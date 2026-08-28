@@ -1060,7 +1060,7 @@ assert_contains "metrics attribute usage by repository" \
 # re-read, not new work, so they are deliberately absent from this total.
 assert_eq "watchdog accumulates known request tokens" "162" \
   "$(jq -r '.budget.usedTokens' .foundation/runtime/tiny-copy-edit.json)"
-assert_eq "watchdog excludes cache reads from spend" "3" \
+assert_eq "watchdog uses the current budget state schema" "4" \
   "$(jq -r '.budget.version' .foundation/runtime/tiny-copy-edit.json)"
 # Targets derive from policy on every read, so over-budget is forced the honest
 # way: a tiny policy budget plus real ingested usage that crosses it.
@@ -1073,13 +1073,15 @@ printf '{"version":1,"execution":{"tokenBudgets":{"rapid":10000,"standard":10000
   > foundation.json
 budget_event="$(node .claude/harness/foundation.mjs event tiny-copy-edit \
   --request req-token-limit --operation build --input 9838)"
-assert_contains "token budget enters completion-only without failing accounting" \
-  "$budget_event" "COMPLETION_ONLY"
+assert_contains "token budget asks the user without failing accounting" \
+  "$budget_event" "OPERATOR_REQUIRED ASK_USER"
+assert_contains "the event names the user-decision boundary" \
+  "$budget_event" "NEEDS_USER_DECISION"
 assert_file_contains "over-budget request remains auditable" \
   ".foundation/logs/tiny-copy-edit/events.jsonl" '"requestId":"req-token-limit"'
 budget_status="$(node .claude/harness/foundation.mjs metrics tiny-copy-edit)"
-assert_contains "metrics exposes completion-only mode" \
-  "$budget_status" '"mode": "completion-only"'
+assert_contains "metrics exposes the operator decision mode" \
+  "$budget_status" '"mode": "operator-required"'
 if budget_continue_output="$(node .claude/harness/foundation.mjs budget-continue \
   tiny-copy-edit --reason "finish required proof" --run tiny-copy-edit \
   --decision-ref fixture://user/continue-required-work 2>&1)"; then
@@ -1207,7 +1209,9 @@ assert_contains "required proof still runs under the operator stop" \
 assert_contains "Land can still be resumed under the operator stop" \
   "$resume_packet" '"land-recovery"'
 assert_file_contains "over-budget lifecycle resume still emits stop warning" \
-  "$TMP/over-budget-resume.err" "CONTINUE_OR_RESCOPE"
+  "$TMP/over-budget-resume.err" "ASK_USER"
+assert_file_contains "over-budget lifecycle resume names the decision state" \
+  "$TMP/over-budget-resume.err" "NEEDS_USER_DECISION"
 if [ -n "$tiny_copy_policy_backup" ]; then
   cp "$TMP/tiny-copy-policy-backup.json" foundation.json
 else

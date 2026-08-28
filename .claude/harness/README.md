@@ -535,14 +535,16 @@ combine by the larger of the two, never by multiplying them together. Only a win
 `budget continue` keeps its granted numbers. At 85% the packet enters `completion-only`: it
 forbids speculative investigation, scope expansion, optional refactors, and new
 subagents while allowing focused fixes and required proof work. Crossing 100%
-adds the `STOP_AND_RESCOPE` recommendation but never turns accounting into a
-process failure. Packet, readiness, provider execution, receipt reuse,
-proof-resume, metrics, Land recovery, and archive remain available. An operator
-may open one fresh audited window with `budget continue` only when readiness
-identifies required model-completable code or configuration work. Active leases,
-external evidence, infrastructure failures, and ready deterministic work do not
-qualify. The reason is audit context, not the policy gate; counters are never
-deleted or silently reset.
+raises `NEEDS_USER_DECISION` on the first exhausted window. New model work waits
+for continue, explicit contract revision, or pause; the runtime never silently
+drops acceptance criteria or moves unfinished work out of the contract. Packet,
+readiness, provider execution, receipt reuse, proof-resume, metrics, Land
+recovery, and archive remain available. A user may open a fresh audited window
+with `budget continue` only when readiness identifies required model-completable
+code or configuration work. Every exhausted continuation asks again, up to the
+configured ceiling. Active leases, external evidence, infrastructure failures,
+and ready deterministic work do not qualify. The reason is audit context, not
+the policy gate; counters and requirements are never deleted or silently reset.
 
 Claude request telemetry is request-owned, not tool-owned. The `SessionStart`
 hook exposes only `session_id` and `transcript_path` to later Foundation

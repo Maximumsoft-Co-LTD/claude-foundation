@@ -7,7 +7,8 @@ export function createBudgetReporter({ applyBudgetDecision }) {
     const spent = decision.measured
       ? `${(decision.ratio * 100).toFixed(1)}%` : "unmeasured";
     const message = `BUDGET ${id}: ${spent} ` +
-      `${decision.action} ${decision.recommendation} (${decision.limiter || "unknown"})`;
+      `${decision.action} ${decision.recommendation} (${decision.limiter || "unknown"})` +
+      (decision.userActionRequired ? " [NEEDS_USER_DECISION]" : "");
     if (!quiet) console.log(message);
     else if (decision.ratio >= 0.7 || decision.mode === "operator-required")
       console.error(`WARNING: ${message}`);
@@ -26,8 +27,8 @@ export function budgetContinuationInputs(flags, fail) {
 }
 
 export function assertBudgetContinuationAvailable(context, id, budget, decision) {
-  if (!["completion-only", "operator-required"].includes(decision.mode))
-    context.fail("budget continue is available only after the active run reaches a completion boundary");
+  if (decision.mode !== "operator-required")
+    context.fail("budget continue is available only after exhaustion asks the user for a decision");
   const extensionNumber = Number(budget.window.extensionNumber || 0);
   const maxContinuations = Number(
     context.foundationPolicy?.().execution?.maxContinuationWindows || 3);
@@ -36,12 +37,12 @@ export function assertBudgetContinuationAvailable(context, id, budget, decision)
       kind: "budget-continuation-spent",
       summary: `This change already used all ${maxContinuations} operator-approved budget continuation windows.`,
       options: [
-        { id: "rescope", outcome: "Narrow this change to what is already provable and carry the remainder into a new change." },
-        { id: "split", outcome: "Create a follow-up change for the unfinished tasks and finish this one at its current scope." },
+        { id: "revise-contract", outcome: "Explicitly revise the acceptance contract; unfinished requirements remain required until the user approves the revision." },
+        { id: "new-budget", outcome: "Set a new budget policy and resume under a separately audited user decision." },
         { id: "abandon", outcome: "Retire this change without landing it." },
         { id: "pause", outcome: "Spend nothing further and leave the change as it stands." }
       ],
-      recommended: "rescope",
+      recommended: "pause",
       window: { used: budget.window.usedTokens, target: budget.window.targetTokens },
       extensions: { used: extensionNumber, maximum: maxContinuations }
     });

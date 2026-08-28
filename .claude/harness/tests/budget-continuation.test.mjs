@@ -25,7 +25,7 @@ test("budget reporter formats measured state and limits quiet output to warnings
     { measured: true, ratio: 0.5, action: "CONTINUE", recommendation: "BUILD", limiter: "tokens", mode: "active" },
     { measured: false, ratio: 0.2, action: "WAIT", recommendation: "MEASURE", limiter: null, mode: "active" },
     { measured: true, ratio: 0.7, action: "STOP", recommendation: "RESCOPE", limiter: "requests", mode: "active" },
-    { measured: true, ratio: 0.1, action: "STOP", recommendation: "ASK", limiter: "tokens", mode: "operator-required" }
+    { measured: true, ratio: 0.1, action: "STOP", recommendation: "ASK", limiter: "tokens", mode: "operator-required", userActionRequired: true }
   ];
   const reporter = createBudgetReporter({ applyBudgetDecision: () => decisions.shift() });
   const logs = [];
@@ -46,7 +46,7 @@ test("budget reporter formats measured state and limits quiet output to warnings
   assert.deepEqual(logs, ["BUDGET change: 50.0% CONTINUE BUILD (tokens)"]);
   assert.deepEqual(warnings, [
     "WARNING: BUDGET change: 70.0% STOP RESCOPE (requests)",
-    "WARNING: BUDGET change: 10.0% STOP ASK (tokens)"
+    "WARNING: BUDGET change: 10.0% STOP ASK (tokens) [NEEDS_USER_DECISION]"
   ]);
 });
 
@@ -60,28 +60,31 @@ test("continuation inputs require trimmed reason and decision identity", () => {
     /requires --decision-ref/);
 });
 
-test("continuation availability accepts repeated approvals up to the configured ceiling", () => {
+test("continuation availability requires an exhaustion decision and accepts approvals up to the ceiling", () => {
   const context = {
     fail, blockWithDecision: stop,
     foundationPolicy: () => ({ execution: { maxContinuationWindows: 3 } })
   };
   const budget = { window: { usedTokens: 4, targetTokens: 10 } };
-  assert.equal(assertBudgetContinuationAvailable(
-    context, "change", budget, { mode: "completion-only" }), 0);
+  assert.throws(() => assertBudgetContinuationAvailable(
+    context, "change", budget, { mode: "completion-only" }), /after exhaustion/);
   assert.equal(assertBudgetContinuationAvailable(
     context, "change", budget, { mode: "operator-required" }), 0);
   assert.throws(() => assertBudgetContinuationAvailable(
-    context, "change", budget, { mode: "active" }), /completion boundary/);
+    context, "change", budget, { mode: "active" }), /after exhaustion/);
   budget.window.extensionNumber = 2;
   assert.equal(assertBudgetContinuationAvailable(
     context, "change", budget, { mode: "operator-required" }), 2);
   budget.window.extensionNumber = 3;
   try {
-    assertBudgetContinuationAvailable(context, "change", budget, { mode: "completion-only" });
+    assertBudgetContinuationAvailable(context, "change", budget, { mode: "operator-required" });
     assert.fail("expected stop");
   } catch (error) {
     assert.equal(error.message, "budget-continuation-spent");
-    assert.equal(error.decision.recommended, "rescope");
+    assert.equal(error.decision.recommended, "pause");
+    assert.deepEqual(error.decision.options.map(({ id }) => id), [
+      "revise-contract", "new-budget", "abandon", "pause"
+    ]);
     assert.deepEqual(error.decision.window, { used: 4, target: 10 });
     assert.deepEqual(error.decision.extensions, { used: 3, maximum: 3 });
   }
@@ -230,7 +233,7 @@ function continuationFixture(overrides = {}) {
       loadRuntime: () => state,
       saveRuntime: () => { calls.saved += 1; },
       ensureBudgetState: () => budget,
-      applyBudgetDecision: () => ({ mode: "completion-only" }),
+      applyBudgetDecision: () => ({ mode: "operator-required" }),
       changeArtifactGaps: () => [], activeChangePath: () => "/change",
       pendingTasks: () => [{ id: "T1" }],
       readinessBudgetPolicy: () => ({ eligible: true, class: "model-work" }),

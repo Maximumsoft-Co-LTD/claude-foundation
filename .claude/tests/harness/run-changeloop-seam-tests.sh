@@ -128,9 +128,8 @@ assert_file_not_contains "the draft is not reported as a dirty target" "$LOGS/se
 # A new run id resets the window's usage, which is what a genuine host session
 # rollover means. It must not also hand back the allowance: the id is
 # caller-supplied. `activateBudgetWindow` carries `operator-required` across for
-# exactly that reason — but nothing ever raised it, so an exhausted run read
-# `completion-only`, and `--run anything-new` reset it to `normal` with a full
-# fresh allowance. The gate re-armed indefinitely, with no decision recorded.
+# exactly that reason. The first exhausted window must raise it: otherwise
+# `--run anything-new` can reset the gate with no user decision recorded.
 setup_project budget-stop
 $F new "budget stop" --rapid > /dev/null
 C=budget-stop
@@ -142,17 +141,17 @@ mode_of() {
 }
 
 $F event "$C" --request b1 --input 800000 --output 0 > /dev/null 2>&1
-assert_eq "an exhausted first window is completion-only" "completion-only:0" "$(mode_of)"
+assert_eq "an exhausted first window asks the user" "operator-required:0" "$(mode_of)"
 
-# No extension spent yet, so a genuine rollover still earns a fresh window.
+# A run rename cannot spend or manufacture user authority.
 $F event "$C" --request b2 --run rollover --input 10 --output 0 > /dev/null 2>&1
-assert_eq "a rollover before any extension still resets" "normal:0" "$(mode_of)"
+assert_eq "a rollover before approval preserves the decision boundary" \
+  "operator-required:0" "$(mode_of)"
 
-$F event "$C" --request b3 --input 800000 --output 0 > /dev/null 2>&1
 $F budget-continue "$C" --reason "operator window" --decision-ref ops-1 > /dev/null 2>&1
 $F event "$C" --request b4 --input 800000 --output 0 > /dev/null 2>&1
-assert_eq "an exhausted approved window permits another recorded continuation" \
-  "completion-only:1" "$(mode_of)"
+assert_eq "an exhausted approved window asks again" \
+  "operator-required:1" "$(mode_of)"
 $F budget-continue "$C" --reason "operator window two" --decision-ref ops-2 > /dev/null 2>&1
 $F event "$C" --request b5 --input 800000 --output 0 > /dev/null 2>&1
 $F budget-continue "$C" --reason "operator window three" --decision-ref ops-3 > /dev/null 2>&1
@@ -166,6 +165,8 @@ assert_eq "a renamed run cannot clear that stop" "operator-required:3" "$(mode_o
 stopped="$($F packet "$C" --phase change 2>/dev/null)"
 assert_contains "the agent is told an operator decision is required" \
   "$stopped" '"action":"OPERATOR_REQUIRED"'
+assert_contains "the packet exposes a resumable user-decision state" \
+  "$stopped" '"status":"NEEDS_USER_DECISION"'
 # The stop withholds new work, not the loop's own completion path.
 assert_contains "required proof stays permitted under the stop" "$stopped" '"provider-run"'
 assert_contains "Land recovery stays permitted under the stop" "$stopped" '"land-recovery"'

@@ -18,7 +18,7 @@ function fixture(execution = {}) {
 
 function currentBudget(overrides = {}) {
   return {
-    version: 3,
+    version: 4,
     measurement: "host-events",
     targetRequests: 20,
     targetTokens: 200,
@@ -90,7 +90,7 @@ test("budget windows distinguish measured baselines from unavailable usage", () 
 test("initial and upgraded budgets preserve only compatible measured usage", () => {
   const { runtime } = fixture();
   const initial = runtime.initialBudget("foundation-rapid", "change");
-  assert.equal(initial.version, 3);
+  assert.equal(initial.version, 4);
   assert.equal(initial.targetRequests, 10);
   assert.equal(initial.usedRequests, null);
   assert.equal(initial.window.id, "change");
@@ -111,6 +111,35 @@ test("initial and upgraded budgets preserve only compatible measured usage", () 
   assert.equal(legacy.budget.usedRequests, null);
   assert.equal(legacy.budget.usedTokens, 12);
   assert.equal(legacy.budget.measurement, "legacy");
+
+  const v3Exhausted = {
+    id: "v3", schema: "foundation-standard",
+    budget: {
+      ...currentBudget(), version: 3,
+      window: {
+        ...currentBudget().window,
+        mode: "completion-only", exhaustedAt: "earlier"
+      }
+    }
+  };
+  runtime.ensureBudgetState(v3Exhausted);
+  assert.equal(v3Exhausted.budget.version, 4);
+  assert.equal(v3Exhausted.budget.window.id, "run-1");
+  assert.equal(v3Exhausted.budget.window.mode, "operator-required");
+  assert.equal(v3Exhausted.budget.window.exhaustedAt, "earlier");
+
+  const v3Untimestamped = {
+    id: "v3-untimestamped", schema: "foundation-standard",
+    budget: {
+      ...currentBudget(), version: 3,
+      window: {
+        ...currentBudget().window,
+        usedRequests: 20, mode: "completion-only", exhaustedAt: null
+      }
+    }
+  };
+  runtime.ensureBudgetState(v3Untimestamped);
+  assert.equal(v3Untimestamped.budget.window.mode, "operator-required");
 });
 
 test("current budgets normalize lifetime, heal invented zeros, and refresh targets", () => {
@@ -210,8 +239,17 @@ test("budget decisions cover unknown, normal, conserve, completion, and operator
 
   state.budget.window.usedTokens = 200;
   decision = runtime.budgetDecision(state);
-  assert.equal(decision.action, "COMPLETION_ONLY");
-  assert.equal(decision.recommendation, "STOP_AND_RESCOPE");
+  assert.equal(decision.action, "OPERATOR_REQUIRED");
+  assert.equal(decision.recommendation, "ASK_USER");
+  assert.equal(decision.status, "NEEDS_USER_DECISION");
+  assert.equal(decision.userActionRequired, true);
+  assert.equal(decision.decision.kind, "budget-exhausted");
+  assert.equal(decision.decision.recommended, "pause");
+  assert.deepEqual(decision.decision.options.map(({ id }) => id), [
+    "continue", "rescope", "pause"
+  ]);
+  assert.ok(decision.allowed.includes("provider-run"));
+  assert.ok(!decision.allowed.includes("focused-fix"));
 
   state.budget.window.mode = "normal";
   state.budget.window.reason = "operator-continue";
@@ -226,14 +264,14 @@ test("budget decisions cover unknown, normal, conserve, completion, and operator
   state.budget.window.mode = "operator-required";
   decision = runtime.budgetDecision(state);
   assert.equal(decision.action, "OPERATOR_REQUIRED");
-  assert.equal(decision.recommendation, "CONTINUE_OR_RESCOPE");
+  assert.equal(decision.recommendation, "ASK_USER");
   assert.ok(decision.allowed.includes("budget-continue"));
   assert.deepEqual(decision.forbidden, [
     "model-exploration", "new-subagent", "scope-expansion"
   ]);
 });
 
-test("applying a decision timestamps exhaustion and stops at the continuation ceiling", () => {
+test("applying a decision asks the user at the first exhausted window", () => {
   const { runtime, ticks } = fixture();
   const state = { id: "change", schema: "foundation-standard", budget: currentBudget() };
   state.budget.window.usedRequests = 15;
@@ -242,7 +280,6 @@ test("applying a decision timestamps exhaustion and stops at the continuation ce
   assert.equal(state.budget.window.exhaustedAt, null);
 
   state.budget.window.usedRequests = 20;
-  state.budget.window.extensionNumber = 3;
   decision = runtime.applyBudgetDecision(state);
   assert.equal(state.budget.window.exhaustedAt, "time-1");
   assert.equal(decision.mode, "operator-required");
@@ -250,6 +287,41 @@ test("applying a decision timestamps exhaustion and stops at the continuation ce
 
   runtime.applyBudgetDecision(state);
   assert.equal(ticks(), 1);
+});
+
+test("first exhaustion asks the user for every workload profile", () => {
+  const workloads = [
+    {
+      name: "rapid-greenfield", schema: "foundation-rapid", impact: "low", size: "xs"
+    },
+    {
+      name: "brownfield-standard", schema: "foundation-standard", impact: "medium", size: "m"
+    },
+    {
+      name: "security", schema: "foundation-standard", impact: "high", size: "l",
+      securityTriggers: ["auth"]
+    },
+    {
+      name: "multi-repo-migration", schema: "foundation-standard", impact: "high", size: "l",
+      coupling: "coupled", repositories: { api: {}, web: {}, data: {} },
+      evidenceCapabilities: ["unit", "integration", "migration", "rollback", "security"]
+    }
+  ];
+
+  for (const workload of workloads) {
+    const { runtime } = fixture();
+    const state = { id: workload.name, ...workload };
+    state.budget = runtime.initialBudget(workload.schema, workload.name);
+    runtime.ensureBudgetState(state);
+    state.budget.window.usedRequests = state.budget.window.targetRequests;
+    state.budget.window.usedTokens = 0;
+    const decision = runtime.applyBudgetDecision(state);
+    assert.equal(decision.status, "NEEDS_USER_DECISION", workload.name);
+    assert.equal(decision.mode, "operator-required", workload.name);
+    assert.equal(decision.userActionRequired, true, workload.name);
+    assert.ok(decision.allowed.includes("proof-resume"), workload.name);
+    assert.ok(decision.forbidden.includes("model-exploration"), workload.name);
+  }
 });
 
 test("usage synchronization subtracts baselines and retains unknown token totals", () => {

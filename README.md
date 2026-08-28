@@ -831,15 +831,18 @@ Common problems:
 Execution budgets are scoped to an autonomous run while lifetime usage remains
 visible in metrics. At 85% the run enters completion-only mode: speculative
 exploration, scope expansion, optional refactors, and new subagents stop, while
-focused fixes and required proof continue. At 100% the harness recommends
-splitting or rescoping but does not fail telemetry or block deterministic
-packet, readiness, provider, receipt-reuse, proof-resume, metrics, Land recovery,
-or archive commands. `budget continue` opens a fresh operator-approved window
-with an audit record only for required model-completable code or configuration
-work, at most once per run. Active leases, external evidence, infrastructure
-failures, and already-ready deterministic work do not qualify. The reason is
-audit context rather than a text-based policy gate; prior usage and evidence
-requirements remain intact.
+focused fixes and required proof continue. At 100% the first exhausted window
+becomes `NEEDS_USER_DECISION`: new model work pauses and the harness offers
+continue, explicit contract revision, or pause. It never silently drops an
+acceptance criterion or treats unfinished work as complete. Deterministic packet,
+readiness, provider, receipt-reuse, proof-resume, metrics, Land recovery, and
+archive commands remain available. `budget continue` opens a fresh
+user-approved window with an audit record only for required model-completable
+code or configuration work. Every exhausted continuation asks again, up to the
+configured continuation ceiling. Active leases, external evidence,
+infrastructure failures, and already-ready deterministic work do not qualify.
+The reason is audit context rather than a text-based policy gate; prior usage,
+the acceptance contract, and evidence requirements remain intact.
 
 ## Verify or upgrade an installation
 
