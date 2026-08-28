@@ -27,10 +27,26 @@ test("result parsers accept JSON and complete TAP summaries", () => {
   assert.deepEqual(parseTapOutput([
     "TAP version 13", "1..2", "ok 1 - first", "not ok 2 - second",
     "# tests 2", "# pass 1", "# fail 1"
-  ].join("\n")), { totalTests: 2, passed: 1, failed: 1, format: "tap" });
-  assert.deepEqual(parseTapOutput("ok 1 - works\n1..1"), {
-    totalTests: 1, passed: null, failed: null, format: "tap"
+  ].join("\n")), {
+    totalTests: 2, passed: 1, failed: 1, format: "tap",
+    criticalCases: [
+      { id: "first", status: "pass" },
+      { id: "second", status: "fail" }
+    ]
   });
+  assert.deepEqual(parseTapOutput("ok 1 - works\n1..1"), {
+    totalTests: 1, passed: null, failed: null, format: "tap",
+    criticalCases: [{ id: "works", status: "pass" }]
+  });
+  assert.deepEqual(parseTapOutput([
+    "TAP version 13",
+    "ok 1 - an unknown id is rejected [unknown-id-rejected]",
+    "ok 2 - an interrupted write preserves data [interrupted-save-preserves-store]",
+    "1..2", "# tests 2", "# pass 2", "# fail 0"
+  ].join("\n")).criticalCases, [
+    { id: "an unknown id is rejected [unknown-id-rejected]", status: "pass" },
+    { id: "an interrupted write preserves data [interrupted-save-preserves-store]", status: "pass" }
+  ]);
   assert.equal(parseTapOutput(`TAP version 13\n1..${"9".repeat(400)}`), null);
 });
 

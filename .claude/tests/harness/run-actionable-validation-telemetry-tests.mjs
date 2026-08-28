@@ -113,6 +113,18 @@ test("Cursor imports retain measured generic-host attribution", () => {
   assert.deepEqual(value.correlatedHosts, ["generic-host"]);
 });
 
+test("Claude transcript tokens without the result-envelope cost stay partial", () => {
+  const value = usageAvailability([{
+    source: "claude-transcript", inputTokens: 2, outputTokens: 9,
+    cacheReadTokens: 100, cost: null
+  }], [], "change-id");
+  assert.equal(value.status, "measured");
+  assert.equal(value.classification, "partial-measurement");
+  assert.equal(value.reason, "partial-measurement");
+  assert(value.recoveryActions.some((action) =>
+    action.command === "claude-foundation telemetry host-import change-id <claude-result.json>"));
+});
+
 test("explicit zero usage is distinguished from missing usage", () => {
   const value = usageAvailability([
     { source: "generic", inputTokens: 0, outputTokens: 0, cost: 0 }

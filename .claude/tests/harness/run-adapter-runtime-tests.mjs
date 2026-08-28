@@ -157,6 +157,11 @@ test("critical cases normalize structured and test-runner reports", () => {
     status: "fail", observations: [{ id: "case-missing", status: "missing" }]
   });
   assert.deepEqual(criticalCaseResult({}, []), { status: "pass", observations: [] });
+  assert.deepEqual(criticalCaseResult({ criticalCases: [{
+    id: "unknown id is rejected [unknown-id-rejected]", status: "pass"
+  }] }, ["unknown-id-rejected"]), {
+    status: "pass", observations: [{ id: "unknown-id-rejected", status: "pass" }]
+  });
 });
 
 test("contract digest compares repository artifacts without a command process", async () => {

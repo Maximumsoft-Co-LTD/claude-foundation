@@ -12,13 +12,15 @@ copy_path="$(jq -r '.workspace.path' .foundation/runtime/copy-sandbox.json)"
 # unless an explicit CLAUDE_FOUNDATION_PROJECT pin asks for the copy itself.
 sandbox_resolution="$( (cd "$copy_path" && node .claude/harness/foundation.mjs changes) 2>&1 )"
 assert_contains "runtime resolution walks past a sandbox copy" \
-  "$sandbox_resolution" "ignoring sandbox copy"
+  "$sandbox_resolution" "control-plane state resolves at the project root"
+assert_contains "runtime resolution preserves provider execution semantics" \
+  "$sandbox_resolution" "provider commands still execute in the registered change sandbox"
 assert_contains "commands from inside a sandbox act on the project root" \
   "$sandbox_resolution" "copy-sandbox"
 pinned_resolution="$( (cd "$copy_path" && CLAUDE_FOUNDATION_PROJECT="$copy_path" \
   node .claude/harness/foundation.mjs changes) 2>&1 )"
 case "$pinned_resolution" in
-  *"ignoring sandbox copy"*) fail "an explicit pin keeps sandbox-local resolution" ;;
+  *"control-plane state resolves at the project root"*) fail "an explicit pin keeps sandbox-local resolution" ;;
   *) pass "an explicit pin keeps sandbox-local resolution" ;;
 esac
 # External build commands are wall time the harness never saw: `exec` runs

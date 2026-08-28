@@ -140,7 +140,10 @@ test("measured numbers reject JavaScript coercion values", () => {
 });
 
 test("a user row without its own timestamp keeps one transition across a rescan", () => {
-  const row = { type: "user", uuid: "row-1", sessionId: "session-a" };
+  const row = {
+    type: "user", uuid: "row-1", sessionId: "session-a",
+    message: { role: "user", content: "continue" }
+  };
   const context = { sessionId: "session-a", sourcePath: "/transcript.jsonl" };
   const first = normalizeClaudeUserTransition(
     "change", row, context, "2026-08-12T00:00:00.000Z");
@@ -162,13 +165,24 @@ test("a user row without its own timestamp keeps one transition across a rescan"
     type: "user", timestamp: "invalid"
   }, context), null);
   assert.equal(normalizeClaudeUserTransition("change", {
-    message: { role: "user" }, id: "message-role", created_at: "2026-08-12T00:01:00.000Z"
+    message: { role: "user", content: "continue" }, id: "message-role",
+    created_at: "2026-08-12T00:01:00.000Z"
   }, {}, null).sessionId, null);
   const contextual = normalizeClaudeUserTransition("change", {
-    type: "user", id: "contextual"
+    type: "user", id: "contextual", message: { role: "user", content: "continue" }
   }, { sessionId: "context-session" }, "2026-08-12T00:02:00.000Z");
   assert.equal(contextual.sessionId, "context-session");
   assert.equal(contextual.sourcePathHash, null);
+  assert.equal(contextual.kind, "human-message");
+  assert.equal(contextual.version, 2);
+  assert.equal(normalizeClaudeUserTransition("change", {
+    type: "user", timestamp: "2026-08-12T00:03:00.000Z",
+    message: { role: "user", content: [{ type: "tool_result", content: "ok" }] }
+  }, context), null, "tool results are not human transitions");
+  assert.equal(normalizeClaudeUserTransition("change", {
+    type: "user", isMeta: true, timestamp: "2026-08-12T00:04:00.000Z",
+    message: { role: "user", content: "Stop hook feedback" }
+  }, context), null, "hook and skill metadata are not human transitions");
 });
 
 test("telemetry normalization keeps junk unknown and normalizes numeric strings", () => {
@@ -464,10 +478,11 @@ test("metrics compose lifecycle, receipt, context, and human-wait timelines", ()
   writeFileSync(join(logs, id, "events.jsonl"),
     events.map(JSON.stringify).join("\n") + "\n");
   writeFileSync(join(logs, id, "user-transitions.jsonl"), [
-    { sessionId: "session-a", timestamp: "2026-08-12T00:05:30.000Z" },
-    { sessionId: "session-a", timestamp: "2026-08-12T00:08:00.000Z" },
-    { sessionId: "missing", timestamp: "2026-08-12T00:09:00.000Z" },
-    { sessionId: "session-a", timestamp: "invalid" }
+    { kind: "human-message", sessionId: "session-a", timestamp: "2026-08-12T00:05:30.000Z" },
+    { kind: "tool-result", sessionId: "session-a", timestamp: "2026-08-12T00:07:00.000Z" },
+    { kind: "human-message", sessionId: "session-a", timestamp: "2026-08-12T00:08:00.000Z" },
+    { kind: "human-message", sessionId: "missing", timestamp: "2026-08-12T00:09:00.000Z" },
+    { kind: "human-message", sessionId: "session-a", timestamp: "invalid" }
   ].map(JSON.stringify).join("\n") + "\n");
   writeFileSync(join(logs, id, "phase-context.jsonl"), [
     { phase: "build", contextMode: "fresh" },

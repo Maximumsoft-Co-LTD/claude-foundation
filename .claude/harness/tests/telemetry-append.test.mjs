@@ -182,7 +182,21 @@ test("appendTelemetryRows records Claude user transitions without token events",
   assert.equal(loads, 0, "a transition-only import does not load runtime state");
   const transitions = readLines(join(logs, "change", "user-transitions.jsonl"));
   assert.equal(transitions.length, 1);
+  assert.equal(transitions[0].kind, "human-message");
   assert.equal(JSON.stringify(transitions).includes("must not persist"), false);
+  assert.equal(runtime.appendTelemetryRows("change", [{
+    type: "user", uuid: "tool-result-1", timestamp: "2026-08-26T00:00:01.000Z",
+    message: { role: "user", content: [{ type: "tool_result", content: "secret" }] }
+  }], "claude", { sessionId: "session" }), 0);
+  assert.equal(readLines(join(logs, "change", "user-transitions.jsonl")).length, 1,
+    "tool results never enter the human-wait timeline");
+  assert.equal(runtime.appendTelemetryRows("change", [{
+    type: "user", isMeta: true, uuid: "meta-1",
+    timestamp: "2026-08-26T00:00:02.000Z",
+    message: { role: "user", content: "hook feedback" }
+  }], "claude", { sessionId: "session" }), 0);
+  assert.equal(readLines(join(logs, "change", "user-transitions.jsonl")).length, 1,
+    "Claude metadata never enters the human-wait timeline");
   assert.equal(runtime.appendTelemetryRows("change", [{
     type: "assistant", uuid: "assistant-1",
     message: {

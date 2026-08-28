@@ -137,12 +137,20 @@ export function normalizeTelemetryRow(id, row, format, context = {}, timestamp =
   };
 }
 
-// Claude transcript user rows are useful for timing even though they must never
-// enter the token-event stream. Keep only an opaque identity and timestamp: in
-// particular, do not retain message.content or any other prompt material.
+// Claude writes tool results as role=user rows. Only actual user-authored text
+// is a human transition; treating tool results as people turns an unattended
+// `claude -p` run into minutes of invented human wait. Keep only opaque identity
+// and timing metadata — never retain the prompt text itself.
 export function normalizeClaudeUserTransition(id, row, context = {}, timestamp = null) {
   const message = row.message && typeof row.message === "object" ? row.message : {};
   if (row.type !== "user" && message.role !== "user") return null;
+  if (row.isMeta === true) return null;
+  const content = message.content ?? row.content;
+  const humanAuthored = typeof content === "string" ? Boolean(content.trim())
+    : Array.isArray(content) &&
+      !content.some((block) => block?.type === "tool_result") &&
+      content.some((block) => block?.type === "text" && String(block.text || "").trim());
+  if (!humanAuthored) return null;
   const rowAt = row.timestamp || row.created_at || null;
   const at = rowAt || timestamp;
   if (!at || !Number.isFinite(Date.parse(at))) return null;
@@ -154,8 +162,8 @@ export function normalizeClaudeUserTransition(id, row, context = {}, timestamp =
   const identity = [id, sessionId, row.uuid || row.id || "", rowAt ?? "", sourcePathHash]
     .map((value) => value ?? "").join("\0");
   return {
-    version: 1,
-    kind: "user-message",
+    version: 2,
+    kind: "human-message",
     transitionId: createHash("sha256").update(identity).digest("hex"),
     sessionId,
     timestamp: at,

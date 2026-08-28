@@ -14,11 +14,23 @@ export function parseTapOutput(value) {
   const plan = [...text.matchAll(/^\s*1\.\.(\d+)\s*$/gm)].at(-1);
   const totalTests = Number(testsFooter?.[1] ?? plan?.[1]);
   if (!Number.isInteger(totalTests) || totalTests < 0) return null;
+  const criticalCases = [...text.matchAll(/^\s*(not ok|ok)\s+\d+\s+-\s+(.+?)\s*$/gm)]
+    .map((match) => {
+      const directive = match[2].match(/\s+#\s*(SKIP|TODO)\b/i);
+      const id = directive ? match[2].slice(0, directive.index).trim() : match[2].trim();
+      return {
+        id,
+        status: directive ? directive[1].toLowerCase()
+          : match[1] === "ok" ? "pass" : "fail"
+      };
+    })
+    .filter((row) => row.id);
   return {
     totalTests,
     passed: passFooter ? Number(passFooter[1]) : null,
     failed: failFooter ? Number(failFooter[1]) : null,
-    format: "tap"
+    format: "tap",
+    criticalCases
   };
 }
 

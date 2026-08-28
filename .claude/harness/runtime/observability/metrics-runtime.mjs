@@ -19,6 +19,11 @@ export function eventUsageRecoveryActions(classification, correlatedHosts, chang
       command: `claude-foundation telemetry import ${changeId} <events.jsonl> --format generic`
     });
   }
+  if (classification === "partial-measurement" &&
+      correlatedHosts.includes("claude-code")) recoveryActions.push({
+    type: "import-host-execution",
+    command: `claude-foundation telemetry host-import ${changeId} <claude-result.json>`
+  });
   if (classification === "source-unsupported") recoveryActions.push({
     type: "import-generic-events",
     command: `claude-foundation telemetry import ${changeId} <events.jsonl> --format generic`
@@ -50,14 +55,18 @@ export function usageAvailability(events = [], phaseContextRows = [], changeId =
       .map((field) => event[field]).filter(finite));
     const completeEvents = events.filter((event) =>
       finite(event.inputTokens) && finite(event.outputTokens));
+    const allUsageZero = completeEvents.length === events.length &&
+      completeEvents.every((event) =>
+        measuredNumber(event.inputTokens) === 0 && measuredNumber(event.outputTokens) === 0 &&
+        usageFields.filter((field) => !["inputTokens", "outputTokens"].includes(field))
+          .filter((field) => finite(event[field]))
+          .every((field) => measuredNumber(event[field]) === 0));
+    const claudeCostMissing = correlatedHosts.includes("claude-code") &&
+      !allUsageZero && !events.some((event) => finite(event.cost));
     const classification = !correlatedHosts.length ? "source-unsupported"
       : !observedValues.length ? "correlation-missing"
-        : completeEvents.length !== events.length ? "partial-measurement"
-          : completeEvents.every((event) =>
-            measuredNumber(event.inputTokens) === 0 && measuredNumber(event.outputTokens) === 0 &&
-            usageFields.filter((field) => !["inputTokens", "outputTokens"].includes(field))
-              .filter((field) => finite(event[field]))
-              .every((field) => measuredNumber(event[field]) === 0)) ? "no-usage"
+        : completeEvents.length !== events.length || claudeCostMissing ? "partial-measurement"
+          : allUsageZero ? "no-usage"
             : "measured";
     const recoveryActions = eventUsageRecoveryActions(
       classification, correlatedHosts, changeId);
@@ -395,6 +404,9 @@ export function createMetricsRuntime({
   function transcriptWaitSpans(events, userTransitions) {
     const spans = [];
     for (const transition of userTransitions) {
+      // v1 transitions did not distinguish real user input from Claude tool
+      // results, so they cannot support a truthful human-wait measurement.
+      if (transition.kind !== "human-message") continue;
       const to = Date.parse(transition.timestamp);
       const preceding = events
         .filter((event) => event.agentId === "orchestrator" &&
@@ -479,7 +491,7 @@ export function createMetricsRuntime({
       humanWaitMs,
       humanWaitSpans,
       humanWaitBasis: "authority-request to authority-record intervals, plus " +
-        "orchestrator-answer to next-user-message intervals from the host " +
+        "orchestrator-answer to next verified human-message intervals from the host " +
         "transcript; overlapping spans are merged, so this is elapsed wait " +
         "rather than the sum of observations. Waits in a session whose " +
         "transcript was never ingested remain inside unattributedWaitMs",
