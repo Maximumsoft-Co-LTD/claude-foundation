@@ -843,6 +843,8 @@ configured continuation ceiling. Active leases, external evidence,
 infrastructure failures, and already-ready deterministic work do not qualify.
 The reason is audit context rather than a text-based policy gate; prior usage,
 the acceptance contract, and evidence requirements remain intact.
+Use `claude-foundation budget checkpoint <change>` to inspect measured remaining
+allowance, unfinished work, the user prompt, and the exact resume command.
 
 ## Verify or upgrade an installation
 

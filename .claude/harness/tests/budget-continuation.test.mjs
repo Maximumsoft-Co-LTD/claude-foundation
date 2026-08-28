@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   assertBudgetContinuationAvailable,
   assertBudgetContinuationEligible,
+  budgetCheckpointValue,
   budgetContinuationInputs,
   budgetContinuationReadiness,
   budgetContinuationUnblock,
@@ -137,6 +138,46 @@ test("continuation unblock maps every ineligible work class", () => {
   for (const [kind, id] of Object.entries(expected))
     assert.equal(budgetContinuationUnblock({ budget: { class: kind } }).id, id);
   assert.equal(budgetContinuationUnblock({}).id, "run-proof");
+});
+
+test("checkpoint exposes the user decision and exact durable resume route", () => {
+  const state = {};
+  const value = budgetCheckpointValue({
+    ...readinessContext({ pendingTasks: () => [{ id: "T1" }] }),
+    loadRuntime: () => state,
+    ensureBudgetState: () => ({ window: {
+      id: "run-1", sequence: 4, extensionNumber: 2
+    } }),
+    applyBudgetDecision: () => ({
+      measured: true, mode: "operator-required", userActionRequired: true,
+      decision: { prompt: "Choose continue, rescope, or pause." }
+    })
+  }, "change");
+  assert.equal(value.status, "NEEDS_USER_DECISION");
+  assert.equal(value.forecast.status, "USER_DECISION_REQUIRED");
+  assert.deepEqual(value.remainingWork.pendingTasks, ["T1"]);
+  assert.equal(value.checkpoint.resumeCommand, null);
+  assert.equal(value.checkpoint.afterContinuationCommand,
+    "claude-foundation packet change --phase build");
+  assert.equal(value.checkpoint.sequence, 4);
+  assert.match(value.userPrompt, /Choose continue/);
+});
+
+test("checkpoint routes deterministic proof without asking for more model budget", () => {
+  const value = budgetCheckpointValue({
+    ...readinessContext(),
+    loadRuntime: () => ({}),
+    ensureBudgetState: () => ({ window: { id: "run", sequence: 1 } }),
+    applyBudgetDecision: () => ({
+      measured: true, mode: "operator-required", userActionRequired: true,
+      decision: { prompt: "Choose more budget." }
+    })
+  }, "change");
+  assert.equal(value.status, "READY_TO_RESUME");
+  assert.equal(value.forecast.status, "NO_ADDITIONAL_MODEL_BUDGET_NEEDED");
+  assert.equal(value.checkpoint.resumeCommand,
+    "claude-foundation proof advance change");
+  assert.equal(value.userPrompt, null);
 });
 
 test("eligible continuation passes and ineligible readiness produces a typed stop", () => {

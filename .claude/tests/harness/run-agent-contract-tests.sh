@@ -101,7 +101,7 @@ assert_eq "mixed-risk single session selects deep model" "deep" \
 
 task_packet="$(node "$RUNTIME" agent-task agent-contract T002)"
 if printf '%s' "$task_packet" | jq -e \
-  '.version == 8 and .packetType == "task" and
+  '.version == 9 and .packetType == "task" and
     (.claims | length) > 0 and (.providers | length) > 0 and
     .workerContract.role == "leased-task-worker" and
     (.workerContract.mustNot | index("edit-task-ledger")) != null and

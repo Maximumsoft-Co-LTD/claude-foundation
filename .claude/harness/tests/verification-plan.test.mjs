@@ -66,3 +66,11 @@ test("compacted provider displays never invent reuse decisions", () => {
   assert.deepEqual(plan.evidence.reusable, []);
   assert.equal(plan.execution.command, "claude-foundation land advance change");
 });
+
+test("task packets keep phase verification with the parent boundary", () => {
+  const plan = verificationPlanValue(packet({ packetType: "task" }), "build");
+  assert.equal(plan.strategy, "parent-boundary");
+  assert.deepEqual(plan.execution, { boundary: "parent", command: null });
+  assert.equal(plan.evidence, undefined);
+  assert.ok(JSON.stringify(plan).length < 250);
+});

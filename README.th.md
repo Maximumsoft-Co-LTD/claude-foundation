@@ -776,14 +776,16 @@ CLI หา installed project จาก directory ปัจจุบันหร�
 Execution budget คิดต่อ autonomous run ส่วน usage ตลอดอายุ change ยังอยู่ใน
 metrics เมื่อถึง 85% ระบบเข้า completion-only mode โดยหยุด speculative
 exploration, การขยาย scope, optional refactor และการเปิด subagent ใหม่ แต่ยังทำ
-focused fix และ required proof ต่อได้ เมื่อถึง 100% harness จะแนะนำให้ split หรือ
-rescope โดยไม่ทำให้ telemetry ล้มเหลวและไม่ block deterministic packet,
-readiness, provider, receipt reuse, proof-resume, metrics, Land recovery หรือ
-archive คำสั่ง `budget continue` เปิด window ใหม่โดย operator พร้อม audit record
-ได้หนึ่งครั้งต่อ run และเฉพาะ code/configuration ที่ AI ต้องทำให้เสร็จ Active
-lease, external evidence, infrastructure failure และงาน deterministic ที่พร้อม
-อยู่แล้วจะไม่ผ่าน gate โดย reason ใช้บันทึก audit ไม่ได้ใช้ตัดสิน policy ระบบไม่
-ลบ usage เดิมและไม่ลด evidence requirement
+focused fix และ required proof ต่อได้ เมื่อถึง 100% ระบบจะหยุด model work ใหม่
+และถามผู้ใช้ให้เลือก continue, แก้ scope อย่างชัดเจน หรือ pause โดยไม่ block
+deterministic packet, readiness, provider, receipt reuse, proof-resume, metrics,
+Land recovery หรือ archive คำสั่ง `budget continue` เปิด window ใหม่พร้อม audit
+record เฉพาะ code/configuration ที่ AI ยังต้องทำ ทุก window ที่หมดจะถามใหม่จนถึง
+เพดาน continuation ที่ตั้งไว้ Active lease, external evidence, infrastructure
+failure และงาน deterministic ที่พร้อมอยู่แล้วจะไม่ผ่าน gate โดย reason ใช้บันทึก
+audit ไม่ได้ใช้ตัดสิน policy ระบบไม่ลบ usage เดิมและไม่ลด evidence requirement
+ใช้ `claude-foundation budget checkpoint <change>` เพื่อดู allowance ที่วัดได้
+งานที่เหลือ คำถามสำหรับผู้ใช้ และคำสั่ง resume ที่ตรงกับ checkpoint
 
 ## ตรวจหรือ Upgrade Installation
 

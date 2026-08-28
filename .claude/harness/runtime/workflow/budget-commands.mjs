@@ -79,6 +79,94 @@ export function budgetContinuationUnblock(readiness) {
   return unblockByClass[readiness.budget?.class] || unblockByClass.deterministic;
 }
 
+function checkpointNextCommand(id, readiness) {
+  if (readiness.status === "NEEDS_CODE_CHANGE")
+    return `claude-foundation packet ${id} --phase build`;
+  if (readiness.status === "CONFIGURATION_ERROR")
+    return `claude-foundation change validate ${id}`;
+  return `claude-foundation proof advance ${id}`;
+}
+
+function checkpointForecast(decision, readiness) {
+  if (readiness.budget?.eligible === false) return {
+    status: "NO_ADDITIONAL_MODEL_BUDGET_NEEDED",
+    confidence: "readiness-classified",
+    reason: readiness.budget.reason || "The next unblock is deterministic or external."
+  };
+  if (!decision.measured) return {
+    status: "UNKNOWN",
+    confidence: "none",
+    reason: "No host usage events have measured this active window."
+  };
+  if (decision.userActionRequired) return {
+    status: "USER_DECISION_REQUIRED",
+    confidence: "measured-capacity",
+    reason: "The active allowance is exhausted; the harness will not infer whether to spend more or change scope."
+  };
+  if (decision.mode === "completion-only") return {
+    status: "AT_RISK",
+    confidence: "measured-capacity",
+    reason: "At least 85% of one active allowance lane is used; only completion work is allowed."
+  };
+  return {
+    status: "CAPACITY_AVAILABLE",
+    confidence: "measured-capacity",
+    reason: "The active allowance has capacity; remaining work is reported separately instead of converted into invented request or token demand."
+  };
+}
+
+function checkpointRoute(id, readiness, budget, needsUser) {
+  const nextCommand = checkpointNextCommand(id, readiness);
+  const route = {
+    durable: true,
+    windowId: budget.window.id,
+    sequence: Number(budget.window.sequence || 0),
+    extensionNumber: Number(budget.window.extensionNumber || 0),
+    inspectCommand: `claude-foundation budget checkpoint ${id}`,
+    resumeCommand: nextCommand,
+    afterContinuationCommand: null
+  };
+  if (needsUser) {
+    route.resumeCommand = null;
+    route.afterContinuationCommand = nextCommand;
+  }
+  return route;
+}
+
+function checkpointUserPrompt(decision, needsUser) {
+  if (!needsUser || !decision.decision) return null;
+  return decision.decision.prompt;
+}
+
+export function budgetCheckpointValue(context, id) {
+  const state = context.loadRuntime(id);
+  const budget = context.ensureBudgetState(state);
+  const decision = context.applyBudgetDecision(state);
+  const readiness = budgetContinuationReadiness(context, id, state);
+  const needsUser = decision.userActionRequired === true &&
+    readiness.budget?.eligible !== false;
+  return {
+    version: 1,
+    changeId: id,
+    status: needsUser ? "NEEDS_USER_DECISION" : "READY_TO_RESUME",
+    decision,
+    forecast: checkpointForecast(decision, readiness),
+    remainingWork: {
+      readinessStatus: readiness.status,
+      pendingTasks: readiness.pendingTasks,
+      externalProviders: readiness.externalProviders,
+      unavailableProviders: readiness.unavailableProviders,
+      modelBudget: readiness.budget
+    },
+    checkpoint: checkpointRoute(id, readiness, budget, needsUser),
+    userPrompt: checkpointUserPrompt(decision, needsUser)
+  };
+}
+
+export function showBudgetCheckpoint(context, id) {
+  console.log(JSON.stringify(budgetCheckpointValue(context, id), null, 2));
+}
+
 export function assertBudgetContinuationEligible(context, id, readiness) {
   if (readiness.budget?.eligible) return;
   const unblock = budgetContinuationUnblock(readiness);
@@ -180,6 +268,11 @@ export function createBudgetContinuation({
     proofReadinessValue, eventUsage, budgetWindow, readJsonLines,
     appendBudgetAudit, blockWithDecision, fail
   });
+  const checkpointBudget = showBudgetCheckpoint.bind(null, {
+    loadRuntime, ensureBudgetState, applyBudgetDecision,
+    changeArtifactGaps, activeChangePath, pendingTasks, readinessBudgetPolicy,
+    proofReadinessValue
+  });
 
-  return { continueBudget };
+  return { continueBudget, checkpointBudget };
 }

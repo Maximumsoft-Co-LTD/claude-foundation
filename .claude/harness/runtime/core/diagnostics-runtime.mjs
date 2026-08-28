@@ -564,6 +564,7 @@ Commands:
   providers
   packet <change> [--phase change|build|prove|review|land] [--repo <id>] [--task <id>] [--pretty]
   metrics <change>
+  budget-checkpoint <change>
   budget-continue <change> --reason <reason> --decision-ref <ref> [--run <id>]
   validate <change>
   audit-change <change> [--json]

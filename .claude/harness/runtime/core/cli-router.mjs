@@ -24,6 +24,7 @@ export async function routeRuntimeCommand(command, values, api) {
     showPacket,
     showMetrics,
     execObserved,
+    checkpointBudget,
     continueBudget,
     doctor,
     validate,
@@ -305,6 +306,11 @@ export async function routeRuntimeCommand(command, values, api) {
       });
       if (rest.length !== 1) die("budget continue requires exactly one change id");
       continueBudget(rest[0], flags);
+    },
+    "budget-checkpoint": async () => {
+      const { rest } = parseStrictCommandFlags(values, "budget checkpoint", {});
+      if (rest.length !== 1) die("budget checkpoint requires exactly one change id");
+      checkpointBudget(rest[0]);
     },
     "doctor": async () => {
       const {

@@ -73,6 +73,20 @@ function phasePlan(changeId, phase, pendingTaskCount) {
 
 export function verificationPlanValue(packet, phase = "build", stableHash = null) {
   const risk = verificationRisk(packet);
+  if (packet.packetType === "task") {
+    const delegated = {
+      version: 1,
+      strategy: "parent-boundary",
+      phase,
+      risk,
+      assurance: "unchanged-by-batching",
+      execution: { boundary: "parent", command: null }
+    };
+    return {
+      ...delegated,
+      planFingerprint: typeof stableHash === "function" ? stableHash(delegated) : null
+    };
+  }
   const execution = phasePlan(packet.changeId, phase, Number(packet.pendingTaskCount || 0));
   const plan = {
     version: 1,
@@ -97,4 +111,3 @@ export function verificationPlanValue(packet, phase = "build", stableHash = null
     planFingerprint: typeof stableHash === "function" ? stableHash(plan) : null
   };
 }
-

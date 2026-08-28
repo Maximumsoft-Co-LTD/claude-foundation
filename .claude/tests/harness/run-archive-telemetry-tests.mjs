@@ -132,7 +132,8 @@ test("archive drains the bound transcript into the change's events", () => {
   }) + "\n");
   const output = cli(fixture, env, "archive", "telemetry-probe");
   assert.match(output, /ARCHIVED telemetry-probe/);
-  assert.match(output, /telemetry: measured/);
+  assert.match(output, /telemetry: partial-measurement/,
+    "Claude token usage without host cost must remain truthfully partial");
   assert.doesNotMatch(output, /telemetry: not-ingested/,
     "archive printed readiness before its final transcript drain");
   const events = join(fixture.root, ".foundation", "logs", "telemetry-probe", "events.jsonl");

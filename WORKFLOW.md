@@ -440,6 +440,10 @@ the outcome in the user's language and owns routine commands and metadata. It
 never asks the user to run a safe authorized operation it can perform. Genuine
 decisions present honest choices (including reject, inconclusive, or pause) and
 wait for the answer. Decision recovery never embeds a preselected passing receipt.
+For budget exhaustion, `budget checkpoint <change>` reports the durable window,
+measured remaining allowance, unfinished work, and exact resume route. Unknown
+usage or future model demand remains unknown; the checkpoint never converts it
+to a fabricated estimate.
 
 Run `claude-foundation proof advance <change>` once as the normal path. It
 collects executable evidence, creates or reuses the authority request, and

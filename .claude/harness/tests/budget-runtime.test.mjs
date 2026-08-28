@@ -214,6 +214,8 @@ test("budget decisions cover unknown, normal, conserve, completion, and operator
   state.budget.window.usedTokens = null;
   let decision = runtime.budgetDecision(state);
   assert.equal(decision.measured, false);
+  assert.equal(decision.allowance.measurement, "unavailable");
+  assert.equal(decision.allowance.window.requests.remaining, null);
   assert.equal(decision.limiter, null);
   assert.equal(decision.action, "CONTINUE");
   assert.deepEqual(decision.allowed, ["scoped-execution"]);
@@ -236,6 +238,8 @@ test("budget decisions cover unknown, normal, conserve, completion, and operator
   assert.equal(decision.recommendation, "STOP_EXPLORATION");
   assert.ok(decision.allowed.includes("focused-fix"));
   assert.ok(decision.forbidden.includes("scope-expansion"));
+  assert.equal(decision.allowance.window.requests.remaining, 3);
+  assert.equal(decision.allowance.window.tokens.remaining, 10);
 
   state.budget.window.usedTokens = 200;
   decision = runtime.budgetDecision(state);
@@ -245,6 +249,9 @@ test("budget decisions cover unknown, normal, conserve, completion, and operator
   assert.equal(decision.userActionRequired, true);
   assert.equal(decision.decision.kind, "budget-exhausted");
   assert.equal(decision.decision.recommended, "pause");
+  assert.match(decision.decision.prompt, /Ask the user/);
+  assert.match(decision.decision.continuationCommand,
+    /budget continue change.*host-user-decision/);
   assert.deepEqual(decision.decision.options.map(({ id }) => id), [
     "continue", "rescope", "pause"
   ]);

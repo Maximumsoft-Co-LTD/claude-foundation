@@ -69,6 +69,7 @@ async function route(command, values, overrides) {
     ["packet", ["change"], "showPacket"],
     ["metrics", ["change"], "showMetrics"],
     ["exec", ["change", "--", "true"], "execObserved"],
+    ["budget-checkpoint", ["change"], "checkpointBudget"],
     ["budget-continue", ["change"], "continueBudget"],
     ["doctor", [], "doctor"],
     ["validate", ["change"], "validate"],
@@ -188,7 +189,8 @@ async function route(command, values, overrides) {
 
   const invalidArity = [
     ["new", []], ["start", []], ["resolve", []], ["abandon", []],
-    ["waive", []], ["agent-dispatch", []], ["budget-continue", []],
+    ["waive", []], ["agent-dispatch", []], ["budget-checkpoint", []],
+    ["budget-continue", []],
     ["doctor", ["unexpected"]], ["audit-change", []], ["proof-advance", []],
     ["evidence-detect", []], ["evidence-init", []],
     ["evidence-verify-ci", ["change", "provider"]],

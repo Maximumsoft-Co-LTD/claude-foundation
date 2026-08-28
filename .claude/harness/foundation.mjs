@@ -176,6 +176,7 @@ let operationFingerprint = null;
 // their rows, so proof-* and land-* are measurements, not inspections.
 const READ_ONLY_OPERATIONS = new Set([
   "metrics", "hash", "changes", "providers", "repos", "models", "describe",
+  "budget-checkpoint",
   "packet", "agent-task", "audit-change", "authority-status",
   "handoff-status", "handoff-packet", "evidence-detect", "evidence-doctor",
   "doctor", "quality-discover", "quality-doctor", "quality-report",
@@ -1073,7 +1074,7 @@ const {
   saveRuntime,
   fail: die
 });
-const { continueBudget } = createBudgetContinuation({
+const { continueBudget, checkpointBudget } = createBudgetContinuation({
   logs: LOGS,
   loadRuntime,
   saveRuntime,
@@ -1556,7 +1557,7 @@ const qualityChange = () => {
   return namedChange(index >= 0 ? values[index + 1] : process.env.FOUNDATION_CHANGE_ID);
 };
 operationChangeId = command === "sandbox" ? namedChange(values[1]) :
-  ["resolve", "validate", "audit-change", "hash", "packet", "agent-plan", "agent-dispatch", "agent-task", "agent-acquire", "agent-release", "metrics", "budget-continue", "proof-plan", "proof-readiness", "proof-advance", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "evidence-verify-ci", "authority-request", "authority-dispatch", "authority-run", "authority-abort", "authority-status", "authority-record", "authority-reset-infra", "authority-reset-base-move", "receipt", "run-provider", "prove",
+  ["resolve", "validate", "audit-change", "hash", "packet", "agent-plan", "agent-dispatch", "agent-task", "agent-acquire", "agent-release", "metrics", "budget-checkpoint", "budget-continue", "proof-plan", "proof-readiness", "proof-advance", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "evidence-verify-ci", "authority-request", "authority-dispatch", "authority-run", "authority-abort", "authority-status", "authority-record", "authority-reset-infra", "authority-reset-base-move", "receipt", "run-provider", "prove",
     "evidence-detect", "evidence-init", "evidence-doctor", "handoff-status", "handoff-packet", "handoff-record", "land-check", "land-advance", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "event", "telemetry-sync", "telemetry-import"].includes(command) ? namedChange(values[0]) :
     command?.startsWith("quality-")
       ? qualityChange()
@@ -1599,6 +1600,8 @@ if (!telemetrySuppressed && telemetryPhase && telemetryWritable(operationChangeI
   prepareClaudeTelemetry(operationChangeId, telemetryPhase);
 if (command === "metrics" && telemetryWritable(operationChangeId))
   syncClaudeTelemetry(operationChangeId, { quiet: true });
+if (command === "budget-checkpoint" && telemetryWritable(operationChangeId))
+  syncClaudeTelemetry(operationChangeId, { quiet: true });
 if (command === "budget-continue" && telemetryWritable(operationChangeId))
   syncClaudeTelemetry(operationChangeId, { quiet: true });
 
@@ -1626,6 +1629,7 @@ await routeRuntimeCommand(command, values, {
   showPacket,
   showMetrics,
   execObserved,
+  checkpointBudget,
   continueBudget,
   doctor,
   validate,

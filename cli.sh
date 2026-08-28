@@ -302,8 +302,9 @@ case "${1:-}" in
     sub="${1:-}"; [ "$#" -gt 0 ] && shift
     need_arg "budget ${sub:-continue}" "${1:-}"
     case "$sub" in
+      checkpoint) run_runtime read budget-checkpoint "$@" ;;
       continue) run_runtime write budget-continue "$@" ;;
-      *) fail "budget requires 'continue'" ;;
+      *) fail "budget requires 'checkpoint' or 'continue'" ;;
     esac ;;
   telemetry)
     shift

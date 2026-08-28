@@ -18,6 +18,8 @@ assert_contains "CLI help documents canonical proof run" \
   "$cli_help" 'proof run <change>'
 assert_contains "CLI help documents budget recovery" \
   "$cli_help" 'budget continue <change>'
+assert_contains "CLI help documents resumable budget checkpoints" \
+  "$cli_help" 'budget checkpoint <change>'
 assert_contains "CLI help documents traceability audit" \
   "$cli_help" 'change audit <change> [--json]'
 assert_contains "CLI help documents evidence detection" \
@@ -159,7 +161,9 @@ assert_file_exists "command registry installed" "$TARGET/.claude/harness/command
 assert_cmd_zero "command registry has one unique entry per public name" \
   jq -e '([.commands[].name] | length) == ([.commands[].name] | unique | length)' \
   "$TARGET/.claude/harness/commands.json"
-assert_eq "agent command surface is bounded" "20" \
+# The additional read-only surface is the resumable budget checkpoint; it does
+# not grant authority or widen the continuation surface below.
+assert_eq "agent command surface is bounded" "21" \
   "$(jq '[.commands[] | select(.audience == "agent")] | length' \
     "$TARGET/.claude/harness/commands.json")"
 # 28 includes the bounded proof controller, its internal execution commands,

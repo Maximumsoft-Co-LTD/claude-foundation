@@ -83,6 +83,7 @@ export const PHASE_BY_COMMAND = {
   archive: "land",
 
   "budget-continue": "meta",
+  "budget-checkpoint": "meta",
   event: "meta",
   "telemetry-sync": "meta",
   "telemetry-import": "meta"

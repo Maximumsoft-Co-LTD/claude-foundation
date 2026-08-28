@@ -125,6 +125,58 @@ export function createBudgetRuntime({ policy, now }) {
     return measuredNumber(value) !== null;
   }
 
+  function budgetAllowance(window, requestsKnown, tokensKnown, measured) {
+    const remaining = (used, target) => knownNumber(used)
+      ? Math.max(0, Number(target) - Number(used)) : null;
+    return {
+      measurement: measured ? "measured-active-window" : "unavailable",
+      window: {
+        requests: {
+          used: requestsKnown ? Number(window.usedRequests) : null,
+          target: Number(window.targetRequests),
+          remaining: remaining(window.usedRequests, window.targetRequests)
+        },
+        tokens: {
+          used: tokensKnown ? Number(window.usedTokens) : null,
+          target: Number(window.targetTokens),
+          remaining: remaining(window.usedTokens, window.targetTokens)
+        }
+      },
+      extension: {
+        used: Number(window.extensionNumber || 0),
+        maximum: Number(policy().execution.maxContinuationWindows || 3)
+      }
+    };
+  }
+
+  function budgetExhaustionDecision(state, window) {
+    return {
+      kind: "budget-exhausted",
+      summary: "The active model budget is exhausted. Required scope remains locked until the user decides how to proceed.",
+      options: [
+        {
+          id: "continue",
+          outcome: "Open an audited continuation window for eligible unfinished model work."
+        },
+        {
+          id: "rescope",
+          outcome: "Propose an explicit contract revision; no acceptance criterion changes without user approval."
+        },
+        {
+          id: "pause",
+          outcome: "Spend no more model budget and preserve the resumable checkpoint."
+        }
+      ],
+      recommended: "pause",
+      decisionRefRequiredForContinuation: true,
+      prompt: "The budget is exhausted while required scope may remain. Ask the user to choose continue, rescope, or pause.",
+      continuationCommand: state.id
+        ? `claude-foundation budget continue ${state.id} --reason <reason> --decision-ref <host-user-decision>`
+        : null,
+      exhaustedAt: window.exhaustedAt || null
+    };
+  }
+
   function ensureBudgetState(state) {
     let existing = state.budget || {};
     // Targets are derived, never trusted from stored state: `change resolve
@@ -273,34 +325,16 @@ export function createBudgetRuntime({ policy, now }) {
     const operatorRequired = window.mode === "operator-required";
     const { mode, action, recommendation } = budgetDirective(ratio, operatorRequired);
     const userActionRequired = mode === "operator-required";
+    const allowance = budgetAllowance(window, requestsKnown, tokensKnown, measured);
     return {
       ratio, measured, limiter, mode, action, recommendation,
+      allowance,
       status: userActionRequired ? "NEEDS_USER_DECISION" : "CONTINUE",
       userActionRequired,
-      decision: userActionRequired ? {
-        kind: "budget-exhausted",
-        summary: "The active model budget is exhausted. Required scope remains locked until the user decides how to proceed.",
-        options: [
-          {
-            id: "continue",
-            outcome: "Open an audited continuation window for eligible unfinished model work."
-          },
-          {
-            id: "rescope",
-            outcome: "Propose an explicit contract revision; no acceptance criterion changes without user approval."
-          },
-          {
-            id: "pause",
-            outcome: "Spend no more model budget and preserve the resumable checkpoint."
-          }
-        ],
-        recommended: "pause",
-        decisionRefRequiredForContinuation: true,
-        exhaustedAt: window.exhaustedAt || null
-      } : null,
+      decision: userActionRequired ? budgetExhaustionDecision(state, window) : null,
       allowed: mode === "completion-only" ? [
         "focused-fix", "provider-run", "receipt-reuse", "proof-resume",
-        "metrics", "land-recovery", "archive"
+        "metrics", "budget-checkpoint", "land-recovery", "archive"
       ] : mode === "operator-required" ? [
         // An operator stop withholds *new* work, not the loop's own completion
         // path. `Required proof remains` is stated for this state too, and a
@@ -308,7 +342,7 @@ export function createBudgetRuntime({ policy, now }) {
         // rather than gated. What stays out is anything that would grow the
         // change while the operator is being asked whether to fund it.
         "packet", "readiness", "provider-run", "proof-resume", "receipt-reuse",
-        "metrics", "land-recovery", "budget-continue", "archive"
+        "metrics", "budget-checkpoint", "land-recovery", "budget-continue", "archive"
       ] : ["scoped-execution"],
       forbidden: mode === "completion-only" ? [
         "scope-expansion", "speculative-investigation", "new-subagent", "optional-refactor"

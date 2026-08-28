@@ -338,6 +338,14 @@
       "description": "Resume an interrupted or multi-repository Land saga."
     },
     {
+      "name": "budget checkpoint",
+      "usage": "budget checkpoint <change>",
+      "audience": "agent",
+      "kind": "read",
+      "idempotent": true,
+      "description": "Show measured remaining allowance, unfinished work, the user decision boundary, and the exact resume route."
+    },
+    {
       "name": "budget continue",
       "usage": "budget continue <change> --reason <reason> --decision-ref <ref> [--run <id>]",
       "audience": "conditional",
@@ -737,6 +745,7 @@
     "agent-release",
     "packet",
     "metrics",
+    "budget-checkpoint",
     "budget-continue",
     "doctor",
     "validate",

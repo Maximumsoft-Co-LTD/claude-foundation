@@ -147,6 +147,7 @@ claude-foundation doctor --stage prove --change <change>
 | `packet <change> --phase <phase>` | Prints a compact handoff; review packets are ≤8 KiB and exclude Build history | Starting Build, Prove, or independent Review |
 | `packet <change> --repo <id> [--task <id>] [--pretty]` | Prints a bounded repository or task packet | Starting a native subagent |
 | `metrics <change>` | Reports measured phase/provider cost and emitted context bytes | Finding latency or orchestration overhead |
+| `budget checkpoint <change>` | Reports measured remaining allowance, unfinished work, and the exact resume route | Before deciding whether an exhausted run should continue, rescope, or pause |
 | `exec <change> [--phase <phase>] -- <command…>` | Runs an external command, passes its exit code through, and records its duration | Long build-phase commands (container builds, installs, full test runs) |
 | `telemetry host-import <change> <result.json>` | Imports a validated host execution result without prompt or tool payloads | Recording actual model attempts, fallback, usage, and instruction provenance |
 | `budget continue <change> --reason <reason>` | Opens one policy-gated audited completion window without deleting usage | Required model work after exhaustion |
@@ -554,6 +555,9 @@ code or configuration work. Every exhausted continuation asks again, up to the
 configured ceiling. Active leases, external evidence, infrastructure failures,
 and ready deterministic work do not qualify. The reason is audit context, not
 the policy gate; counters and requirements are never deleted or silently reset.
+`budget checkpoint` makes that pause resumable: it reports measured capacity,
+remaining tasks/provider blockers, the user prompt, and the command to run after
+an approved continuation without pretending to forecast unknown model demand.
 
 Claude request telemetry is request-owned, not tool-owned. The `SessionStart`
 hook exposes only `session_id` and `transcript_path` to later Foundation
