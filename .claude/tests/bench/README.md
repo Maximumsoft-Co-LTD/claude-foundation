@@ -8,6 +8,10 @@
 > may still be studied independently; a dry-run succeeding does not make this
 > runner compatible with the OpenSpec-native runtime.
 
+The current in-repository protocol and guarded runner live in
+[`openspec-native/`](openspec-native/). They produce a distinct versioned
+scorecard and do not treat the historical rows below as current evidence.
+
 Measures how the `/dev` workflow *performs* — not whether its artifacts are valid
 (that's `../scenarios/`), but what a run **costs**, how much **machinery** it
 uses, and how **good** the delivered code is. Answers three questions:

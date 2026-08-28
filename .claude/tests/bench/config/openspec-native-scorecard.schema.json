@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claude-foundation.dev/schemas/openspec-native-scorecard-v1.json",
+  "title": "Claude Foundation OpenSpec-native benchmark scorecard",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "scenario", "repeat", "runId", "provenance", "outcome", "timing", "usage", "operations", "quality", "evidenceReuse"],
+  "properties": {
+    "protocol": { "const": "foundation-openspec-native-scorecard-v1" },
+    "scenario": { "$ref": "#/$defs/nonEmptyString" },
+    "repeat": { "type": "integer", "minimum": 1 },
+    "runId": { "$ref": "#/$defs/nonEmptyString" },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "dirty", "host", "requestedModel", "actualModel", "configDigest", "startedAt", "finishedAt"],
+      "properties": {
+        "commit": { "$ref": "#/$defs/nullableString" },
+        "dirty": { "type": ["boolean", "null"] },
+        "host": { "$ref": "#/$defs/nullableString" },
+        "requestedModel": { "$ref": "#/$defs/nullableString" },
+        "actualModel": { "$ref": "#/$defs/nullableString" },
+        "configDigest": { "anyOf": [{ "type": "null" }, { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }] },
+        "startedAt": { "$ref": "#/$defs/nullableTimestamp" },
+        "finishedAt": { "$ref": "#/$defs/nullableTimestamp" }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "complete", "failureClass", "changeId", "workflowStatus", "pendingTasks", "requiredEvidencePassed", "proofStatus", "landStatus"],
+      "properties": {
+        "status": { "enum": ["completed", "blocked", "incomplete", "failed", "timeout", "cancelled", "error"] },
+        "complete": { "type": "boolean" },
+        "failureClass": { "$ref": "#/$defs/nullableString" },
+        "changeId": { "$ref": "#/$defs/nullableString" },
+        "workflowStatus": { "$ref": "#/$defs/nullableString" },
+        "pendingTasks": { "$ref": "#/$defs/nullableCount" },
+        "requiredEvidencePassed": { "type": ["boolean", "null"] },
+        "proofStatus": { "$ref": "#/$defs/nullableString" },
+        "landStatus": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wallMs", "wallMeasurement", "wallSource", "modelActiveMs", "harnessActiveMs", "providerMs", "externalExecutionMs", "humanWaitMs", "externalWaitMs", "unattributedWaitMs", "hostEnvelopeDurationMs"],
+      "properties": {
+        "wallMs": { "$ref": "#/$defs/nullableNumber" },
+        "wallMeasurement": { "$ref": "#/$defs/measurement" },
+        "wallSource": { "$ref": "#/$defs/nullableString" },
+        "modelActiveMs": { "$ref": "#/$defs/nullableNumber" },
+        "harnessActiveMs": { "$ref": "#/$defs/nullableNumber" },
+        "providerMs": { "$ref": "#/$defs/nullableNumber" },
+        "externalExecutionMs": { "$ref": "#/$defs/nullableNumber" },
+        "humanWaitMs": { "$ref": "#/$defs/nullableNumber" },
+        "externalWaitMs": { "$ref": "#/$defs/nullableNumber" },
+        "unattributedWaitMs": { "$ref": "#/$defs/nullableNumber" },
+        "hostEnvelopeDurationMs": { "$ref": "#/$defs/nullableNumber" }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["measurement", "classification", "costUsd", "costMeasurement", "costSource", "modelRequests", "inputTokens", "outputTokens", "cacheCreationTokens", "cacheReadTokens"],
+      "properties": {
+        "measurement": { "$ref": "#/$defs/measurement" },
+        "classification": { "$ref": "#/$defs/nullableString" },
+        "costUsd": { "$ref": "#/$defs/nullableNumber" },
+        "costMeasurement": { "$ref": "#/$defs/measurement" },
+        "costSource": { "$ref": "#/$defs/nullableString" },
+        "modelRequests": { "$ref": "#/$defs/nullableCount" },
+        "inputTokens": { "$ref": "#/$defs/nullableNumber" },
+        "outputTokens": { "$ref": "#/$defs/nullableNumber" },
+        "cacheCreationTokens": { "$ref": "#/$defs/nullableNumber" },
+        "cacheReadTokens": { "$ref": "#/$defs/nullableNumber" }
+      }
+    },
+    "operations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["measurement", "total", "failed", "blocked", "byCommand", "duplicateCandidates", "duplicateMeasurement", "browserCalls", "taskMirrorOperations"],
+      "properties": {
+        "measurement": { "$ref": "#/$defs/measurement" },
+        "total": { "$ref": "#/$defs/nullableCount" },
+        "failed": { "$ref": "#/$defs/nullableCount" },
+        "blocked": { "$ref": "#/$defs/nullableCount" },
+        "byCommand": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+        "duplicateCandidates": { "$ref": "#/$defs/nullableCount" },
+        "duplicateMeasurement": { "$ref": "#/$defs/measurement" },
+        "browserCalls": { "$ref": "#/$defs/nullableCount" },
+        "taskMirrorOperations": { "$ref": "#/$defs/nullableCount" }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["measurement", "functions", "mappedFunctions", "coverageMinimum", "coverageMean", "crapMaximum", "pass", "warn", "fail", "unmapped"],
+      "properties": {
+        "measurement": { "$ref": "#/$defs/measurement" },
+        "functions": { "$ref": "#/$defs/nullableCount" },
+        "mappedFunctions": { "$ref": "#/$defs/nullableCount" },
+        "coverageMinimum": { "anyOf": [{ "type": "null" }, { "type": "number", "minimum": 0, "maximum": 100 }] },
+        "coverageMean": { "anyOf": [{ "type": "null" }, { "type": "number", "minimum": 0, "maximum": 100 }] },
+        "crapMaximum": { "$ref": "#/$defs/nullableNumber" },
+        "pass": { "$ref": "#/$defs/nullableCount" },
+        "warn": { "$ref": "#/$defs/nullableCount" },
+        "fail": { "$ref": "#/$defs/nullableCount" },
+        "unmapped": { "$ref": "#/$defs/nullableCount" }
+      }
+    },
+    "evidenceReuse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "byReason"],
+      "properties": {
+        "count": { "$ref": "#/$defs/nullableCount" },
+        "byReason": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } }
+      }
+    }
+  },
+  "$defs": {
+    "nonEmptyString": { "type": "string", "minLength": 1 },
+    "nullableString": { "type": ["string", "null"] },
+    "nullableTimestamp": { "anyOf": [{ "type": "null" }, { "type": "string", "format": "date-time" }] },
+    "nullableNumber": { "type": ["number", "null"], "minimum": 0 },
+    "nullableCount": { "type": ["integer", "null"], "minimum": 0 },
+    "measurement": { "enum": ["measured", "partial", "unavailable"] }
+  }
+}

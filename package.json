@@ -21,6 +21,7 @@
   },
   "scripts": {
     "foundation": "node .claude/harness/foundation.mjs",
+    "bench:openspec-native": "node .claude/tests/bench/openspec-native/run.mjs",
     "test:harness": "sh .claude/tests/harness/run-harness-tests.sh",
     "test:quality": "node --test scripts/quality/test/*.test.mjs",
     "test:quality:consumer": "node --test .claude/tests/harness/run-quality-protocol-tests.mjs .claude/tests/harness/run-quality-policy-tests.mjs .claude/tests/harness/run-quality-discovery-tests.mjs .claude/harness/tests/quality-runtime.test.mjs .claude/harness/tests/quality-adapters.test.mjs",
