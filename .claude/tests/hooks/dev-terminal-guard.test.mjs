@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import {
-  devPrompt, evaluateDevTerminal, transcriptWallMs
+  devPrompt, evaluateDevTerminal, terminalVerdict, transcriptWallMs
 } from "../../hooks/dev-terminal-guard.mjs";
 
 const promptRows = (value) => [
@@ -45,4 +50,39 @@ test("dev cannot complete without exactly one passing fresh audited proof", () =
     "proof-stale");
   assert.equal(evaluateDevTerminal({ ...base,
     prompt: "/dev --plan-only sketch it" }).status, "PLAN_COMPLETE");
+});
+
+test("terminal verdict remains canonical when the host later returns a success envelope", () => {
+  const row = terminalVerdict({ session_id: "session-1" }, {
+    applies: true, complete: false, status: "INCOMPLETE",
+    blockerKind: "proof-not-passing", changeId: "demo"
+  }, "2026-08-28T00:00:00.000Z");
+  assert.equal(row.protocol, "foundation-dev-terminal-v1");
+  assert.equal(row.terminal, "incomplete");
+  assert.equal(row.sessionId, "session-1");
+});
+
+test("Stop hook persists an incomplete verdict before asking the host to continue", () => {
+  const root = mkdtempSync(join(tmpdir(), "dev-terminal-guard-"));
+  const transcript = join(root, "transcript.jsonl");
+  try {
+    mkdirSync(join(root, "openspec", "changes", "demo"), { recursive: true });
+    writeFileSync(transcript, `${JSON.stringify({
+      type: "last-prompt", lastPrompt: "/dev --yes build it"
+    })}\n`);
+    const hook = fileURLToPath(new URL("../../hooks/dev-terminal-guard.mjs", import.meta.url));
+    const child = spawnSync(process.execPath, [hook], {
+      cwd: root,
+      encoding: "utf8",
+      input: JSON.stringify({ session_id: "live-session", transcript_path: transcript }),
+      env: { ...process.env, CLAUDE_PROJECT_DIR: root }
+    });
+    assert.equal(child.status, 0);
+    assert.match(child.stdout, /"decision":"block"/);
+    const verdict = JSON.parse(readFileSync(join(root, ".foundation", "logs",
+      "dev-terminal", "live-session.json"), "utf8"));
+    assert.equal(verdict.protocol, "foundation-dev-terminal-v1");
+    assert.equal(verdict.terminal, "incomplete");
+    assert.equal(verdict.blockerKind, "proof-not-passing");
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

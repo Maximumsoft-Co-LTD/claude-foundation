@@ -14,6 +14,7 @@ import {
   discoverMissingEvidence,
   evidenceCandidateRows,
   evidenceWiringStatus,
+  npmLockfileCandidates,
   packageManagerAt,
   packageScriptCommand,
   packageScriptRisk,
@@ -27,6 +28,22 @@ import {
   testCandidates,
   unavailableEvidenceProviders
 } from "../runtime/evidence/evidence-bootstrap.mjs";
+
+test("npm manifest and lockfile get a deterministic built-in consistency candidate", () => {
+  const root = workspace();
+  try {
+    mkdirSync(join(root, ".claude", "harness", "runtime", "evidence"), { recursive: true });
+    writeFileSync(join(root, "package-lock.json"), "{}\n");
+    writeFileSync(join(root, ".claude", "harness", "runtime", "evidence",
+      "npm-lockfile-check.mjs"), "");
+    const rows = npmLockfileCandidates({ manager: "npm" }, repository(root), 1,
+      ["package.json"]);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].capability, "dependency-supply-chain");
+    assert.deepEqual(rows[0].config.command,
+      ["node", ".claude/harness/runtime/evidence/npm-lockfile-check.mjs"]);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 function workspace() {
   return mkdtempSync(join(tmpdir(), "foundation-evidence-bootstrap-"));

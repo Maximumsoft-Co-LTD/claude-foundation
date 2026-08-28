@@ -8,9 +8,10 @@ import {
 } from "./semantic-fault-catalog.mjs";
 
 const EXCLUDED = new Set([
-  ".git", ".foundation", "node_modules", "vendor", "target", "dist", "build",
-  "coverage", ".venv", "venv", "__pycache__"
+  ".git", ".claude", ".foundation", "node_modules", "vendor", "target", "dist", "build",
+  "coverage", "test-results", ".venv", "venv", "__pycache__"
 ]);
+const EXCLUDED_PATHS = new Set(["openspec/changes/archive"]);
 const MARKERS = new Set([
   "package.json", "tsconfig.json", "go.mod", "pyproject.toml", "requirements.txt",
   "composer.json", "phpunit.xml", "phpunit.xml.dist"
@@ -28,10 +29,13 @@ export function inventoryRepository(root, { maximumFiles = 10000 } = {}) {
     for (const entry of entries) {
       if (EXCLUDED.has(entry.name)) continue;
       const absolute = join(directory, entry.name);
-      if (entry.isDirectory()) { walk(absolute); continue; }
+      const path = relative(root, absolute).replaceAll("\\", "/");
+      if (entry.isDirectory()) {
+        if (!EXCLUDED_PATHS.has(path)) walk(absolute);
+        continue;
+      }
       if (!entry.isFile()) continue;
       if (files.length >= maximumFiles) { truncated = true; return; }
-      const path = relative(root, absolute).replaceAll("\\", "/");
       files.push(path);
       const extension = extname(entry.name).toLowerCase();
       if (extension) extensions.add(extension);
@@ -58,7 +62,9 @@ export function detectedProviders(root, profiles) {
     if (scripts.test) providers.test = commandProvider(["npm", "test"]);
     if (scripts.typecheck) providers["static-analysis"] = commandProvider(["npm", "run", "typecheck"]);
     else if (scripts.lint) providers["static-analysis"] = commandProvider(["npm", "run", "lint"]);
-    if (scripts["foundation:quality:crap"]) providers.crap = commandProvider(["npm", "run", "foundation:quality:crap"], {
+    const crapScript = scripts["foundation:quality:crap"]
+      ? "foundation:quality:crap" : scripts["quality:crap"] ? "quality:crap" : null;
+    if (crapScript) providers.crap = commandProvider(["npm", "run", crapScript], {
       protocol: "foundation-crap-v1", output: ".foundation/quality/crap.json"
     });
     if (scripts["foundation:quality:mutation"]) providers["automated-mutation"] = commandProvider(["npm", "run", "foundation:quality:mutation"], {

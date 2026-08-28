@@ -35,6 +35,8 @@ claude-foundation quality doctor
 
 `quality init` is preview-only until `--write`. It creates `quality/foundation-quality.json`. `--ci github` additionally copies reusable/manual changed-code, four-shard nightly, and full-release workflow templates. The changed-code template must be called by the repository's existing PR workflow; it does not register a `pull_request` trigger itself.
 
+For JavaScript/TypeScript, discovery recognizes the project-owned package scripts `foundation:quality:crap` and `quality:crap`. The command must emit `foundation-crap-v1` at `.foundation/quality/crap.json`; without either script or an explicit provider, CRAP is not measured.
+
 Run against the isolated workspace selected by a Change:
 
 ```bash

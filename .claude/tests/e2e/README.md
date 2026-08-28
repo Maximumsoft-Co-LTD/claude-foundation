@@ -10,6 +10,41 @@ Current deterministic product contracts remain in `.claude/tests/run-all.sh`.
 Consumer-level speed, quality, cost, and feedback-boundary measurements belong
 in the separate `claude-foundation-lab` repository.
 
+### Consumer-quality preflight
+
+A portfolio that claims CRAP or changed-quality measurements must onboard each
+disposable consumer before starting any paid `claude -p` session:
+
+```sh
+claude-foundation quality discover > quality-discovery.json
+claude-foundation quality init --write
+claude-foundation quality doctor --enforce > quality-doctor.json
+jq -e '.repositories[] | select(.profiles | index("application-js-ts")) |
+  .capabilities.crap.status == "available"' quality-discovery.json
+jq -e '.status == "pass"' quality-doctor.json
+```
+
+The fixture must own a real CRAP provider (for JavaScript/TypeScript, normally
+the `foundation:quality:crap` package script). If an applicable repository has
+no provider or config, stop the portfolio as a setup failure before invoking
+Claude. HTML/style-only surfaces record CRAP as not applicable and use their
+browser/accessibility controls; they never receive a fabricated score.
+
+The maintained disposable-lab provider is `consumer-crap-provider.mjs`. Copy it
+into the consumer and wire the package script to it; version 2 discovers both
+`test/` / `tests/` trees and root-level `*.test.*` / `*.spec.*` files so root
+tests cannot silently become zero coverage.
+
+### Durable terminal verdict
+
+Do not classify a paid `claude -p` run from the provider process exit alone.
+The `/dev` Stop hook writes the canonical verdict to
+`.foundation/logs/dev-terminal/<session-id>.json` and mirrors the newest value
+to `.foundation/logs/dev-terminal/latest.json`. An E2E aggregator records PASS
+only when the matching session file exists and `terminal` is `complete`;
+`incomplete`, a missing file, or a mismatched session is a failed/inconclusive
+run even if the host process returned zero after exhausting Stop-hook retries.
+
 The temporary-project method below serves a different purpose: it asks several
 real `claude -p` `/dev` runs to inspect and harden one in-progress change from
 different risk angles. Its output is a diagnostic report and candidate patches,

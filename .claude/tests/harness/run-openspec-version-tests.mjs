@@ -46,6 +46,9 @@ check(riskRequiresCi({ riskBasedCiRequired: true,
 check(riskRequiresCi({ riskBasedCiRequired: true, impact: "low",
   repositories: { root: {} } }), false,
   "isolated low-risk changes retain optional CI");
+check(riskRequiresCi({ riskBasedCiRequired: true, impact: "medium",
+  repositories: { root: {} } }, { tier: "high" }), true,
+  "Land consumes the canonical high review-risk decision");
 check(riskRequiresCi({ impact: "high" }), false,
   "legacy changes retain their recorded CI policy");
 check(signedCiProvider(["test", "deployment"], (provider) => provider,

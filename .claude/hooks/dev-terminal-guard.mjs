@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
+import {
+  appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -72,11 +74,29 @@ function record(root, event, result) {
   try {
     const dir = join(root, ".foundation", "logs");
     mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const row = terminalVerdict(event, result);
     appendFileSync(join(dir, "dev-terminal.jsonl"), `${JSON.stringify({
       version: 1, at: new Date().toISOString(), sessionId: event.session_id || null,
       ...result
     })}\n`, { mode: 0o600 });
+    const verdictDir = join(dir, "dev-terminal");
+    mkdirSync(verdictDir, { recursive: true, mode: 0o700 });
+    const session = String(event.session_id || "unknown").replace(/[^a-zA-Z0-9._-]/g, "_");
+    writeFileSync(join(verdictDir, `${session}.json`), `${JSON.stringify(row, null, 2)}\n`,
+      { mode: 0o600 });
+    writeFileSync(join(verdictDir, "latest.json"), `${JSON.stringify(row, null, 2)}\n`,
+      { mode: 0o600 });
   } catch { /* terminal truth must not depend on telemetry storage */ }
+}
+
+export function terminalVerdict(event, result, at = new Date().toISOString()) {
+  return {
+    protocol: "foundation-dev-terminal-v1",
+    at,
+    sessionId: event.session_id || null,
+    terminal: result.complete ? "complete" : "incomplete",
+    ...result
+  };
 }
 
 async function main() {

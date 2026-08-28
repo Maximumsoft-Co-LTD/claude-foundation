@@ -23,11 +23,7 @@ const AUDIT_MAX_BYTES = 1024 * 1024;
 const PHASE_FRESHNESS_MS = 12 * 60 * 60 * 1000;
 
 const configuredMode = (process.env.FOUNDATION_GUARDRAIL_MODE || "audit").toLowerCase();
-// `/dev` explicitly opts into the lifecycle. Enforce it from the first tool
-// call, before an eager root edit can poison the sandbox baseline.
-const devSession = configuredMode === "audit" && currentTranscriptIsDev();
-const mode = devSession ? "block" : configuredMode;
-if (mode === "off") process.exit(0);
+if (configuredMode === "off") process.exit(0);
 
 let event;
 try {
@@ -37,13 +33,23 @@ try {
   // for enforcement asked for it on the event axis too: an unreadable event
   // could be any mutation, so allowing it would fail open exactly where the
   // guard was told not to.
-  if (mode === "block")
+  if (configuredMode === "block")
     process.stdout.write(JSON.stringify({
       decision: "block",
       reason: "phase guard: hook event is unreadable; retry the tool call"
     }));
   process.exit(0);
 }
+
+// Claude hook events already carry the authoritative transcript path. The
+// SessionStart-exported environment is only a fallback: claude -p does not
+// reliably propagate CLAUDE_ENV_FILE additions into later hook processes.
+// Decide after parsing the event so a /dev session enters block mode before
+// its first product mutation even when the exported environment is absent.
+const transcriptPath = String(event.transcript_path ||
+  process.env.FOUNDATION_CLAUDE_TRANSCRIPT_PATH || "");
+const devSession = configuredMode === "audit" && currentTranscriptIsDev(transcriptPath);
+const mode = devSession ? "block" : configuredMode;
 
 const tool = String(event.tool_name || "");
 const input = event.tool_input || {};
@@ -153,8 +159,7 @@ function runtimeWorkspace(changeId) {
   } catch { return ""; }
 }
 
-function currentTranscriptIsDev() {
-  const path = process.env.FOUNDATION_CLAUDE_TRANSCRIPT_PATH;
+function currentTranscriptIsDev(path) {
   if (!path || !existsSync(path)) return false;
   let descriptor = null;
   try {

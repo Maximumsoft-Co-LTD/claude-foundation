@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
+import { checkNpmWorkspace } from "./npm-lockfile-check.mjs";
 
 const PROVIDER_SCRIPT_ALIASES = {
   "static-analysis": ["check", "typecheck", "type-check", "lint"],
@@ -186,6 +187,22 @@ export function scriptCandidates(capability, tooling, repository, repositoryCoun
   safe.length > 1 ? `alternatives detected: ${safe.join(", ")}` : "project-owned package script"));
 }
 
+export function npmLockfileCandidates(tooling, repository, repositoryCount, declaredSurface) {
+  if (!tooling || tooling.manager !== "npm" ||
+      !existsSync(join(repository.workspacePath, "package-lock.json")) ||
+      !existsSync(join(repository.workspacePath, ".claude", "harness", "runtime",
+        "evidence", "npm-lockfile-check.mjs"))) return [];
+  return [providerCandidate(null, "dependency-supply-chain", repository, repositoryCount, {
+    adapter: "command",
+    command: ["node", ".claude/harness/runtime/evidence/npm-lockfile-check.mjs"],
+    inputs: [...new Set([
+      ...declaredSurface, "package.json", "package-lock.json"
+    ])].sort()
+  }, "package.json + package-lock.json", repositoryCount === 1 ? "high" : "review",
+  `built-in deterministic npm manifest/lockfile consistency check (discovery: ${
+    checkNpmWorkspace(repository.workspacePath).status})`)];
+}
+
 export function capabilityRepositories(capability, repositories, contract) {
   const scoped = new Set(contract.claims
     .filter((claim) => claim.capabilities.includes(capability))
@@ -225,6 +242,8 @@ export function evidenceCandidateRows(
     return testCandidates(tooling, repository, repositoryCount, declaredSurface);
   if (capability === "browser")
     return browserCandidates(tooling, repository, repositoryCount, declaredSurface);
+  if (capability === "dependency-supply-chain")
+    return npmLockfileCandidates(tooling, repository, repositoryCount, declaredSurface);
   if (capability === "discovery") return [];
   return scriptCandidates(capability, tooling, repository, repositoryCount, declaredSurface);
 }

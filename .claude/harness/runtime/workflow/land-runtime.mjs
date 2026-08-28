@@ -86,8 +86,9 @@ export function assertOpenSpecCli(root, fail) {
   return status;
 }
 
-export function riskRequiresCi(state) {
+export function riskRequiresCi(state, reviewRisk = null) {
   if (state?.riskBasedCiRequired !== true) return false;
+  if (reviewRisk?.tier === "high") return true;
   const capabilities = new Set(state?.evidenceCapabilities || []);
   const repositories = Object.values(state?.repositories || {});
   return state?.impact === "high" || repositories.length > 1 ||
@@ -365,6 +366,8 @@ export function createLandRuntime({
   writeJson,
   clearSnapshotCache,
   relevantHash,
+  workspaceIsolationIssues = () => [],
+  reviewPolicy = () => null,
   requiredProviders,
   receiptValidity,
   fileDigest,
@@ -479,7 +482,7 @@ export function createLandRuntime({
         fail(`${provider} live receipt differs from the proven receipt manifest`);
     }
     const repositoryRows = Object.values(state.repositories || {});
-    if (riskRequiresCi(state) && repositoryRows.length <= 1) {
+    if (riskRequiresCi(state, reviewPolicy(id, state)) && repositoryRows.length <= 1) {
       const ciProvider = signedCiProvider(requiredProviders(id),
         (provider) => receiptPath(id, provider), readJson);
       if (!ciProvider)
@@ -539,6 +542,8 @@ export function createLandRuntime({
       return { archived: true, state };
     }
     assertLandTargetReady(id, state);
+    const isolationIssues = workspaceIsolationIssues(id);
+    if (isolationIssues.length) fail(isolationIssues.join("; "));
     assertReadOnlyLandDependencies(id, state);
     const { proof, graph, hash } = validatedLandProof(id);
     assertLandEvidence(id, state, proof, hash);
@@ -802,7 +807,8 @@ export function createLandRuntime({
       if (ci && ci !== verified.status)
         fail(`--ci ${ci} contradicts the signed CI attestation (${verified.status})`);
     }
-    const required = Boolean(flags["ci-required"]) || riskRequiresCi(state);
+    const required = Boolean(flags["ci-required"]) ||
+      riskRequiresCi(state, reviewPolicy(id, state));
     if (required && provenance.kind !== "signed-ci")
       fail(`repository '${repositoryId}' requires CI evidence; pass --ci-attestation <signed.json>. ` +
         "A self-reported --ci is not evidence when CI is required by flag or risk policy.");

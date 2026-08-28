@@ -38,6 +38,8 @@ claude-foundation quality doctor
 
 `quality init` only previews until `--write`. It creates `quality/foundation-quality.json`. With `--ci github`, it also installs:
 
+For JavaScript/TypeScript, discovery recognizes the project-owned package scripts `foundation:quality:crap` and `quality:crap`. The command must emit `foundation-crap-v1` at `.foundation/quality/crap.json`; without either script or an explicit provider, CRAP is not measured.
+
 - a reusable/manual changed-code workflow;
 - a four-shard nightly inventory workflow; and
 - a full enforced release workflow.
@@ -115,4 +117,3 @@ An exception names exactly one function or mutant—never a glob—and requires 
 - Missing capabilities lower assurance and remain visible even when policy permits compensating evidence.
 
 Keep `policy.mode` at `report` for at least three representative runs. Inspect function/path mapping and false positives, approve the initial baselines, then enable enforcement in the PR caller. Nightly owns full debt inventory; release owns the full enforced gate.
-

@@ -1471,9 +1471,16 @@ export function createChangeValidationRuntime({
     const declared = new Set(contract.claims.flatMap((claim) => claim.capabilities || []));
     const enforced = [];
     const advisory = [];
-    for (const capability of policyCapabilities(id))
-      (configured.has(capability) || declared.has(capability) ? enforced : advisory)
+    const state = loadRuntime(id);
+    for (const capability of policyCapabilities(id)) {
+      const trigger = policyCapabilityTrigger(id, capability) || "";
+      const npmManifestChanged = capability === "dependency-supply-chain" &&
+        /(?:^|\/)package\.json$/.test(trigger) &&
+        existsSync(join(state.workspace?.path || root, "package-lock.json"));
+      (configured.has(capability) || declared.has(capability) || npmManifestChanged
+        ? enforced : advisory)
         .push(capability);
+    }
     return { enforced, advisory };
   }
 

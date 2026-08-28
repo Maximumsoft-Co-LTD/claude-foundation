@@ -115,10 +115,11 @@ pre() {
     FOUNDATION_ACTIVE_PHASE="$2" sh "$PREFILTER"
 }
 
-assert_cmd_zero "audit mode with no phase context resolves without starting Node" \
-  pre_isolated audit "$(write_event "$TMP/pre/src/app.js")"
 assert_cmd_zero "guardrail mode off resolves without starting Node" \
   pre_isolated off "$(write_event "$TMP/pre/src/app.js")"
+
+out="$(pre audit "" "$(write_event "$TMP/pre/src/app.js")")"
+assert_eq "audit mode delegates event-local transcript detection to the guard" "" "$out"
 
 # /dev opts into the lifecycle. Its transcript makes the default audit rollout
 # enforce from the first mutation, before a phase packet has been read.
@@ -128,6 +129,15 @@ out="$(printf '%s' "$(write_event "$TMP/pre/src/app.js")" |
   CLAUDE_PROJECT_DIR="$TMP/pre" FOUNDATION_GUARDRAIL_MODE=audit \
   FOUNDATION_CLAUDE_TRANSCRIPT_PATH="$TMP/dev-transcript.jsonl" sh "$PREFILTER")"
 assert_contains "a dev session fails closed before its first phase packet" \
+  "$out" 'active phase is unavailable'
+
+# The real Claude PreToolUse schema carries transcript_path on the event. A
+# claude -p hook process may not inherit SessionStart's CLAUDE_ENV_FILE export,
+# so event-local identity must enforce /dev on its own.
+event_with_transcript="{\"transcript_path\":\"$TMP/dev-transcript.jsonl\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$TMP/pre/src/app.js\"}}"
+out="$(printf '%s' "$event_with_transcript" |
+  CLAUDE_PROJECT_DIR="$TMP/pre" FOUNDATION_GUARDRAIL_MODE=audit sh "$PREFILTER")"
+assert_contains "a dev PreToolUse event enforces without exported transcript env" \
   "$out" 'active phase is unavailable'
 
 out="$(pre block "" "$(write_event "$TMP/pre/src/app.js")")"

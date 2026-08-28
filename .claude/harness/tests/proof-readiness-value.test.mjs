@@ -4,7 +4,8 @@ import {
   proofReadinessValueOperation,
   readinessGraph,
   readinessNext,
-  readinessStatus
+  readinessStatus,
+  workspaceIsolationIssuesValue
 } from "../runtime/evidence/proof-readiness.mjs";
 
 const empty = () => ({
@@ -95,6 +96,7 @@ function operationContext(overrides = {}) {
   return {
     validate: () => {},
     topologyIssues: () => [],
+    workspaceIsolationIssues: () => [],
     changedSurfaceIssues: () => [],
     criticalCaseIssues: () => [],
     relevantHash: () => "workspace",
@@ -158,6 +160,19 @@ test("prove readiness operation composes issues, graph, leases, and task fallbac
   assert.deepEqual(calls.at(-1), [
     "conflicts", "change", [{ id: "root" }], { executing: true }
   ]);
+});
+
+test("root product changes require an isolated workspace", () => {
+  const state = { id: "demo", workspace: { mode: "current" } };
+  assert.match(workspaceIsolationIssuesValue(state, [
+    { repositoryId: "root", path: "src/app.js" }
+  ])[0], /ISOLATION_REQUIRED/);
+  assert.deepEqual(workspaceIsolationIssuesValue(state, [
+    { repositoryId: "root", path: "openspec/changes/demo/tasks.md" }
+  ]), []);
+  assert.deepEqual(workspaceIsolationIssuesValue({
+    ...state, workspace: { mode: "copy" }
+  }, [{ repositoryId: "root", path: "src/app.js" }]), []);
 });
 
 test("build readiness skips prove-only checks and returns a ready value", () => {

@@ -38,6 +38,8 @@ claude-foundation quality doctor
 
 `quality init` เป็น preview จนกว่าจะใส่ `--write` และจะสร้าง `quality/foundation-quality.json` เมื่อใช้ `--ci github` จะติดตั้ง:
 
+สำหรับ JavaScript/TypeScript การ discovery รองรับ package script ที่ project เป็นเจ้าของทั้ง `foundation:quality:crap` และ alias `quality:crap` โดย command ต้องสร้าง `foundation-crap-v1` ที่ `.foundation/quality/crap.json` หากไม่มี script หรือ provider ที่ตั้งค่าไว้ CRAP จะมีสถานะว่ายังไม่ได้วัด
+
 - workflow changed-code แบบ reusable/manual;
 - nightly inventory แบบสี่ shard; และ
 - release workflow ที่ enforce full inventory
@@ -115,4 +117,3 @@ Exception ต้องระบุ function หรือ mutant เดียว 
 - Capability ที่ขาดจะลด assurance และยังแสดงอยู่ แม้ policy อนุญาต compensating evidence
 
 คง `policy.mode` เป็น `report` อย่างน้อยสามรอบที่เป็นตัวแทน ตรวจ function/path mapping กับ false positive อนุมัติ baseline เริ่มต้น แล้วค่อยเปิด enforcement ใน PR caller ให้ nightly ดูแล full debt inventory และ release ดูแล full enforced gate
-

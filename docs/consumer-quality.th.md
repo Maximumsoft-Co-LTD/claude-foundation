@@ -35,6 +35,8 @@ claude-foundation quality doctor
 
 `quality init` เป็น preview จนกว่าจะใส่ `--write` และสร้าง `quality/foundation-quality.json` ส่วน `--ci github` จะคัดลอก workflow template แบบ reusable/manual changed-code, nightly สี่ shard และ full release ตัว changed-code template ต้องถูกเรียกจาก PR workflow เดิม เพราะไม่มี `pull_request` trigger ในตัว
 
+สำหรับ JavaScript/TypeScript การ discovery รองรับ package script ที่ project เป็นเจ้าของทั้ง `foundation:quality:crap` และ alias `quality:crap` โดย command ต้องสร้าง `foundation-crap-v1` ที่ `.foundation/quality/crap.json` หากไม่มี script หรือ provider ที่ตั้งค่าไว้ CRAP จะมีสถานะว่ายังไม่ได้วัด
+
 รันกับ isolated workspace ของ Change:
 
 ```bash
@@ -104,4 +106,3 @@ claude-foundation quality debt
 - HTML/style ใช้ browser/accessibility/visual evidence ไม่สร้าง code metric ปลอม
 
 คง `policy.mode: report` ตลอด pilot ตรวจ mapping และ baseline ให้เสถียรก่อนเปิด PR enforcement ใช้ nightly ทำ full debt inventory และ release ทำ full enforced gate
-

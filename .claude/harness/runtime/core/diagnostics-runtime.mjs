@@ -430,6 +430,16 @@ export function createDiagnosticsRuntime({
       const qualityMode = foundationPolicy().quality?.changeGate || "warn";
       const highRisk = state.impact === "high" ||
         (state.securityTriggers || []).length > 0;
+      const executableSurface = (state.declaredSurface || []).some((path) =>
+        typeof path === "string" && /\.(?:[cm]?js|jsx|tsx?|go|py|php|sh|bash)$/i.test(path));
+      const qualityConfigured = existsSync(join(root, "quality", "foundation-quality.json"));
+      if (qualityMode !== "off" && executableSurface && !qualityConfigured) checks.push({
+        level: qualityMode === "enforce-high-risk" && highRisk ? "error" : "warn",
+        name: "consumer-quality",
+        detail: "QUALITY_NOT_CONFIGURED: missing quality/foundation-quality.json; " +
+          "CRAP_NOT_MEASURED; run 'claude-foundation quality discover' and " +
+          "'claude-foundation quality init --write' after configuring project-owned providers"
+      });
       const configuredCapabilities = new Set(Object.entries(contract.providers || {})
         .map(([provider, config]) => providerCapability(provider, config)));
       if (qualityMode !== "off" && highRisk)

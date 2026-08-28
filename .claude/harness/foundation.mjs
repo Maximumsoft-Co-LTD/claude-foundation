@@ -1038,6 +1038,7 @@ const {
   recoveryLines,
   topologyIssues,
   unavailableProviderRecovery,
+  workspaceIsolationIssues,
   upgradeEvidence
 } = createProofReadinessRuntime({
   markBlocked,
@@ -1417,6 +1418,8 @@ const {
   writeJson,
   clearSnapshotCache,
   relevantHash,
+  workspaceIsolationIssues,
+  reviewPolicy,
   requiredProviders,
   receiptValidity,
   fileDigest,

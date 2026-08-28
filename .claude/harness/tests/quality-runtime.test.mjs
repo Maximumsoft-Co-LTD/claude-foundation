@@ -58,6 +58,37 @@ test("quality init previews before explicitly writing configuration", () => {
   } finally { value.cleanup(); }
 });
 
+test("discovered CRAP script survives init and produces a measured change lane", () => {
+  const value = fixture();
+  try {
+    const report = {
+      protocol: "foundation-crap-v1", repository: "root", repositoryCommit: null,
+      workspaceDigest: `sha256:${"b".repeat(64)}`, language: "javascript",
+      tool: { name: "consumer-fixture", version: "1", adapterVersion: "1",
+        configDigest: configDigest({ fixture: true }) },
+      functions: [{ id: "value", path: "src.js", line: 1, endLine: 1,
+        complexity: 2, coverageKind: "branch", coveragePercent: 100,
+        crap: 999, mapping: "exact" }]
+    };
+    writeFileSync(join(value.root, "provider.mjs"),
+      `import { mkdirSync, writeFileSync } from "node:fs";\n` +
+      `mkdirSync(".foundation/quality", { recursive: true });\n` +
+      `writeFileSync(".foundation/quality/crap.json", ${JSON.stringify(JSON.stringify(report))});\n`);
+    writeFileSync(join(value.root, "package.json"), JSON.stringify({ scripts: {
+      test: "node --test", "quality:crap": "node provider.mjs"
+    } }));
+    value.runtime.initialize({ write: true });
+    const config = JSON.parse(readFileSync(join(value.root, "quality", "foundation-quality.json"), "utf8"));
+    assert.deepEqual(config.repositories[0].providers.crap.command,
+      ["npm", "run", "quality:crap"]);
+    const summary = value.runtime.run({ change: "change" });
+    const crap = summary.lanes.find((lane) => lane.capability === "crap");
+    assert.equal(crap.status, "pass");
+    assert.equal(crap.result.functions[0].crap, 2);
+    assert.equal(crap.evaluation.summary.pass, 1);
+  } finally { value.cleanup(); }
+});
+
 test("quality init installs PR, nightly, and release CI templates without overwriting", () => {
   const value = fixture();
   try {

@@ -66,6 +66,19 @@ export function proofPreflightAdvisory(advisory) {
     advisory.trigger || "the changed surface"} with no provider wired; not blocking`;
 }
 
+export function workspaceIsolationIssuesValue(state, surface = []) {
+  if (["worktree", "copy"].includes(state?.workspace?.mode)) return [];
+  const rootProductPaths = surface
+    .filter((row) => (row.repositoryId || "root") === "root")
+    .map((row) => String(row.path || ""))
+    .filter((path) => path && !path.startsWith("openspec/changes/") &&
+      !path.startsWith("openspec/investigations/") && !path.startsWith(".foundation/"));
+  if (!rootProductPaths.length) return [];
+  return [`ISOLATION_REQUIRED: root product files changed while workspace mode is '${
+    state?.workspace?.mode || "current"}': ${rootProductPaths.join(", ")}; run claude-foundation sandbox create ${
+    state?.id || "<change>"} and rebuild inside the isolated workspace`];
+}
+
 export function proofPreflightOperation({
   proofReadinessValue,
   recoveryLines,
@@ -502,6 +515,11 @@ export function createProofReadinessRuntime({
 
   const topologyIssues = topologyIssuesOperation.bind(null, { evidence });
 
+  function workspaceIsolationIssues(id) {
+    const state = loadRuntime(id);
+    return workspaceIsolationIssuesValue(state, canonicalChangedSurface(id, state));
+  }
+
   // `details`, when supplied, collects `{ repositoryId, paths }` per blocked
   // repository so the recovery can render a paste-ready annotation. The string
   // return stays as-is — proof-runtime consumes it verbatim.
@@ -768,6 +786,7 @@ export function createProofReadinessRuntime({
   const proofReadinessValueFor = proofReadinessValueOperation.bind(null, {
     validate,
     topologyIssues,
+    workspaceIsolationIssues,
     changedSurfaceIssues,
     criticalCaseIssues,
     relevantHash,
@@ -836,6 +855,7 @@ export function createProofReadinessRuntime({
     readinessBudgetPolicy,
     topologyIssues,
     unavailableProviderRecovery,
+    workspaceIsolationIssues,
     upgradeEvidence
   };
 }

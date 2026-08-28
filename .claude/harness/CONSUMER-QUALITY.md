@@ -19,6 +19,12 @@ overwrite config or workflows unless `--force`. The committed configuration is
 `quality/foundation-quality.json`. Generated results live under
 `.foundation/quality/results/`.
 
+For JavaScript/TypeScript, discovery recognizes the canonical project-owned
+`foundation:quality:crap` package script and the existing `quality:crap` alias.
+The command must emit `foundation-crap-v1` at
+`.foundation/quality/crap.json`. Without either script or an explicit provider,
+CRAP remains unsupported and must be reported as not measured.
+
 `--ci github` installs three templates under `.github/workflows/`: a
 reusable/manual changed-code workflow, a four-shard nightly inventory, and a
 full enforced release workflow. The consumer must add language setup and call
@@ -89,4 +95,3 @@ When the committed quality config exists, evidence bootstrap may wire
 `quality run --enforce` as static-analysis evidence. The generic command adapter
 records full/reduced assurance in the receipt observation and preserves the
 per-repository summary in the command log.
-
