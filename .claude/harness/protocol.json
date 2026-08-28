@@ -6,7 +6,7 @@
   "providerProtocol": "12",
   "adapterProtocol": "5",
   "proofProtocol": "7",
-  "packetSchema": "8",
+  "packetSchema": "9",
   "agentPlanSchema": "4",
   "agentContractProtocol": "1",
   "contextEventSchema": "2",

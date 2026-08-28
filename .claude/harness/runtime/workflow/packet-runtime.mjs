@@ -3,6 +3,7 @@ import { join, relative } from "node:path";
 import {
   cachedUpdateAdvisory, updateNotificationDirective
 } from "../core/update-advisory.mjs";
+import { verificationPlanValue } from "./verification-plan.mjs";
 
 export function attachPhaseUpdateAdvisory(value, phase, options = {}) {
   if (!["change", "build"].includes(phase)) return value;
@@ -594,8 +595,11 @@ export function createPacketRuntime({
   }
 
   function packetForRequest(id, flags) {
-    return flags.phase === "review"
+    const value = flags.phase === "review"
       ? reviewPacketValue(id) : packetValue(id, flags.repo || null, flags.task || null);
+    if (flags.phase !== "review")
+      value.verificationPlan = verificationPlanValue(value, flags.phase || "build", stableHash);
+    return value;
   }
 
   function addPacketInstruction(id, flags, value) {

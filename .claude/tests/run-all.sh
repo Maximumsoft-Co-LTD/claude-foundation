@@ -131,6 +131,7 @@ sandbox replay preparation|node --test "$ROOT/.claude/harness/tests/sandbox-repl
 evidence results|node --test "$ROOT/.claude/harness/tests/evidence-results.test.mjs"
 telemetry append|node --test "$ROOT/.claude/harness/tests/telemetry-append.test.mjs"
 operation profiling|node --test "$ROOT/.claude/harness/tests/operation-profile.test.mjs"
+verification planning|node --test "$ROOT/.claude/harness/tests/verification-plan.test.mjs"
 change draft materialization|node --test "$ROOT/.claude/harness/tests/change-draft-materialization.test.mjs"
 land root pointers|node --test "$ROOT/.claude/harness/tests/land-root-pointers.test.mjs"
 telemetry phase context|node --test "$ROOT/.claude/harness/tests/telemetry-phase-context.test.mjs"
