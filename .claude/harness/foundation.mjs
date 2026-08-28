@@ -11,6 +11,7 @@ import {
   createTelemetryRuntime, recordCommandTelemetry
 } from "./runtime/observability/telemetry-runtime.mjs";
 import { createJsonlReader } from "./runtime/observability/telemetry.mjs";
+import { operationInputFingerprint } from "./runtime/observability/operation-profile.mjs";
 import {
   createHostExecutionImporter, createHostExecutionStore, createModelDriftInspector,
   resolveHostExecutionSource
@@ -166,11 +167,11 @@ let operationChangeId = null;
 let operationName = null;
 let operationPhase = null;
 let operationStatusAtStart = null;
-// Commands that only read. `showMetrics` buckets every row of operations.jsonl
-// and then this handler appended a row for the read itself, so each inspection
-// permanently inflated the next one — and an archived change, which is
-// finished evidence, still accumulated rows from sessions that only looked at
-// it. A read is not an operation the change performed.
+let operationFingerprint = null;
+// Commands that only read. They are observed in inspections.jsonl so the
+// benchmark can measure agent probing, but never enter operations.jsonl:
+// `showMetrics` treats that ledger as work the change performed for rework and
+// phase accounting. Archived evidence remains immutable and records neither.
 // Lifecycle commands stay: metrics derives rework and typed-stop signals from
 // their rows, so proof-* and land-* are measurements, not inspections.
 const READ_ONLY_OPERATIONS = new Set([
@@ -188,6 +189,7 @@ process.on("exit", (code) => {
     operationName,
     operationPhase,
     operationStatusAtStart,
+    operationInputFingerprint: operationFingerprint,
     publicOperation: process.env.FOUNDATION_PUBLIC_OPERATION,
     blocked: operationBlocked,
     operationStartedAt,
@@ -1559,8 +1561,29 @@ operationChangeId = command === "sandbox" ? namedChange(values[1]) :
     command?.startsWith("quality-")
       ? qualityChange()
       : null;
-operationStatusAtStart = operationChangeId
-  ? readJson(runtimePath(operationChangeId), {}).status ?? null : null;
+const operationStateAtStart = operationChangeId
+  ? readJson(runtimePath(operationChangeId), {}) : {};
+operationStatusAtStart = operationStateAtStart.status ?? null;
+if (operationChangeId) {
+  try {
+    const changeRoot = activeChangePath(operationChangeId, operationStateAtStart);
+    operationFingerprint = operationInputFingerprint({
+      operation: command,
+      values,
+      state: operationStateAtStart,
+      changeDigest: existsSync(changeRoot) ? directoryHash(changeRoot) : null,
+      foundationConfigDigest: existsSync(join(ROOT, "foundation.json"))
+        ? fileDigest(join(ROOT, "foundation.json")) : null,
+      projectPolicyDigest: existsSync(join(ROOT, ".foundation", "policy.json"))
+        ? fileDigest(join(ROOT, ".foundation", "policy.json")) : null
+    });
+  } catch {
+    // Profiling is observational. A damaged change must still reach the
+    // command that diagnoses or retires it; the row reports unavailable input
+    // identity rather than turning instrumentation into a new blocker.
+    operationFingerprint = null;
+  }
+}
 
 // One table, in `runtime/core/lifecycle-phase.mjs`, shared with the operations
 // row written on exit. The phase is derived here rather than read only from

@@ -514,6 +514,15 @@ Use metrics to inspect the actual cost of a run:
 claude-foundation metrics <change>
 ```
 
+`commandProfile` separates lifecycle mutations from read-only inspections,
+reports elapsed union time and the most expensive commands, and identifies
+repeated checks observed with the same command arguments, runtime revision,
+change content, and policy fingerprints. These rows are candidates for removal,
+not proof of waste: executable providers are never classified as redundant only
+because their inputs matched. Decision reasons and references are redacted
+before fingerprinting. Read-only calls live in `inspections.jsonl`, so measuring
+agent probing does not inflate lifecycle rework or mutate completed evidence.
+
 Context is budgeted at the control surface: plan summaries are at most 4 KiB,
 task and review packets 8 KiB, repository packets 12 KiB, and global packets 16 KiB.
 Oversized artifacts are referenced by path and digest. The budget covers the

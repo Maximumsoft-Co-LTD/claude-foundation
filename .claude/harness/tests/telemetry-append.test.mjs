@@ -29,6 +29,7 @@ function commandContext(overrides = {}) {
     operationName: "validate",
     operationPhase: "prove",
     operationStatusAtStart: "building",
+    operationInputFingerprint: "sha256:input",
     publicOperation: null,
     blocked: false,
     operationStartedAt: Date.parse("2026-08-27T00:00:00.000Z"),
@@ -52,6 +53,8 @@ test("command telemetry projects honest command outcomes and phase fallbacks", (
   }), 2);
   assert.equal(publicRow.phase, "proof-run");
   assert.equal(publicRow.status, "blocked");
+  assert.equal(publicRow.kind, "lifecycle");
+  assert.equal(publicRow.inputFingerprint, "sha256:input");
   assert.equal(publicRow.durationMs, 1_000);
   assert.equal(publicRow.measurement,
     "command-observed; model usage requires host telemetry ingestion");
@@ -59,12 +62,12 @@ test("command telemetry projects honest command outcomes and phase fallbacks", (
   assert.equal(commandTelemetryRow(commandContext({ operationPhase: null }), 1).phase, null);
 });
 
-test("command telemetry eligibility excludes disabled, incomplete, read-only and archived work", () => {
+test("command telemetry eligibility excludes disabled, incomplete and archived work", () => {
   assert.equal(commandTelemetryEligible(commandContext()), true);
   assert.equal(commandTelemetryEligible(commandContext({ telemetryDisabled: true })), false);
   assert.equal(commandTelemetryEligible(commandContext({ changeId: null })), false);
   assert.equal(commandTelemetryEligible(commandContext({ operationName: null })), false);
-  assert.equal(commandTelemetryEligible(commandContext({ operationName: "metrics" })), false);
+  assert.equal(commandTelemetryEligible(commandContext({ operationName: "metrics" })), true);
   assert.equal(commandTelemetryEligible(commandContext({
     operationStatusAtStart: "archived"
   })), false);
@@ -82,6 +85,14 @@ test("command telemetry writes one JSONL row and contains optional write failure
   const rows = readLines(join(root, "change-a", "operations.jsonl"));
   assert.equal(rows.length, 1);
   assert.equal(rows[0].operation, "validate");
+  assert.equal(rows[0].kind, "lifecycle");
+  assert.equal(recordCommandTelemetry(commandContext({
+    logs: root, mkdir: mkdirSync, append: appendFileSync,
+    operationName: "metrics"
+  }), 0), true);
+  const inspections = readLines(join(root, "change-a", "inspections.jsonl"));
+  assert.equal(inspections.length, 1);
+  assert.equal(inspections[0].kind, "inspection");
   assert.equal(recordCommandTelemetry(commandContext({
     telemetryDisabled: true,
     append: () => assert.fail("ineligible telemetry must not write")

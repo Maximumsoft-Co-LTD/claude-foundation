@@ -2,6 +2,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { measuredNumber } from "../core/measured-number.mjs";
 import { createModelDriftInspector } from "./host-execution-contract.mjs";
+import { commandProfile } from "./operation-profile.mjs";
 
 export function eventUsageRecoveryActions(classification, correlatedHosts, changeId) {
   const recoveryActions = [];
@@ -454,6 +455,7 @@ export function createMetricsRuntime({
     const state = loadRuntime(id);
     const budget = ensureBudgetState(state);
     const operations = readJsonLines(join(logs, id, "operations.jsonl"));
+    const inspections = readJsonLines(join(logs, id, "inspections.jsonl"));
     const events = readJsonLines(join(logs, id, "events.jsonl"));
     const userTransitions = readJsonLines(join(logs, id, "user-transitions.jsonl"));
     const { rows: contextRows, rollup: contextRollup } = contextMetricState(id);
@@ -560,6 +562,7 @@ export function createMetricsRuntime({
         failedOperations: operations.filter((row) => row.status === "failed").length,
         providerRebindings: reuseRows.length
       },
+      commandProfile: commandProfile(operations, inspections),
       orchestratorTokenShare: tokenTotal > 0 ? orchestratorTokens / tokenTotal : null,
       orchestratorCostShare: totalCost > 0 && orchestratorCost !== null
         ? orchestratorCost / totalCost : null,

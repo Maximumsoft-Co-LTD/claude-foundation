@@ -130,6 +130,7 @@ change policy surface|node --test "$ROOT/.claude/harness/tests/change-policy-sur
 sandbox replay preparation|node --test "$ROOT/.claude/harness/tests/sandbox-replay-preparation.test.mjs"
 evidence results|node --test "$ROOT/.claude/harness/tests/evidence-results.test.mjs"
 telemetry append|node --test "$ROOT/.claude/harness/tests/telemetry-append.test.mjs"
+operation profiling|node --test "$ROOT/.claude/harness/tests/operation-profile.test.mjs"
 change draft materialization|node --test "$ROOT/.claude/harness/tests/change-draft-materialization.test.mjs"
 land root pointers|node --test "$ROOT/.claude/harness/tests/land-root-pointers.test.mjs"
 telemetry phase context|node --test "$ROOT/.claude/harness/tests/telemetry-phase-context.test.mjs"

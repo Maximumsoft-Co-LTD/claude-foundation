@@ -110,12 +110,13 @@ function qualitySummary(report) {
 
 function operationSummary(rows, metrics) {
   const operations = Array.isArray(rows) ? rows : [];
+  const profile = object(metrics.commandProfile);
   const byCommand = {};
   for (const row of operations) {
     const command = text(row.operation) || "unknown";
     byCommand[command] = Number(byCommand[command] || 0) + 1;
   }
-  const total = operations.length || Object.values(object(metrics.phases))
+  const total = operations.length || count(profile.totalInvocations) || Object.values(object(metrics.phases))
     .map((phase) => count(phase.operations)).filter((value) => value !== null)
     .reduce((sum, value) => sum + value, 0) || null;
   return {
@@ -126,8 +127,9 @@ function operationSummary(rows, metrics) {
     blocked: operations.length
       ? operations.filter((row) => row.status === "blocked").length : null,
     byCommand,
-    duplicateCandidates: null,
-    duplicateMeasurement: "unavailable",
+    duplicateCandidates: count(profile.sameInputCheckCandidates),
+    duplicateMeasurement: profile.measurement
+      ? measurement(profile.measurement) : "unavailable",
     browserCalls: null,
     taskMirrorOperations: null
   };

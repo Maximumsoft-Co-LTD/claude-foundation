@@ -124,7 +124,7 @@ function metricsFor(project, changeId) {
   if (!changeId) return null;
   const result = spawnSync(process.execPath,
     [join(project, ".claude/harness/foundation.mjs"), "metrics", changeId], {
-      cwd: project, encoding: "utf8", env: { ...process.env, FOUNDATION_TELEMETRY_DISABLED: "1" }
+      cwd: project, encoding: "utf8", env: { ...process.env, FOUNDATION_TELEMETRY: "0" }
     });
   if (result.status !== 0) return null;
   try { return JSON.parse(result.stdout); } catch { return null; }
@@ -137,8 +137,10 @@ export function collectNativeScorecard({
 }) {
   const discovered = discoverChangeId(project, changeId, stopwatch.startedEpochMs ?? null);
   const resolvedMetrics = metrics ?? metricsFor(project, discovered) ?? {};
-  const operations = operationRows ?? (discovered
-    ? readJsonLines(join(project, ".foundation/logs", discovered, "operations.jsonl")) : []);
+  const operations = operationRows ?? (discovered ? [
+    ...readJsonLines(join(project, ".foundation/logs", discovered, "operations.jsonl")),
+    ...readJsonLines(join(project, ".foundation/logs", discovered, "inspections.jsonl"))
+  ] : []);
   const qualityReport = quality ?? readJson(
     join(project, ".foundation/test-results/quality/crap.json"));
   return buildScorecard({

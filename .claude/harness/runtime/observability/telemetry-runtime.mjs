@@ -26,10 +26,12 @@ export function commandTelemetryStatus(code, blocked) {
 }
 
 export function commandTelemetryRow(context, code) {
+  const inspection = context.readOnlyOperations.has(context.operationName);
   return {
     version: 2,
     changeId: context.changeId,
     operation: context.operationName,
+    kind: inspection ? "inspection" : "lifecycle",
     phase: context.publicOperation || context.operationPhase || null,
     status: commandTelemetryStatus(code, context.blocked),
     exitCode: code,
@@ -43,6 +45,9 @@ export function commandTelemetryRow(context, code) {
     cacheReadTokens: null,
     cacheTokens: null,
     cost: null,
+    inputFingerprint: context.operationInputFingerprint || null,
+    inputMeasurement: context.operationInputFingerprint
+      ? "command-args+runtime-state+change-content+policy" : "unavailable",
     measurement: "command-observed; model usage requires host telemetry ingestion"
   };
 }
@@ -50,14 +55,15 @@ export function commandTelemetryRow(context, code) {
 export function commandTelemetryEligible(context) {
   if (context.telemetryDisabled || !context.changeId || !context.operationName)
     return false;
-  if (context.readOnlyOperations.has(context.operationName)) return false;
   return context.operationStatusAtStart !== "archived";
 }
 
 export function recordCommandTelemetry(context, code) {
   if (!commandTelemetryEligible(context)) return false;
   try {
-    const path = join(context.logs, context.changeId, "operations.jsonl");
+    const ledger = context.readOnlyOperations.has(context.operationName)
+      ? "inspections.jsonl" : "operations.jsonl";
+    const path = join(context.logs, context.changeId, ledger);
     context.mkdir(dirname(path), { recursive: true });
     context.append(path, `${JSON.stringify(commandTelemetryRow(context, code))}\n`);
     return true;
