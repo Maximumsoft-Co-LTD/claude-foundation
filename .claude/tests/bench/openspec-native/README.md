@@ -77,3 +77,25 @@ The schema is
 [`../config/openspec-native-scorecard.schema.json`](../config/openspec-native-scorecard.schema.json).
 Targets remain in
 [`../config/openspec-native-targets.json`](../config/openspec-native-targets.json).
+
+## Workload matrix and repeat gate
+
+Do not tune only for the todolist sentinel. The release matrix must cover these
+distinct control paths:
+
+| Class | Representative work | Required terminal truth |
+|---|---|---|
+| Greenfield | CLI and browser app from an empty repository | Change never creates product code; Build and Prove complete |
+| Brownfield | Focused bug fix with existing tests and architecture | Baseline digests remain strict; rapid lane stays rapid |
+| Contract/data | Public API or persisted-format migration | Compatibility, rollback, and invariant evidence pass |
+| Multi-repository | Producer/consumer contract change | Scoped leases, topology, and ordered proof complete |
+| External authority | Deploy, secret, IAM, or human acceptance | One handoff, no polling, truthful waiting state |
+| Long-running evidence | Integration/browser/provider command | External time is measured and no duplicate execution occurs |
+| Resume/recovery | Timeout, crash, stale lock, or exhausted budget | Resume starts at the first incomplete operation |
+| Non-code | Investigation or documentation-only request | No unnecessary Build/Prove lifecycle is invented |
+
+Run one disposable sentinel first. Continue to paid repeats only when it reaches
+its expected terminal state and reports walltime, usage, operation counts, and
+quality without unknown fields that the comparison needs. Then use at least
+three repeats per changed workload class; never ratchet from a timeout, a single
+run, or two runs that selected materially different product surfaces.
