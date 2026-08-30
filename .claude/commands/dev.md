@@ -15,6 +15,8 @@ await each.
 
 Do not reread framework files. Report evidence and next action.
 
+Author artifacts with Edit or Write, never mutating Bash commands.
+
 Workflow is mandatory. Code/test success without Foundation runtime state is a failed `/dev` invocation.
 
 Never Land, commit, push, open a PR, or create another ledger.

@@ -57,6 +57,12 @@ reviewer now. Prove must not discover an unnamed operator. Use `change start`
 only when the caller already supplied a complete structured draft; do not emit
 its template merely to rediscover the generated artifact contract.
 
+Classify trust and operations by boundary, not vocabulary. Parsing or writing a
+single-user, app-owned local file is not by itself untrusted input, a security
+trigger, privacy work, or an operated service. CLI stderr and exit codes are not
+observability or operability. Declare those NFRs only when data crosses an
+actor/privilege boundary or a real runtime/operator consumes the control.
+
 Complete artifacts/tasks, validate, run Build doctor, and sync. Offer
 `change abandon` for an unprovable contract; never retire one unasked, infer
 acceptance from silence, or expose harness fields. Summarize outcome,
