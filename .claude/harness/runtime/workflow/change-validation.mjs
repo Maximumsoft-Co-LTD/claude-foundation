@@ -134,6 +134,22 @@ export function plannedGroundingPathEligible(source, pathExists, tasks = [], fir
     normalizedScope(source.path));
 }
 
+export function groundingInteractionRequirements({
+  coupling = "isolated", repositoryCount = 1, capabilities = [], semantics = ""
+} = {}) {
+  const declared = capabilities instanceof Set ? capabilities : new Set(capabilities);
+  const semanticText = String(semantics).toLowerCase();
+  const service = coupling === "coupled" || repositoryCount > 1 ||
+    ["cross-repo-contract", "integration", "live", "queue"]
+      .some((capability) => declared.has(capability)) ||
+    /\b(queue|broker|rabbit|kafka|event|callback|consumer|producer)\w*\b/
+      .test(semanticText);
+  const wire = service || ["compatibility", "browser"]
+    .some((capability) => declared.has(capability)) ||
+    /\b(wire|contract|http|api|json|message|payload)\w*\b/.test(semanticText);
+  return { service, wire };
+}
+
 export function claimContractIssues(claims = [], selectedRepositoryIds = new Set()) {
   return claims.flatMap((claim) => {
     const issues = [];
@@ -939,13 +955,12 @@ export function createChangeValidationRuntime({
       .map((entry) => String(entry).toLowerCase()));
     const semantics = `${state.intent || ""} ${[...riskClasses].join(" ")}`.toLowerCase();
     const selected = validationRepositories(id, state, dir);
-    const mandatoryService = state.coupling === "coupled" || selected.length > 1 ||
-      ["cross-repo-contract", "integration", "live", "queue", "resilience"]
-        .some((capability) => capabilities.has(capability)) ||
-      /\b(queue|broker|rabbit|kafka|event|callback|consumer|producer)\w*\b/.test(semantics);
-    const mandatoryWire = mandatoryService ||
-      ["compatibility", "browser"].some((capability) => capabilities.has(capability)) ||
-      /\b(wire|contract|http|api|json|message|payload)\w*\b/.test(semantics);
+    const interactions = groundingInteractionRequirements({
+      coupling: state.coupling, repositoryCount: selected.length,
+      capabilities, semantics
+    });
+    const mandatoryService = interactions.service;
+    const mandatoryWire = interactions.wire;
     const mandatoryActivation = [...riskClasses].some((entry) =>
       ["legacy", "activation", "cutover"].some((token) => entry.includes(token))) ||
       /\b(activat|cutover|enable existing|wire existing|turn on)\w*\b/.test(semantics);

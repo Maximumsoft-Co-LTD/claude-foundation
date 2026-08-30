@@ -12,7 +12,7 @@ import { routeRuntimeCommand } from "../../harness/runtime/core/cli-router.mjs";
 import { createFlagParser } from "../../harness/runtime/core/cli-flags.mjs";
 import {
   assertOpenSpecStrictValid, groundingTaskOverlapFindings,
-  plannedGroundingPathEligible
+  groundingInteractionRequirements, plannedGroundingPathEligible
 } from "../../harness/runtime/workflow/change-validation.mjs";
 
 const fail = (message) => { throw new Error(message); };
@@ -377,6 +377,25 @@ exit ${validateExit}
   assert.equal(plannedGroundingPathEligible({
     ...planned, role: "requirement"
   }, false, tasks, true), false, "immutable requirements still require a digest");
+}
+
+// --- local resilience is not misclassified as a distributed interaction ---
+{
+  assert.deepEqual(groundingInteractionRequirements({
+    capabilities: ["test", "resilience"], semantics: "local atomic file recovery"
+  }), { service: false, wire: false });
+  assert.equal(groundingInteractionRequirements({
+    capabilities: ["integration"]
+  }).service, true);
+  assert.equal(groundingInteractionRequirements({
+    capabilities: ["resilience"], repositoryCount: 2
+  }).service, true);
+  assert.equal(groundingInteractionRequirements({
+    capabilities: ["resilience"], semantics: "Kafka consumer retry"
+  }).service, true);
+  assert.equal(groundingInteractionRequirements({
+    capabilities: ["compatibility"]
+  }).wire, true);
 }
 
 console.log("guard-fix CLI seams: all cases passed");
