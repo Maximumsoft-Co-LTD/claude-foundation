@@ -7,11 +7,11 @@ Build **$ARGUMENTS**.
 
 `sandbox create <change>` or `sandbox sync`; read the Build packet and
 `.claude/commands/references/build-policy.md`.
-Treat `verificationPlan` as the check schedule: run its boundary command once
-when eligible, and do not run `avoidBefore` commands against unchanged inputs.
+`verificationPlan` schedules checks: run its eligible boundary once; skip
+`avoidBefore` on unchanged inputs.
 Call `agents dispatch <change>` and obey its single action until
-`build-complete`. Run `run-in-session` locally. The deferred readiness command
-becomes eligible only when no tasks remain. For `run-leased-in-session`,
+`build-complete`. Run `run-in-session` locally. Deferred readiness is eligible
+only with no remaining tasks. For `run-leased-in-session`,
 `spawn-group`, or `wait`, read `.claude/commands/references/build-dispatch.md`.
 Relay `blocked`.
 Treat `spawn-group` as concurrent authority: spawn every successfully leased

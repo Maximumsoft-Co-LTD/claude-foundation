@@ -109,13 +109,8 @@ work, and next action; omit empty sections. Do not paste runtime protocol or ask
 the user to run a safe authorized operation the agent can run. Expose hashes,
 receipts, provider codes, task IDs, and commands only for requested diagnosis.
 
-Only deterministic recovery may be followed automatically. When a structured
-`decision` names `automaticRecovery`, execute that offered route within current
-authority, explain the repair in plain language, and continue. Every other
-`decision` requires an explicit user answer, including one a blocked operation
-emits. Present its honest alternatives,
-recommend one with a reason, and always preserve reject, inconclusive, or pause
-when those outcomes are valid. Never infer approval from silence or from the
-ability to invoke an authority command. The agent creates requests, responses,
-flags, and provenance after the human decision; users never assemble harness
-commands or JSON.
+On any structured `decision`, read
+`.claude/commands/references/decision-policy.md` completely. Execute only its
+named deterministic recovery automatically; otherwise wait for the user's
+explicit answer. Never infer approval from silence. The agent owns requests, responses,
+flags, and provenance; users never assemble harness commands or JSON.

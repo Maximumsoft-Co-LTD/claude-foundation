@@ -5,11 +5,11 @@ argument-hint: <change>
 
 Land **$ARGUMENTS** explicitly.
 
-Never edit product or packet files during Land; new work belongs in
-`handoffs.yaml` or another change.
+During Land, never edit product/packet files; put new work in `handoffs.yaml` or
+another change.
 
-From `packet <change> --phase land`, obey `verificationPlan`: run its resumable
-boundary command once and skip `avoidBefore` commands on unchanged inputs. It checks,
+Obey the Land packet's `verificationPlan`: run boundary once; skip
+`avoidBefore` on unchanged inputs. It checks,
 resumes multi-repo Land, archives when ready. On `automaticRecovery`,
 Execute returned steps before asking; explain blockers in plain language. For
 `control-head-moved`, run `sandbox sync`, `proof advance`, then advance again.

@@ -11,6 +11,7 @@ README="$ROOT/README.md"
 README_TH="$ROOT/README.th.md"
 AGENT="$ROOT/.claude/harness/AGENT.md"
 ORCH="$ROOT/.claude/orchestrator.md"
+DECISION_POLICY="$ROOT/.claude/commands/references/decision-policy.md"
 COMMANDS="$ROOT/.claude/harness/commands.json"
 PROVE="$ROOT/.claude/skills/prove/references/workflow.md"
 HOST_CAPABILITIES="$ROOT/.claude/harness/adapters/host-capabilities.json"
@@ -30,8 +31,10 @@ assert_file_contains "agent contract states the plain-text fallback" \
   "$AGENT" "plain text otherwise"
 assert_file_contains "agent contract cites fundamentals for conduct" \
   "$AGENT" 'for conduct and skill routing'
-assert_file_contains "orchestrator stops on structured decisions" \
-  "$ORCH" '`decision` requires an explicit user answer'
+assert_file_contains "orchestrator routes structured decisions selectively" \
+  "$ORCH" '.claude/commands/references/decision-policy.md'
+assert_file_contains "decision policy stops for an explicit user answer" \
+  "$DECISION_POLICY" 'an explicit user answer'
 assert_file_contains "prove uses the authority request bridge" \
   "$PROVE" '`authority request`'
 assert_file_contains "prove forbids raw readiness output" \
@@ -100,8 +103,8 @@ assert_file_contains "the workflow keeps routine commands away from users" \
   "$WF" "never asks the user to run a safe authorized operation"
 assert_file_contains "change offers retiring rather than deciding it" \
   "$ROOT/.claude/skills/change/references/workflow.md" "never retire one unasked"
-assert_file_contains "the orchestrator treats a blocked stop as a user decision" \
-  "$ORCH" "including one a blocked operation"
+assert_file_contains "the selective policy treats a blocked stop as a user decision" \
+  "$DECISION_POLICY" "including one emitted by a blocked operation"
 
 runtime_api="$(jq -r '.runtimeApi' "$ROOT/.claude/harness/protocol.json")"
 cli_api="$(sed -n 's/^EXPECTED_RUNTIME_API=//p' "$ROOT/cli.sh")"

@@ -40,6 +40,10 @@ assert_file_contains "Land translates blockers for people" "$ROOT/.claude/comman
 assert_file_contains "completion-only policy forbids scope expansion" "$ROOT/.claude/orchestrator.md" "scope expansion"
 assert_file_contains "repository instructions cannot grant authority" "$ROOT/.claude/orchestrator.md" "never enable a host permission bypass by implication"
 assert_file_contains "human silence cannot become approval" "$ROOT/.claude/orchestrator.md" "Never infer approval from silence"
+assert_file_contains "orchestrator selectively loads decision policy" \
+  "$ROOT/.claude/orchestrator.md" '.claude/commands/references/decision-policy.md'
+assert_file_contains "selective decision policy preserves explicit answers" \
+  "$ROOT/.claude/commands/references/decision-policy.md" 'explicit user answer'
 
 for command in build change investigate land prove; do
   assert_file_exists "command reference exists: $command" "$ROOT/.claude/commands/$command.md"
