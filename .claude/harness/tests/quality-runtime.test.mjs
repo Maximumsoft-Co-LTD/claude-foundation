@@ -58,6 +58,39 @@ test("quality init previews before explicitly writing configuration", () => {
   } finally { value.cleanup(); }
 });
 
+test("quality discovery prefers the active sandbox recorded in runtime state", () => {
+  const value = fixture();
+  const sandbox = mkdtempSync(join(tmpdir(), "foundation-quality-sandbox-"));
+  try {
+    writeFileSync(join(sandbox, "package.json"), JSON.stringify({
+      scripts: { test: "node --test", typecheck: "tsc --noEmit" }
+    }));
+    writeFileSync(join(sandbox, "app.ts"), "export const value: number = 1;\n");
+    const runtime = createQualityRuntime({
+      root: value.root,
+      repositoryCatalog: () => ({ repositories: [value.repository] }),
+      // Simulate an accidentally stale selector result. Runtime state must win.
+      selectedRepositories: () => [{ ...value.repository, workspacePath: value.root }],
+      canonicalChangedSurface: () => [], declaredSurfaceMatcher: () => () => true,
+      loadRuntime: () => ({
+        id: "change", workspace: { mode: "worktree", path: sandbox },
+        repositories: { root: { path: sandbox, targetPath: value.root } }
+      }),
+      git: value.git, gitHead: () => "abc123",
+      readJson: (path) => JSON.parse(readFileSync(path, "utf8")),
+      writeJson: value.writeJson, pathInside: () => true,
+      fail: (message) => { throw new Error(message); }, log: () => {}
+    });
+    const report = runtime.discovery({ change: "change" });
+    assert.deepEqual(report.repositories[0].languages, ["javascript", "typescript"]);
+    assert.equal(report.repositories[0].inventory.files, 2);
+    assert.equal(report.repositories[0].capabilities["static-analysis"].status, "available");
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
+    value.cleanup();
+  }
+});
+
 test("discovered CRAP script survives init and produces a measured change lane", () => {
   const value = fixture();
   try {

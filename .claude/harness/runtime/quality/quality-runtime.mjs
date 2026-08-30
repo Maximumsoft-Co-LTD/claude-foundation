@@ -152,9 +152,14 @@ export function createQualityRuntime({
 }) {
   const configPath = join(root, QUALITY_CONFIG_RELATIVE);
   const repositoriesFor = (change = null) => {
-    const rows = change ? selectedRepositories(change, loadRuntime(change)) : repositoryCatalog().repositories;
+    const state = change ? loadRuntime(change) : null;
+    const rows = change ? selectedRepositories(change, state) : repositoryCatalog().repositories;
     return rows.map((repository) => {
-      const workspacePath = repository.workspacePath || repository.path;
+      // Runtime state is the source of truth once a change has entered a sandbox.
+      // Do not let a stale/cached selector row silently measure the target checkout.
+      const runtimePath = state?.repositories?.[repository.id]?.path ||
+        (repository.id === "root" ? state?.workspace?.path : null);
+      const workspacePath = runtimePath || repository.workspacePath || repository.path;
       return {
       id: repository.id,
       path: workspacePath,
