@@ -12,7 +12,10 @@ import { routeRuntimeCommand } from "../../harness/runtime/core/cli-router.mjs";
 import { createFlagParser } from "../../harness/runtime/core/cli-flags.mjs";
 import {
   assertOpenSpecStrictValid, groundingTaskOverlapFindings,
-  groundingInteractionRequirements, plannedGroundingPathEligible
+  groundingInteractionRequirements, groundingMissingReadSourceRecovery,
+  groundingPathRowShapeIssue,
+  plannedGroundingPathEligible,
+  plannedGroundingPathRecovery
 } from "../../harness/runtime/workflow/change-validation.mjs";
 
 const fail = (message) => { throw new Error(message); };
@@ -377,6 +380,27 @@ exit ${validateExit}
   assert.equal(plannedGroundingPathEligible({
     ...planned, role: "requirement"
   }, false, tasks, true), false, "immutable requirements still require a digest");
+  assert.equal(plannedGroundingPathRecovery(planned, false, [], true),
+    "path is marked planned but no implementation or migration task owns it; " +
+    "add [kind:implementation] [repo:root] [paths:src/index.js] to the owning " +
+    "task (a matching glob is also valid), then keep sha256 as planned",
+  "recovery must give authors the missing task annotation in one pass");
+  assert.equal(plannedGroundingPathRecovery(planned, false, tasks, true), null,
+    "owned planned paths need no recovery hint");
+  assert.equal(plannedGroundingPathRecovery(planned, true, [], true), null,
+    "existing paths need baseline-digest guidance instead");
+  assert.equal(groundingPathRowShapeIssue("productionEntry.paths[0]", "src/index.js"),
+    "productionEntry.paths[0] must be an object with repository and path, for example " +
+    "{\"repository\":\"root\",\"path\":\"src/index.js\"}",
+  "string rows must receive a concrete object-shape recovery");
+  assert.equal(groundingPathRowShapeIssue("productionEntry.paths[0]", planned), null);
+  assert.equal(groundingMissingReadSourceRecovery(
+    "test/cli.test.js", "root", "test-topology"),
+  "for a new path add {\"repository\":\"root\",\"path\":\"test/cli.test.js\"," +
+    "\"role\":\"test-topology\",\"mode\":\"full\",\"sha256\":\"planned\"} to " +
+    "readSet and add [kind:implementation] [repo:root] [paths:test/cli.test.js] " +
+    "to its owning task",
+  "missing readSet rows must receive both declarations needed for a greenfield path");
 }
 
 // --- local resilience is not misclassified as a distributed interaction ---

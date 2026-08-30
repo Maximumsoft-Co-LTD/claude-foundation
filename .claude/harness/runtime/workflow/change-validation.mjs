@@ -134,6 +134,32 @@ export function plannedGroundingPathEligible(source, pathExists, tasks = [], fir
     normalizedScope(source.path));
 }
 
+export function plannedGroundingPathRecovery(source, pathExists, tasks = [], firstLock = true) {
+  if (source?.sha256 !== "planned" || pathExists || !firstLock) return null;
+  if (!["production-path", "runtime-path", "test-topology", "dependency-source"]
+    .includes(source?.role)) return null;
+  if (taskOwnsGroundingPath(tasks, source.repository || "root",
+    normalizedScope(source.path))) return null;
+  const repository = source.repository || "root";
+  return `path is marked planned but no implementation or migration task owns it; ` +
+    `add [kind:implementation] [repo:${repository}] [paths:${source.path}] to the ` +
+    `owning task (a matching glob is also valid), then keep sha256 as planned`;
+}
+
+export function groundingPathRowShapeIssue(label, row) {
+  if (row && typeof row === "object" && !Array.isArray(row)) return null;
+  return `${label} must be an object with repository and path, for example ` +
+    `{"repository":"root","path":"src/index.js"}`;
+}
+
+export function groundingMissingReadSourceRecovery(sourcePath, repositoryId, role) {
+  return `for a new path add ` +
+    `{"repository":"${repositoryId}","path":"${sourcePath}",` +
+    `"role":"${role}","mode":"full","sha256":"planned"} to readSet ` +
+    `and add [kind:implementation] [repo:${repositoryId}] [paths:${sourcePath}] ` +
+    `to its owning task`;
+}
+
 export function groundingInteractionRequirements({
   coupling = "isolated", repositoryCount = 1, capabilities = [], semantics = ""
 } = {}) {
@@ -1103,6 +1129,11 @@ export function createChangeValidationRuntime({
     const validateRows = (name, rows, allowedRoles) => {
       for (const [index, source] of rows.entries()) {
         const label = `${id}/grounding.yaml ${name}[${index}]`;
+        const shapeIssue = groundingPathRowShapeIssue(label, source);
+        if (shapeIssue) {
+          issues.push(shapeIssue);
+          continue;
+        }
         const repository = repositories.get(source?.repository || "root");
         const sourcePath = String(source?.path || "");
         if (!repository) {
@@ -1120,10 +1151,22 @@ export function createChangeValidationRuntime({
         const planned = plannedGroundingPathEligible(readSource, existsSync(absolute),
           parsedTasks, firstLock);
         if (!pathInside(repository.workspacePath, absolute) ||
-            (!existsSync(absolute) && !planned))
-          issues.push(`${label}.path does not resolve inside repository '${repository.id}'`);
-        if (!readSource)
-          issues.push(`${label} must appear in readSet with role ${allowedRoles.join("|")}`);
+            (!existsSync(absolute) && !planned)) {
+          const recovery = plannedGroundingPathRecovery(readSource, existsSync(absolute),
+            parsedTasks, firstLock);
+          issues.push(`${label}.path does not resolve inside repository '${repository.id}'` +
+            (recovery ? `; ${recovery}` : ""));
+        }
+        if (!readSource) {
+          const allowedRole = allowedRoles.includes("test-topology")
+            ? "test-topology" : allowedRoles[0];
+          const repositoryId = source.repository || "root";
+          const newPathRecovery = !existsSync(absolute)
+            ? `; ${groundingMissingReadSourceRecovery(sourcePath, repositoryId, allowedRole)}`
+            : "";
+          issues.push(`${label} must appear in readSet with role ${allowedRoles.join("|")}` +
+            newPathRecovery);
+        }
       }
     };
     validateRows("productionEntry.paths", value.productionEntry.paths,
@@ -1240,8 +1283,12 @@ export function createChangeValidationRuntime({
       const planned = plannedGroundingPathEligible(source, pathExists,
         parsedTasks, firstLock);
       const inside = pathInside(repository.workspacePath, absolute);
-      if (!inside || (!pathExists && !planned))
-        issues.push(`${label}.path does not resolve inside repository '${repository.id}'`);
+      if (!inside || (!pathExists && !planned)) {
+        const recovery = plannedGroundingPathRecovery(source, pathExists,
+          parsedTasks, firstLock);
+        issues.push(`${label}.path does not resolve inside repository '${repository.id}'` +
+          (recovery ? `; ${recovery}` : ""));
+      }
       if (source.sha256 === "planned" && !planned)
         issues.push(`${label}.sha256 may be 'planned' only for a new implementation-owned ` +
           "production, runtime, test-topology, or dependency path");
@@ -1290,6 +1337,8 @@ export function createChangeValidationRuntime({
   function groundingPathIssues(id, label, row, repositories, value, role,
     failureRequired, parsedTasks, firstLock) {
     const issues = [];
+    const shapeIssue = groundingPathRowShapeIssue(label, row);
+    if (shapeIssue) return [shapeIssue];
     const repository = repositories.get(row?.repository || "root");
     const sourcePath = String(row?.path || "");
     if (!repository) return [`${label} references an unselected repository`];
@@ -1302,8 +1351,12 @@ export function createChangeValidationRuntime({
     const planned = plannedGroundingPathEligible(includedSource, existsSync(absolute),
       parsedTasks, firstLock);
     if (!pathInside(repository.workspacePath, absolute) ||
-        (!existsSync(absolute) && !planned))
-      issues.push(`${label}.path does not resolve inside repository '${repository.id}'`);
+        (!existsSync(absolute) && !planned)) {
+      const recovery = plannedGroundingPathRecovery(includedSource, existsSync(absolute),
+        parsedTasks, firstLock);
+      issues.push(`${label}.path does not resolve inside repository '${repository.id}'` +
+        (recovery ? `; ${recovery}` : ""));
+    }
     if (failureRequired && !String(row?.failure || "").trim())
       issues.push(`${label}.failure is required`);
     if (!includedSource)
