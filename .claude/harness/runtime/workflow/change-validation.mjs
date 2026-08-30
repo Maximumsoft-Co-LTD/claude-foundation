@@ -999,6 +999,15 @@ export function createChangeValidationRuntime({
   function applicableNfrClaimIssues(label, category, row, context) {
     const issues = [];
     const allowedCapabilities = NFR_CATEGORY_CAPABILITIES[category];
+    const consequences = {
+      resilience: "availability must also be applicable",
+      "data-migration": "compatibility and recoverability must also be applicable",
+      deployment: "recoverability must also be applicable"
+    };
+    const consequenceHint = allowedCapabilities
+      .filter((capability) => consequences[capability])
+      .map((capability) => `${capability} => ${consequences[capability]}`)
+      .join("; ");
     for (const claimId of row.claimIds) {
       const claim = context.claimById.get(claimId);
       if (!claim) {
@@ -1007,7 +1016,8 @@ export function createChangeValidationRuntime({
       }
       if (!allowedCapabilities.some((capability) =>
         (claim.capabilities || []).includes(capability)))
-        issues.push(`${label} claim '${claimId}' must declare one of: ${allowedCapabilities.join(", ")}`);
+        issues.push(`${label} claim '${claimId}' must declare one of: ${allowedCapabilities.join(", ")}${
+          consequenceHint ? `; capability consequences: ${consequenceHint}` : ""}`);
       if (!context.taskClaimIds.has(claimId))
         issues.push(`${label} claim '${claimId}' has no implementation task owner`);
     }
@@ -1313,8 +1323,10 @@ export function createChangeValidationRuntime({
     if (!Array.isArray(claim.evidenceClass) || claim.evidenceClass.length === 0 ||
         claim.evidenceClass.some((entry) => !String(entry || "").trim()))
       return [`${label}.evidenceClass must be a non-empty string array`];
-    if (claim.evidenceClass.some((entry) => !classes.has(entry)))
-      issues.push(`${label}.evidenceClass contains an unsupported class`);
+    const unsupported = claim.evidenceClass.filter((entry) => !classes.has(entry));
+    if (unsupported.length)
+      issues.push(`${label}.evidenceClass contains unsupported class(es): ${unsupported.join(", ")}; ` +
+        `supported: ${[...classes].join("|")}`);
     if (!String(claim.testDoubleGap || "").trim())
       issues.push(`${label}.testDoubleGap must be none or describe the gap`);
     if (claim.testDoubleGap !== "none" &&
@@ -1335,7 +1347,8 @@ export function createChangeValidationRuntime({
         issues.push(`${label}.evidenceClass '${evidenceClass}' is not declared by evidence.yaml for claim '${claim.id}'`);
     if (evidenceClaim?.impact === "high" && !claim.evidenceClass.some((entry) =>
       ["integration", "live", "security", "review"].includes(entry)))
-      issues.push(`${label} maps a high-impact claim only to low-fidelity evidence`);
+      issues.push(`${label} maps a high-impact claim only to low-fidelity evidence; ` +
+        "add at least one of: integration|live|security|review");
     return issues;
   }
 

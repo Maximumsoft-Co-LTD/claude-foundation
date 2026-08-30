@@ -179,7 +179,8 @@ try {
   assert.throws(() => runtime.groundingValue("change-a", state, packet),
     (error) => /productionPath\[0\].path must be repository-relative/.test(error.message) &&
       /failurePaths\[0\].failure is required/.test(error.message) &&
-      /evidenceClass contains an unsupported class/.test(error.message),
+      /evidenceClass contains unsupported class/.test(error.message) &&
+      /supported: static\|unit\|test/.test(error.message),
     "claim validation reports path, failure, and evidence repairs in one pass");
   const implicitRoot = valid();
   delete implicitRoot.claims[0].productionPath[0].repository;
@@ -513,6 +514,15 @@ try {
   assert.throws(() => runtime.groundingValue("change-a", state, packet, ownedTask),
     /performance.target is required/,
     "applicable NFRs require an observable target");
+  const cascadingNfr = structuredClone(nfr);
+  cascadingNfr.nfrAssessment.recoverability = {
+    status: "applicable", sourceReason: "local recovery is material",
+    target: "restart restores state", claimIds: ["claim-a"]
+  };
+  writeGrounding(cascadingNfr);
+  assert.throws(() => runtime.groundingValue("change-a", state, packet, ownedTask),
+    /resilience => availability must also be applicable/,
+    "NFR capability recovery names downstream categories before the next validation");
   writeGrounding(nfr);
   assert.throws(() => runtime.groundingValue("change-a", state, packet, []),
     /no implementation task owner/,
