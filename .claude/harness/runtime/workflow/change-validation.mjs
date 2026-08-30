@@ -876,28 +876,30 @@ export function createChangeValidationRuntime({
   }
 
   function validateGroundingDecision(id, decision) {
+    const issues = [];
     if (decision.status !== "locked")
-      fail(`${id}/grounding.yaml decisionBatch.status must be locked`);
+      issues.push(`${id}/grounding.yaml decisionBatch.status must be locked`);
     if (!["prd", "backlog", "user-batch", "recommended-default", "mixed"].includes(decision.source))
-      fail(`${id}/grounding.yaml decisionBatch.source must be prd|backlog|user-batch|recommended-default|mixed`);
+      issues.push(`${id}/grounding.yaml decisionBatch.source must be prd|backlog|user-batch|recommended-default|mixed`);
     if (!String(decision.reference || "").trim())
-      fail(`${id}/grounding.yaml decisionBatch.reference is required`);
+      issues.push(`${id}/grounding.yaml decisionBatch.reference is required`);
     if (!["single-batch", "no-material-questions"].includes(decision.mode))
-      fail(`${id}/grounding.yaml decisionBatch.mode must be single-batch|no-material-questions`);
+      issues.push(`${id}/grounding.yaml decisionBatch.mode must be single-batch|no-material-questions`);
     if (!Number.isFinite(Date.parse(String(decision.lockedAt || ""))))
-      fail(`${id}/grounding.yaml decisionBatch.lockedAt must be an ISO-8601 timestamp`);
+      issues.push(`${id}/grounding.yaml decisionBatch.lockedAt must be an ISO-8601 timestamp`);
     if (!Array.isArray(decision.decisions) || decision.decisions.length === 0)
-      fail(`${id}/grounding.yaml decisionBatch.decisions must record every locked choice/default`);
+      issues.push(`${id}/grounding.yaml decisionBatch.decisions must record every locked choice/default`);
     const ids = new Set();
-    for (const [index, row] of decision.decisions.entries()) {
+    for (const [index, row] of (Array.isArray(decision.decisions) ? decision.decisions : []).entries()) {
       const label = `${id}/grounding.yaml decisionBatch.decisions[${index}]`;
       if (!["prd", "backlog", "user-batch", "recommended-default"].includes(row.source))
-        fail(`${label}.source must be prd|backlog|user-batch|recommended-default`);
+        issues.push(`${label}.source must be prd|backlog|user-batch|recommended-default`);
       for (const field of ["id", "question", "answer"])
-        if (!String(row[field] || "").trim()) fail(`${label}.${field} is required`);
-      if (ids.has(row.id)) fail(`${label}.id is duplicated`);
+        if (!String(row[field] || "").trim()) issues.push(`${label}.${field} is required`);
+      if (ids.has(row.id)) issues.push(`${label}.id is duplicated`);
       ids.add(row.id);
     }
+    failValidationLayer(fail, "grounding decision", issues);
     return ids;
   }
 
@@ -994,45 +996,58 @@ export function createChangeValidationRuntime({
     return required;
   }
 
-  function validateApplicableNfrClaim(label, category, row, context) {
+  function applicableNfrClaimIssues(label, category, row, context) {
+    const issues = [];
     const allowedCapabilities = NFR_CATEGORY_CAPABILITIES[category];
     for (const claimId of row.claimIds) {
       const claim = context.claimById.get(claimId);
-      if (!claim) fail(`${label} references unknown claim '${claimId}'`);
+      if (!claim) {
+        issues.push(`${label} references unknown claim '${claimId}'`);
+        continue;
+      }
       if (!allowedCapabilities.some((capability) =>
         (claim.capabilities || []).includes(capability)))
-        fail(`${label} claim '${claimId}' must declare one of: ${allowedCapabilities.join(", ")}`);
+        issues.push(`${label} claim '${claimId}' must declare one of: ${allowedCapabilities.join(", ")}`);
       if (!context.taskClaimIds.has(claimId))
-        fail(`${label} claim '${claimId}' has no implementation task owner`);
+        issues.push(`${label} claim '${claimId}' has no implementation task owner`);
     }
     if (!allowedCapabilities.some((capability) =>
       context.configuredCapabilities.has(capability)))
-      fail(`${label} has no configured capable evidence provider`);
+      issues.push(`${label} has no configured capable evidence provider`);
     if (category === "securityPrivacy" && !row.claimIds.some((claimId) => {
       const claim = context.claimById.get(claimId);
       return /(?:cannot|denied|reject|unauthor|forbid|invalid|isolation|privacy|redact)/i
         .test(`${claim?.id || ""} ${claim?.scenario || ""}`);
-    })) fail(`${label} requires an observable negative-path or privacy-control claim`);
+    })) issues.push(`${label} requires an observable negative-path or privacy-control claim`);
+    return issues;
   }
 
-  function validateNfrCategory(id, category, row, context) {
+  function nfrCategoryIssues(id, category, row, context) {
+    const issues = [];
     const label = `${id}/grounding.yaml nfrAssessment.${category}`;
-    if (!row || !["applicable", "not-applicable"].includes(row.status))
-      fail(`${label}.status must be applicable|not-applicable`);
-    if (!String(row.sourceReason || "").trim()) fail(`${label}.sourceReason is required`);
-    if (!Array.isArray(row.claimIds)) fail(`${label}.claimIds must be an array`);
+    if (!row || !["applicable", "not-applicable"].includes(row.status)) {
+      issues.push(`${label}.status must be applicable|not-applicable`);
+      return issues;
+    }
+    if (!String(row.sourceReason || "").trim()) issues.push(`${label}.sourceReason is required`);
+    if (!Array.isArray(row.claimIds)) {
+      issues.push(`${label}.claimIds must be an array`);
+      return issues;
+    }
     if (context.required.has(category) && row.status !== "applicable")
-      fail(`${label} is required by the declared risk or evidence capability`);
+      issues.push(`${label} is required by the declared risk or evidence capability`);
     if (row.status === "not-applicable") {
-      if (row.claimIds.length) fail(`${label}.claimIds must be empty when not applicable`);
-      return;
+      if (row.claimIds.length) issues.push(`${label}.claimIds must be empty when not applicable`);
+      return issues;
     }
     const target = String(row.target || "").trim();
-    if (!target || /^none$/i.test(target)) fail(`${label}.target is required when applicable`);
+    if (!target || /^none$/i.test(target)) issues.push(`${label}.target is required when applicable`);
     if (["performance", "capacity"].includes(category) && !/\d/.test(target))
-      fail(`${label}.target must contain a measurable numeric threshold`);
-    if (row.claimIds.length === 0) fail(`${label}.claimIds must be non-empty when applicable`);
-    validateApplicableNfrClaim(label, category, row, context);
+      issues.push(`${label}.target must contain a measurable numeric threshold`);
+    if (row.claimIds.length === 0)
+      issues.push(`${label}.claimIds must be non-empty when applicable`);
+    issues.push(...applicableNfrClaimIssues(label, category, row, context));
+    return issues;
   }
 
   function validateNfrAssessment(id, state, value, parsedTasks, v2) {
@@ -1042,8 +1057,9 @@ export function createChangeValidationRuntime({
       fail(`${id}/grounding.yaml nfrAssessment is required for this change`);
     const categoryNames = Object.keys(NFR_CATEGORY_CAPABILITIES);
     const unknown = Object.keys(assessment).filter((name) => !categoryNames.includes(name));
-    if (unknown.length)
-      fail(`${id}/grounding.yaml nfrAssessment has unknown categories: ${unknown.join(", ")}`);
+    const issues = unknown.length
+      ? [`${id}/grounding.yaml nfrAssessment has unknown categories: ${unknown.join(", ")}`]
+      : [];
     const context = {
       required: requiredNfrCategories(state, v2),
       claimById: new Map(v2.contract.claims.map((claim) => [claim.id, claim])),
@@ -1054,7 +1070,8 @@ export function createChangeValidationRuntime({
         .map(([provider, config]) => providerCapability(provider, config)).filter(Boolean))
     };
     for (const category of categoryNames)
-      validateNfrCategory(id, category, assessment[category], context);
+      issues.push(...nfrCategoryIssues(id, category, assessment[category], context));
+    failValidationLayer(fail, "NFR assessment", issues);
   }
 
   function validateRequiredV2Sections(id, value, v2) {
@@ -1072,14 +1089,20 @@ export function createChangeValidationRuntime({
 
   function validateGroundingSourceRows(id, value, selected, parsedTasks, firstLock) {
     const repositories = new Map(selected.map((repository) => [repository.id, repository]));
+    const issues = [];
     const validateRows = (name, rows, allowedRoles) => {
       for (const [index, source] of rows.entries()) {
         const label = `${id}/grounding.yaml ${name}[${index}]`;
         const repository = repositories.get(source?.repository || "root");
         const sourcePath = String(source?.path || "");
-        if (!repository) fail(`${label} references an unselected repository`);
-        if (!sourcePath || isAbsolute(sourcePath))
-          fail(`${label}.path must be repository-relative`);
+        if (!repository) {
+          issues.push(`${label} references an unselected repository`);
+          continue;
+        }
+        if (!sourcePath || isAbsolute(sourcePath)) {
+          issues.push(`${label}.path must be repository-relative`);
+          continue;
+        }
         const absolute = resolve(repository.workspacePath, sourcePath);
         const readSource = value.readSet.find((row) =>
           (row.repository || "root") === repository.id && row.path === sourcePath &&
@@ -1088,9 +1111,9 @@ export function createChangeValidationRuntime({
           parsedTasks, firstLock);
         if (!pathInside(repository.workspacePath, absolute) ||
             (!existsSync(absolute) && !planned))
-          fail(`${label}.path does not resolve inside repository '${repository.id}'`);
+          issues.push(`${label}.path does not resolve inside repository '${repository.id}'`);
         if (!readSource)
-          fail(`${label} must appear in readSet with role ${allowedRoles.join("|")}`);
+          issues.push(`${label} must appear in readSet with role ${allowedRoles.join("|")}`);
       }
     };
     validateRows("productionEntry.paths", value.productionEntry.paths,
@@ -1099,115 +1122,132 @@ export function createChangeValidationRuntime({
       ["contract", "test-topology"]);
     validateRows("activationSemantics.activatedPaths",
       value.activationSemantics.activatedPaths, ["production-path", "runtime-path"]);
+    failValidationLayer(fail, "grounding source", issues);
   }
 
   function requiredInteractionFields(row, fields, label) {
     const missing = fields.filter((field) => !String(row?.[field] || "").trim());
-    if (missing.length)
-      fail(`${label} requires non-empty fields: ${missing.join(", ")}`);
+    return missing.length
+      ? [`${label} requires non-empty fields: ${missing.join(", ")}`]
+      : [];
   }
 
   function validateServiceInteractionRows(id, value) {
+    const issues = [];
     const interactionIds = new Set();
     for (const [index, row] of (value.serviceInteractions?.rows || []).entries()) {
       const label = `${id}/grounding.yaml serviceInteractions.rows[${index}]`;
-      requiredInteractionFields(row, [
+      issues.push(...requiredInteractionFields(row, [
         "id", "owner", "producer", "consumer", "contract", "delivery",
         "timeoutRetry", "idempotency", "ordering", "consistency", "rollout", "rollback"
-      ], label);
-      if (interactionIds.has(row.id)) fail(`${label}.id is duplicated`);
+      ], label));
+      if (interactionIds.has(row.id)) issues.push(`${label}.id is duplicated`);
       interactionIds.add(row.id);
     }
     const observed = new Set();
     for (const [index, row] of (value.observability?.rows || []).entries()) {
       const label = `${id}/grounding.yaml observability.rows[${index}]`;
-      requiredInteractionFields(row, [
+      issues.push(...requiredInteractionFields(row, [
         "interactionId", "correlation", "structuredEvents", "sli",
         "alert", "runbook", "operatorQuestion"
-      ], label);
+      ], label));
       if (row.interactionId !== "local" && !interactionIds.has(row.interactionId))
-        fail(`${label}.interactionId does not reference a service interaction`);
+        issues.push(`${label}.interactionId does not reference a service interaction`);
       observed.add(row.interactionId);
     }
     if (value.serviceInteractions?.status === "applicable")
       for (const interactionId of interactionIds)
         if (!observed.has(interactionId))
-          fail(`${id}/grounding.yaml observability must cover interaction '${interactionId}'`);
+          issues.push(`${id}/grounding.yaml observability must cover interaction '${interactionId}'`);
+    failValidationLayer(fail, "service interaction", issues);
   }
 
   function validateGroundingCriticalCases(id, rows) {
+    const issues = [];
     const criticalIds = new Set();
     for (const [index, row] of rows.entries()) {
       const label = `${id}/grounding.yaml criticalCases[${index}]`;
       if (!String(row?.id || "").trim() || criticalIds.has(row.id))
-        fail(`${label}.id must be non-empty and unique`);
+        issues.push(`${label}.id must be non-empty and unique`);
       if (!Array.isArray(row.claimIds) || row.claimIds.length === 0)
-        fail(`${label}.claimIds must be non-empty`);
+        issues.push(`${label}.claimIds must be non-empty`);
       if (!CRITICAL_CASE_ORACLES.includes(row.oracle))
-        fail(`${label}.oracle must be one of: ${CRITICAL_CASE_ORACLES.join("|")}`);
+        issues.push(`${label}.oracle must be one of: ${CRITICAL_CASE_ORACLES.join("|")}`);
       criticalIds.add(row.id);
     }
-    return criticalIds;
+    return { criticalIds, issues };
   }
 
   function validateGroundingMutants(id, rows, criticalIds) {
+    const issues = [];
     const mutantIds = new Set();
     for (const [index, row] of rows.entries()) {
       const label = `${id}/grounding.yaml mutants[${index}]`;
       if (!String(row?.id || "").trim() || mutantIds.has(row.id))
-        fail(`${label}.id must be non-empty and unique`);
+        issues.push(`${label}.id must be non-empty and unique`);
       if (!Array.isArray(row.claimIds) || row.claimIds.length === 0 ||
           !String(row.class || "").trim())
-        fail(`${label} requires claimIds and class`);
+        issues.push(`${label} requires claimIds and class`);
       if (!criticalIds.has(row.killerCaseId))
-        fail(`${label}.killerCaseId must name a critical case`);
+        issues.push(`${label}.killerCaseId must name a critical case`);
       mutantIds.add(row.id);
     }
+    return issues;
   }
 
   function validateCriticalCasesAndMutants(id, value) {
     if (!Array.isArray(value.criticalCases) || !Array.isArray(value.mutants))
       fail(`${id}/grounding.yaml criticalCases and mutants must be arrays`);
-    const criticalIds = validateGroundingCriticalCases(id, value.criticalCases);
-    validateGroundingMutants(id, value.mutants, criticalIds);
+    const { criticalIds, issues } = validateGroundingCriticalCases(id, value.criticalCases);
+    issues.push(...validateGroundingMutants(id, value.mutants, criticalIds));
+    failValidationLayer(fail, "critical case and mutant", issues);
   }
 
   function validateGroundingReadSet(id, value, repositories, firstLock, parsedTasks) {
     const roles = new Set(GROUNDING_READ_ROLES);
+    const issues = [];
     const immutableRoles = new Set([
       "requirement", "backlog", "architecture", "contract", "dependency-source", "history"
     ]);
     for (const [index, source] of value.readSet.entries()) {
       const label = `${id}/grounding.yaml readSet[${index}]`;
       const repository = repositories.get(source.repository || "root");
-      if (!repository) fail(`${label} references an unselected repository`);
+      if (!repository) {
+        issues.push(`${label} references an unselected repository`);
+        continue;
+      }
       if (!roles.has(source.role))
-        fail(`${label}.role must be one of: ${GROUNDING_READ_ROLES.join("|")}`);
+        issues.push(`${label}.role must be one of: ${GROUNDING_READ_ROLES.join("|")}`);
       if (!["full", "targeted"].includes(source.mode))
-        fail(`${label}.mode must be full|targeted`);
+        issues.push(`${label}.mode must be full|targeted`);
       const sourcePath = String(source.path || "");
-      if (!sourcePath || isAbsolute(sourcePath))
-        fail(`${label}.path must be repository-relative`);
+      if (!sourcePath || isAbsolute(sourcePath)) {
+        issues.push(`${label}.path must be repository-relative`);
+        continue;
+      }
       const absolute = resolve(repository.workspacePath, sourcePath);
       const pathExists = existsSync(absolute);
       const planned = plannedGroundingPathEligible(source, pathExists,
         parsedTasks, firstLock);
-      if (!pathInside(repository.workspacePath, absolute) || (!pathExists && !planned))
-        fail(`${label}.path does not resolve inside repository '${repository.id}'`);
+      const inside = pathInside(repository.workspacePath, absolute);
+      if (!inside || (!pathExists && !planned))
+        issues.push(`${label}.path does not resolve inside repository '${repository.id}'`);
       if (source.sha256 === "planned" && !planned)
-        fail(`${label}.sha256 may be 'planned' only for a new implementation-owned ` +
+        issues.push(`${label}.sha256 may be 'planned' only for a new implementation-owned ` +
           "production, runtime, test-topology, or dependency path");
       if (planned) continue;
+      if (!inside || !pathExists) continue;
       if (!/^[a-f0-9]{64}$/i.test(String(source.sha256 || "")))
-        fail(`${label}.sha256 must be a SHA-256 hex digest`);
+        issues.push(`${label}.sha256 must be a SHA-256 hex digest`);
       if ((firstLock || immutableRoles.has(source.role)) &&
           fileDigest(absolute) !== String(source.sha256).toLowerCase())
-        fail(`${label}.sha256 does not match the baseline file. ` +
+        issues.push(`${label}.sha256 does not match the baseline file. ` +
           `If '${sourcePath}' is intentionally edited by this change, its role ` +
           "must be production-path or runtime-path (immutable roles pin decision " +
           "sources); re-role the row and refresh its sha256. If the edit is " +
           "unintended drift, restore the file to its baseline.");
     }
+    failValidationLayer(fail, "grounding readSet", issues);
   }
 
   function validateGroundingTaskOverlap(id, value, parsedTasks) {
@@ -1237,13 +1277,14 @@ export function createChangeValidationRuntime({
       fail(`${id}/grounding.yaml security work requires a dependency-source readSet entry`);
   }
 
-  function validateGroundingPath(id, label, row, repositories, value, role,
+  function groundingPathIssues(id, label, row, repositories, value, role,
     failureRequired, parsedTasks, firstLock) {
+    const issues = [];
     const repository = repositories.get(row?.repository || "root");
     const sourcePath = String(row?.path || "");
-    if (!repository) fail(`${label} references an unselected repository`);
+    if (!repository) return [`${label} references an unselected repository`];
     if (!sourcePath || isAbsolute(sourcePath))
-      fail(`${label}.path must be repository-relative`);
+      return [`${label}.path must be repository-relative`];
     const absolute = resolve(repository.workspacePath, sourcePath);
     const includedSource = value.readSet.find((source) =>
       (source.repository || "root") === repository.id && source.path === sourcePath &&
@@ -1252,16 +1293,18 @@ export function createChangeValidationRuntime({
       parsedTasks, firstLock);
     if (!pathInside(repository.workspacePath, absolute) ||
         (!existsSync(absolute) && !planned))
-      fail(`${label}.path does not resolve inside repository '${repository.id}'`);
+      issues.push(`${label}.path does not resolve inside repository '${repository.id}'`);
     if (failureRequired && !String(row?.failure || "").trim())
-      fail(`${label}.failure is required`);
+      issues.push(`${label}.failure is required`);
     if (!includedSource)
-      fail(role
+      issues.push(role
         ? `${label} must appear in readSet with role ${role} and a baseline digest`
         : `${label} must appear in readSet with a baseline digest`);
+    return issues;
   }
 
-  function validateGroundingClaimEvidence(label, claim, evidenceClaim) {
+  function groundingClaimEvidenceIssues(label, claim, evidenceClaim) {
+    const issues = [];
     const classes = new Set([
       "static", "unit", "test", "integration", "live", "mutation", "security",
       "review", "acceptance", "browser", "deployment", "cross-repo-contract",
@@ -1269,14 +1312,14 @@ export function createChangeValidationRuntime({
     ]);
     if (!Array.isArray(claim.evidenceClass) || claim.evidenceClass.length === 0 ||
         claim.evidenceClass.some((entry) => !String(entry || "").trim()))
-      fail(`${label}.evidenceClass must be a non-empty string array`);
+      return [`${label}.evidenceClass must be a non-empty string array`];
     if (claim.evidenceClass.some((entry) => !classes.has(entry)))
-      fail(`${label}.evidenceClass contains an unsupported class`);
+      issues.push(`${label}.evidenceClass contains an unsupported class`);
     if (!String(claim.testDoubleGap || "").trim())
-      fail(`${label}.testDoubleGap must be none or describe the gap`);
+      issues.push(`${label}.testDoubleGap must be none or describe the gap`);
     if (claim.testDoubleGap !== "none" &&
         !claim.evidenceClass.some((entry) => ["integration", "live"].includes(entry)))
-      fail(`${label} declares a test-double gap without integration or live evidence`);
+      issues.push(`${label} declares a test-double gap without integration or live evidence`);
     const capabilities = new Set(evidenceClaim?.capabilities || []);
     const aliases = {
       static: ["static-analysis", "security-static"], unit: ["test"], test: ["test"],
@@ -1287,37 +1330,43 @@ export function createChangeValidationRuntime({
       "changed-quality": ["changed-quality"]
     };
     for (const evidenceClass of claim.evidenceClass)
-      if (!aliases[evidenceClass].some((capability) => capabilities.has(capability)))
-        fail(`${label}.evidenceClass '${evidenceClass}' is not declared by evidence.yaml for claim '${claim.id}'`);
+      if (aliases[evidenceClass] &&
+          !aliases[evidenceClass].some((capability) => capabilities.has(capability)))
+        issues.push(`${label}.evidenceClass '${evidenceClass}' is not declared by evidence.yaml for claim '${claim.id}'`);
     if (evidenceClaim?.impact === "high" && !claim.evidenceClass.some((entry) =>
       ["integration", "live", "security", "review"].includes(entry)))
-      fail(`${label} maps a high-impact claim only to low-fidelity evidence`);
+      issues.push(`${label} maps a high-impact claim only to low-fidelity evidence`);
+    return issues;
   }
 
   function validateGroundingClaims(id, value, contract, repositories,
     parsedTasks, firstLock) {
+    const issues = [];
     const claimIds = new Set(contract.claims.map((claim) => claim.id));
     if (!Array.isArray(value.claims) || value.claims.length !== claimIds.size)
-      fail(`${id}/grounding.yaml must map every evidence claim exactly once`);
+      issues.push(`${id}/grounding.yaml must map every evidence claim exactly once`);
     const seen = new Set();
-    for (const [index, claim] of value.claims.entries()) {
+    for (const [index, claim] of (Array.isArray(value.claims) ? value.claims : []).entries()) {
       const label = `${id}/grounding.yaml claims[${index}]`;
-      if (!claimIds.has(claim.id)) fail(`${label}.id references an unknown evidence claim`);
-      if (seen.has(claim.id)) fail(`${label}.id is duplicated`);
+      if (!claimIds.has(claim.id)) issues.push(`${label}.id references an unknown evidence claim`);
+      if (seen.has(claim.id)) issues.push(`${label}.id is duplicated`);
       seen.add(claim.id);
       if (!Array.isArray(claim.productionPath) || claim.productionPath.length === 0)
-        fail(`${label}.productionPath must be a non-empty array`);
-      for (const [pathIndex, row] of claim.productionPath.entries())
-        validateGroundingPath(id, `${label}.productionPath[${pathIndex}]`, row,
-          repositories, value, "production-path", false, parsedTasks, firstLock);
+        issues.push(`${label}.productionPath must be a non-empty array`);
+      for (const [pathIndex, row] of (Array.isArray(claim.productionPath)
+        ? claim.productionPath : []).entries())
+        issues.push(...groundingPathIssues(id, `${label}.productionPath[${pathIndex}]`, row,
+          repositories, value, "production-path", false, parsedTasks, firstLock));
       if (!Array.isArray(claim.failurePaths) || claim.failurePaths.length === 0)
-        fail(`${label}.failurePaths must be a non-empty array`);
-      for (const [pathIndex, row] of claim.failurePaths.entries())
-        validateGroundingPath(id, `${label}.failurePaths[${pathIndex}]`, row,
-          repositories, value, null, true, parsedTasks, firstLock);
+        issues.push(`${label}.failurePaths must be a non-empty array`);
+      for (const [pathIndex, row] of (Array.isArray(claim.failurePaths)
+        ? claim.failurePaths : []).entries())
+        issues.push(...groundingPathIssues(id, `${label}.failurePaths[${pathIndex}]`, row,
+          repositories, value, null, true, parsedTasks, firstLock));
       const evidenceClaim = contract.claims.find((entry) => entry.id === claim.id);
-      validateGroundingClaimEvidence(label, claim, evidenceClaim);
+      issues.push(...groundingClaimEvidenceIssues(label, claim, evidenceClaim));
     }
+    failValidationLayer(fail, "grounding claim", issues);
     return claimIds;
   }
 

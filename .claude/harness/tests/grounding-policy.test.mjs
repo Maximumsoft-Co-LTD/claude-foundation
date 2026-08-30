@@ -155,6 +155,32 @@ try {
     mutate(value);
     expectFailure(value, expected);
   }
+  const aggregateDecision = valid();
+  aggregateDecision.decisionBatch.source = "guess";
+  aggregateDecision.decisionBatch.reference = "";
+  writeGrounding(aggregateDecision);
+  assert.throws(() => runtime.groundingValue("change-a", state, packet),
+    (error) => /decisionBatch.source/.test(error.message) &&
+      /decisionBatch.reference is required/.test(error.message),
+    "decision validation reports independent repairs in one pass");
+  const aggregateReadSet = valid();
+  aggregateReadSet.readSet[0].role = "unknown";
+  aggregateReadSet.readSet[0].mode = "partial";
+  writeGrounding(aggregateReadSet);
+  assert.throws(() => runtime.groundingValue("change-a", state, packet),
+    (error) => /role must be one of/.test(error.message) &&
+      /mode must be full\|targeted/.test(error.message),
+    "readSet validation reports independent row repairs in one pass");
+  const aggregateClaim = valid();
+  aggregateClaim.claims[0].productionPath[0].path = "/absolute";
+  aggregateClaim.claims[0].failurePaths[0].failure = "";
+  aggregateClaim.claims[0].evidenceClass = ["unknown"];
+  writeGrounding(aggregateClaim);
+  assert.throws(() => runtime.groundingValue("change-a", state, packet),
+    (error) => /productionPath\[0\].path must be repository-relative/.test(error.message) &&
+      /failurePaths\[0\].failure is required/.test(error.message) &&
+      /evidenceClass contains an unsupported class/.test(error.message),
+    "claim validation reports path, failure, and evidence repairs in one pass");
   const implicitRoot = valid();
   delete implicitRoot.claims[0].productionPath[0].repository;
   delete implicitRoot.claims[0].failurePaths[0].repository;
@@ -333,6 +359,16 @@ try {
   missingProductionSource.readSet = missingProductionSource.readSet
     .filter((row) => row.path !== "production.mjs");
   expectFailure(missingProductionSource, /productionEntry.paths\[0\] must appear in readSet/);
+  const aggregateSources = v2();
+  aggregateSources.productionEntry.paths[0].path = "missing-production.mjs";
+  aggregateSources.realWire.contracts[0].path = "missing-wire.json";
+  writeGrounding(aggregateSources);
+  assert.throws(() => runtime.groundingValue("change-a", state, packet),
+    (error) => /productionEntry.paths\[0\].path does not resolve/.test(error.message) &&
+      /productionEntry.paths\[0\] must appear in readSet/.test(error.message) &&
+      /realWire.contracts\[0\].path does not resolve/.test(error.message) &&
+      /realWire.contracts\[0\] must appear in readSet/.test(error.message),
+    "source validation reports path and readSet repairs in one pass");
   const unselectedWireSource = v2();
   unselectedWireSource.realWire.contracts[0].repository = "other";
   expectFailure(unselectedWireSource, /realWire.contracts\[0\] references an unselected/);
@@ -463,6 +499,14 @@ try {
     mutate(value);
     expectFailure(value, expected, ownedTask);
   }
+  const aggregateNfr = structuredClone(nfr);
+  aggregateNfr.nfrAssessment.performance.target = "fast";
+  aggregateNfr.nfrAssessment.accessibility.claimIds = ["claim-a"];
+  writeGrounding(aggregateNfr);
+  assert.throws(() => runtime.groundingValue("change-a", state, packet, ownedTask),
+    (error) => /performance.target must contain a measurable numeric threshold/.test(error.message) &&
+      /accessibility.claimIds must be empty when not applicable/.test(error.message),
+    "NFR validation reports independent category repairs in one pass");
   const missingTarget = structuredClone(nfr);
   missingTarget.nfrAssessment.performance.target = "none";
   writeGrounding(missingTarget);

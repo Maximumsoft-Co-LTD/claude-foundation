@@ -88,8 +88,12 @@ if (!phase) {
 
 if (violations.length === 0) process.exit(0);
 
+const changeShellRecovery = phase === "change" && tool === "Bash"
+  ? " Use Edit or Write for openspec/changes artifacts; Bash remains read-only during Change."
+  : "";
 const reason = `BLOCKED: phase guard (${phase || "unknown"}/${tool}): ${violations.join("; ")}. ` +
-  "No mutation ran. Continue inside the active phase workspace, or ask the user only if scope or authority must change.";
+  `No mutation ran.${changeShellRecovery} Continue inside the active phase workspace, ` +
+  "or ask the user only if scope or authority must change.";
 recordAudit({ phase: phase || "unknown", tool, mode, reason });
 
 if (mode === "block") {

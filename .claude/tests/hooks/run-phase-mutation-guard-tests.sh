@@ -27,6 +27,10 @@ assert_eq "Change permits its OpenSpec draft" "" "$out"
 out="$(invoke change block "" "$(write_event "$TMP/project/src/app.js")")"
 assert_contains "Change blocks product mutation" "$out" '"decision":"block"'
 
+out="$(invoke change block "" "$(bash_event 'touch openspec/changes/demo/tasks.md')")"
+assert_contains "Change shell recovery directs artifact edits to structured tools" \
+  "$out" 'Use Edit or Write for openspec/changes artifacts'
+
 out="$(invoke build block "$TMP/workspace" "$(write_event "$TMP/workspace/src/app.js")")"
 assert_eq "Build permits isolated workspace mutation" "" "$out"
 
