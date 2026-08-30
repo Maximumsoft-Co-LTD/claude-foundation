@@ -55,3 +55,11 @@ Complete artifacts/tasks, validate, run Build doctor, and sync. Offer
 acceptance from silence, or expose harness fields. Summarize outcome,
 boundaries, proof, completed work, and next action in the user's language;
 keep lifecycle fields internal.
+
+The generated templates plus `change validate` output are the complete public
+authoring contract. Never inspect `.claude/harness/runtime/**` to infer a field
+or repair validation. For a genuinely new production, runtime, test-topology,
+or dependency path, put it in an implementation task and use `sha256: planned`
+in `grounding.yaml`; never create product code during Change just to obtain a
+digest. Validation names the artifact, line, marker, and typed recovery. If it
+does not, report a harness defect instead of reading implementation internals.

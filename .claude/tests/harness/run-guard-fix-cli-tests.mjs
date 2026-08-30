@@ -11,7 +11,8 @@ import { delimiter, join } from "node:path";
 import { routeRuntimeCommand } from "../../harness/runtime/core/cli-router.mjs";
 import { createFlagParser } from "../../harness/runtime/core/cli-flags.mjs";
 import {
-  assertOpenSpecStrictValid, groundingTaskOverlapFindings
+  assertOpenSpecStrictValid, groundingTaskOverlapFindings,
+  plannedGroundingPathEligible
 } from "../../harness/runtime/workflow/change-validation.mjs";
 
 const fail = (message) => { throw new Error(message); };
@@ -353,6 +354,29 @@ exit ${validateExit}
   }]);
   assert.equal(wildcard.length, 1,
     "interior file wildcards must not bypass immutable grounding overlap checks");
+}
+
+// --- greenfield paths are declared, not created prematurely during Change ---
+{
+  const tasks = [{
+    id: "T003", done: false,
+    text: "T003 create app [kind:implementation] [paths:src/**,package.json]"
+  }];
+  const planned = {
+    repository: "root", path: "src/index.js", role: "production-path",
+    sha256: "planned"
+  };
+  assert.equal(plannedGroundingPathEligible(planned, false, tasks, true), true);
+  assert.equal(plannedGroundingPathEligible(planned, true, tasks, true), false,
+    "an existing path cannot evade its first-lock baseline digest");
+  assert.equal(plannedGroundingPathEligible(planned, true, tasks, false), true,
+    "the same declaration remains valid after Build creates the owned path");
+  assert.equal(plannedGroundingPathEligible({
+    ...planned, path: "other/index.js"
+  }, false, tasks, true), false, "a task must own every planned path");
+  assert.equal(plannedGroundingPathEligible({
+    ...planned, role: "requirement"
+  }, false, tasks, true), false, "immutable requirements still require a digest");
 }
 
 console.log("guard-fix CLI seams: all cases passed");

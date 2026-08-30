@@ -48,6 +48,11 @@ metadata, stderr, and the formatted scorecard are kept under
 `results/openspec-native-runs/<run-id>/`. The results directory is ignored by
 Git.
 
+Live runs retain Claude's verbose `stream-json` as `host.stream.jsonl`. A
+timeout can therefore keep observed browser and task-mirror counts even when
+the final result envelope never arrives. Cost remains unavailable in that case;
+the scorecard never guesses dollars from an external price table.
+
 ## Collection-only verification
 
 Fixtures and recovered runs can be scored without launching Claude:

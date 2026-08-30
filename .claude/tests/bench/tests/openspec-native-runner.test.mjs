@@ -12,7 +12,7 @@ import addFormats from "ajv-formats";
 
 import {
   assertDisposableProject, collectNativeScorecard, discoverChangeId,
-  observedOutcome, pendingTaskCount
+  observedOutcome, parseHostOutput, pendingTaskCount
 } from "../openspec-native/run.mjs";
 
 const schema = JSON.parse(readFileSync(new URL(
@@ -179,4 +179,31 @@ printf '%s' '{"type":"result","subtype":"success","is_error":false,"total_cost_u
     rmSync(project, { recursive: true, force: true });
     rmSync(outputDir, { recursive: true, force: true });
   }
+});
+
+test("stream parser preserves partial tool telemetry before a final result", () => {
+  const output = [
+    { type: "assistant", message: { content: [{
+      type: "tool_use", id: "one", name: "mcp__browseros-neo__run", input: {}
+    }] } },
+    { type: "assistant", message: { content: [{
+      type: "tool_use", id: "two", name: "Bash",
+      input: { command: "foundation task-mirror sync" }
+    }] } },
+    { type: "assistant", message: { content: [{
+      type: "tool_use", id: "one", name: "mcp__browseros-neo__run", input: {}
+    }] } }
+  ].map(JSON.stringify).join("\n");
+  const parsed = parseHostOutput(output);
+  assert.deepEqual(parsed.envelope, {});
+  assert.deepEqual(parsed.hostTelemetry, {
+    total: 2, browserCalls: 1, taskMirrorOperations: 1
+  });
+});
+
+test("missing collect-only host telemetry remains unknown rather than zero", () => {
+  const parsed = parseHostOutput("{}");
+  assert.deepEqual(parsed.hostTelemetry, {
+    total: null, browserCalls: null, taskMirrorOperations: null
+  });
 });

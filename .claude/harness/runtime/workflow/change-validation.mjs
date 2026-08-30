@@ -100,6 +100,22 @@ export function groundingTaskOverlapFindings(readSet = [], tasks = []) {
   return findings;
 }
 
+function taskOwnsGroundingPath(tasks, repository, path) {
+  return tasks.map(taskMetadata).some((task) =>
+    ["implementation", "migration"].includes(task.kind) &&
+    task.repository === repository && task.paths.some((scope) =>
+      scopeCouldTouchPath(scope, path)));
+}
+
+export function plannedGroundingPathEligible(source, pathExists, tasks = [], firstLock = true) {
+  if (source?.sha256 !== "planned") return false;
+  if (!["production-path", "runtime-path", "test-topology", "dependency-source"]
+    .includes(source?.role)) return false;
+  if (firstLock && pathExists) return false;
+  return taskOwnsGroundingPath(tasks, source.repository || "root",
+    normalizedScope(source.path));
+}
+
 export function claimContractIssues(claims = [], selectedRepositoryIds = new Set()) {
   return claims.flatMap((claim) => {
     const issues = [];
@@ -769,8 +785,13 @@ export function createChangeValidationRuntime({
       const artifact = join(dir, name);
       if (!existsSync(artifact)) continue;
       const content = readFileSync(artifact, "utf8");
-      for (const [label, pattern] of scaffoldPatterns)
-        if (pattern.test(content)) findings.push(`${name}: ${label}`);
+      for (const [label, pattern] of scaffoldPatterns) {
+        const match = pattern.exec(content);
+        if (!match) continue;
+        const line = content.slice(0, match.index).split(/\r?\n/).length;
+        const excerpt = match[0].split(/\r?\n/)[0].trim().slice(0, 72);
+        findings.push(`${name}:${line}: ${label}${excerpt ? ` (${excerpt})` : ""}`);
+      }
     }
     if (findings.length)
       fail(`change artifacts still contain scaffold or unresolved content: ${findings.join("; ")}`);
@@ -1014,7 +1035,7 @@ export function createChangeValidationRuntime({
       fail(`${id}/grounding.yaml observability is required for every declared service interaction`);
   }
 
-  function validateGroundingSourceRows(id, value, selected) {
+  function validateGroundingSourceRows(id, value, selected, parsedTasks, firstLock) {
     const repositories = new Map(selected.map((repository) => [repository.id, repository]));
     const validateRows = (name, rows, allowedRoles) => {
       for (const [index, source] of rows.entries()) {
@@ -1025,11 +1046,15 @@ export function createChangeValidationRuntime({
         if (!sourcePath || isAbsolute(sourcePath))
           fail(`${label}.path must be repository-relative`);
         const absolute = resolve(repository.workspacePath, sourcePath);
-        if (!pathInside(repository.workspacePath, absolute) || !existsSync(absolute))
-          fail(`${label}.path does not resolve inside repository '${repository.id}'`);
-        if (!value.readSet.some((row) =>
+        const readSource = value.readSet.find((row) =>
           (row.repository || "root") === repository.id && row.path === sourcePath &&
-          allowedRoles.includes(row.role)))
+          allowedRoles.includes(row.role));
+        const planned = plannedGroundingPathEligible(readSource, existsSync(absolute),
+          parsedTasks, firstLock);
+        if (!pathInside(repository.workspacePath, absolute) ||
+            (!existsSync(absolute) && !planned))
+          fail(`${label}.path does not resolve inside repository '${repository.id}'`);
+        if (!readSource)
           fail(`${label} must appear in readSet with role ${allowedRoles.join("|")}`);
       }
     };
@@ -1111,7 +1136,7 @@ export function createChangeValidationRuntime({
     validateGroundingMutants(id, value.mutants, criticalIds);
   }
 
-  function validateGroundingReadSet(id, value, repositories, firstLock) {
+  function validateGroundingReadSet(id, value, repositories, firstLock, parsedTasks) {
     const roles = new Set([
       "requirement", "backlog", "architecture", "contract", "composition-root",
       "runtime-path", "production-path", "test-topology", "dependency-source", "history"
@@ -1130,8 +1155,15 @@ export function createChangeValidationRuntime({
       if (!sourcePath || isAbsolute(sourcePath))
         fail(`${label}.path must be repository-relative`);
       const absolute = resolve(repository.workspacePath, sourcePath);
-      if (!pathInside(repository.workspacePath, absolute) || !existsSync(absolute))
+      const pathExists = existsSync(absolute);
+      const planned = plannedGroundingPathEligible(source, pathExists,
+        parsedTasks, firstLock);
+      if (!pathInside(repository.workspacePath, absolute) || (!pathExists && !planned))
         fail(`${label}.path does not resolve inside repository '${repository.id}'`);
+      if (source.sha256 === "planned" && !planned)
+        fail(`${label}.sha256 may be 'planned' only for a new implementation-owned ` +
+          "production, runtime, test-topology, or dependency path");
+      if (planned) continue;
       if (!/^[a-f0-9]{64}$/i.test(String(source.sha256 || "")))
         fail(`${label}.sha256 must be a SHA-256 hex digest`);
       if ((firstLock || immutableRoles.has(source.role)) &&
@@ -1171,21 +1203,25 @@ export function createChangeValidationRuntime({
       fail(`${id}/grounding.yaml security work requires a dependency-source readSet entry`);
   }
 
-  function validateGroundingPath(id, label, row, repositories, value, role, failureRequired) {
+  function validateGroundingPath(id, label, row, repositories, value, role,
+    failureRequired, parsedTasks, firstLock) {
     const repository = repositories.get(row?.repository || "root");
     const sourcePath = String(row?.path || "");
     if (!repository) fail(`${label} references an unselected repository`);
     if (!sourcePath || isAbsolute(sourcePath))
       fail(`${label}.path must be repository-relative`);
     const absolute = resolve(repository.workspacePath, sourcePath);
-    if (!pathInside(repository.workspacePath, absolute) || !existsSync(absolute))
+    const includedSource = value.readSet.find((source) =>
+      (source.repository || "root") === repository.id && source.path === sourcePath &&
+      (!role || source.role === role));
+    const planned = plannedGroundingPathEligible(includedSource, existsSync(absolute),
+      parsedTasks, firstLock);
+    if (!pathInside(repository.workspacePath, absolute) ||
+        (!existsSync(absolute) && !planned))
       fail(`${label}.path does not resolve inside repository '${repository.id}'`);
     if (failureRequired && !String(row?.failure || "").trim())
       fail(`${label}.failure is required`);
-    const included = value.readSet.some((source) =>
-      (source.repository || "root") === repository.id && source.path === sourcePath &&
-      (!role || source.role === role));
-    if (!included)
+    if (!includedSource)
       fail(role
         ? `${label} must appear in readSet with role ${role} and a baseline digest`
         : `${label} must appear in readSet with a baseline digest`);
@@ -1224,7 +1260,8 @@ export function createChangeValidationRuntime({
       fail(`${label} maps a high-impact claim only to low-fidelity evidence`);
   }
 
-  function validateGroundingClaims(id, value, contract, repositories) {
+  function validateGroundingClaims(id, value, contract, repositories,
+    parsedTasks, firstLock) {
     const claimIds = new Set(contract.claims.map((claim) => claim.id));
     if (!Array.isArray(value.claims) || value.claims.length !== claimIds.size)
       fail(`${id}/grounding.yaml must map every evidence claim exactly once`);
@@ -1238,12 +1275,12 @@ export function createChangeValidationRuntime({
         fail(`${label}.productionPath must be a non-empty array`);
       for (const [pathIndex, row] of claim.productionPath.entries())
         validateGroundingPath(id, `${label}.productionPath[${pathIndex}]`, row,
-          repositories, value, "production-path", false);
+          repositories, value, "production-path", false, parsedTasks, firstLock);
       if (!Array.isArray(claim.failurePaths) || claim.failurePaths.length === 0)
         fail(`${label}.failurePaths must be a non-empty array`);
       for (const [pathIndex, row] of claim.failurePaths.entries())
         validateGroundingPath(id, `${label}.failurePaths[${pathIndex}]`, row,
-          repositories, value, null, true);
+          repositories, value, null, true, parsedTasks, firstLock);
       const evidenceClaim = contract.claims.find((entry) => entry.id === claim.id);
       validateGroundingClaimEvidence(label, claim, evidenceClaim);
     }
@@ -1325,19 +1362,20 @@ export function createChangeValidationRuntime({
       } = v2;
       validateNfrAssessment(id, state, value, parsedTasks, v2);
       validateRequiredV2Sections(id, value, v2);
-      validateGroundingSourceRows(id, value, selected);
+      validateGroundingSourceRows(id, value, selected, parsedTasks, firstLock);
       validateServiceInteractionRows(id, value);
       validateCriticalCasesAndMutants(id, value);
     }
 
     const repositories = new Map(validationRepositories(id, state, dir)
       .map((repository) => [repository.id, repository]));
-    validateGroundingReadSet(id, value, repositories, firstLock);
+    validateGroundingReadSet(id, value, repositories, firstLock, parsedTasks);
     validateGroundingTaskOverlap(id, value, parsedTasks);
 
     const contract = evidence(id, dir);
     validateGroundingReadRoles(id, state, contract, value.readSet);
-    const claimIds = validateGroundingClaims(id, value, contract, repositories);
+    const claimIds = validateGroundingClaims(id, value, contract, repositories,
+      parsedTasks, firstLock);
 
     if (value.version === 2) {
       validateV2ClaimCoverage(id, value, contract, claimIds);

@@ -133,7 +133,7 @@ function metricsFor(project, changeId) {
 export function collectNativeScorecard({
   scenario, repeat, runId, project, config = {}, envelope = {}, metrics = null,
   quality = null, operationRows = null, stopwatch = {}, exitCode = 0,
-  timedOut = false, changeId = null, provenance = {}
+  timedOut = false, changeId = null, provenance = {}, hostTelemetry = {}
 }) {
   const discovered = discoverChangeId(project, changeId, stopwatch.startedEpochMs ?? null);
   const resolvedMetrics = metrics ?? metricsFor(project, discovered) ?? {};
@@ -145,7 +145,7 @@ export function collectNativeScorecard({
     join(project, ".foundation/test-results/quality/crap.json"));
   return buildScorecard({
     scenario, repeat, runId, config, envelope, metrics: resolvedMetrics,
-    quality: qualityReport, operationRows: operations,
+    quality: qualityReport, operationRows: operations, hostTelemetry,
     stopwatch,
     outcome: observedOutcome({
       project, changeId: discovered, envelope, exitCode, timedOut
@@ -165,7 +165,8 @@ function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs }) {
     const startedAt = new Date().toISOString();
     const startedEpochMs = Date.now();
     const started = performance.now();
-    const child = spawn(claudeBin, ["-p", prompt, "--output-format", "json", ...claudeArgs], {
+    const child = spawn(claudeBin,
+      ["-p", prompt, "--output-format", "stream-json", "--verbose", ...claudeArgs], {
       cwd: project, env: process.env, detached: process.platform !== "win32",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -215,8 +216,44 @@ function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs }) {
   });
 }
 
-function parseEnvelope(stdout) {
-  try { return JSON.parse(stdout); } catch { return {}; }
+function streamRows(stdout) {
+  return String(stdout || "").split(/\r?\n/).filter(Boolean)
+    .flatMap((line) => { try { return [JSON.parse(line)]; } catch { return []; } });
+}
+
+function hostToolCalls(rows) {
+  const calls = rows.flatMap((row) => row?.type === "assistant" &&
+    Array.isArray(row.message?.content) ? row.message.content : [])
+    .filter((item) => item?.type === "tool_use");
+  const unique = [...new Map(calls.map((call, index) =>
+    [call.id || `anonymous-${index}`, call])).values()];
+  const browser = unique.filter((call) =>
+    /(?:^|__)(?:browseros(?:-neo)?|browser|chrome)(?:__|$)/i.test(call.name || ""));
+  const taskMirror = unique.filter((call) => {
+    const command = call.input?.command || "";
+    return /(?:task(?:s)?[-_ ]mirror|mirror[-_ ]task(?:s)?|task[-_ ]ledger)/i
+      .test(`${call.name || ""} ${command}`);
+  });
+  return { total: unique.length, browserCalls: browser.length,
+    taskMirrorOperations: taskMirror.length };
+}
+
+export function parseHostOutput(stdout) {
+  const rows = streamRows(stdout);
+  const isStream = rows.some((row) =>
+    ["system", "assistant", "user", "result"].includes(row?.type));
+  if (!isStream) {
+    try {
+      const envelope = JSON.parse(stdout);
+      return { envelope, hostTelemetry: { total: null, browserCalls: null,
+        taskMirrorOperations: null }, rows: [envelope] };
+    } catch {
+      return { envelope: {}, hostTelemetry: { total: null, browserCalls: null,
+        taskMirrorOperations: null }, rows: [] };
+    }
+  }
+  const envelope = [...rows].reverse().find((row) => row?.type === "result") || {};
+  return { envelope, hostTelemetry: hostToolCalls(rows), rows };
 }
 
 function writeResult(output, scorecard) {
@@ -255,7 +292,8 @@ async function main() {
       timeoutMs: Number(args["timeout-ms"] || 1800000)
     });
   }
-  const envelope = parseEnvelope(execution.stdout);
+  const parsedHost = parseHostOutput(execution.stdout);
+  const envelope = parsedHost.envelope;
   const scorecard = collectNativeScorecard({
     scenario, repeat, runId, project,
     config: {
@@ -265,13 +303,14 @@ async function main() {
     },
     envelope, stopwatch: execution.stopwatch,
     exitCode: execution.exitCode, timedOut: execution.timedOut,
-    changeId: args["change-id"] || null,
+    changeId: args["change-id"] || null, hostTelemetry: parsedHost.hostTelemetry,
     provenance: { requestedModel: args.model || null }
   });
   writeResult(output, scorecard);
   const artifactDir = join(dirname(output), "openspec-native-runs", runId);
   mkdirSync(artifactDir, { recursive: true });
   writeFileSync(join(artifactDir, "host-result.json"), `${JSON.stringify(envelope, null, 2)}\n`);
+  writeFileSync(join(artifactDir, "host.stream.jsonl"), execution.stdout);
   writeFileSync(join(artifactDir, "host.stderr.log"), execution.stderr);
   writeFileSync(join(artifactDir, "scorecard.json"), `${JSON.stringify(scorecard, null, 2)}\n`);
   process.stdout.write(`${JSON.stringify(scorecard, null, 2)}\n`);

@@ -72,7 +72,7 @@
       "path": "replace-with-relevant-file",
       "role": "requirement",
       "mode": "full",
-      "sha256": "replace-with-file-sha256"
+      "sha256": "replace-with-file-sha256-or-planned-for-a-new-task-owned-path"
     }
   ],
   "claims": [

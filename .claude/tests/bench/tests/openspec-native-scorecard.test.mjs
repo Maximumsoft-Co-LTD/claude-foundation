@@ -45,6 +45,7 @@ function fixture(overrides = {}) {
       { operation: "proof-run", status: "completed" },
       { operation: "land-check", status: "blocked" }
     ],
+    hostTelemetry: { total: 12, browserCalls: 3, taskMirrorOperations: 0 },
     quality: {
       summary: { functions: 2, pass: 1, warn: 1, fail: 0, unmapped: 0 },
       functions: [
@@ -70,6 +71,8 @@ test("scorecard validates and keeps runner walltime separate from host duration"
   assert.equal(scorecard.usage.costUsd, 4.25);
   assert.equal(scorecard.usage.costSource, "host-result-envelope");
   assert.equal(scorecard.operations.total, 3);
+  assert.equal(scorecard.operations.browserCalls, 3);
+  assert.equal(scorecard.operations.taskMirrorOperations, 0);
   assert.deepEqual(scorecard.operations.byCommand, {
     "change-validate": 1, "proof-run": 1, "land-check": 1
   });

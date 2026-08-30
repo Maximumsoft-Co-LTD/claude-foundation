@@ -203,6 +203,12 @@ assert_file_contains "dev command uses atomic rapid start" \
 assert_file_contains "dev routes every fresh intent through complete Change intake" \
   "$ROOT/.claude/commands/dev.md" \
   'For all fresh work use `/change`'
+assert_file_contains "dev enforces fresh phase contexts" \
+  "$ROOT/.claude/commands/dev.md" \
+  'separate fresh Agent'
+assert_file_contains "change forbids runtime archaeology" \
+  "$ROOT/.claude/skills/change/references/workflow.md" \
+  'Never inspect `.claude/harness/runtime/**`'
 assert_file_contains "change command selects rapid before creation" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
   "classify before creating it"

@@ -108,7 +108,7 @@ function qualitySummary(report) {
   };
 }
 
-function operationSummary(rows, metrics) {
+function operationSummary(rows, metrics, hostTelemetry = {}) {
   const operations = Array.isArray(rows) ? rows : [];
   const profile = object(metrics.commandProfile);
   const byCommand = {};
@@ -130,8 +130,8 @@ function operationSummary(rows, metrics) {
     duplicateCandidates: count(profile.sameInputCheckCandidates),
     duplicateMeasurement: profile.measurement
       ? measurement(profile.measurement) : "unavailable",
-    browserCalls: null,
-    taskMirrorOperations: null
+    browserCalls: count(hostTelemetry.browserCalls),
+    taskMirrorOperations: count(hostTelemetry.taskMirrorOperations)
   };
 }
 
@@ -208,7 +208,7 @@ export function buildScorecard(input) {
       cacheCreationTokens: measured(metrics.cacheCreationTokens),
       cacheReadTokens: measured(metrics.cacheReadTokens)
     },
-    operations: operationSummary(input.operationRows, metrics),
+    operations: operationSummary(input.operationRows, metrics, input.hostTelemetry),
     quality: qualitySummary(input.quality),
     evidenceReuse: {
       count: count(metrics.evidenceReuse?.count),
