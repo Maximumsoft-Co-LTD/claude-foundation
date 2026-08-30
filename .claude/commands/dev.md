@@ -3,18 +3,18 @@ description: Compose change → build → prove.
 argument-hint: <intent> | --resume <change> | --plan-only <intent>
 ---
 
-Execute **$ARGUMENTS**.
+`--resume` continues; `--plan-only` stops after Change.
 
-`--resume` continues incomplete work without replay. `--plan-only` stops after Change.
+For all fresh work use `/change`; follow its workflow. After doctor and its
+Decision Sheet, immediately run `claude-foundation change new "<intent>"` to bind
+Change ID/budget before authoring. `change start --template` requires a complete
+supplied draft.
 
-For all fresh work use `/change`; only it runs `change start --template` after
-the complete read and Decision Sheet. Run Build and Prove in separate fresh Agent
-sessions with only the phase command and change ID; await each.
+Run Build and Prove in separate fresh Agent sessions with phase command and change ID;
+await each.
 
-Do not reread framework files unless blocked. Report progress, behavior,
-evidence, risk, and next action in the user's language.
+Do not reread framework files. Report evidence and next action.
 
 Workflow is mandatory. Code/test success without Foundation runtime state is a failed `/dev` invocation.
 
-Never Land, commit, push, open a PR, create `.workflow/` state, lifecycle agents,
-phase mirrors, or another ledger.
+Never Land, commit, push, open a PR, or create another ledger.

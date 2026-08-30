@@ -48,6 +48,24 @@ else
   pass "hook behavior skipped without jq (hooks intentionally fail open)"
 fi
 
+DEV_TRANSCRIPT="$(mktemp)"
+printf '%s\n' '{"type":"last-prompt","lastPrompt":"/dev create app todolist"}' > "$DEV_TRANSCRIPT"
+blocked_runtime="$(printf '%s' "{\"transcript_path\":\"$DEV_TRANSCRIPT\",\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\".claude/harness/runtime/workflow/change-validation.mjs\"}}" |
+  sh "$ROOT/.claude/hooks/authoring-surface-guard.sh")"
+assert_contains "dev authoring guard blocks managed runtime reads" \
+  "$blocked_runtime" '"decision":"block"'
+blocked_hook="$(printf '%s' "{\"transcript_path\":\"$DEV_TRANSCRIPT\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"sed -n 1,80p .claude/hooks/phase-mutation-guard.mjs\"}}" |
+  sh "$ROOT/.claude/hooks/authoring-surface-guard.sh")"
+assert_contains "dev authoring guard blocks managed hook archaeology" \
+  "$blocked_hook" '"decision":"block"'
+allowed_public="$(printf '%s' "{\"transcript_path\":\"$DEV_TRANSCRIPT\",\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\".claude/harness/EVIDENCE.md\"}}" |
+  sh "$ROOT/.claude/hooks/authoring-surface-guard.sh")"
+assert_eq "dev authoring guard allows public operator references" "" "$allowed_public"
+allowed_non_dev="$(printf '%s' '{"tool_name":"Read","tool_input":{"file_path":".claude/harness/runtime/workflow/change-validation.mjs"}}' |
+  sh "$ROOT/.claude/hooks/authoring-surface-guard.sh")"
+assert_eq "authoring guard leaves non-dev sessions unchanged" "" "$allowed_non_dev"
+rm -f "$DEV_TRANSCRIPT"
+
 event='{"tool_name":"Write","tool_input":{"file_path":"/not/a/project/file.js"}}'
 assert_cmd_zero "lint hook safely ignores files outside project" \
   sh -c 'printf "%s" "$1" | CLAUDE_PROJECT_DIR="$2" bash "$3"' \

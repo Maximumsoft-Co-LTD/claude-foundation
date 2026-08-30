@@ -242,6 +242,10 @@ assert_file_not_contains "superseded phase guard command retired on upgrade" \
   "$TARGET/.claude/settings.json" "phase-mutation-guard.mjs"
 assert_eq "exactly one phase guard is wired after upgrade" "1" \
   "$(grep -c 'phase-mutation-guard\.sh' "$TARGET/.claude/settings.json")"
+assert_eq "exactly one authoring surface guard is wired after upgrade" "1" \
+  "$(grep -c 'authoring-surface-guard\.sh' "$TARGET/.claude/settings.json")"
+assert_file_exists "authoring surface guard is installed" \
+  "$TARGET/.claude/hooks/authoring-surface-guard.mjs"
 assert_file_contains "request telemetry binds once at session lifecycle" \
   "$TARGET/.claude/settings.json" "session-context.sh"
 assert_file_contains "user CLAUDE content preserved" "$TARGET/CLAUDE.md" "# User project"

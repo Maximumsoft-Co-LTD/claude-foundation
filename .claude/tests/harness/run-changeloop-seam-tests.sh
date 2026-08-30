@@ -623,6 +623,8 @@ if command -v jq > /dev/null 2>&1; then
     "$target/.claude/settings.json" "phase-mutation-guard.mjs"
   assert_eq "exactly one phase guard is wired after upgrading" "1" \
     "$(grep -c 'phase-mutation-guard\.sh' "$target/.claude/settings.json")"
+  assert_eq "exactly one authoring surface guard is wired after upgrading" "1" \
+    "$(grep -c 'authoring-surface-guard\.sh' "$target/.claude/settings.json")"
 else
   pass "upgrade retirement skipped: jq unavailable, installer merges manually"
   pass "upgrade retirement skipped: jq unavailable, installer merges manually"

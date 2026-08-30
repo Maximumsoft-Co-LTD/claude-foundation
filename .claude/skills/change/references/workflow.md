@@ -44,11 +44,18 @@ sections that contain requirements and delete every unused template section.
 Record AWS/IAM/secret/Terraform/deploy/restart ownership in `handoffs.yaml` with
 timing, activation safety, evidence, runbook, rollback, claims, and tasks.
 
-Run `doctor --stage change`; reuse an existing change. Otherwise classify before creating it:
-rapid is only low-impact isolated unit/static work. Resolve impact, coupling,
-security, surface, acceptance, and review. Omit `--security` when there are no triggers.
-Declare surface, wire evidence, and settle the reviewer now. Prove must not
-discover an unnamed operator.
+Run `doctor --stage change`; reuse an existing change. Otherwise classify before creating it
+from the user's intent without reading framework implementation: rapid is only
+low-impact isolated unit/static work. If a material choice is genuinely
+unresolved, ask every such choice in one Decision Sheet; otherwise record
+reviewed defaults and continue. Then immediately run
+`claude-foundation change new "<intent>"` so the generated artifacts become the
+authoring surface and the session budget is bound before further reads. Resolve
+impact, coupling, security, surface, acceptance, and review. Omit `--security` when there are no triggers.
+Declare surface, wire evidence, and settle the
+reviewer now. Prove must not discover an unnamed operator. Use `change start`
+only when the caller already supplied a complete structured draft; do not emit
+its template merely to rediscover the generated artifact contract.
 
 Complete artifacts/tasks, validate, run Build doctor, and sync. Offer
 `change abandon` for an unprovable contract; never retire one unasked, infer
@@ -56,9 +63,10 @@ acceptance from silence, or expose harness fields. Summarize outcome,
 boundaries, proof, completed work, and next action in the user's language;
 keep lifecycle fields internal.
 
-The generated templates plus `change validate` output are the complete public
-authoring contract. Never inspect managed `.claude/harness/**` or
-`.claude/hooks/**` to infer a field or repair validation. For a genuinely new production, runtime, test-topology,
+The generated Change artifacts plus `change validate` output are the complete
+public authoring contract. Public operator references such as
+`.claude/harness/EVIDENCE.md` may explain configured adapters. Never inspect managed `.claude/harness/**`
+or `.claude/hooks/**` to infer a field or repair validation. For a genuinely new production, runtime, test-topology,
 or dependency path, put it in an implementation task and use `sha256: planned`
 in `grounding.yaml`; never create product code during Change just to obtain a
 digest. Validation names the artifact, line, marker, and typed recovery. If it
