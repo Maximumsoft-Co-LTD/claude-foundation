@@ -9,6 +9,14 @@ import {
 } from "../contracts/change-artifacts.mjs";
 import { createSpecDeltaValidator } from "./validation/spec-delta.mjs";
 
+const GROUNDING_READ_ROLES = [
+  "requirement", "backlog", "architecture", "contract", "composition-root",
+  "runtime-path", "production-path", "test-topology", "dependency-source", "history"
+];
+const CRITICAL_CASE_ORACLES = [
+  "production-entry", "real-wire", "contract-oracle", "failure-path"
+];
+
 // Module scope, taking `fail` explicitly: the check has no runtime state and
 // the deterministic tests exercise it against a stubbed CLI.
 export function assertOpenSpecStrictValid(id, dir, fail) {
@@ -26,8 +34,18 @@ export function assertOpenSpecStrictValid(id, dir, fail) {
     ["validate", id, "--type", "change", "--strict", "--json", "--no-interactive"],
     { cwd: projectRoot, encoding: "utf8", timeout: 60_000 });
   if (lint.error || lint.status !== 0) {
-    const detail = `${lint.stdout || ""}\n${lint.stderr || ""}`.trim().slice(0, 4000);
-    fail(`OpenSpec strict validation failed for '${id}'; repair the spec delta wording before Prove:\n${detail}`);
+    const raw = `${lint.stdout || ""}\n${lint.stderr || ""}`.trim();
+    let detail = raw.slice(0, 4000);
+    try {
+      const report = JSON.parse(lint.stdout);
+      const issues = (report.items || []).flatMap((item) => item.issues || []);
+      if (issues.length) detail = issues.map((issue) =>
+        `- ${issue.path || "spec"}: ${issue.message}`).join("\n");
+    } catch { /* retain bounded raw CLI output */ }
+    fail(`OpenSpec strict validation failed for '${id}'; repair the spec delta ` +
+      `wording before Prove:\n${detail}\nRecovery: keep only non-empty delta files; ` +
+      "each starts with ## ADDED Requirements, ## MODIFIED Requirements, or " +
+      "## REMOVED Requirements.");
   }
 }
 
@@ -414,7 +432,9 @@ export function compatibilityInvariantBindingIssues(claims, boundClaims) {
       ["compatibility", "cross-repo-contract"].includes(capability)))
     .filter((claim) => !boundClaims.has(claim.id))
     .map((claim) =>
-      `compatibility claim '${claim.id}' requires a semantic invariant binding`);
+      `compatibility claim '${claim.id}' requires a semantic invariant binding; ` +
+      "add {id, statement, decisionIds:[...], claimIds:[...], specScenarios:[...]} " +
+      "to grounding.yaml semanticInvariants");
 }
 
 export function semanticInvariantIssues(invariants, contract, decisionIds,
@@ -1067,8 +1087,9 @@ export function createChangeValidationRuntime({
   }
 
   function requiredInteractionFields(row, fields, label) {
-    for (const field of fields)
-      if (!String(row?.[field] || "").trim()) fail(`${label}.${field} is required`);
+    const missing = fields.filter((field) => !String(row?.[field] || "").trim());
+    if (missing.length)
+      fail(`${label} requires non-empty fields: ${missing.join(", ")}`);
   }
 
   function validateServiceInteractionRows(id, value) {
@@ -1107,8 +1128,8 @@ export function createChangeValidationRuntime({
         fail(`${label}.id must be non-empty and unique`);
       if (!Array.isArray(row.claimIds) || row.claimIds.length === 0)
         fail(`${label}.claimIds must be non-empty`);
-      if (!["production-entry", "real-wire", "contract-oracle", "failure-path"].includes(row.oracle))
-        fail(`${label}.oracle is invalid`);
+      if (!CRITICAL_CASE_ORACLES.includes(row.oracle))
+        fail(`${label}.oracle must be one of: ${CRITICAL_CASE_ORACLES.join("|")}`);
       criticalIds.add(row.id);
     }
     return criticalIds;
@@ -1137,10 +1158,7 @@ export function createChangeValidationRuntime({
   }
 
   function validateGroundingReadSet(id, value, repositories, firstLock, parsedTasks) {
-    const roles = new Set([
-      "requirement", "backlog", "architecture", "contract", "composition-root",
-      "runtime-path", "production-path", "test-topology", "dependency-source", "history"
-    ]);
+    const roles = new Set(GROUNDING_READ_ROLES);
     const immutableRoles = new Set([
       "requirement", "backlog", "architecture", "contract", "dependency-source", "history"
     ]);
@@ -1148,7 +1166,8 @@ export function createChangeValidationRuntime({
       const label = `${id}/grounding.yaml readSet[${index}]`;
       const repository = repositories.get(source.repository || "root");
       if (!repository) fail(`${label} references an unselected repository`);
-      if (!roles.has(source.role)) fail(`${label}.role is invalid`);
+      if (!roles.has(source.role))
+        fail(`${label}.role must be one of: ${GROUNDING_READ_ROLES.join("|")}`);
       if (!["full", "targeted"].includes(source.mode))
         fail(`${label}.mode must be full|targeted`);
       const sourcePath = String(source.path || "");
@@ -1294,7 +1313,9 @@ export function createChangeValidationRuntime({
     const criticalCoverage = new Set(value.criticalCases.flatMap((row) => row.claimIds));
     for (const claim of material)
       if (!criticalCoverage.has(claim.id))
-        fail(`${id}/grounding.yaml material test claim '${claim.id}' requires a stable criticalCases row`);
+        fail(`${id}/grounding.yaml material test claim '${claim.id}' requires a ` +
+          "stable criticalCases row shaped as {id, claimIds:[claim-id], " +
+          `oracle:${CRITICAL_CASE_ORACLES.join("|")}}`);
     for (const [index, row] of value.criticalCases.entries())
       for (const claimId of row.claimIds)
         if (!claimIds.has(claimId))

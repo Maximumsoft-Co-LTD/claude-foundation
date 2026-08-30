@@ -57,8 +57,8 @@ boundaries, proof, completed work, and next action in the user's language;
 keep lifecycle fields internal.
 
 The generated templates plus `change validate` output are the complete public
-authoring contract. Never inspect `.claude/harness/runtime/**` to infer a field
-or repair validation. For a genuinely new production, runtime, test-topology,
+authoring contract. Never inspect managed `.claude/harness/**` or
+`.claude/hooks/**` to infer a field or repair validation. For a genuinely new production, runtime, test-topology,
 or dependency path, put it in an implementation task and use `sha256: planned`
 in `grounding.yaml`; never create product code during Change just to obtain a
 digest. Validation names the artifact, line, marker, and typed recovery. If it

@@ -208,7 +208,7 @@ assert_file_contains "dev enforces fresh phase contexts" \
   'separate fresh Agent'
 assert_file_contains "change forbids runtime archaeology" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
-  'Never inspect `.claude/harness/runtime/**`'
+  'Never inspect managed `.claude/harness/**`'
 assert_file_contains "change command selects rapid before creation" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
   "classify before creating it"
