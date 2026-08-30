@@ -160,6 +160,11 @@ export function groundingMissingReadSourceRecovery(sourcePath, repositoryId, rol
     `to its owning task`;
 }
 
+export function hasObservableSecurityControl(claim) {
+  return /(?:cannot|denied|reject|refus|block|prevent|unauthor|forbid|invalid|malform|oversiz|travers|isolation|privacy|redact|saniti|escap)/i
+    .test(`${claim?.id || ""} ${claim?.scenario || ""}`);
+}
+
 export function groundingInteractionRequirements({
   coupling = "isolated", repositoryCount = 1, capabilities = [], semantics = ""
 } = {}) {
@@ -1050,11 +1055,11 @@ export function createChangeValidationRuntime({
     if (!allowedCapabilities.some((capability) =>
       context.configuredCapabilities.has(capability)))
       issues.push(`${label} has no configured capable evidence provider`);
-    if (category === "securityPrivacy" && !row.claimIds.some((claimId) => {
-      const claim = context.claimById.get(claimId);
-      return /(?:cannot|denied|reject|unauthor|forbid|invalid|isolation|privacy|redact)/i
-        .test(`${claim?.id || ""} ${claim?.scenario || ""}`);
-    })) issues.push(`${label} requires an observable negative-path or privacy-control claim`);
+    if (category === "securityPrivacy" && !row.claimIds.some((claimId) =>
+      hasObservableSecurityControl(context.claimById.get(claimId))))
+      issues.push(`${label} requires an observable negative-path or privacy-control claim; ` +
+        `the claim scenario must name the outcome, such as rejected, refused, denied, ` +
+        `blocked, sanitized, escaped, isolated, or redacted`);
     return issues;
   }
 

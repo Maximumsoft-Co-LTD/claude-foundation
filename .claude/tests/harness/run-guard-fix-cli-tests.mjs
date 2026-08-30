@@ -14,6 +14,7 @@ import {
   assertOpenSpecStrictValid, groundingTaskOverlapFindings,
   groundingInteractionRequirements, groundingMissingReadSourceRecovery,
   groundingPathRowShapeIssue,
+  hasObservableSecurityControl,
   plannedGroundingPathEligible,
   plannedGroundingPathRecovery
 } from "../../harness/runtime/workflow/change-validation.mjs";
@@ -401,6 +402,17 @@ exit ${validateExit}
     "readSet and add [kind:implementation] [repo:root] [paths:test/cli.test.js] " +
     "to its owning task",
   "missing readSet rows must receive both declarations needed for a greenfield path");
+  assert.equal(hasObservableSecurityControl({
+    id: "request-validation",
+    scenario: "Malformed and oversized request bodies are refused with 400 or 413"
+  }), true, "refused malformed input is an observable security negative path");
+  assert.equal(hasObservableSecurityControl({
+    id: "static-confinement",
+    scenario: "Traversal requests are blocked before any file is read"
+  }), true, "blocked traversal is an observable security control");
+  assert.equal(hasObservableSecurityControl({
+    id: "happy-path", scenario: "A todo is created and listed"
+  }), false, "ordinary success claims must not satisfy security control grounding");
 }
 
 // --- local resilience is not misclassified as a distributed interaction ---
