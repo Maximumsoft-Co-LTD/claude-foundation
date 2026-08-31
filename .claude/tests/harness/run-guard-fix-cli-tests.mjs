@@ -381,6 +381,10 @@ exit ${validateExit}
   assert.equal(plannedGroundingPathEligible({
     ...planned, role: "requirement"
   }, false, tasks, true), false, "immutable requirements still require a digest");
+  assert.equal(plannedGroundingPathEligible({
+    ...planned, path: "package.json", role: "dependency-source"
+  }, false, tasks, true), false,
+  "dependency sources cannot be both immutable evidence and planned writable paths");
   assert.equal(plannedGroundingPathRecovery(planned, false, [], true),
     "path is marked planned but no implementation or migration task owns it; " +
     "add [kind:implementation] [repo:root] [paths:src/index.js] to the owning " +
@@ -394,7 +398,7 @@ exit ${validateExit}
     ...planned, path: "package.json", role: "requirement"
   }, false, [], true),
   "path is marked planned but role 'requirement' cannot own a new path; change role " +
-    "to production-path|runtime-path|test-topology|dependency-source and add " +
+    "to production-path|runtime-path|test-topology and add " +
     "[kind:implementation] [repo:root] [paths:package.json] to its owning task",
   "planned rows with immutable roles receive the complete role and task recovery");
   assert.equal(groundingPathRowShapeIssue("productionEntry.paths[0]", "src/index.js"),

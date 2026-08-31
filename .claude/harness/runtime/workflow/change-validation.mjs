@@ -127,7 +127,7 @@ function taskOwnsGroundingPath(tasks, repository, path) {
 
 export function plannedGroundingPathEligible(source, pathExists, tasks = [], firstLock = true) {
   if (source?.sha256 !== "planned") return false;
-  if (!["production-path", "runtime-path", "test-topology", "dependency-source"]
+  if (!["production-path", "runtime-path", "test-topology"]
     .includes(source?.role)) return false;
   if (firstLock && pathExists) return false;
   return taskOwnsGroundingPath(tasks, source.repository || "root",
@@ -137,7 +137,7 @@ export function plannedGroundingPathEligible(source, pathExists, tasks = [], fir
 export function plannedGroundingPathRecovery(source, pathExists, tasks = [], firstLock = true) {
   if (source?.sha256 !== "planned" || pathExists || !firstLock) return null;
   const allowedRoles = [
-    "production-path", "runtime-path", "test-topology", "dependency-source"
+    "production-path", "runtime-path", "test-topology"
   ];
   if (!allowedRoles.includes(source?.role))
     return `path is marked planned but role '${source?.role || "missing"}' cannot own ` +

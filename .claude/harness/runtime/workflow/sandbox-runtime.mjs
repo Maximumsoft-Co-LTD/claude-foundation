@@ -272,7 +272,7 @@ export function assertSandboxGroundingPortable(context, id, state) {
 
 export function plannedGroundingPortabilityStatus(source, pathExists) {
   if (source?.sha256 !== "planned") return undefined;
-  if (!["production-path", "runtime-path", "test-topology", "dependency-source"]
+  if (!["production-path", "runtime-path", "test-topology"]
     .includes(source?.role)) return "invalid-planned-role";
   return pathExists ? "planned-path-exists" : null;
 }

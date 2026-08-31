@@ -152,6 +152,10 @@ try {
   }, false), "invalid-planned-role",
   "immutable sources cannot use planned portability");
   assert.equal(plannedGroundingPortabilityStatus({
+    role: "dependency-source", sha256: "planned"
+  }, false), "invalid-planned-role",
+  "dependency evidence cannot become writable through planned portability");
+  assert.equal(plannedGroundingPortabilityStatus({
     role: "requirement", sha256: digest("base")
   }, false), undefined, "ordinary digests retain the full portability check");
   assert.deepEqual(groundingPortabilityFindings({}, repositories, () => null), []);

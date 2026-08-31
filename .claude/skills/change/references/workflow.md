@@ -75,8 +75,8 @@ keep lifecycle fields internal.
 The generated Change artifacts plus `change validate` output are the complete
 public authoring contract. Public operator references such as
 `.claude/harness/EVIDENCE.md` may explain configured adapters. Never inspect managed `.claude/harness/**`
-or `.claude/hooks/**` to infer a field or repair validation. For a genuinely new production, runtime, test-topology,
-or dependency path, put it in an implementation task and use `sha256: planned`
+or `.claude/hooks/**` to infer a field or repair validation. For a genuinely new production, runtime, or test-topology
+path, put it in an implementation task and use `sha256: planned`
 in `grounding.yaml`; never create product code during Change just to obtain a
 digest. Validation names the artifact, line, marker, and typed recovery. If it
 does not, report a harness defect instead of reading implementation internals.
