@@ -9,6 +9,7 @@ import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
 import { buildScorecard } from "./scorecard.mjs";
+import { collectBenchmarkQuality } from "./quality.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "../../../..");
@@ -41,6 +42,18 @@ function readJsonLines(path) {
   if (!path || !existsSync(path)) return [];
   return readFileSync(path, "utf8").split(/\r?\n/).filter(Boolean)
     .flatMap((line) => { try { return [JSON.parse(line)]; } catch { return []; } });
+}
+
+export function operationRowsInWindow(rows, stopwatch = {}) {
+  const started = Number(stopwatch.startedEpochMs ?? Date.parse(stopwatch.startedAt));
+  const finished = Number(Date.parse(stopwatch.finishedAt));
+  if (!Number.isFinite(started) && !Number.isFinite(finished)) return rows;
+  return rows.filter((row) => {
+    const timestamp = Date.parse(row.startedAt || row.finishedAt || "");
+    if (!Number.isFinite(timestamp)) return true;
+    return (!Number.isFinite(started) || timestamp >= started - 1000) &&
+      (!Number.isFinite(finished) || timestamp <= finished + 1000);
+  });
 }
 
 function required(value, field) {
@@ -144,10 +157,11 @@ export function collectNativeScorecard({
 }) {
   const discovered = discoverChangeId(project, changeId, stopwatch.startedEpochMs ?? null);
   const resolvedMetrics = metrics ?? metricsFor(project, discovered) ?? {};
-  const operations = operationRows ?? (discovered ? [
+  const operationCandidates = operationRows ?? (discovered ? [
     ...readJsonLines(join(project, ".foundation/logs", discovered, "operations.jsonl")),
     ...readJsonLines(join(project, ".foundation/logs", discovered, "inspections.jsonl"))
   ] : []);
+  const operations = operationRowsInWindow(operationCandidates, stopwatch);
   const qualityReport = quality ?? readJson(
     join(project, ".foundation/test-results/quality/crap.json"));
   return buildScorecard({
@@ -301,6 +315,15 @@ async function main() {
   }
   const parsedHost = parseHostOutput(execution.stdout);
   const envelope = parsedHost.envelope;
+  const discoveredChangeId = discoverChangeId(
+    project, args["change-id"] || null, execution.stopwatch.startedEpochMs ?? null);
+  const preliminaryOutcome = observedOutcome({
+    project, changeId: discoveredChangeId, envelope,
+    exitCode: execution.exitCode, timedOut: execution.timedOut
+  });
+  const quality = !args["collect-only"] && preliminaryOutcome.status === "completed"
+    ? await collectBenchmarkQuality({ project, changeId: discoveredChangeId })
+    : null;
   const scorecard = collectNativeScorecard({
     scenario, repeat, runId, project,
     config: {
@@ -310,7 +333,7 @@ async function main() {
     },
     envelope, stopwatch: execution.stopwatch,
     exitCode: execution.exitCode, timedOut: execution.timedOut,
-    changeId: args["change-id"] || null, hostTelemetry: parsedHost.hostTelemetry,
+    changeId: discoveredChangeId, hostTelemetry: parsedHost.hostTelemetry, quality,
     provenance: { requestedModel: args.model || null }
   });
   writeResult(output, scorecard);

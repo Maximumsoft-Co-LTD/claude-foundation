@@ -12,8 +12,9 @@ import addFormats from "ajv-formats";
 
 import {
   assertDisposableProject, collectNativeScorecard, discoverChangeId,
-  observedOutcome, parseHostOutput, pendingTaskCount
+  observedOutcome, operationRowsInWindow, parseHostOutput, pendingTaskCount
 } from "../openspec-native/run.mjs";
+import { collectBenchmarkQuality } from "../openspec-native/quality.mjs";
 
 const schema = JSON.parse(readFileSync(new URL(
   "../config/openspec-native-scorecard.schema.json", import.meta.url), "utf8"));
@@ -127,6 +128,72 @@ test("collector joins metrics, operations, quality, and completion truth", () =>
     assert.equal(scorecard.quality.crapMaximum, 1);
     assert.equal(scorecard.usage.costUsd, 2);
     assert.equal(validate(scorecard), true, JSON.stringify(validate.errors));
+  } finally { rmSync(project, { recursive: true, force: true }); }
+});
+
+test("resume scorecards isolate operations and prefer per-run host usage", () => {
+  const project = projectFixture();
+  try {
+  const rows = [
+    { operation: "old", status: "completed",
+      startedAt: "2026-08-28T00:59:00Z", durationMs: 9000 },
+    { operation: "current", status: "completed",
+      startedAt: "2026-08-28T01:00:02Z", durationMs: 25 }
+  ];
+  const stopwatch = {
+    wallMs: 5000, startedAt: "2026-08-28T01:00:00Z",
+    finishedAt: "2026-08-28T01:00:05Z",
+    startedEpochMs: Date.parse("2026-08-28T01:00:00Z")
+  };
+  assert.deepEqual(operationRowsInWindow(rows, stopwatch), [rows[1]]);
+  const scorecard = collectNativeScorecard({
+    scenario: "resume", repeat: 1, runId: "resume-1",
+    project, changeId: "todo", stopwatch,
+    envelope: { total_cost_usd: 0.5, num_turns: 4, usage: {
+      input_tokens: 3, output_tokens: 9,
+      cache_creation_input_tokens: 11, cache_read_input_tokens: 13
+    } },
+    metrics: { requests: 99, inputTokens: 999, outputTokens: 999,
+      cacheCreationTokens: 999, cacheReadTokens: 999,
+      activeTimeMs: 9999, unattributedWaitMs: 9999 },
+    operationRows: rows, provenance: { commit: "abc", dirty: false }
+  });
+  assert.equal(scorecard.operations.total, 1);
+  assert.deepEqual(scorecard.operations.byCommand, { current: 1 });
+  assert.equal(scorecard.timing.harnessActiveMs, 25);
+  assert.equal(scorecard.timing.unattributedWaitMs, null);
+  assert.equal(scorecard.usage.modelRequests, 4);
+  assert.equal(scorecard.usage.outputTokens, 9);
+  assert.equal(scorecard.usage.cacheReadTokens, 13);
+  } finally { rmSync(project, { recursive: true, force: true }); }
+});
+
+test("completed greenfield Node projects produce measured CRAP quality", async () => {
+  const project = projectFixture();
+  try {
+    rmSync(join(project, ".foundation/test-results/quality"),
+      { recursive: true, force: true });
+    const sandbox = join(project, ".foundation/sandboxes/todo");
+    write(join(sandbox, "package.json"), {
+      type: "module", scripts: { test: "node --test" }
+    });
+    write(join(sandbox, "src/math.mjs"),
+      "export function absolute(value) { return value < 0 ? -value : value; }\n");
+    write(join(sandbox, "test/math.test.mjs"), [
+      "import assert from 'node:assert/strict';",
+      "import test from 'node:test';",
+      "import { absolute } from '../src/math.mjs';",
+      "test('covers both branches', () => {",
+      "  assert.equal(absolute(-2), 2); assert.equal(absolute(2), 2);",
+      "});", ""
+    ].join("\n"));
+    const report = await collectBenchmarkQuality({ project, changeId: "todo" });
+    assert.equal(report.protocol, "foundation-quality-v1");
+    assert.equal(report.collector, "openspec-native-node-quality-v1");
+    assert.equal(report.summary.unmapped, 0);
+    assert.ok(report.summary.functions >= 1);
+    assert.ok(report.functions.every((fn) => fn.coveragePercent !== null));
+    assert.ok(report.functions.every((fn) => fn.crap !== null));
   } finally { rmSync(project, { recursive: true, force: true }); }
 });
 

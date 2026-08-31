@@ -108,6 +108,31 @@ function qualitySummary(report) {
   };
 }
 
+function envelopeUsage(envelope) {
+  const usage = object(envelope.usage);
+  return {
+    requests: count(envelope.num_turns ?? envelope.numTurns),
+    inputTokens: measured(usage.input_tokens ?? usage.inputTokens),
+    outputTokens: measured(usage.output_tokens ?? usage.outputTokens),
+    cacheCreationTokens: measured(
+      usage.cache_creation_input_tokens ?? usage.cacheCreationInputTokens),
+    cacheReadTokens: measured(
+      usage.cache_read_input_tokens ?? usage.cacheReadInputTokens)
+  };
+}
+
+function operationActiveTime(rows) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const durations = rows.map((row) => measured(row.durationMs))
+    .filter((value) => value !== null);
+  return durations.length ? durations.reduce((sum, value) => sum + value, 0) : null;
+}
+
+function boundedByWall(value, wallMs) {
+  const result = measured(value);
+  return result !== null && (wallMs === null || result <= wallMs) ? result : null;
+}
+
 function operationSummary(rows, metrics, hostTelemetry = {}) {
   const operations = Array.isArray(rows) ? rows : [];
   const profile = object(metrics.commandProfile);
@@ -162,9 +187,11 @@ export function buildScorecard(input) {
   const cost = costMeasurement(envelope, metrics);
   const wallMs = measured(stopwatch.wallMs);
   const usageClass = metrics.usageAvailability?.classification;
-  const requestCount = count(metrics.requests);
+  const hostUsage = envelopeUsage(envelope);
+  const requestCount = hostUsage.requests ?? count(metrics.requests);
   const usageStatus = requestCount === null ? "unavailable"
-    : ["measured", "no-usage"].includes(usageClass) ? "measured" : "partial";
+    : hostUsage.requests !== null || ["measured", "no-usage"].includes(usageClass)
+      ? "measured" : "partial";
   const startedAt = timestamp(stopwatch.startedAt);
   const finishedAt = timestamp(stopwatch.finishedAt);
   return {
@@ -188,12 +215,13 @@ export function buildScorecard(input) {
       wallMeasurement: wallMs === null ? "unavailable" : "measured",
       wallSource: wallMs === null ? null : "runner-monotonic-stopwatch",
       modelActiveMs: null,
-      harnessActiveMs: measured(metrics.activeTimeMs),
-      providerMs: measured(metrics.evidenceExecutionTimeMs),
-      externalExecutionMs: measured(metrics.externalExecutionTimeMs),
-      humanWaitMs: measured(metrics.humanWaitMs),
+      harnessActiveMs: operationActiveTime(input.operationRows) ??
+        boundedByWall(metrics.activeTimeMs, wallMs),
+      providerMs: boundedByWall(metrics.evidenceExecutionTimeMs, wallMs),
+      externalExecutionMs: boundedByWall(metrics.externalExecutionTimeMs, wallMs),
+      humanWaitMs: boundedByWall(metrics.humanWaitMs, wallMs),
       externalWaitMs: null,
-      unattributedWaitMs: measured(metrics.unattributedWaitMs),
+      unattributedWaitMs: boundedByWall(metrics.unattributedWaitMs, wallMs),
       hostEnvelopeDurationMs: measured(envelope.duration_ms ?? envelope.durationMs)
     },
     usage: {
@@ -203,10 +231,11 @@ export function buildScorecard(input) {
       costMeasurement: measurement(cost.status),
       costSource: cost.source,
       modelRequests: requestCount,
-      inputTokens: measured(metrics.inputTokens),
-      outputTokens: measured(metrics.outputTokens),
-      cacheCreationTokens: measured(metrics.cacheCreationTokens),
-      cacheReadTokens: measured(metrics.cacheReadTokens)
+      inputTokens: hostUsage.inputTokens ?? measured(metrics.inputTokens),
+      outputTokens: hostUsage.outputTokens ?? measured(metrics.outputTokens),
+      cacheCreationTokens: hostUsage.cacheCreationTokens ??
+        measured(metrics.cacheCreationTokens),
+      cacheReadTokens: hostUsage.cacheReadTokens ?? measured(metrics.cacheReadTokens)
     },
     operations: operationSummary(input.operationRows, metrics, input.hostTelemetry),
     quality: qualitySummary(input.quality),
