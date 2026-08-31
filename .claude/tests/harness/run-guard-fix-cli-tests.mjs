@@ -390,6 +390,13 @@ exit ${validateExit}
     "owned planned paths need no recovery hint");
   assert.equal(plannedGroundingPathRecovery(planned, true, [], true), null,
     "existing paths need baseline-digest guidance instead");
+  assert.equal(plannedGroundingPathRecovery({
+    ...planned, path: "package.json", role: "requirement"
+  }, false, [], true),
+  "path is marked planned but role 'requirement' cannot own a new path; change role " +
+    "to production-path|runtime-path|test-topology|dependency-source and add " +
+    "[kind:implementation] [repo:root] [paths:package.json] to its owning task",
+  "planned rows with immutable roles receive the complete role and task recovery");
   assert.equal(groundingPathRowShapeIssue("productionEntry.paths[0]", "src/index.js"),
     "productionEntry.paths[0] must be an object with repository and path, for example " +
     "{\"repository\":\"root\",\"path\":\"src/index.js\"}",

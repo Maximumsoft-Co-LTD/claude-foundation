@@ -40,6 +40,9 @@ from that state:
 
 Do not default to `ADDED` without comparing the canonical spec. Emit only
 sections that contain requirements and delete every unused template section.
+For a fresh standard scaffold, overwrite the generated
+`specs/change/spec.md`; do not create a second spec directory or delete the
+generated file.
 
 Record AWS/IAM/secret/Terraform/deploy/restart ownership in `handoffs.yaml` with
 timing, activation safety, evidence, runbook, rollback, claims, and tasks.

@@ -136,8 +136,14 @@ export function plannedGroundingPathEligible(source, pathExists, tasks = [], fir
 
 export function plannedGroundingPathRecovery(source, pathExists, tasks = [], firstLock = true) {
   if (source?.sha256 !== "planned" || pathExists || !firstLock) return null;
-  if (!["production-path", "runtime-path", "test-topology", "dependency-source"]
-    .includes(source?.role)) return null;
+  const allowedRoles = [
+    "production-path", "runtime-path", "test-topology", "dependency-source"
+  ];
+  if (!allowedRoles.includes(source?.role))
+    return `path is marked planned but role '${source?.role || "missing"}' cannot own ` +
+      `a new path; change role to ${allowedRoles.join("|")} and add ` +
+      `[kind:implementation] [repo:${source?.repository || "root"}] ` +
+      `[paths:${source?.path}] to its owning task`;
   if (taskOwnsGroundingPath(tasks, source.repository || "root",
     normalizedScope(source.path))) return null;
   const repository = source.repository || "root";
