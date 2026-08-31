@@ -208,14 +208,20 @@ function validationRuntimeFixture() {
 
 test("validation preflight reports every unresolved prerequisite", () => {
   assert.deepEqual(validationPreflightIssues("change-a", {
+    resolutionRequired: true, resolvedAt: null,
     impact: "", coupling: "", acceptance: { decision: "undecided" }
   }, ["design.md", "tasks.md"]), [
     "missing change artifacts: design.md, tasks.md",
+    "resolve decisions for 'change-a' before validation: claude-foundation change resolve change-a --impact <low|medium|high> --coupling <isolated|coupled> --acceptance-required|--acceptance-not-required",
     "resolve impact for 'change-a'",
     "resolve coupling for 'change-a'",
     "acceptance decision is unresolved for 'change-a'; ask the user whether subjective human acceptance is required, then resolve with --acceptance-required or --acceptance-not-required"
   ]);
   assert.deepEqual(validationPreflightIssues("change-a", {
+    resolutionRequired: true, resolvedAt: "now",
+    impact: "medium", coupling: "isolated", acceptance: { decision: "not-required" }
+  }), []);
+  assert.deepEqual(validationPreflightIssues("legacy-change", {
     impact: "medium", coupling: "isolated", acceptance: { decision: "not-required" }
   }), []);
   assert.throws(() => assertValidationPreflight("change-a", {

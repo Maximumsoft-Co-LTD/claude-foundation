@@ -64,6 +64,11 @@ export function initialChangeState({
     riskBasedCiRequired: standard && riskBasedCi,
     externalOperationsVersion: 1,
     graphExecutionVersion: 1,
+    // Standard changes must pass through the explicit decision boundary before
+    // validation. Keep the marker opt-in so runtime files created before this
+    // field existed remain valid and rapid changes keep their short lane.
+    resolutionRequired: standard,
+    resolvedAt: null,
     revision: 0, contractRevision: 0, executionRevision: 0,
     impact: standard ? null : "low",
     coupling: standard ? null : "isolated",
@@ -678,6 +683,7 @@ export function createChangeLifecycle({
     applyResolveSecurity(state, flags);
     applyResolveAcceptance(state, flags);
     const upgraded = upgradeResolvedSchema(id, state);
+    state.resolvedAt = now();
     saveRuntime(state);
     printResolution(id, state, upgraded);
   }

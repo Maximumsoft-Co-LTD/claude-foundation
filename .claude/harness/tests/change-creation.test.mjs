@@ -72,6 +72,8 @@ try {
   assert.equal(states[0].groundingRequired, true);
   assert.equal(states[0].groundingVersion, 2);
   assert.equal(states[0].riskBasedCiRequired, true);
+  assert.equal(states[0].resolutionRequired, true);
+  assert.equal(states[0].resolvedAt, null);
   assert.equal(states[0].acceptance.decision, "undecided");
   assert.equal(states[0].createdAt, "time-1");
   assert.equal(states[0].updatedAt, "time-2");
@@ -92,6 +94,8 @@ try {
   assert.equal(states[1].impact, "low");
   assert.equal(states[1].coupling, "isolated");
   assert.equal(states[1].riskBasedCiRequired, false);
+  assert.equal(states[1].resolutionRequired, false);
+  assert.equal(states[1].resolvedAt, null);
   assert.equal(states[1].acceptance.decision, "not-required");
   assert.equal(existsSync(join(changesRoot, rapid, "design.md")), false);
   assert.equal(existsSync(join(changesRoot, rapid, "grounding.yaml")), false);

@@ -243,6 +243,8 @@ export function validationPreflightIssues(id, state, missing = []) {
   const issues = [];
   if (missing.length)
     issues.push(`missing change artifacts: ${missing.join(", ")}`);
+  if (state.resolutionRequired === true && !state.resolvedAt)
+    issues.push(`resolve decisions for '${id}' before validation: claude-foundation change resolve ${id} --impact <low|medium|high> --coupling <isolated|coupled> --acceptance-required|--acceptance-not-required`);
   if (!["low", "medium", "high"].includes(state.impact || ""))
     issues.push(`resolve impact for '${id}'`);
   if (!["isolated", "coupled"].includes(state.coupling || ""))

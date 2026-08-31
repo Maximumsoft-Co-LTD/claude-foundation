@@ -87,6 +87,7 @@ try {
     surface: " src/b.js,src/a.js, src/b.js "
   });
   assert.equal(attributes.ambiguity, "unclear");
+  assert.equal(attributes.resolvedAt, "2026-08-26T00:00:00.000Z");
   assert.equal(attributes.size, "m");
   assert.deepEqual(attributes.declaredSurface, ["src/a.js", "src/b.js"]);
   assert.match(output, /surface: src\/a.js, src\/b.js/);
