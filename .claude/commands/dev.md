@@ -10,8 +10,8 @@ Decision Sheet, immediately run `claude-foundation change new "<intent>"` to bin
 Change ID/budget before authoring. `change start --template` requires a complete
 supplied draft.
 
-Run Build and Prove in separate fresh Agent sessions with phase command and change ID;
-await each.
+After Change, invoke and await fresh Agents for `/build <id>`, then `/prove <id>`;
+parent never runs readiness.
 
 Do not reread framework files. Report evidence and next action.
 

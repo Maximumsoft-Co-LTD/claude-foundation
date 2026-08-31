@@ -205,7 +205,10 @@ assert_file_contains "dev routes every fresh intent through complete Change inta
   'For all fresh work use `/change`'
 assert_file_contains "dev enforces fresh phase contexts" \
   "$ROOT/.claude/commands/dev.md" \
-  'separate fresh Agent'
+  'fresh Agents for `/build <id>`, then `/prove <id>`'
+assert_file_contains "dev leaves proof routing to its fresh Prove agent" \
+  "$ROOT/.claude/commands/dev.md" \
+  'parent never runs readiness'
 assert_file_contains "change forbids runtime archaeology" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
   'Never inspect managed `.claude/harness/**`'
