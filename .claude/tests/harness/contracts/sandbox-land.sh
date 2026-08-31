@@ -150,6 +150,7 @@ install_harness_fixture "$ROOT" "$TMP/git-project"
 cp "$ROOT/.claude/harness/commands.json" "$TMP/git-project/.claude/harness/"
 cp -R "$ROOT/openspec/schemas" "$TMP/git-project/openspec/"
 cp "$ROOT/openspec/config.yaml" "$TMP/git-project/openspec/"
+cp "$ROOT/foundation.json" "$TMP/git-project/"
 cp "$ROOT/.foundation/.gitignore" "$TMP/git-project/.foundation/"
 printf 'before\n' > "$TMP/git-project/app.txt"
 printf 'first\n' > "$TMP/git-project/target-a.txt"
@@ -161,6 +162,49 @@ git config user.name "Foundation Test"
 git config user.email "foundation@example.invalid"
 git add .
 git commit -qm "fixture"
+
+# A greenfield Change records files that Build will create as `sha256: planned`.
+# Those paths are intentionally absent from both HEAD and the control tree;
+# sandbox creation must carry the contract without demanding fake source files.
+planned_create_output="$(CLAUDE_FOUNDATION_PROJECT="$TMP/git-project" \
+  node .claude/harness/foundation.mjs new 'Planned sandbox' \
+  --id planned-greenfield --rapid)"
+planned_id="$(printf '%s\n' "$planned_create_output" | sed -n 's/^CREATED //p')"
+assert_eq "planned greenfield fixture keeps its explicit id" \
+  "planned-greenfield" "$planned_id"
+CLAUDE_FOUNDATION_PROJECT="$TMP/git-project" \
+  node .claude/harness/foundation.mjs resolve "$planned_id" \
+  --impact low --coupling isolated >/dev/null
+node - "$TMP/git-project" "$planned_id" <<'NODE'
+const fs = require("node:fs");
+const path = `${process.argv[2]}/openspec/changes/${process.argv[3]}/grounding.yaml`;
+const grounding = JSON.parse(fs.readFileSync(path, "utf8"));
+grounding.readSet = [{
+  repository: "root",
+  path: "src/new-app.js",
+  role: "production-path",
+  mode: "full",
+  sha256: "planned"
+}];
+fs.writeFileSync(path, `${JSON.stringify(grounding, null, 2)}\n`);
+NODE
+printf '\n- [ ] **T002** Create app [kind:implementation] [repo:root] [paths:src/new-app.js]\n' \
+  >> "$TMP/git-project/openspec/changes/$planned_id/tasks.md"
+planned_output="$(CLAUDE_FOUNDATION_PROJECT="$TMP/git-project" \
+  node .claude/harness/foundation.mjs sandbox create "$planned_id")"
+assert_contains "planned greenfield paths permit sandbox creation" \
+  "$planned_output" "SANDBOX $planned_id"
+assert_eq "planned greenfield sandbox enters Build" "building" \
+  "$(jq -r '.status' "$TMP/git-project/.foundation/runtime/$planned_id.json")"
+assert_file_absent "planned source remains absent from the control tree" \
+  "$TMP/git-project/src/new-app.js"
+assert_file_absent "planned source remains absent until Build writes it" \
+  "$TMP/git-project/.foundation/sandboxes/$planned_id/src/new-app.js"
+# The remainder of this long-standing fixture exercises the legacy no-policy
+# defaults. Restore that posture without touching the active planned sandbox.
+git rm -q foundation.json
+git commit -qm "restore legacy fixture policy"
+
 node .claude/harness/foundation.mjs new 'Sandbox copy' --rapid >/dev/null
 node .claude/harness/foundation.mjs resolve sandbox-copy --impact low --coupling isolated >/dev/null
 node .claude/harness/foundation.mjs sandbox create sandbox-copy >/dev/null
