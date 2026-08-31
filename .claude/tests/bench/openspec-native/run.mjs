@@ -88,6 +88,15 @@ function activeChangePath(project, changeId) {
   return existsSync(archived) ? archived : null;
 }
 
+function taskContent(project, changeId, change) {
+  const sandboxTasks = join(project, ".foundation/sandboxes", changeId,
+    "openspec/changes", changeId, "tasks.md");
+  if (existsSync(sandboxTasks)) return readFileSync(sandboxTasks, "utf8");
+  const controlTasks = change && join(change, "tasks.md");
+  return controlTasks && existsSync(controlTasks)
+    ? readFileSync(controlTasks, "utf8") : null;
+}
+
 export function observedOutcome({ project, changeId, envelope, exitCode, timedOut }) {
   if (!changeId) return {
     status: timedOut ? "timeout" : exitCode === 0 ? "incomplete" : "failed",
@@ -97,9 +106,7 @@ export function observedOutcome({ project, changeId, envelope, exitCode, timedOu
   };
   const state = readJson(join(project, ".foundation/runtime", `${changeId}.json`), {});
   const change = activeChangePath(project, changeId);
-  const tasks = change ? pendingTaskCount(
-    existsSync(join(change, "tasks.md")) ? readFileSync(join(change, "tasks.md"), "utf8") : null
-  ) : null;
+  const tasks = pendingTaskCount(taskContent(project, changeId, change));
   const proof = readJson(join(project, ".foundation/receipts", changeId, "proof.json"));
   const requiredEvidencePassed = proof?.status === "pass";
   const hostFailed = timedOut || exitCode !== 0 || envelope?.is_error === true;

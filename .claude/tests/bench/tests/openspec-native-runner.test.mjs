@@ -90,6 +90,21 @@ test("outcome requires checked tasks and passing proof", () => {
   } finally { rmSync(project, { recursive: true, force: true }); }
 });
 
+test("outcome reads Build task completion from the active sandbox", () => {
+  const project = projectFixture();
+  try {
+    write(join(project, "openspec/changes/todo/tasks.md"), "- [ ] implementation\n");
+    write(join(project, ".foundation/sandboxes/todo/openspec/changes/todo/tasks.md"),
+      "- [x] implementation\n");
+    const outcome = observedOutcome({
+      project, changeId: "todo", envelope: {}, exitCode: 0, timedOut: false
+    });
+    assert.equal(outcome.pendingTasks, 0,
+      "the isolated Build workspace is authoritative while its sandbox is active");
+    assert.equal(outcome.status, "completed");
+  } finally { rmSync(project, { recursive: true, force: true }); }
+});
+
 test("collector joins metrics, operations, quality, and completion truth", () => {
   const project = projectFixture();
   try {
