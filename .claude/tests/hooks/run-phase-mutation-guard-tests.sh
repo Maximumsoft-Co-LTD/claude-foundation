@@ -31,6 +31,17 @@ out="$(invoke change block "" "$(bash_event 'touch openspec/changes/demo/tasks.m
 assert_contains "Change shell recovery directs artifact edits to structured tools" \
   "$out" 'Use Edit or Write for openspec/changes artifacts'
 
+out="$(invoke change block "" "$(bash_event "python3 -c 'Path().write_text()'")")"
+assert_contains "Change blocks Python file-write APIs hidden behind an interpreter" \
+  "$out" '"decision":"block"'
+
+out="$(invoke change block "" "$(bash_event "node -e 'fs.writeFileSync()'")")"
+assert_contains "Change blocks Node file-write APIs hidden behind an interpreter" \
+  "$out" '"decision":"block"'
+
+out="$(invoke change block "" "$(bash_event "python3 -c 'print(1)'")")"
+assert_eq "Change permits a read-only interpreter command" "" "$out"
+
 out="$(invoke build block "$TMP/workspace" "$(write_event "$TMP/workspace/src/app.js")")"
 assert_eq "Build permits isolated workspace mutation" "" "$out"
 

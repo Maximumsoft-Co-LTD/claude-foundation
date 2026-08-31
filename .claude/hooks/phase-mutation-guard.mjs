@@ -183,11 +183,15 @@ function looksMutating(command) {
   // Conservative command-word screening. This intentionally does not claim to
   // be a shell sandbox; enforcement of arbitrary shell effects belongs to the host.
   const stripped = command.replace(/(['"])(?:\\.|(?!\1).)*\1/g, " ");
+  const interpreterWrite = /\b(?:python(?:3(?:\.\d+)?)?|node|ruby|perl)\b/i.test(command) &&
+    /(?:\bopen\s*\([^\n)]*,\s*['"][wax+]|\.write(?:_text|_bytes)?\s*\(|\b(?:writeFile|writeFileSync|appendFile|appendFileSync|createWriteStream|renameSync|rmSync|unlinkSync|mkdirSync|copyFileSync)\s*\()/i
+      .test(command);
   // `git rm` is spelled with the git verb list, not the bare `rm` alternative:
   // that one only matches after a shell separator, so `rm` inside `git rm`
   // never did. cherry-pick/revert/stash/am/pull all write the working tree,
   // and `sed -i` edits files in place — all five read as non-mutating before.
-  return /(^|[;&|`()]|\b(?:then|do)\b)\s*(?:sudo\s+|env\s+)*(?:rm|mv|cp|ln|install|mkdir|rmdir|touch|truncate|tee|chmod|chown|patch|git\s+(?:commit|push|merge|rebase|checkout|switch|restore|reset|clean|apply|rm|mv|cherry-pick|revert|stash|am|pull|worktree|submodule)|npm\s+(?:install|publish)|pnpm\s+(?:install|publish)|yarn\s+(?:add|install|publish))\b/m.test(stripped)
+  return interpreterWrite
+    || /(^|[;&|`()]|\b(?:then|do)\b)\s*(?:sudo\s+|env\s+)*(?:rm|mv|cp|ln|install|mkdir|rmdir|touch|truncate|tee|chmod|chown|patch|git\s+(?:commit|push|merge|rebase|checkout|switch|restore|reset|clean|apply|rm|mv|cherry-pick|revert|stash|am|pull|worktree|submodule)|npm\s+(?:install|publish)|pnpm\s+(?:install|publish)|yarn\s+(?:add|install|publish))\b/m.test(stripped)
     // In-place editors: the file is the effect, not an argument to a reader.
     || /(^|[;&|`()]|\b(?:then|do)\b)\s*(?:sudo\s+|env\s+)*(?:sed|perl|ruby)\s+(?:-\S+\s+)*-\S*i/m.test(stripped)
     // A redirect only mutates when it targets a real file; >/dev/null and

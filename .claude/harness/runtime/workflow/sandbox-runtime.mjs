@@ -250,6 +250,9 @@ export function assertSandboxGroundingPortable(context, id, state) {
     context.selectedRepositories(id, state),
     (repository, source) => {
       const absolute = resolve(repository.path, source.path);
+      const plannedStatus = plannedGroundingPortabilityStatus(
+        source, context.pathExists(absolute));
+      if (plannedStatus !== undefined) return plannedStatus;
       let matchesDigest = false;
       try {
         matchesDigest = context.fileDigest(absolute) ===
@@ -265,6 +268,13 @@ export function assertSandboxGroundingPortable(context, id, state) {
     context.fail(`grounding readSet is not sandbox-portable: ${
       portability.map((entry) => `${entry.repository}:${entry.path} (${entry.reason})`).join(", ")
     } — commit the source or move the required decision/evidence into the change packet before creating a sandbox`);
+}
+
+export function plannedGroundingPortabilityStatus(source, pathExists) {
+  if (source?.sha256 !== "planned") return undefined;
+  if (!["production-path", "runtime-path", "test-topology", "dependency-source"]
+    .includes(source?.role)) return "invalid-planned-role";
+  return pathExists ? "planned-path-exists" : null;
 }
 
 // Which files `git apply` refused, so a replay that cannot proceed names the

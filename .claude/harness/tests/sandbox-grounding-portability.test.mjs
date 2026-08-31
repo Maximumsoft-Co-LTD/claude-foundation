@@ -9,7 +9,7 @@ import { join } from "node:path";
 
 import {
   gitBaseCheckoutPaths, gitBaseCheckoutStatus, groundingPortabilityFindings,
-  isPacketLocalSource
+  isPacketLocalSource, plannedGroundingPortabilityStatus
 } from
   "../runtime/workflow/sandbox-runtime.mjs";
 
@@ -90,6 +90,10 @@ try {
       path: "openspec/changes/portable/notes/escaped.md",
       sha256: digest("outside packet\n")
     },
+    {
+      repository: "root", path: "src/new-app.js", role: "production-path",
+      sha256: "planned"
+    },
     { repository: "plain", path: "requirements.md", sha256: digest("plain") }
   ] };
   const gitBuffer = (args, cwd) => spawnSync("git", args, { cwd });
@@ -109,6 +113,8 @@ try {
     grounding,
     repositories,
     (repository, source) => {
+      const planned = plannedGroundingPortabilityStatus(source, false);
+      if (planned !== undefined) return planned;
       if (digest(readFileSync(join(repository.path, source.path))) !== source.sha256)
         return "working-tree-digest-mismatch";
       if (repository.id === "root" && isPacketLocalSource(
@@ -134,6 +140,20 @@ try {
       reason: "missing-from-base"
     }
   ]);
+  assert.equal(plannedGroundingPortabilityStatus({
+    role: "production-path", sha256: "planned"
+  }, false), null, "an absent validated greenfield path is sandbox-portable");
+  assert.equal(plannedGroundingPortabilityStatus({
+    role: "production-path", sha256: "planned"
+  }, true), "planned-path-exists",
+  "a control-tree path must not masquerade as an absent planned path");
+  assert.equal(plannedGroundingPortabilityStatus({
+    role: "requirement", sha256: "planned"
+  }, false), "invalid-planned-role",
+  "immutable sources cannot use planned portability");
+  assert.equal(plannedGroundingPortabilityStatus({
+    role: "requirement", sha256: digest("base")
+  }, false), undefined, "ordinary digests retain the full portability check");
   assert.deepEqual(groundingPortabilityFindings({}, repositories, () => null), []);
   process.stdout.write("sandbox grounding portability tests: PASS\n");
 } finally {
