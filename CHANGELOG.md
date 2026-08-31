@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Build completion now executes its readiness boundary before Prove.** The
+  phase contract follows the dispatch-provided next command, catching missing
+  critical-case tags before they cause a failed first proof advance.
+
 ## [3.4.9] - 2026-08-31
 
 ### Added

@@ -24,6 +24,8 @@ assert_file_contains "build names the blocked action" \
   "$ROOT/.claude/commands/build.md" '`blocked`'
 assert_file_contains "build names the terminal completion action" \
   "$ROOT/.claude/commands/build.md" '`build-complete`'
+assert_file_contains "build executes terminal readiness before Prove" \
+  "$ROOT/.claude/commands/build.md" 'Execute its `nextCommand` before Prove'
 assert_file_contains "dispatch preserves lease authority for singleton frontiers" \
   "$ROOT/.claude/commands/references/build-dispatch.md" \
   'singleton runnable frontier out of a new worker'

@@ -10,7 +10,8 @@ Build **$ARGUMENTS**.
 `verificationPlan` schedules checks: run its eligible boundary once; skip
 `avoidBefore` on unchanged inputs.
 Call `agents dispatch <change>` and obey its single action until
-`build-complete`. Run `run-in-session` locally. Deferred readiness is eligible
+`build-complete`. Execute its `nextCommand` before Prove. Run `run-in-session`
+locally. Deferred readiness is eligible
 only with no remaining tasks. For `run-leased-in-session`,
 `spawn-group`, or `wait`, read `.claude/commands/references/build-dispatch.md`.
 Relay `blocked`.
