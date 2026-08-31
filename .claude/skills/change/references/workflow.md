@@ -78,5 +78,5 @@ public authoring contract. Public operator references such as
 or `.claude/hooks/**` to infer a field or repair validation. For a genuinely new production, runtime, or test-topology
 path, put it in an implementation task and use `sha256: planned`
 in `grounding.yaml`; never create product code during Change just to obtain a
-digest. Validation names the artifact, line, marker, and typed recovery. If it
-does not, report a harness defect instead of reading implementation internals.
+digest. Run validate untruncated; its output is bounded. If recovery is
+incomplete, report a harness defect instead of inspecting internals.

@@ -218,6 +218,9 @@ assert_file_contains "change command selects rapid before creation" \
 assert_file_contains "change command omits empty security flag" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
   'Omit `--security` when there are no triggers'
+assert_file_contains "change keeps grouped validation output intact" \
+  "$ROOT/.claude/skills/change/references/workflow.md" \
+  'Run validate untruncated; its output is bounded'
 assert_file_contains "build command names sandbox transition" \
   "$ROOT/.claude/commands/build.md" \
   'sandbox create <change>'
