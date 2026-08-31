@@ -744,8 +744,54 @@ export function createChangeValidationRuntime({
   writeJson,
   now,
   foundationPolicy = () => ({ quality: { changeGate: "warn" } }),
-  fail
+  fail: terminalFail
 }) {
+  let activeValidationCapture = null;
+  const fail = (message) => {
+    if (activeValidationCapture) {
+      activeValidationCapture.push(String(message));
+      return;
+    }
+    return terminalFail(message);
+  };
+
+  function capturedIssueLines(name, messages) {
+    const prefix = `${name} validation failed:\n  - `;
+    return messages.flatMap((message) => message.startsWith(prefix)
+      ? message.slice(prefix.length).split("\n  - ") : [message]);
+  }
+
+  function captureValidationGroup(groups, name, operation) {
+    const messages = [];
+    activeValidationCapture = messages;
+    let value;
+    try {
+      value = operation();
+    } catch (error) {
+      // A failed shape check may make its dependent code unreadable. Preserve
+      // the explicit finding and skip that dependency instead of inventing a
+      // second error from a TypeError. Unexpected failures still surface.
+      if (messages.length === 0 || !(error instanceof TypeError)) throw error;
+    } finally {
+      activeValidationCapture = null;
+    }
+    const issues = capturedIssueLines(name, messages);
+    if (issues.length) groups.push({ name, issues });
+    return value;
+  }
+
+  function failCollectedValidation(groups) {
+    const populated = groups.filter((group) => group.issues?.length);
+    if (!populated.length) return;
+    const rendered = populated.map((group) =>
+      `[${group.name}]\n  - ${group.issues.join("\n  - ")}`).join("\n");
+    const limit = 16_000;
+    const bounded = rendered.length > limit
+      ? `${rendered.slice(0, limit)}\n  - output truncated; repair these findings and validate again`
+      : rendered;
+    fail(`change validation failed (${populated.length} groups):\n${bounded}`);
+  }
+
   // `dir` is an override for the one case where the ledger is no longer at the
   // active path: an archive that moved the change directory and then failed.
   function pendingTasks(id, dir = activeChangePath(id)) {
@@ -1505,46 +1551,75 @@ export function createChangeValidationRuntime({
         fail(`${id}/grounding.yaml derivedFacts[${index}] requires fact and command`);
   }
 
-  function groundingValue(id, state, dir, parsedTasks = []) {
+  function groundingValue(id, state, dir, parsedTasks = [], initialGroups = []) {
     if (!state.groundingRequired) return null;
     const grounding = readGroundingDocument(id, state, dir);
     const { value, digest: groundingDigest, firstLock } = grounding;
     const decision = value.decisionBatch || {};
-    const decisionIds = validateGroundingDecision(id, decision);
-    validateGroundingSemanticInvariants(id, state, dir, value, decisionIds);
+    const groups = initialGroups.filter((group) => group.issues?.length)
+      .map((group) => ({ ...group, issues: [...group.issues] }));
+    const decisionIds = captureValidationGroup(groups, "grounding decision",
+      () => validateGroundingDecision(id, decision)) || new Set();
+    captureValidationGroup(groups, "semantic invariant",
+      () => validateGroundingSemanticInvariants(id, state, dir, value, decisionIds));
 
-    if (!Array.isArray(value.readSet) || value.readSet.length === 0)
-      fail(`${id}/grounding.yaml readSet must be non-empty`);
+    const readableReadSet = Array.isArray(value.readSet) && value.readSet.length > 0;
+    if (!readableReadSet)
+      groups.push({
+        name: "grounding readSet",
+        issues: [`${id}/grounding.yaml readSet must be non-empty`]
+      });
 
+    let v2 = null;
     if (value.version === 2) {
-      const v2 = groundingV2Context(id, state, dir, value);
-      const {
-        risk, contract: v2Contract, capabilities: v2Capabilities,
-        semantics, selected, mandatoryService, mandatoryWire, mandatoryActivation
-      } = v2;
-      validateNfrAssessment(id, state, value, parsedTasks, v2);
-      validateRequiredV2Sections(id, value, v2);
-      validateGroundingSourceRows(id, value, selected, parsedTasks, firstLock);
-      validateServiceInteractionRows(id, value);
-      validateCriticalCasesAndMutants(id, value);
+      v2 = captureValidationGroup(groups, "grounding risk and shape",
+        () => groundingV2Context(id, state, dir, value));
+      if (v2) {
+        captureValidationGroup(groups, "NFR assessment",
+          () => validateNfrAssessment(id, state, value, parsedTasks, v2));
+        captureValidationGroup(groups, "required grounding sections",
+          () => validateRequiredV2Sections(id, value, v2));
+        if (readableReadSet)
+          captureValidationGroup(groups, "grounding source",
+            () => validateGroundingSourceRows(
+              id, value, v2.selected, parsedTasks, firstLock));
+        captureValidationGroup(groups, "service interaction",
+          () => validateServiceInteractionRows(id, value));
+        captureValidationGroup(groups, "critical case and mutant",
+          () => validateCriticalCasesAndMutants(id, value));
+      }
     }
 
     const repositories = new Map(validationRepositories(id, state, dir)
       .map((repository) => [repository.id, repository]));
-    validateGroundingReadSet(id, value, repositories, firstLock, parsedTasks);
-    validateGroundingTaskOverlap(id, value, parsedTasks);
-
-    const contract = evidence(id, dir);
-    validateGroundingReadRoles(id, state, contract, value.readSet);
-    const claimIds = validateGroundingClaims(id, value, contract, repositories,
-      parsedTasks, firstLock);
-
-    if (value.version === 2) {
-      validateV2ClaimCoverage(id, value, contract, claimIds);
-      validateV2ExecutionBindings(id, dir, value);
+    if (readableReadSet) {
+      captureValidationGroup(groups, "grounding readSet",
+        () => validateGroundingReadSet(id, value, repositories, firstLock, parsedTasks));
+      captureValidationGroup(groups, "grounding task overlap",
+        () => validateGroundingTaskOverlap(id, value, parsedTasks));
     }
 
-    validateDerivedGroundingFacts(id, value);
+    const contract = evidence(id, dir);
+    let claimIds = new Set();
+    if (readableReadSet) {
+      captureValidationGroup(groups, "grounding read roles",
+        () => validateGroundingReadRoles(id, state, contract, value.readSet));
+      claimIds = captureValidationGroup(groups, "grounding claim",
+        () => validateGroundingClaims(id, value, contract, repositories,
+          parsedTasks, firstLock)) || new Set();
+    }
+
+    if (value.version === 2 && Array.isArray(value.criticalCases) &&
+        Array.isArray(value.mutants)) {
+      captureValidationGroup(groups, "critical case coverage",
+        () => validateV2ClaimCoverage(id, value, contract, claimIds));
+      captureValidationGroup(groups, "execution binding",
+        () => validateV2ExecutionBindings(id, dir, value));
+    }
+
+    captureValidationGroup(groups, "derived grounding facts",
+      () => validateDerivedGroundingFacts(id, value));
+    failCollectedValidation(groups);
     return { value, digest: groundingDigest, firstLock, lockedAt: decision.lockedAt };
   }
 
@@ -1563,7 +1638,18 @@ export function createChangeValidationRuntime({
     }
     const tasks = readFileSync(join(dir, "tasks.md"), "utf8");
     const parsedTasks = taskBlocks(tasks);
-    const grounding = groundingValue(id, state, dir, parsedTasks);
+    const claims = evidence(id, dir).claims;
+    const selectedRepositoryIds = new Set(validationRepositories(id, state, dir)
+      .map((repository) => repository.id));
+    contractDiagnostics.push(...claimContractIssues(claims, selectedRepositoryIds)
+      .map((issue) => `claims: ${issue}`));
+    const selected = validationRepositories(id, state, dir);
+    contractDiagnostics.push(...taskContractIssues(
+      parsedTasks, claims, selectedRepositoryIds, selected.length > 1)
+      .map((issue) => `tasks: ${issue}`));
+    const grounding = groundingValue(id, state, dir, parsedTasks, [{
+      name: "cross-artifact contract", issues: contractDiagnostics
+    }]);
     assertNewCapabilitiesAreAdditive(id, dir);
     assertExistingCapabilityOperations(id, dir);
     assertNoDroppedScenarios(id, dir);
@@ -1582,17 +1668,7 @@ export function createChangeValidationRuntime({
     // work on the very code it guards.
     const taskIds = validateImplementationTasks(parsedTasks, fail);
 
-    const claims = evidence(id, dir).claims;
     const claimById = new Map(claims.map((claim) => [claim.id, claim]));
-    const selectedRepositoryIds = new Set(validationRepositories(id, state, dir)
-      .map((repository) => repository.id));
-    contractDiagnostics.push(...claimContractIssues(claims, selectedRepositoryIds)
-      .map((issue) => `claims: ${issue}`));
-    const selected = validationRepositories(id, state, dir);
-    contractDiagnostics.push(...taskContractIssues(
-      parsedTasks, claims, selectedRepositoryIds, selected.length > 1)
-      .map((issue) => `tasks: ${issue}`));
-    failValidationLayer(fail, "cross-artifact contract", contractDiagnostics);
     handoffContract(id, {
       state,
       claimIds: new Set(claimById.keys()),

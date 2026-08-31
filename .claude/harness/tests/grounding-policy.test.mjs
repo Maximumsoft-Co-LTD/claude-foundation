@@ -136,7 +136,7 @@ try {
     [(value) => { value.claims = []; }, /map every evidence claim exactly once/],
     [(value) => { value.claims[0].id = "unknown"; }, /unknown evidence claim/],
     [(value) => { value.claims[0].productionPath = []; }, /productionPath must be/],
-    [(value) => { value.claims[0].productionPath[0] = null; }, /path must be repository-relative/],
+    [(value) => { value.claims[0].productionPath[0] = null; }, /must be an object with repository and path/],
     [(value) => { value.claims[0].failurePaths = []; }, /failurePaths must be/],
     [(value) => { value.claims[0].failurePaths[0].failure = ""; }, /failure is required/],
     [(value) => { value.claims[0].evidenceClass = []; }, /evidenceClass must be/],
@@ -314,6 +314,58 @@ try {
     "a missing Grounding v2 read set fails with a typed validation message");
   writeGrounding(v2());
   assert.equal(runtime.groundingValue("change-a", state, packet).value.version, 2);
+
+  const cascade = v2();
+  cascade.risk.tier = "low";
+  cascade.nfrAssessment = {};
+  cascade.productionEntry.paths[0].path = "missing-entry.mjs";
+  cascade.readSet.push({
+    repository: "root", path: "package.json", role: "dependency-source",
+    mode: "full", sha256: "planned"
+  });
+  cascade.criticalCases = [{
+    id: "CASE-UNBOUND", claimIds: ["claim-a"], oracle: "guess"
+  }];
+  cascade.derivedFacts = [{ fact: "", command: "" }];
+  const cascadeTasks = [{
+    id: "T-CASCADE", done: false,
+    text: "create manifest [kind:implementation] [paths:package.json]"
+  }];
+  state.nfrAssessmentRequired = true;
+  writeGrounding(cascade);
+  assert.throws(() => runtime.groundingValue(
+    "change-a", state, packet, cascadeTasks,
+    [{ name: "cross-artifact contract", issues: [
+      "design: decision 'DEC-001' contains content outside its metadata fields"
+    ] }]
+  ), (error) => [
+    "[cross-artifact contract]", "[grounding risk and shape]",
+    "[NFR assessment]", "[grounding source]", "[grounding readSet]",
+    "[grounding task overlap]", "[critical case and mutant]",
+    "[execution binding]", "[derived grounding facts]"
+  ].every((heading) => error.message.includes(heading)),
+  "independent Change defects are grouped into one bounded validation response");
+  state.nfrAssessmentRequired = false;
+
+  const unreadableDependency = v2();
+  unreadableDependency.productionEntry.paths = null;
+  unreadableDependency.derivedFacts = [{ fact: "", command: "" }];
+  writeGrounding(unreadableDependency);
+  assert.throws(() => runtime.groundingValue("change-a", state, packet),
+    (error) => error.message.includes("[grounding risk and shape]") &&
+      error.message.includes("[derived grounding facts]"),
+    "an unreadable section skips its dependents without hiding independent findings");
+
+  writeGrounding(v2());
+  assert.throws(() => runtime.groundingValue(
+    "change-a", state, packet, [], [{
+      name: "cross-artifact contract",
+      issues: Array.from({ length: 3000 }, (_, index) => `finding-${index}`)
+    }]
+  ), (error) => error.message.length < 17_000 &&
+      error.message.includes("output truncated; repair these findings"),
+  "grouped validation output is bounded before it enters the model context");
+
   const invalidV2 = [
     [(value) => { value.risk.tier = "extreme"; }, /risk.tier/],
     [(value) => { value.risk.classes = []; }, /risk.classes/],
