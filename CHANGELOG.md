@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **OpenSpec-native benchmarks now collect isolated Node.js quality results.**
+  Completed disposable runs measure function coverage and CRAP scores with c8
+  and ESLint complexity, while per-run host telemetry prevents earlier sessions
+  from inflating request, token, operation, and timing totals.
+
+### Changed
+
+- **The `/dev` phase router now avoids redundant parent-side lifecycle work.**
+  Build and Prove agents own their phase boundaries, completed Build state
+  resumes directly into fresh proof, and review commands carry executable actor
+  provenance instead of placeholders.
+
+### Fixed
+
+- **Standard changes must cross the decision boundary before validation.** New
+  standard runtime state records explicit resolution and validation refuses to
+  become a trial-and-error authoring loop; rapid and pre-existing changes remain
+  compatible.
+
+- **Nested TAP critical cases are recognized during proof recovery.** Passing
+  Node test suites no longer appear to be missing required critical-case
+  evidence when TAP assertions are nested below a parent subtest.
+
 ## [3.4.8] - 2026-08-27
 
 ### Added
