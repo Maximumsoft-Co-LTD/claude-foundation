@@ -1563,7 +1563,14 @@ export function createChangeValidationRuntime({
   }
 
   function groundingValue(id, state, dir, parsedTasks = [], initialGroups = []) {
-    if (!state.groundingRequired) return null;
+    // Cross-artifact diagnostics are supplied through initialGroups, but they
+    // are not grounding-specific. Rapid/optional-grounding changes used to
+    // return here and silently accept unknown task claims and other contract
+    // errors. Preserve the short lane while still enforcing its packet.
+    if (!state.groundingRequired) {
+      failCollectedValidation(initialGroups);
+      return null;
+    }
     const grounding = readGroundingDocument(id, state, dir);
     const { value, digest: groundingDigest, firstLock } = grounding;
     const decision = value.decisionBatch || {};

@@ -501,3 +501,11 @@ test("validation runtime orchestrates contract, state, advisory, and review phas
   assert.equal(fixture.runtime.validate("change-a", "root", { quiet: true }).changeId,
     "change-a");
 });
+
+test("optional grounding still enforces cross-artifact task claims", () => {
+  const fixture = validationRuntimeFixture();
+  writeFileSync(join(fixture.packet, "tasks.md"),
+    "- [ ] T001 Implement behavior [claims:unknown] [paths:src/runtime.mjs]\n");
+  assert.throws(() => fixture.runtime.validate("change-a", "root", { quiet: true }),
+    /references unknown claim\(s\): unknown/);
+});

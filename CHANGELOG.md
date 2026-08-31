@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Node test suites no longer appear to be missing required critical-case
   evidence when TAP assertions are nested below a parent subtest.
 
+- **Optional grounding no longer disables cross-artifact validation.** Rapid
+  changes now reject tasks that reference unknown claims even when no grounding
+  ledger is required.
+
 ## [3.4.8] - 2026-08-27
 
 ### Added

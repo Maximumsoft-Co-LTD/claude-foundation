@@ -68,7 +68,7 @@ test("compatibility binding recognizes either compatibility capability", () => {
   ]);
   assert.deepEqual(compatibilityInvariantBindingIssues(
     claims, new Set(["compat"])), [
-    "compatibility claim 'cross' requires a semantic invariant binding"
+    "compatibility claim 'cross' requires a semantic invariant binding; add {id, statement, decisionIds:[...], claimIds:[...], specScenarios:[...]} to grounding.yaml semanticInvariants"
   ]);
 });
 
@@ -99,6 +99,6 @@ test("semantic invariant operation retains row issue ordering and unbound claims
     "semanticInvariants[1] references unknown decision 'DEC-X'",
     "semanticInvariants[1] references unknown claim 'missing'",
     "semanticInvariants[1] references unknown spec scenario 'unknown'",
-    "compatibility claim 'compat' requires a semantic invariant binding"
+    "compatibility claim 'compat' requires a semantic invariant binding; add {id, statement, decisionIds:[...], claimIds:[...], specScenarios:[...]} to grounding.yaml semanticInvariants"
   ]);
 });

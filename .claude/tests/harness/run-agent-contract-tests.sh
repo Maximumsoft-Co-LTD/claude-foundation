@@ -140,8 +140,8 @@ printf '%s\n' \
   '# Tasks' '' \
   '- [ ] **T002** Bad authority [kind:security] [claims:not-declared]' \
   > "$CHANGE/tasks.md"
-if node "$RUNTIME" validate agent-contract >/dev/null 2>&1; then
-  fail "unknown task claim is rejected"
+if validation_output="$(node "$RUNTIME" validate agent-contract 2>&1)"; then
+  fail "unknown task claim is rejected — validate unexpectedly passed: $validation_output"
 else
   pass "unknown task claim is rejected"
 fi

@@ -55,8 +55,8 @@ reviewed defaults and continue. Then immediately run
 `claude-foundation change new "<intent>"` to bind artifacts and budget before
 further reads. Before authoring or validating, resolve impact, coupling,
 security, surface, acceptance, and review. Omit `--security` when there are no triggers.
-Declare surface, wire evidence, and settle the
-reviewer now. Prove must not discover an unnamed operator. Use `change start`
+Declare surface, wire evidence, and settle the reviewer now. Prove must not
+discover an unnamed operator. Use `change start`
 only when the caller already supplied a complete structured draft; do not emit
 its template merely to rediscover the generated artifact contract.
 
