@@ -15,6 +15,7 @@ import {
   resourcesConflict,
   visitPlaywrightReport
 } from "../runtime/evidence/evidence-results.mjs";
+import { criticalCaseResult } from "../runtime/evidence/adapter-runtime.mjs";
 
 test("result parsers accept JSON and complete TAP summaries", () => {
   assert.equal(parseJsonOutput(""), null);
@@ -48,6 +49,27 @@ test("result parsers accept JSON and complete TAP summaries", () => {
     { id: "an interrupted write preserves data [interrupted-save-preserves-store]", status: "pass" }
   ]);
   assert.equal(parseTapOutput(`TAP version 13\n1..${"9".repeat(400)}`), null);
+});
+
+test("nested TAP critical cases match stable IDs before title punctuation", () => {
+  const report = parseTapOutput([
+    "TAP version 13",
+    "# Subtest: persistence",
+    "    ok 1 - CC-001-store-survives: preserves bytes",
+    "    not ok 2 - CC-002-store-rejects: reports corruption",
+    "    1..2",
+    "not ok 1 - persistence",
+    "1..1", "# tests 2", "# pass 1", "# fail 1"
+  ].join("\n"));
+  assert.deepEqual(criticalCaseResult(report, [
+    "CC-001-store-survives", "CC-002-store-rejects"
+  ]), {
+    status: "fail",
+    observations: [
+      { id: "CC-001-store-survives", status: "pass" },
+      { id: "CC-002-store-rejects", status: "fail" }
+    ]
+  });
 });
 
 test("mutation protocol parser accepts markers and supported JSON fields only", () => {

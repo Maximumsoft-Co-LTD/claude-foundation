@@ -40,13 +40,19 @@ function criticalCaseRows(report) {
   return (report?.testResults || []).flatMap(suiteCriticalCases);
 }
 
+function containsCriticalCaseId(value, id) {
+  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|[^A-Za-z0-9_-])${escaped}(?:$|[^A-Za-z0-9_-])`)
+    .test(value);
+}
+
 export function criticalCaseResult(report, required) {
   if (!required.length) return { status: "pass", observations: [] };
   const rows = criticalCaseRows(report);
   const observations = required.map((id) => {
     const exact = rows.find((row) => row.id === id);
     const embedded = exact || rows.find((row) =>
-      row.id.split(/\s+/).includes(id) || row.id.includes(`[${id}]`));
+      containsCriticalCaseId(row.id, id));
     return { id, status: embedded?.status || "missing" };
   });
   const passWords = new Set(["pass", "passed", "success", "ok"]);
