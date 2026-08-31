@@ -789,7 +789,10 @@ export function createChangeValidationRuntime({
     const bounded = rendered.length > limit
       ? `${rendered.slice(0, limit)}\n  - output truncated; repair these findings and validate again`
       : rendered;
-    fail(`change validation failed (${populated.length} groups):\n${bounded}`);
+    fail(`change validation failed (${populated.length} groups):\n${bounded}\n` +
+      "Recovery: repair only fields named above; do not add planned readSet rows " +
+      "unless a finding requires them. Re-run change validate as a standalone " +
+      "command without a pipe.");
   }
 
   // `dir` is an override for the one case where the ledger is no longer at the

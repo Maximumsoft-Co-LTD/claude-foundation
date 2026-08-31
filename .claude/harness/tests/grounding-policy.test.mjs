@@ -345,6 +345,12 @@ try {
     "[execution binding]", "[derived grounding facts]"
   ].every((heading) => error.message.includes(heading)),
   "independent Change defects are grouped into one bounded validation response");
+  assert.throws(() => runtime.groundingValue(
+    "change-a", state, packet, cascadeTasks,
+    [{ name: "cross-artifact contract", issues: ["known defect"] }]
+  ), (error) => error.message.includes("repair only fields named above") &&
+      error.message.includes("standalone command without a pipe"),
+  "grouped recovery prevents speculative rows and piped validation output");
   state.nfrAssessmentRequired = false;
 
   const unreadableDependency = v2();

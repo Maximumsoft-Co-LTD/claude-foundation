@@ -220,7 +220,13 @@ assert_file_contains "change command omits empty security flag" \
   'Omit `--security` when there are no triggers'
 assert_file_contains "change keeps grouped validation output intact" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
-  'Run validate untruncated; its output is bounded'
+  'Run validate standalone, never through a pipe; its output is bounded'
+assert_file_contains "change repairs only reported validation fields" \
+  "$ROOT/.claude/skills/change/references/workflow.md" \
+  'Repair only reported fields'
+assert_file_contains "change audit warnings do not reopen grounding" \
+  "$ROOT/.claude/skills/change/references/workflow.md" \
+  'Optional audit warnings are advisory'
 assert_file_contains "build command names sandbox transition" \
   "$ROOT/.claude/commands/build.md" \
   'sandbox create <change>'

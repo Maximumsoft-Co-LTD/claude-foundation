@@ -72,11 +72,13 @@ acceptance from silence, or expose harness fields. Summarize outcome,
 boundaries, proof, completed work, and next action in the user's language;
 keep lifecycle fields internal.
 
-The generated Change artifacts plus `change validate` output are the complete
-public authoring contract. Public operator references such as
-`.claude/harness/EVIDENCE.md` may explain configured adapters. Never inspect managed `.claude/harness/**`
-or `.claude/hooks/**` to infer a field or repair validation. For a genuinely new production, runtime, or test-topology
-path, put it in an implementation task and use `sha256: planned`
-in `grounding.yaml`; never create product code during Change just to obtain a
-digest. Run validate untruncated; its output is bounded. If recovery is
-incomplete, report a harness defect instead of inspecting internals.
+Generated artifacts plus `change validate` are the authoring contract.
+`.claude/harness/EVIDENCE.md` may explain adapters.
+Never inspect managed `.claude/harness/**` or `.claude/hooks/**` to infer fields or repair validation.
+New production, runtime, or test-topology paths need an implementation task and
+`sha256: planned` in `grounding.yaml`; never create product code during Change
+to obtain a digest.
+Run validate standalone, never through a pipe; its output is bounded. Repair only reported fields. After
+`VALID`, proceed directly to Build. Optional audit warnings are advisory and
+never justify `--reopen-grounding`. If recovery is incomplete, report a harness
+defect instead of inspecting internals.
