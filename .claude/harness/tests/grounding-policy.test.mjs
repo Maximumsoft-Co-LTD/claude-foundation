@@ -351,6 +351,17 @@ try {
   ), (error) => error.message.includes("repair only fields named above") &&
       error.message.includes("standalone command without a pipe"),
   "grouped recovery prevents speculative rows and piped validation output");
+  assert.throws(() => runtime.groundingValue(
+    "change-a", state, packet, cascadeTasks,
+    Array.from({ length: 20 }, (_, index) => ({
+      name: `group-${index}`, issues: [`finding-${index}`, `detail-${index}`]
+    }))
+  ), (error) => {
+    const lines = error.message.split("\n");
+    return Array.from({ length: 20 }, (_, index) =>
+      lines.some((line) => line.startsWith(`[group-${index}] `) &&
+        line.includes(`finding-${index}; detail-${index}`))).every(Boolean);
+  }, "grouped recovery renders one bounded line per independent group");
   state.nfrAssessmentRequired = false;
 
   const unreadableDependency = v2();
@@ -404,7 +415,8 @@ try {
     [(value) => { value.mutants = [{ id: "", claimIds: ["claim-a"], class: "x", killerCaseId: "CASE-WIRE" }]; }, /mutants\[0\].id/],
     [(value) => { value.mutants = [{ id: "M1", claimIds: [], class: "", killerCaseId: "CASE-WIRE" }]; }, /requires claimIds and class/],
     [(value) => { value.mutants = [{ id: "M1", claimIds: ["claim-a"], class: "x", killerCaseId: "missing" }]; }, /killerCaseId/],
-    [(value) => { value.criticalCases = []; }, /material test claim/],
+    [(value) => { value.criticalCases = []; },
+      /material test claims .*bind its id in execution\.yaml provider\.criticalCases/s],
     [(value) => { value.criticalCases.push({
       ...value.criticalCases[0], id: "CASE-UNKNOWN", claimIds: ["unknown"]
     }); }, /references unknown claim/]

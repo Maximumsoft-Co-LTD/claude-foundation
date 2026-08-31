@@ -783,8 +783,12 @@ export function createChangeValidationRuntime({
   function failCollectedValidation(groups) {
     const populated = groups.filter((group) => group.issues?.length);
     if (!populated.length) return;
-    const rendered = populated.map((group) =>
-      `[${group.name}]\n  - ${group.issues.join("\n  - ")}`).join("\n");
+    // Keep one physical line per group. Agents sometimes pipe this bounded
+    // output through head/tail despite the public workflow; line-bounded
+    // rendering still exposes every independent group in that failure mode.
+    const rendered = populated.map((group) => `[${group.name}] ` +
+      group.issues.map((issue) => issue.replace(/\s*\n\s*/g, " ")).join("; "))
+      .join("\n");
     const limit = 16_000;
     const bounded = rendered.length > limit
       ? `${rendered.slice(0, limit)}\n  - output truncated; repair these findings and validate again`
@@ -1501,11 +1505,13 @@ export function createChangeValidationRuntime({
       (claim.capabilities || []).some((capability) =>
         ["test", "integration", "live", "browser"].includes(capability)));
     const criticalCoverage = new Set(value.criticalCases.flatMap((row) => row.claimIds));
-    for (const claim of material)
-      if (!criticalCoverage.has(claim.id))
-        fail(`${id}/grounding.yaml material test claim '${claim.id}' requires a ` +
-          "stable criticalCases row shaped as {id, claimIds:[claim-id], " +
-          `oracle:${CRITICAL_CASE_ORACLES.join("|")}}`);
+    const uncovered = material.filter((claim) => !criticalCoverage.has(claim.id));
+    if (uncovered.length)
+      fail(`${id}/grounding.yaml material test claims ` +
+        `${uncovered.map((claim) => `'${claim.id}'`).join(", ")} each require a ` +
+        "stable criticalCases row shaped as {id, claimIds:[claim-id], " +
+        `oracle:${CRITICAL_CASE_ORACLES.join("|")}}; when adding each row, also ` +
+        "bind its id in execution.yaml provider.criticalCases before revalidating");
     for (const [index, row] of value.criticalCases.entries())
       for (const claimId of row.claimIds)
         if (!claimIds.has(claimId))
