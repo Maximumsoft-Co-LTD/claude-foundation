@@ -597,7 +597,7 @@ export function createProofExecutionRuntime({
           !aiExhausted && request.mainSessionFallback
         ? `claude-foundation authority run ${id} --request ${request.requestId} --subject-actor ${request.mainSessionFallback.subject?.identity || "<implementer>"} --main-session-model-family <family> --main-session-model <model>`
         : stage === "review" && request.status === "requested" && !aiExhausted
-          ? `claude-foundation authority run ${id} --request ${request.requestId} --subject-actor <implementer> [AI subject provenance options]`
+          ? `claude-foundation authority run ${id} --request ${request.requestId} --subject-actor implementation-agent`
         : `claude-foundation authority status ${id} --request ${request.requestId} --template`
     }));
   }

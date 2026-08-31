@@ -3,20 +3,21 @@ description: Compose change → build → prove.
 argument-hint: <intent> | --resume <change> | --plan-only <intent>
 ---
 
-`--resume` continues; `--plan-only` stops after Change.
+`--resume` reads state. When the sandbox has zero pending tasks, skip Build;
+invoke fresh `/prove <id>`. `--plan-only`: Change only.
 
-For all fresh work use `/change`; follow its workflow. After doctor and its
-Decision Sheet, immediately run `claude-foundation change new "<intent>"` to bind
-Change ID/budget before authoring. `change start --template` requires a complete
-supplied draft.
+For all fresh work use `/change`. After its Decision Sheet, immediately run
+`claude-foundation change new "<intent>"` to bind budget. Use
+`change start --template` only with a complete draft.
 
-After Change, invoke and await fresh Agents for `/build <id>`, then `/prove <id>`;
-parent never runs readiness.
+After Change, await fresh Agents for `/build <id>`, then `/prove <id>`. Parent
+never runs Build inspection/tests, proof readiness/advance, or authority
+commands; phase agents own boundaries.
 
-Do not reread framework files. Report evidence and next action.
+Do not reread framework files. Report evidence.
 
-Author artifacts with Edit or Write, never mutating Bash commands.
+Use Edit/Write.
 
-Workflow is mandatory. Code/test success without Foundation runtime state is a failed `/dev` invocation.
+Code/test success without Foundation runtime state is a failed `/dev` invocation.
 
-Never Land, commit, push, open a PR, or create another ledger.
+Never Land, commit, push, open PR, or add a ledger.

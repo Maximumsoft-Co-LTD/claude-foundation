@@ -208,7 +208,10 @@ assert_file_contains "dev enforces fresh phase contexts" \
   'fresh Agents for `/build <id>`, then `/prove <id>`'
 assert_file_contains "dev leaves proof routing to its fresh Prove agent" \
   "$ROOT/.claude/commands/dev.md" \
-  'parent never runs readiness'
+  'proof readiness/advance'
+assert_file_contains "dev resume skips completed Build" \
+  "$ROOT/.claude/commands/dev.md" \
+  'sandbox has zero pending tasks, skip Build'
 assert_file_contains "change forbids runtime archaeology" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
   'Never inspect managed `.claude/harness/**`'
@@ -218,6 +221,9 @@ assert_file_contains "change command selects rapid before creation" \
 assert_file_contains "change command omits empty security flag" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
   'Omit `--security` when there are no triggers'
+assert_file_contains "change resolves before authoring or validation" \
+  "$ROOT/.claude/skills/change/references/workflow.md" \
+  'Before authoring or validating, resolve impact'
 assert_file_contains "change keeps grouped validation output intact" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
   'Run validate standalone, never through a pipe; its output is bounded'

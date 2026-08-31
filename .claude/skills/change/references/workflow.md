@@ -52,9 +52,9 @@ from the user's intent without reading framework implementation: rapid is only
 low-impact isolated unit/static work. If a material choice is genuinely
 unresolved, ask every such choice in one Decision Sheet; otherwise record
 reviewed defaults and continue. Then immediately run
-`claude-foundation change new "<intent>"` so the generated artifacts become the
-authoring surface and the session budget is bound before further reads. Resolve
-impact, coupling, security, surface, acceptance, and review. Omit `--security` when there are no triggers.
+`claude-foundation change new "<intent>"` to bind artifacts and budget before
+further reads. Before authoring or validating, resolve impact, coupling,
+security, surface, acceptance, and review. Omit `--security` when there are no triggers.
 Declare surface, wire evidence, and settle the
 reviewer now. Prove must not discover an unnamed operator. Use `change start`
 only when the caller already supplied a complete structured draft; do not emit

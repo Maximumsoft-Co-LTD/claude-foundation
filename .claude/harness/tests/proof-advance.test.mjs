@@ -749,8 +749,9 @@ try {
   const open = fixture();
   const wait = await quiet(() => open.runtime.proofAdvance("change-a"));
   assert.equal(wait.status, "WAITING_EXTERNAL");
-  assert.match(wait.next?.[0]?.command || "", /authority run/,
-    "an unexhausted AI review route still prescribes authority run");
+  assert.match(wait.next?.[0]?.command || "",
+    /authority run .* --subject-actor implementation-agent$/,
+    "an unexhausted AI review route prescribes an executable authority command");
 }
 
 process.exitCode = 0;

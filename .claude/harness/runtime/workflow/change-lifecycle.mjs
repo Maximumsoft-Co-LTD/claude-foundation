@@ -393,7 +393,10 @@ export function createChangeLifecycle({
     saveRuntime(state);
     if (draft) materializeDraft(id, draft);
     bindClaudeSession(id, "change");
-    console.log(`CREATED ${id}\n  schema: ${schema}\n  next: complete artifacts, then /build ${id}`);
+    const next = schema === "foundation-standard"
+      ? `resolve decisions with change resolve ${id} before authoring or validation`
+      : `complete artifacts, validate, then /build ${id}`;
+    console.log(`CREATED ${id}\n  schema: ${schema}\n  next: ${next}`);
     return id;
   }
 

@@ -63,7 +63,8 @@ const lifecycle = createChangeLifecycle({
 });
 
 const priorLog = console.log;
-console.log = () => {};
+const logs = [];
+console.log = (message) => logs.push(String(message));
 try {
   const standard = lifecycle.createChange("Standard Change", {});
   assert.equal(standard, "standard-change");
@@ -81,6 +82,8 @@ try {
     /Standard Change standard-change-outcome/);
   assert.match(readFileSync(join(changesRoot, standard, ".openspec.yaml"), "utf8"),
     /^schema: foundation-standard/);
+  assert.match(logs[0],
+    /resolve decisions with change resolve standard-change before authoring or validation/);
 
   groundingRequired = false;
   const rapid = lifecycle.createChange("Rapid Change", { rapid: true, id: "rapid-id" });
@@ -94,6 +97,7 @@ try {
   assert.equal(existsSync(join(changesRoot, rapid, "grounding.yaml")), false);
   assert.match(readFileSync(join(changesRoot, rapid, ".openspec.yaml"), "utf8"),
     /skip_specs: true/);
+  assert.match(logs[1], /complete artifacts, validate, then \/build rapid-id/);
   assert.deepEqual(operationIds, ["standard-change", "rapid-id"]);
   assert.deepEqual(bindings, [
     { id: "standard-change", phase: "change" },
