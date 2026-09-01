@@ -7,7 +7,7 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import {
   createChangeValidationRuntime, durableDecisionMetadataIssues,
-  semanticInvariantIssues
+  groundingInteractionRequirements, semanticInvariantIssues
 } from "../runtime/workflow/change-validation.mjs";
 import { renderDraftDecisions } from "../runtime/workflow/change-lifecycle.mjs";
 
@@ -58,6 +58,15 @@ const writeGrounding = (value) =>
   writeFileSync(join(packet, "grounding.yaml"), `${JSON.stringify(value, null, 2)}\n`);
 
 try {
+  assert.deepEqual(groundingInteractionRequirements({
+    coupling: "isolated", repositoryCount: 1, capabilities: ["test"],
+    semantics: "an event feed calls an in-process consumer callback"
+  }), { service: false, wire: false },
+  "generic in-process event vocabulary does not invent a service boundary");
+  assert.equal(groundingInteractionRequirements({
+    coupling: "isolated", repositoryCount: 1, capabilities: ["test"],
+    semantics: "publish to a Kafka event stream"
+  }).service, true, "explicit distributed infrastructure still requires service grounding");
   const runtime = createChangeValidationRuntime({
     root: fixture,
     activeChangePath: () => packet,
@@ -411,9 +420,12 @@ try {
     [(value) => { value.criticalCases = null; }, /criticalCases and mutants must be arrays/],
     [(value) => { value.criticalCases[0].id = ""; }, /id must be non-empty and unique/],
     [(value) => { value.criticalCases[0].claimIds = []; }, /claimIds must be non-empty/],
+    [(value) => { value.criticalCases[0].claimIds = "claim-a"; },
+      /claimIds must be non-empty/],
     [(value) => { value.criticalCases[0].oracle = "guess"; }, /oracle must be one of:/],
     [(value) => { value.mutants = [{ id: "", claimIds: ["claim-a"], class: "x", killerCaseId: "CASE-WIRE" }]; }, /mutants\[0\].id/],
     [(value) => { value.mutants = [{ id: "M1", claimIds: [], class: "", killerCaseId: "CASE-WIRE" }]; }, /requires claimIds and class/],
+    [(value) => { value.mutants = [{ id: "M1", claimIds: "claim-a", class: "x", killerCaseId: "CASE-WIRE" }]; }, /requires claimIds and class/],
     [(value) => { value.mutants = [{ id: "M1", claimIds: ["claim-a"], class: "x", killerCaseId: "missing" }]; }, /killerCaseId/],
     [(value) => { value.criticalCases = []; },
       /material test claims .*bind its id in execution\.yaml provider\.criticalCases/s],
@@ -426,6 +438,13 @@ try {
     mutate(value);
     expectFailure(value, expected);
   }
+  const malformedCriticalCoverage = v2();
+  malformedCriticalCoverage.criticalCases[0].claimIds = "claim-a";
+  writeGrounding(malformedCriticalCoverage);
+  assert.throws(() => runtime.groundingValue("change-a", state, packet),
+    (error) => error.message.includes("claimIds must be non-empty") &&
+      !error.message.includes("not iterable"),
+  "malformed critical-case bindings never escape as a raw iterator error");
   const missingProductionSource = v2();
   missingProductionSource.readSet = missingProductionSource.readSet
     .filter((row) => row.path !== "production.mjs");

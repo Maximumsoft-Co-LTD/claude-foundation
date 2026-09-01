@@ -109,6 +109,21 @@
         "unmapped": { "$ref": "#/$defs/nullableCount" }
       }
     },
+    "oracle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["configured", "measurement", "verdict", "score", "max", "results", "reason", "source"],
+      "properties": {
+        "configured": { "type": "boolean" },
+        "measurement": { "$ref": "#/$defs/measurement" },
+        "verdict": { "type": ["string", "null"], "enum": ["pass", "fail", null] },
+        "score": { "$ref": "#/$defs/nullableCount" },
+        "max": { "$ref": "#/$defs/nullableCount" },
+        "results": { "type": "object", "additionalProperties": { "enum": ["pass", "fail"] } },
+        "reason": { "$ref": "#/$defs/nullableString" },
+        "source": { "$ref": "#/$defs/nullableString" }
+      }
+    },
     "evidenceReuse": {
       "type": "object",
       "additionalProperties": false,

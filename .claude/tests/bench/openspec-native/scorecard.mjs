@@ -108,6 +108,32 @@ function qualitySummary(report) {
   };
 }
 
+function oracleSummary(input) {
+  const configured = input?.configured === true;
+  const results = object(input?.results);
+  const verdict = ["pass", "fail"].includes(input?.verdict) ? input.verdict : null;
+  const score = count(input?.score);
+  const max = count(input?.max);
+  const resultValues = Object.values(results);
+  const measuredOracle = configured && input?.measurement === "measured" && verdict &&
+    score !== null && max !== null && max > 0 && score <= max &&
+    resultValues.length === max && resultValues.every((value) =>
+      ["pass", "fail"].includes(value)) &&
+    score === resultValues.filter((value) => value === "pass").length &&
+    verdict === (score === max ? "pass" : "fail");
+  return {
+    configured,
+    measurement: measuredOracle ? "measured" : "unavailable",
+    verdict: measuredOracle ? verdict : null,
+    score: measuredOracle ? score : null,
+    max: measuredOracle ? max : null,
+    results: measuredOracle ? results : {},
+    reason: text(input?.reason) || (configured && !measuredOracle
+      ? "oracle-summary-invalid" : null),
+    source: text(input?.source)
+  };
+}
+
 function envelopeUsage(envelope) {
   const usage = object(envelope.usage);
   return {
@@ -160,17 +186,25 @@ function operationSummary(rows, metrics, hostTelemetry = {}) {
   };
 }
 
-function normalizeOutcome(input = {}) {
+function normalizeOutcome(input = {}, oracle = {}) {
   const pendingTasks = count(input.pendingTasks);
   const requiredEvidencePassed = typeof input.requiredEvidencePassed === "boolean"
     ? input.requiredEvidencePassed : null;
-  const outcomeStatus = status(input.status, OUTCOME_STATES, "incomplete");
+  let outcomeStatus = status(input.status, OUTCOME_STATES, "incomplete");
+  let failureClass = text(input.failureClass);
+  const oracleFailed = oracle.configured &&
+    (oracle.measurement !== "measured" || oracle.verdict !== "pass");
+  if (outcomeStatus === "completed" && oracleFailed) {
+    outcomeStatus = "failed";
+    failureClass = oracle.measurement === "measured"
+      ? "task-oracle-failed" : "task-oracle-unavailable";
+  }
   const complete = outcomeStatus === "completed" && pendingTasks === 0 &&
-    requiredEvidencePassed === true;
+    requiredEvidencePassed === true && !oracleFailed;
   return {
     status: outcomeStatus,
     complete,
-    failureClass: text(input.failureClass),
+    failureClass,
     changeId: text(input.changeId),
     workflowStatus: text(input.workflowStatus),
     pendingTasks,
@@ -194,6 +228,7 @@ export function buildScorecard(input) {
       ? "measured" : "partial";
   const startedAt = timestamp(stopwatch.startedAt);
   const finishedAt = timestamp(stopwatch.finishedAt);
+  const oracle = oracleSummary(input.oracle);
   return {
     protocol: SCORECARD_PROTOCOL,
     scenario: requiredText(input.scenario, "scenario"),
@@ -209,7 +244,7 @@ export function buildScorecard(input) {
       startedAt,
       finishedAt
     },
-    outcome: normalizeOutcome(input.outcome),
+    outcome: normalizeOutcome(input.outcome, oracle),
     timing: {
       wallMs,
       wallMeasurement: wallMs === null ? "unavailable" : "measured",
@@ -239,6 +274,7 @@ export function buildScorecard(input) {
     },
     operations: operationSummary(input.operationRows, metrics, input.hostTelemetry),
     quality: qualitySummary(input.quality),
+    oracle,
     evidenceReuse: {
       count: count(metrics.evidenceReuse?.count),
       byReason: object(metrics.evidenceReuse?.byReason)

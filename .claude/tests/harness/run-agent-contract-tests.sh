@@ -26,6 +26,12 @@ assert_file_contains "build names the terminal completion action" \
   "$ROOT/.claude/commands/build.md" '`build-complete`'
 assert_file_contains "build executes terminal readiness before Prove" \
   "$ROOT/.claude/commands/build.md" 'Execute its `nextCommand` before Prove'
+assert_file_contains "change partitions defect inputs beyond the reported repro" \
+  "$ROOT/.claude/skills/change/references/workflow.md" \
+  'partitions and source-language representation/coercion boundaries'
+assert_file_contains "build verifies coercion boundaries before task completion" \
+  "$ROOT/.claude/commands/references/build-policy.md" \
+  'test adjacent input partitions and source-language coercion'
 assert_file_contains "dispatch preserves lease authority for singleton frontiers" \
   "$ROOT/.claude/commands/references/build-dispatch.md" \
   'singleton runnable frontier out of a new worker'

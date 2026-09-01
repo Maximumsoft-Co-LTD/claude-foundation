@@ -8,6 +8,9 @@ Move unauthorized infrastructure operations to `handoffs.yaml`; relay `handoff
 packet` once and never ask for credentials. Time long commands with `exec
 <change> -- <command>` so external wall time reaches metrics.
 
+For defect guards, test adjacent input partitions and source-language coercion
+boundaries before completing their tasks; do not stop at the reported repro.
+
 Ask only for structured decisions. Ask again only if behavior, compatibility,
 security, data, or rollout must change. Provider and permission failures follow
 typed recovery.

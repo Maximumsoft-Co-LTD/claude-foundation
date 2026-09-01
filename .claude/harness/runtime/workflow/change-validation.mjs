@@ -176,11 +176,13 @@ export function groundingInteractionRequirements({
 } = {}) {
   const declared = capabilities instanceof Set ? capabilities : new Set(capabilities);
   const semanticText = String(semantics).toLowerCase();
+  const explicitServiceBoundary =
+    /\b(queue|message broker|rabbit(?:mq)?|kafka|webhook|cross-service|remote service|event (?:bus|stream|consumer|producer))\w*\b/
+      .test(semanticText);
   const service = coupling === "coupled" || repositoryCount > 1 ||
     ["cross-repo-contract", "integration", "live", "queue"]
       .some((capability) => declared.has(capability)) ||
-    /\b(queue|broker|rabbit|kafka|event|callback|consumer|producer)\w*\b/
-      .test(semanticText);
+    explicitServiceBoundary;
   const wire = service || ["compatibility", "browser"]
     .some((capability) => declared.has(capability)) ||
     /\b(wire|contract|http|api|json|message|payload)\w*\b/.test(semanticText);
@@ -1503,10 +1505,11 @@ export function createChangeValidationRuntime({
   }
 
   function validateV2ClaimCoverage(id, value, contract, claimIds) {
+    const rowClaimIds = (row) => Array.isArray(row?.claimIds) ? row.claimIds : [];
     const material = contract.claims.filter((claim) => claim.impact !== "low" &&
       (claim.capabilities || []).some((capability) =>
         ["test", "integration", "live", "browser"].includes(capability)));
-    const criticalCoverage = new Set(value.criticalCases.flatMap((row) => row.claimIds));
+    const criticalCoverage = new Set(value.criticalCases.flatMap(rowClaimIds));
     const uncovered = material.filter((claim) => !criticalCoverage.has(claim.id));
     if (uncovered.length)
       fail(`${id}/grounding.yaml material test claims ` +
@@ -1515,17 +1518,17 @@ export function createChangeValidationRuntime({
         `oracle:${CRITICAL_CASE_ORACLES.join("|")}}; when adding each row, also ` +
         "bind its id in execution.yaml provider.criticalCases before revalidating");
     for (const [index, row] of value.criticalCases.entries())
-      for (const claimId of row.claimIds)
+      for (const claimId of rowClaimIds(row))
         if (!claimIds.has(claimId))
           fail(`${id}/grounding.yaml criticalCases[${index}] references unknown claim '${claimId}'`);
     const mutationClaims = contract.claims.filter((claim) =>
       (claim.capabilities || []).includes("mutation"));
-    const mutationCoverage = new Set(value.mutants.flatMap((row) => row.claimIds));
+    const mutationCoverage = new Set(value.mutants.flatMap(rowClaimIds));
     for (const claim of mutationClaims)
       if (!mutationCoverage.has(claim.id))
         fail(`${id}/grounding.yaml mutation claim '${claim.id}' requires a named mutant and killer case`);
     for (const [index, row] of value.mutants.entries())
-      for (const claimId of row.claimIds)
+      for (const claimId of rowClaimIds(row))
         if (!claimIds.has(claimId))
           fail(`${id}/grounding.yaml mutants[${index}] references unknown claim '${claimId}'`);
   }

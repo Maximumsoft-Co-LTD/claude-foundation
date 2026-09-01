@@ -7,11 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.10] - 2026-09-01
+
+### Added
+
+- **OpenSpec-native scorecards can enforce deterministic brownfield oracles.**
+  Configured hidden-acceptance failures and unavailable oracle measurements now
+  prevent a workflow proof from being reported as completed task correctness.
+
+### Changed
+
+- **Defect planning, implementation, and review now partition input domains.**
+  Critical cases probe adjacent values and applicable language-level
+  representation or coercion boundaries instead of stopping at the reported
+  reproduction alone.
+
 ### Fixed
 
 - **Build completion now executes its readiness boundary before Prove.** The
   phase contract follows the dispatch-provided next command, catching missing
   critical-case tags before they cause a failed first proof advance.
+
+- **Malformed grounding rows now produce actionable validation findings.**
+  Invalid critical-case and mutant claim bindings no longer fall through to a
+  raw iterator error, while generic in-process event vocabulary no longer
+  invents cross-service observability requirements.
+
+- **Bare Node.js benchmark projects now report coverage and CRAP.** Quality
+  collection follows the delivered sandbox even without `package.json` and
+  discovers root-level CommonJS or ESM tests through the built-in test runner.
 
 ## [3.4.9] - 2026-08-31
 
@@ -2902,7 +2926,8 @@ Fast-first, goal-driven overhaul of the `/dev` pipeline — five workstreams fro
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.4.9...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.4.10...HEAD
+[3.4.10]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.4.9...v3.4.10
 [3.4.9]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.4.8...v3.4.9
 [3.4.8]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.4.7...v3.4.8
 [3.4.7]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.4.6...v3.4.7
