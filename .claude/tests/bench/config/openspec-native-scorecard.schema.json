@@ -30,7 +30,7 @@
       "additionalProperties": false,
       "required": ["status", "complete", "failureClass", "changeId", "workflowStatus", "pendingTasks", "requiredEvidencePassed", "proofStatus", "landStatus"],
       "properties": {
-        "status": { "enum": ["completed", "blocked", "incomplete", "failed", "timeout", "cancelled", "error"] },
+        "status": { "enum": ["completed", "blocked", "needs-user-decision", "incomplete", "failed", "timeout", "cancelled", "error"] },
         "complete": { "type": "boolean" },
         "failureClass": { "$ref": "#/$defs/nullableString" },
         "changeId": { "$ref": "#/$defs/nullableString" },

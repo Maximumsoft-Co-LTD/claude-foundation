@@ -48,6 +48,9 @@ export function matrixIssues(matrix, root = resolve(HERE, "../../../..")) {
           (!scenario.oracle.path || !existsSync(resolve(root, scenario.oracle.path))))
         issues.push(`${scenario?.id}: ready oracle does not exist`);
     }
+    if (scenario?.last_attempt?.status === "needs-user-decision" &&
+        (scenario.last_attempt.baseline_eligible !== false || scenario.baseline !== null))
+      issues.push(`${scenario?.id}: user-decision attempts cannot become baselines`);
   }
   for (const workload of REQUIRED_WORKLOADS)
     if (!workloads.has(workload)) issues.push(`missing workload: ${workload}`);

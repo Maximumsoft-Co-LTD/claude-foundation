@@ -69,16 +69,36 @@
     },
     {
       "id": "python-api-validation",
-      "status": "planned",
+      "status": "ready",
       "execution": "paid",
       "workload": "api-validation-defect",
       "stack": "python",
       "size": "medium",
-      "fixture": null,
-      "oracle": { "required": true, "path": null },
+      "fixture": ".claude/tests/bench/tasks/15-python-api-validation/seed",
+      "oracle": {
+        "required": true,
+        "path": ".claude/tests/bench/tasks/15-python-api-validation/oracle/run.sh"
+      },
       "quality_required": true,
       "budget": { "wall_ms": 1500000, "cost_usd": 10, "model_requests": 120 },
       "expected_terminal": "completed",
+      "last_attempt": {
+        "run_id": "python-api-validation-r1-main-20260901",
+        "commit": "91ad436a8952b1ced300377910b46685b4637d6c",
+        "status": "needs-user-decision",
+        "reason": "operator-stop-near-model-request-ceiling",
+        "wall_ms": 1288815.111583,
+        "cost_usd": null,
+        "model_requests": 117,
+        "operations": 25,
+        "blocked_operations": 5,
+        "workflow_status": "building",
+        "pending_tasks": 0,
+        "proof_status": null,
+        "post_stop_oracle": { "score": 5, "max": 5, "verdict": "pass" },
+        "post_stop_quality": { "functions": 9, "pass": 5, "warn": 1, "fail": 3 },
+        "baseline_eligible": false
+      },
       "baseline": null
     },
     {

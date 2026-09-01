@@ -111,11 +111,14 @@ function taskContent(project, changeId, change) {
 }
 
 export function observedOutcome({
-  project, changeId, envelope, exitCode, timedOut, oracle = null
+  project, changeId, envelope, exitCode, timedOut, oracle = null,
+  budgetExhausted = null
 }) {
   if (!changeId) return {
-    status: timedOut ? "timeout" : exitCode === 0 ? "incomplete" : "failed",
-    failureClass: timedOut ? "host-timeout" : exitCode === 0 ? "change-not-discovered" : "host-exit",
+    status: budgetExhausted ? "needs-user-decision"
+      : timedOut ? "timeout" : exitCode === 0 ? "incomplete" : "failed",
+    failureClass: budgetExhausted ? `budget-exhausted-${budgetExhausted.kind}`
+      : timedOut ? "host-timeout" : exitCode === 0 ? "change-not-discovered" : "host-exit",
     changeId: null, workflowStatus: null, pendingTasks: null,
     requiredEvidencePassed: null, proofStatus: null, landStatus: null
   };
@@ -124,15 +127,18 @@ export function observedOutcome({
   const tasks = pendingTaskCount(taskContent(project, changeId, change));
   const proof = readJson(join(project, ".foundation/receipts", changeId, "proof.json"));
   const requiredEvidencePassed = proof?.status === "pass";
-  const hostFailed = timedOut || exitCode !== 0 || envelope?.is_error === true;
+  const hostFailed = !budgetExhausted &&
+    (timedOut || exitCode !== 0 || envelope?.is_error === true);
   const oracleRequired = oracle?.configured === true;
   const oracleUnavailable = oracleRequired && oracle?.measurement !== "measured";
   const oracleFailed = oracleRequired && oracle?.verdict !== "pass";
   const complete = !hostFailed && tasks === 0 && requiredEvidencePassed && !oracleFailed;
   return {
-    status: timedOut ? "timeout" : hostFailed || oracleFailed
+    status: budgetExhausted ? "needs-user-decision"
+      : timedOut ? "timeout" : hostFailed || oracleFailed
       ? "failed" : complete ? "completed" : "incomplete",
-    failureClass: timedOut ? "host-timeout"
+    failureClass: budgetExhausted ? `budget-exhausted-${budgetExhausted.kind}`
+      : timedOut ? "host-timeout"
       : exitCode !== 0 ? `host-exit-${exitCode}`
         : envelope?.is_error === true ? "host-result-error"
           : oracleUnavailable ? "task-oracle-unavailable"
@@ -206,7 +212,8 @@ function metricsFor(project, changeId) {
 export function collectNativeScorecard({
   scenario, repeat, runId, project, config = {}, envelope = {}, metrics = null,
   quality = null, operationRows = null, stopwatch = {}, exitCode = 0,
-  timedOut = false, changeId = null, provenance = {}, hostTelemetry = {}, oracle = null
+  timedOut = false, budgetExhausted = null, changeId = null, provenance = {},
+  hostTelemetry = {}, oracle = null
 }) {
   const discovered = discoverChangeId(project, changeId, stopwatch.startedEpochMs ?? null);
   const resolvedMetrics = metrics ?? metricsFor(project, discovered) ?? {};
@@ -222,7 +229,8 @@ export function collectNativeScorecard({
     quality: qualityReport, operationRows: operations, hostTelemetry,
     stopwatch,
     outcome: observedOutcome({
-      project, changeId: discovered, envelope, exitCode, timedOut, oracle
+      project, changeId: discovered, envelope, exitCode, timedOut, oracle,
+      budgetExhausted
     }),
     oracle,
     provenance: {
@@ -235,7 +243,8 @@ export function collectNativeScorecard({
   });
 }
 
-function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs }) {
+function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
+  maxModelRequests = null }) {
   return new Promise((resolveRun) => {
     const startedAt = new Date().toISOString();
     const startedEpochMs = Date.now();
@@ -247,15 +256,39 @@ function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs }) {
     });
     const stdout = [];
     const stderr = [];
-    child.stdout.on("data", (chunk) => stdout.push(chunk));
-    child.stderr.on("data", (chunk) => stderr.push(chunk));
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
+    const requestIds = new Set();
+    let partialLine = "";
+    let budgetExhausted = null;
+    const terminate = () => {
       try {
         if (process.platform === "win32") child.kill("SIGTERM");
         else process.kill(-child.pid, "SIGTERM");
       } catch { child.kill("SIGTERM"); }
+    };
+    child.stdout.on("data", (chunk) => {
+      stdout.push(chunk);
+      if (!Number.isInteger(maxModelRequests) || maxModelRequests < 1 || budgetExhausted)
+        return;
+      const lines = `${partialLine}${chunk}`.split(/\r?\n/);
+      partialLine = lines.pop() || "";
+      for (const line of lines) {
+        let row;
+        try { row = JSON.parse(line); } catch { continue; }
+        const requestId = row?.type === "assistant"
+          ? row.message?.id || row.request_id || null : null;
+        if (requestId) requestIds.add(requestId);
+      }
+      if (requestIds.size >= maxModelRequests) {
+        budgetExhausted = { kind: "model-requests", used: requestIds.size,
+          target: maxModelRequests };
+        terminate();
+      }
+    });
+    child.stderr.on("data", (chunk) => stderr.push(chunk));
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      terminate();
       forceTimer = setTimeout(() => {
         try {
           if (process.platform === "win32") child.kill("SIGKILL");
@@ -268,7 +301,8 @@ function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs }) {
       clearTimeout(timer);
       if (forceTimer) clearTimeout(forceTimer);
       resolveRun({
-        exitCode: 127, timedOut: false, stdout: "", stderr: error.message,
+        exitCode: 127, timedOut: false, budgetExhausted,
+        stdout: "", stderr: error.message,
         stopwatch: {
           wallMs: performance.now() - started, startedAt,
           finishedAt: new Date().toISOString(), startedEpochMs
@@ -279,7 +313,7 @@ function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs }) {
       clearTimeout(timer);
       if (forceTimer) clearTimeout(forceTimer);
       resolveRun({
-        exitCode: code ?? 1, timedOut,
+        exitCode: code ?? 1, timedOut, budgetExhausted,
         stdout: Buffer.concat(stdout).toString("utf8"),
         stderr: Buffer.concat(stderr).toString("utf8"),
         stopwatch: {
@@ -359,12 +393,17 @@ async function main() {
       }
     };
   } else {
+    const claudeArgs = args["max-cost-usd"]
+      ? [...args["claude-arg"], "--max-budget-usd", args["max-cost-usd"]]
+      : args["claude-arg"];
     execution = await runClaude({
       project,
       prompt: required(args.prompt, "--prompt"),
       claudeBin: args["claude-bin"] || "claude",
-      claudeArgs: args["claude-arg"],
-      timeoutMs: Number(args["timeout-ms"] || 1800000)
+      claudeArgs,
+      timeoutMs: Number(args["timeout-ms"] || 1800000),
+      maxModelRequests: args["max-model-requests"]
+        ? Number(args["max-model-requests"]) : null
     });
   }
   const parsedHost = parseHostOutput(execution.stdout);
@@ -373,7 +412,8 @@ async function main() {
     project, args["change-id"] || null, execution.stopwatch.startedEpochMs ?? null);
   const preliminaryOutcome = observedOutcome({
     project, changeId: discoveredChangeId, envelope,
-    exitCode: execution.exitCode, timedOut: execution.timedOut
+    exitCode: execution.exitCode, timedOut: execution.timedOut,
+    budgetExhausted: execution.budgetExhausted
   });
   const oracle = args.oracle && preliminaryOutcome.status !== "completed"
     ? {
@@ -393,11 +433,15 @@ async function main() {
     config: {
       prompt: args.prompt || null,
       timeoutMs: args["timeout-ms"] ? Number(args["timeout-ms"]) : null,
+      maxCostUsd: args["max-cost-usd"] ? Number(args["max-cost-usd"]) : null,
+      maxModelRequests: args["max-model-requests"]
+        ? Number(args["max-model-requests"]) : null,
       claudeArgs: args["claude-arg"],
       oracle: args.oracle || null
     },
     envelope, stopwatch: execution.stopwatch,
     exitCode: execution.exitCode, timedOut: execution.timedOut,
+    budgetExhausted: execution.budgetExhausted,
     changeId: discoveredChangeId, hostTelemetry: parsedHost.hostTelemetry, quality, oracle,
     provenance: { requestedModel: args.model || null }
   });

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Python brownfield benchmark quality and a hidden API-validation oracle.**
+  Dependency-free Python fixtures now produce measured function coverage and
+  CRAP through the standard-library test runner, allowing the first non-Node
+  workload in the matrix to become paid-run ready without inventing evidence.
+
+- **Live benchmark request and cost ceilings are executable.** Paid runs can
+  bind all three matrix budgets to the runner; request exhaustion terminates
+  the host and records a resumable `needs-user-decision` outcome instead of a
+  generic host failure.
+
 - **A machine-enforced cross-domain brownfield benchmark matrix.** Seven
   workload classes carry explicit wall, cost, request, oracle, quality, and
   budget-decision policies; unmeasured scenarios remain non-runnable instead

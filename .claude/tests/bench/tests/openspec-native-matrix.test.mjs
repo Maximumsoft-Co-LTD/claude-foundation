@@ -3,11 +3,11 @@ import test from "node:test";
 
 import { executionPlan, loadMatrix, matrixIssues } from "../openspec-native/matrix.mjs";
 
-test("the cross-domain matrix is valid and keeps unmeasured work planned", () => {
+test("the cross-domain matrix is valid and keeps unprepared work planned", () => {
   const matrix = loadMatrix();
   assert.deepEqual(matrixIssues(matrix), []);
   assert.equal(matrix.scenarios.length, 7);
-  assert.equal(matrix.scenarios.filter((scenario) => scenario.status === "ready").length, 2);
+  assert.equal(matrix.scenarios.filter((scenario) => scenario.status === "ready").length, 3);
   assert.equal(matrix.scenarios.filter((scenario) => scenario.baseline !== null).length, 1);
 });
 
@@ -22,12 +22,22 @@ test("the measured brownfield baseline preserves its real r21 truth", () => {
 
 test("planned scenarios cannot accidentally spend a live-run budget", () => {
   const matrix = loadMatrix();
-  assert.throws(() => executionPlan(matrix, "python-api-validation"), /not ready/);
+  assert.throws(() => executionPlan(matrix, "typescript-react-state"), /not ready/);
   assert.throws(() => executionPlan(matrix, "missing"), /unknown/);
   const ready = executionPlan(matrix, "bare-node-boundary");
   assert.equal(ready.smokeRepeats, 1);
   assert.equal(ready.varianceRepeats, 3);
   assert.equal(ready.budget.wall_ms, 900000);
+  const python = executionPlan(matrix, "python-api-validation");
+  assert.equal(python.budget.wall_ms, 1500000);
+  assert.match(python.fixture, /15-python-api-validation\/seed$/);
+  assert.match(python.oracle, /15-python-api-validation\/oracle\/run\.sh$/);
+  const attempt = matrix.scenarios.find(({ id }) => id === "python-api-validation").last_attempt;
+  assert.equal(attempt.status, "needs-user-decision");
+  assert.equal(attempt.model_requests, 117);
+  assert.equal(attempt.post_stop_oracle.verdict, "pass");
+  assert.equal(attempt.post_stop_quality.fail, 3);
+  assert.equal(attempt.baseline_eligible, false);
 });
 
 test("budget exhaustion pauses for a resumable user decision", () => {
@@ -38,6 +48,14 @@ test("budget exhaustion pauses for a resumable user decision", () => {
     may_report_complete: false,
     may_report_blocked: false
   });
+});
+
+test("a user-decision attempt cannot be promoted to a baseline", () => {
+  const matrix = loadMatrix();
+  const scenario = matrix.scenarios.find(({ id }) => id === "python-api-validation");
+  scenario.last_attempt.baseline_eligible = true;
+  assert.ok(matrixIssues(matrix).some((issue) =>
+    issue.includes("user-decision attempts cannot become baselines")));
 });
 
 test("validation rejects a paid ready scenario without its oracle", () => {

@@ -59,6 +59,24 @@ function nodeTestFiles(workspace) {
   return files.sort();
 }
 
+function pythonProductionFiles(workspace) {
+  const ignored = new Set([
+    ".claude", ".foundation", ".git", ".venv", "venv", "__pycache__", "tests", "test"
+  ]);
+  const files = [];
+  const visit = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isDirectory() && ignored.has(entry.name)) continue;
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (entry.name.endsWith(".py") && !entry.name.startsWith("test_") &&
+          !entry.name.endsWith("_test.py")) files.push(relative(workspace, path));
+    }
+  };
+  visit(workspace);
+  return files.sort();
+}
+
 export function benchmarkWorkspace(project, changeId) {
   const projectRoot = resolve(project);
   const sandbox = changeId && join(projectRoot, ".foundation/sandboxes", changeId);
@@ -70,6 +88,7 @@ export async function collectBenchmarkQuality({ project, changeId }) {
   const workspace = benchmarkWorkspace(project, changeId);
   const manifest = readJson(join(workspace, "package.json"));
   const includes = javascriptIncludes(workspace);
+  const pythonFiles = pythonProductionFiles(workspace);
   const outputDir = join(projectRoot, ".foundation/test-results/quality");
   const coverageDir = join(outputDir, "benchmark-coverage");
   const coveragePath = join(coverageDir, "coverage-final.json");
@@ -77,6 +96,35 @@ export async function collectBenchmarkQuality({ project, changeId }) {
   const reportPath = join(outputDir, "crap.json");
   const diagnosticPath = join(outputDir, "benchmark-collector.json");
   const discoveredTests = manifest?.scripts?.test ? [] : nodeTestFiles(workspace);
+  if (!includes.length && pythonFiles.length) {
+    const collector = join(HERE, "python-quality.py");
+    const execution = spawnSync("python3", [collector, workspace], {
+      cwd: workspace, encoding: "utf8", timeout: 120_000,
+      env: { ...process.env, FOUNDATION_TELEMETRY: "0" },
+      maxBuffer: 10 * 1024 * 1024
+    });
+    let report = null;
+    try { report = JSON.parse(String(execution.stdout || "").trim()); } catch {}
+    const valid = execution.status === 0 && report?.protocol === "foundation-quality-v1" &&
+      report?.collector === "openspec-native-python-stdlib-quality-v1" &&
+      Array.isArray(report?.functions) && report.functions.length > 0 &&
+      report.functions.every((fn) => Number.isFinite(fn.coveragePercent) &&
+        Number.isFinite(fn.crap));
+    if (!valid) {
+      writeJson(diagnosticPath, {
+        status: "unavailable", reason: execution.error?.code === "ETIMEDOUT"
+          ? "quality-test-timeout" : execution.error?.code === "ENOENT"
+            ? "python3-not-installed" : "quality-test-failed",
+        exitCode: execution.status, signal: execution.signal,
+        stderr: String(execution.stderr || "").slice(-4000)
+      });
+      return null;
+    }
+    writeJson(reportPath, report);
+    writeJson(diagnosticPath, { status: "measured", functions: report.summary.functions,
+      report: reportPath, files: pythonFiles });
+    return report;
+  }
   if (!includes.length || (!manifest?.scripts?.test && !discoveredTests.length)) {
     writeJson(diagnosticPath, { status: "unavailable", reason: !includes.length
       ? "no-production-javascript" : "no-node-test-entrypoint" });

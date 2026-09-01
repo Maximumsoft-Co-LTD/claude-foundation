@@ -3,7 +3,8 @@ import { createHash } from "node:crypto";
 export const SCORECARD_PROTOCOL = "foundation-openspec-native-scorecard-v1";
 export const MEASUREMENT_STATES = new Set(["measured", "partial", "unavailable"]);
 export const OUTCOME_STATES = new Set([
-  "completed", "blocked", "incomplete", "failed", "timeout", "cancelled", "error"
+  "completed", "blocked", "needs-user-decision", "incomplete", "failed",
+  "timeout", "cancelled", "error"
 ]);
 
 function object(value) {

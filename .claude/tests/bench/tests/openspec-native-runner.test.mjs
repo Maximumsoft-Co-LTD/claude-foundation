@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
-  chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
+  chmodSync, cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import Ajv2020 from "ajv/dist/2020.js";
@@ -265,6 +266,61 @@ test("bare CommonJS sandboxes produce measured CRAP without package.json", async
   } finally { rmSync(project, { recursive: true, force: true }); }
 });
 
+test("dependency-free Python sandboxes produce measured CRAP quality", async () => {
+  const project = projectFixture();
+  try {
+    rmSync(join(project, ".foundation/test-results/quality"),
+      { recursive: true, force: true });
+    const sandbox = join(project, ".foundation/sandboxes/todo");
+    write(join(sandbox, "calculator.py"), [
+      "def absolute(value):",
+      "    if value < 0:",
+      "        return -value",
+      "    return value", ""
+    ].join("\n"));
+    write(join(sandbox, "tests/test_calculator.py"), [
+      "import unittest", "from calculator import absolute", "",
+      "class CalculatorTests(unittest.TestCase):",
+      "    def test_both_branches(self):",
+      "        self.assertEqual(absolute(-2), 2)",
+      "        self.assertEqual(absolute(2), 2)", ""
+    ].join("\n"));
+    const report = await collectBenchmarkQuality({ project, changeId: "todo" });
+    assert.equal(report.protocol, "foundation-quality-v1");
+    assert.equal(report.collector, "openspec-native-python-stdlib-quality-v1");
+    assert.equal(report.summary.unmapped, 0);
+    assert.ok(report.summary.functions >= 1);
+    assert.ok(report.functions.every((fn) => fn.coveragePercent === 100));
+    assert.ok(report.functions.every((fn) => fn.crap !== null));
+  } finally { rmSync(project, { recursive: true, force: true }); }
+});
+
+test("Python API oracle requires the boundary fix and a regression test", () => {
+  const project = mkdtempSync(join(tmpdir(), "foundation-python-oracle-"));
+  const task = fileURLToPath(new URL("../tasks/15-python-api-validation", import.meta.url));
+  try {
+    cpSync(join(task, "seed"), project, { recursive: true });
+    const before = runBenchmarkOracle({
+      project, oraclePath: join(task, "oracle/run.sh")
+    });
+    assert.equal(before.verdict, "fail");
+    assert.equal(before.results.AC1_regression_first, "fail");
+
+    const apiPath = join(project, "user_api.py");
+    write(apiPath, readFileSync(apiPath, "utf8").replace(
+      "not isinstance(seat_count, int)", "type(seat_count) is not int"));
+    const testPath = join(project, "tests/test_user_api.py");
+    write(testPath, `${readFileSync(testPath, "utf8")}\nclass BoundaryRegression(unittest.TestCase):\n` +
+      "    def test_boolean_seat_count_is_rejected(self):\n" +
+      "        self.assertIn('seat_count', validate_workspace({'seat_count': True}))\n");
+    const after = runBenchmarkOracle({
+      project, oraclePath: join(task, "oracle/run.sh")
+    });
+    assert.equal(after.verdict, "pass");
+    assert.equal(after.score, 5);
+  } finally { rmSync(project, { recursive: true, force: true }); }
+});
+
 test("collect-only CLI emits a schema-valid scorecard without a paid host run", () => {
   const project = projectFixture();
   const outputDir = mkdtempSync(join(tmpdir(), "foundation-native-scorecard-"));
@@ -355,6 +411,44 @@ printf '%s' '{"type":"result","subtype":"success","is_error":false,"total_cost_u
     assert.equal(scorecard.provenance.actualModel, "stub-model");
     assert.ok(scorecard.timing.wallMs >= 0);
     assert.equal(scorecard.timing.wallSource, "runner-monotonic-stopwatch");
+    assert.equal(validate(scorecard), true, JSON.stringify(validate.errors));
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(outputDir, { recursive: true, force: true });
+  }
+});
+
+test("live request ceilings stop the host at a resumable user-decision boundary", () => {
+  const project = projectFixture();
+  const outputDir = mkdtempSync(join(tmpdir(), "foundation-native-budget-stub-"));
+  const output = join(outputDir, "rows.jsonl");
+  const host = join(outputDir, "claude-stub");
+  write(host, `#!/bin/sh
+printf '%s\n' '{"type":"assistant","message":{"id":"request-1","content":[]}}'
+printf '%s\n' '{"type":"assistant","message":{"id":"request-2","content":[]}}'
+sleep 30
+`);
+  chmodSync(host, 0o755);
+  try {
+    const runner = new URL("../openspec-native/run.mjs", import.meta.url);
+    const result = spawnSync(process.execPath, [
+      runner.pathname,
+      "--scenario", "budget-boundary",
+      "--project", project,
+      "--prompt", "/dev bounded work",
+      "--change-id", "todo",
+      "--run-id", "budget-stub",
+      "--claude-bin", host,
+      "--max-model-requests", "2",
+      "--timeout-ms", "5000",
+      "--output", output
+    ], { encoding: "utf8" });
+    assert.equal(result.status, 1, "a user-decision boundary is not completion");
+    const scorecard = JSON.parse(readFileSync(output, "utf8").trim());
+    assert.equal(scorecard.outcome.status, "needs-user-decision");
+    assert.equal(scorecard.outcome.complete, false);
+    assert.equal(scorecard.outcome.failureClass, "budget-exhausted-model-requests");
+    assert.ok(scorecard.timing.wallMs < 5000);
     assert.equal(validate(scorecard), true, JSON.stringify(validate.errors));
   } finally {
     rmSync(project, { recursive: true, force: true });

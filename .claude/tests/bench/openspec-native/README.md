@@ -39,6 +39,19 @@ npm run bench:openspec-native -- \
   --timeout-ms 1800000
 ```
 
+Paid runs should bind every matrix lane directly to the runner:
+
+```bash
+  --timeout-ms <budget.wall_ms> \
+  --max-cost-usd <budget.cost_usd> \
+  --max-model-requests <budget.model_requests>
+```
+
+The wall and cost ceilings are delegated to the stopwatch and Claude CLI. The
+runner counts distinct streamed model request IDs and terminates at the request
+ceiling. Budget termination records `needs-user-decision`; it is resumable and
+is never classified as completed or permanently blocked.
+
 Brownfield tasks can add a deterministic hidden-acceptance oracle. The runner
 invokes the shell script only after workflow proof completes and passes the
 delivered sandbox as its sole argument:
