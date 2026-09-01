@@ -1,0 +1,1 @@
+/dev --yes bug #731 in this repo — reject boolean seat_count values in workspace API validation while preserving public functions and exact response shapes (type fix, size S, brownfield). Add regression and adjacent representation-boundary tests. Do not ask clarifying questions; assume no commit and no PR. Complete Build and Proof.

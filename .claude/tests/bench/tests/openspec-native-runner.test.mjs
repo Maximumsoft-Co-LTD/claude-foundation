@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
-  chmodSync, cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
+  chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -449,6 +449,14 @@ sleep 30
     assert.equal(scorecard.outcome.complete, false);
     assert.equal(scorecard.outcome.failureClass, "budget-exhausted-model-requests");
     assert.ok(scorecard.timing.wallMs < 5000);
+    assert.equal(scorecard.usage.modelRequests, 2);
+    assert.equal(scorecard.usage.observedModelRequests, 2);
+    assert.equal(scorecard.usage.hostReportedModelRequests, null);
+    assert.equal(scorecard.usage.capConsumedModelRequests, 2);
+    assert.equal(scorecard.usage.modelRequestsMeasurement, "measured");
+    assert.equal(scorecard.usage.measurement, "partial");
+    assert.equal(scorecard.usage.costUsd, null,
+      "a forced stop without a trustworthy final envelope has unknown cost");
     assert.equal(validate(scorecard), true, JSON.stringify(validate.errors));
   } finally {
     rmSync(project, { recursive: true, force: true });
@@ -474,6 +482,8 @@ test("stream parser preserves partial tool telemetry before a final result", () 
   assert.deepEqual(parsed.hostTelemetry, {
     total: 2, browserCalls: 1, taskMirrorOperations: 1
   });
+  assert.equal(parsed.observedUsage.observedModelRequests, null,
+    "tool-use rows sharing no message id are not model-request identities");
 });
 
 test("missing collect-only host telemetry remains unknown rather than zero", () => {
@@ -481,4 +491,121 @@ test("missing collect-only host telemetry remains unknown rather than zero", () 
   assert.deepEqual(parsed.hostTelemetry, {
     total: null, browserCalls: null, taskMirrorOperations: null
   });
+  assert.equal(parsed.observedUsage.observedModelRequests, null);
+});
+
+test("external-authority readiness stops before host dispatch and repeats deterministically", () => {
+  const project = projectFixture();
+  const outputDir = mkdtempSync(join(tmpdir(), "foundation-native-authority-stub-"));
+  const output = join(outputDir, "rows.jsonl");
+  const host = join(outputDir, "claude-stub");
+  const marker = join(outputDir, "host-invoked");
+  write(join(project, ".claude/harness/foundation.mjs"), `#!/usr/bin/env node
+if (process.argv[2] === "proof-readiness") process.stdout.write(JSON.stringify({
+  status: "NEEDS_USER_DECISION",
+  pendingTasks: [],
+  budget: { eligible: false, class: "external-authority", reason: "needs review" },
+  next: [{ provider: "review", kind: "user-decision", decision: {
+    kind: "independent-review", recommended: "prepare-for-reviewer",
+    options: [{ id: "prepare-for-user" }, { id: "prepare-for-reviewer" }]
+  }}]
+}));
+else if (process.argv[2] === "metrics") process.stdout.write(JSON.stringify({
+  requests: 99, cost: 9, usageAvailability: { classification: "measured" }
+}));
+`);
+  write(host, `#!/usr/bin/env node
+require("node:fs").writeFileSync(${JSON.stringify(marker)}, "invoked");
+`);
+  chmodSync(host, 0o755);
+  try {
+    const runner = new URL("../openspec-native/run.mjs", import.meta.url);
+    for (const runId of ["authority-first", "authority-repeat"]) {
+      const result = spawnSync(process.execPath, [
+        runner.pathname,
+        "--scenario", "authority-boundary",
+        "--project", project,
+        "--prompt", "/dev continue",
+        "--change-id", "todo",
+        "--run-id", runId,
+        "--claude-bin", host,
+        "--timeout-ms", "5000",
+        "--output", output
+      ], { encoding: "utf8" });
+      assert.equal(result.status, 1, "a user decision is not benchmark completion");
+    }
+    assert.equal(existsSync(marker), false, "the paid host must never be dispatched");
+    const scorecards = readFileSync(output, "utf8").trim().split("\n").map(JSON.parse);
+    assert.equal(scorecards.length, 2);
+    assert.equal(scorecards[0].outcome.failureClass, "external-authority-review");
+    assert.equal(scorecards[0].outcome.decisionProvider, "review");
+    assert.equal(scorecards[0].outcome.decisionKind, "independent-review");
+    assert.equal(scorecards[0].outcome.decisionFingerprint,
+      scorecards[1].outcome.decisionFingerprint);
+    assert.equal(scorecards[0].usage.modelRequests, 0);
+    assert.equal(scorecards[0].usage.costUsd, 0);
+    assert.equal(scorecards[0].usage.costSource, "runner-preflight");
+    assert.equal(scorecards[0].usage.inputTokens, 0);
+    assert.equal(scorecards[0].usage.outputTokens, 0);
+    assert.equal(scorecards[0].usage.cacheCreationTokens, 0);
+    assert.equal(scorecards[0].usage.cacheReadTokens, 0);
+    assert.equal(scorecards[0].operations.byCommand["stopped-before-model-dispatch"], 1);
+    assert.equal(validate(scorecards[0]), true, JSON.stringify(validate.errors));
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(outputDir, { recursive: true, force: true });
+  }
+});
+
+test("streamed external-authority output stops the active host before it can loop", () => {
+  const project = projectFixture();
+  const outputDir = mkdtempSync(join(tmpdir(), "foundation-native-stream-authority-"));
+  const output = join(outputDir, "rows.jsonl");
+  const host = join(outputDir, "claude-stub");
+  write(host, `#!/usr/bin/env node
+console.log(JSON.stringify({ type: "assistant", message: { id: "request-1", content: [] } }));
+console.log(JSON.stringify({ type: "user", message: { content: [{
+  type: "tool_result", content: JSON.stringify({
+    status: "NEEDS_USER_DECISION", pendingTasks: [],
+    budget: { eligible: false, class: "external-authority", reason: "review required" },
+    next: [{ provider: "review", kind: "user-decision", decision: {
+      kind: "independent-review", recommended: "prepare-for-reviewer",
+      options: [{ id: "prepare-for-reviewer" }, { id: "pause" }]
+    }}]
+  })
+}] } }));
+setTimeout(() => {}, 30000);
+`);
+  chmodSync(host, 0o755);
+  try {
+    const runner = new URL("../openspec-native/run.mjs", import.meta.url);
+    const result = spawnSync(process.execPath, [
+      runner.pathname,
+      "--scenario", "stream-authority-boundary",
+      "--project", project,
+      "--prompt", "/dev continue",
+      "--change-id", "todo",
+      "--run-id", "stream-authority",
+      "--claude-bin", host,
+      "--max-model-requests", "10",
+      "--timeout-ms", "5000",
+      "--output", output
+    ], { encoding: "utf8" });
+    assert.equal(result.status, 1);
+    const scorecard = JSON.parse(readFileSync(output, "utf8").trim());
+    assert.equal(scorecard.outcome.status, "needs-user-decision");
+    assert.equal(scorecard.outcome.failureClass, "external-authority-review");
+    assert.equal(scorecard.usage.modelRequests, 1);
+    assert.equal(scorecard.usage.capConsumedModelRequests, null);
+    assert.equal(scorecard.usage.costUsd, null,
+      "a live external-authority stop must not look like a zero-cost preflight");
+    assert.equal(scorecard.usage.inputTokens, null);
+    assert.equal(scorecard.usage.outputTokens, null);
+    assert.equal(scorecard.operations.byCommand["stopped-at-external-authority"], 1);
+    assert.ok(scorecard.timing.wallMs < 5000);
+    assert.equal(validate(scorecard), true, JSON.stringify(validate.errors));
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(outputDir, { recursive: true, force: true });
+  }
 });

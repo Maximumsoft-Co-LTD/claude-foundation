@@ -32,12 +32,18 @@ test("planned scenarios cannot accidentally spend a live-run budget", () => {
   assert.equal(python.budget.wall_ms, 1500000);
   assert.match(python.fixture, /15-python-api-validation\/seed$/);
   assert.match(python.oracle, /15-python-api-validation\/oracle\/run\.sh$/);
-  const attempt = matrix.scenarios.find(({ id }) => id === "python-api-validation").last_attempt;
+  const scenario = matrix.scenarios.find(({ id }) => id === "python-api-validation");
+  const attempt = scenario.last_attempt;
   assert.equal(attempt.status, "needs-user-decision");
-  assert.equal(attempt.model_requests, 117);
+  assert.equal(attempt.model_requests, 30);
+  assert.equal(attempt.readiness.external_provider, "review");
+  assert.equal(attempt.readiness.budget_class, "external-authority");
   assert.equal(attempt.post_stop_oracle.verdict, "pass");
-  assert.equal(attempt.post_stop_quality.fail, 3);
+  assert.equal(attempt.post_stop_quality.fail, 1);
+  assert.equal(attempt.cumulative.model_requests, 147);
   assert.equal(attempt.baseline_eligible, false);
+  assert.equal(scenario.prior_attempt.post_stop_oracle.verdict, "pass");
+  assert.equal(scenario.prior_attempt.post_stop_quality.fail, 3);
 });
 
 test("budget exhaustion pauses for a resumable user decision", () => {

@@ -82,7 +82,7 @@
       "quality_required": true,
       "budget": { "wall_ms": 1500000, "cost_usd": 10, "model_requests": 120 },
       "expected_terminal": "completed",
-      "last_attempt": {
+      "prior_attempt": {
         "run_id": "python-api-validation-r1-main-20260901",
         "commit": "91ad436a8952b1ced300377910b46685b4637d6c",
         "status": "needs-user-decision",
@@ -97,6 +97,35 @@
         "proof_status": null,
         "post_stop_oracle": { "score": 5, "max": 5, "verdict": "pass" },
         "post_stop_quality": { "functions": 9, "pass": 5, "warn": 1, "fail": 3 },
+        "baseline_eligible": false
+      },
+      "last_attempt": {
+        "run_id": "python-api-validation-r1-continuation1-main-20260901",
+        "continuation_of": "python-api-validation-r1-main-20260901",
+        "commit": "3900e2c1601a666c9e1a91825ea881b2e8a56769",
+        "status": "needs-user-decision",
+        "reason": "external-authority-review-after-model-request-cap",
+        "wall_ms": 310829.555625,
+        "cost_usd": null,
+        "model_requests": 30,
+        "operations": 5,
+        "blocked_operations": 3,
+        "workflow_status": "building",
+        "pending_tasks": 0,
+        "proof_status": null,
+        "readiness": {
+          "status": "NEEDS_USER_DECISION",
+          "external_provider": "review",
+          "budget_class": "external-authority",
+          "recommended": "prepare-for-reviewer"
+        },
+        "post_stop_oracle": { "score": 5, "max": 5, "verdict": "pass" },
+        "post_stop_quality": { "functions": 9, "pass": 8, "warn": 0, "fail": 1 },
+        "cumulative": {
+          "wall_ms": 1599644.667208,
+          "model_requests": 147,
+          "cost_usd": null
+        },
         "baseline_eligible": false
       },
       "baseline": null

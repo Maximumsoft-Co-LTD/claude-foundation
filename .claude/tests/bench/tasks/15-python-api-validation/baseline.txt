@@ -1,0 +1,1 @@
+Fix bug #731 in this repository: Python currently accepts true and false as integer seat counts. Reject booleans and all other non-exact-integer representations while preserving the workspace API response contract. Add regression and boundary tests. Write the code and tests directly; do not use any workflow and do not create planning or spec files.

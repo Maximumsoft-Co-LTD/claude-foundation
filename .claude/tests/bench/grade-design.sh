@@ -41,7 +41,31 @@ else
 fi
 
 lint=false
-if [ -f "$LINTER" ] && sh "$LINTER" "$rd" >/dev/null 2>&1; then lint=true; fi
+if [ -f "$LINTER" ]; then
+  sh "$LINTER" "$rd" >/dev/null 2>&1 && lint=true
+elif [ -f "$rd/run.md" ]; then
+  # The retired .workflow hook is not installed by the OpenSpec-native runtime.
+  # Keep legacy design scoring strict with a local structural fallback.
+  if [ -s "$rd/run.md" ] &&
+     grep -q '^## Acceptance' "$rd/run.md" &&
+     grep -q '^## Tasks' "$rd/run.md" &&
+     grep -q '^## Coverage plan' "$rd/run.md" &&
+     ! grep -qE 'TODO|TBD|<[^>]+>' "$rd/run.md"; then lint=true; fi
+else
+  if [ -s "$rd/spec.md" ] && [ -s "$rd/plan.md" ] &&
+     [ -s "$rd/tasks.md" ] && [ -s "$rd/test-plan.md" ] &&
+     grep -q '^## Goal' "$rd/spec.md" &&
+     grep -q '^## User Stories' "$rd/spec.md" &&
+     grep -q '^## Acceptance' "$rd/spec.md" &&
+     grep -q '^## Functional Requirements' "$rd/spec.md" &&
+     grep -q '^## Success Criteria' "$rd/spec.md" &&
+     grep -q '^## Summary' "$rd/plan.md" &&
+     grep -q '^```mermaid' "$rd/plan.md" &&
+     grep -qE '^-[[:space:]]+\[[ x]\][[:space:]]+T[0-9]+' "$rd/tasks.md" &&
+     grep -q '^## Coverage plan' "$rd/test-plan.md" &&
+     ! grep -qE 'TODO|TBD|<[^>]+>' "$rd/spec.md" "$rd/plan.md" \
+       "$rd/tasks.md" "$rd/test-plan.md"; then lint=true; fi
+fi
 
 # Acceptance ids as declared by the spec surface. Dedup + sort so a repeated
 # mention is not double-counted.

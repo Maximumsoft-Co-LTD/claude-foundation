@@ -52,6 +52,14 @@ runner counts distinct streamed model request IDs and terminates at the request
 ceiling. Budget termination records `needs-user-decision`; it is resumable and
 is never classified as completed or permanently blocked.
 
+For an existing change, the runner executes deterministic proof readiness
+before dispatching the paid host. An `external-authority` user decision stops
+at that preflight boundary with zero model requests. The same structured
+boundary is also recognized in live tool output, so an active host is stopped
+on the first independent-review or external-evidence decision instead of
+polling readiness with more model calls. A stable decision fingerprint makes a
+repeated unchanged boundary visible without reopening model work.
+
 Brownfield tasks can add a deterministic hidden-acceptance oracle. The runner
 invokes the shell script only after workflow proof completes and passes the
 delivered sandbox as its sole argument:
@@ -83,6 +91,12 @@ Live runs retain Claude's verbose `stream-json` as `host.stream.jsonl`. A
 timeout can therefore keep observed browser and task-mirror counts even when
 the final result envelope never arrives. Cost remains unavailable in that case;
 the scorecard never guesses dollars from an external price table.
+
+Request accounting keeps the effective, stream-observed, host-reported, and
+cap-consumed counts separately. On forced termination, an observed request
+count wins over a synthetic zero result envelope. A zero-cost envelope paired
+with observed model work is treated as unavailable rather than as free usage;
+nonzero final-envelope cost from an interrupted run remains partial.
 
 ## Collection-only verification
 

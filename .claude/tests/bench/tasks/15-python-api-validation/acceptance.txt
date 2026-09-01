@@ -1,0 +1,21 @@
+Task: fix bug #731. Both sandboxes start from the same Python workspace API,
+tests, and BUG-731.md. Python's bool type subclasses int, so the current
+`isinstance(seat_count, int)` gate accepts true and false and creates invalid
+workspace records.
+
+AC1: REGRESSION FIRST — shipped tests pin both true and false as invalid seat
+     counts and would fail against the original validator.
+AC2: RIGHT LAYER — exact-integer validation lives in `validate_workspace`, not
+     only in `create_workspace`, because callers use the validator directly.
+AC3: REPRESENTATION BOUNDARIES — floats, numeric strings, null, and a missing
+     seat_count are rejected with a seat_count validation error; no invalid
+     request creates a workspace response.
+AC4: INTEGER BOUNDARIES — 1 and 100 are accepted while 0 and 101 are rejected.
+AC5: RESPONSE COMPATIBILITY — public function signatures, 201 and 422 response
+     shapes, field names, error text, and optional boolean marketing_opt_in
+     behavior remain unchanged.
+
+Trap: changing only `create_workspace` hides the production symptom while
+leaving direct `validate_workspace` callers vulnerable. Broad coercion with
+`int(...)` also accepts representations the contract rejects. The smallest
+correct predicate distinguishes exact integers from Python booleans.

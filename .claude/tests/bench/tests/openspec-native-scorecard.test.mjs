@@ -136,6 +136,39 @@ test("metrics cost is partial unless usage completeness is established", () => {
   }), { value: 0, status: "measured", source: "foundation-metrics" });
 });
 
+test("forced termination preserves observed requests and rejects a synthetic zero envelope", () => {
+  const scorecard = buildScorecard(fixture({
+    envelope: {
+      total_cost_usd: 0,
+      num_turns: 0,
+      usage: { input_tokens: 0, output_tokens: 0 }
+    },
+    metrics: {
+      requests: 147,
+      cost: 0,
+      usageAvailability: { classification: "no-usage" }
+    },
+    hostUsage: {
+      observedModelRequests: 30,
+      capConsumedModelRequests: 30,
+      forcedTermination: true
+    }
+  }));
+  assert.equal(scorecard.usage.modelRequests, 30);
+  assert.equal(scorecard.usage.observedModelRequests, 30);
+  assert.equal(scorecard.usage.hostReportedModelRequests, 0);
+  assert.equal(scorecard.usage.capConsumedModelRequests, 30);
+  assert.equal(scorecard.usage.modelRequestsMeasurement, "measured");
+  assert.equal(scorecard.usage.measurement, "partial");
+  assert.equal(scorecard.usage.classification, "partial-measurement");
+  assert.equal(scorecard.usage.costUsd, null);
+  assert.equal(scorecard.usage.costMeasurement, "unavailable");
+  assert.equal(scorecard.usage.costSource, null);
+  assert.equal(scorecard.usage.inputTokens, null);
+  assert.equal(scorecard.usage.outputTokens, null);
+  assert.equal(validate(scorecard), true, JSON.stringify(validate.errors));
+});
+
 test("partial quality distinguishes unmapped functions from zero coverage", () => {
   const scorecard = buildScorecard(fixture({
     quality: {

@@ -63,10 +63,20 @@ export function digest(value) {
   return `sha256:${createHash("sha256").update(stableJson(value)).digest("hex")}`;
 }
 
-export function costMeasurement(envelope = {}, metrics = {}) {
+export function costMeasurement(envelope = {}, metrics = {}, hostUsage = {}) {
+  if (hostUsage.noModelDispatch === true)
+    return { value: 0, status: "measured", source: "runner-preflight" };
   const envelopeCost = measured(envelope.total_cost_usd ?? envelope.cost_usd);
-  if (envelopeCost !== null)
-    return { value: envelopeCost, status: "measured", source: "host-result-envelope" };
+  const observedRequests = count(hostUsage.observedModelRequests);
+  const forcedTermination = hostUsage.forcedTermination === true;
+  if (envelopeCost !== null) {
+    if (forcedTermination && envelopeCost === 0 && observedRequests > 0)
+      return { value: null, status: "unavailable", source: null };
+    return { value: envelopeCost, status: forcedTermination ? "partial" : "measured",
+      source: "host-result-envelope" };
+  }
+  if (forcedTermination)
+    return { value: null, status: "unavailable", source: null };
   const metricCost = measured(metrics.cost);
   if (metricCost === null)
     return { value: null, status: "unavailable", source: null };
@@ -148,6 +158,17 @@ function envelopeUsage(envelope) {
   };
 }
 
+function attemptUsageValue(hostValue, metricValue, {
+  noModelDispatch, forcedTermination, observedRequests
+}) {
+  if (noModelDispatch) return 0;
+  if (forcedTermination) {
+    if (hostValue === null || (hostValue === 0 && observedRequests > 0)) return null;
+    return hostValue;
+  }
+  return hostValue ?? measured(metricValue);
+}
+
 function operationActiveTime(rows) {
   if (!Array.isArray(rows) || !rows.length) return null;
   const durations = rows.map((row) => measured(row.durationMs))
@@ -211,22 +232,38 @@ function normalizeOutcome(input = {}, oracle = {}) {
     pendingTasks,
     requiredEvidencePassed,
     proofStatus: text(input.proofStatus),
-    landStatus: text(input.landStatus)
+    landStatus: text(input.landStatus),
+    decisionProvider: text(input.decisionProvider),
+    decisionKind: text(input.decisionKind),
+    decisionFingerprint: text(input.decisionFingerprint)
   };
 }
 
 export function buildScorecard(input) {
   const metrics = object(input.metrics);
   const envelope = object(input.envelope);
+  const observedUsage = object(input.hostUsage);
   const stopwatch = object(input.stopwatch);
-  const cost = costMeasurement(envelope, metrics);
+  const cost = costMeasurement(envelope, metrics, observedUsage);
   const wallMs = measured(stopwatch.wallMs);
   const usageClass = metrics.usageAvailability?.classification;
   const hostUsage = envelopeUsage(envelope);
-  const requestCount = hostUsage.requests ?? count(metrics.requests);
-  const usageStatus = requestCount === null ? "unavailable"
-    : hostUsage.requests !== null || ["measured", "no-usage"].includes(usageClass)
+  const observedRequests = count(observedUsage.observedModelRequests);
+  const capConsumedRequests = count(observedUsage.capConsumedModelRequests);
+  const requestCandidates = [observedRequests, capConsumedRequests, hostUsage.requests]
+    .filter((value) => value !== null);
+  const requestCount = requestCandidates.length ? Math.max(...requestCandidates)
+    : count(metrics.requests);
+  const forcedTermination = observedUsage.forcedTermination === true;
+  const noModelDispatch = observedUsage.noModelDispatch === true;
+  const modelRequestsMeasurement = requestCount === null ? "unavailable"
+    : requestCandidates.length || ["measured", "no-usage"].includes(usageClass)
       ? "measured" : "partial";
+  const usageStatus = requestCount === null ? "unavailable"
+    : forcedTermination || (observedRequests !== null && hostUsage.requests === null &&
+      observedRequests > 0) ? "partial" : modelRequestsMeasurement;
+  const usageClassification = forcedTermination ? "partial-measurement"
+    : observedRequests === 0 && hostUsage.requests === null ? "no-usage" : text(usageClass);
   const startedAt = timestamp(stopwatch.startedAt);
   const finishedAt = timestamp(stopwatch.finishedAt);
   const oracle = oracleSummary(input.oracle);
@@ -262,16 +299,26 @@ export function buildScorecard(input) {
     },
     usage: {
       measurement: usageStatus,
-      classification: text(usageClass),
+      classification: usageClassification,
       costUsd: cost.value,
       costMeasurement: measurement(cost.status),
       costSource: cost.source,
       modelRequests: requestCount,
-      inputTokens: hostUsage.inputTokens ?? measured(metrics.inputTokens),
-      outputTokens: hostUsage.outputTokens ?? measured(metrics.outputTokens),
-      cacheCreationTokens: hostUsage.cacheCreationTokens ??
-        measured(metrics.cacheCreationTokens),
-      cacheReadTokens: hostUsage.cacheReadTokens ?? measured(metrics.cacheReadTokens)
+      modelRequestsMeasurement,
+      observedModelRequests: observedRequests,
+      hostReportedModelRequests: hostUsage.requests,
+      capConsumedModelRequests: capConsumedRequests,
+      inputTokens: attemptUsageValue(hostUsage.inputTokens, metrics.inputTokens, {
+        noModelDispatch, forcedTermination, observedRequests
+      }),
+      outputTokens: attemptUsageValue(hostUsage.outputTokens, metrics.outputTokens, {
+        noModelDispatch, forcedTermination, observedRequests
+      }),
+      cacheCreationTokens: attemptUsageValue(hostUsage.cacheCreationTokens,
+        metrics.cacheCreationTokens, { noModelDispatch, forcedTermination, observedRequests }),
+      cacheReadTokens: attemptUsageValue(hostUsage.cacheReadTokens, metrics.cacheReadTokens, {
+        noModelDispatch, forcedTermination, observedRequests
+      })
     },
     operations: operationSummary(input.operationRows, metrics, input.hostTelemetry),
     quality: qualitySummary(input.quality),

@@ -38,7 +38,15 @@
         "pendingTasks": { "$ref": "#/$defs/nullableCount" },
         "requiredEvidencePassed": { "type": ["boolean", "null"] },
         "proofStatus": { "$ref": "#/$defs/nullableString" },
-        "landStatus": { "$ref": "#/$defs/nullableString" }
+        "landStatus": { "$ref": "#/$defs/nullableString" },
+        "decisionProvider": { "$ref": "#/$defs/nullableString" },
+        "decisionKind": { "$ref": "#/$defs/nullableString" },
+        "decisionFingerprint": {
+          "anyOf": [
+            { "type": "null" },
+            { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+          ]
+        }
       }
     },
     "timing": {
@@ -70,6 +78,10 @@
         "costMeasurement": { "$ref": "#/$defs/measurement" },
         "costSource": { "$ref": "#/$defs/nullableString" },
         "modelRequests": { "$ref": "#/$defs/nullableCount" },
+        "modelRequestsMeasurement": { "$ref": "#/$defs/measurement" },
+        "observedModelRequests": { "$ref": "#/$defs/nullableCount" },
+        "hostReportedModelRequests": { "$ref": "#/$defs/nullableCount" },
+        "capConsumedModelRequests": { "$ref": "#/$defs/nullableCount" },
         "inputTokens": { "$ref": "#/$defs/nullableNumber" },
         "outputTokens": { "$ref": "#/$defs/nullableNumber" },
         "cacheCreationTokens": { "$ref": "#/$defs/nullableNumber" },

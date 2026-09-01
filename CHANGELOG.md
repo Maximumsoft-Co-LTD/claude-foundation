@@ -26,11 +26,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Paid benchmark continuations preflight external authority.** Existing
+  changes stop before model dispatch when proof readiness requires an
+  independent reviewer or other user decision, and live structured readiness
+  output terminates the active host before it can poll the same gate again.
+
 - **GitHub workflows now run checkout and Node setup on Node 24 action
   runtimes.** Release, bottle, quality, mutation, and deterministic workflows
   use the same current action generation as the Pages deployment.
 
 ### Fixed
+
+- **Forced benchmark termination preserves observed usage truth.** Scorecards
+  retain streamed and cap-consumed request counts instead of accepting a
+  synthetic zero host envelope, while interrupted runs without a trustworthy
+  cost envelope report unknown cost rather than zero dollars.
 
 - **Runtime coverage survives the suites it measures.** The outer c8 process
   stores raw V8 data outside repository test-results, so nested cleanup and

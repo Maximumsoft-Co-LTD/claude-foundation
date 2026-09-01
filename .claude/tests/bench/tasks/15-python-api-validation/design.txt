@@ -1,0 +1,1 @@
+/dev --yes --plan-only bug #731 in this repo — Python accepts boolean seat_count values because bool subclasses int (type fix, size S, brownfield). Preserve the public functions and exact response shapes. Do not ask clarifying questions; assume no commit and no PR. Stop after the planning gate and do not implement.

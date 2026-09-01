@@ -511,10 +511,11 @@ else
 fi
 ORCHF="$HERE/../../../orchestrator.md"
 if [ -f "$ORCHF" ]; then
-  if grep -qF 'notes += "BLOCKED:' "$ORCHF"; then
-    pass "orchestrator records a BLOCKED stop in state before halting"
+  if grep -qF "otherwise wait for the user's" "$ORCHF" &&
+     grep -qF "explicit answer. Never infer approval from silence" "$ORCHF"; then
+    pass "orchestrator waits at structured decisions instead of looping"
   else
-    fail "orchestrator halts on NON_INTERACTIVE_BLOCKER without recording it — the bench cannot tell why"
+    fail "orchestrator no longer preserves the structured user-decision boundary"
   fi
 fi
 

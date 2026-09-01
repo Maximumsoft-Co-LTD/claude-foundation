@@ -8,7 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
-import { buildScorecard } from "./scorecard.mjs";
+import { buildScorecard, digest } from "./scorecard.mjs";
 import { benchmarkWorkspace, collectBenchmarkQuality } from "./quality.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -112,8 +112,24 @@ function taskContent(project, changeId, change) {
 
 export function observedOutcome({
   project, changeId, envelope, exitCode, timedOut, oracle = null,
-  budgetExhausted = null
+  budgetExhausted = null, decisionBoundary = null
 }) {
+  if (decisionBoundary) {
+    const state = changeId
+      ? readJson(join(project, ".foundation/runtime", `${changeId}.json`), {}) : {};
+    const change = changeId ? activeChangePath(project, changeId) : null;
+    const tasks = changeId ? pendingTaskCount(taskContent(project, changeId, change)) : null;
+    return {
+      status: "needs-user-decision",
+      failureClass: `external-authority-${decisionBoundary.provider || "unknown"}`,
+      changeId, workflowStatus: decisionBoundary.workflowStatus ?? state.status ?? null,
+      pendingTasks: decisionBoundary.pendingTasks ?? tasks,
+      requiredEvidencePassed: false, proofStatus: null, landStatus: null,
+      decisionProvider: decisionBoundary.provider,
+      decisionKind: decisionBoundary.kind,
+      decisionFingerprint: decisionBoundary.fingerprint
+    };
+  }
   if (!changeId) return {
     status: budgetExhausted ? "needs-user-decision"
       : timedOut ? "timeout" : exitCode === 0 ? "incomplete" : "failed",
@@ -152,6 +168,65 @@ export function observedOutcome({
     landStatus: state.status === "archived" ? "archived"
       : state.status === "proven" ? "awaiting-user" : null
   };
+}
+
+function boundaryFromReadiness(readiness) {
+  if (readiness?.status !== "NEEDS_USER_DECISION" ||
+      readiness?.budget?.class !== "external-authority") return null;
+  const next = Array.isArray(readiness.next) ? readiness.next : [];
+  const boundary = next.find((item) => item?.kind === "user-decision") || next[0] || {};
+  const decision = boundary?.decision && typeof boundary.decision === "object"
+    ? boundary.decision : {};
+  const options = Array.isArray(decision.options)
+    ? decision.options.map((option) => option?.id).filter(Boolean) : [];
+  const identity = {
+    status: readiness.status,
+    budgetClass: readiness.budget.class,
+    provider: boundary.provider || null,
+    kind: decision.kind || "external-authority",
+    options
+  };
+  return {
+    provider: identity.provider,
+    kind: identity.kind,
+    fingerprint: digest(identity),
+    recommended: decision.recommended || null,
+    options,
+    reason: readiness.budget.reason || null,
+    workflowStatus: null,
+    pendingTasks: Array.isArray(readiness.pendingTasks)
+      ? readiness.pendingTasks.length : null
+  };
+}
+
+export function externalAuthorityBoundary(value) {
+  const queue = [value];
+  while (queue.length) {
+    const candidate = queue.shift();
+    if (typeof candidate === "string") {
+      try { queue.push(JSON.parse(candidate)); } catch { /* non-JSON tool output */ }
+      continue;
+    }
+    if (!candidate || typeof candidate !== "object") continue;
+    const boundary = boundaryFromReadiness(candidate);
+    if (boundary) return boundary;
+    if (Array.isArray(candidate)) queue.push(...candidate);
+    else queue.push(...Object.values(candidate));
+  }
+  return null;
+}
+
+export function proofDecisionBoundary(project, changeId) {
+  if (!changeId) return null;
+  const harness = join(project, ".claude/harness/foundation.mjs");
+  if (!existsSync(harness)) return null;
+  const result = spawnSync(process.execPath, [harness, "proof-readiness", changeId], {
+    cwd: project, encoding: "utf8",
+    env: { ...process.env, FOUNDATION_TELEMETRY: "0" },
+    maxBuffer: 10 * 1024 * 1024
+  });
+  try { return boundaryFromReadiness(JSON.parse(String(result.stdout || "").trim())); }
+  catch { return null; }
 }
 
 export function runBenchmarkOracle({ project, changeId, oraclePath, timeoutMs = 120000 }) {
@@ -211,9 +286,9 @@ function metricsFor(project, changeId) {
 
 export function collectNativeScorecard({
   scenario, repeat, runId, project, config = {}, envelope = {}, metrics = null,
-  quality = null, operationRows = null, stopwatch = {}, exitCode = 0,
+  quality = null, operationRows = null, syntheticOperationRows = [], stopwatch = {}, exitCode = 0,
   timedOut = false, budgetExhausted = null, changeId = null, provenance = {},
-  hostTelemetry = {}, oracle = null
+  hostTelemetry = {}, hostUsage = {}, oracle = null, decisionBoundary = null
 }) {
   const discovered = discoverChangeId(project, changeId, stopwatch.startedEpochMs ?? null);
   const resolvedMetrics = metrics ?? metricsFor(project, discovered) ?? {};
@@ -221,16 +296,19 @@ export function collectNativeScorecard({
     ...readJsonLines(join(project, ".foundation/logs", discovered, "operations.jsonl")),
     ...readJsonLines(join(project, ".foundation/logs", discovered, "inspections.jsonl"))
   ] : []);
-  const operations = operationRowsInWindow(operationCandidates, stopwatch);
+  const operations = operationRowsInWindow([
+    ...operationCandidates,
+    ...(Array.isArray(syntheticOperationRows) ? syntheticOperationRows : [])
+  ], stopwatch);
   const qualityReport = quality ?? readJson(
     join(project, ".foundation/test-results/quality/crap.json"));
   return buildScorecard({
     scenario, repeat, runId, config, envelope, metrics: resolvedMetrics,
-    quality: qualityReport, operationRows: operations, hostTelemetry,
+    quality: qualityReport, operationRows: operations, hostTelemetry, hostUsage,
     stopwatch,
     outcome: observedOutcome({
       project, changeId: discovered, envelope, exitCode, timedOut, oracle,
-      budgetExhausted
+      budgetExhausted, decisionBoundary
     }),
     oracle,
     provenance: {
@@ -259,6 +337,7 @@ function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
     const requestIds = new Set();
     let partialLine = "";
     let budgetExhausted = null;
+    let decisionBoundary = null;
     const terminate = () => {
       try {
         if (process.platform === "win32") child.kill("SIGTERM");
@@ -267,18 +346,21 @@ function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
     };
     child.stdout.on("data", (chunk) => {
       stdout.push(chunk);
-      if (!Number.isInteger(maxModelRequests) || maxModelRequests < 1 || budgetExhausted)
-        return;
       const lines = `${partialLine}${chunk}`.split(/\r?\n/);
       partialLine = lines.pop() || "";
       for (const line of lines) {
         let row;
         try { row = JSON.parse(line); } catch { continue; }
+        if (!decisionBoundary) {
+          decisionBoundary = externalAuthorityBoundary(row);
+          if (decisionBoundary) terminate();
+        }
         const requestId = row?.type === "assistant"
           ? row.message?.id || row.request_id || null : null;
         if (requestId) requestIds.add(requestId);
       }
-      if (requestIds.size >= maxModelRequests) {
+      if (!decisionBoundary && !budgetExhausted && Number.isInteger(maxModelRequests) &&
+          maxModelRequests > 0 && requestIds.size >= maxModelRequests) {
         budgetExhausted = { kind: "model-requests", used: requestIds.size,
           target: maxModelRequests };
         terminate();
@@ -301,8 +383,9 @@ function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
       clearTimeout(timer);
       if (forceTimer) clearTimeout(forceTimer);
       resolveRun({
-        exitCode: 127, timedOut: false, budgetExhausted,
+        exitCode: 127, timedOut: false, budgetExhausted, decisionBoundary,
         stdout: "", stderr: error.message,
+        observedModelRequests: requestIds.size || null,
         stopwatch: {
           wallMs: performance.now() - started, startedAt,
           finishedAt: new Date().toISOString(), startedEpochMs
@@ -313,9 +396,10 @@ function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
       clearTimeout(timer);
       if (forceTimer) clearTimeout(forceTimer);
       resolveRun({
-        exitCode: code ?? 1, timedOut, budgetExhausted,
+        exitCode: code ?? 1, timedOut, budgetExhausted, decisionBoundary,
         stdout: Buffer.concat(stdout).toString("utf8"),
         stderr: Buffer.concat(stderr).toString("utf8"),
+        observedModelRequests: requestIds.size || null,
         stopwatch: {
           wallMs: performance.now() - started, startedAt,
           finishedAt: new Date().toISOString(), startedEpochMs
@@ -349,20 +433,25 @@ function hostToolCalls(rows) {
 
 export function parseHostOutput(stdout) {
   const rows = streamRows(stdout);
+  const observedRequestIds = new Set(rows.flatMap((row) => row?.type === "assistant"
+    ? [row.message?.id || row.request_id].filter(Boolean) : []));
+  const observedUsage = {
+    observedModelRequests: observedRequestIds.size || null
+  };
   const isStream = rows.some((row) =>
     ["system", "assistant", "user", "result"].includes(row?.type));
   if (!isStream) {
     try {
       const envelope = JSON.parse(stdout);
       return { envelope, hostTelemetry: { total: null, browserCalls: null,
-        taskMirrorOperations: null }, rows: [envelope] };
+        taskMirrorOperations: null }, observedUsage, rows: [envelope] };
     } catch {
       return { envelope: {}, hostTelemetry: { total: null, browserCalls: null,
-        taskMirrorOperations: null }, rows: [] };
+        taskMirrorOperations: null }, observedUsage, rows: [] };
     }
   }
   const envelope = [...rows].reverse().find((row) => row?.type === "result") || {};
-  return { envelope, hostTelemetry: hostToolCalls(rows), rows };
+  return { envelope, hostTelemetry: hostToolCalls(rows), observedUsage, rows };
 }
 
 function writeResult(output, scorecard) {
@@ -379,6 +468,7 @@ async function main() {
   const output = resolve(args.output || DEFAULT_OUTPUT);
   assertDisposableProject(project);
   let execution;
+  let decisionBoundary = null;
   if (args["collect-only"]) {
     execution = {
       exitCode: Number(args["exit-code"] || 0), timedOut: args["timed-out"] === "true",
@@ -393,18 +483,37 @@ async function main() {
       }
     };
   } else {
-    const claudeArgs = args["max-cost-usd"]
-      ? [...args["claude-arg"], "--max-budget-usd", args["max-cost-usd"]]
-      : args["claude-arg"];
-    execution = await runClaude({
-      project,
-      prompt: required(args.prompt, "--prompt"),
-      claudeBin: args["claude-bin"] || "claude",
-      claudeArgs,
-      timeoutMs: Number(args["timeout-ms"] || 1800000),
-      maxModelRequests: args["max-model-requests"]
-        ? Number(args["max-model-requests"]) : null
-    });
+    const preflightChangeId = args["change-id"] || discoverChangeId(project);
+    const preflightStartedAt = new Date().toISOString();
+    const preflightStartedEpochMs = Date.now();
+    const preflightStarted = performance.now();
+    decisionBoundary = proofDecisionBoundary(project, preflightChangeId);
+    if (decisionBoundary) {
+      const finishedAt = new Date().toISOString();
+      execution = {
+        exitCode: 0, timedOut: false, budgetExhausted: null,
+        observedModelRequests: 0, noModelDispatch: true, stdout: "", stderr: "",
+        stopwatch: {
+          wallMs: performance.now() - preflightStarted,
+          startedAt: preflightStartedAt, finishedAt,
+          startedEpochMs: preflightStartedEpochMs
+        }
+      };
+    } else {
+      const claudeArgs = args["max-cost-usd"]
+        ? [...args["claude-arg"], "--max-budget-usd", args["max-cost-usd"]]
+        : args["claude-arg"];
+      execution = await runClaude({
+        project,
+        prompt: required(args.prompt, "--prompt"),
+        claudeBin: args["claude-bin"] || "claude",
+        claudeArgs,
+        timeoutMs: Number(args["timeout-ms"] || 1800000),
+        maxModelRequests: args["max-model-requests"]
+          ? Number(args["max-model-requests"]) : null
+      });
+      decisionBoundary = execution.decisionBoundary || null;
+    }
   }
   const parsedHost = parseHostOutput(execution.stdout);
   const envelope = parsedHost.envelope;
@@ -413,7 +522,7 @@ async function main() {
   const preliminaryOutcome = observedOutcome({
     project, changeId: discoveredChangeId, envelope,
     exitCode: execution.exitCode, timedOut: execution.timedOut,
-    budgetExhausted: execution.budgetExhausted
+    budgetExhausted: execution.budgetExhausted, decisionBoundary
   });
   const oracle = args.oracle && preliminaryOutcome.status !== "completed"
     ? {
@@ -442,7 +551,24 @@ async function main() {
     envelope, stopwatch: execution.stopwatch,
     exitCode: execution.exitCode, timedOut: execution.timedOut,
     budgetExhausted: execution.budgetExhausted,
-    changeId: discoveredChangeId, hostTelemetry: parsedHost.hostTelemetry, quality, oracle,
+    changeId: discoveredChangeId, hostTelemetry: parsedHost.hostTelemetry,
+    hostUsage: {
+      observedModelRequests: execution.observedModelRequests ??
+        parsedHost.observedUsage.observedModelRequests,
+      capConsumedModelRequests: execution.budgetExhausted?.kind === "model-requests"
+        ? execution.budgetExhausted.used : null,
+      forcedTermination: Boolean(execution.budgetExhausted || execution.timedOut ||
+        execution.decisionBoundary),
+      noModelDispatch: execution.noModelDispatch === true
+    },
+    decisionBoundary, quality, oracle,
+    syntheticOperationRows: decisionBoundary ? [{
+      operation: execution.noModelDispatch
+        ? "stopped-before-model-dispatch" : "stopped-at-external-authority",
+      startedAt: execution.stopwatch.startedAt,
+      finishedAt: execution.stopwatch.finishedAt,
+      durationMs: execution.stopwatch.wallMs
+    }] : [],
     provenance: { requestedModel: args.model || null }
   });
   writeResult(output, scorecard);
