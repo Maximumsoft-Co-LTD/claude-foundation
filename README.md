@@ -880,8 +880,8 @@ see [WORKFLOW.md](WORKFLOW.md) and the
 ## Contributing
 
 Bug reports and pull requests are welcome. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for setup, testing
-(`sh .claude/tests/run-all.sh`), and the DCO sign-off we require on commits.
+[CONTRIBUTING.md](CONTRIBUTING.md) for setup, the exact command for running the
+deterministic test suite, and the DCO sign-off we require on commits.
 Security issues go through [SECURITY.md](SECURITY.md) — never a public issue.
 The [Code of Conduct](CODE_OF_CONDUCT.md) applies to all project spaces.
 

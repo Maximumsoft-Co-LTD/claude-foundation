@@ -63,10 +63,13 @@ repository-only tooling. Read [`CLAUDE.md`](CLAUDE.md) — particularly the
 3. Keep the diff surgical — every changed line should trace to the issue or
    request. Do not bundle unrelated cleanup.
 4. A change to a shipped rule or runtime behavior also updates its
-   deterministic tests. New agent-facing commands need an entry in
-   `.claude/harness/commands.json`. Wire-visible contract changes bump the
-   affected pin in `.claude/harness/protocol.json`.
-5. Run `sh .claude/tests/run-all.sh` and make sure it is green.
+   deterministic tests — and, when the change is evidence-driven, the
+   benchmark rationale in `.claude/tests/bench/rationale.md`. New agent-facing
+   commands need an entry in `.claude/harness/commands.json`. Wire-visible
+   contract changes bump the affected pin in `.claude/harness/protocol.json`.
+5. Run the full test suite exactly as shown in
+   [Getting set up](#getting-set-up) (with `node_modules/.bin` on `PATH`) and
+   make sure it is green.
 6. Open a pull request describing **what** changed and **why**, with the test
    evidence.
 

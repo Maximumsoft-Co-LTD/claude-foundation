@@ -820,8 +820,8 @@ watchdog, telemetry, multi-repository landing และ native CLI ทั้ง�
 ## การมีส่วนร่วม
 
 ยินดีรับ bug report และ pull request — อ่าน
-[CONTRIBUTING.md](CONTRIBUTING.md) สำหรับการติดตั้ง, การรันเทสต์
-(`sh .claude/tests/run-all.sh`) และการ sign-off commit แบบ DCO ที่เราต้องการ
+[CONTRIBUTING.md](CONTRIBUTING.md) สำหรับการติดตั้ง, คำสั่งรันชุดเทสต์
+deterministic ที่ถูกต้อง และการ sign-off commit แบบ DCO ที่เราต้องการ
 ปัญหาความปลอดภัยให้รายงานผ่าน [SECURITY.md](SECURITY.md) — ห้ามเปิดเป็น
 issue สาธารณะ และ [Code of Conduct](CODE_OF_CONDUCT.md) ครอบคลุมทุกพื้นที่ของโปรเจกต์
 

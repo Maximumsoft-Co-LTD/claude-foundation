@@ -9,7 +9,7 @@ body:
         round trips — please fill them in.
 
         **Security issues:** do not report them here — use
-        [private vulnerability reporting](../../security/advisories/new) instead.
+        [private vulnerability reporting](https://github.com/Maximumsoft-Co-LTD/claude-foundation/security/advisories/new) instead.
   - type: input
     id: version
     attributes:
