@@ -50,5 +50,5 @@ Foundation จงใจแยกความรับผิดชอบ เพ�
 - [Quality gate ของโปรเจกต์](/docs/th/consumer-quality/) — เพิ่ม CRAP, mutation, baseline และ debt โดยไม่ขยาย Change scope
 
 :::note[เวอร์ชัน]
-เอกสารชุดนี้อ้างอิง Foundation **v3.4.9** — runtime API 26, provider protocol 12 receipt ที่บันทึกด้วยเวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
+เอกสารชุดนี้อ้างอิง Foundation **v3.4.10** — runtime API 26, provider protocol 12 receipt ที่บันทึกด้วยเวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 :::
