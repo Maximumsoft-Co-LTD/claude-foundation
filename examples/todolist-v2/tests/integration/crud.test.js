@@ -204,57 +204,63 @@ describe('AC5/FR-001 — storage banner (integration)', () => {
   test('banner is visible when app inits with localStorage throwing', async () => {
     const { Store: S, App: A } = await import('../../app.js');
 
-    // Stub localStorage (jsdom) to throw on setItem so Store detects unavailability
-    const origSetItem = localStorage.setItem.bind(localStorage);
-    const origGetItem = localStorage.getItem.bind(localStorage);
-    localStorage.setItem = () => { throw new DOMException('QuotaExceededError', 'QuotaExceededError'); };
-    localStorage.getItem = () => null;
+    // Spy on the actual implementation prototype. Assigning directly to a
+    // Storage instance is ignored by some happy-dom/Node combinations.
+    const storagePrototype = Object.getPrototypeOf(globalThis.localStorage);
+    const setItemSpy = vi.spyOn(storagePrototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('QuotaExceededError', 'QuotaExceededError');
+    });
+    const getItemSpy = vi.spyOn(storagePrototype, 'getItem').mockReturnValue(null);
 
-    S._reset();
-    const { bootstrapApp } = await import('./helpers.js');
-    await bootstrapApp();
+    try {
+      S._reset();
+      const { bootstrapApp } = await import('./helpers.js');
+      await bootstrapApp();
 
-    A.init();
+      A.init();
 
-    const banner = document.getElementById('storage-banner');
-    expect(banner).not.toBeNull();
-    expect(banner.classList.contains('hidden')).toBe(false);
-
-    // Restore
-    localStorage.setItem = origSetItem;
-    localStorage.getItem = origGetItem;
+      const banner = document.getElementById('storage-banner');
+      expect(banner).not.toBeNull();
+      expect(banner.classList.contains('hidden')).toBe(false);
+    } finally {
+      getItemSpy.mockRestore();
+      setItemSpy.mockRestore();
+    }
   });
 
   test('add/toggle/delete remain functional after banner is shown', async () => {
     const { Store: S, App: A } = await import('../../app.js');
-    const origSetItem = localStorage.setItem.bind(localStorage);
-    const origGetItem = localStorage.getItem.bind(localStorage);
-    localStorage.setItem = () => { throw new DOMException('QuotaExceededError', 'QuotaExceededError'); };
-    localStorage.getItem = () => null;
+    const storagePrototype = Object.getPrototypeOf(globalThis.localStorage);
+    const setItemSpy = vi.spyOn(storagePrototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('QuotaExceededError', 'QuotaExceededError');
+    });
+    const getItemSpy = vi.spyOn(storagePrototype, 'getItem').mockReturnValue(null);
 
-    S._reset();
-    const { bootstrapApp, addTodoViaForm: addViaForm } = await import('./helpers.js');
-    await bootstrapApp();
-    A.init();
+    try {
+      S._reset();
+      const { bootstrapApp, addTodoViaForm: addViaForm } = await import('./helpers.js');
+      await bootstrapApp();
+      A.init();
 
-    // add todo
-    addViaForm('In-memory task');
-    let items = document.querySelectorAll('#todo-list .todo-item');
-    expect(items).toHaveLength(1);
+      // add todo
+      addViaForm('In-memory task');
+      let items = document.querySelectorAll('#todo-list .todo-item');
+      expect(items).toHaveLength(1);
 
-    // toggle
-    const checkbox = document.querySelector('.todo-item__checkbox');
-    checkbox.checked = true;
-    checkbox.dispatchEvent(new Event('change', { bubbles: true }));
-    const countEl = document.getElementById('active-count');
-    expect(countEl.textContent).toBe('0 items left');
+      // toggle
+      const checkbox = document.querySelector('.todo-item__checkbox');
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+      const countEl = document.getElementById('active-count');
+      expect(countEl.textContent).toBe('0 items left');
 
-    // delete
-    const delBtn = document.querySelector('.btn--icon[aria-label^="Delete todo"]');
-    delBtn.click();
-    expect(document.querySelectorAll('#todo-list .todo-item')).toHaveLength(0);
-
-    localStorage.setItem = origSetItem;
-    localStorage.getItem = origGetItem;
+      // delete
+      const delBtn = document.querySelector('.btn--icon[aria-label^="Delete todo"]');
+      delBtn.click();
+      expect(document.querySelectorAll('#todo-list .todo-item')).toHaveLength(0);
+    } finally {
+      getItemSpy.mockRestore();
+      setItemSpy.mockRestore();
+    }
   });
 });

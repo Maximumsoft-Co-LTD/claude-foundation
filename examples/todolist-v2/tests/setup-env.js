@@ -1,9 +1,9 @@
 /**
  * Vitest environment setup — runs inside the test environment (after DOM is created).
  *
- * Node 22 has an experimental localStorage global that is broken (requires
- * --localstorage-file). This setup installs a real in-memory localStorage
- * implementation on globalThis before any test runs, overriding Node's stub.
+ * Node and DOM test environments expose different localStorage implementations.
+ * Install one deterministic in-memory implementation before every test file so
+ * storage-failure tests do not depend on host-version proxy semantics.
  */
 
 class MemoryStorage {
@@ -38,45 +38,33 @@ class MemoryStorage {
   }
 }
 
-// Only install if localStorage is not already a working implementation
-try {
-  const ls = globalThis.localStorage;
-  if (!ls || typeof ls.setItem !== 'function') {
-    throw new Error('needs install');
-  }
-  // Quick smoke test
-  ls.setItem('__test__', '1');
-  ls.removeItem('__test__');
-} catch (_) {
-  const impl = new MemoryStorage();
-  Object.defineProperty(globalThis, 'localStorage', {
-    value: impl,
-    writable: true,
-    configurable: true,
-  });
-  Object.defineProperty(globalThis, 'sessionStorage', {
-    value: new MemoryStorage(),
-    writable: true,
-    configurable: true,
-  });
-}
+const localStorageImpl = new MemoryStorage();
+const sessionStorageImpl = new MemoryStorage();
 
-// Also assign on window if it exists and doesn't have a working localStorage
-if (typeof window !== 'undefined') {
-  try {
-    const ls = window.localStorage;
-    if (!ls || typeof ls.setItem !== 'function') {
-      throw new Error('needs install');
-    }
-    ls.setItem('__test__', '1');
-    ls.removeItem('__test__');
-  } catch (_) {
-    Object.defineProperty(window, 'localStorage', {
-      value: globalThis.localStorage,
-      writable: true,
-      configurable: true,
-    });
-  }
+Object.defineProperty(globalThis, 'localStorage', {
+  value: localStorageImpl,
+  writable: true,
+  configurable: true,
+});
+Object.defineProperty(globalThis, 'sessionStorage', {
+  value: sessionStorageImpl,
+  writable: true,
+  configurable: true,
+});
+
+// Some DOM environments expose a distinct window object. Keep both lookup
+// paths bound to the same instances because app.js uses browser globals.
+if (typeof window !== 'undefined' && window !== globalThis) {
+  Object.defineProperty(window, 'localStorage', {
+    value: localStorageImpl,
+    writable: true,
+    configurable: true,
+  });
+  Object.defineProperty(window, 'sessionStorage', {
+    value: sessionStorageImpl,
+    writable: true,
+    configurable: true,
+  });
 }
 
 // Clear before each test

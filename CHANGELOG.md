@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Todo v2 storage-degradation tests are deterministic across Node runtimes.**
+  Integration coverage now installs one in-memory storage implementation and
+  restores failure spies even when assertions fail, matching local and CI
+  behavior on the supported Node versions.
+
 ## [3.4.10] - 2026-09-01
 
 ### Added

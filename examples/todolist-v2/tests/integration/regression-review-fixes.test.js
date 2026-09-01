@@ -46,10 +46,10 @@ describe('B1 — mid-session storage degrade (FR-001)', () => {
     observer.observe(banner, { attributes: true, attributeFilter: ['class'] });
 
     // Stub setItem to throw from now on (quota exceeded mid-session)
-    const origSetItem = globalThis.localStorage.setItem.bind(globalThis.localStorage);
-    globalThis.localStorage.setItem = () => {
+    const storagePrototype = Object.getPrototypeOf(globalThis.localStorage);
+    const setItemSpy = vi.spyOn(storagePrototype, 'setItem').mockImplementation(() => {
       throw new DOMException('QuotaExceededError', 'QuotaExceededError');
-    };
+    });
 
     try {
       // Second add → _save() throws → onDegrade fires → banner should appear
@@ -78,7 +78,7 @@ describe('B1 — mid-session storage degrade (FR-001)', () => {
       expect(bannerShowCount).toBe(0);
     } finally {
       observer.disconnect();
-      globalThis.localStorage.setItem = origSetItem;
+      setItemSpy.mockRestore();
     }
   });
 });
