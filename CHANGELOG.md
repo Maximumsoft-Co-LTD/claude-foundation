@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The deterministic test pool now rejects repository residue.** A before-and-
+  after porcelain snapshot fails the run with the leaked paths when any suite
+  leaves tracked changes or untracked generated files outside its sandbox, and
+  the nested OpenSpec quality collector runs outside the process-heavy pool.
+
 - **Todo v2 storage-degradation tests are deterministic across Node runtimes.**
   Integration coverage now installs one in-memory storage implementation and
   restores failure spies even when assertions fail, matching local and CI

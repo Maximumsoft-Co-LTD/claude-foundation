@@ -118,7 +118,7 @@ review policy|node --test "$ROOT/.claude/harness/tests/review-policy.test.mjs"
 traceability|node --test "$ROOT/.claude/harness/tests/traceability.test.mjs"
 telemetry record event|node --test "$ROOT/.claude/harness/tests/telemetry-record-event.test.mjs"
 host execution contract|node --test "$ROOT/.claude/harness/tests/host-execution-contract.test.mjs"
-openspec native benchmark|node --test "$ROOT/.claude/tests/bench/tests/openspec-native-scorecard.test.mjs" "$ROOT/.claude/tests/bench/tests/openspec-native-runner.test.mjs"
+!openspec native benchmark|node --test "$ROOT/.claude/tests/bench/tests/openspec-native-scorecard.test.mjs" "$ROOT/.claude/tests/bench/tests/openspec-native-runner.test.mjs"
 signed CI|node --test "$ROOT/.claude/harness/tests/signed-ci.test.mjs"
 adapter fingerprint|node --test "$ROOT/.claude/harness/tests/adapter-fingerprint.test.mjs"
 provider workspace hash|node --test "$ROOT/.claude/harness/tests/provider-workspace-hash.test.mjs"
@@ -250,10 +250,36 @@ kill_tree() {
   kill -TERM "$1" 2>/dev/null || true
 }
 
+repository_status() {
+  git -C "$1" status --porcelain=v1 --untracked-files=all
+}
+
+assert_repository_unchanged() {
+  _repository="$1"
+  _before="$2"
+  _after="$3"
+  repository_status "$_repository" > "$_after" || return 2
+  cmp -s "$_before" "$_after" && return 0
+  echo "repository residue detected after foundation tests" >&2
+  diff -u "$_before" "$_after" >&2 || true
+  return 1
+}
+
 if [ "${1:-}" = "--kill-tree" ]; then
   [ -n "${2:-}" ] || { echo "--kill-tree requires a PID" >&2; exit 2; }
   kill_tree "$2"
   exit 0
+fi
+
+if [ "${1:-}" = "--assert-repository-unchanged" ]; then
+  [ -n "${2:-}" ] && [ -n "${3:-}" ] || {
+    echo "--assert-repository-unchanged requires a repository and baseline" >&2
+    exit 2
+  }
+  _status_after="$(mktemp)"
+  trap 'rm -f "$_status_after"' EXIT
+  assert_repository_unchanged "$2" "$3" "$_status_after"
+  exit $?
 fi
 
 # One suite, into its own buffer. Re-entered as a child so the pool below can be
@@ -313,6 +339,10 @@ pool_size() {
 }
 
 WORK="$(mktemp -d)"
+repository_status "$ROOT" > "$WORK/repository-before.status" || {
+  echo "unable to capture repository status before foundation tests" >&2
+  exit 1
+}
 # Repeated CLI assertions load the same ESM graph from one fixture path. Newer
 # Node releases reuse its compiled bytecode here; older supported releases
 # safely ignore the environment variable.
@@ -413,6 +443,12 @@ for index in $selected; do
   else printf '✗ %s\n\n' "$label" >&2; failed=1
   fi
 done
+
+if ! assert_repository_unchanged \
+  "$ROOT" "$WORK/repository-before.status" "$WORK/repository-after.status"
+then
+  failed=1
+fi
 
 if [ "$failed" -eq 0 ]; then
   echo "foundation tests: ALL SUITES PASS ($SELECTED_TOTAL suites, ${JOBS}-way${selection_mode:+, $selection_mode})"

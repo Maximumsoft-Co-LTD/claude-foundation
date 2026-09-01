@@ -43,4 +43,31 @@ if child_running "$child"; then
   exit 1
 fi
 
+repository="$WORK/repository"
+mkdir -p "$repository"
+git -C "$repository" init -q
+git -C "$repository" config user.email test@example.invalid
+git -C "$repository" config user.name "Foundation Test"
+printf 'tracked\n' > "$repository/tracked.txt"
+git -C "$repository" add tracked.txt
+git -C "$repository" commit -qm baseline
+git -C "$repository" status --porcelain=v1 --untracked-files=all > "$WORK/baseline.status"
+
+sh "$RUN_ALL" --assert-repository-unchanged "$repository" "$WORK/baseline.status"
+printf 'residue\n' > "$repository/generated.txt"
+if sh "$RUN_ALL" --assert-repository-unchanged \
+  "$repository" "$WORK/baseline.status" > "$WORK/residue.out" 2>&1
+then
+  echo "FAIL: run-all accepted repository residue"
+  exit 1
+fi
+grep -q 'repository residue detected' "$WORK/residue.out" || {
+  echo "FAIL: repository residue failure was not actionable"
+  exit 1
+}
+grep -q 'generated.txt' "$WORK/residue.out" || {
+  echo "FAIL: repository residue failure did not name the leaked path"
+  exit 1
+}
+
 echo "run-all process control: PASS"
