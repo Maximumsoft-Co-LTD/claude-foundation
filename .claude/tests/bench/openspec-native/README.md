@@ -39,6 +39,24 @@ npm run bench:openspec-native -- \
   --timeout-ms 1800000
 ```
 
+Brownfield tasks can add a deterministic hidden-acceptance oracle. The runner
+invokes the shell script only after workflow proof completes and passes the
+delivered sandbox as its sole argument:
+
+```bash
+npm run bench:openspec-native -- \
+  --scenario recent-window-brownfield \
+  --project "$BENCH_PROJECT" \
+  --prompt "/dev fix bug #412" \
+  --oracle .claude/tests/bench/tasks/11-recent-window/oracle/run.sh
+```
+
+The oracle must emit one JSON object with `verdict`, `score`, `max`, and
+per-criterion `results`. A configured oracle that fails, times out, exits
+nonzero, or emits an invalid result prevents `outcome.complete`, even when the
+Foundation proof itself passed. This keeps workflow evidence truth separate
+from benchmark task correctness without exposing the answer key to the agent.
+
 Extra Claude arguments must be passed as repeated, literal `--claude-arg`
 values. The runner does not enable a permission bypass itself.
 
@@ -71,7 +89,11 @@ npm run bench:openspec-native -- \
 If wall time, usage, cost, operations, or quality was not measured, the field
 is `null` and its measurement state is `unavailable`; absence is never rendered
 as zero. A run is complete only when the host completed, no tasks remain, and a
-passing durable proof exists.
+passing durable proof exists, plus a passing oracle when one was configured.
+
+Completed Node.js runs collect coverage and CRAP from the delivered sandbox.
+Projects with an npm test script use it; bare CommonJS/ESM projects fall back to
+discovered `*.test.*` and `*.spec.*` files under `node --test`.
 
 The schema is
 [`../config/openspec-native-scorecard.schema.json`](../config/openspec-native-scorecard.schema.json).

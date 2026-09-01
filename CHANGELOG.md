@@ -7,11 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **OpenSpec-native scorecards can enforce deterministic brownfield oracles.**
+  Configured hidden-acceptance failures and unavailable oracle measurements now
+  prevent a workflow proof from being reported as completed task correctness.
+
 ### Fixed
 
 - **Build completion now executes its readiness boundary before Prove.** The
   phase contract follows the dispatch-provided next command, catching missing
   critical-case tags before they cause a failed first proof advance.
+
+- **Malformed grounding rows now produce actionable validation findings.**
+  Invalid critical-case and mutant claim bindings no longer fall through to a
+  raw iterator error, while generic in-process event vocabulary no longer
+  invents cross-service observability requirements.
+
+- **Bare Node.js benchmark projects now report coverage and CRAP.** Quality
+  collection follows the delivered sandbox even without `package.json` and
+  discovers root-level CommonJS or ESM tests through the built-in test runner.
 
 ## [3.4.9] - 2026-08-31
 

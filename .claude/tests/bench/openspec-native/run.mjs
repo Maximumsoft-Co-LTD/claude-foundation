@@ -9,7 +9,7 @@ import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
 import { buildScorecard } from "./scorecard.mjs";
-import { collectBenchmarkQuality } from "./quality.mjs";
+import { benchmarkWorkspace, collectBenchmarkQuality } from "./quality.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "../../../..");
@@ -110,7 +110,9 @@ function taskContent(project, changeId, change) {
     ? readFileSync(controlTasks, "utf8") : null;
 }
 
-export function observedOutcome({ project, changeId, envelope, exitCode, timedOut }) {
+export function observedOutcome({
+  project, changeId, envelope, exitCode, timedOut, oracle = null
+}) {
   if (!changeId) return {
     status: timedOut ? "timeout" : exitCode === 0 ? "incomplete" : "failed",
     failureClass: timedOut ? "host-timeout" : exitCode === 0 ? "change-not-discovered" : "host-exit",
@@ -123,12 +125,18 @@ export function observedOutcome({ project, changeId, envelope, exitCode, timedOu
   const proof = readJson(join(project, ".foundation/receipts", changeId, "proof.json"));
   const requiredEvidencePassed = proof?.status === "pass";
   const hostFailed = timedOut || exitCode !== 0 || envelope?.is_error === true;
-  const complete = !hostFailed && tasks === 0 && requiredEvidencePassed;
+  const oracleRequired = oracle?.configured === true;
+  const oracleUnavailable = oracleRequired && oracle?.measurement !== "measured";
+  const oracleFailed = oracleRequired && oracle?.verdict !== "pass";
+  const complete = !hostFailed && tasks === 0 && requiredEvidencePassed && !oracleFailed;
   return {
-    status: timedOut ? "timeout" : hostFailed ? "failed" : complete ? "completed" : "incomplete",
+    status: timedOut ? "timeout" : hostFailed || oracleFailed
+      ? "failed" : complete ? "completed" : "incomplete",
     failureClass: timedOut ? "host-timeout"
       : exitCode !== 0 ? `host-exit-${exitCode}`
         : envelope?.is_error === true ? "host-result-error"
+          : oracleUnavailable ? "task-oracle-unavailable"
+            : oracleFailed ? "task-oracle-failed"
           : complete ? null : "required-work-or-proof-incomplete",
     changeId,
     workflowStatus: state.status || null,
@@ -137,6 +145,51 @@ export function observedOutcome({ project, changeId, envelope, exitCode, timedOu
     proofStatus: proof?.status || null,
     landStatus: state.status === "archived" ? "archived"
       : state.status === "proven" ? "awaiting-user" : null
+  };
+}
+
+export function runBenchmarkOracle({ project, changeId, oraclePath, timeoutMs = 120000 }) {
+  if (!oraclePath) return {
+    configured: false, measurement: "unavailable", verdict: null,
+    score: null, max: null, results: {}, reason: "not-configured", source: null
+  };
+  const source = resolve(oraclePath);
+  const workspace = benchmarkWorkspace(project, changeId);
+  if (!existsSync(source)) return {
+    configured: true, measurement: "unavailable", verdict: null,
+    score: null, max: null, results: {}, reason: "oracle-not-found", source
+  };
+  const execution = spawnSync("sh", [source, workspace], {
+    cwd: project, encoding: "utf8", timeout: timeoutMs,
+    env: { ...process.env, FOUNDATION_TELEMETRY: "0" },
+    maxBuffer: 10 * 1024 * 1024
+  });
+  if (execution.status !== 0) return {
+    configured: true, measurement: "unavailable", verdict: null,
+    score: null, max: null, results: {},
+    reason: execution.error?.code === "ETIMEDOUT" ? "oracle-timeout" : "oracle-exit",
+    source
+  };
+  let value;
+  try { value = JSON.parse(String(execution.stdout || "").trim()); }
+  catch { value = null; }
+  const resultsValid = value?.results && typeof value.results === "object" &&
+    !Array.isArray(value.results) && Object.values(value.results)
+      .every((result) => ["pass", "fail"].includes(result));
+  if (!value || !["pass", "fail"].includes(value.verdict) ||
+      !Number.isInteger(value.score) || !Number.isInteger(value.max) ||
+      value.score < 0 || value.max < 1 || value.score > value.max || !resultsValid ||
+      value.score !== Object.values(value.results).filter((result) => result === "pass").length ||
+      value.max !== Object.keys(value.results).length ||
+      value.verdict !== (value.score === value.max ? "pass" : "fail"))
+    return {
+      configured: true, measurement: "unavailable", verdict: null,
+      score: null, max: null, results: {}, reason: "oracle-output-invalid", source
+    };
+  return {
+    configured: true, measurement: "measured", verdict: value.verdict,
+    score: value.score, max: value.max, results: value.results,
+    reason: null, source
   };
 }
 
@@ -153,7 +206,7 @@ function metricsFor(project, changeId) {
 export function collectNativeScorecard({
   scenario, repeat, runId, project, config = {}, envelope = {}, metrics = null,
   quality = null, operationRows = null, stopwatch = {}, exitCode = 0,
-  timedOut = false, changeId = null, provenance = {}, hostTelemetry = {}
+  timedOut = false, changeId = null, provenance = {}, hostTelemetry = {}, oracle = null
 }) {
   const discovered = discoverChangeId(project, changeId, stopwatch.startedEpochMs ?? null);
   const resolvedMetrics = metrics ?? metricsFor(project, discovered) ?? {};
@@ -169,8 +222,9 @@ export function collectNativeScorecard({
     quality: qualityReport, operationRows: operations, hostTelemetry,
     stopwatch,
     outcome: observedOutcome({
-      project, changeId: discovered, envelope, exitCode, timedOut
+      project, changeId: discovered, envelope, exitCode, timedOut, oracle
     }),
+    oracle,
     provenance: {
       commit: provenance.commit ?? git(["rev-parse", "HEAD"]),
       dirty: provenance.dirty ?? Boolean(git(["status", "--porcelain"])),
@@ -321,6 +375,16 @@ async function main() {
     project, changeId: discoveredChangeId, envelope,
     exitCode: execution.exitCode, timedOut: execution.timedOut
   });
+  const oracle = args.oracle && preliminaryOutcome.status !== "completed"
+    ? {
+      configured: true, measurement: "unavailable", verdict: null,
+      score: null, max: null, results: {}, reason: "workflow-incomplete",
+      source: resolve(args.oracle)
+    }
+    : runBenchmarkOracle({
+      project, changeId: discoveredChangeId, oraclePath: args.oracle || null,
+      timeoutMs: Number(args["oracle-timeout-ms"] || 120000)
+    });
   const quality = !args["collect-only"] && preliminaryOutcome.status === "completed"
     ? await collectBenchmarkQuality({ project, changeId: discoveredChangeId })
     : null;
@@ -329,11 +393,12 @@ async function main() {
     config: {
       prompt: args.prompt || null,
       timeoutMs: args["timeout-ms"] ? Number(args["timeout-ms"]) : null,
-      claudeArgs: args["claude-arg"]
+      claudeArgs: args["claude-arg"],
+      oracle: args.oracle || null
     },
     envelope, stopwatch: execution.stopwatch,
     exitCode: execution.exitCode, timedOut: execution.timedOut,
-    changeId: discoveredChangeId, hostTelemetry: parsedHost.hostTelemetry, quality,
+    changeId: discoveredChangeId, hostTelemetry: parsedHost.hostTelemetry, quality, oracle,
     provenance: { requestedModel: args.model || null }
   });
   writeResult(output, scorecard);
@@ -343,6 +408,8 @@ async function main() {
   writeFileSync(join(artifactDir, "host.stream.jsonl"), execution.stdout);
   writeFileSync(join(artifactDir, "host.stderr.log"), execution.stderr);
   writeFileSync(join(artifactDir, "scorecard.json"), `${JSON.stringify(scorecard, null, 2)}\n`);
+  if (oracle.configured)
+    writeFileSync(join(artifactDir, "oracle.json"), `${JSON.stringify(oracle, null, 2)}\n`);
   process.stdout.write(`${JSON.stringify(scorecard, null, 2)}\n`);
   if (!["completed", "blocked"].includes(scorecard.outcome.status)) process.exitCode = 1;
 }

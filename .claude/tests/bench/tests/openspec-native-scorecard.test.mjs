@@ -78,8 +78,39 @@ test("scorecard validates and keeps runner walltime separate from host duration"
   });
   assert.equal(scorecard.quality.crapMaximum, 14.71);
   assert.equal(scorecard.quality.coverageMinimum, 75);
+  assert.equal(scorecard.oracle.configured, false);
   assert.equal(scorecard.outcome.complete, true);
   assert.equal(validate(scorecard), true, JSON.stringify(validate.errors));
+  const legacy = structuredClone(scorecard);
+  delete legacy.oracle;
+  assert.equal(validate(legacy), true,
+    "the additive oracle field keeps historical v1 scorecards schema-valid");
+});
+
+test("scorecard preserves measured oracle results", () => {
+  const scorecard = buildScorecard(fixture({
+    oracle: {
+      configured: true, measurement: "measured", verdict: "pass",
+      score: 2, max: 2, results: { AC1: "pass", AC2: "pass" },
+      reason: null, source: "oracle.sh"
+    }
+  }));
+  assert.deepEqual(scorecard.oracle.results, { AC1: "pass", AC2: "pass" });
+  assert.equal(scorecard.oracle.verdict, "pass");
+  assert.equal(validate(scorecard), true, JSON.stringify(validate.errors));
+});
+
+test("a failing configured oracle overrides a claimed completed outcome", () => {
+  const scorecard = buildScorecard(fixture({
+    oracle: {
+      configured: true, measurement: "measured", verdict: "fail",
+      score: 1, max: 2, results: { AC1: "pass", AC2: "fail" },
+      source: "oracle.sh"
+    }
+  }));
+  assert.equal(scorecard.outcome.status, "failed");
+  assert.equal(scorecard.outcome.complete, false);
+  assert.equal(scorecard.outcome.failureClass, "task-oracle-failed");
 });
 
 test("unknown measurements stay null and cannot make incomplete work complete", () => {

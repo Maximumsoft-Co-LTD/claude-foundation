@@ -12,7 +12,8 @@ import addFormats from "ajv-formats";
 
 import {
   assertDisposableProject, collectNativeScorecard, discoverChangeId,
-  observedOutcome, operationRowsInWindow, parseHostOutput, pendingTaskCount
+  observedOutcome, operationRowsInWindow, parseHostOutput, pendingTaskCount,
+  runBenchmarkOracle
 } from "../openspec-native/run.mjs";
 import { collectBenchmarkQuality } from "../openspec-native/quality.mjs";
 
@@ -89,6 +90,46 @@ test("outcome requires checked tasks and passing proof", () => {
     assert.equal(incomplete.status, "incomplete");
     assert.equal(incomplete.failureClass, "required-work-or-proof-incomplete");
   } finally { rmSync(project, { recursive: true, force: true }); }
+});
+
+test("a configured task oracle is required in addition to workflow proof", () => {
+  const project = projectFixture();
+  try {
+    const failed = observedOutcome({
+      project, changeId: "todo", envelope: {}, exitCode: 0, timedOut: false,
+      oracle: { configured: true, measurement: "measured", verdict: "fail" }
+    });
+    assert.equal(failed.status, "failed");
+    assert.equal(failed.failureClass, "task-oracle-failed");
+    const unavailable = observedOutcome({
+      project, changeId: "todo", envelope: {}, exitCode: 0, timedOut: false,
+      oracle: { configured: true, measurement: "unavailable", verdict: null }
+    });
+    assert.equal(unavailable.failureClass, "task-oracle-unavailable");
+  } finally { rmSync(project, { recursive: true, force: true }); }
+});
+
+test("deterministic oracles are parsed and invalid output stays unavailable", () => {
+  const project = projectFixture();
+  const scripts = mkdtempSync(join(tmpdir(), "foundation-native-oracle-"));
+  try {
+    const passing = join(scripts, "pass.sh");
+    write(passing, "printf '%s\\n' '{\"verdict\":\"pass\",\"score\":2,\"max\":2,\"results\":{\"AC1\":\"pass\",\"AC2\":\"pass\"}}'\n");
+    const measured = runBenchmarkOracle({
+      project, changeId: "todo", oraclePath: passing
+    });
+    assert.equal(measured.measurement, "measured");
+    assert.equal(measured.verdict, "pass");
+    assert.equal(measured.score, 2);
+    const invalid = join(scripts, "invalid.sh");
+    write(invalid, "printf '%s\\n' 'not-json'\n");
+    assert.equal(runBenchmarkOracle({
+      project, changeId: "todo", oraclePath: invalid
+    }).reason, "oracle-output-invalid");
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(scripts, { recursive: true, force: true });
+  }
 });
 
 test("outcome reads Build task completion from the active sandbox", () => {
@@ -197,6 +238,33 @@ test("completed greenfield Node projects produce measured CRAP quality", async (
   } finally { rmSync(project, { recursive: true, force: true }); }
 });
 
+test("bare CommonJS sandboxes produce measured CRAP without package.json", async () => {
+  const project = projectFixture();
+  try {
+    rmSync(join(project, ".foundation/test-results/quality"),
+      { recursive: true, force: true });
+    const sandbox = join(project, ".foundation/sandboxes/todo");
+    write(join(sandbox, "window.js"), [
+      "function lastN(items, n) { return n <= 0 ? [] : items.slice(-n); }",
+      "module.exports = { lastN };", ""
+    ].join("\n"));
+    write(join(sandbox, "window.test.js"), [
+      "const test = require('node:test');",
+      "const assert = require('node:assert/strict');",
+      "const { lastN } = require('./window');",
+      "test('zero and positive windows', () => {",
+      "  assert.deepEqual(lastN([1, 2], 0), []);",
+      "  assert.deepEqual(lastN([1, 2], 1), [2]);",
+      "});", ""
+    ].join("\n"));
+    const report = await collectBenchmarkQuality({ project, changeId: "todo" });
+    assert.equal(report.protocol, "foundation-quality-v1");
+    assert.ok(report.summary.functions >= 1);
+    assert.ok(report.functions.every((fn) => fn.coveragePercent !== null));
+    assert.ok(report.functions.every((fn) => fn.crap !== null));
+  } finally { rmSync(project, { recursive: true, force: true }); }
+});
+
 test("collect-only CLI emits a schema-valid scorecard without a paid host run", () => {
   const project = projectFixture();
   const outputDir = mkdtempSync(join(tmpdir(), "foundation-native-scorecard-"));
@@ -220,6 +288,37 @@ test("collect-only CLI emits a schema-valid scorecard without a paid host run", 
     assert.equal(scorecard.outcome.status, "completed");
     assert.equal(scorecard.usage.costUsd, 1.25);
     assert.equal(scorecard.timing.wallMs, 4000);
+    assert.equal(validate(scorecard), true, JSON.stringify(validate.errors));
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(outputDir, { recursive: true, force: true });
+  }
+});
+
+test("collect-only CLI refuses completed status when its oracle fails", () => {
+  const project = projectFixture();
+  const outputDir = mkdtempSync(join(tmpdir(), "foundation-native-oracle-cli-"));
+  const output = join(outputDir, "rows.jsonl");
+  const oracle = join(outputDir, "oracle.sh");
+  write(oracle, "printf '%s\\n' '{\"verdict\":\"fail\",\"score\":1,\"max\":2,\"results\":{\"AC1\":\"pass\",\"AC2\":\"fail\"}}'\n");
+  try {
+    const runner = new URL("../openspec-native/run.mjs", import.meta.url);
+    const result = spawnSync(process.execPath, [
+      runner.pathname,
+      "--collect-only",
+      "--scenario", "brownfield",
+      "--project", project,
+      "--change-id", "todo",
+      "--run-id", "oracle-fail",
+      "--wall-ms", "4000",
+      "--oracle", oracle,
+      "--output", output
+    ], { encoding: "utf8" });
+    assert.equal(result.status, 1, "a task-correctness failure fails the benchmark command");
+    const scorecard = JSON.parse(readFileSync(output, "utf8").trim());
+    assert.equal(scorecard.outcome.failureClass, "task-oracle-failed");
+    assert.equal(scorecard.outcome.requiredEvidencePassed, true);
+    assert.equal(scorecard.oracle.verdict, "fail");
     assert.equal(validate(scorecard), true, JSON.stringify(validate.errors));
   } finally {
     rmSync(project, { recursive: true, force: true });

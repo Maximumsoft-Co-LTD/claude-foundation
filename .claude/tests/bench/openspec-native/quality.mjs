@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import {
   existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildCrapReport } from "../../../../scripts/quality/calculate-crap.mjs";
@@ -22,41 +22,73 @@ function writeJson(path, value) {
 }
 
 function javascriptIncludes(workspace) {
-  return ["src", "bin"].flatMap((directory) => {
-    const path = join(workspace, directory);
-    if (!existsSync(path)) return [];
-    const extensions = new Set(readdirSync(path, { recursive: true, withFileTypes: true })
-      .filter((entry) => entry.isFile())
-      .map((entry) => entry.name.match(/\.(js|mjs|cjs)$/)?.[1])
-      .filter(Boolean));
-    return [...extensions].sort().map((extension) =>
-      `${directory}/**/*.${extension}`);
-  });
+  const ignored = new Set([
+    ".claude", ".foundation", ".git", "node_modules", "openspec",
+    "test", "tests", "__tests__"
+  ]);
+  const extensions = new Set();
+  const visit = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isDirectory() && (ignored.has(entry.name) || entry.name.startsWith(".quality-")))
+        continue;
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (!/\.(?:test|spec)\.(?:js|mjs|cjs)$/.test(entry.name)) {
+        const extension = entry.name.match(/\.(js|mjs|cjs)$/)?.[1];
+        if (extension) extensions.add(extension);
+      }
+    }
+  };
+  visit(workspace);
+  return [...extensions].sort().map((extension) => `**/*.${extension}`);
+}
+
+function nodeTestFiles(workspace) {
+  const ignored = new Set([".claude", ".foundation", ".git", "node_modules", "openspec"]);
+  const files = [];
+  const visit = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isDirectory() && ignored.has(entry.name)) continue;
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (/\.(?:test|spec)\.(?:js|mjs|cjs)$/.test(entry.name))
+        files.push(relative(workspace, path));
+    }
+  };
+  visit(workspace);
+  return files.sort();
 }
 
 export function benchmarkWorkspace(project, changeId) {
-  const sandbox = changeId && join(project, ".foundation/sandboxes", changeId);
-  return sandbox && existsSync(join(sandbox, "package.json")) ? sandbox : project;
+  const projectRoot = resolve(project);
+  const sandbox = changeId && join(projectRoot, ".foundation/sandboxes", changeId);
+  return sandbox && existsSync(sandbox) ? sandbox : projectRoot;
 }
 
 export async function collectBenchmarkQuality({ project, changeId }) {
+  const projectRoot = resolve(project);
   const workspace = benchmarkWorkspace(project, changeId);
   const manifest = readJson(join(workspace, "package.json"));
   const includes = javascriptIncludes(workspace);
-  if (!manifest?.scripts?.test || !includes.length) return null;
-
-  const outputDir = join(project, ".foundation/test-results/quality");
+  const outputDir = join(projectRoot, ".foundation/test-results/quality");
   const coverageDir = join(outputDir, "benchmark-coverage");
   const coveragePath = join(coverageDir, "coverage-final.json");
   const policyPath = join(outputDir, "benchmark-policy.json");
   const reportPath = join(outputDir, "crap.json");
   const diagnosticPath = join(outputDir, "benchmark-collector.json");
+  const discoveredTests = manifest?.scripts?.test ? [] : nodeTestFiles(workspace);
+  if (!includes.length || (!manifest?.scripts?.test && !discoveredTests.length)) {
+    writeJson(diagnosticPath, { status: "unavailable", reason: !includes.length
+      ? "no-production-javascript" : "no-node-test-entrypoint" });
+    return null;
+  }
   const policy = {
     javascript: {
       include: includes,
       exclude: ["**/node_modules/**", "**/test/**", "**/tests/**",
-        "**/*.test.js", "**/*.test.mjs", ".foundation/**", ".claude/**",
-        "openspec/**"]
+        "**/*.test.js", "**/*.test.mjs", "**/*.test.cjs",
+        "**/*.spec.js", "**/*.spec.mjs", "**/*.spec.cjs",
+        ".foundation/**", ".claude/**", "openspec/**"]
     },
     complexity: { variant: "classic", warning: 11, refactor: 21,
       maximumChanged: 30 },
@@ -75,7 +107,11 @@ export async function collectBenchmarkQuality({ project, changeId }) {
   const args = ["--all", "--reporter=json", `--report-dir=${coverageDir}`];
   for (const pattern of includes) args.push(`--include=${pattern}`);
   for (const pattern of policy.javascript.exclude) args.push(`--exclude=${pattern}`);
-  args.push("npm", "test", "--silent");
+  if (manifest?.scripts?.test) args.push("npm", "test", "--silent");
+  // c8 treats an absolute Node executable as a child binary and can leave only
+  // raw tmp coverage without running its final report hook. The PATH-resolved
+  // `node` spelling preserves c8's normal Node command lifecycle.
+  else args.push("node", "--test", ...discoveredTests);
   const execution = spawnSync(c8, args, {
     cwd: workspace, encoding: "utf8", timeout: 120_000,
     env: { ...process.env, FOUNDATION_TELEMETRY: "0" },
