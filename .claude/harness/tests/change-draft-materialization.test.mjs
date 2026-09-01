@@ -28,7 +28,9 @@ const draft = () => ({
   tasks: [
     {
       outcome: "Implement", verify: "npm test", repository: "api", kind: "code",
-      paths: ["src/**"], dependsOn: ["T000"]
+      paths: ["src/**"], dependsOn: ["T000"], resources: ["database"],
+      claims: ["claim-1"], model: "strong", inputSchema: "request-v1",
+      outputSchema: "result-v1"
     },
     { id: "CUSTOM", outcome: "Document", verify: "npm run docs" }
   ],
@@ -64,7 +66,7 @@ test("draft renderers preserve defaults, metadata and markdown sections", () => 
   assert.match(renderDraftDesign(value), /Draft \| Atomic input \| Chain/);
   assert.match(draftDomainRows([]), /introduces no project-specific term/);
   assert.equal(renderDraftTask(value.tasks[0], 0),
-    "- [ ] **T001** Implement [repo:api] [kind:code] [paths:src/**] [depends:T000] — verify: `npm test`");
+    "- [ ] **T001** Implement [repo:api] [kind:code] [model:strong] [paths:src/**] [depends:T000] [resources:database] [claims:claim-1] [input-schema:request-v1] [output-schema:result-v1] — verify: `npm test`");
   assert.match(renderDraftTasks(value.tasks), /\*\*CUSTOM\*\* Document/);
 });
 

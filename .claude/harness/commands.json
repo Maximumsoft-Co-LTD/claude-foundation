@@ -59,7 +59,7 @@
     },
     {
       "name": "change start",
-      "usage": "change start --template | <draft.json>",
+      "usage": "change start --template | <draft.json> [--consume-draft]",
       "audience": "agent",
       "kind": "write",
       "idempotent": false,

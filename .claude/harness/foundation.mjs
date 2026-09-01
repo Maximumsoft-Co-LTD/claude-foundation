@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import {
-  appendFileSync, existsSync, lstatSync, mkdirSync
+  appendFileSync, existsSync, lstatSync, mkdirSync, rmSync
 } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -127,6 +127,7 @@ const AUTOMATED_MUTATION_PROTOCOL_VERSION = "1";
 // A refusal is a lifecycle stop, not a crash. Recording it as a failure would
 // bury real breakage under the guards that are working as designed.
 let operationBlocked = false;
+let trappedFailureDepth = 0;
 // A command that prints a structured non-ready result and returns has also
 // ended in a refusal, not a crash — but it never reaches `die`. `block()` is
 // that second spelling: it records the decision without exiting, so the exit
@@ -134,8 +135,19 @@ let operationBlocked = false;
 function markBlocked() { operationBlocked = true; }
 function die(message, code = 1) {
   markBlocked();
+  if (trappedFailureDepth > 0) {
+    const error = new Error(String(message));
+    error.exitCode = code;
+    error.foundationBlocked = true;
+    throw error;
+  }
   console.error(`BLOCKED: ${message}`);
   process.exit(code);
+}
+function trapFailures(operation) {
+  trappedFailureDepth += 1;
+  try { return operation(); }
+  finally { trappedFailureDepth -= 1; }
 }
 const { parseFlags, parseStrictCommandFlags } = createFlagParser({ fail: die });
 const { blockedDecisionValue, blockWithDecision } = createBlockedDecision({ fail: die });
@@ -1139,6 +1151,75 @@ const {
   mergeTaskProgress,
   sync: syncSandbox
 } = sandboxRuntime;
+function rollbackAtomicStart(id) {
+  const issues = [];
+  const state = readJson(runtimePath(id), {
+    id,
+    workspace: { mode: "current", path: ROOT }
+  });
+  const repositories = cleanupRepositorySandboxes(id, state);
+  for (const [repositoryId, result] of Object.entries(repositories))
+    if (["failed", "refused"].includes(result.status))
+      issues.push(`repository sandbox '${repositoryId}': ${result.reason || result.status}`);
+  // Multi-repository setup can fail after worktrees were created but before
+  // their in-memory records were saved. Re-resolve the already-validated
+  // selection and clean only its fixed Foundation-owned paths.
+  let selected = [];
+  const repositorySandboxRoot = join(
+    ROOT, ".foundation", "repository-sandboxes", id);
+  if (existsSync(repositorySandboxRoot)) {
+    try {
+      trapFailures(() => { selected = selectedRepositories(id, state); });
+    } catch (error) {
+      issues.push(`repository sandbox discovery: ${error.message || error}`);
+    }
+  }
+  const unrecordedRepositories = {};
+  for (const repository of selected) {
+    if (repository.id === "root") continue;
+    const path = join(ROOT, ".foundation", "repository-sandboxes", id, repository.id);
+    if (!existsSync(path)) continue;
+    unrecordedRepositories[repository.id] = {
+      mode: "worktree", path, targetPath: repository.path
+    };
+  }
+  const unrecorded = cleanupRepositorySandboxes(id, {
+    repositories: unrecordedRepositories
+  });
+  for (const [repositoryId, result] of Object.entries(unrecorded))
+    if (["failed", "refused"].includes(result.status))
+      issues.push(`unrecorded repository sandbox '${repositoryId}': ${
+        result.reason || result.status}`);
+  const applied = cleanupAppliedSandbox(id, state);
+  if (["failed", "refused"].includes(applied.status))
+    issues.push(`sandbox: ${applied.reason || applied.status}`);
+
+  // A worktree/copy can exist before createSingle persists it in runtime state
+  // (for example when copying the packet into a new worktree fails). Clean the
+  // one fixed Foundation-owned path as a fallback; never infer a broad target.
+  const expectedSandbox = join(ROOT, ".foundation", "sandboxes", id);
+  if (existsSync(expectedSandbox) && state.workspace?.path !== expectedSandbox) {
+    const metadata = join(expectedSandbox, ".git");
+    let mode = "copy";
+    try {
+      if (existsSync(metadata) && lstatSync(metadata).isFile()) mode = "worktree";
+    } catch { /* cleanup as a bounded copy when metadata disappeared */ }
+    const fallback = cleanupAppliedSandbox(id, {
+      workspace: { mode, path: expectedSandbox }
+    });
+    if (["failed", "refused"].includes(fallback.status))
+      issues.push(`unrecorded sandbox: ${fallback.reason || fallback.status}`);
+  }
+
+  for (const path of [
+    changePath(id), runtimePath(id), join(RECEIPTS, id),
+    join(EVIDENCE_VAULT, id), join(HANDOFFS, id), snapshotPath(id)
+  ]) {
+    try { rmSync(path, { recursive: true, force: true }); }
+    catch (error) { issues.push(`${path}: ${error.message}`); }
+  }
+  return issues;
+}
 const {
   templateDir,
   instantiate,
@@ -1168,7 +1249,9 @@ const {
   bindClaudeSession,
   validate,
   createSandbox,
-  showPacket
+  showPacket,
+  trapFailures,
+  rollbackStart: rollbackAtomicStart
 });
 function unresolvedApplyTransactions(id) {
   return readTransactionJournals(TRANSACTIONS, id, readJson).filter((journal) =>

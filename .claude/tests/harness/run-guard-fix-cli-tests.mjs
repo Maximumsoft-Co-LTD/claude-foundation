@@ -214,6 +214,11 @@ async function route(command, values, overrides) {
     rapidStartTemplate: () => { templates.push(true); return {}; }
   });
   assert.equal(templates.length, 1);
+  let consumedStart = null;
+  await route("start", ["draft.json", "--consume-draft"], {
+    startAtomic: (...args) => { consumedStart = args; }
+  });
+  assert.deepEqual(consumedStart, ["draft.json", { consumeDraft: true }]);
   await route("describe", ["--json"], { describeCommand: () => {} });
   await route("repos", [], { showRepositories: (value) => assert.equal(value, null) });
   await route("hash", ["change", "provider"], {

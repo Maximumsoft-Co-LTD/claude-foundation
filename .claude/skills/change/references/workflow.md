@@ -56,14 +56,21 @@ Run `doctor --stage change`; reuse an existing change. Otherwise classify before
 from the user's intent without reading framework implementation: rapid is only
 low-impact isolated unit/static work. If a material choice is genuinely
 unresolved, ask every such choice in one Decision Sheet; otherwise record
-reviewed defaults and continue. Then immediately run
-`claude-foundation change new "<intent>"` to bind artifacts and budget before
-further reads. Before authoring or validating, resolve impact, coupling,
-security, surface, acceptance, and review. Omit `--security` when there are no triggers.
-Declare surface, wire evidence, and settle the reviewer now. Prove must not
-discover an unnamed operator. Use `change start`
-only when the caller already supplied a complete structured draft; do not emit
-its template merely to rediscover the generated artifact contract.
+reviewed defaults and continue. Before authoring or validating, resolve impact,
+coupling, security, surface, acceptance, review, evidence wiring, grounding, and
+external operations in one complete structured draft.
+Omit `--security` when there are no triggers. Declare surface and wire evidence;
+settle the reviewer now. Prove must not discover an unnamed operator.
+
+For fresh work, read `claude-foundation change start --template` once as the
+versioned input contract, write the completed draft to
+`.foundation/change-start-<id>.json`, then run
+`claude-foundation change start .foundation/change-start-<id>.json --consume-draft`.
+This is the default creation path: it validates the compiled packet before
+entering Build and rolls back partial agreement/runtime state on failure. Repair
+the single draft and retry when start reports contract findings. Do not patch a
+partially generated packet. Use `change new` only to resume/manual-author an
+existing legacy flow that cannot be represented by the structured draft.
 
 Classify trust and operations by boundary, not vocabulary. Parsing or writing a
 single-user, app-owned local file is not by itself untrusted input, a security
@@ -71,13 +78,16 @@ trigger, privacy work, or an operated service. CLI stderr and exit codes are not
 observability or operability. Declare those NFRs only when data crosses an
 actor/privilege boundary or a real runtime/operator consumes the control.
 
-Complete artifacts/tasks, validate, run Build doctor, and sync. Offer
+For an existing manually authored change, complete artifacts/tasks, validate,
+run Build doctor, and sync. A successful atomic start is already validated; do
+not validate it a second time. Offer
 `change abandon` for an unprovable contract; never retire one unasked, infer
 acceptance from silence, or expose harness fields. Summarize outcome,
 boundaries, proof, completed work, and next action in the user's language;
 keep lifecycle fields internal.
 
-Generated artifacts plus `change validate` are the authoring contract.
+The versioned start draft plus generated artifacts and `change validate` are the
+authoring contract.
 `.claude/harness/EVIDENCE.md` may explain adapters.
 Never inspect managed `.claude/harness/**` or `.claude/hooks/**` to infer fields or repair validation.
 New production, runtime, or test-topology paths need an implementation task and

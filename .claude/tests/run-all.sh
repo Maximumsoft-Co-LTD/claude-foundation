@@ -139,6 +139,7 @@ telemetry append|node --test "$ROOT/.claude/harness/tests/telemetry-append.test.
 operation profiling|node --test "$ROOT/.claude/harness/tests/operation-profile.test.mjs"
 verification planning|node --test "$ROOT/.claude/harness/tests/verification-plan.test.mjs"
 change draft materialization|node --test "$ROOT/.claude/harness/tests/change-draft-materialization.test.mjs"
+atomic change start|node --test "$ROOT/.claude/harness/tests/change-atomic-start.test.mjs"
 land root pointers|node --test "$ROOT/.claude/harness/tests/land-root-pointers.test.mjs"
 telemetry phase context|node --test "$ROOT/.claude/harness/tests/telemetry-phase-context.test.mjs"
 adapter runtime|node --test "$HERE/harness/run-adapter-runtime-tests.mjs"

@@ -6,9 +6,8 @@ argument-hint: <intent> | --resume <change> | --plan-only <intent>
 `--resume` reads state. When sandbox has zero pending tasks, skip Build;
 invoke fresh `/prove <id>`. `--plan-only`: Change.
 
-For all fresh work use `/change`. After its Decision Sheet, run
-`claude-foundation change new "<intent>"` to bind budget. Use
-`change start --template` only with a complete draft.
+For all fresh work use `/change`. It owns the Decision Sheet and
+`change start --template`; do not create a parallel `change new` scaffold.
 
 After Change, await fresh Agents for `/build <id>`, then `/prove <id>`. Parent
 never runs Build inspection/tests, proof readiness/advance, or authority

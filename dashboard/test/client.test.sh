@@ -55,7 +55,9 @@ printf '%s\n' \
   > "$TMP/claude/projects/demo/session.jsonl"
 CLAUDE_CONFIG_DIR="$TMP/claude"; export CLAUDE_CONFIG_DIR
 SCRIPT_PATH="$TMP/no-helper/client.sh"
-USAGE_CACHE="$TMP/fallback-usage.json"; USAGE_DAYS=30; USAGE_INTERVAL=1
+# This assertion exercises the portable parser, not retention. Keep the fixed
+# fixture inside the scan window so the test does not expire with wall time.
+USAGE_CACHE="$TMP/fallback-usage.json"; USAGE_DAYS=36500; USAGE_INTERVAL=1
 scan_usage
 assert_cmd_zero "portable usage fallback emits valid dated aggregates" node -e \
   'const u=JSON.parse(process.argv[1]),t=JSON.parse(process.argv[2]);if(u[0].input!==5||t[0].date!=="2026-08-02")process.exit(1)' \

@@ -342,10 +342,27 @@ printf '%s\n' \
   '"execution":{"version":1,"providers":{"test":{"adapter":"test-discovery","command":["sh","atomic-test.sh"],' \
   '"report":"test-results/atomic.json","inputs":["atomic-test.sh"],"minimum":1,"timeoutMs":120000}},"services":{}}}' \
   > "$TARGET/.foundation/atomic-draft.json"
+jq '.id = "atomic-invalid" | .claims[0].capabilities = ["unknown-capability"]' \
+  "$TARGET/.foundation/atomic-draft.json" \
+  > "$TARGET/.foundation/atomic-invalid-draft.json"
+if invalid_atomic="$(bash "$ROOT/cli.sh" --project "$TARGET" change start \
+  .foundation/atomic-invalid-draft.json 2>&1)"; then
+  fail "invalid atomic start is refused"
+else
+  pass "invalid atomic start is refused"
+fi
+assert_contains "invalid atomic start reports rollback" "$invalid_atomic" \
+  "partial atomic start rolled back"
+assert_file_absent "invalid atomic start leaves no agreement" \
+  "$TARGET/openspec/changes/atomic-invalid"
+assert_file_absent "invalid atomic start leaves no runtime state" \
+  "$TARGET/.foundation/runtime/atomic-invalid.json"
 atomic_start="$(bash "$ROOT/cli.sh" --project "$TARGET" change start \
-  .foundation/atomic-draft.json)"
+  .foundation/atomic-draft.json --consume-draft)"
 assert_contains "atomic start returns a Build packet" "$atomic_start" \
   '"changeId":"atomic-start"'
+assert_file_absent "successful atomic start consumes its transient draft" \
+  "$TARGET/.foundation/atomic-draft.json"
 assert_eq "atomic start enters Build" "building" \
   "$(jq -r '.status' "$TARGET/.foundation/runtime/atomic-start.json")"
 atomic_workspace="$(jq -r '.workspace.path' \

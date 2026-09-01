@@ -1,7 +1,7 @@
 import {
   existsSync, mkdirSync, readFileSync, rmSync, writeFileSync
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { nextCommand } from "../core/next-step.mjs";
 import { materialSecurityTriggers } from "./security-policy.mjs";
 
@@ -143,8 +143,14 @@ export function renderDraftTask(task, index) {
   const metadata = [
     task.repository ? `[repo:${task.repository}]` : "",
     task.kind ? `[kind:${task.kind}]` : "",
+    task.requestedModel || task.model
+      ? `[model:${task.requestedModel || task.model}]` : "",
     task.paths?.length ? `[paths:${task.paths.join(",")}]` : "",
-    task.dependsOn?.length ? `[depends:${task.dependsOn.join(",")}]` : ""
+    task.dependsOn?.length ? `[depends:${task.dependsOn.join(",")}]` : "",
+    task.resources?.length ? `[resources:${task.resources.join(",")}]` : "",
+    task.claims?.length ? `[claims:${task.claims.join(",")}]` : "",
+    task.inputSchema ? `[input-schema:${task.inputSchema}]` : "",
+    task.outputSchema ? `[output-schema:${task.outputSchema}]` : ""
   ].filter(Boolean).join(" ");
   return `- [ ] **${taskId}** ${task.outcome} ${metadata} — verify: \`${task.verify}\``;
 }
@@ -208,7 +214,9 @@ export function createChangeLifecycle({
   bindClaudeSession,
   validate,
   createSandbox,
-  showPacket
+  showPacket,
+  trapFailures = (operation) => operation(),
+  rollbackStart = () => []
 }) {
   const workflowPolicy = () => typeof policy === "function" ? policy() : policy;
   function templateDir(schema) {
@@ -219,6 +227,14 @@ export function createChangeLifecycle({
     return readFileSync(path, "utf8")
       .replaceAll("<title>", title)
       .replaceAll("replace-with-stable-claim-id", `${slugify(title)}-outcome`);
+  }
+
+  function assertChangeAvailable(id) {
+    if (existsSync(changePath(id))) fail(`change already exists: ${id}`);
+    const residue = priorChangeResidue(root, id);
+    if (residue.length)
+      fail(`change id '${id}' was used before and its recorded history remains ` +
+        `(${residue.map((path) => path.slice(root.length + 1)).join(", ")}); pick a new id`);
   }
 
   function draftSource(draftPath) {
@@ -366,19 +382,18 @@ export function createChangeLifecycle({
     writeFileSync(join(target, ".openspec.yaml"), "schema: foundation-standard\n");
   }
 
-  function createChange(intent, flags) {
+  function createChange(intent, flags, preparedDraft = undefined, options = {}) {
     const id = slugify(flags.id || intent);
     setOperationChangeId(id);
-    if (existsSync(changePath(id))) fail(`change already exists: ${id}`);
     // An archived change keeps its runtime state, receipts, and evidence vault
     // as history. A new change reusing the id would inherit them — review
     // rounds it never ran, receipts bound to another workspace — so the id is
-    // refused rather than quietly adopted.
-    const residue = priorChangeResidue(root, id);
-    if (residue.length)
-      fail(`change id '${id}' was used before and its recorded history remains ` +
-        `(${residue.map((path) => path.slice(root.length + 1)).join(", ")}); pick a new id`);
-    const draft = flags.draft ? loadDraft(flags.draft) : null;
+    // refused rather than quietly adopted. Atomic start checks once before its
+    // rollback boundary so cleanup can never delete a pre-existing change.
+    if (!options.availabilityChecked) assertChangeAvailable(id);
+    const draft = preparedDraft !== undefined
+      ? preparedDraft
+      : flags.draft ? loadDraft(flags.draft) : null;
     const schema = flags.rapid ? "foundation-rapid" : "foundation-standard";
     const source = templateDir(schema);
     const target = changePath(id);
@@ -398,7 +413,7 @@ export function createChangeLifecycle({
     });
     saveRuntime(state);
     if (draft) materializeDraft(id, draft);
-    bindClaudeSession(id, "change");
+    if (!options.deferSessionBinding) bindClaudeSession(id, "change");
     const next = schema === "foundation-standard"
       ? `resolve decisions with change resolve ${id} before authoring or validation`
       : `complete artifacts, validate, then /build ${id}`;
@@ -423,7 +438,7 @@ export function createChangeLifecycle({
       decisions: [{ choice: "Use the smallest isolated change", why: "Minimize risk", rejected: "Broader redesign" }],
       risks: [{ risk: "Behavior regression", mitigation: "Focused deterministic test", owner: "implementation" }],
       acceptance: { required: false, reason: null, claimIds: [] },
-      tasks: [{ id: "T001", outcome: "Implement the bounded outcome", kind: "implementation", paths: ["replace-with-owned-path"], verify: "replace-with-focused-command" }],
+      tasks: [{ id: "T001", outcome: "Implement the bounded outcome", kind: "implementation", paths: ["replace-with-owned-path"], claims: ["replace-with-stable-claim-id"], verify: "replace-with-focused-command" }],
       claims: [{ id: "replace-with-stable-claim-id", scenario: "Observable outcome passes", impact: "low", capabilities: ["test"] }],
       specs: [{
         name: "unused-by-rapid",
@@ -687,6 +702,7 @@ export function createChangeLifecycle({
     state.resolvedAt = now();
     saveRuntime(state);
     printResolution(id, state, upgraded);
+    return { state, upgraded };
   }
 
   function validateStartIdentity(draft) {
@@ -770,7 +786,7 @@ export function createChangeLifecycle({
     };
   }
 
-  function startAtomic(draftPath) {
+  function startAtomic(draftPath, options = {}) {
     const draft = loadDraft(draftPath);
     validateStartIdentity(draft);
     validateStartAcceptance(draft);
@@ -779,12 +795,47 @@ export function createChangeLifecycle({
     const rapid = rapidStart(draft, classification);
     validateStartGrounding(draft, rapid);
     const resolutionFlags = startResolutionFlags(draft, classification, rapid);
-    const id = createChange(draft.intent, { rapid, draft: draftPath, id: draft.id });
-    resolveChange(id, resolutionFlags);
-    materializeDraft(id, draft);
-    validate(id, "root", { quiet: true });
-    createSandbox(id);
-    showPacket(id, { phase: "build" });
+    const id = slugify(draft.id || draft.intent);
+    assertChangeAvailable(id);
+    try {
+      trapFailures(() => {
+        createChange(draft.intent, { rapid, id: draft.id }, draft, {
+          availabilityChecked: true,
+          deferSessionBinding: true
+        });
+        const resolution = resolveChange(id, resolutionFlags);
+        // A rapid draft can still upgrade when semantic security terms in the
+        // intent trigger standard policy during resolve. Only that transition
+        // needs a second projection; the common path was previously rewritten
+        // unconditionally after createChange had already materialized it.
+        if (resolution.upgraded) materializeDraft(id, draft);
+        // Atomic start is a public Change gate. Use the same explicit validation
+        // as `change validate`, including OpenSpec strict lint when available.
+        validate(id, "root");
+        createSandbox(id);
+        bindClaudeSession(id, "change");
+        showPacket(id, { phase: "build" });
+      });
+    } catch (error) {
+      let rollbackIssues;
+      try { rollbackIssues = rollbackStart(id) || []; }
+      catch (rollbackError) {
+        rollbackIssues = [`rollback failed: ${rollbackError.message || rollbackError}`];
+      }
+      const failure = error?.message || String(error);
+      const detail = rollbackIssues.length
+        ? `${failure}; rollback issues: ${rollbackIssues.join("; ")}`
+        : `${failure}; partial atomic start rolled back`;
+      fail(detail);
+    }
+    if (options.consumeDraft) {
+      const source = resolve(root, draftPath);
+      try { rmSync(source); }
+      catch (error) {
+        console.error(`WARNING: atomic start succeeded but could not remove draft '${
+          relative(root, source)}': ${error.message}`);
+      }
+    }
   }
 
   return {
