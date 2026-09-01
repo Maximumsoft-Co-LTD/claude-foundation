@@ -95,6 +95,8 @@ def functions_in(path, root, counts):
         rows.append({
             "id": f"{prefix}{node.name}",
             "path": path.relative_to(root).as_posix(),
+            "surface": "tooling" if path.relative_to(root).parts[0] in {"tools", "scripts"}
+            else "product",
             "line": node.lineno,
             "endLine": node.end_lineno or node.lineno,
             "cyclomatic": complexity.value,

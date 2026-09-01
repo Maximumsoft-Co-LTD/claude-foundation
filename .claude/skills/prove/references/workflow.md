@@ -26,6 +26,10 @@ For a missing adapter use `evidence init --write`. Identity may be shared only
 with committed `review.independence: "self"`. Codex-only or Claude-Code-only
 review uses `review.diversity: "single-model"`; it requires a fresh
 identity/session. Never substitute self-review for a required reviewer.
+Prove may run declared evidence but must not invent a checker to manufacture a
+missing capability. Return that gap to Build. A Build-authored checker is
+eligible only when its own success and failure paths are covered by the normal
+test and quality commands.
 Never expose raw readiness JSON. Relay every blocker with the route and stop on real
 decisions. Never fabricate provenance, claim an unproven pass, or Land. End
 with what passed, remains unproven, and the agent's next action.

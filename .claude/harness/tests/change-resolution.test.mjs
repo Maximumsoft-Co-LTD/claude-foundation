@@ -101,6 +101,17 @@ try {
   });
   assert.deepEqual(inferred.securityTriggers, ["manual", "auth token", "a+b"]);
   assert.equal(inferred.reviewRequired, true);
+  const businessValidation = run({
+    security: "untrusted-input,type-confusion-validation-bypass,schema-validation"
+  }, { intent: "Reject boolean seat counts in workspace API validation", securityTriggers: [] });
+  assert.deepEqual(businessValidation.securityTriggers, []);
+  assert.equal(businessValidation.reviewRequired, false);
+  const trustBoundaryValidation = run({
+    security: "untrusted-input,type-confusion-validation-bypass"
+  }, { intent: "Reject an auth token bypass in workspace API validation", securityTriggers: [] });
+  assert.deepEqual(trustBoundaryValidation.securityTriggers,
+    ["auth token", "untrusted-input", "type-confusion-validation-bypass"]);
+  assert.equal(trustBoundaryValidation.reviewRequired, true);
   assert.equal(run({}, { impact: "high", securityTriggers: [] }).reviewRequired, true);
   assert.equal(run({}, { impact: "medium", coupling: "coupled", securityTriggers: [] }).reviewRequired, true);
   assert.equal(run({}, { impact: "low", coupling: "coupled", securityTriggers: [] }).reviewRequired, false);

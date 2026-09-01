@@ -127,7 +127,12 @@ export function observedOutcome({
       requiredEvidencePassed: false, proofStatus: null, landStatus: null,
       decisionProvider: decisionBoundary.provider,
       decisionKind: decisionBoundary.kind,
-      decisionFingerprint: decisionBoundary.fingerprint
+      decisionFingerprint: decisionBoundary.fingerprint,
+      decisionDetectionSource: decisionBoundary.detectionSource,
+      decisionFirstSeenWallMs: decisionBoundary.firstSeenWallMs ?? null,
+      requestsAtDecision: decisionBoundary.requestsAtDecision ?? null,
+      requestsAfterDecision: decisionBoundary.requestsAfterDecision ?? null,
+      suppressedDuplicateDecisions: decisionBoundary.suppressedDuplicateCount ?? 0
     };
   }
   if (!changeId) return {
@@ -170,19 +175,21 @@ export function observedOutcome({
   };
 }
 
-function boundaryFromReadiness(readiness) {
-  if (readiness?.status !== "NEEDS_USER_DECISION" ||
-      readiness?.budget?.class !== "external-authority") return null;
+function boundaryFromReadiness(readiness, detectionSource = "readiness-json") {
+  if (readiness?.status !== "NEEDS_USER_DECISION") return null;
   const next = Array.isArray(readiness.next) ? readiness.next : [];
-  const boundary = next.find((item) => item?.kind === "user-decision") || next[0] || {};
-  const decision = boundary?.decision && typeof boundary.decision === "object"
-    ? boundary.decision : {};
+  const boundary = next.find((item) => item?.kind === "user-decision");
+  const externalBudget = readiness?.budget?.class === "external-authority";
+  if (!externalBudget && !boundary) return null;
+  const selected = boundary || next[0] || {};
+  const decision = selected?.decision && typeof selected.decision === "object"
+    ? selected.decision : {};
   const options = Array.isArray(decision.options)
-    ? decision.options.map((option) => option?.id).filter(Boolean) : [];
+    ? decision.options.map((option) => option?.id).filter(Boolean).sort() : [];
   const identity = {
     status: readiness.status,
-    budgetClass: readiness.budget.class,
-    provider: boundary.provider || null,
+    budgetClass: "external-authority",
+    provider: selected.provider || null,
     kind: decision.kind || "external-authority",
     options
   };
@@ -192,19 +199,96 @@ function boundaryFromReadiness(readiness) {
     fingerprint: digest(identity),
     recommended: decision.recommended || null,
     options,
-    reason: readiness.budget.reason || null,
+    reason: readiness?.budget?.reason || null,
     workflowStatus: null,
     pendingTasks: Array.isArray(readiness.pendingTasks)
-      ? readiness.pendingTasks.length : null
+      ? readiness.pendingTasks.length : null,
+    detectionSource
   };
 }
 
+function balancedJsonAt(value, start) {
+  const opening = value[start];
+  const closing = opening === "{" ? "}" : opening === "[" ? "]" : null;
+  if (!closing) return null;
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
+  for (let index = start; index < value.length; index += 1) {
+    const character = value[index];
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') quoted = false;
+      continue;
+    }
+    if (character === '"') quoted = true;
+    else if (character === opening) depth += 1;
+    else if (character === closing && --depth === 0) return value.slice(start, index + 1);
+  }
+  return null;
+}
+
+function readinessCandidates(value) {
+  const candidates = [];
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return candidates;
+  try { candidates.push({ value: JSON.parse(trimmed), source: "exact-json" }); }
+  catch { /* prefixed, fenced, or summarized output */ }
+  for (let index = 0; index < trimmed.length; index += 1) {
+    if (!["{", "["].includes(trimmed[index])) continue;
+    const segment = balancedJsonAt(trimmed, index);
+    if (!segment) continue;
+    try {
+      candidates.push({ value: JSON.parse(segment), source: "embedded-json" });
+      index += segment.length - 1;
+    } catch { /* keep scanning */ }
+  }
+  if (/\bstatus\s*=\s*["']NEEDS_USER_DECISION["']/.test(trimmed)) {
+    const nextMatch = /\bnext\s*=\s*/.exec(trimmed);
+    if (nextMatch) {
+      const start = trimmed.indexOf("[", nextMatch.index + nextMatch[0].length);
+      const segment = start >= 0 ? balancedJsonAt(trimmed, start) : null;
+      if (segment) {
+        try {
+          candidates.push({
+            value: { status: "NEEDS_USER_DECISION", next: JSON.parse(segment) },
+            source: "readiness-summary"
+          });
+        } catch { /* malformed summary is not a boundary */ }
+      }
+    }
+  }
+  return candidates;
+}
+
+function toolResultValues(row) {
+  if (!row || typeof row !== "object") return [];
+  const values = [];
+  const queue = [row];
+  while (queue.length) {
+    const candidate = queue.shift();
+    if (!candidate || typeof candidate !== "object") continue;
+    if (candidate.type === "tool_result") {
+      values.push(candidate.content);
+      continue;
+    }
+    if (Array.isArray(candidate)) queue.push(...candidate);
+    else queue.push(...Object.values(candidate));
+  }
+  return values;
+}
+
 export function externalAuthorityBoundary(value) {
-  const queue = [value];
+  const streamRow = value && typeof value === "object" && typeof value.type === "string";
+  const queue = streamRow ? toolResultValues(value) : [value];
   while (queue.length) {
     const candidate = queue.shift();
     if (typeof candidate === "string") {
-      try { queue.push(JSON.parse(candidate)); } catch { /* non-JSON tool output */ }
+      for (const parsed of readinessCandidates(candidate)) {
+        const boundary = boundaryFromReadiness(parsed.value, parsed.source);
+        if (boundary) return boundary;
+      }
       continue;
     }
     if (!candidate || typeof candidate !== "object") continue;
@@ -351,13 +435,22 @@ function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
       for (const line of lines) {
         let row;
         try { row = JSON.parse(line); } catch { continue; }
-        if (!decisionBoundary) {
-          decisionBoundary = externalAuthorityBoundary(row);
-          if (decisionBoundary) terminate();
-        }
         const requestId = row?.type === "assistant"
           ? row.message?.id || row.request_id || null : null;
         if (requestId) requestIds.add(requestId);
+        const detected = externalAuthorityBoundary(row);
+        if (!decisionBoundary && detected) {
+          decisionBoundary = {
+            ...detected,
+            firstSeenWallMs: performance.now() - started,
+            requestsAtDecision: requestIds.size,
+            requestsAfterDecision: 0,
+            suppressedDuplicateCount: 0
+          };
+          terminate();
+        } else if (decisionBoundary && detected?.fingerprint === decisionBoundary.fingerprint) {
+          decisionBoundary.suppressedDuplicateCount += 1;
+        }
       }
       if (!decisionBoundary && !budgetExhausted && Number.isInteger(maxModelRequests) &&
           maxModelRequests > 0 && requestIds.size >= maxModelRequests) {
@@ -395,6 +488,9 @@ function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
     child.on("close", (code) => {
       clearTimeout(timer);
       if (forceTimer) clearTimeout(forceTimer);
+      if (decisionBoundary)
+        decisionBoundary.requestsAfterDecision = Math.max(0,
+          requestIds.size - decisionBoundary.requestsAtDecision);
       resolveRun({
         exitCode: code ?? 1, timedOut, budgetExhausted, decisionBoundary,
         stdout: Buffer.concat(stdout).toString("utf8"),
@@ -489,6 +585,13 @@ async function main() {
     const preflightStarted = performance.now();
     decisionBoundary = proofDecisionBoundary(project, preflightChangeId);
     if (decisionBoundary) {
+      decisionBoundary = {
+        ...decisionBoundary,
+        firstSeenWallMs: performance.now() - preflightStarted,
+        requestsAtDecision: 0,
+        requestsAfterDecision: 0,
+        suppressedDuplicateCount: 0
+      };
       const finishedAt = new Date().toISOString();
       execution = {
         exitCode: 0, timedOut: false, budgetExhausted: null,

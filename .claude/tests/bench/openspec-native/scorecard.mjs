@@ -88,8 +88,7 @@ export function costMeasurement(envelope = {}, metrics = {}, hostUsage = {}) {
   };
 }
 
-function qualitySummary(report) {
-  const functions = Array.isArray(report?.functions) ? report.functions : [];
+function functionQualitySummary(functions, reportSummary = {}) {
   if (!functions.length) return {
     measurement: "unavailable", functions: null, mappedFunctions: null,
     coverageMinimum: null, coverageMean: null, crapMaximum: null,
@@ -99,7 +98,7 @@ function qualitySummary(report) {
     .filter((value) => value !== null);
   const crap = functions.map((fn) => measured(fn.crap))
     .filter((value) => value !== null);
-  const summary = object(report.summary);
+  const summary = object(reportSummary);
   const unmapped = count(summary.unmapped) ?? functions.filter((fn) =>
     fn.coveragePercent === null || fn.crap === null || fn.status === "unmapped").length;
   return {
@@ -116,6 +115,19 @@ function qualitySummary(report) {
     warn: count(summary.warn) ?? functions.filter((fn) => fn.status === "warn").length,
     fail: count(summary.fail) ?? functions.filter((fn) => fn.status === "fail").length,
     unmapped
+  };
+}
+
+function qualitySummary(report) {
+  const functions = Array.isArray(report?.functions) ? report.functions : [];
+  const aggregate = functionQualitySummary(functions, report?.summary);
+  const tooling = functions.filter((fn) => fn.surface === "tooling" ||
+    /^(?:tools|scripts)\//.test(String(fn.path || "")));
+  const product = functions.filter((fn) => !tooling.includes(fn));
+  return {
+    ...aggregate,
+    product: functionQualitySummary(product),
+    tooling: functionQualitySummary(tooling)
   };
 }
 
@@ -235,7 +247,12 @@ function normalizeOutcome(input = {}, oracle = {}) {
     landStatus: text(input.landStatus),
     decisionProvider: text(input.decisionProvider),
     decisionKind: text(input.decisionKind),
-    decisionFingerprint: text(input.decisionFingerprint)
+    decisionFingerprint: text(input.decisionFingerprint),
+    decisionDetectionSource: text(input.decisionDetectionSource),
+    decisionFirstSeenWallMs: measured(input.decisionFirstSeenWallMs),
+    requestsAtDecision: count(input.requestsAtDecision),
+    requestsAfterDecision: count(input.requestsAfterDecision),
+    suppressedDuplicateDecisions: count(input.suppressedDuplicateDecisions)
   };
 }
 

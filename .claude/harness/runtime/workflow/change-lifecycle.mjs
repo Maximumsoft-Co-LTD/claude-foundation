@@ -3,6 +3,7 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { nextCommand } from "../core/next-step.mjs";
+import { materialSecurityTriggers } from "./security-policy.mjs";
 
 export function priorChangeResidue(root, id) {
   return [
@@ -603,11 +604,11 @@ export function createChangeLifecycle({
     });
     const explicitSecurity = String(flags.security || "").split(",")
       .map((value) => value.trim()).filter((value) => value && value.toLowerCase() !== "none");
-    state.securityTriggers = [...new Set([
+    state.securityTriggers = materialSecurityTriggers([
       ...(state.securityTriggers || []).filter((value) =>
         String(value).trim().toLowerCase() !== "none"),
       ...inferred, ...explicitSecurity
-    ])];
+    ], state.intent, securityTerms);
     // Coupling alone no longer summons a reviewer. `coupled` means the change
     // spans components, which earns the standard schema's design.md and specs/
     // below — but at low impact there is nothing for an independent reader to

@@ -41,6 +41,11 @@
         "landStatus": { "$ref": "#/$defs/nullableString" },
         "decisionProvider": { "$ref": "#/$defs/nullableString" },
         "decisionKind": { "$ref": "#/$defs/nullableString" },
+        "decisionDetectionSource": { "$ref": "#/$defs/nullableString" },
+        "decisionFirstSeenWallMs": { "$ref": "#/$defs/nullableNumber" },
+        "requestsAtDecision": { "$ref": "#/$defs/nullableCount" },
+        "requestsAfterDecision": { "$ref": "#/$defs/nullableCount" },
+        "suppressedDuplicateDecisions": { "$ref": "#/$defs/nullableCount" },
         "decisionFingerprint": {
           "anyOf": [
             { "type": "null" },
@@ -107,7 +112,7 @@
     "quality": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["measurement", "functions", "mappedFunctions", "coverageMinimum", "coverageMean", "crapMaximum", "pass", "warn", "fail", "unmapped"],
+      "required": ["measurement", "functions", "mappedFunctions", "coverageMinimum", "coverageMean", "crapMaximum", "pass", "warn", "fail", "unmapped", "product", "tooling"],
       "properties": {
         "measurement": { "$ref": "#/$defs/measurement" },
         "functions": { "$ref": "#/$defs/nullableCount" },
@@ -118,7 +123,9 @@
         "pass": { "$ref": "#/$defs/nullableCount" },
         "warn": { "$ref": "#/$defs/nullableCount" },
         "fail": { "$ref": "#/$defs/nullableCount" },
-        "unmapped": { "$ref": "#/$defs/nullableCount" }
+        "unmapped": { "$ref": "#/$defs/nullableCount" },
+        "product": { "$ref": "#/$defs/qualitySummary" },
+        "tooling": { "$ref": "#/$defs/qualitySummary" }
       }
     },
     "oracle": {
@@ -152,6 +159,23 @@
     "nullableTimestamp": { "anyOf": [{ "type": "null" }, { "type": "string", "format": "date-time" }] },
     "nullableNumber": { "type": ["number", "null"], "minimum": 0 },
     "nullableCount": { "type": ["integer", "null"], "minimum": 0 },
-    "measurement": { "enum": ["measured", "partial", "unavailable"] }
+    "measurement": { "enum": ["measured", "partial", "unavailable"] },
+    "qualitySummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["measurement", "functions", "mappedFunctions", "coverageMinimum", "coverageMean", "crapMaximum", "pass", "warn", "fail", "unmapped"],
+      "properties": {
+        "measurement": { "$ref": "#/$defs/measurement" },
+        "functions": { "$ref": "#/$defs/nullableCount" },
+        "mappedFunctions": { "$ref": "#/$defs/nullableCount" },
+        "coverageMinimum": { "anyOf": [{ "type": "null" }, { "type": "number", "minimum": 0, "maximum": 100 }] },
+        "coverageMean": { "anyOf": [{ "type": "null" }, { "type": "number", "minimum": 0, "maximum": 100 }] },
+        "crapMaximum": { "$ref": "#/$defs/nullableNumber" },
+        "pass": { "$ref": "#/$defs/nullableCount" },
+        "warn": { "$ref": "#/$defs/nullableCount" },
+        "fail": { "$ref": "#/$defs/nullableCount" },
+        "unmapped": { "$ref": "#/$defs/nullableCount" }
+      }
+    }
   }
 }

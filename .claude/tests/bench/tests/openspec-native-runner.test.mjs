@@ -13,7 +13,8 @@ import addFormats from "ajv-formats";
 
 import {
   assertDisposableProject, collectNativeScorecard, discoverChangeId,
-  observedOutcome, operationRowsInWindow, parseHostOutput, pendingTaskCount,
+  externalAuthorityBoundary, observedOutcome, operationRowsInWindow,
+  parseHostOutput, pendingTaskCount,
   runBenchmarkOracle
 } from "../openspec-native/run.mjs";
 import { collectBenchmarkQuality } from "../openspec-native/quality.mjs";
@@ -56,7 +57,7 @@ if (process.argv[2] === "metrics") process.stdout.write(JSON.stringify({
   ].join("\n"));
   write(join(project, ".foundation/test-results/quality/crap.json"), {
     summary: { functions: 1, pass: 1, warn: 0, fail: 0, unmapped: 0 },
-    functions: [{ coveragePercent: 100, crap: 1, status: "pass" }]
+    functions: [{ path: "app.py", coveragePercent: 100, crap: 1, status: "pass" }]
   });
   return project;
 }
@@ -168,6 +169,8 @@ test("collector joins metrics, operations, quality, and completion truth", () =>
     assert.equal(scorecard.outcome.complete, true);
     assert.equal(scorecard.operations.total, 2);
     assert.equal(scorecard.quality.crapMaximum, 1);
+    assert.equal(scorecard.quality.product.functions, 1);
+    assert.equal(scorecard.quality.tooling.measurement, "unavailable");
     assert.equal(scorecard.usage.costUsd, 2);
     assert.equal(validate(scorecard), true, JSON.stringify(validate.errors));
   } finally { rmSync(project, { recursive: true, force: true }); }
@@ -278,12 +281,17 @@ test("dependency-free Python sandboxes produce measured CRAP quality", async () 
       "        return -value",
       "    return value", ""
     ].join("\n"));
+    write(join(sandbox, "tools/check_evidence.py"), [
+      "def evidence_ok(value):", "    return bool(value)", ""
+    ].join("\n"));
     write(join(sandbox, "tests/test_calculator.py"), [
-      "import unittest", "from calculator import absolute", "",
+      "import unittest", "from calculator import absolute",
+      "from tools.check_evidence import evidence_ok", "",
       "class CalculatorTests(unittest.TestCase):",
       "    def test_both_branches(self):",
       "        self.assertEqual(absolute(-2), 2)",
-      "        self.assertEqual(absolute(2), 2)", ""
+      "        self.assertEqual(absolute(2), 2)",
+      "        self.assertTrue(evidence_ok('receipt'))", ""
     ].join("\n"));
     const report = await collectBenchmarkQuality({ project, changeId: "todo" });
     assert.equal(report.protocol, "foundation-quality-v1");
@@ -292,6 +300,8 @@ test("dependency-free Python sandboxes produce measured CRAP quality", async () 
     assert.ok(report.summary.functions >= 1);
     assert.ok(report.functions.every((fn) => fn.coveragePercent === 100));
     assert.ok(report.functions.every((fn) => fn.crap !== null));
+    assert.deepEqual(new Set(report.functions.map((fn) => fn.surface)),
+      new Set(["product", "tooling"]));
   } finally { rmSync(project, { recursive: true, force: true }); }
 });
 
@@ -494,6 +504,45 @@ test("missing collect-only host telemetry remains unknown rather than zero", () 
   assert.equal(parsed.observedUsage.observedModelRequests, null);
 });
 
+test("external-authority parser accepts command prefixes and typed summaries only in tool results", () => {
+  const readiness = {
+    status: "NEEDS_USER_DECISION",
+    budget: { class: "external-authority", reason: "review required" },
+    next: [{ provider: "review", kind: "user-decision", decision: {
+      kind: "independent-review", options: [{ id: "pause" }, { id: "prepare" }]
+    }}]
+  };
+  const prefixed = externalAuthorityBoundary({
+    type: "user", message: { content: [{
+      type: "tool_result", content: `EXIT=2\n${JSON.stringify(readiness)}`
+    }] }
+  });
+  assert.equal(prefixed.provider, "review");
+  assert.equal(prefixed.detectionSource, "embedded-json");
+
+  const summary = externalAuthorityBoundary({
+    type: "user", message: { content: [{ type: "tool_result", content: [
+      { type: "text", text: [
+        'status = "NEEDS_USER_DECISION"',
+        `next = ${JSON.stringify(readiness.next)}`
+      ].join("\n") }
+    ] }] }
+  });
+  assert.equal(summary.kind, "independent-review");
+  assert.equal(summary.detectionSource, "readiness-summary");
+  assert.equal(summary.fingerprint, prefixed.fingerprint,
+    "equivalent full and summarized readiness must share an identity");
+
+  assert.equal(externalAuthorityBoundary({
+    type: "assistant", message: { content: [{ type: "text", text:
+      `Example only: ${JSON.stringify(readiness)}` }] }
+  }), null, "assistant prose and prompts must not stop the host");
+  assert.equal(externalAuthorityBoundary({
+    type: "user", message: { content: [{ type: "tool_result", content:
+      'status = "NEEDS_USER_DECISION"\nnext = [{"kind":"command"}]' }] }
+  }), null, "a status string without a typed user-decision is not an authority boundary");
+});
+
 test("external-authority readiness stops before host dispatch and repeats deterministically", () => {
   const project = projectFixture();
   const outputDir = mkdtempSync(join(tmpdir(), "foundation-native-authority-stub-"));
@@ -565,7 +614,7 @@ test("streamed external-authority output stops the active host before it can loo
   write(host, `#!/usr/bin/env node
 console.log(JSON.stringify({ type: "assistant", message: { id: "request-1", content: [] } }));
 console.log(JSON.stringify({ type: "user", message: { content: [{
-  type: "tool_result", content: JSON.stringify({
+  type: "tool_result", content: "EXIT=2\\n" + JSON.stringify({
     status: "NEEDS_USER_DECISION", pendingTasks: [],
     budget: { eligible: false, class: "external-authority", reason: "review required" },
     next: [{ provider: "review", kind: "user-decision", decision: {
@@ -573,6 +622,14 @@ console.log(JSON.stringify({ type: "user", message: { content: [{
       options: [{ id: "prepare-for-reviewer" }, { id: "pause" }]
     }}]
   })
+}] } }));
+console.log(JSON.stringify({ type: "user", message: { content: [{
+  type: "tool_result", content: 'status = "NEEDS_USER_DECISION"\\nnext = ' + JSON.stringify([
+    { provider: "review", kind: "user-decision", decision: {
+      kind: "independent-review", recommended: "prepare-for-reviewer",
+      options: [{ id: "prepare-for-reviewer" }, { id: "pause" }]
+    }}
+  ])
 }] } }));
 setTimeout(() => {}, 30000);
 `);
@@ -595,6 +652,10 @@ setTimeout(() => {}, 30000);
     const scorecard = JSON.parse(readFileSync(output, "utf8").trim());
     assert.equal(scorecard.outcome.status, "needs-user-decision");
     assert.equal(scorecard.outcome.failureClass, "external-authority-review");
+    assert.equal(scorecard.outcome.decisionDetectionSource, "embedded-json");
+    assert.equal(scorecard.outcome.requestsAtDecision, 1);
+    assert.equal(scorecard.outcome.requestsAfterDecision, 0);
+    assert.equal(scorecard.outcome.suppressedDuplicateDecisions, 1);
     assert.equal(scorecard.usage.modelRequests, 1);
     assert.equal(scorecard.usage.capConsumedModelRequests, null);
     assert.equal(scorecard.usage.costUsd, null,
