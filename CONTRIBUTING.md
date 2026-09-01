@@ -28,10 +28,14 @@ cd claude-foundation
 npm install
 ```
 
-Run the full deterministic test suite before and after your change:
+Run the full deterministic test suite before and after your change. The
+harness resolves the pinned OpenSpec CLI from `PATH`, and the
+upgrade-compatibility suite archives real release tags, so put
+`node_modules/.bin` on `PATH` and fetch tags first (CI does the same):
 
 ```sh
-sh .claude/tests/run-all.sh
+git fetch origin --tags
+PATH="$PWD/node_modules/.bin:$PATH" sh .claude/tests/run-all.sh
 ```
 
 The suite installs the harness from `git archive HEAD` into temporary fixture
