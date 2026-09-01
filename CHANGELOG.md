@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A machine-enforced cross-domain brownfield benchmark matrix.** Seven
+  workload classes carry explicit wall, cost, request, oracle, quality, and
+  budget-decision policies; unmeasured scenarios remain non-runnable instead
+  of being presented as evidence.
+
 ### Changed
 
 - **GitHub workflows now run checkout and Node setup on Node 24 action

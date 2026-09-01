@@ -105,6 +105,21 @@ Targets remain in
 Do not tune only for the todolist sentinel. The release matrix must cover these
 distinct control paths:
 
+The machine-enforced cross-domain plan lives in
+[`../config/openspec-native-matrix.json`](../config/openspec-native-matrix.json).
+It keeps unmeasured workloads in `planned` state, so they cannot accidentally
+consume a paid run or be presented as baseline evidence. Inspect the matrix or
+one ready execution plan with:
+
+```bash
+node .claude/tests/bench/openspec-native/matrix.mjs
+node .claude/tests/bench/openspec-native/matrix.mjs \
+  .claude/tests/bench/config/openspec-native-matrix.json bare-node-boundary
+```
+
+Budget exhaustion is a resumable user-decision boundary in this manifest. It
+may not be converted into either completed work or a permanent blocked result.
+
 | Class | Representative work | Required terminal truth |
 |---|---|---|
 | Greenfield | CLI and browser app from an empty repository | Change never creates product code; Build and Prove complete |

@@ -20,6 +20,9 @@ assert_cmd_zero "benchmark targets are valid JSON" \
   jq -e '.workflow == "openspec-native" and .scenarios["todolist-r2"].target.task_mirror_operations_max == 0' \
   "$ROOT/.claude/tests/bench/config/openspec-native-targets.json"
 
+assert_cmd_zero "cross-domain benchmark matrix is valid" \
+  node "$ROOT/.claude/tests/bench/openspec-native/matrix.mjs"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 mkdir -p "$TMP/project/.claude/harness" "$TMP/project/openspec"
