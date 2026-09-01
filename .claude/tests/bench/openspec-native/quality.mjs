@@ -104,7 +104,11 @@ export async function collectBenchmarkQuality({ project, changeId }) {
     writeJson(diagnosticPath, { status: "unavailable", reason: "c8-not-installed" });
     return null;
   }
-  const args = ["--all", "--reporter=json", `--report-dir=${coverageDir}`];
+  // An outer repository coverage run exports NODE_V8_COVERAGE. c8 otherwise
+  // adopts that inherited directory and cleans it before this nested collector
+  // starts, erasing coverage from every suite that already completed.
+  const args = ["--all", "--reporter=json", `--report-dir=${coverageDir}`,
+    `--temp-directory=${join(coverageDir, "tmp")}`];
   for (const pattern of includes) args.push(`--include=${pattern}`);
   for (const pattern of policy.javascript.exclude) args.push(`--exclude=${pattern}`);
   if (manifest?.scripts?.test) args.push("npm", "test", "--silent");

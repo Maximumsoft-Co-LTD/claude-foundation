@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Runtime coverage survives the suites it measures.** The outer c8 process
+  stores raw V8 data outside repository test-results, so nested cleanup and
+  quality collectors cannot erase earlier process coverage and turn tested
+  runtime functions into synthetic zero-coverage CRAP failures.
+
 - **The deterministic test pool now rejects repository residue.** A before-and-
   after porcelain snapshot fails the run with the leaked paths when any suite
   leaves tracked changes or untracked generated files outside its sandbox, and

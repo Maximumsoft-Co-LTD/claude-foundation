@@ -177,13 +177,8 @@ export function createBudgetRuntime({ policy, now }) {
     };
   }
 
-  function ensureBudgetState(state) {
-    let existing = state.budget || {};
-    // Targets are derived, never trusted from stored state: `change resolve
-    // --impact high` arrives after the first window already exists, and policy
-    // budgets can change between runs. Recomputing here is what lets a later
-    // impact declaration actually widen the allowance.
-    const targets = budgetTargets(state.schema, state.impact, state.size, {
+  function targetsForState(state) {
+    return budgetTargets(state.schema, state.impact, state.size, {
       coupling: state.coupling,
       repositoryCount: Object.keys(state.repositories || {}).length,
       providerCount: Array.isArray(state.evidenceCapabilities)
@@ -191,80 +186,94 @@ export function createBudgetRuntime({ policy, now }) {
       securityTriggerCount: Array.isArray(state.securityTriggers)
         ? state.securityTriggers.length : 0
     });
+  }
+
+  function upgradeVersion3Budget(state, existing) {
     // Runtime v4 changes an exhausted window from an implicit auto-rescope
     // boundary into an explicit user-decision boundary. Preserve all v3 usage
     // and window identity while upgrading so a process restart cannot erase
     // either the spend or the pending decision.
-    if (existing.version === 3 && existing.lifetime && existing.window) {
-      existing = {
-        ...existing,
-        version: 4,
-        lifetime: { ...existing.lifetime },
-        window: { ...existing.window }
-      };
-      const requestExhausted = knownNumber(existing.window.usedRequests) &&
-        Number(existing.window.usedRequests) >= Number(existing.window.targetRequests || 1);
-      const tokenExhausted = knownNumber(existing.window.usedTokens) &&
-        Number(existing.window.usedTokens) >= Number(existing.window.targetTokens || 1);
-      if (existing.window.exhaustedAt || existing.window.mode === "operator-required" ||
-          requestExhausted || tokenExhausted)
-        existing.window.mode = "operator-required";
-      state.budget = existing;
+    if (existing.version !== 3 || !existing.lifetime || !existing.window)
+      return existing;
+    const upgraded = {
+      ...existing,
+      version: 4,
+      lifetime: { ...existing.lifetime },
+      window: { ...existing.window }
+    };
+    const requestExhausted = knownNumber(upgraded.window.usedRequests) &&
+      Number(upgraded.window.usedRequests) >= Number(upgraded.window.targetRequests || 1);
+    const tokenExhausted = knownNumber(upgraded.window.usedTokens) &&
+      Number(upgraded.window.usedTokens) >= Number(upgraded.window.targetTokens || 1);
+    if (upgraded.window.exhaustedAt || upgraded.window.mode === "operator-required" ||
+        requestExhausted || tokenExhausted)
+      upgraded.window.mode = "operator-required";
+    state.budget = upgraded;
+    return upgraded;
+  }
+
+  function upgradedLegacyBudget(state, existing, targets) {
+    const legacyRequests = knownNumber(existing.usedRequests)
+      ? Number(existing.usedRequests) : null;
+    // Version 2 counted cache reads as spend. Those totals do not mean the
+    // same thing here, so they are dropped rather than carried forward; the
+    // next telemetry sync recomputes them from the retained events.
+    const legacyTokens = existing.version === 2 ? null
+      : knownNumber(existing.usedTokens) ? Number(existing.usedTokens) : null;
+    return {
+      version: 4,
+      measures: "input+output+cache-write; cache reads excluded",
+      targetRequests: targets.requests,
+      targetTokens: targets.tokens,
+      usedRequests: legacyRequests,
+      usedTokens: legacyTokens,
+      measurement: existing.measurement || "unavailable-until-external-events",
+      lifetime: { usedRequests: legacyRequests, usedTokens: legacyTokens },
+      window: budgetWindow(`${state.id}:post-upgrade`, targets, {}, 1, "runtime-upgrade")
+    };
+  }
+
+  function normalizeCurrentBudget(budget, targets) {
+    budget.targetRequests = targets.requests;
+    budget.targetTokens = targets.tokens;
+    budget.lifetime.usedRequests = knownNumber(budget.lifetime.usedRequests)
+      ? Number(budget.lifetime.usedRequests) : null;
+    budget.lifetime.usedTokens = knownNumber(budget.lifetime.usedTokens)
+      ? Number(budget.lifetime.usedTokens) : null;
+    budget.usedRequests = budget.lifetime.usedRequests;
+    budget.usedTokens = budget.lifetime.usedTokens;
+    // Runtime v3 originally persisted numeric zero in a fresh window while
+    // explicitly saying its measurement was unavailable. Heal that
+    // contradictory state on read so an upgraded change does not keep
+    // reporting invented usage forever.
+    if (budget.measurement === "unavailable-until-external-events" &&
+        budget.lifetime.usedRequests === null && budget.lifetime.usedTokens === null &&
+        Number(budget.window.usedRequests) === 0 && Number(budget.window.usedTokens) === 0) {
+      budget.window.usedRequests = null;
+      budget.window.usedTokens = null;
     }
-    if (existing.version !== 4 || !existing.lifetime || !existing.window) {
-      const legacyRequests = knownNumber(existing.usedRequests)
-        ? Number(existing.usedRequests) : null;
-      // Version 2 counted cache reads as spend. Those totals do not mean the
-      // same thing here, so they are dropped rather than carried forward; the
-      // next telemetry sync recomputes them from the retained events.
-      const legacyTokens = existing.version === 2 ? null
-        : knownNumber(existing.usedTokens) ? Number(existing.usedTokens) : null;
-      state.budget = {
-        version: 4,
-        measures: "input+output+cache-write; cache reads excluded",
-        targetRequests: targets.requests,
-        targetTokens: targets.tokens,
-        usedRequests: legacyRequests,
-        usedTokens: legacyTokens,
-        measurement: existing.measurement || "unavailable-until-external-events",
-        lifetime: { usedRequests: legacyRequests, usedTokens: legacyTokens },
-        window: budgetWindow(`${state.id}:post-upgrade`, targets, {}, 1, "runtime-upgrade")
-      };
-    } else {
-      state.budget.targetRequests = targets.requests;
-      state.budget.targetTokens = targets.tokens;
-      state.budget.lifetime.usedRequests = knownNumber(state.budget.lifetime.usedRequests)
-        ? Number(state.budget.lifetime.usedRequests) : null;
-      state.budget.lifetime.usedTokens = knownNumber(state.budget.lifetime.usedTokens)
-        ? Number(state.budget.lifetime.usedTokens) : null;
-      state.budget.usedRequests = state.budget.lifetime.usedRequests;
-      state.budget.usedTokens = state.budget.lifetime.usedTokens;
-      // Runtime v3 originally persisted numeric zero in a fresh window while
-      // explicitly saying its measurement was unavailable. Heal that
-      // contradictory state on read so an upgraded change does not keep
-      // reporting invented usage forever.
-      if (state.budget.measurement === "unavailable-until-external-events" &&
-          state.budget.lifetime.usedRequests === null &&
-          state.budget.lifetime.usedTokens === null &&
-          Number(state.budget.window.usedRequests) === 0 &&
-          Number(state.budget.window.usedTokens) === 0) {
-        state.budget.window.usedRequests = null;
-        state.budget.window.usedTokens = null;
-      }
-      // The active window follows the derived targets too — an impact declared
-      // mid-change must widen the window the change is actually spending from,
-      // not only the next one. An operator-continue window keeps the numbers
-      // that were granted and audited; only unknown fields are filled there.
-      if (state.budget.window.reason !== "operator-continue") {
-        state.budget.window.targetRequests = targets.requests;
-        state.budget.window.targetTokens = targets.tokens;
-      } else {
-        if (!knownNumber(state.budget.window.targetRequests))
-          state.budget.window.targetRequests = targets.requests;
-        if (!knownNumber(state.budget.window.targetTokens))
-          state.budget.window.targetTokens = targets.tokens;
-      }
+    // An audited continuation keeps its granted targets; only unknown fields
+    // are filled. Every other active window follows newly derived targets.
+    if (budget.window.reason !== "operator-continue") {
+      budget.window.targetRequests = targets.requests;
+      budget.window.targetTokens = targets.tokens;
+      return budget;
     }
+    if (!knownNumber(budget.window.targetRequests))
+      budget.window.targetRequests = targets.requests;
+    if (!knownNumber(budget.window.targetTokens))
+      budget.window.targetTokens = targets.tokens;
+    return budget;
+  }
+
+  function ensureBudgetState(state) {
+    // Targets are derived, never trusted from stored state: impact and policy
+    // can change after the first window has already been persisted.
+    const targets = targetsForState(state);
+    const existing = upgradeVersion3Budget(state, state.budget || {});
+    state.budget = existing.version !== 4 || !existing.lifetime || !existing.window
+      ? upgradedLegacyBudget(state, existing, targets)
+      : normalizeCurrentBudget(existing, targets);
     return state.budget;
   }
 

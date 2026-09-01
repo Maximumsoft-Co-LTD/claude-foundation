@@ -88,6 +88,7 @@ async function main() {
     if (changedSince(commit, [".claude/harness", ".claude/hooks"])) {
       run(c8, ["--include=.claude/harness/foundation.mjs", "--include=.claude/harness/runtime/**/*.mjs",
         "--include=.claude/hooks/**/*.mjs", "--exclude=.claude/**/tests/**", "--reporter=json",
+        `--temp-directory=${join(temporary, "coverage-tmp-runtime")}`,
         "--report-dir=.foundation/test-results/quality/coverage-runtime", "sh", ".claude/tests/run-all.sh"], archive);
       coverageReports.push(join(archive,
         ".foundation/test-results/quality/coverage-runtime/coverage-final.json"));
