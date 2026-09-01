@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **GitHub workflows now run checkout and Node setup on Node 24 action
+  runtimes.** Release, bottle, quality, mutation, and deterministic workflows
+  use the same current action generation as the Pages deployment.
+
 ### Fixed
 
 - **The deterministic test pool now rejects repository residue.** A before-and-

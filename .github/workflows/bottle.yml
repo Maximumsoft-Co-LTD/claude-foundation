@@ -45,7 +45,7 @@ jobs:
       # bottles the right source no matter which came first. (v2.8.1 shipped a
       # 2.6.8-payload bottle because the old version trusted main's formula.)
       - name: Check out the released formula (from main)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: main
 
