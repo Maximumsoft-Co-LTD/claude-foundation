@@ -11,6 +11,6 @@
 
 ## Evidence
 
-- [ ] `sh .claude/tests/run-all.sh` is green locally
+- [ ] `PATH="$PWD/node_modules/.bin:$PATH" sh .claude/tests/run-all.sh` is green locally
 - [ ] Commits are signed off (`git commit -s`, DCO)
 - [ ] Diff contains only changes traceable to this request

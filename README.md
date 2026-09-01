@@ -852,7 +852,7 @@ allowance, unfinished work, the user prompt, and the exact resume command.
 claude-foundation version
 claude-foundation update check
 claude-foundation runtime version
-sh .claude/tests/run-all.sh
+PATH="$PWD/node_modules/.bin:$PATH" sh .claude/tests/run-all.sh
 
 npx --yes @fission-ai/openspec@1.7.0 schema validate foundation-standard
 npx --yes @fission-ai/openspec@1.7.0 schema validate foundation-rapid
