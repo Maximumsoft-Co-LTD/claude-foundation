@@ -102,3 +102,10 @@ solar-system/
 # who clones this one.
 opencode/
 changeloop-cli/
+
+# Residue from running the sandbox-land contract suite against the repo root.
+# The suite writes these fixture names into its own temp project; they must
+# never be committed here.
+/NOTES.md
+/app.txt
+/current-link
