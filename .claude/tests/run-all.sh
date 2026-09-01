@@ -16,6 +16,11 @@ set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 
+# The session-context hook exports the interactive Claude session's identity
+# into agent shells; node --test suites inherit it and the runtime then
+# prefers it over fixture ids. Deterministic suites must never see it.
+unset FOUNDATION_CLAUDE_SESSION_ID FOUNDATION_CLAUDE_TRANSCRIPT_PATH
+
 selection_mode="full"
 list_mode=0
 if [ "${1:-}" = "--affected" ]; then
