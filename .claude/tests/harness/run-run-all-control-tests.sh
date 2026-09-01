@@ -26,12 +26,19 @@ sh "$RUN_ALL" --kill-tree "$parent"
 wait "$parent" 2>/dev/null || true
 parent=""
 
+# kill -0 also succeeds for a zombie, and when the TERMed parent dies before
+# reaping, the dead child reparents to pid 1 — which containers often never
+# reap. Only a non-Z state means kill_tree actually left it running.
+child_running() {
+  _state="$(ps -o state= -p "$1" 2>/dev/null | tr -d ' ')"
+  [ -n "$_state" ] && [ "$_state" != "Z" ]
+}
 tries=0
-while kill -0 "$child" 2>/dev/null && [ "$tries" -lt 50 ]; do
+while child_running "$child" && [ "$tries" -lt 50 ]; do
   sleep 0.02
   tries=$((tries + 1))
 done
-if kill -0 "$child" 2>/dev/null; then
+if child_running "$child"; then
   echo "FAIL: run-all left a descendant process alive"
   exit 1
 fi
