@@ -877,6 +877,14 @@ watchdog behavior, telemetry, multi-repository landing, and the full native CLI,
 see [WORKFLOW.md](WORKFLOW.md) and the
 [harness operator guide](.claude/harness/README.md).
 
+## Contributing
+
+Bug reports and pull requests are welcome. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for setup, testing
+(`sh .claude/tests/run-all.sh`), and the DCO sign-off we require on commits.
+Security issues go through [SECURITY.md](SECURITY.md) — never a public issue.
+The [Code of Conduct](CODE_OF_CONDUCT.md) applies to all project spaces.
+
 ## License
 
 MIT

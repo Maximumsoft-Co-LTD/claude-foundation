@@ -1,0 +1,38 @@
+name: Feature request
+description: Propose an improvement to the harness, workflow, or tooling
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do that Foundation makes hard or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What should happen instead? Concrete command output or workflow steps help.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      multiple: true
+      options:
+        - Commands / workflow (change, build, prove, land, …)
+        - Harness runtime
+        - Installer / distribution
+        - Skills / rules / hooks
+        - Dashboard / observability
+        - Documentation
+    validations:
+      required: false

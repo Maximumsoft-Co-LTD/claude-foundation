@@ -1,6 +1,12 @@
 {
   "name": "claude-foundation",
   "private": true,
+  "description": "OpenSpec-native software-change harness for AI coding agents",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Maximumsoft-Co-LTD/claude-foundation.git"
+  },
   "engines": {
     "node": ">=20.19.0"
   },
