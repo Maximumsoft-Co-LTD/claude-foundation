@@ -56,11 +56,12 @@ an individual is officially representing the community in public spaces.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported privately to the maintainers through GitHub: open a
-[private report to the repository maintainers](https://github.com/Maximumsoft-Co-LTD/claude-foundation/security/advisories/new)
-for conduct issues involving project content, or contact a maintainer listed on
-the repository directly through their GitHub profile. All complaints will be
-reviewed and investigated promptly and fairly.
+reported privately to the maintainers: contact a maintainer of this repository
+directly through their GitHub profile, or use GitHub's
+[Report content](https://docs.github.com/en/communities/maintaining-your-safety-on-github/reporting-abuse-or-spam)
+flow on the offending content. (Security vulnerabilities have their own
+channel — see [SECURITY.md](SECURITY.md).) All complaints will be reviewed and
+investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the
 reporter of any incident.
