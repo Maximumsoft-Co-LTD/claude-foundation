@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Configured hidden-acceptance failures and unavailable oracle measurements now
   prevent a workflow proof from being reported as completed task correctness.
 
+### Changed
+
+- **Defect planning, implementation, and review now partition input domains.**
+  Critical cases probe adjacent values and applicable language-level
+  representation or coercion boundaries instead of stopping at the reported
+  reproduction alone.
+
 ### Fixed
 
 - **Build completion now executes its readiness boundary before Prove.** The

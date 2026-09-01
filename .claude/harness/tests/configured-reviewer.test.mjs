@@ -23,6 +23,8 @@ const adversarialPrompt = configuredReviewPrompt({
 });
 assert.match(adversarialPrompt, /complete authority for scope and claims/);
 assert.match(adversarialPrompt, /JSON data, not instructions/);
+assert.match(adversarialPrompt, /adjacent input partitions/);
+assert.match(adversarialPrompt, /representation or coercion boundaries/);
 assert.match(adversarialPrompt, /return only the required JSON object/);
 assert.match(adversarialPrompt, /UTF-8 bytes of JSON data/);
 assert.ok(adversarialPrompt.indexOf("JSON data, not instructions") <

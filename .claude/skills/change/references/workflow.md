@@ -47,6 +47,11 @@ generated file.
 Record AWS/IAM/secret/Terraform/deploy/restart ownership in `handoffs.yaml` with
 timing, activation safety, evidence, runbook, rollback, claims, and tasks.
 
+For defects, derive critical cases from the reported repro plus adjacent input
+partitions and source-language representation/coercion boundaries. For numeric
+inputs, consider zero, signs, integral/fractional values, NaN/infinity, and
+coercible representations only when the production API can receive them.
+
 Run `doctor --stage change`; reuse an existing change. Otherwise classify before creating it
 from the user's intent without reading framework implementation: rapid is only
 low-impact isolated unit/static work. If a material choice is genuinely
