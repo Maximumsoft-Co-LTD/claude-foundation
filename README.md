@@ -852,7 +852,7 @@ allowance, unfinished work, the user prompt, and the exact resume command.
 claude-foundation version
 claude-foundation update check
 claude-foundation runtime version
-sh .claude/tests/run-all.sh
+PATH="$PWD/node_modules/.bin:$PATH" sh .claude/tests/run-all.sh
 
 npx --yes @fission-ai/openspec@1.7.0 schema validate foundation-standard
 npx --yes @fission-ai/openspec@1.7.0 schema validate foundation-rapid
@@ -876,6 +876,14 @@ For provider contracts, review policy, invalidation rules, sandbox mechanics,
 watchdog behavior, telemetry, multi-repository landing, and the full native CLI,
 see [WORKFLOW.md](WORKFLOW.md) and the
 [harness operator guide](.claude/harness/README.md).
+
+## Contributing
+
+Bug reports and pull requests are welcome. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for setup, the exact command for running the
+deterministic test suite, and the DCO sign-off we require on commits.
+Security issues go through [SECURITY.md](SECURITY.md) — never a public issue.
+The [Code of Conduct](CODE_OF_CONDUCT.md) applies to all project spaces.
 
 ## License
 

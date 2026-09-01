@@ -1,0 +1,60 @@
+name: Bug report
+description: Something in Claude Foundation behaves wrongly
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Version + host + doctor output shortcut most
+        round trips — please fill them in.
+
+        **Security issues:** do not report them here — use
+        [private vulnerability reporting](https://github.com/Maximumsoft-Co-LTD/claude-foundation/security/advisories/new) instead.
+  - type: input
+    id: version
+    attributes:
+      label: Foundation version
+      description: Contents of `VERSION` in your install (or `claude-foundation help` header).
+      placeholder: "3.4.9"
+    validations:
+      required: true
+  - type: dropdown
+    id: host
+    attributes:
+      label: Host agent
+      multiple: false
+      options:
+        - Claude Code
+        - Cursor
+        - OpenCode
+        - Codex
+        - Other / not host-specific
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what actually happened.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. claude-foundation change …
+        2. /build …
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Relevant output
+      description: >
+        Output of `claude-foundation doctor` (and `--change <id>` when a change
+        is involved), or the failing command's output. Redact anything private.
+      render: text
+    validations:
+      required: false

@@ -43,13 +43,18 @@ printf 'not-json\n' > \
 assert_cmd_zero "metrics tolerates a malformed legacy context row" \
   node "$RUNTIME" metrics concurrent-context-telemetry
 
-chmod 500 "$events"
+# Block the event sink with a regular file where the directory should be:
+# permission bits (chmod 500) do not stop root, so a root-run suite would
+# silently record one extra event here and break the retention bound below.
+mv "$events" "$events.blocked"
+printf '' > "$events"
 if node "$RUNTIME" packet concurrent-context-telemetry >/dev/null 2>&1; then
   pass "context telemetry failure cannot block packet output"
 else
   fail "context telemetry failure cannot block packet output"
 fi
-chmod 700 "$events"
+rm "$events"
+mv "$events.blocked" "$events"
 
 node - "$events" <<'NODE'
 const fs = require("node:fs");
