@@ -7,7 +7,7 @@ test("release sentinel freezes and passes every workload without model spend", (
   const report = runDeterministicSentinel();
   assert.equal(report.protocol, "foundation-deterministic-sentinel-v1");
   assert.equal(report.zeroModelSpend, true);
-  assert.equal(report.status, "pass");
+  assert.equal(report.status, "pass", JSON.stringify(report, null, 2));
   assert.equal(report.scenarios.length, 7);
   assert.ok(report.scenarios.every((row) => row.fixtureFrozen && row.status === "pass"));
   assert.match(report.matrixDigest, /^sha256:[a-f0-9]{64}$/);

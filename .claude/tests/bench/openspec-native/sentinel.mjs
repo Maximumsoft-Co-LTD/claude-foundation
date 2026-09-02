@@ -30,8 +30,12 @@ export function runDeterministicSentinel() {
   const issues = matrixIssues(matrix);
   if (issues.length) throw new Error(`invalid matrix:\n${issues.join("\n")}`);
   const started = performance.now();
+  const childEnv = { ...process.env };
+  // A nested `node --test` must not inherit the parent runner's private
+  // context marker; Node otherwise treats it as a recursive test invocation.
+  delete childEnv.NODE_TEST_CONTEXT;
   const result = spawnSync(process.execPath, ["--test", WORKLOAD_SUITE], {
-    cwd: ROOT, encoding: "utf8", env: process.env
+    cwd: ROOT, encoding: "utf8", env: childEnv
   });
   const output = `${result.stdout || ""}${result.stderr || ""}`;
   const scenarios = matrix.scenarios.map((scenario) => {
