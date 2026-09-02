@@ -22,8 +22,8 @@ function stableFiles(root) {
     for (const entry of readdirSync(path, { withFileTypes: true })
       .sort((left, right) => left.name.localeCompare(right.name))) {
       const absolute = join(path, entry.name);
-      if (entry.isDirectory()) visit(absolute);
-      else if (entry.isFile()) rows.push(absolute);
+      if (entry.isDirectory() && entry.name !== "__pycache__") visit(absolute);
+      else if (entry.isFile() && !entry.name.endsWith(".pyc")) rows.push(absolute);
     }
   }
   visit(root);

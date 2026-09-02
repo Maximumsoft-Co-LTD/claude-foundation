@@ -21,6 +21,19 @@ function executable(path, value) {
   chmodSync(path, 0o755);
 }
 
+test("fixture digests ignore generated Python bytecode", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-lab-digest-"));
+  try {
+    write(join(root, "app.py"), "value = 1\n");
+    const expected = directoryDigest(root);
+    write(join(root, "__pycache__/app.cpython-312.pyc"), "generated");
+    write(join(root, "loose.pyc"), "generated");
+    assert.equal(directoryDigest(root), expected);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("consumer lab installs a disposable seed, preserves evidence, and cleans up", () => {
   const root = mkdtempSync(join(tmpdir(), "foundation-lab-test-"));
   const fixture = join(root, "fixture");

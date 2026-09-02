@@ -89,7 +89,7 @@
       "stack": "python",
       "size": "medium",
       "fixture": ".claude/tests/bench/tasks/15-python-api-validation/seed",
-      "fixture_digest": "sha256:3890543a90ea7fba7aad48a89c72090503017cde493e5a72b2f61b3ee762840a",
+      "fixture_digest": "sha256:8baea115bdafb5becf76039cbdfdbde9724693f77a63e95dae7cb327d8122a9d",
       "prompt": "/dev fix the Python API validation boundary and prove boolean rejection",
       "host": "claude-code",
       "risk": "standard",
