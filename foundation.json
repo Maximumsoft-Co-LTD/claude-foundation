@@ -83,7 +83,7 @@
     "changeGate": "warn"
   },
   "land": {
-    "riskBasedCi": true
+    "riskBasedCi": false
   },
   "workflow": {
     "grounding": "required",
