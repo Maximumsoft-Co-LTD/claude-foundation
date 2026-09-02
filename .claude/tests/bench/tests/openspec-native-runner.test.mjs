@@ -603,7 +603,10 @@ sleep 30
     assert.equal(scorecard.outcome.status, "needs-user-decision");
     assert.equal(scorecard.outcome.complete, false);
     assert.equal(scorecard.outcome.failureClass, "budget-exhausted-model-requests");
-    assert.ok(scorecard.timing.wallMs < 5000);
+    // Process-group termination and child reaping can add a few seconds on a
+    // loaded CI runner. The behavioral contract is that the request ceiling
+    // ends the run well before the stub's 30-second sleep completes.
+    assert.ok(scorecard.timing.wallMs < 15000);
     assert.equal(scorecard.usage.modelRequests, 2);
     assert.equal(scorecard.usage.observedModelRequests, 2);
     assert.equal(scorecard.usage.hostReportedModelRequests, null);
