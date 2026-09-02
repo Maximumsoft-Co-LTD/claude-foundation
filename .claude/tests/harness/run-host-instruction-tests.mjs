@@ -192,7 +192,7 @@ test("agent contract endpoint runs outside a project", () => {
   try {
     const result = invokeAgentContract([], fixture);
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.json.contract, /Foundation agent contract/);
+    assert.match(result.json.contract, /Change Loop agent contract/);
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }

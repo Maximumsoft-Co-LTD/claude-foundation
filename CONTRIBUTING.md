@@ -1,7 +1,7 @@
-# Contributing to Claude Foundation
+# Contributing to Change Loop
 
-Thank you for your interest in improving Claude Foundation. This repository is
-the upstream source of the Foundation harness itself — every shipped change
+Thank you for your interest in improving Change Loop. This repository is the
+upstream source of the Change Loop harness itself — every shipped change
 lands in the repositories of everyone who installs it, so we hold contributions
 to the same evidence-driven standard the harness enforces.
 

@@ -12,10 +12,10 @@ import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 
 import {
-  assertDisposableProject, collectNativeScorecard, discoverChangeId,
+  assertDisposableProject, backendLandArgs, collectNativeScorecard, discoverChangeId,
   externalAuthorityBoundary, observedOutcome, operationRowsInWindow,
-  parseHostOutput, pendingTaskCount,
-  runBenchmarkOracle
+  mergeHostExecutions, parseHostOutput, pendingTaskCount,
+  provenLandReady, remainingTimeoutMs, runBenchmarkOracle, runClaude, terminalChangeId
 } from "../openspec-native/run.mjs";
 import { collectBenchmarkQuality } from "../openspec-native/quality.mjs";
 
@@ -43,7 +43,7 @@ if (process.argv[2] === "metrics") process.stdout.write(JSON.stringify({
 }));
 `);
   write(join(project, ".foundation/runtime/todo.json"), {
-    id: "todo", status: "proven"
+    id: "todo", status: "archived"
   });
   write(join(project, "openspec/changes/todo/tasks.md"), [
     "# Tasks", "", "- [x] T1 implementation", "- [x] T2 tests", ""
@@ -75,6 +75,125 @@ test("disposable marker and unambiguous runtime identity protect live runs", () 
   } finally { rmSync(project, { recursive: true, force: true }); }
 });
 
+test("paid Land runner stops the host after backend reaches archived", async () => {
+  const project = projectFixture();
+  const runtime = join(project, ".foundation/runtime/todo.json");
+  write(runtime, { id: "todo", status: "proven" });
+  const fakeClaude = join(project, "fake-claude.sh");
+  write(fakeClaude, [
+    "#!/bin/sh",
+    "sleep 1",
+    `printf '%s\\n' '{"id":"todo","status":"archived"}' > ${JSON.stringify(runtime)}`,
+    "sleep 30"
+  ].join("\n"));
+  chmodSync(fakeClaude, 0o755);
+  const started = Date.now();
+  try {
+    const result = await runClaude({
+      project, prompt: "finish", claudeBin: fakeClaude, claudeArgs: [],
+      timeoutMs: 10000, stopOnArchived: true
+    });
+    assert.equal(result.terminalReached?.status, "archived");
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.timedOut, false);
+    assert.ok(Date.now() - started < 5000,
+      "runner waited for host narration after terminal backend state");
+  } finally { rmSync(project, { recursive: true, force: true }); }
+});
+
+test("oracle-backed runner stops at proven before allowing Land", async () => {
+  const project = projectFixture();
+  const runtime = join(project, ".foundation/runtime/todo.json");
+  write(runtime, { id: "todo", status: "building" });
+  const fakeClaude = join(project, "fake-prover.sh");
+  write(fakeClaude, [
+    "#!/bin/sh",
+    "sleep 1",
+    `printf '%s\\n' '{"id":"todo","status":"proven"}' > ${JSON.stringify(runtime)}`,
+    "sleep 30"
+  ].join("\n"));
+  chmodSync(fakeClaude, 0o755);
+  try {
+    const result = await runClaude({
+      project, prompt: "prove", claudeBin: fakeClaude, claudeArgs: [],
+      timeoutMs: 10000, stopOnProven: true
+    });
+    assert.equal(result.terminalReached?.status, "proven");
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.timedOut, false);
+  } finally { rmSync(project, { recursive: true, force: true }); }
+});
+
+test("repair continuation must leave the initial proven state before it can finish", async () => {
+  const project = projectFixture();
+  const runtime = join(project, ".foundation/runtime/todo.json");
+  write(runtime, { id: "todo", status: "proven" });
+  const fakeClaude = join(project, "fake-repair.sh");
+  write(fakeClaude, [
+    "#!/bin/sh",
+    "sleep 1",
+    `printf '%s\\n' '{"id":"todo","status":"building"}' > ${JSON.stringify(runtime)}`,
+    "sleep 1",
+    `printf '%s\\n' '{"id":"todo","status":"proven"}' > ${JSON.stringify(runtime)}`,
+    "sleep 30"
+  ].join("\n"));
+  chmodSync(fakeClaude, 0o755);
+  try {
+    const result = await runClaude({
+      project, prompt: "repair", claudeBin: fakeClaude, claudeArgs: [],
+      timeoutMs: 10000, stopOnProven: true
+    });
+    assert.equal(result.terminalReached?.status, "proven");
+    assert.ok(result.stopwatch.wallMs >= 1500,
+      "runner mistook the pre-existing proven state for repaired proof");
+  } finally { rmSync(project, { recursive: true, force: true }); }
+});
+
+test("host continuation accounting preserves total requests and wall time", () => {
+  const merged = mergeHostExecutions({
+    stdout: "first\n", stderr: "", observedModelRequests: 3,
+    stopwatch: { wallMs: 100, startedAt: "start", finishedAt: "middle" }
+  }, {
+    exitCode: 0, timedOut: false, stdout: "second\n", stderr: "warning\n",
+    observedModelRequests: 4, terminalReached: { status: "proven" },
+    stopwatch: { wallMs: 250, startedAt: "middle", finishedAt: "finish" }
+  });
+  assert.equal(merged.observedModelRequests, 7);
+  assert.equal(merged.stopwatch.wallMs, 350);
+  assert.equal(merged.stopwatch.startedAt, "start");
+  assert.equal(merged.stopwatch.finishedAt, "finish");
+  assert.equal(merged.stdout, "first\nsecond\n");
+});
+
+test("backend Land receives an integer remaining timeout", () => {
+  assert.equal(remainingTimeoutMs(1800000, 712603.532083), 1087396);
+  assert.equal(remainingTimeoutMs(100, 999.5), 1000);
+});
+
+test("a no-dispatch proven resume keeps its preflight change identity", () => {
+  assert.equal(terminalChangeId({ terminalReached: { changeId: "existing" } }, null),
+    "existing");
+  assert.equal(terminalChangeId({}, "discovered"), "discovered");
+});
+
+test("runner uses the registered internal Land operation", () => {
+  assert.deepEqual(backendLandArgs("change"), ["land-advance", "change"]);
+});
+
+test("proven resume fast-path requires a passing backend Land check", () => {
+  const project = projectFixture();
+  try {
+    write(join(project, ".claude/harness/foundation.mjs"), `#!/usr/bin/env node
+process.exit(process.argv[2] === "land-check" ? 0 : 1);
+`);
+    assert.equal(provenLandReady(project, "todo"), true);
+    write(join(project, ".claude/harness/foundation.mjs"), `#!/usr/bin/env node
+process.stderr.write("stale proof\\n"); process.exit(1);
+`);
+    assert.equal(provenLandReady(project, "todo"), false);
+  } finally { rmSync(project, { recursive: true, force: true }); }
+});
+
 test("outcome requires checked tasks and passing proof", () => {
   const project = projectFixture();
   try {
@@ -85,12 +204,38 @@ test("outcome requires checked tasks and passing proof", () => {
     assert.equal(complete.status, "completed");
     assert.equal(complete.requiredEvidencePassed, true);
     assert.equal(complete.pendingTasks, 0);
+    write(join(project, ".foundation/runtime/todo.json"), {
+      id: "todo", status: "proven"
+    });
+    const notLanded = observedOutcome({
+      project, changeId: "todo", envelope: {}, exitCode: 0, timedOut: false
+    });
+    assert.equal(notLanded.status, "incomplete");
+    assert.equal(notLanded.failureClass, "land-not-archived");
+    assert.equal(notLanded.landStatus, "awaiting-user");
     write(join(project, "openspec/changes/todo/tasks.md"), "- [ ] unfinished\n");
     const incomplete = observedOutcome({
       project, changeId: "todo", envelope: {}, exitCode: 0, timedOut: false
     });
     assert.equal(incomplete.status, "incomplete");
     assert.equal(incomplete.failureClass, "required-work-or-proof-incomplete");
+  } finally { rmSync(project, { recursive: true, force: true }); }
+});
+
+test("outcome follows the runtime's dated OpenSpec archive path", () => {
+  const project = projectFixture();
+  try {
+    const dated = "openspec/changes/archive/2026-09-03-todo";
+    write(join(project, dated, "tasks.md"), "# Tasks\n\n- [x] implementation\n");
+    rmSync(join(project, "openspec/changes/todo"), { recursive: true, force: true });
+    write(join(project, ".foundation/runtime/todo.json"), {
+      id: "todo", status: "archived", archivedChangePath: dated
+    });
+    const outcome = observedOutcome({
+      project, changeId: "todo", envelope: {}, exitCode: 0, timedOut: false
+    });
+    assert.equal(outcome.pendingTasks, 0);
+    assert.equal(outcome.status, "completed");
   } finally { rmSync(project, { recursive: true, force: true }); }
 });
 

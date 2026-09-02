@@ -282,10 +282,19 @@ async function within(promise, timeoutMs, message) {
   assert.doesNotThrow(() => assertProofCollectionOutcomes([
     { provider: "test", status: "pass" }
   ]));
-  assert.throws(() => assertProofCollectionOutcomes([
-    { provider: "test", status: "fail" },
-    { provider: "lint", status: "error" }
-  ]), /evidence collection failed: test:fail, lint:error/);
+assert.throws(() => assertProofCollectionOutcomes([
+  { provider: "test", status: "fail" },
+  { provider: "lint", status: "error" }
+]), /evidence collection failed: test:fail, lint:error/);
+
+assert.throws(() => assertProofCollectionOutcomes([{
+  provider: "test",
+  status: "fail",
+  observations: [
+    { kind: "critical-case", id: "CC001", status: "missing" },
+    { kind: "critical-case", id: "CC002", status: "pass" }
+  ]
+}]), /critical cases non-passing: CC001=missing; tag each covering test title with its literal \[case-id\] and rerun proof advance/);
 }
 
 {
@@ -453,9 +462,13 @@ assert.deepEqual(rejectedResult.cursor.requestIds, ["review-rejected"]);
 assert.equal(rejected.requests.length, 1,
   "a rejected unchanged review must not create a doomed follow-up request");
 const rejectedAgain = await quiet(() => rejected.runtime.proofAdvance("change-a"));
-assert.equal(rejectedAgain.status, "REPAIR_NOT_PROGRESSING");
-assert.deepEqual(rejectedAgain.next, [],
-  "an unchanged rejected review terminates instead of emitting Build forever");
+assert.equal(rejectedAgain.status, "NEEDS_USER_DECISION");
+assert.equal(rejectedAgain.route, "NO_PROGRESS_DECISION");
+assert.equal(rejectedAgain.progressed, false);
+assert.equal(rejectedAgain.decision.kind, "repair-no-progress");
+assert.equal(rejectedAgain.next[0].command,
+  "claude-foundation packet change-a --phase build",
+  "an unchanged rejected review pauses with supported choices and a resume route");
 
 const failedReceipt = fixture({
   receiptOverrides: { review: "fail" },
@@ -476,8 +489,59 @@ assert.deepEqual(failedReceiptResult.repairBatch.findingIds, ["F-BLOCK"],
   "a real failed review receipt reaches the bounded repair route");
 const failedReceiptAgain = await quiet(() =>
   failedReceipt.runtime.proofAdvance("change-a"));
-assert.equal(failedReceiptAgain.status, "REPAIR_NOT_PROGRESSING",
-  "a repeated failed receipt terminates against the stable review subject");
+assert.equal(failedReceiptAgain.status, "NEEDS_USER_DECISION",
+  "a repeated failed receipt pauses against the stable review subject");
+assert.equal(failedReceiptAgain.route, "NO_PROGRESS_DECISION");
+assert.equal(failedReceiptAgain.repairPlan.tasks.length, 1,
+  "the no-progress decision preserves the claim-bound repair plan");
+
+const failedTestEvidence = fixture({
+  executionNeeded: false,
+  receiptOverrides: { test: "fail" }
+});
+const failedTestResult = await quiet(() =>
+  failedTestEvidence.runtime.proofAdvance("change-a"));
+assert.equal(failedTestResult.status, "ACTION_REQUIRED");
+assert.equal(failedTestResult.route, "AUTO_REPAIR");
+assert.equal(failedTestResult.stage, "evidence-failed");
+assert.equal(failedTestResult.repairPlan.tasks[0].findingIds[0], "test:fail");
+const failedTestAgain = await quiet(() =>
+  failedTestEvidence.runtime.proofAdvance("change-a"));
+assert.equal(failedTestAgain.status, "NEEDS_USER_DECISION");
+assert.equal(failedTestAgain.route, "NO_PROGRESS_DECISION");
+assert.equal(failedTestAgain.progressed, false,
+  "unchanged failed evidence pauses instead of repeating an identical repair");
+assert.equal(failedTestAgain.next[0].command,
+  "claude-foundation packet change-a --phase build");
+
+const productiveRepairs = fixture({
+  receiptOverrides: { review: "fail" },
+  deliveredAiAttempts: [{
+    digest: "attempt-repairable", attempt: 1, workspaceHash: "workspace-a",
+    resultStatus: "fail", findings: [{
+      id: "F-PRODUCT", severity: "major", path: "src/app.mjs", line: 1,
+      message: "repair this", claimIds: ["claim-a"],
+      verificationCaseIds: ["CASE-A"]
+    }]
+  }]
+});
+const productiveFirst = await quiet(() =>
+  productiveRepairs.runtime.proofAdvance("change-a"));
+assert.equal(productiveFirst.status, "ACTION_REQUIRED");
+assert.equal(productiveFirst.cursor.repairCycle, 1);
+productiveRepairs.moveWorkspace("workspace-b");
+const productiveSecond = await quiet(() =>
+  productiveRepairs.runtime.proofAdvance("change-a"));
+assert.equal(productiveSecond.status, "ACTION_REQUIRED");
+assert.equal(productiveSecond.progressed, true);
+assert.equal(productiveSecond.cursor.repairCycle, 2);
+productiveRepairs.moveWorkspace("workspace-c");
+const productiveThird = await quiet(() =>
+  productiveRepairs.runtime.proofAdvance("change-a"));
+assert.equal(productiveThird.status, "ACTION_REQUIRED");
+assert.equal(productiveThird.progressed, true);
+assert.equal(productiveThird.cursor.repairCycle, 3,
+  "productive repairs continue without a fixed cycle limit");
 
 const subjectRequest = fixture({
   requests: [{

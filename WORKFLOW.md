@@ -1,8 +1,8 @@
-# Foundation workflow
+# Change Loop workflow
 
 **Version 3.4.10**
 
-Foundation is an OpenSpec-native harness for safe, economical software changes
+Change Loop is an OpenSpec-native harness for safe, economical software changes
 in brownfield repositories.
 
 ```text
@@ -415,10 +415,19 @@ The provider protocol is deny-by-default: a provider may cover only claims that
 declare it, executable providers require an explicit `--claims` scope, and a
 provider protocol/version/fingerprint change invalidates old receipts. Browser
 receipts record `foreground-required` and `foreground-available` independently.
-Playwright uses the distinct `browser-automation` input mode. Foundation does
+Playwright uses the distinct `browser-automation` input mode. Change Loop does
 not install Playwright or browser binaries; `doctor --stage prove --change
 <id>` checks the project-owned command, dependency, configuration, readiness
 identity, execution DAG, and report topology.
+
+Provider protocol 13 adds signed semantic acceptance protocol 1. Its envelope
+binds stable case/claim/partition identities and digested observations to the
+exact workspace. Hidden oracle content stays external; missing or failing
+required cases cannot be replaced by review prose. A declared source critical
+case and optional fail-to-pass transition are independently revalidated on
+every receipt read. For an unambiguous single npm repository, the built-in
+dependency-supply-chain provider checks `package.json` against
+`package-lock.json` without project wiring.
 
 If a configured provider is unavailable, readiness returns
 `INFRASTRUCTURE_ERROR` with structured recovery choices: diagnose, retry,
@@ -445,18 +454,36 @@ measured remaining allowance, unfinished work, and exact resume route. Unknown
 usage or future model demand remains unknown; the checkpoint never converts it
 to a fabricated estimate.
 
-Run `claude-foundation proof advance <change>` once as the normal path. It
-collects executable evidence, creates or reuses the authority request, and
-returns a stable waiting handoff instead of polling or rerunning providers. The
+Run `claude-foundation proof advance <change>` as the normal boundary. Every
+phase gate uses the same convergent contract: collect all independent findings,
+repair the dependency-ordered in-contract batch, selectively rerun invalidated
+checks, and continue without a product-repair limit while progress changes.
+Decisions, authority, resources, conflicts, and repeated no-progress preserve
+state and return a resumable handoff. The command collects executable evidence,
+creates or reuses the authority request, and returns a stable waiting handoff
+instead of polling or rerunning unchanged providers. The
 agent uses `authority run` when handing a full or delta packet to the configured
 Codex or Claude Code reviewer. An explicitly chosen human review reserves the exact packet with
 `authority dispatch`, then records only the real response with `authority record`. Low-level
 `proof collect` and `proof run` remain diagnostic/integration commands.
 
+Draft v2 makes the same division explicit at Change time: authors state intent,
+claims, task outcomes, paths, and one verification command; the harness assigns
+stable IDs and fills only uniquely provable cross-ledger bindings. Draft v1 is
+still accepted unchanged. During Prove, one declared critical case and one test
+result are bound automatically; ambiguous many-to-many coverage still requires
+explicit case identity because guessing would weaken assurance.
+
 The user never constructs receipt commands or provenance metadata. A crashed,
 aborted, or tool-failed dispatch is recorded as infrastructure, does not unlock
 a delta, and permits only one full infrastructure retry. It does not overwrite
 a previously delivered review receipt.
+
+AI reviewer dispatch remains policy-bounded for cost and independence. That is
+not a product-repair cap: after the final AI delta, current deterministic
+claim/critical-case evidence may drive any number of productive repair cycles.
+The change stops only at a real resumable boundary, never because a repair
+counter was reached.
 
 ## Review
 
@@ -509,7 +536,7 @@ live only in the committed policy file; neither is a command flag. The shipped
 only the `single-model` diversity waiver while keeping independence required.
 Set `review.fallbackReviewer` to `main-session` to hand the exact bounded packet
 back to the calling agent after the primary records an infrastructure `error`.
-The failed attempt remains in the review hash chain. Foundation binds the
+The failed attempt remains in the review hash chain. Change Loop binds the
 ambient host session to matching implementation provenance, current-session
 telemetry, or explicit `--main-session-*` values, reserves the fallback attempt, and pre-fills the
 response provenance; it refuses the handback rather than guessing missing
@@ -575,7 +602,7 @@ user interview. Agents translate every other option into the user's language;
 they never present a stop as a dead end or infer the answer. Retiring with
 `change abandon` is one of the offered options wherever it applies.
 
-Foundation also stops on an unresolved apply transaction instead of opening a
+Change Loop also stops on an unresolved apply transaction instead of opening a
 new one over it. `doctor --change <id>` reports unresolved transactions before
 Land reaches them.
 
@@ -587,7 +614,7 @@ security contracts, and security-relevant migrations. Syntax alone is not risk.
 
 ## Invalidation
 
-Foundation creates one relevant workspace snapshot per proof and shares its
+Change Loop creates one relevant workspace snapshot per proof and shares its
 identity across receipts.
 It excludes runtime receipts, sandboxes, dependencies, legacy workflow records,
 other active changes, and archived changes. Any relevant edit makes prior
@@ -613,6 +640,11 @@ Native CLI operations append duration and exit state on a best-effort basis to
 come from uniquely identified host request records; unknown usage is never
 reported as zero. Claude Code binds its session transcript at `SessionStart`
 and incrementally reads only `assistant.message.usage` at phase checkpoints.
+Land drains every bound transcript cursor automatically. When complete token
+usage is measured but the host does not expose cost, telemetry remains
+truthfully `partial-measurement`, while `requireUsage` is satisfied by the
+measured token dimension; no manual telemetry command is required. Land still
+stops when no usage dimension was measured.
 There is no per-tool telemetry hook, and prompt/tool payloads are never copied.
 Other hosts use `telemetry import --format generic|codex|cursor|otel|claude`;
 OpenTelemetry GenAI/LLM attributes normalize into the same append-only event
@@ -637,7 +669,7 @@ packet instead of replaying the full orchestrator transcript.
 
 ## Sandbox safety
 
-Foundation sandboxes protect workspace/apply integrity. They do not by themselves
+Change Loop sandboxes protect workspace/apply integrity. They do not by themselves
 contain processes, network access, host secrets, or system commands. Never infer
 that a Git worktree or copied directory is safe for Allow All/unattended execution.
 
@@ -732,7 +764,7 @@ corroborated by code, tests, or accepted contracts may be promoted.
 ## Native CLI
 
 Host integrations can resolve the canonical workflow instruction owned by the
-installed release without locating or reading a Foundation project:
+installed release without locating or reading a consumer project:
 
 ```bash
 claude-foundation host instruction <command> --protocol 1 --format json --arguments <text>
@@ -740,11 +772,11 @@ claude-foundation host instruction <command> --protocol 1 --format json --argume
 
 Protocol 1 supports `investigate`, `change`, `build`, `prove`, `land`,
 `changes`, `feature`, and `dev`. It returns the command, description, rendered
-instruction, argument mode, protocol, and Foundation version as JSON. Argument
+instruction, argument mode, protocol, and Change Loop version as JSON. Argument
 text is opaque; `changes` accepts none. Unsupported protocols, unknown commands,
 unexpected arguments, and unavailable package instructions fail closed with a
 stable JSON error code. The endpoint is additive and ships before a host adopts
-it; a host that cannot obtain protocol 1 must request a compatible Foundation
+it; a host that cannot obtain protocol 1 must request a compatible Change Loop
 release instead of reading project command files or using a bundled copy.
 
 Hosts can resolve the portable agent contract from the same installed release:
@@ -754,7 +786,7 @@ claude-foundation host agent-contract --protocol 1 --format json
 ```
 
 Agent-contract protocol 1 returns the exact package-owned
-`.claude/harness/AGENT.md` text, protocol, and Foundation version as JSON. It
+`.claude/harness/AGENT.md` text, protocol, and Change Loop version as JSON. It
 does not perform project discovery or return a filesystem path. Unsupported
 protocols or formats, invalid flags, and unavailable or incomplete package
 content fail closed with a stable JSON error code. This resource is separate

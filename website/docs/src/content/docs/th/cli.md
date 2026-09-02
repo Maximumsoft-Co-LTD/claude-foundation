@@ -52,7 +52,7 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | `change validate <change>` | ตรวจ change และ evidence contract ที่รันได้ |
 | `sandbox create <change> [--all]` | สร้างพื้นที่ Build ที่แยกออกมา |
 | `sandbox sync <change>` | ซิงก์การแก้ข้อตกลงที่ตั้งใจเข้าไปใน Build |
-| `proof advance <change>` | ทาง Prove ปกติที่ทำต่อได้: รันหนึ่งครั้ง จัด external gate และ finalize เมื่อพร้อม |
+| `proof advance <change>` | ทาง Prove ปกติที่ทำต่อได้: เดิน gate ปัจจุบัน ใช้ evidence ที่ยัง valid และคืน repair batch เดียวหรือ external handoff |
 | `proof collect <change>` | การเก็บระดับล่างสำหรับวิเคราะห์หรือ integration ที่ตั้งใจไว้ |
 | `proof run <change>` | atomic run ระดับล่างเมื่อไม่ต้องมี external handoff ที่ทำต่อได้ |
 | `handoff record <change> --id <H00n> …` | บันทึก accepted/completed/rejected จาก operator ที่ระบุชื่อพร้อม reference |
@@ -108,7 +108,7 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
-| `init [target-path] [--yes]` | ติดตั้งหรืออัปเกรด Foundation ในโปรเจกต์ |
+| `init [target-path] [--yes]` | ติดตั้งหรืออัปเกรด Change Loop ในโปรเจกต์ |
 | `help [--all]` | คำสั่งหลัก `--all` รวม route ที่เก็บไว้เพื่อความเข้ากันได้ |
 | `dashboard [-up\|-status\|-down]` | จัดการ client แสดงสถานะทีม (ตัวเลือกเสริม) |
 | `migrate [legacy-id] [--apply]` | ย้ายบันทึก workflow เก่าที่ยืนยันได้ |
@@ -121,11 +121,13 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 |---|---|
 | runtime | 3.4.10 |
 | runtime API | 26 |
-| provider protocol | 12 |
+| provider protocol | 13 |
 | evidence schema | 1, 2 |
-| packet schema | 8 |
+| packet schema | 10 |
+| proof protocol | 7 |
 | review protocol | 4 |
 | acceptance protocol | 2 |
+| semantic acceptance protocol | 1 |
 | attestation protocol | 1 |
 | authority protocol | 2 |
 | quality capabilities protocol | 1 |
@@ -133,5 +135,5 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | automated mutation protocol | 1 |
 
 :::note
-provider protocol 12 หมายความว่า receipt ที่บันทึกด้วยเวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่ เพราะ receipt เก่าบอกไม่ได้ว่ามันถูกรันจริงหรือแค่ถูกกล่าวอ้าง จึงเชื่อไม่ได้ว่าถูกรัน
+provider protocol 13 หมายความว่า receipt ที่บันทึกด้วย protocol ก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่ เพราะ receipt เก่าบอกไม่ได้ว่ามันผ่าน semantic-acceptance protocol 1 หรือไม่
 :::

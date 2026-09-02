@@ -1,109 +1,91 @@
-# CLAUDE.md
+# Change Loop maintainer guide
 
-## Identity
+## What this repository is
 
-This is `claude-foundation` (`Maximumsoft-Co-LTD/claude-foundation`) - the
-upstream source repository of the Claude Foundation harness itself, not a
-project that consumes it.
+This is the upstream source of `claude-foundation`, not a consumer project.
+Change Loop is an installable, OpenSpec-native control plane for AI-assisted
+software changes:
 
-Work here is **product development on the harness**, not use of the harness on
-someone else's codebase. We are the maintainers and authors:
+```text
+Investigate? → Change → Build → Prove → Land
+```
 
-- The `.claude/` tree, `openspec/schemas/`, `WORKFLOW.md`, `cli.sh`, and
-  `install.sh` are source code we own and change deliberately - not vendor
-  files to leave alone.
-- A rule, command, skill, or guard that behaves wrongly is our bug to fix here,
-  not a constraint to work around.
-- Consumers install this via `install.sh` (or Homebrew, `claude-foundation
-  init`); every shipped edit lands in their repositories, so treat shipped
-  files as a public contract with real users.
-- Bug reports and feature requests about Foundation are inbound work for this
-  repository, not questions for an upstream project.
+OpenSpec stores the agreement, the native coding agent implements it, project
+tools produce evidence, and the deterministic harness owns lifecycle state,
+isolation, budgets, proof freshness, authority boundaries, and Land recovery.
+Change Loop does not replace the coding agent, Git, CI, or the project's test
+framework.
 
-The change loop (`/change` → `/build` → `/prove` → `/land`) still governs how we
-change this repository - we dogfood the harness while developing it.
+Work here changes the harness shipped to real consumer repositories. A broken
+command, skill, hook, or runtime rule is this project's bug to fix—not a rule to
+work around. Public command names and arguments are compatibility contracts.
 
-## Purpose
+## Why it exists
 
-This repository packages an installable OpenSpec-native change harness.
-The workflow files and deterministic runtime are the product.
+An agent can produce plausible code while misunderstanding intent, testing the
+wrong surface, editing the main checkout too early, or claiming success from
+stale evidence. Change Loop makes completion content-bound and resumable:
 
-## Map
+- Build occurs in a declared isolated workspace.
+- Every phase uses one compiled execution contract and lifecycle reducer.
+- Gates evaluate independent findings once, repair one ordered batch, and rerun
+  only invalidated checks.
+- Product repair has no fixed retry count while progress changes.
+- Real authority, resource, budget, conflict, or repeated no-progress boundaries
+  preserve state and return an exact resume route.
+- A code-delivery flow succeeds at `archived`, never merely `proven`.
+- Land applies only the proven projection and never commits, pushes, or opens a
+  pull request without separate authority.
 
-Product surface, installed into consumer projects:
+## Sources of truth
 
-- `.claude/orchestrator.md` - concise change-loop contract.
-- `.claude/commands/` - `/feature`, `/investigate`, `/change`, `/build`,
-  `/prove`, `/land`, `/changes`, and the `/dev` compatibility composition. Eight commands; there
-  is no migration command.
-- `.claude/harness/foundation.mjs` - CLI-compatibility entrypoint and
-  composition root only. Implementation lives under
-  `.claude/harness/runtime/`: `core/` (flags, router, process, state, trust,
-  diagnostics), `evidence/` (contract, providers, proof, receipts, review,
-  attestation, CI), `workflow/` (change lifecycle, sandbox, agents, budget,
-  authority, land, spec-sync), `observability/` (telemetry, metrics, model
-  drift, host execution), `reliability/` (bounded retry), `contracts/`
-  (portable schemas), and `runtime/version.mjs`, whose `RUNTIME_MODULE_API`
-  `foundation.mjs` checks at load so a mixed-revision install fails immediately
-  instead of partway through Land. Bump it with `RUNTIME_API_VERSION`.
-- `.claude/harness/commands.json` - command registry that drives `cli.sh help`.
-- `.claude/harness/protocol.json` - runtime and protocol version pins.
-- `.claude/harness/AGENT.md`, `EVIDENCE.md`, `README.md` - shipped agent
-  contract, evidence-adapter reference, and runtime reference.
-- `.claude/harness/adapters/` - host adapter payloads: the OpenCode guard plugin
-  and Cursor's always-on human-guidance rule, copied by their installers.
-- `.claude/rules/fundamentals.md` - always-on skill router and canonical
-  construction order.
-- `.claude/skills/` - procedures loaded only when their trigger fires; the
-  whole directory ships.
-- `.claude/hooks/` + `.claude/settings.json` - `session-context.sh`,
-  `phase-mutation-guard.sh` (a prefilter that execs `phase-mutation-guard.mjs`
-  only when a decision is needed), `protect-secrets.sh`, and `lint.sh` are wired in
-  `settings.json`; `no-direct-main-commit.sh` ships but stays unwired.
-  `hooks/README.md` states the host-neutral event/answer contract and the
-  per-host wiring matrix.
-- `openspec/schemas/` - `foundation-rapid` and `foundation-standard` assurance
-  profiles.
-- `openspec/config.yaml`, `openspec/repositories.yaml`, `foundation.json` -
-  seeded into a target only when absent, project-owned afterwards.
-- `openspec/specs/` and `openspec/changes/` - project-owned; empty here.
-- `.foundation/` - ignored machine state, evidence, receipts, and the
-  `install-manifest.txt` recording managed-file ownership.
-- `WORKFLOW.md` - public change-loop contract.
+| Question | Source |
+|---|---|
+| User workflow and commands | `README.md`, `README.th.md` |
+| Detailed lifecycle contract | `WORKFLOW.md` |
+| Runtime structure and operator commands | `.claude/harness/README.md` |
+| Providers, receipts, and proof semantics | `.claude/harness/EVIDENCE.md` |
+| Public CLI registry | `.claude/harness/commands.json` |
+| Wire-visible versions | `.claude/harness/protocol.json` |
+| Installed-file ownership | `install.sh` `MANAGED` array |
+| Deterministic suite ownership | `.claude/tests/README.md` |
+| Current scenario/release status | `docs/reports/user-scenario-release-status.md` |
+| Scenario acceptance portfolio | `docs/reports/user-scenario-test-plan.md` |
+| Release procedure | `RELEASING.md` |
 
-Repository-only surface, never installed:
+Do not copy a detailed contract into several documents. Update its canonical
+source and link to it from summaries. Dated reports are historical evidence and
+must not be rewritten as current status.
 
-- `cli.sh` - top-level `claude-foundation` router; resolves the target project
-  and forwards to its own installed runtime. `install.sh` installs;
-  `install-cursor.sh`, `install-opencode.sh`, and `install-codex.sh` layer
-  host adapters over it.
-- `.claude/tests/run-all.sh` - deterministic workflow test entrypoint. Suites
-  live in `.claude/tests/{harness,hooks,docs,interview,e2e,scenarios,ledger,
-  lib}`; benchmark tooling and rationale in `.claude/tests/bench/`.
-  `lib/harness-fixture.sh` installs the runtime into a temp project atomically,
-  so a concurrent edit cannot produce a mixed-revision fixture;
-  `harness/wiring-check.mjs` verifies the composition root statically.
-- `dashboard/` - Node observability server plus `client.sh`; its `npm test`
-  runs as one suite in `run-all.sh`'s shared parallel pool.
-- `website/` - GitHub Pages site. `examples/` - sample consumer projects.
-- `VERSION`, `RELEASING.md`, `Formula/claude-foundation.rb`, `release-notes/`,
-  and `.github/workflows/{release,bottle,pages,workflow-tests}.yml` - release
-  and distribution.
-- `.workflow/` - read-only legacy migration source.
-- `.changeloop/`, `crates/`, `scripts/`, `clients/`, `research/`, `opencode/` -
-  local scratch, vestigial, or externally cloned. Not the product; do not
-  extend them as if they were.
+## Repository map
 
-Risk and evidence—not size—select assurance. Size controls budget and slicing.
+Shipped product:
 
-## Shipping Boundary
+- `.claude/orchestrator.md` and `.claude/commands/` — agent-facing lifecycle.
+- `.claude/harness/foundation.mjs` — composition root and compatibility entry.
+- `.claude/harness/runtime/` — core, evidence, workflow, observability,
+  reliability, and portable contracts.
+- `.claude/rules/`, `.claude/skills/`, `.claude/hooks/` — routing, procedures,
+  and host enforcement.
+- `openspec/schemas/` — rapid and standard assurance profiles.
+- `WORKFLOW.md` — installed lifecycle reference.
 
-The `MANAGED` array in `install.sh` is authoritative. Everything it names is
-copied on every install and recorded in `.foundation/install-manifest.txt`;
-a path dropped from `MANAGED` is removed from a target only if that manifest
-previously claimed it.
+Repository-only development surfaces:
 
-Managed, overwritten on install:
+- `.claude/tests/` — deterministic unit, seam, integration, mutation, and
+  consumer-install suites.
+- `.claude/tests/bench/` — frozen scenario lab and release evidence tooling.
+- `scripts/release/`, `RELEASING.md`, `Formula/`, `.github/workflows/` — release
+  and distribution tooling. Paid portfolio execution is manual and explicitly
+  authorized; there is no scheduled paid workflow.
+- `dashboard/`, `website/`, and `examples/` — observability UI, public docs, and
+  sample consumers.
+- `.workflow/` — read-only legacy migration input; do not extend it.
+
+## Shipping boundary
+
+`install.sh` is authoritative. These paths are managed and overwritten during
+installation:
 
 ```text
 .claude/orchestrator.md
@@ -118,86 +100,80 @@ openspec/schemas
 WORKFLOW.md
 ```
 
-Project-owned, seeded or merged but never clobbered:
+These are project-owned and must be preserved: `.claude/settings.json`,
+`openspec/config.yaml`, `openspec/repositories.yaml`, `foundation.json`,
+`CLAUDE.md`, `AGENTS.md`, active OpenSpec changes, and `.foundation` state.
+Installers may seed or merge them only through their documented ownership rules.
 
-```text
-.claude/settings.json          # hooks merged with jq; timestamped backup
-openspec/config.yaml           # copied only when missing
-openspec/repositories.yaml     # copied only when missing
-foundation.json                # copied when missing; packetBytes migrated
-CLAUDE.md / AGENTS.md          # only the marked pointer block is rewritten
+Never make a shipped file depend on repository-only tests, reports, or release
+paths. Never store benchmark history, incidents, or cost observations in the
+installed runtime.
+
+## Development workflow
+
+1. Classify the change before editing: runtime, instruction, shipping,
+   repository-only, or release.
+2. Read the smallest canonical source and nearest tests. Preserve unrelated
+   dirty-worktree changes.
+3. For ordinary product work, dogfood the same Change → Build → Prove → Land
+   loop. For bootstrap-breaking runtime pins, installer ownership, or release
+   mechanics, edit at root and use deterministic verification directly.
+4. Put runtime code in the appropriate `.claude/harness/runtime/` domain and
+   keep `foundation.mjs` as the composition root.
+5. Add the lowest-level regression that would have caught the defect. A new
+   suite requires its script, registration in `.claude/tests/run-all.sh`, and a
+   row in `.claude/tests/README.md`.
+6. Update canonical documentation and English/Thai public mirrors together.
+   Change `.claude/harness/protocol.json` only for a wire-visible contract.
+7. Run affected checks while iterating, then the authoritative full suite before
+   commit. Review `git diff --check` and the final status; do not commit generated
+   benchmark output or temporary consumers.
+
+## Verification commands
+
+Prefix shell commands with `rtk`; in a command chain, prefix every segment.
+
+```bash
+rtk test bash .claude/tests/run-all.sh --affected
+rtk test bash .claude/tests/run-all.sh
+rtk test bash .claude/tests/docs/run-doc-consistency.sh
+rtk npm run build                         # from website/docs
+rtk npm run bench:openspec-native:sentinel
+rtk npm run release:preflight
+rtk git diff --check
 ```
 
-Everything else stays here: `.claude/tests/**`, `docs/**`, `dashboard/**`,
-`website/**`, `examples/**`, `Formula/**`, `release-notes/**`, `cli.sh`,
-`install*.sh`, `RELEASING.md`, `VERSION`, `package.json`, `README*.md`, and
-this file's body.
+Use the full 197-suite runner as the final deterministic gate. Paid scenario
+runs are separate release evidence: they require explicit spend authority,
+must use disposable consumers, and must finish at `archived` with oracle and
+clean-install verification. A release-report exit code 2 is a truthful promotion
+blocker, not a deterministic test failure.
 
-Runtime files contain rules, not benchmark history, cost figures, incidents, or
-maintainer narrative. Never point a shipped file at a non-shipped path.
-Evidence belongs in `.claude/tests/bench/rationale.md`.
+## Change-specific gates
 
-`docs/` is local by default: `.gitignore` blocks `/docs/*` except an explicit
-allowlist plus `docs/reports/` and `docs/adr/`. Notes under `docs/research/`
-stay untracked; commit a durable finding to `docs/reports/`.
+| Change touches | Required focused checks in addition to the full suite |
+|---|---|
+| Runtime/composition | nearest unit/seam tests, wiring and architecture checks |
+| Commands, skills, hooks, docs | context budgets, command contracts, docs consistency |
+| Installer, schemas, protocol | installer smoke, managed ownership, upgrade matrix |
+| Evidence or Land | freshness/receipt seams, recovery checkpoints, semantic acceptance |
+| Website docs | English/Thai parity and `website/docs` build |
+| Release tooling | release preflight, local rehearsal, `RELEASING.md` |
 
-## Working Rules
+The runtime API has four pins and all must agree: `cli.sh
+EXPECTED_RUNTIME_API`, `.claude/harness/foundation.mjs RUNTIME_API_VERSION`,
+`.claude/harness/runtime/version.mjs RUNTIME_MODULE_API`, and
+`.claude/harness/protocol.json runtimeApi`.
 
-- Apply `.claude/rules/fundamentals.md`; do not preload full skill bodies.
-- Keep the change packet compact and use `tasks.md` as the sole ledger.
-- Use LSP for definitions/references/diagnostics before grep or broad reads.
-- Read only the needed section of large files such as `WORKFLOW.md`,
-  `CHANGELOG.md` (~280K), `README.th.md`, and harness references.
-- Keep changes surgical. A shipped-rule change also updates its deterministic
-  tests and, when evidence-driven, the benchmark rationale.
-- Run `sh .claude/tests/run-all.sh` after changing shipped files. It needs Node
-  >= 20.19.0 and finishes with the exclusive mutation suites.
-- Schemas and command files are picked up by the installer automatically, but a
-  new agent-facing command also needs an entry in
-  `.claude/harness/commands.json`.
-- Keep new runtime code inside a `runtime/` domain and leave `foundation.mjs` a
-  composition root; follow `.claude/harness/runtime/README.md`.
-- Bump the affected pin in `.claude/harness/protocol.json` when a wire-visible
-  contract changes, and keep `run-upgrade-compat-tests.sh` honest.
+## Working rules
 
-Non-lifecycle skills (`brainstorming`, `plan-writing`, frontend/UX skills,
-`skill-creator`) trigger through explicit workflow wiring or their own
-descriptions; do not add them to the always-on router merely to make them
-discoverable.
-
-## Playbook
-
-Full procedure: `docs/reports/harness-development-playbook.md`.
-
-Triage by lane before writing. The lane sets the gates, not the diff size.
-
-| Lane | Touches | Gates beyond Working Rules |
-|---|---|---|
-| Runtime | `harness/foundation.mjs`, `harness/runtime/**` | wiring test, protocol pins, regression at the seam |
-| Instruction | `orchestrator.md`, `commands/`, `rules/`, `skills/`, `hooks/`, `WORKFLOW.md` | context budgets, doc consistency, `commands.json` |
-| Shipping | `install.sh`, `install-{cursor,opencode,codex}.sh`, `openspec/schemas/`, `protocol.json` | installer smoke, upgrade compatibility, `MANAGED` + manifest |
-| Repo-only | `.claude/tests/**`, `dashboard/`, `website/`, `examples/`, `docs/` | `run-all.sh` |
-| Release | `VERSION`, `CHANGELOG.md`, `Formula/`, `.github/workflows/` | `RELEASING.md`; rehearse with `dry_run` |
-
-`cli.sh` is repo-only in file terms but is the public command surface; a change
-to its grammar takes the Instruction and Shipping gates.
-
-Self-hosting holds for two reasons. The control plane is not the code under
-change — `find_project_root` walks past sandbox copies, so the root keeps
-running the last landed revision until Land applies. And the evidence base sits
-outside the loop — `run-all.sh` needs no lifecycle state, and the test fixture
-installs from `git archive HEAD`. Never point a harness provider at
-`claude-foundation`; the deterministic suites are the evidence.
-
-Skip the loop for release work and for bootstrap-breaking edits: the four
-runtime-API pins (`cli.sh EXPECTED_RUNTIME_API`, `foundation.mjs
-RUNTIME_API_VERSION`, `runtime/version.mjs RUNTIME_MODULE_API`,
-`protocol.json runtimeApi` — all must match), `foundation.mjs` load checks, and
-`install.sh` `MANAGED`. Those can leave the loop unable to run the commands
-that would prove the fix; edit at the root, verify with `run-all.sh`, record
-afterward.
-
-Put a regression at the lowest deterministic boundary that caught the defect
-(`.claude/tests/README.md`). Pair a human-read suite with a TAP wrapper and a
-`minimum` floor when it must also serve as evidence. A new suite is three edits
-together: the script, a `run` line in `run-all.sh`, and a README row.
+- Use `tasks.md` as the sole implementation ledger; do not create shadow status
+  files.
+- Treat risk and evidence—not diff size—as the assurance selector. Size controls
+  budget and slicing only.
+- Do not inspect or patch generated receipts, proof, or Land journal JSON.
+- Preserve fail-closed isolation and unknown-as-unavailable measurement semantics.
+- Do not weaken evidence, silently widen scope, infer user authority, or report
+  `proven` as completion for a delivery flow.
+- Do not commit, push, publish, or start paid execution without the corresponding
+  user authority.

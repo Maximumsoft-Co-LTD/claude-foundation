@@ -1,5 +1,6 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 
 // What a transaction would do to the target, in the three shapes an operator
 // has to weigh differently. Shared so the pre-apply report and the pending
@@ -122,7 +123,7 @@ export function settleCurrentApplyRecovery({
     }
   };
   delete state.workspace.apply;
-  state.status = "building";
+  transitionLifecycleState(state, "building", "apply-recovery-settled-current");
   clearSnapshotCache(id);
   saveRuntime(state);
   journal.status = "settled-current";

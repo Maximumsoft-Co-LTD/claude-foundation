@@ -1,6 +1,6 @@
 # Security Policy
 
-Claude Foundation is installed into its users' repositories and executes as
+Change Loop is installed into its users' repositories and executes as
 part of their development workflow, so we treat security reports with high
 priority.
 

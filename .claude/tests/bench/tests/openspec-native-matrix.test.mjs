@@ -3,11 +3,12 @@ import test from "node:test";
 
 import { executionPlan, loadMatrix, matrixIssues } from "../openspec-native/matrix.mjs";
 
-test("the cross-domain matrix is valid and keeps unprepared work planned", () => {
+test("the versioned cross-domain matrix is valid and every workload is executable", () => {
   const matrix = loadMatrix();
+  assert.equal(matrix.protocol, "foundation-openspec-native-matrix-v2");
   assert.deepEqual(matrixIssues(matrix), []);
   assert.equal(matrix.scenarios.length, 7);
-  assert.equal(matrix.scenarios.filter((scenario) => scenario.status === "ready").length, 3);
+  assert.equal(matrix.scenarios.filter((scenario) => scenario.status === "ready").length, 7);
   assert.equal(matrix.scenarios.filter((scenario) => scenario.baseline !== null).length, 1);
 });
 
@@ -22,12 +23,16 @@ test("the measured brownfield baseline preserves its real r21 truth", () => {
 
 test("planned scenarios cannot accidentally spend a live-run budget", () => {
   const matrix = loadMatrix();
+  const typescript = matrix.scenarios.find(({ id }) => id === "typescript-react-state");
+  typescript.status = "planned";
   assert.throws(() => executionPlan(matrix, "typescript-react-state"), /not ready/);
+  typescript.status = "ready";
   assert.throws(() => executionPlan(matrix, "missing"), /unknown/);
   const ready = executionPlan(matrix, "bare-node-boundary");
   assert.equal(ready.smokeRepeats, 1);
   assert.equal(ready.varianceRepeats, 3);
-  assert.equal(ready.budget.wall_ms, 900000);
+  assert.equal(ready.budget.wall_ms, 1800000);
+  assert.equal(ready.budget.model_requests, 150);
   const python = executionPlan(matrix, "python-api-validation");
   assert.equal(python.budget.wall_ms, 1500000);
   assert.match(python.fixture, /15-python-api-validation\/seed$/);
@@ -69,4 +74,14 @@ test("validation rejects a paid ready scenario without its oracle", () => {
   const scenario = matrix.scenarios.find(({ id }) => id === "bare-node-boundary");
   scenario.oracle.required = false;
   assert.ok(matrixIssues(matrix).some((issue) => issue.includes("require a hidden oracle")));
+});
+
+test("validation rejects a ready scenario with an incomplete fixture manifest", () => {
+  const matrix = loadMatrix();
+  const scenario = matrix.scenarios.find(({ id }) => id === "bare-node-boundary");
+  delete scenario.fixture_digest;
+  scenario.critical_case_ids = [];
+  const issues = matrixIssues(matrix);
+  assert.ok(issues.some((issue) => issue.includes("fixture_digest is required")));
+  assert.ok(issues.some((issue) => issue.includes("critical_case_ids are required")));
 });

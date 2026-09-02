@@ -183,7 +183,8 @@ case "${1:-}" in
     run_runtime inspect describe "$@" ;;
   help|--help|-h)
     [ "$#" -le 2 ] || fail "help accepts only --all"
-    [ "${2:-}" != "" ] && [ "${2:-}" != "--all" ] && fail "help accepts only --all"
+    [ "${2:-}" != "" ] && [ "${2:-}" != "--all" ] && \
+      [ "${2:-}" != "--help" ] && fail "help accepts only --all"
     usage "${2:-}"; exit 0 ;;
   host)
     shift

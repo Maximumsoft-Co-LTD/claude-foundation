@@ -3,7 +3,7 @@ title: Receipts, statuses, and staleness
 description: What a receipt binds itself to, the four statuses a provider can return, why a hand-written pass is refused, and what makes proof go stale.
 ---
 
-A receipt is Foundation's record that a specific provider observed a specific
+A receipt is Change Loop's record that a specific provider observed a specific
 result against specific content. Everything about it is designed so that a
 receipt cannot outlive the thing it described.
 
@@ -61,7 +61,7 @@ rewiring a provider does not by itself expire evidence, but editing source does.
 
 ## Executed versus asserted
 
-Foundation distinguishes evidence it produced from evidence a person handed it,
+Change Loop distinguishes evidence it produced from evidence a person handed it,
 and it will not let the two be confused.
 
 A receipt marked `execution: "harness"` can only be written by a call site that
@@ -98,14 +98,28 @@ A provider can narrow that by declaring the inputs it actually depends on:
 }
 ```
 
-With declared inputs, Foundation records the sorted digest of exactly those
+With declared inputs, Change Loop records the sorted digest of exactly those
 files. When the workspace changes but those files do not, the receipt is
 rebound to the new workspace hash rather than re-run, and the rebinding is
 written to an audit log. Narrow the inputs honestly — a provider that reads
 more than it declares will reuse a receipt it should have re-earned.
 
-`review` and `acceptance` may not declare inputs. A human verdict is about the
-whole change.
+`review`, `acceptance`, and `semantic-acceptance` may not declare inputs. Their
+verdict is about the whole change.
+
+## Signed semantic acceptance
+
+A `semantic-acceptance` provider verifies an external Ed25519-signed envelope
+without exposing hidden inputs or oracle code to the implementation agent. The
+envelope binds stable case IDs, claims, input partitions, statuses, and
+observation digests to the exact workspace. A case can additionally bind a
+critical-case observation from a deterministic provider and a signed
+before-fail/after-pass reproduction.
+
+Missing, skipped, duplicate, wrong-provider, stale, tampered, or failing
+required cases block Proof and Land. A passing review cannot override them. In
+an unambiguous single npm repository, Change Loop also activates its built-in
+`package.json`/`package-lock.json` consistency check without extra wiring.
 
 ## Waiving a failed gate
 
@@ -132,6 +146,7 @@ verdicts, in the order they are checked:
 | `review-not-independent` | The reviewer was also an implementer and the policy does not waive independence |
 | `review-not-diverse` | The AI reviewer shared a model family with the implementer |
 | `acceptance-invalid` | The scope, hash, or stated reason drifted after acceptance |
+| `semantic-acceptance-invalid` | A signed case, source observation, transition, issuer, or workspace binding is invalid |
 | `external-observation-missing` | A manual receipt lacks its observation or provenance |
 
 A receipt that goes stale *after* execution during the same proof run usually

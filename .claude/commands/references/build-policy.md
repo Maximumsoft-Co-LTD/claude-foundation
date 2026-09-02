@@ -4,6 +4,10 @@
 multi-repository work. Update `tasks.md` after focused checks, including the
 `run-in-session` path.
 
+For a mutating Bash command, begin with `cd <exact workspace> && ...`; the live
+phase guard rejects an unanchored command and obvious `..` or absolute-output
+escapes. Prefer structured Edit/Write tools for product changes.
+
 Move unauthorized infrastructure operations to `handoffs.yaml`; relay `handoff
 packet` once and never ask for credentials. Time long commands with `exec
 <change> -- <command>` so external wall time reaches metrics.
@@ -21,3 +25,20 @@ normal quality run; an untested checker cannot be completion evidence.
 Ask only for structured decisions. Ask again only if behavior, compatibility,
 security, data, or rollout must change. Provider and permission failures follow
 typed recovery.
+
+## Convergent gates
+
+Before dispatch or product edits, inspect `authorityPreflight`. If it is not
+`READY`, spend no Build/model budget: present its complete decision and resume
+the same change only after the missing authority or configuration is supplied.
+
+For every Build gate, run all independent eligible checks before repair. Group
+findings by root cause, build one dependency-ordered repair batch, apply every
+safe in-contract fix, and rerun only failed, unavailable, downstream,
+input-invalidated, or mandatory global checks. Continue without a repair-count
+limit while the progress fingerprint changes.
+
+At a decision, authority, resource, conflict, contradictory-contract, or
+repeated no-progress boundary, preserve the sandbox, present the typed choices,
+and resume the same Build after resolution. Never turn repeated execution or a
+stale receipt into a pass.

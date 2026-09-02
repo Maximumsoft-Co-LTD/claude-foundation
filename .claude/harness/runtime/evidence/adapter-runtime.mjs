@@ -3,6 +3,9 @@ import {
 } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import {
+  aggregateEvidenceStatus, evidenceResultValue
+} from "./evidence-results.mjs";
 
 // The receipt vocabulary, ordered. An adapter that runs more than one provider
 // has to report the worst thing that happened — not the last one in the array,
@@ -10,12 +13,6 @@ import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:pa
 // absent: it means "waiting on something external" everywhere else in the
 // harness, so returning it for a suite that ran and failed made a red test
 // indistinguishable from a test that never got to run.
-const STATUS_SEVERITY = { pass: 0, inconclusive: 1, fail: 2, error: 3 };
-const worstStatus = (...values) => values
-  .filter((value) => value in STATUS_SEVERITY)
-  .reduce((worst, value) =>
-    STATUS_SEVERITY[value] > STATUS_SEVERITY[worst] ? value : worst, "pass");
-
 function normalizedCriticalCase(row) {
   return {
     id: String(row?.id || ""),
@@ -53,7 +50,12 @@ export function criticalCaseResult(report, required) {
     const exact = rows.find((row) => row.id === id);
     const embedded = exact || rows.find((row) =>
       containsCriticalCaseId(row.id, id));
-    return { id, status: embedded?.status || "missing" };
+    // A one-case provider and a one-result report have only one possible
+    // binding. Requiring the model to repeat the case ID in the test title is
+    // bookkeeping, not assurance, so the harness records that binding itself.
+    const derived = embedded || (required.length === 1 && rows.length === 1
+      ? rows[0] : null);
+    return { id, status: derived?.status || "missing" };
   });
   const passWords = new Set(["pass", "passed", "success", "ok"]);
   return {
@@ -214,6 +216,7 @@ export function createAdapterRuntime({
   providerRepositories,
   fileDigest, pathInside, stableHash, runCommand,
   providerWorkspaceHash, providerClaims, parseJsonOutput, parseTapOutput,
+  parseNodeTestSpecOutput = () => null,
   numericReportValue, playwrightReportSummary, requiredProviders,
   mutationProtocolResult, now, die
 }) {
@@ -339,7 +342,12 @@ export function createAdapterRuntime({
       log: relative(ROOT, logPath), artifacts,
       environment: config.environment || null, project: config.project || null
     }, { executed: true });
-    return { provider, status };
+    return evidenceResultValue({
+      provider, status,
+      observations: observations.map(({ repositoryId, path, digest }) => ({
+        repositoryId, path, digest
+      }))
+    });
   }
 
   function repositoryExecutionRows(state, manifest) {
@@ -424,7 +432,13 @@ export function createAdapterRuntime({
     const json = parseJsonOutput(content);
     const tap = ["tap", "auto"].includes(config.reportFormat || "auto")
       ? parseTapOutput(content) : null;
-    return json || tap;
+    const command = Array.isArray(config.command) ? config.command : [];
+    const builtInNodeTest = command.some((part) => part === "--test" ||
+      String(part).startsWith("--test="));
+    const spec = !tap && builtInNodeTest &&
+      ["tap", "spec", "auto"].includes(config.reportFormat || "auto")
+      ? parseNodeTestSpecOutput(content) : null;
+    return json || tap || spec;
   }
 
   function adapterEvidence(id, provider, config, execution) {
@@ -496,7 +510,17 @@ export function createAdapterRuntime({
       observed: discovered === null ? "structured test count unavailable" :
         `${discovered} discovered; minimum ${minimum}`
     }, { executed: true });
-    return { provider, status: worstStatus(testStatus, discoveryStatus) };
+    return evidenceResultValue({
+      provider,
+      status: aggregateEvidenceStatus([testStatus, discoveryStatus]),
+      observations: [
+        ...evidenceRow.critical.observations.map((row) => ({
+          kind: "critical-case", ...row
+        })),
+        { kind: "discovery", provider: discoveryProvider, status: discoveryStatus,
+          discovered, minimum }
+      ]
+    });
   }
 
   function playwrightAttachments(summary, cwd, artifacts) {
@@ -533,7 +557,7 @@ export function createAdapterRuntime({
     playwrightAttachments(summary, execution.cwd, evidenceRow.artifacts);
     const outputs = [...new Set([provider, ...(config.outputs || [])])]
       .filter((output) => requiredProviders(id).includes(output));
-    let aggregateStatus = "pass";
+    const outputResults = [];
     for (const output of outputs) {
       const requiredClaims = providerClaims(id, output, config);
       const missingClaims = summary
@@ -541,7 +565,7 @@ export function createAdapterRuntime({
         : requiredClaims;
       const status = playwrightOutputStatus(
         execution.result, summary, missingClaims, evidenceRow.critical, readinessMissed);
-      aggregateStatus = worstStatus(aggregateStatus, status);
+      outputResults.push({ output, status, missingClaims });
       const outputCapability = providerCapability(output, providerConfig(id, output));
       recordReceipt(id, output, status, {
         ...baseFlags, claims: requiredClaims.join(","),
@@ -553,7 +577,14 @@ export function createAdapterRuntime({
         criticalCases: evidenceRow.critical.observations
       }, { executed: true });
     }
-    return { provider, status: aggregateStatus };
+    return evidenceResultValue({
+      provider,
+      status: aggregateEvidenceStatus(outputResults.map((row) => row.status)),
+      observations: outputResults.map((row) => ({
+        kind: "output", provider: row.output, status: row.status,
+        missingClaims: row.missingClaims
+      }))
+    });
   }
 
   function adapterMutationResults(provider, config, result, report) {
@@ -609,9 +640,15 @@ export function createAdapterRuntime({
       classification: mutationReceiptClassification(
         config.resultProtocol, mutation.legacy, config.classification),
       observed: genericAdapterObservation(baseFlags, mutation, evidenceRow.critical,
-        evidenceRow.report)
+        evidenceRow.report),
+      criticalCases: evidenceRow.critical.observations
     }, { executed: true });
-    return { provider, status };
+    return evidenceResultValue({
+      provider, status,
+      observations: evidenceRow.critical.observations.map((row) => ({
+        kind: "critical-case", ...row
+      }))
+    });
   }
 
   async function executeAdapter(id, provider, config, proofRunId, commandCache) {

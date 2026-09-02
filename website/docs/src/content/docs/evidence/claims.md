@@ -3,7 +3,7 @@ title: Claims and capabilities
 description: How an observable scenario becomes a stable claim, and which of the 19 capabilities can actually demonstrate it.
 ---
 
-Foundation's central rule: **a passing command is not automatically proof.**
+Change Loop's central rule: **a passing command is not automatically proof.**
 
 Every observable acceptance scenario gets a stable claim ID. Each claim declares the capabilities that could actually demonstrate it. Missing, stale, failed, erroneous, or inconclusive evidence blocks landing.
 
@@ -75,7 +75,7 @@ artifacts     trace.zip · screenshot.png
 duration      8.42s
 ```
 
-Change a bound input and the receipt becomes stale. Foundation never silently reuses mismatched evidence.
+Change a bound input and the receipt becomes stale. Change Loop never silently reuses mismatched evidence.
 
 `execution: harness` is set only by a call site that actually ran a command. See [`/prove`](/docs/loop/prove/) for the full floor on hand-recorded evidence.
 

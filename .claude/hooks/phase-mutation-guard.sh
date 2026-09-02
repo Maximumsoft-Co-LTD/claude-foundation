@@ -22,9 +22,9 @@ set -u
 # Only off takes a fast path. Audit must delegate because the authoritative
 # transcript path lives in the PreToolUse event body, not reliably in the
 # SessionStart-exported environment of claude -p hook processes.
-case "${FOUNDATION_GUARDRAIL_MODE:-audit}" in
+case "${FOUNDATION_GUARDRAIL_MODE:-auto}" in
   off|OFF|Off) exit 0 ;;
-  audit|AUDIT|Audit) mode=audit ;;
+  auto|AUTO|Auto|audit|AUDIT|Audit) mode=delegate ;;
   *) mode=block ;;
 esac
 

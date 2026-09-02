@@ -32,11 +32,15 @@ the active transcript's prompt starts with `/dev`.
   change has a passing, audited proof bound to the current workspace hash.
 
 Environment: `CLAUDE_PROJECT_DIR` names the project root (default: cwd).
-`FOUNDATION_GUARDRAIL_MODE` (`off|audit|block`) governs the phase guard;
+`FOUNDATION_GUARDRAIL_MODE` (`off|audit|block|auto`) governs the phase guard;
 phase context comes from `FOUNDATION_ACTIVE_PHASE` or `.foundation/logs/`.
-The default audit mode automatically enforces mutations during a `/dev`
-transcript. A recorded Build phase recovers its workspace from runtime state
+The default `auto` mode blocks mutations during every active lifecycle phase
+and stays out of adoption-only sessions with no phase context. A recorded Build
+phase recovers its workspace from runtime state
 when the host does not export `FOUNDATION_WORKSPACE_ROOT`.
+Mutating Build shell commands must explicitly begin inside that workspace;
+unanchored package-manager/formatter commands and obvious path escapes are
+blocked before the shell starts.
 
 ## Host wiring
 

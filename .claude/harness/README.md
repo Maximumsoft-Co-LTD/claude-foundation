@@ -1,7 +1,7 @@
-# Foundation harness runtime
+# Change Loop harness runtime
 
-This directory contains the deterministic runtime installed by Claude
-Foundation. It turns an OpenSpec change into a bounded implementation and
+This directory contains the deterministic runtime installed with Change Loop.
+It turns an OpenSpec change into a bounded implementation and
 evidence workflow:
 
 ```text
@@ -12,6 +12,35 @@ The harness is the control plane, not the coding agent and not a replacement
 for project tooling. OpenSpec owns the agreement, the native coding agent owns
 the implementation, and project-owned providers such as test runners,
 Playwright, linters, or security scanners produce evidence.
+
+The product and workflow are called **Change Loop**. The package and CLI remain
+`claude-foundation`, so existing commands do not change.
+
+## Using Change Loop
+
+Users describe the goal to their coding agent and use `/change`, `/build`,
+`/prove`, and `/land`; `/dev` can drive Change through Prove in one request.
+The agent runs the underlying CLI, so users do not need to construct JSON,
+receipt, recovery, or bookkeeping commands.
+
+At each gate, the harness checks once and returns all known repairable findings
+as one plan. The agent fixes that batch and the harness rechecks only evidence
+made missing or stale by the fix. This repeats while useful progress is
+possible. The user is asked only when a real decision, permission, unavailable
+external system, or unresolved conflict prevents safe progress. A change is
+finished only after the user explicitly authorizes Land and its state is
+`archived`.
+
+Installed users should start with `WORKFLOW.md`. The rest of this page maps the
+runtime for maintainers and evidence authors; `EVIDENCE.md` is the canonical
+provider and receipt contract.
+
+Every phase view is derived from one versioned execution contract. It compiles
+risk, required providers, external authority, workspace mutation capability,
+budgets, repositories, and Land requirements once; packets, planning,
+readiness, and the mutation guard consume that result instead of independently
+reinterpreting policy. Lifecycle writes go through the typed reducer. These are
+backend changes only: installed user command names and arguments are unchanged.
 
 ## Files in this directory
 
@@ -24,6 +53,8 @@ Playwright, linters, or security scanners produce evidence.
 | Core | `runtime/core/cli-flags.mjs` | Shared permissive and strict command flag parsing |
 | Core | `runtime/core/cli-router.mjs` | Runtime command dispatch over an explicit orchestration API |
 | Core | `runtime/core/diagnostics-runtime.mjs` | Doctor, migration, provider listing, and CLI usage diagnostics |
+| Core | `runtime/core/execution-contract.mjs` | Compiled risk, evidence, authority, workspace, budget, repository, and Land capabilities |
+| Core | `runtime/core/lifecycle-reducer.mjs` | Typed lifecycle transitions and compatibility-preserving state mutation |
 | Core | `runtime/core/process-runtime.mjs` | Provider process execution, readiness checks, and managed services |
 | Core | `runtime/core/state-runtime.mjs` | Runtime state, paths, hashing, snapshots, workspace manifests, and Git helpers |
 | Core | `runtime/core/trust.mjs` | Canonical JSON and Ed25519 verification shared by trust protocols |
@@ -45,6 +76,7 @@ Playwright, linters, or security scanners produce evidence.
 | Evidence | `runtime/evidence/review-attempt-store.mjs` | Durable chained review-attempt history and migration |
 | Evidence | `runtime/evidence/review-protocol.mjs` | Pure review provenance, receipt binding, and attempt validation |
 | Evidence | `runtime/evidence/signed-ci.mjs` | Signed CI envelope verification |
+| Evidence | `runtime/evidence/semantic-acceptance.mjs` | Signed hidden/independent case verification without exposing oracle content |
 | Evidence | `runtime/evidence/traceability.mjs` | Pure scenario, claim, task, and provider auditing |
 | Quality | `runtime/quality/quality-runtime.mjs` | Consumer discovery, execution, baselines, debt, and repository-lane aggregation |
 | Quality | `runtime/quality/adapter-registry.mjs` | Portable CRAP and mutation report adapters |
@@ -58,7 +90,6 @@ Playwright, linters, or security scanners produce evidence.
 | Workflow | `runtime/workflow/authority.mjs` | External authority request persistence and response validation |
 | Workflow | `runtime/workflow/budget.mjs` | Run/lifetime usage windows and budget policy transitions |
 | Workflow | `runtime/workflow/change-lifecycle.mjs` | Change creation, draft materialization, resolution, and atomic start |
-| Workflow | `runtime/workflow/change-artifacts.mjs` | Compatibility re-export for commands overlapping an installer upgrade |
 | Workflow | `runtime/workflow/change-validation.mjs` | Traceability, change validation, and provider requirements |
 | Workflow | `runtime/workflow/land-journal.mjs` | Atomic apply identity, journal, rollback, verification, and cleanup |
 | Workflow | `runtime/workflow/land-runtime.mjs` | Multi-repository Land readiness, planning, pointers, and resume saga |
@@ -73,6 +104,13 @@ Playwright, linters, or security scanners produce evidence.
 | Docs | `EVIDENCE.md` | Evidence contract, execution adapter, and proof reference |
 | Docs | `CONSUMER-QUALITY.md` | Installed quality protocols, onboarding, adapters, baselines, and fail-closed rules |
 | Docs | `README.md` | Runtime overview and operator guide |
+
+Atomic draft version 2 keeps semantic inputs author-owned and compiles the
+mechanical ledger fields in `change-lifecycle.mjs`: stable IDs, unambiguous
+claim/task/case links, and the single task verification command's provider
+binding. Version 1 remains an exact compatibility path. The evidence adapter
+uses the same rule for one-case/one-result reports and refuses ambiguous
+many-to-many inference.
 
 Use the public CLI instead of invoking `foundation.mjs` directly. The CLI finds
 the project from the current directory, or from `--project <path>`, and then
@@ -93,7 +131,7 @@ logic independently testable.
 - OpenSpec CLI for schema validation and archival
 - Project-owned test and browser dependencies required by configured evidence
 
-Foundation deliberately does not install Playwright, browser binaries, test
+Change Loop deliberately does not install Playwright, browser binaries, test
 frameworks, or application dependencies. Each application must lock and
 maintain its own versions.
 
@@ -154,7 +192,7 @@ claude-foundation doctor --stage prove --change <change>
 | `change validate <change>` | Validates change artifacts | After creating or revising an agreement |
 | `change audit <change> [--json]` | Audits scenario → claim → task → provider traceability | Before Build or after contract edits |
 | `proof readiness <change>` | Returns READY or a typed blocker with exact next commands | At the end of Build and start of Prove |
-| `proof advance <change>` | Executes missing evidence once, routes external gates, and resumes unchanged waits without polling | Normal Prove path |
+| `proof advance <change>` | Converges missing/invalidated evidence through aggregate repair batches, routes external gates, and resumes unchanged waits without polling | Normal Prove path |
 | `proof run <change>` | Executes, finalizes, and audits proof as one operation | Low-level diagnostic/integration path |
 | `proof collect <change>` | Runs available project-owned evidence without finalizing proof | Low-level preparation for an explicit integration |
 | `evidence detect <change>` | Finds safe project-owned provider candidates without executing them | When `execution.yaml` is empty or incomplete |
@@ -257,7 +295,7 @@ observed-result authority used by a worker, avoiding a spawn with no possible
 parallel speedup. A live lease always returns `wait`, so a restarted host does
 not duplicate an executor it cannot prove abandoned. For a spawn group, the
 host acquires each lease, regenerates the now-leased task packet, and gives the
-native worker only that packet and repository state. Foundation still never
+native worker only that packet and repository state. Change Loop still never
 starts a model process itself.
 
 The host copies `executionAuthority.leaseId` from the acquired task packet into
@@ -282,7 +320,7 @@ persists a prepare-all snapshot and compare-and-swap revalidates it before each
 multi-remote mutation wave.
 
 Multiple remotes use ordered saga states rather than an atomicity claim.
-Foundation verifies explicit child commits, optional CI state, dependency
+Change Loop verifies explicit child commits, optional CI state, dependency
 order, root gitlinks, and fresh composite proof. It never commits or pushes
 without separate authority.
 
@@ -381,11 +419,13 @@ Use the resumable proof path:
 claude-foundation proof advance <change>
 ```
 
-It executes missing providers once, routes review before acceptance, and
-returns a stable external wait without polling. Readiness, collection, direct
-authority calls, execution, finalization, and audit remain diagnostic or
-integration surfaces used by the resumable command, doctor, Land, and runtime
-tests; they are not the normal agent loop.
+It evaluates the current gate, reuses valid receipts, returns one aggregated
+repair batch when product work is needed, routes review before acceptance, and
+returns a stable external wait without polling. After repair, a fresh call
+selectively reruns invalidated evidence. Readiness, collection, direct authority
+calls, execution, finalization, and audit remain diagnostic or integration
+surfaces used by the resumable command, doctor, Land, and runtime tests; they
+are not the normal agent loop.
 
 The scheduler:
 
@@ -423,7 +463,7 @@ leaving unrelated target edits alone. The sandbox remains the proof subject
 until archive completes, so an interrupted OpenSpec archive can resume without
 invalidating proof. Transaction backups are removed only after archive audit.
 
-Foundation does not commit, push, or open a pull request implicitly.
+Change Loop does not commit, push, or open a pull request implicitly.
 
 ## Evidence model
 
@@ -438,7 +478,7 @@ upgrade` separates them. Five adapters are available:
 | `test-discovery` | One test process that emits test and discovery receipts |
 | `playwright` | Structured browser evidence mapped to claim annotations |
 | `contract-digest` | One declared file hashed across two or more repositories, passing only when the bytes agree |
-| `external` | A receipt produced outside Foundation |
+| `external` | A receipt produced outside Change Loop |
 
 Only `external` skips execution entirely. `contract-digest` runs no command but
 still executes: it reads and hashes the declared file itself.
@@ -560,11 +600,17 @@ remaining tasks/provider blockers, the user prompt, and the command to run after
 an approved continuation without pretending to forecast unknown model demand.
 
 Claude request telemetry is request-owned, not tool-owned. The `SessionStart`
-hook exposes only `session_id` and `transcript_path` to later Foundation
+hook exposes only `session_id` and `transcript_path` to later Change Loop
 commands. It does not parse the transcript and there is no per-tool telemetry
 hook. `packet --phase`, Prove, Land, and `metrics` then read only complete JSONL
 records added since the previous cursor. Main-agent and nested subagent
 transcripts are deduplicated by request/message identity.
+
+Archive drains the bound transcript cursors itself. A host may provide complete
+input/output token counts without price data; that remains
+`partial-measurement` in reports, but it satisfies a `requireUsage` Land policy
+because a real usage dimension was measured. Missing/correlated-only telemetry
+still fails that policy, and unknown cost remains `null`.
 
 Only usage metadata is persisted: model, request/session identity, timestamp,
 phase, agent, input/output tokens, separate cache-creation/cache-read tokens,
@@ -588,7 +634,7 @@ claude-foundation telemetry sync <change> ~/.claude/projects/.../session.jsonl
 Use `telemetry import --format generic|codex|cursor|otel|claude` for other hosts
 or historical files. OpenTelemetry GenAI/LLM attributes map to the same token,
 model, trace/request, and run fields. Unknown requests,
-token usage, cache usage, or monetary cost remain `null`; Foundation does not
+token usage, cache usage, or monetary cost remain `null`; Change Loop does not
 manufacture estimates when telemetry is unavailable. Claude transcript parsing
 is schema-validated and isolated behind the host adapter so a future host
 format change cannot silently become fabricated usage.
@@ -626,7 +672,7 @@ claude-foundation init /path/to/project --yes
 ```
 
 The installer records `.foundation/install-manifest.txt`, removes only stale
-Foundation-owned files, preserves project files and managed blocks in
+Change Loop-owned files, preserves project files and managed blocks in
 `CLAUDE.md`/`AGENTS.md`, then refreshes the runtime as one bundle. Re-run
 `doctor` after updating. Runtime and CLI API versions must be compatible.
 

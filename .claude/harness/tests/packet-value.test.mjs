@@ -245,6 +245,18 @@ try {
     count: 1, digest: stableHash(contract.invariants), reference: "evidence.yaml#invariants"
   });
   assert.equal(global.repairContext, undefined);
+  assert.equal(global.authorityPreflight.status, "READY");
+
+  state.riskBasedCiRequired = true;
+  state.impact = "high";
+  const authorityBlocked = runtime.packetValue("packet-test");
+  assert.equal(authorityBlocked.authorityPreflight.status, "NEEDS_USER_DECISION");
+  assert.equal(authorityBlocked.authorityPreflight.blockers[0].code,
+    "SIGNED_CI_CONFIGURATION_REQUIRED");
+  assert.match(authorityBlocked.authorityPreflight.blockers[0].next,
+    /change validate packet-test/);
+  state.riskBasedCiRequired = false;
+  state.impact = "medium";
 
   receiptHashes.length = 0;
   const repository = runtime.packetValue("packet-test", "root");
@@ -297,6 +309,8 @@ try {
   assert.equal(task.tasks[0].model.tier, "standard");
   assert.equal(task.executionAuthority.status, "unleased");
   assert.equal(task.workerContract.role, "leased-task-worker");
+  assert.equal(task.authorityPreflight, undefined,
+    "workers inherit the parent preflight instead of duplicating authority policy");
 
   const leasePath = join(leasesRoot, "tasks", "packet-test", "T1.json");
   mkdirSync(dirname(leasePath), { recursive: true });

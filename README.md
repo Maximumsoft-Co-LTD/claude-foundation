@@ -1,8 +1,8 @@
-# Claude Foundation
+# Change Loop
 
 **English** | [ภาษาไทย](README.th.md)
 
-Claude Foundation is a software-change harness for AI coding agents. It gives
+Change Loop is a software-change harness for AI coding agents. It gives
 the agent a repeatable way to agree on a change, implement it away from your
 working tree, prove it with real evidence, and only then bring it into the
 project.
@@ -11,23 +11,32 @@ project.
 Investigate? → Change → Build → Prove → Land
 ```
 
-Foundation uses [OpenSpec](https://github.com/Fission-AI/OpenSpec) for durable
+Change Loop uses [OpenSpec](https://github.com/Fission-AI/OpenSpec) for durable
 requirements and the repository's own tools for implementation and testing. It
 does not replace your coding agent, test framework, CI system, or Git workflow.
+The product is **Change Loop**; the installed package and CLI remain
+`claude-foundation`, so existing commands do not change.
 
-**Version 3.4.10** — runtime API 26, provider protocol 12. Receipts recorded by
+**Version 3.4.10** — runtime API 26, provider protocol 13. Receipts recorded by
 earlier versions read as `provider-version-stale` and must be re-proven.
+
+## Where to start
+
+- To use Change Loop, follow [Your first change](#your-first-change).
+- To understand lifecycle behavior, read [The workflow in one picture](#the-workflow-in-one-picture); use [WORKFLOW.md](WORKFLOW.md) only as the detailed contract.
+- To extend evidence or the runtime, use [the harness guide](.claude/harness/README.md) and [evidence reference](.claude/harness/EVIDENCE.md).
+- To prepare a release, start with [RELEASING.md](RELEASING.md) and the current [scenario release status](docs/reports/user-scenario-release-status.md).
 
 ## How the AI and harness divide responsibility
 
-Foundation is not an AI and does not write code itself. It is a deterministic
+Change Loop is not an AI and does not write code itself. It is a deterministic
 control plane around the native coding agent.
 
 | Part | Responsibility |
 |---|---|
 | User | Defines intent, makes consequential decisions, reviews the result, and explicitly authorizes Land |
 | AI coding agent | Investigates, writes the agreement, implements code and tests, and fixes failures reported by evidence |
-| Foundation harness | Controls lifecycle state, scope, sandboxes, evidence, proof freshness, budgets, and Land guards |
+| Change Loop harness | Controls lifecycle state, scope, sandboxes, evidence, proof freshness, budgets, and Land guards |
 | OpenSpec | Stores the durable, human-reviewable requirements and change agreement |
 | Project tools | Test runners, linters, Playwright, scanners, and other providers produce executable evidence |
 | Git and CI | Handle version control and automation through the project's existing process |
@@ -55,7 +64,7 @@ running agents and models.
 
 An AI agent can write plausible code and still misunderstand the requirement,
 test the wrong thing, or modify your main working tree before you have reviewed
-the result. Foundation separates those concerns:
+the result. Change Loop separates those concerns:
 
 - **OpenSpec records the agreement.** Intent does not disappear with chat
   history.
@@ -63,7 +72,7 @@ the result. Foundation separates those concerns:
   the main project while the agent works.
 - **Evidence decides readiness.** Tests, static analysis, browser checks, or
   other project-owned tools produce receipts bound to the exact workspace.
-- **Land is explicit.** Foundation never commits, pushes, or opens a pull
+- **Land is explicit.** Change Loop never commits, pushes, or opens a pull
   request unless you separately authorize it.
 - **Work can be resumed.** Tasks, runtime state, receipts, and recovery journals
   survive a new agent session.
@@ -76,21 +85,32 @@ without relying on “the agent says it is done” as proof.
 Requirements:
 
 - Node.js 20.19 or later
-- Git, for worktree isolation
 - OpenSpec CLI 1.7.0, for spec synchronization and archive
-- `jq`, used by the installer to merge Claude settings
+
+Git is recommended for worktree isolation; dirty or non-Git projects use an
+isolated copy. `jq` is recommended for merging existing Claude settings.
+Without it, the installer preserves the existing file and writes a companion
+file for manual review.
 
 ```bash
 npm install -g @fission-ai/openspec@1.7.0
-
-cd /path/to/claude-foundation
-./install.sh /path/to/your-project
 ```
 
-Or, when the packaged command is available:
+Install with Homebrew:
 
 ```bash
-claude-foundation init /path/to/your-project
+brew tap maximumsoft-co-ltd/claude-foundation \
+  https://github.com/Maximumsoft-Co-LTD/claude-foundation
+brew install claude-foundation
+claude-foundation init /path/to/your-project --yes
+```
+
+Or install from a source checkout:
+
+```bash
+git clone https://github.com/Maximumsoft-Co-LTD/claude-foundation.git
+cd claude-foundation
+./install.sh /path/to/your-project
 ```
 
 Claude Code needs no adapter. For other agent hosts, `--host` layers one over
@@ -114,8 +134,16 @@ claude-foundation version
 claude-foundation doctor --stage change
 ```
 
+In a Git project, review and commit the setup files staged by the installer
+before the first `/change`. The installer does not take commit authority:
+
+```bash
+git status
+git commit -m "chore: install Change Loop"
+```
+
 The installer preserves project-owned specs, active changes, runtime state,
-custom agents, and hooks. Upgrades refresh only Foundation-owned commands,
+custom agents, and hooks. Upgrades refresh only Change Loop-owned commands,
 schemas, harness code, rules, skills, and hooks recorded in the install
 manifest.
 
@@ -197,7 +225,7 @@ silently redefining the requested behavior.
 /build <change-id>
 ```
 
-Foundation creates a detached Git worktree when the repository is clean. If the
+Change Loop creates a detached Git worktree when the repository is clean. If the
 repository already has local changes, or is not a Git repository, it uses an
 isolated copy instead. The agent edits that workspace and marks verified items
 in `tasks.md`; the main project is not changed.
@@ -214,6 +242,13 @@ installed, declare `sandbox.setupCommand` (plus `setupTimeoutMs`) in
 `openspec/repositories.yaml`; it runs once inside every new workspace, and a
 failing setup keeps the sandbox and prints the recovery.
 
+For direct Bash use during Build, start an obviously mutating command with
+`cd <exact-workspace> && ...`. The phase guard blocks unanchored package-manager
+or formatter mutations, `..` escapes, and absolute output redirection outside
+the workspace before the shell starts. Structured Edit/Write operations remain
+the preferred mutation path; host process isolation is still required for
+indirect script effects.
+
 Why this step exists: you can inspect or discard implementation work without
 mixing it with your current checkout.
 
@@ -223,7 +258,7 @@ mixing it with your current checkout.
 /prove <change-id>
 ```
 
-Foundation validates the agreement, checks that implementation tasks are
+Change Loop validates the agreement, checks that implementation tasks are
 complete, runs the evidence providers required by the claims, and stores
 content-bound receipts. A successful run ends with:
 
@@ -255,7 +290,7 @@ one guarded, resumable completion boundary.
 
 ### 5. Commit using your normal Git process
 
-Foundation stops after applying and archiving. Review the result, then commit,
+Change Loop stops after applying and archiving. Review the result, then commit,
 push, and open a pull request using your project's normal process.
 
 ## The workflow in one picture
@@ -302,7 +337,7 @@ After Land, a new requirement should normally become a new change.
 | `/prove` | Implementation tasks and focused checks are complete | Required receipts and a content-bound `proof.json` |
 | `/land` | Proof passes and you accept the change | Applies the proven diff, syncs specs, and archives |
 | `/changes` | You are resuming work or managing several changes | Active states and the next useful operation |
-| `/dev` | The intent is clear and you want Change → Build → Prove in one run | A proven candidate; deliberately stops before Land |
+| `/dev` | The intent is clear and you want Change → Build → Prove in one run | Normally stops with a proven candidate; a pre-authorized automation lane may continue through Land to `archived` |
 
 Each slash command has two cooperating layers:
 
@@ -356,7 +391,7 @@ openspec/
 | `specs/` | Current accepted product requirements | Records what the landed system is expected to do |
 | `changes/<change-id>/` | Agreement for one active change | Keeps proposed behavior separate from current behavior until Land |
 | `changes/archive/` | Completed change history | Preserves why and how accepted behavior changed |
-| `schemas/` | Foundation-owned schemas and templates | Defines the required artifacts for standard and rapid work |
+| `schemas/` | Change Loop-owned schemas and templates | Defines the required artifacts for standard and rapid work |
 
 ### Files in an active change
 
@@ -412,7 +447,7 @@ claude-foundation changes
 
 | State | Meaning | What to do next |
 |---|---|---|
-| `untracked` | OpenSpec has an active change but Foundation has no runtime record | Use `/change <change-id>` to bring it under the harness and validate it |
+| `untracked` | OpenSpec has an active change but Change Loop has no runtime record | Use `/change <change-id>` to bring it under the harness and validate it |
 | `change` | The agreement exists; no Build sandbox is active | Complete the artifacts, then `/build` |
 | `building` | An isolated workspace is active; proof has not succeeded yet | Continue `/build`, or `/prove` when ready |
 | `ready-to-land` | Passing proof still matches the agreement and workspace | `/land` |
@@ -492,15 +527,12 @@ unknown links, claims without tasks/providers, scenario mismatches, missing
 security negative paths, and incomplete migration rollback/integrity coverage.
 
 Remote CI can be configured with an issuer and Ed25519 public key, then imported
-with `evidence verify-ci`. `proof advance` is the normal resumable Prove path:
-it executes missing project evidence once, routes review before acceptance, and
-returns a stable waiting handoff without polling. Configured AI review runs
-through `authority run`; named-human review reserves its packet with `authority
-dispatch` before `authority record`; acceptance needs no review dispatch. Every
-path binds evidence to the current workspace, so stale, mismatched, unsigned,
-or replayed responses fail closed.
+with `evidence verify-ci`. `proof advance` is the normal resumable Prove path;
+its convergent behavior and authority routing are summarized below. Every path
+binds evidence to the current workspace, so stale, mismatched, unsigned, or
+replayed responses fail closed.
 
-Foundation does not install a test framework or browser. It runs the tools your
+Change Loop does not install a test framework or browser. It runs the tools your
 repository declares and stores receipts under
 `.foundation/receipts/<change-id>/`. Receipts are reusable only while the
 workspace hash, agreement, provider protocol/version, and claim coverage remain
@@ -531,12 +563,36 @@ claude-foundation proof readiness <change-id>
 claude-foundation proof run <change-id>
 ```
 
-Run `claude-foundation proof advance <change-id>` once. The agent explains a
-real external wait in ordinary language and hands the bounded packet to the
-configured independent reviewer or a named human. Repeating `proof advance` on
-an unchanged wait does not rerun providers or dispatch another reviewer.
+Run `claude-foundation proof advance <change-id>` as the Prove boundary. Each
+gate aggregates independent findings, repairs the complete in-contract batch,
+and selectively reruns invalidated evidence until it passes. Product repair has
+no fixed cycle limit. A decision, authority, resource, conflict, or repeated
+no-progress boundary preserves the same change and returns choices plus an exact
+resume route. Repeating `proof advance` on an unchanged wait does not rerun
+providers or dispatch another reviewer.
 `proof collect`, direct authority commands, and `proof run` remain available for
 diagnosis and explicit integrations.
+
+Build packets also carry `authorityPreflight`. High-risk work that requires
+signed CI stops before dispatch or product edits when no trusted external CI
+provider is configured, naming the issuer/public-key configuration and the
+exact Change resume route. Land independently verifies the signed receipt.
+
+Proof can also require a signed `semantic-acceptance` provider. It binds stable
+case IDs and input partitions to the exact workspace while keeping hidden
+inputs and oracle code outside the agent packet. Missing, skipped, duplicated,
+tampered, stale, or failing required cases block Proof; review cannot waive the
+result. In a single npm repository, the lockfile consistency provider is
+activated automatically when `package.json` and `package-lock.json` are
+present, so a stale lockfile fails before final Proof without extra wiring.
+
+Internally, phase packets, planning, readiness, and mutation enforcement consume
+one compiled execution contract and one lifecycle reducer. This reduces
+duplicated policy decisions without changing any user command. Existing
+provider-protocol-12 receipts become stale after upgrade to provider protocol
+13; preserve the active change, repair configuration if diagnostics requests
+it, and rerun `proof advance <change-id>`. Roll back the installed version only
+if protocol 13 cannot be supported; do not copy or edit receipt JSON by hand.
 
 Users never need to construct receipt commands, provenance JSON, provider
 metadata, or workspace hashes. Those remain machine protocol and are shown only
@@ -565,7 +621,7 @@ for readers rather than agents:
   expires proof.
 - [Adapters and wiring](https://claude-foundation.dev/docs/evidence/adapters/)
   — all five adapters, declared inputs, services, and readiness identity.
-- [What Foundation writes](https://claude-foundation.dev/docs/artifacts/)
+- [What Change Loop writes](https://claude-foundation.dev/docs/artifacts/)
   — every artifact the harness produces and which of them you are meant to read.
 
 ## When the requirement changes during Build
@@ -599,7 +655,7 @@ repository.
 Select repositories needed only by integration evidence with `mode: read`.
 Git-backed read dependencies receive pinned detached worktrees and are hashed
 into proof, but never receive Land nodes. An executable provider may set one
-`repository` as its cwd and list every dependency in `repositories`; Foundation
+`repository` as its cwd and list every dependency in `repositories`; Change Loop
 passes their paths through `FOUNDATION_REPOSITORIES_FILE` and rejects tracked
 writes to read-only worktrees.
 
@@ -611,7 +667,7 @@ Annotate multi-repository tasks so authority and dependencies remain explicit:
 - [ ] **T003** Verify contract [repo:app] [kind:contract] [depends:T001,T002]
 ```
 
-Foundation treats multi-remote landing as an ordered, resumable saga. It verifies
+Change Loop treats multi-remote landing as an ordered, resumable saga. It verifies
 explicit child commits and CI state; it does not claim atomicity across remotes.
 Use `claude-foundation land resume <change-id>` to inspect and advance the order. See
 [WORKFLOW.md](WORKFLOW.md) for the full control-plane protocol.
@@ -630,13 +686,13 @@ During Build, `agents dispatch` turns the current graph and live leases into one
 native-host action. Small, coupled, or singleton-frontier work stays in the
 parent session; only a frontier with multiple selected independent tasks returns
 a bounded spawn group. Planned singleton work still acquires a task lease and
-regenerates its packet before running inline, while Foundation remains
+regenerates its packet before running inline, while Change Loop remains
 model-free and returns `wait` rather than duplicating a live executor after a
 host restart.
 
-## How Foundation scopes agents and skills
+## How Change Loop scopes agents and skills
 
-Foundation supplies a small, task-scoped packet to the native agent host; it is
+Change Loop supplies a small, task-scoped packet to the native agent host; it is
 not a resident orchestrator that copies the entire conversation into every
 worker. A single-repository change without shared external authority stays with
 one agent regardless of task count. Independent workers are useful only when
@@ -650,7 +706,7 @@ backend, data, or documentation work should not preload that entire skill chain.
 
 ### Execution policy in `foundation.json`
 
-`foundation.json` is the committed, project-owned policy for how Foundation
+`foundation.json` is the committed, project-owned policy for how Change Loop
 spends agent work. The shipped defaults route portable tiers by purpose rather
 than hard-coding one host-specific model name:
 
@@ -685,7 +741,7 @@ Commit `independence: "required"` for separation of duties and
 See [Configure `foundation.json`](https://claude-foundation.dev/docs/foundation-config/)
 for every field, validation range, and ready-to-use review profile.
 
-## What Foundation owns
+## What Change Loop owns
 
 | Information | Source of truth |
 |---|---|
@@ -717,7 +773,7 @@ you to.
 - Apply uses backups and a journal; an interrupted Land can be retried.
 - Land warns — without blocking — when the target is checked out on
   `main`/`master`; every land guard stays commit-based.
-- Foundation never commits, pushes, opens a pull request, or grants those powers
+- Change Loop never commits, pushes, opens a pull request, or grants those powers
   to a worker agent without explicit authorization.
 - `protect-secrets.sh` and `lint.sh` are enabled by default.
 - `no-direct-main-commit.sh` is opt-in because some projects allow controlled
@@ -754,7 +810,7 @@ and `diversity: "single-model"` policy supports a single-model, single-identity
 installation. Projects that require separation of duties can commit
 `independence: "required"`; teams with both providers can also require
 cross-provider review with `diversity: "required"`. Reviewer infrastructure receives one bounded main-session handback. After the
-delivered review route is complete, Foundation refuses another open review:
+delivered review route is complete, Change Loop refuses another open review:
 in-contract findings follow deterministic repair closure, a genuine contract
 contradiction reopens one batched Decision Sheet, and missing authority becomes
 an external handoff rather than another interview.
@@ -858,10 +914,10 @@ npx --yes @fission-ai/openspec@1.7.0 schema validate foundation-standard
 npx --yes @fission-ai/openspec@1.7.0 schema validate foundation-rapid
 ```
 
-Foundation checks the latest stable release only when an agent enters
+Change Loop checks the latest stable release only when an agent enters
 Investigate or Change, and immediately before Build. Results are shared in a
 24-hour user cache; Prove and Land never perform an automatic check. An update
-advisory does not block work or alter proof identity, and Foundation never
+advisory does not block work or alter proof identity, and Change Loop never
 applies the update without user authority. Set `FOUNDATION_UPDATE_CHECK=0` to
 disable release discovery, or use `update check --refresh --json` for an
 explicit machine-readable refresh.

@@ -56,9 +56,15 @@ The agent creates an isolated Git worktree under `.foundation/sandboxes/`, reads
 /prove add-profile-auth
 ```
 
-This is the step that makes the difference. Foundation reuses any receipt that is still valid, schedules only what is missing or stale, runs your project's tools, and validates the results.
+This is the step that makes the difference. Change Loop reuses any receipt that is still valid, schedules only what is missing or stale, runs your project's tools, and validates the results.
 
 Evidence can come back `pass`, `fail`, `inconclusive`, or `error`. Anything other than a pass keeps the change blocked, and the agent goes back to Build to fix it. An `inconclusive` result is *not* a soft pass — a browser suite that exits 0 without the required claim annotations is inconclusive, because nothing demonstrated the claim.
+
+The harness checks the gate once, groups all known repairable findings into one
+plan, and lets the agent fix the batch. It then rechecks only evidence made
+missing or stale by those edits. The loop has no arbitrary retry limit: it
+continues while progress is possible and asks you only when a decision,
+permission, unavailable external system, or unresolved conflict is required.
 
 ## 4. Land it
 

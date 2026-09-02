@@ -342,7 +342,8 @@ export function buildScorecard(input) {
     oracle,
     evidenceReuse: {
       count: count(metrics.evidenceReuse?.count),
-      byReason: object(metrics.evidenceReuse?.byReason)
+      byReason: object(metrics.evidenceReuse?.byReason),
+      resumptions: count(metrics.budget?.window?.extensionNumber)
     }
   };
 }

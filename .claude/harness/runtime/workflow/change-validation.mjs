@@ -4,6 +4,7 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { auditTraceability } from "../evidence/traceability.mjs";
 import { detectEvidenceWiring } from "../evidence/evidence-bootstrap.mjs";
 import { nextAfterValidate } from "../core/next-step.mjs";
+import { gateRepairPlan } from "../core/convergent-gate.mjs";
 import {
   taskBlocks, taskMetadata
 } from "../contracts/change-artifacts.mjs";
@@ -747,6 +748,8 @@ export function createChangeValidationRuntime({
   knownProviders,
   writeJson,
   now,
+  authorityPreflight = () => ({ status: "READY", blockers: [], decision: null }),
+  executionContract = null,
   foundationPolicy = () => ({ quality: { changeGate: "warn" } }),
   fail: terminalFail
 }) {
@@ -797,7 +800,16 @@ export function createChangeValidationRuntime({
     const bounded = rendered.length > limit
       ? `${rendered.slice(0, limit)}\n  - output truncated; repair these findings and validate again`
       : rendered;
+    const repairPlan = gateRepairPlan(populated.map((group, groupIndex) => ({
+      id: `change-group-${groupIndex + 1}`,
+      phase: "change",
+      gate: group.name,
+      classification: "contract",
+      rootCause: group.name,
+      message: `Repair all ${group.issues.length} finding(s) in ${group.name}`
+    })), { phase: "change", gate: "change-validation" });
     fail(`change validation failed (${populated.length} groups):\n${bounded}\n` +
+      `Repair plan: ${JSON.stringify(repairPlan)}\n` +
       "Recovery: repair only fields named above; do not add planned readSet rows " +
       "unless a finding requires them. Re-run change validate as a standalone " +
       "command without a pipe.");
@@ -1743,9 +1755,19 @@ export function createChangeValidationRuntime({
     const assurance = reportValidationReviewAssurance(
       options.quiet, reviewResolvable, policy,
       reviewResolvable ? reviewAssurancePosture(policy) : null);
-    if (!options.quiet)
+    const compiled = executionContract?.(id) || null;
+    const preflight = compiled?.authority || authorityPreflight(id);
+    if (!options.quiet) {
       console.log(`VALID ${id} (${state.schema}, ${claims.length} claims)\n  next: ${nextAfterValidate(state.status, id)}`);
-    return { version: 1, changeId: id, reviewAssurance: assurance };
+      if (preflight.status !== "READY")
+        console.log(`  authority: ${preflight.status}; ${preflight.blockers
+          .map((blocker) => `${blocker.code}: ${blocker.next}`).join("; ")}`);
+    }
+    return {
+      version: 1, changeId: id, reviewAssurance: assurance,
+      authorityPreflight: preflight,
+      ...(compiled ? { executionContract: compiled } : {})
+    };
   }
 
   // A capability the policy infers from the *realized* diff is a risk hint, not

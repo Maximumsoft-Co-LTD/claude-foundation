@@ -71,7 +71,7 @@ any quoted verdict. Paraphrase harness jargon into plain Thai on first use
 and keep using the Thai term. Every claim traces to a file above; quote
 verdicts verbatim; never summarize a failure into a pass.
 
-1. **Header**: eyebrow (`Foundation harness · รายงานรอบงาน`), report name, a
+1. **Header**: eyebrow (`Change Loop · รายงานรอบงาน`), report name, a
    2–3 line Thai lede saying what the round fixed/built and how it ended, and
    chips: overall verdict, change id, profile, land/archive date, active next
    round + its task progress, report update date.

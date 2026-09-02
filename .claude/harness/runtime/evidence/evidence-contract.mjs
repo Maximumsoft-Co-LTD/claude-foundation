@@ -736,7 +736,8 @@ export function createEvidenceContract({
           die(`provider '${provider}' input '${input}' references repository outside its repository scope`);
       }
     }
-    if (["review", "acceptance"].includes(capability) && config.inputs !== undefined)
+    if (["review", "acceptance", "semantic-acceptance"].includes(capability) &&
+        config.inputs !== undefined)
       die(`${capability} capability cannot declare reusable inputs; it is bound to the full workspace`);
   }
 
@@ -771,8 +772,8 @@ export function createEvidenceContract({
   }
 
   function validateProviderProtocols(provider, config, capability) {
-    if (config.reportFormat !== undefined && !["json", "tap", "auto"].includes(config.reportFormat))
-      die(`provider '${provider}' reportFormat must be json|tap|auto`);
+    if (config.reportFormat !== undefined && !["json", "tap", "spec", "auto"].includes(config.reportFormat))
+      die(`provider '${provider}' reportFormat must be json|tap|spec|auto`);
     if (config.resultProtocol !== undefined &&
         !["foundation-mutation-v1", "foundation-mutation-v2"].includes(config.resultProtocol))
       die(`provider '${provider}' resultProtocol must be foundation-mutation-v1|foundation-mutation-v2`);
@@ -868,7 +869,57 @@ export function createEvidenceContract({
       die("review capability requires an external provider");
     if (capability === "acceptance" && config.adapter !== "external")
       die("acceptance capability requires an external human provider");
+    if (capability === "semantic-acceptance") {
+      if (config.adapter !== "external")
+        die("semantic-acceptance capability requires an external signed verdict provider");
+      if (!config.semanticAcceptance ||
+          typeof config.semanticAcceptance.issuer !== "string" ||
+          !config.semanticAcceptance.issuer.trim() ||
+          typeof config.semanticAcceptance.publicKey !== "string" ||
+          !config.semanticAcceptance.publicKey.includes("PUBLIC KEY"))
+        die(`provider '${provider}' semanticAcceptance requires issuer and publicKey`);
+      if (!Array.isArray(config.acceptanceCases) || config.acceptanceCases.length === 0)
+        die(`provider '${provider}' semantic-acceptance requires acceptanceCases`);
+      const ids = new Set();
+      for (const [index, row] of config.acceptanceCases.entries()) {
+        if (!row || typeof row !== "object" ||
+            !String(row.id || "").trim() || !String(row.claimId || "").trim() ||
+            !String(row.partition || "").trim())
+          die(`provider '${provider}' acceptanceCases[${index}] requires id, claimId, and partition`);
+        if (ids.has(row.id))
+          die(`provider '${provider}' acceptanceCases has duplicate id '${row.id}'`);
+        if (Boolean(row.sourceProvider) !== Boolean(row.criticalCaseId))
+          die(`provider '${provider}' acceptanceCases[${index}] must declare sourceProvider and criticalCaseId together`);
+        if (row.requiresFailToPass !== undefined && typeof row.requiresFailToPass !== "boolean")
+          die(`provider '${provider}' acceptanceCases[${index}].requiresFailToPass must be boolean`);
+        ids.add(row.id);
+      }
+    }
     validateProviderCi(provider, config);
+  }
+
+  function validateSemanticAcceptanceClaims(provider, config, capability, claims) {
+    if (capability !== "semantic-acceptance") return;
+    const declared = new Set(claims.filter((claim) =>
+      claim.capabilities.includes("semantic-acceptance")).map((claim) => claim.id));
+    const unknown = config.acceptanceCases
+      .map((row) => row.claimId).filter((claimId) => !declared.has(claimId));
+    if (unknown.length)
+      die(`provider '${provider}' acceptanceCases reference claim(s) without semantic-acceptance: ${
+        [...new Set(unknown)].join(", ")}`);
+  }
+
+  function validateSemanticAcceptanceSources(provider, config, capability,
+      configuredProviders) {
+    if (capability !== "semantic-acceptance") return;
+    for (const row of config.acceptanceCases) {
+      if (!row.sourceProvider) continue;
+      const source = configuredProviders[row.sourceProvider];
+      if (!source || row.sourceProvider === provider)
+        die(`provider '${provider}' acceptance case '${row.id}' has invalid sourceProvider '${row.sourceProvider}'`);
+      if (!(source.criticalCases || []).includes(row.criticalCaseId))
+        die(`provider '${provider}' acceptance case '${row.id}' source does not declare critical case '${row.criticalCaseId}'`);
+    }
   }
 
   function validateProviderClaimCoverage(provider, config, capability, claims) {
@@ -905,6 +956,9 @@ export function createEvidenceContract({
     validateProviderReadiness(provider, config);
     validateCapabilityConfiguration(provider, config, capability);
     validateProviderClaimCoverage(provider, config, capability, context.claims);
+    validateSemanticAcceptanceClaims(provider, config, capability, context.claims);
+    validateSemanticAcceptanceSources(provider, config, capability,
+      context.configuredProviders);
   }
   
   function evidence(id, dir = activeChangePath(id)) {
@@ -931,7 +985,31 @@ export function createEvidenceContract({
     return { ...value, providers: configuredProviders, execution: executionValue };
   }
   
-  const providerConfig = providerConfigOperation.bind(null, { evidence });
+  function builtInProviderConfig(id, provider) {
+    if (provider !== "dependency-supply-chain") return null;
+    let repositories;
+    try { repositories = selectedRepositories(id).filter((row) => row.mode === "write"); }
+    catch { return null; }
+    const candidates = repositories.filter((repository) =>
+      existsSync(join(repository.workspacePath, "package.json")) &&
+      existsSync(join(repository.workspacePath, "package-lock.json")));
+    if (candidates.length !== 1) return null;
+    const repository = candidates[0];
+    return {
+      adapter: "command",
+      capability: "dependency-supply-chain",
+      command: ["node", join(ROOT, ".claude", "harness", "runtime", "evidence",
+        "npm-lockfile-check.mjs")],
+      repository: repository.id === "root" ? undefined : repository.id,
+      inputs: ["package.json", "package-lock.json"],
+      builtIn: "npm-lockfile-consistency-v1"
+    };
+  }
+
+  function providerConfig(id, provider) {
+    return configuredProviderValue(evidence(id).providers || {}, provider) ||
+      builtInProviderConfig(id, provider);
+  }
 
   const resolvedAcceptance = resolvedAcceptanceOperation.bind(null, {
     loadRuntime,
@@ -986,7 +1064,7 @@ export function createEvidenceContract({
   // a run that is the same cached snapshot the run created, so recording and
   // checking still agree on one value.
   function packetBoundCapability(id, provider) {
-    return ["review", "acceptance"]
+    return ["review", "acceptance", "semantic-acceptance"]
       .includes(providerCapability(provider, providerConfig(id, provider)));
   }
 

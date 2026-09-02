@@ -93,7 +93,12 @@ Never inspect managed `.claude/harness/**` or `.claude/hooks/**` to infer fields
 New production, runtime, or test-topology paths need an implementation task and
 `sha256: planned` in `grounding.yaml`; never create product code during Change
 to obtain a digest.
-Run validate standalone, never through a pipe; its output is bounded. Repair only reported fields. After
-`VALID`, proceed directly to Build. Optional audit warnings are advisory and
+Run validate standalone, never through a pipe; its output is bounded.
+Repair only reported fields. On each cycle repair them as one
+dependency-ordered batch, then validate
+again. Continue without a repair-count limit while progress changes. At a
+decision, authority, resource, contradiction, or repeated no-progress boundary,
+preserve the draft, present the supported choices, and resume this same Change
+after resolution. After `VALID`, proceed directly to Build. Optional audit warnings are advisory and
 never justify `--reopen-grounding`. If recovery is incomplete, report a harness
 defect instead of inspecting internals.

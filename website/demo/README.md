@@ -1,10 +1,10 @@
-# Foundation harness walkthrough
+# Change Loop harness walkthrough
 
 A dependency-free interactive deck for the current OpenSpec-native workflow.
 
 The six frames cover:
 
-1. Foundation's agreement → build → proof model.
+1. Change Loop's agreement → build → proof model.
 2. Why lifecycle-agent orchestration was removed.
 3. The `/investigate → /change → /build → /prove → /land` loop.
 4. Claims, provider capabilities, adapters, receipts, and content-bound proof.

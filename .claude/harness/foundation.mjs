@@ -28,6 +28,7 @@ import {
   configuredCommand,
   mutationProtocolResult,
   numericReportValue,
+  parseNodeTestSpecOutput,
   parseJsonOutput,
   parseTapOutput,
   playwrightReportSummary,
@@ -66,6 +67,8 @@ import {
 import { createApplyRuntime } from "./runtime/workflow/apply-runtime.mjs";
 import { createApplyRecovery } from "./runtime/workflow/apply-recovery.mjs";
 import { createDiagnosticsRuntime } from "./runtime/core/diagnostics-runtime.mjs";
+import { authorityPreflightValue } from "./runtime/core/authority-policy.mjs";
+import { compileExecutionContractValue } from "./runtime/core/execution-contract.mjs";
 import { createStateRuntime } from "./runtime/core/state-runtime.mjs";
 import {
   createEvidenceContract,
@@ -109,14 +112,15 @@ if (RUNTIME_MODULE_API !== RUNTIME_API_VERSION) {
     "is a mixture of two revisions. Reinstall it with 'claude-foundation init <project>'.");
   process.exit(1);
 }
-const PROVIDER_PROTOCOL_VERSION = "12";
+const PROVIDER_PROTOCOL_VERSION = "13";
 const ADAPTER_PROTOCOL_VERSION = "5";
 const PROOF_PROTOCOL_VERSION = "7";
-const PACKET_SCHEMA_VERSION = "9";
+const PACKET_SCHEMA_VERSION = "10";
 const AGENT_PLAN_SCHEMA_VERSION = "4";
 const CONTEXT_EVENT_SCHEMA_VERSION = "2";
 const REVIEW_PROTOCOL_VERSION = "4";
 const ACCEPTANCE_PROTOCOL_VERSION = "2";
+const SEMANTIC_ACCEPTANCE_PROTOCOL_VERSION = "1";
 const REVIEW_PACKET_SCHEMA_VERSION = "4";
 const ATTESTATION_PROTOCOL_VERSION = "1";
 const AUTHORITY_PROTOCOL_VERSION = "2";
@@ -250,6 +254,7 @@ const {
     contextEventSchema: CONTEXT_EVENT_SCHEMA_VERSION,
     reviewProtocol: REVIEW_PROTOCOL_VERSION,
     acceptanceProtocol: ACCEPTANCE_PROTOCOL_VERSION,
+    semanticAcceptanceProtocol: SEMANTIC_ACCEPTANCE_PROTOCOL_VERSION,
     reviewPacketSchema: REVIEW_PACKET_SCHEMA_VERSION,
     attestationProtocol: ATTESTATION_PROTOCOL_VERSION,
     authorityProtocol: AUTHORITY_PROTOCOL_VERSION,
@@ -688,6 +693,8 @@ const changeValidationRuntime = createChangeValidationRuntime({
   writeJson,
   now,
   foundationPolicy,
+  authorityPreflight,
+  executionContract,
   fail: die
 });
 const {
@@ -707,6 +714,52 @@ const {
   validate,
   waiveGate
 } = changeValidationRuntime;
+
+function authorityPreflight(id) {
+  const state = loadRuntime(id);
+  const contract = evidence(id, activeChangePath(id, state));
+  return authorityPreflightValue({
+    changeId: id,
+    state,
+    reviewRisk: changedSurfaceResolvable(id, state)
+      ? reviewPolicy(id, state, contract)
+      : null,
+    providers: Object.keys(contract.providers || {}),
+    providerConfig: (provider) => providerConfig(id, provider),
+    providerCapability,
+    acceptance: resolvedAcceptance(id, state, contract),
+    grounding: {
+      required: state.groundingRequired === true,
+      locked: Boolean(state.groundingDigest),
+      reopenPending: Boolean(state.groundingReopenPending)
+    },
+    handoffs: handoffReadiness(id, { state })
+  });
+}
+
+function executionContract(id) {
+  const state = loadRuntime(id);
+  const contract = evidence(id, activeChangePath(id, state));
+  const resolvable = changedSurfaceResolvable(id, state);
+  const review = resolvable ? reviewPolicy(id, state, contract) : null;
+  const configured = Object.keys(contract.providers || {});
+  const providerNames = resolvable ? requiredProviders(id) : configured;
+  let repositories = [];
+  try { repositories = selectedRepositories(id, state); } catch { repositories = []; }
+  const handoffs = handoffReadiness(id, { state });
+  return compileExecutionContractValue({
+    changeId: id,
+    state,
+    review,
+    providers: providerNames,
+    providerCapabilities: Object.fromEntries(providerNames.map((provider) => [
+      provider, providerCapability(provider, providerConfig(id, provider))
+    ])),
+    authority: authorityPreflight(id),
+    repositories,
+    handoffs
+  });
+}
 const { runCommand, startServiceSession } = createProcessRuntime({
   root: ROOT,
   logs: LOGS,
@@ -804,6 +857,7 @@ const adapterRuntime = createAdapterRuntime({
   providerClaims,
   parseJsonOutput,
   parseTapOutput,
+  parseNodeTestSpecOutput,
   numericReportValue,
   playwrightReportSummary,
   requiredProviders,
@@ -883,6 +937,8 @@ const packetRuntime = createPacketRuntime({
   resolvedAcceptance,
   handoffReadiness,
   deliveredAiAttempts,
+  authorityPreflight,
+  executionContract,
   serializedJson,
   foundationPolicy,
   recordContextMetric,
@@ -986,6 +1042,8 @@ const {
   providerConfig,
   providerRepositories,
   resourcesConflict,
+  authorityPreflight,
+  executionContract,
   relevantHash,
   contractFingerprint,
   stableHash,
@@ -1084,6 +1142,8 @@ const {
   readJson,
   writeJson,
   saveRuntime,
+  authorityPreflight,
+  executionContract,
   fail: die
 });
 const { continueBudget, checkpointBudget } = createBudgetContinuation({
@@ -1268,6 +1328,8 @@ const {
 } = createDiagnosticsRuntime({
   root: ROOT,
   unresolvedApplyTransactions,
+  authorityPreflight,
+  executionContract,
   version: VERSION,
   runtimeApiVersion: RUNTIME_API_VERSION,
   providerProtocolVersion: PROVIDER_PROTOCOL_VERSION,
@@ -1278,6 +1340,7 @@ const {
   contextEventSchemaVersion: CONTEXT_EVENT_SCHEMA_VERSION,
   reviewProtocolVersion: REVIEW_PROTOCOL_VERSION,
   acceptanceProtocolVersion: ACCEPTANCE_PROTOCOL_VERSION,
+  semanticAcceptanceProtocolVersion: SEMANTIC_ACCEPTANCE_PROTOCOL_VERSION,
   reviewPacketSchemaVersion: REVIEW_PACKET_SCHEMA_VERSION,
   attestationProtocolVersion: ATTESTATION_PROTOCOL_VERSION,
   authorityProtocolVersion: AUTHORITY_PROTOCOL_VERSION,
@@ -1392,6 +1455,7 @@ const { finalize: prove, audit: proofAudit } = createProofRuntime({
     } : null;
   },
   agentPlanValue,
+  executionContract,
   savedAgentPlan: (id) => readJson(join(PLANS, `${id}.json`), {}),
   taskResult: (id, taskId) => {
     const path = join(LEASES, "results", id, `${taskId}.json`);
@@ -1520,6 +1584,7 @@ const {
   ciEvidenceProtocolVersion: CI_EVIDENCE_PROTOCOL_VERSION,
   stableHash,
   agentPlanValue,
+  executionContract,
   now,
   blockWithDecision,
   fail: die

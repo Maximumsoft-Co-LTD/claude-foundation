@@ -54,7 +54,7 @@ assert_contains "host instruction reports protocol 1" \
   "$host_instruction" '"protocol":1'
 host_agent_contract="$(cd "$host_instruction_tmp" && bash "$ROOT/cli.sh" host agent-contract)"
 assert_contains "host agent contract succeeds without project discovery" \
-  "$host_agent_contract" '"contract":"# Foundation agent contract'
+  "$host_agent_contract" '"contract":"# Change Loop agent contract'
 assert_contains "host agent contract reports protocol 1" \
   "$host_agent_contract" '"protocol":1'
 mkdir -p "$TMP/unrelated-git/package"
@@ -64,9 +64,14 @@ packaged_version="$(bash "$TMP/unrelated-git/package/cli.sh" version)"
 assert_eq "packaged CLI ignores unrelated ancestor Git metadata" \
   "claude-foundation $(tr -d '[:space:]' < "$ROOT/VERSION")" "$packaged_version"
 TARGET="$TMP/project with space"
-mkdir -p "$TARGET/.workflow/0001-legacy" "$TARGET/.claude/agents"
+mkdir -p "$TARGET/.workflow/0001-legacy" "$TARGET/.claude/agents" \
+  "$TARGET/.claude/harness/runtime/workflow" "$TARGET/.foundation"
 printf 'legacy\n' > "$TARGET/.workflow/0001-legacy/state.json"
 printf 'old\n' > "$TARGET/.claude/agents/pm.md"
+printf 'legacy compatibility module\n' > \
+  "$TARGET/.claude/harness/runtime/workflow/change-artifacts.mjs"
+printf '%s\n' ".claude/harness/runtime/workflow/change-artifacts.mjs" > \
+  "$TARGET/.foundation/install-manifest.txt"
 printf '# User project\n' > "$TARGET/CLAUDE.md"
 mkdir -p "$TARGET/.claude"
 # The second matcher carries the phase guard as an earlier release wired it. The
@@ -88,6 +93,16 @@ assert_file_absent "review is proof-internal" \
   "$TARGET/.claude/commands/review.md"
 assert_file_exists "harness installed" "$TARGET/.claude/harness/foundation.mjs"
 assert_file_exists "shared trust runtime installed" "$TARGET/.claude/harness/runtime/core/trust.mjs"
+assert_file_exists "authority policy runtime installed" \
+  "$TARGET/.claude/harness/runtime/core/authority-policy.mjs"
+assert_file_exists "convergent gate runtime installed" \
+  "$TARGET/.claude/harness/runtime/core/convergent-gate.mjs"
+assert_file_exists "execution contract runtime installed" \
+  "$TARGET/.claude/harness/runtime/core/execution-contract.mjs"
+assert_file_exists "lifecycle reducer runtime installed" \
+  "$TARGET/.claude/harness/runtime/core/lifecycle-reducer.mjs"
+assert_file_exists "derived state projection runtime installed" \
+  "$TARGET/.claude/harness/runtime/core/state-projections.mjs"
 assert_file_exists "evidence bootstrap runtime installed" \
   "$TARGET/.claude/harness/runtime/evidence/evidence-bootstrap.mjs"
 assert_file_exists "budget runtime installed" "$TARGET/.claude/harness/runtime/workflow/budget.mjs"
@@ -98,17 +113,14 @@ assert_file_exists "CLI router runtime installed" "$TARGET/.claude/harness/runti
 assert_file_exists "state runtime installed" "$TARGET/.claude/harness/runtime/core/state-runtime.mjs"
 assert_file_exists "canonical change-artifact contract installed" \
   "$TARGET/.claude/harness/runtime/contracts/change-artifacts.mjs"
-assert_file_exists "change-artifact compatibility path retained" \
+assert_file_absent "retired change-artifact compatibility path stays absent" \
   "$TARGET/.claude/harness/runtime/workflow/change-artifacts.mjs"
-assert_cmd_zero "change-artifact compatibility path exports the canonical parser API" \
+assert_cmd_zero "canonical change-artifact parser API is installed" \
   node --input-type=module -e '
-    const [canonical, compatibility] = await Promise.all([
-      import(process.argv[1]), import(process.argv[2])
-    ]);
+    const canonical = await import(process.argv[1]);
     for (const name of ["parseSpecRequirements", "taskBlocks", "taskMetadata"])
-      if (canonical[name] !== compatibility[name]) process.exit(1);
-  ' "$TARGET/.claude/harness/runtime/contracts/change-artifacts.mjs" \
-    "$TARGET/.claude/harness/runtime/workflow/change-artifacts.mjs"
+      if (typeof canonical[name] !== "function") process.exit(1);
+  ' "$TARGET/.claude/harness/runtime/contracts/change-artifacts.mjs"
 assert_file_exists "diagnostics runtime installed" \
   "$TARGET/.claude/harness/runtime/core/diagnostics-runtime.mjs"
 assert_file_exists "shared process lock runtime installed" \
@@ -124,6 +136,8 @@ assert_file_exists "artifact store installed" \
   "$TARGET/.claude/harness/runtime/evidence/artifact-store.mjs"
 assert_file_exists "evidence contract runtime installed" \
   "$TARGET/.claude/harness/runtime/evidence/evidence-contract.mjs"
+assert_file_exists "semantic acceptance runtime installed" \
+  "$TARGET/.claude/harness/runtime/evidence/semantic-acceptance.mjs"
 assert_file_exists "proof readiness runtime installed" \
   "$TARGET/.claude/harness/runtime/evidence/proof-readiness.mjs"
 assert_file_exists "receipt runtime installed" \
@@ -316,7 +330,7 @@ jq '.workflow.grounding = "optional" |
 cp "$TMP/foundation-atomic.json" "$TARGET/foundation.json"
 start_template="$(bash "$ROOT/cli.sh" --project "$TARGET" change start --template)"
 assert_contains "atomic start exposes a versioned draft template" \
-  "$start_template" '"version": 1'
+  "$start_template" '"version": 2'
 assert_contains "atomic start template includes executable evidence" \
   "$start_template" '"adapter": "test-discovery"'
 assert_contains "atomic start template requires an acceptance decision" \

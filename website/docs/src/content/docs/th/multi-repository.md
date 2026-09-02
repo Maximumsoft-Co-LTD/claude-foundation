@@ -1,6 +1,6 @@
 ---
 title: Workflow หลาย Repository
-description: ตั้งค่า Build, Prove และ Land change ที่ต้องใช้หลาย Git repository ตามลำดับที่ Foundation ตรวจจริง
+description: ตั้งค่า Build, Prove และ Land change ที่ต้องใช้หลาย Git repository ตามลำดับที่ Change Loop ตรวจจริง
 ---
 
 ใช้คู่มือนี้เมื่อ change หนึ่งเขียนโค้ดในหลาย repository หรือเมื่อ test รันจาก
@@ -24,7 +24,7 @@ repository หนึ่งแต่ต้องใช้โค้ดหรือ
 
 ## 1. ประกาศ Topology ระดับโปรเจกต์
 
-เพิ่มทุก repository ที่ Foundation อาจต้องแยกพื้นที่ใน
+เพิ่มทุก repository ที่ Change Loop อาจต้องแยกพื้นที่ใน
 `openspec/repositories.yaml`:
 
 ```json
@@ -53,7 +53,7 @@ repository หนึ่งแต่ต้องใช้โค้ดหรือ
 - path ภายนอกต้องมี `type: "external"` และ `allowOutsideRoot: true`
 - repository ที่ถูกเลือกทุกตัวต้อง initialize Git แล้ว
 
-Foundation ปฏิเสธ dependency ที่ไม่ใช่ Git เพราะมันล็อก commit และแยก directory
+Change Loop ปฏิเสธ dependency ที่ไม่ใช่ Git เพราะมันล็อก commit และแยก directory
 ที่กำลังขยับอย่างตรงไปตรงมาไม่ได้
 
 ตรวจก่อนสร้าง change:
@@ -99,7 +99,7 @@ task implementation ทุกตัวต้องระบุ repository เจ
 - [ ] **T003** Verify contract [repo:app] [kind:contract] [depends:T001,T002]
 ```
 
-Foundation compile repository selection, task, provider และลำดับ Land เป็น
+Change Loop compile repository selection, task, provider และลำดับ Land เป็น
 execution graph ให้เอง ไม่ต้องสร้างไฟล์ graph ที่สอง
 
 ## 4. สร้าง Sandbox ทั้งหมด
@@ -134,7 +134,7 @@ detached worktree ที่ล็อก commit คำสั่งนี้ไม
 }
 ```
 
-Foundation ส่ง environment สำคัญสองตัว:
+Change Loop ส่ง environment สำคัญสองตัว:
 
 - `FOUNDATION_REPOSITORY_ID` — ID ของ repository ที่เป็น working directory
 - `FOUNDATION_REPOSITORIES_FILE` — JSON manifest ที่มี version และ map ID ทุกตัว
@@ -173,7 +173,7 @@ claude-foundation proof run <change>
 
 Prove รัน branch อิสระขนานกันได้และรักษา branch ที่เสร็จแล้วเมื่ออีก branch ล้ม
 แต่ aggregate proof ยังต้องตรงกับ repository และ provider scope ปัจจุบันทั้งหมด
-read dependency ที่ขยับต้อง sync และ prove ใหม่ Foundation จะไม่รับรอง commit เก่า
+read dependency ที่ขยับต้อง sync และ prove ใหม่ Change Loop จะไม่รับรอง commit เก่า
 ใต้ repository manifest ใหม่
 
 Consumer quality ใช้ graph เดียวกันแต่ไม่เฉลี่ยคะแนนข้าม repository ต้องเพิ่ม
@@ -194,7 +194,7 @@ claude-foundation land record <change> --repo <id> --commit <sha> --decision-ref
 claude-foundation land resume <change>
 ```
 
-ทำตาม structured next action จาก `land check` หรือ `land resume` Foundation ตรวจ
+ทำตาม structured next action จาก `land check` หรือ `land resume` Change Loop ตรวจ
 commit และ root pointer ที่บันทึก แต่ไม่อ้างว่า atomic ข้าม remote อิสระ การ commit,
 push และเปิด pull request ยังต้องได้รับอนุญาตจากผู้ใช้แยกต่างหาก
 

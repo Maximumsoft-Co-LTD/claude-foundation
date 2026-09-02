@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  aggregateEvidenceStatus,
   adapterResources,
   collectPlaywrightAttachments,
   configuredCommand,
+  evidenceResultValue,
   mutationProtocolResult,
   numericReportValue,
   parseJsonOutput,
+  parseNodeTestSpecOutput,
   parseTapOutput,
   playwrightAnnotationClaims,
   playwrightReportSummary,
@@ -16,6 +19,24 @@ import {
   visitPlaywrightReport
 } from "../runtime/evidence/evidence-results.mjs";
 import { criticalCaseResult } from "../runtime/evidence/adapter-runtime.mjs";
+
+test("all adapters share one typed evidence-result contract", () => {
+  assert.deepEqual(evidenceResultValue({
+    provider: "test", status: "pass", observations: [{ id: "CASE-1" }]
+  }), {
+    version: 1, provider: "test", status: "pass",
+    observations: [{ id: "CASE-1" }]
+  });
+  assert.equal(aggregateEvidenceStatus(["pass", "inconclusive", "fail"]), "fail");
+  assert.equal(aggregateEvidenceStatus(["fail", "error", "pass"]), "error");
+  assert.throws(() => evidenceResultValue({ provider: "", status: "pass" }),
+    /requires provider/);
+  assert.throws(() => evidenceResultValue({ provider: "test", status: "blocked" }),
+    /invalid evidence status/);
+  assert.throws(() => evidenceResultValue({
+    provider: "test", status: "pass", observations: null
+  }), /observations must be an array/);
+});
 
 test("result parsers accept JSON and complete TAP summaries", () => {
   assert.equal(parseJsonOutput(""), null);
@@ -70,6 +91,21 @@ test("nested TAP critical cases match stable IDs before title punctuation", () =
       { id: "CC-002-store-rejects", status: "fail" }
     ]
   });
+});
+
+test("Node spec output exposes totals and critical-case observations", () => {
+  assert.deepEqual(parseNodeTestSpecOutput([
+    "✔ zero window [AC1] (1.2ms)",
+    "✖ negative window [AC2] (0.4ms)",
+    "ℹ tests 2", "ℹ pass 1", "ℹ fail 1"
+  ].join("\n")), {
+    totalTests: 2, passed: 1, failed: 1, format: "node-spec",
+    criticalCases: [
+      { id: "zero window [AC1]", status: "pass" },
+      { id: "negative window [AC2]", status: "fail" }
+    ]
+  });
+  assert.equal(parseNodeTestSpecOutput("ordinary output"), null);
 });
 
 test("mutation protocol parser accepts markers and supported JSON fields only", () => {

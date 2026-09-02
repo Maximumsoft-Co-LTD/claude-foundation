@@ -21,8 +21,8 @@ export function loadMatrix(path = DEFAULT_MATRIX) {
 
 export function matrixIssues(matrix, root = resolve(HERE, "../../../..")) {
   const issues = [];
-  if (matrix?.protocol !== "foundation-openspec-native-matrix-v1")
-    issues.push("protocol must be foundation-openspec-native-matrix-v1");
+  if (matrix?.protocol !== "foundation-openspec-native-matrix-v2")
+    issues.push("protocol must be foundation-openspec-native-matrix-v2");
   const scenarios = Array.isArray(matrix?.scenarios) ? matrix.scenarios : [];
   const ids = new Set();
   const workloads = new Set();
@@ -40,6 +40,17 @@ export function matrixIssues(matrix, root = resolve(HERE, "../../../..")) {
         issues.push(`${scenario?.id}: budget.${field} must be positive`);
     }
     if (scenario?.status === "ready") {
+      for (const field of [
+        "fixture_digest", "prompt", "host", "risk", "project_command",
+        "clean_install_command"
+      ]) {
+        if (typeof scenario[field] !== "string" || !scenario[field].trim())
+          issues.push(`${scenario?.id}: ready ${field} is required`);
+      }
+      if (!Array.isArray(scenario.critical_case_ids) ||
+          scenario.critical_case_ids.length === 0 ||
+          scenario.critical_case_ids.some((id) => typeof id !== "string" || !id.trim()))
+        issues.push(`${scenario?.id}: ready critical_case_ids are required`);
       if (!scenario.fixture || !existsSync(resolve(root, scenario.fixture)))
         issues.push(`${scenario?.id}: ready fixture does not exist`);
       if (scenario.execution === "paid" && scenario.oracle?.required !== true)
@@ -78,7 +89,14 @@ export function executionPlan(matrix, scenarioId) {
     budget: scenario.budget,
     fixture: scenario.fixture,
     oracle: scenario.oracle.path,
-    expectedTerminal: scenario.expected_terminal
+    expectedTerminal: scenario.expected_terminal,
+    prompt: scenario.prompt,
+    host: scenario.host,
+    risk: scenario.risk,
+    fixtureDigest: scenario.fixture_digest,
+    projectCommand: scenario.project_command,
+    cleanInstallCommand: scenario.clean_install_command,
+    criticalCaseIds: scenario.critical_case_ids
   };
 }
 

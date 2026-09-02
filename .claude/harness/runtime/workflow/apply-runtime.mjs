@@ -10,6 +10,7 @@ import {
 import {
   nestedRepositoryPathMatcher, sandboxCodePathspec
 } from "../core/workspace-surface.mjs";
+import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 
 // Whether an empty root diff is an acceptable apply outcome rather than an
 // error: true when the change selected any non-root repository, because the
@@ -22,9 +23,16 @@ export function emptyRootDiffPermitted(state) {
     .some((repositoryId) => repositoryId !== "root");
 }
 
+export function telemetryUsageSatisfied(telemetry) {
+  return Boolean(telemetry && (
+    ["measured", "no-usage"].includes(telemetry.classification) ||
+    Object.values(telemetry.measuredDimensions || {}).some(Boolean)
+  ));
+}
+
 export function telemetryLandIssue(policy, telemetry) {
-  if (!policy?.telemetry?.requireUsage || !telemetry ||
-      ["measured", "no-usage"].includes(telemetry.classification)) return null;
+  if (!policy?.telemetry?.requireUsage || !telemetry || telemetryUsageSatisfied(telemetry))
+    return null;
   const recovery = (telemetry.recoveryActions || [])
     .map((action) => action.command).join("; ") || "import host usage events";
   return `Land requires measured model usage, but telemetry is '${
@@ -113,7 +121,7 @@ export function appliedRuntimeState(state, root, journal) {
       touchedPaths: journal.entries.map((entry) => entry.path)
     }
   };
-  state.status = "applied";
+  transitionLifecycleState(state, "applied", "projection-verified");
   return state;
 }
 
@@ -479,6 +487,7 @@ export function createApplyRuntime({
   proofAudit,
   cleanupChangeLeases,
   now,
+  archiveCheckpoint = () => {},
   blockWithDecision,
   fail
 }) {
@@ -691,10 +700,9 @@ export function createApplyRuntime({
   // Re-verifying from the inputs captured before the merge means a repaired spec
   // tree clears the block on its own, with no one hand-editing runtime state.
   function outstandingSpecSync(state) {
-    if (!state.specSyncViolations?.length) return [];
     const captured = state.specSyncInputs;
     return Array.isArray(captured) && captured.length
-      ? verifyArchivedSpecs(captured) : state.specSyncViolations;
+      ? verifyArchivedSpecs(captured) : state.specSyncViolations || [];
   }
 
   const assertRecoveredArchiveReady = assertRecoveredArchiveReadyOperation.bind(null, {
@@ -708,7 +716,11 @@ export function createApplyRuntime({
 
   function resumeArchivedChange(id, state) {
     const outstanding = outstandingSpecSync(state);
-    if (outstanding.length) failSpecSync(outstanding);
+    if (outstanding.length) {
+      state.specSyncViolations = outstanding;
+      saveRuntime(state);
+      failSpecSync(outstanding);
+    }
     if (state.specSyncViolations) {
       delete state.specSyncViolations;
       delete state.specSyncInputs;
@@ -747,7 +759,13 @@ export function createApplyRuntime({
     // checkable once the change directory has moved is checked here, before
     // any state is written: a refusal has to leave the change recoverable.
     assertRecoveredArchiveReady(id, state, archivedPath);
-    state.status = "archived";
+    const outstanding = outstandingSpecSync(state);
+    if (outstanding.length) {
+      state.specSyncViolations = outstanding;
+      saveRuntime(state);
+      failSpecSync(outstanding);
+    }
+    transitionLifecycleState(state, "archived", "interrupted-archive-recovered");
     state.archivedAt ||= now();
     state.archivedChangePath = archivedPath;
     state.land = {
@@ -761,13 +779,9 @@ export function createApplyRuntime({
     if (state.workspace.apply)
       state.workspace.apply.cleanup = cleanupApplyTransaction(state);
     delete state.workspace.baseline;
+    delete state.specSyncInputs;
+    delete state.specSyncViolations;
     saveRuntime(state);
-    // The merge already ran and the pre-merge spec text died with the
-    // interrupted transaction, so spec sync cannot be checked here: without
-    // 'before', a removal and a preserved requirement are indistinguishable
-    // from a bad merge. Say so rather than let the silence read as verified.
-    console.error(
-      `WARNING: spec sync was not verified for ${id}; the interrupted archive left no pre-merge specs to compare against`);
     console.log(`ARCHIVED ${id}\n  recovered: interrupted archive transaction`);
   }
 
@@ -799,18 +813,21 @@ export function createApplyRuntime({
       telemetry: telemetry ? {
         classification: telemetry.classification,
         reason: telemetry.reason,
-        correlatedHosts: telemetry.correlatedHosts
+        correlatedHosts: telemetry.correlatedHosts,
+        measuredDimensions: telemetry.measuredDimensions
       } : null,
       updatedAt: now()
     };
     saveRuntime(state);
     if (telemetry && !["measured", "no-usage"].includes(telemetry.classification)) {
+      const telemetryIssue = telemetryLandIssue(foundationPolicy(), telemetry);
       console.error(telemetry.classification === "not-ingested"
         ? "WARNING: no model usage was imported for this change; cost and token columns stay empty — telemetry not-ingested"
-        : `WARNING: telemetry ${telemetry.classification}; cost and token columns may stay empty`);
-      for (const action of telemetry.recoveryActions || [])
+        : telemetryUsageSatisfied(telemetry)
+          ? `WARNING: telemetry ${telemetry.classification}; unavailable dimensions remain empty`
+          : `WARNING: telemetry ${telemetry.classification}; cost and token columns may stay empty`);
+      if (telemetryIssue) for (const action of telemetry.recoveryActions || [])
         console.error(`  recovery: ${action.command}`);
-      const telemetryIssue = telemetryLandIssue(foundationPolicy(), telemetry);
       if (telemetryIssue) fail(telemetryIssue);
     }
     return telemetry;
@@ -822,12 +839,19 @@ export function createApplyRuntime({
     // openspec/specs in one step, so the delta and the pre-merge spec text can
     // only be read now.
     const specSyncInputs = captureSpecSyncInputs(id);
+    // This is the recovery record for the destructive OpenSpec move. Persist it
+    // before the command so a crash after the move can still verify the merge.
+    state.specSyncInputs = specSyncInputs;
+    state.land = { ...state.land, status: "archive-prepared", updatedAt: now() };
+    saveRuntime(state);
     // landCheck already gated this; repeated here because it is the last point
     // before the destructive step and the CLI can disappear in between.
     assertOpenSpecCli(root, fail);
+    archiveCheckpoint("before-archive-command", state);
     const cli = spawnSync("openspec", ["archive", id, "--yes"], { cwd: root, encoding: "utf8" });
     if (cli.status !== 0) fail(`OpenSpec archive failed: ${(cli.stderr || cli.stdout).trim()}`);
-    state.status = "archived";
+    archiveCheckpoint("after-archive-command", state);
+    transitionLifecycleState(state, "archived", "openspec-archive-complete");
     state.archivedAt = now();
     state.preArchiveWorkspaceHash = preArchiveWorkspaceHash;
     state.archivedChangePath = archivedChangeRelativePath(id);
@@ -839,6 +863,7 @@ export function createApplyRuntime({
     saveRuntime(state);
     // A merge that silently drops or rewrites a requirement still exits 0, and
     // openspec/specs is durable, so the exit code is not evidence.
+    archiveCheckpoint("before-spec-sync-verification", state);
     const specViolations = verifyArchivedSpecs(specSyncInputs);
     if (specViolations.length) {
       state.specSyncViolations = specViolations;
@@ -848,13 +873,19 @@ export function createApplyRuntime({
       saveRuntime(state);
       failSpecSync(specViolations);
     }
+    delete state.specSyncInputs;
+    delete state.specSyncViolations;
+    archiveCheckpoint("after-spec-sync-verification", state);
     return cli;
   }
 
   function finalizeArchivedChange(id, state, telemetry, cli) {
+    archiveCheckpoint("before-final-audit", state);
     const audit = proofAudit(id, true);
     if (!audit.valid) fail(`post-archive proof audit failed: ${audit.reason}`);
+    archiveCheckpoint("after-final-audit", state);
     state.land = { ...state.land, status: "archive-audited", updatedAt: now() };
+    archiveCheckpoint("before-cleanup", state);
     state.workspace.cleanup = cleanupAppliedSandbox(id, state);
     if (state.repositories)
       state.repositoryCleanup = cleanupRepositorySandboxes(id, state);
@@ -864,6 +895,7 @@ export function createApplyRuntime({
     delete state.workspace.baseline;
     state.land.status = "sandbox-cleaned";
     saveRuntime(state);
+    archiveCheckpoint("after-cleanup", state);
     if (!state.archivedChangePath)
       console.error("WARNING: OpenSpec reported success but the archived change directory was not found");
     if (["failed", "refused"].includes(state.workspace.cleanup.status))
@@ -890,16 +922,22 @@ export function createApplyRuntime({
     // `telemetry: not-ingested` and then ingest the missing rows moments later.
     // Telemetry stays advisory: an absent or unreadable transcript never gates
     // Land.
+    archiveCheckpoint("before-telemetry-drain", initial);
     try { syncClaudeTelemetry(id, { quiet: true }); } catch { /* warned below */ }
+    archiveCheckpoint("after-telemetry-drain", initial);
     let readiness = landCheck(id);
     if (readiness.archived) return;
     assertMultiRepositoryArchiveReady(id, readiness.state);
+    archiveCheckpoint("before-evidence-snapshot", readiness.state);
     snapshotArchiveEvidence(id);
+    archiveCheckpoint("after-evidence-snapshot", readiness.state);
     // Unconditional, including when the sandbox is already applied: work done
     // after the first projection is proven and would otherwise archive as a
     // success while the target still holds the earlier code. applySandbox
     // returns early by itself when the projection is already current.
+    archiveCheckpoint("before-code-apply", readiness.state);
     readiness = applyArchiveWorkspace(id, readiness);
+    archiveCheckpoint("after-code-apply", readiness.state);
     // Re-read rather than reuse readiness.state: on the no-sandbox path that
     // object predates the journal write above, and saving it below would
     // silently erase land.proofRunId from the record.

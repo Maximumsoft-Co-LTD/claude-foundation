@@ -71,7 +71,7 @@ export function assertDisposableProject(project) {
   if (marker?.disposable !== true)
     throw new Error("benchmark project must contain .foundation-benchmark.json with disposable=true");
   if (!existsSync(join(project, ".claude/harness/foundation.mjs")))
-    throw new Error("benchmark project must contain an installed Foundation harness");
+    throw new Error("benchmark project must contain an installed Change Loop harness");
 }
 
 export function discoverChangeId(project, explicit = null, startedAtMs = null) {
@@ -97,6 +97,10 @@ export function pendingTaskCount(content) {
 function activeChangePath(project, changeId) {
   const direct = join(project, "openspec/changes", changeId);
   if (existsSync(direct)) return direct;
+  const state = readJson(join(project, ".foundation/runtime", `${changeId}.json`), {});
+  const recordedArchive = state.archivedChangePath
+    ? join(project, state.archivedChangePath) : null;
+  if (recordedArchive && existsSync(recordedArchive)) return recordedArchive;
   const archived = join(project, "openspec/changes/archive", changeId);
   return existsSync(archived) ? archived : null;
 }
@@ -153,7 +157,9 @@ export function observedOutcome({
   const oracleRequired = oracle?.configured === true;
   const oracleUnavailable = oracleRequired && oracle?.measurement !== "measured";
   const oracleFailed = oracleRequired && oracle?.verdict !== "pass";
-  const complete = !hostFailed && tasks === 0 && requiredEvidencePassed && !oracleFailed;
+  const landed = state.status === "archived";
+  const complete = !hostFailed && tasks === 0 && requiredEvidencePassed &&
+    !oracleFailed && landed;
   return {
     status: budgetExhausted ? "needs-user-decision"
       : timedOut ? "timeout" : hostFailed || oracleFailed
@@ -164,7 +170,10 @@ export function observedOutcome({
         : envelope?.is_error === true ? "host-result-error"
           : oracleUnavailable ? "task-oracle-unavailable"
             : oracleFailed ? "task-oracle-failed"
-          : complete ? null : "required-work-or-proof-incomplete",
+          : complete ? null
+            : tasks === 0 && requiredEvidencePassed && !oracleFailed && !landed
+              ? "land-not-archived"
+              : "required-work-or-proof-incomplete",
     changeId,
     workflowStatus: state.status || null,
     pendingTasks: tasks,
@@ -313,6 +322,18 @@ export function proofDecisionBoundary(project, changeId) {
   catch { return null; }
 }
 
+export function provenLandReady(project, changeId) {
+  if (!changeId) return false;
+  const harness = join(project, ".claude/harness/foundation.mjs");
+  if (!existsSync(harness)) return false;
+  const result = spawnSync(process.execPath, [harness, "land-check", changeId], {
+    cwd: project, encoding: "utf8",
+    env: { ...process.env, FOUNDATION_TELEMETRY: "0" },
+    maxBuffer: 10 * 1024 * 1024
+  });
+  return result.status === 0;
+}
+
 export function runBenchmarkOracle({ project, changeId, oraclePath, timeoutMs = 120000 }) {
   if (!oraclePath) return {
     configured: false, measurement: "unavailable", verdict: null,
@@ -405,9 +426,14 @@ export function collectNativeScorecard({
   });
 }
 
-function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
-  maxModelRequests = null }) {
+export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
+  maxModelRequests = null, selfReviewAuthorized = false,
+  stopOnArchived = false, stopOnProven = false }) {
   return new Promise((resolveRun) => {
+    const initialChangeId = discoverChangeId(project);
+    const initialStatus = initialChangeId
+      ? readJson(join(project, ".foundation/runtime", `${initialChangeId}.json`), {}).status
+      : null;
     const startedAt = new Date().toISOString();
     const startedEpochMs = Date.now();
     const started = performance.now();
@@ -422,12 +448,35 @@ function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
     let partialLine = "";
     let budgetExhausted = null;
     let decisionBoundary = null;
+    let terminalReached = null;
+    let sawNonWatchedStatus = !stopOnProven || initialStatus !== "proven";
+    let forceTimer = null;
     const terminate = () => {
       try {
         if (process.platform === "win32") child.kill("SIGTERM");
         else process.kill(-child.pid, "SIGTERM");
       } catch { child.kill("SIGTERM"); }
+      if (!forceTimer) forceTimer = setTimeout(() => {
+        try {
+          if (process.platform === "win32") child.kill("SIGKILL");
+          else process.kill(-child.pid, "SIGKILL");
+        } catch { child.kill("SIGKILL"); }
+      }, 5000);
     };
+    const watchedStatus = stopOnProven ? "proven" : stopOnArchived ? "archived" : null;
+    const terminalTimer = watchedStatus ? setInterval(() => {
+      const changeId = discoverChangeId(project, null, startedEpochMs);
+      if (!changeId) return;
+      const state = readJson(join(project, ".foundation/runtime", `${changeId}.json`), {});
+      if (state.status !== watchedStatus) {
+        sawNonWatchedStatus = true;
+        return;
+      }
+      if (!sawNonWatchedStatus) return;
+      terminalReached = { changeId, status: watchedStatus, observedAt: new Date().toISOString() };
+      clearInterval(terminalTimer);
+      terminate();
+    }, 250) : null;
     child.stdout.on("data", (chunk) => {
       stdout.push(chunk);
       const lines = `${partialLine}${chunk}`.split(/\r?\n/);
@@ -439,7 +488,10 @@ function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
           ? row.message?.id || row.request_id || null : null;
         if (requestId) requestIds.add(requestId);
         const detected = externalAuthorityBoundary(row);
-        if (!decisionBoundary && detected) {
+        const benchmarkSelfReview = selfReviewAuthorized &&
+          detected?.kind === "independent-review" &&
+          detected?.recommended === "prepare-for-reviewer";
+        if (!decisionBoundary && detected && !benchmarkSelfReview) {
           decisionBoundary = {
             ...detected,
             firstSeenWallMs: performance.now() - started,
@@ -464,19 +516,14 @@ function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
     const timer = setTimeout(() => {
       timedOut = true;
       terminate();
-      forceTimer = setTimeout(() => {
-        try {
-          if (process.platform === "win32") child.kill("SIGKILL");
-          else process.kill(-child.pid, "SIGKILL");
-        } catch { child.kill("SIGKILL"); }
-      }, 5000);
     }, timeoutMs);
-    let forceTimer = null;
     child.on("error", (error) => {
       clearTimeout(timer);
+      if (terminalTimer) clearInterval(terminalTimer);
       if (forceTimer) clearTimeout(forceTimer);
       resolveRun({
-        exitCode: 127, timedOut: false, budgetExhausted, decisionBoundary,
+        exitCode: terminalReached ? 0 : 127, timedOut: false, budgetExhausted,
+        decisionBoundary, terminalReached,
         stdout: "", stderr: error.message,
         observedModelRequests: requestIds.size || null,
         stopwatch: {
@@ -487,12 +534,17 @@ function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
     });
     child.on("close", (code) => {
       clearTimeout(timer);
+      if (terminalTimer) clearInterval(terminalTimer);
       if (forceTimer) clearTimeout(forceTimer);
       if (decisionBoundary)
         decisionBoundary.requestsAfterDecision = Math.max(0,
           requestIds.size - decisionBoundary.requestsAtDecision);
       resolveRun({
-        exitCode: code ?? 1, timedOut, budgetExhausted, decisionBoundary,
+        exitCode: terminalReached ? 0 : code ?? 1,
+        timedOut: terminalReached ? false : timedOut,
+        budgetExhausted: terminalReached ? null : budgetExhausted,
+        decisionBoundary: terminalReached ? null : decisionBoundary,
+        terminalReached,
         stdout: Buffer.concat(stdout).toString("utf8"),
         stderr: Buffer.concat(stderr).toString("utf8"),
         observedModelRequests: requestIds.size || null,
@@ -555,6 +607,38 @@ function writeResult(output, scorecard) {
   appendFileSync(output, `${JSON.stringify(scorecard)}\n`);
 }
 
+export function mergeHostExecutions(base, next) {
+  return {
+    ...base,
+    exitCode: next.exitCode,
+    timedOut: next.timedOut,
+    budgetExhausted: next.budgetExhausted,
+    decisionBoundary: next.decisionBoundary,
+    terminalReached: next.terminalReached,
+    stdout: `${base.stdout || ""}${next.stdout || ""}`,
+    stderr: `${base.stderr || ""}${next.stderr || ""}`,
+    observedModelRequests: Number(base.observedModelRequests || 0) +
+      Number(next.observedModelRequests || 0),
+    stopwatch: {
+      ...base.stopwatch,
+      wallMs: Number(base.stopwatch?.wallMs || 0) + Number(next.stopwatch?.wallMs || 0),
+      finishedAt: next.stopwatch?.finishedAt || base.stopwatch?.finishedAt
+    }
+  };
+}
+
+export function remainingTimeoutMs(total, used) {
+  return Math.max(1000, Math.floor(Number(total) - Number(used || 0)));
+}
+
+export function terminalChangeId(execution, fallback = null) {
+  return execution?.terminalReached?.changeId || fallback;
+}
+
+export function backendLandArgs(changeId) {
+  return ["land-advance", changeId];
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const scenario = required(args.scenario, "--scenario");
@@ -583,8 +667,32 @@ async function main() {
     const preflightStartedAt = new Date().toISOString();
     const preflightStartedEpochMs = Date.now();
     const preflightStarted = performance.now();
-    decisionBoundary = proofDecisionBoundary(project, preflightChangeId);
-    if (decisionBoundary) {
+    const preflightState = preflightChangeId
+      ? readJson(join(project, ".foundation/runtime", `${preflightChangeId}.json`), {}) : {};
+    const resumeArchived = Boolean(args.oracle) && args["test-land"] === "true" &&
+      preflightState.status === "archived";
+    const resumeProven = !resumeArchived && Boolean(args.oracle) &&
+      args["test-land"] === "true" &&
+      preflightState.status === "proven" && provenLandReady(project, preflightChangeId);
+    const preflightBoundary = resumeProven || resumeArchived
+      ? null : proofDecisionBoundary(project, preflightChangeId);
+    const authorizedSelfReview = args["test-self-review"] === "true" &&
+      preflightBoundary?.kind === "independent-review";
+    decisionBoundary = authorizedSelfReview ? null : preflightBoundary;
+    if (resumeProven || resumeArchived) {
+      execution = {
+        exitCode: 0, timedOut: false, budgetExhausted: null,
+        observedModelRequests: 0, noModelDispatch: true, stdout: "", stderr: "",
+        terminalReached: { changeId: preflightChangeId,
+          status: resumeArchived ? "archived" : "proven",
+          observedAt: new Date().toISOString() },
+        stopwatch: {
+          wallMs: performance.now() - preflightStarted,
+          startedAt: preflightStartedAt, finishedAt: new Date().toISOString(),
+          startedEpochMs: preflightStartedEpochMs
+        }
+      };
+    } else if (decisionBoundary) {
       decisionBoundary = {
         ...decisionBoundary,
         firstSeenWallMs: performance.now() - preflightStarted,
@@ -606,28 +714,92 @@ async function main() {
       const claudeArgs = args["max-cost-usd"]
         ? [...args["claude-arg"], "--max-budget-usd", args["max-cost-usd"]]
         : args["claude-arg"];
+      const selfReviewAuthorized = args["test-self-review"] === "true";
+      const landAuthorized = args["test-land"] === "true";
+      const benchmarkAuthority = [
+        "Use .foundation-benchmark.json projectCommand as the sole canonical project test command; do not probe alternate runner paths, globs, or reporters.",
+        "Use change start --template as the sole draft schema contract; do not inspect managed .claude/harness files or openspec schema/templates. Keep tasks, claims, and critical cases to the smallest set that proves this scenario, let the backend derive mechanical IDs and unambiguous bindings, and apply any returned repair plan as one batch.",
+        "Before Prove, cover zero, negative, fractional, finite oversized, non-finite, non-numeric/coercible, production-entry, no-collateral, and return-shape partitions when they apply to this recent-window defect.",
+        selfReviewAuthorized
+          ? "This disposable benchmark explicitly authorizes main-session self-review; record the waiver and continue without asking." : "",
+        landAuthorized
+          ? "This disposable benchmark explicitly authorizes Land; continue until the change is landed and archived." : ""
+      ].filter(Boolean).join(" ");
       execution = await runClaude({
         project,
-        prompt: required(args.prompt, "--prompt"),
+        prompt: [required(args.prompt, "--prompt"), benchmarkAuthority]
+          .filter(Boolean).join("\n\n"),
         claudeBin: args["claude-bin"] || "claude",
         claudeArgs,
         timeoutMs: Number(args["timeout-ms"] || 1800000),
         maxModelRequests: args["max-model-requests"]
-          ? Number(args["max-model-requests"]) : null
+          ? Number(args["max-model-requests"]) : null,
+        selfReviewAuthorized,
+        stopOnArchived: landAuthorized && !args.oracle,
+        stopOnProven: landAuthorized && Boolean(args.oracle)
       });
       decisionBoundary = execution.decisionBoundary || null;
     }
   }
+  const discoveredChangeId = terminalChangeId(execution, discoverChangeId(
+    project, args["change-id"] || null, execution.stopwatch.startedEpochMs ?? null));
+  let oracle = null;
+  if (execution.terminalReached?.status === "proven" && args.oracle) {
+    const totalTimeoutMs = Number(args["timeout-ms"] || 1800000);
+    const totalRequestCap = args["max-model-requests"]
+      ? Number(args["max-model-requests"]) : null;
+    do {
+      oracle = runBenchmarkOracle({
+        project, changeId: discoveredChangeId, oraclePath: args.oracle,
+        timeoutMs: Number(args["oracle-timeout-ms"] || 120000)
+      });
+      if (oracle.verdict === "pass") break;
+      const remainingMs = totalTimeoutMs - execution.stopwatch.wallMs;
+      const remainingRequests = Number.isInteger(totalRequestCap)
+        ? totalRequestCap - Number(execution.observedModelRequests || 0) : null;
+      if (remainingMs <= 5000 || (remainingRequests !== null && remainingRequests <= 0))
+        break;
+      const failedCases = Object.entries(oracle.results || {})
+        .filter(([, status]) => status !== "pass").map(([id]) => id);
+      const repairArgs = args["max-cost-usd"]
+        ? [...args["claude-arg"], "--max-budget-usd", args["max-cost-usd"]]
+        : args["claude-arg"];
+      const repair = await runClaude({
+        project,
+        prompt: [
+          `Resume existing change ${discoveredChangeId}. The deterministic pre-Land oracle failed: ${failedCases.join(", ")}. Return to Build, repair the complete root cause and adjacent cases as one batch, run the canonical project test, then Prove again. Do not Land; the backend owns the oracle and Land boundary.`,
+          "Use packets and returned repair plans only; do not inspect managed harness or schema files."
+        ].join("\n\n"),
+        claudeBin: args["claude-bin"] || "claude",
+        claudeArgs: repairArgs,
+        timeoutMs: remainingMs,
+        maxModelRequests: remainingRequests,
+        selfReviewAuthorized: args["test-self-review"] === "true",
+        stopOnProven: true
+      });
+      execution = mergeHostExecutions(execution, repair);
+    } while (execution.terminalReached?.status === "proven");
+    if (oracle.verdict === "pass") {
+      const harness = join(project, ".claude/harness/foundation.mjs");
+      const remainingMs = remainingTimeoutMs(
+        Number(args["timeout-ms"] || 1800000), execution.stopwatch.wallMs);
+      const landed = spawnSync(process.execPath,
+        [harness, ...backendLandArgs(discoveredChangeId)], {
+          cwd: project, encoding: "utf8", env: process.env, timeout: remainingMs
+        });
+      execution.stdout += landed.stdout || "";
+      execution.stderr += landed.stderr || "";
+      execution.exitCode = landed.status ?? 1;
+    }
+  }
   const parsedHost = parseHostOutput(execution.stdout);
   const envelope = parsedHost.envelope;
-  const discoveredChangeId = discoverChangeId(
-    project, args["change-id"] || null, execution.stopwatch.startedEpochMs ?? null);
   const preliminaryOutcome = observedOutcome({
     project, changeId: discoveredChangeId, envelope,
     exitCode: execution.exitCode, timedOut: execution.timedOut,
-    budgetExhausted: execution.budgetExhausted, decisionBoundary
+    budgetExhausted: execution.budgetExhausted, decisionBoundary, oracle
   });
-  const oracle = args.oracle && preliminaryOutcome.status !== "completed"
+  oracle = oracle || (args.oracle && preliminaryOutcome.status !== "completed"
     ? {
       configured: true, measurement: "unavailable", verdict: null,
       score: null, max: null, results: {}, reason: "workflow-incomplete",
@@ -636,7 +808,7 @@ async function main() {
     : runBenchmarkOracle({
       project, changeId: discoveredChangeId, oraclePath: args.oracle || null,
       timeoutMs: Number(args["oracle-timeout-ms"] || 120000)
-    });
+    }));
   const quality = !args["collect-only"] && preliminaryOutcome.status === "completed"
     ? await collectBenchmarkQuality({ project, changeId: discoveredChangeId })
     : null;

@@ -1,10 +1,10 @@
 ---
 title: Configure foundation.json
-description: Understand and safely tune Foundation's project policy for execution, model tiers, escalation, review, sandboxes, and workflow.
+description: Understand and safely tune Change Loop's project policy for execution, model tiers, escalation, review, sandboxes, and workflow.
 ---
 
 `foundation.json` is the **committed policy for one project**. It tells
-Foundation how much autonomous work is allowed, how work maps to model tiers,
+Change Loop how much autonomous work is allowed, how work maps to model tiers,
 when to escalate, who may review, and how a new Build workspace is prepared.
 
 It does not contain product requirements or live task state:
@@ -14,7 +14,7 @@ It does not contain product requirements or live task state:
 | What the product should do | `openspec/` |
 | What implementation remains | `tasks.md` in the active change |
 | Runtime state and receipts | `.foundation/` |
-| How Foundation may execute | `foundation.json` |
+| How Change Loop may execute | `foundation.json` |
 
 The installer copies this file only when it is missing. After that, the file is
 yours: upgrades do not overwrite it. Commit it so that every developer and
@@ -98,7 +98,7 @@ Re-run readiness and Prove rather than editing receipts.
 | `planSummaryBytes` | Integer `1024..16384` | Bound the compact plan handed between phases |
 | `leaseMinutes` | Number `1..1440` | Allow longer workspaces for slow builds or shorten stale-worker recovery |
 
-At 85% of a budget, Foundation enters completion-only mode. At 100%, an
+At 85% of a budget, Change Loop enters completion-only mode. At 100%, an
 operator can approve another audited window while unresolved in-scope model
 work remains, up to `maxContinuationWindows`. Deterministic readiness, receipt
 reuse, recovery, and archive operations remain available without an extension.

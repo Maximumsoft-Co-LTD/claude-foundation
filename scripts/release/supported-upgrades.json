@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "protocol": "foundation-supported-upgrades-v1",
+  "minimum": "3.2.19",
+  "hosts": ["claude-code", "cursor", "opencode", "codex"],
+  "requirements": [
+    "fresh-install",
+    "active-change-readable",
+    "user-owned-file-preserved",
+    "current-runtime-installed",
+    "host-adapter-present"
+  ]
+}

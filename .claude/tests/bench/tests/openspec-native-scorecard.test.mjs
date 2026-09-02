@@ -38,7 +38,8 @@ function fixture(overrides = {}) {
       externalExecutionTimeMs: 12000, humanWaitMs: null,
       unattributedWaitMs: 80000,
       usageAvailability: { classification: "measured" },
-      evidenceReuse: { count: 2, byReason: { fingerprint: 2 } }
+      evidenceReuse: { count: 2, byReason: { fingerprint: 2 } },
+      budget: { window: { extensionNumber: 2 } }
     },
     operationRows: [
       { operation: "change-validate", status: "completed" },
@@ -79,6 +80,7 @@ test("scorecard validates and keeps runner walltime separate from host duration"
   assert.equal(scorecard.quality.crapMaximum, 14.71);
   assert.equal(scorecard.quality.coverageMinimum, 75);
   assert.equal(scorecard.oracle.configured, false);
+  assert.equal(scorecard.evidenceReuse.resumptions, 2);
   assert.equal(scorecard.outcome.complete, true);
   assert.equal(validate(scorecard), true, JSON.stringify(validate.errors));
   const legacy = structuredClone(scorecard);

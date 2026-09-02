@@ -9,22 +9,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Python brownfield benchmark quality and a hidden API-validation oracle.**
-  Dependency-free Python fixtures now produce measured function coverage and
-  CRAP through the standard-library test runner, allowing the first non-Node
-  workload in the matrix to become paid-run ready without inventing evidence.
+- **Release compatibility has a complete supported-version matrix.** A
+  content-bound rehearsal archives every tag from v3.2.19 through the current
+  release and verifies fresh install, active-change readability, user-owned
+  file preservation, current runtime replacement, and adapter presence on
+  Claude Code, Cursor, OpenCode, and Codex.
 
-- **Live benchmark request and cost ceilings are executable.** Paid runs can
-  bind all three matrix budgets to the runner; request exhaustion terminates
-  the host and records a resumable `needs-user-decision` outcome instead of a
-  generic host failure.
+- **Rollout evidence is versioned and privacy-safe.** Stage thresholds,
+  stop conditions, rollback rehearsal, immutable evidence, aggregate metrics,
+  and incident regressions are validated without accepting product content.
+  Maintainers run deterministic or explicitly authorized paid lanes when
+  preparing a candidate; no scheduled workflow grants spend authority.
 
-- **A machine-enforced cross-domain brownfield benchmark matrix.** Seven
-  workload classes carry explicit wall, cost, request, oracle, quality, and
-  budget-decision policies; unmeasured scenarios remain non-runnable instead
-  of being presented as evidence.
+- **Signed semantic acceptance is a first-class proof provider.** Provider
+  protocol 13 introduces semantic-acceptance protocol 1 with Ed25519 envelopes,
+  stable claim/case/partition binding, optional critical-case and FAIL-to-PASS
+  binding, full-workspace freshness, and hidden-oracle confidentiality. A
+  deterministic review cannot override a missing or failed required case.
+
+- **One backend contract drives every phase without changing commands.** Risk,
+  evidence, authority, workspace capability, budgets, repositories, and Land
+  requirements are compiled once. A typed reducer owns lifecycle transitions;
+  convergent gates aggregate findings, repair them in dependency order, rerun
+  invalidated checks, and have no fixed product-repair limit.
+
+- **npm lockfile consistency activates automatically.** An unambiguous single
+  npm repository receives the built-in dependency-supply-chain provider without
+  `execution.yaml` wiring; manifest/lock mismatch blocks Proof.
+
+- **Host assurance is explicit.** Host capability schema 2 distinguishes live
+  terminal truth, phase isolation, stale-proof, explicit-Land, and unattended
+  write guarantees. Codex and Cursor do not claim live phase-hook parity when
+  only final audit is available.
+
+- **A frozen seven-scenario release portfolio is executable.** Node, React,
+  Python, migration, refactor, multi-service, and budget-resume fixtures carry
+  deterministic oracles, quality policy, clean-install checks, and explicit
+  wall/cost/request ceilings. Exhaustion is a resumable decision, never success.
 
 ### Changed
+
+- **Land treats measured usage as usage, even when a host omits price data.**
+  Archive still reports Claude transcript telemetry as `partial-measurement`
+  when cost is unavailable, keeps unknown cost null, and now satisfies
+  `telemetry.requireUsage` from complete measured input/output tokens. It only
+  presents manual recovery when no trustworthy usage dimension exists.
+
+- **Paid benchmarks now follow terminal truth through delivery.** Oracle-backed
+  lanes stop at `proven`, test the isolated sandbox, repair failed cases through
+  a fresh Build/Prove continuation, and call backend Land only after the oracle
+  passes. The runner stops lingering host narration at `archived`, follows the
+  recorded dated archive path, and then runs quality, project, clean-install,
+  and post-install checks within the cumulative budget.
+
+- **Release evidence is source-cohorted and archived runs resume without a
+  model.** The release gate matches paid manifests to the sentinel commit and
+  patch digest, preserving older failures as history without poisoning every
+  future candidate. A retained already-archived consumer re-runs oracle and
+  delivery checks with zero model requests. Those revalidations remain visible
+  but cannot count as paid smoke or variance repeats without model dispatch.
+
+- **Change bookkeeping and validation require less agent work.** Atomic draft
+  v2 derives stable IDs, unambiguous links, and the single verification-command
+  provider binding while retaining v1 compatibility. Validation reports all
+  independent groups as one root-cause repair batch before the next check.
+
+- **Built-in Node test output is version-tolerant.** Test discovery parses the
+  Node 26 `spec` footer and case rows when `node --test` no longer emits TAP,
+  while retaining JSON/TAP support. The Prove phase now executes its compiled
+  boundary before loading recovery references or inspecting tooling. `/dev`
+  also honors predeclared Land authority and requires `archived` in that lane.
+  The `dev.md` context budget is explicitly raised from 120 to 150 words to
+  carry that terminal-state distinction without dropping existing safeguards.
+
+- **The minimum supported Node suite now proves the documented dashboard
+  fallback.** Node 20.19 exercises in-memory dashboard behavior and truthful
+  persistence-unavailable responses without importing `node:sqlite`; release
+  CI still runs the complete SQLite migration suite on Node 24 or newer.
+
+- **Land archive recovery persists verification inputs before mutation.**
+  Fourteen interruption checkpoints prove exact resume, including a crash after
+  OpenSpec moves the change but before spec-sync verification.
+
+- **Build shell classification covers indirect tooling.** Formatter write
+  modes, package scripts, and shell runners enter the same workspace policy;
+  dynamic paths that cannot be proven isolated are rejected. The cross-host
+  security scenario map keeps lower-assurance hosts explicit.
+
+- **Public command compatibility is golden-tested.** Eight host commands and
+  72 public CLI commands are pinned, and `help --help` now satisfies the common
+  help contract.
+
+- **Proof repair stops are resumable decisions instead of dead ends.** Failed
+  review and executable evidence now produce a normalized repair plan and
+  durable progress identity. Repeating the same findings against the same
+  subject returns supported choices and an exact Build resume route; changing
+  the workspace or repair strategy continues the same gate without a
+  repair-count cap.
 
 - **Paid benchmark continuations preflight external authority.** Existing
   changes stop before model dispatch when proof readiness requires an

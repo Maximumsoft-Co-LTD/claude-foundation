@@ -1,7 +1,9 @@
 # Phase mutation guard
 
 `phase-mutation-guard.mjs` is a `PreToolUse` policy layer for file mutations and
-obviously mutating shell commands. It runs in audit-only mode by default.
+obviously mutating shell commands. Its default `auto` mode blocks whenever a
+fresh Foundation phase is active and stays out of adoption-only sessions where
+no lifecycle context exists.
 
 What `.claude/settings.json` wires is `phase-mutation-guard.sh`, a prefilter that
 answers the "no phase to guard" case with shell builtins alone and `exec`s the
@@ -25,7 +27,7 @@ The host may also supply:
 - `FOUNDATION_WORKSPACE_ROOT=/absolute/build/workspace` during Build
 - `FOUNDATION_ALLOWED_PATHS_JSON='["/absolute/extra/path"]'` for explicitly
   declared Build paths
-- `FOUNDATION_GUARDRAIL_MODE=audit|block|off` (`audit` is the default)
+- `FOUNDATION_GUARDRAIL_MODE=auto|audit|block|off` (`auto` is the default)
 
 `FOUNDATION_LAND_TRANSACTION=1` is set by the runtime itself, for the duration
 of the Land apply transaction and its child processes. Do not set it by hand:
@@ -37,10 +39,18 @@ policy to check against, and a row per mutation is noise. `block` mode still
 refuses, so a host that asked for enforcement gets it.
 
 Audit records contain policy metadata, not command text or file paths, and are
-appended to `.foundation/logs/guardrail-audit.jsonl`. Move to `block` only after
-audit false positives have been reviewed.
+appended to `.foundation/logs/guardrail-audit.jsonl`. Select explicit `audit`
+only for a controlled rollout; `auto` is the normal fail-closed lifecycle mode.
 
 The Bash inspection is a conservative command-word screen, not a shell sandbox.
+During Build, an obviously mutating Bash command must begin with `cd`/`pushd`
+to the exact isolated workspace. Obvious `..` escapes and output redirection to
+an absolute path outside that workspace are blocked before execution. Use
+structured Edit/Write operations where possible.
+Formatter write modes, package-manager scripts, and shell-script runners enter
+the same policy. Dynamic mutation paths using environment variables, command
+substitution, backticks, or home expansion are rejected because their target
+cannot be proven isolated before execution.
 Host process isolation remains required for shell commands, network authority,
 and indirect mutations.
 

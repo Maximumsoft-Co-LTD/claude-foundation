@@ -3,7 +3,7 @@ title: Consumer quality gates
 description: Add changed-code CRAP, mutation testing, language profiles, baselines, and quality debt to one or many repositories.
 ---
 
-Foundation can orchestrate project-owned quality tools without pretending one metric fits every language. The feature is opt-in and starts in **report-only** mode.
+Change Loop can orchestrate project-owned quality tools without pretending one metric fits every language. The feature is opt-in and starts in **report-only** mode.
 
 ```text
 discover → preview config → diagnose tools → pilot reports → approve baseline → enforce
@@ -19,7 +19,7 @@ Quality findings are evidence, not permission to edit. A high score outside the 
 CRAP = complexity² × (1 − coverage/100)³ + complexity
 ```
 
-Foundation recomputes the score rather than trusting a provider-supplied value. By default, changed unit code needs 80% coverage, changed integration code 70%, and a critical journey 50%. A new function fails at CRAP 30 or above; an existing function fails when it regresses from a compatible baseline. Changed complexity above 30 also fails.
+Change Loop recomputes the score rather than trusting a provider-supplied value. By default, changed unit code needs 80% coverage, changed integration code 70%, and a critical journey 50%. A new function fails at CRAP 30 or above; an existing function fails when it regresses from a compatible baseline. Changed complexity above 30 also fails.
 
 **Automated mutation** checks whether ordinary tests distinguish small code changes. Killed mutants count; survived, no-coverage, timeout, compile error, runtime error, and unavailable results do not. A skipped mutant is not assumed equivalent. Equivalent suppression needs an explicit reason or a narrow approved exception.
 
@@ -44,7 +44,7 @@ For JavaScript/TypeScript, discovery recognizes the project-owned package script
 - a four-shard nightly inventory workflow; and
 - a full enforced release workflow.
 
-The reusable workflow is not a `pull_request` trigger by itself. Call it from the repository's existing PR workflow and pass the Foundation Change ID. Add each project's language setup before `quality doctor`; Foundation does not install runtimes or quality tools.
+The reusable workflow is not a `pull_request` trigger by itself. Call it from the repository's existing PR workflow and pass the Change ID. Add each project's language setup before `quality doctor`; Change Loop does not install runtimes or quality tools.
 
 Run a pilot against the isolated workspace for a Change:
 
@@ -70,11 +70,11 @@ Once the committed quality config exists, evidence bootstrap can wire the enforc
 | HTML | `web-markup` | validation, browser and accessibility evidence |
 | CSS / Sass | `web-style` | lint/build, browser, accessibility and responsive evidence |
 
-Foundation deliberately does **not** invent CRAP values for Bash, SQL, MongoDB, HTML, CSS, or Sass. Unsupported, unavailable, and unmapped capabilities never become zero or pass.
+Change Loop deliberately does **not** invent CRAP values for Bash, SQL, MongoDB, HTML, CSS, or Sass. Unsupported, unavailable, and unmapped capabilities never become zero or pass.
 
 ## Providers and built-in normalizers
 
-The project owns every command and pinned tool version. A `command` provider emits a Foundation protocol from stdout or a declared output file. A `builtin` provider runs a project command and normalizes native reports with one of these adapters:
+The project owns every command and pinned tool version. A `command` provider emits a Change Loop protocol from stdout or a declared output file. A `builtin` provider runs a project command and normalizes native reports with one of these adapters:
 
 - `javascript-istanbul`
 - `go-complexity-cover`
@@ -110,8 +110,8 @@ An exception names exactly one function or mutant—never a glob—and requires 
 
 ## Safety and rollout
 
-- Mutation uses tool isolation or a Foundation Change sandbox. A `harness-sandbox` provider without `--change` is unavailable.
-- Foundation compares Git status before and after a provider; failure to restore the workspace fails the lane.
+- Mutation uses tool isolation or a Change sandbox. A `harness-sandbox` provider without `--change` is unavailable.
+- Change Loop compares Git status before and after a provider; failure to restore the workspace fails the lane.
 - SQL and MongoDB providers must use per-run isolated databases, never a shared or production database.
 - A selected repository missing from quality config fails closed.
 - Missing capabilities lower assurance and remain visible even when policy permits compensating evidence.

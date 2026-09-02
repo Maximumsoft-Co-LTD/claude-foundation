@@ -59,6 +59,48 @@ assert_eq "Build resolves a relative mutation target from the project" "" "$out"
 out="$(invoke build block "$TMP/workspace" "$(write_event "$TMP/outside/app.js")")"
 assert_contains "Build blocks paths outside isolation" "$out" '"decision":"block"'
 
+hostile_path="$TMP/workspace/src/--flag-semi-colon;literal-dollar"
+out="$(invoke build block "$TMP/workspace" "$(write_event "$hostile_path")")"
+assert_eq "Build treats hostile filenames as paths rather than shell text" "" "$out"
+assert_file_absent "hostile filename inspection executes no embedded text" "$hostile_path"
+
+out="$(invoke build block "$TMP/workspace" "$(bash_event 'npm install')")"
+assert_contains "Build blocks an unanchored package-manager mutation" "$out" \
+  'Build shell mutations must start inside the isolated workspace'
+
+out="$(invoke build block "$TMP/workspace" \
+  "$(bash_event "cd $TMP/workspace && npm install")")"
+assert_eq "Build permits a package-manager command anchored in its workspace" "" "$out"
+
+out="$(invoke build block "$TMP/workspace" \
+  "$(bash_event 'npx prettier --write src')")"
+assert_contains "Build blocks an unanchored formatter mutation" "$out" \
+  'Build shell mutations must start inside the isolated workspace'
+
+out="$(invoke build block "$TMP/workspace" \
+  "$(bash_event "cd $TMP/workspace && npm run generate")")"
+assert_eq "Build permits an anchored package script for the isolated workspace" "" "$out"
+
+out="$(invoke build block "$TMP/workspace" \
+  "$(bash_event "cd $TMP/workspace && cp \$SOURCE ./source")")"
+assert_contains "Build blocks dynamic environment paths it cannot prove isolated" "$out" \
+  'dynamic path that cannot be proven isolated'
+
+out="$(invoke build block "$TMP/workspace" \
+  "$(bash_event "cd $TMP/workspace && cp \$(pwd)/source ./source")")"
+assert_contains "Build blocks command-substitution paths it cannot prove isolated" "$out" \
+  'dynamic path that cannot be proven isolated'
+
+out="$(invoke build block "$TMP/workspace" \
+  "$(bash_event "cd $TMP/workspace && echo x > $TMP/outside/escaped.txt")")"
+assert_contains "Build blocks an absolute redirection outside isolation" "$out" \
+  'obvious path outside the isolated workspace'
+
+out="$(invoke build block "$TMP/workspace" \
+  "$(bash_event "cd $TMP/workspace && cp ../outside/source ./source")")"
+assert_contains "Build blocks a relative shell escape from isolation" "$out" \
+  'obvious path outside the isolated workspace'
+
 out="$(invoke build block "$TMP/workspace" "$(write_event "")")"
 assert_contains "Build blocks an empty mutation target" "$out" 'mutation target is missing or invalid'
 
@@ -106,8 +148,40 @@ assert_file_contains "audit-only rollout records violation" "$TMP/project/.found
 out="$(printf '%s' "$(write_event "$TMP/project/src/app.js")" | CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
 assert_contains "block mode fails closed when phase context is missing" "$out" 'active phase is unavailable'
 
+# `change start` is the atomic creation path, so its versioned input draft must
+# be writable before a phase exists. Keep this bootstrap capability confined to
+# one direct .foundation JSON filename; product paths, nested paths, loose
+# names, and shell redirects remain denied.
+out="$(printf '%s' "$(write_event "$TMP/project/.foundation/change-start-fix-window.json")" |
+  CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
+assert_eq "pre-phase atomic Change draft is writable" "" "$out"
+
+for target in \
+  "$TMP/project/.foundation/change-start-.json" \
+  "$TMP/project/.foundation/change-start-Fix.json" \
+  "$TMP/project/.foundation/drafts/change-start-fix.json" \
+  "$TMP/project/.foundation/change-start-fix.yaml"; do
+  out="$(printf '%s' "$(write_event "$target")" |
+    CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
+  assert_contains "pre-phase draft capability rejects $target" "$out" 'active phase is unavailable'
+done
+
+out="$(printf '%s' "$(bash_event 'echo x > .foundation/change-start-fix.json')" |
+  CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
+assert_contains "pre-phase draft capability never permits shell mutation" \
+  "$out" 'active phase is unavailable'
+
 out="$(printf '%s' "$(bash_event 'git status')" | CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
 assert_eq "read-only shell commands do not require phase context" "" "$out"
+
+out="$(printf '%s' "$(write_event "$TMP/project/src/app.js")" |
+  CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_ACTIVE_PHASE=prove node "$HOOK")"
+assert_contains "default auto mode blocks an active lifecycle phase" \
+  "$out" '"decision":"block"'
+
+out="$(printf '%s' "$(write_event "$TMP/outside/adoption.js")" |
+  CLAUDE_PROJECT_DIR="$TMP/outside" node "$HOOK")"
+assert_eq "default auto mode stays out of adoption-only sessions" "" "$out"
 
 # --- The prefilter: what it may skip, and what it must never skip. ----------
 #
@@ -136,8 +210,8 @@ assert_cmd_zero "guardrail mode off resolves without starting Node" \
 out="$(pre audit "" "$(write_event "$TMP/pre/src/app.js")")"
 assert_eq "audit mode delegates event-local transcript detection to the guard" "" "$out"
 
-# /dev opts into the lifecycle. Its transcript makes the default audit rollout
-# enforce from the first mutation, before a phase packet has been read.
+# /dev opts into the lifecycle. Its transcript makes even an explicit audit
+# rollout enforce from the first mutation, before a phase packet has been read.
 printf '%s\n' '{"type":"last-prompt","lastPrompt":"/dev --yes build it"}' \
   > "$TMP/dev-transcript.jsonl"
 out="$(printf '%s' "$(write_event "$TMP/pre/src/app.js")" |

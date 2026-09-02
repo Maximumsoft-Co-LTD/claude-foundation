@@ -79,7 +79,7 @@ run_one() {
   date -u +%Y-%m-%dT%H:%M:%SZ > "$result/start.txt"
 
   local prompt
-  prompt="You are probe $id of a 20-scenario end-to-end diagnostic of the Foundation harness. This is an isolated disposable snapshot at $SOURCE_HEAD; never commit, push, or touch another checkout.
+  prompt="You are probe $id of a 20-scenario end-to-end diagnostic of the Change Loop harness. This is an isolated disposable snapshot at $SOURCE_HEAD; never commit, push, or touch another checkout.
 
 Hypothesis: $hypothesis
 Suggested focused verification: $verify

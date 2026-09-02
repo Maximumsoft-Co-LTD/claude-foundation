@@ -3,6 +3,7 @@ import {
   rmSync, symlinkSync
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { deriveApplyProjection } from "../core/state-projections.mjs";
 
 export function transactionJournals(transactions, id, readJson) {
   const root = join(transactions, id);
@@ -214,8 +215,8 @@ export function verifyLandJournalOperation(context, state) {
     if (!context.matches(context.safeRootPath(entry.path), entry, "after"))
       return { valid: false, reason: `projection-mismatch:${entry.path}` };
   }
-  if (journal.projectionHash !== state.workspace.apply.projectionHash)
-    return { valid: false, reason: "projection-identity-mismatch" };
+  const projection = deriveApplyProjection(state, journal);
+  if (!projection.valid) return { valid: false, reason: projection.reason };
   return { valid: true, journal };
 }
 

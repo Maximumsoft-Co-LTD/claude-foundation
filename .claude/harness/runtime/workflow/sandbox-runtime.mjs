@@ -9,6 +9,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   ROOT_ONLY_EXCLUDED_DIRS, isExcludedPath, sandboxCodePathspec, trackedPathSet
 } from "../core/workspace-surface.mjs";
+import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 
 // A commit read, not executed. Inspection must not resolve a program through
 // PATH, so ref files are the authority for both ordinary and linked worktrees.
@@ -674,7 +675,7 @@ export function isolateSelectedRepositories(context, id, state, repositories) {
       mode: "current", path: root, baseHead: gitHead(root)
     };
     delete state.repositories;
-    state.status = "change";
+    transitionLifecycleState(state, "change", "sandbox-creation-rolled-back");
     context.saveRuntime(state);
     fail(`${error.message}; created sandboxes rolled back`);
   }
@@ -713,7 +714,7 @@ export function createSandbox(context, id, flags = {}) {
   const state = context.loadRuntime(id);
   isolateSelectedRepositories(context, id, state, repositories);
   setupSelectedRepositories(context, state, repositories);
-  state.status = "building";
+  transitionLifecycleState(state, "building", "repository-sandboxes-created");
   context.saveRuntime(state);
   context.clearSnapshotCache(id);
   reportMultiRepositorySandbox(context, id, state);
@@ -972,7 +973,7 @@ export function createSandboxRuntime({
       id, root, path, reason, carriesGit, preexisting, gitHead, workspaceManifest,
       fileDigest, directoryHash, changePath, packetManifest
     });
-    state.status = "building";
+    transitionLifecycleState(state, "building", "copy-sandbox-created");
     saveRuntime(state);
     const setup = runWorkspaceSetup(state);
     if (setup) saveRuntime(state);
@@ -1105,7 +1106,7 @@ export function createSandboxRuntime({
       changeSourceHash: directoryHash(changePath(id)),
       packetSnapshot: packetManifest(join(path, "openspec", "changes", id))
     };
-    state.status = "building";
+    transitionLifecycleState(state, "building", "worktree-sandbox-created");
     saveRuntime(state);
     const setup = runWorkspaceSetup(state);
     if (setup) saveRuntime(state);
@@ -1374,7 +1375,7 @@ export function createSandboxRuntime({
   function updateSandboxSyncState(id, state, source, fingerprints) {
     state.workspace.changeSourceHash = directoryHash(source);
     delete state.workspace.recovery;
-    state.status = "building";
+    transitionLifecycleState(state, "building", "sandbox-contract-synchronized");
     state.revision = Number(state.revision || 0) + 1;
     if (fingerprints.priorContract !== fingerprints.nextContract)
       state.contractRevision = Number(state.contractRevision || 0) + 1;

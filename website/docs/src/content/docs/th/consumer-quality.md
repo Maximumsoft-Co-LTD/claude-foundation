@@ -3,7 +3,7 @@ title: Quality gate ของโปรเจกต์
 description: เพิ่ม changed-code CRAP, mutation testing, language profile, baseline และ quality debt ให้ repository เดียวหรือหลายตัว
 ---
 
-Foundation orchestrate quality tool ที่โปรเจกต์เป็นเจ้าของ โดยไม่สมมติว่า metric เดียวเหมาะกับทุกภาษา Feature นี้เป็น opt-in และเริ่มต้นแบบ **report-only**
+Change Loop orchestrate quality tool ที่โปรเจกต์เป็นเจ้าของ โดยไม่สมมติว่า metric เดียวเหมาะกับทุกภาษา Feature นี้เป็น opt-in และเริ่มต้นแบบ **report-only**
 
 ```text
 discover → preview config → ตรวจ tool → pilot report → อนุมัติ baseline → enforce
@@ -19,7 +19,7 @@ Quality finding เป็นหลักฐาน ไม่ใช่อำนา
 CRAP = complexity² × (1 − coverage/100)³ + complexity
 ```
 
-Foundation คำนวณคะแนนใหม่เอง ไม่เชื่อค่าที่ provider ส่งมาโดยตรง ค่าเริ่มต้นกำหนด coverage ของ changed unit code ที่ 80%, integration 70% และ critical journey 50% Function ใหม่ fail เมื่อ CRAP ตั้งแต่ 30 ขึ้นไป Function เดิม fail เมื่อแย่กว่า compatible baseline และ changed complexity เกิน 30 จะ fail เช่นกัน
+Change Loop คำนวณคะแนนใหม่เอง ไม่เชื่อค่าที่ provider ส่งมาโดยตรง ค่าเริ่มต้นกำหนด coverage ของ changed unit code ที่ 80%, integration 70% และ critical journey 50% Function ใหม่ fail เมื่อ CRAP ตั้งแต่ 30 ขึ้นไป Function เดิม fail เมื่อแย่กว่า compatible baseline และ changed complexity เกิน 30 จะ fail เช่นกัน
 
 **Automated mutation** ตรวจว่า test ปกติแยกแยะการเปลี่ยน code เล็ก ๆ ได้หรือไม่ เฉพาะ killed mutant ที่นับว่าผ่าน ส่วน survived, no-coverage, timeout, compile error, runtime error และ unavailable ไม่นับเป็น kill ระบบไม่สมมติว่า skipped mutant คือ equivalent การ suppress equivalent ต้องมีเหตุผลชัดเจนหรือ exception แคบที่ได้รับอนุมัติ
 
@@ -44,7 +44,7 @@ claude-foundation quality doctor
 - nightly inventory แบบสี่ shard; และ
 - release workflow ที่ enforce full inventory
 
-Reusable workflow ไม่ได้มี `pull_request` trigger ในตัว ต้องเรียกจาก PR workflow เดิมของ repository และส่ง Foundation Change ID เข้าไป เพิ่มขั้น setup runtime/tool ของแต่ละภาษาก่อน `quality doctor` เพราะ Foundation ไม่ติดตั้ง runtime หรือ quality tool ให้
+Reusable workflow ไม่ได้มี `pull_request` trigger ในตัว ต้องเรียกจาก PR workflow เดิมของ repository และส่ง Change ID เข้าไป เพิ่มขั้น setup runtime/tool ของแต่ละภาษาก่อน `quality doctor` เพราะ Change Loop ไม่ติดตั้ง runtime หรือ quality tool ให้
 
 รัน pilot ใน isolated workspace ของ Change:
 
@@ -70,11 +70,11 @@ claude-foundation quality run --change <change-id> --enforce
 | HTML | `web-markup` | validation, browser, accessibility evidence |
 | CSS / Sass | `web-style` | lint/build, browser, accessibility, responsive evidence |
 
-Foundation ตั้งใจ **ไม่สร้าง CRAP ปลอม** ให้ Bash, SQL, MongoDB, HTML, CSS หรือ Sass และสถานะ unsupported, unavailable หรือ unmapped จะไม่กลายเป็นศูนย์หรือ pass
+Change Loop ตั้งใจ **ไม่สร้าง CRAP ปลอม** ให้ Bash, SQL, MongoDB, HTML, CSS หรือ Sass และสถานะ unsupported, unavailable หรือ unmapped จะไม่กลายเป็นศูนย์หรือ pass
 
 ## Provider และ built-in normalizer
 
-โปรเจกต์เป็นเจ้าของทุก command และ tool version ที่ pin ไว้ Provider แบบ `command` ส่ง Foundation protocol ผ่าน stdout หรือ output file ส่วน `builtin` รัน command ของโปรเจกต์แล้ว normalize native report ด้วย adapter เหล่านี้:
+โปรเจกต์เป็นเจ้าของทุก command และ tool version ที่ pin ไว้ Provider แบบ `command` ส่ง Change Loop protocol ผ่าน stdout หรือ output file ส่วน `builtin` รัน command ของโปรเจกต์แล้ว normalize native report ด้วย adapter เหล่านี้:
 
 - `javascript-istanbul`
 - `go-complexity-cover`
@@ -110,8 +110,8 @@ Exception ต้องระบุ function หรือ mutant เดียว 
 
 ## ความปลอดภัยและ rollout
 
-- Mutation ใช้ tool isolation หรือ Foundation Change sandbox; provider แบบ `harness-sandbox` ที่ไม่มี `--change` จะ unavailable
-- Foundation เปรียบเทียบ Git status ก่อนและหลัง provider หากคืน workspace ไม่เหมือนเดิม lane จะ fail
+- Mutation ใช้ tool isolation หรือ Change sandbox; provider แบบ `harness-sandbox` ที่ไม่มี `--change` จะ unavailable
+- Change Loop เปรียบเทียบ Git status ก่อนและหลัง provider หากคืน workspace ไม่เหมือนเดิม lane จะ fail
 - SQL/MongoDB provider ต้องใช้ database แยกต่อ run ห้ามใช้ shared หรือ production database
 - Repository ที่ถูกเลือกแต่ไม่มี quality config จะ fail closed
 - Capability ที่ขาดจะลด assurance และยังแสดงอยู่ แม้ policy อนุญาต compensating evidence

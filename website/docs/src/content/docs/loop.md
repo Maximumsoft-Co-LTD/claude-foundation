@@ -3,7 +3,7 @@ title: The change loop
 description: The five commands, why they are separate, and how work moves backward when reality changes.
 ---
 
-Foundation's workflow is five commands, one of them optional:
+Change Loop's workflow is five commands, one of them optional:
 
 ```text
 Investigate? → Change → Build → Prove → Land
@@ -42,7 +42,21 @@ The arrows describe *what must be true before what*, not a one-way schedule. Cha
 Change ⇄ Build ⇄ Prove
 ```
 
-When requirements shift, you revise the same change rather than opening a new one. Foundation syncs the sandbox and invalidates any proof the revision made stale. Only Land is a boundary you cross once, deliberately.
+When requirements shift, you revise the same change rather than opening a new one. Change Loop syncs the sandbox and invalidates any proof the revision made stale. Only Land is a boundary you cross once, deliberately.
+
+## How every gate converges
+
+The command stays the same; the harness handles the loop behind it. At each
+gate it collects all independent findings once and groups them into one ordered
+repair plan. The agent applies safe in-contract repairs; the harness reruns only checks whose
+inputs changed. It continues while the work makes progress—there is no fixed
+product-repair limit.
+
+The loop pauses only when the harness cannot choose safely: external authority,
+a resource or budget boundary, a conflict, contradictory requirements, or
+repeated no progress. State is preserved and the result includes the available
+choices and exact resume route. Repeating an unchanged wait does not poll or
+spend another model request.
 
 ## The steps
 
@@ -54,7 +68,7 @@ When requirements shift, you revise the same change rather than opening a new on
 | 03 | [`/prove`](/docs/loop/prove/) | Executable evidence, reusing valid receipts |
 | 04 | [`/land`](/docs/loop/land/) | The explicit completion transaction |
 
-Two more commands sit outside the loop. `/changes` lists active work and the next useful action for each, mutating nothing. `/dev` is a compatibility composition of change → build → prove for callers that predate the split.
+Two more commands sit outside the loop. `/changes` lists active work and the next useful action for each, mutating nothing. `/dev` is a compatibility composition of Change → Build → Prove. It includes Land only when the invocation already carries explicit Land authority; success in that lane means `archived`.
 
 ## Rigor comes from risk, not size
 

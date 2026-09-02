@@ -351,9 +351,13 @@ export function agentTaskExecutionRows(tasks, singleAgent, priorPlan, graph) {
   return execution;
 }
 
-export function agentPlanBlockingReasons(state, conflicts) {
+export function agentPlanBlockingReasons(state, conflicts, authority = null) {
   return [
     ...(state.ambiguity === "unclear" ? ["ambiguity requires /investigate"] : []),
+    ...(authority && authority.status !== "READY"
+      ? authority.blockers.map((blocker) =>
+        `${blocker.kind || "authority"}:${blocker.code}: ${blocker.summary}`)
+      : []),
     ...conflicts.map((conflict) =>
       `scope ${conflict.key} is active in ${conflict.changeId}`)
   ];
@@ -419,6 +423,8 @@ export function createAgentPlanner({
   providerConfig = null,
   providerRepositories = null,
   resourcesConflict, relevantHash, contractFingerprint, stableHash, now,
+  authorityPreflight = () => ({ status: "READY", blockers: [] }),
+  executionContract = null,
   readJson, writeJson, compactStrings, serializedJson, recordContextMetric,
   recordInstructionManifest, modelForTask, showPacket, fail
 }) {
@@ -491,7 +497,9 @@ export function createAgentPlanner({
     const priorPlanPath = join(plans, `${id}.json`);
     const priorPlan = existsSync(priorPlanPath) ? readJson(priorPlanPath, {}) : {};
     const conflicts = activeRepositoryConflicts(id, repositories);
-    const blockingReasons = agentPlanBlockingReasons(state, conflicts);
+    const compiledContract = executionContract?.(id) || null;
+    const authority = compiledContract?.authority || authorityPreflight(id);
+    const blockingReasons = agentPlanBlockingReasons(state, conflicts, authority);
     const execution = agentExecutionSummary(tasks, singleAgent);
     const instructionManifest = recordInstructionManifest?.(id, "build", {
       scope: "plan",
@@ -537,6 +545,8 @@ export function createAgentPlanner({
       sessionModel: execution.sessionModel,
       executionReason: execution.executionReason,
       conflicts,
+      authorityPreflight: authority,
+      executionContract: compiledContract,
       blockingReasons,
       dispatchable: blockingReasons.length === 0,
       instructionProvenance: instructionManifest ? {

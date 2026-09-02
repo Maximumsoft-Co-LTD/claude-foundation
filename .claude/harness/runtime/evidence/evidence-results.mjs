@@ -1,3 +1,35 @@
+export const EVIDENCE_RESULT_VERSION = 1;
+export const EVIDENCE_STATUSES = Object.freeze([
+  "pass", "inconclusive", "fail", "error"
+]);
+
+const STATUS_SEVERITY = Object.freeze({
+  pass: 0, inconclusive: 1, fail: 2, error: 3
+});
+
+export function aggregateEvidenceStatus(values) {
+  return values.reduce((worst, value) => {
+    if (!(value in STATUS_SEVERITY))
+      throw new Error(`invalid evidence status '${value}'`);
+    return STATUS_SEVERITY[value] > STATUS_SEVERITY[worst] ? value : worst;
+  }, "pass");
+}
+
+export function evidenceResultValue({ provider, status, observations = [] }) {
+  if (typeof provider !== "string" || !provider.trim())
+    throw new Error("evidence result requires provider");
+  if (!EVIDENCE_STATUSES.includes(status))
+    throw new Error(`invalid evidence status '${status}'`);
+  if (!Array.isArray(observations))
+    throw new Error("evidence result observations must be an array");
+  return {
+    version: EVIDENCE_RESULT_VERSION,
+    provider,
+    status,
+    observations: observations.map((observation) => ({ ...observation }))
+  };
+}
+
 export function parseJsonOutput(value) {
   const text = String(value || "").trim();
   if (!text) return null;
@@ -30,6 +62,28 @@ export function parseTapOutput(value) {
     passed: passFooter ? Number(passFooter[1]) : null,
     failed: failFooter ? Number(failFooter[1]) : null,
     format: "tap",
+    criticalCases
+  };
+}
+
+export function parseNodeTestSpecOutput(value) {
+  const text = String(value || "").replace(/\x1b\[[0-9;]*m/g, "");
+  const testsFooter = [...text.matchAll(/^ℹ tests\s+(\d+)\s*$/gm)].at(-1);
+  if (!testsFooter) return null;
+  const number = (label) => {
+    const match = [...text.matchAll(new RegExp(`^ℹ ${label}\\s+(\\d+)\\s*$`, "gm"))].at(-1);
+    return match ? Number(match[1]) : null;
+  };
+  const criticalCases = [...text.matchAll(/^\s*([✔✖])\s+(.+?)\s*$/gm)]
+    .map((match) => ({
+      id: match[2].replace(/\s+\([\d.]+ms\)\s*$/, "").trim(),
+      status: match[1] === "✔" ? "pass" : "fail"
+    })).filter((row) => row.id);
+  return {
+    totalTests: Number(testsFooter[1]),
+    passed: number("pass"),
+    failed: number("fail"),
+    format: "node-spec",
     criticalCases
   };
 }

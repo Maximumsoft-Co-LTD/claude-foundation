@@ -1,5 +1,9 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import {
+  SEMANTIC_ACCEPTANCE_PROTOCOL_VERSION,
+  validateSemanticAcceptanceEnvelope
+} from "./semantic-acceptance.mjs";
 
 // A validity code names what is wrong with a receipt and nothing about how to
 // fix it, so every caller that stopped on one printed a code and left. These
@@ -24,6 +28,7 @@ const VALIDITY_RECOVERY = {
   "review-blockers": (id) => `the review recorded unresolved blockers; resolve them, then request a new review: claude-foundation authority request ${id} --type review`,
   "review-repair-evidence-stale": (id) => `the deterministic final-review closure no longer matches its current critical-case evidence; run: claude-foundation proof advance ${id}`,
   "acceptance-invalid": (id) => `acceptance needs a named human, an "accept" decision, and criteria matching the current scope. Either record a real acceptance, or withdraw the requirement: claude-foundation change resolve ${id} --acceptance-not-required (a claim that declares capability 'acceptance' must drop it in evidence.yaml instead)`,
+  "semantic-acceptance-invalid": (id) => `the signed semantic acceptance verdict is missing, stale, altered, or does not cover its declared cases; obtain a current oracle envelope and record it with: claude-foundation evidence record ${id} <provider> <status> --envelope <signed-json>`,
   "external-observation-missing": () => "a passing external receipt must state what was observed (--observed)",
   "external-provenance-missing": () => "a passing external receipt must state its source (--source or --reviewer)",
   "external-evidence-missing": () => "a passing external receipt must carry an artifact or reference (--artifact or --reference)",
@@ -259,6 +264,38 @@ export function createReceiptValidity({
     return null;
   }
 
+  function semanticAcceptanceValidity(context) {
+    const { id, provider, value, capability, config, expectedWorkspaceHash } = context;
+    if (capability !== "semantic-acceptance") return null;
+    if (String(value.semanticAcceptanceProtocolVersion || "") !==
+        SEMANTIC_ACCEPTANCE_PROTOCOL_VERSION)
+      return invalidReceipt(provider, "semantic-acceptance-version-stale", value);
+    const semantic = value.semanticAcceptance;
+    const result = validateSemanticAcceptanceEnvelope({
+      envelope: semantic?.signedEnvelope,
+      config,
+      changeId: id,
+      provider,
+      workspaceHash: expectedWorkspaceHash
+    });
+    if (!result.valid || result.status !== value.status ||
+        result.verdictDigest !== semantic?.verdictDigest ||
+        semantic?.subjectWorkspaceHash !== value.workspaceHash)
+      return invalidReceipt(provider, "semantic-acceptance-invalid", value);
+    for (const binding of semantic?.sourceBindings || []) {
+      const path = receiptPath(id, binding.sourceProvider);
+      if (!existsSync(path))
+        return invalidReceipt(provider, "semantic-acceptance-invalid", value);
+      const source = readJson(path, {});
+      const observation = (source.criticalCases || []).find((row) =>
+        row.id === binding.criticalCaseId && row.status === "pass");
+      if (!observation || stableHash(source) !== binding.sourceReceiptDigest ||
+          stableHash(observation) !== stableHash(binding.observation))
+        return invalidReceipt(provider, "semantic-acceptance-invalid", value);
+    }
+    return null;
+  }
+
   function expectedProviderFingerprint(context) {
     const { id, provider, value, config } = context;
     return config
@@ -374,7 +411,8 @@ export function createReceiptValidity({
     const context = receiptContext(id, provider, hash, value);
     const reuse = workspaceReuse(context);
     if (reuse.result) return reuse.result;
-    const semantic = reviewValidity(context) || acceptanceValidity(context);
+    const semantic = reviewValidity(context) || acceptanceValidity(context) ||
+      semanticAcceptanceValidity(context);
     if (semantic) return semantic;
     const identity = identityValidity(context, reuse);
     if (identity) return identity;

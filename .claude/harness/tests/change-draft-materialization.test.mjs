@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 import {
   createChangeLifecycle,
+  deriveDraftBookkeeping,
   draftDomainRows,
   groupDraftSpecs,
   materializeDraftSpecs,
@@ -16,6 +17,37 @@ import {
   renderDraftTask,
   renderDraftTasks
 } from "../runtime/workflow/change-lifecycle.mjs";
+
+test("draft bookkeeping derives mechanical IDs and unambiguous bindings", () => {
+  const value = deriveDraftBookkeeping({
+    claims: [{ scenario: "Zero window returns nothing" }],
+    tasks: [{ outcome: "Implement", paths: ["window.js"], verify: "node --test" }],
+    execution: { providers: { test: { adapter: "test-discovery" } } },
+    grounding: {
+      claims: [{ productionPath: [] }],
+      criticalCases: [{ input: "zero", expected: "empty" }]
+    }
+  }, (text) => text.toLowerCase().replaceAll(" ", "-"));
+  assert.equal(value.claims[0].id, "zero-window-returns-nothing");
+  assert.equal(value.tasks[0].id, "T001");
+  assert.deepEqual(value.tasks[0].claims, ["zero-window-returns-nothing"]);
+  assert.equal(value.grounding.claims[0].id, "zero-window-returns-nothing");
+  assert.equal(value.grounding.criticalCases[0].id, "CC-001");
+  assert.deepEqual(value.grounding.criticalCases[0].claimIds,
+    ["zero-window-returns-nothing"]);
+  assert.deepEqual(value.execution.providers.test.criticalCases, ["CC-001"]);
+  assert.deepEqual(value.execution.providers.test.command,
+    ["sh", "-lc", "node --test"]);
+});
+
+test("draft bookkeeping never guesses ambiguous multi-claim task bindings", () => {
+  const value = deriveDraftBookkeeping({
+    claims: [{ id: "one" }, { id: "two" }],
+    tasks: [{ outcome: "A" }, { outcome: "B" }]
+  }, String);
+  assert.equal(value.tasks[0].claims, undefined);
+  assert.equal(value.tasks[1].claims, undefined);
+});
 
 const draft = () => ({
   title: "Draft title", why: "Because", changes: ["One", "Two"],

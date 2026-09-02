@@ -7,6 +7,10 @@ import { targetHeadMovedDecision } from "./apply-recovery.mjs";
 import {
   compileLandPreparation, landPreparationMatches
 } from "../core/graph-execution.mjs";
+import { riskRequiresCi } from "../core/authority-policy.mjs";
+import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
+
+export { riskRequiresCi } from "../core/authority-policy.mjs";
 
 const OPENSPEC_REQUIRED_MAJOR = 1;
 const OPENSPEC_TESTED_MINOR = 7;
@@ -84,18 +88,6 @@ export function assertOpenSpecCli(root, fail) {
   if (status.level === "error") fail(status.detail);
   if (status.level === "warn") console.error(`WARNING: ${status.detail}`);
   return status;
-}
-
-export function riskRequiresCi(state, reviewRisk = null) {
-  if (state?.riskBasedCiRequired !== true) return false;
-  if (reviewRisk?.tier === "high") return true;
-  const capabilities = new Set(state?.evidenceCapabilities || []);
-  const repositories = Object.values(state?.repositories || {});
-  return state?.impact === "high" || repositories.length > 1 ||
-    [
-      "compatibility", "cross-repo-contract", "data-migration", "deployment",
-      "security-static"
-    ].some((capability) => capabilities.has(capability));
 }
 
 export function signedCiProvider(providers, receiptPath, readJson) {
@@ -260,7 +252,7 @@ export function stageRootPointersOperation(context, id) {
     git, root, workspacePath: state.workspace.path, entries: pending, fail: context.fail
   });
   state.land = rootPointerLandState(state, entries, signature, now);
-  state.status = "building";
+  transitionLifecycleState(state, "building", "root-pointers-staged-proof-invalidated");
   clearSnapshotCache(id);
   saveRuntime(state);
   log(`ROOT POINTERS STAGED ${id}\n  proof is stale; run /prove ${id}`);
@@ -382,6 +374,7 @@ export function createLandRuntime({
   ciEvidenceProtocolVersion,
   stableHash = (value) => JSON.stringify(value),
   agentPlanValue = null,
+  executionContract = null,
   now,
   blockWithDecision,
   fail
@@ -472,7 +465,12 @@ export function createLandRuntime({
   }
 
   function assertLandEvidence(id, state, proof, hash) {
-    for (const provider of requiredProviders(id)) {
+    const compiled = executionContract?.(id) || null;
+    const currentProviders = requiredProviders(id);
+    const providers = compiled?.evidence?.providers || currentProviders;
+    if (compiled && JSON.stringify(providers) !== JSON.stringify([...currentProviders].sort()))
+      fail("execution contract provider projection disagrees with current Land evidence policy");
+    for (const provider of providers) {
       const check = receiptValidity(id, provider, hash);
       if (check.validity !== "valid")
         fail(`${provider} evidence is ${check.validity}\n  ${
@@ -482,8 +480,12 @@ export function createLandRuntime({
         fail(`${provider} live receipt differs from the proven receipt manifest`);
     }
     const repositoryRows = Object.values(state.repositories || {});
-    if (riskRequiresCi(state, reviewPolicy(id, state)) && repositoryRows.length <= 1) {
-      const ciProvider = signedCiProvider(requiredProviders(id),
+    const independentlyRequiredCi = riskRequiresCi(state, reviewPolicy(id, state));
+    const requiredCi = compiled?.land?.signedCiRequired ?? independentlyRequiredCi;
+    if (compiled && requiredCi !== independentlyRequiredCi)
+      fail("execution contract signed-CI projection disagrees with current Land risk policy");
+    if (requiredCi && repositoryRows.length <= 1) {
+      const ciProvider = signedCiProvider(providers,
         (provider) => receiptPath(id, provider), readJson);
       if (!ciProvider)
         fail(`risk policy requires signed CI evidence before Land. Configure an external ` +
@@ -523,7 +525,11 @@ export function createLandRuntime({
       .filter((row) => row.landDisposition === "tracked-post-land")
       .map((row) => `${row.id} (${row.owner}: ${row.reference})`);
     const telemetry = telemetryReadiness?.(id) || null;
-    const telemetryRecovery = telemetry?.recoveryActions?.[0]?.command || null;
+    const hasMeasuredUsage = telemetry && (
+      ["measured", "no-usage"].includes(telemetry.classification) ||
+      Object.values(telemetry.measuredDimensions || {}).some(Boolean));
+    const telemetryRecovery = hasMeasuredUsage
+      ? null : telemetry?.recoveryActions?.[0]?.command || null;
     console.log(`LAND READY ${id}\n  workspace: ${hash}${
       tracked.length ? `\n  tracked post-Land handoff: ${tracked.join(", ")}` : ""}${
       waived.length ? `\n  waived: ${waived.join(", ")}` : ""}${branchLine}\n  next: claude-foundation land ${

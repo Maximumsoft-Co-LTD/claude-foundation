@@ -95,6 +95,7 @@ function activeArchiveFixture(id, options = {}) {
     proofAudit: () => options.invalidAudit
       ? { valid: false, reason: "audit failed" } : { valid: true },
     cleanupAppliedSandbox: () => options.cleanup || { status: "removed" },
+    archiveCheckpoint: options.archiveCheckpoint,
     ...(options.missingArchivePath ? {
       archivedChangeRelativePath: () => null
     } : {}),
@@ -116,6 +117,67 @@ function activeArchiveFixture(id, options = {}) {
     }
   };
 }
+
+test("every archive checkpoint resumes without repeating the destructive move", async (t) => {
+  const checkpoints = [
+    "before-telemetry-drain", "after-telemetry-drain",
+    "before-evidence-snapshot", "after-evidence-snapshot",
+    "before-code-apply", "after-code-apply",
+    "before-archive-command", "after-archive-command",
+    "before-spec-sync-verification", "after-spec-sync-verification",
+    "before-final-audit", "after-final-audit", "before-cleanup", "after-cleanup"
+  ];
+  for (const checkpoint of checkpoints) await t.test(checkpoint, () => {
+    let injected = false;
+    const id = `fault-${checkpoint}`;
+    const fixture = activeArchiveFixture(id, {
+      archiveCheckpoint: (observed) => {
+        if (!injected && observed === checkpoint) {
+          injected = true;
+          throw new Error(`injected archive interruption at ${checkpoint}`);
+        }
+      }
+    });
+    try {
+      assert.throws(() => fixture.run(), new RegExp(checkpoint));
+      assert.equal(injected, true);
+      fixture.run();
+      assert.equal(fixture.state.status, "archived");
+      assert.equal(existsSync(join(fixture.root, "openspec", "changes", id)), false);
+      assert.equal(existsSync(join(fixture.root, "openspec", "changes", "archive",
+        `2026-08-26-${id}`)), true);
+      fixture.run();
+      assert.equal(fixture.state.status, "archived");
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+});
+
+test("a crash after archive cannot bypass deferred spec-sync verification", () => {
+  let injected = false;
+  const delta = `## MODIFIED Requirements\n\n### Requirement: Stable output\nThe system SHALL return the new output.\n\n#### Scenario: New output\n- **WHEN** it runs\n- **THEN** the new output is returned\n`;
+  const fixture = activeArchiveFixture("fault-spec-sync", {
+    delta,
+    archiveCheckpoint: (observed) => {
+      if (!injected && observed === "before-spec-sync-verification") {
+        injected = true;
+        throw new Error("injected before spec verification");
+      }
+    }
+  });
+  try {
+    write(join(fixture.root, "openspec", "specs", "sample", "spec.md"),
+      `# Sample\n\n## Requirements\n\n### Requirement: Stable output\nThe system SHALL return the old output.\n\n#### Scenario: Old output\n- **WHEN** it runs\n- **THEN** the old output is returned\n`);
+    assert.throws(() => fixture.run(), /injected before spec verification/);
+    assert.equal(fixture.state.status, "archived");
+    assert.ok(Array.isArray(fixture.state.specSyncInputs));
+    assert.throws(() => fixture.run(), /archived specs do not match the change delta/);
+    assert.ok(fixture.state.specSyncViolations.length > 0);
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
 
 test("an archived change resumes every unfinished cleanup exactly once", () => {
   const root = mkdtempSync(join(tmpdir(), "apply-archive-resume-"));
@@ -292,6 +354,24 @@ test("required incomplete telemetry stops before the destructive archive", () =>
 
   assert.throws(() => fixture.run(), /Land requires measured model usage/);
   assert.equal(fixture.state.status, "proven");
+  rmSync(fixture.root, { recursive: true, force: true });
+});
+
+test("required telemetry accepts complete token measurement when cost is unavailable", () => {
+  const fixture = activeArchiveFixture("telemetry-token-measured", {
+    telemetry: {
+      classification: "partial-measurement",
+      reason: "partial-measurement",
+      measuredDimensions: { tokens: true, cost: false }
+    },
+    policy: { telemetry: { requireUsage: true } }
+  });
+
+  fixture.run();
+
+  assert.equal(fixture.state.status, "archived");
+  assert.deepEqual(fixture.state.land.telemetry.measuredDimensions,
+    { tokens: true, cost: false });
   rmSync(fixture.root, { recursive: true, force: true });
 });
 

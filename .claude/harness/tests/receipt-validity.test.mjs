@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createReceiptValidity, validityRecovery } from
   "../runtime/evidence/receipt-validity.mjs";
+import { canonicalJson } from "../runtime/core/trust.mjs";
+import { validateSemanticAcceptanceEnvelope } from
+  "../runtime/evidence/semantic-acceptance.mjs";
 
 const root = mkdtempSync(join(tmpdir(), "foundation-receipt-validity-"));
 const evidenceVault = join(root, "evidence");
@@ -13,10 +16,22 @@ const receipts = new Map();
 const stableHash = (value) => createHash("sha256")
   .update(JSON.stringify(value)).digest("hex");
 const pathFor = (_id, provider) => join(root, `${provider}.json`);
+const semanticKeys = generateKeyPairSync("ed25519");
 const configs = {
   test: { capability: "test", criticalCases: ["CASE-1"] },
   review: { capability: "review" },
-  acceptance: { capability: "acceptance" }
+  acceptance: { capability: "acceptance" },
+  semantic: {
+    capability: "semantic-acceptance", adapter: "external",
+    semanticAcceptance: {
+      issuer: "hidden-oracle",
+      publicKey: semanticKeys.publicKey.export({ type: "spki", format: "pem" })
+    },
+    acceptanceCases: [{
+      id: "CASE-SEMANTIC", claimId: "claim-a", partition: "fractional",
+      required: true
+    }]
+  }
 };
 const world = {
   prototype: false, inputMode: "workspace",
@@ -250,6 +265,48 @@ try {
     mutate(value);
     expect("acceptance", value, "acceptance-invalid");
   }
+
+  const semanticEnvelope = (() => {
+    const payload = {
+      version: "1", changeId: id, provider: "semantic",
+      workspaceHash: world.workspaceHash, issuer: "hidden-oracle",
+      cases: [{
+        id: "CASE-SEMANTIC", claimId: "claim-a", partition: "fractional",
+        status: "pass", observationDigest: "a".repeat(64)
+      }]
+    };
+    return {
+      version: "1", payload,
+      signature: sign(null, Buffer.from(canonicalJson(payload)),
+        semanticKeys.privateKey).toString("base64")
+    };
+  })();
+  const semanticResult = validateSemanticAcceptanceEnvelope({
+    envelope: semanticEnvelope, config: configs.semantic, changeId: id,
+    provider: "semantic", workspaceHash: world.workspaceHash
+  });
+  const semanticBase = () => ({
+    ...baseReceipt("semantic"), execution: "manual", observed: "1 hidden case passed",
+    provenance: { source: "signed-oracle:hidden-oracle" },
+    references: [`semantic-verdict:sha256:${semanticResult.verdictDigest}`],
+    artifacts: [], semanticAcceptanceProtocolVersion: "1",
+    semanticAcceptance: {
+      issuer: semanticResult.issuer,
+      verdictDigest: semanticResult.verdictDigest,
+      subjectWorkspaceHash: world.workspaceHash,
+      cases: semanticResult.cases,
+      sourceBindings: [],
+      signedEnvelope: semanticEnvelope
+    }
+  });
+  expect("semantic", semanticBase(), "valid");
+  const tamperedSemantic = semanticBase();
+  tamperedSemantic.semanticAcceptance.signedEnvelope.payload.cases[0].observationDigest =
+    "b".repeat(64);
+  expect("semantic", tamperedSemantic, "semantic-acceptance-invalid");
+  const movedSemantic = semanticBase();
+  movedSemantic.workspaceHash = "workspace-old";
+  expect("semantic", movedSemantic, "stale");
 
   for (const [mutate, expected] of [
     [(value) => { value.providerFingerprint = "old"; }, "provider-fingerprint-stale"],

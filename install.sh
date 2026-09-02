@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the OpenSpec-native Foundation harness into an existing project.
+# Install the OpenSpec-native Change Loop harness into an existing project.
 
 set -euo pipefail
 
@@ -18,7 +18,7 @@ usage() {
 claude-foundation init [target-path] [options]
 
 Options:
-  --source <path>  Foundation source checkout
+  --source <path>  Change Loop source checkout
   --yes, -y        Do not ask for confirmation
   --dry-run        Show files without writing
   --force, -f      Accepted for backward compatibility; managed files refresh
@@ -49,7 +49,7 @@ TARGET_PATH="${TARGET_PATH:-$PWD}"
 mkdir -p "$TARGET_PATH"
 TARGET_PATH="$(cd "$TARGET_PATH" && pwd)"
 SOURCE_PATH="$(cd "$SOURCE_PATH" && pwd)"
-[ "$TARGET_PATH" != "$SOURCE_PATH" ] || fail "target cannot be the Foundation source"
+[ "$TARGET_PATH" != "$SOURCE_PATH" ] || fail "target cannot be the Change Loop source"
 
 for required in \
   .claude/orchestrator.md .claude/commands .claude/harness/foundation.mjs \
@@ -410,7 +410,7 @@ else
 fi
 
 if ! command -v node >/dev/null 2>&1; then
-  printf '⚠ Node.js >=20.19 is required by OpenSpec and the Foundation harness\n' >&2
+  printf '⚠ Node.js >=20.19 is required by OpenSpec and the Change Loop harness\n' >&2
 elif ! command -v openspec >/dev/null 2>&1; then
   printf '⚠ Install pinned OpenSpec: npm install -g @fission-ai/openspec@1.7.0\n' >&2
 fi
@@ -422,7 +422,7 @@ if command -v node >/dev/null 2>&1; then
 fi
 
 INSTALL_COMMITTED=yes
-ok "OpenSpec-native Foundation installed at $TARGET_PATH"
+ok "Change Loop installed at $TARGET_PATH"
 printf '  Your product source was not changed; managed workflow files were installed or updated.\n'
 
 # Until these files are committed they are the working tree's dirt, and the loop
@@ -438,8 +438,8 @@ if command -v git >/dev/null 2>&1 &&
     .claude/settings.json >/dev/null 2>&1 || true
   if ! git -C "$TARGET_PATH" diff --cached --quiet 2>/dev/null; then
     printf '▸ Setup is complete, but the managed workflow files are only staged.\n'
-    printf '  Commit them before the first Foundation change so they are not mistaken for product work:\n'
-    printf '    git commit -m "chore: install claude-foundation harness"\n'
+    printf '  Commit them before the first Change Loop change so they are not mistaken for product work:\n'
+    printf '    git commit -m "chore: install Change Loop"\n'
     printf '  The loop treats uncommitted files as the change surface, so an\n'
     printf '  uncommitted harness becomes the first change'"'"'s surface.\n'
   fi

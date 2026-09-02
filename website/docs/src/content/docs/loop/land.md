@@ -40,7 +40,12 @@ The archive runs through a journal, and that journal is what makes it recoverabl
 
 `ALREADY ARCHIVED` is a success result, not an error — it means a previous run got there.
 
-Before the destructive archive step, one quiet telemetry sync drains the bound session transcript, so the sealed record carries the change's real model usage; a change archived with no usage warns that its cost columns will stay empty and names the manual `telemetry sync` command. Telemetry never gates an archive.
+Before archive, Land drains every bound transcript cursor automatically. When a
+policy requires usage, at least one trustworthy measured dimension must exist.
+Measured input/output tokens satisfy that policy even if the host omits price;
+the record remains `partial-measurement` and cost stays `null`. Missing or
+correlation-only telemetry stops with a recovery route instead of being treated
+as zero. No manual telemetry step is needed when a real dimension was measured.
 
 `land check` also adds a `branch:` line to `LAND READY` when the target repository is checked out on `main`/`master`, and `land record` warns on a default-branch target. Both are warnings only — every land guard stays commit-based, and branch reads are failure-silent.
 
@@ -70,7 +75,7 @@ Land is built to fail safely and tell you what it left behind.
 
 **Apply refuses to clobber another change's work.** A target file carrying uncommitted edits — say, from a previously landed change — is never silently overwritten by a whole-file copy. Apply refuses, names the clobbered paths, and says how to reconcile; symlinks are compared by link target, like Git blobs.
 
-**An unresolved apply transaction stops the next apply.** A journal left in `rolling-back` or `manual-recovery` is not skipped. It would otherwise open a fresh transaction over a working tree Foundation had already failed to restore, and report success. `doctor --change <id>` reports this before Land reaches it.
+**An unresolved apply transaction stops the next apply.** A journal left in `rolling-back` or `manual-recovery` is not skipped. It would otherwise open a fresh transaction over a working tree Change Loop had already failed to restore, and report success. `doctor --change <id>` reports this before Land reaches it.
 
 **Terminal stops carry their exits.** Exhausted review rounds, a corrupt review chain, a spent budget continuation, a control repository that moved mid-Land, an apply that could not finish rolling back — each emits the same decision envelope: a stop code, at least two honest options, a recommendation, and a preserved `pause`.
 

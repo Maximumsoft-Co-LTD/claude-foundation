@@ -3,7 +3,7 @@ title: Claim และ capability
 description: scenario ที่สังเกตได้กลายเป็น claim ที่มี ID คงที่อย่างไร และ capability ตัวไหนใน 19 ตัวที่พิสูจน์มันได้จริง
 ---
 
-กฎหลักของ Foundation คือ **คำสั่งที่ผ่านไม่ได้แปลว่าเป็นหลักฐานโดยอัตโนมัติ**
+กฎหลักของ Change Loop คือ **คำสั่งที่ผ่านไม่ได้แปลว่าเป็นหลักฐานโดยอัตโนมัติ**
 
 ทุก scenario ที่ยอมรับได้และสังเกตได้จะได้ claim ID ที่คงที่ แต่ละ claim ประกาศ capability ที่พิสูจน์มันได้จริง หลักฐานที่ขาด, stale, fail, error หรือ inconclusive จะบล็อกการ land
 
@@ -75,7 +75,7 @@ artifacts     trace.zip · screenshot.png
 duration      8.42s
 ```
 
-เปลี่ยน input ที่ผูกไว้เมื่อไหร่ receipt จะ stale ทันที Foundation ไม่เคยใช้หลักฐานที่ไม่ตรงกันซ้ำแบบเงียบ ๆ
+เปลี่ยน input ที่ผูกไว้เมื่อไหร่ receipt จะ stale ทันที Change Loop ไม่เคยใช้หลักฐานที่ไม่ตรงกันซ้ำแบบเงียบ ๆ
 
 `execution: harness` ถูกตั้งได้เฉพาะจากจุดเรียกที่รันคำสั่งจริง ดูเกณฑ์เต็มของหลักฐานที่บันทึกด้วยมือได้ที่ [`/prove`](/docs/th/loop/prove/)
 

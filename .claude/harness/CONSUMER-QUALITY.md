@@ -1,6 +1,6 @@
 # Consumer quality runtime reference
 
-This guide ships inside every installed Harness. Consumer quality is opt-in,
+This guide ships inside every installed Change Loop harness. Consumer quality is opt-in,
 project-tool-owned, multi-repository aware, and report-only by default.
 
 ## Operator flow
@@ -43,7 +43,7 @@ CRAP and automated-mutation reports bind repository ID, commit, workspace
 digest, language, tool version, adapter version, and config digest. Baselines
 with incompatible identity fail rather than being silently reused.
 
-CRAP uses `complexity² × (1 − coverage/100)³ + complexity`. Foundation owns the
+CRAP uses `complexity² × (1 − coverage/100)³ + complexity`. Change Loop owns the
 calculation. Missing coverage must be `unmapped`; providers cannot supply a fake
 score. New CRAP at or above 30, changed complexity above 30, coverage below its
 class floor, and baseline regression fail.

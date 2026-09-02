@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "protocol": "foundation-rollout-policy-v1",
+  "stages": {
+    "dogfood": { "minimum_consumers": 1, "minimum_observation_hours": 24, "rollback_required": true },
+    "pilot": { "minimum_consumers": 3, "minimum_observation_hours": 168, "rollback_required": true },
+    "general-availability": { "minimum_consumers": 10, "minimum_observation_hours": 336, "rollback_required": true }
+  },
+  "metrics": [
+    "terminal_truth",
+    "phase_violations",
+    "proof_failures",
+    "land_recoveries",
+    "reviewer_ci_waits",
+    "resumptions",
+    "model_requests",
+    "cost_usd",
+    "wall_ms"
+  ],
+  "stop_conditions": [
+    "false-success",
+    "wrong-side-write",
+    "unbound-land-projection",
+    "authority-bypass",
+    "data-loss",
+    "unrecoverable-journal",
+    "secret-exposure",
+    "sandbox-escape",
+    "unavailable-as-zero"
+  ],
+  "difference_classifications": [
+    "product-regression",
+    "host-provider-drift",
+    "consumer-topology",
+    "measurement-defect"
+  ],
+  "incident_requirements": ["reproduction", "regression", "scenarioDisposition"]
+}

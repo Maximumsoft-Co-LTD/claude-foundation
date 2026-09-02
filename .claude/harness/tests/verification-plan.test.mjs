@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  verificationPlanValue, verificationRisk
+  convergencePlan, verificationPlanValue, verificationRisk
 } from "../runtime/workflow/verification-plan.mjs";
 
 function packet(overrides = {}) {
@@ -44,6 +44,25 @@ test("prove uses one boundary command and names the probes it replaces", () => {
   assert.deepEqual(plan.evidence.required, ["static"]);
   assert.equal(plan.planFingerprint, "digest:prove");
   assert.equal(plan.assurance, "unchanged-by-batching");
+  assert.deepEqual(plan.convergence, {
+    mode: "until-pass",
+    findings: "aggregate-independent",
+    repairLimit: null,
+    rerun: "invalidated-dependencies",
+    noProgress: "decision-and-resume",
+    state: "preserve-same-change"
+  });
+});
+
+test("every parent phase receives one unlimited convergent gate contract", () => {
+  assert.equal(convergencePlan().repairLimit, null);
+  for (const phase of ["change", "build", "prove", "land"]) {
+    const plan = verificationPlanValue(packet(), phase);
+    assert.equal(plan.convergence.mode, "until-pass");
+    assert.equal(plan.convergence.rerun, "invalidated-dependencies");
+    assert.equal(plan.convergence.noProgress, "decision-and-resume");
+    assert.equal(plan.authority.status, "READY");
+  }
 });
 
 test("build defers its single readiness check until tasks are complete", () => {

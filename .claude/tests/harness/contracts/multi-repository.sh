@@ -198,7 +198,7 @@ leased_task_packet="$(node .claude/harness/foundation.mjs agent-task \
   cross-repository-profile T001)"
 assert_cmd_zero "leased task packet carries worker boundaries and current authority" \
   sh -c 'printf "%s" "$1" | jq -e '\''
-.version == 9 and
+.version == 10 and
     .executionAuthority.status == "leased" and
     .workerContract.role == "leased-task-worker" and
     (.workerContract.mustNot | index("edit-task-ledger")) != null and

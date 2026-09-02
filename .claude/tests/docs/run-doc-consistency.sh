@@ -43,6 +43,10 @@ assert_file_contains "English README keeps harness metadata internal" \
   "$README" "Users never need to construct receipt commands"
 assert_file_contains "Thai README keeps harness metadata internal" \
   "$README_TH" "ผู้ใช้ไม่ต้องประกอบ receipt command"
+assert_file_contains "English README documents Homebrew installation" \
+  "$README" "brew install claude-foundation"
+assert_file_contains "Thai README documents Homebrew installation" \
+  "$README_TH" "brew install claude-foundation"
 
 assert_file_contains "hook documentation names the canonical host capability contract" \
   "$HOOKS_README" '.claude/harness/adapters/host-capabilities.json'
@@ -54,14 +58,23 @@ assert_cmd_zero "host capability contract covers every supported host truthfully
     const expected = ["claude-code", "opencode", "cursor", "codex"];
     const keys = Object.keys(c.hosts || {}).sort();
     const guards = c.hosts || {};
-    const ok = c.version === 1 && JSON.stringify(keys) === JSON.stringify(expected.sort()) &&
+    const ok = c.version === 2 && JSON.stringify(keys) === JSON.stringify(expected.sort()) &&
       expected.every((host) => guards[host].nativeDispatch === "available" &&
-        guards[host].finalEnforcement === "Land gates") &&
+        guards[host].finalEnforcement === "Land gates" &&
+        guards[host].workflowGuarantees.terminalTruth === "runtime-enforced" &&
+        guards[host].workflowGuarantees.staleProof === "runtime-enforced" &&
+        guards[host].workflowGuarantees.explicitLand === "runtime-enforced") &&
       guards["claude-code"].liveMutationGuards.coverage === "full" &&
+      guards["claude-code"].workflowGuarantees.phaseIsolation === "live-hook-and-runtime" &&
       guards.opencode.liveMutationGuards.coverage === "partial" &&
       guards.opencode.liveMutationGuards.sessionDigest === "unavailable" &&
+      guards.opencode.workflowGuarantees.phaseIsolation === "live-plugin-and-runtime" &&
       guards.cursor.liveMutationGuards.coverage === "unavailable" &&
-      guards.codex.liveMutationGuards.coverage === "unavailable";
+      guards.codex.liveMutationGuards.coverage === "unavailable" &&
+      guards.cursor.workflowGuarantees.phaseIsolation === "final-audit-only" &&
+      guards.codex.workflowGuarantees.phaseIsolation === "final-audit-only" &&
+      guards.cursor.unattendedWrites.mode === "blocked-without-equivalent-boundary" &&
+      guards.codex.unattendedWrites.mode === "blocked-without-equivalent-boundary";
     process.exit(ok ? 0 : 1);
   ' "$HOST_CAPABILITIES"
 assert_cmd_zero "host wiring table matches the canonical capability rows" \
@@ -188,6 +201,44 @@ assert_file_contains "the English CLI page pins the runtime API" \
   "$DOCS/cli.md" "| runtime API | $runtime_api |"
 assert_file_contains "the Thai CLI page pins the runtime API" \
   "$DOCS/th/cli.md" "| runtime API | $runtime_api |"
+
+provider_protocol="$(jq -r '.providerProtocol' \
+  "$ROOT/.claude/harness/protocol.json")"
+packet_schema="$(jq -r '.packetSchema' "$ROOT/.claude/harness/protocol.json")"
+proof_protocol="$(jq -r '.proofProtocol' "$ROOT/.claude/harness/protocol.json")"
+semantic_acceptance_protocol="$(jq -r '.semanticAcceptanceProtocol' \
+  "$ROOT/.claude/harness/protocol.json")"
+for page in "$DOCS/cli.md" "$DOCS/th/cli.md"; do
+  label="$(basename "$(dirname "$page")")"
+  assert_file_contains "$label CLI pins provider protocol" \
+    "$page" "| provider protocol | $provider_protocol |"
+  assert_file_contains "$label CLI pins packet schema" \
+    "$page" "| packet schema | $packet_schema |"
+  assert_file_contains "$label CLI pins proof protocol" \
+    "$page" "| proof protocol | $proof_protocol |"
+  assert_file_contains "$label CLI pins semantic acceptance protocol" \
+    "$page" "| semantic acceptance protocol | $semantic_acceptance_protocol |"
+done
+assert_file_contains "English loop documents convergent gates" \
+  "$DOCS/loop.md" "## How every gate converges"
+assert_file_contains "Thai loop documents convergent gates" \
+  "$DOCS/th/loop.md" "## ทุก gate เดินจนจบอย่างไร"
+assert_file_contains "English install guide documents Homebrew" \
+  "$DOCS/install.md" "brew install claude-foundation"
+assert_file_contains "Thai install guide documents Homebrew" \
+  "$DOCS/th/install.md" "brew install claude-foundation"
+assert_file_contains "English install guide requires committing setup before work" \
+  "$DOCS/install.md" "## Commit the installation"
+assert_file_contains "Thai install guide requires committing setup before work" \
+  "$DOCS/th/install.md" "## Commit การติดตั้ง"
+assert_file_contains "English install guide leads into the first change" \
+  "$DOCS/install.md" "## Start your first change"
+assert_file_contains "Thai install guide leads into the first change" \
+  "$DOCS/th/install.md" "## เริ่ม change แรก"
+assert_file_contains "English Land docs preserve unavailable cost" \
+  "$DOCS/loop/land.md" 'cost stays `null`'
+assert_file_contains "Thai Land docs preserve unavailable cost" \
+  "$DOCS/th/loop/land.md" 'cost เป็น `null`'
 
 quality_capabilities_protocol="$(jq -r '.qualityCapabilitiesProtocol' \
   "$ROOT/.claude/harness/protocol.json")"

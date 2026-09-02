@@ -1,5 +1,9 @@
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
+import {
+  SEMANTIC_ACCEPTANCE_PROTOCOL_VERSION,
+  validateSemanticAcceptanceEnvelope
+} from "./semantic-acceptance.mjs";
 
 // Adapters the harness itself executes. A receipt may only claim one of these
 // when this process ran the command; naming one on the command line is a claim
@@ -517,6 +521,33 @@ export function createReceiptRuntime({
     };
   }
 
+  function semanticAcceptanceReceiptInput(id, provider, status, flags) {
+    const config = providerConfig(id, provider);
+    if (providerCapability(provider, config) !== "semantic-acceptance") return flags;
+    const source = String(flags.envelope || "").trim();
+    if (!source || !existsSync(resolve(source)))
+      die(`semantic-acceptance provider '${provider}' requires --envelope <signed-json>`);
+    const workspaceHash = flags.workspaceHash || providerWorkspaceHash(id, provider);
+    const result = validateSemanticAcceptanceEnvelope({
+      envelope: readJson(resolve(source)), config, changeId: id, provider, workspaceHash
+    });
+    if (!result.valid) die(result.reason);
+    if (result.status !== status)
+      die(`semantic acceptance envelope status '${result.status}' does not match requested receipt status '${status}'`);
+    const references = [
+      ...(Array.isArray(flags.reference) ? flags.reference : flags.reference ? [flags.reference] : []),
+      `semantic-verdict:sha256:${result.verdictDigest}`
+    ];
+    return {
+      ...flags,
+      workspaceHash,
+      observed: `signed semantic acceptance ${result.status}; ${result.cases.length} case(s)`,
+      source: `signed-oracle:${result.issuer}`,
+      reference: references,
+      semanticAcceptanceResult: result
+    };
+  }
+
   function receiptArtifactFlags(flags) {
     const artifactFlags = [
       ...(Array.isArray(flags.artifact) ? flags.artifact : []),
@@ -610,6 +641,15 @@ export function createReceiptRuntime({
     };
   }
 
+  function normalizedCriticalCaseObservations(flags) {
+    if (!Array.isArray(flags.criticalCases)) return [];
+    return flags.criticalCases.map((row) => ({
+      id: String(row?.id || "").trim(),
+      status: String(row?.status || "").trim()
+    })).filter((row) => row.id && ["pass", "fail", "skip", "todo"].includes(row.status))
+      .sort((left, right) => left.id.localeCompare(right.id));
+  }
+
   function receiptLog(flags, artifacts) {
     return artifacts.find((artifact) => artifact.type === "command-log")?.path ||
       flags.log || null;
@@ -633,6 +673,7 @@ export function createReceiptRuntime({
       inputIdentity,
       rebind: receiptRebind(id, context),
       claims: requestedClaims, status, observed: suppliedEvidence.observed,
+      criticalCases: normalizedCriticalCaseObservations(flags),
       provenance: {
         source: suppliedEvidence.provenanceSource || null,
         recordedBy: String(flags["recorded-by"] || "").trim() || null
@@ -847,6 +888,45 @@ export function createReceiptRuntime({
     };
   }
 
+  function semanticSourceBindings(id, config) {
+    return (config.acceptanceCases || []).flatMap((row) => {
+      if (!row.sourceProvider) return [];
+      const path = receiptPath(id, row.sourceProvider);
+      if (!existsSync(path))
+        die(`semantic acceptance case '${row.id}' requires current source receipt '${row.sourceProvider}'`);
+      const source = readJson(path, {});
+      const observation = (source.criticalCases || []).find((candidate) =>
+        candidate.id === row.criticalCaseId);
+      if (!observation || observation.status !== "pass")
+        die(`semantic acceptance case '${row.id}' requires passing critical case '${row.criticalCaseId}' from '${row.sourceProvider}'`);
+      return [{
+        caseId: row.id,
+        sourceProvider: row.sourceProvider,
+        criticalCaseId: row.criticalCaseId,
+        sourceReceiptDigest: stableHash(source),
+        observation
+      }];
+    });
+  }
+
+  function applySemanticAcceptanceReceipt(id, flags, receipt, context) {
+    const result = flags.semanticAcceptanceResult;
+    if (!result) die("semantic acceptance receipt requires a verified signed envelope");
+    receipt.semanticAcceptanceProtocolVersion = SEMANTIC_ACCEPTANCE_PROTOCOL_VERSION;
+    receipt.semanticAcceptance = {
+      issuer: result.issuer,
+      verdictDigest: result.verdictDigest,
+      subjectWorkspaceHash: receipt.workspaceHash,
+      cases: result.cases,
+      sourceBindings: semanticSourceBindings(id, context.config),
+      signedEnvelope: {
+        version: SEMANTIC_ACCEPTANCE_PROTOCOL_VERSION,
+        payload: result.payload,
+        signature: result.signature
+      }
+    };
+  }
+
   function validateBrowserReceipt(status, receipt) {
     if (status !== "pass") return;
     if (receipt.capability.foregroundRequired && !receipt.capability.foregroundAvailable)
@@ -881,6 +961,8 @@ export function createReceiptRuntime({
       applyReviewReceipt(id, provider, status, flags, options, receipt, receipt.references);
     if (context.capability === "acceptance")
       applyAcceptanceReceipt(id, status, flags, receipt, context);
+    if (context.capability === "semantic-acceptance")
+      applySemanticAcceptanceReceipt(id, flags, receipt, context);
     if (context.capability === "browser") validateBrowserReceipt(status, receipt);
     if (context.capability === "discovery") applyDiscoveryReceipt(status, flags, receipt);
     if (context.capability === "mutation") applyMutationReceipt(status, flags, receipt);
@@ -891,10 +973,11 @@ export function createReceiptRuntime({
   // an execution. Everything arriving over the CLI is a manual assertion and
   // owes the evidence floor below.
   function recordReceipt(id, provider, status, flags = {}, options = {}) {
-    const context = receiptExecutionContext(id, provider, status, flags, options);
-    const suppliedEvidence = receiptEvidence(id, provider, status, flags, context);
-    const receipt = baseReceipt(id, provider, status, flags, context, suppliedEvidence);
-    applyCapabilityReceipt(id, provider, status, flags, options, receipt, context);
+    const preparedFlags = semanticAcceptanceReceiptInput(id, provider, status, flags);
+    const context = receiptExecutionContext(id, provider, status, preparedFlags, options);
+    const suppliedEvidence = receiptEvidence(id, provider, status, preparedFlags, context);
+    const receipt = baseReceipt(id, provider, status, preparedFlags, context, suppliedEvidence);
+    applyCapabilityReceipt(id, provider, status, preparedFlags, options, receipt, context);
     writeJson(receiptPath(id, provider), receipt);
     if (!options.quiet) console.log(`RECEIPT ${id}/${provider}: ${status}`);
   }

@@ -1,9 +1,9 @@
 ---
-title: Foundation เขียนอะไรบ้าง
+title: Change Loop เขียนอะไรบ้าง
 description: artifact ทุกตัวที่ harness สร้าง — change packet, machine state, evidence vault และ archive — และตัวไหนที่ตั้งใจให้คุณอ่าน
 ---
 
-Foundation เขียนลงสองที่ และการแยกนี้คือหัวใจทั้งหมด
+Change Loop เขียนลงสองที่ และการแยกนี้คือหัวใจทั้งหมด
 
 **`openspec/` เป็นของคุณ** เก็บเจตนาที่ต้องคงอยู่ ผ่านการรีวิวโดยคน และ commit ลง Git
 **`.foundation/` เป็นของเครื่อง** เก็บ lifecycle state, receipt, log และ proof bundle
@@ -30,7 +30,7 @@ openspec/
 
 | Path | เจ้าของ | ตอนติดตั้ง |
 |---|---|---|
-| `schemas/` | Foundation | **ถูกเขียนทับทุกครั้งที่ติดตั้ง** แก้ profile ตรงนี้แล้วอัปเกรดครั้งหน้าจะหายไป |
+| `schemas/` | Change Loop | **ถูกเขียนทับทุกครั้งที่ติดตั้ง** แก้ profile ตรงนี้แล้วอัปเกรดครั้งหน้าจะหายไป |
 | `config.yaml` | โปรเจกต์ของคุณ | คัดลอกให้เฉพาะตอนที่ยังไม่มี หลังจากนั้นเป็นของคุณ |
 | `repositories.yaml` | โปรเจกต์ของคุณ | คัดลอกให้เฉพาะตอนที่ยังไม่มี หลังจากนั้นเป็นของคุณ |
 | `specs/`, `changes/`, `investigations/` | โปรเจกต์ของคุณ | installer ไม่แตะเลย |
@@ -175,7 +175,7 @@ ledger ของรอบ review เป็น hash chain ถ้าลิงก�
 โดยไฟล์ยังครบเหมือนเดิม แล้วรวม delta ของ requirement เข้าไปใน spec ถาวรที่
 `openspec/specs/<capability>/spec.md`
 
-การรวมนี้ถูกตรวจสอบ ไม่ใช่เชื่อไปเลย Foundation จะคำนวณสถานะก่อน หลัง และ delta
+การรวมนี้ถูกตรวจสอบ ไม่ใช่เชื่อไปเลย Change Loop จะคำนวณสถานะก่อน หลัง และ delta
 ใหม่อีกครั้ง แล้วบล็อกการ land ถ้า spec ที่ archive ไม่ตรงกับที่ delta บอกว่าจะได้
 
 ## artifact ที่ตั้งใจไม่ให้เป็นหลักฐาน

@@ -1,8 +1,12 @@
 # Executable evidence adapters
 
-Foundation separates the stable behavioral contract from replaceable execution
-wiring. Foundation does not install test frameworks, browsers, or project
+Change Loop separates the stable behavioral contract from replaceable execution
+wiring. Change Loop does not install test frameworks, browsers, or project
 dependencies; the project owns and locks every executable named by an adapter.
+
+This is the canonical provider/receipt reference for maintainers and evidence
+authors. For the installed user journey, start with `WORKFLOW.md`; for runtime
+file ownership and commands, use `README.md` in this directory.
 
 ## Behavioral contract
 
@@ -112,15 +116,45 @@ command prints the change's workspace hash. An invalid signature,
 stale workspace, wrong issuer, or unsigned passing artifact is rejected before
 a receipt is written.
 
+### Signed semantic acceptance
+
+`semantic-acceptance` is the first-class proof boundary for hidden or
+independent behavioral cases. Configure it as an external provider with a
+trusted Ed25519 issuer/key and declare stable case IDs, their claims, input
+partitions, and whether each case is required. A case may also bind a critical
+case observation from another provider. Defect reproductions can require a
+signed before-fail/after-pass transition.
+
+The external runner returns a signed envelope containing only the change,
+provider, workspace hash, case IDs, statuses, observation digests, and optional
+transition digests. Hidden inputs and oracle implementation never enter the
+agent packet. The integration records that envelope through the existing
+command surface:
+
+```bash
+claude-foundation evidence record <change> semantic-acceptance \
+  --envelope signed-semantic-result.json
+```
+
+The runtime verifies the signature, issuer, workspace, complete required-case
+set, uniqueness, claim/partition binding, transition, and any referenced source
+receipt before writing the receipt. A review pass cannot override a failed or
+missing semantic case. Workspace edits, envelope tampering, or a stale/missing
+source critical-case receipt invalidate it and block Proof and Land.
+
 Use `proof advance` as the normal resumable path:
 
 ```bash
 claude-foundation proof advance <change>
 ```
 
-It executes missing project evidence once, routes review before acceptance, and
-returns a stable waiting handoff. Repeating it against an unchanged open request
-does not rerun evidence or dispatch another reviewer. Configured AI review uses
+It executes missing project evidence for the current gate, aggregates findings,
+and reuses current receipts while repaired inputs selectively invalidate their
+providers and downstream dependencies. Product repairs may repeat until all
+required evidence passes. A decision, authority, resource, conflict, or
+no-progress boundary preserves the change and returns an exact resume route.
+Repeating it against an unchanged open request does not rerun evidence or
+dispatch another reviewer. Configured AI review uses
 `authority run`; a named human review uses `authority dispatch` before
 `authority record`; acceptance uses request/status/record without a review
 dispatch. Requests contain bounded packets and expire or become stale with the
@@ -141,7 +175,7 @@ not the normal interactive recovery flow.
 | `test-discovery` | Run a test command once and emit both test and discovery receipts |
 | `playwright` | Run project-owned Playwright tests and map structured claim annotations |
 | `contract-digest` | Hash one declared artifact in two or more repositories and pass only when the bytes agree |
-| `external` | Require a receipt from a system Foundation does not execute |
+| `external` | Require a receipt from a system Change Loop does not execute |
 
 ### Test and discovery in more than one repository
 
@@ -207,10 +241,18 @@ Valid receipts are reused. Commands with identical executable arguments,
 environment, working directory, and timeout are deduplicated within one proof
 execution. Providers with non-conflicting resources run concurrently.
 
+For a single selected writable npm repository containing both `package.json`
+and `package-lock.json`, Change Loop supplies the built-in
+`dependency-supply-chain` lockfile provider automatically. No
+`execution.yaml` entry is needed. A manifest/lock mismatch fails Proof; a
+repaired lockfile is checked again and can pass. Multi-repository or ambiguous
+ownership remains explicit rather than guessing which repository to execute in.
+
 What expires a receipt is what it is bound to. A provider that runs a command
 binds the workspace minus the change packet, so editing `proposal.md`,
 `design.md`, `tasks.md`, or a spec delta after proving re-finalizes the proof
-without re-executing anything. `review` and `acceptance` bind the whole
+without re-executing anything. `review`, `acceptance`, and
+`semantic-acceptance` bind the whole
 workspace including the packet — a reviewer read it — and cannot narrow that.
 In a multi-repository snapshot, both hashes compose repository content rather
 than recorded Git base commits. Base heads remain explicit sandbox/Land state,
@@ -316,7 +358,7 @@ Install and lock Playwright in the application repository. A typical command is:
 For a direct Playwright command, the adapter adds `--reporter=json` and the
 configured `--project` unless they are already supplied. Wrapper commands such
 as `npm run e2e` must forward those options themselves or write the configured
-`report` file. Use Playwright `webServer` configuration or a named Foundation
+`report` file. Use Playwright `webServer` configuration or a named Change Loop
 service for server startup. Every explicit readiness probe requires an expected
 body or header identity. A status-only probe is rejected because a different
 process could occupy the port.
@@ -342,7 +384,7 @@ Browser automation is not physical operating-system input. Use
 evidence that genuinely requires a focused native window.
 
 Projects should also install an automatic Playwright fixture that fails on
-unexpected `console.error` and uncaught page errors. Foundation cannot infer
+unexpected `console.error` and uncaught page errors. Change Loop cannot infer
 that policy from a successful browser exit.
 
 ## Resources and dependencies

@@ -31,6 +31,7 @@ to force fully serial execution when bisecting.
 
 | Suite | Contract |
 |---|---|
+| `bench/tests/openspec-native-{matrix,runner,scorecard,lab,workloads}.test.mjs` | Versioned scenario manifests, clean disposable consumer installation, lifecycle/oracle/quality scorecards, four cross-domain mutation-killing oracles, durable evidence preservation, and cleanup |
 | `harness/run-host-instruction-tests.mjs` | Protocol-1 package-owned host instructions and agent contract, opaque arguments, stable failures, project independence, and packaged layout |
 | `harness/run-context-budget-tests.sh` | Always-on, orchestrator, command, agent-contract, plan-summary, and packet-size ceilings |
 | `harness/run-agent-contract-tests.sh` | JSON-only plans/packets, completed dependencies, claim authority, corrupt-lease fallback, model ceiling, and dispatch conflicts |
@@ -61,8 +62,16 @@ to force fully serial execution when bisecting.
 | `harness/run-harness-tests.sh` + `harness/contracts/*.sh` | Aggregate runner plus domain slices for change policy, evidence/proof, sandbox/Land, multi-repository behavior, planning/diagnostics, and leases. No arguments runs all five slices in one shared fixture process in the original assertion order; slice-name arguments select independent slices. `run-all.sh` divides evidence/proof into eleven balanced rows; multi-repository and planning-diagnostics stay together because the latter reads the former's `cross-repository-profile` state |
 | `harness/run-installer-tests.sh` | Upgrade-safe installation, legacy cleanup, native CLI/API compatibility, doctor, packet handoff, honest metrics, and Cursor adapter |
 | `harness/run-stale-recovery-tests.mjs` | Stale proof and stale authority refusals carry the recovery order and the resuming command |
+| `.claude/harness/tests/convergent-gate.test.mjs` | Shared phase-gate finding normalization, progress fingerprints, root-cause repair batches, and durable no-progress decision guidance |
+| `.claude/harness/tests/authority-preflight.test.mjs` | Shared risk-based signed-CI feasibility and typed pre-Build authority decisions without fabricated evidence |
+| `.claude/harness/tests/execution-contract.test.mjs` | One versioned compiler binds risk, evidence, authority, workspace capability, budgets, repository topology, and Land requirements without changing public commands |
+| `.claude/harness/tests/lifecycle-reducer.test.mjs` | All internal lifecycle status mutations pass through one typed transition reducer, including recovery and legacy direct-workspace edges |
+| `.claude/harness/tests/host-capability-matrix.test.mjs` | Claude Code, OpenCode, Cursor, and Codex declare terminal, isolation, stale-proof, explicit-Land, and unattended-write guarantees without claiming hook parity |
+| `.claude/harness/tests/semantic-acceptance.test.mjs` | Signed hidden-oracle verdicts bind stable claim partitions and reject missing, mismatched, failed-as-pass, or tampered cases without exposing oracle content |
+| `.claude/harness/tests/semantic-acceptance-seam.test.mjs` | A clean installed consumer records a signed semantic receipt, preserves the prior receipt after tampering, and expires it when product content changes |
+| `.claude/harness/tests/npm-lockfile-auto-seam.test.mjs` | A clean installed npm consumer activates the built-in manifest/lockfile provider without execution.yaml wiring, rejects mismatch, and passes after the lockfile is repaired |
 | `hooks/run-hook-tests.sh` | The hooks actually shipped: secret protection, low-cost lint dispatch, and the opt-in direct-main guard |
-| `hooks/run-phase-mutation-guard-tests.sh` | Phase resolution, audit-only default, and block-mode refusals |
+| `hooks/run-phase-mutation-guard-tests.sh` | Phase resolution, fail-closed active-phase default, adoption-only carve-out, explicit audit/block modes, and workspace containment |
 | `harness/run-wiring-tests.sh` | Every runtime factory parameter is supplied by the composition root, and no runtime module is orphaned |
 | `harness/run-architecture-tests.mjs` | Runtime dependency direction, forbidden-edge mutation detection, syntax for every shipped module, and CI path-filter coverage |
 | `harness/run-single-source-tests.mjs` | Tables that encode one fact in two files agree: the lifecycle-phase map against the `cli.sh` grammar, the four runtime-API pins pairwise, the runtime version against `protocol.json`, and `install.sh` `MANAGED` against CLAUDE.md |

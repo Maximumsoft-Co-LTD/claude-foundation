@@ -2,8 +2,11 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { DatabaseSync } = require('node:sqlite');
 const { migrateDashboardSchema, SCHEMA_VERSION } = require('../migrations');
+
+let DatabaseSync = null;
+try { ({ DatabaseSync } = require('node:sqlite')); } catch { /* optional on Node < 24 */ }
+const sqliteTest = DatabaseSync ? test : test.skip;
 
 function columns(db, table) {
   return new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((row) => row.name));
@@ -35,7 +38,7 @@ function legacyDatabase(version) {
   return db;
 }
 
-test('fresh database migrates atomically to the current schema', () => {
+sqliteTest('fresh database migrates atomically to the current schema', () => {
   const db = new DatabaseSync(':memory:');
   const result = migrateDashboardSchema(db);
   assert.deepEqual(result, { from: 0, to: SCHEMA_VERSION });
@@ -47,14 +50,14 @@ test('fresh database migrates atomically to the current schema', () => {
   db.close();
 });
 
-test('migration is idempotent', () => {
+sqliteTest('migration is idempotent', () => {
   const db = new DatabaseSync(':memory:');
   migrateDashboardSchema(db);
   assert.deepEqual(migrateDashboardSchema(db), { from: SCHEMA_VERSION, to: SCHEMA_VERSION });
   db.close();
 });
 
-for (const version of [1, 2, 3]) test(`schema v${version} upgrades to the current schema`, () => {
+for (const version of [1, 2, 3]) sqliteTest(`schema v${version} upgrades to the current schema`, () => {
   const db = legacyDatabase(version);
   assert.deepEqual(migrateDashboardSchema(db), { from: version, to: SCHEMA_VERSION });
   assert.equal(db.prepare('PRAGMA user_version').get().user_version, SCHEMA_VERSION);
@@ -64,7 +67,7 @@ for (const version of [1, 2, 3]) test(`schema v${version} upgrades to the curren
   db.close();
 });
 
-test('future schema is rejected without rewriting its version marker', () => {
+sqliteTest('future schema is rejected without rewriting its version marker', () => {
   const db = new DatabaseSync(':memory:');
   db.exec(`PRAGMA user_version = ${SCHEMA_VERSION + 1};`);
   assert.throws(() => migrateDashboardSchema(db), /newer than supported schema/);

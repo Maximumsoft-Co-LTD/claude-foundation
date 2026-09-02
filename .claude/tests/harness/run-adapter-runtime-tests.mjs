@@ -125,7 +125,7 @@ test("generic command execution is deduplicated while receipts remain provider-s
   const cache = new Map();
   assert.deepEqual(await world.runtime.executeAdapter(
     "change", "provider", { capability: "test", adapter: "command" }, "run", cache
-  ), { provider: "provider", status: "pass" });
+  ), { version: 1, provider: "provider", status: "pass", observations: [] });
   await world.runtime.executeAdapter(
     "change", "provider", { capability: "test", adapter: "command" }, "run", cache);
   assert.equal(world.executions(), 1);
@@ -143,6 +143,11 @@ test("critical cases normalize structured and test-runner reports", () => {
   assert.equal(criticalCaseResult({ criticalCases: [
     { id: "case-1", status: "failed" }
   ] }, ["case-1"]).status, "fail");
+  assert.deepEqual(criticalCaseResult({ criticalCases: [
+    { id: "descriptive test title", status: "passed" }
+  ] }, ["case-1"]), {
+    status: "pass", observations: [{ id: "case-1", status: "passed" }]
+  });
   assert.deepEqual(criticalCaseResult({ foundation: { criticalCases: [
     null, { id: "", status: "pass" }, { id: 42, status: "OK" }
   ] } }, ["42"]), { status: "pass", observations: [{ id: "42", status: "ok" }] });
@@ -263,6 +268,21 @@ test("test-discovery records test and discovery outcomes", async () => {
     ["provider", "pass"], ["discovery", "pass"]
   ]);
   assert.equal(world.receipts[1].flags.discovered, 3);
+});
+
+test("test-discovery falls back to Node spec output for the built-in runner", async () => {
+  const config = {
+    capability: "test", adapter: "test-discovery", command: ["node", "--test"],
+    discoveryProvider: "discovery", minimum: 1, reportFormat: "tap"
+  };
+  const world = fixture(config, result({ stdout: "✔ works (1ms)\nℹ tests 1\nℹ pass 1\nℹ fail 0" }), {
+    parseNodeTestSpecOutput: () => ({ totalTests: 1, criticalCases: [] }),
+    numericReportValue: (report) => report?.totalTests ?? null
+  });
+  const outcome = await world.runtime.executeAdapter(
+    "change", "provider", config, "run", new Map());
+  assert.equal(outcome.status, "pass");
+  assert.equal(world.receipts[1].flags.discovered, 1);
 });
 
 test("test-discovery distinguishes unavailable counts and infrastructure errors", async () => {

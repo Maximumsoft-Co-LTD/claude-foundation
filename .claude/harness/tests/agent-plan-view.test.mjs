@@ -130,6 +130,19 @@ test("blocking reasons combine ambiguity and active scope conflicts", () => {
   ]);
 });
 
+test("blocking reasons stop dispatch before unavailable authority spends model budget", () => {
+  assert.deepEqual(agentPlanBlockingReasons({ ambiguity: "clear" }, [], {
+    status: "NEEDS_USER_DECISION",
+    blockers: [{
+      kind: "configuration-required",
+      code: "SIGNED_CI_CONFIGURATION_REQUIRED",
+      summary: "signed CI is not configured"
+    }]
+  }), [
+    "configuration-required:SIGNED_CI_CONFIGURATION_REQUIRED: signed CI is not configured"
+  ]);
+});
+
 test("graph provider rows support contract defaults and configured providers", () => {
   const fallback = agentGraphProviderRows({
     requiredProviders: null, providerConfig: null,

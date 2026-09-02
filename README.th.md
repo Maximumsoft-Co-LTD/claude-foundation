@@ -1,8 +1,8 @@
-# Claude Foundation
+# Change Loop
 
 [English](README.md) | **ภาษาไทย**
 
-Claude Foundation คือ software-change harness สำหรับ AI coding agent ช่วยให้
+Change Loop คือ software-change harness สำหรับ AI coding agent ช่วยให้
 agent ทำงานเป็นขั้นตอนที่ตรวจสอบและกลับมาทำต่อได้ ตั้งแต่ตกลงว่าจะเปลี่ยนอะไร
 ลงมือในพื้นที่แยก พิสูจน์ผลด้วย evidence จริง และค่อยนำงานเข้า project หลัก
 
@@ -10,23 +10,32 @@ agent ทำงานเป็นขั้นตอนที่ตรวจส�
 Investigate? → Change → Build → Prove → Land
 ```
 
-Foundation ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก็บ requirement
+Change Loop ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก็บ requirement
 ที่ต้องคงอยู่ และใช้เครื่องมือของ repository เองสำหรับ implement กับ test ระบบนี้
 ไม่ได้มาแทน coding agent, test framework, CI หรือ Git workflow ของคุณ
+ชื่อผลิตภัณฑ์และ workflow คือ **Change Loop** ส่วน package และ CLI ที่ติดตั้งยังใช้
+`claude-foundation` เหมือนเดิม จึงไม่ต้องเปลี่ยนคำสั่งที่ใช้อยู่
 
-**Version 3.4.10** — runtime API 26, provider protocol 12 receipt ที่บันทึกด้วย
+**Version 3.4.10** — runtime API 26, provider protocol 13 receipt ที่บันทึกด้วย
 เวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
+
+## เริ่มอ่านตรงไหน
+
+- ถ้าจะใช้งาน ให้เริ่มที่ [สอนทำ Change แรก](#สอนทำ-change-แรก)
+- ถ้าจะเข้าใจ lifecycle ให้อ่าน [ภาพรวม Workflow](#ภาพรวม-workflow) และเปิด [WORKFLOW.md](WORKFLOW.md) เมื่อต้องการ contract แบบละเอียด
+- ถ้าจะพัฒนา evidence หรือ runtime ให้อ่าน [คู่มือ harness](.claude/harness/README.md) และ [เอกสาร evidence](.claude/harness/EVIDENCE.md)
+- ถ้าจะเตรียม release ให้เริ่มที่ [RELEASING.md](RELEASING.md) และ [สถานะ scenario ปัจจุบัน](docs/reports/user-scenario-release-status.md)
 
 ## AI กับ Harness แบ่งหน้าที่กันอย่างไร
 
-Foundation ไม่ใช่ AI และไม่ได้เขียน code เอง แต่เป็น deterministic control plane
+Change Loop ไม่ใช่ AI และไม่ได้เขียน code เอง แต่เป็น deterministic control plane
 ที่ควบคุมการทำงานรอบ native coding agent
 
 | ส่วน | หน้าที่ |
 |---|---|
 | ผู้ใช้ | กำหนด intent ตัดสินใจเรื่องสำคัญ review ผลลัพธ์ และอนุญาต Land อย่างชัดเจน |
 | AI coding agent | Investigate, เขียนข้อตกลง, implement code และ test และแก้ failure ที่ evidence รายงาน |
-| Foundation harness | ควบคุม lifecycle state, scope, sandbox, evidence, proof freshness, budget และ Land guard |
+| Change Loop harness | ควบคุม lifecycle state, scope, sandbox, evidence, proof freshness, budget และ Land guard |
 | OpenSpec | เก็บ requirement และ change agreement แบบถาวรที่คน review ได้ |
 | Tool ของ project | Test runner, linter, Playwright, scanner และ provider อื่นสร้าง executable evidence |
 | Git และ CI | ดูแล version control และ automation ตาม process เดิมของ project |
@@ -52,14 +61,14 @@ agent และ model ยังเป็นหน้าที่ของ native
 ## ทำไมต้องใช้
 
 AI agent อาจเขียน code ที่ดูถูกต้อง แต่เข้าใจ requirement ผิด ทดสอบไม่ตรงจุด
-หรือแก้ working tree หลักก่อนที่คุณจะได้ review Foundation จึงแยกหน้าที่เหล่านี้:
+หรือแก้ working tree หลักก่อนที่คุณจะได้ review Change Loop จึงแยกหน้าที่เหล่านี้:
 
 - **OpenSpec เก็บข้อตกลง** ทำให้ intent ไม่หายไปพร้อม chat history
 - **Build ทำในพื้นที่แยก** โดยใช้ Git worktree หรือ directory copy เพื่อไม่ให้
   งานระหว่างทางปนกับ project หลัก
 - **Evidence เป็นตัวตัดสินความพร้อม** Test, static analysis, browser check หรือ
   tool ของ project จะสร้าง receipt ที่ผูกกับ workspace จริง
-- **Land ต้องสั่งอย่างชัดเจน** Foundation ไม่ commit, push หรือเปิด pull request
+- **Land ต้องสั่งอย่างชัดเจน** Change Loop ไม่ commit, push หรือเปิด pull request
   เอง ถ้าคุณไม่ได้อนุญาตแยกต่างหาก
 - **กลับมาทำต่อได้** Task, runtime state, receipt และ recovery journal ยังคงอยู่
   แม้เปลี่ยน agent session
@@ -72,21 +81,31 @@ AI agent อาจเขียน code ที่ดูถูกต้อง แ�
 สิ่งที่ต้องมี:
 
 - Node.js 20.19 ขึ้นไป
-- Git สำหรับ worktree isolation
 - OpenSpec CLI 1.7.0 สำหรับ sync spec และ archive
-- `jq` สำหรับ merge Claude settings ตอนติดตั้ง
+
+แนะนำให้มี Git สำหรับ worktree isolation; ถ้าโปรเจกต์ dirty หรือไม่ใช่ Git จะใช้
+isolated copy และแนะนำให้มี `jq` สำหรับ merge Claude settings เดิม หากไม่มี
+installer จะรักษาไฟล์เดิมและสร้าง companion file ให้ตรวจและ merge เอง
 
 ```bash
 npm install -g @fission-ai/openspec@1.7.0
-
-cd /path/to/claude-foundation
-./install.sh /path/to/your-project
 ```
 
-หรือใช้ packaged command:
+ติดตั้งด้วย Homebrew:
 
 ```bash
-claude-foundation init /path/to/your-project
+brew tap maximumsoft-co-ltd/claude-foundation \
+  https://github.com/Maximumsoft-Co-LTD/claude-foundation
+brew install claude-foundation
+claude-foundation init /path/to/your-project --yes
+```
+
+หรือติดตั้งจาก source checkout:
+
+```bash
+git clone https://github.com/Maximumsoft-Co-LTD/claude-foundation.git
+cd claude-foundation
+./install.sh /path/to/your-project
 ```
 
 Claude Code ไม่ต้องใช้ adapter ส่วน agent host อื่นใช้ `--host` วาง adapter
@@ -109,9 +128,17 @@ claude-foundation version
 claude-foundation doctor --stage change
 ```
 
+ถ้าเป็น Git project ให้ตรวจและ commit ไฟล์ setup ที่ installer stage ไว้ก่อน
+`/change` แรก เพราะ installer ไม่มีอำนาจ commit แทนผู้ใช้:
+
+```bash
+git status
+git commit -m "chore: install Change Loop"
+```
+
 Installer จะรักษา specs, active changes, runtime state, custom agents และ hooks
 ของ project ไว้ การ upgrade จะ refresh เฉพาะ command, schema, harness, rule,
-skill และ hook ที่ Foundation เป็นเจ้าของตาม install manifest
+skill และ hook ที่ Change Loop เป็นเจ้าของตาม install manifest
 
 ## ใช้ Investigate ก่อนตกลงว่าจะเปลี่ยนอะไร
 
@@ -188,7 +215,7 @@ receipt เป็น protocol ภายในจนกว่าคุณจะ�
 /build <change-id>
 ```
 
-ถ้า Git repository สะอาด Foundation จะสร้าง detached worktree ถ้ามี local
+ถ้า Git repository สะอาด Change Loop จะสร้าง detached worktree ถ้ามี local
 change อยู่แล้วหรือไม่ใช่ Git repository จะใช้ isolated copy แทน Agent แก้ code
 ในพื้นที่นั้นและติ๊ก task ที่ verify ผ่านใน `tasks.md` โดยไม่แก้ project หลัก
 
@@ -203,6 +230,12 @@ worktree มีแค่ไฟล์ที่ Git ติดตาม ถ้า p
 หรือ `setupCommand` รายรีโปใน `openspec/repositories.yaml` มันจะรันหนึ่งครั้ง
 ในทุก workspace ใหม่ และถ้า setup ล้มเหลว sandbox จะถูกเก็บไว้พร้อมพิมพ์วิธีกู้คืน
 
+ถ้าต้องใช้ Bash โดยตรงระหว่าง Build ให้เริ่มคำสั่งที่แก้ไฟล์ด้วย
+`cd <exact-workspace> && ...` phase guard จะบล็อก package manager หรือ formatter
+ที่ไม่ได้ผูกกับ workspace, path ที่หนีด้วย `..` และ absolute output redirection
+ออกนอก workspace ก่อน shell เริ่มทำงาน ควรใช้ Edit/Write แบบ structured เมื่อทำได้
+และยังต้องพึ่ง process isolation ของ host สำหรับผลข้างเคียงทางอ้อมจาก script
+
 ทำไมต้องมีขั้นนี้: คุณ inspect หรือทิ้ง implementation ที่ยังไม่พร้อมได้ โดยไม่
 ปนกับ checkout ที่กำลังใช้งาน
 
@@ -212,7 +245,7 @@ worktree มีแค่ไฟล์ที่ Git ติดตาม ถ้า p
 /prove <change-id>
 ```
 
-Foundation จะ validate ข้อตกลง ตรวจว่า implementation task เสร็จ รัน evidence
+Change Loop จะ validate ข้อตกลง ตรวจว่า implementation task เสร็จ รัน evidence
 provider ตาม claim และเก็บ receipt ที่ผูกกับ content ของ workspace ถ้าผ่านจะได้:
 
 ```text
@@ -241,7 +274,7 @@ Land ต่อให้เอง งานไม่หายและไม่�
 
 ### 5. Commit ตาม Git process ของ project
 
-Foundation หยุดหลัง apply และ archive ให้ review ผลลัพธ์ จากนั้น commit, push
+Change Loop หยุดหลัง apply และ archive ให้ review ผลลัพธ์ จากนั้น commit, push
 และเปิด pull request ตาม process ปกติของ project
 
 ## ภาพรวม Workflow
@@ -287,7 +320,7 @@ Investigate ⇄ Change ⇄ Build ⇄ Prove → Land
 | `/prove` | Implementation task และ focused check เสร็จ | Required receipts และ `proof.json` ที่ผูกกับ content |
 | `/land` | Proof ผ่านและคุณยอมรับ change | Apply proven diff, sync specs และ archive |
 | `/changes` | กลับมาทำงานต่อหรือมีหลาย active changes | State ปัจจุบันและ operation ที่ควรทำต่อ |
-| `/dev` | Intent ชัดและต้องการ Change → Build → Prove ครั้งเดียว | Proven candidate และจงใจหยุดก่อน Land |
+| `/dev` | Intent ชัดและต้องการ Change → Build → Prove ครั้งเดียว | ปกติหยุดที่ proven candidate; automation lane ที่มี Land authority ล่วงหน้าอาจทำต่อถึง `archived` |
 
 Slash command แต่ละคำสั่งมีสองชั้นที่ทำงานร่วมกัน:
 
@@ -339,7 +372,7 @@ openspec/
 | `specs/` | Current product requirements ที่ยอมรับแล้ว | บันทึกว่าระบบหลัง Land ควรทำอะไร |
 | `changes/<change-id>/` | ข้อตกลงของ active change หนึ่งรายการ | แยก proposed behavior จาก current behavior จนกว่าจะ Land |
 | `changes/archive/` | ประวัติ change ที่เสร็จแล้ว | เก็บเหตุผลและวิธีที่ accepted behavior เปลี่ยนไป |
-| `schemas/` | Schema และ template ที่ Foundation ดูแล | กำหนด artifact ที่ standard และ rapid lane ต้องมี |
+| `schemas/` | Schema และ template ที่ Change Loop ดูแล | กำหนด artifact ที่ standard และ rapid lane ต้องมี |
 
 ### ไฟล์ใน Active Change
 
@@ -395,7 +428,7 @@ claude-foundation changes
 
 | State | หมายถึงอะไร | ทำอะไรต่อ |
 |---|---|---|
-| `untracked` | OpenSpec มี active change แต่ Foundation ไม่มี runtime record | ใช้ `/change <change-id>` เพื่อนำเข้า harness และ validate |
+| `untracked` | OpenSpec มี active change แต่ Change Loop ไม่มี runtime record | ใช้ `/change <change-id>` เพื่อนำเข้า harness และ validate |
 | `change` | มีข้อตกลงแล้ว แต่ยังไม่มี Build sandbox | ทำ artifact ให้ครบ แล้ว `/build` |
 | `building` | มี isolated workspace และ proof ยังไม่ผ่าน | ทำ `/build` ต่อ หรือ `/prove` เมื่อพร้อม |
 | `ready-to-land` | Passing proof ยังตรงกับ agreement และ workspace ปัจจุบัน | `/land` |
@@ -474,14 +507,11 @@ claim ที่ไม่มี task/provider, scenario ที่ไม่ตร�
 และ migration ที่ไม่มี rollback/integrity coverage
 
 Remote CI ตั้งค่า issuer กับ Ed25519 public key แล้ว import ด้วย `evidence
-verify-ci` ได้ ส่วน Prove ปกติใช้ `proof advance` ซึ่งรันหลักฐานที่ขาดหนึ่งครั้ง,
-จัด review ก่อน acceptance และคืนสถานะรอที่ทำต่อได้โดยไม่ polling การรีวิว AI
-ที่ตั้งค่าไว้ใช้ `authority run`; named-human review ต้อง reserve packet ด้วย
-`authority dispatch` ก่อน `authority record`; acceptance ไม่ต้อง dispatch แบบ
-review ทุกทางผูก evidence กับ workspace ปัจจุบัน จึงปฏิเสธ response ที่ stale,
-ไม่ตรง, ไม่มีลายเซ็น หรือถูก replay
+verify-ci` ได้ ส่วน `proof advance` เป็น Prove path ปกติที่ resume ได้ โดยสรุป
+convergent behavior และ authority routing ไว้ด้านล่าง ทุกทางผูก evidence กับ
+workspace ปัจจุบัน จึงปฏิเสธ response ที่ stale, ไม่ตรง, ไม่มีลายเซ็น หรือถูก replay
 
-Foundation ไม่ติดตั้ง test framework หรือ browser ให้ แต่รัน tool ที่ repository
+Change Loop ไม่ติดตั้ง test framework หรือ browser ให้ แต่รัน tool ที่ repository
 ประกาศและเก็บ receipt ใต้ `.foundation/receipts/<change-id>/` Receipt reuse ได้
 เฉพาะเมื่อ workspace hash, agreement, provider protocol/version และ claim coverage
 ยังตรงกัน
@@ -511,11 +541,33 @@ claude-foundation proof readiness <change-id>
 claude-foundation proof run <change-id>
 ```
 
-ให้รัน `claude-foundation proof advance <change-id>` หนึ่งครั้งเป็นทางปกติ Agent
-จะอธิบาย external wait เป็นภาษาปกติและส่ง bounded packet ให้ reviewer อิสระที่ตั้ง
-ไว้หรือ named human การเรียกซ้ำตอน workspace และ request ไม่เปลี่ยนจะไม่รัน provider
-หรือ dispatch reviewer ซ้ำ ส่วน `proof collect`, authority commands โดยตรง และ
+ให้ใช้ `claude-foundation proof advance <change-id>` เป็น boundary ของ Prove
+แต่ละ gate จะรวม finding ที่ทำงานแยกกันได้ แก้ทุกข้อใน contract เป็น batch แล้ว
+รันซ้ำเฉพาะ evidence ที่ invalidated จนผ่าน โดยไม่จำกัดจำนวนรอบแก้ product
+ถ้าต้องตัดสินใจ ขอ authority/resource แก้ conflict หรือไม่มี progress ระบบจะเก็บ
+change เดิมและคืนทางเลือกพร้อมคำสั่ง resume การเรียกซ้ำตอน workspace และ request
+ไม่เปลี่ยนจะไม่รัน provider หรือ dispatch reviewer ซ้ำ ส่วน `proof collect`, authority commands โดยตรง และ
 `proof run` เก็บไว้สำหรับการวิเคราะห์หรือ integration ที่ตั้งใจใช้
+
+Build packet มี `authorityPreflight` ด้วย งานเสี่ยงสูงที่ต้องใช้ signed CI จะหยุด
+ก่อน dispatch หรือแก้ product ถ้ายังไม่มี external CI provider ที่เชื่อถือได้ โดย
+ระบุ issuer/public-key ที่ขาดและทาง resume Change ส่วน Land จะตรวจ signed receipt
+ซ้ำอย่างอิสระ
+
+Proof สามารถกำหนด provider `semantic-acceptance` ที่มีลายเซ็นได้ด้วย โดยผูก case
+ID และ input partition ที่คงที่เข้ากับ workspace จริง แต่ไม่เปิด hidden input
+หรือโค้ด oracle ให้ agent เห็น ถ้า required case หาย, ถูก skip, ซ้ำ, ถูกแก้ไข,
+stale หรือ fail ระบบจะบล็อก Proof และ review ไม่สามารถ override ได้ สำหรับ npm
+repository เดียว ระบบจะเปิด lockfile consistency provider อัตโนมัติเมื่อมีทั้ง
+`package.json` และ `package-lock.json` จึงตรวจพบ lockfile ที่ไม่ตรงก่อน Proof
+สุดท้ายโดยไม่ต้องเพิ่ม wiring เอง
+
+เบื้องหลัง packet, planning, readiness และ mutation guard ใช้ compiled execution
+contract ชุดเดียวและเปลี่ยน lifecycle ผ่าน reducer กลาง เพื่อลด policy ซ้ำซ้อน
+โดยไม่เปลี่ยนคำสั่งผู้ใช้ หลังอัปเกรดเป็น provider protocol 13 receipt protocol
+12 เดิมจะ stale ให้เก็บ active change ไว้ แก้ config ตาม diagnostics แล้วรัน
+`proof advance <change-id>` ใหม่ หากจำเป็นต้อง rollback ให้ย้อนเวอร์ชันที่ติดตั้ง
+เท่านั้น ห้ามคัดลอกหรือแก้ receipt JSON เอง
 
 ผู้ใช้ไม่ต้องประกอบ receipt command, provenance JSON, provider metadata หรือ
 workspace hash เอง รายละเอียดเหล่านี้เป็น protocol ภายในและจะแสดงเมื่อผู้ใช้
@@ -555,7 +607,7 @@ archive และบรรทัด `LAND READY` มันเป็นการ�
   — receipt ผูกกับอะไร ทำไม pass ที่เขียนด้วยมือถูกปฏิเสธ และอะไรทำให้ proof หมดอายุ
 - [Adapter และการต่อสาย](https://claude-foundation.dev/docs/th/evidence/adapters/)
   — adapter ทั้งห้าตัว การประกาศ input, service และตัวระบุ readiness
-- [Foundation เขียนอะไรบ้าง](https://claude-foundation.dev/docs/th/artifacts/)
+- [Change Loop เขียนอะไรบ้าง](https://claude-foundation.dev/docs/th/artifacts/)
   — artifact ทุกตัวที่ harness สร้าง และตัวไหนที่ตั้งใจให้คุณอ่าน
 
 ## ถ้า Requirement เปลี่ยนระหว่าง Build
@@ -598,7 +650,7 @@ Repository ที่จำเป็นเฉพาะตอน integration test 
 - [ ] **T003** Verify contract [repo:app] [kind:contract] [depends:T001,T002]
 ```
 
-Foundation มอง multi-remote landing เป็น ordered resumable saga โดยตรวจ child
+Change Loop มอง multi-remote landing เป็น ordered resumable saga โดยตรวจ child
 commit และ CI state ที่ระบุชัด ไม่อ้างว่า atomic ข้าม remote ใช้
 `claude-foundation land resume <change-id>` เพื่อตรวจและเดินลำดับต่อ และดู protocol เต็มใน
 [WORKFLOW.md](WORKFLOW.md)
@@ -617,12 +669,12 @@ native-host action เพียงหนึ่งรายการ งานเ
 parent session รวมถึง frontier ที่เลือกได้เพียง task เดียว ส่วน bounded spawn
 group จะเกิดเมื่อ frontier มี task อิสระที่เลือกได้พร้อมกันหลายงานเท่านั้น
 งาน singleton ที่อยู่ในแผนยังต้อง acquire lease และสร้าง task packet ใหม่ก่อนรัน
-ใน parent Foundation ไม่เรียกโมเดลเอง และจะคืน `wait` แทนการสร้าง executor ซ้ำ
+ใน parent Change Loop ไม่เรียกโมเดลเอง และจะคืน `wait` แทนการสร้าง executor ซ้ำ
 เมื่อ host restart ขณะที่ lease เดิมยังไม่หมดอายุ
 
-## Foundation จำกัด Scope ของ Agent และ Skill อย่างไร
+## Change Loop จำกัด Scope ของ Agent และ Skill อย่างไร
 
-Foundation ส่ง packet ขนาดเล็กตาม scope ของ task ให้ native agent host ไม่ใช่
+Change Loop ส่ง packet ขนาดเล็กตาม scope ของ task ให้ native agent host ไม่ใช่
 resident orchestrator ที่คัดลอก conversation ทั้งหมดให้ worker ทุกตัว Change
 repository เดียวที่ไม่มี shared external authority จะใช้ agent เดียวโดยไม่ขึ้นกับ
 จำนวน task Worker หลายตัวมีประโยชน์เฉพาะเมื่องาน, repository access, dependency
@@ -677,7 +729,7 @@ product requirement หรือซ่อม state ด้วยมือถ้�
 - Apply มี backup และ journal ทำให้ Land ที่ถูกขัดจังหวะ retry ได้
 - Land เตือน — โดยไม่บล็อก — เมื่อ target checkout อยู่บน `main`/`master`
   โดย guard ของ land ทุกตัวยังอิง commit
-- Foundation ไม่ commit, push, เปิด pull request หรือมอบอำนาจเหล่านั้นให้ worker
+- Change Loop ไม่ commit, push, เปิด pull request หรือมอบอำนาจเหล่านั้นให้ worker
   agent โดยไม่ได้รับอนุญาตชัดเจน
 - `protect-secrets.sh` และ `lint.sh` เปิดเป็นค่าเริ่มต้น
 - `no-direct-main-commit.sh` เป็น opt-in เพราะบาง project อนุญาต controlled
@@ -799,10 +851,10 @@ npx --yes @fission-ai/openspec@1.7.0 schema validate foundation-standard
 npx --yes @fission-ai/openspec@1.7.0 schema validate foundation-rapid
 ```
 
-Foundation จะตรวจ stable release ล่าสุดเฉพาะตอน agent เริ่ม Investigate,
+Change Loop จะตรวจ stable release ล่าสุดเฉพาะตอน agent เริ่ม Investigate,
 เข้า Change และก่อน Build โดยทุก project ใช้ user cache อายุ 24 ชั่วโมงร่วมกัน
 Prove และ Land จะไม่ตรวจอัตโนมัติ Advisory ไม่ block งาน ไม่เปลี่ยน proof
-identity และ Foundation จะไม่อัปเดตให้เองหาก user ยังไม่อนุญาต ตั้ง
+identity และ Change Loop จะไม่อัปเดตให้เองหาก user ยังไม่อนุญาต ตั้ง
 `FOUNDATION_UPDATE_CHECK=0` เพื่อปิด release discovery หรือใช้
 `update check --refresh --json` เมื่อต้องการ refresh แบบ machine-readable
 

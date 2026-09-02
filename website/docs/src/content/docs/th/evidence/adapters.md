@@ -3,7 +3,7 @@ title: Adapter และการต่อสาย
 description: adapter ที่รันได้จริงห้าตัว execution.yaml ต่อมันเข้ากับเครื่องมือของโปรเจกต์คุณอย่างไร และ resource กันไม่ให้ provider ชนกันอย่างไร
 ---
 
-Foundation แยกสัญญาเชิงพฤติกรรมที่คงที่ ออกจากการต่อสายที่เปลี่ยนได้ มันไม่ติดตั้ง test framework เบราว์เซอร์ หรือ dependency ของโปรเจกต์ — **โปรเจกต์ของคุณเป็นเจ้าของและล็อกเวอร์ชัน executable ทุกตัวที่ adapter เรียก**
+Change Loop แยกสัญญาเชิงพฤติกรรมที่คงที่ ออกจากการต่อสายที่เปลี่ยนได้ มันไม่ติดตั้ง test framework เบราว์เซอร์ หรือ dependency ของโปรเจกต์ — **โปรเจกต์ของคุณเป็นเจ้าของและล็อกเวอร์ชัน executable ทุกตัวที่ adapter เรียก**
 
 ## execution.yaml
 
@@ -32,7 +32,7 @@ Foundation แยกสัญญาเชิงพฤติกรรมที่
 | `test-discovery` | รันคำสั่งเทสครั้งเดียว แล้วออก receipt ทั้ง test และ discovery |
 | `playwright` | รันเทส Playwright ของโปรเจกต์ แล้วแมป claim annotation แบบมีโครงสร้าง |
 | `contract-digest` | hash artifact ที่ประกาศไว้ในสองรีโปขึ้นไป ผ่านก็ต่อเมื่อ byte ตรงกัน |
-| `external` | ต้องการ receipt จากระบบที่ Foundation ไม่ได้เป็นคนรัน |
+| `external` | ต้องการ receipt จากระบบที่ Change Loop ไม่ได้เป็นคนรัน |
 
 ### command
 
@@ -110,7 +110,7 @@ test("owner updates profile", {
 browser automation ไม่ใช่ input ระดับระบบปฏิบัติการ ใช้ `browser-automation` กับ Playwright และสงวน `os-input` หรือ `both` ไว้สำหรับหลักฐานที่ต้องการหน้าต่าง native ที่ focus จริง ๆ
 :::
 
-Foundation อนุมานนโยบายเรื่อง console error จากการ exit สำเร็จของเบราว์เซอร์ไม่ได้ ให้ติดตั้ง Playwright fixture ที่ fail เมื่อเจอ `console.error` ที่ไม่คาดคิดและ uncaught page error
+Change Loop อนุมานนโยบายเรื่อง console error จากการ exit สำเร็จของเบราว์เซอร์ไม่ได้ ให้ติดตั้ง Playwright fixture ที่ fail เมื่อเจอ `console.error` ที่ไม่คาดคิดและ uncaught page error
 
 ### contract-digest
 
@@ -130,7 +130,7 @@ Foundation อนุมานนโยบายเรื่อง console error 
 
 ### external
 
-สำหรับ CI ผู้รีวิว หรือระบบอื่นที่ Foundation ต้องไม่รันเอง
+สำหรับ CI ผู้รีวิว หรือระบบอื่นที่ Change Loop ต้องไม่รันเอง
 
 ```json
 "review": {
@@ -161,7 +161,7 @@ claude-foundation evidence doctor <change>    # อธิบายว่าย�
 การตั้งต้นไม่เคยติดตั้ง dependency ไม่สร้าง receipt ไม่ลดทอน claim และไม่ถือว่าการตรวจพบคือการพิสูจน์
 
 ถ้า commit `quality/foundation-quality.json` แล้วและ Change ต้องใช้
-`static-analysis` bootstrap จะแนะนำคำสั่ง consumer quality ของ Foundation เป็น
+`static-analysis` bootstrap จะแนะนำคำสั่ง consumer quality ของ Change Loop เป็น
 orchestration provider หนึ่งตัว คำสั่งนี้ route repository ที่ได้รับผลทั้งหมด,
 สร้าง assurance summary แบบไม่เฉลี่ย และเก็บ lane รายละเอียดไว้ใน command log
 ต้อง configure และ pilot ก่อนเสมอ เพราะ discovery ไม่สร้างผล quality ที่ผ่านขึ้นมาเอง

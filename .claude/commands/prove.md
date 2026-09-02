@@ -4,15 +4,19 @@ argument-hint: <change>
 ---
 
 Prove **$ARGUMENTS** from a fresh `packet <change> --phase prove`; inherit no
-Build history.
+Build history. Run the packet's `verificationPlan.execution.command` once
+before loading any further reference. A completed proof needs no manual
+inspection or reference-file reread.
 
 Treat `verificationPlan` as the check schedule: run its boundary command once,
 and do not run `avoidBefore` commands unless an invalidation reason changed.
+Obey its `convergence` contract.
 
-Read `.claude/skills/prove/references/workflow.md` completely and follow it as
-the selectively loaded canonical Prove workflow. It owns evidence collection,
-fresh independent review, authority routing, bounded recovery, and proof
-finalization. Treat the text after `/prove` as its arguments.
+Only when that command returns action-required or a decision boundary, read
+`.claude/skills/prove/references/workflow.md` completely and follow the named
+recovery route. It owns evidence repair, review/authority routing, and proof
+finalization. Do not inspect an installed harness or search for alternate
+commands; the boundary result and repair plan are authoritative.
 
 Never fabricate evidence or Land. Report what passed, what remains unproven,
 and the agent's next action in the user's language.

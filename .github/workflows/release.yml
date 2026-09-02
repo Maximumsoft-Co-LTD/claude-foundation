@@ -114,7 +114,7 @@ jobs:
             .claude/harness/foundation.mjs
           perl -pi -e "s/\"runtime\": \"\Q${PREV}\E\"/\"runtime\": \"${NEW}\"/" \
             .claude/harness/protocol.json
-          perl -pi -e "s/Foundation \Q${PREV}\E/Foundation ${NEW}/" \
+          perl -pi -e "s/Change Loop \Q${PREV}\E/Change Loop ${NEW}/" \
             .claude/harness/AGENT.md
           perl -pi -e "s/\Q${PREV}\E/${NEW}/g" \
             .claude/harness/DEVELOPER-SETUP.md
@@ -141,9 +141,9 @@ jobs:
           jq -e --arg version "$NEW" '.runtime == $version' \
             .claude/harness/protocol.json >/dev/null ||
             { echo "::error::.claude/harness/protocol.json runtime not updated"; exit 1; }
-          grep -q "Foundation $NEW" .claude/harness/AGENT.md ||
+          grep -q "Change Loop $NEW" .claude/harness/AGENT.md ||
             { echo "::error::.claude/harness/AGENT.md version not updated"; exit 1; }
-          grep -q "Foundation v$NEW" .claude/harness/DEVELOPER-SETUP.md ||
+          grep -q "Change Loop v$NEW" .claude/harness/DEVELOPER-SETUP.md ||
             { echo "::error::.claude/harness/DEVELOPER-SETUP.md version not updated"; exit 1; }
           grep -q 'version` is `'$NEW'`' .claude/harness/DEVELOPER-SETUP.md ||
             { echo "::error::.claude/harness/DEVELOPER-SETUP.md CLI pin not updated"; exit 1; }

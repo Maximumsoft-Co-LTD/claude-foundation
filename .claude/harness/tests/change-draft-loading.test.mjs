@@ -145,7 +145,7 @@ try {
   assert.equal(lifecycle.loadDraft(writeDraft(removed)).specs[0].migration,
     "Remove callers first");
 
-  startRejected((draft) => { draft.version = 2; }, /start draft requires version 1/);
+  startRejected((draft) => { draft.version = 3; }, /start draft requires version 1 or 2/);
   startRejected((draft) => { draft.intent = " "; }, /non-empty 'intent'/);
   startRejected((draft) => { delete draft.acceptance; }, /acceptance.required true\|false/);
   startRejected((draft) => { draft.acceptance.required = "false"; }, /acceptance.required true\|false/);
@@ -193,6 +193,13 @@ try {
 
   const valid = baseDraft();
   assert.deepEqual(lifecycle.loadDraft(writeDraft(valid)), valid);
+  const derived = baseDraft();
+  derived.version = 2;
+  delete derived.tasks[0].id;
+  delete derived.claims[0].id;
+  assert.equal(lifecycle.loadDraft(writeDraft(derived)).tasks[0].id, "T001");
+  assert.deepEqual(lifecycle.loadDraft(writeDraft(derived)).tasks[0].claims,
+    ["Works"]);
   console.error = priorError;
   console.log("change draft loading tests: PASS");
 } finally {

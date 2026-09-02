@@ -1,4 +1,10 @@
 import { acquireProcessLock } from "../core/process-lock.mjs";
+import {
+  compareGateProgress,
+  gateProgressValue,
+  gateRepairPlan,
+  noProgressDecision
+} from "../core/convergent-gate.mjs";
 import { createServiceSessions } from "./proof-execution/service-sessions.mjs";
 
 export function requestSummary(id, request) {
@@ -169,8 +175,18 @@ export function rebindProofCollectionReceipts(
 
 export function assertProofCollectionOutcomes(outcomes) {
   const failed = outcomes.filter((row) => row.status !== "pass");
-  if (failed.length)
-    throw new Error(`evidence collection failed: ${failed.map((row) => `${row.provider}:${row.status}`).join(", ")}`);
+  if (failed.length) {
+    const summary = failed.map((row) => `${row.provider}:${row.status}`).join(", ");
+    const critical = failed.flatMap((row) => (row.observations || [])
+      .filter((observation) => observation.kind === "critical-case" &&
+        !["pass", "passed", "success", "ok"].includes(observation.status))
+      .map((observation) => `${observation.id}=${observation.status}`));
+    const recovery = critical.length
+      ? `; critical cases non-passing: ${critical.join(", ")}; ` +
+        "tag each covering test title with its literal [case-id] and rerun proof advance"
+      : "";
+    throw new Error(`evidence collection failed: ${summary}${recovery}`);
+  }
 }
 
 export function persistProofCollectionArtifacts(
@@ -286,6 +302,9 @@ export function createProofExecutionRuntime({
       providers: [...(outcome.providers || [])].sort(),
       subjectHash: outcome.subjectHash || null,
       recoveryDecisionRef: outcome.recoveryDecisionRef || null,
+      progressFingerprint: outcome.progressFingerprint || null,
+      repairCycle: Number(outcome.repairCycle || 0),
+      repairPlanDigest: outcome.repairPlanDigest || null,
       updatedAt: now()
     };
     const prior = readAdvance(id);
@@ -296,7 +315,10 @@ export function createProofExecutionRuntime({
       requestIds: [...(value.requestIds || [])].sort(),
       providers: [...(value.providers || [])].sort(),
       subjectHash: value.subjectHash || null,
-      recoveryDecisionRef: value.recoveryDecisionRef || null
+      recoveryDecisionRef: value.recoveryDecisionRef || null,
+      progressFingerprint: value.progressFingerprint || null,
+      repairCycle: Number(value.repairCycle || 0),
+      repairPlanDigest: value.repairPlanDigest || null
     });
     const progressed = comparable(prior) !== comparable(next);
     const path = proofAdvancePath(id);
@@ -498,37 +520,111 @@ export function createProofExecutionRuntime({
     } : null;
   }
 
+  function writeConvergentRepairStop(id, readiness, advanceStart, {
+    gate, stage, findings, failures = [], requests = [], executedProviders = [],
+    repairBatch = null, strategy, workspaceHash = readiness.workspaceHash,
+    route = "AUTO_REPAIR", nextReason
+  }) {
+    const repairPlan = gateRepairPlan(findings, { phase: "prove", gate });
+    const progress = gateProgressValue({
+      phase: "prove", gate, findings,
+      evidence: failures.map(({ provider, validity }) => ({ provider, validity })),
+      strategy: { route: strategy }, workspaceHash
+    });
+    const progressComparison = compareGateProgress(
+      advanceStart.progressFingerprint
+        ? { fingerprint: advanceStart.progressFingerprint } : null,
+      progress);
+    const noProgress = advanceStart.stage === stage && !progressComparison.progressed;
+    const decision = noProgress ? noProgressDecision({
+      changeId: id,
+      phase: "prove",
+      gate,
+      progress,
+      findings,
+      attemptedStrategies: [{
+        id: strategy,
+        repairPlanDigest: repairPlan.digest,
+        result: "same-findings-and-inputs"
+      }],
+      resumeCommand: `claude-foundation packet ${id} --phase build`
+    }) : null;
+    const written = writeAdvance(id, {
+      version: 1,
+      changeId: id,
+      command: "proof advance",
+      status: noProgress ? "NEEDS_USER_DECISION" : "ACTION_REQUIRED",
+      route: noProgress ? "NO_PROGRESS_DECISION" : route,
+      stage,
+      completed: false,
+      workspaceHash: readiness.workspaceHash,
+      ...(gate === "review" ? { subjectHash: workspaceHash } : {}),
+      progressFingerprint: progress.fingerprint,
+      repairCycle: Number(advanceStart.repairCycle || 0) + 1,
+      repairPlanDigest: repairPlan.digest,
+      failures,
+      requests,
+      repairBatch,
+      repairPlan,
+      ...(decision ? { decision: decision.decision,
+        attemptedStrategies: decision.attemptedStrategies } : {}),
+      executedProviders,
+      next: noProgress ? decision.next : [{
+        kind: gate === "review" ? "correct-workspace" : "correct-failed-evidence",
+        reason: nextReason,
+        command: `claude-foundation packet ${id} --phase build`
+      }]
+    });
+    return noProgress ? { ...written, progressed: false } : written;
+  }
+
   function writeReviewRepairStop(id, readiness, advanceStart, {
     requests = [], failures = [], executedProviders = []
   } = {}) {
     const reviewProvider = requiredProviders(id).find((provider) =>
       providerCapability(provider, providerConfig(id, provider)) === "review") || "review";
-    const subjectHash = currentProviderHash(
-      id, reviewProvider, readiness.workspaceHash);
+    const subjectHash = currentProviderHash(id, reviewProvider, readiness.workspaceHash);
     const repairBatch = reviewRepairBatch(id);
-    const noProgress = advanceStart.stage === "review-rejected" &&
-      advanceStart.subjectHash === subjectHash;
-    return writeAdvance(id, {
-      version: 1,
-      changeId: id,
-      command: "proof advance",
-      status: noProgress ? "REPAIR_NOT_PROGRESSING" : "ACTION_REQUIRED",
+    const findings = repairBatch?.findings || failures.map((failure) => ({
+      id: `${failure.provider || "review"}:${failure.validity || "invalid"}`,
+      provider: failure.provider || reviewProvider,
+      classification: failure.validity === "unavailable" ? "infrastructure" : "product",
+      severity: "error",
+      rootCause: failure.reason || failure.validity || "review-failed",
+      message: failure.reason || `review evidence is ${failure.validity || "invalid"}`
+    }));
+    return writeConvergentRepairStop(id, readiness, advanceStart, {
+      gate: "review", stage: "review-rejected", findings, failures, requests,
+      executedProviders, repairBatch, workspaceHash: subjectHash,
+      strategy: repairBatch ? "repair-in-contract-findings" : "diagnose-review",
       route: repairBatch ? "AUTO_REPAIR" : "CONTRACT_DECISION_REQUIRED",
-      stage: "review-rejected",
-      completed: false,
-      workspaceHash: readiness.workspaceHash,
-      subjectHash,
-      failures,
-      requests,
-      repairBatch,
-      executedProviders,
-      next: noProgress ? [] : [{
-        kind: "correct-workspace",
-        reason: repairBatch
-          ? "Repair the bounded blocker/major finding batch; the Build packet carries the same repair context."
-          : "The review was inconclusive or errored. Repair its infrastructure or make a contract decision before another request.",
-        command: `claude-foundation packet ${id} --phase build`
-      }]
+      nextReason: repairBatch
+        ? "Repair every blocker/major finding in the dependency-ordered batch; the Build packet carries the same repair context. Continue the same gate loop until it passes."
+        : "The review was inconclusive or errored. Repair its infrastructure or make a contract decision before another request."
+    });
+  }
+
+  function evidenceFailureFindings(failures) {
+    return failures.map((failure) => ({
+      id: `${failure.provider || "evidence"}:${failure.validity || "invalid"}`,
+      provider: failure.provider || null,
+      classification: failure.validity === "unavailable"
+        ? "infrastructure" : "product",
+      severity: "error",
+      rootCause: failure.reason || failure.validity || "evidence-failed",
+      message: failure.reason || `${failure.provider || "evidence"} is ${
+        failure.validity || "invalid"}`,
+      claimIds: failure.claimIds || [],
+      criticalCaseIds: failure.criticalCaseIds || []
+    }));
+  }
+
+  function writeEvidenceRepairStop(id, readiness, advanceStart, failures) {
+    const findings = evidenceFailureFindings(failures);
+    return writeConvergentRepairStop(id, readiness, advanceStart, {
+      gate: "evidence", stage: "evidence-failed", findings, failures,
+      strategy: "repair-failed-evidence",
+      nextReason: "Repair every failed evidence finding in the dependency-ordered batch, then resume this same gate. The controller will reuse unaffected current receipts."
     });
   }
 
@@ -893,23 +989,25 @@ export function createProofExecutionRuntime({
         ? writeReviewRepairStop(id, readiness, advanceStart, {
             failures: failedEvidence
           })
-        : writeAdvance(id, {
-            version: 1,
-            changeId: id,
-            command: "proof advance",
-            status: "ACTION_REQUIRED",
-            stage,
-            completed: false,
-            workspaceHash: readiness.workspaceHash,
-            failures: failedEvidence,
-            requests: [],
-            executedProviders: [],
-            next: [{
-              kind: "correct-failed-evidence",
-              reason: "A provider returned or retained a terminal invalid result. Correct the implementation, evidence, or authority provenance before advancing again.",
-              command: `claude-foundation packet ${id} --phase build`
-            }]
-          });
+        : capabilities.has("acceptance")
+          ? writeAdvance(id, {
+              version: 1,
+              changeId: id,
+              command: "proof advance",
+              status: "NEEDS_USER_DECISION",
+              stage,
+              completed: false,
+              workspaceHash: readiness.workspaceHash,
+              failures: failedEvidence,
+              requests: [],
+              executedProviders: [],
+              next: [{
+                kind: "revise-after-acceptance",
+                reason: "Acceptance evidence is terminal or invalid for this workspace. Resolve the behavior decision, then resume the same change.",
+                command: `claude-foundation packet ${id} --phase build`
+              }]
+            })
+          : writeEvidenceRepairStop(id, readiness, advanceStart, failedEvidence);
       return { outcome: stopProofAdvance(outcome) };
     }
 

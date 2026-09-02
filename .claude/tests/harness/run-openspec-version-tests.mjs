@@ -67,6 +67,17 @@ check(telemetryLandIssue({ telemetry: { requireUsage: true } }, {
 check(telemetryLandIssue({ telemetry: { requireUsage: true } }, {
   classification: "measured", recoveryActions: []
 }), null, "measured telemetry satisfies the Land policy");
+check(telemetryLandIssue({ telemetry: { requireUsage: true } }, {
+  classification: "partial-measurement",
+  measuredDimensions: { tokens: true, cost: false },
+  recoveryActions: [{ command: "telemetry host-import change result.json" }]
+}), null, "measured tokens satisfy usage policy even when host cost is unavailable");
+check(telemetryLandIssue({ telemetry: { requireUsage: true } }, {
+  classification: "partial-measurement",
+  measuredDimensions: { tokens: false, cost: false },
+  recoveryActions: [{ command: "telemetry sync change" }]
+}), "Land requires measured model usage, but telemetry is 'partial-measurement'. Recover with: telemetry sync change",
+"partial rows with no measured usage dimension still block Land");
 
 // The loose-match regression: a warning line mentioning the pinned version must
 // not vouch for a CLI that reports a different one.

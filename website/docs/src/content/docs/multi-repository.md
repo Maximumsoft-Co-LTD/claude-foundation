@@ -1,6 +1,6 @@
 ---
 title: Multi-repository workflow
-description: Configure, build, prove, and land a change that needs more than one Git repository, in the order Foundation evaluates it.
+description: Configure, build, prove, and land a change that needs more than one Git repository, in the order Change Loop evaluates it.
 ---
 
 Use this guide when one change writes code in several repositories, or when a
@@ -24,7 +24,7 @@ that the project topology does not know or the change did not select.
 
 ## 1. Declare the project topology
 
-Add every repository Foundation may isolate to `openspec/repositories.yaml`:
+Add every repository Change Loop may isolate to `openspec/repositories.yaml`:
 
 ```json
 {
@@ -53,7 +53,7 @@ What matters:
   `allowOutsideRoot: true`;
 - every selected repository must already be an initialized Git repository.
 
-Foundation refuses a non-Git dependency because it cannot pin or isolate a
+Change Loop refuses a non-Git dependency because it cannot pin or isolate a
 moving directory honestly.
 
 Check the result before creating a change:
@@ -99,7 +99,7 @@ make cross-repository order explicit:
 - [ ] **T003** Verify contract [repo:app] [kind:contract] [depends:T001,T002]
 ```
 
-Foundation compiles repository selection, tasks, providers, and Land order into
+Change Loop compiles repository selection, tasks, providers, and Land order into
 the execution graph. Do not create a second graph file.
 
 ## 4. Create all sandboxes
@@ -135,7 +135,7 @@ In `execution.yaml`, `repository` is the provider's working directory.
 }
 ```
 
-Foundation passes two relevant environment variables:
+Change Loop passes two relevant environment variables:
 
 - `FOUNDATION_REPOSITORY_ID` — the working-directory repository ID;
 - `FOUNDATION_REPOSITORIES_FILE` — a versioned JSON manifest mapping every
@@ -176,7 +176,7 @@ claude-foundation proof run <change>
 Prove may run independent branches concurrently and preserve completed branches
 after a failure. Aggregate proof still requires every selected repository and
 provider scope to match the current graph. A moved read dependency requires
-sync and fresh proof; Foundation never certifies the old commit under the new
+sync and fresh proof; Change Loop never certifies the old commit under the new
 repository manifest.
 
 Consumer quality follows the same graph but never averages repositories. Add a
@@ -198,7 +198,7 @@ claude-foundation land record <change> --repo <id> --commit <sha> --decision-ref
 claude-foundation land resume <change>
 ```
 
-Follow the structured next action from `land check` or `land resume`. Foundation
+Follow the structured next action from `land check` or `land resume`. Change Loop
 verifies recorded commits and root pointers, but does not claim atomicity across
 independent remotes. Committing, pushing, and opening pull requests still need
 separate user authorization.

@@ -33,6 +33,10 @@ The packet is a bounded machine handoff — it carries only what the next step c
 
 Packet budgets are enforced: 8 KiB for a task packet, 8 KiB for review, 12 KiB per repository, 16 KiB global, 4 KiB for a plan summary.
 
+Before dispatch or product edits, Build checks `authorityPreflight`. Work that
+requires unavailable signed CI or another external authority stops with one
+decision and an exact Change resume route, spending no Build/model budget.
+
 ## One ledger
 
 `tasks.md` is the **sole** task ledger. There is no mirrored checklist, no second status file, and no lifecycle state hidden in the agent's head. If something is not in `tasks.md`, it is not tracked.
@@ -40,6 +44,11 @@ Packet budgets are enforced: 8 KiB for a task packet, 8 KiB for review, 12 KiB p
 ## Scope
 
 The agent may edit only allowed sandbox paths. Which paths those are comes from the change's `repositories.yaml` write scope — a change that declared it touches one repository cannot quietly write to another.
+
+For direct shell mutation, anchor the command with
+`cd <exact-workspace> && ...`. Unanchored package-manager/formatter writes,
+obvious `..` escapes, and absolute output outside the workspace fail before the
+shell starts. Structured Edit/Write remains the preferred path.
 
 For multi-repository work, create all selected workspaces together:
 

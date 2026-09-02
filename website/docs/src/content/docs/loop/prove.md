@@ -74,13 +74,22 @@ In an earlier version the real-evidence requirements were gated on the adapter *
 
 ## Human and external authority
 
-Some evidence cannot be executed locally — an independent review, a subjective acceptance, a CI run on another machine. Normally you advance the state machine once:
+Some evidence cannot be executed locally—an independent review, subjective
+acceptance, or CI on another machine. Use the normal resumable boundary:
 
 ```bash
 claude-foundation proof advance <change>
 ```
 
-`proof advance` executes missing project evidence once, routes review before acceptance, and returns a stable waiting handoff. Repeating it on an unchanged open request does not poll, rerun providers, or dispatch another reviewer. Configured AI review uses `authority run`; named-human review reserves its exact packet with `authority dispatch` before `authority record`; acceptance does not use a review dispatch.
+`proof advance` executes the current gate, reuses valid receipts, and returns a
+single repair batch or stable waiting handoff. After a repair, a fresh Prove
+packet reruns only invalidated evidence and continues until proof passes or a
+real decision is required. Repeating an unchanged open request does not poll,
+rerun providers, or dispatch another reviewer. Configured AI review uses
+`authority run`; named-human review reserves its exact packet with
+`authority dispatch` before `authority record`; acceptance does not use a
+review dispatch. Signed hidden-case behavior is described under
+[semantic acceptance](/docs/evidence/receipts/#signed-semantic-acceptance).
 
 Requests carry bounded packets, expire, and go stale with the workspace. A response must match the request identity and workspace, then pass the ordinary review or acceptance validator. Completed requests cannot be replayed. A crashed, aborted, or tool-failed AI dispatch is infrastructure rather than a delivered verdict and receives at most one bounded full retry.
 

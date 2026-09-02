@@ -124,6 +124,8 @@ test("land check phases preserve every refusal and ready route", () => {
       ciEvidenceProtocolVersion: 1,
       stableHash: (value) => JSON.stringify(value),
       agentPlanValue: options.graph ? () => ({ graph: options.graph }) : null,
+      executionContract: options.executionContract
+        ? () => options.executionContract : null,
       now: () => "2026-08-26T00:00:00Z",
       blockWithDecision: (_id, code) => { throw new Error(`decision:${code}`); },
       fail: (message) => { throw new Error(message); }
@@ -257,6 +259,19 @@ test("land check phases preserve every refusal and ready route", () => {
     assert.throws(() => invalidReceipt.runtime.landCheck(invalidReceipt.id), /test evidence is stale/);
     const changedReceipt = make({ providers: ["test"], receiptDigest: "changed" });
     assert.throws(() => changedReceipt.runtime.landCheck(changedReceipt.id), /live receipt differs/);
+    const compiled = make({
+      providers: ["test"], executionContract: {
+        evidence: { providers: ["test"] }, land: { signedCiRequired: false }
+      }
+    });
+    assert.equal(compiled.runtime.landCheck(compiled.id).archived, false);
+    const contractProviderMismatch = make({
+      providers: ["test"], executionContract: {
+        evidence: { providers: ["other"] }, land: { signedCiRequired: false }
+      }
+    });
+    assert.throws(() => contractProviderMismatch.runtime.landCheck(contractProviderMismatch.id),
+      /execution contract provider projection disagrees/);
     const signedCi = make({
       providers: ["ci"], signedCi: true,
       state: { riskBasedCiRequired: true, impact: "high" }

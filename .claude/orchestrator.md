@@ -100,7 +100,8 @@ Multiple remotes are not atomic. Use the ordered saga: bind authorized child
 commits/CI, verify dependencies, stage checked gitlinks, re-Prove the composite
 identity, resume, then archive the control change last.
 
-`/dev` composes Change → Build → Prove only. It never Lands.
+`/dev` runs Change → Build → Prove without inferring Land authority. With
+explicit Land authority, it may continue and succeeds only at `archived`.
 
 ## Human interaction boundary
 

@@ -4,6 +4,7 @@ import {
   cachedUpdateAdvisory, updateNotificationDirective
 } from "../core/update-advisory.mjs";
 import { verificationPlanValue } from "./verification-plan.mjs";
+import { authorityPreflightValue } from "../core/authority-policy.mjs";
 
 export function attachPhaseUpdateAdvisory(value, phase, options = {}) {
   if (!["change", "build"].includes(phase)) return value;
@@ -173,6 +174,23 @@ export function createPacketRuntime({
   budgetDecision, scopedReviewClaims, relevantHash, providerCapability,
   receiptPath, contractFingerprint, reviewPolicy, resolvedAcceptance,
   handoffReadiness,
+  executionContract = null,
+  authorityPreflight = (id) => {
+    const state = loadRuntime(id);
+    const contract = evidence(id, activeChangePath(id, state));
+    return authorityPreflightValue({
+      changeId: id, state, reviewRisk: reviewPolicy(id, state, contract),
+      providers: requiredProviders(id),
+      providerConfig: (provider) => providerConfig(id, provider), providerCapability,
+      acceptance: resolvedAcceptance(id, state, contract),
+      grounding: {
+        required: state.groundingRequired === true,
+        locked: Boolean(state.groundingDigest),
+        reopenPending: Boolean(state.groundingReopenPending)
+      },
+      handoffs: handoffReadiness(id)
+    });
+  },
   deliveredAiAttempts = () => [],
   serializedJson, foundationPolicy, recordContextMetric, recordInstructionManifest,
   fail
@@ -485,6 +503,10 @@ export function createPacketRuntime({
       budget: ensureBudgetState(state),
       budgetDecision: budgetDecision(state)
     };
+    if (packetType !== "task") {
+      packet.authorityPreflight = authorityPreflight(id);
+      packet.executionContract = executionContract?.(id) || null;
+    }
     const repairs = repairContext(id, repository, fileChanges);
     if (repairs) packet.repairContext = repairs;
     return { ...packet, packetDigest: stableHash(packet) };

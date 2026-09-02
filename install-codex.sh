@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Codex CLI adapter for the OpenSpec-native Foundation harness.
+# Codex CLI adapter for the OpenSpec-native Change Loop harness.
 #
 # Codex reads AGENTS.md and project .agents/skills natively. The adapter keeps
-# those skills as relative symlinks to the shared Foundation source so Claude
+# those skills as relative symlinks to the shared Change Loop source so Claude
 # and Codex cannot drift into different workflows. Custom prompts also remain
 # available for older Codex clients, and
 # Codex only reads them from its home directory ($CODEX_HOME/prompts, default

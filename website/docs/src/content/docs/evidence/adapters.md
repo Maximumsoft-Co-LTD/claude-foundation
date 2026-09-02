@@ -3,7 +3,7 @@ title: Adapters and wiring
 description: The five executable adapters, how execution.yaml wires them to your project's own tools, and how resources keep providers from colliding.
 ---
 
-Foundation separates the stable behavioral contract from replaceable execution wiring. It does not install test frameworks, browsers, or project dependencies — **your project owns and locks every executable an adapter names.**
+Change Loop separates the stable behavioral contract from replaceable execution wiring. It does not install test frameworks, browsers, or project dependencies — **your project owns and locks every executable an adapter names.**
 
 ## execution.yaml
 
@@ -32,7 +32,7 @@ Where [`evidence.yaml`](/docs/evidence/claims/) says *what must be true*, `execu
 | `test-discovery` | Run a test command once and emit both test and discovery receipts |
 | `playwright` | Run project-owned Playwright tests and map structured claim annotations |
 | `contract-digest` | Hash one declared artifact in two or more repositories; pass only when the bytes agree |
-| `external` | Require a receipt from a system Foundation does not execute |
+| `external` | Require a receipt from a system Change Loop does not execute |
 
 ### command
 
@@ -111,7 +111,7 @@ A successful exit **without** all required annotations is `inconclusive`, never 
 Browser automation is not physical operating-system input. Use `browser-automation` for Playwright; reserve `os-input` or `both` for evidence that genuinely requires a focused native window.
 :::
 
-Foundation cannot infer a console-error policy from a successful browser exit, so install a Playwright fixture that fails on unexpected `console.error` and uncaught page errors.
+Change Loop cannot infer a console-error policy from a successful browser exit, so install a Playwright fixture that fails on unexpected `console.error` and uncaught page errors.
 
 ### contract-digest
 
@@ -131,7 +131,7 @@ At least two repositories are required: a "shared" contract with one participant
 
 ### external
 
-For CI, a reviewer, or another system Foundation must not execute locally.
+For CI, a reviewer, or another system Change Loop must not execute locally.
 
 ```json
 "review": {
@@ -162,7 +162,7 @@ claude-foundation evidence doctor <change>    # explain what is still unresolved
 Bootstrap never installs a dependency, creates a receipt, weakens a claim, or treats detection as proof.
 
 If `quality/foundation-quality.json` is committed and the Change requires
-`static-analysis`, bootstrap recommends the Foundation consumer-quality command
+`static-analysis`, bootstrap recommends the built-in consumer-quality command
 as one orchestration provider. That command routes all affected repositories,
 emits a non-averaged assurance summary, and stores its detailed lanes in the
 command log. Configure and pilot it first; discovery never invents a passing

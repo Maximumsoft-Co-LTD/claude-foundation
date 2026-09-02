@@ -98,9 +98,9 @@ test("a critical case the workspace carries raises nothing", () => {
   assert.deepEqual(runtime.criticalCaseIssues("change"), []);
 });
 
-test("a search that could not answer never invents a blocker", () => {
+test("copy-mode fallback reports a confirmed miss when git cannot answer", () => {
   const { runtime } = runtimeWith({ providers: testProvider, grep: { default: UNANSWERED } });
-  assert.deepEqual(runtime.criticalCaseIssues("change"), []);
+  assert.equal(runtime.criticalCaseIssues("change").length, 1);
 });
 
 test("a provider declaring no critical cases is not searched at all", () => {

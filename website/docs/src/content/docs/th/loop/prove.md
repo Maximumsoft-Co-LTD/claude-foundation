@@ -73,13 +73,20 @@ receipt ที่ผ่าน **บันทึกด้วยมือไม่
 
 ## อำนาจจากคนและระบบภายนอก
 
-หลักฐานบางอย่างรันในเครื่องไม่ได้ — การรีวิวอิสระ การยอมรับเชิงอัตวิสัย หรือ CI ที่รันบนเครื่องอื่น ปกติให้ขยับ state machine หนึ่งครั้ง
+หลักฐานบางอย่างรันในเครื่องไม่ได้ เช่น การรีวิวอิสระ การยอมรับเชิงอัตวิสัย หรือ
+CI บนเครื่องอื่น ให้ใช้ boundary ปกติที่ resume ได้
 
 ```bash
 claude-foundation proof advance <change>
 ```
 
-`proof advance` รันหลักฐานใน project ที่ขาดหนึ่งครั้ง จัด review ก่อน acceptance และคืน handoff ที่รอทำต่อได้ การเรียกซ้ำบน request เดิมจะไม่ poll, ไม่รัน provider และไม่ dispatch reviewer ซ้ำ การรีวิว AI ที่ตั้งค่าไว้ใช้ `authority run`; named-human review ต้อง reserve packet ด้วย `authority dispatch` ก่อน `authority record`; acceptance ไม่ใช้ review dispatch
+`proof advance` รัน gate ปัจจุบัน ใช้ receipt ที่ยัง valid ซ้ำ และคืน repair batch
+เดียวหรือ handoff ที่รอทำต่อได้ หลังแก้แล้ว Prove packet ใหม่จะรันเฉพาะ evidence
+ที่ invalidated และทำต่อจน proof ผ่านหรือต้องตัดสินใจจริง การเรียกซ้ำบน request
+เดิมจะไม่ poll, ไม่รัน provider และไม่ dispatch reviewer ซ้ำ การรีวิว AI ที่ตั้งไว้
+ใช้ `authority run`; named-human review ต้อง reserve packet ด้วย `authority dispatch`
+ก่อน `authority record`; acceptance ไม่ใช้ review dispatch ส่วน hidden case ที่มี
+ลายเซ็นอธิบายใน [semantic acceptance](/docs/th/evidence/receipts/#signed-semantic-acceptance)
 
 คำขอบรรจุ packet ที่มีขอบเขต มีวันหมดอายุ และ stale ไปพร้อม workspace คำตอบต้องตรงกับตัวตนของคำขอและ workspace แล้วผ่าน validator ตามปกติ AI dispatch ที่ crash, abort หรือ tool fail เป็น infrastructure ไม่นับเป็น verdict และ retry แบบ full ได้หนึ่งครั้ง
 

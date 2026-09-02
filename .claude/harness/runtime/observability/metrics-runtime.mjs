@@ -64,6 +64,10 @@ export function usageAvailability(events = [], phaseContextRows = [], changeId =
           .every((field) => measuredNumber(event[field]) === 0));
     const claudeCostMissing = correlatedHosts.includes("claude-code") &&
       !allUsageZero && !events.some((event) => finite(event.cost));
+    const measuredDimensions = {
+      tokens: completeEvents.length === events.length,
+      cost: events.every((event) => finite(event.cost))
+    };
     const classification = !correlatedHosts.length ? "source-unsupported"
       : !observedValues.length ? "correlation-missing"
         : completeEvents.length !== events.length || claudeCostMissing ? "partial-measurement"
@@ -77,6 +81,7 @@ export function usageAvailability(events = [], phaseContextRows = [], changeId =
       reason: classification === "measured" || classification === "no-usage"
         ? null : classification,
       correlatedHosts,
+      measuredDimensions,
       recoveryActions
     };
   }
@@ -106,6 +111,7 @@ export function usageAvailability(events = [], phaseContextRows = [], changeId =
     reason: correlatedHosts.length
       ? "correlation-without-usage-events" : "host-telemetry-not-ingested",
     correlatedHosts,
+    measuredDimensions: { tokens: false, cost: false },
     recoveryActions
   };
 }

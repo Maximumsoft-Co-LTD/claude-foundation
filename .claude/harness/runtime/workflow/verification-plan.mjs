@@ -71,6 +71,17 @@ function phasePlan(changeId, phase, pendingTaskCount) {
   };
 }
 
+export function convergencePlan() {
+  return {
+    mode: "until-pass",
+    findings: "aggregate-independent",
+    repairLimit: null,
+    rerun: "invalidated-dependencies",
+    noProgress: "decision-and-resume",
+    state: "preserve-same-change"
+  };
+}
+
 export function verificationPlanValue(packet, phase = "build", stableHash = null) {
   const risk = verificationRisk(packet);
   if (packet.packetType === "task") {
@@ -88,6 +99,7 @@ export function verificationPlanValue(packet, phase = "build", stableHash = null
     };
   }
   const execution = phasePlan(packet.changeId, phase, Number(packet.pendingTaskCount || 0));
+  const authorityPreflight = packet.authorityPreflight || { status: "READY", blockers: [] };
   const plan = {
     version: 1,
     strategy: "single-boundary-entrypoint",
@@ -96,6 +108,14 @@ export function verificationPlanValue(packet, phase = "build", stableHash = null
     assurance: "unchanged-by-batching",
     pendingTaskCount: Number(packet.pendingTaskCount || 0),
     execution,
+    authority: {
+      status: authorityPreflight.status,
+      blockerCodes: (authorityPreflight.blockers || []).map((blocker) => blocker.code).sort(),
+      instruction: authorityPreflight.status === "READY"
+        ? "Proceed within the declared authority."
+        : "Stop before dispatch or product edits; present the packet decision and resume the same change after resolution."
+    },
+    convergence: convergencePlan(),
     evidence: providerReuse(packet),
     duplicateSuppression: {
       mode: "instruction-enforced",

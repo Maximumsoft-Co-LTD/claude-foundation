@@ -39,7 +39,12 @@ claude-foundation land archive <change>
 
 `ALREADY ARCHIVED` เป็นผลลัพธ์ที่สำเร็จ ไม่ใช่ error — มันแปลว่ารอบก่อนหน้าไปถึงจุดนั้นแล้ว
 
-ก่อนขั้น archive ที่ย้อนกลับไม่ได้ จะมีการซิงก์ telemetry เงียบ ๆ หนึ่งรอบเพื่อดูดข้อมูลจาก transcript ของ session ที่ผูกไว้ บันทึกที่ถูกปิดผนึกจึงมีการใช้งานโมเดลจริงของ change นั้น ถ้า archive ทั้งที่ไม่มีข้อมูลการใช้งานเลย มันจะเตือนว่าคอลัมน์ต้นทุนจะว่าง และบอกคำสั่ง `telemetry sync` ที่รันเองได้ — telemetry ไม่เคยเป็นเงื่อนไขขวางการ archive
+ก่อน archive Land จะอ่าน transcript cursor ที่ผูกไว้ทั้งหมดเอง ถ้า policy กำหนดให้
+ต้องมี usage อย่างน้อยหนึ่งมิติที่วัดได้และเชื่อถือได้ต้องมีอยู่จริง จำนวน input /
+output token ที่วัดได้ถือว่าเพียงพอ แม้ host ไม่ส่งราคา โดย record ยังคงเป็น
+`partial-measurement` และ cost เป็น `null` ส่วน telemetry ที่หายไปหรือมีแค่ข้อมูล
+correlation จะหยุดพร้อมทางกู้คืน ไม่ถูกแปลงเป็นศูนย์ เมื่อมีมิติจริงแล้วผู้ใช้ไม่ต้อง
+รัน telemetry เอง
 
 `land check` ยังเพิ่มบรรทัด `branch:` ใน `LAND READY` เมื่อรีโปเป้าหมาย checkout อยู่บน `main`/`master` และ `land record` เตือนเมื่อเป้าหมายอยู่บน default branch ทั้งคู่เป็นแค่คำเตือน — guard ของ land ทุกตัวยังอิง commit และการอ่าน branch ที่ล้มเหลวจะเงียบ ไม่ทำให้คำสั่งพัง
 
@@ -69,7 +74,7 @@ Land ถูกออกแบบให้ล้มเหลวอย่างป
 
 **apply ปฏิเสธที่จะทับงานของ change อื่น** ไฟล์เป้าหมายที่มีการแก้ไขซึ่งยังไม่ commit — เช่นจาก change ที่เพิ่ง land ไปก่อนหน้า — จะไม่ถูกเขียนทับเงียบ ๆ ด้วยการคัดลอกทั้งไฟล์ apply จะปฏิเสธ ระบุ path ที่จะถูกทับ และบอกวิธี reconcile ส่วน symlink ถูกเทียบด้วย link target แบบเดียวกับ blob ของ Git
 
-**apply transaction ที่ค้างจะหยุด apply ครั้งถัดไป** journal ที่ค้างอยู่ในสถานะ `rolling-back` หรือ `manual-recovery` จะไม่ถูกข้าม เพราะไม่อย่างนั้นมันจะเปิด transaction ใหม่ทับ working tree ที่ Foundation กู้คืนไม่สำเร็จ แล้วรายงานว่าสำเร็จ `doctor --change <id>` รายงานเรื่องนี้ก่อนที่ Land จะไปถึง
+**apply transaction ที่ค้างจะหยุด apply ครั้งถัดไป** journal ที่ค้างอยู่ในสถานะ `rolling-back` หรือ `manual-recovery` จะไม่ถูกข้าม เพราะไม่อย่างนั้นมันจะเปิด transaction ใหม่ทับ working tree ที่ Change Loop กู้คืนไม่สำเร็จ แล้วรายงานว่าสำเร็จ `doctor --change <id>` รายงานเรื่องนี้ก่อนที่ Land จะไปถึง
 
 **การหยุดแบบสิ้นสุดพกทางออกมาด้วย** รอบรีวิวที่ใช้หมด, review chain ที่เสียหาย, งบ continuation ที่ใช้หมด, control repository ที่ขยับกลาง Land, apply ที่ rollback ไม่จบ — แต่ละอย่างส่งซองการตัดสินใจแบบเดียวกัน: รหัสการหยุด, ทางเลือกที่ตรงไปตรงมาอย่างน้อยสองทาง, คำแนะนำ และ `pause` ที่ถูกรักษาไว้
 

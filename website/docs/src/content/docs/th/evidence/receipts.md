@@ -3,7 +3,7 @@ title: Receipt, สถานะ และความ stale
 description: receipt ผูกตัวเองกับอะไร สี่สถานะที่ provider คืนได้ ทำไม pass ที่เขียนด้วยมือถึงถูกปฏิเสธ และอะไรทำให้ proof stale
 ---
 
-Receipt คือบันทึกของ Foundation ว่า provider ตัวหนึ่งสังเกตเห็นผลอย่างหนึ่ง
+Receipt คือบันทึกของ Change Loop ว่า provider ตัวหนึ่งสังเกตเห็นผลอย่างหนึ่ง
 เทียบกับเนื้อหาชุดหนึ่ง ทุกอย่างในนั้นถูกออกแบบให้ receipt อยู่ได้ไม่นานกว่าสิ่งที่มันบรรยาย
 
 ## สี่สถานะ
@@ -58,7 +58,7 @@ fingerprint คือสิ่งที่ทำให้การใช้ซ�
 
 ## รันจริง กับ แค่ยืนยัน
 
-Foundation แยกหลักฐานที่มันสร้างเอง ออกจากหลักฐานที่คนยื่นให้ และไม่ยอมให้สองอย่างนี้ปนกัน
+Change Loop แยกหลักฐานที่มันสร้างเอง ออกจากหลักฐานที่คนยื่นให้ และไม่ยอมให้สองอย่างนี้ปนกัน
 
 receipt ที่ระบุ `execution: "harness"` เขียนได้เฉพาะจากจุดที่รันคำสั่งจริงเท่านั้น
 และถ้าผ่านก็ต้องแนบ command log เป็น artifact
@@ -90,13 +90,27 @@ provider แคบขอบเขตนั้นได้ด้วยการ�
 }
 ```
 
-เมื่อประกาศ input ไว้ Foundation จะบันทึก digest ของไฟล์เหล่านั้นแบบเรียงลำดับ
+เมื่อประกาศ input ไว้ Change Loop จะบันทึก digest ของไฟล์เหล่านั้นแบบเรียงลำดับ
 เมื่อ workspace เปลี่ยนแต่ไฟล์เหล่านั้นไม่เปลี่ยน receipt จะถูกผูกใหม่เข้ากับ
 workspace hash ใหม่แทนที่จะรันซ้ำ และการผูกใหม่ถูกเขียนลง audit log
 ประกาศ input ตามจริง — provider ที่อ่านมากกว่าที่ประกาศจะใช้ receipt ซ้ำ
 ทั้งที่ควรต้องพิสูจน์ใหม่
 
-`review` กับ `acceptance` ประกาศ input ไม่ได้ คำตัดสินของคนพูดถึง change ทั้งก้อน
+`review`, `acceptance` และ `semantic-acceptance` ประกาศ input ไม่ได้ เพราะคำตัดสิน
+ผูกกับ change ทั้งก้อน
+
+## Signed semantic acceptance
+
+provider `semantic-acceptance` ตรวจ envelope ที่ลงลายเซ็น Ed25519 จากระบบภายนอก
+โดยไม่เปิด hidden input หรือโค้ด oracle ให้ implementation agent เห็น Envelope
+ผูก case ID, claim, input partition, status และ observation digest เข้ากับ
+workspace จริง และผูกกับ critical-case observation หรือหลักฐานก่อนแก้ fail /
+หลังแก้ pass ได้
+
+required case ที่หาย, ถูก skip, ซ้ำ, มาจาก provider ผิด, stale, ถูกแก้ หรือ fail
+จะบล็อก Proof และ Land โดย review ที่ผ่าน override ไม่ได้ สำหรับ npm repository
+เดียวที่ระบุได้แน่นอน Change Loop จะเปิดการตรวจ `package.json` กับ
+`package-lock.json` อัตโนมัติโดยไม่ต้องเพิ่ม wiring
 
 ## การ waive gate ที่ fail
 
@@ -130,6 +144,7 @@ receipt ที่ได้มาแล้วยังใช้ได้ แล�
 | `review-not-independent` | ผู้รีวิวเป็นผู้ implement ด้วย และนโยบายไม่ได้ยกเว้นความเป็นอิสระ |
 | `review-not-diverse` | AI ผู้รีวิวใช้ตระกูลโมเดลเดียวกับผู้ implement |
 | `acceptance-invalid` | ขอบเขต hash หรือเหตุผลเปลี่ยนไปหลังการยอมรับ |
+| `semantic-acceptance-invalid` | case, source observation, transition, issuer หรือตัวผูก workspace ที่ลงลายเซ็นไม่ถูกต้อง |
 | `external-observation-missing` | receipt แบบ manual ขาดสิ่งที่สังเกตเห็นหรือแหล่งที่มา |
 
 receipt ที่ stale *หลัง* จากรันไปแล้วในรอบ proof เดียวกัน มักแปลว่า provider

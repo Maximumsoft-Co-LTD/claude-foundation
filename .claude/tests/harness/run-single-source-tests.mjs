@@ -122,10 +122,10 @@ const releaseVersion = read("VERSION").trim();
 const releaseSurfaces = {
   "foundation.mjs VERSION": runtimeVersion,
   "protocol.json runtime": protocolRuntime,
-  "AGENT.md Foundation version":
-    read(".claude/harness/AGENT.md").match(/verify Foundation ([0-9]+\.[0-9]+\.[0-9]+)/)?.[1],
+  "AGENT.md Change Loop version":
+    read(".claude/harness/AGENT.md").match(/verify Change Loop ([0-9]+\.[0-9]+\.[0-9]+)/)?.[1],
   "DEVELOPER-SETUP.md heading version":
-    read(".claude/harness/DEVELOPER-SETUP.md").match(/Foundation v([0-9]+\.[0-9]+\.[0-9]+)/)?.[1],
+    read(".claude/harness/DEVELOPER-SETUP.md").match(/Change Loop v([0-9]+\.[0-9]+\.[0-9]+)/)?.[1],
   "DEVELOPER-SETUP.md CLI version":
     read(".claude/harness/DEVELOPER-SETUP.md").match(/version` is `([0-9]+\.[0-9]+\.[0-9]+)`/)?.[1],
   "DEVELOPER-SETUP.md clone tag":

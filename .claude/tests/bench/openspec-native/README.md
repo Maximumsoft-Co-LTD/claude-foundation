@@ -4,6 +4,38 @@ This is the current benchmark surface for the installed OpenSpec-native
 Foundation runtime. It does not reuse the retired `.workflow/` runner in the
 parent directory.
 
+This page is the maintainer protocol for running and diagnosing the lab. For a
+short statement of what is green or still required, read
+`docs/reports/user-scenario-release-status.md`; for the scenario portfolio and
+acceptance rules, read `docs/reports/user-scenario-test-plan.md`.
+
+## End-to-end terminal contract
+
+A paid scenario is green only after the change reaches `archived`: Change,
+Build, Prove, review, Land, and post-Land delivery checks must all complete.
+A passing proof with `landStatus: awaiting-user` is scored `incomplete` with
+`failureClass: land-not-archived`.
+
+The consumer lab marks every project disposable. Paid lab runs explicitly
+authorize main-session self-review and Land inside that disposable workspace;
+the waiver remains visible in review provenance. This test authority never
+changes the normal product project's review or explicit-Land policy.
+
+For an explicitly authorized paid Land lane, the runner treats the backend
+`archived` lifecycle state as terminal truth. It stops a host that is still
+generating closing narration and immediately proceeds to oracle, quality,
+project, and clean-room verification; it never upgrades `proven` or
+`code-applied` to completion.
+
+When a lane has a deterministic task oracle, the runner stops first at
+`proven`, executes that oracle against the still-isolated sandbox, and permits
+the backend Land operation only on a passing verdict. Hidden task failure can
+therefore never be discovered for the first time after archive.
+Failed case IDs start a fresh Build/Prove continuation against the same
+disposable change while wall/request allowance remains. A retained lab can be
+continued with `--resume-project <path>`; a `proven` fast path uses zero model
+requests only when backend `land-check` also confirms that proof is fresh.
+
 The runner records one
 `foundation-openspec-native-scorecard-v1` JSON row per execution. Its trusted
 speed value is the runner's monotonic wall-clock stopwatch. Claude's result
@@ -30,6 +62,64 @@ Do not add that marker to a real project.
 
 ## Live run
 
+For a maintained scenario, use the consumer-lab wrapper. It creates a clean
+temporary consumer from the frozen seed, installs the current source revision,
+checks the seed digest, runs the normal benchmark, preserves the source patch,
+installed manifest, lifecycle/evidence trees, host output, oracle, quality, and
+scorecard under one run directory, then removes the consumer:
+
+```bash
+node .claude/tests/bench/openspec-native/lab.mjs \
+  --scenario bare-node-boundary
+```
+
+Pass `--keep-project` only for an explicit debugging run. Direct `run.mjs`
+invocation remains available for an already prepared disposable project.
+Each retained run has `manifest.json`, `source.patch`, and `integrity.json`; the
+last file content-binds every preserved artifact. Aggregate repeated runs with:
+
+```bash
+npm run bench:openspec-native:aggregate -- \
+  .claude/tests/bench/results/openspec-native-lab
+```
+
+Before authorizing any paid smoke, run the zero-cost release sentinel:
+
+```bash
+npm run bench:openspec-native:sentinel
+```
+
+It validates the matrix, checks every frozen fixture digest, and runs the
+deterministic defect/repair oracle for all seven workload rows. Its versioned
+JSON report includes the matrix, source patch, command-output, and fixture
+digests. A dirty source tree is reported explicitly and is not presented as an
+immutable release baseline.
+
+The aggregate is strict: lifecycle completion, oracle, quality, ordinary
+project command, clean install, and the post-install project command must all
+pass for every run. Missing measurements remain `null`, never zero.
+
+Generate the versioned release evidence index after collecting runs:
+
+```bash
+npm run bench:openspec-native:release-report -- \
+  .claude/tests/bench/results/openspec-native-lab
+```
+
+The report always reruns the zero-cost sentinel, then classifies each matrix
+row as `deterministic-green`, `smoke-green`, `repeated-green`, or `blocked`.
+For measured values it reports reliability first, followed by median and p95
+wall time, cost, model requests, operations, and resumptions. Missing paid runs
+and incomplete repeat counts are explicit blockers; unavailable measurements
+remain separate from numeric zero. The command exits 2 until every paid row has
+the required identical-source repeats.
+
+Clean-room verification is a separate versioned contract from the focused
+project command. It runs with a bounded timeout and disposable npm, pip, and XDG
+caches, records its declared network policy, and reports a missing command as
+`unavailable` rather than converting it into a test failure or a pass. The
+ordinary project command runs again only after clean installation succeeds.
+
 ```bash
 npm run bench:openspec-native -- \
   --scenario todolist-r2 \
@@ -48,6 +138,10 @@ Paid runs should bind every matrix lane directly to the runner:
 ```
 
 The wall and cost ceilings are delegated to the stopwatch and Claude CLI. The
+budgets must cover the scenario's declared convergent repair path, not only its
+happy path. Increasing a ceiling never changes the measured result or its
+baseline comparison; the scorecard still reports actual wall time and request
+count, and a run is green only at `archived` with delivery checks complete. The
 runner counts distinct streamed model request IDs and terminates at the request
 ceiling. Budget termination records `needs-user-decision`; it is resumable and
 is never classified as completed or permanently blocked.
@@ -134,9 +228,10 @@ distinct control paths:
 
 The machine-enforced cross-domain plan lives in
 [`../config/openspec-native-matrix.json`](../config/openspec-native-matrix.json).
-It keeps unmeasured workloads in `planned` state, so they cannot accidentally
-consume a paid run or be presented as baseline evidence. Inspect the matrix or
-one ready execution plan with:
+All seven workload classes now have executable frozen fixtures; a future row
+must remain `planned` until its seed digest, prompt, host, risk, project and
+clean-install commands, critical cases, oracle, quality policy, and budgets are
+complete. Inspect the matrix or one ready execution plan with:
 
 ```bash
 node .claude/tests/bench/openspec-native/matrix.mjs

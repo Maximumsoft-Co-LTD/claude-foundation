@@ -33,6 +33,10 @@ packet คือการส่งต่องานแบบมีขอบเ�
 
 ขนาดของ packet ถูกบังคับจริง: 8 KiB สำหรับ task packet, 8 KiB สำหรับ review, 12 KiB ต่อรีโป, 16 KiB รวม และ 4 KiB สำหรับสรุปแผน
 
+ก่อน dispatch หรือแก้ product Build จะตรวจ `authorityPreflight` งานที่ต้องใช้
+signed CI หรืออำนาจภายนอกซึ่งยังไม่มีจะหยุดพร้อม decision เดียวและทาง resume
+Change ที่แน่นอน โดยยังไม่ใช้ Build/model budget
+
 ## ledger เดียว
 
 `tasks.md` เป็น ledger **เดียว** ไม่มี checklist ที่มิเรอร์ ไม่มีไฟล์สถานะที่สอง และไม่มี lifecycle state ซ่อนอยู่ในหัวของ agent ถ้าอะไรไม่อยู่ใน `tasks.md` แปลว่าไม่ได้ถูกติดตาม
@@ -40,6 +44,11 @@ packet คือการส่งต่องานแบบมีขอบเ�
 ## ขอบเขต
 
 agent แก้ได้เฉพาะ path ที่ sandbox อนุญาต ซึ่งมาจากขอบเขตการเขียนใน `repositories.yaml` ของ change นั้น — change ที่ประกาศว่าแตะรีโปเดียวจะเขียนข้ามไปอีกรีโปเงียบ ๆ ไม่ได้
+
+ถ้าจะแก้ไฟล์ผ่าน shell โดยตรง ให้ผูกคำสั่งด้วย
+`cd <exact-workspace> && ...` ระบบจะปฏิเสธ package manager/formatter ที่ไม่ได้
+ผูก workspace, path ที่หนีด้วย `..` และ absolute output นอก workspace ก่อน shell
+เริ่มทำงาน โดย structured Edit/Write ยังเป็นทางที่ควรใช้
 
 งานหลาย repository ให้สร้าง workspace ที่เลือกทั้งหมดพร้อมกัน:
 

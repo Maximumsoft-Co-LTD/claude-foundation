@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -17,6 +17,8 @@ try {
   if (!applied) throw new Error("mutation target did not apply");
   const modulePath = join(scratch, "adapter-mutant.mjs");
   writeFileSync(modulePath, mutated);
+  cpSync(resolve(".claude/harness/runtime/evidence/evidence-results.mjs"),
+    join(scratch, "evidence-results.mjs"));
   const runtime = await import(`${pathToFileURL(modulePath).href}?v=${Date.now()}`);
   compiled = true;
   const status = runtime.mutationV2Result({

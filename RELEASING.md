@@ -2,6 +2,12 @@
 
 How to cut a new version of claude-foundation and update the Homebrew formula.
 
+For the current backend simplification, start with the concise
+[release status](docs/reports/user-scenario-release-status.md) and
+[scenario test plan](docs/reports/user-scenario-test-plan.md). The status page
+separates implementation completion from paid and production evidence; the test
+plan defines the executable portfolio without repeating implementation history.
+
 The formula (`Formula/claude-foundation.rb`) ships **two** install paths:
 
 - **Stable** — `url` + `sha256` pinned to a tagged release tarball. `brew install claude-foundation` and `brew upgrade claude-foundation` use this. This is what the steps below bump.
@@ -23,6 +29,18 @@ It refuses to run if the version is malformed, the tag already exists, or `## [U
 > **Rehearse first.** Run it with **`dry_run: true`** (`gh workflow run release.yml -f version=2.5.11 -f dry_run=true`) to do the edits + build the bottle and print the diffs **without** pushing, tagging, or publishing anything. Recommended before the first real use, and any time the release machinery changed.
 
 > **Coverage.** The bottle is built on one pinned arm64 macOS runner (`macos-15` → `arm64_sequoia`, which also pours on `arm64_tahoe`/macOS 26 via forward-compat). Intel macOS, Linux, and macOS older than Sequoia fall back to build-from-source. To widen coverage, build on a CI matrix and add one `sha256 … <tag>:` line per platform. `bottle.yml` remains the manual tool for retro-fixing/rebuilding the bottle for an already-tagged release.
+
+Before the workflow rehearsal, run `npm run release:upgrade-matrix`. The
+versioned policy in `scripts/release/supported-upgrades.json` selects every tag
+from v3.2.19 through the current `VERSION` and tests all four host adapters.
+The report is source-bound and may be retained with `--output <path>`; a dirty
+source report is useful rehearsal evidence but cannot be release sign-off.
+
+Run `npm run release:local-rehearsal` to build a tracked/untracked-nonignored
+workspace archive, extract it, install a disposable consumer, verify CLI
+version/help, and lint the formula. The retained archive and JSON report live
+under ignored `.foundation/test-results/release/local/` by default. This closes
+the local source-artifact checks but does not replace the macOS bottle dry run.
 
 ## Cutting a release (manual fallback)
 

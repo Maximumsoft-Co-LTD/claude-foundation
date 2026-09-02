@@ -41,7 +41,7 @@ rapid จะ **อัปเกรดในที่** ถ้าพบควา�
 requirement เขียนเป็น delta เทียบกับ spec ปัจจุบัน — `## ADDED Requirements`, `## MODIFIED Requirements`, `## REMOVED Requirements` แต่ละอันมี scenario ที่สังเกตได้
 
 :::caution[การเปลี่ยนชื่อ scenario]
-OpenSpec อ่านบล็อก `## MODIFIED Requirements` ว่าเป็นรายการ scenario **ทั้งหมด** ดังนั้นการเปลี่ยนชื่อ scenario เงียบ ๆ จะถูก archive เป็นการลบ Foundation ปฏิเสธเรื่องนี้ก่อนถึง Land ไม่ใช่หลังจากนั้น
+OpenSpec อ่านบล็อก `## MODIFIED Requirements` ว่าเป็นรายการ scenario **ทั้งหมด** ดังนั้นการเปลี่ยนชื่อ scenario เงียบ ๆ จะถูก archive เป็นการลบ Change Loop ปฏิเสธเรื่องนี้ก่อนถึง Land ไม่ใช่หลังจากนั้น
 
 วิธีเปลี่ยนชื่อที่ถูกต้องคือใส่ชื่อเดิมไว้ใต้ `## REMOVED Requirements` และชื่อใหม่ใต้ `## ADDED Requirements` พร้อมรายการ scenario เต็ม
 
@@ -61,9 +61,15 @@ claude-foundation change audit <change>
 
 `validate` ตรวจตัว change และ evidence contract ส่วน `audit` รายงานความเชื่อมโยงของ scenario → claim → task → provider ทุก scenario ที่สังเกตได้ควรไปถึง claim และทุก claim ควรไปถึง provider ที่พิสูจน์มันได้จริง
 
+Validation คืนกลุ่มปัญหาที่เป็นอิสระทั้งหมดพร้อม repair plan ที่มีขอบเขต Agent
+จึงแก้ครบทั้ง batch ก่อน validate ใหม่ Atomic draft version 2 ให้ผู้เขียนระบุ
+intent, outcome, path และ verification ส่วน Change Loop สร้าง stable ID และเติม
+เฉพาะ cross-link ที่สรุปได้แน่นอน Draft version 1 ยังใช้ได้ ผู้ใช้ไม่ต้องดูแล
+bookkeeping ledger ที่ซ้ำกัน
+
 ## แก้ change ที่มีอยู่
 
-ส่ง ID ของ change แทน intent การแก้เป็นเส้นทางปกติเมื่อ requirement ขยับ — คุณ **ไม่** เปิด change ตัวที่สอง Foundation จะ sync sandbox ที่มีอยู่และทำให้ proof ที่การแก้นั้นทำให้ล้าสมัยใช้ไม่ได้
+ส่ง ID ของ change แทน intent การแก้เป็นเส้นทางปกติเมื่อ requirement ขยับ — คุณ **ไม่** เปิด change ตัวที่สอง Change Loop จะ sync sandbox ที่มีอยู่และทำให้ proof ที่การแก้นั้นทำให้ล้าสมัยใช้ไม่ได้
 
 ## ปลดระวาง
 

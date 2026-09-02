@@ -41,7 +41,7 @@ A rapid change **upgrades in place** if risk emerges. When resolving impact, cou
 Requirements are written as deltas against the current spec — `## ADDED Requirements`, `## MODIFIED Requirements`, `## REMOVED Requirements` — each with observable scenarios.
 
 :::caution[Renaming a scenario]
-OpenSpec reads a `## MODIFIED Requirements` block as the **complete** scenario list, so quietly renaming a scenario archives as a deletion. Foundation refuses this before Land rather than after. To rename, put the old name under `## REMOVED Requirements` and the new name under `## ADDED Requirements` with its full scenario list.
+OpenSpec reads a `## MODIFIED Requirements` block as the **complete** scenario list, so quietly renaming a scenario archives as a deletion. Change Loop refuses this before Land rather than after. To rename, put the old name under `## REMOVED Requirements` and the new name under `## ADDED Requirements` with its full scenario list.
 
 There is deliberately no bypass flag: OpenSpec enforces the same rule at archive time, so skipping the check would only move the failure past the point of no return.
 :::
@@ -59,9 +59,16 @@ claude-foundation change audit <change>
 
 `validate` checks the change and its evidence contract. `audit` reports scenario, claim, task, and provider traceability — every observable scenario should be reachable from a claim, and every claim from a provider that can actually demonstrate it.
 
+Validation returns all independent problem groups together and a bounded repair
+plan, so the agent fixes the complete batch before validating again. Atomic
+draft version 2 lets the author state intent, outcomes, paths, and verification;
+Change Loop derives stable IDs and only those cross-links that are unambiguous.
+Version 1 drafts remain compatible. The user never has to maintain duplicate
+bookkeeping ledgers.
+
 ## Revising an existing change
 
-Pass the change ID instead of an intent. Revision is the normal path when requirements move — you do **not** open a second change. Foundation syncs any existing sandbox and invalidates proof the revision made stale.
+Pass the change ID instead of an intent. Revision is the normal path when requirements move — you do **not** open a second change. Change Loop syncs any existing sandbox and invalidates proof the revision made stale.
 
 ## Retiring one
 

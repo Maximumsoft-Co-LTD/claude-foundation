@@ -1,0 +1,2 @@
+-- v1: accounts(id, name, disabled)
+-- v2: accounts(id, display_name, status)

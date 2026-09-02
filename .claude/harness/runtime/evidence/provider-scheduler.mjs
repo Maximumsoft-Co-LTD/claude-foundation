@@ -141,7 +141,11 @@ export function createProviderScheduler({
         executeAdapter(id, node.provider, node.config, proofRunId, commandCache)));
       for (let index = 0; index < batch.length; index += 1) {
         pending.delete(batch[index].provider);
-        outcomes.push({ provider: batch[index].provider, status: results[index].status });
+        outcomes.push({
+          provider: batch[index].provider,
+          status: results[index].status,
+          observations: results[index].observations || []
+        });
         if (results[index].status === "pass") {
           for (const covered of batch[index].covers) completed.add(covered);
         } else {

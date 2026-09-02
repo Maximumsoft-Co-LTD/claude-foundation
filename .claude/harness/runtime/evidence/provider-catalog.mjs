@@ -20,6 +20,7 @@ export const PROVIDER_CONTRACTS = {
   "cross-repo-contract": "Producer and consumer repositories agree on the same versioned contract.",
   "review": "Independent risk review covers the declared claims and unresolved findings.",
   "acceptance": "A named human accepts an explicitly subjective product or experience decision.",
+  "semantic-acceptance": "A signed external oracle verdict covers every declared behavior partition without exposing hidden oracle content.",
   "static-analysis": "Compilation, type checking, linting, and applicable static quality gates pass.",
   "data-migration": "Schema or data evolution is forward-safe, backward-compatible, and rollback-aware.",
   "accessibility": "Rendered semantics, keyboard use, focus, contrast, and assistive access meet policy.",

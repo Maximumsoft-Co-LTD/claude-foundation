@@ -1,9 +1,9 @@
 ---
-title: What Foundation writes
+title: What Change Loop writes
 description: Every artifact the harness produces — the change packet, machine state, the evidence vault, and the archive — and which of them you are meant to read.
 ---
 
-Foundation writes in two places, and the split is the whole point.
+Change Loop writes in two places, and the split is the whole point.
 
 **`openspec/` is yours.** Durable intent, reviewed by humans, committed to Git.
 **`.foundation/` is the machine's.** Lifecycle state, receipts, logs, and proof
@@ -31,7 +31,7 @@ overwrite:
 
 | Path | Owner | On install |
 |---|---|---|
-| `schemas/` | Foundation | **Overwritten every install.** Edit a profile here and the next upgrade discards it |
+| `schemas/` | Change Loop | **Overwritten every install.** Edit a profile here and the next upgrade discards it |
 | `config.yaml` | your project | Copied only when missing, yours afterwards |
 | `repositories.yaml` | your project | Copied only when missing, yours afterwards |
 | `specs/`, `changes/`, `investigations/` | your project | Never touched by the installer |
@@ -178,7 +178,7 @@ Landing moves the packet to `openspec/changes/archive/<YYYY-MM-DD>-<change-id>/`
 with the same files intact, and merges the requirement deltas into the durable
 specs at `openspec/specs/<capability>/spec.md`.
 
-The merge is verified rather than trusted: Foundation re-derives the before,
+The merge is verified rather than trusted: Change Loop re-derives the before,
 after, and delta states and blocks the land if the archived specs do not match
 what the deltas said they would produce.
 

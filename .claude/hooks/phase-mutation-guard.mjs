@@ -1,17 +1,22 @@
 #!/usr/bin/env node
 
-// Phase-aware PreToolUse guard. Rollout is deliberately audit-only by default.
-// Hosts enable enforcement with FOUNDATION_GUARDRAIL_MODE=block after exporting
-// FOUNDATION_ACTIVE_PHASE and, for Build, FOUNDATION_WORKSPACE_ROOT.
+// Phase-aware PreToolUse guard. The default auto mode blocks whenever an
+// active Foundation phase is known and stays out of adoption-only sessions.
+// Hosts may still select explicit audit/block/off behavior.
 
 import {
   appendFileSync, closeSync, existsSync, mkdirSync, openSync, readSync,
   readdirSync, readFileSync, realpathSync, renameSync, statSync
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { shellMutationViolation } from "./phase-guard-policy.mjs";
+import {
+  looksMutatingShellCommand, shellMutationViolation
+} from "./phase-guard-policy.mjs";
 import { recordedPhaseContext } from "./phase-state.mjs";
 import { devPrompt } from "./dev-terminal-guard.mjs";
+import {
+  workspaceCapabilityValue, workspaceMutationDecision
+} from "../harness/runtime/core/execution-contract.mjs";
 
 // Large enough that a real audit trail survives a working session, small enough
 // that an unattended project never carries an unbounded file.
@@ -22,7 +27,9 @@ const AUDIT_MAX_BYTES = 1024 * 1024;
 // and the guard has nothing to enforce.
 const PHASE_FRESHNESS_MS = 12 * 60 * 60 * 1000;
 
-const configuredMode = (process.env.FOUNDATION_GUARDRAIL_MODE || "audit").toLowerCase();
+const requestedMode = (process.env.FOUNDATION_GUARDRAIL_MODE || "auto").toLowerCase();
+const configuredMode = new Set(["auto", "audit", "block", "off"]).has(requestedMode)
+  ? requestedMode : "block";
 if (configuredMode === "off") process.exit(0);
 
 let event;
@@ -33,7 +40,8 @@ try {
   // for enforcement asked for it on the event axis too: an unreadable event
   // could be any mutation, so allowing it would fail open exactly where the
   // guard was told not to.
-  if (configuredMode === "block")
+  if (configuredMode === "block" ||
+      (configuredMode === "auto" && process.env.FOUNDATION_ACTIVE_PHASE))
     process.stdout.write(JSON.stringify({
       decision: "block",
       reason: "phase guard: hook event is unreadable; retry the tool call"
@@ -48,14 +56,14 @@ try {
 // its first product mutation even when the exported environment is absent.
 const transcriptPath = String(event.transcript_path ||
   process.env.FOUNDATION_CLAUDE_TRANSCRIPT_PATH || "");
-const devSession = configuredMode === "audit" && currentTranscriptIsDev(transcriptPath);
-const mode = devSession ? "block" : configuredMode;
+const devSession = ["auto", "audit"].includes(configuredMode) &&
+  currentTranscriptIsDev(transcriptPath);
 
 const tool = String(event.tool_name || "");
 const input = event.tool_input || {};
 const mutatingTools = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 if (!mutatingTools.has(tool) && tool !== "Bash") process.exit(0);
-if (tool === "Bash" && !looksMutating(String(input.command || ""))) process.exit(0);
+if (tool === "Bash" && !looksMutatingShellCommand(String(input.command || ""))) process.exit(0);
 
 const projectRoot = canonical(process.env.CLAUDE_PROJECT_DIR || process.cwd());
 const recorded = recordedPhaseContext({
@@ -67,16 +75,24 @@ const recorded = recordedPhaseContext({
   nowMs: Date.now
 });
 const phase = String(process.env.FOUNDATION_ACTIVE_PHASE || recorded?.phase || "").toLowerCase();
+const mode = devSession || configuredMode === "block" ||
+  (configuredMode === "auto" && Boolean(phase)) ? "block" : "audit";
 const recordedWorkspace = recorded?.changeId ? runtimeWorkspace(recorded.changeId) : "";
 const violations = [];
 
-// Block mode still fails closed: a host that asked for enforcement gets it
-// even when the phase cannot be established. Audit mode does not — recording
-// "phase unavailable" there appended a row on every mutating call of every
-// stock install, which is noise, not an audit trail.
+// Explicit block mode fails closed without context. Auto mode deliberately
+// stays out of adoption-only sessions, but becomes block as soon as a current
+// phase context or /dev transcript establishes lifecycle authority.
 if (!phase && mode !== "block") process.exit(0);
 
-if (!phase) {
+if (!phase && prePhaseDraftMutationAllowed()) {
+  // Atomic Change starts need one narrowly-scoped bootstrap write before a
+  // lifecycle phase exists.  The draft is data consumed and validated by
+  // `change start`; it is not product code and cannot widen the mutation
+  // capability.  Shell writes remain blocked so redirects cannot smuggle
+  // additional mutations into the bootstrap boundary.
+  process.exit(0);
+} else if (!phase) {
   violations.push("active phase is unavailable");
 } else if (!new Set(["change", "build", "prove", "land"]).has(phase)) {
   violations.push(`unsupported active phase: ${phase}`);
@@ -107,50 +123,35 @@ function inspectPath(rawPath) {
     return;
   }
 
-  if (isWithin(target, join(projectRoot, ".foundation"))) return;
-
-  // Investigation notes are exploratory documentation, not product or
-  // instruction files; /investigate writes them and records no phase, so a
-  // phase left behind by an earlier packet must not block them.
   const investigations = join(projectRoot, "openspec", "investigations");
-
-  if (phase === "change") {
-    if (!isWithin(target, join(projectRoot, "openspec", "changes")) &&
-        !isWithin(target, investigations))
-      violations.push("Change may write only OpenSpec change drafts, investigation notes, or .foundation state");
-    return;
-  }
-
-  if (phase === "prove") {
-    if (!isWithin(target, investigations))
-      violations.push("Prove keeps product and instruction files read-only");
-    return;
-  }
-
-  if (phase === "land") {
-    if (process.env.FOUNDATION_LAND_TRANSACTION !== "1")
-      violations.push("Land mutations require the runtime transaction marker");
-    return;
-  }
-
-  if (phase === "build") {
-    const workspace = process.env.FOUNDATION_WORKSPACE_ROOT || recordedWorkspace;
-    if (!workspace) {
-      violations.push("Build workspace is unavailable");
-      return;
-    }
-    const roots = [canonicalTarget(workspace, projectRoot), ...allowedPaths()];
-    if (!roots.some((root) => root && isWithin(target, root)))
-      violations.push("Build mutation is outside its isolated workspace and declared paths");
-  }
+  const workspace = process.env.FOUNDATION_WORKSPACE_ROOT || recordedWorkspace;
+  const status = phase === "build" ? "building" : phase === "prove" ? "proven"
+    : phase === "land" ? "applied" : "change";
+  const capability = workspaceCapabilityValue(recorded?.changeId || "active", {
+    status, workspace: { path: workspace ? canonicalTarget(workspace, projectRoot) : null }
+  });
+  // Change can target any active change draft because the hook event does not
+  // carry a trustworthy change ID on every host. The runtime still validates
+  // the selected change before state transitions.
+  if (phase === "change") capability.roots = [join(projectRoot, "openspec", "changes")];
+  const decision = workspaceMutationDecision({
+    capability,
+    target,
+    foundationRoot: join(projectRoot, ".foundation"),
+    investigationRoot: investigations,
+    additionalRoots: allowedPaths(),
+    landTransaction: process.env.FOUNDATION_LAND_TRANSACTION === "1",
+    contains: isWithin
+  });
+  if (!decision.allowed) violations.push(decision.reason);
 }
 
-function inspectBash() {
+function inspectBash(command) {
   const violation = shellMutationViolation(phase, {
     ...process.env,
     ...(recordedWorkspace && !process.env.FOUNDATION_WORKSPACE_ROOT
       ? { FOUNDATION_WORKSPACE_ROOT: recordedWorkspace } : {})
-  });
+  }, command);
   if (violation) violations.push(violation);
 }
 
@@ -179,27 +180,6 @@ function currentTranscriptIsDev(path) {
   finally { if (descriptor !== null) closeSync(descriptor); }
 }
 
-function looksMutating(command) {
-  // Conservative command-word screening. This intentionally does not claim to
-  // be a shell sandbox; enforcement of arbitrary shell effects belongs to the host.
-  const stripped = command.replace(/(['"])(?:\\.|(?!\1).)*\1/g, " ");
-  const interpreterWrite = /\b(?:python(?:3(?:\.\d+)?)?|node|ruby|perl)\b/i.test(command) &&
-    /(?:\bopen\s*\([^\n)]*,\s*['"][wax+]|\.write(?:_text|_bytes)?\s*\(|\b(?:writeFile|writeFileSync|appendFile|appendFileSync|createWriteStream|renameSync|rmSync|unlinkSync|mkdirSync|copyFileSync)\s*\()/i
-      .test(command);
-  // `git rm` is spelled with the git verb list, not the bare `rm` alternative:
-  // that one only matches after a shell separator, so `rm` inside `git rm`
-  // never did. cherry-pick/revert/stash/am/pull all write the working tree,
-  // and `sed -i` edits files in place — all five read as non-mutating before.
-  return interpreterWrite
-    || /(^|[;&|`()]|\b(?:then|do)\b)\s*(?:sudo\s+|env\s+)*(?:rm|mv|cp|ln|install|mkdir|rmdir|touch|truncate|tee|chmod|chown|patch|git\s+(?:commit|push|merge|rebase|checkout|switch|restore|reset|clean|apply|rm|mv|cherry-pick|revert|stash|am|pull|worktree|submodule)|npm\s+(?:install|publish)|pnpm\s+(?:install|publish)|yarn\s+(?:add|install|publish))\b/m.test(stripped)
-    // In-place editors: the file is the effect, not an argument to a reader.
-    || /(^|[;&|`()]|\b(?:then|do)\b)\s*(?:sudo\s+|env\s+)*(?:sed|perl|ruby)\s+(?:-\S+\s+)*-\S*i/m.test(stripped)
-    // A redirect only mutates when it targets a real file; >/dev/null and
-    // 2>/dev/null are how read-only commands silence noise, and >&2 / 2>&1
-    // are fd duplication, not writes.
-    || /(?:^|[^<])(?:>>?|2>>?)\s*(?!&)(?!\/dev\/null(?:[\s;&|)]|$))\S/m.test(stripped);
-}
-
 function appendStringPath(paths, value) {
   if (typeof value === "string") paths.push(value);
 }
@@ -211,6 +191,18 @@ function eventPaths(value) {
   if (!Array.isArray(value.edits)) return paths;
   for (const edit of value.edits) appendStringPath(paths, edit?.file_path);
   return paths;
+}
+
+function prePhaseDraftMutationAllowed() {
+  if (!new Set(["Write", "Edit", "MultiEdit"]).has(tool)) return false;
+  const paths = eventPaths(input);
+  if (paths.length === 0) return false;
+  return paths.every((rawPath) => {
+    const target = canonicalTarget(rawPath, projectRoot);
+    if (!target) return false;
+    const rel = relative(projectRoot, target).split(sep).join("/");
+    return /^\.foundation\/change-start-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.json$/.test(rel);
+  });
 }
 
 function allowedPaths() {

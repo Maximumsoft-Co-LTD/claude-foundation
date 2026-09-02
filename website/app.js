@@ -89,7 +89,7 @@
     external: {
       kicker: "REMOTE OR HUMAN · EXPLICIT RECEIPT",
       title: "external",
-      description: "Require evidence from CI, a reviewer, or another system that Foundation must not execute locally. Signed CI envelopes are verified against the workspace.",
+      description: "Require evidence from CI, a reviewer, or another system that Change Loop must not execute locally. Signed CI envelopes are verified against the workspace.",
       code:
         "// execution.yaml\n" +
         '"review": {\n' +

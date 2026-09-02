@@ -1,12 +1,12 @@
 # Consumer Quality: CRAP Score and Mutation Testing
 
-Foundation can run project-owned quality tools across one or many consumer repositories. It starts in report-only mode and never grants permission to edit code outside the approved Change/spec.
+Change Loop can run project-owned quality tools across one or many consumer repositories. It starts in report-only mode and never grants permission to edit code outside the approved Change/spec.
 
 Thai version: [consumer-quality.th.md](consumer-quality.th.md)
 
 ## Guarantees
 
-- CRAP combines cyclomatic complexity with function coverage; Foundation recomputes the score itself.
+- CRAP combines cyclomatic complexity with function coverage; Change Loop recomputes the score itself.
 - Automated mutation counts only behavioral kills. Timeout, crash, compile/runtime error, no coverage, skipped, and unavailable are not kills.
 - Semantic mutation targets domain-specific faults such as a removed tenant filter or skipped transaction.
 - Repository lanes keep separate commit, workspace, tool/config, baseline, and assurance identity. Scores are never averaged across repositories.
@@ -61,7 +61,7 @@ Once the config is committed, evidence bootstrap can wire the enforced run as `s
 | HTML | `web-markup` | validation, browser, accessibility |
 | CSS / Sass | `web-style` | lint/build, browser, accessibility, responsive evidence |
 
-Foundation does not invent CRAP values for Bash, SQL, MongoDB, HTML, CSS, or Sass. Those surfaces use controls that match their behavior.
+Change Loop does not invent CRAP values for Bash, SQL, MongoDB, HTML, CSS, or Sass. Those surfaces use controls that match their behavior.
 
 ## Providers and adapters
 

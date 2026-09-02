@@ -1,6 +1,42 @@
-import { existsSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
 import { dependentClosure } from "../core/graph-execution.mjs";
+import { declaredPathMatcher } from "../core/workspace-surface.mjs";
+
+const PREFLIGHT_SCAN_MAX_FILES = 20000;
+const PREFLIGHT_SCAN_MAX_BYTES = 1024 * 1024;
+
+export function filesystemLiteralSearch(root, literal, inputs = ["*"]) {
+  const matches = declaredPathMatcher(inputs?.length ? inputs : ["*"]);
+  const skipped = new Set([".git", ".foundation", "node_modules", "coverage", "dist"]);
+  let visited = 0;
+  let indeterminate = false;
+  function walk(directory) {
+    let entries;
+    try { entries = readdirSync(directory, { withFileTypes: true }); }
+    catch { indeterminate = true; return false; }
+    for (const entry of entries) {
+      if (visited++ >= PREFLIGHT_SCAN_MAX_FILES) { indeterminate = true; return false; }
+      if (entry.isSymbolicLink()) continue;
+      const path = join(directory, entry.name);
+      const rel = relative(root, path).replaceAll("\\", "/");
+      if (entry.isDirectory()) {
+        if (skipped.has(entry.name) || rel === "openspec/changes" ||
+            rel.startsWith("openspec/changes/")) continue;
+        if (walk(path)) return true;
+        continue;
+      }
+      if (!entry.isFile() || !matches(rel)) continue;
+      try {
+        if (statSync(path).size <= PREFLIGHT_SCAN_MAX_BYTES &&
+            readFileSync(path, "utf8").includes(literal)) return true;
+      } catch { indeterminate = true; }
+    }
+    return false;
+  }
+  const found = walk(root);
+  return found ? true : indeterminate ? null : false;
+}
 
 export function recoverySummaryLine(entry) {
   const heading = entry.provider ? `${entry.provider}: ` : "";
@@ -412,7 +448,12 @@ export function proofReadinessValueOperation(context, id, stage = "prove") {
   const leases = stage === "prove" ? context.activeChangeLeases(id) : [];
   const repositoryConflicts = context.activeRepositoryConflicts(
     id, context.selectedRepositories(id), { executing: true });
-  const status = readinessStatus({
+  const authorityPreflight = context.authorityPreflight?.(id) || {
+    status: "READY", blockers: [], decision: null
+  };
+  const executionContract = plan?.executionContract ||
+    context.executionContract?.(id) || null;
+  const status = authorityPreflight.status !== "READY" ? "NEEDS_USER_DECISION" : readinessStatus({
     pending, issues, leases, repositoryConflicts,
     unavailable, repositoryIssues, unconfigured
   });
@@ -439,7 +480,15 @@ export function proofReadinessValueOperation(context, id, stage = "prove") {
     issues,
     advisories: context.advisoryCapabilities(id),
     budget: context.readinessBudgetPolicy(status),
-    next: readinessNext(context, {
+    authorityPreflight,
+    executionContract,
+    next: authorityPreflight.status !== "READY" ? [{
+      kind: "user-decision",
+      provider: "signed-ci",
+      decision: authorityPreflight.decision,
+      blockers: authorityPreflight.blockers,
+      command: authorityPreflight.blockers[0]?.next || null
+    }] : readinessNext(context, {
       id, status, pending, issues, surfaceFixits, leases,
       repositoryConflicts, unconfigured, unavailable
     })
@@ -502,6 +551,8 @@ export function createProofReadinessRuntime({
   readJson,
   writeJson,
   saveRuntime,
+  authorityPreflight = () => ({ status: "READY", blockers: [], decision: null }),
+  executionContract = null,
   fail
 }) {
   const repositoryInfrastructureIssues = repositoryInfrastructureIssuesOperation.bind(null, {
@@ -605,10 +656,15 @@ export function createProofReadinessRuntime({
       if (!repositories.length) continue;
       for (const caseId of config.criticalCases) {
         const entry = declared.get(caseId) ||
-          { providers: new Set(), repositories: new Map() };
+          { providers: new Set(), repositories: new Map(), inputs: new Map() };
         entry.providers.add(provider);
-        for (const repository of repositories)
+        for (const repository of repositories) {
           entry.repositories.set(repository.id, repository);
+          entry.inputs.set(repository.id, [
+            ...new Set([...(entry.inputs.get(repository.id) || []),
+              ...(config.inputs || ["*"])])
+          ]);
+        }
         declared.set(caseId, entry);
       }
     }
@@ -626,7 +682,12 @@ export function createProofReadinessRuntime({
         ":(exclude)openspec/changes", ":(exclude).foundation"
       ], repository.workspacePath));
       if (searches.some((found) => found.status === 0)) continue;
-      if (!searches.every((found) => found.status === 1)) continue;
+      if (!searches.every((found) => found.status === 1)) {
+        const fallback = repositories.map((repository) => filesystemLiteralSearch(
+          repository.workspacePath, caseId, entry.inputs.get(repository.id)));
+        if (fallback.some((found) => found === true)) continue;
+        if (!fallback.every((found) => found === false)) continue;
+      }
       issues.push(`critical case '${caseId}' declared by provider ${
         [...entry.providers].map((provider) => `'${provider}'`).join(", ")
       } appears in no file under ${
@@ -804,7 +865,9 @@ export function createProofReadinessRuntime({
     configurationRecovery,
     activeWorkRecovery,
     externalEvidenceRecovery,
-    unavailableProviderRecovery
+    unavailableProviderRecovery,
+    authorityPreflight,
+    executionContract
   });
   function proofReadinessValue(id, stage = "prove") {
     return proofReadinessValueFor(id, stage);

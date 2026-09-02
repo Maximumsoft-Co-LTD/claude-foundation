@@ -1,12 +1,32 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
+  filesystemLiteralSearch,
   proofReadinessValueOperation,
   readinessGraph,
   readinessNext,
   readinessStatus,
   workspaceIsolationIssuesValue
 } from "../runtime/evidence/proof-readiness.mjs";
+
+test("copy-mode critical-case scan is bounded to declared inputs", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-case-scan-"));
+  try {
+    mkdirSync(join(root, "test"), { recursive: true });
+    mkdirSync(join(root, ".foundation"), { recursive: true });
+    writeFileSync(join(root, "test", "app.test.js"), 'test("[CC-001] zero", () => {})\n');
+    writeFileSync(join(root, ".foundation", "state.json"), '"CC-SECRET"\n');
+    assert.equal(filesystemLiteralSearch(root, "CC-001", ["test/**"]), true);
+    assert.equal(filesystemLiteralSearch(root, "CC-002", ["test/**"]), false);
+    assert.equal(filesystemLiteralSearch(root, "CC-SECRET", ["*"]), false,
+      "machine state cannot satisfy product critical-case coverage");
+    assert.equal(filesystemLiteralSearch(root, "CC-001", ["src/**"]), false,
+      "a tag outside declared provider inputs cannot satisfy preflight");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 const empty = () => ({
   pending: [], issues: [], leases: [], repositoryConflicts: [],
@@ -189,4 +209,27 @@ test("build readiness skips prove-only checks and returns a ready value", () => 
   assert.deepEqual(value.activeLeases, []);
   assert.equal(value.graph, null);
   assert.deepEqual(value.next, []);
+});
+
+test("authority preflight stops Build readiness with its bound resume decision", () => {
+  const decision = {
+    kind: "authority-preflight", summary: "signed CI is missing",
+    recommended: "configure", options: [
+      { id: "configure", outcome: "configure CI" },
+      { id: "pause", outcome: "preserve work" }
+    ]
+  };
+  const context = operationContext({
+    authorityPreflight: () => ({
+      status: "NEEDS_USER_DECISION", decision,
+      decisionFingerprint: "sha256:bound",
+      blockers: [{ code: "SIGNED_CI_CONFIGURATION_REQUIRED", next: "change validate c" }]
+    })
+  });
+  const value = proofReadinessValueOperation(context, "c", "build");
+  assert.equal(value.status, "NEEDS_USER_DECISION");
+  assert.equal(value.authorityPreflight.decisionFingerprint, "sha256:bound");
+  assert.equal(value.next[0].decision, decision);
+  assert.equal(value.next[0].command, "change validate c");
+  assert.equal(value.budget.status, "NEEDS_USER_DECISION");
 });

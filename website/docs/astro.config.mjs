@@ -14,7 +14,7 @@ export default defineConfig({
   trailingSlash: "always",
   integrations: [
     starlight({
-      title: "Claude Foundation",
+      title: "Change Loop",
       description:
         "An OpenSpec-native change harness for AI coding agents: agree on the change, build it in isolation, prove it with real evidence, then land it.",
       tagline: "Prove the change. Skip the ceremony.",
@@ -64,10 +64,10 @@ export default defineConfig({
           label: "Get started",
           translations: { th: "เริ่มต้น" },
           items: [
-            { slug: "index", label: "What is Foundation?", translations: { th: "Foundation คืออะไร" } },
+            { slug: "index", label: "What is Change Loop?", translations: { th: "Change Loop คืออะไร" } },
             { slug: "install", label: "Install", translations: { th: "ติดตั้ง" } },
             { slug: "quickstart", label: "Quickstart", translations: { th: "เริ่มใช้งาน" } },
-            { slug: "artifacts", label: "What Foundation writes", translations: { th: "Foundation เขียนอะไรบ้าง" } },
+            { slug: "artifacts", label: "What Change Loop writes", translations: { th: "Change Loop เขียนอะไรบ้าง" } },
             { slug: "foundation-config", label: "Configure foundation.json", translations: { th: "ตั้งค่า foundation.json" } },
             { slug: "multi-repository", label: "Multi-repository workflow", translations: { th: "Workflow หลาย Repository" } },
           ],

@@ -1,0 +1,6 @@
+{
+  "name": "contact-panel-state-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test" }
+}

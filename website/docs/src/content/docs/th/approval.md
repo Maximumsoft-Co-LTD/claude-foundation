@@ -3,7 +3,7 @@ title: การอนุมัติโดยคน
 description: สี่จุดที่คนเข้ามาในวงจร — acceptance, review อิสระ, authority bridge และ host attestation — และตัวไหนที่บล็อกจริง
 ---
 
-Foundation มีสี่จุดที่คนเข้ามาในวงจรได้ ทั้งสี่มักถูกสับสนกัน ทั้งที่ทำหน้าที่ต่างกัน
+Change Loop มีสี่จุดที่คนเข้ามาในวงจรได้ ทั้งสี่มักถูกสับสนกัน ทั้งที่ทำหน้าที่ต่างกัน
 
 | จุด | ตอบคำถามอะไร | บล็อกไหม |
 |---|---|---|
@@ -110,6 +110,9 @@ contract fingerprint
 
 :::note[วงจรตามความเสี่ยง]
 ระบบบังคับเพดานก่อน dispatch: low ได้ full หนึ่งรอบ และถ้าแก้จะเลื่อนเข้าเส้นทาง full/delta แบบเดียวกับ medium/high infrastructure retry หนึ่งครั้งแยกจาก delivered wave หลัง AI สองรอบจะไม่เปิด review ใหม่ defect ใน contract ปิดได้เฉพาะผ่าน claim และ critical-case receipt ปัจจุบัน ส่วน contract ขัดแย้งจริงจึงเปิด Decision Sheet แบบ batch และถ้าขาดสิทธิ์จะเป็น external handoff ประวัติเป็น SHA-256 hash chain ถ้าโซ่ขาดระบบจะ fail closed
+
+เพดานนี้จำกัดการ dispatch reviewer เพื่อให้ workflow เร็ว ไม่ได้จำกัดจำนวนครั้งที่แก้
+Agent แก้ finding ที่รวมเป็นชุดและตรวจ evidence ที่ invalidated ซ้ำได้ตราบใดที่งานยังคืบหน้า
 :::
 
 ## Authority bridge
@@ -153,7 +156,7 @@ request/status/record โดยไม่ต้อง review dispatch
 จะรันโดยไม่มีคนเฝ้า มันเซ็นด้วย Ed25519, nonce หมดอายุใน 10 นาที
 และ nonce ที่ใช้แล้วถูกบันทึกไว้เพื่อไม่ให้เล่นซ้ำได้
 
-trust root เป็นไฟล์ระบบที่ root เป็นเจ้าของเท่านั้น และ Foundation
+trust root เป็นไฟล์ระบบที่ root เป็นเจ้าของเท่านั้น และ Change Loop
 ปฏิเสธการรันแบบไม่มีคนดูด้วยตัวเองเมื่อพบ socket ของ container ที่เขียนได้,
 token ของ Kubernetes service account ที่ mount ไว้ หรือ SSH agent socket ที่ mount ไว้
 ซึ่งคือสิ่งที่จะทำให้งานที่อ้างว่า "อยู่ใน sandbox" เอื้อมออกไปนอก sandbox ได้

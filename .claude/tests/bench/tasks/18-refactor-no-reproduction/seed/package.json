@@ -1,0 +1,6 @@
+{
+  "name": "behavior-preserving-refactor-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test" }
+}

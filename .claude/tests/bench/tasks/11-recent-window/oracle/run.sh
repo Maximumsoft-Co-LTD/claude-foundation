@@ -39,7 +39,7 @@ for p in "$WORK"/*.test.js "$WORK"/*.test.cjs "$WORK"/*.test.mjs "$WORK"/*.spec.
   tests="$tests ${p#"$WORK"/}"
 done
 
-run_suite() { ( cd "$WORK" && eval "node --test $tests" >/dev/null 2>&1 ); }
+run_suite() { ( unset NODE_TEST_CONTEXT; cd "$WORK" && eval "node --test $tests" >/dev/null 2>&1 ); }
 
 ac1="fail"; ac1_why="no test file shipped"
 if [ -n "$tests" ]; then

@@ -1643,7 +1643,7 @@ try {
   assert.match(feature, /never dispatch a\s+third AI/i);
   const agentContract = readFileSync(join(root, ".claude/harness/AGENT.md"), "utf8");
   const runtimeApi = readJson(join(root, ".claude/harness/protocol.json")).runtimeApi;
-  assert.match(agentContract, /Before developer work, verify Foundation/i);
+  assert.match(agentContract, /Before work, verify Change Loop/i);
   assert.match(agentContract, new RegExp("runtime API `" + runtimeApi + "`"));
   const developerSetup = readFileSync(
     join(root, ".claude/harness/DEVELOPER-SETUP.md"), "utf8");
@@ -1662,7 +1662,7 @@ try {
   assert.deepEqual(policy.review.fallbackReviewers, ["codex-sol", "main-session"]);
   assert.equal(policy.review.infraFailureThreshold, 2);
   assert.equal(policy.telemetry.requireUsage, true);
-  assert.equal(policy.land.riskBasedCi, true);
+  assert.equal(policy.land.riskBasedCi, false);
   console.log("workflow policy tests: PASS");
 } finally {
   rmSync(fixture, { recursive: true, force: true });

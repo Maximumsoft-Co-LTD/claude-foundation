@@ -50,6 +50,11 @@ test('presence credits one user-minute across multiple machines', async () => {
   const { response, body } = await request('/api/presence?days=1', {
     headers: { 'x-cf-key': 'view-key' },
   });
+  if (!_internals.db) {
+    assert.equal(response.status, 503);
+    assert.equal(body.error, 'no database attached');
+    return;
+  }
   assert.equal(response.status, 200);
   assert.equal(body.buckets.filter((row) => row.user === 'same-user').reduce((sum, row) => sum + row.minutes, 0), 1);
 });
@@ -209,6 +214,16 @@ test('persisted log and history endpoints enforce keys and bound queries', async
   const log = await request('/api/log/heartbeats?limit=9999&since=0&agent=agent-one&user=same-user', {
     headers: { 'x-cf-key': 'view-key' },
   });
+  if (!_internals.db) {
+    assert.equal(log.response.status, 503);
+    assert.equal(log.body.error, 'no database attached');
+    const history = await request('/api/history?days=1', {
+      headers: { 'x-cf-key': 'view-key' },
+    });
+    assert.equal(history.response.status, 503);
+    assert.equal(history.body.error, 'no database attached');
+    return;
+  }
   assert.equal(log.response.status, 200);
   assert.equal(log.body.ok, true);
   assert.equal(log.body.since, 0);

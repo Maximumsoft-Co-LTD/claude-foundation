@@ -1,9 +1,13 @@
 # Prove workflow
 
 Start from a fresh `packet <change> --phase prove`; inherit no Build history.
-Run `proof advance`; it executes once, routes review before acceptance, reuses
-`authority request`, and never polls. Send each `handoff packet` once; continue
-without asking for cloud credentials.
+Run `proof advance`; it routes review before acceptance, reuses `authority request`,
+and never polls. When it returns an automatic in-contract repair
+batch, return through Build, repair the complete batch, then invoke a fresh
+Prove packet and advance again. Continue until proof and audit pass. There is no
+repair-count stop; a decision/authority/resource/conflict/no-progress boundary
+preserves the change and resumes after resolution. Send each `handoff packet`
+once; continue without asking for cloud credentials.
 
 A review dispatch or `authority run` dies with the session: in a
 non-interactive run your final reply terminates the process, kills the
@@ -30,6 +34,7 @@ Prove may run declared evidence but must not invent a checker to manufacture a
 missing capability. Return that gap to Build. A Build-authored checker is
 eligible only when its own success and failure paths are covered by the normal
 test and quality commands.
-Never expose raw readiness JSON. Relay every blocker with the route and stop on real
-decisions. Never fabricate provenance, claim an unproven pass, or Land. End
+Never expose raw readiness JSON. Relay every blocker with the route and every
+boundary with its diagnosis, choices, recommendation, and resume route; pause only for real decisions or
+external conditions. Never fabricate provenance, claim an unproven pass, or Land. End
 with what passed, remains unproven, and the agent's next action.

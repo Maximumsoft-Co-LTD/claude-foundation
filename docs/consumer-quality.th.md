@@ -1,12 +1,12 @@
 # Consumer Quality: CRAP Score และ Mutation Testing
 
-Foundation รัน quality tool ที่ project เป็นเจ้าของข้าม repository เดียวหรือหลายตัวได้ ระบบเริ่มต้นแบบ report-only และไม่มีอำนาจให้แก้ code นอก Change/spec ที่อนุมัติ
+Change Loop รัน quality tool ที่ project เป็นเจ้าของข้าม repository เดียวหรือหลายตัวได้ ระบบเริ่มต้นแบบ report-only และไม่มีอำนาจให้แก้ code นอก Change/spec ที่อนุมัติ
 
 English version: [consumer-quality.md](consumer-quality.md)
 
 ## หลักประกัน
 
-- CRAP รวม cyclomatic complexity กับ coverage ระดับ function และ Foundation คำนวณคะแนนใหม่เอง
+- CRAP รวม cyclomatic complexity กับ coverage ระดับ function และ Change Loop คำนวณคะแนนใหม่เอง
 - Automated mutation นับเฉพาะ behavioral kill; timeout, crash, compile/runtime error, no coverage, skipped และ unavailable ไม่ใช่ kill
 - Semantic mutation ใช้ fault ที่ตรง domain เช่น ลบ tenant filter หรือข้าม transaction
 - แต่ละ repository แยก commit, workspace, tool/config, baseline และ assurance โดยไม่มีการเฉลี่ยคะแนนกลบกัน
@@ -61,7 +61,7 @@ claude-foundation quality run --change <change-id> --enforce
 | HTML | `web-markup` | validation, browser, accessibility |
 | CSS / Sass | `web-style` | lint/build, browser, accessibility, responsive evidence |
 
-Foundation ไม่สร้าง CRAP ปลอมให้ Bash, SQL, MongoDB, HTML, CSS หรือ Sass แต่ใช้ control ที่ตรง behavior ของ surface นั้น
+Change Loop ไม่สร้าง CRAP ปลอมให้ Bash, SQL, MongoDB, HTML, CSS หรือ Sass แต่ใช้ control ที่ตรง behavior ของ surface นั้น
 
 ## Provider และ adapter
 

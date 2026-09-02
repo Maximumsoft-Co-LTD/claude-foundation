@@ -155,6 +155,9 @@ assert_file_contains "fundamentals records decision answers in the change packet
 # harness prints — plus the fact that `review.independence: "self"` is a real
 # configuration rather than a rule to break. That last one replaced a flat ban
 # on self-review, which had made a supported solo setup unusable.
+# `dev.md` carries 30 more by explicit maintainer decision so the orchestrator
+# can distinguish ordinary Prove completion from an invocation that already
+# grants Land authority and must reach archived.
 #
 # Raised deliberately and per command, so the standing budget still binds
 # everywhere else. Raise a limit here only to admit a rule that removes a
@@ -164,6 +167,7 @@ for command in "$ROOT"/.claude/commands/*.md; do
   case "$(basename "$command")" in
     change.md) limit=175 ;;
     build.md) limit=145 ;;
+    dev.md) limit=150 ;;
     prove.md) limit=170 ;;
     # `land check` no longer settles an interrupted apply, so Land owns a route
     # it did not have: read the projection counts, then recover under an explicit

@@ -2,6 +2,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { validityRecovery } from "./receipt-validity.mjs";
 import { singleAgentExecutionEligible } from "../core/graph-execution.mjs";
+import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 
 export function taskPacketWasPrecompletedOperation({
   loadRuntime, activeChangePath, exists, fileDigest
@@ -247,7 +248,7 @@ export function createProofRuntime({
     writeJson(proofPath(id), proof);
     writeJson(join(runRoot, "manifest.json"), proof);
     const state = loadRuntime(id);
-    state.status = "proven";
+    transitionLifecycleState(state, "proven", "proof-finalized");
     delete state.collectedServiceArtifacts;
     saveRuntime(state);
   }

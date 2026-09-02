@@ -3,7 +3,7 @@ title: Human approval
 description: The four separate boundaries where a person enters the loop — acceptance, independent review, the authority bridge, and host attestation — and which of them actually blocks.
 ---
 
-Foundation has four distinct places where a human can enter the loop. They are
+Change Loop has four distinct places where a human can enter the loop. They are
 routinely confused with one another, and they do different jobs.
 
 | Boundary | Question it answers | Blocks? |
@@ -117,11 +117,15 @@ the contract fingerprint.
 The tier limit is enforced before dispatch: low receives one full review; a
 correction promotes it to the bounded full/delta route used by medium and high.
 Reviewer infrastructure gets one separate full retry. After two delivered AI
-waves, Foundation refuses another open review. A final in-contract blocker can
+waves, Change Loop refuses another open review. A final in-contract blocker can
 close only through the claims and current critical-case receipts named by that
 finding; a real contract contradiction reopens one batched Decision Sheet, and
 missing authority becomes an external handoff. The attempt history is a
 SHA-256 hash chain; a broken chain fails closed.
+
+The review-dispatch limit keeps the workflow fast; it does not cap repair
+attempts. The agent may keep fixing grouped findings and rechecking invalidated
+evidence while the work is making progress.
 :::
 
 ## The authority bridge
@@ -168,7 +172,7 @@ statement from a trusted host that the sandbox boundary is safe enough to run
 without a person watching. It is Ed25519-signed, the nonce expires in ten
 minutes, and a consumed nonce is recorded so it cannot be replayed.
 
-Trust roots are root-owned system files only, and Foundation independently
+Trust roots are root-owned system files only, and Change Loop independently
 refuses unattended execution when it finds a writable container socket, a
 mounted Kubernetes service-account token, or a mounted SSH agent socket — the
 things that would let "sandboxed" work reach outside the sandbox.

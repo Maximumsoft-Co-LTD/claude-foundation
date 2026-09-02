@@ -194,6 +194,50 @@ export function materializeDraftSpecs({
   }
 }
 
+export function deriveDraftBookkeeping(input, slugify) {
+  const draft = structuredClone(input);
+  const claims = (draft.claims || []).map((claim, index) => ({
+    ...claim,
+    id: claim.id || slugify(claim.scenario || `claim-${index + 1}`)
+  }));
+  const claimIds = claims.map((claim) => claim.id);
+  draft.claims = claims;
+  draft.tasks = (draft.tasks || []).map((task, index) => ({
+    ...task,
+    id: task.id || `T${String(index + 1).padStart(3, "0")}`,
+    ...(!task.claims?.length && draft.tasks.length === 1 && claimIds.length
+      ? { claims: claimIds } : {})
+  }));
+  if (draft.acceptance?.required && !draft.acceptance.claimIds?.length &&
+      claimIds.length === 1)
+    draft.acceptance.claimIds = claimIds;
+  const providers = draft.execution?.providers || {};
+  if (draft.tasks.length === 1 && draft.tasks[0].verify) {
+    for (const provider of Object.values(providers))
+      if (["test-discovery", "command"].includes(provider.adapter) && !provider.command)
+        provider.command = ["sh", "-lc", draft.tasks[0].verify];
+  }
+  if (draft.grounding?.claims?.length === claims.length)
+    draft.grounding.claims = draft.grounding.claims.map((claim, index) => ({
+      ...claim,
+      id: claim.id || claims[index].id
+    }));
+  if (draft.grounding?.criticalCases) {
+    draft.grounding.criticalCases = draft.grounding.criticalCases.map((row, index) => ({
+      ...row,
+      id: row.id || `CC-${String(index + 1).padStart(3, "0")}`,
+      ...(!row.claimIds?.length && claimIds.length === 1
+        ? { claimIds: claimIds } : {})
+    }));
+    const caseIds = draft.grounding.criticalCases.map((row) => row.id);
+    for (const provider of Object.values(draft.execution?.providers || {}))
+      if (["test-discovery", "playwright"].includes(provider.adapter) &&
+          !provider.criticalCases?.length)
+        provider.criticalCases = caseIds;
+  }
+  return draft;
+}
+
 export function createChangeLifecycle({
   root,
   policy,
@@ -305,7 +349,13 @@ export function createChangeLifecycle({
   }
 
   function loadDraft(draftPath) {
-    const draft = draftSource(draftPath);
+    const source = draftSource(draftPath);
+    // Version 1 is a compatibility contract: callers that supplied every
+    // ledger key receive the exact same object back. Version 2 delegates the
+    // mechanical IDs and unambiguous cross-ledger bindings to the harness.
+    const draft = source.version === 2
+      ? deriveDraftBookkeeping(source, slugify)
+      : source;
     validateDraftFields(draft);
     validateDraftDomainLanguage(draft);
     validateDraftPolicy(draft);
@@ -423,7 +473,7 @@ export function createChangeLifecycle({
 
   function rapidStartTemplate() {
     return {
-      version: 1,
+      version: 2,
       intent: "Describe one low-impact isolated outcome",
       why: "Explain the user-visible reason",
       currentState: "Describe the bounded current behavior",
@@ -438,8 +488,8 @@ export function createChangeLifecycle({
       decisions: [{ choice: "Use the smallest isolated change", why: "Minimize risk", rejected: "Broader redesign" }],
       risks: [{ risk: "Behavior regression", mitigation: "Focused deterministic test", owner: "implementation" }],
       acceptance: { required: false, reason: null, claimIds: [] },
-      tasks: [{ id: "T001", outcome: "Implement the bounded outcome", kind: "implementation", paths: ["replace-with-owned-path"], claims: ["replace-with-stable-claim-id"], verify: "replace-with-focused-command" }],
-      claims: [{ id: "replace-with-stable-claim-id", scenario: "Observable outcome passes", impact: "low", capabilities: ["test"] }],
+      tasks: [{ outcome: "Implement the bounded outcome", kind: "implementation", paths: ["replace-with-owned-path"], verify: "replace-with-focused-command" }],
+      claims: [{ scenario: "Observable outcome passes", impact: "low", capabilities: ["test"] }],
       specs: [{
         name: "unused-by-rapid",
         operation: "added",
@@ -456,8 +506,6 @@ export function createChangeLifecycle({
         providers: {
           test: {
             adapter: "test-discovery",
-            command: ["replace-with-project-test-command"],
-            report: "replace-with-structured-test-report.json",
             minimum: 1,
             timeoutMs: 120000
           }
@@ -528,7 +576,6 @@ export function createChangeLifecycle({
           sha256: "replace-with-file-sha256"
         }],
         claims: [{
-          id: "replace-with-stable-claim-id",
           productionPath: [{
             repository: "root",
             path: "replace-with-entrypoint-or-observable-surface"
@@ -706,7 +753,7 @@ export function createChangeLifecycle({
   }
 
   function validateStartIdentity(draft) {
-    if (draft.version !== 1) fail("start draft requires version 1");
+    if (![1, 2].includes(draft.version)) fail("start draft requires version 1 or 2");
     if (!String(draft.intent || "").trim()) fail("start draft requires non-empty 'intent'");
   }
 

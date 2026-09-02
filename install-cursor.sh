@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cursor adapter for the OpenSpec-native Foundation harness.
+# Cursor adapter for the OpenSpec-native Change Loop harness.
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

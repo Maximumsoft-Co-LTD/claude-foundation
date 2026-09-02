@@ -1,10 +1,10 @@
 ---
 title: ตั้งค่า foundation.json
-description: ทำความเข้าใจและปรับ policy ของ Foundation สำหรับ execution, model tier, escalation, review, sandbox และ workflow อย่างปลอดภัย
+description: ทำความเข้าใจและปรับ policy ของ Change Loop สำหรับ execution, model tier, escalation, review, sandbox และ workflow อย่างปลอดภัย
 ---
 
 `foundation.json` คือ **policy ที่ commit ไว้สำหรับหนึ่งโปรเจกต์** มันบอก
-Foundation ว่า agent ทำงานอัตโนมัติได้มากแค่ไหน, งานแต่ละแบบควรใช้ model tier
+Change Loop ว่า agent ทำงานอัตโนมัติได้มากแค่ไหน, งานแต่ละแบบควรใช้ model tier
 ใด, เมื่อไรต้อง escalate, ใครรีวิวได้ และต้องเตรียม Build workspace ใหม่อย่างไร
 
 ไฟล์นี้ไม่ได้เก็บ requirement ของผลิตภัณฑ์หรือสถานะงานปัจจุบัน:
@@ -14,7 +14,7 @@ Foundation ว่า agent ทำงานอัตโนมัติได้�
 | ผลิตภัณฑ์ควรทำอะไร | `openspec/` |
 | implementation เหลืออะไร | `tasks.md` ใน change ที่ active |
 | runtime state และ receipt | `.foundation/` |
-| Foundation มีสิทธิ์ execute อย่างไร | `foundation.json` |
+| Change Loop มีสิทธิ์ execute อย่างไร | `foundation.json` |
 
 installer คัดลอกไฟล์นี้ให้เฉพาะตอนที่ยังไม่มี หลังจากนั้นไฟล์เป็นของโปรเจกต์
 และ upgrade จะไม่เขียนทับ ควร commit ไว้เพื่อให้ developer กับ reviewer ทุกคน
@@ -95,7 +95,7 @@ independent หรือ diverse receipt จะบันทึก `independence-
 | `planSummaryBytes` | จำนวนเต็ม `1024..16384` | จำกัด plan แบบย่อที่ส่งต่อระหว่าง phase |
 | `leaseMinutes` | ตัวเลข `1..1440` | เพิ่มสำหรับ build ช้า หรือลดเพื่อคืนงานจาก worker ที่ค้างเร็วขึ้น |
 
-เมื่อใช้ budget ถึง 85% Foundation จะเข้า completion-only mode และหยุดงาน
+เมื่อใช้ budget ถึง 85% Change Loop จะเข้า completion-only mode และหยุดงาน
 สำรวจหรือ refactor ที่ไม่จำเป็น เมื่อถึง 100% operator สามารถอนุมัติ window ใหม่
 แบบมี audit ได้ตราบใดที่ยังมีงานใน scope เดิมค้างอยู่ จนถึงเพดาน
 `maxContinuationWindows` ส่วน readiness, receipt reuse, recovery และ archive
@@ -251,7 +251,7 @@ dependency ให้เพิ่ม setup command ที่ deterministic:
 
 `setupCommand` ต้องเป็น string ที่ไม่ว่าง `setupTimeoutMs` ต้องเป็นจำนวนเต็ม
 ตั้งแต่ `1000` ถึง `3600000` คำสั่งรันหนึ่งครั้งในทุก workspace ใหม่ ถ้าล้มเหลว
-Foundation จะเก็บ workspace และรายงานวิธีกู้ แทนที่จะทำต่อใน sandbox ที่เตรียม
+Change Loop จะเก็บ workspace และรายงานวิธีกู้ แทนที่จะทำต่อใน sandbox ที่เตรียม
 ไม่ครบ
 
 โปรเจกต์หลาย repository ให้เก็บ root setup ไว้ที่นี่ และใส่ setup เฉพาะ repo

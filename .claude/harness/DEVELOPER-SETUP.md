@@ -1,6 +1,6 @@
 # Developer setup
 
-Foundation v3.4.10 front-loads material decisions so Build and Prove can run to a
+Change Loop v3.4.10 front-loads material decisions so Build and Prove can run to a
 bounded conclusion without repeatedly interviewing the developer. The shipped
 workflow adds:
 
@@ -19,7 +19,7 @@ workflow adds:
 - durable `handoffs.yaml` packets for AWS, Terraform, secrets, cluster, and
   other external operations that the developer is not authorized to perform.
 
-Before the first Foundation packet on a developer machine:
+Before the first Change Loop packet on a developer machine:
 
 1. Install Node.js 20.19 or later.
 2. Verify `claude-foundation version` is `3.4.10` and the repository runtime API
@@ -46,11 +46,11 @@ Before the first Foundation packet on a developer machine:
    reviewer names followed optionally by `"main-session"`, and set
    `infraFailureThreshold` to bound infrastructure retries per reviewer. The
    route never runs after `fail` or `inconclusive`; `main-session` is explicit
-   self-review and requires `independence: "self"`. Foundation automatically reuses complete AI
+   self-review and requires `independence: "self"`. Change Loop automatically reuses complete AI
    subject provenance only when its session matches the ambient host; otherwise
    the caller supplies the `--main-session-*` provenance fields. When coding and review use the same
    provider/model family, also set `diversity: "single-model"`, but keep
-   `independence: "required"` so Foundation still requires a distinct reviewer
+   `independence: "required"` so Change Loop still requires a distinct reviewer
    identity and fresh session.
 8. Run `claude-foundation doctor --stage prove`. It checks the selected CLI,
    authentication and required headless/read-only flags and prints the exact
@@ -73,7 +73,7 @@ provides reusable/manual changed-code, nightly, and release templates; add the
 consumer's runtime/tool setup and call the reusable workflow from the existing
 PR trigger.
 
-The Harness does not install Jest, Stryker, gocyclo, Radon, coverage.py,
+The Change Loop harness does not install Jest, Stryker, gocyclo, Radon, coverage.py,
 PHPUnit, ShellCheck, database engines, browsers, or accessibility tools. Each
 consumer repository owns and pins them. See `CONSUMER-QUALITY.md` for protocols,
 adapters, isolation, baseline, exception, and multi-repository rules.
@@ -102,7 +102,7 @@ and evidence reference with `handoff record`—never copy a secret value into th
 change or record.
 
 Do not substitute another package, tag, or runtime. `.agents/skills` exposes
-the canonical Foundation skills to Codex. `.codex/foundation-rules` exposes
+the canonical Change Loop skills to Codex. `.codex/foundation-rules` exposes
 behavioral rules. `.codex/hooks` is a readable compatibility link only; Codex
 does not execute project tool-call hooks. Install the documented Git hook
 explicitly if repository-side mutation guards are required.
@@ -116,7 +116,7 @@ Change → Build → Review → Prove without reopening locked choices.
 
 Existing changes can use `/change`, `/build`, `/prove`, and `/land` separately.
 A deterministic failure resumes at the affected provider. First-review findings
-receive one delta review; after two delivered AI waves Foundation uses current
+receive one delta review; after two delivered AI waves Change Loop uses current
 test, mutation, integration, and static evidence to close verified repairs. It
 asks again only for a real contract contradiction or new material risk, not for
 warnings or optional improvements.

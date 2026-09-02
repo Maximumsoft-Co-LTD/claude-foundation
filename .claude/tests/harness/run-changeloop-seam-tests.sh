@@ -865,6 +865,18 @@ assert_contains "validate rejects runnable test copies that would pollute archiv
 assert_contains "archive-safe failure directs topology evidence to grounding" \
   "$unsafe_archive_artifact" "Record test-topology paths and digests in grounding.yaml"
 rm "openspec/changes/$C/test-topology/render.test.js"
+printf 'def test_archived_packet_is_not_executable():\n    assert True\n' > \
+  "openspec/changes/$C/test-topology/test_archived_packet.py"
+unsafe_pytest_archive="$($F validate "$C" 2>&1 || true)"
+assert_contains "validate rejects archived pytest-discovery copies" \
+  "$unsafe_pytest_archive" "test-topology/test_archived_packet.py"
+rm "openspec/changes/$C/test-topology/test_archived_packet.py"
+printf 'export const archived = true;\n' > \
+  "openspec/changes/$C/test-topology/render.spec.ts"
+unsafe_glob_archive="$($F validate "$C" 2>&1 || true)"
+assert_contains "validate rejects archived common spec-glob copies" \
+  "$unsafe_glob_archive" "test-topology/render.spec.ts"
+rm "openspec/changes/$C/test-topology/render.spec.ts"
 rmdir "openspec/changes/$C/test-topology"
 assert_cmd_zero "removing the runnable packet copy restores validation" $F validate "$C"
 

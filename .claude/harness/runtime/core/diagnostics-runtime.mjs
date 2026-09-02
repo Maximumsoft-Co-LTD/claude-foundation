@@ -6,11 +6,10 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { nextCommand } from "./next-step.mjs";
+import { deriveChangeProjection } from "./state-projections.mjs";
 
 export function changeReadiness(state, proof, current) {
-  if (proof?.status === "pass" && proof.workspaceHash === current)
-    return "ready-to-land";
-  return state.status === "proven" ? "stale-proof" : state.status;
+  return deriveChangeProjection({ state, proof, currentHash: current }).readiness;
 }
 
 export function changeListingRow(id, {
@@ -40,8 +39,8 @@ export function changeListingRow(id, {
     }
   }
 
-  const readiness = changeReadiness(state, proof, current);
-  return `${id}\t${readiness}\t${state.schema || "unknown"}\t${nextCommand(readiness, id)}`;
+  const view = deriveChangeProjection({ state, proof, currentHash: current });
+  return `${id}\t${view.readiness}\t${view.schema}\t${nextCommand(view.readiness, id)}`;
 }
 
 export function createDiagnosticsRuntime({
@@ -56,6 +55,7 @@ export function createDiagnosticsRuntime({
   contextEventSchemaVersion,
   reviewProtocolVersion,
   acceptanceProtocolVersion,
+  semanticAcceptanceProtocolVersion,
   reviewPacketSchemaVersion,
   attestationProtocolVersion,
   authorityProtocolVersion,
@@ -94,6 +94,8 @@ export function createDiagnosticsRuntime({
   reviewerStatus,
   unverifiedDrift,
   unresolvedApplyTransactions,
+  authorityPreflight = () => ({ status: "READY", blockers: [] }),
+  executionContract = null,
   parseFlags,
   parseStrictCommandFlags,
   fail
@@ -179,7 +181,6 @@ export function createDiagnosticsRuntime({
     const stage = flags.stage || "prove";
     if (!["change", "build", "prove"].includes(stage))
       fail("doctor --stage must be change|build|prove");
-
     function collectFoundationChecks() {
     function collectUnattendedCheck() {
     if (flags.unattended) {
@@ -210,6 +211,7 @@ export function createDiagnosticsRuntime({
       String(protocols.contextEventSchema) === contextEventSchemaVersion &&
       String(protocols.reviewProtocol) === reviewProtocolVersion &&
       String(protocols.acceptanceProtocol) === acceptanceProtocolVersion &&
+      String(protocols.semanticAcceptanceProtocol) === semanticAcceptanceProtocolVersion &&
       String(protocols.reviewPacketSchema) === reviewPacketSchemaVersion &&
       String(protocols.attestationProtocol) === attestationProtocolVersion &&
       String(protocols.authorityProtocol) === authorityProtocolVersion &&
@@ -218,7 +220,7 @@ export function createDiagnosticsRuntime({
       level: protocolOk ? "ok" : "error",
       name: "protocol-bundle",
       detail: protocolOk
-        ? `runtime API ${runtimeApiVersion}; provider ${providerProtocolVersion}; proof ${proofProtocolVersion}; packet ${packetSchemaVersion}; review ${reviewProtocolVersion}/${reviewPacketSchemaVersion}; acceptance ${acceptanceProtocolVersion}; attestation ${attestationProtocolVersion}; authority ${authorityProtocolVersion}; signed-ci ${ciEvidenceProtocolVersion}; plan ${agentPlanSchemaVersion}; context ${contextEventSchemaVersion}`
+        ? `runtime API ${runtimeApiVersion}; provider ${providerProtocolVersion}; proof ${proofProtocolVersion}; packet ${packetSchemaVersion}; review ${reviewProtocolVersion}/${reviewPacketSchemaVersion}; acceptance ${acceptanceProtocolVersion}; semantic-acceptance ${semanticAcceptanceProtocolVersion}; attestation ${attestationProtocolVersion}; authority ${authorityProtocolVersion}; signed-ci ${ciEvidenceProtocolVersion}; plan ${agentPlanSchemaVersion}; context ${contextEventSchemaVersion}`
         : "protocol.json is incompatible with foundation.mjs; reinstall Foundation"
     });
     }
@@ -297,6 +299,19 @@ export function createDiagnosticsRuntime({
       });
     } else if (requestedChange) {
       const state = loadRuntime(requestedChange);
+      const compiled = executionContract?.(requestedChange) || null;
+      const authority = compiled?.authority || authorityPreflight(requestedChange);
+      if (compiled) checks.push({
+        level: "ok",
+        name: "execution-contract",
+        detail: `v${compiled.version}; ${compiled.fingerprint}`
+      });
+      checks.push({
+        level: authority.status === "READY" ? "ok" : "error",
+        name: "authority-preflight",
+        detail: authority.status === "READY" ? "required authority is configured"
+          : authority.blockers.map((blocker) => `${blocker.code}: ${blocker.next}`).join("; ")
+      });
       const workspace = state.workspace?.path || root;
       const contract = evidence(requestedChange);
       const selected = selectedRepositories(requestedChange, state);
@@ -341,7 +356,9 @@ export function createDiagnosticsRuntime({
       function collectProviderChecks() {
       // Keep the eager host inspection from the original diagnostics path.
       playwrightAvailability(workspace);
-      for (const provider of requiredProviders(requestedChange)) {
+      const contractProviders = compiled?.evidence?.providers ||
+        requiredProviders(requestedChange);
+      for (const provider of contractProviders) {
         const config = providerConfig(requestedChange, provider);
         const current = receiptValidity(requestedChange, provider);
         if (!config) {
@@ -546,7 +563,7 @@ export function createDiagnosticsRuntime({
   }
 
   function usage() {
-    console.log(`Foundation harness ${version}
+    console.log(`Change Loop ${version}
 
 Commands:
   doctor [--stage change|build|prove] [--require-archive] [--change <id>] [--unattended --attestation <file>] [--json]

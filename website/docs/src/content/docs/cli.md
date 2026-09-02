@@ -52,7 +52,7 @@ language profiles, baselines, and rollout policy.
 | `change validate <change>` | Validate the change and its executable evidence contract |
 | `sandbox create <change> [--all]` | Create the isolated Build workspace |
 | `sandbox sync <change>` | Synchronize an intentional contract revision into Build |
-| `proof advance <change>` | Normal resumable Prove path; execute once, route external gates, and finalize when ready |
+| `proof advance <change>` | Normal resumable Prove path; converge the current gate, reuse valid evidence, and return one repair batch or external handoff |
 | `proof collect <change>` | Low-level collection for diagnosis or an explicit integration |
 | `proof run <change>` | Low-level atomic run when no resumable external handoff is needed |
 | `handoff record <change> --id <H00n> …` | Record a named operator's accepted/completed/rejected result and durable references |
@@ -108,7 +108,7 @@ Commands marked as needing a `--decision-ref` require an **explicit host-recorde
 
 | Command | Purpose |
 |---|---|
-| `init [target-path] [--yes]` | Install or upgrade Foundation in a project |
+| `init [target-path] [--yes]` | Install or upgrade Change Loop in a project |
 | `help [--all]` | Canonical commands; `--all` includes compatibility routes |
 | `dashboard [-up\|-status\|-down]` | Manage the optional team-presence client |
 | `migrate [legacy-id] [--apply]` | Migrate corroborated legacy workflow records |
@@ -121,11 +121,13 @@ Wire-visible contracts are pinned in `.claude/harness/protocol.json`. A mixed-re
 |---|---|
 | runtime | 3.4.10 |
 | runtime API | 26 |
-| provider protocol | 12 |
+| provider protocol | 13 |
 | evidence schema | 1, 2 |
-| packet schema | 8 |
+| packet schema | 10 |
+| proof protocol | 7 |
 | review protocol | 4 |
 | acceptance protocol | 2 |
+| semantic acceptance protocol | 1 |
 | attestation protocol | 1 |
 | authority protocol | 2 |
 | quality capabilities protocol | 1 |
@@ -133,5 +135,7 @@ Wire-visible contracts are pinned in `.claude/harness/protocol.json`. A mixed-re
 | automated mutation protocol | 1 |
 
 :::note
-Provider protocol 12 means receipts recorded by earlier versions read as `provider-version-stale` and must be re-proven. An old receipt cannot say whether it was executed or merely asserted, so it cannot be trusted to have been executed.
+Provider protocol 13 means receipts recorded by earlier protocols read as
+`provider-version-stale` and must be re-proven. Older receipts cannot attest to
+semantic-acceptance protocol 1.
 :::

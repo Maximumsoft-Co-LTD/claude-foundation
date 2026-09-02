@@ -470,7 +470,8 @@ test("validation runtime orchestrates contract, state, advisory, and review phas
   const fixture = validationRuntimeFixture();
   const quiet = fixture.runtime.validate("change-a", "root", { quiet: true });
   assert.deepEqual(quiet, {
-    version: 1, changeId: "change-a", reviewAssurance: null
+    version: 1, changeId: "change-a", reviewAssurance: null,
+    authorityPreflight: { status: "READY", blockers: [], decision: null }
   });
   assert.equal(fixture.saved.length, 1);
   assert.equal(fixture.handoffs[0].id, "change-a");

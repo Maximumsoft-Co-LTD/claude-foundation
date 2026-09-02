@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OpenCode adapter for the OpenSpec-native Foundation harness.
+# OpenCode adapter for the OpenSpec-native Change Loop harness.
 #
 # OpenCode reads .claude/skills/ and AGENTS.md natively, so the shared install
 # already covers skills and the agent contract. This adapter adds the two

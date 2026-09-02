@@ -13,10 +13,14 @@ After Change, await fresh Agents for `/build <id>`, then `/prove <id>`. Parent
 never runs Build inspection/tests, proof readiness/advance, or authority
 commands; phase agents own boundaries.
 
+Normally stop after Prove. When the invocation already contains explicit Land
+authority, await a fresh `/land <id>` phase agent after Prove and do not report
+success until runtime status is `archived`.
+
 Do not reread framework files. Report evidence in the user's language.
 
 Use Edit/Write.
 
 Code/test success without Foundation runtime state is a failed `/dev` invocation.
 
-Never Land, commit, push, open PR, or add a ledger.
+Never infer Land authority, commit, push, open PR, or add a ledger.

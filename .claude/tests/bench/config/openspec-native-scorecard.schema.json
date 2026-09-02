@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://claude-foundation.dev/schemas/openspec-native-scorecard-v1.json",
-  "title": "Claude Foundation OpenSpec-native benchmark scorecard",
+  "title": "Change Loop OpenSpec-native benchmark scorecard",
   "type": "object",
   "additionalProperties": false,
   "required": ["protocol", "scenario", "repeat", "runId", "provenance", "outcome", "timing", "usage", "operations", "quality", "evidenceReuse"],
@@ -149,7 +149,8 @@
       "required": ["count", "byReason"],
       "properties": {
         "count": { "$ref": "#/$defs/nullableCount" },
-        "byReason": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } }
+        "byReason": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+        "resumptions": { "$ref": "#/$defs/nullableCount" }
       }
     }
   },
