@@ -101,8 +101,9 @@ and production acceptance are never synthesized by the harness.
 
 ## Current baseline
 
-As of 2026-09-03, all seven deterministic lanes pass. The current source has
-one strict `bare-node-boundary` paid smoke and therefore remains
-`smoke-green`; the other paid lanes remain `deterministic-green`. See
+As of 2026-09-03, all seven deterministic lanes pass. The clean candidate has
+no source-cohorted paid result, so all six paid lanes remain
+`deterministic-green`. An earlier strict `bare-node-boundary` smoke is retained
+as historical development evidence but does not satisfy this candidate. See
 `user-scenario-release-status.md` for the concise live status and remaining
 release work.

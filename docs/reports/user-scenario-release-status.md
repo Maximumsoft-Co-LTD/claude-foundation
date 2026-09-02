@@ -46,23 +46,21 @@ in `RELEASING.md` and `docs/reports/rollout-operations.md`.
 | Public documentation build | PASS — 37 static pages, English and Thai |
 | Frozen deterministic scenario sentinel | PASS — 7/7 scenarios |
 | Public command compatibility | PASS — 8 host commands and 72 CLI commands pinned |
-| Current-source paid smoke | PASS — `bare-node-boundary`, 1/3 required runs |
-| Smoke terminal truth | `archived`, proof pass, 0 pending tasks, oracle 6/6 |
-| Smoke delivery | project test, clean install, and post-install test PASS |
-| Smoke measurements | 724,612 ms, 52 model requests; cost unavailable, not zero |
-| Release report | BLOCKED — expected until all current-source paid repeats exist |
+| Candidate paid evidence | NONE — the clean candidate has 0/18 required runs |
+| Previous dirty-source smoke | Historical only — `bare-node-boundary` reached `archived`, oracle 6/6, but cannot satisfy the clean candidate |
+| Release report | BLOCKED — all six paid scenarios report `authorized-paid-smoke-missing` |
 
-The interrupted `bare-node-current-repeat2-20260903` execution has no manifest
-and does not count as evidence.
+The earlier strict smoke and interrupted `bare-node-current-repeat2-20260903`
+execution do not count for the clean candidate. The strict smoke belongs to a
+different dirty source identity; the interrupted execution has no manifest.
 
 ## Remaining release work
 
 The implementation and deterministic safety slice are complete. Release
 promotion still requires:
 
-- two more independent `bare-node-boundary` passes;
-- three independent passes for each of the other five paid scenarios;
-- 17 paid executions in total from the current source cohort;
+- three independent passes for each of the six paid scenarios;
+- 18 paid executions in total from the clean candidate cohort;
 - a clean immutable candidate and retained aggregate report;
 - candidate-specific package/Homebrew workflow rehearsal; and
 - dogfood and pilot observation required by the rollout policy.
