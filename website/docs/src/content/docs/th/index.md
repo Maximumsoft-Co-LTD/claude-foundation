@@ -53,5 +53,5 @@ Change Loop จงใจแยกความรับผิดชอบ เพ�
 - [Quality gate ของโปรเจกต์](/docs/th/consumer-quality/) — เพิ่ม CRAP, mutation, baseline และ debt โดยไม่ขยาย Change scope
 
 :::note[เวอร์ชัน]
-เอกสารชุดนี้อ้างอิง Change Loop **v3.5.1** — runtime API 27, provider protocol 13 receipt ที่บันทึกด้วยเวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
+เอกสารชุดนี้อ้างอิง Change Loop **v3.5.2** — runtime API 27, provider protocol 13 receipt ที่บันทึกด้วยเวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 :::

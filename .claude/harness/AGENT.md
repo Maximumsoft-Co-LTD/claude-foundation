@@ -2,7 +2,7 @@
 
 Use the lifecycle and ownership in `.claude/orchestrator.md`.
 
-Before work, verify Change Loop 3.5.1/runtime API `27`; run both doctors.
+Before work, verify Change Loop 3.5.2/runtime API `27`; run both doctors.
 Only a failing doctor blocks: relay
 `.claude/harness/DEVELOPER-SETUP.md`; never improvise installation.
 Single-family: select reviewer plus `single-model`; retain distinct identity/session.
