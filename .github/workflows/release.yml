@@ -73,6 +73,7 @@ jobs:
           npm run quality:mutation:coverage:dashboard
           npm run quality:mutation:normalize:dashboard
           npm run quality:mutation:changed
+          npm run release:preflight
 
       - name: Validate inputs + repo state
         run: |

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  classifyReleasePath, protocolPinIssues, structuralReleaseChecks
+  classifyReleasePath, protocolPinIssues, publicationReadiness, structuralReleaseChecks
 } from "../../../scripts/release/preflight.mjs";
 
 test("release lanes classify runtime, instruction, shipping, and repository work", () => {
@@ -52,4 +52,29 @@ test("structural release checks require canonical changelog and matching artifac
     workflow: "dry_run DRY\nnode-version: \"24\"", packageJson: { engines: { node: ">=20.19.0" } }
   });
   assert.ok(checks.every((row) => row.status === "pass"), JSON.stringify(checks));
+});
+
+test("artifact publication does not require paid assurance evidence", () => {
+  const ready = publicationReadiness({
+    structuralReady: true, clean: true, evidenceReady: false
+  });
+  assert.equal(ready.publicationReady, true);
+  assert.equal(ready.releaseReady, true);
+  assert.equal(ready.assuranceReady, false);
+  assert.deepEqual(ready.blockers, []);
+  assert.deepEqual(ready.advisories, ["release-portfolio-not-ready"]);
+});
+
+test("artifact publication still requires a clean structurally valid candidate", () => {
+  const dirty = publicationReadiness({
+    structuralReady: true, clean: false, evidenceReady: true
+  });
+  assert.equal(dirty.publicationReady, false);
+  assert.deepEqual(dirty.blockers, ["source-tree-not-immutable"]);
+
+  const invalid = publicationReadiness({
+    structuralReady: false, clean: true, evidenceReady: true
+  });
+  assert.equal(invalid.publicationReady, false);
+  assert.deepEqual(invalid.blockers, ["structural-release-check-failed"]);
 });

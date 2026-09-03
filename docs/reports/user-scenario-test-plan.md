@@ -54,10 +54,12 @@ deterministic and must not spend model budget.
    quality, project, clean-install, and post-install checks.
 3. Run independent clean consumers until the lane has three strict passes from
    the same commit and patch digest.
-4. Generate the release report. Historical or zero-model runs remain visible
+4. Generate the assurance report. Historical or zero-model runs remain visible
    but cannot satisfy the paid repeat gate.
-5. Run release preflight from a clean immutable candidate.
-6. Execute package rehearsal, dogfood, pilot, and production observation gates.
+5. For artifact publication, independently run release preflight from a clean
+   immutable candidate and complete the deterministic package rehearsal.
+6. Continue dogfood, pilot, and production observation after publication; these
+   gates control the `production-observed` claim, not artifact availability.
 
 Do not tune budgets from a timeout or a single happy path. A ceiling must cover
 the declared convergent repair path, while the report continues to show actual
@@ -76,7 +78,7 @@ npm run bench:openspec-native:sentinel
 node .claude/tests/bench/openspec-native/lab.mjs \
   --scenario <scenario-id>
 
-# Source-cohorted promotion report
+# Source-cohorted assurance report
 npm run bench:openspec-native:release-report -- \
   .claude/tests/bench/results/openspec-native-lab
 

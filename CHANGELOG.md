@@ -49,6 +49,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Artifact publication is independent from production assurance.** A clean,
+  structurally valid candidate may be tagged, published, and bottled after the
+  deterministic release workflow passes. Paid scenario repeats and rollout
+  observations remain truthful assurance gates for the `production-observed`
+  claim, but their absence is an advisory rather than a publication blocker.
+
 - **Land treats measured usage as usage, even when a host omits price data.**
   Archive still reports Claude transcript telemetry as `partial-measurement`
   when cost is unavailable, keeps unknown cost null, and now satisfies

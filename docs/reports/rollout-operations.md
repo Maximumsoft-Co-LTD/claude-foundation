@@ -7,6 +7,8 @@ Production status is earned only from a
 `production-observed`. Deterministic tests, paid benchmark passes, model final
 messages, and a release publication cannot substitute for the required real
 consumer count, observation window, rollback rehearsal, and immutable evidence.
+These gates control the `production-observed` assurance claim, not whether a
+clean deterministic artifact may be tagged, published, bottled, or installed.
 
 Claude Code and OpenCode enforce phase boundaries live. Cursor and Codex retain
 runtime terminal truth, stale-proof, and explicit-Land enforcement, but their
@@ -42,10 +44,12 @@ npm run release:upgrade-matrix -- --output <durable-path>/upgrade-matrix.json
 npm run release:rollout-report -- <privacy-safe-observation.json>
 ```
 
-Exit 2 means a truthful, resumable promotion blocker. Resolve the named
-authority, evidence, observation-window, consumer-count, rollback, or incident
-condition and rerun the same command. Exit 1 means malformed input or a harness
-execution fault and must be diagnosed before promotion.
+For benchmark and rollout reports, exit 2 means a truthful, resumable assurance
+blocker; it does not block artifact publication. For `release:preflight`, exit 2
+means the candidate is not structurally publishable or is not immutable.
+Resolve the named condition and rerun the same command. Exit 1 means malformed
+input or a harness execution fault and must be diagnosed before relying on the
+report.
 
 For a consumer workflow stop, use the exact recovery command returned by the
 runtime. Common routes are `proof advance <change>`, `sandbox sync <change>`,

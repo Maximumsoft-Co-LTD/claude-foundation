@@ -34,7 +34,15 @@ Before the workflow rehearsal, run `npm run release:upgrade-matrix`. The
 versioned policy in `scripts/release/supported-upgrades.json` selects every tag
 from v3.2.19 through the current `VERSION` and tests all four host adapters.
 The report is source-bound and may be retained with `--output <path>`; a dirty
-source report is useful rehearsal evidence but cannot be release sign-off.
+source report is useful rehearsal evidence but cannot be assurance sign-off.
+
+Artifact publication and production assurance are separate contracts. A clean,
+structurally valid candidate that passes the deterministic release workflow may
+be tagged, published, and bottled without paid benchmark repeats, dogfood, or
+pilot evidence. Missing paid or rollout evidence must remain visible as an
+advisory and the release must not be described as `production-observed` until
+the corresponding reports pass. `npm run release:preflight` enforces the
+publication boundary; benchmark and rollout reports enforce assurance only.
 
 Run `npm run release:local-rehearsal` to build a tracked/untracked-nonignored
 workspace archive, extract it, install a disposable consumer, verify CLI

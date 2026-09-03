@@ -48,26 +48,28 @@ in `RELEASING.md` and `docs/reports/rollout-operations.md`.
 | Public command compatibility | PASS — 8 host commands and 72 CLI commands pinned |
 | Candidate paid evidence | NONE — the clean candidate has 0/18 required runs |
 | Previous dirty-source smoke | Historical only — `bare-node-boundary` reached `archived`, oracle 6/6, but cannot satisfy the clean candidate |
-| Release report | BLOCKED — all six paid scenarios report `authorized-paid-smoke-missing` |
+| Assurance report | BLOCKED — all six paid scenarios report `authorized-paid-smoke-missing` |
+| Artifact publication | ALLOWED after clean structural, deterministic, and package checks |
 
 The earlier strict smoke and interrupted `bare-node-current-repeat2-20260903`
 execution do not count for the clean candidate. The strict smoke belongs to a
 different dirty source identity; the interrupted execution has no manifest.
 
-## Remaining release work
+## Remaining assurance work
 
-The implementation and deterministic safety slice are complete. Release
-promotion still requires:
+The implementation and deterministic safety slice are complete. Publishing a
+versioned artifact does not require the paid portfolio or rollout observations.
+Production assurance still requires:
 
 - three independent passes for each of the six paid scenarios;
 - 18 paid executions in total from the clean candidate cohort;
-- a clean immutable candidate and retained aggregate report;
-- candidate-specific package/Homebrew workflow rehearsal; and
+- a retained aggregate report from one immutable source cohort;
 - dogfood and pilot observation required by the rollout policy.
 
 Deterministic tests, historical runs, zero-model revalidation, and a published
-artifact do not substitute for those gates. A release-report exit code of 2 is
-a truthful promotion blocker, not a test failure.
+artifact do not substitute for assurance. A benchmark or rollout report exit
+code of 2 is a truthful assurance blocker, not a publication blocker or test
+failure.
 
 ## Reproduce the evidence
 
@@ -93,8 +95,9 @@ Before committing this change:
 - rerun the authoritative suite and documentation consistency check;
 - review the diff by runtime, tests, documentation, and release automation;
 - keep ignored benchmark output and temporary consumers out of Git; and
-- do not label the commit or release as production-proven.
+- do not label the commit or release as `production-observed` without the
+  required assurance report.
 
 The clean commit creates a new source identity. Paid evidence collected from a
-dirty patch remains useful development evidence, but final release sign-off
-must be generated from the immutable candidate identity.
+dirty patch remains useful development evidence, but assurance sign-off must be
+generated from one immutable source identity.

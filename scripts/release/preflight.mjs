@@ -76,6 +76,22 @@ export function structuralReleaseChecks({ version, protocol, foundationSource,
   return checks;
 }
 
+export function publicationReadiness({ structuralReady, clean, evidenceReady }) {
+  const publicationReady = structuralReady && clean;
+  return {
+    publicationReady,
+    // Compatibility alias for callers that consumed the original v1 field.
+    // Release publication is intentionally independent from paid assurance.
+    releaseReady: publicationReady,
+    assuranceReady: evidenceReady,
+    blockers: [
+      ...(!structuralReady ? ["structural-release-check-failed"] : []),
+      ...(!clean ? ["source-tree-not-immutable"] : [])
+    ],
+    advisories: !evidenceReady ? ["release-portfolio-not-ready"] : []
+  };
+}
+
 export function releasePreflight({ evidenceReady = false } = {}) {
   const version = read("VERSION").trim();
   const protocol = JSON.parse(read(".claude/harness/protocol.json"));
@@ -96,23 +112,19 @@ export function releasePreflight({ evidenceReady = false } = {}) {
   });
   const structuralReady = checks.every((row) => row.status === "pass");
   const clean = paths.length === 0;
+  const readiness = publicationReadiness({ structuralReady, clean, evidenceReady });
   return {
     version: 1, protocol: "foundation-release-preflight-v1",
     candidateVersion: version, checks, lanes,
     source: { clean, changedPaths: paths.length },
-    evidence: { ready: evidenceReady },
+    evidence: { ready: evidenceReady, requiredForPublication: false },
     structuralReady,
-    releaseReady: structuralReady && clean && evidenceReady,
-    blockers: [
-      ...(!structuralReady ? ["structural-release-check-failed"] : []),
-      ...(!clean ? ["source-tree-not-immutable"] : []),
-      ...(!evidenceReady ? ["release-portfolio-not-ready"] : [])
-    ]
+    ...readiness
   };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const report = releasePreflight({ evidenceReady: process.argv.includes("--evidence-ready") });
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-  if (!report.releaseReady) process.exitCode = 2;
+  if (!report.publicationReady) process.exitCode = 2;
 }
