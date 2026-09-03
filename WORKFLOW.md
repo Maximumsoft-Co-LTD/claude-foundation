@@ -1,6 +1,6 @@
 # Change Loop workflow
 
-**Version 3.5.2**
+**Version 3.5.3**
 
 Change Loop is an OpenSpec-native harness for safe, economical software changes
 in brownfield repositories.
