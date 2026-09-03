@@ -25,7 +25,11 @@ Every observable acceptance scenario gets a stable claim ID. Each claim declares
 }
 ```
 
-Executable wiring lives separately, in [`execution.yaml`](/docs/evidence/adapters/). That split is deliberate: Build routinely discovers that the real command is `npm run test:unit` rather than `npm test`, and rewiring that should not look like changing what the software promises.
+Semantic draft v3 derives ordinary provider wiring from task verification and
+stores it with the contract in `evidence.yaml`. Custom commands, reports,
+services, or readiness overrides live separately in conditional
+[`execution.yaml`](/docs/evidence/adapters/). Rewiring still does not change
+what the software promises.
 
 :::tip
 `discovery` is an implicit suite-level obligation whenever `test` is selected. Do not repeat it on every claim.

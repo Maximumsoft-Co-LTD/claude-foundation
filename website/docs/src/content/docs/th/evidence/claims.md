@@ -25,7 +25,10 @@ description: scenario ที่สังเกตได้กลายเป็�
 }
 ```
 
-การต่อสายที่รันได้จริงอยู่แยกใน [`execution.yaml`](/docs/th/evidence/adapters/) การแยกนี้ตั้งใจ เพราะ Build มักค้นพบว่าคำสั่งจริงคือ `npm run test:unit` ไม่ใช่ `npm test` และการเปลี่ยนสายไฟแบบนั้นไม่ควรดูเหมือนการเปลี่ยนสิ่งที่ซอฟต์แวร์สัญญาไว้
+Semantic draft v3 derive provider wiring ปกติจาก verify ของ task แล้วเก็บกับ
+contract ใน `evidence.yaml` ส่วน custom command, report, service หรือ readiness
+override อยู่ใน [`execution.yaml`](/docs/th/evidence/adapters/) แบบ conditional
+การเปลี่ยน wiring จึงยังไม่เปลี่ยนสิ่งที่ซอฟต์แวร์สัญญาไว้
 
 :::tip
 `discovery` เป็นภาระระดับ suite ที่มาโดยปริยายทุกครั้งที่เลือก `test` ไม่ต้องใส่ซ้ำในทุก claim

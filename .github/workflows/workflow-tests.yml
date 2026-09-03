@@ -82,12 +82,13 @@ jobs:
       - name: Run workflow test harness
         run: sh .claude/tests/run-all.sh
       - name: Check packaged CLI contract
-        # Canonical public vocabulary only. `proof plan` and `runtime new` are
-        # legacy names that still resolve but are deliberately absent from help,
-        # and run-context-budget-tests.sh fails any slash command that uses
-        # them — so asserting them here contradicted the suite it runs beside.
+        # Default help is the small agent-facing lifecycle surface. Compatibility
+        # primitives remain discoverable only through help --all.
         run: |
-          bash cli.sh help | grep -F "change new"
-          bash cli.sh help | grep -F "proof run"
-          bash cli.sh help | grep -F "land check"
+          bash cli.sh help | grep -F "change start"
+          bash cli.sh help | grep -F "change amend"
+          bash cli.sh help | grep -F "advance"
+          bash cli.sh help --all | grep -F "change new"
+          bash cli.sh help --all | grep -F "proof run"
+          bash cli.sh help --all | grep -F "land check"
           ruby -c Formula/claude-foundation.rb

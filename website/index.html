@@ -82,12 +82,12 @@
               <div class="console-bar">
                 <span class="console-dots"><i></i><i></i><i></i></span>
                 <span>profile-auth · sandbox</span>
-          <span class="console-api">API 27</span>
+          <span class="console-api">API 28</span>
               </div>
               <div class="console-body" aria-live="polite">
                 <div class="console-command">
                   <span class="prompt">❯</span>
-              <span id="typed-command">claude-foundation proof run profile-auth</span>
+              <span id="typed-command">claude-foundation advance profile-auth --through proven</span>
                   <span class="cursor" aria-hidden="true"></span>
                 </div>
                 <div id="console-output" class="console-output">
@@ -178,7 +178,7 @@
               <span class="step-num">01</span>
               <span class="step-command">/change</span>
               <h3>Agree</h3>
-              <p>Define intent, delta specs, tasks, claims, risk, and executable evidence.</p>
+              <p>State intent, requirements, task outcomes, and evidence; the harness compiles stable OpenSpec links.</p>
               <span class="step-mode">OpenSpec contract</span>
             </article>
             <article class="loop-step">
@@ -213,7 +213,7 @@
           <div class="backflow reveal" data-delay="1">
             <span>Outside the loop</span>
             <code>/changes · /dev</code>
-            <span><code>/changes</code> lists active work, readiness, and stale proof. <code>/dev</code> is a compatibility composition of change → build → prove.</span>
+            <span><code>/changes</code> lists active work. <code>/dev</code> composes the same workflow. The agent drives one <code>advance</code> coordinator; users never assemble the internal CLI chain.</span>
           </div>
         </div>
       </section>
@@ -229,10 +229,10 @@
               or inconclusive evidence blocks landing.
             </p>
             <p class="callout reveal">
-              The behavioral contract lives in <code>evidence.yaml</code> and changes only when
-              claims change. Executable wiring lives in <code>execution.yaml</code> and may change
-              as Build discovers the real commands, reports, and ports—invalidating only the
-              provider fingerprints it touches.
+              The behavioral contract and ordinary derived wiring live in
+              <code>evidence.yaml</code>. Conditional <code>execution.yaml</code> overrides custom
+              commands, reports, services, or readiness—invalidating only the provider
+              fingerprints it touches.
             </p>
 
             <div class="adapter-tabs reveal" role="tablist" aria-label="Evidence adapters">
@@ -472,12 +472,14 @@
           </div>
           <pre class="filetree reveal" data-delay="1"><code><span class="folder">openspec/changes/profile-auth/</span>
 ├── proposal.md
-├── design.md
 ├── tasks.md          <i># sole task ledger</i>
 ├── evidence.yaml     <i># stable claims + capabilities</i>
-├── execution.yaml    <i># provider + service wiring</i>
-├── repositories.yaml <i># write scope</i>
-└── specs/
+├── specs/            <i># standard lane</i>
+├── design.md         <i># conditional context</i>
+├── grounding.yaml    <i># conditional decisions</i>
+├── execution.yaml    <i># conditional custom wiring</i>
+├── repositories.yaml <i># conditional multi-repo scope</i>
+└── handoffs.yaml      <i># conditional external work</i>
 
 <span class="folder">.foundation/</span>
 ├── runtime/          <i># lifecycle + resolver</i>
@@ -487,6 +489,7 @@
 ├── logs/             <i># provider output + events</i>
 ├── recovery/         <i># abandoned change records</i>
 └── sandboxes/        <i># isolated worktrees</i></code></pre>
+          <p class="callout reveal">The compiled OpenSpec packet is the source of truth. Semantic drafts and runtime actions are inputs and projections, not parallel requirement ledgers.</p>
         </div>
       </section>
 
@@ -551,15 +554,18 @@ claude-foundation init /path/to/project --yes</code></pre>
         <div class="wrap command-layout">
           <div class="section-head reveal">
             <p class="eyebrow">Operator surface</p>
-            <h2>Small commands, explicit effects.</h2>
+            <h2>One coordinator for the loop. Primitives when you need them.</h2>
           </div>
           <div class="command-list reveal" data-delay="1">
+            <div><code>change start &lt;draft.json&gt;</code><span>compile one semantic brief into a valid OpenSpec change</span></div>
+            <div><code>change amend &lt;id&gt; &lt;amendment.json&gt;</code><span>apply a linked semantic amendment transactionally</span></div>
+            <div><code>advance &lt;id&gt; --through build|proven|archived</code><span>run the safe lifecycle chain and stop only at a real boundary</span></div>
             <div><code>doctor --change &lt;id&gt;</code><span>check runtime, provider, and lifecycle readiness</span></div>
             <div><code>changes</code><span>list active work and the next useful action for each</span></div>
             <div><code>packet &lt;id&gt;</code><span>compact handoff without replaying history</span></div>
             <div><code>evidence detect &lt;id&gt;</code><span>find project-owned providers without executing them</span></div>
             <div><code>proof readiness &lt;id&gt;</code><span>see typed blockers and canonical next actions</span></div>
-            <div><code>proof run &lt;id&gt;</code><span>check readiness, run providers, and finalize proof</span></div>
+            <div><code>proof run &lt;id&gt;</code><span>advanced primitive: run the proof phase only</span></div>
             <div><code>authority request &lt;id&gt;</code><span>open a resumable human review or acceptance</span></div>
             <div><code>evidence verify-ci &lt;id&gt;</code><span>verify signed CI provenance bound to the workspace</span></div>
             <div><code>metrics &lt;id&gt;</code><span>inspect latency, execution, token, and cost data</span></div>
@@ -568,7 +574,7 @@ claude-foundation init /path/to/project --yes</code></pre>
             <div><code>land resume &lt;id&gt;</code><span>resume an interrupted or multi-repository Land</span></div>
             <div><code>change waive &lt;id&gt; --capability &lt;c&gt;</code><span>withdraw one failed gate's enforcement on a recorded decision</span></div>
             <div><code>change abandon &lt;id&gt;</code><span>quarantine a change that cannot be proven</span></div>
-            <div><code>describe [command]</code><span>explain any surface — the eight slash commands included</span></div>
+            <div><code>describe [command]</code><span>explain the six intent commands and every advanced primitive</span></div>
           </div>
         </div>
       </section>
@@ -592,7 +598,7 @@ claude-foundation init /path/to/project --yes</code></pre>
           <span class="brand-mark">f</span>
           <span>claude<b>-foundation</b></span>
         </a>
-        <p>OpenSpec-native software change harness. <b>v3.5.2</b> · runtime API 27 · provider protocol 13</p>
+        <p>OpenSpec-native software change harness. <b>v3.5.2</b> · runtime API 28 · provider protocol 13</p>
         <div class="footer-links">
           <a href="./docs/">Docs</a>
           <a href="./docs/th/">เอกสารภาษาไทย</a>

@@ -34,6 +34,9 @@ the active transcript's prompt starts with `/dev`.
 Environment: `CLAUDE_PROJECT_DIR` names the project root (default: cwd).
 `FOUNDATION_GUARDRAIL_MODE` (`off|audit|block|auto`) governs the phase guard;
 phase context comes from `FOUNDATION_ACTIVE_PHASE` or `.foundation/logs/`.
+The normal slash-command path records that context through the unified
+`advance` coordinator; agents do not have to prepare a packet solely to make a
+hook recognize the phase.
 The default `auto` mode blocks mutations during every active lifecycle phase
 and stays out of adoption-only sessions with no phase context. A recorded Build
 phase recovers its workspace from runtime state
@@ -41,6 +44,11 @@ when the host does not export `FOUNDATION_WORKSPACE_ROOT`.
 Mutating Build shell commands must explicitly begin inside that workspace;
 unanchored package-manager/formatter commands and obvious path escapes are
 blocked before the shell starts.
+
+Hooks constrain unsafe mutations; they do not own lifecycle completion. A
+refusal must preserve state and point back to `claude-foundation advance
+<change>` (or its exact typed recovery), so an unavailable live hook or stale
+phase row cannot become an artificial dead end.
 
 ## Host wiring
 

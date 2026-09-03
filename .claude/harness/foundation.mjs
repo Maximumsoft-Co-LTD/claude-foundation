@@ -110,7 +110,7 @@ import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
 import { createQualityRuntime } from "./runtime/quality/quality-runtime.mjs";
 
 const VERSION = "3.5.2";
-const RUNTIME_API_VERSION = "27";
+const RUNTIME_API_VERSION = "28";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
 // every command up to `archive` and then threw partway through Land.
@@ -1323,6 +1323,7 @@ const {
   createChange,
   rapidStartTemplate,
   startAtomic,
+  amendChange,
   resolveChange
 } = createChangeLifecycle({
   root: ROOT,
@@ -1691,14 +1692,28 @@ const {
 const advanceLand = advanceLandOperation.bind(null, {
   loadRuntime, landCheck, archive, resumeLand, landPlanValue
 });
+async function runAdvanceQuietly(operation) {
+  const priorLog = console.log;
+  console.log = () => {};
+  try { return await operation(); }
+  finally { console.log = priorLog; }
+}
 const { advanceValue, showAdvance } = createAdvanceRuntime({
   loadRuntime,
   agentDispatchValue,
+  agentPlanValue,
   relevantHash,
   deliveredAiAttempts,
   authorityStatusValue,
   authorityNext,
   proofReadinessValue,
+  prepareBuild: (id) => runAdvanceQuietly(async () => {
+    validate(id, "root", { quiet: true });
+    createSandbox(id, { quiet: true });
+  }),
+  runProof: (id) => proofAdvance(id, { quiet: true }),
+  runLand: (id) => runAdvanceQuietly(() => advanceLand(id)),
+  recordPhase: recordPhaseContext,
   readJson,
   proofAdvancePath: (id) => join(EVIDENCE_VAULT, id, "proof-advance.json"),
   stableHash
@@ -1825,6 +1840,7 @@ await routeRuntimeCommand(command, values, {
   createChange,
   rapidStartTemplate,
   startAtomic,
+  amendChange,
   resolveChange,
   abandonChange,
   waiveGate,

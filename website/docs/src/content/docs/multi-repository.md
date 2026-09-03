@@ -17,7 +17,7 @@ These files answer different questions. Configure them in this order:
 |---|---|---|
 | 1 | `openspec/repositories.yaml` | Which repositories may this project use? |
 | 2 | `openspec/changes/<change>/repositories.yaml` | Which of them may this change read or write? |
-| 3 | `execution.yaml` provider fields | Which repositories does this evidence command need? |
+| 3 | derived provider or conditional `execution.yaml` fields | Which repositories does this evidence command need? |
 
 Do not skip directly to provider wiring. A provider cannot prove a repository
 that the project topology does not know or the change did not select.
@@ -102,14 +102,16 @@ make cross-repository order explicit:
 Change Loop compiles repository selection, tasks, providers, and Land order into
 the execution graph. Do not create a second graph file.
 
-## 4. Create all sandboxes
+## 4. Let Build create all sandboxes
 
-Create the selected workspaces together:
+The normal agent command creates the selected workspaces together:
 
 ```bash
-claude-foundation sandbox create <change> --all
-claude-foundation sandbox inspect <change>
+claude-foundation advance <change> --through build
 ```
+
+`sandbox create --all` and `sandbox inspect` remain operator diagnostics under
+`help --all`; users do not need to sequence them.
 
 Write repositories receive isolated Build worktrees. Git-backed read and
 external repositories receive pinned detached worktrees. The command does not
@@ -118,7 +120,7 @@ isolation, not an OS security boundary.
 
 ## 5. Wire repository-scoped evidence
 
-In `execution.yaml`, `repository` is the provider's working directory.
+For custom wiring in conditional `execution.yaml`, `repository` is the provider's working directory.
 `repositories` is the complete set the command reads:
 
 ```json

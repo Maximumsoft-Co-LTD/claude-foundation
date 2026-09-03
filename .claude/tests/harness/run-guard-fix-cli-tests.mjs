@@ -59,6 +59,7 @@ async function route(command, values, overrides) {
   const cases = [
     ["new", ["intent"], "createChange"],
     ["start", ["draft.json"], "startAtomic"],
+    ["amend", ["change", "amendment.json"], "amendChange"],
     ["resolve", ["change"], "resolveChange"],
     ["abandon", ["change"], "abandonChange"],
     ["waive", ["change"], "waiveGate"],
@@ -73,6 +74,7 @@ async function route(command, values, overrides) {
     ["agent-release", ["change", "resource"], "releaseAgentLease"],
     ["packet", ["change"], "showPacket"],
     ["metrics", ["change"], "showMetrics"],
+    ["advance", ["change"], "showAdvance"],
     ["exec", ["change", "--", "true"], "execObserved"],
     ["budget-checkpoint", ["change"], "checkpointBudget"],
     ["budget-continue", ["change"], "continueBudget"],
@@ -219,6 +221,19 @@ async function route(command, values, overrides) {
     startAtomic: (...args) => { consumedStart = args; }
   });
   assert.deepEqual(consumedStart, ["draft.json", { consumeDraft: true }]);
+  let consumedAmendment = null;
+  await route("amend", ["change", "amendment.json", "--consume-amendment"], {
+    amendChange: (...args) => { consumedAmendment = args; }
+  });
+  assert.deepEqual(consumedAmendment,
+    ["change", "amendment.json", { consumeAmendment: true }]);
+  let advanced = null;
+  await route("advance", ["change", "--through", "archived", "--pretty"], {
+    showAdvance: (...args) => { advanced = args; }
+  });
+  assert.deepEqual(advanced, ["change", { through: "archived", pretty: true }]);
+  await assert.rejects(route("advance", ["change", "--through", "invalid"], {}),
+    /advance --through must be build\|proven\|archived/);
   await route("describe", ["--json"], { describeCommand: () => {} });
   await route("repos", [], { showRepositories: (value) => assert.equal(value, null) });
   await route("hash", ["change", "provider"], {

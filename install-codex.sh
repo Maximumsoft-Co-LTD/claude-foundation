@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Codex CLI adapter for the OpenSpec-native Change Loop harness.
+# Codex CLI adapter for the OpenSpec-native Change Loop harness. The six
+# intent-level prompts delegate lifecycle mechanics to semantic draft
+# compilation and the unified `advance` coordinator; compatibility prompts are
+# still installed so upgrades do not break existing usage.
 #
 # Codex reads AGENTS.md and project .agents/skills natively. The adapter keeps
 # those skills as relative symlinks to the shared Change Loop source so Claude
@@ -147,4 +150,4 @@ if ! command -v codex >/dev/null 2>&1; then
 else
   printf '  reviewer setup: codex login status\n'
 fi
-printf 'Next: describe the outcome with /change <intent>; the agent handles the workflow details.\n'
+printf 'Next: describe the outcome with /change <intent>; the agent compiles OpenSpec and drives advance for you.\n'

@@ -120,10 +120,11 @@ Agent แก้ finding ที่รวมเป็นชุดและตร�
 ทางปกติเริ่มด้วยคำสั่งที่ทำต่อได้คำสั่งเดียว
 
 ```bash
-claude-foundation proof advance <change>
+claude-foundation advance <change> --through proven
 ```
 
-คำสั่งนี้สร้างหรือ reuse request และไม่ poll external wait ที่ไม่เปลี่ยน เมื่อส่ง packet
+Coordinator เรียก compatible proof primitive แล้วสร้างหรือ reuse request และไม่
+poll external wait ที่ไม่เปลี่ยน เมื่อส่ง packet
 จริง การรีวิว Codex หรือ Claude Code ที่ตั้งค่าไว้ใช้ `authority run` ส่วน named-human review ต้องใช้
 `authority dispatch` ก่อน `authority record` และ human acceptance ใช้
 request/status/record โดยไม่ต้อง review dispatch

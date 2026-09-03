@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Semantic change compilation and transactional amendments.** Agents can
+  author one semantic draft, receive stable cross-artifact links and
+  conditional OpenSpec files, then add newly discovered behavior without
+  losing completed work or custom documentation.
+
+### Changed
+
+- **The normal agent route is one resumable lifecycle coordinator.**
+  `advance --through build|proven|archived` performs safe deterministic chains
+  and returns a bounded action with an exact resume route; compatible
+  primitives remain available under `help --all`.
+- **Grounding and auxiliary artifacts are conditional by default.** OpenSpec
+  remains the authoritative agreement, while execution wiring is derived when
+  the project already declares suitable commands.
+
 ## [3.5.2] - 2026-09-03
 
 ### Added

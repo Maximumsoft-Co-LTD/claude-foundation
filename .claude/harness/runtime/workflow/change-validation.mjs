@@ -902,16 +902,20 @@ export function createChangeValidationRuntime({
   }
 
   function changeArtifactGaps(state, dir) {
+    const conditional = Number(state.artifactDefaultsVersion || 0) >= 2;
     const required = state.schema === "foundation-rapid"
       ? ["proposal.md", "tasks.md", "evidence.yaml"]
-      : ["proposal.md", "design.md", "tasks.md", "evidence.yaml"];
+      : ["proposal.md", "tasks.md", "evidence.yaml"];
+    if (state.schema === "foundation-standard" &&
+        (!conditional || state.decisionMetadataRequired))
+      required.push("design.md");
     if (state.groundingRequired) required.push("grounding.yaml");
     // `repositories.yaml` sits in both schemas' `apply.requires` and is written
     // by `createChange`, but nothing checked it here: deleting the file passed
     // `change validate` and only failed later, inside Land, where the recovery
     // is expensive. Gated with `execution.yaml` because the two arrived
     // together in the version-2 packet.
-    if (Number(state.version || 1) >= 2)
+    if (Number(state.version || 1) >= 2 && !conditional)
       required.push("execution.yaml", "repositories.yaml");
     if (state.externalOperationsVersion)
       required.push("handoffs.yaml");
@@ -993,10 +997,11 @@ export function createChangeValidationRuntime({
     } catch {
       fail(`${id}/grounding.yaml must be JSON-compatible YAML`);
     }
-    if (![1, 2].includes(value.version))
-      fail(`${id}/grounding.yaml requires version 1 or 2`);
-    if (Number(state.groundingVersion || 1) >= 2 && value.version !== 2)
-      fail(`${id}/grounding.yaml requires version 2 for this change; migrate all newly material decisions in one Decision Sheet`);
+    if (![1, 2, 3].includes(value.version))
+      fail(`${id}/grounding.yaml requires version 1, 2, or 3`);
+    if (Number(state.groundingVersion || 1) >= 2 &&
+        value.version !== Number(state.groundingVersion))
+      fail(`${id}/grounding.yaml requires version ${state.groundingVersion} for this change`);
     const digest = stableHash(value);
     if (state.groundingDigest && state.groundingDigest !== digest)
       fail(`${id}/grounding.yaml changed after its decision batch was locked; ` +
@@ -1031,6 +1036,23 @@ export function createChangeValidationRuntime({
     }
     failValidationLayer(fail, "grounding decision", issues);
     return ids;
+  }
+
+  function validateGroundingV3(id, value) {
+    const issues = [];
+    if (!Array.isArray(value.decisions) || value.decisions.length === 0)
+      issues.push(`${id}/grounding.yaml decisions must contain each non-derived material decision`);
+    const ids = new Set();
+    for (const [index, decision] of (value.decisions || []).entries()) {
+      const label = `${id}/grounding.yaml decisions[${index}]`;
+      for (const field of ["id", "choice", "reason"])
+        if (!String(decision?.[field] || "").trim()) issues.push(`${label}.${field} is required`);
+      if (ids.has(decision?.id)) issues.push(`${label}.id is duplicated`);
+      ids.add(decision?.id);
+      if (decision?.derivedAt || decision?.digest || decision?.readSet || decision?.productionPath)
+        issues.push(`${label} contains derived runtime data; grounding v3 stores decisions only`);
+    }
+    failValidationLayer(fail, "grounding v3 decision", issues);
   }
 
   function validateGroundingSemanticInvariants(id, state, dir, value, decisionIds) {
@@ -1612,6 +1634,19 @@ export function createChangeValidationRuntime({
     }
     const grounding = readGroundingDocument(id, state, dir);
     const { value, digest: groundingDigest, firstLock } = grounding;
+    if (value.version === 3) {
+      const groups = initialGroups.filter((group) => group.issues?.length)
+        .map((group) => ({ ...group, issues: [...group.issues] }));
+      captureValidationGroup(groups, "grounding v3 decision",
+        () => validateGroundingV3(id, value));
+      failCollectedValidation(groups);
+      return {
+        value,
+        digest: groundingDigest,
+        firstLock,
+        lockedAt: state.groundingLockedAt || now()
+      };
+    }
     const decision = value.decisionBatch || {};
     const groups = initialGroups.filter((group) => group.issues?.length)
       .map((group) => ({ ...group, issues: [...group.issues] }));

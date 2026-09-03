@@ -31,18 +31,29 @@ Its output is facts, hypotheses, options, tradeoffs, and a next decision.
 
 ### `/change <intent>`
 
-Creates or completes `openspec/changes/<id>/`. The resolver records:
+The agent authors one compact semantic draft v3. The transactional compiler
+creates `openspec/changes/<id>/`, generates stable cross-ledger IDs, validates
+the complete agreement, installs it, and prepares isolation. The draft records:
 
 - ambiguity: clear or unclear;
 - impact: low, medium, or high;
 - coupling: isolated or coupled;
-- evidence capabilities;
+- semantic requirements, task coverage, and evidence capabilities;
 - size for budget and slicing only;
 - semantic security and review triggers.
 
-Standard changes contain proposal, delta specs, design, tasks, evidence, and
-execution wiring. Rapid changes contain proposal, tasks, evidence, and execution
-wiring and upgrade in place if risk emerges.
+Rapid changes default to `proposal.md`, `tasks.md`, and `evidence.yaml`.
+Standard changes add delta specs and add `design.md` only for a load-bearing
+decision, migration, compatibility, architecture, diagram, integration, or
+prototype selection. `execution.yaml`, `repositories.yaml`, `handoffs.yaml`,
+and `grounding.yaml` appear only when the change overrides detected execution,
+spans repositories, delegates an external operation, or records a non-derived
+material decision. Their absence has versioned virtual-default semantics.
+
+After compilation, the OpenSpec documents are the source of truth. The semantic
+draft is temporary and `.foundation/` is derived coordination state. When Build
+discovers new behavior, `change amend <change> <amendment.json>` updates the
+canonical agreement transactionally before implementation continues.
 
 `/investigate <decision> --compare` is the optional disposable mode for
 genuinely unresolved experience, API, or architecture alternatives. It writes only under
@@ -65,14 +76,17 @@ revert them; `--applied keep|revert` records that answer.
 
 ### `/build <change>`
 
-The native harness reads the compact change packet and implements it. `tasks.md`
+The agent calls `claude-foundation advance <change> --through build`. The
+coordinator validates, prepares/synchronizes isolation, compiles the task graph,
+and returns one bounded protocol-v3 action. `tasks.md`
 is the only implementation ledger; `handoffs.yaml` separately owns operations
 that require AWS, cluster, secret, Terraform, deploy, restart, or other external
 authority. Focused checks run during convergence. Native task primitives
 or subagents are used only for independently verifiable parallel/resumable work
 packages, not lifecycle personas.
 
-For a Git project, create an isolated worktree with:
+Isolation is prepared by `advance`. Operators can inspect the compatible
+primitive directly with:
 
 ```bash
 claude-foundation sandbox create <change>
@@ -89,7 +103,7 @@ rejected before telemetry, workspace inspection, or sandbox mutation. The guard
 is cooperative because the runtime cannot infer an external Allow All setting;
 the host that enables unattended execution must invoke the guarded form.
 
-For a selected multi-repository topology:
+For advanced diagnosis of a selected multi-repository topology:
 
 ```bash
 claude-foundation repos <change>
@@ -107,7 +121,9 @@ leases are acquired all-or-none and carry a fencing generation, so a late
 worker result cannot advance after takeover. Actual worktree writes, rather
 than worker-reported paths alone, must remain inside the granted scope.
 
-The host drives Build by repeatedly calling `agents dispatch`. A
+`advance` drives Build and projects the compatible dispatch result into
+`EDIT`, `REPAIR`, `RUN_EXTERNAL`, `WAIT`, `ASK_USER`, or `DONE`. The underlying
+advanced host dispatch still exposes a
 `run-in-session` action preserves the main-session path. A
 `run-leased-in-session` action keeps a singleton runnable frontier in that
 session while acquiring and releasing its task authority. For `spawn-group`,
@@ -193,9 +209,11 @@ unsynchronized target still stops at `control-head-moved`, while rebasing onto a
 history-only commit with identical content does not charge another review.
 
 ```bash
-claude-foundation proof readiness <change>
-claude-foundation proof run <change>
+claude-foundation advance <change> --through proven
 ```
+
+`proof readiness`, `proof advance`, and `proof run` remain advanced diagnostic
+and integration primitives behind this coordinator.
 
 Required evidence that is failed, missing, stale, erroneous, or inconclusive
 blocks landing.
@@ -231,9 +249,10 @@ with `[claims:<claim-id>]`.
 
 Remote CI can return a signed envelope through `evidence verify-ci`; issuer,
 workspace, optional commit, run URL, and artifact digests are verified before a
-receipt is created. `proof advance` is the normal resumable Prove path. It runs
-configured evidence once, routes review before acceptance, and stops cleanly
-while external authority is pending. Configured AI review uses `authority run`;
+receipt is created. `advance --through proven` is the normal resumable Prove
+path. It invokes the compatible `proof advance` primitive, runs configured
+evidence once, routes review before acceptance, and stops cleanly while external
+authority is pending. Configured AI review uses `authority run`;
 named-human review uses `authority dispatch` before `authority record`;
 acceptance uses `authority request` and `authority record` without a review
 dispatch. All paths expire or become stale with the workspace and pass the same
@@ -246,10 +265,12 @@ verifies state identity, then delegates semantic spec sync and archive to the
 pinned OpenSpec CLI.
 
 ```bash
-claude-foundation land check <change>
-claude-foundation land recover <change> --decision-ref <ref> [--resolution keep-current|restore-backup]
-claude-foundation land archive <change>
+claude-foundation advance <change> --through archived
 ```
+
+This explicit command supplies Land authority. `land check`, `land recover`,
+and `land archive` remain advanced recovery primitives when its action names
+them. Land never grants commit, push, publish, or pull-request authority.
 
 `land check` mutates nothing. An apply is a transaction over the target, and an
 interrupted one stays pending until somebody settles it deliberately: the check
@@ -456,7 +477,8 @@ measured remaining allowance, unfinished work, and exact resume route. Unknown
 usage or future model demand remains unknown; the checkpoint never converts it
 to a fabricated estimate.
 
-Run `claude-foundation proof advance <change>` as the normal boundary. Every
+Run `claude-foundation advance <change> --through proven` as the normal
+boundary. Every
 phase gate uses the same convergent contract: collect all independent findings,
 repair the dependency-ordered in-contract batch, selectively rerun invalidated
 checks, and continue without a product-repair limit while progress changes.
@@ -469,13 +491,11 @@ Codex or Claude Code reviewer. An explicitly chosen human review reserves the ex
 `authority dispatch`, then records only the real response with `authority record`. Low-level
 `proof collect` and `proof run` remain diagnostic/integration commands.
 
-Hosts may instead drive the whole resumable loop with
-`claude-foundation advance <change>`. The command returns one bounded action:
-execute a Build task, execute a review-repair batch, rerun invalidated evidence,
-dispatch the configured review, request a real decision, or enter Land. The
+The command returns one bounded protocol-v3 action: `EDIT`, `RUN_EXTERNAL`,
+`REPAIR`, `WAIT`, `ASK_USER`, or `DONE`. The
 harness owns selection, dependency order, state, and resume routing; the host
 still owns model invocation. `advance` never grants commit, push, publish, PR,
-or waiver authority. Before returning `RUN_PROOF`, it runs the same Proof
+or waiver authority. Before running deterministic Proof, it uses the same
 readiness contract and returns a typed repair, resource, or decision action when
 Proof cannot start. A host execution result can be imported atomically with
 `--host-result <result.json>` before the next action is selected.
@@ -488,10 +508,11 @@ workspace/fingerprint detail. Metrics and feedback also group providers by
 command-execution identity so multiple receipts from one process are not
 presented as independent observations. Unavailable legacy causes remain explicit.
 
-Draft v2 makes the same division explicit at Change time: authors state intent,
-claims, task outcomes, paths, and one verification command; the harness assigns
-stable IDs and fills only uniquely provable cross-ledger bindings. Draft v1 is
-still accepted unchanged. The `Impact` and `Coupling` recorded in the proposal
+Semantic draft v3 makes the same division explicit at Change time: authors
+state intent, keyed requirements, task outcomes/coverage, paths, and evidence
+capabilities; the harness assigns stable IDs and all cross-ledger bindings.
+Draft v1 remains unchanged and draft v2 keeps its unambiguous compatibility
+behavior. The `Impact` and `Coupling` recorded in the proposal
 must match the machine-owned agreement before Build can start. During Prove, one
 declared critical case and one test
 result are bound automatically; ambiguous many-to-many coverage still requires
@@ -678,8 +699,10 @@ provider execution time, request/token/cache/cost totals, orchestrator token
 share, and emitted context bytes without double-counting receipts emitted by
 one combined execution.
 
-`claude-foundation packet <change> --phase change|build|prove|review|land` emits the bounded
-handoff for a fresh execution context. Global, repository, task, and review
+`advance` records phase context and returns the bounded normal action. The
+advanced `claude-foundation packet <change> --phase
+change|build|prove|review|land` emits a diagnostic handoff. Global, repository,
+task, and review
 packets are capped at 16, 12, 8, and 8 KiB respectively and reference larger artifacts by
 path and digest. Compact JSON is the default and is the exact measured budget;
 `--pretty` is available for people. Collection previews include counts and
@@ -837,10 +860,10 @@ responses or argument handling.
 `claude-foundation` is the stable public control surface. It searches upward
 from the working directory, or from `--project <path>`, and forwards to the
 runtime installed in that project so schemas and runtime behavior stay aligned.
-Use canonical `change`, `packet`, `evidence detect|init|doctor`,
-`proof readiness|collect|run`, `sandbox create|sync`, and
-`land check|record|resume|archive` commands rather than calling runtime
-internals directly.
+Use canonical `change start|amend` and `advance --through
+build|proven|archived` for normal agent work. `packet`, `evidence`, `proof`,
+`sandbox`, and `land` primitives remain supported for operator diagnostics,
+recovery, and integrations; never call runtime internals directly.
 
 When the packaged CLI is not on `PATH`, use the source checkout's public router:
 

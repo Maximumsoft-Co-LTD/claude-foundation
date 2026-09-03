@@ -1,84 +1,72 @@
 ---
 title: /change
-description: สร้างหรือทำข้อตกลง OpenSpec ให้ครบ — เจตนา delta spec tasks claim ความเสี่ยง และ evidence contract
+description: Compile semantic draft หนึ่งชุดเป็นข้อตกลง OpenSpec ที่ validate แล้ว
 ---
 
 ```text
-/change <intent | change ที่มีอยู่> [--prototype-selection <path>]
+/change <intent | existing-change> [--prototype-selection <path>]
 ```
 
-`/change` ผลิต **ข้อตกลง** คือคำแถลงที่คงอยู่และคนรีวิวได้ ว่าจะเปลี่ยนอะไรและจะรู้ได้อย่างไรว่ามันสำเร็จ ทุกขั้นที่อยู่ถัดจากนี้อ่านจากมัน
+`/change` เปลี่ยน intent ให้เป็นข้อตกลงถาวรที่ทุก phase ถัดไปอ่าน Agent เขียน
+semantic draft ขนาดเล็กหนึ่งครั้ง ส่วน Change Loop สร้าง bookkeeping และติดตั้ง
+ผลลัพธ์แบบ transaction
 
-มันสร้างหรือทำ `openspec/changes/<id>/` ให้ครบ
+## Semantic draft
 
-## ประเมินอะไรบ้าง
+แกนที่บังคับมีเพียง `version: 3`, `intent`, `requirements`, `tasks` ที่ระบุ
+`covers` และ `evidence` ที่ใช้ requirement key เดียวกัน ตัวอย่างโครงสร้างเต็มดูได้
+จาก `claude-foundation change start --template`
 
-ก่อนเขียนไฟล์ agent จะจำแนก change แล้วบันทึก
-
-| คุณสมบัติ | ค่า | ใช้ทำอะไร |
-|---|---|---|
-| ambiguity | clear, unclear | ต้องไปสำรวจก่อนไหม |
-| impact | low, medium, high | เลือก assurance profile |
-| coupling | isolated, coupled | เลือก assurance profile |
-| security trigger | จับตามความหมาย | บังคับให้ต้องมีรีวิวอิสระ |
-| evidence capability | ดู [claim](/docs/th/evidence/claims/) | ต้องพิสูจน์อะไรบ้าง |
-| size | — | **งบและการแบ่งงานเท่านั้น** |
-
-ขนาดไม่เคยลดความเข้มลง นี่เป็นความตั้งใจ เพราะ change ที่ดูถูกที่สุดมักเป็นตัวที่ข้าม trust boundary
-
-security trigger จับแบบ **ทั้งคำ** ไม่ใช่ substring เวอร์ชันก่อนหน้าจับคำว่า `access` ที่อยู่ใน "accessibility" และ `migration` ใน "migration guide" — ทำให้งานธรรมดาถูกบังคับให้ต้องรีวิวภายนอก ขณะที่พลาด "sign in with a passkey" ไปทั้งที่เป็นเคสที่ข้าม trust boundary จริง
-
-## สองรูปแบบ
-
-**Rapid** — proposal, tasks, evidence และ execution wiring ใช้กับงาน impact ต่ำที่แยกขาดและเป็นงาน unit/static เท่านั้น
-
-**Standard** — เพิ่ม delta spec และ `design.md`
-
-rapid จะ **อัปเกรดในที่** ถ้าพบความเสี่ยง เมื่อการประเมิน impact, coupling, security หรือ acceptance ทำให้ change ย้ายจาก rapid ไป standard คำสั่งจะพิมพ์บอกว่าลงเอยที่ schema ไหนและสร้างไฟล์ที่จำเป็นให้ แทนที่จะปล่อยให้ `validate` มาปฏิเสธทีหลังเพราะไฟล์ที่ไม่มีใครรู้ว่าต้องมี
-
-## Delta spec
-
-requirement เขียนเป็น delta เทียบกับ spec ปัจจุบัน — `## ADDED Requirements`, `## MODIFIED Requirements`, `## REMOVED Requirements` แต่ละอันมี scenario ที่สังเกตได้
-
-:::caution[การเปลี่ยนชื่อ scenario]
-OpenSpec อ่านบล็อก `## MODIFIED Requirements` ว่าเป็นรายการ scenario **ทั้งหมด** ดังนั้นการเปลี่ยนชื่อ scenario เงียบ ๆ จะถูก archive เป็นการลบ Change Loop ปฏิเสธเรื่องนี้ก่อนถึง Land ไม่ใช่หลังจากนั้น
-
-วิธีเปลี่ยนชื่อที่ถูกต้องคือใส่ชื่อเดิมไว้ใต้ `## REMOVED Requirements` และชื่อใหม่ใต้ `## ADDED Requirements` พร้อมรายการ scenario เต็ม
-
-จงใจไม่มี flag ให้ข้าม เพราะ OpenSpec บังคับกฎเดียวกันตอน archive อยู่ดี การข้ามจึงเป็นแค่การเลื่อนความล้มเหลวไปอยู่หลังจุดที่ย้อนกลับไม่ได้
-:::
-
-## Acceptance ต้องตัดสิน ไม่ใช่อนุมาน
-
-ผลลัพธ์บางอย่างเป็นเรื่องอัตวิสัย — "อันนี้รู้สึกใช่ไหม" — ซึ่งไม่มีเทสไหนตัดสินได้ change แบบ standard จึงต้อง **ตัดสินอย่างชัดเจน** ว่าต้องให้คนยอมรับหรือไม่ การนิ่งเงียบจะคงสถานะเป็น `undecided` และบล็อก validation มันไม่เคยกลายเป็นการอนุมัติ
-
-## การตรวจสอบ
+Agent ใช้ key ที่มีความหมาย Compiler สร้าง claim/task ID ที่ stable และผูก
+spec → claim → task → provider ให้อัตโนมัติ รวมปัญหา draft ที่เป็นอิสระทั้งหมดใน
+ครั้งเดียวและชี้กลับไปยัง field ต้นทาง ถ้า compile ไม่ผ่านจะไม่เหลือ change
+ครึ่งชุด Draft version 1 และ 2 ยังใช้ได้กับ integration เดิม
 
 ```bash
-claude-foundation change validate <change>
-claude-foundation change audit <change>
+claude-foundation change start .foundation/drafts/<id>.json --consume-draft
 ```
 
-`validate` ตรวจตัว change และ evidence contract ส่วน `audit` รายงานความเชื่อมโยงของ scenario → claim → task → provider ทุก scenario ที่สังเกตได้ควรไปถึง claim และทุก claim ควรไปถึง provider ที่พิสูจน์มันได้จริง
+## Extension แบบมีชนิด
 
-Validation คืนกลุ่มปัญหาที่เป็นอิสระทั้งหมดพร้อม repair plan ที่มีขอบเขต Agent
-จึงแก้ครบทั้ง batch ก่อน validate ใหม่ Atomic draft version 2 ให้ผู้เขียนระบุ
-intent, outcome, path และ verification ส่วน Change Loop สร้าง stable ID และเติม
-เฉพาะ cross-link ที่สรุปได้แน่นอน Draft version 1 ยังใช้ได้ ผู้ใช้ไม่ต้องดูแล
-bookkeeping ledger ที่ซ้ำกัน
+เพิ่มเฉพาะเมื่อจำเป็น:
 
-## แก้ change ที่มีอยู่
+- requirement หลายตัว แยก `capability` และ `operation`
+- `decisions` สำหรับมติที่มีผลต่อ implementation
+- diagram แบบ Mermaid หรืออ้าง SVG/PNG
+- `prototypeSelection` ที่ชี้ไป selection note ที่มีจริง
+- `integrations` พร้อมแหล่ง/เวอร์ชันเอกสาร requirement ที่เกี่ยวข้อง และ concern
+  ด้าน security, resilience, compatibility โดย scenario ที่เกี่ยวข้องต้องระบุ
+  `"kind": "success"` และ `"kind": "failure"`
+- repository เมื่อแตะหลาย repo
+- external operation เมื่อต้องใช้อำนาจภายนอก
+- Grounding v3 สำหรับมติสำคัญที่ derive ไม่ได้
 
-ส่ง ID ของ change แทน intent การแก้เป็นเส้นทางปกติเมื่อ requirement ขยับ — คุณ **ไม่** เปิด change ตัวที่สอง Change Loop จะ sync sandbox ที่มีอยู่และทำให้ proof ที่การแก้นั้นทำให้ล้าสมัยใช้ไม่ได้
+Prototype ไม่ใช่ proof เอกสาร integration ที่หายหรือไม่ระบุเวอร์ชันเป็น boundary
+ให้ค้นคว้าหรือถามผู้ใช้ ไม่ใช่สิทธิ์ให้เดา สำหรับ `MODIFIED` compiler จะอ่าน
+canonical spec แล้ว merge scenario เดิมให้ครบก่อนเพิ่มหรือแก้ ส่วน `REMOVED`
+ต้องมีผลด้าน migration เอกสาร local ต้องมีจริงใน project และ remote source ต้อง
+เป็น URL ที่ระบุ version
 
-## ปลดระวาง
+## Artifact แบบ conditional และ source of truth
 
-change ที่พิสูจน์ไม่ได้ต้องปลดระวางอย่างชัดเจน
+Rapid ปกติมีเพียง `proposal.md`, `tasks.md`, `evidence.yaml` Standard เพิ่ม delta
+spec และสร้าง `design.md` เฉพาะเมื่อมีมติหรือบริบทสถาปัตยกรรมที่จำเป็น ไฟล์
+execution, repository, handoff และ grounding จะเกิดเมื่อมี override จริงเท่านั้น
+
+หลัง compile แล้ว `openspec/changes/<id>/` คือ source of truth Draft เป็นข้อมูล
+ชั่วคราว และ `.foundation/` เป็น runtime state ที่ derive ได้
+
+## แก้ข้อตกลงระหว่าง Build
+
+ถ้า Build พบ observable requirement ใหม่ ให้ใช้ semantic amendment หนึ่งชุด:
 
 ```bash
-claude-foundation change abandon <change> --reason <reason> --decision-ref <ref>
+claude-foundation change amend <change> <amendment.json> --consume-amendment
 ```
 
-มันปล่อย lease เก็บกวาด sandbox และย้ายไดเรกทอรีของ change, runtime state, receipt, evidence, transaction และ log ไปกักไว้ใต้ `.foundation/recovery/abandoned/<id>/` พร้อมบันทึก audit ที่ `.foundation/logs/abandoned.jsonl` มันไม่แตะ Git และปฏิเสธ change ที่ archive แล้ว ถ้าไฟล์ที่พิสูจน์แล้วอยู่ใน working tree ของคุณแล้ว มันจะหยุดและถามว่าจะเก็บไว้หรือย้อนกลับ
+มันรักษา task ที่เสร็จแล้ว prose/diagram/section ที่ไม่เกี่ยวข้อง เพิ่ม link แบบ
+stable เพิ่ม revision แล้ว validate ทั้งชุด หากล้มเหลวจะ rollback Change เก่ายังใช้
+manual path เดิมได้
 
-agent จะเสนอทางนี้เมื่อเข้าเงื่อนไข แต่จะไม่ปลดระวาง change โดยไม่ถามก่อน
+`/change` ที่สำเร็จ validate และแยก workspace แล้ว ทำต่อด้วย
+`claude-foundation advance <change> --through build`

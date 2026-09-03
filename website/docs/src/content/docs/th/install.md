@@ -58,9 +58,9 @@ claude-foundation init /path/to/your-project --host cursor    # หรือ ope
 
 | Host | adapter เพิ่มอะไรให้ |
 |---|---|
-| **Cursor** | คำสั่งทั้งแปดใน `.cursor/commands/` และ skill router แบบ always-on เป็น rule `.mdc` ที่ตั้ง `alwaysApply: true` |
-| **OpenCode** | คำสั่งทั้งแปดใน `.opencode/commands/` และ guard plugin ที่ `.opencode/plugins/foundation.js` ซึ่ง replay hook ที่ ship มา — secrets guard กับ phase-mutation guard บล็อกแบบ live ส่วน lint ให้ feedback ตอนแก้ไฟล์ ส่วน skill กับ agent contract ไม่ต้องมี adapter เลย เพราะ OpenCode อ่าน `.claude/skills/` และ `AGENTS.md` ได้เอง |
-| **Codex CLI** | prompt ทั้งแปดใน `$CODEX_HOME/prompts` (Codex ไม่มีไดเรกทอรี prompt ต่อโปรเจกต์) พร้อม ownership marker เพื่อให้การติดตั้งซ้ำรีเฟรชเฉพาะ prompt ของ Change Loop โดยไม่ทับ prompt ชื่อซ้ำของผู้ใช้ |
+| **Cursor** | หก lifecycle prompt หลักพร้อม `/changes` และ alias `/feature` ใน `.cursor/commands/` และ skill router แบบ always-on เป็น rule `.mdc` ที่ตั้ง `alwaysApply: true` |
+| **OpenCode** | prompt หลักหกตัวพร้อม utility/alias สองตัวใน `.opencode/commands/` และ guard plugin ที่ `.opencode/plugins/foundation.js` ซึ่ง replay hook ที่ ship มา — secrets guard กับ phase-mutation guard บล็อกแบบ live ส่วน lint ให้ feedback ตอนแก้ไฟล์ ส่วน skill กับ agent contract ไม่ต้องมี adapterเลย เพราะ OpenCode อ่าน `.claude/skills/` และ `AGENTS.md` ได้เอง |
+| **Codex CLI** | prompt หลักหกตัวพร้อม utility/alias สองตัวใน `$CODEX_HOME/prompts` (Codex ไม่มีไดเรกทอรี prompt ต่อโปรเจกต์) พร้อม ownership marker เพื่อให้การติดตั้งซ้ำรีเฟรชเฉพาะ prompt ของ Change Loop โดยไม่ทับ prompt ชื่อซ้ำของผู้ใช้ |
 
 :::caution[Codex ไม่มี tool hook]
 Codex รัน guard แบบ live ไม่ได้ ดังนั้น secrets guard กับ phase-mutation guard จะไม่ทำงานที่นั่น — การบังคับใช้จึงเหลือ Land gate กับ `no-direct-main-commit.sh` ที่เป็น opt-in

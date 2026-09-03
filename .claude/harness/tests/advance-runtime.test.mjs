@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { coordinatorAction } from "../runtime/workflow/advance-runtime.mjs";
+import {
+  coordinatorAction, createAdvanceRuntime
+} from "../runtime/workflow/advance-runtime.mjs";
 import {
   feedbackSnapshotValue, operationCauseCoverage, reviewRepairIntervals
 } from "../runtime/observability/feedback-runtime.mjs";
@@ -22,7 +24,8 @@ test("advance returns bounded Build work without invoking a model", () => {
     ...base,
     dispatch: { action: "run-in-session", packetCommand: "packet" }
   });
-  assert.equal(value.action, "EXECUTE_TASK");
+  assert.equal(value.action, "EDIT");
+  assert.equal(value.legacyAction, "EXECUTE_TASK");
   assert.equal(value.boundary, "host-execution");
   assert.equal(value.resumeCommand, "claude-foundation advance change-a");
 });
@@ -38,7 +41,8 @@ test("advance exposes current review findings as a repair graph", () => {
       }]
     }
   });
-  assert.equal(value.action, "EXECUTE_REPAIR_BATCH");
+  assert.equal(value.action, "REPAIR");
+  assert.equal(value.legacyAction, "EXECUTE_REPAIR_BATCH");
   assert.equal(value.repairGraph.nodes[0].findingIds[0], "F1");
   assert.equal(value.repairGraph.nodes[0].sourceAttemptDigest, "attempt-a");
 });
@@ -52,7 +56,8 @@ test("changed repair workspace routes to invalidated evidence", () => {
       findings: [{ id: "F1", severity: "major", path: "src/a.mjs" }]
     }
   });
-  assert.equal(value.action, "RUN_INVALIDATED_EVIDENCE");
+  assert.equal(value.action, "RUN_EXTERNAL");
+  assert.equal(value.legacyAction, "RUN_INVALIDATED_EVIDENCE");
   assert.equal(value.boundary, null);
   assert.equal(value.command, "claude-foundation proof advance change-a");
 });
@@ -64,14 +69,16 @@ test("advance returns configured review and user authority boundaries", () => {
       requestId: "review-1", type: "review", status: "requested"
     }]
   });
-  assert.equal(review.action, "RUN_CONFIGURED_REVIEW");
+  assert.equal(review.action, "RUN_EXTERNAL");
+  assert.equal(review.legacyAction, "RUN_CONFIGURED_REVIEW");
   assert.equal(review.boundary, "external-authority");
 
   const decision = coordinatorAction({
     ...base,
     proofCursor: { status: "NEEDS_USER_DECISION", decision: { id: "D1" } }
   });
-  assert.equal(decision.action, "REQUEST_DECISION");
+  assert.equal(decision.action, "ASK_USER");
+  assert.equal(decision.legacyAction, "REQUEST_DECISION");
   assert.equal(decision.boundary, "user-authority");
 });
 
@@ -80,7 +87,8 @@ test("Land readiness forbids implicit delivery authority", () => {
     ...base, state: { status: "proven" },
     proofCursor: { status: "PASS", workspaceHash: "workspace-a" }
   });
-  assert.equal(value.action, "LAND_READY");
+  assert.equal(value.action, "ASK_USER");
+  assert.equal(value.legacyAction, "LAND_READY");
   assert.deepEqual(value.forbidden, ["commit", "push", "publish", "open-pr", "waive"]);
 });
 
@@ -93,13 +101,15 @@ test("successful proof and current review request supersede stale review failure
     ...base, workspaceHash: "workspace-b", latestReview: failedReview,
     proofCursor: { status: "PASS", workspaceHash: "workspace-b" }
   });
-  assert.equal(proven.action, "LAND_READY");
+  assert.equal(proven.action, "ASK_USER");
+  assert.equal(proven.legacyAction, "LAND_READY");
 
   const requested = coordinatorAction({
     ...base, workspaceHash: "workspace-b", latestReview: failedReview,
     authorityRequests: [{ requestId: "review-2", type: "review", status: "requested" }]
   });
-  assert.equal(requested.action, "RUN_CONFIGURED_REVIEW");
+  assert.equal(requested.action, "RUN_EXTERNAL");
+  assert.equal(requested.legacyAction, "RUN_CONFIGURED_REVIEW");
   assert.equal(requested.requestId, "review-2");
 });
 
@@ -108,14 +118,16 @@ test("advance rejects stale proof and uses proof-owned authority routing", () =>
     ...base, state: { status: "proven" },
     proofCursor: { status: "PASS", workspaceHash: "workspace-old" }
   });
-  assert.equal(stale.action, "RUN_PROOF");
+  assert.equal(stale.action, "RUN_EXTERNAL");
+  assert.equal(stale.legacyAction, "RUN_PROOF");
 
   const capped = coordinatorAction({
     ...base,
     authorityRequests: [{ requestId: "review-3", type: "review", status: "requested" }],
     authorityActions: [{ requestId: "review-3", command: "claude-foundation authority status change-a --request review-3 --template" }]
   });
-  assert.equal(capped.action, "RUN_CONFIGURED_REVIEW");
+  assert.equal(capped.action, "RUN_EXTERNAL");
+  assert.equal(capped.legacyAction, "RUN_CONFIGURED_REVIEW");
   assert.match(capped.command, /authority status/);
 });
 
@@ -128,7 +140,8 @@ test("advance stops on proof preflight before starting expensive evidence", () =
       next: [{ command: "claude-foundation doctor --stage prove --change change-a" }]
     }
   });
-  assert.equal(unavailable.action, "REPAIR_PROVIDER_ENVIRONMENT");
+  assert.equal(unavailable.action, "REPAIR");
+  assert.equal(unavailable.legacyAction, "REPAIR_PROVIDER_ENVIRONMENT");
   assert.equal(unavailable.boundary, "resource");
   assert.match(unavailable.command, /doctor --stage prove/);
 
@@ -138,8 +151,110 @@ test("advance stops on proof preflight before starting expensive evidence", () =
       status: "CONFIGURATION_ERROR", issues: ["critical case missing"], next: []
     }
   });
-  assert.equal(invalid.action, "REPAIR_PROOF_CONTRACT");
+  assert.equal(invalid.action, "REPAIR");
+  assert.equal(invalid.legacyAction, "REPAIR_PROOF_CONTRACT");
   assert.equal(invalid.boundary, "contract");
+});
+
+test("advance --through runs deterministic proof and Land until archived", async () => {
+  const state = { status: "building", workspace: { path: "/tmp/change" } };
+  let proofRuns = 0;
+  let landRuns = 0;
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => state,
+    agentDispatchValue: () => ({ action: "build-complete" }),
+    relevantHash: () => "workspace-a",
+    deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => proofRuns ? { status: "PASS", workspaceHash: "workspace-a" } : {},
+    proofAdvancePath: () => "/proof.json",
+    stableHash,
+    runProof: async () => {
+      proofRuns += 1;
+      state.status = "proven";
+      return { progressed: true, completed: true };
+    },
+    runLand: async () => {
+      landRuns += 1;
+      state.status = "archived";
+    }
+  });
+  const value = await runtime.advanceThrough("change-a", "archived");
+  assert.equal(value.action, "DONE");
+  assert.equal(value.reached, "archived");
+  assert.equal(proofRuns, 1);
+  assert.equal(landRuns, 1);
+});
+
+test("advance --through build stops before proof and preserves one resume route", async () => {
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => ({ status: "building", workspace: { path: "/tmp/change" } }),
+    agentDispatchValue: () => ({ action: "build-complete" }),
+    relevantHash: () => "workspace-a",
+    deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => ({}),
+    proofAdvancePath: () => "/proof.json",
+    stableHash
+  });
+  const value = await runtime.advanceThrough("change-a", "build");
+  assert.equal(value.action, "DONE");
+  assert.equal(value.reached, "build");
+  assert.equal(value.resume, null);
+  assert.equal(value.next, "claude-foundation advance change-a --through proven");
+});
+
+test("advance --through records each phase once", async () => {
+  const state = { status: "change", workspace: { path: "/tmp/change" } };
+  const phases = [];
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => state,
+    prepareBuild: async () => { state.status = "building"; },
+    agentDispatchValue: () => ({ action: "build-complete" }),
+    relevantHash: () => "workspace-a",
+    deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => ({}), proofAdvancePath: () => "/proof.json", stableHash,
+    recordPhase: (_id, phase) => phases.push(phase),
+    output: () => {}
+  });
+  await runtime.showAdvance("change-a", { through: "build" });
+  assert.deepEqual(phases, ["build"]);
+});
+
+test("a weak host can finish by reading one action and calling its resume", async () => {
+  const state = { status: "building", workspace: { path: "/tmp/change" } };
+  let edited = false;
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => state,
+    agentDispatchValue: () => edited
+      ? { action: "build-complete" }
+      : { action: "run-in-session", task: { taskId: "T001" } },
+    agentPlanValue: () => ({
+      tasks: [{
+        id: "T001", text: "Implement bounded behavior — verify: `npm test`",
+        paths: ["src/**"], repository: "root"
+      }]
+    }),
+    relevantHash: () => "workspace-a",
+    deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => state.status === "proven"
+      ? { status: "PASS", workspaceHash: "workspace-a" } : {},
+    proofAdvancePath: () => "/proof.json", stableHash,
+    runProof: async () => { state.status = "proven"; return { progressed: true }; },
+    runLand: async () => { state.status = "archived"; }
+  });
+  const first = await runtime.advanceThrough("change-a", "archived");
+  assert.equal(first.action, "EDIT");
+  assert.deepEqual(first.allowedPaths, ["src/**"]);
+  assert.deepEqual(first.verification, ["npm test"]);
+  assert.equal(first.resume, "claude-foundation advance change-a --through archived");
+  assert.ok(JSON.stringify(first).length < 8192, "action stays within the bounded host context");
+  edited = true;
+  const second = await runtime.advanceThrough("change-a", "archived");
+  assert.equal(second.action, "DONE");
+  assert.equal(second.reached, "archived");
 });
 
 test("feedback classifies observed review repair without inventing wait", () => {

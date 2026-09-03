@@ -64,7 +64,8 @@ check("advance-stops-at-authority", () => {
     authorityRequests: [],
     proofCursor: { status: "PASS", workspaceHash: "workspace-a" }, stableHash
   });
-  assert.equal(action.action, "LAND_READY");
+  assert.equal(action.action, "ASK_USER");
+  assert.equal(action.legacyAction, "LAND_READY");
   assert(action.forbidden.includes("commit"));
   assert(action.forbidden.includes("publish"));
 });

@@ -17,7 +17,7 @@ does not replace your coding agent, test framework, CI system, or Git workflow.
 The product is **Change Loop**; the installed package and CLI remain
 `claude-foundation`, so existing commands do not change.
 
-**Version 3.5.2** — runtime API 27, provider protocol 13. Receipts recorded by
+**Version 3.5.2** — runtime API 28, provider protocol 13. Receipts recorded by
 earlier versions read as `provider-version-stale` and must be re-proven.
 `claude-foundation metrics <change-id>` also reports the exact runtime source
 cohort: semantic version, the loaded protocol bundle, and a SHA-256 digest of
@@ -125,7 +125,8 @@ the same shared install:
 claude-foundation init /path/to/your-project --host cursor    # or opencode, codex
 ```
 
-Cursor gets the eight commands and the always-on skill router as an
+Cursor gets the six primary lifecycle prompts plus `/changes` and the `/feature`
+compatibility alias, and the always-on skill router as an
 `alwaysApply` rule; OpenCode gets the commands plus a guard plugin that replays
 the shipped hooks live; Codex gets the eight prompts in `$CODEX_HOME/prompts`
 with an ownership marker — Codex has no tool hooks, so Land gates remain the
@@ -212,8 +213,11 @@ In your agent session, run:
 ```
 
 The agent inspects the project, asks only for decisions that materially affect
-the result, and creates `openspec/changes/<change-id>/`. Review the proposal,
-observable scenarios, tasks, and evidence claims before moving on.
+the result, and writes one compact semantic draft. The harness compiles it into
+`openspec/changes/<change-id>/`, deriving stable IDs and links between
+requirements, scenarios, tasks, claims, and providers. Review the proposal,
+observable scenarios, tasks, and evidence claims before moving on; the compiled
+OpenSpec packet—not chat or the temporary draft—is the source of truth.
 
 The agent answers in your language and leads with the outcome. It performs safe
 recovery and routine commands itself, then reports what it changed and checked.
@@ -257,6 +261,11 @@ indirect script effects.
 Why this step exists: you can inspect or discard implementation work without
 mixing it with your current checkout.
 
+The agent drives Build with `claude-foundation advance <change-id> --through
+build`. That one coordinator validates, prepares isolation, chooses runnable
+work, and returns one bounded action; users do not assemble sandbox, packet,
+plan, lease, or dispatch commands.
+
 ### 3. Prove the result
 
 ```text
@@ -276,6 +285,9 @@ Why this step exists: passing proof means the declared behavior was checked on
 the same code that will be landed, rather than on an earlier or unrelated
 workspace.
 
+The agent uses `advance <change-id> --through proven`; compatible `proof ...`
+commands remain available for diagnostics and integrations.
+
 ### 4. Land the proven change
 
 ```text
@@ -292,6 +304,10 @@ not create a new change. A real replay conflict still stops for your judgment.
 
 Why this step exists: applying code and updating the durable requirements are
 one guarded, resumable completion boundary.
+
+The agent uses `advance <change-id> --through archived`. Land is complete only
+at `archived`; it still grants no authority to commit, push, publish, or open a
+pull request.
 
 ### 5. Commit using your normal Git process
 
@@ -327,7 +343,7 @@ After Land, a new requirement should normally become a new change.
 | Phase | What the AI does | What the harness does |
 |---|---|---|
 | Investigate | Establishes facts, hypotheses, options, and tradeoffs | Selects the correct workspace and keeps investigation non-mutating |
-| Change | Writes the proposal, scenarios, design, tasks, and evidence claims | Validates schema, risk policy, scope, and revision state |
+| Change | States intent, requirements, scenarios, task outcomes, and evidence needs | Compiles stable links and validates schema, risk, scope, and revision state |
 | Build | Implements code and tests, runs focused checks, and completes tasks | Creates an isolated workspace, bounds authority, and persists progress |
 | Prove | Diagnoses and fixes failures exposed by evidence | Runs providers, validates claim coverage and receipts, and creates content-bound proof |
 | Land | Helps resolve a conflict when human judgment or implementation changes are needed | Checks freshness, applies the proven diff, supports rollback/resume, syncs specs, and archives |
@@ -404,14 +420,14 @@ openspec/
 openspec/changes/<change-id>/
 ├── .openspec.yaml
 ├── proposal.md
-├── specs/<area>/spec.md       # standard lane only
-├── design.md                  # standard lane only
 ├── tasks.md
 ├── evidence.yaml
-├── grounding.yaml
-├── execution.yaml
-├── repositories.yaml
-└── handoffs.yaml
+├── specs/<area>/spec.md       # standard lane
+├── design.md                  # only when durable design context exists
+├── grounding.yaml             # only when a material decision must be locked
+├── execution.yaml             # only for custom provider/service wiring
+├── repositories.yaml          # only for explicit multi-repository scope
+└── handoffs.yaml              # only for permission-bound operations
 ```
 
 | File | What it answers | Why the harness needs it |
@@ -419,11 +435,11 @@ openspec/changes/<change-id>/
 | `.openspec.yaml` | Is this `foundation-standard` or `foundation-rapid`? | Selects the artifact workflow for this change |
 | `proposal.md` | Why change, what changes, and what is excluded? | Prevents scope and impact from being implicit |
 | `specs/<area>/spec.md` | What observable behavior is added, modified, or removed? | Gives Prove stable requirements and `WHEN`/`THEN` scenarios; Land merges the deltas into current specs |
-| `design.md` | Which technical decisions constrain implementation and rollback? | Records load-bearing facts plus stable `DEC-*` decisions with status, rationale, rejected alternatives, consequences, and supersession |
+| `design.md` | Which technical decisions, diagrams, integrations, or prototype selection constrain implementation? | Records only load-bearing context instead of forcing an empty design document |
 | `tasks.md` | What implementation work remains? | The sole implementation ledger; stable IDs and checkboxes make Build resumable |
 | `evidence.yaml` | Which behavioral claims must be proven? | Separates the proof obligation from whichever tool happens to run it |
-| `grounding.yaml` | Which facts, material decisions, and NFR categories were settled up front? | Locks one Decision Sheet, production/failure paths, and a sourced eight-category NFR assessment whose applicable targets trace to claims, tasks, and providers |
-| `execution.yaml` | How does this project produce the evidence? | Wires commands, reports, services, timeouts, and readiness checks |
+| `grounding.yaml` | Which material decisions were settled up front? | Semantic v3 stores non-derived decisions only; legacy grounding remains readable |
+| `execution.yaml` | Does this change override derived evidence wiring? | Appears only for custom commands, reports, services, timeouts, or readiness checks |
 | `repositories.yaml` | Which repositories may this change read or write? | Bounds agent authority and establishes dependency order |
 | `handoffs.yaml` | Which permission-bound operations belong to an external owner? | Keeps AWS, secret, Terraform, deploy, restart, and environment work out of the developer task ledger without losing activation safety |
 
@@ -432,12 +448,12 @@ commands, not implementation tasks.
 
 ### Standard and rapid lanes
 
-`foundation-standard` includes proposal, delta specs, design, tasks, evidence,
-and execution. Use it for public contracts, authentication, data or migrations,
+`foundation-standard` includes proposal, delta specs, tasks, and evidence;
+design and other extensions appear only when their concern exists. Use it for public contracts, authentication, data or migrations,
 coupled behavior, high impact, irreversible effects, or any change needing more
 than unit/static evidence.
 
-`foundation-rapid` intentionally omits delta specs and design. It is eligible
+`foundation-rapid` intentionally omits delta specs and normally omits design. It is eligible
 only for low-impact, isolated work with no public contract, persistent
 migration, security trigger, or irreversible effect. If stronger requirements
 appear, `/change` upgrades the same change to standard.
@@ -493,9 +509,11 @@ Requirement → Claim → Provider → Receipt → Proof
 }
 ```
 
-`execution.yaml` then connects those capabilities to project-owned tools. This
-separation lets you replace a test command without silently weakening the
-behavior that must be proven.
+For semantic drafts, the compiler derives ordinary provider wiring into
+`evidence.yaml` from task verification commands. `execution.yaml` is created
+only when the change needs a custom provider, report, service, timeout, or
+readiness override. This still lets wiring change without silently weakening
+the behavior that must be proven.
 
 Common capabilities include `test`, `discovery`, `static-analysis`, `browser`,
 `integration`, `compatibility`, `performance`, `security-static`,
@@ -507,7 +525,7 @@ installed catalog and exact configuration shape with:
 claude-foundation providers
 ```
 
-When `execution.yaml` is empty or incomplete, inspect project-owned commands
+When derived or custom wiring is incomplete, inspect project-owned commands
 without running them, preview high-confidence wiring, and write it explicitly:
 
 ```bash
@@ -532,9 +550,9 @@ unknown links, claims without tasks/providers, scenario mismatches, missing
 security negative paths, and incomplete migration rollback/integrity coverage.
 
 Remote CI can be configured with an issuer and Ed25519 public key, then imported
-with `evidence verify-ci`. `proof advance` is the normal resumable Prove path;
-its convergent behavior and authority routing are summarized below. Every path
-binds evidence to the current workspace, so stale, mismatched, unsigned, or
+with `evidence verify-ci`. The normal agent path is `advance <change-id>
+--through proven`; `proof advance` is the compatible Prove primitive it invokes.
+Every path binds evidence to the current workspace, so stale, mismatched, unsigned, or
 replayed responses fail closed.
 
 Change Loop does not install a test framework or browser. It runs the tools your
@@ -568,18 +586,19 @@ claude-foundation proof readiness <change-id>
 claude-foundation proof run <change-id>
 ```
 
-Run `claude-foundation proof advance <change-id>` as the Prove boundary. Each
+Run `claude-foundation advance <change-id> --through proven` as the agent-facing
+Prove boundary. Each
 gate aggregates independent findings, repairs the complete in-contract batch,
 and selectively reruns invalidated evidence until it passes. Product repair has
 no fixed cycle limit. A decision, authority, resource, conflict, or repeated
 no-progress boundary preserves the same change and returns choices plus an exact
-resume route. Repeating `proof advance` on an unchanged wait does not rerun
+resume route. Repeating `advance` on an unchanged wait does not rerun
 providers or dispatch another reviewer.
 `proof collect`, direct authority commands, and `proof run` remain available for
 diagnosis and explicit integrations.
 
-For a higher-level driver, run `claude-foundation advance <change-id>`. It
-selects one bounded next action across Build, Prove, repair, and Land, while the
+`claude-foundation advance <change-id>` selects one bounded next action across
+Build, Prove, repair, and Land, while the
 host still executes model work and the user retains commit, push, publish, PR,
 and waiver authority. Before it returns `RUN_PROOF`, the command verifies Proof
 readiness and routes any code, contract, resource, or decision blocker to its
@@ -611,7 +630,7 @@ one compiled execution contract and one lifecycle reducer. This reduces
 duplicated policy decisions without changing any user command. Existing
 provider-protocol-12 receipts become stale after upgrade to provider protocol
 13; preserve the active change, repair configuration if diagnostics requests
-it, and rerun `proof advance <change-id>`. Roll back the installed version only
+it, and rerun `advance <change-id> --through proven`. Roll back the installed version only
 if protocol 13 cannot be supported; do not copy or edit receipt JSON by hand.
 
 Users never need to construct receipt commands, provenance JSON, provider
@@ -647,7 +666,8 @@ for readers rather than agents:
 ## When the requirement changes during Build
 
 Do not create a second change merely because you learned something before Land.
-Revise the same agreement:
+Revise the same agreement. The agent submits one semantic amendment and resumes
+the coordinator:
 
 ```text
 /investigate <change-id>: how does the existing verification flow work?
@@ -656,9 +676,10 @@ Revise the same agreement:
 /prove <change-id>
 ```
 
-`/change` synchronizes the new revision into the active sandbox, preserves
-completed tasks whose stable IDs and meaning did not change, and invalidates
-proof affected by the revision.
+The runtime uses `change amend <change-id> <amendment.json>` transactionally. It
+preserves completed tasks and manual Markdown sections, validates before keeping
+the revision, rolls back a rejected amendment, and invalidates only claims added
+by that amendment before resuming `advance`.
 
 ## Multiple repositories
 
@@ -702,8 +723,9 @@ Prove preserves completed independent branches after a failure, but Land still
 requires fresh aggregate graph proof and revalidates every remote wave before
 mutation.
 
-During Build, `agents dispatch` turns the current graph and live leases into one
-native-host action. Small, coupled, or singleton-frontier work stays in the
+During Build, `advance` turns the current graph and live leases into one
+native-host action. Its compatible `agents dispatch` primitive is available
+under `help --all`. Small, coupled, or singleton-frontier work stays in the
 parent session; only a frontier with multiple selected independent tasks returns
 a bounded spawn group. Planned singleton work still acquires a task lease and
 regenerates its packet before running inline, while Change Loop remains
@@ -863,6 +885,9 @@ for inspection and recovery:
 ```bash
 claude-foundation doctor --stage change
 claude-foundation changes
+claude-foundation change start --template
+claude-foundation change amend <change-id> <amendment.json>
+claude-foundation advance <change-id> --through build|proven|archived
 claude-foundation change validate <change-id>
 claude-foundation change audit <change-id>
 claude-foundation packet <change-id> --phase build|prove|review
@@ -890,8 +915,10 @@ into the same append-only usage events used by `metrics` and budget accounting.
 
 The CLI finds the installed project from the current directory or from
 `--project <path>`. Run `claude-foundation help` for the complete command
-surface, or `claude-foundation describe [command]` for any single one — the
-eight slash commands included, resolvable by bare word or `/slash` spelling.
+surface intended for agents, `help --all` for compatible primitives, or
+`claude-foundation describe [command]` for any single one — the
+six primary slash commands plus the two compatible utility/alias prompts,
+resolvable by bare word or `/slash` spelling.
 The shipped `harness-html-report` skill renders harness state — gates,
 receipts, phase timing, and cost — as a self-contained HTML report when you
 want the round told as a story rather than a status listing.

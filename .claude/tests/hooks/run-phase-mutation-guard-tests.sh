@@ -185,10 +185,14 @@ out="$(printf '%s' "$(write_event "$TMP/project/.foundation/change-start-fix-win
   CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
 assert_eq "pre-phase atomic Change draft is writable" "" "$out"
 
+out="$(printf '%s' "$(write_event "$TMP/project/.foundation/drafts/change-start-fix.json")" |
+  CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
+assert_eq "pre-phase semantic draft is writable" "" "$out"
+
 for target in \
   "$TMP/project/.foundation/change-start-.json" \
   "$TMP/project/.foundation/change-start-Fix.json" \
-  "$TMP/project/.foundation/drafts/change-start-fix.json" \
+  "$TMP/project/.foundation/drafts/Change-start-fix.json" \
   "$TMP/project/.foundation/change-start-fix.yaml"; do
   out="$(printf '%s' "$(write_event "$target")" |
     CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"

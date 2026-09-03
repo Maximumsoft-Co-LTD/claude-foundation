@@ -5,21 +5,20 @@ argument-hint: <change>
 
 Build **$ARGUMENTS**.
 
-`sandbox create <change>` or `sandbox sync`; read the Build packet and
-`.claude/commands/references/build-policy.md`.
-`verificationPlan` schedules checks: run its eligible boundary once; skip
-`avoidBefore` on unchanged inputs. Obey its `convergence` contract.
-Call `agents dispatch <change>` and obey its single action until
-`build-complete`. Execute its `nextCommand` before Prove. Run `run-in-session`.
-Deferred readiness is eligible
-only with no remaining tasks. For `run-leased-in-session`,
-`spawn-group`, or `wait`, read `.claude/commands/references/build-dispatch.md`.
-Relay `blocked`.
-Treat `spawn-group` as concurrent authority: spawn every successfully leased
-worker before waiting for any worker. Never serialize that group in the parent.
+Run `claude-foundation advance <change> --through build`. It validates the
+agreement and isolation, then returns one protocol-v3 action. Follow it and its
+exact `resume` route until `DONE` at Build or a real boundary.
+
+- `EDIT`: implement returned tasks and focused checks.
+- `REPAIR`: apply the dependency-ordered batch; amend new behavior.
+- `RUN_EXTERNAL`: run the configured operation once.
+- `WAIT`/`ASK_USER`: preserve state and relay the boundary choices.
+- `DONE`: Build is complete; do not continue into Proof from this command.
+
+Read `references/build-policy.md` only for edits/repair and
+`references/build-dispatch.md` only for parallel work or leases.
 
 Edit only allowed sandbox paths. Host owns leases and task ledger. Declare new
-files in `[paths:]`; move unauthorized operations to `handoffs.yaml`. Auto-repair
-in-contract findings and use typed recovery.
-Never replay history, expose JSON, archive, commit, or Land. Report
-behavior, checks, remaining risk, and next action.
+files in `[paths:]`; move unauthorized work to `handoffs.yaml`. Never replay
+history, expose internal JSON, archive, commit, or Land. Report behavior, checks, remaining risk,
+and the resume action.

@@ -163,9 +163,9 @@ git config user.email "foundation@example.invalid"
 git add .
 git commit -qm "fixture"
 
-# A greenfield Change records files that Build will create as `sha256: planned`.
-# Those paths are intentionally absent from both HEAD and the control tree;
-# sandbox creation must carry the contract without demanding fake source files.
+# A greenfield Change declares files Build will create in its task paths. Those
+# paths are absent from HEAD and the control tree; sandbox creation must carry
+# the contract without demanding fake source files or empty grounding.
 planned_create_output="$(CLAUDE_FOUNDATION_PROJECT="$TMP/git-project" \
   node .claude/harness/foundation.mjs new 'Planned sandbox' \
   --id planned-greenfield --rapid)"
@@ -175,19 +175,6 @@ assert_eq "planned greenfield fixture keeps its explicit id" \
 CLAUDE_FOUNDATION_PROJECT="$TMP/git-project" \
   node .claude/harness/foundation.mjs resolve "$planned_id" \
   --impact low --coupling isolated >/dev/null
-node - "$TMP/git-project" "$planned_id" <<'NODE'
-const fs = require("node:fs");
-const path = `${process.argv[2]}/openspec/changes/${process.argv[3]}/grounding.yaml`;
-const grounding = JSON.parse(fs.readFileSync(path, "utf8"));
-grounding.readSet = [{
-  repository: "root",
-  path: "src/new-app.js",
-  role: "production-path",
-  mode: "full",
-  sha256: "planned"
-}];
-fs.writeFileSync(path, `${JSON.stringify(grounding, null, 2)}\n`);
-NODE
 printf '\n- [ ] **T002** Create app [kind:implementation] [repo:root] [paths:src/new-app.js]\n' \
   >> "$TMP/git-project/openspec/changes/$planned_id/tasks.md"
 planned_output="$(CLAUDE_FOUNDATION_PROJECT="$TMP/git-project" \

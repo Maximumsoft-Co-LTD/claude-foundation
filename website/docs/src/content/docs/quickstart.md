@@ -38,7 +38,12 @@ report-only until its mappings and baselines have been reviewed. See
 
 The agent creates `openspec/changes/add-profile-auth/` and resolves how much rigor the change needs — impact, coupling, security triggers, and whether a human has to accept the result. It will **ask you** about anything consequential rather than guessing.
 
-Two shapes exist. A *rapid* change carries proposal, tasks, evidence, and execution wiring, and is only for low-impact isolated work. A *standard* change adds delta specs and a design document. A rapid change upgrades itself in place if risk emerges — and when it does, it tells you which schema it settled on and creates the artifacts the new schema requires.
+The agent writes one semantic draft: intent, requirements and scenarios, task
+outcomes, and evidence needs. The harness derives stable IDs and links and
+compiles the OpenSpec packet transactionally. Both lanes need only proposal,
+tasks, and evidence at their core; standard adds delta specs. Design, grounding,
+custom execution, repository scope, and handoffs appear only when their concern
+exists. A rapid change upgrades itself in place if risk emerges.
 
 What you should read and push back on is `proposal.md` and the delta specs. That is the agreement.
 
@@ -48,7 +53,10 @@ What you should read and push back on is `proposal.md` and the delta specs. That
 /build add-profile-auth
 ```
 
-The agent creates an isolated Git worktree under `.foundation/sandboxes/`, reads a compact packet, and implements. **Your working tree is not touched.** `tasks.md` is the only ledger — there is no second checklist to keep in sync.
+The agent calls `advance add-profile-auth --through build`. The coordinator
+creates an isolated workspace, returns one bounded action, and resumes through
+the same route. **Your working tree is not touched.** `tasks.md` is the only
+ledger; the user never assembles sandbox, packet, plan, or dispatch commands.
 
 ## 3. Prove it
 
@@ -57,6 +65,9 @@ The agent creates an isolated Git worktree under `.foundation/sandboxes/`, reads
 ```
 
 This is the step that makes the difference. Change Loop reuses any receipt that is still valid, schedules only what is missing or stale, runs your project's tools, and validates the results.
+
+The agent drives it with `advance add-profile-auth --through proven`; low-level
+`proof` commands remain available for operator diagnosis and integrations.
 
 Evidence can come back `pass`, `fail`, `inconclusive`, or `error`. Anything other than a pass keeps the change blocked, and the agent goes back to Build to fix it. An `inconclusive` result is *not* a soft pass — a browser suite that exits 0 without the required claim annotations is inconclusive, because nothing demonstrated the claim.
 
@@ -73,6 +84,9 @@ permission, unavailable external system, or unresolved conflict is required.
 ```
 
 Land is an explicit boundary, and it is the only step that touches your real working tree. It re-checks proof freshness, applies only the proven sandbox while preserving unrelated edits, syncs specs, audits the evidence, archives the change, and cleans up isolation.
+
+The agent drives the resumable transaction with `advance add-profile-auth
+--through archived`. Only `archived` means the lifecycle is complete.
 
 If the target branch advanced after Prove, the agent replays the same sandbox
 onto the new base, re-proves it, and resumes Land. You do not restart Change or
@@ -91,7 +105,11 @@ The loop is not a waterfall. If requirements change halfway through, you revise 
 Change ⇄ Build ⇄ Prove
 ```
 
-Revising the agreement syncs the sandbox and invalidates any proof that the revision made stale. That invalidation is the point — it prevents evidence from an older agreement being credited to a newer one.
+The agent submits one semantic amendment to the same change. The harness
+preserves completed tasks and manual sections, validates the staged packet,
+rolls back on failure, and invalidates affected claims before resuming. That
+invalidation prevents evidence from an older agreement being credited to a
+newer one.
 
 ## Checking on things
 

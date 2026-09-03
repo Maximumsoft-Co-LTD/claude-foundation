@@ -5,23 +5,19 @@ argument-hint: <change>
 
 Land **$ARGUMENTS** explicitly.
 
-During Land, never edit product/packet files; put new work in `handoffs.yaml` or
-another change.
+This invocation supplies Land authority to
+`claude-foundation advance <change> --through archived`. The coordinator checks
+proof freshness and handoffs, prepares/applies the recoverable transaction,
+verifies, archives, and cleans up safely.
 
-Obey the Land packet's `verificationPlan`: run boundary once; skip
-`avoidBefore` on unchanged inputs. It checks,
-resumes multi-repo Land, archives when ready. On `automaticRecovery`,
-Execute returned steps before asking; explain blockers in plain language. For
-`control-head-moved`, run `sandbox sync`, `proof advance`, then advance again.
-Stop on replay conflict or no automatic route; never paste raw JSON/hashes.
+During Land never edit product or agreement files. Follow a returned `WAIT`,
+`REPAIR`, `RUN_EXTERNAL`, or `ASK_USER` action exactly and resume with its
+`resume` command. Relay its cause, actor, alternatives, and preserved state.
+Conflicts, interrupted apply, external handoffs, missing permission, and moved
+bases are real boundaries. `DONE` requires `archived`; store no credentials.
 
-Resolve interrupted apply with authorized `land recover --decision-ref`;
-manual recovery adds `--resolution`. Bind authorized child commits/CI with
-`land record`, resume, and re-Prove.
+For compatibility, a legacy `automaticRecovery` is projected as
+`recovery.type: AUTO_RECOVER`: Execute returned safe steps before asking, then
+explain blockers in plain language.
 
-Only accepted, proven-safe `post-land` handoff work remains. On
-`WAITING_EXTERNAL`, send its packet and resume after evidence.
-Store no credentials.
-
-`ALREADY ARCHIVED` succeeds. Explain effects.
 Never commit, push, or open a PR without separate authority.

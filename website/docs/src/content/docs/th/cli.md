@@ -5,7 +5,23 @@ description: คำสั่งที่ agent ของคุณรัน จ�
 
 agent ของคุณเป็นคนรันคำสั่งเหล่านี้ คุณแทบไม่ต้องรันเอง เอกสารนี้มีไว้ให้คุณอ่านออกว่า agent กำลังทำอะไร และรันเองได้เมื่ออยากรัน
 
-ทุกคำสั่งตอบ `--help` และ `claude-foundation describe [command] [--json]` อธิบายทั้ง surface — รวม slash command ทั้งแปด เรียกได้ทั้งชื่อเปล่าและแบบ `/slash` โดยอ่านจากไฟล์คำสั่งที่ ship มาโดยตรง จึงไม่มีสำเนาที่สองให้ drift
+ทุกคำสั่งตอบ `--help` และ `claude-foundation describe [command] [--json]` อธิบายทั้ง surface — รวมหก slash command หลัก พร้อม `/changes` และ alias `/feature` เรียกได้ทั้งชื่อเปล่าและแบบ `/slash` โดยอ่านจากไฟล์คำสั่งที่ ship มาโดยตรง จึงไม่มีสำเนาที่สองให้ drift
+
+## Surface หลักของ agent
+
+ผู้ใช้ปกติสั่ง `/investigate`, `/change`, `/build`, `/prove`, `/land` หรือ `/dev`
+แล้ว agent เป็นเจ้าของรายละเอียด CLI โดย surface หลักมีเพียง:
+
+| คำสั่ง | ใช้ทำอะไร |
+|---|---|
+| `change start --template \| <draft.json>` | Compile และเริ่ม semantic agreement หนึ่งชุดแบบ atomic |
+| `change amend <change> <amendment.json>` | ขยาย agreement ระหว่าง Build แบบ transaction |
+| `advance <change> --through build\|proven\|archived` | รัน deterministic lifecycle แล้วคืนหนึ่งในหก action ที่ boundary จริง |
+| `changes` | อ่าน active state และ route ถัดไป |
+| `doctor …` | วิเคราะห์เฉพาะเมื่อ coordinator ขอ |
+
+`claude-foundation help` แสดง surface ขนาดเล็กนี้ ส่วน `help --all` แสดง
+compatible primitive ด้านล่างสำหรับ operator และ host integration
 
 ## อ่านอย่างเดียว
 
@@ -47,14 +63,15 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
-| `change new <intent> [--rapid]` | สร้างข้อตกลงของ change |
-| `change start --template \| <draft.json>` | สร้างและเริ่ม change ที่แยกออกมาจาก draft ที่ผ่านการตรวจแล้วหนึ่งอัน |
+| `change new <intent> [--rapid]` | Compatible primitive สำหรับเขียน agreement ด้วยมือ |
+| `change start --template \| <draft.json>` | Compile และเริ่ม change จาก semantic draft ที่ผ่านการตรวจ |
+| `change amend <change> <amendment.json>` | เพิ่ม semantic requirement แบบ transaction และรักษางานที่เสร็จแล้ว |
 | `change resolve <change> …` | บันทึกการตัดสินใจเรื่อง impact coupling security และ review |
 | `change validate <change>` | ตรวจ change และ evidence contract ที่รันได้ |
 | `sandbox create <change> [--all]` | สร้างพื้นที่ Build ที่แยกออกมา |
 | `sandbox sync <change>` | ซิงก์การแก้ข้อตกลงที่ตั้งใจเข้าไปใน Build |
-| `advance <change> [--host-result <result.json>]` | คืน next action หนึ่งรายการตลอด Build, Prove, repair และ Land โดยเลือก import host result ที่ตรวจแล้วก่อนได้ |
-| `proof advance <change>` | ทาง Prove ปกติที่ทำต่อได้: เดิน gate ปัจจุบัน ใช้ evidence ที่ยัง valid และคืน repair batch เดียวหรือ external handoff |
+| `advance <change> [--through build\|proven\|archived] [--host-result <result.json>]` | Coordinator ปกติของ model รัน deterministic step ที่ปลอดภัยแล้วคืน bounded action หนึ่งตัว |
+| `proof advance <change>` | Compatible Prove primitive ที่ coordinator และ integration ใช้ภายใน |
 | `proof collect <change>` | การเก็บระดับล่างสำหรับวิเคราะห์หรือ integration ที่ตั้งใจไว้ |
 | `proof run <change>` | atomic run ระดับล่างเมื่อไม่ต้องมี external handoff ที่ทำต่อได้ |
 | `handoff record <change> --id <H00n> …` | บันทึก accepted/completed/rejected จาก operator ที่ระบุชื่อพร้อม reference |
@@ -70,7 +87,7 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 
 ## อำนาจจากภายนอก
 
-การรีวิวและการยอมรับที่ทำต่อข้าม session ได้ ปกติใช้ `proof advance`; ใช้คำสั่ง
+การรีวิวและการยอมรับที่ทำต่อข้าม session ได้ ปกติใช้ `advance`; ใช้คำสั่ง
 เหล่านี้โดยตรงเมื่อตรวจวิเคราะห์หรือทำ integration ที่ตั้งใจไว้
 
 | คำสั่ง | ใช้ทำอะไร |
@@ -91,7 +108,7 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
-| `land archive <change>` | apply, ซิงก์, ตรวจ, archive และเก็บกวาด |
+| `land archive <change>` | Primitive ระดับล่างสำหรับ apply, ซิงก์, ตรวจ, archive และเก็บกวาด; agent ปกติใช้ `advance --through archived` |
 | `land record <change> --repo <id> --commit <sha> --decision-ref <ref>` | ผูก commit ของรีโปลูกหลังมีการตัดสินใจของผู้ใช้ที่บันทึกไว้ |
 | `land resume <change>` | ทำ Land saga ที่ถูกขัดจังหวะหรือแบบหลายรีโปต่อ |
 
@@ -122,7 +139,12 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | Pin | v3.5.2 |
 |---|---|
 | runtime | 3.5.2 |
-| runtime API | 27 |
+| runtime API | 28 |
+| semantic draft schema | 3 |
+| semantic amendment schema | 1 |
+| artifact defaults schema | 2 |
+| grounding schema | 1, 2, 3 |
+| advance protocol | 3 |
 | provider protocol | 13 |
 | evidence schema | 1, 2 |
 | packet schema | 10 |

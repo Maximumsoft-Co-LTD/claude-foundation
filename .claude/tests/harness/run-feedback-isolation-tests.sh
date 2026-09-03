@@ -19,23 +19,6 @@ assert_not_eq() {
   if [ "$2" != "$3" ]; then pass "$1"; else fail "$1 — both values were '$2'"; fi
 }
 
-ground_fixture_change() {
-  node -e '
-    const { createHash } = require("node:crypto");
-    const { readFileSync, writeFileSync } = require("node:fs");
-    const { join } = require("node:path");
-    const root = process.argv[1];
-    const id = process.argv[2];
-    const path = `openspec/changes/${id}/proposal.md`;
-    const sourcePath = join(root, path);
-    const groundingPath = join(root, `openspec/changes/${id}/grounding.yaml`);
-    const grounding = JSON.parse(readFileSync(groundingPath, "utf8"));
-    grounding.readSet = [{ repository: "root", path, role: "requirement",
-      mode: "full", sha256: createHash("sha256").update(readFileSync(sourcePath)).digest("hex") }];
-    writeFileSync(groundingPath, `${JSON.stringify(grounding, null, 2)}\n`);' \
-    "$1" "$2"
-}
-
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 TARGET="$TMP/project"
@@ -95,12 +78,11 @@ else
   pass "ordinary doctor does not activate the unattended guard"
 fi
 
-help_text="$(bash "$ROOT/cli.sh" help)"
 help_all_text="$(bash "$ROOT/cli.sh" help --all)"
 assert_contains "full CLI help retains isolation diagnostics" \
   "$help_all_text" "sandbox inspect <change> [--unattended --attestation <file>] [--json]"
 assert_contains "CLI help advertises guarded sandbox creation" \
-  "$help_text" "sandbox create <change> [--all] [--unattended --attestation <file>]"
+  "$help_all_text" "sandbox create <change> [--all] [--unattended --attestation <file>]"
 
 # Exercise the fail-closed branch deterministically even when this suite itself
 # runs in a container. Only the installed fixture runtime is modified: strong
@@ -270,8 +252,8 @@ SIGNED_CHANGE="signed-unattended-contract"
 assert_cmd_zero "signed fixture change is resolved before Build" \
   bash "$ROOT/cli.sh" --project "$TARGET" runtime resolve "$SIGNED_CHANGE" \
     --impact low --coupling isolated
-assert_cmd_zero "signed fixture grounding is portable" \
-  ground_fixture_change "$TARGET" "$SIGNED_CHANGE"
+assert_file_absent "signed fixture needs no empty grounding artifact" \
+  "$TARGET/openspec/changes/$SIGNED_CHANGE/grounding.yaml"
 FOUNDATION_TESTING=1 FOUNDATION_TEST_TRUST_ROOT="$TMP/trusted-hosts.json" \
   FOUNDATION_TEST_HOST_ROOT="$HOST_ROOT" \
   SSH_AUTH_SOCK= XDG_RUNTIME_DIR= DOCKER_HOST= CONTAINER_HOST= \
@@ -401,8 +383,8 @@ assert_cmd_zero "copy fixture change is created" \
     "Isolated copy contract" --rapid
 
 COPY_CHANGE="isolated-copy-contract"
-assert_cmd_zero "copy fixture grounding is portable" \
-  ground_fixture_change "$COPY_TARGET" "$COPY_CHANGE"
+assert_file_absent "copy fixture needs no empty grounding artifact" \
+  "$COPY_TARGET/openspec/changes/$COPY_CHANGE/grounding.yaml"
 # An unrelated untracked file is all it takes to make the runtime choose a copy.
 printf 'work in progress\n' > "$COPY_TARGET/unrelated-wip.txt"
 copy_create="$(bash "$ROOT/cli.sh" --project "$COPY_TARGET" \

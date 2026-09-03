@@ -35,7 +35,11 @@ Installed users should start with `WORKFLOW.md`. The rest of this page maps the
 runtime for maintainers and evidence authors; `EVIDENCE.md` is the canonical
 provider and receipt contract.
 
-Every phase view is derived from one versioned execution contract. It compiles
+Every phase view is derived from one versioned execution contract. Semantic
+draft v3 compiles meaningful keys into stable cross-ledger IDs and writes only
+the OpenSpec artifacts the change needs. After Change, protocol-v3 `advance`
+is the normal model-facing entrypoint; primitive commands remain compatible
+operator and integration tools. It compiles
 risk, required providers, external authority, workspace mutation capability,
 budgets, repositories, and Land requirements once; packets, planning,
 readiness, and the mutation guard consume that result instead of independently
@@ -90,6 +94,9 @@ backend changes only: installed user command names and arguments are unchanged.
 | Workflow | `runtime/workflow/authority.mjs` | External authority request persistence and response validation |
 | Workflow | `runtime/workflow/budget.mjs` | Run/lifetime usage windows and budget policy transitions |
 | Workflow | `runtime/workflow/change-lifecycle.mjs` | Change creation, draft materialization, resolution, and atomic start |
+| Workflow | `runtime/workflow/semantic-draft.mjs` | Semantic draft v3 validation, stable links, typed extensions, and provider defaults |
+| Workflow | `runtime/workflow/semantic-amendment.mjs` | Transactional Build-time agreement amendments that preserve canonical prose and completed work |
+| Workflow | `runtime/workflow/advance-runtime.mjs` | Protocol-v3 deterministic chaining and six-action model envelope |
 | Workflow | `runtime/workflow/change-validation.mjs` | Traceability, change validation, and provider requirements |
 | Workflow | `runtime/workflow/land-journal.mjs` | Atomic apply identity, journal, rollback, verification, and cleanup |
 | Workflow | `runtime/workflow/land-runtime.mjs` | Multi-repository Land readiness, planning, pointers, and resume saga |
@@ -105,12 +112,13 @@ backend changes only: installed user command names and arguments are unchanged.
 | Docs | `CONSUMER-QUALITY.md` | Installed quality protocols, onboarding, adapters, baselines, and fail-closed rules |
 | Docs | `README.md` | Runtime overview and operator guide |
 
-Atomic draft version 2 keeps semantic inputs author-owned and compiles the
-mechanical ledger fields in `change-lifecycle.mjs`: stable IDs, unambiguous
-claim/task/case links, and the single task verification command's provider
-binding. Version 1 remains an exact compatibility path. The evidence adapter
-uses the same rule for one-case/one-result reports and refuses ambiguous
-many-to-many inference.
+Semantic draft version 3 is the default. Agents write intent, requirements,
+tasks, and evidence capabilities once; the compiler generates stable IDs,
+cross-ledger links, specs, and safe detected provider wiring. Multiple specs,
+decisions, diagrams, prototype selections, integration documentation,
+repositories, and external operations are typed extensions. Version 1 remains
+an exact compatibility path and version 2 retains its unambiguous mechanical
+bookkeeping behavior.
 
 Use the public CLI instead of invoking `foundation.mjs` directly. The CLI finds
 the project from the current directory, or from `--project <path>`, and then
@@ -168,7 +176,16 @@ Check both the project and one change's executable evidence:
 claude-foundation doctor --stage prove --change <change>
 ```
 
-## Operator commands
+## Primary agent commands
+
+| Command | What it does | When to use it |
+|---|---|---|
+| `change start --template` | Prints the compact semantic draft v3 contract | Beginning a fresh Change |
+| `change start <draft.json>` | Compiles, validates, installs, and prepares one isolated change transactionally | Completing Change |
+| `change amend <change> <amendment.json>` | Adds discovered requirements while preserving canonical content and completed tasks | A semantic v3 Build discovers new behavior |
+| `advance <change> --through build\|proven\|archived` | Runs deterministic steps and returns one `EDIT`, `RUN_EXTERNAL`, `REPAIR`, `WAIT`, `ASK_USER`, or `DONE` action | Every normal step after Change |
+
+## Advanced operator and compatibility commands
 
 | Command | What it does | When to use it |
 |---|---|---|
@@ -179,11 +196,11 @@ claude-foundation doctor --stage prove --change <change>
 | `quality run\|report` | Runs report-only or enforced per-repository quality lanes | PR/Prove quality checks |
 | `quality baseline\|debt` | Explicitly versions reviewed baselines and renders debt inventory | Pilot graduation and nightly inventory |
 | `agents plan <change> [--group <n>] [--pretty]` | Persists the full plan and prints a ≤4 KiB summary or one dispatch group | Before spawning independent workers |
-| `agents dispatch <change> [--pretty]` | Returns one graph- and lease-bound native-host action | Driving the resumable Build loop |
-| `advance <change> [--host-result <result.json>] [--pretty]` | Returns the next bounded Build/Prove/Land action and imports an optional host result | Letting the harness drive the loop while the host performs model work |
+| `agents dispatch <change> [--pretty]` | Returns one graph- and lease-bound native-host action | Advanced host integration behind `advance` |
+| `advance <change> [--through build\|proven\|archived] [--host-result <result.json>] [--pretty]` | Runs deterministic lifecycle work and returns one minimal action at a real boundary | Normal post-Change agent path |
 | `doctor` | Checks runtime and project readiness | After install or when diagnosing setup |
 | `changes` | Lists active changes and readiness | Finding work to resume or land |
-| `packet <change> --phase <phase>` | Prints a compact handoff; review packets are ≤8 KiB and exclude Build history | Starting Build, Prove, or independent Review |
+| `packet <change> --phase <phase>` | Prints a compact diagnostic handoff; review packets are ≤8 KiB | Operator/debug inspection |
 | `packet <change> --repo <id> [--task <id>] [--pretty]` | Prints a bounded repository or task packet | Starting a native subagent |
 | `metrics <change>` | Reports measured phase/provider cost and emitted context bytes | Finding latency or orchestration overhead |
 | `feedback <change> [--pretty]` | Reports source-aware timing, repair intervals, blocker coverage, evidence reuse, and the next action | Explaining why Prove took time without labeling repair as wait |
@@ -194,20 +211,20 @@ claude-foundation doctor --stage prove --change <change>
 | `change validate <change>` | Validates change artifacts | After creating or revising an agreement |
 | `change audit <change> [--json]` | Audits scenario → claim → task → provider traceability | Before Build or after contract edits |
 | `proof readiness <change>` | Returns READY or a typed blocker with exact next commands | At the end of Build and start of Prove |
-| `proof advance <change>` | Converges missing/invalidated evidence through aggregate repair batches, routes external gates, and resumes unchanged waits without polling | Normal Prove path |
+| `proof advance <change>` | Converges missing/invalidated evidence through aggregate repair batches | Advanced primitive used by `advance --through proven` |
 | `proof run <change>` | Executes, finalizes, and audits proof as one operation | Low-level diagnostic/integration path |
 | `proof collect <change>` | Runs available project-owned evidence without finalizing proof | Low-level preparation for an explicit integration |
-| `evidence detect <change>` | Finds safe project-owned provider candidates without executing them | When `execution.yaml` is empty or incomplete |
+| `evidence detect <change>` | Finds safe project-owned provider candidates without executing them | When derived or custom wiring is incomplete |
 | `evidence init <change> [--write]` | Previews or explicitly writes high-confidence provider wiring | Before manually wiring detected test/static/browser tools |
 | `evidence doctor <change>` | Explains configured, detectable, and unresolved capabilities | Diagnosing why Prove lacks a provider |
 | `evidence verify-ci <change> <provider> <signed.json>` | Verifies a signed, workspace-bound CI envelope | Importing trusted remote CI evidence |
 | `evidence record ...` | Records evidence produced by an external system | CI, human review, or remote systems |
 | `authority request\|status\|dispatch\|run\|abort\|record ...` | Routes configured AI review and bound human review/acceptance responses | Crossing a human or remote authority boundary |
 | `evidence upgrade <change>` | Upgrades evidence v1 to v2 without guessing commands | Migrating an older active change |
-| `sandbox create <change>` | Creates an isolated Git worktree | Before Build |
+| `sandbox create <change>` | Creates an isolated Git worktree | Advanced primitive behind `advance --through build` |
 | `sandbox challenge <change>` | Creates a short-lived nonce and permission contract | Before a host signs unattended authority |
 | `sandbox create <change> --unattended --attestation <file>` | Verifies and consumes one trusted host attestation | Unattended Build only |
-| `sandbox create <change> --all` | Creates one sandbox per selected writable repository | Before a multi-repo Build |
+| `sandbox create <change> --all` | Creates one sandbox per selected writable repository | Advanced multi-repo primitive behind `advance` |
 | `sandbox sync <change> [--resolve <path,path>]` | Synchronizes a revised agreement and reconciles a moved target: a worktree replays onto the new commit, a copy fast-forwards what it left alone; `--resolve` accepts a merged double-edit | When requirements change during Build, or the target moved (another change landed) |
 | `land check <change>` | Checks proof freshness and landing readiness | Before accepting the change |
 | `land record <change> ...` | Binds an explicitly created child commit | After authorized commit/CI work |

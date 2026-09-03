@@ -208,6 +208,16 @@ packet_schema="$(jq -r '.packetSchema' "$ROOT/.claude/harness/protocol.json")"
 proof_protocol="$(jq -r '.proofProtocol' "$ROOT/.claude/harness/protocol.json")"
 semantic_acceptance_protocol="$(jq -r '.semanticAcceptanceProtocol' \
   "$ROOT/.claude/harness/protocol.json")"
+semantic_draft_schema="$(jq -r '.semanticDraftSchema' \
+  "$ROOT/.claude/harness/protocol.json")"
+semantic_amendment_schema="$(jq -r '.semanticAmendmentSchema' \
+  "$ROOT/.claude/harness/protocol.json")"
+artifact_defaults_schema="$(jq -r '.artifactDefaultsSchema' \
+  "$ROOT/.claude/harness/protocol.json")"
+grounding_schema="$(jq -r '.groundingSchema | join(", ")' \
+  "$ROOT/.claude/harness/protocol.json")"
+advance_protocol="$(jq -r '.advanceProtocol' \
+  "$ROOT/.claude/harness/protocol.json")"
 for page in "$DOCS/cli.md" "$DOCS/th/cli.md"; do
   label="$(basename "$(dirname "$page")")"
   assert_file_contains "$label CLI pins provider protocol" \
@@ -218,6 +228,16 @@ for page in "$DOCS/cli.md" "$DOCS/th/cli.md"; do
     "$page" "| proof protocol | $proof_protocol |"
   assert_file_contains "$label CLI pins semantic acceptance protocol" \
     "$page" "| semantic acceptance protocol | $semantic_acceptance_protocol |"
+  assert_file_contains "$label CLI pins semantic draft schema" \
+    "$page" "| semantic draft schema | $semantic_draft_schema |"
+  assert_file_contains "$label CLI pins semantic amendment schema" \
+    "$page" "| semantic amendment schema | $semantic_amendment_schema |"
+  assert_file_contains "$label CLI pins artifact defaults schema" \
+    "$page" "| artifact defaults schema | $artifact_defaults_schema |"
+  assert_file_contains "$label CLI pins grounding schema" \
+    "$page" "| grounding schema | $grounding_schema |"
+  assert_file_contains "$label CLI pins advance protocol" \
+    "$page" "| advance protocol | $advance_protocol |"
 done
 assert_file_contains "English loop documents convergent gates" \
   "$DOCS/loop.md" "## How every gate converges"
@@ -239,6 +259,39 @@ assert_file_contains "English Land docs preserve unavailable cost" \
   "$DOCS/loop/land.md" 'cost stays `null`'
 assert_file_contains "Thai Land docs preserve unavailable cost" \
   "$DOCS/th/loop/land.md" 'cost เป็น `null`'
+
+assert_cmd_zero "repository default keeps grounding conditional" \
+  jq -e '.workflow.grounding == "optional"' "$ROOT/foundation.json"
+assert_file_contains "English README makes compiled OpenSpec authoritative" \
+  "$README" "OpenSpec packet—not chat or the temporary draft—is the source of truth"
+assert_file_contains "Thai README makes compiled OpenSpec authoritative" \
+  "$README_TH" "คือ source of truth"
+assert_file_contains "English change docs require integration success scenarios" \
+  "$DOCS/loop/change.md" '"kind": "success"'
+assert_file_contains "English change docs require integration failure scenarios" \
+  "$DOCS/loop/change.md" '"kind": "failure"'
+assert_file_contains "Thai change docs require integration success scenarios" \
+  "$DOCS/th/loop/change.md" '"kind": "success"'
+assert_file_contains "Thai change docs require integration failure scenarios" \
+  "$DOCS/th/loop/change.md" '"kind": "failure"'
+assert_file_contains "English artifacts document conditional execution wiring" \
+  "$DOCS/artifacts.md" 'conditional when derived wiring is insufficient'
+assert_file_contains "Thai artifacts document conditional execution wiring" \
+  "$DOCS/th/artifacts.md" 'มีเมื่อ derived wiring ไม่พอ'
+assert_file_contains "English Build continues through one coordinator" \
+  "$DOCS/loop/build.md" 'advance <change> --through build'
+assert_file_contains "Thai Build continues through one coordinator" \
+  "$DOCS/th/loop/build.md" 'advance <change> --through build'
+assert_file_contains "English Prove continues through one coordinator" \
+  "$DOCS/loop/prove.md" 'advance <change> --through proven'
+assert_file_contains "Thai Prove continues through one coordinator" \
+  "$DOCS/th/loop/prove.md" 'advance <change> --through proven'
+assert_file_contains "English Land continues through one coordinator" \
+  "$DOCS/loop/land.md" 'advance <change> --through archived'
+assert_file_contains "Thai Land continues through one coordinator" \
+  "$DOCS/th/loop/land.md" 'advance <change> --through archived'
+assert_file_contains "landing demonstrates unified lifecycle advance" \
+  "$SITE" 'claude-foundation advance profile-auth --through proven'
 
 quality_capabilities_protocol="$(jq -r '.qualityCapabilitiesProtocol' \
   "$ROOT/.claude/harness/protocol.json")"

@@ -16,11 +16,11 @@ freshness policy stay in one place.
 The phase comes from one of two places, in this order:
 
 1. `FOUNDATION_ACTIVE_PHASE=change|build|prove|land`, if the host exports it.
-2. Otherwise the most recent row in `.foundation/logs/<change>/phase-context.jsonl`,
-   which `packet <change> --phase <phase>` writes at every phase transition —
-   so `/change`, `/build`, `/prove`, and `/land` establish it on a stock
-   install with no host wiring at all. A row older than 12 hours is treated as
-   no phase: the loop is not running.
+2. Otherwise the most recent row in `.foundation/logs/<change>/phase-context.jsonl`.
+   `change start` establishes Change/Build context and `advance` records the
+   phase for its current action, so `/change`, `/build`, `/prove`, and `/land`
+   share the same authority without a preparatory `packet` command. A row older
+   than 12 hours is treated as no phase: the loop is not running.
 
 A recorded row governs only while its change is still an active OpenSpec
 change — `openspec/changes/<id>` exists. Logs outlive their change, so an

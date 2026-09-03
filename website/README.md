@@ -131,8 +131,9 @@ directly. Keep it in step with `.brand` / `.brand-mark` in `styles.css`.
 ## Notes
 
 - `.claude/tests/harness/run-context-budget-tests.sh` asserts on
-  `website/index.html` — it checks the command list names `proof run` and not
-  the internal `proof execute`. Run it after editing the landing page.
+  `website/index.html` — it checks the command list names the unified
+  `advance` route and never exposes the internal `proof execute`. Run it after
+  editing the landing page.
 - npm 11 blocks package install scripts by default. `docs/package.json` records
   the approval esbuild needs under `allowScripts`, so `npm ci` works on CI
   without prompting.

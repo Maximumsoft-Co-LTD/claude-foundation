@@ -132,11 +132,11 @@ assert_cmd_zero "[qualified-durable-decision] template and change intake share t
 assert_file_contains "change intake forbids parallel domain and ADR artifacts" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
   'Never create `CONTEXT.md`, a glossary artifact, or an ADR store'
-assert_cmd_zero "atomic draft template emits domain language input" \
+assert_cmd_zero "atomic draft template stays semantic and minimal" \
   sh -c 'node "$1" start --template | jq -e '\''
-    .domainLanguage[0].term == "replace-with-project-specific-term" and
-    .domainLanguage[0].meaning == "replace-with-tight-domain-meaning" and
-    .domainLanguage[0].avoid == "replace-with-ambiguous-alias-or-none"'\'' >/dev/null' \
+    .version == 3 and (.requirements | length) == 1 and
+    (.tasks[0].covers | length) == 1 and (.evidence | type) == "object" and
+    (has("domainLanguage") | not) and (has("execution") | not)'\'' >/dev/null' \
   sh "$ROOT/.claude/harness/foundation.mjs"
 assert_file_contains "fundamentals records decision answers in the change packet" \
   "$ROOT/.claude/rules/fundamentals.md" \
@@ -192,61 +192,52 @@ assert_file_contains "investigate owns bounded comparison" \
 assert_file_contains "normal investigate limits writes to its note" \
   "$ROOT/.claude/commands/investigate.md" 'Without comparison'
 assert_file_contains "compare mode scopes writes to prototypes" \
-  "$ROOT/.claude/commands/investigate.md" 'write only inside the prototype directory'
+  "$ROOT/.claude/commands/investigate.md" 'write only there'
 assert_file_contains "prove owns fresh independent review" \
   "$ROOT/.claude/skills/prove/references/workflow.md" 'fresh independent'
 assert_file_contains "dev command forbids direct implementation bypass" \
   "$ROOT/.claude/commands/dev.md" \
-  "Foundation runtime state is a failed"
+  "Code/test success without the corresponding Foundation state is incomplete"
 assert_file_contains "dev command forbids redundant framework exploration" \
   "$ROOT/.claude/commands/dev.md" \
   "Do not reread framework files"
 assert_file_contains "dev command uses atomic rapid start" \
   "$ROOT/.claude/commands/dev.md" \
-  'change start --template'
+  'compiles one semantic draft'
 assert_file_contains "dev routes every fresh intent through complete Change intake" \
   "$ROOT/.claude/commands/dev.md" \
-  'For all fresh work use `/change`'
-assert_file_contains "dev enforces fresh phase contexts" \
+  'For fresh work use `/change`'
+assert_file_contains "dev uses the unified lifecycle coordinator" \
   "$ROOT/.claude/commands/dev.md" \
-  'fresh Agents for `/build <id>`, then `/prove <id>`'
-assert_file_contains "dev leaves proof routing to its fresh Prove agent" \
+  'advance <id> --through proven'
+assert_file_contains "dev resume skips completed lifecycle work" \
   "$ROOT/.claude/commands/dev.md" \
-  'proof readiness/advance'
-assert_file_contains "dev resume skips completed Build" \
-  "$ROOT/.claude/commands/dev.md" \
-  'sandbox has zero pending tasks, skip Build'
+  'completed Build work and reused evidence automatically'
 assert_file_contains "change forbids runtime archaeology" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
   'Never inspect managed `.claude/harness/**`'
-assert_file_contains "change command selects rapid before creation" \
+assert_file_contains "change compiler owns classification" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
-  "classify before creating it"
-assert_file_contains "change command omits empty security flag" \
+  "compiler owns classification"
+assert_file_contains "change compiler owns conditional artifacts" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
-  'Omit `--security` when there are no triggers'
-assert_file_contains "change resolves before authoring or validation" \
+  'conditional artifacts'
+assert_file_contains "change repairs only reported draft fields" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
-  'Before authoring or validating, resolve impact'
-assert_file_contains "change keeps grouped validation output intact" \
-  "$ROOT/.claude/skills/change/references/workflow.md" \
-  'Run validate standalone, never through a pipe; its output is bounded'
-assert_file_contains "change repairs only reported validation fields" \
-  "$ROOT/.claude/skills/change/references/workflow.md" \
-  'Repair only reported fields'
+  'Repair only the draft fields it reports'
 assert_file_contains "change audit warnings do not reopen grounding" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
   'Optional audit warnings are advisory'
-assert_file_contains "build command names sandbox transition" \
+assert_file_contains "build command names unified transition" \
   "$ROOT/.claude/commands/build.md" \
-  'sandbox create <change>'
+  'advance <change> --through build'
 if grep -qF 'proof execute' "$ROOT/website/index.html"; then
   fail "public website uses canonical proof command"
 else
   pass "public website uses canonical proof command"
 fi
-assert_file_contains "public website advertises proof run" \
-  "$ROOT/website/index.html" 'proof run &lt;id&gt;'
+assert_file_contains "public website advertises unified lifecycle advance" \
+  "$ROOT/website/index.html" 'advance &lt;id&gt; --through build|proven|archived'
 
 hot_skill_words="$(wc -w \
   "$ROOT/.claude/skills/programming-fundamentals/SKILL.md" \

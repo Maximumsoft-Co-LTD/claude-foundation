@@ -1,13 +1,17 @@
 ---
 title: Adapters and wiring
-description: The five executable adapters, how execution.yaml wires them to your project's own tools, and how resources keep providers from colliding.
+description: The five executable adapters, derived and custom wiring, and how resources keep providers from colliding.
 ---
 
 Change Loop separates the stable behavioral contract from replaceable execution wiring. It does not install test frameworks, browsers, or project dependencies — **your project owns and locks every executable an adapter names.**
 
-## execution.yaml
+## Derived wiring and execution.yaml
 
-Where [`evidence.yaml`](/docs/evidence/claims/) says *what must be true*, `execution.yaml` says *what to run*. It may change as Build discovers the actual commands, ports, and reports; a wiring change invalidates only the affected provider fingerprints.
+Where [`evidence.yaml`](/docs/evidence/claims/) says *what must be true*, semantic
+draft v3 also derives the ordinary commands needed to prove it. `execution.yaml`
+is optional and overrides that wiring when a provider needs a structured report,
+service, timeout, readiness check, or other project-specific configuration. A
+wiring change invalidates only the affected provider fingerprints.
 
 ```json
 {
@@ -148,7 +152,7 @@ For CI, a reviewer, or another system Change Loop must not execute locally.
 
 ## Bootstrapping wiring
 
-When a change declares claims but `execution.yaml` has no providers yet:
+When a change declares claims but derived or custom wiring is unresolved:
 
 ```bash
 claude-foundation evidence detect <change>    # read manifests, execute nothing

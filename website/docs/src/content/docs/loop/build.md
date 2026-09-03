@@ -1,105 +1,64 @@
 ---
 title: /build
-description: Implement the agreement inside an isolated Git worktree, with tasks.md as the only ledger.
+description: Implement the compiled agreement in isolation through one coordinator.
 ---
 
 ```text
 /build <change>
 ```
 
-Build implements the agreement. It is where your coding agent does the work it is actually good at — and it happens **away from your working tree**.
-
-## Isolation
+Build uses one model-facing command:
 
 ```bash
-claude-foundation sandbox create <change>
+claude-foundation advance <change> --through build
 ```
 
-This creates an isolated Git worktree under `.foundation/sandboxes/`. Your working tree is untouched until Land. If the change's agreement was revised, `sandbox sync <change>` brings the revision in rather than recreating the sandbox.
+The coordinator validates the agreement, creates or synchronizes the isolated
+workspace, compiles task dependencies, accounts for active leases, and returns
+one protocol-v3 action. After doing that action, the agent calls the exact
+`resume` route. It never reconstructs a `sandbox → packet → plan → dispatch`
+chain.
 
-A worktree carries tracked files only — no `node_modules`. If your providers need dependencies installed, declare a setup command once: `sandbox.setupCommand` (plus `setupTimeoutMs`) in `foundation.json`, or a per-repository `setupCommand` in `openspec/repositories.yaml`. It runs once inside every newly created workspace, and its outcome is recorded on the workspace record. A failing setup keeps the sandbox and prints the recovery rather than destroying the workspace.
+## The six actions
 
-:::caution[Isolation, not a security boundary]
-A sandbox is **workspace isolation**, not an OS security boundary. Code executing inside it is still code executing on your machine. Inspect the distinction with `sandbox inspect <change>`.
-:::
+| Action | Meaning |
+|---|---|
+| `EDIT` | Implement only the returned task(s), workspace, and allowed paths; run the listed focused checks once |
+| `REPAIR` | Apply one complete dependency-ordered repair batch, then resume |
+| `RUN_EXTERNAL` | Run the one configured boundary operation |
+| `WAIT` | A live resource/external owner must finish; state is preserved |
+| `ASK_USER` | A material choice or authority is genuinely missing |
+| `DONE` | The requested Build target is reached |
 
-## Start from the packet, not from history
+Every non-done action names the cause, responsible actor, safe alternatives,
+preserved state, and exact resume command. Automatic recovery stays inside the
+agent's current authority; the harness never turns a stale lease or repeated
+execution into a pass.
+
+## Isolation and concurrency
+
+Product writes are allowed only in the exact workspace and paths returned by
+`EDIT`. Shell mutation must anchor itself to that workspace. A worktree contains
+tracked files only; configure `sandbox.setupCommand` or a per-repository setup
+command when dependencies must be installed.
+
+Parallel mode returns only independent tasks and lease instructions. The host
+starts every successfully leased worker before waiting, observes the writes,
+and resumes the same `advance` command. Primitive `sandbox`, `packet`, `agents
+plan`, and `agents dispatch` commands remain available under `help --all` for
+operator diagnostics and host integrations.
+
+## New behavior discovered during Build
+
+Do not edit several OpenSpec ledgers by hand. Submit one semantic amendment:
 
 ```bash
-claude-foundation packet <change> --phase build
+claude-foundation change amend <change> <amendment.json> --consume-amendment
 ```
 
-The packet is a bounded machine handoff — it carries only what the next step consumes. The agent does not replay the conversation to rebuild context, which is what lets a fresh session pick up work an earlier one started.
+The compiler preserves completed tasks and manual sections, validates the new
+agreement transactionally, and returns to `advance`. Permission-bound cloud,
+secret, Terraform, deployment, or restart work becomes a typed external
+operation; Build never asks for credentials.
 
-Packet budgets are enforced: 8 KiB for a task packet, 8 KiB for review, 12 KiB per repository, 16 KiB global, 4 KiB for a plan summary.
-
-Before dispatch or product edits, Build checks `authorityPreflight`. Work that
-requires unavailable signed CI or another external authority stops with one
-decision and an exact Change resume route, spending no Build/model budget.
-
-## One ledger
-
-`tasks.md` is the **sole** task ledger. There is no mirrored checklist, no second status file, and no lifecycle state hidden in the agent's head. If something is not in `tasks.md`, it is not tracked.
-
-## Scope
-
-The agent may edit only allowed sandbox paths. Which paths those are comes from the change's `repositories.yaml` write scope — a change that declared it touches one repository cannot quietly write to another.
-
-For direct shell mutation, anchor the command with
-`cd <exact-workspace> && ...`. Unanchored package-manager/formatter writes,
-obvious `..` escapes, and absolute output outside the workspace fail before the
-shell starts. Structured Edit/Write remains the preferred path.
-
-For multi-repository work, create all selected workspaces together:
-
-```bash
-claude-foundation sandbox create <change> --all
-```
-
-Write repositories are Build targets. Read and external repositories are pinned
-inputs and never receive Land nodes. If a target moves during Build, use
-`sandbox sync`; do not copy files between checkouts. See the ordered
-[multi-repository workflow](/docs/multi-repository/) before assigning workers.
-
-## Parallel work
-
-For multi-repository work:
-
-```bash
-claude-foundation repos <change>
-claude-foundation sandbox create <change> --all
-claude-foundation agents plan <change>
-```
-
-The plan permits parallel workers **only** across genuinely independent repositories and resources. A frontier with one selected task runs in the parent under a task lease; it does not spawn a worker when no parallel speedup is possible. A one-repository change without shared external authority stays with a single agent regardless of task count.
-
-Workers receive only `packet --task <task-id>`. The host owns resource leases:
-
-```bash
-claude-foundation agents acquire <change> <task> --owner <id>
-claude-foundation agents release <change> <task> --owner <id> --lease-id <acquired-lease-id>
-```
-
-Use the `executionAuthority.leaseId` from the acquired task packet. After a takeover, a release without that generation id is refused so a late executor cannot clear its successor's lease. If a worker crashes holding a lease, `agents release --force` takes it over. A lease that has not yet expired also requires `--decision-ref`, because the worker holding it may still be running.
-
-## Converging
-
-Run focused checks as you go, then ask the runtime what still blocks proof:
-
-```bash
-claude-foundation proof readiness <change>
-```
-
-Readiness returns **typed blockers** and the canonical next command for each. Resolve code and configuration blockers here, in Build, before spending a fresh Prove run on them.
-
-One blocker hands back its own fix: when a repository changed files no task declares, readiness renders the undeclared paths as a paste-ready `[paths:...]` annotation per repository. Declare new files in the owning task's `[paths:]` the moment you create them and the blocker never appears.
-
-## What Build must never do
-
-Build never replays conversation history, mirrors tasks into a second ledger, archives, commits, or Lands. Those are other steps' authority, and collapsing them is how a change ends up applied without ever having been proven.
-
-## Unattended execution
-
-A host that deliberately runs without a human present uses one bare `--unattended` flag on `doctor` and `sandbox create`. It is presence-only: valued or duplicated forms are rejected before any telemetry, workspace inspection, or sandbox mutation happens.
-
-Detection is diagnostic, never authorization. The runtime accepts no workspace-controlled override and fails unattended execution closed. The guard is cooperative by necessity — the runtime cannot infer that you enabled an "allow all" setting in your host, so the host that enables unattended execution must invoke the guarded form itself.
+`DONE` at Build does not prove or land the change.

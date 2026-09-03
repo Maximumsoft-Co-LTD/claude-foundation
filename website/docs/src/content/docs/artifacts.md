@@ -80,8 +80,10 @@ reference and a reason. See [Consumer quality gates](/docs/consumer-quality/).
 :::caution[Two files named `repositories.yaml`]
 `openspec/repositories.yaml` describes the project's repository topology.
 `openspec/changes/<id>/repositories.yaml` describes the repositories **one
-change** touches and in which mode. They are different files with the same
-name; a provider that reads the wrong one silently scopes to the wrong set.
+change** touches and in which mode when explicit multi-repository scope exists.
+Without the packet file, the semantic default is the single `root` repository.
+They are different files with the same name; a provider that reads the wrong
+one silently scopes to the wrong set.
 :::
 
 `config.yaml` is worth reading once. It carries the default schema plus the
@@ -100,17 +102,25 @@ what a reviewer reads.
 | `proposal.md` | Why the change exists, what observably changes, impact, and non-goals | both |
 | `tasks.md` | The sole implementation ledger — the only place work is tracked | both |
 | `evidence.yaml` | The stable behavioral contract: claim IDs, scenarios, capabilities | both |
-| `grounding.yaml` | Locked decisions, read-set hashes, production/failure paths, and the sourced eight-category NFR assessment | both when grounding is required |
-| `execution.yaml` | Replaceable wiring: provider commands, services, readiness | both |
-| `repositories.yaml` | Repository topology and write modes | both |
+| `grounding.yaml` | Semantic v3 non-derived material decisions; legacy read-set grounding remains readable | conditional when a decision must be locked |
+| `execution.yaml` | Replaceable custom wiring: provider commands, services, readiness | conditional when derived wiring is insufficient |
+| `repositories.yaml` | Explicit repository selection and write modes | conditional for multi-repository scope |
+| `handoffs.yaml` | Permission-bound external operations and activation safety | conditional when such work exists |
 | `.openspec.yaml` | Which assurance profile governs the packet | both |
-| `design.md` | Stable `DEC-*` decisions, rationale, rejected alternatives, consequences, supersession, compatibility, risks | standard |
+| `design.md` | Durable decisions, diagrams, versioned integrations, prototype selection, compatibility, and risks | standard, conditional on design context |
 | `specs/**/spec.md` | Requirement deltas — `ADDED`, `MODIFIED`, `REMOVED` | standard |
 
-A `foundation-rapid` packet omits `design.md` and the spec deltas. The moment
+A `foundation-rapid` packet omits spec deltas and normally omits `design.md`. The moment
 impact rises above low, coupling stops being isolated, or review or acceptance
-becomes required, the change **upgrades itself to standard** and those two
-artifacts are created for you.
+becomes required, the change **upgrades itself to standard** and its delta
+artifacts are created for you. Optional extensions still appear only when their
+concern exists.
+
+The agent does not author cross-ledger IDs by hand. Semantic draft v3 compiles
+requirements, scenarios, tasks, claims, and provider bindings into this packet.
+That compiled OpenSpec packet remains the source of truth. A selected prototype
+or diagram may be referenced from design, but prototype output is still
+non-authoritative and is rejected as evidence.
 
 :::tip
 `tasks.md` is the sole ledger by design. A second checklist kept in chat or in

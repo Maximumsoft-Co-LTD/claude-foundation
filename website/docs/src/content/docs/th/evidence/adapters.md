@@ -1,13 +1,17 @@
 ---
 title: Adapter และการต่อสาย
-description: adapter ที่รันได้จริงห้าตัว execution.yaml ต่อมันเข้ากับเครื่องมือของโปรเจกต์คุณอย่างไร และ resource กันไม่ให้ provider ชนกันอย่างไร
+description: adapter ที่รันได้จริงห้าตัว derived/custom wiring และ resource กันไม่ให้ provider ชนกันอย่างไร
 ---
 
 Change Loop แยกสัญญาเชิงพฤติกรรมที่คงที่ ออกจากการต่อสายที่เปลี่ยนได้ มันไม่ติดตั้ง test framework เบราว์เซอร์ หรือ dependency ของโปรเจกต์ — **โปรเจกต์ของคุณเป็นเจ้าของและล็อกเวอร์ชัน executable ทุกตัวที่ adapter เรียก**
 
-## execution.yaml
+## Derived wiring และ execution.yaml
 
-ในขณะที่ [`evidence.yaml`](/docs/th/evidence/claims/) บอกว่า *อะไรต้องเป็นจริง* `execution.yaml` บอกว่า *ต้องรันอะไร* มันเปลี่ยนได้เมื่อ Build ค้นพบคำสั่ง พอร์ต และรายงานจริง และการเปลี่ยนสายไฟจะทำให้เฉพาะ fingerprint ของ provider ที่เกี่ยวข้องใช้ไม่ได้
+ในขณะที่ [`evidence.yaml`](/docs/th/evidence/claims/) บอกว่า *อะไรต้องเป็นจริง*
+semantic draft v3 จะ derive command ปกติที่ใช้พิสูจน์ ส่วน `execution.yaml` เป็น
+optional override เมื่อ provider ต้องใช้ structured report, service, timeout,
+readiness หรือ config เฉพาะ project การเปลี่ยน wiring จะทำให้เฉพาะ fingerprint
+ของ provider ที่เกี่ยวข้องใช้ไม่ได้
 
 ```json
 {
@@ -147,7 +151,7 @@ Change Loop อนุมานนโยบายเรื่อง console error
 
 ## ตั้งต้นการต่อสาย
 
-เมื่อ change ประกาศ claim ไว้แล้วแต่ `execution.yaml` ยังไม่มี provider
+เมื่อ change ประกาศ claim แล้วแต่ derived หรือ custom wiring ยังไม่ลงตัว
 
 ```bash
 claude-foundation evidence detect <change>    # อ่าน manifest ไม่รันอะไร

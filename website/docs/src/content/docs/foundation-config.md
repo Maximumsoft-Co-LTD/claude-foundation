@@ -39,7 +39,7 @@ Claude Opus for configured review and permits the same identity/model family:
     "defaultReviewer": "claude-opus"
   },
   "workflow": {
-    "grounding": "required",
+    "grounding": "optional",
     "reviewCircuit": "full-delta",
     "reviewPolicy": "risk-tiered"
   }
@@ -270,7 +270,7 @@ them in that order in the [multi-repository workflow](/docs/multi-repository/).
 ```json
 {
   "workflow": {
-    "grounding": "required",
+    "grounding": "optional",
     "reviewCircuit": "full-delta",
     "reviewPolicy": "risk-tiered"
   }
@@ -283,6 +283,10 @@ them in that order in the [multi-repository workflow](/docs/multi-repository/).
 
 Use the shipped values for new work. The legacy values exist to read older
 projects; they are not the recommended way to weaken review.
+`optional` means the semantic compiler creates `grounding.yaml` only when a
+material non-derived decision exists. Set `required` when project policy truly
+requires a decision ledger for every change; it does not make empty grounding
+content useful.
 
 ## Common mistakes
 

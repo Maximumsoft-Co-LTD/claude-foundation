@@ -37,7 +37,12 @@ Consumer quality เป็นตัวเลือก ถ้าต้องก�
 
 agent จะสร้าง `openspec/changes/add-profile-auth/` แล้วประเมินว่า change นี้ต้องการความเข้มแค่ไหน — impact, coupling, security trigger และต้องให้คนอนุมัติผลลัพธ์หรือไม่ เรื่องไหนที่มีผลสำคัญ **มันจะถามคุณ** ไม่ใช่เดาเอง
 
-change มีสองรูปแบบ แบบ *rapid* มี proposal, tasks, evidence และ execution wiring ใช้กับงาน impact ต่ำที่แยกขาดเท่านั้น ส่วนแบบ *standard* เพิ่ม delta spec กับเอกสาร design เข้ามา และ rapid จะ **อัปเกรดตัวเองในที่** ถ้าพบความเสี่ยง — ตอนอัปเกรดมันจะบอกว่าลงเอยที่ schema ไหนและสร้างไฟล์ที่ schema ใหม่ต้องการให้ด้วย
+Agent เขียน semantic draft หนึ่งชุด: intent, requirement กับ scenario, task
+outcome และ evidence ที่ต้องใช้ Harness derive stable ID กับ link แล้ว compile
+OpenSpec packet แบบ transaction ทั้งสอง lane มี core แค่ proposal, tasks และ
+evidence ส่วน standard เพิ่ม delta spec ขณะที่ design, grounding, custom
+execution, repository scope และ handoff จะมีเมื่อ concern นั้นมีจริง Rapid จะ
+**อัปเกรดตัวเองในที่** ถ้าพบความเสี่ยง
 
 สิ่งที่คุณควรอ่านและเถียงกลับคือ `proposal.md` กับ delta spec นั่นแหละคือตัวข้อตกลง
 
@@ -47,7 +52,10 @@ change มีสองรูปแบบ แบบ *rapid* มี proposal, task
 /build add-profile-auth
 ```
 
-agent สร้าง Git worktree แยกไว้ใต้ `.foundation/sandboxes/` อ่าน packet ที่กระชับ แล้วลงมือเขียน **working tree ของคุณไม่ถูกแตะ** และ `tasks.md` เป็น ledger เดียว — ไม่มี checklist ที่สองให้ต้องคอยซิงก์
+Agent เรียก `advance add-profile-auth --through build` Coordinator จะสร้าง
+workspace แยก คืน action ที่มีขอบเขตหนึ่งตัว และ resume ด้วย route เดิม
+**working tree ของคุณไม่ถูกแตะ** และ `tasks.md` เป็น ledger เดียว ผู้ใช้ไม่ต้อง
+ประกอบ sandbox, packet, plan หรือ dispatch command
 
 ## 3. พิสูจน์
 
@@ -56,6 +64,9 @@ agent สร้าง Git worktree แยกไว้ใต้ `.foundation/sand
 ```
 
 ขั้นนี้คือหัวใจ Change Loop จะใช้ receipt เดิมที่ยังใช้ได้ซ้ำ จัดคิวรันเฉพาะส่วนที่ขาดหรือ stale สั่งเครื่องมือของโปรเจกต์คุณ แล้วตรวจผลลัพธ์
+
+Agent ขับขั้นนี้ด้วย `advance add-profile-auth --through proven`; low-level
+`proof` command ยังอยู่สำหรับ operator diagnostic และ integration
 
 หลักฐานกลับมาได้สี่แบบ: `pass`, `fail`, `inconclusive`, `error` อะไรที่ไม่ใช่ pass จะบล็อก change ไว้ และ agent จะย้อนกลับไป Build เพื่อแก้
 
@@ -74,6 +85,9 @@ Harness จะตรวจ gate หนึ่งรอบ รวบรวมป�
 
 Land เป็นเส้นแบ่งที่ชัดเจน และเป็นขั้นเดียวที่แตะ working tree จริงของคุณ มันตรวจความสดของ proof ซ้ำ, apply เฉพาะ sandbox ที่พิสูจน์แล้วโดยรักษาการแก้ไขอื่นที่ไม่เกี่ยวไว้, sync spec, ตรวจหลักฐาน, archive change แล้วเก็บกวาด sandbox
 
+Agent ขับ transaction ที่ resume ได้ด้วย `advance add-profile-auth --through
+archived` มีเพียง state `archived` เท่านั้นที่แปลว่างาน lifecycle เสร็จ
+
 ถ้า target branch ขยับหลัง Prove Agent จะ replay sandbox เดิมบน base ใหม่,
 Prove ใหม่ และทำ Land ต่อ คุณไม่ต้องเริ่ม Change หรือรัน recovery เอง แต่ conflict
 ที่ replay ไม่ได้จะยังหยุดให้ตัดสินใจแทนการ merge เงียบ ๆ
@@ -90,7 +104,10 @@ Land ไม่ commit ไม่ push และไม่เปิด PR ให้
 Change ⇄ Build ⇄ Prove
 ```
 
-การแก้ข้อตกลงจะ sync sandbox และทำให้ proof ที่ล้าสมัยไปแล้วใช้ไม่ได้ ซึ่งนั่นคือเจตนา — มันกันไม่ให้หลักฐานจากข้อตกลงเก่าถูกนับให้ข้อตกลงใหม่
+Agent ส่ง semantic amendment หนึ่งชุดเข้า change เดิม Harness รักษา completed
+task กับ manual section, validate packet ที่ stage ไว้, rollback ถ้าไม่ผ่าน และ
+invalidate claim ที่กระทบก่อน resume จึงไม่มีหลักฐานจากข้อตกลงเก่าถูกนับให้
+ข้อตกลงใหม่
 
 ## ดูสถานะ
 

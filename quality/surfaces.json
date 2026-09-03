@@ -31,7 +31,7 @@
     },
     {
       "id": "website",
-      "paths": ["website/**/*.js", "website/**/*.mjs", "website/**/*.astro"],
+      "paths": ["website/**/*.js", "website/**/*.mjs", "website/**/*.astro", "website/**/*.md", "website/**/*.html", "website/**/*.css"],
       "testCommand": "node --test website/demo/test/*.test.mjs && npm --prefix website/docs run build",
       "controls": ["build", "dom-test", "coverage-pilot", "automated-mutation-pilot"],
       "blocking": false
@@ -52,7 +52,7 @@
     },
     {
       "id": "instructions-and-docs",
-      "paths": [".claude/commands/**", ".claude/rules/**", ".claude/skills/**", "docs/**", "WORKFLOW.md"],
+      "paths": [".claude/commands/**", ".claude/rules/**", ".claude/skills/**", "docs/**", "README.md", "README.th.md", "WORKFLOW.md", "website/docs/src/content/docs/**/*.md"],
       "testCommand": "sh .claude/tests/docs/run-doc-consistency.sh && sh .claude/tests/harness/run-instruction-contract-tests.sh",
       "controls": ["consistency", "contract", "build"],
       "blocking": true

@@ -17,7 +17,7 @@ repository หนึ่งแต่ต้องใช้โค้ดหรือ
 |---|---|---|
 | 1 | `openspec/repositories.yaml` | โปรเจกต์นี้ใช้ repository อะไรได้บ้าง |
 | 2 | `openspec/changes/<change>/repositories.yaml` | change นี้อ่านหรือเขียนตัวไหนได้บ้าง |
-| 3 | ฟิลด์ provider ใน `execution.yaml` | command หลักฐานตัวนี้ต้องใช้ repository อะไรบ้าง |
+| 3 | derived provider หรือฟิลด์ใน conditional `execution.yaml` | command หลักฐานตัวนี้ต้องใช้ repository อะไรบ้าง |
 
 อย่าข้ามไปต่อ provider ก่อน เพราะ provider พิสูจน์ repository ที่ topology ไม่รู้จัก
 หรือ change ไม่ได้เลือกไม่ได้
@@ -102,14 +102,16 @@ task implementation ทุกตัวต้องระบุ repository เจ
 Change Loop compile repository selection, task, provider และลำดับ Land เป็น
 execution graph ให้เอง ไม่ต้องสร้างไฟล์ graph ที่สอง
 
-## 4. สร้าง Sandbox ทั้งหมด
+## 4. ให้ Build สร้าง Sandbox ทั้งหมด
 
-สร้าง workspace ที่เลือกพร้อมกัน:
+คำสั่งปกติของ agent สร้าง workspace ที่เลือกพร้อมกัน:
 
 ```bash
-claude-foundation sandbox create <change> --all
-claude-foundation sandbox inspect <change>
+claude-foundation advance <change> --through build
 ```
+
+`sandbox create --all` และ `sandbox inspect` ยังเป็น operator diagnostic ใต้
+`help --all`; ผู้ใช้ไม่ต้องเรียงคำสั่งเอง
 
 repository แบบ write ได้ Build worktree แยก ส่วน read และ external ที่มี Git ได้
 detached worktree ที่ล็อก commit คำสั่งนี้ไม่ได้ทำให้ service ภายนอกหรือ directory
@@ -117,7 +119,7 @@ detached worktree ที่ล็อก commit คำสั่งนี้ไม
 
 ## 5. ต่อ Evidence ให้ครบ Scope
 
-ใน `execution.yaml`, `repository` คือ working directory ของ provider ส่วน
+สำหรับ custom wiring ใน conditional `execution.yaml`, `repository` คือ working directory ของ provider ส่วน
 `repositories` คือชุดทั้งหมดที่ command อ่าน:
 
 ```json

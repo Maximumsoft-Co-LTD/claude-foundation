@@ -87,10 +87,10 @@ if (!phase && mode !== "block") process.exit(0);
 
 if (!phase && prePhaseDraftMutationAllowed()) {
   // Atomic Change starts need one narrowly-scoped bootstrap write before a
-  // lifecycle phase exists.  The draft is data consumed and validated by
-  // `change start`; it is not product code and cannot widen the mutation
-  // capability.  Shell writes remain blocked so redirects cannot smuggle
-  // additional mutations into the bootstrap boundary.
+  // lifecycle phase exists. Both the legacy change-start name and the v3
+  // drafts directory are temporary data consumed by `change start`; neither
+  // is product code or authority. Shell writes remain blocked so redirects
+  // cannot smuggle additional mutations into the bootstrap boundary.
   process.exit(0);
 } else if (!phase) {
   violations.push("active phase is unavailable");
@@ -201,7 +201,7 @@ function prePhaseDraftMutationAllowed() {
     const target = canonicalTarget(rawPath, projectRoot);
     if (!target) return false;
     const rel = relative(projectRoot, target).split(sep).join("/");
-    return /^\.foundation\/change-start-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.json$/.test(rel);
+    return /^(?:\.foundation\/change-start-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.json|\.foundation\/drafts\/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.json)$/.test(rel);
   });
 }
 

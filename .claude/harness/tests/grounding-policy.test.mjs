@@ -107,6 +107,27 @@ try {
     useTargetPaths: true
   }, "root validation selects repositories from the root packet and target tree");
 
+  const expectFailure = (value, expected, tasks = []) => {
+    writeGrounding(value);
+    assert.throws(() => runtime.groundingValue("change-a", state, packet, tasks), expected);
+  };
+
+  state.groundingVersion = 3;
+  writeGrounding({
+    version: 3,
+    decisions: [{ id: "DEC-001", choice: "Keep the bounded behavior", reason: "User selected it" }]
+  });
+  assert.equal(runtime.groundingValue("change-a", state, packet).value.version, 3,
+    "grounding v3 keeps only non-derived material decisions");
+  expectFailure({
+    version: 3,
+    decisions: [{
+      id: "DEC-001", choice: "Keep it", reason: "Selected",
+      readSet: [{ path: "production.mjs" }]
+    }]
+  }, /grounding v3 stores decisions only/);
+  delete state.groundingVersion;
+
   state.semanticInvariantsRequired = true;
   const semanticGrounding = valid();
   semanticGrounding.semanticInvariants = [{
@@ -118,12 +139,8 @@ try {
     .value.semanticInvariants[0].id, "INV-STABLE");
   state.semanticInvariantsRequired = false;
 
-  const expectFailure = (value, expected, tasks = []) => {
-    writeGrounding(value);
-    assert.throws(() => runtime.groundingValue("change-a", state, packet, tasks), expected);
-  };
   const invalidV1 = [
-    [(value) => { value.version = 3; }, /requires version 1 or 2/],
+    [(value) => { value.version = 4; }, /requires version 1, 2, or 3/],
     [(value) => { value.decisionBatch.status = "open"; }, /status must be locked/],
     [(value) => { value.decisionBatch.source = "guess"; }, /decisionBatch.source/],
     [(value) => { value.decisionBatch.reference = ""; }, /reference is required/],

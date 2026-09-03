@@ -1,105 +1,59 @@
 ---
 title: /build
-description: ลงมือทำตามข้อตกลงภายใน Git worktree ที่แยกออกมา โดยมี tasks.md เป็น ledger เดียว
+description: ทำตามข้อตกลงที่ compile แล้วใน workspace แยกผ่าน coordinator เดียว
 ---
 
 ```text
 /build <change>
 ```
 
-Build คือขั้นที่ทำตามข้อตกลง เป็นจุดที่ coding agent ได้ทำสิ่งที่มันเก่งจริง ๆ — และมันเกิดขึ้น **นอก working tree ของคุณ**
-
-## การแยกพื้นที่
+Build ใช้คำสั่งหลักของ agent เพียงคำสั่งเดียว:
 
 ```bash
-claude-foundation sandbox create <change>
+claude-foundation advance <change> --through build
 ```
 
-คำสั่งนี้สร้าง Git worktree แยกไว้ใต้ `.foundation/sandboxes/` working tree ของคุณจะไม่ถูกแตะจนกว่าจะถึง Land ถ้าข้อตกลงถูกแก้ ให้ใช้ `sandbox sync <change>` ดึงการแก้เข้ามาแทนการสร้าง sandbox ใหม่
+Coordinator ตรวจ agreement สร้างหรือ sync workspace แยก compile dependency ของ
+task ตรวจ lease ที่ยังทำงาน แล้วคืน action protocol v3 เพียงหนึ่งตัว เมื่อทำ action
+นั้นเสร็จ Agent เรียก `resume` ที่ส่งกลับมา โดยไม่ประกอบ chain ของ `sandbox`,
+`packet`, plan และ dispatch เอง
 
-worktree พกมาแค่ไฟล์ที่ Git ติดตาม — ไม่มี `node_modules` ถ้า provider ของคุณต้องติดตั้ง dependency ก่อน ให้ประกาศคำสั่ง setup ไว้ครั้งเดียว: `sandbox.setupCommand` (พร้อม `setupTimeoutMs`) ใน `foundation.json` หรือ `setupCommand` รายรีโปใน `openspec/repositories.yaml` มันจะรันหนึ่งครั้งในทุก workspace ที่สร้างใหม่ และผลลัพธ์ถูกบันทึกลง workspace record ถ้า setup ล้มเหลว sandbox จะถูกเก็บไว้พร้อมพิมพ์วิธีกู้คืน ไม่ใช่ถูกทำลายทิ้ง
+## Action หกแบบ
 
-:::caution[แยกพื้นที่ ไม่ใช่ขอบเขตความปลอดภัย]
-sandbox คือ **การแยกพื้นที่ทำงาน** ไม่ใช่ security boundary ระดับ OS โค้ดที่รันในนั้นก็ยังคือโค้ดที่รันบนเครื่องคุณ ตรวจความต่างนี้ได้ด้วย `sandbox inspect <change>`
-:::
+| Action | ความหมาย |
+|---|---|
+| `EDIT` | ทำเฉพาะ task, workspace และ path ที่คืนมา แล้วรัน focused check ที่ระบุหนึ่งครั้ง |
+| `REPAIR` | แก้ repair batch ที่เรียงตาม dependency ให้ครบแล้ว resume |
+| `RUN_EXTERNAL` | รัน boundary operation ที่ตั้งค่าไว้หนึ่งตัว |
+| `WAIT` | รอ resource หรือเจ้าของภายนอก โดย state ถูกเก็บไว้ |
+| `ASK_USER` | ขาดมติสำคัญหรืออำนาจจริง ๆ |
+| `DONE` | ถึงเป้าหมาย Build แล้ว |
 
-## เริ่มจาก packet ไม่ใช่จากประวัติ
+ทุก action ที่ยังไม่จบระบุสาเหตุ actor ทางเลือกที่ปลอดภัย state ที่เก็บไว้ และ
+resume command ที่แน่นอน Automatic recovery ทำได้เฉพาะในอำนาจปัจจุบัน ระบบไม่
+เปลี่ยน lease เก่าหรือการรันซ้ำให้กลายเป็น pass
+
+## Isolation และ concurrency
+
+เขียน product ได้เฉพาะ workspace และ path ที่ `EDIT` คืนมา Shell mutation ต้องเริ่ม
+จาก workspace นั้น Worktree มีเฉพาะ tracked files ถ้าต้องติดตั้ง dependency ให้ตั้ง
+`sandbox.setupCommand` หรือ setup command ราย repository
+
+Parallel mode คืนเฉพาะ task อิสระพร้อม lease instruction Host ต้องเริ่ม worker ที่
+lease สำเร็จทั้งหมดก่อนรอ ตรวจ write จริง แล้ว resume คำสั่งเดิม Primitive อย่าง
+`sandbox`, `packet`, `agents plan`, `agents dispatch` ยังอยู่ใน `help --all` สำหรับ
+operator และ host integration
+
+## พบ behavior ใหม่ระหว่าง Build
+
+อย่าแก้ OpenSpec หลาย ledger ด้วยมือ ให้ส่ง semantic amendment หนึ่งชุด:
 
 ```bash
-claude-foundation packet <change> --phase build
+claude-foundation change amend <change> <amendment.json> --consume-amendment
 ```
 
-packet คือการส่งต่องานแบบมีขอบเขต มันบรรจุเฉพาะสิ่งที่ขั้นถัดไปต้องใช้ agent ไม่ต้องเล่นบทสนทนาซ้ำเพื่อสร้าง context ขึ้นมาใหม่ ซึ่งเป็นเหตุผลที่ session ใหม่หยิบงานที่ session ก่อนเริ่มไว้ต่อได้
+Compiler รักษา task ที่เสร็จและ manual section ตรวจ agreement ใหม่แบบ transaction
+แล้วกลับมา `advance` งาน cloud, secret, Terraform, deploy หรือ restart ที่ต้องใช้
+สิทธิ์จะเป็น external operation แบบมีชนิด Build ไม่ขอ credential
 
-ขนาดของ packet ถูกบังคับจริง: 8 KiB สำหรับ task packet, 8 KiB สำหรับ review, 12 KiB ต่อรีโป, 16 KiB รวม และ 4 KiB สำหรับสรุปแผน
-
-ก่อน dispatch หรือแก้ product Build จะตรวจ `authorityPreflight` งานที่ต้องใช้
-signed CI หรืออำนาจภายนอกซึ่งยังไม่มีจะหยุดพร้อม decision เดียวและทาง resume
-Change ที่แน่นอน โดยยังไม่ใช้ Build/model budget
-
-## ledger เดียว
-
-`tasks.md` เป็น ledger **เดียว** ไม่มี checklist ที่มิเรอร์ ไม่มีไฟล์สถานะที่สอง และไม่มี lifecycle state ซ่อนอยู่ในหัวของ agent ถ้าอะไรไม่อยู่ใน `tasks.md` แปลว่าไม่ได้ถูกติดตาม
-
-## ขอบเขต
-
-agent แก้ได้เฉพาะ path ที่ sandbox อนุญาต ซึ่งมาจากขอบเขตการเขียนใน `repositories.yaml` ของ change นั้น — change ที่ประกาศว่าแตะรีโปเดียวจะเขียนข้ามไปอีกรีโปเงียบ ๆ ไม่ได้
-
-ถ้าจะแก้ไฟล์ผ่าน shell โดยตรง ให้ผูกคำสั่งด้วย
-`cd <exact-workspace> && ...` ระบบจะปฏิเสธ package manager/formatter ที่ไม่ได้
-ผูก workspace, path ที่หนีด้วย `..` และ absolute output นอก workspace ก่อน shell
-เริ่มทำงาน โดย structured Edit/Write ยังเป็นทางที่ควรใช้
-
-งานหลาย repository ให้สร้าง workspace ที่เลือกทั้งหมดพร้อมกัน:
-
-```bash
-claude-foundation sandbox create <change> --all
-```
-
-repository แบบ write คือเป้าหมาย Build ส่วน read และ external เป็น input ที่ล็อก
-commit และไม่มี Land node ถ้า target ขยับระหว่าง Build ให้ใช้ `sandbox sync`
-ห้ามคัดลอกไฟล์ข้าม checkout ก่อนแบ่งงานให้ worker ให้อ่านลำดับในคู่มือ
-[Workflow หลาย Repository](/docs/th/multi-repository/)
-
-## งานคู่ขนาน
-
-สำหรับงานหลายรีโป
-
-```bash
-claude-foundation repos <change>
-claude-foundation sandbox create <change> --all
-claude-foundation agents plan <change>
-```
-
-แผนจะอนุญาตให้มี worker คู่ขนาน **เฉพาะ** ข้ามรีโปและ resource ที่เป็นอิสระต่อกันจริง ๆ frontier ที่เลือกได้หนึ่ง task จะรันใน parent ภายใต้ task lease โดยไม่ spawn worker เมื่อไม่มีทางลด wall time ได้ ส่วน change รีโปเดียวที่ไม่มี shared external authority จะอยู่กับ agent ตัวเดียวโดยไม่ขึ้นกับจำนวน task
-
-worker ได้รับแค่ `packet --task <task-id>` ส่วน host เป็นเจ้าของ lease ของ resource
-
-```bash
-claude-foundation agents acquire <change> <task> --owner <id>
-claude-foundation agents release <change> <task> --owner <id> --lease-id <acquired-lease-id>
-```
-
-ใช้ `executionAuthority.leaseId` จาก task packet ที่ acquire แล้ว หลัง takeover runtime จะปฏิเสธการ release ที่ไม่มี generation id นี้ เพื่อไม่ให้ executor เก่าล้าง lease ของตัวถัดไป ถ้า worker crash ขณะถือ lease อยู่ ให้ใช้ `agents release --force` เพื่อยึดคืน แต่ lease ที่ยังไม่หมดอายุต้องใส่ `--decision-ref` ด้วย เพราะ worker ที่ถืออยู่อาจยังทำงานอยู่จริง
-
-## ทำให้ลู่เข้า
-
-รัน check แบบเจาะจงระหว่างทาง แล้วถาม runtime ว่ายังเหลืออะไรขวาง proof อยู่
-
-```bash
-claude-foundation proof readiness <change>
-```
-
-readiness คืนค่าเป็น **blocker แบบมีชนิด** พร้อมคำสั่งถัดไปที่ถูกต้องของแต่ละอัน แก้ blocker ที่เป็นเรื่องโค้ดและการตั้งค่าให้จบตรงนี้ ใน Build ก่อนจะไปเสียรอบ Prove ใหม่กับมัน
-
-มี blocker หนึ่งตัวที่ยื่นวิธีแก้มาให้เลย: เมื่อรีโปมีไฟล์ที่เปลี่ยนแต่ไม่มี task ไหนประกาศไว้ readiness จะแสดง path ที่ไม่ได้ประกาศเป็น annotation `[paths:...]` รายรีโปที่พร้อมวางลงไฟล์ได้ทันที ประกาศไฟล์ใหม่ใน `[paths:]` ของ task เจ้าของตั้งแต่ตอนสร้างไฟล์ แล้ว blocker นี้จะไม่โผล่มาเลย
-
-## สิ่งที่ Build ต้องไม่ทำ
-
-Build ไม่เล่นประวัติบทสนทนาซ้ำ ไม่มิเรอร์ task ไปยัง ledger ที่สอง ไม่ archive ไม่ commit และไม่ Land สิ่งเหล่านั้นเป็นอำนาจของขั้นอื่น และการยุบรวมมันคือวิธีที่ change ลงเอยด้วยการถูก apply ทั้งที่ไม่เคยถูกพิสูจน์
-
-## การรันแบบไม่มีคนเฝ้า
-
-host ที่ตั้งใจรันโดยไม่มีคนอยู่ให้ใช้ flag `--unattended` เปล่า ๆ หนึ่งตัวกับ `doctor` และ `sandbox create` มันเป็น flag แบบมีหรือไม่มีเท่านั้น รูปแบบที่ใส่ค่าหรือใส่ซ้ำจะถูกปฏิเสธก่อนที่จะเกิด telemetry การตรวจ workspace หรือการแก้ sandbox ใด ๆ
-
-การตรวจจับเป็นการวินิจฉัย ไม่ใช่การอนุญาต runtime ไม่รับ override ที่ควบคุมจากฝั่ง workspace และจะทำให้การรันแบบไม่มีคนเฝ้าล้มเหลวแบบปิด guard นี้ต้องอาศัยความร่วมมือโดยจำเป็น เพราะ runtime ไม่มีทางรู้ว่าคุณเปิดโหมด "allow all" ในโฮสต์ไว้ — host ที่เปิดโหมดนี้จึงต้องเป็นฝ่ายเรียกรูปแบบที่มี guard เอง
+`DONE` ของ Build ยังไม่ใช่ proof และยังไม่ Land

@@ -15,6 +15,8 @@ Typical reasons to use it:
 - several approaches with materially different tradeoffs
 - unclear compatibility or migration constraints
 - an unfamiliar brownfield code path
+- an external API whose versioned documentation, success path, or failure
+  behavior has not been read yet
 
 ## Start from the uncertainty
 
@@ -79,3 +81,6 @@ Continue into the agreement with the selection attached:
 ```
 
 `/change` summarizes that decision into the proposal and design. It does not treat the selection or its artifacts as evidence.
+For an integration, the investigation note records the exact documentation
+source and version. `/change` then requires linked success and failure scenarios;
+an unread or unversioned API is a research boundary, never a guessed contract.

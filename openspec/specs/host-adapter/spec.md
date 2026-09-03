@@ -61,6 +61,26 @@ Foundation SHALL expose an additive high-level coordinator that evaluates the cu
 - **WHEN** a deterministic local step succeeds and progress identity changes
 - **THEN** the host may call the coordinator again without interpreting prose or invoking a duplicate action
 
+#### Scenario: A host requests a lifecycle target
+
+- **WHEN** a host calls `advance <change> --through build|proven|archived`
+- **THEN** Foundation performs safe deterministic steps internally and returns
+  exactly one of `EDIT`, `RUN_EXTERNAL`, `REPAIR`, `WAIT`, `ASK_USER`, or `DONE`
+  at the next real boundary
+
+#### Scenario: A target is reached
+
+- **WHEN** the requested lifecycle target is reached without missing authority
+- **THEN** the coordinator returns `DONE`, records the phase once, and does not
+  require the host to replay the completed command chain
+
+#### Scenario: The coordinator cannot continue safely
+
+- **WHEN** authority, a resource, a contract repair, a conflict, or repeated
+  no-progress prevents automatic continuation
+- **THEN** the response names the cause and actor, confirms preserved state,
+  offers bounded alternatives, and includes the exact resume route
+
 ### Requirement: Host execution envelopes are idempotent handoffs
 
 A host adapter SHALL be able to submit a validated execution envelope once at an action boundary, and Foundation SHALL deduplicate the envelope by stable execution identity while preserving unavailable dimensions.
@@ -69,4 +89,3 @@ A host adapter SHALL be able to submit a validated execution envelope once at an
 
 - **WHEN** the same validated dispatch or execution identity is delivered twice
 - **THEN** usage and action completion are recorded once
-

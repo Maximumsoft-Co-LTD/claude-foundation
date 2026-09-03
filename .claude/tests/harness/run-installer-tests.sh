@@ -10,24 +10,25 @@ trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 assert_file_contains "Homebrew source package includes required model policy" \
   "$ROOT/Formula/claude-foundation.rb" '"foundation.json"'
 cli_help="$(bash "$ROOT/cli.sh" help)"
+cli_help_all="$(bash "$ROOT/cli.sh" help --all)"
 assert_contains "CLI help documents proof readiness" \
-  "$cli_help" 'proof readiness <change>'
+  "$cli_help_all" 'proof readiness <change>'
 assert_contains "CLI help documents pre-review evidence collection" \
-  "$cli_help" 'proof collect <change>'
+  "$cli_help_all" 'proof collect <change>'
 assert_contains "CLI help documents canonical proof run" \
-  "$cli_help" 'proof run <change>'
+  "$cli_help_all" 'proof run <change>'
 assert_contains "CLI help documents budget recovery" \
-  "$cli_help" 'budget continue <change>'
+  "$cli_help_all" 'budget continue <change>'
 assert_contains "CLI help documents resumable budget checkpoints" \
-  "$cli_help" 'budget checkpoint <change>'
+  "$cli_help_all" 'budget checkpoint <change>'
 assert_contains "CLI help documents traceability audit" \
-  "$cli_help" 'change audit <change> [--json]'
+  "$cli_help_all" 'change audit <change> [--json]'
 assert_contains "CLI help documents evidence detection" \
-  "$cli_help" 'evidence detect <change>'
+  "$cli_help_all" 'evidence detect <change>'
 assert_contains "CLI help documents explicit evidence initialization" \
-  "$cli_help" 'evidence init <change> [--write]'
+  "$cli_help_all" 'evidence init <change> [--write]'
 assert_contains "CLI help documents evidence diagnosis" \
-  "$cli_help" 'evidence doctor <change>'
+  "$cli_help_all" 'evidence doctor <change>'
 if printf '%s' "$cli_help" | grep -qF 'proof execute'; then
   fail "default CLI help hides internal proof commands"
 else
@@ -38,7 +39,6 @@ if printf '%s' "$cli_help" | grep -Eq 'telemetry (sync|import)|dashboard|runtime
 else
   pass "default CLI help hides host and administration commands"
 fi
-cli_help_all="$(bash "$ROOT/cli.sh" help --all)"
 assert_contains "full CLI help retains compatibility diagnostics" \
   "$cli_help_all" 'proof execute <change>'
 assert_contains "full CLI help publishes the host instruction endpoint" \
@@ -157,6 +157,12 @@ assert_file_exists "Land journal runtime installed" "$TARGET/.claude/harness/run
 assert_file_exists "proof runtime installed" "$TARGET/.claude/harness/runtime/evidence/proof-runtime.mjs"
 assert_file_exists "change lifecycle runtime installed" \
   "$TARGET/.claude/harness/runtime/workflow/change-lifecycle.mjs"
+assert_file_exists "semantic draft compiler installed" \
+  "$TARGET/.claude/harness/runtime/workflow/semantic-draft.mjs"
+assert_file_exists "semantic amendment compiler installed" \
+  "$TARGET/.claude/harness/runtime/workflow/semantic-amendment.mjs"
+assert_file_exists "unified advance runtime installed" \
+  "$TARGET/.claude/harness/runtime/workflow/advance-runtime.mjs"
 assert_file_exists "change validation runtime installed" \
   "$TARGET/.claude/harness/runtime/workflow/change-validation.mjs"
 assert_file_exists "packet runtime installed" \
@@ -177,7 +183,7 @@ assert_cmd_zero "command registry has one unique entry per public name" \
   "$TARGET/.claude/harness/commands.json"
 # The additional read-only surface is the resumable budget checkpoint; it does
 # not grant authority or widen the continuation surface below.
-assert_eq "agent command surface is bounded" "22" \
+assert_eq "agent command surface is bounded" "23" \
   "$(jq '[.commands[] | select(.audience == "agent")] | length' \
     "$TARGET/.claude/harness/commands.json")"
 # 28 includes the bounded proof controller, its internal execution commands,
@@ -330,11 +336,13 @@ jq '.workflow.grounding = "optional" |
 cp "$TMP/foundation-atomic.json" "$TARGET/foundation.json"
 start_template="$(bash "$ROOT/cli.sh" --project "$TARGET" change start --template)"
 assert_contains "atomic start exposes a versioned draft template" \
-  "$start_template" '"version": 2'
-assert_contains "atomic start template includes executable evidence" \
+  "$start_template" '"version": 3'
+assert_contains "atomic start template links tasks by requirement key" \
+  "$start_template" '"covers": ['
+assert_contains "atomic start template requests evidence capabilities" \
+  "$start_template" '"capabilities": ['
+assert_not_contains "atomic start template omits derived execution wiring" \
   "$start_template" '"adapter": "test-discovery"'
-assert_contains "atomic start template requires an acceptance decision" \
-  "$start_template" '"acceptance": {'
 printf '%s\n' '#!/usr/bin/env sh' \
   'mkdir -p test-results' \
   'printf "%s\n" "{\"numTotalTests\":1}" > test-results/atomic.json' \
@@ -386,7 +394,7 @@ assert_in "atomic start creates isolation" \
   "worktree copy"
 active_changes="$(bash "$ROOT/cli.sh" --project "$TARGET" changes)"
 assert_contains "changes returns a canonical next action" "$active_changes" \
-  "claude-foundation proof readiness atomic-start"
+  "claude-foundation advance atomic-start --through build"
 sed -i.bak 's/- \[ \]/- [x]/' \
   "$atomic_workspace/openspec/changes/atomic-start/tasks.md"
 rm "$atomic_workspace/openspec/changes/atomic-start/tasks.md.bak"

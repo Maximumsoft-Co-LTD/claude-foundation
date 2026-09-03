@@ -86,7 +86,7 @@
     "riskBasedCi": false
   },
   "workflow": {
-    "grounding": "required",
+    "grounding": "optional",
     "reviewCircuit": "full-delta",
     "reviewPolicy": "risk-tiered",
     "handoffDefaultOwner": "devops-team"

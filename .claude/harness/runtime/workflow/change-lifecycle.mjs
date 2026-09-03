@@ -1,14 +1,21 @@
 import {
-  existsSync, mkdirSync, readFileSync, rmSync, writeFileSync
+  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync,
+  writeFileSync
 } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { nextCommand } from "../core/next-step.mjs";
 import { materialSecurityTriggers } from "./security-policy.mjs";
+import {
+  normalizeSemanticDraft, semanticDraftTemplate
+} from "./semantic-draft.mjs";
+import {
+  compileSemanticAmendment, writeSemanticAmendment
+} from "./semantic-amendment.mjs";
 
 export function atomicStartPreflight(draft, { groundingRequired = false } = {}) {
   const issues = [];
-  if (![1, 2].includes(draft?.version))
-    issues.push("start draft requires version 1 or 2");
+  if (![1, 2, 3].includes(draft?.version))
+    issues.push("start draft requires version 1, 2, or 3");
   if (!String(draft?.intent || "").trim())
     issues.push("start draft requires non-empty 'intent'");
   const acceptance = draft?.acceptance;
@@ -41,9 +48,9 @@ export function atomicStartPreflight(draft, { groundingRequired = false } = {}) 
   const rapid = impact === "low" && coupling === "isolated" &&
     safeTriggers.filter((trigger) => trigger.toLowerCase() !== "none").length === 0 &&
     !draft?.reviewRequired && !acceptance?.required;
-  if (groundingRequired && draft?.grounding?.version !== 2)
-    issues.push("start draft requires grounding.version 2 after the initial Decision Sheet");
-  if (!rapid && groundingRequired) {
+  if (groundingRequired && ![2, 3].includes(draft?.grounding?.version))
+    issues.push("start draft requires grounding.version 2 or 3 after the initial Decision Sheet");
+  if (!rapid && groundingRequired && draft?.grounding?.version !== 3) {
     const categories = [
       "performance", "capacity", "availability", "securityPrivacy",
       "accessibility", "operability", "compatibility", "recoverability"
@@ -73,25 +80,31 @@ export function materializeChangeTemplates({
   target,
   intent,
   groundingRequired,
+  conditional = false,
+  includeDesign = true,
   instantiate
 }) {
   mkdirSync(target, { recursive: true });
   writeFileSync(join(target, ".openspec.yaml"), schema === "foundation-rapid"
     ? `schema: ${schema}\nskip_specs: true\n`
     : `schema: ${schema}\n`);
-  for (const name of [
-    "proposal.md", "tasks.md", "evidence.yaml", "execution.yaml",
-    "repositories.yaml", "handoffs.yaml"
-  ])
+  const core = conditional
+    ? ["proposal.md", "tasks.md", "evidence.yaml"]
+    : ["proposal.md", "tasks.md", "evidence.yaml", "execution.yaml",
+        "repositories.yaml", "handoffs.yaml"];
+  for (const name of core)
     writeFileSync(join(target, name), instantiate(join(source, name), intent));
-  if (groundingRequired)
+  if (groundingRequired && !conditional)
     writeFileSync(join(target, "grounding.yaml"),
       instantiate(join(source, "grounding.yaml"), intent));
   if (schema === "foundation-standard") {
-    writeFileSync(join(target, "design.md"), instantiate(join(source, "design.md"), intent));
-    mkdirSync(join(target, "specs", "change"), { recursive: true });
-    writeFileSync(join(target, "specs", "change", "spec.md"),
-      instantiate(join(source, "spec.md"), intent));
+    if (includeDesign)
+      writeFileSync(join(target, "design.md"), instantiate(join(source, "design.md"), intent));
+    if (!conditional) {
+      mkdirSync(join(target, "specs", "change"), { recursive: true });
+      writeFileSync(join(target, "specs", "change", "spec.md"),
+        instantiate(join(source, "spec.md"), intent));
+    }
   }
 }
 
@@ -105,18 +118,24 @@ export function initialChangeState({
   gitHead,
   preexistingDirty,
   initialBudget,
-  now
+  now,
+  semanticDraftVersion = null,
+  groundingVersion = null,
+  externalOperationsVersion = 1,
+  designRequired = true
 }) {
   const standard = schema === "foundation-standard";
   return {
     version: 2, id, intent, schema, status: "change", ambiguity: "clear",
     groundingRequired,
-    groundingVersion: groundingRequired ? 2 : null,
-    nfrAssessmentRequired: standard,
-    decisionMetadataRequired: standard,
+    groundingVersion: groundingRequired ? (groundingVersion || 2) : null,
+    semanticDraftVersion,
+    artifactDefaultsVersion: semanticDraftVersion === 3 ? 2 : null,
+    nfrAssessmentRequired: standard && groundingRequired && groundingVersion !== 3,
+    decisionMetadataRequired: standard && designRequired,
     semanticInvariantsRequired: standard,
     riskBasedCiRequired: standard && riskBasedCi,
-    externalOperationsVersion: 1,
+    externalOperationsVersion,
     graphExecutionVersion: 1,
     // Standard changes must pass through the explicit decision boundary before
     // validation. Keep the marker opt-in so runtime files created before this
@@ -150,8 +169,9 @@ export function renderDraftDecisions(decisions) {
     const decisionId = decision.id || `DEC-${String(index + 1).padStart(3, "0")}`;
     return `- **Decision ID:** ${decisionId}\n` +
       `  - **Status:** ${decision.status || "accepted"}\n` +
-      `  - **Decision:** ${decision.choice}\n  - **Why:** ${decision.why}\n` +
-      `  - **Rejected:** ${decision.rejected || "none"}\n` +
+      `  - **Decision:** ${decision.choice}\n  - **Why:** ${decision.why || decision.reason}\n` +
+      `  - **Rejected:** ${Array.isArray(decision.rejected)
+        ? decision.rejected.join(", ") : decision.rejected || "none"}\n` +
       `  - **Consequences:** ${decision.consequences || "No consequence beyond the bounded change"}\n` +
       `  - **Supersedes:** ${decision.supersedes || "none"}\n` +
       `  - **Superseded by:** ${decision.supersededBy || "none"}`;
@@ -159,7 +179,7 @@ export function renderDraftDecisions(decisions) {
 }
 
 export function draftBullets(items) {
-  return items.map((item) => `- ${item}`).join("\n");
+  return items.length ? items.map((item) => `- ${item}`).join("\n") : "- none";
 }
 
 export function renderDraftProposal(draft, state) {
@@ -194,19 +214,53 @@ export function draftDomainRows(domainLanguage = []) {
 }
 
 export function renderDraftDesign(draft) {
+  const risks = draft.risks.length
+    ? draft.risks.map((risk) =>
+      `| ${risk.risk} | ${risk.mitigation} | ${risk.owner} |`).join("\n")
+    : "| none | none | none |";
+  const diagrams = (draft.diagrams || []).map((diagram) => {
+    const title = diagram.title || diagram.key;
+    if (diagram.type === "mermaid" && diagram.source)
+      return `### ${title}\n\n${diagram.purpose || ""}\n\n\`\`\`mermaid\n${diagram.source}\n\`\`\``;
+    const target = diagram.path || diagram.source;
+    return `### ${title}\n\n${diagram.purpose || ""}\n\n[Diagram source](${target})`;
+  });
+  const prototype = draft.prototypeSelection
+    ? `\n\n## Prototype selection\n\n- **Selected:** ${draft.prototypeSelection.selected}\n` +
+      `- **Reference:** ${draft.prototypeSelection.reference}\n` +
+      `- **Reason:** ${draft.prototypeSelection.reason || "Recorded in the selection reference"}`
+    : "";
+  const integrations = (draft.integrations || []).map((integration) =>
+    `| ${integration.key} | ${integration.kind} | ${integration.documentation?.source} | ` +
+    `${integration.documentation?.version} | ${(integration.concerns || []).join(", ") || "none"} |`
+  );
   return `# Design\n\n## Current state\n\n${draft.currentState}\n\n` +
     `## Domain language\n\n| Canonical term | Meaning | Avoid |\n|---|---|---|\n` +
     `${draftDomainRows(draft.domainLanguage)}\n\n## Decisions\n\n` +
     renderDraftDecisions(draft.decisions) +
     `\n\n## Compatibility and migration\n\n${draft.compatibility}\n\n## Risks\n\n` +
     `| Risk | Mitigation | Evidence owner |\n|---|---|---|\n` +
-    draft.risks.map((risk) =>
-      `| ${risk.risk} | ${risk.mitigation} | ${risk.owner} |`).join("\n") + "\n";
+    risks + (diagrams.length ? `\n\n## Diagrams\n\n${diagrams.join("\n\n")}` : "") +
+    (integrations.length
+      ? `\n\n## Integrations\n\n| Integration | Kind | Documentation | Version | Concerns |\n` +
+        `|---|---|---|---|---|\n${integrations.join("\n")}` : "") + prototype + "\n";
+}
+
+export function draftNeedsDesign(draft) {
+  return Boolean(
+    draft.design || draft.prototypeSelection || (draft.diagrams || []).length ||
+    (draft.integrations || []).length || (draft.decisions || []).length ||
+    (draft.risks || []).length ||
+    (draft.compatibility && String(draft.compatibility).toLowerCase() !== "none") ||
+    (draft.specs || []).some((spec) =>
+      String(spec.operation || "added").toLowerCase() === "removed")
+  );
 }
 
 export function renderDraftTask(task, index) {
   const taskId = task.id || `T${String(index + 1).padStart(3, "0")}`;
   const metadata = [
+    task.semanticKey ? `[key:${task.semanticKey}]` : "",
     task.repository ? `[repo:${task.repository}]` : "",
     task.kind ? `[kind:${task.kind}]` : "",
     task.requestedModel || task.model
@@ -359,7 +413,10 @@ export function createChangeLifecycle({
     for (const field of requiredStrings)
       if (!String(draft[field] || "").trim())
         fail(`draft requires non-empty '${field}'`);
-    for (const field of ["changes", "nonGoals", "decisions", "risks", "tasks", "claims", "specs"])
+    const requiredArrays = draft._semanticVersion === 3
+      ? ["changes", "tasks", "claims", "specs"]
+      : ["changes", "nonGoals", "decisions", "risks", "tasks", "claims", "specs"];
+    for (const field of requiredArrays)
       if (!Array.isArray(draft[field]) || draft[field].length === 0)
         fail(`draft requires a non-empty '${field}' array`);
   }
@@ -377,8 +434,8 @@ export function createChangeLifecycle({
 
   function validateDraftPolicy(draft) {
     if (workflowPolicy().workflow.grounding === "required" &&
-        draft.grounding?.version !== 2)
-      fail("draft requires grounding.version 2 from the single Decision Sheet");
+        ![2, 3].includes(draft.grounding?.version))
+      fail("draft requires grounding.version 2 or 3 from the single Decision Sheet");
     if (draft.externalOperations !== undefined && !Array.isArray(draft.externalOperations))
       fail("draft externalOperations must be an array");
   }
@@ -419,14 +476,59 @@ export function createChangeLifecycle({
     // Version 1 is a compatibility contract: callers that supplied every
     // ledger key receive the exact same object back. Version 2 delegates the
     // mechanical IDs and unambiguous cross-ledger bindings to the harness.
-    const draft = source.version === 2
-      ? deriveDraftBookkeeping(source, slugify)
-      : source;
+    let draft = source;
+    if (source.version === 2) draft = deriveDraftBookkeeping(source, slugify);
+    if (source.version === 3) {
+      const normalized = normalizeSemanticDraft(source, slugify, {
+        loadCanonicalSpec: (capability) => {
+          const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
+          return existsSync(path) ? readFileSync(path, "utf8") : null;
+        }
+      });
+      if (normalized.issues.length)
+        fail(`semantic draft validation failed:\n  - ${normalized.issues.join("\n  - ")}`);
+      draft = normalized.draft;
+      validateSemanticReferences(draft);
+    }
     validateDraftFields(draft);
     validateDraftDomainLanguage(draft);
     if (!deferPolicy) validateDraftPolicy(draft);
     validateDraftSpecs(draft);
     return draft;
+  }
+
+  function validateSemanticReferences(draft) {
+    const referencedPaths = [];
+    if (draft.prototypeSelection?.reference)
+      referencedPaths.push(["prototypeSelection.reference", draft.prototypeSelection.reference]);
+    for (const [index, diagram] of (draft.diagrams || []).entries()) {
+      if (!["mermaid", "svg", "png"].includes(diagram?.type))
+        fail(`semantic draft diagrams[${index}].type must be mermaid|svg|png`);
+      if (!String(diagram?.key || "").trim())
+        fail(`semantic draft diagrams[${index}].key is required`);
+      if (!String(diagram?.purpose || "").trim())
+        fail(`semantic draft diagrams[${index}].purpose is required`);
+      if (diagram.type === "mermaid" && !String(diagram.source || "").trim())
+        fail(`semantic draft diagrams[${index}].source is required`);
+      if (diagram.type !== "mermaid") {
+        const path = diagram.path || diagram.source;
+        if (!String(path || "").trim())
+          fail(`semantic draft diagrams[${index}].path is required`);
+        referencedPaths.push([`diagrams[${index}].path`, path]);
+      }
+    }
+    for (const [field, value] of referencedPaths) {
+      const path = resolve(root, value);
+      if (!pathInside(root, path) || !existsSync(path))
+        fail(`semantic draft ${field} must reference an existing file inside the project`);
+    }
+    for (const [index, integration] of (draft.integrations || []).entries()) {
+      const source = String(integration?.documentation?.source || "").trim();
+      if (!source || /^[a-z][a-z0-9+.-]*:\/\//i.test(source)) continue;
+      const path = resolve(root, source);
+      if (!pathInside(root, path) || !existsSync(path))
+        fail(`semantic draft integrations[${index}].documentation.source must reference an existing file inside the project or a versioned URL`);
+    }
   }
 
   function normalizedDraftScenarios(spec) {
@@ -452,20 +554,25 @@ export function createChangeLifecycle({
     const state = loadRuntime(id);
     const basePath = changePath(id);
     writeFileSync(join(basePath, "proposal.md"), renderDraftProposal(draft, state));
-    if (state.schema === "foundation-standard")
+    if (state.schema === "foundation-standard" &&
+        (draft._semanticVersion !== 3 || draftNeedsDesign(draft)))
       writeFileSync(join(basePath, "design.md"), renderDraftDesign(draft));
     if (state.groundingRequired && draft.grounding)
       writeJson(join(basePath, "grounding.yaml"), draft.grounding);
     writeFileSync(join(basePath, "tasks.md"), renderDraftTasks(draft.tasks));
     const contract = readJson(join(basePath, "evidence.yaml"));
     contract.claims = draft.claims;
+    if (draft._semanticVersion === 3 && draft._derivedExecution)
+      contract.providers = draft.execution.providers;
     writeJson(join(basePath, "evidence.yaml"), contract);
-    if (draft.execution) writeJson(join(basePath, "execution.yaml"), draft.execution);
-    writeJson(join(basePath, "handoffs.yaml"), {
-      version: 1,
-      operations: draft.externalOperations || []
-    });
-    if (draft.repositories) writeJson(join(basePath, "repositories.yaml"), {
+    if (draft.execution && !(draft._semanticVersion === 3 && draft._derivedExecution))
+      writeJson(join(basePath, "execution.yaml"), draft.execution);
+    if (draft._semanticVersion !== 3 || draft.externalOperations?.length)
+      writeJson(join(basePath, "handoffs.yaml"), {
+        version: 1,
+        operations: draft.externalOperations || []
+      });
+    if (draft.repositories?.length) writeJson(join(basePath, "repositories.yaml"), {
       version: 1,
       repositories: draft.repositories
     });
@@ -513,19 +620,29 @@ export function createChangeLifecycle({
     const schema = flags.rapid ? "foundation-rapid" : "foundation-standard";
     const source = templateDir(schema);
     const target = changePath(id);
-    const groundingRequired = workflowPolicy().workflow.grounding === "required";
+    const groundingRequired = workflowPolicy().workflow.grounding === "required" ||
+      Boolean(draft?.grounding);
+    const semantic = draft?._semanticVersion === 3;
     // The rapid schema declares no spec artifact, so a rapid change never has
     // deltas to find. OpenSpec reads that absence as an error — every rapid
     // change was invalid to `openspec validate`, and Land printed five lines of
     // raw validator text at the user for a lane whose whole point is small work.
     // `skip_specs` is the flag OpenSpec's own message names for exactly this.
     materializeChangeTemplates({
-      schema, source, target, intent, groundingRequired, instantiate
+      schema, source, target, intent, groundingRequired,
+      conditional: semantic,
+      includeDesign: !semantic || draftNeedsDesign(draft),
+      instantiate
     });
     const state = initialChangeState({
       root, id, intent, schema, groundingRequired,
       riskBasedCi: workflowPolicy().land?.riskBasedCi === true,
-      gitHead, preexistingDirty, initialBudget, now
+      gitHead, preexistingDirty, initialBudget, now,
+      semanticDraftVersion: semantic ? 3 : null,
+      groundingVersion: draft?.grounding?.version || null,
+      externalOperationsVersion: semantic
+        ? (draft.externalOperations?.length ? 1 : null) : 1,
+      designRequired: !semantic || draftNeedsDesign(draft)
     });
     saveRuntime(state);
     if (draft) materializeDraft(id, draft);
@@ -538,127 +655,7 @@ export function createChangeLifecycle({
   }
 
   function rapidStartTemplate() {
-    return {
-      version: 2,
-      intent: "Describe one low-impact isolated outcome",
-      why: "Explain the user-visible reason",
-      currentState: "Describe the bounded current behavior",
-      domainLanguage: [{
-        term: "replace-with-project-specific-term",
-        meaning: "replace-with-tight-domain-meaning",
-        avoid: "replace-with-ambiguous-alias-or-none"
-      }],
-      compatibility: "No public compatibility or migration impact",
-      changes: ["Describe the intended behavior"],
-      nonGoals: ["Name one explicit non-goal"],
-      decisions: [{ choice: "Use the smallest isolated change", why: "Minimize risk", rejected: "Broader redesign" }],
-      risks: [{ risk: "Behavior regression", mitigation: "Focused deterministic test", owner: "implementation" }],
-      acceptance: { required: false, reason: null, claimIds: [] },
-      tasks: [{ outcome: "Implement the bounded outcome", kind: "implementation", paths: ["replace-with-owned-path"], verify: "replace-with-focused-command" }],
-      claims: [{ scenario: "Observable outcome passes", impact: "low", capabilities: ["test"] }],
-      specs: [{
-        name: "unused-by-rapid",
-        operation: "added",
-        requirement: "Bounded outcome",
-        description: "The system SHALL provide the outcome.",
-        scenarios: [{
-          name: "Focused behavior",
-          when: "the bounded input occurs",
-          then: "the expected result is returned"
-        }]
-      }],
-      execution: {
-        version: 1,
-        providers: {
-          test: {
-            adapter: "test-discovery",
-            minimum: 1,
-            timeoutMs: 120000
-          }
-        },
-        services: {}
-      },
-      externalOperations: [],
-      grounding: {
-        version: 2,
-        decisionBatch: {
-          status: "locked",
-          source: "user-batch",
-          reference: "replace-with-durable-decision-reference",
-          mode: "single-batch",
-          lockedAt: "replace-with-ISO-8601-timestamp",
-          decisions: [{
-            id: "replace-with-stable-decision-id",
-            question: "replace-with-material-question-or-default-reviewed",
-            answer: "replace-with-locked-answer",
-            source: "user-batch"
-          }]
-        },
-        risk: {
-          tier: "low",
-          classes: ["none"],
-          rationale: "Low-impact isolated draft with no discovered operated boundary"
-        },
-        productionEntry: {
-          status: "applicable",
-          sourceReason: "The focused production entry must be named before start",
-          paths: ["replace-with-production-entry"]
-        },
-        realWire: {
-          status: "not-applicable",
-          sourceReason: "No wire boundary is present in the isolated draft",
-          contracts: []
-        },
-        activationSemantics: {
-          status: "not-applicable",
-          sourceReason: "The isolated draft activates no dormant legacy path",
-          activatedPaths: [],
-          failureSemanticChanges: []
-        },
-        serviceInteractions: {
-          status: "not-applicable",
-          sourceReason: "The isolated draft has no cross-service interaction",
-          rows: []
-        },
-        observability: {
-          status: "not-applicable",
-          sourceReason: "The isolated draft creates no operated runtime boundary",
-          rows: []
-        },
-        nfrAssessment: Object.fromEntries([
-          "performance", "capacity", "availability", "securityPrivacy",
-          "accessibility", "operability", "compatibility", "recoverability"
-        ].map((category) => [category, {
-          status: "not-applicable",
-          sourceReason: `The isolated draft has no discovered ${category} requirement`,
-          target: "none",
-          claimIds: []
-        }])),
-        readSet: [{
-          repository: "root",
-          path: "replace-with-relevant-file",
-          role: "requirement",
-          mode: "full",
-          sha256: "replace-with-file-sha256"
-        }],
-        claims: [{
-          productionPath: [{
-            repository: "root",
-            path: "replace-with-entrypoint-or-observable-surface"
-          }],
-          failurePaths: [{
-            repository: "root",
-            path: "replace-with-path-containing-failure-branch",
-            failure: "replace-with-branch-input-class-or-dependency-stage"
-          }],
-          evidenceClass: ["test"],
-          testDoubleGap: "none"
-        }],
-        criticalCases: [],
-        mutants: [],
-        derivedFacts: []
-      }
-    };
+    return semanticDraftTemplate();
   }
 
   function applyGroundingReopen(state, flags) {
@@ -842,7 +839,8 @@ export function createChangeLifecycle({
   function startAtomic(draftPath, options = {}) {
     const draft = loadDraft(draftPath, { deferPolicy: true });
     const preflight = atomicStartPreflight(draft, {
-      groundingRequired: workflowPolicy().workflow.grounding === "required"
+      groundingRequired: workflowPolicy().workflow.grounding === "required" ||
+        Boolean(draft.grounding)
     });
     if (preflight.issues.length)
       fail(`start draft preflight failed:\n  - ${preflight.issues.join("\n  - ")}`);
@@ -891,6 +889,73 @@ export function createChangeLifecycle({
     }
   }
 
+  function amendChange(id, amendmentPath, options = {}) {
+    const state = loadRuntime(id);
+    if (state.semanticDraftVersion !== 3)
+      fail(`change amend requires a semantic-draft v3 change; '${id}' is a legacy agreement`);
+    if (["proven", "landing", "archived"].includes(state.status))
+      fail(`change amend cannot rewrite an agreement in '${state.status}' status; start a successor change`);
+    const source = resolve(root, amendmentPath);
+    if (!pathInside(root, source) || !existsSync(source))
+      fail("change amend requires a JSON file inside the project");
+    const amendment = readJson(source);
+    const basePath = changePath(id);
+    const contract = readJson(join(basePath, "evidence.yaml"));
+    const tasksContent = readFileSync(join(basePath, "tasks.md"), "utf8");
+    const compiled = compileSemanticAmendment({
+      amendment, contract, tasksContent, slugify, renderTask: renderDraftTask
+    });
+    if (compiled.issues.length)
+      fail(`semantic amendment validation failed:\n  - ${compiled.issues.join("\n  - ")}`);
+
+    const transactionRoot = mkdtempSync(join(dirname(basePath), `.${id}-amend-`));
+    const stagedPath = join(transactionRoot, "next");
+    const priorPath = join(transactionRoot, "prior");
+    cpSync(basePath, stagedPath, { recursive: true, errorOnExist: true });
+    writeSemanticAmendment(stagedPath, compiled, slugify);
+    const priorState = structuredClone(state);
+    let installed = false;
+    try {
+      renameSync(basePath, priorPath);
+      renameSync(stagedPath, basePath);
+      installed = true;
+      validate(id, "root");
+      const nextState = loadRuntime(id);
+      nextState.revision = Number(nextState.revision || 0) + 1;
+      nextState.contractRevision = Number(nextState.contractRevision || 0) + 1;
+      nextState.executionRevision = Number(nextState.executionRevision || 0) + 1;
+      nextState.amendments = [...(nextState.amendments || []), {
+        version: 1,
+        revision: nextState.contractRevision,
+        reason: String(amendment.reason || "Agreement expanded during Build"),
+        requirementKeys: compiled.addedRequirementKeys,
+        invalidatedClaims: compiled.invalidatedClaims,
+        appliedAt: now()
+      }];
+      saveRuntime(nextState);
+      rmSync(priorPath, { recursive: true, force: true });
+    } catch (error) {
+      if (installed && existsSync(basePath))
+        rmSync(basePath, { recursive: true, force: true });
+      if (existsSync(priorPath)) renameSync(priorPath, basePath);
+      saveRuntime(priorState);
+      fail(`${error?.message || error}; semantic amendment rolled back`);
+    } finally {
+      rmSync(transactionRoot, { recursive: true, force: true });
+    }
+    if (options.consumeAmendment) {
+      try { rmSync(source); }
+      catch (error) {
+        console.error(`WARNING: amendment succeeded but could not remove '${
+          relative(root, source)}': ${error.message}`);
+      }
+    }
+    console.log(`AMENDED ${id}\n  revision: ${loadRuntime(id).contractRevision}\n` +
+      `  invalidated claims: ${compiled.invalidatedClaims.join(", ")}\n` +
+      `  next: claude-foundation advance ${id}`);
+    return compiled;
+  }
+
   return {
     templateDir,
     instantiate,
@@ -899,6 +964,7 @@ export function createChangeLifecycle({
     createChange,
     rapidStartTemplate,
     startAtomic,
+    amendChange,
     resolveChange
   };
 }

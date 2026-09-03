@@ -2,24 +2,25 @@
 
 Use the lifecycle and ownership in `.claude/orchestrator.md`.
 
-Before work, verify Change Loop 3.5.2/runtime API `27`; run both doctors.
-Only a failing doctor blocks: relay
+Before work, verify Change Loop 3.5.2/runtime API `28` and run doctors. Only failure
+blocks: relay
 `.claude/harness/DEVELOPER-SETUP.md`; never improvise installation.
-Single-family: select reviewer plus `single-model`; retain distinct identity/session.
+Single-family: select reviewer plus `single-model`; retain distinct identity.
 
-Use `packet <change> --phase <phase>`. Edit sandbox paths only; claims in
-`evidence.yaml`, providers in `execution.yaml`.
+Create Change from one semantic draft. Then use
+`advance <change> --through build|proven|archived`; edit only the workspace,
+tasks and paths returned by its action. OpenSpec stays canonical; absent files
+use versioned defaults.
 
 Harness output is a machine handoff: translate in the user's language. Run
-authorized `automaticRecovery`; never ask the user to run a safe action you can.
-Otherwise use AskUserQuestion, plain text otherwise; never present only the option that makes the workflow pass.
+authorized `automaticRecovery`; never ask users to run a safe action you can.
+Use AskUserQuestion, plain text otherwise; never offer only a passing option.
 
 For `notification.surface: true`, load `README.md`; false is the
 harness-owned suppression decision.
 
 Settle production, wire, activation, proof, and authority once. Build/Prove fix
-in-contract defects, recover providers, and hand off missing permission. Ask
-again only for a locked material change.
+defects and hand off missing permission. Reask only for material change.
 
-Land authority and evidence rules live in `.claude/orchestrator.md`.
+Land authority/evidence rules: `.claude/orchestrator.md`.
 Follow `.claude/rules/fundamentals.md` for conduct and skill routing.

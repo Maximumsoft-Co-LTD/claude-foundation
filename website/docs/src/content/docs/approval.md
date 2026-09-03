@@ -133,10 +133,11 @@ evidence while the work is making progress.
 The normal entry point is one resumable command:
 
 ```bash
-claude-foundation proof advance <change>
+claude-foundation advance <change> --through proven
 ```
 
-It creates or reuses the request and never polls an unchanged external wait.
+The coordinator invokes the compatible proof primitive, creates or reuses the
+request, and never polls an unchanged external wait.
 When the packet is actually handed off, configured Codex or Claude Code review
 uses `authority run`. A named-human review must use `authority dispatch` before `authority
 record`. Human acceptance uses request/status/record without a review dispatch.

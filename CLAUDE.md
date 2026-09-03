@@ -16,6 +16,11 @@ isolation, budgets, proof freshness, authority boundaries, and Land recovery.
 Change Loop does not replace the coding agent, Git, CI, or the project's test
 framework.
 
+New changes use semantic draft v3: the compiler owns stable cross-ledger links
+and creates optional artifacts only for real concerns. The normal host path
+after Change is `advance --through build|proven|archived`; low-level commands
+remain supported operator and integration primitives. OpenSpec stays canonical.
+
 Work here changes the harness shipped to real consumer repositories. A broken
 command, skill, hook, or runtime rule is this project's bug to fix—not a rule to
 work around. Public command names and arguments are compatibility contracts.

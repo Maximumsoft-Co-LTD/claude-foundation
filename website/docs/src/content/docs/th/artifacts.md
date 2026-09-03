@@ -79,7 +79,8 @@ quality/
 :::caution[มีไฟล์ชื่อ `repositories.yaml` สองตัว]
 `openspec/repositories.yaml` อธิบายโครงสร้าง repository ของทั้งโปรเจกต์
 ส่วน `openspec/changes/<id>/repositories.yaml` อธิบายว่า **change ตัวนั้น**
-แตะ repository ไหนบ้างและในโหมดใด สองไฟล์นี้คนละตัวกันแต่ชื่อเหมือนกัน
+แตะ repository ไหนบ้างและในโหมดใดเมื่อมี multi-repository scope ถ้าไม่มีไฟล์ใน
+packet semantic default คือ repository เดียวชื่อ `root` สองไฟล์นี้คนละตัวกันแต่ชื่อเหมือนกัน
 provider ที่อ่านผิดตัวจะกำหนดขอบเขตผิดแบบเงียบ ๆ
 :::
 
@@ -99,16 +100,23 @@ design บันทึกเฉพาะการตัดสินใจที�
 | `proposal.md` | ทำไมต้องมี change นี้ อะไรเปลี่ยนแบบที่สังเกตได้ impact และสิ่งที่ไม่ทำ | ทั้งคู่ |
 | `tasks.md` | ledger เดียวของการ implement — ที่เดียวที่ติดตามงาน | ทั้งคู่ |
 | `evidence.yaml` | สัญญาเชิงพฤติกรรมที่คงที่ — claim ID, scenario, capability | ทั้งคู่ |
-| `grounding.yaml` | มติที่ล็อกแล้ว hash ของ read set, production/failure path และ NFR assessment 8 หมวด | ทั้งคู่เมื่อบังคับ grounding |
-| `execution.yaml` | การต่อสายที่เปลี่ยนได้ — คำสั่ง provider, service, readiness | ทั้งคู่ |
-| `repositories.yaml` | โครงสร้าง repository และโหมดการเขียน | ทั้งคู่ |
+| `grounding.yaml` | Semantic v3 เก็บ non-derived material decision; grounding read-set รุ่นเดิมยังอ่านได้ | มีเมื่อมี decision ที่ต้อง lock |
+| `execution.yaml` | Custom wiring ที่เปลี่ยนได้ — คำสั่ง provider, service, readiness | มีเมื่อ derived wiring ไม่พอ |
+| `repositories.yaml` | การเลือก repository และโหมดการเขียนแบบชัดเจน | มีเมื่อเป็น multi-repository |
+| `handoffs.yaml` | Permission-bound external operation และ activation safety | มีเมื่องานแบบนี้มีจริง |
 | `.openspec.yaml` | assurance profile ที่ควบคุม packet นี้ | ทั้งคู่ |
-| `design.md` | มติ `DEC-*` เหตุผล ทางเลือกที่ปฏิเสธ consequence, supersession, compatibility และความเสี่ยง | standard |
+| `design.md` | Durable decision, diagram, versioned integration, prototype selection, compatibility และความเสี่ยง | standard และมีเมื่อมี design context |
 | `specs/**/spec.md` | delta ของ requirement — `ADDED`, `MODIFIED`, `REMOVED` | standard |
 
-packet แบบ `foundation-rapid` จะไม่มี `design.md` กับ spec delta ทันทีที่ impact
+packet แบบ `foundation-rapid` จะไม่มี spec delta และปกติไม่มี `design.md` ทันทีที่ impact
 สูงกว่า low, coupling ไม่ใช่ isolated แล้ว หรือมีการบังคับ review หรือ acceptance
-change จะ **อัปเกรดตัวเองเป็น standard** และสร้างสอง artifact นั้นให้อัตโนมัติ
+change จะ **อัปเกรดตัวเองเป็น standard** และสร้าง delta artifact ให้อัตโนมัติ
+ส่วน extension อื่นยังสร้างเฉพาะเมื่อมี concern จริง
+
+Agent ไม่ต้องเขียน ID ข้าม ledger ด้วยมือ Semantic draft v3 compile requirement,
+scenario, task, claim และ provider binding เป็น packet นี้ และ OpenSpec packet ที่
+compile แล้วคือ source of truth Prototype หรือ diagram ที่เลือกอ้างจาก design ได้
+แต่ output ของ prototype ยังไม่ authoritative และถูกปฏิเสธเป็น evidence
 
 :::tip
 `tasks.md` เป็น ledger เดียวโดยตั้งใจ checklist ที่สองที่เก็บไว้ในแชทหรือไฟล์ scratch

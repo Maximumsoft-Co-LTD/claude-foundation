@@ -31,8 +31,17 @@ for (const status of LIFECYCLE_STATUSES)
     `status '${status}' must name the operation that moves it`));
 
 check(() => assert.equal(nextCommand("proven", "demo"),
-  "claude-foundation land check demo",
-  "a proof of unknown freshness defers to land check, which re-compares the hash"));
+  "claude-foundation advance demo",
+  "the coordinator rechecks proof freshness without implying Land authority"));
+check(() => assert.equal(nextCommand("building", "demo"),
+  "claude-foundation advance demo --through build",
+  "Build status names the exact bounded target"));
+check(() => assert.equal(nextCommand("stale-proof", "demo"),
+  "claude-foundation advance demo --through proven",
+  "stale proof returns to the exact proof target"));
+check(() => assert.equal(nextCommand("landing", "demo"),
+  "claude-foundation advance demo --through archived",
+  "an authorized in-flight Land resumes to archived"));
 check(() => assert.match(nextCommand("no-such-status", "demo"), /doctor --change demo/,
   "an unknown status falls back to diagnosis rather than a dead entry"));
 
@@ -75,7 +84,7 @@ try {
 
   const active = digest(fixture);
   check(() => assert.match(active, /demo-change \[building\]/));
-  check(() => assert.match(active, /next: claude-foundation proof readiness demo-change/));
+  check(() => assert.match(active, /next: claude-foundation advance demo-change/));
   check(() => assert.match(active, /orphan runtime state/,
     "state with no active change is how a stuck project stays stuck unnoticed"));
   check(() => assert.match(active, /left-behind/));

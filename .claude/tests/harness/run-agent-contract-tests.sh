@@ -11,21 +11,21 @@ assert_file_contains "agent contract translates machine output for users" \
 assert_file_contains "agent contract executes deterministic recovery" \
   "$ROOT/.claude/harness/AGENT.md" 'authorized `automaticRecovery`'
 assert_file_contains "agent contract forbids pass-biased decisions" \
-  "$ROOT/.claude/harness/AGENT.md" "never present only the option that makes the workflow"
-assert_file_contains "build treats spawn groups as concurrent authority" \
-  "$ROOT/.claude/commands/build.md" 'Treat `spawn-group` as concurrent authority'
+  "$ROOT/.claude/harness/AGENT.md" "never offer only a passing option"
+assert_file_contains "build routes parallel authority selectively" \
+  "$ROOT/.claude/commands/build.md" '`references/build-dispatch.md`'
 assert_file_contains "build handles singleton frontiers in the parent under lease" \
-  "$ROOT/.claude/commands/build.md" '`run-leased-in-session`'
-assert_file_contains "build names the ordinary parent-session action" \
-  "$ROOT/.claude/commands/build.md" '`run-in-session`'
-assert_file_contains "build names the live-lease wait action" \
-  "$ROOT/.claude/commands/build.md" '`wait`'
-assert_file_contains "build names the blocked action" \
-  "$ROOT/.claude/commands/build.md" '`blocked`'
-assert_file_contains "build names the terminal completion action" \
-  "$ROOT/.claude/commands/build.md" '`build-complete`'
-assert_file_contains "build executes terminal readiness before Prove" \
-  "$ROOT/.claude/commands/build.md" 'Execute its `nextCommand` before Prove'
+  "$ROOT/.claude/commands/references/build-dispatch.md" 'session-mode leased task'
+assert_file_contains "build names the normal model edit action" \
+  "$ROOT/.claude/commands/build.md" '`EDIT`'
+assert_file_contains "build names real wait boundaries" \
+  "$ROOT/.claude/commands/build.md" '`WAIT`/`ASK_USER`'
+assert_file_contains "build names the repair action" \
+  "$ROOT/.claude/commands/build.md" '`REPAIR`'
+assert_file_contains "build names terminal completion" \
+  "$ROOT/.claude/commands/build.md" '`DONE`'
+assert_file_contains "build follows the exact resume route" \
+  "$ROOT/.claude/commands/build.md" 'exact `resume` route'
 assert_file_contains "change partitions defect inputs beyond the reported repro" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
   'partitions and source-language representation/coercion boundaries'
@@ -36,7 +36,7 @@ assert_file_contains "dispatch preserves lease authority for singleton frontiers
   "$ROOT/.claude/commands/references/build-dispatch.md" \
   'singleton runnable frontier out of a new worker'
 assert_file_contains "build forbids serializing a spawn group in the parent" \
-  "$ROOT/.claude/commands/build.md" 'serialize that group in the parent'
+  "$ROOT/.claude/commands/references/build-dispatch.md" 'Never serialize the'
 assert_file_contains "dispatch spawns the leased group before waiting" \
   "$ROOT/.claude/commands/references/build-dispatch.md" \
   'successfully leased worker before waiting for any worker'
@@ -65,7 +65,7 @@ assert_file_contains "prove command forbids raw readiness output" \
 assert_file_contains "change command requires canonical spec comparison" \
   "$ROOT/.claude/skills/change/references/workflow.md" 'Do not default to `ADDED`'
 assert_file_contains "change command defines complete modified deltas" \
-  "$ROOT/.claude/skills/change/references/workflow.md" "copy the complete requirement and every existing scenario"
+  "$ROOT/.claude/skills/change/references/workflow.md" "requirement and every existing scenario"
 assert_file_contains "change command requires removal migration consequence" \
   "$ROOT/.claude/skills/change/references/workflow.md" '`**Migration:**` or `**Compatibility:**`'
 

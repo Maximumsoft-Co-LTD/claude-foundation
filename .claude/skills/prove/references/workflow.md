@@ -1,13 +1,13 @@
 # Prove workflow
 
-Start from a fresh `packet <change> --phase prove`; inherit no Build history.
-Run `proof advance`; it routes review before acceptance, reuses `authority request`,
-and never polls. When it returns an automatic in-contract repair
-batch, return through Build, repair the complete batch, then invoke a fresh
-Prove packet and advance again. Continue until proof and audit pass. There is no
-repair-count stop; a decision/authority/resource/conflict/no-progress boundary
-preserves the change and resumes after resolution. Send each `handoff packet`
-once; continue without asking for cloud credentials.
+Run `claude-foundation advance <change> --through proven`. It establishes fresh
+Prove context, reuses valid receipts, executes eligible providers, routes review
+before acceptance, and never polls. Follow only the returned protocol-v3 action
+and exact resume route. An automatic in-contract repair returns a bounded
+dependency-ordered batch; repair it in Build and resume. There is no fixed
+repair-count stop while the progress fingerprint changes. A decision,
+authority, resource, conflict, or repeated no-progress boundary preserves state
+and returns the responsible actor plus supported alternatives.
 
 A review dispatch or `authority run` dies with the session: in a
 non-interactive run your final reply terminates the process, kills the
@@ -26,7 +26,8 @@ receipts—never AI round three or a generic redesign/split/pause question.
 Reopen one Decision Sheet only for changed behavior, compatibility, security,
 data, or rollout.
 
-For a missing adapter use `evidence init --write`. Identity may be shared only
+For a missing adapter follow the `REPAIR` action; its advanced recovery may use
+`evidence init --write`. Identity may be shared only
 with committed `review.independence: "self"`. Codex-only or Claude-Code-only
 review uses `review.diversity: "single-model"`; it requires a fresh
 identity/session. Never substitute self-review for a required reviewer.
@@ -34,6 +35,9 @@ Prove may run declared evidence but must not invent a checker to manufacture a
 missing capability. Return that gap to Build. A Build-authored checker is
 eligible only when its own success and failure paths are covered by the normal
 test and quality commands.
+When the coordinator reaches review or acceptance, its advanced bridge is
+`authority request`; do not replace that typed handoff with an informal prompt
+or a fabricated receipt.
 Never expose raw readiness JSON. Relay every blocker with the route and every
 boundary with its diagnosis, choices, recommendation, and resume route; pause only for real decisions or
 external conditions. Never fabricate provenance, claim an unproven pass, or Land. End

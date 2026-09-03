@@ -88,6 +88,7 @@ export const PHASE_BY_COMMAND = {
   "telemetry-sync": "meta",
   "telemetry-import": "meta",
   advance: "meta",
+  amend: "change",
   feedback: "meta"
 };
 

@@ -67,7 +67,7 @@ assert_contains "partial policy receives review default" "$doctor" "review=8192"
 # Exercise the real previous release rather than a hand-built policy fragment.
 # An in-flight v3.2.19 change is a grandfathered migration exception: it stays
 # readable and does not acquire an invented Decision Sheet. New changes created
-# after upgrade must use Grounding v2.
+# after upgrade use the current conditional-grounding default.
 previous_source="$TMP/foundation-3.2.19"
 previous_target="$TMP/previous-project"
 current_version="$(cat "$ROOT/VERSION")"
@@ -96,9 +96,9 @@ assert_eq "legacy active change is an explicit grounding migration exception" \
 assert_cmd_zero "post-upgrade change creation uses the new runtime" \
   bash "$ROOT/cli.sh" --project "$previous_target" \
     change new "Grounded after upgrade" --rapid
-assert_file_exists "post-upgrade change receives Grounding v2" \
+assert_file_absent "post-upgrade change receives no empty grounding artifact" \
   "$previous_target/openspec/changes/grounded-after-upgrade/grounding.yaml"
-assert_eq "post-upgrade runtime requires Grounding v2" "2" \
+assert_eq "post-upgrade runtime keeps grounding optional" "null" \
   "$(jq -r '.groundingVersion' \
     "$previous_target/.foundation/runtime/grounded-after-upgrade.json")"
 

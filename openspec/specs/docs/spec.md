@@ -65,3 +65,28 @@ human consent, because the harness gates Land on evidence.
 - **THEN** it states that a standard change starts `undecided` and that
   `change validate` fails until a human decides
 
+### Requirement: Current documentation teaches one primary agent workflow
+
+Current English and Thai documentation SHALL teach `/investigate`, `/change`,
+`/build`, `/prove`, `/land`, and `/dev` as the user surface, semantic draft plus
+`change amend` as the agreement compiler surface, and `advance --through` as the
+normal model-facing runtime surface. Low-level compatible commands SHALL remain
+documented as operator or integration primitives rather than a required chain.
+
+#### Scenario: A user follows the normal lifecycle
+
+- **WHEN** the user asks the coding agent to create, build, prove, or land work
+- **THEN** the documentation does not require the user to run sandbox, packet,
+  dispatch, provider, receipt, or archive primitives manually
+
+#### Scenario: Documentation lists active change artifacts
+
+- **WHEN** a current page describes an active semantic change
+- **THEN** it distinguishes the three core files from conditional design,
+  grounding, execution, repository, handoff, and standard delta-spec files
+
+#### Scenario: Historical records retain their original vocabulary
+
+- **WHEN** a file is an archived OpenSpec change, release note, or dated report
+- **THEN** documentation consistency treats it as historical evidence and does
+  not rewrite its description of the version that produced it

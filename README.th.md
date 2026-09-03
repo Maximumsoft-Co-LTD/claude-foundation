@@ -16,7 +16,7 @@ Change Loop ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก�
 ชื่อผลิตภัณฑ์และ workflow คือ **Change Loop** ส่วน package และ CLI ที่ติดตั้งยังใช้
 `claude-foundation` เหมือนเดิม จึงไม่ต้องเปลี่ยนคำสั่งที่ใช้อยู่
 
-**Version 3.5.2** — runtime API 27, provider protocol 13 receipt ที่บันทึกด้วย
+**Version 3.5.2** — runtime API 28, provider protocol 13 receipt ที่บันทึกด้วย
 เวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 `claude-foundation metrics <change-id>` จะแสดง source cohort ของ runtime แบบ
 เจาะจงด้วย ได้แก่ semantic version, protocol bundle ที่โหลดจริง และ SHA-256
@@ -119,9 +119,9 @@ Claude Code ไม่ต้องใช้ adapter ส่วน agent host อ�
 claude-foundation init /path/to/your-project --host cursor    # หรือ opencode, codex
 ```
 
-Cursor ได้ command ทั้งแปดพร้อม skill router เป็น rule แบบ `alwaysApply`;
+Cursor ได้หก lifecycle prompt หลัก พร้อม `/changes`, alias `/feature` และ skill router เป็น rule แบบ `alwaysApply`;
 OpenCode ได้ command พร้อม guard plugin ที่ replay hook ที่ ship มาแบบ live;
-Codex ได้ prompt ทั้งแปดใน `$CODEX_HOME/prompts` พร้อม ownership marker —
+Codex ได้หก prompt หลักพร้อม utility/alias อีกสองตัวใน `$CODEX_HOME/prompts` พร้อม ownership marker —
 Codex ไม่มี tool hook การบังคับใช้ที่นั่นจึงเหลือ Land gate
 
 หลังติดตั้ง ให้เปิด Claude Code session ใหม่ใน project เป้าหมายเพื่อโหลด slash
@@ -201,9 +201,12 @@ assumption ใหม่
 /change allow an account owner to edit their display name
 ```
 
-Agent จะสำรวจ project ถามเฉพาะ decision ที่มีผลต่อ outcome และสร้าง
-`openspec/changes/<change-id>/` ก่อนทำต่อ ให้ review proposal, observable
-scenario, task และ evidence claim ว่าตรงกับสิ่งที่ต้องการ
+Agent จะสำรวจ project ถามเฉพาะ decision ที่มีผลต่อ outcome และเขียน semantic
+draft ขนาดเล็กหนึ่งชุด Harness compile เป็น `openspec/changes/<change-id>/`
+พร้อมสร้าง stable ID และ link ระหว่าง requirement, scenario, task, claim และ
+provider ก่อนทำต่อ ให้ review proposal, observable scenario, task และ evidence
+claim ว่าตรงกับสิ่งที่ต้องการ OpenSpec packet ที่ compile แล้ว—not chat หรือ draft
+ชั่วคราว—คือ source of truth
 
 Agent จะตอบด้วยภาษาของคุณและเริ่มจากผลลัพธ์ งานกู้คืนที่ปลอดภัยกับคำสั่งปกติ
 Agent จะทำให้เอง แล้วบอกว่าแก้อะไรและตรวจอะไรแล้ว คุณจะถูกถามเฉพาะเมื่อ behavior,
@@ -243,6 +246,10 @@ worktree มีแค่ไฟล์ที่ Git ติดตาม ถ้า p
 ทำไมต้องมีขั้นนี้: คุณ inspect หรือทิ้ง implementation ที่ยังไม่พร้อมได้ โดยไม่
 ปนกับ checkout ที่กำลังใช้งาน
 
+Agent ขับ Build ด้วย `claude-foundation advance <change-id> --through build`
+Coordinator เดียวนี้ validate เตรียม isolation เลือกงานที่รันได้ และคืน action ที่
+มีขอบเขตหนึ่งตัว ผู้ใช้ไม่ต้องประกอบ sandbox, packet, plan, lease หรือ dispatch เอง
+
 ### 3. Prove ผลลัพธ์
 
 ```text
@@ -260,6 +267,9 @@ next: /land <change-id>
 ทำไมต้องมีขั้นนี้: Passing proof ยืนยันว่า behavior ที่ประกาศไว้ถูกตรวจบน code
 ชุดเดียวกับที่จะ Land ไม่ใช่บน workspace เก่าหรือคนละชุด
 
+Agent ใช้ `advance <change-id> --through proven`; คำสั่ง `proof ...` เดิมยังอยู่
+สำหรับ diagnostic และ integration
+
 ### 4. Land งานที่พิสูจน์แล้ว
 
 ```text
@@ -275,6 +285,9 @@ Land ต่อให้เอง งานไม่หายและไม่�
 
 ทำไมต้องมีขั้นนี้: การนำ code เข้า project กับการอัปเดต requirement ถาวรถูกผูก
 เป็น completion boundary เดียวที่มี guard และ resume ได้
+
+Agent ใช้ `advance <change-id> --through archived` งานจะเสร็จจริงเมื่อ state เป็น
+`archived` และ Land ยังไม่ได้ให้อำนาจ commit, push, publish หรือเปิด pull request
 
 ### 5. Commit ตาม Git process ของ project
 
@@ -309,7 +322,7 @@ Investigate ⇄ Change ⇄ Build ⇄ Prove → Land
 | Phase | AI ทำอะไร | Harness ทำอะไร |
 |---|---|---|
 | Investigate | หา fact, hypothesis, ทางเลือก และ tradeoff | เลือก workspace ที่ถูกต้องและควบคุมไม่ให้แก้ product |
-| Change | เขียน proposal, scenario, design, task และ evidence claim | Validate schema, risk policy, scope และ revision state |
+| Change | ระบุ intent, requirement, scenario, task outcome และ evidence ที่ต้องใช้ | Compile stable link และ validate schema, risk, scope กับ revision state |
 | Build | Implement code และ test, รัน focused check และทำ task ให้เสร็จ | สร้าง isolated workspace จำกัดอำนาจ และเก็บความคืบหน้า |
 | Prove | วิเคราะห์และแก้ failure ที่ evidence พบ | รัน provider ตรวจ claim coverage และ receipt แล้วสร้าง content-bound proof |
 | Land | ช่วยแก้ conflict เมื่อจำเป็นต้องใช้ judgment หรือแก้ implementation | ตรวจ freshness, apply proven diff, รองรับ rollback/resume, sync spec และ archive |
@@ -384,14 +397,14 @@ openspec/
 openspec/changes/<change-id>/
 ├── .openspec.yaml
 ├── proposal.md
-├── specs/<area>/spec.md       # standard lane เท่านั้น
-├── design.md                  # standard lane เท่านั้น
 ├── tasks.md
 ├── evidence.yaml
-├── grounding.yaml
-├── execution.yaml
-├── repositories.yaml
-└── handoffs.yaml
+├── specs/<area>/spec.md       # standard lane
+├── design.md                  # เมื่อมี durable design context
+├── grounding.yaml             # เมื่อมี material decision ที่ต้อง lock
+├── execution.yaml             # เมื่อ override provider/service wiring
+├── repositories.yaml          # เมื่อประกาศ multi-repository scope
+└── handoffs.yaml              # เมื่อมี permission-bound operation
 ```
 
 | File | ตอบคำถามอะไร | Harness ต้องใช้ทำไม |
@@ -399,11 +412,11 @@ openspec/changes/<change-id>/
 | `.openspec.yaml` | ใช้ `foundation-standard` หรือ `foundation-rapid` | เลือก artifact workflow ของ change |
 | `proposal.md` | เปลี่ยนทำไม เปลี่ยนอะไร และไม่ทำอะไร | ทำให้ scope กับ impact ไม่ถูกซ่อนไว้เป็น assumption |
 | `specs/<area>/spec.md` | Observable behavior ใดถูกเพิ่ม แก้ หรือลบ | ให้ Prove มี requirement และ `WHEN`/`THEN` scenario ที่คงที่ และให้ Land merge delta เข้า current specs |
-| `design.md` | Technical decision ใดบังคับวิธี implement และ rollback | เก็บ fact ที่จำเป็นและมติ `DEC-*` พร้อม status, เหตุผล, rejected alternative, consequence และ supersession |
+| `design.md` | Technical decision, diagram, integration หรือ prototype selection ใดบังคับวิธี implement | เก็บเฉพาะ context สำคัญ ไม่บังคับสร้าง design ว่าง |
 | `tasks.md` | Implementation ใดยังเหลือ | เป็น implementation ledger เพียงที่เดียว Stable ID และ checkbox ทำให้ Build resume ได้ |
 | `evidence.yaml` | Behavioral claim ใดต้องพิสูจน์ | แยก proof obligation ออกจาก tool ที่นำมารัน |
-| `grounding.yaml` | อ่านข้อเท็จจริงใด ล็อกมติและ NFR หมวดใดตั้งแต่ต้น | ผูก Decision Sheet, production/failure path และ NFR assessment 8 หมวด โดย target ที่ applicable ต้อง trace ถึง claim, task และ provider |
-| `execution.yaml` | Project จะสร้าง evidence อย่างไร | Wire command, report, service, timeout และ readiness check |
+| `grounding.yaml` | Material decision ใดถูกตกลงไว้ล่วงหน้า | Semantic v3 เก็บเฉพาะ non-derived decision ส่วน grounding รุ่นเดิมยังอ่านได้ |
+| `execution.yaml` | Change นี้ override evidence wiring ที่ derive แล้วหรือไม่ | มีเมื่อใช้ custom command, report, service, timeout หรือ readiness เท่านั้น |
 | `repositories.yaml` | Change อ่านหรือเขียน repository ใดได้ | จำกัดอำนาจของ agent และกำหนด dependency order |
 | `handoffs.yaml` | Operation ใดต้องส่งต่อเจ้าของสิทธิ์ | ย้าย AWS, secret, Terraform, deploy, restart และงาน environment ออกจาก task ของ developer โดยยังคุม activation safety |
 
@@ -412,12 +425,13 @@ lifecycle command ไม่ใช่ implementation task
 
 ### Standard กับ Rapid Lane
 
-`foundation-standard` มี proposal, delta specs, design, tasks, evidence และ
-execution ใช้กับ public contract, authentication, data หรือ migration, behavior
+`foundation-standard` มี proposal, delta specs, tasks และ evidence ส่วน design
+กับ extension อื่นสร้างเมื่อมี concern จริง ใช้กับ public contract,
+authentication, data หรือ migration, behavior
 ที่ coupled, impact สูง, irreversible effect หรืองานที่ต้องใช้ evidence มากกว่า
 unit/static
 
-`foundation-rapid` จงใจไม่มี delta specs และ design ใช้ได้เฉพาะงาน impact ต่ำ
+`foundation-rapid` จงใจไม่มี delta specs และปกติไม่มี design ใช้ได้เฉพาะงาน impact ต่ำ
 แยกขาด ไม่มี public contract, persistent migration, security trigger หรือ
 irreversible effect หากพบ requirement ที่เข้มขึ้น `/change` จะ upgrade change เดิม
 เป็น standard
@@ -473,8 +487,10 @@ Requirement → Claim → Provider → Receipt → Proof
 }
 ```
 
-จากนั้น `execution.yaml` เชื่อม capability เหล่านั้นเข้ากับ tool ของ project การ
-แยกสองไฟล์นี้ทำให้เปลี่ยน test command ได้โดยไม่ลด behavior ที่ต้องพิสูจน์
+สำหรับ semantic draft compiler จะ derive provider wiring ปกติไว้ใน
+`evidence.yaml` จาก verify command ของ task และสร้าง `execution.yaml` เฉพาะเมื่อ
+ต้องใช้ custom provider, report, service, timeout หรือ readiness การแยกนี้ยังทำให้
+เปลี่ยน wiring ได้โดยไม่ลด behavior ที่ต้องพิสูจน์
 
 Capability ที่พบบ่อยคือ `test`, `discovery`, `static-analysis`, `browser`,
 `integration`, `compatibility`, `performance`, `security-static`,
@@ -486,7 +502,7 @@ Capability ที่พบบ่อยคือ `test`, `discovery`, `static-ana
 claude-foundation providers
 ```
 
-ถ้า `execution.yaml` ว่างหรือยังไม่ครบ ให้ตรวจ command ที่ project เป็นเจ้าของ
+ถ้า derived หรือ custom wiring ยังไม่ครบ ให้ตรวจ command ที่ project เป็นเจ้าของ
 โดยไม่รัน จากนั้น preview wiring ที่มีความมั่นใจสูงก่อนเขียนอย่างชัดเจน:
 
 ```bash
@@ -511,8 +527,8 @@ claim ที่ไม่มี task/provider, scenario ที่ไม่ตร�
 และ migration ที่ไม่มี rollback/integrity coverage
 
 Remote CI ตั้งค่า issuer กับ Ed25519 public key แล้ว import ด้วย `evidence
-verify-ci` ได้ ส่วน `proof advance` เป็น Prove path ปกติที่ resume ได้ โดยสรุป
-convergent behavior และ authority routing ไว้ด้านล่าง ทุกทางผูก evidence กับ
+verify-ci` ได้ ทางปกติของ agent คือ `advance <change-id> --through proven` ส่วน
+`proof advance` เป็น compatible primitive ที่ coordinator เรียกภายใน ทุกทางผูก evidence กับ
 workspace ปัจจุบัน จึงปฏิเสธ response ที่ stale, ไม่ตรง, ไม่มีลายเซ็น หรือถูก replay
 
 Change Loop ไม่ติดตั้ง test framework หรือ browser ให้ แต่รัน tool ที่ repository
@@ -545,7 +561,7 @@ claude-foundation proof readiness <change-id>
 claude-foundation proof run <change-id>
 ```
 
-ให้ใช้ `claude-foundation proof advance <change-id>` เป็น boundary ของ Prove
+ให้ใช้ `claude-foundation advance <change-id> --through proven` เป็น boundary ของ Prove
 แต่ละ gate จะรวม finding ที่ทำงานแยกกันได้ แก้ทุกข้อใน contract เป็น batch แล้ว
 รันซ้ำเฉพาะ evidence ที่ invalidated จนผ่าน โดยไม่จำกัดจำนวนรอบแก้ product
 ถ้าต้องตัดสินใจ ขอ authority/resource แก้ conflict หรือไม่มี progress ระบบจะเก็บ
@@ -553,8 +569,7 @@ change เดิมและคืนทางเลือกพร้อมค�
 ไม่เปลี่ยนจะไม่รัน provider หรือ dispatch reviewer ซ้ำ ส่วน `proof collect`, authority commands โดยตรง และ
 `proof run` เก็บไว้สำหรับการวิเคราะห์หรือ integration ที่ตั้งใจใช้
 
-ถ้าต้องการให้ harness ขับ loop ระดับสูง ให้ใช้
-`claude-foundation advance <change-id>` ซึ่งจะเลือก next action ที่มีขอบเขตชัดเจน
+`claude-foundation advance <change-id>` จะเลือก next action ที่มีขอบเขตชัดเจน
 เพียงหนึ่งรายการตลอด Build, Prove, repair และ Land โดย host ยังเป็นผู้เรียก model
 และ user ยังถือ authority สำหรับ commit, push, publish, เปิด PR และ waiver
 ก่อนคืน `RUN_PROOF` คำสั่งนี้จะตรวจ Proof readiness และส่ง blocker ด้าน code,
@@ -586,7 +601,7 @@ repository เดียว ระบบจะเปิด lockfile consistency p
 contract ชุดเดียวและเปลี่ยน lifecycle ผ่าน reducer กลาง เพื่อลด policy ซ้ำซ้อน
 โดยไม่เปลี่ยนคำสั่งผู้ใช้ หลังอัปเกรดเป็น provider protocol 13 receipt protocol
 12 เดิมจะ stale ให้เก็บ active change ไว้ แก้ config ตาม diagnostics แล้วรัน
-`proof advance <change-id>` ใหม่ หากจำเป็นต้อง rollback ให้ย้อนเวอร์ชันที่ติดตั้ง
+`advance <change-id> --through proven` ใหม่ หากจำเป็นต้อง rollback ให้ย้อนเวอร์ชันที่ติดตั้ง
 เท่านั้น ห้ามคัดลอกหรือแก้ receipt JSON เอง
 
 ผู้ใช้ไม่ต้องประกอบ receipt command, provenance JSON, provider metadata หรือ
@@ -632,7 +647,8 @@ archive และบรรทัด `LAND READY` มันเป็นการ�
 
 ## ถ้า Requirement เปลี่ยนระหว่าง Build
 
-ไม่ต้องเปิด change ที่สองเพียงเพราะพบข้อมูลใหม่ก่อน Land ให้แก้ agreement เดิม:
+ไม่ต้องเปิด change ที่สองเพียงเพราะพบข้อมูลใหม่ก่อน Land ให้แก้ agreement เดิม
+Agent ส่ง semantic amendment หนึ่งชุดแล้ว resume coordinator:
 
 ```text
 /investigate <change-id>: how does the existing verification flow work?
@@ -641,8 +657,9 @@ archive และบรรทัด `LAND READY` มันเป็นการ�
 /prove <change-id>
 ```
 
-`/change` จะ sync revision ใหม่เข้า active sandbox รักษา completed task ที่ stable
-ID และความหมายไม่เปลี่ยน และ invalidate proof ที่ได้รับผลจาก revision
+Runtime ใช้ `change amend <change-id> <amendment.json>` แบบ transaction โดยรักษา
+task ที่เสร็จและ manual Markdown section, validate ก่อนเก็บ revision, rollback
+amendment ที่ไม่ผ่าน และ invalidate เฉพาะ claim ใหม่ก่อน resume `advance`
 
 ## การใช้หลาย Repository
 
@@ -684,8 +701,9 @@ repository เดียวกันได้เฉพาะเมื่อ path,
 เมื่อบาง branch ล้ม Prove จะรักษางานอิสระที่เสร็จแล้ว แต่ Land ยังต้องมี aggregate
 graph proof ที่ fresh และตรวจสถานะใหม่ก่อน mutation ของทุก remote wave
 
-ระหว่าง Build คำสั่ง `agents dispatch` จะแปลง graph ปัจจุบันและ live lease เป็น
-native-host action เพียงหนึ่งรายการ งานเล็กหรืองานที่ coupling กันยังอยู่ใน
+ระหว่าง Build คำสั่ง `advance` จะแปลง graph ปัจจุบันและ live lease เป็น
+native-host action เพียงหนึ่งรายการ ส่วน compatible primitive `agents dispatch`
+อยู่ใน `help --all` งานเล็กหรืองานที่ coupling กันยังอยู่ใน
 parent session รวมถึง frontier ที่เลือกได้เพียง task เดียว ส่วน bounded spawn
 group จะเกิดเมื่อ frontier มี task อิสระที่เลือกได้พร้อมกันหลายงานเท่านั้น
 งาน singleton ที่อยู่ในแผนยังต้อง acquire lease และสร้าง task packet ใหม่ก่อนรัน
@@ -805,6 +823,9 @@ recover:
 ```bash
 claude-foundation doctor --stage change
 claude-foundation changes
+claude-foundation change start --template
+claude-foundation change amend <change-id> <amendment.json>
+claude-foundation advance <change-id> --through build|proven|archived
 claude-foundation change validate <change-id>
 claude-foundation change audit <change-id>
 claude-foundation packet <change-id> --phase build|prove|review
@@ -830,9 +851,10 @@ Host import telemetry แบบ `generic`, `codex`, `cursor`, `otel` หรื�
 normalize เป็น usage event แบบ append-only ชุดเดียวกับที่ `metrics` และ budget ใช้
 
 CLI หา installed project จาก directory ปัจจุบันหรือ `--project <path>` ใช้
-`claude-foundation help` เพื่อดู command ทั้งหมด หรือ
+`claude-foundation help` เพื่อดู surface หลักของ agent, `help --all` เพื่อดู
+compatible primitive หรือ
 `claude-foundation describe [command]` เพื่อดูทีละตัว — รวม slash command
-ทั้งแปด เรียกได้ทั้งชื่อเปล่าและแบบ `/slash` ส่วน skill `harness-html-report`
+หกคำสั่งหลักพร้อม utility/alias อีกสองตัว เรียกได้ทั้งชื่อเปล่าและแบบ `/slash` ส่วน skill `harness-html-report`
 ที่ ship มาด้วยจะ render สถานะ harness — gate, receipt, เวลาต่อ phase และ
 ต้นทุน — เป็นรายงาน HTML ในไฟล์เดียว เมื่ออยากอ่านรอบงานเป็นเรื่องเล่า
 มากกว่ารายการสถานะ

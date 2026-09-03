@@ -58,6 +58,13 @@ repeated no progress. State is preserved and the result includes the available
 choices and exact resume route. Repeating an unchanged wait does not poll or
 spend another model request.
 
+The slash commands call one model-facing coordinator. `/build`, `/prove`, and
+`/land` use `advance <change> --through build|proven|archived`; `/dev` composes
+the same targets. The coordinator returns exactly one of `EDIT`, `RUN_EXTERNAL`,
+`REPAIR`, `WAIT`, `ASK_USER`, or `DONE`, with an exact resume route whenever it
+stops. Primitive commands remain under `help --all` for operators and host
+integrations.
+
 ## The steps
 
 | Step | Command | What it owns |
@@ -89,12 +96,14 @@ Durable intent belongs in OpenSpec; machine state belongs in `.foundation/`. Not
 ```text
 openspec/changes/add-profile-auth/
 ├── proposal.md
-├── design.md
 ├── tasks.md          # sole task ledger
 ├── evidence.yaml     # stable claims + capabilities
-├── execution.yaml    # provider + service wiring
-├── repositories.yaml # write scope
-└── specs/
+├── specs/             # standard lane
+├── design.md          # conditional: decisions/diagrams/integrations/prototype
+├── grounding.yaml     # conditional: material decisions
+├── execution.yaml     # conditional: custom provider + service wiring
+├── repositories.yaml  # conditional: explicit multi-repository scope
+└── handoffs.yaml       # conditional: permission-bound operations
 
 .foundation/
 ├── runtime/          # lifecycle + resolver
@@ -107,3 +116,6 @@ openspec/changes/add-profile-auth/
 ```
 
 `.foundation/` is machine-owned and gitignored. `openspec/` is yours to read and review.
+The compiled OpenSpec packet is the source of truth. The semantic input draft
+and coordinator actions are compiler/runtime inputs, not parallel requirement
+ledgers.

@@ -15,6 +15,7 @@ description: ขั้นสำรวจแบบอ่านอย่างเ�
 - มีหลายแนวทางที่ tradeoff ต่างกันอย่างมีนัยสำคัญ
 - ข้อจำกัดเรื่อง compatibility หรือ migration ยังไม่ชัด
 - เป็นเส้นทางโค้ด brownfield ที่ไม่คุ้นเคย
+- เป็น external API ที่ยังไม่ได้อ่านเอกสารตาม version, success path หรือ failure behavior
 
 ## เริ่มจากสิ่งที่ยังไม่รู้
 
@@ -79,3 +80,6 @@ not worth changing
 ```
 
 `/change` จะสรุปการตัดสินใจนั้นลงใน proposal และ design แต่จะไม่ถือว่าตัวเลือกหรือ artifact ของมันเป็นหลักฐาน
+สำหรับ integration บันทึกจะเก็บ source กับ version ของเอกสารให้ชัด `/change`
+จึงบังคับ scenario ทั้ง success และ failure ส่วน API ที่ยังไม่อ่านหรือไม่มี version
+เป็น research boundary ไม่ใช่ contract ที่เดาได้

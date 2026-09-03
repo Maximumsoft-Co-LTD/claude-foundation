@@ -142,7 +142,7 @@ evidence results|node --test "$ROOT/.claude/harness/tests/evidence-results.test.
 telemetry append|node --test "$ROOT/.claude/harness/tests/telemetry-append.test.mjs"
 operation profiling|node --test "$ROOT/.claude/harness/tests/operation-profile.test.mjs"
 verification planning|node --test "$ROOT/.claude/harness/tests/verification-plan.test.mjs"
-change draft materialization|node --test "$ROOT/.claude/harness/tests/change-draft-materialization.test.mjs"
+change draft materialization|node --test "$ROOT/.claude/harness/tests/change-draft-materialization.test.mjs" "$ROOT/.claude/harness/tests/semantic-draft.test.mjs"
 atomic change start|node --test "$ROOT/.claude/harness/tests/change-atomic-start.test.mjs"
 land root pointers|node --test "$ROOT/.claude/harness/tests/land-root-pointers.test.mjs"
 telemetry phase context|node --test "$ROOT/.claude/harness/tests/telemetry-phase-context.test.mjs"

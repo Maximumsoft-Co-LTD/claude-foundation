@@ -38,7 +38,7 @@ profile ปัจจุบันออกแบบให้ Claude Code ตั�
     "defaultReviewer": "claude-opus"
   },
   "workflow": {
-    "grounding": "required",
+    "grounding": "optional",
     "reviewCircuit": "full-delta",
     "reviewPolicy": "risk-tiered"
   }
@@ -264,7 +264,7 @@ Change Loop จะเก็บ workspace และรายงานวิธี
 ```json
 {
   "workflow": {
-    "grounding": "required",
+    "grounding": "optional",
     "reviewCircuit": "full-delta",
     "reviewPolicy": "risk-tiered"
   }
@@ -277,6 +277,9 @@ Change Loop จะเก็บ workspace และรายงานวิธี
 
 งานใหม่ควรใช้ค่าที่ ship มา ค่า legacy มีไว้สำหรับอ่านโปรเจกต์เก่า ไม่ใช่วิธีที่
 แนะนำสำหรับลดความเข้มของ review
+`optional` แปลว่า semantic compiler สร้าง `grounding.yaml` เฉพาะเมื่อมี material
+non-derived decision จริง ตั้งเป็น `required` เมื่อ policy ของ project ต้องมี
+decision ledger ทุก change เท่านั้น เพราะ grounding ว่างไม่ได้เพิ่มคุณภาพ
 
 ## จุดที่พลาดบ่อย
 

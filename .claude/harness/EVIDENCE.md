@@ -142,13 +142,14 @@ receipt before writing the receipt. A review pass cannot override a failed or
 missing semantic case. Workspace edits, envelope tampering, or a stale/missing
 source critical-case receipt invalidate it and block Proof and Land.
 
-Use `proof advance` as the normal resumable path:
+Use unified `advance` as the normal resumable path:
 
 ```bash
-claude-foundation proof advance <change>
+claude-foundation advance <change> --through proven
 ```
 
-It executes missing project evidence for the current gate, aggregates findings,
+It invokes the compatible `proof advance` primitive internally, executes
+missing project evidence for the current gate, aggregates findings,
 and reuses current receipts while repaired inputs selectively invalidate their
 providers and downstream dependencies. Product repairs may repeat until all
 required evidence passes. A decision, authority, resource, conflict, or

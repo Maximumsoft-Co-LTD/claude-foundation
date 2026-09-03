@@ -15,7 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXPECTED_RUNTIME_API=27
+EXPECTED_RUNTIME_API=28
 PROJECT_START="${CLAUDE_FOUNDATION_PROJECT:-$PWD}"
 
 fail() { printf 'claude-foundation: %s\n' "$*" >&2; exit 1; }
@@ -78,7 +78,7 @@ run_runtime() {
   fi
   local phase=""
   case "${1:-}" in
-    new|start|resolve|validate|audit-change|abandon|waive|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade|quality-discover|quality-init|quality-doctor) phase="change" ;;
+    new|start|resolve|amend|validate|audit-change|abandon|waive|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade|quality-discover|quality-init|quality-doctor) phase="change" ;;
     sandbox|agent-plan|agent-dispatch|agent-acquire|agent-release) phase="build" ;;
     proof-plan|proof-readiness|proof-advance|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-dispatch|authority-run|authority-abort|authority-status|authority-record|authority-reset-infra|authority-reset-base-move|quality-run|quality-report|quality-baseline|quality-debt) phase="prove" ;;
     handoff-status|handoff-packet|handoff-record|land-check|land-advance|land-recover|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
@@ -129,14 +129,16 @@ usage() {
 const fs = require("fs");
 const registry = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 const showAll = process.argv[3] === "--all";
-const groups = showAll
-  ? [["Workflow", "agent"], ["Conditional recovery", "conditional"],
-     ["Administration", "admin"], ["Host integration", "host"],
-     ["Internal compatibility", "internal"]]
-  : [["Workflow", "agent"], ["Conditional recovery", "conditional"]];
+const groups = [["Workflow", "agent"], ["Conditional recovery", "conditional"],
+  ["Administration", "admin"], ["Host integration", "host"],
+  ["Internal compatibility", "internal"]];
+const primary = new Set([
+  "advance", "change start", "change amend", "changes", "doctor", "describe"
+]);
 console.log("claude-foundation — OpenSpec-native software-change harness\n");
 for (const [title, audience] of groups) {
-  const rows = registry.commands.filter((command) => command.audience === audience);
+  const rows = registry.commands.filter((command) => command.audience === audience &&
+    (showAll || primary.has(command.name)));
   if (!rows.length) continue;
   console.log(`${title}:`);
   for (const command of rows) {
@@ -149,7 +151,7 @@ for (const [title, audience] of groups) {
 console.log("Global options: --project <path>, -C <path>");
 console.log("Workflow: /investigate → /change → /build → /prove → /land");
 console.log("Normal use: describe the outcome to your coding agent; it runs recovery and CLI details for you.");
-if (!showAll) console.log("Run `claude-foundation help --all` for host and compatibility commands.");
+if (!showAll) console.log("Run `claude-foundation help --all` for primitive, recovery, host, and compatibility commands.");
 NODE
 }
 
@@ -341,6 +343,9 @@ case "${1:-}" in
       resolve)
         [ "$#" -ge 1 ] || fail "change resolve requires <change>"
         run_runtime write resolve "$@" ;;
+      amend)
+        [ "$#" -ge 2 ] || fail "change amend requires <change> <amendment.json>"
+        run_runtime write amend "$@" ;;
       validate)
         need_arg "change validate" "${1:-}"
         run_runtime write validate "$@" ;;
@@ -353,7 +358,7 @@ case "${1:-}" in
       waive)
         need_arg "change waive" "${1:-}"
         run_runtime write waive "$@" ;;
-      *) fail "change requires 'new', 'start', 'resolve', 'validate', 'audit', 'abandon', or 'waive'" ;;
+      *) fail "change requires 'new', 'start', 'resolve', 'amend', 'validate', 'audit', 'abandon', or 'waive'" ;;
     esac ;;
   validate)
     warn "'validate' is deprecated; use 'change validate'"

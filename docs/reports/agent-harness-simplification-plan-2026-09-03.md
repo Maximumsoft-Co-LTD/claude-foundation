@@ -1,7 +1,7 @@
 # แผนลดความซับซ้อนของ Agent Harness
 
 **วันที่:** 2026-09-03  
-**สถานะ:** แผนออกแบบ ยังไม่ได้เริ่ม implementation และไม่ได้สร้าง OpenSpec change  
+**สถานะ:** Implemented และผ่าน deterministic verification ทั้งระบบ โดยไม่ได้สร้าง OpenSpec change ใหม่ตามคำขอ  
 **ขอบเขต:** ทั้ง repository — model-facing workflow, OpenSpec artifact authoring,
 CLI orchestration, runtime, hooks, rules, adapters, installers, quality, examples,
 dashboard, website, CI, documentation, compatibility, tests และ rollout
@@ -1209,5 +1209,13 @@ rtk git diff --check
 
 ## 25. สถานะปัจจุบัน
 
-เอกสารนี้เป็น planning-only ไม่มี OpenSpec change ถูกสร้าง ไม่มี implementation ถูกแก้
-และไม่มี paid Qwen scenario ถูกเรียกใช้
+Work packages A-O ถูกนำไปใช้กับ runtime, semantic compiler/amendment,
+OpenSpec schemas/templates, coordinator, commands, hooks, rules, installers,
+quality ownership, tests และเอกสาร/website สองภาษาแล้ว รายละเอียดการ classify
+ทั้ง 1,601 tracked files และสถานะ verification อยู่ที่
+[implementation audit](agent-harness-simplification-implementation-audit-2026-09-03.md)
+
+ไม่มี OpenSpec change ใหม่ถูกสร้างตามคำขอ และ `copy-sandbox` ที่ active อยู่ไม่ได้
+ถูกแก้ Paid Qwen scenario ยังไม่ได้เรียกใช้ เพราะเป็นกิจกรรมที่ต้องได้รับอำนาจใช้
+ค่าใช้จ่ายโดยชัดเจน; deterministic weak-host simulation เป็น regression หลักของ
+protocol ใหม่นี้

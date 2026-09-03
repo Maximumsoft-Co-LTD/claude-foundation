@@ -7,6 +7,7 @@ export async function routeRuntimeCommand(command, values, api) {
     createChange,
     rapidStartTemplate,
     startAtomic,
+    amendChange,
     resolveChange,
     abandonChange,
     waiveGate,
@@ -129,6 +130,16 @@ export async function routeRuntimeCommand(command, values, api) {
       });
       if (rest.length !== 1) die("change resolve requires exactly one change id");
       resolveChange(rest[0], flags);
+    },
+    "amend": async () => {
+      const { flags, rest } = parseStrictCommandFlags(values, "change amend", {
+        boolean: ["consume-amendment"]
+      });
+      if (rest.length !== 2)
+        die("change amend requires <change> <amendment.json>");
+      amendChange(rest[0], rest[1], {
+        consumeAmendment: flags["consume-amendment"]
+      });
     },
     "abandon": async () => {
       const {
@@ -288,9 +299,11 @@ export async function routeRuntimeCommand(command, values, api) {
     "advance": async () => {
       const { flags, rest } = parseStrictCommandFlags(values, "advance", {
         boolean: ["pretty"],
-        value: ["host-result"]
+        value: ["host-result", "through"]
       });
       if (rest.length !== 1) die("advance requires exactly one change id");
+      if (flags.through && !["build", "proven", "archived"].includes(flags.through))
+        die("advance --through must be build|proven|archived");
       if (flags["host-result"])
         importHostExecution(rest[0], flags["host-result"]);
       showAdvance(rest[0], flags);

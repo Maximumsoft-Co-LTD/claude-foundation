@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// A /dev Change is authored from generated artifacts and validator recovery.
+// A /dev Change is authored from one semantic draft and compiler recovery.
 // Reading managed implementation to rediscover that contract creates an
 // unmetered pre-change loop, so deny those reads before they enter context.
 
@@ -40,7 +40,7 @@ async function main() {
   if (!authoringSurfaceViolation(String(event.tool_name || ""), event.tool_input || {})) return;
   process.stdout.write(JSON.stringify({
     decision: "block",
-    reason: "BLOCKED: /dev authoring uses generated openspec/changes artifacts, change validate recovery, and public operator references. Managed .claude/harness/runtime and .claude/hooks are implementation, not the authoring contract. No managed source was read. Create the Change early with `claude-foundation change new \"<intent>\"`; if generated artifacts or validation are insufficient, report a harness defect."
+    reason: "BLOCKED: /dev authoring uses one semantic draft compiled by `claude-foundation change start`, then follows `claude-foundation advance`. Managed .claude/harness/runtime and .claude/hooks are implementation, not the authoring contract. No managed source was read. If compiler output or recovery is insufficient, report a harness defect."
   }));
 }
 

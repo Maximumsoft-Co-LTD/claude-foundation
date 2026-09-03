@@ -5,7 +5,23 @@ description: The commands your agent runs, grouped by what they do and what auth
 
 Your agent runs these; you rarely need to. They are documented so you can read what the agent is doing, and drive it yourself when you want to.
 
-Every command answers `--help`, and `claude-foundation describe [command] [--json]` describes the surface — including the eight slash commands, resolvable by bare word or `/slash` spelling, read from the shipped command files so there is no second copy to drift.
+Every command answers `--help`, and `claude-foundation describe [command] [--json]` describes the surface — including six primary slash commands plus `/changes` and the `/feature` compatibility alias, resolvable by bare word or `/slash` spelling, read from the shipped command files so there is no second copy to drift.
+
+## Primary agent surface
+
+Normal users issue `/investigate`, `/change`, `/build`, `/prove`, `/land`, or
+`/dev`; the agent owns CLI details. Its compact runtime surface is:
+
+| Command | Purpose |
+|---|---|
+| `change start --template \| <draft.json>` | Compile and atomically start one semantic agreement |
+| `change amend <change> <amendment.json>` | Transactionally extend that agreement during Build |
+| `advance <change> --through build\|proven\|archived` | Run deterministic lifecycle work and return one of six bounded actions at the next real boundary |
+| `changes` | Read active state and the next useful route |
+| `doctor …` | Diagnose a route only when the coordinator asks for it |
+
+`claude-foundation help` shows this small surface. `help --all` exposes the
+compatible primitives below for operators and host integrations.
 
 ## Read-only
 
@@ -47,14 +63,15 @@ language profiles, baselines, and rollout policy.
 
 | Command | Purpose |
 |---|---|
-| `change new <intent> [--rapid]` | Create a change agreement |
-| `change start --template \| <draft.json>` | Create and start an isolated change from one validated draft |
+| `change new <intent> [--rapid]` | Compatible primitive for manually authoring a change agreement |
+| `change start --template \| <draft.json>` | Compile and start an isolated change from one validated semantic draft |
+| `change amend <change> <amendment.json>` | Add semantic requirements transactionally while preserving completed work |
 | `change resolve <change> …` | Persist impact, coupling, security, and review decisions |
 | `change validate <change>` | Validate the change and its executable evidence contract |
 | `sandbox create <change> [--all]` | Create the isolated Build workspace |
 | `sandbox sync <change>` | Synchronize an intentional contract revision into Build |
-| `advance <change> [--host-result <result.json>]` | Return one bounded next action across Build, Prove, repair, and Land; optionally import a validated host result first |
-| `proof advance <change>` | Normal resumable Prove path; converge the current gate, reuse valid evidence, and return one repair batch or external handoff |
+| `advance <change> [--through build\|proven\|archived] [--host-result <result.json>]` | Normal model-facing coordinator; run safe deterministic steps and return one bounded action |
+| `proof advance <change>` | Compatible Prove primitive used internally and by explicit integrations |
 | `proof collect <change>` | Low-level collection for diagnosis or an explicit integration |
 | `proof run <change>` | Low-level atomic run when no resumable external handoff is needed |
 | `handoff record <change> --id <H00n> …` | Record a named operator's accepted/completed/rejected result and durable references |
@@ -70,7 +87,7 @@ language profiles, baselines, and rollout policy.
 
 ## External authority
 
-Review and acceptance, resumable across sessions. Prefer `proof advance`; use
+Review and acceptance, resumable across sessions. Prefer `advance`; use
 these directly for diagnosis or an explicit integration.
 
 | Command | Purpose |
@@ -91,7 +108,7 @@ these directly for diagnosis or an explicit integration.
 
 | Command | Purpose |
 |---|---|
-| `land archive <change>` | Apply, synchronize, audit, archive, and clean up |
+| `land archive <change>` | Low-level apply, synchronize, audit, archive, and cleanup primitive; normal agents use `advance --through archived` |
 | `land record <change> --repo <id> --commit <sha> --decision-ref <ref>` | Bind a child repository commit after a recorded user decision |
 | `land resume <change>` | Resume an interrupted or multi-repository Land saga |
 
@@ -122,7 +139,12 @@ Wire-visible contracts are pinned in `.claude/harness/protocol.json`. A mixed-re
 | Pin | v3.5.2 |
 |---|---|
 | runtime | 3.5.2 |
-| runtime API | 27 |
+| runtime API | 28 |
+| semantic draft schema | 3 |
+| semantic amendment schema | 1 |
+| artifact defaults schema | 2 |
+| grounding schema | 1, 2, 3 |
+| advance protocol | 3 |
 | provider protocol | 13 |
 | evidence schema | 1, 2 |
 | packet schema | 10 |

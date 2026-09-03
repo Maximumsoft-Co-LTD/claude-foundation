@@ -35,11 +35,11 @@
     },
     {
       "name": "advance",
-      "usage": "advance <change> [--host-result <result.json>] [--pretty]",
+      "usage": "advance <change> [--through build|proven|archived] [--host-result <result.json>] [--pretty]",
       "audience": "host",
       "kind": "write",
       "idempotent": true,
-      "description": "Project one bounded next host action across Build, repair, Proof, review, and Land without invoking a model or inferring authority."
+      "description": "Run deterministic lifecycle work through a requested target and return one bounded action at the next real model, user, resource, or authority boundary."
     },
     {
       "name": "feedback",
@@ -88,6 +88,14 @@
       "kind": "write",
       "idempotent": true,
       "description": "Persist agreement decisions or open one audited batched grounding revision."
+    },
+    {
+      "name": "change amend",
+      "usage": "change amend <change> <amendment.json> [--consume-amendment]",
+      "audience": "agent",
+      "kind": "write",
+      "idempotent": false,
+      "description": "Transactionally add semantic requirements during Build while preserving the canonical agreement."
     },
     {
       "name": "change validate",
@@ -740,6 +748,7 @@
     "new",
     "start",
     "resolve",
+    "amend",
     "abandon",
     "waive",
     "audit-change",

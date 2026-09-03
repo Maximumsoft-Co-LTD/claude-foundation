@@ -477,3 +477,61 @@ the refusal SHALL name the operations it refused.
 - **THEN** the guard refuses it, because its mutations cannot be read from the
   command text
 
+### Requirement: One semantic draft compiles the change agreement
+
+Foundation SHALL accept a compact semantic draft version 3 and derive stable
+claim IDs, task IDs, task dependencies, claim coverage, provider wiring, and
+OpenSpec delta documents without requiring the agent to duplicate those links.
+The compiled OpenSpec packet remains the human-reviewable agreement and source
+of truth; the input draft is not a parallel ledger.
+
+#### Scenario: A compact draft becomes a linked packet
+
+- **WHEN** requirements, observable scenarios, implementation outcomes, and
+  evidence capabilities are supplied with stable semantic keys
+- **THEN** the compiler writes a valid packet whose specs, tasks, claims, and
+  providers use deterministic cross-ledger identifiers
+
+#### Scenario: A modified requirement omits an existing scenario
+
+- **WHEN** a semantic draft modifies a canonical requirement and names only a
+  changed or new scenario
+- **THEN** the compiler reads the canonical specification and includes every
+  existing scenario in the complete modified delta before validation
+
+#### Scenario: Optional concerns are absent
+
+- **WHEN** a change has no durable design choice, material grounding decision,
+  external operation, multi-repository scope, or custom execution wiring
+- **THEN** the compiler uses virtual defaults and does not create empty
+  `design.md`, `grounding.yaml`, `handoffs.yaml`, `repositories.yaml`, or
+  `execution.yaml` placeholders
+
+#### Scenario: Rich context is required
+
+- **WHEN** the draft declares a diagram, selected prototype, or versioned API
+  integration
+- **THEN** the compiler validates the referenced source, records it in the
+  existing OpenSpec design, and requires integration scenarios to cover both a
+  successful and a failing outcome
+
+### Requirement: Active semantic agreements amend transactionally
+
+Foundation SHALL apply one semantic amendment to an active version-3 agreement
+as a validated transaction. It SHALL preserve completed task checkboxes and
+manual Markdown sections, add only stable requirements and links, invalidate
+the affected new claims, and restore both packet and runtime state if validation
+fails.
+
+#### Scenario: Build discovers new required behavior
+
+- **WHEN** the agent submits one amendment that adds requirements and maps them
+  to an existing or new implementation task
+- **THEN** Foundation updates the same active change, increments its revisions,
+  and returns the exact `advance` resume route
+
+#### Scenario: The amended packet is invalid
+
+- **WHEN** strict validation rejects the staged amendment
+- **THEN** no partial file or revision remains installed and the prior active
+  agreement is still resumable

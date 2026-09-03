@@ -56,6 +56,12 @@ Agent แก้สิ่งที่ปลอดภัยและอยู่�
 state เดิมจะถูกเก็บไว้ พร้อมตัวเลือกและทาง resume ที่แน่นอน การเรียกซ้ำบน wait
 เดิมจะไม่ poll หรือเสีย model request เพิ่ม
 
+Slash command เรียก coordinator สำหรับ model เพียงตัวเดียว `/build`, `/prove`
+และ `/land` ใช้ `advance <change> --through build|proven|archived` ส่วน `/dev`
+compose target ชุดเดียวกัน Coordinator คืนเพียง `EDIT`, `RUN_EXTERNAL`, `REPAIR`,
+`WAIT`, `ASK_USER` หรือ `DONE` พร้อม exact resume route เมื่อหยุด Primitive เดิม
+ยังอยู่ใต้ `help --all` สำหรับ operator และ host integration
+
 ## แต่ละขั้น
 
 | ขั้น | คำสั่ง | รับผิดชอบอะไร |
@@ -87,12 +93,14 @@ state เดิมจะถูกเก็บไว้ พร้อมตัว�
 ```text
 openspec/changes/add-profile-auth/
 ├── proposal.md
-├── design.md
 ├── tasks.md          # ledger เดียว
 ├── evidence.yaml     # claim + capability ที่คงที่
-├── execution.yaml    # การต่อสาย provider + service
-├── repositories.yaml # ขอบเขตการเขียน
-└── specs/
+├── specs/             # standard lane
+├── design.md          # มีเมื่อใช้ decision/diagram/integration/prototype
+├── grounding.yaml     # มีเมื่อมี material decision
+├── execution.yaml     # มีเมื่อใช้ custom provider + service wiring
+├── repositories.yaml  # มีเมื่อประกาศ multi-repository scope
+└── handoffs.yaml       # มีเมื่อมี permission-bound operation
 
 .foundation/
 ├── runtime/          # lifecycle + resolver
@@ -105,3 +113,5 @@ openspec/changes/add-profile-auth/
 ```
 
 `.foundation/` เป็นของเครื่องและถูก gitignore ส่วน `openspec/` เป็นของคุณไว้อ่านและรีวิว
+OpenSpec packet ที่ compile แล้วคือ source of truth ส่วน semantic input draft กับ
+coordinator action เป็น input ของ compiler/runtime ไม่ใช่ requirement ledger คู่ขนาน

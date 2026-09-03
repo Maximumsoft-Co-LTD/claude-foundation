@@ -1,16 +1,17 @@
 # Build operating policy
 
-`--unattended` requires the runtime guard. Use `agents plan` only for
-multi-repository work. Update `tasks.md` after focused checks, including the
-`run-in-session` path.
+The protocol-v3 `advance` action is the current authority. Do not call lifecycle
+primitives unless its recovery explicitly names one. Update `tasks.md` only for
+the returned task after focused checks; the coordinator owns planning and phase
+transitions.
 
 For a mutating Bash command, begin with `cd <exact workspace> && ...`; the live
 phase guard rejects an unanchored command and obvious `..` or absolute-output
 escapes. Prefer structured Edit/Write tools for product changes.
 
-Move unauthorized infrastructure operations to `handoffs.yaml`; relay `handoff
-packet` once and never ask for credentials. Time long commands with `exec
-<change> -- <command>` so external wall time reaches metrics.
+Move unauthorized infrastructure operations to a semantic amendment that adds
+an external operation; never ask for credentials. Time a returned long command
+only when its action requests observed execution.
 
 For defect guards, test adjacent input partitions and source-language coercion
 boundaries before completing their tasks; do not stop at the reported repro.
@@ -28,9 +29,8 @@ typed recovery.
 
 ## Convergent gates
 
-Before dispatch or product edits, inspect `authorityPreflight`. If it is not
-`READY`, spend no Build/model budget: present its complete decision and resume
-the same change only after the missing authority or configuration is supplied.
+Before product edits, obey the action boundary. `advance` has already evaluated
+authority preflight; do not repeat it.
 
 For every Build gate, run all independent eligible checks before repair. Group
 findings by root cause, build one dependency-ordered repair batch, apply every

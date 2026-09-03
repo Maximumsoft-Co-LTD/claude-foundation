@@ -43,7 +43,7 @@ to force fully serial execution when bisecting.
 | `harness/run-context-rollup-drain-tests.mjs` | Context-event drain: junk-row exclusion with file removal, byKind aggregation, idempotent re-drain, additive merge, and corrupt-rollup recovery |
 | `harness/run-actionable-validation-telemetry-tests.sh` | Dependency-safe semantic diagnostic aggregation, truthful host-usage availability, and supported recovery routes |
 | `harness/run-v33-policy-tests.mjs` | Risk-tier review routing, named critical-case and mutation-v2 oracles, and the pinned read-only ephemeral Codex reviewer invocation |
-| `harness/run-risk-tiered-review-tests.mjs` | End-to-end Grounding v2, bounded review, configured reviewer, proof recovery, upgrade, handoff, and repair-closure critical cases |
+| `harness/run-risk-tiered-review-tests.mjs` | End-to-end legacy Grounding v2/current Grounding v3, bounded review, configured reviewer, proof recovery, upgrade, handoff, and repair-closure critical cases |
 | `harness/run-review-guard-fix-tests.mjs` | Receipt-guard reconciliation (overwrite/human/error), reviewer-schema portability and session handshake, infra-retry reset, `sandbox apply --refresh` routing, validate-time OpenSpec strict lint, and grounding readSet portability |
 | `harness/run-risk-tiered-review-mutation.mjs` | Mutation-v2 rejects a mutant killed by any case other than its declared killer |
 | `harness/run-land-surface-tests.mjs` | Change surface confined to tracked-or-declared paths, deletion provenance, and read-only pending-apply reporting |
@@ -70,6 +70,8 @@ to force fully serial execution when bisecting.
 | `.claude/harness/tests/semantic-acceptance.test.mjs` | Signed hidden-oracle verdicts bind stable claim partitions and reject missing, mismatched, failed-as-pass, or tampered cases without exposing oracle content |
 | `.claude/harness/tests/semantic-acceptance-seam.test.mjs` | A clean installed consumer records a signed semantic receipt, preserves the prior receipt after tampering, and expires it when product content changes |
 | `.claude/harness/tests/npm-lockfile-auto-seam.test.mjs` | A clean installed npm consumer activates the built-in manifest/lockfile provider without execution.yaml wiring, rejects mismatch, and passes after the lockfile is repaired |
+| `.claude/harness/tests/semantic-draft.test.mjs` | Semantic draft v3 stable links, canonical MODIFIED scenario merge, typed integration documentation, conditional artifacts, Grounding-compatible compilation, and transactional amendment rollback/preservation |
+| `.claude/harness/tests/advance-runtime.test.mjs` | Protocol-v3 six-action projection, target chaining, exact resume routes, compact output, phase recording, Land authority, and a weak-host read-action/resume simulation through `archived` |
 | `hooks/run-hook-tests.sh` | The hooks actually shipped: secret protection, low-cost lint dispatch, and the opt-in direct-main guard |
 | `hooks/run-phase-mutation-guard-tests.sh` | Phase resolution, fail-closed active-phase default, adoption-only carve-out, explicit audit/block modes, and workspace containment |
 | `harness/run-wiring-tests.sh` | Every runtime factory parameter is supplied by the composition root, and no runtime module is orphaned |

@@ -14,6 +14,11 @@ Change Loop ไม่ใช่ AI และไม่ได้เขียนโ�
 ชื่อ workflow คือ **Change Loop** ส่วน package และ CLI ที่ติดตั้งยังใช้
 `claude-foundation` เหมือนเดิม คำสั่งและ integration เดิมจึงยังทำงานต่อได้
 
+ผู้ใช้ยังใช้หกคำสั่งระดับ intent คือ `/investigate`, `/change`, `/build`, `/prove`,
+`/land` และ `/dev` Agent compile semantic draft หนึ่งชุดแล้วขับ coordinator
+`advance` ตัวเดียว ไม่ผลัก chain ของ CLI ภายในให้ผู้ใช้ และ OpenSpec packet ที่
+compile แล้วคือ source of truth
+
 ## ปัญหาที่มันแก้
 
 AI coding agent จะบอกคุณว่า "เสร็จแล้ว" เสมอ และคำพูดนั้นคือจุดที่อ่อนที่สุดของทั้ง workflow เพราะ agent อ่านผลงานตัวเอง ตัดสินว่าดูถูกต้อง แล้วรายงานว่าสำเร็จ ไม่มีอะไรตรวจอย่างเป็นอิสระเลยว่าโค้ดรันได้จริง เทสที่อ้างว่าเขียนไว้มีอยู่จริง หรือสิ่งที่ส่งมอบคือสิ่งที่คุณขอ
@@ -53,5 +58,5 @@ Change Loop จงใจแยกความรับผิดชอบ เพ�
 - [Quality gate ของโปรเจกต์](/docs/th/consumer-quality/) — เพิ่ม CRAP, mutation, baseline และ debt โดยไม่ขยาย Change scope
 
 :::note[เวอร์ชัน]
-เอกสารชุดนี้อ้างอิง Change Loop **v3.5.2** — runtime API 27, provider protocol 13 receipt ที่บันทึกด้วยเวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
+เอกสารชุดนี้อ้างอิง Change Loop **v3.5.2** — runtime API 28, provider protocol 13 receipt ที่บันทึกด้วยเวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 :::

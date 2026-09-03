@@ -4,26 +4,27 @@ Change Loop v3.5.2 front-loads material decisions so Build and Prove can run to 
 bounded conclusion without repeatedly interviewing the developer. The shipped
 workflow adds:
 
-- one `/feature` entry point for discovery, one Decision Sheet, Change, Build,
-  review, and Prove; Land remains an explicit delivery action;
-- grounding of production entry points, activation hazards, failure semantics,
-  real wire behavior, observability, and test topology before Build;
+- six primary user commands, with semantic draft v3 compiling stable OpenSpec
+  links and conditional artifacts instead of asking the model to maintain them;
+- optional Grounding v3 containing only non-derived material decisions, while
+  legacy Grounding v2 remains readable;
 - strictest-wins low/medium/high review routing with at most two delivered AI
   review waves: one full packet and one finding-bound delta;
 - deterministic repair closure after the second AI review instead of a third AI
   loop or a mandatory human approval;
-- resumable `proof advance`, which reruns only stale providers and reuses
-  content-bound receipts for unchanged inputs;
+- one resumable `advance --through build|proven|archived` coordinator, which
+  invokes compatible proof/Land primitives, reruns only stale providers, and
+  returns one bounded action at a real boundary;
 - Codex-only and Claude-Code-only coding/review configurations that retain a
   distinct read-only reviewer identity and fresh session; and
-- durable `handoffs.yaml` packets for AWS, Terraform, secrets, cluster, and
+- conditional `handoffs.yaml` packets for AWS, Terraform, secrets, cluster, and
   other external operations that the developer is not authorized to perform.
 
 Before the first Change Loop packet on a developer machine:
 
 1. Install Node.js 20.19 or later.
 2. Verify `claude-foundation version` is `3.5.2` and the repository runtime API
-   is `27`. A delta between the two is advisory while both doctors still pass:
+   is `28`. A delta between the two is advisory while both doctors still pass:
    the CLI forwards to the runtime installed in the project, so an older CLI
    prints `warning: project runtime API … differs from CLI API …` and keeps
    working. Only a doctor that exits non-zero is a blocked machine.

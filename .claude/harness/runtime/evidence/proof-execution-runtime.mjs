@@ -251,6 +251,7 @@ export function createProofExecutionRuntime({
 }) {
   const memoryAdvance = new Map();
   const activeAdvance = new Set();
+  let quietAdvanceOutput = false;
   const { startTrackedServices, stopAll } = createServiceSessions({ startRequiredServices });
   const prepareProofExecutionFor = prepareProofExecution.bind(null, {
     proofPreflight, pendingTasks, die, relevantSnapshot, loadRuntime, saveRuntime,
@@ -334,7 +335,7 @@ export function createProofExecutionRuntime({
   }
 
   function printOutcome(outcome) {
-    console.log(JSON.stringify(outcome, null, 2));
+    if (!quietAdvanceOutput) console.log(JSON.stringify(outcome, null, 2));
     return outcome;
   }
 
@@ -1172,9 +1173,15 @@ export function createProofExecutionRuntime({
   }
 
   async function proofAdvance(id, flags = {}) {
-    const locked = await withProofAdvanceLock(id, () => advanceUnlocked(id, flags));
-    if (locked.acquired) return locked.value;
-    return mutationInProgress(id, "proof advance", locked);
+    const priorQuiet = quietAdvanceOutput;
+    quietAdvanceOutput = Boolean(flags.quiet);
+    try {
+      const locked = await withProofAdvanceLock(id, () => advanceUnlocked(id, flags));
+      if (locked.acquired) return locked.value;
+      return mutationInProgress(id, "proof advance", locked);
+    } finally {
+      quietAdvanceOutput = priorQuiet;
+    }
   }
 
   return {

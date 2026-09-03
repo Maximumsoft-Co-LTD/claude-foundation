@@ -1656,7 +1656,7 @@ try {
   assert.doesNotMatch(developerSetup, /install-foundation-runtime/);
   assert.match(developerSetup, /Node\.js 20\.19 or later/);
   const policy = readJson(join(root, "foundation.json"));
-  assert.equal(policy.workflow.grounding, "required");
+  assert.equal(policy.workflow.grounding, "optional");
   assert.equal(policy.workflow.reviewCircuit, "full-delta");
   assert.equal(policy.workflow.reviewPolicy, "risk-tiered");
   assert.deepEqual(policy.review.fallbackReviewers, ["codex-sol", "main-session"]);

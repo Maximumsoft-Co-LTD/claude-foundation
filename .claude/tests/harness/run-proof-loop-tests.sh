@@ -47,14 +47,18 @@ draft() {
     const { readFileSync, writeFileSync } = require("fs");
     const d = JSON.parse(readFileSync("draft.json", "utf8"));
     d.intent = process.env.TITLE;
-    d.tasks = [{ id: "T001", outcome: "Update app.txt", kind: "implementation",
+    d.requirements = [{ key: "greeting-updated", capability: "application",
+      operation: "added", scenario: { name: "app.txt carries v2",
+        when: "the change is built", then: "app.txt carries v2" },
+      outcome: "write v2 to app.txt" }];
+    d.tasks = [{ key: "update-app", outcome: "Update app.txt", kind: "implementation",
       paths: (process.env.DECLARE_REPORT ? ["app.txt", process.env.REPORT] : ["app.txt"]),
-      verify: "sh run-test.sh " + process.env.REPORT }];
-    d.claims = [{ id: "greeting-updated", scenario: "app.txt carries v2",
-      impact: "low", capabilities: ["test"] }];
-    d.execution.providers.test = { adapter: "test-discovery",
-      command: ["sh", "run-test.sh", process.env.REPORT],
-      report: process.env.REPORT, minimum: 1, timeoutMs: 60000 };
+      verify: "sh run-test.sh " + process.env.REPORT,
+      covers: ["greeting-updated"] }];
+    d.evidence = { "greeting-updated": { capabilities: ["test"] } };
+    d.execution = { version: 1, providers: { test: { adapter: "test-discovery",
+      command: ["sh", "run-test.sh", process.env.REPORT], report: process.env.REPORT,
+      minimum: 1, timeoutMs: 60000 } }, services: {} };
     writeFileSync("draft.json", JSON.stringify(d, null, 2));'
   node .claude/harness/foundation.mjs start draft.json > start.log 2>&1
 }
