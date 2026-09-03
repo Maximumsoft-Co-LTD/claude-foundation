@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Harness feedback is bound to the exact installed source cohort.** Metrics
+  and generated HTML reports include the semantic version, loaded protocol
+  bundle, and harness-content digest so reports from patched or divergent
+  installations are distinguishable.
+
+- **Upgrade diagnostics make historical defaults explicit.** Install, update,
+  and doctor flows identify supported active changes affected by legacy
+  defaults and provide a previewable migration route without rewriting
+  project-owned policy.
+
+### Changed
+
+- **Budgets now reflect the compiled execution surface.** Request and token
+  targets account for repository, provider, risk, and coupling demands instead
+  of relying on declared change size alone.
+
+### Fixed
+
+- **Blocked operations now retain safe, actionable recovery context.** Typed,
+  redacted causes and exact resume routes survive into telemetry and feedback,
+  while incompatible critical-case provider adapters fail validation before
+  Build begins.
+
+- **Out-of-band delivery is reported without inventing lifecycle authority.**
+  Land diagnostics identify repository changes made outside the harness and
+  explain how to recover, but never treat those changes as proof, permission,
+  or archived completion.
+
 ## [3.5.0] - 2026-09-03
 
 ### Added
