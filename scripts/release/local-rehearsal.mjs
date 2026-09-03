@@ -28,6 +28,13 @@ export function unsafeEnvironmentPaths(paths) {
   });
 }
 
+export function cliHelpStatus(compact, full) {
+  return compact.status === 0 && full.status === 0 &&
+    compact.stdout.includes("change start") && compact.stdout.includes("advance <change>") &&
+    full.stdout.includes("proof readiness") && full.stdout.includes("land check")
+    ? "pass" : "fail";
+}
+
 export function runLocalRehearsal(outputDir = resolve(ROOT, ".foundation/test-results/release/local")) {
   mkdirSync(outputDir, { recursive: true });
   const temp = mkdtempSync(join(tmpdir(), "foundation-release-rehearsal-"));
@@ -65,8 +72,9 @@ export function runLocalRehearsal(outputDir = resolve(ROOT, ".foundation/test-re
     checks.cliVersion = { status: cliVersion.status === 0 && cliVersion.stdout.includes(version)
       ? "pass" : "fail", detail: cliVersion.stdout || cliVersion.stderr };
     const help = run("bash", [join(extract, "cli.sh"), "help"], extract);
-    checks.cliHelp = { status: help.status === 0 && help.stdout.includes("proof readiness") &&
-      help.stdout.includes("land check") ? "pass" : "fail", detail: help.stderr };
+    const helpAll = run("bash", [join(extract, "cli.sh"), "help", "--all"], extract);
+    checks.cliHelp = { status: cliHelpStatus(help, helpAll),
+      detail: help.stderr || helpAll.stderr };
     const ruby = run("ruby", ["-c", join(extract, "Formula/claude-foundation.rb")], extract);
     checks.formulaSyntax = { status: ruby.status === 0 ? "pass" : "fail", detail: ruby.stdout || ruby.stderr };
     const brewAvailable = run("sh", ["-c", "command -v brew >/dev/null"]).status === 0;

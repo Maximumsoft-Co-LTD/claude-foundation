@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { REQUIRED_ARCHIVE_PATHS, rehearsalStatus,
+import { REQUIRED_ARCHIVE_PATHS, cliHelpStatus, rehearsalStatus,
   unsafeEnvironmentPaths } from "../../../scripts/release/local-rehearsal.mjs";
 
 test("local release rehearsal requires runtime, installer, formula, and site sources", () => {
@@ -21,4 +21,12 @@ test("archive intake permits examples but rejects environment payloads", () => {
   assert.deepEqual(unsafeEnvironmentPaths([
     "dashboard/.env.example", ".env", "app/.env.local", "src/app.js"
   ]), [".env", "app/.env.local"]);
+});
+
+test("rehearsal checks compact intent help and full compatibility help separately", () => {
+  const compact = { status: 0, stdout: "change start <draft>\nadvance <change>\n" };
+  const full = { status: 0, stdout: "proof readiness <change>\nland check <change>\n" };
+  assert.equal(cliHelpStatus(compact, full), "pass");
+  assert.equal(cliHelpStatus({ status: 0, stdout: full.stdout }, full), "fail");
+  assert.equal(cliHelpStatus(compact, { status: 1, stdout: full.stdout }), "fail");
 });
