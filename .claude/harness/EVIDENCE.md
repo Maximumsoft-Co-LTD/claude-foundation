@@ -373,8 +373,22 @@ test("owner updates profile", {
 });
 ```
 
+Bind a stable critical case on the same test with a `critical-case` annotation:
+
+```ts
+test("owner updates profile", {
+  annotation: [
+    { type: "claim", description: "profile-update" },
+    { type: "critical-case", description: "case-profile-owner-update" }
+  ]
+}, async ({ page }) => {
+  // interaction and assertions
+});
+```
+
 A successful exit without all required annotations is `inconclusive`, never
-`pass`. Playwright attachments present in the JSON report are referenced from
+`pass`. A skipped annotated test does not satisfy its claim or critical case.
+Playwright attachments present in the JSON report are referenced from
 the receipt. One Playwright adapter may declare `outputs`, for example
 `["accessibility"]`; it emits separate capability receipts from one command
 execution. Configure traces, screenshots, and videos in the project.

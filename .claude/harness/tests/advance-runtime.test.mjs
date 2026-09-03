@@ -119,6 +119,29 @@ test("advance rejects stale proof and uses proof-owned authority routing", () =>
   assert.match(capped.command, /authority status/);
 });
 
+test("advance stops on proof preflight before starting expensive evidence", () => {
+  const unavailable = coordinatorAction({
+    ...base,
+    proofPreflight: {
+      status: "INFRASTRUCTURE_ERROR",
+      unavailableProviders: ["browser"],
+      next: [{ command: "claude-foundation doctor --stage prove --change change-a" }]
+    }
+  });
+  assert.equal(unavailable.action, "REPAIR_PROVIDER_ENVIRONMENT");
+  assert.equal(unavailable.boundary, "resource");
+  assert.match(unavailable.command, /doctor --stage prove/);
+
+  const invalid = coordinatorAction({
+    ...base,
+    proofPreflight: {
+      status: "CONFIGURATION_ERROR", issues: ["critical case missing"], next: []
+    }
+  });
+  assert.equal(invalid.action, "REPAIR_PROOF_CONTRACT");
+  assert.equal(invalid.boundary, "contract");
+});
+
 test("feedback classifies observed review repair without inventing wait", () => {
   const operations = [{
     version: 3, operation: "proof-advance", status: "completed",
@@ -145,7 +168,13 @@ test("feedback classifies observed review repair without inventing wait", () => 
 
   const snapshot = feedbackSnapshotValue({
     changeId: "change-a",
-    metrics: { unattributedWaitMs: 2_000_000, humanWaitMs: null },
+    metrics: {
+      unattributedWaitMs: 2_000_000, humanWaitMs: null,
+      evidenceObservationGroups: [{
+        commandExecutionId: "exec-1", providers: ["test", "compatibility"],
+        independent: false
+      }]
+    },
     operations,
     reviewAttempts: attempts,
     nextAction: { action: "RUN_PROOF" }
@@ -153,6 +182,7 @@ test("feedback classifies observed review repair without inventing wait", () => 
   assert.equal(snapshot.timing.repairMs, 1_850_604);
   assert.equal(snapshot.timing.humanWaitMs, null);
   assert.equal(snapshot.timing.unattributedMs, 149_396);
+  assert.equal(snapshot.evidenceObservationGroups[0].independent, false);
 });
 
 test("feedback keeps legacy blocker cause explicitly unavailable", () => {

@@ -1,7 +1,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-export const FEEDBACK_SCHEMA_VERSION = 1;
+export const FEEDBACK_SCHEMA_VERSION = 2;
 
 function timestamp(value) {
   const parsed = Date.parse(value || "");
@@ -85,6 +85,7 @@ export function feedbackSnapshotValue({
       unexpectedFailures: operations.filter((row) => row.status === "failed").length
     },
     evidenceReuse: metrics.evidenceReuse || { count: 0, byReason: {} },
+    evidenceObservationGroups: metrics.evidenceObservationGroups || [],
     usageAvailability: metrics.usageAvailability || null,
     nextAction,
     measurement: "read-only-retained-state-projection"

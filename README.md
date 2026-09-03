@@ -581,9 +581,17 @@ diagnosis and explicit integrations.
 For a higher-level driver, run `claude-foundation advance <change-id>`. It
 selects one bounded next action across Build, Prove, repair, and Land, while the
 host still executes model work and the user retains commit, push, publish, PR,
-and waiver authority. `claude-foundation feedback <change-id>` explains elapsed
+and waiver authority. Before it returns `RUN_PROOF`, the command verifies Proof
+readiness and routes any code, contract, resource, or decision blocker to its
+typed next action. `claude-foundation feedback <change-id>` explains elapsed
 time by reviewer execution, evidenced repair, human wait, and unattributed time,
-and shows evidence reuse plus the next resumable action.
+shows evidence reuse plus the next resumable action, and identifies providers
+whose receipts came from the same command execution rather than independent runs.
+
+Playwright tests can bind evidence with `claim` annotations and stable cases with
+`critical-case` annotations. A skipped test does not satisfy either requirement.
+The proposal's `Impact` and `Coupling` fields must also match the machine-owned
+agreement, preventing the human-readable and enforced classifications from drifting.
 
 Build packets also carry `authorityPreflight`. High-risk work that requires
 signed CI stops before dispatch or product edits when no trusted external CI

@@ -557,9 +557,17 @@ change เดิมและคืนทางเลือกพร้อมค�
 `claude-foundation advance <change-id>` ซึ่งจะเลือก next action ที่มีขอบเขตชัดเจน
 เพียงหนึ่งรายการตลอด Build, Prove, repair และ Land โดย host ยังเป็นผู้เรียก model
 และ user ยังถือ authority สำหรับ commit, push, publish, เปิด PR และ waiver
+ก่อนคืน `RUN_PROOF` คำสั่งนี้จะตรวจ Proof readiness และส่ง blocker ด้าน code,
+contract, resource หรือ decision ไปยัง typed next action ที่ถูกต้อง
 ส่วน `claude-foundation feedback <change-id>` จะแยกเวลาที่ reviewer ทำงาน,
 เวลาซ่อมที่มีหลักฐานจาก workspace, human wait และเวลาที่ยังระบุสาเหตุไม่ได้
-พร้อมแสดง evidence reuse และ action ที่ resume ต่อได้
+พร้อมแสดง evidence reuse, action ที่ resume ต่อได้ และ provider ที่ receipt
+มาจาก command execution เดียวกันแทนที่จะเป็น observation อิสระ
+
+Playwright test ผูก evidence ได้ด้วย annotation `claim` และผูก stable case ด้วย
+annotation `critical-case` โดย test ที่ถูก skip จะไม่ผ่าน requirement ทั้งสองแบบ
+นอกจากนี้ `Impact` และ `Coupling` ใน proposal ต้องตรงกับ agreement ที่ machine
+เป็นเจ้าของ เพื่อไม่ให้ classification ที่คนอ่านกับที่ระบบบังคับใช้คลาดกัน
 
 Build packet มี `authorityPreflight` ด้วย งานเสี่ยงสูงที่ต้องใช้ signed CI จะหยุด
 ก่อน dispatch หรือแก้ product ถ้ายังไม่มี external CI provider ที่เชื่อถือได้ โดย

@@ -11,6 +11,7 @@ import {
   parseJsonOutput,
   parseNodeTestSpecOutput,
   parseTapOutput,
+  playwrightAnnotationCriticalCases,
   playwrightAnnotationClaims,
   playwrightReportSummary,
   playwrightTestOutcome,
@@ -200,6 +201,10 @@ test("Playwright result helpers classify annotations and terminal outcomes", () 
     { type: "note", description: "ignored" },
     { type: "claim" }, null
   ]), ["claim:a"]);
+  assert.deepEqual(playwrightAnnotationCriticalCases([
+    { type: "critical-case", description: "CC-A" },
+    { type: "claim", description: "ignored" }
+  ]), ["CC-A"]);
   assert.deepEqual(playwrightTestOutcome([{ status: "passed" }]),
     { failed: false, skipped: false });
   assert.deepEqual(playwrightTestOutcome([{ status: "skipped" }, { status: "skipped" }]),
@@ -210,24 +215,36 @@ test("Playwright result helpers classify annotations and terminal outcomes", () 
   assert.deepEqual(playwrightTestOutcome([{}, null]), { failed: false, skipped: false });
 });
 
-test("playwrightReportSummary carries claims only to tests that ran", () => {
+test("playwrightReportSummary carries claims and critical cases only to executed tests", () => {
   const report = {
-    annotations: [{ type: "claim", description: "suite" }],
+    annotations: [
+      { type: "claim", description: "suite" },
+      { type: "critical-case", description: "CC-SUITE" }
+    ],
     suites: [{
       annotations: [{ type: "claim", description: "nested" }],
       specs: [
         {
-          annotations: [{ type: "claim", description: "passed" }],
+          annotations: [
+            { type: "claim", description: "passed" },
+            { type: "critical-case", description: "CC-PASS" }
+          ],
           attachments: [{ path: "trace.zip" }, {}, null],
           results: [{ status: "passed" }]
         },
         {
-          annotations: [{ type: "claim", description: "skipped-only" }],
+          annotations: [
+            { type: "claim", description: "skipped-only" },
+            { type: "critical-case", description: "CC-SKIP" }
+          ],
           attachments: [{ path: "skip.png" }],
           results: [{ status: "skipped" }]
         },
         {
-          annotations: [{ type: "claim", description: "suite" }],
+          annotations: [
+            { type: "claim", description: "suite" },
+            { type: "critical-case", description: "CC-FAIL" }
+          ],
           results: [{ status: "failed" }, { status: "skipped" }]
         }
       ]
@@ -238,10 +255,17 @@ test("playwrightReportSummary carries claims only to tests that ran", () => {
     claims: ["nested", "passed", "suite"],
     attachments: ["skip.png", "trace.zip"],
     skippedClaims: ["skipped-only"],
+    criticalCases: [
+      { id: "CC-FAIL", status: "fail" },
+      { id: "CC-PASS", status: "pass" },
+      { id: "CC-SKIP", status: "skipped" },
+      { id: "CC-SUITE", status: "fail" }
+    ],
     tests: 3, failed: 1, skipped: 1
   });
   assert.deepEqual(playwrightReportSummary(null), {
-    claims: [], attachments: [], skippedClaims: [], tests: 0, failed: 0, skipped: 0
+    claims: [], attachments: [], skippedClaims: [], criticalCases: [],
+    tests: 0, failed: 0, skipped: 0
   });
 });
 
@@ -252,12 +276,14 @@ test("visitPlaywrightReport ignores repeated object identities", () => {
   };
   const state = {
     claims: new Set(), attachments: new Set(), skippedClaims: new Set(),
-    tests: 0, failed: 0, skipped: 0
+    criticalCases: new Map(), tests: 0, failed: 0, skipped: 0
   };
-  visitPlaywrightReport({ children: [testCase, testCase] }, [], state);
+  visitPlaywrightReport({ children: [testCase, testCase] }, {
+    claims: [], criticalCases: []
+  }, state);
   assert.equal(state.tests, 1);
   assert.deepEqual([...state.claims], ["once"]);
   collectPlaywrightAttachments(null, state.attachments);
-  recordPlaywrightTest(null, [], state);
+  recordPlaywrightTest(null, { claims: [], criticalCases: [] }, state);
   assert.equal(state.tests, 1);
 });

@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { tmpdir } from "node:os";
-import { createChangeLifecycle } from "../runtime/workflow/change-lifecycle.mjs";
+import {
+  atomicStartPreflight, createChangeLifecycle, synchronizeProposalClassification
+} from "../runtime/workflow/change-lifecycle.mjs";
 
 const root = mkdtempSync(join(tmpdir(), "foundation-change-draft-"));
 const draftPath = join(root, "draft.json");
@@ -67,6 +69,12 @@ const startRejected = (mutate, pattern) => {
 };
 
 try {
+  assert.equal(synchronizeProposalClassification([
+    "## Impact", "", "- **Impact:** low | medium | high",
+    "- **Coupling:** isolated | coupled", ""
+  ].join("\n"), { impact: "high", coupling: "coupled" }), [
+    "## Impact", "", "- **Impact:** high", "- **Coupling:** coupled", ""
+  ].join("\n"));
   assert.throws(() => lifecycle.loadDraft("missing.json"), /JSON file inside the project/);
   const outside = join(tmpdir(), `outside-draft-${process.pid}.json`);
   writeFileSync(outside, "{}\n");
@@ -162,6 +170,19 @@ try {
   startRejected((draft) => { draft.execution.version = 2; }, /executable evidence wiring/);
   startRejected((draft) => { delete draft.execution.providers; }, /executable evidence wiring/);
   startRejected((draft) => { draft.execution.providers = {}; }, /executable evidence wiring/);
+
+  const incomplete = baseDraft();
+  incomplete.version = 3;
+  incomplete.intent = "";
+  delete incomplete.acceptance;
+  incomplete.impact = "critical";
+  incomplete.coupling = "shared";
+  incomplete.securityTriggers = {};
+  incomplete.externalOperations = {};
+  delete incomplete.execution;
+  const aggregate = atomicStartPreflight(incomplete, { groundingRequired: true });
+  assert.equal(aggregate.issues.length, 10);
+  assert.match(aggregate.issues.join("\n"), /version 1 or 2[\s\S]*non-empty 'intent'[\s\S]*acceptance.required[\s\S]*impact must be[\s\S]*coupling must be[\s\S]*securityTriggers[\s\S]*executable evidence[\s\S]*grounding.version[\s\S]*nfrAssessment/);
 
   for (const mutate of [
     () => {},

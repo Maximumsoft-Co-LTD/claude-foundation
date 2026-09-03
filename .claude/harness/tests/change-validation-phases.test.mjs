@@ -10,6 +10,7 @@ import {
   createChangeValidationRuntime,
   lockValidatedGrounding,
   normalizeValidationAcceptance,
+  proposalClassificationIssues,
   reportDeclaredSurfaceForecast,
   reportValidationReviewAssurance,
   validateImplementationTasks,
@@ -233,6 +234,28 @@ test("validation preflight reports every unresolved prerequisite", () => {
   assert.doesNotThrow(() => assertValidationPreflight("change-a", {
     status: "change", impact: "medium", coupling: "isolated"
   }, [], fail));
+});
+
+test("versioned proposals remain authoritative for impact and coupling", () => {
+  const proposal = [
+    "# Change", "", "## Impact", "",
+    "- **Impact:** medium", "- **Coupling:** isolated", ""
+  ].join("\n");
+  assert.deepEqual(proposalClassificationIssues({
+    version: 2, impact: "medium", coupling: "isolated"
+  }, proposal), []);
+  assert.deepEqual(proposalClassificationIssues({
+    version: 2, impact: "low", coupling: "coupled"
+  }, proposal), [
+    "proposal.md impact 'medium' disagrees with compiled runtime impact 'low'; re-resolve the agreement instead of editing machine state",
+    "proposal.md coupling 'isolated' disagrees with compiled runtime coupling 'coupled'; re-resolve the agreement instead of editing machine state"
+  ]);
+  assert.deepEqual(proposalClassificationIssues({
+    version: 2, impact: "medium", coupling: "isolated"
+  }, "# Legacy-shaped proposal\n"), []);
+  assert.deepEqual(proposalClassificationIssues({
+    version: 1, impact: "low", coupling: "isolated"
+  }, "# Legacy-shaped proposal\n"), []);
 });
 
 test("validation selects root or active packet without hiding state", () => {

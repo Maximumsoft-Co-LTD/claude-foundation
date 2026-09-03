@@ -5,6 +5,59 @@ import { join, relative, resolve } from "node:path";
 import { nextCommand } from "../core/next-step.mjs";
 import { materialSecurityTriggers } from "./security-policy.mjs";
 
+export function atomicStartPreflight(draft, { groundingRequired = false } = {}) {
+  const issues = [];
+  if (![1, 2].includes(draft?.version))
+    issues.push("start draft requires version 1 or 2");
+  if (!String(draft?.intent || "").trim())
+    issues.push("start draft requires non-empty 'intent'");
+  const acceptance = draft?.acceptance;
+  if (!acceptance || typeof acceptance.required !== "boolean")
+    issues.push("start draft requires acceptance.required true|false from an explicit user-facing decision");
+  else if (acceptance.required && !String(acceptance.reason || "").trim())
+    issues.push("start draft requires acceptance.reason when acceptance.required is true");
+  else if (!acceptance.required && (String(acceptance.reason || "").trim() ||
+      (acceptance.claimIds || []).length))
+    issues.push("start draft acceptance.reason and acceptance.claimIds require acceptance.required true");
+
+  const impact = draft?.impact || "low";
+  const coupling = draft?.coupling || "isolated";
+  const securityTriggers = draft?.securityTriggers || [];
+  if (!["low", "medium", "high"].includes(impact))
+    issues.push("start draft impact must be low|medium|high");
+  if (!["isolated", "coupled"].includes(coupling))
+    issues.push("start draft coupling must be isolated|coupled");
+  if (!Array.isArray(securityTriggers) ||
+      securityTriggers.some((trigger) => typeof trigger !== "string" || !trigger.trim()))
+    issues.push("start draft securityTriggers must be an array of non-empty strings");
+  if (draft?.externalOperations !== undefined &&
+      !Array.isArray(draft.externalOperations))
+    issues.push("draft externalOperations must be an array");
+  if (!draft?.execution || draft.execution.version !== 1 ||
+      !draft.execution.providers || Object.keys(draft.execution.providers).length === 0)
+    issues.push("start draft requires executable evidence wiring");
+
+  const safeTriggers = Array.isArray(securityTriggers) ? securityTriggers : [];
+  const rapid = impact === "low" && coupling === "isolated" &&
+    safeTriggers.filter((trigger) => trigger.toLowerCase() !== "none").length === 0 &&
+    !draft?.reviewRequired && !acceptance?.required;
+  if (groundingRequired && draft?.grounding?.version !== 2)
+    issues.push("start draft requires grounding.version 2 after the initial Decision Sheet");
+  if (!rapid && groundingRequired) {
+    const categories = [
+      "performance", "capacity", "availability", "securityPrivacy",
+      "accessibility", "operability", "compatibility", "recoverability"
+    ];
+    const missing = categories.filter((category) =>
+      !draft?.grounding?.nfrAssessment?.[category]);
+    if (missing.length)
+      issues.push(`standard start draft requires every grounding.nfrAssessment category before creation: ${missing.join(", ")}`);
+  }
+  if (!rapid && !Array.isArray(draft?.decisions))
+    issues.push("standard start draft requires decisions to be an array; use [] when no durable decision qualifies");
+  return { issues, classification: { impact, coupling, securityTriggers: safeTriggers }, rapid };
+}
+
 export function priorChangeResidue(root, id) {
   return [
     join(root, ".foundation", "runtime", `${id}.json`),
@@ -118,6 +171,19 @@ export function renderDraftProposal(draft, state) {
     `- **Affected surfaces:** ${(draft.surfaces || ["code"]).join(", ")}\n` +
     `- **Security triggers:** ${(draft.securityTriggers || ["none"]).join(", ")}\n\n` +
     `## Non-goals\n\n${draftBullets(draft.nonGoals)}\n`;
+}
+
+export function synchronizeProposalClassification(proposal, state) {
+  let next = String(proposal || "");
+  for (const [label, value] of [
+    ["Impact", state.impact], ["Coupling", state.coupling]
+  ]) {
+    if (!value) continue;
+    const pattern = new RegExp(
+      `^(\\s*-\\s*\\*\\*${label}:\\*\\*\\s*).*$`, "im");
+    if (pattern.test(next)) next = next.replace(pattern, `$1${value}`);
+  }
+  return next;
 }
 
 export function draftDomainRows(domainLanguage = []) {
@@ -348,7 +414,7 @@ export function createChangeLifecycle({
     }
   }
 
-  function loadDraft(draftPath) {
+  function loadDraft(draftPath, { deferPolicy = false } = {}) {
     const source = draftSource(draftPath);
     // Version 1 is a compatibility contract: callers that supplied every
     // ledger key receive the exact same object back. Version 2 delegates the
@@ -358,7 +424,7 @@ export function createChangeLifecycle({
       : source;
     validateDraftFields(draft);
     validateDraftDomainLanguage(draft);
-    validateDraftPolicy(draft);
+    if (!deferPolicy) validateDraftPolicy(draft);
     validateDraftSpecs(draft);
     return draft;
   }
@@ -746,76 +812,16 @@ export function createChangeLifecycle({
     applyResolveSecurity(state, flags);
     applyResolveAcceptance(state, flags);
     const upgraded = upgradeResolvedSchema(id, state);
+    const proposalPath = join(changePath(id), "proposal.md");
+    if (existsSync(proposalPath)) {
+      const proposal = readFileSync(proposalPath, "utf8");
+      const synchronized = synchronizeProposalClassification(proposal, state);
+      if (synchronized !== proposal) writeFileSync(proposalPath, synchronized);
+    }
     state.resolvedAt = now();
     saveRuntime(state);
     printResolution(id, state, upgraded);
     return { state, upgraded };
-  }
-
-  function validateStartIdentity(draft) {
-    if (![1, 2].includes(draft.version)) fail("start draft requires version 1 or 2");
-    if (!String(draft.intent || "").trim()) fail("start draft requires non-empty 'intent'");
-  }
-
-  function validateStartAcceptance(draft) {
-    if (!draft.acceptance || typeof draft.acceptance.required !== "boolean")
-      fail("start draft requires acceptance.required true|false from an explicit user-facing decision");
-    // Validated here, with everything else, rather than inside resolveChange:
-    // createChange has already persisted by then, so a late refusal leaves a
-    // half-created change whose only exit is `change abandon --decision-ref`,
-    // a flag the error does not mention. `start` is meant to be atomic.
-    if (draft.acceptance.required && !String(draft.acceptance.reason || "").trim())
-      fail("start draft requires acceptance.reason when acceptance.required is true");
-    // The converse direction, for the same reason: resolveChange refuses a
-    // reason or claims without required, and by then the change exists.
-    if (!draft.acceptance.required &&
-        (String(draft.acceptance.reason || "").trim() ||
-         (draft.acceptance.claimIds || []).length))
-      fail("start draft acceptance.reason and acceptance.claimIds require acceptance.required true");
-  }
-
-  function startClassification(draft) {
-    const impact = draft.impact || "low";
-    const coupling = draft.coupling || "isolated";
-    const securityTriggers = draft.securityTriggers || [];
-    if (!["low", "medium", "high"].includes(impact))
-      fail("start draft impact must be low|medium|high");
-    if (!["isolated", "coupled"].includes(coupling))
-      fail("start draft coupling must be isolated|coupled");
-    if (!Array.isArray(securityTriggers) ||
-        securityTriggers.some((trigger) => typeof trigger !== "string" || !trigger.trim()))
-      fail("start draft securityTriggers must be an array of non-empty strings");
-    return { impact, coupling, securityTriggers };
-  }
-
-  function validateStartExecution(draft) {
-    if (!draft.execution || draft.execution.version !== 1 ||
-        !draft.execution.providers || Object.keys(draft.execution.providers).length === 0)
-      fail("start draft requires executable evidence wiring");
-  }
-
-  function rapidStart(draft, { impact, coupling, securityTriggers }) {
-    return impact === "low" && coupling === "isolated" &&
-      securityTriggers.filter((trigger) => trigger.toLowerCase() !== "none").length === 0 &&
-      !draft.reviewRequired && !draft.acceptance?.required;
-  }
-
-  function validateStartGrounding(draft, rapid) {
-    if (workflowPolicy().workflow.grounding === "required" &&
-        (!draft.grounding || draft.grounding.version !== 2))
-      fail("start draft requires grounding.version 2 after the initial Decision Sheet");
-    if (!rapid && workflowPolicy().workflow.grounding === "required") {
-      const categories = [
-        "performance", "capacity", "availability", "securityPrivacy",
-        "accessibility", "operability", "compatibility", "recoverability"
-      ];
-      const missing = categories.filter((category) =>
-        !draft.grounding?.nfrAssessment?.[category]);
-      if (missing.length)
-        fail(`standard start draft requires every grounding.nfrAssessment category before creation: ${missing.join(", ")}`);
-    }
-    if (!rapid && !Array.isArray(draft.decisions))
-      fail("standard start draft requires decisions to be an array; use [] when no durable decision qualifies");
   }
 
   function startResolutionFlags(draft, classification, rapid) {
@@ -834,13 +840,13 @@ export function createChangeLifecycle({
   }
 
   function startAtomic(draftPath, options = {}) {
-    const draft = loadDraft(draftPath);
-    validateStartIdentity(draft);
-    validateStartAcceptance(draft);
-    const classification = startClassification(draft);
-    validateStartExecution(draft);
-    const rapid = rapidStart(draft, classification);
-    validateStartGrounding(draft, rapid);
+    const draft = loadDraft(draftPath, { deferPolicy: true });
+    const preflight = atomicStartPreflight(draft, {
+      groundingRequired: workflowPolicy().workflow.grounding === "required"
+    });
+    if (preflight.issues.length)
+      fail(`start draft preflight failed:\n  - ${preflight.issues.join("\n  - ")}`);
+    const { classification, rapid } = preflight;
     const resolutionFlags = startResolutionFlags(draft, classification, rapid);
     const id = slugify(draft.id || draft.intent);
     assertChangeAvailable(id);

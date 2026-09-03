@@ -212,7 +212,9 @@ and `acceptance` keep their own waiver and withdrawal routes.
 
 Execution adapters run project-owned commands. `test-discovery` produces
 two receipts from one process; `playwright` consumes a structured JSON report
-and requires claim annotations. The scheduler reuses valid receipts,
+and requires claim annotations. Playwright tests may also bind stable critical
+cases with `critical-case` annotations; skipped tests never satisfy those cases.
+The scheduler reuses valid receipts,
 deduplicates identical commands, and runs providers concurrently only when
 their declared resources do not conflict. Evidence v1 remains manual-compatible
 and upgrades explicitly with `claude-foundation evidence upgrade <change>`.
@@ -473,19 +475,25 @@ execute a Build task, execute a review-repair batch, rerun invalidated evidence,
 dispatch the configured review, request a real decision, or enter Land. The
 harness owns selection, dependency order, state, and resume routing; the host
 still owns model invocation. `advance` never grants commit, push, publish, PR,
-or waiver authority. A host execution result can be imported atomically with
+or waiver authority. Before returning `RUN_PROOF`, it runs the same Proof
+readiness contract and returns a typed repair, resource, or decision action when
+Proof cannot start. A host execution result can be imported atomically with
 `--host-result <result.json>` before the next action is selected.
 
 Use `claude-foundation feedback <change>` when investigating latency. It keeps
 reviewer execution, evidenced repair, human wait, and unattributed time separate;
 therefore time spent changing the workspace after major review findings is not
 reported as quiet reviewer wait. Reuse records include bounded provider and
-workspace/fingerprint detail, while unavailable legacy causes remain explicit.
+workspace/fingerprint detail. Metrics and feedback also group providers by
+command-execution identity so multiple receipts from one process are not
+presented as independent observations. Unavailable legacy causes remain explicit.
 
 Draft v2 makes the same division explicit at Change time: authors state intent,
 claims, task outcomes, paths, and one verification command; the harness assigns
 stable IDs and fills only uniquely provable cross-ledger bindings. Draft v1 is
-still accepted unchanged. During Prove, one declared critical case and one test
+still accepted unchanged. The `Impact` and `Coupling` recorded in the proposal
+must match the machine-owned agreement before Build can start. During Prove, one
+declared critical case and one test
 result are bound automatically; ambiguous many-to-many coverage still requires
 explicit case identity because guessing would weaken assurance.
 

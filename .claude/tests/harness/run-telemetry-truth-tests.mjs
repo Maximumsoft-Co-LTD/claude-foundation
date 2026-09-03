@@ -605,6 +605,11 @@ test("metrics compose lifecycle, receipt, context, and human-wait timelines", ()
   assert.equal(rendered.phases.prove.contextMode, "retained");
   assert.equal(rendered.providers.test.commandExecutionId, "exec-1");
   assert.equal(rendered.providers.second.adapter, "external");
+  assert.deepEqual(rendered.evidenceObservationGroups, [{
+    commandExecutionId: "exec-1",
+    providers: ["second", "test"],
+    independent: false
+  }]);
   assert.equal(rendered.evidenceExecutionTimeMs, 100);
   assert.equal(rendered.externalExecutionTimeMs, 40);
   assert.equal(rendered.context.totalBytes, 450);

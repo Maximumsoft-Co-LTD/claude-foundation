@@ -452,9 +452,12 @@ export function createAdapterRuntime({
         type: "structured-report", required: true
       });
     const report = parsedAdapterReport(config, configuredReport, execution.result);
+    const criticalCaseReport = config.adapter === "playwright" && report
+      ? { criticalCases: playwrightReportSummary(report).criticalCases }
+      : report;
     return {
       logArtifact, artifacts, report,
-      critical: criticalCaseResult(report, config.criticalCases || [])
+      critical: criticalCaseResult(criticalCaseReport, config.criticalCases || [])
     };
   }
 

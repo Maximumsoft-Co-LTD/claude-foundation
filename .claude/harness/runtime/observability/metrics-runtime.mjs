@@ -57,6 +57,22 @@ export function createSourceCohortProvider({
   };
 }
 
+export function evidenceObservationGroups(providers = {}) {
+  const groups = new Map();
+  for (const [provider, row] of Object.entries(providers)) {
+    if (!row.commandExecutionId) continue;
+    const current = groups.get(row.commandExecutionId) || [];
+    current.push(provider);
+    groups.set(row.commandExecutionId, current);
+  }
+  return [...groups].map(([commandExecutionId, names]) => ({
+    commandExecutionId,
+    providers: names.sort(),
+    independent: names.length === 1
+  })).sort((left, right) =>
+    left.commandExecutionId.localeCompare(right.commandExecutionId));
+}
+
 export function eventUsageRecoveryActions(classification, correlatedHosts, changeId) {
   const recoveryActions = [];
   if (["correlation-missing", "partial-measurement"].includes(classification)) {
@@ -565,6 +581,7 @@ export function createMetricsRuntime({
         "rather than the sum of observations. Waits in a session whose " +
         "transcript was never ingested remain inside unattributedWaitMs",
       phases, providers,
+      evidenceObservationGroups: evidenceObservationGroups(providers),
       evidenceExecutionTimeMs,
       externalExecutionTimeMs,
       // No host events means no request observation. Lifecycle operations are

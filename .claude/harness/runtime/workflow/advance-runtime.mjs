@@ -1,6 +1,6 @@
 import { repairActionForWorkspace } from "../evidence/repair-runtime.mjs";
 
-export const ADVANCE_PROTOCOL_VERSION = 1;
+export const ADVANCE_PROTOCOL_VERSION = 2;
 
 const command = (value) => `claude-foundation ${value}`;
 
@@ -35,7 +35,8 @@ function buildAction(id, dispatch) {
 
 export function coordinatorAction({
   id, state, dispatch, workspaceHash, latestReview = null,
-  proofCursor = {}, authorityRequests = [], stableHash, authorityActions = null
+  proofCursor = {}, authorityRequests = [], stableHash, authorityActions = null,
+  proofPreflight = null
 }) {
   if (state.status === "archived") return {
     version: ADVANCE_PROTOCOL_VERSION, changeId: id,
@@ -105,6 +106,28 @@ export function coordinatorAction({
     resumeCommand: command(`advance ${id}`)
   };
 
+  if (proofPreflight && proofPreflight.status !== "READY") {
+    const first = proofPreflight.next?.[0] || null;
+    const mapping = {
+      NEEDS_CODE_CHANGE: ["EXECUTE_TASK", "host-execution"],
+      CONFIGURATION_ERROR: ["REPAIR_PROOF_CONTRACT", "contract"],
+      BLOCKED_BY_ACTIVE_WORK: ["WAIT_RESOURCE", "resource"],
+      INFRASTRUCTURE_ERROR: ["REPAIR_PROVIDER_ENVIRONMENT", "resource"],
+      NEEDS_USER_DECISION: ["REQUEST_DECISION", "user-authority"]
+    };
+    const [action, boundary] = mapping[proofPreflight.status] ||
+      ["REPAIR_PROOF_PREFLIGHT", "contract"];
+    return {
+      version: ADVANCE_PROTOCOL_VERSION,
+      changeId: id,
+      action,
+      boundary,
+      preflight: proofPreflight,
+      command: first?.command || command(`doctor --stage prove --change ${id}`),
+      resumeCommand: command(`advance ${id}`)
+    };
+  }
+
   return {
     version: ADVANCE_PROTOCOL_VERSION,
     changeId: id,
@@ -118,7 +141,7 @@ export function coordinatorAction({
 export function createAdvanceRuntime({
   loadRuntime, agentDispatchValue, relevantHash, deliveredAiAttempts,
   authorityStatusValue, authorityNext, readJson, proofAdvancePath, stableHash,
-  output = console.log
+  proofReadinessValue = null, output = console.log
 }) {
   function advanceValue(id) {
     const state = loadRuntime(id);
@@ -133,6 +156,20 @@ export function createAdvanceRuntime({
       dispatch = { action: "unavailable", reason: "build-dispatch-unavailable",
         nextCommand: command(`doctor --stage build --change ${id}`) };
     }
+    let proofPreflight = null;
+    if (dispatch.action === "build-complete" && proofReadinessValue) {
+      try { proofPreflight = proofReadinessValue(id, "prove"); }
+      catch (error) {
+        proofPreflight = {
+          version: 1, changeId: id, stage: "prove", status: "CONFIGURATION_ERROR",
+          issues: [error?.message || String(error)],
+          next: [{
+            kind: "diagnose-proof",
+            command: command(`doctor --stage prove --change ${id}`)
+          }]
+        };
+      }
+    }
     const openRequests = authority.requests || [];
     return coordinatorAction({
       id,
@@ -142,6 +179,7 @@ export function createAdvanceRuntime({
       latestReview: deliveredAiAttempts(id).at(-1) || null,
       proofCursor: readJson(proofAdvancePath(id), {}),
       authorityRequests: openRequests,
+      proofPreflight,
       authorityActions: authorityNext
         ? authorityNext(id, openRequests[0]?.type || "review", openRequests) : null,
       stableHash

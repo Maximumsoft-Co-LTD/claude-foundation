@@ -169,6 +169,27 @@ test("critical cases normalize structured and test-runner reports", () => {
   });
 });
 
+test("playwright critical-case annotations bind receipts without title conventions", async () => {
+  const summary = {
+    claims: ["test-claim"], attachments: [], skippedClaims: [],
+    criticalCases: [{ id: "CC-DRAWER-NARROW", status: "pass" }],
+    tests: 1, failed: 0, skipped: 0
+  };
+  const config = {
+    capability: "browser", adapter: "playwright",
+    command: ["playwright", "test"], reportFormat: "json",
+    criticalCases: ["CC-DRAWER-NARROW"]
+  };
+  const world = fixture(config, result({
+    stdout: JSON.stringify({ summary })
+  }));
+  const outcome = await world.runtime.executeAdapter(
+    "change", "provider", config, "run", new Map());
+  assert.equal(outcome.status, "pass");
+  assert.deepEqual(world.receipts[0].flags.criticalCases,
+    [{ id: "CC-DRAWER-NARROW", status: "pass" }]);
+});
+
 test("contract digest compares repository artifacts without a command process", async () => {
   const config = {
     capability: "test", adapter: "contract-digest",

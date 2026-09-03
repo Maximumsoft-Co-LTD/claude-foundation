@@ -258,6 +258,29 @@ export function validationPreflightIssues(id, state, missing = []) {
   return issues;
 }
 
+export function proposalClassificationIssues(state, proposal = "") {
+  // Version-2 changes are created by the runtime with these fields. OpenSpec
+  // owns the agreement; the runtime values are only its compiled projection.
+  // Grandfather older packets whose free-form proposal had no stable labels.
+  if (Number(state.version || 1) < 2) return [];
+  const value = String(proposal || "");
+  const field = (name) => value.match(
+    new RegExp(`^\\s*-\\s*\\*\\*${name}:\\*\\*\\s*([^\\n]+?)\\s*$`, "im"))?.[1]
+    ?.trim().toLowerCase() || null;
+  const declared = { impact: field("Impact"), coupling: field("Coupling") };
+  const issues = [];
+  for (const [name, allowed] of Object.entries({
+    impact: ["low", "medium", "high"], coupling: ["isolated", "coupled"]
+  })) {
+    // Packets created before the stable labels remain valid. Current templates
+    // are synchronized by resolve; when a concrete label exists, it is part of
+    // the agreement and must not drift from the compiled projection.
+    if (declared[name] && allowed.includes(declared[name]) && declared[name] !== state[name])
+      issues.push(`proposal.md ${name} '${declared[name]}' disagrees with compiled runtime ${name} '${state[name]}'; re-resolve the agreement instead of editing machine state`);
+  }
+  return issues;
+}
+
 export function assertValidationPreflight(id, state, missing, fail) {
   if (state.status === "archived") fail(`change '${id}' is already archived`);
   const issues = validationPreflightIssues(id, state, missing);
@@ -1662,6 +1685,10 @@ export function createChangeValidationRuntime({
     const dir = validationChangeDirectory(
       id, source, state, activeChangePath, changePath);
     assertValidationPreflight(id, state, changeArtifactGaps(state, dir), fail);
+    const classificationIssues = proposalClassificationIssues(
+      state, readFileSync(join(dir, "proposal.md"), "utf8"));
+    if (classificationIssues.length)
+      fail(`change agreement classification failed:\n  - ${classificationIssues.join("\n  - ")}`);
     assertArchiveSafeArtifacts(id, dir);
     assertNoScaffolds(state, dir);
     const contractDiagnostics = [];

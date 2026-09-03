@@ -122,12 +122,12 @@ if (RUNTIME_MODULE_API !== RUNTIME_API_VERSION) {
   process.exit(1);
 }
 const PROVIDER_PROTOCOL_VERSION = "13";
-const ADAPTER_PROTOCOL_VERSION = "5";
+const ADAPTER_PROTOCOL_VERSION = "6";
 const PROOF_PROTOCOL_VERSION = "7";
 const PACKET_SCHEMA_VERSION = "10";
 const AGENT_PLAN_SCHEMA_VERSION = "4";
 const CONTEXT_EVENT_SCHEMA_VERSION = "2";
-const METRICS_SCHEMA_VERSION = "7";
+const METRICS_SCHEMA_VERSION = "8";
 const COMMAND_TELEMETRY_SCHEMA_VERSION = "3";
 const REVIEW_PROTOCOL_VERSION = "4";
 const ACCEPTANCE_PROTOCOL_VERSION = "2";
@@ -1698,6 +1698,7 @@ const { advanceValue, showAdvance } = createAdvanceRuntime({
   deliveredAiAttempts,
   authorityStatusValue,
   authorityNext,
+  proofReadinessValue,
   readJson,
   proofAdvancePath: (id) => join(EVIDENCE_VAULT, id, "proof-advance.json"),
   stableHash

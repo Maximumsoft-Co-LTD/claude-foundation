@@ -112,11 +112,19 @@ export function numericReportValue(report, keys) {
   return null;
 }
 
-export function playwrightAnnotationClaims(annotations) {
+export function playwrightAnnotationValues(annotations, type) {
   if (!Array.isArray(annotations)) return [];
   return annotations
-    .filter((annotation) => annotation?.type === "claim" && annotation.description)
+    .filter((annotation) => annotation?.type === type && annotation.description)
     .map((annotation) => String(annotation.description));
+}
+
+export function playwrightAnnotationClaims(annotations) {
+  return playwrightAnnotationValues(annotations, "claim");
+}
+
+export function playwrightAnnotationCriticalCases(annotations) {
+  return playwrightAnnotationValues(annotations, "critical-case");
 }
 
 export function playwrightTestOutcome(results) {
@@ -141,7 +149,14 @@ export function recordPlaywrightTest(results, carried, state) {
   if (outcome.failed) state.failed += 1;
   else if (outcome.skipped) state.skipped += 1;
   const destination = outcome.skipped ? state.skippedClaims : state.claims;
-  for (const claim of carried) destination.add(claim);
+  for (const claim of carried.claims) destination.add(claim);
+  const caseStatus = outcome.failed ? "fail" : outcome.skipped ? "skipped" : "pass";
+  const severity = new Map([["pass", 0], ["skipped", 1], ["fail", 2]]);
+  for (const id of carried.criticalCases) {
+    const current = state.criticalCases.get(id);
+    if (!current || severity.get(caseStatus) > severity.get(current))
+      state.criticalCases.set(id, caseStatus);
+  }
 }
 
 export function visitPlaywrightChildren(value, carried, state, seen) {
@@ -157,7 +172,11 @@ export function visitPlaywrightReport(value, inherited, state, seen = new WeakSe
   if (!value || typeof value !== "object" || seen.has(value)) return;
   seen.add(value);
   const ownClaims = playwrightAnnotationClaims(value.annotations);
-  const carried = ownClaims.length ? [...inherited, ...ownClaims] : inherited;
+  const ownCriticalCases = playwrightAnnotationCriticalCases(value.annotations);
+  const carried = ownClaims.length || ownCriticalCases.length ? {
+    claims: [...inherited.claims, ...ownClaims],
+    criticalCases: [...inherited.criticalCases, ...ownCriticalCases]
+  } : inherited;
   collectPlaywrightAttachments(value.attachments, state.attachments);
   recordPlaywrightTest(value.results, carried, state);
   visitPlaywrightChildren(value, carried, state, seen);
@@ -166,18 +185,21 @@ export function visitPlaywrightReport(value, inherited, state, seen = new WeakSe
 export function playwrightReportSummary(report) {
   const state = {
     claims: new Set(), attachments: new Set(), skippedClaims: new Set(),
-    tests: 0, failed: 0, skipped: 0
+    criticalCases: new Map(), tests: 0, failed: 0, skipped: 0
   };
   // Annotations are carried down from suites to the tests they contain, and a
   // claim is credited only where a test actually ran. Playwright emits the
   // annotations of a `test.skip`/`test.fixme`/filtered-out test and still
   // exits 0, so harvesting them regardless recorded claims as proven by tests
   // that never executed.
-  visitPlaywrightReport(report, [], state);
+  visitPlaywrightReport(report, { claims: [], criticalCases: [] }, state);
   return {
     claims: [...state.claims].sort(), attachments: [...state.attachments].sort(),
     skippedClaims: [...state.skippedClaims]
       .filter((claim) => !state.claims.has(claim)).sort(),
+    criticalCases: [...state.criticalCases]
+      .map(([id, status]) => ({ id, status }))
+      .sort((left, right) => left.id.localeCompare(right.id)),
     tests: state.tests, failed: state.failed, skipped: state.skipped
   };
 }

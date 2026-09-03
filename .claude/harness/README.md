@@ -659,7 +659,9 @@ format change cannot silently become fabricated usage.
 events whose blocker type was not recorded explicitly unavailable, and reports
 the interval after a failed review as repair only when a later changed workspace
 provides evidence of repair. Source-cohort hashing is lazy and failure-contained,
-so ordinary commands do not pay the provenance cost.
+so ordinary commands do not pay the provenance cost. Metrics and feedback group
+provider receipts by command-execution identity; a group with multiple providers
+is explicitly non-independent even when it yields multiple capability receipts.
 
 ## Playwright ownership
 
@@ -675,9 +677,10 @@ use `npx` to download an unpinned package during proof. Server startup may live
 in project Playwright configuration or a named `execution.yaml` service. Named
 services require an identity-bearing readiness body/header so an unrelated
 process on the same port cannot produce a false green. Emit a structured JSON
-report, annotate tests with the claims they prove, and configure traces,
+report, annotate tests with the claims they prove, annotate stable cases with
+`critical-case`, and configure traces,
 screenshots, videos, console-error handling, and page-error handling in the
-project.
+project. Skipped annotated tests do not satisfy claims or critical cases.
 
 ## Updating an installed copy
 
