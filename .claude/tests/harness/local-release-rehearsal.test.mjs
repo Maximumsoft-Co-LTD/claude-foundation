@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import test from "node:test";
 
 import { REQUIRED_ARCHIVE_PATHS, cliHelpStatus, rehearsalStatus,
@@ -29,4 +31,14 @@ test("rehearsal checks compact intent help and full compatibility help separatel
   assert.equal(cliHelpStatus(compact, full), "pass");
   assert.equal(cliHelpStatus({ status: 0, stdout: full.stdout }, full), "fail");
   assert.equal(cliHelpStatus(compact, { status: 1, stdout: full.stdout }), "fail");
+});
+
+test("Homebrew test checks compact and full CLI help at their owning surfaces", () => {
+  const formula = readFileSync(resolve("Formula/claude-foundation.rb"), "utf8");
+  assert.match(formula, /help = shell_output\("#\{bin\}\/claude-foundation --help"\)/);
+  assert.match(formula, /assert_match "change start", help/);
+  assert.match(formula, /assert_match "advance", help/);
+  assert.match(formula, /full_help = shell_output\("#\{bin\}\/claude-foundation help --all"\)/);
+  assert.match(formula, /assert_match "proof readiness", full_help/);
+  assert.match(formula, /assert_match "land check", full_help/);
 });

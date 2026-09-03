@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   remains the authoritative agreement, while execution wiring is derived when
   the project already declares suitable commands.
 
+### Fixed
+
+- **Homebrew release rehearsal follows the compact CLI surface.** Formula tests
+  validate normal intent commands from default help and compatibility
+  primitives from `help --all`.
+
 ## [3.5.2] - 2026-09-03
 
 ### Added
