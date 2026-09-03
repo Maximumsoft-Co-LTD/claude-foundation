@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {"adapter":"test-discovery","command":["node","--test","--test-reporter=tap",".claude/tests/hooks/phase-state.test.mjs",".claude/tests/hooks/phase-guard-policy.test.mjs"],"reportFormat":"tap","minimum":6,"timeoutMs":300000,"criticalCases":["orphan-row-ignored","active-row-still-governs","land-delivery-commit-allowed","land-tree-mutation-refused"]},
+    "security-static": {"capability":"security-static","adapter":"command","command":["bash",".claude/tests/hooks/run-phase-mutation-guard-tests.sh"],"timeoutMs":300000},
+    "review": {"adapter":"external"}
+  },
+  "services": {}
+}

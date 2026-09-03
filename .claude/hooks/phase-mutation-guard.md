@@ -22,6 +22,15 @@ The phase comes from one of two places, in this order:
    install with no host wiring at all. A row older than 12 hours is treated as
    no phase: the loop is not running.
 
+A recorded row governs only while its change is still an active OpenSpec
+change — `openspec/changes/<id>` exists. Logs outlive their change, so an
+archived, abandoned, deleted, or fixture change leaves its last row behind;
+without that check the newest such row governed whoever opened the next
+session, and one fixture stuck at `building` with no workspace refused every
+mutation in its repository for the whole freshness window. Ineligible rows are
+skipped and the newest remaining one decides; if none remain there is no phase
+to enforce.
+
 The host may also supply:
 
 - `FOUNDATION_WORKSPACE_ROOT=/absolute/build/workspace` during Build
@@ -33,6 +42,21 @@ The host may also supply:
 of the Land apply transaction and its child processes. Do not set it by hand:
 it is the carve-out that distinguishes a runtime-owned projection from an agent
 mutating the tree during Land.
+
+Delivery is not a tree mutation. `git commit` and `git push` run during Land
+without that marker, because they publish the projection the runtime already
+applied and the Land contract requires the agent to run them under separate
+user authority — an authority the marker made unusable, since it is
+process-local to the apply transaction and never reaches a host tool call.
+Every other mutating command during Land still requires the marker, including
+`git checkout`, `reset`, `clean`, `rm`, redirects, and anything hidden inside
+`sh -c` or a script runner, and the refusal names the operations it refused.
+Because the command-word screen reads a copy with quoted spans blanked out, a
+delivery command carrying `$(…)`, backticks, `${…}`, or `<(…)` is refused too:
+otherwise `git commit -m "$(rm -rf build)"` would reduce to `git commit` while
+the shell still ran the removal. Routing a commit through
+`claude-foundation exec` changes nothing either: the guard inspects the outer
+command before `exec` spawns anything.
 
 When no phase can be established, `audit` mode records nothing — there is no
 policy to check against, and a row per mutation is noise. `block` mode still

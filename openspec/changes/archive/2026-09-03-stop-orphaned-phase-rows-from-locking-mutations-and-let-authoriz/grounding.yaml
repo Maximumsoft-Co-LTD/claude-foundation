@@ -1,0 +1,176 @@
+{
+  "version": 2,
+  "decisionBatch": {
+    "status": "locked",
+    "source": "user-batch",
+    "reference": "session-c08685bf-user-report-land-commit-blocked",
+    "mode": "single-batch",
+    "lockedAt": "2026-09-03T11:00:00.000Z",
+    "decisions": [
+      {
+        "id": "DEC-ELIGIBILITY",
+        "question": "Which recorded phase rows may govern a session?",
+        "answer": "Only rows whose change still has an openspec/changes/<id> directory; the newest remaining eligible row wins.",
+        "source": "recommended-default"
+      },
+      {
+        "id": "DEC-LAND-DELIVERY",
+        "question": "Which Land shell commands run without the runtime transaction marker?",
+        "answer": "git commit and git push only; every other mutating command still requires the marker and is named in the refusal.",
+        "source": "user-batch"
+      }
+    ]
+  },
+  "risk": {
+    "tier": "high",
+    "classes": ["control-policy"],
+    "rationale": "Both edits narrow a PreToolUse refusal that gates every file and shell mutation, so a mistake widens mutation authority across the whole loop. The guard keeps its fail-closed posture: explicit block mode still refuses without context, file mutation policy is untouched, and only two named delivery command words are separated from tree mutation."
+  },
+  "productionEntry": {
+    "status": "applicable",
+    "sourceReason": "settings.json wires phase-mutation-guard.sh, which execs phase-mutation-guard.mjs for every candidate mutation.",
+    "paths": [{
+      "repository": "root",
+      "path": ".claude/hooks/phase-mutation-guard.mjs"
+    }]
+  },
+  "realWire": {
+    "status": "applicable",
+    "sourceReason": "The shell harness drives the real hook process with real stdin events and asserts its stdout decision.",
+    "contracts": [{
+      "repository": "root",
+      "path": ".claude/tests/hooks/run-phase-mutation-guard-tests.sh"
+    }]
+  },
+  "activationSemantics": {
+    "status": "applicable",
+    "sourceReason": "Both paths already run on every mutating tool call; this change alters which decisions they return, not whether they execute.",
+    "activatedPaths": [{
+      "repository": "root",
+      "path": ".claude/hooks/phase-state.mjs"
+    }],
+    "failureSemanticChanges": [
+      {
+        "repository": "root",
+        "path": ".claude/hooks/phase-state.mjs",
+        "before": "The newest fresh row governs even when its change is gone.",
+        "after": "A row whose change has no openspec/changes/<id> directory is skipped; if none remain, no phase is established."
+      },
+      {
+        "repository": "root",
+        "path": ".claude/hooks/phase-guard-policy.mjs",
+        "before": "Every mutating shell command during Land is refused without the transaction marker.",
+        "after": "git commit and git push are permitted; other operations are refused and named."
+      }
+    ]
+  },
+  "serviceInteractions": {
+    "status": "not-applicable",
+    "sourceReason": "The guard is a local process reading local files; it calls no service.",
+    "rows": []
+  },
+  "observability": {
+    "status": "not-applicable",
+    "sourceReason": "No new log, metric, trace, or alert. Refusals keep the existing guardrail-audit.jsonl row shape; the refused-operation names ride in the reason field that row already carries.",
+    "rows": []
+  },
+  "nfrAssessment": {
+    "performance": { "status": "not-applicable", "sourceReason": "Eligibility is decided inside the directory walk the guard already performs and adds no traversal, process, or I/O beyond one existence check per candidate; no latency target is defined for the hook.", "target": "none", "claimIds": [] },
+    "capacity": { "status": "not-applicable", "sourceReason": "No stored, queued, or concurrent volume changes.", "target": "none", "claimIds": [] },
+    "availability": { "status": "not-applicable", "sourceReason": "No service or dependency availability is involved.", "target": "none", "claimIds": [] },
+    "securityPrivacy": { "status": "applicable", "sourceReason": "The change narrows a control that refuses mutations, so its negative paths must stay refused.", "target": "tree-mutating Land commands and opaque shell runners are refused without the transaction marker, and explicit block mode is refused when no phase context exists", "claimIds": ["stop-orphaned-phase-rows-from-locking-mutations-and-let-authoriz-outcome"] },
+    "accessibility": { "status": "not-applicable", "sourceReason": "No user interface surface.", "target": "none", "claimIds": [] },
+    "operability": { "status": "not-applicable", "sourceReason": "No operated runtime surface changes; the guard emits the same audit row and the same decision channel.", "target": "none", "claimIds": [] },
+    "compatibility": { "status": "not-applicable", "sourceReason": "No public CLI, protocol, schema, or installed-file ownership change; protocol.json and commands.json are untouched and the exported hook function signatures are unchanged.", "target": "none", "claimIds": [] },
+    "recoverability": { "status": "not-applicable", "sourceReason": "The hook holds no durable state to recover.", "target": "none", "claimIds": [] }
+  },
+  "semanticInvariants": [],
+  "readSet": [
+    {
+      "repository": "root",
+      "path": ".claude/commands/land.md",
+      "role": "requirement",
+      "mode": "full",
+      "sha256": "56095bc70e79ced66590d2ae65d8e9b5eaa75a70472c2d699db0ab55d07282b6"
+    },
+    {
+      "repository": "root",
+      "path": "package.json",
+      "role": "dependency-source",
+      "mode": "full",
+      "sha256": "66522408c1e7ce44773e0a218f2eeffac1daa934e530b3c1a67af6a632e3cce2"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/hooks/phase-mutation-guard.mjs",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "4572891dba01c1aeef74027d352ca612b38e489c74c0852344b51a05c06be12a"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/hooks/phase-state.mjs",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "5ade58a40bb7533735184a0ecb84e6af7cd22dd730f2f3cdb3b0de5357e04274"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/hooks/phase-guard-policy.mjs",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "5ef6d5971d8a6fc8c5f1da308ce34cd00e5856fe2777e7605b8a3f4d5c999dcc"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/tests/hooks/run-phase-mutation-guard-tests.sh",
+      "role": "test-topology",
+      "mode": "full",
+      "sha256": "fa9394dfe8df9b4d7e76b8e933e56a1a0bf037f6e6517bee81530176ff0bf5a9"
+    }
+  ],
+  "claims": [
+    {
+      "id": "stop-orphaned-phase-rows-from-locking-mutations-and-let-authoriz-outcome",
+      "productionPath": [{
+        "repository": "root",
+        "path": ".claude/hooks/phase-mutation-guard.mjs"
+      }],
+      "failurePaths": [{
+        "repository": "root",
+        "path": ".claude/hooks/phase-state.mjs",
+        "failure": "every fresh recorded phase row belongs to a change with no openspec/changes/<id> directory"
+      }, {
+        "repository": "root",
+        "path": ".claude/hooks/phase-guard-policy.mjs",
+        "failure": "a Land shell command mixes delivery with a tree mutation or hides it inside an opaque shell runner"
+      }],
+      "evidenceClass": ["test"],
+      "testDoubleGap": "none"
+    }
+  ],
+  "criticalCases": [
+    {
+      "id": "orphan-row-ignored",
+      "claimIds": ["stop-orphaned-phase-rows-from-locking-mutations-and-let-authoriz-outcome"],
+      "oracle": "failure-path"
+    },
+    {
+      "id": "active-row-still-governs",
+      "claimIds": ["stop-orphaned-phase-rows-from-locking-mutations-and-let-authoriz-outcome"],
+      "oracle": "production-entry"
+    },
+    {
+      "id": "land-delivery-commit-allowed",
+      "claimIds": ["stop-orphaned-phase-rows-from-locking-mutations-and-let-authoriz-outcome"],
+      "oracle": "real-wire"
+    },
+    {
+      "id": "land-tree-mutation-refused",
+      "claimIds": ["stop-orphaned-phase-rows-from-locking-mutations-and-let-authoriz-outcome"],
+      "oracle": "failure-path"
+    }
+  ],
+  "mutants": [],
+  "derivedFacts": []
+}

@@ -12,6 +12,7 @@ time; they are not updated to describe the current release.
 | See the executable scenario and acceptance matrix | [User scenario test plan](user-scenario-test-plan.md) | Current contract |
 | Operate dogfood, pilot, rollback, and production observation | [Rollout operations](rollout-operations.md) | Current runbook |
 | Configure consumer CRAP and mutation gates | [Consumer quality](../consumer-quality.md) / [ภาษาไทย](../consumer-quality.th.md) | Current guide |
+| Review the proposed agent-harness simplification | [Agent harness simplification plan](agent-harness-simplification-plan-2026-09-03.md) | Current design plan |
 
 Release mechanics live in the repository [RELEASING.md](../../RELEASING.md).
 Detailed runtime semantics live in [WORKFLOW.md](../../WORKFLOW.md). Do not copy

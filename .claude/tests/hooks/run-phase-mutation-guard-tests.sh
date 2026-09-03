@@ -141,6 +141,35 @@ out="$(printf '%s' "$(write_event "$TMP/project/src/app.js")" | CLAUDE_PROJECT_D
   FOUNDATION_ACTIVE_PHASE=land FOUNDATION_GUARDRAIL_MODE=block FOUNDATION_LAND_TRANSACTION=1 node "$HOOK")"
 assert_eq "Land runtime transaction may mutate" "" "$out"
 
+# The transaction marker is process-local to the runtime apply transaction and
+# never reaches a host tool call, so demanding it for a commit made the Land
+# contract's own delivery step unreachable and left asking the user as the only
+# route. Delivery publishes an applied projection; it does not touch the tree.
+out="$(invoke land block "" \
+  "$(bash_event 'git add foundation.json && git commit -q -m chore-land')")"
+assert_eq "Land permits an authorized delivery commit" "" "$out"
+
+out="$(invoke land block "" "$(bash_event 'git push origin main')")"
+assert_eq "Land permits an authorized delivery push" "" "$out"
+
+out="$(invoke land block "" "$(bash_event 'git checkout -- src')")"
+assert_contains "Land still refuses a tree-mutating git command" "$out" '"decision":"block"'
+assert_contains "Land names the operation it refused" "$out" 'refused: git checkout'
+
+out="$(invoke land block "" "$(bash_event 'git commit -m x && rm -rf build')")"
+assert_contains "Land refuses delivery mixed with a tree mutation" "$out" 'refused: rm'
+
+out="$(invoke land block "" "$(bash_event 'sh -c cd-and-commit.sh')")"
+assert_contains "Land refuses a mutation hidden inside a shell runner" "$out" 'refused: sh'
+
+# The operation screen blanks quoted spans before it reads command words, so a
+# substitution inside a commit message arrived as whitespace and delivery saw
+# only `git commit` while the shell still ran the removal.
+out="$(invoke land block "" \
+  "$(bash_event 'git commit -m \"$(rm -rf build)\"')")"
+assert_contains "Land refuses delivery hiding a command substitution" \
+  "$out" 'refused: command substitution'
+
 out="$(invoke prove audit "" "$(write_event "$TMP/project/src/app.js")")"
 assert_eq "audit-only rollout does not block" "" "$out"
 assert_file_contains "audit-only rollout records violation" "$TMP/project/.foundation/logs/guardrail-audit.jsonl" '"phase":"prove"'
@@ -241,7 +270,8 @@ assert_file_contains "an exported phase reaches the guard through the prefilter"
 # A recorded Build phase can recover its workspace from runtime state; Claude
 # Code hook processes do not need a manually exported workspace variable.
 mkdir -p "$TMP/buildpre/.foundation/logs/build-change" "$TMP/buildpre/.foundation/runtime" \
-  "$TMP/buildpre/.foundation/sandboxes/build-change/src"
+  "$TMP/buildpre/.foundation/sandboxes/build-change/src" \
+  "$TMP/buildpre/openspec/changes/build-change"
 printf '{"timestamp":"%s","phase":"build","changeId":"build-change"}\n' \
   "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
   > "$TMP/buildpre/.foundation/logs/build-change/phase-context.jsonl"
@@ -251,6 +281,28 @@ printf '{"workspace":{"path":"%s"}}\n' \
 out="$(printf '%s' "$(write_event "$TMP/buildpre/.foundation/sandboxes/build-change/src/app.js")" |
   CLAUDE_PROJECT_DIR="$TMP/buildpre" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
 assert_eq "Build derives the recorded sandbox when the host exports no workspace" "" "$out"
+
+# Logs outlive their change. A fixture change left a fresh `building` row with
+# no workspace in a real repository, and because it was the newest row every
+# session there was refused every mutation until it aged out — for work that had
+# nothing to do with it. Only an active OpenSpec change may govern.
+mkdir -p "$TMP/orphan/.foundation/logs/gone" "$TMP/orphan/.foundation/logs/live" \
+  "$TMP/orphan/openspec/changes/live" "$TMP/orphan/src"
+printf '{"timestamp":"%s","phase":"build","changeId":"gone"}\n' \
+  "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+  > "$TMP/orphan/.foundation/logs/gone/phase-context.jsonl"
+out="$(printf '%s' "$(write_event "$TMP/orphan/src/app.js")" |
+  CLAUDE_PROJECT_DIR="$TMP/orphan" node "$HOOK")"
+assert_eq "an orphaned change's phase row does not govern the session" "" "$out"
+
+printf '{"timestamp":"%s","phase":"prove","changeId":"live"}\n' \
+  "$(date -u -r "$(($(date +%s) - 3600))" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null ||
+    date -u -d '@'"$(($(date +%s) - 3600))" '+%Y-%m-%dT%H:%M:%SZ')" \
+  > "$TMP/orphan/.foundation/logs/live/phase-context.jsonl"
+out="$(printf '%s' "$(write_event "$TMP/orphan/src/app.js")" |
+  CLAUDE_PROJECT_DIR="$TMP/orphan" node "$HOOK")"
+assert_contains "an older active change still governs past a newer orphan" \
+  "$out" 'Prove keeps product and instruction files read-only'
 
 # The guard lowercases the mode, so "BLock" means enforcement there. A
 # prefilter that only recognised three block spellings took the audit fast

@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "stop-orphaned-phase-rows-from-locking-mutations-and-let-authoriz-outcome",
+      "scenario": "A phase row from a change that is no longer active does not govern the session, an authorized git commit or git push during Land is permitted, and every other Land tree mutation — git checkout, rm, a redirect, an opaque sh -c runner — is still refused with the refused operations named",
+      "impact": "medium",
+      "capabilities": ["test", "security-static"]
+    }
+  ]
+}
