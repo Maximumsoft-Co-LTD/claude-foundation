@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "claims": [
+    {"id":"feedback-truth-is-source-aware","scenario":"Measured host usage, blocker cause, legacy absence, and test totals retain truthful source-aware classifications","impact":"high","capabilities":["test","compatibility","observability","security-static","review"]},
+    {"id":"upgrade-and-provenance-stay-safe","scenario":"Upgrade intent and exact source provenance are diagnosed without rewriting policy or crashing unrelated commands","impact":"high","capabilities":["test","compatibility","resilience","review"]},
+    {"id":"review-repair-is-harness-orchestrated","scenario":"Current in-contract review findings become bounded repair work with measured intervals and sound selective invalidation","impact":"high","capabilities":["test","resilience","observability","review"]},
+    {"id":"advance-removes-agent-glue-without-authority","scenario":"One additive coordinator returns deterministic host actions and stops before model, user, delivery, conflict, budget, or no-progress authority","impact":"high","capabilities":["test","compatibility","resilience","observability","security-static","review"]},
+    {"id":"feedback-and-recovery-are-deterministic","scenario":"A read-only feedback snapshot explains repair-aware time, evidence reuse, and safe recovery without inventing causality or delivery authority","impact":"high","capabilities":["test","resilience","observability","review"]}
+  ]
+}

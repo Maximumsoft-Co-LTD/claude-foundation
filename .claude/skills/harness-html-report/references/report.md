@@ -39,6 +39,7 @@ Per-change telemetry lives in `.foundation/logs/<id>/`:
 | Tokens and cost per request/model | `events.jsonl` — `modelId`, input/output/cache tokens; group by `operationId` for per-phase totals; aggregates in `operations.jsonl` (`requests`, `cost`) |
 | Phase transitions, model tier, context mode | `phase-context.jsonl` |
 | Human wait time | `user-transitions.jsonl` |
+| Cause-aware timing, blocker coverage, reuse, next action | `claude-foundation feedback <change>` |
 | Exact runtime source cohort | `claude-foundation metrics <change>` — `sourceCohort.runtimeVersion`, `sourceCohort.protocolBundle`, and `sourceCohort.contentDigest` |
 | Command duration per evidence run | receipt `observed` field (e.g. `exit 0; 19425ms`) |
 | Quality / defects | `review.json` verdicts and findings, `review-attempts/` retry count, failed test claims |
@@ -56,7 +57,18 @@ Derived figures (compute, do not store):
 - **Phase attribution is non-overlapping**: phases interleave, so assign each
   wall-clock span to the phase of the most recent command at that moment;
   the per-phase times must sum exactly to the span. Note the longest single
-  quiet gap and what command preceded it.
+  unattributed interval and what command preceded it.
+- **Inspect behavior before naming a gap**: read the preceding receipt/review
+  findings, the later workspace hash, relevant task state, and the code paths
+  that own the command. Prefer the structured `feedback` classification. An
+  interval after a failed review with blocker/major findings is **repair** only
+  when a later changed workspace and proof resume provide evidence; it is not
+  reviewer wait or human wait. If the evidence is insufficient, say
+  "ยังระบุสาเหตุไม่ได้" rather than calling it quiet, idle, or agent delay.
+- **Prove timing**: report reviewer execution, evidenced repair, human wait,
+  and unattributed time separately. Do not compare Prove with Build until the
+  repair component has been separated; explain when Prove is larger because it
+  contains product repair triggered by review findings.
 - **Harness interventions**: `status == "blocked"` rows grouped by what the
   guard was preventing (same operation + adjacent timestamps = one story).
   For each group: count, timestamps, what the harness prevented (the risk,
@@ -101,8 +113,9 @@ verdicts verbatim; never summarize a failure into a pass.
    pass), then up to three cards: the clearest win (a guard that prevented a
    real mistake), what the harness did **not** catch (name the disabled or
    missing policy), and the price paid (rework the strictness forced).
-5. **What took time**: slowest commands table (command, phase, duration,
-   outcome tag, cause).
+5. **What took time**: slowest commands table plus the cause-aware timing from
+   `feedback` (reviewer execution, evidenced repair, human wait, unattributed),
+   with command, phase, duration, outcome tag, cause, and evidence basis.
 6. **Code volume**: KPI mini-cards (added/removed, prod, test+fixtures), a
    per-file table from the round's commits, and a separate table for the
    openspec/docs commit when one exists.

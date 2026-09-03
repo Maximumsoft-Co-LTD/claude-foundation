@@ -15,7 +15,8 @@ import {
   createTelemetryRuntime,
   normalizeTelemetryBatch,
   recordCommandTelemetry,
-  rebindTelemetryWindow
+  rebindTelemetryWindow,
+  replaceTelemetryJsonLines
 } from "../runtime/observability/telemetry-runtime.mjs";
 
 const readLines = (path) => existsSync(path)
@@ -93,6 +94,16 @@ test("blocked command telemetry carries bounded cause and recovery without raw e
   assert.equal(commandTelemetryRow(commandContext(), 0).blocker, null);
 });
 
+test("ambiguous legacy blocker text falls back to a safe policy guard", () => {
+  const blocker = blockerTelemetryValue(
+    "authority token conflicts with workspace evidence",
+    { changeId: "change-a", operationName: "proof-advance", phase: "prove" }
+  );
+  assert.equal(blocker.code, "policy-guard");
+  assert.equal(blocker.classification, "policy");
+  assert.equal(blocker.recovery, "claude-foundation packet change-a --phase prove");
+});
+
 test("command telemetry eligibility excludes disabled, incomplete and archived work", () => {
   assert.equal(commandTelemetryEligible(commandContext()), true);
   assert.equal(commandTelemetryEligible(commandContext({ telemetryDisabled: true })), false);
@@ -157,6 +168,73 @@ test("telemetry batch normalization deduplicates events and Claude transitions",
   assert.equal(clock, 6, "Claude rows retain separate transition and event timestamps");
 });
 
+test("native Codex token_count rows preserve measured usage and deduplicate repeats", () => {
+  const batch = normalizeTelemetryBatch({
+    id: "change-a",
+    format: "codex",
+    context: {
+      sessionId: "session-a",
+      since: "2026-09-03T00:00:00.000Z"
+    },
+    known: new Set(),
+    knownTransitions: new Set(),
+    now: () => "2026-09-03T00:00:00.000Z",
+    rows: [
+      {
+        type: "event_msg", timestamp: "2026-09-02T23:59:59.000Z",
+        payload: { type: "token_count", info: {
+          total_token_usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+          last_token_usage: { input_tokens: 1, output_tokens: 1 }
+        } }
+      },
+      { type: "turn_context", payload: { model: "gpt-5.6-sol", cwd: "/project" } },
+      {
+        type: "event_msg", timestamp: "2026-09-03T00:00:01.000Z",
+        payload: { type: "token_count", info: {
+          total_token_usage: {
+            input_tokens: 120, cached_input_tokens: 80,
+            output_tokens: 10, total_tokens: 130
+          },
+          last_token_usage: {
+            input_tokens: 20, cached_input_tokens: 8,
+            cache_write_input_tokens: 2, output_tokens: 3
+          }
+        } }
+      },
+      {
+        type: "event_msg", timestamp: "2026-09-03T00:00:02.000Z",
+        payload: { type: "token_count", info: {
+          total_token_usage: {
+            input_tokens: 120, cached_input_tokens: 80,
+            output_tokens: 10, total_tokens: 130
+          },
+          last_token_usage: {
+            input_tokens: 20, cached_input_tokens: 8,
+            cache_write_input_tokens: 2, output_tokens: 3
+          }
+        } }
+      }
+    ]
+  });
+  assert.equal(batch.normalized.length, 1);
+  assert.deepEqual({
+    source: batch.normalized[0].source,
+    modelId: batch.normalized[0].modelId,
+    inputTokens: batch.normalized[0].inputTokens,
+    outputTokens: batch.normalized[0].outputTokens,
+    cacheReadTokens: batch.normalized[0].cacheReadTokens,
+    cacheCreationTokens: batch.normalized[0].cacheCreationTokens
+  }, {
+    source: "codex",
+    modelId: "gpt-5.6-sol",
+    inputTokens: 12,
+    outputTokens: 3,
+    cacheReadTokens: 8,
+    cacheCreationTokens: 2
+  });
+  assert.match(batch.normalized[0].requestId, /^codex:session-a:/);
+});
+
 test("JSONL append, window rebinding and active run selection preserve fallbacks", (t) => {
   const root = mkdtempSync(join(tmpdir(), "telemetry-append-helper-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -164,6 +242,8 @@ test("JSONL append, window rebinding and active run selection preserve fallbacks
   assert.equal(appendTelemetryJsonLines(path, []), false);
   assert.equal(appendTelemetryJsonLines(path, [{ a: 1 }, { b: 2 }]), true);
   assert.deepEqual(readLines(path), [{ a: 1 }, { b: 2 }]);
+  assert.equal(replaceTelemetryJsonLines(path, [{ corrected: true }]), true);
+  assert.deepEqual(readLines(path), [{ corrected: true }]);
   const events = [{ runId: "c" }, { runId: "explicit" }];
   rebindTelemetryWindow(events, "c", "window");
   assert.deepEqual(events.map((event) => event.runId), ["window", "explicit"]);
@@ -200,6 +280,42 @@ test("appendTelemetryRows persists only new events and updates the active budget
   assert.equal(calls.reported, 1);
   assert.equal(runtime.appendTelemetryRows("change", rows, "generic"), 0);
   assert.equal(calls.saved, 1, "an empty import leaves runtime state untouched");
+});
+
+test("Codex source reimport atomically replaces stale normalization", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "telemetry-codex-reimport-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const logs = join(root, "logs");
+  const state = { budget: { window: {
+    id: "session-a", mode: "operator-required", exhaustedAt: "earlier"
+  } } };
+  const runtime = createTelemetryRuntime({
+    root, logs, now: () => "2026-09-03T00:00:03.000Z",
+    readJsonLines: readLines, loadRuntime: () => state,
+    synchronizeBudgetUsage: () => {}, saveRuntime: () => {}, reportBudget: () => {}
+  });
+  const row = (inputTokens) => ({
+    type: "event_msg", timestamp: "2026-09-03T00:00:01.000Z",
+    payload: { type: "token_count", info: {
+      total_token_usage: {
+        input_tokens: 120, cached_input_tokens: 80,
+        output_tokens: 10, total_tokens: 130
+      },
+      last_token_usage: {
+        input_tokens: inputTokens, cached_input_tokens: 8, output_tokens: 3
+      }
+    } }
+  });
+  const context = {
+    sessionId: "session-a", sourcePath: "/tmp/codex.jsonl", replaceSource: true
+  };
+  assert.equal(runtime.appendTelemetryRows("change", [row(20)], "codex", context), 1);
+  assert.equal(runtime.appendTelemetryRows("change", [row(18)], "codex", context), 1);
+  const events = readLines(join(logs, "change", "events.jsonl"));
+  assert.equal(events.length, 1);
+  assert.equal(events[0].inputTokens, 10);
+  assert.equal(state.budget.window.mode, "normal");
+  assert.equal(state.budget.window.exhaustedAt, null);
 });
 
 test("appendTelemetryRows records Claude user transitions without token events", (t) => {

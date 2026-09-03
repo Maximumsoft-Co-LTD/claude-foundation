@@ -15,7 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXPECTED_RUNTIME_API=26
+EXPECTED_RUNTIME_API=27
 PROJECT_START="${CLAUDE_FOUNDATION_PROJECT:-$PWD}"
 
 fail() { printf 'claude-foundation: %s\n' "$*" >&2; exit 1; }
@@ -291,6 +291,12 @@ case "${1:-}" in
   metrics)
     shift; need_arg "metrics" "${1:-}"
     run_runtime read metrics "$@" ;;
+  feedback)
+    shift; need_arg "feedback" "${1:-}"
+    run_runtime read feedback "$@" ;;
+  advance)
+    shift; need_arg "advance" "${1:-}"
+    run_runtime write advance "$@" ;;
   exec)
     shift; need_arg "exec" "${1:-}"
     run_runtime write exec "$@" ;;
@@ -476,7 +482,7 @@ case "${1:-}" in
     shift
     [ "$#" -gt 0 ] || fail "runtime requires an internal harness command"
     warn "'runtime' is an internal compatibility namespace; use canonical public commands"
-    case "$1" in version|api-version|hash|doctor|packet|metrics) access=read ;; *) access=write ;; esac
+    case "$1" in version|api-version|hash|doctor|packet|metrics|feedback) access=read ;; *) access=write ;; esac
     run_runtime "$access" "$@" ;;
   dashboard|dashboard-up|dashboard-down|dashboard-status)
     sub="$1"; shift

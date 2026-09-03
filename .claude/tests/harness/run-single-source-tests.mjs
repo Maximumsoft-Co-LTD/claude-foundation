@@ -64,7 +64,7 @@ for (const [command, phase] of Object.entries(PHASE_BY_COMMAND)) {
 // literal (the `dashboard snapshot` form).
 const registry = JSON.parse(read(".claude", "harness", "commands.json"));
 const publicCommands = registry.commands.filter(
-  (command) => !["internal", "host"].includes(command.audience));
+  (command) => command.audience !== "internal");
 check(() => assert.ok(publicCommands.length > 20,
   "the command registry failed to parse — this test is reading the wrong file"));
 for (const command of publicCommands)

@@ -177,7 +177,7 @@ assert_cmd_zero "command registry has one unique entry per public name" \
   "$TARGET/.claude/harness/commands.json"
 # The additional read-only surface is the resumable budget checkpoint; it does
 # not grant authority or widen the continuation surface below.
-assert_eq "agent command surface is bounded" "21" \
+assert_eq "agent command surface is bounded" "22" \
   "$(jq '[.commands[] | select(.audience == "agent")] | length' \
     "$TARGET/.claude/harness/commands.json")"
 # 28 includes the bounded proof controller, its internal execution commands,

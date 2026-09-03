@@ -6,9 +6,12 @@ import {
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  createMetricsRuntime, runtimeSourceDigest
+  createMetricsRuntime, createSourceCohortProvider
 } from "./runtime/observability/metrics-runtime.mjs";
 import { createExecRuntime } from "./runtime/observability/exec-runtime.mjs";
+import {
+  createFeedbackRuntime, FEEDBACK_SCHEMA_VERSION
+} from "./runtime/observability/feedback-runtime.mjs";
 import {
   blockerTelemetryValue, createTelemetryRuntime, recordCommandTelemetry
 } from "./runtime/observability/telemetry-runtime.mjs";
@@ -46,6 +49,9 @@ import { createProcessRuntime, serviceWorkspace } from "./runtime/core/process-r
 import { createInstructionRecorder } from "./runtime/core/instruction-recorder.mjs";
 import { createAgentPlanner, createModelRouter } from "./runtime/workflow/agent-planning.mjs";
 import { createAgentDispatchRuntime } from "./runtime/workflow/agent-dispatch.mjs";
+import {
+  ADVANCE_PROTOCOL_VERSION, createAdvanceRuntime
+} from "./runtime/workflow/advance-runtime.mjs";
 import { createSandboxRuntime } from "./runtime/workflow/sandbox-runtime.mjs";
 import { createSandboxCleanup } from "./runtime/workflow/sandbox-cleanup.mjs";
 import {
@@ -104,7 +110,7 @@ import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
 import { createQualityRuntime } from "./runtime/quality/quality-runtime.mjs";
 
 const VERSION = "3.5.1";
-const RUNTIME_API_VERSION = "26";
+const RUNTIME_API_VERSION = "27";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
 // every command up to `archive` and then threw partway through Land.
@@ -121,7 +127,7 @@ const PROOF_PROTOCOL_VERSION = "7";
 const PACKET_SCHEMA_VERSION = "10";
 const AGENT_PLAN_SCHEMA_VERSION = "4";
 const CONTEXT_EVENT_SCHEMA_VERSION = "2";
-const METRICS_SCHEMA_VERSION = "6";
+const METRICS_SCHEMA_VERSION = "7";
 const COMMAND_TELEMETRY_SCHEMA_VERSION = "3";
 const REVIEW_PROTOCOL_VERSION = "4";
 const ACCEPTANCE_PROTOCOL_VERSION = "2";
@@ -204,7 +210,7 @@ let operationFingerprint = null;
 // Lifecycle commands stay: metrics derives rework and typed-stop signals from
 // their rows, so proof-* and land-* are measurements, not inspections.
 const READ_ONLY_OPERATIONS = new Set([
-  "metrics", "hash", "changes", "providers", "repos", "models", "describe",
+  "metrics", "feedback", "hash", "changes", "providers", "repos", "models", "describe",
   "budget-checkpoint",
   "packet", "agent-task", "audit-change", "authority-status",
   "handoff-status", "handoff-packet", "evidence-detect", "evidence-doctor",
@@ -267,6 +273,8 @@ const {
     agentPlanSchema: AGENT_PLAN_SCHEMA_VERSION,
     contextEventSchema: CONTEXT_EVENT_SCHEMA_VERSION,
     metricsSchema: METRICS_SCHEMA_VERSION,
+    advanceProtocol: String(ADVANCE_PROTOCOL_VERSION),
+    feedbackSchema: String(FEEDBACK_SCHEMA_VERSION),
     commandTelemetrySchema: COMMAND_TELEMETRY_SCHEMA_VERSION,
     reviewProtocol: REVIEW_PROTOCOL_VERSION,
     acceptanceProtocol: ACCEPTANCE_PROTOCOL_VERSION,
@@ -283,13 +291,10 @@ const {
   fail: die
 });
 
-const SOURCE_COHORT = Object.freeze({
-  version: 1,
+const sourceCohort = createSourceCohortProvider({
   runtimeVersion: VERSION,
   protocolBundle: protocolDescriptor(),
-  contentDigest: runtimeSourceDigest(dirname(fileURLToPath(import.meta.url))),
-  scope: ".claude/harness",
-  basis: "sorted-relative-path-and-file-bytes"
+  directory: dirname(fileURLToPath(import.meta.url))
 });
 const { recordInstructionManifest } = createInstructionRecorder({
   root: ROOT,
@@ -426,7 +431,7 @@ const {
   synchronizeBudgetUsage
 } = createBudgetRuntime({ policy: foundationPolicy, now });
 const { reportBudget } = createBudgetReporter({ applyBudgetDecision });
-const { showMetrics } = createMetricsRuntime({
+const { metricsValue, showMetrics } = createMetricsRuntime({
   logs: LOGS,
   receipts: RECEIPTS,
   readJson,
@@ -442,7 +447,7 @@ const { showMetrics } = createMetricsRuntime({
   taskBlocks,
   taskMetadata,
   metricsSchemaVersion: Number(METRICS_SCHEMA_VERSION),
-  sourceCohort: SOURCE_COHORT
+  sourceCohort
 });
 const { execObserved } = createExecRuntime({
   logs: LOGS,
@@ -1118,6 +1123,7 @@ const {
   fail: die
 });
 const {
+  dispatchValue: agentDispatchValue,
   showDispatch: showAgentDispatch
 } = createAgentDispatchRuntime({
   agentPlanValue,
@@ -1505,6 +1511,7 @@ const { finalize: prove, audit: proofAudit } = createProofRuntime({
   fail: die
 });
 const {
+  authorityNext,
   guardProofMutation,
   proofAdvance,
   proofCollect,
@@ -1544,6 +1551,7 @@ const {
   recordDeterministicReviewClosure,
   authorityStatusValue,
   requestAuthority,
+  stableHash,
   die
 });
 const guardPublicProofMutation = (command, operation) =>
@@ -1683,6 +1691,25 @@ const {
 const advanceLand = advanceLandOperation.bind(null, {
   loadRuntime, landCheck, archive, resumeLand, landPlanValue
 });
+const { advanceValue, showAdvance } = createAdvanceRuntime({
+  loadRuntime,
+  agentDispatchValue,
+  relevantHash,
+  deliveredAiAttempts,
+  authorityStatusValue,
+  authorityNext,
+  readJson,
+  proofAdvancePath: (id) => join(EVIDENCE_VAULT, id, "proof-advance.json"),
+  stableHash
+});
+const { showFeedback } = createFeedbackRuntime({
+  logs: LOGS,
+  evidenceVault: EVIDENCE_VAULT,
+  readJson,
+  readJsonLines,
+  metricsValue,
+  nextAction: advanceValue
+});
 const abandonRuntime = createAbandonRuntime({
   root: ROOT,
   paths: {
@@ -1742,7 +1769,7 @@ const qualityChange = () => {
   return namedChange(index >= 0 ? values[index + 1] : process.env.FOUNDATION_CHANGE_ID);
 };
 operationChangeId = command === "sandbox" ? namedChange(values[1]) :
-  ["resolve", "validate", "audit-change", "hash", "packet", "agent-plan", "agent-dispatch", "agent-task", "agent-acquire", "agent-release", "metrics", "budget-checkpoint", "budget-continue", "proof-plan", "proof-readiness", "proof-advance", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "evidence-verify-ci", "authority-request", "authority-dispatch", "authority-run", "authority-abort", "authority-status", "authority-record", "authority-reset-infra", "authority-reset-base-move", "receipt", "run-provider", "prove",
+  ["resolve", "validate", "audit-change", "hash", "packet", "agent-plan", "agent-dispatch", "agent-task", "agent-acquire", "agent-release", "metrics", "feedback", "advance", "budget-checkpoint", "budget-continue", "proof-plan", "proof-readiness", "proof-advance", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "evidence-verify-ci", "authority-request", "authority-dispatch", "authority-run", "authority-abort", "authority-status", "authority-record", "authority-reset-infra", "authority-reset-base-move", "receipt", "run-provider", "prove",
     "evidence-detect", "evidence-init", "evidence-doctor", "handoff-status", "handoff-packet", "handoff-record", "land-check", "land-advance", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "event", "telemetry-sync", "telemetry-import"].includes(command) ? namedChange(values[0]) :
     command?.startsWith("quality-")
       ? qualityChange()
@@ -1813,6 +1840,8 @@ await routeRuntimeCommand(command, values, {
   recordPhaseContext,
   showPacket,
   showMetrics,
+  showAdvance,
+  showFeedback,
   execObserved,
   checkpointBudget,
   continueBudget,

@@ -49,6 +49,20 @@ function firstPresent(...values) {
 
 function telemetryUsage(format, row, message, attributes) {
   if (format === "claude") return message.usage;
+  if (format === "codex" && row.type === "event_msg" &&
+      row.payload?.type === "token_count") {
+    const native = row.payload?.info?.last_token_usage || {};
+    const input = measuredNumber(native.input_tokens);
+    const cached = measuredNumber(native.cached_input_tokens);
+    // Native Codex input_tokens includes cached input. The canonical event
+    // contract stores fresh input separately because budget spend excludes
+    // cache reads and metrics report the two dimensions independently.
+    return {
+      ...native,
+      input_tokens: input === null ? null
+        : Math.max(0, input - (cached ?? 0))
+    };
+  }
   if (format === "otel") return {
     input_tokens: firstPresent(
       attributes["gen_ai.usage.input_tokens"], attributes["llm.usage.input_tokens"]),
@@ -70,6 +84,7 @@ function telemetryRequestId(format, row, message) {
 function telemetryCacheReadTokens(format, row, usage) {
   return measuredNumber(firstPresent(
     row.cacheReadTokens,
+    usage.cached_input_tokens,
     usage.cache_read_input_tokens,
     usage.cache_tokens,
     format === "claude" ? null : row.cacheTokens
@@ -88,10 +103,21 @@ export function normalizeTelemetryRow(id, row, format, context = {}, timestamp =
       (row.type !== "assistant" || !message.usage || message.role !== "assistant"))
     return null;
   const usage = telemetryUsage(format, row, message, attributes);
-  const requestId = telemetryRequestId(format, row, message);
+  const codexTotal = format === "codex" && row.type === "event_msg" &&
+      row.payload?.type === "token_count"
+    ? row.payload?.info?.total_token_usage : null;
+  const requestId = codexTotal
+    ? `codex:${context.sessionId || "unknown"}:${[
+      codexTotal.input_tokens,
+      codexTotal.cached_input_tokens,
+      codexTotal.output_tokens,
+      codexTotal.total_tokens
+    ].map((value) => measuredNumber(value) ?? "unknown").join(":")}`
+    : telemetryRequestId(format, row, message);
   if (!requestId) return null;
   const cacheCreationTokens = measuredNumber(firstPresent(
-    row.cacheCreationTokens, usage.cache_creation_input_tokens));
+    row.cacheCreationTokens, usage.cache_creation_input_tokens,
+    usage.cache_write_input_tokens));
   const cacheReadTokens = telemetryCacheReadTokens(format, row, usage);
   const explicitCacheTokens = measuredNumber(row.cacheTokens);
   const cacheTokens = explicitCacheTokens ?? nullableSum(cacheCreationTokens, cacheReadTokens);
@@ -105,7 +131,7 @@ export function normalizeTelemetryRow(id, row, format, context = {}, timestamp =
       row.agentId, row.agent_id, row.agent, context.agentId,
       format === "claude" ? "orchestrator" : null),
     modelId: firstTruthy(
-      row.modelId, row.model_id, row.model, message.model,
+      row.modelId, row.model_id, row.model, message.model, context.modelId,
       attributes["gen_ai.request.model"], attributes["llm.request.model"]),
     requestId,
     messageId: firstTruthy(message.id, row.messageId),

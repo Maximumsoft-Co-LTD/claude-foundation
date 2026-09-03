@@ -325,10 +325,31 @@ export function upgradeCompatibilityDiagnostics({
   previousVersion = null,
   currentVersion = null,
   configuredPolicy = {},
-  activeChanges = []
+  activeChanges = [],
+  signedCiConfigured = false
 } = {}) {
   const policyFindings = [];
-  if (configuredPolicy?.land?.riskBasedCi === true) policyFindings.push({
+  const acknowledgement = configuredPolicy?.upgradeAcknowledgements?.["land.riskBasedCi"];
+  const acknowledgementRef = String(acknowledgement?.decisionRef || "").trim();
+  const intentionallyAcknowledged = acknowledgement?.value === true &&
+    acknowledgementRef.length <= 160 && /^[A-Za-z0-9._:/-]+$/.test(acknowledgementRef);
+  const policyObservations = [];
+  if (configuredPolicy?.land?.riskBasedCi === true && signedCiConfigured)
+    policyObservations.push({
+      code: "historical-default-land-risk-based-ci",
+      classification: "signed-ci-satisfies-policy",
+      configuredValue: true,
+      changed: false
+    });
+  else if (configuredPolicy?.land?.riskBasedCi === true && intentionallyAcknowledged)
+    policyObservations.push({
+      code: "historical-default-land-risk-based-ci",
+      classification: "intentional-policy",
+      configuredValue: true,
+      decisionRef: acknowledgementRef,
+      changed: false
+    });
+  else if (configuredPolicy?.land?.riskBasedCi === true) policyFindings.push({
     code: "historical-default-land-risk-based-ci",
     classification: "historical-default-or-explicit-value-ambiguous",
     configuredValue: true,
@@ -357,8 +378,16 @@ export function upgradeCompatibilityDiagnostics({
     currentVersion: stableVersion(currentVersion) || currentVersion || null,
     blocking: false,
     policyFindings,
+    policyObservations,
     activeChangeEffects
   };
+}
+
+function repositoriesHaveSignedCi(value) {
+  return (value?.repositories || []).some((repository) =>
+    Object.values(repository?.ci?.issuers || {}).some((issuer) =>
+      issuer?.algorithm === "ed25519" &&
+      String(issuer.publicKey || "").includes("PUBLIC KEY")));
 }
 
 function readProjectJson(path, fallback) {
@@ -376,7 +405,9 @@ export function projectUpgradeDiagnostics(root, versions = {}) {
   return upgradeCompatibilityDiagnostics({
     ...versions,
     configuredPolicy: readProjectJson(join(root, "foundation.json"), {}),
-    activeChanges
+    activeChanges,
+    signedCiConfigured: repositoriesHaveSignedCi(
+      readProjectJson(join(root, "openspec", "repositories.yaml"), {}))
   });
 }
 
@@ -387,6 +418,10 @@ export function printUpgradeDiagnostics(diagnostics, log = console.log) {
     log("WARN " + finding.code + " configured=" + finding.configuredValue +
       " changed=" + finding.changed + "; " + finding.summary +
       "; recovery: " + finding.recovery);
+  for (const observation of diagnostics.policyObservations || [])
+    log("INFO " + observation.code + " classification=" + observation.classification +
+      " configured=" + observation.configuredValue + " changed=" + observation.changed +
+      (observation.decisionRef ? "; decision-ref: " + observation.decisionRef : ""));
   for (const effect of diagnostics.activeChangeEffects)
     log("INFO active-change-effects:" + effect.changeId + " status=" + effect.status +
       " changed=" + effect.changed + "; " + effect.effects.join(",") +

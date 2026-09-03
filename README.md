@@ -17,7 +17,7 @@ does not replace your coding agent, test framework, CI system, or Git workflow.
 The product is **Change Loop**; the installed package and CLI remain
 `claude-foundation`, so existing commands do not change.
 
-**Version 3.5.1** — runtime API 26, provider protocol 13. Receipts recorded by
+**Version 3.5.1** — runtime API 27, provider protocol 13. Receipts recorded by
 earlier versions read as `provider-version-stale` and must be re-proven.
 `claude-foundation metrics <change-id>` also reports the exact runtime source
 cohort: semantic version, the loaded protocol bundle, and a SHA-256 digest of
@@ -578,6 +578,13 @@ providers or dispatch another reviewer.
 `proof collect`, direct authority commands, and `proof run` remain available for
 diagnosis and explicit integrations.
 
+For a higher-level driver, run `claude-foundation advance <change-id>`. It
+selects one bounded next action across Build, Prove, repair, and Land, while the
+host still executes model work and the user retains commit, push, publish, PR,
+and waiver authority. `claude-foundation feedback <change-id>` explains elapsed
+time by reviewer execution, evidenced repair, human wait, and unattributed time,
+and shows evidence reuse plus the next resumable action.
+
 Build packets also carry `authorityPreflight`. High-risk work that requires
 signed CI stops before dispatch or product edits when no trusted external CI
 provider is configured, naming the issuer/public-key configuration and the
@@ -930,6 +937,12 @@ advisory does not block work or alter proof identity, and Change Loop never
 applies the update without user authority. Set `FOUNDATION_UPDATE_CHECK=0` to
 disable release discovery, or use `update check --refresh --json` for an
 explicit machine-readable refresh.
+
+Upgrade diagnostics preserve project-owned policy. A historical
+`land.riskBasedCi=true` is reported as ambiguous unless an active change has
+configured signed CI or `foundation.json` records an intentional acknowledgement
+at `upgradeAcknowledgements["land.riskBasedCi"]` with `value: true` and a bounded
+`decisionRef`; the installer never rewrites the value silently.
 
 Preview a source installation without writing:
 

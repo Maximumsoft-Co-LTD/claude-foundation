@@ -1,0 +1,75 @@
+{
+  "version": 2,
+  "decisionBatch": {
+    "status": "locked",
+    "source": "user-batch",
+    "reference": "conversation-2026-09-03-maximize-harness-help-one-change",
+    "mode": "single-batch",
+    "lockedAt": "2026-09-03T14:00:00+07:00",
+    "decisions": [
+      {"id":"single-change","question":"How should the complete improvement plan be delivered?","answer":"Implement all agreed workstreams in one dependency-ordered OpenSpec change.","source":"user-batch"},
+      {"id":"authority-boundary","question":"How far may automation go?","answer":"Automate deterministic local orchestration maximally, but never invoke a model from the core or infer contract, delivery, waiver, commit, push, or publish authority.","source":"recommended-default"}
+    ]
+  },
+  "risk": {"tier":"high","classes":["public-compatibility","privacy","execution-authority"],"rationale":"The change adds a public coordinator and versioned observability while changing review-repair, upgrade, and Land recovery behavior."},
+  "productionEntry": {"status":"applicable","sourceReason":"Installed users enter through foundation.mjs and its workflow runtimes.","paths":[{"repository":"root","path":".claude/harness/foundation.mjs"}]},
+  "realWire": {"status":"applicable","sourceReason":"Machine actions, metrics, operation rows, and feedback snapshots are persisted or printed versioned contracts.","contracts":[{"repository":"root","path":"openspec/specs/host-adapter/spec.md"}]},
+  "activationSemantics": {"status":"applicable","sourceReason":"Installing the release activates additive commands and diagnostics.","activatedPaths":[{"repository":"root","path":".claude/harness/foundation.mjs"},{"repository":"root","path":"install.sh"}],"failureSemanticChanges":["Ambiguous blocker text falls back to policy-guard","Review repair is represented as derived work instead of unattributed Prove time","The coordinator stops at typed host or authority boundaries"]},
+  "serviceInteractions": {"status":"applicable","sourceReason":"The harness emits machine actions consumed by a separate host adapter process even though no new remote service is introduced.","rows":[{"id":"host-harness-action-loop","owner":"Change Loop maintainers","producer":"Foundation core","consumer":"native host adapter","contract":"versioned bounded machine action and validated result envelope","delivery":"stdout JSON and local atomic state","timeoutRetry":"host retries the same stable action identity","idempotency":"change, action digest, graph revision, workspace hash, and execution ID","ordering":"one current action per change; results bind to that action","consistency":"compare-and-swap state and lease fencing","rollout":"additive command and protocol pin","rollback":"existing low-level commands remain supported"}]},
+  "observability": {"status":"applicable","sourceReason":"The change corrects attribution and makes repair and orchestration visible.","rows":[{"interactionId":"host-harness-action-loop","correlation":"change ID, graph revision, workspace hash, review attempt digest, repair plan digest, and host execution ID","structuredEvents":"machine actions, repair intervals, provider invalidation and reuse, normalized host usage","sli":"every non-terminal action has one bounded next route and every reported interval names its evidence basis","alert":"none; local inspection","runbook":"run advance or feedback and follow only the returned action","operatorQuestion":"what is running, what changed, what can be safely automated, and what authority is missing?"}]},
+  "nfrAssessment": {
+    "performance":{"status":"not-applicable","sourceReason":"This change removes eager work but introduces no release latency SLO.","target":"none","claimIds":[]},
+    "capacity":{"status":"not-applicable","sourceReason":"Action and repair records are bounded by existing task, finding, and attempt policies.","target":"none","claimIds":[]},
+    "availability":{"status":"applicable","sourceReason":"Unreadable provenance or unavailable host adapters must not disable unrelated commands.","target":"Return explicit unavailable/action-required states with exact resume routes.","claimIds":["upgrade-and-provenance-stay-safe","advance-removes-agent-glue-without-authority"]},
+    "securityPrivacy":{"status":"applicable","sourceReason":"Blockers and reviewer findings cross retained machine boundaries.","target":"Persist bounded package-owned recovery and path-scoped finding data without raw hostile terminal content.","claimIds":["feedback-truth-is-source-aware","advance-removes-agent-glue-without-authority"]},
+    "accessibility":{"status":"not-applicable","sourceReason":"No interactive visual control is introduced.","target":"none","claimIds":[]},
+    "operability":{"status":"applicable","sourceReason":"Reducing agent glue and truthful feedback are the primary outcomes.","target":"One coordinator action reaches the next genuine boundary and feedback separates review, repair, wait, and unattributed time.","claimIds":["review-repair-is-harness-orchestrated","advance-removes-agent-glue-without-authority","feedback-and-recovery-are-deterministic"]},
+    "compatibility":{"status":"applicable","sourceReason":"Public commands and retained schemas are shipped to supported upgrades.","target":"Existing commands and active state remain readable; all new fields and commands are additive.","claimIds":["feedback-truth-is-source-aware","upgrade-and-provenance-stay-safe","advance-removes-agent-glue-without-authority"]},
+    "recoverability":{"status":"applicable","sourceReason":"Repair, sandbox drift, telemetry gaps, and Land must preserve exact resume routes.","target":"Every stop preserves state and distinguishes safe local recovery from authority-requiring delivery.","claimIds":["review-repair-is-harness-orchestrated","feedback-and-recovery-are-deterministic"]}
+  },
+  "semanticInvariants": [
+    {"id":"INV-AUTHORITY","statement":"Automation stops before model invocation, contract choice, waiver, commit, push, publish, or conflict overwrite.","decisionIds":["authority-boundary"],"claimIds":["advance-removes-agent-glue-without-authority"],"specScenarios":["Coordinator reaches an authority boundary"]},
+    {"id":"INV-REPAIR","statement":"A derived repair node is current, in-contract, path-bounded, and cannot close without observed changed workspace evidence.","decisionIds":["authority-boundary"],"claimIds":["review-repair-is-harness-orchestrated"],"specScenarios":["Current review rejects the workspace"]},
+    {"id":"INV-UNKNOWN","statement":"Unavailable cause, cost, timing, or provenance is never converted to idle, zero, or pass.","decisionIds":["single-change"],"claimIds":["feedback-truth-is-source-aware","feedback-and-recovery-are-deterministic"],"specScenarios":["Historical operation predates typed blockers"]},
+    {"id":"INV-UPGRADE","statement":"Upgrade diagnostics and unavailable source provenance preserve project policy and do not prevent unrelated commands.","decisionIds":["authority-boundary"],"claimIds":["upgrade-and-provenance-stay-safe"],"specScenarios":["Managed source cannot be completely read"]}
+  ],
+  "readSet": [
+    {"repository":"root","path":"openspec/specs/runtime-observability/spec.md","role":"contract","mode":"full","sha256":"77d8a1589174058ff661e845ea498f1781e23077373a592e219684332bb6740b"},
+    {"repository":"root","path":"openspec/specs/update-advisory/spec.md","role":"contract","mode":"full","sha256":"85d69e6eb6813452ce2e3ba82468de76a72c0fe217c7ae461d9f480492b3fb92"},
+    {"repository":"root","path":".claude/harness/runtime/evidence/proof-execution-runtime.mjs","role":"production-path","mode":"full","sha256":"1f723249a3ac221e3075b1247f69ea8f027a618f04647a1d56125fc8090bbca1"},
+    {"repository":"root","path":".claude/harness/runtime/workflow/agent-dispatch.mjs","role":"production-path","mode":"full","sha256":"3f61d47f70320e8983cb071f83996821d669aa210beb730d7ca0f4fffe90fe10"},
+    {"repository":"root","path":".claude/harness/foundation.mjs","role":"production-path","mode":"full","sha256":"6ed891cd3b1f0a7d46ad3034c96908d7ff9956c13d5f2c76070c29e2ec38040f"}
+    ,{"repository":"root","path":"README.md","role":"production-path","mode":"full","sha256":"bfd38cf3e44458b469b94db9d1ab1a9ca2daa98814ac557eb08a3ef109530fda"}
+    ,{"repository":"root","path":"docs/ROADMAP.md","role":"architecture","mode":"full","sha256":"05c32cb2b9c1468a83128d25da525185ddc866992aaa2ac77fc078065a37481a"}
+    ,{"repository":"root","path":".claude/tests/README.md","role":"test-topology","mode":"full","sha256":"23c94af8419e2f7db16f4adb92391f67fe8a059c254e7b26b8dd5524826d4e7e"}
+    ,{"repository":"root","path":"package-lock.json","role":"dependency-source","mode":"full","sha256":"61ebeb8ed9271ed3d7975ddd839af8d216ee54426ab8c1491acda6a8ac6a3ca5"}
+    ,{"repository":"root","path":".claude/harness/protocol.json","role":"production-path","mode":"full","sha256":"e5005f67716795ce0dfff04ee982843c234d7cb3da6903f9471dd439695648ab"}
+    ,{"repository":"root","path":"install.sh","role":"production-path","mode":"full","sha256":"ab5df4912d8144dda14e5fc345640554219248f15a272f07506a328598254c44"}
+    ,{"repository":"root","path":".claude/harness/runtime/observability/metrics-runtime.mjs","role":"production-path","mode":"full","sha256":"0ed548e88c84779530c0ed6815ab4bc404c36a1ce7e0a479755248cd60396837"}
+    ,{"repository":"root","path":".claude/harness/runtime/observability/telemetry-runtime.mjs","role":"production-path","mode":"full","sha256":"917ae200dd2263b59e87826e221dc7cb0e025b83eb6653c06e3e94049a0b6cd8"}
+    ,{"repository":"root","path":".claude/harness/runtime/core/update-advisory.mjs","role":"production-path","mode":"full","sha256":"553688e5b4590241eb6a96b364b767f08999cbfd30dae37f89f21cf9339c8e2a"}
+    ,{"repository":"root","path":".claude/harness/runtime/evidence/review-attempt-store.mjs","role":"production-path","mode":"full","sha256":"313c56669fb3dc8e7a6f0a1712fed42e6f42fb054740c97ac8f3c640b9111517"}
+    ,{"repository":"root","path":".claude/harness/runtime/composition/bootstrap.mjs","role":"composition-root","mode":"full","sha256":"9915f6ea85ab512bcd870925c0b3adac7aa8e13b5dfc1129ddcea05d9c3ae9cd"}
+    ,{"repository":"root","path":"CLAUDE.md","role":"requirement","mode":"full","sha256":"08d535cac612aac00c623912319df4fe296d27254df886f56dd562ad0fbf7333"}
+    ,{"repository":"root","path":"openspec/specs/host-adapter/spec.md","role":"contract","mode":"full","sha256":"7982b0fad876cb80cccdfa846b82967b25191efe6137dd2fa4c139f118285ce8"}
+  ],
+  "claims": [
+    {"id":"feedback-truth-is-source-aware","productionPath":[{"repository":"root","path":".claude/harness/runtime/observability/metrics-runtime.mjs"}],"failurePaths":[{"repository":"root","path":".claude/harness/runtime/observability/telemetry-runtime.mjs","failure":"supported host source is misclassified or ambiguous raw text selects an unsafe recovery"}],"evidenceClass":["test","security","review"],"testDoubleGap":"none"},
+    {"id":"upgrade-and-provenance-stay-safe","productionPath":[{"repository":"root","path":".claude/harness/runtime/core/update-advisory.mjs"},{"repository":"root","path":".claude/harness/foundation.mjs"}],"failurePaths":[{"repository":"root","path":".claude/harness/foundation.mjs","failure":"unrelated command hashes unreadable source during startup"}],"evidenceClass":["test","review"],"testDoubleGap":"none"},
+    {"id":"review-repair-is-harness-orchestrated","productionPath":[{"repository":"root","path":".claude/harness/runtime/evidence/proof-execution-runtime.mjs"}],"failurePaths":[{"repository":"root","path":".claude/harness/runtime/evidence/review-attempt-store.mjs","failure":"stale or unchanged review findings are treated as closed repair"}],"evidenceClass":["test","review"],"testDoubleGap":"none"},
+    {"id":"advance-removes-agent-glue-without-authority","productionPath":[{"repository":"root","path":".claude/harness/foundation.mjs"}],"failurePaths":[{"repository":"root","path":".claude/harness/foundation.mjs","failure":"coordinator crosses a model, user, conflict, budget, or delivery boundary"}],"evidenceClass":["test","security","review"],"testDoubleGap":"none"},
+    {"id":"feedback-and-recovery-are-deterministic","productionPath":[{"repository":"root","path":".claude/harness/runtime/observability/metrics-runtime.mjs"}],"failurePaths":[{"repository":"root","path":".claude/harness/runtime/observability/metrics-runtime.mjs","failure":"repair interval is labelled as human wait or idle without evidence"}],"evidenceClass":["test","review"],"testDoubleGap":"none"}
+  ],
+  "criticalCases": [
+    {"id":"codex-host-source-normalized","claimIds":["feedback-truth-is-source-aware"],"oracle":"failure-path"},
+    {"id":"lazy-cohort-contained","claimIds":["upgrade-and-provenance-stay-safe"],"oracle":"failure-path"},
+    {"id":"repair-node-current","claimIds":["review-repair-is-harness-orchestrated"],"oracle":"contract-oracle"},
+    {"id":"advance-stops-at-authority","claimIds":["advance-removes-agent-glue-without-authority"],"oracle":"failure-path"},
+    {"id":"repair-time-not-wait","claimIds":["feedback-and-recovery-are-deterministic"],"oracle":"real-wire"}
+  ],
+  "mutants": [],
+  "derivedFacts": [
+    {"fact":"The retained Codex envelope uses source host-execution while usageAvailability recognizes host-execution-contract.","command":"jq -r '.source' .foundation/logs/make-harness-feedback-version-aware-upgrade-safe-actionable-and-/events.jsonl"},
+    {"fact":"The largest quiet interval begins after the first review completed with major findings and ends when Proof resumes on a changed workspace.","command":"jq -r '[.timestamp,.completedAt,.resultStatus] | @tsv' .foundation/evidence/make-harness-feedback-version-aware-upgrade-safe-actionable-and-/review-attempts/*.json"}
+  ]
+}

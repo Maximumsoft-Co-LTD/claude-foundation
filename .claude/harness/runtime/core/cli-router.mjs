@@ -23,6 +23,8 @@ export async function routeRuntimeCommand(command, values, api) {
     recordPhaseContext,
     showPacket,
     showMetrics,
+    showAdvance,
+    showFeedback,
     execObserved,
     checkpointBudget,
     continueBudget,
@@ -275,6 +277,23 @@ export async function routeRuntimeCommand(command, values, api) {
     },
     "metrics": async () => {
       showMetrics(values[0]);
+    },
+    "feedback": async () => {
+      const { flags, rest } = parseStrictCommandFlags(values, "feedback", {
+        boolean: ["pretty"]
+      });
+      if (rest.length !== 1) die("feedback requires exactly one change id");
+      showFeedback(rest[0], flags);
+    },
+    "advance": async () => {
+      const { flags, rest } = parseStrictCommandFlags(values, "advance", {
+        boolean: ["pretty"],
+        value: ["host-result"]
+      });
+      if (rest.length !== 1) die("advance requires exactly one change id");
+      if (flags["host-result"])
+        importHostExecution(rest[0], flags["host-result"]);
+      showAdvance(rest[0], flags);
     },
     "exec": async () => {
       // Everything after `--` belongs to the external command, including its

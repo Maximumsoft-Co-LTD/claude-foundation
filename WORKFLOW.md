@@ -467,6 +467,21 @@ Codex or Claude Code reviewer. An explicitly chosen human review reserves the ex
 `authority dispatch`, then records only the real response with `authority record`. Low-level
 `proof collect` and `proof run` remain diagnostic/integration commands.
 
+Hosts may instead drive the whole resumable loop with
+`claude-foundation advance <change>`. The command returns one bounded action:
+execute a Build task, execute a review-repair batch, rerun invalidated evidence,
+dispatch the configured review, request a real decision, or enter Land. The
+harness owns selection, dependency order, state, and resume routing; the host
+still owns model invocation. `advance` never grants commit, push, publish, PR,
+or waiver authority. A host execution result can be imported atomically with
+`--host-result <result.json>` before the next action is selected.
+
+Use `claude-foundation feedback <change>` when investigating latency. It keeps
+reviewer execution, evidenced repair, human wait, and unattributed time separate;
+therefore time spent changing the workspace after major review findings is not
+reported as quiet reviewer wait. Reuse records include bounded provider and
+workspace/fingerprint detail, while unavailable legacy causes remain explicit.
+
 Draft v2 makes the same division explicit at Change time: authors state intent,
 claims, task outcomes, paths, and one verification command; the harness assigns
 stable IDs and fills only uniquely provable cross-ledger bindings. Draft v1 is

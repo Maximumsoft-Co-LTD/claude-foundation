@@ -26,7 +26,8 @@ function publicCliRows() {
 test("golden fixture freezes every public host and CLI command contract", () => {
   assert.equal(fixture.protocol, "foundation-public-command-golden-v1");
   const described = JSON.parse(execFileSync("sh", ["./cli.sh", "describe", "--json"], {
-    cwd: root, encoding: "utf8"
+    cwd: root, encoding: "utf8",
+    env: { ...process.env, CLAUDE_FOUNDATION_PROJECT: root }
   }));
   const hostRows = described.filter((row) => row.surface === "host-command");
   const cliRows = publicCliRows();
@@ -39,7 +40,8 @@ test("golden fixture freezes every public host and CLI command contract", () => 
 test("every frozen public command retains a successful non-mutating help route", () => {
   for (const row of publicCliRows()) {
     const result = spawnSync("sh", ["./cli.sh", ...row.name.split(" "), "--help"], {
-      cwd: root, encoding: "utf8"
+      cwd: root, encoding: "utf8",
+      env: { ...process.env, CLAUDE_FOUNDATION_PROJECT: root }
     });
     assert.equal(result.status, 0, `${row.name}: ${result.stderr || result.stdout}`);
     assert.ok(result.stdout.trim(), `${row.name}: empty help response`);

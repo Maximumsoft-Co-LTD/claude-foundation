@@ -34,6 +34,22 @@
       "description": "Inspect measured usage, active budget, cost, and execution timing."
     },
     {
+      "name": "advance",
+      "usage": "advance <change> [--host-result <result.json>] [--pretty]",
+      "audience": "host",
+      "kind": "write",
+      "idempotent": true,
+      "description": "Project one bounded next host action across Build, repair, Proof, review, and Land without invoking a model or inferring authority."
+    },
+    {
+      "name": "feedback",
+      "usage": "feedback <change> [--pretty]",
+      "audience": "agent",
+      "kind": "read",
+      "idempotent": true,
+      "description": "Project repair-aware timing, guard provenance, evidence reuse, usage availability, and the next safe action without mutating state."
+    },
+    {
       "name": "exec",
       "usage": "exec <change> [--phase change|build|prove|land] -- <command...>",
       "audience": "agent",
@@ -745,6 +761,8 @@
     "agent-release",
     "packet",
     "metrics",
+    "advance",
+    "feedback",
     "budget-checkpoint",
     "budget-continue",
     "doctor",

@@ -17,6 +17,7 @@ Safe to run at any time. These mutate nothing.
 | `doctor [--stage change\|build\|prove] [--change <id>]` | Diagnose project, provider, and lifecycle readiness |
 | `packet <change> [--phase <phase>] [--task <id>]` | Read the bounded machine handoff for the current operation |
 | `metrics <change>` | Inspect measured usage, active budget, cost, and execution timing |
+| `feedback <change>` | Explain reviewer, evidenced repair, human-wait, and unattributed timing; show reuse and the next action |
 | `change audit <change>` | Audit scenario, claim, task, and provider traceability |
 | `proof readiness <change>` | Typed blockers and canonical next commands |
 | `land check <change>` | Validate that the proven projection remains landable |
@@ -52,6 +53,7 @@ language profiles, baselines, and rollout policy.
 | `change validate <change>` | Validate the change and its executable evidence contract |
 | `sandbox create <change> [--all]` | Create the isolated Build workspace |
 | `sandbox sync <change>` | Synchronize an intentional contract revision into Build |
+| `advance <change> [--host-result <result.json>]` | Return one bounded next action across Build, Prove, repair, and Land; optionally import a validated host result first |
 | `proof advance <change>` | Normal resumable Prove path; converge the current gate, reuse valid evidence, and return one repair batch or external handoff |
 | `proof collect <change>` | Low-level collection for diagnosis or an explicit integration |
 | `proof run <change>` | Low-level atomic run when no resumable external handoff is needed |
@@ -120,7 +122,7 @@ Wire-visible contracts are pinned in `.claude/harness/protocol.json`. A mixed-re
 | Pin | v3.5.1 |
 |---|---|
 | runtime | 3.5.1 |
-| runtime API | 26 |
+| runtime API | 27 |
 | provider protocol | 13 |
 | evidence schema | 1, 2 |
 | packet schema | 10 |

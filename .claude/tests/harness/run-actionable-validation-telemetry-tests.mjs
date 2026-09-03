@@ -8,7 +8,7 @@ import {
   claimContractIssues, taskContractIssues
 } from "../../harness/runtime/workflow/change-validation.mjs";
 import {
-  eventUsageRecoveryActions, usageAvailability
+  eventUsageRecoveryActions, normalizedTelemetryHost, usageAvailability
 } from "../../harness/runtime/observability/metrics-runtime.mjs";
 import {
   createTelemetryRuntime
@@ -90,6 +90,23 @@ test("request-only events expose missing usage without inventing totals", () => 
   assert.equal(value.reason, "correlation-missing");
   assert.deepEqual(value.correlatedHosts, ["codex"]);
   assert.match(value.recoveryActions[0].command, /--format codex/);
+});
+
+test("Codex host-execution aliases retain measured attribution", () => {
+  for (const source of ["host-execution", "host-execution-contract"]) {
+    const event = {
+      source, agentId: "codex", inputTokens: 549429,
+      outputTokens: 122429, cacheReadTokens: 63154432, cost: null
+    };
+    assert.equal(normalizedTelemetryHost(event), "codex");
+    const value = usageAvailability([event], [], "change-id");
+    assert.equal(value.classification, "measured");
+    assert.deepEqual(value.correlatedHosts, ["codex"]);
+    assert.deepEqual(value.measuredDimensions, {
+      tokens: true, cost: false, model: false
+    });
+    assert.deepEqual(value.recoveryActions, []);
+  }
 });
 
 test("event recovery routes every correlated host without adding irrelevant actions", () => {

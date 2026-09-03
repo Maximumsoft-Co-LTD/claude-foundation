@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {"adapter":"test-discovery","command":["node",".claude/tests/harness/run-harness-guidance-tests.mjs"],"report":".foundation/test-results/harness-guidance.json","reportFormat":"json","minimum":5,"timeoutMs":300000,"env":{"FOUNDATION_RESULT_REPORT":".foundation/test-results/harness-guidance.json"},"criticalCases":["codex-host-source-normalized","lazy-cohort-contained","repair-node-current","advance-stops-at-authority","repair-time-not-wait"]},
+    "compatibility": {"capability":"compatibility","adapter":"command","command":["bash",".claude/tests/harness/run-upgrade-compat-tests.sh"],"timeoutMs":300000},
+    "observability": {"capability":"observability","adapter":"command","command":["node","--test",".claude/harness/tests/telemetry-append.test.mjs"],"timeoutMs":300000},
+    "security-static": {"capability":"security-static","adapter":"command","command":["node","--test",".claude/harness/tests/telemetry-append.test.mjs",".claude/harness/tests/advance-runtime.test.mjs"],"timeoutMs":300000},
+    "resilience": {"capability":"resilience","adapter":"command","command":["node","--test",".claude/harness/tests/review-repair-closure.test.mjs",".claude/harness/tests/advance-runtime.test.mjs"],"timeoutMs":300000},
+    "review": {"adapter":"external"}
+  },
+  "services": {}
+}

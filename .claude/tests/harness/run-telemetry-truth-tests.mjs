@@ -6,7 +6,7 @@ import test from "node:test";
 
 import { measuredNumber } from "../../harness/runtime/core/measured-number.mjs";
 import {
-  createMetricsRuntime, runtimeSourceDigest
+  createMetricsRuntime, createSourceCohortProvider, runtimeSourceDigest
 } from "../../harness/runtime/observability/metrics-runtime.mjs";
 import {
   createJsonlReader,
@@ -148,6 +148,29 @@ test("metrics identify the exact runtime source cohort", () => {
   assert.deepEqual(rendered.sourceCohort, cohort);
   assert.notEqual(rendered.sourceCohort.contentDigest, "sha256:bbbbbbbb",
     "reports from different source digests must remain distinguishable");
+});
+
+test("source cohort digest is lazy, memoized, and failure-contained", () => {
+  let calls = 0;
+  const available = createSourceCohortProvider({
+    runtimeVersion: "3.5.0", protocolBundle: { metrics: "6" }, directory: "/runtime",
+    digest: () => { calls += 1; return "sha256:available"; }
+  });
+  assert.equal(calls, 0);
+  assert.equal(available().contentDigest, "sha256:available");
+  assert.equal(available().availability, "available");
+  assert.equal(available().reason, null);
+  assert.equal(available().contentDigest, "sha256:available");
+  assert.equal(calls, 1);
+
+  const unavailable = createSourceCohortProvider({
+    runtimeVersion: "3.5.0", protocolBundle: {}, directory: "/unreadable",
+    digest: () => { throw new Error("SECRET raw filesystem error"); }
+  })();
+  assert.equal(unavailable.contentDigest, null);
+  assert.equal(unavailable.availability, "unavailable");
+  assert.equal(unavailable.reason, "source-read-failed");
+  assert.equal(JSON.stringify(unavailable).includes("SECRET"), false);
 });
 
 test("a real event reporting numeric zero remains measured", () => {

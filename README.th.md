@@ -16,7 +16,7 @@ Change Loop ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก�
 ชื่อผลิตภัณฑ์และ workflow คือ **Change Loop** ส่วน package และ CLI ที่ติดตั้งยังใช้
 `claude-foundation` เหมือนเดิม จึงไม่ต้องเปลี่ยนคำสั่งที่ใช้อยู่
 
-**Version 3.5.1** — runtime API 26, provider protocol 13 receipt ที่บันทึกด้วย
+**Version 3.5.1** — runtime API 27, provider protocol 13 receipt ที่บันทึกด้วย
 เวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 `claude-foundation metrics <change-id>` จะแสดง source cohort ของ runtime แบบ
 เจาะจงด้วย ได้แก่ semantic version, protocol bundle ที่โหลดจริง และ SHA-256
@@ -553,6 +553,14 @@ change เดิมและคืนทางเลือกพร้อมค�
 ไม่เปลี่ยนจะไม่รัน provider หรือ dispatch reviewer ซ้ำ ส่วน `proof collect`, authority commands โดยตรง และ
 `proof run` เก็บไว้สำหรับการวิเคราะห์หรือ integration ที่ตั้งใจใช้
 
+ถ้าต้องการให้ harness ขับ loop ระดับสูง ให้ใช้
+`claude-foundation advance <change-id>` ซึ่งจะเลือก next action ที่มีขอบเขตชัดเจน
+เพียงหนึ่งรายการตลอด Build, Prove, repair และ Land โดย host ยังเป็นผู้เรียก model
+และ user ยังถือ authority สำหรับ commit, push, publish, เปิด PR และ waiver
+ส่วน `claude-foundation feedback <change-id>` จะแยกเวลาที่ reviewer ทำงาน,
+เวลาซ่อมที่มีหลักฐานจาก workspace, human wait และเวลาที่ยังระบุสาเหตุไม่ได้
+พร้อมแสดง evidence reuse และ action ที่ resume ต่อได้
+
 Build packet มี `authorityPreflight` ด้วย งานเสี่ยงสูงที่ต้องใช้ signed CI จะหยุด
 ก่อน dispatch หรือแก้ product ถ้ายังไม่มี external CI provider ที่เชื่อถือได้ โดย
 ระบุ issuer/public-key ที่ขาดและทาง resume Change ส่วน Land จะตรวจ signed receipt
@@ -865,6 +873,12 @@ Prove และ Land จะไม่ตรวจอัตโนมัติ Advi
 identity และ Change Loop จะไม่อัปเดตให้เองหาก user ยังไม่อนุญาต ตั้ง
 `FOUNDATION_UPDATE_CHECK=0` เพื่อปิด release discovery หรือใช้
 `update check --refresh --json` เมื่อต้องการ refresh แบบ machine-readable
+
+การวิเคราะห์ upgrade จะรักษา policy ที่ project เป็นเจ้าของ หากพบ
+`land.riskBasedCi=true` ซึ่งเคยเป็นค่า default ระบบจะรายงานว่าแยกเจตนาไม่ได้
+ยกเว้น active change ตั้ง signed CI แล้ว หรือ `foundation.json` บันทึกการยืนยัน
+โดยตั้ง `upgradeAcknowledgements["land.riskBasedCi"]` เป็น `value: true` พร้อม
+`decisionRef` ที่มีขอบเขตชัดเจน ตัว installer จะไม่เปลี่ยนค่านี้เงียบ ๆ
 
 Preview source installation โดยไม่เขียนไฟล์:
 

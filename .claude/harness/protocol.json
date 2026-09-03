@@ -1,6 +1,6 @@
 {
   "runtime": "3.5.1",
-  "runtimeApi": "26",
+  "runtimeApi": "27",
   "evidenceSchema": ["1", "2"],
   "executionSchema": "1",
   "providerProtocol": "13",
@@ -10,7 +10,9 @@
   "agentPlanSchema": "4",
   "agentContractProtocol": "1",
   "contextEventSchema": "2",
-  "metricsSchema": "6",
+  "metricsSchema": "7",
+  "advanceProtocol": "1",
+  "feedbackSchema": "1",
   "commandTelemetrySchema": "3",
   "reviewProtocol": "4",
   "acceptanceProtocol": "2",

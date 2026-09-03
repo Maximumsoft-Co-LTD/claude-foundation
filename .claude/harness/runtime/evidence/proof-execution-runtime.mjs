@@ -6,6 +6,7 @@ import {
   noProgressDecision
 } from "../core/convergent-gate.mjs";
 import { createServiceSessions } from "./proof-execution/service-sessions.mjs";
+import { derivedReviewRepairGraph } from "./repair-runtime.mjs";
 
 export function requestSummary(id, request) {
   if (!request) return null;
@@ -246,7 +247,7 @@ export function createProofExecutionRuntime({
   reviewPolicy = () => ({ tier: "low", requiresHumanFinal: false }),
   deliveredAiAttempts = () => [], recordDeterministicReviewClosure = () => null,
   authorityStatusValue = () => ({ requests: [] }), requestAuthority = () => null,
-  die, markBlocked = () => {}
+  stableHash = (value) => JSON.stringify(value), die, markBlocked = () => {}
 }) {
   const memoryAdvance = new Map();
   const activeAdvance = new Set();
@@ -566,6 +567,9 @@ export function createProofExecutionRuntime({
       requests,
       repairBatch,
       repairPlan,
+      ...(repairBatch ? { repairGraph: derivedReviewRepairGraph(
+        deliveredAiAttempts(id).at(-1), stableHash
+      ) } : {}),
       ...(decision ? { decision: decision.decision,
         attemptedStrategies: decision.attemptedStrategies } : {}),
       executedProviders,
@@ -1174,6 +1178,7 @@ export function createProofExecutionRuntime({
   }
 
   return {
+    authorityNext,
     guardProofMutation,
     proofAdvance,
     proofCollect,

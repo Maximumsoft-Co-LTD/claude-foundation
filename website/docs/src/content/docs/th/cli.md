@@ -17,6 +17,7 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | `doctor [--stage change\|build\|prove] [--change <id>]` | วินิจฉัยความพร้อมของโปรเจกต์ provider และ lifecycle |
 | `packet <change> [--phase <phase>] [--task <id>]` | อ่าน handoff ของ operation ปัจจุบัน |
 | `metrics <change>` | ดูการใช้งานที่วัดได้ งบที่ใช้อยู่ ต้นทุน และเวลาการรัน |
+| `feedback <change>` | อธิบายเวลา reviewer, repair ที่มีหลักฐาน, human wait และเวลาที่ยังระบุไม่ได้ พร้อม reuse และ action ถัดไป |
 | `change audit <change>` | ตรวจความเชื่อมโยงของ scenario claim task และ provider |
 | `proof readiness <change>` | blocker แบบมีชนิด พร้อมคำสั่งถัดไปที่ถูกต้อง |
 | `land check <change>` | ตรวจว่า projection ที่พิสูจน์แล้วยัง land ได้ |
@@ -52,6 +53,7 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | `change validate <change>` | ตรวจ change และ evidence contract ที่รันได้ |
 | `sandbox create <change> [--all]` | สร้างพื้นที่ Build ที่แยกออกมา |
 | `sandbox sync <change>` | ซิงก์การแก้ข้อตกลงที่ตั้งใจเข้าไปใน Build |
+| `advance <change> [--host-result <result.json>]` | คืน next action หนึ่งรายการตลอด Build, Prove, repair และ Land โดยเลือก import host result ที่ตรวจแล้วก่อนได้ |
 | `proof advance <change>` | ทาง Prove ปกติที่ทำต่อได้: เดิน gate ปัจจุบัน ใช้ evidence ที่ยัง valid และคืน repair batch เดียวหรือ external handoff |
 | `proof collect <change>` | การเก็บระดับล่างสำหรับวิเคราะห์หรือ integration ที่ตั้งใจไว้ |
 | `proof run <change>` | atomic run ระดับล่างเมื่อไม่ต้องมี external handoff ที่ทำต่อได้ |
@@ -120,7 +122,7 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | Pin | v3.5.1 |
 |---|---|
 | runtime | 3.5.1 |
-| runtime API | 26 |
+| runtime API | 27 |
 | provider protocol | 13 |
 | evidence schema | 1, 2 |
 | packet schema | 10 |

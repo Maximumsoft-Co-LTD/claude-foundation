@@ -340,6 +340,18 @@ export function replayContext({
   };
 }
 
+export function manuallyRebasedMovement(candidate, gitHead) {
+  const { repository, record, targetPath } = candidate;
+  const targetHead = targetPath ? gitHead(targetPath) : null;
+  const sandboxHead = record.path ? gitHead(record.path) : null;
+  if (!targetHead || !sandboxHead || !record.baseHead ||
+      record.baseHead === targetHead || sandboxHead !== targetHead) return null;
+  return {
+    repository, from: record.baseHead, to: targetHead,
+    rebased: true, conflicts: [], manuallyRebased: true
+  };
+}
+
 export function stageReplayWorkspace(context, { git, remove = rmSync, fail }) {
   const { repository, record, targetPath, currentHead, staging } = context;
   remove(staging, { recursive: true, force: true });
@@ -1211,8 +1223,14 @@ export function createSandboxRuntime({
     if (!candidates.length) return null;
     const multiRepository = Object.keys(state.repositories || {}).length > 1;
     const prepared = [];
+    const manuallyRebased = [];
     try {
       for (const candidate of candidates) {
+        const manualMovement = manuallyRebasedMovement(candidate, gitHead);
+        if (manualMovement) {
+          manuallyRebased.push({ candidate, movement: manualMovement });
+          continue;
+        }
         const replay = prepareReplay(id, state, candidate);
         if (!replay) continue;
         prepared.push(replay);
@@ -1232,10 +1250,17 @@ export function createSandboxRuntime({
       prepared.forEach((entry) => entry.discardStaging());
       throw error;
     }
-    if (!prepared.length) return null;
+    if (!prepared.length && !manuallyRebased.length) return null;
     prepared.forEach((entry) => commitReplay(id, state, entry));
     prepared.forEach((entry) => rmSync(entry.patch, { force: true }));
-    const repositories = prepared.map((entry) => entry.movement);
+    for (const entry of manuallyRebased) {
+      entry.candidate.record.baseHead = entry.movement.to;
+      if (entry.candidate.repository === "root") state.workspace.baseHead = entry.movement.to;
+    }
+    const repositories = [
+      ...prepared.map((entry) => entry.movement),
+      ...manuallyRebased.map((entry) => entry.movement)
+    ];
     const movement = {
       rebased: true, multiRepository, repositories, conflicts: []
     };

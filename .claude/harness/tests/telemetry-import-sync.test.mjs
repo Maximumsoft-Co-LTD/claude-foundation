@@ -50,8 +50,9 @@ function importContext(overrides = {}) {
     resolvePath: (_cwd, source) => `/project/${source}`,
     cwd: () => "/project",
     pathExists: () => true,
-    readFile: () => '[{"requestId":"r1"},{"requestId":"r2"}]',
+    readFile: () => '[{"requestId":"r1","usage":{"input_tokens":2}},{"requestId":"r2","usage":{"output_tokens":1}}]',
     readJson: () => ({ workspaceHash: "hash" }),
+    loadRuntime: () => ({ createdAt: "2026-09-03T00:00:00.000Z" }),
     snapshotPath: () => "/snapshot.json",
     appendTelemetryRows: () => 1,
     runtimeSessionId: () => "runtime-session",
@@ -85,7 +86,10 @@ test("Codex import binds snapshot and runtime session and reports skipped rows",
   assert.equal(calls[0][2], "codex");
   assert.deepEqual(calls[0][3], {
     snapshot: { workspaceHash: "hash" },
-    sessionId: "runtime-session"
+    sessionId: "runtime-session",
+    sourcePath: "/project/events.json",
+    since: "2026-09-03T00:00:00.000Z",
+    replaceSource: true
   });
   assert.equal(logs[0], "TELEMETRY change: imported 1; skipped 1");
 });

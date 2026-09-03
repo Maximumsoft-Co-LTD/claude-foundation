@@ -9,8 +9,10 @@ import {
   readSync,
   readdirSync,
   realpathSync,
+  renameSync,
   rmSync,
-  statSync
+  statSync,
+  writeFileSync
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { measuredNumber } from "../core/measured-number.mjs";
@@ -71,7 +73,8 @@ function safeLifecyclePhase(value) {
 
 export function blockerTelemetryValue(message, context = {}) {
   const source = String(message || "");
-  const kind = BLOCKER_KINDS.find((candidate) => candidate.pattern.test(source)) || {
+  const matches = BLOCKER_KINDS.filter((candidate) => candidate.pattern.test(source));
+  const kind = matches.length === 1 ? matches[0] : {
     code: "policy-guard", classification: "policy",
     summary: "A Change Loop policy guard stopped the operation",
     recovery: (id) => `claude-foundation packet ${id} --phase ${safeLifecyclePhase(context.phase)}`
@@ -231,15 +234,28 @@ export function normalizeTelemetryBatch({
 }) {
   const normalized = [];
   const transitions = [];
+  const rollingContext = { ...context };
   for (const row of rows) {
+    if (format === "codex" && row.type === "session_meta") {
+      rollingContext.sessionId ||= String(row.payload?.id || "").trim() || null;
+      rollingContext.cwd = row.payload?.cwd || rollingContext.cwd;
+    }
+    if (format === "codex" && row.type === "turn_context") {
+      rollingContext.modelId = row.payload?.model || rollingContext.modelId;
+      rollingContext.cwd = row.payload?.cwd || rollingContext.cwd;
+    }
+    const rowTime = Date.parse(row.timestamp || row.created_at || "");
+    const since = Date.parse(rollingContext.since || "");
+    if (Number.isFinite(rowTime) && Number.isFinite(since) && rowTime < since)
+      continue;
     if (format === "claude") {
-      const transition = normalizeTransition(id, row, context, now());
+      const transition = normalizeTransition(id, row, rollingContext, now());
       if (transition && !knownTransitions.has(transition.transitionId)) {
         knownTransitions.add(transition.transitionId);
         transitions.push(transition);
       }
     }
-    const event = normalizeEvent(id, row, format, context, now());
+    const event = normalizeEvent(id, row, format, rollingContext, now());
     if (!event || known.has(event.requestId)) continue;
     known.add(event.requestId);
     normalized.push(event);
@@ -252,6 +268,17 @@ export function appendTelemetryJsonLines(path, rows, options = {}) {
   if (!rows.length) return false;
   makeDirectory(dirname(path), { recursive: true });
   append(path, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+  return true;
+}
+
+export function replaceTelemetryJsonLines(path, rows, options = {}) {
+  const { makeDirectory = mkdirSync, write = writeFileSync,
+    rename = renameSync } = options;
+  makeDirectory(dirname(path), { recursive: true });
+  const temporary = `${path}.replacement-${process.pid}`;
+  write(temporary, rows.length
+    ? `${rows.map((row) => JSON.stringify(row)).join("\n")}\n` : "");
+  rename(temporary, path);
   return true;
 }
 
@@ -356,6 +383,19 @@ export function validateTelemetryImportRows({ fail }, format, rows) {
   if (format === "claude" && !rows.some((row) =>
     row.type === "assistant" && row.message?.role === "assistant" && row.message?.usage))
     fail("Claude telemetry source has no assistant.message.usage records");
+  if (format === "codex" && !rows.some((row) =>
+    (row.type === "event_msg" && row.payload?.type === "token_count" &&
+      row.payload?.info?.last_token_usage) ||
+    (telemetryRequestLike(row) && telemetryUsageLike(row))))
+    fail("Codex telemetry source has no supported token_count or request usage records");
+}
+
+function telemetryRequestLike(row) {
+  return Boolean(row?.requestId || row?.request_id || row?.id || row?.uuid);
+}
+
+function telemetryUsageLike(row) {
+  return Boolean(row?.usage || row?.token_usage);
 }
 
 export function importTelemetryOperation(context, id, values) {
@@ -369,10 +409,14 @@ export function importTelemetryOperation(context, id, values) {
   if (!context.pathExists(path)) context.fail(`telemetry source not found: ${source}`);
   const rows = parseTelemetryImportRows(context, source, context.readFile(path, "utf8").trim());
   validateTelemetryImportRows(context, format, rows);
+  const state = context.loadRuntime(id);
   const snapshot = context.readJson(context.snapshotPath(id), {});
   const imported = context.appendTelemetryRows(id, rows, format, {
     snapshot,
-    sessionId: format === "codex" ? context.runtimeSessionId() : null
+    sessionId: format === "codex" ? context.runtimeSessionId() : null,
+    sourcePath: path,
+    since: state.createdAt || null,
+    replaceSource: format === "codex"
   });
   context.output.log(`TELEMETRY ${id}: imported ${imported}; skipped ${rows.length - imported}`);
 }
@@ -794,14 +838,22 @@ export function createTelemetryRuntime({
   function appendTelemetryRows(id, rows, format, context = {}) {
     const target = join(logs, id, "events.jsonl");
     const transitionTarget = join(logs, id, "user-transitions.jsonl");
-    const known = new Set(readJsonLines(target).map((row) => row.requestId));
+    const existing = readJsonLines(target);
+    const sourcePathHash = context.sourcePath
+      ? createHash("sha256").update(context.sourcePath).digest("hex") : null;
+    const replacesSource = Boolean(context.replaceSource && sourcePathHash);
+    const retained = replacesSource
+      ? existing.filter((row) => row.sourcePathHash !== sourcePathHash)
+      : existing;
+    const removedCount = existing.length - retained.length;
+    const known = new Set(retained.map((row) => row.requestId));
     const knownTransitions = new Set(readJsonLines(transitionTarget)
       .map((row) => row.transitionId));
     const { normalized, transitions } = normalizeTelemetryBatch({
       id, rows, format, context, known, knownTransitions, now
     });
     appendTelemetryJsonLines(transitionTarget, transitions);
-    if (normalized.length) {
+    if (normalized.length || removedCount) {
       // Loading runtime state can normalize it, so it stays inside this branch:
       // an import that adds nothing must leave the change untouched.
       const state = loadRuntime(id);
@@ -812,11 +864,21 @@ export function createTelemetryRuntime({
       // along with its targets.
       const windowId = state.budget?.window?.id || null;
       rebindTelemetryWindow(normalized, id, windowId);
-      appendTelemetryJsonLines(target, normalized);
+      if (replacesSource)
+        replaceTelemetryJsonLines(target, [...retained, ...normalized]);
+      else
+        appendTelemetryJsonLines(target, normalized);
       const allEvents = readJsonLines(target);
       const activeRunId = activeTelemetryRunId(normalized, context, id);
+      if (removedCount &&
+          !readJsonLines(join(logs, id, "budget-events.jsonl")).length &&
+          state.budget?.window?.mode === "operator-required") {
+        state.budget.window.mode = "normal";
+        state.budget.window.exhaustedAt = null;
+      }
       synchronizeBudgetUsage(state, allEvents, activeRunId, format === "claude"
-        ? "claude-transcript" : `host-events:${format}`, normalized.length);
+        ? "claude-transcript" : `host-events:${format}`,
+      replacesSource ? 0 : normalized.length);
       saveRuntime(state);
       reportBudget(id, state, true);
     }
@@ -859,6 +921,7 @@ export function createTelemetryRuntime({
     pathExists: existsSync,
     readFile: readFileSync,
     readJson,
+    loadRuntime,
     snapshotPath,
     appendTelemetryRows,
     runtimeSessionId,

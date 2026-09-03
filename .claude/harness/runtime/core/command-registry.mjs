@@ -20,6 +20,8 @@ const RUNTIME_COMMAND_ALIASES = {
   "agent-task": "agents task",
   "agent-acquire": "agents acquire",
   "agent-release": "agents release",
+  advance: "advance",
+  feedback: "feedback",
   receipt: "evidence record",
   "run-provider": "evidence run",
   prove: "proof finalize",

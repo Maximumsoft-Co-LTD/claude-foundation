@@ -180,11 +180,13 @@ claude-foundation doctor --stage prove --change <change>
 | `quality baseline\|debt` | Explicitly versions reviewed baselines and renders debt inventory | Pilot graduation and nightly inventory |
 | `agents plan <change> [--group <n>] [--pretty]` | Persists the full plan and prints a ≤4 KiB summary or one dispatch group | Before spawning independent workers |
 | `agents dispatch <change> [--pretty]` | Returns one graph- and lease-bound native-host action | Driving the resumable Build loop |
+| `advance <change> [--host-result <result.json>] [--pretty]` | Returns the next bounded Build/Prove/Land action and imports an optional host result | Letting the harness drive the loop while the host performs model work |
 | `doctor` | Checks runtime and project readiness | After install or when diagnosing setup |
 | `changes` | Lists active changes and readiness | Finding work to resume or land |
 | `packet <change> --phase <phase>` | Prints a compact handoff; review packets are ≤8 KiB and exclude Build history | Starting Build, Prove, or independent Review |
 | `packet <change> --repo <id> [--task <id>] [--pretty]` | Prints a bounded repository or task packet | Starting a native subagent |
 | `metrics <change>` | Reports measured phase/provider cost and emitted context bytes | Finding latency or orchestration overhead |
+| `feedback <change> [--pretty]` | Reports source-aware timing, repair intervals, blocker coverage, evidence reuse, and the next action | Explaining why Prove took time without labeling repair as wait |
 | `budget checkpoint <change>` | Reports measured remaining allowance, unfinished work, and the exact resume route | Before deciding whether an exhausted run should continue, rescope, or pause |
 | `exec <change> [--phase <phase>] -- <command…>` | Runs an external command, passes its exit code through, and records its duration | Long build-phase commands (container builds, installs, full test runs) |
 | `telemetry host-import <change> <result.json>` | Imports a validated host execution result without prompt or tool payloads | Recording actual model attempts, fallback, usage, and instruction provenance |
@@ -651,6 +653,13 @@ token usage, cache usage, or monetary cost remain `null`; Change Loop does not
 manufacture estimates when telemetry is unavailable. Claude transcript parsing
 is schema-validated and isolated behind the host adapter so a future host
 format change cannot silently become fabricated usage.
+
+`feedback <change>` is the read-only explanation surface. It normalizes both
+`host-execution` and `host-execution-contract` source names, keeps historical
+events whose blocker type was not recorded explicitly unavailable, and reports
+the interval after a failed review as repair only when a later changed workspace
+provides evidence of repair. Source-cohort hashing is lazy and failure-contained,
+so ordinary commands do not pay the provenance cost.
 
 ## Playwright ownership
 

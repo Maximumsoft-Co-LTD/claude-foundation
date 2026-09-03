@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The harness can now drive the next bounded lifecycle action.** `advance`
+  selects Build work, review repair, invalidated proof, configured review, a
+  real decision boundary, or Land readiness without invoking a model or
+  inferring delivery authority. `feedback` explains source-aware timing,
+  evidenced repair, blocker coverage, evidence reuse, and the resume action.
+
 - **Harness feedback is bound to the exact installed source cohort.** Metrics
   and generated HTML reports include the semantic version, loaded protocol
   bundle, and harness-content digest so reports from patched or divergent

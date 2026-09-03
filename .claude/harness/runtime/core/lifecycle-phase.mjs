@@ -86,7 +86,9 @@ export const PHASE_BY_COMMAND = {
   "budget-checkpoint": "meta",
   event: "meta",
   "telemetry-sync": "meta",
-  "telemetry-import": "meta"
+  "telemetry-import": "meta",
+  advance: "meta",
+  feedback: "meta"
 };
 
 // The bucket an operations row is filed under. `meta` is a real answer here.

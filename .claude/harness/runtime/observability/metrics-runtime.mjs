@@ -28,6 +28,35 @@ export function runtimeSourceDigest(directory) {
   return `sha256:${digest.digest("hex")}`;
 }
 
+export function createSourceCohortProvider({
+  runtimeVersion,
+  protocolBundle,
+  directory,
+  scope = ".claude/harness",
+  digest = runtimeSourceDigest
+}) {
+  let cached;
+  return () => {
+    if (cached) return cached;
+    try {
+      cached = Object.freeze({
+        version: 1, runtimeVersion, protocolBundle,
+        contentDigest: digest(directory), scope,
+        basis: "sorted-relative-path-and-file-bytes",
+        availability: "available", reason: null
+      });
+    } catch {
+      cached = Object.freeze({
+        version: 1, runtimeVersion, protocolBundle,
+        contentDigest: null, scope,
+        basis: "sorted-relative-path-and-file-bytes",
+        availability: "unavailable", reason: "source-read-failed"
+      });
+    }
+    return cached;
+  };
+}
+
 export function eventUsageRecoveryActions(classification, correlatedHosts, changeId) {
   const recoveryActions = [];
   if (["correlation-missing", "partial-measurement"].includes(classification)) {
@@ -56,20 +85,21 @@ export function eventUsageRecoveryActions(classification, correlatedHosts, chang
   return recoveryActions;
 }
 
+export function normalizedTelemetryHost(event = {}) {
+  const source = String(event.source || "").toLowerCase();
+  if (source === "codex") return "codex";
+  if (source === "claude" || source === "claude-transcript") return "claude-code";
+  if (["generic", "otel", "cursor"].includes(source)) return "generic-host";
+  if (!["host-execution", "host-execution-contract"].includes(source)) return null;
+  const host = String(event.agentId || event.host || "").toLowerCase();
+  if (host.includes("codex")) return "codex";
+  if (host.includes("claude")) return "claude-code";
+  return host ? "generic-host" : null;
+}
+
 export function usageAvailability(events = [], phaseContextRows = [], changeId = "<change>") {
   if (events.length) {
-    const correlatedHosts = [...new Set(events.map((event) => {
-      const source = String(event.source || "").toLowerCase();
-      if (source === "codex") return "codex";
-      if (source === "claude" || source === "claude-transcript") return "claude-code";
-      if (source === "generic" || source === "otel" || source === "cursor")
-        return "generic-host";
-      if (source !== "host-execution-contract") return null;
-      const host = String(event.agentId || "").toLowerCase();
-      if (host.includes("codex")) return "codex";
-      if (host.includes("claude")) return "claude-code";
-      return "generic-host";
-    })
+    const correlatedHosts = [...new Set(events.map(normalizedTelemetryHost)
       .filter(Boolean))].sort();
     const usageFields = [
       "inputTokens", "outputTokens", "cacheCreationTokens", "cacheReadTokens",
@@ -90,7 +120,8 @@ export function usageAvailability(events = [], phaseContextRows = [], changeId =
       !allUsageZero && !events.some((event) => finite(event.cost));
     const measuredDimensions = {
       tokens: completeEvents.length === events.length,
-      cost: events.every((event) => finite(event.cost))
+      cost: events.every((event) => finite(event.cost)),
+      model: events.every((event) => Boolean(String(event.modelId || "").trim()))
     };
     const classification = !correlatedHosts.length ? "source-unsupported"
       : !observedValues.length ? "correlation-missing"
@@ -135,7 +166,7 @@ export function usageAvailability(events = [], phaseContextRows = [], changeId =
     reason: correlatedHosts.length
       ? "correlation-without-usage-events" : "host-telemetry-not-ingested",
     correlatedHosts,
-    measuredDimensions: { tokens: false, cost: false },
+    measuredDimensions: { tokens: false, cost: false, model: false },
     recoveryActions
   };
 }
@@ -484,7 +515,7 @@ export function createMetricsRuntime({
     return { ...active, humanWaitSpans, humanWaitMs };
   }
 
-  function showMetrics(id) {
+  function metricsValue(id) {
     const state = loadRuntime(id);
     const budget = ensureBudgetState(state);
     const operations = readJsonLines(join(logs, id, "operations.jsonl"));
@@ -517,9 +548,11 @@ export function createMetricsRuntime({
       result[status] = Number(result[status] || 0) + 1;
       return result;
     }, {});
-    output(JSON.stringify({
+    const producingSourceCohort = typeof sourceCohort === "function"
+      ? sourceCohort() : sourceCohort;
+    const value = {
       version: metricsSchemaVersion, changeId: id,
-      sourceCohort,
+      sourceCohort: producingSourceCohort,
       wallTimeMs,
       activeTimeMs,
       unattributedWaitMs: wallTimeMs === null || activeTimeMs === null
@@ -589,7 +622,15 @@ export function createMetricsRuntime({
           const reason = row.reason || "unknown";
           result[reason] = Number(result[reason] || 0) + 1;
           return result;
-        }, {})
+        }, {}),
+        recent: reuseRows.slice(-20).map((row) => ({
+          timestamp: row.timestamp || null,
+          provider: row.provider || null,
+          reason: row.reason || "unknown",
+          fromWorkspaceHash: row.fromWorkspaceHash || null,
+          toWorkspaceHash: row.toWorkspaceHash || null,
+          inputFingerprint: row.inputFingerprint || null
+        }))
       },
       rework: {
         expectedStops: operations.filter((row) => row.status === "blocked").length,
@@ -604,8 +645,15 @@ export function createMetricsRuntime({
       measurement: events.length
         ? (operations.length ? "operations-and-host-events" : "host-events-only")
         : (operations.length ? "operations-only" : "receipts-only")
-    }, null, 2));
+    };
+    return value;
   }
 
-  return { showMetrics };
+  function showMetrics(id) {
+    const value = metricsValue(id);
+    output(JSON.stringify(value, null, 2));
+    return value;
+  }
+
+  return { metricsValue, showMetrics };
 }

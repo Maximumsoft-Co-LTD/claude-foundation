@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   assertReadOnlyReplayClean,
+  manuallyRebasedMovement,
   prepareWorktreeReplay,
   rejectedPaths,
   replayContext,
@@ -60,6 +61,20 @@ test("replayContext identifies moved bases and root submodule pathspecs", () => 
   assert.equal(replayContext({
     id: "c", state: {}, candidate, gitHead: () => "base", selectedRepositories: () => []
   }), null);
+});
+
+test("a manually rebased sandbox can advance its recorded base safely", () => {
+  const candidate = {
+    repository: "root", targetPath: "/target",
+    record: { path: "/box", baseHead: "old" }
+  };
+  const heads = new Map([["/target", "new"], ["/box", "new"]]);
+  assert.deepEqual(manuallyRebasedMovement(candidate, (path) => heads.get(path)), {
+    repository: "root", from: "old", to: "new", rebased: true,
+    conflicts: [], manuallyRebased: true
+  });
+  heads.set("/box", "other");
+  assert.equal(manuallyRebasedMovement(candidate, (path) => heads.get(path)), null);
 });
 
 test("staging and cleanup perform the durable worktree lifecycle", () => {
