@@ -733,6 +733,14 @@ The external event ledger requires unique request identity and records operation
 agent/model, parent request, tokens, cache, cost, tool, hash, and change. The
 watchdog evaluates the larger of request usage and configured token usage, so a
 small number of unusually large requests cannot bypass the thresholds.
+Validation compiles task, claim, provider, repository, critical-case, and
+external-authority counts into the execution surface. The widest model-work
+surface factor scales both request and token targets; impact, size, coupling,
+review tier, and security also participate in that shared maximum. External
+authority does not inflate model allowance. Metrics expose the non-secret
+counts, factors, selected scale, and limiting factors. Factors are never
+multiplied. An operator continuation
+retains the exact targets it was granted.
 
 Budget actions:
 
@@ -748,6 +756,16 @@ waiting on, re-scoping, retiring the change, or pausing.
 The stop applies to further model exploration. Deterministic packet, readiness,
 evidence, proof-resume, metrics, and archive commands remain available, and
 fresh receipts are reused. Required evidence is never removed to meet budget.
+
+Git or deployment activity performed outside Change Loop is observation, not
+authority. A bare control-target move remains `control-head-moved`; only target
+bytes matching the change projection or an explicit external delivery
+reference is reported as `out-of-band-delivery-drift`. `doctor --change <id>`
+surfaces that condition before apply, and Land includes the old/new identity
+plus an exact `sandbox sync` recovery command. It does not mark proof passed,
+change the lifecycle state, or treat a merge/deployment as completion.
+Completion still requires a fresh proof when invalidated and a successful Land
+ending at `archived`.
 
 ## Legacy migration
 

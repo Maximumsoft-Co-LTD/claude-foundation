@@ -1,5 +1,6 @@
 import {
-  existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync
+  existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync,
+  rmSync, writeFileSync
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -320,6 +321,78 @@ export function updateBoundary(command) {
   return UPDATE_BOUNDARY_COMMANDS.has(command) ? command : null;
 }
 
+export function upgradeCompatibilityDiagnostics({
+  previousVersion = null,
+  currentVersion = null,
+  configuredPolicy = {},
+  activeChanges = []
+} = {}) {
+  const policyFindings = [];
+  if (configuredPolicy?.land?.riskBasedCi === true) policyFindings.push({
+    code: "historical-default-land-risk-based-ci",
+    classification: "historical-default-or-explicit-value-ambiguous",
+    configuredValue: true,
+    historicalDefault: true,
+    currentDefault: false,
+    changed: false,
+    summary: "land.riskBasedCi=true matches a historical shipped default; the installer preserved it because ownership cannot be inferred",
+    recovery: "Review foundation.json land.riskBasedCi; keep true intentionally or set false explicitly to adopt the current default"
+  });
+  const activeChangeEffects = activeChanges
+    .filter((change) => change?.id && change.status !== "archived")
+    .map((change) => ({
+      changeId: change.id,
+      status: change.status || "unknown",
+      changed: false,
+      effects: [
+        "state-and-agreement-preserved",
+        "receipts-revalidated-against-current-protocols"
+      ],
+      recovery: "claude-foundation change validate " + change.id + " && " +
+        "claude-foundation proof readiness " + change.id
+    }));
+  return {
+    version: 1,
+    previousVersion: stableVersion(previousVersion) || previousVersion || null,
+    currentVersion: stableVersion(currentVersion) || currentVersion || null,
+    blocking: false,
+    policyFindings,
+    activeChangeEffects
+  };
+}
+
+function readProjectJson(path, fallback) {
+  try { return JSON.parse(readFileSync(path, "utf8")); } catch { return fallback; }
+}
+
+export function projectUpgradeDiagnostics(root, versions = {}) {
+  const runtimeRoot = join(root, ".foundation", "runtime");
+  const activeChanges = existsSync(runtimeRoot)
+    ? readdirSync(runtimeRoot, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+      .map((entry) => readProjectJson(join(runtimeRoot, entry.name), null))
+      .filter(Boolean)
+    : [];
+  return upgradeCompatibilityDiagnostics({
+    ...versions,
+    configuredPolicy: readProjectJson(join(root, "foundation.json"), {}),
+    activeChanges
+  });
+}
+
+export function printUpgradeDiagnostics(diagnostics, log = console.log) {
+  log("INFO upgrade-context from=" + (diagnostics.previousVersion || "unknown") +
+    " to=" + (diagnostics.currentVersion || "unknown") + " blocking=false");
+  for (const finding of diagnostics.policyFindings)
+    log("WARN " + finding.code + " configured=" + finding.configuredValue +
+      " changed=" + finding.changed + "; " + finding.summary +
+      "; recovery: " + finding.recovery);
+  for (const effect of diagnostics.activeChangeEffects)
+    log("INFO active-change-effects:" + effect.changeId + " status=" + effect.status +
+      " changed=" + effect.changed + "; " + effect.effects.join(",") +
+      "; recovery: " + effect.recovery);
+}
+
 function readInstalledVersion(packageRoot) {
   return readFileSync(join(packageRoot, "VERSION"), "utf8").trim();
 }
@@ -337,7 +410,27 @@ export function printHuman(advisory, log = console.log) {
 
 async function main() {
   const args = process.argv.slice(2);
-  if (args.shift() !== "check" || args.some((arg) => !["--json", "--refresh"].includes(arg))) {
+  const operation = args.shift();
+  if (operation === "upgrade-diagnostics") {
+    const value = (name) => {
+      const index = args.indexOf(name);
+      return index >= 0 ? args[index + 1] : null;
+    };
+    const root = value("--root");
+    const flagNames = args.filter((_, index) => index % 2 === 0);
+    if (!root || args.length % 2 !== 0 || flagNames.some((arg) =>
+      !["--root", "--previous-version", "--current-version"].includes(arg))) {
+      console.error("usage: update-advisory.mjs upgrade-diagnostics --root <path> [--previous-version <version>] [--current-version <version>]");
+      process.exitCode = 1;
+      return;
+    }
+    printUpgradeDiagnostics(projectUpgradeDiagnostics(resolve(root), {
+      previousVersion: value("--previous-version"),
+      currentVersion: value("--current-version")
+    }));
+    return;
+  }
+  if (operation !== "check" || args.some((arg) => !["--json", "--refresh"].includes(arg))) {
     console.error("usage: claude-foundation update check [--refresh] [--json]");
     process.exitCode = 1;
     return;

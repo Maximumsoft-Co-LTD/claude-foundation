@@ -8,6 +8,7 @@ import test from "node:test";
 import {
   activeTelemetryRunId,
   appendTelemetryJsonLines,
+  blockerTelemetryValue,
   commandTelemetryEligible,
   commandTelemetryRow,
   commandTelemetryStatus,
@@ -60,6 +61,36 @@ test("command telemetry projects honest command outcomes and phase fallbacks", (
     "command-observed; model usage requires host telemetry ingestion");
   assert.equal(commandTelemetryRow(commandContext(), 0).phase, "prove");
   assert.equal(commandTelemetryRow(commandContext({ operationPhase: null }), 1).phase, null);
+});
+
+test("blocked command telemetry carries bounded cause and recovery without raw error text", () => {
+  const blocker = blockerTelemetryValue(
+    "budget exceeded while reading token SECRET-123 at /private/path",
+    { changeId: "change-a", operationName: "proof-advance", phase: "prove" }
+  );
+  const row = commandTelemetryRow(commandContext({
+    operationName: "proof-advance", blocked: true, blocker
+  }), 2);
+  assert.equal(row.version, 3);
+  assert.deepEqual(Object.keys(row.blocker).sort(), [
+    "classification", "code", "fingerprint", "recovery", "summary"
+  ]);
+  assert.equal(row.blocker.code, "budget-exhausted");
+  assert.equal(row.blocker.classification, "budget");
+  assert.match(row.blocker.recovery, /budget checkpoint change-a/);
+  assert.equal(JSON.stringify(row).includes("SECRET-123"), false);
+  assert.equal(JSON.stringify(row).includes("/private/path"), false);
+  assert.equal(blockerTelemetryValue("budget stopped for OTHER-SECRET", {
+    changeId: "change-a", operationName: "proof-advance", phase: "prove"
+  }).fingerprint, blocker.fingerprint);
+  const hostilePhase = blockerTelemetryValue("unclassified stop", {
+    changeId: "change-a", operationName: "proof-advance",
+    phase: "prove; echo SECRET-456 /private/path"
+  });
+  assert.equal(hostilePhase.recovery,
+    "claude-foundation packet change-a --phase build");
+  assert.equal(JSON.stringify(hostilePhase).includes("SECRET-456"), false);
+  assert.equal(commandTelemetryRow(commandContext(), 0).blocker, null);
 });
 
 test("command telemetry eligibility excludes disabled, incomplete and archived work", () => {

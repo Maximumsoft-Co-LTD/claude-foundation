@@ -187,6 +187,19 @@ for rel in "${MANAGED[@]}"; do
   fi
 done | LC_ALL=C sort -u > "$NEW_MANIFEST"
 
+# Capture the installed label before managed files are refreshed. The
+# diagnostic below is advisory only: the exact source cohort is emitted by the
+# refreshed runtime because old releases did not record a content digest.
+PREVIOUS_RUNTIME_VERSION=unknown
+if [ -f "$TARGET_PATH/.claude/harness/protocol.json" ] &&
+    command -v jq >/dev/null 2>&1; then
+  PREVIOUS_RUNTIME_VERSION="$(jq -r '.runtime // "unknown"' "$TARGET_PATH/.claude/harness/protocol.json")"
+fi
+CURRENT_RUNTIME_VERSION=unknown
+if command -v jq >/dev/null 2>&1; then
+  CURRENT_RUNTIME_VERSION="$(jq -r '.runtime // "unknown"' "$SOURCE_PATH/.claude/harness/protocol.json")"
+fi
+
 # Remove only files previously recorded as Foundation-owned and no longer
 # shipped. Never infer ownership from a directory name.
 if [ -f "$MANIFEST_PATH" ]; then
@@ -276,6 +289,10 @@ elif command -v jq >/dev/null 2>&1; then
   printf '✓ installed risk-tiered workflow and configured reviewer defaults; existing explicit review waivers were preserved\n'
 else
   printf '⚠ jq unavailable; inspect legacy numeric execution.packetBytes manually\n' >&2
+fi
+
+if command -v node >/dev/null 2>&1; then
+  node "$SOURCE_PATH/.claude/harness/runtime/core/update-advisory.mjs" upgrade-diagnostics --root "$TARGET_PATH" --previous-version "$PREVIOUS_RUNTIME_VERSION" --current-version "$CURRENT_RUNTIME_VERSION"
 fi
 
 for rel in "${LEGACY[@]}"; do

@@ -93,7 +93,7 @@ function completeEvidence() {
       tests: {
         capability: "test", adapter: "test-discovery", command: ["npm", "test"],
         discoveryProvider: "discovery", inputs: ["src/**"],
-        criticalCases: ["case-test"], outputs: ["discovery"],
+        criticalCases: ["case-test"], reportFormat: "tap", outputs: ["discovery"],
         readiness: {
           url: "http://127.0.0.1:3000", expectStatus: 200,
           expectBody: "ready", expectHeader: { "x-ready": "yes" }
@@ -247,12 +247,27 @@ test("provider resources, inputs, and protocols reject malformed contracts", () 
   expectProviderFailure((providers) => { providers.external.reportFormat = "xml"; }, /reportFormat/);
   expectProviderFailure((providers) => { providers.external.resultProtocol = "custom"; }, /resultProtocol/);
   expectProviderFailure((providers) => { providers.external.criticalCases = [""]; }, /criticalCases/);
-  expectProviderFailure((providers) => { providers.external.criticalCases = ["case"]; }, /cannot execute criticalCases/);
   expectProviderFailure((providers) => {
     providers.external.resultProtocol = "foundation-mutation-v2";
   }, /requires capability 'mutation'/);
   expectProviderFailure((providers) => { providers.mutation.requiredMutants = []; }, /unique requiredMutants/);
   expectProviderFailure((providers) => { providers.mutation.mutantKillers = {}; }, /one mutantKillers mapping/);
+});
+
+test("critical case preflight rejects adapters and formats that cannot emit case rows", () => {
+  expectProviderFailure((providers) => {
+    providers.external.criticalCases = ["case"];
+  }, /cannot execute criticalCases/);
+  expectProviderFailure((providers) => {
+    providers.tests.reportFormat = "auto";
+  }, /criticalCases requires an explicit machine-readable reportFormat/);
+  expectProviderFailure((providers) => {
+    providers.tests.reportFormat = "spec";
+  }, /requires a Node --test command/);
+  const value = completeEvidence();
+  value.providers.tests.reportFormat = "spec";
+  value.providers.tests.command = ["node", "--test", "test.mjs"];
+  assert.doesNotThrow(() => fixture(value).evidence("change"));
 });
 
 test("command adapters reject uncovered untracked workspace files", () => {

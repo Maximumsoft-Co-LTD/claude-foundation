@@ -7,9 +7,16 @@ import {
 import { dirname, join } from "node:path";
 import { nextCommand } from "./next-step.mjs";
 import { deriveChangeProjection } from "./state-projections.mjs";
+import { upgradeCompatibilityDiagnostics } from "./update-advisory.mjs";
 
 export function changeReadiness(state, proof, current) {
   return deriveChangeProjection({ state, proof, currentHash: current }).readiness;
+}
+
+export function shouldReportOutOfBandDelivery(state, delivery) {
+  return ["change", "building", "waiting", "proven"].includes(state?.status) &&
+    state?.workspace?.applied !== true &&
+    Boolean(delivery?.observed || delivery?.references?.length);
 }
 
 export function changeListingRow(id, {
@@ -53,6 +60,8 @@ export function createDiagnosticsRuntime({
   packetSchemaVersion,
   agentPlanSchemaVersion,
   contextEventSchemaVersion,
+  metricsSchemaVersion,
+  commandTelemetrySchemaVersion,
   reviewProtocolVersion,
   acceptanceProtocolVersion,
   semanticAcceptanceProtocolVersion,
@@ -94,6 +103,7 @@ export function createDiagnosticsRuntime({
   reviewerStatus,
   unverifiedDrift,
   unresolvedApplyTransactions,
+  deliveryObservation = null,
   authorityPreflight = () => ({ status: "READY", blockers: [] }),
   executionContract = null,
   parseFlags,
@@ -209,6 +219,8 @@ export function createDiagnosticsRuntime({
       String(protocols.packetSchema) === packetSchemaVersion &&
       String(protocols.agentPlanSchema) === agentPlanSchemaVersion &&
       String(protocols.contextEventSchema) === contextEventSchemaVersion &&
+      String(protocols.metricsSchema) === metricsSchemaVersion &&
+      String(protocols.commandTelemetrySchema) === commandTelemetrySchemaVersion &&
       String(protocols.reviewProtocol) === reviewProtocolVersion &&
       String(protocols.acceptanceProtocol) === acceptanceProtocolVersion &&
       String(protocols.semanticAcceptanceProtocol) === semanticAcceptanceProtocolVersion &&
@@ -220,7 +232,7 @@ export function createDiagnosticsRuntime({
       level: protocolOk ? "ok" : "error",
       name: "protocol-bundle",
       detail: protocolOk
-        ? `runtime API ${runtimeApiVersion}; provider ${providerProtocolVersion}; proof ${proofProtocolVersion}; packet ${packetSchemaVersion}; review ${reviewProtocolVersion}/${reviewPacketSchemaVersion}; acceptance ${acceptanceProtocolVersion}; semantic-acceptance ${semanticAcceptanceProtocolVersion}; attestation ${attestationProtocolVersion}; authority ${authorityProtocolVersion}; signed-ci ${ciEvidenceProtocolVersion}; plan ${agentPlanSchemaVersion}; context ${contextEventSchemaVersion}`
+        ? `runtime API ${runtimeApiVersion}; provider ${providerProtocolVersion}; proof ${proofProtocolVersion}; packet ${packetSchemaVersion}; review ${reviewProtocolVersion}/${reviewPacketSchemaVersion}; acceptance ${acceptanceProtocolVersion}; semantic-acceptance ${semanticAcceptanceProtocolVersion}; attestation ${attestationProtocolVersion}; authority ${authorityProtocolVersion}; signed-ci ${ciEvidenceProtocolVersion}; plan ${agentPlanSchemaVersion}; context ${contextEventSchemaVersion}; metrics ${metricsSchemaVersion}; command-telemetry ${commandTelemetrySchemaVersion}`
         : "protocol.json is incompatible with foundation.mjs; reinstall Foundation"
     });
     }
@@ -265,6 +277,25 @@ export function createDiagnosticsRuntime({
       detail: modelPolicy.execution.legacyNumericPacketBytes === undefined
         ? `task=${modelPolicy.execution.packetBytes.task}; review=${modelPolicy.execution.packetBytes.review}; repository=${modelPolicy.execution.packetBytes.repository}; global=${modelPolicy.execution.packetBytes.global}`
         : `legacy numeric limit ${modelPolicy.execution.legacyNumericPacketBytes}; migrate to scoped task/repository/global limits`
+    });
+    const upgradeDiagnostics = upgradeCompatibilityDiagnostics({
+      currentVersion: version,
+      configuredPolicy: readJson(join(root, "foundation.json"), {}),
+      activeChanges: activeChanges()
+        .map((id) => readJsonOrNull(runtimePath(id)))
+        .filter(Boolean)
+    });
+    for (const finding of upgradeDiagnostics.policyFindings) checks.push({
+      level: "warn",
+      name: `upgrade-policy:${finding.code}`,
+      detail: `${finding.summary}; changed=${finding.changed}; ${finding.recovery}`
+    });
+    if (upgradeDiagnostics.activeChangeEffects.length) checks.push({
+      level: "info",
+      name: "upgrade-active-changes",
+      detail: upgradeDiagnostics.activeChangeEffects.map((effect) =>
+        `${effect.changeId} (${effect.status}): ${effect.effects.join(", ")}; ${effect.recovery}`
+      ).join("; ")
     });
 
     const openspec = openSpecCliStatus(root);
@@ -315,6 +346,17 @@ export function createDiagnosticsRuntime({
       const workspace = state.workspace?.path || root;
       const contract = evidence(requestedChange);
       const selected = selectedRepositories(requestedChange, state);
+      if (deliveryObservation) {
+        const delivery = deliveryObservation(requestedChange, state);
+        if (shouldReportOutOfBandDelivery(state, delivery)) checks.push({
+          level: "warn",
+          name: "out-of-band-delivery",
+          detail: `change bytes or a recorded delivery reference are present while lifecycle=${
+            state.status}; this is not Proof or archive completion; recover with 'claude-foundation sandbox sync ${
+              requestedChange}', then re-prove and Land until archived`,
+          delivery: { authoritative: false, proofStatus: "unchanged", ...delivery }
+        });
+      }
       function collectRepositoryChecks() {
       for (const repository of selected) {
         const available = existsSync(repository.path);

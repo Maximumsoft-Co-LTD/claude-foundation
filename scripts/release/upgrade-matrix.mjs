@@ -62,7 +62,7 @@ function hostArtifact(host, target, codexHome) {
 
 function install(source, host, target, codexHome) {
   const env = { ...process.env, CODEX_HOME: codexHome };
-  run("bash", [join(source, installer(host)), target, "--source", source, "--yes"], { env });
+  return run("bash", [join(source, installer(host)), target, "--source", source, "--yes"], { env });
 }
 
 function unpackTag(tag, destination) {
@@ -86,12 +86,14 @@ function exercise({ tag, source, host, root, currentVersion }) {
     "change", "new", changeId, "--rapid"]);
   const userFile = join(target, "USER-OWNED-UPGRADE.txt");
   writeFileSync(userFile, `preserve ${tag} ${host}\n`);
-  install(ROOT, host, target, codexHome);
+  const upgradeOutput = install(ROOT, host, target, codexHome);
   const version = run("bash", [join(ROOT, "cli.sh"), "--project", target, "version"]).trim();
   const changes = run("bash", [join(ROOT, "cli.sh"), "--project", target, "changes"]);
   const checks = {
     freshInstall: existsSync(join(target, ".claude", "harness", "foundation.mjs")),
     activeChangeReadable: changes.includes(changeId),
+    activeChangeEffectsReported:
+      upgradeOutput.includes("active-change-effects:" + changeId),
     userOwnedFilePreserved: readFileSync(userFile, "utf8") === `preserve ${tag} ${host}\n`,
     currentRuntimeInstalled: version.includes(currentVersion),
     hostAdapterPresent: existsSync(hostArtifact(host, target, codexHome))

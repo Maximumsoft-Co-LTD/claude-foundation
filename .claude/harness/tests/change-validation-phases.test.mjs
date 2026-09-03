@@ -476,6 +476,11 @@ test("validation runtime orchestrates contract, state, advisory, and review phas
   assert.equal(fixture.saved.length, 1);
   assert.equal(fixture.handoffs[0].id, "change-a");
   assert.deepEqual(fixture.state.evidenceCapabilities, []);
+  assert.deepEqual(fixture.state.executionSurface, {
+    version: 2, taskCount: 1, claimCount: 1, providerCount: 0,
+    repositoryCount: 1, criticalCaseCount: 0, externalAuthorityCount: 0,
+    reviewTier: null, securityTriggerCount: 0
+  });
 
   fixture.state.declaredSurface = ["src/**"];
   fixture.contract.claims[0].impact = "high";

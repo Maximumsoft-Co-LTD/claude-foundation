@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "bash",
+        ".claude/tests/harness/run-feedback-diagnostics-tests.sh"
+      ],
+      "report": ".foundation/test-results/feedback-diagnostics.json",
+      "reportFormat": "json",
+      "minimum": 8,
+      "timeoutMs": 300000,
+      "env": {
+        "FOUNDATION_RESULT_REPORT": ".foundation/test-results/feedback-diagnostics.json"
+      },
+      "criticalCases": [
+        "source-cohort-differs",
+        "legacy-default-advisory",
+        "blocker-redaction",
+        "adapter-preflight",
+        "token-target-scales",
+        "continuation-preserved",
+        "delivery-drift-visible",
+        "delivery-not-proof"
+      ]
+    },
+    "compatibility": {
+      "capability": "compatibility",
+      "adapter": "command",
+      "command": [
+        "bash",
+        ".claude/tests/harness/run-upgrade-compat-tests.sh"
+      ],
+      "timeoutMs": 300000
+    },
+    "observability": {
+      "capability": "observability",
+      "adapter": "command",
+      "command": [
+        "node",
+        "--test",
+        ".claude/harness/tests/telemetry-append.test.mjs"
+      ],
+      "timeoutMs": 300000
+    },
+    "security-static": {
+      "capability": "security-static",
+      "adapter": "command",
+      "command": [
+        "node",
+        "--test",
+        ".claude/harness/tests/telemetry-append.test.mjs"
+      ],
+      "timeoutMs": 300000
+    },
+    "resilience": {
+      "capability": "resilience",
+      "adapter": "command",
+      "command": [
+        "node",
+        "--test",
+        ".claude/harness/tests/land-check-phases.test.mjs"
+      ],
+      "timeoutMs": 300000
+    },
+    "review": {
+      "adapter": "external"
+    }
+  },
+  "services": {}
+}

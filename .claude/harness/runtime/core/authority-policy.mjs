@@ -7,6 +7,64 @@ function ciConfigurationValid(config) {
     config.ci.publicKey.includes("PUBLIC KEY");
 }
 
+export function compiledExecutionSurfaceValue({
+  tasks = [], claims = [], providers = {}, repositories = [],
+  reviewTier = null, securityTriggerCount = 0
+} = {}) {
+  const providerRows = Object.values(providers || {});
+  return {
+    version: 2,
+    taskCount: tasks.length,
+    claimCount: claims.length,
+    providerCount: providerRows.length,
+    repositoryCount: repositories.length,
+    criticalCaseCount: providerRows.reduce((count, provider) =>
+      count + (Array.isArray(provider?.criticalCases)
+        ? provider.criticalCases.length : 0), 0),
+    externalAuthorityCount: providerRows.filter((provider) =>
+      provider?.adapter === "external").length,
+    reviewTier: ["low", "medium", "high"].includes(reviewTier) ? reviewTier : null,
+    securityTriggerCount: Math.max(0, Number(securityTriggerCount || 0))
+  };
+}
+
+export function executionSurfaceBudgetScale(profile = {}) {
+  const countScale = (count, floor, increment, maximum) => {
+    const value = Math.max(0, Number(count || 0));
+    return value > floor
+      ? Math.min(maximum, 1 + (value - floor) * increment) : 1;
+  };
+  return Math.max(
+    countScale(profile.taskCount, 2, 0.25, 3),
+    countScale(profile.claimCount, 4, 0.15, 3),
+    countScale(profile.providerCount, 4, 0.15, 2),
+    countScale(profile.repositoryCount, 1, 0.5, 3),
+    countScale(profile.criticalCaseCount, 2, 0.2, 2.5),
+    1
+  );
+}
+
+export function outOfBandDeliveryDriftValue({
+  changeId, state, recordedHead, currentHead, baseDecision, observation = null
+}) {
+  return {
+    ...baseDecision,
+    version: 1,
+    kind: "out-of-band-delivery-drift",
+    priorKind: baseDecision?.kind || "control-head-moved",
+    classification: "lifecycle-drift",
+    authoritative: false,
+    lifecycleStatus: state?.status || "unknown",
+    proofStatus: "unchanged",
+    recordedHead: recordedHead || null,
+    currentHead: currentHead || null,
+    observation,
+    summary: "The control target moved outside this Land transaction. A commit, merge, or deployment may have happened, but it is not Change Loop proof or lifecycle completion.",
+    recoveryCommand: `claude-foundation sandbox sync ${changeId}`,
+    completionRequirement: `re-prove if invalidated, then Land until ${changeId} is archived`
+  };
+}
+
 export function riskRequiresCi(state, reviewRisk = null) {
   if (state?.riskBasedCiRequired !== true) return false;
   if (reviewRisk?.tier === "high") return true;

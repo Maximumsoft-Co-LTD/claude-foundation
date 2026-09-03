@@ -10,6 +10,8 @@
   "agentPlanSchema": "4",
   "agentContractProtocol": "1",
   "contextEventSchema": "2",
+  "metricsSchema": "6",
+  "commandTelemetrySchema": "3",
   "reviewProtocol": "4",
   "acceptanceProtocol": "2",
   "semanticAcceptanceProtocol": "1",

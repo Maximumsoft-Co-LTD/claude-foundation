@@ -1072,7 +1072,7 @@ fi
 printf '{"version":1,"execution":{"tokenBudgets":{"rapid":10000,"standard":10000}}}\n' \
   > foundation.json
 budget_event="$(node .claude/harness/foundation.mjs event tiny-copy-edit \
-  --request req-token-limit --operation build --input 9838)"
+  --request req-token-limit --operation build --input 19838)"
 assert_contains "token budget asks the user without failing accounting" \
   "$budget_event" "OPERATOR_REQUIRED ASK_USER"
 assert_contains "the event names the user-decision boundary" \
@@ -1096,7 +1096,7 @@ assert_eq "continuation preserves lifetime usage" "4" \
 assert_eq "continuation resets only the active window" "0" \
   "$(jq -r '.budget.window.usedRequests' .foundation/runtime/tiny-copy-edit.json)"
 node .claude/harness/foundation.mjs event tiny-copy-edit \
-  --request req-second-limit --operation build --input 10001 >/dev/null
+  --request req-second-limit --operation build --input 20001 >/dev/null
 if node .claude/harness/foundation.mjs budget-continue tiny-copy-edit \
   --reason "second required attempt" --run tiny-copy-edit \
   --decision-ref fixture://user/continue-second-attempt >/dev/null 2>&1; then
@@ -1105,7 +1105,7 @@ else
   fail "active run can extend its budget twice with separate operator approval"
 fi
 node .claude/harness/foundation.mjs event tiny-copy-edit \
-  --request req-third-limit --operation build --input 10001 >/dev/null
+  --request req-third-limit --operation build --input 20001 >/dev/null
 if node .claude/harness/foundation.mjs budget-continue tiny-copy-edit \
   --reason "third required attempt" --run tiny-copy-edit \
   --decision-ref fixture://user/continue-third-attempt >/dev/null 2>&1; then
@@ -1114,7 +1114,7 @@ else
   fail "active run can use the configured third continuation"
 fi
 node .claude/harness/foundation.mjs event tiny-copy-edit \
-  --request req-continuation-ceiling --operation build --input 10001 >/dev/null
+  --request req-continuation-ceiling --operation build --input 20001 >/dev/null
 if node .claude/harness/foundation.mjs budget-continue tiny-copy-edit \
   --reason "fourth required attempt" --run tiny-copy-edit \
   --decision-ref fixture://user/continue-fourth-attempt >/dev/null 2>&1; then
@@ -1188,7 +1188,7 @@ assert_eq "session rollover preserves lifetime but resets run usage" "1" \
 # lifecycle commands. Telemetry is ingested and warns while the requested
 # packet/readiness/proof command remains resumable and can reuse prior evidence.
 printf '%s\n' \
-  '{"type":"assistant","requestId":"over-budget-before-prove","message":{"id":"over-budget","role":"assistant","model":"claude-test","usage":{"input_tokens":10011,"output_tokens":7}}}' \
+  '{"type":"assistant","requestId":"over-budget-before-prove","message":{"id":"over-budget","role":"assistant","model":"claude-test","usage":{"input_tokens":20011,"output_tokens":7}}}' \
   >> "$BOUND_TRANSCRIPT"
 resume_packet="$(FOUNDATION_CLAUDE_SESSION_ID=bound-session \
   FOUNDATION_CLAUDE_TRANSCRIPT_PATH="$BOUND_TRANSCRIPT" \

@@ -6,6 +6,7 @@
   "requirements": [
     "fresh-install",
     "active-change-readable",
+    "active-change-effects-reported",
     "user-owned-file-preserved",
     "current-runtime-installed",
     "host-adapter-present"

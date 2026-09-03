@@ -25,15 +25,81 @@ export function commandTelemetryStatus(code, blocked) {
   return code === 0 ? "completed" : blocked ? "blocked" : "failed";
 }
 
+const BLOCKER_KINDS = Object.freeze([
+  {
+    code: "budget-exhausted", classification: "budget",
+    pattern: /budget|token|request limit|allowance/i,
+    summary: "Measured execution allowance requires an explicit continuation decision",
+    recovery: (id) => `claude-foundation budget checkpoint ${id}`
+  },
+  {
+    code: "authority-required", classification: "authority",
+    pattern: /authority|approval|acceptance|review receipt|decision-ref/i,
+    summary: "Required external authority has not been recorded",
+    recovery: (id) => `claude-foundation authority status ${id}`
+  },
+  {
+    code: "resource-conflict", classification: "resource-conflict",
+    pattern: /conflict|lease|already active|scope path|resource/i,
+    summary: "Another active operation owns a conflicting resource",
+    recovery: (id) => `claude-foundation agents plan ${id} --pretty`
+  },
+  {
+    code: "workspace-boundary", classification: "workspace",
+    pattern: /workspace|sandbox|base move|outside.*scope|undeclared path/i,
+    summary: "The isolated workspace or declared write boundary is not ready",
+    recovery: (id) => `claude-foundation sandbox sync ${id}`
+  },
+  {
+    code: "contract-invalid", classification: "contract",
+    pattern: /protocol|provider|adapter|criticalcase|critical case|evidence|claim|contract/i,
+    summary: "The executable change or evidence contract is incomplete",
+    recovery: (id) => `claude-foundation change validate ${id}`
+  }
+]);
+
+function safeChangeId(value) {
+  const id = String(value || "");
+  return /^[a-z0-9][a-z0-9-]*$/.test(id) ? id : "<change>";
+}
+
+function safeLifecyclePhase(value) {
+  const phase = String(value || "").toLowerCase();
+  return ["change", "build", "prove", "review", "land"].includes(phase)
+    ? phase : "build";
+}
+
+export function blockerTelemetryValue(message, context = {}) {
+  const source = String(message || "");
+  const kind = BLOCKER_KINDS.find((candidate) => candidate.pattern.test(source)) || {
+    code: "policy-guard", classification: "policy",
+    summary: "A Change Loop policy guard stopped the operation",
+    recovery: (id) => `claude-foundation packet ${id} --phase ${safeLifecyclePhase(context.phase)}`
+  };
+  const operation = String(context.operationName || "unknown")
+    .replace(/[^a-z0-9-]/gi, "-").slice(0, 64) || "unknown";
+  return {
+    code: kind.code,
+    classification: kind.classification,
+    summary: kind.summary,
+    recovery: kind.recovery(safeChangeId(context.changeId)),
+    fingerprint: `sha256:${createHash("sha256")
+      .update(`${kind.code}\0${operation}`).digest("hex")}`
+  };
+}
+
 export function commandTelemetryRow(context, code) {
   const inspection = context.readOnlyOperations.has(context.operationName);
+  const status = commandTelemetryStatus(code, context.blocked);
   return {
-    version: 2,
+    version: 3,
     changeId: context.changeId,
     operation: context.operationName,
     kind: inspection ? "inspection" : "lifecycle",
     phase: context.publicOperation || context.operationPhase || null,
-    status: commandTelemetryStatus(code, context.blocked),
+    status,
+    blocker: status === "blocked"
+      ? context.blocker || blockerTelemetryValue("", context) : null,
     exitCode: code,
     startedAt: new Date(context.operationStartedAt).toISOString(),
     finishedAt: context.now(),

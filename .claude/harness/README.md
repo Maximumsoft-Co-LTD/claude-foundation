@@ -577,11 +577,16 @@ and archived event counts, median, p95, and maximum by kind.
 Request and token limits apply to an active run window; lifetime usage remains
 available for cost reporting. Targets come from `foundation.json`
 (`execution.requestBudgets`, `execution.tokenBudgets`, keyed by lane) and are
-derived on every read: a change resolved to high impact widens its request
-target by 1.5x, including the window it is already spending from, because
-requests bind long before tokens on high-impact work. A declared `--size`
-widens the same lane (`xs` 0.5x, `s` 1x, `m` 1.5x, `l` 2x); size and impact
-combine by the larger of the two, never by multiplying them together. Only a window opened by
+derived on every read: impact, size, coupling, review tier, and security can
+widen both targets, including the window it is already spending from.
+A validated change stores a compiled execution-surface summary (task, claim,
+provider, repository, critical-case, and external-authority counts); its widest
+factor widens both request and token targets. The shared factors also include
+declared `--size` (`xs` 0.5x, `s` 1x, `m` 1.5x, `l` 2x), impact, coupling,
+review tier, and security. Metrics schema 6 reports the non-secret inputs,
+factor values, selected scale, and limiting factors. Factors use the maximum,
+never multiplication. Only a
+window opened by
 `budget continue` keeps its granted numbers. At 85% the packet enters `completion-only`: it
 forbids speculative investigation, scope expansion, optional refactors, and new
 subagents while allowing focused fixes and required proof work. Crossing 100%
@@ -598,6 +603,14 @@ the policy gate; counters and requirements are never deleted or silently reset.
 `budget checkpoint` makes that pause resumable: it reports measured capacity,
 remaining tasks/provider blockers, the user prompt, and the command to run after
 an approved continuation without pretending to forecast unknown model demand.
+
+A control-target HEAD move remains `control-head-moved` unless target bytes
+match the change projection or an explicit external delivery reference exists.
+Only that observed containment/reference is `out-of-band-delivery-drift`;
+`doctor --change <id>` reports it during pre-apply lifecycle states. Change Loop
+never converts the signal into proof, authority, or completion. Sync the
+sandbox, re-prove if the workspace identity changed, and continue Land until
+the change is `archived`.
 
 Claude request telemetry is request-owned, not tool-owned. The `SessionStart`
 hook exposes only `session_id` and `transcript_path` to later Change Loop

@@ -7,10 +7,56 @@ import { targetHeadMovedDecision } from "./apply-recovery.mjs";
 import {
   compileLandPreparation, landPreparationMatches
 } from "../core/graph-execution.mjs";
-import { riskRequiresCi } from "../core/authority-policy.mjs";
+import {
+  outOfBandDeliveryDriftValue, riskRequiresCi
+} from "../core/authority-policy.mjs";
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 
 export { riskRequiresCi } from "../core/authority-policy.mjs";
+
+export function recordedDeliveryReferences(state) {
+  const explicit = Array.isArray(state?.deliveryReferences)
+    ? state.deliveryReferences : [];
+  const repository = Object.entries(state?.repositories || {}).flatMap(
+    ([repositoryId, runtime]) => runtime?.land?.commit &&
+      runtime.land.authority?.kind !== "host-user-decision"
+      ? [{ repositoryId, commit: runtime.land.commit }] : []);
+  return [...explicit, ...repository];
+}
+
+export function targetProjectionObservationValue({
+  root, state, git, fileDigest, pathExists = existsSync
+}) {
+  const workspace = state?.workspace;
+  if (workspace?.mode !== "worktree" || !workspace.path || !workspace.baseHead)
+    return { observed: false, paths: [], reason: "workspace-not-comparable" };
+  const tracked = git(["diff", "--name-only", "-z", workspace.baseHead, "--"], workspace.path);
+  const untracked = git([
+    "ls-files", "--others", "--exclude-standard", "-z", "--"
+  ], workspace.path);
+  if (tracked.status !== 0 || untracked.status !== 0)
+    return { observed: false, paths: [], reason: "workspace-diff-unavailable" };
+  const paths = [...new Set(`${tracked.stdout || ""}\0${untracked.stdout || ""}`
+    .split("\0").filter(Boolean))].sort();
+  if (!paths.length)
+    return { observed: false, paths: [], reason: "empty-change-projection" };
+  const matching = paths.filter((path) => {
+    const source = join(workspace.path, path);
+    const target = join(root, path);
+    const sourceExists = pathExists(source);
+    const targetExists = pathExists(target);
+    if (!sourceExists || !targetExists) return sourceExists === targetExists;
+    try { return fileDigest(source) === fileDigest(target); }
+    catch { return false; }
+  });
+  return {
+    observed: matching.length === paths.length,
+    paths: matching,
+    expectedPathCount: paths.length,
+    reason: matching.length === paths.length
+      ? "target-matches-change-projection" : "target-does-not-match-change-projection"
+  };
+}
 
 const OPENSPEC_REQUIRED_MAJOR = 1;
 const OPENSPEC_TESTED_MINOR = 7;
@@ -377,6 +423,7 @@ export function createLandRuntime({
   executionContract = null,
   now,
   blockWithDecision,
+  deliveryObservation = null,
   fail
 }) {
   function assertLandTargetReady(id, state) {
@@ -406,14 +453,27 @@ export function createLandRuntime({
     assertNoDroppedScenarios(id);
     assertOpenSpecCli(root, fail);
     if (state.workspace?.mode === "worktree" && !state.workspace.applied &&
-        gitHead(root) !== state.workspace.baseHead)
-      blockWithDecision(id, "control-head-moved", targetHeadMovedDecision({
-        changeId: id,
-        recordedBase: state.workspace.baseHead,
-        currentHead: gitHead(root),
-        multiRepository: Object.keys(state.repositories || {}).length > 1,
-        action: "Landing"
-      }));
+        gitHead(root) !== state.workspace.baseHead) {
+      const baseDecision = targetHeadMovedDecision({
+          changeId: id,
+          recordedBase: state.workspace.baseHead,
+          currentHead: gitHead(root),
+          multiRepository: Object.keys(state.repositories || {}).length > 1,
+          action: "Landing"
+        });
+      const projection = deliveryObservation?.(id, state) ||
+        { observed: false, paths: [], reason: "observation-unavailable" };
+      const references = recordedDeliveryReferences(state);
+      const decision = projection.observed || references.length
+        ? outOfBandDeliveryDriftValue({
+          changeId: id, state,
+          recordedHead: state.workspace.baseHead,
+          currentHead: gitHead(root), baseDecision,
+          observation: { projection, references }
+        })
+        : baseDecision;
+      blockWithDecision(id, "control-head-moved", decision);
+    }
   }
 
   function assertReadOnlyLandDependencies(id, state) {

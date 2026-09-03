@@ -79,6 +79,7 @@ test("land check phases preserve every refusal and ready route", () => {
         provenance: { source: options.signedCi ? "signed-ci:test" : "harness-test" }
       })}\n`);
     const written = [];
+    const decisions = [];
     const runtime = createLandRuntime({
       root,
       transactions: join(root, "transactions"),
@@ -127,10 +128,16 @@ test("land check phases preserve every refusal and ready route", () => {
       executionContract: options.executionContract
         ? () => options.executionContract : null,
       now: () => "2026-08-26T00:00:00Z",
-      blockWithDecision: (_id, code) => { throw new Error(`decision:${code}`); },
+      blockWithDecision: (_id, code, decision) => {
+        decisions.push({ code, decision });
+        throw new Error(`decision:${code}`);
+      },
+      deliveryObservation: () => options.deliveryObservation || {
+        observed: false, paths: [], reason: "target-does-not-match-change-projection"
+      },
       fail: (message) => { throw new Error(message); }
     });
-    return { id, runtime, state, proof, written };
+    return { id, runtime, state, proof, written, decisions };
   };
 
   const output = [];
@@ -159,6 +166,19 @@ test("land check phases preserve every refusal and ready route", () => {
       rootHead: "moved"
     });
     assert.throws(() => moved.runtime.landCheck(moved.id), /decision:control-head-moved/);
+    assert.equal(moved.decisions[0].decision.kind, "control-head-moved");
+    const delivered = make({
+      state: { workspace: { mode: "worktree", applied: false, baseHead: "base" } },
+      rootHead: "moved",
+      deliveryObservation: { observed: true, paths: ["changed.js"], expectedPathCount: 1 }
+    });
+    assert.throws(() => delivered.runtime.landCheck(delivered.id), /decision:control-head-moved/);
+    assert.equal(delivered.decisions[0].decision.kind, "out-of-band-delivery-drift");
+    assert.equal(delivered.decisions[0].decision.authoritative, false);
+    assert.equal(delivered.decisions[0].decision.lifecycleStatus, "proven");
+    assert.equal(delivered.decisions[0].decision.proofStatus, "unchanged");
+    assert.match(delivered.decisions[0].decision.recoveryCommand,
+      /sandbox sync land-/);
     const stableWorktree = make({
       state: { workspace: { mode: "worktree", applied: false, baseHead: "base" } },
       rootHead: "base"

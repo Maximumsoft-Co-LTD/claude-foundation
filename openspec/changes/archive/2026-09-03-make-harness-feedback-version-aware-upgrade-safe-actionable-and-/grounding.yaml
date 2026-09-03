@@ -1,0 +1,599 @@
+{
+  "version": 2,
+  "decisionBatch": {
+    "status": "locked",
+    "source": "user-batch",
+    "reference": "conversation-2026-09-03-consolidate-four-feedback-improvements",
+    "mode": "single-batch",
+    "lockedAt": "2026-09-03T12:00:00+07:00",
+    "decisions": [
+      {
+        "id": "feedback-scope",
+        "question": "Should the four feedback workstreams be separate changes or one coordinated contract?",
+        "answer": "One standard change with four dependency-ordered implementation tasks.",
+        "source": "user-batch"
+      },
+      {
+        "id": "compatibility-boundary",
+        "question": "May the work rewrite old project policy or infer delivery authority?",
+        "answer": "No; preserve project-owned configuration and require explicit audited decisions for migration or reconciliation.",
+        "source": "recommended-default"
+      }
+    ]
+  },
+  "risk": {
+    "tier": "high",
+    "classes": [
+      "public-compatibility",
+      "privacy"
+    ],
+    "rationale": "The change modifies versioned metrics and operation records, upgrade behavior, evidence validation, budget authority, and Land diagnostics across supported historical releases."
+  },
+  "semanticInvariants": [
+    {
+      "id": "INV-SOURCE-COHORT",
+      "statement": "Producer provenance distinguishes different source bytes even when their semantic version is equal.",
+      "decisionIds": [
+        "compatibility-boundary"
+      ],
+      "claimIds": [
+        "exact-source-cohort-provenance"
+      ],
+      "specScenarios": [
+        "Same version carries different source bytes"
+      ]
+    },
+    {
+      "id": "INV-EXPLICIT-LEGACY-MIGRATION",
+      "statement": "A supported upgrade never rewrites project-owned policy without an explicit user decision.",
+      "decisionIds": [
+        "compatibility-boundary"
+      ],
+      "claimIds": [
+        "legacy-default-upgrade-is-explicit"
+      ],
+      "specScenarios": [
+        "Former risk-based CI default survives upgrade"
+      ]
+    },
+    {
+      "id": "INV-BUDGET-AUTHORITY",
+      "statement": "Recalibration preserves measured lifetime usage and never enlarges an explicitly granted continuation window.",
+      "decisionIds": [
+        "compatibility-boundary"
+      ],
+      "claimIds": [
+        "execution-surface-calibrates-budget"
+      ],
+      "specScenarios": [
+        "Audited continuation survives recalibration"
+      ]
+    }
+  ],
+  "productionEntry": {
+    "status": "applicable",
+    "sourceReason": "Installed users enter these behaviors through foundation.mjs, install.sh, doctor, metrics, change validate, and Land.",
+    "paths": [
+      {
+        "repository": "root",
+        "path": "install.sh"
+      },
+      {
+        "repository": "root",
+        "path": ".claude/harness/runtime/core/diagnostics-runtime.mjs"
+      },
+      {
+        "repository": "root",
+        "path": ".claude/harness/runtime/workflow/change-validation.mjs"
+      },
+      {
+        "repository": "root",
+        "path": ".claude/harness/runtime/workflow/land-runtime.mjs"
+      }
+    ]
+  },
+  "realWire": {
+    "status": "applicable",
+    "sourceReason": "Metrics and operations JSONL are persisted local contracts consumed by feedback reports, while the runtime-observability specification defines their compatibility boundary.",
+    "contracts": [
+      {
+        "repository": "root",
+        "path": "openspec/specs/runtime-observability/spec.md"
+      }
+    ]
+  },
+  "activationSemantics": {
+    "status": "applicable",
+    "sourceReason": "Installing the resulting release activates new additive diagnostics and validation for both fresh and supported existing changes.",
+    "activatedPaths": [
+      {
+        "repository": "root",
+        "path": "install.sh"
+      },
+      {
+        "repository": "root",
+        "path": ".claude/harness/runtime/core/diagnostics-runtime.mjs"
+      },
+      {
+        "repository": "root",
+        "path": ".claude/harness/runtime/observability/telemetry-runtime.mjs"
+      }
+    ],
+    "failureSemanticChanges": [
+      "Invalid critical-case adapter wiring fails during Change instead of after evidence execution",
+      "Known legacy defaults and out-of-band delivery become explicit diagnostics rather than inferred report commentary"
+    ]
+  },
+  "serviceInteractions": {
+    "status": "applicable",
+    "sourceReason": "The runtime produces persisted metrics and operation records that the report skill and local operator diagnostics consume across a versioned contract boundary.",
+    "rows": [
+      {
+        "id": "feedback-diagnostics-wire",
+        "owner": "Change Loop maintainers",
+        "producer": "Foundation runtime metrics and operation recorder",
+        "consumer": "harness HTML report, doctor, and local operator tooling",
+        "contract": "additive source-cohort, typed blocker, and budget-calibration fields under the pinned protocol bundle",
+        "delivery": "atomic local JSON or append-only JSONL persisted under .foundation",
+        "timeoutRetry": "local read failure remains unavailable and is retried only on the next explicit inspection",
+        "idempotency": "source cohort plus change, revision, operation, and decision fingerprint identities",
+        "ordering": "operation rows append after command completion; reports read the retained ledger without mutating it",
+        "consistency": "older rows remain readable and absent additive fields remain unavailable rather than inferred",
+        "rollout": "ship schema, producer, consumer, installer, and upgrade coverage in one release cohort",
+        "rollback": "restore the prior installed runtime while preserving additive retained rows and project-owned state"
+      }
+    ]
+  },
+  "observability": {
+    "status": "applicable",
+    "sourceReason": "The local producer-consumer boundary must reveal exact provenance, blocker cause, and recovery without inventing missing data.",
+    "rows": [
+      {
+        "interactionId": "feedback-diagnostics-wire",
+        "correlation": "change ID, lifecycle revision, operation identity, decision fingerprint, and source cohort",
+        "structuredEvents": "additive metrics provenance, typed blocked operation fields, budget calibration inputs, and delivery-drift diagnostics",
+        "sli": "new reports with exact source cohort and known blockers with a typed recovery route",
+        "alert": "none; local diagnostics are inspected on demand",
+        "runbook": "run doctor for the active phase, inspect metrics/report provenance, and execute only the emitted recovery route",
+        "operatorQuestion": "which runtime produced this result, why is it blocked, and what supported action resumes it?"
+      }
+    ]
+  },
+  "nfrAssessment": {
+    "performance": {
+      "status": "not-applicable",
+      "sourceReason": "The work adds bounded local metadata and diagnostics outside provider hot paths; no new latency or throughput contract is required.",
+      "target": "none",
+      "claimIds": []
+    },
+    "capacity": {
+      "status": "not-applicable",
+      "sourceReason": "Operation rows remain one bounded record per command and no new retained unbounded collection is introduced.",
+      "target": "none",
+      "claimIds": []
+    },
+    "availability": {
+      "status": "applicable",
+      "sourceReason": "Recovery diagnostics must remain available when an upgrade or out-of-band target movement makes the current lifecycle state inconsistent.",
+      "target": "Doctor and Land inspection return a deterministic diagnostic and recovery route without requiring a remote service.",
+      "claimIds": [
+        "legacy-default-upgrade-is-explicit",
+        "out-of-band-delivery-remains-non-authoritative"
+      ],
+      "taskIds": [
+        "T002",
+        "T004"
+      ],
+      "provider": "resilience"
+    },
+    "securityPrivacy": {
+      "status": "applicable",
+      "sourceReason": "Persisted blocker diagnostics must not copy secrets or user-controlled terminal content into retained logs.",
+      "target": "Only package-defined bounded blocker fields are persisted; hostile raw error text is absent from the operation row.",
+      "claimIds": [
+        "blocked-operations-carry-safe-recovery"
+      ],
+      "taskIds": [
+        "T003"
+      ],
+      "provider": "security-static"
+    },
+    "accessibility": {
+      "status": "not-applicable",
+      "sourceReason": "No interactive visual interface or user-input control is introduced.",
+      "target": "none",
+      "claimIds": []
+    },
+    "operability": {
+      "status": "applicable",
+      "sourceReason": "The outcome is specifically to make version skew, blockers, budgets, and lifecycle drift actionable to operators.",
+      "target": "Every newly blocked typed boundary exposes one source cohort, reason classification, and supported next action when those facts are available.",
+      "claimIds": [
+        "exact-source-cohort-provenance",
+        "blocked-operations-carry-safe-recovery",
+        "out-of-band-delivery-remains-non-authoritative"
+      ],
+      "taskIds": [
+        "T001",
+        "T003",
+        "T004"
+      ],
+      "provider": "observability"
+    },
+    "compatibility": {
+      "status": "applicable",
+      "sourceReason": "The change alters shipped schemas, installer diagnostics, and active-change behavior across the supported upgrade range.",
+      "target": "Every supported tag from v3.2.19 through the prior stable release upgrades with its active change readable, user-owned files preserved, and additive records accepted.",
+      "claimIds": [
+        "exact-source-cohort-provenance",
+        "legacy-default-upgrade-is-explicit",
+        "execution-surface-calibrates-budget"
+      ],
+      "taskIds": [
+        "T001",
+        "T002",
+        "T004"
+      ],
+      "provider": "compatibility"
+    },
+    "recoverability": {
+      "status": "applicable",
+      "sourceReason": "Legacy configuration and out-of-band delivery both require a non-destructive route back to a coherent lifecycle.",
+      "target": "Diagnostics preserve active state and emit an explicit audited migration or reconciliation route without granting Proof or Land authority.",
+      "claimIds": [
+        "legacy-default-upgrade-is-explicit",
+        "out-of-band-delivery-remains-non-authoritative"
+      ],
+      "taskIds": [
+        "T002",
+        "T004"
+      ],
+      "provider": "resilience"
+    }
+  },
+  "readSet": [
+    {
+      "repository": "root",
+      "path": "openspec/specs/runtime-observability/spec.md",
+      "role": "contract",
+      "mode": "full",
+      "sha256": "d3af36f901eb3688cbdfc2f979aae06b116938c3c1942f070beeaaf2bdd4a62a"
+    },
+    {
+      "repository": "root",
+      "path": "openspec/specs/update-advisory/spec.md",
+      "role": "requirement",
+      "mode": "full",
+      "sha256": "6e2d9fe7fc7d5abe3a571d771e4615d26985c69562afc05cd29bb0909e8acf80"
+    },
+    {
+      "repository": "root",
+      "path": "openspec/specs/change-validation/spec.md",
+      "role": "requirement",
+      "mode": "full",
+      "sha256": "ba5169f9781b4668f420369b3de13b81740f0ee8b4636fb3ff850160f91dc8b1"
+    },
+    {
+      "repository": "root",
+      "path": "openspec/specs/land/spec.md",
+      "role": "requirement",
+      "mode": "full",
+      "sha256": "cbb6fdae52e4cb025e70be80ece45ab3e322ddc1453a1440e2818657bb6baa0e"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/observability/metrics-runtime.mjs",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "1b0a4e7b1b578950dd077cd51c18ad40efbd8179b561f54e8e776a06072ecbd3"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/observability/telemetry-runtime.mjs",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "4cb9d25ae8519d166cc80fe8880777c8f6fb5833b0c4d3619141e150064b08d8"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/workflow/budget.mjs",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "b060ac5c54631c8fea81dc952796080f52d3dffa381d36ee728e2cbe93ec12ec"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/core/diagnostics-runtime.mjs",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "287750fac34cb123102c46d5d50637402125ab425fd4fbeb71beadc2132357e3"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/evidence/evidence-contract.mjs",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "37ad9c5d202a324dcf4a3d2aaf0ffd9980d69947caa7d32406b7584d52485597"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/workflow/land-runtime.mjs",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "abe7439e313bc665abb532518655b40ee976cac00502cc8920ae0444b20e03e4"
+    },
+    {
+      "repository": "root",
+      "path": "install.sh",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "fd0df2d4e5c056335a6dbfcf7ad6b778c856785af4d1fc062d44c311230651e0"
+    },
+    {
+      "repository": "root",
+      "path": "scripts/release/upgrade-matrix.mjs",
+      "role": "test-topology",
+      "mode": "full",
+      "sha256": "9be30525bfa39334d4f038c23bbda8fb50a30b780dbbdf474115afcf9a921393"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/foundation.mjs",
+      "role": "composition-root",
+      "mode": "full",
+      "sha256": "bec7b33122b7686c5cd773c4d4cacc7295185e902b23ca100abdbc34129d4412"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/protocol.json",
+      "role": "runtime-path",
+      "mode": "full",
+      "sha256": "49dd87226f005180217f2029dbee23e297bc1d2c6f2590d8f635763e5b421b5b"
+    },
+    {
+      "repository": "root",
+      "path": "scripts/release/supported-upgrades.json",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "138375f84303e2e34de90d3d04ea3c587c9f2beac4954a854adf6a95ce0b0a73"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/core/authority-policy.mjs",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "68f455a1e0d84b62d730169620ce45237b8aa2597569fbb3de6ec2b3b29209b4"
+    },
+    {
+      "repository": "root",
+      "path": "package-lock.json",
+      "role": "dependency-source",
+      "mode": "full",
+      "sha256": "61ebeb8ed9271ed3d7975ddd839af8d216ee54426ab8c1491acda6a8ac6a3ca5"
+    },
+    {
+      "repository": "root",
+      "path": "docs/ROADMAP.md",
+      "role": "architecture",
+      "mode": "full",
+      "sha256": "05c32cb2b9c1468a83128d25da525185ddc866992aaa2ac77fc078065a37481a"
+    },
+    {
+      "repository": "root",
+      "path": ".claude/harness/runtime/workflow/change-validation.mjs",
+      "role": "production-path",
+      "mode": "full",
+      "sha256": "5c8867960d8cded50df1580e716295be09a50ab90959a3c46aa396976f32a304"
+    }
+  ],
+  "claims": [
+    {
+      "id": "exact-source-cohort-provenance",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/observability/metrics-runtime.mjs"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/foundation.mjs",
+          "failure": "semantic version matches but protocol or managed source bytes differ"
+        }
+      ],
+      "evidenceClass": [
+        "test",
+        "review"
+      ],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "legacy-default-upgrade-is-explicit",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": "install.sh"
+        },
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/core/diagnostics-runtime.mjs"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": "install.sh",
+          "failure": "former packaged default is indistinguishable from deliberate project policy"
+        }
+      ],
+      "evidenceClass": [
+        "test",
+        "review"
+      ],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "blocked-operations-carry-safe-recovery",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/observability/telemetry-runtime.mjs"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/observability/telemetry-runtime.mjs",
+          "failure": "blocked command contains secret-shaped or user-controlled raw error text"
+        }
+      ],
+      "evidenceClass": [
+        "test",
+        "security",
+        "review"
+      ],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "critical-case-adapters-fail-early",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/evidence/evidence-contract.mjs"
+        },
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/workflow/change-validation.mjs"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/evidence/evidence-contract.mjs",
+          "failure": "provider declares critical cases but only unstructured exit status is observable"
+        }
+      ],
+      "evidenceClass": [
+        "test",
+        "review"
+      ],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "execution-surface-calibrates-budget",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/workflow/budget.mjs"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/workflow/budget.mjs",
+          "failure": "large claim and provider surface retains the small default token target or rewrites an audited continuation"
+        }
+      ],
+      "evidenceClass": [
+        "test",
+        "review"
+      ],
+      "testDoubleGap": "none"
+    },
+    {
+      "id": "out-of-band-delivery-remains-non-authoritative",
+      "productionPath": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/workflow/land-runtime.mjs"
+        }
+      ],
+      "failurePaths": [
+        {
+          "repository": "root",
+          "path": ".claude/harness/runtime/core/authority-policy.mjs",
+          "failure": "target contains change bytes while required evidence or authority remains incomplete"
+        }
+      ],
+      "evidenceClass": [
+        "test",
+        "review"
+      ],
+      "testDoubleGap": "none"
+    }
+  ],
+  "criticalCases": [
+    {
+      "id": "source-cohort-differs",
+      "claimIds": [
+        "exact-source-cohort-provenance"
+      ],
+      "oracle": "contract-oracle"
+    },
+    {
+      "id": "legacy-default-advisory",
+      "claimIds": [
+        "legacy-default-upgrade-is-explicit"
+      ],
+      "oracle": "failure-path"
+    },
+    {
+      "id": "blocker-redaction",
+      "claimIds": [
+        "blocked-operations-carry-safe-recovery"
+      ],
+      "oracle": "failure-path"
+    },
+    {
+      "id": "adapter-preflight",
+      "claimIds": [
+        "critical-case-adapters-fail-early"
+      ],
+      "oracle": "failure-path"
+    },
+    {
+      "id": "token-target-scales",
+      "claimIds": [
+        "execution-surface-calibrates-budget"
+      ],
+      "oracle": "contract-oracle"
+    },
+    {
+      "id": "continuation-preserved",
+      "claimIds": [
+        "execution-surface-calibrates-budget"
+      ],
+      "oracle": "failure-path"
+    },
+    {
+      "id": "delivery-drift-visible",
+      "claimIds": [
+        "out-of-band-delivery-remains-non-authoritative"
+      ],
+      "oracle": "real-wire"
+    },
+    {
+      "id": "delivery-not-proof",
+      "claimIds": [
+        "out-of-band-delivery-remains-non-authoritative"
+      ],
+      "oracle": "failure-path"
+    }
+  ],
+  "mutants": [],
+  "derivedFacts": [
+    {
+      "fact": "The supported upgrade matrix starts at v3.2.19 and requires active-change readability and user-owned file preservation.",
+      "command": "sed -n '1,40p' scripts/release/supported-upgrades.json"
+    },
+    {
+      "fact": "Current command telemetry rows record blocked status and exit code but no typed blocker reason or recovery route.",
+      "command": "sed -n '24,75p' .claude/harness/runtime/observability/telemetry-runtime.mjs"
+    },
+    {
+      "fact": "Current budget sizing scales request targets but leaves token targets at the lane default.",
+      "command": "sed -n '50,82p' .claude/harness/runtime/workflow/budget.mjs"
+    }
+  ]
+}

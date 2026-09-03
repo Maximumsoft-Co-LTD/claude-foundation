@@ -1,0 +1,68 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "exact-source-cohort-provenance",
+      "scenario": "Metrics and feedback reports distinguish a tagged release from different source bytes that share its semantic version",
+      "impact": "high",
+      "capabilities": [
+        "test",
+        "compatibility",
+        "observability",
+        "review"
+      ]
+    },
+    {
+      "id": "legacy-default-upgrade-is-explicit",
+      "scenario": "A supported upgrade identifies former packaged defaults and active-change consequences without overwriting intentional project policy",
+      "impact": "high",
+      "capabilities": [
+        "test",
+        "compatibility",
+        "resilience",
+        "review"
+      ]
+    },
+    {
+      "id": "blocked-operations-carry-safe-recovery",
+      "scenario": "A blocked lifecycle operation records one redacted typed cause and exact recovery route without copying hostile terminal content",
+      "impact": "high",
+      "capabilities": [
+        "test",
+        "observability",
+        "security-static",
+        "review"
+      ]
+    },
+    {
+      "id": "critical-case-adapters-fail-early",
+      "scenario": "Change validation rejects a provider that declares critical cases through an adapter or report format unable to observe them",
+      "impact": "high",
+      "capabilities": [
+        "test",
+        "review"
+      ]
+    },
+    {
+      "id": "execution-surface-calibrates-budget",
+      "scenario": "Initial request and token targets reflect tasks, claims, providers, repositories, review risk, and security triggers while existing measured usage is preserved",
+      "impact": "high",
+      "capabilities": [
+        "test",
+        "compatibility",
+        "review"
+      ]
+    },
+    {
+      "id": "out-of-band-delivery-remains-non-authoritative",
+      "scenario": "Repository delivery observed before archive is reported as lifecycle drift and cannot satisfy Proof, authority, or archive completion",
+      "impact": "high",
+      "capabilities": [
+        "test",
+        "resilience",
+        "observability",
+        "review"
+      ]
+    }
+  ]
+}

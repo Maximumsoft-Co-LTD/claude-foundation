@@ -19,6 +19,11 @@ The product is **Change Loop**; the installed package and CLI remain
 
 **Version 3.5.0** — runtime API 26, provider protocol 13. Receipts recorded by
 earlier versions read as `provider-version-stale` and must be re-proven.
+`claude-foundation metrics <change-id>` also reports the exact runtime source
+cohort: semantic version, the loaded protocol bundle, and a SHA-256 digest of
+the installed `.claude/harness` files. Use the complete cohort—not the version
+label alone—when comparing reports from installations that may be on different
+patches or source revisions.
 
 ## Where to start
 
@@ -726,6 +731,10 @@ task and review packets, 12 KiB repository packets, and a 16 KiB global packet;
 45-minute leases; and separate rapid/standard budgets of 800,000/1,600,000
 tokens and 100/200 requests. These are ceilings, not targets—ordinary small
 changes normally stay with one agent.
+Validation calibrates both lanes from the widest non-secret impact, size,
+coupling, review, security, repository, provider, task, claim, or critical-case
+factor. `metrics` reports those inputs, the selected scale, and its limiting
+factor; an explicitly granted continuation keeps its original allowance.
 
 The shipped `foundation.json` commits `independence: "self"` and
 `diversity: "single-model"`. These are explicit assurance waivers: review may

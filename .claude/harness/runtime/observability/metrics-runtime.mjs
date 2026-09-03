@@ -1,8 +1,32 @@
-import { existsSync, readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, readdirSync, readlinkSync } from "node:fs";
 import { join } from "node:path";
 import { measuredNumber } from "../core/measured-number.mjs";
 import { createModelDriftInspector } from "./host-execution-contract.mjs";
 import { commandProfile } from "./operation-profile.mjs";
+
+export function runtimeSourceDigest(directory) {
+  const digest = createHash("sha256");
+  const visit = (absolute, relative = "") => {
+    for (const entry of readdirSync(absolute, { withFileTypes: true })
+      .sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)) {
+      const childRelative = relative ? `${relative}/${entry.name}` : entry.name;
+      const childAbsolute = join(absolute, entry.name);
+      if (entry.isDirectory()) {
+        digest.update(`directory\0${childRelative}\0`);
+        visit(childAbsolute, childRelative);
+      } else if (entry.isSymbolicLink()) {
+        digest.update(`symlink\0${childRelative}\0${readlinkSync(childAbsolute)}\0`);
+      } else if (entry.isFile()) {
+        digest.update(`file\0${childRelative}\0`);
+        digest.update(readFileSync(childAbsolute));
+        digest.update("\0");
+      }
+    }
+  };
+  visit(directory);
+  return `sha256:${digest.digest("hex")}`;
+}
 
 export function eventUsageRecoveryActions(classification, correlatedHosts, changeId) {
   const recoveryActions = [];
@@ -125,11 +149,14 @@ export function createMetricsRuntime({
   loadRuntime,
   ensureBudgetState,
   budgetDecision,
+  calibrationForState = null,
   instructionManifests = null,
   activeChangePath = null,
   policy = null,
   taskBlocks = null,
   taskMetadata = null,
+  metricsSchemaVersion = 6,
+  sourceCohort = null,
   output = console.log
 }) {
   // Absent join inputs report as unknown drift rather than suppressing the
@@ -491,7 +518,8 @@ export function createMetricsRuntime({
       return result;
     }, {});
     output(JSON.stringify({
-      version: 5, changeId: id,
+      version: metricsSchemaVersion, changeId: id,
+      sourceCohort,
       wallTimeMs,
       activeTimeMs,
       unattributedWaitMs: wallTimeMs === null || activeTimeMs === null
@@ -531,7 +559,8 @@ export function createMetricsRuntime({
       budget: {
         lifetime: budget.lifetime,
         window: budget.window,
-        decision: budgetDecision(state)
+        decision: budgetDecision(state),
+        calibration: calibrationForState ? calibrationForState(state) : null
       },
       context: {
         totalBytes: contextBytes,

@@ -39,10 +39,17 @@ Per-change telemetry lives in `.foundation/logs/<id>/`:
 | Tokens and cost per request/model | `events.jsonl` — `modelId`, input/output/cache tokens; group by `operationId` for per-phase totals; aggregates in `operations.jsonl` (`requests`, `cost`) |
 | Phase transitions, model tier, context mode | `phase-context.jsonl` |
 | Human wait time | `user-transitions.jsonl` |
+| Exact runtime source cohort | `claude-foundation metrics <change>` — `sourceCohort.runtimeVersion`, `sourceCohort.protocolBundle`, and `sourceCohort.contentDigest` |
 | Command duration per evidence run | receipt `observed` field (e.g. `exit 0; 19425ms`) |
 | Quality / defects | `review.json` verdicts and findings, `review-attempts/` retry count, failed test claims |
 
 Derived figures (compute, do not store):
+
+- **Source cohort** = runtime semantic version + the complete protocol bundle +
+  the content digest emitted by `claude-foundation metrics`. Show all three in
+  the report. If two reports have different source cohorts, label any KPI
+  comparison as cross-cohort and do not attribute the delta solely to product
+  behavior.
 
 - **Span** = first `startedAt` → last `finishedAt`; say explicitly it includes
   human wait. **Busy** = sum of `durationMs`; give it as % of span.
@@ -74,7 +81,8 @@ verdicts verbatim; never summarize a failure into a pass.
 1. **Header**: eyebrow (`Change Loop · รายงานรอบงาน`), report name, a
    2–3 line Thai lede saying what the round fixed/built and how it ended, and
    chips: overall verdict, change id, profile, land/archive date, active next
-   round + its task progress, report update date.
+   round + its task progress, report update date, runtime version, abbreviated
+   source digest, and protocol bundle identity.
 2. **KPI scorecard** directly under the header — one card per dimension, each
    named Thai + English keyword, each with its evidence in the subline:
    Quality (gates/claims passed), Bug (found → fixed / open), Time (span),

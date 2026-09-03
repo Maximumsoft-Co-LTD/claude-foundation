@@ -1,4 +1,5 @@
 import { measuredNumber } from "../core/measured-number.mjs";
+import { executionSurfaceBudgetScale } from "../core/authority-policy.mjs";
 
 export function budgetDirective(ratio, operatorRequired) {
   if (operatorRequired || ratio >= 1)
@@ -40,22 +41,20 @@ export function createBudgetRuntime({ policy, now }) {
     return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
   }
 
-  // Size scales the request lane for the same reason impact does: requests bind
+  // Size scales the execution lane for the same reason impact does: the
+  // compiled surface predicts both orchestration turns and model context.
   // first. The loop already asks the author to declare a size and WORKFLOW.md
   // says it is "for budget and slicing only", but nothing here read it, so the
   // declaration meant nothing. Scales combine by max rather than product — a
   // large high-impact change earns one widening, not two multiplied together.
   const SIZE_REQUEST_SCALE = { xs: 0.5, s: 1, m: 1.5, l: 2 };
 
-  function budgetTargets(schema, impact, size, profile = {}) {
+  function budgetCalibration(schema, impact, size, profile = {}) {
     const { requestBudgets, tokenBudgets } = policy().execution;
     // An unrecognized schema takes the standard lane deliberately: a spend
     // target is not an assurance gate, and refusing to compute one would strand
     // the change rather than protect anything.
     const lane = schema === "foundation-rapid" ? "rapid" : "standard";
-    // Requests bind long before tokens on high-impact work (measured: 91% of
-    // requests spent at 33% of tokens), so the request lane widens with the
-    // declared impact. Tokens do not scale: they were never the limiter.
     const sizeScale = SIZE_REQUEST_SCALE[String(size || "").toLowerCase()] ?? 1;
     const repositoryCount = Math.max(0, Number(profile.repositoryCount || 0));
     const providerCount = Math.max(0, Number(profile.providerCount || 0));
@@ -65,19 +64,58 @@ export function createBudgetRuntime({ policy, now }) {
     // change effectively unbounded; ignoring them recreates the Stripe case
     // where the default request lane was exhausted before Prove could finish.
     const riskScale = securityTriggerCount > 0 ? 2 : 1;
+    const reviewScale = profile.reviewTier === "high" ? 2
+      : profile.reviewTier === "medium" ? 1.5 : 1;
     const couplingScale = profile.coupling === "coupled" ? 1.5 : 1;
     const repositoryScale = repositoryCount > 1
       ? Math.min(3, 1 + (repositoryCount - 1) * 0.5) : 1;
     const providerScale = providerCount > 4
       ? Math.min(2, 1 + (providerCount - 4) * 0.15) : 1;
-    const scale = Math.max(
-      impact === "high" ? 1.5 : impact === "medium" ? 1.25 : 1,
-      sizeScale, riskScale, couplingScale, repositoryScale, providerScale
-    );
-    return {
-      requests: Math.ceil((requestBudgets?.[lane] ?? (lane === "rapid" ? 100 : 200)) * scale),
-      tokens: tokenBudgets[lane]
+    const surfaceScale = executionSurfaceBudgetScale(profile);
+    const factors = {
+      impact: impact === "high" ? 1.5 : impact === "medium" ? 1.25 : 1,
+      size: sizeScale,
+      security: riskScale,
+      review: reviewScale,
+      coupling: couplingScale,
+      repositories: repositoryScale,
+      providers: providerScale,
+      executionSurface: surfaceScale
     };
+    const scale = Math.max(...Object.values(factors));
+    const limitingFactors = Object.entries(factors)
+      .filter(([, value]) => value === scale).map(([name]) => name);
+    const baseRequests = requestBudgets?.[lane] ?? (lane === "rapid" ? 100 : 200);
+    const baseTokens = tokenBudgets[lane];
+    const scaledTarget = (base) => Math.ceil(Number((base * scale).toFixed(8)));
+    return {
+      version: 1,
+      lane,
+      inputs: {
+        impact: impact || null,
+        size: size || null,
+        coupling: profile.coupling || null,
+        reviewTier: profile.reviewTier || null,
+        securityTriggerCount,
+        taskCount: Math.max(0, Number(profile.taskCount || 0)),
+        claimCount: Math.max(0, Number(profile.claimCount || 0)),
+        providerCount,
+        repositoryCount,
+        criticalCaseCount: Math.max(0, Number(profile.criticalCaseCount || 0)),
+        externalAuthorityCount: Math.max(0, Number(profile.externalAuthorityCount || 0))
+      },
+      factors,
+      selectedScale: scale,
+      limitingFactors,
+      targets: {
+        requests: scaledTarget(baseRequests),
+        tokens: scaledTarget(baseTokens)
+      }
+    };
+  }
+
+  function budgetTargets(schema, impact, size, profile = {}) {
+    return budgetCalibration(schema, impact, size, profile).targets;
   }
 
   function budgetWindow(id, targets, baseline = {}, sequence = 1, reason = "initial-run") {
@@ -177,15 +215,27 @@ export function createBudgetRuntime({ policy, now }) {
     };
   }
 
-  function targetsForState(state) {
-    return budgetTargets(state.schema, state.impact, state.size, {
+  function calibrationForState(state) {
+    const surface = state.executionSurface || {};
+    return budgetCalibration(state.schema, state.impact, state.size, {
       coupling: state.coupling,
-      repositoryCount: Object.keys(state.repositories || {}).length,
-      providerCount: Array.isArray(state.evidenceCapabilities)
-        ? state.evidenceCapabilities.length : 0,
-      securityTriggerCount: Array.isArray(state.securityTriggers)
-        ? state.securityTriggers.length : 0
+      reviewTier: surface.reviewTier || null,
+      repositoryCount: surface.repositoryCount ??
+        Object.keys(state.repositories || {}).length,
+      providerCount: surface.providerCount ??
+        (Array.isArray(state.evidenceCapabilities)
+          ? state.evidenceCapabilities.length : 0),
+      securityTriggerCount: surface.securityTriggerCount ??
+        (Array.isArray(state.securityTriggers) ? state.securityTriggers.length : 0),
+      taskCount: surface.taskCount,
+      claimCount: surface.claimCount,
+      criticalCaseCount: surface.criticalCaseCount,
+      externalAuthorityCount: surface.externalAuthorityCount
     });
+  }
+
+  function targetsForState(state) {
+    return calibrationForState(state).targets;
   }
 
   function upgradeVersion3Budget(state, existing) {
@@ -399,7 +449,8 @@ export function createBudgetRuntime({ policy, now }) {
   }
 
   return {
-    eventTokenCount, budgetTargets, budgetWindow, initialBudget, knownNumber,
+    eventTokenCount, budgetTargets, budgetCalibration, calibrationForState,
+    budgetWindow, initialBudget, knownNumber,
     ensureBudgetState, eventUsage, activateBudgetWindow, budgetDecision,
     applyBudgetDecision, synchronizeBudgetUsage
   };

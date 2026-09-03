@@ -219,11 +219,15 @@ export function continueBudgetWindow(context, id, flags) {
   const { reason, decisionRef } = budgetContinuationInputs(flags, context.fail);
   const state = context.loadRuntime(id);
   const budget = context.ensureBudgetState(state);
+  const readiness = budgetContinuationReadiness(context, id, state);
+  // An external or deterministic blocker cannot be solved by model allowance,
+  // regardless of whether the current window is exhausted. Diagnose that real
+  // boundary before the exhaustion precondition so calibration changes cannot
+  // replace an actionable recovery route with a generic ordering error.
+  assertBudgetContinuationEligible(context, id, readiness);
   const decision = context.applyBudgetDecision(state);
   const extensionNumber = assertBudgetContinuationAvailable(
     context, id, budget, decision);
-  const readiness = budgetContinuationReadiness(context, id, state);
-  assertBudgetContinuationEligible(context, id, readiness);
   const previous = structuredClone(budget.window);
   const { runId, window } = nextBudgetContinuationWindow(
     context, id, flags, budget, previous, extensionNumber);

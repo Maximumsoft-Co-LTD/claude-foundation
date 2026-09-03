@@ -36,30 +36,63 @@ function currentBudget(overrides = {}) {
   };
 }
 
-test("budget targets select lanes and apply the largest request scale", () => {
+test("budget targets scale both request and token lanes from execution surface", () => {
   const { runtime } = fixture();
   assert.deepEqual(runtime.budgetTargets("foundation-rapid", "low", "xs"), {
     requests: 10, tokens: 100
   });
   assert.deepEqual(runtime.budgetTargets("foundation-standard", "high", "s"), {
-    requests: 30, tokens: 200
+    requests: 30, tokens: 300
   });
   assert.deepEqual(runtime.budgetTargets("unknown", "low", "L"), {
-    requests: 40, tokens: 200
+    requests: 40, tokens: 400
   });
   assert.deepEqual(runtime.budgetTargets("foundation-rapid", "high", "m"), {
-    requests: 15, tokens: 100
+    requests: 15, tokens: 150
   });
   assert.deepEqual(runtime.budgetTargets("foundation-standard", "medium", "s", {
     coupling: "coupled", repositoryCount: 4, providerCount: 8,
-    securityTriggerCount: 1
-  }), { requests: 50, tokens: 200 });
+    securityTriggerCount: 1, taskCount: 8, claimCount: 12,
+    criticalCaseCount: 6, externalAuthorityCount: 1
+  }), { requests: 50, tokens: 500 });
+  const calibrated = runtime.budgetCalibration("foundation-standard", "high", "l", {
+    coupling: "coupled", reviewTier: "high", securityTriggerCount: 1,
+    taskCount: 4, claimCount: 6, providerCount: 7, repositoryCount: 1,
+    criticalCaseCount: 8, externalAuthorityCount: 1
+  });
+  assert.equal(calibrated.selectedScale, 2.2);
+  assert.deepEqual(calibrated.limitingFactors, ["executionSurface"]);
+  assert.equal(calibrated.inputs.reviewTier, "high");
+  assert.equal(calibrated.inputs.securityTriggerCount, 1);
+  assert.deepEqual(calibrated.targets, { requests: 44, tokens: 440 });
   assert.deepEqual(fixture({ requestBudgets: {} }).runtime
     .budgetTargets("foundation-rapid"), { requests: 100, tokens: 100 });
   assert.deepEqual(fixture({ requestBudgets: {} }).runtime
     .budgetTargets("foundation-standard", "low", "unrecognized"), {
       requests: 200, tokens: 200
     });
+});
+
+test("stored compiled execution surface refreshes normal targets but preserves continuation grants", () => {
+  const { runtime } = fixture();
+  const state = {
+    id: "surface", schema: "foundation-standard", impact: "low",
+    executionSurface: {
+      version: 1, taskCount: 10, claimCount: 14, providerCount: 7,
+      repositoryCount: 1, criticalCaseCount: 8, externalAuthorityCount: 1
+    },
+    budget: currentBudget()
+  };
+  runtime.ensureBudgetState(state);
+  assert.equal(state.budget.window.targetRequests, 60);
+  assert.equal(state.budget.window.targetTokens, 600);
+
+  state.budget.window.reason = "operator-continue";
+  state.budget.window.targetRequests = 77;
+  state.budget.window.targetTokens = 777;
+  runtime.ensureBudgetState(state);
+  assert.equal(state.budget.window.targetRequests, 77);
+  assert.equal(state.budget.window.targetTokens, 777);
 });
 
 test("budget windows distinguish measured baselines from unavailable usage", () => {
@@ -161,7 +194,7 @@ test("current budgets normalize lifetime, heal invented zeros, and refresh targe
   assert.equal(state.budget.window.usedRequests, null);
   assert.equal(state.budget.window.usedTokens, null);
   assert.equal(state.budget.window.targetRequests, 40);
-  assert.equal(state.budget.window.targetTokens, 200);
+  assert.equal(state.budget.window.targetTokens, 400);
 
   const continued = {
     id: "change", schema: "foundation-standard",

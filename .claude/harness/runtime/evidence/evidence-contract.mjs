@@ -783,6 +783,13 @@ export function createEvidenceContract({
       die(`provider '${provider}' criticalCases must be an array of non-empty IDs`);
     if (config.criticalCases?.length && ["external", "contract-digest"].includes(config.adapter))
       die(`provider '${provider}' adapter '${config.adapter}' cannot execute criticalCases; use a structured command adapter`);
+    if (config.criticalCases?.length &&
+        !["json", "tap", "spec"].includes(config.reportFormat))
+      die(`provider '${provider}' criticalCases requires an explicit machine-readable reportFormat json|tap|spec; auto or plain output cannot prove stable case IDs before Build`);
+    if (config.criticalCases?.length && config.reportFormat === "spec" &&
+        !(Array.isArray(config.command) && config.command.some((part) =>
+          part === "--test" || String(part).startsWith("--test="))))
+      die(`provider '${provider}' criticalCases with reportFormat 'spec' requires a Node --test command; use --test, tap, or a JSON report before Build`);
     validateMutationProtocol(provider, config, capability);
   }
 

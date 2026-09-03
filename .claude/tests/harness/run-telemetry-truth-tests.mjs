@@ -5,7 +5,9 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { measuredNumber } from "../../harness/runtime/core/measured-number.mjs";
-import { createMetricsRuntime } from "../../harness/runtime/observability/metrics-runtime.mjs";
+import {
+  createMetricsRuntime, runtimeSourceDigest
+} from "../../harness/runtime/observability/metrics-runtime.mjs";
 import {
   createJsonlReader,
   normalizeClaudeUserTransition,
@@ -92,6 +94,7 @@ test("unobserved host usage remains unknown in budget and metrics", () => {
     loadRuntime: () => structuredClone(state),
     ensureBudgetState: budgetRuntime.ensureBudgetState,
     budgetDecision: budgetRuntime.budgetDecision,
+    calibrationForState: budgetRuntime.calibrationForState,
     output: (value) => { rendered = JSON.parse(value); }
   }).showMetrics("truthful-usage");
 
@@ -100,6 +103,51 @@ test("unobserved host usage remains unknown in budget and metrics", () => {
   assert.equal(budgetRuntime.budgetDecision(state).measured, false);
   assert.equal(rendered.requests, null);
   assert.equal(rendered.usageMeasurement, "unavailable");
+  assert.equal(rendered.budget.calibration.inputs.impact, "medium");
+  assert.equal(rendered.budget.calibration.selectedScale, 1.25);
+});
+
+test("metrics identify the exact runtime source cohort", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-source-cohort-"));
+  const cohortA = join(root, "cohort-a");
+  const cohortB = join(root, "cohort-b");
+  mkdirSync(cohortA);
+  mkdirSync(cohortB);
+  writeFileSync(join(cohortA, "runtime.mjs"), "revision-a\n");
+  writeFileSync(join(cohortB, "runtime.mjs"), "revision-b\n");
+  assert.notEqual(runtimeSourceDigest(cohortA), runtimeSourceDigest(cohortB));
+  const logs = join(root, "logs");
+  const receipts = join(root, "receipts");
+  const budgetRuntime = createBudgetRuntime({
+    policy, now: () => "2026-08-12T00:00:00.000Z"
+  });
+  const state = {
+    id: "source-cohort", schema: "foundation-standard", impact: "medium",
+    budget: budgetRuntime.initialBudget("foundation-standard", "source-cohort")
+  };
+  const cohort = {
+    version: 1,
+    runtimeVersion: "3.4.10",
+    protocolBundle: { runtimeApi: "26", providerProtocol: "13", metricsSchema: "6" },
+    contentDigest: "sha256:aaaaaaaa",
+    scope: ".claude/harness",
+    basis: "sorted-relative-path-and-file-bytes"
+  };
+  let rendered;
+  createMetricsRuntime({
+    logs, receipts, readJson: json, readJsonLines: jsonLines,
+    readJsonLinesTolerant: jsonLines, loadRuntime: () => structuredClone(state),
+    ensureBudgetState: budgetRuntime.ensureBudgetState,
+    budgetDecision: budgetRuntime.budgetDecision,
+    metricsSchemaVersion: 6,
+    sourceCohort: cohort,
+    output: (value) => { rendered = JSON.parse(value); }
+  }).showMetrics("source-cohort");
+
+  assert.equal(rendered.version, 6);
+  assert.deepEqual(rendered.sourceCohort, cohort);
+  assert.notEqual(rendered.sourceCohort.contentDigest, "sha256:bbbbbbbb",
+    "reports from different source digests must remain distinguishable");
 });
 
 test("a real event reporting numeric zero remains measured", () => {
@@ -571,9 +619,9 @@ test("an explicit nonzero window is not erased while host totals are unavailable
     budget: budgetRuntime.initialBudget("foundation-standard", "explicit-window")
   };
   state.budget.window.usedRequests = 0;
-  state.budget.window.usedTokens = 1600001;
+  state.budget.window.usedTokens = 2000001;
   const decision = budgetRuntime.budgetDecision(state);
-  assert.equal(state.budget.window.usedTokens, 1600001);
+  assert.equal(state.budget.window.usedTokens, 2000001);
   assert.equal(decision.measured, true);
   assert.equal(decision.mode, "operator-required");
   assert.equal(decision.status, "NEEDS_USER_DECISION");

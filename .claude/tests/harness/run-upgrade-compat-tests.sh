@@ -12,10 +12,13 @@ trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 legacy="$TMP/legacy"
 mkdir -p "$legacy"
 printf '%s\n' \
-  '{"version":1,"execution":{"maxParallelAgents":3,"packetBytes":65536,"leaseMinutes":45}}' \
+  '{"version":1,"execution":{"maxParallelAgents":3,"packetBytes":65536,"leaseMinutes":45},"land":{"riskBasedCi":true}}' \
   > "$legacy/foundation.json"
-assert_cmd_zero "installer upgrades the former default policy" \
-  bash "$ROOT/install.sh" "$legacy" --source "$ROOT" --yes
+legacy_upgrade="$(bash "$ROOT/install.sh" "$legacy" --source "$ROOT" --yes)"
+assert_contains "installer diagnoses historical risk-based CI default" \
+  "$legacy_upgrade" "historical-default-land-risk-based-ci"
+assert_eq "historical risk-based CI value is preserved" "true" \
+  "$(jq -r '.land.riskBasedCi' "$legacy/foundation.json")"
 assert_eq "legacy task budget migrates" "8192" \
   "$(jq -r '.execution.packetBytes.task' "$legacy/foundation.json")"
 assert_eq "legacy review budget migrates" "8192" \
@@ -78,8 +81,9 @@ assert_cmd_zero "v3.2.19 creates an active legacy change" \
     change new "Legacy active upgrade" --rapid
 assert_file_exists "legacy active state exists before upgrade" \
   "$previous_target/.foundation/runtime/legacy-active-upgrade.json"
-assert_cmd_zero "current Foundation upgrades the real previous installation" \
-  bash "$ROOT/install.sh" "$previous_target" --source "$ROOT" --yes
+previous_upgrade="$(bash "$ROOT/install.sh" "$previous_target" --source "$ROOT" --yes)"
+assert_contains "upgrade reports active-change compatibility effects" \
+  "$previous_upgrade" "active-change-effects:legacy-active-upgrade"
 assert_contains "upgraded CLI reports the current version" \
   "$(bash "$ROOT/cli.sh" --project "$previous_target" version)" "$current_version"
 assert_contains "upgraded runtime keeps the active legacy change readable" \

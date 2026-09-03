@@ -5,10 +5,12 @@ import {
 } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createMetricsRuntime } from "./runtime/observability/metrics-runtime.mjs";
+import {
+  createMetricsRuntime, runtimeSourceDigest
+} from "./runtime/observability/metrics-runtime.mjs";
 import { createExecRuntime } from "./runtime/observability/exec-runtime.mjs";
 import {
-  createTelemetryRuntime, recordCommandTelemetry
+  blockerTelemetryValue, createTelemetryRuntime, recordCommandTelemetry
 } from "./runtime/observability/telemetry-runtime.mjs";
 import { createJsonlReader } from "./runtime/observability/telemetry.mjs";
 import { operationInputFingerprint } from "./runtime/observability/operation-profile.mjs";
@@ -62,7 +64,8 @@ import { createLeaseRuntime } from "./runtime/workflow/lease-runtime.mjs";
 import { createAuthorityRuntime } from "./runtime/workflow/authority-runtime.mjs";
 import { createHandoffRuntime } from "./runtime/workflow/handoff-runtime.mjs";
 import {
-  advanceLandOperation, assertOpenSpecCli, createLandRuntime, openSpecCliStatus
+  advanceLandOperation, assertOpenSpecCli, createLandRuntime, openSpecCliStatus,
+  recordedDeliveryReferences, targetProjectionObservationValue
 } from "./runtime/workflow/land-runtime.mjs";
 import { createApplyRuntime } from "./runtime/workflow/apply-runtime.mjs";
 import { createApplyRecovery } from "./runtime/workflow/apply-recovery.mjs";
@@ -118,6 +121,8 @@ const PROOF_PROTOCOL_VERSION = "7";
 const PACKET_SCHEMA_VERSION = "10";
 const AGENT_PLAN_SCHEMA_VERSION = "4";
 const CONTEXT_EVENT_SCHEMA_VERSION = "2";
+const METRICS_SCHEMA_VERSION = "6";
+const COMMAND_TELEMETRY_SCHEMA_VERSION = "3";
 const REVIEW_PROTOCOL_VERSION = "4";
 const ACCEPTANCE_PROTOCOL_VERSION = "2";
 const SEMANTIC_ACCEPTANCE_PROTOCOL_VERSION = "1";
@@ -131,14 +136,22 @@ const AUTOMATED_MUTATION_PROTOCOL_VERSION = "1";
 // A refusal is a lifecycle stop, not a crash. Recording it as a failure would
 // bury real breakage under the guards that are working as designed.
 let operationBlocked = false;
+let operationBlocker = null;
 let trappedFailureDepth = 0;
 // A command that prints a structured non-ready result and returns has also
 // ended in a refusal, not a crash — but it never reaches `die`. `block()` is
 // that second spelling: it records the decision without exiting, so the exit
 // handler reports what the command decided instead of inferring it.
-function markBlocked() { operationBlocked = true; }
+function markBlocked(message) {
+  operationBlocked = true;
+  operationBlocker = blockerTelemetryValue(message, {
+    changeId: operationChangeId,
+    operationName,
+    phase: process.env.FOUNDATION_PUBLIC_OPERATION || operationPhase
+  });
+}
 function die(message, code = 1) {
-  markBlocked();
+  markBlocked(message);
   if (trappedFailureDepth > 0) {
     const error = new Error(String(message));
     error.exitCode = code;
@@ -209,6 +222,7 @@ process.on("exit", (code) => {
     operationInputFingerprint: operationFingerprint,
     publicOperation: process.env.FOUNDATION_PUBLIC_OPERATION,
     blocked: operationBlocked,
+    blocker: operationBlocker,
     operationStartedAt,
     readOnlyOperations: READ_ONLY_OPERATIONS,
     logs: LOGS,
@@ -252,6 +266,8 @@ const {
     packetSchema: PACKET_SCHEMA_VERSION,
     agentPlanSchema: AGENT_PLAN_SCHEMA_VERSION,
     contextEventSchema: CONTEXT_EVENT_SCHEMA_VERSION,
+    metricsSchema: METRICS_SCHEMA_VERSION,
+    commandTelemetrySchema: COMMAND_TELEMETRY_SCHEMA_VERSION,
     reviewProtocol: REVIEW_PROTOCOL_VERSION,
     acceptanceProtocol: ACCEPTANCE_PROTOCOL_VERSION,
     semanticAcceptanceProtocol: SEMANTIC_ACCEPTANCE_PROTOCOL_VERSION,
@@ -265,6 +281,15 @@ const {
   },
   readJson,
   fail: die
+});
+
+const SOURCE_COHORT = Object.freeze({
+  version: 1,
+  runtimeVersion: VERSION,
+  protocolBundle: protocolDescriptor(),
+  contentDigest: runtimeSourceDigest(dirname(fileURLToPath(import.meta.url))),
+  scope: ".claude/harness",
+  basis: "sorted-relative-path-and-file-bytes"
 });
 const { recordInstructionManifest } = createInstructionRecorder({
   root: ROOT,
@@ -393,6 +418,7 @@ const {
   initialBudget,
   knownNumber,
   ensureBudgetState,
+  calibrationForState,
   activateBudgetWindow,
   budgetDecision,
   applyBudgetDecision,
@@ -409,11 +435,14 @@ const { showMetrics } = createMetricsRuntime({
   loadRuntime,
   ensureBudgetState,
   budgetDecision,
+  calibrationForState,
   instructionManifests: INSTRUCTION_MANIFESTS,
   activeChangePath,
   policy: foundationPolicy,
   taskBlocks,
-  taskMetadata
+  taskMetadata,
+  metricsSchemaVersion: Number(METRICS_SCHEMA_VERSION),
+  sourceCohort: SOURCE_COHORT
 });
 const { execObserved } = createExecRuntime({
   logs: LOGS,
@@ -1328,6 +1357,10 @@ const {
 } = createDiagnosticsRuntime({
   root: ROOT,
   unresolvedApplyTransactions,
+  deliveryObservation: (_id, state) => ({
+    ...targetProjectionObservationValue({ root: ROOT, state, git, fileDigest }),
+    references: recordedDeliveryReferences(state)
+  }),
   authorityPreflight,
   executionContract,
   version: VERSION,
@@ -1338,6 +1371,8 @@ const {
   packetSchemaVersion: PACKET_SCHEMA_VERSION,
   agentPlanSchemaVersion: AGENT_PLAN_SCHEMA_VERSION,
   contextEventSchemaVersion: CONTEXT_EVENT_SCHEMA_VERSION,
+  metricsSchemaVersion: METRICS_SCHEMA_VERSION,
+  commandTelemetrySchemaVersion: COMMAND_TELEMETRY_SCHEMA_VERSION,
   reviewProtocolVersion: REVIEW_PROTOCOL_VERSION,
   acceptanceProtocolVersion: ACCEPTANCE_PROTOCOL_VERSION,
   semanticAcceptanceProtocolVersion: SEMANTIC_ACCEPTANCE_PROTOCOL_VERSION,
@@ -1587,6 +1622,8 @@ const {
   executionContract,
   now,
   blockWithDecision,
+  deliveryObservation: (_id, state) =>
+    targetProjectionObservationValue({ root: ROOT, state, git, fileDigest }),
   fail: die
 });
 const applyRuntime = createApplyRuntime({

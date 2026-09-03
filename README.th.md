@@ -18,6 +18,10 @@ Change Loop ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก�
 
 **Version 3.5.0** — runtime API 26, provider protocol 13 receipt ที่บันทึกด้วย
 เวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
+`claude-foundation metrics <change-id>` จะแสดง source cohort ของ runtime แบบ
+เจาะจงด้วย ได้แก่ semantic version, protocol bundle ที่โหลดจริง และ SHA-256
+digest ของไฟล์ที่ติดตั้งใต้ `.claude/harness` เมื่อต้องเทียบรายงานจากคนละ
+installation ให้ใช้ cohort ครบชุดแทนการดูเลข version เพียงอย่างเดียว
 
 ## เริ่มอ่านตรงไหน
 
@@ -689,6 +693,10 @@ documentation ปกติไม่ควร preload skill chain ทั้งห
 model family พร้อมกำหนด execution budget งาน inventory หรือ mechanical ใช้ fast,
 implementation ปกติใช้ standard และ architecture, security, migration หรือ
 independent review ใช้ deep โดยงาน risk สูงลดลงเป็น fast ไม่ได้
+Validation จะปรับทั้ง request และ token lane จาก factor ที่กว้างที่สุดของ impact,
+size, coupling, review, security, repository, provider, task, claim หรือ critical
+case โดยไม่เปิดเผยข้อมูลลับ คำสั่ง `metrics` จะแสดง input, scale ที่เลือก และ
+limiting factor ส่วน continuation ที่ผู้ใช้อนุมัติไว้จะคง allowance เดิม
 
 `foundation.json` ที่มากับระบบ commit `independence: "self"` และ
 `diversity: "single-model"` ไว้ชัดเจน ทั้งสองค่าเป็น assurance waiver:

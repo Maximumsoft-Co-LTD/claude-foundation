@@ -5,6 +5,7 @@ import { auditTraceability } from "../evidence/traceability.mjs";
 import { detectEvidenceWiring } from "../evidence/evidence-bootstrap.mjs";
 import { nextAfterValidate } from "../core/next-step.mjs";
 import { gateRepairPlan } from "../core/convergent-gate.mjs";
+import { compiledExecutionSurfaceValue } from "../core/authority-policy.mjs";
 import {
   taskBlocks, taskMetadata
 } from "../contracts/change-artifacts.mjs";
@@ -1671,7 +1672,8 @@ export function createChangeValidationRuntime({
     }
     const tasks = readFileSync(join(dir, "tasks.md"), "utf8");
     const parsedTasks = taskBlocks(tasks);
-    const claims = evidence(id, dir).claims;
+    const executableEvidence = evidence(id, dir);
+    const claims = executableEvidence.claims;
     const selectedRepositoryIds = new Set(validationRepositories(id, state, dir)
       .map((repository) => repository.id));
     contractDiagnostics.push(...claimContractIssues(claims, selectedRepositoryIds)
@@ -1714,6 +1716,16 @@ export function createChangeValidationRuntime({
 
     if (claims.some((claim) => claim.impact === "high")) state.reviewRequired = true;
     state.evidenceCapabilities = [...new Set(claims.flatMap((claim) => claim.capabilities))];
+    const budgetReviewRisk = changedSurfaceResolvable(id, state)
+      ? reviewPolicy(id, state, executableEvidence) : null;
+    state.executionSurface = compiledExecutionSurfaceValue({
+      tasks: parsedTasks,
+      claims,
+      providers: executableEvidence.providers,
+      repositories: selected,
+      reviewTier: budgetReviewRisk?.tier || null,
+      securityTriggerCount: (state.securityTriggers || []).length
+    });
     const missingQuality = missingHighRiskQualityCapabilities(
       state, claims, foundationPolicy());
     if (missingQuality.length)

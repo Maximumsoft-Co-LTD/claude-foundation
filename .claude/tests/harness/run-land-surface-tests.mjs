@@ -24,7 +24,16 @@ import {
 import {
   createBlockedDecision
 } from "../../harness/runtime/core/blocked-decision.mjs";
+import {
+  outOfBandDeliveryDriftValue
+} from "../../harness/runtime/core/authority-policy.mjs";
 import { createLandJournal } from "../../harness/runtime/workflow/land-journal.mjs";
+import {
+  recordedDeliveryReferences, targetProjectionObservationValue
+} from "../../harness/runtime/workflow/land-runtime.mjs";
+import {
+  shouldReportOutOfBandDelivery
+} from "../../harness/runtime/core/diagnostics-runtime.mjs";
 import { createApplyRuntime } from "../../harness/runtime/workflow/apply-runtime.mjs";
 
 const EXCLUDED = new Set([".git", ".foundation", ".workflow", "node_modules"]);
@@ -316,6 +325,65 @@ test("a moved target offers replaying, and recommends it", () => {
   const ids = decision.options.map((option) => option.id);
   assert.deepEqual(ids, ["sync", "inspect", "abandon", "pause"]);
   assert.match(decision.options[0].outcome, /sandbox sync confine-surface/);
+});
+
+test("an external target move remains non-authoritative while Build is active", () => {
+  const drift = outOfBandDeliveryDriftValue({
+    changeId: "confine-surface",
+    state: { status: "building" },
+    recordedHead: "aaa",
+    currentHead: "bbb",
+    baseDecision: targetHeadMovedDecision({
+      changeId: "confine-surface", recordedBase: "aaa", currentHead: "bbb"
+    })
+  });
+  assert.equal(drift.kind, "out-of-band-delivery-drift");
+  assert.equal(drift.lifecycleStatus, "building");
+  assert.equal(drift.authoritative, false);
+  assert.equal(drift.proofStatus, "unchanged");
+  assert.match(drift.summary, /not Change Loop proof or lifecycle completion/);
+  assert.match(drift.recoveryCommand, /sandbox sync confine-surface/);
+});
+
+test("delivery drift is reported only when target bytes match the change projection", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-delivery-observation-"));
+  const workspace = join(root, "sandbox");
+  mkdirSync(workspace);
+  writeFileSync(join(root, "changed.txt"), "delivered\n");
+  writeFileSync(join(workspace, "changed.txt"), "delivered\n");
+  const state = { workspace: { mode: "worktree", path: workspace, baseHead: "base" } };
+  const git = (args) => args[0] === "diff"
+    ? { status: 0, stdout: "changed.txt\0" }
+    : { status: 0, stdout: "" };
+  const matching = targetProjectionObservationValue({
+    root, state, git, fileDigest: (path) => readFileSync(path, "utf8")
+  });
+  assert.equal(matching.observed, true);
+  writeFileSync(join(root, "changed.txt"), "unrelated\n");
+  const unrelated = targetProjectionObservationValue({
+    root, state, git, fileDigest: (path) => readFileSync(path, "utf8")
+  });
+  assert.equal(unrelated.observed, false);
+  assert.equal(unrelated.reason, "target-does-not-match-change-projection");
+});
+
+test("doctor excludes journaled apply and authorized Land records from delivery drift", () => {
+  const observed = { observed: true, references: [] };
+  assert.equal(shouldReportOutOfBandDelivery({
+    status: "building", workspace: { applied: false }
+  }, observed), true);
+  assert.equal(shouldReportOutOfBandDelivery({
+    status: "applied", workspace: { applied: true }
+  }, observed), false);
+  assert.equal(shouldReportOutOfBandDelivery({
+    status: "proven", workspace: { applied: true }
+  }, observed), false);
+  assert.deepEqual(recordedDeliveryReferences({ repositories: {
+    child: { land: { commit: "abc", authority: { kind: "host-user-decision" } } }
+  } }), []);
+  assert.deepEqual(recordedDeliveryReferences({
+    deliveryReferences: [{ kind: "pull-request", reference: "pr-1" }]
+  }), [{ kind: "pull-request", reference: "pr-1" }]);
 });
 
 test("a multi-repository sandbox offers the conflict-atomic replay", () => {
