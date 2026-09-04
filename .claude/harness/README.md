@@ -670,8 +670,9 @@ configured ceiling. Active leases, external evidence, infrastructure failures,
 and ready deterministic work do not qualify. The reason is audit context, not
 the policy gate; counters and requirements are never deleted or silently reset.
 `budget checkpoint` makes that pause resumable: it reports measured capacity,
-remaining tasks/provider blockers, the user prompt, and the command to run after
-an approved continuation without pretending to forecast unknown model demand.
+remaining tasks/provider blockers, the user prompt, and the command the agent
+will run after an approved continuation without pretending to forecast unknown
+model demand.
 
 A control-target HEAD move remains `control-head-moved` unless target bytes
 match the change projection or an explicit external delivery reference exists.

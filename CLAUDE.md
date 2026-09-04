@@ -148,7 +148,7 @@ rtk npm run release:preflight
 rtk git diff --check
 ```
 
-Use the full 197-suite runner as the final deterministic gate. Paid scenario
+Use the full registered suite runner as the final deterministic gate. Paid scenario
 runs are separate release evidence: they require explicit spend authority,
 must use disposable consumers, and must finish at `archived` with oracle and
 clean-install verification. A release-report exit code 2 is a truthful promotion

@@ -1,6 +1,6 @@
 # User scenario release status
 
-Last verified: 2026-09-03
+Last verified: 2026-09-04 for v3.5.6
 
 ## Summary
 
@@ -32,6 +32,7 @@ be archived by a passing Change Loop proof alone.
 | Isolation | Fail closed for unsafe or ambiguous writes while honoring declared host capability | `.claude/hooks/phase-mutation-guard.mjs` |
 | Land | Require current proof, pre-Land oracle success, recoverable archive checkpoints, and truthful measured telemetry | `.claude/harness/runtime/workflow/land-runtime.mjs`, `apply-runtime.mjs` |
 | Release evidence | Freeze seven fixtures, bind results to commit + patch digest, and separate paid runs from zero-model revalidation | `.claude/tests/bench/openspec-native/` |
+| Human handoff | Keep routine commands and resume routes agent-owned; ask people only for decisions, authority, or external conditions | `.claude/orchestrator.md`, `.claude/harness/AGENT.md` |
 
 User-facing behavior and recovery are documented in `README.md`,
 `README.th.md`, and `WORKFLOW.md`. Release and rollout operations are documented
@@ -41,15 +42,16 @@ in `RELEASING.md` and `docs/reports/rollout-operations.md`.
 
 | Check | Result |
 |---|---|
-| Authoritative repository suite | PASS — 197/197 registered suites |
-| Documentation consistency | PASS — 98/98 assertions |
-| Public documentation build | PASS — 37 static pages, English and Thai |
+| Authoritative repository suite | PASS — all 200 registered suites |
+| Documentation consistency | PASS — 132/132 assertions |
+| Public documentation build | PASS — the v3.5.6 release workflow built and deployed English and Thai docs |
 | Frozen deterministic scenario sentinel | PASS — 7/7 scenarios |
 | Public command compatibility | PASS — 8 host commands and 72 CLI commands pinned |
-| Candidate paid evidence | NONE — the clean candidate has 0/18 required runs |
+| Release workflow | PASS — source-bound rehearsal `33885638882` and publishing run `33886638840` |
+| Release paid evidence | NONE — the v3.5.6 cohort has 0/18 required runs |
 | Previous dirty-source smoke | Historical only — `bare-node-boundary` reached `archived`, oracle 6/6, but cannot satisfy the clean candidate |
 | Assurance report | BLOCKED — all six paid scenarios report `authorized-paid-smoke-missing` |
-| Artifact publication | ALLOWED after clean structural, deterministic, and package checks |
+| Artifact publication | PUBLISHED — v3.5.6 source release, `arm64_sequoia` bottle, formula, and Pages deployment |
 
 The earlier strict smoke and interrupted `bare-node-current-repeat2-20260903`
 execution do not count for the clean candidate. The strict smoke belongs to a
@@ -88,16 +90,15 @@ consumer, installs the current source, executes through Land, verifies delivery
 from a clean install, preserves a content-bound evidence bundle, and removes the
 consumer unless `--keep-project` is explicitly supplied.
 
-## Commit boundary
+## Next assurance boundary
 
-Before committing this change:
+Version 3.5.6 is published. Before describing it as `production-observed`:
 
-- rerun the authoritative suite and documentation consistency check;
-- review the diff by runtime, tests, documentation, and release automation;
+- run the paid portfolio from one immutable v3.5.6 source cohort;
+- retain the aggregate report plus dogfood and pilot observations;
 - keep ignored benchmark output and temporary consumers out of Git; and
-- do not label the commit or release as `production-observed` without the
-  required assurance report.
+- require the resulting assurance report to pass.
 
-The clean commit creates a new source identity. Paid evidence collected from a
-dirty patch remains useful development evidence, but assurance sign-off must be
-generated from one immutable source identity.
+Any later source change creates a new identity. Paid evidence collected from a
+dirty patch or different commit remains useful development evidence, but cannot
+provide assurance sign-off for v3.5.6.
