@@ -179,17 +179,25 @@ export function coordinatorAction({
   const open = authorityRequests.find((request) =>
     ["requested", "dispatched", "pending"].includes(request.status));
   if (open) {
-    const configuredReview = open.type === "review" && open.status === "requested";
     const authorityAction = authorityActions?.find((entry) => entry.requestId === open.requestId);
+    const authorityCommand = authorityAction?.command || null;
+    // A requested review is executable only while the authority router still
+    // offers `authority run`. Once the bounded AI circuit is exhausted it
+    // deliberately offers the external response template instead. Treating
+    // that template as configured work makes a host print it, resume, and
+    // receive the same RUN_EXTERNAL action forever.
+    const configuredReview = open.type === "review" && open.status === "requested" &&
+      /^claude-foundation authority run\s/.test(authorityCommand || "");
     return envelope(id, configuredReview ? "RUN_EXTERNAL" : "WAIT", {
       legacyAction: configuredReview ? "RUN_CONFIGURED_REVIEW" : "WAIT_EXTERNAL",
       actor: configuredReview ? "configured-reviewer" : "external-authority",
       boundary: "external-authority",
-      reason: configuredReview ? "configured review is ready" : "external authority is pending",
+      reason: configuredReview ? "configured review is ready" :
+        open.type === "review" && open.status === "requested"
+          ? "bounded AI review is unavailable; an external verdict is pending"
+          : "external authority is pending",
       requestId: open.requestId,
-      command: authorityAction?.command || (configuredReview
-        ? command(`authority status ${id} --request ${open.requestId} --template`)
-        : command(`authority status ${id} --request ${open.requestId}`)),
+      command: authorityCommand || command(`authority status ${id} --request ${open.requestId}`),
       recoveryType: configuredReview ? "HANDOFF" : "PAUSE",
       alternatives: configuredReview
         ? ["run the configured reviewer", "record an authorized external verdict"]

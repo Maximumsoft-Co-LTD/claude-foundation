@@ -67,6 +67,10 @@ test("advance returns configured review and user authority boundaries", () => {
     ...base,
     authorityRequests: [{
       requestId: "review-1", type: "review", status: "requested"
+    }],
+    authorityActions: [{
+      requestId: "review-1",
+      command: "claude-foundation authority run change-a --request review-1 --subject-actor implementation-agent"
     }]
   });
   assert.equal(review.action, "RUN_EXTERNAL");
@@ -106,14 +110,18 @@ test("successful proof and current review request supersede stale review failure
 
   const requested = coordinatorAction({
     ...base, workspaceHash: "workspace-b", latestReview: failedReview,
-    authorityRequests: [{ requestId: "review-2", type: "review", status: "requested" }]
+    authorityRequests: [{ requestId: "review-2", type: "review", status: "requested" }],
+    authorityActions: [{
+      requestId: "review-2",
+      command: "claude-foundation authority run change-a --request review-2 --subject-actor implementation-agent"
+    }]
   });
   assert.equal(requested.action, "RUN_EXTERNAL");
   assert.equal(requested.legacyAction, "RUN_CONFIGURED_REVIEW");
   assert.equal(requested.requestId, "review-2");
 });
 
-test("advance rejects stale proof and uses proof-owned authority routing", () => {
+test("advance rejects stale proof and stops when bounded review needs an external verdict", () => {
   const stale = coordinatorAction({
     ...base, state: { status: "proven" },
     proofCursor: { status: "PASS", workspaceHash: "workspace-old" }
@@ -126,8 +134,10 @@ test("advance rejects stale proof and uses proof-owned authority routing", () =>
     authorityRequests: [{ requestId: "review-3", type: "review", status: "requested" }],
     authorityActions: [{ requestId: "review-3", command: "claude-foundation authority status change-a --request review-3 --template" }]
   });
-  assert.equal(capped.action, "RUN_EXTERNAL");
-  assert.equal(capped.legacyAction, "RUN_CONFIGURED_REVIEW");
+  assert.equal(capped.action, "WAIT");
+  assert.equal(capped.legacyAction, "WAIT_EXTERNAL");
+  assert.equal(capped.actor, "external-authority");
+  assert.match(capped.reason, /external verdict is pending/);
   assert.match(capped.command, /authority status/);
 });
 

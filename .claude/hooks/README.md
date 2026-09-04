@@ -28,8 +28,13 @@ the active transcript's prompt starts with `/dev`.
 - Exit 0 with no output means allow. Hooks fail open when a toolchain is
   missing (no jq, no node): absence of a guard must not brick a session.
 - **Refuse a false terminal success**: the `/dev` Stop hook returns
-  `{"decision":"block","reason":"DEV_TERMINAL ..."}` until exactly one active
-  change has a passing, audited proof bound to the current workspace hash.
+  `{"decision":"block","reason":"DEV_TERMINAL ..."}` while the coordinator has
+  an automatic action available. It allows Stop when exactly one active change
+  has a passing, audited proof bound to the current workspace hash, or when the
+  coordinator returns a real `WAIT`/`ASK_USER` boundary. A boundary remains
+  recorded as incomplete and cannot be mistaken for passing proof. A host
+  permission denial is also a real authority boundary: the hook allows the
+  agent to ask for permission instead of forcing the denied operation again.
 
 Environment: `CLAUDE_PROJECT_DIR` names the project root (default: cwd).
 `FOUNDATION_GUARDRAIL_MODE` (`off|audit|block|auto`) governs the phase guard;

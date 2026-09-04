@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`/dev` now stops cleanly at review authority boundaries.** An exhausted
+  configured-review circuit is reported as an external wait instead of a
+  repeatedly executable review action, and the Stop hook permits genuine
+  `WAIT`/`ASK_USER` or host-permission handoffs without misreporting Proof as
+  complete or asking users to run blocked commands themselves.
+
 ## [3.5.6] - 2026-09-04
 
 ### Fixed
