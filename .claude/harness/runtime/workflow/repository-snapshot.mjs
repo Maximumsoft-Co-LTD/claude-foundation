@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { compositeRepositorySelection } from "../core/repository-binding.mjs";
 
 export function snapshotChildPaths(selection) {
   return selection.filter((repository) => repository.id !== "root" &&
@@ -73,12 +74,14 @@ export function relevantSnapshotOperation({
   stableHash,
   now
 }, id, workspaceOverride = null, force = false) {
-  const state = existsSync(runtimePath(id)) ? readJson(runtimePath(id)) : {};
+  const runtimePresent = existsSync(runtimePath(id));
+  const state = runtimePresent ? readJson(runtimePath(id)) : {};
   const contractRevision = Number(state.contractRevision ?? 0);
-  if (workspaceOverride || !state.repositories ||
-      Object.keys(state.repositories).length === 0)
+  if (workspaceOverride || !runtimePresent)
     return singleRelevantSnapshot(id, workspaceOverride, force);
   const selection = selectedRepositories(id, state);
+  if (!compositeRepositorySelection(selection))
+    return singleRelevantSnapshot(id, null, force);
   const control = singleRelevantSnapshot(
     id, state.workspace?.path || root, force, snapshotChildPaths(selection));
   const repositories = repositorySnapshotEntries({

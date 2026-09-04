@@ -230,7 +230,7 @@ claude-foundation doctor --stage prove --change <change>
 | `sandbox create <change>` | Creates an isolated Git worktree | Advanced primitive behind `advance --through build` |
 | `sandbox challenge <change>` | Creates a short-lived nonce and permission contract | Before a host signs unattended authority |
 | `sandbox create <change> --unattended --attestation <file>` | Verifies and consumes one trusted host attestation | Unattended Build only |
-| `sandbox create <change> --all` | Creates one sandbox per selected writable repository | Advanced multi-repo primitive behind `advance` |
+| `sandbox create <change> --all` | Creates selected repository sandboxes or repairs missing bindings while preserving valid worktrees | Advanced multi-repo primitive and recovery behind `advance` |
 | `sandbox sync <change> [--resolve <path,path>]` | Synchronizes a revised agreement and reconciles a moved target: a worktree replays onto the new commit, a copy fast-forwards what it left alone; `--resolve` accepts a merged double-edit | When requirements change during Build, or the target moved (another change landed) |
 | `land check <change>` | Checks proof freshness and landing readiness | Before accepting the change |
 | `land record <change> ...` | Binds an explicitly created child commit | After authorized commit/CI work |
@@ -347,7 +347,14 @@ multi-remote mutation wave.
 Multiple remotes use ordered saga states rather than an atomicity claim.
 Change Loop verifies explicit child commits, optional CI state, dependency
 order, root gitlinks, and fresh composite proof. It never commits or pushes
-without separate authority.
+without separate authority. Composite routing comes from the declared
+selection, not `state.repositories` cardinality: one selected non-root child
+still uses the saga. After isolation, a child record must bind its worktree,
+catalog target, access mode, and base head; a missing or invalid record fails
+closed instead of falling back to the live checkout. `sandbox inspect` exposes
+the incomplete record using filesystem and Git-metadata reads only, without a
+PATH-resolved Git process. Repeating `sandbox create <change> --all` repairs a
+partial binding in place and preserves every valid existing child worktree.
 
 ## Normal flow
 

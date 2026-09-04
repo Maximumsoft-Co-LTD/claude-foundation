@@ -116,6 +116,7 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
+| `sandbox create <change> --all` | ซ่อม binding แบบหลาย repository ที่หายในจุดเดิม โดยรักษา worktree เดิมที่ยังใช้ได้ |
 | `change abandon <change> --reason <r> --decision-ref <ref>` | กัก change ที่พิสูจน์ไม่ได้ |
 | `change waive <change> --capability <c> --reason <r> --decision-ref <ref>` | ถอนการบังคับใช้ capability หนึ่งตัวหลัง provider ของมันรันแล้วล้มเหลว `--revoke` คืนข้อบังคับ |
 | `budget continue <change> --reason <r> --decision-ref <ref>` | เปิดหน้าต่างทำงานต่อหนึ่งครั้งตามนโยบาย |
@@ -139,7 +140,7 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 | Pin | v3.5.4 |
 |---|---|
 | runtime | 3.5.4 |
-| runtime API | 28 |
+| runtime API | 30 |
 | semantic draft schema | 3 |
 | semantic amendment schema | 1 |
 | artifact defaults schema | 2 |

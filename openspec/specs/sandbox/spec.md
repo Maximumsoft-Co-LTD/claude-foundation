@@ -80,3 +80,44 @@ When Foundation validates a root change packet in preparation for sandbox synchr
 - **WHEN** root-source validation reads a refreshed repositories.yaml while the active sandbox still carries the prior selection
 - **THEN** each validation uses the selection in its own packet tree and still enforces known repositories and declared dependencies
 
+### Requirement: Isolated repository selection remains fully bound
+
+After the control workspace enters worktree or copy mode, Foundation SHALL
+resolve every selected non-root repository only from a complete runtime record
+whose worktree path, catalog target, access mode, and base head agree with the
+declared selection. It SHALL NOT fall back to the live target checkout.
+
+#### Scenario: selected child runtime record is missing
+
+- **WHEN** an isolated change still selects a non-root repository but its runtime record is absent
+- **THEN** selection fails before hashing, provider execution, Apply, or Land and returns `sandbox create <change> --all` as the exact repair route with inspect and retirement alternatives
+
+#### Scenario: existing child worktree lost only its runtime record
+
+- **WHEN** `sandbox create <change> --all` finds a canonical child worktree owned by the selected target but no matching runtime row
+- **THEN** Foundation reconstructs the binding without recreating the worktree or losing its uncommitted or committed work
+
+#### Scenario: a valid partial selection needs one new child worktree
+
+- **WHEN** `sandbox create <change> --all` finds valid existing bindings and one selected child whose canonical worktree is absent
+- **THEN** Foundation preserves the valid bindings, creates only the missing child, and can be resumed with the same lifecycle command
+
+#### Scenario: selected child runtime record drifted
+
+- **WHEN** a selected child record has no worktree path or base, names a different target or access mode, or its worktree metadata is invalid
+- **THEN** readiness and lifecycle operations refuse the record as infrastructure state rather than reading the live target
+
+#### Scenario: valid worktree belongs to another repository
+
+- **WHEN** a recorded canonical path is a Git worktree but its common Git directory does not match the selected catalog target
+- **THEN** Foundation refuses the binding and preserves the path for explicit inspection instead of accepting Git validity as ownership
+
+#### Scenario: inspection exposes the complete selection safely
+
+- **WHEN** `sandbox inspect` reads a change whose selected and recorded repository sets differ
+- **THEN** it reports missing, unexpected, missing-path, and invalid-worktree rows and does not execute a PATH-resolved Git program
+
+#### Scenario: external repository is not Git initialized
+
+- **WHEN** the topology selects an external path that exists but has no Git repository
+- **THEN** doctor reports it as not initialized because Foundation cannot pin an isolated revision honestly

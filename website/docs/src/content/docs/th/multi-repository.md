@@ -82,6 +82,10 @@ claude-foundation repos
 contract, SDK และ integration dependency repository แบบ read เป็นส่วนหนึ่งของ
 identity ของ proof แต่ไม่ใช่เป้าหมาย Build หรือ Land
 
+การเลือก non-root ตัวใดก็ตามทำให้ lifecycle เป็น composite รวมถึงกรณีเลือก child
+เพียงตัวเดียวโดยไม่มี product work ใน `root`; ระบบต้องไม่ลดรูปไปใช้ Apply หรือ
+archive แบบ single-root
+
 ตรวจ selection ที่ resolve แล้ว:
 
 ```bash
@@ -113,6 +117,12 @@ claude-foundation advance <change> --through build
 `sandbox create --all` และ `sandbox inspect` ยังเป็น operator diagnostic ใต้
 `help --all`; ผู้ใช้ไม่ต้องเรียงคำสั่งเอง
 
+หลัง isolation child ที่เลือกทุกตัวต้องมี runtime record ซึ่ง target, access mode,
+base head และ worktree ตรงกับ catalog `sandbox inspect` จะแสดง `missing-record`,
+`unexpected-record`, `missing` หรือ `invalid` แทนการนำ target checkout มาใช้เงียบ ๆ
+การ inspect อ่าน filesystem และ Git metadata โดยตรง จึงไม่รัน `git` ที่ repository
+ควบคุมผ่าน `PATH`
+
 repository แบบ write ได้ Build worktree แยก ส่วน read และ external ที่มี Git ได้
 detached worktree ที่ล็อก commit คำสั่งนี้ไม่ได้ทำให้ service ภายนอกหรือ directory
 ทั่วไปปลอดภัย sandbox เป็น Git workspace isolation ไม่ใช่ OS security boundary
@@ -141,6 +151,10 @@ Change Loop ส่ง environment สำคัญสองตัว:
 - `FOUNDATION_REPOSITORY_ID` — ID ของ repository ที่เป็น working directory
 - `FOUNDATION_REPOSITORIES_FILE` — JSON manifest ที่มี version และ map ID ทุกตัว
   ใน scope ไปยัง `path`, `access` และ `baseHead` ที่แยกพื้นที่แล้ว
+
+changed-surface check, review packet, provider manifest, snapshot และ Land ใช้
+base ที่บันทึกชุดเดียวกัน ก่อน isolation source head ที่เลือกใช้ตั้งต้นได้ แต่หลัง
+isolation ถ้า child binding หายจะเป็น infrastructure failure
 
 โค้ด provider ต้องอ่าน manifest ห้ามสมมติว่า repository ทั้งห้าของบริษัทถูก
 checkout เป็น sibling อยู่ในทุกเครื่อง
@@ -200,6 +214,9 @@ claude-foundation land resume <change>
 commit และ root pointer ที่บันทึก แต่ไม่อ้างว่า atomic ข้าม remote อิสระ การ commit,
 push และเปิด pull request ยังต้องได้รับอนุญาตจากผู้ใช้แยกต่างหาก
 
+saga นี้ใช้ด้วยเมื่อเลือก non-root child เพียงตัวเดียว runtime record ที่หายต้องไม่
+ทำให้ Land ลัดไปใช้ทาง single-repository
+
 ## แผนที่การกู้คืน
 
 | เหตุการณ์ | Action ที่ถูกต้อง |
@@ -208,6 +225,8 @@ push และเปิด pull request ยังต้องได้รับ�
 | sync เจอ replay conflict | แก้ path ที่ระบุ ไม่ต้องสร้าง change ใหม่ |
 | read repository สกปรก | เอา mutation ออกหรือแก้ setup/provider |
 | setup ของ repository ล้ม | แก้ `setupCommand` แล้ว recreate หรือ sync ตามที่รายงาน |
+| binding ของ child ที่เลือกหาย | รัน `sandbox inspect <change>` แล้ว `sandbox create <change> --all`; ระบบรักษา worktree และงานเดิมที่ยังใช้ได้ |
+| path มาตรฐานของ child เป็น worktree ของ repository อื่น | อย่าแก้หรือลบทิ้ง ตรวจ path ที่รายงาน แล้วแก้ conflict ของ target/path หรือ abandon change อย่างชัดเจน |
 | provider มองไม่เห็น repository | เพิ่มใน `repositories` ของ provider ห้าม hard-code local path |
 | Land ถูกขัดจังหวะ | `land resume <change>` |
 

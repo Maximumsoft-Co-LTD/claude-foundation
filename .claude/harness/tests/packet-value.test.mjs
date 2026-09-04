@@ -36,7 +36,7 @@ const repositories = {
   },
   other: {
     id: "other", type: "service", mode: "worktree", relativePath: "other",
-    workspacePath: join(root, "other"), dependsOn: ["root"]
+    workspacePath: join(root, "other"), baseHead: "selected-other", dependsOn: ["root"]
   }
 };
 const baseTasks = [
@@ -142,6 +142,11 @@ const smallSurface = reviewChangedSurface(surfaceContext, "change", {
 assert.equal(smallSurface.paths.length, 4);
 assert.equal(smallSurface.inspection[0].baseHead, "root-base");
 assert.equal(smallSurface.inspection[1].baseHead, "other-base");
+const currentSurface = reviewChangedSurface(surfaceContext, "change", {
+  workspace: { mode: "current", path: root, baseHead: "root-base" }, repositories: {}
+}, [{ repositoryId: "other", path: "src/current.js" }]);
+assert.equal(currentSurface.inspection[0].baseHead, "selected-other",
+  "review metadata must expose the same selected base used by changed-surface diffing");
 const largeRows = Array.from({ length: 61 }, (_, index) => ({
   repositoryId: "root", path: `src/file-${index}.js`, kind: "code", identity: String(index)
 }));

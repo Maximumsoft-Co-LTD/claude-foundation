@@ -9,6 +9,17 @@ const ROOT = resolve(import.meta.dirname, "../../..");
 const HOOK_DETECTOR = ["node", "--test", ".claude/tests/hooks/phase-guard-policy.test.mjs"];
 const EXEC_DETECTOR = ["node", "--test", ".claude/harness/tests/exec-runtime.test.mjs"];
 const SEMANTIC_DETECTOR = ["node", "--test", ".claude/harness/tests/semantic-draft.test.mjs"];
+const TOPOLOGY_DETECTOR = ["node", "--test", ".claude/harness/tests/repository-topology.test.mjs"];
+const SNAPSHOT_DETECTOR = ["node", "--test", ".claude/harness/tests/repository-snapshot.test.mjs"];
+const INFRASTRUCTURE_DETECTOR = ["node", "--test", ".claude/harness/tests/repository-infrastructure-issues.test.mjs"];
+const PROOF_VALUE_DETECTOR = ["node", "--test", ".claude/harness/tests/proof-readiness-value.test.mjs"];
+const ADVANCE_DETECTOR = ["node", "--test", ".claude/harness/tests/advance-runtime.test.mjs"];
+const SANDBOX_DETECTOR = ["node", "--test", ".claude/harness/tests/sandbox-create-phases.test.mjs"];
+const PACKET_DETECTOR = ["node", ".claude/harness/tests/packet-value.test.mjs"];
+const LAND_DETECTOR = ["node", "--test", ".claude/harness/tests/land-check-phases.test.mjs"];
+const APPLY_DETECTOR = ["node", ".claude/harness/tests/apply-sandbox-operation.test.mjs"];
+const INSPECTION_DETECTOR = ["node", "--test", ".claude/harness/tests/workspace-inspection.test.mjs"];
+const DIAGNOSTICS_DETECTOR = ["node", ".claude/harness/tests/diagnostics-runtime.test.mjs"];
 
 const CASES = [
   {
@@ -58,6 +69,134 @@ const CASES = [
     detector: SEMANTIC_DETECTOR,
     before: "if (url.protocol !== \"https:\")",
     after: "if (false && url.protocol !== \"https:\")"
+  },
+  {
+    id: "MUT-ISOLATED-REPOSITORY-TARGET-FALLBACK",
+    sourcePath: ".claude/harness/runtime/workflow/repository-topology.mjs",
+    expectedKiller: "CASE-ISOLATED-REPOSITORY-BINDING",
+    detector: TOPOLOGY_DETECTOR,
+    before: "if (options.useTargetPaths || !isolatedRepositoryState(state) ||\n      repository.id === \"root\") return null;",
+    after: "if (true || options.useTargetPaths || !isolatedRepositoryState(state) ||\n      repository.id === \"root\") return null;"
+  },
+  {
+    id: "MUT-MULTI-REPOSITORY-SNAPSHOT-COLLAPSED",
+    sourcePath: ".claude/harness/runtime/workflow/repository-snapshot.mjs",
+    expectedKiller: "CASE-MULTI-REPOSITORY-SNAPSHOT",
+    detector: SNAPSHOT_DETECTOR,
+    before: "if (!compositeRepositorySelection(selection))",
+    after: "if (true || !compositeRepositorySelection(selection))"
+  },
+  {
+    id: "MUT-PROOF-REPOSITORY-INFRASTRUCTURE-SKIPPED",
+    sourcePath: ".claude/harness/runtime/evidence/proof-readiness.mjs",
+    expectedKiller: "CASE-PROOF-REPOSITORY-INFRASTRUCTURE",
+    detector: INFRASTRUCTURE_DETECTOR,
+    before: "if (!gitHead(runtime.path))",
+    after: "if (false && !gitHead(runtime.path))"
+  },
+  {
+    id: "MUT-REPOSITORY-WORKTREE-OWNER-INVERTED",
+    sourcePath: ".claude/harness/runtime/core/repository-binding.mjs",
+    expectedKiller: "CASE-REPOSITORY-WORKTREE-OWNERSHIP",
+    detector: TOPOLOGY_DETECTOR,
+    before: "return Boolean(worktreeOwner && targetOwner && worktreeOwner === targetOwner);",
+    after: "return Boolean(worktreeOwner && targetOwner && worktreeOwner !== targetOwner);"
+  },
+  {
+    id: "MUT-PROOF-INCOMPLETE-REPOSITORY-BINDING-ALLOWED",
+    sourcePath: ".claude/harness/runtime/evidence/proof-readiness.mjs",
+    expectedKiller: "CASE-PROOF-COMPLETE-REPOSITORY-BINDING",
+    detector: INFRASTRUCTURE_DETECTOR,
+    before: "for (const field of [\"targetPath\", \"baseHead\", \"access\"])",
+    after: "for (const field of [])"
+  },
+  {
+    id: "MUT-PROOF-PRIMARY-BINDING-RESULT-OVERWRITTEN",
+    sourcePath: ".claude/harness/runtime/evidence/proof-readiness.mjs",
+    expectedKiller: "CASE-PROOF-PRIMARY-BINDING-ORDER",
+    detector: INFRASTRUCTURE_DETECTOR,
+    before: "if (issues.length) return [...new Set(issues)];",
+    after: "if (false && issues.length) return [...new Set(issues)];"
+  },
+  {
+    id: "MUT-PROOF-PREHASH-INFRASTRUCTURE-RECOVERY-DROPPED",
+    sourcePath: ".claude/harness/runtime/evidence/proof-readiness.mjs",
+    expectedKiller: "CASE-PROOF-INFRASTRUCTURE-BEFORE-HASH",
+    detector: PROOF_VALUE_DETECTOR,
+    before: "if (repositoryIssues.length)\n      return repositoryInfrastructureReadiness(\n        context, id, stage, repositoryIssues, error);",
+    after: "if (false && repositoryIssues.length)\n      return repositoryInfrastructureReadiness(\n        context, id, stage, repositoryIssues, error);"
+  },
+  {
+    id: "MUT-ADVANCE-FAILURE-ENVELOPE-GENERIC",
+    sourcePath: ".claude/harness/runtime/workflow/advance-runtime.mjs",
+    expectedKiller: "CASE-ADVANCE-EXACT-FAILURE-ENVELOPE",
+    detector: ADVANCE_DETECTOR,
+    before: "const dispatch = agentDispatchValue(id);",
+    after: "const dispatch = (() => {\n          try { return agentDispatchValue(id); }\n          catch { return { action: \"unavailable\", reason: \"build-dispatch-unavailable\" }; }\n        })();"
+  },
+  {
+    id: "MUT-ADVANCE-PREFLIGHT-HASH-REPEATED",
+    sourcePath: ".claude/harness/runtime/workflow/advance-runtime.mjs",
+    expectedKiller: "CASE-ADVANCE-PREFLIGHT-HASH-OWNERSHIP",
+    detector: ADVANCE_DETECTOR,
+    before: "const workspaceHash = dispatch.action === \"build-complete\" && proofPreflight\n          ? proofPreflight.workspaceHash : relevantHash(id);",
+    after: "const workspaceHash = relevantHash(id);"
+  },
+  {
+    id: "MUT-ADVANCE-FIXED-CYCLE-LIMIT",
+    sourcePath: ".claude/harness/runtime/workflow/advance-runtime.mjs",
+    expectedKiller: "CASE-ADVANCE-SEMANTIC-CONVERGENCE",
+    detector: ADVANCE_DETECTOR,
+    before: "while (true) {",
+    after: "for (let cycle = 0; cycle < 32; cycle += 1) {"
+  },
+  {
+    id: "MUT-PARTIAL-SANDBOX-RECOVERY-SKIPPED",
+    sourcePath: ".claude/harness/runtime/workflow/sandbox-runtime.mjs",
+    expectedKiller: "CASE-PARTIAL-SANDBOX-RECOVERY",
+    detector: SANDBOX_DETECTOR,
+    before: "if (existsSync(expectedPath)) {",
+    after: "if (false && existsSync(expectedPath)) {"
+  },
+  {
+    id: "MUT-REVIEW-PACKET-BASE-DIVERGED",
+    sourcePath: ".claude/harness/runtime/workflow/packet-runtime.mjs",
+    expectedKiller: "CASE-REVIEW-PACKET-REPOSITORY-BASE",
+    detector: PACKET_DETECTOR,
+    before: "baseHead: repositoryBaseHead(repository, state),",
+    after: "baseHead: state.repositories?.[repositoryId]?.baseHead || null,"
+  },
+  {
+    id: "MUT-SINGLE-CHILD-LAND-DOWNGRADED",
+    sourcePath: ".claude/harness/runtime/workflow/land-runtime.mjs",
+    expectedKiller: "CASE-SINGLE-CHILD-LAND-SAGA",
+    detector: LAND_DETECTOR,
+    before: "const state = loadRuntime(id);\n  const multiRepository = compositeRepositorySelection(selectedRepositories(id, state));",
+    after: "const state = loadRuntime(id);\n  const multiRepository = Object.keys(state.repositories || {}).length > 1;"
+  },
+  {
+    id: "MUT-SINGLE-CHILD-LOCAL-APPLY-ALLOWED",
+    sourcePath: ".claude/harness/runtime/workflow/apply-runtime.mjs",
+    expectedKiller: "CASE-SINGLE-CHILD-LOCAL-APPLY",
+    detector: APPLY_DETECTOR,
+    before: "if (emptyRootDiffPermitted(initialState) && !options.controlPlane)",
+    after: "if (Object.keys(initialState.repositories || {}).length > 1 && !options.controlPlane)"
+  },
+  {
+    id: "MUT-REPOSITORY-INSPECTION-OMITS-MISSING",
+    sourcePath: ".claude/harness/runtime/workflow/sandbox-runtime.mjs",
+    expectedKiller: "CASE-REPOSITORY-INSPECTION-COMPLETENESS",
+    detector: INSPECTION_DETECTOR,
+    before: "const ids = new Set([...Object.keys(records), ...expected]);",
+    after: "const ids = new Set(Object.keys(records));"
+  },
+  {
+    id: "MUT-EXTERNAL-NON-GIT-DIAGNOSTIC-PASSES",
+    sourcePath: ".claude/harness/runtime/core/diagnostics-runtime.mjs",
+    expectedKiller: "CASE-EXTERNAL-REPOSITORY-REQUIRES-GIT",
+    detector: DIAGNOSTICS_DETECTOR,
+    before: "const initialized = available && Boolean(gitHead(repository.path));",
+    after: "const initialized = available && (repository.type === \"external\" || Boolean(gitHead(repository.path)));"
   }
 ];
 
@@ -76,7 +215,13 @@ const output = resolve(process.env.FOUNDATION_RESULT_REPORT ||
 try {
   cpSync(join(ROOT, ".claude"), join(fixture, ".claude"), { recursive: true });
   const baselines = new Map();
-  for (const detector of [HOOK_DETECTOR, EXEC_DETECTOR, SEMANTIC_DETECTOR]) {
+  for (const detector of [
+    HOOK_DETECTOR, EXEC_DETECTOR, SEMANTIC_DETECTOR, TOPOLOGY_DETECTOR,
+    SNAPSHOT_DETECTOR, INFRASTRUCTURE_DETECTOR, PROOF_VALUE_DETECTOR,
+    ADVANCE_DETECTOR, SANDBOX_DETECTOR,
+    PACKET_DETECTOR, LAND_DETECTOR, APPLY_DETECTOR, INSPECTION_DETECTOR,
+    DIAGNOSTICS_DETECTOR
+  ]) {
     const key = detector.join("\0");
     if (!baselines.has(key)) baselines.set(key, execute(detector, fixture));
     if (baselines.get(key).status !== 0)

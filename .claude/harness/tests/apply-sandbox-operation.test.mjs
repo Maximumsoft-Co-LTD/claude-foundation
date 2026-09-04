@@ -62,6 +62,8 @@ function fixture(overrides = {}) {
 try {
   assert.throws(() => assertLocalApply({ repositories: { root: {}, api: {} } }, {}, fail),
     /multi-repository/);
+  assert.throws(() => assertLocalApply({ repositories: { api: {} } }, {}, fail),
+    /multi-repository/);
   assert.doesNotThrow(() => assertLocalApply(
     { repositories: { root: {}, api: {} } }, { controlPlane: true }, fail));
   assert.equal(projectionHash(JSON.stringify, [{ path: "a", after: "x", afterMode: "1", extra: true }]),

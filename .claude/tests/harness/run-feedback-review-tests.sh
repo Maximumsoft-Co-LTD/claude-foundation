@@ -559,7 +559,7 @@ assert_contains "legacy review receipt is specifically stale" \
 assert_eq "provider protocol carries canonical filesystem identity" "13" \
   "$(jq -r '.providerProtocolVersion' .foundation/receipts/irreversible-payment-migration/review.json)"
 assert_cmd_zero "protocol bundle advertises feedback protocols" \
-  jq -e '.reviewProtocol == "4" and .acceptanceProtocol == "2" and .reviewPacketSchema == "4" and .authorityProtocol == "2" and .attestationProtocol == "1" and .ciEvidenceProtocol == "1"' \
+  jq -e '.reviewProtocol == "4" and .acceptanceProtocol == "2" and .reviewPacketSchema == "5" and .authorityProtocol == "2" and .attestationProtocol == "1" and .ciEvidenceProtocol == "1"' \
     .claude/harness/protocol.json
 
 node .claude/harness/foundation.mjs new 'Missing recorded base' >/dev/null

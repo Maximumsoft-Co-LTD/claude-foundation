@@ -24,11 +24,13 @@ function readiness(overrides = {}) {
 test("preflight blockers preserve every blocker category", () => {
   assert.deepEqual(proofPreflightBlockers(readiness({
     issues: ["configuration drift"],
+    repositoryIssues: ["api binding missing"],
     externalProviders: ["review"],
     unavailableProviders: ["test:command-missing"],
     pendingTasks: [{ id: "task-1" }, { id: "task-2" }]
   })), [
     "configuration drift",
+    "api binding missing",
     "provider 'review' has no executable adapter or valid external receipt",
     "provider unavailable: test:command-missing",
     "2 implementation task(s) remain unchecked"

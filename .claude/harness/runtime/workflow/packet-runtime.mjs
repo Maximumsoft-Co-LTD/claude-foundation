@@ -5,6 +5,7 @@ import {
 } from "../core/update-advisory.mjs";
 import { verificationPlanValue } from "./verification-plan.mjs";
 import { authorityPreflightValue } from "../core/authority-policy.mjs";
+import { repositoryBaseHead } from "../core/repository-binding.mjs";
 
 export function attachPhaseUpdateAdvisory(value, phase, options = {}) {
   if (!["change", "build"].includes(phase)) return value;
@@ -81,14 +82,15 @@ export function reviewChangedSurface(context, id, state, surfaceRows) {
     if (!groups.has(row.repositoryId)) groups.set(row.repositoryId, []);
     groups.get(row.repositoryId).push(row.path);
     return groups;
-  }, new Map())].map(([repositoryId, repositoryPaths]) => ({
-    repositoryId,
-    workspacePath: reviewSurfaceWorkspace(context, id, state, repositoryId),
-    baseHead: repositoryId === "root"
-      ? state.repositories?.root?.baseHead || state.workspace?.baseHead || null
-      : state.repositories?.[repositoryId]?.baseHead || null,
-    paths: repositoryPaths
-  }));
+  }, new Map())].map(([repositoryId, repositoryPaths]) => {
+    const repository = context.repositoryById(id, repositoryId, state);
+    return {
+      repositoryId,
+      workspacePath: reviewSurfaceWorkspace(context, id, state, repositoryId),
+      baseHead: repositoryBaseHead(repository, state),
+      paths: repositoryPaths
+    };
+  });
   if (paths.length <= 60) return {
     paths, digest: context.stableHash(paths), inspection
   };

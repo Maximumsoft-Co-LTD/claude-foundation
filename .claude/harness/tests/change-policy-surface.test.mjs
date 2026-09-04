@@ -37,6 +37,18 @@ test("changed-surface helpers normalize, exclude, merge and sort rows", () => {
   }), "repo-base");
   assert.equal(repositoryBaseHead({ id: "root" }, { workspace: { baseHead: "workspace-base" } }),
     "workspace-base");
+  assert.equal(repositoryBaseHead({ id: "root", baseHead: "selected-base" }, {
+    workspace: { mode: "current" }, repositories: {}
+  }), null);
+  assert.equal(repositoryBaseHead({ id: "api", baseHead: "selected-base" }, {
+    workspace: { mode: "current" }, repositories: {}
+  }), "selected-base");
+  assert.equal(repositoryBaseHead({ id: "api", baseHead: "selected-base" }, {
+    workspace: { mode: "worktree" }, repositories: { api: { baseHead: "sandbox-base" } }
+  }), "sandbox-base");
+  assert.equal(repositoryBaseHead({ id: "api", baseHead: "selected-base" }, {
+    workspace: { mode: "worktree" }, repositories: {}
+  }), null);
   assert.equal(repositoryBaseHead({ id: "api" }, { repositories: {} }), null);
 });
 
@@ -214,16 +226,25 @@ test("surface resolvability distinguishes selection errors and missing repositor
   assert.equal(throwing.changedSurfaceResolvable("c"), false);
 
   let state = { workspace: {}, repositories: {} };
+  const repositories = [
+    { id: "root", workspacePath: "/root" },
+    { id: "copy", workspacePath: "/copy" },
+    { id: "api", workspacePath: "/api" }
+  ];
   const policy = createChangePolicy({
     ...base,
     gitHead: (workspace) => workspace === "/copy" ? null : "head",
     loadRuntime: () => state,
-    selectedRepositories: () => [
-      { id: "root", workspacePath: "/root" },
-      { id: "copy", workspacePath: "/copy" },
-      { id: "api", workspacePath: "/api" }
-    ]
+    selectedRepositories: () => repositories
   });
+  assert.equal(policy.changedSurfaceResolvable("c"), false);
+  state = {
+    workspace: { mode: "current", baseHead: "root-base" }, repositories: {}
+  };
+  repositories[2].baseHead = "target-api";
+  assert.equal(policy.changedSurfaceResolvable("c"), true);
+  assert.deepEqual(policy.canonicalChangedSurface("c"), []);
+  state.workspace.mode = "worktree";
   assert.equal(policy.changedSurfaceResolvable("c"), false);
   state = {
     workspace: { baseHead: "root-base" },

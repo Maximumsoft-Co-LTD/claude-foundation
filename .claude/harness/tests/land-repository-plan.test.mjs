@@ -326,8 +326,9 @@ test("multi-repository archive readiness accepts settled plans and names blocker
   delete state.repositories.docs.mode;
   assert.throws(() => runtime.assertMultiRepositoryArchiveReady("change-a", state),
     /multi-repository Land is incomplete: docs:read-not-isolated/);
-  assert.doesNotThrow(() => runtime.assertMultiRepositoryArchiveReady("change-a", {
+  assert.throws(() => runtime.assertMultiRepositoryArchiveReady("change-a", {
     repositories: { root: {} }
-  }));
-  assert.doesNotThrow(() => runtime.assertMultiRepositoryArchiveReady("change-a", {}));
+  }), /multi-repository Land is incomplete: docs:read-not-isolated/);
+  assert.throws(() => runtime.assertMultiRepositoryArchiveReady("change-a", {}),
+    /multi-repository Land is incomplete: docs:read-not-isolated/);
 });

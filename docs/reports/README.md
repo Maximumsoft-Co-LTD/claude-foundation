@@ -13,8 +13,9 @@ time; they are not updated to describe the current release.
 | Operate dogfood, pilot, rollback, and production observation | [Rollout operations](rollout-operations.md) | Current runbook |
 | Configure consumer CRAP and mutation gates | [Consumer quality](../consumer-quality.md) / [ภาษาไทย](../consumer-quality.th.md) | Current guide |
 | Understand the agent-harness simplification design | [Agent harness simplification plan](agent-harness-simplification-plan-2026-09-03.md) | Implemented design |
-| Review the repository-wide implementation and ownership audit | [Agent harness simplification implementation audit](agent-harness-simplification-implementation-audit-2026-09-03.md) | Current verification record |
-| Review the v3.5.4 lifecycle safety remediation | [Lifecycle safety remediation plan](v3.5.4-lifecycle-safety-remediation-plan-2026-09-04.md) | Target release plan and acceptance contract |
+| Review the repository-wide simplification audit | [Agent harness simplification implementation audit](agent-harness-simplification-implementation-audit-2026-09-03.md) | v3.5.3 implementation record |
+| Review the v3.5.4 lifecycle safety remediation | [Lifecycle safety remediation plan](v3.5.4-lifecycle-safety-remediation-plan-2026-09-04.md) | v3.5.4 release acceptance record |
+| Review the post-v3.5.4 multi-repository binding remediation | [Multi-repository runtime binding remediation](multi-repository-runtime-binding-remediation-2026-09-04.md) | Current working-tree verification record |
 
 Release mechanics live in the repository [RELEASING.md](../../RELEASING.md).
 Detailed runtime semantics live in [WORKFLOW.md](../../WORKFLOW.md). Do not copy

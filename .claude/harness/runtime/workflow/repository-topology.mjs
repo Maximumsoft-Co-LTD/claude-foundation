@@ -1,5 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import {
+  compositeRepositorySelection, isolatedRepositoryState, repositoryBaseHead,
+  worktreeOwnedByTarget
+} from "../core/repository-binding.mjs";
+
+export {
+  compositeRepositorySelection, isolatedRepositoryState, repositoryBaseHead
+} from "../core/repository-binding.mjs";
 
 export function normalizedSelectionEntry(entry) {
   return typeof entry === "string" ? { id: entry } : entry;
@@ -12,16 +20,58 @@ export function selectedRepository(catalogValue, id, entry, reportFailure) {
   return repository;
 }
 
-export function selectedRepositoryRow({
-  repository, entry, state, options, root, canonicalPath, gitHead
+export function selectedRepositoryRuntimeIssue({
+  repository, entry, state, options = {}, canonicalPath, root = null,
+  changeId = null, ownsWorktree = worktreeOwnedByTarget
 }) {
-  const runtimeState = state.repositories?.[repository.id] || {};
+  if (options.useTargetPaths || !isolatedRepositoryState(state) ||
+      repository.id === "root") return null;
+  const runtime = state.repositories?.[repository.id];
+  if (!runtime)
+    return `isolated runtime state is missing repository '${repository.id}'`;
+  if (runtime.mode !== "worktree")
+    return `isolated repository '${repository.id}' has invalid mode '${runtime.mode || "missing"}'`;
+  for (const field of ["path", "targetPath", "baseHead"])
+    if (!runtime[field])
+      return `isolated repository '${repository.id}' is missing ${field}`;
+  const access = entry.mode || repository.mode;
+  if (runtime.access !== access)
+    return `isolated repository '${repository.id}' access changed from '${
+      runtime.access || "missing"}' to '${access}'`;
+  if (canonicalPath(runtime.targetPath) !== canonicalPath(repository.path))
+    return `isolated repository '${repository.id}' target path no longer matches the repository catalog`;
+  if (root && changeId) {
+    const expectedPath = join(root, ".foundation", "repository-sandboxes",
+      changeId, repository.id);
+    if (canonicalPath(runtime.path) !== canonicalPath(expectedPath))
+      return `isolated repository '${repository.id}' path is not its canonical sandbox path`;
+    if (!existsSync(runtime.path))
+      return `isolated repository '${repository.id}' workspace is missing`;
+    if (!ownsWorktree(runtime.path, repository.path))
+      return `isolated repository '${repository.id}' worktree is not owned by its selected target`;
+  }
+  return null;
+}
+
+export function selectedRepositoryRow({
+  repository, entry, state, options, root, canonicalPath, gitHead,
+  changeId = "<change>", reportFailure = (message) => { throw new Error(message); }
+}) {
+  const issue = selectedRepositoryRuntimeIssue({
+    repository, entry, state, options, canonicalPath, root, changeId
+  });
+  if (issue)
+    reportFailure(`${issue}; repair it with 'claude-foundation sandbox create ${changeId} --all', inspect preserved state with 'claude-foundation sandbox inspect ${changeId}', or retire the change with 'claude-foundation change abandon ${changeId} --reason <reason> --decision-ref <ref>'`);
+  const runtimeState = state.repositories?.[repository.id] ||
+    (repository.id === "root" ? state.workspace : null) || {};
   return {
     ...repository,
     mode: entry.mode || repository.mode,
     dependsOn: entry.dependsOn || repository.dependsOn || [],
-    baseHead: options.useTargetPaths
-      ? gitHead(repository.path)
+    baseHead: options.withoutGit
+      ? runtimeState.baseHead || repository.baseHead || null
+      : options.useTargetPaths
+        ? gitHead(repository.path)
       : runtimeState.baseHead || gitHead(repository.path),
     workspacePath: canonicalPath(options.useTargetPaths
       ? repository.path
@@ -52,7 +102,8 @@ export function selectRepositories({
       reportFailure(`${id}/repositories.yaml repeats '${repository.id}'`);
     seen.add(repository.id);
     rows.push(selectedRepositoryRow({
-      repository, entry, state, options, root, canonicalPath, gitHead
+      repository, entry, state, options, root, canonicalPath, gitHead,
+      changeId: id, reportFailure
     }));
   }
   assertSelectedDependencies(rows, id, reportFailure);

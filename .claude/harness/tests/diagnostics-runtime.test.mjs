@@ -114,6 +114,7 @@ try {
   runtime.doctor({ stage: "prove", change: "c", unattended: true, "require-archive": true });
   assert.match(output, /unattended-security-boundary/);
   assert.match(output, /repository:missing/);
+  assert.match(output, /WARN\s+repository:external: not initialized as Git/);
   assert.match(output, /provider:browser:command/);
   assert.match(output, /playwright:readiness/);
   assert.match(output, /apply-transactions/);

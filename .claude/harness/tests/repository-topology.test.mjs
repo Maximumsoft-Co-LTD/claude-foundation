@@ -16,12 +16,16 @@ import {
   normalizedSelectionEntry,
   normalizedCatalogRepository,
   parseDiscoveredSubmodules,
+  compositeRepositorySelection,
+  repositoryBaseHead,
   repositoryDisplayRow,
   repositoryDisplayState,
   selectRepositories,
   selectedRepository,
-  selectedRepositoryRow
+  selectedRepositoryRow,
+  selectedRepositoryRuntimeIssue
 } from "../runtime/workflow/repository-topology.mjs";
+import { worktreeOwnedByTarget } from "../runtime/core/repository-binding.mjs";
 
 const fail = (message) => { throw new Error(message); };
 
@@ -93,6 +97,33 @@ test("repository selection follows the packet source without changing the defaul
   }
 });
 
+test("worktree ownership is bound to the selected Git repository", () => {
+  const root = workspacePath();
+  try {
+    const first = join(root, "first");
+    const second = join(root, "second");
+    const linked = join(root, "linked");
+    for (const repository of [first, second]) {
+      mkdirSync(repository);
+      execFileSync("git", ["init", "-q"], { cwd: repository });
+      execFileSync("git", ["config", "user.name", "Foundation Test"],
+        { cwd: repository });
+      execFileSync("git", ["config", "user.email", "foundation@example.invalid"],
+        { cwd: repository });
+      writeFileSync(join(repository, "tracked.txt"), "tracked\n");
+      execFileSync("git", ["add", "tracked.txt"], { cwd: repository });
+      execFileSync("git", ["commit", "-qm", "fixture"], { cwd: repository });
+    }
+    execFileSync("git", ["worktree", "add", "--detach", linked, "HEAD"],
+      { cwd: first });
+    assert.equal(worktreeOwnedByTarget(linked, first), true);
+    assert.equal(worktreeOwnedByTarget(linked, second), false);
+    assert.equal(worktreeOwnedByTarget(join(root, "missing"), first), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("selection entries and catalog lookup retain string and object forms", () => {
   const object = { id: "child", mode: "read" };
   assert.deepEqual(normalizedSelectionEntry("root"), { id: "root" });
@@ -140,6 +171,48 @@ test("selected repository rows preserve runtime and target path precedence", () 
   assert.equal(rootRow.mode, undefined);
   assert.deepEqual(rootRow.dependsOn, []);
   assert.equal(rootRow.workspacePath, "canonical:/sandbox");
+
+  const isolatedState = {
+    workspace: { mode: "worktree", path: "/sandbox" }, repositories: {}
+  };
+  assert.match(selectedRepositoryRuntimeIssue({
+    ...base, state: isolatedState, options: {}
+  }), /missing repository 'child'/);
+  const ownerRoot = workspacePath();
+  const ownerPath = join(ownerRoot, ".foundation", "repository-sandboxes",
+    "change", "child");
+  mkdirSync(ownerPath, { recursive: true });
+  try {
+    assert.match(selectedRepositoryRuntimeIssue({
+      repository: { ...base.repository, path: join(ownerRoot, "child") },
+      entry: base.entry,
+      root: ownerRoot,
+      changeId: "change",
+      canonicalPath: resolve,
+      ownsWorktree: () => false,
+      state: { workspace: { mode: "worktree" }, repositories: { child: {
+        mode: "worktree", path: ownerPath,
+        targetPath: join(ownerRoot, "child"), baseHead: "base", access: "read"
+      } } },
+      options: {}
+    }), /not owned by its selected target/);
+  } finally {
+    rmSync(ownerRoot, { recursive: true, force: true });
+  }
+  assert.throws(() => selectedRepositoryRow({
+    ...base, state: isolatedState, options: {}
+  }), /missing repository 'child'/);
+  assert.equal(selectedRepositoryRuntimeIssue({
+    ...base,
+    state: { workspace: { mode: "current" }, repositories: {} },
+    options: {}
+  }), null);
+  assert.equal(repositoryBaseHead({ id: "child", baseHead: "selected" }, {
+    workspace: { mode: "current" }, repositories: {}
+  }), "selected");
+  assert.equal(repositoryBaseHead({ id: "child", baseHead: "selected" }, isolatedState), null);
+  assert.equal(compositeRepositorySelection([{ id: "root" }]), false);
+  assert.equal(compositeRepositorySelection([{ id: "child" }]), true);
 });
 
 test("selection composition defaults to root and rejects duplicates and missing dependencies", () => {

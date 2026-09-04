@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   realpathSync,
@@ -71,6 +72,27 @@ try {
     { id: "z", kind: "reference", status: "active", access: "read" }
   ]);
   assert.deepEqual(repositoryInspectionRows(null), []);
+  const complete = repositoryInspectionRows({
+    api: { mode: "worktree", path: worktreePath, access: "write" },
+    stale: { mode: "worktree", path: referencePath, access: "read" }
+  }, [{ id: "api", mode: "write" }, { id: "missing", mode: "read" }], {
+    directoryExists: (path) => existsSync(path),
+    gitMetadataPresent: (path) => path === worktreePath
+  });
+  assert.deepEqual(complete.map(({ id, status }) => ({ id, status })), [
+    { id: "api", status: "active" },
+    { id: "missing", status: "missing-record" },
+    { id: "stale", status: "unexpected-record" }
+  ]);
+  assert.deepEqual(repositoryInspectionRows({
+    api: { mode: "worktree", path: worktreePath, access: "write" }
+  }, [{ id: "api", mode: "write", path: join(root, "target-api") }], {
+    directoryExists: () => true,
+    gitMetadataPresent: () => true,
+    worktreeOwnedByTarget: () => false
+  }).map(({ id, status }) => ({ id, status })), [
+    { id: "api", status: "invalid" }
+  ]);
 
   loadedState = {};
   assert.deepEqual(runtime.workspaceInspection("c"), {

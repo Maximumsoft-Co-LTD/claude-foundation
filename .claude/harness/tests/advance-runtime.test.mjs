@@ -156,6 +156,31 @@ test("advance stops on proof preflight before starting expensive evidence", () =
   assert.equal(invalid.boundary, "contract");
 });
 
+test("advance uses proof readiness hash and does not hash failed infrastructure again", () => {
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => ({ status: "building" }),
+    agentDispatchValue: () => ({ action: "build-complete" }),
+    proofReadinessValue: () => ({
+      status: "INFRASTRUCTURE_ERROR",
+      workspaceHash: null,
+      issues: ["selected repository 'api' isolated workspace is missing"],
+      repositoryIssues: ["selected repository 'api' isolated workspace is missing"],
+      unavailableProviders: [],
+      next: [{
+        command: "claude-foundation sandbox create change-a --all"
+      }]
+    }),
+    relevantHash: assert.fail,
+    deliveredAiAttempts: () => [], authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => ({}), proofAdvancePath: () => "/proof.json", stableHash
+  });
+  const value = runtime.advanceValue("change-a");
+  assert.equal(value.action, "REPAIR");
+  assert.equal(value.legacyAction, "REPAIR_PROVIDER_ENVIRONMENT");
+  assert.equal(value.command,
+    "claude-foundation sandbox create change-a --all");
+});
+
 test("advance --through runs deterministic proof and Land until archived", async () => {
   const state = { status: "building", workspace: { path: "/tmp/change" } };
   let proofRuns = 0;
@@ -220,6 +245,99 @@ test("advance --through records each phase once", async () => {
   });
   await runtime.showAdvance("change-a", { through: "build" });
   assert.deepEqual(phases, ["build"]);
+});
+
+test("advance preserves exact runtime failures in a repair envelope", () => {
+  const reason = "isolated runtime state is missing repository 'api'; repair it with 'claude-foundation sandbox create change-a --all'";
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => ({ status: "building" }),
+    agentDispatchValue: () => { throw new Error(reason); },
+    relevantHash: () => "workspace-a",
+    deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => ({}), proofAdvancePath: () => "/proof.json", stableHash
+  });
+  const value = runtime.advanceValue("change-a");
+  assert.equal(value.action, "REPAIR");
+  assert.equal(value.legacyAction, "REPAIR_BUILD_RUNTIME");
+  assert.equal(value.reason, reason);
+  assert.equal(value.command,
+    "claude-foundation sandbox create change-a --all");
+  assert.equal(value.resume, "claude-foundation advance change-a");
+});
+
+test("advance --through converts prepare and Land failures without rejecting", async () => {
+  const preparing = { status: "change" };
+  const prepareRuntime = createAdvanceRuntime({
+    loadRuntime: () => preparing,
+    prepareBuild: async () => { throw new Error("root sandbox unavailable"); },
+    agentDispatchValue: () => ({ action: "build-complete" }),
+    relevantHash: () => "workspace-a", deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }), readJson: () => ({}),
+    proofAdvancePath: () => "/proof.json", stableHash
+  });
+  const prepare = await prepareRuntime.advanceThrough("change-a", "archived");
+  assert.equal(prepare.action, "REPAIR");
+  assert.equal(prepare.legacyAction, "REPAIR_BUILD_RUNTIME");
+  assert.equal(prepare.reason, "root sandbox unavailable");
+  assert.equal(prepare.resume,
+    "claude-foundation advance change-a --through archived");
+
+  const landing = { status: "proven" };
+  const landRuntime = createAdvanceRuntime({
+    loadRuntime: () => landing,
+    agentDispatchValue: () => ({ action: "build-complete" }),
+    relevantHash: () => "workspace-a", deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => ({ status: "PASS", workspaceHash: "workspace-a" }),
+    proofAdvancePath: () => "/proof.json", stableHash,
+    runLand: async () => { throw new Error("land conflict route"); }
+  });
+  const land = await landRuntime.advanceThrough("change-a", "archived");
+  assert.equal(land.action, "REPAIR");
+  assert.equal(land.legacyAction, "REPAIR_LAND_RUNTIME");
+  assert.equal(land.reason, "land conflict route");
+  assert.equal(land.command, "claude-foundation land check change-a");
+});
+
+test("advance convergence follows semantic progress beyond 32 proof runs", async () => {
+  const state = { status: "building", revision: 0 };
+  let proofRuns = 0;
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => state,
+    agentDispatchValue: () => ({ action: "build-complete" }),
+    relevantHash: () => `workspace-${state.revision}`,
+    deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => ({}), proofAdvancePath: () => "/proof.json", stableHash,
+    runProof: async () => {
+      proofRuns += 1;
+      state.revision += 1;
+      if (proofRuns === 40) state.status = "proven";
+      return { progressed: true, completed: proofRuns === 40 };
+    }
+  });
+  const value = await runtime.advanceThrough("change-a", "proven");
+  assert.equal(value.action, "DONE");
+  assert.equal(value.reached, "proven");
+  assert.equal(proofRuns, 40);
+});
+
+test("advance convergence stops only after repeated unchanged automation", async () => {
+  const state = { status: "building", revision: 1 };
+  let proofRuns = 0;
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => state,
+    agentDispatchValue: () => ({ action: "build-complete" }),
+    relevantHash: () => "workspace-a", deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }), readJson: () => ({}),
+    proofAdvancePath: () => "/proof.json", stableHash,
+    runProof: async () => { proofRuns += 1; return { progressed: false }; }
+  });
+  const value = await runtime.advanceThrough("change-a", "proven");
+  assert.equal(value.action, "WAIT");
+  assert.equal(value.boundary, "repeated-no-progress");
+  assert.equal(proofRuns, 2);
 });
 
 test("a weak host can finish by reading one action and calling its resume", async () => {

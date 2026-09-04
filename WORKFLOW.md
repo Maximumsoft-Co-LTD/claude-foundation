@@ -171,6 +171,20 @@ dependencies are pinned in detached worktrees, included in provider and
 aggregate proof identity, exposed through `FOUNDATION_REPOSITORIES_FILE`, and
 must remain unchanged. They never produce Land nodes; target drift requires
 sandbox sync and fresh proof.
+
+The declared change selection—not the number of surviving runtime records—
+decides whether the lifecycle is composite. Selecting one non-root repository
+is a multi-repository change even when `root` has no product writes. After
+isolation, every selected non-root repository must retain a worktree record
+whose path, target, access mode, and base head match the catalog. Selection,
+changed-surface hashing, review packets, provider manifests, Apply, and Land
+all use that binding; none may fall back to the live target when an isolated
+record is absent. `sandbox inspect <change>` reports missing, unexpected,
+missing-path, and invalid-worktree records without executing a PATH-resolved
+Git command. `sandbox create <change> --all` is idempotent recovery for missing
+bindings: it preserves valid worktrees and creates or rebinds only the missing
+children. Repair or retire the recorded change before resume; never prove an
+incomplete repository subset.
 Load one primary construction skill per task; add only the security and
 observability cross-cutting skills whose triggers apply.
 
@@ -500,6 +514,10 @@ Decisions, authority, resources, conflicts, and repeated no-progress preserve
 state and return a resumable handoff. The command collects executable evidence,
 creates or reuses the authority request, and returns a stable waiting handoff
 instead of polling or rerunning unchanged providers. The
+chain has no fixed cycle ceiling while its semantic progress identity changes;
+two unchanged automated transitions produce the typed no-progress boundary.
+Thrown Build, Prove, or Land dependencies are captured into the same action
+envelope with their original reason and exact recovery/resume route. The
 agent uses `authority run` when handing a full or delta packet to the configured
 Codex or Claude Code reviewer. An explicitly chosen human review reserves the exact packet with
 `authority dispatch`, then records only the real response with `authority record`. Low-level

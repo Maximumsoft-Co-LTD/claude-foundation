@@ -11,6 +11,7 @@ import {
   nestedRepositoryPathMatcher, sandboxCodePathspec
 } from "../core/workspace-surface.mjs";
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
+import { compositeRepositorySelection } from "../core/repository-binding.mjs";
 
 // Whether an empty root diff is an acceptable apply outcome rather than an
 // error: true when the change selected any non-root repository, because the
@@ -40,8 +41,7 @@ export function telemetryLandIssue(policy, telemetry) {
 }
 
 export function assertLocalApply(initialState, options, fail) {
-  if (initialState.repositories && Object.keys(initialState.repositories).length > 1 &&
-      !options.controlPlane)
+  if (emptyRootDiffPermitted(initialState) && !options.controlPlane)
     fail("multi-repository sandboxes do not apply as one local transaction; use land plan/record/resume");
 }
 
@@ -552,7 +552,7 @@ export function createApplyRuntime({
       changeId: id,
       recordedBase: state.workspace.baseHead,
       currentHead,
-      multiRepository: Object.keys(state.repositories || {}).length > 1,
+      multiRepository: compositeRepositorySelection(selectedRepositories(id, state)),
       action: "Applying"
     }));
   }

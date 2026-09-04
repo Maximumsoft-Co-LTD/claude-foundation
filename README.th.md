@@ -16,7 +16,7 @@ Change Loop ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก�
 ชื่อผลิตภัณฑ์และ workflow คือ **Change Loop** ส่วน package และ CLI ที่ติดตั้งยังใช้
 `claude-foundation` เหมือนเดิม จึงไม่ต้องเปลี่ยนคำสั่งที่ใช้อยู่
 
-**Version 3.5.4** — runtime API 28, provider protocol 13 receipt ที่บันทึกด้วย
+**Version 3.5.4** — runtime API 30, provider protocol 13 receipt ที่บันทึกด้วย
 เวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 `claude-foundation metrics <change-id>` จะแสดง source cohort ของ runtime แบบ
 เจาะจงด้วย ได้แก่ semantic version, protocol bundle ที่โหลดจริง และ SHA-256
@@ -569,7 +569,9 @@ claude-foundation proof run <change-id>
 ถ้าต้องตัดสินใจ ขอ authority/resource แก้ conflict หรือไม่มี progress ระบบจะเก็บ
 change เดิมและคืนทางเลือกพร้อมคำสั่ง resume การเรียกซ้ำตอน workspace และ request
 ไม่เปลี่ยนจะไม่รัน provider หรือ dispatch reviewer ซ้ำ ส่วน `proof collect`, authority commands โดยตรง และ
-`proof run` เก็บไว้สำหรับการวิเคราะห์หรือ integration ที่ตั้งใจใช้
+`proof run` เก็บไว้สำหรับการวิเคราะห์หรือ integration ที่ตั้งใจใช้ ความล้มเหลวภายใน
+Build, Prove และ Land จะคืน six-action envelope เดิมพร้อมสาเหตุจริง และ chain ที่ยัง
+มี progress จะไม่ถูกหยุดด้วยจำนวนรอบตายตัว
 
 `claude-foundation advance <change-id>` จะเลือก next action ที่มีขอบเขตชัดเจน
 เพียงหนึ่งรายการตลอด Build, Prove, repair และ Land โดย host ยังเป็นผู้เรียก model
@@ -673,6 +675,13 @@ amendment ที่ไม่ผ่าน และ invalidate เฉพาะ cl
 `openspec/repositories.yaml` ประกาศ topology ถาวรของ project ส่วน
 `repositories.yaml` ภายใน change เลือกเฉพาะ repository ที่ change นั้นอ่านหรือ
 เขียนได้ ถ้าไม่มี selection จะยังทำงานแบบ repository เดียวชื่อ `root`
+
+ถ้า selection ระบุ non-root แม้เพียง child เดียวและไม่ได้เลือก `root` ระบบยัง
+ถือว่าเป็น composite หลัง Build สร้าง isolation แล้ว Change Loop ต้องพบ worktree,
+target, access mode และ base head ที่บันทึกไว้ครบทุก child โดยจะไม่ fallback ไปยัง
+live checkout หรือเงียบแล้วลดรูปเป็น root-only ใช้ `sandbox inspect <change-id>`
+เพื่อดู record ที่หาย/ใช้ไม่ได้ แล้วรัน `sandbox create <change-id> --all` ซ้ำ
+คำสั่งเดิมจะซ่อม binding ที่หายโดยรักษา worktree ที่ยังใช้ได้
 
 Repository ที่จำเป็นเฉพาะตอน integration test ให้เลือกด้วย `mode: read`
 ระบบจะสร้าง detached worktree ที่ล็อก commit ให้ read dependency, รวม content

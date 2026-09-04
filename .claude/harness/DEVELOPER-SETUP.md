@@ -24,7 +24,7 @@ Before the first Change Loop packet on a developer machine:
 
 1. Install Node.js 20.19 or later.
 2. Verify `claude-foundation version` is `3.5.4` and the repository runtime API
-   is `28`. A delta between the two is advisory while both doctors still pass:
+   is `30`. A delta between the two is advisory while both doctors still pass:
    the CLI forwards to the runtime installed in the project, so an older CLI
    prints `warning: project runtime API … differs from CLI API …` and keeps
    working. Only a doctor that exits non-zero is a blocked machine.

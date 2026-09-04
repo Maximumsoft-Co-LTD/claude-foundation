@@ -138,6 +138,9 @@ test("recovery prose preserves summaries, commands, decisions and instructions",
   assert.deepEqual(recoveryCommands(detailed), [
     "wire browser", "request browser", "open packet", "verify browser", "verify fallback"
   ]);
+  assert.deepEqual(recoveryCommands({
+    command: "repair repository", inspectCommand: "inspect repository"
+  }), ["repair repository", "inspect repository"]);
   assert.deepEqual(recoveryInstructions(detailed), [
     "Use the recorded result", "Run the browser check"
   ]);

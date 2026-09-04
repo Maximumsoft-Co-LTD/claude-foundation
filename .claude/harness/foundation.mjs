@@ -110,7 +110,7 @@ import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
 import { createQualityRuntime } from "./runtime/quality/quality-runtime.mjs";
 
 const VERSION = "3.5.4";
-const RUNTIME_API_VERSION = "28";
+const RUNTIME_API_VERSION = "30";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
 // every command up to `archive` and then threw partway through Land.
@@ -132,7 +132,7 @@ const COMMAND_TELEMETRY_SCHEMA_VERSION = "3";
 const REVIEW_PROTOCOL_VERSION = "4";
 const ACCEPTANCE_PROTOCOL_VERSION = "2";
 const SEMANTIC_ACCEPTANCE_PROTOCOL_VERSION = "1";
-const REVIEW_PACKET_SCHEMA_VERSION = "4";
+const REVIEW_PACKET_SCHEMA_VERSION = "5";
 const ATTESTATION_PROTOCOL_VERSION = "1";
 const AUTHORITY_PROTOCOL_VERSION = "2";
 const CI_EVIDENCE_PROTOCOL_VERSION = "1";
@@ -170,6 +170,11 @@ function die(message, code = 1) {
 function trapFailures(operation) {
   trappedFailureDepth += 1;
   try { return operation(); }
+  finally { trappedFailureDepth -= 1; }
+}
+async function trapFailuresAsync(operation) {
+  trappedFailureDepth += 1;
+  try { return await operation(); }
   finally { trappedFailureDepth -= 1; }
 }
 const { parseFlags, parseStrictCommandFlags } = createFlagParser({ fail: die });
@@ -1149,6 +1154,7 @@ const {
   workspaceIsolationIssues,
   upgradeEvidence
 } = createProofReadinessRuntime({
+  root: ROOT,
   markBlocked,
   evidence,
   loadRuntime,
@@ -1162,6 +1168,7 @@ const {
   providerRepositories,
   requiredProviders,
   git,
+  gitHead,
   advisoryCapabilities,
   evidenceDetectionValue,
   validate,
@@ -1690,7 +1697,8 @@ const {
   archive
 } = applyRuntime;
 const advanceLand = advanceLandOperation.bind(null, {
-  loadRuntime, landCheck, archive, resumeLand, landPlanValue
+  loadRuntime, landCheck, archive, resumeLand, landPlanValue,
+  selectedRepositories
 });
 async function runAdvanceQuietly(operation) {
   const priorLog = console.log;
@@ -1699,6 +1707,9 @@ async function runAdvanceQuietly(operation) {
   finally { console.log = priorLog; }
 }
 const { advanceValue, showAdvance } = createAdvanceRuntime({
+  capture: trapFailures,
+  captureAsync: trapFailuresAsync,
+  markBlocked,
   loadRuntime,
   agentDispatchValue,
   agentPlanValue,

@@ -102,6 +102,9 @@ function operationContext(state, overrides = {}) {
   const context = {
     root: "/root", landCheck: () => {}, requirePreparedLand: () => {},
     loadRuntime: () => state, gitHead: () => "control-base",
+    selectedRepositories: (_id, runtimeState) =>
+      Object.hasOwn(runtimeState.repositories || {}, "api")
+        ? [{ id: "root" }, repository] : [{ id: "root" }],
     orderedRepositories: () => [repository], repositoryCommitLanded: () => true,
     rootGitlink: (path) => path === "/root" ? "api-base" : "api-base",
     git: () => ({ status: 0, stderr: "" }), fail,

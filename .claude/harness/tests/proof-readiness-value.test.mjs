@@ -107,6 +107,14 @@ test("readiness recovery routes every typed status", () => {
   assert.deepEqual(readinessNext(context, {
     ...input, status: "INFRASTRUCTURE_ERROR"
   }), ["x1", "x2"]);
+  assert.deepEqual(readinessNext(context, {
+    ...input, status: "INFRASTRUCTURE_ERROR", repositoryIssues: ["api missing"]
+  }), [{
+    kind: "repair-repository-binding",
+    reason: "api missing",
+    command: "claude-foundation sandbox create c --all",
+    inspectCommand: "claude-foundation sandbox inspect c"
+  }, "x1", "x2"]);
   assert.deepEqual(readinessNext(context, { ...input, status: "READY" }), []);
   assert.ok(calls.some(([kind]) => kind === "external"));
   assert.ok(calls.some(([kind]) => kind === "unavailable"));
@@ -182,7 +190,41 @@ test("prove readiness operation composes issues, graph, leases, and task fallbac
   ]);
 });
 
-test("root product changes require an isolated workspace", () => {
+test("repository health is read before hashing and returns typed recovery", () => {
+  let infrastructureRead = false;
+  const context = operationContext({
+    repositoryInfrastructureIssues: () => {
+      infrastructureRead = true;
+      return ["selected repository 'api' isolated workspace is missing"];
+    },
+    relevantHash: () => {
+      assert.equal(infrastructureRead, true);
+      throw new Error("workspace missing before hash");
+    }
+  });
+  const value = proofReadinessValueOperation(context, "change", "prove");
+  assert.equal(value.status, "INFRASTRUCTURE_ERROR");
+  assert.equal(value.workspaceHash, null);
+  assert.deepEqual(value.repositoryIssues,
+    ["selected repository 'api' isolated workspace is missing"]);
+  assert.equal(value.next[0].command,
+    "claude-foundation sandbox create change --all");
+  assert.equal(value.issues[0], "workspace missing before hash");
+});
+
+test("repository recovery exposes repair and inspection commands", () => {
+  const next = readinessNext(operationContext(), {
+    id: "change", status: "INFRASTRUCTURE_ERROR", pending: [], issues: [],
+    surfaceFixits: [], leases: [], repositoryConflicts: [], unconfigured: [],
+    unavailable: [], repositoryIssues: ["api binding missing"]
+  });
+  assert.equal(next[0].command,
+    "claude-foundation sandbox create change --all");
+  assert.equal(next[0].inspectCommand,
+    "claude-foundation sandbox inspect change");
+});
+
+test("product changes in every repository require an isolated workspace", () => {
   const state = { id: "demo", workspace: { mode: "current" } };
   assert.match(workspaceIsolationIssuesValue(state, [
     { repositoryId: "root", path: "src/app.js" }
@@ -190,6 +232,9 @@ test("root product changes require an isolated workspace", () => {
   assert.deepEqual(workspaceIsolationIssuesValue(state, [
     { repositoryId: "root", path: "openspec/changes/demo/tasks.md" }
   ]), []);
+  assert.match(workspaceIsolationIssuesValue(state, [
+    { repositoryId: "api", path: "src/api.js" }
+  ])[0], /api\/src\/api\.js/);
   assert.deepEqual(workspaceIsolationIssuesValue({
     ...state, workspace: { mode: "copy" }
   }, [{ repositoryId: "root", path: "src/app.js" }]), []);
@@ -197,6 +242,7 @@ test("root product changes require an isolated workspace", () => {
 
 test("build readiness skips prove-only checks and returns a ready value", () => {
   const context = operationContext({
+    workspaceIsolationIssues: assert.fail,
     changedSurfaceIssues: assert.fail,
     criticalCaseIssues: assert.fail,
     repositoryInfrastructureIssues: assert.fail,

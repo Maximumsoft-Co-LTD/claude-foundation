@@ -42,7 +42,7 @@ export function changeListingRow(id, {
       current = relevantHash(id);
     } catch (error) {
       if (error.code !== "FOUNDATION_WORKSPACE_MISSING") throw error;
-      return `${id}\tworkspace-missing\t${state.schema || "unknown"}\tclaude-foundation sandbox create ${id}`;
+      return `${id}\tworkspace-missing\t${state.schema || "unknown"}\tclaude-foundation sandbox create ${id} --all`;
     }
   }
 
@@ -360,9 +360,10 @@ export function createDiagnosticsRuntime({
       function collectRepositoryChecks() {
       for (const repository of selected) {
         const available = existsSync(repository.path);
-        const initialized = available && (
-          repository.type === "external" || Boolean(gitHead(repository.path))
-        );
+        // `external` describes topology/containment, not a weaker isolation
+        // contract. Every selected repository must still be Git-backed so the
+        // sandbox can pin it to a commit.
+        const initialized = available && Boolean(gitHead(repository.path));
         checks.push({
           level: initialized ? "ok" : (repository.mode === "write" ? "error" : "warn"),
           name: `repository:${repository.id}`,

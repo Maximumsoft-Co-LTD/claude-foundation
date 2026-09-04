@@ -97,6 +97,29 @@ assert_file_exists "read-only contracts setup ran in its isolated worktree" \
   .foundation/repository-sandboxes/cross-repository-profile/contracts/.deps/ready
 assert_file_exists "Git-backed external repository receives an isolated worktree" \
   .foundation/repository-sandboxes/cross-repository-profile/external/external.txt
+printf 'preserve me\n' > \
+  .foundation/repository-sandboxes/cross-repository-profile/api/.binding-recovery-marker
+jq 'del(.repositories.api)' \
+  .foundation/runtime/cross-repository-profile.json > "$TMP/partial-runtime.json"
+mv "$TMP/partial-runtime.json" .foundation/runtime/cross-repository-profile.json
+partial_action="$(node .claude/harness/foundation.mjs advance \
+  cross-repository-profile --through proven)"
+assert_cmd_zero "advance keeps partial binding failure inside its action envelope" \
+  sh -c 'printf "%s" "$1" | jq -e '\''
+    .action == "REPAIR" and
+    .legacyAction == "REPAIR_BUILD_RUNTIME" and
+    .command == "claude-foundation sandbox create cross-repository-profile --all" and
+    .resume == "claude-foundation advance cross-repository-profile --through proven"'\'' \
+    >/dev/null' sh "$partial_action"
+assert_cmd_zero "sandbox create --all repairs a partial repository binding" \
+  node .claude/harness/foundation.mjs sandbox create cross-repository-profile --all
+assert_file_exists "partial binding repair preserves existing repository work" \
+  .foundation/repository-sandboxes/cross-repository-profile/api/.binding-recovery-marker
+assert_eq "partial binding repair restores the selected target" \
+  "$(cd api && pwd -P)" \
+  "$(jq -r '.repositories.api.targetPath' \
+    .foundation/runtime/cross-repository-profile.json)"
+rm .foundation/repository-sandboxes/cross-repository-profile/api/.binding-recovery-marker
 assert_eq "contracts sandbox records read access" "read" \
   "$(jq -r '.repositories.contracts.access' .foundation/runtime/cross-repository-profile.json)"
 printf 'unauthorized read dependency edit\n' > \

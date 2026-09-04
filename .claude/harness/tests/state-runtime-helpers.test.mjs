@@ -177,7 +177,8 @@ test("snapshot invalidation, porcelain parsing, and dirty baselines are determin
     first.workspaceHash);
   assert.throws(() => f.state.singleRelevantSnapshot(
     id, join(f.root, "missing-workspace")), (error) =>
-    error.code === "FOUNDATION_WORKSPACE_MISSING" && /sandbox create/.test(error.message));
+    error.code === "FOUNDATION_WORKSPACE_MISSING" &&
+      error.message.includes(`sandbox create ${id} --all`));
   const cleared = [];
   f.state.registerPolicyCacheClearer((changeId) => cleared.push(changeId));
   f.state.clearSnapshotCache(id);

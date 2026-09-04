@@ -44,15 +44,15 @@ test("repository manifest validates workspaces, setup, and read-only state", () 
   }, "change", "test", {}, [child]), /read-only repository 'child' changed/);
 });
 
-test("repository manifest falls back to selected heads and null", () => {
+test("repository manifest uses selected heads and rejects an unbound child", () => {
   const context = { pathExists: () => true, repositoryStatus: () => null, die: fail };
   const value = providerRepositoryManifestValue(context, "change", "test", {}, [{
     id: "child", workspacePath: "/child", mode: "read", baseHead: "selected"
-  }, {
-    id: "empty", workspacePath: "/empty", mode: "write"
   }]);
   assert.equal(value.repositories.child.baseHead, "selected");
-  assert.equal(value.repositories.empty.baseHead, null);
+  assert.throws(() => providerRepositoryManifestValue(context, "change", "test", {}, [{
+    id: "empty", workspacePath: "/empty", mode: "write"
+  }]), /repository 'empty' has no recorded baseHead/);
 });
 
 function result(patch = {}) {

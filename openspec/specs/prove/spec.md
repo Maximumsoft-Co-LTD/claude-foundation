@@ -64,3 +64,29 @@ The proof controller SHALL explain each provider invalidation or reuse from its 
 - **WHEN** a repair changes paths consumed by one provider but not another
 - **THEN** Proof reruns the affected provider and reuses the unaffected valid receipt with a recorded reason
 
+### Requirement: Repository proof surfaces share one base binding
+
+Foundation SHALL derive changed-surface, composite snapshot, review-packet, and
+provider-manifest repository bases from one mode-aware binding. A current
+pre-isolation selection MAY use the observed source head; an isolated selection
+SHALL require its recorded runtime base.
+
+#### Scenario: current multi-repository selection has no runtime rows yet
+
+- **WHEN** a change selects a non-root repository before isolation and `state.repositories` is absent
+- **THEN** the repository snapshot remains composite and binds the selected source head instead of collapsing to a root-only snapshot
+
+#### Scenario: isolated child base is absent
+
+- **WHEN** an isolated selected child has no recorded runtime base or valid worktree
+- **THEN** provider readiness reports infrastructure failure and no packet, manifest, receipt, or proof substitutes the live target head
+
+#### Scenario: repository workspace is missing before snapshot hashing
+
+- **WHEN** readiness observes a missing or foreign selected worktree that would make workspace hashing fail
+- **THEN** it returns typed `INFRASTRUCTURE_ERROR` with `sandbox create <change> --all` before attempting the hash
+
+#### Scenario: review and executable evidence observe the same base
+
+- **WHEN** a repository-scoped review packet and provider manifest are built for one workspace
+- **THEN** both report the same mode-aware repository base used by changed-surface identity

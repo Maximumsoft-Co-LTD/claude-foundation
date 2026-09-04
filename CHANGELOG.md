@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Isolated multi-repository state no longer falls back to live checkouts.**
+  Selected child paths, targets, access modes, base heads, review packets,
+  provider manifests, and snapshots now share one fail-closed binding;
+  `sandbox inspect` exposes missing or invalid records without executing Git
+  from `PATH`.
+- **A single selected child can no longer bypass composite Land.** Apply and
+  archive routing follow the declared non-root selection rather than runtime
+  record count, so missing state cannot turn a multi-repository change into a
+  root-only transaction.
+- **External repository diagnostics require real Git initialization.** An
+  existing arbitrary directory no longer passes repository doctor checks.
+- **Partial repository isolation now has an idempotent repair route.** Repeating
+  `sandbox create <change> --all` reconstructs missing canonical bindings and
+  creates only missing child worktrees while preserving valid existing work;
+  foreign worktrees fail closed by repository ownership.
+- **`advance` now keeps its six-action contract on internal failures.** Build,
+  Prove, and Land exceptions retain their exact reason, repair command, and
+  resume route; progressing chains no longer stop at an arbitrary 32-cycle
+  limit, while repeated unchanged automation still stops safely.
+- **Repository health now precedes proof hashing.** Missing or foreign selected
+  worktrees return typed infrastructure recovery before snapshot code can throw.
+
 ## [3.5.4] - 2026-09-04
 
 ### Added

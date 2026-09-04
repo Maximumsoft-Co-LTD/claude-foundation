@@ -11,6 +11,7 @@ import {
   outOfBandDeliveryDriftValue, riskRequiresCi
 } from "../core/authority-policy.mjs";
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
+import { compositeRepositorySelection } from "../core/repository-binding.mjs";
 
 export { riskRequiresCi } from "../core/authority-policy.mjs";
 
@@ -63,11 +64,11 @@ const OPENSPEC_TESTED_MINOR = 7;
 const OPENSPEC_PACKAGE = "@fission-ai/openspec@^1.7";
 
 export function advanceLandOperation({
-  loadRuntime, landCheck, archive, resumeLand, landPlanValue
+  loadRuntime, landCheck, archive, resumeLand, landPlanValue,
+  selectedRepositories
 }, id) {
   const state = loadRuntime(id);
-  const multiRepository = state.repositories &&
-    Object.keys(state.repositories).length > 1;
+  const multiRepository = compositeRepositorySelection(selectedRepositories(id, state));
   if (!multiRepository) {
     landCheck(id);
     archive(id);
@@ -268,12 +269,13 @@ export function restagedRootPointersDecision(staged, pending) {
 export function stageRootPointersOperation(context, id) {
   const {
     landCheck, requirePreparedLand, loadRuntime, root, gitHead, blockWithDecision,
-    git, clearSnapshotCache, saveRuntime, now, log = console.log
+    selectedRepositories, orderedRepositories, git, clearSnapshotCache,
+    saveRuntime, now, log = console.log
   } = context;
   landCheck(id);
   requirePreparedLand(id);
   const state = loadRuntime(id);
-  if (!state.repositories || Object.keys(state.repositories).length <= 1)
+  if (!compositeRepositorySelection(selectedRepositories(id, state)))
     context.fail(`change '${id}' is not multi-repository`);
   const currentHead = gitHead(root);
   if (currentHead !== state.workspace?.baseHead)
@@ -458,7 +460,7 @@ export function createLandRuntime({
           changeId: id,
           recordedBase: state.workspace.baseHead,
           currentHead: gitHead(root),
-          multiRepository: Object.keys(state.repositories || {}).length > 1,
+          multiRepository: compositeRepositorySelection(selectedRepositories(id, state)),
           action: "Landing"
         });
       const projection = deliveryObservation?.(id, state) ||
@@ -524,7 +526,7 @@ export function createLandRuntime({
     return { proof, graph, hash };
   }
 
-  function assertLandEvidence(id, state, proof, hash) {
+  function assertLandEvidence(id, state, proof, hash, multiRepository) {
     const compiled = executionContract?.(id) || null;
     const currentProviders = requiredProviders(id);
     const providers = compiled?.evidence?.providers || currentProviders;
@@ -539,12 +541,11 @@ export function createLandRuntime({
       if (!manifestEntry || fileDigest(receiptPath(id, provider)) !== manifestEntry.sha256)
         fail(`${provider} live receipt differs from the proven receipt manifest`);
     }
-    const repositoryRows = Object.values(state.repositories || {});
     const independentlyRequiredCi = riskRequiresCi(state, reviewPolicy(id, state));
     const requiredCi = compiled?.land?.signedCiRequired ?? independentlyRequiredCi;
     if (compiled && requiredCi !== independentlyRequiredCi)
       fail("execution contract signed-CI projection disagrees with current Land risk policy");
-    if (requiredCi && repositoryRows.length <= 1) {
+    if (requiredCi && !multiRepository) {
       const ciProvider = signedCiProvider(providers,
         (provider) => receiptPath(id, provider), readJson);
       if (!ciProvider)
@@ -607,15 +608,15 @@ export function createLandRuntime({
       console.log(`ALREADY ARCHIVED ${id}\n  archived: ${state.archivedAt || "unknown"}`);
       return { archived: true, state };
     }
+    const multiRepository = compositeRepositorySelection(selectedRepositories(id, state));
     assertLandTargetReady(id, state);
     const isolationIssues = workspaceIsolationIssues(id);
     if (isolationIssues.length) fail(isolationIssues.join("; "));
     assertReadOnlyLandDependencies(id, state);
     const { proof, graph, hash } = validatedLandProof(id);
-    assertLandEvidence(id, state, proof, hash);
+    assertLandEvidence(id, state, proof, hash, multiRepository);
     const externalOperations = handoffReadiness(id);
     assertLandOperationalGates(id, state, externalOperations);
-    const multiRepository = state.repositories && Object.keys(state.repositories).length > 1;
     if (multiRepository) persistLandPreparation(id, state, proof, graph, hash);
     const telemetry = reportLandReady(
       id, state, hash, externalOperations, multiRepository);
@@ -691,8 +692,7 @@ export function createLandRuntime({
     return result.stdout.trim().match(/^160000\s+([0-9a-f]+)/)?.[1] || null;
   }
 
-  function landPlanValue(id) {
-    const state = loadRuntime(id);
+  function landPlanValue(id, state = loadRuntime(id)) {
     const proof = existsSync(proofPath(id)) ? readJson(proofPath(id), {}) : null;
     const repositories = orderedRepositories(id, state).map(
       landRepositoryPlanRow.bind(null, {
@@ -725,7 +725,7 @@ export function createLandRuntime({
   function landPreparationValue(id, state = loadRuntime(id), proof = null, graph = null, hash = null) {
     const currentProof = currentLandProof(id, proof);
     const currentGraph = currentLandGraph(id, graph);
-    const plan = landPlanValue(id);
+    const plan = landPlanValue(id, state);
     const repositories = plan.repositories.map(
       landPreparationRepositoryValue.bind(null, state));
     return compileLandPreparation({
@@ -930,7 +930,7 @@ export function createLandRuntime({
 
   const stageRootPointers = stageRootPointersOperation.bind(null, {
     landCheck, requirePreparedLand, loadRuntime, root, gitHead, blockWithDecision,
-    orderedRepositories, repositoryCommitLanded, rootGitlink, git, fail,
+    selectedRepositories, orderedRepositories, repositoryCommitLanded, rootGitlink, git, fail,
     clearSnapshotCache, saveRuntime, now
   });
 
@@ -961,7 +961,7 @@ export function createLandRuntime({
   }
 
   function assertMultiRepositoryArchiveReady(id, state) {
-    if (!state.repositories || Object.keys(state.repositories).length <= 1) return;
+    if (!compositeRepositorySelection(selectedRepositories(id, state))) return;
     const plan = landPlanValue(id);
     const blocked = plan.repositories.filter((repository) =>
       !["read-only", "child-landed", "control-plane-last"].includes(repository.status));

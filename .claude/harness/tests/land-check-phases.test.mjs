@@ -11,8 +11,9 @@ const HASH = "workspacehash0000000000000000000000000000000000000000000000000000"
 
 test("land advance handles single repositories and multi-repository resume states", () => {
   const calls = [];
-  const dependencies = (states, plan = {}) => ({
+  const dependencies = (states, plan = {}, selected = [{ id: "root" }]) => ({
     loadRuntime: () => states.shift(),
+    selectedRepositories: () => selected,
     landCheck: (id) => calls.push(["check", id]),
     archive: (id) => calls.push(["archive", id]),
     resumeLand: (id) => calls.push(["resume", id]),
@@ -24,18 +25,27 @@ test("land advance handles single repositories and multi-repository resume state
 
   advanceLandOperation(dependencies([
     { repositories: { root: {}, api: {} } }, { status: "building" }
-  ]), "building");
+  ], {}, [{ id: "root" }, { id: "api" }]), "building");
   assert.deepEqual(calls.splice(0), [["resume", "building"]]);
 
   advanceLandOperation(dependencies([
     { repositories: { root: {}, api: {} } }, { status: "proven" }
-  ], { readyToArchive: false }), "waiting");
+  ], { readyToArchive: false }, [{ id: "root" }, { id: "api" }]), "waiting");
   assert.deepEqual(calls.splice(0), [["resume", "waiting"], ["plan", "waiting"]]);
 
   advanceLandOperation(dependencies([
     { repositories: { root: {}, api: {} } }, { status: "proven" }
-  ], { readyToArchive: true }), "ready");
-  assert.deepEqual(calls, [["resume", "ready"], ["plan", "ready"], ["archive", "ready"]]);
+  ], { readyToArchive: true }, [{ id: "root" }, { id: "api" }]), "ready");
+  assert.deepEqual(calls.splice(0), [
+    ["resume", "ready"], ["plan", "ready"], ["archive", "ready"]
+  ]);
+
+  advanceLandOperation(dependencies([
+    { repositories: { api: {} } }, { status: "proven" }
+  ], { readyToArchive: true }, [{ id: "api" }]), "single-child");
+  assert.deepEqual(calls.slice(-3), [
+    ["resume", "single-child"], ["plan", "single-child"], ["archive", "single-child"]
+  ]);
 });
 
 test("land check phases preserve every refusal and ready route", () => {
@@ -343,7 +353,10 @@ test("land check phases preserve every refusal and ready route", () => {
     assert.ok(output.some((message) => message.includes("branch: main")));
     assert.ok(output.some((message) => message.includes("telemetry: complete")));
 
-    const multi = make({ state: { repositories: { a: {}, b: {} } } });
+    const multi = make({
+      state: { repositories: { a: {}, b: {} } },
+      selected: [{ id: "a" }, { id: "b" }]
+    });
     assert.equal(multi.runtime.landCheck(multi.id).archived, false);
     assert.equal(multi.written.length, 1);
   } finally {

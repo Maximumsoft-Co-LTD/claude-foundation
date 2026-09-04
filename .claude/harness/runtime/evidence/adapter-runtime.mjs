@@ -6,6 +6,7 @@ import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:pa
 import {
   aggregateEvidenceStatus, evidenceResultValue
 } from "./evidence-results.mjs";
+import { repositoryBaseHead } from "../core/repository-binding.mjs";
 
 // The receipt vocabulary, ordered. An adapter that runs more than one provider
 // has to report the worst thing that happened — not the last one in the array,
@@ -199,10 +200,13 @@ export function providerRepositoryManifestValue(context, id, provider, state, ro
       if (changed)
         context.die(`provider '${provider}' read-only repository '${repository.id}' changed inside its sandbox: ${changed}`);
     }
+    const baseHead = repositoryBaseHead(repository, state);
+    if (repository.id !== "root" && !baseHead)
+      context.die(`provider '${provider}' repository '${repository.id}' has no recorded baseHead`);
     repositories[repository.id] = {
       path: repository.workspacePath,
       access: repository.mode,
-      baseHead: runtime.baseHead || repository.baseHead || null
+      baseHead
     };
   }
   return { version: 1, changeId: id, provider, repositories };

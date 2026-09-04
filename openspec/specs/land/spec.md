@@ -120,3 +120,23 @@ The coordinator MAY perform or prescribe reversible local sandbox reconciliation
 - **WHEN** proof passes but commit, push, publication, or another declared delivery step lacks authority
 - **THEN** the coordinator reports Land readiness and stops without performing that step
 
+### Requirement: Declared non-root scope always uses composite Land
+
+Foundation SHALL choose root-only Apply/archive or multi-repository saga behavior
+from the declared repository selection, not from the number of runtime records
+that happen to survive.
+
+#### Scenario: exactly one child is selected
+
+- **WHEN** a change selects one non-root repository with or without selecting `root`
+- **THEN** Apply refuses the single local transaction and Land uses the ordered resumable repository saga
+
+#### Scenario: selected child record is missing at Land
+
+- **WHEN** a non-root selection remains declared but its isolated runtime record is absent
+- **THEN** Land reports the incomplete child and does not downgrade to the root-only archive route
+
+#### Scenario: root is the only selected repository
+
+- **WHEN** no non-root repository is selected
+- **THEN** the compatible single-repository Apply and archive path remains available

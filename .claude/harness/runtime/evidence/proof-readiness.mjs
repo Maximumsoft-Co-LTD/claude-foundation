@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { dependentClosure } from "../core/graph-execution.mjs";
+import { worktreeOwnedByTarget } from "../core/repository-binding.mjs";
 import { declaredPathMatcher } from "../core/workspace-surface.mjs";
 
 const PREFLIGHT_SCAN_MAX_FILES = 20000;
@@ -47,6 +48,8 @@ export function recoverySummaryLine(entry) {
 
 export function recoveryCommands(entry) {
   return [...new Set([
+    entry.command,
+    entry.inspectCommand,
     entry.wiring?.command,
     entry.request?.command,
     entry.request?.packet,
@@ -78,6 +81,7 @@ export function recoveryLines(next = []) {
 export function proofPreflightBlockers(value) {
   const blockers = [
     ...value.issues,
+    ...(value.repositoryIssues || []),
     ...value.externalProviders.map((provider) =>
       `provider '${provider}' has no executable adapter or valid external receipt`),
     ...value.unavailableProviders.map((provider) => `provider unavailable: ${provider}`)
@@ -104,14 +108,16 @@ export function proofPreflightAdvisory(advisory) {
 
 export function workspaceIsolationIssuesValue(state, surface = []) {
   if (["worktree", "copy"].includes(state?.workspace?.mode)) return [];
-  const rootProductPaths = surface
-    .filter((row) => (row.repositoryId || "root") === "root")
-    .map((row) => String(row.path || ""))
-    .filter((path) => path && !path.startsWith("openspec/changes/") &&
-      !path.startsWith("openspec/investigations/") && !path.startsWith(".foundation/"));
-  if (!rootProductPaths.length) return [];
-  return [`ISOLATION_REQUIRED: root product files changed while workspace mode is '${
-    state?.workspace?.mode || "current"}': ${rootProductPaths.join(", ")}; run claude-foundation sandbox create ${
+  const productPaths = surface.map((row) => ({
+    repositoryId: row.repositoryId || "root",
+    path: String(row.path || "")
+  })).filter((row) => row.path && !row.path.startsWith("openspec/changes/") &&
+    !row.path.startsWith("openspec/investigations/") &&
+    !row.path.startsWith(".foundation/"));
+  if (!productPaths.length) return [];
+  return [`ISOLATION_REQUIRED: product files changed while workspace mode is '${
+    state?.workspace?.mode || "current"}': ${productPaths.map((row) =>
+    `${row.repositoryId}/${row.path}`).join(", ")}; run claude-foundation sandbox create ${
     state?.id || "<change>"} and rebuild inside the isolated workspace`];
 }
 
@@ -230,6 +236,44 @@ export function repositoryRuntimeState(state, repository) {
     (repository.id === "root" ? state.workspace : null) || {};
 }
 
+export function selectedRepositoryInfrastructureIssueRows({
+  repository,
+  runtime,
+  state,
+  pathExists,
+  gitHead,
+  root = null,
+  changeId = null,
+  ownsWorktree = worktreeOwnedByTarget
+}) {
+  if (!["worktree", "copy"].includes(state?.workspace?.mode)) return [];
+  if (!runtime.path || !pathExists(runtime.path))
+    return [`selected repository '${repository.id}' isolated workspace is missing`];
+  if (repository.id !== "root" && root && changeId) {
+    if (runtime.mode !== "worktree")
+      return [`selected repository '${repository.id}' has invalid isolated mode '${runtime.mode || "missing"}'`];
+    for (const field of ["targetPath", "baseHead", "access"])
+      if (!runtime[field])
+        return [`selected repository '${repository.id}' isolated binding is missing ${field}`];
+    if (resolve(runtime.targetPath) !== resolve(repository.path))
+      return [`selected repository '${repository.id}' target no longer matches the repository catalog`];
+    if (runtime.access !== repository.mode)
+      return [`selected repository '${repository.id}' access changed from '${runtime.access}' to '${repository.mode}'`];
+    const expected = resolve(root, ".foundation", "repository-sandboxes",
+      changeId, repository.id);
+    if (resolve(runtime.path) !== expected)
+      return [`selected repository '${repository.id}' path is not its canonical sandbox path`];
+  }
+  if (runtime.mode === "worktree") {
+    if (!gitHead(runtime.path))
+      return [`selected repository '${repository.id}' path is not a valid Git worktree`];
+    const targetPath = repository.path || runtime.targetPath;
+    if (targetPath && !ownsWorktree(runtime.path, targetPath))
+      return [`selected repository '${repository.id}' worktree is not owned by its selected target`];
+  }
+  return [];
+}
+
 export function repositoryInfrastructureIssueRows({
   provider,
   repository,
@@ -258,11 +302,33 @@ export function repositoryInfrastructureIssuesOperation({
   requiredProviders,
   providerConfig,
   providerRepositories,
+  selectedRepositories,
   pathExists,
-  git
+  git,
+  gitHead,
+  root = null,
+  ownsWorktree = worktreeOwnedByTarget
 }, id) {
   const state = loadRuntime(id);
   const issues = [];
+  const selected = selectedRepositories(id, state,
+    (message) => { throw new Error(message); },
+    { useTargetPaths: true, withoutGit: true });
+  for (const repository of selected)
+    issues.push(...selectedRepositoryInfrastructureIssueRows({
+      repository,
+      runtime: repositoryRuntimeState(state, repository),
+      state,
+      pathExists,
+      gitHead,
+      root,
+      changeId: id,
+      ownsWorktree
+    }));
+  // Provider repository resolution consumes the runtime binding checked
+  // above. Do not let that dependent read throw and replace the actionable
+  // primary infrastructure result.
+  if (issues.length) return [...new Set(issues)];
   for (const provider of requiredProviders(id)) {
     const config = providerConfig(id, provider) || {};
     for (const repository of providerRepositories(id, provider, config))
@@ -418,7 +484,7 @@ export function readinessGraph(plan, pending) {
 export function readinessNext(context, input) {
   const {
     id, status, pending, issues, surfaceFixits, leases,
-    repositoryConflicts, unconfigured, unavailable
+    repositoryConflicts, unconfigured, unavailable, repositoryIssues = []
   } = input;
   if (status === "NEEDS_CODE_CHANGE") return context.codeChangeRecovery(id, pending);
   if (status === "CONFIGURATION_ERROR")
@@ -428,20 +494,72 @@ export function readinessNext(context, input) {
   if (status === "NEEDS_USER_DECISION")
     return unconfigured.map((provider) => context.externalEvidenceRecovery(id, provider));
   if (status === "INFRASTRUCTURE_ERROR")
-    return unavailable.map((provider) => context.unavailableProviderRecovery(id, provider));
+    return [
+      ...(repositoryIssues.length ? [{
+        kind: "repair-repository-binding",
+        reason: repositoryIssues.join("; "),
+        command: `claude-foundation sandbox create ${id} --all`,
+        inspectCommand: `claude-foundation sandbox inspect ${id}`
+      }] : []),
+      ...unavailable.map((provider) => context.unavailableProviderRecovery(id, provider))
+    ];
   return [];
 }
 
+function repositoryInfrastructureReadiness(context, id, stage, repositoryIssues, error) {
+  const status = "INFRASTRUCTURE_ERROR";
+  return {
+    version: 1,
+    changeId: id,
+    stage,
+    status,
+    workspaceHash: null,
+    pendingTasks: [],
+    externalOperations: {
+      status: "BLOCKED", operations: [], blocking: [], tracked: [],
+      proofBlocking: false,
+      note: "Repository health must recover before the proof workspace can be hashed."
+    },
+    externalProviders: [],
+    unavailableProviders: [],
+    repositoryIssues,
+    activeLeases: [],
+    repositoryConflicts: [],
+    graph: null,
+    issues: [error?.message || String(error)].filter(Boolean),
+    advisories: [],
+    budget: context.readinessBudgetPolicy(status),
+    authorityPreflight: { status: "READY", blockers: [], decision: null },
+    executionContract: null,
+    next: readinessNext(context, {
+      id, status, pending: [], issues: [], surfaceFixits: [], leases: [],
+      repositoryConflicts: [], unconfigured: [], unavailable: [], repositoryIssues
+    })
+  };
+}
+
 export function proofReadinessValueOperation(context, id, stage = "prove") {
-  context.validate(id, "active", { quiet: true });
-  const issues = context.topologyIssues(id);
-  const surfaceFixits = [];
-  if (stage === "prove") issues.push(...context.changedSurfaceIssues(id, surfaceFixits));
-  if (stage === "prove") issues.push(...context.criticalCaseIssues(id));
-  const hash = context.relevantHash(id);
-  const { unconfigured, unavailable } = context.executionNodes(id, hash);
   const repositoryIssues = stage === "prove"
     ? context.repositoryInfrastructureIssues(id) : [];
+  let issues;
+  let surfaceFixits;
+  let hash;
+  let unconfigured;
+  let unavailable;
+  try {
+    context.validate(id, "active", { quiet: true });
+    issues = context.topologyIssues(id);
+    surfaceFixits = [];
+    if (stage === "prove") issues.push(...context.changedSurfaceIssues(id, surfaceFixits));
+    if (stage === "prove") issues.push(...context.criticalCaseIssues(id));
+    hash = context.relevantHash(id);
+    ({ unconfigured, unavailable } = context.executionNodes(id, hash));
+  } catch (error) {
+    if (repositoryIssues.length)
+      return repositoryInfrastructureReadiness(
+        context, id, stage, repositoryIssues, error);
+    throw error;
+  }
   const pending = context.pendingTasks(id);
   const plan = context.agentPlanValue?.(id) || null;
   const externalOperations = context.handoffReadiness(id);
@@ -490,7 +608,7 @@ export function proofReadinessValueOperation(context, id, stage = "prove") {
       command: authorityPreflight.blockers[0]?.next || null
     }] : readinessNext(context, {
       id, status, pending, issues, surfaceFixits, leases,
-      repositoryConflicts, unconfigured, unavailable
+      repositoryConflicts, unconfigured, unavailable, repositoryIssues
     })
   };
 }
@@ -533,6 +651,7 @@ export function createProofReadinessRuntime({
       : selectedRepositories(id),
   requiredProviders = (id) => Object.keys(evidence(id).providers || {}),
   git = () => ({ status: 0, stdout: "", stderr: "" }),
+  gitHead = () => null,
   advisoryCapabilities,
   evidenceDetectionValue,
   validate,
@@ -553,6 +672,7 @@ export function createProofReadinessRuntime({
   saveRuntime,
   authorityPreflight = () => ({ status: "READY", blockers: [], decision: null }),
   executionContract = null,
+  root = null,
   fail
 }) {
   const repositoryInfrastructureIssues = repositoryInfrastructureIssuesOperation.bind(null, {
@@ -560,8 +680,11 @@ export function createProofReadinessRuntime({
     requiredProviders,
     providerConfig,
     providerRepositories,
+    selectedRepositories,
     pathExists: existsSync,
-    git
+    git,
+    gitHead,
+    root
   });
 
   const topologyIssues = topologyIssuesOperation.bind(null, { evidence });

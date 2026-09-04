@@ -58,12 +58,36 @@ function compactPreflight(value) {
   return {
     status: value.status,
     issues: (value.issues || []).slice(0, 20),
+    repositoryIssues: (value.repositoryIssues || []).slice(0, 20),
     unavailableProviders: (value.unavailableProviders || []).slice(0, 20),
     activeWorkers: (value.activeWorkers || []).slice(0, 20),
     truncated: (value.issues || []).length > 20 ||
+      (value.repositoryIssues || []).length > 20 ||
       (value.unavailableProviders || []).length > 20 ||
       (value.activeWorkers || []).length > 20
   };
+}
+
+function exactRecoveryCommand(message) {
+  const text = String(message || "");
+  return text.match(/[\'\"`](claude-foundation\s+[^\'\"`\n]+)[\'\"`]/)?.[1] || null;
+}
+
+export function advanceFailureAction(id, error, { stage = "build", through = null } = {}) {
+  const reason = error?.message || String(error);
+  const fallback = stage === "land"
+    ? command(`land check ${id}`)
+    : command(`doctor --stage ${stage === "prove" ? "prove" : "build"} --change ${id}`);
+  return envelope(id, "REPAIR", {
+    legacyAction: `REPAIR_${stage.toUpperCase()}_RUNTIME`,
+    actor: "agent",
+    boundary: "resource",
+    reason,
+    command: exactRecoveryCommand(reason) || fallback,
+    recoveryType: "RECONFIGURE",
+    alternatives: ["run the exact recovery command, then resume the same lifecycle route"],
+    resumeCommand: resume(id, through)
+  });
 }
 
 function selectedBuildTasks(dispatch, plan) {
@@ -240,59 +264,61 @@ export function createAdvanceRuntime({
   authorityStatusValue, authorityNext, readJson, proofAdvancePath, stableHash,
   proofReadinessValue = null, agentPlanValue = null,
   prepareBuild = null, runProof = null, runLand = null,
-  recordPhase = null, output = console.log
+  recordPhase = null, output = console.log,
+  capture = (operation) => operation(),
+  captureAsync = async (operation) => operation(),
+  markBlocked = () => {}
 }) {
   function advanceValue(id) {
-    const state = loadRuntime(id);
-    if (state.status === "archived") return coordinatorAction({
-      id, state, dispatch: { action: "build-complete" }, workspaceHash: null,
-      stableHash
-    });
-    const authority = authorityStatusValue(id);
-    let dispatch;
-    try { dispatch = agentDispatchValue(id); }
-    catch (error) {
-      dispatch = { action: "unavailable", reason: "build-dispatch-unavailable",
-        nextCommand: command(`doctor --stage build --change ${id}`) };
+    let stage = "build";
+    try {
+      return capture(() => {
+        const state = loadRuntime(id);
+        if (state.status === "archived") return coordinatorAction({
+          id, state, dispatch: { action: "build-complete" }, workspaceHash: null,
+          stableHash
+        });
+        if (["proven", "landing"].includes(state.status)) stage = "land";
+        const authority = authorityStatusValue(id);
+        const dispatch = agentDispatchValue(id);
+        let proofPreflight = null;
+        if (dispatch.action === "build-complete") {
+          stage = "prove";
+          if (proofReadinessValue) proofPreflight = proofReadinessValue(id, "prove");
+        }
+        const openRequests = authority.requests || [];
+        let plan = null;
+        if (agentPlanValue && ["run-in-session", "run-leased-in-session", "spawn-group"]
+          .includes(dispatch.action)) {
+          try { plan = agentPlanValue(id); }
+          catch { /* dispatch still carries an exact compatibility route */ }
+        }
+        const workspaceHash = dispatch.action === "build-complete" && proofPreflight
+          ? proofPreflight.workspaceHash : relevantHash(id);
+        return coordinatorAction({
+          id,
+          state,
+          dispatch,
+          workspaceHash,
+          latestReview: deliveredAiAttempts(id).at(-1) || null,
+          proofCursor: readJson(proofAdvancePath(id), {}),
+          authorityRequests: openRequests,
+          proofPreflight,
+          plan,
+          authorityActions: authorityNext
+            ? authorityNext(id, openRequests[0]?.type || "review", openRequests) : null,
+          stableHash
+        });
+      });
+    } catch (error) {
+      markBlocked(error?.message || String(error));
+      return advanceFailureAction(id, error, { stage });
     }
-    let proofPreflight = null;
-    if (dispatch.action === "build-complete" && proofReadinessValue) {
-      try { proofPreflight = proofReadinessValue(id, "prove"); }
-      catch (error) {
-        proofPreflight = {
-          version: 1, changeId: id, stage: "prove", status: "CONFIGURATION_ERROR",
-          issues: [error?.message || String(error)],
-          next: [{
-            kind: "diagnose-proof",
-            command: command(`doctor --stage prove --change ${id}`)
-          }]
-        };
-      }
-    }
-    const openRequests = authority.requests || [];
-    let plan = null;
-    if (agentPlanValue && ["run-in-session", "run-leased-in-session", "spawn-group"]
-      .includes(dispatch.action)) {
-      try { plan = agentPlanValue(id); }
-      catch { /* dispatch still carries an exact compatibility route */ }
-    }
-    return coordinatorAction({
-      id,
-      state,
-      dispatch,
-      workspaceHash: relevantHash(id),
-      latestReview: deliveredAiAttempts(id).at(-1) || null,
-      proofCursor: readJson(proofAdvancePath(id), {}),
-      authorityRequests: openRequests,
-      proofPreflight,
-      plan,
-      authorityActions: authorityNext
-        ? authorityNext(id, openRequests[0]?.type || "review", openRequests) : null,
-      stableHash
-    });
   }
 
   function phaseForAction(value) {
+    if (value.legacyAction === "REPAIR_PROVE_RUNTIME") return "prove";
+    if (value.legacyAction === "REPAIR_LAND_RUNTIME") return "land";
     if (value.action === "EDIT" || value.action === "REPAIR") return "build";
     if (value.legacyAction === "LAND_READY" || value.reached === "archived") return "land";
     if (["RUN_PROOF", "RUN_INVALIDATED_EVIDENCE", "RUN_CONFIGURED_REVIEW",
@@ -318,55 +344,118 @@ export function createAdvanceRuntime({
     });
   }
 
-  async function advanceThrough(id, through) {
-    if (!through) return advanceValue(id);
-    if (!["build", "proven", "archived"].includes(through))
-      throw new Error("advance --through must be build|proven|archived");
-    const initial = loadRuntime(id);
-    if (initial.status === "change" && prepareBuild) await prepareBuild(id);
-    const targetResume = (value) => ({
-      ...value,
-      resume: resume(id, through),
-      resumeCommand: resume(id, through)
+  function convergenceFingerprint(id) {
+    const state = loadRuntime(id);
+    const proof = readJson(proofAdvancePath(id), {});
+    const repositoryState = Object.entries(state.repositories || {})
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([repository, value]) => [repository, {
+        mode: value.mode || null,
+        path: value.path || null,
+        targetPath: value.targetPath || null,
+        baseHead: value.baseHead || null,
+        access: value.access || null,
+        applied: value.applied === true,
+        setupStatus: value.setup?.status || null,
+        landCommit: value.land?.commit || null,
+        landStatus: value.land?.status || null
+      }]);
+    return stableHash({
+      state: {
+        status: state.status,
+        revision: state.revision || 0,
+        contractRevision: state.contractRevision || 0,
+        executionRevision: state.executionRevision || 0,
+        workspace: {
+          mode: state.workspace?.mode || null,
+          path: state.workspace?.path || null,
+          baseHead: state.workspace?.baseHead || null,
+          applied: state.workspace?.applied === true
+        },
+        repositories: repositoryState,
+        applyStatus: state.apply?.status || state.applyTransaction?.status || null,
+        landStatus: state.land?.status || null
+      },
+      proof: {
+        status: proof.status || null,
+        stage: proof.stage || null,
+        completed: proof.completed === true,
+        workspaceHash: proof.workspaceHash || null,
+        proofRunId: proof.proofRunId || null,
+        route: proof.route || null,
+        requestIds: [...(proof.requestIds || [])].sort(),
+        providers: [...(proof.providers || [])].sort(),
+        subjectHash: proof.subjectHash || null,
+        recoveryDecisionRef: proof.recoveryDecisionRef || null,
+        progressFingerprint: proof.progressFingerprint || null,
+        repairCycle: Number(proof.repairCycle || 0),
+        repairPlanDigest: proof.repairPlanDigest || null,
+        next: (proof.next || []).map((row) => ({
+          kind: row.kind || null, command: row.command || null
+        }))
+      }
     });
-    for (let cycle = 0; cycle < 32; cycle += 1) {
-      const completed = reached(id, through);
-      if (completed) return done(id, completed, through);
-      const value = advanceValue(id);
-      if (through === "build" && ["RUN_PROOF", "LAND_READY"].includes(value.legacyAction)) {
-        if (recordPhase) recordPhase(id, "build");
-        return done(id, "build", through);
-      }
-      const phase = phaseForAction(value);
-      if (phase && recordPhase) recordPhase(id, phase);
-      if (value.legacyAction === "RUN_PROOF" && ["proven", "archived"].includes(through)) {
-        if (!runProof) return targetResume(value);
-        const outcome = await runProof(id);
-        if (!outcome?.progressed && !outcome?.completed)
-          return targetResume(advanceValue(id));
-        continue;
-      }
-      if (value.legacyAction === "RUN_INVALIDATED_EVIDENCE" &&
-          ["proven", "archived"].includes(through)) {
-        if (!runProof) return targetResume(value);
-        await runProof(id);
-        continue;
-      }
-      if (value.legacyAction === "LAND_READY" && through === "archived") {
-        if (!runLand) return targetResume(value);
-        await runLand(id);
-        continue;
-      }
-      return targetResume(value);
-    }
+  }
+
+  function noProgress(id, through) {
     return envelope(id, "WAIT", {
       legacyAction: "NO_PROGRESS_BOUNDARY", actor: "operator",
       boundary: "repeated-no-progress",
-      reason: "advance reached its convergence safety boundary",
+      reason: "advance repeated an automated action without changing lifecycle state",
       recoveryType: "PAUSE",
       alternatives: ["inspect feedback and resume with the same command"],
       resumeCommand: resume(id, through)
     });
+  }
+
+  async function advanceThrough(id, through) {
+    let stage = "build";
+    try {
+      return await captureAsync(async () => {
+        if (!through) return advanceValue(id);
+        if (!["build", "proven", "archived"].includes(through))
+          throw new Error("advance --through must be build|proven|archived");
+        const initial = loadRuntime(id);
+        if (initial.status === "change" && prepareBuild) await prepareBuild(id);
+        const targetResume = (value) => ({
+          ...value,
+          resume: resume(id, through),
+          resumeCommand: resume(id, through)
+        });
+        let unchangedAutomations = 0;
+        while (true) {
+          const completed = reached(id, through);
+          if (completed) return done(id, completed, through);
+          const value = advanceValue(id);
+          if (through === "build" && ["RUN_PROOF", "LAND_READY"].includes(value.legacyAction)) {
+            if (recordPhase) recordPhase(id, "build");
+            return done(id, "build", through);
+          }
+          const phase = phaseForAction(value);
+          if (phase && recordPhase) recordPhase(id, phase);
+          let operation = null;
+          if (["RUN_PROOF", "RUN_INVALIDATED_EVIDENCE"].includes(value.legacyAction) &&
+              ["proven", "archived"].includes(through)) {
+            if (!runProof) return targetResume(value);
+            stage = "prove";
+            operation = runProof;
+          } else if (value.legacyAction === "LAND_READY" && through === "archived") {
+            if (!runLand) return targetResume(value);
+            stage = "land";
+            operation = runLand;
+          }
+          if (!operation) return targetResume(value);
+          const before = convergenceFingerprint(id);
+          await operation(id);
+          const after = convergenceFingerprint(id);
+          unchangedAutomations = before === after ? unchangedAutomations + 1 : 0;
+          if (unchangedAutomations >= 2) return noProgress(id, through);
+        }
+      });
+    } catch (error) {
+      markBlocked(error?.message || String(error));
+      return advanceFailureAction(id, error, { stage, through });
+    }
   }
 
   async function showAdvance(id, flags = {}) {

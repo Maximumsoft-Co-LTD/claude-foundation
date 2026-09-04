@@ -116,6 +116,7 @@ these directly for diagnosis or an explicit integration.
 
 | Command | Purpose |
 |---|---|
+| `sandbox create <change> --all` | Repair missing multi-repository bindings in place; valid existing worktrees are preserved |
 | `change abandon <change> --reason <r> --decision-ref <ref>` | Quarantine a change that cannot be proven |
 | `change waive <change> --capability <c> --reason <r> --decision-ref <ref>` | Withdraw one capability's enforcement after its provider ran and failed; `--revoke` restores it |
 | `budget continue <change> --reason <r> --decision-ref <ref>` | Open one policy-gated completion window |
@@ -139,7 +140,7 @@ Wire-visible contracts are pinned in `.claude/harness/protocol.json`. A mixed-re
 | Pin | v3.5.4 |
 |---|---|
 | runtime | 3.5.4 |
-| runtime API | 28 |
+| runtime API | 30 |
 | semantic draft schema | 3 |
 | semantic amendment schema | 1 |
 | artifact defaults schema | 2 |

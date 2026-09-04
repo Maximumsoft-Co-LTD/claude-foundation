@@ -1,11 +1,8 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { repositoryBaseHead } from "../core/repository-binding.mjs";
 
-export function repositoryBaseHead(repository, state) {
-  return repository.id === "root"
-    ? state.repositories?.root?.baseHead || state.workspace?.baseHead || null
-    : state.repositories?.[repository.id]?.baseHead || null;
-}
+export { repositoryBaseHead } from "../core/repository-binding.mjs";
 
 export function addChangedSurfaceSource({
   sources, path, source, repositoryId, changeId, excludedWorkspaceDirs,
@@ -102,9 +99,7 @@ export function createChangePolicy({
     catch { return false; }
     return repositories.every((repository) => {
       if (!gitHead(repository.workspacePath)) return true;
-      return Boolean(repository.id === "root"
-        ? state.repositories?.root?.baseHead || state.workspace?.baseHead
-        : state.repositories?.[repository.id]?.baseHead);
+      return Boolean(repositoryBaseHead(repository, state));
     });
   }
 

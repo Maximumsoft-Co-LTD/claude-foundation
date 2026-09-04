@@ -81,6 +81,21 @@ Foundation SHALL expose an additive high-level coordinator that evaluates the cu
 - **THEN** the response names the cause and actor, confirms preserved state,
   offers bounded alternatives, and includes the exact resume route
 
+#### Scenario: An internal lifecycle dependency throws
+
+- **WHEN** Build preparation, dispatch, Prove, or Land throws an operational failure while `advance` is evaluating or chaining
+- **THEN** the coordinator returns a `REPAIR` action carrying the original reason, exact recovery command when available, preserved-state claim, and the same resume route instead of exiting outside the six-action protocol
+
+#### Scenario: A long deterministic chain keeps progressing
+
+- **WHEN** more than 32 automated transitions each change the semantic lifecycle progress identity
+- **THEN** `advance --through` continues toward the requested target without applying a fixed cycle ceiling
+
+#### Scenario: Automated continuation repeats unchanged
+
+- **WHEN** the same automated transition leaves the semantic lifecycle progress identity unchanged twice
+- **THEN** the coordinator returns the typed repeated-no-progress `WAIT` boundary with state preserved
+
 ### Requirement: Host execution envelopes are idempotent handoffs
 
 A host adapter SHALL be able to submit a validated execution envelope once at an action boundary, and Foundation SHALL deduplicate the envelope by stable execution identity while preserving unavailable dimensions.

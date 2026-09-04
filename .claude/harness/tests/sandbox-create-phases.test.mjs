@@ -20,6 +20,7 @@ import {
   ignoredSandboxPaths,
   inspectSandbox,
   isolateSelectedRepositories,
+  repairSelectedRepositories,
   reportMultiRepositorySandbox,
   runSandboxSetupCommand,
   sandboxCopyPlan,
@@ -420,6 +421,29 @@ test("repository isolation records root and child worktrees", (t) => {
   assert.equal(f.state.repositories.child.baseHead, "child-head");
   assert.equal(f.state.repositories.child.access, "read");
   assert.equal(f.calls.git.at(-1).args[1], "add");
+});
+
+test("repository repair recovers a partial binding without recreating work", (t) => {
+  const f = fixture(t);
+  const expected = join(f.root, ".foundation", "repository-sandboxes",
+    "change", "child");
+  mkdirSync(expected, { recursive: true });
+  f.state.repositories = {
+    root: {
+      mode: "worktree", path: f.state.workspace.path,
+      targetPath: f.root, baseHead: "root-base", access: "write"
+    }
+  };
+  f.context.worktreeOwnedByTarget = () => true;
+  f.context.gitHead = (path) => path === expected || path === f.child
+    ? "child-head" : "root-head";
+  const setup = repairSelectedRepositories(
+    f.context, "change", f.state, f.repositories());
+  assert.deepEqual(setup.map((repository) => repository.id), ["child"]);
+  assert.equal(f.state.repositories.child.path, expected);
+  assert.equal(f.state.repositories.child.targetPath, f.child);
+  assert.equal(f.state.repositories.child.baseHead, "child-head");
+  assert.equal(f.calls.git.some(({ args }) => args[1] === "add"), false);
 });
 
 test("repository isolation rolls back an uninitialized repository", (t) => {

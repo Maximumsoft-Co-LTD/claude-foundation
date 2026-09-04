@@ -10,6 +10,9 @@ import {
   ROOT_ONLY_EXCLUDED_DIRS, isExcludedPath, sandboxCodePathspec, trackedPathSet
 } from "../core/workspace-surface.mjs";
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
+import {
+  compositeRepositorySelection, isolatedRepositoryState, worktreeOwnedByTarget
+} from "../core/repository-binding.mjs";
 
 // A commit read, not executed. Inspection must not resolve a program through
 // PATH, so ref files are the authority for both ordinary and linked worktrees.
@@ -63,16 +66,40 @@ export function workspaceIdentityValid(kind, path, { gitMetadataPresent, directo
   return true;
 }
 
-export function repositoryInspectionRows(repositories) {
-  return Object.entries(repositories || {}).map(([repositoryId, runtime]) => ({
-    id: repositoryId,
-    access: runtime.access || "write",
-    kind: runtime.mode === "worktree" ? "git-worktree" :
+export function repositoryInspectionRows(repositories, selected = [], context = {}) {
+  const records = repositories || {};
+  const expected = new Set(selected.map((repository) => repository.id));
+  const ids = new Set([...Object.keys(records), ...expected]);
+  const directoryExists = context.directoryExists || existsSync;
+  const gitMetadataPresent = context.gitMetadataPresent || directoryExists;
+  const ownsWorktree = context.worktreeOwnedByTarget || worktreeOwnedByTarget;
+  return [...ids].map((repositoryId) => {
+    const runtime = records[repositoryId];
+    const selectedRepository = selected.find((row) => row.id === repositoryId);
+    if (!runtime) return {
+      id: repositoryId, access: selectedRepository?.mode || null,
+      kind: "none", status: "missing-record", path: null, baseHead: null, targetPath: null
+    };
+    const kind = runtime.mode === "worktree" ? "git-worktree" :
       runtime.mode === "copy" ? "filesystem-copy" :
-        runtime.mode === "reference" ? "reference" : "none",
-    status: runtime.path && existsSync(runtime.path) ? "active" : "missing",
-    path: runtime.path || null
-  })).sort((left, right) => left.id.localeCompare(right.id));
+        runtime.mode === "reference" ? "reference" : "none";
+    const present = Boolean(runtime.path && directoryExists(runtime.path));
+    const identityValid = present && (runtime.mode !== "worktree" ||
+      gitMetadataPresent(runtime.path));
+    const ownershipValid = identityValid && (runtime.mode !== "worktree" ||
+      !selectedRepository?.path || ownsWorktree(runtime.path, selectedRepository.path));
+    const unexpected = expected.size > 0 && !expected.has(repositoryId);
+    return {
+      id: repositoryId,
+      access: runtime.access || "write",
+      kind,
+      status: unexpected ? "unexpected-record" :
+        !present ? "missing" : !identityValid || !ownershipValid ? "invalid" : "active",
+      path: runtime.path || null,
+      baseHead: runtime.baseHead || null,
+      targetPath: runtime.targetPath || null
+    };
+  }).sort((left, right) => left.id.localeCompare(right.id));
 }
 
 export function workspaceTargetDrift(kind, baseHead, targetHead) {
@@ -85,8 +112,9 @@ export function workspaceInspectionValue({
   root,
   gitMetadataPresent,
   directoryExists,
-  headOfRepository
-}, state) {
+  headOfRepository,
+  worktreeOwnedByTarget
+}, state, selected = []) {
   const workspace = state.workspace || {};
   const kind = workspaceIsolationKind(workspace.mode);
   const identityValid = workspaceIdentityValid(kind, workspace.path, {
@@ -103,13 +131,28 @@ export function workspaceInspectionValue({
     baseHead,
     targetHead,
     drift: workspaceTargetDrift(kind, baseHead, targetHead),
-    repositories: repositoryInspectionRows(state.repositories)
+    repositories: repositoryInspectionRows(state.repositories, selected, {
+      gitMetadataPresent, directoryExists, worktreeOwnedByTarget
+    })
   };
 }
 
 export function workspaceInspectionFor(context) {
-  return (id, state = context.loadRuntime(id)) =>
-    workspaceInspectionValue(context, state);
+  return (id, state = context.loadRuntime(id)) => {
+    let selected = [];
+    let selectionError = null;
+    try {
+      selected = context.selectedRepositories?.(id, state,
+        (message) => { throw new Error(message); },
+        { useTargetPaths: true, withoutGit: true }) || [];
+    } catch (error) {
+      selectionError = error.message;
+    }
+    return {
+      ...workspaceInspectionValue(context, state, selected),
+      ...(selectionError ? { selectionError } : {})
+    };
+  };
 }
 
 export function inspectSandbox(context, id, flags = {}) {
@@ -141,6 +184,11 @@ export function showSandboxInspection(context, id, flags = {}) {
       context.output.log(`  target drift: base ${
         String(result.workspaceIsolation.baseHead).slice(0, 8)} -> target ${
         String(result.workspaceIsolation.targetHead).slice(0, 8)}; run 'claude-foundation sandbox sync ${id}' to replay onto it`);
+    if (result.workspaceIsolation.selectionError)
+      context.output.log(`  repository selection: invalid (${result.workspaceIsolation.selectionError})`);
+    for (const repository of result.workspaceIsolation.repositories || [])
+      context.output.log(`  repository ${repository.id}: ${repository.kind} (${repository.status})${
+        repository.path ? ` ${repository.path}` : ""}`);
     context.output.log(`  security boundary: ${result.securityBoundary.kind} (${result.securityBoundary.status})`);
     context.output.log(`  safe for unattended: ${result.execution.safeForUnattended ? "yes" : "no"}`);
     for (const reason of result.execution.reasons) context.output.log(`  reason: ${reason}`);
@@ -647,7 +695,14 @@ export function sandboxCreatePreflight(context, id, flags = {}) {
   if (unownedInvestigations.length)
     fail(`sandbox preflight found untracked investigation note(s): ${
       unownedInvestigations.map((row) => row.path).join(", ")}\n  commit the investigation record in the control repository before Build so sandbox apply cannot race another writer at archive`);
-  return { initial, repositories: selectedRepositories(id, initial) };
+  return {
+    initial,
+    // Creation and repair resolve the agreement against live targets. Runtime
+    // bindings may be precisely what is missing, so they cannot be required in
+    // order to discover the repositories that need repair.
+    repositories: selectedRepositories(id, initial, fail,
+      { useTargetPaths: true, withoutGit: true })
+  };
 }
 
 export function isolateSelectedRepositories(context, id, state, repositories) {
@@ -693,6 +748,88 @@ export function isolateSelectedRepositories(context, id, state, repositories) {
   }
 }
 
+function recoveredRepositoryBaseHead(context, repository, path) {
+  const sandboxHead = context.gitHead(path);
+  const targetHead = context.gitHead(repository.path);
+  if (!sandboxHead || !targetHead)
+    throw new Error(`repository '${repository.id}' cannot be recovered because its sandbox or target HEAD is unreadable`);
+  if (sandboxHead === targetHead) return sandboxHead;
+  const common = context.git(["merge-base", sandboxHead, targetHead], repository.path);
+  const baseHead = String(common.stdout || "").trim();
+  if (common.status !== 0 || !/^[0-9a-f]{40,64}$/i.test(baseHead))
+    throw new Error(`repository '${repository.id}' sandbox does not share a recoverable base with its selected target`);
+  return baseHead;
+}
+
+export function repairSelectedRepositories(context, id, state, repositories) {
+  const ownsWorktree = context.worktreeOwnedByTarget || worktreeOwnedByTarget;
+  const records = state.repositories || {};
+  const created = [];
+  const setupIds = new Set();
+  state.repositories = records;
+  records.root = {
+    ...(records.root || {}),
+    mode: state.workspace.mode,
+    path: state.workspace.path,
+    targetPath: context.root,
+    baseHead: state.workspace.baseHead || context.gitHead(context.root),
+    access: repositories.find((repository) => repository.id === "root")?.mode || "write"
+  };
+  try {
+    for (const repository of repositories) {
+      if (repository.id === "root") continue;
+      const requestedPath = join(context.root, ".foundation",
+        "repository-sandboxes", id, repository.id);
+      const expectedPath = context.canonicalPath(requestedPath);
+      const prior = records[repository.id];
+      if (prior?.path && existsSync(prior.path) &&
+          context.canonicalPath(prior.path) !== expectedPath)
+        throw new Error(`repository '${repository.id}' has recoverable work at non-canonical path '${prior.path}'`);
+      if (existsSync(expectedPath)) {
+        if (!ownsWorktree(expectedPath, repository.path))
+          throw new Error(`repository '${repository.id}' canonical sandbox path is not owned by its selected target`);
+        if (!prior || prior.mode !== "worktree" || !prior.targetPath ||
+            context.canonicalPath(prior.targetPath || repository.path) !==
+              context.canonicalPath(repository.path) ||
+            prior.access !== repository.mode || !prior.baseHead)
+          setupIds.add(repository.id);
+        records[repository.id] = {
+          ...(prior || {}), mode: "worktree", path: expectedPath,
+          targetPath: repository.path,
+          baseHead: prior?.baseHead || recoveredRepositoryBaseHead(
+            context, repository, expectedPath),
+          access: repository.mode, applied: prior?.applied === true
+        };
+        continue;
+      }
+      const baseHead = context.gitHead(repository.path);
+      if (!baseHead)
+        throw new Error(`repository '${repository.id}' cannot be isolated because it is not an initialized Git repository`);
+      mkdirSync(dirname(expectedPath), { recursive: true });
+      context.git(["worktree", "prune"], repository.path);
+      const result = context.git(
+        ["worktree", "add", "--detach", expectedPath, baseHead], repository.path);
+      if (result.status !== 0)
+        throw new Error(`cannot create sandbox for '${repository.id}': ${result.stderr.trim()}`);
+      created.push({ id: repository.id, path: expectedPath, targetPath: repository.path });
+      setupIds.add(repository.id);
+      records[repository.id] = {
+        mode: "worktree", path: expectedPath, targetPath: repository.path,
+        baseHead, access: repository.mode, applied: false
+      };
+    }
+    return repositories.filter((repository) => setupIds.has(repository.id));
+  } catch (error) {
+    for (const record of created.reverse()) {
+      context.git(["worktree", "remove", "--force", record.path], record.targetPath);
+      rmSync(record.path, { recursive: true, force: true });
+      delete records[record.id];
+    }
+    context.saveRuntime(state);
+    context.fail(`${error.message}; existing work was preserved — inspect it with 'claude-foundation sandbox inspect ${id}', retry repair with 'claude-foundation sandbox create ${id} --all', or retire the change with 'claude-foundation change abandon ${id} --reason <reason> --decision-ref <ref>'`);
+  }
+}
+
 export function setupSelectedRepositories(context, state, repositories) {
   for (const repository of repositories) {
     const record = state.repositories[repository.id];
@@ -722,10 +859,20 @@ export function createSandbox(context, id, flags = {}) {
     context.createSingle(id);
     return;
   }
-  context.createSingle(id);
+  const expectedRepositoryPath = (repository) => context.canonicalPath(join(
+    context.root, ".foundation", "repository-sandboxes", id, repository.id));
+  const rootActive = isolatedRepositoryState(initial) &&
+    Boolean(initial.workspace?.path && existsSync(initial.workspace.path));
+  const repair = isolatedRepositoryState(initial) ||
+    Object.keys(initial.repositories || {}).some((repository) => repository !== "root") ||
+    repositories.some((repository) => repository.id !== "root" &&
+      existsSync(expectedRepositoryPath(repository)));
+  if (!rootActive) context.createSingle(id);
   const state = context.loadRuntime(id);
-  isolateSelectedRepositories(context, id, state, repositories);
-  setupSelectedRepositories(context, state, repositories);
+  const setupRepositories = repair
+    ? repairSelectedRepositories(context, id, state, repositories)
+    : (isolateSelectedRepositories(context, id, state, repositories), repositories);
+  setupSelectedRepositories(context, state, setupRepositories);
   transitionLifecycleState(state, "building", "repository-sandboxes-created");
   context.saveRuntime(state);
   context.clearSnapshotCache(id);
@@ -1039,9 +1186,11 @@ export function createSandboxRuntime({
   const workspaceInspection = workspaceInspectionFor({
     root,
     loadRuntime,
+    selectedRepositories,
     gitMetadataPresent,
     directoryExists,
-    headOfRepository
+    headOfRepository,
+    worktreeOwnedByTarget
   });
 
   const inspect = inspectSandbox.bind(null, { workspaceInspection, hostAttestation });
@@ -1195,6 +1344,10 @@ export function createSandboxRuntime({
     combine: combinedDiffIdentity
   });
   function changeDiffIdentity(id, state = loadRuntime(id)) {
+    // Selection validation is the fail-closed boundary for an isolated
+    // multi-repository runtime. Without it a missing child record turns this
+    // into a root-only identity and can preserve evidence for the wrong tree.
+    selectedRepositories(id, state);
     return changeDiffIdentityForState(id, state);
   }
 
@@ -1218,10 +1371,11 @@ export function createSandboxRuntime({
   });
 
   function rebaseWorktree(id, state) {
+    const selection = selectedRepositories(id, state);
     const candidates = replayCandidates(state)
       .filter((candidate) => candidate.record.mode === "worktree");
     if (!candidates.length) return null;
-    const multiRepository = Object.keys(state.repositories || {}).length > 1;
+    const multiRepository = compositeRepositorySelection(selection);
     const prepared = [];
     const manuallyRebased = [];
     try {

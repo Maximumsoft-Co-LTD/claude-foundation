@@ -15,10 +15,14 @@ let compiled = false;
 let killed = false;
 try {
   if (!applied) throw new Error("mutation target did not apply");
-  const modulePath = join(scratch, "adapter-mutant.mjs");
+  const modulePath = join(scratch, "evidence", "adapter-mutant.mjs");
+  mkdirSync(dirname(modulePath), { recursive: true });
   writeFileSync(modulePath, mutated);
   cpSync(resolve(".claude/harness/runtime/evidence/evidence-results.mjs"),
-    join(scratch, "evidence-results.mjs"));
+    join(scratch, "evidence", "evidence-results.mjs"));
+  mkdirSync(join(scratch, "core"), { recursive: true });
+  cpSync(resolve(".claude/harness/runtime/core/repository-binding.mjs"),
+    join(scratch, "core", "repository-binding.mjs"));
   const runtime = await import(`${pathToFileURL(modulePath).href}?v=${Date.now()}`);
   compiled = true;
   const status = runtime.mutationV2Result({

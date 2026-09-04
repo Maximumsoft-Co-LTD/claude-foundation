@@ -86,6 +86,16 @@ try {
   assert.deepEqual(calls[0], { id: "c", workspace: "/override", force: true, childPaths: undefined });
 
   writeFileSync(runtimeFile, JSON.stringify({
+    contractRevision: 2,
+    workspace: { mode: "current", path: "/control" }
+  }));
+  calls.length = 0;
+  const currentComposite = store.relevantSnapshot("c", null, true);
+  assert.equal(currentComposite.version, 3,
+    "declared multi-repository selection must not collapse to a root-only snapshot before isolation");
+  assert.deepEqual(Object.keys(currentComposite.repositories).sort(), ["a", "dot", "root", "z"]);
+
+  writeFileSync(runtimeFile, JSON.stringify({
     contractRevision: 3,
     revision: 99,
     workspace: { path: "/control" },

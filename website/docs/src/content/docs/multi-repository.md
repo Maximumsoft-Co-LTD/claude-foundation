@@ -82,6 +82,10 @@ Use `write` only where the change will produce code. Use `read` for test data,
 contracts, SDKs, and integration dependencies. A read repository is part of
 proof identity, but it is not a Build or Land target.
 
+Selecting any non-root repository makes the lifecycle composite. This includes
+a selection with exactly one child and no `root` product work; it must not be
+downgraded to the single-root Apply or archive path.
+
 Then inspect the resolved selection:
 
 ```bash
@@ -113,6 +117,12 @@ claude-foundation advance <change> --through build
 `sandbox create --all` and `sandbox inspect` remain operator diagnostics under
 `help --all`; users do not need to sequence them.
 
+After isolation, every selected child must have a runtime record matching its
+catalog target, access mode, base head, and live worktree. `sandbox inspect`
+lists `missing-record`, `unexpected-record`, `missing`, or `invalid` instead of
+silently substituting the target checkout. Inspection reads filesystem and Git
+metadata directly, so a repository-controlled `git` on `PATH` is never run.
+
 Write repositories receive isolated Build worktrees. Git-backed read and
 external repositories receive pinned detached worktrees. The command does not
 make an external service or arbitrary folder safe; this is Git workspace
@@ -142,6 +152,10 @@ Change Loop passes two relevant environment variables:
 - `FOUNDATION_REPOSITORY_ID` — the working-directory repository ID;
 - `FOUNDATION_REPOSITORIES_FILE` — a versioned JSON manifest mapping every
   scoped ID to its isolated `path`, `access`, and `baseHead`.
+
+Changed-surface checks, review packets, provider manifests, snapshots, and Land
+use this same recorded base. Before isolation the selected source head may seed
+the record; after isolation a missing child binding is infrastructure failure.
 
 Provider code must read the manifest. It must not assume all five company
 repositories happen to be checked out as siblings on the current machine.
@@ -205,6 +219,9 @@ verifies recorded commits and root pointers, but does not claim atomicity across
 independent remotes. Committing, pushing, and opening pull requests still need
 separate user authorization.
 
+The saga is also required when exactly one non-root child is selected. A missing
+child runtime record cannot make Land take the single-repository shortcut.
+
 ## Recovery map
 
 | What happened | Correct next action |
@@ -213,6 +230,8 @@ separate user authorization.
 | Sync reports a replay conflict | Resolve the named paths; do not recreate the change |
 | A read repository is dirty | Remove the mutation or fix setup/provider behavior |
 | Repository setup failed | Fix `setupCommand`, then recreate or sync as reported |
+| A selected child binding is missing | Run `sandbox inspect <change>`, then `sandbox create <change> --all`; valid worktrees and their work are preserved |
+| A canonical child path belongs to another repository | Keep it untouched, inspect the reported path, then correct the target/path conflict or explicitly abandon the change |
 | Provider cannot see a repository | Add it to provider `repositories`; do not hard-code a local path |
 | Land is interrupted | `land resume <change>` |
 

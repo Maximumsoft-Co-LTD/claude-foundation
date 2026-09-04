@@ -178,6 +178,15 @@ not the normal interactive recovery flow.
 | `contract-digest` | Hash one declared artifact in two or more repositories and pass only when the bytes agree |
 | `external` | Require a receipt from a system Change Loop does not execute |
 
+For a repository-scoped provider, `FOUNDATION_REPOSITORIES_FILE` binds every
+selected ID to the same path, access mode, and base head used by changed-surface
+and review-packet identity. A selected source head may seed this before
+isolation. After isolation, every non-root repository requires its recorded
+runtime base and a worktree owned by the selected catalog target; a missing,
+incomplete, or foreign binding is infrastructure failure before hashing, never
+fallback to the live target and never a zero/pass measurement. Its recovery is
+the existing `sandbox create <change> --all` route.
+
 ### Test and discovery in more than one repository
 
 `test-discovery` writes both receipts from a single run: the test receipt under

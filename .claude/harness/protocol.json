@@ -1,6 +1,6 @@
 {
   "runtime": "3.5.4",
-  "runtimeApi": "28",
+  "runtimeApi": "30",
   "semanticDraftSchema": "3",
   "semanticAmendmentSchema": "1",
   "artifactDefaultsSchema": "2",
@@ -21,7 +21,7 @@
   "reviewProtocol": "4",
   "acceptanceProtocol": "2",
   "semanticAcceptanceProtocol": "1",
-  "reviewPacketSchema": "4",
+  "reviewPacketSchema": "5",
   "attestationProtocol": "1",
   "authorityProtocol": "2",
   "ciEvidenceProtocol": "1",
