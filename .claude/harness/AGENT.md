@@ -1,6 +1,6 @@
 # Change Loop agent contract
 
-Before work, verify Change Loop 3.5.5/runtime API `30`; run doctors; relay
+Before work, verify Change Loop 3.5.6/runtime API `30`; run doctors; relay
 `.claude/harness/DEVELOPER-SETUP.md` on failure. Never improvise.
 `single-model` review retains distinct identity.
 
