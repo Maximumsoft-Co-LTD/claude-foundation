@@ -12,9 +12,14 @@ DASHBOARD="$ROOT/dashboard/public"
 
 assert_file_contains "agent matches the user's language" "$AGENT" "user's language"
 assert_file_contains "agent performs safe authorized actions" "$AGENT" "safe action you can"
+assert_file_contains "agent keeps runtime routes internal" "$AGENT" "agent-only control data"
+assert_file_contains "agent asks users for decisions rather than CLI execution" "$AGENT" \
+  "requests a decision, not CLI execution"
 assert_file_contains "orchestrator leads with the outcome" "$ORCH" "Lead with outcome"
 assert_file_contains "orchestrator keeps protocol internal" "$ORCH" "Do not paste runtime protocol"
 assert_file_contains "orchestrator avoids command handoffs" "$ORCH" "agent can run"
+assert_file_contains "orchestrator keeps wait commands with the agent" "$ORCH" \
+  "not a user command"
 
 for command in investigate change dev feature changes; do
   assert_file_contains "$command returns user-language guidance" \
@@ -26,11 +31,21 @@ assert_file_contains "Prove distinguishes proof from remaining risk" "$COMMANDS/
   "unproven"
 assert_file_contains "Land performs deterministic recovery" "$COMMANDS/land.md" \
   '`automaticRecovery`'
+for command in build prove dev land; do
+  assert_file_contains "$command keeps control commands agent-owned" \
+    "$COMMANDS/$command.md" "agent-only control"
+done
 
 assert_file_contains "session digest tells the agent to translate" \
   "$ROOT/.claude/hooks/session-context.mjs" "never paste it verbatim"
 assert_file_contains "secret guard confirms no disclosure" \
   "$ROOT/.claude/hooks/protect-secrets.sh" "No secret contents were read"
+assert_file_contains "secret guard keeps blocked commands internal" \
+  "$ROOT/.claude/hooks/protect-secrets.sh" "Keep the blocked command internal"
+assert_file_not_contains "secret guard never delegates a bypass to the user" \
+  "$ROOT/.claude/hooks/protect-secrets.sh" "user can run the command"
+assert_file_not_contains "secret guard never recommends disabling itself" \
+  "$ROOT/.claude/hooks/protect-secrets.sh" "temporarily disable the hook"
 assert_file_contains "phase guard confirms no mutation" \
   "$ROOT/.claude/hooks/phase-mutation-guard.mjs" "No mutation ran"
 assert_file_contains "branch guard confirms work preservation" \

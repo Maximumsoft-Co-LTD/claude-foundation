@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Agents no longer hand routine harness commands back to users.** Runtime
+  commands, resume routes, next actions, and hook recovery fields stay
+  agent-owned; `ASK_USER` requests only the decision or authority, while `WAIT`
+  reports the responsible owner and condition. Secret protection also stops
+  suggesting user-side bypasses without changing public commands or lifecycle
+  behavior.
+
 ### Changed
 
 - **Release verification now fails fast and reuses exact rehearsal evidence.**

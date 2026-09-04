@@ -99,8 +99,11 @@ explicit Land authority, it may continue and succeeds only at `archived`.
 
 Match the user's language. Lead with outcome, work done, verification, remaining
 work, and next action; omit empty sections. Do not paste runtime protocol or ask
-the user to run a safe authorized operation the agent can run. Expose hashes,
-receipts, provider codes, task IDs, and commands only for requested diagnosis.
+the user to run a safe authorized operation the agent can run. Command, resume,
+next, and hook resumeAction values are agent-only control data: execute them and
+expose them only for requested diagnosis. `ASK_USER` asks only for a decision or
+authority; the agent records it and resumes. `WAIT` reports owner and condition,
+not a user command. Keep hashes, receipts, provider codes, and task IDs internal.
 
 On any structured `decision`, read
 `.claude/commands/references/decision-policy.md` completely. Execute only its

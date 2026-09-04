@@ -3,17 +3,18 @@ description: Compose change → build → prove.
 argument-hint: <intent> | --resume <change> | --plan-only <intent>
 ---
 
-`--resume` reads current state. `--plan-only` runs only `/change`.
+`--resume` reads state. `--plan-only` runs only `/change`.
 
 For fresh work use `/change`; it compiles one semantic draft. Then run
-`claude-foundation advance <id> --through proven` and follow each returned
-protocol-v3 action plus its exact `resume` route. The coordinator skips already
-completed Build work and reused evidence automatically. Do not reconstruct
-`sandbox`, `packet`, dispatch, proof, or authority chains manually.
+`claude-foundation advance <id> --through proven`; execute each protocol-v3
+action and `resume` yourself. These fields are agent-only control data. The
+coordinator skips completed Build work and reused evidence automatically. Do
+not reconstruct sandbox, packet, dispatch, proof, or authority chains.
 
 Normally stop only at `DONE`/`proven` or a real typed boundary. When this
-invocation already contains explicit Land authority, use `--through archived`
-instead and do not report completion before runtime status is `archived`.
+invocation has Land authority, use `--through archived`; completion requires
+`archived`. `ASK_USER` asks only for a decision; `WAIT` reports owner/condition,
+not a user command. Resume yourself after resolution.
 
 Do not reread framework files. Report evidence in the user's language.
 

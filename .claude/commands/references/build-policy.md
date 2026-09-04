@@ -43,5 +43,6 @@ limit while the progress fingerprint changes.
 
 At a decision, authority, resource, conflict, contradictory-contract, or
 repeated no-progress boundary, preserve the sandbox, present the typed choices,
-and resume the same Build after resolution. Never turn repeated execution or a
-stale receipt into a pass.
+and resume the same Build yourself after resolution. Keep the resume route
+agent-only unless the user requests diagnosis. Never turn repeated execution or
+a stale receipt into a pass.

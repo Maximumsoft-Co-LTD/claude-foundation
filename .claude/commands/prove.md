@@ -9,10 +9,12 @@ fresh receipts, runs eligible deterministic providers, routes configured review
 or acceptance, and finalizes proof without asking the model to reconstruct a
 primitive command chain.
 
-Follow only the returned protocol-v3 action and its exact `resume` command.
+Follow only the returned protocol-v3 action and invoke its exact `resume`
+command yourself. Command and resume fields are agent-only control data.
 `REPAIR` and `EDIT` return a bounded invalidation/repair set; `RUN_EXTERNAL`
-names one configured external boundary; `WAIT` and `ASK_USER` identify the actor,
-safe alternatives, preserved state, and resume route. Read
+names one configured external boundary; `WAIT` reports its owner and condition
+without a user command; `ASK_USER` asks only for the decision, after which the
+agent records it and resumes. Read
 `.claude/skills/prove/references/workflow.md` only for the named non-automatic
 boundary. Do not rerun unchanged deterministic checks or search for alternate
 commands.

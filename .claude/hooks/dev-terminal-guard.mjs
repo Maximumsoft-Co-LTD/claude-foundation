@@ -40,24 +40,24 @@ export function evaluateDevTerminal({ prompt, activeIds, proofFor, currentHash, 
     applies: true, complete: false, status: "INCOMPLETE",
     blockerKind: activeIds.length ? "ambiguous-active-change" : "missing-active-change",
     changeId: null, phase: activeIds.length ? "unknown" : "change",
-    resumeAction: "Run /dev --resume <change> after selecting exactly one active change."
+    resumeAction: "Agent: invoke /dev --resume <change> after selecting exactly one active change."
   };
   const changeId = activeIds[0];
   const proof = proofFor(changeId);
   if (!proof || proof.status !== "pass") return {
     applies: true, complete: false, status: "INCOMPLETE", blockerKind: "proof-not-passing",
-    changeId, phase: "prove", resumeAction: `Run /dev --resume ${changeId}; do not end while reviewer or evidence work is pending.`
+    changeId, phase: "prove", resumeAction: `Agent: invoke /dev --resume ${changeId}; do not end while reviewer or evidence work is pending.`
   };
   const audit = auditProof(changeId);
   if (!audit.valid) return {
     applies: true, complete: false, status: "INCOMPLETE", blockerKind: "proof-audit-failed",
-    changeId, phase: "prove", resumeAction: `Repair proof audit for ${changeId}, then run one fresh proof.`,
+    changeId, phase: "prove", resumeAction: `Agent: repair proof audit for ${changeId}, then run one fresh proof.`,
     detail: audit.reason
   };
   const hash = currentHash(changeId);
   if (!hash || hash !== proof.workspaceHash) return {
     applies: true, complete: false, status: "INCOMPLETE", blockerKind: "proof-stale",
-    changeId, phase: "prove", resumeAction: `Workspace changed after Prove; run one fresh proof for ${changeId}.`
+    changeId, phase: "prove", resumeAction: `Agent: workspace changed after Prove; run one fresh proof for ${changeId}.`
   };
   return { applies: true, complete: true, status: "PROVEN", changeId, phase: "prove" };
 }
@@ -139,7 +139,7 @@ async function main() {
   if (result.complete) return;
   process.stdout.write(JSON.stringify({
     decision: "block",
-    reason: `DEV_TERMINAL ${JSON.stringify(result)}. /dev is incomplete regardless of model prose. Continue the recorded resumeAction and stop only after a fresh passing proof.`
+    reason: `DEV_TERMINAL ${JSON.stringify(result)}. /dev is incomplete regardless of model prose. Execute the recorded agent resumeAction yourself and stop only after a fresh passing proof; do not hand the command to the user.`
   }));
 }
 

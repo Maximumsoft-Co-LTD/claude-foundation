@@ -9,6 +9,12 @@ if command -v jq >/dev/null 2>&1; then
   blocked="$(printf '%s' '{"tool_name":"Read","tool_input":{"file_path":".env"}}' |
     bash "$ROOT/.claude/hooks/protect-secrets.sh")"
   assert_contains "secret hook blocks dotenv reads" "$blocked" '"decision": "block"'
+  assert_contains "secret hook keeps its blocked command with the agent" "$blocked" \
+    "Keep the blocked command internal"
+  assert_not_contains "secret hook does not delegate a bypass" "$blocked" \
+    "user can run the command"
+  assert_not_contains "secret hook does not recommend disabling itself" "$blocked" \
+    "temporarily disable the hook"
 
   allowed="$(printf '%s' '{"tool_name":"Read","tool_input":{"file_path":".env.example"}}' |
     bash "$ROOT/.claude/hooks/protect-secrets.sh")"

@@ -39,8 +39,9 @@ test("dev cannot complete without exactly one passing fresh audited proof", () =
     currentHash: () => "same", auditProof: () => ({ valid: true })
   };
   assert.equal(evaluateDevTerminal(base).status, "PROVEN");
-  assert.equal(evaluateDevTerminal({ ...base, activeIds: [] }).blockerKind,
-    "missing-active-change");
+  const missing = evaluateDevTerminal({ ...base, activeIds: [] });
+  assert.equal(missing.blockerKind, "missing-active-change");
+  assert.match(missing.resumeAction, /^Agent: invoke \/dev --resume/);
   assert.equal(evaluateDevTerminal({ ...base, proofFor: () => null }).blockerKind,
     "proof-not-passing");
   assert.equal(evaluateDevTerminal({ ...base,
@@ -79,6 +80,8 @@ test("Stop hook persists an incomplete verdict before asking the host to continu
     });
     assert.equal(child.status, 0);
     assert.match(child.stdout, /"decision":"block"/);
+    assert.match(child.stdout, /Execute the recorded agent resumeAction yourself/);
+    assert.doesNotMatch(child.stdout, /Run \/dev/);
     const verdict = JSON.parse(readFileSync(join(root, ".foundation", "logs",
       "dev-terminal", "live-session.json"), "utf8"));
     assert.equal(verdict.protocol, "foundation-dev-terminal-v1");

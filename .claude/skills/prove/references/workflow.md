@@ -38,7 +38,9 @@ test and quality commands.
 When the coordinator reaches review or acceptance, its advanced bridge is
 `authority request`; do not replace that typed handoff with an informal prompt
 or a fabricated receipt.
-Never expose raw readiness JSON. Relay every blocker with the route and every
-boundary with its diagnosis, choices, recommendation, and resume route; pause only for real decisions or
-external conditions. Never fabricate provenance, claim an unproven pass, or Land. End
-with what passed, remains unproven, and the agent's next action.
+Never expose raw readiness JSON. Keep recovery and resume routes as agent-only
+control data unless the user requests diagnosis. Relay every blocker and
+boundary with its diagnosis, choices, recommendation, and responsible owner;
+pause only for real decisions or external conditions. Never fabricate
+provenance, claim an unproven pass, or Land. End with what passed, remains
+unproven, and the agent's next action.

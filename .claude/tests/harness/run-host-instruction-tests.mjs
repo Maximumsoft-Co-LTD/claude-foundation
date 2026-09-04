@@ -233,6 +233,8 @@ test("contract evolves additively", () => {
   const { protocol, command, instruction } = response;
   assert.deepEqual({ protocol, command }, { protocol: 1, command: "build" });
   assert.match(instruction, /demo/);
+  assert.match(instruction, /agent-only control data/);
+  assert.match(instruction, /ask only for the decision/);
 });
 
 test("host instruction answers --help without project discovery", () => {

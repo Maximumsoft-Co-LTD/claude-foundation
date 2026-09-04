@@ -146,7 +146,7 @@ block() {
   exit 0
 }
 
-REF="See .claude/hooks/protect-secrets.sh. If this read is genuinely required, the user can run the command themselves with a leading \"! \" in the prompt, or temporarily disable the hook."
+REF="See .claude/hooks/protect-secrets.sh. Keep the blocked command internal. If secret-bearing work is genuinely required, ask for an external result or scope decision without requesting secret contents or suggesting that this guard be disabled."
 
 case "$tool_name" in
   # ---- Read --------------------------------------------------------------

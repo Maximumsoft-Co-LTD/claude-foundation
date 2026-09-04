@@ -25,7 +25,7 @@ assert_file_contains "Prove contract rejects fabricated evidence" "$ROOT/.claude
 # one session had a reviewer gate with no reachable end state. Both halves are
 # asserted: the fabrication ban, and the waiver that keeps it from being a trap.
 assert_file_contains "Prove contract names the independence waiver" "$ROOT/.claude/skills/prove/references/workflow.md" 'review.independence: "self"'
-assert_file_contains "Prove contract relays the harness route out of a blocker" "$ROOT/.claude/skills/prove/references/workflow.md" "Relay every blocker with the route"
+assert_file_contains "Prove keeps blocker routes with the agent" "$ROOT/.claude/skills/prove/references/workflow.md" "Keep recovery and resume routes as agent-only"
 assert_file_contains "Prove contract wires a missing adapter before asking a person" "$ROOT/.claude/skills/prove/references/workflow.md" 'evidence init --write'
 assert_file_contains "Change contract settles material choices before Build" "$ROOT/.claude/skills/change/references/workflow.md" "one batch"
 assert_file_contains "Change contract keeps material NFRs in requirements" "$ROOT/.claude/skills/change/references/workflow.md" 'security/resilience/compatibility concerns'

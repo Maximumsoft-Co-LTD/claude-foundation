@@ -1,26 +1,24 @@
 # Change Loop agent contract
 
-Use the lifecycle and ownership in `.claude/orchestrator.md`.
+Before work, verify Change Loop 3.5.5/runtime API `30`; run doctors; relay
+`.claude/harness/DEVELOPER-SETUP.md` on failure. Never improvise.
+`single-model` review retains distinct identity.
 
-Before work, verify Change Loop 3.5.5/runtime API `30` and run doctors. Only failure
-blocks: relay
-`.claude/harness/DEVELOPER-SETUP.md`; never improvise installation.
-Single-family: select reviewer plus `single-model`; retain distinct identity.
+Compile one semantic draft; use `advance <change> --through
+build|proven|archived`. Edit only returned workspaces/tasks/paths.
+OpenSpec stays canonical; use versioned defaults.
 
-Create Change from one semantic draft. Then use
-`advance <change> --through build|proven|archived`; edit only the workspace,
-tasks and paths returned by its action. OpenSpec stays canonical; absent files
-use versioned defaults.
-
-Harness output is a machine handoff: translate in the user's language. Run
-authorized `automaticRecovery`; never ask users to run a safe action you can.
+Harness output is a machine handoff: translate in the user's language. Command,
+resume, and hook `resumeAction` fields are agent-only control data; execute
+authorized routes and expose them only for requested diagnosis. `ASK_USER`
+requests a decision, not CLI execution; `WAIT` reports owner/condition. Never
+ask users to run a safe action you can. Run authorized `automaticRecovery`.
 Use AskUserQuestion, plain text otherwise; never offer only a passing option.
 
 For `notification.surface: true`, load `README.md`; false is the
-harness-owned suppression decision.
+suppression decision.
 
-Settle production, wire, activation, proof, and authority once. Build/Prove fix
-defects and hand off missing permission. Reask only for material change.
+Settle production, wire, activation, proof, and authority once; reask only on
+material change. Build/Prove fix defects; hand off missing permission.
 
-Land authority/evidence rules: `.claude/orchestrator.md`.
-Follow `.claude/rules/fundamentals.md` for conduct and skill routing.
+Land: `.claude/orchestrator.md`. Follow `.claude/rules/fundamentals.md` for conduct and skill routing.
