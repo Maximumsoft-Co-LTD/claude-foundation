@@ -70,6 +70,14 @@ export function structuralReleaseChecks({ version, protocol, foundationSource,
   add("formula-head", /head ".+\.git", branch: "main"/.test(formula), "HEAD remains available");
   add("workflow-dry-run", workflow.includes("dry_run") && workflow.includes("DRY"),
     "release workflow exposes a non-publishing rehearsal");
+  add("workflow-main-bound", workflow.includes('"$GITHUB_REF" = "refs/heads/main"') &&
+    workflow.includes("git ls-remote --heads origin refs/heads/main") &&
+    workflow.includes('"$REMOTE_MAIN" = "$GITHUB_SHA"'),
+  "release workflow rejects non-main and stale dispatch revisions");
+  add("workflow-rehearsal-reuse", workflow.includes("rehearsal_run_id") &&
+    workflow.includes("rehearsal-evidence.mjs verify") && workflow.includes("actions: read") &&
+    workflow.includes('.head_branch == "main"'),
+  "release workflow verifies source-bound rehearsal evidence before reuse");
   add("workflow-node-supported", /node-version: "24"/.test(workflow) &&
     /^>=20\.19\.0$/.test(packageJson.engines?.node || ""),
   "CI Node and minimum supported Node are declared");

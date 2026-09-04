@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { compareSemver, semverTuple, supportedTags } from "../../../scripts/release/upgrade-matrix.mjs";
+import {
+  boundedMap, compareSemver, semverTuple, supportedTags
+} from "../../../scripts/release/upgrade-matrix.mjs";
 import {
   projectUpgradeDiagnostics, upgradeCompatibilityDiagnostics
 } from "../../harness/runtime/core/update-advisory.mjs";
@@ -13,6 +15,33 @@ test("upgrade policy selects every release from the supported minimum through cu
   const tags = ["v3.4.10", "v3.2.18", "v3.3.0", "junk", "v3.2.19", "v3.4.11"];
   assert.deepEqual(supportedTags(tags, "3.2.19", "3.4.10"),
     ["v3.2.19", "v3.3.0", "v3.4.10"]);
+});
+
+test("upgrade exercises use bounded concurrency and preserve report order", async () => {
+  let active = 0;
+  let maximum = 0;
+  const results = await boundedMap([40, 10, 30, 20], 2, async (delay, index) => {
+    active += 1;
+    maximum = Math.max(maximum, active);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    active -= 1;
+    return index;
+  });
+  assert.equal(maximum, 2);
+  assert.deepEqual(results, [0, 1, 2, 3]);
+});
+
+test("upgrade exercise workers drain safely before surfacing a failure", async () => {
+  let active = 0;
+  await assert.rejects(() => boundedMap(["slow", "fail", "unstarted"], 2, async (item) => {
+    active += 1;
+    try {
+      if (item === "fail") throw new Error("fixture failure");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return item;
+    } finally { active -= 1; }
+  }), /fixture failure/);
+  assert.equal(active, 0);
 });
 
 test("project upgrade diagnostics read signed CI from the root repository catalog", () => {

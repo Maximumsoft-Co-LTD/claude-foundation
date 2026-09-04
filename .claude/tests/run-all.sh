@@ -108,6 +108,7 @@ consumer quality adapters|node --test "$ROOT/.claude/harness/tests/quality-adapt
 runtime syntax|node --check "$ROOT/.claude/harness/foundation.mjs"
 runtime environment policy|node --test "$HERE/harness/run-runtime-environment-policy-tests.mjs"
 release preflight|node --test "$HERE/harness/release-preflight.test.mjs"
+release rehearsal evidence|node --test "$HERE/harness/rehearsal-evidence.test.mjs"
 release upgrade matrix contract|node --test "$HERE/harness/upgrade-matrix.test.mjs"
 local release rehearsal contract|node --test "$HERE/harness/local-release-rehearsal.test.mjs"
 rollout report contract|node --test "$HERE/bench/tests/rollout-report.test.mjs"

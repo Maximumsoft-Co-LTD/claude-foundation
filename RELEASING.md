@@ -24,15 +24,41 @@ We follow [Semantic Versioning](https://semver.org/) and [Keep a Changelog](http
 
 The workflow then: renames `## [Unreleased]` → `## [X.Y.Z]` (dated) + adds a fresh `## [Unreleased]` + fixes the link refs · bumps `VERSION` + the `WORKFLOW.md` mirror · commits `chore(release): vX.Y.Z` + tags + pushes · computes the tarball `sha256` and bumps the formula `url`/`sha256` · publishes the GitHub release from the new changelog section · builds + uploads the bottle and arms the formula's `bottle do` block · commits `chore(brew): formula for vX.Y.Z`. **Result: 2 bot commits + a tag + a published, bottled release.**
 
-It refuses to run if the version is malformed, the tag already exists, or `## [Unreleased]` is empty (nothing to release).
+It refuses to run if the selected ref is not the current `main` revision, the
+version is malformed, the tag already exists, or `## [Unreleased]` is empty
+(nothing to release). If `main` moves before validation, dispatch a new run;
+if it moves later, the release push still fails closed.
 
-> **Rehearse first.** Run it with **`dry_run: true`** (`gh workflow run release.yml -f version=2.5.11 -f dry_run=true`) to do the edits + build the bottle and print the diffs **without** pushing, tagging, or publishing anything. Recommended before the first real use, and any time the release machinery changed.
+> **Rehearse when the release machinery changed.** Run with **`dry_run: true`**
+> (`gh workflow run release.yml -f version=2.5.11 -f dry_run=true`) to do the
+> edits, deterministic and mutation gates, and bottle build **without** pushing,
+> tagging, or publishing anything. An ordinary product release does not need a
+> second rehearsal when the release machinery is unchanged.
+
+A successful rehearsal on `main` uploads a seven-day, source-bound evidence manifest. To
+publish the exact same proposed version and source commit without repeating the
+expensive gates, pass that rehearsal's Actions run id:
+
+```bash
+gh workflow run release.yml \
+  -f version=2.5.11 \
+  -f rehearsal_run_id=<successful-dry-run-id>
+```
+
+The publishing run verifies that the referenced run succeeded and that its
+version, source commit, release workflow, dependency lock, candidate rewrite,
+semantic/deterministic checks, automated mutation check, and bottle rehearsal
+all match. Omitting `rehearsal_run_id` keeps the self-contained path and runs
+fresh evidence. Input, tag, changelog, checkout, and structural checks always
+run first, before dependency installation.
 
 > **Coverage.** The bottle is built on one pinned arm64 macOS runner (`macos-15` → `arm64_sequoia`, which also pours on `arm64_tahoe`/macOS 26 via forward-compat). Intel macOS, Linux, and macOS older than Sequoia fall back to build-from-source. To widen coverage, build on a CI matrix and add one `sha256 … <tag>:` line per platform. `bottle.yml` remains the manual tool for retro-fixing/rebuilding the bottle for an already-tagged release.
 
 Before the workflow rehearsal, run `npm run release:upgrade-matrix`. The
 versioned policy in `scripts/release/supported-upgrades.json` selects every tag
-from v3.2.19 through the current `VERSION` and tests all four host adapters.
+from v3.2.19 through the current `VERSION` and tests all four host adapters with
+a bounded concurrent worker pool. The default is up to eight workers; use
+`--jobs <n>` to reduce concurrency on a constrained machine.
 The report is source-bound and may be retained with `--output <path>`; a dirty
 source report is useful rehearsal evidence but cannot be assurance sign-off.
 

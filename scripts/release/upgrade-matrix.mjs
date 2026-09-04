@@ -2,10 +2,10 @@
 
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { availableParallelism, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const POLICY = JSON.parse(readFileSync(join(ROOT, "scripts/release/supported-upgrades.json"), "utf8"));
@@ -15,6 +15,44 @@ function run(command, args, options = {}) {
   if (result.status !== 0) throw new Error(
     `${command} ${args.join(" ")} failed (${result.status}): ${result.stderr || result.stdout}`);
   return result.stdout;
+}
+
+function runAsync(command, args, options = {}) {
+  return new Promise((resolveRun, reject) => {
+    const child = spawn(command, args, { cwd: ROOT, ...options });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk) => { stdout += chunk; });
+    child.stderr?.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", reject);
+    child.on("close", (status) => {
+      if (status === 0) resolveRun(stdout);
+      else reject(new Error(
+        `${command} ${args.join(" ")} failed (${status}): ${stderr || stdout}`));
+    });
+  });
+}
+
+export async function boundedMap(items, concurrency, worker) {
+  const width = Math.max(1, Math.min(items.length || 1,
+    Number.isSafeInteger(concurrency) ? concurrency : 1));
+  const results = new Array(items.length);
+  let cursor = 0;
+  let firstError = null;
+  const consume = async () => {
+    while (!firstError) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= items.length) return;
+      try { results[index] = await worker(items[index], index); }
+      catch (error) { firstError ||= error; }
+    }
+  };
+  await Promise.all(Array.from({ length: width }, consume));
+  if (firstError) throw firstError;
+  return results;
 }
 
 function sourceIdentity() {
@@ -62,7 +100,7 @@ function hostArtifact(host, target, codexHome) {
 
 function install(source, host, target, codexHome) {
   const env = { ...process.env, CODEX_HOME: codexHome };
-  return run("bash", [join(source, installer(host)), target, "--source", source, "--yes"], { env });
+  return runAsync("bash", [join(source, installer(host)), target, "--source", source, "--yes"], { env });
 }
 
 function unpackTag(tag, destination) {
@@ -74,21 +112,23 @@ function unpackTag(tag, destination) {
   if (extracted.status !== 0) throw new Error(`cannot extract ${tag}`);
 }
 
-function exercise({ tag, source, host, root, currentVersion }) {
+async function exercise({ tag, source, host, root, currentVersion }) {
   const slug = `${tag.slice(1).replaceAll(".", "-")}-${host}`;
   const target = join(root, slug, "project");
   const codexHome = join(root, slug, "codex-home");
   mkdirSync(target, { recursive: true });
   mkdirSync(codexHome, { recursive: true });
-  install(source, host, target, codexHome);
+  await install(source, host, target, codexHome);
   const changeId = `upgrade-${slug}`;
-  run("bash", [join(source, "cli.sh"), "--project", target,
+  await runAsync("bash", [join(source, "cli.sh"), "--project", target,
     "change", "new", changeId, "--rapid"]);
   const userFile = join(target, "USER-OWNED-UPGRADE.txt");
   writeFileSync(userFile, `preserve ${tag} ${host}\n`);
-  const upgradeOutput = install(ROOT, host, target, codexHome);
-  const version = run("bash", [join(ROOT, "cli.sh"), "--project", target, "version"]).trim();
-  const changes = run("bash", [join(ROOT, "cli.sh"), "--project", target, "changes"]);
+  const upgradeOutput = await install(ROOT, host, target, codexHome);
+  const version = (await runAsync("bash",
+    [join(ROOT, "cli.sh"), "--project", target, "version"])).trim();
+  const changes = await runAsync("bash",
+    [join(ROOT, "cli.sh"), "--project", target, "changes"]);
   const checks = {
     freshInstall: existsSync(join(target, ".claude", "harness", "foundation.mjs")),
     activeChangeReadable: changes.includes(changeId),
@@ -101,21 +141,24 @@ function exercise({ tag, source, host, root, currentVersion }) {
   return { tag, host, status: Object.values(checks).every(Boolean) ? "pass" : "fail", checks };
 }
 
-export function runUpgradeMatrix({ tags: requestedTags = null } = {}) {
+export async function runUpgradeMatrix({ tags: requestedTags = null,
+  jobs = Math.min(8, availableParallelism()) } = {}) {
   const currentVersion = readFileSync(join(ROOT, "VERSION"), "utf8").trim();
   const allTags = run("git", ["tag", "--list", "v*.*.*"]).trim().split(/\r?\n/).filter(Boolean);
   const tags = requestedTags || supportedTags(allTags, POLICY.minimum, currentVersion);
   if (!tags.length) throw new Error("supported upgrade matrix selected no tags");
   const root = mkdtempSync(join(tmpdir(), "foundation-upgrade-matrix-"));
-  const rows = [];
+  let rows = [];
   try {
     for (const tag of tags) {
       const source = join(root, `source-${tag.slice(1)}`);
       mkdirSync(source, { recursive: true });
       unpackTag(tag, source);
-      for (const host of POLICY.hosts)
-        rows.push(exercise({ tag, source, host, root, currentVersion }));
     }
+    const exercises = tags.flatMap((tag) => POLICY.hosts.map((host) => ({
+      tag, host, source: join(root, `source-${tag.slice(1)}`), root, currentVersion
+    })));
+    rows = await boundedMap(exercises, jobs, exercise);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -134,7 +177,11 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   try {
     const tagIndex = process.argv.indexOf("--tag");
     const tags = tagIndex >= 0 ? [process.argv[tagIndex + 1]] : null;
-    const report = runUpgradeMatrix({ tags });
+    const jobsIndex = process.argv.indexOf("--jobs");
+    const jobs = jobsIndex >= 0 ? Number(process.argv[jobsIndex + 1]) : undefined;
+    if (jobs !== undefined && (!Number.isSafeInteger(jobs) || jobs < 1))
+      throw new Error("--jobs must be a positive integer");
+    const report = await runUpgradeMatrix({ tags, jobs });
     const rendered = `${JSON.stringify(report, null, 2)}\n`;
     const outputIndex = process.argv.indexOf("--output");
     if (outputIndex >= 0) {

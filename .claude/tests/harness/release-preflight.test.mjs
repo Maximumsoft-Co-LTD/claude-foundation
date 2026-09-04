@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -49,7 +50,14 @@ test("structural release checks require canonical changelog and matching artifac
     version: "1.2.3", protocol, foundationSource: constants,
     changelog: "# Changelog\n\n## [Unreleased]\n\n- Change\n\n## [1.2.2]\n",
     formula: `  url "https://example/v1.2.3.tar.gz"\n  sha256 "${"a".repeat(64)}"\n  head "https://example/repo.git", branch: "main"`,
-    workflow: "dry_run DRY\nnode-version: \"24\"", packageJson: { engines: { node: ">=20.19.0" } }
+    workflow: `dry_run DRY rehearsal_run_id actions: read
+"$GITHUB_REF" = "refs/heads/main"
+git ls-remote --heads origin refs/heads/main
+"$REMOTE_MAIN" = "$GITHUB_SHA"
+.head_branch == "main"
+rehearsal-evidence.mjs verify
+node-version: "24"`,
+    packageJson: { engines: { node: ">=20.19.0" } }
   });
   assert.ok(checks.every((row) => row.status === "pass"), JSON.stringify(checks));
 });
@@ -77,4 +85,31 @@ test("artifact publication still requires a clean structurally valid candidate",
   });
   assert.equal(invalid.publicationReady, false);
   assert.deepEqual(invalid.blockers, ["structural-release-check-failed"]);
+});
+
+test("release workflow fails fast and does not repeat semantic mutation", () => {
+  const workflow = readFileSync(new URL("../../../.github/workflows/release.yml", import.meta.url),
+    "utf8");
+  const validation = workflow.indexOf("- name: Validate inputs + repo state");
+  const expensive = workflow.indexOf("- name: Require fresh deterministic and mutation evidence");
+  assert.ok(validation >= 0 && validation < expensive);
+  assert.doesNotMatch(workflow, /npm run test:mutation:semantic/);
+  assert.match(workflow, /authoritative suite already contains all six semantic mutation/);
+});
+
+test("release workflow binds publishing and reusable rehearsal evidence to current main", () => {
+  const workflow = readFileSync(new URL("../../../.github/workflows/release.yml", import.meta.url),
+    "utf8");
+  assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/);
+  assert.match(workflow, /\[ "\$GITHUB_REF" = "refs\/heads\/main" \]/);
+  assert.match(workflow, /git ls-remote --heads origin refs\/heads\/main/);
+  assert.match(workflow, /\[ "\$REMOTE_MAIN" = "\$GITHUB_SHA" \]/);
+  assert.match(workflow, /actions: read/);
+  assert.match(workflow, /rehearsal_run_id:/);
+  assert.match(workflow, /\.conclusion == "success"/);
+  assert.match(workflow, /\.head_branch == "main"/);
+  assert.match(workflow, /\.head_sha == \$source/);
+  assert.match(workflow, /\.path == "\.github\/workflows\/release\.yml"/);
+  assert.match(workflow, /rehearsal-evidence\.mjs verify/);
+  assert.match(workflow, /name: release-rehearsal-evidence/);
 });

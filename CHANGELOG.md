@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Release verification now fails fast and reuses exact rehearsal evidence.**
+  Invalid inputs stop before dependency installation, release runs reject
+  non-main or stale dispatch revisions, successful dry runs can be reused only
+  for the same version and source-bound workflow on `main`, semantic
+  mutation is no longer executed twice, and the exhaustive multi-host upgrade
+  matrix uses bounded concurrency instead of 140 serial exercises.
+
 ## [3.5.5] - 2026-09-04
 
 ### Fixed

@@ -15,7 +15,9 @@ name: Release
 # Result: 2 bot commits + a tag + a published, bottled release from one click.
 #
 # `dry_run: true` does steps 1-2, 6 (build the bottle to prove it works) WITHOUT
-# any push/tag/publish/upload — use it to rehearse a release safely.
+# any push/tag/publish/upload — use it to rehearse a release safely. A successful
+# rehearsal emits source-bound evidence; pass its run id to the real release to
+# reuse the expensive gates without trusting a different commit or candidate.
 #
 # bottle.yml stays as the manual tool for retro-fixing/rebuilding an old tag.
 # See RELEASING.md.
@@ -30,9 +32,18 @@ on:
         description: "Rehearse: do edits + build the bottle, but don't push/tag/publish"
         type: boolean
         default: false
+      rehearsal_run_id:
+        description: "Successful dry-run id for this version and exact source SHA (optional)"
+        required: false
+        default: ""
 
 permissions:
+  actions: read # inspect and download source-bound rehearsal evidence
   contents: write # commit the release + push the tag + create/upload the release
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -45,12 +56,15 @@ jobs:
     env:
       NEW: ${{ github.event.inputs.version }}
       DRY: ${{ github.event.inputs.dry_run }}
+      REHEARSAL_RUN_ID: ${{ github.event.inputs.rehearsal_run_id }}
       TAP: maximumsoft-co-ltd/claude-foundation
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: main
+          # Bind every check and reusable rehearsal to the dispatch SHA. A later
+          # main update then makes the eventual release push fail closed.
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - uses: actions/setup-node@v6
@@ -58,27 +72,21 @@ jobs:
           node-version: "24"
           cache: npm
 
-      - name: Require fresh deterministic and mutation evidence
-        run: |
-          set -euo pipefail
-          command -v jq >/dev/null || brew install jq
-          npm ci
-          export PATH="$PWD/node_modules/.bin:$PATH"
-          npm run quality:config
-          npm run quality:exceptions
-          npm run quality:static
-          sh .claude/tests/run-all.sh
-          npm run test:mutation:semantic
-          npm run test:mutation:dashboard
-          npm run quality:mutation:coverage:dashboard
-          npm run quality:mutation:normalize:dashboard
-          npm run quality:mutation:changed
-          npm run release:preflight
-
       - name: Validate inputs + repo state
         run: |
           set -euo pipefail
           [[ "$NEW" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::version '$NEW' is not X.Y.Z"; exit 1; }
+          [[ -z "$REHEARSAL_RUN_ID" || "$REHEARSAL_RUN_ID" =~ ^[0-9]+$ ]] || {
+            echo "::error::rehearsal_run_id must be a numeric GitHub Actions run id"; exit 1; }
+          [ "$DRY" != "true" ] || [ -z "$REHEARSAL_RUN_ID" ] || {
+            echo "::error::a dry run cannot reuse another dry run"; exit 1; }
+          [ "$GITHUB_REF" = "refs/heads/main" ] || {
+            echo "::error::releases must be dispatched from main, not $GITHUB_REF"; exit 1; }
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ] || {
+            echo "::error::checkout is not bound to the dispatch SHA"; exit 1; }
+          REMOTE_MAIN=$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 { print $1 }')
+          [ -n "$REMOTE_MAIN" ] && [ "$REMOTE_MAIN" = "$GITHUB_SHA" ] || {
+            echo "::error::dispatch SHA is not the current origin/main; start a new release run"; exit 1; }
           PREV=$(tr -d '[:space:]' < VERSION)
           echo "PREV=$PREV" >> "$GITHUB_ENV"
           [ "$PREV" != "$NEW" ] || { echo "::error::VERSION is already $NEW"; exit 1; }
@@ -88,7 +96,43 @@ jobs:
           # The editorial part you write by hand must be present.
           body=$(awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md | tr -d '[:space:]')
           [ -n "$body" ] || { echo "::error::## [Unreleased] is empty — add changelog entries first"; exit 1; }
-          echo "PREV=$PREV NEW=$NEW DRY=$DRY"
+          node scripts/release/preflight.mjs
+          command -v jq >/dev/null || brew install jq
+          echo "PREV=$PREV NEW=$NEW DRY=$DRY REHEARSAL_RUN_ID=${REHEARSAL_RUN_ID:-none}"
+
+      - name: Verify reusable rehearsal evidence
+        if: env.REHEARSAL_RUN_ID != ''
+        run: |
+          set -euo pipefail
+          metadata="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$REHEARSAL_RUN_ID")"
+          jq -e --arg source "$GITHUB_SHA" '
+            .conclusion == "success" and
+            .event == "workflow_dispatch" and
+            .head_branch == "main" and
+            .head_sha == $source and
+            .path == ".github/workflows/release.yml"
+          ' <<<"$metadata" >/dev/null || {
+            echo "::error::rehearsal run is not a successful Release run for $GITHUB_SHA"; exit 1; }
+          evidence_dir="$RUNNER_TEMP/rehearsal-evidence"
+          gh run download "$REHEARSAL_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name release-rehearsal-evidence --dir "$evidence_dir"
+          node scripts/release/rehearsal-evidence.mjs verify \
+            --version "$NEW" --source-head "$GITHUB_SHA" \
+            --file "$evidence_dir/manifest.json"
+
+      - name: Require fresh deterministic and mutation evidence
+        if: env.REHEARSAL_RUN_ID == ''
+        run: |
+          set -euo pipefail
+          npm ci
+          export PATH="$PWD/node_modules/.bin:$PATH"
+          # The authoritative suite already contains all six semantic mutation
+          # lanes, so do not execute the same mutations a second time here.
+          sh .claude/tests/run-all.sh
+          npm run test:mutation:dashboard
+          npm run quality:mutation:coverage:dashboard
+          npm run quality:mutation:normalize:dashboard
+          npm run quality:mutation:changed
 
       - name: Rewrite changelog + bump version mirrors
         run: |
@@ -277,6 +321,22 @@ jobs:
           git add Formula/claude-foundation.rb
           git commit -m "chore(brew): formula for v$NEW (url/sha + bottle)"
           git push origin HEAD:main
+
+      - name: Record reusable rehearsal evidence
+        if: env.DRY == 'true'
+        run: |
+          node scripts/release/rehearsal-evidence.mjs create \
+            --version "$NEW" --source-head "$GITHUB_SHA" \
+            --file "$RUNNER_TEMP/release-rehearsal-evidence/manifest.json"
+
+      - name: Upload reusable rehearsal evidence
+        if: env.DRY == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-rehearsal-evidence
+          path: ${{ runner.temp }}/release-rehearsal-evidence/manifest.json
+          if-no-files-found: error
+          retention-days: 7
 
   # The release job bumps the landing page and both docs locales, then pushes
   # with GITHUB_TOKEN — which fires no push event, so pages.yml never sees the
