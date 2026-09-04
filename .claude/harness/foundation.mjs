@@ -109,7 +109,7 @@ import {
 import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
 import { createQualityRuntime } from "./runtime/quality/quality-runtime.mjs";
 
-const VERSION = "3.5.4";
+const VERSION = "3.5.5";
 const RUNTIME_API_VERSION = "30";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed

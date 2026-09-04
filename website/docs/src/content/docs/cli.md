@@ -137,9 +137,9 @@ Commands marked as needing a `--decision-ref` require an **explicit host-recorde
 
 Wire-visible contracts are pinned in `.claude/harness/protocol.json`. A mixed-revision install fails immediately at load rather than partway through Land.
 
-| Pin | v3.5.4 |
+| Pin | v3.5.5 |
 |---|---|
-| runtime | 3.5.4 |
+| runtime | 3.5.5 |
 | runtime API | 30 |
 | semantic draft schema | 3 |
 | semantic amendment schema | 1 |
