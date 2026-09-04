@@ -42,6 +42,12 @@ Product writes are allowed only in the exact workspace and paths returned by
 tracked files only; configure `sandbox.setupCommand` or a per-repository setup
 command when dependencies must be installed.
 
+The phase hook and `claude-foundation exec` use the same containment policy.
+They reject absolute outside operands, later directory escapes, and writes
+through symlinks outside the workspace; `exec` derives the phase from runtime
+state and starts Build children in the canonical workspace. This is cooperative
+containment, so the host still owns process isolation for indirect effects.
+
 Parallel mode returns only independent tasks and lease instructions. The host
 starts every successfully leased worker before waiting, observes the writes,
 and resumes the same `advance` command. Primitive `sandbox`, `packet`, `agents
@@ -57,7 +63,9 @@ claude-foundation change amend <change> <amendment.json> --consume-amendment
 ```
 
 The compiler preserves completed tasks and manual sections, validates the new
-agreement transactionally, and returns to `advance`. Permission-bound cloud,
+agreement transactionally, and returns to `advance`. `updateTasks` may extend
+claim coverage but cannot replace an existing outcome or verification command;
+add a new task when that contract changes. Permission-bound cloud,
 secret, Terraform, deployment, or restart work becomes a typed external
 operation; Build never asks for credentials.
 

@@ -6,8 +6,11 @@ the returned task after focused checks; the coordinator owns planning and phase
 transitions.
 
 For a mutating Bash command, begin with `cd <exact workspace> && ...`; the live
-phase guard rejects an unanchored command and obvious `..` or absolute-output
-escapes. Prefer structured Edit/Write tools for product changes.
+phase guard rejects an unanchored command, absolute outside operands, later
+directory escapes, and symlink traversal. Run returned long commands through
+`claude-foundation exec`; it derives the active phase and starts Build children
+in the canonical workspace. Prefer structured Edit/Write tools for product
+changes.
 
 Move unauthorized infrastructure operations to a semantic amendment that adds
 an external operation; never ask for credentials. Time a returned long command

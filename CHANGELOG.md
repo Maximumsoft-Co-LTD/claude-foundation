@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Lifecycle safety now has exact semantic mutation killers.** Six deliberate
+  faults cover Land delivery authority, Build shell and `exec` containment,
+  immutable completed-task semantics, and canonical local/HTTPS references.
+
+### Fixed
+
+- **Active Land no longer infers commit or push authority.** Every mutating
+  shell command requires the recoverable runtime transaction marker until the
+  change is archived; separately authorized delivery stays outside Land.
+- **Build command execution remains in its canonical workspace.** The live hook
+  and `exec` share one policy for absolute operands, later directory changes,
+  symlink escapes, runtime-derived phases, and the child working directory.
+- **Semantic agreement inputs fail explicitly instead of drifting silently.**
+  Rich local references must be contained regular files, remote integration
+  sources require HTTPS and fixed versions, and amendments cannot replace an
+  existing task's outcome or verification command.
+
 ## [3.5.3] - 2026-09-03
 
 ### Added

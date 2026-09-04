@@ -23,6 +23,11 @@ extensions:
 - external operations only for permission-bound work;
 - Grounding v3 only for non-derived material decisions.
 
+Local diagram, prototype-selection, and integration references must resolve to
+regular files inside the project; reject directories and escaping symlinks.
+Remote integration sources must use HTTPS and name a fixed version rather than
+`latest` or a branch.
+
 Create no decision-tree or interview ledger. Never create `CONTEXT.md`, a glossary artifact, or an ADR store;
 durable terms and choices belong in the
 compiled packet. Always hash reads in `grounding.yaml` when a material decision
@@ -52,6 +57,8 @@ run `change amend <change> <amendment.json> --consume-amendment`. It preserves
 completed tasks and custom prose/assets, increments the revision, invalidates
 the affected contract, validates, and rolls back on failure. Existing legacy
 changes keep their legacy authoring path; do not rewrite them merely to migrate.
+`updateTasks` may extend claim coverage but must not replace an existing outcome
+or verification command; add a new task when that contract changes.
 
 The compiled `openspec/changes/<id>/` documents—not the temporary draft or
 `.foundation` state—are the source of truth. Never create product code during

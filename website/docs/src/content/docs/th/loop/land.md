@@ -19,8 +19,10 @@ transaction ที่กู้คืนได้ apply projection ที่ prov
 
 มีเพียง recoverable Land transaction ของ harness ที่ apply product และ sync
 agreement ได้ Agent ไม่แก้ไฟล์เหล่านั้นนอก transaction และ Land ไม่ให้อำนาจ
-commit, push, publish หรือเปิด PR
-อำนาจเหล่านั้นแยกกัน Base ที่ขยับ conflict, transaction ที่ค้าง, permission ที่หาย,
+commit, push, publish หรือเปิด PR ระหว่างที่ Land ยัง active phase guard จะปฏิเสธ
+คำสั่ง shell เหล่านี้ เว้นแต่เป็น child ของ runtime transaction ที่มี marker หลัง
+archive แล้วจึงส่งมอบผ่าน process ปกติของ project ด้วยอำนาจแยกต่างหาก Base ที่ขยับ
+conflict, transaction ที่ค้าง, permission ที่หาย,
 child repository หรือ pre-Land handoff ที่ยังไม่เสร็จจะหยุดด้วย `WAIT`, `REPAIR`,
 `RUN_EXTERNAL` หรือ `ASK_USER` พร้อมสาเหตุ actor ทางเลือกปลอดภัย state ที่เก็บไว้
 และ resume route ที่แน่นอน

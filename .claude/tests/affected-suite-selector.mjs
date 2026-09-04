@@ -45,6 +45,8 @@ const RULES = [
   [/^\.claude\/tests\/docs\//, ["workflow documentation contracts"]],
   [/^\.claude\/tests\/interview\//, ["human interaction contracts"]],
   [/^\.claude\/hooks\//, ["current hook contracts", "phase mutation guard"]],
+  [/phase-guard-policy|shell-mutation-policy|exec-runtime|semantic-amendment|semantic-draft|change-lifecycle/,
+    ["lifecycle safety mutation"]],
   [/configured-reviewer|codex-reviewer|review-protocol|review-attempt-store/,
     REVIEW],
   [/handoff-runtime|handoff-policy/, ["external operation handoff", ...LAND]],

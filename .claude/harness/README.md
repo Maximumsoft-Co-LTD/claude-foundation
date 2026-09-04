@@ -60,6 +60,7 @@ backend changes only: installed user command names and arguments are unchanged.
 | Core | `runtime/core/execution-contract.mjs` | Compiled risk, evidence, authority, workspace, budget, repository, and Land capabilities |
 | Core | `runtime/core/lifecycle-reducer.mjs` | Typed lifecycle transitions and compatibility-preserving state mutation |
 | Core | `runtime/core/process-runtime.mjs` | Provider process execution, readiness checks, and managed services |
+| Core | `runtime/core/shell-mutation-policy.mjs` | Shared phase-aware shell mutation and canonical Build containment policy |
 | Core | `runtime/core/state-runtime.mjs` | Runtime state, paths, hashing, snapshots, workspace manifests, and Git helpers |
 | Core | `runtime/core/trust.mjs` | Canonical JSON and Ed25519 verification shared by trust protocols |
 | Core | `runtime/core/update-advisory.mjs` | Phase-bound stable-release discovery, shared cache, and version comparison |
@@ -119,6 +120,11 @@ decisions, diagrams, prototype selections, integration documentation,
 repositories, and external operations are typed extensions. Version 1 remains
 an exact compatibility path and version 2 retains its unambiguous mechanical
 bookkeeping behavior.
+
+Rich local references resolve to regular files inside the project; remote
+integration references use HTTPS with a fixed version. Semantic amendments may
+extend an existing task's claims but require a new task to change its outcome
+or verification command, so a completed task never changes meaning silently.
 
 Use the public CLI instead of invoking `foundation.mjs` directly. The CLI finds
 the project from the current directory, or from `--project <path>`, and then
@@ -205,7 +211,7 @@ claude-foundation doctor --stage prove --change <change>
 | `metrics <change>` | Reports measured phase/provider cost and emitted context bytes | Finding latency or orchestration overhead |
 | `feedback <change> [--pretty]` | Reports source-aware timing, repair intervals, blocker coverage, evidence reuse, and the next action | Explaining why Prove took time without labeling repair as wait |
 | `budget checkpoint <change>` | Reports measured remaining allowance, unfinished work, and the exact resume route | Before deciding whether an exhausted run should continue, rescope, or pause |
-| `exec <change> [--phase <phase>] -- <command…>` | Runs an external command, passes its exit code through, and records its duration | Long build-phase commands (container builds, installs, full test runs) |
+| `exec <change> [--phase <phase>] -- <command…>` | Derives the phase, runs Build commands in the canonical workspace under the shared mutation policy, passes the exit code through, and records duration | Long build-phase commands (container builds, installs, full test runs) |
 | `telemetry host-import <change> <result.json>` | Imports a validated host execution result without prompt or tool payloads | Recording actual model attempts, fallback, usage, and instruction provenance |
 | `budget continue <change> --reason <reason>` | Opens one policy-gated audited completion window without deleting usage | Required model work after exhaustion |
 | `change validate <change>` | Validates change artifacts | After creating or revising an agreement |

@@ -147,11 +147,15 @@ function inspectPath(rawPath) {
 }
 
 function inspectBash(command) {
+  const workspace = process.env.FOUNDATION_WORKSPACE_ROOT || recordedWorkspace;
   const violation = shellMutationViolation(phase, {
     ...process.env,
     ...(recordedWorkspace && !process.env.FOUNDATION_WORKSPACE_ROOT
       ? { FOUNDATION_WORKSPACE_ROOT: recordedWorkspace } : {})
-  }, command);
+  }, command, workspace ? {
+    canonicalTarget: (target) => canonicalTarget(target, workspace),
+    contains: (target, root) => isWithin(target, canonical(root))
+  } : null);
   if (violation) violations.push(violation);
 }
 

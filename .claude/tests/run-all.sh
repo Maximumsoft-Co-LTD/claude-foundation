@@ -43,6 +43,7 @@ suites() {
 evidence binding mutation|sh "$HERE/harness/run-evidence-binding-mutation.sh"
 target drift mutation|sh "$HERE/harness/run-target-drift-mutation.sh"
 land surface mutation|sh "$HERE/harness/run-land-surface-mutation.sh"
+lifecycle safety mutation|node "$HERE/harness/run-lifecycle-safety-mutation.mjs"
 shipping boundary mutation|node "$ROOT/scripts/quality/run-shipping-semantic-mutation.mjs"
 harness contracts (evidence recovery)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-a2-recovery
 harness contracts (evidence telemetry)|sh "$HERE/harness/run-harness-tests.sh" evidence-proof-c-telemetry

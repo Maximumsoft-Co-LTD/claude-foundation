@@ -46,6 +46,7 @@ to force fully serial execution when bisecting.
 | `harness/run-risk-tiered-review-tests.mjs` | End-to-end legacy Grounding v2/current Grounding v3, bounded review, configured reviewer, proof recovery, upgrade, handoff, and repair-closure critical cases |
 | `harness/run-review-guard-fix-tests.mjs` | Receipt-guard reconciliation (overwrite/human/error), reviewer-schema portability and session handshake, infra-retry reset, `sandbox apply --refresh` routing, validate-time OpenSpec strict lint, and grounding readSet portability |
 | `harness/run-risk-tiered-review-mutation.mjs` | Mutation-v2 rejects a mutant killed by any case other than its declared killer |
+| `harness/run-lifecycle-safety-mutation.mjs` | Mutation-v2 proves Land authority, Build shell/exec containment, immutable completed-task semantics, and canonical HTTPS/local reference validation each have an exact killer |
 | `harness/run-land-surface-tests.mjs` | Change surface confined to tracked-or-declared paths, deletion provenance, and read-only pending-apply reporting |
 | `harness/run-proof-fixit-tests.mjs` | Changed-surface blocker recovery renders undeclared paths as a paste-ready `[paths:]` annotation |
 | `harness/run-critical-case-readiness-tests.mjs` | A declared critical case no file carries blocks at Prove instead of reporting the change ready, without inventing a blocker across repositories or when the search cannot answer |

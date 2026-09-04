@@ -108,6 +108,35 @@ violation through the wired hook as through the guard invoked directly.
 - **THEN** the violation is recorded, and in block mode the hook emits a block
   decision
 
+### Requirement: Build command execution stays in the canonical workspace
+
+Foundation SHALL run `exec` commands for a building change with the isolated
+workspace as the process working directory and SHALL apply the same shell
+mutation policy used by the live hook. The policy SHALL inspect literal
+filesystem operands and later directory changes and SHALL compare canonical
+targets so symlink traversal cannot escape the workspace. An explicit `exec`
+phase SHALL match the lifecycle phase derived from runtime state.
+
+#### Scenario: A command names an outside target
+
+- **WHEN** a Build shell or `exec` command names an absolute outside operand,
+  changes directory outside after its workspace anchor, or writes through an
+  in-workspace symlink to an outside target
+- **THEN** Foundation refuses the command before the mutation occurs
+
+#### Scenario: A Build command uses a relative path
+
+- **WHEN** `exec` runs a Build command that writes a relative path within the
+  isolated workspace
+- **THEN** the child process runs from the canonical workspace and the write
+  remains there
+
+#### Scenario: A caller labels Build execution as an impossible phase
+
+- **WHEN** `exec --phase land` is requested while runtime state is `building`
+- **THEN** Foundation refuses the phase mismatch instead of recording a false
+  phase
+
 ### Requirement: An upgraded project runs one phase guard
 
 Installing over a project whose settings wire a superseded phase-guard command
@@ -451,31 +480,33 @@ newest remaining eligible row SHALL govern instead.
   `openspec/changes/<id>` directory exists
 - **THEN** the guard enforces that row's phase exactly as before
 
-### Requirement: Land permits authorized delivery commands without the transaction marker
+### Requirement: Active Land never infers host mutation authority
 
-Land SHALL treat `git commit` and `git push` as delivery rather than tree
-mutation and SHALL allow them without `FOUNDATION_LAND_TRANSACTION=1`. Every
-other mutating shell command during Land SHALL still require that marker, and
-the refusal SHALL name the operations it refused.
+Every mutating shell command inspected during active Land SHALL require
+`FOUNDATION_LAND_TRANSACTION=1`, including `git add`, `git commit`, and
+`git push`. Only the recoverable runtime transaction SHALL set that marker.
+Land lifecycle authority SHALL NOT imply commit, push, publication, or
+destructive Git authority; those effects happen only after archive through the
+project's separately authorized delivery process.
 
-#### Scenario: An authorized delivery commit runs during Land
+#### Scenario: A delivery command is attempted during active Land
 
-- **WHEN** a `git add … && git commit -m …` command is inspected during Land
-  without the runtime transaction marker
-- **THEN** the guard reports no violation
+- **WHEN** `git add … && git commit …`, `git push`, `git push --force`, or a
+  branch deletion is inspected without the runtime transaction marker
+- **THEN** the guard refuses the command without inferring delivery authority
 
-#### Scenario: A tree mutation during Land is still refused
+#### Scenario: The runtime applies the proven projection
 
-- **WHEN** a `git checkout -- src`, `rm -rf build`, or `echo x > notes.txt`
-  command is inspected during Land without the runtime transaction marker
-- **THEN** the guard reports a violation that names the refused operation
-
-#### Scenario: An opaque shell runner is not delivery
-
-- **WHEN** a Land command wraps its work in `sh -c` or `bash <script>` without
+- **WHEN** the recoverable Land transaction runs a mutating child process with
   the runtime transaction marker
-- **THEN** the guard refuses it, because its mutations cannot be read from the
-  command text
+- **THEN** the guard permits the mutation to be governed by that transaction
+
+#### Scenario: Delivery follows archived completion
+
+- **WHEN** the change is archived and the user separately authorizes commit,
+  push, publication, or a pull request
+- **THEN** the completed lifecycle grants no authority itself and the project
+  performs delivery through its normal process
 
 ### Requirement: One semantic draft compiles the change agreement
 
@@ -511,9 +542,18 @@ of truth; the input draft is not a parallel ledger.
 
 - **WHEN** the draft declares a diagram, selected prototype, or versioned API
   integration
-- **THEN** the compiler validates the referenced source, records it in the
-  existing OpenSpec design, and requires integration scenarios to cover both a
-  successful and a failing outcome
+- **THEN** the compiler requires a contained regular local file or an HTTPS
+  source with a fixed version, records it in the existing OpenSpec design, and
+  requires integration scenarios to cover both a successful and a failing
+  outcome
+
+#### Scenario: Rich context cannot escape or float
+
+- **WHEN** a local reference is a directory or resolves through a symlink
+  outside the project, or a remote integration uses a non-HTTPS scheme or a
+  floating version alias
+- **THEN** semantic draft validation refuses the reference before writing the
+  compiled agreement
 
 ### Requirement: Active semantic agreements amend transactionally
 
@@ -535,3 +575,10 @@ fails.
 - **WHEN** strict validation rejects the staged amendment
 - **THEN** no partial file or revision remains installed and the prior active
   agreement is still resumable
+
+#### Scenario: An amendment tries to redefine an existing task
+
+- **WHEN** `updateTasks` supplies a replacement outcome or verification command
+  for an existing task
+- **THEN** validation refuses the silent replacement and instructs the agent to
+  add a new task, preserving the original task's completed meaning

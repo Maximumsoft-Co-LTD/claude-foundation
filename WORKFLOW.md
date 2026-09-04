@@ -55,6 +55,13 @@ draft is temporary and `.foundation/` is derived coordination state. When Build
 discovers new behavior, `change amend <change> <amendment.json>` updates the
 canonical agreement transactionally before implementation continues.
 
+Referenced diagrams, prototype selections, and local integration documentation
+must resolve to regular files inside the project. Remote integration sources
+must use HTTPS and a fixed version rather than `latest`, a branch, or another
+floating alias. An amendment may extend an existing task's claim coverage, but
+changing its outcome or verification command requires a new task so completed
+work cannot silently change meaning.
+
 `/investigate <decision> --compare` is the optional disposable mode for
 genuinely unresolved experience, API, or architecture alternatives. It writes only under
 `.foundation/prototypes/`, never edits product code, and adds no lifecycle state;
@@ -102,6 +109,13 @@ execution closed pending a trusted host-owned attestation mechanism.
 rejected before telemetry, workspace inspection, or sandbox mutation. The guard
 is cooperative because the runtime cannot infer an external Allow All setting;
 the host that enables unattended execution must invoke the guarded form.
+
+Mutating shell commands must begin in the exact workspace. The hook and
+`claude-foundation exec` share one policy that rejects absolute outside
+operands, later directory escapes, and symlink traversal; `exec` derives the
+phase from runtime state and runs Build children with the canonical workspace
+as their working directory. Host process isolation is still required for
+indirect or dynamically computed effects.
 
 For advanced diagnosis of a selected multi-repository topology:
 

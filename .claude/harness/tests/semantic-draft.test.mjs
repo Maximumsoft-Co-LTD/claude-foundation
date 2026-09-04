@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync,
+  writeFileSync
+} from "node:fs";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
@@ -140,7 +143,28 @@ test("semantic draft validates local integration documentation references", (t) 
   draft.integrations[0].documentation.source = "docs/missing.md";
   writeFileSync(join(root, "draft.json"), `${JSON.stringify(draft, null, 2)}\n`);
   assert.throws(() => lifecycle.loadDraft("draft.json"),
-    /documentation.source must reference an existing file/);
+    /documentation.source must reference an existing regular file/);
+
+  draft.integrations[0].documentation.source = "docs";
+  writeFileSync(join(root, "draft.json"), `${JSON.stringify(draft, null, 2)}\n`);
+  assert.throws(() => lifecycle.loadDraft("draft.json"), /existing regular file/);
+
+  const outside = mkdtempSync(join(tmpdir(), "semantic-integration-outside-"));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  writeFileSync(join(outside, "provider.md"), "# Outside\n");
+  symlinkSync(join(outside, "provider.md"), join(root, "docs", "outside.md"));
+  draft.integrations[0].documentation.source = "docs/outside.md";
+  writeFileSync(join(root, "draft.json"), `${JSON.stringify(draft, null, 2)}\n`);
+  assert.throws(() => lifecycle.loadDraft("draft.json"), /existing regular file/);
+
+  draft.integrations[0].documentation.source = "file:///etc/passwd";
+  writeFileSync(join(root, "draft.json"), `${JSON.stringify(draft, null, 2)}\n`);
+  assert.throws(() => lifecycle.loadDraft("draft.json"), /must use HTTPS/);
+
+  draft.integrations[0].documentation.source = "https://provider.example/api";
+  draft.integrations[0].documentation.version = "latest";
+  writeFileSync(join(root, "draft.json"), `${JSON.stringify(draft, null, 2)}\n`);
+  assert.throws(() => lifecycle.loadDraft("draft.json"), /must identify a fixed version/);
 });
 
 test("modified requirements merge every canonical scenario before rendering", () => {
@@ -282,6 +306,33 @@ test("semantic amendment rejects unknown task references without writing", () =>
     renderTask: () => ""
   });
   assert.match(compiled.issues.join("\n"), /unknown task 'missing'/);
+});
+
+test("semantic amendment never silently replaces a completed task contract", () => {
+  const compiled = compileSemanticAmendment({
+    amendment: {
+      version: 1,
+      addRequirements: [{
+        key: "new", capability: "change", scenario: "Input", outcome: "Output"
+      }],
+      updateTasks: [{
+        key: "existing", covers: ["old", "new"],
+        outcome: "A different outcome", verify: "npm run test:new"
+      }],
+      evidence: { new: { capabilities: ["test"] } }
+    },
+    contract: {
+      version: 1,
+      claims: [{ id: "old", requirementKey: "old", capabilities: ["test"] }]
+    },
+    tasksContent: "# Tasks\n\n- [x] **T001** Existing [key:existing] " +
+      "[claims:old] — verify: `npm test`\n",
+    slugify,
+    renderTask: () => ""
+  });
+  assert.match(compiled.issues.join("\n"),
+    /cannot replace outcome or verify; add a new task/);
+  assert.equal(compiled.tasksContent, undefined);
 });
 
 test("change amend installs atomically and restores files and state on validation failure", (t) => {

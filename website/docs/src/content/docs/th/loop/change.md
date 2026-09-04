@@ -44,8 +44,10 @@ claude-foundation change start .foundation/drafts/<id>.json --consume-draft
 Prototype ไม่ใช่ proof เอกสาร integration ที่หายหรือไม่ระบุเวอร์ชันเป็น boundary
 ให้ค้นคว้าหรือถามผู้ใช้ ไม่ใช่สิทธิ์ให้เดา สำหรับ `MODIFIED` compiler จะอ่าน
 canonical spec แล้ว merge scenario เดิมให้ครบก่อนเพิ่มหรือแก้ ส่วน `REMOVED`
-ต้องมีผลด้าน migration เอกสาร local ต้องมีจริงใน project และ remote source ต้อง
-เป็น URL ที่ระบุ version
+ต้องมีผลด้าน migration diagram, prototype selection หรือเอกสาร integration แบบ
+local ต้อง resolve เป็นไฟล์ปกติภายใน project; directory และ symlink ที่หนีออกไปจะ
+ถูกปฏิเสธ ส่วน remote source ต้องใช้ HTTPS และ version แบบคงที่ ไม่ใช่ `latest`
+หรือชื่อ branch
 
 ## Artifact แบบ conditional และ source of truth
 
@@ -66,7 +68,8 @@ claude-foundation change amend <change> <amendment.json> --consume-amendment
 
 มันรักษา task ที่เสร็จแล้ว prose/diagram/section ที่ไม่เกี่ยวข้อง เพิ่ม link แบบ
 stable เพิ่ม revision แล้ว validate ทั้งชุด หากล้มเหลวจะ rollback Change เก่ายังใช้
-manual path เดิมได้
+manual path เดิมได้ Existing task เพิ่ม claim coverage ได้ แต่ถ้าจะเปลี่ยน outcome
+หรือ verify command ต้องเพิ่ม task ใหม่
 
 `/change` ที่สำเร็จ validate และแยก workspace แล้ว ทำต่อด้วย
 `claude-foundation advance <change> --through build`

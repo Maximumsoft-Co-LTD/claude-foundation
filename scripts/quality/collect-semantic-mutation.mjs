@@ -25,6 +25,11 @@ const SUITES = [
     protocol: "mutation-v2"
   },
   {
+    id: "SEM-LIFECYCLE-SAFETY",
+    command: ["node", ".claude/tests/harness/run-lifecycle-safety-mutation.mjs"],
+    protocol: "mutation-v2"
+  },
+  {
     id: "SEM-SHIPPING-CONTRACTS",
     command: ["node", "scripts/quality/run-shipping-semantic-mutation.mjs"],
     protocol: "mutation-v2"

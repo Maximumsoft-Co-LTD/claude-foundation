@@ -82,6 +82,10 @@ out="$(invoke build block "$TMP/workspace" \
 assert_eq "Build permits an anchored package script for the isolated workspace" "" "$out"
 
 out="$(invoke build block "$TMP/workspace" \
+  "$(bash_event "cd $TMP/workspace && /usr/bin/touch inside.txt")")"
+assert_eq "Build does not mistake an absolute executable for an output path" "" "$out"
+
+out="$(invoke build block "$TMP/workspace" \
   "$(bash_event "cd $TMP/workspace && cp \$SOURCE ./source")")"
 assert_contains "Build blocks dynamic environment paths it cannot prove isolated" "$out" \
   'dynamic path that cannot be proven isolated'
@@ -101,6 +105,22 @@ out="$(invoke build block "$TMP/workspace" \
 assert_contains "Build blocks a relative shell escape from isolation" "$out" \
   'obvious path outside the isolated workspace'
 
+for command in \
+  "touch $TMP/outside/touched.txt" \
+  "cp source $TMP/outside/copied.txt" \
+  "mv source $TMP/outside/moved.txt" \
+  "rm $TMP/outside/removed.txt"; do
+  out="$(invoke build block "$TMP/workspace" \
+    "$(bash_event "cd $TMP/workspace && $command")")"
+  assert_contains "Build blocks an absolute filesystem operand outside isolation ($command)" \
+    "$out" 'obvious path outside the isolated workspace'
+done
+
+out="$(invoke build block "$TMP/workspace" \
+  "$(bash_event "cd $TMP/workspace && cd $TMP/outside && touch escaped.txt")")"
+assert_contains "Build blocks a later cwd escape from isolation" "$out" \
+  'obvious path outside the isolated workspace'
+
 out="$(invoke build block "$TMP/workspace" "$(write_event "")")"
 assert_contains "Build blocks an empty mutation target" "$out" 'mutation target is missing or invalid'
 
@@ -111,6 +131,11 @@ assert_contains "Build blocks a NUL mutation target" "$out" 'mutation target is 
 ln -s "$TMP/outside" "$TMP/workspace/escape"
 out="$(invoke build block "$TMP/workspace" "$(write_event "$TMP/workspace/escape/app.js")")"
 assert_contains "Build resolves symlink escape before allowing" "$out" '"decision":"block"'
+
+out="$(invoke build block "$TMP/workspace" \
+  "$(bash_event "cd $TMP/workspace && touch escape/from-shell.txt")")"
+assert_contains "Build resolves symlinked shell targets before containment" "$out" \
+  'outside the isolated workspace'
 
 out="$(invoke prove block "" "$(write_event "$TMP/project/src/app.js")")"
 assert_contains "Prove keeps product files read-only" "$out" '"decision":"block"'
@@ -141,26 +166,26 @@ out="$(printf '%s' "$(write_event "$TMP/project/src/app.js")" | CLAUDE_PROJECT_D
   FOUNDATION_ACTIVE_PHASE=land FOUNDATION_GUARDRAIL_MODE=block FOUNDATION_LAND_TRANSACTION=1 node "$HOOK")"
 assert_eq "Land runtime transaction may mutate" "" "$out"
 
-# The transaction marker is process-local to the runtime apply transaction and
-# never reaches a host tool call, so demanding it for a commit made the Land
-# contract's own delivery step unreachable and left asking the user as the only
-# route. Delivery publishes an applied projection; it does not touch the tree.
 out="$(invoke land block "" \
   "$(bash_event 'git add foundation.json && git commit -q -m chore-land')")"
-assert_eq "Land permits an authorized delivery commit" "" "$out"
+assert_contains "Land does not infer commit authority" "$out" '"decision":"block"'
 
 out="$(invoke land block "" "$(bash_event 'git push origin main')")"
-assert_eq "Land permits an authorized delivery push" "" "$out"
+assert_contains "Land does not infer push authority" "$out" '"decision":"block"'
+
+out="$(invoke land block "" "$(bash_event 'git push --force origin main')")"
+assert_contains "Land does not infer destructive push authority" "$out" '"decision":"block"'
 
 out="$(invoke land block "" "$(bash_event 'git checkout -- src')")"
 assert_contains "Land still refuses a tree-mutating git command" "$out" '"decision":"block"'
-assert_contains "Land names the operation it refused" "$out" 'refused: git checkout'
+assert_contains "Land names the missing runtime authority" "$out" \
+  'Land shell mutations require the runtime transaction marker'
 
 out="$(invoke land block "" "$(bash_event 'git commit -m x && rm -rf build')")"
-assert_contains "Land refuses delivery mixed with a tree mutation" "$out" 'refused: rm'
+assert_contains "Land refuses delivery mixed with a tree mutation" "$out" '"decision":"block"'
 
 out="$(invoke land block "" "$(bash_event 'sh -c cd-and-commit.sh')")"
-assert_contains "Land refuses a mutation hidden inside a shell runner" "$out" 'refused: sh'
+assert_contains "Land refuses a mutation hidden inside a shell runner" "$out" '"decision":"block"'
 
 # The operation screen blanks quoted spans before it reads command words, so a
 # substitution inside a commit message arrived as whitespace and delivery saw
@@ -168,7 +193,7 @@ assert_contains "Land refuses a mutation hidden inside a shell runner" "$out" 'r
 out="$(invoke land block "" \
   "$(bash_event 'git commit -m \"$(rm -rf build)\"')")"
 assert_contains "Land refuses delivery hiding a command substitution" \
-  "$out" 'refused: command substitution'
+  "$out" '"decision":"block"'
 
 out="$(invoke prove audit "" "$(write_event "$TMP/project/src/app.js")")"
 assert_eq "audit-only rollout does not block" "" "$out"

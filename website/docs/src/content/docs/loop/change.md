@@ -69,8 +69,10 @@ Prototype output is never proof. Missing or unversioned integration
 documentation is a research/user-decision boundary, not permission to guess.
 For `MODIFIED`, the compiler reads the canonical spec and merges its complete
 scenario set before adding or changing scenarios; `REMOVED` requires a
-migration consequence. A local integration document must exist inside the
-project, while a remote source must be a versioned URL.
+migration consequence. A local diagram, prototype selection, or integration
+document must resolve to a regular file inside the project; directories and
+symlinks that escape it are refused. A remote integration source must use HTTPS
+and a fixed version rather than `latest` or a branch.
 
 ## Conditional artifacts and source of truth
 
@@ -92,7 +94,9 @@ claude-foundation change amend <change> <amendment.json> --consume-amendment
 
 It preserves completed tasks, custom prose, diagrams, and unrelated sections;
 adds stable links, increments the revision, validates, and rolls back on
-failure. Legacy changes retain their compatible manual path.
+failure. An existing task may gain claim coverage, but replacing its outcome or
+verification command requires a new task. Legacy changes retain their
+compatible manual path.
 
 A successful `/change` is already validated and isolated. Continue with
 `claude-foundation advance <change> --through build`.

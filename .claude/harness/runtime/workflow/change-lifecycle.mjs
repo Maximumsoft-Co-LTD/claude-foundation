@@ -1,6 +1,6 @@
 import {
   cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync,
-  writeFileSync
+  realpathSync, statSync, writeFileSync
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { nextCommand } from "../core/next-step.mjs";
@@ -498,6 +498,17 @@ export function createChangeLifecycle({
   }
 
   function validateSemanticReferences(draft) {
+    const validateLocalFile = (field, value) => {
+      const path = resolve(root, value);
+      try {
+        const project = realpathSync(root);
+        const canonical = realpathSync(path);
+        if (!pathInside(project, canonical) || !statSync(canonical).isFile())
+          throw new Error("not a contained regular file");
+      } catch {
+        fail(`semantic draft ${field} must reference an existing regular file inside the project`);
+      }
+    };
     const referencedPaths = [];
     if (draft.prototypeSelection?.reference)
       referencedPaths.push(["prototypeSelection.reference", draft.prototypeSelection.reference]);
@@ -517,17 +528,22 @@ export function createChangeLifecycle({
         referencedPaths.push([`diagrams[${index}].path`, path]);
       }
     }
-    for (const [field, value] of referencedPaths) {
-      const path = resolve(root, value);
-      if (!pathInside(root, path) || !existsSync(path))
-        fail(`semantic draft ${field} must reference an existing file inside the project`);
-    }
+    for (const [field, value] of referencedPaths) validateLocalFile(field, value);
     for (const [index, integration] of (draft.integrations || []).entries()) {
       const source = String(integration?.documentation?.source || "").trim();
-      if (!source || /^[a-z][a-z0-9+.-]*:\/\//i.test(source)) continue;
-      const path = resolve(root, source);
-      if (!pathInside(root, path) || !existsSync(path))
-        fail(`semantic draft integrations[${index}].documentation.source must reference an existing file inside the project or a versioned URL`);
+      if (!source) continue;
+      if (/^[a-z][a-z0-9+.-]*:\/\//i.test(source)) {
+        let url;
+        try { url = new URL(source); }
+        catch { fail(`semantic draft integrations[${index}].documentation.source must be a valid HTTPS URL`); }
+        if (url.protocol !== "https:")
+          fail(`semantic draft integrations[${index}].documentation.source must use HTTPS`);
+        const version = String(integration?.documentation?.version || "").trim();
+        if (/^(?:latest|current|main|master|head)$/i.test(version))
+          fail(`semantic draft integrations[${index}].documentation.version must identify a fixed version`);
+        continue;
+      }
+      validateLocalFile(`integrations[${index}].documentation.source`, source);
     }
   }
 

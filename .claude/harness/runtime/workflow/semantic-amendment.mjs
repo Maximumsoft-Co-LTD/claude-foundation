@@ -75,6 +75,13 @@ function amendmentIssues(amendment) {
     issues.push("semantic amendment requires evidence keyed by each added requirement");
   if (amendment?.updateTasks !== undefined && !Array.isArray(amendment.updateTasks))
     issues.push("semantic amendment updateTasks must be an array");
+  for (const [index, task] of (amendment?.updateTasks || []).entries()) {
+    const unsupported = ["outcome", "verify"].filter((field) =>
+      Object.prototype.hasOwnProperty.call(task || {}, field));
+    if (unsupported.length)
+      issues.push(`semantic amendment updateTasks[${index}] cannot replace ${
+        unsupported.join(" or ")}; add a new task so completed work keeps its meaning`);
+  }
   if (amendment?.addTasks !== undefined && !Array.isArray(amendment.addTasks))
     issues.push("semantic amendment addTasks must be an array");
   return issues;
@@ -110,8 +117,8 @@ export function compileSemanticAmendment({
   const coverageTasks = [
     ...(amendment.updateTasks || []).map((task) => ({
       key: task.key,
-      outcome: task.outcome || `Extend ${task.key}`,
-      verify: task.verify || taskVerify(tasksByKey.get(task.key)?.line),
+      outcome: `Extend ${task.key}`,
+      verify: taskVerify(tasksByKey.get(task.key)?.line),
       covers: stringList(task.covers).filter((key) => addedKeys.has(key))
     })),
     ...(amendment.addTasks || []).map((task) => ({ ...task, dependsOn: [] }))

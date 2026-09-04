@@ -239,9 +239,11 @@ worktree มีแค่ไฟล์ที่ Git ติดตาม ถ้า p
 
 ถ้าต้องใช้ Bash โดยตรงระหว่าง Build ให้เริ่มคำสั่งที่แก้ไฟล์ด้วย
 `cd <exact-workspace> && ...` phase guard จะบล็อก package manager หรือ formatter
-ที่ไม่ได้ผูกกับ workspace, path ที่หนีด้วย `..` และ absolute output redirection
-ออกนอก workspace ก่อน shell เริ่มทำงาน ควรใช้ Edit/Write แบบ structured เมื่อทำได้
-และยังต้องพึ่ง process isolation ของ host สำหรับผลข้างเคียงทางอ้อมจาก script
+ที่ไม่ได้ผูกกับ workspace, path ที่หนีด้วย `..`, การ `cd` ออกภายหลัง, filesystem
+operand แบบ absolute และการเขียนผ่าน symlink ออกนอก workspace ก่อน shell เริ่ม
+ทำงาน `claude-foundation exec` จะ derive phase จาก runtime state ใช้นโยบายเดียวกัน
+และเริ่มคำสั่ง Build ใน canonical workspace ควรใช้ Edit/Write แบบ structured เมื่อ
+ทำได้ และยังต้องพึ่ง process isolation ของ host สำหรับผลข้างเคียงทางอ้อมจาก script
 
 ทำไมต้องมีขั้นนี้: คุณ inspect หรือทิ้ง implementation ที่ยังไม่พร้อมได้ โดยไม่
 ปนกับ checkout ที่กำลังใช้งาน

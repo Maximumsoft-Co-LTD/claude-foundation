@@ -43,20 +43,13 @@ of the Land apply transaction and its child processes. Do not set it by hand:
 it is the carve-out that distinguishes a runtime-owned projection from an agent
 mutating the tree during Land.
 
-Delivery is not a tree mutation. `git commit` and `git push` run during Land
-without that marker, because they publish the projection the runtime already
-applied and the Land contract requires the agent to run them under separate
-user authority — an authority the marker made unusable, since it is
-process-local to the apply transaction and never reaches a host tool call.
-Every other mutating command during Land still requires the marker, including
-`git checkout`, `reset`, `clean`, `rm`, redirects, and anything hidden inside
-`sh -c` or a script runner, and the refusal names the operations it refused.
-Because the command-word screen reads a copy with quoted spans blanked out, a
-delivery command carrying `$(…)`, backticks, `${…}`, or `<(…)` is refused too:
-otherwise `git commit -m "$(rm -rf build)"` would reduce to `git commit` while
-the shell still ran the removal. Routing a commit through
-`claude-foundation exec` changes nothing either: the guard inspects the outer
-command before `exec` spawns anything.
+During active Land every mutating shell command requires the transaction
+marker, including `git add`, `git commit`, `git push`, amend, force-push, branch
+deletion, checkout, reset, cleanup, redirects, and opaque script runners. The
+Land slash command authorizes only the recoverable lifecycle transaction; it
+never implies delivery authority. Once the change is archived, the phase row
+is no longer eligible and a separately authorized commit, push, publication,
+or pull request proceeds through the project's normal process.
 
 When no phase can be established, `audit` mode records nothing — there is no
 policy to check against, and a row per mutation is noise. `block` mode still
@@ -68,8 +61,11 @@ only for a controlled rollout; `auto` is the normal fail-closed lifecycle mode.
 
 The Bash inspection is a conservative command-word screen, not a shell sandbox.
 During Build, an obviously mutating Bash command must begin with `cd`/`pushd`
-to the exact isolated workspace. Obvious `..` escapes and output redirection to
-an absolute path outside that workspace are blocked before execution. Use
+to the exact isolated workspace. It checks recognized filesystem operands,
+later directory changes, redirection targets, and canonical symlink targets;
+literal paths outside that workspace are blocked before execution. The
+`claude-foundation exec` runtime uses the same policy, derives its phase from
+change state, and starts Build children in the canonical workspace. Use
 structured Edit/Write operations where possible.
 Formatter write modes, package-manager scripts, and shell-script runners enter
 the same policy. Dynamic mutation paths using environment variables, command

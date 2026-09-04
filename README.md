@@ -253,10 +253,12 @@ failing setup keeps the sandbox and prints the recovery.
 
 For direct Bash use during Build, start an obviously mutating command with
 `cd <exact-workspace> && ...`. The phase guard blocks unanchored package-manager
-or formatter mutations, `..` escapes, and absolute output redirection outside
-the workspace before the shell starts. Structured Edit/Write operations remain
-the preferred mutation path; host process isolation is still required for
-indirect script effects.
+or formatter mutations, `..` escapes, later `cd` escapes, absolute filesystem
+operands, and writes through symlinks outside the workspace before the shell
+starts. `claude-foundation exec` derives the phase from runtime state, applies
+the same policy, and starts Build commands in the canonical workspace.
+Structured Edit/Write operations remain the preferred mutation path; host
+process isolation is still required for indirect script effects.
 
 Why this step exists: you can inspect or discard implementation work without
 mixing it with your current checkout.

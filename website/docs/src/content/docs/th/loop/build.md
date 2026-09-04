@@ -39,6 +39,12 @@ resume command ที่แน่นอน Automatic recovery ทำได้เ
 จาก workspace นั้น Worktree มีเฉพาะ tracked files ถ้าต้องติดตั้ง dependency ให้ตั้ง
 `sandbox.setupCommand` หรือ setup command ราย repository
 
+Phase hook และ `claude-foundation exec` ใช้ containment policy เดียวกัน ทั้งคู่
+ปฏิเสธ absolute operand ที่อยู่นอก workspace, การเปลี่ยน directory ออกภายหลัง และ
+การเขียนผ่าน symlink ออกนอก workspace ส่วน `exec` derive phase จาก runtime state
+และเริ่ม child process ของ Build ใน canonical workspace นี่ยังเป็น cooperative
+containment ดังนั้น host ต้องรับผิดชอบ process isolation สำหรับผลทางอ้อม
+
 Parallel mode คืนเฉพาะ task อิสระพร้อม lease instruction Host ต้องเริ่ม worker ที่
 lease สำเร็จทั้งหมดก่อนรอ ตรวจ write จริง แล้ว resume คำสั่งเดิม Primitive อย่าง
 `sandbox`, `packet`, `agents plan`, `agents dispatch` ยังอยู่ใน `help --all` สำหรับ
@@ -53,7 +59,9 @@ claude-foundation change amend <change> <amendment.json> --consume-amendment
 ```
 
 Compiler รักษา task ที่เสร็จและ manual section ตรวจ agreement ใหม่แบบ transaction
-แล้วกลับมา `advance` งาน cloud, secret, Terraform, deploy หรือ restart ที่ต้องใช้
+แล้วกลับมา `advance` โดย `updateTasks` เพิ่ม claim coverage ได้ แต่เปลี่ยน outcome
+หรือ verify command เดิมไม่ได้ ถ้าสัญญาของ task เปลี่ยนต้องเพิ่ม task ใหม่ งาน cloud,
+secret, Terraform, deploy หรือ restart ที่ต้องใช้
 สิทธิ์จะเป็น external operation แบบมีชนิด Build ไม่ขอ credential
 
 `DONE` ของ Build ยังไม่ใช่ proof และยังไม่ Land
