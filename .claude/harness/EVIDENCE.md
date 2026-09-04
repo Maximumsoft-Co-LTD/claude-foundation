@@ -323,6 +323,11 @@ commits both waivers: `independence: "self"` and
 `diversity: "single-model"`. Claude Code Opus is the selected reviewer and
 Codex is the alternate. `doctor` and `change validate` expose the normalized
 posture and consequences; risk-tiered routing does not restore either assurance axis.
+A configured `defaultReviewer` runs first, followed by `fallbackReviewers` in
+order only after infrastructure errors. `fail` and `inconclusive` are delivered
+verdicts and never trigger fallback. `main-session` is allowed in that list only
+with `review.independence: "self"`; the request binds observed implementation
+provenance and current-session telemetry rather than guessing identity or model.
 A project may require either axis independently, and the runtime defaults
 an absent key to `required`. Risk routing bounds the circuit: low gets one full AI review; medium
 and high may use one full plus one finding-bound delta after one correction

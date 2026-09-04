@@ -239,6 +239,9 @@ claude-foundation doctor --stage prove --change <change>
 | `handoff status <change>` | Shows external operations and Land disposition | Checking work owned by DevOps/SRE/security |
 | `handoff packet <change> [--id H00n]` | Emits one credential-free operator packet | Sending the exact operation to its named owner |
 | `handoff record <change> ...` | Records accepted/completed/rejected with actor and evidence references | Resuming Land without turning operator work into a developer task |
+| `migrate [legacy-id] [--apply]` | Reads legacy `.workflow/` state and optionally creates migration candidates | Recovering an older installation without promoting unverified prose |
+| `host instruction <command> --protocol 1 --format json --arguments <text>` | Resolves the package-owned command instruction | Host integration without reading consumer command files |
+| `host agent-contract --protocol 1 --format json` | Resolves the portable package-owned agent contract | Installing or refreshing a host adapter |
 
 Consumer-quality configuration is opt-in and remains report-only until the
 project explicitly enables enforcement. The complete installed command,
@@ -276,6 +279,40 @@ and workspace hash.
 Run `claude-foundation help` for command syntax and installer options.
 Low-level `runtime` commands are reserved for installed slash commands and
 diagnostics.
+
+## Host integration protocols
+
+Host integrations resolve canonical instructions from the installed release:
+
+```bash
+claude-foundation host instruction <command> \
+  --protocol 1 --format json --arguments <text>
+claude-foundation host agent-contract --protocol 1 --format json
+```
+
+Instruction protocol 1 supports `investigate`, `change`, `build`, `prove`,
+`land`, `changes`, `feature`, and `dev`. It returns the command, description,
+rendered instruction, argument mode, protocol, and Change Loop version.
+Arguments are opaque and `changes` accepts none. Agent-contract protocol 1
+returns the exact package-owned `AGENT.md` text, protocol, and version; it does
+not perform project discovery or expose a filesystem path.
+
+Unknown commands, invalid arguments, incomplete package content, and unsupported
+protocols or formats fail closed with stable JSON error codes. These endpoints
+ship before a host adopts them. A host that cannot obtain protocol 1 must request
+a compatible Change Loop release rather than read consumer command files or
+bundle its own copy.
+
+When the packaged CLI is not on `PATH`, use the source checkout's public router:
+
+```bash
+bash /path/to/claude-foundation/cli.sh --project "$PWD" \
+  proof readiness <change>
+```
+
+The router preserves public nested command grammar. Do not invoke
+`foundation.mjs` directly; its hyphenated low-level API is an implementation
+surface.
 
 ## Repository and model execution
 
