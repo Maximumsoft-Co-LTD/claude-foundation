@@ -273,6 +273,13 @@ and `package-lock.json`, Change Loop supplies the built-in
 repaired lockfile is checked again and can pass. Multi-repository or ambiguous
 ownership remains explicit rather than guessing which repository to execute in.
 
+Built-in provider version 2 validates the dependency graph with the installed
+`npm ci --dry-run --offline --ignore-scripts` after comparing root metadata.
+It preserves manifests and `node_modules` and does not run lifecycle scripts.
+Unavailable npm or cache data cannot produce a passing receipt. The provider
+binds the workspace, including workspace/local manifests and npm configuration;
+its version change invalidates receipts from the metadata-only provider.
+
 What expires a receipt is what it is bound to. A provider that runs a command
 binds the workspace minus the change packet, so editing `proposal.md`,
 `design.md`, `tasks.md`, or a spec delta after proving re-finalizes the proof

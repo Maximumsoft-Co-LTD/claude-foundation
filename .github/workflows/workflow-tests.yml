@@ -18,6 +18,12 @@ on:
       - 'examples/**'
       - 'quality/**'
       - 'scripts/quality/**'
+      - 'scripts/release/**'
+      - 'RELEASING.md'
+      - 'VERSION'
+      - '.github/workflows/release*.yml'
+      - '.github/workflows/bottle*.yml'
+      - '.github/workflows/pages*.yml'
       - 'stryker.dashboard.config.mjs'
       - 'stryker.runtime.config.mjs'
       - 'stryker.examples.config.mjs'
@@ -46,6 +52,12 @@ on:
       - 'quality/**'
       - 'scripts/quality/**'
       - 'stryker.dashboard.config.mjs'
+      - 'scripts/release/**'
+      - 'RELEASING.md'
+      - 'VERSION'
+      - '.github/workflows/release*.yml'
+      - '.github/workflows/bottle*.yml'
+      - '.github/workflows/pages*.yml'
       - 'stryker.runtime.config.mjs'
       - 'stryker.examples.config.mjs'
       - 'stryker.website.config.mjs'
@@ -60,6 +72,26 @@ on:
   workflow_dispatch: {}
 
 jobs:
+  minimum-runtime:
+    runs-on: ubuntu-latest
+    env:
+      FOUNDATION_UPDATE_CHECK: '0'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20.19.0'
+      - name: Verify minimum supported runtime and installed consumer
+        run: |
+          node --test .claude/harness/tests/land-grant.test.mjs .claude/harness/tests/execution-graph.test.mjs .claude/harness/tests/npm-lockfile-check.test.mjs
+          consumer="$(mktemp -d)"
+          trap 'rm -rf "$consumer"' EXIT
+          bash install.sh "$consumer" --yes
+          cd "$consumer"
+          node .claude/harness/foundation.mjs doctor
+
   deterministic:
     runs-on: ubuntu-latest
     steps:

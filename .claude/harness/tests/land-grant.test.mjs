@@ -67,6 +67,19 @@ test("consumed Land authority cannot be reused", () => {
   assert.equal(runtime.valid("change-a").reason, "missing-land-grant");
 });
 
+test("Land authority cannot cross missing and named session identities", () => {
+  const { runtime, env } = fixture();
+  runtime.issue("change-a");
+  delete env.FOUNDATION_CLAUDE_SESSION_ID;
+  assert.equal(runtime.valid("change-a").reason, "land-grant-session-mismatch");
+  // Hosts without session metadata retain direct CLI compatibility, but their
+  // grant cannot subsequently be adopted by a named host session.
+  runtime.issue("change-a");
+  assert.equal(runtime.valid("change-a").valid, true);
+  env.FOUNDATION_SESSION_ID = "new-session";
+  assert.equal(runtime.valid("change-a").reason, "land-grant-session-mismatch");
+});
+
 test("Land grant is issued only after readiness and is unnecessary for archived recovery", () => {
   const ready = fixture();
   ready.runtime.issue("change-a");

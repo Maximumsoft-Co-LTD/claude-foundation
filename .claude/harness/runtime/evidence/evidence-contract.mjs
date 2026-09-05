@@ -1005,11 +1005,13 @@ export function createEvidenceContract({
     return {
       adapter: "command",
       capability: "dependency-supply-chain",
+      version: "2",
       command: ["node", join(ROOT, ".claude", "harness", "runtime", "evidence",
         "npm-lockfile-check.mjs")],
       repository: repository.id === "root" ? undefined : repository.id,
-      inputs: ["package.json", "package-lock.json"],
-      builtIn: "npm-lockfile-consistency-v1"
+      // Workspace/local manifests and npm configuration affect the install
+      // plan too. Whole-workspace binding avoids reusing incomplete evidence.
+      builtIn: "npm-lockfile-consistency-v2"
     };
   }
 

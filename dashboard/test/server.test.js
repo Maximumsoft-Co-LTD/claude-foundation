@@ -74,6 +74,14 @@ test('usage is served on the slow endpoint and excluded from live presence', asy
   ]);
 });
 
+test('measured phase timing survives heartbeat and online projection without inventing values', async () => {
+  await heartbeat('timing-agent', { runs: [{ id: 'timing-run', repo: 'timing',
+    operationMs: { build: 4000, prove: 0, land: -1, change: null, secret: 123 } }] });
+  const { body } = await request('/api/online', { headers: { 'x-cf-key': 'view-key' } });
+  assert.deepEqual(body.runs.find((run) => run.id === 'timing-run').operationMs,
+    { build: 4000, prove: 0 });
+});
+
 test('unchanged aggregate hashes suppress repeat dataset persistence', () => {
   const record = { runs: [], changes: [], usage: [{ date: 'x' }], sessions: [], tools: [], prs: [] };
   const hashes = _internals.datasetHashes(record);

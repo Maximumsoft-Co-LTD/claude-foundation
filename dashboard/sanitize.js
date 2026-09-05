@@ -24,6 +24,15 @@ function cleanArtifacts(raw) {
   return out;
 }
 
+function cleanOperationMs(raw) {
+  const out = {};
+  for (const phase of ['change', 'build', 'prove', 'land']) {
+    const value = raw && raw[phase];
+    if (Number.isSafeInteger(value) && value >= 0) out[phase] = value;
+  }
+  return out;
+}
+
 function cleanRuns(raw) {
   if (!Array.isArray(raw)) return [];
   return raw.slice(0, 300).map((run) => ({
@@ -40,6 +49,7 @@ function cleanRuns(raw) {
     finished: Math.max(0, toInt(run && run.finished, 0)),
     done: !!(run && run.done),
     art: cleanArtifacts(run && run.art),
+    operationMs: cleanOperationMs(run && run.operationMs),
   })).filter((run) => run.id);
 }
 

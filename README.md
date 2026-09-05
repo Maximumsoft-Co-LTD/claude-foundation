@@ -628,6 +628,8 @@ tampered, stale, or failing required cases block Proof; review cannot waive the
 result. In a single npm repository, the lockfile consistency provider is
 activated automatically when `package.json` and `package-lock.json` are
 present, so a stale lockfile fails before final Proof without extra wiring.
+The check validates npm's offline install plan with scripts disabled; missing
+dependency graph entries fail, and unavailable tooling or cache cannot pass.
 
 Internally, phase packets, planning, readiness, and mutation enforcement consume
 one compiled execution contract and one lifecycle reducer. This reduces

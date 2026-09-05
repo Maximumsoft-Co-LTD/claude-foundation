@@ -1,0 +1,15 @@
+---
+import DefaultLanguageSelect from '@astrojs/starlight/components/LanguageSelect.astro';
+
+const id = Astro.locals.starlightRoute.entry.id;
+const isNotFound = id === '404' || id.endsWith('/404');
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+{isNotFound ? (
+  <nav aria-label={Astro.locals.t('languageSelect.accessibleLabel')}>
+    <a href={`${base}/`} lang="en">English</a>
+    <span aria-hidden="true"> · </span>
+    <a href={`${base}/th/`} lang="th">ไทย</a>
+  </nav>
+) : <DefaultLanguageSelect />}

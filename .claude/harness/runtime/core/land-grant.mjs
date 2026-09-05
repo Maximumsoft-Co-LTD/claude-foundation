@@ -83,7 +83,7 @@ export function createLandGrantRuntime({
     const { digest, ...body } = grant;
     if (digest !== stableHash(body)) return { valid: false, reason: "invalid-land-grant" };
     const currentSession = sessionId(env);
-    if (grant.sessionId && currentSession && grant.sessionId !== currentSession)
+    if ((grant.sessionId || null) !== currentSession)
       return { valid: false, reason: "land-grant-session-mismatch" };
     const binding = currentBinding(id);
     if (stableHash(binding) !== stableHash(grant.binding))

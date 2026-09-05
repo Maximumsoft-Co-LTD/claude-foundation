@@ -9,7 +9,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 function readJson(path, fallback = null) {
   try { return JSON.parse(readFileSync(path, "utf8")); }
@@ -154,6 +154,32 @@ function stateBlockers(state) {
   return blockers.slice(0, 50);
 }
 
+function operationTiming(root, id) {
+  let lines;
+  try { lines = readFileSync(join(root, ".foundation", "logs", id, "operations.jsonl"), "utf8").split("\n"); }
+  catch { return {}; }
+  const spans = {};
+  for (const line of lines) {
+    let row;
+    try { row = JSON.parse(line); } catch { continue; }
+    if (!row || !["change", "build", "prove", "land"].includes(row.phase)) continue;
+    const start = Date.parse(row.startedAt), end = Date.parse(row.finishedAt);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) continue;
+    (spans[row.phase] ||= []).push([start, end]);
+  }
+  const measured = {};
+  for (const [phase, intervals] of Object.entries(spans)) {
+    intervals.sort((a, b) => a[0] - b[0]);
+    let total = 0, previousEnd = -Infinity;
+    for (const [start, end] of intervals) {
+      total += Math.max(0, end - Math.max(start, previousEnd));
+      previousEnd = Math.max(previousEnd, end);
+    }
+    measured[phase] = total;
+  }
+  return measured;
+}
+
 function projectState(root, state, project) {
   const id = String(state.id || "");
   const phase = lifecyclePhase(state.status);
@@ -187,7 +213,10 @@ function projectState(root, state, project) {
       started,
       finished,
       done,
-      art: {}
+      art: {},
+      // Union of observed operation intervals per phase, not end-to-end time.
+      // Missing measurements remain absent. No raw command telemetry leaves here.
+      operationMs: operationTiming(root, id)
     },
     blockers,
     budget: budgetProjection(state.budget),

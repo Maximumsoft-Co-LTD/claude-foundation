@@ -38,8 +38,12 @@ EOF
 done
 
 TARGET_PATH="${TARGET_PATH:-$PWD}"
-mkdir -p "$TARGET_PATH"
-TARGET_PATH="$(cd "$TARGET_PATH" && pwd)"
+[ "$DRY_RUN" = yes ] || mkdir -p "$TARGET_PATH"
+if [ -d "$TARGET_PATH" ]; then
+  TARGET_PATH="$(cd "$TARGET_PATH" && pwd)"
+else
+  case "$TARGET_PATH" in /*) ;; *) TARGET_PATH="$PWD/$TARGET_PATH" ;; esac
+fi
 SOURCE_PATH="$(cd "$SOURCE_PATH" && pwd)"
 
 args=("$TARGET_PATH" "--source" "$SOURCE_PATH")

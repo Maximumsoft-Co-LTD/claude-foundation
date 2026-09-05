@@ -89,7 +89,7 @@ assert_cmd_zero "malformed current state is isolated" node -e \
 
 snapshot_cli="$("$ROOT/cli.sh" --project "$TMP/current" dashboard snapshot --json)"
 assert_cmd_zero "public dashboard snapshot route emits valid JSON" node -e \
-  'const s=JSON.parse(process.argv[1]);if(s.schemaVersion!==1||s.runs[0].id!=="current-change")process.exit(1)' \
+  'const s=JSON.parse(process.argv[1]);if(s.schemaVersion!==2||s.runs[0].id!=="current-change")process.exit(1)' \
   "$snapshot_cli"
 
 # The scans run detached, so anything they derive reaches the heartbeat only via

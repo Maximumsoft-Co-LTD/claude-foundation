@@ -307,7 +307,7 @@ export async function routeRuntimeCommand(command, values, api) {
         die("advance --through must be build|proven|archived");
       if (flags["host-result"])
         importHostExecution(rest[0], flags["host-result"]);
-      showAdvance(rest[0], flags);
+      await showAdvance(rest[0], flags);
     },
     "exec": async () => {
       // Everything after `--` belongs to the external command, including its
@@ -565,7 +565,7 @@ export async function routeRuntimeCommand(command, values, api) {
     },
     "land-advance": async () => {
       if (grantLand) grantLand(values[0]);
-      advanceLand(values[0]);
+      await advanceLand(values[0]);
     },
     "land-recover": async () => {
       const {

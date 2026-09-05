@@ -121,7 +121,12 @@ test('authenticated startup polls live and durable dashboard datasets', async ()
     calls.push(String(url));
     const body = String(url).includes('/online') ? {
       ok: true, now, ttlMs: 75000, onlineCount: 0, totalCount: 0,
-      agents: [], conflicts: null, profiles: null, runs: null,
+      agents: [], conflicts: null, profiles: null, runs: [
+        { id: 'current', gitUser: 'alice', started: now / 1000, finished: now / 1000,
+          operationMs: { build: 120000 }, art: {} },
+        { id: 'legacy', gitUser: 'alice', started: now / 1000, finished: now / 1000,
+          art: { spec: now / 1000 - 60, plan: now / 1000 } },
+      ],
     } : String(url).includes('/presence') ? { ok: true, buckets: [] }
       : String(url).includes('/history') ? {
         ok: true, usage: [], projects: [], hotspots: [], conflicts: [], work: [],
@@ -137,6 +142,10 @@ test('authenticated startup polls live and durable dashboard datasets', async ()
   assert.equal(window.document.getElementById('online-empty').hidden, false);
   assert.equal(calls.some((url) => url.includes('/online')), true);
   assert.equal(calls.some((url) => url.includes('/history')), true);
+  const timing = window.document.getElementById('ins-funnel').textContent;
+  assert.match(timing, /build · observed operations/);
+  assert.match(timing, /legacy spec → plan/);
+  assert.doesNotMatch(timing, /land · observed operations/);
   window.document.dispatchEvent(new window.Event('visibilitychange'));
   await new Promise((resolve) => setImmediate(resolve));
 });

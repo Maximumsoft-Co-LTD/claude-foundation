@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildDashboardSnapshot } from "../snapshot.mjs";
@@ -26,7 +26,9 @@ function fixture() {
 
 test("projects current runtime into the stable dashboard schema", () => {
   const snapshot = buildDashboardSnapshot(fixture(), { generatedAt: "2026-08-04T00:00:00.000Z" });
-  assert.equal(snapshot.schemaVersion, 1);
+  assert.equal(snapshot.schemaVersion, 2);
+  const protocol = JSON.parse(readFileSync(new URL("../../.claude/harness/protocol.json", import.meta.url), "utf8"));
+  assert.equal(String(snapshot.schemaVersion), protocol.dashboardSnapshotSchema);
   assert.equal(snapshot.sourceSchema, "foundation-runtime-v2");
   assert.equal(snapshot.changes.length, 1);
   assert.equal(snapshot.changes[0].phase, "build");
@@ -36,6 +38,23 @@ test("projects current runtime into the stable dashboard schema", () => {
   assert.deepEqual(snapshot.evidence["safe-change"].providers, [{ provider: "test", status: "pass" }]);
   assert.equal(snapshot.diagnostics.malformedStates, 1);
   assert.equal(snapshot.generatedAt, "2026-08-04T00:00:00.000Z");
+});
+
+test("operation timing merges overlaps, omits unknown phases, and keeps telemetry private", () => {
+  const root = fixture();
+  const dir = join(root, ".foundation", "logs", "safe-change");
+  mkdirSync(dir, { recursive: true });
+  const row = (phase, start, end) => JSON.stringify({ phase,
+    startedAt: new Date(start).toISOString(), finishedAt: new Date(end).toISOString(),
+    command: "private-command" });
+  writeFileSync(join(dir, "operations.jsonl"), [
+    row("build", 1000, 4000), row("build", 2000, 3000), row("build", 3000, 5000),
+    row("prove", 6000, 6500), row("land", 9000, 8000), row("unknown", 1000, 9999),
+    'null', '{broken', JSON.stringify({ phase: "change" })
+  ].join("\n"));
+  const snapshot = buildDashboardSnapshot(root);
+  assert.deepEqual(snapshot.runs[0].operationMs, { build: 4000, prove: 500 });
+  assert.equal(JSON.stringify(snapshot).includes("private-command"), false);
 });
 
 test("sparse valid runtime states project stable defaults", () => {

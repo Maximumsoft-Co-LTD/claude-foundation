@@ -27,7 +27,9 @@ export default defineConfig({
       // reuses the landing brand markup, and ThemeSelect is removed because a
       // toggle that cannot change anything is worse than no toggle.
       components: {
+        Head: "./src/components/Head.astro",
         SiteTitle: "./src/components/SiteTitle.astro",
+        LanguageSelect: "./src/components/LanguageSelect.astro",
         ThemeSelect: "./src/components/ThemeSelect.astro",
         ThemeProvider: "./src/components/ThemeProvider.astro",
       },

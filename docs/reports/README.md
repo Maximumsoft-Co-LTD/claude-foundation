@@ -8,10 +8,10 @@ time; they are not updated to describe the current release.
 
 | Need | Document | Status |
 |---|---|---|
-| Understand the current backend change and release gap | [User scenario release status](user-scenario-release-status.md) | Current source cohort |
+| Distinguish current source from recorded release evidence | [User scenario release status](user-scenario-release-status.md) | Current source note; verification table is v3.5.6 history |
 | See the executable scenario and acceptance matrix | [User scenario test plan](user-scenario-test-plan.md) | Current contract |
 | Operate dogfood, pilot, rollback, and production observation | [Rollout operations](rollout-operations.md) | Current runbook |
-| Track delivery convergence, ownership, tool preparation, permission, and uncommitted multi-repository Land | [Delivery convergence master plan](delivery-convergence-master-plan-2026-09-05.md) | Active implementation plan |
+| Review delivery convergence, ownership, tool preparation, permission, and uncommitted multi-repository Land | [Delivery convergence master plan](delivery-convergence-master-plan-2026-09-05.md) | v3.5.7 implementation record |
 | Configure consumer CRAP and mutation gates | [Consumer quality](../consumer-quality.md) / [ภาษาไทย](../consumer-quality.th.md) | Current guide |
 | Understand the agent-harness simplification design | [Agent harness simplification plan](agent-harness-simplification-plan-2026-09-03.md) | Implemented design |
 | Review the repository-wide simplification audit | [Agent harness simplification implementation audit](agent-harness-simplification-implementation-audit-2026-09-03.md) | v3.5.3 implementation record |

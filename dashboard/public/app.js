@@ -266,9 +266,16 @@ const FUNNEL_STAGES = [
 function renderFunnel(runs) {
   const gaps = {};
   for (const r of runs) {
+    for (const phase of ['change', 'build', 'prove', 'land']) {
+      const ms = r.operationMs?.[phase];
+      if (Number.isFinite(ms) && ms >= 0) {
+        const label = `${phase} · observed operations`;
+        (gaps[label] ||= []).push(ms / 1000);
+      }
+    }
     const art = r.art || {};
     for (const [a, b] of FUNNEL_STAGES) {
-      if (art[a] && art[b] && art[b] >= art[a]) (gaps[`${a} → ${b}`] = gaps[`${a} → ${b}`] || []).push(art[b] - art[a]);
+      if (art[a] && art[b] && art[b] >= art[a]) (gaps[`legacy ${a} → ${b}`] = gaps[`legacy ${a} → ${b}`] || []).push(art[b] - art[a]);
     }
   }
   const rows = Object.entries(gaps).map(([label, arr]) => {

@@ -46,8 +46,12 @@ while [ "$#" -gt 0 ]; do
 done
 
 TARGET_PATH="${TARGET_PATH:-$PWD}"
-mkdir -p "$TARGET_PATH"
-TARGET_PATH="$(cd "$TARGET_PATH" && pwd)"
+[ "$DRY_RUN" = yes ] || mkdir -p "$TARGET_PATH"
+if [ -d "$TARGET_PATH" ]; then
+  TARGET_PATH="$(cd "$TARGET_PATH" && pwd)"
+else
+  case "$TARGET_PATH" in /*) ;; *) TARGET_PATH="$PWD/$TARGET_PATH" ;; esac
+fi
 SOURCE_PATH="$(cd "$SOURCE_PATH" && pwd)"
 [ "$TARGET_PATH" != "$SOURCE_PATH" ] || fail "target cannot be the Change Loop source"
 
@@ -118,8 +122,6 @@ if [ "$ASSUME_YES" != yes ]; then
 fi
 
 MANIFEST_PATH="$TARGET_PATH/.foundation/install-manifest.txt"
-NEW_MANIFEST="$(mktemp)"
-BACKUP_DIR="$(mktemp -d)"
 INSTALL_COMMITTED=no
 PROJECT_MUTABLE=(
   ".claude/settings.json"
@@ -130,14 +132,32 @@ PROJECT_MUTABLE=(
   "openspec/repositories.yaml"
   "foundation.json"
 )
-for rel in "${MANAGED[@]}"; do
-  if [ -e "$TARGET_PATH/$rel" ]; then
-    mkdir -p "$BACKUP_DIR/$(dirname "$rel")"
-    cp -R "$TARGET_PATH/$rel" "$BACKUP_DIR/$rel"
-  fi
-done
-for rel in "${PROJECT_MUTABLE[@]}"; do
-  if [ -e "$TARGET_PATH/$rel" ]; then
+validate_managed_path() {
+  case "$1" in
+    /*|*..*|*\\*|*$'\n'*) fail "refusing unsafe managed manifest path: $1" ;;
+  esac
+  case "$1" in
+    .claude/*|openspec/schemas/*|.foundation/.gitignore|.foundation/README.md|WORKFLOW.md) ;;
+    *) fail "refusing unsafe managed manifest path: $1" ;;
+  esac
+}
+# Backup and rollback share the complete mutation set, including removals
+# outside today's managed directories. Validate all old paths before mutation.
+MUTATION_PATHS=("${MANAGED[@]}" "${PROJECT_MUTABLE[@]}" "${LEGACY[@]}")
+if [ -f "$MANIFEST_PATH" ]; then
+  while IFS= read -r old_rel; do
+    [ -n "$old_rel" ] || continue
+    validate_managed_path "$old_rel"
+    MUTATION_PATHS+=("$old_rel")
+  done < "$MANIFEST_PATH"
+fi
+NEW_MANIFEST="$(mktemp)"
+BACKUP_DIR="$(mktemp -d)"
+trap 'rm -f "$NEW_MANIFEST"; rm -rf "$BACKUP_DIR"' EXIT
+for rel in "${MUTATION_PATHS[@]}"; do
+  # A parent directory backup already contains its children.
+  if { [ -e "$TARGET_PATH/$rel" ] || [ -L "$TARGET_PATH/$rel" ]; } &&
+     [ ! -e "$BACKUP_DIR/$rel" ] && [ ! -L "$BACKUP_DIR/$rel" ]; then
     mkdir -p "$BACKUP_DIR/$(dirname "$rel")"
     cp -R "$TARGET_PATH/$rel" "$BACKUP_DIR/$rel"
   fi
@@ -145,16 +165,11 @@ done
 [ ! -f "$MANIFEST_PATH" ] || cp "$MANIFEST_PATH" "$BACKUP_DIR/install-manifest.txt"
 rollback_install() {
   [ "$INSTALL_COMMITTED" != yes ] || return 0
-  for rel in "${MANAGED[@]}"; do
-    [ ! -e "$TARGET_PATH/$rel" ] || rm -rf "$TARGET_PATH/$rel"
-    if [ -e "$BACKUP_DIR/$rel" ]; then
-      mkdir -p "$TARGET_PATH/$(dirname "$rel")"
-      cp -R "$BACKUP_DIR/$rel" "$TARGET_PATH/$rel"
+  for rel in "${MUTATION_PATHS[@]}"; do
+    if [ -e "$TARGET_PATH/$rel" ] || [ -L "$TARGET_PATH/$rel" ]; then
+      rm -rf "$TARGET_PATH/$rel"
     fi
-  done
-  for rel in "${PROJECT_MUTABLE[@]}"; do
-    [ ! -e "$TARGET_PATH/$rel" ] || rm -rf "$TARGET_PATH/$rel"
-    if [ -e "$BACKUP_DIR/$rel" ]; then
+    if [ -e "$BACKUP_DIR/$rel" ] || [ -L "$BACKUP_DIR/$rel" ]; then
       mkdir -p "$TARGET_PATH/$(dirname "$rel")"
       cp -R "$BACKUP_DIR/$rel" "$TARGET_PATH/$rel"
     fi
@@ -208,13 +223,7 @@ if [ -f "$MANIFEST_PATH" ]; then
     # Prefix alone is not containment: `.claude/../../../tmp/x` starts with
     # `.claude/` and resolves outside the project, and this list guards a
     # delete. Reject traversal, absolute paths, and backslashes outright.
-    case "$old_rel" in
-      /*|*..*|*\\*|*$'\n'*) fail "refusing unsafe managed manifest path: $old_rel" ;;
-    esac
-    case "$old_rel" in
-      .claude/*|openspec/schemas/*|.foundation/.gitignore|.foundation/README.md|WORKFLOW.md) ;;
-      *) fail "refusing unsafe managed manifest path: $old_rel" ;;
-    esac
+    validate_managed_path "$old_rel"
     if ! grep -qxF "$old_rel" "$NEW_MANIFEST"; then
       [ ! -e "$TARGET_PATH/$old_rel" ] || rm -f "$TARGET_PATH/$old_rel"
     fi
@@ -305,7 +314,8 @@ if [ ! -e "$SETTINGS_DST" ]; then
   mkdir -p "$(dirname "$SETTINGS_DST")"
   cp "$SETTINGS_SRC" "$SETTINGS_DST"
 elif command -v jq >/dev/null 2>&1; then
-  backup="$SETTINGS_DST.backup-$(date +%Y%m%d-%H%M%S)"
+  backup="$(mktemp "$SETTINGS_DST.backup-XXXXXXXX")"
+  MUTATION_PATHS+=("${backup#"$TARGET_PATH/"}")
   cp "$SETTINGS_DST" "$backup"
   merged="$(jq --slurpfile src "$SETTINGS_SRC" '
     # `upsert` below matches on the command string, so a hook whose command
@@ -432,7 +442,7 @@ fi
 if ! command -v node >/dev/null 2>&1; then
   printf '⚠ Node.js >=20.19 is required by OpenSpec and the Change Loop harness\n' >&2
 elif ! command -v openspec >/dev/null 2>&1; then
-  printf '⚠ Install pinned OpenSpec: npm install -g @fission-ai/openspec@1.7.0\n' >&2
+  printf '▸ The harness prepares pinned OpenSpec project-locally under .foundation/tools when needed.\n'
 fi
 
 if command -v node >/dev/null 2>&1; then

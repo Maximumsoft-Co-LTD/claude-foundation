@@ -16,7 +16,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const APP_VERSION = require('./package.json').version; // surfaced in /api/health, /api/online, and the UI footer
+const APP_VERSION = require('./package.json').version; // surfaced in /api/online and the UI footer
 const {
   clean, cleanChanges, cleanDateCounts, cleanRuns, cleanSessions, cleanTools,
   cleanUsage, toInt,
@@ -957,6 +957,7 @@ function handleOnline(req, res, url) {
       id: r.id, type: r.type, repo: r.repo, gitUser: r.gitUser, owner: r.owner || '',
       size: r.size || '', phase: r.phase, started: r.started, finished: r.finished, done: r.done,
       art: r.art || {},
+      operationMs: r.operationMs || {},
     })),
   };
   onlineCache = { at: now, body: JSON.stringify(payload) };

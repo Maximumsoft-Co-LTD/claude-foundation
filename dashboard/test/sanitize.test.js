@@ -16,7 +16,7 @@ test('run and usage sanitizers reject invalid rows and negative counters', () =>
     {
       id: 'run-1', type: '', repo: '', repoId: '', branch: '', owner: '',
       ownerEmail: '', size: '', phase: '', started: 0, finished: 0,
-      done: false, art: { spec: 5 },
+      done: false, art: { spec: 5 }, operationMs: {},
     },
   ]);
   assert.deepEqual(cleanUsage([{ date: 'bad', model: 'x' }]), []);

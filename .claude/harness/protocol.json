@@ -15,6 +15,7 @@
   "agentContractProtocol": "1",
   "contextEventSchema": "2",
   "metricsSchema": "8",
+  "dashboardSnapshotSchema": "2",
   "advanceProtocol": "4",
   "feedbackSchema": "2",
   "commandTelemetrySchema": "3",

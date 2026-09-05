@@ -600,6 +600,8 @@ stale หรือ fail ระบบจะบล็อก Proof และ review
 repository เดียว ระบบจะเปิด lockfile consistency provider อัตโนมัติเมื่อมีทั้ง
 `package.json` และ `package-lock.json` จึงตรวจพบ lockfile ที่ไม่ตรงก่อน Proof
 สุดท้ายโดยไม่ต้องเพิ่ม wiring เอง
+การตรวจใช้ install plan แบบ offline ของ npm โดยปิด scripts หาก dependency graph
+ขาดจะไม่ผ่าน และหากเครื่องมือหรือ cache ไม่พร้อมจะไม่ถือว่าผ่าน
 
 เบื้องหลัง packet, planning, readiness และ mutation guard ใช้ compiled execution
 contract ชุดเดียวและเปลี่ยน lifecycle ผ่าน reducer กลาง เพื่อลด policy ซ้ำซ้อน

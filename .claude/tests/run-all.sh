@@ -171,7 +171,8 @@ lifecycle reducer|node --test "$ROOT/.claude/harness/tests/lifecycle-reducer.tes
 host capability matrix|node --test "$ROOT/.claude/harness/tests/host-capability-matrix.test.mjs" "$ROOT/.claude/harness/tests/host-security-scenarios.test.mjs"
 semantic acceptance|node --test "$ROOT/.claude/harness/tests/semantic-acceptance.test.mjs"
 semantic acceptance seam|node --test "$ROOT/.claude/harness/tests/semantic-acceptance-seam.test.mjs" "$ROOT/.claude/harness/tests/semantic-acceptance-portfolio.test.mjs"
-npm lockfile auto seam|node --test "$ROOT/.claude/harness/tests/npm-lockfile-auto-seam.test.mjs"
+npm lockfile auto seam|node --test "$ROOT/.claude/harness/tests/npm-lockfile-check.test.mjs" "$ROOT/.claude/harness/tests/npm-lockfile-auto-seam.test.mjs"
+installer transaction|node --test "$ROOT/.claude/tests/harness/installer-transaction.test.mjs"
 external evidence recovery|node --test "$ROOT/.claude/harness/tests/external-evidence-recovery.test.mjs"
 repository infrastructure issues|node --test "$ROOT/.claude/harness/tests/repository-infrastructure-issues.test.mjs"
 proof preflight|node --test "$ROOT/.claude/harness/tests/proof-preflight.test.mjs"
@@ -320,6 +321,11 @@ if [ "${1:-}" = "--suite" ]; then
     ( eval "${line#*|}" ) > "$work/$index.out" 2>&1 &
     child=$!
     timeout="${FOUNDATION_SUITE_TIMEOUT_SECONDS:-300}"
+    # This slice deliberately shares one fixture across both domains. It can
+    # exceed five minutes under the full pool despite passing alone.
+    case "${line%%|*}" in
+      'harness contracts (topology planning)') timeout="${FOUNDATION_SUITE_TIMEOUT_SECONDS:-600}" ;;
+    esac
     (
       sleep "$timeout"
       if kill -0 "$child" 2>/dev/null; then

@@ -24,7 +24,8 @@ function schema(value, fallback = NODE_DATA_SCHEMA) {
   if (!value) return { ...fallback, accepts: sorted(fallback.accepts) };
   if (typeof value === "string") {
     const match = value.match(/^(.+?)(?:@|\/v)(\d+)$/);
-    return match ? { name: match[1], version: Number(match[2]) } : { name: value, version: 1 };
+    return match ? { name: match[1], version: Number(match[2]), accepts: [] }
+      : { name: value, version: 1, accepts: [] };
   }
   return {
     name: String(value.name || fallback.name),
@@ -129,7 +130,9 @@ export function compileExecutionGraph({
           (!provider.repositories.length && !provider.repository) ||
           provider.repositories.includes(repository.id) ||
           provider.repository === repository.id).map((provider) => provider.id),
-        ...(repository.dependsOn || []).map((id) => `land:${id}`)
+        ...(repository.dependsOn || [])
+          .filter((id) => repositoryMap.get(id)?.mode !== "read")
+          .map((id) => `land:${id}`)
       ],
       resources: [`land:${repository.id}`], lifecycle: "land"
     }));

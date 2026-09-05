@@ -194,13 +194,11 @@ export function npmLockfileCandidates(tooling, repository, repositoryCount, decl
         "evidence", "npm-lockfile-check.mjs"))) return [];
   return [providerCandidate(null, "dependency-supply-chain", repository, repositoryCount, {
     adapter: "command",
-    command: ["node", ".claude/harness/runtime/evidence/npm-lockfile-check.mjs"],
-    inputs: [...new Set([
-      ...declaredSurface, "package.json", "package-lock.json"
-    ])].sort()
+    version: "2",
+    command: ["node", ".claude/harness/runtime/evidence/npm-lockfile-check.mjs"]
   }, "package.json + package-lock.json", repositoryCount === 1 ? "high" : "review",
   `built-in deterministic npm manifest/lockfile consistency check (discovery: ${
-    checkNpmWorkspace(repository.workspacePath).status})`)];
+    checkNpmWorkspace(repository.workspacePath, { validateInstall: false }).status})`)];
 }
 
 export function capabilityRepositories(capability, repositories, contract) {

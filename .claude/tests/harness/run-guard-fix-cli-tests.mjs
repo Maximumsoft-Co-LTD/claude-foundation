@@ -51,6 +51,21 @@ async function route(command, values, overrides) {
   });
 }
 
+for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "advanceLand"]]) {
+  let finish;
+  const pending = new Promise((resolve) => { finish = resolve; });
+  let routed = false;
+  const routing = route(command, ["change"], { [method]: () => pending })
+    .then(() => { routed = true; });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(routed, false, `${command} must await its lifecycle operation`);
+  finish();
+  await routing;
+  await assert.rejects(route(command, ["change"], {
+    [method]: async () => { throw new Error("lifecycle failed asynchronously"); }
+  }), /lifecycle failed asynchronously/);
+}
+
 // --- complete command-registry dispatch coverage ---
 // Every registry entry is invoked through the public router. This makes a
 // command that is lost while decomposing the router fail as a contract defect,

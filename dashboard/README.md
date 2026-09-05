@@ -9,7 +9,7 @@ central server; open the web page and you get six tabs:
 | **Team** | Who's online right now, which repos each person is working in (repo + folder + branch + changed-file count), and which `/dev` runs are in flight. |
 | **Presence** | When people are online: a weekday × hour heatmap (viewer's local time), online hours per person and per day — built from the persisted heartbeat log. |
 | **Conflicts** | Early warning when two people's changed *line ranges* overlap in the same file, plus file **hotspots** (most-edited files, 120 d) and the full **conflict history**. |
-| **Insights** | `/dev` throughput: a **workload table** (per-person effort points from size-weighted runs + commits/lines, each compared against the previous equal-length window), runs completed by type, median durations, a **phase funnel** (median time between spec → plan → tests → review → retro artifacts), commits/day, and the FOLLOWUPS backlog per repo. |
+| **Insights** | Change throughput: a **workload table** (per-person scope points from size-weighted runs + commits/lines, each compared against the previous equal-length window), runs completed by type, median durations, **phase timing** (observed Change → Build → Prove → Land operations, with legacy artifact gaps shown separately), commits/day, and the FOLLOWUPS backlog per repo. |
 | **Usage** | Claude token usage per day × model × **project**, estimated cost ($), tool-call counts, sessions per day, monthly trend, and a per-model breakdown table. |
 | **Activity** | Recent `/dev` runs across the team, newest first — attributed to the run's **owner** (from `state.json` / first-commit author), with the size tier shown per run. |
 
@@ -129,7 +129,12 @@ the scan roots (bounded by `SCAN_DEPTH` and repo/file caps; `find` prunes
   show up as the person who ran it (runs also dedupe by normalized `repoId`
   across clones). Artifact **mtimes** (`spec.md`, `plan.md`, `test-plan.md`,
   `tests.md`, `review.md`, `security.md`, `retro.md`) still power the Insights
-  **phase funnel**. The `size` tier (XS/S/M/L) feeds the **workload points**
+  legacy artifact-gap rows. Snapshot schema 2 additionally emits `operationMs`:
+  measured operation intervals for Change, Build, Prove, and Land, merged within
+  each phase to avoid counting overlapping commands twice. Insights displays
+  these separately as observed operations, not end-to-end phase time. Missing
+  measurements stay absent; schema-1 clients and legacy runs remain accepted.
+  The `size` tier (XS/S/M/L) feeds the **workload points**
   (XS=1 S=2 M=5 L=8, unknown counts as S) — a scope proxy, not a measure of
   effort or hours.
 - **Commits & follow-ups** — per repo: `git log --since=14.days` bucketed per
@@ -229,7 +234,7 @@ labels are bucketed on the server's clock, UTC on Railway.)
 | `GET` | `/api/presence` | `VIEW_KEY` | Hour-bucketed online minutes per person. `?days=` (≤30, default 7). `503` without a DB. |
 | `GET` | `/api/history` | `VIEW_KEY` | Durable aggregates: long-range usage, top projects, hotspots, conflict history, per-person daily work (for the workload comparison). `?days=` (≤365, default 120). |
 | `GET` | `/api/log/heartbeats` | `VIEW_KEY` | Raw heartbeat log. `?limit=` (≤2000), `?agent=`, `?user=`, `?since=` (epoch ms). |
-| `GET` | `/api/health` | none | `{ ok, online, db: "sqlite"\|"off" }`. |
+| `GET` | `/api/health` | none | Liveness only: `{ "ok": true }`; no storage or user metadata. |
 | `GET` | `/` (+ `public/*`) | page public; data needs key | The dashboard UI. |
 
 Raw `changes` (full file paths + line ranges) are **never returned** in the
@@ -301,7 +306,9 @@ Open <http://localhost:8473/?key=devkey>. Stop with `./client.sh down`.
 2. Variables: `SHARED_KEY` = long random string (`openssl rand -hex 24`).
 3. **Attach a Volume** (any mount path) so SQLite survives deploys.
 4. Deploy — Railway sets `PORT`, health-checks `/api/health`, and Node 24 comes
-   from `.nvmrc`/`engines`. Verify `/api/health` shows `"db":"sqlite"`.
+   from `.nvmrc`/`engines`. Verify liveness at `/api/health`, then call
+   `/api/presence?days=1` with `x-cf-key: <VIEW_KEY>`: HTTP 200 confirms the
+   database is attached; HTTP 503 means storage is unavailable.
 
 Point clients at it:
 
@@ -315,7 +322,8 @@ claude-foundation dashboard-up --key=<SHARED_KEY>
 ## Security & privacy
 
 - One bearer key over HTTPS; rotate by changing `SHARED_KEY`. `VIEW_KEY` can be
-  a separate, weaker read-only key.
+  a separate viewer key. It also authorizes profile metadata edits through
+  `POST /api/profile`; distribute it only to trusted dashboard collaborators.
 - `/api/online` exposes git user names, hostnames, repo names, folder paths,
   branches, and aggregate usage numbers — gated by the key. Full changed-file
   paths never leave the server in the agent list.

@@ -75,6 +75,24 @@ test("contract: compatible schema versions cross an edge", () => {
     { name: "contract", version: 2, accepts: [1] }), true);
 });
 
+test("contract: string schema mismatches return false without throwing", () => {
+  assert.equal(schemasCompatible("api@2", "api@1"), false);
+  assert.equal(schemasCompatible("api@1", "api@1"), true);
+});
+
+test("cross-repo: explicit read dependencies remain in identity without Land nodes", () => {
+  const value = fixture();
+  value.repositories.push({ id: "contracts", mode: "read", dependsOn: [] });
+  value.repositories[0].dependsOn = ["contracts"];
+  const graph = compileExecutionGraph(value);
+  assert.ok(!graph.nodes.some((row) => row.id === "land:contracts"));
+  assert.ok(graph.edges.some((row) => row.id === "land:api->land:web"));
+  value.repositories[0].dependsOn = [];
+  assert.notEqual(graph.identity, compileExecutionGraph(value).identity);
+  value.repositories[0].dependsOn = ["missing"];
+  assert.throws(() => compileExecutionGraph(value), /unknown node/);
+});
+
 test("contract: an implicit input schema rejects a different producer version", () => {
   assert.equal(schemasCompatible(
     { name: "foundation.node-data", version: 2 }, null), false);

@@ -1,6 +1,16 @@
 # User scenario release status
 
-Last verified: 2026-09-04 for v3.5.6
+Release evidence last verified: 2026-09-04 for v3.5.6.
+
+Current source note (2026-09-05): the repository version is v3.5.7. The verified
+state table below belongs to v3.5.6 and does not certify v3.5.7 or subsequent
+working-tree fixes. See the [delivery convergence record](delivery-convergence-master-plan-2026-09-05.md)
+for the later implementation. No paid evidence is transferred between cohorts.
+
+Working-tree reliability fixes based on `5b546392e2eca536a28af0db9985392ad2ec715b`
+were checked on 2026-09-05: the full deterministic gate passed 205/205 suites
+with eight workers; focused minimum-runtime tests passed 36/36 on Node 20.19.0.
+These are local repair checks, not a published release or paid scenario sign-off.
 
 ## Summary
 
@@ -38,7 +48,7 @@ User-facing behavior and recovery are documented in `README.md`,
 `README.th.md`, and `WORKFLOW.md`. Release and rollout operations are documented
 in `RELEASING.md` and `docs/reports/rollout-operations.md`.
 
-## Verified state
+## Verified state — historical v3.5.6 cohort
 
 | Check | Result |
 |---|---|

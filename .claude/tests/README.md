@@ -26,11 +26,15 @@ trees before injecting faults. They therefore run in the same pool without
 exposing the checkout or another suite to a mutant, and interrupted or
 overlapping runs remove only their temporary trees. Set `FOUNDATION_TEST_JOBS=1`
 to force fully serial execution when bisecting.
+The default watchdog is 300 seconds per suite, or 600 seconds for the combined
+topology/planning fixture. `FOUNDATION_SUITE_TIMEOUT_SECONDS` overrides both.
 
 ## Current suites
 
 | Suite | Contract |
 |---|---|
+| `harness/installer-transaction.test.mjs` | Failed upgrade restores legacy and retired managed files; all installer dry-runs preserve absent targets |
+| `.claude/harness/tests/npm-lockfile-{check,auto-seam}.test.mjs` | Offline npm install-plan validation, missing dependency graphs, non-mutating checks, and automatic consumer proof wiring |
 | `bench/tests/openspec-native-{matrix,runner,scorecard,lab,workloads}.test.mjs` | Versioned scenario manifests, clean disposable consumer installation, lifecycle/oracle/quality scorecards, four cross-domain mutation-killing oracles, durable evidence preservation, and cleanup |
 | `harness/run-host-instruction-tests.mjs` | Protocol-1 package-owned host instructions and agent contract, opaque arguments, stable failures, project independence, and packaged layout |
 | `harness/run-context-budget-tests.sh` | Always-on, orchestrator, command, agent-contract, plan-summary, and packet-size ceilings |
