@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Restore retired managed files and legacy paths when installation fails, and
+  keep nonexistent targets untouched during every host installer's dry run.
+- Validate npm's offline install plan before accepting automatic lockfile
+  evidence, rejecting missing dependency graph entries without running scripts.
+- Await asynchronous lifecycle commands, preserve read-only repository
+  dependencies without creating Land targets, and reject Land grants when the
+  current session identity differs or disappears.
+- Correct dashboard health and viewer-permission guidance, distinguish historical
+  release evidence, and remove broken language and metadata links on the 404 page.
+
+### Added
+
+- Dashboard snapshot schema 2 includes measured operation time for Change,
+  Build, Prove, and Land, with overlapping intervals merged and missing values
+  left absent. Legacy artifact timing remains separately labeled.
+- Regression coverage for installer rollback, npm dependency graphs, lifecycle
+  routing, session authority, and dashboard timing; CI now checks the minimum
+  supported runtime and includes release-tooling changes in deterministic gates.
+
+### Changed
+
+- Allow the combined topology/planning suite a longer watchdog under concurrent
+  execution while preserving explicit timeout overrides.
+
 ## [3.5.7] - 2026-09-05
 
 ### Added
