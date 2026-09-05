@@ -88,3 +88,22 @@ test("recorded phase identifies a change by its row before its directory name", 
     nowMs: () => Date.parse("2026-08-27T02:00:00Z")
   }).changeId, "renamed");
 });
+
+test("recorded phase never borrows a sibling session's active change", () => {
+  const rows = {
+    "/repo/.foundation/logs/old/phase-context.jsonl":
+      '{"timestamp":"2026-08-27T01:30:00Z","phase":"prove","sessionId":"sibling"}\n',
+    "/repo/.foundation/logs/new/phase-context.jsonl":
+      '{"timestamp":"2026-08-27T01:00:00Z","phase":"build","sessionId":"current"}\n'
+  };
+  const selected = recordedPhaseContext(context({
+    sessionId: "current",
+    readText: (path) => rows[path]
+  }));
+  assert.equal(selected.changeId, "new");
+  assert.equal(selected.phase, "build");
+  assert.equal(recordedPhaseContext(context({
+    sessionId: "missing",
+    readText: (path) => rows[path]
+  })), "");
+});

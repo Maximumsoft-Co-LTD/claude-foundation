@@ -60,6 +60,7 @@ export async function routeRuntimeCommand(command, values, api) {
     runProvider,
     prove,
     landCheck,
+    grantLand,
     advanceLand,
     recoverLand,
     showLandPlan,
@@ -298,7 +299,7 @@ export async function routeRuntimeCommand(command, values, api) {
     },
     "advance": async () => {
       const { flags, rest } = parseStrictCommandFlags(values, "advance", {
-        boolean: ["pretty"],
+        boolean: ["pretty", "inspect"],
         value: ["host-result", "through"]
       });
       if (rest.length !== 1) die("advance requires exactly one change id");
@@ -563,6 +564,7 @@ export async function routeRuntimeCommand(command, values, api) {
       landCheck(values[0]);
     },
     "land-advance": async () => {
+      if (grantLand) grantLand(values[0]);
       advanceLand(values[0]);
     },
     "land-recover": async () => {
@@ -646,10 +648,12 @@ export async function routeRuntimeCommand(command, values, api) {
           boolean: ["refresh"]
         });
         if (rest.length !== 1) die("sandbox apply requires exactly one change id");
+        if (grantLand) grantLand(rest[0]);
         applySandbox(rest[0], flags);
       } else die("sandbox requires challenge|inspect|create|sync|apply <change>");
     },
     "archive": async () => {
+      if (grantLand) grantLand(values[0]);
       archive(values[0]);
     },
     "event": async () => {

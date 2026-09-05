@@ -215,7 +215,9 @@ export function runSandboxSetupCommand(context, record, command, timeoutMs, cwd,
     const tail = `${result.stdout || ""}\n${result.stderr || ""}`
       .trim().split("\n").filter(Boolean).slice(-5).join("\n    ");
     context.output.error(`WARNING: sandbox setup command failed${
-      label ? ` for '${label}'` : ""} (${cause}): ${command}\n  workspace: ${cwd}\n  rerun it there manually before Prove${tail ? `\n    ${tail}` : ""}`);
+      label ? ` for '${label}'` : ""} (${cause}) in the isolated workspace. ` +
+      `Harness preparation will repair or route this failure before Build.${
+        tail ? `\n    ${tail}` : ""}`);
   }
   return record.setup;
 }
@@ -847,6 +849,43 @@ export function setupSelectedRepositories(context, state, repositories) {
   }
 }
 
+// Setup is Harness-owned preparation. A transient package-manager or network
+// failure must not turn into a command for the user, and a successful sibling
+// must not be repeated. Retry only records that are still failed; callers can
+// invoke this at every lifecycle resume without redoing valid work.
+export function retryFailedSandboxSetups(context, id,
+  state = context.loadRuntime(id)) {
+  const selected = context.selectedRepositories(id, state);
+  const attempted = [];
+  const configured = context.policy().sandbox || {};
+  const rootSelection = selected.find((repository) => repository.id === "root");
+  const rootCommand = rootSelection?.setupCommand || configured.setupCommand;
+  if (state.workspace?.setup?.status === "failed" && rootCommand &&
+      state.workspace?.path) {
+    context.runSetupCommand(state.workspace, rootCommand,
+      configured.setupTimeoutMs, state.workspace.path, "root");
+    attempted.push("root");
+  }
+  for (const repository of selected) {
+    if (repository.id === "root") continue;
+    const record = state.repositories?.[repository.id];
+    if (record?.setup?.status !== "failed" || !repository.setupCommand ||
+        !record.path) continue;
+    context.runSetupCommand(record, repository.setupCommand,
+      configured.setupTimeoutMs, record.path, repository.id);
+    if (record.access === "read") {
+      const changed = context.git(["status", "--porcelain"], record.path);
+      if (changed.status !== 0 || changed.stdout.trim()) {
+        record.setup.status = "failed";
+        record.setup.reason = "setup modified a read-only repository";
+      }
+    }
+    attempted.push(repository.id);
+  }
+  if (attempted.length) context.saveRuntime(state);
+  return attempted;
+}
+
 export function reportMultiRepositorySandbox(context, id, state) {
   console.log(`MULTI-REPOSITORY SANDBOX ${id}`);
   for (const repository of context.selectedRepositories(id, state))
@@ -1046,8 +1085,8 @@ export function createSandboxRuntime({
   // excludes them by name and by gitignore, and a worktree is a bare checkout.
   // The setup command exists so the first proof run does not have to discover
   // that. Failure keeps the sandbox — the workspace itself is correct, and
-  // destroying it over a flaky install would cost more than the one manual
-  // rerun the warning asks for.
+  // destroying it over a flaky install would discard valid isolation. The
+  // lifecycle preparation step retries failed records internally on resume.
   const runSetupCommand = runSandboxSetupCommand.bind(null, {
     spawn: spawnSync, output: console
   });
@@ -1631,8 +1670,13 @@ export function createSandboxRuntime({
     fail
   });
 
+  const retryFailedSetups = retryFailedSandboxSetups.bind(null, {
+    loadRuntime, saveRuntime, selectedRepositories, policy, runSetupCommand, git
+  });
+
   return {
     createChallenge, workspaceInspection, inspect, showInspection,
-    createSingle, create, mergeTaskProgress, sync, changeDiffIdentity
+    createSingle, create, retryFailedSetups, mergeTaskProgress, sync,
+    changeDiffIdentity
   };
 }

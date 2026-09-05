@@ -44,6 +44,16 @@ export function executionSurfaceBudgetScale(profile = {}) {
   );
 }
 
+export function effectiveReviewAttemptLimit(routing = {}, delivered = [], workspaceHash = null) {
+  const latest = delivered.at(-1) || null;
+  const promotesLow = routing.tier === "low" && delivered.length >= 1 &&
+    Boolean(workspaceHash) && workspaceHash !== latest?.workspaceHash;
+  return {
+    promotesLow,
+    maxAiAttempts: promotesLow ? 2 : Number(routing.maxAiAttempts || 2)
+  };
+}
+
 export function outOfBandDeliveryDriftValue({
   changeId, state, recordedHead, currentHead, baseDecision, observation = null
 }) {

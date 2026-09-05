@@ -109,8 +109,8 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
 | `land archive <change>` | Primitive ระดับล่างสำหรับ apply, ซิงก์, ตรวจ, archive และเก็บกวาด; agent ปกติใช้ `advance --through archived` |
-| `land record <change> --repo <id> --commit <sha> --decision-ref <ref>` | ผูก commit ของรีโปลูกหลังมีการตัดสินใจของผู้ใช้ที่บันทึกไว้ |
-| `land resume <change>` | ทำ Land saga ที่ถูกขัดจังหวะหรือแบบหลายรีโปต่อ |
+| `land record <change> --repo <id> --commit <sha> --decision-ref <ref>` | Compatibility สำหรับ transaction แบบ commit-oriented ที่ active อยู่ก่อนแล้ว |
+| `land resume <change>` | Primitive สำหรับวินิจฉัย; recovery ปกติเรียก `/land` ซ้ำ |
 
 ## การกู้คืนและทางออกฉุกเฉิน
 
@@ -140,12 +140,12 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 | Pin | v3.5.6 |
 |---|---|
 | runtime | 3.5.6 |
-| runtime API | 30 |
+| runtime API | 31 |
 | semantic draft schema | 3 |
 | semantic amendment schema | 1 |
 | artifact defaults schema | 2 |
 | grounding schema | 1, 2, 3 |
-| advance protocol | 3 |
+| advance protocol | 4 |
 | provider protocol | 13 |
 | evidence schema | 1, 2 |
 | packet schema | 10 |

@@ -199,20 +199,22 @@ baseline และ assurance แยกกัน รัน `quality run --change 
 หรือให้ evidence bootstrap ต่อ quality config ที่ commit แล้วเป็น static-analysis
 evidence ดูรายละเอียดที่ [Quality gate ของโปรเจกต์](/docs/th/consumer-quality/)
 
-## 8. Land ตามลำดับที่ระบบรายงาน
+## 8. Land ทุก Writable Target แบบยังไม่ Commit
 
-read repository ไม่มี Land node ส่วน writable child repository จะ Land เป็น saga
-ที่เรียงลำดับและ resume ได้:
+read repository ไม่มี Land node และผู้ใช้ให้อำนาจ local delivery ทั้ง transaction
+ด้วยคำสั่งเดียว:
 
-```bash
-claude-foundation land check <change>
-claude-foundation land record <change> --repo <id> --commit <sha> --decision-ref <ref>
-claude-foundation land resume <change>
+```text
+/land <change>
 ```
 
-ทำตาม structured next action จาก `land check` หรือ `land resume` Change Loop ตรวจ
-commit และ root pointer ที่บันทึก แต่ไม่อ้างว่า atomic ข้าม remote อิสระ การ commit,
-push และเปิด pull request ยังต้องได้รับอนุญาตจากผู้ใช้แยกต่างหาก
+Harness เตรียม writable target ทุกตัวก่อนเขียนไฟล์แรก แล้ว apply projection ที่
+พิสูจน์แล้วตาม dependency พร้อม durable checkpoint แต่ละ node จบที่
+`applied-uncommitted`; Git HEAD กับ index ของทุก repository ไม่เปลี่ยน และงานเดิม
+ที่ไม่ overlap ยังคงอยู่ เรียก `/land` ซ้ำแล้วระบบ resume transaction เดิมโดยข้าม
+node ที่ตรวจแล้ว `land check`, `land record` แบบ legacy และ `land resume` ยังเป็น
+diagnostic/compatibility primitive ไม่ใช่ขั้นที่ user ต้องเรียงเอง ส่วน commit,
+push และ PR อยู่นอก Land และต้องมีอำนาจแยก
 
 saga นี้ใช้ด้วยเมื่อเลือก non-root child เพียงตัวเดียว runtime record ที่หายต้องไม่
 ทำให้ Land ลัดไปใช้ทาง single-repository
@@ -224,16 +226,17 @@ saga นี้ใช้ด้วยเมื่อเลือก non-root child
 | target ที่เลือกขยับ | `sandbox sync <change>` แล้ว Prove ใหม่ |
 | sync เจอ replay conflict | แก้ path ที่ระบุ ไม่ต้องสร้าง change ใหม่ |
 | read repository สกปรก | เอา mutation ออกหรือแก้ setup/provider |
-| setup ของ repository ล้ม | แก้ `setupCommand` แล้ว recreate หรือ sync ตามที่รายงาน |
-| binding ของ child ที่เลือกหาย | รัน `sandbox inspect <change>` แล้ว `sandbox create <change> --all`; ระบบรักษา worktree และงานเดิมที่ยังใช้ได้ |
+| setup ของ repository ล้ม | Harness retry เฉพาะ repository นั้นและเก็บ sibling ที่พร้อมแล้ว; แก้ policy เฉพาะเมื่อ command ที่ประกาศผิดจริง |
+| binding ของ child ที่เลือกหาย | Harness ซ่อม binding โดยรักษา worktree ที่ยังใช้ได้; ใช้ `sandbox inspect` เมื่อต้องวินิจฉัยเท่านั้น |
 | path มาตรฐานของ child เป็น worktree ของ repository อื่น | อย่าแก้หรือลบทิ้ง ตรวจ path ที่รายงาน แล้วแก้ conflict ของ target/path หรือ abandon change อย่างชัดเจน |
 | provider มองไม่เห็น repository | เพิ่มใน `repositories` ของ provider ห้าม hard-code local path |
-| Land ถูกขัดจังหวะ | `land resume <change>` |
+| Land ถูกขัดจังหวะ | เรียก `/land <change>` ซ้ำเพื่อ resume journal |
 
 ## User และ Agent ต้องทำอะไร
 
-**User:** ยืนยัน write scope, ลำดับ dependency ที่มีผลสำคัญ และการตัดสินใจเรื่อง
-external commit/CI ไม่ต้องสร้าง manifest, receipt, hash หรือ Land journal เอง
+**User:** ยืนยัน scope/dependency ที่มีผลต่อ behavior, เรียก Land ครั้งเดียว,
+ตรวจ final diff และ commit ตาม Git process ของ project ไม่ต้องสร้าง manifest,
+grant, receipt, hash หรือ Land journal เอง
 
 **Agent:** ตั้งค่า scope สามชั้นตามลำดับ ใช้ path จาก manifest รัน readiness ก่อน
 เสียรอบ Prove ทำ recovery ตามที่ระบบรายงาน และสรุปว่า repository ใดถูกอ่าน เขียน

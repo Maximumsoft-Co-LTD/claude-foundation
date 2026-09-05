@@ -21,7 +21,7 @@ const CRITICAL_CASE_ORACLES = [
 
 // Module scope, taking `fail` explicitly: the check has no runtime state and
 // the deterministic tests exercise it against a stubbed CLI.
-export function assertOpenSpecStrictValid(id, dir, fail) {
+export function assertOpenSpecStrictValid(id, dir, fail, options = {}) {
   // dir is <projectRoot>/openspec/changes/<id> for both the root and the
   // sandbox copy, so the CLI runs against whichever tree is being validated.
   const projectRoot = resolve(dir, "..", "..", "..");
@@ -29,7 +29,8 @@ export function assertOpenSpecStrictValid(id, dir, fail) {
     cwd: projectRoot, encoding: "utf8", timeout: 15_000
   });
   if (probe.error || probe.status !== 0) {
-    console.error("WARNING: OpenSpec CLI unavailable; strict spec lint deferred to Land, which requires it");
+    if (!options.quiet)
+      console.error("WARNING: OpenSpec CLI unavailable; strict spec lint deferred to tool preparation");
     return;
   }
   const lint = spawnSync("openspec",
@@ -1752,11 +1753,11 @@ export function createChangeValidationRuntime({
     assertNoDroppedScenarios(id, dir);
     // The OpenSpec strict lint used to surface only inside 'openspec archive',
     // after the code had landed, so a pure wording defect forced a re-prove.
-    // Same tool, same mode, earlier. Quiet internal validations skip the
-    // subprocess; the explicit gate is the one that must catch it. Rapid
-    // changes declare skip_specs and have no deltas to lint.
-    if (!options.quiet && state.schema !== "foundation-rapid")
-      assertOpenSpecStrictValid(id, dir, fail);
+    // Same tool, same mode, earlier. Quiet changes presentation only; skipping
+    // the subprocess here let an invalid agreement travel all the way to Land.
+    // Rapid changes declare skip_specs and have no deltas to lint.
+    if (state.schema !== "foundation-rapid")
+      assertOpenSpecStrictValid(id, dir, fail, { quiet: options.quiet });
 
     // The gate is about a task that names a lifecycle *command*, so the slash
     // has to start a token. Matching a bare `/land` anywhere also matched the

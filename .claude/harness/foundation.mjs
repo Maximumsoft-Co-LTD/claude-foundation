@@ -3,6 +3,7 @@
 import {
   appendFileSync, existsSync, lstatSync, mkdirSync, rmSync
 } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -97,6 +98,11 @@ import { createAdapterRuntime } from "./runtime/evidence/adapter-runtime.mjs";
 import { createProofExecutionRuntime } from "./runtime/evidence/proof-execution-runtime.mjs";
 import { createConfiguredReviewerRuntime } from "./runtime/evidence/codex-reviewer.mjs";
 import { createBlockedDecision } from "./runtime/core/blocked-decision.mjs";
+import { createLandGrantRuntime } from "./runtime/core/land-grant.mjs";
+import {
+  assertExecutionPreparationReady, ensureProjectOpenSpec,
+  executionPreparationValue, prependFoundationToolPath
+} from "./runtime/core/tool-preparation.mjs";
 import { createAbandonRuntime } from "./runtime/workflow/abandon-runtime.mjs";
 import { RUNTIME_MODULE_API } from "./runtime/version.mjs";
 import { createBootstrap } from "./runtime/composition/bootstrap.mjs";
@@ -110,7 +116,7 @@ import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
 import { createQualityRuntime } from "./runtime/quality/quality-runtime.mjs";
 
 const VERSION = "3.5.6";
-const RUNTIME_API_VERSION = "30";
+const RUNTIME_API_VERSION = "31";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
 // every command up to `archive` and then threw partway through Land.
@@ -156,12 +162,16 @@ function markBlocked(message) {
     phase: process.env.FOUNDATION_PUBLIC_OPERATION || operationPhase
   });
 }
-function die(message, code = 1) {
+function die(message, code = 1, details = null) {
   markBlocked(message);
   if (trappedFailureDepth > 0) {
     const error = new Error(String(message));
     error.exitCode = code;
     error.foundationBlocked = true;
+    if (details?.decision) error.decision = details.decision;
+    if (details?.boundary) error.boundary = details.boundary;
+    if (details?.owner) error.owner = details.owner;
+    if (details?.code) error.code = details.code;
     throw error;
   }
   console.error(`BLOCKED: ${message}`);
@@ -196,6 +206,11 @@ const {
   fail: die,
   warn: console.error
 });
+
+// Project-local tools are machine-owned and survive between lifecycle
+// invocations. Put them on PATH before any validation or Land check probes a
+// binary; the user's global environment is never modified.
+prependFoundationToolPath(ROOT);
 
 const { readJsonLines, readJsonLinesTolerant } = createJsonlReader({
   root: ROOT,
@@ -1250,6 +1265,7 @@ const {
   showInspection: showSandboxInspection,
   createSingle: createSingleSandbox,
   create: createSandbox,
+  retryFailedSetups,
   mergeTaskProgress,
   sync: syncSandbox
 } = sandboxRuntime;
@@ -1642,6 +1658,17 @@ const {
     targetProjectionObservationValue({ root: ROOT, state, git, fileDigest }),
   fail: die
 });
+const landGrantRuntime = createLandGrantRuntime({
+  transactions: TRANSACTIONS,
+  loadRuntime,
+  selectedRepositories,
+  proofPath,
+  readJson,
+  writeJson,
+  stableHash,
+  now,
+  landCheck
+});
 const applyRuntime = createApplyRuntime({
   root: ROOT,
   transactions: TRANSACTIONS,
@@ -1656,10 +1683,13 @@ const applyRuntime = createApplyRuntime({
   pathIdentity,
   pathMode,
   directoryHash,
+  fileDigest,
+  pathInside,
   applyTransactionRoot,
   copyPath,
   proofPath,
   readJson,
+  writeJson,
   stableHash,
   syncClaudeTelemetry,
   modelUsageRecorded,
@@ -1685,6 +1715,8 @@ const applyRuntime = createApplyRuntime({
   proofAudit,
   cleanupChangeLeases,
   now,
+  assertLandGrant: landGrantRuntime.assert,
+  consumeLandGrant: landGrantRuntime.consume,
   blockWithDecision,
   fail: die
 });
@@ -1698,13 +1730,63 @@ const {
 } = applyRuntime;
 const advanceLand = advanceLandOperation.bind(null, {
   loadRuntime, landCheck, archive, resumeLand, landPlanValue,
-  selectedRepositories
+  selectedRepositories,
+  prepareExecution: (id, options) => prepareExecution(id, options)
 });
+
+function preparationPlanPath(id) {
+  return join(PLANS, `${id}-preparation.json`);
+}
+
+function preparationProviders(id) {
+  return requiredProviders(id).map((provider) => {
+    const config = providerConfig(id, provider) || {};
+    return {
+      id: provider,
+      repository: config.repository || null,
+      adapter: config.adapter || "external",
+      command: config.command || null
+    };
+  });
+}
+
+function prepareExecution(id, { stage = "build" } = {}) {
+  const state = loadRuntime(id);
+  const repositories = selectedRepositories(id, state);
+  const openSpec = ensureProjectOpenSpec({
+    root: ROOT,
+    status: openSpecCliStatus,
+    spawn: spawnSync
+  });
+  const prior = readJsonOrNull(preparationPlanPath(id));
+  const plan = executionPreparationValue({
+    id,
+    state,
+    repositories,
+    providers: preparationProviders(id),
+    openSpec,
+    stableHash,
+    prior,
+    now
+  });
+  plan.stage = stage;
+  writeJson(preparationPlanPath(id), plan);
+  return assertExecutionPreparationReady(plan);
+}
 async function runAdvanceQuietly(operation) {
   const priorLog = console.log;
+  const priorExitCode = process.exitCode;
   console.log = () => {};
-  try { return await operation(); }
-  finally { console.log = priorLog; }
+  try {
+    const result = await operation();
+    // Primitive proof commands retain their diagnostic non-zero exits. The
+    // unified lifecycle transports the same structured boundary successfully
+    // so the host consumes it instead of retrying a command it thinks crashed.
+    process.exitCode = priorExitCode;
+    return result;
+  } finally {
+    console.log = priorLog;
+  }
 }
 const { advanceValue, showAdvance } = createAdvanceRuntime({
   capture: trapFailures,
@@ -1718,11 +1800,18 @@ const { advanceValue, showAdvance } = createAdvanceRuntime({
   authorityStatusValue,
   authorityNext,
   proofReadinessValue,
+  budgetDecisionValue: budgetDecision,
+  hasLandGrant: (id) => landGrantRuntime.valid(id).valid,
   prepareBuild: (id) => runAdvanceQuietly(async () => {
-    validate(id, "root", { quiet: true });
-    createSandbox(id, { quiet: true });
+    const state = loadRuntime(id);
+    if (state.status === "change") {
+      validate(id, "root", { quiet: true });
+      createSandbox(id, { quiet: true });
+    }
+    retryFailedSetups(id);
+    prepareExecution(id, { stage: "build" });
   }),
-  runProof: (id) => proofAdvance(id, { quiet: true }),
+  runProof: (id) => runAdvanceQuietly(() => proofAdvance(id, { quiet: true })),
   runLand: (id) => runAdvanceQuietly(() => advanceLand(id)),
   recordPhase: recordPhaseContext,
   readJson,
@@ -1904,6 +1993,7 @@ await routeRuntimeCommand(command, values, {
   runProvider: guardedRunProvider,
   prove,
   landCheck,
+  grantLand: landGrantRuntime.issue,
   advanceLand,
   recoverLand,
   showLandPlan,

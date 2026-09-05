@@ -88,9 +88,9 @@ projection, preserve unrelated edits, journal backups/mutations, roll back
 partial failure, run OpenSpec spec sync/archive, audit digests, and clean up
 resumably. Never commit, push, or open a PR without separate authority.
 
-Multiple remotes are not atomic. Use the ordered saga: bind authorized child
-commits/CI, verify dependencies, stage checked gitlinks, re-Prove the composite
-identity, resume, then archive the control change last.
+Multiple repositories use one local saga: prepare all writable targets, apply
+dependency waves, verify unchanged HEAD/index, then archive. Diffs remain
+uncommitted; never manufacture child commits or gitlink SHAs.
 
 `/dev` runs Change → Build → Prove without inferring Land authority. With
 explicit Land authority, it may continue and succeeds only at `archived`.

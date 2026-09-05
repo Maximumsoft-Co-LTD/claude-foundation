@@ -22,7 +22,10 @@ const base = {
 test("advance returns bounded Build work without invoking a model", () => {
   const value = coordinatorAction({
     ...base,
-    dispatch: { action: "run-in-session", packetCommand: "packet" }
+    dispatch: { action: "run-in-session", packetCommand: "packet",
+      task: { taskId: "T001" } },
+    plan: { tasks: [{ id: "T001", text: "Implement behavior",
+      repository: "root", paths: ["src/**"] }] }
   });
   assert.equal(value.action, "EDIT");
   assert.equal(value.legacyAction, "EXECUTE_TASK");
@@ -79,7 +82,9 @@ test("advance returns configured review and user authority boundaries", () => {
 
   const decision = coordinatorAction({
     ...base,
-    proofCursor: { status: "NEEDS_USER_DECISION", decision: { id: "D1" } }
+    proofCursor: { status: "NEEDS_USER_DECISION", decision: {
+      id: "D1", kind: "work-decision", summary: "Choose the product behavior"
+    } }
   });
   assert.equal(decision.action, "ASK_USER");
   assert.equal(decision.legacyAction, "REQUEST_DECISION");
@@ -204,6 +209,7 @@ test("advance --through runs deterministic proof and Land until archived", async
     readJson: () => proofRuns ? { status: "PASS", workspaceHash: "workspace-a" } : {},
     proofAdvancePath: () => "/proof.json",
     stableHash,
+    hasLandGrant: () => true,
     runProof: async () => {
       proofRuns += 1;
       state.status = "proven";
@@ -301,6 +307,7 @@ test("advance --through converts prepare and Land failures without rejecting", a
     authorityStatusValue: () => ({ requests: [] }),
     readJson: () => ({ status: "PASS", workspaceHash: "workspace-a" }),
     proofAdvancePath: () => "/proof.json", stableHash,
+    hasLandGrant: () => true,
     runLand: async () => { throw new Error("land conflict route"); }
   });
   const land = await landRuntime.advanceThrough("change-a", "archived");
@@ -345,8 +352,9 @@ test("advance convergence stops only after repeated unchanged automation", async
     runProof: async () => { proofRuns += 1; return { progressed: false }; }
   });
   const value = await runtime.advanceThrough("change-a", "proven");
-  assert.equal(value.action, "WAIT");
+  assert.equal(value.action, "ASK_USER");
   assert.equal(value.boundary, "repeated-no-progress");
+  assert.equal(value.decision.kind, "repair-no-progress");
   assert.equal(proofRuns, 2);
 });
 
@@ -370,6 +378,7 @@ test("a weak host can finish by reading one action and calling its resume", asyn
     readJson: () => state.status === "proven"
       ? { status: "PASS", workspaceHash: "workspace-a" } : {},
     proofAdvancePath: () => "/proof.json", stableHash,
+    hasLandGrant: () => true,
     runProof: async () => { state.status = "proven"; return { progressed: true }; },
     runLand: async () => { state.status = "archived"; }
   });

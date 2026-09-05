@@ -287,6 +287,28 @@ out="$(printf '%s' "$event_with_transcript" |
 assert_contains "a dev PreToolUse event enforces without exported transcript env" \
   "$out" 'active phase is unavailable'
 
+# /land is the one authority bootstrap. The stable wrapper itself is allowed
+# only when the current event transcript starts with /land; its child file
+# mutations still require the transaction marker and target capability.
+printf '%s\n' '{"type":"last-prompt","lastPrompt":"/land delivery-change"}' \
+  > "$TMP/land-transcript.jsonl"
+land_event="{\"transcript_path\":\"$TMP/land-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation land advance delivery-change\"}}"
+out="$(printf '%s' "$land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
+  FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
+assert_eq "current /land may invoke the stable lifecycle wrapper" "" "$out"
+
+dev_land_event="{\"transcript_path\":\"$TMP/dev-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation land advance delivery-change\"}}"
+out="$(printf '%s' "$dev_land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
+  FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
+assert_contains "/dev cannot infer Land through the trusted wrapper" "$out" \
+  'requires the current /land invocation'
+
+chained_land_event="{\"transcript_path\":\"$TMP/land-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation land advance delivery-change && git commit -am bad\"}}"
+out="$(printf '%s' "$chained_land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
+  FOUNDATION_GUARDRAIL_MODE=block FOUNDATION_ACTIVE_PHASE=land node "$HOOK")"
+assert_contains "Land wrapper authority cannot cover a chained commit" "$out" \
+  'decision":"block'
+
 out="$(pre block "" "$(write_event "$TMP/pre/src/app.js")")"
 assert_contains "block mode delegates even when no phase is recorded" \
   "$out" 'active phase is unavailable'

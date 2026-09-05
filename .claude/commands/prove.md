@@ -9,7 +9,7 @@ fresh receipts, runs eligible deterministic providers, routes configured review
 or acceptance, and finalizes proof without asking the model to reconstruct a
 primitive command chain.
 
-Follow only the returned protocol-v3 action and invoke its exact `resume`
+Follow only the returned protocol-v4 action and invoke its exact `resume`
 command yourself. Command and resume fields are agent-only control data.
 `REPAIR` and `EDIT` return a bounded invalidation/repair set; `RUN_EXTERNAL`
 names one configured external boundary; `WAIT` reports its owner and condition

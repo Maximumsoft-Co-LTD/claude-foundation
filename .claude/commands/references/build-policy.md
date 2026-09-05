@@ -1,6 +1,6 @@
 # Build operating policy
 
-The protocol-v3 `advance` action is the current authority. Do not call lifecycle
+The protocol-v4 `advance` action is the current authority. Do not call lifecycle
 primitives unless its recovery explicitly names one. Update `tasks.md` only for
 the returned task after focused checks; the coordinator owns planning and phase
 transitions.

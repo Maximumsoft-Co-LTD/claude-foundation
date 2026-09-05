@@ -43,7 +43,7 @@ npm run test:mutation:semantic
 
 `quality:report:dashboard` composes the fast dashboard report. Runtime coverage
 executes the complete deterministic harness and belongs in scheduled CI.
-Semantic draft compilation, transactional amendment, and protocol-v3 `advance`
+Semantic draft compilation, transactional amendment, and protocol-v4 `advance`
 belong to that runtime surface. Website Markdown and both root READMEs belong to
 the documentation surfaces, so changed-file selection cannot skip them merely
 because they are documentation rather than executable JavaScript.

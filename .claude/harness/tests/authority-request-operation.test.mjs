@@ -87,7 +87,9 @@ test("pending authority lookup requires complete identity and an open status", (
   ];
   assert.equal(pendingAuthorityRequest(entries, selection).requestId, "open");
   assert.equal(pendingAuthorityRequest(entries.slice(0, 4), selection), null);
-  for (const status of ["requested", "dispatched", "pending"])
+  for (const status of [
+    "requested", "dispatched", "pending", "infrastructure-exhausted"
+  ])
     assert.equal(pendingAuthorityRequest([{ value: { ...matching, status } }], selection).status,
       status);
 });
@@ -294,6 +296,11 @@ function resetInfrastructureContext(overrides = {}) {
   const validated = [];
   const acknowledgements = [];
   const output = [];
+  const exhaustedEntry = {
+    path: "request.json",
+    value: { requestId: "request-a", status: "infrastructure-exhausted" }
+  };
+  const replaced = [];
   return {
     validate: (...args) => validated.push(args),
     reviewerStatus: (reviewer) => ({
@@ -305,9 +312,15 @@ function resetInfrastructureContext(overrides = {}) {
     },
     fail,
     output: { log: (row) => output.push(row) },
+    authorityStore: {
+      list: () => [exhaustedEntry],
+      replace: (...args) => replaced.push(args)
+    },
+    now: () => "2026-09-05T00:00:00.000Z",
     validated,
     acknowledgements,
     outputRows: output,
+    replaced,
     ...overrides
   };
 }
@@ -335,6 +348,9 @@ test("infrastructure reset acknowledges attempts and renders the recovery route"
   });
   assert.deepEqual(result, { digests: ["attempt-a", "attempt-b"] });
   assert.deepEqual(context.acknowledgements, [["c", "decision-a"]]);
+  assert.equal(context.replaced.length, 1);
+  assert.equal(context.replaced[0][1].status, "requested",
+    "a diagnosed infrastructure reset reactivates the same durable request");
   assert.match(context.outputRows[0], /default-reviewer \(doctor\)/);
   assert.match(context.outputRows[0], /acknowledged: 2 attempt/);
   assert.match(context.outputRows[0], /decision: decision-a/);

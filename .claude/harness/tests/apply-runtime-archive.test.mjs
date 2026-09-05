@@ -346,14 +346,15 @@ test("a worktree archive reapplies before recording advisory telemetry", () => {
   rmSync(fixture.root, { recursive: true, force: true });
 });
 
-test("required incomplete telemetry stops before the destructive archive", () => {
+test("required incomplete telemetry remains advisory during delivery", () => {
   const fixture = activeArchiveFixture("telemetry-required", {
     telemetry: { classification: "partial", reason: "missing rows" },
     policy: { telemetry: { requireUsage: true } }
   });
 
-  assert.throws(() => fixture.run(), /Land requires measured model usage/);
-  assert.equal(fixture.state.status, "proven");
+  fixture.run();
+  assert.equal(fixture.state.status, "archived");
+  assert.equal(fixture.state.land.telemetry.classification, "partial");
   rmSync(fixture.root, { recursive: true, force: true });
 });
 

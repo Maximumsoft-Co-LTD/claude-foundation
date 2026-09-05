@@ -63,22 +63,47 @@ const OPENSPEC_REQUIRED_MAJOR = 1;
 const OPENSPEC_TESTED_MINOR = 7;
 const OPENSPEC_PACKAGE = "@fission-ai/openspec@^1.7";
 
-export function advanceLandOperation({
+export async function advanceLandOperation({
   loadRuntime, landCheck, archive, resumeLand, landPlanValue,
-  selectedRepositories
+  selectedRepositories, prepareExecution = null
 }, id) {
+  if (prepareExecution) await prepareExecution(id, { stage: "land" });
   const state = loadRuntime(id);
   const multiRepository = compositeRepositorySelection(selectedRepositories(id, state));
   if (!multiRepository) {
-    landCheck(id);
-    archive(id);
-    return;
+    const check = await landCheck(id);
+    const archived = await archive(id);
+    return archived || { status: "ARCHIVED", archived: true, check };
   }
-  resumeLand(id);
+  const currentPlan = landPlanValue(id);
+  if (currentPlan.strategy === "workspace-uncommitted") {
+    const archived = await archive(id);
+    return archived || { status: "ARCHIVED", archived: true, plan: currentPlan };
+  }
+  const resumed = await resumeLand(id);
   const refreshed = loadRuntime(id);
-  if (refreshed.status === "building") return;
+  if (refreshed.status === "building") return resumed || {
+    status: "PENDING",
+    reason: "repository delivery changed the composite workspace; proof must converge again"
+  };
   const plan = landPlanValue(id);
-  if (plan.readyToArchive) archive(id);
+  if (plan.readyToArchive) {
+    const archived = await archive(id);
+    return archived || { status: "ARCHIVED", archived: true, plan };
+  }
+  return {
+    status: plan.waitingExternal ? "WAITING_EXTERNAL" : "PENDING",
+    reason: plan.reason || "repository delivery is not ready to archive",
+    repositories: plan.repositories || [],
+    plan
+  };
+}
+
+export function legacyRepositoryLandTransaction(state) {
+  return Object.entries(state?.repositories || {}).some(([id, runtime]) =>
+    id !== "root" && Boolean(runtime?.land?.commit ||
+      ["child-landed", "awaiting-explicit-commit", "awaiting-explicit-branch-land",
+        "awaiting-root-pointer"].includes(runtime?.land?.status)));
 }
 
 // Layered policy rather than a pinned string: a wrong major cannot sync specs,
@@ -694,7 +719,42 @@ export function createLandRuntime({
 
   function landPlanValue(id, state = loadRuntime(id)) {
     const proof = existsSync(proofPath(id)) ? readJson(proofPath(id), {}) : null;
-    const repositories = orderedRepositories(id, state).map(
+    const selected = orderedRepositories(id, state);
+    if (compositeRepositorySelection(selected) &&
+        !legacyRepositoryLandTransaction(state)) {
+      const repositories = selected.map((repository) => {
+        const runtime = repository.id === "root"
+          ? state.repositories?.root || state.workspace
+          : state.repositories?.[repository.id] || {};
+        return {
+          id: repository.id,
+          type: repository.type,
+          mode: repository.mode,
+          dependsOn: repository.dependsOn || [],
+          targetPath: repository.path,
+          transactionId: repository.id === "root"
+            ? state.workspace?.apply?.transactionId || null
+            : runtime.delivery?.transactionId || null,
+          status: repository.mode === "read" ? "read-only" :
+            repository.id === "root" && state.workspace?.applied
+              ? "applied-uncommitted"
+              : runtime.delivery?.status || "pending-apply"
+        };
+      });
+      return {
+        version: 2,
+        changeId: id,
+        proofRunId: proof?.proofRunId || null,
+        proofStatus: proof?.status || "missing",
+        workspaceHash: relevantHash(id),
+        strategy: "workspace-uncommitted",
+        repositories,
+        readyToArchive: repositories.every((repository) =>
+          ["read-only", "applied-uncommitted"].includes(repository.status)),
+        updatedAt: now()
+      };
+    }
+    const repositories = selected.map(
       landRepositoryPlanRow.bind(null, {
         root, git, gitHead, rootGitlink, repositoryCommitLanded
       }, state));
@@ -937,6 +997,11 @@ export function createLandRuntime({
   function resumeLand(id) {
     landCheck(id);
     const state = loadRuntime(id);
+    if (!legacyRepositoryLandTransaction(state)) {
+      const plan = landPlanValue(id, state);
+      console.log(JSON.stringify(plan, null, 2));
+      return plan;
+    }
     for (const repository of orderedRepositories(id, state)) {
       if (repository.id === "root" || repository.mode !== "write") continue;
       const runtime = state.repositories?.[repository.id];
@@ -963,6 +1028,14 @@ export function createLandRuntime({
   function assertMultiRepositoryArchiveReady(id, state) {
     if (!compositeRepositorySelection(selectedRepositories(id, state))) return;
     const plan = landPlanValue(id);
+    if (plan.strategy === "workspace-uncommitted") {
+      const blocked = plan.repositories.filter((repository) =>
+        !["read-only", "applied-uncommitted"].includes(repository.status));
+      if (blocked.length)
+        fail(`multi-repository workspace delivery is incomplete: ${blocked.map(
+          (repository) => `${repository.id}:${repository.status}`).join(", ")}`);
+      return;
+    }
     const blocked = plan.repositories.filter((repository) =>
       !["read-only", "child-landed", "control-plane-last"].includes(repository.status));
     if (blocked.length)

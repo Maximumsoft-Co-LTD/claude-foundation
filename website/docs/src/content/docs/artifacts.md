@@ -145,6 +145,7 @@ state cannot drift into a commit by accident.
 | `plans/` | Agent execution plans |
 | `leases/` | Task and resource leases |
 | `transactions/` | Land apply journals and staged backups |
+| `tools/` | Harness-owned project-local CLI dependencies keyed by the pinned runtime contract |
 | `authority/` | Review and acceptance requests and their completion records |
 | `attestations/` | Unattended-execution challenges and consumed nonces |
 | `instruction-manifests/` | Instruction provenance per command |

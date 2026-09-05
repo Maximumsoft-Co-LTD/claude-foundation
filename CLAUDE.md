@@ -36,11 +36,15 @@ stale evidence. Change Loop makes completion content-bound and resumable:
 - Gates evaluate independent findings once, repair one ordered batch, and rerun
   only invalidated checks.
 - Product repair has no fixed retry count while progress changes.
+- The harness prepares required tools and retries failed repository setup before
+  execution; host permission or harness bookkeeping never becomes a user-run
+  recovery command.
 - Real authority, resource, budget, conflict, or repeated no-progress boundaries
   preserve state and return an exact resume route.
 - A code-delivery flow succeeds at `archived`, never merely `proven`.
-- Land applies only the proven projection and never commits, pushes, or opens a
-  pull request without separate authority.
+- Land applies every writable repository's proven projection as an uncommitted
+  target diff, archives only after the full saga succeeds, and leaves Git HEAD
+  and index unchanged. It never commits, pushes, or opens a pull request.
 
 ## Sources of truth
 
@@ -177,6 +181,11 @@ EXPECTED_RUNTIME_API`, `.claude/harness/foundation.mjs RUNTIME_API_VERSION`,
 - Treat risk and evidence—not diff size—as the assurance selector. Size controls
   budget and slicing only.
 - Do not inspect or patch generated receipts, proof, or Land journal JSON.
+- Keep user interaction to intent, consequential semantics, explicit Land, or
+  external-side-effect authority. Agent work stays with the agent and
+  deterministic workflow/setup/permission/recovery work stays with the harness.
+- Optimize for delivery: reuse identity-valid work and run only dependency-
+  invalidated Build, Review, and Prove work across all selected repositories.
 - Preserve fail-closed isolation and unknown-as-unavailable measurement semantics.
 - Do not weaken evidence, silently widen scope, infer user authority, or report
   `proven` as completion for a delivery flow.

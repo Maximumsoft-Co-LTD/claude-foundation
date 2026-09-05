@@ -5,7 +5,7 @@ argument-hint: <change>
 
 Build **$ARGUMENTS**.
 
-Run `claude-foundation advance <change> --through build`. Follow its protocol-v3
+Run `claude-foundation advance <change> --through build`. Follow its protocol-v4
 action and exact `resume` route yourself until `DONE` or a real boundary.
 Command and resume fields are agent-only control data; expose them only for
 requested diagnosis.

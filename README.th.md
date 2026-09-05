@@ -16,7 +16,7 @@ Change Loop ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก�
 ชื่อผลิตภัณฑ์และ workflow คือ **Change Loop** ส่วน package และ CLI ที่ติดตั้งยังใช้
 `claude-foundation` เหมือนเดิม จึงไม่ต้องเปลี่ยนคำสั่งที่ใช้อยู่
 
-**Version 3.5.6** — runtime API 30, provider protocol 13 receipt ที่บันทึกด้วย
+**Version 3.5.6** — runtime API 31, provider protocol 13 receipt ที่บันทึกด้วย
 เวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 `claude-foundation metrics <change-id>` จะแสดง source cohort ของ runtime แบบ
 เจาะจงด้วย ได้แก่ semantic version, protocol bundle ที่โหลดจริง และ SHA-256
@@ -39,7 +39,7 @@ Change Loop ไม่ใช่ AI และไม่ได้เขียน cod
 |---|---|
 | ผู้ใช้ | กำหนด intent ตัดสินใจเรื่องสำคัญ review ผลลัพธ์ และอนุญาต Land อย่างชัดเจน |
 | AI coding agent | Investigate, เขียนข้อตกลง, implement code และ test และแก้ failure ที่ evidence รายงาน |
-| Change Loop harness | ควบคุม lifecycle state, scope, sandbox, evidence, proof freshness, budget และ Land guard |
+| Change Loop harness | ควบคุม lifecycle state, scope, เตรียม tool, sandbox, evidence, proof freshness, budget, permission integration, Apply ที่กู้คืนได้ และ archive |
 | OpenSpec | เก็บ requirement และ change agreement แบบถาวรที่คน review ได้ |
 | Tool ของ project | Test runner, linter, Playwright, scanner และ provider อื่นสร้าง executable evidence |
 | Git และ CI | ดูแล version control และ automation ตาม process เดิมของ project |
@@ -72,8 +72,9 @@ AI agent อาจเขียน code ที่ดูถูกต้อง แ�
   งานระหว่างทางปนกับ project หลัก
 - **Evidence เป็นตัวตัดสินความพร้อม** Test, static analysis, browser check หรือ
   tool ของ project จะสร้าง receipt ที่ผูกกับ workspace จริง
-- **Land ต้องสั่งอย่างชัดเจน** Change Loop ไม่ commit, push หรือเปิด pull request
-  เอง ถ้าคุณไม่ได้อนุญาตแยกต่างหาก
+- **Land ต้องสั่งอย่างชัดเจน** ระบบ apply diff ที่พิสูจน์แล้วไปทุก writable target
+  และ archive โดยปล่อย HEAD, index และ diff ที่ส่งมอบไว้แบบยังไม่ commit ให้คุณ
+  ตรวจเอง ระบบไม่ push หรือเปิด pull request
 - **กลับมาทำต่อได้** Task, runtime state, receipt และ recovery journal ยังคงอยู่
   แม้เปลี่ยน agent session
 
@@ -85,15 +86,13 @@ AI agent อาจเขียน code ที่ดูถูกต้อง แ�
 สิ่งที่ต้องมี:
 
 - Node.js 20.19 ขึ้นไป
-- OpenSpec CLI 1.7.0 สำหรับ sync spec และ archive
+- npm access เมื่อยังไม่มี OpenSpec CLI เวอร์ชันที่ pin ไว้
 
 แนะนำให้มี Git สำหรับ worktree isolation; ถ้าโปรเจกต์ dirty หรือไม่ใช่ Git จะใช้
 isolated copy และแนะนำให้มี `jq` สำหรับ merge Claude settings เดิม หากไม่มี
-installer จะรักษาไฟล์เดิมและสร้าง companion file ให้ตรวจและ merge เอง
-
-```bash
-npm install -g @fission-ai/openspec@1.7.0
-```
+installer จะรักษาไฟล์เดิมและสร้าง companion file ให้ตรวจเอง Harness ตรวจ OpenSpec
+ตั้งแต่ต้น และถ้าจำเป็นจะติดตั้ง CLI ที่ pin ไว้เฉพาะ project ใต้
+`.foundation/tools`; user workflow ไม่มีคำสั่งติดตั้ง global
 
 ติดตั้งด้วย Homebrew:
 
@@ -234,8 +233,9 @@ jq -r '.workspace.path' .foundation/runtime/<change-id>.json
 
 worktree มีแค่ไฟล์ที่ Git ติดตาม ถ้า provider ต้องติดตั้ง dependency ก่อน ให้
 ประกาศ `sandbox.setupCommand` (พร้อม `setupTimeoutMs`) ใน `foundation.json`
-หรือ `setupCommand` รายรีโปใน `openspec/repositories.yaml` มันจะรันหนึ่งครั้ง
-ในทุก workspace ใหม่ และถ้า setup ล้มเหลว sandbox จะถูกเก็บไว้พร้อมพิมพ์วิธีกู้คืน
+หรือ `setupCommand` รายรีโปใน `openspec/repositories.yaml` setup ที่ผ่านแล้วจะถูก
+reuse ส่วนตัวที่ล้มจะเก็บ sandbox ไว้และ Harness retry ให้โดยไม่รัน sibling ที่พร้อม
+แล้วซ้ำหรือส่ง recovery command ให้ user
 
 ถ้าต้องใช้ Bash โดยตรงระหว่าง Build ให้เริ่มคำสั่งที่แก้ไฟล์ด้วย
 `cd <exact-workspace> && ...` phase guard จะบล็อก package manager หรือ formatter
@@ -698,9 +698,10 @@ Repository ที่จำเป็นเฉพาะตอน integration test 
 - [ ] **T003** Verify contract [repo:app] [kind:contract] [depends:T001,T002]
 ```
 
-Change Loop มอง multi-remote landing เป็น ordered resumable saga โดยตรวจ child
-commit และ CI state ที่ระบุชัด ไม่อ้างว่า atomic ข้าม remote ใช้
-`claude-foundation land resume <change-id>` เพื่อตรวจและเดินลำดับต่อ และดู protocol เต็มใน
+Change Loop ส่งมอบหลาย repository ในเครื่องด้วย ordered resumable saga คำสั่ง
+`/land` ครั้งเดียวเตรียม writable target ทั้งหมดและ apply proven diff โดยไม่ stage
+หรือ commit; HEAD กับ index ไม่เปลี่ยน เรียก `/land` ซ้ำแล้ว resume journal โดยข้าม
+target ที่ตรวจแล้ว ดู protocol เต็มใน
 [WORKFLOW.md](WORKFLOW.md)
 
 ระหว่าง Build ระบบจะ compile repository, task, evidence provider และ Land

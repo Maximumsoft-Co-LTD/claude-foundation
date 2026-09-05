@@ -14,16 +14,18 @@ routinely confused with one another, and they do different jobs.
 | **Host attestation** | Is it safe to run unattended? | Only for unattended execution |
 
 :::caution[What Land actually enforces]
-Land gates on **evidence**, not on consent. It refuses to proceed on missing,
-stale, failed, or inconclusive evidence, and it re-checks every receipt digest
-against the proof manifest before applying anything.
+An exact `/land <change>` supplies one internal, session-bound grant for that
+recoverable transaction. Readiness itself gates on **evidence**, not a second
+consent receipt: missing, stale, failed, or inconclusive evidence still stops
+before Apply, and every receipt digest is re-checked against the proof manifest.
+In short: Land gates on **evidence**, not on consent beyond that explicit
+invocation.
 
-The agent is separately instructed to explain the effects and offer you
-inspect, proceed, or pause before it lands — but that is an instruction the
-agent follows, not a lock the harness enforces. The commands that *do* demand a
-recorded human decision are the continuations: `land record`, `budget continue`,
-`change abandon`, `change waive`, and `agents release --force`, each of which
-requires a `--decision-ref` naming the decision you actually made.
+Users never construct the grant or a decision-reference command. `land record`
+requires `--decision-ref` only as compatibility for an already-active legacy
+commit-oriented transaction. Other advanced continuations—`budget continue`,
+`change abandon`, `change waive`, and `agents release --force`—still record the
+decision that authorized them.
 
 `change waive` is the recorded exit for a gate that ran and failed: it
 withdraws one capability's enforcement on your explicit decision, travels as a

@@ -15,13 +15,21 @@ export function workspaceCapabilityValue(changeId, state) {
   };
   if (status === "building") return {
     phase: "build", mode: "isolated-workspace",
-    roots: [state?.workspace?.path].filter(Boolean)
+    roots: [state?.workspace?.path, ...Object.values(state?.repositories || {})
+      .filter((repository) => repository?.mode !== "read")
+      .map((repository) => repository?.path || repository?.workspacePath)]
+      .filter(Boolean)
   };
   if (status === "proven") return {
     phase: "prove", mode: "evidence-state-only", roots: [".foundation"]
   };
   if (["applied", "archived"].includes(status)) return {
-    phase: "land", mode: "journaled-transaction", roots: [".foundation"]
+    phase: "land", mode: "journaled-transaction",
+    roots: [state?.workspace?.targetPath,
+      ...Object.values(state?.repositories || {})
+        .filter((repository) => repository?.mode !== "read")
+        .map((repository) => repository?.targetPath)]
+      .filter(Boolean)
   };
   return { phase: status, mode: "fail-closed", roots: [] };
 }
@@ -50,7 +58,8 @@ export function workspaceMutationDecision({
       allowed: false, reason: "Prove keeps product and instruction files read-only"
     };
   if (capability.phase === "land")
-    return landTransaction ? { allowed: true, reason: null } : {
+    return landTransaction && capability.roots.some((root) => contains(target, root))
+      ? { allowed: true, reason: null } : {
       allowed: false, reason: "Land mutations require the runtime transaction marker"
     };
   if (capability.phase === "build") {

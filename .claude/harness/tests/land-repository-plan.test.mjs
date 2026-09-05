@@ -118,7 +118,7 @@ test("land repository row preserves complete child projection", () => {
     path: "/target/api", workspacePath: "/workspace/api", baseHead: "repo-base"
   };
   const state = {
-    workspace: { path: "/workspace" },
+    workspace: { path: "/workspace", applied: true },
     repositories: { api: {
       path: "/box/api", baseHead: "runtime-base",
       land: { commit: "commit", ci: "pass", ciRequired: true }
@@ -293,7 +293,7 @@ test("Land resume refreshes child statuses and emits the resumable plan", () => 
 
 test("multi-repository archive readiness accepts settled plans and names blockers", () => {
   const state = {
-    workspace: { path: "/workspace" },
+    workspace: { path: "/workspace", applied: true },
     repositories: {
       root: { path: "/workspace" },
       docs: { mode: "worktree", path: "/workspace/docs", baseHead: "head" }
@@ -323,12 +323,7 @@ test("multi-repository archive readiness accepts settled plans and names blocker
   });
 
   assert.doesNotThrow(() => runtime.assertMultiRepositoryArchiveReady("change-a", state));
-  delete state.repositories.docs.mode;
+  state.workspace.applied = false;
   assert.throws(() => runtime.assertMultiRepositoryArchiveReady("change-a", state),
-    /multi-repository Land is incomplete: docs:read-not-isolated/);
-  assert.throws(() => runtime.assertMultiRepositoryArchiveReady("change-a", {
-    repositories: { root: {} }
-  }), /multi-repository Land is incomplete: docs:read-not-isolated/);
-  assert.throws(() => runtime.assertMultiRepositoryArchiveReady("change-a", {}),
-    /multi-repository Land is incomplete: docs:read-not-isolated/);
+    /multi-repository workspace delivery is incomplete: root:pending-apply/);
 });

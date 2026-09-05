@@ -7,13 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Lifecycle outcomes now carry explicit ownership and a four-state user
+  projection.** Agent, Harness, User, and External-owner responsibilities are
+  validated at runtime while internal resume routes and recovery commands stay
+  out of normal user guidance.
+- **Tool preparation and Land are repository-aware.** Required project-local
+  tools are prepared and reused by content identity, while a session-bound
+  Land grant and durable delivery saga support resumable single-repository,
+  monorepo, sibling-repository, read-only, and writable-submodule topologies.
+
+### Changed
+
+- **Land now delivers workspace diffs instead of manufacturing Git history.**
+  Every selected writable target receives the proven projection without
+  staging, committing, pushing, or changing Git HEAD/index; the change archives
+  only after all targets apply and verify successfully.
+- **Build, Review, and Prove converge on the smallest invalidated surface.**
+  Valid setup, review, proof, and repository work is reused; findings are
+  repaired in dependency order, and progress may continue without an arbitrary
+  retry ceiling while its identity changes.
+
 ### Fixed
 
-- **`/dev` now stops cleanly at review authority boundaries.** An exhausted
-  configured-review circuit is reported as an external wait instead of a
-  repeatedly executable review action, and the Stop hook permits genuine
-  `WAIT`/`ASK_USER` or host-permission handoffs without misreporting Proof as
-  complete or asking users to run blocked commands themselves.
+- **Harness permissions and Hooks no longer strand valid delivery work.** The
+  stable lifecycle wrapper is merged into consumer permissions, phase and
+  change selection stay bound to the current session, multi-root capabilities
+  cover declared repositories, and Stop inspection is read-only. Host
+  permission denial remains Harness-owned instead of asking users to run
+  blocked commands themselves.
+- **Review and proof recovery no longer repeats unchanged work.** Exhausted
+  reviewer infrastructure becomes non-dispatchable, held proof operations are
+  reused, durable proof cursors retain decisions and repair routes, and only a
+  legitimate work decision or unavailable external owner can stop the flow.
 
 ## [3.5.6] - 2026-09-04
 

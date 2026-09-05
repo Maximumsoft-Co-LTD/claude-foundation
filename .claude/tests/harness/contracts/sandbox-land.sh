@@ -499,8 +499,8 @@ node .claude/harness/foundation.mjs resolve setup-fail --impact low --coupling i
 setup_fail_output="$(node .claude/harness/foundation.mjs sandbox create setup-fail 2>&1)"
 assert_contains "failed setup warns with the command" "$setup_fail_output" \
   "WARNING: sandbox setup command failed"
-assert_contains "failed setup says how to recover" "$setup_fail_output" \
-  "rerun it there manually"
+assert_contains "failed setup remains Harness-owned recovery" "$setup_fail_output" \
+  "Harness preparation will repair or route this failure before Build"
 assert_eq "failed setup keeps the sandbox in Build" "building" \
   "$(jq -r '.status' .foundation/runtime/setup-fail.json)"
 assert_eq "failed setup records the exit code" "7" \

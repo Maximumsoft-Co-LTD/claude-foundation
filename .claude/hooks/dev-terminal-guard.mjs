@@ -6,6 +6,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
+import { recordedPhaseContext } from "./phase-state.mjs";
 
 export function devPrompt(transcript) {
   let prompt = "";
@@ -19,6 +20,10 @@ export function devPrompt(transcript) {
     } catch { /* tolerate a partially flushed final line */ }
   }
   return prompt;
+}
+
+export function devResumeChange(prompt) {
+  return String(prompt || "").match(/(?:^|\s)--resume\s+([^\s]+)/)?.[1] || null;
 }
 
 export function transcriptWallMs(transcript, nowMs = Date.now()) {
@@ -66,22 +71,12 @@ export function latestHostPermissionBoundary(transcript) {
 }
 
 function pendingTerminalBoundary(changeId, hostBoundary, nextActionFor) {
-  if (hostBoundary?.kind === "host-permission-denied") return {
-    applies: true,
-    complete: false,
-    stopAllowed: true,
-    status: "BOUNDARY",
-    blockerKind: "host-permission-boundary",
-    changeId,
-    phase: "prove",
-    action: "ASK_USER",
-    actor: "user",
-    boundary: "host-authority",
-    reason: "the host denied permission for the pending operation"
-  };
   let nextAction = null;
   try { nextAction = nextActionFor(changeId); } catch { return null; }
   if (!["WAIT", "ASK_USER"].includes(nextAction?.action)) return null;
+  if (nextAction.action === "WAIT" && nextAction.owner !== "external" &&
+      !["external-authority", "resource-owner"].includes(nextAction.actor) &&
+      nextAction.userState !== "WAITING_EXTERNAL") return null;
   return {
     applies: true,
     complete: false,
@@ -100,18 +95,30 @@ function pendingTerminalBoundary(changeId, hostBoundary, nextActionFor) {
 
 export function evaluateDevTerminal({
   prompt, activeIds, proofFor, currentHash, auditProof,
-  nextActionFor = () => null, hostBoundary = null
+  nextActionFor = () => null, hostBoundary = null, selectedChangeId = null
 }) {
   if (!prompt) return { applies: false, complete: true };
   if (/\s--plan-only(?:\s|$)/.test(prompt))
     return { applies: true, complete: true, status: "PLAN_COMPLETE" };
-  if (activeIds.length !== 1) return {
+  const explicit = selectedChangeId || devResumeChange(prompt);
+  const changeId = explicit || (activeIds.length === 1 ? activeIds[0] : null);
+  if (!changeId || !activeIds.includes(changeId)) return {
     applies: true, complete: false, status: "INCOMPLETE",
-    blockerKind: activeIds.length ? "ambiguous-active-change" : "missing-active-change",
-    changeId: null, phase: activeIds.length ? "unknown" : "change",
-    resumeAction: "Agent: invoke /dev --resume <change> after selecting exactly one active change."
+    blockerKind: explicit ? "selected-change-unavailable" :
+      activeIds.length ? "ambiguous-active-change" : "missing-active-change",
+    changeId: explicit, phase: activeIds.length ? "unknown" : "change",
+    resumeAction: explicit
+      ? `Agent: recover the selected change ${explicit} without switching to a sibling change.`
+      : "Agent: select the change that belongs to this session before continuing."
   };
-  const changeId = activeIds[0];
+  if (hostBoundary?.kind === "host-permission-denied") return {
+    applies: true, complete: false, stopAllowed: false,
+    status: "INCOMPLETE", blockerKind: "host-integration-recovery",
+    changeId, phase: "prove", action: "WORKING", actor: "harness",
+    boundary: "host-integration",
+    reason: "the Harness must recover the denied internal operation",
+    resumeAction: `Agent: resume ${changeId} through the trusted lifecycle wrapper; do not ask the user to run an internal command.`
+  };
   const proof = proofFor(changeId);
   if (!proof || proof.status !== "pass") {
     const boundary = pendingTerminalBoundary(changeId, hostBoundary, nextActionFor);
@@ -152,13 +159,15 @@ function runCli(root, ...args) {
       env: {
         ...process.env,
         FOUNDATION_GUARDRAIL_MODE: "off",
-        FOUNDATION_UPDATE_CHECK: "0"
+        FOUNDATION_UPDATE_CHECK: "0",
+        FOUNDATION_TELEMETRY: "0",
+        FOUNDATION_READ_ONLY_INSPECTION: "1"
       }
     });
 }
 
 function nextAction(root, id) {
-  const child = runCli(root, "advance", id);
+  const child = runCli(root, "advance", id, "--inspect");
   if (child.status !== 0) return null;
   try { return JSON.parse(String(child.stdout || "").trim()); }
   catch { return null; }
@@ -206,9 +215,19 @@ async function main() {
   const activeIds = existsSync(changes) ? readdirSync(changes, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && entry.name !== "archive")
     .map((entry) => entry.name).sort() : [];
+  const recorded = recordedPhaseContext({
+    projectRoot: root,
+    sessionId: event.session_id || null,
+    freshnessMs: 12 * 60 * 60 * 1000,
+    pathExists: existsSync,
+    readDirectory: (path) => readdirSync(path, { withFileTypes: true }),
+    readText: readFileSync,
+    nowMs: Date.now
+  });
   const evaluated = evaluateDevTerminal({
     prompt,
     activeIds,
+    selectedChangeId: devResumeChange(prompt) || recorded?.changeId || null,
     hostBoundary: latestHostPermissionBoundary(transcript),
     proofFor: (id) => {
       const path = join(root, ".foundation", "receipts", id, "proof.json");

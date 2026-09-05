@@ -1,6 +1,9 @@
 import { repairActionForWorkspace } from "../evidence/repair-runtime.mjs";
+import {
+  lifecycleOutcome, lifecycleUserProjection, lifecycleUserState
+} from "../core/lifecycle-outcome.mjs";
 
-export const ADVANCE_PROTOCOL_VERSION = 3;
+export const ADVANCE_PROTOCOL_VERSION = 4;
 
 const command = (value) => `claude-foundation ${value}`;
 
@@ -12,7 +15,7 @@ function envelope(id, action, values = {}) {
     legacyAction = null, boundary = null, actor = "harness", reason = null,
     resumeCommand = resume(id), recoveryType = null, alternatives = [], ...rest
   } = values;
-  return {
+  const value = lifecycleOutcome({
     protocol: ADVANCE_PROTOCOL_VERSION,
     version: ADVANCE_PROTOCOL_VERSION,
     action,
@@ -30,6 +33,11 @@ function envelope(id, action, values = {}) {
     resume: resumeCommand,
     // Kept for v2 host adapters during the protocol migration.
     resumeCommand
+  });
+  return {
+    ...value,
+    userState: lifecycleUserState(value),
+    user: lifecycleUserProjection(value)
   };
 }
 
@@ -61,6 +69,8 @@ function compactPreflight(value) {
     repositoryIssues: (value.repositoryIssues || []).slice(0, 20),
     unavailableProviders: (value.unavailableProviders || []).slice(0, 20),
     activeWorkers: (value.activeWorkers || []).slice(0, 20),
+    decision: value.decision || null,
+    next: (value.next || []).slice(0, 20),
     truncated: (value.issues || []).length > 20 ||
       (value.repositoryIssues || []).length > 20 ||
       (value.unavailableProviders || []).length > 20 ||
@@ -75,19 +85,161 @@ function exactRecoveryCommand(message) {
 
 export function advanceFailureAction(id, error, { stage = "build", through = null } = {}) {
   const reason = error?.message || String(error);
+  if (error?.decision) return envelope(id, "ASK_USER", {
+    legacyAction: "REQUEST_DECISION",
+    actor: "user",
+    boundary: error.boundary || "user-authority",
+    reason,
+    decision: error.decision,
+    recoveryType: "ASK_USER",
+    alternatives: error.decision.options?.map((option) => option.outcome) || [],
+    resumeCommand: resume(id, through)
+  });
+  if (error?.owner === "user" || error?.boundary === "land-authority")
+    return envelope(id, "ASK_USER", {
+      legacyAction: error?.code === "LAND_GRANT_REQUIRED"
+        ? "LAND_READY" : "REQUEST_DECISION",
+      actor: "user",
+      boundary: error?.boundary || "user-authority",
+      reason,
+      recoveryType: "ASK_USER",
+      alternatives: error?.boundary === "land-authority"
+        ? ["invoke /land for this exact change", "leave the proven change pending"] : [],
+      resumeCommand: resume(id, through)
+    });
+  if (error?.owner === "external") return envelope(id, "WAIT", {
+    legacyAction: "WAIT_EXTERNAL",
+    actor: "external-authority",
+    boundary: error?.boundary || "external-authority",
+    reason,
+    recoveryType: "PAUSE",
+    alternatives: error?.details?.alternatives || [],
+    resumeCommand: resume(id, through)
+  });
   const fallback = stage === "land"
     ? command(`land check ${id}`)
     : command(`doctor --stage ${stage === "prove" ? "prove" : "build"} --change ${id}`);
   return envelope(id, "REPAIR", {
     legacyAction: `REPAIR_${stage.toUpperCase()}_RUNTIME`,
-    actor: "agent",
-    boundary: "resource",
+    actor: error?.owner === "harness" ? "harness" : "agent",
+    boundary: error?.boundary || "resource",
     reason,
+    details: error?.details || null,
     command: exactRecoveryCommand(reason) || fallback,
     recoveryType: "RECONFIGURE",
     alternatives: ["run the exact recovery command, then resume the same lifecycle route"],
     resumeCommand: resume(id, through)
   });
+}
+
+function proofOperationAction(id, result) {
+  if (!result || typeof result !== "object") return null;
+  if (result.action) return result;
+  if (["PASS", "READY"].includes(result.status) || result.completed === true) return null;
+  if (result.status === "IN_PROGRESS") return envelope(id, "WORKING", {
+    legacyAction: "PROOF_IN_PROGRESS",
+    actor: "harness",
+    boundary: "internal-lock",
+    reason: "proof is already running for this change",
+    wait: { owner: result.owner || null, next: result.next || [] },
+    recoveryType: "AUTO_RECOVER",
+    alternatives: ["reuse the active proof operation"]
+  });
+  if (result.status === "WAITING_EXTERNAL" &&
+      (result.requests || []).some((request) =>
+        request.status === "infrastructure-exhausted"))
+    return envelope(id, "REPAIR", {
+      legacyAction: "REPAIR_REVIEW_INFRASTRUCTURE",
+      actor: "harness",
+      boundary: "resource",
+      reason: result.next?.[0]?.reason ||
+        "configured review infrastructure is exhausted",
+      requests: result.requests || [],
+      next: result.next || [],
+      recoveryType: "RECONFIGURE",
+      alternatives: ["repair or switch the configured reviewer, then resume"]
+    });
+  if (result.status === "WAITING_EXTERNAL") return envelope(id, "WAIT", {
+    legacyAction: "WAIT_EXTERNAL",
+    actor: "external-authority",
+    boundary: "external-authority",
+    reason: result.next?.[0]?.reason || "required external evidence is pending",
+    requests: result.requests || [],
+    providers: result.providers || [],
+    next: result.next || [],
+    recoveryType: "PAUSE",
+    alternatives: (result.next || []).map((row) => row.reason).filter(Boolean)
+  });
+  if (result.status === "NEEDS_USER_DECISION" ||
+      ["CONTRACT_DECISION_REQUIRED", "NO_PROGRESS_DECISION"].includes(result.route))
+    return envelope(id, "ASK_USER", {
+      legacyAction: "REQUEST_DECISION",
+      actor: "user",
+      boundary: "user-authority",
+      reason: result.decision?.summary || result.next?.[0]?.reason ||
+        "proof reached a material work decision",
+      decision: result.decision || {
+        kind: "work-decision",
+        summary: result.next?.[0]?.reason || "A work decision is required",
+        options: []
+      },
+      next: result.next || [],
+      recoveryType: "ASK_USER",
+      alternatives: result.decision?.options?.map((option) => option.outcome) || []
+    });
+  if (result.status === "ACTION_REQUIRED" || result.status === "BLOCKED")
+    return envelope(id, "REPAIR", {
+      legacyAction: "REPAIR_PROOF_RESULT",
+      actor: "agent",
+      boundary: "host-execution",
+      reason: result.next?.[0]?.reason || result.issues?.[0] ||
+        "proof found work that must be repaired",
+      route: result.route || null,
+      decision: result.decision || null,
+      repairPlan: result.repairPlan || null,
+      repairGraph: compactRepairGraph(result.repairGraph),
+      invalidation: result.invalidation || null,
+      next: result.next || [],
+      recoveryType: "EDIT",
+      alternatives: ["repair the dependency-ordered finding batch"]
+    });
+  return null;
+}
+
+function landOperationAction(id, result) {
+  if (!result || typeof result !== "object") return null;
+  if (result.action) return result;
+  if (["ARCHIVED", "PASS"].includes(result.status) || result.archived === true) return null;
+  if (result.status === "BLOCKED" && result.decision) return envelope(id, "ASK_USER", {
+    legacyAction: "REQUEST_LAND_DECISION",
+    actor: "user",
+    boundary: "user-authority",
+    reason: result.decision.summary || "Land requires a work decision",
+    decision: result.decision,
+    recoveryType: "ASK_USER",
+    alternatives: result.decision.options?.map((option) => option.outcome) || []
+  });
+  if (["WAITING_EXTERNAL", "PENDING_EXTERNAL"].includes(result.status))
+    return envelope(id, "WAIT", {
+      legacyAction: "WAIT_LAND_EXTERNAL",
+      actor: "external-authority",
+      boundary: "external-authority",
+      reason: result.reason || "an external delivery dependency is pending",
+      repositories: result.repositories || [],
+      recoveryType: "PAUSE",
+      alternatives: result.alternatives || []
+    });
+  if (["IN_PROGRESS", "READY", "PENDING"].includes(result.status))
+    return envelope(id, "WORKING", {
+      legacyAction: "LAND_IN_PROGRESS",
+      actor: "harness",
+      boundary: "internal-transaction",
+      reason: result.reason || "Land has a resumable internal transaction",
+      repositories: result.repositories || [],
+      recoveryType: "AUTO_RECOVER",
+      alternatives: ["resume the same Land transaction"]
+    });
+  return null;
 }
 
 function selectedBuildTasks(dispatch, plan) {
@@ -109,6 +261,15 @@ function buildAction(id, dispatch, state, plan = null) {
   if (dispatch.action === "build-complete") return null;
   if (["run-in-session", "run-leased-in-session", "spawn-group"].includes(dispatch.action)) {
     const tasks = selectedBuildTasks(dispatch, plan);
+    if (!plan || tasks.length === 0 || tasks.some((task) =>
+      !task.id || task.allowedPaths.length === 0)) return envelope(id, "REPAIR", {
+      legacyAction: "REPAIR_BUILD_PLAN",
+      actor: "harness",
+      boundary: "contract",
+      reason: "the compiled Build plan is missing executable task or path scope",
+      recoveryType: "AUTO_RECOVER",
+      alternatives: ["regenerate the compiled task graph from the current agreement"]
+    });
     return envelope(id, "EDIT", {
       legacyAction: dispatch.action === "spawn-group" ? "EXECUTE_TASK_GROUP" : "EXECUTE_TASK",
       actor: "agent",
@@ -147,11 +308,22 @@ function buildAction(id, dispatch, state, plan = null) {
 export function coordinatorAction({
   id, state, dispatch, workspaceHash, latestReview = null,
   proofCursor = {}, authorityRequests = [], stableHash, authorityActions = null,
-  proofPreflight = null, plan = null
+  proofPreflight = null, plan = null, budget = null
 }) {
   if (state.status === "archived") return envelope(id, "DONE", {
     legacyAction: "ARCHIVED", boundary: null, reason: "change is archived",
     completed: true, reached: "archived", resumeCommand: null
+  });
+
+  if (dispatch.action !== "build-complete" &&
+      budget?.status === "NEEDS_USER_DECISION") return envelope(id, "ASK_USER", {
+    legacyAction: "BUDGET_DECISION_REQUIRED",
+    actor: "user",
+    boundary: "user-authority",
+    reason: budget.decision?.summary || "the active model budget is exhausted",
+    decision: budget.decision,
+    recoveryType: "ASK_USER",
+    alternatives: budget.decision?.options?.map((option) => option.outcome) || []
   });
 
   const pendingBuild = buildAction(id, dispatch, state, plan);
@@ -177,7 +349,8 @@ export function coordinatorAction({
   // far enough to need the configured authority. Prefer it over a stale
   // failure from the previous workspace.
   const open = authorityRequests.find((request) =>
-    ["requested", "dispatched", "pending"].includes(request.status));
+    ["requested", "dispatched", "pending", "infrastructure-exhausted"]
+      .includes(request.status));
   if (open) {
     const authorityAction = authorityActions?.find((entry) => entry.requestId === open.requestId);
     const authorityCommand = authorityAction?.command || null;
@@ -186,6 +359,16 @@ export function coordinatorAction({
     // deliberately offers the external response template instead. Treating
     // that template as configured work makes a host print it, resume, and
     // receive the same RUN_EXTERNAL action forever.
+    if (open.status === "infrastructure-exhausted") return envelope(id, "REPAIR", {
+      legacyAction: "REPAIR_REVIEW_INFRASTRUCTURE",
+      actor: "harness",
+      boundary: "resource",
+      reason: open.infrastructureError ||
+        "configured review infrastructure is exhausted",
+      requestId: open.requestId,
+      recoveryType: "RECONFIGURE",
+      alternatives: ["repair or switch the configured reviewer, then resume"]
+    });
     const configuredReview = open.type === "review" && open.status === "requested" &&
       /^claude-foundation authority run\s/.test(authorityCommand || "");
     return envelope(id, configuredReview ? "RUN_EXTERNAL" : "WAIT", {
@@ -271,7 +454,9 @@ export function createAdvanceRuntime({
   loadRuntime, agentDispatchValue, relevantHash, deliveredAiAttempts,
   authorityStatusValue, authorityNext, readJson, proofAdvancePath, stableHash,
   proofReadinessValue = null, agentPlanValue = null,
+  budgetDecisionValue = null,
   prepareBuild = null, runProof = null, runLand = null,
+  hasLandGrant = () => false,
   recordPhase = null, output = console.log,
   capture = (operation) => operation(),
   captureAsync = async (operation) => operation(),
@@ -289,6 +474,7 @@ export function createAdvanceRuntime({
         if (["proven", "landing"].includes(state.status)) stage = "land";
         const authority = authorityStatusValue(id);
         const dispatch = agentDispatchValue(id);
+        const budget = budgetDecisionValue ? budgetDecisionValue(state) : null;
         let proofPreflight = null;
         if (dispatch.action === "build-complete") {
           stage = "prove";
@@ -313,6 +499,7 @@ export function createAdvanceRuntime({
           authorityRequests: openRequests,
           proofPreflight,
           plan,
+          budget,
           authorityActions: authorityNext
             ? authorityNext(id, openRequests[0]?.type || "review", openRequests) : null,
           stableHash
@@ -406,12 +593,21 @@ export function createAdvanceRuntime({
   }
 
   function noProgress(id, through) {
-    return envelope(id, "WAIT", {
-      legacyAction: "NO_PROGRESS_BOUNDARY", actor: "operator",
-      boundary: "repeated-no-progress",
-      reason: "advance repeated an automated action without changing lifecycle state",
-      recoveryType: "PAUSE",
-      alternatives: ["inspect feedback and resume with the same command"],
+    const decision = {
+      kind: "repair-no-progress",
+      summary: "The same authorized operation completed twice without changing delivery state",
+      options: [
+        { id: "revise", outcome: "revise the work or contract so the blocked result can change" },
+        { id: "pause", outcome: "preserve the current state and stop this delivery attempt" }
+      ],
+      recommended: "revise"
+    };
+    return envelope(id, "ASK_USER", {
+      legacyAction: "NO_PROGRESS_BOUNDARY", actor: "user",
+      boundary: "repeated-no-progress", decision,
+      reason: decision.summary,
+      recoveryType: "ASK_USER",
+      alternatives: decision.options.map((option) => option.outcome),
       resumeCommand: resume(id, through)
     });
   }
@@ -424,7 +620,11 @@ export function createAdvanceRuntime({
         if (!["build", "proven", "archived"].includes(through))
           throw new Error("advance --through must be build|proven|archived");
         const initial = loadRuntime(id);
-        if (initial.status === "change" && prepareBuild) await prepareBuild(id);
+        // Preparation is identity-reused and also owns recovery of failed
+        // sandbox setup. Re-enter it while Build is active so a prior setup
+        // failure cannot be bypassed by the next coordinator invocation.
+        if (["change", "building"].includes(initial.status) && prepareBuild)
+          await prepareBuild(id);
         const targetResume = (value) => ({
           ...value,
           resume: resume(id, through),
@@ -448,13 +648,21 @@ export function createAdvanceRuntime({
             stage = "prove";
             operation = runProof;
           } else if (value.legacyAction === "LAND_READY" && through === "archived") {
+            if (!hasLandGrant(id)) return targetResume(value);
             if (!runLand) return targetResume(value);
             stage = "land";
             operation = runLand;
           }
           if (!operation) return targetResume(value);
           const before = convergenceFingerprint(id);
-          await operation(id);
+          const operationResult = await operation(id);
+          // An operation is the authoritative source for its own boundary.
+          // Consume it before consulting projections, otherwise quiet proof or
+          // Land composition can discard a decision and repeat the operation.
+          const boundaryResult = stage === "land"
+            ? landOperationAction(id, operationResult)
+            : proofOperationAction(id, operationResult);
+          if (boundaryResult) return targetResume(boundaryResult);
           const after = convergenceFingerprint(id);
           unchangedAutomations = before === after ? unchangedAutomations + 1 : 0;
           if (unchangedAutomations >= 2) return noProgress(id, through);
@@ -468,7 +676,8 @@ export function createAdvanceRuntime({
 
   async function showAdvance(id, flags = {}) {
     const value = await advanceThrough(id, flags.through || null);
-    if (!flags.through) {
+    if (!flags.through && !flags.inspect &&
+        process.env.FOUNDATION_READ_ONLY_INSPECTION !== "1") {
       const phase = phaseForAction(value);
       if (phase && recordPhase) recordPhase(id, phase);
     }

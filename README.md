@@ -17,7 +17,7 @@ does not replace your coding agent, test framework, CI system, or Git workflow.
 The product is **Change Loop**; the installed package and CLI remain
 `claude-foundation`, so existing commands do not change.
 
-**Version 3.5.6** — runtime API 30, provider protocol 13. Receipts recorded by
+**Version 3.5.6** — runtime API 31, provider protocol 13. Receipts recorded by
 earlier versions read as `provider-version-stale` and must be re-proven.
 `claude-foundation metrics <change-id>` also reports the exact runtime source
 cohort: semantic version, the loaded protocol bundle, and a SHA-256 digest of
@@ -41,7 +41,7 @@ control plane around the native coding agent.
 |---|---|
 | User | Defines intent, makes consequential decisions, reviews the result, and explicitly authorizes Land |
 | AI coding agent | Investigates, writes the agreement, implements code and tests, and fixes failures reported by evidence |
-| Change Loop harness | Controls lifecycle state, scope, sandboxes, evidence, proof freshness, budgets, and Land guards |
+| Change Loop harness | Controls lifecycle state, scope, tool preparation, sandboxes, evidence, proof freshness, budgets, permissions integration, recoverable Apply, and archive |
 | OpenSpec | Stores the durable, human-reviewable requirements and change agreement |
 | Project tools | Test runners, linters, Playwright, scanners, and other providers produce executable evidence |
 | Git and CI | Handle version control and automation through the project's existing process |
@@ -77,8 +77,9 @@ the result. Change Loop separates those concerns:
   the main project while the agent works.
 - **Evidence decides readiness.** Tests, static analysis, browser checks, or
   other project-owned tools produce receipts bound to the exact workspace.
-- **Land is explicit.** Change Loop never commits, pushes, or opens a pull
-  request unless you separately authorize it.
+- **Land is explicit.** It applies the proven diff to every writable target and
+  archives the change, leaving HEAD, the index, and the delivered diff
+  uncommitted for your review. It never pushes or opens a pull request.
 - **Work can be resumed.** Tasks, runtime state, receipts, and recovery journals
   survive a new agent session.
 
@@ -90,16 +91,14 @@ without relying on “the agent says it is done” as proof.
 Requirements:
 
 - Node.js 20.19 or later
-- OpenSpec CLI 1.7.0, for spec synchronization and archive
+- npm access when the pinned OpenSpec CLI is not already available
 
 Git is recommended for worktree isolation; dirty or non-Git projects use an
 isolated copy. `jq` is recommended for merging existing Claude settings.
 Without it, the installer preserves the existing file and writes a companion
-file for manual review.
-
-```bash
-npm install -g @fission-ai/openspec@1.7.0
-```
+file for review. The harness verifies OpenSpec early and, when necessary,
+installs the pinned CLI project-locally under `.foundation/tools`; no global
+installation command is part of the user workflow.
 
 Install with Homebrew:
 
@@ -248,8 +247,9 @@ jq -r '.workspace.path' .foundation/runtime/<change-id>.json
 A worktree carries tracked files only. If providers need dependencies
 installed, declare `sandbox.setupCommand` (plus `setupTimeoutMs`) in
 `foundation.json`, or a per-repository `setupCommand` in
-`openspec/repositories.yaml`; it runs once inside every new workspace, and a
-failing setup keeps the sandbox and prints the recovery.
+`openspec/repositories.yaml`. A successful setup is reused; a failed one keeps
+the sandbox and is retried by the harness without repeating ready siblings or
+handing a recovery command to the user.
 
 For direct Bash use during Build, start an obviously mutating command with
 `cd <exact-workspace> && ...`. The phase guard blocks unanchored package-manager
@@ -720,9 +720,10 @@ Annotate multi-repository tasks so authority and dependencies remain explicit:
 - [ ] **T003** Verify contract [repo:app] [kind:contract] [depends:T001,T002]
 ```
 
-Change Loop treats multi-remote landing as an ordered, resumable saga. It verifies
-explicit child commits and CI state; it does not claim atomicity across remotes.
-Use `claude-foundation land resume <change-id>` to inspect and advance the order. See
+Change Loop treats local multi-repository delivery as an ordered, resumable
+saga. One `/land` prepares all writable targets and applies each proven diff
+without staging or committing; HEAD and index stay unchanged. Repeating
+`/land` resumes the journal and skips verified targets. See
 [WORKFLOW.md](WORKFLOW.md) for the full control-plane protocol.
 
 Build compiles the repository, task, evidence-provider, and Land declarations

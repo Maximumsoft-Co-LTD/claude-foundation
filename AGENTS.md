@@ -30,6 +30,12 @@ agreement source of truth.
 - Build writes only inside the declared isolated workspace.
 - Gates aggregate independent findings, repair one dependency-ordered batch,
   and selectively rerun invalidated checks.
+- The harness owns deterministic setup, tool readiness, permissions integration,
+  routing, evidence, recovery, Apply, and archive. Never ask the user to run a
+  harness command that the active workflow can execute.
+- The agent owns product implementation and repair. The user owns intent,
+  consequential semantics, explicit Land, final diff review, and separate Git
+  or external-side-effect authority.
 - Product repair has no fixed retry count while progress changes.
 - Stop only at a real authority, resource, budget, conflict, or repeated
   no-progress boundary; preserve state and return an exact resume route.
@@ -37,6 +43,9 @@ agreement source of truth.
 - Never fabricate evidence, convert unavailable measurements to zero/pass, edit
   machine-owned proof JSON, or infer user authority.
 - Land never implies permission to commit, push, publish, or open a PR.
+- Land prepares every writable repository before mutation, applies dependency
+  waves as uncommitted target diffs, and must leave every Git HEAD and index
+  unchanged. Read-only repositories are never Land targets.
 
 ## Read before editing
 
@@ -60,7 +69,8 @@ summaries short. Keep English and Thai public documentation aligned.
 2. Classify the edit as runtime, instruction, shipping, repository-only, or
    release work.
 3. Read the nearest implementation and tests before changing code.
-4. Keep edits surgical. Put new runtime behavior in its domain under
+4. Keep edits surgical and focused on complete delivery. Reuse valid work and
+   do not run unrelated Review, Prove, setup, or repository branches. Put new runtime behavior in its domain under
    `.claude/harness/runtime/`; keep `foundation.mjs` a composition root.
 5. Add a deterministic regression at the lowest boundary that catches the bug.
 6. Update command registry, protocol pins, installer ownership, and canonical

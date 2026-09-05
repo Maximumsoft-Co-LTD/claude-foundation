@@ -73,7 +73,11 @@ to force fully serial execution when bisecting.
 | `.claude/harness/tests/semantic-acceptance-seam.test.mjs` | A clean installed consumer records a signed semantic receipt, preserves the prior receipt after tampering, and expires it when product content changes |
 | `.claude/harness/tests/npm-lockfile-auto-seam.test.mjs` | A clean installed npm consumer activates the built-in manifest/lockfile provider without execution.yaml wiring, rejects mismatch, and passes after the lockfile is repaired |
 | `.claude/harness/tests/semantic-draft.test.mjs` | Semantic draft v3 stable links, canonical MODIFIED scenario merge, typed integration documentation, conditional artifacts, Grounding-compatible compilation, and transactional amendment rollback/preservation |
-| `.claude/harness/tests/advance-runtime.test.mjs` | Protocol-v3 six-action projection, target chaining, exact resume routes, compact output, phase recording, Land authority, and a weak-host read-action/resume simulation through `archived` |
+| `.claude/harness/tests/advance-runtime.test.mjs` | Compatibility characterization for Build/review/proof/Land routing, exact failures, semantic convergence beyond 32 operations, no-progress detection, weak-host resume, and feedback projection |
+| `.claude/harness/tests/delivery-convergence.test.mjs` | Protocol-v4 owner-validated outcomes, safe four-state user projection, operation-result preservation, setup recovery re-entry, non-empty Build plans, and budget/explicit-Land boundaries |
+| `.claude/harness/tests/tool-preparation.test.mjs` | Project-local OpenSpec preparation, composite readiness identity, root setup visibility, and failed-only repository setup retry |
+| `.claude/harness/tests/land-grant.test.mjs` | Session/change/proof/graph/target-bound Land authority, forbidden Git/external effects, stale rejection, and single-use consumption |
+| `.claude/harness/tests/repository-delivery-saga.test.mjs` | Prepare-all dependency order, non-root-only delivery, uncommitted HEAD/index invariants, overlap conflict, and crash-safe multi-repository resume |
 | `hooks/run-hook-tests.sh` | The hooks actually shipped: secret protection, low-cost lint dispatch, and the opt-in direct-main guard |
 | `hooks/run-phase-mutation-guard-tests.sh` | Phase resolution, fail-closed active-phase default, adoption-only carve-out, explicit audit/block modes, and workspace containment |
 | `harness/run-wiring-tests.sh` | Every runtime factory parameter is supplied by the composition root, and no runtime module is orphaned |

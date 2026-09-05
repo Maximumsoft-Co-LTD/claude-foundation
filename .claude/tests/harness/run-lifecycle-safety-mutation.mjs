@@ -17,11 +17,20 @@ const ADVANCE_DETECTOR = ["node", "--test", ".claude/harness/tests/advance-runti
 const SANDBOX_DETECTOR = ["node", "--test", ".claude/harness/tests/sandbox-create-phases.test.mjs"];
 const PACKET_DETECTOR = ["node", ".claude/harness/tests/packet-value.test.mjs"];
 const LAND_DETECTOR = ["node", "--test", ".claude/harness/tests/land-check-phases.test.mjs"];
+const LAND_GRANT_DETECTOR = ["node", "--test", ".claude/harness/tests/land-grant.test.mjs"];
 const APPLY_DETECTOR = ["node", ".claude/harness/tests/apply-sandbox-operation.test.mjs"];
 const INSPECTION_DETECTOR = ["node", "--test", ".claude/harness/tests/workspace-inspection.test.mjs"];
 const DIAGNOSTICS_DETECTOR = ["node", ".claude/harness/tests/diagnostics-runtime.test.mjs"];
 
 const CASES = [
+  {
+    id: "MUT-LAND-GRANT-READINESS-SKIPPED",
+    sourcePath: ".claude/harness/runtime/core/land-grant.mjs",
+    expectedKiller: "CASE-LAND-GRANT-READINESS",
+    detector: LAND_GRANT_DETECTOR,
+    before: "landCheck(id);",
+    after: "void id;"
+  },
   {
     id: "MUT-LAND-DELIVERY-AUTHORITY-INFERRED",
     sourcePath: ".claude/harness/runtime/core/shell-mutation-policy.mjs",
@@ -219,7 +228,7 @@ try {
     HOOK_DETECTOR, EXEC_DETECTOR, SEMANTIC_DETECTOR, TOPOLOGY_DETECTOR,
     SNAPSHOT_DETECTOR, INFRASTRUCTURE_DETECTOR, PROOF_VALUE_DETECTOR,
     ADVANCE_DETECTOR, SANDBOX_DETECTOR,
-    PACKET_DETECTOR, LAND_DETECTOR, APPLY_DETECTOR, INSPECTION_DETECTOR,
+    PACKET_DETECTOR, LAND_DETECTOR, LAND_GRANT_DETECTOR, APPLY_DETECTOR, INSPECTION_DETECTOR,
     DIAGNOSTICS_DETECTOR
   ]) {
     const key = detector.join("\0");

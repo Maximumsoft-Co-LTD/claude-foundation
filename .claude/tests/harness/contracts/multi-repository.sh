@@ -263,9 +263,9 @@ assert_contains "review packet includes app repository changes" \
   "$multi_review_packet" 'app/app.txt'
 land_plan="$(node .claude/harness/foundation.mjs land-plan cross-repository-profile)"
 assert_contains "multi-repo Land is an honest saga" \
-  "$land_plan" '"strategy": "ordered-resumable-saga"'
-assert_contains "uncommitted child blocks Land" \
-  "$land_plan" '"status": "awaiting-explicit-commit"'
+  "$land_plan" '"strategy": "workspace-uncommitted"'
+assert_contains "uncommitted child is pending local apply" \
+  "$land_plan" '"status": "pending-apply"'
 sandboxes=.foundation/repository-sandboxes/cross-repository-profile
 printf '{"profile":"v1"}\n' > "$sandboxes/api/contract.json"
 printf '{"profile":"v1"}\n' > "$sandboxes/app/contract.json"

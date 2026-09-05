@@ -78,7 +78,7 @@ mkdir -p "$TARGET/.claude"
 # guard has since moved to a shell prefilter, and `upsert` matches on the command
 # string — so without retirement the upgrade would leave both wired and every
 # mutating call would pay for the guard twice.
-printf '%s\n' '{"hooks":{"PreToolUse":[{"matcher":"Agent","hooks":[{"type":"command","command":"${CLAUDE_PROJECT_DIR}/.claude/hooks/dev-agent-guard.sh"},{"type":"command","command":"user-hook.sh"}]},{"matcher":"Edit|Write|MultiEdit|NotebookEdit|Bash","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/phase-mutation-guard.mjs","timeout":5}]}]}}' > "$TARGET/.claude/settings.json"
+printf '%s\n' '{"permissions":{"allow":["Bash(user-tool *)"]},"hooks":{"PreToolUse":[{"matcher":"Agent","hooks":[{"type":"command","command":"${CLAUDE_PROJECT_DIR}/.claude/hooks/dev-agent-guard.sh"},{"type":"command","command":"user-hook.sh"}]},{"matcher":"Edit|Write|MultiEdit|NotebookEdit|Bash","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/phase-mutation-guard.mjs","timeout":5}]}]}}' > "$TARGET/.claude/settings.json"
 
 assert_cmd_zero "installer applies non-interactively" \
   bash "$ROOT/install.sh" "$TARGET" --source "$ROOT" --yes
@@ -99,6 +99,14 @@ assert_file_exists "convergent gate runtime installed" \
   "$TARGET/.claude/harness/runtime/core/convergent-gate.mjs"
 assert_file_exists "execution contract runtime installed" \
   "$TARGET/.claude/harness/runtime/core/execution-contract.mjs"
+assert_file_exists "lifecycle outcome runtime installed" \
+  "$TARGET/.claude/harness/runtime/core/lifecycle-outcome.mjs"
+assert_file_exists "Land grant runtime installed" \
+  "$TARGET/.claude/harness/runtime/core/land-grant.mjs"
+assert_file_exists "tool preparation runtime installed" \
+  "$TARGET/.claude/harness/runtime/core/tool-preparation.mjs"
+assert_file_exists "repository delivery saga installed" \
+  "$TARGET/.claude/harness/runtime/workflow/repository-delivery-saga.mjs"
 assert_file_exists "lifecycle reducer runtime installed" \
   "$TARGET/.claude/harness/runtime/core/lifecycle-reducer.mjs"
 assert_file_exists "derived state projection runtime installed" \
@@ -258,6 +266,12 @@ else
   pass "legacy hook wiring removed"
 fi
 assert_file_contains "user hook wiring preserved" "$TARGET/.claude/settings.json" "user-hook.sh"
+assert_cmd_zero "stable lifecycle wrapper permission is installed" \
+  jq -e '.permissions.allow | index("Bash(claude-foundation *)") != null' \
+    "$TARGET/.claude/settings.json"
+assert_cmd_zero "user permission is preserved during permission merge" \
+  jq -e '.permissions.allow | index("Bash(user-tool *)") != null' \
+    "$TARGET/.claude/settings.json"
 assert_file_not_contains "superseded phase guard command retired on upgrade" \
   "$TARGET/.claude/settings.json" "phase-mutation-guard.mjs"
 assert_eq "exactly one phase guard is wired after upgrade" "1" \

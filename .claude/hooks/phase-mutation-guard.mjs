@@ -62,23 +62,35 @@ const devSession = ["auto", "audit"].includes(configuredMode) &&
 const tool = String(event.tool_name || "");
 const input = event.tool_input || {};
 const mutatingTools = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+const landAuthorityCommand = tool === "Bash" &&
+  /^\s*(?:claude-foundation|node\s+(?:"[^"]*foundation\.mjs"|'[^']*foundation\.mjs'|\S*foundation\.mjs))\s+(?:(?:land(?:-|\s+)advance)|archive|sandbox\s+apply)\s+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\s*$/
+    .test(String(input.command || ""));
 if (!mutatingTools.has(tool) && tool !== "Bash") process.exit(0);
-if (tool === "Bash" && !looksMutatingShellCommand(String(input.command || ""))) process.exit(0);
+if (tool === "Bash" && !landAuthorityCommand &&
+    !looksMutatingShellCommand(String(input.command || ""))) process.exit(0);
 
 const projectRoot = canonical(process.env.CLAUDE_PROJECT_DIR || process.cwd());
 const recorded = recordedPhaseContext({
   projectRoot,
+  sessionId: event.session_id || process.env.FOUNDATION_CLAUDE_SESSION_ID || null,
   freshnessMs: PHASE_FRESHNESS_MS,
   pathExists: existsSync,
   readDirectory: (path) => readdirSync(path, { withFileTypes: true }),
   readText: readFileSync,
   nowMs: Date.now
 });
-const phase = String(process.env.FOUNDATION_ACTIVE_PHASE || recorded?.phase || "").toLowerCase();
-const mode = devSession || configuredMode === "block" ||
+const landSession = landAuthorityCommand && currentTranscriptIsLand(transcriptPath);
+const phase = String(process.env.FOUNDATION_ACTIVE_PHASE || recorded?.phase ||
+  (landSession ? "land" : "")).toLowerCase();
+const mode = devSession || landAuthorityCommand || configuredMode === "block" ||
   (configuredMode === "auto" && Boolean(phase)) ? "block" : "audit";
-const recordedWorkspace = recorded?.changeId ? runtimeWorkspace(recorded.changeId) : "";
+const recordedRuntime = recorded?.changeId ? runtimeState(recorded.changeId) : null;
+const recordedWorkspace = recordedRuntime?.workspace?.path
+  ? canonicalTarget(recordedRuntime.workspace.path, projectRoot) || "" : "";
 const violations = [];
+
+if (landAuthorityCommand && !landSession)
+  violations.push("Land authority command requires the current /land invocation");
 
 // Explicit block mode fails closed without context. Auto mode deliberately
 // stays out of adoption-only sessions, but becomes block as soon as a current
@@ -96,7 +108,7 @@ if (!phase && prePhaseDraftMutationAllowed()) {
   violations.push("active phase is unavailable");
 } else if (!new Set(["change", "build", "prove", "land"]).has(phase)) {
   violations.push(`unsupported active phase: ${phase}`);
-} else if (tool === "Bash") {
+} else if (tool === "Bash" && !landSession) {
   inspectBash(String(input.command || ""));
 } else {
   for (const rawPath of eventPaths(input)) inspectPath(rawPath);
@@ -128,8 +140,20 @@ function inspectPath(rawPath) {
   const status = phase === "build" ? "building" : phase === "prove" ? "proven"
     : phase === "land" ? "applied" : "change";
   const capability = workspaceCapabilityValue(recorded?.changeId || "active", {
-    status, workspace: { path: workspace ? canonicalTarget(workspace, projectRoot) : null }
+    ...(recordedRuntime || {}),
+    status,
+    workspace: {
+      ...(recordedRuntime?.workspace || {}),
+      path: workspace ? canonicalTarget(workspace, projectRoot) : null
+    }
   });
+  // Direct runtime fixtures and legacy consumers may establish Land through
+  // the transaction marker before a repository projection is readable. Limit
+  // that compatibility case to the current project; recorded modern state
+  // always supplies the exact target roots above.
+  if (phase === "land" && capability.roots.length === 0 && !recordedRuntime &&
+      process.env.FOUNDATION_LAND_TRANSACTION === "1")
+    capability.roots = [projectRoot];
   // Change can target any active change draft because the hook event does not
   // carry a trustworthy change ID on every host. The runtime still validates
   // the selected change before state transitions.
@@ -159,13 +183,11 @@ function inspectBash(command) {
   if (violation) violations.push(violation);
 }
 
-function runtimeWorkspace(changeId) {
+function runtimeState(changeId) {
   try {
-    const state = JSON.parse(readFileSync(join(projectRoot, ".foundation", "runtime",
+    return JSON.parse(readFileSync(join(projectRoot, ".foundation", "runtime",
       `${changeId}.json`), "utf8"));
-    return typeof state.workspace?.path === "string"
-      ? canonicalTarget(state.workspace.path, projectRoot) || "" : "";
-  } catch { return ""; }
+  } catch { return null; }
 }
 
 function currentTranscriptIsDev(path) {
@@ -182,6 +204,23 @@ function currentTranscriptIsDev(path) {
     return Boolean(devPrompt(buffer.subarray(0, read).toString("utf8")));
   } catch { return false; }
   finally { if (descriptor !== null) closeSync(descriptor); }
+}
+
+function currentTranscriptIsLand(path) {
+  if (!path || !existsSync(path)) return false;
+  try {
+    const source = readFileSync(path, "utf8");
+    let latest = "";
+    for (const line of source.split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const row = JSON.parse(line);
+        if (row.type === "last-prompt" && typeof row.lastPrompt === "string")
+          latest = row.lastPrompt.trim();
+      } catch { /* tolerate a partially flushed final line */ }
+    }
+    return /^\/land(?:\s|$)/.test(latest);
+  } catch { return false; }
 }
 
 function appendStringPath(paths, value) {

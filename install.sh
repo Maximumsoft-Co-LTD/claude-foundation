@@ -352,6 +352,9 @@ elif command -v jq >/dev/null 2>&1; then
       else .hooks[$event] += [{matcher:$matcher,hooks:[$hook]}] end;
     remove_legacy |
     quote_foundation_hooks |
+    .permissions //= {} |
+    .permissions.allow = (((.permissions.allow // []) +
+      ($src[0].permissions.allow // [])) | unique) |
     reduce ($src[0].hooks | to_entries[]) as $event (.;
       reduce ($event.value[]) as $entry (.;
         reduce ($entry.hooks[]) as $hook (.;

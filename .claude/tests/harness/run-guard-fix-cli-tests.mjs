@@ -232,6 +232,10 @@ async function route(command, values, overrides) {
     showAdvance: (...args) => { advanced = args; }
   });
   assert.deepEqual(advanced, ["change", { through: "archived", pretty: true }]);
+  await route("advance", ["change", "--inspect"], {
+    showAdvance: (...args) => { advanced = args; }
+  });
+  assert.deepEqual(advanced, ["change", { inspect: true }]);
   await assert.rejects(route("advance", ["change", "--through", "invalid"], {}),
     /advance --through must be build\|proven\|archived/);
   await route("describe", ["--json"], { describeCommand: () => {} });

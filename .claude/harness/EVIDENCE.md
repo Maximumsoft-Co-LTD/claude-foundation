@@ -29,6 +29,21 @@ file ownership and commands, use `README.md` in this directory.
 Discovery is an implicit suite-level obligation whenever `test` is selected; do
 not repeat `discovery` on every claim.
 
+## Readiness and selective execution
+
+Before Build, the harness records an execution-preparation identity covering
+the agreement revisions, selected repository bases/setup state, and provider
+wiring. It prepares only missing project-local tools and failed repository
+setups; ready sibling repositories are reused. Provider execution still occurs
+only in Prove and remains bound to the exact isolated repository set.
+
+Review packets and provider receipts carry repository-qualified inputs. A
+changed producer invalidates dependent consumers, while an unrelated repository
+or provider with the same fingerprint is reused. An active proof lock is waited
+on rather than duplicated. Infrastructure exhaustion leaves a non-dispatchable
+external or Harness-owned boundary; it cannot remain a review request that gets
+invoked repeatedly. No unavailable measurement is converted to zero or pass.
+
 ## Execution wiring
 
 `execution.yaml` may change as Build discovers the actual commands, ports, and

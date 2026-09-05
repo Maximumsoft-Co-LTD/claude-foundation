@@ -23,6 +23,20 @@ deterministic project-owned providers prove it. The harness owns state,
 isolation, budgets, evidence identity, authority boundaries, and recoverable
 Land. Rigor scales with risk and evidence needs, not a task-size phase matrix.
 
+## Ownership and user states
+
+The user owns intent, consequential product decisions, explicit Land authority,
+final diff review, and any later Git or external side effect. The coding agent
+owns implementation and product repair. The harness owns compilation, tool
+preparation, isolation, routing, evidence, permissions integration, recovery,
+Apply, and archive. An external owner owns credentials, remote systems, and
+human verdicts outside the execution boundary. Harness configuration or host
+permission is never turned into a question or command for the user.
+
+Normal output projects internal actions into four user states: `WORKING`,
+`NEEDS_DECISION`, `WAITING_EXTERNAL`, and `DELIVERED`. Internal commands,
+request IDs, journals, repair graphs, and resume tokens remain machine-facing.
+
 ## Lifecycle commands
 
 ### `/investigate <problem>`
@@ -94,7 +108,7 @@ claude-foundation advance <change> --through build
 ```
 
 The coordinator validates the agreement, prepares or synchronizes isolation,
-compiles the task graph, and returns one bounded protocol-v3 action:
+compiles the task graph, and returns one bounded protocol-v4 action:
 `EDIT`, `REPAIR`, `RUN_EXTERNAL`, `WAIT`, `ASK_USER`, or `DONE`.
 `tasks.md` is the only implementation ledger. `handoffs.yaml` separately owns
 AWS, cluster, secret, Terraform, deploy, restart, or other operations that need
@@ -107,6 +121,14 @@ Mutating shell commands must start in the exact workspace. The phase guard and
 `claude-foundation exec` reject direct path escapes and symlink traversal, but
 the host still owns process isolation for indirect or dynamically computed
 effects.
+
+Before Build, the harness compiles and persists an execution-preparation plan
+from selected repositories, setup commands, provider wiring, and tool identity.
+It reuses ready records, prepares only missing project-local dependencies, and
+retries only failed repository setup records. The pinned OpenSpec CLI may be
+installed under `.foundation/tools`; it is never installed globally. A setup or
+host-integration failure remains Harness-owned repair and is not emitted as a
+command for the user.
 
 Unattended Build requires a trusted host-owned attestation:
 
@@ -132,7 +154,7 @@ For multi-repository work, the committed topology selects repositories and
 access modes before task, provider, or worker planning. Providers may execute
 in one repository while consuming a declared set of other isolated
 repositories. Read-selected Git dependencies participate in proof but never
-produce Land commits.
+produce a Land mutation node.
 
 The declared selection—not the number of surviving runtime records—decides
 whether a lifecycle is composite. Selecting one non-root repository is
@@ -230,7 +252,8 @@ claude-foundation advance <change> --through archived
 ```
 
 This explicit invocation supplies Land authority. Land checks proof freshness,
-applies the proven isolated diff when necessary, verifies state identity,
+binds a resumable grant to the exact change, proof, repository graph, and target
+roots, applies the proven isolated diff when necessary, verifies state identity,
 delegates semantic spec synchronization and archival to the pinned OpenSpec
 CLI, and finishes only at `archived`. `proven` is not completion.
 
@@ -244,6 +267,14 @@ The projection is confined to Git-tracked files plus paths declared in
 `tasks.md`. An untracked path no task names is neither evidence surface nor a
 Land deletion. A target path is deleted only when the proven sandbox removed
 it. Conflicts never overwrite unrelated target edits.
+
+Every writable selected repository is prepared before the first target write
+and then applied in dependency order with durable per-repository checkpoints.
+Each target finishes `applied-uncommitted`: its intended diff is visible for
+the user to inspect, while Git HEAD and index remain unchanged. Read-only
+repositories remain unchanged. Re-entering `/land` resumes the same grant and
+skips already verified nodes; it never requires the user to assemble a journal,
+grant, commit, or recovery command.
 
 Land never implies permission to commit, push, publish, deploy, or open a pull
 request. Those effects require separate explicit authority.
@@ -461,10 +492,13 @@ name.
 
 Multi-repository changes use one OpenSpec agreement and one declared topology.
 Cross-repository contract evidence must be checked before repositories Land in
-dependency order. Submodule results become root gitlinks; sibling Git commits
-remain in runtime state until separately delivered. Multiple remotes use an
-ordered, resumable saga with explicit commit and CI records, never a claim of
-atomic remote mutation.
+dependency order. Writable sibling repositories and submodules receive their
+proven bytes in their existing target working trees without staging, committing,
+or manufacturing a gitlink SHA. Read-only repositories have no mutation node.
+All writable targets are prepared before mutation and use an ordered, resumable
+local saga; an unavailable external delivery remains an external-owner wait
+rather than a claim of atomic remote mutation. Legacy in-flight commit-oriented
+transactions remain readable through their recorded compatibility route.
 
 Git or deployment activity outside Change Loop is observation, not authority.
 A moved control target remains `control-head-moved` unless observed bytes match

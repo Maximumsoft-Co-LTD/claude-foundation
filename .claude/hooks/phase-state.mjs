@@ -17,6 +17,7 @@ export function recordedPhaseContext(context) {
     const logs = join(context.projectRoot, ".foundation", "logs");
     if (!context.pathExists(logs)) return "";
     let newest = null;
+    let newestForSession = null;
     for (const entry of context.readDirectory(logs)) {
       if (!entry.isDirectory()) continue;
       const path = join(logs, entry.name, "phase-context.jsonl");
@@ -32,7 +33,11 @@ export function recordedPhaseContext(context) {
       const changeId = String(row.changeId || entry.name);
       if (!activeChange(context, changeId)) continue;
       if (!newest || at > newest.at) newest = { at, phase: String(row.phase || ""), changeId };
+      if (context.sessionId && row.sessionId === context.sessionId &&
+          (!newestForSession || at > newestForSession.at))
+        newestForSession = { at, phase: String(row.phase || ""), changeId };
     }
+    if (context.sessionId) newest = newestForSession;
     if (!newest || context.nowMs() - newest.at > context.freshnessMs) return "";
     return newest;
   } catch {

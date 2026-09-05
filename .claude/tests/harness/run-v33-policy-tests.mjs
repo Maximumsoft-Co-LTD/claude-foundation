@@ -16,6 +16,7 @@ import { providerEvidencePolicy, providerReceiptWriterConflicts } from
   "../../harness/runtime/evidence/evidence-contract.mjs";
 import { createCodexReviewerRuntime } from "../../harness/runtime/evidence/codex-reviewer.mjs";
 import { createRuntimeEnvironment } from "../../harness/runtime/core/runtime-environment.mjs";
+import { effectiveReviewAttemptLimit } from "../../harness/runtime/core/authority-policy.mjs";
 import { createChangeLifecycle } from "../../harness/runtime/workflow/change-lifecycle.mjs";
 import { taskBlocks, taskMetadata } from "../../harness/runtime/contracts/change-artifacts.mjs";
 import { emptyRootDiffPermitted } from "../../harness/runtime/workflow/apply-runtime.mjs";
@@ -30,6 +31,14 @@ const low = classifyReviewRisk({
 assert.deepEqual(low.route, ["ai-full"]);
 assert.equal(low.maxAiAttempts, 1);
 pass("low risk uses one full AI review");
+
+assert.deepEqual(effectiveReviewAttemptLimit(low, [{
+  workspaceHash: "before-repair"
+}], "after-repair"), { promotesLow: true, maxAiAttempts: 2 });
+assert.deepEqual(effectiveReviewAttemptLimit(low, [{
+  workspaceHash: "same"
+}], "same"), { promotesLow: false, maxAiAttempts: 1 });
+pass("one shared route promotes low-risk review only after a real correction");
 
 const medium = classifyReviewRisk({
   state: { intent: "Change an internal calculation", impact: "medium", coupling: "isolated" },

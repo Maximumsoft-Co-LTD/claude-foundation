@@ -33,20 +33,22 @@ the active transcript's prompt starts with `/dev`.
   has a passing, audited proof bound to the current workspace hash, or when the
   coordinator returns a real `WAIT`/`ASK_USER` boundary. A boundary remains
   recorded as incomplete and cannot be mistaken for passing proof. A host
-  permission denial is also a real authority boundary: the hook allows the
-  agent to ask for permission instead of forcing the denied operation again.
+  permission denial is Harness-owned integration recovery: the hook keeps the
+  session active and never tells the user to run an internal command.
 
 Environment: `CLAUDE_PROJECT_DIR` names the project root (default: cwd).
 `FOUNDATION_GUARDRAIL_MODE` (`off|audit|block|auto`) governs the phase guard;
 phase context comes from `FOUNDATION_ACTIVE_PHASE` or `.foundation/logs/`.
 The normal slash-command path records that context through the unified
-`advance` coordinator; agents do not have to prepare a packet solely to make a
-hook recognize the phase.
+`advance` coordinator; read-only Stop inspection uses `advance --inspect`, does
+not record a new phase, and agents do not have to prepare a packet solely to
+make a hook recognize the phase. Session identity selects the exact active
+change even when another session has a newer change.
 The default `auto` mode blocks mutations during every active lifecycle phase
 and stays out of adoption-only sessions with no phase context. A recorded Build
-phase recovers its workspace from runtime state
-when the host does not export `FOUNDATION_WORKSPACE_ROOT`.
-Mutating Build shell commands must explicitly begin inside that workspace;
+phase recovers every selected repository workspace root from runtime state when
+the host does not export `FOUNDATION_WORKSPACE_ROOT`.
+Mutating Build shell commands must explicitly begin inside a granted workspace;
 unanchored package-manager/formatter commands and obvious path escapes are
 blocked before the shell starts.
 

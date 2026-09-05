@@ -62,8 +62,8 @@ check(signedCiProvider(["test"], (provider) => provider,
 check(telemetryLandIssue({ telemetry: { requireUsage: true } }, {
   classification: "not-ingested",
   recoveryActions: [{ command: "telemetry import change events.jsonl" }]
-}), "Land requires measured model usage, but telemetry is 'not-ingested'. Recover with: telemetry import change events.jsonl",
-"measured-usage policy blocks Land with its recovery command");
+}), null,
+"missing usage remains advisory and cannot strand proven delivery");
 check(telemetryLandIssue({ telemetry: { requireUsage: true } }, {
   classification: "measured", recoveryActions: []
 }), null, "measured telemetry satisfies the Land policy");
@@ -76,8 +76,8 @@ check(telemetryLandIssue({ telemetry: { requireUsage: true } }, {
   classification: "partial-measurement",
   measuredDimensions: { tokens: false, cost: false },
   recoveryActions: [{ command: "telemetry sync change" }]
-}), "Land requires measured model usage, but telemetry is 'partial-measurement'. Recover with: telemetry sync change",
-"partial rows with no measured usage dimension still block Land");
+}), null,
+"partial rows with no measured usage dimension remain advisory at Land");
 
 // The loose-match regression: a warning line mentioning the pinned version must
 // not vouch for a CLI that reports a different one.

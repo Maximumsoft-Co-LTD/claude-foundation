@@ -466,6 +466,11 @@ assert.equal(rejectedAgain.status, "NEEDS_USER_DECISION");
 assert.equal(rejectedAgain.route, "NO_PROGRESS_DECISION");
 assert.equal(rejectedAgain.progressed, false);
 assert.equal(rejectedAgain.decision.kind, "repair-no-progress");
+assert.equal(rejectedAgain.cursor.route, "NO_PROGRESS_DECISION");
+assert.deepEqual(rejectedAgain.cursor.decision, rejectedAgain.decision,
+  "the durable cursor preserves the exact work decision");
+assert.deepEqual(rejectedAgain.cursor.next, rejectedAgain.next,
+  "the durable cursor preserves the exact resume choices");
 assert.equal(rejectedAgain.next[0].command,
   "claude-foundation packet change-a --phase build",
   "an unchanged rejected review pauses with supported choices and a resume route");
@@ -494,6 +499,8 @@ assert.equal(failedReceiptAgain.status, "NEEDS_USER_DECISION",
 assert.equal(failedReceiptAgain.route, "NO_PROGRESS_DECISION");
 assert.equal(failedReceiptAgain.repairPlan.tasks.length, 1,
   "the no-progress decision preserves the claim-bound repair plan");
+assert.deepEqual(failedReceiptAgain.cursor.repairPlan, failedReceiptAgain.repairPlan,
+  "the durable cursor preserves the repair plan across process restarts");
 
 const failedTestEvidence = fixture({
   executionNeeded: false,

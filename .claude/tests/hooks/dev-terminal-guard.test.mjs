@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import {
-  devPrompt, evaluateDevTerminal, latestHostPermissionBoundary,
+  devPrompt, devResumeChange, evaluateDevTerminal, latestHostPermissionBoundary,
   terminalVerdict, transcriptWallMs
 } from "../../hooks/dev-terminal-guard.mjs";
 
@@ -23,6 +23,8 @@ test("terminal guard recognizes only the active dev command", () => {
     JSON.stringify({ type: "last-prompt", lastPrompt: "/dev --yes build it" }),
     JSON.stringify({ type: "last-prompt", lastPrompt: "are you done?" })
   ].join("\n")), "/dev --yes build it");
+  assert.equal(devResumeChange("/dev --resume change-a"), "change-a");
+  assert.equal(devResumeChange("/dev build it"), null);
 });
 
 test("terminal status measures wall time from the first transcript timestamp", () => {
@@ -71,7 +73,7 @@ test("dev cannot complete without exactly one passing fresh audited proof", () =
   assert.equal(evaluateDevTerminal(base).status, "PROVEN");
   const missing = evaluateDevTerminal({ ...base, activeIds: [] });
   assert.equal(missing.blockerKind, "missing-active-change");
-  assert.match(missing.resumeAction, /^Agent: invoke \/dev --resume/);
+  assert.match(missing.resumeAction, /^Agent: select the change/);
   assert.equal(evaluateDevTerminal({ ...base, proofFor: () => null }).blockerKind,
     "proof-not-passing");
   const automatic = evaluateDevTerminal({
@@ -94,6 +96,17 @@ test("dev cannot complete without exactly one passing fresh audited proof", () =
   assert.equal(waiting.stopAllowed, true);
   assert.equal(waiting.complete, false,
     "a real wait may stop the session without claiming proof completion");
+  const internalWait = evaluateDevTerminal({
+    ...base,
+    proofFor: () => null,
+    nextActionFor: () => ({
+      action: "WAIT", owner: "harness", userState: "WORKING",
+      boundary: "repeated-no-progress"
+    })
+  });
+  assert.equal(internalWait.stopAllowed, false,
+    "a Harness-owned wait remains internal work");
+  assert.equal(internalWait.blockerKind, "proof-not-passing");
   const decision = evaluateDevTerminal({
     ...base,
     proofFor: () => null,
@@ -107,16 +120,17 @@ test("dev cannot complete without exactly one passing fresh audited proof", () =
     nextActionFor: () => ({ action: "REPAIR", actor: "agent" }),
     hostBoundary: { kind: "host-permission-denied" }
   });
-  assert.equal(denied.blockerKind, "host-permission-boundary");
-  assert.equal(denied.stopAllowed, true,
-    "host authority must beat an otherwise automatic repair action");
+  assert.equal(denied.blockerKind, "host-integration-recovery");
+  assert.equal(denied.stopAllowed, false,
+    "an internal permission denial remains Harness-owned work");
+  assert.equal(denied.action, "WORKING");
   const staleDenied = evaluateDevTerminal({
     ...base,
     currentHash: () => "changed",
     nextActionFor: () => ({ action: "REPAIR", actor: "agent" }),
     hostBoundary: { kind: "host-permission-denied" }
   });
-  assert.equal(staleDenied.blockerKind, "host-permission-boundary",
+  assert.equal(staleDenied.blockerKind, "host-integration-recovery",
     "a stale passing receipt cannot hide the later permission stop");
   assert.equal(evaluateDevTerminal({ ...base,
     auditProof: () => ({ valid: false, reason: "bad" }) }).blockerKind,
@@ -125,6 +139,17 @@ test("dev cannot complete without exactly one passing fresh audited proof", () =
     "proof-stale");
   assert.equal(evaluateDevTerminal({ ...base,
     prompt: "/dev --plan-only sketch it" }).status, "PLAN_COMPLETE");
+});
+
+test("terminal guard targets the resumed change when siblings are active", () => {
+  const value = evaluateDevTerminal({
+    prompt: "/dev --resume selected", activeIds: ["other", "selected"],
+    proofFor: (id) => id === "selected"
+      ? { status: "pass", workspaceHash: "same" } : null,
+    currentHash: () => "same", auditProof: () => ({ valid: true })
+  });
+  assert.equal(value.status, "PROVEN");
+  assert.equal(value.changeId, "selected");
 });
 
 test("terminal verdict remains canonical when the host later returns a success envelope", () => {
@@ -197,7 +222,7 @@ test("Stop hook allows a real external review wait without marking proof complet
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test("Stop hook allows a permission handoff instead of forcing another repair", () => {
+test("Stop hook keeps an internal permission denial inside the Harness", () => {
   const root = mkdtempSync(join(tmpdir(), "dev-terminal-permission-"));
   const transcript = join(root, "transcript.jsonl");
   try {
@@ -226,12 +251,12 @@ test("Stop hook allows a permission handoff instead of forcing another repair", 
       env: { ...process.env, CLAUDE_PROJECT_DIR: root }
     });
     assert.equal(child.status, 0);
-    assert.equal(child.stdout, "",
-      "a denied permission must not make the Stop hook retry the same command");
+    assert.match(child.stdout, /"decision":"block"/,
+      "a denied internal operation must not be handed to the user");
     const verdict = JSON.parse(readFileSync(join(root, ".foundation", "logs",
       "dev-terminal", "permission-session.json"), "utf8"));
     assert.equal(verdict.terminal, "incomplete");
-    assert.equal(verdict.stopAllowed, true);
-    assert.equal(verdict.blockerKind, "host-permission-boundary");
+    assert.equal(verdict.stopAllowed, false);
+    assert.equal(verdict.blockerKind, "host-integration-recovery");
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

@@ -203,21 +203,23 @@ Use `quality run --change <change>` before Prove or let evidence bootstrap wire
 the committed quality config as static-analysis evidence. See
 [Consumer quality gates](/docs/consumer-quality/).
 
-## 8. Land in reported order
+## 8. Land every writable target uncommitted
 
-Read repositories have no Land node. Writable child repositories land as an
-ordered, resumable saga:
+Read repositories have no Land node. One explicit user command grants the
+complete local delivery transaction:
 
-```bash
-claude-foundation land check <change>
-claude-foundation land record <change> --repo <id> --commit <sha> --decision-ref <ref>
-claude-foundation land resume <change>
+```text
+/land <change>
 ```
 
-Follow the structured next action from `land check` or `land resume`. Change Loop
-verifies recorded commits and root pointers, but does not claim atomicity across
-independent remotes. Committing, pushing, and opening pull requests still need
-separate user authorization.
+The harness prepares every writable target before the first write, then applies
+the proven projections in dependency order with durable checkpoints. Each node
+finishes `applied-uncommitted`; Git HEAD and the index remain unchanged in every
+repository, and existing non-overlapping edits are preserved. A later `/land`
+resumes the same transaction and skips verified nodes. `land check`, legacy
+`land record`, and `land resume` remain diagnostic/compatibility primitives—not
+steps the user must sequence. Commits, pushes, and pull requests stay outside
+Land under separate user authority.
 
 The saga is also required when exactly one non-root child is selected. A missing
 child runtime record cannot make Land take the single-repository shortcut.
@@ -229,17 +231,17 @@ child runtime record cannot make Land take the single-repository shortcut.
 | A selected target moved | `sandbox sync <change>`, then Prove again |
 | Sync reports a replay conflict | Resolve the named paths; do not recreate the change |
 | A read repository is dirty | Remove the mutation or fix setup/provider behavior |
-| Repository setup failed | Fix `setupCommand`, then recreate or sync as reported |
-| A selected child binding is missing | Run `sandbox inspect <change>`, then `sandbox create <change> --all`; valid worktrees and their work are preserved |
+| Repository setup failed | Harness retries only that repository and preserves ready siblings; change policy only if the declared command itself is wrong |
+| A selected child binding is missing | Harness repairs the binding while preserving valid worktrees; use `sandbox inspect` only for requested diagnosis |
 | A canonical child path belongs to another repository | Keep it untouched, inspect the reported path, then correct the target/path conflict or explicitly abandon the change |
 | Provider cannot see a repository | Add it to provider `repositories`; do not hard-code a local path |
-| Land is interrupted | `land resume <change>` |
+| Land is interrupted | Invoke `/land <change>` again; it resumes the journal |
 
 ## What the user and agent each need to do
 
-**User:** confirm repository write scope, consequential dependency order, and
-each external commit/CI decision. You do not need to construct manifests,
-receipts, hashes, or Land journals.
+**User:** confirm consequential repository scope/dependency semantics, invoke
+Land once, review the final diffs, and commit through the project's normal Git
+process. You do not construct manifests, grants, receipts, hashes, or journals.
 
 **Agent:** configure the three scopes in order, use the manifest paths, run
 readiness before spending a Prove attempt, follow the reported recovery, and

@@ -26,8 +26,9 @@ receipt, recovery, or bookkeeping commands.
 At each gate, the harness checks once and returns all known repairable findings
 as one plan. The agent fixes that batch and the harness rechecks only evidence
 made missing or stale by the fix. This repeats while useful progress is
-possible. The user is asked only when a real decision, permission, unavailable
-external system, or unresolved conflict prevents safe progress. A change is
+possible. The user is asked only for a product decision, explicit side-effect
+authority, unavailable external system, or semantic conflict. Harness setup and
+host permission recovery stay internal. A change is
 finished only after the user explicitly authorizes Land and its state is
 `archived`.
 
@@ -37,7 +38,7 @@ provider and receipt contract.
 
 Every phase view is derived from one versioned execution contract. Semantic
 draft v3 compiles meaningful keys into stable cross-ledger IDs and writes only
-the OpenSpec artifacts the change needs. After Change, protocol-v3 `advance`
+the OpenSpec artifacts the change needs. After Change, protocol-v4 `advance`
 is the normal model-facing entrypoint; primitive commands remain compatible
 operator and integration tools. It compiles
 risk, required providers, external authority, workspace mutation capability,
@@ -58,6 +59,9 @@ backend changes only: installed user command names and arguments are unchanged.
 | Core | `runtime/core/cli-router.mjs` | Runtime command dispatch over an explicit orchestration API |
 | Core | `runtime/core/diagnostics-runtime.mjs` | Doctor, migration, provider listing, and CLI usage diagnostics |
 | Core | `runtime/core/execution-contract.mjs` | Compiled risk, evidence, authority, workspace, budget, repository, and Land capabilities |
+| Core | `runtime/core/lifecycle-outcome.mjs` | Owner-validated lifecycle outcomes and four-state user projection |
+| Core | `runtime/core/land-grant.mjs` | Session/change/proof/target-bound explicit Land authority |
+| Core | `runtime/core/tool-preparation.mjs` | Project-local tool readiness, preparation identity, and setup boundaries |
 | Core | `runtime/core/lifecycle-reducer.mjs` | Typed lifecycle transitions and compatibility-preserving state mutation |
 | Core | `runtime/core/process-runtime.mjs` | Provider process execution, readiness checks, and managed services |
 | Core | `runtime/core/shell-mutation-policy.mjs` | Shared phase-aware shell mutation and canonical Build containment policy |
@@ -97,10 +101,11 @@ backend changes only: installed user command names and arguments are unchanged.
 | Workflow | `runtime/workflow/change-lifecycle.mjs` | Change creation, draft materialization, resolution, and atomic start |
 | Workflow | `runtime/workflow/semantic-draft.mjs` | Semantic draft v3 validation, stable links, typed extensions, and provider defaults |
 | Workflow | `runtime/workflow/semantic-amendment.mjs` | Transactional Build-time agreement amendments that preserve canonical prose and completed work |
-| Workflow | `runtime/workflow/advance-runtime.mjs` | Protocol-v3 deterministic chaining and six-action model envelope |
+| Workflow | `runtime/workflow/advance-runtime.mjs` | Protocol-v4 deterministic chaining, owner outcomes, and safe user projection |
 | Workflow | `runtime/workflow/change-validation.mjs` | Traceability, change validation, and provider requirements |
 | Workflow | `runtime/workflow/land-journal.mjs` | Atomic apply identity, journal, rollback, verification, and cleanup |
 | Workflow | `runtime/workflow/land-runtime.mjs` | Multi-repository Land readiness, planning, pointers, and resume saga |
+| Workflow | `runtime/workflow/repository-delivery-saga.mjs` | Prepare-all, dependency-ordered, uncommitted multi-repository Apply and resume |
 | Workflow | `runtime/workflow/lease-runtime.mjs` | Agent resource lease acquisition, renewal, release, and cleanup |
 | Workflow | `runtime/workflow/packet-runtime.mjs` | Changed-surface calculation and bounded task/review packet generation |
 | Workflow | `runtime/workflow/repository-topology.mjs` | Repository discovery, selection, dependency validation, and workspace views |
@@ -142,12 +147,16 @@ logic independently testable.
 
 - Node.js 20.19 or newer
 - Git for isolated sandbox/worktree operations
-- OpenSpec CLI for schema validation and archival
+- npm access when the pinned OpenSpec CLI needs project-local preparation
 - Project-owned test and browser dependencies required by configured evidence
 
-Change Loop deliberately does not install Playwright, browser binaries, test
-frameworks, or application dependencies. Each application must lock and
-maintain its own versions.
+Change Loop prepares its pinned OpenSpec CLI under `.foundation/tools` when it
+is absent and runs declared repository setup commands in isolated workspaces.
+It does not globally install Playwright, browser binaries, test frameworks, or
+application dependencies; each application locks and maintains those versions.
+
+`.foundation/tools/` is machine-owned cache state: it is ignored by Git,
+recreated from the pinned runtime contract, and never part of a change packet.
 
 Check a project before starting:
 
@@ -233,8 +242,8 @@ claude-foundation doctor --stage prove --change <change>
 | `sandbox create <change> --all` | Creates selected repository sandboxes or repairs missing bindings while preserving valid worktrees | Advanced multi-repo primitive and recovery behind `advance` |
 | `sandbox sync <change> [--resolve <path,path>]` | Synchronizes a revised agreement and reconciles a moved target: a worktree replays onto the new commit, a copy fast-forwards what it left alone; `--resolve` accepts a merged double-edit | When requirements change during Build, or the target moved (another change landed) |
 | `land check <change>` | Checks proof freshness and landing readiness | Before accepting the change |
-| `land record <change> ...` | Binds an explicitly created child commit | After authorized commit/CI work |
-| `land resume <change>` | Rechecks the resumable Land saga | After a child PR or branch lands |
+| `land record <change> ...` | Legacy compatibility: binds a commit for an already-active commit-oriented transaction | Diagnosing/resuming a legacy transaction only |
+| `land resume <change>` | Rechecks a resumable Land saga | Diagnostic primitive; normal recovery repeats `/land` |
 | `land archive <change>` | Applies, verifies, archives, and safely cleans up | Completing an accepted change |
 | `handoff status <change>` | Shows external operations and Land disposition | Checking work owned by DevOps/SRE/security |
 | `handoff packet <change> [--id H00n]` | Emits one credential-free operator packet | Sending the exact operation to its named owner |
@@ -381,10 +390,11 @@ Proof records node diagnostics plus one aggregate graph proof, while Land
 persists a prepare-all snapshot and compare-and-swap revalidates it before each
 multi-remote mutation wave.
 
-Multiple remotes use ordered saga states rather than an atomicity claim.
-Change Loop verifies explicit child commits, optional CI state, dependency
-order, root gitlinks, and fresh composite proof. It never commits or pushes
-without separate authority. Composite routing comes from the declared
+Multiple writable repositories use ordered local saga states rather than an
+atomicity claim. Change Loop prepares every target first, applies dependency
+waves as uncommitted diffs, verifies HEAD/index invariants, and requires fresh
+composite proof. It never stages, commits, or pushes. Legacy active
+commit-oriented records retain their old resume route. Composite routing comes from the declared
 selection, not `state.repositories` cardinality: one selected non-root child
 still uses the saga. After isolation, a child record must bind its worktree,
 catalog target, access mode, and base head; a missing or invalid record fails

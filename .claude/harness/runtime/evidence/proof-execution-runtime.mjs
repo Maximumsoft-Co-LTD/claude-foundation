@@ -1,4 +1,5 @@
 import { acquireProcessLock } from "../core/process-lock.mjs";
+import { effectiveReviewAttemptLimit } from "../core/authority-policy.mjs";
 import {
   compareGateProgress,
   gateProgressValue,
@@ -307,6 +308,13 @@ export function createProofExecutionRuntime({
       progressFingerprint: outcome.progressFingerprint || null,
       repairCycle: Number(outcome.repairCycle || 0),
       repairPlanDigest: outcome.repairPlanDigest || null,
+      route: outcome.route || null,
+      decision: outcome.decision || null,
+      next: outcome.next || [],
+      repairPlan: outcome.repairPlan || null,
+      repairGraph: outcome.repairGraph || null,
+      invalidation: outcome.invalidation || null,
+      attemptedStrategies: outcome.attemptedStrategies || [],
       updatedAt: now()
     };
     const prior = readAdvance(id);
@@ -320,7 +328,14 @@ export function createProofExecutionRuntime({
       recoveryDecisionRef: value.recoveryDecisionRef || null,
       progressFingerprint: value.progressFingerprint || null,
       repairCycle: Number(value.repairCycle || 0),
-      repairPlanDigest: value.repairPlanDigest || null
+      repairPlanDigest: value.repairPlanDigest || null,
+      route: value.route || null,
+      decision: value.decision || null,
+      next: value.next || [],
+      repairPlan: value.repairPlan || null,
+      repairGraph: value.repairGraph || null,
+      invalidation: value.invalidation || null,
+      attemptedStrategies: value.attemptedStrategies || []
     });
     const progressed = comparable(prior) !== comparable(next);
     const path = proofAdvancePath(id);
@@ -688,23 +703,30 @@ export function createProofExecutionRuntime({
     // every allotted wave is delivered — prescribing it then hands the agent a
     // command guaranteed to block. Route the exhausted case to the external
     // recording template (a human verdict) instead.
-    const aiExhausted = stage === "review" &&
-      deliveredAiAttempts(id).length >=
-        Number(reviewPolicy(id).maxAiAttempts ?? 2);
+    const delivered = deliveredAiAttempts(id);
     return requests.map((request) => ({
       requestId: request.requestId,
       provider: request.provider,
+      status: request.status,
+      owner: request.status === "infrastructure-exhausted" ? "harness" :
+        stage === "review" ? "harness" : "external",
       command: stage === "review" && request.status === "requested" &&
-          !aiExhausted && request.mainSessionFallback
+          delivered.length < effectiveReviewAttemptLimit(
+            reviewPolicy(id), delivered, request.workspaceHash).maxAiAttempts &&
+          request.mainSessionFallback
         ? `claude-foundation authority run ${id} --request ${request.requestId} --subject-actor ${request.mainSessionFallback.subject?.identity || "<implementer>"} --main-session-model-family <family> --main-session-model <model>`
-        : stage === "review" && request.status === "requested" && !aiExhausted
+        : stage === "review" && request.status === "requested" &&
+            delivered.length < effectiveReviewAttemptLimit(
+              reviewPolicy(id), delivered, request.workspaceHash).maxAiAttempts
           ? `claude-foundation authority run ${id} --request ${request.requestId} --subject-actor implementation-agent`
         : `claude-foundation authority status ${id} --request ${request.requestId} --template`
     }));
   }
 
   function requestMissingAuthority(id, providers, type, workspaceHash, knownRequests) {
-    const openStatuses = ["requested", "dispatched", "pending"];
+    const openStatuses = [
+      "requested", "dispatched", "pending", "infrastructure-exhausted"
+    ];
     const existing = currentRequests(
       id, providers, workspaceHash, openStatuses, knownRequests);
     const byProvider = new Map(existing.map((request) => [request.provider, request]));

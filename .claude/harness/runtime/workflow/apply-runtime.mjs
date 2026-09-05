@@ -12,6 +12,7 @@ import {
 } from "../core/workspace-surface.mjs";
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 import { compositeRepositorySelection } from "../core/repository-binding.mjs";
+import { createRepositoryDeliverySaga } from "./repository-delivery-saga.mjs";
 
 // Whether an empty root diff is an acceptable apply outcome rather than an
 // error: true when the change selected any non-root repository, because the
@@ -32,12 +33,10 @@ export function telemetryUsageSatisfied(telemetry) {
 }
 
 export function telemetryLandIssue(policy, telemetry) {
-  if (!policy?.telemetry?.requireUsage || !telemetry || telemetryUsageSatisfied(telemetry))
-    return null;
-  const recovery = (telemetry.recoveryActions || [])
-    .map((action) => action.command).join("; ") || "import host usage events";
-  return `Land requires measured model usage, but telemetry is '${
-    telemetry.classification}'. Recover with: ${recovery}`;
+  // Usage measurement is operational evidence, not product correctness or
+  // delivery authority. Missing host telemetry stays explicit and recoverable
+  // but can never strand a proven local delivery.
+  return null;
 }
 
 export function assertLocalApply(initialState, options, fail) {
@@ -449,7 +448,10 @@ export function createApplyRuntime({
   transactions,
   loadRuntime,
   saveRuntime,
-  selectedRepositories,
+  selectedRepositories = (_id, state) => [{
+    id: "root", type: "git", mode: "write", path: root,
+    dependsOn: [], workspacePath: state?.workspace?.path || root
+  }],
   workspaceManifest,
   declaredSurfaceMatcher,
   currentChangeRelativePath,
@@ -458,10 +460,13 @@ export function createApplyRuntime({
   pathIdentity,
   pathMode,
   directoryHash,
+  fileDigest,
+  pathInside,
   applyTransactionRoot,
   copyPath,
   proofPath,
   readJson,
+  writeJson,
   stableHash,
   syncClaudeTelemetry,
   modelUsageRecorded,
@@ -488,6 +493,8 @@ export function createApplyRuntime({
   cleanupChangeLeases,
   now,
   archiveCheckpoint = () => {},
+  assertLandGrant = () => {},
+  consumeLandGrant = () => {},
   blockWithDecision,
   fail
 }) {
@@ -665,6 +672,39 @@ export function createApplyRuntime({
     fail
   });
 
+  const repositoryDelivery = createRepositoryDeliverySaga({
+    root,
+    transactions,
+    loadRuntime,
+    saveRuntime,
+    selectedRepositories,
+    git,
+    gitHead,
+    fileDigest,
+    directoryHash,
+    pathInside,
+    readJson,
+    writeJson,
+    stableHash,
+    proofPath,
+    now,
+    prepareRoot: prepareApplyTransaction,
+    executeRoot: (id, journal) => {
+      beginApplyJournal({
+        id, journal, safeRootPath, pathIdentity, pathMode,
+        saveApplyJournal, now, fail
+      });
+      executeApplyJournal({
+        id, journal, root, loadRuntime, saveRuntime, safeRootPath,
+        pathIdentity, pathMode, applyTransactionEntry,
+        rollbackApplyTransaction, saveApplyJournal, now, fail
+      });
+    },
+    verifyRoot: verifyAppliedProjection,
+    cleanupRoot: cleanupApplyTransaction,
+    fail
+  });
+
   function currentSpecText(capability) {
     const path = join(root, "openspec", "specs", capability, "spec.md");
     return existsSync(path) ? readFileSync(path, "utf8") : null;
@@ -799,7 +839,9 @@ export function createApplyRuntime({
   function applyArchiveWorkspace(id, readiness) {
     if (!["worktree", "copy"].includes(readiness.state.workspace?.mode))
       return readiness;
-    applySandbox(id, { controlPlane: true });
+    if (compositeRepositorySelection(selectedRepositories(id, readiness.state)))
+      repositoryDelivery.apply(id);
+    else applySandbox(id, { controlPlane: true });
     const journal = loadRuntime(id);
     journal.land = { ...journal.land, status: "code-applied", updatedAt: now() };
     saveRuntime(journal);
@@ -887,6 +929,9 @@ export function createApplyRuntime({
     state.land = { ...state.land, status: "archive-audited", updatedAt: now() };
     archiveCheckpoint("before-cleanup", state);
     state.workspace.cleanup = cleanupAppliedSandbox(id, state);
+    if (state.repositories &&
+        compositeRepositorySelection(selectedRepositories(id, state)))
+      repositoryDelivery.cleanup(id, state);
     if (state.repositories)
       state.repositoryCleanup = cleanupRepositorySandboxes(id, state);
     cleanupChangeLeases(id);
@@ -895,6 +940,7 @@ export function createApplyRuntime({
     delete state.workspace.baseline;
     state.land.status = "sandbox-cleaned";
     saveRuntime(state);
+    consumeLandGrant(id);
     archiveCheckpoint("after-cleanup", state);
     if (!state.archivedChangePath)
       console.error("WARNING: OpenSpec reported success but the archived change directory was not found");
@@ -912,6 +958,7 @@ export function createApplyRuntime({
       resumeArchivedChange(id, initial);
       return;
     }
+    assertLandGrant(id);
     const recoveredArchive = !existsSync(changePath(id)) &&
       archivedChangeRelativePath(id);
     if (recoveredArchive) {
@@ -925,9 +972,12 @@ export function createApplyRuntime({
     archiveCheckpoint("before-telemetry-drain", initial);
     try { syncClaudeTelemetry(id, { quiet: true }); } catch { /* warned below */ }
     archiveCheckpoint("after-telemetry-drain", initial);
+    // Explicit Land authority may recover an interrupted mechanical apply.
+    // Prepared/applying journals are rolled back safely; only a divergent
+    // manual-recovery journal becomes a user work decision.
+    recoverPendingApply(id, initial);
     let readiness = landCheck(id);
     if (readiness.archived) return;
-    assertMultiRepositoryArchiveReady(id, readiness.state);
     archiveCheckpoint("before-evidence-snapshot", readiness.state);
     snapshotArchiveEvidence(id);
     archiveCheckpoint("after-evidence-snapshot", readiness.state);
@@ -937,6 +987,7 @@ export function createApplyRuntime({
     // returns early by itself when the projection is already current.
     archiveCheckpoint("before-code-apply", readiness.state);
     readiness = applyArchiveWorkspace(id, readiness);
+    assertMultiRepositoryArchiveReady(id, readiness.state);
     archiveCheckpoint("after-code-apply", readiness.state);
     // Re-read rather than reuse readiness.state: on the no-sandbox path that
     // object predates the journal write above, and saving it below would

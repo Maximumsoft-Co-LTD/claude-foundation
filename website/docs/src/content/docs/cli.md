@@ -109,8 +109,8 @@ these directly for diagnosis or an explicit integration.
 | Command | Purpose |
 |---|---|
 | `land archive <change>` | Low-level apply, synchronize, audit, archive, and cleanup primitive; normal agents use `advance --through archived` |
-| `land record <change> --repo <id> --commit <sha> --decision-ref <ref>` | Bind a child repository commit after a recorded user decision |
-| `land resume <change>` | Resume an interrupted or multi-repository Land saga |
+| `land record <change> --repo <id> --commit <sha> --decision-ref <ref>` | Legacy compatibility for an active commit-oriented transaction |
+| `land resume <change>` | Diagnostic resume primitive; normal recovery repeats `/land` |
 
 ## Recovery and escape hatches
 
@@ -140,12 +140,12 @@ Wire-visible contracts are pinned in `.claude/harness/protocol.json`. A mixed-re
 | Pin | v3.5.6 |
 |---|---|
 | runtime | 3.5.6 |
-| runtime API | 30 |
+| runtime API | 31 |
 | semantic draft schema | 3 |
 | semantic amendment schema | 1 |
 | artifact defaults schema | 2 |
 | grounding schema | 1, 2, 3 |
-| advance protocol | 3 |
+| advance protocol | 4 |
 | provider protocol | 13 |
 | evidence schema | 1, 2 |
 | packet schema | 10 |

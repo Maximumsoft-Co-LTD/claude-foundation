@@ -13,16 +13,16 @@ Change Loop มีสี่จุดที่คนเข้ามาในว�
 | **Host attestation** | ปลอดภัยพอจะรันแบบไม่มีคนดูไหม | เฉพาะการรันแบบไม่มีคนดู |
 
 :::caution[Land บังคับอะไรจริง ๆ]
-Land ตรวจที่ **หลักฐาน** ไม่ใช่ที่ความยินยอม มันปฏิเสธที่จะไปต่อเมื่อหลักฐานขาด, stale,
-fail หรือ inconclusive และตรวจ digest ของ receipt ทุกตัวเทียบกับ proof manifest อีกครั้ง
-ก่อนจะ apply อะไรก็ตาม
+คำสั่ง `/land <change>` ที่ตรง change จะสร้าง grant ภายในซึ่งผูก session สำหรับ
+recoverable transaction นี้หนึ่งครั้ง ส่วน readiness ตรวจ **หลักฐาน** โดยไม่ขอ
+consent receipt รอบที่สอง หลักฐานที่ขาด, stale, fail หรือ inconclusive ยังหยุดก่อน
+Apply และ digest ทุกตัวถูกตรวจเทียบ proof manifest อีกครั้ง
 
-agent ถูกสั่งแยกต่างหากให้อธิบายผลกระทบและเสนอทางเลือกให้คุณ ตรวจดู ไปต่อ หรือหยุดพัก
-ก่อนจะ land — แต่นั่นคือคำสั่งที่ agent ปฏิบัติตาม ไม่ใช่กลอนที่ harness ล็อกไว้
-คำสั่งที่ **บังคับ** ให้มีการตัดสินใจของคนที่บันทึกไว้จริงคือกลุ่มคำสั่งต่อเนื่อง ได้แก่
-`land record`, `budget continue`, `change abandon`, `change waive` และ
-`agents release --force` ซึ่งแต่ละตัวต้องมี `--decision-ref`
-ระบุการตัดสินใจที่คุณทำจริง
+User ไม่ต้องสร้าง grant หรือ decision-reference command เอง `land record` ต้องมี
+`--decision-ref` เฉพาะ compatibility ของ commit-oriented transaction แบบ legacy
+ที่ active อยู่ก่อนแล้ว ส่วน continuation ขั้นสูงอื่น เช่น `budget continue`,
+`change abandon`, `change waive` และ `agents release --force` ยังบันทึกการตัดสินใจ
+ที่ให้อำนาจตามเดิม
 
 `change waive` คือทางออกที่ถูกบันทึกไว้สำหรับ gate ที่รันแล้ว fail:
 มันถอนการบังคับใช้ capability หนึ่งตัวตามการตัดสินใจชัดเจนของคุณ

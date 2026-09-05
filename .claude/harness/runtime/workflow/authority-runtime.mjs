@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { acquireProcessLock, isProcessAlive } from "../core/process-lock.mjs";
+import { effectiveReviewAttemptLimit } from "../core/authority-policy.mjs";
 
 export function authorityRequestDisplayValue(request, limit = 8192) {
   const packetBytes = Buffer.byteLength(JSON.stringify(request.packet || null));
@@ -100,7 +101,8 @@ export function pendingAuthorityRequest(entries, selection) {
     const value = entry.value;
     if (value.type === selection.type && value.provider === selection.provider &&
         value.workspaceHash === selection.workspaceHash &&
-        ["requested", "dispatched", "pending"].includes(value.status))
+        ["requested", "dispatched", "pending", "infrastructure-exhausted"]
+          .includes(value.status))
       return value;
   }
   return null;
@@ -215,6 +217,15 @@ export function resetInfrastructureAuthorityOperation(context, id, flags = {}) {
   if (!status.ok)
     context.fail(`configured reviewer '${status.reviewer}' still fails its ${status.check} diagnosis: ${status.detail}`);
   const result = context.acknowledgeInfrastructureAttempts(id, decisionRef);
+  for (const entry of context.authorityStore?.list(id) || []) {
+    if (entry.value.status !== "infrastructure-exhausted") continue;
+    context.authorityStore.replace(entry, {
+      ...entry.value,
+      status: "requested",
+      infrastructureResetAt: context.now?.() || null,
+      infrastructureResetDecisionRef: decisionRef
+    });
+  }
   context.output.log(`AUTHORITY ${id}: infrastructure retries reset\n  reviewer: ${
     status.reviewer} (${status.check})\n  acknowledged: ${
     result.digests.length} attempt(s)\n  decision: ${decisionRef
@@ -661,9 +672,8 @@ export function createAuthorityRuntime({
     const routing = reviewPolicy(id);
     const historySnapshot = reviewHistoryState(id);
     const deliveredSnapshot = deliveredAiAttempts(id, historySnapshot);
-    const promotesLow = routing.tier === "low" && deliveredSnapshot.length >= 1 &&
-      request.workspaceHash !== deliveredSnapshot.at(-1).workspaceHash;
-    const maxAiAttempts = promotesLow ? 2 : Number(routing.maxAiAttempts || 2);
+    const { promotesLow, maxAiAttempts } = effectiveReviewAttemptLimit(
+      routing, deliveredSnapshot, request.workspaceHash);
     const reviewSettings = foundationPolicy().review || {};
     const configuredFallbacks = (Array.isArray(reviewSettings.fallbackReviewers)
       ? reviewSettings.fallbackReviewers
@@ -1244,6 +1254,12 @@ export function createAuthorityRuntime({
           value: runAuthorityReviewerUnlocked(id, nextFlags) };
       }
       if (!nextReviewer) {
+        authorityStore.replace(failedEntry, {
+          ...failedRequest,
+          status: "infrastructure-exhausted",
+          infrastructureExhaustedAt: now(),
+          infrastructureError: report.summary
+        });
         const exhausted = {
           status: "configured-reviewer-infrastructure-exhausted",
           changeId: id,
@@ -1665,7 +1681,7 @@ export function createAuthorityRuntime({
   const resetInfrastructureAuthorityUnlocked =
     resetInfrastructureAuthorityOperation.bind(null, {
       validate, reviewerStatus, acknowledgeInfrastructureAttempts, fail,
-      output: console
+      authorityStore, now, output: console
     });
 
   const resetInfrastructureAuthority = lockedAuthorityOperation(

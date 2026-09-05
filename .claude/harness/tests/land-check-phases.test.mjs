@@ -9,7 +9,7 @@ import {
 
 const HASH = "workspacehash0000000000000000000000000000000000000000000000000000";
 
-test("land advance handles single repositories and multi-repository resume states", () => {
+test("land advance handles single repositories and multi-repository resume states", async () => {
   const calls = [];
   const dependencies = (states, plan = {}, selected = [{ id: "root" }]) => ({
     loadRuntime: () => states.shift(),
@@ -20,31 +20,44 @@ test("land advance handles single repositories and multi-repository resume state
     landPlanValue: (id) => { calls.push(["plan", id]); return plan; }
   });
 
-  advanceLandOperation(dependencies([{ repositories: {} }]), "single");
+  await advanceLandOperation(dependencies([{ repositories: {} }]), "single");
   assert.deepEqual(calls.splice(0), [["check", "single"], ["archive", "single"]]);
 
-  advanceLandOperation(dependencies([
+  await advanceLandOperation(dependencies([
     { repositories: { root: {}, api: {} } }, { status: "building" }
   ], {}, [{ id: "root" }, { id: "api" }]), "building");
-  assert.deepEqual(calls.splice(0), [["resume", "building"]]);
+  assert.deepEqual(calls.splice(0), [["plan", "building"], ["resume", "building"]]);
 
-  advanceLandOperation(dependencies([
+  await advanceLandOperation(dependencies([
     { repositories: { root: {}, api: {} } }, { status: "proven" }
   ], { readyToArchive: false }, [{ id: "root" }, { id: "api" }]), "waiting");
-  assert.deepEqual(calls.splice(0), [["resume", "waiting"], ["plan", "waiting"]]);
+  assert.deepEqual(calls.splice(0), [
+    ["plan", "waiting"], ["resume", "waiting"], ["plan", "waiting"]
+  ]);
 
-  advanceLandOperation(dependencies([
+  await advanceLandOperation(dependencies([
     { repositories: { root: {}, api: {} } }, { status: "proven" }
   ], { readyToArchive: true }, [{ id: "root" }, { id: "api" }]), "ready");
   assert.deepEqual(calls.splice(0), [
-    ["resume", "ready"], ["plan", "ready"], ["archive", "ready"]
+    ["plan", "ready"], ["resume", "ready"], ["plan", "ready"],
+    ["archive", "ready"]
   ]);
 
-  advanceLandOperation(dependencies([
+  await advanceLandOperation(dependencies([
     { repositories: { api: {} } }, { status: "proven" }
   ], { readyToArchive: true }, [{ id: "api" }]), "single-child");
-  assert.deepEqual(calls.slice(-3), [
-    ["resume", "single-child"], ["plan", "single-child"], ["archive", "single-child"]
+  assert.deepEqual(calls.slice(-4), [
+    ["plan", "single-child"], ["resume", "single-child"],
+    ["plan", "single-child"], ["archive", "single-child"]
+  ]);
+
+  await advanceLandOperation(dependencies([
+    { repositories: { root: {}, api: {} } }
+  ], { strategy: "workspace-uncommitted" }, [
+    { id: "root" }, { id: "api" }
+  ]), "local-saga");
+  assert.deepEqual(calls.slice(-2), [
+    ["plan", "local-saga"], ["archive", "local-saga"]
   ]);
 });
 
