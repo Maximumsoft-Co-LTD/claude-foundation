@@ -90,7 +90,8 @@ jobs:
           trap 'rm -rf "$consumer"' EXIT
           bash install.sh "$consumer" --yes
           cd "$consumer"
-          node .claude/harness/foundation.mjs doctor
+          # Validate install readiness without requiring a paid reviewer host.
+          node .claude/harness/foundation.mjs doctor --stage change
 
   deterministic:
     runs-on: ubuntu-latest
