@@ -28,6 +28,24 @@ test('change sanitizer retains history-only repository rows', () => {
   assert.deepEqual(rows[0].commits, [{ date: '2026-08-16', n: 2 }]);
 });
 
+test('run timing retains every measured phase, including zero, and rejects unknown fields', () => {
+  const [run] = cleanRuns([{ id: 'measured', operationMs: {
+    change: 0, build: 120000, prove: 3000, land: 500, unknown: 100
+  } }]);
+  assert.deepEqual(run.operationMs, { change: 0, build: 120000, prove: 3000, land: 500 });
+});
+
+test('run timing never coerces missing, invalid, or unsafe measurements into evidence', () => {
+  for (const value of [null, undefined, -1, 0.5, NaN, Infinity, '100', true,
+    Number.MAX_SAFE_INTEGER + 1]) {
+    const [run] = cleanRuns([{ id: 'invalid', operationMs: {
+      change: value, build: value, prove: value, land: value
+    } }]);
+    assert.deepEqual(run.operationMs, {}, String(value));
+  }
+  assert.deepEqual(cleanRuns([{ id: 'missing', operationMs: null }])[0].operationMs, {});
+});
+
 test('range sanitizer rejects malformed rows and normalizes numeric boundaries', () => {
   assert.deepEqual(cleanRanges(null), []);
   assert.deepEqual(cleanRanges([null, [1], ['3.9', '8.2'], [-2, -1], [9, 4],

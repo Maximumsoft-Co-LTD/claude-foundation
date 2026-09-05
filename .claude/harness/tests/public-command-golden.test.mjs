@@ -25,7 +25,7 @@ function publicCliRows() {
 
 test("golden fixture freezes every public host and CLI command contract", () => {
   assert.equal(fixture.protocol, "foundation-public-command-golden-v1");
-  const described = JSON.parse(execFileSync("sh", ["./cli.sh", "describe", "--json"], {
+  const described = JSON.parse(execFileSync("bash", ["./cli.sh", "describe", "--json"], {
     cwd: root, encoding: "utf8",
     env: { ...process.env, CLAUDE_FOUNDATION_PROJECT: root }
   }));
@@ -39,7 +39,7 @@ test("golden fixture freezes every public host and CLI command contract", () => 
 
 test("every frozen public command retains a successful non-mutating help route", () => {
   for (const row of publicCliRows()) {
-    const result = spawnSync("sh", ["./cli.sh", ...row.name.split(" "), "--help"], {
+    const result = spawnSync("bash", ["./cli.sh", ...row.name.split(" "), "--help"], {
       cwd: root, encoding: "utf8",
       env: { ...process.env, CLAUDE_FOUNDATION_PROJECT: root }
     });

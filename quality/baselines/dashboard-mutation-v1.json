@@ -1,13 +1,13 @@
 {
   "protocol": "foundation-mutation-baseline-v1",
-  "generatedAt": "2026-08-27T00:00:00.000Z",
+  "generatedAt": "2026-09-05T06:07:44.000Z",
   "tool": "@stryker-mutator/core@9.6.1",
   "scope": "dashboard",
   "counts": {
-    "killed": 471,
+    "killed": 490,
     "timeout": 5,
     "survived": 189,
     "noCoverage": 60
   },
-  "score": 65.66
+  "score": 66.53
 }
