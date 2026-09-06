@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Build phase-guard refusals name the refused operation, the isolated
+  workspace, and the exact `cd <workspace> &&` prefix, so an agent repairs a
+  blocked shell command instead of retrying it unchanged.
+- Exit-status expansions such as `${PIPESTATUS[0]}` with a literal subscript
+  no longer read as dynamic paths; computed subscripts, `$name` path segments,
+  command substitution, backticks, and home expansion stay refused.
+- Workspaces whose path contains spaces or apostrophes anchor correctly through
+  one shell unquoter, and a quoted redirect target remains visible to the
+  mutation classifier.
+
+### Changed
+
+- A Build shell anchor may target a literal directory inside the isolated
+  workspace when joined by `&&`; `;` is accepted only for the workspace root.
+  `claude-foundation exec` and the hook share the same quoting.
+
 ## [3.5.9] - 2026-09-06
 
 ### Fixed
