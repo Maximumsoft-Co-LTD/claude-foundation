@@ -121,7 +121,8 @@ external authority.
 Build writes only inside the declared isolated workspace. Git projects normally
 use detached worktrees; a dirty target or non-Git project uses an isolated copy.
 This is workspace integrity, not OS process, network, or secret containment.
-Mutating shell commands must start in the exact workspace. The phase guard and
+Mutating shell commands must start with `cd` to the workspace root or a literal
+directory inside it, joined by `&&`. The phase guard and
 `claude-foundation exec` reject direct path escapes and symlink traversal, but
 the host still owns process isolation for indirect or dynamically computed
 effects.

@@ -1,5 +1,8 @@
 #!/usr/bin/env sh
 set -eu
+# The session-context hook exports these into any Claude Code shell; a recorded
+# phase row would then be judged against this session instead of the fixture.
+unset FOUNDATION_CLAUDE_SESSION_ID FOUNDATION_CLAUDE_TRANSCRIPT_PATH
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 . "$ROOT/.claude/tests/lib/assert.sh"
@@ -80,6 +83,35 @@ assert_contains "Build blocks an unanchored formatter mutation" "$out" \
 out="$(invoke build block "$TMP/workspace" \
   "$(bash_event "cd $TMP/workspace && npm run generate")")"
 assert_eq "Build permits an anchored package script for the isolated workspace" "" "$out"
+
+out="$(invoke build block "$TMP/workspace" "$(bash_event 'npx tsc --noEmit 2>&1 | tail -20')")"
+assert_contains "Build refusal names the refused operation" "$out" '(refused: npx)'
+assert_contains "Build refusal names the workspace prefix to use" "$out" \
+  "start the command with \`cd $TMP/workspace && \`"
+
+mkdir -p "$TMP/workspace/packages/app"
+out="$(invoke build block "$TMP/workspace" \
+  "$(bash_event "cd $TMP/workspace/packages/app && npm run lint")")"
+assert_eq "Build permits a package script anchored in a workspace subdirectory" "" "$out"
+
+out="$(invoke build block "$TMP/workspace" \
+  "$(bash_event "cd $TMP/workspace && npx tsc --noEmit 2>&1 | tail -20; echo tsc-exit=\${PIPESTATUS[0]}")")"
+assert_eq "Build permits an exit-status expansion after an anchored check" "" "$out"
+
+out="$(invoke build block "$TMP/workspace" \
+  "$(bash_event "cd $TMP/workspace/\$X && rm -rf ./build")")"
+assert_contains "Build refuses an anchor that expands at run time" "$out" \
+  'dynamic path that cannot be proven isolated'
+
+out="$(invoke build block "$TMP/workspace" \
+  "$(bash_event "cd $TMP/workspace/nope; rm -rf ./build")")"
+assert_contains "Build refuses a missing subdirectory anchor joined by a semicolon" "$out" \
+  'continues even when the directory change fails'
+
+out="$(invoke build block "$TMP/workspace" \
+  "$(bash_event "cd $TMP/workspace && npm run test; echo \${PIPESTATUS[\$(id)]}")")"
+assert_contains "Build refuses a computed PIPESTATUS subscript" "$out" \
+  'dynamic path that cannot be proven isolated'
 
 out="$(invoke build block "$TMP/workspace" \
   "$(bash_event "cd $TMP/workspace && /usr/bin/touch inside.txt")")"

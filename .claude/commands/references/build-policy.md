@@ -5,7 +5,7 @@ primitives unless its recovery explicitly names one. Update `tasks.md` only for
 the returned task after focused checks; the coordinator owns planning and phase
 transitions.
 
-For a mutating Bash command, begin with `cd <exact workspace> && ...`; the live
+For a mutating Bash command, begin with `cd <workspace or a directory inside it> && ...`; the live
 phase guard rejects an unanchored command, absolute outside operands, later
 directory escapes, and symlink traversal. Run returned long commands through
 `claude-foundation exec`; it derives the active phase and starts Build children

@@ -19,6 +19,7 @@ requested diagnosis.
 Read `references/build-policy.md` for repair and `references/build-dispatch.md`
 only for parallel work or leases.
 
-Edit only allowed sandbox paths. Host owns leases and tasks. Declare new files
+Edit only allowed sandbox paths. Host owns leases and tasks. Start
+script-running shell checks with `cd <workspace> &&`. Declare new files
 in `[paths:]`; move unauthorized work to `handoffs.yaml`. Never expose JSON,
 archive, commit, or Land. Report behavior, checks, remaining risk, and outcome.

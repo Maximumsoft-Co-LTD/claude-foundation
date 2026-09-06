@@ -91,46 +91,152 @@ test("Land leaves read-only commands alone", () => {
   assert.equal(shellMutationViolation("land", {}, "git log 2>/dev/null"), null);
 });
 
+const UNANCHORED = "Build shell mutations must start inside the isolated workspace";
+const DYNAMIC = "Build shell mutation contains a dynamic path that cannot be proven isolated";
+const ESCAPE = "Build shell mutation contains an obvious path outside the isolated workspace";
+const WS = { FOUNDATION_WORKSPACE_ROOT: "/workspace" };
+
 test("shell mutation policy requires an isolated Build workspace", () => {
   assert.equal(shellMutationViolation("build", {}),
     "Build shell mutations require an isolated workspace");
-  assert.equal(shellMutationViolation("build", {
-    FOUNDATION_WORKSPACE_ROOT: "/workspace"
-  }), null);
-  assert.equal(shellMutationViolation("build", {
-    FOUNDATION_WORKSPACE_ROOT: "/workspace"
-  }, "npm install"), "Build shell mutations must start inside the isolated workspace");
-  assert.equal(shellMutationViolation("build", {
-    FOUNDATION_WORKSPACE_ROOT: "/workspace"
-  }, "cd /workspace && npm install"), null);
-  assert.equal(shellMutationViolation("build", {
-    FOUNDATION_WORKSPACE_ROOT: "/workspace"
-  }, "cd /workspace && /usr/bin/touch nested/file"), null);
-  assert.equal(shellMutationViolation("build", {
-    FOUNDATION_WORKSPACE_ROOT: "/workspace"
-  }, "cd /workspace && echo x > /outside.txt"),
-  "Build shell mutation contains an obvious path outside the isolated workspace");
-  assert.equal(shellMutationViolation("build", {
-    FOUNDATION_WORKSPACE_ROOT: "/workspace"
-  }, "cd /workspace && cp ../secret ./secret"),
-  "Build shell mutation contains an obvious path outside the isolated workspace");
+  assert.equal(shellMutationViolation("build", WS), null);
+  assert.match(shellMutationViolation("build", WS, "npm install"), new RegExp(`^${UNANCHORED}`));
+  assert.equal(shellMutationViolation("build", WS, "cd /workspace && npm install"), null);
+  assert.equal(shellMutationViolation("build", WS,
+    "cd /workspace && /usr/bin/touch nested/file"), null);
+  assert.match(shellMutationViolation("build", WS,
+    "cd /workspace && echo x > /outside.txt"), new RegExp(`^${ESCAPE}`));
+  assert.match(shellMutationViolation("build", WS,
+    "cd /workspace && cp ../secret ./secret"), new RegExp(`^${ESCAPE}`));
   for (const command of [
     "cd /workspace && touch /outside.txt",
     "cd /workspace && cp source /outside.txt",
     "cd /workspace && mv source /outside.txt",
     "cd /workspace && rm /outside.txt",
     "cd /workspace && cd /tmp && touch outside.txt"
-  ]) assert.equal(shellMutationViolation("build", {
-    FOUNDATION_WORKSPACE_ROOT: "/workspace"
-  }, command), "Build shell mutation contains an obvious path outside the isolated workspace",
-  command);
+  ]) assert.match(shellMutationViolation("build", WS, command), new RegExp(`^${ESCAPE}`), command);
   for (const command of [
     "cd /workspace && cp $SOURCE ./source",
     "cd /workspace && cp $(pwd)/source ./source",
     "cd /workspace && cp `pwd`/source ./source",
     "cd /workspace && cp ~/source ./source"
-  ]) assert.equal(shellMutationViolation("build", {
-    FOUNDATION_WORKSPACE_ROOT: "/workspace"
-  }, command), "Build shell mutation contains a dynamic path that cannot be proven isolated");
+  ]) assert.match(shellMutationViolation("build", WS, command), new RegExp(`^${DYNAMIC}`), command);
   assert.equal(shellMutationViolation("unknown", {}), null);
+});
+
+// A consumer agent retried the same blocked verification command five times:
+// the reason named a rule, not the workspace, the refused word, or the prefix
+// the guard wanted. Every Build refusal must carry its own repair route.
+test("Build refusals name the refused operation, the workspace, and the required prefix", () => {
+  assert.equal(shellMutationViolation("build", WS,
+    'npx tsc --noEmit 2>&1 | tail -20; npm run lint'),
+  `${UNANCHORED} (refused: npx, npm run); ` +
+  "start the command with `cd /workspace && ` or `cd /workspace/<subdir> && `");
+  assert.equal(shellMutationViolation("build", WS, "cd /workspace && cp $SOURCE ./source"),
+    `${DYNAMIC} (\`$SOURCE\`); use literal paths inside /workspace`);
+  assert.equal(shellMutationViolation("build", WS, "cd /workspace && cp $(pwd)/source ./source"),
+    `${DYNAMIC} (\`$(…)\`); use literal paths inside /workspace`);
+  assert.equal(shellMutationViolation("build", WS, "cd /workspace && echo x > /outside.txt"),
+    `${ESCAPE} (\`/outside.txt\`); keep every mutation target inside /workspace`);
+  assert.equal(shellMutationViolation("build", WS, "cd /workspace && cp ../secret ./secret"),
+    `${ESCAPE} (\`../secret\`); keep every mutation target inside /workspace`);
+  assert.equal(shellMutationViolation("build", { FOUNDATION_WORKSPACE_ROOT: "/my ws" }, "npm install"),
+    `${UNANCHORED} (refused: npm install); ` +
+    "start the command with `cd '/my ws' && ` or `cd '/my ws/<subdir>' && `");
+  assert.equal(shellMutationViolation("build", WS, "cd /workspace/nope; rm -rf ./build"),
+    `${UNANCHORED} (\`cd /workspace/nope;\` continues even when the directory change fails); ` +
+    "start the command with `cd /workspace/nope && `");
+});
+
+// Exit-status expansions expand to integers. The blocked consumer command
+// reported ${PIPESTATUS[0]} after a piped check, which is verification, not a
+// mutation target the guard cannot prove.
+test("Build allows exit-status expansions and still refuses real dynamic paths", () => {
+  for (const command of [
+    'cd /workspace && npx tsc --noEmit 2>&1 | tail -20; echo "tsc-exit=${PIPESTATUS[0]}"',
+    'cd /workspace && npm run lint 2>&1 | tail -20; echo "lint=${PIPESTATUS[@]}"',
+    "cd /workspace && npm test 2>&1 | tail -5; echo $PIPESTATUS",
+    "cd /workspace && npm test 2>&1 | tail -5; echo ${pipestatus[1]}"
+  ]) assert.equal(shellMutationViolation("build", WS, command), null, command);
+  // bash evaluates array subscripts, so anything but a literal index would run.
+  for (const command of [
+    'cd /workspace && npm run lint; echo "${PIPESTATUS_FILE}"',
+    "cd /workspace && cp ${SOURCE} ./source",
+    "cd /workspace && cp ${#PIPESTATUS[@]} ./source",
+    "cd /workspace && npm run test; echo ${PIPESTATUS[$(id >/tmp/pwned)]}",
+    "cd /workspace && npm run test; echo ${PIPESTATUS[$(id)]}",
+    "cd /workspace && npm run test; echo ${PIPESTATUS[`touch /tmp/pwn`]}",
+    "cd /workspace && npm run test; echo ${PIPESTATUS[i]}"
+  ]) assert.match(shellMutationViolation("build", WS, command), new RegExp(`^${DYNAMIC}`), command);
+});
+
+// Monorepo checks run from a package directory. Any literal absolute directory
+// inside the workspace is as provable as the root; relative and parent-escaping
+// anchors remain unprovable.
+test("Build accepts an anchor inside the workspace and refuses unprovable anchors", () => {
+  for (const command of [
+    "cd /workspace/packages/app && npm run lint",
+    "pushd /workspace/packages/app && npm run lint",
+    'cd "/workspace/packages/app" && npm run lint',
+    "cd '/workspace/packages/app' && npm run lint",
+    "cd /workspace/ && npm run lint",
+    "cd /workspace; npm run lint",
+    "cd /workspace/ ; npm run lint"
+  ]) assert.equal(shellMutationViolation("build", WS, command), null, command);
+  for (const command of [
+    "cd packages/app && npm run lint",
+    "cd /workspace-other/app && npm run lint",
+    "cd /workspace/../etc && npm run lint",
+    "cd /workspace/packages/app; cd /tmp && npm run lint"
+  ]) assert.notEqual(shellMutationViolation("build", WS, command), null, command);
+  assert.match(shellMutationViolation("build", WS, "cd /workspace-other/app && npm run lint"),
+    new RegExp(`^${UNANCHORED}`));
+  // Below the root the directory may not exist; a failed `cd` followed by `;`
+  // would run the mutation in the shell's inherited cwd, the main checkout.
+  for (const command of [
+    "cd /workspace/nope; rm -rf ./build",
+    "pushd /workspace/missing; npm install",
+    "cd /workspace/packages/app; cd /tmp && npm run lint"
+  ]) assert.match(shellMutationViolation("build", WS, command),
+    /continues even when the directory change fails/, command);
+  // An anchor is only literal when nothing in it expands at run time.
+  for (const command of [
+    "cd /workspace/$X && rm -rf ./build",
+    'cd "/workspace/$X" && rm -rf ./build',
+    "cd /workspace/${X} && npm install",
+    "cd /workspace && cp source /workspace/$X"
+  ]) assert.match(shellMutationViolation("build", WS, command), new RegExp(`^${DYNAMIC}`), command);
+  assert.equal(shellMutationViolation("build", WS, 'cd /workspace && git commit -m "$MSG"'), null);
+});
+
+// Workspaces under macOS "My Project" style directories carry spaces or
+// apostrophes. The anchor must accept every quoting a shell or `exec` emits
+// for them, and the refusal hint must be a prefix the policy itself accepts.
+test("Build anchors accept quoted workspaces and the hint they are given", () => {
+  const spaced = { FOUNDATION_WORKSPACE_ROOT: "/my ws" };
+  for (const command of [
+    'cd "/my ws" && npm run lint',
+    "cd '/my ws' && npm run lint",
+    "cd '/my ws/packages/app' && npm run lint",
+    'cd "/my ws" && echo x > "/my ws/out.txt"',
+    'cd "/my\\ ws" && npm run lint'
+  ]) assert.equal(shellMutationViolation("build", spaced, command), null, command);
+  assert.match(shellMutationViolation("build", spaced, 'cd "/my ws" && echo x > "/other dir/out.txt"'),
+    new RegExp(`^${ESCAPE} \\(\`/other dir/out.txt\`\\)`));
+  assert.match(shellMutationViolation("build", spaced, "cd '/my ws' && cp a '/other dir/b'"),
+    new RegExp(`^${ESCAPE}`));
+  const apostrophe = { FOUNDATION_WORKSPACE_ROOT: "/it's/ws" };
+  assert.equal(shellMutationViolation("build", apostrophe,
+    "cd '/it'\\''s/ws' && npm run lint"), null);
+  assert.equal(shellMutationViolation("build", apostrophe, "npm run lint"),
+    `${UNANCHORED} (refused: npm run); ` +
+    "start the command with `cd '/it'\\''s/ws' && ` or `cd '/it'\\''s/ws/<subdir>' && `");
+});
+
+test("shell mutation detection keeps a quoted operand as an operand", () => {
+  assert.deepEqual(mutatingShellOperations('echo x > "/etc/x"'), ["redirect"]);
+  assert.deepEqual(mutatingShellOperations("echo x > '/etc/x'"), ["redirect"]);
+  assert.deepEqual(mutatingShellOperations('echo "a > b"'), []);
+  assert.deepEqual(mutatingShellOperations('sh "scripts/update.sh"'), ["sh"]);
+  assert.deepEqual(mutatingShellOperations("bash scripts/update.sh"), ["bash"]);
 });

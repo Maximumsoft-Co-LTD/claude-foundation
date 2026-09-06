@@ -61,16 +61,24 @@ only for a controlled rollout; `auto` is the normal fail-closed lifecycle mode.
 
 The Bash inspection is a conservative command-word screen, not a shell sandbox.
 During Build, an obviously mutating Bash command must begin with `cd`/`pushd`
-to the exact isolated workspace. It checks recognized filesystem operands,
+to a literal absolute directory that is the isolated workspace or inside it,
+joined by `&&`; `;` is accepted only for the workspace root, which the harness
+guarantees exists. The event's cwd is never trusted. It checks recognized filesystem operands,
 later directory changes, redirection targets, and canonical symlink targets;
 literal paths outside that workspace are blocked before execution. The
 `claude-foundation exec` runtime uses the same policy, derives its phase from
 change state, and starts Build children in the canonical workspace. Use
 structured Edit/Write operations where possible.
-Formatter write modes, package-manager scripts, and shell-script runners enter
-the same policy. Dynamic mutation paths using environment variables, command
-substitution, backticks, or home expansion are rejected because their target
-cannot be proven isolated before execution.
+Formatter write modes, package-manager scripts (`npm run`, `npx`, and peers,
+including read-only checks such as `npx tsc --noEmit`), and shell-script
+runners enter the same policy. Dynamic mutation paths using environment
+variables, command substitution, backticks, or home expansion are rejected
+because their target cannot be proven isolated before execution; exit-status
+expansions such as `${PIPESTATUS[0]}` with a literal subscript are integers, not
+paths, and stay allowed.
+Every Build refusal names the refused operation or fragment, the workspace, and
+the prefix or path shape that repairs the command, so an agent can continue
+without asking the user or retrying unchanged.
 Host process isolation remains required for shell commands, network authority,
 and indirect mutations.
 

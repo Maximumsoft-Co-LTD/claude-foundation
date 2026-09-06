@@ -3,7 +3,9 @@ import {
   appendFileSync, existsSync, mkdirSync, realpathSync, statSync
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { shellMutationViolation } from "../core/shell-mutation-policy.mjs";
+import {
+  shellDisplayArgument as displayArgument, shellMutationViolation
+} from "../core/shell-mutation-policy.mjs";
 
 function phasesForStatus(status) {
   if (["change", "resolved"].includes(status)) return ["change"];
@@ -32,12 +34,6 @@ function canonicalTarget(value, base) {
   }
   try { return resolve(realpathSync(cursor), ...suffix); }
   catch { return null; }
-}
-
-function displayArgument(value) {
-  const text = String(value);
-  return /^[A-Za-z0-9_./:@%+=,-]+$/.test(text)
-    ? text : `'${text.replaceAll("'", "'\\''")}'`;
 }
 
 function commandForPolicy(commandArgs, workspace) {

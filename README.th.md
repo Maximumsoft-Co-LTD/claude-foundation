@@ -244,7 +244,7 @@ reuse ส่วนตัวที่ล้มจะเก็บ sandbox ไว�
 แล้วซ้ำหรือส่ง recovery command ให้ user
 
 ถ้าต้องใช้ Bash โดยตรงระหว่าง Build ให้เริ่มคำสั่งที่แก้ไฟล์ด้วย
-`cd <exact-workspace> && ...` phase guard จะบล็อก package manager หรือ formatter
+`cd <workspace-or-subdirectory> && ...` phase guard จะบล็อก package manager หรือ formatter
 ที่ไม่ได้ผูกกับ workspace, path ที่หนีด้วย `..`, การ `cd` ออกภายหลัง, filesystem
 operand แบบ absolute และการเขียนผ่าน symlink ออกนอก workspace ก่อน shell เริ่ม
 ทำงาน `claude-foundation exec` จะ derive phase จาก runtime state ใช้นโยบายเดียวกัน

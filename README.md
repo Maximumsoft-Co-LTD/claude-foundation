@@ -258,7 +258,7 @@ the sandbox and is retried by the harness without repeating ready siblings or
 handing a recovery command to the user.
 
 For direct Bash use during Build, start an obviously mutating command with
-`cd <exact-workspace> && ...`. The phase guard blocks unanchored package-manager
+`cd <workspace-or-subdirectory> && ...`. The phase guard blocks unanchored package-manager
 or formatter mutations, `..` escapes, later `cd` escapes, absolute filesystem
 operands, and writes through symlinks outside the workspace before the shell
 starts. `claude-foundation exec` derives the phase from runtime state, applies
