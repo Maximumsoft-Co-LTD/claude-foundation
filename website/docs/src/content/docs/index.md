@@ -58,5 +58,5 @@ Change Loop deliberately splits responsibility so that no single party can both 
 - [Consumer quality gates](/docs/consumer-quality/) — add CRAP, mutation, baselines, and debt without widening Change scope
 
 :::note[Version]
-These docs track Change Loop **v3.5.9** — runtime API 32, provider protocol 13. Receipts recorded by earlier versions read as `provider-version-stale` and must be re-proven.
+These docs track Change Loop **v3.5.10** — runtime API 32, provider protocol 13. Receipts recorded by earlier versions read as `provider-version-stale` and must be re-proven.
 :::
