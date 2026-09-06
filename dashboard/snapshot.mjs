@@ -9,7 +9,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 function readJson(path, fallback = null) {
   try { return JSON.parse(readFileSync(path, "utf8")); }
@@ -116,13 +116,17 @@ function proofIsFresh(proof, providers, receiptDigests) {
 
 function projectedReceiptStatus(providers, proof, proofFresh) {
   if (providers.some((item) => ["fail", "error"].includes(item.status))) return "failing";
-  if (proofFresh) return proof.status;
+  // This collector can validate receipt integrity, not live workspace inputs.
+  // A recorded pass must never be presented as current proof.
+  if (proofFresh) return "unverified";
   return providers.length ? "partial" : "missing";
 }
 
 function receiptProjection(root, id) {
   const dir = join(root, ".foundation", "receipts", id);
-  if (!existsSync(dir)) return { status: "missing", providers: [] };
+  if (!existsSync(dir)) return {
+    status: "missing", recordedStatus: null, freshness: "stale-or-missing", providers: []
+  };
   const { proof, providers, receiptDigests } = receiptDirectoryProjection(dir);
   const proofFresh = proofIsFresh(proof, providers, receiptDigests);
   // A proof is current only while every included receipt still has the digest
@@ -131,6 +135,8 @@ function receiptProjection(root, id) {
   // fail/error remains the stronger live signal.
   return {
     status: projectedReceiptStatus(providers, proof, proofFresh),
+    recordedStatus: proofFresh ? proof.status : null,
+    freshness: proofFresh ? "unavailable" : "stale-or-missing",
     providers
   };
 }

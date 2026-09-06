@@ -33,8 +33,12 @@ Apply, and archive. An external owner owns credentials, remote systems, and
 human verdicts outside the execution boundary. Harness configuration or host
 permission is never turned into a question or command for the user.
 
-Normal output projects internal actions into four user states: `WORKING`,
-`NEEDS_DECISION`, `WAITING_EXTERNAL`, and `DELIVERED`. Internal commands,
+Normal output projects internal actions into five user states: `WORKING`,
+`NEEDS_DECISION`, `WAITING_EXTERNAL`, `TARGET_REACHED`, and `DELIVERED`.
+`DONE` at a requested Build or Prove target projects `TARGET_REACHED`, with
+`delivered: false` and the next route preserved. Only `reached: archived`
+projects `DELIVERED`. Internal worker and proof-lock waits remain harness-owned
+`WORKING`; `WAITING_EXTERNAL` requires a real external owner. Internal commands,
 request IDs, journals, repair graphs, and resume tokens remain machine-facing.
 
 ## Lifecycle commands
@@ -108,7 +112,7 @@ claude-foundation advance <change> --through build
 ```
 
 The coordinator validates the agreement, prepares or synchronizes isolation,
-compiles the task graph, and returns one bounded protocol-v4 action:
+compiles the task graph, and returns one bounded protocol-v5 action:
 `EDIT`, `REPAIR`, `RUN_EXTERNAL`, `WAIT`, `ASK_USER`, or `DONE`.
 `tasks.md` is the only implementation ledger. `handoffs.yaml` separately owns
 AWS, cluster, secret, Terraform, deploy, restart, or other operations that need

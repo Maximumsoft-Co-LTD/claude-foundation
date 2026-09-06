@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
-  createHostExecutionImporter, normalizeHostExecution, normalizedAttempt, normalizedAttempts,
+  createHostExecutionImporter, createHostExecutionStore, hostExecutionTelemetryRows,
+  normalizeHostExecution, normalizedAttempt, normalizedAttempts,
   normalizedExecutionIdentity, normalizedExecutionTiming, normalizedUsage,
   resolveHostExecutionSource, sum
 } from "../runtime/observability/host-execution-contract.mjs";
@@ -193,4 +197,34 @@ test("host execution source resolves relative to the invoking workspace", () => 
   assert.equal(resolveHostExecutionSource("/workspace", "results/host.json"),
     "/workspace/results/host.json");
   assert.equal(resolveHostExecutionSource("/workspace", "/tmp/host.json"), "/tmp/host.json");
+});
+
+test("conflicting duplicate and out-of-order observations retain first accepted usage", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-host-conformance-"));
+  try {
+    const store = createHostExecutionStore({ root });
+    const first = store.importExecution("change", {
+      dispatchId: "attempt-new", status: "failed", usage: { inputTokens: 7 }
+    });
+    const bytes = readFileSync(first.path, "utf8");
+    const duplicate = store.importExecution("change", {
+      dispatchId: "attempt-new", status: "completed", usage: { inputTokens: 999 },
+      revision: 999, lifecycle: "archived"
+    });
+    assert.equal(duplicate.duplicate, true);
+    assert.equal(readFileSync(first.path, "utf8"), bytes);
+    assert.equal(duplicate.execution.result.status, "failed");
+    assert.deepEqual(hostExecutionTelemetryRows(duplicate.execution),
+      hostExecutionTelemetryRows(first.execution));
+    const historical = store.importExecution("change", {
+      dispatchId: "attempt-old", status: "completed", usage: { inputTokens: 3 },
+      finishedAt: "2020-01-01T00:00:00Z", lifecycle: "archived"
+    });
+    assert.equal(historical.imported, true);
+    assert.equal(historical.execution.usage.inputTokens, 3);
+    assert.equal("lifecycle" in historical.execution, false);
+    assert.equal("revision" in duplicate.execution, false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

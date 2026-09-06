@@ -26,7 +26,7 @@ function fixture() {
 
 test("projects current runtime into the stable dashboard schema", () => {
   const snapshot = buildDashboardSnapshot(fixture(), { generatedAt: "2026-08-04T00:00:00.000Z" });
-  assert.equal(snapshot.schemaVersion, 2);
+  assert.equal(snapshot.schemaVersion, 3);
   const protocol = JSON.parse(readFileSync(new URL("../../.claude/harness/protocol.json", import.meta.url), "utf8"));
   assert.equal(String(snapshot.schemaVersion), protocol.dashboardSnapshotSchema);
   assert.equal(snapshot.sourceSchema, "foundation-runtime-v2");
@@ -119,7 +119,12 @@ test("a changed non-failing receipt makes an old proof partial until re-proven",
     status: "pass", receipts: [{ provider: "test", sha256: originalDigest }],
     excludedReceipts: []
   }));
-  assert.equal(buildDashboardSnapshot(root).evidence["safe-change"].status, "pass");
+  assert.equal(buildDashboardSnapshot(root).evidence["safe-change"].status, "unverified");
+  writeFileSync(join(root, "code.js"), "changed after proof");
+  const afterEdit = buildDashboardSnapshot(root).evidence["safe-change"];
+  assert.equal(afterEdit.status, "unverified");
+  assert.equal(afterEdit.recordedStatus, "pass");
+  assert.equal(afterEdit.freshness, "unavailable");
 
   writeFileSync(receiptPath, JSON.stringify({ status: "pass", output: "new run" }));
   assert.equal(buildDashboardSnapshot(root).evidence["safe-change"].status, "partial");
@@ -154,13 +159,17 @@ test("receipt projection ignores malformed files and honors explicit proof exclu
   }));
 
   const snapshot = buildDashboardSnapshot(root);
-  assert.equal(snapshot.evidence["mixed-change"].status, "pass");
+  assert.equal(snapshot.evidence["mixed-change"].status, "unverified");
   assert.deepEqual(snapshot.evidence["mixed-change"].providers, [
     { provider: "optional", status: "unknown" },
     { provider: "test", status: "pass" }
   ]);
-  assert.deepEqual(snapshot.evidence["no-receipts"], { status: "missing", providers: [] });
-  assert.deepEqual(snapshot.evidence["empty-receipts"], { status: "missing", providers: [] });
+  assert.deepEqual(snapshot.evidence["no-receipts"], {
+    status: "missing", recordedStatus: null, freshness: "stale-or-missing", providers: []
+  });
+  assert.deepEqual(snapshot.evidence["empty-receipts"], {
+    status: "missing", recordedStatus: null, freshness: "stale-or-missing", providers: []
+  });
 });
 
 test("snapshot bounds blocker variants and nulls malformed budget fields", () => {

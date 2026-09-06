@@ -16,7 +16,7 @@ Change Loop ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก�
 ชื่อผลิตภัณฑ์และ workflow คือ **Change Loop** ส่วน package และ CLI ที่ติดตั้งยังใช้
 `claude-foundation` เหมือนเดิม จึงไม่ต้องเปลี่ยนคำสั่งที่ใช้อยู่
 
-**Version 3.5.8** — runtime API 31, provider protocol 13 receipt ที่บันทึกด้วย
+**Version 3.5.8** — runtime API 32, provider protocol 13 receipt ที่บันทึกด้วย
 เวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 `claude-foundation metrics <change-id>` จะแสดง source cohort ของ runtime แบบ
 เจาะจงด้วย ได้แก่ semantic version, protocol bundle ที่โหลดจริง และ SHA-256
@@ -24,6 +24,12 @@ digest ของไฟล์ที่ติดตั้งใต้ `.claude/har
 installation ให้ใช้ cohort ครบชุดแทนการดูเลข version เพียงอย่างเดียว
 
 ## เริ่มอ่านตรงไหน
+
+เมื่อถึงขั้น Build หรือ Prove ระบบแสดง `TARGET_REACHED`; เฉพาะ change ที่
+archived แล้วจึงแสดง `DELIVERED` ใช้ `feedback <change-id>` ดู readiness ปัจจุบัน,
+`feedback <change-id> --diagnostics` ส่งออก metadata ที่ผ่าน allowlist ในเครื่อง
+และ `packet <change-id> --resume` อ่าน context ล่าสุดภายในขนาดที่กำหนด
+คำสั่งตรวจเหล่านี้ไม่ทำงาน lifecycle ต่อ ดูรายละเอียดใน [คู่มือ harness](.claude/harness/README.md)
 
 - ถ้าจะใช้งาน ให้เริ่มที่ [สอนทำ Change แรก](#สอนทำ-change-แรก)
 - ถ้าจะเข้าใจ lifecycle ให้อ่าน [ภาพรวม Workflow](#ภาพรวม-workflow) และเปิด [WORKFLOW.md](WORKFLOW.md) เมื่อต้องการ contract แบบละเอียด

@@ -6,6 +6,7 @@ import {
 import { verificationPlanValue } from "./verification-plan.mjs";
 import { authorityPreflightValue } from "../core/authority-policy.mjs";
 import { repositoryBaseHead } from "../core/repository-binding.mjs";
+import { archivedResumeSource, resumePacketValue } from "./resume-packet.mjs";
 
 export function attachPhaseUpdateAdvisory(value, phase, options = {}) {
   if (!["change", "build"].includes(phase)) return value;
@@ -194,6 +195,8 @@ export function createPacketRuntime({
     });
   },
   deliveredAiAttempts = () => [],
+  resumeAction = null, activeLeases = () => [],
+  inspectSnapshots = (operation) => operation(),
   serializedJson, foundationPolicy, recordContextMetric, recordInstructionManifest,
   fail
 }) {
@@ -698,8 +701,37 @@ export function createPacketRuntime({
     process.stdout.write(encoded);
   }
 
-  function showPacket(id, suppliedFlags) {
+  function inspectionPacketValue(id, state = loadRuntime(id)) {
+    if (state.status !== "archived") return packetValue(id);
+    const activePath = activeChangePath(id, state);
+    const tasks = taskBlocks(readFileSync(join(activePath, "tasks.md"), "utf8")).map(taskMetadata);
+    return archivedResumeSource({
+      id, state, version: PACKET_SCHEMA_VERSION, root: ROOT, tasks, stableHash,
+      references: packetArtifactReferences(activePath),
+      externalOperations: handoffReadiness(id)
+    });
+  }
+
+  function renderPacket(id, suppliedFlags) {
     const flags = Object.assign({}, suppliedFlags);
+    if (flags.resume) {
+      if (flags.phase || flags.task || flags.repo)
+        die("packet --resume uses the current change; do not combine it with phase, task or repo");
+      if (!resumeAction) die("resume projection is unavailable");
+      const state = loadRuntime(id);
+      const activePath = activeChangePath(id, state);
+      const tasks = taskBlocks(readFileSync(join(activePath, "tasks.md"), "utf8"))
+        .map(taskMetadata);
+      const packet = inspectionPacketValue(id, state);
+      const value = resumePacketValue({
+        packet, tasks, leases: activeLeases(id),
+        action: resumeAction(id), stableHash,
+        limit: Number(foundationPolicy().execution.packetBytes.global) - 1
+      });
+      // Compact JSON is intentional: pretty whitespace must not break ceilings.
+      process.stdout.write(JSON.stringify(value) + "\n");
+      return value;
+    }
     validatePacketRequest(id, flags);
     const value = packetForRequest(id, flags);
     const manifest = addPacketInstruction(id, flags, value);
@@ -709,8 +741,15 @@ export function createPacketRuntime({
   }
   
 
+  function showPacket(id, flags = {}) {
+    return flags.resume
+      ? inspectSnapshots(() => renderPacket(id, flags))
+      : renderPacket(id, flags);
+  }
+
   return {
     packetValue,
+    inspectionPacketValue,
     reviewPacketValue,
     showPacket
   };

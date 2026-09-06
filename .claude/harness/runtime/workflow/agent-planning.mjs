@@ -477,8 +477,8 @@ export function createAgentPlanner({
     nowMs: Date.now
   });
 
-  function planValue(id) {
-    validate(id, "active", { quiet: true });
+  function planValue(id, options = {}) {
+    validate(id, "active", { quiet: true, inspect: options.inspect === true });
     const state = loadRuntime(id);
     const selectedPolicy = policy();
     const repositories = selectedRepositories(id, state);
@@ -501,7 +501,7 @@ export function createAgentPlanner({
     const authority = compiledContract?.authority || authorityPreflight(id);
     const blockingReasons = agentPlanBlockingReasons(state, conflicts, authority);
     const execution = agentExecutionSummary(tasks, singleAgent);
-    const instructionManifest = recordInstructionManifest?.(id, "build", {
+    const instructionManifest = options.inspect ? null : recordInstructionManifest?.(id, "build", {
       scope: "plan",
       requestedModel: singleAgent ? execution.sessionTask?.model?.tier || null : null
     });

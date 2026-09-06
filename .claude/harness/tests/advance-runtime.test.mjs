@@ -437,6 +437,20 @@ test("feedback classifies observed review repair without inventing wait", () => 
   assert.equal(snapshot.evidenceObservationGroups[0].independent, false);
 });
 
+test("feedback keeps missing timing unknown and retains measured zero", () => {
+  const snapshot = (reviewAttempts) => feedbackSnapshotValue({
+    changeId: "change-a", metrics: {}, reviewAttempts
+  }).timing;
+  assert.equal(snapshot([]).reviewerExecutionMs, null);
+  assert.equal(snapshot([]).repairMs, null);
+  assert.equal(snapshot([{ timestamp: "invalid" }]).reviewerExecutionMs, null);
+  const measured = { timestamp: "2026-09-05T00:00:00Z",
+    completedAt: "2026-09-05T00:00:00Z" };
+  assert.equal(snapshot([measured]).reviewerExecutionMs, 0);
+  assert.equal(snapshot([measured]).reviewerTimingAvailability, "complete");
+  assert.equal(snapshot([measured, {}]).reviewerTimingAvailability, "partial");
+});
+
 test("feedback keeps legacy blocker cause explicitly unavailable", () => {
   assert.deepEqual(operationCauseCoverage([
     { version: 2, status: "blocked" },

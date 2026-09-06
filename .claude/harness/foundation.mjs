@@ -116,7 +116,7 @@ import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
 import { createQualityRuntime } from "./runtime/quality/quality-runtime.mjs";
 
 const VERSION = "3.5.8";
-const RUNTIME_API_VERSION = "31";
+const RUNTIME_API_VERSION = "32";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
 // every command up to `archive` and then threw partway through Land.
@@ -130,7 +130,7 @@ if (RUNTIME_MODULE_API !== RUNTIME_API_VERSION) {
 const PROVIDER_PROTOCOL_VERSION = "13";
 const ADAPTER_PROTOCOL_VERSION = "6";
 const PROOF_PROTOCOL_VERSION = "7";
-const PACKET_SCHEMA_VERSION = "10";
+const PACKET_SCHEMA_VERSION = "11";
 const AGENT_PLAN_SCHEMA_VERSION = "4";
 const CONTEXT_EVENT_SCHEMA_VERSION = "2";
 const METRICS_SCHEMA_VERSION = "8";
@@ -374,6 +374,8 @@ const {
   listCount,
   fileDigest,
   singleRelevantSnapshot,
+  inspectSnapshots,
+  writeSnapshot,
   clearSnapshotCache,
   registerPolicyCacheClearer,
   workspaceManifest,
@@ -500,7 +502,7 @@ const { relevantSnapshot, relevantHash } = createRepositorySnapshot({
   runtimePath,
   snapshotPath,
   readJson,
-  writeJson,
+  writeJson: writeSnapshot,
   singleRelevantSnapshot,
   selectedRepositories,
   gitHead,
@@ -951,12 +953,15 @@ const { modelForTask } = createModelRouter({
   fail: die
 });
 const packetRuntime = createPacketRuntime({
+  inspectSnapshots,
   ROOT,
   PACKET_SCHEMA_VERSION,
   REVIEW_PACKET_SCHEMA_VERSION,
   foundationVersion: VERSION,
   installedCliVersion: process.env.FOUNDATION_INSTALLED_CLI_VERSION || VERSION,
   leasesRoot: LEASES,
+  resumeAction: (id) => advanceValue(id, { inspect: true }),
+  activeLeases: (id) => activeChangeLeases(id),
   loadRuntime,
   readJson,
   activeChangePath,
@@ -1789,6 +1794,7 @@ async function runAdvanceQuietly(operation) {
   }
 }
 const { advanceValue, showAdvance } = createAdvanceRuntime({
+  inspectSnapshots,
   capture: trapFailures,
   captureAsync: trapFailuresAsync,
   markBlocked,
@@ -1819,12 +1825,14 @@ const { advanceValue, showAdvance } = createAdvanceRuntime({
   stableHash
 });
 const { showFeedback } = createFeedbackRuntime({
+  inspectSnapshots,
   logs: LOGS,
   evidenceVault: EVIDENCE_VAULT,
   readJson,
   readJsonLines,
   metricsValue,
-  nextAction: advanceValue
+  packetValue: packetRuntime.inspectionPacketValue,
+  nextAction: (id) => advanceValue(id, { inspect: true })
 });
 const abandonRuntime = createAbandonRuntime({
   root: ROOT,

@@ -3,7 +3,7 @@ import {
   lifecycleOutcome, lifecycleUserProjection, lifecycleUserState
 } from "../core/lifecycle-outcome.mjs";
 
-export const ADVANCE_PROTOCOL_VERSION = 4;
+export const ADVANCE_PROTOCOL_VERSION = 5;
 
 const command = (value) => `claude-foundation ${value}`;
 
@@ -159,17 +159,34 @@ function proofOperationAction(id, result) {
       recoveryType: "RECONFIGURE",
       alternatives: ["repair or switch the configured reviewer, then resume"]
     });
-  if (result.status === "WAITING_EXTERNAL") return envelope(id, "WAIT", {
-    legacyAction: "WAIT_EXTERNAL",
-    actor: "external-authority",
-    boundary: "external-authority",
-    reason: result.next?.[0]?.reason || "required external evidence is pending",
-    requests: result.requests || [],
-    providers: result.providers || [],
-    next: result.next || [],
-    recoveryType: "PAUSE",
-    alternatives: (result.next || []).map((row) => row.reason).filter(Boolean)
-  });
+  if (result.status === "WAITING_EXTERNAL") {
+    const review = (result.requests || []).find((request) =>
+      request.type === "review" && request.status === "requested");
+    const next = review && (result.next || []).find((row) =>
+      row.requestId === review.requestId &&
+      /^claude-foundation authority run\s/.test(row.command || ""));
+    if (next) return envelope(id, "RUN_EXTERNAL", {
+      legacyAction: "RUN_CONFIGURED_REVIEW",
+      actor: "configured-reviewer",
+      boundary: "external-authority",
+      reason: "configured review is ready",
+      requestId: review.requestId,
+      command: next.command,
+      recoveryType: "HANDOFF",
+      alternatives: ["run the configured reviewer", "record an authorized external verdict"]
+    });
+    return envelope(id, "WAIT", {
+      legacyAction: "WAIT_EXTERNAL",
+      actor: "external-authority",
+      boundary: "external-authority",
+      reason: result.next?.[0]?.reason || "required external evidence is pending",
+      requests: result.requests || [],
+      providers: result.providers || [],
+      next: result.next || [],
+      recoveryType: "PAUSE",
+      alternatives: (result.next || []).map((row) => row.reason).filter(Boolean)
+    });
+  }
   if (result.status === "NEEDS_USER_DECISION" ||
       ["CONTRACT_DECISION_REQUIRED", "NO_PROGRESS_DECISION"].includes(result.route))
     return envelope(id, "ASK_USER", {
@@ -289,7 +306,7 @@ function buildAction(id, dispatch, state, plan = null) {
     });
   }
   if (dispatch.action === "wait") return envelope(id, "WAIT", {
-    legacyAction: "WAIT_RESOURCE", actor: "resource-owner", boundary: "resource",
+    legacyAction: "WAIT_RESOURCE", actor: "harness", boundary: "resource",
     reason: dispatch.reason, wait: { workers: dispatch.activeWorkers || [] },
     recoveryType: "PAUSE",
     alternatives: ["wait for the active lease", "release an abandoned lease after inspection"]
@@ -416,11 +433,30 @@ export function coordinatorAction({
   });
 
   if (proofPreflight && proofPreflight.status !== "READY") {
-    const first = proofPreflight.next?.[0] || null;
+    const next = proofPreflight.next || [];
+    const needsDecision = proofPreflight.status === "NEEDS_USER_DECISION";
+    // Proof already owns request creation and reuse. A required review is
+    // deterministic preparation, not permission to change review policy.
+    if (needsDecision && next.length &&
+        (!proofPreflight.authorityPreflight ||
+          proofPreflight.authorityPreflight.status === "READY") &&
+        next.every((row) => row.decision?.kind === "independent-review"))
+      return envelope(id, "RUN_EXTERNAL", {
+        legacyAction: "RUN_PROOF", actor: "harness",
+        reason: "prepare required review through the deterministic proof chain",
+        command: command(`proof advance ${id}`),
+        automatic: true,
+        recoveryType: "AUTO_RECOVER",
+        alternatives: ["collect current evidence and prepare required review"]
+      });
+    const first = (needsDecision && next.find((row) =>
+      row.decision && row.decision.kind !== "independent-review")) || next[0] || null;
+    const decision = proofPreflight.authorityPreflight?.decision ||
+      proofPreflight.decision || first?.decision || null;
     const mapping = {
       NEEDS_CODE_CHANGE: ["EDIT", "EXECUTE_TASK", "agent", "host-execution", "EDIT"],
       CONFIGURATION_ERROR: ["REPAIR", "REPAIR_PROOF_CONTRACT", "agent", "contract", "RECONFIGURE"],
-      BLOCKED_BY_ACTIVE_WORK: ["WAIT", "WAIT_RESOURCE", "resource-owner", "resource", "PAUSE"],
+      BLOCKED_BY_ACTIVE_WORK: ["WAIT", "WAIT_RESOURCE", "harness", "resource", "PAUSE"],
       INFRASTRUCTURE_ERROR: ["REPAIR", "REPAIR_PROVIDER_ENVIRONMENT", "operator", "resource", "RECONFIGURE"],
       NEEDS_USER_DECISION: ["ASK_USER", "REQUEST_DECISION", "user", "user-authority", "ASK_USER"]
     };
@@ -431,11 +467,14 @@ export function coordinatorAction({
       actor,
       action,
       boundary,
-      reason: proofPreflight.issues?.[0] || proofPreflight.status,
+      reason: decision?.summary || proofPreflight.issues?.[0] || proofPreflight.status,
       preflight: compactPreflight(proofPreflight),
+      ...(needsDecision ? { decision } : {}),
       command: first?.command || command(`doctor --stage prove --change ${id}`),
       recoveryType,
-      alternatives: (proofPreflight.next || []).map((row) => row.reason || row.command)
+      alternatives: needsDecision && decision?.options
+        ? decision.options.map((option) => option.outcome)
+        : next.map((row) => row.reason || row.command)
     });
   }
 
@@ -451,6 +490,7 @@ export function coordinatorAction({
 }
 
 export function createAdvanceRuntime({
+  inspectSnapshots = (operation) => operation(),
   loadRuntime, agentDispatchValue, relevantHash, deliveredAiAttempts,
   authorityStatusValue, authorityNext, readJson, proofAdvancePath, stableHash,
   proofReadinessValue = null, agentPlanValue = null,
@@ -462,7 +502,7 @@ export function createAdvanceRuntime({
   captureAsync = async (operation) => operation(),
   markBlocked = () => {}
 }) {
-  function advanceValue(id) {
+  function readAdvanceValue(id, options = {}) {
     let stage = "build";
     try {
       return capture(() => {
@@ -473,18 +513,18 @@ export function createAdvanceRuntime({
         });
         if (["proven", "landing"].includes(state.status)) stage = "land";
         const authority = authorityStatusValue(id);
-        const dispatch = agentDispatchValue(id);
+        const dispatch = agentDispatchValue(id, options);
         const budget = budgetDecisionValue ? budgetDecisionValue(state) : null;
         let proofPreflight = null;
         if (dispatch.action === "build-complete") {
           stage = "prove";
-          if (proofReadinessValue) proofPreflight = proofReadinessValue(id, "prove");
+          if (proofReadinessValue) proofPreflight = proofReadinessValue(id, "prove", options);
         }
         const openRequests = authority.requests || [];
         let plan = null;
         if (agentPlanValue && ["run-in-session", "run-leased-in-session", "spawn-group"]
           .includes(dispatch.action)) {
-          try { plan = agentPlanValue(id); }
+          try { plan = agentPlanValue(id, options); }
           catch { /* dispatch still carries an exact compatibility route */ }
         }
         const workspaceHash = dispatch.action === "build-complete" && proofPreflight
@@ -674,8 +714,17 @@ export function createAdvanceRuntime({
     }
   }
 
+  function advanceValue(id, options = {}) {
+    return options.inspect
+      ? inspectSnapshots(() => readAdvanceValue(id, options))
+      : readAdvanceValue(id, options);
+  }
+
   async function showAdvance(id, flags = {}) {
-    const value = await advanceThrough(id, flags.through || null);
+    if (flags.inspect && flags.through)
+      throw new Error("advance --inspect cannot execute --through; inspect first, then advance");
+    const value = flags.inspect ? advanceValue(id, { inspect: true })
+      : await advanceThrough(id, flags.through || null);
     if (!flags.through && !flags.inspect &&
         process.env.FOUNDATION_READ_ONLY_INSPECTION !== "1") {
       const phase = phaseForAction(value);

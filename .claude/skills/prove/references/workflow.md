@@ -2,7 +2,7 @@
 
 Run `claude-foundation advance <change> --through proven`. It establishes fresh
 Prove context, reuses valid receipts, executes eligible providers, routes review
-before acceptance, and never polls. Follow only the returned protocol-v4 action
+before acceptance, and never polls. Follow only the returned protocol-v5 action
 and exact resume route. An automatic in-contract repair returns a bounded
 dependency-ordered batch; repair it in Build and resume. There is no fixed
 repair-count stop while the progress fingerprint changes. A decision,

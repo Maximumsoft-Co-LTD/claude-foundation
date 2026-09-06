@@ -140,8 +140,8 @@ const CASES = [
     sourcePath: ".claude/harness/runtime/workflow/advance-runtime.mjs",
     expectedKiller: "CASE-ADVANCE-EXACT-FAILURE-ENVELOPE",
     detector: ADVANCE_DETECTOR,
-    before: "const dispatch = agentDispatchValue(id);",
-    after: "const dispatch = (() => {\n          try { return agentDispatchValue(id); }\n          catch { return { action: \"unavailable\", reason: \"build-dispatch-unavailable\" }; }\n        })();"
+    before: "const dispatch = agentDispatchValue(id, options);",
+    after: "const dispatch = (() => {\n          try { return agentDispatchValue(id, options); }\n          catch { return { action: \"unavailable\", reason: \"build-dispatch-unavailable\" }; }\n        })();"
   },
   {
     id: "MUT-ADVANCE-PREFLIGHT-HASH-REPEATED",

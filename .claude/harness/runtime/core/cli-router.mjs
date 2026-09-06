@@ -280,6 +280,8 @@ export async function routeRuntimeCommand(command, values, api) {
         flags,
         rest
       } = parseFlags(values);
+      if (flags.resume && (flags.phase || flags.task || flags.repo))
+        die("packet --resume cannot be combined with phase, task or repo");
       if (flags.phase && !["change", "build", "prove", "review", "land"].includes(flags.phase)) die("packet --phase must be change|build|prove|review|land");
       if (flags.phase && flags.phase !== "review") {
         prepareClaudeTelemetry(rest[0], flags.phase);
@@ -292,7 +294,7 @@ export async function routeRuntimeCommand(command, values, api) {
     },
     "feedback": async () => {
       const { flags, rest } = parseStrictCommandFlags(values, "feedback", {
-        boolean: ["pretty"]
+        boolean: ["pretty", "diagnostics"]
       });
       if (rest.length !== 1) die("feedback requires exactly one change id");
       showFeedback(rest[0], flags);
@@ -303,6 +305,8 @@ export async function routeRuntimeCommand(command, values, api) {
         value: ["host-result", "through"]
       });
       if (rest.length !== 1) die("advance requires exactly one change id");
+      if (flags.inspect && (flags.through || flags["host-result"]))
+        die("advance --inspect cannot be combined with through or host-result");
       if (flags.through && !["build", "proven", "archived"].includes(flags.through))
         die("advance --through must be build|proven|archived");
       if (flags["host-result"])

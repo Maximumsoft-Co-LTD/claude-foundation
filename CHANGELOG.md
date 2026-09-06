@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Distinguish completed Build/Prove targets from archived delivery while
+  preserving the machine action `DONE` and exact continuation routes.
+- Keep active worker and proof-lock waits harness-owned. Read-only inspection
+  and feedback no longer persist validation or instruction-manifest state.
+- Prepare required review through the existing proof chain and preserve actual
+  user decisions when projecting proof preflight boundaries.
+- Leave unavailable reviewer/repair timing unknown and stop presenting
+  receipt-only dashboard proof as current workspace readiness.
+
+### Added
+
+- Allowlisted local diagnostic export with provider aliases and no free-form
+  payloads, paths or commands.
+- Bounded `packet --resume` with current agreement references, task frontier,
+  leases, evidence and next action.
+- Conformance coverage for conflicting host observations, historical usage,
+  ownership, target completion and read-only projections.
+
+### Changed
+
+- Runtime API 32, advance protocol 5, lifecycle outcome 2, packet schema 11,
+  feedback schema 3 and dashboard snapshot schema 3 version the new projections.
+
 ## [3.5.8] - 2026-09-05
 
 ### Fixed

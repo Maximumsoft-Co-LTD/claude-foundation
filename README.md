@@ -17,7 +17,7 @@ does not replace your coding agent, test framework, CI system, or Git workflow.
 The product is **Change Loop**; the installed package and CLI remain
 `claude-foundation`, so existing commands do not change.
 
-**Version 3.5.8** — runtime API 31, provider protocol 13. Receipts recorded by
+**Version 3.5.8** — runtime API 32, provider protocol 13. Receipts recorded by
 earlier versions read as `provider-version-stale` and must be re-proven.
 `claude-foundation metrics <change-id>` also reports the exact runtime source
 cohort: semantic version, the loaded protocol bundle, and a SHA-256 digest of
@@ -26,6 +26,12 @@ label alone—when comparing reports from installations that may be on different
 patches or source revisions.
 
 ## Where to start
+
+Build and Prove completion report `TARGET_REACHED`; only an archived change is
+`DELIVERED`. Read current readiness with `feedback <change-id>`, export
+allowlisted local metadata with `feedback <change-id> --diagnostics`, or recover
+bounded current context with `packet <change-id> --resume`. These inspection
+views do not execute lifecycle work; see the [harness guide](.claude/harness/README.md).
 
 - To use Change Loop, follow [Your first change](#your-first-change).
 - To understand lifecycle behavior, read [The workflow in one picture](#the-workflow-in-one-picture); use [WORKFLOW.md](WORKFLOW.md) only as the detailed contract.

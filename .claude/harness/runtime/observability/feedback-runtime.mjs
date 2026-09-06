@@ -1,7 +1,28 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { diagnosticExport } from "./diagnostic-export.mjs";
 
-export const FEEDBACK_SCHEMA_VERSION = 2;
+export const FEEDBACK_SCHEMA_VERSION = 3;
+
+export function readinessProjection(packet) {
+  const providers = Array.isArray(packet.providers) ? packet.providers :
+    packet.providers?.preview || [];
+  return {
+    availability: "available",
+    status: packet.status,
+    delivered: packet.status === "archived",
+    revision: packet.revision,
+    contractRevision: packet.contractRevision,
+    executionRevision: packet.executionRevision,
+    workspaceHash: packet.compositeWorkspaceHash || packet.workspaceHash,
+    pendingTaskCount: packet.pendingTaskCount,
+    providers: providers.map(({ provider, status, validity }) => ({ provider, status, validity })),
+    providersTruncated: !Array.isArray(packet.providers) &&
+      Number(packet.providers?.count || 0) > providers.length,
+    basis: packet.evidenceAvailability === "retained-archive"
+      ? "retained-archive" : "current-runtime-receipt-validity"
+  };
+}
 
 function timestamp(value) {
   const parsed = Date.parse(value || "");
@@ -54,29 +75,37 @@ export function operationCauseCoverage(operations = []) {
 }
 
 export function feedbackSnapshotValue({
-  changeId, metrics, operations = [], inspections = [], reviewAttempts = [], nextAction
+  changeId, metrics, operations = [], inspections = [], reviewAttempts = [], nextAction,
+  readiness = null, observedAt = null
 }) {
   const repairIntervals = reviewRepairIntervals(operations, reviewAttempts);
-  const repairMs = repairIntervals.reduce((sum, row) => sum + row.durationMs, 0);
+  const repairMs = repairIntervals.length
+    ? repairIntervals.reduce((sum, row) => sum + row.durationMs, 0) : null;
+  const reviewDurations = reviewAttempts.flatMap((row) => {
+    const from = timestamp(row.timestamp);
+    const to = timestamp(row.completedAt);
+    return from !== null && to !== null && to >= from ? [to - from] : [];
+  });
   const humanWaitMs = metrics.humanWaitMs ?? 0;
   return {
     version: FEEDBACK_SCHEMA_VERSION,
     changeId,
     sourceCohort: metrics.sourceCohort || null,
+    observedAt,
+    readiness,
     timing: {
       wallTimeMs: metrics.wallTimeMs ?? null,
       activeTimeMs: metrics.activeTimeMs ?? null,
-      reviewerExecutionMs: reviewAttempts.reduce((sum, row) => {
-        const from = timestamp(row.timestamp);
-        const to = timestamp(row.completedAt);
-        return sum + (from !== null && to !== null && to > from ? to - from : 0);
-      }, 0),
+      reviewerExecutionMs: reviewDurations.length
+        ? reviewDurations.reduce((sum, duration) => sum + duration, 0) : null,
+      reviewerTimingAvailability: !reviewDurations.length ? "unavailable" :
+        reviewDurations.length === reviewAttempts.length ? "complete" : "partial",
       repairMs,
       repairIntervals,
       humanWaitMs: metrics.humanWaitMs ?? null,
       unattributedMs: metrics.unattributedWaitMs === null ||
         metrics.unattributedWaitMs === undefined
-        ? null : Math.max(0, metrics.unattributedWaitMs - repairMs - humanWaitMs),
+        ? null : Math.max(0, metrics.unattributedWaitMs - (repairMs ?? 0) - humanWaitMs),
       basis: "operations+review-attempts+verified-human-transitions"
     },
     guards: {
@@ -93,7 +122,9 @@ export function feedbackSnapshotValue({
 }
 
 export function createFeedbackRuntime({
+  inspectSnapshots = (operation) => operation(),
   logs, evidenceVault, readJson, readJsonLines, metricsValue, nextAction,
+  packetValue = null,
   output = console.log
 }) {
   function reviewAttempts(id) {
@@ -103,7 +134,7 @@ export function createFeedbackRuntime({
       .map((name) => readJson(join(directory, name), null)).filter(Boolean);
   }
 
-  function feedbackValue(id) {
+  function readFeedbackValue(id) {
     let resolvedNextAction;
     try { resolvedNextAction = nextAction(id); }
     catch {
@@ -113,18 +144,28 @@ export function createFeedbackRuntime({
         command: `claude-foundation doctor --change ${id}`
       };
     }
+    let readiness;
+    try { readiness = packetValue ? readinessProjection(packetValue(id)) : null; }
+    catch { readiness = { availability: "unavailable", providers: [] }; }
     return feedbackSnapshotValue({
       changeId: id,
       metrics: metricsValue(id),
       operations: readJsonLines(join(logs, id, "operations.jsonl")),
       inspections: readJsonLines(join(logs, id, "inspections.jsonl")),
       reviewAttempts: reviewAttempts(id),
-      nextAction: resolvedNextAction
+      nextAction: resolvedNextAction,
+      readiness,
+      observedAt: new Date().toISOString()
     });
   }
 
+  function feedbackValue(id) {
+    return inspectSnapshots(() => readFeedbackValue(id));
+  }
+
   function showFeedback(id, flags = {}) {
-    const value = feedbackValue(id);
+    const feedback = feedbackValue(id);
+    const value = flags.diagnostics ? diagnosticExport(feedback) : feedback;
     output(JSON.stringify(value, null, flags.pretty ? 2 : 0));
     return value;
   }

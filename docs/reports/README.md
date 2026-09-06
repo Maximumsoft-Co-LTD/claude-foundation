@@ -24,6 +24,18 @@ those contracts into a report; link to them instead.
 
 ## Historical material
 
+- [Harness behavior plan](harness-behavior-plan-2026-09-05.md) —
+  2026-09-05 proposed boundary, completion, recovery, and projection changes;
+  includes a reproduced target-completion projection mismatch. Not implemented.
+
+- [Development roadmap](development-roadmap-2026-09-05.md) —
+  2026-09-05 proposed development sequence based on the related-projects
+  research and source inspection; implementation has not started.
+
+- [Related projects research](related-projects-research-2026-09-05.md) —
+  2026-09-05 ecosystem comparison and proposed investigations; not benchmark
+  evidence or an approved implementation plan.
+
 Files with a date in their name are point-in-time evidence or investigations.
 Plans and audits such as `bug-audit-*`, `*-plan.md`, `*-assessment-*`, and
 `changeloop-review-*` record the reasoning that led to later implementation.

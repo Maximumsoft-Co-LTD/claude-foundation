@@ -38,7 +38,7 @@ provider and receipt contract.
 
 Every phase view is derived from one versioned execution contract. Semantic
 draft v3 compiles meaningful keys into stable cross-ledger IDs and writes only
-the OpenSpec artifacts the change needs. After Change, protocol-v4 `advance`
+the OpenSpec artifacts the change needs. After Change, protocol-v5 `advance`
 is the normal model-facing entrypoint; primitive commands remain compatible
 operator and integration tools. It compiles
 risk, required providers, external authority, workspace mutation capability,
@@ -59,7 +59,7 @@ backend changes only: installed user command names and arguments are unchanged.
 | Core | `runtime/core/cli-router.mjs` | Runtime command dispatch over an explicit orchestration API |
 | Core | `runtime/core/diagnostics-runtime.mjs` | Doctor, migration, provider listing, and CLI usage diagnostics |
 | Core | `runtime/core/execution-contract.mjs` | Compiled risk, evidence, authority, workspace, budget, repository, and Land capabilities |
-| Core | `runtime/core/lifecycle-outcome.mjs` | Owner-validated lifecycle outcomes and four-state user projection |
+| Core | `runtime/core/lifecycle-outcome.mjs` | Owner-validated lifecycle outcomes and target-versus-delivery user projection |
 | Core | `runtime/core/land-grant.mjs` | Session/change/proof/target-bound explicit Land authority |
 | Core | `runtime/core/tool-preparation.mjs` | Project-local tool readiness, preparation identity, and setup boundaries |
 | Core | `runtime/core/lifecycle-reducer.mjs` | Typed lifecycle transitions and compatibility-preserving state mutation |
@@ -101,7 +101,7 @@ backend changes only: installed user command names and arguments are unchanged.
 | Workflow | `runtime/workflow/change-lifecycle.mjs` | Change creation, draft materialization, resolution, and atomic start |
 | Workflow | `runtime/workflow/semantic-draft.mjs` | Semantic draft v3 validation, stable links, typed extensions, and provider defaults |
 | Workflow | `runtime/workflow/semantic-amendment.mjs` | Transactional Build-time agreement amendments that preserve canonical prose and completed work |
-| Workflow | `runtime/workflow/advance-runtime.mjs` | Protocol-v4 deterministic chaining, owner outcomes, and safe user projection |
+| Workflow | `runtime/workflow/advance-runtime.mjs` | Protocol-v5 deterministic chaining, owner outcomes, and safe user projection |
 | Workflow | `runtime/workflow/change-validation.mjs` | Traceability, change validation, and provider requirements |
 | Workflow | `runtime/workflow/land-journal.mjs` | Atomic apply identity, journal, rollback, verification, and cleanup |
 | Workflow | `runtime/workflow/land-runtime.mjs` | Multi-repository Land readiness, planning, pointers, and resume saga |
@@ -218,7 +218,7 @@ claude-foundation doctor --stage prove --change <change>
 | `packet <change> --phase <phase>` | Prints a compact diagnostic handoff; review packets are ≤8 KiB | Operator/debug inspection |
 | `packet <change> --repo <id> [--task <id>] [--pretty]` | Prints a bounded repository or task packet | Starting a native subagent |
 | `metrics <change>` | Reports measured phase/provider cost and emitted context bytes | Finding latency or orchestration overhead |
-| `feedback <change> [--pretty]` | Reports source-aware timing, repair intervals, blocker coverage, evidence reuse, and the next action | Explaining why Prove took time without labeling repair as wait |
+| `feedback <change> [--pretty] [--diagnostics]` | Reports current readiness, source-aware timing, repair intervals, blocker coverage, evidence reuse, and the next action; diagnostics exports allowlisted metadata | Explaining why Prove took time without labeling repair as wait |
 | `budget checkpoint <change>` | Reports measured remaining allowance, unfinished work, and the exact resume route | Before deciding whether an exhausted run should continue, rescope, or pause |
 | `exec <change> [--phase <phase>] -- <command…>` | Derives the phase, runs Build commands in the canonical workspace under the shared mutation policy, passes the exit code through, and records duration | Long build-phase commands (container builds, installs, full test runs) |
 | `telemetry host-import <change> <result.json>` | Imports a validated host execution result without prompt or tool payloads | Recording actual model attempts, fallback, usage, and instruction provenance |
@@ -732,7 +732,28 @@ manufacture estimates when telemetry is unavailable. Claude transcript parsing
 is schema-validated and isolated behind the host adapter so a future host
 format change cannot silently become fabricated usage.
 
-`feedback <change>` is the read-only explanation surface. It normalizes both
+`packet <change> --resume` returns current agreement references, task frontier,
+active lease identities, evidence validity, findings and the next action in the
+existing global packet ceiling. It does not cache authority or execute work.
+Oversized sections identify their source and truncation; read those references
+before editing. Resume cannot be combined with phase, task or repository views.
+After archive and sandbox cleanup, resume and feedback use retained agreement
+references. The pre-archive hash is historical; workspace validity is not
+claimed. Use the referenced proof audit for archive evidence.
+
+`advance <change> --inspect` projects the next action without validation writes,
+instruction-manifest recording, provider execution or lease acquisition. It
+cannot be combined with `--through` or `--host-result`.
+
+`feedback <change>` is the read-only explanation surface. Its readiness uses
+current runtime receipt validity; `observedAt` identifies when it was read.
+Missing reviewer/repair measurements remain null, and partial reviewer timing
+is labeled. The dashboard separately exposes recorded status and freshness:
+receipt identity alone cannot establish current workspace validity, so a
+recorded passing proof is unverified until checked by the runtime.
+`feedback <change> --diagnostics` emits allowlisted metadata and provider aliases,
+excluding paths, commands, free-form reasons, payloads and user identifiers.
+It neither uploads data nor grants authority. It normalizes both
 `host-execution` and `host-execution-contract` source names, keeps historical
 events whose blocker type was not recorded explicitly unavailable, and reports
 the interval after a failed review as repair only when a later changed workspace

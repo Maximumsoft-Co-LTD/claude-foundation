@@ -184,7 +184,7 @@ test("prove readiness operation composes issues, graph, leases, and task fallbac
   assert.deepEqual(value.next, ["code-recovery"]);
   assert.equal(value.externalOperations.proofBlocking, false);
   assert.match(value.externalOperations.note, /evaluated at Land/);
-  assert.deepEqual(calls[0], ["validate", "change", "active", { quiet: true }]);
+  assert.deepEqual(calls[0], ["validate", "change", "active", { quiet: true, inspect: false }]);
   assert.deepEqual(calls.at(-1), [
     "conflicts", "change", [{ id: "root" }], { executing: true }
   ]);

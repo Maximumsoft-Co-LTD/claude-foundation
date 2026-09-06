@@ -1800,11 +1800,13 @@ export function createChangeValidationRuntime({
     // Lock only after every validation gate above passes. A malformed task or
     // unresolved acceptance decision must not freeze a grounding ledger that
     // has never represented a valid Change contract.
-    if (grounding?.firstLock)
-      lockValidatedGrounding(state, grounding, contractFingerprint(id, dir), now());
-    else
-      lockValidatedGrounding(state, grounding, null, null);
-    saveRuntime(state);
+    if (!options.inspect) {
+      if (grounding?.firstLock)
+        lockValidatedGrounding(state, grounding, contractFingerprint(id, dir), now());
+      else
+        lockValidatedGrounding(state, grounding, null, null);
+      saveRuntime(state);
+    }
     // A declared surface predicts capabilities that the *changed* surface will
     // only reveal once files exist — by which point this contract is signed and
     // its evidence collected. Warn, never fail: the forecast is a prediction the

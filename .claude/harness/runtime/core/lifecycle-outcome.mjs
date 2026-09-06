@@ -1,4 +1,4 @@
-export const LIFECYCLE_OUTCOME_VERSION = 1;
+export const LIFECYCLE_OUTCOME_VERSION = 2;
 
 const OWNER_BY_ACTOR = new Map([
   ["agent", "agent"],
@@ -58,7 +58,8 @@ export function lifecycleOutcome(value) {
 }
 
 export function lifecycleUserState(value) {
-  if (value.action === "DONE") return "DELIVERED";
+  if (value.action === "DONE")
+    return value.reached === "archived" ? "DELIVERED" : "TARGET_REACHED";
   if (value.action === "ASK_USER") return "NEEDS_DECISION";
   if (value.action === "WAIT" && value.owner === "external") return "WAITING_EXTERNAL";
   return "WORKING";
@@ -70,9 +71,15 @@ export function lifecycleUserProjection(value) {
     state,
     summary: value.reason || (state === "DELIVERED"
       ? "The change is delivered and archived."
-      : state === "WORKING" ? "Work is continuing."
+      : state === "TARGET_REACHED" ? "The requested target is reached; the change is not yet delivered."
+        : state === "WORKING" ? "Work is continuing."
         : state === "WAITING_EXTERNAL" ? "An external dependency is pending."
           : "A work decision is required.")
+  };
+  if (state === "TARGET_REACHED" || state === "DELIVERED") return {
+    ...base,
+    reached: value.reached || null,
+    delivered: state === "DELIVERED"
   };
   if (state === "NEEDS_DECISION") return {
     ...base,

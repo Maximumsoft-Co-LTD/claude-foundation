@@ -37,9 +37,9 @@ export function createAgentDispatchRuntime({
   serializedJson = (value, pretty) => JSON.stringify(value, null, pretty ? 2 : 0),
   fail
 }) {
-  function dispatchValue(id) {
+  function dispatchValue(id, options = {}) {
     if (!id) fail("agents dispatch requires <change>");
-    const plan = agentPlanValue(id);
+    const plan = agentPlanValue(id, options);
     const active = activeChangeLeases(id)
       .sort((left, right) => String(left.taskId).localeCompare(String(right.taskId)));
     const base = {

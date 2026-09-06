@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-lc",
+        "node --test --test-reporter=tap .claude/harness/tests/delivery-convergence.test.mjs .claude/harness/tests/advance-runtime.test.mjs .claude/harness/tests/host-execution-contract.test.mjs .claude/harness/tests/lease-acquisition-helpers.test.mjs .claude/harness/tests/agent-dispatch.test.mjs .claude/harness/tests/host-capability-matrix.test.mjs .claude/harness/tests/proof-readiness-value.test.mjs .claude/harness/tests/packet-value.test.mjs dashboard/test/snapshot.test.mjs && node scripts/quality/run-shipping-semantic-mutation.mjs && node .claude/tests/harness/run-lifecycle-safety-mutation.mjs"
+      ],
+      "minimum": 1,
+      "timeoutMs": 600000,
+      "reportFormat": "tap",
+      "claims": "declared"
+    }
+  },
+  "services": {}
+}

@@ -220,6 +220,16 @@ export function createStateRuntime({
   }
 
   const snapshotCache = new Map();
+  let snapshotInspectionDepth = 0;
+  function inspectSnapshots(operation) {
+    snapshotInspectionDepth += 1;
+    try { return operation(); }
+    finally { snapshotInspectionDepth -= 1; }
+  }
+
+  function writeSnapshot(path, value) {
+    if (!snapshotInspectionDepth) writeJson(path, value);
+  }
   // The policy cache lives in change-policy; it registers its clearer here so
   // one invalidation covers both. A local Map that nothing populated used to
   // stand in for it, so the real cache was never invalidated.
@@ -456,7 +466,7 @@ export function createStateRuntime({
       foldSnapshotEntry(digests, id, workspace, rel, identity);
     const value = snapshotValue(id, workspace, contractRevision, files, digests);
     snapshotCache.set(cacheKey, value);
-    if (workspace === resolve(state.workspace?.path || root)) writeJson(snapshotPath(id), value);
+    if (workspace === resolve(state.workspace?.path || root)) writeSnapshot(snapshotPath(id), value);
     return value;
   }
 
@@ -578,6 +588,8 @@ export function createStateRuntime({
     listCount,
     fileDigest,
     singleRelevantSnapshot,
+    inspectSnapshots,
+    writeSnapshot,
     declaredSurfaceMatcher,
     clearSnapshotCache,
     registerPolicyCacheClearer,

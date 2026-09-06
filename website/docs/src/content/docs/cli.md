@@ -135,20 +135,30 @@ Commands marked as needing a `--decision-ref` require an **explicit host-recorde
 
 ## Protocol versions
 
+`advance <change> --inspect` reads the next action without executing work; it
+cannot be combined with `--through` or `--host-result`.
+`packet <change> --resume` returns bounded current agreement references,
+frontier, leases and evidence. Read referenced sections when marked truncated.
+`feedback <change> --diagnostics` exports allowlisted local metadata with
+provider aliases; paths, commands and free-form payloads are excluded.
+Build/Prove completion is `TARGET_REACHED`; archived delivery is `DELIVERED`.
+Feedback reports current runtime receipt validity. Dashboard recorded proof
+remains unverified when current workspace freshness cannot be checked.
+
 Wire-visible contracts are pinned in `.claude/harness/protocol.json`. A mixed-revision install fails immediately at load rather than partway through Land.
 
 | Pin | v3.5.8 |
 |---|---|
 | runtime | 3.5.8 |
-| runtime API | 31 |
+| runtime API | 32 |
 | semantic draft schema | 3 |
 | semantic amendment schema | 1 |
 | artifact defaults schema | 2 |
 | grounding schema | 1, 2, 3 |
-| advance protocol | 4 |
+| advance protocol | 5 |
 | provider protocol | 13 |
 | evidence schema | 1, 2 |
-| packet schema | 10 |
+| packet schema | 11 |
 | proof protocol | 7 |
 | review protocol | 4 |
 | acceptance protocol | 2 |

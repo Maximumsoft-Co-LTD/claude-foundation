@@ -538,7 +538,7 @@ function repositoryInfrastructureReadiness(context, id, stage, repositoryIssues,
   };
 }
 
-export function proofReadinessValueOperation(context, id, stage = "prove") {
+export function proofReadinessValueOperation(context, id, stage = "prove", options = {}) {
   const repositoryIssues = stage === "prove"
     ? context.repositoryInfrastructureIssues(id) : [];
   let issues;
@@ -547,7 +547,7 @@ export function proofReadinessValueOperation(context, id, stage = "prove") {
   let unconfigured;
   let unavailable;
   try {
-    context.validate(id, "active", { quiet: true });
+    context.validate(id, "active", { quiet: true, inspect: options.inspect === true });
     issues = context.topologyIssues(id);
     surfaceFixits = [];
     if (stage === "prove") issues.push(...context.changedSurfaceIssues(id, surfaceFixits));
@@ -561,7 +561,7 @@ export function proofReadinessValueOperation(context, id, stage = "prove") {
     throw error;
   }
   const pending = context.pendingTasks(id);
-  const plan = context.agentPlanValue?.(id) || null;
+  const plan = context.agentPlanValue?.(id, options) || null;
   const externalOperations = context.handoffReadiness(id);
   const leases = stage === "prove" ? context.activeChangeLeases(id) : [];
   const repositoryConflicts = context.activeRepositoryConflicts(
@@ -992,8 +992,8 @@ export function createProofReadinessRuntime({
     authorityPreflight,
     executionContract
   });
-  function proofReadinessValue(id, stage = "prove") {
-    return proofReadinessValueFor(id, stage);
+  function proofReadinessValue(id, stage = "prove", options = {}) {
+    return proofReadinessValueFor(id, stage, options);
   }
 
   function proofReadiness(id, stage = "prove") {

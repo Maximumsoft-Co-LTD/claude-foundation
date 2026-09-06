@@ -1,0 +1,81 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "target-completion",
+      "requirementKey": "target-completion",
+      "scenario": "When advance reaches build, proven, or archived",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "host-conformance",
+      "requirementKey": "host-conformance",
+      "scenario": "When resumed hosts release old leases or import repeated observations",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "recovery-ownership",
+      "requirementKey": "recovery-ownership",
+      "scenario": "When a worker or internal lock is active or setup and review infrastructure fail",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "readiness-diagnostics",
+      "requirementKey": "readiness-diagnostics",
+      "scenario": "When local feedback, diagnostics, or dashboard status is read",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "resume-context",
+      "requirementKey": "resume-context",
+      "scenario": "When an agent resumes after agreement, wiring, base or delivery progress changes",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "projection-compatibility",
+      "requirementKey": "projection-compatibility",
+      "scenario": "When a consumer upgrades or inspects the new projections",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "mutation-applicability",
+      "requirementKey": "mutation-applicability",
+      "scenario": "When the versioned runtime is checked for deliberately injected contract faults",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-lc",
+        "(node --test .claude/harness/tests/delivery-convergence.test.mjs .claude/harness/tests/advance-runtime.test.mjs) && (node --test .claude/harness/tests/delivery-convergence.test.mjs .claude/harness/tests/advance-runtime.test.mjs .claude/harness/tests/host-execution-contract.test.mjs .claude/harness/tests/lease-acquisition-helpers.test.mjs .claude/harness/tests/agent-dispatch.test.mjs dashboard/test/snapshot.test.mjs) && (node scripts/quality/run-shipping-semantic-mutation.mjs && node .claude/tests/harness/run-lifecycle-safety-mutation.mjs)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

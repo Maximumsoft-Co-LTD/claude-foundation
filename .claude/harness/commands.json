@@ -19,7 +19,7 @@
     },
     {
       "name": "packet",
-      "usage": "packet <change> [--phase change|build|prove|review|land] [--repo <id>] [--task <id>] [--pretty]",
+      "usage": "packet <change> [--resume] [--phase change|build|prove|review|land] [--repo <id>] [--task <id>] [--pretty]",
       "audience": "agent",
       "kind": "read",
       "idempotent": true,
@@ -35,7 +35,7 @@
     },
     {
       "name": "advance",
-      "usage": "advance <change> [--through build|proven|archived] [--host-result <result.json>] [--pretty]",
+      "usage": "advance <change> [--through build|proven|archived] [--host-result <result.json>] [--inspect] [--pretty]",
       "audience": "host",
       "kind": "write",
       "idempotent": true,
@@ -43,7 +43,7 @@
     },
     {
       "name": "feedback",
-      "usage": "feedback <change> [--pretty]",
+      "usage": "feedback <change> [--pretty] [--diagnostics]",
       "audience": "agent",
       "kind": "read",
       "idempotent": true,

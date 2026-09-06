@@ -135,20 +135,30 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 
 ## เวอร์ชันของ protocol
 
+`advance <change> --inspect` อ่าน action ถัดไปโดยไม่ทำงานต่อ และใช้ร่วมกับ
+`--through` หรือ `--host-result` ไม่ได้ ส่วน `packet <change> --resume`
+คืน references ของ agreement, task frontier, lease และ evidence ล่าสุดภายใน
+ขนาดที่กำหนด ต้องอ่าน references ต่อเมื่อ section ถูกระบุว่า truncated
+`feedback <change> --diagnostics` ส่งออก metadata ในเครื่องที่ผ่าน allowlist
+และใช้ alias ของ provider โดยไม่รวม path, command หรือ payload แบบข้อความอิสระ
+Build/Prove ที่จบแสดง `TARGET_REACHED`; archived แล้วจึงแสดง `DELIVERED`
+Feedback ตรวจ validity จาก runtime ปัจจุบัน ส่วน proof ที่ dashboard เคยบันทึกไว้
+ยังเป็น unverified หากตรวจ freshness ของ workspace ปัจจุบันไม่ได้
+
 สัญญาที่มองเห็นจากภายนอกถูกตรึงไว้ใน `.claude/harness/protocol.json` การติดตั้งที่ปนกันหลายรุ่นจะล้มเหลวทันทีตอนโหลด แทนที่จะไปพังกลางทาง Land
 
 | Pin | v3.5.8 |
 |---|---|
 | runtime | 3.5.8 |
-| runtime API | 31 |
+| runtime API | 32 |
 | semantic draft schema | 3 |
 | semantic amendment schema | 1 |
 | artifact defaults schema | 2 |
 | grounding schema | 1, 2, 3 |
-| advance protocol | 4 |
+| advance protocol | 5 |
 | provider protocol | 13 |
 | evidence schema | 1, 2 |
-| packet schema | 10 |
+| packet schema | 11 |
 | proof protocol | 7 |
 | review protocol | 4 |
 | acceptance protocol | 2 |

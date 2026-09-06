@@ -14,7 +14,7 @@ claude-foundation advance <change> --through build
 ```
 
 Coordinator ตรวจ agreement สร้างหรือ sync workspace แยก compile dependency ของ
-task ตรวจ lease ที่ยังทำงาน แล้วคืน action protocol v4 เพียงหนึ่งตัว เมื่อทำ action
+task ตรวจ lease ที่ยังทำงาน แล้วคืน action protocol v5 เพียงหนึ่งตัว เมื่อทำ action
 นั้นเสร็จ Agent เรียก `resume` ที่ส่งกลับมา โดยไม่ประกอบ chain ของ `sandbox`,
 `packet`, plan และ dispatch เอง
 

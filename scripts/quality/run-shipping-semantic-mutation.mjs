@@ -10,7 +10,7 @@ const CASES = [
   {
     id: "MUT-CLI-RUNTIME-API-DRIFT", sourcePath: "cli.sh",
     expectedKiller: "CASE-SINGLE-SOURCE-RUNTIME-API", detector: SINGLE_SOURCE,
-    before: "EXPECTED_RUNTIME_API=31", after: "EXPECTED_RUNTIME_API=999",
+    before: "EXPECTED_RUNTIME_API=32", after: "EXPECTED_RUNTIME_API=999",
     compile: ["bash", "-n", "cli.sh"]
   },
   {
@@ -22,7 +22,7 @@ const CASES = [
   {
     id: "MUT-PROTOCOL-RUNTIME-API-DRIFT", sourcePath: ".claude/harness/protocol.json",
     expectedKiller: "CASE-SINGLE-SOURCE-PROTOCOL", detector: SINGLE_SOURCE,
-    before: "\"runtimeApi\": \"31\"", after: "\"runtimeApi\": \"999\"",
+    before: "\"runtimeApi\": \"32\"", after: "\"runtimeApi\": \"999\"",
     compile: ["node", "-e", "JSON.parse(require('node:fs').readFileSync('.claude/harness/protocol.json'))"]
   },
   {
