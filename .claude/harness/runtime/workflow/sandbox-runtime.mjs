@@ -13,6 +13,7 @@ import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 import {
   compositeRepositorySelection, isolatedRepositoryState, worktreeOwnedByTarget
 } from "../core/repository-binding.mjs";
+import { shellDisplayArgument } from "../core/shell-mutation-policy.mjs";
 
 // A commit read, not executed. Inspection must not resolve a program through
 // PATH, so ref files are the authority for both ordinary and linked worktrees.
@@ -220,6 +221,36 @@ export function runSandboxSetupCommand(context, record, command, timeoutMs, cwd,
         tail ? `\n    ${tail}` : ""}`);
   }
   return record.setup;
+}
+
+// A worktree is a bare checkout and the copy path excludes installed
+// dependencies, so a project that installs them at its root starts every Build
+// without them. Three consumer Builds rediscovered that by linking the
+// checkout's node_modules — which the phase guard refuses — before falling back
+// to an install. Name the sanctioned route when the sandbox is created, so the
+// first Build turn already knows it. Lockfile first: the advice must match the
+// package manager the project actually pins.
+const DEPENDENCY_LOCKFILES = [
+  ["package-lock.json", "npm ci"],
+  ["npm-shrinkwrap.json", "npm ci"],
+  ["pnpm-lock.yaml", "pnpm install --frozen-lockfile"],
+  ["yarn.lock", "yarn install --frozen-lockfile"],
+  ["bun.lock", "bun install --frozen-lockfile"],
+  ["bun.lockb", "bun install --frozen-lockfile"]
+];
+
+export function missingDependencySetupAdvisory({ root, workspace, setupCommand, pathExists }) {
+  if (setupCommand) return null;
+  const lockfile = DEPENDENCY_LOCKFILES.find(([file]) => pathExists(join(root, file)));
+  if (!lockfile) return null;
+  const [file, install] = lockfile;
+  const installed = pathExists(join(root, "node_modules"));
+  return `NOTE: the workspace has no installed dependencies: ${file} is at ${root}` +
+    `${installed ? " and node_modules is installed there" : ""}, but foundation.json ` +
+    `declares no sandbox.setupCommand. Declare {"sandbox":{"setupCommand":"${install}"}} ` +
+    "so the harness prepares every workspace, or run " +
+    `\`cd ${shellDisplayArgument(workspace)} && ${install}\` once; linking or copying the ` +
+    "checkout's node_modules into the workspace is refused.";
 }
 
 export function carrySandboxIgnoredArtifacts(context, sourcePath, stagingPath) {
@@ -1101,6 +1132,14 @@ export function createSandboxRuntime({
       configured.setupTimeoutMs, state.workspace.path, null);
   }
 
+  function noteMissingDependencySetup(workspacePath) {
+    const advisory = missingDependencySetupAdvisory({
+      root, workspace: workspacePath, setupCommand: policy().sandbox?.setupCommand,
+      pathExists: existsSync
+    });
+    if (advisory) console.log(advisory);
+  }
+
   // Per-file digests of a packet directory. `sync` copies the target's packet
   // over the sandbox's wholesale; without a record of what the last copy wrote,
   // a packet edited in the sandbox is indistinguishable from one the copy wrote,
@@ -1178,6 +1217,7 @@ export function createSandboxRuntime({
     console.log(`SANDBOX ${id}\n  mode: isolated-copy\n  reason: ${reason}\n  git: ${
       carriesGit ? "carried" : "absent (target has no usable .git directory)"
     }\n  path: ${path}${setup ? `\n  setup: ${setup.status}` : ""}`);
+    noteMissingDependencySetup(path);
   }
 
   function createChallenge(id) {
@@ -1311,6 +1351,7 @@ export function createSandboxRuntime({
     const setup = runWorkspaceSetup(state);
     if (setup) saveRuntime(state);
     console.log(`SANDBOX ${id}\n  path: ${path}${setup ? `\n  setup: ${setup.status}` : ""}`);
+    noteMissingDependencySetup(path);
   }
 
   function mergeTaskProgress(source, sandbox) {

@@ -105,6 +105,27 @@ function filesystemMutationTargets(command) {
   return [...new Set(targets)].filter((target) => target && target !== "/dev/null");
 }
 
+// The operands a copy or link only reads: every `cp`/`ln`/`install` word
+// before the destination. Containment still refuses them outside the
+// workspace — a workspace never borrows the checkout's files — but the refusal
+// has to say so and name the sanctioned route. Three consumer Builds retried
+// relative, absolute, and unanchored links to the checkout's node_modules
+// against a reason that spoke only of mutation targets.
+const COPY_LIKE = /(?:^|[;&|()]|\b(?:then|do)\b)\s*(?:sudo\s+|env\s+)*(?:[^\s;&|()]+\/)*(?:cp|ln|install)\b([^;&|\n]*)/gmi;
+
+function copySourceOperands(command) {
+  const sources = [];
+  for (const match of command.matchAll(COPY_LIKE)) {
+    const words = shellWords(match[1]).map(unquote);
+    // `-t DIR` / `--target-directory` name the destination first; every
+    // operand is then a possible target and none is classified as a source.
+    if (words.some((word) => /^(?:-t|--target-directory)/.test(word))) continue;
+    const operands = words.filter((word) => word && !word.startsWith("-"));
+    sources.push(...operands.slice(0, -1));
+  }
+  return sources;
+}
+
 function targetEscapes(target, workspace, inspection) {
   const absolute = isAbsolute(target) ? resolve(target) : resolve(workspace, target);
   if (!within(workspace, absolute)) return true;
@@ -208,6 +229,11 @@ export function shellMutationViolation(phase, environment, command = null, inspe
       return "Build shell mutation contains a dynamic path that cannot be proven isolated " +
         `(\`${dynamicToken}\`); use literal paths inside ${root}`;
     const escape = obviousWorkspaceEscape(text, workspace, inspection);
+    if (escape !== null && copySourceOperands(text).includes(escape))
+      return "Build shell mutation copies or links from outside the isolated workspace " +
+        `(\`${escape}\`); a workspace never borrows the checkout's files or dependencies. ` +
+        "Declare sandbox.setupCommand in foundation.json (for example \"npm ci\") so the " +
+        `harness prepares every workspace, or run that install once after \`cd ${root} && \``;
     if (escape !== null)
       return "Build shell mutation contains an obvious path outside the isolated workspace " +
         `(\`${escape}\`); keep every mutation target inside ${root}`;

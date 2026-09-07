@@ -5,9 +5,15 @@ primitives unless its recovery explicitly names one. Update `tasks.md` only for
 the returned task after focused checks; the coordinator owns planning and phase
 transitions.
 
-For a mutating Bash command, begin with `cd <workspace or a directory inside it> && ...`; the live
-phase guard rejects an unanchored command, absolute outside operands, later
-directory escapes, and symlink traversal. Run returned long commands through
+For every mutating Bash command — redirects and heredocs, `sed -i`, `ln`,
+`cp`, `mv`, `rm`, `touch`, package scripts, `npx` — begin with
+`cd <workspace or a directory inside it> && ...`; the live phase guard reads
+only the command text, so the shell's remembered cwd never counts. It rejects
+an unanchored command, absolute outside operands, later directory escapes,
+symlink traversal, and copying or linking from outside the workspace. A fresh
+workspace has no installed dependencies: rely on `sandbox.setupCommand` in
+`foundation.json`, or run the project's install once inside the workspace;
+never link or copy the checkout's `node_modules`. Run returned long commands through
 `claude-foundation exec`; it derives the active phase and starts Build children
 in the canonical workspace. Prefer structured Edit/Write tools for product
 changes.

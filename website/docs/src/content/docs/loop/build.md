@@ -40,7 +40,9 @@ execution into a pass.
 Product writes are allowed only in the exact workspace and paths returned by
 `EDIT`. Shell mutation must anchor itself to that workspace. A worktree contains
 tracked files only; configure `sandbox.setupCommand` or a per-repository setup
-command when dependencies must be installed.
+command when dependencies must be installed. Sandbox creation prints a NOTE with
+the exact snippet when a lockfile is present and no setup command is declared;
+linking or copying the checkout's `node_modules` into the workspace is refused.
 
 The phase hook and `claude-foundation exec` use the same containment policy.
 They reject absolute outside operands, later directory escapes, and writes

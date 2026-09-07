@@ -255,7 +255,10 @@ installed, declare `sandbox.setupCommand` (plus `setupTimeoutMs`) in
 `foundation.json`, or a per-repository `setupCommand` in
 `openspec/repositories.yaml`. A successful setup is reused; a failed one keeps
 the sandbox and is retried by the harness without repeating ready siblings or
-handing a recovery command to the user.
+handing a recovery command to the user. When a lockfile is present and no setup
+command is declared, sandbox creation prints a NOTE with the exact
+`foundation.json` snippet; linking or copying the checkout's `node_modules`
+into the workspace is refused by the phase guard.
 
 For direct Bash use during Build, start an obviously mutating command with
 `cd <workspace-or-subdirectory> && ...`. The phase guard blocks unanchored package-manager

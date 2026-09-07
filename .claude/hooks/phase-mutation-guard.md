@@ -65,7 +65,11 @@ to a literal absolute directory that is the isolated workspace or inside it,
 joined by `&&`; `;` is accepted only for the workspace root, which the harness
 guarantees exists. The event's cwd is never trusted. It checks recognized filesystem operands,
 later directory changes, redirection targets, and canonical symlink targets;
-literal paths outside that workspace are blocked before execution. The
+literal paths outside that workspace are blocked before execution. A copy or
+link whose source lies outside the workspace (`cp ../x .`,
+`ln -s <checkout>/node_modules node_modules`) is refused with a reason that
+names `sandbox.setupCommand` and an in-workspace install as the routes: a
+workspace never borrows the checkout's files. The
 `claude-foundation exec` runtime uses the same policy, derives its phase from
 change state, and starts Build children in the canonical workspace. Use
 structured Edit/Write operations where possible.

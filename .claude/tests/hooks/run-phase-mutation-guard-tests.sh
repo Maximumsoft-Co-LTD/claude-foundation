@@ -135,7 +135,13 @@ assert_contains "Build blocks an absolute redirection outside isolation" "$out" 
 out="$(invoke build block "$TMP/workspace" \
   "$(bash_event "cd $TMP/workspace && cp ../outside/source ./source")")"
 assert_contains "Build blocks a relative shell escape from isolation" "$out" \
-  'obvious path outside the isolated workspace'
+  'copies or links from outside the isolated workspace'
+
+out="$(invoke build block "$TMP/workspace" \
+  "$(bash_event "cd $TMP/workspace && ln -sfn $TMP/outside/node_modules node_modules")")"
+assert_contains "Build refuses borrowing the checkout's dependencies" "$out" '"decision":"block"'
+assert_contains "Build routes a borrowed dependency link to sandbox setup" "$out" \
+  'sandbox.setupCommand'
 
 for command in \
   "touch $TMP/outside/touched.txt" \

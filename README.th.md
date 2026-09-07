@@ -241,7 +241,9 @@ worktree มีแค่ไฟล์ที่ Git ติดตาม ถ้า p
 ประกาศ `sandbox.setupCommand` (พร้อม `setupTimeoutMs`) ใน `foundation.json`
 หรือ `setupCommand` รายรีโปใน `openspec/repositories.yaml` setup ที่ผ่านแล้วจะถูก
 reuse ส่วนตัวที่ล้มจะเก็บ sandbox ไว้และ Harness retry ให้โดยไม่รัน sibling ที่พร้อม
-แล้วซ้ำหรือส่ง recovery command ให้ user
+แล้วซ้ำหรือส่ง recovery command ให้ user ถ้ามี lockfile แต่ยังไม่ประกาศ setup command
+ตอนสร้าง sandbox จะพิมพ์ NOTE พร้อม snippet ของ `foundation.json` ให้ ส่วนการ link
+หรือ copy `node_modules` ของ checkout เข้า workspace จะถูก phase guard ปฏิเสธ
 
 ถ้าต้องใช้ Bash โดยตรงระหว่าง Build ให้เริ่มคำสั่งที่แก้ไฟล์ด้วย
 `cd <workspace-or-subdirectory> && ...` phase guard จะบล็อก package manager หรือ formatter

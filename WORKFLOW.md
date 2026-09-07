@@ -125,7 +125,10 @@ Mutating shell commands must start with `cd` to the workspace root or a literal
 directory inside it, joined by `&&`. The phase guard and
 `claude-foundation exec` reject direct path escapes and symlink traversal, but
 the host still owns process isolation for indirect or dynamically computed
-effects.
+effects. Copying or linking files from outside the workspace is refused as
+well: a workspace never borrows the checkout's dependencies. Sandbox creation
+prints a NOTE with the exact `sandbox.setupCommand` snippet when the project
+has a lockfile but declares no setup command.
 
 Before Build, the harness compiles and persists an execution-preparation plan
 from selected repositories, setup commands, provider wiring, and tool identity.

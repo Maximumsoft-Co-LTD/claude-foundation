@@ -438,6 +438,10 @@ runs it once inside every newly created sandbox:
 { "sandbox": { "setupCommand": "npm ci", "setupTimeoutMs": 600000 } }
 ```
 
+Without it, `sandbox create` prints a NOTE naming this snippet whenever the
+project has a lockfile, and the phase guard refuses linking or copying the
+checkout's `node_modules` from inside the sandbox.
+
 In a multi-repository topology, each `openspec/repositories.yaml` row may
 declare its own `setupCommand`, which runs inside that repository's sandbox;
 `sandbox.setupCommand` still covers the root workspace. The outcome is

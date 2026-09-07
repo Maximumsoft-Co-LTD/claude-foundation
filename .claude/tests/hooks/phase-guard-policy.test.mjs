@@ -94,6 +94,10 @@ test("Land leaves read-only commands alone", () => {
 const UNANCHORED = "Build shell mutations must start inside the isolated workspace";
 const DYNAMIC = "Build shell mutation contains a dynamic path that cannot be proven isolated";
 const ESCAPE = "Build shell mutation contains an obvious path outside the isolated workspace";
+const BORROW = "Build shell mutation copies or links from outside the isolated workspace";
+const borrowRepair = (workspace) => "a workspace never borrows the checkout's files or " +
+  "dependencies. Declare sandbox.setupCommand in foundation.json (for example \"npm ci\") so " +
+  `the harness prepares every workspace, or run that install once after \`cd ${workspace} && \``;
 const WS = { FOUNDATION_WORKSPACE_ROOT: "/workspace" };
 
 test("shell mutation policy requires an isolated Build workspace", () => {
@@ -107,7 +111,7 @@ test("shell mutation policy requires an isolated Build workspace", () => {
   assert.match(shellMutationViolation("build", WS,
     "cd /workspace && echo x > /outside.txt"), new RegExp(`^${ESCAPE}`));
   assert.match(shellMutationViolation("build", WS,
-    "cd /workspace && cp ../secret ./secret"), new RegExp(`^${ESCAPE}`));
+    "cd /workspace && cp ../secret ./secret"), new RegExp(`^${BORROW}`));
   for (const command of [
     "cd /workspace && touch /outside.txt",
     "cd /workspace && cp source /outside.txt",
@@ -139,13 +143,46 @@ test("Build refusals name the refused operation, the workspace, and the required
   assert.equal(shellMutationViolation("build", WS, "cd /workspace && echo x > /outside.txt"),
     `${ESCAPE} (\`/outside.txt\`); keep every mutation target inside /workspace`);
   assert.equal(shellMutationViolation("build", WS, "cd /workspace && cp ../secret ./secret"),
-    `${ESCAPE} (\`../secret\`); keep every mutation target inside /workspace`);
+    `${BORROW} (\`../secret\`); ${borrowRepair("/workspace")}`);
   assert.equal(shellMutationViolation("build", { FOUNDATION_WORKSPACE_ROOT: "/my ws" }, "npm install"),
     `${UNANCHORED} (refused: npm install); ` +
     "start the command with `cd '/my ws' && ` or `cd '/my ws/<subdir>' && `");
   assert.equal(shellMutationViolation("build", WS, "cd /workspace/nope; rm -rf ./build"),
     `${UNANCHORED} (\`cd /workspace/nope;\` continues even when the directory change fails); ` +
     "start the command with `cd /workspace/nope && `");
+});
+
+// Three consumer Builds retried relative, absolute, and unanchored links to the
+// checkout's node_modules: the reason spoke of mutation targets while every
+// target was inside the workspace. A source outside the workspace is still
+// refused, but the refusal names the sanctioned route instead.
+test("Build names a copy or link from outside the workspace and routes to sandbox setup", () => {
+  const borrow = (fragment) => `${BORROW} (\`${fragment}\`); ${borrowRepair("/workspace")}`;
+  assert.equal(shellMutationViolation("build", WS,
+    "cd /workspace && ln -sfn /checkout/node_modules node_modules && ls node_modules/.bin"),
+  borrow("/checkout/node_modules"));
+  assert.equal(shellMutationViolation("build", WS,
+    "cd /workspace && ln -s ../../../node_modules node_modules"), borrow("../../../node_modules"));
+  assert.equal(shellMutationViolation("build", WS,
+    "cd /workspace && cp -R /checkout/node_modules ."), borrow("/checkout/node_modules"));
+  assert.equal(shellMutationViolation("build", WS,
+    'cd /workspace && cp "/other dir/x" .'), borrow("/other dir/x"));
+  assert.equal(shellMutationViolation("build", { FOUNDATION_WORKSPACE_ROOT: "/my ws" },
+    "cd '/my ws' && ln -s /checkout/node_modules node_modules"),
+  `${BORROW} (\`/checkout/node_modules\`); ${borrowRepair("'/my ws'")}`);
+  // A move consumes its source and a link name or `-t` directory is written;
+  // those operands stay mutation targets with the containment reason.
+  for (const command of [
+    "cd /workspace && mv /outside/x .",
+    "cd /workspace && ln -s node_modules /outside/link",
+    "cd /workspace && cp -t /outside a b",
+    "cd /workspace && cp source /outside.txt"
+  ]) assert.match(shellMutationViolation("build", WS, command), new RegExp(`^${ESCAPE}`), command);
+  // An unanchored link is refused for its anchor first: the guard must not
+  // propose a setup route before the command even names its workspace.
+  assert.match(shellMutationViolation("build", WS, "ln -s ../../../node_modules node_modules"),
+    new RegExp(`^${UNANCHORED}`));
+  assert.equal(shellMutationViolation("build", WS, "cd /workspace && npm ci"), null);
 });
 
 // Exit-status expansions expand to integers. The blocked consumer command

@@ -37,7 +37,9 @@ resume command ที่แน่นอน Automatic recovery ทำได้เ
 
 เขียน product ได้เฉพาะ workspace และ path ที่ `EDIT` คืนมา Shell mutation ต้องเริ่ม
 จาก workspace นั้น Worktree มีเฉพาะ tracked files ถ้าต้องติดตั้ง dependency ให้ตั้ง
-`sandbox.setupCommand` หรือ setup command ราย repository
+`sandbox.setupCommand` หรือ setup command ราย repository ถ้ามี lockfile แต่ยังไม่ประกาศ
+setup command ตอนสร้าง sandbox จะพิมพ์ NOTE พร้อม snippet ให้ ส่วนการ link หรือ copy
+`node_modules` ของ checkout เข้า workspace จะถูกปฏิเสธ
 
 Phase hook และ `claude-foundation exec` ใช้ containment policy เดียวกัน ทั้งคู่
 ปฏิเสธ absolute operand ที่อยู่นอก workspace, การเปลี่ยน directory ออกภายหลัง และ

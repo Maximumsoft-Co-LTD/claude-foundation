@@ -20,6 +20,7 @@ import {
   ignoredSandboxPaths,
   inspectSandbox,
   isolateSelectedRepositories,
+  missingDependencySetupAdvisory,
   repairSelectedRepositories,
   reportMultiRepositorySandbox,
   runSandboxSetupCommand,
@@ -799,4 +800,33 @@ test("createSingle creates clean worktrees and reports add failures", (t) => {
     "openspec", "changes", "change", "tasks.md"), "utf8"), "- [ ] task\n");
   assert.equal(clean.saved.length, 1);
   assert.match(output.rows[0], /SANDBOX change/);
+});
+
+// Three consumer Builds started in a worktree without node_modules and spent
+// their first turns linking the checkout's install — which the guard refuses —
+// before finding `npm ci`. Sandbox creation names that route up front.
+test("sandbox creation names sandbox.setupCommand when a lockfile has no setup", () => {
+  const present = (files) => (path) => files.some((file) => path.endsWith(`/${file}`));
+  const advisory = missingDependencySetupAdvisory({
+    root: "/proj", workspace: "/proj/.foundation/sandboxes/x", setupCommand: null,
+    pathExists: present(["package-lock.json", "node_modules"])
+  });
+  assert.match(advisory, /^NOTE: the workspace has no installed dependencies: package-lock\.json is at \/proj and node_modules is installed there/);
+  assert.match(advisory, /"sandbox":\{"setupCommand":"npm ci"\}/);
+  assert.match(advisory, /`cd \/proj\/\.foundation\/sandboxes\/x && npm ci` once/);
+  assert.match(advisory, /linking or copying the checkout's node_modules into the workspace is refused/);
+  // The advice follows the lockfile the project pins, quoted the way the
+  // guard's own anchor accepts it.
+  assert.match(missingDependencySetupAdvisory({
+    root: "/proj", workspace: "/my ws/sb", setupCommand: null,
+    pathExists: present(["pnpm-lock.yaml"])
+  }), /`cd '\/my ws\/sb' && pnpm install --frozen-lockfile` once/);
+  // A declared setup command or a project without a lockfile has nothing to add.
+  assert.equal(missingDependencySetupAdvisory({
+    root: "/proj", workspace: "/proj/sb", setupCommand: "npm ci",
+    pathExists: present(["package-lock.json"])
+  }), null);
+  assert.equal(missingDependencySetupAdvisory({
+    root: "/proj", workspace: "/proj/sb", setupCommand: null, pathExists: () => false
+  }), null);
 });
