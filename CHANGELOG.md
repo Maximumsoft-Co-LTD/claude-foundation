@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A Build shell command that copies or links from outside the isolated
+  workspace (for example `ln -s <checkout>/node_modules node_modules`) is
+  refused with a reason that names `sandbox.setupCommand` and an in-workspace
+  install, instead of a mutation-target message that sent agents through
+  relative, absolute, and unanchored retries. Destinations, `-t`, and `mv`
+  keep the containment reason.
+- The Build command requires the `cd <workspace> &&` anchor on every mutating
+  shell call, not only script-running checks; the Build policy reference and
+  the hook guide state the same contract.
+
+### Added
+
+- Sandbox creation prints a NOTE with the exact `foundation.json`
+  `sandbox.setupCommand` snippet when the project has a lockfile but declares
+  no setup command, matched to the lockfile's package manager.
+
 ## [3.5.10] - 2026-09-06
 
 ### Fixed
