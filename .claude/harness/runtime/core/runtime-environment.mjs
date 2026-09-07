@@ -40,6 +40,10 @@ const DEFAULT_POLICY = {
   }
 };
 
+export function policyExecutionLimit(policy, field) {
+  return policy().execution[field];
+}
+
 export function reviewAssuranceDimension(review, effectiveReview, definition) {
   const active = Boolean(effectiveReview);
   const configured = review[definition.key];
@@ -211,12 +215,15 @@ export function createRuntimeEnvironment({
       fail("foundation.json execution.maxContinuationWindows must be 1..20");
   }
 
+  function validateParallelLimit(policy, field) {
+    const parallel = Number(policy.execution[field]);
+    if (!Number.isInteger(parallel) || parallel < 1 || parallel > 16)
+      fail(`foundation.json execution.${field} must be an integer from 1 to 16`);
+  }
+
   function validateExecutionLimits(policy) {
-    for (const field of ["maxParallelAgents", "maxParallelProviders", "maxParallelSetups"]) {
-      const parallel = Number(policy.execution[field]);
-      if (!Number.isInteger(parallel) || parallel < 1 || parallel > 16)
-        fail(`foundation.json execution.${field} must be an integer from 1 to 16`);
-    }
+    for (const field of ["maxParallelAgents", "maxParallelProviders", "maxParallelSetups"])
+      validateParallelLimit(policy, field);
     const leaseMinutes = Number(policy.execution.leaseMinutes);
     if (!Number.isFinite(leaseMinutes) || leaseMinutes < 1 || leaseMinutes > 1440)
       fail("foundation.json execution.leaseMinutes must be from 1 to 1440");
@@ -354,12 +361,15 @@ export function createRuntimeEnvironment({
     return policy;
   }
 
+  function currentReviewAssurancePosture(effectiveReview = null) {
+    return reviewAssurancePosture(foundationPolicy(), effectiveReview);
+  }
+
   return {
     protocolDescriptor,
     commandExists,
     playwrightAvailability,
     foundationPolicy,
-    reviewAssurancePosture: (effectiveReview = null) =>
-      reviewAssurancePosture(foundationPolicy(), effectiveReview)
+    reviewAssurancePosture: currentReviewAssurancePosture
   };
 }

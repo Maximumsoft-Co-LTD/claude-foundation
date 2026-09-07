@@ -73,6 +73,33 @@ export function executionNodesOperation(context, id, hash) {
   return { nodes, unconfigured, unavailable };
 }
 
+export function providerExecutionBatch(context, id, pending, completed, owner, ready) {
+  const schedulable = [];
+  for (const node of pending.values()) {
+    const dependsOn = [];
+    for (const dependency of node.dependsOn)
+      dependsOn.push(owner.get(dependency) || dependency);
+    schedulable.push({ ...node, id: node.provider, dependsOn });
+  }
+  const schedulerCompleted = new Set();
+  for (const output of completed) schedulerCompleted.add(owner.get(output) || output);
+  for (const node of pending.values())
+    for (const dependency of node.dependsOn)
+      if (context.receiptValidity(id, dependency).validity === "valid")
+        schedulerCompleted.add(owner.get(dependency) || dependency);
+  const { selected } = scheduleReadyBatch(schedulable, schedulerCompleted, {
+    maxParallel: context.maxParallelProviders(),
+    conflicts: (left, right) => context.resourcesConflict(left.resources, right.resources)
+  });
+  const selectedIds = new Set();
+  for (const node of selected) selectedIds.add(node.id);
+  const batch = [];
+  for (const node of ready)
+    if (selectedIds.has(node.provider)) batch.push(node);
+  if (!batch.length) batch.push(ready[0]);
+  return batch;
+}
+
 export function createProviderScheduler({
   requiredProviders,
   receiptValidity,
@@ -88,9 +115,9 @@ export function createProviderScheduler({
   fail,
   log = console.log,
   logError = console.error,
-  maxParallelProviders = () => 4,
-  recordScheduler = () => {},
-  timestamp = Date.now
+  maxParallelProviders,
+  recordScheduler,
+  timestamp
 }) {
   const executionNodeContext = {
     requiredProviders, receiptValidity, providerConfig, commandExists,
@@ -154,23 +181,9 @@ export function createProviderScheduler({
           throw new Error(`provider dependency cycle: ${cycle.join(" -> ")}`);
         throw new Error(`provider dependency unresolvable: ${[...pending.keys()].join(", ")}`);
       }
-      const schedulable = [...pending.values()].map((node) => ({
-        ...node,
-        id: node.provider,
-        dependsOn: node.dependsOn.map((dependency) => owner.get(dependency) || dependency)
-      }));
-      const schedulerCompleted = new Set([...completed].map((output) => owner.get(output) || output));
-      for (const node of pending.values())
-        for (const dependency of node.dependsOn)
-          if (receiptValidity(id, dependency).validity === "valid")
-            schedulerCompleted.add(owner.get(dependency) || dependency);
-      const { selected: scheduled } = scheduleReadyBatch(schedulable, schedulerCompleted, {
-        maxParallel: maxParallelProviders(),
-        conflicts: (left, right) => resourcesConflict(left.resources, right.resources)
-      });
-      const selectedIds = new Set(scheduled.map((node) => node.id));
-      const batch = ready.filter((node) => selectedIds.has(node.provider));
-      if (!batch.length) batch.push(ready[0]);
+      const batch = providerExecutionBatch({
+        receiptValidity, maxParallelProviders, resourcesConflict
+      }, id, pending, completed, owner, ready);
       wave += 1;
       recordScheduler({
         scheduler: "provider", wave, readyNodes: ready.length,

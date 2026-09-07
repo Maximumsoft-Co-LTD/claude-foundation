@@ -439,7 +439,7 @@ export function createAgentPlanner({
   executionContract = null,
   readJson, writeJson, compactStrings, serializedJson, recordContextMetric,
   recordInstructionManifest, modelForTask, showPacket, fail,
-  recordScheduler = () => {}
+  recordScheduler
 }) {
   // Build resources are repo-qualified (`workspace:api`); evidence resources
   // are a different vocabulary (`workspace-read`, `dev-server`). Judging build

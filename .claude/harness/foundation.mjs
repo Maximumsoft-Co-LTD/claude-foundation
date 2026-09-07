@@ -42,7 +42,9 @@ import {
 } from "./runtime/evidence/evidence-results.mjs";
 import { createFlagParser } from "./runtime/core/cli-flags.mjs";
 import { createCommandRegistry } from "./runtime/core/command-registry.mjs";
-import { createRuntimeEnvironment } from "./runtime/core/runtime-environment.mjs";
+import {
+  createRuntimeEnvironment, policyExecutionLimit
+} from "./runtime/core/runtime-environment.mjs";
 import {
   phaseForCommand, telemetryPhaseForCommand
 } from "./runtime/core/lifecycle-phase.mjs";
@@ -51,7 +53,8 @@ import { createInstructionRecorder } from "./runtime/core/instruction-recorder.m
 import { createAgentPlanner, createModelRouter } from "./runtime/workflow/agent-planning.mjs";
 import { createAgentDispatchRuntime } from "./runtime/workflow/agent-dispatch.mjs";
 import {
-  ADVANCE_PROTOCOL_VERSION, createAdvanceRuntime
+  ADVANCE_PROTOCOL_VERSION, createAdvanceRuntime, hasValidLandGrant,
+  prepareAdvanceBuild, runAdvanceProof
 } from "./runtime/workflow/advance-runtime.mjs";
 import { createSandboxRuntime } from "./runtime/workflow/sandbox-runtime.mjs";
 import { createSandboxCleanup } from "./runtime/workflow/sandbox-cleanup.mjs";
@@ -309,6 +312,8 @@ const {
   readJson,
   fail: die
 });
+const maxParallelProviders = policyExecutionLimit.bind(
+  null, foundationPolicy, "maxParallelProviders");
 
 const sourceCohort = createSourceCohortProvider({
   runtimeVersion: VERSION,
@@ -919,8 +924,9 @@ const adapterRuntime = createAdapterRuntime({
   mutationProtocolResult,
   now,
   serviceResourcesConflict: resourcesConflict,
-  maxParallelServices: () => foundationPolicy().execution.maxParallelProviders,
-  recordScheduler: (event) => commandPhaseRecorder.scheduler(event),
+  maxParallelServices: maxParallelProviders,
+  recordScheduler: commandPhaseRecorder.scheduler,
+  timestamp: Date.now,
   die
 });
 const {
@@ -947,8 +953,9 @@ const {
   adapterResources,
   resourcesConflict,
   executeAdapter,
-  maxParallelProviders: () => foundationPolicy().execution.maxParallelProviders,
-  recordScheduler: (event) => commandPhaseRecorder.scheduler(event),
+  maxParallelProviders,
+  recordScheduler: commandPhaseRecorder.scheduler,
+  timestamp: Date.now,
   fail: die
 });
 const { modelForTask } = createModelRouter({
@@ -1120,7 +1127,7 @@ const {
   recordInstructionManifest,
   modelForTask,
   showPacket,
-  recordScheduler: (event) => commandPhaseRecorder.scheduler(event),
+  recordScheduler: commandPhaseRecorder.scheduler,
   fail: die
 });
 const {
@@ -1238,7 +1245,7 @@ const {
 } = createSandboxCleanup({ root: ROOT, canonicalPath, git });
 const sandboxRuntime = createSandboxRuntime({
   markBlocked,
-  recordScheduler: (event) => commandPhaseRecorder.scheduler(event),
+  recordScheduler: commandPhaseRecorder.scheduler,
   root: ROOT,
   policy: foundationPolicy,
   excludedWorkspaceDirs: EXCLUDED_WORKSPACE_DIRS,
@@ -1381,7 +1388,7 @@ const {
   bindClaudeSession,
   validate,
   showPacket,
-  measureStage: (stage, operation) => commandPhaseRecorder.measure(stage, operation),
+  measureStage: commandPhaseRecorder.measure,
   trapFailures,
   rollbackStart: rollbackAtomicStart
 });
@@ -1815,13 +1822,15 @@ const { advanceValue, showAdvance } = createAdvanceRuntime({
   authorityNext,
   proofReadinessValue,
   budgetDecisionValue: budgetDecision,
-  hasLandGrant: (id) => landGrantRuntime.valid(id).valid,
-  prepareBuild: (id) => commandPhaseRecorder.measureAsync("build.prepare", () => runAdvanceQuietly(async () => {
-    prepareBuildSandbox(id);
-    prepareExecution(id, { stage: "build" });
-  })),
-  runProof: (id) => commandPhaseRecorder.measureAsync("prove.execute", () =>
-    runAdvanceQuietly(() => proofAdvance(id, { quiet: true }))),
+  hasLandGrant: hasValidLandGrant.bind(null, landGrantRuntime),
+  prepareBuild: prepareAdvanceBuild.bind(null, {
+    measureAsync: commandPhaseRecorder.measureAsync,
+    runQuietly: runAdvanceQuietly, prepareBuildSandbox, prepareExecution
+  }),
+  runProof: runAdvanceProof.bind(null, {
+    measureAsync: commandPhaseRecorder.measureAsync,
+    runQuietly: runAdvanceQuietly, proofAdvance
+  }),
   recoverReviewBindings,
   runLand: (id) => runAdvanceQuietly(() => advanceLand(id)),
   recordPhase: (id, phase) => {

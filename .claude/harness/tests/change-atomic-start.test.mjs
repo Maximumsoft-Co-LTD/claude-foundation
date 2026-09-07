@@ -107,6 +107,7 @@ function fixture(t, { validationFailure = null, sandboxFailure = null } = {}) {
       if (sandboxFailure) throw new Error(sandboxFailure);
     },
     showPacket: () => { calls.sequence.push("packet"); },
+    measureStage: (_stage, operation) => operation(),
     trapFailures: (operation) => operation(),
     rollbackStart: (id) => {
       calls.rollback += 1;

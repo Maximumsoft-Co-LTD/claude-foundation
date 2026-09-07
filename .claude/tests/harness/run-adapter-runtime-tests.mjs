@@ -1,17 +1,39 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
-  createAdapterRuntime, criticalCaseResult, providerRepositoryManifestValue
+  assertReadRepositoriesUnchanged, createAdapterRuntime, criticalCaseResult,
+  providerRepositoryManifestValue, repositoryStatus
 } from "../../harness/runtime/evidence/adapter-runtime.mjs";
 
 const stableHash = (value) => createHash("sha256")
   .update(JSON.stringify(value)).digest("hex");
 const fail = (message) => { throw new Error(message); };
+
+test("read-only postcondition ignores writes and rejects dirty reads", () => {
+  const rows = [{ id: "write", mode: "write" }, { id: "read", mode: "read" }];
+  assert.doesNotThrow(() => assertReadRepositoriesUnchanged({
+    repositoryStatus: () => "", die: fail
+  }, "test", rows));
+  assert.throws(() => assertReadRepositoriesUnchanged({
+    repositoryStatus: () => " M lockfile", die: fail
+  }, "test", rows), /modified read-only repository 'read'/);
+});
+
+test("repository status distinguishes clean, dirty, and unavailable workspaces", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "adapter-repository-status-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  execFileSync("git", ["init", "--quiet"], { cwd: root });
+  assert.equal(repositoryStatus({ workspacePath: root }), "");
+  writeFileSync(join(root, "dirty.txt"), "dirty\n");
+  assert.match(repositoryStatus({ workspacePath: root }), /\?\? dirty\.txt/);
+  assert.equal(repositoryStatus({ workspacePath: join(root, "missing") }), null);
+});
 
 test("repository manifest validates workspaces, setup, and read-only state", () => {
   const root = { id: "root", workspacePath: "/root", mode: "write", baseHead: "row-root" };
@@ -108,12 +130,17 @@ function fixture(config, resultValue = result(), overrides = {}) {
       try { return JSON.parse(value); } catch { return null; }
     },
     parseTapOutput: () => null,
+    parseNodeTestSpecOutput: () => null,
     numericReportValue: (report) => Number.isFinite(report?.numTotalTests)
       ? report.numTotalTests : null,
     playwrightReportSummary: (report) => report.summary || null,
     requiredProviders: () => ["provider", "browser"],
     mutationProtocolResult: () => "behavioral-kill",
     now: () => "2026-08-25T00:00:00.000Z",
+    serviceResourcesConflict: () => false,
+    maxParallelServices: () => 4,
+    recordScheduler: () => {},
+    timestamp: Date.now,
     die: fail,
     ...overrides
   });

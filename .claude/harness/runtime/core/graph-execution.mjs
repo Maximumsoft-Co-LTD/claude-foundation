@@ -27,7 +27,9 @@ export function criticalPathDepths(nodes = []) {
     if (memo.has(id)) return memo.get(id);
     if (visiting.has(id)) throw new Error(`execution graph dependency cycle at '${id}'`);
     visiting.add(id);
-    const value = 1 + Math.max(0, ...(children.get(id) || []).map(depth));
+    let childDepth = 0;
+    for (const child of children.get(id) || []) childDepth = Math.max(childDepth, depth(child));
+    const value = 1 + childDepth;
     visiting.delete(id);
     memo.set(id, value);
     return value;
@@ -111,6 +113,13 @@ function providerClaims(provider, claims) {
     .map((claim) => claim.id));
 }
 
+function taskDependencies(task, repository, tasks) {
+  if ((task.dependsOn || []).length) return [...task.dependsOn];
+  return (repository.dependsOn || []).flatMap((dependencyRepository) =>
+    tasks.filter((candidate) => candidate.repository === dependencyRepository)
+      .map((candidate) => candidate.id));
+}
+
 // Pure compiler: durable artifacts remain authoritative and this value can be
 // deleted and reconstructed. Callers supply stableHash so graph identity uses
 // the same canonical hash implementation as the rest of Foundation.
@@ -118,7 +127,7 @@ export function compileExecutionGraph({
   changeId, contractRevision = 0, workspaceHash = null,
   repositories = [], tasks = [], claims = [], providers = [], services = [], stableHash
 }) {
-  if (typeof stableHash !== "function") throw new Error("execution graph requires stableHash");
+  assertStableHash(stableHash);
   const repositoryMap = new Map(repositories.map((repository) => [repository.id, repository]));
   const setupNodes = repositories.filter((repository) => repository.setupCommand)
     .map((repository) => node({
@@ -137,11 +146,7 @@ export function compileExecutionGraph({
   const taskNodes = tasks.map((task) => {
     const repository = repositoryMap.get(task.repository);
     if (!repository) throw new Error(`graph task '${task.id}' references unknown repository '${task.repository}'`);
-    const dependencies = [...(task.dependsOn || [])];
-    if (!dependencies.length)
-      for (const dependencyRepository of repository.dependsOn || [])
-        dependencies.push(...tasks.filter((candidate) =>
-          candidate.repository === dependencyRepository).map((candidate) => candidate.id));
+    const dependencies = taskDependencies(task, repository, tasks);
     return node({
       id: `task:${task.id}`, kind: "task", repository: task.repository,
       required: task.required !== false, dependsOn: [
@@ -250,6 +255,10 @@ export function compileExecutionGraph({
     identity,
     revision: `graph-v${EXECUTION_GRAPH_VERSION}-${identity.slice(0, 20)}`
   };
+}
+
+function assertStableHash(stableHash) {
+  if (typeof stableHash !== "function") throw new Error("execution graph requires stableHash");
 }
 
 export function dependentClosure(graph, seeds) {

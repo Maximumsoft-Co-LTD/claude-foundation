@@ -10,10 +10,15 @@ import {
   compileLandPreparation, dependentClosure, landPreparationMatches,
   schemasCompatible, scheduleReadyBatch, singleAgentExecutionEligible, validateNodeResult
 } from "../runtime/core/graph-execution.mjs";
+
 import { createLeaseRuntime } from "../runtime/workflow/lease-runtime.mjs";
 
 const stableHash = (value) => createHash("sha256")
   .update(JSON.stringify(value)).digest("hex");
+
+test("execution graph requires the shared stable hash implementation", () => {
+  assert.throws(() => compileExecutionGraph({}), /requires stableHash/);
+});
 
 function fixture(overrides = {}) {
   return {

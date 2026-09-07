@@ -9,6 +9,7 @@ import test from "node:test";
 
 import {
   assertSandboxGroundingPortable,
+  applySetupResult,
   carrySandboxIgnoredArtifacts,
   carryableGitMetadata,
   commitSandboxReplay,
@@ -17,6 +18,7 @@ import {
   copyTrackedRootMetadata,
   createSandbox,
   createSandboxRuntime,
+  executeSandboxSetupBatch,
   ignoredSandboxPaths,
   inspectSandbox,
   isolateSelectedRepositories,
@@ -24,6 +26,8 @@ import {
   prepareBuildSandbox,
   repairSelectedRepositories,
   reportMultiRepositorySandbox,
+  retryFailedSandboxSetups,
+  runMeasuredSandboxSetupBatch,
   runSandboxSetupBatch,
   runSandboxSetupCommand,
   sandboxCopyPlan,
@@ -211,6 +215,28 @@ test("sandbox setup batch runs independent commands concurrently within capacity
     }
   ], 2);
   assert.deepEqual(rows.map((row) => row.result.status), [0, 0]);
+});
+
+test("sandbox setup batch runner surfaces worker failures", () => {
+  assert.throws(() => executeSandboxSetupBatch({
+    executable: "node",
+    spawn: () => ({ status: 1, stderr: "worker crashed" })
+  }, "unused", []), /parallel sandbox setup runner failed: worker crashed/);
+});
+
+test("measured sandbox setup reports bounded waves", () => {
+  const events = [];
+  const rows = runMeasuredSandboxSetupBatch({
+    policy: () => ({ execution: { maxParallelSetups: 2 } }),
+    recordScheduler: (event) => events.push(event)
+  }, [
+    { command: "true", cwd: process.cwd(), timeoutMs: 1000 },
+    { command: "true", cwd: process.cwd(), timeoutMs: 1000 },
+    { command: "true", cwd: process.cwd(), timeoutMs: 1000 }
+  ]);
+  assert.deepEqual(rows.map((row) => row.wave), [1, 1, 2]);
+  assert.deepEqual(events.map((event) => [event.readyNodes, event.executedNodes]),
+    [[3, 2], [1, 1]]);
 });
 
 test("ignored artifact carry skips failures, existing targets, and unmovable entries", () => {
@@ -467,6 +493,36 @@ test("repository repair recovers a partial binding without recreating work", (t)
   assert.equal(f.calls.git.some(({ args }) => args[1] === "add"), false);
 });
 
+test("repository repair creates a missing canonical worktree", (t) => {
+  const f = fixture(t);
+  f.state.repositories = {};
+  const setup = repairSelectedRepositories(
+    f.context, "change", f.state, f.repositories());
+  assert.deepEqual(setup.map((repository) => repository.id), ["child"]);
+  assert.equal(f.state.repositories.child.baseHead, "child-head");
+  assert.equal(f.state.repositories.child.applied, false);
+  assert.equal(f.calls.git.some(({ args }) => args[1] === "add"), true);
+});
+
+test("repository repair removes only worktrees created by a failed attempt", (t) => {
+  const f = fixture(t);
+  const broken = join(f.root, "broken-source");
+  mkdirSync(broken);
+  f.state.repositories = {};
+  f.context.gitHead = (path) => path === broken ? null :
+    (path === f.root ? "root-head" : "child-head");
+  const repositories = [
+    ...f.repositories(),
+    { id: "broken", mode: "write", path: broken }
+  ];
+  assert.throws(() => repairSelectedRepositories(
+    f.context, "change", f.state, repositories),
+  /broken.*not an initialized Git repository.*existing work was preserved/);
+  assert.equal("child" in f.state.repositories, false);
+  assert.equal(f.calls.git.some(({ args }) => args[1] === "remove"), true);
+  assert.equal(f.calls.saved.length, 1);
+});
+
 test("repository isolation rolls back an uninitialized repository", (t) => {
   const f = fixture(t);
   f.context.gitHead = (path) => path === f.child ? null : "root-head";
@@ -541,6 +597,73 @@ test("parallel repository setup records and reports command failures", (t) => {
   assert.match(output.rows[0], /exit 2[\s\S]*install failed/);
 });
 
+test("setup result retains non-process failures without warning", () => {
+  const record = { access: "write" };
+  applySetupResult({ git: () => assert.fail("write repositories need no status") }, {
+    repository: { id: "child" }, record, command: "install",
+    result: { status: null, error: "spawn failed", stdout: "", stderr: "" }
+  });
+  assert.deepEqual(record.setup, {
+    command: "install", status: "failed", exitCode: null
+  });
+
+  const warnings = captureConsole("error", () => applySetupResult({
+    git: () => assert.fail("write repositories need no status")
+  }, {
+    repository: { id: "child" }, record, command: "install",
+    result: { status: null, error: "spawn failed" }
+  }, true));
+  assert.match(warnings.rows[0], /spawn failed/);
+  assert.doesNotMatch(warnings.rows[0], /\n    /);
+});
+
+test("parallel repository setup validates successful read-only worktrees", (t) => {
+  const f = fixture(t);
+  f.state.repositories = {
+    child: { mode: "worktree", access: "read", path: f.child }
+  };
+  const context = {
+    ...f.context,
+    runSetupBatch: (jobs) => jobs.map((job) => ({
+      ...job, result: { status: 0, error: null, stdout: "", stderr: "" }
+    })),
+    git: () => ({ status: 0, stdout: "", stderr: "" })
+  };
+  setupSelectedRepositories(context, f.state,
+    [{ id: "child", setupCommand: "install" }]);
+  assert.deepEqual(f.state.repositories.child.setup, {
+    command: "install", status: "ok", exitCode: 0
+  });
+});
+
+test("failed setup retry batches only failed child records", () => {
+  const state = {
+    workspace: { path: "/root", setup: { status: "ok" } },
+    repositories: {
+      api: { path: "/api", access: "write", setup: { status: "failed" } },
+      ready: { path: "/ready", access: "write", setup: { status: "ok" } }
+    }
+  };
+  const saved = [];
+  const attempted = retryFailedSandboxSetups({
+    loadRuntime: () => state,
+    saveRuntime: (value) => saved.push(value),
+    selectedRepositories: () => [
+      { id: "root" }, { id: "api", setupCommand: "install" },
+      { id: "ready", setupCommand: "install" }
+    ],
+    policy: () => ({ sandbox: { setupTimeoutMs: 100 } }),
+    runSetupCommand: () => assert.fail("batch path expected"),
+    runSetupBatch: (jobs) => jobs.map((job) => ({
+      ...job, result: { status: 0, error: null, stdout: "", stderr: "" }
+    })),
+    git: () => ({ status: 0, stdout: "", stderr: "" })
+  }, "change", state);
+  assert.deepEqual(attempted, ["api"]);
+  assert.equal(state.repositories.api.setup.status, "ok");
+  assert.equal(saved.length, 1);
+});
+
 test("read-only setup reports dirty output and git failures", (t) => {
   const dirty = fixture(t);
   dirty.state.repositories = {
@@ -602,6 +725,25 @@ test("create sandbox completes the multi-repository lifecycle", (t) => {
   all.setRepositories([{ id: "root", mode: "write", path: all.root }]);
   captureConsole("log", () => createSandbox(all.context, "change", { all: true }));
   assert.equal(all.calls.saved.at(-1).status, "building");
+});
+
+test("create sandbox repairs an existing partial repository topology", (t) => {
+  const f = fixture(t);
+  const expected = join(f.root, ".foundation", "repository-sandboxes",
+    "change", "child");
+  mkdirSync(expected, { recursive: true });
+  f.state.repositories = { root: {
+    mode: "worktree", path: f.state.workspace.path, targetPath: f.root,
+    baseHead: "root-base", access: "write"
+  } };
+  f.context.worktreeOwnedByTarget = () => true;
+  f.context.selectedRepositories = () => f.repositories();
+  f.context.gitHead = (path) => path === expected || path === f.child
+    ? "child-head" : "root-head";
+  captureConsole("log", () => createSandbox(f.context, "change"));
+  assert.equal(f.state.repositories.child.path, expected);
+  assert.equal(f.calls.setup.length, 1);
+  assert.equal(f.calls.saved.at(-1).status, "building");
 });
 
 test("prepareBuild repairs an incomplete child repository before execution", () => {

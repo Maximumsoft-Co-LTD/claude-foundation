@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  coordinatorAction, createAdvanceRuntime
+  coordinatorAction, createAdvanceRuntime, hasValidLandGrant,
+  prepareAdvanceBuild, runAdvanceProof
 } from "../runtime/workflow/advance-runtime.mjs";
 import {
   feedbackSnapshotValue, operationCauseCoverage, reviewRepairIntervals
@@ -18,6 +19,34 @@ const base = {
   authorityRequests: [],
   stableHash
 };
+
+test("advance phase operations measure harness-owned Build and Prove work", async () => {
+  const calls = [];
+  const measureAsync = async (stage, operation) => {
+    calls.push(stage);
+    return operation();
+  };
+  const runQuietly = (operation) => operation();
+  await prepareAdvanceBuild({
+    measureAsync, runQuietly,
+    prepareBuildSandbox: (id) => calls.push(["sandbox", id]),
+    prepareExecution: (id, options) => calls.push(["execution", id, options])
+  }, "change-a");
+  await runAdvanceProof({
+    measureAsync, runQuietly,
+    proofAdvance: (id, options) => calls.push(["proof", id, options])
+  }, "change-a");
+  assert.deepEqual(calls, [
+    "build.prepare", ["sandbox", "change-a"],
+    ["execution", "change-a", { stage: "build" }],
+    "prove.execute", ["proof", "change-a", { quiet: true }]
+  ]);
+});
+
+test("advance land grant adapter projects only current validity", () => {
+  assert.equal(hasValidLandGrant({ valid: () => ({ valid: true }) }, "change-a"), true);
+  assert.equal(hasValidLandGrant({ valid: () => ({ valid: false }) }, "change-a"), false);
+});
 
 test("advance returns bounded Build work without invoking a model", () => {
   const value = coordinatorAction({

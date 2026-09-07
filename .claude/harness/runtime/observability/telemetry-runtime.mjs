@@ -91,6 +91,13 @@ export function blockerTelemetryValue(message, context = {}) {
   };
 }
 
+export function commandTelemetryDetails(context) {
+  return {
+    ...(context.stageSpans ? { stageSpans: context.stageSpans } : {}),
+    ...(context.schedulerEvents?.length ? { schedulerEvents: context.schedulerEvents } : {})
+  };
+}
+
 export function commandTelemetryRow(context, code) {
   const inspection = context.readOnlyOperations.has(context.operationName);
   const status = commandTelemetryStatus(code, context.blocked);
@@ -108,8 +115,7 @@ export function commandTelemetryRow(context, code) {
     finishedAt: context.now(),
     durationMs: context.timestamp() - context.operationStartedAt,
     ...(context.phaseSpans ? { phaseSpans: context.phaseSpans } : {}),
-    ...(context.stageSpans ? { stageSpans: context.stageSpans } : {}),
-    ...(context.schedulerEvents?.length ? { schedulerEvents: context.schedulerEvents } : {}),
+    ...commandTelemetryDetails(context),
     requests: null,
     inputTokens: null,
     outputTokens: null,

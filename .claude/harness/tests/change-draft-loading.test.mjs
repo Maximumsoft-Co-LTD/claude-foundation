@@ -51,6 +51,7 @@ const lifecycle = createChangeLifecycle({
     return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
   },
   readJson: (path) => JSON.parse(readFileSync(path, "utf8")),
+  measureStage: (_stage, operation) => operation(),
   writeJson: () => {}, slugify: (value) => value, changePath: () => root,
   loadRuntime: () => ({}), saveRuntime: () => {}, setOperationChangeId: () => {},
   initialBudget: () => ({}), gitHead: () => "head", preexistingDirty: () => [],

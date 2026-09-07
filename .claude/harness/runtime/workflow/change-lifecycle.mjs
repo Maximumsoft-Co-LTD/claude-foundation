@@ -378,7 +378,7 @@ export function createChangeLifecycle({
   bindClaudeSession,
   validate,
   showPacket,
-  measureStage = (_stage, operation) => operation(),
+  measureStage,
   trapFailures = (operation) => operation(),
   rollbackStart = () => []
 }) {

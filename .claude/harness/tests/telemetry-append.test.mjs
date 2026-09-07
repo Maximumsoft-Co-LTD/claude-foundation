@@ -19,7 +19,9 @@ import {
   rebindTelemetryWindow,
   replaceTelemetryJsonLines
 } from "../runtime/observability/telemetry-runtime.mjs";
-import { lifecycleSchedulerMetrics } from "../runtime/observability/metrics-runtime.mjs";
+import {
+  lifecycleSchedulerMetrics, lifecycleStageMetrics
+} from "../runtime/observability/metrics-runtime.mjs";
 
 const readLines = (path) => existsSync(path)
   ? readFileSync(path, "utf8").split("\n").filter(Boolean).map(JSON.parse)
@@ -68,6 +70,45 @@ test("advance records disjoint phase spans and attributes a failure to its activ
   }]);
   assert.equal(planned["build-task-plan"].queueingMs, null);
   assert.equal(planned["build-task-plan"].reusedNodes, null);
+});
+
+test("phase recorder covers failed sync and async stages plus empty scheduler values", async () => {
+  let at = 2000;
+  const rows = [];
+  const recorder = createCommandPhaseRecorder(() => commandContext({
+    operationName: "advance", operationStartedAt: 2000,
+    timestamp: () => at, now: () => new Date(at).toISOString()
+  }), (context, code) => rows.push(commandTelemetryRow(context, code)));
+  assert.throws(() => recorder.measure("sync-failure", () => {
+    at += 5;
+    throw new Error("sync failed");
+  }), /sync failed/);
+  assert.equal(await recorder.measureAsync("async-success", async () => {
+    at += 10;
+    return "ok";
+  }), "ok");
+  await assert.rejects(() => recorder.measureAsync("async-failure", async () => {
+    at += 15;
+    throw new Error("async failed");
+  }), /async failed/);
+  recorder.scheduler({ reusedNodes: null, queueingMs: null });
+  recorder.finish(0);
+  assert.deepEqual(rows[0].stageSpans.map((span) => span.status),
+    ["failed", "completed", "failed"]);
+  assert.deepEqual(rows[0].schedulerEvents[0], {
+    scheduler: "unknown", wave: 0, readyNodes: 0, executedNodes: 0,
+    reusedNodes: null, queueingMs: null, peakConcurrency: 0
+  });
+  assert.deepEqual(lifecycleStageMetrics([
+    ...rows,
+    { stageSpans: [{ stage: null, durationMs: 1 },
+      { stage: "ignored", durationMs: "not-a-number" }] },
+    { stageSpans: null }
+  ]), {
+    "sync-failure": { calls: 1, durationMs: 5, failures: 1 },
+    "async-success": { calls: 1, durationMs: 10, failures: 0 },
+    "async-failure": { calls: 1, durationMs: 15, failures: 1 }
+  });
 });
 
 function commandContext(overrides = {}) {

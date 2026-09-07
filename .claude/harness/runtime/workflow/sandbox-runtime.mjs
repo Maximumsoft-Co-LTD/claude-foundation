@@ -250,21 +250,49 @@ export function runSandboxSetupBatch(records, maxParallel = 1) {
     const batch = records.slice(index, index + capacity);
     const queuedMs = Date.now() - operationStartedAt;
     const batchStartedAt = Date.now();
-    const child = spawnSync(process.execPath, ["--input-type=module", "-e", source], {
-      encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
-      input: JSON.stringify(batch.map((row) => ({
-        command: row.command, cwd: row.cwd, timeoutMs: row.timeoutMs
-      })))
-    });
-    if (child.status !== 0) throw new Error(`parallel sandbox setup runner failed: ${child.stderr.trim()}`);
-    const rows = JSON.parse(child.stdout);
+    const rows = executeSandboxSetupBatch({
+      spawn: spawnSync, executable: process.execPath
+    }, source, batch);
     const durationMs = Date.now() - batchStartedAt;
-    results.push(...batch.map((job, offset) => ({
-      ...job, result: rows[offset], queuedMs, durationMs,
-      wave: Math.floor(index / capacity) + 1
-    })));
+    for (let offset = 0; offset < batch.length; offset += 1)
+      results.push(sandboxSetupResult(batch[offset], rows[offset], queuedMs,
+        durationMs, Math.floor(index / capacity) + 1));
   }
   return results;
+}
+
+export function executeSandboxSetupBatch(context, source, batch) {
+  const child = context.spawn(context.executable, ["--input-type=module", "-e", source], {
+    encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
+    input: JSON.stringify(batch.map(sandboxSetupInput))
+  });
+  if (child.status !== 0)
+    throw new Error(`parallel sandbox setup runner failed: ${child.stderr.trim()}`);
+  return JSON.parse(child.stdout);
+}
+
+function sandboxSetupInput(row) {
+  return { command: row.command, cwd: row.cwd, timeoutMs: row.timeoutMs };
+}
+
+function sandboxSetupResult(job, result, queuedMs, durationMs, wave) {
+  return { ...job, result, queuedMs, durationMs, wave };
+}
+
+export function runMeasuredSandboxSetupBatch(context, records) {
+  const capacity = context.policy().execution?.maxParallelSetups;
+  const rows = runSandboxSetupBatch(records, capacity);
+  for (const wave of [...new Set(rows.map((row) => row.wave))]) {
+    const batch = rows.filter((row) => row.wave === wave);
+    context.recordScheduler({
+      scheduler: "setup", wave,
+      readyNodes: records.length - rows.filter((row) => row.wave < wave).length,
+      executedNodes: batch.length, reusedNodes: 0,
+      queueingMs: batch.reduce((total, row) => total + row.queuedMs, 0),
+      peakConcurrency: batch.length
+    });
+  }
+  return rows;
 }
 
 // A worktree is a bare checkout and the copy path excludes installed
@@ -907,52 +935,57 @@ export function repairSelectedRepositories(context, id, state, repositories) {
   }
 }
 
+export function setupJob(repository, record, timeoutMs) {
+  return {
+    repository, record, command: repository.setupCommand,
+    cwd: record.path, timeoutMs
+  };
+}
+
+export function verifyReadOnlySetup(context, repository, record, warn = false) {
+  if (record.access !== "read") return;
+  const changed = context.git(["status", "--porcelain"], record.path);
+  if (changed.status === 0 && !changed.stdout.trim()) return;
+  record.setup.status = "failed";
+  record.setup.reason = "setup modified a read-only repository";
+  if (warn) (context.output || console).error(
+    `WARNING: sandbox setup modified read-only repository '${repository.id}': ${
+      changed.stdout.trim() || changed.stderr.trim() || "git status failed"}`);
+}
+
+export function applySetupResult(context, row, warn = false) {
+  const { repository, record, command, result } = row;
+  const failed = Boolean(result.error) || result.status !== 0;
+  record.setup = {
+    command, status: failed ? "failed" : "ok",
+    exitCode: typeof result.status === "number" ? result.status : null
+  };
+  if (failed && warn) {
+    const cause = typeof result.status === "number" ? `exit ${result.status}` : result.error;
+    const tail = `${result.stdout || ""}\n${result.stderr || ""}`
+      .trim().split("\n").filter(Boolean).slice(-5).join("\n    ");
+    (context.output || console).error(`WARNING: sandbox setup command failed for '${repository.id}' (${
+      cause}) in the isolated workspace. Harness preparation will repair or route this failure before Build.${
+      tail ? `\n    ${tail}` : ""}`);
+  }
+  verifyReadOnlySetup(context, repository, record, warn);
+}
+
 export function setupSelectedRepositories(context, state, repositories) {
+  const timeoutMs = context.policy().sandbox?.setupTimeoutMs;
+  const eligible = repositories.flatMap((repository) => {
+    const record = state.repositories[repository.id];
+    return repository.setupCommand && record?.mode === "worktree"
+      ? [setupJob(repository, record, timeoutMs)] : [];
+  });
   if (!context.runSetupBatch) {
-    for (const repository of repositories) {
-      const record = state.repositories[repository.id];
-      if (!repository.setupCommand || !record || record.mode !== "worktree") continue;
-      context.runSetupCommand(record, repository.setupCommand,
-        context.policy().sandbox?.setupTimeoutMs, record.path, repository.id);
-      if (record.access !== "read") continue;
-      const changed = context.git(["status", "--porcelain"], record.path);
-      if (changed.status !== 0 || changed.stdout.trim()) {
-        record.setup.status = "failed";
-        record.setup.reason = "setup modified a read-only repository";
-        console.error(`WARNING: sandbox setup modified read-only repository '${repository.id}': ${
-          changed.stdout.trim() || changed.stderr.trim() || "git status failed"}`);
-      }
+    for (const { repository, record, command } of eligible) {
+      context.runSetupCommand(record, command, timeoutMs, record.path, repository.id);
+      verifyReadOnlySetup(context, repository, record, true);
     }
     return;
   }
-  const jobs = [];
-  for (const repository of repositories) {
-    const record = state.repositories[repository.id];
-    if (!repository.setupCommand || !record || record.mode !== "worktree") continue;
-    jobs.push({ repository, record, command: repository.setupCommand, cwd: record.path,
-      timeoutMs: context.policy().sandbox?.setupTimeoutMs });
-  }
-  for (const { repository, record, command, result } of context.runSetupBatch(jobs)) {
-    const failed = Boolean(result.error) || result.status !== 0;
-    record.setup = { command, status: failed ? "failed" : "ok",
-      exitCode: typeof result.status === "number" ? result.status : null };
-    if (failed) {
-      const cause = typeof result.status === "number" ? `exit ${result.status}` : result.error;
-      const tail = `${result.stdout || ""}\n${result.stderr || ""}`
-        .trim().split("\n").filter(Boolean).slice(-5).join("\n    ");
-      context.output.error(`WARNING: sandbox setup command failed for '${repository.id}' (${
-        cause}) in the isolated workspace. Harness preparation will repair or route this failure before Build.${
-        tail ? `\n    ${tail}` : ""}`);
-    }
-    if (record.access !== "read") continue;
-    const changed = context.git(["status", "--porcelain"], record.path);
-    if (changed.status !== 0 || changed.stdout.trim()) {
-      record.setup.status = "failed";
-      record.setup.reason = "setup modified a read-only repository";
-      console.error(`WARNING: sandbox setup modified read-only repository '${repository.id}': ${
-        changed.stdout.trim() || changed.stderr.trim() || "git status failed"}`);
-    }
-  }
+  for (const row of context.runSetupBatch(eligible)) applySetupResult(context, row, true);
 }
 
 // Setup is Harness-owned preparation. A transient package-manager or network
@@ -981,30 +1014,13 @@ export function retryFailedSandboxSetups(context, id,
     if (!context.runSetupBatch) {
       context.runSetupCommand(record, repository.setupCommand,
         configured.setupTimeoutMs, record.path, repository.id);
-      if (record.access === "read") {
-        const changed = context.git(["status", "--porcelain"], record.path);
-        if (changed.status !== 0 || changed.stdout.trim()) {
-          record.setup.status = "failed";
-          record.setup.reason = "setup modified a read-only repository";
-        }
-      }
+      verifyReadOnlySetup(context, repository, record);
       attempted.push(repository.id);
-    } else jobs.push({ repository, record, command: repository.setupCommand,
-      cwd: record.path, timeoutMs: configured.setupTimeoutMs });
+    } else jobs.push(setupJob(repository, record, configured.setupTimeoutMs));
   }
-  for (const { repository, record, command, result } of context.runSetupBatch
-    ? context.runSetupBatch(jobs) : []) {
-    const failed = Boolean(result.error) || result.status !== 0;
-    record.setup = { command, status: failed ? "failed" : "ok",
-      exitCode: typeof result.status === "number" ? result.status : null };
-    if (record.access === "read") {
-      const changed = context.git(["status", "--porcelain"], record.path);
-      if (changed.status !== 0 || changed.stdout.trim()) {
-        record.setup.status = "failed";
-        record.setup.reason = "setup modified a read-only repository";
-      }
-    }
-    attempted.push(repository.id);
+  for (const row of context.runSetupBatch ? context.runSetupBatch(jobs) : []) {
+    applySetupResult(context, row);
+    attempted.push(row.repository.id);
   }
   if (attempted.length) context.saveRuntime(state);
   return attempted;
@@ -1214,7 +1230,7 @@ export function createSandboxRuntime({
   clearSnapshotCache, validate, repositorySelectionIdsAt, contractFingerprint,
   executionFingerprint, taskBlocks, proofPath, relevantHash, now, fail,
   markBlocked = () => {},
-  recordScheduler = () => {}
+  recordScheduler
 }) {
   function sandboxRoot(id) {
     return join(root, ".foundation", "sandboxes", id);
@@ -1229,21 +1245,9 @@ export function createSandboxRuntime({
   const runSetupCommand = runSandboxSetupCommand.bind(null, {
     spawn: spawnSync, output: console
   });
-  const runSetupBatch = (records) => {
-    const capacity = policy().execution?.maxParallelSetups;
-    const rows = runSandboxSetupBatch(records, capacity);
-    for (const wave of [...new Set(rows.map((row) => row.wave))]) {
-      const batch = rows.filter((row) => row.wave === wave);
-      recordScheduler({
-        scheduler: "setup", wave,
-        readyNodes: records.length - rows.filter((row) => row.wave < wave).length,
-        executedNodes: batch.length, reusedNodes: 0,
-        queueingMs: batch.reduce((total, row) => total + row.queuedMs, 0),
-        peakConcurrency: batch.length
-      });
-    }
-    return rows;
-  };
+  const runSetupBatch = runMeasuredSandboxSetupBatch.bind(null, {
+    policy, recordScheduler
+  });
 
   // Single-repository setup comes from foundation.json; a repository row in a
   // multi-repository change carries its own `setupCommand` because each
@@ -1570,7 +1574,7 @@ export function createSandboxRuntime({
   });
   const commitReplay = commitSandboxReplay.bind(null, {
     carryIgnoredArtifacts, git, fail, selectedRepositories,
-    runSetupCommand, runSetupBatch, policy
+    runSetupCommand, policy
   });
 
   function rebaseWorktree(id, state) {
