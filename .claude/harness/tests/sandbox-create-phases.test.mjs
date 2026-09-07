@@ -224,6 +224,15 @@ test("sandbox setup batch runner surfaces worker failures", () => {
   }, "unused", []), /parallel sandbox setup runner failed: worker crashed/);
 });
 
+test("sandbox setup batch bounds captured output per job", () => {
+  const [row] = runSandboxSetupBatch([{
+    command: `node -e "process.stdout.write('x'.repeat(70000))"`,
+    cwd: process.cwd(), timeoutMs: 1000
+  }]);
+  assert.equal(row.result.status, 0);
+  assert.equal(row.result.stdout.length, 65536);
+});
+
 test("measured sandbox setup reports bounded waves", () => {
   const events = [];
   const rows = runMeasuredSandboxSetupBatch({
@@ -781,6 +790,46 @@ test("prepareBuild reuses a complete building sandbox", () => {
   };
   assert.deepEqual(prepareBuildSandbox(context, "change"), { repaired: false });
   assert.deepEqual(calls, [["retry", "change"]]);
+});
+
+test("prepareBuild repairs a missing root record in multi-repository state", () => {
+  const calls = [];
+  const context = {
+    loadRuntime: () => ({
+      status: "building", workspace: { path: "/sandbox/root" },
+      repositories: { api: { path: "/sandbox/api" } }
+    }),
+    validate: () => assert.fail("building state is already agreed"),
+    workspaceInspection: () => ({
+      status: "active",
+      repositories: [
+        { id: "root", status: "missing-record" },
+        { id: "api", status: "active" }
+      ]
+    }),
+    create: (...args) => calls.push(["create", ...args]),
+    retryFailedSetups: (...args) => calls.push(["retry", ...args])
+  };
+  assert.deepEqual(prepareBuildSandbox(context, "change"), { repaired: true });
+  assert.deepEqual(calls, [
+    ["create", "change", { quiet: true }],
+    ["retry", "change"]
+  ]);
+});
+
+test("prepareBuild uses workspace state for a root-only change", () => {
+  const calls = [];
+  const context = {
+    loadRuntime: () => ({ status: "building", workspace: { path: "/sandbox/root" } }),
+    validate: () => assert.fail("building state is already agreed"),
+    workspaceInspection: () => ({
+      status: "active", repositories: [{ id: "root", status: "missing-record" }]
+    }),
+    create: () => assert.fail("root-only workspace is already active"),
+    retryFailedSetups: (...args) => calls.push(args)
+  };
+  assert.deepEqual(prepareBuildSandbox(context, "change"), { repaired: false });
+  assert.deepEqual(calls, [["change"]]);
 });
 
 test("copy planning recognizes carryable Git metadata and ignored paths", (t) => {

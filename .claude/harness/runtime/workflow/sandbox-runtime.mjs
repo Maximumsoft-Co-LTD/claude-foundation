@@ -232,16 +232,18 @@ export function runSandboxSetupBatch(records, maxParallel = 1) {
     import { readFileSync } from "node:fs";
     import { promisify } from "node:util";
     const execute = promisify(execFile);
+    const outputTail = (value) => String(value || "").slice(-65536);
     const jobs = JSON.parse(readFileSync(0, "utf8") || "[]");
     const rows = await Promise.all(jobs.map(async (job) => {
       try {
         const value = await execute("sh", ["-c", job.command], {
           cwd: job.cwd, timeout: job.timeoutMs, maxBuffer: 16 * 1024 * 1024
         });
-        return { status: 0, stdout: value.stdout || "", stderr: value.stderr || "", error: null };
+        return { status: 0, stdout: outputTail(value.stdout),
+          stderr: outputTail(value.stderr), error: null };
       } catch (error) {
         return { status: Number.isInteger(error.code) ? error.code : null,
-          stdout: error.stdout || "", stderr: error.stderr || "",
+          stdout: outputTail(error.stdout), stderr: outputTail(error.stderr),
           error: String(error.code || error.message) };
       }
     }));
@@ -1062,9 +1064,10 @@ export function prepareBuildSandbox(context, id) {
   const state = context.loadRuntime(id);
   if (state.status === "change") context.validate(id, "root", { quiet: true });
   const inspection = context.workspaceInspection(id, state);
-  const repositoryIncomplete = inspection.repositories
-    .filter((repository) => repository.id !== "root")
-    .some((repository) => repository.status !== "active");
+  const repositoryRecordsExist = Object.keys(state.repositories || {}).length > 0;
+  const repositoryIncomplete = inspection.repositories.some((repository) =>
+    repository.status !== "active" &&
+    (repository.id !== "root" || repositoryRecordsExist));
   const incomplete = state.status === "change" || inspection.status !== "active" ||
     repositoryIncomplete;
   if (incomplete) context.create(id, { quiet: true });
