@@ -23,6 +23,7 @@ invoke() {
 
 write_event() { printf '{"tool_name":"Write","tool_input":{"file_path":"%s"}}' "$1"; }
 bash_event() { printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$1"; }
+bash_event_at() { printf '{"cwd":"%s","tool_name":"Bash","tool_input":{"command":"%s","description":"d"}}' "$1" "$2"; }
 
 out="$(invoke change block "" "$(write_event "$TMP/project/openspec/changes/demo/tasks.md")")"
 assert_eq "Change permits its OpenSpec draft" "" "$out"
@@ -169,6 +170,40 @@ assert_contains "Build blocks a NUL mutation target" "$out" 'mutation target is 
 ln -s "$TMP/outside" "$TMP/workspace/escape"
 out="$(invoke build block "$TMP/workspace" "$(write_event "$TMP/workspace/escape/app.js")")"
 assert_contains "Build resolves symlink escape before allowing" "$out" '"decision":"block"'
+
+# The host reports the shell's directory. Inside the workspace it is pinned
+# into the command as the literal anchor the policy already demands, so the
+# write runs where the agent meant it instead of costing a refused turn.
+out="$(invoke build block "$TMP/workspace" "$(bash_event_at "$TMP/workspace" 'echo x > out.txt')")"
+assert_contains "Build pins a reported workspace cwd as the shell anchor" "$out" \
+  "\"updatedInput\":{\"command\":\"cd $TMP/workspace && echo x > out.txt\""
+assert_contains "Build keeps the rest of the tool input when pinning" "$out" '"description":"d"'
+assert_not_contains "a pinned command is not a refusal" "$out" '"decision":"block"'
+out="$(invoke build block "$TMP/workspace" "$(bash_event_at "$TMP/workspace/src" 'echo x > out.txt')")"
+assert_contains "Build pins the reported subdirectory, not the workspace root" "$out" \
+  "cd $TMP/workspace/src && echo x > out.txt"
+ln -s "$TMP/workspace" "$TMP/wslink"
+out="$(invoke build block "$TMP/workspace" "$(bash_event_at "$TMP/wslink/src" 'echo x > out.txt')")"
+assert_contains "Build pins a cwd reported through a symlink to the workspace" "$out" \
+  "cd $TMP/workspace/src && echo x > out.txt"
+out="$(invoke build block "$TMP/workspace" "$(bash_event_at "$TMP/outside" 'echo x > out.txt')")"
+assert_contains "Build refuses a reported cwd outside the workspace" "$out" '"decision":"block"'
+out="$(invoke build block "$TMP/workspace" "$(bash_event_at "$TMP/workspace/escape" 'echo x > out.txt')")"
+assert_contains "Build refuses a reported cwd that is a symlink out of the workspace" "$out" \
+  '"decision":"block"'
+out="$(invoke build block "$TMP/workspace" "$(bash_event 'echo x > out.txt')")"
+assert_contains "Build still refuses an unanchored write when no cwd is reported" "$out" \
+  '"decision":"block"'
+out="$(invoke build block "$TMP/workspace" \
+  "$(bash_event_at "$TMP/workspace" "ln -sfn $TMP/outside/node_modules node_modules")")"
+assert_contains "a pin never widens containment: outside operands still refuse" "$out" \
+  'sandbox.setupCommand'
+out="$(invoke build block "$TMP/workspace" \
+  "$(bash_event_at "$TMP/workspace" "echo x > $TMP/outside/o.txt")")"
+assert_contains "a pin never widens containment: outside targets still refuse" "$out" \
+  'obvious path outside the isolated workspace'
+out="$(invoke build audit "$TMP/workspace" "$(bash_event_at "$TMP/workspace" 'echo x > out.txt')")"
+assert_eq "audit mode observes and never rewrites" "" "$out"
 
 out="$(invoke build block "$TMP/workspace" \
   "$(bash_event "cd $TMP/workspace && touch escape/from-shell.txt")")"

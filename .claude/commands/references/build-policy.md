@@ -7,8 +7,10 @@ transitions.
 
 For every mutating Bash command — redirects and heredocs, `sed -i`, `ln`,
 `cp`, `mv`, `rm`, `touch`, package scripts, `npx` — begin with
-`cd <workspace or a directory inside it> && ...`; the live phase guard reads
-only the command text, so the shell's remembered cwd never counts. It rejects
+`cd <workspace or a directory inside it> && ...`; the live phase guard proves
+the command text. On Claude Code it pins the shell's reported directory as
+that anchor when it lies inside the workspace; other hosts refuse an
+unanchored command, so anchor explicitly. It rejects
 an unanchored command, absolute outside operands, later directory escapes,
 symlink traversal, and copying or linking from outside the workspace. A fresh
 workspace has no installed dependencies: rely on `sandbox.setupCommand` in

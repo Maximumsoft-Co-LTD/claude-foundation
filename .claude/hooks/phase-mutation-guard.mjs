@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
-  looksMutatingShellCommand, shellMutationViolation
+  looksMutatingShellCommand, pinShellAnchor, shellMutationViolation
 } from "./phase-guard-policy.mjs";
 import { recordedPhaseContext } from "./phase-state.mjs";
 import { devPrompt } from "./dev-terminal-guard.mjs";
@@ -88,6 +88,9 @@ const recordedRuntime = recorded?.changeId ? runtimeState(recorded.changeId) : n
 const recordedWorkspace = recordedRuntime?.workspace?.path
   ? canonicalTarget(recordedRuntime.workspace.path, projectRoot) || "" : "";
 const violations = [];
+// A Build shell command rewritten with the reported working directory as its
+// literal anchor. Set only when the policy accepts the pinned form.
+let pinnedCommand = null;
 
 if (landAuthorityCommand && !landSession)
   violations.push("Land authority command requires the current /land invocation");
@@ -114,7 +117,19 @@ if (!phase && prePhaseDraftMutationAllowed()) {
   for (const rawPath of eventPaths(input)) inspectPath(rawPath);
 }
 
-if (violations.length === 0) process.exit(0);
+if (violations.length === 0) {
+  if (pinnedCommand !== null) {
+    recordAudit({ phase, tool, mode, reason:
+      "phase guard: pinned the reported shell directory as the Build workspace anchor" });
+    process.stdout.write(JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        updatedInput: { ...input, command: pinnedCommand }
+      }
+    }));
+  }
+  process.exit(0);
+}
 
 const changeShellRecovery = phase === "change" && tool === "Bash"
   ? " Use Edit or Write for openspec/changes artifacts; Bash remains read-only during Change."
@@ -172,15 +187,51 @@ function inspectPath(rawPath) {
 
 function inspectBash(command) {
   const workspace = process.env.FOUNDATION_WORKSPACE_ROOT || recordedWorkspace;
-  const violation = shellMutationViolation(phase, {
+  const environment = {
     ...process.env,
     ...(recordedWorkspace && !process.env.FOUNDATION_WORKSPACE_ROOT
       ? { FOUNDATION_WORKSPACE_ROOT: recordedWorkspace } : {})
-  }, command, workspace ? {
+  };
+  const inspection = workspace ? {
     canonicalTarget: (target) => canonicalTarget(target, workspace),
     contains: (target, root) => isWithin(target, canonical(root))
-  } : null);
-  if (violation) violations.push(violation);
+  } : null;
+  const violation = shellMutationViolation(phase, environment, command, inspection);
+  if (!violation) return;
+  const pinned = phase === "build" && mode === "block" && workspace
+    ? pinnedWorkspaceCommand(command, workspace, environment, inspection) : null;
+  if (pinned === null) violations.push(violation);
+  else if (pinned.violation) violations.push(pinned.violation);
+  else pinnedCommand = pinned.command;
+}
+
+// The host reports where the shell is. That report is never authority — it
+// cannot let a mutation run where the policy would refuse it — but a report
+// inside the workspace can be pinned into the command as a literal anchor, so
+// the same policy proves the mutation and an unanchored write an agent meant
+// for its sandbox runs there instead of costing a refused turn. No report
+// (OpenCode synthesizes events without one), a report outside the workspace,
+// or a pinned form the policy still refuses keeps the refusal; a refusal of
+// the pinned form is the more exact reason (an outside operand, a dynamic
+// path) and replaces the anchor complaint.
+function pinnedWorkspaceCommand(command, workspace, environment, inspection) {
+  const reported = typeof event.cwd === "string" ? event.cwd : "";
+  if (!reported || !isAbsolute(reported)) return null;
+  const canonicalCwd = canonicalTarget(reported, projectRoot);
+  if (!canonicalCwd || !isWithin(canonicalCwd, canonical(workspace))) return null;
+  // The workspace may be spelled through a symlink (macOS /var → /private/var,
+  // a linked sandbox path) while the report is canonical, or the reverse; the
+  // policy compares text, so also try the report re-spelled under the
+  // workspace the policy was given.
+  const respelled = resolve(workspace, relative(canonical(workspace), canonicalCwd));
+  for (const directory of [...new Set([resolve(reported), canonicalCwd, respelled])]) {
+    const pinned = pinShellAnchor(command, directory);
+    if (pinned === null) continue;
+    const violation = shellMutationViolation(phase, environment, pinned, inspection);
+    if (violation && violation.startsWith("Build shell mutations must start inside")) continue;
+    return { command: pinned, violation };
+  }
+  return null;
 }
 
 function runtimeState(changeId) {

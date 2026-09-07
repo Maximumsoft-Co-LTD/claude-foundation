@@ -150,6 +150,31 @@ try {
   assert.equal(existsSync(join(changeDir, "specs", "change", "spec.md")), true);
   assert.match(output, /upgraded from foundation-rapid/);
 
+  // Signed CI follows the current policy on every resolve, and a user's
+  // waiver outlives later policy reads. A consumer sat in Build with the
+  // requirement pinned from a historical `riskBasedCi: true` default and no
+  // route but a hand edit of foundation.json, which the guard refuses there.
+  riskBasedCi = false;
+  assert.equal(run({}, { riskBasedCiRequired: true }).riskBasedCiRequired, false);
+  riskBasedCi = true;
+  assert.equal(run({}, { riskBasedCiRequired: false }).riskBasedCiRequired, true);
+  rejected({ "ci-not-required": true }, /--ci-not-required requires --decision-ref/);
+  const waived = run({ "ci-not-required": true, "decision-ref": "CI-WAIVER-1" },
+    { riskBasedCiRequired: true });
+  assert.equal(waived.riskBasedCiRequired, false);
+  assert.deepEqual(waived.ciWaiver,
+    { version: 1, decisionRef: "CI-WAIVER-1", declaredAt: "2026-08-26T00:00:00.000Z" });
+  assert.match(output, /signed CI: waived \(CI-WAIVER-1\)/);
+  assert.equal(run({}, { riskBasedCiRequired: false, ciWaiver: waived.ciWaiver }).riskBasedCiRequired,
+    false, "a recorded waiver is not undone by a later policy read");
+  const waivedUpgrade = run({ impact: "medium" }, {
+    schema: "foundation-rapid", securityTriggers: [], groundingRequired: false,
+    riskBasedCiRequired: false, ciWaiver: waived.ciWaiver
+  });
+  assert.equal(waivedUpgrade.schema, "foundation-standard");
+  assert.equal(waivedUpgrade.riskBasedCiRequired, false, "a schema upgrade keeps the waiver");
+  assert.doesNotMatch(run({}, { riskBasedCiRequired: true }) && output, /signed CI: waived/);
+
   console.log = priorLog;
   priorLog("change resolution tests: PASS");
 } finally {

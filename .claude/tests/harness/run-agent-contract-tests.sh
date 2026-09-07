@@ -165,6 +165,24 @@ node "$RUNTIME" resolve competing-root-writer \
   --impact low --coupling isolated >/dev/null
 printf '%s\n' '# Tasks' '' \
   '- [ ] **T001** Valid task [claims:agent-contract-outcome]' > "$CHANGE/tasks.md"
+# Another change writing the same repository is the concurrency model's normal
+# case: the plan names the overlap and still dispatches; whichever lands later
+# synchronizes. Two consumer changes on `src/lib` once deadlocked here.
+plan="$(node "$RUNTIME" agent-plan agent-contract)"
+assert_eq "a competing writer does not block the plan" "true" \
+  "$(printf '%s' "$plan" | jq -r '.dispatchable')"
+assert_contains "the plan names the overlapping change" "$plan" 'competing-root-writer'
+assert_cmd_zero "an overlapping change still dispatches a task packet" \
+  node "$RUNTIME" agent-task agent-contract T001
+# A declared shared resource is the one overlap that serializes.
+printf '%s\n' '# Tasks' '' \
+  '- [ ] **T001** Valid task [claims:agent-contract-outcome] [resources:staging-db]' > "$CHANGE/tasks.md"
+printf '%s\n' '# Tasks' '' \
+  '- [ ] **T001** Other work [resources:staging-db]' > openspec/changes/competing-root-writer/tasks.md
+plan="$(node "$RUNTIME" agent-plan agent-contract)"
+assert_eq "a shared resource held by another change blocks the plan" "false" \
+  "$(printf '%s' "$plan" | jq -r '.dispatchable')"
+assert_contains "the block names the shared resource" "$plan" 'resource:staging-db'
 if node "$RUNTIME" agent-task agent-contract T001 >/dev/null 2>&1; then
   fail "blocked plan cannot dispatch a task packet"
 else

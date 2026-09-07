@@ -38,7 +38,9 @@ execution into a pass.
 ## Isolation and concurrency
 
 Product writes are allowed only in the exact workspace and paths returned by
-`EDIT`. Shell mutation must anchor itself to that workspace. A worktree contains
+`EDIT`. Shell mutation must anchor itself to that workspace; on Claude Code the
+phase guard pins the shell's reported directory as that anchor when it is
+already inside the workspace. A worktree contains
 tracked files only; configure `sandbox.setupCommand` or a per-repository setup
 command when dependencies must be installed. Sandbox creation prints a NOTE with
 the exact snippet when a lockfile is present and no setup command is declared;

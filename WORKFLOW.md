@@ -122,7 +122,9 @@ Build writes only inside the declared isolated workspace. Git projects normally
 use detached worktrees; a dirty target or non-Git project uses an isolated copy.
 This is workspace integrity, not OS process, network, or secret containment.
 Mutating shell commands must start with `cd` to the workspace root or a literal
-directory inside it, joined by `&&`. The phase guard and
+directory inside it, joined by `&&`; on Claude Code the phase guard pins the
+shell's reported directory as that anchor when it is already inside the
+workspace, and audits the pin. The phase guard and
 `claude-foundation exec` reject direct path escapes and symlink traversal, but
 the host still owns process isolation for indirect or dynamically computed
 effects. Copying or linking files from outside the workspace is refused as
@@ -193,6 +195,12 @@ before replacing any; a copy fast-forwards files only the target changed.
 Double-edited files stop as named `CONFLICT` entries and leave the existing
 sandbox intact. Merge the target version in the sandbox and sync again, using
 `--resolve` for a copy.
+
+Several changes may be active at once. Overlapping path or repository scopes
+never block Build, Prove, or Land across changes; whichever lands later
+synchronizes onto the moved target as above, resolves any double edit, and
+re-proves. Only an explicit `[resources:]` token names a resource two changes
+cannot use at once, and those still serialize.
 
 Packet artifacts flow from `openspec/changes/<change>/` in the target into the
 sandbox. An artifact edited only in the sandbox blocks sync; only `tasks.md`

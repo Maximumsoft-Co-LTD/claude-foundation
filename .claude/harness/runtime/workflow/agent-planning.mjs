@@ -4,7 +4,7 @@ import { join, relative } from "node:path";
 // are the ones a silent downgrade must block at Land.
 import { DRIFT_BLOCKING_TASK_KINDS } from "../contracts/model-policy.mjs";
 import {
-  compileExecutionGraph, conflictKeysForTask, conflictKeysOverlap,
+  blockingConflictRows, compileExecutionGraph, conflictKeysForTask, conflictKeysOverlap,
   singleAgentExecutionEligible
 } from "../core/graph-execution.mjs";
 import { findCyclePath } from "../core/graph.mjs";
@@ -149,6 +149,10 @@ export function agentPlanSummaryView(context, id, path, output) {
     planPath: relative(context.root, path).replaceAll("\\", "/"),
     dispatchable: output.dispatchable,
     blockingReasons: context.compactStrings(output.blockingReasons, 10),
+    // Scope shared with another active change is information, not a block:
+    // name it so the session knows a later landing will synchronize.
+    overlaps: context.compactStrings((output.overlaps || []).map((row) =>
+      `${row.changeId}: ${row.key}`), 10),
     recommendedExecution: output.recommendedExecution,
     sessionModel: output.sessionModel,
     executionReason: output.executionReason,
@@ -496,7 +500,14 @@ export function createAgentPlanner({
     const singleAgent = singleAgentExecutionEligible(tasks, claims);
     const priorPlanPath = join(plans, `${id}.json`);
     const priorPlan = existsSync(priorPlanPath) ? readJson(priorPlanPath, {}) : {};
-    const conflicts = activeRepositoryConflicts(id, repositories);
+    const activeConflicts = activeRepositoryConflicts(id, repositories);
+    const conflicts = blockingConflictRows(activeConflicts);
+    // Scope overlaps with other active changes are reported, never enforced:
+    // the later landing synchronizes onto the moved target and re-proves.
+    const overlaps = activeConflicts.filter((row) => !conflicts.includes(row)).map((row) => ({
+      ...row,
+      note: "another active change touches this scope; whichever lands later synchronizes with `sandbox sync`, resolves any double edit, and re-proves"
+    }));
     const compiledContract = executionContract?.(id) || null;
     const authority = compiledContract?.authority || authorityPreflight(id);
     const blockingReasons = agentPlanBlockingReasons(state, conflicts, authority);
@@ -545,6 +556,7 @@ export function createAgentPlanner({
       sessionModel: execution.sessionModel,
       executionReason: execution.executionReason,
       conflicts,
+      overlaps,
       authorityPreflight: authority,
       executionContract: compiledContract,
       blockingReasons,

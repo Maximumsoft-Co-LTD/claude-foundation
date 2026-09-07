@@ -383,9 +383,16 @@ result authority; it rejects unknown, cross-repository, providerless, stale, or
 out-of-scope task results. Large collections are previews plus counts and
 digests; use `packet <change> --task <task>` as the authoritative expansion.
 
-Conflict scopes are hierarchical. Disjoint paths, contracts, and explicit
-resources may proceed concurrently across active changes; missing or ambiguous
-scope takes the exclusive repository key. All keys are acquired atomically.
+Several changes may be active at once. Path and repository scopes never
+serialize across changes: each change builds and proves in its own workspace,
+and the change that lands later synchronizes onto the moved target
+(`sandbox sync`), resolves any double edit, re-proves, and lands. The plan
+reports such overlaps as `overlaps`, for information. Only an explicit
+`[resources:]` token names something two changes cannot use at once (a shared
+database, a deploy target); those still block the plan and a concurrent proof
+run. Within one change, conflict scopes are hierarchical: disjoint paths let
+tasks run in parallel, and missing or ambiguous scope takes the exclusive
+repository key for that change's workers. All keys are acquired atomically.
 Proof records node diagnostics plus one aggregate graph proof, while Land
 persists a prepare-all snapshot and compare-and-swap revalidates it before each
 multi-remote mutation wave.

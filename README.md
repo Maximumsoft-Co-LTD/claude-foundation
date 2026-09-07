@@ -261,7 +261,10 @@ command is declared, sandbox creation prints a NOTE with the exact
 into the workspace is refused by the phase guard.
 
 For direct Bash use during Build, start an obviously mutating command with
-`cd <workspace-or-subdirectory> && ...`. The phase guard blocks unanchored package-manager
+`cd <workspace-or-subdirectory> && ...`. On Claude Code the phase guard pins
+the shell's reported directory as that anchor when it is already inside the
+workspace, so a forgotten prefix costs nothing; other hosts refuse the
+command. The phase guard blocks unanchored package-manager
 or formatter mutations, `..` escapes, later `cd` escapes, absolute filesystem
 operands, and writes through symlinks outside the workspace before the shell
 starts. `claude-foundation exec` derives the phase from runtime state, applies
@@ -312,6 +315,9 @@ relevant target paths moved after Prove, Land stops instead of overwriting them.
 If the target branch simply advanced, the agent synchronizes the existing
 sandbox, re-proves it, and continues Land. Your work is preserved and you do
 not create a new change. A real replay conflict still stops for your judgment.
+Several changes can be active at once, even on the same files: none waits for
+another during Build, Prove, or Land, and whichever lands later synchronizes
+and re-proves. Only a shared resource declared with `[resources:]` serializes.
 
 Why this step exists: applying code and updating the durable requirements are
 one guarded, resumable completion boundary.
@@ -629,6 +635,11 @@ Build packets also carry `authorityPreflight`. High-risk work that requires
 signed CI stops before dispatch or product edits when no trusted external CI
 provider is configured, naming the issuer/public-key configuration and the
 exact Change resume route. Land independently verifies the signed receipt.
+A project that cannot produce signed CI resolves this as a user decision, never
+from inside Build: record a per-change waiver with
+`claude-foundation change resolve <change> --ci-not-required --decision-ref <ref>`,
+or set `land.riskBasedCi` to `false` in `foundation.json` and rerun
+`change resolve`, which re-reads the policy for that change.
 
 Proof can also require a signed `semantic-acceptance` provider. It binds stable
 case IDs and input partitions to the exact workspace while keeping hidden

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { blockingConflictRows } from "../runtime/core/graph-execution.mjs";
 import {
   activeProofRunIsCurrent,
   activeRepositoryConflictsOperation,
@@ -124,4 +125,20 @@ test("repository conflict operation skips unreadable state and scopes execution 
     context, "current", repositories, { executing: true });
   assert.deepEqual(executing.map((row) => row.changeId), ["live"]);
   assert.equal(executing[0].repository, "api");
+});
+
+// Two consumer changes that both touched `src/lib` waited on each other until
+// one was abandoned. Scope overlap across changes is the concurrency model's
+// normal case — the later landing synchronizes — so only a declared shared
+// resource may stop a plan or a proof run.
+test("only shared-resource overlaps block across changes", () => {
+  const rows = [
+    { changeId: "other", key: "repo:root <> repo:root", status: "building" },
+    { changeId: "other", key: "path:root:src/lib <> path:root:src", status: "building" },
+    { changeId: "other", key: "contract:api-v1 <> contract:api-v1", status: "proven" },
+    { changeId: "other", key: "resource:staging-db <> resource:staging-db", status: "building" },
+    { changeId: "other", status: "building" }
+  ];
+  assert.deepEqual(blockingConflictRows(rows), [rows[3]]);
+  assert.deepEqual(blockingConflictRows([]), []);
 });

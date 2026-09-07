@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { dependentClosure } from "../core/graph-execution.mjs";
+import { blockingConflictRows, dependentClosure } from "../core/graph-execution.mjs";
 import { worktreeOwnedByTarget } from "../core/repository-binding.mjs";
 import { declaredPathMatcher } from "../core/workspace-surface.mjs";
 
@@ -564,8 +564,10 @@ export function proofReadinessValueOperation(context, id, stage = "prove", optio
   const plan = context.agentPlanValue?.(id, options) || null;
   const externalOperations = context.handoffReadiness(id);
   const leases = stage === "prove" ? context.activeChangeLeases(id) : [];
-  const repositoryConflicts = context.activeRepositoryConflicts(
-    id, context.selectedRepositories(id), { executing: true });
+  // Another change's live proof run blocks this one only over a declared
+  // shared resource; separate workspaces do not contend over paths.
+  const repositoryConflicts = blockingConflictRows(context.activeRepositoryConflicts(
+    id, context.selectedRepositories(id), { executing: true }));
   const authorityPreflight = context.authorityPreflight?.(id) || {
     status: "READY", blockers: [], decision: null
   };
@@ -919,7 +921,7 @@ export function createProofReadinessRuntime({
         changeId: conflict.changeId,
         repository: conflict.repository,
         status: conflict.status,
-        note: "Land or retire that change before proving this one; both would execute against the same repository."
+        note: "Both changes declare the same shared resource; wait for that change's proof run to finish or release the resource before proving this one."
       })),
       // Telling the host to release a stale lease is only actionable if the
       // release it can actually run is named: a crashed worker never comes back

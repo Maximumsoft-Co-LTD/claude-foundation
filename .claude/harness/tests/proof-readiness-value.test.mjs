@@ -279,3 +279,26 @@ test("authority preflight stops Build readiness with its bound resume decision",
   assert.equal(value.next[0].command, "change validate c");
   assert.equal(value.budget.status, "NEEDS_USER_DECISION");
 });
+
+// A live proof run in another change that merely shares paths must not hold
+// this proof; separate workspaces do not contend. A declared shared resource
+// still does, and is the only conflict the readiness value reports.
+test("prove readiness ignores path overlaps and blocks only on shared resources", () => {
+  const overlapping = proofReadinessValueOperation(operationContext({
+    activeRepositoryConflicts: () => [
+      { changeId: "other", repository: "root", key: "path:root:src <> path:root:src", status: "proving" }
+    ]
+  }), "change", "prove");
+  assert.equal(overlapping.status, "READY");
+  assert.deepEqual(overlapping.repositoryConflicts, []);
+  const shared = proofReadinessValueOperation(operationContext({
+    activeRepositoryConflicts: () => [
+      { changeId: "other", repository: "root", key: "path:root:src <> path:root:src", status: "proving" },
+      { changeId: "other", repository: null, key: "resource:staging-db <> resource:staging-db", status: "proving" }
+    ]
+  }), "change", "prove");
+  assert.equal(shared.status, "BLOCKED_BY_ACTIVE_WORK");
+  assert.deepEqual(shared.repositoryConflicts.map((row) => row.key),
+    ["resource:staging-db <> resource:staging-db"]);
+  assert.deepEqual(shared.next, ["active-recovery"]);
+});

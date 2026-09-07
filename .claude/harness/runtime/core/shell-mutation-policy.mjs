@@ -75,33 +75,126 @@ const REDIRECT_TARGET = new RegExp(`(?:>>?|\\btee\\b(?:\\s+-\\S+)*)\\s+(${QUOTED
 // first segment reported `/my` for `"/my ws"` and refused the workspace itself.
 const LITERAL_ABSOLUTE = new RegExp(String.raw`"(\/(?:\\.|[^"\\])*)"|'(\/(?:'\\''|[^'])*)'|(?:^|[\s'"(=,])((?:\/(?!\/))[^\s'";&|,)\]]+)`, "gm");
 
+// A heredoc body behind a quoted delimiter and the inside of a single-quoted
+// word are literal to the shell: nothing in them expands or runs. Scans that
+// look for shell expansion or shell operands must not read them, or a template
+// literal in a TypeScript heredoc, a backtick in a Python docstring, or
+// `"/status: {` inside a sed script refuses a command that writes exactly
+// where its redirect says. Code the command hands on is the exception: an
+// inner shell (`sh -c`, `eval`) reads its script as a command line again, and
+// an interpreter that writes resolves the paths its code names.
+const HEREDOC_MARKER = /<<(-?)\s*(?:'([^']+)'|"([^"]+)"|\\(\S+)|([A-Za-z_][A-Za-z0-9_]*))/g;
+const SHELL_CODE_CARRIER = /\b(?:sh|bash|zsh|ksh|dash)\s+(?:-\S+\s+)*-c\b|\beval\b/;
+const QUOTED_REGION = new RegExp(QUOTED_WORD, "g");
+
+function insideQuotes(text) {
+  let single = 0;
+  let double = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "\\") { i++; continue; }
+    if (ch === "'" && double % 2 === 0) single++;
+    else if (ch === '"' && single % 2 === 0) double++;
+  }
+  return single % 2 === 1 || double % 2 === 1;
+}
+
+// Every heredoc body as a character range. A marker inside quotes is text,
+// not a heredoc; an unterminated body runs to the end of the command; a body
+// is never searched for further markers.
+function heredocBodies(command) {
+  const lines = command.split("\n");
+  const starts = [];
+  let offset = 0;
+  for (const line of lines) { starts.push(offset); offset += line.length + 1; }
+  const bodies = [];
+  let next = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (i < next) continue;
+    for (const match of lines[i].matchAll(HEREDOC_MARKER)) {
+      if (insideQuotes(lines[i].slice(0, match.index))) continue;
+      const word = match[2] ?? match[3] ?? match[4] ?? match[5];
+      const strip = match[1] === "-";
+      const first = Math.max(i + 1, next);
+      let j = first;
+      while (j < lines.length && (strip ? lines[j].replace(/^\t+/, "") : lines[j]) !== word) j++;
+      bodies.push({
+        start: first < lines.length ? starts[first] : command.length,
+        end: j < lines.length ? starts[j] : command.length,
+        literal: match[5] === undefined
+      });
+      next = j + 1;
+    }
+  }
+  return bodies;
+}
+
+function withoutHeredocBodies(command, keep = () => false) {
+  let text = "";
+  let cursor = 0;
+  for (const body of heredocBodies(command)) {
+    if (keep(body) || body.start < cursor) continue;
+    text += command.slice(cursor, body.start);
+    cursor = body.end;
+  }
+  return text + command.slice(cursor);
+}
+
+function maskSingleQuoted(text) {
+  return text.replace(QUOTED_REGION, (word) => (word.startsWith("'") ? "'_'" : word));
+}
+
+// What the shell may expand: unquoted words, double quotes, and bodies behind
+// an unquoted delimiter. An inner shell expands its single-quoted script too.
+function expansionText(command) {
+  const text = withoutHeredocBodies(command, (body) => !body.literal);
+  return SHELL_CODE_CARRIER.test(command) ? text : maskSingleQuoted(text);
+}
+
+// Where an operand may be named: the command line, never data the command
+// carries — unless that data is code an inner shell or a writing interpreter
+// will resolve paths from.
+function operandText(command) {
+  if (SHELL_CODE_CARRIER.test(command) ||
+      (INTERPRETER.test(command) && INTERPRETER_WRITE.test(command))) return command;
+  return maskSingleQuoted(withoutHeredocBodies(command));
+}
+
 // Return every path that a recognized filesystem command may mutate. Reading
 // an extra source path is harmless to containment, while omitting a destination
 // is not, so multi-path commands deliberately inspect all operands.
 function filesystemMutationTargets(command) {
   const targets = [];
-  const executableRanges = absoluteExecutableRanges(command);
+  const commandLine = withoutHeredocBodies(command);
   const operations = /(?:^|[;&|()]|\b(?:then|do)\b)\s*(?:sudo\s+|env\s+)*(?:[^\s;&|()]+\/)*(rm|mv|cp|ln|install|mkdir|rmdir|touch|truncate|tee|chmod|chown)\b([^;&|\n]*)/gmi;
-  for (const match of command.matchAll(operations)) {
+  for (const match of commandLine.matchAll(operations)) {
     const words = shellWords(match[2]).map(unquote);
     for (const word of words) {
       if (!word || word.startsWith("-") || /^\d+$/.test(word)) continue;
       targets.push(word.includes("=") ? word.slice(word.indexOf("=") + 1) : word);
     }
   }
-  for (const match of command.matchAll(DIRECTORY_CHANGE)) targets.push(unquote(match[1]));
-  for (const match of command.matchAll(REDIRECT_TARGET)) targets.push(unquote(match[1]));
+  for (const match of commandLine.matchAll(DIRECTORY_CHANGE)) targets.push(unquote(match[1]));
+  for (const match of commandLine.matchAll(REDIRECT_TARGET)) targets.push(unquote(match[1]));
   // Interpreter and option-value writes do not necessarily expose a standalone
   // shell operand (`writeFile('/tmp/x')`, `--output=/tmp/x`). Once the command
   // is already known to mutate, every literal absolute reference is safer to
   // treat as scoped input than to let a destination disappear from analysis.
-  for (const match of command.matchAll(LITERAL_ABSOLUTE)) {
+  // A fully single-quoted absolute word is still an operand; the rest of a
+  // single-quoted word and literal heredoc bodies are data, read only when
+  // the command carries code that resolves paths itself.
+  const scoped = operandText(command);
+  const executableRanges = absoluteExecutableRanges(scoped);
+  for (const match of scoped.matchAll(LITERAL_ABSOLUTE)) {
     const raw = match[1] ?? match[2] ?? match[3];
     const start = match.index + match[0].indexOf(raw);
     if (executableRanges.some(([from, to]) => start >= from && start < to)) continue;
     targets.push(match[1] !== undefined ? shellUnquote(`"${raw}"`)
       : match[2] !== undefined ? shellUnquote(`'${raw}'`) : raw);
   }
+  if (scoped !== command)
+    for (const match of commandLine.matchAll(QUOTED_REGION))
+      if (match[0].startsWith("'/")) targets.push(shellUnquote(match[0]));
   return [...new Set(targets)].filter((target) => target && target !== "/dev/null");
 }
 
@@ -137,7 +230,7 @@ function targetEscapes(target, workspace, inspection) {
 // Returns the first fragment that leaves the workspace, or null. Naming it is
 // what lets an agent repair the command instead of retrying it unchanged.
 function obviousWorkspaceEscape(command, workspace, inspection = null) {
-  const parent = /(?:^|[\s'"=])(\.\.(?:\/[^\s'";&|]*|$))/.exec(command);
+  const parent = /(?:^|[\s'"=])(\.\.(?:\/[^\s'";&|]*|$))/.exec(operandText(command));
   if (parent) return parent[1];
   // A second popd can return to the checkout that preceded the required
   // workspace anchor. Its resulting cwd cannot be proven from the command.
@@ -197,6 +290,26 @@ export function looksMutatingShellCommand(command) {
   return mutatingShellOperations(command).length > 0;
 }
 
+// The host reports the shell's working directory with every event. It is
+// never authority: a stale or wrong report must not let a mutation run in the
+// main checkout. It is a claim the hook can pin — prefixing the literal
+// directory turns "the shell is probably in the workspace" into a command the
+// same policy proves — so an unanchored write an agent meant for its sandbox
+// runs there instead of costing a refused turn. Directories are tried in
+// order (as reported, then canonical) so the anchor matches the workspace
+// spelling the policy was given.
+export function pinShellAnchor(command, ...directories) {
+  const text = String(command || "");
+  if (!text.trim() || shellAnchor(text)) return null;
+  for (const directory of directories) {
+    if (typeof directory !== "string" || !isAbsolute(directory)) continue;
+    const pinned = `cd ${shellDisplayArgument(resolve(directory))} && ${text}`;
+    const anchor = shellAnchor(pinned);
+    if (anchor && dynamicPathToken(anchor.target) === null) return pinned;
+  }
+  return null;
+}
+
 export function shellMutationViolation(phase, environment, command = null, inspection = null) {
   const operations = command === null ? null : mutatingShellOperations(command);
   if (operations !== null && operations.length === 0) return null;
@@ -224,7 +337,11 @@ export function shellMutationViolation(phase, environment, command = null, inspe
       return "Build shell mutations must start inside the isolated workspace " +
         `(\`${anchor.word};\` continues even when the directory change fails); ` +
         `start the command with \`cd ${shellDisplayArgument(anchor.target)} && \``;
-    const dynamicToken = dynamic ?? dynamicPathToken(text);
+    // A quoted operand hides its expansion from the text screen (`> "$OUT"`
+    // reads as a literal word) but not from the shell; every mutation target
+    // is judged after unquoting as well.
+    const dynamicToken = dynamic ?? dynamicPathToken(expansionText(text)) ??
+      filesystemMutationTargets(text).map(dynamicPathToken).find((token) => token !== null) ?? null;
     if (dynamicToken !== null)
       return "Build shell mutation contains a dynamic path that cannot be proven isolated " +
         `(\`${dynamicToken}\`); use literal paths inside ${root}`;

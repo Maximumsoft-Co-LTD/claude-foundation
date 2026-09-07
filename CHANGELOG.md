@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Several changes may be active at once, even on the same files. Overlapping
+  path or repository scopes no longer block Build planning, lease acquisition,
+  or proof readiness across changes; the plan lists them as `overlaps`, and
+  whichever lands later synchronizes onto the moved target and re-proves. Only
+  an explicit `[resources:]` token still serializes, and a concurrent proof run
+  blocks only over such a shared resource.
+
+### Fixed
+
+- A change that requires signed CI under `land.riskBasedCi` no longer traps
+  the agent when the project cannot produce it: `change resolve <change>
+  --ci-not-required --decision-ref <ref>` records the user's per-change
+  waiver, `change resolve` re-reads `land.riskBasedCi` from `foundation.json`
+  instead of keeping the value pinned at creation, and the preflight blocker
+  names both routes beside configuring signed CI.
+- On Claude Code, a Build shell mutation that lacks its `cd <workspace> &&`
+  anchor while the host reports the shell already inside the workspace is
+  pinned to that directory (`updatedInput`) and audited instead of refused;
+  a report outside the workspace, no report, or an operand the policy still
+  refuses keeps the refusal, and audit mode never rewrites.
+- The SessionStart digest names the exact `cd <workspace> && ` prefix for
+  every building change, so the rule is in context before the first command.
+- Literal heredoc bodies (quoted delimiter) and single-quoted words are inert
+  to the Build expansion and operand screens: a TypeScript heredoc with
+  template literals, a Python heredoc with a backtick in a string, and a sed
+  script whose replacement contains `"/status: {` no longer refuse an
+  anchored command. Code handed to `sh -c`, `eval`, or a writing interpreter
+  is still read, and a quoted mutation target such as `> "$OUT"` is now
+  refused as dynamic instead of passing as a literal word.
+
 ## [3.5.11] - 2026-09-07
 
 ### Fixed

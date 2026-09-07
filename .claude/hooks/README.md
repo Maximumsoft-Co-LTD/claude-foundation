@@ -50,7 +50,8 @@ phase recovers every selected repository workspace root from runtime state when
 the host does not export `FOUNDATION_WORKSPACE_ROOT`.
 Mutating Build shell commands must explicitly begin inside a granted workspace;
 unanchored package-manager/formatter commands and obvious path escapes are
-blocked before the shell starts.
+blocked before the shell starts. When the host reports the shell already inside
+the workspace, the guard pins that directory as the anchor instead of refusing.
 
 Hooks constrain unsafe mutations; they do not own lifecycle completion. A
 refusal must preserve state and point back to `claude-foundation advance

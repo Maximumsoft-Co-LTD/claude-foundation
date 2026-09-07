@@ -246,7 +246,9 @@ reuse ส่วนตัวที่ล้มจะเก็บ sandbox ไว�
 หรือ copy `node_modules` ของ checkout เข้า workspace จะถูก phase guard ปฏิเสธ
 
 ถ้าต้องใช้ Bash โดยตรงระหว่าง Build ให้เริ่มคำสั่งที่แก้ไฟล์ด้วย
-`cd <workspace-or-subdirectory> && ...` phase guard จะบล็อก package manager หรือ formatter
+`cd <workspace-or-subdirectory> && ...` บน Claude Code phase guard จะปัก directory
+ที่ shell รายงานมาเป็น anchor ให้เองเมื่ออยู่ใน workspace แล้ว ลืมใส่ prefix จึงไม่เสีย
+turn ส่วน host อื่นจะปฏิเสธคำสั่ง phase guard จะบล็อก package manager หรือ formatter
 ที่ไม่ได้ผูกกับ workspace, path ที่หนีด้วย `..`, การ `cd` ออกภายหลัง, filesystem
 operand แบบ absolute และการเขียนผ่าน symlink ออกนอก workspace ก่อน shell เริ่ม
 ทำงาน `claude-foundation exec` จะ derive phase จาก runtime state ใช้นโยบายเดียวกัน
@@ -291,7 +293,9 @@ prove แล้ว sync delta spec ที่ยอมรับ และ archive
 agreement หรือ target path ที่เกี่ยวข้องเปลี่ยนหลัง Prove ระบบจะหยุดแทนการเขียนทับ
 ถ้า target branch แค่มี commit ใหม่ Agent จะ sync sandbox เดิม, Prove ใหม่ และ
 Land ต่อให้เอง งานไม่หายและไม่ต้องเปิด Change ใหม่ แต่ถ้า replay conflict จริง
-ระบบจะหยุดเพื่อให้คุณตัดสินใจ
+ระบบจะหยุดเพื่อให้คุณตัดสินใจ เปิดหลาย change พร้อมกันได้แม้แตะไฟล์เดียวกัน ไม่มี
+change ไหนต้องรออีก change ระหว่าง Build, Prove หรือ Land ใครที่ land ทีหลังก็ sync
+แล้ว prove ใหม่ มีแค่ resource ที่ประกาศด้วย `[resources:]` เท่านั้นที่ต้องต่อคิว
 
 ทำไมต้องมีขั้นนี้: การนำ code เข้า project กับการอัปเดต requirement ถาวรถูกผูก
 เป็น completion boundary เดียวที่มี guard และ resume ได้
@@ -600,6 +604,10 @@ Build packet มี `authorityPreflight` ด้วย งานเสี่ย�
 ก่อน dispatch หรือแก้ product ถ้ายังไม่มี external CI provider ที่เชื่อถือได้ โดย
 ระบุ issuer/public-key ที่ขาดและทาง resume Change ส่วน Land จะตรวจ signed receipt
 ซ้ำอย่างอิสระ
+โปรเจกต์ที่ทำ signed CI ไม่ได้ ให้ user ตัดสินใจ ไม่ใช่แก้จากใน Build: บันทึกการยกเว้น
+ต่อ change ด้วย `claude-foundation change resolve <change> --ci-not-required --decision-ref <ref>`
+หรือตั้ง `land.riskBasedCi` เป็น `false` ใน `foundation.json` แล้วรัน `change resolve` ใหม่
+ซึ่งจะอ่าน policy ปัจจุบันให้ change นั้น
 
 Proof สามารถกำหนด provider `semantic-acceptance` ที่มีลายเซ็นได้ด้วย โดยผูก case
 ID และ input partition ที่คงที่เข้ากับ workspace จริง แต่ไม่เปิด hidden input

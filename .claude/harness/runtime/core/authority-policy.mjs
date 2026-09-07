@@ -110,7 +110,10 @@ export function authorityPreflightValue({
     classification: "authority",
     summary: "Risk policy requires signed CI but no trusted external CI provider is configured.",
     required: ["external adapter", "ci.issuer", "ci.publicKey"],
-    next: `configure signed CI in openspec/changes/${changeId}/execution.yaml, ` +
+    next: `configure signed CI in openspec/changes/${changeId}/execution.yaml; or, as the ` +
+      "user's decision, record a waiver with claude-foundation change resolve " +
+      `${changeId} --ci-not-required --decision-ref <ref>, or set land.riskBasedCi to ` +
+      `false in foundation.json and rerun claude-foundation change resolve ${changeId}; ` +
       `then run claude-foundation change validate ${changeId}`
   });
   const binding = {
@@ -194,6 +197,9 @@ export function authorityPreflightValue({
       options: [{
         id: "configure-required-authority",
         outcome: "Configure the named trust root/provider and resume this change."
+      }, {
+        id: "waive-signed-ci",
+        outcome: "Record the user's decision that this change proceeds without signed CI (`change resolve --ci-not-required --decision-ref <ref>`), or relax `land.riskBasedCi` in foundation.json and rerun `change resolve`."
       }, {
         id: "revise-change-risk",
         outcome: "Revise the agreement only if the declared impact or capability is incorrect."

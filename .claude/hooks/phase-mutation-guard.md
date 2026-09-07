@@ -63,7 +63,16 @@ The Bash inspection is a conservative command-word screen, not a shell sandbox.
 During Build, an obviously mutating Bash command must begin with `cd`/`pushd`
 to a literal absolute directory that is the isolated workspace or inside it,
 joined by `&&`; `;` is accepted only for the workspace root, which the harness
-guarantees exists. The event's cwd is never trusted. It checks recognized filesystem operands,
+guarantees exists. The event's cwd is never authority: when the host reports
+the shell inside the workspace, the hook pins that directory into the command
+as the literal anchor (`updatedInput`) and audits the pin, so an unanchored
+write an agent meant for its sandbox runs there instead of costing a refused
+turn; a report outside the workspace, no report (OpenCode synthesizes events
+without one), or a pinned form the policy still refuses keeps the refusal, and
+audit mode never rewrites. The pin carries no permission decision; when
+another PreToolUse hook rewrites the same command with an `allow` decision
+(a token-saving proxy, for example), the host applies that hook's rewrite and
+the command runs unanchored in the directory the host reported. It checks recognized filesystem operands,
 later directory changes, redirection targets, and canonical symlink targets;
 literal paths outside that workspace are blocked before execution. A copy or
 link whose source lies outside the workspace (`cp ../x .`,
@@ -73,6 +82,13 @@ workspace never borrows the checkout's files. The
 `claude-foundation exec` runtime uses the same policy, derives its phase from
 change state, and starts Build children in the canonical workspace. Use
 structured Edit/Write operations where possible.
+A heredoc body behind a quoted delimiter and the inside of a single-quoted
+word are literal to the shell and inert to these screens, so template
+literals in a TypeScript heredoc, a backtick in a Python docstring, or
+`"/status: {` inside a sed script no longer refuse an anchored command; code
+handed to an inner shell (`sh -c`, `eval`) or to a writing interpreter is
+still read, because it resolves its own paths. A quoted mutation target such
+as `> "$OUT"` is refused as dynamic.
 Formatter write modes, package-manager scripts (`npm run`, `npx`, and peers,
 including read-only checks such as `npx tsc --noEmit`), and shell-script
 runners enter the same policy. Dynamic mutation paths using environment

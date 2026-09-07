@@ -223,6 +223,18 @@ export function conflictKeysForTask(task) {
   ]);
 }
 
+// Which cross-change overlaps stop work. Path and repository scopes do not:
+// every change builds and proves in its own workspace, and the change that
+// lands later synchronizes onto the moved target, resolves any double edit,
+// and re-proves — that is the concurrency model, not a lock. Pessimistic
+// scope locks made two changes that both touched `src/lib` wait on each other
+// until one was abandoned. Only an explicit `[resources:]` token names
+// something two changes cannot use at once (a shared database, a deploy
+// target), and those still serialize.
+export function blockingConflictRows(rows) {
+  return rows.filter((row) => /^resource:/.test(String(row.key || "")));
+}
+
 export function conflictKeysOverlap(left, right) {
   if (left === right) return true;
   const leftRepo = left.match(/^repo:(.+)$/)?.[1];

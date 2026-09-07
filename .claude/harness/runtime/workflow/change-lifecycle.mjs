@@ -697,8 +697,28 @@ export function createChangeLifecycle({
       delete state.groundingDigest;
       delete state.groundingLockedAt;
       state.contractRevision = Number(state.contractRevision || 0) + 1;
-    } else if (flags["decision-ref"] || flags["reopen-reason"])
+    } else if ((flags["decision-ref"] && !flags["ci-not-required"]) || flags["reopen-reason"])
       fail("--decision-ref and --reopen-reason require --reopen-grounding");
+  }
+
+  // Signed CI is project policy, read once at creation and pinned into the
+  // change. A project that relaxes `land.riskBasedCi` afterwards — the
+  // historical default many installs still carry — was left with every open
+  // change pinned to the old value, and the only ways out were a hand edit of
+  // runtime state or of foundation.json from inside Build, which the phase
+  // guard rightly refuses. Resolve re-reads the policy, and a user who cannot
+  // produce signed CI for one change records that decision here instead.
+  function applyResolveCiPolicy(state, flags) {
+    if (flags["ci-not-required"]) {
+      const decisionRef = String(flags["decision-ref"] || "").trim();
+      if (!decisionRef) fail("--ci-not-required requires --decision-ref");
+      state.riskBasedCiRequired = false;
+      state.ciWaiver = { version: 1, decisionRef, declaredAt: now() };
+      return;
+    }
+    if (state.ciWaiver) return;
+    state.riskBasedCiRequired = state.schema === "foundation-standard" &&
+      workflowPolicy().land?.riskBasedCi === true;
   }
 
   function applyResolveAttributes(state, flags) {
@@ -798,7 +818,8 @@ export function createChangeLifecycle({
       state.nfrAssessmentRequired = true;
       state.decisionMetadataRequired = true;
       state.semanticInvariantsRequired = true;
-      state.riskBasedCiRequired = workflowPolicy().land?.riskBasedCi === true;
+      state.riskBasedCiRequired = !state.ciWaiver &&
+        workflowPolicy().land?.riskBasedCi === true;
       // The rapid packet has no design.md and no specs/, which the standard
       // schema requires. Leaving them absent made `validate` refuse a change
       // whose only listed next command was `validate` — a dead end that had to
@@ -815,7 +836,10 @@ export function createChangeLifecycle({
     // existed.
     const surfaceLine = state.declaredSurface?.length
       ? `\n  surface: ${state.declaredSurface.join(", ")}` : "";
-    console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${state.reviewRequired ? "required" : "not required"}\n  acceptance: ${state.acceptance?.decision || (state.acceptance?.required ? "required" : "legacy-not-required")}\n  security: ${state.securityTriggers.join(", ") || "none"}${surfaceLine}\n  schema: ${state.schema}${upgraded ? " (upgraded from foundation-rapid; design.md and specs/ added)" : ""}\n  next: ${nextCommand(state.status, id)}`);
+    // Named only when a decision waived it, so every earlier output is intact.
+    const ciLine = state.ciWaiver
+      ? `\n  signed CI: waived (${state.ciWaiver.decisionRef})` : "";
+    console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${state.reviewRequired ? "required" : "not required"}\n  acceptance: ${state.acceptance?.decision || (state.acceptance?.required ? "required" : "legacy-not-required")}\n  security: ${state.securityTriggers.join(", ") || "none"}${surfaceLine}${ciLine}\n  schema: ${state.schema}${upgraded ? " (upgraded from foundation-rapid; design.md and specs/ added)" : ""}\n  next: ${nextCommand(state.status, id)}`);
   }
 
   function resolveChange(id, flags) {
@@ -824,6 +848,7 @@ export function createChangeLifecycle({
     applyResolveAttributes(state, flags);
     applyResolveSecurity(state, flags);
     applyResolveAcceptance(state, flags);
+    applyResolveCiPolicy(state, flags);
     const upgraded = upgradeResolvedSchema(id, state);
     const proposalPath = join(changePath(id), "proposal.md");
     if (existsSync(proposalPath)) {

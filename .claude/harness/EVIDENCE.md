@@ -131,6 +131,13 @@ command prints the change's workspace hash. An invalid signature,
 stale workspace, wrong issuer, or unsigned passing artifact is rejected before
 a receipt is written.
 
+`land.riskBasedCi` is read when a change is created and again on every
+`change resolve`. When a project cannot produce signed CI, the user decides:
+`change resolve <change> --ci-not-required --decision-ref <ref>` records a
+per-change waiver, or `land.riskBasedCi: false` in `foundation.json` followed
+by `change resolve` lifts the requirement for that change. Neither is made
+from inside Build, where the phase guard keeps project policy out of reach.
+
 ### Signed semantic acceptance
 
 `semantic-acceptance` is the first-class proof boundary for hidden or

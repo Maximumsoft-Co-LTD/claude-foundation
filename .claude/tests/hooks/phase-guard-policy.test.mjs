@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  looksMutatingShellCommand, mutatingShellOperations, shellMutationViolation
+  looksMutatingShellCommand, mutatingShellOperations, pinShellAnchor,
+  shellMutationViolation
 } from "../../hooks/phase-guard-policy.mjs";
 
 test("shell mutation detection covers formatters, package scripts, and script runners", () => {
@@ -276,4 +277,86 @@ test("shell mutation detection keeps a quoted operand as an operand", () => {
   assert.deepEqual(mutatingShellOperations('echo "a > b"'), []);
   assert.deepEqual(mutatingShellOperations('sh "scripts/update.sh"'), ["sh"]);
   assert.deepEqual(mutatingShellOperations("bash scripts/update.sh"), ["bash"]);
+});
+
+
+// The host reports the shell's directory with every event. Pinning it as a
+// literal anchor is how an unanchored write an agent meant for its sandbox
+// runs there instead of costing a refused turn; the pinned form must be one
+// the policy itself accepts, or the pin is no repair.
+test("pinShellAnchor prefixes a literal directory the policy can prove", () => {
+  assert.equal(pinShellAnchor("echo x > out.txt", "/workspace"),
+    "cd /workspace && echo x > out.txt");
+  assert.equal(pinShellAnchor("cat >> a.ts <<'EOF'\nx\nEOF", "/workspace/src"),
+    "cd /workspace/src && cat >> a.ts <<'EOF'\nx\nEOF");
+  assert.equal(pinShellAnchor("npm run lint", "/my ws/app"),
+    "cd '/my ws/app' && npm run lint");
+  assert.equal(shellMutationViolation("build", WS, pinShellAnchor("echo x > out.txt", "/workspace")), null);
+  assert.equal(shellMutationViolation("build", { FOUNDATION_WORKSPACE_ROOT: "/my ws" },
+    pinShellAnchor("npm run lint", "/my ws/app")), null);
+  // Already anchored, blank, relative, or unpinnable directories pin nothing.
+  assert.equal(pinShellAnchor("cd /workspace && npm run lint", "/workspace"), null);
+  assert.equal(pinShellAnchor("   ", "/workspace"), null);
+  assert.equal(pinShellAnchor("touch x", "relative/dir"), null);
+  assert.equal(pinShellAnchor("touch x", "/workspace/$X"), null);
+  assert.equal(pinShellAnchor("touch x", null), null);
+  // A pin never widens containment: the same policy still refuses an outside
+  // directory or an outside operand behind the pinned anchor.
+  assert.match(shellMutationViolation("build", WS, pinShellAnchor("touch x", "/elsewhere")),
+    new RegExp(`^${UNANCHORED}`));
+  assert.match(shellMutationViolation("build", WS,
+    pinShellAnchor("ln -sfn /checkout/node_modules node_modules", "/workspace")),
+  new RegExp(`^${BORROW}`));
+});
+
+// A TypeScript heredoc with template literals, a Python heredoc with a
+// backtick in a string, and a sed script whose replacement contains
+// `"/status: {` each refused a correctly anchored Build command today. What
+// the shell never expands or reads as an operand must be inert to the scans;
+// what an inner shell or a writing interpreter resolves itself must not be.
+test("literal heredoc bodies and single-quoted words are inert to Build scans", () => {
+  for (const command of [
+    "cd /workspace && cat > \"src/app/tasks/[taskId]/metrics.ts\" <<'TS'\nconst s = `${x} sees /etc/hosts ../up`;\nTS",
+    "cd /workspace && python3 - <<'PYEOF'\np='src/lib/sync.ts'\ns=open(p).read()\nopen(p,'w').write(s.replace('`a`','b'))\nPYEOF",
+    "cd /workspace/src/app/tasks/[taskId] && sed -i '' 's/status: { status: \"/status: { name: \"/g; s/`x`/y/' page.tsx",
+    "cd /workspace && sed -i '' 's/x$/y/; s/${a}/b/' f.ts",
+    "cd /workspace && cat > notes.md <<'EOF'\nsee /etc/hosts and ../secret\nEOF",
+    "cd /workspace && cat > notes.md <<-\"EOF\"\n\t$(pwd) and `date`\n\tEOF",
+    // An unterminated body is data to the end of the input, as the shell reads it.
+    "cd /workspace && cat > a.md <<'EOF'\nrm -rf /outside"
+  ]) assert.equal(shellMutationViolation("build", WS, command), null, command);
+  // Carried code still names its own targets, and an inner shell expands
+  // its single-quoted script as a command line again.
+  assert.match(shellMutationViolation("build", WS,
+    "cd /workspace && python3 - <<'PYEOF'\nopen('/etc/x','w').write('x')\nPYEOF"), new RegExp(`^${ESCAPE}`));
+  assert.match(shellMutationViolation("build", WS, "cd /workspace && sh -c 'touch /outside/x'"),
+    new RegExp(`^${ESCAPE}`));
+  assert.match(shellMutationViolation("build", WS, "cd /workspace && bash -c 'echo $(pwd) > out'"),
+    new RegExp(`^${DYNAMIC}`));
+  // An unquoted delimiter expands; a marker inside quotes is text and the
+  // lines after it are still a command line; a fully quoted absolute word is
+  // still an operand; a redirect after a heredoc is still a redirect.
+  assert.match(shellMutationViolation("build", WS, "cd /workspace && cat > out.md <<EOF\n$(pwd)\nEOF"),
+    new RegExp(`^${DYNAMIC}`));
+  assert.match(shellMutationViolation("build", WS,
+    "cd /workspace && echo \"<<'EOF'\" > out.txt\ntouch /outside/x\nEOF"), new RegExp(`^${ESCAPE}`));
+  assert.match(shellMutationViolation("build", WS, "cd /workspace && cp '/outside dir/x' ."),
+    new RegExp(`^${BORROW}`));
+  assert.match(shellMutationViolation("build", WS,
+    "cd /workspace && cat > a.md <<'EOF'\nx\nEOF\necho y > /outside/y"), new RegExp(`^${ESCAPE}`));
+});
+
+// `> "$OUT"` read as a literal word: the expansion screen skips a `$` behind
+// a quote so `-m "$MSG"` stays allowed, but a quoted mutation target still
+// expands to wherever the variable points.
+test("Build refuses a quoted variable as a mutation target", () => {
+  for (const command of [
+    'cd /workspace && echo x > "$OUT"',
+    'cd /workspace && touch "$F"',
+    'cd /workspace && cp a "$D/b"',
+    'cd /workspace && tee "$LOG" < in.txt',
+    'cd /workspace && cd "$D" && npm run build'
+  ]) assert.match(shellMutationViolation("build", WS, command), new RegExp(`^${DYNAMIC}`), command);
+  assert.equal(shellMutationViolation("build", WS, 'cd /workspace && git commit -m "$MSG"'), null);
+  assert.equal(shellMutationViolation("build", WS, 'cd /workspace && echo "$VAR" > out.txt'), null);
 });

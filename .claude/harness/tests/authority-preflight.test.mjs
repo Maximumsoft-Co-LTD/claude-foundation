@@ -33,6 +33,12 @@ test("missing signed CI is a typed pre-Build decision", () => {
   assert.match(value.decision.summary, /paused before dispatch/);
   assert.ok(value.decision.options.some((option) => option.id === "pause"));
   assert.match(value.blockers[0].next, /change validate secure-change/);
+  // The trap a consumer sat in: the only named route was configuring signed
+  // CI, and the policy that demanded it lives outside Build's reach.
+  assert.match(value.blockers[0].next,
+    /change resolve secure-change --ci-not-required --decision-ref <ref>/);
+  assert.match(value.blockers[0].next, /land\.riskBasedCi/);
+  assert.ok(value.decision.options.some((option) => option.id === "waive-signed-ci"));
   assert.match(value.decisionFingerprint, /^sha256:/);
   assert.equal(value.binding.revision, 0);
 });
