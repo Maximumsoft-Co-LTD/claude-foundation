@@ -14,7 +14,7 @@ import {
   createFeedbackRuntime, FEEDBACK_SCHEMA_VERSION
 } from "./runtime/observability/feedback-runtime.mjs";
 import {
-  blockerTelemetryValue, createTelemetryRuntime, recordCommandTelemetry
+  blockerTelemetryValue, createTelemetryRuntime, createCommandPhaseRecorder
 } from "./runtime/observability/telemetry-runtime.mjs";
 import { createJsonlReader } from "./runtime/observability/telemetry.mjs";
 import { operationInputFingerprint } from "./runtime/observability/operation-profile.mjs";
@@ -134,7 +134,7 @@ const PACKET_SCHEMA_VERSION = "11";
 const AGENT_PLAN_SCHEMA_VERSION = "4";
 const CONTEXT_EVENT_SCHEMA_VERSION = "2";
 const METRICS_SCHEMA_VERSION = "8";
-const COMMAND_TELEMETRY_SCHEMA_VERSION = "3";
+const COMMAND_TELEMETRY_SCHEMA_VERSION = "4";
 const REVIEW_PROTOCOL_VERSION = "4";
 const ACCEPTANCE_PROTOCOL_VERSION = "2";
 const SEMANTIC_ACCEPTANCE_PROTOCOL_VERSION = "1";
@@ -237,8 +237,7 @@ const READ_ONLY_OPERATIONS = new Set([
   "doctor", "quality-discover", "quality-doctor", "quality-report",
   "api-version", "version"
 ]);
-process.on("exit", (code) => {
-  recordCommandTelemetry({
+const commandPhaseRecorder = createCommandPhaseRecorder(() => ({
     telemetryDisabled: process.env.FOUNDATION_TELEMETRY === "0",
     telemetryDebug: process.env.FOUNDATION_TELEMETRY_DEBUG === "1",
     changeId: operationChangeId,
@@ -257,8 +256,8 @@ process.on("exit", (code) => {
     now,
     timestamp: Date.now,
     warn: console.error
-  }, code);
-});
+}));
+process.on("exit", (code) => commandPhaseRecorder.finish(code));
 
 const {
   commandRegistry,
@@ -1017,6 +1016,7 @@ const {
   runAuthorityReviewer,
   abortAuthority,
   resetInfrastructureAuthority,
+  recoverReviewBindings,
   resetBaseMoveAuthority,
   authorityStatusValue,
   showAuthorityStatus,
@@ -1818,8 +1818,12 @@ const { advanceValue, showAdvance } = createAdvanceRuntime({
     prepareExecution(id, { stage: "build" });
   }),
   runProof: (id) => runAdvanceQuietly(() => proofAdvance(id, { quiet: true })),
+  recoverReviewBindings,
   runLand: (id) => runAdvanceQuietly(() => advanceLand(id)),
-  recordPhase: recordPhaseContext,
+  recordPhase: (id, phase) => {
+    commandPhaseRecorder.transition(phase);
+    recordPhaseContext(id, phase);
+  },
   readJson,
   proofAdvancePath: (id) => join(EVIDENCE_VAULT, id, "proof-advance.json"),
   stableHash
@@ -2029,7 +2033,7 @@ await routeRuntimeCommand(command, values, {
   showQualityDiscovery,
   initializeQuality,
   qualityDoctor,
-  runQuality,
+  runQuality: (options) => trapFailures(() => runQuality(options)),
   showQualityReport,
   updateQualityBaseline,
   showQualityDebt

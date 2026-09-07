@@ -168,6 +168,13 @@ const artifacts = reviewContractArtifactValues((name) => name === "present"
   ? { relativePath: name, sha256: "digest" } : null, ["present", "missing"]);
 assert.deepEqual(Object.keys(artifacts.contractArtifacts), ["present"]);
 assert.equal(artifacts.manifest[0].identity, "digest");
+mkdirSync(join(activePath, "specs", "nested"), { recursive: true });
+writeFileSync(join(activePath, "specs", "nested", "spec.md"), "nested requirement\n");
+const nestedArtifacts = reviewContractArtifactValues((name) => ({
+  relativePath: name, sha256: name
+}), ["specs"], activePath);
+assert.deepEqual(nestedArtifacts.manifest.map((row) => row.path), ["specs/nested/spec.md"]);
+assert.equal(nestedArtifacts.contractArtifacts.specs.relativePath, "specs");
 
 const evidenceRows = reviewEvidenceRows({
   requiredProviders: () => ["test", "review", "receipt"],

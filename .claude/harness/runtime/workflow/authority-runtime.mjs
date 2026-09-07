@@ -3,6 +3,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { acquireProcessLock, isProcessAlive } from "../core/process-lock.mjs";
 import { effectiveReviewAttemptLimit } from "../core/authority-policy.mjs";
+import { reviewFindingIssues, reviewPacketIssues, validReview } from "../evidence/configured-reviewer.mjs";
 
 export function authorityRequestDisplayValue(request, limit = 8192) {
   const packetBytes = Buffer.byteLength(JSON.stringify(request.packet || null));
@@ -761,10 +762,17 @@ export function createAuthorityRuntime({
       const currentRows = new Map(currentManifest.map((row) => [
         `${row.repositoryId}/${row.path}`, row
       ]));
-      scopeRows = currentManifest.filter((row) =>
-        baseRows.get(`${row.repositoryId}/${row.path}`)?.identity !== row.identity);
-      for (const [key, row] of baseRows)
-        if (!currentRows.has(key)) scopeRows.push({ ...row, identity: "reverted-to-base" });
+      const projected = request.packet.reviewScope?.mode === "delta" &&
+        request.packet.reviewScope.baseAttemptDigest === baseAttemptDigest &&
+        request.packet.changedSurface?.deltaFrom?.attemptDigest === baseAttemptDigest;
+      // A retry already carries a projected delta. Missing base rows there are
+      // unchanged files, not evidence of a revert in the current workspace.
+      if (!projected) {
+        scopeRows = currentManifest.filter((row) =>
+          baseRows.get(`${row.repositoryId}/${row.path}`)?.identity !== row.identity);
+        for (const [key, row] of baseRows)
+          if (!currentRows.has(key)) scopeRows.push({ ...row, identity: "reverted-to-base" });
+      }
       scopeRows.sort((left, right) =>
         `${left.repositoryId}/${left.path}`.localeCompare(`${right.repositoryId}/${right.path}`));
       if (scopeRows.length === 0)
@@ -825,6 +833,11 @@ export function createAuthorityRuntime({
         groups.get(key).paths.push(row.relativePath || row.path);
         return groups;
       }, new Map()).values()];
+      // Contract aliases need the control workspace even when no root product
+      // file changed. Keep its location without granting additional paths.
+      const control = fullInspection.get("root");
+      if (control && !inspection.some((entry) => entry.repositoryId === "root"))
+        inspection.push({ ...control, paths: [], pathCount: 0, truncated: false });
       return inspection;
       }
       const inspection = deltaInspection();
@@ -856,7 +869,8 @@ export function createAuthorityRuntime({
       }
       function selectedDeltaArtifacts(artifacts, pathFor) {
         return Object.fromEntries(Object.entries(artifacts).filter(([name, artifact]) =>
-          changedContractNames.has(pathFor(name, artifact))));
+          [...changedContractNames].some((path) => path === pathFor(name, artifact) ||
+            path.startsWith(`${pathFor(name, artifact)}/`))));
       }
       function artifactCollection(value) {
         return value && typeof value === "object" ? value : {};
@@ -999,10 +1013,59 @@ export function createAuthorityRuntime({
     const attempts = request.fallbackAttempts || [];
     for (const reviewer of configured) {
       const failures = attempts.filter((attempt) =>
-        attempt.reviewer === reviewer).length;
+        attempt.reviewer === reviewer && !attempt.bindingRecoveredAt).length;
       if (failures < threshold) return reviewer;
     }
     return fallbacks.includes("main-session") ? "main-session" : null;
+  }
+
+  function recoverReviewBindingsUnlocked(id, requestId = null) {
+    let recovered = false;
+    for (const entry of authorityStore.list(id)) {
+      const request = entry.value;
+      if (requestId && request.requestId !== requestId) continue;
+      if (request.type !== "review" || request.status !== "infrastructure-exhausted" ||
+          !["packet", "result"].includes(request.bindingFailure) ||
+          request.workspaceHash !== authorityWorkspaceHash(id, request.provider)) continue;
+      const failure = request.fallbackAttempts?.at(-1);
+      if (!failure?.reportReference) continue;
+      const failedAttempt = reviewAttemptByDigest(id, failure.attemptDigest);
+      if (canonicalPacketDigest(request.packet) !== request.packetDigest ||
+          failedAttempt?.packetDigest !== request.packetDigest ||
+          failedAttempt.status !== "completed" || failedAttempt.resultStatus !== "error") continue;
+      const report = readJson(resolve(root, failure.reportReference), null);
+      if (report?.status !== "error" || report.changeId !== id) continue;
+      const packet = structuredClone(request.packet);
+      if (!Array.isArray(packet?.reviewScope?.paths)) continue;
+      // Restore location metadata lost by old delta projection, never scope.
+      const inspection = packet.changedSurface?.inspection;
+      if (Array.isArray(inspection) && !inspection.some((row) => row.repositoryId === "root")) {
+        const control = reviewPacketValue(id).changedSurface?.inspection
+          ?.find((row) => row.repositoryId === "root");
+        if (control) inspection.push({ ...control, paths: [], pathCount: 0, truncated: false });
+      }
+      if (reviewPacketIssues(packet).length || request.bindingFailure === "result" &&
+          (!validReview({ ...report, status: "pass" }) || reviewFindingIssues(report, packet).length)) continue;
+      if (!reviewerStatus(failure.reviewer).ok) continue;
+      const at = now();
+      delete packet.packetDigest;
+      packet.packetDigest = canonicalPacketDigest(packet);
+      const { bindingFailure: _bindingFailure, ...rest } = request;
+      authorityStore.replace(entry, {
+        ...rest, status: "requested", packet, packetDigest: packet.packetDigest,
+        bindingRecoveredAt: at,
+        fallbackAttempts: request.fallbackAttempts.map((row) =>
+          row === failure ? { ...row, bindingRecoveredAt: at } : row)
+      });
+      // The immutable attempt and its infrastructure budget remain consumed.
+      // Only the repaired binding's reviewer-routing failure is released.
+      recovered = true;
+    }
+    return recovered;
+  }
+
+  function recoverReviewBindings(id) {
+    return withAuthorityLock(id, () => recoverReviewBindingsUnlocked(id));
   }
 
   function authorityRunSubject(flags) {
@@ -1050,6 +1113,12 @@ export function createAuthorityRuntime({
     const requestEntry = authorityStore.list(id)
       .find((row) => row.value.requestId === requestId);
     if (!requestEntry) fail(`unknown authority request '${requestId}'`);
+    if (requestEntry.value.status === "infrastructure-exhausted" &&
+        recoverReviewBindingsUnlocked(id, requestId))
+      requestEntry.value = authorityStore.list(id)
+        .find((row) => row.value.requestId === requestId).value;
+    if (requestEntry.value.status === "infrastructure-exhausted")
+      fail("configured reviewer infrastructure retries are exhausted for this request");
     const reviewerName = configuredReviewerRoute(reviewSettings, requestEntry.value,
       String(flags.reviewer || "").trim() || null,
       String(flags["automatic-reviewer"] || "").trim() || null);
@@ -1243,7 +1312,10 @@ export function createAuthorityRuntime({
         ]
       };
       authorityStore.replace(failedEntry, failedRequest);
-      const nextReviewer = configuredReviewerRoute(reviewSettings, failedRequest);
+      // Validation is deterministic for this packet/result. Changing models
+      // cannot repair its binding; retain the error and existing resume route.
+      const nextReviewer = report.retryable === false ? null
+        : configuredReviewerRoute(reviewSettings, failedRequest);
       if (nextReviewer && nextReviewer !== "main-session") {
         const nextFlags = {
           ...flags,
@@ -1258,6 +1330,7 @@ export function createAuthorityRuntime({
           ...failedRequest,
           status: "infrastructure-exhausted",
           infrastructureExhaustedAt: now(),
+          ...(report.bindingFailure ? { bindingFailure: report.bindingFailure } : {}),
           infrastructureError: report.summary
         });
         const exhausted = {
@@ -1267,7 +1340,9 @@ export function createAuthorityRuntime({
           failedReviewer: configured.identity,
           infrastructureError: report.summary,
           attempts: failedRequest.fallbackAttempts,
-          action: "Configure review.fallbackReviewers, repair reviewer infrastructure, or pause."
+          action: report.retryable === false
+            ? "Repair the packet or finding bindings through the existing harness recovery; do not repeat the unchanged full review."
+            : "Configure review.fallbackReviewers, repair reviewer infrastructure, or pause."
         };
         console.log(JSON.stringify(exhausted, null, 2));
         return { handled: true, value: exhausted };
@@ -1713,6 +1788,7 @@ export function createAuthorityRuntime({
     runAuthorityReviewer,
     abortAuthority,
     resetInfrastructureAuthority,
+    recoverReviewBindings,
     resetBaseMoveAuthority,
     unrecordedDeliveredAiResponse,
     authorityStatusValue,

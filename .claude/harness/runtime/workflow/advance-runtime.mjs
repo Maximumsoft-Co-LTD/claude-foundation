@@ -496,6 +496,7 @@ export function createAdvanceRuntime({
   proofReadinessValue = null, agentPlanValue = null,
   budgetDecisionValue = null,
   prepareBuild = null, runProof = null, runLand = null,
+  recoverReviewBindings = null,
   hasLandGrant = () => false,
   recordPhase = null, output = console.log,
   capture = (operation) => operation(),
@@ -552,7 +553,7 @@ export function createAdvanceRuntime({
   }
 
   function phaseForAction(value) {
-    if (value.legacyAction === "REPAIR_PROVE_RUNTIME") return "prove";
+    if (["REPAIR_PROVE_RUNTIME", "REPAIR_REVIEW_INFRASTRUCTURE"].includes(value.legacyAction)) return "prove";
     if (value.legacyAction === "REPAIR_LAND_RUNTIME") return "land";
     if (value.action === "EDIT" || value.action === "REPAIR") return "build";
     if (value.legacyAction === "LAND_READY" || value.reached === "archived") return "land";
@@ -654,6 +655,13 @@ export function createAdvanceRuntime({
 
   async function advanceThrough(id, through) {
     let stage = "build";
+    let recordedPhase = null;
+    const recordActivePhase = (phase) => {
+      if (phase && phase !== recordedPhase && recordPhase) {
+        recordPhase(id, phase);
+        recordedPhase = phase;
+      }
+    };
     try {
       return await captureAsync(async () => {
         if (!through) return advanceValue(id);
@@ -663,8 +671,10 @@ export function createAdvanceRuntime({
         // Preparation is identity-reused and also owns recovery of failed
         // sandbox setup. Re-enter it while Build is active so a prior setup
         // failure cannot be bypassed by the next coordinator invocation.
-        if (["change", "building"].includes(initial.status) && prepareBuild)
+        if (["change", "building"].includes(initial.status) && prepareBuild) {
+          recordActivePhase("build");
           await prepareBuild(id);
+        }
         const targetResume = (value) => ({
           ...value,
           resume: resume(id, through),
@@ -674,13 +684,19 @@ export function createAdvanceRuntime({
         while (true) {
           const completed = reached(id, through);
           if (completed) return done(id, completed, through);
-          const value = advanceValue(id);
+          let value = advanceValue(id);
+          if (through !== "build" && value.legacyAction === "REPAIR_REVIEW_INFRASTRUCTURE" &&
+              recoverReviewBindings) {
+            stage = "prove";
+            recordActivePhase("prove");
+            if (await recoverReviewBindings(id)) value = advanceValue(id);
+          }
           if (through === "build" && ["RUN_PROOF", "LAND_READY"].includes(value.legacyAction)) {
-            if (recordPhase) recordPhase(id, "build");
+            recordActivePhase("build");
             return done(id, "build", through);
           }
           const phase = phaseForAction(value);
-          if (phase && recordPhase) recordPhase(id, phase);
+          recordActivePhase(phase);
           let operation = null;
           if (["RUN_PROOF", "RUN_INVALIDATED_EVIDENCE"].includes(value.legacyAction) &&
               ["proven", "archived"].includes(through)) {

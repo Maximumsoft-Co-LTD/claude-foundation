@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { createQualityRuntime, runQualityProvider } from "../runtime/quality/quality-runtime.mjs";
 import { configDigest } from "../runtime/quality/quality-protocol.mjs";
+import { fileURLToPath } from "node:url";
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "foundation-quality-runtime-"));
@@ -45,6 +46,42 @@ function fixture() {
   });
   return { root, runtime, repository, git, writeJson, logs, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
+
+test("quality CLI preserves a large structured failure report through piped stdout", () => {
+  const value = fixture();
+  try {
+    writeFileSync(join(value.root, ".claude", "harness", "foundation.mjs"), "// project marker\n");
+    const report = {
+      protocol: "foundation-crap-v1", repository: "root", repositoryCommit: null,
+      language: "javascript",
+      tool: { name: "fixture", version: "1", adapterVersion: "1", configDigest: configDigest({}) },
+      functions: Array.from({ length: 1200 }, (_, index) => ({
+        id: `function-${index}`, path: "src.js", line: index + 1, endLine: index + 1,
+        complexity: 50, coverageKind: "branch", coveragePercent: 0, crap: 0, mapping: "exact"
+      }))
+    };
+    const script = join(value.root, "provider.mjs");
+    writeFileSync(script, `process.stdout.write(${JSON.stringify(JSON.stringify(report))});\n`);
+    const config = value.runtime.draft();
+    config.repositories[0].profiles = [];
+    config.repositories[0].providers = {
+      crap: { kind: "command", command: [process.execPath, script],
+        protocol: "foundation-crap-v1", isolation: "read-only" }
+    };
+    value.writeJson(join(value.root, "quality", "foundation-quality.json"), config);
+    const child = spawnSync(process.execPath, [
+      fileURLToPath(new URL("../foundation.mjs", import.meta.url)), "quality-run", "--enforce", "--full"
+    ], { cwd: value.root, encoding: "utf8", timeout: 30000, maxBuffer: 8 * 1024 * 1024,
+      env: { ...process.env, CLAUDE_FOUNDATION_PROJECT: value.root, FOUNDATION_TELEMETRY: "0",
+        FOUNDATION_CHANGE_ID: "" } });
+    assert.equal(child.status, 1, child.stderr);
+    assert.match(child.stderr, /consumer quality gate fail/);
+    assert.ok(Buffer.byteLength(child.stdout) > 65536);
+    const summary = JSON.parse(child.stdout);
+    assert.equal(summary.status, "fail");
+    assert.equal(summary.lanes[0].result.functions.length, 1200);
+  } finally { value.cleanup(); }
+});
 
 test("quality init previews before explicitly writing configuration", () => {
   const value = fixture();

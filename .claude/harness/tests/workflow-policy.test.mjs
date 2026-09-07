@@ -9,6 +9,8 @@ import { fileURLToPath } from "node:url";
 
 import { createReviewAttemptStore } from "../runtime/evidence/review-attempt-store.mjs";
 import { createReviewProtocol } from "../runtime/evidence/review-protocol.mjs";
+import { reviewFindingIssues } from "../runtime/evidence/configured-reviewer.mjs";
+import { createAdvanceRuntime } from "../runtime/workflow/advance-runtime.mjs";
 import { createAuthorityStore } from "../runtime/workflow/authority.mjs";
 import {
   bindMainSession,
@@ -184,6 +186,7 @@ try {
 
   let packetSequence = 0;
   let packetMode = "code";
+  let packetOverride = null;
   let riskTier = null;
   let workspaceHash = "workspace-a";
   let reviewSettings = {
@@ -230,6 +233,7 @@ try {
       ...(providerRepository ? { repository: providerRepository } : {}) }),
     reviewPacketValue: () => {
       packetSequence += 1;
+      if (packetOverride) return packetOverride();
       const proposal = {
         path: "openspec/changes/change-a/proposal.md",
         workspacePath: fixture,
@@ -251,6 +255,7 @@ try {
           "proposal.md": proposal,
           ...(packetMode === "grounding" ? {
             "grounding.yaml": groundingArtifact,
+            "specs": { relativePath: "specs", sha256: `specs-${packetSequence}` },
             "evidence.yaml": evidenceArtifact
           } : {})
         },
@@ -275,6 +280,10 @@ try {
               kind: "contract-artifact", identity: proposal.sha256
             },
             ...(packetMode === "grounding" ? [{
+              repositoryId: "contract", path: "specs/nested/spec.md",
+              relativePath: "specs/nested/spec.md", workspacePath: fixture,
+              kind: "contract-artifact", identity: `spec-${packetSequence}`
+            }, {
               repositoryId: "root", path: "openspec/changes/change-a/grounding.yaml",
               relativePath: "grounding.yaml", workspacePath: fixture,
               kind: "contract-artifact", identity: groundingArtifact.sha256
@@ -335,6 +344,7 @@ try {
         reviewer: { sessionId: configuredReviewSession }
       };
     },
+    reviewerStatus: () => ({ ok: true }),
     writeJson,
     receiptPath: (id) => join(fixture, `${id}-receipt.json`),
     recordReceipt: (id, _provider, status, flags) => writeJson(
@@ -912,6 +922,99 @@ try {
   assert.equal(verdictAttempts.at(-1).reviewerIdentity, "codex-sol");
   assert.equal(verdictAttempts.at(-1).resultStatus, "fail");
 
+  state = { version: 2, changeId: "change-invalid-binding", reviewHistory: null };
+  configuredReviewResults = {
+    "codex-sol": {
+      status: "error", retryable: false, summary: "Invalid dispatched finding path",
+      findings: [], verifiedFindingIds: [], reportReference: "binding-error.json",
+      reviewer: { sessionId: "invalid-binding-thread" }
+    }
+  };
+  const bindingRequest = quiet(() => authority.requestAuthority(
+    "change-invalid-binding", { type: "review" }));
+  const bindingResult = quiet(() => authority.runAuthorityReviewer("change-invalid-binding", {
+    request: bindingRequest.requestId, "subject-actor": "human-implementer"
+  }));
+  assert.equal(bindingResult.status, "configured-reviewer-infrastructure-exhausted");
+  assert.equal(attemptStore.reviewAttempts("change-invalid-binding", state.reviewHistory).length, 1,
+    "deterministic binding failures must not spend another full review on fallback");
+  assert.throws(() => quiet(() => authority.runAuthorityReviewer("change-invalid-binding", {
+    request: bindingRequest.requestId, "subject-actor": "human-implementer"
+  })), /exhausted|status|dispatch/i);
+
+  state = { version: 2, changeId: "change-binding-recovery", status: "building", reviewHistory: null };
+  const recoveryId = state.changeId;
+  const recoveryContract = join(fixture, "openspec", "changes", recoveryId);
+  mkdirSync(recoveryContract, { recursive: true });
+  writeFileSync(join(recoveryContract, "spec.md"), "requirement\n");
+  let bindingCorrected = false;
+  packetOverride = () => ({ version: 1, claims: [], changedSurface: {
+    inspection: [{ repositoryId: "contract", workspacePath: recoveryContract },
+      ...(bindingCorrected ? [{ repositoryId: "root", workspacePath: fixture, paths: [] }] : [])],
+    manifest: [{ repositoryId: "contract", path: "spec.md", relativePath: "spec.md",
+      workspacePath: recoveryContract, kind: "contract-artifact", identity: "stable-spec" }]
+  } });
+  const rejectedReport = {
+    changeId: recoveryId, status: "error", summary: "finding binding rejected",
+    findings: [{ id: "F-RECOVER", severity: "major", line: 1,
+      path: `openspec/changes/${recoveryId}/spec.md`, message: "check requirement",
+      claimIds: [], verificationCaseIds: [] }], verifiedFindingIds: []
+  };
+  writeJson(join(fixture, "binding-recovery.json"), rejectedReport);
+  configuredReviewResults = { "codex-sol": {
+    ...rejectedReport, retryable: false, bindingFailure: "result",
+    reportReference: "binding-recovery.json", reviewer: { sessionId: "binding-recovery-one" }
+  } };
+  const recoveryRequest = quiet(() => authority.requestAuthority(recoveryId, { type: "review" }));
+  const beforeRecoveryCalls = configuredReviewCalls;
+  quiet(() => authority.runAuthorityReviewer(recoveryId, {
+    request: recoveryRequest.requestId, "subject-actor": "human-implementer"
+  }));
+  const advanceRecovery = createAdvanceRuntime({
+    loadRuntime: () => state, agentDispatchValue: () => ({ action: "build-complete" }),
+    relevantHash: () => workspaceHash, deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: authorityStore.list(recoveryId).map((row) => row.value) }),
+    authorityNext: (_id, _type, requests) => requests.map((request) => ({
+      requestId: request.requestId,
+      command: `claude-foundation authority run ${recoveryId} --request ${request.requestId} --subject-actor implementation-agent`
+    })),
+    readJson: () => ({}), proofAdvancePath: () => "/unused-proof.json", stableHash,
+    recoverReviewBindings: authority.recoverReviewBindings
+  });
+  assert.equal((await advanceRecovery.advanceThrough(recoveryId, "proven")).action, "REPAIR");
+  assert.equal(configuredReviewCalls, beforeRecoveryCalls + 1,
+    "unchanged invalid bindings do not spend another review");
+  bindingCorrected = true;
+  const retainedEntry = authorityStore.list(recoveryId).find((row) => row.value.requestId === recoveryRequest.requestId);
+  const retainedRequest = structuredClone(retainedEntry.value);
+  writeFileSync(join(recoveryContract, "other.md"), "outside dispatched scope\n");
+  const corruptedPacket = structuredClone(retainedRequest.packet);
+  corruptedPacket.reviewScope.paths.push("contract/other.md");
+  corruptedPacket.changedSurface.manifest.push({ repositoryId: "contract", path: "other.md",
+    relativePath: "other.md", workspacePath: recoveryContract, kind: "contract-artifact", identity: "other" });
+  authorityStore.replace(retainedEntry, { ...retainedRequest, packet: corruptedPacket });
+  assert.equal(authority.recoverReviewBindings(recoveryId), false,
+    "recovery must not bless a packet that no longer matches its dispatch digest");
+  assert.equal(authorityStore.list(recoveryId).find((row) => row.value.requestId === recoveryRequest.requestId)
+    .value.packetDigest, retainedRequest.packetDigest);
+  authorityStore.replace(retainedEntry, retainedRequest);
+  assert.equal(advanceRecovery.advanceValue(recoveryId, { inspect: true }).action, "REPAIR",
+    "inspection must not reopen requests");
+  const recoveredAction = await advanceRecovery.advanceThrough(recoveryId, "proven");
+  assert.equal(recoveredAction.legacyAction, "RUN_CONFIGURED_REVIEW",
+    "advance itself reopens a now-valid binding through the existing route");
+  configuredReviewResults = {};
+  const recoveredResult = quiet(() => authority.runAuthorityReviewer(recoveryId, {
+    request: recoveryRequest.requestId, "subject-actor": "human-implementer"
+  }));
+  assert.equal(recoveredResult.status, "pass");
+  assert.equal(configuredReviewCalls, beforeRecoveryCalls + 2);
+  assert.deepEqual(attemptStore.reviewAttempts(recoveryId, state.reviewHistory)
+    .map((row) => row.resultStatus), ["error", "pass"], "failed evidence remains in history");
+  assert.equal(state.reviewHistory.infraAcknowledged?.length || 0, 0,
+    "automatic binding recovery never resets the infrastructure budget");
+  packetOverride = null;
+
   configuredReviewResults = {};
   reviewSettings = {
     ...reviewSettings, independence: "required", diversity: "required",
@@ -1439,7 +1542,99 @@ try {
     "reviewer-session": "grounding-two-session"
   }));
   assert.equal(groundingSecond.packet.grounding.decisionBatch.status, "locked");
+  assert.equal(groundingSecond.packet.contractArtifacts.specs.relativePath, "specs",
+    "a nested spec delta retains the containing agreement reference");
+  assert(groundingSecond.packet.reviewScope.paths.includes("contract/specs/nested/spec.md"));
   assert(Array.isArray(groundingSecond.packet.claims));
+
+  for (const includeService of [false, true]) {
+    const changeId = `change-contract-alias-${includeService}`;
+    const contractWorkspace = join(fixture, "openspec", "changes", changeId);
+    const serviceWorkspace = join(fixture, "service");
+    mkdirSync(serviceWorkspace, { recursive: true });
+    writeFileSync(join(serviceWorkspace, "app.txt"), "service\n");
+    mkdirSync(join(contractWorkspace, "specs", "nested"), { recursive: true });
+    writeFileSync(join(contractWorkspace, "specs", "nested", "spec.md"), "changed\n");
+    writeFileSync(join(contractWorkspace, "specs", "nested", "unchanged.md"), "unchanged\n");
+    state = { version: 2, changeId, reviewHistory: null };
+    packetSequence = 0;
+    packetOverride = () => ({
+      version: 1, claims: [], contractArtifacts: {},
+      changedSurface: {
+        inspection: [
+          { repositoryId: "root", workspacePath: fixture, baseHead: "head", paths: [] },
+          { repositoryId: "contract", workspacePath: contractWorkspace, paths: ["specs/nested/spec.md"] }
+        ],
+        manifest: [{ repositoryId: "contract", path: "specs/nested/spec.md",
+          relativePath: "specs/nested/spec.md", workspacePath: contractWorkspace,
+          kind: "contract-artifact", identity: `spec-${packetSequence}` },
+        { repositoryId: "contract", path: "specs/nested/unchanged.md",
+          relativePath: "specs/nested/unchanged.md", workspacePath: contractWorkspace,
+          kind: "contract-artifact", identity: "stable-sibling" },
+        ...(includeService ? [{ repositoryId: "service", path: "app.txt",
+          relativePath: "app.txt", workspacePath: serviceWorkspace,
+          kind: "code", identity: `service-${packetSequence}` }] : [])]
+      }
+    });
+    const firstRequest = quiet(() => authority.requestAuthority(changeId, { type: "review" }));
+    const first = quiet(() => authority.dispatchAuthority(changeId, {
+      request: firstRequest.requestId, scope: "full", "reviewer-type": "ai",
+      "reviewer-identity": "alias-one", "reviewer-provider-family": "openai",
+      "reviewer-model-family": "gpt", "reviewer-model": "gpt-5.6",
+      "reviewer-session": `${changeId}-one`
+    }));
+    const completed = attemptStore.completeReviewAttempt(changeId, first.dispatch.attemptDigest, {
+      reviewerSessionId: `${changeId}-one`, resultStatus: "fail",
+      findings: [{ id: "F-ALIAS", severity: "major", path: "contract/specs/nested/spec.md",
+        message: "repair spec" }], verifiedFindingIds: []
+    });
+    writeJson(join(fixture, `${changeId}-receipt.json`), {
+      status: "fail", review: { attemptDigest: completed.digest }
+    });
+    quiet(() => authority.abortAuthority(changeId, { request: firstRequest.requestId, reason: "repair spec" }));
+    const secondRequest = quiet(() => authority.requestAuthority(changeId, { type: "review" }));
+    const deltaReport = { changeId, status: "error", summary: "pre-upgrade packet binding failure",
+      findings: [], verifiedFindingIds: [] };
+    writeJson(join(fixture, `${changeId}-error.json`), deltaReport);
+    configuredReviewResults = { "claude-opus": { ...deltaReport,
+      retryable: false, bindingFailure: "packet", reportReference: `${changeId}-error.json`,
+      reviewer: { sessionId: `${changeId}-two` }
+    } };
+    quiet(() => authority.runAuthorityReviewer(changeId, {
+      request: secondRequest.requestId, reviewer: "claude-opus", "subject-actor": "human-implementer"
+    }));
+    const second = authorityStore.list(changeId).find((row) => row.value.requestId === secondRequest.requestId).value;
+    assert.equal(second.status, "infrastructure-exhausted");
+    for (const packet of [first.packet, second.packet]) {
+      const verifiedFindingIds = packet.closureFindings?.ids || [];
+      for (const path of ["contract/specs/nested/spec.md",
+        `openspec/changes/${changeId}/specs/nested/spec.md`,
+        `root/openspec/changes/${changeId}/specs/nested/spec.md`])
+        assert.deepEqual(reviewFindingIssues({ findings: [{ id: "F-ALIAS", path, line: 1 }],
+          verifiedFindingIds }, packet), [], "full and delta preserve contract aliases");
+      if (packet.reviewScope.mode === "delta") assert.match(reviewFindingIssues({ findings: [{ id: "F-OTHER",
+        path: "contract/specs/nested/unchanged.md", line: 1 }], verifiedFindingIds }, packet)[0],
+      /outside the dispatched review scope/);
+    }
+    assert.deepEqual(second.packet.changedSurface.inspection.find((row) => row.repositoryId === "root").paths, []);
+    const failedScope = [...second.packet.reviewScope.paths];
+    assert.equal(authority.recoverReviewBindings(changeId), true);
+    configuredReviewResults = { "claude-opus": {
+      status: "pass", summary: "delta repaired", findings: [], verifiedFindingIds: ["F-ALIAS"],
+      reportReference: `${changeId}-pass.json`, reviewer: { sessionId: `${changeId}-three` }
+    } };
+    const recoveredDelta = quiet(() => authority.runAuthorityReviewer(changeId, {
+      request: secondRequest.requestId, reviewer: "claude-opus", "subject-actor": "human-implementer"
+    }));
+    assert.equal(recoveredDelta.status, "pass");
+    assert.deepEqual(lastConfiguredReviewArgs.packet.reviewScope.paths, failedScope,
+      "retrying a recovered delta must not turn omitted unchanged files into reverted files");
+    assert.match(reviewFindingIssues({ findings: [{ id: "F-OTHER",
+      path: "contract/specs/nested/unchanged.md", line: 1 }], verifiedFindingIds: ["F-ALIAS"] },
+    lastConfiguredReviewArgs.packet)[0], /outside the dispatched review scope/);
+  }
+  configuredReviewResults = {};
+  packetOverride = null;
 
   state = { version: 2, changeId: "change-low", reviewHistory: null };
   riskTier = "low";

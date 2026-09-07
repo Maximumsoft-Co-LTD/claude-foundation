@@ -13,6 +13,7 @@ import {
   commandTelemetryRow,
   commandTelemetryStatus,
   createTelemetryRuntime,
+  createCommandPhaseRecorder,
   normalizeTelemetryBatch,
   recordCommandTelemetry,
   rebindTelemetryWindow,
@@ -22,6 +23,30 @@ import {
 const readLines = (path) => existsSync(path)
   ? readFileSync(path, "utf8").split("\n").filter(Boolean).map(JSON.parse)
   : [];
+
+test("advance records disjoint phase spans and attributes a failure to its active phase", () => {
+  let at = 1000;
+  let blocked = false;
+  const rows = [];
+  const recorder = createCommandPhaseRecorder(() => commandContext({
+    operationName: "advance", operationPhase: "meta", publicOperation: "meta",
+    operationStartedAt: 1000, timestamp: () => at,
+    now: () => new Date(at).toISOString(), blocked
+  }), (context, code) => rows.push(commandTelemetryRow(context, code)));
+  recorder.transition("build");
+  at = 1100;
+  recorder.transition("build");
+  recorder.transition("prove");
+  at = 1500;
+  blocked = true;
+  recorder.finish(1);
+  assert.equal(rows.length, 1, "phase transitions must not inflate command invocations");
+  assert.equal(rows[0].durationMs, 500);
+  assert.deepEqual(rows[0].phaseSpans.map((row) => [row.phase, row.durationMs, row.status]), [
+    ["build", 100, "completed"], ["prove", 400, "blocked"]
+  ]);
+  assert.equal(rows[0].phaseSpans[0].finishedAt, rows[0].phaseSpans[1].startedAt);
+});
 
 function commandContext(overrides = {}) {
   return {
@@ -72,7 +97,7 @@ test("blocked command telemetry carries bounded cause and recovery without raw e
   const row = commandTelemetryRow(commandContext({
     operationName: "proof-advance", blocked: true, blocker
   }), 2);
-  assert.equal(row.version, 3);
+  assert.equal(row.version, 4);
   assert.deepEqual(Object.keys(row.blocker).sort(), [
     "classification", "code", "fingerprint", "recovery", "summary"
   ]);

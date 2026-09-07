@@ -339,7 +339,13 @@ Review receipts additionally identify reviewer type/identity, the actual model
 session for AI reviewers, one or more structured implementation-subject tuples,
 finding IDs/details, verified closure IDs, and changed-artifact scope after the
 first round. The review packet unions committed base-to-HEAD and dirty paths per
-repository with all review contract artifacts. Critical policy
+repository with all review contract artifacts. Contract directories are expanded
+to individual file identities in the dispatch manifest, including nested spec
+files. Workspace-relative contract paths are accepted only when they uniquely
+bind to the same scoped file; escaping symlinks remain invalid. Packet paths
+are checked before launching a configured reviewer. Immutable older packets
+with contract-directory scopes remain resumable; this compatibility does not
+widen a new file-scoped delta. Critical policy
 requires a different provider/model family or a human, unless the project has
 declared `"review": { "diversity": "single-model" }` in `foundation.json`; that
 waiver is named in the packet and recorded as `review.policy.diversityWaived`.
@@ -354,7 +360,16 @@ Codex is the alternate. `doctor` and `change validate` expose the normalized
 posture and consequences; risk-tiered routing does not restore either assurance axis.
 A configured `defaultReviewer` runs first, followed by `fallbackReviewers` in
 order only after infrastructure errors. `fail` and `inconclusive` are delivered
-verdicts and never trigger fallback. `main-session` is allowed in that list only
+verdicts and never trigger fallback. Uninspectable packets and finding/closure
+binding errors retain an error attempt and exhaust that request immediately,
+without spending a full review on another model for unchanged validation input.
+Rejected findings remain diagnostic data, not passing evidence.
+On the existing `advance --through proven|archived` route, the backend revalidates
+the retained packet and rejected result. It may restore missing control-workspace
+location metadata without widening scope. Only a now-valid binding with a ready
+reviewer reopens the request; unchanged failures stay stopped, inspection is
+read-only, and the immutable error attempt still consumes infrastructure budget.
+`main-session` is allowed in that list only
 with `review.independence: "self"`; the request binds observed implementation
 provenance and current-session telemetry rather than guessing identity or model.
 A project may require either axis independently, and the runtime defaults

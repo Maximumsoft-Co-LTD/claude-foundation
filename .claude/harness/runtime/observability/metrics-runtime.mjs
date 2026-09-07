@@ -3,7 +3,7 @@ import { existsSync, readFileSync, readdirSync, readlinkSync } from "node:fs";
 import { join } from "node:path";
 import { measuredNumber } from "../core/measured-number.mjs";
 import { createModelDriftInspector } from "./host-execution-contract.mjs";
-import { commandProfile } from "./operation-profile.mjs";
+import { commandProfile, operationPhaseRows } from "./operation-profile.mjs";
 
 export function runtimeSourceDigest(directory) {
   const digest = createHash("sha256");
@@ -304,12 +304,16 @@ export function createMetricsRuntime({
 
   function addOperationPhases(phases, operations) {
     for (const operation of operations) {
-      const name = operation.phase || operation.operation || "unknown";
-      const phase = phaseEntry(phases, name);
-      phase.operations += 1;
-      phase.durationMs += Number(operation.durationMs || 0);
-      if (operation.status === "blocked") phase.blocked += 1;
-      else if (operation.status !== "completed") phase.failed += 1;
+      const seen = new Set();
+      for (const span of operationPhaseRows(operation)) {
+        const name = span.phase || operation.operation || "unknown";
+        const phase = phaseEntry(phases, name);
+        if (!seen.has(name)) phase.operations += 1;
+        seen.add(name);
+        phase.durationMs += Number(span.durationMs || 0);
+        if (span.status === "blocked") phase.blocked += 1;
+        else if (span.status !== "completed") phase.failed += 1;
+      }
     }
   }
 

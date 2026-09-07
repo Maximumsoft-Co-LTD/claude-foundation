@@ -414,6 +414,12 @@ only its own axis and is named in both packet and receipt.
 
 Configured `fallbackReviewers` are tried in order only after an infrastructure
 error. `fail` and `inconclusive` are delivered verdicts and never fall through.
+Packet inspection and finding/closure binding errors stop the current automatic
+retry chain rather than dispatching the unchanged validation failure to another
+model. The backend owns this routing through the existing commands.
+The existing `advance --through` route reopens a binding failure only after the
+retained packet/result validates again and the reviewer is ready, preserving
+scope, attempt history, and infrastructure retry accounting.
 A `main-session` fallback requires the explicit self-independence policy and
 records observed provenance rather than guessing it.
 
@@ -480,6 +486,11 @@ tokens, cache, or cost remain unknown rather than zero. A complete token
 measurement without price data is truthfully partial and may satisfy a policy
 that requires a measured usage dimension; no measured dimension cannot.
 Prompts and tool payloads are never copied.
+When `advance` executes multiple lifecycle phases, its single operation row
+carries disjoint phase intervals. Metrics attribute those intervals without
+counting additional command invocations or overlapping parent time. Quality
+lane timing includes adapter normalization and ratchet evaluation; structured
+quality output is drained even when enforcement returns a failing exit code.
 
 `metrics` and `feedback` expose cost, context, execution, reuse, repair, and wait
 signals without counting several receipts from one process as independent

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, lstatSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import {
   cachedUpdateAdvisory, updateNotificationDirective
@@ -149,12 +149,21 @@ export function priorReviewValue(prior) {
   };
 }
 
-export function reviewContractArtifactValues(artifact, names) {
+export function reviewContractArtifactValues(artifact, names, activePath = null) {
   const rows = names.map((name) => [name, artifact(name)])
     .filter(([, row]) => Boolean(row));
+  // Keep directory references in the agreement, but dispatch file identities.
+  // Never follow directory symlinks while enumerating the review surface.
+  function files(name) {
+    if (!activePath || !lstatSync(join(activePath, name)).isDirectory()) return [name];
+    return readdirSync(join(activePath, name)).sort()
+      .flatMap((child) => files(`${name}/${child}`));
+  }
+  const fileRows = rows.flatMap(([name, row]) => files(name)
+    .map((file) => [file, file === name ? row : artifact(file)]));
   return {
     contractArtifacts: Object.fromEntries(rows),
-    manifest: rows.map(([name, row]) => ({
+    manifest: fileRows.map(([name, row]) => ({
       repositoryId: "contract",
       path: name,
       relativePath: name,
@@ -555,10 +564,19 @@ export function createPacketRuntime({
     ];
     const {
       contractArtifacts, manifest: reviewArtifactManifest
-    } = reviewContractArtifactValues(artifact, reviewArtifactNames);
+    } = reviewContractArtifactValues(artifact, reviewArtifactNames, activePath);
     const reviewManifest = [...surfaceRows, ...reviewArtifactManifest]
       .sort((left, right) => `${left.repositoryId}/${left.path}`
         .localeCompare(`${right.repositoryId}/${right.path}`));
+    if (!changedSurface.inspection.some((entry) => entry.repositoryId === "root"))
+      changedSurface.inspection.push({
+        repositoryId: "root",
+        workspacePath: reviewSurfaceWorkspace(surfaceContext, id, state, "root"),
+        // The control workspace may hold the contract without being a selected
+        // product repository. This empty inspection grants no product scope.
+        baseHead: repositoryBaseHead({ id: "root" }, state),
+        paths: []
+      });
     if (reviewArtifactManifest.length) changedSurface.inspection.push({
       repositoryId: "contract",
       workspacePath: activePath,

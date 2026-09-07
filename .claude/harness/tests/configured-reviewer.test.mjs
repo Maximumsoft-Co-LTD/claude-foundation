@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {
   chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync,
-  realpathSync, writeFileSync
+  realpathSync, symlinkSync, writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -123,6 +123,75 @@ const scopedPacket = {
   }
 };
 assert.deepEqual(reviewFindingIssues({ findings: [validFinding] }, scopedPacket), []);
+const serviceWorkspace = join(workspace, "service");
+mkdirSync(join(serviceWorkspace, "root"), { recursive: true });
+writeFileSync(join(workspace, "README.md"), "root\n");
+writeFileSync(join(serviceWorkspace, "root", "README.md"), "service\n");
+const overlappingPacket = {
+  reviewScope: { mode: "full", paths: ["root/README.md", "service/root/README.md"] },
+  changedSurface: {
+    inspection: [
+      { repositoryId: "root", workspacePath: workspace },
+      { repositoryId: "service", workspacePath: serviceWorkspace }
+    ],
+    manifest: [
+      { repositoryId: "root", path: "README.md", identity: "root-digest" },
+      { repositoryId: "service", path: "root/README.md", identity: "service-digest" }
+    ]
+  }
+};
+for (const path of overlappingPacket.reviewScope.paths)
+  assert.deepEqual(reviewFindingIssues({ findings: [{ ...validFinding, path }] },
+    overlappingPacket), [], "exact repository identities take precedence over suffix aliases");
+assert.match(reviewFindingIssues({ findings: [{ ...validFinding, path: "README.md" }] },
+  overlappingPacket)[0], /outside the dispatched review scope/,
+"ambiguous shorthand must still be rejected");
+const contractRoot = join(workspace, "openspec", "changes", "nested");
+mkdirSync(join(contractRoot, "specs", "dashboard"), { recursive: true });
+writeFileSync(join(contractRoot, "specs", "dashboard", "spec.md"), "Requirement\n");
+const contractPacket = {
+  reviewScope: { mode: "full", paths: ["contract/specs/dashboard/spec.md"] },
+  changedSurface: {
+    inspection: [
+      { repositoryId: "root", workspacePath: workspace },
+      { repositoryId: "contract", workspacePath: contractRoot }
+    ],
+    manifest: [{ repositoryId: "contract", path: "specs/dashboard/spec.md", identity: "digest" }]
+  }
+};
+for (const path of ["contract/specs/dashboard/spec.md",
+  "openspec/changes/nested/specs/dashboard/spec.md",
+  "root/openspec/changes/nested/specs/dashboard/spec.md"])
+  assert.deepEqual(reviewFindingIssues({ findings: [{ ...validFinding, path }] },
+    contractPacket), [], "nested contract aliases bind to the same scoped file");
+assert.match(reviewFindingIssues({ findings: [{
+  ...validFinding, path: "openspec/changes/other/specs/dashboard/spec.md"
+}] }, contractPacket)[0], /outside the dispatched review scope/);
+const legacyContractPacket = {
+  ...contractPacket, reviewScope: { mode: "full", paths: ["contract/specs"] },
+  changedSurface: { ...contractPacket.changedSurface, manifest: [{
+    repositoryId: "contract", path: "specs", kind: "contract-artifact", identity: "directory-digest"
+  }] }
+};
+for (const path of ["contract/specs/dashboard/spec.md", "specs/dashboard/spec.md",
+  "openspec/changes/nested/specs/dashboard/spec.md"])
+  assert.deepEqual(reviewFindingIssues({ findings: [{ ...validFinding, path }] }, legacyContractPacket), [],
+    "an immutable pre-upgrade directory packet can resume without a fresh review packet");
+writeFileSync(join(contractRoot, "specs", "dashboard", "unchanged.md"), "unchanged\n");
+assert.match(reviewFindingIssues({ findings: [{
+  ...validFinding, path: "contract/specs/dashboard/unchanged.md"
+}] }, { ...contractPacket, reviewScope: { ...contractPacket.reviewScope, mode: "delta" } })[0],
+  /outside the dispatched review scope/, "file-scoped delta must not reopen an unchanged sibling");
+assert.match(reviewFindingIssues({ findings: [validFinding] }, {
+  ...scopedPacket, reviewScope: { mode: "delta", paths: [] }
+})[0], /outside the dispatched review scope/);
+writeFileSync(join(root, "outside.mjs"), "outside\n");
+symlinkSync(join(root, "outside.mjs"), join(workspace, "src", "escape.mjs"));
+assert.match(reviewFindingIssues({ findings: [{
+  ...validFinding, path: "src/escape.mjs"
+}] }, {
+  ...scopedPacket, reviewScope: { mode: "full", paths: ["root/src/escape.mjs"] }
+})[0], /outside|does not resolve inside/);
 writeFileSync(join(workspace, "root-file.mjs"), "export const root = true;\n");
 assert.deepEqual(reviewFindingIssues({ findings: [{
   ...validFinding, path: "root-file.mjs"
@@ -271,6 +340,21 @@ try {
   });
   assert.equal(codexResult.status, "pass");
   assert.equal(codexResult.reviewer.sessionId, "codex-review-session");
+  const priorInvocations = readFileSync(join(workspace, "claude-invocations.txt"), "utf8");
+  const invalidPacket = runtime.runReview({
+    changeId: "missing-packet-file", workspace, packet: missingPacket
+  });
+  assert.equal(invalidPacket.status, "error");
+  assert.equal(invalidPacket.retryable, false);
+  assert.equal(readFileSync(join(workspace, "claude-invocations.txt"), "utf8"), priorInvocations,
+    "an uninspectable packet must not launch a reviewer");
+  const overlappingResult = runtime.runReview({
+    changeId: "overlapping-scope", workspace, packet: overlappingPacket
+  });
+  assert.equal(overlappingResult.status, "pass");
+  assert.equal(readFileSync(join(workspace, "claude-invocations.txt"), "utf8")
+    .trim().split("\n").length, priorInvocations.trim().split("\n").length + 1,
+  "valid overlapping identities dispatch exactly one reviewer");
 
   process.env.FAKE_CLAUDE_SESSION = "implementation-session";
   const reused = runtime.runReview({

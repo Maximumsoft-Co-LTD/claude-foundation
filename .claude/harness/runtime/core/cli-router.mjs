@@ -205,7 +205,15 @@ export async function routeRuntimeCommand(command, values, api) {
         value: ["change", "repo", "capability", "shard-index", "shard-count"]
       });
       if (rest.length) die(`unexpected quality run argument(s): ${rest.join(", ")}`);
-      runQuality({ ...flags, repository: flags.repo });
+      try {
+        await runQuality({ ...flags, repository: flags.repo });
+      } catch (error) {
+        if (!error.foundationBlocked) throw error;
+        // The complete report has already been printed. A forced exit here
+        // drops buffered pipe output (often at 64 KiB), destroying evidence.
+        console.error(`BLOCKED: ${error.message}`);
+        process.exitCode = error.exitCode || 1;
+      }
     },
     "quality-report": async () => {
       const { flags, rest } = parseStrictCommandFlags(values, "quality report");

@@ -84,7 +84,8 @@ export function runQualityProvider({ repository, capability, provider, git, path
     required: provider.required !== false
   };
   const before = cleanStatus(git, repository.path);
-  const started = Date.now();
+  const started = performance.now();
+  const elapsed = () => performance.now() - started;
   const result = command.length ? spawnSync(command[0], command.slice(1), {
       cwd: repository.path,
       encoding: "utf8",
@@ -94,16 +95,15 @@ export function runQualityProvider({ repository, capability, provider, git, path
         FOUNDATION_QUALITY_CAPABILITY: capability }
     }) : { status: 0, stdout: "", stderr: "" };
   const after = cleanStatus(git, repository.path);
-  const durationMs = Date.now() - started;
   if (before !== null && after !== null && before !== after) return {
     repository: repository.id, capability, status: "fail", assurance: "missing",
-    reason: "provider changed repository state and did not restore it", durationMs,
+    reason: "provider changed repository state and did not restore it", durationMs: elapsed(),
     required: provider.required !== false
   };
   if (result.status !== 0) return {
     repository: repository.id, capability, status: "fail", assurance: "missing",
     reason: `provider exited ${result.status ?? "without status"}`,
-    stderr: String(result.stderr || "").slice(-4000), durationMs,
+    stderr: String(result.stderr || "").slice(-4000), durationMs: elapsed(),
     required: provider.required !== false
   };
   let value = null;
@@ -113,7 +113,7 @@ export function runQualityProvider({ repository, capability, provider, git, path
         repositoryCommit: repository.head || null, workspaceDigest: repository.workspaceDigest });
     } catch (error) {
       return { repository: repository.id, capability, status: "fail", assurance: "missing",
-        reason: `built-in adapter failed: ${error.message}`, durationMs,
+        reason: `built-in adapter failed: ${error.message}`, durationMs: elapsed(),
         required: provider.required !== false };
     }
   } else if (provider.protocol) {
@@ -125,14 +125,14 @@ export function runQualityProvider({ repository, capability, provider, git, path
     } catch (error) {
       return {
         repository: repository.id, capability, status: "fail", assurance: "missing",
-        reason: `invalid ${provider.protocol} result: ${error.message}`, durationMs,
+        reason: `invalid ${provider.protocol} result: ${error.message}`, durationMs: elapsed(),
         required: provider.required !== false
       };
     }
   }
   return {
     repository: repository.id, capability, status: "pass", assurance: "full",
-    durationMs, required: provider.required !== false, result: value,
+    durationMs: elapsed(), required: provider.required !== false, result: value,
     stdout: provider.protocol ? undefined : String(result.stdout || "").slice(-4000)
   };
 }
@@ -337,6 +337,7 @@ export function createQualityRuntime({
       for (const [capability, provider] of Object.entries(repositoryConfig.providers)) {
         if (options.capability && capability !== options.capability) continue;
         if (!selectedLane(repository.id, capability)) continue;
+        const laneStarted = performance.now();
         const lane = runQualityProvider({ repository, capability, provider, git, pathInside,
           environment: { FOUNDATION_QUALITY_CHANGE: activeChange || "" } });
         if (lane.result) {
@@ -362,6 +363,7 @@ export function createQualityRuntime({
             lane.reason = "quality ratchet failed";
           }
         }
+        lane.durationMs = performance.now() - laneStarted;
         lanes.push(lane);
       }
       for (const capability of profileCapabilities(repositoryConfig.profiles)) {

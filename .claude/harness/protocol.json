@@ -18,7 +18,7 @@
   "dashboardSnapshotSchema": "3",
   "advanceProtocol": "5",
   "feedbackSchema": "3",
-  "commandTelemetrySchema": "3",
+  "commandTelemetrySchema": "4",
   "reviewProtocol": "4",
   "acceptanceProtocol": "2",
   "semanticAcceptanceProtocol": "1",

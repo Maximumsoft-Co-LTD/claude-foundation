@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Review packets enumerate nested contract files and preserve workspace-relative
+  aliases in full and delta review. Exact repository-qualified paths take
+  precedence over shorthand matches, while ambiguous aliases, escaping paths,
+  and unchanged delta siblings remain rejected.
+- Packet and finding-binding failures stop redundant full-review fallbacks.
+  The existing advance route reopens repaired bindings only after validating
+  the retained packet, failed-attempt digest, and reviewer readiness. Recovery
+  preserves delta scope, failed evidence, and infrastructure retry accounting
+  without adding user commands, CLI commands, flags, or arguments.
+- Failing quality runs drain complete structured JSON before exiting, including
+  reports larger than 64 KiB, while retaining the failure exit status.
+- Quality timing includes provider normalization and lane evaluation. Advance
+  telemetry records one invocation with disjoint lifecycle phase spans, avoiding
+  duplicate command counts and parent/child duration totals. Command telemetry
+  schema 4 remains readable alongside legacy rows.
+
+### Changed
+
+- Full and delta review guidance starts from the dispatched diff, limits
+  findings to attributable defects, and reuses current evidence before further
+  verification.
+
 ## [3.5.12] - 2026-09-07
 
 ### Changed

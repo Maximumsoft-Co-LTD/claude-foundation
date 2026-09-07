@@ -80,6 +80,24 @@ function operationSpan(row) {
     ? { from, to } : null;
 }
 
+export function operationPhaseRows(row) {
+  const parent = operationSpan(row);
+  if (row.version !== 4 || !parent || !Array.isArray(row.phaseSpans) || !row.phaseSpans.length)
+    return [row];
+  let end = parent.from;
+  for (const span of row.phaseSpans) {
+    if (!span || typeof span !== "object") return [row];
+    const interval = operationSpan(span);
+    if (!interval || interval.from !== end || interval.to > parent.to ||
+        !["change", "build", "prove", "land"].includes(span.phase) ||
+        !["completed", "blocked", "failed"].includes(span.status) ||
+        typeof span.durationMs !== "number" || span.durationMs !== interval.to - interval.from)
+      return [row];
+    end = interval.to;
+  }
+  return end === parent.to ? row.phaseSpans : [row];
+}
+
 function unionDuration(spans) {
   const ordered = spans.filter(Boolean).sort((left, right) => left.from - right.from);
   let total = 0;

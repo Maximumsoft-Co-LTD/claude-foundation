@@ -883,6 +883,11 @@ or malformed output), `infraFailureThreshold` bounds retries per reviewer and
 `fallbackReviewers` routes automatically through configured reviewers before an
 optional final `main-session` handback. Every failed attempt remains in the
 review chain and the full/delta scope is preserved.
+An uninspectable packet or a finding/closure binding error stops that request's
+automatic retry chain; the backend does not spend another full review on the
+unchanged validation failure. No additional user or CLI command is required.
+The existing advance route reopens a repaired binding after validation succeeds,
+while retaining the failed attempt and its infrastructure budget consumption.
 It never falls back after a review verdict such as `fail` or `inconclusive`.
 Because `main-session` is explicitly self-review, including it requires
 `independence: "self"`.

@@ -95,7 +95,7 @@ export function commandTelemetryRow(context, code) {
   const inspection = context.readOnlyOperations.has(context.operationName);
   const status = commandTelemetryStatus(code, context.blocked);
   return {
-    version: 3,
+    version: 4,
     changeId: context.changeId,
     operation: context.operationName,
     kind: inspection ? "inspection" : "lifecycle",
@@ -107,6 +107,7 @@ export function commandTelemetryRow(context, code) {
     startedAt: new Date(context.operationStartedAt).toISOString(),
     finishedAt: context.now(),
     durationMs: context.timestamp() - context.operationStartedAt,
+    ...(context.phaseSpans ? { phaseSpans: context.phaseSpans } : {}),
     requests: null,
     inputTokens: null,
     outputTokens: null,
@@ -141,6 +142,39 @@ export function recordCommandTelemetry(context, code) {
       context.warn(`WARNING: telemetry unavailable: ${error.message}`);
     return false;
   }
+}
+
+// Retain one invocation row, with disjoint child phase intervals. Readers use
+// the intervals for phase attribution and the parent for command accounting.
+export function createCommandPhaseRecorder(context, record = recordCommandTelemetry) {
+  let phase = null;
+  let startedAt = null;
+  const spans = [];
+  const close = (at, status) => spans.push({
+    phase, startedAt: new Date(startedAt).toISOString(),
+    finishedAt: new Date(at).toISOString(), durationMs: at - startedAt, status
+  });
+  return {
+    transition(next) {
+      const base = context();
+      if (base.operationName !== "advance" || phase === next ||
+          !["change", "build", "prove", "land"].includes(next)) return;
+      const at = base.timestamp();
+      if (phase) close(at, "completed");
+      startedAt = phase ? at : base.operationStartedAt;
+      phase = next;
+    },
+    finish(code) {
+      const base = context();
+      if (!phase) return record(base, code);
+      const at = base.timestamp();
+      close(at, commandTelemetryStatus(code, base.blocked));
+      return record({ ...base, phaseSpans: spans,
+        now: () => new Date(at).toISOString(), timestamp: () => at,
+        ...(spans.length === 1 ? { operationPhase: phase, publicOperation: phase } : {})
+      }, code);
+    }
+  };
 }
 
 export function validateTelemetryEventFlags(context, id, state, flags) {

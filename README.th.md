@@ -828,6 +828,11 @@ read-only/non-persistent ถ้าเกิด infrastructure `error` เช่�
 หรือ output schema พัง `infraFailureThreshold` จะจำกัดจำนวนครั้งต่อ reviewer และ
 `fallbackReviewers` จะสลับ configured reviewer อัตโนมัติก่อนใช้ `main-session`
 เป็นทางสุดท้าย ทุก attempt ที่พังยังอยู่ใน review chain และคง full/delta scope เดิม
+ถ้า packet ตรวจอ่านไม่ได้ หรือ finding/closure ผูกกับ scope ไม่ถูกต้อง backend
+จะหยุด automatic retry ของ request นั้น ไม่ส่ง validation failure เดิมไปทำ full
+review ซ้ำกับโมเดลอื่น และไม่ต้องเพิ่มคำสั่งของผู้ใช้หรือ CLI
+เส้นทาง advance เดิมจะเปิด request ให้เดินต่อเมื่อ binding ที่ซ่อมแล้วตรวจผ่าน
+โดยยังเก็บ attempt ที่ล้มเหลวและนับการใช้งบ infrastructure ของครั้งนั้นไว้
 การใส่ `main-session` ต้องใช้ `independence: "self"` และผล review แบบ `fail`
 หรือ `inconclusive` จะไม่ fallback
 ทีมที่ใช้ Codex ล้วนหรือ Claude Code ล้วนตั้ง reviewer ให้ตรงและ commit
