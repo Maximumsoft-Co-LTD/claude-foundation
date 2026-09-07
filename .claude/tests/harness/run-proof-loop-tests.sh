@@ -61,7 +61,12 @@ draft() {
       minimum: 1, timeoutMs: 60000 } }, services: {} };
     writeFileSync("draft.json", JSON.stringify(d, null, 2));'
   node .claude/harness/foundation.mjs start draft.json > start.log 2>&1
-  change_id="$(printf '%s' "$1" | tr '[:upper:] ' '[:lower:]-')"
+  change_id="$(sed -n 's/^AGREED \([^[:space:]]*\).*$/\1/p' start.log | head -n 1)"
+  if [ -z "$change_id" ]; then
+    echo "FAIL: start did not report an agreed change id" >&2
+    cat start.log >&2
+    exit 1
+  fi
   node .claude/harness/foundation.mjs advance "$change_id" --through build >> start.log 2>&1
 }
 
@@ -74,18 +79,20 @@ implement() {
 
 # --- A report inside the hashed surface is refused a silent failure. ---------
 setup_project at-root
-draft "Report at root" "report.json"
+draft "Report / API::  Root" "report.json"
 assert_file_contains "a report inside the hashed surface is named before a run is spent" \
   start.log "writes its report to report.json, inside the hashed workspace surface"
-implement report-at-root
-root_proof="$({ node .claude/harness/foundation.mjs proof-run report-at-root; } 2>&1 || true)"
+assert_file_exists "the exact agreed id survives punctuation and repeated separators" \
+  ".foundation/runtime/$change_id.json"
+implement "$change_id"
+root_proof="$({ node .claude/harness/foundation.mjs proof-run "$change_id"; } 2>&1 || true)"
 assert_contains "the provider still runs and still passes" "$root_proof" "RECEIPT"
 # The warning above still earns its place — a report at the root is a bad habit
 # and the run says so. What it no longer does is void the run: the report is
 # untracked and no task declares it, so it is not this change's surface and
 # cannot expire the evidence just collected.
 assert_contains "a report outside the declared surface no longer voids its own run" \
-  "$root_proof" "PROVEN report-at-root"
+  "$root_proof" "PROVEN $change_id"
 assert_not_contains "an undeclared report is not reported as a mid-run change" \
   "$root_proof" "the workspace hash changed while providers ran"
 

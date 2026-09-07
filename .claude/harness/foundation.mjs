@@ -1277,6 +1277,7 @@ const {
   showInspection: showSandboxInspection,
   createSingle: createSingleSandbox,
   create: createSandbox,
+  prepareBuild: prepareBuildSandbox,
   retryFailedSetups,
   mergeTaskProgress,
   sync: syncSandbox
@@ -1816,12 +1817,7 @@ const { advanceValue, showAdvance } = createAdvanceRuntime({
   budgetDecisionValue: budgetDecision,
   hasLandGrant: (id) => landGrantRuntime.valid(id).valid,
   prepareBuild: (id) => commandPhaseRecorder.measureAsync("build.prepare", () => runAdvanceQuietly(async () => {
-    const state = loadRuntime(id);
-    if (state.status === "change") {
-      validate(id, "root", { quiet: true });
-      createSandbox(id, { quiet: true });
-    }
-    retryFailedSetups(id);
+    prepareBuildSandbox(id);
     prepareExecution(id, { stage: "build" });
   })),
   runProof: (id) => commandPhaseRecorder.measureAsync("prove.execute", () =>

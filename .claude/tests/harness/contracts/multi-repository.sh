@@ -104,18 +104,16 @@ jq 'del(.repositories.api)' \
 mv "$TMP/partial-runtime.json" .foundation/runtime/cross-repository-profile.json
 partial_action="$(node .claude/harness/foundation.mjs advance \
   cross-repository-profile --through proven)"
-assert_cmd_zero "advance keeps partial binding failure inside its action envelope" \
+assert_cmd_zero "advance repairs a partial binding before returning Build work" \
   sh -c 'printf "%s" "$1" | jq -e '\''
-    .action == "REPAIR" and
-    .legacyAction == "REPAIR_BUILD_RUNTIME" and
-    .command == "claude-foundation sandbox create cross-repository-profile --all" and
+    .action == "EDIT" and
+    .legacyAction == "EXECUTE_TASK" and
+    .tasks[0].repository == "api" and
     .resume == "claude-foundation advance cross-repository-profile --through proven"'\'' \
     >/dev/null' sh "$partial_action"
-assert_cmd_zero "sandbox create --all repairs a partial repository binding" \
-  node .claude/harness/foundation.mjs sandbox create cross-repository-profile --all
-assert_file_exists "partial binding repair preserves existing repository work" \
+assert_file_exists "automatic partial binding repair preserves existing repository work" \
   .foundation/repository-sandboxes/cross-repository-profile/api/.binding-recovery-marker
-assert_eq "partial binding repair restores the selected target" \
+assert_eq "automatic partial binding repair restores the selected target" \
   "$(cd api && pwd -P)" \
   "$(jq -r '.repositories.api.targetPath' \
     .foundation/runtime/cross-repository-profile.json)"

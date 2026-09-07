@@ -1042,6 +1042,20 @@ export function createSandbox(context, id, flags = {}) {
   reportMultiRepositorySandbox(context, id, state);
 }
 
+export function prepareBuildSandbox(context, id) {
+  const state = context.loadRuntime(id);
+  if (state.status === "change") context.validate(id, "root", { quiet: true });
+  const inspection = context.workspaceInspection(id, state);
+  const repositoryIncomplete = inspection.repositories
+    .filter((repository) => repository.id !== "root")
+    .some((repository) => repository.status !== "active");
+  const incomplete = state.status === "change" || inspection.status !== "active" ||
+    repositoryIncomplete;
+  if (incomplete) context.create(id, { quiet: true });
+  context.retryFailedSetups(id);
+  return { repaired: incomplete };
+}
+
 export function relocatedSandboxCandidate(context, id, workspace) {
   if (!["worktree", "copy"].includes(workspace.mode) ||
       !workspace.path || context.pathExists(workspace.path)) return null;
@@ -1826,9 +1840,13 @@ export function createSandboxRuntime({
     runSetupBatch, git
   });
 
+  const prepareBuild = prepareBuildSandbox.bind(null, {
+    loadRuntime, validate, workspaceInspection, create, retryFailedSetups
+  });
+
   return {
     createChallenge, workspaceInspection, inspect, showInspection,
-    createSingle, create, retryFailedSetups, mergeTaskProgress, sync,
+    createSingle, create, retryFailedSetups, prepareBuild, mergeTaskProgress, sync,
     changeDiffIdentity
   };
 }

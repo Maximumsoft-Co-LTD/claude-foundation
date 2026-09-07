@@ -102,9 +102,11 @@ export function createProviderScheduler({
     const result = executionNodesOperation(executionNodeContext, id, hash);
     recordScheduler({
       scheduler: "provider-selection", wave: 0,
-      readyNodes: result.nodes.length, executedNodes: result.nodes.length,
+      // Selection only identifies work and reusable receipts. Readiness and
+      // execution belong to the dependency/resource waves below.
+      readyNodes: 0, executedNodes: 0,
       reusedNodes: required.length - neededExecutionProviders(executionNodeContext, id, hash).length,
-      queueingMs: 0, peakConcurrency: 0
+      queueingMs: null, peakConcurrency: 0
     });
     return result;
   }

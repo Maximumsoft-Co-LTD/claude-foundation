@@ -21,6 +21,7 @@ import {
   inspectSandbox,
   isolateSelectedRepositories,
   missingDependencySetupAdvisory,
+  prepareBuildSandbox,
   repairSelectedRepositories,
   reportMultiRepositorySandbox,
   runSandboxSetupBatch,
@@ -601,6 +602,43 @@ test("create sandbox completes the multi-repository lifecycle", (t) => {
   all.setRepositories([{ id: "root", mode: "write", path: all.root }]);
   captureConsole("log", () => createSandbox(all.context, "change", { all: true }));
   assert.equal(all.calls.saved.at(-1).status, "building");
+});
+
+test("prepareBuild repairs an incomplete child repository before execution", () => {
+  const calls = [];
+  const context = {
+    loadRuntime: () => ({ status: "building", workspace: { path: "/sandbox/root" } }),
+    validate: () => calls.push("validate"),
+    workspaceInspection: () => ({
+      status: "active",
+      repositories: [
+        { id: "root", status: "missing-record" },
+        { id: "api", status: "missing-record" }
+      ]
+    }),
+    create: (...args) => calls.push(["create", ...args]),
+    retryFailedSetups: (...args) => calls.push(["retry", ...args])
+  };
+  assert.deepEqual(prepareBuildSandbox(context, "change"), { repaired: true });
+  assert.deepEqual(calls, [
+    ["create", "change", { quiet: true }],
+    ["retry", "change"]
+  ]);
+});
+
+test("prepareBuild reuses a complete building sandbox", () => {
+  const calls = [];
+  const context = {
+    loadRuntime: () => ({ status: "building", workspace: { path: "/sandbox/root" } }),
+    validate: () => calls.push("validate"),
+    workspaceInspection: () => ({
+      status: "active", repositories: [{ id: "api", status: "active" }]
+    }),
+    create: () => calls.push("create"),
+    retryFailedSetups: (...args) => calls.push(["retry", ...args])
+  };
+  assert.deepEqual(prepareBuildSandbox(context, "change"), { repaired: false });
+  assert.deepEqual(calls, [["retry", "change"]]);
 });
 
 test("copy planning recognizes carryable Git metadata and ignored paths", (t) => {

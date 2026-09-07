@@ -135,6 +135,32 @@ test("executionNodesOperation binds discovery outputs to their producer", () => 
   assert.deepEqual(result.nodes[2].covers, ["output", "covered"]);
 });
 
+test("provider selection records reuse without claiming execution", () => {
+  const events = [];
+  const configs = { test: { adapter: "shell", command: ["test"] } };
+  const instance = createProviderScheduler({
+    requiredProviders: () => ["cached", "test"],
+    receiptValidity: (_id, provider) => ({
+      validity: provider === "cached" ? "valid" : "missing"
+    }),
+    providerConfig: (_id, provider) => configs[provider],
+    commandExists: () => true,
+    providerWorkspace: () => ".",
+    playwrightAvailability: () => ({ packageOwned: true, binaryAvailable: true }),
+    evidence: () => ({ providers: configs }),
+    providerCapability: (provider) => provider,
+    adapterResources: () => [],
+    recordScheduler: (event) => events.push(event)
+  });
+  assert.deepEqual(instance.executionNodes("c", "hash").nodes.map((row) => row.provider),
+    ["test"]);
+  assert.deepEqual(events, [{
+    scheduler: "provider-selection", wave: 0,
+    readyNodes: 0, executedNodes: 0, reusedNodes: 1,
+    queueingMs: null, peakConcurrency: 0
+  }]);
+});
+
 test("provider scheduler runs an acyclic graph in dependency order", async () => {
   const { instance, executions } = scheduler({});
   const outcomes = await instance.runExecutionDag("c1", [
@@ -203,7 +229,7 @@ test("provider scheduler attributes a failed covered output to its producer", as
     });
 });
 
-function planner(tasks) {
+function planner(tasks, recordScheduler = () => {}) {
   const changePath = mkdtempSync(join(tmpdir(), "dag-cycle-"));
   writeFileSync(join(changePath, "tasks.md"), "# Tasks\n");
   return createAgentPlanner({
@@ -235,6 +261,7 @@ function planner(tasks) {
     readJson: () => ({}),
     writeJson: () => {},
     recordInstructionManifest: null,
+    recordScheduler,
     modelForTask: () => ({ tier: "fast", family: "haiku" }),
     fail: (message) => { throw new Error(message); }
   });
@@ -266,4 +293,16 @@ test("task planner groups an acyclic graph into dependency waves", () => {
   ]);
   const plan = instance.planValue("c1");
   assert.deepEqual(plan.groups, [["T001", "T003"], ["T002"]]);
+});
+
+test("task planner telemetry retains the full ready frontier above capacity", () => {
+  const events = [];
+  const instance = planner([
+    plannerTask("T001"), plannerTask("T002"),
+    plannerTask("T003"), plannerTask("T004")
+  ], (event) => events.push(event));
+  instance.planValue("c1");
+  assert.equal(events[0].readyNodes, 4);
+  assert.equal(events[0].executedNodes, 3);
+  assert.equal(events[0].peakConcurrency, 3);
 });

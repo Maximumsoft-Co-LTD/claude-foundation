@@ -771,8 +771,8 @@ host restart.
 
 Change Loop supplies a small, task-scoped packet to the native agent host; it is
 not a resident orchestrator that copies the entire conversation into every
-worker. A single-repository change without shared external authority stays with
-one agent regardless of task count. Independent workers are useful only when
+worker. A single-task change without shared external authority stays with one
+agent. Independent workers are useful only when
 their tasks, repository access, dependencies, and evidence can be separated
 cleanly.
 

@@ -293,7 +293,8 @@ export function enrichAgentTasks(context, id, allTasks, repositories, selectedPo
   return { tasks, completed };
 }
 
-export function groupAgentTasks(tasks, completed, maxParallelAgents, resourcesConflict, fail) {
+export function groupAgentTasks(tasks, completed, maxParallelAgents, resourcesConflict, fail,
+  recordWave = () => {}) {
   const pending = new Map(tasks.map((task) => [task.id, task]));
   const groups = [];
   const initialCycle = findCyclePath(new Map(tasks.map((task) =>
@@ -312,6 +313,11 @@ export function groupAgentTasks(tasks, completed, maxParallelAgents, resourcesCo
         : `task dependency deadlock: ${[...pending.keys()].join(", ")}`);
     }
     if (!group.length) group.push(ready[0]);
+    recordWave({
+      wave: groups.length + 1,
+      readyNodes: ready.length,
+      executedNodes: group.length
+    });
     groups.push(group.map((task) => task.id));
     for (const task of group) {
       pending.delete(task.id);
@@ -496,8 +502,10 @@ export function createAgentPlanner({
       }));
     const { tasks, completed } = enrichAgentTasks({ modelForTask, fail },
       id, allTasks, repositories, selectedPolicy);
+    const schedulingWaves = [];
     const groups = groupAgentTasks(tasks, completed,
-      selectedPolicy.execution.maxParallelAgents, taskResourcesConflict, fail);
+      selectedPolicy.execution.maxParallelAgents, taskResourcesConflict, fail,
+      (wave) => schedulingWaves.push(wave));
     const contract = evidence(id);
     const claims = contract.claims;
     const singleAgent = singleAgentExecutionEligible(tasks, claims);
@@ -544,11 +552,11 @@ export function createAgentPlanner({
       stableHash
     });
     const taskExecution = agentTaskExecutionRows(tasks, singleAgent, priorPlan, graph);
-    groups.forEach((group, index) => recordScheduler({
-      scheduler: "build-task-plan", wave: index + 1,
-      readyNodes: group.length, executedNodes: group.length,
+    schedulingWaves.forEach((wave, index) => recordScheduler({
+      scheduler: "build-task-plan", wave: wave.wave,
+      readyNodes: wave.readyNodes, executedNodes: wave.executedNodes,
       reusedNodes: index === 0 ? allTasks.length - tasks.length : 0,
-      queueingMs: null, peakConcurrency: group.length
+      queueingMs: null, peakConcurrency: wave.executedNodes
     }));
     const basePlan = {
       version: Number(schemaVersion),
