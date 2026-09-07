@@ -1229,7 +1229,7 @@ export function createSandboxRuntime({
   repositoryCatalog,
   clearSnapshotCache, validate, repositorySelectionIdsAt, contractFingerprint,
   executionFingerprint, taskBlocks, proofPath, relevantHash, now, fail,
-  markBlocked = () => {},
+  markBlocked,
   recordScheduler
 }) {
   function sandboxRoot(id) {
