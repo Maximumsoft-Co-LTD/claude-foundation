@@ -73,6 +73,8 @@ Re-run readiness and Prove rather than editing receipts.
 {
   "execution": {
     "maxParallelAgents": 3,
+    "maxParallelProviders": 4,
+    "maxParallelSetups": 3,
     "packetBytes": {
       "task": 8192,
       "review": 8192,
@@ -91,6 +93,8 @@ Re-run readiness and Prove rather than editing receipts.
 | Field | Valid value | What to change it for |
 |---|---|---|
 | `maxParallelAgents` | Integer `1..16` | Lower it for constrained machines or tightly coupled work; raise it only when tasks can be separated safely |
+| `maxParallelProviders` | Integer `1..16` | Bound independent evidence providers and required service startups |
+| `maxParallelSetups` | Integer `1..16` | Bound independent repository setup commands during Build preparation |
 | `packetBytes.*` | Integer `2048..65536` bytes | Increase only when a bounded task, review, repository description, or whole packet is being truncated |
 | `tokenBudgets.rapid/standard` | Integer `10000..100000000` | Cap model tokens for one autonomous run; this is a ceiling, not a target |
 | `requestBudgets.rapid/standard` | Integer `10..100000` | Cap model requests for one autonomous run |

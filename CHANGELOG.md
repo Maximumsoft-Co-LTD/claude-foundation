@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Change start now stops after compiling and validating the agreement; the
+  first Build advance owns idempotent sandbox creation and setup, removing
+  environment preparation from the Change critical path.
+- Execution graph v3 and agent-plan schema 5 schedule the longest ready
+  dependency path first. Independent same-repository Build tasks, evidence
+  providers, required services, and repository setup commands use bounded,
+  resource-aware parallel waves while conflicts remain serialized.
+- Command telemetry schema 5 records lifecycle substages plus scheduler waves,
+  queueing, reuse, executed-node counts, and peak concurrency. Metrics schema 9
+  aggregates them without double-counting phase or command totals. Version 4
+  command telemetry remains readable and unavailable values remain null.
+
+### Fixed
+
+- A no-change `--affected` test run selects zero suites, `--list` composes with
+  `--affected` in either order, and deleted tracked files participate in suite
+  selection.
+
 ## [3.5.13] - 2026-09-07
 
 ### Fixed

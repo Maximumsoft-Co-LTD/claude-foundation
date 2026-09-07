@@ -70,6 +70,8 @@ independent หรือ diverse receipt จะบันทึก `independence-
 {
   "execution": {
     "maxParallelAgents": 3,
+    "maxParallelProviders": 4,
+    "maxParallelSetups": 3,
     "packetBytes": {
       "task": 8192,
       "review": 8192,
@@ -88,6 +90,8 @@ independent หรือ diverse receipt จะบันทึก `independence-
 | Field | ค่าที่ใช้ได้ | ปรับเมื่อไร |
 |---|---|---|
 | `maxParallelAgents` | จำนวนเต็ม `1..16` | ลดเมื่อเครื่องจำกัดหรืองานผูกกันแน่น เพิ่มเฉพาะเมื่อแยก task ได้ปลอดภัย |
+| `maxParallelProviders` | จำนวนเต็ม `1..16` | จำกัด provider หลักฐานและ service startup ที่เป็นอิสระต่อกัน |
+| `maxParallelSetups` | จำนวนเต็ม `1..16` | จำกัด setup command ของ repository ที่รันพร้อมกันระหว่างเตรียม Build |
 | `packetBytes.*` | จำนวนเต็ม `2048..65536` byte | เพิ่มเมื่อ task, review, repository description หรือ packet ทั้งก้อนถูกตัดจริง ๆ |
 | `tokenBudgets.rapid/standard` | จำนวนเต็ม `10000..100000000` | จำกัด token ของ autonomous run หนึ่งรอบ เป็นเพดาน ไม่ใช่เป้าหมาย |
 | `requestBudgets.rapid/standard` | จำนวนเต็ม `10..100000` | จำกัดจำนวน model request ต่อ run |

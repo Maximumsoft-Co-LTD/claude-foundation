@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   commandExistsOperation,
   createRuntimeEnvironment,
+  policyExecutionLimit,
   playwrightAvailabilityOperation,
   reviewAssuranceDimension
 } from "../../harness/runtime/core/runtime-environment.mjs";
@@ -22,6 +23,12 @@ function policy(configured = {}, path = policyPath) {
     readJson: (requested, fallback) => requested === path ? configured : fallback
   }).foundationPolicy();
 }
+
+test("execution limits can be bound without an extra runtime closure", () => {
+  assert.equal(policyExecutionLimit(() => ({
+    execution: { maxParallelProviders: 7 }
+  }), "maxParallelProviders"), 7);
+});
 
 const reviewer = {
   adapter: "codex-cli", executable: "codex", providerFamily: "openai",
@@ -98,6 +105,16 @@ test("assurance dimensions distinguish configured, active, and preferred posture
   });
 });
 
+test("runtime environment projects assurance from its normalized policy", () => {
+  const runtime = createRuntimeEnvironment({
+    root, policyPath, protocols: {}, fail,
+    readJson: () => ({ review: { independence: "self", diversity: "single-model" } })
+  });
+  assert.equal(runtime.reviewAssurancePosture().independence.waived, true);
+  assert.equal(runtime.reviewAssurancePosture({ independence: "required" })
+    .independence.required, true);
+});
+
 test("policy defaults and legacy execution values normalize deterministically", () => {
   const defaults = policy({}, join(root, "missing-foundation.json"));
   assert.equal(defaults.execution.packetBytes.task, 8192);
@@ -146,6 +163,8 @@ test("execution validation rejects every bounded numeric class", () => {
     [{ execution: { maxContinuationWindows: 21 } }, /maxContinuationWindows/],
     [{ execution: { maxParallelAgents: 0 } }, /maxParallelAgents/],
     [{ execution: { maxParallelAgents: 17 } }, /maxParallelAgents/],
+    [{ execution: { maxParallelProviders: 0 } }, /maxParallelProviders/],
+    [{ execution: { maxParallelSetups: 17 } }, /maxParallelSetups/],
     [{ execution: { leaseMinutes: 0 } }, /leaseMinutes/],
     [{ execution: { leaseMinutes: 1441 } }, /leaseMinutes/]
   ];

@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import { DRIFT_BLOCKING_TASK_KINDS } from "../contracts/model-policy.mjs";
 import {
   blockingConflictRows, compileExecutionGraph, conflictKeysForTask, conflictKeysOverlap,
-  singleAgentExecutionEligible
+  scheduleReadyBatch, singleAgentExecutionEligible
 } from "../core/graph-execution.mjs";
 import { findCyclePath } from "../core/graph.mjs";
 
@@ -162,6 +162,7 @@ export function agentPlanSummaryView(context, id, path, output) {
     taskCount: output.tasks.length,
     modelCounts,
     groupCount: groupSummaries.length,
+    scheduling: output.scheduling,
     groups: groupSummaries.length <= 20 ? groupSummaries : {
       preview: groupSummaries.slice(0, 10),
       count: groupSummaries.length,
@@ -292,12 +293,18 @@ export function enrichAgentTasks(context, id, allTasks, repositories, selectedPo
   return { tasks, completed };
 }
 
-export function groupAgentTasks(tasks, completed, maxParallelAgents, resourcesConflict, fail) {
+export function groupAgentTasks(tasks, completed, maxParallelAgents, resourcesConflict, fail,
+  recordWave = () => {}) {
   const pending = new Map(tasks.map((task) => [task.id, task]));
   const groups = [];
+  const initialCycle = findCyclePath(new Map(tasks.map((task) =>
+    [task.id, task.dependsOn.filter((dependency) => pending.has(dependency))])));
+  if (initialCycle) fail(`task dependency cycle: ${initialCycle.join(" -> ")}`);
   while (pending.size) {
-    const ready = [...pending.values()].filter((task) =>
-      task.dependsOn.every((dependency) => completed.has(dependency)));
+    const { ready, selected: group } = scheduleReadyBatch([...pending.values()], completed, {
+      maxParallel: maxParallelAgents,
+      conflicts: resourcesConflict
+    });
     if (!ready.length) {
       const cycle = findCyclePath(new Map([...pending.values()].map((task) =>
         [task.id, task.dependsOn.filter((dependency) => pending.has(dependency))])));
@@ -305,12 +312,12 @@ export function groupAgentTasks(tasks, completed, maxParallelAgents, resourcesCo
         ? `task dependency cycle: ${cycle.join(" -> ")}`
         : `task dependency deadlock: ${[...pending.keys()].join(", ")}`);
     }
-    const group = [];
-    for (const task of ready) {
-      const conflicts = group.some((selected) => resourcesConflict(selected, task));
-      if (!conflicts && group.length < maxParallelAgents) group.push(task);
-    }
     if (!group.length) group.push(ready[0]);
+    recordWave({
+      wave: groups.length + 1,
+      readyNodes: ready.length,
+      executedNodes: group.length
+    });
     groups.push(group.map((task) => task.id));
     for (const task of group) {
       pending.delete(task.id);
@@ -382,6 +389,7 @@ export function agentGraphProviderRows(context, id, contract) {
         ? context.providerRepositories(id, provider, config).map((repository) => repository.id)
         : config.repositories || [],
       dependsOn: config.dependsOn || [],
+      ...(config.service ? { service: config.service } : {}),
       resources: config.resources || [],
       claims: context.claimsForProvider
         ? context.claimsForProvider(id, provider).map((claim) => claim.id)
@@ -430,7 +438,8 @@ export function createAgentPlanner({
   authorityPreflight = () => ({ status: "READY", blockers: [] }),
   executionContract = null,
   readJson, writeJson, compactStrings, serializedJson, recordContextMetric,
-  recordInstructionManifest, modelForTask, showPacket, fail
+  recordInstructionManifest, modelForTask, showPacket, fail,
+  recordScheduler
 }) {
   // Build resources are repo-qualified (`workspace:api`); evidence resources
   // are a different vocabulary (`workspace-read`, `dev-server`). Judging build
@@ -493,8 +502,10 @@ export function createAgentPlanner({
       }));
     const { tasks, completed } = enrichAgentTasks({ modelForTask, fail },
       id, allTasks, repositories, selectedPolicy);
+    const schedulingWaves = [];
     const groups = groupAgentTasks(tasks, completed,
-      selectedPolicy.execution.maxParallelAgents, taskResourcesConflict, fail);
+      selectedPolicy.execution.maxParallelAgents, taskResourcesConflict, fail,
+      (wave) => schedulingWaves.push(wave));
     const contract = evidence(id);
     const claims = contract.claims;
     const singleAgent = singleAgentExecutionEligible(tasks, claims);
@@ -531,9 +542,22 @@ export function createAgentPlanner({
         requiredProviders, providerConfig, providerCapability,
         providerRepositories, claimsForProvider, stableHash
       }, id, contract),
+      services: Object.entries(contract.execution?.services || {}).map(([serviceId, config]) => ({
+        id: serviceId,
+        dependsOn: config.dependsOn || [],
+        resources: config.resources || [],
+        port: config.port || null,
+        command: config.command || null
+      })),
       stableHash
     });
     const taskExecution = agentTaskExecutionRows(tasks, singleAgent, priorPlan, graph);
+    schedulingWaves.forEach((wave, index) => recordScheduler({
+      scheduler: "build-task-plan", wave: wave.wave,
+      readyNodes: wave.readyNodes, executedNodes: wave.executedNodes,
+      reusedNodes: index === 0 ? allTasks.length - tasks.length : 0,
+      queueingMs: null, peakConcurrency: wave.executedNodes
+    }));
     const basePlan = {
       version: Number(schemaVersion),
       changeId: id,
@@ -552,6 +576,11 @@ export function createAgentPlanner({
       })),
       tasks,
       groups,
+      scheduling: {
+        strategy: "critical-path-resource-aware",
+        capacity: selectedPolicy.execution.maxParallelAgents,
+        readyConcurrency: groups[0]?.length || 0
+      },
       recommendedExecution: execution.recommendedExecution,
       sessionModel: execution.sessionModel,
       executionReason: execution.executionReason,

@@ -1,0 +1,65 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "lazy-build-preparation",
+      "requirementKey": "lazy-build-preparation",
+      "scenario": "A valid semantic draft is started before any implementation work",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "dependency-aware-parallel-build",
+      "requirementKey": "dependency-aware-parallel-build",
+      "scenario": "Multiple ready Build tasks have disjoint declared paths and no dependency or shared external resource",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "dependency-aware-parallel-proof",
+      "requirementKey": "dependency-aware-parallel-proof",
+      "scenario": "Required providers, services, or repository setup operations are independent",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "observable-lifecycle-latency",
+      "requirementKey": "observable-lifecycle-latency",
+      "scenario": "A lifecycle invocation performs Change, Build, or Prove preparation and execution",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "minimal-agent-ceremony",
+      "requirementKey": "minimal-agent-ceremony",
+      "scenario": "An agent follows the normal Change Loop workflow",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-lc",
+        "bash .claude/tests/run-all.sh && bash .claude/tests/docs/run-doc-consistency.sh && count=$(bash .claude/tests/run-all.sh --list | wc -l | tr -d ' '); mkdir -p .foundation/test-results; printf '{\"numTotalTests\":%s}\n' \"$count\" > .foundation/test-results/proof-suite-count.json"
+      ],
+      "timeoutMs": 600000,
+      "minimum": 1,
+      "report": ".foundation/test-results/proof-suite-count.json",
+      "reportFormat": "json",
+      "claims": "declared"
+    }
+  }
+}

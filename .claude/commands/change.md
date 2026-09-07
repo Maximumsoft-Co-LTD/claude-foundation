@@ -14,8 +14,9 @@ OpenSpec artifacts by hand. Include typed `decisions`, `diagrams`,
 when the change actually needs them.
 
 Run `claude-foundation change start <draft.json> --consume-draft`. The compiler
-owns classification, stable links, conditional artifacts, validation, sandbox
-preparation, and rollback. If an active semantic change gains a requirement,
+owns classification, stable links, conditional artifacts, validation, and
+rollback. Build `advance` owns sandbox preparation and setup.
+If an active semantic change gains a requirement,
 use one `change amend <change> <amendment.json> --consume-amendment`; do not
 rewrite its ledgers independently. On compiler errors, repair the named draft
 fields as one batch and retry. Ask the user only for a material behavior,

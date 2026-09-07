@@ -1,19 +1,63 @@
 import { findCyclePath } from "./graph.mjs";
 
-export const EXECUTION_GRAPH_VERSION = 2;
+export const EXECUTION_GRAPH_VERSION = 3;
 export const NODE_DATA_SCHEMA = Object.freeze({ name: "foundation.node-data", version: 1 });
 
-// A single host session is valid execution authority when all Build work is
-// confined to one repository and carries no cross-repository claim or shared
-// external resource. Task count is not an authority boundary: the documented
-// single-repository /build path does not dispatch workers merely because the
-// packet split the work into more than two checklist entries.
+// A single host session is valid execution authority only for one Build task
+// confined to one repository with no cross-repository claim or shared external
+// resource. Multiple ready tasks use the planner even in one repository so
+// disjoint paths can execute concurrently under leases.
 export function singleAgentExecutionEligible(tasks = [], claims = []) {
-  return tasks.length > 0 &&
+  return tasks.length === 1 &&
     new Set(tasks.map((task) => task.repository)).size === 1 &&
     !claims.some((claim) => (claim.repositories || []).length > 1) &&
     !tasks.some((task) => (task.resources || [])
       .some((resource) => !resource.startsWith("workspace:")));
+}
+
+export function criticalPathDepths(nodes = []) {
+  const byId = new Map(nodes.map((entry) => [entry.id, entry]));
+  const children = new Map(nodes.map((entry) => [entry.id, []]));
+  for (const entry of nodes)
+    for (const dependency of entry.dependsOn || [])
+      if (children.has(dependency)) children.get(dependency).push(entry.id);
+  const memo = new Map();
+  const visiting = new Set();
+  const depth = (id) => {
+    if (memo.has(id)) return memo.get(id);
+    if (visiting.has(id)) throw new Error(`execution graph dependency cycle at '${id}'`);
+    visiting.add(id);
+    let childDepth = 0;
+    for (const child of children.get(id) || []) childDepth = Math.max(childDepth, depth(child));
+    const value = 1 + childDepth;
+    visiting.delete(id);
+    memo.set(id, value);
+    return value;
+  };
+  for (const id of byId.keys()) depth(id);
+  return memo;
+}
+
+// Pure, deterministic scheduling primitive shared by Build and Prove. It
+// prioritizes the longest remaining dependency chain, then fills capacity with
+// nodes whose declared resources do not conflict.
+export function scheduleReadyBatch(nodes = [], completed = new Set(), {
+  maxParallel = 1,
+  conflicts = () => false
+} = {}) {
+  const capacity = Math.max(1, Number(maxParallel) || 1);
+  const depths = criticalPathDepths(nodes);
+  const ready = nodes.filter((entry) => !completed.has(entry.id) &&
+    (entry.dependsOn || []).every((dependency) => completed.has(dependency)))
+    .sort((left, right) =>
+      (depths.get(right.id) || 0) - (depths.get(left.id) || 0) ||
+      left.id.localeCompare(right.id));
+  const selected = [];
+  for (const entry of ready) {
+    if (selected.length >= capacity) break;
+    if (selected.every((candidate) => !conflicts(candidate, entry))) selected.push(entry);
+  }
+  return { ready, selected, depths };
 }
 
 function sorted(values) {
@@ -69,26 +113,46 @@ function providerClaims(provider, claims) {
     .map((claim) => claim.id));
 }
 
+function taskDependencies(task, repository, tasks) {
+  if ((task.dependsOn || []).length) return [...task.dependsOn];
+  return (repository.dependsOn || []).flatMap((dependencyRepository) =>
+    tasks.filter((candidate) => candidate.repository === dependencyRepository)
+      .map((candidate) => candidate.id));
+}
+
 // Pure compiler: durable artifacts remain authoritative and this value can be
 // deleted and reconstructed. Callers supply stableHash so graph identity uses
 // the same canonical hash implementation as the rest of Foundation.
 export function compileExecutionGraph({
   changeId, contractRevision = 0, workspaceHash = null,
-  repositories = [], tasks = [], claims = [], providers = [], stableHash
+  repositories = [], tasks = [], claims = [], providers = [], services = [], stableHash
 }) {
-  if (typeof stableHash !== "function") throw new Error("execution graph requires stableHash");
+  assertStableHash(stableHash);
   const repositoryMap = new Map(repositories.map((repository) => [repository.id, repository]));
+  const setupNodes = repositories.filter((repository) => repository.setupCommand)
+    .map((repository) => node({
+      id: `setup:${repository.id}`, kind: "setup", repository: repository.id,
+      resources: [`setup:${repository.id}`], lifecycle: "build",
+      authorityDigest: stableHash({ command: repository.setupCommand })
+    }));
+  const setupIds = new Set(setupNodes.map((entry) => entry.repository));
+  const serviceNodes = services.map((service) => node({
+    id: `service:${service.id}`, kind: "service",
+    dependsOn: (service.dependsOn || []).map((id) => `service:${id}`),
+    resources: [...(service.resources || []), ...(service.port ? [`port:${service.port}`] : [])],
+    lifecycle: "prove", authorityDigest: stableHash(service)
+  }));
+  const serviceIds = new Set(serviceNodes.map((entry) => entry.id));
   const taskNodes = tasks.map((task) => {
     const repository = repositoryMap.get(task.repository);
     if (!repository) throw new Error(`graph task '${task.id}' references unknown repository '${task.repository}'`);
-    const dependencies = [...(task.dependsOn || [])];
-    if (!dependencies.length)
-      for (const dependencyRepository of repository.dependsOn || [])
-        dependencies.push(...tasks.filter((candidate) =>
-          candidate.repository === dependencyRepository).map((candidate) => candidate.id));
+    const dependencies = taskDependencies(task, repository, tasks);
     return node({
       id: `task:${task.id}`, kind: "task", repository: task.repository,
-      required: task.required !== false, dependsOn: dependencies.map((id) => `task:${id}`),
+      required: task.required !== false, dependsOn: [
+        ...dependencies.map((id) => `task:${id}`),
+        ...(setupIds.has(task.repository) ? [`setup:${task.repository}`] : [])
+      ],
       paths: task.paths, contracts: task.contracts,
       resources: task.resources, claims: task.claims,
       inputSchema: task.inputSchema, outputSchema: task.outputSchema,
@@ -113,6 +177,8 @@ export function compileExecutionGraph({
       repositories: provider.repositories || [],
       dependsOn: [
         ...(provider.dependsOn || []).map((id) => `provider:${id}`),
+        ...(provider.service && serviceIds.has(`service:${provider.service}`)
+          ? [`service:${provider.service}`] : []),
         ...taskDependencies
       ],
       resources: provider.resources, claims: covered,
@@ -136,7 +202,7 @@ export function compileExecutionGraph({
       ],
       resources: [`land:${repository.id}`], lifecycle: "land"
     }));
-  const nodes = [...taskNodes, ...providerNodes, ...landNodes]
+  const nodes = [...setupNodes, ...serviceNodes, ...taskNodes, ...providerNodes, ...landNodes]
     .sort((left, right) => left.id.localeCompare(right.id));
   const ids = new Set(nodes.map((entry) => entry.id));
   if (ids.size !== nodes.length) throw new Error("execution graph contains duplicate node IDs");
@@ -189,6 +255,10 @@ export function compileExecutionGraph({
     identity,
     revision: `graph-v${EXECUTION_GRAPH_VERSION}-${identity.slice(0, 20)}`
   };
+}
+
+function assertStableHash(stableHash) {
+  if (typeof stableHash !== "function") throw new Error("execution graph requires stableHash");
 }
 
 export function dependentClosure(graph, seeds) {

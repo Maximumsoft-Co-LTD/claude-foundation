@@ -2,6 +2,8 @@
   "version": 1,
   "execution": {
     "maxParallelAgents": 3,
+    "maxParallelProviders": 4,
+    "maxParallelSetups": 3,
     "packetBytes": {
       "task": 8192,
       "review": 8192,

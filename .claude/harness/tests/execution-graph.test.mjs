@@ -8,12 +8,17 @@ import { createHash } from "node:crypto";
 import {
   compileExecutionGraph, conflictKeysForTask, conflictKeysOverlap,
   compileLandPreparation, dependentClosure, landPreparationMatches,
-  schemasCompatible, singleAgentExecutionEligible, validateNodeResult
+  schemasCompatible, scheduleReadyBatch, singleAgentExecutionEligible, validateNodeResult
 } from "../runtime/core/graph-execution.mjs";
+
 import { createLeaseRuntime } from "../runtime/workflow/lease-runtime.mjs";
 
 const stableHash = (value) => createHash("sha256")
   .update(JSON.stringify(value)).digest("hex");
+
+test("execution graph requires the shared stable hash implementation", () => {
+  assert.throws(() => compileExecutionGraph({}), /requires stableHash/);
+});
 
 function fixture(overrides = {}) {
   return {
@@ -159,11 +164,12 @@ test("scope: repository fallback conflicts with every path in that repository", 
   assert.deepEqual(conflictKeysForTask({ repository: "root", paths: [] }), ["repo:root"]);
 });
 
-test("authority: a single-repository host session remains valid beyond two tasks", () => {
+test("authority: multiple single-repository tasks use planned dispatch", () => {
   const tasks = Array.from({ length: 5 }, (_, index) => ({
     repository: "root", resources: ["workspace:root"], id: `T00${index + 1}`
   }));
-  assert.equal(singleAgentExecutionEligible(tasks, []), true);
+  assert.equal(singleAgentExecutionEligible(tasks, []), false);
+  assert.equal(singleAgentExecutionEligible([tasks[0]], []), true);
   assert.equal(singleAgentExecutionEligible([
     ...tasks, { repository: "api", resources: ["workspace:api"], id: "T006" }
   ], []), false);
@@ -173,6 +179,42 @@ test("authority: a single-repository host session remains valid beyond two tasks
   assert.equal(singleAgentExecutionEligible(tasks, [
     { repositories: ["root", "contracts"] }
   ]), false);
+});
+
+test("scheduler: longest ready dependency chain wins before deterministic siblings", () => {
+  const nodes = [
+    { id: "short", dependsOn: [], resources: [] },
+    { id: "long", dependsOn: [], resources: [] },
+    { id: "middle", dependsOn: ["long"], resources: [] },
+    { id: "end", dependsOn: ["middle"], resources: [] }
+  ];
+  const result = scheduleReadyBatch(nodes, new Set(), { maxParallel: 1 });
+  assert.deepEqual(result.selected.map((row) => row.id), ["long"]);
+});
+
+test("scheduler: capacity and resource conflicts bound a ready wave", () => {
+  const nodes = [
+    { id: "a", dependsOn: [], resources: ["db"] },
+    { id: "b", dependsOn: [], resources: ["db"] },
+    { id: "c", dependsOn: [], resources: ["browser"] }
+  ];
+  const result = scheduleReadyBatch(nodes, new Set(), {
+    maxParallel: 2,
+    conflicts: (left, right) => left.resources.some((value) => right.resources.includes(value))
+  });
+  assert.deepEqual(result.selected.map((row) => row.id), ["a", "c"]);
+  assert.deepEqual(scheduleReadyBatch(nodes, new Set(["a"]), { maxParallel: 3 })
+    .selected.map((row) => row.id), ["b", "c"]);
+});
+
+test("graph: setup and service nodes gate tasks and providers", () => {
+  const value = fixture();
+  value.repositories[0].setupCommand = "npm ci";
+  value.services = [{ id: "api", resources: ["port:3000"] }];
+  value.providers[0].service = "api";
+  const graph = compileExecutionGraph(value);
+  assert.ok(graph.edges.some((edge) => edge.id === "setup:api->task:T001"));
+  assert.ok(graph.edges.some((edge) => edge.id === "service:api->provider:test"));
 });
 
 const authority = {
@@ -422,8 +464,8 @@ test("release: an undeclared path scope grants whole-tree write authority", () =
 
 test("upgrade: graph state is derived and requires no authored graph file", () => {
   const graph = compileExecutionGraph(fixture());
-  assert.equal(graph.version, 2);
-  assert.match(graph.revision, /^graph-v2-/);
+  assert.equal(graph.version, 3);
+  assert.match(graph.revision, /^graph-v3-/);
 });
 
 test("land: target drift invalidates a prepared remote wave", () => {

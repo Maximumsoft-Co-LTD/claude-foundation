@@ -43,7 +43,8 @@ independence settings, and the sandbox setup command (`sandbox.setupCommand`)
 that runs once inside every new Build workspace.
 It is seeded when missing and yours afterwards.
 
-The shipped policy permits at most three parallel agents and uses 45-minute
+The shipped policy permits at most three parallel agents, four evidence
+providers or services, and three repository setup commands. It uses 45-minute
 leases. Task and review packets are capped at 8 KiB, repository packets at
 12 KiB, and the global packet at 16 KiB. Rapid runs receive ceilings of 800,000
 tokens and 100 requests; standard runs receive 1,600,000 tokens and 200
@@ -216,7 +217,8 @@ note. Evidence has to come from the code that will actually ship.
 
 Each command appends a row to `.foundation/logs/<change-id>/operations.jsonl`,
 alongside context events and phase-context records. `telemetry` reports totals,
-estimated tokens, and duration percentiles by kind.
+estimated tokens, and duration percentiles by kind. Scheduler rows expose
+queueing, reuse, executed nodes, and peak concurrency for harness-owned waves.
 
 The accounting deliberately distinguishes *unknown* from *zero*. A run whose
 cost could not be measured is reported as unmeasured rather than free.

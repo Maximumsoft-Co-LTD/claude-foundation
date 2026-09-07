@@ -82,7 +82,7 @@ function operationSpan(row) {
 
 export function operationPhaseRows(row) {
   const parent = operationSpan(row);
-  if (row.version !== 4 || !parent || !Array.isArray(row.phaseSpans) || !row.phaseSpans.length)
+  if (![4, 5].includes(row.version) || !parent || !Array.isArray(row.phaseSpans) || !row.phaseSpans.length)
     return [row];
   let end = parent.from;
   for (const span of row.phaseSpans) {

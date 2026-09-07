@@ -9,6 +9,7 @@ import test from "node:test";
 
 import {
   assertSandboxGroundingPortable,
+  applySetupResult,
   carrySandboxIgnoredArtifacts,
   carryableGitMetadata,
   commitSandboxReplay,
@@ -17,12 +18,17 @@ import {
   copyTrackedRootMetadata,
   createSandbox,
   createSandboxRuntime,
+  executeSandboxSetupBatch,
   ignoredSandboxPaths,
   inspectSandbox,
   isolateSelectedRepositories,
   missingDependencySetupAdvisory,
+  prepareBuildSandbox,
   repairSelectedRepositories,
   reportMultiRepositorySandbox,
+  retryFailedSandboxSetups,
+  runMeasuredSandboxSetupBatch,
+  runSandboxSetupBatch,
   runSandboxSetupCommand,
   sandboxCopyPlan,
   sandboxCopyWorkspace,
@@ -191,6 +197,55 @@ test("sandbox setup records success and actionable process failures", () => {
   runSandboxSetupCommand(context, record, "npm ci", 1000, "/workspace", null);
   assert.match(warnings[1], /\(exit 2\)/);
   assert.equal(record.setup.status, "failed");
+});
+
+test("sandbox setup batch runs independent commands concurrently within capacity", (t) => {
+  const markers = mkdtempSync(join(tmpdir(), "sandbox-setup-batch-"));
+  t.after(() => rmSync(markers, { recursive: true, force: true }));
+  const first = join(markers, "first");
+  const second = join(markers, "second");
+  const rows = runSandboxSetupBatch([
+    {
+      command: `touch '${first}'; while [ ! -e '${second}' ]; do sleep 0.01; done`,
+      cwd: process.cwd(), timeoutMs: 1000
+    },
+    {
+      command: `touch '${second}'; while [ ! -e '${first}' ]; do sleep 0.01; done`,
+      cwd: process.cwd(), timeoutMs: 1000
+    }
+  ], 2);
+  assert.deepEqual(rows.map((row) => row.result.status), [0, 0]);
+});
+
+test("sandbox setup batch runner surfaces worker failures", () => {
+  assert.throws(() => executeSandboxSetupBatch({
+    executable: "node",
+    spawn: () => ({ status: 1, stderr: "worker crashed" })
+  }, "unused", []), /parallel sandbox setup runner failed: worker crashed/);
+});
+
+test("sandbox setup batch bounds captured output per job", () => {
+  const [row] = runSandboxSetupBatch([{
+    command: `node -e "process.stdout.write('x'.repeat(70000))"`,
+    cwd: process.cwd(), timeoutMs: 1000
+  }]);
+  assert.equal(row.result.status, 0);
+  assert.equal(row.result.stdout.length, 65536);
+});
+
+test("measured sandbox setup reports bounded waves", () => {
+  const events = [];
+  const rows = runMeasuredSandboxSetupBatch({
+    policy: () => ({ execution: { maxParallelSetups: 2 } }),
+    recordScheduler: (event) => events.push(event)
+  }, [
+    { command: "true", cwd: process.cwd(), timeoutMs: 1000 },
+    { command: "true", cwd: process.cwd(), timeoutMs: 1000 },
+    { command: "true", cwd: process.cwd(), timeoutMs: 1000 }
+  ]);
+  assert.deepEqual(rows.map((row) => row.wave), [1, 1, 2]);
+  assert.deepEqual(events.map((event) => [event.readyNodes, event.executedNodes]),
+    [[3, 2], [1, 1]]);
 });
 
 test("ignored artifact carry skips failures, existing targets, and unmovable entries", () => {
@@ -447,6 +502,36 @@ test("repository repair recovers a partial binding without recreating work", (t)
   assert.equal(f.calls.git.some(({ args }) => args[1] === "add"), false);
 });
 
+test("repository repair creates a missing canonical worktree", (t) => {
+  const f = fixture(t);
+  f.state.repositories = {};
+  const setup = repairSelectedRepositories(
+    f.context, "change", f.state, f.repositories());
+  assert.deepEqual(setup.map((repository) => repository.id), ["child"]);
+  assert.equal(f.state.repositories.child.baseHead, "child-head");
+  assert.equal(f.state.repositories.child.applied, false);
+  assert.equal(f.calls.git.some(({ args }) => args[1] === "add"), true);
+});
+
+test("repository repair removes only worktrees created by a failed attempt", (t) => {
+  const f = fixture(t);
+  const broken = join(f.root, "broken-source");
+  mkdirSync(broken);
+  f.state.repositories = {};
+  f.context.gitHead = (path) => path === broken ? null :
+    (path === f.root ? "root-head" : "child-head");
+  const repositories = [
+    ...f.repositories(),
+    { id: "broken", mode: "write", path: broken }
+  ];
+  assert.throws(() => repairSelectedRepositories(
+    f.context, "change", f.state, repositories),
+  /broken.*not an initialized Git repository.*existing work was preserved/);
+  assert.equal("child" in f.state.repositories, false);
+  assert.equal(f.calls.git.some(({ args }) => args[1] === "remove"), true);
+  assert.equal(f.calls.saved.length, 1);
+});
+
 test("repository isolation rolls back an uninitialized repository", (t) => {
   const f = fixture(t);
   f.context.gitHead = (path) => path === f.child ? null : "root-head";
@@ -500,6 +585,92 @@ test("repository setup skips inapplicable records and runs write setup", (t) => 
     command: "build", timeout: 321, path: f.child, id: "write"
   }]);
   assert.equal(f.calls.git.length, 0);
+});
+
+test("parallel repository setup records and reports command failures", (t) => {
+  const f = fixture(t);
+  f.state.repositories = {
+    child: { mode: "worktree", access: "write", path: f.child }
+  };
+  const context = {
+    ...f.context,
+    output: console,
+    runSetupBatch: (jobs) => jobs.map((job) => ({
+      ...job, result: { status: 2, error: "2", stdout: "", stderr: "install failed" }
+    }))
+  };
+  const output = captureConsole("error", () => setupSelectedRepositories(
+    context, f.state, [{ id: "child", setupCommand: "install" }]
+  ));
+  assert.equal(f.state.repositories.child.setup.status, "failed");
+  assert.match(output.rows[0], /exit 2[\s\S]*install failed/);
+});
+
+test("setup result retains non-process failures without warning", () => {
+  const record = { access: "write" };
+  applySetupResult({ git: () => assert.fail("write repositories need no status") }, {
+    repository: { id: "child" }, record, command: "install",
+    result: { status: null, error: "spawn failed", stdout: "", stderr: "" }
+  });
+  assert.deepEqual(record.setup, {
+    command: "install", status: "failed", exitCode: null
+  });
+
+  const warnings = captureConsole("error", () => applySetupResult({
+    git: () => assert.fail("write repositories need no status")
+  }, {
+    repository: { id: "child" }, record, command: "install",
+    result: { status: null, error: "spawn failed" }
+  }, true));
+  assert.match(warnings.rows[0], /spawn failed/);
+  assert.doesNotMatch(warnings.rows[0], /\n    /);
+});
+
+test("parallel repository setup validates successful read-only worktrees", (t) => {
+  const f = fixture(t);
+  f.state.repositories = {
+    child: { mode: "worktree", access: "read", path: f.child }
+  };
+  const context = {
+    ...f.context,
+    runSetupBatch: (jobs) => jobs.map((job) => ({
+      ...job, result: { status: 0, error: null, stdout: "", stderr: "" }
+    })),
+    git: () => ({ status: 0, stdout: "", stderr: "" })
+  };
+  setupSelectedRepositories(context, f.state,
+    [{ id: "child", setupCommand: "install" }]);
+  assert.deepEqual(f.state.repositories.child.setup, {
+    command: "install", status: "ok", exitCode: 0
+  });
+});
+
+test("failed setup retry batches only failed child records", () => {
+  const state = {
+    workspace: { path: "/root", setup: { status: "ok" } },
+    repositories: {
+      api: { path: "/api", access: "write", setup: { status: "failed" } },
+      ready: { path: "/ready", access: "write", setup: { status: "ok" } }
+    }
+  };
+  const saved = [];
+  const attempted = retryFailedSandboxSetups({
+    loadRuntime: () => state,
+    saveRuntime: (value) => saved.push(value),
+    selectedRepositories: () => [
+      { id: "root" }, { id: "api", setupCommand: "install" },
+      { id: "ready", setupCommand: "install" }
+    ],
+    policy: () => ({ sandbox: { setupTimeoutMs: 100 } }),
+    runSetupCommand: () => assert.fail("batch path expected"),
+    runSetupBatch: (jobs) => jobs.map((job) => ({
+      ...job, result: { status: 0, error: null, stdout: "", stderr: "" }
+    })),
+    git: () => ({ status: 0, stdout: "", stderr: "" })
+  }, "change", state);
+  assert.deepEqual(attempted, ["api"]);
+  assert.equal(state.repositories.api.setup.status, "ok");
+  assert.equal(saved.length, 1);
 });
 
 test("read-only setup reports dirty output and git failures", (t) => {
@@ -563,6 +734,102 @@ test("create sandbox completes the multi-repository lifecycle", (t) => {
   all.setRepositories([{ id: "root", mode: "write", path: all.root }]);
   captureConsole("log", () => createSandbox(all.context, "change", { all: true }));
   assert.equal(all.calls.saved.at(-1).status, "building");
+});
+
+test("create sandbox repairs an existing partial repository topology", (t) => {
+  const f = fixture(t);
+  const expected = join(f.root, ".foundation", "repository-sandboxes",
+    "change", "child");
+  mkdirSync(expected, { recursive: true });
+  f.state.repositories = { root: {
+    mode: "worktree", path: f.state.workspace.path, targetPath: f.root,
+    baseHead: "root-base", access: "write"
+  } };
+  f.context.worktreeOwnedByTarget = () => true;
+  f.context.selectedRepositories = () => f.repositories();
+  f.context.gitHead = (path) => path === expected || path === f.child
+    ? "child-head" : "root-head";
+  captureConsole("log", () => createSandbox(f.context, "change"));
+  assert.equal(f.state.repositories.child.path, expected);
+  assert.equal(f.calls.setup.length, 1);
+  assert.equal(f.calls.saved.at(-1).status, "building");
+});
+
+test("prepareBuild repairs an incomplete child repository before execution", () => {
+  const calls = [];
+  const context = {
+    loadRuntime: () => ({ status: "building", workspace: { path: "/sandbox/root" } }),
+    validate: () => calls.push("validate"),
+    workspaceInspection: () => ({
+      status: "active",
+      repositories: [
+        { id: "root", status: "missing-record" },
+        { id: "api", status: "missing-record" }
+      ]
+    }),
+    create: (...args) => calls.push(["create", ...args]),
+    retryFailedSetups: (...args) => calls.push(["retry", ...args])
+  };
+  assert.deepEqual(prepareBuildSandbox(context, "change"), { repaired: true });
+  assert.deepEqual(calls, [
+    ["create", "change", { quiet: true }],
+    ["retry", "change"]
+  ]);
+});
+
+test("prepareBuild reuses a complete building sandbox", () => {
+  const calls = [];
+  const context = {
+    loadRuntime: () => ({ status: "building", workspace: { path: "/sandbox/root" } }),
+    validate: () => calls.push("validate"),
+    workspaceInspection: () => ({
+      status: "active", repositories: [{ id: "api", status: "active" }]
+    }),
+    create: () => calls.push("create"),
+    retryFailedSetups: (...args) => calls.push(["retry", ...args])
+  };
+  assert.deepEqual(prepareBuildSandbox(context, "change"), { repaired: false });
+  assert.deepEqual(calls, [["retry", "change"]]);
+});
+
+test("prepareBuild repairs a missing root record in multi-repository state", () => {
+  const calls = [];
+  const context = {
+    loadRuntime: () => ({
+      status: "building", workspace: { path: "/sandbox/root" },
+      repositories: { api: { path: "/sandbox/api" } }
+    }),
+    validate: () => assert.fail("building state is already agreed"),
+    workspaceInspection: () => ({
+      status: "active",
+      repositories: [
+        { id: "root", status: "missing-record" },
+        { id: "api", status: "active" }
+      ]
+    }),
+    create: (...args) => calls.push(["create", ...args]),
+    retryFailedSetups: (...args) => calls.push(["retry", ...args])
+  };
+  assert.deepEqual(prepareBuildSandbox(context, "change"), { repaired: true });
+  assert.deepEqual(calls, [
+    ["create", "change", { quiet: true }],
+    ["retry", "change"]
+  ]);
+});
+
+test("prepareBuild uses workspace state for a root-only change", () => {
+  const calls = [];
+  const context = {
+    loadRuntime: () => ({ status: "building", workspace: { path: "/sandbox/root" } }),
+    validate: () => assert.fail("building state is already agreed"),
+    workspaceInspection: () => ({
+      status: "active", repositories: [{ id: "root", status: "missing-record" }]
+    }),
+    create: () => assert.fail("root-only workspace is already active"),
+    retryFailedSetups: (...args) => calls.push(args)
+  };
+  assert.deepEqual(prepareBuildSandbox(context, "change"), { repaired: false });
+  assert.deepEqual(calls, [["change"]]);
 });
 
 test("copy planning recognizes carryable Git metadata and ignored paths", (t) => {

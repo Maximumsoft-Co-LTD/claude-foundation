@@ -42,7 +42,9 @@ import {
 } from "./runtime/evidence/evidence-results.mjs";
 import { createFlagParser } from "./runtime/core/cli-flags.mjs";
 import { createCommandRegistry } from "./runtime/core/command-registry.mjs";
-import { createRuntimeEnvironment } from "./runtime/core/runtime-environment.mjs";
+import {
+  createRuntimeEnvironment, policyExecutionLimit
+} from "./runtime/core/runtime-environment.mjs";
 import {
   phaseForCommand, telemetryPhaseForCommand
 } from "./runtime/core/lifecycle-phase.mjs";
@@ -51,7 +53,8 @@ import { createInstructionRecorder } from "./runtime/core/instruction-recorder.m
 import { createAgentPlanner, createModelRouter } from "./runtime/workflow/agent-planning.mjs";
 import { createAgentDispatchRuntime } from "./runtime/workflow/agent-dispatch.mjs";
 import {
-  ADVANCE_PROTOCOL_VERSION, createAdvanceRuntime
+  ADVANCE_PROTOCOL_VERSION, createAdvanceRuntime, hasValidLandGrant,
+  prepareAdvanceBuild, runAdvanceProof
 } from "./runtime/workflow/advance-runtime.mjs";
 import { createSandboxRuntime } from "./runtime/workflow/sandbox-runtime.mjs";
 import { createSandboxCleanup } from "./runtime/workflow/sandbox-cleanup.mjs";
@@ -116,7 +119,7 @@ import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
 import { createQualityRuntime } from "./runtime/quality/quality-runtime.mjs";
 
 const VERSION = "3.5.13";
-const RUNTIME_API_VERSION = "32";
+const RUNTIME_API_VERSION = "33";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
 // every command up to `archive` and then threw partway through Land.
@@ -131,10 +134,10 @@ const PROVIDER_PROTOCOL_VERSION = "13";
 const ADAPTER_PROTOCOL_VERSION = "6";
 const PROOF_PROTOCOL_VERSION = "7";
 const PACKET_SCHEMA_VERSION = "11";
-const AGENT_PLAN_SCHEMA_VERSION = "4";
+const AGENT_PLAN_SCHEMA_VERSION = "5";
 const CONTEXT_EVENT_SCHEMA_VERSION = "2";
-const METRICS_SCHEMA_VERSION = "8";
-const COMMAND_TELEMETRY_SCHEMA_VERSION = "4";
+const METRICS_SCHEMA_VERSION = "9";
+const COMMAND_TELEMETRY_SCHEMA_VERSION = "5";
 const REVIEW_PROTOCOL_VERSION = "4";
 const ACCEPTANCE_PROTOCOL_VERSION = "2";
 const SEMANTIC_ACCEPTANCE_PROTOCOL_VERSION = "1";
@@ -309,6 +312,8 @@ const {
   readJson,
   fail: die
 });
+const maxParallelProviders = policyExecutionLimit.bind(
+  null, foundationPolicy, "maxParallelProviders");
 
 const sourceCohort = createSourceCohortProvider({
   runtimeVersion: VERSION,
@@ -918,6 +923,10 @@ const adapterRuntime = createAdapterRuntime({
   requiredProviders,
   mutationProtocolResult,
   now,
+  serviceResourcesConflict: resourcesConflict,
+  maxParallelServices: maxParallelProviders,
+  recordScheduler: commandPhaseRecorder.scheduler,
+  timestamp: Date.now,
   die
 });
 const {
@@ -944,6 +953,9 @@ const {
   adapterResources,
   resourcesConflict,
   executeAdapter,
+  maxParallelProviders,
+  recordScheduler: commandPhaseRecorder.scheduler,
+  timestamp: Date.now,
   fail: die
 });
 const { modelForTask } = createModelRouter({
@@ -1115,6 +1127,7 @@ const {
   recordInstructionManifest,
   modelForTask,
   showPacket,
+  recordScheduler: commandPhaseRecorder.scheduler,
   fail: die
 });
 const {
@@ -1232,6 +1245,7 @@ const {
 } = createSandboxCleanup({ root: ROOT, canonicalPath, git });
 const sandboxRuntime = createSandboxRuntime({
   markBlocked,
+  recordScheduler: commandPhaseRecorder.scheduler,
   root: ROOT,
   policy: foundationPolicy,
   excludedWorkspaceDirs: EXCLUDED_WORKSPACE_DIRS,
@@ -1270,6 +1284,7 @@ const {
   showInspection: showSandboxInspection,
   createSingle: createSingleSandbox,
   create: createSandbox,
+  prepareBuild: prepareBuildSandbox,
   retryFailedSetups,
   mergeTaskProgress,
   sync: syncSandbox
@@ -1372,8 +1387,8 @@ const {
   now,
   bindClaudeSession,
   validate,
-  createSandbox,
   showPacket,
+  measureStage: commandPhaseRecorder.measure,
   trapFailures,
   rollbackStart: rollbackAtomicStart
 });
@@ -1807,17 +1822,15 @@ const { advanceValue, showAdvance } = createAdvanceRuntime({
   authorityNext,
   proofReadinessValue,
   budgetDecisionValue: budgetDecision,
-  hasLandGrant: (id) => landGrantRuntime.valid(id).valid,
-  prepareBuild: (id) => runAdvanceQuietly(async () => {
-    const state = loadRuntime(id);
-    if (state.status === "change") {
-      validate(id, "root", { quiet: true });
-      createSandbox(id, { quiet: true });
-    }
-    retryFailedSetups(id);
-    prepareExecution(id, { stage: "build" });
+  hasLandGrant: hasValidLandGrant.bind(null, landGrantRuntime),
+  prepareBuild: prepareAdvanceBuild.bind(null, {
+    measureAsync: commandPhaseRecorder.measureAsync,
+    runQuietly: runAdvanceQuietly, prepareBuildSandbox, prepareExecution
   }),
-  runProof: (id) => runAdvanceQuietly(() => proofAdvance(id, { quiet: true })),
+  runProof: runAdvanceProof.bind(null, {
+    measureAsync: commandPhaseRecorder.measureAsync,
+    runQuietly: runAdvanceQuietly, proofAdvance
+  }),
   recoverReviewBindings,
   runLand: (id) => runAdvanceQuietly(() => advanceLand(id)),
   recordPhase: (id, phase) => {

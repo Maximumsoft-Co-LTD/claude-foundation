@@ -3,6 +3,67 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { createServiceSessions } from "../../harness/runtime/evidence/proof-execution/service-sessions.mjs";
+import {
+  requiredServiceNames, serviceStartBatch, startRequiredServicesOperation
+} from "../../harness/runtime/evidence/adapter-runtime.mjs";
+
+const serviceWave = serviceStartBatch([
+  { name: "api", resources: ["port:3000"] },
+  { name: "duplicate", resources: ["port:3000"] },
+  { name: "browser", resources: ["browser"] }
+], 2, (left, right) => left.some((value) => right.includes(value)));
+assert.deepEqual(serviceWave.map((row) => row.name), ["api", "browser"]);
+const dependentWave = serviceStartBatch([
+  { name: "api", dependsOn: ["db"], resources: [] },
+  { name: "db", dependsOn: [], resources: [] }
+], 2, () => false, new Set());
+assert.deepEqual(dependentWave.map((row) => row.name), ["db"]);
+assert.deepEqual(requiredServiceNames({
+  api: { dependsOn: ["db"] }, db: { dependsOn: ["cache"] }, cache: {}
+}, ["api"]), ["api", "cache", "db"]);
+assert.throws(() => requiredServiceNames({
+  api: { dependsOn: ["db"] }, db: { dependsOn: ["api"] }
+}, ["api"]), /service dependency cycle/);
+
+const scheduling = [];
+const started = [];
+let clock = 10;
+const serviceContext = {
+  evidence: () => ({ execution: { services: {
+    db: { port: 5432 }, api: { dependsOn: ["db"], resources: ["network"] },
+    browser: { resources: ["browser"] }
+  } } }),
+  startServiceSession: async (_id, name) => {
+    started.push(name);
+    return { name, stop: () => started.push(`stop:${name}`) };
+  },
+  serviceResourcesConflict: () => false,
+  maxParallelServices: () => 2,
+  recordScheduler: (event) => scheduling.push(event),
+  timestamp: () => clock++
+};
+const startedSessions = await startRequiredServicesOperation(serviceContext, "change", [
+  { config: { service: "api" } }, { config: { service: "browser" } }
+], "proof");
+assert.deepEqual(started, ["browser", "db", "api"]);
+assert.deepEqual(startedSessions.map((session) => session.name), ["browser", "db", "api"]);
+assert.deepEqual(scheduling.map((event) => [event.readyNodes, event.executedNodes]),
+  [[2, 2], [1, 1]]);
+
+const stopped = [];
+await assert.rejects(() => startRequiredServicesOperation({
+  ...serviceContext,
+  evidence: () => ({ execution: { services: {
+    ok: {}, broken: { dependsOn: ["ok"] }
+  } } }),
+  startServiceSession: async (_id, name) => {
+    if (name === "broken") throw new Error("unavailable");
+    return { stop: () => stopped.push(name) };
+  },
+  maxParallelServices: () => 1
+}, "change", [{ config: { service: "ok" } }, { config: { service: "broken" } }],
+"proof"), /service startup failed: broken: unavailable/);
+assert.deepEqual(stopped, ["ok"]);
 
 const events = [];
 const processRef = new EventEmitter();
@@ -26,4 +87,4 @@ assert.equal(interrupted.length, 2);
 processRef.emit("SIGTERM");
 assert.deepEqual(events.slice(-3), ["stop:second", "stop:first", "exit:130"]);
 
-console.log("service session tests: ALL PASS (5/5 assertions)");
+console.log("service session tests: ALL PASS (14/14 assertions)");

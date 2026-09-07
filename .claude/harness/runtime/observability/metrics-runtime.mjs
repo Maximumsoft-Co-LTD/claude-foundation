@@ -73,6 +73,42 @@ export function evidenceObservationGroups(providers = {}) {
     left.commandExecutionId.localeCompare(right.commandExecutionId));
 }
 
+export function lifecycleStageMetrics(operations = []) {
+  const result = {};
+  for (const span of operations.flatMap((row) => Array.isArray(row.stageSpans)
+    ? row.stageSpans : [])) {
+    if (!span?.stage || !Number.isFinite(Number(span.durationMs))) continue;
+    const current = result[span.stage] ||= { calls: 0, durationMs: 0, failures: 0 };
+    current.calls += 1;
+    current.durationMs += Number(span.durationMs);
+    if (span.status === "failed") current.failures += 1;
+  }
+  return result;
+}
+
+export function lifecycleSchedulerMetrics(operations = []) {
+  const result = {};
+  for (const event of operations.flatMap((row) => Array.isArray(row.schedulerEvents)
+    ? row.schedulerEvents : [])) {
+    if (!event?.scheduler) continue;
+    const current = result[event.scheduler] ||= {
+      waves: 0, readyNodes: 0, executedNodes: 0, reusedNodes: null,
+      queueingMs: null, peakConcurrency: 0
+    };
+    current.waves += 1;
+    for (const field of ["readyNodes", "executedNodes"])
+      if (Number.isFinite(Number(event[field]))) current[field] += Number(event[field]);
+    for (const field of ["reusedNodes", "queueingMs"])
+      if (event[field] !== null && event[field] !== undefined &&
+          Number.isFinite(Number(event[field])))
+        current[field] = Number(current[field] || 0) + Number(event[field]);
+    if (Number.isFinite(Number(event.peakConcurrency)))
+      current.peakConcurrency = Math.max(current.peakConcurrency,
+        Number(event.peakConcurrency));
+  }
+  return result;
+}
+
 export function eventUsageRecoveryActions(classification, correlatedHosts, changeId) {
   const recoveryActions = [];
   if (["correlation-missing", "partial-measurement"].includes(classification)) {
@@ -585,6 +621,8 @@ export function createMetricsRuntime({
         "rather than the sum of observations. Waits in a session whose " +
         "transcript was never ingested remain inside unattributedWaitMs",
       phases, providers,
+      stages: lifecycleStageMetrics(operations),
+      schedulers: lifecycleSchedulerMetrics(operations),
       evidenceObservationGroups: evidenceObservationGroups(providers),
       evidenceExecutionTimeMs,
       externalExecutionTimeMs,

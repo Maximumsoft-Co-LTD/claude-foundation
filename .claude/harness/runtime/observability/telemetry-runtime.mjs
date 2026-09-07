@@ -91,11 +91,18 @@ export function blockerTelemetryValue(message, context = {}) {
   };
 }
 
+export function commandTelemetryDetails(context) {
+  return {
+    ...(context.stageSpans ? { stageSpans: context.stageSpans } : {}),
+    ...(context.schedulerEvents?.length ? { schedulerEvents: context.schedulerEvents } : {})
+  };
+}
+
 export function commandTelemetryRow(context, code) {
   const inspection = context.readOnlyOperations.has(context.operationName);
   const status = commandTelemetryStatus(code, context.blocked);
   return {
-    version: 4,
+    version: 5,
     changeId: context.changeId,
     operation: context.operationName,
     kind: inspection ? "inspection" : "lifecycle",
@@ -108,6 +115,7 @@ export function commandTelemetryRow(context, code) {
     finishedAt: context.now(),
     durationMs: context.timestamp() - context.operationStartedAt,
     ...(context.phaseSpans ? { phaseSpans: context.phaseSpans } : {}),
+    ...commandTelemetryDetails(context),
     requests: null,
     inputTokens: null,
     outputTokens: null,
@@ -150,11 +158,49 @@ export function createCommandPhaseRecorder(context, record = recordCommandTeleme
   let phase = null;
   let startedAt = null;
   const spans = [];
+  const stageSpans = [];
+  const schedulerEvents = [];
+  const measuredStage = (stage, operation) => {
+    const started = context().timestamp();
+    try {
+      const value = operation();
+      stageSpans.push({ stage, durationMs: context().timestamp() - started, status: "completed" });
+      return value;
+    } catch (error) {
+      stageSpans.push({ stage, durationMs: context().timestamp() - started, status: "failed" });
+      throw error;
+    }
+  };
   const close = (at, status) => spans.push({
     phase, startedAt: new Date(startedAt).toISOString(),
     finishedAt: new Date(at).toISOString(), durationMs: at - startedAt, status
   });
   return {
+    measure: measuredStage,
+    scheduler(event = {}) {
+      schedulerEvents.push({
+        scheduler: String(event.scheduler || "unknown"),
+        wave: Number(event.wave || 0),
+        readyNodes: Number(event.readyNodes || 0),
+        executedNodes: Number(event.executedNodes || 0),
+        reusedNodes: event.reusedNodes === null || event.reusedNodes === undefined
+          ? null : Number(event.reusedNodes),
+        queueingMs: event.queueingMs === null || event.queueingMs === undefined
+          ? null : Number(event.queueingMs),
+        peakConcurrency: Number(event.peakConcurrency || 0)
+      });
+    },
+    async measureAsync(stage, operation) {
+      const started = context().timestamp();
+      try {
+        const value = await operation();
+        stageSpans.push({ stage, durationMs: context().timestamp() - started, status: "completed" });
+        return value;
+      } catch (error) {
+        stageSpans.push({ stage, durationMs: context().timestamp() - started, status: "failed" });
+        throw error;
+      }
+    },
     transition(next) {
       const base = context();
       if (base.operationName !== "advance" || phase === next ||
@@ -166,10 +212,10 @@ export function createCommandPhaseRecorder(context, record = recordCommandTeleme
     },
     finish(code) {
       const base = context();
-      if (!phase) return record(base, code);
+      if (!phase) return record({ ...base, stageSpans, schedulerEvents }, code);
       const at = base.timestamp();
       close(at, commandTelemetryStatus(code, base.blocked));
-      return record({ ...base, phaseSpans: spans,
+      return record({ ...base, phaseSpans: spans, stageSpans, schedulerEvents,
         now: () => new Date(at).toISOString(), timestamp: () => at,
         ...(spans.length === 1 ? { operationPhase: phase, publicOperation: phase } : {})
       }, code);

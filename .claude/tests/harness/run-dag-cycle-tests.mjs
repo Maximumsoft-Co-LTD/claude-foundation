@@ -13,6 +13,7 @@ import {
   executionNodeCovers,
   executionNodesOperation,
   neededExecutionProviders,
+  providerExecutionBatch,
   providerAvailabilityIssue,
   providerExecutionNode
 } from "../../harness/runtime/evidence/provider-scheduler.mjs";
@@ -40,6 +41,9 @@ function scheduler(statusByProvider) {
   const instance = createProviderScheduler({
     receiptValidity: () => ({ validity: "missing" }),
     resourcesConflict: () => false,
+    maxParallelProviders: () => 4,
+    recordScheduler: () => {},
+    timestamp: Date.now,
     executeAdapter: async (id, provider) => {
       executions.push(provider);
       return { status: statusByProvider[provider] || "pass" };
@@ -135,6 +139,32 @@ test("executionNodesOperation binds discovery outputs to their producer", () => 
   assert.deepEqual(result.nodes[2].covers, ["output", "covered"]);
 });
 
+test("provider selection records reuse without claiming execution", () => {
+  const events = [];
+  const configs = { test: { adapter: "shell", command: ["test"] } };
+  const instance = createProviderScheduler({
+    requiredProviders: () => ["cached", "test"],
+    receiptValidity: (_id, provider) => ({
+      validity: provider === "cached" ? "valid" : "missing"
+    }),
+    providerConfig: (_id, provider) => configs[provider],
+    commandExists: () => true,
+    providerWorkspace: () => ".",
+    playwrightAvailability: () => ({ packageOwned: true, binaryAvailable: true }),
+    evidence: () => ({ providers: configs }),
+    providerCapability: (provider) => provider,
+    adapterResources: () => [],
+    recordScheduler: (event) => events.push(event)
+  });
+  assert.deepEqual(instance.executionNodes("c", "hash").nodes.map((row) => row.provider),
+    ["test"]);
+  assert.deepEqual(events, [{
+    scheduler: "provider-selection", wave: 0,
+    readyNodes: 0, executedNodes: 0, reusedNodes: 1,
+    queueingMs: null, peakConcurrency: 0
+  }]);
+});
+
 test("provider scheduler runs an acyclic graph in dependency order", async () => {
   const { instance, executions } = scheduler({});
   const outcomes = await instance.runExecutionDag("c1", [
@@ -142,6 +172,47 @@ test("provider scheduler runs an acyclic graph in dependency order", async () =>
   ], "run");
   assert.deepEqual(executions, ["a", "b"]);
   assert.deepEqual(outcomes.map((outcome) => outcome.status), ["pass", "pass"]);
+});
+
+test("provider execution batching accepts reusable dependencies and retains a fallback", () => {
+  const dependencyNode = node("child", ["cached"]);
+  const pending = new Map([["child", dependencyNode]]);
+  const context = {
+    receiptValidity: () => ({ validity: "valid" }),
+    maxParallelProviders: () => 1,
+    resourcesConflict: () => false
+  };
+  assert.deepEqual(providerExecutionBatch(context, "c", pending, new Set(),
+    new Map(), [dependencyNode]).map((row) => row.provider), ["child"]);
+  const detached = node("detached");
+  assert.deepEqual(providerExecutionBatch(context, "c", pending, new Set(),
+    new Map(), [detached]).map((row) => row.provider), ["detached"]);
+});
+
+test("provider scheduler bounds independent execution concurrency", async () => {
+  let active = 0;
+  let peak = 0;
+  const schedulerEvents = [];
+  const instance = createProviderScheduler({
+    receiptValidity: () => ({ validity: "missing" }),
+    resourcesConflict: () => false,
+    maxParallelProviders: () => 2,
+    recordScheduler: (event) => schedulerEvents.push(event),
+    timestamp: Date.now,
+    executeAdapter: async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      active -= 1;
+      return { status: "pass" };
+    },
+    log: () => {}, logError: () => {}
+  });
+  await instance.runExecutionDag("c1", [node("a"), node("b"), node("c")], "run");
+  assert.equal(peak, 2);
+  assert.deepEqual(schedulerEvents.map((event) => event.executedNodes), [2, 1]);
+  assert.equal(schedulerEvents[1].queueingMs > 0, true);
+  assert.equal(Math.max(...schedulerEvents.map((event) => event.peakConcurrency)), 2);
 });
 
 test("provider scheduler names the cycle path for a dependency cycle", async () => {
@@ -178,7 +249,7 @@ test("provider scheduler attributes a failed covered output to its producer", as
     });
 });
 
-function planner(tasks) {
+function planner(tasks, recordScheduler = () => {}, overrides = {}) {
   const changePath = mkdtempSync(join(tmpdir(), "dag-cycle-"));
   writeFileSync(join(changePath, "tasks.md"), "# Tasks\n");
   return createAgentPlanner({
@@ -210,8 +281,10 @@ function planner(tasks) {
     readJson: () => ({}),
     writeJson: () => {},
     recordInstructionManifest: null,
+    recordScheduler,
     modelForTask: () => ({ tier: "fast", family: "haiku" }),
-    fail: (message) => { throw new Error(message); }
+    fail: (message) => { throw new Error(message); },
+    ...overrides
   });
 }
 
@@ -241,4 +314,37 @@ test("task planner groups an acyclic graph into dependency waves", () => {
   ]);
   const plan = instance.planValue("c1");
   assert.deepEqual(plan.groups, [["T001", "T003"], ["T002"]]);
+});
+
+test("task planner telemetry retains the full ready frontier above capacity", () => {
+  const events = [];
+  const instance = planner([
+    plannerTask("T001"), plannerTask("T002"),
+    plannerTask("T003"), plannerTask("T004")
+  ], (event) => events.push(event));
+  instance.planValue("c1");
+  assert.equal(events[0].readyNodes, 4);
+  assert.equal(events[0].executedNodes, 3);
+  assert.equal(events[0].peakConcurrency, 3);
+});
+
+test("task planner compiles services and instruction provenance", () => {
+  const instance = planner([plannerTask("T001")], () => {}, {
+    evidence: () => ({
+      claims: [{ id: "claim", capabilities: ["test"], repositories: ["root"] }],
+      execution: { services: {
+        api: { dependsOn: ["db"], resources: ["network"], port: 3000,
+          command: ["node", "api.mjs"] },
+        db: {}
+      } }
+    }),
+    recordInstructionManifest: () => ({
+      schemaVersion: 2, manifestDigest: "manifest",
+      execution: { requestedModel: "haiku" }
+    })
+  });
+  const plan = instance.planValue("c1");
+  assert.equal(plan.instructionProvenance.manifestDigest, "manifest");
+  assert.deepEqual(plan.graph.nodes.filter((node) => node.kind === "service")
+    .map((node) => node.id), ["service:api", "service:db"]);
 });

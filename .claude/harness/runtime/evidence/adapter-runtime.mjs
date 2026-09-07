@@ -8,6 +8,36 @@ import {
 } from "./evidence-results.mjs";
 import { repositoryBaseHead } from "../core/repository-binding.mjs";
 
+export function serviceStartBatch(entries, maxParallel, conflicts,
+  completed = new Set()) {
+  const selected = [];
+  const capacity = Math.max(1, Number(maxParallel) || 1);
+  for (const entry of entries.filter((candidate) =>
+    (candidate.dependsOn || []).every((dependency) => completed.has(dependency)))) {
+    if (selected.length >= capacity) break;
+    if (selected.every((candidate) => !conflicts(candidate.resources, entry.resources)))
+      selected.push(entry);
+  }
+  return selected;
+}
+
+export function requiredServiceNames(services = {}, names = []) {
+  const required = new Set();
+  const visiting = new Set();
+  const include = (name) => {
+    if (required.has(name)) return;
+    const config = services[name];
+    if (!config) throw new Error(`service '${name}' is not configured`);
+    if (visiting.has(name)) throw new Error(`service dependency cycle at '${name}'`);
+    visiting.add(name);
+    for (const dependency of config.dependsOn || []) include(dependency);
+    visiting.delete(name);
+    required.add(name);
+  };
+  for (const name of names.filter(Boolean)) include(name);
+  return [...required].sort();
+}
+
 // The receipt vocabulary, ordered. An adapter that runs more than one provider
 // has to report the worst thing that happened — not the last one in the array,
 // and never a word from a different vocabulary. `blocked` is deliberately
@@ -212,6 +242,80 @@ export function providerRepositoryManifestValue(context, id, provider, state, ro
   return { version: 1, changeId: id, provider, repositories };
 }
 
+export async function startRequiredServicesOperation(context, id, nodes, proofRunId) {
+  const executionValue = context.evidence(id).execution;
+  const names = requiredServiceNames(executionValue.services,
+    nodes.map((node) => node.config.service));
+  const sessions = [];
+  try {
+    const pending = [...names];
+    const completed = new Set();
+    const readySince = new Map();
+    let wave = 0;
+    while (pending.length) {
+      const candidates = pending.map((name) => {
+        const config = executionValue.services[name];
+        const resources = [...(config.resources || []),
+          ...(config.port ? [`port:${config.port}`] : [])];
+        return { name, config, resources, dependsOn: config.dependsOn || [] };
+      });
+      const observedAt = context.timestamp();
+      for (const candidate of candidates)
+        if (candidate.dependsOn.every((dependency) => completed.has(dependency)) &&
+            !readySince.has(candidate.name)) readySince.set(candidate.name, observedAt);
+      const ready = candidates.filter((candidate) => candidate.dependsOn
+        .every((dependency) => completed.has(dependency)));
+      const batch = serviceStartBatch(candidates, context.maxParallelServices(),
+        context.serviceResourcesConflict, completed);
+      if (!batch.length)
+        throw new Error(`service dependency unresolvable: ${pending.join(", ")}`);
+      wave += 1;
+      context.recordScheduler({
+        scheduler: "service", wave,
+        readyNodes: ready.length, executedNodes: batch.length, reusedNodes: 0,
+        queueingMs: batch.reduce((total, candidate) =>
+          total + Math.max(0, observedAt - readySince.get(candidate.name)), 0),
+        peakConcurrency: batch.length
+      });
+      const results = await Promise.allSettled(batch.map(({ name, config }) =>
+        context.startServiceSession(id, name, config, proofRunId)));
+      const failures = [];
+      for (let index = 0; index < batch.length; index += 1) {
+        pending.splice(pending.indexOf(batch[index].name), 1);
+        if (results[index].status === "fulfilled") {
+          sessions.push(results[index].value);
+          completed.add(batch[index].name);
+        } else failures.push(`${batch[index].name}: ${
+          results[index].reason?.message || results[index].reason}`);
+      }
+      if (failures.length) throw new Error(`service startup failed: ${failures.join("; ")}`);
+    }
+    return sessions;
+  } catch (error) {
+    sessions.reverse().forEach((session) => session.stop());
+    throw error;
+  }
+}
+
+export function repositoryStatus(repository) {
+  const result = spawnSync("git", ["status", "--porcelain"], {
+    cwd: repository.workspacePath, encoding: "utf8"
+  });
+  return result.status === 0 ? result.stdout.trim() : null;
+}
+
+function readOnlyRepository(repository) {
+  return repository.mode === "read";
+}
+
+export function assertReadRepositoriesUnchanged(context, provider, rows) {
+  for (const repository of rows.filter(readOnlyRepository)) {
+    const changed = context.repositoryStatus(repository);
+    if (changed)
+      context.die(`provider '${provider}' modified read-only repository '${repository.id}': ${changed}`);
+  }
+}
+
 export function createAdapterRuntime({
   ROOT, LOGS, PROVIDERS,
   providerCapability, providerConfig, parseFlags, providerWorkspace,
@@ -220,17 +324,14 @@ export function createAdapterRuntime({
   providerRepositories,
   fileDigest, pathInside, stableHash, runCommand,
   providerWorkspaceHash, providerClaims, parseJsonOutput, parseTapOutput,
-  parseNodeTestSpecOutput = () => null,
+  parseNodeTestSpecOutput,
   numericReportValue, playwrightReportSummary, requiredProviders,
-  mutationProtocolResult, now, die
+  mutationProtocolResult, now, die,
+  serviceResourcesConflict,
+  maxParallelServices,
+  recordScheduler,
+  timestamp
 }) {
-  function repositoryStatus(repository) {
-    const result = spawnSync("git", ["status", "--porcelain"], {
-      cwd: repository.workspacePath, encoding: "utf8"
-    });
-    return result.status === 0 ? result.stdout.trim() : null;
-  }
-
   function providerRepositoryManifest(id, provider, config, proofRunId) {
     const state = loadRuntime(id);
     const rows = providerRepositories(id, provider, config);
@@ -245,13 +346,9 @@ export function createAdapterRuntime({
     return { path, rows };
   }
 
-  function assertReadRepositoriesUnchanged(provider, rows) {
-    for (const repository of rows.filter((row) => row.mode === "read")) {
-      const changed = repositoryStatus(repository);
-      if (changed)
-        die(`provider '${provider}' modified read-only repository '${repository.id}': ${changed}`);
-    }
-  }
+  const assertReadRepositories = assertReadRepositoriesUnchanged.bind(null, {
+    repositoryStatus, die
+  });
 
   const runProvider = runProviderOperation.bind(null, {
     root: ROOT, logs: LOGS, providers: PROVIDERS,
@@ -261,21 +358,10 @@ export function createAdapterRuntime({
     mkdir: mkdirSync, write: writeFileSync, exit: process.exit.bind(process)
   });
   
-  async function startRequiredServices(id, nodes, proofRunId) {
-    const executionValue = evidence(id).execution;
-    const names = [...new Set(nodes.map((node) => node.config.service).filter(Boolean))];
-    const sessions = [];
-    try {
-      for (const name of names)
-        sessions.push(await startServiceSession(
-          id, name, executionValue.services[name], proofRunId
-        ));
-      return sessions;
-    } catch (error) {
-      sessions.reverse().forEach((session) => session.stop());
-      throw error;
-    }
-  }
+  const startRequiredServices = startRequiredServicesOperation.bind(null, {
+    evidence, startServiceSession, serviceResourcesConflict, maxParallelServices,
+    recordScheduler, timestamp
+  });
   
   function executionLog(id, provider, executionId, result) {
     const logPath = join(LOGS, id, `${executionId}-${provider}.log`);
@@ -665,7 +751,7 @@ export function createAdapterRuntime({
       id, provider, config, proofRunId, commandCache);
     execution.result = await execution.cached.result;
     execution.commandExecutionId = execution.cached.commandExecutionId;
-    assertReadRepositoriesUnchanged(provider, execution.repositoryManifest.rows);
+    assertReadRepositories(provider, execution.repositoryManifest.rows);
     const evidenceRow = adapterEvidence(id, provider, config, execution);
     const baseFlags = adapterBaseFlags(
       id, provider, config, proofRunId, execution, evidenceRow);

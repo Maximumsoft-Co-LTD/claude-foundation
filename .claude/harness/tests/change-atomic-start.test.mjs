@@ -107,6 +107,7 @@ function fixture(t, { validationFailure = null, sandboxFailure = null } = {}) {
       if (sandboxFailure) throw new Error(sandboxFailure);
     },
     showPacket: () => { calls.sequence.push("packet"); },
+    measureStage: (_stage, operation) => operation(),
     trapFailures: (operation) => operation(),
     rollbackStart: (id) => {
       calls.rollback += 1;
@@ -118,17 +119,18 @@ function fixture(t, { validationFailure = null, sandboxFailure = null } = {}) {
   return { root, changes, runtime, draftPath, lifecycle, calls };
 }
 
-test("atomic start reads once, validates explicitly, then publishes Build state", (t) => {
+test("atomic start reads once, validates explicitly, then publishes agreement state", (t) => {
   const value = fixture(t);
   value.lifecycle.startAtomic(value.draftPath);
   assert.equal(value.calls.draftReads, 1);
   assert.equal(value.calls.rollback, 0);
   assert.deepEqual(value.calls.sequence.map((entry) =>
     typeof entry === "string" ? entry : "validate"),
-  ["validate", "sandbox", "bind", "packet"]);
+  ["validate", "bind"]);
   assert.deepEqual(value.calls.sequence[0].validate, ["atomic-change", "root"]);
   assert.equal(existsSync(join(value.changes, "atomic-change")), true);
   assert.equal(existsSync(join(value.runtime, "atomic-change.json")), true);
+  assert.equal(JSON.parse(readFileSync(join(value.runtime, "atomic-change.json"))).status, "change");
 });
 
 test("atomic start consumes its transient draft only after success", (t) => {
@@ -150,15 +152,14 @@ test("atomic start removes change and runtime state after late validation failur
     typeof entry === "string" ? entry : "validate"), ["validate"]);
 });
 
-test("atomic start rolls back when sandbox creation fails", (t) => {
+test("atomic start defers sandbox creation even when the later sandbox would fail", (t) => {
   const value = fixture(t, { sandboxFailure: "sandbox unavailable" });
-  assert.throws(() => value.lifecycle.startAtomic(value.draftPath),
-    /sandbox unavailable; partial atomic start rolled back/);
-  assert.equal(value.calls.rollback, 1);
-  assert.equal(existsSync(join(value.changes, "atomic-change")), false);
-  assert.equal(existsSync(join(value.runtime, "atomic-change.json")), false);
+  value.lifecycle.startAtomic(value.draftPath);
+  assert.equal(value.calls.rollback, 0);
+  assert.equal(existsSync(join(value.changes, "atomic-change")), true);
+  assert.equal(existsSync(join(value.runtime, "atomic-change.json")), true);
   assert.deepEqual(value.calls.sequence.map((entry) =>
-    typeof entry === "string" ? entry : "validate"), ["validate", "sandbox"]);
+    typeof entry === "string" ? entry : "validate"), ["validate", "bind"]);
 });
 
 test("atomic start never rolls back a pre-existing change", (t) => {

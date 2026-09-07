@@ -77,6 +77,7 @@ reports. Wiring changes invalidate only affected provider fingerprints.
   "services": {
     "web": {
       "command": ["npm", "run", "start", "--", "--port", "4173"],
+      "resources": ["port:4173"],
       "readiness": {
         "url": "http://127.0.0.1:4173",
         "expectHeader": {"x-foundation-app": "profile"}
@@ -479,6 +480,11 @@ Override with `resources` and order providers with `dependsOn`. Read-only
 providers may run together. `workspace-write` conflicts with all workspace
 readers, and named exclusive resources such as `browser`, `dev-server`, or
 `database` cannot overlap.
+
+Required services use the same explicit resource vocabulary and start in
+bounded parallel batches. Their declared port is also an implicit `port:<n>`
+resource. If one startup fails, the harness stops every successful sibling
+before returning the aggregate failure.
 
 Use parameterized names such as `port:4173`, `database:test`, or
 `browser:chromium` when independent instances may run concurrently. Provider

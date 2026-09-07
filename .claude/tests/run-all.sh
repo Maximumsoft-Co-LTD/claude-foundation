@@ -23,13 +23,13 @@ unset FOUNDATION_CLAUDE_SESSION_ID FOUNDATION_CLAUDE_TRANSCRIPT_PATH
 
 selection_mode="full"
 list_mode=0
-if [ "${1:-}" = "--affected" ]; then
-  selection_mode="affected"
-  shift
-elif [ "${1:-}" = "--list" ]; then
-  list_mode=1
-  shift
-fi
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --affected) selection_mode="affected"; shift ;;
+    --list) list_mode=1; shift ;;
+    *) break ;;
+  esac
+done
 
 # label|command — `!` prefixes a label that must run with the repository to
 # itself. Commands are expanded by the child with $HERE and $ROOT in scope.
@@ -253,10 +253,18 @@ label_of() { _l="${1%%|*}"; printf '%s' "${_l#!}"; }
 exclusive() { case "$1" in !*) return 0 ;; *) return 1 ;; esac; }
 
 if [ "$list_mode" -eq 1 ]; then
-  suites | while IFS='|' read -r label _command; do
-    label_of "$label"
-    printf '\n'
-  done
+  suite_registry="$(suites)"
+  if [ "$selection_mode" = "affected" ]; then
+    suite_labels="$(printf '%s\n' "$suite_registry" | while IFS='|' read -r label _command; do label_of "$label"; printf '\n'; done)"
+    FOUNDATION_SUITE_LABELS="$suite_labels" \
+      FOUNDATION_SUITE_REGISTRY="$suite_registry" \
+      node "$HERE/affected-suite-selector.mjs" "$ROOT"
+  else
+    printf '%s\n' "$suite_registry" | while IFS='|' read -r label _command; do
+      label_of "$label"
+      printf '\n'
+    done
+  fi
   exit 0
 fi
 
@@ -415,7 +423,11 @@ while [ "$index" -le "$TOTAL" ]; do
   if exclusive "$line"; then alone="$alone $index"; else shared="$shared $index"; fi
   index=$((index + 1))
 done
-SELECTED_TOTAL="$(printf '%s\n' $selected | wc -l | tr -d ' ')"
+if [ -n "$selected" ]; then
+  SELECTED_TOTAL="$(printf '%s\n' $selected | wc -l | tr -d ' ')"
+else
+  SELECTED_TOTAL=0
+fi
 
 # Full runs already schedule both detector baselines in this same gate. The
 # private mutation fixture cannot affect them, so the mutation row may avoid

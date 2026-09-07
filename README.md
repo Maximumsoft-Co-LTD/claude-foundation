@@ -17,7 +17,7 @@ does not replace your coding agent, test framework, CI system, or Git workflow.
 The product is **Change Loop**; the installed package and CLI remain
 `claude-foundation`, so existing commands do not change.
 
-**Version 3.5.13** — runtime API 32, provider protocol 13. Receipts recorded by
+**Version 3.5.13** — runtime API 33, provider protocol 13. Receipts recorded by
 earlier versions read as `provider-version-stale` and must be re-proven.
 `claude-foundation metrics <change-id>` also reports the exact runtime source
 cohort: semantic version, the loaded protocol bundle, and a SHA-256 digest of
@@ -771,8 +771,8 @@ host restart.
 
 Change Loop supplies a small, task-scoped packet to the native agent host; it is
 not a resident orchestrator that copies the entire conversation into every
-worker. A single-repository change without shared external authority stays with
-one agent regardless of task count. Independent workers are useful only when
+worker. A single-task change without shared external authority stays with one
+agent. Independent workers are useful only when
 their tasks, repository access, dependencies, and evidence can be separated
 cleanly.
 
@@ -798,11 +798,12 @@ data or authentication, migrations, concurrency, public compatibility,
 cross-repository conflicts, evidence anomalies, and two failed attempts all
 trigger escalation.
 
-The same file bounds an autonomous run: at most three parallel agents; 8 KiB
+The same file bounds an autonomous run: at most three parallel agents, four
+parallel evidence providers, and three parallel setup operations; 8 KiB
 task and review packets, 12 KiB repository packets, and a 16 KiB global packet;
 45-minute leases; and separate rapid/standard budgets of 800,000/1,600,000
-tokens and 100/200 requests. These are ceilings, not targets—ordinary small
-changes normally stay with one agent.
+tokens and 100/200 requests. These are ceilings, not targets—one-task changes
+stay in the current session while independent disjoint tasks can fan out.
 Validation calibrates both lanes from the widest non-secret impact, size,
 coupling, review, security, repository, provider, task, claim, or critical-case
 factor. `metrics` reports those inputs, the selected scale, and its limiting

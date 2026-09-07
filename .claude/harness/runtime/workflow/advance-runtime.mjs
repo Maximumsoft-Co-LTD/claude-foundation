@@ -752,3 +752,18 @@ export function createAdvanceRuntime({
 
   return { advanceValue, advanceThrough, showAdvance };
 }
+export async function prepareAdvanceBuild(context, id) {
+  return context.measureAsync("build.prepare", () => context.runQuietly(async () => {
+    context.prepareBuildSandbox(id);
+    context.prepareExecution(id, { stage: "build" });
+  }));
+}
+
+export async function runAdvanceProof(context, id) {
+  return context.measureAsync("prove.execute", () =>
+    context.runQuietly(() => context.proofAdvance(id, { quiet: true })));
+}
+
+export function hasValidLandGrant(landGrantRuntime, id) {
+  return landGrantRuntime.valid(id).valid;
+}
