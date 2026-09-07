@@ -11,7 +11,10 @@ The entrypoint is also run by `.github/workflows/workflow-tests.yml`.
 
 For an edit/repair loop, `run-all.sh --affected` selects the suites that own
 the changed files plus their proof, review, Land, and mutation dependencies.
-The selector reads staged, unstaged, and untracked paths; set
+With no changed files it exits without running a suite. Use
+`run-all.sh --affected --list` to inspect the selection without executing it;
+the two flags may appear in either order. The selector reads added, modified,
+renamed, deleted, staged, unstaged, and untracked paths; set
 `FOUNDATION_TEST_BASE=<ref>` to include committed changes since a branch point.
 It is deliberately conservative: changes to the composition root, protocol,
 runtime version, CLI router, workspace policy, or shared test libraries expand

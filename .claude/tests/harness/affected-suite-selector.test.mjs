@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
-  selectAffectedSuites, suiteRunnerLabels
+  changedFiles, selectAffectedSuites, suiteRunnerLabels
 } from "../affected-suite-selector.mjs";
 
 const labels = [
@@ -26,6 +30,29 @@ const labels = [
   "target drift", "spec sync land gate", "model drift land gate",
   "workspace surface"
 ];
+
+test("no changed files select no suites", () => {
+  const { selected, reasons } = selectAffectedSuites([], labels);
+  assert.deepEqual(selected, []);
+  assert.equal(reasons.size, 0);
+});
+
+test("deleted tracked files remain part of affected selection", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-affected-deletion-"));
+  try {
+    execFileSync("git", ["init", "-q"], { cwd: root });
+    execFileSync("git", ["config", "user.email", "test@example.invalid"], { cwd: root });
+    execFileSync("git", ["config", "user.name", "Foundation Test"], { cwd: root });
+    const path = join(root, "deleted.mjs");
+    writeFileSync(path, "export default true;\n");
+    execFileSync("git", ["add", "deleted.mjs"], { cwd: root });
+    execFileSync("git", ["commit", "-qm", "baseline"], { cwd: root });
+    rmSync(path);
+    assert.deepEqual(changedFiles(root), ["deleted.mjs"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("a reviewer adapter edit selects review dependencies, not unrelated UI", () => {
   const { selected } = selectAffectedSuites([

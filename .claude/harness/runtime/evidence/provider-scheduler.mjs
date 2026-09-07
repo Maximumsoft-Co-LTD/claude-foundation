@@ -1,4 +1,5 @@
 import { findCyclePath } from "../core/graph.mjs";
+import { scheduleReadyBatch } from "../core/graph-execution.mjs";
 
 export function neededExecutionProviders(context, id, hash) {
   return context.requiredProviders(id)
@@ -86,13 +87,27 @@ export function createProviderScheduler({
   executeAdapter,
   fail,
   log = console.log,
-  logError = console.error
+  logError = console.error,
+  maxParallelProviders = () => 4,
+  recordScheduler = () => {},
+  timestamp = Date.now
 }) {
-  const executionNodes = executionNodesOperation.bind(null, {
+  const executionNodeContext = {
     requiredProviders, receiptValidity, providerConfig, commandExists,
     providerWorkspace, playwrightAvailability, evidence, providerCapability,
     adapterResources
-  });
+  };
+  function executionNodes(id, hash) {
+    const required = requiredProviders(id);
+    const result = executionNodesOperation(executionNodeContext, id, hash);
+    recordScheduler({
+      scheduler: "provider-selection", wave: 0,
+      readyNodes: result.nodes.length, executedNodes: result.nodes.length,
+      reusedNodes: required.length - neededExecutionProviders(executionNodeContext, id, hash).length,
+      queueingMs: 0, peakConcurrency: 0
+    });
+    return result;
+  }
 
   async function runExecutionDag(id, nodes, proofRunId) {
     const pending = new Map(nodes.map((node) => [node.provider, node]));
@@ -100,6 +115,8 @@ export function createProviderScheduler({
     const failedOutputs = new Set();
     const commandCache = new Map();
     const outcomes = [];
+    const readySince = new Map();
+    let wave = 0;
     // A dependency may name a covered output of another pending node, not the
     // node's own provider id; resolve those to the owning node for cycle edges.
     const owner = new Map(nodes.flatMap((node) =>
@@ -109,6 +126,9 @@ export function createProviderScheduler({
         node.dependsOn.every((dependency) =>
           completed.has(dependency) ||
           receiptValidity(id, dependency).validity === "valid"));
+      const observedAt = timestamp();
+      for (const node of ready)
+        if (!readySince.has(node.provider)) readySince.set(node.provider, observedAt);
       // Throw rather than fail(): fail is process.exit, which skips the
       // caller's catch — the thing that stops services and clears
       // activeProofRun — so the next `evidence record` bound a dead run's
@@ -132,10 +152,31 @@ export function createProviderScheduler({
           throw new Error(`provider dependency cycle: ${cycle.join(" -> ")}`);
         throw new Error(`provider dependency unresolvable: ${[...pending.keys()].join(", ")}`);
       }
-      const batch = [];
-      for (const node of ready)
-        if (batch.every((selected) => !resourcesConflict(selected.resources, node.resources)))
-          batch.push(node);
+      const schedulable = [...pending.values()].map((node) => ({
+        ...node,
+        id: node.provider,
+        dependsOn: node.dependsOn.map((dependency) => owner.get(dependency) || dependency)
+      }));
+      const schedulerCompleted = new Set([...completed].map((output) => owner.get(output) || output));
+      for (const node of pending.values())
+        for (const dependency of node.dependsOn)
+          if (receiptValidity(id, dependency).validity === "valid")
+            schedulerCompleted.add(owner.get(dependency) || dependency);
+      const { selected: scheduled } = scheduleReadyBatch(schedulable, schedulerCompleted, {
+        maxParallel: maxParallelProviders(),
+        conflicts: (left, right) => resourcesConflict(left.resources, right.resources)
+      });
+      const selectedIds = new Set(scheduled.map((node) => node.id));
+      const batch = ready.filter((node) => selectedIds.has(node.provider));
+      if (!batch.length) batch.push(ready[0]);
+      wave += 1;
+      recordScheduler({
+        scheduler: "provider", wave, readyNodes: ready.length,
+        executedNodes: batch.length, reusedNodes: 0,
+        queueingMs: batch.reduce((total, node) =>
+          total + Math.max(0, observedAt - readySince.get(node.provider)), 0),
+        peakConcurrency: batch.length
+      });
       log(`EXECUTION ${proofRunId}: ${batch.map((node) => node.provider).join(", ")}`);
       const results = await Promise.all(batch.map((node) =>
         executeAdapter(id, node.provider, node.config, proofRunId, commandCache)));

@@ -5,6 +5,8 @@ const DEFAULT_POLICY = {
   version: 1,
   execution: {
     maxParallelAgents: 3,
+    maxParallelProviders: 4,
+    maxParallelSetups: 3,
     packetBytes: { task: 8192, review: 8192, repository: 12288, global: 16384 },
     tokenBudgets: { rapid: 800000, standard: 1600000 },
     requestBudgets: { rapid: 100, standard: 200 },
@@ -210,9 +212,11 @@ export function createRuntimeEnvironment({
   }
 
   function validateExecutionLimits(policy) {
-    const parallel = Number(policy.execution.maxParallelAgents);
-    if (!Number.isInteger(parallel) || parallel < 1 || parallel > 16)
-      fail("foundation.json execution.maxParallelAgents must be an integer from 1 to 16");
+    for (const field of ["maxParallelAgents", "maxParallelProviders", "maxParallelSetups"]) {
+      const parallel = Number(policy.execution[field]);
+      if (!Number.isInteger(parallel) || parallel < 1 || parallel > 16)
+        fail(`foundation.json execution.${field} must be an integer from 1 to 16`);
+    }
     const leaseMinutes = Number(policy.execution.leaseMinutes);
     if (!Number.isFinite(leaseMinutes) || leaseMinutes < 1 || leaseMinutes > 1440)
       fail("foundation.json execution.leaseMinutes must be from 1 to 1440");
@@ -355,7 +359,7 @@ export function createRuntimeEnvironment({
     commandExists,
     playwrightAvailability,
     foundationPolicy,
-reviewAssurancePosture: (effectiveReview = null) =>
-  reviewAssurancePosture(foundationPolicy(), effectiveReview)
+    reviewAssurancePosture: (effectiveReview = null) =>
+      reviewAssurancePosture(foundationPolicy(), effectiveReview)
   };
 }

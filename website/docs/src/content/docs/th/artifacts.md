@@ -42,7 +42,8 @@ openspec/
 workspace ของ Build ที่สร้างใหม่
 มันถูกสร้างให้ตอนยังไม่มี และหลังจากนั้นเป็นของคุณ
 
-นโยบายเริ่มต้นอนุญาต agent ทำงานขนานกันสูงสุดสามตัวและใช้ lease 45 นาที
+นโยบายเริ่มต้นอนุญาต agent สูงสุดสามตัว, evidence provider หรือ service สี่ตัว
+และ repository setup command สามตัวทำงานขนานกัน โดยใช้ lease 45 นาที
 task packet กับ review packet มีเพดาน 8 KiB, repository packet 12 KiB และ
 global packet 16 KiB ส่วน rapid run มีเพดาน 800,000 token กับ 100 request
 และ standard run มีเพดาน 1,600,000 token กับ 200 request ตัวเลขเหล่านี้เป็น
@@ -208,7 +209,8 @@ prototype พิสูจน์ว่าแนวทางนั้นเป็�
 
 ทุกคำสั่งจะเขียนแถวหนึ่งลง `.foundation/logs/<change-id>/operations.jsonl`
 พร้อมกับ context event และบันทึก phase context คำสั่ง `telemetry`
-รายงานยอดรวม ประมาณการ token และ percentile ของระยะเวลาแยกตามชนิด
+รายงานยอดรวม ประมาณการ token และ percentile ของระยะเวลาแยกตามชนิด รวมทั้ง
+เวลาเข้าคิว การใช้ผลเดิม จำนวน node ที่รัน และ concurrency สูงสุดของ scheduler
 
 การนับนี้แยก *unknown* ออกจาก *zero* โดยตั้งใจ การรันที่วัดต้นทุนไม่ได้
 จะถูกรายงานว่าวัดไม่ได้ ไม่ใช่ว่าฟรี

@@ -61,6 +61,8 @@ draft() {
       minimum: 1, timeoutMs: 60000 } }, services: {} };
     writeFileSync("draft.json", JSON.stringify(d, null, 2));'
   node .claude/harness/foundation.mjs start draft.json > start.log 2>&1
+  change_id="$(printf '%s' "$1" | tr '[:upper:] ' '[:lower:]-')"
+  node .claude/harness/foundation.mjs advance "$change_id" --through build >> start.log 2>&1
 }
 
 implement() {

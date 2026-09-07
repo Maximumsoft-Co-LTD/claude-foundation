@@ -48,7 +48,8 @@ Write the draft to `.foundation/drafts/<id>.json` and run
 Never inspect managed `.claude/harness/**` merely to reconstruct this schema.
 The compiler owns classification, stable requirement/claim/task IDs,
 cross-links, conditional artifacts, versioned defaults, structural validation,
-sandbox creation, and rollback. Repair only the draft fields it reports, as one
+and rollback. The first Build `advance` owns idempotent sandbox creation and
+setup. Repair only the draft fields it reports, as one
 batch, then retry. Never patch a partially generated packet or create parallel
 IDs by hand.
 

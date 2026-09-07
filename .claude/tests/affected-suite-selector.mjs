@@ -120,10 +120,12 @@ export function selectAffectedSuites(files, suiteLabels, registry = "") {
   const selected = new Set();
   const reasons = new Map();
   const runnerLabels = suiteRunnerLabels(registry);
+  const changed = [...new Set(files)].sort();
+  if (changed.length === 0) return { selected: [], reasons };
   addKnown(selected, ALWAYS, known);
   for (const label of selected) reasons.set(label, ["always-on safety contract"]);
 
-  for (const file of [...new Set(files)].sort()) {
+  for (const file of changed) {
     for (const label of runnerLabels.get(file) || []) {
       if (!known.has(label)) continue;
       selected.add(label);
@@ -173,11 +175,11 @@ function gitLines(root, args) {
 
 export function changedFiles(root, base = null) {
   const tracked = base
-    ? gitLines(root, ["diff", "--name-only", "--diff-filter=ACMR", `${base}...HEAD`])
+    ? gitLines(root, ["diff", "--name-only", "--diff-filter=ACMRD", `${base}...HEAD`])
     : [];
   return [...new Set([
     ...tracked,
-    ...gitLines(root, ["diff", "--name-only", "--diff-filter=ACMR", "HEAD"]),
+    ...gitLines(root, ["diff", "--name-only", "--diff-filter=ACMRD", "HEAD"]),
     ...gitLines(root, ["ls-files", "--others", "--exclude-standard"])
   ])];
 }
@@ -186,7 +188,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
   const root = process.argv[2];
   const labels = String(process.env.FOUNDATION_SUITE_LABELS || "")
     .split("\n").filter(Boolean);
-  const files = process.env.FOUNDATION_CHANGED_FILES
+  const files = Object.hasOwn(process.env, "FOUNDATION_CHANGED_FILES")
     ? process.env.FOUNDATION_CHANGED_FILES.split("\n").filter(Boolean)
     : changedFiles(root, process.env.FOUNDATION_TEST_BASE || null);
   const result = selectAffectedSuites(files, labels,

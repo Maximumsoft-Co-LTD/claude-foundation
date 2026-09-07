@@ -150,7 +150,7 @@ Wire-visible contracts are pinned in `.claude/harness/protocol.json`. A mixed-re
 | Pin | v3.5.13 |
 |---|---|
 | runtime | 3.5.13 |
-| runtime API | 32 |
+| runtime API | 33 |
 | semantic draft schema | 3 |
 | semantic amendment schema | 1 |
 | artifact defaults schema | 2 |

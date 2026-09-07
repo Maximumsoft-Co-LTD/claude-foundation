@@ -395,15 +395,20 @@ assert_file_absent "invalid atomic start leaves no runtime state" \
   "$TARGET/.foundation/runtime/atomic-invalid.json"
 atomic_start="$(bash "$ROOT/cli.sh" --project "$TARGET" change start \
   .foundation/atomic-draft.json --consume-draft)"
-assert_contains "atomic start returns a Build packet" "$atomic_start" \
-  '"changeId":"atomic-start"'
+assert_contains "atomic start returns the Build advance route" "$atomic_start" \
+  'claude-foundation advance atomic-start --through build'
 assert_file_absent "successful atomic start consumes its transient draft" \
   "$TARGET/.foundation/atomic-draft.json"
-assert_eq "atomic start enters Build" "building" \
+assert_eq "atomic start remains agreement-only" "change" \
+  "$(jq -r '.status' "$TARGET/.foundation/runtime/atomic-start.json")"
+assert_eq "atomic start creates no isolation" "current" \
+  "$(jq -r '.workspace.mode' "$TARGET/.foundation/runtime/atomic-start.json")"
+bash "$ROOT/cli.sh" --project "$TARGET" advance atomic-start --through build >/dev/null
+assert_eq "first Build advance enters Build" "building" \
   "$(jq -r '.status' "$TARGET/.foundation/runtime/atomic-start.json")"
 atomic_workspace="$(jq -r '.workspace.path' \
   "$TARGET/.foundation/runtime/atomic-start.json")"
-assert_in "atomic start creates isolation" \
+assert_in "first Build advance creates isolation" \
   "$(jq -r '.workspace.mode' "$TARGET/.foundation/runtime/atomic-start.json")" \
   "worktree copy"
 active_changes="$(bash "$ROOT/cli.sh" --project "$TARGET" changes)"
@@ -441,17 +446,20 @@ printf '%s\n' \
   > "$TARGET/.foundation/atomic-migration-draft.json"
 standard_start="$(bash "$ROOT/cli.sh" --project "$TARGET" change start \
   .foundation/atomic-migration-draft.json)"
-assert_contains "atomic standard start returns a Build packet" "$standard_start" \
-  '"changeId":"atomic-migration"'
+assert_contains "atomic standard start returns the Build advance route" "$standard_start" \
+  'claude-foundation advance atomic-migration --through build'
 assert_eq "atomic standard start selects standard schema" "foundation-standard" \
   "$(jq -r '.schema' "$TARGET/.foundation/runtime/atomic-migration.json")"
 assert_eq "atomic standard start preserves required review" "true" \
   "$(jq -r '.reviewRequired' "$TARGET/.foundation/runtime/atomic-migration.json")"
-assert_eq "atomic standard start enters Build" "building" \
+assert_eq "atomic standard start remains agreement-only" "change" \
+  "$(jq -r '.status' "$TARGET/.foundation/runtime/atomic-migration.json")"
+bash "$ROOT/cli.sh" --project "$TARGET" advance atomic-migration --through build >/dev/null
+assert_eq "standard first Build advance enters Build" "building" \
   "$(jq -r '.status' "$TARGET/.foundation/runtime/atomic-migration.json")"
 standard_workspace="$(jq -r '.workspace.path' \
   "$TARGET/.foundation/runtime/atomic-migration.json")"
-assert_in "atomic standard start creates isolation" \
+assert_in "standard first Build advance creates isolation" \
   "$(jq -r '.workspace.mode' "$TARGET/.foundation/runtime/atomic-migration.json")" \
   "worktree copy"
 rm -rf "$standard_workspace" \

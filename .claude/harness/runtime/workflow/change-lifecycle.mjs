@@ -377,8 +377,8 @@ export function createChangeLifecycle({
   now,
   bindClaudeSession,
   validate,
-  createSandbox,
   showPacket,
+  measureStage = (_stage, operation) => operation(),
   trapFailures = (operation) => operation(),
   rollbackStart = () => []
 }) {
@@ -878,11 +878,12 @@ export function createChangeLifecycle({
   }
 
   function startAtomic(draftPath, options = {}) {
-    const draft = loadDraft(draftPath, { deferPolicy: true });
-    const preflight = atomicStartPreflight(draft, {
+    const draft = measureStage("change.load-draft", () =>
+      loadDraft(draftPath, { deferPolicy: true }));
+    const preflight = measureStage("change.preflight", () => atomicStartPreflight(draft, {
       groundingRequired: workflowPolicy().workflow.grounding === "required" ||
         Boolean(draft.grounding)
-    });
+    }));
     if (preflight.issues.length)
       fail(`start draft preflight failed:\n  - ${preflight.issues.join("\n  - ")}`);
     const { classification, rapid } = preflight;
@@ -891,11 +892,11 @@ export function createChangeLifecycle({
     assertChangeAvailable(id);
     try {
       trapFailures(() => {
-        createChange(draft.intent, { rapid, id: draft.id }, draft, {
+        measureStage("change.materialize", () => createChange(draft.intent, { rapid, id: draft.id }, draft, {
           availabilityChecked: true,
           deferSessionBinding: true
-        });
-        const resolution = resolveChange(id, resolutionFlags);
+        }));
+        const resolution = measureStage("change.resolve", () => resolveChange(id, resolutionFlags));
         // A rapid draft can still upgrade when semantic security terms in the
         // intent trigger standard policy during resolve. Only that transition
         // needs a second projection; the common path was previously rewritten
@@ -903,10 +904,9 @@ export function createChangeLifecycle({
         if (resolution.upgraded) materializeDraft(id, draft);
         // Atomic start is a public Change gate. Use the same explicit validation
         // as `change validate`, including OpenSpec strict lint when available.
-        validate(id, "root");
-        createSandbox(id);
+        measureStage("change.validate", () => validate(id, "root"));
         bindClaudeSession(id, "change");
-        showPacket(id, { phase: "build" });
+        console.log(`AGREED ${id}\n  next: claude-foundation advance ${id} --through build`);
       });
     } catch (error) {
       let rollbackIssues;

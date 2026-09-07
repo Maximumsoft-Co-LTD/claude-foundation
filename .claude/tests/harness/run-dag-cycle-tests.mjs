@@ -144,6 +144,31 @@ test("provider scheduler runs an acyclic graph in dependency order", async () =>
   assert.deepEqual(outcomes.map((outcome) => outcome.status), ["pass", "pass"]);
 });
 
+test("provider scheduler bounds independent execution concurrency", async () => {
+  let active = 0;
+  let peak = 0;
+  const schedulerEvents = [];
+  const instance = createProviderScheduler({
+    receiptValidity: () => ({ validity: "missing" }),
+    resourcesConflict: () => false,
+    maxParallelProviders: () => 2,
+    recordScheduler: (event) => schedulerEvents.push(event),
+    executeAdapter: async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      active -= 1;
+      return { status: "pass" };
+    },
+    log: () => {}, logError: () => {}
+  });
+  await instance.runExecutionDag("c1", [node("a"), node("b"), node("c")], "run");
+  assert.equal(peak, 2);
+  assert.deepEqual(schedulerEvents.map((event) => event.executedNodes), [2, 1]);
+  assert.equal(schedulerEvents[1].queueingMs > 0, true);
+  assert.equal(Math.max(...schedulerEvents.map((event) => event.peakConcurrency)), 2);
+});
+
 test("provider scheduler names the cycle path for a dependency cycle", async () => {
   const { instance } = scheduler({});
   await assert.rejects(

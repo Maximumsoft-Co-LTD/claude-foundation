@@ -23,6 +23,7 @@ import {
   missingDependencySetupAdvisory,
   repairSelectedRepositories,
   reportMultiRepositorySandbox,
+  runSandboxSetupBatch,
   runSandboxSetupCommand,
   sandboxCopyPlan,
   sandboxCopyWorkspace,
@@ -191,6 +192,24 @@ test("sandbox setup records success and actionable process failures", () => {
   runSandboxSetupCommand(context, record, "npm ci", 1000, "/workspace", null);
   assert.match(warnings[1], /\(exit 2\)/);
   assert.equal(record.setup.status, "failed");
+});
+
+test("sandbox setup batch runs independent commands concurrently within capacity", (t) => {
+  const markers = mkdtempSync(join(tmpdir(), "sandbox-setup-batch-"));
+  t.after(() => rmSync(markers, { recursive: true, force: true }));
+  const first = join(markers, "first");
+  const second = join(markers, "second");
+  const rows = runSandboxSetupBatch([
+    {
+      command: `touch '${first}'; while [ ! -e '${second}' ]; do sleep 0.01; done`,
+      cwd: process.cwd(), timeoutMs: 1000
+    },
+    {
+      command: `touch '${second}'; while [ ! -e '${first}' ]; do sleep 0.01; done`,
+      cwd: process.cwd(), timeoutMs: 1000
+    }
+  ], 2);
+  assert.deepEqual(rows.map((row) => row.result.status), [0, 0]);
 });
 
 test("ignored artifact carry skips failures, existing targets, and unmovable entries", () => {
@@ -500,6 +519,25 @@ test("repository setup skips inapplicable records and runs write setup", (t) => 
     command: "build", timeout: 321, path: f.child, id: "write"
   }]);
   assert.equal(f.calls.git.length, 0);
+});
+
+test("parallel repository setup records and reports command failures", (t) => {
+  const f = fixture(t);
+  f.state.repositories = {
+    child: { mode: "worktree", access: "write", path: f.child }
+  };
+  const context = {
+    ...f.context,
+    output: console,
+    runSetupBatch: (jobs) => jobs.map((job) => ({
+      ...job, result: { status: 2, error: "2", stdout: "", stderr: "install failed" }
+    }))
+  };
+  const output = captureConsole("error", () => setupSelectedRepositories(
+    context, f.state, [{ id: "child", setupCommand: "install" }]
+  ));
+  assert.equal(f.state.repositories.child.setup.status, "failed");
+  assert.match(output.rows[0], /exit 2[\s\S]*install failed/);
 });
 
 test("read-only setup reports dirty output and git failures", (t) => {

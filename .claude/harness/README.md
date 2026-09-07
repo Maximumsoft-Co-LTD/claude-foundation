@@ -354,8 +354,10 @@ execution annotations. `agents plan` uses them to prevent same-workspace or
 shared-resource concurrency and applies the model tiers in `foundation.json`.
 The complete plan is persisted under `.foundation/plans/`; stdout is a compact
 summary, or one group selected with `--group`. `packet --task` emits only the
-chosen task's claims, files, providers, and model. A small one-repository change
-recommends one agent. The plan is advice and bounded authority for the native
+chosen task's claims, files, providers, and model. A one-task change recommends
+one agent. Multiple ready tasks with disjoint declared paths can fan out in the
+same repository; overlapping, dependent, or unknown scopes stay serialized.
+The plan is advice and bounded authority for the native
 host; the harness does not invoke a model itself.
 
 `agents dispatch` derives the next host action from that plan plus current task
@@ -375,7 +377,9 @@ refused so a late executor with the same stable owner cannot clear the current
 lease.
 
 JSON output is compact by default and `--pretty` is inspection-only. Plan
-schema 4 compiles a deterministic task/provider/repository/Land graph, resumes dependencies satisfied by completed tasks, reports
+schema 5 compiles a deterministic setup/service/task/provider/repository/Land
+graph, prioritizes the longest ready dependency path within configured resource
+and capacity bounds, resumes dependencies satisfied by completed tasks, reports
 `proof-ready` after all tasks complete, and declares the deepest model required
 by a mixed session while carrying instruction provenance. Packet schema 7 adds
 the active graph, lease fencing generation, execution attempt, and versioned
@@ -653,6 +657,9 @@ not proof of waste: executable providers are never classified as redundant only
 because their inputs matched. Decision reasons and references are redacted
 before fingerprinting. Read-only calls live in `inspections.jsonl`, so measuring
 agent probing does not inflate lifecycle rework or mutate completed evidence.
+Command telemetry also records setup, service, provider, and Build-plan scheduler
+waves with ready/executed/reused node counts, measured queueing where execution is
+harness-owned, and peak concurrency. Unknown queueing remains `null`, never zero.
 
 Context is budgeted at the control surface: plan summaries are at most 4 KiB,
 task and review packets 8 KiB, repository packets 12 KiB, and global packets 16 KiB.

@@ -19,6 +19,7 @@ import {
   rebindTelemetryWindow,
   replaceTelemetryJsonLines
 } from "../runtime/observability/telemetry-runtime.mjs";
+import { lifecycleSchedulerMetrics } from "../runtime/observability/metrics-runtime.mjs";
 
 const readLines = (path) => existsSync(path)
   ? readFileSync(path, "utf8").split("\n").filter(Boolean).map(JSON.parse)
@@ -34,6 +35,11 @@ test("advance records disjoint phase spans and attributes a failure to its activ
     now: () => new Date(at).toISOString(), blocked
   }), (context, code) => rows.push(commandTelemetryRow(context, code)));
   recorder.transition("build");
+  recorder.measure("build.prepare", () => { at = 1050; });
+  recorder.scheduler({
+    scheduler: "setup", wave: 1, readyNodes: 3, executedNodes: 2,
+    reusedNodes: 1, queueingMs: 25, peakConcurrency: 2
+  });
   at = 1100;
   recorder.transition("build");
   recorder.transition("prove");
@@ -46,6 +52,22 @@ test("advance records disjoint phase spans and attributes a failure to its activ
     ["build", 100, "completed"], ["prove", 400, "blocked"]
   ]);
   assert.equal(rows[0].phaseSpans[0].finishedAt, rows[0].phaseSpans[1].startedAt);
+  assert.deepEqual(rows[0].stageSpans, [
+    { stage: "build.prepare", durationMs: 50, status: "completed" }
+  ]);
+  assert.equal(rows[0].schedulerEvents[0].peakConcurrency, 2);
+  assert.deepEqual(lifecycleSchedulerMetrics(rows), {
+    setup: {
+      waves: 1, readyNodes: 3, executedNodes: 2, reusedNodes: 1,
+      queueingMs: 25, peakConcurrency: 2
+    }
+  });
+  const planned = lifecycleSchedulerMetrics([{
+    schedulerEvents: [{ scheduler: "build-task-plan", executedNodes: 1,
+      readyNodes: 1, reusedNodes: null, queueingMs: null, peakConcurrency: 1 }]
+  }]);
+  assert.equal(planned["build-task-plan"].queueingMs, null);
+  assert.equal(planned["build-task-plan"].reusedNodes, null);
 });
 
 function commandContext(overrides = {}) {
@@ -97,7 +119,7 @@ test("blocked command telemetry carries bounded cause and recovery without raw e
   const row = commandTelemetryRow(commandContext({
     operationName: "proof-advance", blocked: true, blocker
   }), 2);
-  assert.equal(row.version, 4);
+  assert.equal(row.version, 5);
   assert.deepEqual(Object.keys(row.blocker).sort(), [
     "classification", "code", "fingerprint", "recovery", "summary"
   ]);

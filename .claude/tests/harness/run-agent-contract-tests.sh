@@ -99,7 +99,7 @@ printf '%s\n' \
   > "$CHANGE/tasks.md"
 
 plan="$(node "$RUNTIME" agent-plan agent-contract)"
-if printf '%s' "$plan" | jq -e '.version == 4 and .taskCount == 1' >/dev/null; then
+if printf '%s' "$plan" | jq -e '.version == 5 and .taskCount == 1' >/dev/null; then
   pass "agent plan is JSON-only and accepts completed dependencies"
 else
   fail "agent plan is JSON-only and accepts completed dependencies"

@@ -152,9 +152,10 @@ telemetry or mutation. An attestation is short-lived, project-, agreement-, and
 permission-bound, single-use, and does not turn a worktree or container into a
 security boundary. The complete operator contract is in the harness guide.
 
-One-repository changes without shared external authority stay in one agent.
-Independent repositories or resources may use native tasks or subagents, but
-never lifecycle personas. The harness plans dependency and resource scopes,
+One-task changes without shared external authority stay in the current agent.
+Independent tasks with disjoint declared paths may use native workers even in
+one repository; overlapping, dependent, unknown-scope, or shared-resource work
+stays serialized. The harness plans dependency and resource scopes,
 leases them all-or-none with fencing generations, and accepts only observed
 writes inside the granted authority. Load one primary construction skill per
 task and only the cross-cutting security or observability skills whose triggers
@@ -336,6 +337,12 @@ names. Provider names describe what is proven, not which tool runs. Run
 `claude-foundation providers` for the installed catalog and use
 `.claude/harness/EVIDENCE.md` for adapters, receipts, resource locks, signed
 envelopes, Playwright annotations, and reuse rules.
+
+Execution graph v3 includes setup, service, task, provider, and Land nodes.
+The scheduler prioritizes the longest ready dependency path, then fills the
+configured capacity with non-conflicting nodes. Valid receipts are reused;
+required services and repository setup commands start in bounded independent
+batches, and a partial service-start failure stops every session already born.
 
 Test claims automatically require suite-level discovery. Risk-triggered changes
 require review. Changed-surface policy may add supply-chain, migration,

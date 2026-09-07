@@ -70,4 +70,23 @@ grep -q 'generated.txt' "$WORK/residue.out" || {
   exit 1
 }
 
+affected_first="$(FOUNDATION_CHANGED_FILES='.claude/tests/affected-suite-selector.mjs' \
+  sh "$RUN_ALL" --affected --list)"
+list_first="$(FOUNDATION_CHANGED_FILES='.claude/tests/affected-suite-selector.mjs' \
+  sh "$RUN_ALL" --list --affected)"
+[ "$affected_first" = "$list_first" ] || {
+  echo "FAIL: --affected and --list depend on argument order"
+  exit 1
+}
+printf '%s\n' "$affected_first" | grep -qFx 'affected test selection' || {
+  echo "FAIL: --affected --list did not select the changed suite"
+  exit 1
+}
+
+no_changes="$(FOUNDATION_CHANGED_FILES='' sh "$RUN_ALL" --affected 2>&1)"
+printf '%s\n' "$no_changes" | grep -q 'ALL SUITES PASS (0 suites,' || {
+  echo "FAIL: no-change affected run did not report zero suites"
+  exit 1
+}
+
 echo "run-all process control: PASS"

@@ -8,6 +8,36 @@ import {
 } from "./evidence-results.mjs";
 import { repositoryBaseHead } from "../core/repository-binding.mjs";
 
+export function serviceStartBatch(entries, maxParallel, conflicts,
+  completed = new Set()) {
+  const selected = [];
+  const capacity = Math.max(1, Number(maxParallel) || 1);
+  for (const entry of entries.filter((candidate) =>
+    (candidate.dependsOn || []).every((dependency) => completed.has(dependency)))) {
+    if (selected.length >= capacity) break;
+    if (selected.every((candidate) => !conflicts(candidate.resources, entry.resources)))
+      selected.push(entry);
+  }
+  return selected;
+}
+
+export function requiredServiceNames(services = {}, names = []) {
+  const required = new Set();
+  const visiting = new Set();
+  const include = (name) => {
+    if (required.has(name)) return;
+    const config = services[name];
+    if (!config) throw new Error(`service '${name}' is not configured`);
+    if (visiting.has(name)) throw new Error(`service dependency cycle at '${name}'`);
+    visiting.add(name);
+    for (const dependency of config.dependsOn || []) include(dependency);
+    visiting.delete(name);
+    required.add(name);
+  };
+  for (const name of names.filter(Boolean)) include(name);
+  return [...required].sort();
+}
+
 // The receipt vocabulary, ordered. An adapter that runs more than one provider
 // has to report the worst thing that happened — not the last one in the array,
 // and never a word from a different vocabulary. `blocked` is deliberately
@@ -222,7 +252,11 @@ export function createAdapterRuntime({
   providerWorkspaceHash, providerClaims, parseJsonOutput, parseTapOutput,
   parseNodeTestSpecOutput = () => null,
   numericReportValue, playwrightReportSummary, requiredProviders,
-  mutationProtocolResult, now, die
+  mutationProtocolResult, now, die,
+  serviceResourcesConflict = () => false,
+  maxParallelServices = () => 4,
+  recordScheduler = () => {},
+  timestamp = Date.now
 }) {
   function repositoryStatus(repository) {
     const result = spawnSync("git", ["status", "--porcelain"], {
@@ -263,13 +297,52 @@ export function createAdapterRuntime({
   
   async function startRequiredServices(id, nodes, proofRunId) {
     const executionValue = evidence(id).execution;
-    const names = [...new Set(nodes.map((node) => node.config.service).filter(Boolean))];
+    const names = requiredServiceNames(executionValue.services,
+      nodes.map((node) => node.config.service));
     const sessions = [];
     try {
-      for (const name of names)
-        sessions.push(await startServiceSession(
-          id, name, executionValue.services[name], proofRunId
-        ));
+      const pending = [...names];
+      const completed = new Set();
+      const readySince = new Map();
+      let wave = 0;
+      while (pending.length) {
+        const candidates = pending.map((name) => {
+          const config = executionValue.services[name];
+          const resources = [...(config.resources || []),
+            ...(config.port ? [`port:${config.port}`] : [])];
+          return { name, config, resources, dependsOn: config.dependsOn || [] };
+        });
+        const observedAt = timestamp();
+        for (const candidate of candidates)
+          if (candidate.dependsOn.every((dependency) => completed.has(dependency)) &&
+              !readySince.has(candidate.name)) readySince.set(candidate.name, observedAt);
+        const batch = serviceStartBatch(candidates, maxParallelServices(),
+          serviceResourcesConflict, completed);
+        if (!batch.length)
+          throw new Error(`service dependency unresolvable: ${pending.join(", ")}`);
+        wave += 1;
+        recordScheduler({
+          scheduler: "service", wave,
+          readyNodes: candidates.filter((candidate) => candidate.dependsOn
+            .every((dependency) => completed.has(dependency))).length,
+          executedNodes: batch.length, reusedNodes: 0,
+          queueingMs: batch.reduce((total, candidate) =>
+            total + Math.max(0, observedAt - readySince.get(candidate.name)), 0),
+          peakConcurrency: batch.length
+        });
+        const results = await Promise.allSettled(batch.map(({ name, config }) =>
+          startServiceSession(id, name, config, proofRunId)));
+        const failures = [];
+        for (let index = 0; index < batch.length; index += 1) {
+          pending.splice(pending.indexOf(batch[index].name), 1);
+          if (results[index].status === "fulfilled") {
+            sessions.push(results[index].value);
+            completed.add(batch[index].name);
+          }
+          else failures.push(`${batch[index].name}: ${results[index].reason?.message || results[index].reason}`);
+        }
+        if (failures.length) throw new Error(`service startup failed: ${failures.join("; ")}`);
+      }
       return sessions;
     } catch (error) {
       sessions.reverse().forEach((session) => session.stop());

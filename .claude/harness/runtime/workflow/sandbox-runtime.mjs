@@ -223,6 +223,50 @@ export function runSandboxSetupCommand(context, record, command, timeoutMs, cwd,
   return record.setup;
 }
 
+export function runSandboxSetupBatch(records, maxParallel = 1) {
+  const results = [];
+  const capacity = Math.max(1, Number(maxParallel) || 1);
+  const operationStartedAt = Date.now();
+  const source = String.raw`
+    import { execFile } from "node:child_process";
+    import { readFileSync } from "node:fs";
+    import { promisify } from "node:util";
+    const execute = promisify(execFile);
+    const jobs = JSON.parse(readFileSync(0, "utf8") || "[]");
+    const rows = await Promise.all(jobs.map(async (job) => {
+      try {
+        const value = await execute("sh", ["-c", job.command], {
+          cwd: job.cwd, timeout: job.timeoutMs, maxBuffer: 16 * 1024 * 1024
+        });
+        return { status: 0, stdout: value.stdout || "", stderr: value.stderr || "", error: null };
+      } catch (error) {
+        return { status: Number.isInteger(error.code) ? error.code : null,
+          stdout: error.stdout || "", stderr: error.stderr || "",
+          error: String(error.code || error.message) };
+      }
+    }));
+    process.stdout.write(JSON.stringify(rows));`;
+  for (let index = 0; index < records.length; index += capacity) {
+    const batch = records.slice(index, index + capacity);
+    const queuedMs = Date.now() - operationStartedAt;
+    const batchStartedAt = Date.now();
+    const child = spawnSync(process.execPath, ["--input-type=module", "-e", source], {
+      encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
+      input: JSON.stringify(batch.map((row) => ({
+        command: row.command, cwd: row.cwd, timeoutMs: row.timeoutMs
+      })))
+    });
+    if (child.status !== 0) throw new Error(`parallel sandbox setup runner failed: ${child.stderr.trim()}`);
+    const rows = JSON.parse(child.stdout);
+    const durationMs = Date.now() - batchStartedAt;
+    results.push(...batch.map((job, offset) => ({
+      ...job, result: rows[offset], queuedMs, durationMs,
+      wave: Math.floor(index / capacity) + 1
+    })));
+  }
+  return results;
+}
+
 // A worktree is a bare checkout and the copy path excludes installed
 // dependencies, so a project that installs them at its root starts every Build
 // without them. Three consumer Builds rediscovered that by linking the
@@ -864,11 +908,42 @@ export function repairSelectedRepositories(context, id, state, repositories) {
 }
 
 export function setupSelectedRepositories(context, state, repositories) {
+  if (!context.runSetupBatch) {
+    for (const repository of repositories) {
+      const record = state.repositories[repository.id];
+      if (!repository.setupCommand || !record || record.mode !== "worktree") continue;
+      context.runSetupCommand(record, repository.setupCommand,
+        context.policy().sandbox?.setupTimeoutMs, record.path, repository.id);
+      if (record.access !== "read") continue;
+      const changed = context.git(["status", "--porcelain"], record.path);
+      if (changed.status !== 0 || changed.stdout.trim()) {
+        record.setup.status = "failed";
+        record.setup.reason = "setup modified a read-only repository";
+        console.error(`WARNING: sandbox setup modified read-only repository '${repository.id}': ${
+          changed.stdout.trim() || changed.stderr.trim() || "git status failed"}`);
+      }
+    }
+    return;
+  }
+  const jobs = [];
   for (const repository of repositories) {
     const record = state.repositories[repository.id];
     if (!repository.setupCommand || !record || record.mode !== "worktree") continue;
-    context.runSetupCommand(record, repository.setupCommand,
-      context.policy().sandbox?.setupTimeoutMs, record.path, repository.id);
+    jobs.push({ repository, record, command: repository.setupCommand, cwd: record.path,
+      timeoutMs: context.policy().sandbox?.setupTimeoutMs });
+  }
+  for (const { repository, record, command, result } of context.runSetupBatch(jobs)) {
+    const failed = Boolean(result.error) || result.status !== 0;
+    record.setup = { command, status: failed ? "failed" : "ok",
+      exitCode: typeof result.status === "number" ? result.status : null };
+    if (failed) {
+      const cause = typeof result.status === "number" ? `exit ${result.status}` : result.error;
+      const tail = `${result.stdout || ""}\n${result.stderr || ""}`
+        .trim().split("\n").filter(Boolean).slice(-5).join("\n    ");
+      context.output.error(`WARNING: sandbox setup command failed for '${repository.id}' (${
+        cause}) in the isolated workspace. Harness preparation will repair or route this failure before Build.${
+        tail ? `\n    ${tail}` : ""}`);
+    }
     if (record.access !== "read") continue;
     const changed = context.git(["status", "--porcelain"], record.path);
     if (changed.status !== 0 || changed.stdout.trim()) {
@@ -897,13 +972,31 @@ export function retryFailedSandboxSetups(context, id,
       configured.setupTimeoutMs, state.workspace.path, "root");
     attempted.push("root");
   }
+  const jobs = [];
   for (const repository of selected) {
     if (repository.id === "root") continue;
     const record = state.repositories?.[repository.id];
     if (record?.setup?.status !== "failed" || !repository.setupCommand ||
         !record.path) continue;
-    context.runSetupCommand(record, repository.setupCommand,
-      configured.setupTimeoutMs, record.path, repository.id);
+    if (!context.runSetupBatch) {
+      context.runSetupCommand(record, repository.setupCommand,
+        configured.setupTimeoutMs, record.path, repository.id);
+      if (record.access === "read") {
+        const changed = context.git(["status", "--porcelain"], record.path);
+        if (changed.status !== 0 || changed.stdout.trim()) {
+          record.setup.status = "failed";
+          record.setup.reason = "setup modified a read-only repository";
+        }
+      }
+      attempted.push(repository.id);
+    } else jobs.push({ repository, record, command: repository.setupCommand,
+      cwd: record.path, timeoutMs: configured.setupTimeoutMs });
+  }
+  for (const { repository, record, command, result } of context.runSetupBatch
+    ? context.runSetupBatch(jobs) : []) {
+    const failed = Boolean(result.error) || result.status !== 0;
+    record.setup = { command, status: failed ? "failed" : "ok",
+      exitCode: typeof result.status === "number" ? result.status : null };
     if (record.access === "read") {
       const changed = context.git(["status", "--porcelain"], record.path);
       if (changed.status !== 0 || changed.stdout.trim()) {
@@ -1106,7 +1199,8 @@ export function createSandboxRuntime({
   repositoryCatalog,
   clearSnapshotCache, validate, repositorySelectionIdsAt, contractFingerprint,
   executionFingerprint, taskBlocks, proofPath, relevantHash, now, fail,
-  markBlocked = () => {}
+  markBlocked = () => {},
+  recordScheduler = () => {}
 }) {
   function sandboxRoot(id) {
     return join(root, ".foundation", "sandboxes", id);
@@ -1121,6 +1215,21 @@ export function createSandboxRuntime({
   const runSetupCommand = runSandboxSetupCommand.bind(null, {
     spawn: spawnSync, output: console
   });
+  const runSetupBatch = (records) => {
+    const capacity = policy().execution?.maxParallelSetups;
+    const rows = runSandboxSetupBatch(records, capacity);
+    for (const wave of [...new Set(rows.map((row) => row.wave))]) {
+      const batch = rows.filter((row) => row.wave === wave);
+      recordScheduler({
+        scheduler: "setup", wave,
+        readyNodes: records.length - rows.filter((row) => row.wave < wave).length,
+        executedNodes: batch.length, reusedNodes: 0,
+        queueingMs: batch.reduce((total, row) => total + row.queuedMs, 0),
+        peakConcurrency: batch.length
+      });
+    }
+    return rows;
+  };
 
   // Single-repository setup comes from foundation.json; a repository row in a
   // multi-repository change carries its own `setupCommand` because each
@@ -1447,7 +1556,7 @@ export function createSandboxRuntime({
   });
   const commitReplay = commitSandboxReplay.bind(null, {
     carryIgnoredArtifacts, git, fail, selectedRepositories,
-    runSetupCommand, policy
+    runSetupCommand, runSetupBatch, policy
   });
 
   function rebaseWorktree(id, state) {
@@ -1707,12 +1816,14 @@ export function createSandboxRuntime({
     repositoryCatalog,
     clearSnapshotCache,
     createSingle,
-    runSetupCommand,
+    runSetupCommand, runSetupBatch,
+    output: console,
     fail
   });
 
   const retryFailedSetups = retryFailedSandboxSetups.bind(null, {
-    loadRuntime, saveRuntime, selectedRepositories, policy, runSetupCommand, git
+    loadRuntime, saveRuntime, selectedRepositories, policy, runSetupCommand,
+    runSetupBatch, git
   });
 
   return {
