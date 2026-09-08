@@ -1,0 +1,82 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "copy-review-reuse",
+      "requirementKey": "copy-review-reuse",
+      "scenario": "A copy sandbox receives an unrelated target change while its baseline-to-sandbox contribution and review packet remain unchanged",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preserve-noop-proof",
+      "requirementKey": "preserve-noop-proof",
+      "scenario": "Sandbox sync does not change evidence-bound inputs",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "explain-review-invalidation",
+      "requirementKey": "explain-review-invalidation",
+      "scenario": "A moved workspace cannot reuse a review receipt",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "reuse-wire-compatibility",
+      "requirementKey": "reuse-wire-compatibility",
+      "scenario": "Runtime exposes more specific review invalidation reasons",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "public-api-docs-alignment",
+      "requirementKey": "public-api-docs-alignment",
+      "scenario": "The runtime API pin changes for sync diagnostics",
+      "impact": "low",
+      "capabilities": [
+        "static-analysis"
+      ]
+    },
+    {
+      "id": "upgrade-detector-preservation",
+      "requirementKey": "upgrade-detector-preservation",
+      "scenario": "The runtime API changes while existing shipping mutation checks run",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-lc",
+        "(rtk test bash .claude/tests/run-all.sh) && (rtk npm --prefix website/docs run build)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    },
+    "static-analysis": {
+      "adapter": "command",
+      "capability": "static-analysis",
+      "command": [
+        "sh",
+        "-lc",
+        "(rtk test bash .claude/tests/run-all.sh) && (rtk npm --prefix website/docs run build)"
+      ],
+      "claims": "declared"
+    }
+  }
+}

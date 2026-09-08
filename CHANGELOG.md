@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Concurrent-change sync can reuse review verdicts in copy sandboxes when the
+  change's contribution and review agreement remain unchanged. Mixed
+  copy/worktree changes include every writable repository in the identity;
+  missing baselines and same-file reconciliation remain conservative.
+- No-op sandbox sync preserves valid proof and lifecycle progress. Copy-only
+  sync avoids an unnecessary full manifest scan, and `proof plan` explains
+  missing reuse identity, changed contributions, and changed agreements.
+- Legacy review receipts retain their verdict binding after a valid rebind;
+  human acceptance keeps its existing worktree-only reuse boundary.
+
+### Changed
+
+- Runtime API is now 34. Public documentation and upgrade checks are aligned
+  with the additive review invalidation diagnostics.
+
 ## [3.5.14] - 2026-09-07
 
 ### Changed

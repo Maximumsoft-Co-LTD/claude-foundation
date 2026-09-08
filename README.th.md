@@ -16,7 +16,7 @@ Change Loop ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก�
 ชื่อผลิตภัณฑ์และ workflow คือ **Change Loop** ส่วน package และ CLI ที่ติดตั้งยังใช้
 `claude-foundation` เหมือนเดิม จึงไม่ต้องเปลี่ยนคำสั่งที่ใช้อยู่
 
-**Version 3.5.14** — runtime API 33, provider protocol 13 receipt ที่บันทึกด้วย
+**Version 3.5.14** — runtime API 34, provider protocol 13 receipt ที่บันทึกด้วย
 เวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 `claude-foundation metrics <change-id>` จะแสดง source cohort ของ runtime แบบ
 เจาะจงด้วย ได้แก่ semantic version, protocol bundle ที่โหลดจริง และ SHA-256
@@ -86,6 +86,12 @@ AI agent อาจเขียน code ที่ดูถูกต้อง แ�
 
 เป้าหมายคือรักษาความน่าเชื่อถือโดยไม่ต้องใช้ phase pipeline หรือ agent หลายบทบาท
 ตลอดเวลา และไม่ถือว่าคำพูดว่า “เสร็จแล้ว” ของ agent เป็นหลักฐาน
+
+เมื่อทำหลาย change พร้อมกันแล้ว target เปลี่ยน sync สามารถใช้ review เดิมได้ทั้ง
+worktree และ copy sandbox หาก binding ยังครบ โดย copy mode เทียบ identity ของไฟล์
+ระหว่าง baseline กับงานปัจจุบัน และยังถือว่าการ reconcile ไฟล์เดียวกันต้องตรวจใหม่
+sync ที่ไม่เปลี่ยน input จะเก็บ proof เดิม ส่วน `proof plan` อธิบายเหตุที่ใช้ review
+เดิมไม่ได้ ดู [กติกา binding](.claude/harness/EVIDENCE.md)
 
 ## ติดตั้ง
 

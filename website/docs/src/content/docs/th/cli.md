@@ -150,7 +150,7 @@ Feedback ตรวจ validity จาก runtime ปัจจุบัน ส่
 | Pin | v3.5.14 |
 |---|---|
 | runtime | 3.5.14 |
-| runtime API | 33 |
+| runtime API | 34 |
 | semantic draft schema | 3 |
 | semantic amendment schema | 1 |
 | artifact defaults schema | 2 |

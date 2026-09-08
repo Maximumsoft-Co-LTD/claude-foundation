@@ -127,6 +127,7 @@ test("records manual and harness-executed receipts with durable evidence", () =>
 test("explains receipt bindings and renders complete proof plans", () => {
   const configs = {
     review: { capability: "review" },
+    acceptance: { capability: "acceptance" },
     declared: { capability: "test", inputs: ["src/**", "test/**"] },
     workspace: { capability: "test" }
   };
@@ -145,6 +146,15 @@ test("explains receipt bindings and renders complete proof plans", () => {
     "whole-workspace binding; declare inputs to narrow it");
   assert.equal(receiptBindingNote(context, "change", "review", "valid"), null);
   assert.equal(receiptBindingNote(context, "change", "review", "missing"), null);
+  for (const [reason, expected] of [
+    ["review-identity-unavailable", /identity is unavailable/],
+    ["review-packet-changed", /agreement changed/],
+    ["review-contribution-changed", /contribution changed/]
+  ]) assert.match(receiptBindingNote(context, "change", "review", "stale", { reason }), expected);
+  const acceptanceNote = receiptBindingNote(context, "change", "acceptance", "stale",
+    { reason: "review-identity-unavailable" });
+  assert.match(acceptanceNote, /^acceptance reuse identity is unavailable/);
+  assert.match(acceptanceNote, /acceptance rebind requires a worktree/);
 
   const calls = [];
   proofPlanOperation({
@@ -208,6 +218,7 @@ test("rebinds reusable and diff-bound receipts without rewriting review identity
     }
   }, { id: "snapshot-next" }, "proof-next");
   assert.equal(diff.recorded().workspaceHash, "workspace-original");
+  assert.equal(diff.recorded().proofRunId, "proof-prior");
   assert.deepEqual(diff.recorded().rebind.reboundFrom, {
     workspaceHash: "workspace-bound", proofRunId: "proof-prior"
   });
@@ -353,6 +364,23 @@ test("records structured acceptance and review receipts", () => {
   });
   assert.equal(review.recorded().review.reviewer.identity, "independent-reviewer");
   assert.equal(review.recorded().review.attemptDigest, "attempt");
+});
+
+test("copy review gets reuse identity without broadening human acceptance", () => {
+  const loadRuntime = () => ({ workspace: { mode: "copy", path: "/copy" } });
+  const acceptance = fixture("acceptance", {}, { loadRuntime });
+  acceptance.runtime.recordReceipt("change", "provider", "pass", {
+    observed: "accepted", acceptor: "product-owner", decision: "accept",
+    criterion: ["criterion-a"], reference: ["fixture://acceptance"]
+  });
+  assert.equal(acceptance.recorded().rebind, undefined);
+  const review = fixture("review", {}, { loadRuntime });
+  review.runtime.recordReceipt("change", "provider", "pass", {
+    ...externalEvidence, "reviewer-type": "human",
+    "reviewer-identity": "independent-reviewer", "unresolved-blockers": 0,
+    "verified-findings": 0
+  });
+  assert.equal(review.recorded().rebind.diffIdentity, "diff");
 });
 
 test("rejects incomplete acceptance and undeclared acceptance", () => {

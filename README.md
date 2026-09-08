@@ -17,7 +17,7 @@ does not replace your coding agent, test framework, CI system, or Git workflow.
 The product is **Change Loop**; the installed package and CLI remain
 `claude-foundation`, so existing commands do not change.
 
-**Version 3.5.14** — runtime API 33, provider protocol 13. Receipts recorded by
+**Version 3.5.14** — runtime API 34, provider protocol 13. Receipts recorded by
 earlier versions read as `provider-version-stale` and must be re-proven.
 `claude-foundation metrics <change-id>` also reports the exact runtime source
 cohort: semantic version, the loaded protocol bundle, and a SHA-256 digest of
@@ -91,6 +91,12 @@ the result. Change Loop separates those concerns:
 
 The intended result is less ceremony than a fixed multi-agent phase pipeline,
 without relying on “the agent says it is done” as proof.
+
+When concurrent changes move the target, sync can reuse an unchanged review
+in either a worktree or a copy sandbox. Copy mode compares the change's
+baseline-to-current file identities; same-file reconciliation remains
+conservative. No-op sync keeps existing proof, and `proof plan` explains
+why a review cannot be reused. See the [binding rules](.claude/harness/EVIDENCE.md).
 
 ## Install
 

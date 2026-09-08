@@ -6,11 +6,13 @@ import { pathToFileURL } from "node:url";
 import { ROOT, isMain, repoPath, writeJson } from "./lib.mjs";
 
 const SINGLE_SOURCE = ["node", ".claude/tests/harness/run-single-source-tests.mjs"];
+const RUNTIME_API = JSON.parse(readFileSync(
+  join(ROOT, ".claude/harness/protocol.json"), "utf8")).runtimeApi;
 const CASES = [
   {
     id: "MUT-CLI-RUNTIME-API-DRIFT", sourcePath: "cli.sh",
     expectedKiller: "CASE-SINGLE-SOURCE-RUNTIME-API", detector: SINGLE_SOURCE,
-    before: "EXPECTED_RUNTIME_API=33", after: "EXPECTED_RUNTIME_API=999",
+    before: `EXPECTED_RUNTIME_API=${RUNTIME_API}`, after: "EXPECTED_RUNTIME_API=999",
     compile: ["bash", "-n", "cli.sh"]
   },
   {
@@ -22,7 +24,7 @@ const CASES = [
   {
     id: "MUT-PROTOCOL-RUNTIME-API-DRIFT", sourcePath: ".claude/harness/protocol.json",
     expectedKiller: "CASE-SINGLE-SOURCE-PROTOCOL", detector: SINGLE_SOURCE,
-    before: "\"runtimeApi\": \"33\"", after: "\"runtimeApi\": \"999\"",
+    before: `"runtimeApi": "${RUNTIME_API}"`, after: "\"runtimeApi\": \"999\"",
     compile: ["node", "-e", "JSON.parse(require('node:fs').readFileSync('.claude/harness/protocol.json'))"]
   },
   {

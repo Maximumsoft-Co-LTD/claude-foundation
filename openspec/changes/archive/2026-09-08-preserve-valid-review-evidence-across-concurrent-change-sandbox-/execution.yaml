@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["rtk", "proxy", "node", "--test", "--test-reporter=tap", ".claude/harness/tests/sandbox-diff-identity.test.mjs", ".claude/harness/tests/sandbox-runtime-sync.test.mjs", ".claude/harness/tests/receipt-validity.test.mjs", ".claude/tests/harness/run-receipt-runtime-tests.mjs", ".claude/tests/harness/run-review-protocol-tests.mjs"],
+      "minimum": 1,
+      "reportFormat": "tap",
+      "timeoutMs": 120000,
+      "claims": "declared"
+    },
+    "deterministic-suite": {
+      "adapter": "command",
+      "capability": "test",
+      "command": ["rtk", "test", "bash", ".claude/tests/run-all.sh"],
+      "timeoutMs": 1800000,
+      "claims": "declared"
+    },
+    "static-analysis": {
+      "adapter": "command",
+      "capability": "static-analysis",
+      "command": ["rtk", "npm", "--prefix", "website/docs", "run", "build"],
+      "timeoutMs": 300000,
+      "claims": "declared"
+    }
+  },
+  "services": {}
+}

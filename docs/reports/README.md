@@ -24,6 +24,11 @@ those contracts into a report; link to them instead.
 
 ## Historical material
 
+- [Concurrent change review efficiency plan](concurrent-change-review-efficiency-plan-2026-09-08.md) —
+  2026-09-08 source-read proposal for review reuse across copy/worktree sync,
+  selective invalidation, diagnostics, and conditional impact review. Planning
+  only; no tests or implementation were performed for this report.
+
 - [Harness behavior plan](harness-behavior-plan-2026-09-05.md) —
   2026-09-05 proposed boundary, completion, recovery, and projection changes;
   includes a reproduced target-completion projection mismatch. Not implemented.

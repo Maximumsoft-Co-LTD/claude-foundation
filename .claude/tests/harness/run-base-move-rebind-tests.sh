@@ -204,14 +204,62 @@ else
   fail "a packet edit changes the packet review hash"
 fi
 
+# A dirty target uses a copy. Another change lands without committing, so
+# HEAD stays fixed while sync forwards its unrelated content into this copy.
+setup_project rebind-copy
+printf 'export const other = 1;\n' > src/other.js
+git add src/other.js && git commit -qm "baseline other module"
+$F new "copy review survives unrelated land" --rapid > /dev/null
+C=copy-review-survives-unrelated-land
+$F resolve "$C" --impact low --coupling isolated --review \
+  --acceptance-not-required > /dev/null
+printf 'export const other = 2;\n' > src/other.js
+$F sandbox create "$C" > /dev/null
+assert_eq "dirty target selects copy isolation" "copy" "$(runtime_json "$C" .workspace.mode)"
+printf 'export function add(a,b){return a+b;}\nexport const added = true;\n' \
+  > ".foundation/sandboxes/$C/src/calc.js"
+assert_cmd_zero "copy review fixture records a bound AI verdict" \
+  node .claude/harness/foundation.mjs receipt "$C" review pass \
+    --reviewer-type ai --reviewer-identity fixture-reviewer \
+    --reviewer-provider-family anthropic --reviewer-model-family claude \
+    --reviewer-model fixture-model --reviewer-session fixture-review-session \
+    --subject-provenance '{"type":"ai","identity":"fixture-author","sessionId":"fixture-build-session","providerFamily":"openai","modelFamily":"gpt","modelId":"fixture-model"}' \
+    --unresolved-blockers 0 --observed 'Deterministic fixture verdict' \
+    --reference fixture://copy-review
+copy_receipt=".foundation/receipts/$C/review.json"
+before_attempt="$(node -e "console.log(JSON.parse(require('fs').readFileSync('$copy_receipt')).review.attemptDigest)")"
+before_head="$(git rev-parse HEAD)"
+before_index="$(git ls-files --stage | git hash-object --stdin)"
+printf 'export const other = 3;\n' > src/other.js
+$F sandbox sync "$C" > /dev/null
+plan="$($F proof-plan "$C")"
+assert_contains "uncommitted target movement reuses copy review" "$plan" "review: reusable-diff"
+assert_eq "copy sync preserves target HEAD" "$before_head" "$(git rev-parse HEAD)"
+assert_eq "copy identity and sync preserve target index" "$before_index" "$(git ls-files --stage | git hash-object --stdin)"
+sed 's/- \[ \]/- [x]/g' "openspec/changes/$C/tasks.md" > "$TMP/copy-tasks-done.md"
+cp "$TMP/copy-tasks-done.md" "openspec/changes/$C/tasks.md"
+cp "$TMP/copy-tasks-done.md" ".foundation/sandboxes/$C/openspec/changes/$C/tasks.md"
+copy_advance="$($F proof-advance "$C" 2>&1 || true)"
+plan="$($F proof-plan "$C")"
+assert_contains "copy verdict durably rebinds through proof advance" "$plan
+$copy_advance" "review: valid"
+case "$plan" in *"review: valid"*) ;; *) printf '%s\n' "$plan" "$copy_advance" ;; esac
+assert_eq "copy reuse preserves the original review attempt" "$before_attempt" \
+  "$(node -e "console.log(JSON.parse(require('fs').readFileSync('$copy_receipt')).review.attemptDigest)")"
+printf 'export const changedAgain = true;\n' >> ".foundation/sandboxes/$C/src/calc.js"
+plan="$($F proof-plan "$C")"
+assert_contains "copy contribution edit expires review" "$plan" "review: stale"
+assert_contains "copy invalidation explains the contribution change" "$plan" "contribution changed"
+
 if [ -n "${FOUNDATION_RESULT_REPORT:-}" ]; then
   result_dir="$(dirname "$FOUNDATION_RESULT_REPORT")"
   mkdir -p "$result_dir"
   printf '%s\n' \
-    '{"numTotalTests":3,"criticalCases":[' \
+    '{"numTotalTests":4,"criticalCases":[' \
     ' {"id":"CASE-BASE-MOVE-REBIND-CLEAN","status":"pass"},' \
     ' {"id":"CASE-BASE-MOVE-EXPIRES-ALTERED","status":"pass"},' \
-    ' {"id":"CASE-PACKET-HASH-ISOLATION","status":"pass"}' \
+    ' {"id":"CASE-PACKET-HASH-ISOLATION","status":"pass"},' \
+    ' {"id":"CASE-COPY-REVIEW-REUSE","status":"pass"}' \
     ']}' > "$FOUNDATION_RESULT_REPORT"
 fi
 

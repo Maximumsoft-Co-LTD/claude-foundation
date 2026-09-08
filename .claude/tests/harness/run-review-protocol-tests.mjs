@@ -75,6 +75,34 @@ test("review attempt protocol accepts valid versions 1 through 4", () => {
   }), true);
 });
 
+test("legacy review binding survives runtime rebind metadata but still binds every verdict field", () => {
+  const { receipt, common } = fixture();
+  receipt.proofRunId = "original-proof";
+  receipt.rebind = { mode: "diff", diffIdentity: "diff", packetReviewHash: "packet" };
+  // Match an already-recorded legacy digest, not the new canonicalizer.
+  const attempt = { ...common, version: 1, reviewBinding: stableHash(receipt) };
+  const rebound = structuredClone(receipt);
+  Object.assign(rebound.rebind, {
+    boundWorkspaceHash: "new-workspace", boundSnapshotId: "new-snapshot",
+    boundAt: "now", reboundFrom: { workspaceHash: receipt.workspaceHash, proofRunId: "original-proof" }
+  });
+  assert.equal(protocol.attemptIsValid(rebound, attempt), true);
+  assert.equal(receipt.rebind.boundWorkspaceHash, undefined);
+  for (const mutate of [
+    (value) => { value.proofRunId = "rewritten-proof"; },
+    (value) => { value.rebind.diffIdentity = "tampered"; },
+    (value) => { value.rebind.packetReviewHash = "tampered"; },
+    (value) => { value.review.reviewer.identity = "tampered"; },
+    (value) => { value.review.findings.verified = 2; },
+    (value) => { value.observed = "tampered"; },
+    (value) => { value.rebind.unknown = "unbound"; }
+  ]) {
+    const changed = structuredClone(rebound);
+    mutate(changed);
+    assert.equal(protocol.attemptIsValid(changed, attempt), false);
+  }
+});
+
 test("review attempt protocol rejects common binding mismatches", () => {
   const { receipt, common } = fixture();
   assert.equal(protocol.attemptIsValid(receipt, null), false);
