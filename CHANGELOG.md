@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Newly started changes require explicit approval of the compiled spec before
+  Build, including `/dev`. Approval binds the agreement content and revision;
+  semantic edits require renewed approval while task completion preserves it.
+- Review uses one persisted 30-minute window across retries, fallbacks, delta
+  review, and resume. At expiry, the user chooses another window, explicit
+  acceptance of remaining review risk before Land, or pause.
+- Change authoring presents concrete scope, behavior, and acceptance criteria
+  in the user's language before implementation.
+- Runtime API is now 35; public documentation and upgrade coverage are aligned.
+
+### Fixed
+
+- Review exceptions bind the current workspace and contract revision, expire
+  after relevant edits, and preserve failed findings and earned test evidence.
+  Repair remains the first route before asking the user to accept remaining risk.
+- Delivery can resume from a resolved proof decision through explicitly
+  authorized Land and archive, preserving Git HEAD and index and valid JSON output.
+- Amendment synchronization, review result recovery, and test evidence handling
+  recover valid progress without unnecessary repeated reviewer work.
+
 ## [3.5.15] - 2026-09-08
 
 ### Fixed
