@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.16] - 2026-09-09
+
 ### Changed
 
 - Newly started changes require explicit approval of the compiled spec before
@@ -3454,7 +3456,8 @@ Fast-first, goal-driven overhaul of the `/dev` pipeline — five workstreams fro
 - `.claude/agents/orchestrator.md` sub-agent file (replaced by the main-agent script at `.claude/orchestrator.md`). ([acf8964](../../commit/acf8964))
   - **Note:** a short-lived *redirect-only* stub at the same path was introduced in [5bd0475](../../commit/5bd0475) and removed again later — see the matching entry under `Fixed`. There is now **no** `orchestrator` sub-agent. The only worker sub-agents are `pm | lead | engineer | qa | retro`.
 
-[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.5.15...HEAD
+[Unreleased]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.5.16...HEAD
+[3.5.16]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.5.15...v3.5.16
 [3.5.15]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.5.14...v3.5.15
 [3.5.14]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.5.13...v3.5.14
 [3.5.13]: https://github.com/Maximumsoft-Co-LTD/claude-foundation/compare/v3.5.12...v3.5.13
