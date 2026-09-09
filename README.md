@@ -230,6 +230,11 @@ requirements, scenarios, tasks, claims, and providers. Review the proposal,
 observable scenarios, tasks, and evidence claims before moving on; the compiled
 OpenSpec packet—not chat or the temporary draft—is the source of truth.
 
+The agreement explains the current problem, intended behavior, scope, relevant
+failure cases, and how the result will be verified. Its authored content uses
+your language unless you request another document language; OpenSpec syntax
+and stable identifiers stay unchanged. See the [Change workflow](WORKFLOW.md#change-intent).
+
 The agent answers in your language and leads with the outcome. It performs safe
 recovery and routine commands itself, then reports what it changed and checked.
 You are asked only when behavior, risk, authority, or an unresolved conflict

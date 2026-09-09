@@ -7,7 +7,54 @@ Ask every unresolved material behavior, compatibility, security,
 migration, rollout, or authority choice in one batch; do not create an interview
 ledger.
 
-Create one semantic draft v3 from `change start --template`. Keep its core small:
+## Agreement detail and language
+
+Write agent-authored document prose in the user's requested document language;
+otherwise use the language of their current request. This applies to proposal
+text, requirements, scenario descriptions and outcomes, tasks, evidence
+descriptions, and any design rationale, including new prose in amendments.
+An English template or existing repository does not override that default.
+Preserve schema keys, enums, IDs, paths, commands, code identifiers, and
+parser-required headings/markers such as `Requirement:`, `Scenario:`,
+`WHEN`, `THEN`, and `SHALL`. Preserve canonical requirement/scenario names
+and unchanged text when modifying an existing spec; do not rename identities
+or translate unrelated documents. If a mixed-language request leaves the
+preference unclear, follow the surrounding conversation.
+
+For each non-English requirement, supply `description` as the complete
+requirement statement in the document language, retaining the `SHALL` marker
+(for example, `ระบบ SHALL ปฏิเสธคำขอที่ไม่มีสิทธิ์`). Keep `outcome` as the
+observable result. Without `description`, the compiler prefixes the outcome
+with the English stem `The system SHALL`; translating only `outcome` leaves
+a mixed-language statement. `requirement`/`title` names the requirement,
+not its statement.
+
+Keep bookkeeping compact, but make the agreement understandable without chat
+history. Before compiling, cover the following with facts from the canonical
+sources and the user's settled intent:
+
+- In `why`, explain the current behavior, concrete problem, affected actor or
+  system, and desired result. Use `changes` for observable before/after behavior
+  and affected surfaces, and `nonGoals` for meaningful scope exclusions.
+- Give each requirement a bounded outcome. Scenarios identify the triggering
+  input or precondition and a result that can be checked; cover the main path
+  and relevant failure, boundary, permission, or compatibility cases. Do not
+  substitute "works correctly" or an implementation step for observable behavior.
+- Tasks name implementation outcomes and affected paths, link requirement
+  coverage, and name verification that can detect a violation. Evidence should
+  explain what establishes the claim; running a command alone is not acceptance.
+- Record material assumptions, constraints, tradeoffs, and compatibility or
+  migration consequences in the existing proposal/scenarios or qualifying typed
+  extensions. Resolve discoverable facts yourself; ask only for unresolved
+  material choices. Do not invent decisions or facts to fill a section.
+
+Scale detail to behavior and risk, not word count or a fixed number of
+scenarios. A small change can be brief if its boundaries and acceptance are
+clear. Do not create extra artifacts merely to make the packet look thorough.
+
+## Compile and inspect
+
+Create one semantic draft v3 from `change start --template`. Its core is:
 `intent`, semantic `requirements`, implementation `tasks` with `covers`, and
 evidence capabilities keyed by requirement. Put only real complexity in typed
 extensions:
@@ -60,6 +107,13 @@ the affected contract, validates, and rolls back on failure. Existing legacy
 changes keep their legacy authoring path; do not rewrite them merely to migrate.
 `updateTasks` may extend claim coverage but must not replace an existing outcome
 or verification command; add a new task when that contract changes.
+
+After a successful start, read the compiled proposal, tasks, evidence, and any
+specs/design. Check that the intended detail and document language survived
+compilation, and that the packet alone explains scope and acceptance.
+Structural validation does not establish semantic completeness. If material
+content is missing, repair through the supported draft/amendment workflow;
+never patch generated ledgers independently or silently proceed to Build.
 
 The compiled `openspec/changes/<id>/` documents—not the temporary draft or
 `.foundation` state—are the source of truth. Never create product code during

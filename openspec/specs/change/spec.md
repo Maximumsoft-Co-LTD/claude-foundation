@@ -601,3 +601,12 @@ The system SHALL The agent invokes change start and advance routes while the har
 - **WHEN** An agent follows the normal Change Loop workflow
 - **THEN** The agent invokes change start and advance routes while the harness owns validation, setup, scheduling, evidence reuse and recovery instead of requiring repeated primitive commands
 
+### Requirement: change-command-budget
+
+ระบบตรวจ context budget SHALL กำหนดเพดานของคำสั่ง Change เป็น 200 คำ เพื่อรองรับกติกาด้านรายละเอียดและภาษา โดยรักษาเพดานของคำสั่งอื่น
+
+#### Scenario: คำสั่ง Change มี 195 คำหลังเพิ่มกติกาที่ผู้ใช้ต้องการ
+
+- **WHEN** ตัวตรวจนับคำใน change.md ได้ 195 คำและเปรียบเทียบกับเพดานของคำสั่ง
+- **THEN** การตรวจคำสั่ง Change ผ่านและรายงาน 195 ไม่เกิน 200 คำ โดยคำสั่งอื่นยังถูกตรวจด้วยเพดานเดิม
+

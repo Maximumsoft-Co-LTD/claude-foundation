@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": ["sh", "-lc", "rtk proxy sh .claude/tests/harness/run-user-guidance-tests.sh && rtk proxy sh .claude/tests/docs/run-docs-tap.sh"],
+      "reportFormat": "tap",
+      "minimum": 1,
+      "claims": "declared",
+      "timeoutMs": 120000
+    }
+  }
+}

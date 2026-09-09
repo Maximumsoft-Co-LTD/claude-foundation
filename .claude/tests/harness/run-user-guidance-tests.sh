@@ -25,6 +25,29 @@ for command in investigate change dev feature changes; do
   assert_file_contains "$command returns user-language guidance" \
     "$COMMANDS/$command.md" "user's language"
 done
+CHANGE_WORKFLOW="$ROOT/.claude/skills/change/references/workflow.md"
+assert_file_contains "Change command routes document authoring rules" \
+  "$COMMANDS/change.md" "agreement-detail and document-language rules"
+assert_file_contains "Change defaults document prose to the user's language" \
+  "$CHANGE_WORKFLOW" "otherwise use the language of their current request"
+assert_file_contains "Change honors explicit document language" \
+  "$CHANGE_WORKFLOW" "user's requested document language"
+assert_file_contains "Change protects machine syntax during localization" \
+  "$CHANGE_WORKFLOW" "Preserve schema keys, enums, IDs, paths, commands"
+assert_file_contains "Change preserves amendment identities" \
+  "$CHANGE_WORKFLOW" "Preserve canonical requirement/scenario names"
+assert_file_contains "Change supplies localized requirement statements" \
+  "$CHANGE_WORKFLOW" 'supply `description` as the complete'
+assert_file_contains "Change explains the compiler's English fallback" \
+  "$CHANGE_WORKFLOW" 'with the English stem `The system SHALL`'
+assert_file_contains "Change records current behavior and value" \
+  "$CHANGE_WORKFLOW" "current behavior, concrete problem, affected actor"
+assert_file_contains "Change covers relevant negative scenarios" \
+  "$CHANGE_WORKFLOW" "failure, boundary, permission, or compatibility cases"
+assert_file_contains "Change checks compiled content beyond schema validity" \
+  "$CHANGE_WORKFLOW" "Structural validation does not establish semantic completeness"
+assert_file_contains "Change inspects compiled artifacts" \
+  "$CHANGE_WORKFLOW" "read the compiled proposal, tasks, evidence"
 assert_file_contains "Build ends with a useful summary" "$COMMANDS/build.md" \
   "behavior, checks, remaining risk"
 assert_file_contains "Prove distinguishes proof from remaining risk" "$COMMANDS/prove.md" \

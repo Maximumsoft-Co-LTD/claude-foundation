@@ -55,7 +55,13 @@ under `.foundation/prototypes/`. It always records the selected conclusion in
 
 ### `/change <intent>`
 
-Change authors one compact semantic draft v3. The transactional compiler creates
+Change authors one semantic draft v3 with compact bookkeeping and enough
+behavioral detail to understand scope and acceptance without chat history.
+Agent-authored document prose follows the user's requested document language,
+or the language of their current request; machine syntax and canonical
+identities stay stable. See the [Change authoring workflow](.claude/skills/change/references/workflow.md)
+for the detail, language, and compiled-packet inspection rules.
+The transactional compiler creates
 `openspec/changes/<id>/`, assigns stable cross-ledger IDs, validates the complete
 agreement, installs it, and prepares isolation. The draft records:
 

@@ -1,0 +1,63 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "complete-change-authoring-code-spec",
+      "requirementKey": "complete-change-authoring",
+      "scenario": "คำขอสั้นที่มีบริบทใน repository",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "complete-change-authoring-compiler-change",
+      "requirementKey": "complete-change-authoring",
+      "scenario": "ตรวจ packet ก่อนเริ่ม Build",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "user-language-change-prose-change",
+      "requirementKey": "user-language-change-prose",
+      "scenario": "คำขอภาษาไทย",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "user-language-change-prose",
+      "requirementKey": "user-language-change-prose",
+      "scenario": "ระบุภาษาเอกสารต่างจากแชต",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "change-command-budget",
+      "requirementKey": "change-command-budget",
+      "scenario": "คำสั่ง Change มี 195 คำหลังเพิ่มกติกาที่ผู้ใช้ต้องการ",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-lc",
+        "(rtk test bash .claude/tests/harness/run-user-guidance-tests.sh) && (rtk test bash .claude/tests/harness/run-context-budget-tests.sh)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}
