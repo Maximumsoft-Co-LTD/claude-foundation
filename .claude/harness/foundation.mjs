@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { assertSpecApproval } from "./runtime/core/user-decisions.mjs";
 
 import {
   appendFileSync, existsSync, lstatSync, mkdirSync, rmSync
@@ -119,7 +120,7 @@ import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
 import { createQualityRuntime } from "./runtime/quality/quality-runtime.mjs";
 
 const VERSION = "3.5.15";
-const RUNTIME_API_VERSION = "34";
+const RUNTIME_API_VERSION = "35";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
 // every command up to `archive` and then threw partway through Land.
@@ -476,6 +477,7 @@ const { metricsValue, showMetrics } = createMetricsRuntime({
   sourceCohort
 });
 const { execObserved } = createExecRuntime({
+  assertApproval: (id, state) => assertSpecApproval(ROOT, id, state),
   logs: LOGS,
   loadRuntime,
   now,
@@ -724,6 +726,7 @@ const { receiptValidity } = createReceiptValidity({
   changeDiffIdentity: (id, state) => sandboxRuntime.changeDiffIdentity(id, state)
 });
 const changeValidationRuntime = createChangeValidationRuntime({
+  relevantHash,
   markBlocked,
   root: ROOT,
   activeChangePath,
@@ -1044,6 +1047,7 @@ const {
   providerConfig,
   reviewPacketValue,
   loadRuntime,
+  saveRuntime,
   evidence,
   resolvedAcceptance,
   relevantHash,
@@ -1809,6 +1813,7 @@ async function runAdvanceQuietly(operation) {
   }
 }
 const { advanceValue, showAdvance } = createAdvanceRuntime({
+  assertApproval: (id, state, options) => assertSpecApproval(ROOT, id, state, options),
   inspectSnapshots,
   capture: trapFailures,
   captureAsync: trapFailuresAsync,
@@ -1823,6 +1828,7 @@ const { advanceValue, showAdvance } = createAdvanceRuntime({
   proofReadinessValue,
   budgetDecisionValue: budgetDecision,
   hasLandGrant: hasValidLandGrant.bind(null, landGrantRuntime),
+  authorizeLand: (id) => runAdvanceQuietly(() => landGrantRuntime.issue(id)),
   prepareBuild: prepareAdvanceBuild.bind(null, {
     measureAsync: commandPhaseRecorder.measureAsync,
     runQuietly: runAdvanceQuietly, prepareBuildSandbox, prepareExecution

@@ -339,7 +339,7 @@ export function runClaudeReviewOperation(
   const args = claudeReviewerArguments(config, packet, requestedSession);
   const result = context.spawn(config.executable, args, {
     cwd: workspace, encoding: "utf8",
-    timeout: Number(config.timeoutMs || 45 * 60 * 1000),
+    timeout: Number(config.timeoutMs || 30 * 60 * 1000),
     maxBuffer: 64 * 1024 * 1024,
     env: environment
   });
@@ -538,7 +538,7 @@ export function createConfiguredReviewerRuntime({
       ];
       const result = spawn(config.executable, args, {
         cwd: workspace, encoding: "utf8", input: configuredReviewPrompt(packet),
-        timeout: Number(config.timeoutMs || 45 * 60 * 1000),
+        timeout: Number(config.timeoutMs || 30 * 60 * 1000),
         maxBuffer: 64 * 1024 * 1024,
         env: { ...process.env, FOUNDATION_CHANGE_ID: changeId }
       });
@@ -569,9 +569,12 @@ export function createConfiguredReviewerRuntime({
   });
 
   function runReview({
-    changeId, reviewer = null, workspace, packet, forbiddenSessionIds = []
+    changeId, reviewer = null, workspace, packet, forbiddenSessionIds = [], timeoutMs = 30 * 60 * 1000
   }) {
-    const config = reviewerConfig(reviewer);
+    const startedAt = Date.now();
+    const original = reviewerConfig(reviewer);
+    const config = { ...original, timeoutMs: Math.max(1, Math.min(
+      Number(original.timeoutMs) || 30 * 60 * 1000, timeoutMs, 30 * 60 * 1000)) };
     // A stale/malformed packet cannot be repaired by spending a reviewer call.
     // Reuse the same containment checks as returned findings before any spawn.
     const packetIssues = reviewPacketIssues(packet);
@@ -590,6 +593,11 @@ export function createConfiguredReviewerRuntime({
         status: "error",
         summary: `review workspace does not exist: ${workspace || "<missing>"}`
       });
+    const remaining = timeoutMs - (Date.now() - startedAt);
+    if (remaining <= 0) return { ...persist(config, changeId, workspace, {
+      status: "error", summary: "The shared review deadline expired during reviewer preparation"
+    }), retryable: false };
+    config.timeoutMs = Math.min(config.timeoutMs, remaining);
     return config.adapter === "codex-cli"
       ? runCodex(config, changeId, workspace, packet, forbiddenSessionIds)
       : runClaude(config, changeId, workspace, packet, forbiddenSessionIds);

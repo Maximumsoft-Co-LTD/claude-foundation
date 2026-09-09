@@ -1,3 +1,4 @@
+import { REVIEW_WINDOW_MS, reviewWindowRemaining, reviewWindowError, currentWaivers } from "../core/user-decisions.mjs";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
@@ -516,6 +517,7 @@ export function createAuthorityRuntime({
   providerConfig,
   reviewPacketValue,
   loadRuntime,
+  saveRuntime,
   evidence,
   resolvedAcceptance,
   relevantHash,
@@ -670,6 +672,14 @@ export function createAuthorityRuntime({
   function dispatchAuthorityUnlocked(id, flags = {}) {
     const context = dispatchRequestContext(id, flags);
     if (context.handled) return context.value;
+    const windowState = loadRuntime(id);
+    if (!windowState.reviewWindow) {
+      const startedAt = now();
+      windowState.reviewWindow = { startedAt,
+        deadline: new Date(Date.parse(startedAt) + REVIEW_WINDOW_MS).toISOString() };
+      saveRuntime(windowState);
+    }
+    if (!reviewWindowRemaining(windowState, Date.parse(now()))) throw reviewWindowError(id);
     const { entry, request, requestId, reviewerType } = context;
     function dispatchRouting() {
     const routing = reviewPolicy(id);
@@ -1283,6 +1293,7 @@ export function createAuthorityRuntime({
     });
     const report = recoveredReport || runConfiguredReview({
       changeId: id,
+      timeoutMs: reviewWindowRemaining(loadRuntime(id), Date.parse(now())),
       reviewer: reviewerName,
       workspace,
       packet: dispatched.packet,
@@ -1327,6 +1338,7 @@ export function createAuthorityRuntime({
         ]
       };
       authorityStore.replace(failedEntry, failedRequest);
+      if (!reviewWindowRemaining(loadRuntime(id), Date.parse(now()))) throw reviewWindowError(id);
       // Validation is deterministic for this packet/result. Changing models
       // cannot repair its binding; retain the error and existing resume route.
       const nextReviewer = report.retryable === false ? null
@@ -1557,7 +1569,9 @@ export function createAuthorityRuntime({
     const result = authorityStore.status(id, workspaceHash, requestId,
       (request) => authorityWorkspaceHash(id, request.provider));
     if (!result.found) fail(`unknown authority request '${requestId}'`);
-    return result.value;
+    const waived = new Set(currentWaivers(loadRuntime(id), workspaceHash).map((row) => row.capability));
+    return { ...result.value, requests: result.value.requests.map((request) =>
+      waived.has(request.type) ? { ...request, status: "user-waived", originalStatus: request.status } : request) };
   }
 
   // The response shape is a contract. Without a way to emit it, a responder

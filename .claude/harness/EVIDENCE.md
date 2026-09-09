@@ -584,8 +584,11 @@ declaring it, and the waiver is carried as a `user-waived` advisory in proof
 readiness, the proof record, the archive, and on the `LAND READY` line. The
 receipts already earned stay valid — a waiver is subtractive and cannot change
 what any other provider attested — so the next `proof run` executes nothing.
-`--revoke` restores the requirement. There is no route that lands a failing
-proof. `review` and `acceptance` are refused here: review is waived through
-`review.independence` / `review.diversity` in `foundation.json`, and acceptance
-is withdrawn through `change resolve --acceptance-not-required` or by dropping
-the capability from the claim.
+`--revoke` restores the requirement. New waivers bind the current workspace and
+contract revision and expire when either changes. `review` can be waived with
+an explicit user decision naming the remaining risks; original failed receipts
+and incomplete review remain visible, never converted into passing evidence.
+The final proof covers the remaining required set and records the exceptions.
+`acceptance` retains its withdrawal route through
+`change resolve --acceptance-not-required` or an explicit claim amendment.
+The review deadline and continuation contract is in [WORKFLOW.md](../../WORKFLOW.md).

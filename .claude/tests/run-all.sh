@@ -163,7 +163,7 @@ repository snapshot|node --test "$ROOT/.claude/harness/tests/repository-snapshot
 task node proof|node "$ROOT/.claude/harness/tests/task-node-proof.test.mjs"
 proof finalize|node "$ROOT/.claude/harness/tests/proof-finalize.test.mjs"
 proof advance runtime|node "$ROOT/.claude/harness/tests/proof-advance.test.mjs"
-advance lifecycle outcomes|node --test "$ROOT/.claude/harness/tests/advance-runtime.test.mjs" "$ROOT/.claude/harness/tests/delivery-convergence.test.mjs"
+advance lifecycle outcomes|node --test "$ROOT/.claude/harness/tests/advance-runtime.test.mjs" "$ROOT/.claude/harness/tests/delivery-convergence.test.mjs" "$ROOT/.claude/harness/tests/user-decisions.test.mjs"
 convergent gate controller|node "$ROOT/.claude/harness/tests/convergent-gate.test.mjs"
 authority preflight|node --test "$ROOT/.claude/harness/tests/authority-preflight.test.mjs"
 execution contract compiler|node --test "$ROOT/.claude/harness/tests/execution-contract.test.mjs"

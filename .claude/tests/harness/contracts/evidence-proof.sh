@@ -1272,8 +1272,8 @@ assert_cmd_fails_with "waive requires a host-recorded decision reference" \
 assert_cmd_fails_with "waive requires a reason" "requires --reason" \
   node .claude/harness/foundation.mjs waive waivable-gate \
     --capability static-analysis --decision-ref fixture://user/waive-static
-assert_cmd_fails_with "review keeps its own waiver route" \
-  "review cannot be waived here" \
+assert_cmd_fails_with "review waiver requires review to be required" \
+  "not required" \
   node .claude/harness/foundation.mjs waive waivable-gate \
     --capability review --reason "no reviewer" --decision-ref fixture://user/waive-review
 assert_cmd_fails_with "acceptance keeps its withdrawal route" \

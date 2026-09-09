@@ -303,6 +303,7 @@ try {
     },
     loadRuntime: () => state,
     evidence: () => ({ claims: [{ id: "claim-a" }] }),
+    saveRuntime: (next) => { state = next; },
     resolvedAcceptance: () => ({ required: false }),
     relevantHash: () => workspaceHash,
     validate: () => {},
@@ -1001,6 +1002,7 @@ try {
     request: recoveryRequest.requestId, "subject-actor": "human-implementer"
   }));
   const advanceRecovery = createAdvanceRuntime({
+    nowMs: () => Date.parse(now()),
     loadRuntime: () => state, agentDispatchValue: () => ({ action: "build-complete" }),
     relevantHash: () => workspaceHash, deliveredAiAttempts: () => [],
     authorityStatusValue: () => ({ requests: authorityStore.list(recoveryId).map((row) => row.value) }),

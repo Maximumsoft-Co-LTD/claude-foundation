@@ -117,8 +117,13 @@ never patch generated ledgers independently or silently proceed to Build.
 
 The compiled `openspec/changes/<id>/` documents—not the temporary draft or
 `.foundation` state—are the source of truth. Never create product code during
-Change. A successful start is already validated; continue with
-`claude-foundation advance <id> --through build`. At a real decision,
+Change. After successful validation, present the compiled packet links, scope,
+behavior, and acceptance criteria to the user. Wait for explicit approval of
+this spec before Build, including `/dev`; validation is not user approval.
+Record the answer with `claude-foundation change resolve <id> --approve-spec
+--decision-ref <user-decision>`, then continue with
+`claude-foundation advance <id> --through build`. A changed agreement requires
+fresh approval; task checkboxes alone do not. At a real decision,
 authority, resource, contradiction, or repeated no-progress boundary, preserve
 the draft, present supported alternatives and the exact resume route. The agent
 must never retire one unasked or infer acceptance from silence.

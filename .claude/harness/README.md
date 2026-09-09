@@ -36,6 +36,12 @@ Installed users should start with `WORKFLOW.md`. The rest of this page maps the
 runtime for maintainers and evidence authors; `EVIDENCE.md` is the canonical
 provider and receipt contract.
 
+Runtime API 35 adds spec approval through `change resolve --approve-spec`,
+an explicit review continuation through `change resolve --continue-review`,
+and content-bound review waivers through `change waive --capability review`.
+Each requires a real `--decision-ref`. Review dispatches share a persisted
+30-minute deadline. See [WORKFLOW.md](../../WORKFLOW.md) for the user contract.
+
 Every phase view is derived from one versioned execution contract. Semantic
 draft v3 compiles meaningful keys into stable cross-ledger IDs and writes only
 the OpenSpec artifacts the change needs. After Change, protocol-v5 `advance`

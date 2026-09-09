@@ -17,7 +17,7 @@ does not replace your coding agent, test framework, CI system, or Git workflow.
 The product is **Change Loop**; the installed package and CLI remain
 `claude-foundation`, so existing commands do not change.
 
-**Version 3.5.15** — runtime API 34, provider protocol 13. Receipts recorded by
+**Version 3.5.15** — runtime API 35, provider protocol 13. Receipts recorded by
 earlier versions read as `provider-version-stale` and must be re-proven.
 `claude-foundation metrics <change-id>` also reports the exact runtime source
 cohort: semantic version, the loaded protocol bundle, and a SHA-256 digest of
@@ -212,6 +212,13 @@ sandbox rather than an older main working tree. You may investigate again at
 any point before Land when implementation reveals a new assumption.
 
 ## Your first change
+
+After Change, inspect the compiled spec and explicitly approve it before Build;
+this also applies to `/dev`. Review shares a 30-minute window across retries,
+fallbacks, and delta review. If repair cannot progress or review time expires,
+choose further work, Land with explicitly accepted remaining risks, or pause.
+Failed and missing evidence remains visible. See [the workflow](WORKFLOW.md)
+for approval, continuation, and content-bound waiver semantics.
 
 Suppose an account owner should be able to edit their display name.
 

@@ -130,6 +130,9 @@ be packaged as live hook self-tests.
 
 ## Add a regression
 
+`user-decisions.test.mjs` runs with advance lifecycle outcomes and covers spec
+approval, shared review deadlines, explicit decision routes, and waiver expiry.
+
 Put a regression at the lowest deterministic boundary that caught the defect:
 
 - runtime or evidence semantics → `harness/run-harness-tests.sh`;

@@ -7,7 +7,7 @@ Create or update **$ARGUMENTS**.
 
 Read `.claude/skills/change/references/workflow.md` completely.
 Apply its agreement-detail and document-language rules to the authored packet,
-then inspect the compiled documents before handing off to Build.
+then inspect the compiled documents; obtain explicit spec approval before Build.
 Inspect the smallest relevant canonical code/spec/doc set, settle material decisions in
 one batch, and write one semantic draft v3 under `.foundation/drafts/`. Use
 semantic requirement/task keys; never invent cross-file claim IDs or create

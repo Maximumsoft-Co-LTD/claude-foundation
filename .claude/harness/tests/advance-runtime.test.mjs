@@ -229,6 +229,7 @@ test("advance --through runs deterministic proof and Land until archived", async
   const state = { status: "building", workspace: { path: "/tmp/change" } };
   let proofRuns = 0;
   let landRuns = 0;
+  let grants = 0;
   const runtime = createAdvanceRuntime({
     loadRuntime: () => state,
     agentDispatchValue: () => ({ action: "build-complete" }),
@@ -238,7 +239,8 @@ test("advance --through runs deterministic proof and Land until archived", async
     readJson: () => proofRuns ? { status: "PASS", workspaceHash: "workspace-a" } : {},
     proofAdvancePath: () => "/proof.json",
     stableHash,
-    hasLandGrant: () => true,
+    hasLandGrant: () => grants > 0,
+    authorizeLand: () => { assert.equal(state.status, "proven"); grants += 1; },
     runProof: async () => {
       proofRuns += 1;
       state.status = "proven";
@@ -254,6 +256,7 @@ test("advance --through runs deterministic proof and Land until archived", async
   assert.equal(value.reached, "archived");
   assert.equal(proofRuns, 1);
   assert.equal(landRuns, 1);
+  assert.equal(grants, 1);
 });
 
 test("advance --through build stops before proof and preserves one resume route", async () => {

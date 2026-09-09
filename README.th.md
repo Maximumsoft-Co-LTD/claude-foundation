@@ -16,7 +16,7 @@ Change Loop ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก�
 ชื่อผลิตภัณฑ์และ workflow คือ **Change Loop** ส่วน package และ CLI ที่ติดตั้งยังใช้
 `claude-foundation` เหมือนเดิม จึงไม่ต้องเปลี่ยนคำสั่งที่ใช้อยู่
 
-**Version 3.5.15** — runtime API 34, provider protocol 13 receipt ที่บันทึกด้วย
+**Version 3.5.15** — runtime API 35, provider protocol 13 receipt ที่บันทึกด้วย
 เวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 `claude-foundation metrics <change-id>` จะแสดง source cohort ของ runtime แบบ
 เจาะจงด้วย ได้แก่ semantic version, protocol bundle ที่โหลดจริง และ SHA-256
@@ -201,6 +201,13 @@ Investigation ไม่แก้ product code และไม่แก้ formal
 assumption ใหม่
 
 ## สอนทำ Change แรก
+
+หลัง Change ให้ตรวจ spec ที่ compile แล้วและยืนยันก่อนเข้า Build รวมถึง `/dev`
+Review ใช้กรอบเวลารวม 30 นาที ครอบคลุม retry, fallback และการตรวจส่วนที่แก้
+ถ้าซ่อมต่อไม่ได้หรือ review หมดเวลา ให้เลือกทำต่อ, Land โดยยอมรับปัญหาที่เหลือ
+อย่างชัดเจน หรือพักงาน ผลตรวจที่ fail หรือหลักฐานที่ขาดยังแสดงตามจริง
+ดูรายละเอียดการยืนยัน การต่อเวลา และ waiver ที่ผูกกับเนื้อหางานใน
+[workflow](WORKFLOW.md)
 
 สมมติว่าต้องการให้เจ้าของ account แก้ display name ของตัวเองได้
 
