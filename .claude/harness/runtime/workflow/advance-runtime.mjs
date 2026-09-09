@@ -664,8 +664,7 @@ export function createAdvanceRuntime({
     };
     try {
       return await captureAsync(async () => {
-        if (!through) return advanceValue(id);
-        if (!["build", "proven", "archived"].includes(through))
+        if (through && !["build", "proven", "archived"].includes(through))
           throw new Error("advance --through must be build|proven|archived");
         const initial = loadRuntime(id);
         // Preparation is identity-reused and also owns recovery of failed
@@ -675,6 +674,7 @@ export function createAdvanceRuntime({
           recordActivePhase("build");
           await prepareBuild(id);
         }
+        if (!through) return advanceValue(id);
         const targetResume = (value) => ({
           ...value,
           resume: resume(id, through),

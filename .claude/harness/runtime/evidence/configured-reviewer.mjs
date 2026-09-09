@@ -224,6 +224,21 @@ export function reviewPacketIssues(packet) {
   }, packet);
 }
 
+export function normalizeReviewFindingPaths(review, packet) {
+  const issues = reviewFindingIssues(review, packet);
+  if (issues.length) throw new Error(issues.join("; "));
+  if (!Array.isArray(packet?.reviewScope?.paths)) return review;
+  const inspections = new Map((packet.changedSurface?.inspection || [])
+    .map((entry) => [String(entry.repositoryId), entry]));
+  const manifest = new Map((packet.changedSurface?.manifest || [])
+    .map((entry) => [`${entry.repositoryId}/${entry.path}`, entry]));
+  return { ...review, findings: review.findings.map((finding) => ({
+    ...finding,
+    path: findingScopeBinding(finding, packet.reviewScope.paths,
+      inspections, manifest).scoped
+  })) };
+}
+
 function parseJson(value) {
   try { return JSON.parse(String(value)); }
   catch { return null; }
@@ -491,6 +506,7 @@ export function createConfiguredReviewerRuntime({
         findings: review.findings, verifiedFindingIds: review.verifiedFindingIds,
         summary: `${config.adapter} reviewer returned findings that do not bind to the dispatched workspace: ${findingIssues.join("; ")}`
       }), retryable: false, bindingFailure: "result" };
+    review = normalizeReviewFindingPaths(review, packet);
     const blockers = review.findings.filter((finding) =>
       ["blocker", "major"].includes(finding.severity));
     if (review.status === "fail" && review.findings.length === 0)

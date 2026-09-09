@@ -200,14 +200,16 @@ export function compileSemanticAmendment({
   };
 }
 
-export function writeSemanticAmendment(dir, compiled, slugify) {
+export function writeSemanticAmendment(dir, compiled, slugify, { schema } = {}) {
   writeFileSync(join(dir, "tasks.md"), compiled.tasksContent);
   const evidencePath = join(dir, "evidence.yaml");
   const contract = JSON.parse(readFileSync(evidencePath, "utf8"));
   contract.claims = compiled.claims;
   contract.providers = compiled.providers;
   writeFileSync(evidencePath, `${JSON.stringify(contract, null, 2)}\n`);
-  for (const spec of compiled.specs) {
+  // Rapid agreements carry their scenarios in evidence.yaml, just like start.
+  // Writing a delta while skip_specs remains true creates an unmergeable packet.
+  for (const spec of schema === "foundation-rapid" ? [] : compiled.specs) {
     const capability = slugify(spec.name);
     const specDir = join(dir, "specs", capability);
     mkdirSync(specDir, { recursive: true });

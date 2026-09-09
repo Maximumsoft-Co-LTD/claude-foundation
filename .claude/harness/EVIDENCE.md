@@ -371,6 +371,12 @@ verdicts and never trigger fallback. Uninspectable packets and finding/closure
 binding errors retain an error attempt and exhaust that request immediately,
 without spending a full review on another model for unchanged validation input.
 Rejected findings remain diagnostic data, not passing evidence.
+A completed configured report is checkpointed before attempt and receipt
+recording. Retrying the same request after interrupted recording reuses that
+report only when its digest, packet, workspace, implementation subject, and
+reviewer provenance still match. It retains the actual reviewer session and
+does not launch another model or append another completed attempt. A changed
+binding stops recovery and preserves the report for inspection.
 On the existing `advance --through proven|archived` route, the backend revalidates
 the retained packet and rejected result. It may restore missing control-workspace
 location metadata without widening scope. Only a now-valid binding with a ready
@@ -406,6 +412,12 @@ New standard changes must explicitly decide whether acceptance is required;
 silence remains `undecided` and blocks validation rather than becoming approval.
 
 ## Test and discovery
+
+With automatic report detection, counted shell summaries such as
+`suite: ALL PASS (12/12 assertions)` and `suite: 2/12 assertion(s) FAILED`
+also provide discovery counts, including when retained by RTK. Suite names
+must be unique and counts consistent; bare `PASS` and malformed summaries do
+not establish a count. These summaries do not establish critical-case IDs.
 
 The configured structured JSON report must expose a non-negative integer such as
 `numTotalTests`, `totalTests`, `testCount`, or `expected`. If the command passes

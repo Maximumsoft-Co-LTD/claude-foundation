@@ -953,7 +953,7 @@ export function createChangeLifecycle({
     const stagedPath = join(transactionRoot, "next");
     const priorPath = join(transactionRoot, "prior");
     cpSync(basePath, stagedPath, { recursive: true, errorOnExist: true });
-    writeSemanticAmendment(stagedPath, compiled, slugify);
+    writeSemanticAmendment(stagedPath, compiled, slugify, { schema: state.schema });
     const priorState = structuredClone(state);
     let installed = false;
     try {

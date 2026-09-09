@@ -333,6 +333,22 @@ test("test-discovery falls back to Node spec output for the built-in runner", as
   assert.equal(world.receipts[1].flags.discovered, 1);
 });
 
+test("test-discovery reads counted shell summaries retained by RTK", async () => {
+  const config = { capability: "test", adapter: "test-discovery", minimum: 1 };
+  for (const [stdout, status, count, expected] of [
+    ["OUTPUT:\na: ALL PASS (5/5 assertions)\nb: ALL PASS (7/7 assertions)", 0, 12, "pass"],
+    ["a: 2/5 assertion(s) FAILED", 1, 5, "fail"],
+    ["a: ALL PASS (4/5 assertions)", 0, null, "inconclusive"]
+  ]) {
+    const world = fixture(config, result({ stdout, status }), {
+      numericReportValue: (report) => report?.totalTests ?? null
+    });
+    assert.equal((await world.runtime.executeAdapter(
+      "change", "provider", config, "run", new Map())).status, expected);
+    assert.equal(world.receipts[1].flags.discovered, count);
+  }
+});
+
 test("test-discovery distinguishes unavailable counts and infrastructure errors", async () => {
   const config = { capability: "test", adapter: "test-discovery", minimum: 1 };
   const unknown = fixture(config, result({ stdout: "not-json" }));

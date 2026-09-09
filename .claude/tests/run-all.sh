@@ -429,6 +429,14 @@ else
   SELECTED_TOTAL=0
 fi
 
+for index in $selected; do
+  if [ "$(label_of "$(nth "$index")")" = "openspec native benchmark" ] &&
+     [ ! -x "$ROOT/node_modules/.bin/c8" ]; then
+    echo "test setup incomplete: c8 is missing; the agent must run npm ci --ignore-scripts in this workspace before retrying" >&2
+    exit 1
+  fi
+done
+
 # Full runs already schedule both detector baselines in this same gate. The
 # private mutation fixture cannot affect them, so the mutation row may avoid
 # repeating their work; a standalone mutation invocation still proves both.

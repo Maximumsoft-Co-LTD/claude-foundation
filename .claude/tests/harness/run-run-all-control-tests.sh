@@ -89,4 +89,26 @@ printf '%s\n' "$no_changes" | grep -q 'ALL SUITES PASS (0 suites,' || {
   exit 1
 }
 
+missing_dependencies="$WORK/missing-dependencies/.claude/tests"
+mkdir -p "$missing_dependencies"
+cp "$RUN_ALL" "$missing_dependencies/run-all.sh"
+git -C "$WORK/missing-dependencies" init -q
+if sh "$missing_dependencies/run-all.sh" > "$WORK/missing-dependencies.out" 2>&1; then
+  echo "FAIL: full runner accepted missing benchmark dependencies"
+  exit 1
+fi
+grep -q 'test setup incomplete: c8 is missing' "$WORK/missing-dependencies.out" || {
+  echo "FAIL: missing dependency did not fail during setup"
+  exit 1
+}
+if grep -q '^=== ' "$WORK/missing-dependencies.out"; then
+  echo "FAIL: runner launched suites before checking dependencies"
+  exit 1
+fi
+sh "$missing_dependencies/run-all.sh" --list > "$WORK/missing-dependencies-list.out"
+grep -q 'openspec native benchmark' "$WORK/missing-dependencies-list.out" || {
+  echo "FAIL: listing suites unexpectedly needs benchmark dependencies"
+  exit 1
+}
+
 echo "run-all process control: PASS"

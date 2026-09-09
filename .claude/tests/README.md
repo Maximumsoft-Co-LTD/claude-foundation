@@ -9,6 +9,10 @@ sh .claude/tests/run-all.sh
 
 The entrypoint is also run by `.github/workflows/workflow-tests.yml`.
 
+Run `npm ci --ignore-scripts` in the test workspace before the full suite.
+When the benchmark suite is selected, the runner checks for `c8` before launching
+suites, so a missing dependency fails during setup instead of after a long run.
+
 For an edit/repair loop, `run-all.sh --affected` selects the suites that own
 the changed files plus their proof, review, Land, and mutation dependencies.
 With no changed files it exits without running a suite. Use

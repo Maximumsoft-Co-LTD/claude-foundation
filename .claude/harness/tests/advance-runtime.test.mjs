@@ -292,6 +292,26 @@ test("advance --through records each phase once", async () => {
   assert.deepEqual(phases, ["build"]);
 });
 
+test("plain advance prepares the amended agreement before choosing work", async () => {
+  let prepared = false;
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => ({ status: "building", workspace: { path: "/tmp/change" } }),
+    prepareBuild: async () => { prepared = true; },
+    agentDispatchValue: () => {
+      assert.equal(prepared, true);
+      return { action: "run-in-session", packetCommand: "packet", task: { taskId: "T002" } };
+    },
+    agentPlanValue: () => ({ tasks: [{ id: "T002", text: "New amended task",
+      repository: "root", paths: ["src/**"] }] }),
+    relevantHash: () => "workspace-a", deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => ({}), proofAdvancePath: () => "/proof.json", stableHash,
+    output: () => {}
+  });
+  const value = await runtime.advanceThrough("change-a", null);
+  assert.equal(value.action, "EDIT", JSON.stringify(value));
+});
+
 test("advance preserves exact runtime failures in a repair envelope", () => {
   const reason = "isolated runtime state is missing repository 'api'; repair it with 'claude-foundation sandbox create change-a --all'";
   const runtime = createAdvanceRuntime({

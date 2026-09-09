@@ -9,7 +9,8 @@ import test from "node:test";
 import { normalizeSemanticDraft, semanticDraftTemplate } from "../runtime/workflow/semantic-draft.mjs";
 import { createChangeLifecycle, draftNeedsDesign } from "../runtime/workflow/change-lifecycle.mjs";
 import {
-  appendRequirementToSpec, compileSemanticAmendment, updateTaskClaimAnnotation
+  appendRequirementToSpec, compileSemanticAmendment, updateTaskClaimAnnotation,
+  writeSemanticAmendment
 } from "../runtime/workflow/semantic-amendment.mjs";
 
 const slugify = (value) => String(value).toLowerCase()
@@ -288,6 +289,22 @@ test("semantic amendment preserves completed tasks and custom spec sections", ()
   assert.equal(updateTaskClaimAnnotation(
     "- [ ] **T001** Work — verify: `npm test`", ["a"]),
   "- [ ] **T001** Work [claims:a] — verify: `npm test`");
+});
+
+test("rapid amendments preserve skip_specs while retaining claims and tasks", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "rapid-amend-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, ".openspec.yaml"), "schema: foundation-rapid\nskip_specs: true\n");
+  writeFileSync(join(root, "evidence.yaml"), JSON.stringify({ version: 1 }));
+  const draft = normalizeSemanticDraft(semanticDraft(), slugify).draft;
+  const compiled = { tasksContent: "- [x] existing task\n", claims: draft.claims,
+    providers: draft.execution.providers, specs: draft.specs };
+  writeSemanticAmendment(root, compiled, slugify, { schema: "foundation-rapid" });
+  assert.equal(existsSync(join(root, "specs")), false);
+  assert.equal(readFileSync(join(root, ".openspec.yaml"), "utf8"),
+    "schema: foundation-rapid\nskip_specs: true\n");
+  assert.deepEqual(JSON.parse(readFileSync(join(root, "evidence.yaml"))).claims, draft.claims);
+  assert.equal(readFileSync(join(root, "tasks.md"), "utf8"), compiled.tasksContent);
 });
 
 test("semantic amendment rejects unknown task references without writing", () => {

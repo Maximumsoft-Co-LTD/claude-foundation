@@ -1071,6 +1071,7 @@ export function prepareBuildSandbox(context, id) {
   const incomplete = state.status === "change" || inspection.status !== "active" ||
     repositoryIncomplete;
   if (incomplete) context.create(id, { quiet: true });
+  context.synchronizeAgreement?.(id);
   context.retryFailedSetups(id);
   return { repaired: incomplete };
 }
@@ -1896,7 +1897,13 @@ export function createSandboxRuntime({
   });
 
   const prepareBuild = prepareBuildSandbox.bind(null, {
-    loadRuntime, validate, workspaceInspection, create, retryFailedSetups
+    loadRuntime, validate, workspaceInspection, create, retryFailedSetups,
+    synchronizeAgreement: (id) => {
+      const state = loadRuntime(id);
+      if (state.workspace?.changeSourceHash &&
+          state.workspace.changeSourceHash !== directoryHash(changePath(id)))
+        sync(id);
+    }
   });
 
   return {

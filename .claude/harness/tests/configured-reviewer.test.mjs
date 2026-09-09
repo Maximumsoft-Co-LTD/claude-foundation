@@ -9,11 +9,13 @@ import { join } from "node:path";
 import {
   REVIEW_SCHEMA, claudeResultEnvelope, configuredReviewPrompt,
   createConfiguredReviewerRuntime, reviewFindingIssues, validReview,
-  validReviewFinding
+  validReviewFinding, normalizeReviewFindingPaths
 } from
   "../runtime/evidence/configured-reviewer.mjs";
 import { createRuntimeEnvironment } from
   "../runtime/core/runtime-environment.mjs";
+import { checkpointReviewResult, recoverReviewResult } from
+  "../runtime/evidence/review-result-recovery.mjs";
 
 const root = mkdtempSync(join(tmpdir(), "foundation-configured-reviewer-"));
 const workspace = join(root, "workspace");
@@ -167,6 +169,17 @@ for (const path of ["contract/specs/dashboard/spec.md",
 assert.match(reviewFindingIssues({ findings: [{
   ...validFinding, path: "openspec/changes/other/specs/dashboard/spec.md"
 }] }, contractPacket)[0], /outside the dispatched review scope/);
+const aliasReview = { status: "pass", summary: "reviewed", verifiedFindingIds: [],
+  findings: [{ ...validFinding, severity: "minor",
+    path: "openspec/changes/nested/specs/dashboard/spec.md" }] };
+const normalizedAlias = normalizeReviewFindingPaths(aliasReview, {
+  ...contractPacket, reviewScope: { ...contractPacket.reviewScope, mode: "delta" }
+});
+assert.equal(normalizedAlias.findings[0].path, "contract/specs/dashboard/spec.md");
+assert.equal(aliasReview.findings[0].path, "openspec/changes/nested/specs/dashboard/spec.md");
+assert.throws(() => normalizeReviewFindingPaths({ ...aliasReview, findings: [{
+  ...validFinding, path: "../outside.mjs"
+}] }, contractPacket), /invalid finding path/);
 const legacyContractPacket = {
   ...contractPacket, reviewScope: { mode: "full", paths: ["contract/specs"] },
   changedSurface: { ...contractPacket.changedSurface, manifest: [{
@@ -487,6 +500,30 @@ try {
   }));
   assert.throws(() => environment.foundationPolicy(),
     /providerFamily must be anthropic/);
+
+  const recoveryReference = ".foundation/reviews/recovery/saved.json";
+  const recoveryPath = join(root, recoveryReference);
+  mkdirSync(join(root, ".foundation/reviews/recovery"), { recursive: true });
+  const recoveryReviewer = { identity: "codex", providerFamily: "openai",
+    modelFamily: "gpt", modelId: "test", sessionId: "actual-session" };
+  const recoveryReport = { changeId: "recovery", status: "pass", summary: "done",
+    findings: [], verifiedFindingIds: [], reviewer: recoveryReviewer,
+    reportPath: recoveryPath, reportReference: recoveryReference };
+  writeFileSync(recoveryPath, JSON.stringify(recoveryReport));
+  const recoveryRequest = { changeId: "recovery", packetDigest: "packet",
+    workspaceHash: "workspace", packet: {} };
+  const recoverySubject = { actor: "implementer" };
+  recoveryRequest.configuredResult = checkpointReviewResult(root,
+    recoveryRequest, recoverySubject, recoveryReport);
+  const recover = (overrides = {}, subject = recoverySubject, current = "workspace") =>
+    recoverReviewResult(root, { ...recoveryRequest, ...overrides }, subject,
+      recoveryReviewer, current);
+  assert.equal(recover().reviewer.sessionId, "actual-session");
+  assert.throws(() => recover({ packetDigest: "changed" }), /binding changed/);
+  assert.throws(() => recover({}, { actor: "other" }), /binding changed/);
+  assert.throws(() => recover({}, recoverySubject, "changed"), /binding changed/);
+  writeFileSync(recoveryPath, JSON.stringify({ ...recoveryReport, summary: "tampered" }));
+  assert.throws(() => recover(), /integrity or reviewer provenance/);
 
   process.stdout.write("configured reviewer tests: PASS\n");
 } finally {
