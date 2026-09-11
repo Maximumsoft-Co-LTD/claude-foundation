@@ -256,6 +256,10 @@ export function configuredReviewPrompt(packet) {
     "Use supplied current evidence before considering additional verification. " +
     "For defect guards, challenge adjacent input partitions and source-language " +
     "representation or coercion boundaries, not only the reported repro. " +
+    "Read the full referenced requirements and scenarios for the scoped claims. " +
+    "For UI claims check the required output is rendered and reachable; for persisted " +
+    "or wire data challenge supported older representations. Passing counts, test " +
+    "tags, and calculated-but-unused values do not establish those outcomes. " +
     "For a delta packet, review only reviewScope.paths, return verifiedFindingIds exactly for " +
     "closureFindings.ids, and never report findings outside that scope or reopen unchanged " +
     "surface. Bind every blocker/major finding to non-empty claimIds and " +
@@ -331,6 +335,28 @@ export function claudeStructuredReview(envelope) {
     ? envelope.result : parseJson(envelope?.result);
 }
 
+// Import only the CLI's terminal usage, never assistant/tool text or a
+// model-authored review field. Ephemeral reviewers do not retain transcripts.
+export function reviewerUsageRow(config, sessionId, envelope, now, suffix = "") {
+  if (!sessionId || !envelope?.usage || typeof envelope.usage !== "object") return null;
+  const number = (value) => typeof value === "number" && Number.isFinite(value) &&
+    value >= 0 ? value : null;
+  const usage = envelope.usage;
+  const row = {
+    requestId: `configured-reviewer:${sessionId}${suffix}`,
+    sessionId, operationId: "prove", agentId: config.identity,
+    modelId: config.modelId, timestamp: now(),
+    inputTokens: number(usage.input_tokens),
+    outputTokens: number(usage.output_tokens),
+    cacheCreationTokens: number(usage.cache_creation_input_tokens),
+    cacheReadTokens: number(usage.cache_read_input_tokens ?? usage.cached_input_tokens),
+    cost: number(envelope.total_cost_usd),
+    durationMs: number(envelope.duration_ms)
+  };
+  return [row.inputTokens, row.outputTokens, row.cacheCreationTokens,
+    row.cacheReadTokens, row.cost].some((value) => value !== null) ? row : null;
+}
+
 export function runClaudeReviewOperation(
   context, config, changeId, workspace, packet, forbiddenSessionIds
 ) {
@@ -345,6 +371,9 @@ export function runClaudeReviewOperation(
   });
   const envelope = claudeResultEnvelope(result.stdout);
   const sessionId = text(envelope?.session_id);
+  if (!envelope?.envelopeError && sessionId &&
+      !reviewerSessionIsForbidden(sessionId, forbiddenSessionIds))
+    context.recordUsage?.(config, changeId, sessionId, envelope);
   const failure = claudeReviewerFailure(result, envelope, sessionId);
   if (failure)
     return context.persist(config, changeId, workspace, failure);
@@ -365,9 +394,20 @@ export function runClaudeReviewOperation(
 
 export function createConfiguredReviewerRuntime({
   root, foundationPolicy, commandExists, now, fail, uuid = randomUUID,
-  spawn = spawnSync
+  spawn = spawnSync, recordUsage = null
 }) {
   const reviewerConfig = reviewerConfigValue.bind(null, { foundationPolicy, fail });
+
+  function collectUsage(config, changeId, sessionId, envelope, suffix = "") {
+    const row = reviewerUsageRow(config, sessionId, envelope, now, suffix);
+    if (!row || !recordUsage) return;
+    try { recordUsage(changeId, [row]); }
+    catch {
+      // Telemetry failure never converts a delivered review to infrastructure
+      // failure or causes another paid dispatch. Availability remains partial.
+      console.error("WARNING: configured reviewer usage could not be recorded");
+    }
+  }
 
   function codexStatus(config) {
     const login = spawn(config.executable, ["login", "status"], {
@@ -546,6 +586,13 @@ export function createConfiguredReviewerRuntime({
         .map(parseJson).filter(Boolean);
       const sessionId = text(events.find((event) =>
         event.type === "thread.started")?.thread_id);
+      if (sessionId && !reviewerSessionIsForbidden(sessionId, forbiddenSessionIds)) {
+        const completed = events.filter((event) => event.type === "turn.completed");
+        // A CLI invocation may emit more than one turn; retain each observation
+        // under a stable per-session/turn key rather than dropping earlier usage.
+        completed.forEach((event, index) => collectUsage(config, changeId,
+          sessionId, event, `:turn:${index + 1}`));
+      }
       if (result.error || result.status !== 0)
         return persist(config, changeId, workspace, {
           status: "error", sessionId: sessionId || null,
@@ -565,7 +612,7 @@ export function createConfiguredReviewerRuntime({
   }
 
   const runClaude = runClaudeReviewOperation.bind(null, {
-    env: process.env, uuid, spawn, persist, normalizeReview
+    env: process.env, uuid, spawn, persist, normalizeReview, recordUsage: collectUsage
   });
 
   function runReview({

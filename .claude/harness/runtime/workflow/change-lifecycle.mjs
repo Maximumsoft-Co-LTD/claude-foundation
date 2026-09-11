@@ -336,7 +336,7 @@ export function deriveDraftBookkeeping(input, slugify) {
   if (draft.tasks.length === 1 && draft.tasks[0].verify) {
     for (const provider of Object.values(providers))
       if (["test-discovery", "command"].includes(provider.adapter) && !provider.command)
-        provider.command = ["sh", "-lc", draft.tasks[0].verify];
+        provider.command = ["sh", "-c", draft.tasks[0].verify];
   }
   if (draft.grounding?.claims?.length === claims.length)
     draft.grounding.claims = draft.grounding.claims.map((claim, index) => ({

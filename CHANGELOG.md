@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Change authoring reconciles available conversation decisions and corrections,
+  with diagrams and folder mapping for affected boundaries and structure. Build
+  and resumed sessions read the full referenced agreement before implementation.
+- Tasks sharing a repository workspace run serially so lease results can be
+  attributed. Independent repository workspaces retain parallel execution.
+- Runtime API is now 36, feedback schema 4, and hook audit schema 2. Public
+  command names and arguments remain unchanged.
+
+### Fixed
+
+- Shared-workspace leases also fence legacy holders. Force release discards
+  accepted result authority and schedules completed tasks for verification
+  without requiring checkbox toggles.
+- Generated provider commands preserve the prepared PATH with a non-login
+  shell; explicitly configured shell commands keep their declared behavior.
+- Guard audit outcomes distinguish anchor rewrites, audit-only violations,
+  and blocked mutations.
+- Ephemeral reviewer usage flows through deduplicated telemetry and the active
+  budget window. Missing measurements remain unknown. Review guidance checks
+  rendered UI outcomes and supported legacy data within scoped requirements.
+- Feedback derives repair intervals for current and legacy resume routes,
+  unions overlapping intervals, and avoids subtracting overlapping waits twice.
+
 ## [3.5.16] - 2026-09-09
 
 ### Changed

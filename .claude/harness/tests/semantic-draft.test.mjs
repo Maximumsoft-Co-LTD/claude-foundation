@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
   existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync,
   writeFileSync
@@ -225,7 +226,13 @@ test("semantic materialization omits virtual-default files and writes typed exte
     readJson: (path) => JSON.parse(readFileSync(path, "utf8")), writeJson,
     slugify, changePath: () => root, loadRuntime: () => state
   });
-  const compiled = normalizeSemanticDraft(semanticDraft(), slugify).draft;
+  const mapping = "## Affected folders\n\n```text\nsrc/payment/ — retry policy\n```\n\n" +
+    "| Path | Responsibility | Requirement | Task | Verification |\n" +
+    "|---|---|---|---|---|\n| src/payment | Retry safely | payment-retry | implement-retry | npm test |";
+  const diagram = "sequenceDiagram\nClient->>Payment: retry\nPayment-->>Client: stable result";
+  const compiled = normalizeSemanticDraft(semanticDraft({ currentState: mapping,
+    diagrams: [{ key: "retry-flow", type: "mermaid", purpose: "Retry boundary", source: diagram }]
+  }), slugify).draft;
   assert.equal(draftNeedsDesign(compiled), true);
   lifecycle.materializeDraft("payment", compiled);
   assert.ok(existsSync(join(root, "design.md")));
@@ -238,6 +245,30 @@ test("semantic materialization omits virtual-default files and writes typed exte
   assert.ok(evidence.providers.test);
   assert.match(readFileSync(join(root, "tasks.md"), "utf8"), /\[key:implement-retry\]/);
   assert.match(readFileSync(join(root, "design.md"), "utf8"), /payment-api/);
+  const design = readFileSync(join(root, "design.md"), "utf8");
+  assert.ok(design.includes(mapping));
+  assert.ok(design.includes(diagram));
+});
+
+test("derived evidence commands preserve the prepared PATH and explicit execution stays unchanged", () => {
+  const draft = semanticDraft();
+  draft.tasks = draft.tasks.map((task) => ({ ...task, verify: "printf '%s' \"$PATH\"" }));
+  const normalized = normalizeSemanticDraft(draft, slugify);
+  assert.deepEqual(normalized.issues, []);
+  const [executable, ...args] = normalized.draft.execution.providers.test.command;
+  // A login shell can source host profiles and replace this prepared PATH.
+  assert.deepEqual(args.slice(0, 1), ["-c"]);
+  const preparedPath = `/prepared-node/bin:${process.env.PATH}`;
+  const result = spawnSync(executable, args, { encoding: "utf8", env: {
+    ...process.env, PATH: preparedPath
+  } });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, preparedPath);
+  const explicit = { version: 1, providers: {
+    test: { command: ["sh", "-lc", "custom toolchain"], adapter: "command" }
+  } };
+  assert.deepEqual(normalizeSemanticDraft({ ...draft, execution: explicit }, slugify)
+    .draft.execution, explicit);
 });
 
 test("semantic amendment preserves completed tasks and custom spec sections", () => {

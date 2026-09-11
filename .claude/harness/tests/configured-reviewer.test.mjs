@@ -9,7 +9,7 @@ import { join } from "node:path";
 import {
   REVIEW_SCHEMA, claudeResultEnvelope, configuredReviewPrompt,
   createConfiguredReviewerRuntime, reviewFindingIssues, validReview,
-  validReviewFinding, normalizeReviewFindingPaths
+  validReviewFinding, normalizeReviewFindingPaths, reviewerUsageRow
 } from
   "../runtime/evidence/configured-reviewer.mjs";
 import { createRuntimeEnvironment } from
@@ -75,6 +75,8 @@ const review = process.env.FAKE_CLAUDE_INVALID === "1"
 emit({
   type: "result", subtype: "success", is_error: false,
   session_id: process.env.FAKE_CLAUDE_SESSION || sessionId,
+  usage: { input_tokens: 120, output_tokens: 35, cache_creation_input_tokens: 8, cache_read_input_tokens: 90 },
+  total_cost_usd: 0.125, duration_ms: 1234,
   structured_output: review
 });
 `);
@@ -97,6 +99,9 @@ fs.writeFileSync(outputPath, JSON.stringify({
 process.stdout.write(JSON.stringify({
   type: "thread.started", thread_id: "codex-review-session"
 }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "turn.completed", usage: {
+  input_tokens: 40, cached_input_tokens: 10, output_tokens: 5
+} }) + "\\n");
 `);
 chmodSync(codexExecutable, 0o755);
 
@@ -285,11 +290,14 @@ const policy = () => ({ review: {
   diversity: "single-model", independence: "required",
   defaultReviewer: "claude-opus", reviewers: { "claude-opus": reviewer }
 } });
+const usageRows = [];
+const recordUsage = (changeId, rows) => usageRows.push(...rows.map((row) => ({ ...row, changeId })));
 const runtime = createConfiguredReviewerRuntime({
   root, foundationPolicy: policy,
   commandExists: (command) => existsSync(command),
   now: () => "2026-08-14T00:00:00.000Z",
   uuid: () => "11111111-1111-4111-8111-111111111111",
+  recordUsage,
   fail: (message) => { throw new Error(message); }
 });
 const codexReviewer = {
@@ -298,6 +306,7 @@ const codexReviewer = {
 };
 const codexRuntime = createConfiguredReviewerRuntime({
   root,
+  recordUsage,
   foundationPolicy: () => ({ review: {
     diversity: "cross-model", independence: "required",
     defaultReviewer: "codex", reviewers: { codex: codexReviewer }
@@ -331,6 +340,19 @@ try {
   const capture = JSON.parse(readFileSync(join(workspace,
     "claude-capture.json"), "utf8"));
   assert.equal(result.status, "pass");
+  const usage = usageRows.find((row) => row.changeId === "claude-only");
+  assert.equal(usage.outputTokens, 35);
+  assert.equal(usage.cacheCreationTokens, 8);
+  assert.equal(usage.cacheReadTokens, 90);
+  assert.equal(usage.cost, 0.125);
+  assert.equal(usage.operationId, "prove");
+  assert.equal(usage.sessionId, result.reviewer.sessionId);
+  assert.equal(reviewerUsageRow(reviewer, "s", {}, () => "now"), null);
+  assert.equal(reviewerUsageRow(reviewer, "s", { usage: {
+    output_tokens: -1, input_tokens: "120"
+  } }, () => "now"), null);
+  assert.equal(reviewerUsageRow(reviewer, "s", { usage: { output_tokens: 0 } },
+    () => "now").cost, null);
   assert.equal(result.reviewer.sessionId, "11111111-1111-4111-8111-111111111111");
   assert.equal(realpathSync(capture.cwd), realpathSync(workspace));
   assert.equal(capture.changeId, "claude-only");
@@ -353,6 +375,11 @@ try {
   });
   assert.equal(codexResult.status, "pass");
   assert.equal(codexResult.reviewer.sessionId, "codex-review-session");
+  const codexUsage = usageRows.find((row) => row.changeId === "codex-only");
+  assert.equal(codexUsage.sessionId, "codex-review-session");
+  assert.equal(codexUsage.cacheReadTokens, 10);
+  assert.equal(codexUsage.cost, null);
+  assert.equal(codexUsage.requestId, "configured-reviewer:codex-review-session:turn:1");
   const priorInvocations = readFileSync(join(workspace, "claude-invocations.txt"), "utf8");
   const invalidPacket = runtime.runReview({
     changeId: "missing-packet-file", workspace, packet: missingPacket

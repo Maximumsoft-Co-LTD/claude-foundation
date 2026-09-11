@@ -24,6 +24,12 @@ those contracts into a report; link to them instead.
 
 ## Historical material
 
+- [Weekly Review feedback remediation plan](weekly-review-feedback-remediation-plan-2026-09-11.md) —
+  2026-09-11 full artifact review and current-source comparison covering intent
+  continuity, guards, leases, toolchains, evidence coverage, and telemetry.
+  Includes approved upstream implementation, verification, and limits;
+  consumer logs and version-cohort replay are still needed.
+
 - [Concurrent change review efficiency plan](concurrent-change-review-efficiency-plan-2026-09-08.md) —
   2026-09-08 source-read proposal for review reuse across copy/worktree sync,
   selective invalidation, diagnostics, and conditional impact review. Planning

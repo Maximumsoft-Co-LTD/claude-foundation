@@ -1,5 +1,14 @@
 # Change workflow
 
+Before drafting, reconcile all available conversation context relevant to this
+intent, including earlier constraints, examples, corrections, investigation
+conclusions, and selected prototypes. The latest explicit correction supersedes
+the earlier choice; retain earlier requirements that it did not change. Separate
+confirmed decisions from proposals, rejected alternatives, and unresolved
+choices. Do not turn an assistant suggestion or user silence into agreement.
+Use retained project notes for unavailable sessions; never claim to have read
+missing conversation history. Ask only for material gaps that cannot be recovered.
+
 Read the smallest canonical sources that settle the requested behavior:
 existing OpenSpec requirements, relevant code/tests, architecture decisions,
 prototype selection, and versioned integration documentation. Reuse settled answers without asking them again.
@@ -51,6 +60,16 @@ sources and the user's settled intent:
 Scale detail to behavior and risk, not word count or a fixed number of
 scenarios. A small change can be brief if its boundaries and acceptance are
 clear. Do not create extra artifacts merely to make the packet look thorough.
+
+For changes across components, supply a diagram explaining the affected
+boundaries and dependencies. For changed state, async, or workflow behavior,
+show the relevant transitions or sequence, including failure/recovery paths.
+For added or moved structure, put an affected folder tree and a mapping of
+path, responsibility, intended change, requirement/task, and verification in
+`currentState` with `design: true`; the compiler carries this Markdown into
+`design.md`. Distinguish existing paths from proposed paths. Use `diagrams` for
+Mermaid or local image references. Omit unrelated folders and diagrams that add
+no implementation constraint; rapid work need not create an empty design.
 
 ## Compile and inspect
 
@@ -111,6 +130,10 @@ or verification command; add a new task when that contract changes.
 After a successful start, read the compiled proposal, tasks, evidence, and any
 specs/design. Check that the intended detail and document language survived
 compilation, and that the packet alone explains scope and acceptance.
+Reconcile each confirmed conversation requirement and constraint against its
+compiled requirement/scenario, proposal exclusion, or design decision. Report
+any uncovered material point before approval; keep this reconciliation in the
+existing packet and approval summary, not a separate conversation ledger.
 Structural validation does not establish semantic completeness. If material
 content is missing, repair through the supported draft/amendment workflow;
 never patch generated ledgers independently or silently proceed to Build.

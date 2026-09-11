@@ -61,8 +61,8 @@ export function appendRequirementToSpec(content, spec) {
 function combinedCommand(tasksContent) {
   const commands = unique(String(tasksContent).split("\n").map(taskVerify).filter(Boolean));
   return commands.length === 1
-    ? ["sh", "-lc", commands[0]]
-    : ["sh", "-lc", commands.map((command) => `(${command})`).join(" && ")];
+    ? ["sh", "-c", commands[0]]
+    : ["sh", "-c", commands.map((command) => `(${command})`).join(" && ")];
 }
 
 function amendmentIssues(amendment) {

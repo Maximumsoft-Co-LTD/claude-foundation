@@ -57,6 +57,10 @@ under `.foundation/prototypes/`. It always records the selected conclusion in
 
 Change authors one semantic draft v3 with compact bookkeeping and enough
 behavioral detail to understand scope and acceptance without chat history.
+Reconcile the relevant available conversation, latest corrections, and retained
+decisions before drafting, then check their coverage in the compiled packet.
+Use diagrams and affected folder mapping when boundaries, flow, or structure
+need explanation; preserve that context for Build and session restart.
 Agent-authored document prose follows the user's requested document language,
 or the language of their current request; machine syntax and canonical
 identities stay stable. See the [Change authoring workflow](.claude/skills/change/references/workflow.md)
@@ -166,13 +170,18 @@ permission-bound, single-use, and does not turn a worktree or container into a
 security boundary. The complete operator contract is in the harness guide.
 
 One-task changes without shared external authority stay in the current agent.
-Independent tasks with disjoint declared paths may use native workers even in
-one repository; overlapping, dependent, unknown-scope, or shared-resource work
-stays serialized. The harness plans dependency and resource scopes,
+Independent tasks in separate repository workspaces may use native workers.
+Tasks sharing a workspace stay serialized because lease release observes the
+whole repository diff; disjoint paths alone cannot identify their writer.
+The harness plans dependency and resource scopes,
 leases them all-or-none with fencing generations, and accepts only observed
 writes inside the granted authority. Load one primary construction skill per
 task and only the cross-cutting security or observability skills whose triggers
 apply.
+
+A force-released lease grants no result authority. If its task was already
+checked complete, the planner returns it for leased verification without
+rewriting the checkbox; only an accepted release clears that recovery.
 
 For multi-repository work, the committed topology selects repositories and
 access modes before task, provider, or worker planning. Providers may execute

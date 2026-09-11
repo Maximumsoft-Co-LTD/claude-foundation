@@ -2,7 +2,7 @@
 // the provider scheduler distinguishes a cycle from a failed dependency.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -289,8 +289,7 @@ function planner(tasks, recordScheduler = () => {}, overrides = {}) {
 }
 
 function plannerTask(id, dependsOn = []) {
-  // Disjoint paths keep same-repository tasks parallelizable, so wave shape
-  // is decided by dependencies alone.
+  // Disjoint paths still share the repository's observed-write baseline.
   return {
     id, done: false, repository: "root", dependsOn,
     resources: [], paths: [`${id}/`], kind: "code", text: id, requestedModel: null
@@ -313,7 +312,28 @@ test("task planner groups an acyclic graph into dependency waves", () => {
     plannerTask("T001"), plannerTask("T002", ["T001"]), plannerTask("T003")
   ]);
   const plan = instance.planValue("c1");
-  assert.deepEqual(plan.groups, [["T001", "T003"], ["T002"]]);
+  assert.deepEqual(plan.groups, [["T001"], ["T002"], ["T003"]]);
+});
+
+test("completed task with abandoned lease is reverified without rewriting its checkbox", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "lease-recovery-plan-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const leases = join(root, ".foundation", "leases", "tasks", "c1");
+  mkdirSync(leases, { recursive: true });
+  const path = join(leases, "T001.json");
+  writeFileSync(path, JSON.stringify({ leaseId: "old", status: "taken-over" }));
+  const task = { ...plannerTask("T001"), done: true };
+  const instance = planner([task], () => {}, {
+    root,
+    readJson: (path) => JSON.parse(readFileSync(path, "utf8"))
+  });
+  const plan = instance.planValue("c1");
+  assert.equal(task.done, true, "the source ledger is unchanged");
+  assert.deepEqual(plan.groups, [["T001"]]);
+  assert.notEqual(plan.recommendedExecution, "single-agent");
+  assert.notEqual(plan.recommendedExecution, "proof-ready");
+  rmSync(path);
+  assert.equal(instance.planValue("c1").recommendedExecution, "proof-ready");
 });
 
 test("task planner telemetry retains the full ready frontier above capacity", () => {
@@ -324,8 +344,8 @@ test("task planner telemetry retains the full ready frontier above capacity", ()
   ], (event) => events.push(event));
   instance.planValue("c1");
   assert.equal(events[0].readyNodes, 4);
-  assert.equal(events[0].executedNodes, 3);
-  assert.equal(events[0].peakConcurrency, 3);
+  assert.equal(events[0].executedNodes, 1);
+  assert.equal(events[0].peakConcurrency, 1);
 });
 
 test("task planner compiles services and instruction provenance", () => {

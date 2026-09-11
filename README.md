@@ -17,7 +17,7 @@ does not replace your coding agent, test framework, CI system, or Git workflow.
 The product is **Change Loop**; the installed package and CLI remain
 `claude-foundation`, so existing commands do not change.
 
-**Version 3.5.16** — runtime API 35, provider protocol 13. Receipts recorded by
+**Version 3.5.16** — runtime API 36, provider protocol 13. Receipts recorded by
 earlier versions read as `provider-version-stale` and must be re-proven.
 `claude-foundation metrics <change-id>` also reports the exact runtime source
 cohort: semantic version, the loaded protocol bundle, and a SHA-256 digest of
@@ -241,6 +241,9 @@ The agreement explains the current problem, intended behavior, scope, relevant
 failure cases, and how the result will be verified. Its authored content uses
 your language unless you request another document language; OpenSpec syntax
 and stable identifiers stay unchanged. See the [Change workflow](WORKFLOW.md#change-intent).
+Change carries forward relevant conversation decisions and latest corrections.
+Affected diagrams and folder mappings live in the agreement when needed;
+Build and resumed sessions read the full relevant scenarios and design context.
 
 The agent answers in your language and leads with the outcome. It performs safe
 recovery and routine commands itself, then reports what it changed and checked.
@@ -821,7 +824,8 @@ parallel evidence providers, and three parallel setup operations; 8 KiB
 task and review packets, 12 KiB repository packets, and a 16 KiB global packet;
 45-minute leases; and separate rapid/standard budgets of 800,000/1,600,000
 tokens and 100/200 requests. These are ceilings, not targets—one-task changes
-stay in the current session while independent disjoint tasks can fan out.
+stay in the current session while tasks in independent workspaces can fan out.
+Tasks sharing one workspace run serially so lease results have attributable writes.
 Validation calibrates both lanes from the widest non-secret impact, size,
 coupling, review, security, repository, provider, task, claim, or critical-case
 factor. `metrics` reports those inputs, the selected scale, and its limiting

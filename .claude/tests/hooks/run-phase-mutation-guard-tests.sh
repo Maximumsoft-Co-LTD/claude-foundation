@@ -179,6 +179,8 @@ assert_contains "Build pins a reported workspace cwd as the shell anchor" "$out"
   "\"updatedInput\":{\"command\":\"cd $TMP/workspace && echo x > out.txt\""
 assert_contains "Build keeps the rest of the tool input when pinning" "$out" '"description":"d"'
 assert_not_contains "a pinned command is not a refusal" "$out" '"decision":"block"'
+assert_file_contains "anchor audit distinguishes rewrite from block" \
+  "$TMP/project/.foundation/logs/guardrail-audit.jsonl" '"outcome":"rewritten"'
 out="$(invoke build block "$TMP/workspace" "$(bash_event_at "$TMP/workspace/src" 'echo x > out.txt')")"
 assert_contains "Build pins the reported subdirectory, not the workspace root" "$out" \
   "cd $TMP/workspace/src && echo x > out.txt"

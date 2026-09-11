@@ -16,7 +16,7 @@ Change Loop ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก�
 ชื่อผลิตภัณฑ์และ workflow คือ **Change Loop** ส่วน package และ CLI ที่ติดตั้งยังใช้
 `claude-foundation` เหมือนเดิม จึงไม่ต้องเปลี่ยนคำสั่งที่ใช้อยู่
 
-**Version 3.5.16** — runtime API 35, provider protocol 13 receipt ที่บันทึกด้วย
+**Version 3.5.16** — runtime API 36, provider protocol 13 receipt ที่บันทึกด้วย
 เวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 `claude-foundation metrics <change-id>` จะแสดง source cohort ของ runtime แบบ
 เจาะจงด้วย ได้แก่ semantic version, protocol bundle ที่โหลดจริง และ SHA-256
@@ -229,6 +229,9 @@ claim ว่าตรงกับสิ่งที่ต้องการ Open
 ข้อตกลงจะอธิบายปัญหาปัจจุบัน พฤติกรรมที่ต้องการ ขอบเขต กรณีผิดพลาดที่เกี่ยวข้อง
 และวิธีตรวจรับ เนื้อหาที่ agent เขียนจะใช้ภาษาของคุณ เว้นแต่คุณระบุภาษาเอกสารอื่น
 โดยคง syntax ของ OpenSpec และตัวระบุเดิม ดูรายละเอียดใน [Change workflow](WORKFLOW.md#change-intent)
+Change จะเก็บข้อสรุปจากบทสนทนาที่เกี่ยวข้องและคำแก้ไขล่าสุดไว้ในข้อตกลง
+พร้อม diagram และ folder mapping เมื่อจำเป็น ส่วน Build และ session ที่กลับมาทำต่อ
+ต้องอ่าน scenario ฉบับเต็มและ design context ที่เกี่ยวข้อง
 
 Agent จะตอบด้วยภาษาของคุณและเริ่มจากผลลัพธ์ งานกู้คืนที่ปลอดภัยกับคำสั่งปกติ
 Agent จะทำให้เอง แล้วบอกว่าแก้อะไรและตรวจอะไรแล้ว คุณจะถูกถามเฉพาะเมื่อ behavior,
@@ -761,9 +764,9 @@ group จะเกิดเมื่อ frontier มี task อิสระท�
 
 Change Loop ส่ง packet ขนาดเล็กตาม scope ของ task ให้ native agent host ไม่ใช่
 resident orchestrator ที่คัดลอก conversation ทั้งหมดให้ worker ทุกตัว Change
-repository เดียวที่ไม่มี shared external authority จะใช้ agent เดียวโดยไม่ขึ้นกับ
-จำนวน task Worker หลายตัวมีประโยชน์เฉพาะเมื่องาน, repository access, dependency
-และ evidence แยกจากกันได้ชัด
+ที่มี task เดียวและไม่มี shared external authority จะใช้ agent เดียว งานใน workspace
+เดียวกันทำทีละงานเพื่อระบุที่มาของผลการแก้ไฟล์ ส่วน workspace ที่แยกจากกันทำพร้อมกันได้
+เมื่อ dependency และ resource อนุญาต
 
 Agent จะโหลด construction skill หลักหนึ่งตัวตาม layer ที่แก้ และเพิ่ม security
 หรือ observability guidance เฉพาะเมื่อ change ข้าม boundary เหล่านั้น งานที่ต้อง
