@@ -410,6 +410,11 @@ exact recovery or resume route.
 The decision envelope is machine-facing. The agent explains it in the user's
 language and owns routine commands and metadata. It
 never asks the user to run a safe authorized operation it can perform.
+For human review and acceptance, the user decides the concrete verdict; the
+agent records that confirmed decision and resumes. Human decision ownership
+does not require human CLI execution. Command permission alone is not a review
+verdict. The host approval and denial handling procedure is in
+`.claude/commands/references/decision-policy.md`.
 Genuine decisions present honest
 choices, including reject, inconclusive, or pause; they never contain a
 preselected passing receipt.

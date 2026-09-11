@@ -15,6 +15,19 @@ assert_file_contains "agent performs safe authorized actions" "$AGENT" "safe act
 assert_file_contains "agent keeps runtime routes internal" "$AGENT" "agent-only control data"
 assert_file_contains "agent asks users for decisions rather than CLI execution" "$AGENT" \
   "requests a decision, not CLI execution"
+DECISIONS="$COMMANDS/references/decision-policy.md"
+assert_file_contains "human decisions do not require user CLI execution" "$DECISIONS" \
+  "Human ownership of the decision does not require human CLI execution"
+assert_file_contains "command approval cannot fabricate a human verdict" "$DECISIONS" \
+  "Permission to run a command is not a human review verdict"
+assert_file_contains "agent records confirmed human decisions" "$DECISIONS" \
+  'After confirmation, the agent runs the offered `authority dispatch`'
+assert_file_contains "permission claims require observed denial" "$DECISIONS" \
+  "only when a tool returned an actual denial"
+assert_file_contains "host approval is requested through the host" "$DECISIONS" \
+  "flow, request it there and execute after approval"
+assert_file_contains "hard deny never becomes a user shell escape" "$DECISIONS" \
+  'with a shell escape such as `!`'
 assert_file_contains "orchestrator leads with the outcome" "$ORCH" "Lead with outcome"
 assert_file_contains "orchestrator keeps protocol internal" "$ORCH" "Do not paste runtime protocol"
 assert_file_contains "orchestrator avoids command handoffs" "$ORCH" "agent can run"
