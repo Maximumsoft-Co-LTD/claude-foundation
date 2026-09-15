@@ -149,9 +149,9 @@ Feedback ตรวจ validity จาก runtime ปัจจุบัน ส่
 
 สัญญาที่มองเห็นจากภายนอกถูกตรึงไว้ใน `.claude/harness/protocol.json` การติดตั้งที่ปนกันหลายรุ่นจะล้มเหลวทันทีตอนโหลด แทนที่จะไปพังกลางทาง Land
 
-| Pin | v3.5.17 |
+| Pin | v3.5.18 |
 |---|---|
-| runtime | 3.5.17 |
+| runtime | 3.5.18 |
 | runtime API | 39 |
 | semantic draft schema | 4 |
 | semantic intake state schema | 2 |
