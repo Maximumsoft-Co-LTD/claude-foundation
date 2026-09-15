@@ -510,11 +510,13 @@ project's separately authorized delivery process.
 
 ### Requirement: One semantic draft compiles the change agreement
 
-Foundation SHALL accept a compact semantic draft version 3 and derive stable
-claim IDs, task IDs, task dependencies, claim coverage, provider wiring, and
-OpenSpec delta documents without requiring the agent to duplicate those links.
-The compiled OpenSpec packet remains the human-reviewable agreement and source
-of truth; the input draft is not a parallel ledger.
+Foundation SHALL accept semantic draft version 4, derive the discovery
+dimensions required by risk, validate dependency-ordered user decisions, and
+derive stable claim IDs, task IDs, task dependencies, claim coverage, provider
+wiring, and OpenSpec delta documents without requiring the agent to duplicate
+those links. Versions 1 through 3 remain compatible. The compiled OpenSpec
+packet remains the human-reviewable agreement and source of truth; the input
+draft is not a parallel ledger.
 
 #### Scenario: A compact draft becomes a linked packet
 
@@ -522,6 +524,96 @@ of truth; the input draft is not a parallel ledger.
   evidence capabilities are supplied with stable semantic keys
 - **THEN** the compiler writes a valid packet whose specs, tasks, claims, and
   providers use deterministic cross-ledger identifiers
+
+#### Scenario: Discovery coverage is incomplete
+
+- **WHEN** a version-4 draft omits a risk-derived discovery dimension, leaves a
+  dimension awaiting investigation or user choice, or marks a dimension covered
+  without a requirement or grounded source
+- **THEN** the harness refuses compilation with aggregated findings instead of
+  silently treating the missing requirement as not applicable
+
+#### Scenario: Risk is expressed outside English prose
+
+- **WHEN** a version-4 draft declares a stable typed risk signal
+- **THEN** the harness requires its corresponding discovery dimensions without
+  depending on natural-language keyword matching
+
+#### Scenario: Material decisions depend on earlier choices
+
+- **WHEN** open semantic decisions declare prerequisites
+- **THEN** the harness rejects unknown or cyclic dependencies and exposes only
+  unresolved decisions whose prerequisites are already resolved, bounded to the
+  host interaction capacity
+
+#### Scenario: The agent asks the harness what intake work is next
+
+- **WHEN** the agent inspects a version-4 semantic draft before compilation
+- **THEN** the harness returns source investigation before user questions, then
+  at most three linked dependency-ready decisions, and finally a typed ready
+  action with an exact resume route
+
+#### Scenario: User-owned coverage has no decision link
+
+- **WHEN** a discovery dimension awaits a user decision without naming its
+  related decision keys, or names a decision that does not exist
+- **THEN** the harness returns agent-owned draft repair instead of an empty or
+  ambiguous user frontier
+
+#### Scenario: Discovery survives compilation
+
+- **WHEN** a version-4 draft completes discovery coverage
+- **THEN** the compiler records the dispositions and their requirement or source
+  mappings in the proposal so the agreement is understandable without chat
+  history or a parallel interview ledger
+
+#### Scenario: A grounded discovery source changes
+
+- **WHEN** a version-4 draft was ready and a declared local discovery source
+  changes before compilation
+- **THEN** the harness invalidates readiness, returns agent-owned source
+  coverage refresh, and refuses compilation until a changed draft is inspected
+
+#### Scenario: Intake resumes in another session
+
+- **WHEN** the same draft is inspected after the authoring session changes
+- **THEN** one machine-owned snapshot restores its bounded action and exact
+  route without retaining chat or an interview history
+
+#### Scenario: Relevant repository evidence was not declared manually
+
+- **WHEN** a version-4 draft is inspected
+- **THEN** the harness performs a bounded read-only scan, ranks relevant specs,
+  tests, callers, dependencies, integrations, persistence, and permission
+  boundaries, and binds the selected read-set to intake freshness
+
+#### Scenario: Repository discovery cannot prove completeness
+
+- **WHEN** traversal, path containment, read, file-size, byte, depth, or graph
+  limits prevent a complete repository scan
+- **THEN** the harness returns agent-owned investigation with no partial read-set
+  presented as complete
+
+#### Scenario: Intake effort adapts to risk and coupling
+
+- **WHEN** typed size, impact, coupling, risk, or repository boundary signals
+  increase the investigation tier
+- **THEN** source and question-frontier budgets grow within fixed limits while
+  every mandatory discovery dimension remains required
+
+#### Scenario: A proposed user question is low quality
+
+- **WHEN** a question is already answered by a keyed source fact, contains
+  duplicate alternatives, recommends an unavailable alternative, or lacks
+  recommendation evidence
+- **THEN** the harness returns agent-owned repair instead of asking the user
+
+#### Scenario: Intake effectiveness is measured across languages
+
+- **WHEN** equivalent typed facts accompany Thai, English, or mixed-language prose
+- **THEN** the harness derives the same intake policy and records coverage,
+  grounding, question-quality, depth, and compact action-count measurements,
+  retaining `null` for unavailable history instead of fabricating zero
 
 #### Scenario: A modified requirement omits an existing scenario
 
@@ -557,7 +649,8 @@ of truth; the input draft is not a parallel ledger.
 
 ### Requirement: Active semantic agreements amend transactionally
 
-Foundation SHALL apply one semantic amendment to an active version-3 agreement
+Foundation SHALL apply one semantic amendment to an active version-3 or
+version-4 agreement
 as a validated transaction. It SHALL preserve completed task checkboxes and
 manual Markdown sections, add only stable requirements and links, invalidate
 the affected new claims, and restore both packet and runtime state if validation
@@ -569,6 +662,33 @@ fails.
   to an existing or new implementation task
 - **THEN** Foundation updates the same active change, increments its revisions,
   and returns the exact `advance` resume route
+
+#### Scenario: A version-4 amendment adds behavior
+
+- **WHEN** an amendment targets a version-4 agreement
+- **THEN** Foundation requires complete discovery coverage for the added
+  requirements and appends the validated delta to the proposal
+
+#### Scenario: Amendment invalidation is planned before mutation
+
+- **WHEN** an amendment adds claims to an active semantic agreement
+- **THEN** Foundation computes affected tasks and dependency-closed providers,
+  invalidates agreement approval and proof, and records which unrelated
+  providers may be preserved before installing the staged packet
+
+#### Scenario: An unaffected proof receipt crosses one amendment revision
+
+- **WHEN** a passing unaffected provider retains the exact declared provider,
+  claim, and input fingerprints across one explicit contract revision
+- **THEN** the amendment transaction rebinds that receipt to the new contract
+  and validates it before Prove scheduling
+
+#### Scenario: Receipt preservation is ambiguous
+
+- **WHEN** a receipt is affected, missing, unscoped, independently stale, or has
+  an incomplete or changed binding
+- **THEN** the harness fails closed for that provider, preserves no ambiguous
+  proof, and returns the exact `advance <change> --through proven` recovery route
 
 #### Scenario: The amended packet is invalid
 
@@ -609,4 +729,3 @@ The system SHALL The agent invokes change start and advance routes while the har
 
 - **WHEN** ตัวตรวจนับคำใน change.md ได้ 195 คำและเปรียบเทียบกับเพดานของคำสั่ง
 - **THEN** การตรวจคำสั่ง Change ผ่านและรายงาน 195 ไม่เกิน 200 คำ โดยคำสั่งอื่นยังถูกตรวจด้วยเพดานเดิม
-

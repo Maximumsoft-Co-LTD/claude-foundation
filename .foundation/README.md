@@ -9,6 +9,8 @@ machine-owned. Disposable comparison prototypes live under `prototypes/`; the
 runtime rejects them as evidence artifacts or local references so they never
 enter proof or product artifacts. Repository topology and model policy remain
 reviewable in `openspec/repositories.yaml` and `foundation.json`.
+Semantic draft inspection keeps one source-bound resume snapshot under
+`intake/`; it contains no transcript or durable product intent.
 Emitted plan and packet byte counts live in
 `logs/<change>/context.jsonl`; they contain sizes and scope metadata, not prompt
 or artifact content.

@@ -75,11 +75,11 @@
     },
     {
       "name": "change start",
-      "usage": "change start --template | <draft.json> [--consume-draft]",
+      "usage": "change start --template | <draft.json> [--inspect | --consume-draft]",
       "audience": "agent",
       "kind": "write",
       "idempotent": false,
-      "description": "Create and start an isolated change from one validated draft."
+      "description": "Inspect semantic intake or create and start an isolated change from one validated draft."
     },
     {
       "name": "change resolve",

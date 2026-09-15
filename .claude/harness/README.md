@@ -36,22 +36,27 @@ Installed users should start with `WORKFLOW.md`. The rest of this page maps the
 runtime for maintainers and evidence authors; `EVIDENCE.md` is the canonical
 provider and receipt contract.
 
-Runtime API 35 adds spec approval through `change resolve --approve-spec`,
-an explicit review continuation through `change resolve --continue-review`,
+Runtime API 38 adds bounded repository intelligence, adaptive intake metrics,
+and selective amendment proof recovery. Typed intake inspection uses
+`change start <draft.json> --inspect` and discovery deltas for v4 amendments.
+Spec approval uses `change resolve --approve-spec`, with review continuation
+through `change resolve --continue-review`,
 and content-bound review waivers through `change waive --capability review`.
 Each requires a real `--decision-ref`. Review dispatches share a persisted
 30-minute deadline. See [WORKFLOW.md](../../WORKFLOW.md) for the user contract.
 
 Every phase view is derived from one versioned execution contract. Semantic
-draft v3 compiles meaningful keys into stable cross-ledger IDs and writes only
+draft v4 validates risk-derived discovery coverage and decision prerequisites,
+then compiles meaningful keys into stable cross-ledger IDs and writes only
 the OpenSpec artifacts the change needs. After Change, protocol-v5 `advance`
 is the normal model-facing entrypoint; primitive commands remain compatible
 operator and integration tools. It compiles
 risk, required providers, external authority, workspace mutation capability,
 budgets, repositories, and Land requirements once; packets, planning,
 readiness, and the mutation guard consume that result instead of independently
-reinterpreting policy. Lifecycle writes go through the typed reducer. These are
-backend changes only: installed user command names and arguments are unchanged.
+reinterpreting policy. Lifecycle writes go through the typed reducer. Existing
+command names remain compatible; `change start --inspect` is an additive
+read-only argument.
 
 ## Files in this directory
 
@@ -105,7 +110,14 @@ backend changes only: installed user command names and arguments are unchanged.
 | Workflow | `runtime/workflow/authority.mjs` | External authority request persistence and response validation |
 | Workflow | `runtime/workflow/budget.mjs` | Run/lifetime usage windows and budget policy transitions |
 | Workflow | `runtime/workflow/change-lifecycle.mjs` | Change creation, draft materialization, resolution, and atomic start |
-| Workflow | `runtime/workflow/semantic-draft.mjs` | Semantic draft v3 validation, stable links, typed extensions, and provider defaults |
+| Workflow | `runtime/workflow/semantic-draft.mjs` | Semantic draft v3 compatibility plus v4 discovery coverage, stable links, typed extensions, and provider defaults |
+| Workflow | `runtime/workflow/validation/semantic-intake.mjs` | Risk-derived discovery dimensions, decision-DAG validation, and bounded frontier selection |
+| Workflow | `runtime/workflow/validation/semantic-source-inventory.mjs` | Deterministic grounded-source inventory and freshness findings |
+| Workflow | `runtime/workflow/validation/repository-intelligence.mjs` | Bounded repository discovery, relevance ranking, and dependency/caller/test maps |
+| Workflow | `runtime/workflow/validation/semantic-intake-intelligence.mjs` | Adaptive intake depth, question-quality gates, multilingual-neutral signals, and effectiveness snapshots |
+| Workflow | `runtime/workflow/semantic-intake-state.mjs` | Draft/source-bound typed intake snapshot and safe resume projection |
+| Workflow | `runtime/workflow/validation/amendment-invalidation.mjs` | Selective claim, task, provider, approval, and proof invalidation planning |
+| Workflow | `runtime/workflow/validation/selective-proof-plan.mjs` | Fail-closed receipt preservation and exact post-amendment proof recovery |
 | Workflow | `runtime/workflow/semantic-amendment.mjs` | Transactional Build-time agreement amendments that preserve canonical prose and completed work |
 | Workflow | `runtime/workflow/advance-runtime.mjs` | Protocol-v5 deterministic chaining, owner outcomes, and safe user projection |
 | Workflow | `runtime/workflow/change-validation.mjs` | Traceability, change validation, and provider requirements |
@@ -124,13 +136,15 @@ backend changes only: installed user command names and arguments are unchanged.
 | Docs | `CONSUMER-QUALITY.md` | Installed quality protocols, onboarding, adapters, baselines, and fail-closed rules |
 | Docs | `README.md` | Runtime overview and operator guide |
 
-Semantic draft version 3 is the default. Agents write intent, requirements,
-tasks, and evidence capabilities once; the compiler generates stable IDs,
-cross-ledger links, specs, and safe detected provider wiring. Multiple specs,
+Semantic draft version 4 is the default. Agents write intent, requirements,
+tasks, evidence capabilities, and explicit discovery dispositions once; the
+harness derives required dimensions, refuses unresolved coverage, and validates
+the decision frontier before the compiler generates stable IDs, cross-ledger
+links, specs, and safe detected provider wiring. Multiple specs,
 decisions, diagrams, prototype selections, integration documentation,
 repositories, and external operations are typed extensions. Version 1 remains
-an exact compatibility path and version 2 retains its unambiguous mechanical
-bookkeeping behavior.
+an exact compatibility path, version 2 retains its unambiguous mechanical
+bookkeeping behavior, and version 3 remains readable.
 
 Rich local references resolve to regular files inside the project; remote
 integration references use HTTPS with a fixed version. Semantic amendments may
@@ -201,9 +215,10 @@ claude-foundation doctor --stage prove --change <change>
 
 | Command | What it does | When to use it |
 |---|---|---|
-| `change start --template` | Prints the compact semantic draft v3 contract | Beginning a fresh Change |
+| `change start --template` | Prints the semantic draft v4 contract with machine-checkable discovery coverage | Beginning a fresh Change |
+| `change start <draft.json> --inspect` | Returns the next typed intake action and exact resume route without creating a change | Iterating on a semantic draft |
 | `change start <draft.json>` | Compiles, validates, installs, and prepares one isolated change transactionally | Completing Change |
-| `change amend <change> <amendment.json>` | Adds discovered requirements while preserving canonical content and completed tasks | A semantic v3 Build discovers new behavior |
+| `change amend <change> <amendment.json>` | Adds discovered requirements, requiring and retaining a discovery delta for v4 | A semantic v3/v4 Build discovers new behavior |
 | `advance <change> --through build\|proven\|archived` | Runs deterministic steps and returns one `EDIT`, `RUN_EXTERNAL`, `REPAIR`, `WAIT`, `ASK_USER`, or `DONE` action | Every normal step after Change |
 
 ## Advanced operator and compatibility commands
@@ -615,6 +630,7 @@ listings elsewhere name this file as their source rather than restating it.
 | Path | Contents |
 |---|---|
 | `.foundation/runtime/` | Runtime operation and handoff state, one file per change |
+| `.foundation/intake/` | One draft/source-bound semantic intake snapshot per inspected draft path |
 | `.foundation/receipts/` | Live content-bound provider receipts and `proof.json` |
 | `.foundation/evidence/` | Immutable proof bundles: manifests, receipt copies, durable artifacts, and the hash-chained review-attempt ledger |
 | `.foundation/snapshots/` | One content snapshot descriptor per proof |
@@ -634,7 +650,7 @@ listings elsewhere name this file as their source rather than restating it.
 | `.foundation/policy.json` | Optional project rules mapping paths to required capabilities |
 | `.foundation/install-manifest.txt` | Installer-owned record of managed files |
 
-`repository-sandboxes/`, `prototypes/`, `recovery/`, and `policy.json` appear
+`intake/`, `repository-sandboxes/`, `prototypes/`, `recovery/`, and `policy.json` appear
 only once something creates them.
 
 Receipts are reusable only while their bound inputs remain unchanged. Every

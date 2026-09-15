@@ -6,6 +6,7 @@ export async function routeRuntimeCommand(command, values, api) {
     fail,
     createChange,
     rapidStartTemplate,
+    inspectDraft,
     startAtomic,
     amendChange,
     resolveChange,
@@ -108,14 +109,20 @@ export async function routeRuntimeCommand(command, values, api) {
         flags,
         rest
       } = parseStrictCommandFlags(values, "start", {
-        boolean: ["template", "consume-draft"]
+        boolean: ["template", "inspect", "consume-draft"]
       });
       if (flags.template) {
         if (rest.length) die("start --template takes no draft path");
+        if (flags.inspect || flags["consume-draft"])
+          die("start --template cannot be combined with --inspect or --consume-draft");
         console.log(JSON.stringify(rapidStartTemplate(), null, 2));
       } else {
         if (rest.length !== 1) die("start requires exactly one draft JSON path");
-        startAtomic(rest[0], { consumeDraft: flags["consume-draft"] });
+        if (flags.inspect) {
+          if (flags["consume-draft"])
+            die("start --inspect cannot be combined with --consume-draft");
+          inspectDraft(rest[0]);
+        } else startAtomic(rest[0], { consumeDraft: flags["consume-draft"] });
       }
     },
     "resolve": async () => {

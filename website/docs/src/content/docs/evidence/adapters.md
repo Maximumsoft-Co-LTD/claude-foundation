@@ -8,7 +8,7 @@ Change Loop separates the stable behavioral contract from replaceable execution 
 ## Derived wiring and execution.yaml
 
 Where [`evidence.yaml`](/docs/evidence/claims/) says *what must be true*, semantic
-draft v3 also derives the ordinary commands needed to prove it. `execution.yaml`
+draft v4 also derives the ordinary commands needed to prove it. `execution.yaml`
 is optional and overrides that wiring when a provider needs a structured report,
 service, timeout, readiness check, or other project-specific configuration. A
 wiring change invalidates only the affected provider fingerprints.

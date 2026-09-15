@@ -8,7 +8,9 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import { normalizeSemanticDraft, semanticDraftTemplate } from "../runtime/workflow/semantic-draft.mjs";
-import { createChangeLifecycle, draftNeedsDesign } from "../runtime/workflow/change-lifecycle.mjs";
+import {
+  createChangeLifecycle, draftNeedsDesign, renderDraftProposal
+} from "../runtime/workflow/change-lifecycle.mjs";
 import {
   appendRequirementToSpec, compileSemanticAmendment, updateTaskClaimAnnotation,
   writeSemanticAmendment
@@ -74,6 +76,22 @@ function semanticDraft(overrides = {}) {
   };
 }
 
+function semanticDraftV4(overrides = {}) {
+  const value = semanticDraft({ version: 4, ...overrides });
+  value.discovery = {
+    coverage: [
+      "current-behavior", "affected-actor", "desired-behavior", "success-path",
+      "failure-path", "input-boundary", "compatibility", "non-goals", "verification",
+      "security-privacy", "permission-rejection", "integration-contract",
+      "timeout-retry-idempotency", "operability", "recoverability"
+    ].map((dimension) => ({
+      dimension, status: "covered", covers: ["payment-retry"]
+    })),
+    decisions: []
+  };
+  return value;
+}
+
 test("semantic compiler creates stable cross-ledger links from semantic keys", () => {
   const result = normalizeSemanticDraft(semanticDraft(), slugify);
   assert.deepEqual(result.issues, []);
@@ -91,6 +109,80 @@ test("semantic compiler creates stable cross-ledger links from semantic keys", (
   assert.equal(result.draft._derivedExecution, true);
   assert.ok(result.draft.execution.providers.test);
   assert.ok(result.draft.execution.providers.integration);
+});
+
+test("semantic compiler accepts discovery-complete v4 and retains v3 compatibility", () => {
+  const current = normalizeSemanticDraft(semanticDraftV4(), slugify);
+  assert.deepEqual(current.issues, []);
+  assert.equal(current.draft._semanticVersion, 4);
+  assert.equal(current.draft.discovery.coverage[0].dimension, "current-behavior");
+  assert.deepEqual(normalizeSemanticDraft(semanticDraft(), slugify).issues, []);
+});
+
+test("draft inspection persists source freshness and blocks stale compilation", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "semantic-intake-lifecycle-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "openspec", "specs"), { recursive: true });
+  writeFileSync(join(root, "README.md"), "first\n");
+  const source = semanticDraftV4({ integrations: [], securityTriggers: [] });
+  source.discovery.coverage = source.discovery.coverage
+    .filter((row) => ![
+      "security-privacy", "permission-rejection", "integration-contract",
+      "timeout-retry-idempotency", "operability", "recoverability"
+    ].includes(row.dimension));
+  source.discovery.coverage[0].sources = ["README.md"];
+  const draftPath = join(root, "draft.json");
+  const saveDraft = () => writeFileSync(draftPath, `${JSON.stringify(source, null, 2)}\n`);
+  saveDraft();
+  const fail = (message) => { throw new Error(message); };
+  const lifecycle = createChangeLifecycle({
+    root, policy: () => ({ workflow: { grounding: "optional" } }), securityTerms: [], fail,
+    pathInside: (parent, candidate) => {
+      const rel = relative(parent, candidate);
+      return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+    },
+    readJson: (path) => JSON.parse(readFileSync(path, "utf8")),
+    writeJson: (path, value) => {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+    },
+    slugify, measureStage: (_stage, operation) => operation(),
+    changePath: (id) => join(root, "openspec", "changes", id),
+    loadRuntime: () => ({}), saveRuntime: () => {}, setOperationChangeId: () => {},
+    initialBudget: () => ({}), gitHead: () => "head", preexistingDirty: () => [],
+    now: () => "2026-09-15T00:00:00.000Z", bindClaudeSession: () => {},
+    validate: () => {}, rollbackStart: () => []
+  });
+  const priorLog = console.log;
+  console.log = () => {};
+  try {
+    const ready = lifecycle.inspectDraft("draft.json");
+    assert.equal(ready.action, "DONE");
+    assert.equal(existsSync(join(root, ready.intakeState.path)), true);
+    writeFileSync(join(root, "README.md"), "second\n");
+    const stale = lifecycle.inspectDraft("draft.json");
+    assert.equal(stale.action, "EDIT");
+    assert.equal(stale.intake.kind, "refresh-source-coverage");
+    source.why = "Acknowledge the refreshed source";
+    saveDraft();
+    assert.equal(lifecycle.inspectDraft("draft.json").action, "DONE");
+    writeFileSync(join(root, "README.md"), "third\n");
+    assert.throws(() => lifecycle.startAtomic("draft.json"),
+      /current completed semantic intake/);
+  } finally {
+    console.log = priorLog;
+  }
+});
+
+test("semantic v4 renders discovery coverage into the compiled agreement", () => {
+  const input = semanticDraftV4();
+  input.discovery.coverage.find((row) => row.dimension === "compatibility").rationale =
+    "Preserve caller | exporter";
+  const compiled = normalizeSemanticDraft(input, slugify).draft;
+  const proposal = renderDraftProposal(compiled, { intent: compiled.intent });
+  assert.match(proposal, /## Requirement discovery coverage/);
+  assert.match(proposal, /\| compatibility \| covered \| payment-retry \|/);
+  assert.match(proposal, /Preserve caller \\\| exporter/);
 });
 
 test("semantic compiler aggregates unknown references, cycles, and placeholders", () => {
@@ -198,13 +290,15 @@ test("modified requirements merge every canonical scenario before rendering", ()
 
 test("semantic template is compact and delegates bookkeeping", () => {
   const template = semanticDraftTemplate();
-  assert.equal(template.version, 3);
+  assert.equal(template.version, 4);
   assert.ok(template.requirements[0].key);
   assert.ok(template.tasks[0].covers.length);
   assert.equal(template.claims, undefined);
   assert.equal(template.specs, undefined);
   assert.equal(template.execution, undefined);
   assert.equal(template.grounding, undefined);
+  assert.ok(template.discovery.coverage.length);
+  assert.ok(template.discovery.coverage.some((row) => row.status === "needs-investigation"));
 });
 
 test("semantic materialization omits virtual-default files and writes typed extensions", (t) => {
@@ -230,7 +324,7 @@ test("semantic materialization omits virtual-default files and writes typed exte
     "| Path | Responsibility | Requirement | Task | Verification |\n" +
     "|---|---|---|---|---|\n| src/payment | Retry safely | payment-retry | implement-retry | npm test |";
   const diagram = "sequenceDiagram\nClient->>Payment: retry\nPayment-->>Client: stable result";
-  const compiled = normalizeSemanticDraft(semanticDraft({ currentState: mapping,
+  const compiled = normalizeSemanticDraft(semanticDraftV4({ currentState: mapping,
     diagrams: [{ key: "retry-flow", type: "mermaid", purpose: "Retry boundary", source: diagram }]
   }), slugify).draft;
   assert.equal(draftNeedsDesign(compiled), true);
@@ -322,6 +416,56 @@ test("semantic amendment preserves completed tasks and custom spec sections", ()
   "- [ ] **T001** Work [claims:a] — verify: `npm test`");
 });
 
+test("v4 semantic amendment requires discovery delta and records it in proposal", (t) => {
+  const amendment = {
+    version: 1,
+    reason: "Build exposed an additional bounded failure",
+    addRequirements: [{
+      key: "bounded-failure", capability: "mutation-control", operation: "added",
+      scenario: "A bounded failure occurs", outcome: "The failure is reported"
+    }],
+    addTasks: [{
+      key: "handle-bounded-failure", outcome: "Handle the bounded failure",
+      covers: ["bounded-failure"], paths: ["src/**"], verify: "npm test"
+    }],
+    evidence: { "bounded-failure": { capabilities: ["test"] } }
+  };
+  const args = {
+    amendment,
+    semanticDraftVersion: 4,
+    contract: { version: 1, claims: [], providers: {} },
+    tasksContent: "# Tasks\n",
+    slugify,
+    renderTask: (task) => `- [ ] **${task.id}** ${task.outcome} [key:${task.key}] ` +
+      `[claims:${task.claims.join(",")}] — verify: \`${task.verify}\`\n`
+  };
+  assert.match(compileSemanticAmendment(args).issues.join("\n"),
+    /version 4 requires a 'discovery' object/);
+
+  amendment.discovery = {
+    coverage: [
+      "current-behavior", "affected-actor", "desired-behavior", "success-path",
+      "failure-path", "input-boundary", "compatibility", "non-goals", "verification"
+    ].map((dimension) => ({
+      dimension, status: "covered", covers: ["bounded-failure"]
+    })),
+    decisions: []
+  };
+  const compiled = compileSemanticAmendment(args);
+  assert.deepEqual(compiled.issues, []);
+  assert.equal(compiled.discovery.coverage.length, 9);
+
+  const root = mkdtempSync(join(tmpdir(), "v4-amend-proposal-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, "proposal.md"), "# Change\n");
+  writeFileSync(join(root, "tasks.md"), "# Tasks\n");
+  writeFileSync(join(root, "evidence.yaml"), JSON.stringify({ version: 1 }));
+  writeSemanticAmendment(root, compiled, slugify, { schema: "foundation-rapid" });
+  const proposal = readFileSync(join(root, "proposal.md"), "utf8");
+  assert.match(proposal, /## Amendment discovery coverage/);
+  assert.match(proposal, /\| failure-path \| covered \| bounded-failure \|/);
+});
+
 test("rapid amendments preserve skip_specs while retaining claims and tasks", (t) => {
   const root = mkdtempSync(join(tmpdir(), "rapid-amend-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -394,6 +538,7 @@ test("change amend installs atomically and restores files and state on validatio
     "- [x] **T001** Existing outcome [key:existing-task] [claims:existing-claim] — verify: `npm test`",
     ""
   ].join("\n"));
+  writeFileSync(join(change, "proposal.md"), "# Payment change\n");
   writeFileSync(join(change, "evidence.yaml"), `${JSON.stringify({
     version: 1,
     claims: [{
@@ -416,10 +561,17 @@ test("change amend installs atomically and restores files and state on validatio
       scenario: `${key} is observed`, outcome: `${key} is handled`
     }],
     updateTasks: [{ key: "existing-task", covers: ["existing-behavior", key] }],
-    evidence: { [key]: { capabilities: ["test"] } }
+    evidence: { [key]: { capabilities: ["test"] } },
+    discovery: {
+      coverage: [
+        "current-behavior", "affected-actor", "desired-behavior", "success-path",
+        "failure-path", "input-boundary", "compatibility", "non-goals", "verification"
+      ].map((dimension) => ({ dimension, status: "covered", covers: [key] })),
+      decisions: []
+    }
   }, null, 2)}\n`);
   let state = {
-    id, status: "building", semanticDraftVersion: 3,
+    id, status: "building", semanticDraftVersion: 4,
     revision: 0, contractRevision: 0, executionRevision: 0
   };
   let rejectValidation = false;
@@ -451,14 +603,19 @@ test("change amend installs atomically and restores files and state on validatio
     lifecycle.amendChange(id, "amendment.json");
     assert.equal(state.contractRevision, 1);
     assert.equal(state.amendments.length, 1);
+    assert.deepEqual(state.amendments[0].invalidation.affectedTasks, ["T001"]);
+    assert.deepEqual(state.amendments[0].invalidation.affectedProviders, ["test"]);
     assert.match(readFileSync(join(change, "tasks.md"), "utf8"),
       /\[x\].*existing-claim,malformed-row/);
+    assert.match(readFileSync(join(change, "proposal.md"), "utf8"),
+      /Amendment discovery coverage[\s\S]*malformed-row/);
     const spec = readFileSync(join(change, "specs", "payment-control", "spec.md"), "utf8");
     assert.ok(spec.indexOf("Requirement: malformed-row") < spec.indexOf("## Operator notes"));
 
     const before = {
       tasks: readFileSync(join(change, "tasks.md"), "utf8"),
       evidence: readFileSync(join(change, "evidence.yaml"), "utf8"),
+      proposal: readFileSync(join(change, "proposal.md"), "utf8"),
       spec: readFileSync(join(change, "specs", "payment-control", "spec.md"), "utf8"),
       state: structuredClone(state)
     };
@@ -468,6 +625,7 @@ test("change amend installs atomically and restores files and state on validatio
       /synthetic validator failure; semantic amendment rolled back/);
     assert.equal(readFileSync(join(change, "tasks.md"), "utf8"), before.tasks);
     assert.equal(readFileSync(join(change, "evidence.yaml"), "utf8"), before.evidence);
+    assert.equal(readFileSync(join(change, "proposal.md"), "utf8"), before.proposal);
     assert.equal(readFileSync(join(change, "specs", "payment-control", "spec.md"), "utf8"), before.spec);
     assert.deepEqual(state, before.state);
   } finally {

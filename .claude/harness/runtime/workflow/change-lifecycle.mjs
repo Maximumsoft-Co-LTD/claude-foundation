@@ -1,22 +1,41 @@
 import { agreementIdentity, REVIEW_WINDOW_MS } from "../core/user-decisions.mjs";
+import { createHash } from "node:crypto";
 import {
   cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync,
   realpathSync, statSync, writeFileSync
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { nextCommand } from "../core/next-step.mjs";
+import { taskBlocks, taskMetadata } from "../contracts/change-artifacts.mjs";
 import { materialSecurityTriggers } from "./security-policy.mjs";
 import {
   normalizeSemanticDraft, semanticDraftTemplate
 } from "./semantic-draft.mjs";
+import {
+  semanticIntakeAction, semanticIntakeIssues
+} from "./validation/semantic-intake.mjs";
+import { inspectSemanticSources } from "./validation/semantic-source-inventory.mjs";
+import { inspectRepositoryIntelligence } from "./validation/repository-intelligence.mjs";
+import {
+  planSemanticIntakeDepth,
+  semanticIntakeEffectivenessSnapshot,
+  semanticQuestionQualityFindings
+} from "./validation/semantic-intake-intelligence.mjs";
+import { planAmendmentInvalidation } from "./validation/amendment-invalidation.mjs";
+import {
+  planSelectiveProofRecovery, rebindSelectiveProofReceipt
+} from "./validation/selective-proof-plan.mjs";
+import {
+  reduceSemanticIntakeState, semanticDraftDigest, semanticIntakeResumeProjection
+} from "./semantic-intake-state.mjs";
 import {
   compileSemanticAmendment, writeSemanticAmendment
 } from "./semantic-amendment.mjs";
 
 export function atomicStartPreflight(draft, { groundingRequired = false } = {}) {
   const issues = [];
-  if (![1, 2, 3].includes(draft?.version))
-    issues.push("start draft requires version 1, 2, or 3");
+  if (![1, 2, 3, 4].includes(draft?.version))
+    issues.push("start draft requires version 1, 2, 3, or 4");
   if (!String(draft?.intent || "").trim())
     issues.push("start draft requires non-empty 'intent'");
   const acceptance = draft?.acceptance;
@@ -131,7 +150,7 @@ export function initialChangeState({
     groundingRequired,
     groundingVersion: groundingRequired ? (groundingVersion || 2) : null,
     semanticDraftVersion,
-    artifactDefaultsVersion: semanticDraftVersion === 3 ? 2 : null,
+    artifactDefaultsVersion: [3, 4].includes(semanticDraftVersion) ? 2 : null,
     nfrAssessmentRequired: standard && groundingRequired && groundingVersion !== 3,
     decisionMetadataRequired: standard && designRequired,
     semanticInvariantsRequired: standard,
@@ -183,15 +202,30 @@ export function draftBullets(items) {
   return items.length ? items.map((item) => `- ${item}`).join("\n") : "- none";
 }
 
+function tableCell(value) {
+  return String(value ?? "").replace(/\r?\n/g, " ").replaceAll("|", "\\|");
+}
+
 export function renderDraftProposal(draft, state) {
   const title = draft.title || state.intent;
+  const discovery = draft.discovery?.coverage?.length
+    ? `\n\n## Requirement discovery coverage\n\n` +
+      `| Dimension | Status | Requirements | Sources | Rationale |\n` +
+      `|---|---|---|---|---|\n` +
+      draft.discovery.coverage.map((row) =>
+        `| ${tableCell(row.dimension)} | ${tableCell(row.status)} | ` +
+        `${tableCell((row.covers || []).join(", ") || "none")} | ` +
+        `${tableCell((row.sources || []).join(", ") || "none")} | ` +
+        `${tableCell(row.rationale || "none")} |`
+      ).join("\n")
+    : "";
   return `# Change: ${title}\n\n## Why\n\n${draft.why}\n\n` +
     `## What changes\n\n${draftBullets(draft.changes)}\n\n## Impact\n\n` +
     `- **Impact:** ${draft.impact || state.impact || "medium"}\n` +
     `- **Coupling:** ${draft.coupling || state.coupling || "coupled"}\n` +
     `- **Affected surfaces:** ${(draft.surfaces || ["code"]).join(", ")}\n` +
     `- **Security triggers:** ${(draft.securityTriggers || ["none"]).join(", ")}\n\n` +
-    `## Non-goals\n\n${draftBullets(draft.nonGoals)}\n`;
+    `## Non-goals\n\n${draftBullets(draft.nonGoals)}${discovery}\n`;
 }
 
 export function synchronizeProposalClassification(proposal, state) {
@@ -380,10 +414,40 @@ export function createChangeLifecycle({
   validate,
   showPacket,
   measureStage,
+  receiptPath = null,
+  receiptValidity = null,
+  contractFingerprint = null,
+  requiredProviders = null,
+  providerConfig = null,
+  claimsForProvider = null,
+  providerWorkspaceHash = null,
+  providerInputIdentity = null,
+  relevantHash = null,
+  stableHash = null,
   trapFailures = (operation) => operation(),
   rollbackStart = () => []
 }) {
   const workflowPolicy = () => typeof policy === "function" ? policy() : policy;
+
+  function selectiveBinding(id, provider, contractRevision, receipt = null) {
+    if (!receiptValidity || !providerConfig || !claimsForProvider || !providerWorkspaceHash ||
+        !providerInputIdentity || !relevantHash || !stableHash) return null;
+    const config = providerConfig(id, provider);
+    const claims = claimsForProvider(id, provider).map((claim) => claim.id).sort();
+    const workspaceHash = providerWorkspaceHash(id, provider, relevantHash(id));
+    const inputs = providerInputIdentity(id, provider, config, workspaceHash);
+    return {
+      provider,
+      status: receipt?.status || "pass",
+      validity: receipt ? receiptValidity(id, provider, workspaceHash).validity : "valid",
+      binding: {
+        contractRevision,
+        providerFingerprint: stableHash({ config, claims }),
+        claimsFingerprint: stableHash(claims),
+        inputIdentity: inputs
+      }
+    };
+  }
   function templateDir(schema) {
     return join(root, "openspec", "schemas", schema, "templates");
   }
@@ -409,12 +473,64 @@ export function createChangeLifecycle({
     return readJson(source);
   }
 
+  function semanticSourcePaths(source) {
+    return [...new Set((source.discovery?.coverage || [])
+      .flatMap((row) => Array.isArray(row?.sources) ? row.sources : [])
+      .map((path) => String(path || "").trim()).filter(Boolean))];
+  }
+
+  function semanticIntakeStatePath(draftPath) {
+    const draft = relative(root, resolve(root, draftPath)).replaceAll("\\", "/");
+    const key = createHash("sha256").update(draft).digest("hex").slice(0, 24);
+    return join(root, ".foundation", "intake", `${key}.json`);
+  }
+
+  function semanticSourceInspection(source, baseline = null, discoveredPaths = []) {
+    return inspectSemanticSources({
+      projectRoot: root,
+      sourcePaths: [...new Set([...semanticSourcePaths(source), ...discoveredPaths])],
+      baseline
+    });
+  }
+
+  function repositoryIntelligence(source) {
+    const query = [source.intent, source.why, ...(source.changes || []),
+      ...(source.requirements || []).flatMap((row) => [
+        row?.key, row?.requirement, row?.description, row?.outcome
+      ])];
+    const initialDepth = planSemanticIntakeDepth(source);
+    const repository = inspectRepositoryIntelligence({
+      projectRoot: root,
+      query,
+      seedPaths: semanticSourcePaths(source),
+      limits: { maxReadSet: 48 }
+    });
+    const graph = repository.graph || {};
+    const surfaces = graph.surfaces || {};
+    const depth = planSemanticIntakeDepth(source, { repository: {
+      candidateFileCount: repository.candidates?.length || 0,
+      integrationCount: surfaces.integrations?.length || 0,
+      dependentCount: graph.callers?.length || 0,
+      persistenceBoundaryCount: surfaces.persistence?.length || 0,
+      permissionBoundaryCount: surfaces.permissions?.length || 0
+    } });
+    let selectedBytes = 0;
+    const selected = [];
+    for (const row of repository.readSet || []) {
+      if (selected.length >= depth.limits.maxSourceFiles) break;
+      if (selectedBytes + row.bytes > depth.limits.maxSourceBytes) continue;
+      selected.push(row.path);
+      selectedBytes += row.bytes;
+    }
+    return { repository, depth, selected, selectedBytes, initialDepth };
+  }
+
   function validateDraftFields(draft) {
     const requiredStrings = ["why", "currentState", "compatibility"];
     for (const field of requiredStrings)
       if (!String(draft[field] || "").trim())
         fail(`draft requires non-empty '${field}'`);
-    const requiredArrays = draft._semanticVersion === 3
+    const requiredArrays = [3, 4].includes(draft._semanticVersion)
       ? ["changes", "tasks", "claims", "specs"]
       : ["changes", "nonGoals", "decisions", "risks", "tasks", "claims", "specs"];
     for (const field of requiredArrays)
@@ -472,14 +588,14 @@ export function createChangeLifecycle({
     }
   }
 
-  function loadDraft(draftPath, { deferPolicy = false } = {}) {
-    const source = draftSource(draftPath);
+  function loadDraft(draftPath, { deferPolicy = false, preparedSource = null } = {}) {
+    const source = preparedSource || draftSource(draftPath);
     // Version 1 is a compatibility contract: callers that supplied every
     // ledger key receive the exact same object back. Version 2 delegates the
     // mechanical IDs and unambiguous cross-ledger bindings to the harness.
     let draft = source;
     if (source.version === 2) draft = deriveDraftBookkeeping(source, slugify);
-    if (source.version === 3) {
+    if ([3, 4].includes(source.version)) {
       const normalized = normalizeSemanticDraft(source, slugify, {
         loadCanonicalSpec: (capability) => {
           const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
@@ -498,7 +614,8 @@ export function createChangeLifecycle({
     return draft;
   }
 
-  function validateSemanticReferences(draft) {
+  function semanticReferenceIssues(draft) {
+    const issues = [];
     const validateLocalFile = (field, value) => {
       const path = resolve(root, value);
       try {
@@ -507,26 +624,31 @@ export function createChangeLifecycle({
         if (!pathInside(project, canonical) || !statSync(canonical).isFile())
           throw new Error("not a contained regular file");
       } catch {
-        fail(`semantic draft ${field} must reference an existing regular file inside the project`);
+        issues.push(`semantic draft ${field} must reference an existing regular file inside the project`);
       }
     };
     const referencedPaths = [];
     if (draft.prototypeSelection?.reference)
       referencedPaths.push(["prototypeSelection.reference", draft.prototypeSelection.reference]);
+    for (const [index, row] of (draft.discovery?.coverage || []).entries())
+      for (const [sourceIndex, source] of (row.sources || []).entries())
+        referencedPaths.push([
+          `discovery.coverage[${index}].sources[${sourceIndex}]`, source
+        ]);
     for (const [index, diagram] of (draft.diagrams || []).entries()) {
       if (!["mermaid", "svg", "png"].includes(diagram?.type))
-        fail(`semantic draft diagrams[${index}].type must be mermaid|svg|png`);
+        issues.push(`semantic draft diagrams[${index}].type must be mermaid|svg|png`);
       if (!String(diagram?.key || "").trim())
-        fail(`semantic draft diagrams[${index}].key is required`);
+        issues.push(`semantic draft diagrams[${index}].key is required`);
       if (!String(diagram?.purpose || "").trim())
-        fail(`semantic draft diagrams[${index}].purpose is required`);
+        issues.push(`semantic draft diagrams[${index}].purpose is required`);
       if (diagram.type === "mermaid" && !String(diagram.source || "").trim())
-        fail(`semantic draft diagrams[${index}].source is required`);
+        issues.push(`semantic draft diagrams[${index}].source is required`);
       if (diagram.type !== "mermaid") {
         const path = diagram.path || diagram.source;
         if (!String(path || "").trim())
-          fail(`semantic draft diagrams[${index}].path is required`);
-        referencedPaths.push([`diagrams[${index}].path`, path]);
+          issues.push(`semantic draft diagrams[${index}].path is required`);
+        else referencedPaths.push([`diagrams[${index}].path`, path]);
       }
     }
     for (const [field, value] of referencedPaths) validateLocalFile(field, value);
@@ -536,16 +658,25 @@ export function createChangeLifecycle({
       if (/^[a-z][a-z0-9+.-]*:\/\//i.test(source)) {
         let url;
         try { url = new URL(source); }
-        catch { fail(`semantic draft integrations[${index}].documentation.source must be a valid HTTPS URL`); }
+        catch {
+          issues.push(`semantic draft integrations[${index}].documentation.source must be a valid HTTPS URL`);
+          continue;
+        }
         if (url.protocol !== "https:")
-          fail(`semantic draft integrations[${index}].documentation.source must use HTTPS`);
+          issues.push(`semantic draft integrations[${index}].documentation.source must use HTTPS`);
         const version = String(integration?.documentation?.version || "").trim();
         if (/^(?:latest|current|main|master|head)$/i.test(version))
-          fail(`semantic draft integrations[${index}].documentation.version must identify a fixed version`);
+          issues.push(`semantic draft integrations[${index}].documentation.version must identify a fixed version`);
         continue;
       }
       validateLocalFile(`integrations[${index}].documentation.source`, source);
     }
+    return issues;
+  }
+
+  function validateSemanticReferences(draft) {
+    const issues = semanticReferenceIssues(draft);
+    if (issues.length) fail(issues.join("\n  - "));
   }
 
   function normalizedDraftScenarios(spec) {
@@ -572,19 +703,19 @@ export function createChangeLifecycle({
     const basePath = changePath(id);
     writeFileSync(join(basePath, "proposal.md"), renderDraftProposal(draft, state));
     if (state.schema === "foundation-standard" &&
-        (draft._semanticVersion !== 3 || draftNeedsDesign(draft)))
+        (![3, 4].includes(draft._semanticVersion) || draftNeedsDesign(draft)))
       writeFileSync(join(basePath, "design.md"), renderDraftDesign(draft));
     if (state.groundingRequired && draft.grounding)
       writeJson(join(basePath, "grounding.yaml"), draft.grounding);
     writeFileSync(join(basePath, "tasks.md"), renderDraftTasks(draft.tasks));
     const contract = readJson(join(basePath, "evidence.yaml"));
     contract.claims = draft.claims;
-    if (draft._semanticVersion === 3 && draft._derivedExecution)
+    if ([3, 4].includes(draft._semanticVersion) && draft._derivedExecution)
       contract.providers = draft.execution.providers;
     writeJson(join(basePath, "evidence.yaml"), contract);
-    if (draft.execution && !(draft._semanticVersion === 3 && draft._derivedExecution))
+    if (draft.execution && !([3, 4].includes(draft._semanticVersion) && draft._derivedExecution))
       writeJson(join(basePath, "execution.yaml"), draft.execution);
-    if (draft._semanticVersion !== 3 || draft.externalOperations?.length)
+    if (![3, 4].includes(draft._semanticVersion) || draft.externalOperations?.length)
       writeJson(join(basePath, "handoffs.yaml"), {
         version: 1,
         operations: draft.externalOperations || []
@@ -639,7 +770,7 @@ export function createChangeLifecycle({
     const target = changePath(id);
     const groundingRequired = workflowPolicy().workflow.grounding === "required" ||
       Boolean(draft?.grounding);
-    const semantic = draft?._semanticVersion === 3;
+    const semantic = [3, 4].includes(draft?._semanticVersion);
     // The rapid schema declares no spec artifact, so a rapid change never has
     // deltas to find. OpenSpec reads that absence as an error — every rapid
     // change was invalid to `openspec validate`, and Land printed five lines of
@@ -655,7 +786,7 @@ export function createChangeLifecycle({
       root, id, intent, schema, groundingRequired,
       riskBasedCi: workflowPolicy().land?.riskBasedCi === true,
       gitHead, preexistingDirty, initialBudget, now,
-      semanticDraftVersion: semantic ? 3 : null,
+      semanticDraftVersion: semantic ? draft._semanticVersion : null,
       groundingVersion: draft?.grounding?.version || null,
       externalOperationsVersion: semantic
         ? (draft.externalOperations?.length ? 1 : null) : 1,
@@ -673,6 +804,89 @@ export function createChangeLifecycle({
 
   function rapidStartTemplate() {
     return semanticDraftTemplate();
+  }
+
+  function inspectDraft(draftPath, options = {}) {
+    const source = options.preparedSource || draftSource(draftPath);
+    const resume = `claude-foundation change start ${draftPath} --inspect`;
+    const statePath = semanticIntakeStatePath(draftPath);
+    let previous = null;
+    if (existsSync(statePath)) {
+      try { previous = JSON.parse(readFileSync(statePath, "utf8")); }
+      catch { previous = null; }
+    }
+    const sameDraft = previous?.draftDigest === semanticDraftDigest(source);
+    const intelligence = repositoryIntelligence(source);
+    const sourceInspection = semanticSourceInspection(
+      source, sameDraft ? previous?.sourceInventory : null, intelligence.selected);
+    const intakeIssues = semanticIntakeIssues(source);
+    const normalized = normalizeSemanticDraft(source, slugify, {
+      loadCanonicalSpec: (capability) => {
+        const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
+        return existsSync(path) ? readFileSync(path, "utf8") : null;
+      }
+    });
+    const additionalIssues = [
+      ...normalized.issues.filter((issue) => !intakeIssues.includes(issue)),
+      ...semanticReferenceIssues(normalized.draft),
+      ...semanticQuestionQualityFindings(source, {
+        sourceFacts: source.discovery?.sourceFacts || []
+      }).map((finding) => `semantic decision ${finding.code}: ${finding.key || finding.path}`),
+      ...(intelligence.repository.status === "blocked"
+        ? intelligence.repository.findings.map((finding) =>
+          `repository discovery ${finding.code}: ${finding.path || "(root)"}`)
+        : []),
+      ...sourceInspection.findings.map((finding) =>
+        `semantic source ${finding.code}: ${finding.path || "(unknown)"}`)
+    ];
+    const action = semanticIntakeAction(source, {
+      resume, additionalIssues,
+      sourceFreshnessFindings: sourceInspection.staleFindings,
+      frontierLimit: intelligence.depth.limits.frontierLimit
+    });
+    const retainedInventory = sameDraft && sourceInspection.staleFindings.length
+      ? previous.sourceInventory : sourceInspection.inventory;
+    const effectiveness = semanticIntakeEffectivenessSnapshot(source, {
+      repository: {
+        candidateFileCount: intelligence.repository.candidates?.length || 0,
+        integrationCount: intelligence.repository.graph?.surfaces?.integrations?.length || 0,
+        dependentCount: intelligence.repository.graph?.callers?.length || 0,
+        persistenceBoundaryCount:
+          intelligence.repository.graph?.surfaces?.persistence?.length || 0,
+        permissionBoundaryCount:
+          intelligence.repository.graph?.surfaces?.permissions?.length || 0
+      },
+      sourceFacts: source.discovery?.sourceFacts || [],
+      history: previous?.effectiveness?.history
+    });
+    const state = reduceSemanticIntakeState(previous, {
+      draft: source, action, resumeRoute: resume, sourceInventory: retainedInventory,
+      effectiveness
+    });
+    writeJson(statePath, state);
+    const result = {
+      ...action,
+      intakeState: {
+        path: relative(root, statePath),
+        revision: state.revision,
+        draftDigest: state.draftDigest,
+        sourceDigest: state.sourceInventory?.digest || null
+      },
+      intelligence: {
+        depth: state.effectiveness.depth,
+        repository: {
+          status: intelligence.repository.status,
+          complete: intelligence.repository.complete,
+          scan: intelligence.repository.scan,
+          selectedSources: intelligence.selected,
+          selectedBytes: intelligence.selectedBytes,
+          findings: intelligence.repository.findings
+        }
+      },
+      effectiveness: state.effectiveness
+    };
+    if (!options.quiet) console.log(JSON.stringify(result, null, 2));
+    return result;
   }
 
   function applyGroundingReopen(state, flags) {
@@ -903,8 +1117,37 @@ export function createChangeLifecycle({
   }
 
   function startAtomic(draftPath, options = {}) {
+    const source = draftSource(draftPath);
+    if (source.version === 4) {
+      const statePath = semanticIntakeStatePath(draftPath);
+      const resume = `claude-foundation change start ${draftPath} --inspect`;
+      let intakeState = null;
+      if (existsSync(statePath)) {
+        try { intakeState = JSON.parse(readFileSync(statePath, "utf8")); }
+        catch { intakeState = null; }
+      }
+      if (!intakeState) {
+        const inspected = inspectDraft(draftPath, {
+          quiet: true,
+          preparedSource: source
+        });
+        if (inspected.action !== "DONE")
+          fail(`version-4 drafts require a current completed semantic intake; ` +
+            `resume with '${resume}'`);
+      } else {
+        const intelligence = repositoryIntelligence(source);
+        const sourceInspection = semanticSourceInspection(source, null, intelligence.selected);
+        const projection = semanticIntakeResumeProjection(intakeState, source, {
+          resumeRoute: resume, sourceInventory: sourceInspection.inventory
+        });
+        if (intelligence.repository.status !== "ready" || sourceInspection.findings.length ||
+            projection.status !== "current" || projection.action?.action !== "DONE")
+          fail(`version-4 drafts require a current completed semantic intake; ` +
+            `resume with '${resume}'`);
+      }
+    }
     const draft = measureStage("change.load-draft", () =>
-      loadDraft(draftPath, { deferPolicy: true }));
+      loadDraft(draftPath, { deferPolicy: true, preparedSource: source }));
     const preflight = measureStage("change.preflight", () => atomicStartPreflight(draft, {
       groundingRequired: workflowPolicy().workflow.grounding === "required" ||
         Boolean(draft.grounding)
@@ -949,19 +1192,24 @@ export function createChangeLifecycle({
       fail(detail);
     }
     if (options.consumeDraft) {
-      const source = resolve(root, draftPath);
-      try { rmSync(source); }
+      const draftFile = resolve(root, draftPath);
+      try { rmSync(draftFile); }
       catch (error) {
         console.error(`WARNING: atomic start succeeded but could not remove draft '${
-          relative(root, source)}': ${error.message}`);
+          relative(root, draftFile)}': ${error.message}`);
       }
+    }
+    try { rmSync(semanticIntakeStatePath(draftPath), { force: true }); }
+    catch (error) {
+      console.error(`WARNING: atomic start succeeded but could not remove semantic intake state: ${
+        error.message}`);
     }
   }
 
   function amendChange(id, amendmentPath, options = {}) {
     const state = loadRuntime(id);
-    if (state.semanticDraftVersion !== 3)
-      fail(`change amend requires a semantic-draft v3 change; '${id}' is a legacy agreement`);
+    if (![3, 4].includes(state.semanticDraftVersion))
+      fail(`change amend requires a semantic-draft v3 or v4 change; '${id}' is a legacy agreement`);
     if (["proven", "landing", "archived"].includes(state.status))
       fail(`change amend cannot rewrite an agreement in '${state.status}' status; start a successor change`);
     const source = resolve(root, amendmentPath);
@@ -972,10 +1220,51 @@ export function createChangeLifecycle({
     const contract = readJson(join(basePath, "evidence.yaml"));
     const tasksContent = readFileSync(join(basePath, "tasks.md"), "utf8");
     const compiled = compileSemanticAmendment({
-      amendment, contract, tasksContent, slugify, renderTask: renderDraftTask
+      amendment, contract, tasksContent, slugify, renderTask: renderDraftTask,
+      semanticDraftVersion: state.semanticDraftVersion
     });
     if (compiled.issues.length)
       fail(`semantic amendment validation failed:\n  - ${compiled.issues.join("\n  - ")}`);
+    const coverageChanges = (compiled.discovery?.coverage || []).map((row) => ({
+      dimension: row.dimension,
+      claimIds: compiled.claims.filter((claim) =>
+        (row.covers || []).includes(claim.requirementKey)).map((claim) => claim.id)
+    }));
+    const providers = Object.fromEntries(Object.entries(compiled.providers || {}).map(
+      ([name, config]) => [name, {
+        capability: config.capability || name,
+        ...(Array.isArray(config.claims) ? { claims: config.claims } : {}),
+        ...(Array.isArray(config.dependsOn) ? { dependsOn: config.dependsOn } : {})
+      }]
+    ));
+    const invalidation = planAmendmentInvalidation({
+      claims: compiled.claims,
+      tasks: taskBlocks(compiled.tasksContent).map(taskMetadata),
+      providers,
+      coverageDelta: {
+        addedClaimIds: compiled.invalidatedClaims,
+        coverageChanges
+      }
+    });
+    if (invalidation.status !== "READY")
+      fail(`semantic amendment invalidation planning failed:\n  - ${
+        invalidation.findings.map((finding) => `${finding.code}: ${finding.message}`).join("\n  - ")}`);
+    compiled.invalidation = invalidation;
+
+    const priorContractRevision = Number(state.contractRevision || 0);
+    const priorContractFingerprint = contractFingerprint ? contractFingerprint(id) : null;
+    const receiptBackups = new Map();
+    const receiptBindings = [];
+    if (receiptPath && existsSync(dirname(receiptPath(id, "__provider__")))) {
+      for (const provider of invalidation.proof.preserveReceipts) {
+        const path = receiptPath(id, provider);
+        if (!existsSync(path)) continue;
+        const receipt = readJson(path);
+        receiptBackups.set(provider, receipt);
+        const binding = selectiveBinding(id, provider, priorContractRevision, receipt);
+        if (binding) receiptBindings.push(binding);
+      }
+    }
 
     const transactionRoot = mkdtempSync(join(dirname(basePath), `.${id}-amend-`));
     const stagedPath = join(transactionRoot, "next");
@@ -989,6 +1278,38 @@ export function createChangeLifecycle({
       renameSync(stagedPath, basePath);
       installed = true;
       validate(id, "root");
+      const currentContractRevision = priorContractRevision + 1;
+      const currentRequiredProviders = requiredProviders ? requiredProviders(id) : [];
+      const currentBindings = invalidation.proof.preserveReceipts
+        .map((provider) => selectiveBinding(id, provider, currentContractRevision))
+        .filter(Boolean);
+      const proofRecovery = planSelectiveProofRecovery({
+        changeId: id,
+        invalidation,
+        requiredProviders: currentRequiredProviders,
+        receiptBindings,
+        currentBindings,
+        priorContractRevision,
+        currentContractRevision
+      });
+      compiled.invalidation.proofRecovery = proofRecovery;
+      if (proofRecovery.status === "READY" && receiptPath && contractFingerprint) {
+        const nextFingerprint = contractFingerprint(id);
+        for (const provider of proofRecovery.providers.preserved) {
+          const priorReceipt = receiptBackups.get(provider);
+          if (!priorReceipt) throw new Error(`selective proof receipt '${provider}' disappeared`);
+          writeJson(receiptPath(id, provider), rebindSelectiveProofReceipt({
+            receipt: priorReceipt,
+            provider,
+            plan: proofRecovery,
+            fromContractFingerprint: priorContractFingerprint,
+            toContractFingerprint: nextFingerprint,
+            reboundAt: now()
+          }));
+          if (receiptValidity(id, provider).validity !== "valid")
+            throw new Error(`selective proof receipt '${provider}' failed post-rebind validation`);
+        }
+      }
       const nextState = loadRuntime(id);
       nextState.revision = Number(nextState.revision || 0) + 1;
       nextState.contractRevision = Number(nextState.contractRevision || 0) + 1;
@@ -999,6 +1320,14 @@ export function createChangeLifecycle({
         reason: String(amendment.reason || "Agreement expanded during Build"),
         requirementKeys: compiled.addedRequirementKeys,
         invalidatedClaims: compiled.invalidatedClaims,
+        invalidation: {
+          affectedTasks: invalidation.affectedTasks,
+          affectedProviders: invalidation.affectedProviders,
+          preservedProviders: invalidation.preservedProviders,
+          approval: invalidation.approval,
+          proof: invalidation.proof,
+          proofRecovery
+        },
         appliedAt: now()
       }];
       saveRuntime(nextState);
@@ -1007,6 +1336,9 @@ export function createChangeLifecycle({
       if (installed && existsSync(basePath))
         rmSync(basePath, { recursive: true, force: true });
       if (existsSync(priorPath)) renameSync(priorPath, basePath);
+      if (receiptPath)
+        for (const [provider, receipt] of receiptBackups)
+          writeJson(receiptPath(id, provider), receipt);
       saveRuntime(priorState);
       fail(`${error?.message || error}; semantic amendment rolled back`);
     } finally {
@@ -1021,6 +1353,8 @@ export function createChangeLifecycle({
     }
     console.log(`AMENDED ${id}\n  revision: ${loadRuntime(id).contractRevision}\n` +
       `  invalidated claims: ${compiled.invalidatedClaims.join(", ")}\n` +
+      `  proof: ${compiled.invalidation.proofRecovery?.recovery?.instruction ||
+        "re-enter Prove so receipt bindings are recomputed"}\n` +
       `  next: claude-foundation advance ${id}`);
     return compiled;
   }
@@ -1032,6 +1366,7 @@ export function createChangeLifecycle({
     materializeDraft,
     createChange,
     rapidStartTemplate,
+    inspectDraft,
     startAtomic,
     amendChange,
     resolveChange

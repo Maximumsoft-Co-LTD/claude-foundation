@@ -17,7 +17,7 @@ does not replace your coding agent, test framework, CI system, or Git workflow.
 The product is **Change Loop**; the installed package and CLI remain
 `claude-foundation`, so existing commands do not change.
 
-**Version 3.5.17** — runtime API 36, provider protocol 13. Receipts recorded by
+**Version 3.5.17** — runtime API 38, provider protocol 13. Receipts recorded by
 earlier versions read as `provider-version-stale` and must be re-proven.
 `claude-foundation metrics <change-id>` also reports the exact runtime source
 cohort: semantic version, the loaded protocol bundle, and a SHA-256 digest of
@@ -230,8 +230,16 @@ In your agent session, run:
 /change allow an account owner to edit their display name
 ```
 
-The agent inspects the project, asks only for decisions that materially affect
-the result, and writes one compact semantic draft. The harness compiles it into
+The agent interprets the relevant project sources and writes observable
+requirements. The harness derives the risk-relevant discovery dimensions,
+validates decision prerequisites, and refuses unresolved coverage; only
+consequential choices are returned to you, one dependency-ready frontier at a
+time with source-supported recommendations. The harness automatically discovers
+and ranks relevant specs, tests, callers, integrations, persistence, and
+permission boundaries under a risk-adaptive read budget. Intake stores one
+machine-owned snapshot bound to the draft and selected local-source digests,
+plus coverage and question-effectiveness measurements; a source change reopens coverage
+instead of compiling stale requirements. It then compiles one semantic draft into
 `openspec/changes/<change-id>/`, deriving stable IDs and links between
 requirements, scenarios, tasks, claims, and providers. Review the proposal,
 observable scenarios, tasks, and evidence claims before moving on; the compiled
@@ -244,6 +252,8 @@ and stable identifiers stay unchanged. See the [Change workflow](WORKFLOW.md#cha
 Change carries forward relevant conversation decisions and latest corrections.
 Affected diagrams and folder mappings live in the agreement when needed;
 Build and resumed sessions read the full relevant scenarios and design context.
+The compiled proposal also records which discovery dimensions were covered or
+source-grounded as not applicable, so no settled answer has to live only in chat.
 
 The agent answers in your language and leads with the outcome. It performs safe
 recovery and routine commands itself, then reports what it changed and checked.
@@ -726,7 +736,11 @@ the coordinator:
 The runtime uses `change amend <change-id> <amendment.json>` transactionally. It
 preserves completed tasks and manual Markdown sections, validates before keeping
 the revision, rolls back a rejected amendment, and invalidates only claims added
-by that amendment before resuming `advance`.
+by that amendment before resuming `advance`. Version-4 amendments must include
+discovery coverage for the added requirements; the validated delta remains in
+the compiled proposal. Unaffected passing receipts survive only when their
+declared provider, claim, and input bindings remain exact; every ambiguous or
+affected provider is routed back through Prove.
 
 ## Multiple repositories
 
@@ -949,6 +963,7 @@ for inspection and recovery:
 claude-foundation doctor --stage change
 claude-foundation changes
 claude-foundation change start --template
+claude-foundation change start <draft.json> --inspect
 claude-foundation change amend <change-id> <amendment.json>
 claude-foundation advance <change-id> --through build|proven|archived
 claude-foundation change validate <change-id>

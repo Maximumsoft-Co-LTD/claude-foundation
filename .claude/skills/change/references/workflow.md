@@ -12,9 +12,8 @@ missing conversation history. Ask only for material gaps that cannot be recovere
 Read the smallest canonical sources that settle the requested behavior:
 existing OpenSpec requirements, relevant code/tests, architecture decisions,
 prototype selection, and versioned integration documentation. Reuse settled answers without asking them again.
-Ask every unresolved material behavior, compatibility, security,
-migration, rollout, or authority choice in one batch; do not create an interview
-ledger.
+Read [semantic-intake.md](semantic-intake.md) completely and follow its
+harness/agent/user ownership, dependency-frontier, and coverage rules.
 
 ## Agreement detail and language
 
@@ -73,9 +72,11 @@ no implementation constraint; rapid work need not create an empty design.
 
 ## Compile and inspect
 
-Create one semantic draft v3 from `change start --template`. Its core is:
+Create one semantic draft v4 from `change start --template`. Its core is:
 `intent`, semantic `requirements`, implementation `tasks` with `covers`, and
-evidence capabilities keyed by requirement. Put only real complexity in typed
+evidence capabilities keyed by requirement. Its discovery contract is defined
+once in [semantic-intake.md](semantic-intake.md). Draft v3 remains the
+compatibility path for existing callers. Put only real complexity in typed
 extensions:
 
 - `decisions` only for choices hard to reverse, surprising without context,
@@ -110,11 +111,15 @@ For defect behavior, include adjacent input partitions and source-language repre
 not only the reported reproduction.
 
 Write the draft to `.foundation/drafts/<id>.json` and run
-`claude-foundation change start .foundation/drafts/<id>.json --consume-draft`.
+`claude-foundation change start .foundation/drafts/<id>.json --inspect`.
+Follow the returned typed intake action and exact resume route. When it returns
+`DONE`, run the same command with `--consume-draft` instead of `--inspect`.
 Never inspect managed `.claude/harness/**` merely to reconstruct this schema.
-The compiler owns classification, stable requirement/claim/task IDs,
-cross-links, conditional artifacts, versioned defaults, structural validation,
-and rollback. The first Build `advance` owns idempotent sandbox creation and
+The compiler owns classification and the deterministic intake responsibilities
+defined in [semantic-intake.md](semantic-intake.md), plus stable requirement/claim/task IDs,
+cross-links,
+conditional artifacts, versioned defaults, structural validation, and rollback.
+The first Build `advance` owns idempotent sandbox creation and
 setup. Repair only the draft fields it reports, as one
 batch, then retry. Never patch a partially generated packet or create parallel
 IDs by hand.
@@ -124,6 +129,8 @@ run `change amend <change> <amendment.json> --consume-amendment`. It preserves
 completed tasks and custom prose/assets, increments the revision, invalidates
 the affected contract, validates, and rolls back on failure. Existing legacy
 changes keep their legacy authoring path; do not rewrite them merely to migrate.
+An amendment to a v4 agreement must include discovery coverage for the added
+requirements; the compiler retains that delta in the proposal.
 `updateTasks` may extend claim coverage but must not replace an existing outcome
 or verification command; add a new task when that contract changes.
 
@@ -134,8 +141,10 @@ Reconcile each confirmed conversation requirement and constraint against its
 compiled requirement/scenario, proposal exclusion, or design decision. Report
 any uncovered material point before approval; keep this reconciliation in the
 existing packet and approval summary, not a separate conversation ledger.
-Structural validation does not establish semantic completeness. If material
-content is missing, repair through the supported draft/amendment workflow;
+Structural validation alone does not establish semantic completeness. Draft v4
+therefore requires explicit discovery coverage, but the agent must still check
+that each source actually supports the claimed meaning. If material content is
+missing, repair through the supported draft/amendment workflow;
 never patch generated ledgers independently or silently proceed to Build.
 
 The compiled `openspec/changes/<id>/` documents—not the temporary draft or

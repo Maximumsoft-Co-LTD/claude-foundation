@@ -7,20 +7,25 @@ description: Compile semantic draft หนึ่งชุดเป็นข้�
 /change <intent | existing-change> [--prototype-selection <path>]
 ```
 
-`/change` เปลี่ยน intent ให้เป็นข้อตกลงถาวรที่ทุก phase ถัดไปอ่าน Agent เขียน
-semantic draft ขนาดเล็กหนึ่งครั้ง ส่วน Change Loop สร้าง bookkeeping และติดตั้ง
-ผลลัพธ์แบบ transaction
+`/change` เปลี่ยน intent ให้เป็นข้อตกลงถาวรที่ทุก phase ถัดไปอ่าน Agent ตีความ
+source และเขียน semantic draft ส่วน Change Loop derive มิติการค้น requirement
+ตามความเสี่ยง ตรวจ decision frontier สร้าง bookkeeping และติดตั้งผลลัพธ์แบบ
+transaction
 
 ## Semantic draft
 
-แกนที่บังคับมีเพียง `version: 3`, `intent`, `requirements`, `tasks` ที่ระบุ
-`covers` และ `evidence` ที่ใช้ requirement key เดียวกัน ตัวอย่างโครงสร้างเต็มดูได้
+แกนใช้ `version: 4`, `intent`, `requirements`, `tasks` ที่ระบุ `covers`,
+`evidence` ที่ใช้ requirement key เดียวกัน และ `discovery.coverage` ซึ่งระบุว่า
+แต่ละมิติถูก cover, ไม่เกี่ยวข้องพร้อมเหตุผล, ต้อง investigate หรือต้องถามผู้ใช้
+ตัวอย่างโครงสร้างเต็มดูได้
 จาก `claude-foundation change start --template`
 
 Agent ใช้ key ที่มีความหมาย Compiler สร้าง claim/task ID ที่ stable และผูก
 spec → claim → task → provider ให้อัตโนมัติ รวมปัญหา draft ที่เป็นอิสระทั้งหมดใน
-ครั้งเดียวและชี้กลับไปยัง field ต้นทาง ถ้า compile ไม่ผ่านจะไม่เหลือ change
-ครึ่งชุด Draft version 1 และ 2 ยังใช้ได้กับ integration เดิม
+ครั้งเดียวและชี้กลับไปยัง field ต้นทาง Harness จะปฏิเสธ coverage ที่ยังไม่จบ
+ตรวจ dependency cycle และเปิดเฉพาะ frontier ที่พร้อมครั้งละไม่เกินสาม decision
+ถ้า compile ไม่ผ่านจะไม่เหลือ change ครึ่งชุด Draft version 1 ถึง 3 ยังใช้ได้กับ
+integration เดิม
 
 ```bash
 claude-foundation change start .foundation/drafts/<id>.json --consume-draft
@@ -58,6 +63,21 @@ execution, repository, handoff และ grounding จะเกิดเมื�
 หลัง compile แล้ว `openspec/changes/<id>/` คือ source of truth Draft เป็นข้อมูล
 ชั่วคราว และ `.foundation/` เป็น runtime state ที่ derive ได้
 
+ก่อน compile ให้ใช้ `change start <draft.json> --inspect` Harness จะคืน action
+เดียวพร้อม resume route: `EDIT` สำหรับการค้นข้อเท็จจริงหรือซ่อม draft,
+`ASK_USER` สำหรับ decision ที่เชื่อมกับ coverage และพร้อมถามไม่เกินสามข้อ หรือ
+`DONE` เมื่อพร้อม compile จากนั้นจึงรันไฟล์เดิมด้วย `--consume-draft`
+ใช้ `riskSignals` แบบ typed สำหรับ access control, persisted data, integration,
+performance SLO, UI, operational risk และ external side effect เพื่อให้ coverage
+ที่บังคับใช้ไม่ขึ้นกับภาษาของ prose
+การ inspect เก็บ snapshot ที่ harness เป็นเจ้าของเพียงชุดเดียว โดยผูก digest ของ
+draft และ local sources ก่อน inspect repository intelligence แบบ bounded จะ
+จัดอันดับ spec, test, caller, integration, persistence และ permission boundary
+โดยปรับ read budget จาก typed risk กับสัญญาณของ repository แต่ไม่ลดมิติที่บังคับ
+คำถามที่ source ตอบได้ ตัวเลือกซ้ำ และ recommendation ที่ไม่มีหลักฐานจะถูกปฏิเสธ
+เมื่อ source เปลี่ยนจะคืน `refresh-source-coverage`; snapshot เก็บ effectiveness
+metrics แบบย่อแต่ไม่เก็บ transcript
+
 ## แก้ข้อตกลงระหว่าง Build
 
 ถ้า Build พบ observable requirement ใหม่ ให้ใช้ semantic amendment หนึ่งชุด:
@@ -69,7 +89,12 @@ claude-foundation change amend <change> <amendment.json> --consume-amendment
 มันรักษา task ที่เสร็จแล้ว prose/diagram/section ที่ไม่เกี่ยวข้อง เพิ่ม link แบบ
 stable เพิ่ม revision แล้ว validate ทั้งชุด หากล้มเหลวจะ rollback Change เก่ายังใช้
 manual path เดิมได้ Existing task เพิ่ม claim coverage ได้ แต่ถ้าจะเปลี่ยน outcome
-หรือ verify command ต้องเพิ่ม task ใหม่
+หรือ verify command ต้องเพิ่ม task ใหม่ Amendment ของ agreement v4 ต้องมี
+discovery coverage สำหรับ requirement ที่เพิ่ม และ compiler จะต่อ delta ที่ผ่าน
+validation เข้า `proposal.md` ก่อน mutation harness จะบันทึก claim, task และ
+provider dependency closure ที่ได้รับผลไว้เป็น bounded input สำหรับ proof scheduling
+Receipt ที่ผ่านและไม่ affected จะคงไว้เฉพาะเมื่อ declared provider, claim และ input
+fingerprint ตรงครบ ส่วน binding ที่ affected หรือคลุมเครือต้อง rerun ผ่าน Prove route
 
 `/change` ที่สำเร็จ validate และแยก workspace แล้ว ทำต่อด้วย
 `claude-foundation advance <change> --through build`

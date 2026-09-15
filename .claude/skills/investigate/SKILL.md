@@ -4,8 +4,8 @@ description: Investigate an unclear problem before committing to a Foundation ch
 ---
 
 Treat the text after `$investigate` as the command arguments. Read
-`../../commands/investigate.md` completely and follow it as the canonical
-workflow. Preserve the investigation-only boundary.
+`references/workflow.md` completely and follow it as the canonical workflow.
+Preserve the investigation-only boundary.
 
 At each investigation gate, gather all independent available facts before
 revising conclusions. Reconcile falsified hypotheses as one batch and continue

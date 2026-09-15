@@ -120,7 +120,7 @@ import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
 import { createQualityRuntime } from "./runtime/quality/quality-runtime.mjs";
 
 const VERSION = "3.5.17";
-const RUNTIME_API_VERSION = "36";
+const RUNTIME_API_VERSION = "38";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
 // every command up to `archive` and then threw partway through Land.
@@ -1372,6 +1372,7 @@ const {
   materializeDraft,
   createChange,
   rapidStartTemplate,
+  inspectDraft,
   startAtomic,
   amendChange,
   resolveChange
@@ -1396,6 +1397,16 @@ const {
   validate,
   showPacket,
   measureStage: commandPhaseRecorder.measure,
+  receiptPath,
+  receiptValidity,
+  contractFingerprint,
+  requiredProviders,
+  providerConfig,
+  claimsForProvider,
+  providerWorkspaceHash,
+  providerInputIdentity,
+  relevantHash,
+  stableHash,
   trapFailures,
   rollbackStart: rollbackAtomicStart
 });
@@ -1973,6 +1984,7 @@ await routeRuntimeCommand(command, values, {
   fail: die,
   createChange,
   rapidStartTemplate,
+  inspectDraft,
   startAtomic,
   amendChange,
   resolveChange,

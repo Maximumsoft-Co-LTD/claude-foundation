@@ -14,7 +14,7 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
-| `change start --template \| <draft.json>` | Compile และเริ่ม semantic agreement หนึ่งชุดแบบ atomic |
+| `change start --template \| <draft.json> [--inspect]` | Inspect intake หรือ compile และเริ่ม semantic agreement หนึ่งชุดแบบ atomic |
 | `change amend <change> <amendment.json>` | ขยาย agreement ระหว่าง Build แบบ transaction |
 | `advance <change> --through build\|proven\|archived` | รัน deterministic lifecycle แล้วคืนหนึ่งในหก action ที่ boundary จริง |
 | `changes` | อ่าน active state และ route ถัดไป |
@@ -64,7 +64,7 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
 | `change new <intent> [--rapid]` | Compatible primitive สำหรับเขียน agreement ด้วยมือ |
-| `change start --template \| <draft.json>` | Compile และเริ่ม change จาก semantic draft ที่ผ่านการตรวจ |
+| `change start --template \| <draft.json> [--inspect]` | Inspect intake หรือ compile และเริ่ม change จาก semantic draft ที่ผ่านการตรวจ |
 | `change amend <change> <amendment.json>` | เพิ่ม semantic requirement แบบ transaction และรักษางานที่เสร็จแล้ว |
 | `change resolve <change> …` | บันทึกการตัดสินใจเรื่อง impact coupling security และ review |
 | `change validate <change>` | ตรวจ change และ evidence contract ที่รันได้ |
@@ -150,8 +150,9 @@ Feedback ตรวจ validity จาก runtime ปัจจุบัน ส่
 | Pin | v3.5.17 |
 |---|---|
 | runtime | 3.5.17 |
-| runtime API | 36 |
-| semantic draft schema | 3 |
+| runtime API | 38 |
+| semantic draft schema | 4 |
+| semantic intake state schema | 2 |
 | semantic amendment schema | 1 |
 | artifact defaults schema | 2 |
 | grounding schema | 1, 2, 3 |

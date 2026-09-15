@@ -4,7 +4,7 @@ Change Loop v3.5.17 front-loads material decisions so Build and Prove can run to
 bounded conclusion without repeatedly interviewing the developer. The shipped
 workflow adds:
 
-- six primary user commands, with semantic draft v3 compiling stable OpenSpec
+- six primary user commands, with semantic draft v4 validating discovery and compiling stable OpenSpec
   links and conditional artifacts instead of asking the model to maintain them;
 - optional Grounding v3 containing only non-derived material decisions, while
   legacy Grounding v2 remains readable;
@@ -24,7 +24,7 @@ Before the first Change Loop packet on a developer machine:
 
 1. Install Node.js 20.19 or later.
 2. Verify `claude-foundation version` is `3.5.17` and the repository runtime API
-   is `36`. A delta between the two is advisory while both doctors still pass:
+   is `38`. A delta between the two is advisory while both doctors still pass:
    the CLI forwards to the runtime installed in the project, so an older CLI
    prints `warning: project runtime API … differs from CLI API …` and keeps
    working. Only a doctor that exits non-zero is a blocked machine.

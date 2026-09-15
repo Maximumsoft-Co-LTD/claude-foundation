@@ -210,6 +210,8 @@ semantic_acceptance_protocol="$(jq -r '.semanticAcceptanceProtocol' \
   "$ROOT/.claude/harness/protocol.json")"
 semantic_draft_schema="$(jq -r '.semanticDraftSchema' \
   "$ROOT/.claude/harness/protocol.json")"
+semantic_intake_state_schema="$(jq -r '.semanticIntakeStateSchema' \
+  "$ROOT/.claude/harness/protocol.json")"
 semantic_amendment_schema="$(jq -r '.semanticAmendmentSchema' \
   "$ROOT/.claude/harness/protocol.json")"
 artifact_defaults_schema="$(jq -r '.artifactDefaultsSchema' \
@@ -230,6 +232,8 @@ for page in "$DOCS/cli.md" "$DOCS/th/cli.md"; do
     "$page" "| semantic acceptance protocol | $semantic_acceptance_protocol |"
   assert_file_contains "$label CLI pins semantic draft schema" \
     "$page" "| semantic draft schema | $semantic_draft_schema |"
+  assert_file_contains "$label CLI pins semantic intake state schema" \
+    "$page" "| semantic intake state schema | $semantic_intake_state_schema |"
   assert_file_contains "$label CLI pins semantic amendment schema" \
     "$page" "| semantic amendment schema | $semantic_amendment_schema |"
   assert_file_contains "$label CLI pins artifact defaults schema" \

@@ -5,6 +5,8 @@ import { normalizeSemanticDraft } from "./semantic-draft.mjs";
 const stringList = (value) => Array.isArray(value)
   ? value.map((item) => String(item || "").trim()).filter(Boolean) : [];
 const unique = (values) => [...new Set(values)];
+const markdownCell = (value) => String(value ?? "")
+  .replace(/\r?\n/g, " ").replaceAll("|", "\\|");
 
 export function semanticTaskKey(line) {
   return String(line).match(/\[key:([^\]]+)\]/i)?.[1]?.trim() || null;
@@ -88,9 +90,11 @@ function amendmentIssues(amendment) {
 }
 
 export function compileSemanticAmendment({
-  amendment, contract, tasksContent, slugify, renderTask
+  amendment, contract, tasksContent, slugify, renderTask, semanticDraftVersion = 3
 }) {
   const issues = amendmentIssues(amendment);
+  if (![3, 4].includes(semanticDraftVersion))
+    issues.push("semantic amendment requires semanticDraftVersion 3 or 4");
   const existingClaims = contract.claims || [];
   const claimsByRequirement = new Map();
   for (const claim of existingClaims) {
@@ -124,12 +128,17 @@ export function compileSemanticAmendment({
     ...(amendment.addTasks || []).map((task) => ({ ...task, dependsOn: [] }))
   ].filter((task) => stringList(task.covers).some((key) => addedKeys.has(key)));
   const normalized = normalizeSemanticDraft({
-    version: 3,
+    version: semanticDraftVersion,
     intent: amendment.reason || "Amend the active agreement",
+    impact: amendment.impact || "low",
     requirements: addRequirements,
     tasks: coverageTasks,
     evidence: amendment.evidence,
-    integrations: amendment.integrations || []
+    integrations: amendment.integrations || [],
+    securityTriggers: amendment.securityTriggers || [],
+    riskSignals: amendment.riskSignals || [],
+    externalOperations: amendment.externalOperations || [],
+    discovery: amendment.discovery
   }, slugify);
   issues.push(...normalized.issues.map((issue) => `amendment ${issue}`));
   const duplicateClaims = normalized.draft.claims
@@ -195,6 +204,8 @@ export function compileSemanticAmendment({
     claims: [...existingClaims, ...normalized.draft.claims],
     providers,
     specs: normalized.draft.specs,
+    discovery: normalized.draft.discovery,
+    amendmentReason: amendment.reason || "Agreement expanded during Build",
     invalidatedClaims: normalized.draft.claims.map((claim) => claim.id),
     addedRequirementKeys: [...addedKeys]
   };
@@ -207,6 +218,21 @@ export function writeSemanticAmendment(dir, compiled, slugify, { schema } = {}) 
   contract.claims = compiled.claims;
   contract.providers = compiled.providers;
   writeFileSync(evidencePath, `${JSON.stringify(contract, null, 2)}\n`);
+  if (compiled.discovery?.coverage?.length && existsSync(join(dir, "proposal.md"))) {
+    const proposalPath = join(dir, "proposal.md");
+    const rows = compiled.discovery.coverage.map((row) =>
+      `| ${markdownCell(row.dimension)} | ${markdownCell(row.status)} | ` +
+      `${markdownCell((row.covers || []).join(", ") || "none")} | ` +
+      `${markdownCell((row.sources || []).join(", ") || "none")} | ` +
+      `${markdownCell(row.rationale || "none")} |`
+    ).join("\n");
+    const section = `\n\n## Amendment discovery coverage\n\n` +
+      `Reason: ${markdownCell(compiled.amendmentReason)}\n\n` +
+      `| Dimension | Status | Requirements | Sources | Rationale |\n` +
+      `|---|---|---|---|---|\n${rows}\n`;
+    const proposal = readFileSync(proposalPath, "utf8").replace(/\s+$/, "");
+    writeFileSync(proposalPath, `${proposal}${section}`);
+  }
   // Rapid agreements carry their scenarios in evidence.yaml, just like start.
   // Writing a delta while skip_specs remains true creates an unmergeable packet.
   for (const spec of schema === "foundation-rapid" ? [] : compiled.specs) {

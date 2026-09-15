@@ -56,6 +56,9 @@ draft() {
       verify: "sh run-test.sh " + process.env.REPORT,
       covers: ["greeting-updated"] }];
     d.evidence = { "greeting-updated": { capabilities: ["test"] } };
+    d.discovery.coverage = d.discovery.coverage.map((row) => ({
+      dimension: row.dimension, status: "covered", covers: ["greeting-updated"]
+    }));
     d.execution = { version: 1, providers: { test: { adapter: "test-discovery",
       command: ["sh", "run-test.sh", process.env.REPORT], report: process.env.REPORT,
       minimum: 1, timeoutMs: 60000 } }, services: {} };

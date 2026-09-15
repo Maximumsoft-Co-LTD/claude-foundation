@@ -1,7 +1,8 @@
 {
   "runtime": "3.5.17",
-  "runtimeApi": "36",
-  "semanticDraftSchema": "3",
+  "runtimeApi": "38",
+  "semanticDraftSchema": "4",
+  "semanticIntakeStateSchema": "2",
   "semanticAmendmentSchema": "1",
   "artifactDefaultsSchema": "2",
   "groundingSchema": ["1", "2", "3"],

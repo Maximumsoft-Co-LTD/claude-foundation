@@ -16,7 +16,7 @@ Change Loop ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก�
 ชื่อผลิตภัณฑ์และ workflow คือ **Change Loop** ส่วน package และ CLI ที่ติดตั้งยังใช้
 `claude-foundation` เหมือนเดิม จึงไม่ต้องเปลี่ยนคำสั่งที่ใช้อยู่
 
-**Version 3.5.17** — runtime API 36, provider protocol 13 receipt ที่บันทึกด้วย
+**Version 3.5.17** — runtime API 38, provider protocol 13 receipt ที่บันทึกด้วย
 เวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 `claude-foundation metrics <change-id>` จะแสดง source cohort ของ runtime แบบ
 เจาะจงด้วย ได้แก่ semantic version, protocol bundle ที่โหลดจริง และ SHA-256
@@ -219,8 +219,15 @@ Review ใช้กรอบเวลารวม 30 นาที ครอบ�
 /change allow an account owner to edit their display name
 ```
 
-Agent จะสำรวจ project ถามเฉพาะ decision ที่มีผลต่อ outcome และเขียน semantic
-draft ขนาดเล็กหนึ่งชุด Harness compile เป็น `openspec/changes/<change-id>/`
+Agent จะตีความ source ที่เกี่ยวข้องและเขียน requirement ที่สังเกตผลได้ ส่วน
+Harness จะ derive มิติการค้น requirement ตามความเสี่ยง ตรวจ prerequisite ของ
+decision และปฏิเสธ coverage ที่ยังไม่จบ โดยส่งกลับให้คุณเฉพาะ consequential
+choice ใน frontier ที่พร้อมตาม dependency พร้อม recommendation ที่มี source รองรับ
+Harness จะค้นและจัดอันดับ spec, test, caller, integration, persistence และ
+permission boundary ที่เกี่ยวข้องโดยอัตโนมัติภายใต้ read budget ตามความเสี่ยง
+จากนั้นเก็บ machine-owned snapshot ที่ผูก digest ของ draft และ local source ที่เลือก
+พร้อม measurement ด้าน coverage และคุณภาพคำถาม หาก source เปลี่ยน coverage จะเปิดใหม่แทนการ compile requirement
+ที่ stale แล้วจึง compile semantic draft หนึ่งชุดเป็น `openspec/changes/<change-id>/`
 พร้อมสร้าง stable ID และ link ระหว่าง requirement, scenario, task, claim และ
 provider ก่อนทำต่อ ให้ review proposal, observable scenario, task และ evidence
 claim ว่าตรงกับสิ่งที่ต้องการ OpenSpec packet ที่ compile แล้ว—not chat หรือ draft
@@ -232,6 +239,8 @@ claim ว่าตรงกับสิ่งที่ต้องการ Open
 Change จะเก็บข้อสรุปจากบทสนทนาที่เกี่ยวข้องและคำแก้ไขล่าสุดไว้ในข้อตกลง
 พร้อม diagram และ folder mapping เมื่อจำเป็น ส่วน Build และ session ที่กลับมาทำต่อ
 ต้องอ่าน scenario ฉบับเต็มและ design context ที่เกี่ยวข้อง
+Proposal ที่ compile แล้วจะบันทึกด้วยว่ามิติใดถูก cover หรือมี source รองรับว่า
+ไม่เกี่ยวข้อง เพื่อไม่ให้คำตอบที่ตกลงแล้วอยู่เฉพาะใน chat
 
 Agent จะตอบด้วยภาษาของคุณและเริ่มจากผลลัพธ์ งานกู้คืนที่ปลอดภัยกับคำสั่งปกติ
 Agent จะทำให้เอง แล้วบอกว่าแก้อะไรและตรวจอะไรแล้ว คุณจะถูกถามเฉพาะเมื่อ behavior,
@@ -702,6 +711,10 @@ Agent ส่ง semantic amendment หนึ่งชุดแล้ว resume c
 Runtime ใช้ `change amend <change-id> <amendment.json>` แบบ transaction โดยรักษา
 task ที่เสร็จและ manual Markdown section, validate ก่อนเก็บ revision, rollback
 amendment ที่ไม่ผ่าน และ invalidate เฉพาะ claim ใหม่ก่อน resume `advance`
+Amendment ของ version 4 ต้องมี discovery coverage ของ requirement ที่เพิ่ม และ
+delta ที่ผ่าน validation จะอยู่ใน compiled proposal receipt ที่ผ่านแล้วจะถูกเก็บ
+ไว้เฉพาะเมื่อ provider, claim และ declared-input binding ไม่เปลี่ยน ส่วน provider
+ที่ affected หรือคลุมเครือต้องกลับไปผ่าน Prove
 
 ## การใช้หลาย Repository
 
@@ -879,6 +892,7 @@ recover:
 claude-foundation doctor --stage change
 claude-foundation changes
 claude-foundation change start --template
+claude-foundation change start <draft.json> --inspect
 claude-foundation change amend <change-id> <amendment.json>
 claude-foundation advance <change-id> --through build|proven|archived
 claude-foundation change validate <change-id>

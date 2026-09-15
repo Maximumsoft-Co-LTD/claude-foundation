@@ -350,7 +350,9 @@ jq '.workflow.grounding = "optional" |
 cp "$TMP/foundation-atomic.json" "$TARGET/foundation.json"
 start_template="$(bash "$ROOT/cli.sh" --project "$TARGET" change start --template)"
 assert_contains "atomic start exposes a versioned draft template" \
-  "$start_template" '"version": 3'
+  "$start_template" '"version": 4'
+assert_contains "atomic start exposes discovery coverage" \
+  "$start_template" '"discovery"'
 assert_contains "atomic start template links tasks by requirement key" \
   "$start_template" '"covers": ['
 assert_contains "atomic start template requests evidence capabilities" \
@@ -393,6 +395,14 @@ assert_file_absent "invalid atomic start leaves no agreement" \
   "$TARGET/openspec/changes/atomic-invalid"
 assert_file_absent "invalid atomic start leaves no runtime state" \
   "$TARGET/.foundation/runtime/atomic-invalid.json"
+atomic_intake="$(bash "$ROOT/cli.sh" --project "$TARGET" change start \
+  .foundation/atomic-draft.json --inspect)"
+assert_contains "atomic start inspection returns a typed ready action" \
+  "$atomic_intake" '"action": "DONE"'
+assert_contains "atomic start inspection returns an exact resume route" \
+  "$atomic_intake" '"resume": "claude-foundation change start .foundation/atomic-draft.json --inspect"'
+assert_file_exists "atomic start inspection does not consume its draft" \
+  "$TARGET/.foundation/atomic-draft.json"
 atomic_start="$(bash "$ROOT/cli.sh" --project "$TARGET" change start \
   .foundation/atomic-draft.json --consume-draft)"
 assert_contains "atomic start requires spec approval" "$atomic_start" \

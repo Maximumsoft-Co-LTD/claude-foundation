@@ -1,4 +1,7 @@
 import { parseSpecDocument } from "../contracts/change-artifacts.mjs";
+import {
+  normalizeDiscovery, semanticIntakeIssues
+} from "./validation/semantic-intake.mjs";
 
 const OPERATIONS = new Set(["added", "modified", "removed"]);
 const AUTHORITY_CAPABILITIES = new Set(["review", "acceptance", "semantic-acceptance"]);
@@ -106,7 +109,7 @@ function requiredIntegrationCapabilities(integration) {
 
 function semanticDraftIssues(source) {
   const issues = [];
-  if (source?.version !== 3) issues.push("semantic draft requires version 3");
+  if (![3, 4].includes(source?.version)) issues.push("semantic draft requires version 3 or 4");
   if (!text(source?.intent)) issues.push("semantic draft requires non-empty 'intent'");
   if (!Array.isArray(source?.requirements) || source.requirements.length === 0)
     issues.push("semantic draft requires a non-empty 'requirements' array");
@@ -149,6 +152,7 @@ function semanticDraftIssues(source) {
     else if (choices.has(key)) issues.push(`semantic draft decision key '${key}' is duplicated`);
     choices.set(key, choice);
   }
+  issues.push(...semanticIntakeIssues(source));
   return issues;
 }
 
@@ -379,7 +383,7 @@ export function normalizeSemanticDraft(source, slugify, options = {}) {
   ]);
   const draft = {
     ...source,
-    _semanticVersion: 3,
+    _semanticVersion: source.version,
     _derivedExecution: !source.execution,
     why: text(source.why) || text(source.intent),
     currentState: text(source.currentState) || "none",
@@ -410,12 +414,13 @@ export function normalizeSemanticDraft(source, slugify, options = {}) {
       ? source.externalOperations : undefined,
     repositories: Array.isArray(source.repositories) ? source.repositories : undefined
   };
+  if (source.version === 4) draft.discovery = normalizeDiscovery(source);
   return { draft, issues };
 }
 
 export function semanticDraftTemplate() {
   return {
-    version: 3,
+    version: 4,
     intent: "Describe one observable outcome",
     why: "Explain the concrete user or system value",
     impact: "low",
@@ -436,6 +441,20 @@ export function semanticDraftTemplate() {
     }],
     evidence: {
       "observable-outcome": { capabilities: ["test"] }
+    },
+    discovery: {
+      coverage: [
+        { dimension: "current-behavior", status: "needs-investigation" },
+        { dimension: "affected-actor", status: "needs-user-decision" },
+        { dimension: "desired-behavior", status: "covered", covers: ["observable-outcome"] },
+        { dimension: "success-path", status: "covered", covers: ["observable-outcome"] },
+        { dimension: "failure-path", status: "needs-user-decision" },
+        { dimension: "input-boundary", status: "needs-user-decision" },
+        { dimension: "compatibility", status: "needs-investigation" },
+        { dimension: "non-goals", status: "needs-user-decision" },
+        { dimension: "verification", status: "covered", covers: ["observable-outcome"] }
+      ],
+      decisions: []
     }
   };
 }

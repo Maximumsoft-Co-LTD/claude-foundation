@@ -35,8 +35,11 @@ assert_file_contains "orchestrator keeps wait commands with the agent" "$ORCH" \
   "not a user command"
 
 for command in investigate change dev feature changes; do
+  guidance="$COMMANDS/$command.md"
+  [ "$command" = "investigate" ] && \
+    guidance="$ROOT/.claude/skills/investigate/references/workflow.md"
   assert_file_contains "$command returns user-language guidance" \
-    "$COMMANDS/$command.md" "user's language"
+    "$guidance" "user's language"
 done
 CHANGE_WORKFLOW="$ROOT/.claude/skills/change/references/workflow.md"
 assert_file_contains "Change command routes document authoring rules" \
@@ -58,7 +61,7 @@ assert_file_contains "Change records current behavior and value" \
 assert_file_contains "Change covers relevant negative scenarios" \
   "$CHANGE_WORKFLOW" "failure, boundary, permission, or compatibility cases"
 assert_file_contains "Change checks compiled content beyond schema validity" \
-  "$CHANGE_WORKFLOW" "Structural validation does not establish semantic completeness"
+  "$CHANGE_WORKFLOW" "Structural validation alone does not establish semantic completeness"
 assert_file_contains "Change inspects compiled artifacts" \
   "$CHANGE_WORKFLOW" "read the compiled proposal, tasks, evidence"
 assert_file_contains "Build ends with a useful summary" "$COMMANDS/build.md" \

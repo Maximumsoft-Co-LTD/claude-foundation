@@ -1,6 +1,6 @@
 # Change: <title>
 
-> Normally generated from semantic draft v3 by `change start`; the compiled
+> Normally generated from semantic draft v4 by `change start`; the compiled
 > OpenSpec packet is the source of truth.
 
 ## Why

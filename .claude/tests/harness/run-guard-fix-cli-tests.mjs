@@ -236,6 +236,13 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
     startAtomic: (...args) => { consumedStart = args; }
   });
   assert.deepEqual(consumedStart, ["draft.json", { consumeDraft: true }]);
+  let inspectedDraft = null;
+  await route("start", ["draft.json", "--inspect"], {
+    inspectDraft: (...args) => { inspectedDraft = args; }
+  });
+  assert.deepEqual(inspectedDraft, ["draft.json"]);
+  await assert.rejects(route("start", ["draft.json", "--inspect", "--consume-draft"], {}),
+    /cannot be combined/);
   let consumedAmendment = null;
   await route("amend", ["change", "amendment.json", "--consume-amendment"], {
     amendChange: (...args) => { consumedAmendment = args; }

@@ -14,7 +14,7 @@ Normal users issue `/investigate`, `/change`, `/build`, `/prove`, `/land`, or
 
 | Command | Purpose |
 |---|---|
-| `change start --template \| <draft.json>` | Compile and atomically start one semantic agreement |
+| `change start --template \| <draft.json> [--inspect]` | Inspect intake or compile and atomically start one semantic agreement |
 | `change amend <change> <amendment.json>` | Transactionally extend that agreement during Build |
 | `advance <change> --through build\|proven\|archived` | Run deterministic lifecycle work and return one of six bounded actions at the next real boundary |
 | `changes` | Read active state and the next useful route |
@@ -64,7 +64,7 @@ language profiles, baselines, and rollout policy.
 | Command | Purpose |
 |---|---|
 | `change new <intent> [--rapid]` | Compatible primitive for manually authoring a change agreement |
-| `change start --template \| <draft.json>` | Compile and start an isolated change from one validated semantic draft |
+| `change start --template \| <draft.json> [--inspect]` | Inspect intake or compile and start an isolated change from one validated semantic draft |
 | `change amend <change> <amendment.json>` | Add semantic requirements transactionally while preserving completed work |
 | `change resolve <change> …` | Persist impact, coupling, security, and review decisions |
 | `change validate <change>` | Validate the change and its executable evidence contract |
@@ -150,8 +150,9 @@ Wire-visible contracts are pinned in `.claude/harness/protocol.json`. A mixed-re
 | Pin | v3.5.17 |
 |---|---|
 | runtime | 3.5.17 |
-| runtime API | 36 |
-| semantic draft schema | 3 |
+| runtime API | 38 |
+| semantic draft schema | 4 |
+| semantic intake state schema | 2 |
 | semantic amendment schema | 1 |
 | artifact defaults schema | 2 |
 | grounding schema | 1, 2, 3 |

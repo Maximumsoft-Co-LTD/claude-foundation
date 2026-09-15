@@ -16,8 +16,10 @@ isolation, budgets, proof freshness, authority boundaries, and Land recovery.
 Change Loop does not replace the coding agent, Git, CI, or the project's test
 framework.
 
-New changes use semantic draft v3: the compiler owns stable cross-ledger links
-and creates optional artifacts only for real concerns. The normal host path
+New changes use semantic draft v4: the harness owns risk-derived discovery
+coverage and decision-frontier validation, while the compiler owns stable
+cross-ledger links and creates optional artifacts only for real concerns. Draft
+v3 remains compatible. The normal host path
 after Change is `advance --through build|proven|archived`; low-level commands
 remain supported operator and integration primitives. OpenSpec stays canonical.
 

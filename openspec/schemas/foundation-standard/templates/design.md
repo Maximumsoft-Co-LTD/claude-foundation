@@ -1,6 +1,6 @@
 # Design
 
-> This file is conditional. Semantic draft v3 creates it only for a durable
+> This file is conditional. Semantic draft v4 creates it only for a durable
 > decision, diagram, integration, selected prototype, migration, compatibility,
 > rollout, rollback, or architecture constraint.
 

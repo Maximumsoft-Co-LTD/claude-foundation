@@ -8,7 +8,7 @@ Change Loop แยกสัญญาเชิงพฤติกรรมที�
 ## Derived wiring และ execution.yaml
 
 ในขณะที่ [`evidence.yaml`](/docs/th/evidence/claims/) บอกว่า *อะไรต้องเป็นจริง*
-semantic draft v3 จะ derive command ปกติที่ใช้พิสูจน์ ส่วน `execution.yaml` เป็น
+semantic draft v4 จะ derive command ปกติที่ใช้พิสูจน์ ส่วน `execution.yaml` เป็น
 optional override เมื่อ provider ต้องใช้ structured report, service, timeout,
 readiness หรือ config เฉพาะ project การเปลี่ยน wiring จะทำให้เฉพาะ fingerprint
 ของ provider ที่เกี่ยวข้องใช้ไม่ได้

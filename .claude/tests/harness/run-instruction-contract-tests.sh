@@ -27,7 +27,14 @@ assert_file_contains "Prove contract rejects fabricated evidence" "$ROOT/.claude
 assert_file_contains "Prove contract names the independence waiver" "$ROOT/.claude/skills/prove/references/workflow.md" 'review.independence: "self"'
 assert_file_contains "Prove keeps blocker routes with the agent" "$ROOT/.claude/skills/prove/references/workflow.md" "Keep recovery and resume routes as agent-only"
 assert_file_contains "Prove contract wires a missing adapter before asking a person" "$ROOT/.claude/skills/prove/references/workflow.md" 'evidence init --write'
-assert_file_contains "Change contract settles material choices before Build" "$ROOT/.claude/skills/change/references/workflow.md" "one batch"
+assert_file_contains "Change contract asks only the dependency-ready frontier" \
+  "$ROOT/.claude/skills/change/references/semantic-intake.md" "current frontier"
+assert_file_contains "Change contract assigns deterministic intake to the harness" \
+  "$ROOT/.claude/skills/change/references/semantic-intake.md" "harness owns required coverage"
+assert_file_contains "Change contract keeps consequential choices with the user" \
+  "$ROOT/.claude/skills/change/references/semantic-intake.md" "user owns"
+assert_file_contains "Change contract requires machine-checkable discovery coverage" \
+  "$ROOT/.claude/skills/change/references/semantic-intake.md" 'discovery.coverage'
 assert_file_contains "Change contract keeps material NFRs in requirements" "$ROOT/.claude/skills/change/references/workflow.md" 'security/resilience/compatibility concerns'
 assert_file_contains "Change contract forbids guessing integration behavior" "$ROOT/.claude/skills/change/references/workflow.md" "Do not guess"
 assert_file_contains "Change contract delegates stable identity to compiler" "$ROOT/.claude/skills/change/references/workflow.md" "stable requirement/claim/task IDs"

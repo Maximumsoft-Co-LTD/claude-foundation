@@ -14,8 +14,7 @@ prompts or Markdown.
 
 ## Resolve
 
-Write one semantic draft v3 and let `change start` derive stable spec, claim,
-task, dependency, and provider links. Do not create cross-ledger IDs or empty
+Follow Change's semantic-intake reference; compile one draft v4. Do not create cross-ledger IDs or empty
 artifacts by hand. Persist ambiguity, impact, coupling, evidence, and size;
 size controls slicing, never assurance. Use `/investigate` for ambiguity.
 

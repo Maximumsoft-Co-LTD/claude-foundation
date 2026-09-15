@@ -55,7 +55,7 @@ under `.foundation/prototypes/`. It always records the selected conclusion in
 
 ### `/change <intent>`
 
-Change authors one semantic draft v3 with compact bookkeeping and enough
+Change authors one semantic draft v4 with compact bookkeeping and enough
 behavioral detail to understand scope and acceptance without chat history.
 Reconcile the relevant available conversation, latest corrections, and retained
 decisions before drafting, then check their coverage in the compiled packet.
@@ -69,7 +69,7 @@ The transactional compiler creates
 `openspec/changes/<id>/`, assigns stable cross-ledger IDs, validates the complete
 agreement, installs it, and prepares isolation. The draft records:
 
-- ambiguity, impact, coupling, and size;
+- harness-required discovery coverage, ambiguity, impact, coupling, and size;
 - semantic requirements and task outcomes;
 - claim-to-task coverage and required evidence capabilities;
 - semantic security and review triggers;
@@ -84,9 +84,32 @@ multiple repositories participate, external authority is required, or a
 non-derived material decision must be recorded. Absence has versioned
 virtual-default semantics.
 
-After compilation, the OpenSpec packet is the source of truth. The semantic
-draft is temporary and `.foundation/` is derived coordination state. Draft v1
-remains compatible; draft v2 retains its unambiguous bookkeeping behavior.
+Before compilation, the harness requires every risk-derived discovery dimension
+to be covered, source-grounded as not applicable, investigated, or resolved by
+the user. It validates decision dependencies and exposes only the current
+frontier; the agent interprets sources and authors requirements, while the user
+owns consequential choices. After compilation, the OpenSpec packet is the
+source of truth. The semantic draft is temporary and `.foundation/` is derived
+coordination state. Draft v1 remains compatible, draft v2 retains its
+unambiguous bookkeeping behavior, and draft v3 remains readable.
+
+Run `change start <draft.json> --inspect` before compilation. It returns one
+typed `EDIT`, `ASK_USER`, or `DONE` action with an exact resume route. An
+unresolved user-owned coverage row must link to its decisions through
+`decisionKeys`; repository-owned investigation is returned before user
+questions. After `DONE`, rerun with `--consume-draft` to compile atomically.
+Typed `riskSignals` provide language-neutral triggers for access control,
+persisted data, integrations, performance SLOs, UI accessibility, operational
+risk, and external side effects.
+Inspection persists one machine-owned snapshot bound to the draft and its
+grounded-source digests. Before each v4 inspection the harness performs bounded,
+read-only repository discovery and ranks relevant specs, tests, callers,
+integrations, persistence, and permission boundaries. Typed size, impact,
+coupling, risk, and repository signals choose the intake depth without dropping
+mandatory dimensions. Questions already answered by source facts, duplicate
+alternatives, and unsupported recommendations are rejected. The snapshot keeps
+compact effectiveness counts but never chat or an interview history. A changed
+selected source invalidates readiness and returns agent-owned coverage refresh.
 
 For newly started changes, present the compiled spec, scope, and acceptance
 criteria and wait for explicit user approval before Build, including `/dev`.
@@ -107,6 +130,13 @@ When Build discovers new behavior, amend the same agreement before continuing:
 ```bash
 claude-foundation change amend <change> <amendment.json>
 ```
+
+A version-4 amendment includes discovery coverage for every added requirement;
+the transaction validates and appends that delta to the compiled proposal.
+Version-3 amendments keep their compatibility shape. The amendment transaction
+preserves an unaffected passing receipt only across one explicit revision when
+its declared provider, claims, and input fingerprints remain exact. Everything
+affected, missing, or ambiguous is rerun through the returned Prove route.
 
 A change that cannot be proven is retired explicitly, never deleted by hand:
 

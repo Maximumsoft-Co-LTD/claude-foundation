@@ -122,6 +122,73 @@ assert_file_contains "change intake always hashes grounding reads after sheet re
 assert_file_contains "change intake creates no parallel interview ledger" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
   'Create no decision-tree or interview ledger'
+assert_file_contains "change workflow delegates semantic intake to one canonical reference" \
+  "$ROOT/.claude/skills/change/references/workflow.md" \
+  '[semantic-intake.md](semantic-intake.md)'
+assert_words_at_most "change workflow reference budget" 1400 \
+  "$ROOT/.claude/skills/change/references/workflow.md"
+assert_words_at_most "semantic intake reference budget" 400 \
+  "$ROOT/.claude/skills/change/references/semantic-intake.md"
+assert_words_at_most "semantic intelligence reference budget" 220 \
+  "$ROOT/.claude/skills/change/references/semantic-intelligence.md"
+assert_words_at_most "investigate workflow reference budget" 220 \
+  "$ROOT/.claude/skills/investigate/references/workflow.md"
+change_reference_words="$(wc -w "$ROOT"/.claude/skills/change/references/*.md | tail -1 | awk '{print $1}')"
+if [ "$change_reference_words" -le 2050 ]; then
+  pass "change reference collection stays bounded ($change_reference_words/2050 words)"
+else
+  fail "change reference collection exceeds 2050 words ($change_reference_words)"
+fi
+assert_cmd_zero "change references are reachable, acyclic, and free of duplicated long blocks" \
+  node --input-type=module -e '
+    import { readFileSync, readdirSync } from "node:fs";
+    import { basename, dirname, join, resolve } from "node:path";
+    const skill = resolve(process.argv[1]);
+    const references = resolve(process.argv[2]);
+    const files = [skill, ...readdirSync(references)
+      .filter((name) => name.endsWith(".md")).sort()
+      .map((name) => join(references, name))];
+    const known = new Set(files);
+    const edges = new Map(files.map((file) => [file, []]));
+    for (const file of files) {
+      const markdown = readFileSync(file, "utf8");
+      const links = [
+        ...[...markdown.matchAll(/\[[^\]]+\]\(([^)#]+\.md)(?:#[^)]+)?\)/g)].map((match) => match[1]),
+        ...[...markdown.matchAll(/`(references\/[A-Za-z0-9._/-]+\.md)`/g)].map((match) => match[1])
+      ];
+      for (const link of new Set(links)) {
+        const target = resolve(dirname(file), link);
+        if (!known.has(target)) throw new Error(`${basename(file)} has unresolved reference ${link}`);
+        edges.get(file).push(target);
+      }
+    }
+    const reachable = new Set();
+    const active = new Set();
+    function visit(file) {
+      if (active.has(file)) throw new Error(`reference cycle at ${basename(file)}`);
+      if (reachable.has(file)) return;
+      active.add(file);
+      reachable.add(file);
+      for (const target of edges.get(file) || []) visit(target);
+      active.delete(file);
+    }
+    visit(skill);
+    const orphaned = files.filter((file) => file !== skill && !reachable.has(file));
+    if (orphaned.length) throw new Error(`orphaned references: ${orphaned.map(basename).join(", ")}`);
+    const owners = new Map();
+    for (const file of files) {
+      const blocks = readFileSync(file, "utf8").split(/\n\s*\n/)
+        .map((block) => block.replace(/\s+/g, " ").trim())
+        .filter((block) => block.split(" ").length >= 24 && !block.startsWith("```"));
+      for (const block of blocks) {
+        const prior = owners.get(block);
+        if (prior && prior !== file)
+          throw new Error(`duplicated long block in ${basename(prior)} and ${basename(file)}`);
+        owners.set(block, file);
+      }
+    }
+  ' "$ROOT/.claude/skills/change/SKILL.md" \
+  "$ROOT/.claude/skills/change/references"
 assert_cmd_zero "[qualified-durable-decision] template and change intake share the three-part durability threshold" \
   sh -c 'for path do
     grep -F '\''hard to reverse, surprising without context'\'' "$path" >/dev/null || exit 1
@@ -134,8 +201,9 @@ assert_file_contains "change intake forbids parallel domain and ADR artifacts" \
   'Never create `CONTEXT.md`, a glossary artifact, or an ADR store'
 assert_cmd_zero "atomic draft template stays semantic and minimal" \
   sh -c 'node "$1" start --template | jq -e '\''
-    .version == 3 and (.requirements | length) == 1 and
+    .version == 4 and (.requirements | length) == 1 and
     (.tasks[0].covers | length) == 1 and (.evidence | type) == "object" and
+    (.discovery.coverage | length) == 9 and
     (has("domainLanguage") | not) and (has("execution") | not)'\'' >/dev/null' \
   sh "$ROOT/.claude/harness/foundation.mjs"
 assert_file_contains "fundamentals records decision answers in the change packet" \
@@ -187,12 +255,12 @@ if grep -R -Eq 'runtime (new|start|resolve)|proof (plan|finish|preflight|execute
 else
   pass "slash commands use canonical public vocabulary"
 fi
-assert_file_contains "investigate owns bounded comparison" \
-  "$ROOT/.claude/commands/investigate.md" '--compare'
+assert_file_contains "investigate command selectively loads its workflow" \
+  "$ROOT/.claude/commands/investigate.md" 'references/workflow.md'
 assert_file_contains "normal investigate limits writes to its note" \
-  "$ROOT/.claude/commands/investigate.md" 'Without comparison'
+  "$ROOT/.claude/skills/investigate/references/workflow.md" 'only allowed write'
 assert_file_contains "compare mode scopes writes to prototypes" \
-  "$ROOT/.claude/commands/investigate.md" 'write only there'
+  "$ROOT/.claude/skills/investigate/references/workflow.md" 'only under'
 assert_file_contains "prove owns fresh independent review" \
   "$ROOT/.claude/skills/prove/references/workflow.md" 'fresh independent'
 assert_file_contains "dev command forbids direct implementation bypass" \

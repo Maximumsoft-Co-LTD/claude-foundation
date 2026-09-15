@@ -154,7 +154,7 @@ try {
   assert.equal(lifecycle.loadDraft(writeDraft(removed)).specs[0].migration,
     "Remove callers first");
 
-  startRejected((draft) => { draft.version = 4; }, /start draft requires version 1, 2, or 3/);
+  startRejected((draft) => { draft.version = 5; }, /start draft requires version 1, 2, 3, or 4/);
   startRejected((draft) => { draft.intent = " "; }, /non-empty 'intent'/);
   startRejected((draft) => { delete draft.acceptance; }, /acceptance.required true\|false/);
   startRejected((draft) => { draft.acceptance.required = "false"; }, /acceptance.required true\|false/);
@@ -173,7 +173,7 @@ try {
   startRejected((draft) => { draft.execution.providers = {}; }, /executable evidence wiring/);
 
   const incomplete = baseDraft();
-  incomplete.version = 4;
+  incomplete.version = 5;
   incomplete.intent = "";
   delete incomplete.acceptance;
   incomplete.impact = "critical";
@@ -183,7 +183,7 @@ try {
   delete incomplete.execution;
   const aggregate = atomicStartPreflight(incomplete, { groundingRequired: true });
   assert.equal(aggregate.issues.length, 10);
-  assert.match(aggregate.issues.join("\n"), /version 1, 2, or 3[\s\S]*non-empty 'intent'[\s\S]*acceptance.required[\s\S]*impact must be[\s\S]*coupling must be[\s\S]*securityTriggers[\s\S]*executable evidence[\s\S]*grounding.version[\s\S]*nfrAssessment/);
+  assert.match(aggregate.issues.join("\n"), /version 1, 2, 3, or 4[\s\S]*non-empty 'intent'[\s\S]*acceptance.required[\s\S]*impact must be[\s\S]*coupling must be[\s\S]*securityTriggers[\s\S]*executable evidence[\s\S]*grounding.version[\s\S]*nfrAssessment/);
 
   for (const mutate of [
     () => {},
