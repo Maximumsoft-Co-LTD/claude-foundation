@@ -4,6 +4,11 @@ import { isAbsolute, posix, relative, resolve, sep } from "node:path";
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const compareText = (left, right) => left < right ? -1 : left > right ? 1 : 0;
+export const SEMANTIC_SOURCE_LIMITS = Object.freeze({
+  maxSources: 64,
+  maxBytes: 2 * 1024 * 1024,
+  maxFileBytes: 256 * 1024
+});
 
 function sourceRows(value) {
   if (Array.isArray(value)) return value;
@@ -33,12 +38,45 @@ function canonicalInventoryDigest(sources) {
   return `sha256:${sha256(payload)}`;
 }
 
+export function semanticSourceInventoryFindings(inventory) {
+  if (!inventory || typeof inventory !== "object" || Array.isArray(inventory) ||
+      inventory.version !== 1 || inventory.algorithm !== "sha256" ||
+      !Array.isArray(inventory.sources) ||
+      JSON.stringify(Object.keys(inventory).sort()) !==
+        JSON.stringify(["algorithm", "digest", "sources", "version"]))
+    return [finding("invalid-source-inventory", "")];
+  const findings = [];
+  const canonicalRows = [];
+  const seen = new Set();
+  for (const [index, row] of inventory.sources.entries()) {
+    const path = normalizedDeclaredPath(row?.path);
+    if (!path || path !== row.path || seen.has(path) ||
+        !row || typeof row !== "object" || Array.isArray(row) ||
+        JSON.stringify(Object.keys(row).sort()) !== JSON.stringify(["bytes", "path", "sha256"]) ||
+        !Number.isSafeInteger(row?.bytes) || row.bytes < 0 ||
+        !/^[a-f0-9]{64}$/.test(String(row?.sha256 || ""))) {
+      findings.push(finding("invalid-source-inventory-row", String(row?.path || ""), { index }));
+      continue;
+    }
+    seen.add(path);
+    canonicalRows.push({ path, sha256: row.sha256, bytes: row.bytes });
+  }
+  const sorted = [...canonicalRows].sort((left, right) => compareText(left.path, right.path));
+  if (JSON.stringify(sorted) !== JSON.stringify(canonicalRows))
+    findings.push(finding("noncanonical-source-inventory-order", ""));
+  if (canonicalInventoryDigest(sorted) !== inventory.digest)
+    findings.push(finding("source-inventory-digest-mismatch", ""));
+  return findings;
+}
+
 /**
  * Compare two source inventories without filesystem access.
  * A null baseline means that no freshness assertion has been recorded yet.
  */
 export function semanticSourceFreshnessFindings(baseline, current) {
   if (baseline === null || baseline === undefined) return [];
+  const invalid = Array.isArray(baseline) ? [] : semanticSourceInventoryFindings(baseline);
+  if (invalid.length) return invalid;
   const before = new Map(sourceRows(baseline).map((row) => [row?.path, row]));
   const after = new Map(sourceRows(current).map((row) => [row?.path, row]));
   const findings = [];
@@ -67,6 +105,7 @@ export function inspectSemanticSources({
   projectRoot,
   sourcePaths = [],
   baseline = null,
+  limits: limitOverrides = {},
   fs = { lstat: lstatSync, readFile: readFileSync, realpath: realpathSync }
 } = {}) {
   if (typeof projectRoot !== "string" || !projectRoot.trim())
@@ -79,8 +118,15 @@ export function inspectSemanticSources({
   const sources = [];
   const findings = [];
   const seen = new Set();
+  const limits = Object.fromEntries(Object.entries(SEMANTIC_SOURCE_LIMITS).map(([key, fallback]) =>
+    [key, Number.isSafeInteger(limitOverrides[key]) && limitOverrides[key] > 0
+      ? limitOverrides[key] : fallback]));
+  let totalBytes = 0;
 
-  for (const [index, declared] of sourcePaths.entries()) {
+  if (sourcePaths.length > limits.maxSources) findings.push(finding(
+    "source-count-limit", "", { count: sourcePaths.length, maximum: limits.maxSources }));
+
+  for (const [index, declared] of sourcePaths.slice(0, limits.maxSources).entries()) {
     const path = normalizedDeclaredPath(declared);
     if (!path) {
       findings.push(finding("invalid-source-path", String(declared ?? ""), { index }));
@@ -132,6 +178,19 @@ export function inspectSemanticSources({
       findings.push(finding("source-not-file", path));
       continue;
     }
+    if (Number.isSafeInteger(canonicalStat.size) && canonicalStat.size > limits.maxFileBytes) {
+      findings.push(finding("source-file-size-limit", path, {
+        bytes: canonicalStat.size, maximum: limits.maxFileBytes
+      }));
+      continue;
+    }
+    if (Number.isSafeInteger(canonicalStat.size) &&
+        totalBytes + canonicalStat.size > limits.maxBytes) {
+      findings.push(finding("source-byte-limit", path, {
+        bytes: totalBytes + canonicalStat.size, maximum: limits.maxBytes
+      }));
+      continue;
+    }
 
     let content;
     try {
@@ -140,6 +199,16 @@ export function inspectSemanticSources({
       findings.push(finding("source-unreadable", path, { reason: error?.code || "unreadable" }));
       continue;
     }
+    if (content.byteLength > limits.maxFileBytes || totalBytes + content.byteLength > limits.maxBytes) {
+      findings.push(finding(content.byteLength > limits.maxFileBytes
+        ? "source-file-size-limit" : "source-byte-limit", path, {
+        bytes: content.byteLength > limits.maxFileBytes
+          ? content.byteLength : totalBytes + content.byteLength,
+        maximum: content.byteLength > limits.maxFileBytes ? limits.maxFileBytes : limits.maxBytes
+      }));
+      continue;
+    }
+    totalBytes += content.byteLength;
     sources.push({ path, bytes: content.byteLength, sha256: sha256(content) });
   }
 

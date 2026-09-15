@@ -202,7 +202,9 @@ handoff ที่ผูก digest และ Change ต้องตรวจอ�
 ```
 
 Investigation ไม่แก้ product code และไม่แก้ formal change โดยเงียบ ๆ ถ้า change
-มี Build sandbox แล้ว ระบบจะสำรวจ sandbox นั้นแทน main working tree รุ่นเก่า
+มี Build sandbox แล้ว ให้ตั้ง field `activeChange` ใน record เป็น change ID นั้น
+ระบบจะสำรวจ sandbox แทน main working tree รุ่นเก่า พร้อมผูก identity, base และ
+source root ไว้ใน handoff และหยุดแบบ fail closed หาก sandbox หายหรือ stale
 และสามารถ Investigate ซ้ำได้ทุกเวลาก่อน Land เมื่อ implementation ทำให้พบ
 assumption ใหม่
 

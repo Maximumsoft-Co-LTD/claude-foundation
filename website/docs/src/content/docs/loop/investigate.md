@@ -62,6 +62,12 @@ persists compact metrics and no-progress state, and returns `EDIT`, `ASK_USER`,
 or `DONE` with an exact resume route. Newly discovered sources must be read and
 acknowledged in the record before completion.
 
+For an investigation prompted by an existing Build or Prove workspace, set the
+record's optional `activeChange` field to that change ID. Source paths then
+resolve against the active isolated workspace, and the handoff binds its source
+root, base, and identity. A missing or stale sandbox returns the same exact
+record command instead of silently reading the main checkout.
+
 ## What it may write
 
 Investigation is read-only with respect to product code and formal change

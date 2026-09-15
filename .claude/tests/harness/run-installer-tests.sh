@@ -123,6 +123,8 @@ assert_file_exists "CLI router runtime installed" "$TARGET/.claude/harness/runti
 investigation_template="$(bash "$ROOT/cli.sh" --project "$TARGET" investigate --template)"
 assert_contains "public investigate template exposes typed facts" \
   "$investigation_template" '"facts": []'
+assert_contains "public investigate template exposes optional active-change binding" \
+  "$investigation_template" '"activeChange": null'
 mkdir -p "$TARGET/openspec/investigations"
 printf '%s\n' 'Retry evidence establishes the current revision boundary.' \
   > "$TARGET/investigation-evidence.md"

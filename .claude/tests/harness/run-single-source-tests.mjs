@@ -15,7 +15,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PHASE_BY_COMMAND, LIFECYCLE_PHASES } from "../../harness/runtime/core/lifecycle-phase.mjs";
+import {
+  PHASE_BY_COMMAND, LIFECYCLE_PHASES, telemetryPhaseForCommand
+} from "../../harness/runtime/core/lifecycle-phase.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..", "..");
@@ -38,6 +40,12 @@ for (const line of phaseBlock.split("\n")) {
 
 check(() => assert.ok(Object.keys(cliPhases).length > 20,
   "the cli.sh phase grammar failed to parse — this test is reading the wrong block"));
+check(() => assert.equal(cliPhases.investigate, "investigate",
+  "the public Investigate route must export its canonical lifecycle phase"));
+check(() => assert.equal(PHASE_BY_COMMAND.investigate, "investigate",
+  "direct runtime Investigate must use the same canonical lifecycle phase"));
+check(() => assert.equal(telemetryPhaseForCommand("investigate"), "investigate",
+  "Investigate telemetry must retain its lifecycle phase"));
 
 for (const [command, phase] of Object.entries(cliPhases))
   check(() => assert.equal(PHASE_BY_COMMAND[command], phase,

@@ -20,9 +20,10 @@
 // They get an explicit bucket rather than a phantom phase named after whichever
 // command happened to run.
 
-export const LIFECYCLE_PHASES = ["change", "build", "prove", "land"];
+export const LIFECYCLE_PHASES = ["investigate", "change", "build", "prove", "land"];
 
 export const PHASE_BY_COMMAND = {
+  investigate: "investigate",
   new: "change",
   start: "change",
   resolve: "change",

@@ -22,7 +22,7 @@ We follow [Semantic Versioning](https://semver.org/) and [Keep a Changelog](http
 1. **Write the changelog.** Add the release's entries under `## [Unreleased]` in `CHANGELOG.md` and push to `main`. (This is the only hand-written part; everything below is automated.)
 2. **Trigger the release.** Actions tab → **Release** → *Run workflow* → enter the new version (e.g. `2.5.11`). Or: `gh workflow run release.yml -f version=2.5.11`.
 
-The workflow then: renames `## [Unreleased]` → `## [X.Y.Z]` (dated) + adds a fresh `## [Unreleased]` + fixes the link refs · bumps `VERSION` + the `WORKFLOW.md` mirror · commits `chore(release): vX.Y.Z` + tags + pushes · computes the tarball `sha256` and bumps the formula `url`/`sha256` · publishes the GitHub release from the new changelog section · builds + uploads the bottle and arms the formula's `bottle do` block · commits `chore(brew): formula for vX.Y.Z`. **Result: 2 bot commits + a tag + a published, bottled release.**
+The workflow then: renames `## [Unreleased]` → `## [X.Y.Z]` (dated) + adds a fresh `## [Unreleased]` + fixes the link refs · bumps `VERSION` + the `WORKFLOW.md` mirror · validates and builds the rewritten English/Thai documentation · commits `chore(release): vX.Y.Z` + tags + pushes · computes the tarball `sha256` and bumps the formula `url`/`sha256` · publishes the GitHub release from the new changelog section · builds + uploads the bottle and arms the formula's `bottle do` block · commits `chore(brew): formula for vX.Y.Z`. **Result: 2 bot commits + a tag + a published, bottled release.**
 
 It refuses to run if the selected ref is not the current `main` revision, the
 version is malformed, the tag already exists, or `## [Unreleased]` is empty

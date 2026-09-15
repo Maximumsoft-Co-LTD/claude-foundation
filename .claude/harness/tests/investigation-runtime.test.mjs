@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync
+} from "node:fs";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +10,7 @@ import {
   createInvestigationRuntime, validateInvestigationBinding
 } from "../runtime/workflow/investigation-runtime.mjs";
 
-function fixture(t) {
+function fixture(t, options = {}) {
   const root = mkdtempSync(join(tmpdir(), "investigation-runtime-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "openspec", "investigations"), { recursive: true });
@@ -38,6 +40,7 @@ function fixture(t) {
   const writeJson = (path, value) => writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
   const runtime = createInvestigationRuntime({
     root, readJson, writeJson, now: () => "2026-09-15T00:00:00.000Z",
+    setOperationChangeId: options.setOperationChangeId,
     fail: (message) => { throw new Error(message); }
   });
   return { root, record, recordPath, runtime, readJson };
@@ -79,6 +82,58 @@ test("persists deterministic investigation evidence and emits a Change-bound han
   }).join("\n"), /digest is stale/);
 });
 
+test("an active-change investigation reads and binds the isolated Build sandbox", (t) => {
+  let operationChangeId = null;
+  const value = fixture(t, {
+    setOperationChangeId: (id) => { operationChangeId = id; }
+  });
+  const sandbox = join(value.root, ".foundation", "sandboxes", "active-change");
+  mkdirSync(sandbox, { recursive: true });
+  writeFileSync(join(sandbox, "evidence.md"), "Sandbox evidence is newer than main.\n");
+  mkdirSync(join(value.root, ".foundation", "runtime"), { recursive: true });
+  writeFileSync(join(value.root, ".foundation", "runtime", "active-change.json"),
+    `${JSON.stringify({
+      id: "active-change", status: "building",
+      workspace: { mode: "copy", path: sandbox, baseHead: "base", baseline: {} }
+    }, null, 2)}\n`);
+  value.record.activeChange = "active-change";
+  writeFileSync(value.recordPath, `${JSON.stringify(value.record, null, 2)}\n`);
+
+  const result = quiet(() => value.runtime.inspectInvestigation(
+    "openspec/investigations/retry-race.json"));
+  assert.equal(result.action, "DONE");
+  assert.equal(result.handoff.workspace.changeId, "active-change");
+  assert.equal(operationChangeId, "active-change");
+  assert.equal(result.handoff.workspace.sourceRoot, realpathSync(sandbox));
+  const state = value.readJson(join(value.root, result.state.path));
+  assert.equal(state.workspace.identity, result.handoff.workspace.identity);
+  assert.equal(state.sourceInventory.sources[0].path, "evidence.md");
+  assert.deepEqual(validateInvestigationBinding({
+    projectRoot: value.root, binding: result.handoff
+  }), []);
+
+  writeFileSync(join(value.root, ".foundation", "runtime", "active-change.json"),
+    `${JSON.stringify({
+      id: "active-change", status: "building",
+      workspace: { mode: "copy", path: sandbox, baseHead: "moved", baseline: {} }
+    }, null, 2)}\n`);
+  assert.match(validateInvestigationBinding({
+    projectRoot: value.root, binding: result.handoff
+  }).join("\n"), /sandbox identity or base is stale/);
+
+  rmSync(sandbox, { recursive: true, force: true });
+  assert.match(validateInvestigationBinding({
+    projectRoot: value.root, binding: result.handoff
+  }).join("\n"), /sandbox is missing or unsafe/);
+  const blocked = quiet(() => value.runtime.inspectInvestigation(
+    "openspec/investigations/retry-race.json"));
+  assert.equal(blocked.action, "EDIT");
+  assert.equal(blocked.resume,
+    "claude-foundation investigate openspec/investigations/retry-race.json");
+  assert.match(blocked.investigation.issues.join("\n"), /sandbox is missing or unsafe/);
+  assert.deepEqual(value.readJson(join(value.root, blocked.state.path)).repository.selectedSources, []);
+});
+
 test("new repository sources require an agent acknowledgement before DONE", (t) => {
   const value = fixture(t);
   writeFileSync(join(value.root, "second.md"),
@@ -91,6 +146,18 @@ test("new repository sources require an agent acknowledgement before DONE", (t) 
   assert.equal(result.investigation.kind, "inspect-sources");
   assert.ok(result.investigation.paths.includes("second.md"));
   assert.equal(result.handoff, null);
+});
+
+test("blocked repository discovery short-circuits source inventory reads", (t) => {
+  const value = fixture(t);
+  writeFileSync(join(value.root, "evidence.md"), "x".repeat(300_000));
+  const result = quiet(() => value.runtime.inspectInvestigation(
+    "openspec/investigations/retry-race.json"));
+  assert.equal(result.action, "EDIT");
+  assert.match(result.investigation.issues.join("\n"), /repository discovery scan-file-size-limit/);
+  assert.doesNotMatch(result.investigation.issues.join("\n"), /investigation source source-file-size-limit/);
+  const state = value.readJson(join(value.root, result.state.path));
+  assert.deepEqual(state.sourceInventory.sources, []);
 });
 
 test("hypotheses, facts, and recommendations fail closed on invalid bindings", (t) => {
@@ -116,6 +183,55 @@ test("Change handoff validation rejects traversing investigation identities", (t
   }), ["investigation binding id is invalid"]);
 });
 
+test("Investigation refuses record and state paths through parent-directory symlinks", (t) => {
+  const outside = mkdtempSync(join(tmpdir(), "investigation-outside-"));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  const recordRoot = mkdtempSync(join(tmpdir(), "investigation-record-root-"));
+  t.after(() => rmSync(recordRoot, { recursive: true, force: true }));
+  mkdirSync(join(recordRoot, "openspec"), { recursive: true });
+  symlinkSync(outside, join(recordRoot, "openspec", "investigations"));
+  writeFileSync(join(outside, "escape.json"), JSON.stringify({ version: 1, id: "escape" }));
+  const runtime = createInvestigationRuntime({
+    root: recordRoot,
+    readJson: (path) => JSON.parse(readFileSync(path, "utf8")),
+    writeJson: (path, value) => writeFileSync(path, JSON.stringify(value)),
+    now: () => "2026-09-15T00:00:00.000Z",
+    fail: (message) => { throw new Error(message); }
+  });
+  assert.throws(() => runtime.inspectInvestigation("openspec/investigations/escape.json"),
+    /regular JSON record inside the project/);
+
+  const value = fixture(t);
+  mkdirSync(join(value.root, ".foundation"), { recursive: true });
+  symlinkSync(outside, join(value.root, ".foundation", "investigations"));
+  assert.throws(() => quiet(() => value.runtime.inspectInvestigation(
+    "openspec/investigations/retry-race.json")), /state directory is unsafe/);
+});
+
+test("Change handoff binds canonical inventory, outcome, and refreshed discovery", (t) => {
+  const value = fixture(t);
+  const result = quiet(() => value.runtime.inspectInvestigation(
+    "openspec/investigations/retry-race.json"));
+  assert.match(validateInvestigationBinding({
+    projectRoot: value.root, binding: { ...result.handoff, outcome: "not-worth-changing" }
+  }).join("\n"), /outcome does not match/);
+
+  writeFileSync(join(value.root, "new-retry-evidence.md"),
+    "A retry must preserve the latest revision and reject a stale write.\n");
+  assert.match(validateInvestigationBinding({
+    projectRoot: value.root, binding: result.handoff
+  }).join("\n"), /repository discovery is stale/);
+
+  rmSync(join(value.root, "new-retry-evidence.md"));
+  const statePath = join(value.root, result.state.path);
+  const state = value.readJson(statePath);
+  state.sourceInventory.sources[0].path = "evidence.md/../evidence.md";
+  writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+  assert.match(validateInvestigationBinding({
+    projectRoot: value.root, binding: result.handoff
+  }).join("\n"), /source inventory is invalid or noncanonical/);
+});
+
 test("repeated unchanged work records a bounded no-progress recovery route", (t) => {
   const value = fixture(t);
   value.record.hypotheses[0].status = "open";
@@ -129,6 +245,10 @@ test("repeated unchanged work records a bounded no-progress recovery route", (t)
   assert.equal(result.noProgress.count, 3);
   assert.equal(result.noProgress.boundaryReached, true);
   assert.equal(result.noProgress.resume, route);
+  assert.equal(result.action, "ASK_USER");
+  assert.equal(result.owner, "user");
+  assert.equal(result.boundary, "repeated-no-progress");
+  assert.equal(result.decision.kind, "repair-no-progress");
 });
 
 test("comparison requires grounded options, a selection, and bounded prototype paths", (t) => {

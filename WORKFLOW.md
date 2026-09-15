@@ -53,6 +53,12 @@ machine-owned resumable state with compact metrics, and returns one typed
 agent, user, or harness action. Three unchanged attempts expose a no-progress
 boundary without discarding the exact resume route.
 
+Set the optional `activeChange` field to an existing change ID when the question
+arises during Build or Prove. The harness then reads the active isolated root,
+binds its workspace identity and base into state and handoff, and fails closed
+with the same record command if that sandbox is missing or stale. Omitting the
+field preserves standalone Investigate behavior against the project root.
+
 `/investigate <decision> --compare` may build disposable alternatives only
 under `.foundation/prototypes/`. It always records the selected conclusion in
 `selection.md`. Prototype artifacts are never evidence.

@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import { inspectRepositoryIntelligence } from "./validation/repository-intelligence.mjs";
-import { inspectSemanticSources } from "./validation/semantic-source-inventory.mjs";
+import {
+  inspectSemanticSources, semanticSourceInventoryFindings
+} from "./validation/semantic-source-inventory.mjs";
 
 export const INVESTIGATION_STATE_VERSION = 1;
 const OUTCOMES = new Set([
@@ -20,6 +22,7 @@ export function investigationRecordTemplate() {
   return {
     version: 1,
     id: "replace-with-investigation-id",
+    activeChange: null,
     problem: "Describe the uncertainty or decision to investigate",
     mode: "analyze",
     sources: [],
@@ -52,6 +55,35 @@ function within(root, candidate) {
   return path === "" || (!path.startsWith(`..${sep}`) && path !== ".." && !isAbsolute(path));
 }
 
+function safeExistingFile(root, declaredPath) {
+  const canonicalRoot = realpathSync(resolve(root));
+  const absolute = resolve(canonicalRoot, declaredPath);
+  if (!within(canonicalRoot, absolute) || !existsSync(absolute)) return null;
+  let canonical;
+  try { canonical = realpathSync(absolute); }
+  catch { return null; }
+  if (canonical !== absolute || !within(canonicalRoot, canonical)) return null;
+  const stat = lstatSync(absolute);
+  return stat.isFile() && !stat.isSymbolicLink() ? absolute : null;
+}
+
+function safeStateDirectory(root) {
+  const canonicalRoot = realpathSync(resolve(root));
+  const foundation = join(canonicalRoot, ".foundation");
+  if (existsSync(foundation) && realpathSync(foundation) !== foundation) return null;
+  mkdirSync(foundation, { recursive: true });
+  const directory = join(foundation, "investigations");
+  if (existsSync(directory) && realpathSync(directory) !== directory) return null;
+  mkdirSync(directory, { recursive: true });
+  return realpathSync(directory) === directory ? directory : null;
+}
+
+function repositoryQuery(record) {
+  return [record?.problem, record?.changeIntent,
+    ...(record?.facts || []).map((row) => row?.statement),
+    ...(record?.hypotheses || []).map((row) => row?.statement)];
+}
+
 function recordIssues(record) {
   const issues = [];
   if (!record || typeof record !== "object" || Array.isArray(record))
@@ -60,6 +92,9 @@ function recordIssues(record) {
   if (!ID_PATTERN.test(text(record.id)))
     issues.push("investigation record id must be a lowercase kebab-case identifier");
   if (!text(record.problem)) issues.push("investigation record problem is required");
+  if (record.activeChange !== undefined && record.activeChange !== null &&
+      !ID_PATTERN.test(text(record.activeChange)))
+    issues.push("investigation record activeChange must be a lowercase kebab-case change id");
   const mode = text(record.mode).toLowerCase();
   if (!new Set(["analyze", "compare"]).has(mode))
     issues.push("investigation record mode must be analyze|compare");
@@ -168,6 +203,9 @@ function stateProjection(state) {
     id: state.id,
     requestDigest: state.requestDigest,
     sourceInventoryDigest: state.sourceInventory?.digest || null,
+    status: state.status,
+    workspace: state.workspace || null,
+    repository: state.repository,
     facts: state.facts,
     hypotheses: state.hypotheses,
     options: state.options,
@@ -190,13 +228,69 @@ function bindingFor(state) {
     statePath: state.path,
     stateDigest: state.stateDigest,
     sourceDigest: state.sourceInventory.digest,
+    workspace: state.workspace || null,
     outcome: state.conclusion.status,
     summary: state.conclusion.summary,
     changeIntent: state.changeIntent || null
   };
 }
 
-export function validateInvestigationBinding({ projectRoot, binding } = {}) {
+function activeWorkspace(projectRoot, changeId, git = null) {
+  if (!changeId) return { root: projectRoot, binding: null, issues: [] };
+  const runtimePath = join(projectRoot, ".foundation", "runtime", `${changeId}.json`);
+  if (!existsSync(runtimePath) || !lstatSync(runtimePath).isFile() ||
+      lstatSync(runtimePath).isSymbolicLink()) return {
+    root: null, binding: null,
+    issues: [`active change '${changeId}' runtime state is missing or unsafe`]
+  };
+  let runtime;
+  try { runtime = JSON.parse(readFileSync(runtimePath, "utf8")); }
+  catch { return { root: null, binding: null,
+    issues: [`active change '${changeId}' runtime state is unreadable`] }; }
+  if (["landing", "applied", "archived"].includes(text(runtime.status).toLowerCase()))
+    return { root: null, binding: null,
+      issues: [`active change '${changeId}' has already entered Land`] };
+  const workspace = runtime.workspace || {};
+  if (!["worktree", "copy"].includes(workspace.mode) || !text(workspace.path))
+    return { root: null, binding: null,
+      issues: [`active change '${changeId}' does not have an isolated Build sandbox`] };
+  const declared = resolve(workspace.path);
+  let sourceRoot;
+  try {
+    if (!existsSync(declared) || !lstatSync(declared).isDirectory() ||
+        lstatSync(declared).isSymbolicLink()) throw new Error("missing");
+    sourceRoot = realpathSync(declared);
+  } catch {
+    return { root: null, binding: null,
+      issues: [`active change '${changeId}' sandbox is missing or unsafe`] };
+  }
+  if (sourceRoot === projectRoot) return { root: null, binding: null,
+    issues: [`active change '${changeId}' is not bound to an isolated Build sandbox`] };
+  let head = null;
+  if (workspace.mode === "worktree") {
+    const result = typeof git === "function" ? git(["rev-parse", "HEAD"], sourceRoot) : null;
+    head = result?.status === 0 ? text(result.stdout) : null;
+    if (!head) return { root: null, binding: null,
+      issues: [`active change '${changeId}' worktree identity is stale or unreadable`] };
+  }
+  const identityInput = {
+    changeId,
+    mode: workspace.mode,
+    sourceRoot,
+    baseHead: workspace.baseHead || null,
+    head,
+    baselineDigest: workspace.mode === "copy"
+      ? digest(workspace.baseline || {}, "foundation-investigation-copy-baseline:1") : null
+  };
+  return {
+    root: sourceRoot,
+    binding: { version: 1, ...identityInput,
+      identity: digest(identityInput, "foundation-investigation-workspace:1") },
+    issues: []
+  };
+}
+
+export function validateInvestigationBinding({ projectRoot, binding, git = null } = {}) {
   const issues = [];
   const root = realpathSync(resolve(projectRoot));
   if (!binding || binding.version !== 1) return ["investigation binding version must be 1"];
@@ -205,10 +299,8 @@ export function validateInvestigationBinding({ projectRoot, binding } = {}) {
   const expectedPath = `.foundation/investigations/${bindingId}.json`;
   if (text(binding.statePath) !== expectedPath)
     issues.push(`investigation binding statePath must be '${expectedPath}'`);
-  const path = resolve(root, text(binding.statePath));
-  if (!within(join(root, ".foundation", "investigations"), path) ||
-      !existsSync(path) || !lstatSync(path).isFile() ||
-      lstatSync(path).isSymbolicLink())
+  const path = safeExistingFile(root, text(binding.statePath));
+  if (!path || !within(join(root, ".foundation", "investigations"), path))
     return unique([...issues, "investigation binding state is missing or unsafe"]);
   let state;
   try { state = JSON.parse(readFileSync(path, "utf8")); }
@@ -216,35 +308,103 @@ export function validateInvestigationBinding({ projectRoot, binding } = {}) {
   if (state.version !== INVESTIGATION_STATE_VERSION || state.status !== "DONE" ||
       state.conclusion?.status !== "ready-for-change")
     issues.push("investigation binding must reference a ready-for-change DONE state");
+  let sourceRoot = root;
+  let workspaceCurrent = true;
+  if (state.workspace) {
+    const current = activeWorkspace(root, state.workspace.changeId, git);
+    if (current.issues.length) {
+      workspaceCurrent = false;
+      issues.push(...current.issues);
+    }
+    else {
+      sourceRoot = current.root;
+      if (current.binding.identity !== state.workspace.identity ||
+          current.binding.sourceRoot !== state.workspace.sourceRoot ||
+          current.binding.baseHead !== state.workspace.baseHead)
+        issues.push("investigation binding sandbox identity or base is stale");
+    }
+  }
   if (state.id !== binding.id || investigationStateDigest(state) !== binding.stateDigest ||
       state.stateDigest !== binding.stateDigest)
     issues.push("investigation binding state digest is stale or mismatched");
-  if (state.sourceInventory?.digest !== binding.sourceDigest)
+  const inventoryIssues = semanticSourceInventoryFindings(state.sourceInventory);
+  if (inventoryIssues.length)
+    issues.push("investigation binding source inventory is invalid or noncanonical");
+  else if (state.sourceInventory.digest !== binding.sourceDigest)
     issues.push("investigation binding source digest is stale or mismatched");
-  else {
+  else if (workspaceCurrent) {
     const freshness = inspectSemanticSources({
-      projectRoot: root,
+      projectRoot: sourceRoot,
       sourcePaths: (state.sourceInventory?.sources || []).map((row) => row.path),
       baseline: state.sourceInventory
     });
     if (freshness.findings.length || freshness.staleFindings.length)
       issues.push("investigation binding sources changed after the investigation completed");
   }
+  if (state.conclusion?.status !== binding.outcome)
+    issues.push("investigation binding outcome does not match machine state");
   if (state.conclusion?.summary !== binding.summary ||
       (state.changeIntent || null) !== (binding.changeIntent || null))
     issues.push("investigation binding handoff content does not match machine state");
+  if (digest(state.workspace || null, "foundation-investigation-workspace-binding:1") !==
+      digest(binding.workspace || null, "foundation-investigation-workspace-binding:1"))
+    issues.push("investigation binding workspace does not match machine state");
+  const requestPath = safeExistingFile(root, text(state.requestPath));
+  if (!requestPath) issues.push("investigation binding request is missing or unsafe");
+  else if (workspaceCurrent) {
+    try {
+      const record = JSON.parse(readFileSync(requestPath, "utf8"));
+      if (digest(record, "foundation-investigation-record:1") !== state.requestDigest) {
+        issues.push("investigation binding request changed after the investigation completed");
+      } else {
+        const excludedPaths = [state.requestPath, state.path];
+        let includedPaths = null;
+        let trackedPaths = [];
+        if (typeof git === "function") {
+          const tracked = git(["ls-files", "-z"], sourceRoot);
+          const included = git([
+            "ls-files", "-z", "--cached", "--others", "--exclude-standard"
+          ], sourceRoot);
+          if (tracked.status === 0 && included.status === 0) {
+            trackedPaths = tracked.stdout.split("\0").filter(Boolean);
+            includedPaths = included.stdout.split("\0").filter(Boolean)
+              .filter((candidate) => !excludedPaths.includes(candidate) &&
+                !candidate.startsWith(".foundation/"));
+          }
+        }
+        const repository = inspectRepositoryIntelligence({
+          projectRoot: sourceRoot,
+          query: repositoryQuery(record),
+          seedPaths: strings(record.sources),
+          includedPaths,
+          trackedPaths,
+          excludedPaths,
+          limits: { maxReadSet: 24 }
+        });
+        const selected = (repository.readSet || []).map((row) => row.path);
+        if (repository.status !== "ready" ||
+            JSON.stringify(selected) !== JSON.stringify(state.repository?.selectedSources || []))
+          issues.push("investigation binding repository discovery is stale or incomplete");
+      }
+    } catch { issues.push("investigation binding request is unreadable"); }
+  }
   return unique(issues);
 }
 
-export function createInvestigationRuntime({ root, readJson, writeJson, now, fail, git = null } = {}) {
-  const statePath = (id) => join(root, ".foundation", "investigations", `${id}.json`);
+export function createInvestigationRuntime({
+  root, readJson, writeJson, now, fail, git = null, setOperationChangeId = null
+} = {}) {
+  const projectRoot = realpathSync(resolve(root));
+  const statePath = (id) => join(projectRoot, ".foundation", "investigations",
+    `${id}.json`);
 
-  function repositoryPaths(excludedPaths) {
+  function repositoryPaths(excludedPaths, repositoryRoot = projectRoot) {
     if (typeof git !== "function") return {
       includedPaths: null, trackedPaths: [], excludedPaths
     };
-    const tracked = git(["ls-files", "-z"], root);
-    const included = git(["ls-files", "-z", "--cached", "--others", "--exclude-standard"], root);
+    const tracked = git(["ls-files", "-z"], repositoryRoot);
+    const included = git(["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+      repositoryRoot);
     if (tracked.status !== 0 || included.status !== 0) return {
       includedPaths: null, trackedPaths: [], excludedPaths
     };
@@ -257,34 +417,42 @@ export function createInvestigationRuntime({ root, readJson, writeJson, now, fai
   }
 
   function inspectInvestigation(recordPath) {
-    const absolute = resolve(root, recordPath);
-    if (!within(root, absolute) || !existsSync(absolute) || !lstatSync(absolute).isFile() ||
-        lstatSync(absolute).isSymbolicLink())
+    const absolute = safeExistingFile(projectRoot, recordPath);
+    if (!absolute)
       fail("investigate requires a regular JSON record inside the project");
     const record = readJson(absolute);
     const issues = recordIssues(record);
     const id = text(record?.id) || "invalid";
+    const workspace = activeWorkspace(projectRoot, text(record?.activeChange), git);
+    if (workspace.binding && typeof setOperationChangeId === "function")
+      setOperationChangeId(workspace.binding.changeId);
+    issues.push(...workspace.issues);
+    const sourceRoot = workspace.root;
     const resume = `claude-foundation investigate ${recordPath}`;
-    const relativeRecord = relative(root, absolute).replaceAll("\\", "/");
+    const relativeRecord = relative(projectRoot, absolute).replaceAll("\\", "/");
     const relativeState = `.foundation/investigations/${id}.json`;
-    const paths = repositoryPaths([relativeRecord, relativeState]);
-    const repository = inspectRepositoryIntelligence({
-      projectRoot: root,
-      query: [record?.problem, record?.changeIntent,
-        ...(record?.facts || []).map((row) => row?.statement),
-        ...(record?.hypotheses || []).map((row) => row?.statement)],
+    const paths = sourceRoot
+      ? repositoryPaths([relativeRecord, relativeState], sourceRoot)
+      : { includedPaths: [], trackedPaths: [], excludedPaths: [] };
+    const repository = sourceRoot ? inspectRepositoryIntelligence({
+      projectRoot: sourceRoot,
+      query: repositoryQuery(record),
       seedPaths: strings(record?.sources),
       includedPaths: paths.includedPaths,
       trackedPaths: paths.trackedPaths,
       excludedPaths: paths.excludedPaths,
       limits: { maxReadSet: 24 }
-    });
+    }) : {
+      version: 1, status: "blocked", complete: false,
+      scan: { entries: 0, files: 0, bytes: 0 }, findings: [], readSet: []
+    };
     const discovered = (repository.readSet || []).map((row) => row.path);
     const acknowledged = new Set(strings(record?.sources));
     const missingAcknowledgements = discovered.filter((path) => !acknowledged.has(path));
     const sourceInspection = inspectSemanticSources({
-      projectRoot: root,
-      sourcePaths: unique([...acknowledged, ...discovered])
+      projectRoot: sourceRoot || projectRoot,
+      sourcePaths: sourceRoot && repository.status === "ready"
+        ? unique([...acknowledged, ...discovered]) : []
     });
     for (const fact of record?.facts || [])
       for (const source of strings(fact?.sources))
@@ -345,6 +513,20 @@ export function createInvestigationRuntime({ root, readJson, writeJson, now, fai
       action: action.action, kind: action.investigation?.kind || action.decision?.kind || null });
     const noProgressCount = previous?.progressDigest === progressDigest && action.action !== "DONE"
       ? Number(previous.noProgress?.count || 0) + 1 : action.action === "DONE" ? 0 : 1;
+    if (noProgressCount >= 3 && action.action !== "DONE") action = {
+      action: "ASK_USER", owner: "user", boundary: "repeated-no-progress",
+      reason: "The investigation produced the same unresolved result three times.",
+      decision: {
+        kind: "repair-no-progress",
+        recommended: "change-strategy",
+        options: [
+          { id: "change-strategy", outcome: "Revise the investigation approach or evidence." },
+          { id: "resolve-boundary", outcome: "Supply the missing decision, authority, or source." },
+          { id: "pause", outcome: "Preserve state and pause the investigation." }
+        ]
+      },
+      resume
+    };
     const state = {
       version: INVESTIGATION_STATE_VERSION,
       kind: "investigation",
@@ -357,6 +539,7 @@ export function createInvestigationRuntime({ root, readJson, writeJson, now, fai
       requestDigest,
       progressDigest,
       sourceInventory: sourceInspection.inventory,
+      workspace: workspace.binding,
       repository: {
         complete: repository.complete,
         scan: repository.scan,
@@ -391,11 +574,13 @@ export function createInvestigationRuntime({ root, readJson, writeJson, now, fai
       }
     };
     state.stateDigest = investigationStateDigest(state);
-    mkdirSync(dirname(path), { recursive: true });
+    const directory = safeStateDirectory(projectRoot);
+    if (!directory || dirname(path) !== directory)
+      fail("investigate state directory is unsafe");
     writeJson(path, state);
     const handoff = action.action === "DONE" && state.conclusion?.status === "ready-for-change"
       ? bindingFor(state) : null;
-    const result = { ...action, state: { path: relative(root, path).replaceAll("\\", "/"),
+    const result = { ...action, state: { path: relative(projectRoot, path).replaceAll("\\", "/"),
       revision: state.revision, digest: state.stateDigest }, noProgress: state.noProgress,
       metrics: state.metrics, handoff };
     console.log(JSON.stringify(result, null, 2));

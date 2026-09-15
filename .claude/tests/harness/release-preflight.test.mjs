@@ -97,6 +97,16 @@ test("release workflow fails fast and does not repeat semantic mutation", () => 
   assert.match(workflow, /authoritative suite already contains all six semantic mutation/);
 });
 
+test("release workflow builds the rewritten public documentation before publication", () => {
+  const workflow = readFileSync(new URL("../../../.github/workflows/release.yml", import.meta.url),
+    "utf8");
+  const rewrite = workflow.indexOf("- name: Rewrite changelog + bump version mirrors");
+  const docsBuild = workflow.indexOf("npm run build --prefix website/docs");
+  const publish = workflow.indexOf("- name: Commit, tag, push");
+  assert.ok(rewrite >= 0 && rewrite < docsBuild && docsBuild < publish);
+  assert.match(workflow, /npm ci --prefix website\/docs/);
+});
+
 test("release workflow binds publishing and reusable rehearsal evidence to current main", () => {
   const workflow = readFileSync(new URL("../../../.github/workflows/release.yml", import.meta.url),
     "utf8");

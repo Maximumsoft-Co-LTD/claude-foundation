@@ -60,6 +60,11 @@ Agent เริ่มจาก `claude-foundation investigate --template` เก
 no-progress state แล้วคืน `EDIT`, `ASK_USER` หรือ `DONE` พร้อม resume route
 source ใหม่ที่ค้นพบต้องถูกอ่านและยืนยันใน record ก่อนจบ
 
+หากคำถามเกิดจาก Build หรือ Prove workspace ที่มีอยู่ ให้ตั้ง field
+`activeChange` ใน record เป็น change ID นั้น source path จะอ้างอิงจาก isolated
+workspace ที่ active และ handoff จะผูก source root, base และ identity หาก sandbox
+หายหรือ stale ระบบจะคืนคำสั่ง record เดิมที่ใช้ resume โดยไม่ย้อนอ่าน main checkout
+
 ## เขียนอะไรได้บ้าง
 
 ขั้นสำรวจเป็น read-only ต่อ product code และ formal change packet งานเขียนปกติ

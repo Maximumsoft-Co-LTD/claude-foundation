@@ -635,7 +635,7 @@ assert_cmd_zero "per-phase spend is reported in the budget's own measure" \
 # `--phase` is advertised as an enum; it used to accept anything and write the
 # typo straight into metrics.phases as if it were a phase.
 assert_cmd_fails_with "exec refuses a phase outside the enum" \
-  "exec --phase must be change|build|prove|land" \
+  "exec --phase must be investigate|change|build|prove|land" \
   node .claude/harness/foundation.mjs exec unavailable-provider-recovery \
   --phase buidl -- true
 mkdir -p .foundation/leases/tasks/unavailable-provider-recovery

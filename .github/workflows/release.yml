@@ -225,6 +225,8 @@ jobs:
           set -euo pipefail
           node .claude/tests/harness/run-single-source-tests.mjs
           sh .claude/tests/docs/run-doc-consistency.sh
+          npm ci --prefix website/docs
+          npm run build --prefix website/docs
 
       - name: Commit, tag, push
         if: env.DRY != 'true'

@@ -583,7 +583,11 @@ test("change amend installs atomically and restores files and state on validatio
   const root = mkdtempSync(join(tmpdir(), "semantic-amend-transaction-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const id = "payment-change";
-  const change = join(root, "openspec", "changes", id);
+  const rootChange = join(root, "openspec", "changes", id);
+  const change = join(root, ".foundation", "sandboxes", id, "openspec", "changes", id);
+  mkdirSync(rootChange, { recursive: true });
+  writeFileSync(join(rootChange, "tasks.md"), "# Root packet stays unchanged\n");
+  writeFileSync(join(root, "README.md"), "Initial amendment source.\n");
   mkdirSync(join(change, "specs", "payment-control"), { recursive: true });
   writeFileSync(join(change, "tasks.md"), [
     "# Tasks", "",
@@ -608,7 +612,7 @@ test("change amend installs atomically and restores files and state on validatio
     "## Operator notes", "", "Preserve this manual section.", ""
   ].join("\n"));
   const amendmentPath = join(root, "amendment.json");
-  const writeAmendment = (key) => writeFileSync(amendmentPath, `${JSON.stringify({
+  const writeAmendment = (key, path = amendmentPath) => writeFileSync(path, `${JSON.stringify({
     version: 1,
     reason: `Add ${key}`,
     addRequirements: [{
@@ -621,7 +625,10 @@ test("change amend installs atomically and restores files and state on validatio
       coverage: [
         "current-behavior", "affected-actor", "desired-behavior", "success-path",
         "failure-path", "input-boundary", "compatibility", "non-goals", "verification"
-      ].map((dimension) => ({ dimension, status: "covered", covers: [key] })),
+      ].map((dimension) => ({
+        dimension, status: "covered", covers: [key],
+        ...(dimension === "current-behavior" ? { sources: ["README.md"] } : {})
+      })),
       decisions: []
     }
   }, null, 2)}\n`);
@@ -632,17 +639,26 @@ test("change amend installs atomically and restores files and state on validatio
   let rejectValidation = false;
   let rejectRebind = false;
   let rejectRebindChecks = 0;
+  let runContender = false;
+  let contenderError = null;
+  let mutateStateOnFingerprint = false;
+  let lifecycle;
   const stableHash = (value) => createHash("sha256")
     .update(JSON.stringify(value)).digest("hex");
-  const contractFingerprint = () => stableHash(JSON.parse(
-    readFileSync(join(change, "evidence.yaml"), "utf8")));
+  const contractFingerprint = () => {
+    if (mutateStateOnFingerprint) {
+      mutateStateOnFingerprint = false;
+      state = { ...state, revision: Number(state.revision || 0) + 1 };
+    }
+    return stableHash(JSON.parse(readFileSync(join(change, "evidence.yaml"), "utf8")));
+  };
   const receipts = join(root, ".foundation", "receipts", id);
   mkdirSync(receipts, { recursive: true });
   writeFileSync(join(receipts, "lint.json"), `${JSON.stringify({
     provider: "lint", status: "pass", contractFingerprint: contractFingerprint()
   }, null, 2)}\n`);
   const initialLintReceipt = JSON.parse(readFileSync(join(receipts, "lint.json"), "utf8"));
-  const lifecycle = createChangeLifecycle({
+  lifecycle = createChangeLifecycle({
     root,
     policy: () => ({ workflow: { grounding: "optional" } }),
     securityTerms: [],
@@ -657,11 +673,18 @@ test("change amend installs atomically and restores files and state on validatio
       writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
     },
     slugify,
-    changePath: () => change,
+    changePath: () => rootChange,
+    activeChangePath: () => change,
     loadRuntime: () => state,
     saveRuntime: (value) => { state = structuredClone(value); },
-    validate: () => {
+    validate: (_changeId, validationSource) => {
+      assert.equal(validationSource, "active");
       assert.match(readFileSync(join(change, "tasks.md"), "utf8"), /\[x\]/);
+      if (runContender) {
+        runContender = false;
+        try { lifecycle.amendChange(id, "amendment.json"); }
+        catch (error) { contenderError = error; }
+      }
       if (rejectValidation) throw new Error("synthetic validator failure");
     },
     now: () => "2026-09-03T00:00:00.000Z",
@@ -700,7 +723,7 @@ test("change amend installs atomically and restores files and state on validatio
     writeFileSync(amendmentPath, `${JSON.stringify(firstAmendment, null, 2)}\n`);
     assert.equal(lifecycle.inspectAmendment(id, "amendment.json").action, "DONE");
     const specPath = join(change, "specs", "payment-control", "spec.md");
-    writeFileSync(specPath, `${readFileSync(specPath, "utf8")}\nNew source fact.\n`);
+    writeFileSync(join(root, "README.md"), "Changed amendment source.\n");
     assert.throws(() => lifecycle.amendChange(id, "amendment.json"),
       /current completed semantic intake/);
     const refreshed = lifecycle.inspectAmendment(id, "amendment.json");
@@ -709,9 +732,12 @@ test("change amend installs atomically and restores files and state on validatio
       finding.code === "source-acknowledgement-required").detail.expected;
     writeFileSync(amendmentPath, `${JSON.stringify(firstAmendment, null, 2)}\n`);
     assert.equal(lifecycle.inspectAmendment(id, "amendment.json").action, "DONE");
+    runContender = true;
     lifecycle.amendChange(id, "amendment.json");
+    assert.match(contenderError?.message || "", /already in progress/);
     assert.equal(state.contractRevision, 1);
     assert.equal(state.amendments.length, 1);
+    assert.deepEqual(state.amendments[0].requirementKeys, ["malformed-row"]);
     assert.equal(state.amendments[0].semanticIntakeEffectiveness.history.inspections, 4);
     assert.deepEqual(state.amendments[0].invalidation.affectedTasks, ["T001"]);
     assert.deepEqual(state.amendments[0].invalidation.affectedProviders, ["test"]);
@@ -740,6 +766,7 @@ test("change amend installs atomically and restores files and state on validatio
       evidence: readFileSync(join(change, "evidence.yaml"), "utf8"),
       proposal: readFileSync(join(change, "proposal.md"), "utf8"),
       spec: readFileSync(join(change, "specs", "payment-control", "spec.md"), "utf8"),
+      receipt: readFileSync(join(receipts, "lint.json"), "utf8"),
       state: structuredClone(state)
     };
     writeAmendment("second-behavior");
@@ -748,6 +775,13 @@ test("change amend installs atomically and restores files and state on validatio
     secondAmendment.discovery.sourceDigest = secondInspection.intakeState.sourceDigest;
     writeFileSync(amendmentPath, `${JSON.stringify(secondAmendment, null, 2)}\n`);
     assert.equal(lifecycle.inspectAmendment(id, "amendment.json").action, "DONE");
+    mutateStateOnFingerprint = true;
+    assert.throws(() => lifecycle.amendChange(id, "amendment.json"),
+      /conflicted with a newer change revision/);
+    assert.equal(readFileSync(join(change, "tasks.md"), "utf8"), before.tasks);
+    assert.equal(readFileSync(join(receipts, "lint.json"), "utf8"), before.receipt);
+    assert.equal(state.revision, before.state.revision + 1);
+    before.state = structuredClone(state);
     rejectValidation = true;
     assert.throws(() => lifecycle.amendChange(id, "amendment.json"),
       /synthetic validator failure; semantic amendment rolled back/);
@@ -755,6 +789,9 @@ test("change amend installs atomically and restores files and state on validatio
     assert.equal(readFileSync(join(change, "evidence.yaml"), "utf8"), before.evidence);
     assert.equal(readFileSync(join(change, "proposal.md"), "utf8"), before.proposal);
     assert.equal(readFileSync(join(change, "specs", "payment-control", "spec.md"), "utf8"), before.spec);
+    assert.equal(readFileSync(join(receipts, "lint.json"), "utf8"), before.receipt);
+    assert.equal(readFileSync(join(rootChange, "tasks.md"), "utf8"),
+      "# Root packet stays unchanged\n");
     assert.deepEqual(state, before.state);
 
     rejectValidation = false;

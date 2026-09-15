@@ -1420,6 +1420,7 @@ const { inspectInvestigation, investigationRecordTemplate } = createInvestigatio
   writeJson,
   now,
   git,
+  setOperationChangeId(id) { operationChangeId = id; },
   fail: die
 });
 function unresolvedApplyTransactions(id) {

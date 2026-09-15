@@ -13,6 +13,9 @@ returns `EDIT`, `ASK_USER`, or `DONE` with a resume route. Interpret and add eac
 new source to `sources`. On `DONE`, copy `handoff` into the semantic draft's
 `investigation`; Change rejects stale bindings.
 
+For Build/Prove investigations, set `activeChange`; follow the
+[workspace-binding contract](../../../../WORKFLOW.md#investigate-problem).
+
 Without comparison, the record and optional note are the only allowed write;
 create `openspec/investigations/<name>.md` only when narrative helps. With
 approved `--compare`, create three to five disposable alternatives only under

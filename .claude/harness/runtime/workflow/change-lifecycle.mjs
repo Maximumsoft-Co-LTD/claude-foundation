@@ -5,6 +5,7 @@ import {
   realpathSync, statSync, writeFileSync
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
+import { acquireProcessLock } from "../core/process-lock.mjs";
 import { nextCommand } from "../core/next-step.mjs";
 import { taskBlocks, taskMetadata } from "../contracts/change-artifacts.mjs";
 import { materialSecurityTriggers } from "./security-policy.mjs";
@@ -442,6 +443,34 @@ export function createChangeLifecycle({
 }) {
   const workflowPolicy = () => typeof policy === "function" ? policy() : policy;
 
+  function amendmentRevision(state) {
+    return JSON.stringify({
+      revision: Number(state.revision || 0),
+      contractRevision: Number(state.contractRevision || 0),
+      executionRevision: Number(state.executionRevision || 0)
+    });
+  }
+
+  function assertAmendmentRevision(id, expected) {
+    if (amendmentRevision(loadRuntime(id)) !== expected)
+      fail(`change amendment for '${id}' conflicted with a newer change revision; ` +
+        "reload the active agreement and retry");
+  }
+
+  function withAmendmentLock(id, observedRevision, operation) {
+    const lock = acquireProcessLock(
+      join(root, ".foundation", "locks", `amend-${id}.lock`), { now });
+    if (!lock.acquired)
+      fail(`change amendment for '${id}' is already in progress; ` +
+        "reload the active agreement and retry");
+    try {
+      assertAmendmentRevision(id, observedRevision);
+      return operation();
+    } finally {
+      lock.release();
+    }
+  }
+
   function selectiveBinding(id, provider, contractRevision, receipt = null) {
     if (!receiptValidity || !providerConfig || !claimsForProvider || !providerWorkspaceHash ||
         !providerInputIdentity || !relevantHash || !stableHash) return null;
@@ -856,8 +885,10 @@ export function createChangeLifecycle({
     const sameDraft = previous?.draftDigest === semanticDraftDigest(source);
     const intelligence = repositoryIntelligence(source,
       excludedSourcePath ? [excludedSourcePath] : []);
-    const sourceInspection = semanticSourceInspection(
-      source, sameDraft ? previous?.sourceInventory : null, intelligence.selected);
+    const sourceInspection = intelligence.repository.status === "ready"
+      ? semanticSourceInspection(
+        source, sameDraft ? previous?.sourceInventory : null, intelligence.selected)
+      : inspectSemanticSources({ projectRoot: root, sourcePaths: [] });
     const intakeIssues = semanticIntakeIssues(source);
     const normalized = validateCompiledDraft
       ? normalizeSemanticDraft(source, slugify, {
@@ -871,7 +902,7 @@ export function createChangeLifecycle({
       ...normalized.issues.filter((issue) => !intakeIssues.includes(issue)),
       ...semanticReferenceIssues(normalized.draft),
       ...(source.version === 4 && source.investigation !== undefined
-        ? validateInvestigationBinding({ projectRoot: root, binding: source.investigation })
+        ? validateInvestigationBinding({ projectRoot: root, binding: source.investigation, git })
           .map((issue) => `investigation ${issue}`)
         : []),
       ...semanticQuestionQualityFindings(source, {
@@ -1246,12 +1277,14 @@ export function createChangeLifecycle({
       } else {
         const sourcePath = relative(root, resolve(root, draftPath)).replaceAll("\\", "/");
         const intelligence = repositoryIntelligence(source, [sourcePath]);
-        const sourceInspection = semanticSourceInspection(source, null, intelligence.selected);
+        const sourceInspection = intelligence.repository.status === "ready"
+          ? semanticSourceInspection(source, null, intelligence.selected)
+          : inspectSemanticSources({ projectRoot: root, sourcePaths: [] });
         const projection = semanticIntakeResumeProjection(intakeState, source, {
           resumeRoute: resume, sourceInventory: sourceInspection.inventory
         });
         const investigationIssues = source.investigation === undefined ? []
-          : validateInvestigationBinding({ projectRoot: root, binding: source.investigation });
+          : validateInvestigationBinding({ projectRoot: root, binding: source.investigation, git });
         if (intelligence.repository.status !== "ready" || sourceInspection.findings.length ||
             investigationIssues.length ||
             source.discovery?.sourceDigest !== sourceInspection.inventory.digest ||
@@ -1323,8 +1356,7 @@ export function createChangeLifecycle({
     }
   }
 
-  function amendChange(id, amendmentPath, options = {}) {
-    const state = loadRuntime(id);
+  function amendChangeUnlocked(id, amendmentPath, options, state, expectedRevision) {
     if (![3, 4].includes(state.semanticDraftVersion))
       fail(`change amend requires a semantic-draft v3 or v4 change; '${id}' is a legacy agreement`);
     if (["proven", "landing", "archived"].includes(state.status))
@@ -1345,8 +1377,9 @@ export function createChangeLifecycle({
       const intakeSource = amendmentIntakeSource(amendment);
       const amendmentRelativePath = relative(root, source).replaceAll("\\", "/");
       const intelligence = repositoryIntelligence(intakeSource, [amendmentRelativePath]);
-      const sourceInspection = semanticSourceInspection(
-        intakeSource, null, intelligence.selected);
+      const sourceInspection = intelligence.repository.status === "ready"
+        ? semanticSourceInspection(intakeSource, null, intelligence.selected)
+        : inspectSemanticSources({ projectRoot: root, sourcePaths: [] });
       const projection = semanticIntakeResumeProjection(intakeState, intakeSource, {
         resumeRoute: resume, sourceInventory: sourceInspection.inventory
       });
@@ -1426,10 +1459,12 @@ export function createChangeLifecycle({
     const rebindAudits = [];
     let installed = false;
     try {
+      assertAmendmentRevision(id, expectedRevision);
       renameSync(basePath, priorPath);
       renameSync(stagedPath, basePath);
       installed = true;
-      validate(id, "root");
+      validate(id, "active");
+      assertAmendmentRevision(id, expectedRevision);
       const currentContractRevision = priorContractRevision + 1;
       const currentRequiredProviders = requiredProviders ? requiredProviders(id) : [];
       const currentBindings = invalidation.proof.preserveReceipts
@@ -1530,7 +1565,7 @@ export function createChangeLifecycle({
         mkdirSync(dirname(proofAdvancePath), { recursive: true });
         writeFileSync(proofAdvancePath, priorProofAdvance);
       }
-      saveRuntime(priorState);
+      if (installed) saveRuntime(priorState);
       fail(`${error?.message || error}; semantic amendment rolled back`);
     } finally {
       rmSync(transactionRoot, { recursive: true, force: true });
@@ -1555,6 +1590,13 @@ export function createChangeLifecycle({
         `claude-foundation advance ${id} --through proven`}\n` +
       `  next: claude-foundation advance ${id}`);
     return compiled;
+  }
+
+  function amendChange(id, amendmentPath, options = {}) {
+    const state = loadRuntime(id);
+    const observedRevision = amendmentRevision(state);
+    return withAmendmentLock(id, observedRevision,
+      () => amendChangeUnlocked(id, amendmentPath, options, state, observedRevision));
   }
 
   return {

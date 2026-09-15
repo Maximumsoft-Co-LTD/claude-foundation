@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   inspectSemanticSources,
+  semanticSourceInventoryFindings,
   semanticSourceFreshnessFindings
 } from "../runtime/workflow/validation/semantic-source-inventory.mjs";
 
@@ -126,4 +127,41 @@ test("filesystem dependencies are injectable without creating harness state", ()
 
   assert.deepEqual(value.findings, []);
   assert.equal(value.inventory.sources[0].bytes, 6);
+});
+
+test("inventory validates canonical rows and its own digest", async (t) => {
+  const root = await fixture(t);
+  const inventory = inspectSemanticSources({
+    projectRoot: root, sourcePaths: ["README.md", "src/app.mjs"]
+  }).inventory;
+  assert.deepEqual(semanticSourceInventoryFindings(inventory), []);
+  const reordered = { ...inventory, sources: [...inventory.sources].reverse() };
+  assert.match(semanticSourceInventoryFindings(reordered).map((row) => row.code).join("\n"),
+    /noncanonical-source-inventory-order/);
+  const forged = structuredClone(inventory);
+  forged.sources[0].bytes += 1;
+  assert.match(semanticSourceInventoryFindings(forged).map((row) => row.code).join("\n"),
+    /source-inventory-digest-mismatch/);
+});
+
+test("inventory refuses oversized and excessive sources before reading bytes", () => {
+  let reads = 0;
+  const fs = {
+    realpath: (path) => path,
+    lstat: () => ({ isSymbolicLink: () => false, isFile: () => true, size: 300_000 }),
+    readFile: () => { reads += 1; return Buffer.from("unexpected"); }
+  };
+  const oversized = inspectSemanticSources({
+    projectRoot: "/project", sourcePaths: ["large.md"], fs
+  });
+  assert.equal(reads, 0);
+  assert.equal(oversized.findings[0].code, "source-file-size-limit");
+
+  const excessive = inspectSemanticSources({
+    projectRoot: "/project",
+    sourcePaths: Array.from({ length: 65 }, (_, index) => `source-${index}.md`),
+    fs,
+    limits: { maxSources: 1 }
+  });
+  assert.equal(excessive.findings.some((row) => row.code === "source-count-limit"), true);
 });

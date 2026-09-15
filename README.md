@@ -214,7 +214,9 @@ agreement:
 
 Investigation does not edit product code and does not silently rewrite the
 formal change. When the change already has a Build sandbox, it examines that
-sandbox rather than an older main working tree. You may investigate again at
+sandbox rather than an older main working tree: set the record's optional
+`activeChange` field to that change ID. The handoff binds the sandbox identity,
+base, and source root and fails closed if they are stale or missing. You may investigate again at
 any point before Land when implementation reveals a new assumption.
 
 ## Your first change

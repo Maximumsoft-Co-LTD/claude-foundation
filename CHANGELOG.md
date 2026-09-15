@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A deterministic `investigate` runtime now discovers and hashes repository
+  sources, tracks facts, hypotheses, options, consequential decisions and
+  repeated no-progress, and emits a digest-bound handoff into semantic Change.
+  Investigations can bind an active Build change and then read only its current
+  isolated sandbox rather than an older main checkout.
+- Semantic draft v4 and in-flight amendments use adaptive repository intake,
+  source acknowledgements, effectiveness metrics and provider-selective proof
+  recovery. Preserved receipts carry immutable digest-bound rebind audits.
+- Shipped skill references now have automated reachability, link, cycle and
+  duplicate-content governance.
+
+### Changed
+
+- Runtime API is now 39, metrics schema 10, semantic source binding schema 1
+  and investigation state schema 1. Public command compatibility is retained;
+  stale earlier evidence remains fail-closed and must be re-proven.
+- Release validation builds the rewritten English and Thai documentation before
+  any release commit, tag or publication.
+
+### Fixed
+
+- Investigation source and state paths reject parent-symlink escapes, enforce
+  bounded reads, validate canonical inventory rows and all compiled handoff
+  fields, re-discover newly relevant sources, and stop at a typed boundary after
+  repeated unchanged work.
+- Active-sandbox amendments validate the packet they actually stage, serialize
+  concurrent amendment writers, compare revisions before mutation, roll back
+  transactionally and preserve only proof receipts unaffected by the new
+  agreement.
+- Confirmed human review execution remains agent-owned while harness-owned
+  authority, state, evidence and exact recovery routes stay deterministic.
+- Build and test dependencies are refreshed to patched Astro, Vitest,
+  image-processing, YAML, query-string, ID-generation and SVG-optimization
+  releases; both locked npm dependency trees now report no known advisories.
+
 ## [3.5.17] - 2026-09-11
 
 ### Changed

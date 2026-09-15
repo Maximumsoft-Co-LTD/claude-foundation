@@ -2,15 +2,17 @@
 
 Release evidence last verified: 2026-09-04 for v3.5.6.
 
-Current source note (2026-09-05): the repository version is v3.5.7. The verified
-state table below belongs to v3.5.6 and does not certify v3.5.7 or subsequent
-working-tree fixes. See the [delivery convergence record](delivery-convergence-master-plan-2026-09-05.md)
-for the later implementation. No paid evidence is transferred between cohorts.
+Current source note (2026-09-15): the repository version remains v3.5.17 while
+the unreleased source adds repository-grounded semantic intake, a deterministic
+Investigate runtime, amendment-aware selective proof, and their release-safety
+remediations. This working tree is not yet an immutable release cohort. The
+verified state table below belongs to v3.5.6 and does not certify v3.5.17 or the
+current unreleased source. No paid, rollout, or production evidence transfers
+between source cohorts.
 
-Working-tree reliability fixes based on `5b546392e2eca536a28af0db9985392ad2ec715b`
-were checked on 2026-09-05: the full deterministic gate passed 205/205 suites
-with eight workers; focused minimum-runtime tests passed 36/36 on Node 20.19.0.
-These are local repair checks, not a published release or paid scenario sign-off.
+Local deterministic checks for the unreleased source are development evidence
+only. Replace this note with the final clean commit identity plus CI, upgrade,
+and rehearsal evidence before calling the next release candidate verified.
 
 ## Summary
 
