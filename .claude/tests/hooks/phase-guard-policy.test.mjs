@@ -33,6 +33,8 @@ test("shell mutation policy blocks read-only lifecycle phases", () => {
     "Change cannot run mutating shell commands");
   assert.equal(shellMutationViolation("prove", {}),
     "Prove cannot run mutating shell commands");
+  assert.equal(shellMutationViolation("investigate", {}),
+    "Investigate cannot run mutating shell commands");
 });
 
 test("shell mutation policy requires Land transaction authority", () => {

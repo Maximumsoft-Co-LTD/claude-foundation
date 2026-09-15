@@ -43,7 +43,7 @@ setup_project() {
 # $1 = change id, $2 = report path the provider writes
 draft() {
   node .claude/harness/foundation.mjs start --template > draft.json
-  REPORT="$2" TITLE="$1" DECLARE_REPORT="${3:-}" node -e '
+  REPORT="$2" TITLE="$1" DECLARE_REPORT="${3:-}" ADD_LINT="${4:-}" node -e '
     const { readFileSync, writeFileSync } = require("fs");
     const d = JSON.parse(readFileSync("draft.json", "utf8"));
     d.intent = process.env.TITLE;
@@ -55,15 +55,32 @@ draft() {
       paths: (process.env.DECLARE_REPORT ? ["app.txt", process.env.REPORT] : ["app.txt"]),
       verify: "sh run-test.sh " + process.env.REPORT,
       covers: ["greeting-updated"] }];
-    d.evidence = { "greeting-updated": { capabilities: ["test"] } };
+    d.evidence = { "greeting-updated": { capabilities:
+      process.env.ADD_LINT ? ["test", "static-analysis"] : ["test"] } };
     d.discovery.coverage = d.discovery.coverage.map((row) => ({
       dimension: row.dimension, status: "covered", covers: ["greeting-updated"]
     }));
     d.execution = { version: 1, providers: { test: { adapter: "test-discovery",
       command: ["sh", "run-test.sh", process.env.REPORT], report: process.env.REPORT,
       minimum: 1, timeoutMs: 60000 } }, services: {} };
+    if (process.env.ADD_LINT) d.execution.providers.lint = {
+      adapter: "command", capability: "static-analysis", claims: ["greeting-updated"],
+      inputs: ["run-test.sh"], command: ["sh", "-n", "run-test.sh"], timeoutMs: 60000
+    };
     writeFileSync("draft.json", JSON.stringify(d, null, 2));'
-  node .claude/harness/foundation.mjs start draft.json > start.log 2>&1
+  mkdir -p .foundation
+  node .claude/harness/foundation.mjs start draft.json --inspect > .foundation/start-inspect.json
+  SOURCE_DIGEST="$(node -p 'require("./.foundation/start-inspect.json").intakeState.sourceDigest')" node -e '
+    const { readFileSync, writeFileSync } = require("fs");
+    const d = JSON.parse(readFileSync("draft.json", "utf8"));
+    d.discovery.sourceDigest = process.env.SOURCE_DIGEST;
+    writeFileSync("draft.json", JSON.stringify(d, null, 2));'
+  node .claude/harness/foundation.mjs start draft.json --inspect > .foundation/start-inspect.json
+  node -e 'if (require("./.foundation/start-inspect.json").action !== "DONE") process.exit(1)'
+  if ! node .claude/harness/foundation.mjs start draft.json > start.log 2>&1; then
+    cat start.log >&2
+    exit 1
+  fi
   change_id="$(sed -n 's/^AGREED \([^[:space:]]*\).*$/\1/p' start.log | head -n 1)"
   if [ -z "$change_id" ]; then
     echo "FAIL: start did not report an agreed change id" >&2
@@ -137,6 +154,7 @@ setup_project review-waiver
 printf '%s\n' '{"workflow":{"grounding":"optional","reviewPolicy":"risk-tiered"},"land":{"riskBasedCi":false}}' > foundation.json
 draft "Review waiver" "test-results/report.json"
 implement review-waiver
+review_ws="$ws"
 node .claude/harness/foundation.mjs proof-collect review-waiver >/dev/null
 pending_review="$({ node .claude/harness/foundation.mjs proof-run review-waiver; } 2>&1 || true)"
 assert_contains "review is required before the waiver" "$pending_review" 'review'
@@ -156,8 +174,89 @@ printf 'v3\n' > "$ws/app.txt"
 stale_waiver="$({ node .claude/harness/foundation.mjs proof-readiness review-waiver; } 2>&1 || true)"
 assert_contains "changing the diff expires the review waiver" "$stale_waiver" 'waiver-stale'
 
+# A v4 amendment uses the same public intake gate, preserves an unaffected
+# declared-input receipt, reruns the affected provider through advance, and
+# leaves a durable rebind audit.
+setup_project amendment-selective
+draft "Selective amendment" "test-results/report.json" "" 1
+implement selective-amendment
+node .claude/harness/foundation.mjs proof-collect selective-amendment >/dev/null
+lint_before="$(shasum .foundation/receipts/selective-amendment/lint.json)"
+test_before="$(shasum .foundation/receipts/selective-amendment/test.json)"
+node -e '
+  const { writeFileSync } = require("fs");
+  const dimensions = ["current-behavior", "affected-actor", "desired-behavior",
+    "success-path", "failure-path", "input-boundary", "compatibility", "non-goals",
+    "verification"];
+  const amendment = { version: 1, reason: "Cover the observed v2 persistence",
+    size: "l", coupling: "isolated",
+    addRequirements: [{ key: "v2-persists", capability: "application", operation: "added",
+      scenario: "The updated value is read", outcome: "v2 remains observable" }],
+    updateTasks: [{ key: "update-app", covers: ["greeting-updated", "v2-persists"] }],
+    evidence: { "v2-persists": { capabilities: ["test"] } },
+    discovery: { coverage: dimensions.map((dimension) => ({ dimension,
+      status: "covered", covers: ["v2-persists"] })), decisions: [] } };
+  writeFileSync("amendment.json", JSON.stringify(amendment, null, 2));'
+node .claude/harness/foundation.mjs amend selective-amendment amendment.json --inspect \
+  > .foundation/amendment-inspect.json
+assert_contains "amendment first inspection pauses for intake repair" \
+  "$(cat .foundation/amendment-inspect.json)" '"action": "EDIT"'
+assert_contains "amendment inspection adapts coverage to the installed repository" \
+  "$(cat .foundation/amendment-inspect.json)" 'data-migration'
+AMENDMENT_SOURCE_DIGEST="$(node -p 'require("./.foundation/amendment-inspect.json").intakeState.sourceDigest')" \
+  node -e '
+    const { readFileSync, writeFileSync } = require("fs");
+    const a = JSON.parse(readFileSync("amendment.json", "utf8"));
+    const inspected = JSON.parse(readFileSync(".foundation/amendment-inspect.json", "utf8"));
+    a.discovery.coverage = inspected.intelligence.depth.requiredDimensions.map(
+      (dimension) => ({ dimension, status: "covered", covers: ["v2-persists"] }));
+    a.discovery.sourceDigest = process.env.AMENDMENT_SOURCE_DIGEST;
+    writeFileSync("amendment.json", JSON.stringify(a, null, 2));'
+node .claude/harness/foundation.mjs amend selective-amendment amendment.json --inspect \
+  > .foundation/amendment-inspect.json
+assert_contains "amendment reaches the resumable DONE gate" \
+  "$(cat .foundation/amendment-inspect.json)" '"action": "DONE"'
+amended="$(node .claude/harness/foundation.mjs amend selective-amendment amendment.json \
+  --consume-amendment)"
+assert_contains "amendment prints the exact proof recovery command" "$amended" \
+  'claude-foundation advance selective-amendment --through proven'
+assert_not_contains "unaffected lint receipt is rebound rather than left byte-identical" \
+  "$(shasum .foundation/receipts/selective-amendment/lint.json)" "$lint_before"
+assert_eq "affected test receipt remains stale until Prove reruns it" "$test_before" \
+  "$(shasum .foundation/receipts/selective-amendment/test.json)"
+assert_file_contains "preserved receipt records its amendment rebind" \
+  .foundation/receipts/selective-amendment/lint.json 'unaffected-semantic-amendment'
+lint_execution_before="$(node -p \
+  'require("./.foundation/receipts/selective-amendment/lint.json").commandExecutionId')"
+assert_cmd_zero "amendment writes one digest-bound rebind audit" sh -c '
+  set -- .foundation/evidence/selective-amendment/receipt-rebinds/*.json
+  [ "$#" -eq 1 ] && grep -q priorReceiptDigest "$1" && grep -q reboundReceiptDigest "$1"'
+amendment_blocked="$(node .claude/harness/foundation.mjs advance selective-amendment --through proven)"
+assert_contains "amended agreement fails closed until its exact spec is re-approved" \
+  "$amendment_blocked" 'spec-approval-required'
+assert_contains "blocked advance preserves the exact recovery command" \
+  "$amendment_blocked" 'claude-foundation advance selective-amendment --through proven'
+assert_eq "authority pause does not spend the affected test receipt" "$test_before" \
+  "$(shasum .foundation/receipts/selective-amendment/test.json)"
+node .claude/harness/foundation.mjs resolve selective-amendment --approve-spec \
+  --decision-ref fixture://user/amended-spec >/dev/null
+node .claude/harness/foundation.mjs advance selective-amendment --through proven \
+  > .foundation/amendment-advance.out
+amendment_proven="$(cat .foundation/amendment-advance.out)"
+assert_contains "advance reruns affected proof and reaches proven" "$amendment_proven" \
+  '"reached":"proven"'
+assert_eq "advance does not re-execute the preserved lint provider" \
+  "$lint_execution_before" "$(node -p \
+    'require("./.foundation/receipts/selective-amendment/lint.json").commandExecutionId')"
+assert_file_contains "advance retains the auditable amendment rebind" \
+  .foundation/receipts/selective-amendment/lint.json 'unaffected-semantic-amendment'
+assert_not_contains "advance replaces the affected test receipt" \
+  "$(shasum .foundation/receipts/selective-amendment/test.json)" "$test_before"
+
 # Restore the accepted bytes and complete the local saga with a deterministic
 # OpenSpec stub. No remote/model execution is part of this regression.
+cd "$TMP/review-waiver"
+ws="$review_ws"
 printf 'v2\n' > "$ws/app.txt"
 mkdir -p "$TMP/bin"
 printf '%s\n' '#!/usr/bin/env sh' \

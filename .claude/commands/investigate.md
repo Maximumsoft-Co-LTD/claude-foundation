@@ -7,5 +7,7 @@ Investigate **$ARGUMENTS** without product edits.
 
 Read `.claude/skills/investigate/references/workflow.md` completely and follow
 its fact/decision ownership, bounded-write, comparison, evidence, and handoff
-rules. Preserve findings at a real boundary and never treat prototype output as
-proof.
+rules. Start from `claude-foundation investigate --template`, maintain its JSON
+record, and run `claude-foundation investigate <record.json>` after every
+evidence batch. Follow the typed action and exact resume route. Preserve
+findings at a real boundary and never treat prototype output as proof.

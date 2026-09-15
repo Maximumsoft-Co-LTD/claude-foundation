@@ -60,11 +60,11 @@ test("accepts a current valid binding without cross-revision reuse", () => {
 
 test("fails closed when a preservation binding is missing or duplicated", () => {
   const missing = planSelectiveProofRecovery(fixture({ receiptBindings: [] }));
-  assert.equal(missing.status, "BLOCKED");
+  assert.equal(missing.status, "READY");
   assert.deepEqual(missing.providers.preserved, []);
   assert.deepEqual(missing.providers.rerun, ["browser", "lint", "review"]);
   assert.ok(missing.findings.some((row) => row.code === "MISSING_PROVIDER_BINDING"));
-  assert.equal(missing.recovery.mode, "fail-closed-rerun");
+  assert.equal(missing.recovery.mode, "selective-rerun");
 
   const duplicate = planSelectiveProofRecovery(fixture({
     receiptBindings: [binding("lint", 3), binding("lint", 3)]
@@ -72,6 +72,22 @@ test("fails closed when a preservation binding is missing or duplicated", () => 
   assert.equal(duplicate.status, "BLOCKED");
   assert.ok(duplicate.findings.some((row) => row.code === "AMBIGUOUS_PROVIDER_BINDING"));
   assert.deepEqual(duplicate.providers.rerun, ["browser", "lint", "review"]);
+});
+
+test("one ambiguous candidate does not invalidate another exact receipt", () => {
+  const result = planSelectiveProofRecovery(fixture({
+    invalidation: {
+      status: "READY",
+      proof: { invalidateReceipts: ["browser"], preserveReceipts: ["lint", "review"] }
+    },
+    receiptBindings: [binding("lint", 3)],
+    currentBindings: [binding("lint", 4), binding("review", 4)]
+  }));
+  assert.equal(result.status, "READY");
+  assert.deepEqual(result.providers.preserved, ["lint"]);
+  assert.deepEqual(result.providers.rerun, ["browser", "review"]);
+  assert.ok(result.findings.some((row) =>
+    row.provider === "review" && row.code === "MISSING_PROVIDER_BINDING"));
 });
 
 test("does not reuse changed, unscoped, or independently stale receipts", () => {
@@ -89,7 +105,7 @@ test("does not reuse changed, unscoped, or independently stale receipts", () => 
     const result = planSelectiveProofRecovery(fixture({
       receiptBindings: [receipt], currentBindings: [current]
     }));
-    assert.equal(result.status, "BLOCKED", code);
+    assert.equal(result.status, "READY", code);
     assert.ok(result.findings.some((row) => row.code === code), code);
     assert.ok(result.providers.rerun.includes("lint"), code);
   }

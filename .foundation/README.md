@@ -11,6 +11,9 @@ enter proof or product artifacts. Repository topology and model policy remain
 reviewable in `openspec/repositories.yaml` and `foundation.json`.
 Semantic draft inspection keeps one source-bound resume snapshot under
 `intake/`; it contains no transcript or durable product intent.
+Investigation keeps source-bound state, compact metrics, and Change handoff
+digests under `investigations/`; the agent-authored record remains in
+`openspec/investigations/`.
 Emitted plan and packet byte counts live in
 `logs/<change>/context.jsonl`; they contain sizes and scope metadata, not prompt
 or artifact content.

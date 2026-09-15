@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, realpathSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, posix, relative, resolve, sep } from "node:path";
 import { EXCLUDED_WORKSPACE_DIRS } from "../../core/workspace-policy.mjs";
 import { isExcludedPath } from "../../core/workspace-surface.mjs";
@@ -6,7 +6,7 @@ import { isExcludedPath } from "../../core/workspace-surface.mjs";
 const DEFAULT_LIMITS = Object.freeze({
   maxEntries: 12_000,
   maxFiles: 3_000,
-  maxBytes: 12 * 1024 * 1024,
+  maxBytes: 32 * 1024 * 1024,
   maxFileBytes: 256 * 1024,
   maxDepth: 12,
   maxReadSet: 24,
@@ -23,6 +23,13 @@ const RESOLUTION_EXTENSIONS = [
   "/index.js", "/index.jsx", "/index.mjs", "/index.ts", "/index.tsx"
 ];
 const CATEGORY_ORDER = ["specs", "tests", "integrations", "persistence", "permissions"];
+const GRAPH_LANGUAGE = Object.freeze({
+  ".js": "javascript", ".jsx": "javascript", ".mjs": "javascript",
+  ".ts": "javascript", ".tsx": "javascript", ".py": "python",
+  ".rs": "rust", ".go": "go", ".java": "java", ".kt": "kotlin",
+  ".rb": "ruby", ".php": "php"
+});
+const SUPPORTED_GRAPH_LANGUAGES = new Set(["javascript", "python"]);
 const CATEGORY_RULES = Object.freeze({
   specs: {
     path: /(^|\/)(?:openspec\/specs|specifications?|contracts?|docs\/[^/]*spec)(?:\/|$)|(?:^|\/)(?:openapi|asyncapi)\.(?:ya?ml|json)$/i,
@@ -73,6 +80,22 @@ function normalizeSeedPaths(paths) {
   return new Set((Array.isArray(paths) ? paths : []).map(normalizedPath)
     .map((path) => posix.normalize(path)).filter((path) => path && path !== "." &&
       path !== ".." && !path.startsWith("../") && !isAbsolute(path)));
+}
+
+function normalizedPathSet(paths) {
+  return new Set((Array.isArray(paths) ? paths : []).map(normalizedPath)
+    .map((path) => posix.normalize(path)).filter((path) => path && path !== "." &&
+      path !== ".." && !path.startsWith("../") && !isAbsolute(path)));
+}
+
+function pathAncestors(paths) {
+  const ancestors = new Set();
+  for (const path of paths) {
+    const segments = path.split("/");
+    for (let index = 1; index < segments.length; index += 1)
+      ancestors.add(segments.slice(0, index).join("/"));
+  }
+  return ancestors;
 }
 
 function sourceCandidate(path) {
@@ -148,7 +171,17 @@ function graphFor(files, maxEdges) {
     .map((row) => ({ test: row.from, target: row.to, evidence: row.evidence }));
   const surfaces = Object.fromEntries(CATEGORY_ORDER.map((category) => [category,
     files.filter((file) => file.categories.includes(category)).map((file) => file.path)]));
-  return { exceeded: false, dependencies, callers, tests, surfaces };
+  const detected = [...new Set(files.map((file) => GRAPH_LANGUAGE[extname(file.path)])
+    .filter(Boolean))].sort(compareText);
+  const unsupported = detected.filter((language) => !SUPPORTED_GRAPH_LANGUAGES.has(language));
+  return {
+    exceeded: false, dependencies, callers, tests, surfaces,
+    completeness: {
+      status: unsupported.length ? "partial" : "complete",
+      supported: detected.filter((language) => SUPPORTED_GRAPH_LANGUAGES.has(language)),
+      unsupported
+    }
+  };
 }
 
 function rankFiles(files, terms, seedPaths, graph) {
@@ -174,7 +207,6 @@ function rankFiles(files, terms, seedPaths, graph) {
         reasons.push(`query-content:${term}`);
       }
     }
-    score += file.categories.length * 6;
     if (dependenciesOfSeeds.has(file.path)) {
       score += 15;
       reasons.push("dependency-of-seed");
@@ -183,6 +215,9 @@ function rankFiles(files, terms, seedPaths, graph) {
       score += 15;
       reasons.push("caller-of-seed");
     }
+    // A category describes what a file is, not whether it is relevant to this
+    // change. Only boost a file after query, seed, or graph evidence selected it.
+    if (score > 0) score += file.categories.length * 6;
     return {
       path: file.path,
       bytes: file.bytes,
@@ -194,17 +229,8 @@ function rankFiles(files, terms, seedPaths, graph) {
 }
 
 function boundedReadSet(ranked, maximum) {
-  const selected = [];
-  const seen = new Set();
-  const add = (row) => {
-    if (!row || seen.has(row.path) || selected.length >= maximum) return;
-    selected.push(row);
-    seen.add(row.path);
-  };
-  for (const row of ranked.filter((candidate) => candidate.reasons.includes("declared-seed"))) add(row);
-  for (const category of CATEGORY_ORDER) add(ranked.find((row) => row.categories.includes(category)));
-  for (const row of ranked) add(row);
-  return selected;
+  return ranked.filter((row) => row.score > 0 || row.reasons.includes("declared-seed"))
+    .slice(0, maximum);
 }
 
 function blockedResult({ limits, terms, scan, findings }) {
@@ -219,7 +245,8 @@ function blockedResult({ limits, terms, scan, findings }) {
       compareText(left.code, right.code)),
     candidates: [],
     readSet: [],
-    graph: { dependencies: [], callers: [], tests: [], surfaces: {} }
+    graph: { dependencies: [], callers: [], tests: [], surfaces: {},
+      completeness: { status: "unavailable", supported: [], unsupported: [] } }
   };
 }
 
@@ -234,15 +261,21 @@ export function inspectRepositoryIntelligence({
   seedPaths = [],
   excludedDirectories = EXCLUDED_WORKSPACE_DIRS,
   trackedPaths = [],
+  includedPaths = null,
+  excludedPaths = [],
   limits: limitOverrides = {},
-  fs = { readdir: readdirSync, readFile: readFileSync, realpath: realpathSync }
+  fs = { readdir: readdirSync, readFile: readFileSync, realpath: realpathSync, stat: statSync }
 } = {}) {
   if (typeof projectRoot !== "string" || !projectRoot.trim())
     throw new TypeError("projectRoot must be a non-empty string");
   const limits = normalizeLimits(limitOverrides);
   const terms = queryTerms(query);
   const seeds = normalizeSeedPaths(seedPaths);
-  const tracked = new Set((Array.isArray(trackedPaths) ? trackedPaths : []).map(normalizedPath));
+  const trackedFiles = normalizedPathSet(trackedPaths);
+  const tracked = new Set([...trackedFiles, ...pathAncestors(trackedFiles)]);
+  const included = includedPaths === null ? null : normalizedPathSet(includedPaths);
+  const excludedFiles = normalizedPathSet(excludedPaths);
+  const includedAncestors = included === null ? null : pathAncestors(included);
   const findings = [];
   const scan = { entries: 0, files: 0, bytes: 0 };
   const files = [];
@@ -273,6 +306,9 @@ export function inspectRepositoryIntelligence({
     for (const entry of entries) {
       scan.entries += 1;
       const path = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name;
+      if (!entry.isDirectory() && excludedFiles.has(path)) continue;
+      if (included && entry.isDirectory() && !includedAncestors.has(path)) continue;
+      if (included && !entry.isDirectory() && !included.has(path)) continue;
       if (scan.entries > limits.maxEntries) {
         findings.push({ code: "scan-entry-limit", path, blocking: true });
         return;
@@ -298,6 +334,23 @@ export function inspectRepositoryIntelligence({
         findings.push({ code: "scan-file-limit", path, blocking: true });
         return;
       }
+      let knownBytes = null;
+      if (typeof fs.stat === "function") {
+        try { knownBytes = fs.stat(absolute).size; }
+        catch (error) {
+          findings.push({ code: "scan-file-unreadable", path,
+            detail: error?.code || "unreadable", blocking: true });
+          return;
+        }
+      }
+      if (knownBytes !== null && knownBytes > limits.maxFileBytes) {
+        const pathRelevant = seeds.has(path);
+        findings.push({ code: pathRelevant ? "scan-file-size-limit" : "scan-file-size-skipped", path,
+          detail: { bytes: knownBytes, maximum: limits.maxFileBytes },
+          ...(pathRelevant ? { blocking: true } : {}) });
+        if (pathRelevant) return;
+        continue;
+      }
       let content;
       try {
         content = fs.readFile(absolute);
@@ -307,9 +360,15 @@ export function inspectRepositoryIntelligence({
         return;
       }
       if (content.byteLength > limits.maxFileBytes) {
-        findings.push({ code: "scan-file-size-limit", path,
-          detail: { bytes: content.byteLength, maximum: limits.maxFileBytes }, blocking: true });
-        return;
+        // A path-name match cannot justify reading an unbounded file (for
+        // example every change matches CHANGELOG.md). Only an explicit seed
+        // makes an oversized file part of the required grounding set.
+        const pathRelevant = seeds.has(path);
+        findings.push({ code: pathRelevant ? "scan-file-size-limit" : "scan-file-size-skipped", path,
+          detail: { bytes: content.byteLength, maximum: limits.maxFileBytes },
+          ...(pathRelevant ? { blocking: true } : {}) });
+        if (pathRelevant) return;
+        continue;
       }
       scan.bytes += content.byteLength;
       if (scan.bytes > limits.maxBytes) {

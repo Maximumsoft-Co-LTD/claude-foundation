@@ -125,7 +125,9 @@ batch, then retry. Never patch a partially generated packet or create parallel
 IDs by hand.
 
 If Build discovers new observable behavior, create a semantic amendment v1 and
-run `change amend <change> <amendment.json> --consume-amendment`. It preserves
+run `change amend <change> <amendment.json> --inspect`. Follow the same returned
+source-digest and intake actions; after `DONE`, rerun with `--consume-amendment`.
+It preserves
 completed tasks and custom prose/assets, increments the revision, invalidates
 the affected contract, validates, and rolls back on failure. Existing legacy
 changes keep their legacy authoring path; do not rewrite them merely to migrate.

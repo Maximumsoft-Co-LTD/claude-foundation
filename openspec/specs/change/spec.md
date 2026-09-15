@@ -341,6 +341,33 @@ carrying a host decision reference.
 - **THEN** the recorded transaction is resumed or rolled back and the outcome is
   reported
 
+### Requirement: Investigation state is source-bound and hands off explicitly
+
+Foundation SHALL validate a versioned investigation record, discover and hash
+its bounded repository sources, persist typed facts, hypotheses, decisions,
+metrics, and no-progress state, and return one owner-tagged action with an exact
+resume route. It SHALL keep product code read-only and emit a digest-bound
+handoff only from a source-current `ready-for-change` conclusion.
+
+#### Scenario: Investigation discovers an unacknowledged source
+
+- **WHEN** repository discovery selects a relevant path absent from the record's
+  acknowledged sources
+- **THEN** the harness returns agent-owned source interpretation and cannot
+  report the investigation complete
+
+#### Scenario: Change consumes an investigation conclusion
+
+- **WHEN** semantic draft v4 carries an investigation handoff
+- **THEN** Change verifies the machine-state and source digests, retains the
+  conclusion in the compiled agreement, and rejects stale or altered bindings
+
+#### Scenario: Investigation stops making progress
+
+- **WHEN** the same unresolved evidence and action recur three times
+- **THEN** the harness records a no-progress boundary while preserving the exact
+  record command needed to resume after new evidence or a decision
+
 ### Requirement: One Decision Sheet grounds operated service boundaries
 
 Before Build, Foundation SHALL require one locked Decision Sheet produced only
@@ -585,7 +612,21 @@ draft is not a parallel ledger.
 - **WHEN** a version-4 draft is inspected
 - **THEN** the harness performs a bounded read-only scan, ranks relevant specs,
   tests, callers, dependencies, integrations, persistence, and permission
-  boundaries, and binds the selected read-set to intake freshness
+  boundaries from Git-tracked and non-ignored files when available, excludes
+  zero-relevance filler, and binds the selected read-set to intake freshness
+
+#### Scenario: Selected repository evidence is acknowledged
+
+- **WHEN** repository discovery returns a selected source inventory
+- **THEN** the harness requires `discovery.sourceDigest` plus every keyed source
+  fact and recommendation source to match current selected path digests before DONE
+
+#### Scenario: Generated or unsupported repository evidence is encountered
+
+- **WHEN** an ignored or oversized undeclared file is present, or a dependency
+  language has no deterministic resolver
+- **THEN** ignored output is omitted, the oversized file is reported and skipped,
+  and graph completeness names unsupported languages instead of claiming coverage
 
 #### Scenario: Repository discovery cannot prove completeness
 
@@ -599,7 +640,8 @@ draft is not a parallel ledger.
 - **WHEN** typed size, impact, coupling, risk, or repository boundary signals
   increase the investigation tier
 - **THEN** source and question-frontier budgets grow within fixed limits while
-  every mandatory discovery dimension remains required
+  every mandatory discovery dimension remains required; whole-repository
+  enumeration remains governed by separate fixed hard safety limits
 
 #### Scenario: A proposed user question is low quality
 
@@ -669,6 +711,13 @@ fails.
 - **THEN** Foundation requires complete discovery coverage for the added
   requirements and appends the validated delta to the proposal
 
+#### Scenario: A version-4 amendment is inspected before mutation
+
+- **WHEN** Build discovers new observable behavior in a version-4 agreement
+- **THEN** the amendment uses the same bounded repository discovery, source
+  acknowledgement, adaptive depth, question-quality, freshness, and resumable
+  DONE gate as initial Change intake before it may mutate the packet
+
 #### Scenario: Amendment invalidation is planned before mutation
 
 - **WHEN** an amendment adds claims to an active semantic agreement
@@ -689,6 +738,20 @@ fails.
   an incomplete or changed binding
 - **THEN** the harness fails closed for that provider, preserves no ambiguous
   proof, and returns the exact `advance <change> --through proven` recovery route
+
+#### Scenario: One preserved receipt is ambiguous
+
+- **WHEN** one preservation candidate is ambiguous while another retains an
+  exact independently valid declared-input binding
+- **THEN** only the ambiguous provider is rerun and the exact provider remains
+  preserved
+
+#### Scenario: A receipt is rebound across an amendment
+
+- **WHEN** the transaction preserves and rebinds an unaffected receipt
+- **THEN** it writes a create-only audit record containing the before/after
+  receipt digests and authorized contract-revision decision, and removes that
+  record if the amendment rolls back
 
 #### Scenario: The amended packet is invalid
 

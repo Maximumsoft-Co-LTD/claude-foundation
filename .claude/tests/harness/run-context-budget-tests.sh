@@ -189,6 +189,9 @@ assert_cmd_zero "change references are reachable, acyclic, and free of duplicate
     }
   ' "$ROOT/.claude/skills/change/SKILL.md" \
   "$ROOT/.claude/skills/change/references"
+assert_cmd_zero "all shipped skill references resolve and governed lifecycle bundles stay bounded" \
+  node "$ROOT/.claude/tests/harness/reference-governance.mjs" \
+  "$ROOT/.claude/skills"
 assert_cmd_zero "[qualified-durable-decision] template and change intake share the three-part durability threshold" \
   sh -c 'for path do
     grep -F '\''hard to reverse, surprising without context'\'' "$path" >/dev/null || exit 1

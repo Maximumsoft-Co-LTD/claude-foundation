@@ -207,6 +207,26 @@ risky_init="$(node .claude/harness/foundation.mjs evidence-init \
 assert_contains "risky script is never auto-wired" "$risky_init" '"written": []'
 rm package.json
 
+# The legacy draft primitive remains available for its original shape, but it
+# must not bypass the repository/source handshake introduced by semantic v4.
+node .claude/harness/foundation.mjs start --template > semantic-v4-new-draft.json
+node -e '
+  const fs = require("fs");
+  const path = "semantic-v4-new-draft.json";
+  const draft = JSON.parse(fs.readFileSync(path, "utf8"));
+  draft.intent = "Exercise semantic v4 compatibility routing";
+  draft.why = "Semantic v4 must pass repository intake";
+  draft.requirements[0].scenario = "A valid semantic draft is supplied";
+  draft.requirements[0].outcome = "The intake gate remains mandatory";
+  draft.discovery.coverage = draft.discovery.coverage.map((row) => ({
+    dimension: row.dimension, status: "covered", covers: ["observable-outcome"]
+  }));
+  fs.writeFileSync(path, JSON.stringify(draft, null, 2));'
+v4_new="$({ node .claude/harness/foundation.mjs new "Bypass intake" \
+  --draft semantic-v4-new-draft.json; } 2>&1 || true)"
+assert_contains "legacy new --draft cannot bypass semantic v4 intake" "$v4_new" \
+  "semantic draft v4 must use 'change start <draft.json>'"
+
 # A structured draft materializes the agreement once without creating a
 # second implementation ledger.
 printf '%s\n' \

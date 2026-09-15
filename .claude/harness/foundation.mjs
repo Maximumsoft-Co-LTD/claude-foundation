@@ -71,6 +71,7 @@ import { createPacketRuntime } from "./runtime/workflow/packet-runtime.mjs";
 import { createChangePolicy } from "./runtime/workflow/change-policy.mjs";
 import { taskBlocks, taskMetadata } from "./runtime/contracts/change-artifacts.mjs";
 import { createChangeLifecycle } from "./runtime/workflow/change-lifecycle.mjs";
+import { createInvestigationRuntime } from "./runtime/workflow/investigation-runtime.mjs";
 import { createLeaseRuntime } from "./runtime/workflow/lease-runtime.mjs";
 import { createAuthorityRuntime } from "./runtime/workflow/authority-runtime.mjs";
 import { createHandoffRuntime } from "./runtime/workflow/handoff-runtime.mjs";
@@ -120,7 +121,7 @@ import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
 import { createQualityRuntime } from "./runtime/quality/quality-runtime.mjs";
 
 const VERSION = "3.5.17";
-const RUNTIME_API_VERSION = "38";
+const RUNTIME_API_VERSION = "39";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
 // every command up to `archive` and then threw partway through Land.
@@ -137,7 +138,7 @@ const PROOF_PROTOCOL_VERSION = "7";
 const PACKET_SCHEMA_VERSION = "11";
 const AGENT_PLAN_SCHEMA_VERSION = "5";
 const CONTEXT_EVENT_SCHEMA_VERSION = "2";
-const METRICS_SCHEMA_VERSION = "9";
+const METRICS_SCHEMA_VERSION = "10";
 const COMMAND_TELEMETRY_SCHEMA_VERSION = "5";
 const REVIEW_PROTOCOL_VERSION = "4";
 const ACCEPTANCE_PROTOCOL_VERSION = "2";
@@ -1373,6 +1374,7 @@ const {
   createChange,
   rapidStartTemplate,
   inspectDraft,
+  inspectAmendment,
   startAtomic,
   amendChange,
   resolveChange
@@ -1386,10 +1388,12 @@ const {
   writeJson,
   slugify,
   changePath,
+  activeChangePath,
   loadRuntime,
   saveRuntime,
   setOperationChangeId(id) { operationChangeId = id; },
   initialBudget,
+  git,
   gitHead,
   preexistingDirty,
   now,
@@ -1409,6 +1413,14 @@ const {
   stableHash,
   trapFailures,
   rollbackStart: rollbackAtomicStart
+});
+const { inspectInvestigation, investigationRecordTemplate } = createInvestigationRuntime({
+  root: ROOT,
+  readJson,
+  writeJson,
+  now,
+  git,
+  fail: die
 });
 function unresolvedApplyTransactions(id) {
   return readTransactionJournals(TRANSACTIONS, id, readJson).filter((journal) =>
@@ -1983,8 +1995,11 @@ await routeRuntimeCommand(command, values, {
   parseStrictCommandFlags,
   fail: die,
   createChange,
+  inspectInvestigation,
+  investigationRecordTemplate,
   rapidStartTemplate,
   inspectDraft,
+  inspectAmendment,
   startAtomic,
   amendChange,
   resolveChange,

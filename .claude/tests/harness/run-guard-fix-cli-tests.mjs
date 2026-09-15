@@ -249,6 +249,14 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
   });
   assert.deepEqual(consumedAmendment,
     ["change", "amendment.json", { consumeAmendment: true }]);
+  let inspectedAmendment = null;
+  await route("amend", ["change", "amendment.json", "--inspect"], {
+    inspectAmendment: (...args) => { inspectedAmendment = args; }
+  });
+  assert.deepEqual(inspectedAmendment, ["change", "amendment.json"]);
+  await assert.rejects(route("amend", [
+    "change", "amendment.json", "--inspect", "--consume-amendment"
+  ], {}), /cannot be combined/);
   let advanced = null;
   await route("advance", ["change", "--through", "archived", "--pretty"], {
     showAdvance: (...args) => { advanced = args; }

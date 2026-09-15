@@ -14,8 +14,9 @@ Normal users issue `/investigate`, `/change`, `/build`, `/prove`, `/land`, or
 
 | Command | Purpose |
 |---|---|
-| `change start --template \| <draft.json> [--inspect]` | Inspect intake or compile and atomically start one semantic agreement |
-| `change amend <change> <amendment.json>` | Transactionally extend that agreement during Build |
+| `investigate --template \| <record.json>` | Validate source-bound facts and hypotheses, persist resume state, and emit a Change handoff |
+| `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect intake or compile and atomically start one semantic agreement |
+| `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake or transactionally extend that agreement during Build |
 | `advance <change> --through build\|proven\|archived` | Run deterministic lifecycle work and return one of six bounded actions at the next real boundary |
 | `changes` | Read active state and the next useful route |
 | `doctor …` | Diagnose a route only when the coordinator asks for it |
@@ -32,7 +33,7 @@ Safe to run at any time. These mutate nothing.
 | `changes` | List active changes, lifecycle status, and each one's next useful action |
 | `doctor [--stage change\|build\|prove] [--change <id>]` | Diagnose project, provider, and lifecycle readiness |
 | `packet <change> [--phase <phase>] [--task <id>]` | Read the bounded machine handoff for the current operation |
-| `metrics <change>` | Inspect measured usage, active budget, cost, and execution timing |
+| `metrics <change>` | Inspect measured usage, semantic-intake effectiveness, active budget, cost, and execution timing |
 | `feedback <change>` | Explain reviewer, evidenced repair, human-wait, and unattributed timing; show reuse and the next action |
 | `change audit <change>` | Audit scenario, claim, task, and provider traceability |
 | `proof readiness <change>` | Typed blockers and canonical next commands |
@@ -63,9 +64,10 @@ language profiles, baselines, and rollout policy.
 
 | Command | Purpose |
 |---|---|
+| `investigate --template \| <record.json>` | Print or validate a versioned investigation record and return one typed action |
 | `change new <intent> [--rapid]` | Compatible primitive for manually authoring a change agreement |
-| `change start --template \| <draft.json> [--inspect]` | Inspect intake or compile and start an isolated change from one validated semantic draft |
-| `change amend <change> <amendment.json>` | Add semantic requirements transactionally while preserving completed work |
+| `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect intake or compile and start an agreement from one validated semantic draft; Build creates isolation later |
+| `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake or add semantic requirements transactionally while preserving completed work |
 | `change resolve <change> …` | Persist impact, coupling, security, and review decisions |
 | `change validate <change>` | Validate the change and its executable evidence contract |
 | `sandbox create <change> [--all]` | Create the isolated Build workspace |
@@ -150,7 +152,7 @@ Wire-visible contracts are pinned in `.claude/harness/protocol.json`. A mixed-re
 | Pin | v3.5.17 |
 |---|---|
 | runtime | 3.5.17 |
-| runtime API | 38 |
+| runtime API | 39 |
 | semantic draft schema | 4 |
 | semantic intake state schema | 2 |
 | semantic amendment schema | 1 |

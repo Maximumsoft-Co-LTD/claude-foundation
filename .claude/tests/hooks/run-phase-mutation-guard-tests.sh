@@ -226,8 +226,41 @@ assert_eq "Prove permits read-only commands silencing stderr" "" "$out"
 out="$(invoke prove block "" "$(bash_event 'echo x > notes.txt')")"
 assert_contains "Prove still blocks redirects to real files" "$out" '"decision":"block"'
 
-# /investigate writes openspec/investigations and records no phase; a phase
-# left behind by an earlier packet must not block investigation notes.
+# Investigate has a real write boundary: records and notes are allowed, product
+# writes and shell mutations are not, and prototypes require explicit compare.
+mkdir -p "$TMP/project/openspec/investigations" \
+  "$TMP/project/.foundation/investigations" "$TMP/project/.foundation/prototypes/probe"
+out="$(invoke investigate block "" "$(write_event "$TMP/project/openspec/investigations/probe.json")")"
+assert_eq "Investigate permits its record" "" "$out"
+
+out="$(invoke investigate block "" "$(write_event "$TMP/project/.foundation/investigations/probe.json")")"
+assert_eq "Investigate permits machine state" "" "$out"
+
+out="$(invoke investigate block "" "$(write_event "$TMP/project/src/app.js")")"
+assert_contains "Investigate blocks product mutation" "$out" '"decision":"block"'
+
+out="$(invoke investigate block "" "$(write_event "$TMP/project/.foundation/prototypes/probe/a.html")")"
+assert_contains "ordinary Investigate blocks prototype mutation" "$out" '"decision":"block"'
+
+printf '%s\n' '{"type":"last-prompt","lastPrompt":"/investigate compare UI --compare"}' \
+  > "$TMP/investigate-transcript.jsonl"
+printf '%s\n' '{"version":1,"id":"probe","mode":"compare","options":[{"prototypePaths":[".foundation/prototypes/probe/a.html"]}]}' \
+  > "$TMP/project/openspec/investigations/probe.json"
+compare_event="{\"transcript_path\":\"$TMP/investigate-transcript.jsonl\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$TMP/project/.foundation/prototypes/probe/a.html\"}}"
+out="$(printf '%s' "$compare_event" | CLAUDE_PROJECT_DIR="$TMP/project" \
+  FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
+assert_eq "explicit compare Investigate permits its prototype" "" "$out"
+
+compare_event="{\"transcript_path\":\"$TMP/investigate-transcript.jsonl\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$TMP/project/.foundation/prototypes/other/a.html\"}}"
+out="$(printf '%s' "$compare_event" | CLAUDE_PROJECT_DIR="$TMP/project" \
+  FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
+assert_contains "compare Investigate blocks an undeclared prototype" "$out" '"decision":"block"'
+
+out="$(invoke investigate block "" "$(bash_event 'touch src/app.js')")"
+assert_contains "Investigate blocks mutating shell commands" "$out" '"decision":"block"'
+
+# Change and Prove may still append durable investigation notes when a finding
+# arises later in the lifecycle.
 out="$(invoke change block "" "$(write_event "$TMP/project/openspec/investigations/probe.md")")"
 assert_eq "Change permits investigation notes" "" "$out"
 

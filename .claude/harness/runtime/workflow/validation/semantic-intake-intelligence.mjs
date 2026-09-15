@@ -39,9 +39,10 @@ function impactScore(value) {
 
 function sizeScore(source, repository) {
   const declared = text(source?.changeSize || source?.size).toLowerCase();
-  if (declared === "large") return 4;
-  if (declared === "medium") return 2;
-  if (declared === "small") return 0;
+  if (["l", "large"].includes(declared)) return 4;
+  if (["m", "medium"].includes(declared)) return 2;
+  if (["s", "small"].includes(declared)) return 1;
+  if (["xs", "extra-small"].includes(declared)) return 0;
   const files = finiteCount(repository?.candidateFileCount ?? repository?.changedFileCount);
   return files >= 25 ? 4 : files >= 8 ? 2 : files > 0 ? 1 : 0;
 }
@@ -62,6 +63,9 @@ export function planSemanticIntakeDepth(source = {}, { repository = {} } = {}) {
 
   add(impactScore(source.impact), `impact:${text(source.impact).toLowerCase() || "unspecified"}`);
   add(sizeScore(source, repository), "repository-size");
+  const coupling = text(source.coupling).toLowerCase();
+  add({ isolated: 0, coupled: 2, "cross-repository": 4 }[coupling] ?? 0,
+    `coupling:${coupling || "unspecified"}`);
   const riskSignals = [...new Set(strings(source.riskSignals).map((value) => value.toLowerCase()))];
   for (const signal of riskSignals.sort(compareText))
     add(RISK_WEIGHTS[signal] || 0, `risk:${signal}`);
@@ -92,15 +96,48 @@ function sourceFactRows(sourceFacts) {
   return Array.isArray(sourceFacts) ? sourceFacts : [];
 }
 
+function sourceInventoryIndex(sourceInventory) {
+  const rows = Array.isArray(sourceInventory?.sources) ? sourceInventory.sources : [];
+  return new Map(rows.map((row) => [text(row?.path), text(row?.sha256)]).filter(
+    ([path, digest]) => path && digest));
+}
+
+function boundSourceReference(value, inventory) {
+  if (typeof value === "string") {
+    const path = text(value);
+    return path && inventory.has(path) ? { path, digest: inventory.get(path) } : null;
+  }
+  const path = text(value?.sourcePath || value?.path);
+  const digest = text(value?.sourceDigest || value?.digest);
+  return path && digest && inventory.get(path) === digest ? { path, digest } : null;
+}
+
 /**
  * Evaluate only open user questions. Source facts are keyed structured evidence;
  * no English-only keyword inference is used.
  */
-export function semanticQuestionQualityFindings(source = {}, { sourceFacts = [] } = {}) {
+export function semanticQuestionQualityFindings(source = {}, {
+  sourceFacts = [], sourceInventory = null
+} = {}) {
   const decisions = Array.isArray(source.discovery?.decisions)
     ? source.discovery.decisions : [];
   const facts = sourceFactRows(sourceFacts);
+  const inventory = sourceInventoryIndex(sourceInventory);
   const findings = [];
+  const boundFacts = [];
+
+  for (const [index, fact] of facts.entries()) {
+    const path = `discovery.sourceFacts[${index}]`;
+    const sourceKey = text(fact?.sourceKey);
+    const decisionKey = text(fact?.decisionKey);
+    const binding = boundSourceReference(fact, inventory);
+    if (!sourceKey || !decisionKey || !binding ||
+        (!text(fact?.answer) && fact?.supportsRecommendation !== true)) {
+      findings.push({ code: "invalid-source-fact-binding", key: decisionKey, path });
+      continue;
+    }
+    boundFacts.push(fact);
+  }
 
   for (const [index, decision] of decisions.entries()) {
     if (text(decision?.status).toLowerCase() !== "open") continue;
@@ -120,16 +157,24 @@ export function semanticQuestionQualityFindings(source = {}, { sourceFacts = [] 
       code: "recommendation-not-an-alternative", key, path
     });
 
-    const recommendationEvidence = [
-      ...strings(decision?.recommendationSources),
-      ...strings(decision?.recommendationEvidence)
+    const evidenceRows = [
+      ...(Array.isArray(decision?.recommendationSources)
+        ? decision.recommendationSources : []),
+      ...(Array.isArray(decision?.recommendationEvidence)
+        ? decision.recommendationEvidence : [])
     ];
-    const supportingFacts = facts.filter((fact) =>
+    const invalidEvidence = evidenceRows.filter((row) =>
+      !boundSourceReference(row, inventory));
+    if (invalidEvidence.length) findings.push({
+      code: "invalid-recommendation-evidence-binding", key, path
+    });
+    const supportingFacts = boundFacts.filter((fact) =>
       text(fact?.decisionKey) === key && fact?.supportsRecommendation === true);
-    if (recommendation && !recommendationEvidence.length && !supportingFacts.length)
+    const boundEvidence = evidenceRows.filter((row) => boundSourceReference(row, inventory));
+    if (recommendation && !boundEvidence.length && !supportingFacts.length)
       findings.push({ code: "unsupported-recommendation", key, path });
 
-    const answeringFacts = facts.filter((fact) =>
+    const answeringFacts = boundFacts.filter((fact) =>
       text(fact?.decisionKey) === key && text(fact?.answer));
     if (answeringFacts.length) findings.push({
       code: "question-answerable-from-source", key, path,
@@ -176,6 +221,8 @@ export function semanticIntakeEffectivenessSnapshot(source = {}, options = {}) {
   const grounded = requiredRows.filter((row) => strings(row?.sources).length > 0).length;
   const openQuestions = (source.discovery?.decisions || []).filter((row) =>
     text(row?.status).toLowerCase() === "open").length;
+  const resolvedQuestions = (source.discovery?.decisions || []).filter((row) =>
+    text(row?.status).toLowerCase() === "resolved" && text(row?.choice) && text(row?.reason)).length;
   const qualityFindings = semanticQuestionQualityFindings(source, options);
   const rejectedQuestions = new Set(qualityFindings.map((row) => row.key || row.path)).size;
 
@@ -191,7 +238,14 @@ export function semanticIntakeEffectivenessSnapshot(source = {}, options = {}) {
     },
     questions: {
       open: openQuestions,
-      accepted: Math.max(0, openQuestions - rejectedQuestions),
+      // A draft edit can prove that a decision is resolved, but it cannot prove
+      // that the user was asked or accepted the recommendation. Keep the old
+      // field explicit and unavailable instead of turning eligible candidates
+      // into a fabricated acceptance measurement.
+      accepted: null,
+      acceptanceMeasurement: "unavailable",
+      eligible: Math.max(0, openQuestions - rejectedQuestions),
+      resolved: resolvedQuestions,
       rejected: rejectedQuestions,
       findings: qualityFindings
     },

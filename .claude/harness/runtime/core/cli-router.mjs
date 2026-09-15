@@ -5,9 +5,12 @@ export async function routeRuntimeCommand(command, values, api) {
     parseStrictCommandFlags,
     fail,
     createChange,
+    inspectInvestigation,
+    investigationRecordTemplate,
     rapidStartTemplate,
     inspectDraft,
     startAtomic,
+    inspectAmendment,
     amendChange,
     resolveChange,
     abandonChange,
@@ -96,6 +99,18 @@ export async function routeRuntimeCommand(command, values, api) {
   } = api;
   const die = fail;
   const handlers = {
+    "investigate": async () => {
+      const { flags, rest } = parseStrictCommandFlags(values, "investigate", {
+        boolean: ["template"]
+      });
+      if (flags.template) {
+        if (rest.length) die("investigate --template takes no record path");
+        console.log(JSON.stringify(investigationRecordTemplate(), null, 2));
+        return;
+      }
+      if (rest.length !== 1) die("investigate requires exactly one investigation JSON record");
+      inspectInvestigation(rest[0]);
+    },
     "new": async () => {
       const {
         flags,
@@ -141,11 +156,15 @@ export async function routeRuntimeCommand(command, values, api) {
     },
     "amend": async () => {
       const { flags, rest } = parseStrictCommandFlags(values, "change amend", {
-        boolean: ["consume-amendment"]
+        boolean: ["inspect", "consume-amendment"]
       });
       if (rest.length !== 2)
         die("change amend requires <change> <amendment.json>");
-      amendChange(rest[0], rest[1], {
+      if (flags.inspect) {
+        if (flags["consume-amendment"])
+          die("change amend --inspect cannot be combined with --consume-amendment");
+        inspectAmendment(rest[0], rest[1]);
+      } else amendChange(rest[0], rest[1], {
         consumeAmendment: flags["consume-amendment"]
       });
     },

@@ -313,8 +313,8 @@ export function pinShellAnchor(command, ...directories) {
 export function shellMutationViolation(phase, environment, command = null, inspection = null) {
   const operations = command === null ? null : mutatingShellOperations(command);
   if (operations !== null && operations.length === 0) return null;
-  if (phase === "prove" || phase === "change")
-    return `${phase === "prove" ? "Prove" : "Change"} cannot run mutating shell commands`;
+  if (phase === "prove" || phase === "change" || phase === "investigate")
+    return `${phase === "prove" ? "Prove" : phase === "change" ? "Change" : "Investigate"} cannot run mutating shell commands`;
   if (phase === "land" && environment.FOUNDATION_LAND_TRANSACTION !== "1")
     return "Land shell mutations require the runtime transaction marker";
   if (phase === "build") {

@@ -1,20 +1,26 @@
 # Semantic intelligence
 
-The harness scans the repository read-only before every v4 inspection. It
-discovers and ranks specifications, tests, callers, dependencies, integrations,
-persistence, and permission boundaries, then hashes a bounded relevant read-set.
-Declared sources are seeds, not the entire discovery obligation. A traversal,
-read, path, size, or graph limit returns agent-owned investigation instead of a
-partial result that could be mistaken for completeness.
+Before every v4 inspection, the harness ranks repository specifications, tests,
+callers, dependencies, integrations, persistence, and permission boundaries,
+then hashes a bounded read-set. Declared sources are seeds. Git-tracked and
+non-ignored files define the scan when available. Oversized undeclared files are
+reported and skipped; an oversized seed or hard-limit failure returns agent-owned
+investigation. Unsupported graph languages report partial coverage.
+Enumeration uses fixed hard safety limits; the adaptive tier controls only the
+selected read-set and question frontier.
 
 Intake depth adapts from typed size, impact, coupling, risk, and repository
 signals. The tier changes source and question-frontier budgets; it never removes
 a mandatory discovery dimension. Before exposing `ASK_USER`, the harness rejects
 duplicate alternatives, a recommendation outside its alternatives, an
 unsupported recommendation, and a question already answered by a keyed source
-fact. Keep `riskSignals` and `discovery.sourceFacts` language-neutral; Thai,
+fact. Before `DONE`, copy the returned inventory digest to
+`discovery.sourceDigest`. Every source fact carries `sourcePath` and
+`sourceDigest`; recommendation evidence names a selected path or carries the same
+binding. Keep `riskSignals` and `discovery.sourceFacts` language-neutral; Thai,
 English, and mixed prose must produce the same result from the same typed facts.
 
-The intake snapshot records coverage, grounding, accepted/rejected question
-counts, depth, and compact cumulative action counts. Missing historical
-measurements stay `null`; never report them as zero. It stores no transcript.
+The snapshot records coverage, grounding, eligible/rejected/resolved questions,
+depth, and cumulative actions. Unobserved user acceptance and other missing
+measurements stay `null`. It stores no transcript; completed initial and amendment
+summaries survive in change runtime and `metrics`.

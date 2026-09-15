@@ -54,9 +54,20 @@ not worth changing
 
 `not worth changing` is a legitimate, useful outcome.
 
+The agent starts from `claude-foundation investigate --template`, keeps the
+record at `openspec/investigations/<id>.json`, and runs `claude-foundation
+investigate <record.json>` after each evidence batch. The harness discovers and
+hashes relevant sources, validates fact, hypothesis, and recommendation links,
+persists compact metrics and no-progress state, and returns `EDIT`, `ASK_USER`,
+or `DONE` with an exact resume route. Newly discovered sources must be read and
+acknowledged in the record before completion.
+
 ## What it may write
 
-Investigation is read-only with respect to product code and OpenSpec. Its only permitted write is an investigation note at `openspec/investigations/<name>.md`, and only when the findings need to persist.
+Investigation is read-only with respect to product code and formal change
+packets. Its only ordinary agent-owned writes are the JSON record and an
+optional note under `openspec/investigations/`; the harness alone writes its
+state under `.foundation/investigations/`.
 
 ## Comparison mode
 
@@ -66,7 +77,7 @@ For genuinely unresolved experience, API, or architecture alternatives, add `--c
 /investigate dashboard filter interaction --compare
 ```
 
-This produces 3–5 lightweight, disposable alternatives under `.foundation/prototypes/<id>/`. In this mode the agent writes **only** inside that prototype directory — never product code, never OpenSpec, and it adds no lifecycle state.
+This produces 3–5 lightweight, disposable alternatives under `.foundation/prototypes/<id>/`. In this mode the agent may additionally write **only** inside that prototype directory — never product code or a formal change packet.
 
 It always writes `selection.md` recording the choice, the reasons, the rejected alternatives, and the artifact paths. When the evidence cannot decide, it asks you rather than picking.
 
@@ -81,6 +92,9 @@ Continue into the agreement with the selection attached:
 ```
 
 `/change` summarizes that decision into the proposal and design. It does not treat the selection or its artifacts as evidence.
+A `ready-for-change` runtime result also emits a digest-bound `handoff`. The
+agent copies it into the semantic draft's `investigation` field; Change rejects
+the binding if the investigation state or any selected source has changed.
 For an integration, the investigation note records the exact documentation
 source and version. `/change` then requires linked success and failure scenarios;
 an unread or unversioned API is a research boundary, never a guessed contract.

@@ -2,6 +2,14 @@
   "version": 1,
   "commands": [
     {
+      "name": "investigate",
+      "usage": "investigate --template | <record.json>",
+      "audience": "agent",
+      "kind": "write",
+      "idempotent": true,
+      "description": "Validate and persist source-grounded investigation state and emit a Change-bound handoff."
+    },
+    {
       "name": "changes",
       "usage": "changes",
       "audience": "agent",
@@ -91,7 +99,7 @@
     },
     {
       "name": "change amend",
-      "usage": "change amend <change> <amendment.json> [--consume-amendment]",
+      "usage": "change amend <change> <amendment.json> [--inspect | --consume-amendment]",
       "audience": "agent",
       "kind": "write",
       "idempotent": false,
@@ -745,6 +753,7 @@
   ],
   "runtimeCommands": [
     "describe",
+    "investigate",
     "new",
     "start",
     "resolve",

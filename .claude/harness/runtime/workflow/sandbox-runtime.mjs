@@ -1064,7 +1064,7 @@ export function createSandbox(context, id, flags = {}) {
 
 export function prepareBuildSandbox(context, id) {
   const state = context.loadRuntime(id);
-  if (context.root) assertSpecApproval(context.root, id, state, { workspace: false });
+  if (context.root) assertSpecApproval(context.root, id, state);
   if (state.status === "change") context.validate(id, "root", { quiet: true });
   const inspection = context.workspaceInspection(id, state);
   const repositoryRecordsExist = Object.keys(state.repositories || {}).length > 0;
@@ -1825,6 +1825,12 @@ export function createSandboxRuntime({
     const workspace = activeSandboxWorkspace(id, state);
     const source = changePath(id);
     const destination = join(workspace.path, "openspec", "changes", id);
+    const activeAmendment = (state.amendments || []).some((entry) =>
+      Number(entry?.revision) === Number(state.contractRevision || 0));
+    if (activeAmendment && existsSync(destination) &&
+        agreementIdentity(workspace.path, id) !== agreementIdentity(root, id))
+      fail(`sandbox sync would overwrite the active amended agreement for '${id}'; ` +
+        "continue through Build/Prove and let Land project that isolated packet to the target");
     assertSandboxPacketPreserved(id, workspace, source, destination);
     assertSandboxRepositoryScope(source, destination);
     const fingerprints = sandboxSyncInputs(id, source, destination);

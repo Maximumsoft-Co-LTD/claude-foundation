@@ -45,7 +45,7 @@ const RULES = [
   [/^\.claude\/tests\/docs\//, ["workflow documentation contracts"]],
   [/^\.claude\/tests\/interview\//, ["human interaction contracts"]],
   [/^\.claude\/hooks\//, ["current hook contracts", "phase mutation guard"]],
-  [/phase-guard-policy|shell-mutation-policy|exec-runtime|semantic-amendment|semantic-draft|semantic-intake|semantic-source-inventory|semantic-intake-intelligence|repository-intelligence|amendment-invalidation|selective-proof-plan|change-lifecycle/,
+  [/phase-guard-policy|shell-mutation-policy|exec-runtime|semantic-amendment|semantic-draft|semantic-intake|semantic-source-inventory|semantic-intake-intelligence|repository-intelligence|investigation-runtime|amendment-invalidation|selective-proof-plan|change-lifecycle/,
     ["lifecycle safety mutation"]],
   [/configured-reviewer|codex-reviewer|review-protocol|review-attempt-store/,
     REVIEW],

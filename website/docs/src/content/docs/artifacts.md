@@ -203,8 +203,11 @@ investigation are explicitly rejected as evidence artifacts or references. A
 prototype demonstrates that an approach is possible; it does not demonstrate
 that the shipped code works.
 
-**Investigation notes** at `openspec/investigations/<name>.md` are the durable
-output of `/investigate` when findings need to outlive the session. They are
+**Investigation records** at `openspec/investigations/<id>.json` hold typed,
+source-linked facts, hypotheses, decisions, and the conclusion. Optional notes
+at `openspec/investigations/<name>.md` add human narrative. Machine state and
+handoff digests live under `.foundation/investigations/`; they are derived and
+ignored. The project-owned record and note are
 committed and reviewable, and they rank *below* specs and code when the three
 disagree — a note records what was believed at the time, not what is true now.
 

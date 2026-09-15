@@ -108,7 +108,8 @@ test("consumer inspection preserves lifecycle files and resumes amended current 
     assert.equal(JSON.parse(runtime("advance", "inspect-resume", "--through", "build")).boundary,
       "spec-approval-required");
     runtime("resolve", "inspect-resume", "--approve-spec", "--decision-ref", "fixture://user/amended-spec");
-    runtime("sandbox", "sync", "inspect-resume");
+    assert.throws(() => runtime("sandbox", "sync", "inspect-resume"),
+      /would overwrite the active amended agreement/);
     const after = JSON.parse(runtime("packet", "inspect-resume", "--resume"));
     assert.equal(after.pendingTaskCount, 2);
     assert.equal(after.frontier.count, 1);

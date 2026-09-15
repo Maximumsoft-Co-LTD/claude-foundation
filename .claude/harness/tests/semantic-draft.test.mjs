@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync,
+  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync,
   writeFileSync
 } from "node:fs";
 import { dirname, isAbsolute, join, relative } from "node:path";
@@ -124,6 +125,7 @@ test("draft inspection persists source freshness and blocks stale compilation", 
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "openspec", "specs"), { recursive: true });
   writeFileSync(join(root, "README.md"), "first\n");
+  writeFileSync(join(root, "ignored-output.json"), "x".repeat(300_000));
   const source = semanticDraftV4({ integrations: [], securityTriggers: [] });
   source.discovery.coverage = source.discovery.coverage
     .filter((row) => ![
@@ -147,6 +149,11 @@ test("draft inspection persists source freshness and blocks stale compilation", 
       writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
     },
     slugify, measureStage: (_stage, operation) => operation(),
+    git: (args) => ({
+      status: 0,
+      stdout: args.includes("--others")
+        ? "README.md\0draft.json\0" : "README.md\0"
+    }),
     changePath: (id) => join(root, "openspec", "changes", id),
     loadRuntime: () => ({}), saveRuntime: () => {}, setOperationChangeId: () => {},
     initialBudget: () => ({}), gitHead: () => "head", preexistingDirty: () => [],
@@ -156,6 +163,25 @@ test("draft inspection persists source freshness and blocks stale compilation", 
   const priorLog = console.log;
   console.log = () => {};
   try {
+    source.investigation = {
+      version: 1, id: "missing-investigation",
+      statePath: ".foundation/investigations/missing-investigation.json",
+      stateDigest: "missing", sourceDigest: "missing", outcome: "ready-for-change",
+      summary: "Missing", changeIntent: "Missing"
+    };
+    saveDraft();
+    const missingInvestigation = lifecycle.inspectDraft("draft.json");
+    assert.equal(missingInvestigation.action, "EDIT");
+    assert.match(missingInvestigation.intake.issues.join("\n"),
+      /investigation binding state is missing or unsafe/);
+    delete source.investigation;
+    saveDraft();
+    const discovery = lifecycle.inspectDraft("draft.json");
+    assert.equal(discovery.action, "EDIT");
+    assert.equal(discovery.intelligence.repository.findings.some((finding) =>
+      finding.path === "ignored-output.json"), false);
+    source.discovery.sourceDigest = discovery.intakeState.sourceDigest;
+    saveDraft();
     const ready = lifecycle.inspectDraft("draft.json");
     assert.equal(ready.action, "DONE");
     assert.equal(existsSync(join(root, ready.intakeState.path)), true);
@@ -164,8 +190,25 @@ test("draft inspection persists source freshness and blocks stale compilation", 
     assert.equal(stale.action, "EDIT");
     assert.equal(stale.intake.kind, "refresh-source-coverage");
     source.why = "Acknowledge the refreshed source";
+    source.discovery.sourceDigest = stale.intake?.findings?.find((finding) =>
+      finding.code === "source-acknowledgement-required")?.detail?.expected ||
+      stale.intakeState.sourceDigest;
     saveDraft();
     assert.equal(lifecycle.inspectDraft("draft.json").action, "DONE");
+    const languagePlans = [];
+    for (const intent of [
+      "Preserve the selected source behavior",
+      "รักษาพฤติกรรมจากแหล่งข้อมูลที่เลือก",
+      "รักษา selected source behavior"
+    ]) {
+      source.intent = intent;
+      saveDraft();
+      const inspected = lifecycle.inspectDraft("draft.json");
+      assert.equal(inspected.action, "DONE");
+      languagePlans.push(inspected.intelligence.depth);
+    }
+    assert.deepEqual(languagePlans[0], languagePlans[1]);
+    assert.deepEqual(languagePlans[1], languagePlans[2]);
     writeFileSync(join(root, "README.md"), "third\n");
     assert.throws(() => lifecycle.startAtomic("draft.json"),
       /current completed semantic intake/);
@@ -176,6 +219,13 @@ test("draft inspection persists source freshness and blocks stale compilation", 
 
 test("semantic v4 renders discovery coverage into the compiled agreement", () => {
   const input = semanticDraftV4();
+  input.investigation = {
+    version: 1, id: "payment-investigation",
+    statePath: ".foundation/investigations/payment-investigation.json",
+    stateDigest: "state-digest", sourceDigest: "source-digest",
+    outcome: "ready-for-change", summary: "Retry behavior should change",
+    changeIntent: "Change retry behavior"
+  };
   input.discovery.coverage.find((row) => row.dimension === "compatibility").rationale =
     "Preserve caller | exporter";
   const compiled = normalizeSemanticDraft(input, slugify).draft;
@@ -183,6 +233,8 @@ test("semantic v4 renders discovery coverage into the compiled agreement", () =>
   assert.match(proposal, /## Requirement discovery coverage/);
   assert.match(proposal, /\| compatibility \| covered \| payment-retry \|/);
   assert.match(proposal, /Preserve caller \\\| exporter/);
+  assert.match(proposal, /## Investigation handoff[\s\S]*payment-investigation/);
+  assert.match(proposal, /Change retry behavior/);
 });
 
 test("semantic compiler aggregates unknown references, cycles, and placeholders", () => {
@@ -543,9 +595,12 @@ test("change amend installs atomically and restores files and state on validatio
     version: 1,
     claims: [{
       id: "existing-claim", requirementKey: "existing-behavior",
-      scenario: "Existing behavior", capabilities: ["test"]
+      scenario: "Existing behavior", capabilities: ["lint"]
     }],
-    providers: { test: { adapter: "test-discovery", command: ["sh", "-lc", "npm test"] } }
+    providers: { lint: {
+      adapter: "command", capability: "lint", claims: ["existing-claim"],
+      inputs: ["src/**"], command: ["sh", "-c", "npm test"]
+    } }
   }, null, 2)}\n`);
   writeFileSync(join(change, "specs", "payment-control", "spec.md"), [
     "# payment-control", "", "## ADDED Requirements", "",
@@ -575,6 +630,18 @@ test("change amend installs atomically and restores files and state on validatio
     revision: 0, contractRevision: 0, executionRevision: 0
   };
   let rejectValidation = false;
+  let rejectRebind = false;
+  let rejectRebindChecks = 0;
+  const stableHash = (value) => createHash("sha256")
+    .update(JSON.stringify(value)).digest("hex");
+  const contractFingerprint = () => stableHash(JSON.parse(
+    readFileSync(join(change, "evidence.yaml"), "utf8")));
+  const receipts = join(root, ".foundation", "receipts", id);
+  mkdirSync(receipts, { recursive: true });
+  writeFileSync(join(receipts, "lint.json"), `${JSON.stringify({
+    provider: "lint", status: "pass", contractFingerprint: contractFingerprint()
+  }, null, 2)}\n`);
+  const initialLintReceipt = JSON.parse(readFileSync(join(receipts, "lint.json"), "utf8"));
   const lifecycle = createChangeLifecycle({
     root,
     policy: () => ({ workflow: { grounding: "optional" } }),
@@ -585,7 +652,10 @@ test("change amend installs atomically and restores files and state on validatio
       return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
     },
     readJson: (path) => JSON.parse(readFileSync(path, "utf8")),
-    writeJson: (path, value) => writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`),
+    writeJson: (path, value) => {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+    },
     slugify,
     changePath: () => change,
     loadRuntime: () => state,
@@ -594,17 +664,70 @@ test("change amend installs atomically and restores files and state on validatio
       assert.match(readFileSync(join(change, "tasks.md"), "utf8"), /\[x\]/);
       if (rejectValidation) throw new Error("synthetic validator failure");
     },
-    now: () => "2026-09-03T00:00:00.000Z"
+    now: () => "2026-09-03T00:00:00.000Z",
+    receiptPath: (_changeId, provider) => join(receipts, `${provider}.json`),
+    receiptValidity: (_changeId, provider) => {
+      const receipt = JSON.parse(readFileSync(join(receipts, `${provider}.json`), "utf8"));
+      return { provider, status: receipt.status,
+        validity: rejectRebind && ++rejectRebindChecks > 1 ? "invalid-artifacts" :
+          receipt.contractFingerprint === contractFingerprint()
+          ? "valid" : "contract-stale" };
+    },
+    contractFingerprint,
+    requiredProviders: () => Object.keys(JSON.parse(
+      readFileSync(join(change, "evidence.yaml"), "utf8")).providers),
+    providerConfig: (_changeId, provider) => JSON.parse(
+      readFileSync(join(change, "evidence.yaml"), "utf8")).providers[provider],
+    claimsForProvider: (_changeId, provider) => {
+      const contract = JSON.parse(readFileSync(join(change, "evidence.yaml"), "utf8"));
+      const config = contract.providers[provider];
+      return contract.claims.filter((claim) => config.claims?.includes(claim.id) ||
+        claim.capabilities.includes(config.capability || provider));
+    },
+    relevantHash: () => "workspace",
+    providerWorkspaceHash: () => "workspace",
+    providerInputIdentity: () => ({ mode: "declared", fingerprint: "inputs" }),
+    stableHash
   });
   const priorLog = console.log;
   console.log = () => {};
   try {
     writeAmendment("malformed-row");
+    const firstInspection = lifecycle.inspectAmendment(id, "amendment.json");
+    assert.equal(firstInspection.action, "EDIT");
+    const firstAmendment = JSON.parse(readFileSync(amendmentPath, "utf8"));
+    firstAmendment.discovery.sourceDigest = firstInspection.intakeState.sourceDigest;
+    writeFileSync(amendmentPath, `${JSON.stringify(firstAmendment, null, 2)}\n`);
+    assert.equal(lifecycle.inspectAmendment(id, "amendment.json").action, "DONE");
+    const specPath = join(change, "specs", "payment-control", "spec.md");
+    writeFileSync(specPath, `${readFileSync(specPath, "utf8")}\nNew source fact.\n`);
+    assert.throws(() => lifecycle.amendChange(id, "amendment.json"),
+      /current completed semantic intake/);
+    const refreshed = lifecycle.inspectAmendment(id, "amendment.json");
+    assert.equal(refreshed.action, "EDIT");
+    firstAmendment.discovery.sourceDigest = refreshed.intake.findings.find((finding) =>
+      finding.code === "source-acknowledgement-required").detail.expected;
+    writeFileSync(amendmentPath, `${JSON.stringify(firstAmendment, null, 2)}\n`);
+    assert.equal(lifecycle.inspectAmendment(id, "amendment.json").action, "DONE");
     lifecycle.amendChange(id, "amendment.json");
     assert.equal(state.contractRevision, 1);
     assert.equal(state.amendments.length, 1);
+    assert.equal(state.amendments[0].semanticIntakeEffectiveness.history.inspections, 4);
     assert.deepEqual(state.amendments[0].invalidation.affectedTasks, ["T001"]);
     assert.deepEqual(state.amendments[0].invalidation.affectedProviders, ["test"]);
+    assert.deepEqual(state.amendments[0].invalidation.proofRecovery.providers.preserved,
+      ["lint"]);
+    const rebound = JSON.parse(readFileSync(join(receipts, "lint.json"), "utf8"));
+    assert.equal(rebound.contractFingerprint, contractFingerprint());
+    assert.equal(rebound.contractRebind.reason, "unaffected-semantic-amendment");
+    const audits = readdirSync(join(root, ".foundation", "evidence", id, "receipt-rebinds"));
+    assert.equal(audits.length, 1);
+    const audit = JSON.parse(readFileSync(join(root, ".foundation", "evidence", id,
+      "receipt-rebinds", audits[0]), "utf8"));
+    assert.equal(audit.priorReceiptDigest, stableHash(initialLintReceipt));
+    assert.equal(audit.reboundReceiptDigest, stableHash(rebound));
+    assert.equal(state.amendments[0].invalidation.rebindAudits[0].provider, "lint");
+    assert.equal(state.amendments[0].invalidation.rebindAudits[0].digest, stableHash(audit));
     assert.match(readFileSync(join(change, "tasks.md"), "utf8"),
       /\[x\].*existing-claim,malformed-row/);
     assert.match(readFileSync(join(change, "proposal.md"), "utf8"),
@@ -620,6 +743,11 @@ test("change amend installs atomically and restores files and state on validatio
       state: structuredClone(state)
     };
     writeAmendment("second-behavior");
+    const secondInspection = lifecycle.inspectAmendment(id, "amendment.json");
+    const secondAmendment = JSON.parse(readFileSync(amendmentPath, "utf8"));
+    secondAmendment.discovery.sourceDigest = secondInspection.intakeState.sourceDigest;
+    writeFileSync(amendmentPath, `${JSON.stringify(secondAmendment, null, 2)}\n`);
+    assert.equal(lifecycle.inspectAmendment(id, "amendment.json").action, "DONE");
     rejectValidation = true;
     assert.throws(() => lifecycle.amendChange(id, "amendment.json"),
       /synthetic validator failure; semantic amendment rolled back/);
@@ -627,6 +755,25 @@ test("change amend installs atomically and restores files and state on validatio
     assert.equal(readFileSync(join(change, "evidence.yaml"), "utf8"), before.evidence);
     assert.equal(readFileSync(join(change, "proposal.md"), "utf8"), before.proposal);
     assert.equal(readFileSync(join(change, "specs", "payment-control", "spec.md"), "utf8"), before.spec);
+    assert.deepEqual(state, before.state);
+
+    rejectValidation = false;
+    rejectRebind = true;
+    rejectRebindChecks = 0;
+    writeAmendment("third-behavior");
+    const thirdInspection = lifecycle.inspectAmendment(id, "amendment.json");
+    const thirdAmendment = JSON.parse(readFileSync(amendmentPath, "utf8"));
+    thirdAmendment.discovery.sourceDigest = thirdInspection.intakeState.sourceDigest;
+    writeFileSync(amendmentPath, `${JSON.stringify(thirdAmendment, null, 2)}\n`);
+    assert.equal(lifecycle.inspectAmendment(id, "amendment.json").action, "DONE");
+    const receiptBeforeFailedRebind = readFileSync(join(receipts, "lint.json"), "utf8");
+    const auditCountBefore = readdirSync(join(root, ".foundation", "evidence", id,
+      "receipt-rebinds")).length;
+    assert.throws(() => lifecycle.amendChange(id, "amendment.json"),
+      /failed post-rebind validation; semantic amendment rolled back/);
+    assert.equal(readFileSync(join(receipts, "lint.json"), "utf8"), receiptBeforeFailedRebind);
+    assert.equal(readdirSync(join(root, ".foundation", "evidence", id,
+      "receipt-rebinds")).length, auditCountBefore);
     assert.deepEqual(state, before.state);
   } finally {
     console.log = priorLog;

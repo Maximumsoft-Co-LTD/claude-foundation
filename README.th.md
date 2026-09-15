@@ -16,7 +16,7 @@ Change Loop ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก�
 ชื่อผลิตภัณฑ์และ workflow คือ **Change Loop** ส่วน package และ CLI ที่ติดตั้งยังใช้
 `claude-foundation` เหมือนเดิม จึงไม่ต้องเปลี่ยนคำสั่งที่ใช้อยู่
 
-**Version 3.5.17** — runtime API 38, provider protocol 13 receipt ที่บันทึกด้วย
+**Version 3.5.17** — runtime API 39, provider protocol 13 receipt ที่บันทึกด้วย
 เวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 `claude-foundation metrics <change-id>` จะแสดง source cohort ของ runtime แบบ
 เจาะจงด้วย ได้แก่ semantic version, protocol bundle ที่โหลดจริง และ SHA-256
@@ -189,6 +189,12 @@ needs user decision
 not worth changing
 ```
 
+Agent เริ่มจาก `claude-foundation investigate --template` แล้วส่ง JSON record
+ที่ปรับตามหลักฐานเข้า `claude-foundation investigate <record.json>` Harness จะ
+ค้นและ hash source, ตรวจ link ของ fact กับ hypothesis, เก็บ no-progress และ
+effectiveness metrics แล้วคืน typed action ถ้าพร้อมเข้า Change ผลลัพธ์จะมี
+handoff ที่ผูก digest และ Change ต้องตรวจอีกครั้ง
+
 ถ้าได้ `ready for /change` ให้นำ finding ที่ยอมรับแล้วเข้า durable agreement:
 
 ```text
@@ -224,9 +230,12 @@ Harness จะ derive มิติการค้น requirement ตามคว
 decision และปฏิเสธ coverage ที่ยังไม่จบ โดยส่งกลับให้คุณเฉพาะ consequential
 choice ใน frontier ที่พร้อมตาม dependency พร้อม recommendation ที่มี source รองรับ
 Harness จะค้นและจัดอันดับ spec, test, caller, integration, persistence และ
-permission boundary ที่เกี่ยวข้องโดยอัตโนมัติภายใต้ read budget ตามความเสี่ยง
-จากนั้นเก็บ machine-owned snapshot ที่ผูก digest ของ draft และ local source ที่เลือก
-พร้อม measurement ด้าน coverage และคุณภาพคำถาม หาก source เปลี่ยน coverage จะเปิดใหม่แทนการ compile requirement
+permission boundary ที่เกี่ยวข้องโดยอัตโนมัติ โดย enumerate ภายใต้ hard safety
+limit แล้วใช้ risk-adaptive budget กับ read-set
+ที่เลือก และใช้ชุดไฟล์ tracked/non-ignored ของ Git เมื่อใช้ได้ จากนั้น agent ต้องยืนยัน
+`discovery.sourceDigest` ที่ harness คืนมา ส่วน source fact และหลักฐาน recommendation
+ต้องผูก path และ digest ของ local source ที่เลือก ระบบจะเก็บ measurement ด้าน
+coverage และคุณภาพคำถามไว้ใน runtime ของ change หาก source เปลี่ยน coverage จะเปิดใหม่แทนการ compile requirement
 ที่ stale แล้วจึง compile semantic draft หนึ่งชุดเป็น `openspec/changes/<change-id>/`
 พร้อมสร้าง stable ID และ link ระหว่าง requirement, scenario, task, claim และ
 provider ก่อนทำต่อ ให้ review proposal, observable scenario, task และ evidence
@@ -708,13 +717,18 @@ Agent ส่ง semantic amendment หนึ่งชุดแล้ว resume c
 /prove <change-id>
 ```
 
-Runtime ใช้ `change amend <change-id> <amendment.json>` แบบ transaction โดยรักษา
+สำหรับ agreement version 4 ให้รัน `change amend <change-id> <amendment.json>
+--inspect` ก่อน ทำตาม intake/source-digest action แล้วเปลี่ยน `--inspect` เป็น
+`--consume-amendment` เมื่อได้ `DONE` จากนั้น runtime จะ apply amendment แบบ
+transaction โดยรักษา
 task ที่เสร็จและ manual Markdown section, validate ก่อนเก็บ revision, rollback
 amendment ที่ไม่ผ่าน และ invalidate เฉพาะ claim ใหม่ก่อน resume `advance`
 Amendment ของ version 4 ต้องมี discovery coverage ของ requirement ที่เพิ่ม และ
 delta ที่ผ่าน validation จะอยู่ใน compiled proposal receipt ที่ผ่านแล้วจะถูกเก็บ
 ไว้เฉพาะเมื่อ provider, claim และ declared-input binding ไม่เปลี่ยน ส่วน provider
 ที่ affected หรือคลุมเครือต้องกลับไปผ่าน Prove
+ผลลัพธ์จะแสดงคำสั่ง recovery `advance <change-id> --through proven` ที่แน่นอน
+โดย receipt ที่ขาดหรือ stale จะทำให้ rerun เฉพาะ provider นั้น
 
 ## การใช้หลาย Repository
 

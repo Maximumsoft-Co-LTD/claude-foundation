@@ -15,7 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXPECTED_RUNTIME_API=38
+EXPECTED_RUNTIME_API=39
 PROJECT_START="${CLAUDE_FOUNDATION_PROJECT:-$PWD}"
 
 fail() { printf 'claude-foundation: %s\n' "$*" >&2; exit 1; }
@@ -133,7 +133,7 @@ const groups = [["Workflow", "agent"], ["Conditional recovery", "conditional"],
   ["Administration", "admin"], ["Host integration", "host"],
   ["Internal compatibility", "internal"]];
 const primary = new Set([
-  "advance", "change start", "change amend", "changes", "doctor", "describe"
+  "advance", "investigate", "change start", "change amend", "changes", "doctor", "describe"
 ]);
 console.log("claude-foundation — OpenSpec-native software-change harness\n");
 for (const [title, audience] of groups) {
@@ -296,6 +296,9 @@ case "${1:-}" in
   feedback)
     shift; need_arg "feedback" "${1:-}"
     run_runtime read feedback "$@" ;;
+  investigate)
+    shift; need_arg "investigate" "${1:-}"
+    run_runtime write investigate "$@" ;;
   advance)
     shift; need_arg "advance" "${1:-}"
     run_runtime write advance "$@" ;;

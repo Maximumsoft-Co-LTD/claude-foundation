@@ -46,12 +46,20 @@ request IDs, journals, repair graphs, and resume tokens remain machine-facing.
 ### `/investigate <problem>`
 
 Use Investigate only when the problem or direction is unclear. It is bounded
-and read-only with respect to product code. Its output is facts, hypotheses,
-options, tradeoffs, and a next decision; it creates no lifecycle state.
+and read-only with respect to product code. `investigate --template` defines a
+versioned fact, hypothesis, option, decision, and conclusion record. Running
+`investigate <record.json>` discovers and hashes repository sources, persists a
+machine-owned resumable state with compact metrics, and returns one typed
+agent, user, or harness action. Three unchanged attempts expose a no-progress
+boundary without discarding the exact resume route.
 
 `/investigate <decision> --compare` may build disposable alternatives only
 under `.foundation/prototypes/`. It always records the selected conclusion in
 `selection.md`. Prototype artifacts are never evidence.
+
+A `ready-for-change` result emits a digest-bound handoff. The agent copies it
+into semantic draft v4 as `investigation`; Change verifies the state and source
+digests before compiling and retains the conclusion in the agreement.
 
 ### `/change <intent>`
 
@@ -106,10 +114,15 @@ grounded-source digests. Before each v4 inspection the harness performs bounded,
 read-only repository discovery and ranks relevant specs, tests, callers,
 integrations, persistence, and permission boundaries. Typed size, impact,
 coupling, risk, and repository signals choose the intake depth without dropping
-mandatory dimensions. Questions already answered by source facts, duplicate
-alternatives, and unsupported recommendations are rejected. The snapshot keeps
-compact effectiveness counts but never chat or an interview history. A changed
-selected source invalidates readiness and returns agent-owned coverage refresh.
+mandatory dimensions. Enumeration has fixed hard safety limits; adaptive limits
+bound only the selected read-set and question frontier. Questions already answered by source facts, duplicate
+alternatives, and unsupported recommendations are rejected. Git-aware discovery
+omits ignored output; an oversized undeclared file is reported but cannot poison
+the whole scan, and unsupported dependency languages are reported as partial
+graph coverage. `discovery.sourceDigest`, source facts, and recommendation
+evidence must match the selected inventory. Compact effectiveness counts survive
+successful compilation in runtime, but no chat or interview history is kept. A
+changed selected source invalidates readiness and returns agent-owned coverage refresh.
 
 For newly started changes, present the compiled spec, scope, and acceptance
 criteria and wait for explicit user approval before Build, including `/dev`.
@@ -128,11 +141,14 @@ cannot silently change meaning.
 When Build discovers new behavior, amend the same agreement before continuing:
 
 ```bash
-claude-foundation change amend <change> <amendment.json>
+claude-foundation change amend <change> <amendment.json> --inspect
 ```
 
 A version-4 amendment includes discovery coverage for every added requirement;
-the transaction validates and appends that delta to the compiled proposal.
+follow its typed intake actions and source digest, then replace `--inspect` with
+`--consume-amendment` after `DONE`. The returned proof command is the exact
+post-amendment recovery route. The transaction validates and appends that delta
+to the compiled proposal.
 Version-3 amendments keep their compatibility shape. The amendment transaction
 preserves an unaffected passing receipt only across one explicit revision when
 its declared provider, claims, and input fingerprints remain exact. Everything

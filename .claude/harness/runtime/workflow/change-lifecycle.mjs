@@ -31,6 +31,7 @@ import {
 import {
   compileSemanticAmendment, writeSemanticAmendment
 } from "./semantic-amendment.mjs";
+import { validateInvestigationBinding } from "./investigation-runtime.mjs";
 
 export function atomicStartPreflight(draft, { groundingRequired = false } = {}) {
   const issues = [];
@@ -219,13 +220,23 @@ export function renderDraftProposal(draft, state) {
         `${tableCell(row.rationale || "none")} |`
       ).join("\n")
     : "";
+  const investigation = draft.investigation
+    ? `\n\n## Investigation handoff\n\n` +
+      `- **ID:** ${tableCell(draft.investigation.id)}\n` +
+      `- **Outcome:** ${tableCell(draft.investigation.outcome)}\n` +
+      `- **Summary:** ${tableCell(draft.investigation.summary)}\n` +
+      `- **Change intent:** ${tableCell(draft.investigation.changeIntent)}\n` +
+      `- **State:** ${tableCell(draft.investigation.statePath)} @ ` +
+      `${tableCell(draft.investigation.stateDigest)}\n` +
+      `- **Sources:** ${tableCell(draft.investigation.sourceDigest)}`
+    : "";
   return `# Change: ${title}\n\n## Why\n\n${draft.why}\n\n` +
     `## What changes\n\n${draftBullets(draft.changes)}\n\n## Impact\n\n` +
     `- **Impact:** ${draft.impact || state.impact || "medium"}\n` +
     `- **Coupling:** ${draft.coupling || state.coupling || "coupled"}\n` +
     `- **Affected surfaces:** ${(draft.surfaces || ["code"]).join(", ")}\n` +
     `- **Security triggers:** ${(draft.securityTriggers || ["none"]).join(", ")}\n\n` +
-    `## Non-goals\n\n${draftBullets(draft.nonGoals)}${discovery}\n`;
+    `## Non-goals\n\n${draftBullets(draft.nonGoals)}${investigation}${discovery}\n`;
 }
 
 export function synchronizeProposalClassification(proposal, state) {
@@ -403,10 +414,12 @@ export function createChangeLifecycle({
   writeJson,
   slugify,
   changePath,
+  activeChangePath = changePath,
   loadRuntime,
   saveRuntime,
   setOperationChangeId,
   initialBudget,
+  git = null,
   gitHead,
   preexistingDirty,
   now,
@@ -479,9 +492,12 @@ export function createChangeLifecycle({
       .map((path) => String(path || "").trim()).filter(Boolean))];
   }
 
-  function semanticIntakeStatePath(draftPath) {
-    const draft = relative(root, resolve(root, draftPath)).replaceAll("\\", "/");
-    const key = createHash("sha256").update(draft).digest("hex").slice(0, 24);
+  function semanticIntakeStatePath(sourcePath, scope = "draft") {
+    const source = relative(root, resolve(root, sourcePath)).replaceAll("\\", "/");
+    // Preserve the v1/v2 draft-state filename while namespacing amendment
+    // snapshots so one file can be inspected against different active changes.
+    const identity = scope === "draft" ? source : `${scope}\0${source}`;
+    const key = createHash("sha256").update(identity).digest("hex").slice(0, 24);
     return join(root, ".foundation", "intake", `${key}.json`);
   }
 
@@ -493,16 +509,36 @@ export function createChangeLifecycle({
     });
   }
 
-  function repositoryIntelligence(source) {
+  function repositoryGitPaths() {
+    if (typeof git !== "function") return { includedPaths: null, trackedPaths: [] };
+    const tracked = git(["ls-files", "-z"], root);
+    const included = git([
+      "ls-files", "-z", "--cached", "--others", "--exclude-standard"
+    ], root);
+    if (tracked.status !== 0 || included.status !== 0)
+      return { includedPaths: null, trackedPaths: [] };
+    return {
+      trackedPaths: tracked.stdout.split("\0").filter(Boolean),
+      includedPaths: included.stdout.split("\0").filter(Boolean)
+    };
+  }
+
+  function repositoryIntelligence(source, excludedPaths = []) {
     const query = [source.intent, source.why, ...(source.changes || []),
       ...(source.requirements || []).flatMap((row) => [
         row?.key, row?.requirement, row?.description, row?.outcome
       ])];
-    const initialDepth = planSemanticIntakeDepth(source);
+    const repositoryPaths = repositoryGitPaths();
+    const excluded = new Set(excludedPaths.map((path) =>
+      String(path || "").replaceAll("\\", "/")));
     const repository = inspectRepositoryIntelligence({
       projectRoot: root,
       query,
       seedPaths: semanticSourcePaths(source),
+      trackedPaths: repositoryPaths.trackedPaths,
+      excludedPaths: [...excluded],
+      includedPaths: repositoryPaths.includedPaths === null ? null
+        : repositoryPaths.includedPaths.filter((path) => !excluded.has(path)),
       limits: { maxReadSet: 48 }
     });
     const graph = repository.graph || {};
@@ -522,7 +558,7 @@ export function createChangeLifecycle({
       selected.push(row.path);
       selectedBytes += row.bytes;
     }
-    return { repository, depth, selected, selectedBytes, initialDepth };
+    return { repository, depth, selected, selectedBytes };
   }
 
   function validateDraftFields(draft) {
@@ -765,6 +801,8 @@ export function createChangeLifecycle({
     const draft = preparedDraft !== undefined
       ? preparedDraft
       : flags.draft ? loadDraft(flags.draft) : null;
+    if (preparedDraft === undefined && flags.draft && draft?._semanticVersion === 4)
+      fail("semantic draft v4 must use 'change start <draft.json>' so repository intake is enforced");
     const schema = flags.rapid ? "foundation-rapid" : "foundation-standard";
     const source = templateDir(schema);
     const target = changePath(id);
@@ -806,31 +844,39 @@ export function createChangeLifecycle({
     return semanticDraftTemplate();
   }
 
-  function inspectDraft(draftPath, options = {}) {
-    const source = options.preparedSource || draftSource(draftPath);
-    const resume = `claude-foundation change start ${draftPath} --inspect`;
-    const statePath = semanticIntakeStatePath(draftPath);
+  function inspectSemanticIntakeSource(source, {
+    statePath, resume, quiet = false, validateCompiledDraft = true,
+    excludedSourcePath = null
+  }) {
     let previous = null;
     if (existsSync(statePath)) {
       try { previous = JSON.parse(readFileSync(statePath, "utf8")); }
       catch { previous = null; }
     }
     const sameDraft = previous?.draftDigest === semanticDraftDigest(source);
-    const intelligence = repositoryIntelligence(source);
+    const intelligence = repositoryIntelligence(source,
+      excludedSourcePath ? [excludedSourcePath] : []);
     const sourceInspection = semanticSourceInspection(
       source, sameDraft ? previous?.sourceInventory : null, intelligence.selected);
     const intakeIssues = semanticIntakeIssues(source);
-    const normalized = normalizeSemanticDraft(source, slugify, {
-      loadCanonicalSpec: (capability) => {
-        const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
-        return existsSync(path) ? readFileSync(path, "utf8") : null;
-      }
-    });
+    const normalized = validateCompiledDraft
+      ? normalizeSemanticDraft(source, slugify, {
+        loadCanonicalSpec: (capability) => {
+          const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
+          return existsSync(path) ? readFileSync(path, "utf8") : null;
+        }
+      })
+      : { issues: [], draft: source };
     const additionalIssues = [
       ...normalized.issues.filter((issue) => !intakeIssues.includes(issue)),
       ...semanticReferenceIssues(normalized.draft),
+      ...(source.version === 4 && source.investigation !== undefined
+        ? validateInvestigationBinding({ projectRoot: root, binding: source.investigation })
+          .map((issue) => `investigation ${issue}`)
+        : []),
       ...semanticQuestionQualityFindings(source, {
-        sourceFacts: source.discovery?.sourceFacts || []
+        sourceFacts: source.discovery?.sourceFacts || [],
+        sourceInventory: sourceInspection.inventory
       }).map((finding) => `semantic decision ${finding.code}: ${finding.key || finding.path}`),
       ...(intelligence.repository.status === "blocked"
         ? intelligence.repository.findings.map((finding) =>
@@ -839,9 +885,21 @@ export function createChangeLifecycle({
       ...sourceInspection.findings.map((finding) =>
         `semantic source ${finding.code}: ${finding.path || "(unknown)"}`)
     ];
+    const acknowledgedDigest = String(source.discovery?.sourceDigest || "").trim();
+    const acknowledgementFindings = acknowledgedDigest === sourceInspection.inventory.digest
+      ? [] : [{
+        code: "source-acknowledgement-required",
+        path: "discovery.sourceDigest",
+        detail: {
+          expected: sourceInspection.inventory.digest,
+          actual: acknowledgedDigest || null
+        }
+      }];
     const action = semanticIntakeAction(source, {
       resume, additionalIssues,
-      sourceFreshnessFindings: sourceInspection.staleFindings,
+      sourceFreshnessFindings: [
+        ...sourceInspection.staleFindings, ...acknowledgementFindings
+      ],
       frontierLimit: intelligence.depth.limits.frontierLimit
     });
     const retainedInventory = sameDraft && sourceInspection.staleFindings.length
@@ -857,6 +915,7 @@ export function createChangeLifecycle({
           intelligence.repository.graph?.surfaces?.permissions?.length || 0
       },
       sourceFacts: source.discovery?.sourceFacts || [],
+      sourceInventory: sourceInspection.inventory,
       history: previous?.effectiveness?.history
     });
     const state = reduceSemanticIntakeState(previous, {
@@ -885,8 +944,53 @@ export function createChangeLifecycle({
       },
       effectiveness: state.effectiveness
     };
-    if (!options.quiet) console.log(JSON.stringify(result, null, 2));
+    if (!quiet) console.log(JSON.stringify(result, null, 2));
     return result;
+  }
+
+  function inspectDraft(draftPath, options = {}) {
+    const source = options.preparedSource || draftSource(draftPath);
+    return inspectSemanticIntakeSource(source, {
+      statePath: semanticIntakeStatePath(draftPath),
+      resume: `claude-foundation change start ${draftPath} --inspect`,
+      quiet: options.quiet,
+      excludedSourcePath: relative(root, resolve(root, draftPath)).replaceAll("\\", "/")
+    });
+  }
+
+  function amendmentIntakeSource(amendment) {
+    return {
+      version: 4,
+      intent: String(amendment.reason || "Amend the active agreement"),
+      impact: amendment.impact || "low",
+      coupling: amendment.coupling || "isolated",
+      size: amendment.size,
+      changeSize: amendment.changeSize,
+      requirements: amendment.addRequirements || [],
+      integrations: amendment.integrations || [],
+      externalOperations: amendment.externalOperations || [],
+      securityTriggers: amendment.securityTriggers || [],
+      riskSignals: amendment.riskSignals || [],
+      discovery: amendment.discovery
+    };
+  }
+
+  function inspectAmendment(id, amendmentPath, options = {}) {
+    const active = loadRuntime(id);
+    if (active.semanticDraftVersion !== 4)
+      fail(`change amend --inspect requires a semantic-draft v4 change; '${id}' is version ${
+        active.semanticDraftVersion || "legacy"}`);
+    const path = resolve(root, amendmentPath);
+    if (!pathInside(root, path) || !existsSync(path))
+      fail("change amend requires a JSON file inside the project");
+    const amendment = options.preparedSource || readJson(path);
+    return inspectSemanticIntakeSource(amendmentIntakeSource(amendment), {
+      statePath: semanticIntakeStatePath(amendmentPath, `amend:${id}`),
+      resume: `claude-foundation change amend ${id} ${amendmentPath} --inspect`,
+      quiet: options.quiet,
+      validateCompiledDraft: false,
+      excludedSourcePath: relative(root, path).replaceAll("\\", "/")
+    });
   }
 
   function applyGroundingReopen(state, flags) {
@@ -1069,7 +1173,10 @@ export function createChangeLifecycle({
       if (flags["approve-spec"]) {
         validate(id, "root", { quiet: true });
         const current = loadRuntime(id);
-        current.specApproval = { required: true, identity: agreementIdentity(root, id),
+        const approvalRoot = current.workspace?.path &&
+          existsSync(join(current.workspace.path, "openspec", "changes", id))
+          ? current.workspace.path : root;
+        current.specApproval = { required: true, identity: agreementIdentity(approvalRoot, id),
           revision: Number(current.contractRevision || 0), decisionRef, approvedAt: now() };
         saveRuntime(current);
       } else {
@@ -1118,6 +1225,7 @@ export function createChangeLifecycle({
 
   function startAtomic(draftPath, options = {}) {
     const source = draftSource(draftPath);
+    let completedIntakeEffectiveness = null;
     if (source.version === 4) {
       const statePath = semanticIntakeStatePath(draftPath);
       const resume = `claude-foundation change start ${draftPath} --inspect`;
@@ -1134,16 +1242,23 @@ export function createChangeLifecycle({
         if (inspected.action !== "DONE")
           fail(`version-4 drafts require a current completed semantic intake; ` +
             `resume with '${resume}'`);
+        completedIntakeEffectiveness = inspected.effectiveness || null;
       } else {
-        const intelligence = repositoryIntelligence(source);
+        const sourcePath = relative(root, resolve(root, draftPath)).replaceAll("\\", "/");
+        const intelligence = repositoryIntelligence(source, [sourcePath]);
         const sourceInspection = semanticSourceInspection(source, null, intelligence.selected);
         const projection = semanticIntakeResumeProjection(intakeState, source, {
           resumeRoute: resume, sourceInventory: sourceInspection.inventory
         });
+        const investigationIssues = source.investigation === undefined ? []
+          : validateInvestigationBinding({ projectRoot: root, binding: source.investigation });
         if (intelligence.repository.status !== "ready" || sourceInspection.findings.length ||
+            investigationIssues.length ||
+            source.discovery?.sourceDigest !== sourceInspection.inventory.digest ||
             projection.status !== "current" || projection.action?.action !== "DONE")
           fail(`version-4 drafts require a current completed semantic intake; ` +
             `resume with '${resume}'`);
+        completedIntakeEffectiveness = intakeState.effectiveness || null;
       }
     }
     const draft = measureStage("change.load-draft", () =>
@@ -1176,6 +1291,8 @@ export function createChangeLifecycle({
         bindClaudeSession(id, "change");
         const pending = loadRuntime(id);
         pending.specApproval = { required: true };
+        if (completedIntakeEffectiveness)
+          pending.semanticIntakeEffectiveness = completedIntakeEffectiveness;
         saveRuntime(pending);
         console.log(`AGREED ${id}\n  inspect: openspec/changes/${id}/\n  awaiting user approval before Build\n  next: claude-foundation change resolve ${id} --approve-spec --decision-ref <user-decision>`);
       });
@@ -1216,7 +1333,31 @@ export function createChangeLifecycle({
     if (!pathInside(root, source) || !existsSync(source))
       fail("change amend requires a JSON file inside the project");
     const amendment = readJson(source);
-    const basePath = changePath(id);
+    const amendmentStatePath = semanticIntakeStatePath(amendmentPath, `amend:${id}`);
+    let completedAmendmentIntakeEffectiveness = null;
+    if (state.semanticDraftVersion === 4) {
+      const resume = `claude-foundation change amend ${id} ${amendmentPath} --inspect`;
+      let intakeState = null;
+      if (existsSync(amendmentStatePath)) {
+        try { intakeState = JSON.parse(readFileSync(amendmentStatePath, "utf8")); }
+        catch { intakeState = null; }
+      }
+      const intakeSource = amendmentIntakeSource(amendment);
+      const amendmentRelativePath = relative(root, source).replaceAll("\\", "/");
+      const intelligence = repositoryIntelligence(intakeSource, [amendmentRelativePath]);
+      const sourceInspection = semanticSourceInspection(
+        intakeSource, null, intelligence.selected);
+      const projection = semanticIntakeResumeProjection(intakeState, intakeSource, {
+        resumeRoute: resume, sourceInventory: sourceInspection.inventory
+      });
+      if (intelligence.repository.status !== "ready" || sourceInspection.findings.length ||
+          intakeSource.discovery?.sourceDigest !== sourceInspection.inventory.digest ||
+          projection.status !== "current" || projection.action?.action !== "DONE")
+        fail(`version-4 amendments require a current completed semantic intake; ` +
+          `resume with '${resume}'`);
+      completedAmendmentIntakeEffectiveness = intakeState?.effectiveness || null;
+    }
+    const basePath = activeChangePath(id, state);
     const contract = readJson(join(basePath, "evidence.yaml"));
     const tasksContent = readFileSync(join(basePath, "tasks.md"), "utf8");
     const compiled = compileSemanticAmendment({
@@ -1230,8 +1371,14 @@ export function createChangeLifecycle({
       claimIds: compiled.claims.filter((claim) =>
         (row.covers || []).includes(claim.requirementKey)).map((claim) => claim.id)
     }));
-    const providers = Object.fromEntries(Object.entries(compiled.providers || {}).map(
-      ([name, config]) => [name, {
+    const configuredProviderNames = requiredProviders ? requiredProviders(id) : [];
+    const providerEntries = new Map(Object.entries(compiled.providers || {}));
+    for (const name of configuredProviderNames) {
+      if (providerEntries.has(name)) continue;
+      const config = providerConfig ? providerConfig(id, name) : null;
+      if (config) providerEntries.set(name, config);
+    }
+    const providers = Object.fromEntries([...providerEntries].map(([name, config]) => [name, {
         capability: config.capability || name,
         ...(Array.isArray(config.claims) ? { claims: config.claims } : {}),
         ...(Array.isArray(config.dependsOn) ? { dependsOn: config.dependsOn } : {})
@@ -1253,6 +1400,9 @@ export function createChangeLifecycle({
 
     const priorContractRevision = Number(state.contractRevision || 0);
     const priorContractFingerprint = contractFingerprint ? contractFingerprint(id) : null;
+    const proofAdvancePath = join(root, ".foundation", "evidence", id, "proof-advance.json");
+    const priorProofAdvance = existsSync(proofAdvancePath)
+      ? readFileSync(proofAdvancePath, "utf8") : null;
     const receiptBackups = new Map();
     const receiptBindings = [];
     if (receiptPath && existsSync(dirname(receiptPath(id, "__provider__")))) {
@@ -1272,6 +1422,8 @@ export function createChangeLifecycle({
     cpSync(basePath, stagedPath, { recursive: true, errorOnExist: true });
     writeSemanticAmendment(stagedPath, compiled, slugify, { schema: state.schema });
     const priorState = structuredClone(state);
+    const rebindAuditPaths = [];
+    const rebindAudits = [];
     let installed = false;
     try {
       renameSync(basePath, priorPath);
@@ -1298,16 +1450,42 @@ export function createChangeLifecycle({
         for (const provider of proofRecovery.providers.preserved) {
           const priorReceipt = receiptBackups.get(provider);
           if (!priorReceipt) throw new Error(`selective proof receipt '${provider}' disappeared`);
-          writeJson(receiptPath(id, provider), rebindSelectiveProofReceipt({
+          const rebound = rebindSelectiveProofReceipt({
             receipt: priorReceipt,
             provider,
             plan: proofRecovery,
             fromContractFingerprint: priorContractFingerprint,
             toContractFingerprint: nextFingerprint,
             reboundAt: now()
-          }));
+          });
+          writeJson(receiptPath(id, provider), rebound);
           if (receiptValidity(id, provider).validity !== "valid")
             throw new Error(`selective proof receipt '${provider}' failed post-rebind validation`);
+          const audit = {
+            version: 1,
+            kind: "semantic-amendment-receipt-rebind",
+            changeId: id,
+            provider,
+            recordedAt: rebound.contractRebind.reboundAt,
+            contract: proofRecovery.contract,
+            decision: proofRecovery.decisions.find((row) => row.provider === provider),
+            priorReceiptDigest: stableHash(priorReceipt),
+            reboundReceiptDigest: stableHash(rebound)
+          };
+          const auditDirectory = join(root, ".foundation", "evidence", id, "receipt-rebinds");
+          mkdirSync(auditDirectory, { recursive: true });
+          const providerKey = createHash("sha256").update(provider).digest("hex").slice(0, 12);
+          const auditPath = join(auditDirectory,
+            `${currentContractRevision}-${providerKey}-${stableHash(audit).slice(0, 12)}.json`);
+          writeFileSync(auditPath, `${JSON.stringify(audit, null, 2)}\n`, {
+            encoding: "utf8", flag: "wx"
+          });
+          rebindAuditPaths.push(auditPath);
+          rebindAudits.push({
+            provider,
+            path: relative(root, auditPath).replaceAll("\\", "/"),
+            digest: stableHash(audit)
+          });
         }
       }
       const nextState = loadRuntime(id);
@@ -1326,11 +1504,19 @@ export function createChangeLifecycle({
           preservedProviders: invalidation.preservedProviders,
           approval: invalidation.approval,
           proof: invalidation.proof,
-          proofRecovery
+          proofRecovery,
+          rebindAudits
         },
+        ...(completedAmendmentIntakeEffectiveness
+          ? { semanticIntakeEffectiveness: completedAmendmentIntakeEffectiveness } : {}),
         appliedAt: now()
       }];
       saveRuntime(nextState);
+      // A prior proof-advance checkpoint describes the old contract. Even when
+      // every executable receipt is preserved, the coordinator must re-enter
+      // Prove and finalize the amended packet instead of accepting that stale
+      // READY projection as if it covered the new revision.
+      rmSync(proofAdvancePath, { force: true });
       rmSync(priorPath, { recursive: true, force: true });
     } catch (error) {
       if (installed && existsSync(basePath))
@@ -1339,6 +1525,11 @@ export function createChangeLifecycle({
       if (receiptPath)
         for (const [provider, receipt] of receiptBackups)
           writeJson(receiptPath(id, provider), receipt);
+      for (const path of rebindAuditPaths) rmSync(path, { force: true });
+      if (priorProofAdvance !== null) {
+        mkdirSync(dirname(proofAdvancePath), { recursive: true });
+        writeFileSync(proofAdvancePath, priorProofAdvance);
+      }
       saveRuntime(priorState);
       fail(`${error?.message || error}; semantic amendment rolled back`);
     } finally {
@@ -1351,10 +1542,17 @@ export function createChangeLifecycle({
           relative(root, source)}': ${error.message}`);
       }
     }
+    try { rmSync(amendmentStatePath, { force: true }); }
+    catch (error) {
+      console.error(`WARNING: amendment succeeded but could not remove semantic intake state: ${
+        error.message}`);
+    }
     console.log(`AMENDED ${id}\n  revision: ${loadRuntime(id).contractRevision}\n` +
       `  invalidated claims: ${compiled.invalidatedClaims.join(", ")}\n` +
       `  proof: ${compiled.invalidation.proofRecovery?.recovery?.instruction ||
         "re-enter Prove so receipt bindings are recomputed"}\n` +
+      `  proof command: ${compiled.invalidation.proofRecovery?.recovery?.command ||
+        `claude-foundation advance ${id} --through proven`}\n` +
       `  next: claude-foundation advance ${id}`);
     return compiled;
   }
@@ -1367,6 +1565,7 @@ export function createChangeLifecycle({
     createChange,
     rapidStartTemplate,
     inspectDraft,
+    inspectAmendment,
     startAtomic,
     amendChange,
     resolveChange

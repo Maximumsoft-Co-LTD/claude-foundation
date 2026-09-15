@@ -691,6 +691,16 @@ export function createMetricsRuntime({
           inputFingerprint: row.inputFingerprint || null
         }))
       },
+      // Semantic intake is captured before its resumable draft snapshot is
+      // retired. Older and non-semantic changes truthfully report unavailable.
+      semanticIntake: state.semanticIntakeEffectiveness || null,
+      semanticAmendmentIntake: (state.amendments || [])
+        .filter((row) => row?.semanticIntakeEffectiveness)
+        .map((row) => ({
+          revision: row.revision,
+          appliedAt: row.appliedAt || null,
+          effectiveness: row.semanticIntakeEffectiveness
+        })),
       rework: {
         expectedStops: operations.filter((row) => row.status === "blocked").length,
         unexpectedFailures: operations.filter((row) => row.status === "failed").length,

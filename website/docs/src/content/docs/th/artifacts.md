@@ -195,8 +195,11 @@ ledger ของรอบ review เป็น hash chain ถ้าลิงก�
 แบบเปรียบเทียบ ถูกปฏิเสธอย่างชัดเจนไม่ให้เป็น artifact หรือ reference ของหลักฐาน
 prototype พิสูจน์ว่าแนวทางนั้นเป็นไปได้ ไม่ได้พิสูจน์ว่า code ที่จะ ship ทำงานได้
 
-**Investigation note** ที่ `openspec/investigations/<name>.md` คือผลลัพธ์ถาวรของ
-`/investigate` เมื่อสิ่งที่ค้นพบต้องอยู่ต่อหลังจบ session มันถูก commit และรีวิวได้
+**Investigation record** ที่ `openspec/investigations/<id>.json` เก็บ fact,
+hypothesis, decision และ conclusion ที่ผูก source ส่วน note ที่
+`openspec/investigations/<name>.md` เป็น narrative เสริม Machine state และ
+handoff digest อยู่ใต้ `.foundation/investigations/` และเป็น derived state
+record กับ note ของโปรเจกต์ถูก commit และรีวิวได้
 และมันมีลำดับความสำคัญ **ต่ำกว่า** spec และ code เมื่อทั้งสามขัดกัน
 เพราะ note บันทึกสิ่งที่เชื่อ ณ ตอนนั้น ไม่ใช่สิ่งที่จริงตอนนี้
 

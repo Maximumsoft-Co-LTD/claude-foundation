@@ -38,11 +38,22 @@ export function userDecisionError(code, summary, options, recommended) {
 export function assertSpecApproval(root, id, state, { workspace = true } = {}) {
   // Legacy primitive-created/in-flight agreements retain their compatibility route.
   if (!state.specApproval?.required || state.status === "archived") return;
-  if (state.specApproval.identity === agreementIdentity(root, id) &&
-      state.specApproval.revision === Number(state.contractRevision || 0) &&
-      (!workspace || !state.workspace?.path || state.workspace.path === root ||
-       !existsSync(join(state.workspace.path, "openspec", "changes", id)) ||
-       state.specApproval.identity === agreementIdentity(state.workspace.path, id))) return;
+  const hasWorkspaceAgreement = state.workspace?.path && state.workspace.path !== root &&
+    existsSync(join(state.workspace.path, "openspec", "changes", id));
+  const workspaceAgreement = workspace && hasWorkspaceAgreement;
+  const revisionMatches = state.specApproval.revision === Number(state.contractRevision || 0);
+  const rootIdentity = agreementIdentity(root, id);
+  const workspaceIdentity = hasWorkspaceAgreement
+    ? agreementIdentity(state.workspace.path, id) : null;
+  if (revisionMatches && state.specApproval.identity === rootIdentity &&
+      (!workspaceAgreement || state.specApproval.identity === workspaceIdentity)) return;
+  // A harness-owned semantic amendment is written to the isolated packet and
+  // reaches the target only through Land. Its post-amendment approval therefore
+  // has a legitimate workspace-only identity at the matching amendment revision.
+  const currentAmendment = (state.amendments || []).some((entry) =>
+    Number(entry?.revision) === Number(state.contractRevision || 0));
+  if (revisionMatches && currentAmendment && hasWorkspaceAgreement &&
+      state.specApproval.identity === workspaceIdentity) return;
   throw userDecisionError("SPEC_APPROVAL_REQUIRED",
     "Inspect the compiled spec with the user and obtain approval before Build.", [
       { id: "approve", outcome: "Approve this exact spec, then begin Build",

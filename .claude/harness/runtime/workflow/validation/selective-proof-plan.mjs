@@ -194,6 +194,11 @@ export function planSelectiveProofRecovery({
 
   const receipts = bindingIndex(receiptBindings, "receiptBindings", findings);
   const current = bindingIndex(currentBindings, "currentBindings", findings);
+  // Structural findings make every preservation decision ambiguous. Findings
+  // discovered while evaluating one candidate, however, are provider-local:
+  // fail closed for that provider without throwing away independently valid
+  // receipts from the same amendment.
+  const structuralFindingCount = findings.length;
   const preserved = [];
   const rerun = new Set([...affected, ...unclassified]);
   const decisions = affected.map((provider) => ({
@@ -234,7 +239,7 @@ export function planSelectiveProofRecovery({
       `${right.path}\0${right.code}\0${right.message}`));
   return {
     version: 1,
-    status: sortedFindings.length ? "BLOCKED" : "READY",
+    status: structuralFindingCount > 0 ? "BLOCKED" : "READY",
     findings: sortedFindings,
     contract: { fromRevision: priorRevision, toRevision: currentRevision },
     providers: {
@@ -243,10 +248,10 @@ export function planSelectiveProofRecovery({
     },
     decisions: decisions.sort((left, right) => left.provider.localeCompare(right.provider)),
     recovery: {
-      mode: sortedFindings.length ? "fail-closed-rerun" : "selective-rerun",
+      mode: structuralFindingCount > 0 ? "fail-closed-rerun" : "selective-rerun",
       command,
       resume: command,
-      instruction: sortedFindings.length
+      instruction: structuralFindingCount > 0
         ? "Do not trust ambiguous preservation. Re-enter Prove so the harness recomputes every invalid binding and preserves only receipts it can validate."
         : rerunProviders.length
           ? `Re-enter Prove; the harness may retain ${preservedProviders.length} bound receipt(s) and rerun ${rerunProviders.length}.`

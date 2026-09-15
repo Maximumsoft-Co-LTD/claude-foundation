@@ -44,11 +44,11 @@ test("discovers, classifies, ranks, and maps repository evidence deterministical
   assert.equal(first.complete, true);
   assert.equal(first.candidates[0].path, "src/auth/policy.ts");
   assert.ok(first.candidates[0].reasons.includes("declared-seed"));
-  assert.equal(first.readSet.length, 5);
+  assert.ok(first.readSet.length > 0 && first.readSet.length <= 5);
+  assert.equal(first.readSet.every((row) => row.score > 0), true);
   assert.equal(first.readSet.some((row) => row.categories.includes("specs")), true);
   assert.equal(first.readSet.some((row) => row.categories.includes("tests")), true);
   assert.equal(first.readSet.some((row) => row.categories.includes("integrations")), true);
-  assert.equal(first.readSet.some((row) => row.categories.includes("persistence")), true);
   assert.equal(first.readSet.some((row) => row.categories.includes("permissions")), true);
   assert.equal(first.candidates.some((row) => row.path.startsWith(".foundation/")), false);
   assert.equal(first.candidates.some((row) => row.path.startsWith("node_modules/")), false);
@@ -78,6 +78,69 @@ test("read-set is bounded while preserving declared seeds and category coverage"
   assert.equal(value.readSet.length, 3);
   assert.equal(value.readSet[0].path, "src/auth/policy.ts");
   assert.equal(new Set(value.readSet.map((row) => row.path)).size, 3);
+});
+
+test("git-visible allowlist omits ignored output and oversized irrelevant files", async (t) => {
+  const root = await fixture(t);
+  mkdirSync(join(root, "generated"), { recursive: true });
+  writeFileSync(join(root, "generated/result.json"), "x".repeat(300_000));
+  const value = inspectRepositoryIntelligence({
+    projectRoot: root,
+    query: "login",
+    trackedPaths: ["src/auth/policy.ts", "tests/login.test.ts"],
+    includedPaths: ["src/auth/policy.ts", "tests/login.test.ts"]
+  });
+
+  assert.equal(value.status, "ready");
+  assert.equal(value.candidates.some((row) => row.path.startsWith("generated/")), false);
+  assert.equal(value.findings.some((row) => row.code === "scan-file-size-limit"), false);
+});
+
+test("oversized irrelevant fallback files are skipped without poisoning discovery", async (t) => {
+  const root = await fixture(t);
+  writeFileSync(join(root, "historical-output.json"), "x".repeat(300_000));
+  const value = inspectRepositoryIntelligence({ projectRoot: root, query: "login" });
+
+  assert.equal(value.status, "ready");
+  assert.equal(value.findings.some((row) =>
+    row.code === "scan-file-size-skipped" && row.path === "historical-output.json"), true);
+  assert.equal(value.readSet.every((row) => row.score > 0), true);
+});
+
+test("an oversized declared seed still fails closed", async (t) => {
+  const root = await fixture(t);
+  writeFileSync(join(root, "required-contract.json"), "x".repeat(300_000));
+  const value = inspectRepositoryIntelligence({
+    projectRoot: root, query: "contract", seedPaths: ["required-contract.json"]
+  });
+
+  assert.equal(value.status, "blocked");
+  assert.equal(value.findings.some((row) =>
+    row.code === "scan-file-size-limit" && row.path === "required-contract.json"), true);
+  assert.deepEqual(value.readSet, []);
+});
+
+test("Thai query tokens rank Thai source content without category filler", async (t) => {
+  const root = await fixture(t);
+  writeFileSync(join(root, "src/auth/thai.ts"),
+    "export const policy = 'ผู้ดูแลระบบเข้าสู่ระบบ';\n");
+  const value = inspectRepositoryIntelligence({
+    projectRoot: root, query: "ผู้ดูแลระบบเข้าสู่ระบบ"
+  });
+
+  assert.equal(value.status, "ready");
+  assert.equal(value.readSet[0].path, "src/auth/thai.ts");
+  assert.equal(value.readSet.some((row) => row.path === "db/migrations/001_users.sql"), false);
+});
+
+test("graph reports unsupported local-language resolvers instead of claiming completeness", async (t) => {
+  const root = await fixture(t);
+  writeFileSync(join(root, "src/auth/lib.rs"), "mod policy;\n");
+  writeFileSync(join(root, "src/auth/main.go"), "package auth\nimport \"example/local/policy\"\n");
+  const value = inspectRepositoryIntelligence({ projectRoot: root, query: "policy" });
+
+  assert.equal(value.graph.completeness.status, "partial");
+  assert.deepEqual(value.graph.completeness.unsupported, ["go", "rust"]);
 });
 
 test("tracked content under a normally excluded directory can be included explicitly", async (t) => {

@@ -77,3 +77,20 @@ test("the shared capability check fails closed for wrong-side mutations", () => 
     investigationRoot: "/project/openspec/investigations", contains
   }).reason, /transaction marker/);
 });
+
+test("Investigation writes are scoped and comparison prototypes need explicit mode", () => {
+  const contains = (target, root) => target === root || target.startsWith(`${root}/`);
+  const decide = (target, investigationCompare = false) => workspaceMutationDecision({
+    capability: { phase: "investigate", roots: [] }, target,
+    foundationRoot: "/project/.foundation",
+    investigationRoot: "/project/openspec/investigations",
+    investigationStateRoot: "/project/.foundation/investigations",
+    prototypeRoot: "/project/.foundation/prototypes/race/a.html",
+    investigationCompare, contains
+  });
+  assert.equal(decide("/project/openspec/investigations/race.json").allowed, true);
+  assert.equal(decide("/project/.foundation/investigations/race.json").allowed, true);
+  assert.equal(decide("/project/.foundation/prototypes/race/a.html").allowed, false);
+  assert.equal(decide("/project/.foundation/prototypes/race/a.html", true).allowed, true);
+  assert.equal(decide("/project/src/profile.js", true).allowed, false);
+});

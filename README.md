@@ -17,7 +17,7 @@ does not replace your coding agent, test framework, CI system, or Git workflow.
 The product is **Change Loop**; the installed package and CLI remain
 `claude-foundation`, so existing commands do not change.
 
-**Version 3.5.17** — runtime API 38, provider protocol 13. Receipts recorded by
+**Version 3.5.17** — runtime API 39, provider protocol 13. Receipts recorded by
 earlier versions read as `provider-version-stale` and must be re-proven.
 `claude-foundation metrics <change-id>` also reports the exact runtime source
 cohort: semantic version, the loaded protocol bundle, and a SHA-256 digest of
@@ -199,6 +199,12 @@ needs user decision
 not worth changing
 ```
 
+The agent starts from `claude-foundation investigate --template` and submits
+the maintained JSON record to `claude-foundation investigate <record.json>`.
+The harness discovers and hashes sources, validates fact and hypothesis links,
+persists no-progress and effectiveness metrics, and returns the next typed
+action. A ready result carries a digest-bound handoff that Change verifies.
+
 If it is `ready for /change`, turn the accepted findings into the durable
 agreement:
 
@@ -236,9 +242,13 @@ validates decision prerequisites, and refuses unresolved coverage; only
 consequential choices are returned to you, one dependency-ready frontier at a
 time with source-supported recommendations. The harness automatically discovers
 and ranks relevant specs, tests, callers, integrations, persistence, and
-permission boundaries under a risk-adaptive read budget. Intake stores one
+permission boundaries under fixed enumeration safety limits, then applies a
+risk-adaptive budget to the selected read-set. Intake stores one
 machine-owned snapshot bound to the draft and selected local-source digests,
-plus coverage and question-effectiveness measurements; a source change reopens coverage
+using Git's tracked/non-ignored file set when available. The agent acknowledges
+the returned `discovery.sourceDigest`; keyed facts and recommendation evidence
+must bind a selected path and digest. Intake also retains coverage and
+question-effectiveness measurements in the change runtime; a source change reopens coverage
 instead of compiling stale requirements. It then compiles one semantic draft into
 `openspec/changes/<change-id>/`, deriving stable IDs and links between
 requirements, scenarios, tasks, claims, and providers. Review the proposal,
@@ -733,7 +743,10 @@ the coordinator:
 /prove <change-id>
 ```
 
-The runtime uses `change amend <change-id> <amendment.json>` transactionally. It
+For a version-4 agreement, first run `change amend <change-id> <amendment.json>
+--inspect`, follow its intake/source-digest action, then replace `--inspect` with
+`--consume-amendment` after `DONE`. The runtime applies the amendment
+transactionally. It
 preserves completed tasks and manual Markdown sections, validates before keeping
 the revision, rolls back a rejected amendment, and invalidates only claims added
 by that amendment before resuming `advance`. Version-4 amendments must include
@@ -741,6 +754,8 @@ discovery coverage for the added requirements; the validated delta remains in
 the compiled proposal. Unaffected passing receipts survive only when their
 declared provider, claim, and input bindings remain exact; every ambiguous or
 affected provider is routed back through Prove.
+The result prints the exact `advance <change-id> --through proven` recovery
+command; a missing or stale receipt reruns only its provider.
 
 ## Multiple repositories
 

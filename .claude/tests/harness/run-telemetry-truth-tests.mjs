@@ -589,7 +589,16 @@ test("metrics compose lifecycle, receipt, context, and human-wait timelines", ()
   });
   const state = {
     id, schema: "foundation-standard", impact: "medium",
-    budget: budgetRuntime.initialBudget("foundation-standard", id)
+    budget: budgetRuntime.initialBudget("foundation-standard", id),
+    semanticIntakeEffectiveness: {
+      version: 1,
+      coverage: { completed: 9, required: 9, completionRatio: 1 },
+      questions: { accepted: null, acceptanceMeasurement: "unavailable", resolved: 2 },
+      history: { observed: true, inspections: 3, questionRounds: 1 }
+    },
+    amendments: [{ revision: 2, appliedAt: "2026-08-12T00:00:00.000Z",
+      semanticIntakeEffectiveness: { version: 1,
+        history: { observed: true, inspections: 2, questionRounds: 0 } } }]
   };
   let rendered;
   const runtime = createMetricsRuntime({
@@ -619,6 +628,11 @@ test("metrics compose lifecycle, receipt, context, and human-wait timelines", ()
   assert.equal(rendered.hostExecution.fallbacks, 1);
   assert.deepEqual(rendered.evidenceReuse.byReason,
     { "declared-inputs": 2, unknown: 1 });
+  assert.deepEqual(rendered.semanticIntake, state.semanticIntakeEffectiveness);
+  assert.deepEqual(rendered.semanticAmendmentIntake, [{
+    revision: 2, appliedAt: "2026-08-12T00:00:00.000Z",
+    effectiveness: state.amendments[0].semanticIntakeEffectiveness
+  }]);
 
   const operationOnly = "operation-only";
   mkdirSync(join(logs, operationOnly), { recursive: true });

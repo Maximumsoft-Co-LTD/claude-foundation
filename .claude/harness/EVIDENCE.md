@@ -308,6 +308,12 @@ with byte-identical content does not expire evidence.
 Narrow it further with workspace-relative `inputs`, and an edit outside them
 rebinds the receipt instead of re-earning it:
 
+An unaffected declared-input receipt may also cross one validated semantic
+amendment revision. The transaction writes a create-only before/after audit at
+`.foundation/evidence/<change>/receipt-rebinds/`; any failed amendment restores
+the prior receipt and removes its audit record. Ambiguity reruns only the
+affected provider and never authorizes a broad receipt rewrite.
+
 ```json
 {"providers": {
   "test": {"adapter": "test-discovery", "command": ["npm", "test"],

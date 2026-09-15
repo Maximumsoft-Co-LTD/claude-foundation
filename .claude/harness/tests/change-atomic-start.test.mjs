@@ -6,6 +6,8 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import { createChangeLifecycle } from "../runtime/workflow/change-lifecycle.mjs";
+import { CORE_DISCOVERY_DIMENSIONS } from
+  "../runtime/workflow/validation/semantic-intake.mjs";
 import { assertSpecApproval, reviewWindowRemaining, REVIEW_WINDOW_MS } from "../runtime/core/user-decisions.mjs";
 
 function writeJson(path, value) {
@@ -139,6 +141,45 @@ test("atomic start consumes its transient draft only after success", (t) => {
   value.lifecycle.startAtomic(value.draftPath, { consumeDraft: true });
   assert.equal(existsSync(value.draftPath), false);
   assert.equal(existsSync(join(value.changes, "atomic-change")), true);
+});
+
+test("v4 start persists completed intake effectiveness before deleting its snapshot", (t) => {
+  const value = fixture(t);
+  const semantic = {
+    version: 4,
+    id: "semantic-intake-change",
+    intent: "Add a bounded semantic outcome",
+    impact: "low",
+    coupling: "isolated",
+    requirements: [{
+      key: "semantic-outcome", capability: "semantic-intake-change", operation: "added",
+      scenario: "A bounded input arrives", outcome: "The bounded result is returned"
+    }],
+    tasks: [{
+      key: "implement-semantic-outcome", outcome: "Implement the bounded result",
+      covers: ["semantic-outcome"], paths: ["src/**"], verify: "npm test"
+    }],
+    evidence: { "semantic-outcome": { capabilities: ["test"] } },
+    discovery: {
+      coverage: CORE_DISCOVERY_DIMENSIONS.map((dimension) => ({
+        dimension, status: "covered", covers: ["semantic-outcome"]
+      })),
+      decisions: []
+    }
+  };
+  writeJson(value.draftPath, semantic);
+  const acknowledgement = value.lifecycle.inspectDraft(value.draftPath);
+  assert.equal(acknowledgement.action, "EDIT");
+  semantic.discovery.sourceDigest = acknowledgement.intakeState.sourceDigest;
+  writeJson(value.draftPath, semantic);
+  assert.equal(value.lifecycle.inspectDraft(value.draftPath).action, "DONE");
+
+  value.lifecycle.startAtomic(value.draftPath);
+  const runtime = JSON.parse(readFileSync(join(
+    value.runtime, "semantic-intake-change.json"), "utf8"));
+  assert.equal(runtime.semanticIntakeEffectiveness.version, 1);
+  assert.equal(runtime.semanticIntakeEffectiveness.history.observed, true);
+  assert.equal(existsSync(join(value.root, acknowledgement.intakeState.path)), false);
 });
 
 test("spec approval is explicit, content-bound, and separate from edits", (t) => {

@@ -14,8 +14,9 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
-| `change start --template \| <draft.json> [--inspect]` | Inspect intake หรือ compile และเริ่ม semantic agreement หนึ่งชุดแบบ atomic |
-| `change amend <change> <amendment.json>` | ขยาย agreement ระหว่าง Build แบบ transaction |
+| `investigate --template \| <record.json>` | ตรวจ fact และ hypothesis ที่ผูก source เก็บ resume state และสร้าง Change handoff |
+| `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect intake หรือ compile และเริ่ม semantic agreement หนึ่งชุดแบบ atomic |
+| `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake หรือขยาย agreement ระหว่าง Build แบบ transaction |
 | `advance <change> --through build\|proven\|archived` | รัน deterministic lifecycle แล้วคืนหนึ่งในหก action ที่ boundary จริง |
 | `changes` | อ่าน active state และ route ถัดไป |
 | `doctor …` | วิเคราะห์เฉพาะเมื่อ coordinator ขอ |
@@ -32,7 +33,7 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 | `changes` | แสดง change ที่ active สถานะ lifecycle และ action ถัดไปของแต่ละตัว |
 | `doctor [--stage change\|build\|prove] [--change <id>]` | วินิจฉัยความพร้อมของโปรเจกต์ provider และ lifecycle |
 | `packet <change> [--phase <phase>] [--task <id>]` | อ่าน handoff ของ operation ปัจจุบัน |
-| `metrics <change>` | ดูการใช้งานที่วัดได้ งบที่ใช้อยู่ ต้นทุน และเวลาการรัน |
+| `metrics <change>` | ดูการใช้งาน ประสิทธิผล semantic intake งบ ต้นทุน และเวลาการรันที่วัดได้ |
 | `feedback <change>` | อธิบายเวลา reviewer, repair ที่มีหลักฐาน, human wait และเวลาที่ยังระบุไม่ได้ พร้อม reuse และ action ถัดไป |
 | `change audit <change>` | ตรวจความเชื่อมโยงของ scenario claim task และ provider |
 | `proof readiness <change>` | blocker แบบมีชนิด พร้อมคำสั่งถัดไปที่ถูกต้อง |
@@ -63,9 +64,10 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
+| `investigate --template \| <record.json>` | พิมพ์หรือตรวจ investigation record แล้วคืน typed action หนึ่งรายการ |
 | `change new <intent> [--rapid]` | Compatible primitive สำหรับเขียน agreement ด้วยมือ |
-| `change start --template \| <draft.json> [--inspect]` | Inspect intake หรือ compile และเริ่ม change จาก semantic draft ที่ผ่านการตรวจ |
-| `change amend <change> <amendment.json>` | เพิ่ม semantic requirement แบบ transaction และรักษางานที่เสร็จแล้ว |
+| `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect intake หรือ compile agreement จาก semantic draft ที่ผ่านการตรวจ โดยพื้นที่แยกจะสร้างภายหลังใน Build |
+| `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake หรือเพิ่ม semantic requirement แบบ transaction และรักษางานที่เสร็จแล้ว |
 | `change resolve <change> …` | บันทึกการตัดสินใจเรื่อง impact coupling security และ review |
 | `change validate <change>` | ตรวจ change และ evidence contract ที่รันได้ |
 | `sandbox create <change> [--all]` | สร้างพื้นที่ Build ที่แยกออกมา |
@@ -150,7 +152,7 @@ Feedback ตรวจ validity จาก runtime ปัจจุบัน ส่
 | Pin | v3.5.17 |
 |---|---|
 | runtime | 3.5.17 |
-| runtime API | 38 |
+| runtime API | 39 |
 | semantic draft schema | 4 |
 | semantic intake state schema | 2 |
 | semantic amendment schema | 1 |

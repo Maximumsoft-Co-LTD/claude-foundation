@@ -58,6 +58,7 @@ const transcriptPath = String(event.transcript_path ||
   process.env.FOUNDATION_CLAUDE_TRANSCRIPT_PATH || "");
 const devSession = ["auto", "audit"].includes(configuredMode) &&
   currentTranscriptIsDev(transcriptPath);
+const investigateSession = currentTranscriptIsInvestigate(transcriptPath);
 
 const tool = String(event.tool_name || "");
 const input = event.tool_input || {};
@@ -81,7 +82,7 @@ const recorded = recordedPhaseContext({
 });
 const landSession = landAuthorityCommand && currentTranscriptIsLand(transcriptPath);
 const phase = String(process.env.FOUNDATION_ACTIVE_PHASE || recorded?.phase ||
-  (landSession ? "land" : "")).toLowerCase();
+  (landSession ? "land" : investigateSession.active ? "investigate" : "")).toLowerCase();
 const mode = devSession || landAuthorityCommand || configuredMode === "block" ||
   (configuredMode === "auto" && Boolean(phase)) ? "block" : "audit";
 const recordedRuntime = recorded?.changeId ? runtimeState(recorded.changeId) : null;
@@ -109,7 +110,7 @@ if (!phase && prePhaseDraftMutationAllowed()) {
   process.exit(0);
 } else if (!phase) {
   violations.push("active phase is unavailable");
-} else if (!new Set(["change", "build", "prove", "land"]).has(phase)) {
+} else if (!new Set(["investigate", "change", "build", "prove", "land"]).has(phase)) {
   violations.push(`unsupported active phase: ${phase}`);
 } else if (tool === "Bash" && !landSession) {
   inspectBash(String(input.command || ""));
@@ -152,10 +153,12 @@ function inspectPath(rawPath) {
   }
 
   const investigations = join(projectRoot, "openspec", "investigations");
+  const prototypes = join(projectRoot, ".foundation", "prototypes");
   const workspace = process.env.FOUNDATION_WORKSPACE_ROOT || recordedWorkspace;
   const status = phase === "build" ? "building" : phase === "prove" ? "proven"
     : phase === "land" ? "applied" : "change";
-  const capability = workspaceCapabilityValue(recorded?.changeId || "active", {
+  const capability = phase === "investigate" ? { phase: "investigate", roots: [] } :
+    workspaceCapabilityValue(recorded?.changeId || "active", {
     ...(recordedRuntime || {}),
     status,
     workspace: {
@@ -179,11 +182,35 @@ function inspectPath(rawPath) {
     target,
     foundationRoot: join(projectRoot, ".foundation"),
     investigationRoot: investigations,
+    investigationStateRoot: join(projectRoot, ".foundation", "investigations"),
+    prototypeRoot: investigateSession.compare
+      ? approvedPrototypeTarget(target, investigations, prototypes) : null,
+    investigationCompare: investigateSession.compare,
     additionalRoots: allowedPaths(),
     landTransaction: process.env.FOUNDATION_LAND_TRANSACTION === "1",
     contains: isWithin
   });
   if (!decision.allowed) violations.push(decision.reason);
+}
+
+function approvedPrototypeTarget(target, investigations, prototypes) {
+  if (!isWithin(target, prototypes) || !existsSync(investigations)) return null;
+  for (const entry of readdirSync(investigations, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+    try {
+      const record = JSON.parse(readFileSync(join(investigations, entry.name), "utf8"));
+      if (record?.mode !== "compare" || !Array.isArray(record.options)) continue;
+      for (const option of record.options) {
+        for (const declared of Array.isArray(option?.prototypePaths)
+          ? option.prototypePaths : []) {
+          const approved = canonicalTarget(declared, projectRoot);
+          if (approved === target && isWithin(approved, join(prototypes, String(record.id || ""))))
+            return approved;
+        }
+      }
+    } catch { /* malformed records grant no write capability */ }
+  }
+  return null;
 }
 
 function inspectBash(command) {
@@ -273,6 +300,26 @@ function currentTranscriptIsLand(path) {
     }
     return /^\/land(?:\s|$)/.test(latest);
   } catch { return false; }
+}
+
+function currentTranscriptIsInvestigate(path) {
+  if (!path || !existsSync(path)) return { active: false, compare: false };
+  try {
+    const source = readFileSync(path, "utf8");
+    let latest = "";
+    for (const line of source.split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const row = JSON.parse(line);
+        if (row.type === "last-prompt" && typeof row.lastPrompt === "string")
+          latest = row.lastPrompt.trim();
+      } catch { /* tolerate a partially flushed final line */ }
+    }
+    return {
+      active: /^\/investigate(?:\s|$)/.test(latest),
+      compare: /^\/investigate(?:\s|$)/.test(latest) && /(?:^|\s)--compare(?:\s|$)/.test(latest)
+    };
+  } catch { return { active: false, compare: false }; }
 }
 
 function appendStringPath(paths, value) {

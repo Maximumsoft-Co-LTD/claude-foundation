@@ -36,7 +36,7 @@ Installed users should start with `WORKFLOW.md`. The rest of this page maps the
 runtime for maintainers and evidence authors; `EVIDENCE.md` is the canonical
 provider and receipt contract.
 
-Runtime API 38 adds bounded repository intelligence, adaptive intake metrics,
+Runtime API 39 adds bounded repository intelligence, adaptive intake metrics,
 and selective amendment proof recovery. Typed intake inspection uses
 `change start <draft.json> --inspect` and discovery deltas for v4 amendments.
 Spec approval uses `change resolve --approve-spec`, with review continuation
@@ -215,6 +215,8 @@ claude-foundation doctor --stage prove --change <change>
 
 | Command | What it does | When to use it |
 |---|---|---|
+| `investigate --template` | Prints the versioned source/fact/hypothesis record | Starting a bounded investigation |
+| `investigate <record.json>` | Persists source-bound investigation state and emits a Change handoff when ready | Resuming Investigate or crossing into Change |
 | `change start --template` | Prints the semantic draft v4 contract with machine-checkable discovery coverage | Beginning a fresh Change |
 | `change start <draft.json> --inspect` | Returns the next typed intake action and exact resume route without creating a change | Iterating on a semantic draft |
 | `change start <draft.json>` | Compiles, validates, installs, and prepares one isolated change transactionally | Completing Change |
@@ -631,6 +633,7 @@ listings elsewhere name this file as their source rather than restating it.
 |---|---|
 | `.foundation/runtime/` | Runtime operation and handoff state, one file per change |
 | `.foundation/intake/` | One draft/source-bound semantic intake snapshot per inspected draft path |
+| `.foundation/investigations/` | Source-bound Investigate state, metrics, no-progress checkpoint, and Change handoff digest |
 | `.foundation/receipts/` | Live content-bound provider receipts and `proof.json` |
 | `.foundation/evidence/` | Immutable proof bundles: manifests, receipt copies, durable artifacts, and the hash-chained review-attempt ledger |
 | `.foundation/snapshots/` | One content snapshot descriptor per proof |

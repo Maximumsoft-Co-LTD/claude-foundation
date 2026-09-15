@@ -23,9 +23,20 @@ test("spec approval binds semantics and revision, not task completion", (t) => {
   assert.doesNotThrow(() => assertSpecApproval(root, "demo", state));
   writeFileSync(join(packet, "proposal.md"), "Delete the greeting");
   assert.throws(() => assertSpecApproval(root, "demo", state), { code: "SPEC_APPROVAL_REQUIRED" });
+  const workspace = join(root, "workspace");
+  const workspacePacket = join(workspace, "openspec/changes/demo");
+  mkdirSync(workspacePacket, { recursive: true });
+  writeFileSync(join(workspacePacket, "proposal.md"), "Amend the greeting");
+  writeFileSync(join(workspacePacket, "tasks.md"), "- [x] Implement greeting\n");
   state.status = "building";
   state.contractRevision = 1;
   assert.equal(workspaceCapabilityValue("demo", state).mode, "agreement-only");
+  state.workspace = { mode: "copy", path: workspace };
+  state.amendments = [{ revision: 1 }];
+  state.specApproval = { required: true, identity: agreementIdentity(workspace, "demo"), revision: 1 };
+  assert.doesNotThrow(() => assertSpecApproval(root, "demo", state));
+  state.amendments = [];
+  assert.throws(() => assertSpecApproval(root, "demo", state), { code: "SPEC_APPROVAL_REQUIRED" });
 });
 
 test("legacy in-flight state needs no invented approval", () => {

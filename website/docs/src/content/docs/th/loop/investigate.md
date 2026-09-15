@@ -53,9 +53,19 @@ not worth changing
 
 `not worth changing` เป็นผลลัพธ์ที่ถูกต้องและมีประโยชน์
 
+Agent เริ่มจาก `claude-foundation investigate --template` เก็บ record ที่
+`openspec/investigations/<id>.json` และเรียก `claude-foundation investigate
+<record.json>` หลังอ่านหลักฐานแต่ละ batch Harness จะค้นและ hash source ที่
+เกี่ยวข้อง ตรวจ link ของ fact, hypothesis และ recommendation เก็บ metrics กับ
+no-progress state แล้วคืน `EDIT`, `ASK_USER` หรือ `DONE` พร้อม resume route
+source ใหม่ที่ค้นพบต้องถูกอ่านและยืนยันใน record ก่อนจบ
+
 ## เขียนอะไรได้บ้าง
 
-ขั้นสำรวจเป็น read-only ต่อโค้ดของโปรดักต์และ OpenSpec สิ่งเดียวที่เขียนได้คือบันทึกการสำรวจที่ `openspec/investigations/<name>.md` และเขียนก็ต่อเมื่อผลการสำรวจต้องคงอยู่จริง ๆ
+ขั้นสำรวจเป็น read-only ต่อ product code และ formal change packet งานเขียนปกติ
+ของ agent มีเพียง JSON record กับ note ที่เลือกสร้างใต้
+`openspec/investigations/`; harness เท่านั้นที่เขียน state ใต้
+`.foundation/investigations/`
 
 ## โหมดเปรียบเทียบ
 
@@ -65,7 +75,9 @@ not worth changing
 /investigate dashboard filter interaction --compare
 ```
 
-จะได้ทางเลือกแบบเบาและใช้แล้วทิ้ง 3–5 แบบใต้ `.foundation/prototypes/<id>/` ในโหมดนี้ agent เขียนได้ **เฉพาะ** ในไดเรกทอรี prototype เท่านั้น ไม่แตะโค้ดโปรดักต์ ไม่แตะ OpenSpec และไม่เพิ่ม lifecycle state ใด ๆ
+จะได้ทางเลือกแบบเบาและใช้แล้วทิ้ง 3–5 แบบใต้ `.foundation/prototypes/<id>/`
+ในโหมดนี้ agent จึงเขียนเพิ่มได้ **เฉพาะ** ใน prototype directory โดยไม่แตะ
+product code หรือ formal change packet
 
 มันจะเขียน `selection.md` เสมอ เพื่อบันทึกตัวเลือกที่เลือก เหตุผล ทางเลือกที่ตัดทิ้ง และ path ของ artifact และเมื่อหลักฐานตัดสินไม่ได้ มันจะถามคุณแทนที่จะเลือกเอง
 
@@ -80,6 +92,9 @@ not worth changing
 ```
 
 `/change` จะสรุปการตัดสินใจนั้นลงใน proposal และ design แต่จะไม่ถือว่าตัวเลือกหรือ artifact ของมันเป็นหลักฐาน
+ผล `ready-for-change` จาก runtime จะมี `handoff` ที่ผูก digest ให้ agent คัดลอก
+เข้า field `investigation` ของ semantic draft; Change จะปฏิเสธหาก state หรือ
+source ที่เลือกเปลี่ยนไป
 สำหรับ integration บันทึกจะเก็บ source กับ version ของเอกสารให้ชัด `/change`
 จึงบังคับ scenario ทั้ง success และ failure ส่วน API ที่ยังไม่อ่านหรือไม่มี version
 เป็น research boundary ไม่ใช่ contract ที่เดาได้

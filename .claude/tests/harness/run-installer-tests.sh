@@ -92,6 +92,8 @@ assert_file_absent "prototype is no longer a separate command" \
 assert_file_absent "review is proof-internal" \
   "$TARGET/.claude/commands/review.md"
 assert_file_exists "harness installed" "$TARGET/.claude/harness/foundation.mjs"
+assert_file_exists "investigation runtime installed" \
+  "$TARGET/.claude/harness/runtime/workflow/investigation-runtime.mjs"
 assert_file_exists "shared trust runtime installed" "$TARGET/.claude/harness/runtime/core/trust.mjs"
 assert_file_exists "authority policy runtime installed" \
   "$TARGET/.claude/harness/runtime/core/authority-policy.mjs"
@@ -118,6 +120,47 @@ assert_file_exists "authority runtime installed" "$TARGET/.claude/harness/runtim
 assert_file_exists "agent planner runtime installed" \
   "$TARGET/.claude/harness/runtime/workflow/agent-planning.mjs"
 assert_file_exists "CLI router runtime installed" "$TARGET/.claude/harness/runtime/core/cli-router.mjs"
+investigation_template="$(bash "$ROOT/cli.sh" --project "$TARGET" investigate --template)"
+assert_contains "public investigate template exposes typed facts" \
+  "$investigation_template" '"facts": []'
+mkdir -p "$TARGET/openspec/investigations"
+printf '%s\n' 'Retry evidence establishes the current revision boundary.' \
+  > "$TARGET/investigation-evidence.md"
+printf '%s\n' '{
+  "version":1,
+  "id":"retry-boundary",
+  "problem":"Why can retry overwrite a current revision?",
+  "mode":"analyze",
+  "sources":["investigation-evidence.md"],
+  "facts":[{"key":"revision","statement":"Retry must preserve the current revision.","sources":["investigation-evidence.md"]}],
+  "hypotheses":[{"key":"stale-write","statement":"A stale write bypasses revision checking.","status":"supported","factKeys":["revision"]}],
+  "options":[],
+  "decisions":[],
+  "conclusion":{"status":"ready-for-change","summary":"Require revision checking."},
+  "changeIntent":"Reject stale retry writes"
+}' > "$TARGET/openspec/investigations/retry-boundary.json"
+investigation_result="$(bash "$ROOT/cli.sh" --project "$TARGET" investigate \
+  openspec/investigations/retry-boundary.json)"
+if printf '%s' "$investigation_result" | jq -e '.action == "EDIT" and .investigation.kind == "inspect-sources"' >/dev/null; then
+  printf '%s' "$investigation_result" | jq -r '.investigation.paths[]' > "$TMP/investigation-sources.txt"
+  jq --rawfile paths "$TMP/investigation-sources.txt" \
+    '.sources = ((.sources + ($paths | split("\n") | map(select(length > 0)))) | unique)' \
+    "$TARGET/openspec/investigations/retry-boundary.json" \
+    > "$TMP/investigation-record.json"
+  mv "$TMP/investigation-record.json" \
+    "$TARGET/openspec/investigations/retry-boundary.json"
+  investigation_result="$(bash "$ROOT/cli.sh" --project "$TARGET" investigate \
+    openspec/investigations/retry-boundary.json)"
+fi
+assert_contains "public investigate reaches a harness-owned terminal action" \
+  "$investigation_result" '"action": "DONE"'
+assert_contains "public investigate emits a Change-bound handoff" \
+  "$investigation_result" '"statePath": ".foundation/investigations/retry-boundary.json"'
+assert_file_exists "public investigate persists resumable state" \
+  "$TARGET/.foundation/investigations/retry-boundary.json"
+rm "$TARGET/investigation-evidence.md" \
+  "$TARGET/openspec/investigations/retry-boundary.json" \
+  "$TARGET/.foundation/investigations/retry-boundary.json"
 assert_file_exists "state runtime installed" "$TARGET/.claude/harness/runtime/core/state-runtime.mjs"
 assert_file_exists "canonical change-artifact contract installed" \
   "$TARGET/.claude/harness/runtime/contracts/change-artifacts.mjs"
@@ -191,7 +234,7 @@ assert_cmd_zero "command registry has one unique entry per public name" \
   "$TARGET/.claude/harness/commands.json"
 # The additional read-only surface is the resumable budget checkpoint; it does
 # not grant authority or widen the continuation surface below.
-assert_eq "agent command surface is bounded" "23" \
+assert_eq "agent command surface is bounded" "24" \
   "$(jq '[.commands[] | select(.audience == "agent")] | length' \
     "$TARGET/.claude/harness/commands.json")"
 # 28 includes the bounded proof controller, its internal execution commands,
@@ -443,6 +486,25 @@ rm -rf "$atomic_workspace" \
   "$TARGET/.foundation/receipts/atomic-start" \
   "$TARGET/.foundation/proofs/atomic-start.json" \
   "$TARGET/.foundation/proof-runs/atomic-start"
+v4_draft="$TARGET/v4-cli-draft.json"
+jq -n --argjson dimensions '["current-behavior","affected-actor","desired-behavior","success-path","failure-path","input-boundary","compatibility","non-goals","verification"]' \
+  '{version:4,id:"v4-cli-intake",intent:"Verify v4 CLI intake",impact:"low",coupling:"isolated",
+    requirements:[{key:"v4-outcome",capability:"v4-cli-intake",operation:"added",scenario:"A v4 draft is inspected",outcome:"The CLI binds its sources"}],
+    tasks:[{key:"implement-v4",outcome:"Verify v4 intake",covers:["v4-outcome"],paths:["app.txt"],verify:"sh atomic-test.sh"}],
+    evidence:{"v4-outcome":{capabilities:["test"]}},
+    discovery:{coverage:($dimensions | map({dimension:.,status:"covered",covers:["v4-outcome"]})),decisions:[]}}' \
+  > "$v4_draft"
+v4_ack="$(bash "$ROOT/cli.sh" --project "$TARGET" change start v4-cli-draft.json --inspect)"
+assert_contains "v4 CLI inspection requests source acknowledgement" "$v4_ack" \
+  '"code": "source-acknowledgement-required"'
+v4_source_digest="$(printf '%s' "$v4_ack" | jq -r '.intakeState.sourceDigest')"
+jq --arg digest "$v4_source_digest" '.discovery.sourceDigest = $digest' \
+  "$v4_draft" > "$TMP/v4-cli-draft.json"
+mv "$TMP/v4-cli-draft.json" "$v4_draft"
+v4_ready="$(bash "$ROOT/cli.sh" --project "$TARGET" change start v4-cli-draft.json --inspect)"
+assert_contains "v4 CLI inspection reaches DONE after bound acknowledgement" "$v4_ready" \
+  '"action": "DONE"'
+rm "$v4_draft"
 printf '%s\n' \
   '{"version":1,"id":"atomic-migration","intent":"Payment ledger migration",' \
   '"impact":"high","coupling":"coupled","size":"S","securityTriggers":["migration"],' \
