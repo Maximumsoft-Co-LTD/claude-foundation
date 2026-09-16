@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Deliver verifies staged blobs and the final commit against the proven Land
+  projection, including resumed attempts and Git hooks, and pushes the verified
+  commit explicitly rather than a mutable HEAD.
+- Deliver checks the fetched remote PR base before publication, blocking
+  unrelated feature-branch history and incompatible base changes during retries.
+- Multi-repository Deliver keeps independent sibling repositories separate and
+  updates root gitlinks only for declared submodules.
+
 ## [3.5.18] - 2026-09-15
 
 ### Added

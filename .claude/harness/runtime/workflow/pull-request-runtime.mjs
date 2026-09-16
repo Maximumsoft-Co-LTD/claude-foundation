@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { dirname, join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
 import { repositoryDeliveryOrder } from "./repository-delivery-saga.mjs";
+import { createDeliveryIntegrity, deliveryProjectionEntry } from "./delivery-integrity.mjs";
 
 export const DELIVERY_PROTOCOL_VERSION = 1;
 export const DELIVERY_RECEIPT_SCHEMA_VERSION = 1;
@@ -382,7 +383,7 @@ export function repositoryDeliveryProjection({
     integrity: "land-bound",
     roots,
     entries: unique(roots.flatMap((path) => filesUnder(repository.path, path))).sort()
-      .map((path) => ({ path, identity: pathIdentity(join(repository.path, path)) }))
+      .map((path) => deliveryProjectionEntry(repository.path, path, pathIdentity))
   };
 }
 
@@ -427,7 +428,7 @@ export function deliveryProjection({ root, state, readJson, transactionJournalPa
     ...archivedSpecPaths(root, archive)
   ]).sort();
   const paths = unique(roots.flatMap((path) => filesUnder(root, path))).sort();
-  const entries = paths.map((path) => ({ path, identity: pathIdentity(join(root, path)) }));
+  const entries = paths.map((path) => deliveryProjectionEntry(root, path, pathIdentity));
   const projectionHash = state.workspace?.apply?.projectionHash || journal.projectionHash;
   return {
     version: 1,
@@ -469,6 +470,7 @@ export function createPullRequestRuntime({
   run = spawnSync,
   fail = (message) => { throw new Error(message); }
 }) {
+  const integrity = createDeliveryIntegrity({ git, run, runChecked, gitOutput });
   const statePath = (id) => join(deliveriesRoot, id, "state.json");
   const receiptPath = (id) => join(deliveriesRoot, id, "receipt.json");
   const bodyPath = (id) => join(deliveriesRoot, id, "pull-request.md");
@@ -585,6 +587,8 @@ export function createPullRequestRuntime({
       !projection.roots.some((rootPath) => path === rootPath || path.startsWith(`${rootPath}/`)));
     if (outside.length) throw new Error(`delivery staged paths outside the proven projection: ${outside.join(", ")}`);
     if (!staged.length) throw new Error("delivery projection produces no commit");
+    integrity.assertTree(workspace, projection,
+      gitOutput(git, ["write-tree"], workspace, "cannot inspect staged delivery tree"), gitlinks);
     return staged;
   }
 
@@ -752,7 +756,8 @@ export function createPullRequestRuntime({
       }
       const workspace = node.workspace || repositoryWorkspacePath(id, repository.id);
       const gitlinks = repository.id === "root" ? repositories
-        .filter((row) => row.id !== "root" && row.relativePath && completed.has(row.id))
+        .filter((row) => row.type === "submodule" && row.id !== "root" &&
+          row.relativePath && completed.has(row.id))
         .map((row) => ({ path: row.relativePath, commit: completed.get(row.id).commit })) : [];
 
       if (!existsSync(workspace))
@@ -779,9 +784,11 @@ export function createPullRequestRuntime({
         "cannot verify delivery commit") !== commit) {
         throw new Error(`delivery workspace commit changed for repository '${repository.id}'`);
       }
+      integrity.assertTree(workspace, projection, commit, gitlinks);
+      integrity.assertPullRequestBase(workspace, provider, projection);
       if (node.status === "commit-created") {
         runChecked(run, "git", ["push", "--set-upstream", provider.remoteName,
-          `HEAD:refs/heads/${branch}`],
+          `${commit}:refs/heads/${branch}`],
         { cwd: workspace, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
         `cannot push delivery branch for '${repository.id}'`);
         node.status = "branch-pushed";
@@ -941,9 +948,11 @@ export function createPullRequestRuntime({
           "cannot verify delivery commit");
         if (observed !== commit) throw new Error("delivery workspace commit changed after checkpoint");
       }
+      integrity.assertTree(workspace, projection, commit);
+      integrity.assertPullRequestBase(workspace, provider, projection);
       if (delivery.status === "commit-created") {
         runChecked(run, "git", ["push", "--set-upstream", provider.remoteName,
-          `HEAD:refs/heads/${branch}`],
+          `${commit}:refs/heads/${branch}`],
         { cwd: workspace, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }, "cannot push delivery branch");
         delivery = checkpoint(delivery, "branch-pushed", { pushedAt: now(), provider });
       }
@@ -990,7 +999,7 @@ export function createPullRequestRuntime({
         version: 1, changeId: id, status: "failed", code: delivery.lastError.code,
         at: delivery.lastError.at
       })}\n`);
-      if (["DELIVERY_PROJECTION_DRIFT", "DELIVERY_TARGET_MOVED"].includes(error.code))
+      if (["DELIVERY_PROJECTION_DRIFT", "DELIVERY_TARGET_MOVED", "DELIVERY_PR_BASE_DRIFT"].includes(error.code))
         return deliveryEnvelope(id, "ASK_USER", {
           completed: false, boundary: "content-identity", reason: error.message,
           options: ["create-a-new-change-for-the-current-content", "cancel-delivery"]

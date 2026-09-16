@@ -53,3 +53,31 @@ before and after the final full suite:
 HEAD remains `58a026eb85c66451e841491c383527f363ce72c5`. No real project Change,
 commit, push, deployment, paid scenario, or live-provider execution was performed.
 All Git and authority crash simulations used disposable test fixtures.
+
+## Deliver release review fixes — 2026-09-16
+
+User authorized direct fixes without entering Change. Scope is the three
+confirmed Deliver findings; no commit, push, publication, or paid execution.
+Agent owns implementation, regressions and documentation. The harness must
+automate content verification before publication and PR-base validation.
+
+- [x] D1 Verify staged and committed bytes against the Land projection, including resumed attempts and commit hooks.
+- [x] D2 Verify the remote PR base includes the Land base; block unrelated branch history before publication.
+- [x] D3 Stage gitlinks only for actual submodules; retain independent sibling delivery.
+- [x] D4 Run regression-first checks, the full registered suite, and documentation checks; preserve unrelated workspace changes.
+
+Delivery fix validation:
+
+- New regressions reproduced six failures on the original implementation.
+- Focused Deliver suite: 17 tests pass, including modified resumes, commit hooks,
+  recovered commits, incompatible PR bases, binary/deleted/executable files,
+  real submodule gitlinks, and independent sibling repositories.
+- Full `.claude/tests/run-all.sh`: exit 0, all 208 registered suites pass,
+  including documentation consistency, installer and architecture checks.
+- Git operations use disposable fixtures; fetch reads local fixture repositories,
+  while push and GitHub operations are mocked. No live-provider calls occurred.
+- Updated the English/Thai guides and added release notes for the three fixes.
+  No Change workflow, source commit, push, or publication was performed.
+- Final `git diff --check`: pass. Release preflight's structural checks all pass;
+  exit 2 now reflects only the uncommitted source tree. Paid portfolio readiness
+  remains an advisory. Root and subsystem statuses preserve unrelated work.

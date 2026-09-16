@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
-  existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync,
+  chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync,
   readlinkSync, rmSync, writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -239,7 +239,9 @@ test("child repository projection is bound to its verified Land journal", (t) =>
   }), /proven path changed after Land in 'api'/);
 });
 
-test("one advance creates an isolated commit, pushes once, opens a PR, and reuses its receipt", async (t) => {
+for (const scenario of ["normal", "mixed-files", "resume-edit", "resume-mode", "commit-hook",
+  "hook-extra-path", "recovered-commit", "unrelated-base", "remote-base-moved"])
+test(`delivery verifies publication boundaries: ${scenario}`, async (t) => {
   const root = mkdtempSync(join(tmpdir(), "foundation-delivery-e2e-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   checkedGit(["init", "-b", "main"], root);
@@ -247,8 +249,16 @@ test("one advance creates an isolated commit, pushes once, opens a PR, and reuse
   checkedGit(["config", "user.email", "foundation@example.test"], root);
   write(join(root, ".gitignore"), ".foundation/\n");
   write(join(root, "src", "booking.js"), "export const booking = false;\n");
+  if (scenario === "mixed-files") write(join(root, "obsolete.txt"), "remove me\n");
   checkedGit(["add", "."], root);
   checkedGit(["commit", "-m", "chore: baseline"], root);
+  const remoteBase = checkedGit(["rev-parse", "HEAD"], root);
+  if (scenario === "unrelated-base") {
+    checkedGit(["switch", "-c", "other-feature"], root);
+    write(join(root, "unrelated.txt"), "unrelated committed work\n");
+    checkedGit(["add", "unrelated.txt"], root);
+    checkedGit(["commit", "-m", "feat: unrelated work"], root);
+  }
   const baseHead = checkedGit(["rev-parse", "HEAD"], root);
   checkedGit(["remote", "add", "origin", "https://github.com/acme/booking.git"], root);
 
@@ -265,6 +275,15 @@ test("one advance creates an isolated commit, pushes once, opens a PR, and reuse
   write(join(root, "openspec", "specs", "booking", "spec.md"), "# Booking Specification\n");
 
   const transaction = join(root, ".foundation", "transactions", id, "tx", "journal.json");
+  const extraEntries = [];
+  if (scenario === "mixed-files") {
+    rmSync(join(root, "obsolete.txt"));
+    write(join(root, "data.bin"), Buffer.from([0, 255, 128, 10, 13, 0]));
+    write(join(root, "run.sh"), "#!/bin/sh\nexit 0\n");
+    chmodSync(join(root, "run.sh"), 0o755);
+    for (const path of ["obsolete.txt", "data.bin", "run.sh"])
+      extraEntries.push({ path, before: "before", after: pathIdentity(join(root, path)) });
+  }
   writeJson(transaction, {
     status: "committed", projectionHash: "source-projection",
     entries: [{
@@ -272,7 +291,7 @@ test("one advance creates an isolated commit, pushes once, opens a PR, and reuse
       after: pathIdentity(join(root, "src", "booking.js"))
     }, {
       path: `openspec/changes/${id}`, before: null, after: "directory:old"
-    }]
+    }, ...extraEntries]
   });
   const proofPath = join(root, ".foundation", "receipts", id, "proof.json");
   const durableReceipt = join(root, ".foundation", "proof-runs", id, "proof-1", "receipts", "test.json");
@@ -297,9 +316,15 @@ test("one advance creates an isolated commit, pushes once, opens a PR, and reuse
   let creates = 0;
   let pushes = 0;
   let failPushOnce = true;
+  let failCommitOnce = ["resume-edit", "resume-mode", "recovered-commit"].includes(scenario);
+  let fetchedBase = remoteBase;
   let pullRequest = null;
   const run = (executable, args, options) => {
+    if (executable === "git" && args[0] === "fetch") {
+      return spawnSync("git", ["fetch", "--no-tags", root, fetchedBase], options);
+    }
     if (executable === "git" && args[0] === "push") {
+      assert.equal(args.at(-1), `${commit}:refs/heads/change/${id}`);
       pushes += 1;
       if (failPushOnce) {
         failPushOnce = false;
@@ -308,6 +333,10 @@ test("one advance creates an isolated commit, pushes once, opens a PR, and reuse
       return { status: 0, stdout: "pushed\n", stderr: "" };
     }
     if (executable === "git") {
+      if (args[0] === "commit" && failCommitOnce) {
+        failCommitOnce = false;
+        return { status: 1, stdout: "", stderr: "temporary local commit failure" };
+      }
       const result = spawnSync(executable, args, options);
       if (args[0] === "commit" && result.status === 0)
         commit = checkedGit(["rev-parse", "HEAD"], options.cwd);
@@ -345,9 +374,46 @@ test("one advance creates an isolated commit, pushes once, opens a PR, and reuse
 
   const originalHead = checkedGit(["rev-parse", "HEAD"], root);
   const originalIndex = checkedGit(["diff", "--cached"], root);
+  if (["commit-hook", "hook-extra-path"].includes(scenario)) {
+    const hook = join(root, ".git/hooks/pre-commit");
+    const path = scenario === "hook-extra-path" ? "outside-projection.txt" : "src/booking.js";
+    write(hook, `#!/bin/sh\nprintf "unproven hook edit\\n" > ${path}\ngit add ${path}\n`);
+    chmodSync(hook, 0o755);
+  }
+  if (["resume-edit", "resume-mode", "recovered-commit"].includes(scenario)) {
+    await assert.rejects(runtime.advance(id), /temporary local commit failure/);
+    const workspace = runtime.workspacePath(id);
+    if (scenario === "resume-mode") chmodSync(join(workspace, "src/booking.js"), 0o755);
+    else write(join(workspace, "src/booking.js"), "unproven edit after interruption\n");
+    if (scenario === "recovered-commit") {
+      checkedGit(["add", "src/booking.js"], workspace);
+      checkedGit(["commit", "-m", "feat: unproven recovery"], workspace);
+    }
+  }
   const interrupted = await runtime.advance(id);
+  if (["resume-edit", "resume-mode", "commit-hook", "hook-extra-path", "recovered-commit", "unrelated-base"].includes(scenario)) {
+    assert.equal(interrupted.action, "ASK_USER");
+    assert.equal(interrupted.boundary, "content-identity");
+    assert.equal(pushes, 0);
+    assert.equal(creates, 0);
+    assert.equal(checkedGit(["rev-parse", "HEAD"], root), originalHead);
+    assert.equal(checkedGit(["diff", "--cached"], root), originalIndex);
+    return;
+  }
   assert.equal(interrupted.action, "WAIT");
   assert.equal(readJson(runtime.statePath(id)).status, "commit-created");
+
+  if (scenario === "remote-base-moved") {
+    // A force-moved remote no longer contains the proven Land base.
+    const emptyTree = checkedGit(["mktree"], root);
+    fetchedBase = checkedGit(["commit-tree", emptyTree, "-m", "unrelated remote history"], root);
+    const resumed = await runtime.advance(id);
+    assert.equal(resumed.action, "ASK_USER");
+    assert.equal(resumed.boundary, "content-identity");
+    assert.equal(pushes, 1, "resume must not push to an incompatible PR base");
+    assert.equal(creates, 0);
+    return;
+  }
 
   const first = await runtime.advance(id);
   assert.equal(first.action, "DONE");
@@ -357,6 +423,12 @@ test("one advance creates an isolated commit, pushes once, opens a PR, and reuse
   assert.equal(checkedGit(["rev-parse", "HEAD"], root), originalHead);
   assert.equal(checkedGit(["diff", "--cached"], root), originalIndex);
   assert.equal(existsSync(runtime.receiptPath(id)), true);
+  if (scenario === "mixed-files") {
+    assert.deepEqual(spawnSync("git", ["show", `${commit}:data.bin`], { cwd: root }).stdout,
+      Buffer.from([0, 255, 128, 10, 13, 0]));
+    assert.match(checkedGit(["ls-tree", commit, "run.sh"], root), /^100755 /);
+    assert.equal(checkedGit(["ls-tree", commit, "obsolete.txt"], root), "");
+  }
 
   const second = await runtime.advance(id);
   assert.equal(second.action, "DONE");
@@ -365,11 +437,12 @@ test("one advance creates an isolated commit, pushes once, opens a PR, and reuse
   assert.equal(pushes, 2);
 });
 
-test("multi-repository delivery opens child PRs before root without moving target HEADs", async (t) => {
+for (const topology of ["sibling", "submodule"])
+test(`multi-repository delivery preserves ${topology} topology and target HEADs`, async (t) => {
   const base = mkdtempSync(join(tmpdir(), "foundation-delivery-multi-"));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const root = join(base, "control");
-  const child = join(base, "api");
+  const child = topology === "submodule" ? join(root, "modules", "api") : join(base, "api");
   for (const [path, remote] of [[root, "control"], [child, "api"]]) {
     mkdirSync(path, { recursive: true });
     checkedGit(["init", "-b", "main"], path);
@@ -381,8 +454,14 @@ test("multi-repository delivery opens child PRs before root without moving targe
     checkedGit(["commit", "-m", "chore: baseline"], path);
     checkedGit(["remote", "add", "origin", `https://github.com/acme/${remote}.git`], path);
   }
-  const rootHead = checkedGit(["rev-parse", "HEAD"], root);
   const childHead = checkedGit(["rev-parse", "HEAD"], child);
+  if (topology === "submodule") {
+    write(join(root, ".gitmodules"), '[submodule "api"]\n\tpath = modules/api\n\turl = https://github.com/acme/api.git\n');
+    checkedGit(["add", ".gitmodules"], root);
+    checkedGit(["update-index", "--add", "--cacheinfo", `160000,${childHead},modules/api`], root);
+    checkedGit(["commit", "-m", "chore: register submodule"], root);
+  }
+  const rootHead = checkedGit(["rev-parse", "HEAD"], root);
   write(join(root, "src", "value.js"), "export const value = true;\n");
   write(join(child, "src", "value.js"), "export const value = true;\n");
   const id = "multi-change";
@@ -422,7 +501,13 @@ test("multi-repository delivery opens child PRs before root without moving targe
   const pullRequests = new Map();
   const pushed = [];
   const run = (executable, args, options) => {
+    if (executable === "git" && args[0] === "fetch") {
+      const isChild = options.cwd.includes("repositories/api") || options.cwd === child;
+      return spawnSync("git", ["fetch", "--no-tags", isChild ? child : root,
+        isChild ? childHead : rootHead], options);
+    }
     if (executable === "git" && args[0] === "push") {
+      assert.equal(args.at(-1), `${checkedGit(["rev-parse", "HEAD"], options.cwd)}:refs/heads/change/${id}`);
       pushed.push(options.cwd.includes("repositories/api") ? "api" : "root");
       return { status: 0, stdout: "pushed\n", stderr: "" };
     }
@@ -455,7 +540,8 @@ test("multi-repository delivery opens child PRs before root without moving targe
     transactionJournalPath: () => rootJournal,
     selectedRepositories: () => [
       { id: "root", path: root, mode: "write", dependsOn: [], relativePath: "." },
-      { id: "api", path: child, mode: "write", dependsOn: [], relativePath: null }
+      { id: "api", type: topology === "submodule" ? "submodule" : "git", path: child,
+        mode: "write", dependsOn: [], relativePath: topology === "submodule" ? "modules/api" : "../api" }
     ],
     pathIdentity, readJson, writeJson,
     stableHash: (value) => hash(JSON.stringify(value)), git,
@@ -469,6 +555,12 @@ test("multi-repository delivery opens child PRs before root without moving targe
   assert.deepEqual(pushed, ["api", "root"]);
   assert.equal(checkedGit(["rev-parse", "HEAD"], root), rootHead);
   assert.equal(checkedGit(["rev-parse", "HEAD"], child), childHead);
+  const workspace = runtime.workspacePath(id);
+  const gitlink = checkedGit(["ls-tree", "HEAD", "--", "modules/api"], workspace);
+  if (topology === "submodule") {
+    const deliveredChild = result.pullRequests.find((row) => row.repositoryId === "api");
+    assert.match(gitlink, new RegExp(`160000 commit ${deliveredChild.headCommit}\\tmodules/api`));
+  } else assert.equal(gitlink, "");
   const reused = await runtime.advance(id);
   assert.equal(reused.reused, true);
   assert.equal(pullRequests.size, 2);

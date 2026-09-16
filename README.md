@@ -387,6 +387,10 @@ Deliver is a cold path: if it is not invoked, Change, Build, Prove, and Land do
 no PR-specific prompting, evidence collection, or validation. Missing optional
 presentation evidence can make the PR a draft according to project policy;
 missing or stale required proof blocks Deliver without undoing `archived`.
+Staged files and final commits are checked against the proven projection, including
+after interruption or Git hooks. The fetched PR base must contain the Land base;
+unrelated branch history blocks publication. Sibling repositories keep separate
+PRs, while only submodules update root gitlinks. See the [Deliver contract](WORKFLOW.md).
 
 ## The workflow in one picture
 

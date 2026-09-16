@@ -412,6 +412,15 @@ after interruption it reconciles the local commit, remote branch, and provider
 state before taking the next missing action. A repeated invocation verifies and
 returns the existing pull request rather than creating another.
 
+Before committing, Deliver verifies staged Git blobs against the retained Land
+projection. Before publishing, it verifies the actual commit tree again, including
+resumed commits and changes made by Git hooks. Changed bytes, file modes, missing
+files, or additional paths block publication rather than inheriting old proof.
+It fetches the proposed remote PR base on each unfinished attempt and requires
+that base to contain the proven Land base; unrelated feature-branch history or
+a force-moved base requires a new proven change. Independent sibling repositories
+receive their own PRs; only declared submodules produce root gitlink updates.
+
 The PR body has one core contract—Summary, Why, Related Work, Type, included and
 excluded Scope, Test and Evidence, Risk, Rollback, and Monitoring—plus the
 applicable Frontend, Backend, Bug, Refactor/Technical Debt, Database/Migration,

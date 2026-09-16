@@ -360,6 +360,10 @@ Deliver เป็น cold path: ถ้าไม่เรียก Change, Build,
 การเก็บ evidence หรือ validation เฉพาะ PR เพิ่ม หลักฐาน presentation ที่ไม่บังคับ
 ซึ่งขาดได้อาจทำให้เปิดเป็น Draft ตาม policy ส่วน proof ที่บังคับแต่หายหรือ stale
 จะ block เฉพาะ Deliver โดยไม่ย้อนสถานะ `archived`
+ระบบตรวจไฟล์ที่ stage และ commit จริงเทียบกับ projection ที่ผ่าน Prove รวมถึงหลัง
+การทำงานขัดจังหวะหรือ Git hook โดย PR base ที่ fetch มาต้องมี Land base อยู่ในประวัติ
+หากพ่วงประวัติ branch ของงานอื่นจะหยุดการส่ง ส่วน sibling repository มี PR แยกกัน
+และอัปเดต gitlink ใน root เฉพาะ submodule ดู [ข้อกำหนด Deliver](WORKFLOW.md)
 
 ## ภาพรวม Workflow
 
