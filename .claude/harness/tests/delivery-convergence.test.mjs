@@ -104,12 +104,34 @@ test("consumer inspection preserves lifecycle files and resumes amended current 
       evidence: { "after-resume": { capabilities: ["test"] } }
     };
     writeFileSync(join(project, ".foundation/amendment.json"), JSON.stringify(amendment));
-    runtime("amend", "inspect-resume", join(project, ".foundation/amendment.json"));
+    runtime("amend", "inspect-resume", join(project, ".foundation/amendment.json"),
+      "--consume-amendment");
+    assert.throws(() => readFileSync(join(project, ".foundation/amendment.json")),
+      { code: "ENOENT" });
     assert.equal(JSON.parse(runtime("advance", "inspect-resume", "--through", "build")).boundary,
       "spec-approval-required");
     runtime("resolve", "inspect-resume", "--approve-spec", "--decision-ref", "fixture://user/amended-spec");
+    const targetTasksPath = join(project, "openspec/changes/inspect-resume/tasks.md");
+    const targetTasks = readFileSync(targetTasksPath, "utf8");
+    const amended = JSON.parse(runtime("packet", "inspect-resume", "--resume"));
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const continued = JSON.parse(runtime("advance", "inspect-resume", "--through", "build"));
+      assert.equal(continued.action, "EDIT", "Build resumes the isolated amendment");
+      const current = JSON.parse(runtime("packet", "inspect-resume", "--resume"));
+      assert.equal(current.contractRevision, amended.contractRevision);
+      assert.deepEqual(current.references, amended.references,
+        "preparation preserves amended packet bytes across process restarts");
+      assert.equal(readFileSync(targetTasksPath, "utf8"), targetTasks);
+    }
+    runtime("sandbox", "sync", "inspect-resume");
+    writeFileSync(targetTasksPath, `${targetTasks}\n`);
+    const conflict = JSON.parse(runtime("advance", "inspect-resume", "--through", "build"));
+    assert.equal(conflict.action, "ASK_USER");
+    assert.equal(conflict.decision.kind, "amended-agreement-conflict");
     assert.throws(() => runtime("sandbox", "sync", "inspect-resume"),
       /would overwrite the active amended agreement/);
+    runtime("sandbox", "sync", "inspect-resume", "--resolve", "openspec/changes/inspect-resume");
+    assert.equal(JSON.parse(runtime("advance", "inspect-resume", "--through", "build")).action, "EDIT");
     const after = JSON.parse(runtime("packet", "inspect-resume", "--resume"));
     assert.equal(after.pendingTaskCount, 2);
     assert.equal(after.frontier.count, 1);
@@ -316,7 +338,9 @@ test("review preparation stays internal and preserves actual preflight decisions
     const action = coordinatorAction({ ...base, proofPreflight: actual });
     assert.equal(action.action, "ASK_USER");
     assert.equal(action.owner, "user");
-    assert.deepEqual(action.decision, decision);
+    assert.deepEqual(action.decision, { ...decision, recommended: "pause", options: [
+      ...decision.options, { id: "pause", outcome: "Preserve the work and pause until a decision is made." }
+    ] });
   }
   let runs = 0;
   const requests = [];
@@ -524,7 +548,7 @@ test("advance preserves a proof decision returned by a quiet operation", async (
   const value = await runtime.advanceThrough("change-a", "proven");
   assert.equal(value.action, "ASK_USER");
   assert.equal(value.owner, "user");
-  assert.deepEqual(value.decision, decision);
+  assert.deepEqual(value.decision, { ...decision, recommended: "pause" });
   assert.deepEqual(value.user.decision.options, decision.options);
 });
 
@@ -533,7 +557,7 @@ test("an active proof lock becomes harness-owned working state", async () => {
   const { runtime } = fixture({
     runProof: async () => {
       calls += 1;
-      return { status: "IN_PROGRESS", owner: { pid: 42 } };
+      return { status: "IN_PROGRESS", owner: { pid: process.pid } };
     }
   });
   const value = await runtime.advanceThrough("change-a", "proven");
@@ -560,7 +584,7 @@ test("advance consumes a structured Land decision", async () => {
   const value = await runtime.advanceThrough("change-a", "archived");
   assert.equal(value.action, "ASK_USER");
   assert.equal(value.owner, "user");
-  assert.deepEqual(value.decision, decision);
+  assert.deepEqual(value.decision, { ...decision, recommended: "pause" });
 });
 
 test("Build never emits an empty edit packet", () => {
@@ -594,7 +618,7 @@ test("model budget decisions reach the coordinator before Build dispatch", () =>
     stableHash
   });
   assert.equal(value.action, "ASK_USER");
-  assert.deepEqual(value.decision, decision);
+  assert.deepEqual(value.decision, { ...decision, recommended: "pause" });
 });
 
 test("Build preparation is re-entered after a setup repair boundary", async () => {

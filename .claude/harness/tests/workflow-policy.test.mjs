@@ -200,6 +200,7 @@ try {
   let configuredReviewCalls = 0;
   let persistConfiguredResult = false;
   let interruptReceipt = false;
+  let interruptConfigured = false;
   let providerRepository = null;
   let receiptValidityResult = { validity: "valid" };
   const attemptStore = createReviewAttemptStore({
@@ -338,6 +339,7 @@ try {
     }),
     runConfiguredReview: (args) => {
       configuredReviewCalls += 1;
+      if (interruptConfigured) { interruptConfigured = false; throw new Error("controller interrupted"); }
       lastConfiguredReviewArgs = args;
       const configuredResult = configuredReviewResults[args.reviewer];
       if (configuredResult) return configuredResult;
@@ -617,6 +619,49 @@ try {
   assert.equal(state.reviewHistory.chainHead, savedAttemptDigest,
     "receipt recovery must not append another attempt");
   persistConfiguredResult = false;
+
+  // Exercise the coordinator handoff as well as the authority primitive. A
+  // status-only recovery command used to loop here despite a recoverable result.
+  for (const checkpointed of [false, true]) {
+    const id = checkpointed ? "advance-saved" : "advance-orphan";
+    state = { version: 2, changeId: id, status: "building", reviewHistory: null };
+    const request = quiet(() => authority.requestAuthority(id, { type: "review" }));
+    const flags = { request: request.requestId, "subject-actor": "human-implementer" };
+    persistConfiguredResult = checkpointed;
+    interruptReceipt = checkpointed;
+    interruptConfigured = !checkpointed;
+    const callsBefore = configuredReviewCalls;
+    assert.throws(() => quiet(() => authority.runAuthorityReviewer(id, flags)),
+      checkpointed ? /receipt interrupted/ : /controller interrupted/);
+    const entry = authorityStore.list(id).find((row) => row.value.requestId === request.requestId);
+    if (entry.value.configuredController) authorityStore.replace(entry, {
+      ...entry.value, configuredController: { ...entry.value.configuredController, pid: 2147483647 }
+    });
+    let proofs = 0;
+    const advance = createAdvanceRuntime({
+      loadRuntime: () => state, saveRuntime: (value) => { state = value; },
+      agentDispatchValue: () => ({ action: "build-complete" }),
+      relevantHash: () => workspaceHash, stableHash, deliveredAiAttempts: () => [],
+      authorityStatusValue: authority.authorityStatusValue,
+      readJson: () => ({}), proofAdvancePath: () => "unused",
+      runProof: () => { proofs++; state.status = "proven"; return { status: "PASS" }; },
+      nowMs: () => Date.parse(now())
+    });
+    const next = await advance.advanceThrough(id, "proven");
+    assert.equal(next.action, "RUN_EXTERNAL");
+    assert.equal(next.command, `claude-foundation authority run ${id} --request ${request.requestId} --subject-actor human-implementer`);
+    // Decode the concrete fixture's command exactly as the host does; all
+    // fixture arguments are simple tokens, with no shell expansion needed.
+    const args = next.command.split(" ").slice(4);
+    const resumedFlags = Object.fromEntries(Array.from({ length: args.length / 2 },
+      (_, index) => [args[index * 2].slice(2), args[index * 2 + 1]]));
+    quiet(() => authority.runAuthorityReviewer(id, resumedFlags));
+    assert.equal(configuredReviewCalls, callsBefore + (checkpointed ? 1 : 2));
+    assert.equal(authority.authorityStatusValue(id, request.requestId).requests[0].status, "completed");
+    assert.equal((await advance.advanceThrough(id, "proven")).reached, "proven");
+    assert.equal(proofs, 1);
+    persistConfiguredResult = false;
+  }
 
   state = { version: 2, changeId: "change-orphan", reviewHistory: null };
   const orphanRequest = quiet(() => authority.requestAuthority(

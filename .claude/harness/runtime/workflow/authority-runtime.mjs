@@ -1288,6 +1288,7 @@ export function createAuthorityRuntime({
         version: 1,
         pid: process.pid,
         reviewer: configured.identity,
+        subject,
         startedAt: now()
       }
     });

@@ -173,7 +173,7 @@ Wire-visible contracts are pinned in `.claude/harness/protocol.json`. A mixed-re
 | semantic amendment schema | 1 |
 | artifact defaults schema | 2 |
 | grounding schema | 1, 2, 3 |
-| advance protocol | 5 |
+| advance protocol | 6 |
 | provider protocol | 13 |
 | evidence schema | 1, 2 |
 | packet schema | 11 |

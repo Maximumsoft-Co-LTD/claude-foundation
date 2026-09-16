@@ -19,7 +19,7 @@
   "contextEventSchema": "2",
   "metricsSchema": "10",
   "dashboardSnapshotSchema": "3",
-  "advanceProtocol": "5",
+  "advanceProtocol": "6",
   "feedbackSchema": "4",
   "commandTelemetrySchema": "5",
   "reviewProtocol": "4",

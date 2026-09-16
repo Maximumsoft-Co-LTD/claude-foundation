@@ -337,11 +337,14 @@ export async function routeRuntimeCommand(command, values, api) {
     "advance": async () => {
       const { flags, rest } = parseStrictCommandFlags(values, "advance", {
         boolean: ["pretty", "inspect"],
-        value: ["host-result", "through"]
+        value: ["host-result", "through", "decision", "decision-fingerprint", "decision-ref", "reason"]
       });
       if (rest.length !== 1) die("advance requires exactly one change id");
-      if (flags.inspect && (flags.through || flags["host-result"]))
-        die("advance --inspect cannot be combined with through or host-result");
+      if (flags.inspect && (flags.through || flags["host-result"] || flags.decision ||
+          flags["decision-fingerprint"] || flags["decision-ref"] || flags.reason))
+        die("advance --inspect cannot be combined with through or host-result or decision flags");
+      if (!flags.decision && (flags["decision-fingerprint"] || flags["decision-ref"] || flags.reason))
+        die("advance decision metadata requires --decision");
       if (flags.through && !["build", "proven", "archived"].includes(flags.through))
         die("advance --through must be build|proven|archived");
       if (flags["host-result"])

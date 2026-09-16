@@ -587,7 +587,15 @@ export function createLandRuntime({
         .map((row) => `  ${row.id}: ${row.owner} (${row.environment}) — ${row.operation}; ${
           row.validity}/${row.status}, ${row.timing}/${row.activation}`)
         .join("\n");
-      fail(`WAITING_EXTERNAL ${id}\n${blocked}\n  next: claude-foundation handoff packet ${id}`);
+      fail(`WAITING_EXTERNAL ${id}\n${blocked}\n  next: claude-foundation handoff packet ${id}`, 1, {
+        owner: "external", boundary: "external-authority",
+        details: { wait: {
+          owner: [...new Set(externalOperations.operations.filter((row) => row.landBlocking)
+            .map((row) => row.owner))].join(", "),
+          condition: `Complete the required operations with valid evidence: ${externalOperations.blocking.join(", ")}`,
+          checkCommand: `claude-foundation handoff status ${id}`
+        } }
+      });
     }
     if (state.workspace?.applied) {
       const applied = verifyAppliedProjection(state);

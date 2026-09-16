@@ -8,7 +8,7 @@ agreement or proof that it was read. Follow truncated references to their
 source; resolve missing or contradictory material through the existing
 amendment/decision route. Preserve scope settled before this session.
 
-The protocol-v5 `advance` action is the current authority. Do not call lifecycle
+The protocol-v6 `advance` action is the current authority. Do not call lifecycle
 primitives unless its recovery explicitly names one. Update `tasks.md` only for
 the returned task after focused checks; the coordinator owns planning and phase
 transitions.

@@ -1,10 +1,15 @@
 import { reviewWindowRemaining, reviewWindowError, currentWaivers } from "../core/user-decisions.mjs";
 import { repairActionForWorkspace } from "../evidence/repair-runtime.mjs";
+import { isProcessAlive } from "../core/process-lock.mjs";
+import { shellDisplayArgument } from "../core/shell-mutation-policy.mjs";
 import {
   lifecycleOutcome, lifecycleUserProjection, lifecycleUserState
 } from "../core/lifecycle-outcome.mjs";
+import {
+  actionableGuidance, automaticRecoveryAction, createAdvanceRecovery
+} from "./advance-recovery.mjs";
 
-export const ADVANCE_PROTOCOL_VERSION = 5;
+export const ADVANCE_PROTOCOL_VERSION = 6;
 
 const command = (value) => `claude-foundation ${value}`;
 
@@ -16,7 +21,7 @@ function envelope(id, action, values = {}) {
     legacyAction = null, boundary = null, actor = "harness", reason = null,
     resumeCommand = resume(id), recoveryType = null, alternatives = [], ...rest
   } = values;
-  const value = lifecycleOutcome({
+  const value = lifecycleOutcome(actionableGuidance({
     protocol: ADVANCE_PROTOCOL_VERSION,
     version: ADVANCE_PROTOCOL_VERSION,
     action,
@@ -34,7 +39,7 @@ function envelope(id, action, values = {}) {
     resume: resumeCommand,
     // Kept for v2 host adapters during the protocol migration.
     resumeCommand
-  });
+  }));
   return {
     ...value,
     userState: lifecycleUserState(value),
@@ -86,6 +91,14 @@ function exactRecoveryCommand(message) {
 
 export function advanceFailureAction(id, error, { stage = "build", through = null } = {}) {
   const reason = error?.message || String(error);
+  const automatic = automaticRecoveryAction(id, error?.decision);
+  if (automatic) return envelope(id, "REPAIR", {
+    legacyAction: "RECOVER_SANDBOX_SYNC", actor: "harness",
+    boundary: "internal-recovery", reason,
+    automaticRecovery: automatic, decision: error.decision,
+    command: automatic.command, recoveryType: "AUTO_RECOVER",
+    resumeCommand: resume(id, through)
+  });
   if (error?.decision) return envelope(id, "ASK_USER", {
     legacyAction: "REQUEST_DECISION",
     actor: "user",
@@ -113,6 +126,7 @@ export function advanceFailureAction(id, error, { stage = "build", through = nul
     actor: "external-authority",
     boundary: error?.boundary || "external-authority",
     reason,
+    wait: error?.details?.wait || null,
     recoveryType: "PAUSE",
     alternatives: error?.details?.alternatives || [],
     resumeCommand: resume(id, through)
@@ -122,7 +136,7 @@ export function advanceFailureAction(id, error, { stage = "build", through = nul
     : command(`doctor --stage ${stage === "prove" ? "prove" : "build"} --change ${id}`);
   return envelope(id, "REPAIR", {
     legacyAction: `REPAIR_${stage.toUpperCase()}_RUNTIME`,
-    actor: error?.owner === "harness" ? "harness" : "agent",
+    actor: error?.owner === "agent" ? "agent" : "harness",
     boundary: error?.boundary || "resource",
     reason,
     details: error?.details || null,
@@ -133,10 +147,50 @@ export function advanceFailureAction(id, error, { stage = "build", through = nul
   });
 }
 
+function configuredReviewWait(id, request) {
+  const controller = request?.configuredController;
+  if (request?.status !== "dispatched" || (!controller && !request.configuredResult)) return null;
+  const live = isProcessAlive(Number(controller?.pid));
+  const subject = request.configuredResult?.subject || controller?.subject;
+  const subjectFlags = [
+    ["subject-actor", subject?.subjectActor],
+    ["subject-session", subject?.subjectSession],
+    ["subject-provider-family", subject?.subjectProvider],
+    ["subject-model-family", subject?.subjectFamily],
+    ["subject-model", subject?.subjectModel]
+  ].filter(([, value]) => value).map(([flag, value]) => `--${flag} ${shellDisplayArgument(value)}`);
+  // Old controller records did not retain provenance. The host must supply its
+  // original implementer identity, never silently downgrade an AI subject.
+  if (!subject?.subjectActor) subjectFlags.unshift("--subject-actor <original-implementer>");
+  return envelope(id, live ? "WAIT" : "RUN_EXTERNAL", {
+    actor: live ? "harness" : "configured-reviewer",
+    legacyAction: live ? "WAIT_CONFIGURED_REVIEW" : "RUN_CONFIGURED_REVIEW",
+    boundary: "resource",
+    reason: live ? "The authorized configured reviewer is still running."
+      : "Resume the stopped reviewer through bounded authority recovery; reuse a valid checkpoint before starting another attempt.",
+    requestId: request.requestId,
+    ...(!live && !subject?.subjectActor ? { requiredContext: "original implementation subject provenance" } : {}),
+    command: live ? command(`authority status ${id} --request ${request.requestId}`)
+      : command(`authority run ${id} --request ${request.requestId} ${subjectFlags.join(" ")}`),
+    wait: live ? { owner: controller.reviewer || "configured-reviewer",
+      condition: `Review request ${request.requestId} returns its verdict.`, pid: controller.pid } : null,
+    recoveryType: live ? "PAUSE" : "HANDOFF"
+  });
+}
+
 function proofOperationAction(id, result) {
   if (!result || typeof result !== "object") return null;
   if (result.action) return result;
+  if (result.decision && (result.status === "BLOCKED" || result.decision.automaticRecovery))
+    return advanceFailureAction(id, { message: result.decision.summary, decision: result.decision }, { stage: "prove" });
   if (["PASS", "READY"].includes(result.status) || result.completed === true) return null;
+  if (result.status === "IN_PROGRESS" && !isProcessAlive(Number(result.owner?.pid)) &&
+      !(result.owner?.state === "initializing" && Date.parse(result.owner.recoverableAfter) > Date.now()))
+    return envelope(id, "REPAIR", {
+      actor: "harness", legacyAction: "REPAIR_PROOF_LOCK", boundary: "internal-lock",
+      reason: "The reported proof worker is no longer live; inspect and recover its lock before resuming.",
+      command: command(`doctor --stage prove --change ${id}`), recoveryType: "RECONFIGURE"
+    });
   if (result.status === "IN_PROGRESS") return envelope(id, "WORKING", {
     legacyAction: "PROOF_IN_PROGRESS",
     actor: "harness",
@@ -161,6 +215,8 @@ function proofOperationAction(id, result) {
       alternatives: ["repair or switch the configured reviewer, then resume"]
     });
   if (result.status === "WAITING_EXTERNAL") {
+    const running = (result.requests || []).map((row) => configuredReviewWait(id, row)).find(Boolean);
+    if (running) return running;
     const review = (result.requests || []).find((request) =>
       request.type === "review" && request.status === "requested");
     const next = review && (result.next || []).find((row) =>
@@ -183,6 +239,7 @@ function proofOperationAction(id, result) {
       reason: result.next?.[0]?.reason || "required external evidence is pending",
       requests: result.requests || [],
       providers: result.providers || [],
+      wait: result.wait || null,
       next: result.next || [],
       recoveryType: "PAUSE",
       alternatives: (result.next || []).map((row) => row.reason).filter(Boolean)
@@ -227,6 +284,8 @@ function proofOperationAction(id, result) {
 function landOperationAction(id, result) {
   if (!result || typeof result !== "object") return null;
   if (result.action) return result;
+  if (result.decision?.automaticRecovery)
+    return advanceFailureAction(id, { message: result.decision.summary, decision: result.decision }, { stage: "land" });
   if (["ARCHIVED", "PASS"].includes(result.status) || result.archived === true) return null;
   if (result.status === "BLOCKED" && result.decision) return envelope(id, "ASK_USER", {
     legacyAction: "REQUEST_LAND_DECISION",
@@ -243,6 +302,7 @@ function landOperationAction(id, result) {
       actor: "external-authority",
       boundary: "external-authority",
       reason: result.reason || "an external delivery dependency is pending",
+      wait: result.wait || null,
       repositories: result.repositories || [],
       recoveryType: "PAUSE",
       alternatives: result.alternatives || []
@@ -326,7 +386,7 @@ function buildAction(id, dispatch, state, plan = null) {
 export function coordinatorAction({
   id, state, dispatch, workspaceHash, latestReview = null,
   proofCursor = {}, authorityRequests = [], stableHash, authorityActions = null,
-  proofPreflight = null, plan = null, budget = null
+  proofPreflight = null, plan = null, budget = null, proofIsCurrent = null
 }) {
   if (state.status === "archived") return envelope(id, "DONE", {
     legacyAction: "ARCHIVED", boundary: null, reason: "change is archived",
@@ -346,6 +406,14 @@ export function coordinatorAction({
 
   const pendingBuild = buildAction(id, dispatch, state, plan);
   if (pendingBuild) return pendingBuild;
+
+  if (["proven", "landing"].includes(state.status) && proofIsCurrent === false)
+    return envelope(id, "RUN_EXTERNAL", {
+      legacyAction: "RUN_INVALIDATED_EVIDENCE", actor: "harness",
+      reason: "The retained proof or required receipts are no longer current; refresh only invalidated evidence before delivery.",
+      command: command(`proof advance ${id}`), automatic: true,
+      recoveryType: "AUTO_RECOVER"
+    });
 
   // A successful proof supersedes earlier review failures. Without this
   // ordering, the last failed AI attempt could keep routing a proven change
@@ -370,6 +438,8 @@ export function coordinatorAction({
     ["requested", "dispatched", "pending", "infrastructure-exhausted"]
       .includes(request.status));
   if (open) {
+    const running = configuredReviewWait(id, open);
+    if (running) return running;
     const authorityAction = authorityActions?.find((entry) => entry.requestId === open.requestId);
     const authorityCommand = authorityAction?.command || null;
     // A requested review is executable only while the authority router still
@@ -500,6 +570,8 @@ export function createAdvanceRuntime({
   assertApproval = null,
   prepareBuild = null, runProof = null, runLand = null,
   recoverReviewBindings = null,
+  recoverWorkspace = null,
+  recoverSandbox = null, saveRuntime = () => {}, proofIsCurrent = null,
   authorizeLand = null,
   hasLandGrant = () => false,
   recordPhase = null, output = console.log,
@@ -507,6 +579,32 @@ export function createAdvanceRuntime({
   captureAsync = async (operation) => operation(),
   markBlocked = () => {}
 }) {
+  const recovery = createAdvanceRecovery({
+    loadRuntime, saveRuntime,
+    // Failure recovery may run after captureAsync has unwound. Keep runtime
+    // fail() calls throwable while reading the recovery binding there too.
+    subject: (id) => capture(() => convergenceFingerprint(id)),
+    now: () => new Date(nowMs()).toISOString()
+  });
+
+  function projected(value) {
+    const result = lifecycleOutcome(actionableGuidance(value));
+    return { ...result, userState: lifecycleUserState(result), user: lifecycleUserProjection(result) };
+  }
+
+  function pendingAction(id, through, pending) {
+    return envelope(id, pending.paused ? "WAIT" : "ASK_USER", {
+      legacyAction: pending.paused ? "PAUSED_BY_USER" : "NO_PROGRESS_BOUNDARY",
+      actor: pending.paused ? "harness" : "user",
+      boundary: pending.paused ? "user-paused" : "repeated-no-progress", decision: pending.decision,
+      ...(pending.paused ? { paused: true, wait: {
+        owner: "user", condition: "The user explicitly chooses to resume the preserved work."
+      } } : {}),
+      reason: pending.paused ? "Delivery is paused by the user; work and evidence are preserved."
+        : pending.decision.summary,
+      recoveryType: pending.paused ? "PAUSE" : "ASK_USER", resumeCommand: resume(id, through || pending.through)
+    });
+  }
   function readAdvanceValue(id, options = {}) {
     let stage = "build";
     try {
@@ -550,6 +648,8 @@ export function createAdvanceRuntime({
           proofPreflight,
           plan,
           budget,
+          proofIsCurrent: proofIsCurrent && ["proven", "landing"].includes(state.status)
+            ? proofIsCurrent(id) : null,
           authorityActions: authorityNext
             ? authorityNext(id, openRequests[0]?.type || "review", openRequests) : null,
           stableHash
@@ -574,7 +674,8 @@ export function createAdvanceRuntime({
   function reached(id, through) {
     const state = loadRuntime(id);
     if (state.status === "archived") return "archived";
-    if (through === "proven" && ["proven", "landing"].includes(state.status)) return "proven";
+    if (through === "proven" && ["proven", "landing"].includes(state.status) &&
+        (!proofIsCurrent || proofIsCurrent(id))) return "proven";
     return null;
   }
 
@@ -606,11 +707,14 @@ export function createAdvanceRuntime({
         landStatus: value.land?.status || null
       }]);
     return stableHash({
+      workspaceHash: relevantHash(id),
       state: {
         status: state.status,
-        revision: state.revision || 0,
         contractRevision: state.contractRevision || 0,
         executionRevision: state.executionRevision || 0,
+        approval: state.specApproval?.decisionRef || null,
+        reviewContinuation: state.reviewWindow?.decisionRef || null,
+        waivers: state.waivers || [],
         workspace: {
           mode: state.workspace?.mode || null,
           path: state.workspace?.path || null,
@@ -626,14 +730,12 @@ export function createAdvanceRuntime({
         stage: proof.stage || null,
         completed: proof.completed === true,
         workspaceHash: proof.workspaceHash || null,
-        proofRunId: proof.proofRunId || null,
         route: proof.route || null,
         requestIds: [...(proof.requestIds || [])].sort(),
         providers: [...(proof.providers || [])].sort(),
         subjectHash: proof.subjectHash || null,
         recoveryDecisionRef: proof.recoveryDecisionRef || null,
         progressFingerprint: proof.progressFingerprint || null,
-        repairCycle: Number(proof.repairCycle || 0),
         repairPlanDigest: proof.repairPlanDigest || null,
         next: (proof.next || []).map((row) => ({
           kind: row.kind || null, command: row.command || null
@@ -643,28 +745,46 @@ export function createAdvanceRuntime({
   }
 
   function noProgress(id, through) {
-    const decision = {
-      kind: "repair-no-progress",
-      summary: "The same authorized operation completed twice without changing delivery state",
-      options: [
-        { id: "revise", outcome: "revise the work or contract so the blocked result can change" },
-        { id: "land", outcome: "After inspecting remaining findings and the current diff, explicitly accept waivable evidence gaps and Land; conflicts and failed Apply still require recovery" },
-        { id: "pause", outcome: "preserve the current state and stop this delivery attempt" }
-      ],
-      recommended: "revise"
-    };
-    return envelope(id, "ASK_USER", {
-      legacyAction: "NO_PROGRESS_BOUNDARY", actor: "user",
-      boundary: "repeated-no-progress", decision,
-      reason: decision.summary,
-      recoveryType: "ASK_USER",
-      alternatives: decision.options.map((option) => option.outcome),
+    return projected(recovery.observe(id, envelope(id, "REPAIR", {
+      legacyAction: "NO_PROGRESS_BOUNDARY", actor: "harness",
+      boundary: "repeated-no-progress",
+      reason: "The same authorized operation completed twice without changing delivery state",
+      recoveryType: "RECONFIGURE",
       resumeCommand: resume(id, through)
-    });
+    }), { force: true }));
   }
 
   async function advanceThrough(id, through) {
     let stage = "build";
+    const finish = async (value) => {
+      value = projected({ ...value, resume: resume(id, through), resumeCommand: resume(id, through) });
+      try { value = projected(recovery.observe(id, value)); }
+      catch (error) {
+        // Recovery bookkeeping must not hide the original failure or turn a
+        // corrupt/missing runtime into an uncaught exception loop.
+        return envelope(id, "ASK_USER", {
+          actor: "user", boundary: "recovery-unavailable",
+          reason: `${value.reason}; recovery state could not be retained: ${error.message}`,
+          decision: { kind: "recovery-unavailable" },
+          recoveryType: "ASK_USER", resumeCommand: resume(id, through)
+        });
+      }
+      if (value.action === "REPAIR" && value.automaticRecovery?.kind === "sandbox-sync" && recoverSandbox) {
+        try {
+          const result = await captureAsync(() => recoverSandbox(id));
+          if (result?.conflicts?.length || result?.status === "CONFLICT")
+            return projected(recovery.observe(id, envelope(id, "REPAIR", {
+              actor: "agent", legacyAction: "REPAIR_SYNC_CONFLICT", boundary: "conflict",
+              reason: "Sandbox synchronization found conflicting changes; choose the intended result before merging.",
+              details: result, recoveryType: "EDIT", resumeCommand: resume(id, through)
+            }), { force: true }));
+          return advanceThrough(id, through);
+        } catch (error) {
+          return projected(recovery.observe(id, advanceFailureAction(id, error, { stage, through })));
+        }
+      }
+      return value;
+    };
     let recordedPhase = null;
     const recordActivePhase = (phase) => {
       if (phase && phase !== recordedPhase && recordPhase) {
@@ -676,8 +796,20 @@ export function createAdvanceRuntime({
       return await captureAsync(async () => {
         if (through && !["build", "proven", "archived"].includes(through))
           throw new Error("advance --through must be build|proven|archived");
-        const initial = loadRuntime(id);
+        let initial = loadRuntime(id);
+        if (initial.status === "archived") return done(id, "archived", through);
+        if (initial.workspace?.amendmentReplay && recoverWorkspace) {
+          if (initial.advanceRecovery?.pending?.paused)
+            return pendingAction(id, through, initial.advanceRecovery.pending);
+          // Approval belongs to the packet retained in replay staging. Restore
+          // verified bytes before checking it; never grant or refresh approval.
+          await recoverWorkspace(id);
+          initial = loadRuntime(id);
+        }
         assertApproval?.(id, initial, { workspace: false });
+        const pending = recovery.pending(id);
+        if (pending && (pending.paused || pending.decision.kind !== "external-dependency"))
+          return pendingAction(id, through, pending);
         // Preparation is identity-reused and also owns recovery of failed
         // sandbox setup. Re-enter it while Build is active so a prior setup
         // failure cannot be bypassed by the next coordinator invocation.
@@ -685,7 +817,7 @@ export function createAdvanceRuntime({
           recordActivePhase("build");
           await prepareBuild(id);
         }
-        if (!through) return advanceValue(id);
+        if (!through) return finish(readAdvanceValue(id));
         const targetResume = (value) => ({
           ...value,
           resume: resume(id, through),
@@ -695,12 +827,12 @@ export function createAdvanceRuntime({
         while (true) {
           const completed = reached(id, through);
           if (completed) return done(id, completed, through);
-          let value = advanceValue(id);
+          let value = readAdvanceValue(id);
           if (through !== "build" && value.legacyAction === "REPAIR_REVIEW_INFRASTRUCTURE" &&
               recoverReviewBindings) {
             stage = "prove";
             recordActivePhase("prove");
-            if (await recoverReviewBindings(id)) value = advanceValue(id);
+            if (await recoverReviewBindings(id)) value = readAdvanceValue(id);
           }
           if (through === "build" && ["RUN_PROOF", "LAND_READY"].includes(value.legacyAction)) {
             recordActivePhase("build");
@@ -711,28 +843,34 @@ export function createAdvanceRuntime({
           let operation = null;
           if (["RUN_PROOF", "RUN_INVALIDATED_EVIDENCE"].includes(value.legacyAction) &&
               ["proven", "archived"].includes(through)) {
-            if (!runProof) return targetResume(value);
+            if (!runProof) return finish(targetResume(value));
             stage = "prove";
             operation = runProof;
           } else if (value.legacyAction === "LAND_READY" && through === "archived") {
             // The explicit archived target authorizes Land only once the exact
             // proof is ready. Earlier phases and inspection grant nothing.
             if (!hasLandGrant(id) && authorizeLand) await authorizeLand(id);
-            if (!hasLandGrant(id)) return targetResume(value);
-            if (!runLand) return targetResume(value);
+            if (!hasLandGrant(id)) return finish(targetResume(value));
+            if (!runLand) return finish(targetResume(value));
             stage = "land";
             operation = runLand;
           }
-          if (!operation) return targetResume(value);
+          if (!operation) return finish(targetResume(value));
           const before = convergenceFingerprint(id);
           const operationResult = await operation(id);
+          // Archive may remove the sandbox and active agreement. Do not hash
+          // those retired paths after the authoritative lifecycle reached its
+          // target; the archived proof already retains its durable identity.
+          const completedAfterOperation = reached(id, through);
+          if (completedAfterOperation) return done(id, completedAfterOperation, through);
           // An operation is the authoritative source for its own boundary.
           // Consume it before consulting projections, otherwise quiet proof or
           // Land composition can discard a decision and repeat the operation.
           const boundaryResult = stage === "land"
             ? landOperationAction(id, operationResult)
             : proofOperationAction(id, operationResult);
-          if (boundaryResult) return targetResume(boundaryResult);
+          if (boundaryResult && boundaryResult.legacyAction !== "LAND_IN_PROGRESS")
+            return finish(targetResume(boundaryResult));
           const after = convergenceFingerprint(id);
           unchangedAutomations = before === after ? unchangedAutomations + 1 : 0;
           if (unchangedAutomations >= 2) return noProgress(id, through);
@@ -740,21 +878,33 @@ export function createAdvanceRuntime({
       });
     } catch (error) {
       markBlocked(error?.message || String(error));
-      return advanceFailureAction(id, error, { stage, through });
+      return finish(advanceFailureAction(id, error, { stage, through }));
     }
   }
 
   function advanceValue(id, options = {}) {
-    return options.inspect
-      ? inspectSnapshots(() => readAdvanceValue(id, options))
-      : readAdvanceValue(id, options);
+    const read = () => {
+      const value = readAdvanceValue(id, options);
+      try {
+        const pending = recovery.pending(id);
+        if (pending)
+          return pendingAction(id, null, pending);
+      } catch { /* The original diagnostic already describes unavailable state. */ }
+      return value;
+    };
+    return options.inspect ? inspectSnapshots(read) : read();
   }
 
   async function showAdvance(id, flags = {}) {
-    if (flags.inspect && flags.through)
+    if (flags.inspect && (flags.through || flags.decision || flags["decision-ref"] || flags["decision-fingerprint"] || flags.reason))
       throw new Error("advance --inspect cannot execute --through; inspect first, then advance");
+    let through = flags.through || null;
+    if (flags.decision) {
+      const answer = recovery.resolve(id, flags);
+      through ||= answer.through;
+    }
     const value = flags.inspect ? advanceValue(id, { inspect: true })
-      : await advanceThrough(id, flags.through || null);
+      : await advanceThrough(id, through);
     if (!flags.through && !flags.inspect &&
         process.env.FOUNDATION_READ_ONLY_INSPECTION !== "1") {
       const phase = phaseForAction(value);

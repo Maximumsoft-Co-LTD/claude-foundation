@@ -7,7 +7,7 @@ argument-hint: <intent> | --resume <change> | --plan-only <intent>
 
 For fresh work use `/change`; it compiles one semantic draft.
 Await spec approval. Then run
-`claude-foundation advance <id> --through proven`; execute each protocol-v5
+`claude-foundation advance <id> --through proven`; execute each protocol-v6
 action and `resume`. These are agent-only control fields. The coordinator skips
 completed Build work and reused evidence automatically. Do not reconstruct chains.
 

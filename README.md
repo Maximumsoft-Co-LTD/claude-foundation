@@ -673,6 +673,15 @@ resume route. Repeating `advance` on an unchanged wait does not rerun
 providers or dispatch another reviewer. Internal Build, Prove, and Land
 failures also return the same six-action envelope with the original reason;
 progressing chains are not stopped by an arbitrary cycle count.
+Automatic sandbox sync stays harness-owned. Repeated unchanged repair handoffs
+survive process restarts and ask for a decision with the cause, attempted work,
+options and a recommendation. External waiting is an explicit choice naming its
+owner and resume condition. The agent records retry/wait/pause answers and
+resumes the original target; users never assemble recovery commands. Changed wait
+owners or conditions require a new answer. Stopped reviewers reuse valid saved
+results through bounded recovery; interrupted replay restores its verified base
+and rechecks proof. See
+[recovery and user decisions](WORKFLOW.md#recovery-and-user-decisions).
 `proof collect`, direct authority commands, and `proof run` remain available for
 diagnosis and explicit integrations.
 
@@ -775,6 +784,9 @@ declared provider, claim, and input bindings remain exact; every ambiguous or
 affected provider is routed back through Prove.
 The result prints the exact `advance <change-id> --through proven` recovery
 command; a missing or stale receipt reruns only its provider.
+After approval, `advance` continues with the isolated amended packet until Land;
+base-move sync preserves it, while competing target agreement edits require an
+explicit resolution. See [the amendment contract](WORKFLOW.md).
 
 ## Multiple repositories
 

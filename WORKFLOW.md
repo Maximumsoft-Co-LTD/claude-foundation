@@ -155,6 +155,24 @@ follow its typed intake actions and source digest, then replace `--inspect` with
 `--consume-amendment` after `DONE`. The returned proof command is the exact
 post-amendment recovery route. The transaction validates and appends that delta
 to the compiled proposal.
+During Build, the amended packet stays in the isolated workspace until Land.
+After approval of that revision, `advance` resumes from this packet without
+importing the older target agreement. `sandbox sync` can replay code onto a moved
+base while preserving the amended packet, approval, and contract revision. The
+packet is copied and verified in staging before replacing the worktree; an
+interrupted replacement retains a verified recovery checkpoint. Restoring that
+checkpoint records the base already incorporated in staging, including when the
+target has moved again. The aggregate proof is invalidated separately; retained
+provider receipts and exact spec approval are rechecked, not silently renewed.
+
+If the target packet changed, Build and sync return an agreement conflict.
+The agent compares both packets and asks for the intended merge or retained
+agreement. After the isolated result is approved, record that resolution with
+`sandbox sync <change> --resolve openspec/changes/<change>`. This explicitly
+accepts the current target packet as the baseline that Land may replace; it does
+not copy the target over the amendment. Unknown or stale baselines are never
+silently refreshed, and later target edits still block Apply. Code conflicts
+continue to use their existing replay or copy-path resolution routes.
 Version-3 amendments keep their compatibility shape. The amendment transaction
 preserves an unaffected passing receipt only across one explicit revision when
 its declared provider, claims, and input fingerprints remain exact. Everything
@@ -181,7 +199,7 @@ claude-foundation advance <change> --through build
 ```
 
 The coordinator validates the agreement, prepares or synchronizes isolation,
-compiles the task graph, and returns one bounded protocol-v5 action:
+compiles the task graph, and returns one bounded protocol-v6 action:
 `EDIT`, `REPAIR`, `RUN_EXTERNAL`, `WAIT`, `ASK_USER`, or `DONE`.
 `tasks.md` is the only implementation ledger. `handoffs.yaml` separately owns
 AWS, cluster, secret, Terraform, deploy, restart, or other operations that need
@@ -587,7 +605,9 @@ Acknowledgements, terminal outcomes, tickets, and evidence references are
 optional operational records—never credentials. Archive means the code change
 was delivered, not that deployment, activation, or production verification ran.
 
-## Terminal stops
+<a id="terminal-stops"></a>
+
+## Recovery and user decisions
 
 Some guards end a run rather than returning another repair action: exhausted AI
 review waves, corrupt review history, a spent budget continuation, model budget
@@ -597,10 +617,53 @@ that could not complete.
 
 Each stop preserves the change and returns a decision envelope with a typed
 code, at least two honest options, a recommendation, and an exact resume route.
-When `automaticRecovery` is marked, `automaticRecovery` is performed and
-explained by the agent without opening a user interview. Other options are
+When `automaticRecovery` is marked, the known typed recovery is performed by
+the harness and explained by the agent without opening a user interview. The
+coordinator executes sandbox sync and resumes the original target; a conflicting
+sync preserves the work and asks for the intended resolution. Other options are
 translated into the user's language; the agent never treats a stop as a dead
 end or infers authority. Retiring with `change abandon` is offered where valid.
+
+Advance protocol 6 retains the existing actions and command routes. Recovery
+observations and answers live in `advanceRecovery` on the existing runtime
+record. Three unchanged repair handoffs across invocations request a decision;
+two unchanged internal automated transitions do likewise. New process sessions,
+proof run IDs, diagnostic wording, retry counters and bookkeeping revisions do not reset progress.
+Relevant content, agreement, execution policy or actual delivery changes do.
+Read-only inspection never counts as a repair attempt or records an answer.
+
+Every question offers concrete alternatives, a recommendation and pause, with
+the cause and retained repair observations. External waiting first asks whether
+to retry, wait for the named owner/condition, or pause. An explicit wait answer
+is reused only for the unchanged dependency, owner, condition and checking route.
+Live proof workers remain working;
+a dead worker returns to harness-owned diagnosis. Resumable internal Land
+checkpoints advance automatically while their state progresses.
+
+A stopped configured reviewer returns the existing `authority run` handoff,
+not a read-only status command. The agent executes that bounded recovery with the
+original implementation provenance and resumes Prove. A valid checkpoint is
+reused without another model call; absent results follow the existing attempt
+and infrastructure limits. Live reviewer controllers are never dispatched twice.
+
+The agent records an explicit recovery answer using the fingerprint returned
+with the decision:
+
+```bash
+claude-foundation advance <change> --decision retry|wait|pause \
+  --decision-fingerprint <hash> --decision-ref <user-answer> --reason <approach>
+```
+
+The answer retains the prior `--through` target. Retry records the chosen
+approach; wait is available only for an external dependency; pause preserves
+the work without running setup or providers again. A recorded pause projects
+`WAIT` with user state `PAUSED`, not another question or a claim of active work.
+Answers are content-bound,
+stale fingerprints are refused, and repeated identical references do not grant
+another retry allowance. Changed scope requires a new decision. These answers
+do not grant Land, waive evidence, extend a model/review budget, or authorize
+external side effects. Those decisions keep their existing explicit routes.
+Users supply decisions, never flags or runtime JSON.
 
 An unresolved apply transaction blocks a new one. `doctor --change <id>` reports
 it before Land and names the recovery operation.

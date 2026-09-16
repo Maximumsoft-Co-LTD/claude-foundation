@@ -10,6 +10,7 @@ import {
   createSandboxRuntime, recordSandboxBaseMove, reportSandboxSync,
   sandboxMovementLine, unusedCopyResolveMessage
 } from "../runtime/workflow/sandbox-runtime.mjs";
+import { agreementIdentity } from "../runtime/core/user-decisions.mjs";
 
 const digest = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
 const fail = (message) => { throw new Error(message); };
@@ -71,6 +72,8 @@ function syncFixture(id = "sync-copy", { unchanged = false, hashChanged = false 
   let hashReads = 0;
   let repositoryScope = { source: [], destination: [] };
   let saves = 0;
+  let sourceHash = "source-hash";
+  let onHash = () => {};
   const manifestReads = [];
   const runtime = createSandboxRuntime({
     root,
@@ -81,7 +84,7 @@ function syncFixture(id = "sync-copy", { unchanged = false, hashChanged = false 
       manifestReads.push(path);
       return path === root ? targetManifest : sandboxManifest;
     },
-    directoryHash: () => "source-hash",
+    directoryHash: () => sourceHash,
     fileDigest: digest,
     changePath: () => source,
     selectedRepositories: () => [],
@@ -96,13 +99,18 @@ function syncFixture(id = "sync-copy", { unchanged = false, hashChanged = false 
     taskBlocks: (text) => text.includes("[x]")
       ? [{ id: "T001", text: "T001 keep progress", done: true }] : [],
     proofPath: () => proof,
-    relevantHash: () => hashChanged && hashReads++ > 0 ? "changed-hash" : "relevant-hash",
+    relevantHash: () => {
+      onHash();
+      return hashChanged && hashReads++ > 0 ? "changed-hash" : "relevant-hash";
+    },
     now: () => "2026-08-26T00:00:00.000Z",
     fail
   });
   return {
     root, sandbox, source, destination, state, runtime, manifestReads,
     setRepositoryScope(value) { repositoryScope = value; },
+    setSourceHash(value) { sourceHash = value; },
+    onHash(callback) { onHash = callback; },
     saves: () => saves
   };
 }
@@ -153,6 +161,129 @@ test("Build preparation imports amended tasks and preserves completed work", () 
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });
   }
+});
+
+test("Build and copy sync preserve current and repeated sandbox amendments", () => {
+  const fixture = syncFixture("isolated-amendment", { unchanged: true });
+  try {
+    fixture.state.status = "building";
+    fixture.state.contractRevision = 1;
+    fixture.state.amendments = [{ revision: 1 }];
+    fixture.state.workspace.changeSourceHash = "source-hash";
+    fixture.state.workspace.packetSnapshot = {
+      "proposal.md": digest(join(fixture.source, "proposal.md"))
+    };
+    write(join(fixture.destination, "proposal.md"), "amended sandbox proposal\n");
+    write(join(fixture.destination, "tasks.md"),
+      "- [x] T001 keep progress\n- [ ] T002 amended requirement\n");
+    const before = structuredClone(fixture.state);
+    for (let attempt = 0; attempt < 2; attempt++)
+      capture(() => fixture.runtime.prepareBuild("isolated-amendment"));
+    assert.equal(readFileSync(join(fixture.destination, "proposal.md"), "utf8"),
+      "amended sandbox proposal\n");
+    assert.match(readFileSync(join(fixture.destination, "tasks.md"), "utf8"),
+      /\[x\] T001 keep progress\n- \[ \] T002 amended requirement/);
+    assert.equal(readFileSync(join(fixture.source, "proposal.md"), "utf8"),
+      "target proposal\n");
+    assert.deepEqual(fixture.state, before);
+    assert.equal(fixture.saves(), 0);
+    capture(() => fixture.runtime.sync("isolated-amendment"));
+    assert.equal(readFileSync(join(fixture.destination, "proposal.md"), "utf8"),
+      "amended sandbox proposal\n");
+    assert.equal(fixture.state.contractRevision, 1);
+    fixture.state.contractRevision = 2;
+    fixture.state.amendments.push({ revision: 2 });
+    write(join(fixture.destination, "proposal.md"), "second sandbox amendment\n");
+    capture(() => fixture.runtime.prepareBuild("isolated-amendment"));
+    capture(() => fixture.runtime.sync("isolated-amendment"));
+    assert.equal(readFileSync(join(fixture.destination, "proposal.md"), "utf8"),
+      "second sandbox amendment\n");
+    fixture.state.contractRevision = 3;
+    fixture.state.workspace.changeSourceHash = "previous-agreement";
+    assert.throws(() => fixture.runtime.prepareBuild("isolated-amendment"),
+      /sandbox packet edits would be lost/,
+      "historical amendments must still pass normal packet preservation guards");
+  } finally { rmSync(fixture.root, { recursive: true, force: true }); }
+});
+
+test("amended target divergence requires an explicit approved packet resolution", () => {
+  const fixture = syncFixture("target-conflict", { unchanged: true });
+  try {
+    fixture.state.status = "building";
+    fixture.state.contractRevision = 1;
+    fixture.state.amendments = [{ revision: 1 }];
+    fixture.state.workspace.changeSourceHash = "original-target";
+    write(join(fixture.destination, "proposal.md"), "amended sandbox proposal\n");
+    fixture.state.specApproval = { required: true, revision: 1,
+      identity: agreementIdentity(fixture.sandbox, "target-conflict") };
+    const before = structuredClone(fixture.state);
+    const conflicts = (error) => error.code === "AMENDED_AGREEMENT_CONFLICT" &&
+      error.decision.options.some((option) => option.command?.includes(
+        "--resolve openspec/changes/target-conflict"));
+    assert.throws(() => fixture.runtime.prepareBuild("target-conflict"), conflicts);
+    assert.throws(() => fixture.runtime.sync("target-conflict"), conflicts);
+    assert.throws(() => fixture.runtime.sync("target-conflict", { resolve: "proposal.md" }), conflicts);
+    assert.deepEqual(fixture.state, before);
+    write(join(fixture.destination, "proposal.md"), "approved merged agreement\n");
+    const flags = { resolve: "openspec/changes/target-conflict" };
+    assert.throws(() => fixture.runtime.sync("target-conflict", flags),
+      (error) => error.code === "SPEC_APPROVAL_REQUIRED");
+    fixture.state.specApproval.identity = agreementIdentity(fixture.sandbox, "target-conflict");
+    capture(() => fixture.runtime.sync("target-conflict", flags));
+    assert.equal(fixture.state.workspace.changeSourceHash, "source-hash");
+    assert.equal(fixture.state.contractRevision, 1);
+    assert.equal(readFileSync(join(fixture.destination, "proposal.md"), "utf8"),
+      "approved merged agreement\n");
+    assert.equal(readFileSync(join(fixture.source, "proposal.md"), "utf8"), "target proposal\n");
+  } finally { rmSync(fixture.root, { recursive: true, force: true }); }
+});
+
+test("amended copy sync retains the packet through code conflict resolution", () => {
+  const fixture = syncFixture("amended-copy-conflict");
+  try {
+    fixture.state.status = "building";
+    fixture.state.contractRevision = 1;
+    fixture.state.amendments = [{ revision: 1 }];
+    fixture.state.workspace.changeSourceHash = "source-hash";
+    write(join(fixture.destination, "proposal.md"), "isolated amendment\n");
+    const first = capture(() => fixture.runtime.sync("amended-copy-conflict",
+      { resolve: "resolved.txt" })).value;
+    assert.equal(first.status, "CONFLICT");
+    assert.deepEqual(first.conflicts, ["conflict.txt"]);
+    assert.equal(readFileSync(join(fixture.destination, "proposal.md"), "utf8"),
+      "isolated amendment\n");
+    assert.equal(readFileSync(join(fixture.sandbox, "forward.txt"), "utf8"), "target-new\n");
+    assert.equal(fixture.state.workspace.baseline["conflict.txt"], "old");
+    const second = capture(() => fixture.runtime.sync("amended-copy-conflict",
+      { resolve: "conflict.txt" })).value;
+    assert.equal(second.status, "SYNCED");
+    assert.equal(fixture.state.workspace.baseline["conflict.txt"], "new");
+    assert.equal(fixture.state.contractRevision, 1);
+    assert.equal(readFileSync(join(fixture.destination, "proposal.md"), "utf8"),
+      "isolated amendment\n");
+  } finally { rmSync(fixture.root, { recursive: true, force: true }); }
+});
+
+test("target packet edits during amended sync cannot be acknowledged implicitly", () => {
+  const fixture = syncFixture("concurrent-target", { unchanged: true });
+  try {
+    fixture.state.status = "building";
+    fixture.state.contractRevision = 1;
+    fixture.state.amendments = [{ revision: 1 }];
+    fixture.state.workspace.changeSourceHash = "source-hash";
+    write(join(fixture.destination, "proposal.md"), "isolated amendment\n");
+    fixture.onHash(() => {
+      write(join(fixture.source, "proposal.md"), "concurrent target edit\n");
+      fixture.setSourceHash("concurrent-target-hash");
+    });
+    assert.throws(() => fixture.runtime.sync("concurrent-target"), /target agreement changed during/);
+    assert.equal(fixture.state.workspace.changeSourceHash, "source-hash");
+    assert.equal(fixture.saves(), 0);
+    assert.equal(readFileSync(join(fixture.destination, "proposal.md"), "utf8"), "isolated amendment\n");
+    assert.equal(readFileSync(join(fixture.source, "proposal.md"), "utf8"), "concurrent target edit\n");
+    assert.throws(() => fixture.runtime.sync("concurrent-target"),
+      (error) => error.code === "AMENDED_AGREEMENT_CONFLICT");
+  } finally { rmSync(fixture.root, { recursive: true, force: true }); }
 });
 
 test("repeated no-op sync preserves proof bytes and proven state", () => {

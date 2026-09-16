@@ -641,6 +641,15 @@ change เดิมและคืนทางเลือกพร้อมค�
 Build, Prove และ Land จะคืน six-action envelope เดิมพร้อมสาเหตุจริง และ chain ที่ยัง
 มี progress จะไม่ถูกหยุดด้วยจำนวนรอบตายตัว
 
+Harness ทำ sandbox sync อัตโนมัติเอง การส่งงานซ่อมเดิมซ้ำโดยไม่คืบหน้าจะถูกเก็บ
+ข้าม process และกลับมาถามผู้ใช้พร้อมสาเหตุ สิ่งที่ลองแล้ว ทางเลือกและคำแนะนำ
+การรอภายนอกต้องเป็นทางเลือกที่ระบุเจ้าของและเงื่อนไขกลับมาทำต่อ Agent บันทึก
+คำตอบ retry/wait/pause แล้ว resume เป้าหมายเดิม ผู้ใช้ไม่ต้องประกอบคำสั่ง recovery
+เมื่อเจ้าของหรือเงื่อนไขการรอเปลี่ยน ต้องขอคำตอบใหม่ Reviewer ที่หยุดทำงานจะใช้ผล
+ที่บันทึกไว้และยัง valid ผ่าน bounded recovery ส่วน replay ที่ขัดจังหวะจะกู้ base
+ที่ตรวจสอบแล้วและตรวจ proof ใหม่
+ดู [การกู้คืนและการตัดสินใจ](WORKFLOW.md#recovery-and-user-decisions)
+
 `claude-foundation advance <change-id>` จะเลือก next action ที่มีขอบเขตชัดเจน
 เพียงหนึ่งรายการตลอด Build, Prove, repair และ Land โดย host ยังเป็นผู้เรียก model
 และ user ยังถือ authority สำหรับ commit, push, publish, เปิด PR และ waiver
@@ -747,6 +756,9 @@ delta ที่ผ่าน validation จะอยู่ใน compiled proposa
 ที่ affected หรือคลุมเครือต้องกลับไปผ่าน Prove
 ผลลัพธ์จะแสดงคำสั่ง recovery `advance <change-id> --through proven` ที่แน่นอน
 โดย receipt ที่ขาดหรือ stale จะทำให้ rerun เฉพาะ provider นั้น
+หลังอนุมัติ `advance` จะทำงานต่อจาก packet ที่แก้ไขใน sandbox จนถึง Land
+การ sync เมื่อ base ขยับจะรักษา packet นี้ไว้ ส่วน agreement ใน target ที่ถูกแก้
+พร้อมกันต้อง resolve อย่างชัดเจน ดู [ข้อกำหนด amendment](WORKFLOW.md)
 
 ## การใช้หลาย Repository
 

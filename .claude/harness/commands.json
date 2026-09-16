@@ -43,7 +43,7 @@
     },
     {
       "name": "advance",
-      "usage": "advance <change> [--through build|proven|archived] [--host-result <result.json>] [--inspect] [--pretty]",
+      "usage": "advance <change> [--through build|proven|archived] [--host-result <result.json>] [--decision retry|wait|pause --decision-fingerprint <hash> --decision-ref <ref> --reason <approach>] [--inspect] [--pretty]",
       "audience": "host",
       "kind": "write",
       "idempotent": true,

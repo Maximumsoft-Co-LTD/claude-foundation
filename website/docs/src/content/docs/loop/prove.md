@@ -20,10 +20,18 @@ returns `DONE` only when the requested `proven` target is reached.
 
 Failed evidence returns one `REPAIR` or `EDIT` batch with the invalidated claim
 closure. After a fix, only invalidated/downstream checks rerun. A configured
-review is `RUN_EXTERNAL`; a pending human or remote system is `WAIT`; a material
+review is `RUN_EXTERNAL`; an explicitly chosen external wait is `WAIT`; a material
 contract or acceptance decision is `ASK_USER`. Each boundary preserves state
 and gives one exact resume route. Repeating an unchanged wait does not poll,
 rerun evidence, or spend another model request.
+
+Recovery observations survive process restarts. Three unchanged repair handoffs
+ask how to proceed, with the cause, attempted work, alternatives and a
+recommendation. The agent records an explicit retry/wait/pause answer with
+`advance --decision`, the returned fingerprint, a decision reference and reason.
+The harness resumes the original target and reuses the answer while its scope is
+unchanged. Waiting names the owner and condition; pausing does not run setup or
+providers. A retry grants no waiver, extra budget, or Land authority.
 
 The harness never fabricates evidence, converts unavailable measurements to
 zero/pass, or lets review prose replace a missing behavioral result. Prototype

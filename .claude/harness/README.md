@@ -48,7 +48,7 @@ Each requires a real `--decision-ref`. Review dispatches share a persisted
 Every phase view is derived from one versioned execution contract. Semantic
 draft v4 validates risk-derived discovery coverage and decision prerequisites,
 then compiles meaningful keys into stable cross-ledger IDs and writes only
-the OpenSpec artifacts the change needs. After Change, protocol-v5 `advance`
+the OpenSpec artifacts the change needs. After Change, protocol-v6 `advance`
 is the normal model-facing entrypoint; primitive commands remain compatible
 operator and integration tools. It compiles
 risk, required providers, external authority, workspace mutation capability,
@@ -119,7 +119,7 @@ read-only argument.
 | Workflow | `runtime/workflow/validation/amendment-invalidation.mjs` | Selective claim, task, provider, approval, and proof invalidation planning |
 | Workflow | `runtime/workflow/validation/selective-proof-plan.mjs` | Fail-closed receipt preservation and exact post-amendment proof recovery |
 | Workflow | `runtime/workflow/semantic-amendment.mjs` | Transactional Build-time agreement amendments that preserve canonical prose and completed work |
-| Workflow | `runtime/workflow/advance-runtime.mjs` | Protocol-v5 deterministic chaining, owner outcomes, and safe user projection |
+| Workflow | `runtime/workflow/advance-runtime.mjs` | Protocol-v6 deterministic chaining, durable recovery decisions, owner outcomes, and safe user projection |
 | Workflow | `runtime/workflow/change-validation.mjs` | Traceability, change validation, and provider requirements |
 | Workflow | `runtime/workflow/land-journal.mjs` | Atomic apply identity, journal, rollback, verification, and cleanup |
 | Workflow | `runtime/workflow/land-runtime.mjs` | Multi-repository Land readiness, planning, pointers, and resume saga |
@@ -236,6 +236,7 @@ claude-foundation doctor --stage prove --change <change>
 | `agents plan <change> [--group <n>] [--pretty]` | Persists the full plan and prints a ≤4 KiB summary or one dispatch group | Before spawning independent workers |
 | `agents dispatch <change> [--pretty]` | Returns one graph- and lease-bound native-host action | Advanced host integration behind `advance` |
 | `advance <change> [--through build\|proven\|archived] [--host-result <result.json>] [--pretty]` | Runs deterministic lifecycle work and returns one minimal action at a real boundary | Normal post-Change agent path |
+| `advance <change> --decision retry\|wait\|pause --decision-fingerprint <hash> --decision-ref <ref> --reason <approach>` | Records the user's current recovery choice and resumes its retained target; grants no unrelated authority | Agent records an explicit answer |
 | `doctor` | Checks runtime and project readiness | After install or when diagnosing setup |
 | `changes` | Lists active changes and readiness | Finding work to resume or land |
 | `packet <change> --phase <phase>` | Prints a compact diagnostic handoff; review packets are ≤8 KiB | Operator/debug inspection |
@@ -531,6 +532,10 @@ Packet artifacts are the other direction: their source of truth is
 `openspec/changes/<change>/` in the target, so a packet file edited only in
 the sandbox blocks the sync until the edit is ported there — only `tasks.md`
 ticks merge back automatically.
+Harness-owned semantic amendments stay in the sandbox until Land. Build
+preparation and base-move sync preserve them. Competing target packet edits
+require an approved resolution via `--resolve openspec/changes/<change>`;
+see the Build-time amendment contract in `WORKFLOW.md`.
 
 ### 3. Prove the claims
 

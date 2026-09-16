@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { createStateRuntime } from "../runtime/core/state-runtime.mjs";
 import {
   assertReadOnlyReplayClean,
+  commitSandboxReplay,
+  createSandboxRuntime,
   manuallyRebasedMovement,
   prepareWorktreeReplay,
+  preserveReplayPacket,
+  recoverAmendedReplay,
   rejectedPaths,
   replayContext,
   replayStagingCleanup,
@@ -12,6 +21,143 @@ import {
 
 const fail = (message) => { throw new Error(message); };
 const ok = { status: 0, stdout: "", stderr: "" };
+
+test("recovered amendment replay uses B, not A, when the target advances again to C", () => {
+  for (const recoveryPoint of ["staged", "moved", "newer-agent-commit"]) {
+    const root = mkdtempSync(join(tmpdir(), "amended-replay-base-"));
+    const target = join(root, "target");
+    const sandbox = join(root, "sandbox");
+    const staging = `${sandbox}.rebase`;
+    const packet = "openspec/changes/amended";
+    const { directoryHash } = createStateRuntime({});
+    const git = (args, cwd = target) => spawnSync("git", args, { cwd, encoding: "utf8" });
+    const checked = (args, cwd = target) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+    const gitHead = (path) => checked(["rev-parse", "HEAD"], path);
+    try {
+      mkdirSync(target);
+      checked(["init", "-q"]);
+      checked(["config", "user.name", "Replay Test"]);
+      checked(["config", "user.email", "replay@example.invalid"]);
+      writeFileSync(join(target, "app.txt"), "original\n");
+      writeFileSync(join(target, "upstream.txt"), "A\n");
+      checked(["add", "."]); checked(["commit", "-qm", "A"]);
+      const baseA = gitHead(target);
+      writeFileSync(join(target, "upstream.txt"), "B\n");
+      checked(["commit", "-qam", "B"]);
+      const baseB = gitHead(target);
+      checked(["worktree", "add", "--detach", staging, baseB]);
+      writeFileSync(join(staging, "app.txt"), "product edit\n");
+      mkdirSync(join(staging, packet), { recursive: true });
+      writeFileSync(join(staging, packet, "proposal.md"), "approved amendment\n");
+      const packetHash = directoryHash(join(staging, packet));
+      let expectedProduct = "product edit\n";
+      if (recoveryPoint !== "staged") checked(["worktree", "move", staging, sandbox]);
+      if (recoveryPoint === "newer-agent-commit") {
+        expectedProduct = "product edit plus later agent work\n";
+        writeFileSync(join(sandbox, "app.txt"), expectedProduct);
+        checked(["add", "."], sandbox); checked(["commit", "-qm", "retain later work"], sandbox);
+      }
+      writeFileSync(join(target, "upstream.txt"), "C\n");
+      checked(["commit", "-qam", "C"]);
+      const state = { status: "proven", workspace: { mode: "worktree", path: sandbox, baseHead: baseA,
+        amendmentReplay: { from: baseA, to: baseB, packetHash } },
+        specApproval: { identity: "approved-packet", revision: 1 }, lastBaseMove: { movementKey: "old" },
+        repositories: { root: { mode: "worktree", path: sandbox, baseHead: baseA, access: "write" } } };
+      const proof = join(root, "proof.json");
+      const receipt = join(root, "receipt.json");
+      writeFileSync(proof, "old aggregate proof\n"); writeFileSync(receipt, "retained provider evidence\n");
+      let invalidations = 0;
+      const runtime = createSandboxRuntime({ root: target, git, gitHead,
+        directoryHash, fail, loadRuntime: () => state, saveRuntime: () => {}, proofPath: () => proof,
+        clearSnapshotCache: () => { invalidations++; } });
+      runtime.recoverReplay("amended");
+      assert.equal(state.workspace.baseHead, baseB);
+      assert.equal(state.repositories.root.baseHead, baseB);
+      assert.equal(invalidations, 1);
+      assert.equal(state.status, "building");
+      assert.equal(existsSync(proof), false);
+      assert.equal(readFileSync(receipt, "utf8"), "retained provider evidence\n");
+      assert.deepEqual(state.specApproval, { identity: "approved-packet", revision: 1 });
+      assert.equal(state.lastBaseMove, undefined);
+      const replay = prepareWorktreeReplay({ id: "amended", state,
+        candidate: { repository: "root", record: state.repositories.root, targetPath: target },
+        git, gitHead, selectedRepositories: () => [], fail,
+        gitBuffer: (args, cwd) => spawnSync("git", args, { cwd }) });
+      assert.deepEqual(replay.movement.conflicts, []);
+      assert.equal(readFileSync(join(replay.staging, "upstream.txt"), "utf8"), "C\n");
+      assert.equal(readFileSync(join(replay.staging, "app.txt"), "utf8"), expectedProduct);
+      assert.equal(directoryHash(join(sandbox, packet)), packetHash);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }
+});
+
+test("amended replay retains a verified packet across replacement failures", () => {
+  const root = mkdtempSync(join(tmpdir(), "amended-replay-"));
+  const { directoryHash } = createStateRuntime({});
+  try {
+    const original = join(root, "sandbox");
+    const staging = join(root, "sandbox.rebase");
+    const packet = "openspec/changes/amended";
+    mkdirSync(join(original, packet), { recursive: true });
+    mkdirSync(join(staging, packet), { recursive: true });
+    writeFileSync(join(original, packet, "proposal.md"), "amended agreement\n");
+    writeFileSync(join(original, packet, "tasks.md"), "- [x] T001 completed\n");
+    writeFileSync(join(staging, packet, "obsolete.md"), "old target artifact\n");
+    const prepared = { record: { path: original, baseHead: "old" }, staging,
+      movement: { repository: "root", to: "new" }, targetPath: root, patch: "retained.patch" };
+    assert.throws(() => preserveReplayPacket("amended", prepared,
+      (path) => path.startsWith(staging) ? "incorrect-copy" : directoryHash(path)),
+    /amended packet changed/);
+    assert.equal(readFileSync(join(original, packet, "proposal.md"), "utf8"), "amended agreement\n");
+    preserveReplayPacket("amended", prepared, directoryHash);
+    const expected = directoryHash(join(original, packet));
+    assert.equal(directoryHash(join(staging, packet)), expected);
+    assert.equal(existsSync(join(staging, packet, "obsolete.md")), false);
+    const state = { workspace: { baseHead: "old" } };
+    let failure = "remove";
+    const context = { fail, directoryHash, carryIgnoredArtifacts: () => {}, selectedRepositories: () => [],
+      git: (args) => {
+        if (args[1] === failure) return { status: 1, stderr: "injected failure" };
+        if (args[1] === "remove") rmSync(original, { recursive: true });
+        if (args[1] === "move") renameSync(staging, original);
+        return ok;
+      } };
+    assert.throws(() => commitSandboxReplay(context, "amended", state, prepared), /cannot replace/);
+    assert.equal(directoryHash(join(original, packet)), expected);
+    failure = "move";
+    assert.throws(() => commitSandboxReplay(context, "amended", state, prepared), /replacement could not be moved/);
+    assert.equal(existsSync(original), false);
+    assert.equal(directoryHash(join(staging, packet)), expected);
+    assert.equal(state.workspace.baseHead, "old");
+    assert.equal(prepared.record.baseHead, "old");
+    state.workspace = { mode: "worktree", path: original, baseHead: "old",
+      amendmentReplay: { from: "old", to: "new", packetHash: expected } };
+    let saves = 0;
+    const recovery = { root, fail, directoryHash, pathExists: existsSync,
+      ownsWorktree: () => true, gitHead: () => "new",
+      git: () => { renameSync(staging, original); return ok; },
+      saveRuntime: () => { saves++; } };
+    assert.throws(() => recoverAmendedReplay({ ...recovery, ownsWorktree: () => false },
+      "amended", state), /cannot be verified/);
+    assert.equal(recoverAmendedReplay(recovery, "amended", state), true);
+    assert.equal(directoryHash(join(original, packet)), expected);
+    assert.equal(state.workspace.baseHead, "new", "the restored replay must use its verified base");
+    assert.equal(state.workspace.amendmentReplay, undefined);
+    assert.equal(saves, 1);
+    assert.equal(recoverAmendedReplay(recovery, "amended", state), false);
+    mkdirSync(staging);
+    preserveReplayPacket("amended", prepared, directoryHash);
+    writeFileSync(join(original, packet, "proposal.md"), "newer amendment\n");
+    assert.throws(() => commitSandboxReplay(context, "amended", state, prepared),
+      /amended packet changed before sandbox replay/);
+    assert.equal(readFileSync(join(original, packet, "proposal.md"), "utf8"), "newer amendment\n");
+    state.workspace.amendmentReplay = { from: "old", to: "new", packetHash: expected };
+    assert.equal(recoverAmendedReplay({ ...recovery, gitHead: () => "newer-agent-commit", git: () => ok },
+      "amended", state), false);
+    assert.equal(state.workspace.amendmentReplay, undefined);
+    assert.equal(readFileSync(join(original, packet, "proposal.md"), "utf8"), "newer amendment\n");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 test("rejectedPaths prefers genuine merge conflicts and sorts patch failures", () => {
   assert.deepEqual(rejectedPaths("U z.js\nU a.js\nerror: patch failed: ignored.js:1"),

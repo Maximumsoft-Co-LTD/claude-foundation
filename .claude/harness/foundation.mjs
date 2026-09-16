@@ -57,6 +57,7 @@ import {
   ADVANCE_PROTOCOL_VERSION, createAdvanceRuntime, hasValidLandGrant,
   prepareAdvanceBuild, runAdvanceProof
 } from "./runtime/workflow/advance-runtime.mjs";
+import { currentDeliveryProof } from "./runtime/workflow/advance-recovery.mjs";
 import { createSandboxRuntime } from "./runtime/workflow/sandbox-runtime.mjs";
 import { createSandboxCleanup } from "./runtime/workflow/sandbox-cleanup.mjs";
 import {
@@ -1871,6 +1872,12 @@ const { advanceValue, showAdvance } = createAdvanceRuntime({
   captureAsync: trapFailuresAsync,
   markBlocked,
   loadRuntime,
+  saveRuntime,
+  recoverSandbox: (id) => runAdvanceQuietly(() => syncSandbox(id)),
+  recoverWorkspace: (id) => runAdvanceQuietly(() => sandboxRuntime.recoverReplay(id)),
+  proofIsCurrent: currentDeliveryProof.bind(null, {
+    proofAudit, relevantHash, requiredProviders, receiptValidity, receiptPath, fileDigest
+  }),
   agentDispatchValue,
   agentPlanValue,
   relevantHash,

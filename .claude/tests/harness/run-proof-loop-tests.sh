@@ -88,6 +88,12 @@ draft() {
     exit 1
   fi
   node .claude/harness/foundation.mjs resolve "$change_id" --approve-spec --decision-ref fixture://user/spec >> start.log 2>&1
+  if [ "${5:-}" = worktree ]; then
+    # Fixture-only intake outputs must be in the base before isolation; an
+    # evolving untracked start.log otherwise selects copy isolation.
+    git add draft.json start.log
+    git commit -qm 'record fixture intake outputs before worktree isolation'
+  fi
   node .claude/harness/foundation.mjs advance "$change_id" --through build >> start.log 2>&1
 }
 
@@ -178,7 +184,7 @@ assert_contains "changing the diff expires the review waiver" "$stale_waiver" 'w
 # declared-input receipt, reruns the affected provider through advance, and
 # leaves a durable rebind audit.
 setup_project amendment-selective
-draft "Selective amendment" "test-results/report.json" "" 1
+draft "Selective amendment" "test-results/report.json" "" 1 worktree
 implement selective-amendment
 node .claude/harness/foundation.mjs proof-collect selective-amendment >/dev/null
 lint_before="$(shasum .foundation/receipts/selective-amendment/lint.json)"
@@ -240,6 +246,35 @@ assert_eq "authority pause does not spend the affected test receipt" "$test_befo
   "$(shasum .foundation/receipts/selective-amendment/test.json)"
 node .claude/harness/foundation.mjs resolve selective-amendment --approve-spec \
   --decision-ref fixture://user/amended-spec >/dev/null
+
+# Replay must carry the isolated amended agreement, never import the old
+# target packet or erase it while replacing the worktree.
+packet_hash() {
+  node --input-type=module -e '
+    import { createStateRuntime } from "./.claude/harness/runtime/core/state-runtime.mjs";
+    console.log(createStateRuntime({}).directoryHash(process.argv[1]));' "$1"
+}
+amended_ws="$ws"
+packet_before="$(packet_hash "$ws/openspec/changes/selective-amendment")"
+target_packet_before="$(packet_hash openspec/changes/selective-amendment)"
+approval_before="$(node -p 'JSON.stringify(require("./.foundation/runtime/selective-amendment.json").specApproval)')"
+revisions_before="$(node -p 'const s=require("./.foundation/runtime/selective-amendment.json"); [s.contractRevision,s.executionRevision].join(":")')"
+assert_eq "amendment replay fixture uses a worktree" worktree \
+  "$(node -p 'require("./.foundation/runtime/selective-amendment.json").workspace.mode')"
+git commit --allow-empty -qm 'unrelated target movement after amendment'
+moved_head="$(git rev-parse HEAD)"
+amendment_sync="$(node .claude/harness/foundation.mjs sandbox sync selective-amendment)"
+assert_contains "amended worktree replays to the moved base" "$amendment_sync" 'rebased: '
+assert_eq "replay preserves every amended packet byte" "$packet_before" \
+  "$(packet_hash "$ws/openspec/changes/selective-amendment")"
+assert_eq "replay leaves the target agreement untouched" "$target_packet_before" \
+  "$(packet_hash openspec/changes/selective-amendment)"
+assert_eq "replay retains exact amendment approval" "$approval_before" \
+  "$(node -p 'JSON.stringify(require("./.foundation/runtime/selective-amendment.json").specApproval)')"
+assert_eq "replay does not invent contract or execution revisions" "$revisions_before" \
+  "$(node -p 'const s=require("./.foundation/runtime/selective-amendment.json"); [s.contractRevision,s.executionRevision].join(":")')"
+assert_eq "replay records the moved base" "$moved_head" \
+  "$(node -p 'require("./.foundation/runtime/selective-amendment.json").workspace.baseHead')"
 node .claude/harness/foundation.mjs advance selective-amendment --through proven \
   > .foundation/amendment-advance.out
 amendment_proven="$(cat .foundation/amendment-advance.out)"
@@ -264,6 +299,20 @@ printf '%s\n' '#!/usr/bin/env sh' \
   'if [ "$1" = "archive" ]; then mkdir -p openspec/changes/archive; mv "openspec/changes/$2" "openspec/changes/archive/$2"; fi' \
   'exit 0' > "$TMP/bin/openspec"
 chmod +x "$TMP/bin/openspec"
+
+cd "$TMP/amendment-selective"
+git commit --allow-empty -qm 'second unrelated move before automatic Land recovery'
+head_before="$(git rev-parse HEAD)"
+index_before="$(git ls-files --stage | shasum)"
+amendment_landed="$(PATH="$TMP/bin:$PATH" node .claude/harness/foundation.mjs advance selective-amendment --through archived)"
+assert_contains "amended work reaches archived after base movement" "$amendment_landed" '"reached":"archived"'
+assert_eq "amended Land preserves target HEAD" "$head_before" "$(git rev-parse HEAD)"
+assert_eq "amended Land preserves target index" "$index_before" "$(git ls-files --stage | shasum)"
+assert_file_contains "amended Land applies verified product bytes" app.txt 'v2'
+assert_eq "archive retains the exact amended packet" "$packet_before" \
+  "$(packet_hash openspec/changes/archive/selective-amendment)"
+
+cd "$TMP/review-waiver"
 head_before="$(git rev-parse HEAD)"
 index_before="$(git ls-files --stage | shasum)"
 landed="$(PATH="$TMP/bin:$PATH" node .claude/harness/foundation.mjs advance review-waiver --through archived)"

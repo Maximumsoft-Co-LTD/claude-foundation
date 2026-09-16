@@ -1,4 +1,4 @@
-import { assertSpecApproval, agreementIdentity } from "../core/user-decisions.mjs";
+import { assertSpecApproval, agreementIdentity, userDecisionError } from "../core/user-decisions.mjs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -346,6 +346,7 @@ export function carrySandboxIgnoredArtifacts(context, sourcePath, stagingPath) {
 
 export function commitSandboxReplay(context, id, state, prepared) {
   const { movement, record, targetPath, staging, patch } = prepared;
+  if (prepared.packetHash) assertReplayPacket(id, prepared, context.directoryHash);
   context.carryIgnoredArtifacts(record.path, staging);
   const removed = context.git(["worktree", "remove", "--force", record.path], targetPath);
   if (removed.status !== 0)
@@ -371,6 +372,64 @@ export function commitSandboxReplay(context, id, state, prepared) {
     }
   }
   movement.rebased = true;
+}
+
+export function preserveReplayPacket(id, prepared, directoryHash) {
+  const packet = join("openspec", "changes", id);
+  const source = join(prepared.record.path, packet);
+  const destination = join(prepared.staging, packet);
+  const expected = directoryHash(source);
+  rmSync(destination, { recursive: true, force: true });
+  mkdirSync(dirname(destination), { recursive: true });
+  cpSync(source, destination, { recursive: true, ...VERBATIM_COPY });
+  if (directoryHash(destination) !== expected || directoryHash(source) !== expected)
+    throw new Error("amended packet changed while preparing sandbox replay; original sandbox preserved");
+  prepared.packetHash = expected;
+}
+
+export function assertReplayPacket(id, prepared, directoryHash) {
+  const packet = join("openspec", "changes", id);
+  if (directoryHash(join(prepared.record.path, packet)) !== prepared.packetHash ||
+      directoryHash(join(prepared.staging, packet)) !== prepared.packetHash)
+    throw new Error("amended packet changed before sandbox replay; original sandbox preserved");
+}
+
+export function recoverAmendedReplay(context, id, state) {
+  const workspace = state.workspace;
+  const pending = workspace?.amendmentReplay;
+  if (!pending) return false;
+  const staging = `${workspace.path}.rebase`;
+  const originalExists = context.pathExists(workspace.path);
+  const candidate = originalExists ? workspace.path : staging;
+  const head = context.gitHead(candidate);
+  if (workspace.mode !== "worktree" || !context.ownsWorktree(candidate, context.root) ||
+      !context.pathExists(join(candidate, "openspec", "changes", id)) ||
+      (!originalExists && (head !== pending.to ||
+        context.directoryHash(join(candidate, "openspec", "changes", id)) !== pending.packetHash)))
+    context.fail(`interrupted amendment replay for '${id}' cannot be verified; preserve '${workspace.path}' and '${staging}' and inspect the retained work before recovery`);
+  if (!originalExists) {
+    const moved = context.git(["worktree", "move", staging, workspace.path], context.root);
+    if (moved.status !== 0)
+      context.fail(`cannot restore the verified amendment replay for '${id}': ${moved.stderr.trim()}; retained at '${staging}', retry sandbox sync`);
+  }
+  // An original that still exists may have newer agent edits after an aborted
+  // replay. Keep those bytes and discard only the checkpoint; ordinary approval
+  // and proof checks must evaluate them, never restore the older staged copy.
+  // Staging already incorporates pending.to. Keeping pending.from would replay
+  // upstream changes as product edits if the target moves again before resume.
+  // The original can also be the moved staging plus later agent commits; retain
+  // those commits as product work by recording the verified replay base, not HEAD.
+  const replayed = !originalExists || head === pending.to ||
+    context.git(["merge-base", "--is-ancestor", pending.to, head], candidate).status === 0;
+  if (replayed) {
+    workspace.baseHead = pending.to;
+    if (state.repositories?.root?.path === workspace.path)
+      state.repositories.root.baseHead = pending.to;
+    context.invalidateProof?.(id, state);
+  }
+  delete workspace.amendmentReplay;
+  context.saveRuntime(state);
+  return !originalExists;
 }
 
 export function unrelatedSandboxTargetChanges(context, id, state, statusOutput) {
@@ -1063,7 +1122,8 @@ export function createSandbox(context, id, flags = {}) {
 }
 
 export function prepareBuildSandbox(context, id) {
-  const state = context.loadRuntime(id);
+  let state = context.loadRuntime(id);
+  if (context.recoverReplay?.(id, state)) state = context.loadRuntime(id);
   if (context.root) assertSpecApproval(context.root, id, state);
   if (state.status === "change") context.validate(id, "root", { quiet: true });
   const inspection = context.workspaceInspection(id, state);
@@ -1459,6 +1519,7 @@ export function createSandboxRuntime({
   function createSingle(id) {
     const state = loadRuntime(id);
     if (state.status === "archived") fail(`change '${id}' is already archived`);
+    if (recoverReplay(id, state)) return;
     if (rebindRelocatedSandbox(id, state)) return;
     if (["worktree", "copy"].includes(state.workspace?.mode) && existsSync(state.workspace.path))
       fail(`sandbox already exists: ${state.workspace.path}`);
@@ -1616,10 +1677,22 @@ export function createSandboxRuntime({
   });
   const commitReplay = commitSandboxReplay.bind(null, {
     carryIgnoredArtifacts, git, fail, selectedRepositories,
-    runSetupCommand, policy
+    runSetupCommand, policy, directoryHash
   });
 
-  function rebaseWorktree(id, state) {
+  const recoverReplay = recoverAmendedReplay.bind(null, {
+    root, pathExists: existsSync, ownsWorktree: worktreeOwnedByTarget,
+    gitHead, git, directoryHash, saveRuntime, fail,
+    invalidateProof: (id, state) => {
+      clearSnapshotCache(id);
+      if (existsSync(proofPath(id))) rmSync(proofPath(id));
+      transitionLifecycleState(state, "building", "sandbox-replay-recovered");
+      // No pre-crash diff comparison is available to authorize review rebinding.
+      delete state.lastBaseMove;
+    }
+  });
+
+  function rebaseWorktree(id, state, preserveAmendment = false) {
     const selection = selectedRepositories(id, state);
     const candidates = replayCandidates(state)
       .filter((candidate) => candidate.record.mode === "worktree");
@@ -1648,13 +1721,28 @@ export function createSandboxRuntime({
               })))
           };
         }
+        // Stage the packet before any original worktree is removed. A failed
+        // replacement must leave the amendment in the original or staging tree.
+        if (preserveAmendment && candidate.repository === "root")
+          preserveReplayPacket(id, replay, directoryHash);
       }
+      for (const replay of prepared)
+        if (replay.packetHash) assertReplayPacket(id, replay, directoryHash);
     } catch (error) {
       prepared.forEach((entry) => entry.discardStaging());
       throw error;
     }
     if (!prepared.length && !manuallyRebased.length) return null;
+    const amendedRoot = prepared.find((entry) => entry.packetHash);
+    if (amendedRoot) {
+      state.workspace.amendmentReplay = {
+        from: amendedRoot.movement.from, to: amendedRoot.movement.to,
+        packetHash: amendedRoot.packetHash
+      };
+      saveRuntime(state);
+    }
     prepared.forEach((entry) => commitReplay(id, state, entry));
+    if (amendedRoot) delete state.workspace.amendmentReplay;
     prepared.forEach((entry) => rmSync(entry.patch, { force: true }));
     for (const entry of manuallyRebased) {
       entry.candidate.record.baseHead = entry.movement.to;
@@ -1800,11 +1888,12 @@ export function createSandboxRuntime({
     return { forwarded, conflicts };
   }
 
-  function updateSandboxSyncState(id, state, source, fingerprints, invalidated) {
+  function updateSandboxSyncState(id, state, source, fingerprints, invalidated,
+    sourceHash = directoryHash(source)) {
     const approvedSource = state.specApproval?.identity &&
       state.specApproval.revision === Number(state.contractRevision || 0) &&
       state.specApproval.identity === agreementIdentity(root, id);
-    state.workspace.changeSourceHash = directoryHash(source);
+    state.workspace.changeSourceHash = sourceHash;
     delete state.workspace.recovery;
     if (invalidated)
       transitionLifecycleState(state, "building", "sandbox-contract-synchronized");
@@ -1819,21 +1908,54 @@ export function createSandboxRuntime({
     if (invalidated && existsSync(proofPath(id))) rmSync(proofPath(id));
   }
 
+  function activeSandboxAmendment(id, state) {
+    const destination = state.workspace?.path &&
+      join(state.workspace.path, "openspec", "changes", id);
+    return (state.amendments || []).some((entry) =>
+      Number(entry?.revision) === Number(state.contractRevision || 0)) &&
+      Boolean(destination && existsSync(destination)) &&
+      agreementIdentity(state.workspace.path, id) !== agreementIdentity(root, id);
+  }
+
+  function assertAmendedSource(id, state, resolves = new Set()) {
+    const sourceHash = directoryHash(changePath(id));
+    if (state.workspace.changeSourceHash === sourceHash) return sourceHash;
+    const packet = `openspec/changes/${id}`;
+    if (resolves.has(packet)) {
+      // Like copy-path --resolve, this is an explicit declaration that the
+      // sandbox contains the intended merged result, never automatic recovery.
+      assertSpecApproval(root, id, state);
+      return sourceHash;
+    }
+    const error = userDecisionError("AMENDED_AGREEMENT_CONFLICT",
+      `The target agreement for '${id}' changed after isolation; sandbox sync would overwrite the active amended agreement. ` +
+      "Compare both packets and resolve the intended agreement before continuing.", [
+        { id: "merge", outcome: "Merge the intended target changes into the isolated agreement, approve it, then synchronize.",
+          command: `claude-foundation sandbox sync ${id} --resolve ${packet}` },
+        { id: "retain", outcome: "Explicitly keep the approved isolated agreement instead of the competing target edits, then synchronize.",
+          command: `claude-foundation sandbox sync ${id} --resolve ${packet}` },
+        { id: "pause", outcome: "Preserve both packets and pause until their intended content is decided." }
+      ], "merge");
+    error.decision.paths = [changePath(id), join(state.workspace.path, packet)];
+    throw error;
+  }
+
   function sync(id, flags = {}) {
-    validate(id, "root", { quiet: true });
     const state = loadRuntime(id);
+    recoverReplay(id, state);
     const workspace = activeSandboxWorkspace(id, state);
     const source = changePath(id);
     const destination = join(workspace.path, "openspec", "changes", id);
-    const activeAmendment = (state.amendments || []).some((entry) =>
-      Number(entry?.revision) === Number(state.contractRevision || 0));
-    if (activeAmendment && existsSync(destination) &&
-        agreementIdentity(workspace.path, id) !== agreementIdentity(root, id))
-      fail(`sandbox sync would overwrite the active amended agreement for '${id}'; ` +
-        "continue through Build/Prove and let Land project that isolated packet to the target");
-    assertSandboxPacketPreserved(id, workspace, source, destination);
-    assertSandboxRepositoryScope(source, destination);
-    const fingerprints = sandboxSyncInputs(id, source, destination);
+    const preserveAmendment = activeSandboxAmendment(id, state);
+    const resolves = new Set(String(flags.resolve || "").split(",")
+      .map((entry) => entry.trim()).filter(Boolean));
+    const acceptedSourceHash = preserveAmendment ? assertAmendedSource(id, state, resolves) : null;
+    validate(id, preserveAmendment ? "active" : "root", { quiet: true });
+    if (!preserveAmendment) {
+      assertSandboxPacketPreserved(id, workspace, source, destination);
+      assertSandboxRepositoryScope(source, destination);
+    }
+    const fingerprints = sandboxSyncInputs(id, preserveAmendment ? destination : source, destination);
     clearSnapshotCache(id);
     // Without an aggregate proof there is nothing to preserve. Avoid two
     // extra full snapshots on the common pre-proof sync path.
@@ -1848,8 +1970,9 @@ export function createSandboxRuntime({
     const capturesBaseMove = !workspace.applied && replayCandidates(state)
       .some(({ record }) => record?.mode === "worktree");
     const preDiffIdentity = capturesBaseMove ? changeDiffIdentity(id, state) : null;
-    const movement = workspace.applied ? null : rebaseWorktree(id, state);
-    replaceSandboxPacket(id, state, source, destination, fingerprints.mergedTasks);
+    const movement = workspace.applied ? null : rebaseWorktree(id, state, preserveAmendment);
+    if (!preserveAmendment)
+      replaceSandboxPacket(id, state, source, destination, fingerprints.mergedTasks);
     // An isolated copy is a snapshot; the target keeps moving while it builds
     // (another change lands, a hook rewrites a file). Every target move the
     // sandbox did not also touch fast-forwards here, baseline included, so
@@ -1857,14 +1980,19 @@ export function createSandboxRuntime({
     // named now, at sync, not discovered at Land. `--resolve` is the explicit
     // way out: it declares the sandbox copy already carries the merged result,
     // so the baseline may advance without the harness guessing.
-    const { forwarded, conflicts } = reconcileCopyWorkspace(id, state, flags);
+    if (preserveAmendment) resolves.delete(`openspec/changes/${id}`);
+    const { forwarded, conflicts } = reconcileCopyWorkspace(id, state,
+      { ...flags, resolve: [...resolves].join(",") });
     clearSnapshotCache(id);
     const invalidated = !priorHash || priorHash !== relevantHash(id) ||
       fingerprints.priorContract !== fingerprints.nextContract ||
       fingerprints.priorExecution !== fingerprints.nextExecution ||
       conflicts.length > 0 || (movement && !movement.rebased) ||
       Boolean(movement?.conflicts?.length);
-    updateSandboxSyncState(id, state, source, fingerprints, invalidated);
+    if (preserveAmendment && directoryHash(source) !== acceptedSourceHash)
+      fail(`target agreement changed during sandbox sync for '${id}'; both packets are preserved, retry sync to resolve the current target`);
+    updateSandboxSyncState(id, state, source, fingerprints, invalidated,
+      preserveAmendment ? acceptedSourceHash : undefined);
     // The durable record of what this replay did to the change's own diff.
     // Identical identities mean the moved base never touched the change's
     // content — the fact that lets a review verdict rebind instead of
@@ -1883,6 +2011,11 @@ export function createSandboxRuntime({
     reportSandboxSync({
       id, state, movement, forwarded, conflicts, relevantHash
     });
+    return {
+      status: conflicts.length || movement?.conflicts?.length ? "CONFLICT" : "SYNCED",
+      conflicts: [...conflicts, ...(movement?.conflicts || [])],
+      movement
+    };
   }
 
   const create = createSandbox.bind(null, {
@@ -1912,9 +2045,16 @@ export function createSandboxRuntime({
   });
 
   const prepareBuild = prepareBuildSandbox.bind(null, {
-    root, loadRuntime, validate, workspaceInspection, create, retryFailedSetups,
+    root, loadRuntime, validate, workspaceInspection, create, retryFailedSetups, recoverReplay,
     synchronizeAgreement: (id) => {
       const state = loadRuntime(id);
+      // Semantic amendments live in the sandbox until Land. A changed target
+      // packet must not make automatic preparation import the older agreement
+      // or deadlock on the explicit sync overwrite guard.
+      if (activeSandboxAmendment(id, state)) {
+        assertAmendedSource(id, state);
+        return;
+      }
       if (state.workspace?.changeSourceHash &&
           state.workspace.changeSourceHash !== directoryHash(changePath(id)))
         sync(id);
@@ -1924,6 +2064,7 @@ export function createSandboxRuntime({
   return {
     createChallenge, workspaceInspection, inspect, showInspection,
     createSingle, create, retryFailedSetups, prepareBuild, mergeTaskProgress, sync,
+    recoverReplay: (id) => recoverReplay(id, loadRuntime(id)),
     changeDiffIdentity
   };
 }
