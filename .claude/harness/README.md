@@ -269,8 +269,9 @@ claude-foundation doctor --stage prove --change <change>
 | `land resume <change>` | Rechecks a resumable Land saga | Diagnostic primitive; normal recovery repeats `/land` |
 | `land archive <change>` | Applies, verifies, archives, and safely cleans up | Completing an accepted change |
 | `handoff status <change>` | Shows external operations and Land disposition | Checking work owned by DevOps/SRE/security |
+| `handoff list [--open] [--owner <team>] [--environment <env>] [--json]` | Lists operational obligations across active and archived changes | Finding post-Land work without knowing a change ID |
 | `handoff packet <change> [--id H00n]` | Emits one credential-free operator packet | Sending the exact operation to its named owner |
-| `handoff record <change> ...` | Records accepted/completed/rejected with actor and evidence references | Resuming Land without turning operator work into a developer task |
+| `handoff record <change> ...` | Records accepted/completed/rejected/cancelled/superseded outcomes with durable references | Updating operational state without reopening developer tasks |
 | `migrate [legacy-id] [--apply]` | Reads legacy `.workflow/` state and optionally creates migration candidates | Recovering an older installation without promoting unverified prose |
 | `host instruction <command> --protocol 1 --format json --arguments <text>` | Resolves the package-owned command instruction | Host integration without reading consumer command files |
 | `host agent-contract --protocol 1 --format json` | Resolves the portable package-owned agent contract | Installing or refreshing a host adapter |

@@ -189,6 +189,23 @@ export function approvedGroundingRevision(state, currentContractFingerprint) {
     row.contractFingerprint === currentContractFingerprint) || null;
 }
 
+export function approvedDecisionRevision(state, currentContractFingerprint) {
+  const grounding = approvedGroundingRevision(state, currentContractFingerprint);
+  if (grounding || state?.groundingRequired === true) return grounding;
+  const approval = state?.specApproval;
+  if (!approval?.required || !approval.decisionRef || !approval.identity ||
+      !approval.approvedAt || Number(approval.revision) !==
+        Number(state?.contractRevision || 0)) return null;
+  return {
+    decisionRef: approval.decisionRef,
+    reason: "approved non-grounding contract revision",
+    priorDigest: null,
+    newDigest: approval.identity,
+    contractFingerprint: currentContractFingerprint,
+    completedAt: approval.approvedAt
+  };
+}
+
 export function deterministicReviewClosureSource(delivered) {
   const source = delivered.at(-1);
   return delivered.length >= 2 && source?.resultStatus === "fail" &&
@@ -328,7 +345,7 @@ export function recordDeterministicReviewClosureOperation(
     };
   const currentContractFingerprint = context.contractFingerprint(id);
   const contractChanged = prior.contractFingerprint !== currentContractFingerprint;
-  const approvedRevision = approvedGroundingRevision(
+  const approvedRevision = approvedDecisionRevision(
     context.loadRuntime(id), currentContractFingerprint);
   if (contractChanged && !approvedRevision)
     return {

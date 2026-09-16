@@ -5,6 +5,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
+import test from "node:test";
 
 import { createHandoffRuntime } from "../runtime/workflow/handoff-runtime.mjs";
 
@@ -17,6 +18,8 @@ const stableHash = (value) => createHash("sha256")
 const fixture = mkdtempSync(join(tmpdir(), "foundation-handoff-"));
 const changeId = "external-operation";
 const change = join(fixture, "changes", changeId);
+const brokenChangeId = "broken-external-operation";
+const brokenChange = join(fixture, "changes", brokenChangeId);
 const archivedChange = join(fixture, "changes", "archive", `2026-08-14-${changeId}`);
 const state = {
   id: changeId, status: "building", contractRevision: 1,
@@ -51,34 +54,66 @@ const operation = (overrides = {}) => ({
   ...overrides
 });
 
+test("test", () => {
 try {
   mkdirSync(change, { recursive: true });
+  let captureCalls = 0;
   const runtime = createHandoffRuntime({
     root: fixture,
     handoffsRoot: join(fixture, ".foundation", "handoffs"),
-    activeChangePath: (_id, current = state) =>
-      current.status === "archived" ? archivedChange : change,
-    loadRuntime: () => state,
+    activeChangePath: (id, current = state) => id === brokenChangeId
+      ? brokenChange
+      : current.status === "archived" ? archivedChange : change,
+    loadRuntime: (id) => id === brokenChangeId
+      ? { ...state, id: brokenChangeId }
+      : state,
     readJson,
     writeJson,
     stableHash,
     defaultOwner: () => "devops-team",
     now: () => "2026-08-14T12:00:00.000Z",
-    fail
+    fail,
+    capture: (callback) => {
+      captureCalls += 1;
+      return callback();
+    }
   });
 
   writeJson(join(change, "handoffs.yaml"), { version: 1, operations: [operation()] });
+  writeJson(join(fixture, ".foundation", "runtime", `${changeId}.json`), state);
   const validated = runtime.handoffContract(changeId, {
     claimIds: new Set(["activation-safe"]), taskIds: new Set(["T001"])
   });
   assert.equal(validated.operations.length, 1);
-  assert.deepEqual(runtime.handoffReadiness(changeId).blocking, ["H001"]);
+  const declared = runtime.handoffReadiness(changeId);
+  assert.deepEqual(declared.blocking, []);
+  assert.deepEqual(declared.declared, ["H001"]);
+  assert.equal(declared.operations[0].landDisposition, "declared-post-land");
   const initialPacket = runtime.handoffPacketValue(changeId);
   assert.equal(initialPacket.operations[0].obligationClass,
     "production-verification");
-  assert.equal(initialPacket.operations[0].decision.recommended, "track-and-land");
-  assert.deepEqual(initialPacket.operations[0].decision.requiredFacts,
-    ["actor", "tracking-reference"]);
+  assert.equal(initialPacket.operations[0].userActionRequired, false);
+  assert.equal(initialPacket.operations[0].decision, null,
+    "a valid declaration must not ask a user to acknowledge harness bookkeeping");
+  const openList = runtime.handoffListValue({ open: true });
+  assert.equal(openList.changes.length, 1);
+  assert.equal(openList.changes[0].changeId, changeId);
+  assert.equal(openList.changes[0].operations[0].landDisposition,
+    "declared-post-land");
+  assert.deepEqual(openList.errors, []);
+  mkdirSync(brokenChange, { recursive: true });
+  writeFileSync(join(brokenChange, "handoffs.yaml"), "{not-json");
+  writeJson(join(fixture, ".foundation", "runtime", `${brokenChangeId}.json`), {
+    ...state, id: brokenChangeId
+  });
+  const isolatedList = runtime.handoffListValue({ open: true });
+  assert.equal(isolatedList.changes.length, 1,
+    "an unreadable change must not hide healthy operational obligations");
+  assert.equal(isolatedList.changes[0].changeId, changeId);
+  assert.equal(isolatedList.errors.length, 1);
+  assert.equal(isolatedList.errors[0].changeId, brokenChangeId);
+  assert.equal(captureCalls, 3,
+    "aggregate readiness must cross the injected failure trap for every change");
   assert.equal(JSON.stringify(initialPacket).includes("claude-foundation"), false,
     "a user-facing recovery packet must never require the user to type a command");
 
@@ -135,7 +170,9 @@ try {
   });
   const stale = runtime.handoffReadiness(changeId);
   assert.equal(stale.operations[0].validity, "stale");
-  assert.equal(stale.operations[0].landBlocking, true);
+  assert.equal(stale.operations[0].landBlocking, false,
+    "a stale optional acknowledgement must not block a valid safe declaration");
+  assert.equal(stale.operations[0].landDisposition, "declared-post-land");
 
   writeJson(join(change, "handoffs.yaml"), {
     version: 1,
@@ -166,14 +203,57 @@ try {
     });
   } finally { console.log = priorLog; }
   assert.equal(runtime.handoffReadiness(changeId).status, "COMPLETE");
+  assert.equal(runtime.handoffListValue({ open: true }).changes.length, 0,
+    "completed obligations leave the open operational queue");
   const completedPacket = runtime.handoffPacketValue(changeId);
   assert.equal(completedPacket.operations[0].userActionRequired, false);
   assert.equal(completedPacket.operations[0].decision, null);
 
   writeFileSync(join(fixture, ".foundation", "handoffs", changeId, "H001.json"),
     "{not-json");
-  assert.equal(runtime.handoffReadiness(changeId).operations[0].validity, "invalid",
+  const invalid = runtime.handoffReadiness(changeId).operations[0];
+  assert.equal(invalid.validity, "invalid",
     "a torn operator record becomes a typed invalid state instead of crashing readiness");
+  assert.equal(invalid.landBlocking, true,
+    "the current activation-coupled declaration remains fail-closed");
+
+  writeJson(join(change, "handoffs.yaml"), { version: 1, operations: [operation()] });
+  console.log = () => {};
+  try {
+    runtime.recordHandoff(changeId, {
+      id: "H001", status: "cancelled", actor: "foundation-harness",
+      reference: "change-retired", reason: "Deployment was superseded before activation"
+    });
+  } finally { console.log = priorLog; }
+  const cancelled = runtime.handoffReadiness(changeId);
+  assert.equal(cancelled.operations[0].landDisposition, "cancelled");
+  assert.equal(cancelled.operations[0].landBlocking, false);
+  assert.equal(runtime.handoffListValue({ open: true }).changes.length, 0,
+    "cancelled safe obligations leave the open operational queue");
+  assert.throws(() => runtime.recordHandoff(changeId, {
+    id: "H001", status: "accepted", actor: "Nok SRE", reference: "OPS-1900"
+  }), /cancelled handoff 'H001' cannot be changed/);
+  writeJson(join(change, "handoffs.yaml"), {
+    version: 1,
+    operations: [operation({ runbook: "docs/runbooks/service-v2.md#activate" })]
+  });
+  const staleTerminalList = runtime.handoffListValue({ open: true });
+  assert.equal(staleTerminalList.changes.length, 1,
+    "a stale terminal record must not hide the current declared obligation");
+  assert.equal(staleTerminalList.changes[0].operations[0].validity, "stale");
+  assert.equal(staleTerminalList.changes[0].operations[0].landDisposition,
+    "declared-post-land");
+  console.log = () => {};
+  try {
+    runtime.recordHandoff(changeId, {
+      id: "H001", status: "superseded", actor: "foundation-harness",
+      reference: "replacement-change-v2"
+    });
+  } finally { console.log = priorLog; }
+  const superseded = runtime.handoffReadiness(changeId);
+  assert.equal(superseded.operations[0].landDisposition, "superseded");
+  assert.equal(runtime.handoffListValue({ open: true }).changes.length, 0,
+    "superseded safe obligations leave the open operational queue");
 
   writeJson(join(change, "handoffs.yaml"), {
     version: 1,
@@ -191,3 +271,4 @@ try {
 } finally {
   rmSync(fixture, { recursive: true, force: true });
 }
+});

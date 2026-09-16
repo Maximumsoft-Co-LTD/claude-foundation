@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  approvedDecisionRevision,
   currentRepairProviders,
   deterministicClosureIsBound,
   deterministicRepairClosureValue,
@@ -11,6 +12,32 @@ import {
   repairClosureEvidenceBindings,
   uniqueRepairEvidenceBindings
 } from "../runtime/evidence/receipt-runtime.mjs";
+
+test("approved decision revision supports only current non-grounding spec approval", () => {
+  const state = {
+    groundingRequired: false,
+    contractRevision: 5,
+    specApproval: {
+      required: true,
+      revision: 5,
+      identity: "agreement-current",
+      decisionRef: "user:approved-revision",
+      approvedAt: "2026-09-16T00:00:00.000Z"
+    }
+  };
+  const approved = approvedDecisionRevision(state, "contract-current");
+  assert.equal(approved.decisionRef, "user:approved-revision");
+  assert.equal(approved.contractFingerprint, "contract-current");
+  assert.equal(approved.newDigest, "agreement-current");
+  assert.equal(approvedDecisionRevision({
+    ...state, contractRevision: 6
+  }, "contract-current"), null,
+  "a stale spec approval must not authorize a later revision");
+  assert.equal(approvedDecisionRevision({
+    ...state, groundingRequired: true
+  }, "contract-current"), null,
+  "grounding-required changes must still use an audited grounding reopen");
+});
 
 const finalDelta = {
   digest: "attempt-2",

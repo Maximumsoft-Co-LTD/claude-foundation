@@ -277,13 +277,13 @@ printf '%s\n' '#!/usr/bin/env sh' \
   '[ ! -f .foundation/provider-count.txt ] || count="$(cat .foundation/provider-count.txt)"' \
   'count=$((count + 1))' \
   'printf "%s\\n" "$count" > .foundation/provider-count.txt' \
-  'printf "%s\\n" "{\"numTotalTests\":4}"' > provider-fixture.sh
+  'printf "%s\\n" "{\"numTotalTests\":4,\"criticalCases\":[{\"id\":\"BOUNDARY\",\"status\":\"pass\"}]}"' > provider-fixture.sh
 chmod +x provider-fixture.sh
 printf '%s\n' \
   '{' \
   '  "version": 2,' \
   '  "providers": {' \
-  '    "test": {"adapter":"test-discovery","command":["sh","provider-fixture.sh"],"minimum":4,"inputs":["provider-fixture.sh"]},' \
+  '    "test": {"adapter":"test-discovery","command":["sh","provider-fixture.sh"],"minimum":4,"reportFormat":"json","criticalCases":["BOUNDARY"],"inputs":["provider-fixture.sh"]},' \
   '    "static-analysis": {"adapter":"command","command":["sh","provider-fixture.sh"],"inputs":["provider-fixture.sh"]}' \
   '  },' \
   '  "claims": [' \
@@ -297,6 +297,8 @@ assert_cmd_zero "proof execute runs configured evidence DAG" \
 assert_eq "identical provider command executes once" "1" "$(tr -d '\n' < .foundation/provider-count.txt)"
 assert_file_exists "combined adapter emits test receipt" \
   .foundation/receipts/executable-evidence/test.json
+assert_file_contains "combined adapter persists critical-case observations" \
+  .foundation/receipts/executable-evidence/test.json '"id": "BOUNDARY"'
 assert_file_exists "combined adapter emits discovery receipt" \
   .foundation/receipts/executable-evidence/discovery.json
 assert_file_exists "DAG emits static receipt" \

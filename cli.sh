@@ -82,7 +82,7 @@ run_runtime() {
     new|start|resolve|amend|validate|audit-change|abandon|waive|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade|quality-discover|quality-init|quality-doctor) phase="change" ;;
     sandbox|agent-plan|agent-dispatch|agent-acquire|agent-release) phase="build" ;;
     proof-plan|proof-readiness|proof-advance|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-dispatch|authority-run|authority-abort|authority-status|authority-record|authority-reset-infra|authority-reset-base-move|quality-run|quality-report|quality-baseline|quality-debt) phase="prove" ;;
-    handoff-status|handoff-packet|handoff-record|land-check|land-advance|land-recover|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
+    handoff-list|handoff-status|handoff-packet|handoff-record|land-check|land-advance|land-recover|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
     delivery-advance) phase="deliver" ;;
   esac
   telemetry=1
@@ -451,12 +451,16 @@ case "${1:-}" in
   handoff)
     shift
     sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    need_arg "handoff ${sub:-<status|packet|record>}" "${1:-}"
     case "$sub" in
-      status) run_runtime read handoff-status "$@" ;;
-      packet) run_runtime read handoff-packet "$@" ;;
-      record) run_runtime write handoff-record "$@" ;;
-      *) fail "handoff requires 'status', 'packet', or 'record'" ;;
+      list) run_runtime read handoff-list "$@" ;;
+      status|packet|record)
+        need_arg "handoff $sub" "${1:-}"
+        case "$sub" in
+          status) run_runtime read handoff-status "$@" ;;
+          packet) run_runtime read handoff-packet "$@" ;;
+          record) run_runtime write handoff-record "$@" ;;
+        esac ;;
+      *) fail "handoff requires 'list', 'status', 'packet', or 'record'" ;;
     esac ;;
   sandbox)
     shift

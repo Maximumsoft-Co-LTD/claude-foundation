@@ -362,9 +362,21 @@ test("land check phases preserve every refusal and ready route", () => {
       }
     });
     assert.equal(rich.runtime.landCheck(rich.id).telemetry.classification, "complete");
-    assert.ok(output.some((message) => message.includes("tracked post-Land handoff")));
+    assert.ok(output.some((message) => message.includes("declared post-Land obligation")));
     assert.ok(output.some((message) => message.includes("branch: main")));
     assert.ok(output.some((message) => message.includes("telemetry: complete")));
+
+    const declaredPostLand = make({ handoffs: {
+      blocking: [], declared: ["post"], tracked: ["post"],
+      status: "READY_WITH_TRACKED_HANDOFF",
+      operations: [{
+        id: "post", owner: "ops", reference: null,
+        landDisposition: "declared-post-land"
+      }]
+    } });
+    assert.equal(declaredPostLand.runtime.landCheck(declaredPostLand.id).archived, false);
+    assert.ok(output.some((message) =>
+      message.includes("declared post-Land obligation: post (ops)")));
 
     const multi = make({
       state: { repositories: { a: {}, b: {} } },

@@ -71,6 +71,7 @@ export const PHASE_BY_COMMAND = {
   "quality-baseline": "prove",
   "quality-debt": "prove",
 
+  "handoff-list": "land",
   "handoff-status": "land",
   "handoff-packet": "land",
   "handoff-record": "land",

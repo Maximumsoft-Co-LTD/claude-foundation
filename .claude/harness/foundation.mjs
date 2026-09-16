@@ -241,7 +241,7 @@ const READ_ONLY_OPERATIONS = new Set([
   "metrics", "feedback", "hash", "changes", "providers", "repos", "models", "describe",
   "budget-checkpoint",
   "packet", "agent-task", "audit-change", "authority-status",
-  "handoff-status", "handoff-packet", "evidence-detect", "evidence-doctor",
+  "handoff-list", "handoff-status", "handoff-packet", "evidence-detect", "evidence-doctor",
   "doctor", "quality-discover", "quality-doctor", "quality-report",
   "api-version", "version"
 ]);
@@ -630,7 +630,8 @@ const handoffRuntime = createHandoffRuntime({
   stableHash,
   defaultOwner: () => foundationPolicy().workflow.handoffDefaultOwner,
   now,
-  fail: die
+  fail: die,
+  capture: trapFailures
 });
 const {
   handoffContract,

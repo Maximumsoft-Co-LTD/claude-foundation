@@ -905,7 +905,7 @@ review ซ้ำกับโมเดลอื่น และไม่ต้อ
 `diversity: "single-model"` โดยยังต้องใช้ reviewer identity และ session ใหม่
 ถ้า reviewer infrastructure ล้มเหลวจะ handback มาที่ main session ได้หนึ่งครั้ง เมื่อใช้รอบ review ครบแล้วจะไม่ถาม redesign/split/pause: defect ใน contract เข้า deterministic repair closure, ความขัดแย้งจริงจึงเปิด Decision Sheet แบบ batch อีกครั้ง และถ้าขาดสิทธิ์จะสร้าง external handoff
 
-Build และ Prove ไม่รอ operator เพียงเพราะ developer ไม่มีสิทธิ์ cloud; `handoff packet` ส่ง operation ไปยัง owner ที่ระบุ หรือใช้ `workflow.handoffDefaultOwner` (`devops-team`) เมื่อไม่ระบุ Land จะรอเฉพาะงาน pre-Land หรือ activation-coupled; งาน post-Land ที่มี ticket และพิสูจน์ว่ายังไม่ activate สามารถ Land ได้
+Build และ Prove ไม่รอ operator เพียงเพราะ developer ไม่มีสิทธิ์ cloud; `handoff packet` ส่ง operation ไปยัง owner ที่ระบุ หรือใช้ `workflow.handoffDefaultOwner` (`devops-team`) เมื่อไม่ระบุ Land จะรอเฉพาะงาน pre-Land หรือ activation-coupled ส่วน declaration ของงาน post-Land ที่พิสูจน์ว่า artifact ยังไม่ activate สามารถ Land ได้โดยไม่ต้องมีคนเซ็นรับ `handoff list --open` ทำให้งาน operational เหล่านี้ยังค้นเจอข้ามทั้ง active และ archived change และการ complete, cancel หรือ supersede จะไม่เปิด `tasks.md` กลับมา Archive ยืนยันว่า code ถูกส่งมอบ ไม่ได้ยืนยันว่า deploy, activate หรือตรวจ production แล้ว
 
 ตัว Land เองตรวจที่หลักฐาน ไม่ใช่ที่ความยินยอม agent ถูกสั่งให้อธิบายผลกระทบ
 และเสนอให้ตรวจดู ไปต่อ หรือหยุดก่อน ส่วนคำสั่งต่อเนื่อง (`land record`,

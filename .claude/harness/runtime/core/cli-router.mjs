@@ -579,6 +579,17 @@ export async function routeRuntimeCommand(command, values, api) {
       if (Object.keys(flags).length || rest.length !== 1) die("handoff status requires exactly one change id");
       showHandoffStatus(rest[0]);
     },
+    "handoff-list": async () => {
+      const {
+        flags,
+        rest
+      } = parseStrictCommandFlags(values, "handoff list", {
+        boolean: ["open", "json"],
+        value: ["owner", "environment"]
+      });
+      if (rest.length) die("handoff list takes no change id");
+      showHandoffStatus(null, { ...flags, list: true });
+    },
     "handoff-packet": async () => {
       const {
         flags,

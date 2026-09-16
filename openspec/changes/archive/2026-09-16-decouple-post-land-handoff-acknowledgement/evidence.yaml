@@ -1,0 +1,108 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "declaration-unblocks-land",
+      "requirementKey": "declaration-unblocks-land",
+      "scenario": "A valid post-land operation declares safe-before-activation and its activation proof, but no operator acknowledgement exists",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "unsafe-activation-still-blocks",
+      "requirementKey": "unsafe-activation-still-blocks",
+      "scenario": "An operation is pre-land or activation-coupled and lacks valid completion evidence",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "post-archive-obligation-lifecycle",
+      "requirementKey": "post-archive-obligation-lifecycle",
+      "scenario": "An operational obligation remains after its source change is archived",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "delivery-language-remains-truthful",
+      "requirementKey": "delivery-language-remains-truthful",
+      "scenario": "Land archives a change that still has declared post-deployment work",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "legacy-records-remain-readable",
+      "requirementKey": "legacy-records-remain-readable",
+      "scenario": "An existing version-1 handoff record contains accepted or completed status",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "public-obligation-list-route",
+      "requirementKey": "public-obligation-list-route",
+      "scenario": "An agent invokes the public handoff list command with optional open, owner, environment, or JSON filters",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "public-command-contract-remains-frozen",
+      "requirementKey": "public-command-contract-remains-frozen",
+      "scenario": "The shipped command registry adds the read-only handoff list command",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "operational-list-remains-truthful",
+      "requirementKey": "operational-list-remains-truthful",
+      "scenario": "Aggregate listing encounters stale terminal records or an unreadable handoff contract while other obligations remain valid",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "combined-evidence-preserves-critical-cases",
+      "requirementKey": "combined-evidence-preserves-critical-cases",
+      "scenario": "A test-discovery provider evaluates a declared critical case while also writing its discovery receipt",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "non-grounding-contract-revision-can-close-review",
+      "requirementKey": "non-grounding-contract-revision-can-close-review",
+      "scenario": "A non-grounding change receives an explicitly approved contract revision after its final AI delta and current deterministic repair evidence passes",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node .claude/harness/tests/handoff-policy.test.mjs && node --test .claude/harness/tests/land-check-phases.test.mjs) && (bash .claude/tests/run-all.sh --affected) && (bash .claude/tests/docs/run-doc-consistency.sh)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

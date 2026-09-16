@@ -234,9 +234,9 @@ assert_file_exists "command registry installed" "$TARGET/.claude/harness/command
 assert_cmd_zero "command registry has one unique entry per public name" \
   jq -e '([.commands[].name] | length) == ([.commands[].name] | unique | length)' \
   "$TARGET/.claude/harness/commands.json"
-# The additional read-only surface is the resumable budget checkpoint; it does
-# not grant authority or widen the continuation surface below.
-assert_eq "agent command surface is bounded" "24" \
+# The additional read-only surfaces are the resumable budget checkpoint and
+# aggregate handoff list; neither grants authority or widens continuation.
+assert_eq "agent command surface is bounded" "25" \
   "$(jq '[.commands[] | select(.audience == "agent")] | length' \
     "$TARGET/.claude/harness/commands.json")"
 # 28 includes the bounded proof controller, its internal execution commands,

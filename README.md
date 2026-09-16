@@ -977,9 +977,12 @@ an external handoff rather than another interview.
 Build and Prove do not wait for an operator merely because a developer lacks
 cloud access. `handoff packet` sends the exact operation to its owner; operations
 without one use `workflow.handoffDefaultOwner` (`devops-team` by default).
-Land waits only for pre-Land or activation-coupled work; an accepted tracked
-post-Land operation may remain when the merged artifact is proven dark until
-activation.
+Land waits only for pre-Land or activation-coupled work. A valid post-Land
+declaration may remain without acknowledgement when the merged artifact is
+proven dark until activation. `handoff list --open` keeps those operational
+obligations visible across active and archived changes; completing, cancelling,
+or superseding one never reopens `tasks.md`. Archive proves code delivery, not
+deployment, activation, or production verification.
 
 Land itself gates on evidence rather than consent. The agent is instructed to
 explain the effects and offer to inspect, proceed, or pause first, and the

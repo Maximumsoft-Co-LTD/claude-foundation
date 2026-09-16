@@ -194,6 +194,14 @@
       "description": "Show permission-bound external operations without treating them as developer tasks."
     },
     {
+      "name": "handoff list",
+      "usage": "handoff list [--open] [--owner <team>] [--environment <env>] [--json]",
+      "audience": "agent",
+      "kind": "read",
+      "idempotent": true,
+      "description": "List operational obligations across active and archived changes."
+    },
+    {
       "name": "handoff packet",
       "usage": "handoff packet <change> [--id <H00n>]",
       "audience": "agent",
@@ -203,11 +211,11 @@
     },
     {
       "name": "handoff record",
-      "usage": "handoff record <change> --id <H00n> --status accepted|completed|rejected --actor <name> --reference <ticket-or-run> [--evidence <reference,...>] [--reason <why>]",
+      "usage": "handoff record <change> --id <H00n> --status accepted|completed|rejected|cancelled|superseded --actor <name> --reference <ticket-or-run> [--evidence <reference,...>] [--reason <why>]",
       "audience": "conditional",
       "kind": "authority",
       "idempotent": false,
-      "description": "Record a named operator's tracked acceptance or completion without storing credentials."
+      "description": "Record a named operator's tracked acceptance, completion, rejection, cancellation, or supersession without storing credentials."
     },
     {
       "name": "land recover",
@@ -819,6 +827,7 @@
     "run-provider",
     "prove",
     "handoff-status",
+    "handoff-list",
     "handoff-packet",
     "handoff-record",
     "land-check",

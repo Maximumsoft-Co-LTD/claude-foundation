@@ -41,6 +41,7 @@ Safe to run at any time. These mutate nothing.
 | `proof readiness <change>` | Typed blockers and canonical next commands |
 | `land check <change>` | Validate that the proven projection remains landable |
 | `handoff status <change>` | Inspect permission-bound operations and their Land disposition |
+| `handoff list [--open] [--owner <team>] [--environment <env>] [--json]` | List operational obligations across active and archived changes |
 | `handoff packet <change> [--id <H00n>]` | Read the credential-free packet for a named DevOps/SRE owner |
 | `repos [change]` | Inspect repository topology and selection |
 | `models` | Inspect model-tier policy |
@@ -78,7 +79,7 @@ language profiles, baselines, and rollout policy.
 | `proof advance <change>` | Compatible Prove primitive used internally and by explicit integrations |
 | `proof collect <change>` | Low-level collection for diagnosis or an explicit integration |
 | `proof run <change>` | Low-level atomic run when no resumable external handoff is needed |
-| `handoff record <change> --id <H00n> …` | Record a named operator's accepted/completed/rejected result and durable references |
+| `handoff record <change> --id <H00n> …` | Record accepted/completed/rejected/cancelled/superseded operational outcomes and durable references |
 
 ## Evidence wiring
 

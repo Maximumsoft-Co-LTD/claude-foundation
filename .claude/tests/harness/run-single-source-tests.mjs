@@ -47,6 +47,21 @@ check(() => assert.equal(PHASE_BY_COMMAND.investigate, "investigate",
   "direct runtime Investigate must use the same canonical lifecycle phase"));
 check(() => assert.equal(telemetryPhaseForCommand("investigate"), "investigate",
   "Investigate telemetry must retain its lifecycle phase"));
+check(() => assert.equal(cliPhases["handoff-list"], "land",
+  "the aggregate handoff reader must retain its Land lifecycle phase"));
+check(() => assert.equal(PHASE_BY_COMMAND["handoff-list"], "land",
+  "direct runtime handoff listing must use the Land lifecycle phase"));
+
+const foundation = read(".claude", "harness", "foundation.mjs");
+const readOnlyBlock = foundation.slice(
+  foundation.indexOf("const READ_ONLY_OPERATIONS"),
+  foundation.indexOf("const commandPhaseRecorder")
+);
+check(() => assert.match(readOnlyBlock, /["']handoff-list["']/,
+  "handoff-list must remain classified as a read-only operation"));
+check(() => assert.match(foundation,
+  /createHandoffRuntime\(\{[\s\S]*?capture:\s*trapFailures[\s\S]*?\}\);/,
+  "the shipped handoff runtime must trap fail-fast errors during aggregate listing"));
 
 for (const [command, phase] of Object.entries(cliPhases))
   check(() => assert.equal(PHASE_BY_COMMAND[command], phase,

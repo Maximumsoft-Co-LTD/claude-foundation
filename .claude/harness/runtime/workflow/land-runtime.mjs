@@ -607,9 +607,10 @@ export function createLandRuntime({
     const rootBranch = targetBranch(root);
     const branchLine = rootBranch && ["main", "master"].includes(rootBranch)
       ? `\n  branch: ${rootBranch} (default branch — branch-first policy suggests a feature branch)` : "";
-    const tracked = externalOperations.operations
-      .filter((row) => row.landDisposition === "tracked-post-land")
-      .map((row) => `${row.id} (${row.owner}: ${row.reference})`);
+    const postLand = externalOperations.operations
+      .filter((row) => ["declared-post-land", "tracked-post-land"]
+        .includes(row.landDisposition))
+      .map((row) => `${row.id} (${row.owner}${row.reference ? `: ${row.reference}` : ""})`);
     const telemetry = telemetryReadiness?.(id) || null;
     const hasMeasuredUsage = telemetry && (
       ["measured", "no-usage"].includes(telemetry.classification) ||
@@ -617,7 +618,7 @@ export function createLandRuntime({
     const telemetryRecovery = hasMeasuredUsage
       ? null : telemetry?.recoveryActions?.[0]?.command || null;
     console.log(`LAND READY ${id}\n  workspace: ${hash}${
-      tracked.length ? `\n  tracked post-Land handoff: ${tracked.join(", ")}` : ""}${
+      postLand.length ? `\n  declared post-Land obligation: ${postLand.join(", ")}` : ""}${
       waived.length ? `\n  waived: ${waived.join(", ")}` : ""}${branchLine}\n  next: claude-foundation land ${
       multiRepository ? "resume" : "archive"} ${id}${telemetry
         ? `\n  telemetry: ${telemetry.classification}${telemetryRecovery

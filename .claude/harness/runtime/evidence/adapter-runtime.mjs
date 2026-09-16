@@ -589,7 +589,8 @@ export function createAdapterRuntime({
       observed: `${baseFlags.observed}; critical cases ${
         evidenceRow.critical.observations.length
           ? evidenceRow.critical.observations.map((row) =>
-            `${row.id}=${row.status}`).join(", ") : "not declared"}`
+            `${row.id}=${row.status}`).join(", ") : "not declared"}`,
+      criticalCases: evidenceRow.critical.observations
     }, { executed: true });
     const discovered = numericReportValue(evidenceRow.report, [
       "numTotalTests", "totalTests", "tests", "testCount", "expected"

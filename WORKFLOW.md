@@ -580,9 +580,12 @@ The runtime never invokes a human, impersonates one, or manufactures approval.
 
 `handoffs.yaml` owns external operations. Pending handoffs do not block Build or
 evidence collection. Land blocks unresolved pre-Land or activation-coupled
-operations. An accepted post-Land operation may remain only when a declared
-claim proves the merged artifact is safe before activation. Records contain
-owners, tickets, and evidence references—never credentials.
+operations. A declared post-Land operation does not require acknowledgement when
+a claim proves the merged artifact is safe before activation; the archived
+change preserves that operational obligation independently of `tasks.md`.
+Acknowledgements, terminal outcomes, tickets, and evidence references are
+optional operational records—never credentials. Archive means the code change
+was delivered, not that deployment, activation, or production verification ran.
 
 ## Terminal stops
 

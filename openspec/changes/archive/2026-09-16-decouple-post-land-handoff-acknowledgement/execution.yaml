@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "node",
+        "--test",
+        "--test-reporter=tap",
+        ".claude/harness/tests/handoff-policy.test.mjs",
+        ".claude/harness/tests/handoff-operation-normalization.test.mjs",
+        ".claude/harness/tests/land-check-phases.test.mjs",
+        ".claude/harness/tests/public-command-golden.test.mjs",
+        ".claude/tests/harness/run-guard-fix-cli-tests.mjs",
+        ".claude/tests/harness/run-single-source-tests.mjs"
+      ],
+      "minimum": 1,
+      "reportFormat": "tap",
+      "claims": "declared",
+      "criticalCases": ["test"],
+      "timeoutMs": 300000
+    }
+  },
+  "services": {}
+}

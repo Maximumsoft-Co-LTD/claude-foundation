@@ -650,8 +650,9 @@ Commands:
   authority-abort <change> --request <id> --reason <reason>
   authority-record <change> --request <id> --response <file>
   handoff-status <change>
+  handoff-list [--open] [--owner <team>] [--environment <env>] [--json]
   handoff-packet <change> [--id <operation-id>]
-  handoff-record <change> --id <operation-id> --status accepted|completed|rejected --actor <name> --reference <ref> [--evidence <refs> --reason <why>]
+  handoff-record <change> --id <operation-id> --status accepted|completed|rejected|cancelled|superseded --actor <name> --reference <ref> [--evidence <refs> --reason <why>]
   run-provider <change> <provider> -- <command> [args...]
   prove <change>
   land-check <change>

@@ -28,6 +28,10 @@ child repository หรือ pre-Land handoff ที่ยังไม่เส
 `RUN_EXTERNAL` หรือ `ASK_USER` พร้อมสาเหตุ actor ทางเลือกปลอดภัย state ที่เก็บไว้
 และ resume route ที่แน่นอน
 
+Declaration ที่เป็น `post-land` และ `safe-before-activation` ไม่ต้องมีผู้เซ็นรับ
+ก่อน Land และยังค้นเจอเป็น operational obligation หลัง archive การ archive
+ยืนยันการส่งมอบ code แต่ไม่ได้อ้างว่า deploy, activate หรือตรวจ production เสร็จแล้ว
+
 Automatic recovery ที่ปลอดภัย รวมทั้ง host-permission integration และ journal
 resume ทำได้ภายในอำนาจปัจจุบัน ส่วน external delivery record และ legacy
 transaction diagnostic ยังอยู่เป็น primitive ขั้นสูงใต้ `help --all` แต่ไม่ใช่

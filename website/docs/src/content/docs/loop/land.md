@@ -31,6 +31,11 @@ repository delivery, or pending pre-Land handoff stops with `WAIT`, `REPAIR`,
 `RUN_EXTERNAL`, or `ASK_USER`. The result names the cause, responsible actor,
 safe alternatives, state retained, and exact resume route.
 
+A valid `post-land` and `safe-before-activation` declaration does not require a
+named acknowledgement to Land. It remains discoverable as an operational
+obligation after archive. Archive confirms code delivery; it does not claim that
+deployment, activation, or production verification has completed.
+
 Safe automatic recovery—including host-permission integration and journal
 resume—runs within current authority. External delivery records and legacy
 transaction diagnostics remain available as advanced primitives under

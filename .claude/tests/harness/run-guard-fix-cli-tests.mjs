@@ -66,6 +66,24 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
   }), /lifecycle failed asynchronously/);
 }
 
+{
+  let observed = null;
+  await route("handoff-list", [
+    "--open", "--owner", "ops", "--environment", "production", "--json"
+  ], {
+    showHandoffStatus: (id, flags) => { observed = { id, flags }; }
+  });
+  assert.deepEqual(observed, {
+    id: null,
+    flags: {
+      open: true, owner: "ops", environment: "production", json: true, list: true
+    }
+  });
+  await assert.rejects(route("handoff-list", ["unexpected"], {
+    showHandoffStatus: () => {}
+  }), /takes no change id/);
+}
+
 // --- complete command-registry dispatch coverage ---
 // Every registry entry is invoked through the public router. This makes a
 // command that is lost while decomposing the router fail as a contract defect,
@@ -120,6 +138,7 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
     ["run-provider", ["change", "provider"], "runProvider"],
     ["prove", ["change"], "proofFinalize"],
     ["handoff-status", ["change"], "showHandoffStatus"],
+    ["handoff-list", [], "showHandoffStatus"],
     ["handoff-packet", ["change"], "showHandoffPacket"],
     ["handoff-record", ["change"], "recordHandoff"],
     ["land-check", ["change"], "landCheck"],

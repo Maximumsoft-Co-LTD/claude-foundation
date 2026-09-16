@@ -40,6 +40,7 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 | `proof readiness <change>` | blocker แบบมีชนิด พร้อมคำสั่งถัดไปที่ถูกต้อง |
 | `land check <change>` | ตรวจว่า projection ที่พิสูจน์แล้วยัง land ได้ |
 | `handoff status <change>` | ดู operation ที่ต้องสิทธิ์ภายนอกและผลต่อ Land |
+| `handoff list [--open] [--owner <team>] [--environment <env>] [--json]` | ดู operational obligation ข้าม active และ archived change |
 | `handoff packet <change> [--id <H00n>]` | อ่าน packet ที่ไม่มี credential สำหรับ DevOps/SRE owner |
 | `repos [change]` | ดู topology และการเลือกรีโป |
 | `models` | ดูนโยบาย model tier |
@@ -77,7 +78,7 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 | `proof advance <change>` | Compatible Prove primitive ที่ coordinator และ integration ใช้ภายใน |
 | `proof collect <change>` | การเก็บระดับล่างสำหรับวิเคราะห์หรือ integration ที่ตั้งใจไว้ |
 | `proof run <change>` | atomic run ระดับล่างเมื่อไม่ต้องมี external handoff ที่ทำต่อได้ |
-| `handoff record <change> --id <H00n> …` | บันทึก accepted/completed/rejected จาก operator ที่ระบุชื่อพร้อม reference |
+| `handoff record <change> --id <H00n> …` | บันทึก accepted/completed/rejected/cancelled/superseded พร้อม durable reference |
 
 ## การต่อสายหลักฐาน
 
