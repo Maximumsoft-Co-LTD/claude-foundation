@@ -119,9 +119,12 @@ import {
 } from "./runtime/evidence/provider-catalog.mjs";
 import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
 import { createQualityRuntime } from "./runtime/quality/quality-runtime.mjs";
+import {
+  createPullRequestRuntime, DELIVERY_PROTOCOL_VERSION, DELIVERY_RECEIPT_SCHEMA_VERSION
+} from "./runtime/workflow/pull-request-runtime.mjs";
 
 const VERSION = "3.5.18";
-const RUNTIME_API_VERSION = "39";
+const RUNTIME_API_VERSION = "40";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
 // every command up to `archive` and then threw partway through Land.
@@ -202,7 +205,7 @@ const {
     snapshots: SNAPSHOTS, transactions: TRANSACTIONS, plans: PLANS, leases: LEASES,
     prototypes: PROTOTYPES, attestations: ATTESTATIONS, authority: AUTHORITY,
     handoffs: HANDOFFS, instructionManifests: INSTRUCTION_MANIFESTS,
-    recovery: RECOVERY, changes: CHANGES
+    recovery: RECOVERY, deliveries: DELIVERIES, changes: CHANGES
   },
   readJson, readJsonOrNull, writeJson, canonicalPath, pathInside, now
 } = createBootstrap({
@@ -309,7 +312,9 @@ const {
     ciEvidenceProtocol: CI_EVIDENCE_PROTOCOL_VERSION,
     qualityCapabilitiesProtocol: QUALITY_CAPABILITIES_PROTOCOL_VERSION,
     crapProtocol: CRAP_PROTOCOL_VERSION,
-    automatedMutationProtocol: AUTOMATED_MUTATION_PROTOCOL_VERSION
+    automatedMutationProtocol: AUTOMATED_MUTATION_PROTOCOL_VERSION,
+    deliveryProtocol: String(DELIVERY_PROTOCOL_VERSION),
+    deliveryReceiptSchema: String(DELIVERY_RECEIPT_SCHEMA_VERSION)
   },
   readJson,
   fail: die
@@ -1779,6 +1784,25 @@ const {
   applySandbox,
   archive
 } = applyRuntime;
+const pullRequestRuntime = createPullRequestRuntime({
+  root: ROOT,
+  deliveriesRoot: DELIVERIES,
+  loadRuntime,
+  activeChangePath,
+  proofPath,
+  transactionJournalPath,
+  pathIdentity,
+  readJson,
+  writeJson,
+  stableHash,
+  git,
+  transactions: TRANSACTIONS,
+  selectedRepositories,
+  foundationPolicy,
+  now,
+  fail: die
+});
+const { showAdvance: showDeliveryAdvance } = pullRequestRuntime;
 const advanceLand = advanceLandOperation.bind(null, {
   loadRuntime, landCheck, archive, resumeLand, landPlanValue,
   selectedRepositories,
@@ -1944,7 +1968,7 @@ const qualityChange = () => {
 };
 operationChangeId = command === "sandbox" ? namedChange(values[1]) :
   ["resolve", "validate", "audit-change", "hash", "packet", "agent-plan", "agent-dispatch", "agent-task", "agent-acquire", "agent-release", "metrics", "feedback", "advance", "budget-checkpoint", "budget-continue", "proof-plan", "proof-readiness", "proof-advance", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "evidence-verify-ci", "authority-request", "authority-dispatch", "authority-run", "authority-abort", "authority-status", "authority-record", "authority-reset-infra", "authority-reset-base-move", "receipt", "run-provider", "prove",
-    "evidence-detect", "evidence-init", "evidence-doctor", "handoff-status", "handoff-packet", "handoff-record", "land-check", "land-advance", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "event", "telemetry-sync", "telemetry-import"].includes(command) ? namedChange(values[0]) :
+    "evidence-detect", "evidence-init", "evidence-doctor", "handoff-status", "handoff-packet", "handoff-record", "land-check", "land-advance", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "delivery-advance", "event", "telemetry-sync", "telemetry-import"].includes(command) ? namedChange(values[0]) :
     command?.startsWith("quality-")
       ? qualityChange()
       : null;
@@ -2062,6 +2086,7 @@ await routeRuntimeCommand(command, values, {
   recordRepositoryLand,
   stageRootPointers,
   resumeLand,
+  showDeliveryAdvance,
   showHandoffStatus,
   showHandoffPacket,
   recordHandoff,

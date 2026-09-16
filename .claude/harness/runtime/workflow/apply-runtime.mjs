@@ -729,6 +729,20 @@ export function createApplyRuntime({
         .violations.map((violation) => ({ capability, ...violation })));
   }
 
+  function recordDeliveryIntegrity(state, archivedPath, captured = []) {
+    if (typeof pathIdentity !== "function" || !archivedPath) return;
+    const paths = [archivedPath, ...captured.map(({ capability }) =>
+      `openspec/specs/${capability}/spec.md`)];
+    state.deliveryIntegrity = {
+      version: 1,
+      createdAt: now(),
+      entries: [...new Set(paths)].sort().map((path) => ({
+        path,
+        identity: pathIdentity(join(root, path))
+      }))
+    };
+  }
+
   function failSpecSync(violations) {
     fail(`archived specs do not match the change delta:\n${violations
       .map((violation) => `  ${violation.capability}/${violation.requirement || "-"}: ${
@@ -813,6 +827,8 @@ export function createApplyRuntime({
       status: "archive-audited",
       recoveredAt: now()
     };
+    recordDeliveryIntegrity(state, archivedPath,
+      Array.isArray(state.specSyncInputs) ? state.specSyncInputs : []);
     state.workspace.cleanup = cleanupAppliedSandbox(id, state);
     if (state.repositories)
       state.repositoryCleanup = cleanupRepositorySandboxes(id, state);
@@ -915,8 +931,10 @@ export function createApplyRuntime({
       saveRuntime(state);
       failSpecSync(specViolations);
     }
+    recordDeliveryIntegrity(state, state.archivedChangePath, specSyncInputs);
     delete state.specSyncInputs;
     delete state.specSyncViolations;
+    saveRuntime(state);
     archiveCheckpoint("after-spec-sync-verification", state);
     return cli;
   }

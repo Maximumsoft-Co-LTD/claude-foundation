@@ -5,12 +5,12 @@ description: คำสั่งที่ agent ของคุณรัน จ�
 
 agent ของคุณเป็นคนรันคำสั่งเหล่านี้ คุณแทบไม่ต้องรันเอง เอกสารนี้มีไว้ให้คุณอ่านออกว่า agent กำลังทำอะไร และรันเองได้เมื่ออยากรัน
 
-ทุกคำสั่งตอบ `--help` และ `claude-foundation describe [command] [--json]` อธิบายทั้ง surface — รวมหก slash command หลัก พร้อม `/changes` และ alias `/feature` เรียกได้ทั้งชื่อเปล่าและแบบ `/slash` โดยอ่านจากไฟล์คำสั่งที่ ship มาโดยตรง จึงไม่มีสำเนาที่สองให้ drift
+ทุกคำสั่งตอบ `--help` และ `claude-foundation describe [command] [--json]` อธิบายทั้ง surface — รวม `/deliver` แบบ optional พร้อม `/changes` และ alias `/feature` เรียกได้ทั้งชื่อเปล่าและแบบ `/slash` โดยอ่านจากไฟล์คำสั่งที่ ship มาโดยตรง จึงไม่มีสำเนาที่สองให้ drift
 
 ## Surface หลักของ agent
 
-ผู้ใช้ปกติสั่ง `/investigate`, `/change`, `/build`, `/prove`, `/land` หรือ `/dev`
-แล้ว agent เป็นเจ้าของรายละเอียด CLI โดย surface หลักมีเพียง:
+ผู้ใช้ปกติสั่ง `/investigate`, `/change`, `/build`, `/prove`, `/land`, `/deliver`
+แบบ optional หรือ `/dev` แล้ว agent เป็นเจ้าของรายละเอียด CLI โดย surface หลักมีเพียง:
 
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
@@ -18,6 +18,7 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect intake หรือ compile และเริ่ม semantic agreement หนึ่งชุดแบบ atomic |
 | `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake หรือขยาย agreement ระหว่าง Build แบบ transaction |
 | `advance <change> --through build\|proven\|archived` | รัน deterministic lifecycle แล้วคืนหนึ่งในหก action ที่ boundary จริง |
+| `deliver advance <change>` | หลังสั่ง `/deliver` อย่างชัดเจน ให้ harness ทำ isolated commit, push feature branch, เปิด/ใช้ PR เดิม, ตรวจผ่าน provider และคืน URL |
 | `changes` | อ่าน active state และ route ถัดไป |
 | `doctor …` | วิเคราะห์เฉพาะเมื่อ coordinator ขอ |
 
@@ -114,6 +115,17 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 | `land record <change> --repo <id> --commit <sha> --decision-ref <ref>` | Compatibility สำหรับ transaction แบบ commit-oriented ที่ active อยู่ก่อนแล้ว |
 | `land resume <change>` | Primitive สำหรับวินิจฉัย; recovery ปกติเรียก `/land` ซ้ำ |
 
+## การส่ง pull request แบบ optional
+
+| คำสั่ง | ใช้ทำอะไร |
+|---|---|
+| `deliver advance <change>` | Composition command เดียวสำหรับ archived change โดย harness เป็นเจ้าของ readiness, isolated worktree, projection guard, PR-standard rendering, commit, push, provider read-back, retry และ resume |
+
+ถ้าไม่เรียก `/deliver` จะไม่สร้าง delivery directory, งาน evidence เฉพาะ PR หรือ
+gate เพิ่ม คำสั่งนี้ไม่อนุญาต force-push, push เข้า default branch, merge, deploy,
+publish หรือแก้ product และสำเร็จได้เมื่อ provider ยืนยันว่า base, head กับ commit
+ของ PR ที่เปิดอยู่ตรงกับ delivery receipt เท่านั้น
+
 ## การกู้คืนและทางออกฉุกเฉิน
 
 | คำสั่ง | ใช้ทำอะไร |
@@ -152,7 +164,7 @@ Feedback ตรวจ validity จาก runtime ปัจจุบัน ส่
 | Pin | v3.5.18 |
 |---|---|
 | runtime | 3.5.18 |
-| runtime API | 39 |
+| runtime API | 40 |
 | semantic draft schema | 4 |
 | semantic intake state schema | 2 |
 | semantic amendment schema | 1 |

@@ -89,6 +89,7 @@ topology/planning fixture. `FOUNDATION_SUITE_TIMEOUT_SECONDS` overrides both.
 | `.claude/harness/tests/delivery-convergence.test.mjs` | Protocol-v5 target completion, owner-validated outcomes, read-only readiness and diagnostics, bounded resume context, operation-result preservation, setup recovery re-entry, non-empty Build plans, and budget/explicit-Land boundaries |
 | `.claude/harness/tests/tool-preparation.test.mjs` | Project-local OpenSpec preparation, composite readiness identity, root setup visibility, and failed-only repository setup retry |
 | `.claude/harness/tests/land-grant.test.mjs` | Session/change/proof/graph/target-bound Land authority, forbidden Git/external effects, stale rejection, and single-use consumption |
+| `.claude/harness/tests/pull-request-runtime.test.mjs` | Optional single-command Deliver classification, PR-standard rendering, secret and projection guards, isolated Git commit/push, provider read-back, receipt reuse, and preservation of the user's HEAD/index |
 | `.claude/harness/tests/repository-delivery-saga.test.mjs` | Prepare-all dependency order, non-root-only delivery, uncommitted HEAD/index invariants, overlap conflict, and crash-safe multi-repository resume |
 | `hooks/run-hook-tests.sh` | The hooks actually shipped: secret protection, low-cost lint dispatch, and the opt-in direct-main guard |
 | `hooks/run-phase-mutation-guard-tests.sh` | Phase resolution, fail-closed active-phase default, adoption-only carve-out, explicit audit/block modes, and workspace containment |

@@ -91,6 +91,7 @@ required providers|node --test "$ROOT/.claude/harness/tests/required-providers.t
 instruction recorder|node --test "$ROOT/.claude/harness/tests/instruction-recorder.test.mjs"
 land journal recovery helpers|node --test "$ROOT/.claude/harness/tests/land-journal-recovery-helpers.test.mjs"
 land grant|node --test "$ROOT/.claude/harness/tests/land-grant.test.mjs"
+pull request delivery|node --test "$ROOT/.claude/harness/tests/pull-request-runtime.test.mjs"
 repository head|node --test "$ROOT/.claude/harness/tests/repository-head.test.mjs"
 proof readiness value|node --test "$ROOT/.claude/harness/tests/proof-readiness-value.test.mjs"
 provider claim scope|node --test "$ROOT/.claude/harness/tests/provider-claim-scope.test.mjs"

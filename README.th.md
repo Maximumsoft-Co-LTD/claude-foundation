@@ -16,7 +16,7 @@ Change Loop ใช้ [OpenSpec](https://github.com/Fission-AI/OpenSpec) เก�
 ชื่อผลิตภัณฑ์และ workflow คือ **Change Loop** ส่วน package และ CLI ที่ติดตั้งยังใช้
 `claude-foundation` เหมือนเดิม จึงไม่ต้องเปลี่ยนคำสั่งที่ใช้อยู่
 
-**Version 3.5.18** — runtime API 39, provider protocol 13 receipt ที่บันทึกด้วย
+**Version 3.5.18** — runtime API 40, provider protocol 13 receipt ที่บันทึกด้วย
 เวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 `claude-foundation metrics <change-id>` จะแสดง source cohort ของ runtime แบบ
 เจาะจงด้วย ได้แก่ semantic version, protocol bundle ที่โหลดจริง และ SHA-256
@@ -343,10 +343,23 @@ change ไหนต้องรออีก change ระหว่าง Build, 
 Agent ใช้ `advance <change-id> --through archived` งานจะเสร็จจริงเมื่อ state เป็น
 `archived` และ Land ยังไม่ได้ให้อำนาจ commit, push, publish หรือเปิด pull request
 
-### 5. Commit ตาม Git process ของ project
+### 5. เลือก Deliver เป็น pull request (ไม่บังคับ)
 
-Change Loop หยุดหลัง apply และ archive ให้ review ผลลัพธ์ จากนั้น commit, push
-และเปิด pull request ตาม process ปกติของ project
+```text
+/deliver <change-id>
+```
+
+Workflow ปกติยังจบสมบูรณ์ที่ `archived` ถ้าเรียก Deliver อย่างชัดเจน คำสั่งเดียว
+จะสร้าง feature branch ใน isolated worktree จาก projection ที่ prove และ archive
+แล้ว สร้าง PR body มาตรฐานจาก OpenSpec กับ proof receipt, commit, push, เปิดหรือ
+ใช้ PR เดิม, ตรวจกลับผ่าน provider และคืน URL โดยไม่เปลี่ยน HEAD/index ของ checkout
+ผู้ใช้ และไม่ force-push, push เข้า default branch, merge, deploy, publish หรือแก้
+product code
+
+Deliver เป็น cold path: ถ้าไม่เรียก Change, Build, Prove และ Land จะไม่มี prompt,
+การเก็บ evidence หรือ validation เฉพาะ PR เพิ่ม หลักฐาน presentation ที่ไม่บังคับ
+ซึ่งขาดได้อาจทำให้เปิดเป็น Draft ตาม policy ส่วน proof ที่บังคับแต่หายหรือ stale
+จะ block เฉพาะ Deliver โดยไม่ย้อนสถานะ `archived`
 
 ## ภาพรวม Workflow
 
@@ -363,6 +376,7 @@ flowchart LR
     P -- Evidence ไม่ผ่าน --> B
     P -- ผ่าน --> L[Land]
     L --> A[Sync specs และ archive]
+    A -. Explicit และ optional .-> R[Deliver URL ของ PR ที่ตรวจแล้ว]
 ```
 
 Flow นี้ไม่ใช่ waterfall ก่อน Land สามารถแก้ change เดิมเมื่อพบข้อมูลใหม่:
@@ -380,6 +394,7 @@ Investigate ⇄ Change ⇄ Build ⇄ Prove → Land
 | Build | Implement code และ test, รัน focused check และทำ task ให้เสร็จ | สร้าง isolated workspace จำกัดอำนาจ และเก็บความคืบหน้า |
 | Prove | วิเคราะห์และแก้ failure ที่ evidence พบ | รัน provider ตรวจ claim coverage และ receipt แล้วสร้าง content-bound proof |
 | Land | ช่วยแก้ conflict เมื่อจำเป็นต้องใช้ judgment หรือแก้ implementation | ตรวจ freshness, apply proven diff, รองรับ rollback/resume, sync spec และ archive |
+| Deliver (optional) | เรียบเรียง narrative สำหรับ reviewer จาก archived source แบบมีขอบเขต | สร้าง proven projection ใน isolation, commit, push, เปิด/ใช้ PR เดิมและตรวจยืนยัน |
 
 ## ควรใช้ Command ไหน
 
@@ -390,6 +405,7 @@ Investigate ⇄ Change ⇄ Build ⇄ Prove → Land
 | `/build` | ข้อตกลงพร้อม implement | Code และ focused check ใน isolated workspace |
 | `/prove` | Implementation task และ focused check เสร็จ | Required receipts และ `proof.json` ที่ผูกกับ content |
 | `/land` | Proof ผ่านและคุณยอมรับ change | Apply proven diff, sync specs และ archive |
+| `/deliver` | ต้องการส่ง archived change ไป review | Commit แบบ isolated, push feature branch และคืน PR URL ที่ตรวจยืนยันแล้ว |
 | `/changes` | กลับมาทำงานต่อหรือมีหลาย active changes | State ปัจจุบันและ operation ที่ควรทำต่อ |
 | `/dev` | Intent ชัดและต้องการ Change → Build → Prove ครั้งเดียว | ปกติหยุดที่ proven candidate; automation lane ที่มี Land authority ล่วงหน้าอาจทำต่อถึง `archived` |
 
@@ -850,8 +866,9 @@ product requirement หรือซ่อม state ด้วยมือถ้�
 - Apply มี backup และ journal ทำให้ Land ที่ถูกขัดจังหวะ retry ได้
 - Land เตือน — โดยไม่บล็อก — เมื่อ target checkout อยู่บน `main`/`master`
   โดย guard ของ land ทุกตัวยังอิง commit
-- Change Loop ไม่ commit, push, เปิด pull request หรือมอบอำนาจเหล่านั้นให้ worker
-  agent โดยไม่ได้รับอนุญาตชัดเจน
+- Land ไม่ commit, push หรือเปิด pull request มีเพียง `/deliver` แบบ explicit และ
+  optional ที่ให้อำนาจแคบ ๆ เพื่อ commit proven projection บน isolated feature
+  branch, push และเปิดหรือใช้ PR เดิมที่ตรวจยืนยันแล้ว โดย worker ห้ามอนุมาน authority
 - `protect-secrets.sh` และ `lint.sh` เปิดเป็นค่าเริ่มต้น
 - `no-direct-main-commit.sh` เป็น opt-in เพราะบาง project อนุญาต controlled
   commit บน default branch โดย `doctor` จะรายงานว่าเปิดอยู่หรือไม่

@@ -14,8 +14,8 @@ It is not an AI, and it does not write code. It is a deterministic control plane
 The workflow is called **Change Loop**. Its installed package and CLI remain
 `claude-foundation`, so current commands and integrations keep working.
 
-Users keep the six intent-level commands: `/investigate`, `/change`, `/build`,
-`/prove`, `/land`, and `/dev`. The agent compiles one semantic draft and drives
+Users keep seven intent-level commands: `/investigate`, `/change`, `/build`,
+`/prove`, `/land`, optional `/deliver`, and `/dev`. The agent compiles one semantic draft and drives
 one `advance` coordinator; it does not ask the user to operate the internal CLI
 chain. The compiled OpenSpec packet remains the source of truth.
 
@@ -58,5 +58,5 @@ Change Loop deliberately splits responsibility so that no single party can both 
 - [Consumer quality gates](/docs/consumer-quality/) — add CRAP, mutation, baselines, and debt without widening Change scope
 
 :::note[Version]
-These docs track Change Loop **v3.5.18** — runtime API 39, provider protocol 13. Receipts recorded by earlier versions read as `provider-version-stale` and must be re-proven.
+These docs track Change Loop **v3.5.18** — runtime API 40, provider protocol 13. Receipts recorded by earlier versions read as `provider-version-stale` and must be re-proven.
 :::

@@ -71,6 +71,7 @@ export async function routeRuntimeCommand(command, values, api) {
     recordRepositoryLand,
     stageRootPointers,
     resumeLand,
+    showDeliveryAdvance,
     createAttestationChallenge,
     showHandoffStatus,
     showHandoffPacket,
@@ -636,6 +637,12 @@ export async function routeRuntimeCommand(command, values, api) {
     },
     "land-resume": async () => {
       resumeLand(values[0]);
+    },
+    "delivery-advance": async () => {
+      const { flags, rest } = parseStrictCommandFlags(values, "deliver advance");
+      if (Object.keys(flags).length || rest.length !== 1)
+        die("deliver advance requires exactly one change id");
+      await showDeliveryAdvance(rest[0]);
     },
     "sandbox": async () => {
       if (values[0] === "challenge") {

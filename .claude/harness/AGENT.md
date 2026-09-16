@@ -1,7 +1,7 @@
 # Change Loop agent contract
 
-Before work, verify Change Loop 3.5.18/runtime API `39`; run doctors. Harness repairs setup
-and host integration. Surface only product decisions or external owners.
+Before work, verify Change Loop 3.5.18/runtime API `40`; run doctors. Harness repairs setup.
+Surface product decisions or external owners.
 `single-model` review retains distinct identity.
 
 Compile one semantic draft. Use `advance <change> --through
@@ -22,3 +22,4 @@ Settle semantics and authority once; reask only after material change.
 Build/Prove fix product defects; Harness owns setup, permission, and recovery.
 
 Land: `.claude/orchestrator.md`. Follow `.claude/rules/fundamentals.md` for conduct and skill routing.
+After archive, `/deliver` grants commit/push/PR authority; Harness returns provider-verified URLs.

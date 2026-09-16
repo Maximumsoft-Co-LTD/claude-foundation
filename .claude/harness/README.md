@@ -583,7 +583,25 @@ leaving unrelated target edits alone. The sandbox remains the proof subject
 until archive completes, so an interrupted OpenSpec archive can resume without
 invalidating proof. Transaction backups are removed only after archive audit.
 
-Change Loop does not commit, push, or open a pull request implicitly.
+Land does not commit, push, or open a pull request implicitly.
+
+### 5. Deliver a pull request optionally
+
+`/deliver <change>` is a cold post-archive path. Its single composition command
+creates `.foundation/deliveries/<change>/` only when invoked, binds the request
+to the archived proof and Land journal, reconstructs the permitted projection
+in a separate Git worktree, commits and pushes a non-default feature branch,
+opens or reuses a provider PR, reads it back, and returns the verified URL.
+
+The grant forbids force-push, default-branch push, merge, deploy, publish,
+product edits, and staging outside the proven projection. Durable checkpoints
+make commit, push, and PR creation idempotent after interruption. Core proof
+receipts populate Test and Evidence; OpenSpec populates Summary, Why, Scope,
+Risk, Rollback, and Monitoring; one of eight type-specific sections is selected
+by risk-first classification. Presentation gaps may route to a draft, but
+Deliver never manufactures evidence and never changes the archived lifecycle
+result. Without `/deliver`, no directory, prompt, provider call, or PR-specific
+gate is created.
 
 ## Evidence model
 

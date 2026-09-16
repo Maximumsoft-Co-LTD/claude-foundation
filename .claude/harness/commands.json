@@ -226,6 +226,14 @@
       "description": "Apply, synchronize, audit, archive, and clean up explicitly."
     },
     {
+      "name": "deliver advance",
+      "usage": "deliver advance <change>",
+      "audience": "host",
+      "kind": "authority",
+      "idempotent": true,
+      "description": "Optionally create an isolated commit and feature branch from an archived proven projection, open or reuse its pull request, and return the verified URL."
+    },
+    {
       "name": "agents plan",
       "usage": "agents plan <change> [--group <n>] [--full] [--pretty]",
       "audience": "conditional",
@@ -820,6 +828,7 @@
     "land-record",
     "land-pointers",
     "land-resume",
+    "delivery-advance",
     "sandbox",
     "archive",
     "event",

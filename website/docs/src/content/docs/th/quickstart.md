@@ -93,7 +93,10 @@ Prove ใหม่ และทำ Land ต่อ คุณไม่ต้อง
 ที่ replay ไม่ได้จะยังหยุดให้ตัดสินใจแทนการ merge เงียบ ๆ
 
 :::caution
-Land ไม่ commit ไม่ push และไม่เปิด PR ให้เอง สิ่งเหล่านั้นต้องได้รับอนุญาตจากคุณแยกต่างหาก
+Land ไม่ commit ไม่ push และไม่เปิด PR ให้เอง ถ้าต้องการส่ง archived change ไป
+review ให้เรียก `/deliver add-profile-auth` หนึ่งครั้ง จากนั้น harness จะจัดการ
+isolated commit, push feature branch, เปิดหรือใช้ PR เดิม, recovery และตรวจกลับ
+ผ่าน provider แล้วคืน PR URL โดยไม่ merge หรือ deploy
 :::
 
 ## ย้อนกลับได้

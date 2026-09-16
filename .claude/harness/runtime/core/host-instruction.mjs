@@ -7,7 +7,7 @@ import {
 
 export const HOST_INSTRUCTION_PROTOCOL = 1;
 export const HOST_COMMANDS = Object.freeze([
-  "investigate", "change", "build", "prove", "land", "changes", "feature", "dev"
+  "investigate", "change", "build", "prove", "land", "deliver", "changes", "feature", "dev"
 ]);
 
 const COMMAND_FILES = new Map(HOST_COMMANDS.map((name) => [name, `${name}.md`]));

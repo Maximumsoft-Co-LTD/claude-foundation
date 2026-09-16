@@ -66,8 +66,11 @@ const mutatingTools = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 const landAuthorityCommand = tool === "Bash" &&
   /^\s*(?:claude-foundation|node\s+(?:"[^"]*foundation\.mjs"|'[^']*foundation\.mjs'|\S*foundation\.mjs))\s+(?:(?:land(?:-|\s+)advance)|archive|sandbox\s+apply)\s+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\s*$/
     .test(String(input.command || ""));
+const deliverAuthorityCommand = tool === "Bash" &&
+  /^\s*(?:claude-foundation\s+deliver\s+advance|node\s+(?:"[^"]*foundation\.mjs"|'[^']*foundation\.mjs'|\S*foundation\.mjs)\s+delivery-advance)\s+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\s*$/
+    .test(String(input.command || ""));
 if (!mutatingTools.has(tool) && tool !== "Bash") process.exit(0);
-if (tool === "Bash" && !landAuthorityCommand &&
+if (tool === "Bash" && !landAuthorityCommand && !deliverAuthorityCommand &&
     !looksMutatingShellCommand(String(input.command || ""))) process.exit(0);
 
 const projectRoot = canonical(process.env.CLAUDE_PROJECT_DIR || process.cwd());
@@ -81,9 +84,13 @@ const recorded = recordedPhaseContext({
   nowMs: Date.now
 });
 const landSession = landAuthorityCommand && currentTranscriptIsLand(transcriptPath);
-const phase = String(process.env.FOUNDATION_ACTIVE_PHASE || recorded?.phase ||
-  (landSession ? "land" : investigateSession.active ? "investigate" : "")).toLowerCase();
-const mode = devSession || landAuthorityCommand || configuredMode === "block" ||
+const deliverInvocation = currentTranscriptIsDeliver(transcriptPath);
+const deliverSession = deliverAuthorityCommand && deliverInvocation;
+const phase = String(process.env.FOUNDATION_ACTIVE_PHASE ||
+  (deliverInvocation ? "deliver" : recorded?.phase ||
+    (landSession ? "land" : investigateSession.active ? "investigate" : ""))).toLowerCase();
+const mode = devSession || landAuthorityCommand || deliverAuthorityCommand ||
+  deliverInvocation || configuredMode === "block" ||
   (configuredMode === "auto" && Boolean(phase)) ? "block" : "audit";
 const recordedRuntime = recorded?.changeId ? runtimeState(recorded.changeId) : null;
 const recordedWorkspace = recordedRuntime?.workspace?.path
@@ -95,6 +102,8 @@ let pinnedCommand = null;
 
 if (landAuthorityCommand && !landSession)
   violations.push("Land authority command requires the current /land invocation");
+if (deliverAuthorityCommand && !deliverSession)
+  violations.push("Deliver authority command requires the current /deliver invocation");
 
 // Explicit block mode fails closed without context. Auto mode deliberately
 // stays out of adoption-only sessions, but becomes block as soon as a current
@@ -110,9 +119,12 @@ if (!phase && prePhaseDraftMutationAllowed()) {
   process.exit(0);
 } else if (!phase) {
   violations.push("active phase is unavailable");
-} else if (!new Set(["investigate", "change", "build", "prove", "land"]).has(phase)) {
+} else if (!new Set(["investigate", "change", "build", "prove", "land", "deliver"])
+  .has(phase)) {
   violations.push(`unsupported active phase: ${phase}`);
-} else if (tool === "Bash" && !landSession) {
+} else if (phase === "deliver" && !deliverSession) {
+  violations.push("Deliver permits mutations only through its trusted composite command");
+} else if (tool === "Bash" && !landSession && !deliverSession) {
   inspectBash(String(input.command || ""));
 } else {
   for (const rawPath of eventPaths(input)) inspectPath(rawPath);
@@ -146,6 +158,10 @@ if (mode === "block") {
 }
 
 function inspectPath(rawPath) {
+  if (phase === "deliver") {
+    violations.push("Deliver permits mutations only through its trusted composite command");
+    return;
+  }
   const target = canonicalTarget(rawPath, projectRoot);
   if (!target) {
     violations.push("mutation target is missing or invalid");
@@ -299,6 +315,23 @@ function currentTranscriptIsLand(path) {
       } catch { /* tolerate a partially flushed final line */ }
     }
     return /^\/land(?:\s|$)/.test(latest);
+  } catch { return false; }
+}
+
+function currentTranscriptIsDeliver(path) {
+  if (!path || !existsSync(path)) return false;
+  try {
+    const source = readFileSync(path, "utf8");
+    let latest = "";
+    for (const line of source.split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const row = JSON.parse(line);
+        if (row.type === "last-prompt" && typeof row.lastPrompt === "string")
+          latest = row.lastPrompt.trim();
+      } catch { /* tolerate a partially flushed final line */ }
+    }
+    return /^\/deliver(?:\s|$)/.test(latest);
   } catch { return false; }
 }
 

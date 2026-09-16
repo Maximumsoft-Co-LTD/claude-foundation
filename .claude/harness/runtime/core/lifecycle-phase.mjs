@@ -21,6 +21,7 @@
 // command happened to run.
 
 export const LIFECYCLE_PHASES = ["investigate", "change", "build", "prove", "land"];
+export const OPTIONAL_OPERATION_PHASES = ["deliver"];
 
 export const PHASE_BY_COMMAND = {
   investigate: "investigate",
@@ -83,6 +84,8 @@ export const PHASE_BY_COMMAND = {
   "land-resume": "land",
   archive: "land",
 
+  "delivery-advance": "deliver",
+
   "budget-continue": "meta",
   "budget-checkpoint": "meta",
   event: "meta",
@@ -103,5 +106,5 @@ export function phaseForCommand(command) {
 // attribute a whole cursor chunk to a command that built nothing.
 export function telemetryPhaseForCommand(command) {
   const phase = phaseForCommand(command);
-  return LIFECYCLE_PHASES.includes(phase) ? phase : null;
+  return [...LIFECYCLE_PHASES, ...OPTIONAL_OPERATION_PHASES].includes(phase) ? phase : null;
 }

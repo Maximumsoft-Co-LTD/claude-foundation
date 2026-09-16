@@ -94,7 +94,10 @@ run recovery commands by hand. A replay conflict remains visible and requires
 judgment rather than being merged silently.
 
 :::caution
-Land never commits, pushes, or opens a PR on its own. Those need separate authorization from you.
+Land never commits, pushes, or opens a PR on its own. If you want that archived
+change sent for review, invoke `/deliver add-profile-auth` once. The harness
+then owns the isolated commit, feature-branch push, PR creation/reuse, recovery,
+and provider verification, and returns the PR URL. It never merges or deploys.
 :::
 
 ## Moving backward

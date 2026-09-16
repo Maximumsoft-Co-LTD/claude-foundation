@@ -16,7 +16,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  PHASE_BY_COMMAND, LIFECYCLE_PHASES, telemetryPhaseForCommand
+  PHASE_BY_COMMAND, LIFECYCLE_PHASES, OPTIONAL_OPERATION_PHASES,
+  telemetryPhaseForCommand
 } from "../../harness/runtime/core/lifecycle-phase.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -56,7 +57,7 @@ for (const [command, phase] of Object.entries(cliPhases))
 // a command the CLI also routes has to match, and the phase vocabulary is
 // closed.
 for (const [command, phase] of Object.entries(PHASE_BY_COMMAND)) {
-  check(() => assert.ok([...LIFECYCLE_PHASES, "meta"].includes(phase),
+  check(() => assert.ok([...LIFECYCLE_PHASES, ...OPTIONAL_OPERATION_PHASES, "meta"].includes(phase),
     `'${command}' is mapped to unknown phase '${phase}'`));
   if (cliPhases[command])
     check(() => assert.equal(cliPhases[command], phase,

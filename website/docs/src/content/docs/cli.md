@@ -5,12 +5,13 @@ description: The commands your agent runs, grouped by what they do and what auth
 
 Your agent runs these; you rarely need to. They are documented so you can read what the agent is doing, and drive it yourself when you want to.
 
-Every command answers `--help`, and `claude-foundation describe [command] [--json]` describes the surface — including six primary slash commands plus `/changes` and the `/feature` compatibility alias, resolvable by bare word or `/slash` spelling, read from the shipped command files so there is no second copy to drift.
+Every command answers `--help`, and `claude-foundation describe [command] [--json]` describes the surface — including the optional `/deliver` command, `/changes`, and the `/feature` compatibility alias, resolvable by bare word or `/slash` spelling, read from the shipped command files so there is no second copy to drift.
 
 ## Primary agent surface
 
-Normal users issue `/investigate`, `/change`, `/build`, `/prove`, `/land`, or
-`/dev`; the agent owns CLI details. Its compact runtime surface is:
+Normal users issue `/investigate`, `/change`, `/build`, `/prove`, `/land`,
+optional `/deliver`, or `/dev`; the agent owns CLI details. Its compact runtime
+surface is:
 
 | Command | Purpose |
 |---|---|
@@ -18,6 +19,7 @@ Normal users issue `/investigate`, `/change`, `/build`, `/prove`, `/land`, or
 | `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect intake or compile and atomically start one semantic agreement |
 | `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake or transactionally extend that agreement during Build |
 | `advance <change> --through build\|proven\|archived` | Run deterministic lifecycle work and return one of six bounded actions at the next real boundary |
+| `deliver advance <change>` | After explicit `/deliver`, automate isolated commit, feature-branch push, PR creation/reuse, provider verification, and return the URL |
 | `changes` | Read active state and the next useful route |
 | `doctor …` | Diagnose a route only when the coordinator asks for it |
 
@@ -114,6 +116,18 @@ these directly for diagnosis or an explicit integration.
 | `land record <change> --repo <id> --commit <sha> --decision-ref <ref>` | Legacy compatibility for an active commit-oriented transaction |
 | `land resume <change>` | Diagnostic resume primitive; normal recovery repeats `/land` |
 
+## Optional pull-request delivery
+
+| Command | Purpose |
+|---|---|
+| `deliver advance <change>` | One composition command for an archived change; the harness owns readiness, isolated worktree, projection guard, PR-standard rendering, commit, push, provider read-back, retry, and resume |
+
+If `/deliver` is absent, no delivery directory, PR-specific evidence work, or
+gate is created. The explicit command never authorizes force-push,
+default-branch push, merge, deploy, publish, or product edits. Success requires
+an open PR whose provider-reported base, head, and commit match the durable
+delivery receipt.
+
 ## Recovery and escape hatches
 
 | Command | Purpose |
@@ -152,7 +166,7 @@ Wire-visible contracts are pinned in `.claude/harness/protocol.json`. A mixed-re
 | Pin | v3.5.18 |
 |---|---|
 | runtime | 3.5.18 |
-| runtime API | 39 |
+| runtime API | 40 |
 | semantic draft schema | 4 |
 | semantic intake state schema | 2 |
 | semantic amendment schema | 1 |

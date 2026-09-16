@@ -4,48 +4,42 @@
 Investigate? → Change → Build → Prove → Land
 ```
 
-Compiled OpenSpec owns the agreement, code/tests own implementation truth, and the harness owns
-state, evidence, budgets, isolation, and Land guards. `tasks.md` is the implementation ledger;
+OpenSpec owns the agreement, code owns truth, and the harness owns
+state, evidence, budgets, isolation, and Land guards. `tasks.md` is the ledger;
 `handoffs.yaml` is the external-operation contract. `.workflow/` is read-only
 legacy state.
 
-Use the public `claude-foundation` CLI. Do not reproduce its runtime logic in
+Use the `claude-foundation` CLI. Do not reproduce runtime logic in
 prompts or Markdown.
 
 ## Resolve
 
-Follow Change's semantic-intake reference; compile one draft v4. Do not create cross-ledger IDs or empty
-artifacts by hand. Persist ambiguity, impact, coupling, evidence, and size;
-size controls slicing, never assurance. Use `/investigate` for ambiguity.
+Follow Change's semantic-intake reference and compile one v4 draft. Never hand-create
+cross-ledger IDs or empty artifacts. Persist ambiguity, impact, coupling, evidence,
+and size; size controls slicing, not assurance. Investigate ambiguity.
 
-Rapid schema requires low impact, isolated coupling, unit/static evidence, and
-no public contract, migration, trust boundary, irreversible effect, or
-sensitive data. Upgrade when risk appears.
+Rapid schema requires low impact, isolated coupling, unit/static evidence, and no
+public contract, migration, trust boundary, irreversible effect, or sensitive data.
 
 ## Build
 
-Approve spec before Build.
+Approve before Build.
 
-Start from a compact packet, not conversation history. Read only referenced
-files needed by the task, edit only its sandbox and allowed paths, and check
-`tasks.md` after focused verification.
+Start from the compact packet. Read needed files, edit only the
+sandbox's allowed paths, and check `tasks.md` after focused verification.
 
-Use `advance <change> --through build`; execute only its `EDIT`, `REPAIR`,
-`RUN_EXTERNAL`, `WAIT`, `ASK_USER`, or `DONE` action and call the exact resume
-route. `agents plan`, packets, leases, and dispatch are compatible primitives,
-not a chain the model reconstructs.
+Use `advance <change> --through build`; execute its action and resume route.
+Plans, packets, leases, and dispatch are compatible primitives, not a model-built chain.
 
-Worktrees/copies isolate files, not processes or host authority. Unattended work
-must pass the runtime guard; never enable a host permission bypass by implication.
+Worktrees isolate files, not processes or host authority. Unattended work must
+pass the runtime guard; never enable a host permission bypass by implication.
 
-If intent changes, pause and submit one `change amend` semantic amendment to the
-same change. Its transaction preserves completed tasks and manual sections,
-validates, and rolls back. Repository-scope changes require an explicit topology
-revision; never expose an unsandboxed repository.
+If intent changes, submit one `change amend`; its transaction preserves completed
+work, validates, and rolls back. Repository-scope changes require explicit topology;
+never expose an unsandboxed repository.
 
-Unauthorized cloud, secret, infrastructure, deployment, or restart work belongs
-to `handoffs.yaml`, never unchecked tasks. Unresolved operations return the
-named owner and resume route.
+Unauthorized external work belongs to `handoffs.yaml`, never unchecked tasks;
+unresolved operations return the owner and resume route.
 
 ## Prove
 
@@ -89,12 +83,21 @@ projection, preserve unrelated edits, journal backups/mutations, roll back
 partial failure, run OpenSpec spec sync/archive, audit digests, and clean up
 resumably. Never commit, push, or open a PR without separate authority.
 
-Multiple repositories use one local saga: prepare all writable targets, apply
+Multiple repositories use one saga: prepare all writable targets, apply
 dependency waves, verify unchanged HEAD/index, then archive. Diffs remain
 uncommitted; never manufacture child commits or gitlink SHAs.
 
 `/dev` runs Change → Build → Prove without inferring Land authority. With
 explicit Land authority, it may continue and succeeds only at `archived`.
+
+## Deliver (optional)
+
+After `archived`, `/deliver <change>` grants separate optional authority. Harness
+owns isolation, proven-path staging, commit, non-default feature push, PR rendering,
+provider read-back, retry, and checkpoints. The agent may compose only from archived
+sources and asks only for authority or content-identity decisions. Never force-push,
+merge, deploy, publish, expose credentials, or edit product code. No invocation means
+no delivery work; `DONE` requires provider-verified PR URLs.
 
 ## Human interaction boundary
 

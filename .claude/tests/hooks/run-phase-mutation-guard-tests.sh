@@ -417,6 +417,39 @@ out="$(printf '%s' "$chained_land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
 assert_contains "Land wrapper authority cannot cover a chained commit" "$out" \
   'decision":"block'
 
+# /deliver is a separate optional authority boundary. Only its one composite
+# command may mutate; product edits, forged calls, and chained shell commands
+# remain blocked even when a recent Land phase is still recorded.
+printf '%s\n' '{"type":"last-prompt","lastPrompt":"/deliver delivery-change"}' \
+  > "$TMP/deliver-transcript.jsonl"
+deliver_event="{\"transcript_path\":\"$TMP/deliver-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation deliver advance delivery-change\"}}"
+out="$(printf '%s' "$deliver_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
+  FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
+assert_eq "current /deliver may invoke only its composite wrapper" "" "$out"
+
+out="$(printf '%s' "$(write_event "$TMP/pre/src/app.js")" | \
+  CLAUDE_PROJECT_DIR="$TMP/pre" FOUNDATION_GUARDRAIL_MODE=auto \
+  FOUNDATION_CLAUDE_TRANSCRIPT_PATH="$TMP/deliver-transcript.jsonl" node "$HOOK")"
+assert_contains "/deliver cannot edit product files directly" "$out" \
+  'Deliver permits mutations only through its trusted composite command'
+
+out="$(printf '%s' "$deliver_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
+  FOUNDATION_GUARDRAIL_MODE=auto FOUNDATION_CLAUDE_TRANSCRIPT_PATH="$TMP/dev-transcript.jsonl" \
+  node "$HOOK")"
+assert_eq "event transcript remains authoritative for /deliver" "" "$out"
+
+forged_deliver_event="{\"transcript_path\":\"$TMP/dev-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation deliver advance delivery-change\"}}"
+out="$(printf '%s' "$forged_deliver_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
+  FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
+assert_contains "/dev cannot infer Deliver through the trusted wrapper" "$out" \
+  'requires the current /deliver invocation'
+
+chained_deliver_event="{\"transcript_path\":\"$TMP/deliver-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation deliver advance delivery-change && git push --force\"}}"
+out="$(printf '%s' "$chained_deliver_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
+  FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
+assert_contains "Deliver wrapper authority cannot cover a chained force push" "$out" \
+  'decision":"block'
+
 out="$(pre block "" "$(write_event "$TMP/pre/src/app.js")")"
 assert_contains "block mode delegates even when no phase is recorded" \
   "$out" 'active phase is unavailable'

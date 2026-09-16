@@ -2,12 +2,12 @@
   "version": 1,
   "protocol": "foundation-public-command-golden-v1",
   "hostCommands": {
-    "count": 8,
-    "sha256": "6147ee3e9a26ef0b4aa853116733904a439f46adff58250c73ec08aafae2bf20"
+    "count": 9,
+    "sha256": "e965e14abdff8efad10392d2e4c94f492a8f590246d5eb263b8bf248a11ae95a"
   },
   "cliCommands": {
-    "count": 76,
-    "sha256": "2d19723f9adb50d7df90dd7fc1c38410b5f20ad2ed4e8d55f73179ed97dc15c1"
+    "count": 77,
+    "sha256": "b20d15d89c1e2bcd9e5fa1a08f0e723fce5203a34b802797261d7c61164a6d9b"
   },
   "observableOutcomeCoverage": {
     "invalidFlags": ".claude/tests/harness/contracts/change-policy.sh",

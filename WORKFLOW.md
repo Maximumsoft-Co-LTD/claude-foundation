@@ -372,6 +372,44 @@ grant, commit, or recovery command.
 Land never implies permission to commit, push, publish, deploy, or open a pull
 request. Those effects require separate explicit authority.
 
+### `/deliver <change>` (optional)
+
+Deliver is an optional post-Land transaction. The normal change lifecycle is
+still complete at `archived`; no delivery state, provider work, presentation
+evidence, prompt, or gate exists unless the user explicitly invokes
+`/deliver <change>`.
+
+The agent runs one composition command, `claude-foundation deliver advance
+<change>`, and executes its automatic recovery internally. The user never
+assembles readiness, preparation, commit, push, provider, or resume commands.
+The invocation grants only the authority to create an isolated feature branch,
+commit the proven Land projection, push that branch, and open or reuse a pull
+request. It does not authorize force-push, default-branch push, merge, deploy,
+publish, evidence disclosure to a new store, or product edits.
+
+Deliver reconstructs the projection in a separate Git worktree, leaving the
+user's checkout, HEAD, index, and unrelated edits unchanged. It binds durable
+checkpoints to the archived change, proof run, target head, and Land projection;
+after interruption it reconciles the local commit, remote branch, and provider
+state before taking the next missing action. A repeated invocation verifies and
+returns the existing pull request rather than creating another.
+
+The PR body has one core contract—Summary, Why, Related Work, Type, included and
+excluded Scope, Test and Evidence, Risk, Rollback, and Monitoring—plus the
+applicable Frontend, Backend, Bug, Refactor/Technical Debt, Database/Migration,
+Infrastructure/DevOps, Performance, or Security/Hotfix sections. Deliver reuses
+content-bound proof receipts and archived OpenSpec sources. It may collect only
+read-only presentation evidence; it never invents evidence or changes code. A
+missing optional presentation artifact produces a draft according to project
+policy, while missing or stale required evidence blocks Deliver without
+changing the already-archived lifecycle result.
+
+Success requires provider read-back proving that the open PR's base, head, and
+commit match the delivery receipt. The final user-facing result is the verified
+PR URL. Decisions remain with the user, semantic implementation and bounded
+narrative work with the agent, and deterministic Git/provider orchestration,
+retry, and recovery with the Harness.
+
 ### `/changes` and `/dev`
 
 `/changes` distinguishes in-progress, proven, stale-proof, and ready-to-land

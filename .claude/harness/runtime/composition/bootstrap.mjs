@@ -46,6 +46,7 @@ export function createBootstrap({ start, pinned, fail, warn = console.error }) {
     handoffs: join(root, ".foundation", "handoffs"),
     instructionManifests: join(root, ".foundation", "instruction-manifests"),
     recovery: join(root, ".foundation", "recovery"),
+    deliveries: join(root, ".foundation", "deliveries"),
     changes: join(root, "openspec", "changes")
   };
   for (const name of [

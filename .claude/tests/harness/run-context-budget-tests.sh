@@ -250,7 +250,7 @@ for command in "$ROOT"/.claude/commands/*.md; do
   esac
   assert_words_at_most "command budget: $(basename "$command")" "$limit" "$command"
 done
-assert_eq "normal slash command surface is bounded" "8" \
+assert_eq "normal slash command surface is bounded" "9" \
   "$(find "$ROOT/.claude/commands" -maxdepth 1 -name '*.md' | wc -l | tr -d ' ')"
 if grep -R -Eq 'runtime (new|start|resolve)|proof (plan|finish|preflight|execute|finalize|audit)' \
   "$ROOT/.claude/commands"; then

@@ -15,7 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXPECTED_RUNTIME_API=39
+EXPECTED_RUNTIME_API=40
 PROJECT_START="${CLAUDE_FOUNDATION_PROJECT:-$PWD}"
 
 fail() { printf 'claude-foundation: %s\n' "$*" >&2; exit 1; }
@@ -83,6 +83,7 @@ run_runtime() {
     sandbox|agent-plan|agent-dispatch|agent-acquire|agent-release) phase="build" ;;
     proof-plan|proof-readiness|proof-advance|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-dispatch|authority-run|authority-abort|authority-status|authority-record|authority-reset-infra|authority-reset-base-move|quality-run|quality-report|quality-baseline|quality-debt) phase="prove" ;;
     handoff-status|handoff-packet|handoff-record|land-check|land-advance|land-recover|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
+    delivery-advance) phase="deliver" ;;
   esac
   telemetry=1
   [ "$access" != "inspect" ] || telemetry=0
@@ -150,7 +151,7 @@ for (const [title, audience] of groups) {
   console.log("");
 }
 console.log("Global options: --project <path>, -C <path>");
-console.log("Workflow: /investigate → /change → /build → /prove → /land");
+console.log("Workflow: /investigate → /change → /build → /prove → /land; optional: /deliver");
 console.log("Normal use: describe the outcome to your coding agent; it runs recovery and CLI details for you.");
 if (!showAll) console.log("Run `claude-foundation help --all` for primitive, recovery, host, and compatibility commands.");
 NODE
@@ -482,6 +483,18 @@ case "${1:-}" in
       archive) run_runtime write archive "$@" ;;
       *) fail "land requires 'advance', 'check', 'recover', 'plan', 'record', 'pointers', 'resume', or 'archive'" ;;
     esac ;;
+  deliver)
+    shift
+    sub="${1:-}"
+    if [ "$sub" = "advance" ]; then
+      shift
+    elif [ -n "$sub" ]; then
+      # Public convenience form: `claude-foundation deliver <change>`.
+      :
+    fi
+    need_arg "deliver" "${1:-}"
+    [ "$#" -eq 1 ] || fail "deliver requires exactly one change id"
+    run_runtime write delivery-advance "$@" ;;
   migrate)
     shift
     access=read

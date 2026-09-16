@@ -17,7 +17,7 @@ does not replace your coding agent, test framework, CI system, or Git workflow.
 The product is **Change Loop**; the installed package and CLI remain
 `claude-foundation`, so existing commands do not change.
 
-**Version 3.5.18** — runtime API 39, provider protocol 13. Receipts recorded by
+**Version 3.5.18** — runtime API 40, provider protocol 13. Receipts recorded by
 earlier versions read as `provider-version-stale` and must be re-proven.
 `claude-foundation metrics <change-id>` also reports the exact runtime source
 cohort: semantic version, the loaded protocol bundle, and a SHA-256 digest of
@@ -136,10 +136,10 @@ the same shared install:
 claude-foundation init /path/to/your-project --host cursor    # or opencode, codex
 ```
 
-Cursor gets the six primary lifecycle prompts plus `/changes` and the `/feature`
+Cursor gets the seven primary lifecycle prompts plus `/changes` and the `/feature`
 compatibility alias, and the always-on skill router as an
 `alwaysApply` rule; OpenCode gets the commands plus a guard plugin that replays
-the shipped hooks live; Codex gets the eight prompts in `$CODEX_HOME/prompts`
+the shipped hooks live; Codex gets the nine prompts in `$CODEX_HOME/prompts`
 with an ownership marker — Codex has no tool hooks, so Land gates remain the
 enforcement there.
 
@@ -369,10 +369,24 @@ The agent uses `advance <change-id> --through archived`. Land is complete only
 at `archived`; it still grants no authority to commit, push, publish, or open a
 pull request.
 
-### 5. Commit using your normal Git process
+### 5. Optionally deliver a pull request
 
-Change Loop stops after applying and archiving. Review the result, then commit,
-push, and open a pull request using your project's normal process.
+```text
+/deliver <change-id>
+```
+
+The normal workflow remains complete at `archived`. If you explicitly invoke
+Deliver, one command creates an isolated feature branch from the archived,
+proven projection, prepares the company-standard PR body from OpenSpec and
+proof receipts, commits, pushes, opens or reuses the PR, verifies it through the
+provider, and returns its URL. It does not touch your checkout's HEAD or index,
+and it never force-pushes, pushes a default branch, merges, deploys, publishes,
+or edits product code.
+
+Deliver is a cold path: if it is not invoked, Change, Build, Prove, and Land do
+no PR-specific prompting, evidence collection, or validation. Missing optional
+presentation evidence can make the PR a draft according to project policy;
+missing or stale required proof blocks Deliver without undoing `archived`.
 
 ## The workflow in one picture
 
@@ -389,6 +403,7 @@ flowchart LR
     P -- Evidence fails --> B
     P -- Evidence passes --> L[Land]
     L --> A[Sync specs and archive]
+    A -. Optional explicit authority .-> R[Deliver verified PR URL]
 ```
 
 This is not a waterfall. Before Land, use the same change when learning changes
@@ -407,6 +422,7 @@ After Land, a new requirement should normally become a new change.
 | Build | Implements code and tests, runs focused checks, and completes tasks | Creates an isolated workspace, bounds authority, and persists progress |
 | Prove | Diagnoses and fixes failures exposed by evidence | Runs providers, validates claim coverage and receipts, and creates content-bound proof |
 | Land | Helps resolve a conflict when human judgment or implementation changes are needed | Checks freshness, applies the proven diff, supports rollback/resume, syncs specs, and archives |
+| Deliver (optional) | Composes bounded reviewer-facing narrative from archived sources | Reconstructs the proven projection in isolation, commits, pushes, opens/reuses and verifies the PR |
 
 ## Which command should I use?
 
@@ -417,6 +433,7 @@ After Land, a new requirement should normally become a new change.
 | `/build` | The agreement is ready to implement | Edits and focused checks in an isolated workspace |
 | `/prove` | Implementation tasks and focused checks are complete | Required receipts and a content-bound `proof.json` |
 | `/land` | Proof passes and you accept the change | Applies the proven diff, syncs specs, and archives |
+| `/deliver` | An archived change should be sent for review | Optional isolated commit, feature-branch push, and verified PR URL |
 | `/changes` | You are resuming work or managing several changes | Active states and the next useful operation |
 | `/dev` | The intent is clear and you want Change → Build → Prove in one run | Normally stops with a proven candidate; a pre-authorized automation lane may continue through Land to `archived` |
 
@@ -908,8 +925,10 @@ you to.
 - Apply uses backups and a journal; an interrupted Land can be retried.
 - Land warns — without blocking — when the target is checked out on
   `main`/`master`; every land guard stays commit-based.
-- Change Loop never commits, pushes, opens a pull request, or grants those powers
-  to a worker agent without explicit authorization.
+- Land never commits, pushes, or opens a pull request. Only an explicit optional
+  `/deliver` grants narrow authority to commit the proven projection in an
+  isolated feature branch, push it, and open or reuse a verified PR; workers
+  never infer that authority.
 - `protect-secrets.sh` and `lint.sh` are enabled by default.
 - `no-direct-main-commit.sh` is opt-in because some projects allow controlled
   commits on their default branch; `doctor` reports whether it is enabled.
@@ -1012,7 +1031,7 @@ The CLI finds the installed project from the current directory or from
 `--project <path>`. Run `claude-foundation help` for the complete command
 surface intended for agents, `help --all` for compatible primitives, or
 `claude-foundation describe [command]` for any single one — the
-six primary slash commands plus the two compatible utility/alias prompts,
+seven primary slash commands plus the two compatible utility/alias prompts,
 resolvable by bare word or `/slash` spelling.
 The shipped `harness-html-report` skill renders harness state — gates,
 receipts, phase timing, and cost — as a self-contained HTML report when you

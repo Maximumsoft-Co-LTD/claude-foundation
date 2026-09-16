@@ -43,10 +43,12 @@ stale evidence. Change Loop makes completion content-bound and resumable:
   recovery command.
 - Real authority, resource, budget, conflict, or repeated no-progress boundaries
   preserve state and return an exact resume route.
-- A code-delivery flow succeeds at `archived`, never merely `proven`.
+- The normal code-delivery flow succeeds at `archived`, never merely `proven`.
 - Land applies every writable repository's proven projection as an uncommitted
   target diff, archives only after the full saga succeeds, and leaves Git HEAD
-  and index unchanged. It never commits, pushes, or opens a pull request.
+  and index unchanged. Land never commits, pushes, or opens a pull request;
+  the separate optional `/deliver` command may do those effects only under its
+  narrow explicit authority and must finish with a verified PR URL.
 
 ## Sources of truth
 

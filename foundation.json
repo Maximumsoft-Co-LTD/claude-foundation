@@ -87,6 +87,16 @@
   "land": {
     "riskBasedCi": false
   },
+  "deliver": {
+    "provider": "auto",
+    "remote": "origin",
+    "defaultBaseBranch": "main",
+    "branchPattern": "change/{changeId}",
+    "missingPresentationEvidence": "draft",
+    "missingRequiredEvidence": "block",
+    "updateOwnedPullRequest": true,
+    "allowedHosts": ["github.com"]
+  },
   "workflow": {
     "grounding": "optional",
     "reviewCircuit": "full-delta",
