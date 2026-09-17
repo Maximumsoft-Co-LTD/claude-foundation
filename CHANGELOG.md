@@ -7,8 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Optional `/deliver <change>` sends an archived, proven change to a pull
+  request under separate commit/push/PR authority. It uses isolated feature
+  branches, resumable checkpoints, and provider-verified PR URLs.
+- Investigate generates a readable English or Thai Markdown report beside its
+  structured record, with findings, source links, alternatives, decisions, and
+  the next action. Incomplete validation remains explicit, and authored notes
+  are preserved.
+
+### Changed
+
+- Normal Land instructions use `advance <change> --through archived`, including
+  interrupted-archive recovery. `/dev` continues through Land only when explicit
+  Land authority is already present.
+- Post-Land operations proven safe before activation no longer need an accepted
+  tracking reference or acknowledgement before code delivery. Their obligations
+  remain visible after archive; pre-Land and activation-coupled work still blocks.
+- PRD decision approval is distinct from compiled-spec approval before Build.
+  Feature workflows reuse identity-valid evidence and settled decisions;
+  standalone Git requests no longer select the Land skill.
+- English/Thai READMEs and the harness guide remove 730 lines of duplicated
+  guidance in favor of canonical references. Agent update instructions name the
+  installed policy path explicitly.
+- Runtime API is now 40, adapter protocol 7, advance protocol 6, delivery
+  protocol 2, and delivery receipt schema 1. Existing public command names and
+  arguments remain supported; invalidated evidence must be re-proven.
+
 ### Fixed
 
+- Prove and Land resume after failed setup, interrupted review, sandbox replay,
+  dependency-wave application, and archive interruption. Recovery preserves
+  valid work, evidence, unrelated target edits, and every target Git HEAD/index.
+- Repeated unchanged recovery returns a scoped decision instead of looping;
+  waits bind their owner and condition, and budget continuation keeps its exact
+  resume route without discarding evidence.
+- Playwright evidence rejects empty, malformed, skipped-only, or unrecognized
+  outcomes instead of crediting unexecuted claims or critical cases. Failed
+  attempts remain failures even when a retry passes.
+- Installers reject symlink destinations that escape the target before writing,
+  including host adapters and upgrade cleanup paths, and preserve user files
+  during failed upgrades.
 - Deliver verifies staged blobs and the final commit against the proven Land
   projection, including resumed attempts and Git hooks, and pushes the verified
   commit explicitly rather than a mutable HEAD.
@@ -16,6 +56,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unrelated feature-branch history and incompatible base changes during retries.
 - Multi-repository Deliver keeps independent sibling repositories separate and
   updates root gitlinks only for declared submodules.
+- Deliver validates effective push destinations and protected branches, binds
+  executable modes to Land evidence, preserves dangling symlinks, and compares
+  Git-normalized content correctly when line endings differ.
+- Dashboard registration prunes expired agents before enforcing capacity and
+  invalidates stale caches. Documentation builds declare a Node version
+  supported by the pinned Astro toolchain.
 
 ## [3.5.18] - 2026-09-15
 
