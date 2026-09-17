@@ -105,12 +105,13 @@ assert_file_contains "grill-task-gu models unresolved choices privately" \
 assert_file_contains "grill-task-gu keeps conditional effects in the same sheet" \
   "$ROOT/.claude/skills/grill-task-gu/SKILL.md" \
   'show the prerequisite and every conditional effect in this same'
-assert_file_contains "grill-task-gu forbids later decision rounds" \
+assert_file_contains "grill-task-gu includes known choices in the PRD sheet" \
   "$ROOT/.claude/skills/grill-task-gu/SKILL.md" \
-  'do not defer it to a later question round'
-assert_cmd_zero "[feature-single-finalized-sheet] feature delegates to the grill workflow that forbids a second approval" \
+  'do not defer known choices to a later question round'
+assert_cmd_zero "[feature-single-finalized-sheet] feature reuses PRD choices without substituting them for compiled-spec approval" \
   sh -c 'grep -F '\''Invoke `grill-task-gu`'\'' "$1" >/dev/null &&
-    grep -F '\''do not ask a second approval question'\'' "$2" >/dev/null' \
+    grep -F '\''choices again. This approves intake choices, not a compiled OpenSpec packet.'\'' "$2" >/dev/null &&
+    grep -F '\''Change still requires explicit compiled-spec approval before Build.'\'' "$2" >/dev/null' \
   sh "$ROOT/.claude/skills/feature/references/workflow.md" \
   "$ROOT/.claude/skills/grill-task-gu/SKILL.md"
 assert_file_contains "[change-reuses-agreement] change intake reuses settled answers" \

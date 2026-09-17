@@ -444,29 +444,19 @@ partial binding in place and preserves every valid existing child worktree.
 
 ## Normal flow
 
-### 1. Define the agreement
+The [lifecycle contract](../../WORKFLOW.md#lifecycle-commands) owns Change,
+Build, Prove, Land, and optional Deliver. Normal agent execution uses
+`advance <change> --through build|proven|archived`. Commands listed above as
+compatibility primitives are for diagnostics and integrations.
 
-Use `/change` to create or revise `openspec/changes/<change>/`. A complete
-change declares its intent, tasks, claims, and required evidence capabilities.
-Use `/investigate` first only when the problem or direction is materially
-unclear.
+Land requires explicit authority and completes at `archived`. It preserves
+Git HEAD and index; commit, push, and PR creation need separate authority.
+For interrupted work follow [recovery and user decisions](../../WORKFLOW.md#recovery-and-user-decisions).
 
-Validate the result:
+### Sandbox setup and synchronization
 
-```bash
-claude-foundation change validate <change>
-claude-foundation change audit <change>
-claude-foundation doctor --stage build --change <change>
-```
-
-Task annotations such as `[claims:profile-owner-update]` provide the explicit
-claim link. The audit also checks exact scenario mapping, provider coverage,
-security negative paths, and migration rollback/integrity expectations.
-
-### 2. Build in isolation
-
-Use `/build <change>`. For a Git project, the harness creates an isolated
-workspace under `.foundation/sandboxes/<change>`.
+The following details are operator diagnostics; the coordinator owns routine
+preparation, synchronization, and recovery.
 
 A fresh sandbox has no installed dependencies — the copy path excludes them
 and a worktree is a bare checkout. Declare a setup command and the harness
@@ -484,9 +474,9 @@ checkout's `node_modules` from inside the sandbox.
 In a multi-repository topology, each `openspec/repositories.yaml` row may
 declare its own `setupCommand`, which runs inside that repository's sandbox;
 `sandbox.setupCommand` still covers the root workspace. The outcome is
-recorded on the workspace record (`setup: ok|failed`). A failing command keeps
-the sandbox and prints a warning naming the command and workspace path — rerun
-it there manually before Prove.
+recorded on the workspace record (`setup: ok|failed`). A failing command preserves the sandbox and its setup result. Resume
+`advance`: preparation retries failed setup while reusing successful repository
+setup. Repair the declared command when the failure needs a project change.
 
 Keep the setup command to dependency installation. Anything it writes outside
 ignored directories counts toward the change's surface, exactly as if the
@@ -535,115 +525,18 @@ ticks merge back automatically.
 Harness-owned semantic amendments stay in the sandbox until Land. Build
 preparation and base-move sync preserve them. Competing target packet edits
 require an approved resolution via `--resolve openspec/changes/<change>`;
-see the Build-time amendment contract in `WORKFLOW.md`.
-
-### 3. Prove the claims
-
-Use the resumable proof path:
-
-```bash
-claude-foundation proof advance <change>
-```
-
-It evaluates the current gate, reuses valid receipts, returns one aggregated
-repair batch when product work is needed, routes review before acceptance, and
-returns a stable external wait without polling. After repair, a fresh call
-selectively reruns invalidated evidence. Readiness, collection, direct authority
-calls, execution, finalization, and audit remain diagnostic or integration
-surfaces used by the resumable command, doctor, Land, and runtime tests; they
-are not the normal agent loop.
-
-The scheduler:
-
-- reuses receipts bound to unchanged inputs;
-- deduplicates identical commands within an execution;
-- runs independent read-only providers concurrently;
-- serializes providers that share exclusive resources;
-- marks incomplete or ambiguous evidence `inconclusive` instead of guessing.
-
-A successful command is not automatically sufficient evidence. Every declared
-claim must be covered by a valid receipt from each required capability. See
-[EVIDENCE.md](EVIDENCE.md) for adapter configuration, Playwright claim
-annotations, resource locks, and receipt reuse rules.
-
-### 4. Land transactionally
-
-Check readiness:
-
-```bash
-claude-foundation land check <change>
-```
-
-Then complete the change:
-
-```bash
-claude-foundation land archive <change>
-```
-
-`land archive` verifies the content-bound proof, applies the isolated diff when
-needed, checks state identity, synchronizes the specs, archives the OpenSpec
-change, and cleans up a safely owned sandbox. Before mutation it builds an
-immutable touched-path projection, backs up those paths, and writes an apply
-journal. Each write is verified; failure rolls the projection back while
-leaving unrelated target edits alone. The sandbox remains the proof subject
-until archive completes, so an interrupted OpenSpec archive can resume without
-invalidating proof. Transaction backups are removed only after archive audit.
-
-Land does not commit, push, or open a pull request implicitly.
-
-### 5. Deliver a pull request optionally
-
-`/deliver <change>` is a cold post-archive path. Its single composition command
-creates `.foundation/deliveries/<change>/` only when invoked, binds the request
-to the archived proof and Land journal, reconstructs the permitted projection
-in a separate Git worktree, commits and pushes a non-default feature branch,
-opens or reuses a provider PR, reads it back, and returns the verified URL.
-
-The grant forbids force-push, default-branch push, merge, deploy, publish,
-product edits, and staging outside the proven projection. Durable checkpoints
-make commit, push, and PR creation idempotent after interruption. Core proof
-receipts populate Test and Evidence; OpenSpec populates Summary, Why, Scope,
-Risk, Rollback, and Monitoring; one of eight type-specific sections is selected
-by risk-first classification. Presentation gaps may route to a draft, but
-Deliver never manufactures evidence and never changes the archived lifecycle
-result. Without `/deliver`, no directory, prompt, provider call, or PR-specific
-gate is created.
+see the [Build-time amendment contract](../../WORKFLOW.md#build-change).
 
 ## Evidence model
 
-`evidence.yaml` stores stable behavioral claims. `execution.yaml` stores
-commands, reports, services, readiness identity, and resource wiring. Legacy
-changes that keep `providers` in `evidence.yaml` remain readable; `evidence
-upgrade` separates them. Five adapters are available:
+Claims belong to `evidence.yaml`. The compiler derives ordinary provider wiring;
+`execution.yaml` is conditional on custom commands, reports, services, or
+readiness. See [EVIDENCE.md](EVIDENCE.md) for adapters, capability selection,
+claim coverage, resource scheduling, and receipt validity.
 
-| Adapter | Use |
-|---|---|
-| `command` | One deterministic command for one provider |
-| `test-discovery` | One test process that emits test and discovery receipts |
-| `playwright` | Structured browser evidence mapped to claim annotations |
-| `contract-digest` | One declared file hashed across two or more repositories, passing only when the bytes agree |
-| `external` | A receipt produced outside Change Loop |
-
-Only `external` skips execution entirely. `contract-digest` runs no command but
-still executes: it reads and hashes the declared file itself.
-
-Provider names describe what is proven, not which tool runs. The built-in
-contracts include behavioral tests, discovery, browser behavior, mutation,
-state identity, integration, compatibility, performance, security, review,
-static analysis, migration, accessibility, resilience, observability, acceptance,
-deployment, and supply-chain checks.
-
-The project selects only the capabilities required by the risk and claims of
-the change. Task size affects budgeting and slicing; it does not weaken proof.
-
-Changed-surface policy can only speak once files exist. `change resolve
---surface <glob,glob>` records the paths a change expects to touch so the same
-rules run at change time: `doctor --stage change` reports the forecast
-capabilities, names the declared glob behind each, and says whether an
-independent reviewer and reviewer diversity will be required — before a
-signature is spent on a contract that is still moving. `change validate` warns
-on the same gap. The forecast never gates: a declared surface is advisory, and
-required evidence still comes from the real changed surface.
+Use `advance <change> --through proven` for the normal agent path. It aggregates
+findings and reuses valid evidence. Diagnostic primitives do not replace the
+coordinator's recovery protocol.
 
 ## Runtime state
 
@@ -669,6 +562,7 @@ listings elsewhere name this file as their source rather than restating it.
 | `.foundation/plans/` | Agent execution plans |
 | `.foundation/leases/` | Task and resource leases |
 | `.foundation/transactions/` | Land apply journals and staged backups |
+| `.foundation/deliveries/` | Optional post-archive Deliver checkpoints and verified PR receipts |
 | `.foundation/authority/` | Review and acceptance requests and their completion records |
 | `.foundation/attestations/` | Unattended-execution challenges and consumed nonces |
 | `.foundation/instruction-manifests/` | Instruction provenance per command |

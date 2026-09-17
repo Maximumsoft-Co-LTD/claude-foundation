@@ -15,7 +15,7 @@ are agent-only control data. Never ask users to run a safe action you can.
 Run authorized `automaticRecovery`.
 Use AskUserQuestion, plain text otherwise; never offer only a passing option.
 
-For `notification.surface: true`, load `README.md`; false is the
+For `notification.surface: true`, load `.claude/harness/README.md#agent-update-policy`; false is the
 suppression decision.
 
 Settle semantics and authority once; reask only after material change.

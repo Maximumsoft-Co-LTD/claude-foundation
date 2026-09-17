@@ -371,7 +371,28 @@ interrupted="$({ PATH="$TMP/bin:$PATH" FOUNDATION_SESSION_ID=before-interruption
 assert_contains "archive interruption surfaces after moving the packet" "$interrupted" 'OpenSpec archive failed'
 assert_file_exists "interrupted archive retains the moved packet" openspec/changes/archive/review-waiver/proposal.md
 export FOUNDATION_SESSION_ID=after-interruption
-landed="$(PATH="$TMP/bin:$PATH" node .claude/harness/foundation.mjs advance review-waiver --through archived)"
+# Execute the route taught by the installed slash command, through the public
+# CLI. A stale instruction pointing at a compatibility primitive must fail this
+# interrupted-archive regression even when the coordinator itself still works.
+documented_land() {
+  PATH="$TMP/bin:$PATH" node --input-type=module - "$ROOT/cli.sh" "$PWD" <<'NODE'
+import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+const [cli, project] = process.argv.slice(2);
+const instruction = readFileSync(`${project}/.claude/commands/land.md`, "utf8");
+const command = instruction.match(/Run `claude-foundation ([^`]+)`/)?.[1];
+if (!command) throw new Error("installed Land instruction has no executable route");
+const args = command.split(/\s+/).map((arg) => arg === "<change>" ? "review-waiver" : arg);
+const result = spawnSync("bash", [cli, "--project", project, ...args], {
+  encoding: "utf8", env: process.env
+});
+process.stdout.write(result.stdout || "");
+process.stderr.write(result.stderr || "");
+if (result.error) throw result.error;
+process.exit(result.status ?? 1);
+NODE
+}
+landed="$(documented_land)"
 assert_cmd_zero "Land emits one JSON outcome" env LAND_OUTPUT="$landed" \
   node -e 'JSON.parse(process.env.LAND_OUTPUT)'
 assert_contains "accepted review risk can finish at archived" "$landed" '"reached":"archived"'
@@ -386,7 +407,7 @@ assert_eq "installed consumer archive records mode-bound delivery evidence" 2 \
   "$(node -p 'require("./.foundation/runtime/review-waiver.json").deliveryIntegrity.version')"
 assert_eq "recovered Land consumes the fresh-session grant" consumed \
   "$(node -p 'require("./.foundation/transactions/review-waiver/land-grant.json").status')"
-resumed="$(PATH="$TMP/bin:$PATH" node .claude/harness/foundation.mjs advance review-waiver --through archived)"
+resumed="$(documented_land)"
 assert_contains "fresh installed runtime resumes completed Land idempotently" "$resumed" '"reached":"archived"'
 assert_eq "repeated archive preserves target HEAD" "$head_before" "$(git rev-parse HEAD)"
 assert_eq "repeated archive preserves target index" "$index_before" "$(git ls-files --stage | shasum)"

@@ -354,7 +354,7 @@ test("non-selected host phases carry no automatic advisory", async () => {
 test("shipped agent policy notifies once and reminds before Build", () => {
   const contract = readFileSync(join(ROOT, ".claude", "harness", "AGENT.md"), "utf8");
   const policy = readFileSync(join(ROOT, ".claude", "harness", "README.md"), "utf8");
-  assert.match(contract, /For `notification\.surface: true`, load `README\.md`/);
+  assert.match(contract, /For `notification\.surface: true`, load `\.claude\/harness\/README\.md#agent-update-policy`/);
   assert.match(policy, /harness owns the phase timing and session-level/);
   assert.match(policy, /do not override a false `surface`/);
   assert.match(policy, /reminder immediately before that Build entry/);

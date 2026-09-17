@@ -11,9 +11,9 @@ Await spec approval. Then run
 action and `resume`. These are agent-only control fields. The coordinator skips
 completed Build work and reused evidence automatically. Do not reconstruct chains.
 
-Stop only at `DONE`/`proven` or a real typed boundary. `/dev` never
-infers Land authority; `/land` creates the internal grant and completes through
-`archived`. `ASK_USER` asks only for a work decision; `WAIT` reports an external
+Stop at `DONE`/`proven` or a real typed boundary. With explicit Land authority,
+follow `/land` through `archived`; never infer it. `ASK_USER` asks only for a
+work decision; `WAIT` reports an external
 owner and condition, not a user command. Resume internal work yourself.
 
 Do not reread framework files. Report evidence in the user's language.

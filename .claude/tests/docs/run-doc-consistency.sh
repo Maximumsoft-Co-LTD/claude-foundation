@@ -321,7 +321,7 @@ assert_file_contains "Thai consumer quality docs forbid scope expansion" \
 assert_file_contains "installed consumer quality guide documents report-only default" \
   "$ROOT/.claude/harness/CONSUMER-QUALITY.md" "report-only by default"
 
-# Every adapter the runtime implements must appear in the shipped operator
+# Every adapter the runtime implements must appear in the canonical evidence
 # guide. Deriving the set from the provider catalog turns "contract-digest is missing
 # from the table" from something a reader has to notice into a failing test.
 adapters="$(node -e 'const s=require("fs").readFileSync(process.argv[1],"utf8");
@@ -333,13 +333,15 @@ process.stdout.write(m ? m[1].replace(/["\s]/g,"").split(",").filter(Boolean).jo
 # readers actually consult has lost its row.
 missing_adapters=""
 for adapter in $adapters; do
-  grep -qF "| \`$adapter\` |" "$HARNESS_README" || missing_adapters="$missing_adapters $adapter"
+  grep -qF "| \`$adapter\` |" "$ROOT/.claude/harness/EVIDENCE.md" || missing_adapters="$missing_adapters $adapter"
 done
 if [ -n "$adapters" ] && [ -z "$missing_adapters" ]; then
-  pass "shipped operator guide documents every runtime adapter"
+  pass "canonical evidence guide documents every runtime adapter"
 else
-  fail "shipped operator guide omits adapters:$missing_adapters"
+  fail "canonical evidence guide omits adapters:$missing_adapters"
 fi
+assert_file_contains "operator guide links to canonical adapter documentation" \
+  "$HARNESS_README" '[EVIDENCE.md](EVIDENCE.md) for adapters'
 
 # The runtime's own state roots are the authority on what the system writes.
 # Four listings previously disagreed with each other and with disk, and the one
@@ -462,5 +464,64 @@ else
 fi
 assert_file_contains "the approval page says what Land actually gates on" \
   "$APPROVAL" "Land gates on **evidence**, not on consent"
+
+# Compare the agent entrypoints with their canonical contracts. These checks
+# reject the previously contradictory instructions, not just missing keywords.
+assert_cmd_zero "lifecycle instructions agree on routing, approval, handoffs, and reuse" \
+  node --input-type=module - "$ROOT" <<'NODE'
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+const root = process.argv[2];
+const read = (file) => readFileSync(resolve(root, file), "utf8");
+const prose = (file) => read(file).replace(/\s+/g, " ");
+const land = prose(".claude/commands/land.md");
+const route = land.match(/Run `([^`]+)`/)?.[1];
+assert.equal(route, "claude-foundation advance <change> --through archived");
+assert.ok(read("WORKFLOW.md").includes(route));
+for (const boundary of ["Authority", "resource", "budget", "conflict", "external dependency", "repeated no-progress"])
+  assert.ok(land.includes(boundary), `Land omits ${boundary}`);
+assert.doesNotMatch(land, /Only semantic conflicts/);
+
+const intake = prose(".claude/skills/grill-task-gu/references/intake-contract.md");
+assert.match(intake, /needs no acknowledgement or accepted tracking reference before Land/);
+assert.doesNotMatch(intake, /requires .*named accepted tracking reference/);
+assert.match(intake, /Unresolved pre-Land or activation-coupled operations still block Land/);
+assert.match(prose("WORKFLOW.md"), /post-Land operation does not require acknowledgement/);
+
+const grill = prose(".claude/skills/grill-task-gu/SKILL.md");
+assert.match(grill, /approves intake choices, not a compiled OpenSpec packet/);
+assert.match(grill, /explicit compiled-spec approval before Build/);
+assert.match(grill, /New material gaps follow Change intake/);
+assert.doesNotMatch(grill, /do not ask a second approval question/);
+assert.match(prose(".claude/skills/change/references/workflow.md"), /Wait for explicit approval of this spec before Build/);
+const feature = prose(".claude/skills/feature/references/workflow.md");
+assert.match(feature, /PRD Decision Sheet does not replace it/);
+assert.match(feature, /coordinator reuse identity-valid receipts and proof/);
+assert.doesNotMatch(feature, /Never Land, publish, weaken evidence, or reuse proof/);
+assert.match(prose(".claude/commands/prove.md"), /coordinator reuses fresh receipts/);
+assert.match(prose(".claude/commands/dev.md"), /With explicit Land authority, follow `\/land` through `archived`/);
+
+const description = read(".claude/skills/land/SKILL.md").match(/^description: (.+)$/m)[1];
+assert.doesNotMatch(description, /apply a proven change, commit, publish/);
+assert.match(description, /standalone Git requests to git-workflow/);
+const policyPath = prose(".claude/harness/AGENT.md").match(/notification.surface: true`, load `([^`]+)`/)?.[1];
+assert.equal(policyPath, ".claude/harness/README.md#agent-update-policy");
+assert.ok(read(policyPath.split("#")[0]).includes("### Agent update policy"));
+
+// Consolidation must retain working local references, including section links.
+for (const file of ["README.md", "README.th.md", ".claude/harness/README.md",
+  ".claude/skills/grill-task-gu/references/intake-contract.md"]) {
+  for (const [, href] of read(file).matchAll(/\[[^\]]+\]\(([^)]+\.md(?:#[^)]*)?)\)/g)) {
+    if (/^https?:/.test(href)) continue;
+    const [path, fragment] = href.split("#");
+    const target = readFileSync(resolve(root, dirname(file), path), "utf8");
+    if (!fragment) continue;
+    const anchors = [...target.matchAll(/^#{1,6}\s+(.+)$/gm)].map(([, title]) =>
+      title.toLowerCase().replace(/[^\p{L}\p{N}_\-\s]/gu, "").replace(/\s/g, "-"));
+    assert.ok(anchors.includes(fragment) || target.includes(`id="${fragment}"`), `${file}: ${href}`);
+  }
+}
+NODE
 
 finish "doc-consistency tests"

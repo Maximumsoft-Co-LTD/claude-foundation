@@ -552,206 +552,32 @@ Runtime state อยู่ใน `.foundation/runtime/<change-id>.json` ห้�
 
 ## Evidence คืออะไร
 
-Evidence ใช้ตอบคำถามว่า:
-
-> เรารู้ได้อย่างไรว่า behavior นี้ถูกต้อง นอกเหนือจากการที่ agent บอกว่าเสร็จแล้ว
+Evidence เชื่อมพฤติกรรมที่ตกลงกันกับผลจากเครื่องมือจริงของโปรเจกต์:
 
 ```text
 Requirement → Claim → Provider → Receipt → Proof
 ```
 
-`evidence.yaml` ประกาศ behavioral claim ที่มี stable ID และ capability ที่ต้องใช้:
+Compiler สร้าง provider wiring ทั่วไปจากคำสั่งตรวจของ task ส่วนเครื่องมือ
+report, service หรือ readiness แบบเฉพาะกำหนดใน `execution.yaml`
+Change Loop รันเครื่องมือที่ประกาศไว้ ไม่ได้แทน test framework ของโปรเจกต์
+หรือเปลี่ยนค่าที่วัดไม่ได้ให้กลายเป็นผ่าน
 
-```json
-{
-  "version": 2,
-  "claims": [
-    {
-      "id": "other-user-cannot-update-profile",
-      "scenario": "A user cannot update another user's profile",
-      "impact": "high",
-      "capabilities": ["test", "security-static"]
-    }
-  ]
-}
-```
-
-สำหรับ semantic draft compiler จะ derive provider wiring ปกติไว้ใน
-`evidence.yaml` จาก verify command ของ task และสร้าง `execution.yaml` เฉพาะเมื่อ
-ต้องใช้ custom provider, report, service, timeout หรือ readiness การแยกนี้ยังทำให้
-เปลี่ยน wiring ได้โดยไม่ลด behavior ที่ต้องพิสูจน์
-
-Capability ที่พบบ่อยคือ `test`, `discovery`, `static-analysis`, `browser`,
-`integration`, `compatibility`, `performance`, `security-static`,
-`accessibility`, `data-migration`, `resilience`, `observability`, `deployment`,
-`dependency-supply-chain`, `cross-repo-contract` และ `review` ดู catalog และ
-รูปแบบ config จริงที่ติดตั้งด้วย:
-
-```bash
-claude-foundation providers
-```
-
-ถ้า derived หรือ custom wiring ยังไม่ครบ ให้ตรวจ command ที่ project เป็นเจ้าของ
-โดยไม่รัน จากนั้น preview wiring ที่มีความมั่นใจสูงก่อนเขียนอย่างชัดเจน:
-
-```bash
-claude-foundation evidence detect <change-id>
-claude-foundation evidence init <change-id>
-claude-foundation evidence init <change-id> --write
-claude-foundation evidence doctor <change-id>
-```
-
-Detection อ่านเฉพาะ manifest และ configuration ใน repository โดยไม่รัน script,
-ติดตั้ง dependency, เขียนทับ provider เดิม, สร้าง receipt หรือเปลี่ยน command ที่
-กำกวมให้กลายเป็น passing evidence
-
-ตรวจ traceability ตั้งแต่ต้นจนจบก่อน Build หรือหลังแก้ข้อตกลง:
-
-```bash
-claude-foundation change audit <change-id>
-```
-
-Task เชื่อม claim ด้วย `[claims:<claim-id>]` Audit จะตรวจ link ที่หายหรือไม่รู้จัก,
-claim ที่ไม่มี task/provider, scenario ที่ไม่ตรง, security negative path ที่ขาด
-และ migration ที่ไม่มี rollback/integrity coverage
-
-Remote CI ตั้งค่า issuer กับ Ed25519 public key แล้ว import ด้วย `evidence
-verify-ci` ได้ ทางปกติของ agent คือ `advance <change-id> --through proven` ส่วน
-`proof advance` เป็น compatible primitive ที่ coordinator เรียกภายใน ทุกทางผูก evidence กับ
-workspace ปัจจุบัน จึงปฏิเสธ response ที่ stale, ไม่ตรง, ไม่มีลายเซ็น หรือถูก replay
-
-Change Loop ไม่ติดตั้ง test framework หรือ browser ให้ แต่รัน tool ที่ repository
-ประกาศและเก็บ receipt ใต้ `.foundation/receipts/<change-id>/` Receipt reuse ได้
-เฉพาะเมื่อ workspace hash, agreement, provider protocol/version และ claim coverage
-ยังตรงกัน
-
-Repository ของผู้ใช้เปิด changed-code CRAP และ mutation quality lane ได้ด้วย
-`claude-foundation quality init` โดยผลแต่ละ repository ไม่ถูกเฉลี่ยรวม ภาษา/เครื่องมือ
-ที่ยังไม่รองรับจะแสดงสถานะตรงไปตรงมา และ finding ไม่มีอำนาจให้แก้ code นอก change
-อ่านวิธีตั้งค่า adapter, baseline, CI และ rollout ที่
-[Consumer Quality](docs/consumer-quality.th.md)
-
-```bash
-claude-foundation quality discover                 # สำรวจ capability แบบ read-only
-claude-foundation quality init                     # preview config ที่จะ commit
-claude-foundation quality init --write --ci github
-claude-foundation quality doctor
-claude-foundation quality run --change <change-id> # pilot แบบ report-only
-```
-
-ค่าเริ่มต้นยังเป็น report-only ให้ตรวจ mapping และสร้าง baseline ที่อนุมัติชัดเจน
-ก่อนเพิ่ม `--enforce`; nightly ดูแล full debt inventory ส่วน PR จำกัดอยู่ใน Change
-
-คำสั่งวิเคราะห์ที่ใช้บ่อย:
-
-```bash
-claude-foundation doctor --stage prove --change <change-id>
-claude-foundation proof readiness <change-id>
-claude-foundation proof run <change-id>
-```
-
-ให้ใช้ `claude-foundation advance <change-id> --through proven` เป็น boundary ของ Prove
-แต่ละ gate จะรวม finding ที่ทำงานแยกกันได้ แก้ทุกข้อใน contract เป็น batch แล้ว
-รันซ้ำเฉพาะ evidence ที่ invalidated จนผ่าน โดยไม่จำกัดจำนวนรอบแก้ product
-ถ้าต้องตัดสินใจ ขอ authority/resource แก้ conflict หรือไม่มี progress ระบบจะเก็บ
-change เดิมและคืนทางเลือกพร้อมคำสั่ง resume การเรียกซ้ำตอน workspace และ request
-ไม่เปลี่ยนจะไม่รัน provider หรือ dispatch reviewer ซ้ำ ส่วน `proof collect`, authority commands โดยตรง และ
-`proof run` เก็บไว้สำหรับการวิเคราะห์หรือ integration ที่ตั้งใจใช้ ความล้มเหลวภายใน
-Build, Prove และ Land จะคืน six-action envelope เดิมพร้อมสาเหตุจริง และ chain ที่ยัง
-มี progress จะไม่ถูกหยุดด้วยจำนวนรอบตายตัว
-
-Harness ทำ sandbox sync อัตโนมัติเอง การส่งงานซ่อมเดิมซ้ำโดยไม่คืบหน้าจะถูกเก็บ
-ข้าม process และกลับมาถามผู้ใช้พร้อมสาเหตุ สิ่งที่ลองแล้ว ทางเลือกและคำแนะนำ
-การรอภายนอกต้องเป็นทางเลือกที่ระบุเจ้าของและเงื่อนไขกลับมาทำต่อ Agent บันทึก
-คำตอบ retry/wait/pause แล้ว resume เป้าหมายเดิม ผู้ใช้ไม่ต้องประกอบคำสั่ง recovery
-เมื่อเจ้าของหรือเงื่อนไขการรอเปลี่ยน ต้องขอคำตอบใหม่ Reviewer ที่หยุดทำงานจะใช้ผล
-ที่บันทึกไว้และยัง valid ผ่าน bounded recovery ส่วน replay ที่ขัดจังหวะจะกู้ base
-ที่ตรวจสอบแล้วและตรวจ proof ใหม่
-ดู [การกู้คืนและการตัดสินใจ](WORKFLOW.md#recovery-and-user-decisions)
-
-`claude-foundation advance <change-id>` จะเลือก next action ที่มีขอบเขตชัดเจน
-เพียงหนึ่งรายการตลอด Build, Prove, repair และ Land โดย host ยังเป็นผู้เรียก model
-และ user ยังถือ authority สำหรับ commit, push, publish, เปิด PR และ waiver
-ก่อนคืน `RUN_PROOF` คำสั่งนี้จะตรวจ Proof readiness และส่ง blocker ด้าน code,
-contract, resource หรือ decision ไปยัง typed next action ที่ถูกต้อง
-ส่วน `claude-foundation feedback <change-id>` จะแยกเวลาที่ reviewer ทำงาน,
-เวลาซ่อมที่มีหลักฐานจาก workspace, human wait และเวลาที่ยังระบุสาเหตุไม่ได้
-พร้อมแสดง evidence reuse, action ที่ resume ต่อได้ และ provider ที่ receipt
-มาจาก command execution เดียวกันแทนที่จะเป็น observation อิสระ
-
-Playwright test ผูก evidence ได้ด้วย annotation `claim` และผูก stable case ด้วย
-annotation `critical-case` โดย test ที่ถูก skip จะไม่ผ่าน requirement ทั้งสองแบบ
-ผลที่ว่าง ผิดรูปแบบ หรือไม่มี test รันจริงเป็น inconclusive ให้แก้ reporter หรือ
-การเลือก test แล้วรัน provider ใหม่ หากมี attempt ที่ล้มเหลว ผลยังเป็น fail แม้ retry ผ่าน
-นอกจากนี้ `Impact` และ `Coupling` ใน proposal ต้องตรงกับ agreement ที่ machine
-เป็นเจ้าของ เพื่อไม่ให้ classification ที่คนอ่านกับที่ระบบบังคับใช้คลาดกัน
-
-Build packet มี `authorityPreflight` ด้วย งานเสี่ยงสูงที่ต้องใช้ signed CI จะหยุด
-ก่อน dispatch หรือแก้ product ถ้ายังไม่มี external CI provider ที่เชื่อถือได้ โดย
-ระบุ issuer/public-key ที่ขาดและทาง resume Change ส่วน Land จะตรวจ signed receipt
-ซ้ำอย่างอิสระ
-โปรเจกต์ที่ทำ signed CI ไม่ได้ ให้ user ตัดสินใจ ไม่ใช่แก้จากใน Build: บันทึกการยกเว้น
-ต่อ change ด้วย `claude-foundation change resolve <change> --ci-not-required --decision-ref <ref>`
-หรือตั้ง `land.riskBasedCi` เป็น `false` ใน `foundation.json` แล้วรัน `change resolve` ใหม่
-ซึ่งจะอ่าน policy ปัจจุบันให้ change นั้น
-
-Proof สามารถกำหนด provider `semantic-acceptance` ที่มีลายเซ็นได้ด้วย โดยผูก case
-ID และ input partition ที่คงที่เข้ากับ workspace จริง แต่ไม่เปิด hidden input
-หรือโค้ด oracle ให้ agent เห็น ถ้า required case หาย, ถูก skip, ซ้ำ, ถูกแก้ไข,
-stale หรือ fail ระบบจะบล็อก Proof และ review ไม่สามารถ override ได้ สำหรับ npm
-repository เดียว ระบบจะเปิด lockfile consistency provider อัตโนมัติเมื่อมีทั้ง
-`package.json` และ `package-lock.json` จึงตรวจพบ lockfile ที่ไม่ตรงก่อน Proof
-สุดท้ายโดยไม่ต้องเพิ่ม wiring เอง
-การตรวจใช้ install plan แบบ offline ของ npm โดยปิด scripts หาก dependency graph
-ขาดจะไม่ผ่าน และหากเครื่องมือหรือ cache ไม่พร้อมจะไม่ถือว่าผ่าน
-
-เบื้องหลัง packet, planning, readiness และ mutation guard ใช้ compiled execution
-contract ชุดเดียวและเปลี่ยน lifecycle ผ่าน reducer กลาง เพื่อลด policy ซ้ำซ้อน
-โดยไม่เปลี่ยนคำสั่งผู้ใช้ หลังอัปเกรดเป็น provider protocol 13 receipt protocol
-12 เดิมจะ stale ให้เก็บ active change ไว้ แก้ config ตาม diagnostics แล้วรัน
-`advance <change-id> --through proven` ใหม่ หากจำเป็นต้อง rollback ให้ย้อนเวอร์ชันที่ติดตั้ง
-เท่านั้น ห้ามคัดลอกหรือแก้ receipt JSON เอง
+ใช้ `/prove <change-id>` แล้ว coordinator จะ reuse receipt ที่ identity ยังตรง
+แก้ finding เป็นชุด และรันเฉพาะ check ที่ใช้ไม่ได้แล้ว คำสั่งที่ผ่านยังต้องครอบคลุม
+claim ที่กำหนด หลักฐานที่ fail, inconclusive, stale หรือขาดหายใช้ผ่าน proof ไม่ได้
+การ waive ต้องอ้างอิงการตัดสินใจจริงของผู้ใช้ agent สร้างคำอนุมัติเองไม่ได้
 
 ผู้ใช้ไม่ต้องประกอบ receipt command, provenance JSON, provider metadata หรือ
-workspace hash เอง รายละเอียดเหล่านี้เป็น protocol ภายในและจะแสดงเมื่อผู้ใช้
-ขอดูข้อมูลเชิงเทคนิคเท่านั้น
+workspace hash ข้อมูลเหล่านี้เป็น machine protocol และแสดงเมื่อขอรายละเอียดทางเทคนิค
 
-ถ้า provider ที่ตั้งค่าไว้รันไม่ได้ `proof readiness` จะคืน
-`INFRASTRUCTURE_ERROR` พร้อม `next` ที่มีทางเลือกแบบ structured ได้แก่ ตรวจ
-environment ด้วย doctor, retry, ใช้ external evidence ที่มี artifact ตรวจสอบ
-ย้อนหลังได้ หรือเปลี่ยนเป็น project-owned command ที่พิสูจน์ claims เดิมได้
-Harness จะไม่ลด claim coverage หรือเปลี่ยน provider ที่ล่มให้เป็น `pass`
+เมื่อจะตั้งค่าหรือวิเคราะห์ evidence ให้อ่านเฉพาะเรื่อง:
 
-สถานะที่ยังไม่พร้อมทุกแบบมี recovery path โดย `NEEDS_CODE_CHANGE` จะคืนคำสั่ง
-`/build` และ pending tasks ส่วน `CONFIGURATION_ERROR` จะคืน doctor, `/change`,
-ไฟล์ config ที่เกี่ยวข้อง และคำสั่ง validate ถ้า `changes` แสดง
-`orphan-runtime` หมายถึง runtime ยังอยู่แต่ active OpenSpec directory หาย ให้กู้
-directory เดิมหรือย้าย runtime JSON ไป `.foundation/recovery/orphaned-runtime/`
-เพื่อ quarantine แบบย้อนกลับได้
-
-provider คืนสถานะหนึ่งในสี่ มีแค่ `pass` ที่ land ได้ ส่วน `fail`, `error` และ
-`inconclusive` บล็อกทั้งหมด ตัวที่ควรรู้จักคือ `inconclusive` มันแปลว่า provider
-รันแล้วแต่ไม่ได้ให้คำตัดสินกับ claim ของคุณ ซึ่งมักหมายถึงการต่อสายที่รายงานผิดที่
-ไม่ใช่ code พัง
-
-gate ที่รันแล้ว fail มีทางออกสามทาง และ blocker พิมพ์ให้ครบ: แก้ code, ต่อสาย
-provider ใหม่ หรือ waive capability ตัวนั้นด้วยการตัดสินใจที่บันทึกไว้ผ่าน
-`change waive <change-id> --capability <c> --reason <why> --decision-ref <ref>`
-(`--revoke` คืนข้อบังคับ) waiver เดินทางเป็น advisory `user-waived` ผ่าน proof,
-archive และบรรทัด `LAND READY` มันเป็นการหักออกเท่านั้น receipt ที่ได้มาแล้ว
-ยังใช้ได้ และไม่มีเส้นทางที่พา proof ที่ fail ไป land ส่วน review กับ acceptance
-มีเส้นทาง waiver ของตัวเองจึงถูกปฏิเสธที่นี่
-
-หากต้อง wire provider หรือ browser workflow ใหม่ ดู
-[Executable evidence adapters](.claude/harness/EVIDENCE.md)
-ส่วนเว็บเอกสารครอบคลุมเรื่องเดียวกันสำหรับคนอ่าน ไม่ใช่สำหรับ agent
-
-- [Receipt และความ stale](https://claude-foundation.dev/docs/th/evidence/receipts/)
-  — receipt ผูกกับอะไร ทำไม pass ที่เขียนด้วยมือถูกปฏิเสธ และอะไรทำให้ proof หมดอายุ
-- [Adapter และการต่อสาย](https://claude-foundation.dev/docs/th/evidence/adapters/)
-  — adapter ทั้งห้าตัว การประกาศ input, service และตัวระบุ readiness
-- [Change Loop เขียนอะไรบ้าง](https://claude-foundation.dev/docs/th/artifacts/)
-  — artifact ทุกตัวที่ harness สร้าง และตัวไหนที่ตั้งใจให้คุณอ่าน
+- [Adapter, execution wiring และ signed evidence](.claude/harness/EVIDENCE.md)
+- [การ reuse receipt](.claude/harness/EVIDENCE.md#receipt-reuse)
+- [เมื่อ gate รันแล้วไม่ผ่าน](.claude/harness/EVIDENCE.md#a-gate-that-executed-and-failed)
+- [Recovery และการตัดสินใจของผู้ใช้](WORKFLOW.md#recovery-and-user-decisions)
+- [การตรวจคุณภาพ changed code แบบเลือกใช้](docs/consumer-quality.md)
 
 ## ถ้า Requirement เปลี่ยนระหว่าง Build
 
@@ -783,90 +609,38 @@ delta ที่ผ่าน validation จะอยู่ใน compiled proposa
 
 ## การใช้หลาย Repository
 
-ถ้าเพิ่งตั้งค่าครั้งแรก ให้อ่าน
-[Workflow หลาย Repository](https://claude-foundation.dev/docs/th/multi-repository/)
-ตามลำดับก่อนต่อ provider หรือแบ่ง worker ขนาน ส่วนเนื้อหาด้านล่างเป็นฉบับอ้างอิง
-ย่อสำหรับผู้ที่คุ้นเคยแล้ว
+`openspec/repositories.yaml` ประกาศ topology ของโปรเจกต์ ส่วน
+`repositories.yaml` ใน change เลือกขอบเขตอ่านและเขียน แม้เลือก child เพียงตัวเดียว
+โดยไม่มี `root` ก็ใช้ composite isolation ส่วน dependency แบบ read-only
+มีส่วนใน proof แต่ไม่เป็นเป้าหมายของ Land
 
-`openspec/repositories.yaml` ประกาศ topology ถาวรของ project ส่วน
-`repositories.yaml` ภายใน change เลือกเฉพาะ repository ที่ change นั้นอ่านหรือ
-เขียนได้ ถ้าไม่มี selection จะยังทำงานแบบ repository เดียวชื่อ `root`
+`/land` ครั้งเดียวเตรียม writable target ทั้งหมดและ apply ตามลำดับ dependency
+เป็น diff ที่ยังไม่ commit โดยรักษา Git HEAD และ index ของทุก repository
+เมื่อขัดจังหวะจะ resume งานที่ตรวจไว้แล้ว
 
-ถ้า selection ระบุ non-root แม้เพียง child เดียวและไม่ได้เลือก `root` ระบบยัง
-ถือว่าเป็น composite หลัง Build สร้าง isolation แล้ว Change Loop ต้องพบ worktree,
-target, access mode และ base head ที่บันทึกไว้ครบทุก child โดยจะไม่ fallback ไปยัง
-live checkout หรือเงียบแล้วลดรูปเป็น root-only ใช้ `sandbox inspect <change-id>`
-เพื่อดู record ที่หาย/ใช้ไม่ได้ แล้วรัน `sandbox create <change-id> --all` ซ้ำ
-คำสั่งเดิมจะซ่อม binding ที่หายโดยรักษา worktree ที่ยังใช้ได้
-
-Repository ที่จำเป็นเฉพาะตอน integration test ให้เลือกด้วย `mode: read`
-ระบบจะสร้าง detached worktree ที่ล็อก commit ให้ read dependency, รวม content
-ไว้ใน proof แต่ไม่สร้าง Land node ให้ Provider ที่รันจาก repo หนึ่งแต่ต้องใช้
-หลาย repo ระบุ cwd ด้วย `repository` และระบุ dependency ทั้งหมดด้วย
-`repositories`; command จะได้รับ path ผ่าน `FOUNDATION_REPOSITORIES_FILE` และ
-ระบบจะปฏิเสธ tracked write ที่เกิดใน read-only worktree
-
-ใส่ annotation ใน multi-repository task เพื่อให้ authority และ dependency ชัด:
-
-```markdown
-- [ ] **T001** Implement API [repo:api] [kind:implementation] [paths:internal/profile]
-- [ ] **T002** Implement App [repo:app] [kind:implementation] [depends:T001]
-- [ ] **T003** Verify contract [repo:app] [kind:contract] [depends:T001,T002]
-```
-
-Change Loop ส่งมอบหลาย repository ในเครื่องด้วย ordered resumable saga คำสั่ง
-`/land` ครั้งเดียวเตรียม writable target ทั้งหมดและ apply proven diff โดยไม่ stage
-หรือ commit; HEAD กับ index ไม่เปลี่ยน เรียก `/land` ซ้ำแล้ว resume journal โดยข้าม
-target ที่ตรวจแล้ว ดู protocol เต็มใน
-[WORKFLOW.md](WORKFLOW.md)
-
-ระหว่าง Build ระบบจะ compile repository, task, evidence provider และ Land
-declaration เป็น execution graph แบบ deterministic โดยผู้ใช้ไม่ต้องเขียน graph
-เพิ่มเอง งานข้าม repository เชื่อมกันด้วย producer/consumer contract ที่มี version
-และ consumer จะไม่ถูก dispatch หาก schema ไม่เข้ากัน หลาย active change ทำงานใน
-repository เดียวกันได้เฉพาะเมื่อ path, contract และ shared resource ที่ประกาศไว้
-ไม่ทับกันอย่างพิสูจน์ได้ หาก scope ไม่ชัดจะกลับไป lock ทั้ง repository ตามเดิม
-เมื่อบาง branch ล้ม Prove จะรักษางานอิสระที่เสร็จแล้ว แต่ Land ยังต้องมี aggregate
-graph proof ที่ fresh และตรวจสถานะใหม่ก่อน mutation ของทุก remote wave
-
-ระหว่าง Build คำสั่ง `advance` จะแปลง graph ปัจจุบันและ live lease เป็น
-native-host action เพียงหนึ่งรายการ ส่วน compatible primitive `agents dispatch`
-อยู่ใน `help --all` งานเล็กหรืองานที่ coupling กันยังอยู่ใน
-parent session รวมถึง frontier ที่เลือกได้เพียง task เดียว ส่วน bounded spawn
-group จะเกิดเมื่อ frontier มี task อิสระที่เลือกได้พร้อมกันหลายงานเท่านั้น
-งาน singleton ที่อยู่ในแผนยังต้อง acquire lease และสร้าง task packet ใหม่ก่อนรัน
-ใน parent Change Loop ไม่เรียกโมเดลเอง และจะคืน `wait` แทนการสร้าง executor ซ้ำ
-เมื่อ host restart ขณะที่ lease เดิมยังไม่หมดอายุ
+เริ่มจาก [คู่มือหลาย repository](https://claude-foundation.dev/docs/th/multi-repository/)
+รายละเอียด isolation และ scheduling อยู่ใน
+[Sandbox and repository safety](WORKFLOW.md#sandbox-and-repository-safety) และ
+[Repository execution](.claude/harness/README.md#repository-and-model-execution)
 
 ## Change Loop จำกัด Scope ของ Agent และ Skill อย่างไร
 
-Change Loop ส่ง packet ขนาดเล็กตาม scope ของ task ให้ native agent host ไม่ใช่
-resident orchestrator ที่คัดลอก conversation ทั้งหมดให้ worker ทุกตัว Change
-ที่มี task เดียวและไม่มี shared external authority จะใช้ agent เดียว งานใน workspace
-เดียวกันทำทีละงานเพื่อระบุที่มาของผลการแก้ไฟล์ ส่วน workspace ที่แยกจากกันทำพร้อมกันได้
-เมื่อ dependency และ resource อนุญาต
+Change Loop ส่ง packet ตามขอบเขต task ให้ native agent host
+งานเล็กอยู่ใน session เดิม ใช้ worker แยกเมื่องาน ขอบเขต repository
+dependency และ evidence แยกกันได้จริง agent โหลด skill หลักของชั้นที่แก้
+แล้วเพิ่ม security หรือ observability เฉพาะเมื่อเกี่ยวข้อง
 
-Agent จะโหลด construction skill หลักหนึ่งตัวตาม layer ที่แก้ และเพิ่ม security
-หรือ observability guidance เฉพาะเมื่อ change ข้าม boundary เหล่านั้น งานที่ต้อง
-ตัดสิน domain boundary เริ่มจาก `ddd-strategic` ส่วนงาน UI, backend, data หรือ
-documentation ปกติไม่ควร preload skill chain ทั้งหมด
+`foundation.json` เป็น policy ของโปรเจกต์ที่ commit ไว้ ใช้กำหนด model routing,
+concurrency, isolation, review และ execution budget ค่าจำกัดเป็นเพดาน ไม่ใช่เป้าหมาย
 
-`foundation.json` map tier แบบ portable คือ `fast`, `standard` และ `deep` เข้ากับ
-model family พร้อมกำหนด execution budget งาน inventory หรือ mechanical ใช้ fast,
-implementation ปกติใช้ standard และ architecture, security, migration หรือ
-independent review ใช้ deep โดยงาน risk สูงลดลงเป็น fast ไม่ได้
-Validation จะปรับทั้ง request และ token lane จาก factor ที่กว้างที่สุดของ impact,
-size, coupling, review, security, repository, provider, task, claim หรือ critical
-case โดยไม่เปิดเผยข้อมูลลับ คำสั่ง `metrics` จะแสดง input, scale ที่เลือก และ
-limiting factor ส่วน continuation ที่ผู้ใช้อนุมัติไว้จะคง allowance เดิม
+ค่าเริ่มต้น `independence: "self"` และ `diversity: "single-model"` เป็นการยกเว้น
+assurance อย่างชัดเจน การจัด review ตามความเสี่ยง
+ไม่ได้ทำให้ reviewer กลับมาเป็นอิสระหรือทำให้เกิด model diversity
+โปรเจกต์ที่ต้องการแยก identity หรือ model family ต้องตั้งค่าให้ชัดเจน
 
-`foundation.json` ที่มากับระบบ commit `independence: "self"` และ
-`diversity: "single-model"` ไว้ชัดเจน ทั้งสองค่าเป็น assurance waiver:
-review อาจใช้ identity หรือ session เดียวกับผู้แก้ และอาจใช้ model family เดียวกัน
-`doctor` กับ `change validate` จะแสดงชื่อ waiver พร้อมผลที่ตามมา และ review receipt
-จะบันทึกไว้ด้วย การแบ่งรอบ review ตามระดับความเสี่ยงกำหนดจำนวนรอบเท่านั้น ไม่ได้ทำให้ reviewer กลับมาเป็นอิสระหรือทำให้เกิด model diversity หากต้องการ separation
-of duties ให้ commit `independence: "required"`; หากต้องการ cross-family review
-ให้ commit `diversity: "required"`
+ดู field, ช่วงค่า, model เริ่มต้น และ review profile ใน
+[Configure foundation.json](https://claude-foundation.dev/docs/th/foundation-config/)
+และกติกาการต่อ budget ใน [Budgets and progress](WORKFLOW.md#budgets-and-progress)
 
 ## อะไรเป็น Source of Truth
 
@@ -908,117 +682,49 @@ product requirement หรือซ่อม state ด้วยมือถ้�
 
 ### การอนุมัติโดยคน
 
-standard change เริ่มต้นด้วย acceptance ที่ **ยังไม่ตัดสิน** และ `change validate`
-จะไม่ผ่านจนกว่าจะมีคนตัดสิน นี่เป็นความตั้งใจ เพราะความเงียบไม่เคยถูกอ่านว่ายินยอม
-แต่มันก็เป็นตัวบล็อกที่คนเจอเป็นอย่างแรก จึงควรตัดสินให้ชัดเจน
+ผู้ใช้ตัดสินใจเรื่อง requirement ที่มีผลสำคัญและอนุมัติ compiled OpenSpec packet
+ก่อน Build การอนุมัติ PRD Decision Sheet ตกลงเฉพาะตัวเลือกในนั้น
+ไม่ได้อนุมัติ packet ที่ยังไม่ compile คำตอบเดิมส่งต่อโดยไม่สัมภาษณ์ซ้ำ
 
-```bash
-claude-foundation change resolve <change-id> --acceptance-not-required
-claude-foundation change resolve <change-id> \
-  --acceptance-required --acceptance-reason "<ทำไมต้องให้คนตัดสิน>"
-```
+Subjective acceptance เป็นอีกเรื่องหนึ่ง Standard change เริ่มที่ undecided
+agent บันทึกการตัดสินใจของผู้ใช้ด้วย `--acceptance-required` หรือ
+`--acceptance-not-required` ส่วน review routing และ reviewer assurance
+ก็แยกจากการตัดสินใจนี้
 
-การ route review เป็นคนละจุดและแบ่งตามความเสี่ยง งาน low ใช้ AI full review หนึ่งรอบ
-งาน medium ใช้ full review หนึ่งรอบ และหลังแก้รวมหนึ่ง batch จึงใช้ fresh-session
-delta ได้อีกหนึ่งรอบเพื่อปิด finding IDs เดิม งาน high ถาม material risk ใน
-Decision Sheet ต้นทางและใช้ full/delta circuit แบบมีเพดาน โดยไม่มี human approval
-บังคับและไม่มี AI รอบสาม ค่าเริ่มต้นใช้ Claude Code Opus ใน session ใหม่แบบ
-read-only/non-persistent ถ้าเกิด infrastructure `error` เช่น CLI, auth, timeout
-หรือ output schema พัง `infraFailureThreshold` จะจำกัดจำนวนครั้งต่อ reviewer และ
-`fallbackReviewers` จะสลับ configured reviewer อัตโนมัติก่อนใช้ `main-session`
-เป็นทางสุดท้าย ทุก attempt ที่พังยังอยู่ใน review chain และคง full/delta scope เดิม
-ถ้า packet ตรวจอ่านไม่ได้ หรือ finding/closure ผูกกับ scope ไม่ถูกต้อง backend
-จะหยุด automatic retry ของ request นั้น ไม่ส่ง validation failure เดิมไปทำ full
-review ซ้ำกับโมเดลอื่น และไม่ต้องเพิ่มคำสั่งของผู้ใช้หรือ CLI
-เส้นทาง advance เดิมจะเปิด request ให้เดินต่อเมื่อ binding ที่ซ่อมแล้วตรวจผ่าน
-โดยยังเก็บ attempt ที่ล้มเหลวและนับการใช้งบ infrastructure ของครั้งนั้นไว้
-การใส่ `main-session` ต้องใช้ `independence: "self"` และผล review แบบ `fail`
-หรือ `inconclusive` จะไม่ fallback
-ทีมที่ใช้ Codex ล้วนหรือ Claude Code ล้วนตั้ง reviewer ให้ตรงและ commit
-`diversity: "single-model"` โดยยังต้องใช้ reviewer identity และ session ใหม่
-ถ้า reviewer infrastructure ล้มเหลวจะ handback มาที่ main session ได้หนึ่งครั้ง เมื่อใช้รอบ review ครบแล้วจะไม่ถาม redesign/split/pause: defect ใน contract เข้า deterministic repair closure, ความขัดแย้งจริงจึงเปิด Decision Sheet แบบ batch อีกครั้ง และถ้าขาดสิทธิ์จะสร้าง external handoff
+การไม่มีสิทธิ์ cloud ไม่หยุด Build หรือเก็บ evidence Land รอเฉพาะงาน pre-Land
+หรือ activation-coupled ที่ยังไม่เสร็จ งาน post-Land ที่ประกาศไว้และมี proof ว่า
+artifact ปลอดภัยก่อน activation ไม่ต้องมี acknowledgement หรือ accepted tracking
+reference ก่อน Land ภาระงานนั้นยังมองเห็นได้หลัง archive
 
-Build และ Prove ไม่รอ operator เพียงเพราะ developer ไม่มีสิทธิ์ cloud; `handoff packet` ส่ง operation ไปยัง owner ที่ระบุ หรือใช้ `workflow.handoffDefaultOwner` (`devops-team`) เมื่อไม่ระบุ Land จะรอเฉพาะงาน pre-Land หรือ activation-coupled ส่วน declaration ของงาน post-Land ที่พิสูจน์ว่า artifact ยังไม่ activate สามารถ Land ได้โดยไม่ต้องมีคนเซ็นรับ `handoff list --open` ทำให้งาน operational เหล่านี้ยังค้นเจอข้ามทั้ง active และ archived change และการ complete, cancel หรือ supersede จะไม่เปิด `tasks.md` กลับมา Archive ยืนยันว่า code ถูกส่งมอบ ไม่ได้ยืนยันว่า deploy, activate หรือตรวจ production แล้ว
-
-ตัว Land เองตรวจที่หลักฐาน ไม่ใช่ที่ความยินยอม agent ถูกสั่งให้อธิบายผลกระทบ
-และเสนอให้ตรวจดู ไปต่อ หรือหยุดก่อน ส่วนคำสั่งต่อเนื่อง (`land record`,
-`budget continue`, `change abandon`) แต่ละตัวต้องมี `--decision-ref`
-ระบุการตัดสินใจที่คุณทำจริง
-
-[การอนุมัติโดยคน](https://claude-foundation.dev/docs/th/approval/)
-ครอบคลุมทั้งสี่จุด รวมถึง `authority run`, การ dispatch review ที่ชัดเจน และการ
-เปลี่ยนคำตัดสินจริงของคนให้เป็น receipt
+สิทธิ์ Land แยกจากสิทธิ์ Git และผลกระทบภายนอก Archive หมายถึงส่งมอบโค้ด
+ไม่ได้หมายถึง deploy หรือยืนยันผล production แล้ว ดู
+[Review, acceptance, and external authority](WORKFLOW.md#review-acceptance-and-external-authority)
+และ [คู่มือการอนุมัติ](https://claude-foundation.dev/docs/th/approval/)
 
 ## Operator Commands และการแก้ปัญหา
 
-ผู้ใช้ทั่วไปใช้ slash commands เป็นหลัก Native CLI เหล่านี้ช่วย inspect และ
-recover:
+Agent รัน setup และ recovery ที่ทำได้เอง ผู้ใช้ให้การตัดสินใจและสิทธิ์
+โดยไม่ต้องประกอบคำสั่ง harness
 
-```bash
-claude-foundation doctor --stage change
-claude-foundation changes
-claude-foundation change start --template
-claude-foundation change start <draft.json> --inspect
-claude-foundation change amend <change-id> <amendment.json>
-claude-foundation advance <change-id> --through build|proven|archived
-claude-foundation change validate <change-id>
-claude-foundation change audit <change-id>
-claude-foundation packet <change-id> --phase build|prove|review
-claude-foundation metrics <change-id>
-claude-foundation budget continue <change-id> --reason "ทำ required proof ให้จบ" --decision-ref <host-user-decision>
-claude-foundation proof readiness <change-id>
-claude-foundation proof advance <change-id>
-claude-foundation proof run <change-id>
-claude-foundation land check <change-id>
-claude-foundation land archive <change-id>
-claude-foundation change waive <change-id> --capability <c> --reason "gate ไม่เหมาะกับ change นี้" --decision-ref <host-user-decision>
-claude-foundation change abandon <change-id> --reason "evidence contract ทำให้ผ่านไม่ได้" --decision-ref <host-user-decision>
-```
+สำหรับ operator ใช้ `claude-foundation help` ดูคำสั่งหลัก,
+`help --all` ดู compatibility primitive และ `describe <command>`
+ดูคำสั่งหนึ่งรายการ CLI หาโปรเจกต์จาก current directory หรือ `--project <path>`
 
-change ที่พิสูจน์ไม่ได้เลิกด้วย `change abandon` ซึ่งปลด lease ล้าง sandbox และย้าย
-record ไปไว้ที่ `.foundation/recovery/abandoned/<id>/` พร้อม audit line โดย
-quarantine ไม่ได้ลบ และไม่แตะ Git ส่วน guard ที่หยุดงาน เช่น ใช้ review route ตาม risk tier ครบแล้ว
-budget continuation ที่ใช้ไปแล้ว หรือ apply ที่ rollback ไม่จบ จะรายงานทางเลือกที่มี
-แทนการปฏิเสธเปล่า ๆ
+| อาการ | ขั้นถัดไป |
+|---|---|
+| ไม่มี slash command | เปิด agent session ใหม่หลังติดตั้ง |
+| เริ่ม Build ไม่ได้ | Agent ทำตาม doctor และแก้ setup หรือ agreement |
+| Proof เป็น stale | แก้งานให้เสร็จแล้ว resume `/prove`; reuse หลักฐานที่ยังใช้ได้ |
+| Test discovery เป็นศูนย์ | แก้ provider/report wiring ห้ามบันทึก pass เอง |
+| Land พบ conflict | แก้ path ที่รายงานแล้วให้ coordinator ตรวจใหม่ |
+| Archive รันไม่ได้ | Harness ตรวจและเตรียม OpenSpec CLI รุ่นที่รองรับ |
+| Land หยุดหลัง apply | Resume `/land` ไม่ต้องเปิด Change ใหม่หรือ reapply เอง |
 
-Host import telemetry แบบ `generic`, `codex`, `cursor`, `otel` หรือ `claude`
-จาก JSON/JSONL ได้ โดย OpenTelemetry GenAI/LLM token และ model attributes จะถูก
-normalize เป็น usage event แบบ append-only ชุดเดียวกับที่ `metrics` และ budget ใช้
-
-CLI หา installed project จาก directory ปัจจุบันหรือ `--project <path>` ใช้
-`claude-foundation help` เพื่อดู surface หลักของ agent, `help --all` เพื่อดู
-compatible primitive หรือ
-`claude-foundation describe [command]` เพื่อดูทีละตัว — รวม slash command
-หกคำสั่งหลักพร้อม utility/alias อีกสองตัว เรียกได้ทั้งชื่อเปล่าและแบบ `/slash` ส่วน skill `harness-html-report`
-ที่ ship มาด้วยจะ render สถานะ harness — gate, receipt, เวลาต่อ phase และ
-ต้นทุน — เป็นรายงาน HTML ในไฟล์เดียว เมื่ออยากอ่านรอบงานเป็นเรื่องเล่า
-มากกว่ารายการสถานะ
-
-ปัญหาที่พบบ่อย:
-
-| อาการ | มักหมายถึง | วิธีแก้ |
-|---|---|---|
-| ไม่พบ slash command | Agent session เปิดก่อนติดตั้ง | เปิด session ใหม่ใน target project |
-| Build เริ่มไม่ได้ | OpenSpec artifact หรือ provider wiring ยังไม่ครบ | รัน `doctor --stage build --change <change-id>` แล้วแก้ artifact ที่รายงาน |
-| Proof stale | Code, test, config, claim หรือ provider input ที่เกี่ยวข้องเปลี่ยน | ทำ edit ให้เสร็จแล้ว `/prove` ใหม่ |
-| Test discovery เป็นศูนย์ | Command ไม่พบ test/report ที่คาดไว้ | แก้ `execution.yaml` หรือ test command ห้ามบันทึก manual pass แทน |
-| Land แจ้ง conflict | Target path ใน project หลักเปลี่ยนหลังสร้าง sandbox | Review/rebase หรือ sync change แล้วสร้าง proof ใหม่ |
-| Archive รันไม่ได้ | ไม่มี OpenSpec หรือ version ไม่ใช่ 1.7.0 | ติดตั้ง pinned CLI แล้วลอง `/land` ใหม่ |
-| Land หยุดหลัง apply | Code เข้าแล้ว แต่ sync/archive ถูกขัดจังหวะ รวมถึงกรณีย้าย packet เข้า archive แล้ว | Agent resume `/land` จากหลักฐานที่เก็บไว้และทำ audit/cleanup ให้ครบ ไม่ต้อง apply ซ้ำด้วยมือหรือเปิด Change ใหม่ |
-
-Execution budget คิดต่อ autonomous run ส่วน usage ตลอดอายุ change ยังอยู่ใน
-metrics เมื่อถึง 85% ระบบเข้า completion-only mode โดยหยุด speculative
-exploration, การขยาย scope, optional refactor และการเปิด subagent ใหม่ แต่ยังทำ
-focused fix และ required proof ต่อได้ เมื่อถึง 100% ระบบจะหยุด model work ใหม่
-และถามผู้ใช้ให้เลือก continue, แก้ scope อย่างชัดเจน หรือ pause โดยไม่ block
-deterministic packet, readiness, provider, receipt reuse, proof-resume, metrics,
-Land recovery หรือ archive คำสั่ง `budget continue` เปิด window ใหม่พร้อม audit
-record เฉพาะ code/configuration ที่ AI ยังต้องทำ ทุก window ที่หมดจะถามใหม่จนถึง
-เพดาน continuation ที่ตั้งไว้ Active lease, external evidence, infrastructure
-failure และงาน deterministic ที่พร้อมอยู่แล้วจะไม่ผ่าน gate โดย reason ใช้บันทึก
-audit ไม่ได้ใช้ตัดสิน policy ระบบไม่ลบ usage เดิมและไม่ลด evidence requirement
-ใช้ `claude-foundation budget checkpoint <change>` เพื่อดู allowance ที่วัดได้
-งานที่เหลือ คำถามสำหรับผู้ใช้ และคำสั่ง resume ที่ตรงกับ checkpoint
+ดู [คำสั่ง operator](.claude/harness/README.md#advanced-operator-and-compatibility-commands),
+[ทางเลือก recovery](WORKFLOW.md#recovery-and-user-decisions) และ
+[กติกาต่อ budget](WORKFLOW.md#budgets-and-progress)
+หากต้องการภาพรวมที่อ่านง่าย skill `harness-html-report` แสดง state, evidence,
+เวลา และค่าใช้จ่ายที่วัดได้เป็น HTML report
 
 ## ตรวจหรือ Upgrade Installation
 

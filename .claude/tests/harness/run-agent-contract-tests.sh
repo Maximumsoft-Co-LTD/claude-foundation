@@ -51,7 +51,7 @@ assert_file_contains "dispatch acquires only immediately spawnable workers" \
   "$ROOT/.claude/commands/references/build-dispatch.md" \
   'Never acquire a lease that cannot be spawned immediately'
 assert_file_contains "agent contract selectively loads update policy" \
-  "$ROOT/.claude/harness/AGENT.md" 'For `notification.surface: true`, load `README.md`'
+  "$ROOT/.claude/harness/AGENT.md" 'For `notification.surface: true`, load `.claude/harness/README.md#agent-update-policy`'
 assert_file_contains "update policy suppresses the duplicate Change notice" \
   "$ROOT/.claude/harness/README.md" "harness owns the phase timing and session-level"
 assert_file_contains "update policy reminds before every Build entry" \

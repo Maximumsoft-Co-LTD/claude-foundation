@@ -1,6 +1,6 @@
 ---
 name: land
-description: Land and archive a proven Foundation change after explicit authority. Use when the user invokes land or explicitly asks Codex to apply a proven change, commit, publish, or prepare its reviewed delivery.
+description: Apply and archive proven changes with explicit Land authority. Route standalone Git requests to git-workflow and deployment or publication to delivery-engineering.
 ---
 
 Treat the text after `$land` as the command arguments. Read

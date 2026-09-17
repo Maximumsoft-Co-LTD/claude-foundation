@@ -106,7 +106,7 @@ topology/planning fixture. `FOUNDATION_SUITE_TIMEOUT_SECONDS` overrides both.
 | `harness/run-provenance-contract-tests.sh` | Instruction provenance and host execution import |
 | `harness/run-specsync-gate-tests.sh` | Spec-sync Land gate |
 | `interview/run-interview-tests.sh` | Human-interaction contracts |
-| `docs/run-doc-consistency.sh` | Shipped documentation contracts and shipped-path resolution |
+| `docs/run-doc-consistency.sh` | Shipped documentation contracts, canonical lifecycle routes, PRD versus compiled-spec approval, post-Land handoffs, evidence reuse, skill routing, and shipped-path resolution |
 | `harness/*.mjs` node suites | Bounded retry, blocked decisions, OpenSpec version policy, model drift, drift gate, spec-sync verification |
 | `dashboard` (`npm test`) | Dashboard server, snapshot projection, usage scan, and client |
 

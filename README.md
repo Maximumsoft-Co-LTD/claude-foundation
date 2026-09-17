@@ -583,204 +583,34 @@ or manually edit it in OpenSpec Markdown.
 
 ## What evidence means
 
-Evidence answers:
-
-> How do we know this behavior is correct, beyond the agent saying it is done?
+Evidence connects the agreed behavior to results from the project's real tools:
 
 ```text
 Requirement → Claim → Provider → Receipt → Proof
 ```
 
-`evidence.yaml` declares stable behavioral claims and required capabilities:
+The compiler derives ordinary provider wiring from task verification commands.
+Custom tools, reports, services, or readiness rules use `execution.yaml`.
+Change Loop runs the declared tools; it does not replace the project's test
+framework or turn an unavailable measurement into a pass.
 
-```json
-{
-  "version": 2,
-  "claims": [
-    {
-      "id": "other-user-cannot-update-profile",
-      "scenario": "A user cannot update another user's profile",
-      "impact": "high",
-      "capabilities": ["test", "security-static"]
-    }
-  ]
-}
-```
-
-For semantic drafts, the compiler derives ordinary provider wiring into
-`evidence.yaml` from task verification commands. `execution.yaml` is created
-only when the change needs a custom provider, report, service, timeout, or
-readiness override. This still lets wiring change without silently weakening
-the behavior that must be proven.
-
-Common capabilities include `test`, `discovery`, `static-analysis`, `browser`,
-`integration`, `compatibility`, `performance`, `security-static`,
-`accessibility`, `data-migration`, `resilience`, `observability`, `deployment`,
-`dependency-supply-chain`, `cross-repo-contract`, and `review`. Inspect the
-installed catalog and exact configuration shape with:
-
-```bash
-claude-foundation providers
-```
-
-When derived or custom wiring is incomplete, inspect project-owned commands
-without running them, preview high-confidence wiring, and write it explicitly:
-
-```bash
-claude-foundation evidence detect <change-id>
-claude-foundation evidence init <change-id>
-claude-foundation evidence init <change-id> --write
-claude-foundation evidence doctor <change-id>
-```
-
-Detection reads repository manifests and configuration only. It does not run
-scripts, install dependencies, overwrite configured providers, create receipts,
-or turn an ambiguous command into passing evidence.
-
-Audit end-to-end traceability before Build or after editing the agreement:
-
-```bash
-claude-foundation change audit <change-id>
-```
-
-Tasks link to claims with `[claims:<claim-id>]`. The audit detects missing or
-unknown links, claims without tasks/providers, scenario mismatches, missing
-security negative paths, and incomplete migration rollback/integrity coverage.
-
-Remote CI can be configured with an issuer and Ed25519 public key, then imported
-with `evidence verify-ci`. The normal agent path is `advance <change-id>
---through proven`; `proof advance` is the compatible Prove primitive it invokes.
-Every path binds evidence to the current workspace, so stale, mismatched, unsigned, or
-replayed responses fail closed.
-
-Change Loop does not install a test framework or browser. It runs the tools your
-repository declares and stores receipts under
-`.foundation/receipts/<change-id>/`. Receipts are reusable only while the
-workspace hash, agreement, provider protocol/version, and claim coverage remain
-valid.
-
-Consumer repositories can opt into changed-code CRAP and mutation quality
-lanes with `claude-foundation quality init`. Results keep repository identities
-separate, unsupported tools remain explicit, and findings never grant authority
-to edit outside the approved change. See [Consumer Quality](docs/consumer-quality.md).
-
-```bash
-claude-foundation quality discover                 # read-only capability inventory
-claude-foundation quality init                     # preview committed config
-claude-foundation quality init --write --ci github
-claude-foundation quality doctor
-claude-foundation quality run --change <change-id> # report-only pilot
-```
-
-The default remains report-only. Review mappings and establish an explicitly
-approved baseline before adding `--enforce`; nightly owns full debt inventory,
-while PR runs stay scoped to the Change.
-
-Useful diagnostics:
-
-```bash
-claude-foundation doctor --stage prove --change <change-id>
-claude-foundation proof readiness <change-id>
-claude-foundation proof run <change-id>
-```
-
-Run `claude-foundation advance <change-id> --through proven` as the agent-facing
-Prove boundary. Each
-gate aggregates independent findings, repairs the complete in-contract batch,
-and selectively reruns invalidated evidence until it passes. Product repair has
-no fixed cycle limit. A decision, authority, resource, conflict, or repeated
-no-progress boundary preserves the same change and returns choices plus an exact
-resume route. Repeating `advance` on an unchanged wait does not rerun
-providers or dispatch another reviewer. Internal Build, Prove, and Land
-failures also return the same six-action envelope with the original reason;
-progressing chains are not stopped by an arbitrary cycle count.
-Automatic sandbox sync stays harness-owned. Repeated unchanged repair handoffs
-survive process restarts and ask for a decision with the cause, attempted work,
-options and a recommendation. External waiting is an explicit choice naming its
-owner and resume condition. The agent records retry/wait/pause answers and
-resumes the original target; users never assemble recovery commands. Changed wait
-owners or conditions require a new answer. Stopped reviewers reuse valid saved
-results through bounded recovery; interrupted replay restores its verified base
-and rechecks proof. See
-[recovery and user decisions](WORKFLOW.md#recovery-and-user-decisions).
-`proof collect`, direct authority commands, and `proof run` remain available for
-diagnosis and explicit integrations.
-
-`claude-foundation advance <change-id>` selects one bounded next action across
-Build, Prove, repair, and Land, while the
-host still executes model work and the user retains commit, push, publish, PR,
-and waiver authority. Before it returns `RUN_PROOF`, the command verifies Proof
-readiness and routes any code, contract, resource, or decision blocker to its
-typed next action. `claude-foundation feedback <change-id>` explains elapsed
-time by reviewer execution, evidenced repair, human wait, and unattributed time,
-shows evidence reuse plus the next resumable action, and identifies providers
-whose receipts came from the same command execution rather than independent runs.
-
-Playwright tests can bind evidence with `claim` annotations and stable cases with
-`critical-case` annotations. A skipped test does not satisfy either requirement.
-Empty or malformed outcomes are inconclusive, including a report with no executed
-tests. Repair the project reporter or test selection and rerun the provider;
-failed attempts remain failures even if a retry passes.
-The proposal's `Impact` and `Coupling` fields must also match the machine-owned
-agreement, preventing the human-readable and enforced classifications from drifting.
-
-Build packets also carry `authorityPreflight`. High-risk work that requires
-signed CI stops before dispatch or product edits when no trusted external CI
-provider is configured, naming the issuer/public-key configuration and the
-exact Change resume route. Land independently verifies the signed receipt.
-A project that cannot produce signed CI resolves this as a user decision, never
-from inside Build: record a per-change waiver with
-`claude-foundation change resolve <change> --ci-not-required --decision-ref <ref>`,
-or set `land.riskBasedCi` to `false` in `foundation.json` and rerun
-`change resolve`, which re-reads the policy for that change.
-
-Proof can also require a signed `semantic-acceptance` provider. It binds stable
-case IDs and input partitions to the exact workspace while keeping hidden
-inputs and oracle code outside the agent packet. Missing, skipped, duplicated,
-tampered, stale, or failing required cases block Proof; review cannot waive the
-result. In a single npm repository, the lockfile consistency provider is
-activated automatically when `package.json` and `package-lock.json` are
-present, so a stale lockfile fails before final Proof without extra wiring.
-The check validates npm's offline install plan with scripts disabled; missing
-dependency graph entries fail, and unavailable tooling or cache cannot pass.
-
-Internally, phase packets, planning, readiness, and mutation enforcement consume
-one compiled execution contract and one lifecycle reducer. This reduces
-duplicated policy decisions without changing any user command. Existing
-provider-protocol-12 receipts become stale after upgrade to provider protocol
-13; preserve the active change, repair configuration if diagnostics requests
-it, and rerun `advance <change-id> --through proven`. Roll back the installed version only
-if protocol 13 cannot be supported; do not copy or edit receipt JSON by hand.
+Use `/prove <change-id>`. The coordinator reuses identity-valid receipts,
+repairs the current batch, and reruns only invalidated checks. A passing command
+must still cover its required claims. Failed, inconclusive, stale, or missing
+evidence cannot satisfy proof. A waiver requires a recorded user decision;
+the agent cannot manufacture one.
 
 Users never need to construct receipt commands, provenance JSON, provider
 metadata, or workspace hashes. Those remain machine protocol and are shown only
 when technical detail is requested.
 
-A provider returns one of four statuses. Only `pass` lands; `fail`, `error`, and
-`inconclusive` all block. `inconclusive` is the one worth knowing about — it
-means the provider ran but produced no verdict for your claim, so it usually
-signals wiring that reports against the wrong thing rather than broken code.
+Read the relevant reference when configuring or diagnosing evidence:
 
-A gate that ran and failed has three exits, and the blocker prints all three:
-fix the code, rewire the provider, or waive that one capability on a recorded
-user decision with `change waive <change-id> --capability <c> --reason <why>
---decision-ref <ref>` (`--revoke` restores it). The waiver travels as a
-`user-waived` advisory through proof, the archive, and the `LAND READY` line;
-it is subtractive, so receipts already earned stay valid and there is no route
-that lands a failing proof. Review and acceptance keep their own declared
-waiver routes and are refused here.
-
-See [Executable evidence adapters](.claude/harness/EVIDENCE.md) when wiring a
-new provider or browser workflow. The documentation site covers the same ground
-for readers rather than agents:
-
-- [Receipts, statuses, and staleness](https://claude-foundation.dev/docs/evidence/receipts/)
-  — what a receipt binds itself to, why a hand-written pass is refused, and what
-  expires proof.
-- [Adapters and wiring](https://claude-foundation.dev/docs/evidence/adapters/)
-  — all five adapters, declared inputs, services, and readiness identity.
-- [What Change Loop writes](https://claude-foundation.dev/docs/artifacts/)
-  — every artifact the harness produces and which of them you are meant to read.
+- [Adapters, execution wiring, and signed evidence](.claude/harness/EVIDENCE.md)
+- [Receipt reuse](.claude/harness/EVIDENCE.md#receipt-reuse)
+- [A gate that executed and failed](.claude/harness/EVIDENCE.md#a-gate-that-executed-and-failed)
+- [Recovery and user decisions](WORKFLOW.md#recovery-and-user-decisions)
+- [Optional changed-code quality checks](docs/consumer-quality.md)
 
 ## When the requirement changes during Build
 
@@ -814,63 +644,19 @@ explicit resolution. See [the amendment contract](WORKFLOW.md).
 
 ## Multiple repositories
 
-New to this setup? Follow the ordered
-[multi-repository workflow](https://claude-foundation.dev/docs/multi-repository/)
-before wiring providers or assigning parallel workers. The reference below
-summarizes the same contract for experienced operators.
+`openspec/repositories.yaml` declares project topology; the change's own
+`repositories.yaml` selects its read and write scope. Even one selected child
+without `root` uses composite isolation. Read-only dependencies contribute to
+proof but never become Land targets.
 
-`openspec/repositories.yaml` declares the durable project topology. The
-`repositories.yaml` inside a change selects only the repositories that change
-may read or write. A missing selection remains compatible with a single `root`
-repository.
+One `/land` prepares every writable target and applies dependency waves as
+uncommitted diffs. It preserves every Git HEAD and index and resumes verified
+work after interruption.
 
-Any explicit non-root selection—including exactly one child without `root`—is
-composite. Once Build creates isolation, Change Loop requires every selected
-child's recorded worktree, target, access mode, and base head. It never falls
-back to the live checkout or silently treats a missing child as a root-only
-change. Use `sandbox inspect <change-id>` for the exact missing or invalid
-record, then rerun `sandbox create <change-id> --all`; the existing command
-repairs missing bindings while preserving valid worktrees.
-
-Select repositories needed only by integration evidence with `mode: read`.
-Git-backed read dependencies receive pinned detached worktrees and are hashed
-into proof, but never receive Land nodes. An executable provider may set one
-`repository` as its cwd and list every dependency in `repositories`; Change Loop
-passes their paths through `FOUNDATION_REPOSITORIES_FILE` and rejects tracked
-writes to read-only worktrees.
-
-Annotate multi-repository tasks so authority and dependencies remain explicit:
-
-```markdown
-- [ ] **T001** Implement API [repo:api] [kind:implementation] [paths:internal/profile]
-- [ ] **T002** Implement App [repo:app] [kind:implementation] [depends:T001]
-- [ ] **T003** Verify contract [repo:app] [kind:contract] [depends:T001,T002]
-```
-
-Change Loop treats local multi-repository delivery as an ordered, resumable
-saga. One `/land` prepares all writable targets and applies each proven diff
-without staging or committing; HEAD and index stay unchanged. Repeating
-`/land` resumes the journal and skips verified targets. See
-[WORKFLOW.md](WORKFLOW.md) for the full control-plane protocol.
-
-Build compiles the repository, task, evidence-provider, and Land declarations
-into a deterministic execution graph; users do not author another graph file.
-Versioned producer/consumer contracts join repository work, and incompatible
-schemas block consumers before dispatch. Separate active changes may build in
-the same repository only when their declared path, contract, and shared-resource
-scopes are provably disjoint. Ambiguous scope remains repository-exclusive.
-Prove preserves completed independent branches after a failure, but Land still
-requires fresh aggregate graph proof and revalidates every remote wave before
-mutation.
-
-During Build, `advance` turns the current graph and live leases into one
-native-host action. Its compatible `agents dispatch` primitive is available
-under `help --all`. Small, coupled, or singleton-frontier work stays in the
-parent session; only a frontier with multiple selected independent tasks returns
-a bounded spawn group. Planned singleton work still acquires a task lease and
-regenerates its packet before running inline, while Change Loop remains
-model-free and returns `wait` rather than duplicating a live executor after a
-host restart.
+Start with the [multi-repository guide](https://claude-foundation.dev/docs/multi-repository/).
+For exact isolation and scheduling rules, see
+[Sandbox and repository safety](WORKFLOW.md#sandbox-and-repository-safety) and
+[repository execution](.claude/harness/README.md#repository-and-model-execution).
 
 ## How Change Loop scopes agents and skills
 
@@ -888,46 +674,18 @@ backend, data, or documentation work should not preload that entire skill chain.
 
 ### Execution policy in `foundation.json`
 
-`foundation.json` is the committed, project-owned policy for how Change Loop
-spends agent work. The shipped defaults route portable tiers by purpose rather
-than hard-coding one host-specific model name:
+`foundation.json` is committed, project-owned policy for model routing,
+concurrency, isolation, review, and execution budgets. Limits are ceilings;
+small changes stay in the current session.
 
-| Tier | Default family | Intended work | Fallback |
-|---|---|---|---|
-| `fast` | Haiku | Inventory, logs, and mechanical documentation | `standard` |
-| `standard` | Sonnet | Implementation, tests, and focused investigation | `deep` |
-| `deep` | Opus | Architecture, security, migration, and independent review | None |
+The defaults `independence: "self"` and `diversity: "single-model"` are explicit
+assurance waivers. Risk-tiered routing does not restore reviewer independence or model diversity.
+Projects requiring separate identities or model families must configure those
+assurances explicitly.
 
-High-risk work cannot be downgraded to `fast`. Ambiguous contracts, sensitive
-data or authentication, migrations, concurrency, public compatibility,
-cross-repository conflicts, evidence anomalies, and two failed attempts all
-trigger escalation.
-
-The same file bounds an autonomous run: at most three parallel agents, four
-parallel evidence providers, and three parallel setup operations; 8 KiB
-task and review packets, 12 KiB repository packets, and a 16 KiB global packet;
-45-minute leases; and separate rapid/standard budgets of 800,000/1,600,000
-tokens and 100/200 requests. These are ceilings, not targets—one-task changes
-stay in the current session while tasks in independent workspaces can fan out.
-Tasks sharing one workspace run serially so lease results have attributable writes.
-Validation calibrates both lanes from the widest non-secret impact, size,
-coupling, review, security, repository, provider, task, claim, or critical-case
-factor. `metrics` reports those inputs, the selected scale, and its limiting
-factor; an explicitly granted continuation keeps its original allowance.
-
-The shipped `foundation.json` commits `independence: "self"` and
-`diversity: "single-model"`. These are explicit assurance waivers: review may
-share the implementer's identity or session and may use the same model family.
-`doctor` and `change validate` name both waivers and their consequences; review
-receipts record them too. Risk-tiered routing decides how many review rounds a
-change receives, but does not restore reviewer independence or model diversity.
-The configured reviewer is Claude Code Opus at high reasoning effort in a
-read-only, ephemeral run, with Codex GPT-5.6 Sol available as the alternate.
-Commit `independence: "required"` for separation of duties and
-`diversity: "required"` for cross-family review.
-
-See [Configure `foundation.json`](https://claude-foundation.dev/docs/foundation-config/)
-for every field, validation range, and ready-to-use review profile.
+See [Configure foundation.json](https://claude-foundation.dev/docs/foundation-config/)
+for fields, validation ranges, model defaults, and review profiles, and
+[Budgets and progress](WORKFLOW.md#budgets-and-progress) for continuation rules.
 
 ## What Change Loop owns
 
@@ -971,140 +729,52 @@ you to.
 
 ### Human approval
 
-A standard change starts with acceptance **undecided**, and `change validate`
-fails until somebody decides. This is deliberate — silence is never read as
-consent — but it is also the blocker people hit first, so decide it explicitly:
+The user owns consequential requirement choices and approval of the compiled
+OpenSpec packet before Build. Approving a PRD Decision Sheet settles its choices;
+it does not approve a packet that has not yet been compiled. Settled answers
+carry forward without another interview.
 
-```bash
-claude-foundation change resolve <change-id> --acceptance-not-required
-claude-foundation change resolve <change-id> \
-  --acceptance-required --acceptance-reason "<why a person must judge this>"
-```
+Subjective acceptance is separate. A standard change starts with acceptance
+undecided; the agent records the user's choice with `--acceptance-required` or
+`--acceptance-not-required`. Review routing and reviewer assurance are also
+separate from that choice.
 
-Review routing is a separate boundary and is risk-tiered. Low risk gets one
-full AI review. Medium risk gets one full review and, only after one correction
-batch, one fresh-session delta that must close the original finding IDs. High
-risk asks material decisions during intake and permits the same bounded
-full/delta route—never a third AI and never a mandatory human approval gate.
-The default reviewer is Claude Code Opus in a read-only ephemeral run. If it
-returns infrastructure `error` results (for example missing CLI, auth, timeout,
-or malformed output), `infraFailureThreshold` bounds retries per reviewer and
-`fallbackReviewers` routes automatically through configured reviewers before an
-optional final `main-session` handback. Every failed attempt remains in the
-review chain and the full/delta scope is preserved.
-An uninspectable packet or a finding/closure binding error stops that request's
-automatic retry chain; the backend does not spend another full review on the
-unchanged validation failure. No additional user or CLI command is required.
-The existing advance route reopens a repaired binding after validation succeeds,
-while retaining the failed attempt and its infrastructure budget consumption.
-It never falls back after a review verdict such as `fail` or `inconclusive`.
-Because `main-session` is explicitly self-review, including it requires
-`independence: "self"`.
-The default `independence: "self"`
-and `diversity: "single-model"` policy supports a single-model, single-identity
-installation. Projects that require separation of duties can commit
-`independence: "required"`; teams with both providers can also require
-cross-provider review with `diversity: "required"`. Reviewer infrastructure receives one bounded main-session handback. After the
-delivered review route is complete, Change Loop refuses another open review:
-in-contract findings follow deterministic repair closure, a genuine contract
-contradiction reopens one batched Decision Sheet, and missing authority becomes
-an external handoff rather than another interview.
+Missing cloud access does not stop Build or evidence collection. Land blocks
+unresolved pre-Land or activation-coupled operations. A declared post-Land
+operation with proof that the merged artifact is safe before activation needs
+no acknowledgement or accepted tracking reference before Land. Its obligation
+remains visible after archive.
 
-Build and Prove do not wait for an operator merely because a developer lacks
-cloud access. `handoff packet` sends the exact operation to its owner; operations
-without one use `workflow.handoffDefaultOwner` (`devops-team` by default).
-Land waits only for pre-Land or activation-coupled work. A valid post-Land
-declaration may remain without acknowledgement when the merged artifact is
-proven dark until activation. `handoff list --open` keeps those operational
-obligations visible across active and archived changes; completing, cancelling,
-or superseding one never reopens `tasks.md`. Archive proves code delivery, not
-deployment, activation, or production verification.
-
-Land itself gates on evidence rather than consent. The agent is instructed to
-explain the effects and offer to inspect, proceed, or pause first, and the
-continuation commands (`land record`, `budget continue`, `change abandon`) each
-require a `--decision-ref` naming the decision you actually made.
-
-[Human approval](https://claude-foundation.dev/docs/approval/) covers all four
-boundaries, including automatic `authority run`, explicit review dispatch, and
-how a real human verdict becomes a receipt.
+Explicit Land authority is separate from Git and external-side-effect authority.
+Archive means code delivery, not deployment or production verification.
+See [Review, acceptance, and external authority](WORKFLOW.md#review-acceptance-and-external-authority)
+and the [human approval guide](https://claude-foundation.dev/docs/approval/).
 
 ## Operator commands and troubleshooting
 
-Most users only need the slash commands. These native CLI commands are useful
-for inspection and recovery:
+The agent executes routine setup and recovery. Users supply decisions and
+authority; they do not need to assemble harness commands.
 
-```bash
-claude-foundation doctor --stage change
-claude-foundation changes
-claude-foundation change start --template
-claude-foundation change start <draft.json> --inspect
-claude-foundation change amend <change-id> <amendment.json>
-claude-foundation advance <change-id> --through build|proven|archived
-claude-foundation change validate <change-id>
-claude-foundation change audit <change-id>
-claude-foundation packet <change-id> --phase build|prove|review
-claude-foundation metrics <change-id>
-claude-foundation budget continue <change-id> --reason "finish required proof" --decision-ref <host-user-decision>
-claude-foundation proof readiness <change-id>
-claude-foundation proof advance <change-id>
-claude-foundation proof run <change-id>
-claude-foundation land check <change-id>
-claude-foundation land archive <change-id>
-claude-foundation change waive <change-id> --capability <c> --reason "gate is wrong for this change" --decision-ref <host-user-decision>
-claude-foundation change abandon <change-id> --reason "evidence contract cannot be satisfied" --decision-ref <host-user-decision>
-```
+For operator inspection, `claude-foundation help` lists primary commands,
+`help --all` includes compatibility primitives, and `describe <command>`
+explains one command. The CLI finds the project from the current directory or
+`--project <path>`.
 
-A change that cannot be proven is retired with `change abandon`, which releases
-its leases, cleans up its sandbox, and moves its record into
-`.foundation/recovery/abandoned/<id>/` with an audit line. It quarantines rather
-than deletes and never touches Git. Guards that end a run — exhausted AI review
-rounds, a spent budget continuation, an apply that could not finish rolling
-back — report their options rather than a bare refusal.
+| Symptom | Next step |
+|---|---|
+| Slash command is missing | Open a new agent session after installation |
+| Build cannot start | The agent follows doctor findings and repairs setup or the agreement |
+| Proof is stale | Finish the edits and resume `/prove`; valid evidence is reused |
+| Test discovery is zero | Repair the provider/report wiring; never record a manual pass |
+| Land reports a conflict | Resolve the named paths, then let the coordinator revalidate |
+| Archive cannot run | The harness checks and prepares the supported OpenSpec CLI |
+| Land stopped after apply | Resume `/land`; do not create a new change or reapply manually |
 
-Host telemetry can be imported from `generic`, `codex`, `cursor`, `otel`, or
-`claude` JSON/JSONL. OpenTelemetry GenAI/LLM token and model attributes normalize
-into the same append-only usage events used by `metrics` and budget accounting.
-
-The CLI finds the installed project from the current directory or from
-`--project <path>`. Run `claude-foundation help` for the complete command
-surface intended for agents, `help --all` for compatible primitives, or
-`claude-foundation describe [command]` for any single one — the
-seven primary slash commands plus the two compatible utility/alias prompts,
-resolvable by bare word or `/slash` spelling.
-The shipped `harness-html-report` skill renders harness state — gates,
-receipts, phase timing, and cost — as a self-contained HTML report when you
-want the round told as a story rather than a status listing.
-
-Common problems:
-
-| Symptom | What it usually means | Action |
-|---|---|---|
-| Slash command is missing | The agent session started before installation | Open a new session in the target project |
-| Build cannot start | Required OpenSpec artifacts or provider wiring are incomplete | Run `doctor --stage build --change <change-id>` and fix the reported artifact |
-| Proof is stale | Relevant code, tests, configuration, claims, or provider inputs changed | Finish the edits and run `/prove` again |
-| Test discovery is zero | The configured command did not find the expected tests/report | Fix `execution.yaml` or the project test command; do not record a manual pass |
-| Land reports a conflict | A touched path in the main project changed after sandbox creation | Review/rebase or synchronize the change, then produce fresh proof |
-| Archive cannot run | OpenSpec is missing or not version 1.7.0 | Install the pinned CLI and retry `/land` |
-| Land stopped after apply | Code is present but sync/archive was interrupted, including a packet already moved to archive | The agent resumes `/land` from retained evidence and completes audit/cleanup; no manual reapply or new Change is needed |
-
-Execution budgets are scoped to an autonomous run while lifetime usage remains
-visible in metrics. At 85% the run enters completion-only mode: speculative
-exploration, scope expansion, optional refactors, and new subagents stop, while
-focused fixes and required proof continue. At 100% the first exhausted window
-becomes `NEEDS_USER_DECISION`: new model work pauses and the harness offers
-continue, explicit contract revision, or pause. It never silently drops an
-acceptance criterion or treats unfinished work as complete. Deterministic packet,
-readiness, provider, receipt-reuse, proof-resume, metrics, Land recovery, and
-archive commands remain available. `budget continue` opens a fresh
-user-approved window with an audit record only for required model-completable
-code or configuration work. Every exhausted continuation asks again, up to the
-configured continuation ceiling. Active leases, external evidence,
-infrastructure failures, and already-ready deterministic work do not qualify.
-The reason is audit context rather than a text-based policy gate; prior usage,
-the acceptance contract, and evidence requirements remain intact.
-Use `claude-foundation budget checkpoint <change>` to inspect measured remaining
-allowance, unfinished work, the user prompt, and the exact resume command.
+See the [operator command reference](.claude/harness/README.md#advanced-operator-and-compatibility-commands),
+[recovery choices](WORKFLOW.md#recovery-and-user-decisions), and
+[budget continuation rules](WORKFLOW.md#budgets-and-progress).
+For a readable overview, the `harness-html-report` skill renders state, evidence,
+timing, and available cost measurements as an HTML report.
 
 ## Verify or upgrade an installation
 
