@@ -164,9 +164,9 @@ remains unverified when current workspace freshness cannot be checked.
 
 Wire-visible contracts are pinned in `.claude/harness/protocol.json`. A mixed-revision install fails immediately at load rather than partway through Land.
 
-| Pin | v3.5.18 |
+| Pin | v3.5.19 |
 |---|---|
-| runtime | 3.5.18 |
+| runtime | 3.5.19 |
 | runtime API | 40 |
 | semantic draft schema | 4 |
 | semantic intake state schema | 2 |
