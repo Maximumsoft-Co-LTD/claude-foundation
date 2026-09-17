@@ -11,7 +11,7 @@
   "evidenceSchema": ["1", "2"],
   "executionSchema": "1",
   "providerProtocol": "13",
-  "adapterProtocol": "6",
+  "adapterProtocol": "7",
   "proofProtocol": "7",
   "packetSchema": "11",
   "agentPlanSchema": "5",
@@ -32,6 +32,6 @@
   "qualityCapabilitiesProtocol": "1",
   "crapProtocol": "1",
   "automatedMutationProtocol": "1",
-  "deliveryProtocol": "1",
+  "deliveryProtocol": "2",
   "deliveryReceiptSchema": "1"
 }

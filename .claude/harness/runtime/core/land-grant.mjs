@@ -37,7 +37,7 @@ export function landGrantBinding({ state, proof, repositories, stableHash }) {
 
 export function createLandGrantRuntime({
   transactions, loadRuntime, selectedRepositories, proofPath, readJson, writeJson,
-  stableHash, now, landCheck, env = process.env
+  stableHash, now, landCheck, archiveRecoveryReady = null, env = process.env
 }) {
   const grantPath = (id) => join(transactions, id, "land-grant.json");
 
@@ -57,7 +57,7 @@ export function createLandGrantRuntime({
     // not mutate product files. Avoid asking landCheck to announce an archived
     // success before that recovery has rejected a corrupt spec-sync result.
     if (loadRuntime(id).status === "archived") return null;
-    landCheck(id);
+    if (!archiveRecoveryReady?.(id)) landCheck(id);
     const binding = currentBinding(id);
     const body = {
       version: LAND_GRANT_VERSION,

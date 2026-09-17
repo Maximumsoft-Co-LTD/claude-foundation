@@ -156,12 +156,15 @@ export function playwrightAnnotationCriticalCases(annotations) {
 }
 
 export function playwrightTestOutcome(results) {
-  const statuses = results.map((result) => result?.status).filter(Boolean);
+  const statuses = Array.isArray(results) ? results.map((result) => result?.status) : [];
   const failed = statuses.some((status) =>
     ["failed", "timedOut", "interrupted"].includes(status));
   const skipped = !failed && statuses.length > 0 &&
     statuses.every((status) => status === "skipped");
-  return { failed, skipped };
+  const inconclusive = !statuses.length || statuses.some((status) =>
+    !["passed", "failed", "timedOut", "interrupted", "skipped"].includes(status));
+  // Any failed attempt remains a failure, even when a later retry passed.
+  return { failed, skipped, inconclusive };
 }
 
 export function collectPlaywrightAttachments(attachments, destination) {
@@ -176,10 +179,14 @@ export function recordPlaywrightTest(results, carried, state) {
   const outcome = playwrightTestOutcome(results);
   if (outcome.failed) state.failed += 1;
   else if (outcome.skipped) state.skipped += 1;
-  const destination = outcome.skipped ? state.skippedClaims : state.claims;
-  for (const claim of carried.claims) destination.add(claim);
-  const caseStatus = outcome.failed ? "fail" : outcome.skipped ? "skipped" : "pass";
-  const severity = new Map([["pass", 0], ["skipped", 1], ["fail", 2]]);
+  else if (outcome.inconclusive) state.inconclusive = (state.inconclusive || 0) + 1;
+  if (outcome.skipped)
+    for (const claim of carried.claims) state.skippedClaims.add(claim);
+  else if (!outcome.failed && !outcome.inconclusive)
+    for (const claim of carried.claims) state.claims.add(claim);
+  const caseStatus = outcome.failed ? "fail" : outcome.inconclusive ? "inconclusive"
+    : outcome.skipped ? "skipped" : "pass";
+  const severity = new Map([["pass", 0], ["skipped", 1], ["inconclusive", 2], ["fail", 3]]);
   for (const id of carried.criticalCases) {
     const current = state.criticalCases.get(id);
     if (!current || severity.get(caseStatus) > severity.get(current))
@@ -206,14 +213,15 @@ export function visitPlaywrightReport(value, inherited, state, seen = new WeakSe
     criticalCases: [...inherited.criticalCases, ...ownCriticalCases]
   } : inherited;
   collectPlaywrightAttachments(value.attachments, state.attachments);
-  recordPlaywrightTest(value.results, carried, state);
+  if (Object.hasOwn(value, "results"))
+    recordPlaywrightTest(Array.isArray(value.results) ? value.results : [], carried, state);
   visitPlaywrightChildren(value, carried, state, seen);
 }
 
 export function playwrightReportSummary(report) {
   const state = {
     claims: new Set(), attachments: new Set(), skippedClaims: new Set(),
-    criticalCases: new Map(), tests: 0, failed: 0, skipped: 0
+    criticalCases: new Map(), tests: 0, failed: 0, skipped: 0, inconclusive: 0
   };
   // Annotations are carried down from suites to the tests they contain, and a
   // claim is credited only where a test actually ran. Playwright emits the
@@ -228,7 +236,8 @@ export function playwrightReportSummary(report) {
     criticalCases: [...state.criticalCases]
       .map(([id, status]) => ({ id, status }))
       .sort((left, right) => left.id.localeCompare(right.id)),
-    tests: state.tests, failed: state.failed, skipped: state.skipped
+    tests: state.tests, failed: state.failed, skipped: state.skipped,
+    inconclusive: state.inconclusive
   };
 }
 

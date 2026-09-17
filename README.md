@@ -164,6 +164,11 @@ custom agents, and hooks. Upgrades refresh only Change Loop-owned commands,
 schemas, harness code, rules, skills, and hooks recorded in the install
 manifest.
 
+Installation checks writable destinations before changing files. A symlink in a
+managed destination is preserved and reported: choose a real installation
+directory or explicitly relocate shared configuration, then retry. Host adapters
+also check their destinations before installing the shared runtime.
+
 ## Investigate before committing to a change
 
 Use `/investigate` when you do not yet know enough to write a reliable change
@@ -182,6 +187,11 @@ For an existing change, include its ID and the new question:
 ```text
 /investigate add-profile: should updates use last-write-wins or optimistic locking?
 ```
+
+You receive a short summary and a readable
+`openspec/investigations/<id>.report.md` in your language. JSON remains the
+machine-readable record. The report explains the result and next step without
+starting Change; existing authored notes are preserved.
 
 The agent reads the relevant code and separates its output into:
 
@@ -391,6 +401,13 @@ Staged files and final commits are checked against the proven projection, includ
 after interruption or Git hooks. The fetched PR base must contain the Land base;
 unrelated branch history blocks publication. Sibling repositories keep separate
 PRs, while only submodules update root gitlinks. See the [Deliver contract](WORKFLOW.md).
+
+Deliver preserves dangling symlinks and verifies normal Git CRLF/LF conversion.
+It checks effective push destinations, the actual remote default branch, and
+Land-bound file modes. Old archives missing mode evidence and custom clean
+filters/LFS or working-tree encodings require a separate review and Git
+publication decision; automatic Deliver does not support those cases. The work
+remains archived, and project conversion settings are preserved.
 
 ## The workflow in one picture
 
@@ -701,6 +718,9 @@ whose receipts came from the same command execution rather than independent runs
 
 Playwright tests can bind evidence with `claim` annotations and stable cases with
 `critical-case` annotations. A skipped test does not satisfy either requirement.
+Empty or malformed outcomes are inconclusive, including a report with no executed
+tests. Repair the project reporter or test selection and rerun the provider;
+failed attempts remain failures even if a retry passes.
 The proposal's `Impact` and `Coupling` fields must also match the machine-owned
 agreement, preventing the human-readable and enforced classifications from drifting.
 
@@ -1066,7 +1086,7 @@ Common problems:
 | Test discovery is zero | The configured command did not find the expected tests/report | Fix `execution.yaml` or the project test command; do not record a manual pass |
 | Land reports a conflict | A touched path in the main project changed after sandbox creation | Review/rebase or synchronize the change, then produce fresh proof |
 | Archive cannot run | OpenSpec is missing or not version 1.7.0 | Install the pinned CLI and retry `/land` |
-| Land stopped after apply | Code is present but sync/archive was interrupted | Do not reapply manually; retry `/land` to resume from the journal |
+| Land stopped after apply | Code is present but sync/archive was interrupted, including a packet already moved to archive | The agent resumes `/land` from retained evidence and completes audit/cleanup; no manual reapply or new Change is needed |
 
 Execution budgets are scoped to an autonomous run while lifetime usage remains
 visible in metrics. At 85% the run enters completion-only mode: speculative

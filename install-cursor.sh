@@ -41,8 +41,6 @@ SOURCE_PATH="$(cd "$SOURCE_PATH" && pwd)"
 args=("$TARGET_PATH" "--source" "$SOURCE_PATH")
 [ "$ASSUME_YES" = no ] || args+=("--yes")
 [ "$DRY_RUN" = no ] || args+=("--dry-run")
-bash "$SOURCE_PATH/install.sh" "${args[@]}"
-[ "$DRY_RUN" = no ] || exit 0
 
 # shellcheck source=.claude/harness/adapters/install-support.sh
 . "$SOURCE_PATH/.claude/harness/adapters/install-support.sh"
@@ -57,6 +55,9 @@ adapter_legacy_owned() {
     *) return 1 ;;
   esac
 }
+if [ "$DRY_RUN" = no ]; then adapter_manifest_preflight cursor "$TARGET_PATH"; fi
+bash "$SOURCE_PATH/install.sh" "${args[@]}"
+[ "$DRY_RUN" = no ] || exit 0
 adapter_manifest_init cursor "$TARGET_PATH"
 for retired in \
   .cursor/agents/pm.md .cursor/agents/lead.md .cursor/agents/engineer.md \

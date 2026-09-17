@@ -419,9 +419,13 @@ restoreAgents(agents);
 
 /** Drop agents we have not heard from in a long time. */
 function prune(now) {
+  let removed = false;
   for (const [id, a] of agents) {
-    if (now - a.lastSeen > PRUNE_AFTER_MS) { agents.delete(id); dbDeleteAgent(id); }
+    if (now - a.lastSeen > PRUNE_AFTER_MS) {
+      agents.delete(id); dbDeleteAgent(id); removed = true;
+    }
   }
+  if (removed) { onlineCache.at = 0; usageCache.at = 0; }
 }
 
 // A reported /dev run counts as live "activity" on the team card if it's not
@@ -608,6 +612,7 @@ async function handleHeartbeat(req, res, url) {
   // Validate before the throttle: a throttled beat still returns 200, so a
   // status checked afterwards is a status a fast client never has to pass.
   if (!['online', 'offline'].includes(status)) return sendJson(res, 400, { ok: false, error: 'invalid status' });
+  prune(now);
   const existing = agents.get(agentId);
   // A shared key plus an arbitrary agentId is enough to register unbounded
   // agents; prune() only evicts after idle minutes, far slower than a loop

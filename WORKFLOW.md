@@ -53,6 +53,16 @@ machine-owned resumable state with compact metrics, and returns one typed
 agent, user, or harness action. Three unchanged attempts expose a no-progress
 boundary without discarding the exact resume route.
 
+Each inspection also generates `openspec/investigations/<id>.report.md` from the
+validated state: conclusion, recommendation/reasons, facts and source links,
+hypotheses, comparisons, unknowns, decisions, and next action. The agent writes
+record content in the user's language and returns a short summary with the
+current report link. `language: "th"` selects Thai headings; English is the
+fallback. JSON stdout and handoff remain machine-readable. Generated reports
+are excluded from investigation source binding, and authored `<id>.md` notes
+are preserved. A report failure preserves research and returns a regeneration
+route with no current report or handoff advertised. Reporting never starts Change.
+
 Set the optional `activeChange` field to an existing change ID when the question
 arises during Build or Prove. The harness then reads the active isolated root,
 binds its workspace identity and base into state and handoff, and fails closed
@@ -421,6 +431,25 @@ that base to contain the proven Land base; unrelated feature-branch history or
 a force-moved base requires a new proven change. Independent sibling repositories
 receive their own PRs; only declared submodules produce root gitlink updates.
 
+Delivery protocol 2 binds file modes to Land and archive evidence. Legacy changes
+without mode evidence stay archived and cannot use automatic Deliver. The agent
+can review the current diff for separately authorized Git publication, or leave
+the work archived; a no-op follow-up Change is not a migration route. Current
+modes are never substituted for missing proof. Valid dangling symlinks retain
+their link text. Built-in Git text/binary
+conversion (including CRLF/LF) is bound to the proven bytes and verified as Git
+objects; a changed conversion configuration stops with a retry route. Custom
+clean filters (including LFS) and working-tree encodings currently return an
+explicit unsupported-conversion boundary before staging, without executing the
+filter. Keep those project settings intact and choose separately reviewed Git
+publication or leave the work archived. For an interrupted supported conversion,
+restore the bound configuration to resume.
+Effective push URLs, including rewrites and multiple destinations, must all
+identify the approved repository. They are checkpoint-bound and rechecked before
+push. Multi-repository Deliver validates all selected projections and destinations
+before the first publication. The live remote default branch and the selected
+PR base are both protected.
+
 The PR body has one core contract—Summary, Why, Related Work, Type, included and
 excluded Scope, Test and Evidence, Risk, Rollback, and Monitoring—plus the
 applicable Frontend, Backend, Bug, Refactor/Technical Debt, Database/Migration,
@@ -728,6 +757,16 @@ infer that a worktree or copy makes unrestricted execution safe.
 - The sandbox remains the proof subject until archive and proof audit finish.
 - Conflicts stop without overwriting unrelated user edits.
 - Mutation testing runs only in isolation.
+
+If OpenSpec moves the packet and the archive command is interrupted, an explicit
+`advance --through archived` continuation verifies retained proof, the applied
+projection at the relocated packet, the approved agreement, captured file modes,
+and spec synchronization before completing cleanup. It does not require a new
+Change or reconstruct the missing active packet. A recorded `archived` checkpoint
+still undergoes the pending archive audit and cleanup before that continuation
+reports success. Recovery consumes its Land grant; it does not grant Git or
+publication authority. Legacy recovery without captured modes remains explicit
+about unavailable mode evidence for optional Deliver.
 
 Copy mode preserves symbolic links verbatim and rejects target paths changed
 since its baseline. Generated, tool-owned directories are excluded only when

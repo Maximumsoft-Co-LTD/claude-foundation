@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { createLandJournal, landEntryNoOp } from "./land-journal.mjs";
+import { deliveryTreeEntries } from "./delivery-integrity.mjs";
 
 export const REPOSITORY_DELIVERY_SAGA_VERSION = 1;
 
@@ -187,7 +188,10 @@ export function createRepositoryDeliverySaga({
       before: runtime.pathIdentity(runtime.safeRootPath(path)),
       beforeMode: runtime.pathMode(runtime.safeRootPath(path)),
       after: runtime.pathIdentity(resolve(record.path, path)),
-      afterMode: runtime.pathMode(resolve(record.path, path))
+      afterMode: runtime.pathMode(resolve(record.path, path)),
+      ...(runtime.pathIdentity(resolve(record.path, path))?.startsWith("directory:") ? {
+        afterEntries: deliveryTreeEntries(record.path, [path], runtime.pathIdentity)
+      } : {})
     }));
     assertChildTargetCompatible({ git, journalRuntime: runtime }, repository, record, entries);
     const transactionId = `repo-${safeRepositoryId(repository.id)}-${Date.now()}-${process.pid}`;

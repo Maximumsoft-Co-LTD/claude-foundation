@@ -260,8 +260,10 @@ else
 fi
 assert_file_contains "investigate command selectively loads its workflow" \
   "$ROOT/.claude/commands/investigate.md" 'references/workflow.md'
-assert_file_contains "normal investigate limits writes to its note" \
-  "$ROOT/.claude/skills/investigate/references/workflow.md" 'only allowed write'
+assert_file_contains "normal investigate bounds agent writes and preserves notes" \
+  "$ROOT/.claude/skills/investigate/references/workflow.md" 'agent writes are the record and an optional authored note'
+assert_file_contains "investigate assigns readable reports to the harness" \
+  "$ROOT/.claude/skills/investigate/references/workflow.md" 'the harness owns the generated report'
 assert_file_contains "compare mode scopes writes to prototypes" \
   "$ROOT/.claude/skills/investigate/references/workflow.md" 'only under'
 assert_file_contains "prove owns fresh independent review" \

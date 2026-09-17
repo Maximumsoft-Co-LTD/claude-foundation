@@ -48,11 +48,13 @@ done
 TARGET_PATH="${TARGET_PATH:-$PWD}"
 [ "$DRY_RUN" = yes ] || mkdir -p "$TARGET_PATH"
 if [ -d "$TARGET_PATH" ]; then
-  TARGET_PATH="$(cd "$TARGET_PATH" && pwd)"
+  TARGET_PATH="$(cd "$TARGET_PATH" && pwd -P)"
 else
   case "$TARGET_PATH" in /*) ;; *) TARGET_PATH="$PWD/$TARGET_PATH" ;; esac
 fi
-SOURCE_PATH="$(cd "$SOURCE_PATH" && pwd)"
+SOURCE_PATH="$(cd "$SOURCE_PATH" && pwd -P)"
+# shellcheck source=.claude/harness/adapters/install-paths.sh
+. "$SOURCE_PATH/.claude/harness/adapters/install-paths.sh"
 [ "$TARGET_PATH" != "$SOURCE_PATH" ] || fail "target cannot be the Change Loop source"
 
 for required in \
@@ -144,6 +146,7 @@ validate_managed_path() {
 # Backup and rollback share the complete mutation set, including removals
 # outside today's managed directories. Validate all old paths before mutation.
 MUTATION_PATHS=("${MANAGED[@]}" "${PROJECT_MUTABLE[@]}" "${LEGACY[@]}")
+install_assert_destination "$TARGET_PATH" ".foundation/install-manifest.txt"
 if [ -f "$MANIFEST_PATH" ]; then
   while IFS= read -r old_rel; do
     [ -n "$old_rel" ] || continue
@@ -151,6 +154,17 @@ if [ -f "$MANIFEST_PATH" ]; then
     MUTATION_PATHS+=("$old_rel")
   done < "$MANIFEST_PATH"
 fi
+# Inspect every destination before backups, deletes, copies, or project merges.
+# Checking only managed directory roots misses nested symlinks followed by cp.
+for rel in "${MUTATION_PATHS[@]}"; do
+  install_assert_destination "$TARGET_PATH" "$rel"
+done
+for rel in "${MANAGED[@]}"; do
+  [ -d "$SOURCE_PATH/$rel" ] || continue
+  while IFS= read -r -d '' file; do
+    install_assert_destination "$TARGET_PATH" "${file#"$SOURCE_PATH/"}"
+  done < <(find "$SOURCE_PATH/$rel" -mindepth 1 -print0)
+done
 NEW_MANIFEST="$(mktemp)"
 BACKUP_DIR="$(mktemp -d)"
 trap 'rm -f "$NEW_MANIFEST"; rm -rf "$BACKUP_DIR"' EXIT

@@ -467,6 +467,16 @@ test("sandbox create preflight rejects only untracked investigation notes", (t) 
   assert.doesNotThrow(() => sandboxCreatePreflight(failedStatus.context, "change"));
 });
 
+test("a generated investigation report cannot prevent Build, while authored report names stay protected", (t) => {
+  const path = "openspec/investigations/retry.report.md";
+  const f = fixture(t, { porcelainStatusRecords: () => [{ status: "??", path }] });
+  mkdirSync(join(f.root, "openspec/investigations"), { recursive: true });
+  writeFileSync(join(f.root, path), "authored report\n");
+  assert.throws(() => sandboxCreatePreflight(f.context, "change"), /untracked investigation/);
+  writeFileSync(join(f.root, path), "<!-- change-loop:generated-investigation-report:v1 -->\n# Report\n");
+  assert.doesNotThrow(() => sandboxCreatePreflight(f.context, "change"));
+});
+
 test("repository isolation records root and child worktrees", (t) => {
   const f = fixture(t);
   f.state.workspace.baseHead = "";

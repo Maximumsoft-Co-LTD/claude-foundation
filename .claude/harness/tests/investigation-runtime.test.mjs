@@ -62,6 +62,12 @@ test("persists deterministic investigation evidence and emits a Change-bound han
   assert.equal(result.handoff.outcome, "ready-for-change");
   assert.equal(result.metrics.factCount, 1);
   assert.equal(result.metrics.supportedHypothesisCount, 1);
+  assert.equal(result.report.status, "current");
+  const report = readFileSync(join(value.root, result.report.path), "utf8");
+  assert.match(report, /Require revision checking/);
+  assert.match(report, /Source-grounded facts/);
+  assert.match(report, /\.\.\/\.\.\/evidence\.md/);
+  assert.match(report, /Supported/);
   assert.deepEqual(validateInvestigationBinding({
     projectRoot: value.root, binding: result.handoff
   }), []);
@@ -80,6 +86,99 @@ test("persists deterministic investigation evidence and emits a Change-bound han
   assert.match(validateInvestigationBinding({
     projectRoot: value.root, binding: result.handoff
   }).join("\n"), /digest is stale/);
+});
+
+test("generated reports do not enter discovery or invalidate handoffs on repeated inspection", (t) => {
+  const value = fixture(t);
+  const inspect = () => quiet(() => value.runtime.inspectInvestigation("openspec/investigations/retry-race.json"));
+  const first = inspect();
+  const second = inspect();
+  assert.equal(second.action, "DONE");
+  assert.equal(first.handoff.sourceDigest, second.handoff.sourceDigest);
+  assert.deepEqual(validateInvestigationBinding({ projectRoot: value.root, binding: second.handoff }), []);
+  assert(!value.readJson(join(value.root, second.state.path)).repository.selectedSources.some((path) => path.endsWith(".report.md")));
+});
+
+test("Thai reports retain open hypotheses, choices and authored notes", (t) => {
+  const value = fixture(t);
+  value.record.problem = "ทำไมการลองใหม่จึงเขียนทับข้อมูลล่าสุด";
+  value.record.conclusion = { status: "investigating", summary: "ยังต้องตรวจสอบเงื่อนไข revision" };
+  value.record.hypotheses[0].status = "open";
+  writeFileSync(value.recordPath, JSON.stringify(value.record));
+  const note = join(value.root, "openspec/investigations/retry-race.md");
+  writeFileSync(note, "บันทึกของผู้ใช้\n");
+  const result = quiet(() => value.runtime.inspectInvestigation("openspec/investigations/retry-race.json"));
+  const report = readFileSync(join(value.root, result.report.path), "utf8");
+  assert.match(report, /รายงานการสำรวจปัญหา/);
+  assert.match(report, /ยังไม่สมบูรณ์/);
+  assert.match(report, /ยังไม่สรุป/);
+  assert.match(report, /ยังต้องตรวจสอบเงื่อนไข revision/);
+  assert.equal(readFileSync(note, "utf8"), "บันทึกของผู้ใช้\n");
+});
+
+test("report path conflicts preserve evidence and recover after resolving the destination", (t) => {
+  const value = fixture(t);
+  const path = join(value.root, "openspec/investigations/retry-race.report.md");
+  const external = join(value.root, "user-note.txt");
+  writeFileSync(external, "owned by user\n");
+  symlinkSync(external, path);
+  const inspect = () => quiet(() => value.runtime.inspectInvestigation("openspec/investigations/retry-race.json"));
+  const blocked = inspect();
+  assert.equal(blocked.action, "EDIT");
+  assert.equal(blocked.boundary, "investigation-report");
+  assert.equal(blocked.report.path, null);
+  assert.equal(blocked.handoff, null);
+  assert.equal(readFileSync(external, "utf8"), "owned by user\n");
+  const preserved = value.readJson(join(value.root, blocked.state.path));
+  assert.deepEqual(preserved.facts, value.record.facts);
+  rmSync(path); rmSync(external);
+  const resumed = inspect();
+  assert.equal(resumed.action, "DONE");
+  assert.equal(resumed.report.status, "current");
+});
+
+test("authored report conflicts never overwrite notes or advertise an older report as current", (t) => {
+  const value = fixture(t);
+  const inspect = () => quiet(() => value.runtime.inspectInvestigation("openspec/investigations/retry-race.json"));
+  const first = inspect();
+  const path = join(value.root, first.report.path);
+  writeFileSync(path, "User replaced the generated report with private notes.\n");
+  const stopped = inspect();
+  assert.equal(stopped.report.status, "unavailable");
+  assert.equal(stopped.report.path, null);
+  assert.equal(stopped.handoff, null);
+  assert.equal(readFileSync(path, "utf8"), "User replaced the generated report with private notes.\n");
+  // An explicit fixture-owned relocation preserves the note, then the same
+  // investigation can regenerate without discarding its research.
+  const note = join(value.root, "openspec/investigations/retry-race.md");
+  writeFileSync(note, readFileSync(path));
+  rmSync(path);
+  value.record.sources.push("openspec/investigations/retry-race.md");
+  writeFileSync(value.recordPath, JSON.stringify(value.record));
+  const resumed = inspect();
+  assert.equal(resumed.action, "DONE");
+  assert.equal(resumed.report.status, "current");
+  assert.equal(readFileSync(note, "utf8"), "User replaced the generated report with private notes.\n");
+});
+
+test("invalid facts stay unverified after repeated no-progress and generated reports cannot be sources", (t) => {
+  const value = fixture(t);
+  value.record.facts[0].sources = [];
+  writeFileSync(value.recordPath, JSON.stringify(value.record));
+  const inspect = () => quiet(() => value.runtime.inspectInvestigation("openspec/investigations/retry-race.json"));
+  for (let iteration = 0; iteration < 4; iteration++) {
+    const result = inspect();
+    const report = readFileSync(join(value.root, result.report.path), "utf8");
+    assert.match(report, /Recorded facts — validation is incomplete/);
+    assert.doesNotMatch(report, /## Source-grounded facts/);
+    assert.notEqual(result.action, "DONE");
+  }
+  value.record.facts[0].sources = ["evidence.md"];
+  value.record.sources.push("openspec/investigations/retry-race.report.md");
+  writeFileSync(value.recordPath, JSON.stringify(value.record));
+  const invalid = inspect();
+  assert.notEqual(invalid.action, "DONE");
+  assert.match(readFileSync(join(value.root, invalid.report.path), "utf8"), /presentation, not investigation sources/);
 });
 
 test("an active-change investigation reads and binds the isolated Build sandbox", (t) => {
@@ -267,8 +366,13 @@ test("comparison requires grounded options, a selection, and bounded prototype p
     ]
   };
   writeFileSync(value.recordPath, `${JSON.stringify(value.record, null, 2)}\n`);
-  assert.equal(quiet(() => value.runtime.inspectInvestigation(
-    "openspec/investigations/retry-race.json")).action, "DONE");
+  const result = quiet(() => value.runtime.inspectInvestigation(
+    "openspec/investigations/retry-race.json"));
+  assert.equal(result.action, "DONE");
+  const report = readFileSync(join(value.root, result.report.path), "utf8");
+  assert.match(report, /Options and tradeoffs/);
+  assert.match(report, /Can lose a newer write/);
+  assert.match(report, /Prototype \(not proof\)/);
 
   value.record.options[0].prototypePaths = ["src/escape.html"];
   value.record.selection.rejected = [];
@@ -278,4 +382,27 @@ test("comparison requires grounded options, a selection, and bounded prototype p
   assert.equal(blocked.action, "EDIT");
   assert.match(blocked.investigation.issues.join("\n"), /prototypePaths must stay under/);
   assert.match(blocked.investigation.issues.join("\n"), /must explain option/);
+  assert.match(readFileSync(join(value.root, blocked.report.path), "utf8"), /Incomplete/);
+});
+
+test("report represents pending user choices and a no-change conclusion without automatic Change", (t) => {
+  const value = fixture(t);
+  value.record.decisions = [{ key: "policy", status: "open", question: "Which policy?",
+    alternatives: ["strict", "compatible"], recommended: "strict",
+    recommendationFactKeys: ["latest-revision"] }];
+  value.record.conclusion.status = "needs-user-decision";
+  writeFileSync(value.recordPath, JSON.stringify(value.record));
+  const result = quiet(() => value.runtime.inspectInvestigation("openspec/investigations/retry-race.json"));
+  assert.equal(result.action, "ASK_USER");
+  const report = readFileSync(join(value.root, result.report.path), "utf8");
+  assert.match(report, /Which policy/);
+  assert.match(report, /strict \/ compatible/);
+  assert.match(report, /User decision required/);
+  value.record.decisions = [];
+  value.record.conclusion = { status: "not-worth-changing", summary: "Existing behavior satisfies the constraint." };
+  writeFileSync(value.recordPath, JSON.stringify(value.record));
+  const done = quiet(() => value.runtime.inspectInvestigation("openspec/investigations/retry-race.json"));
+  assert.equal(done.action, "DONE");
+  assert.equal(done.handoff, null);
+  assert.match(readFileSync(join(value.root, done.report.path), "utf8"), /no Change recommended/);
 });

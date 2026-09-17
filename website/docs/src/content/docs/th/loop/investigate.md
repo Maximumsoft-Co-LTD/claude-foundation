@@ -60,6 +60,13 @@ Agent เริ่มจาก `claude-foundation investigate --template` เก
 no-progress state แล้วคืน `EDIT`, `ASK_USER` หรือ `DONE` พร้อม resume route
 source ใหม่ที่ค้นพบต้องถูกอ่านและยืนยันใน record ก่อนจบ
 
+แต่ละ batch สร้างรายงานที่อ่านได้ที่ `openspec/investigations/<id>.report.md`
+แสดงข้อสรุป เหตุผล แหล่งอ้างอิง สมมติฐานที่ทดสอบ ทางเลือก สิ่งที่ยังไม่รู้ และ
+การตัดสินใจถัดไป Agent เขียนในภาษาของผู้ใช้และส่งสรุปสั้นพร้อมลิงก์รายงาน
+JSON record ยังคงใช้ร่วมกับระบบเดิมได้ รายงานที่สร้างไม่เป็น source ของการสำรวจ
+และไม่เริ่ม Change หากสร้างรายงานไม่ได้ ระบบรักษางานสำรวจไว้และให้ agent ทำต่อ
+โดยไม่แสดงรายงานเก่าเป็นผลปัจจุบัน
+
 หากคำถามเกิดจาก Build หรือ Prove workspace ที่มีอยู่ ให้ตั้ง field
 `activeChange` ใน record เป็น change ID นั้น source path จะอ้างอิงจาก isolated
 workspace ที่ active และ handoff จะผูก source root, base และ identity หาก sandbox
@@ -70,7 +77,8 @@ workspace ที่ active และ handoff จะผูก source root, base �
 ขั้นสำรวจเป็น read-only ต่อ product code และ formal change packet งานเขียนปกติ
 ของ agent มีเพียง JSON record กับ note ที่เลือกสร้างใต้
 `openspec/investigations/`; harness เท่านั้นที่เขียน state ใต้
-`.foundation/investigations/`
+`.foundation/investigations/` และรายงาน `<id>.report.md` ที่สร้างจาก state
+note `<id>.md` ที่ผู้ใช้เขียนไว้จะถูกเก็บรักษา
 
 ## โหมดเปรียบเทียบ
 

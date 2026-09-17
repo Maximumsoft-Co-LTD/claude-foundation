@@ -3,6 +3,9 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from "no
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import { inspectRepositoryIntelligence } from "./validation/repository-intelligence.mjs";
 import {
+  investigationReportPaths, isInvestigationReport, writeInvestigationReport
+} from "./investigation-report.mjs";
+import {
   inspectSemanticSources, semanticSourceInventoryFindings
 } from "./validation/semantic-source-inventory.mjs";
 
@@ -99,6 +102,8 @@ function recordIssues(record) {
   if (!new Set(["analyze", "compare"]).has(mode))
     issues.push("investigation record mode must be analyze|compare");
   if (!Array.isArray(record.sources)) issues.push("investigation record sources must be an array");
+  if (strings(record.sources).some(isInvestigationReport))
+    issues.push("generated investigation reports are presentation, not investigation sources");
   if (!Array.isArray(record.facts)) issues.push("investigation record facts must be an array");
   if (!Array.isArray(record.hypotheses))
     issues.push("investigation record hypotheses must be an array");
@@ -357,7 +362,7 @@ export function validateInvestigationBinding({ projectRoot, binding, git = null 
       if (digest(record, "foundation-investigation-record:1") !== state.requestDigest) {
         issues.push("investigation binding request changed after the investigation completed");
       } else {
-        const excludedPaths = [state.requestPath, state.path];
+        const excludedPaths = [state.requestPath, state.path, ...investigationReportPaths(sourceRoot)];
         let includedPaths = null;
         let trackedPaths = [];
         if (typeof git === "function") {
@@ -432,12 +437,12 @@ export function createInvestigationRuntime({
     const relativeRecord = relative(projectRoot, absolute).replaceAll("\\", "/");
     const relativeState = `.foundation/investigations/${id}.json`;
     const paths = sourceRoot
-      ? repositoryPaths([relativeRecord, relativeState], sourceRoot)
+      ? repositoryPaths([relativeRecord, relativeState, ...investigationReportPaths(sourceRoot)], sourceRoot)
       : { includedPaths: [], trackedPaths: [], excludedPaths: [] };
     const repository = sourceRoot ? inspectRepositoryIntelligence({
       projectRoot: sourceRoot,
       query: repositoryQuery(record),
-      seedPaths: strings(record?.sources),
+      seedPaths: strings(record?.sources).filter((path) => !isInvestigationReport(path)),
       includedPaths: paths.includedPaths,
       trackedPaths: paths.trackedPaths,
       excludedPaths: paths.excludedPaths,
@@ -447,7 +452,7 @@ export function createInvestigationRuntime({
       scan: { entries: 0, files: 0, bytes: 0 }, findings: [], readSet: []
     };
     const discovered = (repository.readSet || []).map((row) => row.path);
-    const acknowledged = new Set(strings(record?.sources));
+    const acknowledged = new Set(strings(record?.sources).filter((path) => !isInvestigationReport(path)));
     const missingAcknowledgements = discovered.filter((path) => !acknowledged.has(path));
     const sourceInspection = inspectSemanticSources({
       projectRoot: sourceRoot || projectRoot,
@@ -580,9 +585,15 @@ export function createInvestigationRuntime({
     writeJson(path, state);
     const handoff = action.action === "DONE" && state.conclusion?.status === "ready-for-change"
       ? bindingFor(state) : null;
-    const result = { ...action, state: { path: relative(projectRoot, path).replaceAll("\\", "/"),
+    const report = writeInvestigationReport({ projectRoot, sourceRoot, record, state, validationIssues: unique(issues) });
+    const presentation = report.status === "current" ? action : {
+      action: "EDIT", owner: "harness", boundary: "investigation-report",
+      reason: `Investigation state is preserved, but the readable report is unavailable: ${report.reason}`,
+      resume, investigation: { kind: "regenerate-report", outcome: action.action }
+    };
+    const result = { ...presentation, state: { path: relative(projectRoot, path).replaceAll("\\", "/"),
       revision: state.revision, digest: state.stateDigest }, noProgress: state.noProgress,
-      metrics: state.metrics, handoff };
+      metrics: state.metrics, handoff: report.status === "current" ? handoff : null, report };
     console.log(JSON.stringify(result, null, 2));
     return result;
   }

@@ -205,14 +205,19 @@ export function rollbackLandJournalOperation(context, journal, reason) {
   }
 }
 
-export function verifyLandJournalOperation(context, state) {
+export function verifyLandJournalOperation(context, state, { archivedChangePath = null } = {}) {
   const transactionId = state.workspace?.apply?.transactionId;
   if (!transactionId) return { valid: false, reason: "missing-apply-transaction" };
   const path = context.journalPath(state.id, transactionId);
   if (!context.exists(path)) return { valid: false, reason: "missing-apply-journal" };
   const journal = context.readJson(path);
+  if (archivedChangePath && (!archivedChangePath.startsWith("openspec/changes/archive/") ||
+      archivedChangePath.split(/[\\/]/).some((part) => !part || part === "." || part === "..")))
+    return { valid: false, reason: "invalid-archive-projection-path" };
   for (const entry of journal.entries) {
-    if (!context.matches(context.safeRootPath(entry.path), entry, "after"))
+    const observedPath = archivedChangePath && entry.path === `openspec/changes/${state.id}`
+      ? archivedChangePath : entry.path;
+    if (!context.matches(context.safeRootPath(observedPath), entry, "after"))
       return { valid: false, reason: `projection-mismatch:${entry.path}` };
   }
   const projection = deriveApplyProjection(state, journal);

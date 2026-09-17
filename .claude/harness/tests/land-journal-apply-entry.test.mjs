@@ -264,6 +264,34 @@ test("journal verification distinguishes every invalid projection state", () => 
   assert.equal(verifyLandJournalOperation(base, state).valid, true);
 });
 
+test("archive verification relocates only the agreement and keeps its original identity", () => {
+  const state = { id: "change", workspace: { apply: {
+    transactionId: "tx", projectionHash: "projection"
+  } } };
+  const archivedChangePath = "openspec/changes/archive/2026-09-17-change";
+  const entries = [
+    { path: "openspec/changes/change", after: "directory:approved", afterMode: 0o755 },
+    { path: "app.txt", after: "proven-product", afterMode: 0o644 }
+  ];
+  const observed = [];
+  const context = {
+    journalPath: () => "/journal", exists: () => true,
+    readJson: () => ({ entries, projectionHash: "projection" }),
+    safeRootPath: (path) => `/root/${path}`,
+    matches: (path, entry, side) => { observed.push([path, entry.after, entry.afterMode, side]); return true; }
+  };
+  assert.equal(verifyLandJournalOperation(context, state, { archivedChangePath }).valid, true);
+  assert.deepEqual(observed, [
+    [`/root/${archivedChangePath}`, "directory:approved", 0o755, "after"],
+    ["/root/app.txt", "proven-product", 0o644, "after"]
+  ]);
+  for (const path of ["../escape", "openspec/changes/archive/../change", "openspec/changes/archive//change"])
+    assert.equal(verifyLandJournalOperation(context, state, { archivedChangePath: path }).reason,
+      "invalid-archive-projection-path");
+  assert.equal(verifyLandJournalOperation({ ...context, matches: () => false }, state,
+    { archivedChangePath }).reason, "projection-mismatch:openspec/changes/change");
+});
+
 test("journal cleanup removes temporary data, commits journals, and reports failures", () => {
   const noApply = cleanupLandJournalOperation({}, { workspace: {} });
   assert.deepEqual(noApply, { status: "not-needed" });

@@ -155,6 +155,11 @@ Installer จะรักษา specs, active changes, runtime state, custom age
 ของ project ไว้ การ upgrade จะ refresh เฉพาะ command, schema, harness, rule,
 skill และ hook ที่ Change Loop เป็นเจ้าของตาม install manifest
 
+Installer ตรวจปลายทางที่จะเขียนก่อนเปลี่ยนไฟล์ หากพบ symlink ในปลายทางที่จัดการ
+จะรักษา link ไว้และแจ้งสาเหตุ ให้เลือก directory จริงสำหรับติดตั้ง หรือย้าย shared
+configuration ตามการตัดสินใจของผู้ใช้แล้วลองใหม่ ตัวติดตั้งของแต่ละ host ตรวจ
+ปลายทางของตนก่อนติดตั้ง runtime ร่วมด้วย
+
 ## ใช้ Investigate ก่อนตกลงว่าจะเปลี่ยนอะไร
 
 ใช้ `/investigate` เมื่อข้อมูลยังไม่พอสำหรับเขียน change agreement ที่เชื่อถือได้
@@ -172,6 +177,10 @@ migration constraint ยังไม่ชัด หรือยังไม่�
 ```text
 /investigate add-profile: should updates use last-write-wins or optimistic locking?
 ```
+
+ผู้ใช้จะได้รับสรุปสั้นพร้อมรายงานที่อ่านได้ในภาษาของตนที่
+`openspec/investigations/<id>.report.md` ส่วน JSON ยังคงเป็น record สำหรับระบบ
+รายงานอธิบายผลและขั้นตอนถัดไปโดยไม่เริ่ม Change และรักษา note ที่ผู้ใช้เขียนไว้
 
 Agent จะอ่าน code ที่เกี่ยวข้องแล้วแยกผลลัพธ์เป็น:
 
@@ -364,6 +373,12 @@ Deliver เป็น cold path: ถ้าไม่เรียก Change, Build,
 การทำงานขัดจังหวะหรือ Git hook โดย PR base ที่ fetch มาต้องมี Land base อยู่ในประวัติ
 หากพ่วงประวัติ branch ของงานอื่นจะหยุดการส่ง ส่วน sibling repository มี PR แยกกัน
 และอัปเดต gitlink ใน root เฉพาะ submodule ดู [ข้อกำหนด Deliver](WORKFLOW.md)
+
+Deliver รักษา dangling symlink และตรวจการแปลง CRLF/LF ตามปกติของ Git ได้
+โดยตรวจปลายทาง push จริง, default branch ของ remote และ file mode ที่ผูกไว้ตอน Land
+archive รุ่นเก่าที่ไม่มีหลักฐาน mode รวมถึง custom clean filter/LFS หรือ
+working-tree encoding ยังไม่รองรับการ Deliver อัตโนมัติ ต้องตรวจ diff และขอสิทธิ์
+ส่งผ่าน Git แยกต่างหาก หรือคงงานไว้ที่ archived โดยรักษา conversion settings เดิม
 
 ## ภาพรวม Workflow
 
@@ -666,6 +681,8 @@ contract, resource หรือ decision ไปยัง typed next action ท�
 
 Playwright test ผูก evidence ได้ด้วย annotation `claim` และผูก stable case ด้วย
 annotation `critical-case` โดย test ที่ถูก skip จะไม่ผ่าน requirement ทั้งสองแบบ
+ผลที่ว่าง ผิดรูปแบบ หรือไม่มี test รันจริงเป็น inconclusive ให้แก้ reporter หรือ
+การเลือก test แล้วรัน provider ใหม่ หากมี attempt ที่ล้มเหลว ผลยังเป็น fail แม้ retry ผ่าน
 นอกจากนี้ `Impact` และ `Coupling` ใน proposal ต้องตรงกับ agreement ที่ machine
 เป็นเจ้าของ เพื่อไม่ให้ classification ที่คนอ่านกับที่ระบบบังคับใช้คลาดกัน
 
@@ -987,7 +1004,7 @@ compatible primitive หรือ
 | Test discovery เป็นศูนย์ | Command ไม่พบ test/report ที่คาดไว้ | แก้ `execution.yaml` หรือ test command ห้ามบันทึก manual pass แทน |
 | Land แจ้ง conflict | Target path ใน project หลักเปลี่ยนหลังสร้าง sandbox | Review/rebase หรือ sync change แล้วสร้าง proof ใหม่ |
 | Archive รันไม่ได้ | ไม่มี OpenSpec หรือ version ไม่ใช่ 1.7.0 | ติดตั้ง pinned CLI แล้วลอง `/land` ใหม่ |
-| Land หยุดหลัง apply | Code เข้าแล้ว แต่ sync/archive ถูกขัดจังหวะ | ห้าม apply ซ้ำด้วยมือ ให้เรียก `/land` เพื่อ resume journal |
+| Land หยุดหลัง apply | Code เข้าแล้ว แต่ sync/archive ถูกขัดจังหวะ รวมถึงกรณีย้าย packet เข้า archive แล้ว | Agent resume `/land` จากหลักฐานที่เก็บไว้และทำ audit/cleanup ให้ครบ ไม่ต้อง apply ซ้ำด้วยมือหรือเปิด Change ใหม่ |
 
 Execution budget คิดต่อ autonomous run ส่วน usage ตลอดอายุ change ยังอยู่ใน
 metrics เมื่อถึง 85% ระบบเข้า completion-only mode โดยหยุด speculative

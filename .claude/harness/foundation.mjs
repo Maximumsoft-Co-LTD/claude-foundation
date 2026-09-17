@@ -137,7 +137,7 @@ if (RUNTIME_MODULE_API !== RUNTIME_API_VERSION) {
   process.exit(1);
 }
 const PROVIDER_PROTOCOL_VERSION = "13";
-const ADAPTER_PROTOCOL_VERSION = "6";
+const ADAPTER_PROTOCOL_VERSION = "7";
 const PROOF_PROTOCOL_VERSION = "7";
 const PACKET_SCHEMA_VERSION = "11";
 const AGENT_PLAN_SCHEMA_VERSION = "5";
@@ -1725,7 +1725,8 @@ const landGrantRuntime = createLandGrantRuntime({
   writeJson,
   stableHash,
   now,
-  landCheck
+  landCheck,
+  archiveRecoveryReady: (id) => applyRuntime.archiveRecoveryReady(id)
 });
 const applyRuntime = createApplyRuntime({
   root: ROOT,
@@ -1875,6 +1876,8 @@ const { advanceValue, showAdvance } = createAdvanceRuntime({
   saveRuntime,
   recoverSandbox: (id) => runAdvanceQuietly(() => syncSandbox(id)),
   recoverWorkspace: (id) => runAdvanceQuietly(() => sandboxRuntime.recoverReplay(id)),
+  recoverArchive: (id) => runAdvanceQuietly(() =>
+    applyRuntime.recoverArchive(id, landGrantRuntime.issue)),
   proofIsCurrent: currentDeliveryProof.bind(null, {
     proofAudit, relevantHash, requiredProviders, receiptValidity, receiptPath, fileDigest
   }),

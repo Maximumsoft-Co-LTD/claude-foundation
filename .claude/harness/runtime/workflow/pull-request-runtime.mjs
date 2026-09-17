@@ -6,9 +6,11 @@ import { createHash } from "node:crypto";
 import { dirname, join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
 import { repositoryDeliveryOrder } from "./repository-delivery-saga.mjs";
-import { createDeliveryIntegrity, deliveryProjectionEntry } from "./delivery-integrity.mjs";
+import {
+  createDeliveryIntegrity, deliveryProjectionEntry, assertLandEntryMode, assertDeliveryEntries
+} from "./delivery-integrity.mjs";
 
-export const DELIVERY_PROTOCOL_VERSION = 1;
+export const DELIVERY_PROTOCOL_VERSION = 2;
 export const DELIVERY_RECEIPT_SCHEMA_VERSION = 1;
 
 export const PULL_REQUEST_TYPES = [
@@ -309,8 +311,8 @@ function runChecked(run, executable, args, options, label) {
 
 function copyEntry(source, destination) {
   rmSync(destination, { recursive: true, force: true });
-  if (!existsSync(source)) return;
-  const stat = lstatSync(source);
+  const stat = lstatSync(source, { throwIfNoEntry: false });
+  if (!stat) return;
   mkdirSync(dirname(destination), { recursive: true });
   if (stat.isSymbolicLink()) symlinkSync(readlinkSync(source), destination);
   else cpSync(source, destination, {
@@ -365,6 +367,7 @@ export function repositoryDeliveryProjection({
     !(entry.before === entry.after &&
       (entry.beforeMode === undefined || entry.beforeMode === entry.afterMode)));
   for (const entry of entries) {
+    assertLandEntryMode(repository.path, entry, pathIdentity);
     const observed = pathIdentity(join(repository.path, entry.path));
     if (observed !== entry.after) {
       const error = new Error(`proven path changed after Land in '${repository.id}': ${entry.path}`);
@@ -375,7 +378,7 @@ export function repositoryDeliveryProjection({
   }
   const roots = unique(entries.map((entry) => entry.path)).sort();
   return {
-    version: 1,
+    version: 2,
     changeId: lifecycle.id,
     repositoryId: repository.id,
     baseHead: runtime.baseHead || journal.baseHead || null,
@@ -402,6 +405,7 @@ export function deliveryProjection({ root, state, readJson, transactionJournalPa
   const productEntries = journal.entries.filter((entry) => entry.path !== activeChange &&
     !(entry.before === entry.after && (entry.beforeMode === undefined || entry.beforeMode === entry.afterMode)));
   for (const entry of productEntries) {
+    assertLandEntryMode(root, entry, pathIdentity);
     const observed = pathIdentity(join(root, entry.path));
     if (observed !== entry.after) {
       const error = new Error(`proven path changed after Land: ${entry.path}`);
@@ -413,14 +417,12 @@ export function deliveryProjection({ root, state, readJson, transactionJournalPa
   const archive = clean(state.archivedChangePath);
   if (!archive || !existsSync(join(root, archive)))
     throw new Error(`archived OpenSpec packet for '${state.id}' is unavailable`);
-  for (const entry of state.deliveryIntegrity?.entries || []) {
-    if (pathIdentity(join(root, entry.path)) !== entry.identity) {
-      const error = new Error(`archived delivery input changed after Land: ${entry.path}`);
-      error.code = "DELIVERY_PROJECTION_DRIFT";
-      error.path = entry.path;
-      throw error;
-    }
+  if (state.deliveryIntegrity?.version !== 2) {
+    const error = new Error("Archived mode evidence is unavailable in this legacy change; automatic Deliver cannot reconstruct historical modes. Preserve the archived work and review the current diff for separately authorized Git publication.");
+    error.code = "DELIVERY_MODE_EVIDENCE_UNAVAILABLE";
+    throw error;
   }
+  assertDeliveryEntries(root, state.deliveryIntegrity.entries, pathIdentity);
   const roots = unique([
     ...productEntries.map((entry) => entry.path),
     activeChange,
@@ -431,11 +433,11 @@ export function deliveryProjection({ root, state, readJson, transactionJournalPa
   const entries = paths.map((path) => deliveryProjectionEntry(root, path, pathIdentity));
   const projectionHash = state.workspace?.apply?.projectionHash || journal.projectionHash;
   return {
-    version: 1,
+    version: 2,
     changeId: state.id,
     baseHead: state.workspace?.baseHead || journal.baseHead || null,
     sourceProjectionHash: projectionHash,
-    integrity: state.deliveryIntegrity ? "land-bound" : "legacy-observed",
+    integrity: "land-bound",
     roots,
     entries
   };
@@ -525,11 +527,38 @@ export function createPullRequestRuntime({
       throw new Error(`Deliver currently requires a GitHub remote; found '${remoteUrl}'`);
     if (!policy.allowedHosts.includes(remote.host))
       throw new Error(`Git remote host '${remote.host}' is not allowed by delivery policy`);
-    const defaultBase = policy.defaultBaseBranch ||
-      gitOutput(git, ["symbolic-ref", "--quiet", "--short", `refs/remotes/${policy.remote}/HEAD`], repositoryRoot,
-        "cannot determine default branch").replace(`${policy.remote}/`, "");
-    if (!defaultBase) throw new Error("Deliver cannot determine a base branch");
-    return { remote, remoteName: policy.remote, baseBranch: defaultBase };
+    const pushUrls = gitOutput(git, ["remote", "get-url", "--push", "--all", policy.remote],
+      repositoryRoot, "cannot resolve effective push remote").split("\n").filter(Boolean);
+    if (!pushUrls.length || pushUrls.some((url) => {
+      const destination = parseGitHubRemote(url);
+      return !destination || destination.host !== remote.host ||
+        destination.slug.toLowerCase() !== remote.slug.toLowerCase();
+    })) throw new Error("Git push remote does not match the approved GitHub repository; correct the push URLs or URL rewrite rules and retry Deliver");
+    // Query the remote: a cached origin/HEAD may be stale, and a configured PR
+    // base is not authority to publish to the actual default branch.
+    const heads = runChecked(run, "git", ["ls-remote", "--symref", policy.remote, "HEAD"],
+      { cwd: repositoryRoot, encoding: "utf8", timeout: 60_000, maxBuffer: 1024 * 1024 },
+      "cannot determine remote default branch");
+    const defaultBranch = String(heads.stdout).match(/^ref: refs\/heads\/(.+)\tHEAD$/m)?.[1];
+    if (!defaultBranch) throw new Error("Git remote default branch is unavailable; restore remote access and retry Deliver");
+    return { remote, remoteName: policy.remote, pushUrls: [...new Set(pushUrls)].sort(),
+      defaultBranch, baseBranch: policy.defaultBaseBranch || defaultBranch };
+  }
+
+  function assertProviderBinding(expected, observed) {
+    const identity = (value) => ({ remote: value.remote,
+      remoteName: value.remoteName, baseBranch: value.baseBranch,
+      ...(expected?.pushUrls ? { pushUrls: value.pushUrls } : {}) });
+    if (expected && stableHash(identity(expected)) !== stableHash(identity(observed)))
+      throw new Error("Git remote delivery binding changed; restore the approved remote, push URLs and base branch before retrying Deliver");
+  }
+
+  function assertDeliveryBranch(branch, provider) {
+    if ([provider.baseBranch, provider.defaultBranch].includes(branch)) {
+      const error = new Error(`delivery branch '${branch}' is the remote default or PR base branch; configure a feature branch and retry Deliver`);
+      error.code = "DELIVERY_DEFAULT_BRANCH_FORBIDDEN";
+      throw error;
+    }
   }
 
   function prepareWorkspace(id, state, projection, branch, repositoryRoot = root,
@@ -566,8 +595,9 @@ export function createPullRequestRuntime({
   }
 
   function stageProjection(workspace, projection, gitlinks = []) {
+    integrity.assertConversion(workspace, projection);
     const stageable = projection.roots.filter((path) => {
-      if (existsSync(join(workspace, path))) return true;
+      if (lstatSync(join(workspace, path), { throwIfNoEntry: false })) return true;
       const tracked = git(["ls-files", "-z", "--", path], workspace);
       return tracked.status === 0 && Boolean(tracked.stdout);
     });
@@ -707,15 +737,31 @@ export function createPullRequestRuntime({
     const sources = archivedSources(id, lifecycle);
     const completed = new Map();
     delivery.repositories ||= {};
-
+    // Validate every selected projection and destination before any repository
+    // publishes. A later invalid root must not leave earlier child PRs behind.
+    const prepared = new Map();
     for (const repository of execution) {
-      let node = delivery.repositories[repository.id] || { status: "new" };
-      const projection = node.projection || (repository.id === "root"
+      const node = delivery.repositories[repository.id] || { status: "new" };
+      const projection = integrity.bindProjection(repository.path,
+        (node.projection?.version === 2 ? node.projection : null) || (repository.id === "root"
         ? deliveryProjection({ root, state: lifecycle, readJson,
           transactionJournalPath, pathIdentity })
         : repositoryDeliveryProjection({
           repository, lifecycle, transactions, readJson, pathIdentity
-        }));
+        })));
+      const noChange = repository.id !== "root" && projection.roots.length === 0;
+      const provider = noChange ? null : providerContext(policy, repository.path);
+      const branch = node.branch || deliveryBranchName(policy.branchPattern, id);
+      if (provider) {
+        assertProviderBinding(node.provider, provider);
+        assertDeliveryBranch(branch, provider);
+      }
+      prepared.set(repository.id, { projection, provider, branch });
+    }
+
+    for (const repository of execution) {
+      let node = delivery.repositories[repository.id] || { status: "new" };
+      const { projection, provider, branch } = prepared.get(repository.id);
       if (repository.id !== "root" && projection.roots.length === 0) {
         delivery.repositories[repository.id] = {
           ...node, status: "no-change", projection,
@@ -724,7 +770,6 @@ export function createPullRequestRuntime({
         checkpoint(delivery, "repositories-delivering");
         continue;
       }
-      const provider = providerContext(policy, repository.path);
       const narrative = node.narrative || pullRequestNarrative({
         changeId: id, state: lifecycle, ...sources, proof,
         paths: projection.entries.map((entry) => repository.id === "root"
@@ -748,12 +793,6 @@ export function createPullRequestRuntime({
       const body = renderPullRequestBody(narrative, { draft });
       if (containsSecretMaterial(body))
         throw new Error("generated pull-request body appears to contain secret material");
-      const branch = node.branch || deliveryBranchName(policy.branchPattern, id);
-      if (branch === provider.baseBranch) {
-        const error = new Error(`delivery branch '${branch}' is the default branch`);
-        error.code = "DELIVERY_DEFAULT_BRANCH_FORBIDDEN";
-        throw error;
-      }
       const workspace = node.workspace || repositoryWorkspacePath(id, repository.id);
       const gitlinks = repository.id === "root" ? repositories
         .filter((row) => row.type === "submodule" && row.id !== "root" &&
@@ -763,7 +802,7 @@ export function createPullRequestRuntime({
       if (!existsSync(workspace))
         prepareWorkspace(id, node, projection, branch, repository.path, workspace);
       node = { ...node, status: node.status === "new" ? "workspace-prepared" : node.status,
-        workspace, branch, projection, narrative, draft, repository: {
+        workspace, branch, projection, narrative, draft, provider, repository: {
           id: repository.id, path: repository.path, relativePath: repository.relativePath || null
         } };
       delivery.repositories[repository.id] = node;
@@ -787,6 +826,9 @@ export function createPullRequestRuntime({
       integrity.assertTree(workspace, projection, commit, gitlinks);
       integrity.assertPullRequestBase(workspace, provider, projection);
       if (node.status === "commit-created") {
+        const currentProvider = providerContext(policy, workspace);
+        assertProviderBinding(provider, currentProvider);
+        assertDeliveryBranch(branch, currentProvider);
         runChecked(run, "git", ["push", "--set-upstream", provider.remoteName,
           `${commit}:refs/heads/${branch}`],
         { cwd: workspace, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
@@ -868,6 +910,7 @@ export function createPullRequestRuntime({
       if (repositories.length > 1 || repositories.some((row) => row.id !== "root"))
         return await advanceMulti(id, lifecycle, delivery, policy, repositories);
       const provider = providerContext(policy);
+      assertProviderBinding(delivery.provider, provider);
       if (priorReceipt) {
         const verified = verifyPullRequest(provider, priorReceipt.pullRequest.url, priorReceipt.commit);
         return deliveryEnvelope(id, "DONE", {
@@ -882,9 +925,10 @@ export function createPullRequestRuntime({
           forbidden: ["force-push", "push-default-branch", "merge", "deploy", "publish"]
         }
       });
-      const projection = delivery.projection || deliveryProjection({
+      const projection = integrity.bindProjection(root,
+        (delivery.projection?.version === 2 ? delivery.projection : null) || deliveryProjection({
         root, state: lifecycle, readJson, transactionJournalPath, pathIdentity
-      });
+      }));
       const binding = {
         archivedAt: lifecycle.archivedAt,
         proofRunId: lifecycle.land?.proofRunId || null,
@@ -922,11 +966,8 @@ export function createPullRequestRuntime({
       const body = renderPullRequestBody(narrative, { draft });
       if (containsSecretMaterial(body)) throw new Error("generated pull-request body appears to contain secret material");
       const branch = delivery.branch || deliveryBranchName(policy.branchPattern, id);
-      if (branch === provider.baseBranch) {
-        const error = new Error(`delivery branch '${branch}' is the default branch`);
-        error.code = "DELIVERY_DEFAULT_BRANCH_FORBIDDEN";
-        throw error;
-      }
+      assertDeliveryBranch(branch, provider);
+      if (!delivery.provider) delivery = checkpoint(delivery, delivery.status, { provider });
       let workspace = delivery.workspace;
       if (!workspace || !existsSync(workspace)) {
         workspace = prepareWorkspace(id, delivery, projection, branch);
@@ -951,6 +992,9 @@ export function createPullRequestRuntime({
       integrity.assertTree(workspace, projection, commit);
       integrity.assertPullRequestBase(workspace, provider, projection);
       if (delivery.status === "commit-created") {
+        const currentProvider = providerContext(policy, workspace);
+        assertProviderBinding(provider, currentProvider);
+        assertDeliveryBranch(branch, currentProvider);
         runChecked(run, "git", ["push", "--set-upstream", provider.remoteName,
           `${commit}:refs/heads/${branch}`],
         { cwd: workspace, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }, "cannot push delivery branch");
@@ -1008,6 +1052,22 @@ export function createPullRequestRuntime({
         return deliveryEnvelope(id, "ASK_USER", {
           completed: false, boundary: "required-evidence", reason: error.message,
           options: ["create-a-follow-up-change-with-required-evidence", "cancel-delivery"]
+        });
+      if (error.code === "DELIVERY_MODE_EVIDENCE_UNAVAILABLE")
+        return deliveryEnvelope(id, "ASK_USER", {
+          completed: false, boundary: "legacy-mode-evidence", reason: error.message,
+          options: ["review-current-diff-for-separate-git-publication", "leave-archived-without-deliver"]
+        });
+      if (error.code === "DELIVERY_CONVERSION_UNSUPPORTED")
+        return deliveryEnvelope(id, "ASK_USER", {
+          completed: false, boundary: "git-conversion", owner: "repository-operator",
+          reason: error.message,
+          options: ["review-converted-content-for-separate-git-publication", "leave-archived-without-deliver"]
+        });
+      if (error.code === "DELIVERY_CONVERSION_CHANGED")
+        return deliveryEnvelope(id, "WAIT", {
+          completed: false, boundary: "git-conversion", owner: "repository-operator",
+          reason: error.message, resumeCommand: `claude-foundation deliver advance ${id}`
         });
       if (error.code === "DELIVERY_DEFAULT_BRANCH_FORBIDDEN")
         return deliveryEnvelope(id, "WAIT", {

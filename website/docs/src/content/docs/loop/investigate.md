@@ -62,6 +62,14 @@ persists compact metrics and no-progress state, and returns `EDIT`, `ASK_USER`,
 or `DONE` with an exact resume route. Newly discovered sources must be read and
 acknowledged in the record before completion.
 
+Each batch produces a readable `openspec/investigations/<id>.report.md` with the
+conclusion, reasons, source links, tested hypotheses, alternatives, unknowns, and
+next decision. The agent writes in your language and shares a short summary with
+the report link. The JSON record remains compatible. Generated reports are not
+investigation sources; reporting never starts Change. If report generation
+fails, research is preserved and the agent resumes generation without presenting
+an old report as current.
+
 For an investigation prompted by an existing Build or Prove workspace, set the
 record's optional `activeChange` field to that change ID. Source paths then
 resolve against the active isolated workspace, and the handoff binds its source
@@ -73,7 +81,8 @@ record command instead of silently reading the main checkout.
 Investigation is read-only with respect to product code and formal change
 packets. Its only ordinary agent-owned writes are the JSON record and an
 optional note under `openspec/investigations/`; the harness alone writes its
-state under `.foundation/investigations/`.
+state under `.foundation/investigations/` and the generated `<id>.report.md`.
+Existing authored `<id>.md` notes are preserved.
 
 ## Comparison mode
 

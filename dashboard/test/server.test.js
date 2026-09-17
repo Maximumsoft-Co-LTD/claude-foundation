@@ -396,5 +396,12 @@ test('the agent roster is bounded', async () => {
     if (response.status === 429) { rejected += 1; break; }
   }
   assert.equal(rejected, 1);
+  _internals.agents.get('flood-0').lastSeen = Date.now() - 86_400_000;
+  assert.equal((await heartbeat('replacement-after-expiry')).response.status, 200,
+    'expired capacity must be reclaimed without any viewer request');
+  assert.equal(_internals.agents.has('flood-0'), false);
+  if (_internals.db)
+    assert.equal(_internals.db.prepare('SELECT agent_id FROM agents WHERE agent_id = ?').get('flood-0'), undefined);
+  _internals.agents.delete('replacement-after-expiry');
   for (let i = 0; i < 600; i += 1) _internals.agents.delete(`flood-${i}`);
 });

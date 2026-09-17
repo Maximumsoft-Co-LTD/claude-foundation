@@ -225,6 +225,53 @@ test("advance uses proof readiness hash and does not hash failed infrastructure 
     "claude-foundation sandbox create change-a --all");
 });
 
+test("explicit archive continuation recovers the moved packet before active approval checks", async () => {
+  const state = { status: "applied" };
+  let recoveries = 0;
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => state, stableHash,
+    assertApproval: () => assert.fail("active packet is already archived"),
+    recoverArchive: () => { recoveries += 1; state.status = "archived"; return true; }
+  });
+  const result = await runtime.advanceThrough("change-a", "archived");
+  assert.equal(result.action, "DONE");
+  assert.equal(result.reached, "archived");
+  assert.equal(recoveries, 1);
+});
+
+test("archive recovery respects a user pause", async () => {
+  const state = { status: "applied", advanceRecovery: {
+    pending: { paused: true, through: "archived", decision: { summary: "pause" } }
+  } };
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => state, stableHash,
+    recoverArchive: () => assert.fail("paused recovery must not run")
+  });
+  const result = await runtime.advanceThrough("change-a", "archived");
+  assert.equal(result.action, "WAIT");
+  assert.equal(result.boundary, "user-paused");
+});
+
+test("an archived checkpoint must finish its audit and cleanup before reporting completion", async () => {
+  const state = { status: "archived" };
+  let invalid = true, recoveries = 0;
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => state, stableHash, relevantHash: () => "retained",
+    readJson: () => ({}), proofAdvancePath: () => "/proof.json",
+    recoverArchive: () => {
+      recoveries += 1;
+      if (invalid) throw new Error("archived specs do not match the change delta");
+      return true;
+    }
+  });
+  const rejected = await runtime.advanceThrough("change-a", "archived");
+  assert.notEqual(rejected.action, "DONE");
+  invalid = false;
+  const resumed = await runtime.advanceThrough("change-a", "archived");
+  assert.equal(resumed.action, "DONE");
+  assert.equal(recoveries, 2);
+});
+
 test("advance --through runs deterministic proof and Land until archived", async () => {
   const state = { status: "building", workspace: { path: "/tmp/change" } };
   let proofRuns = 0;

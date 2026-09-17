@@ -5,7 +5,7 @@ import { createLandGrantRuntime } from "../runtime/core/land-grant.mjs";
 
 const stableHash = (value) => JSON.stringify(value);
 
-function fixture() {
+function fixture(overrides = {}) {
   const values = new Map();
   const env = { FOUNDATION_CLAUDE_SESSION_ID: "session-a" };
   const state = {
@@ -35,7 +35,8 @@ function fixture() {
     stableHash,
     now: () => "2026-09-05T00:00:00.000Z",
     landCheck: () => { checks += 1; return { archived: false }; },
-    env
+    env,
+    ...overrides
   });
   return { runtime, state, proof, env, checks: () => checks };
 }
@@ -89,4 +90,22 @@ test("Land grant is issued only after readiness and is unnecessary for archived 
   archived.state.status = "archived";
   assert.equal(archived.runtime.issue("change-a"), null);
   assert.equal(archived.checks(), 0);
+});
+
+test("retained archive readiness binds a fresh grant without a stale live-packet check", () => {
+  const f = fixture({ archiveRecoveryReady: () => true });
+  f.env.FOUNDATION_CLAUDE_SESSION_ID = "recovery-session";
+  const grant = f.runtime.issue("change-a");
+  assert.equal(f.checks(), 0);
+  assert.equal(grant.sessionId, "recovery-session");
+  assert.equal(f.runtime.valid("change-a").valid, true);
+  f.proof.proofRunId = "changed-proof";
+  assert.equal(f.runtime.valid("change-a").reason, "stale-land-grant");
+});
+
+test("failed retained archive verification cannot issue a grant", () => {
+  const f = fixture({ archiveRecoveryReady: () => { throw new Error("invalid retained proof"); } });
+  assert.throws(() => f.runtime.issue("change-a"), /invalid retained proof/);
+  assert.equal(f.runtime.read("change-a"), null);
+  assert.equal(f.checks(), 0);
 });

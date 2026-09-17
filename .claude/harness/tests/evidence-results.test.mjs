@@ -219,13 +219,17 @@ test("Playwright result helpers classify annotations and terminal outcomes", () 
     { type: "claim", description: "ignored" }
   ]), ["CC-A"]);
   assert.deepEqual(playwrightTestOutcome([{ status: "passed" }]),
-    { failed: false, skipped: false });
+    { failed: false, skipped: false, inconclusive: false });
   assert.deepEqual(playwrightTestOutcome([{ status: "skipped" }, { status: "skipped" }]),
-    { failed: false, skipped: true });
+    { failed: false, skipped: true, inconclusive: false });
   for (const status of ["failed", "timedOut", "interrupted"])
     assert.deepEqual(playwrightTestOutcome([{ status }, { status: "skipped" }]),
-      { failed: true, skipped: false });
-  assert.deepEqual(playwrightTestOutcome([{}, null]), { failed: false, skipped: false });
+      { failed: true, skipped: false, inconclusive: false });
+  for (const results of [[], [{}, null], [{ status: "unknown" }], [{ status: "passed" }, {}]])
+    assert.deepEqual(playwrightTestOutcome(results),
+      { failed: false, skipped: false, inconclusive: true });
+  assert.deepEqual(playwrightTestOutcome([{ status: "failed" }, { status: "passed" }]),
+    { failed: true, skipped: false, inconclusive: false });
 });
 
 test("playwrightReportSummary carries claims and critical cases only to executed tests", () => {
@@ -274,11 +278,11 @@ test("playwrightReportSummary carries claims and critical cases only to executed
       { id: "CC-SKIP", status: "skipped" },
       { id: "CC-SUITE", status: "fail" }
     ],
-    tests: 3, failed: 1, skipped: 1
+    tests: 3, failed: 1, skipped: 1, inconclusive: 0
   });
   assert.deepEqual(playwrightReportSummary(null), {
     claims: [], attachments: [], skippedClaims: [], criticalCases: [],
-    tests: 0, failed: 0, skipped: 0
+    tests: 0, failed: 0, skipped: 0, inconclusive: 0
   });
 });
 

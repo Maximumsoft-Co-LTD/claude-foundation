@@ -1,5 +1,134 @@
 # Recovery review fixes
 
+## Consumer completion improvements — 2026-09-17 (active)
+
+User authorized all work in `docs/reports/project-review-fix-plan-2026-09-17.md`
+directly in this repository without starting Change. Preserve earlier records
+and unrelated edits. No source commit, push, publication, or paid/live providers.
+
+- [x] I1 Correct Playwright outcome evidence and receipt compatibility (R1).
+- [x] I2 Preflight installer and adapter destinations; preserve rollback and user files (R2).
+- [x] I3 Bind effective push destinations and actual default branches (R3, R4).
+- [x] I4 Bind proven modes, preserve symlinks, and verify Git conversions (R5, R6, R11).
+- [x] I5 Deliver readable, current Investigation reports with compatible JSON (R10).
+- [x] I6 Verify installed-consumer completion and recovery; repair demonstrated gaps.
+- [x] I7 Repair dashboard admission and align environment/protocol guidance (R7–R9).
+- [x] I8 Run integrated, upgrade, docs/build, release preflight, and full deterministic verification; review final diff.
+
+### Implementation evidence and remaining work — 2026-09-17
+
+- R1: only recognized executed browser outcomes credit claims/cases; empty,
+  malformed, unknown, skipped-only and zero-test reports cannot pass. Adapter
+  protocol 7 invalidates old execution fingerprints; real normalizer/adapter
+  recovery and receipt-validity suites pass.
+- R2: base and host installers preflight writable ancestors/leaves, including
+  previous manifests and global Codex prompts, before managed writes. External
+  files and links are preserved on refusal. Installer smoke passes 272 assertions;
+  containment/rollback/dry-run regressions pass.
+- R3/R4: effective push URLs and actual remote defaults are validated and rebound
+  on resume. An additional reproduction showed an unsafe later root could leave
+  an earlier child published. Multi-repository preflight now validates every
+  selected projection/destination before publication; all five topology/remote
+  cases pass, including successful retry after restoring the remote.
+- R5/R6/R11: delivery protocol 2 binds modes, including recursive directory and
+  archive entries; valid dangling/modified/external links retain mode 120000 and
+  link text. Normal Git CRLF/LF conversion is bound to the proven bytes and its
+  attributes/configuration. Binary, hook mutation, resume drift, mode-only child
+  changes, and both executable-bit drift directions are covered. Custom filters
+  (including a driver literally named `unset`) are rejected without execution.
+  Legacy archives missing mode evidence and unsupported conversions retain an
+  explicit choice of separate diff review/Git authority or remaining archived;
+  a no-op follow-up Change is not represented as a supported migration route.
+- R10: generated reports preserve JSON compatibility and authored notes, show
+  current conclusions/evidence/unknowns in English/Thai, reject report-as-source
+  feedback, and recover destination conflicts without discarding research.
+  Sixteen Investigation tests pass. Generated reports no longer trip the
+  untracked-investigation Build guard; authored notes retain their guard.
+- R7–R9: expired dashboard entries are pruned before admission with cache and
+  persistence updates. Docs build passes on declared minimum Node 22.13.0
+  (37 pages). Current draft/advance guidance is checked against protocol pins;
+  docs consistency passes 136 assertions.
+- Installed-consumer proof loop passes 66 assertions through `archived`, with
+  failed/restored setup, unavailable/restored provider command, failed/repaired
+  product test, explicit review-risk fixture authority, target conflict and
+  resolution, repeated resume, and preservation of HEAD/index/unrelated files.
+  OpenSpec archive is a deterministic fixture stub; no live reviewer is invoked.
+- Full upgrade matrix passes 192 rows (48 tags from v3.2.19 through v3.5.18,
+  four hosts), preserving user files and active changes. Website/example Node
+  tests pass 13 tests; Todo v2 passes 58 tests; zero-cost sentinel passes all seven
+  scenarios. Release preflight is structurally ready; exit 2 is solely the
+  intentionally uncommitted source, with paid portfolio readiness advisory.
+- An earlier full run used eight workers: 207/208 suites passed. Proof loop completed
+  in 216s and topology/planning in 285s; no watchdog timeout. The failing
+  reference-governance assertion exposed a removed ownership sentence in the
+  shortened Investigation guide. That sentence is restored; reference governance
+  (5 tests) and context budgets (127 assertions) then passed. The final fresh
+  full run below supersedes that incomplete gate.
+
+The reproduced interrupted-archive coordinator gap is now repaired: an explicit
+archive continuation verifies retained proof, the relocated applied projection,
+approval, captured modes, and spec sync before active-packet/live-hash checks.
+The registered installed-consumer proof loop now includes budget continuation
+and an OpenSpec move followed by failure, then resumes from a different session;
+71 assertions pass, including grant consumption and unchanged HEAD/index/user
+work. Focused recovery, grant, projection and dependency-saga tests pass 86 tests.
+Both readiness and primitive archive reject tampered retained inputs without
+cleanup. Legacy interrupted archives do not invent historical mode evidence.
+
+A second regression reproduced premature DONE when an `archived` checkpoint
+still needed audit/cleanup. Explicit archive continuation now runs that recovery
+before reporting completion; the regression passes. The registered installed multi-repository recovery
+suite passes 19 assertions: an injected stop after the API dependency wave leaves
+the app untouched; a new process applies the app, refuses an incomplete spec
+merge, then completes archive after the real spec output is repaired. Every
+repository HEAD/index and the read-only dependency are preserved. Recovery also
+records mode-bound delivery evidence after repaired spec sync. Injection touches
+only the installed fixture's existing checkpoint, and OpenSpec is a deterministic
+stub; no source proof records or live providers are modified.
+
+Acceptance mapping: the installed proof loop covers fresh install, retained
+unrelated work, failed/restored setup/provider, product repair, review-risk
+authority, target conflict, budget continuation and fresh-session interrupted
+Land. Installed repository recovery covers dependency waves, read-only targets,
+spec-sync refusal/repair and repeated completion. Installer/upgrade suites cover
+project configuration and active-state preservation. Investigation suites cover
+current readable output, stale/error recovery and authored notes. Deliver suites
+cover valid links/conversion and rejection/recovery boundaries; publication is
+mocked and separate from lifecycle completion. Existing recovery suites retain
+pause and repeated no-progress boundaries. Live service availability, credentials,
+custom Git filters and unadvertised platforms remain explicitly outside these
+deterministic guarantees.
+
+Diagnostic labs/scripts (temporary, not shipped evidence):
+`/tmp/changeloop-consumer-budget-20260917.sh` passes 27 assertions through archive
+after an explicit synthetic-fixture budget continuation;
+`/tmp/changeloop-consumer-interrupted-land-debug-20260917.sh` reproduces the gap and
+retains its consumer at
+`/var/folders/xv/rnwy766j2wv3d7d2yqzn9x340000gn/T/tmp.qW111Iyjcu/review-waiver`.
+The full-run log is
+`~/Library/Application Support/rtk/tee/1789625716_test.log`.
+Budget/interrupted-Land and multi-repository acceptance are now registered.
+Final verification on the delivered source:
+
+- `rtk test env FOUNDATION_TEST_JOBS=8 bash .claude/tests/run-all.sh`: exit 0,
+  all 209 suites pass (208 shared and one isolated suite). This includes the
+  latest recovery composition, both installed-consumer suites, installer,
+  protocol/upgrade, documentation, architecture, and context-budget checks.
+- Docs production build on Node 22.13.0: exit 0, 37 pages. Existing non-fatal
+  empty-i18n/missing-404-content warnings remain. Docs consistency: 136/136.
+- Zero-cost sentinel: all seven scenarios pass. Release preflight:
+  `structuralReady: true`; exit 2 is solely `source-tree-not-immutable` because
+  changes intentionally remain uncommitted. Paid portfolio readiness is advisory;
+  no live provider or publication was run.
+- Final diff review and `git diff --check` pass. Source fingerprint, excluding
+  this ledger, is identical before and after the full gate:
+  `77f529ab199d0d6863c848078a54f1d223ce468b82a596e1f3f3028951b15564`.
+  Index fingerprint also remains unchanged:
+  `096c3c502cbdba733574428cbab688dbc64f2ae20bcb788eaed63ca9e971e774`.
+
+All I1–I8 work is complete within the documented deterministic scope. Source HEAD remains
+`63f2ce1c4b73034bed2cbdb70b924928529e3fde`; no source commit/publication occurred.
+
 Scope: address the completed independent review without starting a Change,
 committing, pushing, deploying, or invoking paid/live providers. Preserve the
 existing uncommitted recovery and amendment-replay work.

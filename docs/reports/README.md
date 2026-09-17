@@ -24,6 +24,12 @@ those contracts into a report; link to them instead.
 
 ## Historical material
 
+- [Project review and fix plan](project-review-fix-plan-2026-09-17.md) —
+  2026-09-17 repository-wide inventory, deterministic checks, and reproduced
+  evidence, installation, delivery, and dashboard defects on source
+  `63f2ce1c4b73034bed2cbdb70b924928529e3fde`. Proposed fixes only; includes the
+  full-suite timeout and verification limits.
+
 - [Weekly Review feedback remediation plan](weekly-review-feedback-remediation-plan-2026-09-11.md) —
   2026-09-11 full artifact review and current-source comparison covering intent
   continuity, guards, leases, toolchains, evidence coverage, and telemetry.

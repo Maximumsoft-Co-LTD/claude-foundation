@@ -16,7 +16,7 @@ OpenSpec owns the agreement; the coding agent owns implementation; project
 tools produce evidence; the harness owns state, isolation, budgets, proof,
 authority, and recoverable Land.
 
-For new work, the agent states semantics once in draft v3 and `change start`
+For new work, the agent states semantics once in draft v4 (v3 remains compatible) and `change start`
 compiles stable OpenSpec links and conditional artifacts. After Change, the
 normal model-facing runtime entrypoint is `advance --through
 build|proven|archived`; primitive commands remain compatibility/diagnostic

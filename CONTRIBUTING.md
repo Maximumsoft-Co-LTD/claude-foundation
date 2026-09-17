@@ -20,6 +20,9 @@ to the same evidence-driven standard the harness enforces.
 Requirements:
 
 - Node.js **>= 20.19.0**
+- Website docs: Node.js **22.13.x or later 22.x, or >= 24.0.0** (the docs CI
+  exercises 22.13.0; Astro and its optional WASM dependency require newer Node
+  than the consumer harness).
 - A POSIX shell (`sh`), `git`, and `jq`
 
 ```sh

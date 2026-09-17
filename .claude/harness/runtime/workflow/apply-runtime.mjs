@@ -13,6 +13,8 @@ import {
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 import { compositeRepositorySelection } from "../core/repository-binding.mjs";
 import { createRepositoryDeliverySaga } from "./repository-delivery-saga.mjs";
+import { deliveryTreeEntries, assertDeliveryEntries } from "./delivery-integrity.mjs";
+import { agreementIdentity } from "../core/user-decisions.mjs";
 
 // Whether an empty root diff is an acceptable apply outcome rather than an
 // error: true when the change selected any non-root repository, because the
@@ -287,7 +289,10 @@ export function applyCodeEntry(context, sandboxPath, rel) {
     before: context.pathIdentity(target),
     beforeMode: context.pathMode(target),
     after: context.pathIdentity(source),
-    afterMode: context.pathMode(source)
+    afterMode: context.pathMode(source),
+    ...(context.pathIdentity(source)?.startsWith("directory:") ? {
+      afterEntries: deliveryTreeEntries(sandboxPath, [rel], context.pathIdentity)
+    } : {})
   };
 }
 
@@ -425,7 +430,7 @@ export function assertRecoveredProjection(context, id, state, archivedPath) {
   if (!state.workspace.applied)
     context.fail(`the interrupted archive never projected the sandbox into the target; ` +
       `restore 'openspec/changes/${id}' from '${archivedPath}' and land again`);
-  const verification = context.verifyAppliedProjection(state);
+  const verification = context.verifyAppliedProjection(state, { archivedChangePath: archivedPath });
   if (!verification.valid)
     context.fail(`recovered archive has an invalid applied projection: ${verification.reason}`);
 }
@@ -729,17 +734,14 @@ export function createApplyRuntime({
         .violations.map((violation) => ({ capability, ...violation })));
   }
 
-  function recordDeliveryIntegrity(state, archivedPath, captured = []) {
+  function recordDeliveryIntegrity(state, archivedPath, captured = [], modeBound = true) {
     if (typeof pathIdentity !== "function" || !archivedPath) return;
     const paths = [archivedPath, ...captured.map(({ capability }) =>
       `openspec/specs/${capability}/spec.md`)];
     state.deliveryIntegrity = {
-      version: 1,
+      version: modeBound ? 2 : 1,
       createdAt: now(),
-      entries: [...new Set(paths)].sort().map((path) => ({
-        path,
-        identity: pathIdentity(join(root, path))
-      }))
+      entries: deliveryTreeEntries(root, [...new Set(paths)], pathIdentity)
     };
   }
 
@@ -775,13 +777,23 @@ export function createApplyRuntime({
       saveRuntime(state);
       failSpecSync(outstanding);
     }
-    if (state.specSyncViolations) {
+    const audit = proofAudit(id, true);
+    if (!audit.valid) fail(`archived proof audit failed: ${audit.reason}`);
+    if (!state.deliveryIntegrity && Array.isArray(state.specSyncInputs) &&
+        typeof pathIdentity === "function") {
+      const archivedPath = state.archivedChangePath || archivedChangeRelativePath(id);
+      if (archivedPath) {
+        assertRetainedArchiveIntegrity(id, state, archivedPath);
+        recordDeliveryIntegrity(state, archivedPath, state.specSyncInputs,
+          Array.isArray(state.land?.archivePacketEntries));
+        saveRuntime(state);
+      }
+    }
+    if (state.specSyncViolations || Array.isArray(state.specSyncInputs)) {
       delete state.specSyncViolations;
       delete state.specSyncInputs;
       saveRuntime(state);
     }
-    const audit = proofAudit(id, true);
-    if (!audit.valid) fail(`archived proof audit failed: ${audit.reason}`);
     let resumed = false;
     if (state.workspace &&
         !["removed", "not-needed"].includes(state.workspace.cleanup?.status)) {
@@ -804,6 +816,8 @@ export function createApplyRuntime({
       resumed = true;
     }
     if (resumed) saveRuntime(state);
+    cleanupChangeLeases(id);
+    consumeLandGrant(id);
     console.log(`ALREADY ARCHIVED ${id}\n  archived: ${state.archivedAt || "unknown"}`);
   }
 
@@ -813,6 +827,7 @@ export function createApplyRuntime({
     // checkable once the change directory has moved is checked here, before
     // any state is written: a refusal has to leave the change recoverable.
     assertRecoveredArchiveReady(id, state, archivedPath);
+    assertRetainedArchiveIntegrity(id, state, archivedPath);
     const outstanding = outstandingSpecSync(state);
     if (outstanding.length) {
       state.specSyncViolations = outstanding;
@@ -828,17 +843,58 @@ export function createApplyRuntime({
       recoveredAt: now()
     };
     recordDeliveryIntegrity(state, archivedPath,
-      Array.isArray(state.specSyncInputs) ? state.specSyncInputs : []);
+      Array.isArray(state.specSyncInputs) ? state.specSyncInputs : [],
+      Array.isArray(state.land.archivePacketEntries));
     state.workspace.cleanup = cleanupAppliedSandbox(id, state);
     if (state.repositories)
       state.repositoryCleanup = cleanupRepositorySandboxes(id, state);
     if (state.workspace.apply)
       state.workspace.apply.cleanup = cleanupApplyTransaction(state);
+    cleanupChangeLeases(id);
     delete state.workspace.baseline;
     delete state.specSyncInputs;
     delete state.specSyncViolations;
     saveRuntime(state);
+    consumeLandGrant(id);
     console.log(`ARCHIVED ${id}\n  recovered: interrupted archive transaction`);
+  }
+
+  function assertRetainedArchiveIntegrity(id, state, archivedPath) {
+    if (state.specApproval?.required &&
+        (state.specApproval.revision !== Number(state.contractRevision || 0) ||
+        state.specApproval.identity !== agreementIdentity(root,
+          archivedPath.slice("openspec/changes/".length))))
+      fail("interrupted archive no longer matches the approved agreement; preserve both versions and restore the approved packet before retrying Land");
+    if (state.land?.archivePacketEntries) {
+      const active = `openspec/changes/${id}`;
+      assertDeliveryEntries(root, state.land.archivePacketEntries.map((entry) => ({
+        ...entry, path: archivedPath + entry.path.slice(active.length)
+      })), pathIdentity);
+    }
+  }
+
+  function archiveRecoveryReady(id) {
+    const state = loadRuntime(id);
+    if (state.status === "archived" || state.land?.status !== "archive-prepared" ||
+        existsSync(changePath(id))) return false;
+    const archivedPath = archivedChangeRelativePath(id);
+    if (!archivedPath) return false;
+    assertRecoveredArchiveReady(id, state, archivedPath);
+    assertRetainedArchiveIntegrity(id, state, archivedPath);
+    const outstanding = outstandingSpecSync(state);
+    if (outstanding.length) failSpecSync(outstanding);
+    return true;
+  }
+
+  function recoverArchive(id, authorizeLand) {
+    if (loadRuntime(id).status === "archived") {
+      archive(id);
+      return true;
+    }
+    if (!archiveRecoveryReady(id)) return false;
+    authorizeLand(id);
+    archive(id);
+    return true;
   }
 
   function snapshotArchiveEvidence(id) {
@@ -900,7 +956,11 @@ export function createApplyRuntime({
     // This is the recovery record for the destructive OpenSpec move. Persist it
     // before the command so a crash after the move can still verify the merge.
     state.specSyncInputs = specSyncInputs;
-    state.land = { ...state.land, status: "archive-prepared", updatedAt: now() };
+    state.preArchiveWorkspaceHash = preArchiveWorkspaceHash;
+    state.land = { ...state.land, status: "archive-prepared", updatedAt: now(),
+      ...(typeof pathIdentity === "function" ? {
+        archivePacketEntries: deliveryTreeEntries(root, [`openspec/changes/${id}`], pathIdentity)
+      } : {}) };
     saveRuntime(state);
     // landCheck already gated this; repeated here because it is the last point
     // before the destructive step and the CLI can disappear in between.
@@ -1024,6 +1084,8 @@ export function createApplyRuntime({
     prepareApplyTransaction,
     refreshAppliedProjection,
     applySandbox,
+    archiveRecoveryReady,
+    recoverArchive,
     archive
   };
 }

@@ -472,6 +472,12 @@ test("owner updates profile", {
 
 A successful exit without all required annotations is `inconclusive`, never
 `pass`. A skipped annotated test does not satisfy its claim or critical case.
+Empty, malformed, or unknown result statuses are inconclusive and cannot credit
+claims or cases. Zero executed tests cannot pass, even without required claims.
+Any failed, timed-out, or interrupted attempt remains a failure even if a later
+retry passed. Repair the project reporter/test selection and rerun that provider.
+Adapter protocol 7 invalidates prior adapter fingerprints, so pre-upgrade
+receipts must be refreshed instead of retaining ambiguous browser passes.
 Playwright attachments present in the JSON report are referenced from
 the receipt. One Playwright adapter may declare `outputs`, for example
 `["accessibility"]`; it emits separate capability receipts from one command

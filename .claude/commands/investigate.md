@@ -11,3 +11,5 @@ rules. Start from `claude-foundation investigate --template`, maintain its JSON
 record, and run `claude-foundation investigate <record.json>` after every
 evidence batch. Follow the typed action and exact resume route. Preserve
 findings at a real boundary and never treat prototype output as proof.
+Write record content in the user's language. Return a short conclusion and a
+link to the current `report.path`; do not hand the user raw JSON as the result.

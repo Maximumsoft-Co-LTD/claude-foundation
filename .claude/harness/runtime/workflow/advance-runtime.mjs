@@ -571,6 +571,7 @@ export function createAdvanceRuntime({
   prepareBuild = null, runProof = null, runLand = null,
   recoverReviewBindings = null,
   recoverWorkspace = null,
+  recoverArchive = null,
   recoverSandbox = null, saveRuntime = () => {}, proofIsCurrent = null,
   authorizeLand = null,
   hasLandGrant = () => false,
@@ -797,6 +798,12 @@ export function createAdvanceRuntime({
         if (through && !["build", "proven", "archived"].includes(through))
           throw new Error("advance --through must be build|proven|archived");
         let initial = loadRuntime(id);
+        if (through === "archived" && recoverArchive) {
+          if (["proven", "applied", "landing", "archived"].includes(initial.status)) stage = "land";
+          if (initial.advanceRecovery?.pending?.paused)
+            return pendingAction(id, through, initial.advanceRecovery.pending);
+          if (await recoverArchive(id)) return done(id, "archived", through);
+        }
         if (initial.status === "archived") return done(id, "archived", through);
         if (initial.workspace?.amendmentReplay && recoverWorkspace) {
           if (initial.advanceRecovery?.pending?.paused)

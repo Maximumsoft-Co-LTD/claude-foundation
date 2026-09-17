@@ -160,6 +160,12 @@ assert_contains "public investigate emits a Change-bound handoff" \
   "$investigation_result" '"statePath": ".foundation/investigations/retry-boundary.json"'
 assert_file_exists "public investigate persists resumable state" \
   "$TARGET/.foundation/investigations/retry-boundary.json"
+assert_file_contains "installed investigate produces a readable report" \
+  "$TARGET/openspec/investigations/retry-boundary.report.md" 'Require revision checking'
+assert_contains "installed investigate advertises its current readable report" \
+  "$investigation_result" '"status": "current"'
+# Leave the harness-owned report in place: the later Build must not demand a
+# user commit merely because presentation was generated.
 rm "$TARGET/investigation-evidence.md" \
   "$TARGET/openspec/investigations/retry-boundary.json" \
   "$TARGET/.foundation/investigations/retry-boundary.json"
@@ -463,11 +469,16 @@ assert_contains "Build asks for spec approval" "$blocked_build" 'spec-approval-r
 assert_eq "unapproved Build creates no isolation" "current" \
   "$(jq -r '.workspace.mode' "$TARGET/.foundation/runtime/atomic-start.json")"
 bash "$ROOT/cli.sh" --project "$TARGET" change resolve atomic-start --approve-spec --decision-ref fixture://user/spec >/dev/null
-bash "$ROOT/cli.sh" --project "$TARGET" advance atomic-start --through build >/dev/null
+atomic_build="$(bash "$ROOT/cli.sh" --project "$TARGET" advance atomic-start --through build)"
 assert_eq "first Build advance enters Build" "building" \
   "$(jq -r '.status' "$TARGET/.foundation/runtime/atomic-start.json")"
 atomic_workspace="$(jq -r '.workspace.path' \
   "$TARGET/.foundation/runtime/atomic-start.json")"
+if [ "$(jq -r '.workspace.mode' "$TARGET/.foundation/runtime/atomic-start.json")" = current ]; then
+  printf '%s\n' "$atomic_build" >&2
+  fail "Build must isolate before the fixture implements or removes a workspace"
+  exit 1
+fi
 assert_in "first Build advance creates isolation" \
   "$(jq -r '.workspace.mode' "$TARGET/.foundation/runtime/atomic-start.json")" \
   "worktree copy"

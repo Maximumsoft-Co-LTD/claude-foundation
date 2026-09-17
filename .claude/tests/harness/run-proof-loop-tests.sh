@@ -25,15 +25,25 @@ trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 # repository is a repository conflict — a real blocker, and not the one under
 # test here.
 setup_project() {
-  mkdir -p "$TMP/$1/.claude/harness" "$TMP/$1/openspec"
-  cp -R "$ROOT/.claude/harness/." "$TMP/$1/.claude/harness/"
-  cp -R "$ROOT/openspec/schemas" "$TMP/$1/openspec/"
-  cp "$ROOT/openspec/config.yaml" "$TMP/$1/openspec/"
+  if [ "$1" = review-waiver ]; then
+    # Exercise the shipped installer, not just copied runtime modules, through
+    # proof, a fixture-owned review-risk decision, and archive below.
+    bash "$ROOT/install.sh" "$TMP/$1" --source "$ROOT" --yes >/dev/null
+  else
+    mkdir -p "$TMP/$1/.claude/harness" "$TMP/$1/openspec"
+    cp -R "$ROOT/.claude/harness/." "$TMP/$1/.claude/harness/"
+    cp -R "$ROOT/openspec/schemas" "$TMP/$1/openspec/"
+    cp "$ROOT/openspec/config.yaml" "$TMP/$1/openspec/"
+  fi
   cd "$TMP/$1"
   printf 'v1\n' > app.txt
-  printf '%s\n' '#!/usr/bin/env sh' 'grep -q v2 app.txt || exit 1' \
+  printf '%s\n' '#!/usr/bin/env sh' \
     'mkdir -p "$(dirname "$1")"' \
-    'printf "{\"numTotalTests\":1,\"numPassedTests\":1,\"success\":true}" > "$1"' \
+    'if grep -q v2 app.txt; then' \
+    '  printf "{\"numTotalTests\":1,\"numPassedTests\":1,\"success\":true}" > "$1"' \
+    'else' \
+    '  printf "{\"numTotalTests\":1,\"numFailedTests\":1,\"success\":false}" > "$1"; exit 1' \
+    'fi' \
     > run-test.sh
   printf '.foundation/\n' > .gitignore
   git init -q . && git config user.email t@t && git config user.name t
@@ -157,10 +167,39 @@ assert_contains "changes reports the change as ready to land" \
 
 # A user may accept the remaining review risk without discarding earned tests.
 setup_project review-waiver
-printf '%s\n' '{"workflow":{"grounding":"optional","reviewPolicy":"risk-tiered"},"land":{"riskBasedCi":false}}' > foundation.json
+export FOUNDATION_FIXTURE_PREREQUISITE="$TMP/dependency-ready"
+printf '%s\n' '{"workflow":{"grounding":"optional","reviewPolicy":"risk-tiered"},"land":{"riskBasedCi":false},"sandbox":{"setupCommand":"test -f \"$FOUNDATION_FIXTURE_PREREQUISITE\""}}' > foundation.json
 draft "Review waiver" "test-results/report.json"
+assert_eq "installed consumer retains failed setup for retry" failed \
+  "$(node -p 'require("./.foundation/runtime/review-waiver.json").workspace.setup.status')"
+printf 'available\n' > "$FOUNDATION_FIXTURE_PREREQUISITE"
+node .claude/harness/foundation.mjs advance review-waiver --through build >/dev/null
+assert_eq "fresh installed runtime retries restored setup" ok \
+  "$(node -p 'require("./.foundation/runtime/review-waiver.json").workspace.setup.status')"
+# Synthetic fixture telemetry exercises an explicitly authorized continuation.
+unset FOUNDATION_CLAUDE_SESSION_ID FOUNDATION_CLAUDE_TRANSCRIPT_PATH CODEX_THREAD_ID FOUNDATION_SESSION_ID
+export FOUNDATION_RUN_ID=fixture-budget-recovery
+node .claude/harness/foundation.mjs event review-waiver --request fixture-exhaustion --input 800000 --output 0 >/dev/null
+assert_eq "installed consumer stops at exhausted budget" operator-required \
+  "$(node -p 'require("./.foundation/runtime/review-waiver.json").budget.window.mode')"
+node .claude/harness/foundation.mjs budget-continue review-waiver --reason "Fixture user authorizes completion" --decision-ref fixture://user/budget >/dev/null
+assert_eq "installed continuation records one authorized window" 1 \
+  "$(node -p 'require("./.foundation/runtime/review-waiver.json").budget.window.extensionNumber')"
 implement review-waiver
 review_ws="$ws"
+# An installed consumer must recover on a fresh CLI process after a missing
+# provider dependency and a real product failure, without a replacement Change.
+mv "$ws/run-test.sh" "$TMP/run-test.saved"
+missing_provider="$({ node .claude/harness/foundation.mjs proof-collect review-waiver; } 2>&1 || true)"
+assert_not_contains "missing provider cannot produce proof" "$missing_provider" 'PROVEN review-waiver'
+assert_contains "missing provider identifies its command" "$missing_provider" 'run-test.sh'
+mv "$TMP/run-test.saved" "$ws/run-test.sh"
+printf 'v1\n' > "$ws/app.txt"
+failed_product="$({ node .claude/harness/foundation.mjs proof-collect review-waiver; } 2>&1 || true)"
+assert_not_contains "failed product cannot produce proof" "$failed_product" 'PROVEN review-waiver'
+assert_cmd_zero "installed consumer records the failed product test" node -e \
+  'const r=require("./.foundation/receipts/review-waiver/test.json"); if (r.status !== "fail") process.exit(1)'
+printf 'v2\n' > "$ws/app.txt"
 node .claude/harness/foundation.mjs proof-collect review-waiver >/dev/null
 pending_review="$({ node .claude/harness/foundation.mjs proof-run review-waiver; } 2>&1 || true)"
 assert_contains "review is required before the waiver" "$pending_review" 'review'
@@ -296,7 +335,7 @@ printf 'v2\n' > "$ws/app.txt"
 mkdir -p "$TMP/bin"
 printf '%s\n' '#!/usr/bin/env sh' \
   'if [ "$1" = "--version" ]; then echo 1.7.0; exit 0; fi' \
-  'if [ "$1" = "archive" ]; then mkdir -p openspec/changes/archive; mv "openspec/changes/$2" "openspec/changes/archive/$2"; fi' \
+  'if [ "$1" = "archive" ]; then mkdir -p openspec/changes/archive; mv "openspec/changes/$2" "openspec/changes/archive/$2"; if [ -f .foundation/interrupt-archive ]; then rm .foundation/interrupt-archive; exit 1; fi; fi' \
   'exit 0' > "$TMP/bin/openspec"
 chmod +x "$TMP/bin/openspec"
 
@@ -313,8 +352,25 @@ assert_eq "archive retains the exact amended packet" "$packet_before" \
   "$(packet_hash openspec/changes/archive/selective-amendment)"
 
 cd "$TMP/review-waiver"
+printf 'operator work must survive\n' > operator-staged.txt
+git add operator-staged.txt
+printf 'untracked operator note\n' > operator-note.txt
 head_before="$(git rev-parse HEAD)"
 index_before="$(git ls-files --stage | shasum)"
+printf 'newer operator edit\n' > app.txt
+conflicted="$(PATH="$TMP/bin:$PATH" node .claude/harness/foundation.mjs advance review-waiver --through archived)"
+assert_cmd_zero "installed consumer pauses on target conflict" env CONFLICT_OUTPUT="$conflicted" node -e \
+  'const r=JSON.parse(process.env.CONFLICT_OUTPUT); if (r.action === "DONE" || !/conflict/i.test(JSON.stringify(r))) { console.error(r); process.exit(1); }'
+assert_file_contains "target conflict preserves newer operator bytes" app.txt 'newer operator edit'
+assert_eq "target conflict preserves index" "$index_before" "$(git ls-files --stage | shasum)"
+# Fixture owner explicitly chooses the original target version; product work
+# and earned proof remain in the isolated workspace, then Land can resume.
+printf 'v1\n' > app.txt
+touch .foundation/interrupt-archive
+interrupted="$({ PATH="$TMP/bin:$PATH" FOUNDATION_SESSION_ID=before-interruption node .claude/harness/foundation.mjs archive review-waiver; } 2>&1 || true)"
+assert_contains "archive interruption surfaces after moving the packet" "$interrupted" 'OpenSpec archive failed'
+assert_file_exists "interrupted archive retains the moved packet" openspec/changes/archive/review-waiver/proposal.md
+export FOUNDATION_SESSION_ID=after-interruption
 landed="$(PATH="$TMP/bin:$PATH" node .claude/harness/foundation.mjs advance review-waiver --through archived)"
 assert_cmd_zero "Land emits one JSON outcome" env LAND_OUTPUT="$landed" \
   node -e 'JSON.parse(process.env.LAND_OUTPUT)'
@@ -322,5 +378,17 @@ assert_contains "accepted review risk can finish at archived" "$landed" '"reache
 assert_eq "Land preserves HEAD" "$head_before" "$(git rev-parse HEAD)"
 assert_eq "Land preserves the index" "$index_before" "$(git ls-files --stage | shasum)"
 assert_file_contains "Land applies the accepted product bytes" app.txt 'v2'
+assert_file_contains "installed consumer Land preserves unrelated staged work" \
+  operator-staged.txt 'operator work must survive'
+assert_file_contains "installed consumer Land preserves unrelated untracked work" \
+  operator-note.txt 'untracked operator note'
+assert_eq "installed consumer archive records mode-bound delivery evidence" 2 \
+  "$(node -p 'require("./.foundation/runtime/review-waiver.json").deliveryIntegrity.version')"
+assert_eq "recovered Land consumes the fresh-session grant" consumed \
+  "$(node -p 'require("./.foundation/transactions/review-waiver/land-grant.json").status')"
+resumed="$(PATH="$TMP/bin:$PATH" node .claude/harness/foundation.mjs advance review-waiver --through archived)"
+assert_contains "fresh installed runtime resumes completed Land idempotently" "$resumed" '"reached":"archived"'
+assert_eq "repeated archive preserves target HEAD" "$head_before" "$(git rev-parse HEAD)"
+assert_eq "repeated archive preserves target index" "$index_before" "$(git ls-files --stage | shasum)"
 
 finish "proof loop"

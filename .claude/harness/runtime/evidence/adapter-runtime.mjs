@@ -632,16 +632,21 @@ export function createAdapterRuntime({
   function playwrightOutputStatus(result, summary, missingClaims, critical, readinessMissed) {
     const base = adapterInfrastructureFailed(result, readinessMissed) ? "error" :
       result.status !== 0 || (summary?.failed || 0) > 0 ? "fail" :
-        !summary || missingClaims.length ? "inconclusive" : "pass";
+        !summary || !Number.isInteger(summary.tests) ||
+          summary.tests - summary.skipped - (summary.inconclusive || 0) <= 0 ||
+          summary.inconclusive > 0 || missingClaims.length ? "inconclusive" : "pass";
     return enforceCriticalCases(base, critical);
   }
 
   function playwrightObservation(summary, requiredClaims, missingClaims) {
     if (!summary) return "Playwright JSON report unavailable";
     return `${summary.tests} tests; ${summary.failed} failed; ${summary.skipped} skipped; ` +
+      `${summary.inconclusive || 0} inconclusive; ` +
       `covered claims ${requiredClaims.length - missingClaims.length}/${requiredClaims.length}; ` +
       `observed annotations ${summary.claims.length}` +
       (missingClaims.length ? `; missing ${missingClaims.join(",")}` : "") +
+      (summary.inconclusive > 0 || summary.tests === summary.skipped
+        ? "; repair the project JSON reporter/test selection and rerun this provider" : "") +
       (summary.skippedClaims.length
         ? `; claimed only by skipped tests ${summary.skippedClaims.join(",")}` : "");
   }

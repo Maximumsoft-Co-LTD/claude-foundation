@@ -10,6 +10,7 @@ import {
   assertReadRepositoriesUnchanged, createAdapterRuntime, criticalCaseResult,
   providerRepositoryManifestValue, repositoryStatus
 } from "../../harness/runtime/evidence/adapter-runtime.mjs";
+import { playwrightReportSummary } from "../../harness/runtime/evidence/evidence-results.mjs";
 
 const stableHash = (value) => createHash("sha256")
   .update(JSON.stringify(value)).digest("hex");
@@ -369,6 +370,49 @@ test("test-discovery distinguishes unavailable counts and infrastructure errors"
     result({ status: 1, stdout: JSON.stringify({ numTotalTests: 2 }) }));
   assert.equal((await failedTest.runtime.executeAdapter(
     "change", "provider", config, "run", new Map())).status, "fail");
+});
+
+for (const results of [null, {}, [], [{}], [null], [{ status: "unknown" }],
+  [{ status: "passed" }, {}], [{ status: "skipped" }]])
+test(`Playwright does not prove annotated unexecuted or invalid outcomes: ${JSON.stringify(results)}`, async (t) => {
+  const config = { capability: "browser", adapter: "playwright", criticalCases: ["case-1"] };
+  const report = { suites: [{ specs: [{ tests: [{
+    annotations: [{ type: "claim", description: "test-claim" },
+      { type: "critical-case", description: "case-1" }], results
+  }] }] }] };
+  const world = fixture(config, result({ stdout: JSON.stringify(report) }), { playwrightReportSummary });
+  t.after(() => rmSync(world.root, { recursive: true, force: true }));
+  const outcome = await world.runtime.executeAdapter("change", "provider", config, "run", new Map());
+  assert.equal(outcome.status, "inconclusive");
+  assert(world.receipts.every((row) => row.status === "inconclusive"));
+  assert(!playwrightReportSummary(report).claims.includes("test-claim"));
+});
+
+test("Playwright zero executions cannot pass even without required claims", async (t) => {
+  const config = { capability: "browser", adapter: "playwright" };
+  const world = fixture(config, result({ stdout: '{"suites":[]}' }), {
+    playwrightReportSummary, providerClaims: () => []
+  });
+  t.after(() => rmSync(world.root, { recursive: true, force: true }));
+  assert.equal((await world.runtime.executeAdapter("change", "provider", config, "run", new Map())).status,
+    "inconclusive");
+});
+
+test("Playwright repaired reporter resumes to pass while failed retries remain failures", async (t) => {
+  const config = { capability: "browser", adapter: "playwright", criticalCases: ["case-1"] };
+  const output = result();
+  const world = fixture(config, output, { playwrightReportSummary });
+  t.after(() => rmSync(world.root, { recursive: true, force: true }));
+  for (const [results, expected] of [[[], "inconclusive"],
+    [[{ status: "failed" }, { status: "passed" }], "fail"],
+    [[{ status: "passed" }], "pass"]]) {
+    output.stdout = JSON.stringify({ tests: [{
+      annotations: [{ type: "claim", description: "test-claim" },
+        { type: "critical-case", description: "case-1" }], results
+    }] });
+    assert.equal((await world.runtime.executeAdapter("change", "provider", config,
+      `run-${expected}`, new Map())).status, expected);
+  }
 });
 
 test("playwright emits covered output receipts and attachments", async () => {

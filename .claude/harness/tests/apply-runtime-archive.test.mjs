@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync,
+import { chmodSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, rmSync,
   writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 
 import { createApplyRuntime } from "../runtime/workflow/apply-runtime.mjs";
+import { agreementIdentity } from "../runtime/core/user-decisions.mjs";
+import { deliveryTreeEntries } from "../runtime/workflow/delivery-integrity.mjs";
 
 const timestamp = "2026-08-26T00:00:00.000Z";
 const fail = (message) => { throw new Error(message); };
@@ -290,6 +292,81 @@ test("interrupted recovery also supports a direct change without repositories", 
   assert.equal(state.status, "archived");
   assert.equal(state.repositoryCleanup, undefined);
   rmSync(root, { recursive: true, force: true });
+});
+
+test("interrupted archive readiness and execution reject changed retained inputs", () => {
+  const root = mkdtempSync(join(tmpdir(), "apply-archive-retained-"));
+  const id = "retained";
+  const archivedPath = `openspec/changes/archive/2026-08-26-${id}`;
+  const proposal = join(root, archivedPath, "proposal.md");
+  write(proposal, "Approved proposal\n");
+  const pathIdentity = (path) => lstatSync(path).isDirectory()
+    ? "directory:fixture" : readFileSync(path, "utf8");
+  const state = {
+    id, status: "applied", contractRevision: 1,
+    specApproval: { required: true, revision: 1,
+      identity: agreementIdentity(root, `archive/2026-08-26-${id}`) },
+    workspace: { mode: "copy", applied: true },
+    land: { status: "archive-prepared", archivePacketEntries:
+      deliveryTreeEntries(root, [archivedPath], pathIdentity).map((entry) => ({
+        ...entry, path: entry.path.replace(archivedPath, `openspec/changes/${id}`)
+      })) }
+  };
+  let auditValid = true, projectionValid = true, cleaned = 0, consumed = 0;
+  const runtime = archiveRuntime(root, state, {
+    pathIdentity,
+    proofAudit: () => ({ valid: auditValid, reason: "retained proof changed" }),
+    verifyAppliedProjection: (_state, options) => {
+      assert.equal(options.archivedChangePath, archivedPath);
+      return { valid: projectionValid, reason: "product changed" };
+    },
+    cleanupAppliedSandbox: () => { cleaned += 1; return { status: "removed" }; },
+    consumeLandGrant: () => { consumed += 1; }
+  });
+  const rejected = (pattern) => {
+    assert.throws(() => runtime.archiveRecoveryReady(id), pattern);
+    assert.throws(() => quiet(() => runtime.archive(id)), pattern);
+    assert.equal(state.status, "applied");
+    assert.equal(cleaned, 0);
+    assert.equal(consumed, 0);
+  };
+  try {
+    assert.equal(runtime.archiveRecoveryReady(id), true);
+    auditValid = false;
+    rejected(/invalid proof/);
+    auditValid = true;
+    projectionValid = false;
+    rejected(/invalid applied projection/);
+    projectionValid = true;
+    write(proposal, "Unapproved proposal\n");
+    rejected(/approved agreement/);
+    write(proposal, "Approved proposal\n");
+    const mode = lstatSync(proposal).mode & 0o777;
+    chmodSync(proposal, mode ^ 0o111);
+    rejected(/delivery input changed/);
+    chmodSync(proposal, mode);
+    state.specSyncViolations = [{ capability: "sample", detail: "missing merge" }];
+    rejected(/archived specs do not match/);
+    delete state.specSyncViolations;
+    assert.equal(runtime.archiveRecoveryReady(id), true);
+    quiet(() => runtime.archive(id));
+    assert.equal(state.status, "archived");
+    assert.equal(state.deliveryIntegrity.version, 2);
+    assert.equal(cleaned, 1);
+    assert.equal(consumed, 1);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("legacy interrupted archives do not invent historical mode evidence", () => {
+  const root = mkdtempSync(join(tmpdir(), "apply-archive-legacy-mode-"));
+  const id = "legacy";
+  mkdirSync(join(root, "openspec/changes/archive", `2026-08-26-${id}`), { recursive: true });
+  const state = { status: "proven", workspace: { mode: "direct" }, land: {} };
+  try {
+    quiet(() => archiveRuntime(root, state, { pathIdentity: () => "directory:fixture" }).archive(id));
+    assert.equal(state.status, "archived");
+    assert.equal(state.deliveryIntegrity.version, 1);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test("a ready direct workspace archives specs and completes cleanup", () => {

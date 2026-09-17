@@ -220,6 +220,10 @@ grounding_schema="$(jq -r '.groundingSchema | join(", ")' \
   "$ROOT/.claude/harness/protocol.json")"
 advance_protocol="$(jq -r '.advanceProtocol' \
   "$ROOT/.claude/harness/protocol.json")"
+assert_file_contains "maintainer guidance names the current draft schema" \
+  "$ROOT/AGENTS.md" "draft v$semantic_draft_schema"
+assert_file_contains "quality guidance names the current advance protocol" \
+  "$ROOT/quality/README.md" "protocol-v$advance_protocol"
 for page in "$DOCS/cli.md" "$DOCS/th/cli.md"; do
   label="$(basename "$(dirname "$page")")"
   assert_file_contains "$label CLI pins provider protocol" \

@@ -15,6 +15,7 @@ import {
   compositeRepositorySelection, isolatedRepositoryState, worktreeOwnedByTarget
 } from "../core/repository-binding.mjs";
 import { shellDisplayArgument } from "../core/shell-mutation-policy.mjs";
+import { isOwnedInvestigationReport } from "./investigation-report.mjs";
 
 // A commit read, not executed. Inspection must not resolve a program through
 // PATH, so ref files are the authority for both ordinary and linked worktrees.
@@ -858,7 +859,8 @@ export function sandboxCreatePreflight(context, id, flags = {}) {
   ], root);
   const unownedInvestigations = targetStatus.status === 0
     ? porcelainStatusRecords(targetStatus.stdout).filter((row) =>
-      row.status === "??" && row.path.startsWith("openspec/investigations/"))
+      row.status === "??" && row.path.startsWith("openspec/investigations/") &&
+      !isOwnedInvestigationReport(root, row.path))
     : [];
   if (unownedInvestigations.length)
     fail(`sandbox preflight found untracked investigation note(s): ${
