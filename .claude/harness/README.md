@@ -403,11 +403,14 @@ refused so a late executor with the same stable owner cannot clear the current
 lease.
 
 JSON output is compact by default and `--pretty` is inspection-only. Plan
-schema 5 compiles a deterministic setup/service/task/provider/repository/Land
+schema 6 compiles a deterministic setup/service/task/provider/repository/Land
 graph, prioritizes the longest ready dependency path within configured resource
 and capacity bounds, resumes dependencies satisfied by completed tasks, reports
 `proof-ready` after all tasks complete, and declares the deepest model required
-by a mixed session while carrying instruction provenance. Packet schema 7 adds
+by a mixed session while carrying instruction provenance. It retains a bounded
+graph-v2 authority snapshot so compatible upgrades can resume, while missing or
+stale authority returns affected tasks and their dependants to verification as
+defined in [`WORKFLOW.md`](../../WORKFLOW.md). Packet schema 7 adds
 the active graph, lease fencing generation, execution attempt, and versioned
 result authority; it rejects unknown, cross-repository, providerless, stale, or
 out-of-scope task results. Large collections are previews plus counts and

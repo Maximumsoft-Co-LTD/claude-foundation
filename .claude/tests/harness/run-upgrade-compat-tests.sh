@@ -102,4 +102,150 @@ assert_eq "post-upgrade runtime keeps grounding optional" "null" \
   "$(jq -r '.groundingVersion' \
     "$previous_target/.foundation/runtime/grounded-after-upgrade.json")"
 
+# Graph v2 allowed every task in one repository to run in the host session.
+# Graph v3 requires leases once more than one task is ready. An in-flight
+# v3.5.13 change therefore has no per-task lease results to invent on upgrade;
+# its persisted single-session authority must either compare cleanly or return
+# only the affected task to current verification.
+graph_source="$TMP/foundation-3.5.13"
+graph_target="$TMP/graph-upgrade-project"
+mkdir -p "$graph_source" "$graph_target"
+git -C "$ROOT" archive v3.5.13 | tar -x -C "$graph_source"
+git -C "$graph_target" init -q
+git -C "$graph_target" config user.email fixture@example.com
+git -C "$graph_target" config user.name "Upgrade Fixture"
+printf 'initial\n' > "$graph_target/app.txt"
+git -C "$graph_target" add app.txt
+git -C "$graph_target" commit -qm initial
+assert_cmd_zero "v3.5.13 installs into the graph upgrade fixture" \
+  bash "$graph_source/install.sh" "$graph_target" --source "$graph_source" --yes
+(
+  cd "$graph_target"
+  node .claude/harness/foundation.mjs new "Graph upgrade" --rapid >/dev/null
+  node .claude/harness/foundation.mjs resolve graph-upgrade \
+    --impact low --coupling isolated --acceptance-not-required >/dev/null
+  change="openspec/changes/graph-upgrade"
+  printf '%s\n' \
+    '# Tasks' '' \
+    '- [ ] **T001** First [kind:code] [paths:app.txt] [claims:graph-upgrade-outcome]' \
+    '- [ ] **T002** Second [kind:code] [paths:app.txt] [claims:graph-upgrade-outcome]' \
+    > "$change/tasks.md"
+  bash "$graph_source/cli.sh" --project "$graph_target" \
+    sandbox create graph-upgrade >/dev/null
+  bash "$graph_source/cli.sh" --project "$graph_target" \
+    agents plan graph-upgrade >/dev/null
+  workspace="$(node -p 'require("./.foundation/runtime/graph-upgrade.json").workspace.path')"
+  sed -i.bak 's/- \[ \]/- [x]/g' \
+    "$workspace/openspec/changes/graph-upgrade/tasks.md"
+  rm -f "$workspace/openspec/changes/graph-upgrade/tasks.md.bak"
+
+  node .claude/harness/foundation.mjs new "Graph reverify" --rapid >/dev/null
+  node .claude/harness/foundation.mjs resolve graph-reverify \
+    --impact low --coupling isolated --acceptance-not-required >/dev/null
+  change="openspec/changes/graph-reverify"
+  printf '%s\n' \
+    '# Tasks' '' \
+    '- [ ] **T001** First [kind:code] [paths:app.txt] [claims:graph-reverify-outcome]' \
+    '- [ ] **T002** Second [kind:code] [paths:app.txt] [claims:graph-reverify-outcome]' \
+    > "$change/tasks.md"
+  bash "$graph_source/cli.sh" --project "$graph_target" \
+    sandbox create graph-reverify >/dev/null
+  bash "$graph_source/cli.sh" --project "$graph_target" \
+    agents plan graph-reverify >/dev/null
+  workspace="$(node -p 'require("./.foundation/runtime/graph-reverify.json").workspace.path')"
+  sed -i.bak 's/- \[ \]/- [x]/g' \
+    "$workspace/openspec/changes/graph-reverify/tasks.md"
+  rm -f "$workspace/openspec/changes/graph-reverify/tasks.md.bak"
+)
+assert_eq "the previous release persisted graph-v2 execution authority" "2" \
+  "$(jq -r '.graph.version' "$graph_target/.foundation/plans/graph-upgrade.json")"
+rm "$graph_target/.foundation/plans/graph-reverify.json"
+assert_file_absent "the recovery fixture has lost its historical plan" \
+  "$graph_target/.foundation/plans/graph-reverify.json"
+assert_cmd_zero "current runtime upgrades the completed graph-v2 change" \
+  bash "$ROOT/install.sh" "$graph_target" --source "$ROOT" --yes
+assert_cmd_zero "read-only planning preserves compatible historical authority" \
+  bash "$ROOT/cli.sh" --project "$graph_target" agents plan graph-upgrade
+assert_eq "the upgraded plan has no Build task to repeat" "0" \
+  "$(jq -r '.tasks | length' "$graph_target/.foundation/plans/graph-upgrade.json")"
+assert_eq "the upgraded plan retains its bounded graph-v2 authority snapshot" "2" \
+  "$(jq -r '.legacyExecutionAuthority.graph.version' \
+    "$graph_target/.foundation/plans/graph-upgrade.json")"
+readiness="$(bash "$ROOT/cli.sh" --project "$graph_target" \
+  proof readiness graph-upgrade || true)"
+assert_contains "upgraded proof readiness reports no implementation work" \
+  "$readiness" '"pendingTasks": []'
+assert_not_contains "upgraded proof readiness does not demand synthetic lease results" \
+  "$readiness" "accepted lease result"
+
+# If the historical plan is missing, recovery remains Harness-owned: completion
+# added after isolation returns to current leased verification without packet
+# edits or a user decision, and accepted current results converge back to
+# build-complete.
+bash "$ROOT/cli.sh" --project "$graph_target" change waive graph-reverify \
+  --capability review --reason fixture --decision-ref fixture-review >/dev/null
+assert_cmd_zero "missing graph-v2 authority enters automatic verification" \
+  bash "$ROOT/cli.sh" --project "$graph_target" agents plan graph-reverify
+assert_eq "both completed tasks are queued for current verification" "2" \
+  "$(jq -r '.tasks | length' "$graph_target/.foundation/plans/graph-reverify.json")"
+for expected_task in T001 T002; do
+  dispatch="$(bash "$ROOT/cli.sh" --project "$graph_target" \
+    agents dispatch graph-reverify)"
+  task_id="$(printf '%s' "$dispatch" | jq -r '.task.taskId')"
+  owner="$(printf '%s' "$dispatch" | jq -r '.task.owner')"
+  assert_eq "verification dispatch selects the next completed task" \
+    "$expected_task" "$task_id"
+  bash "$ROOT/cli.sh" --project "$graph_target" agents acquire \
+    graph-reverify "$task_id" --owner "$owner" >/dev/null
+  lease_id="$(jq -r '.leaseId' \
+    "$graph_target/.foundation/leases/tasks/graph-reverify/$task_id.json")"
+  bash "$ROOT/cli.sh" --project "$graph_target" agents release \
+    graph-reverify "$task_id" --owner "$owner" --lease-id "$lease_id" >/dev/null
+done
+reverified_dispatch="$(bash "$ROOT/cli.sh" --project "$graph_target" \
+  agents dispatch graph-reverify)"
+assert_contains "accepted current results finish automatic verification" \
+  "$reverified_dispatch" '"action":"build-complete"'
+head_before="$(git -C "$graph_target" rev-parse HEAD)"
+index_before="$(git -C "$graph_target" diff --cached --binary | shasum -a 256)"
+bash "$ROOT/cli.sh" --project "$graph_target" change waive graph-upgrade \
+  --capability review --reason fixture --decision-ref fixture-review >/dev/null
+(
+  cd "$graph_target"
+  node .claude/harness/foundation.mjs receipt graph-upgrade test pass \
+    --observed "fixture test passed" --source harness-test \
+    --reference fixture://test >/dev/null
+  node .claude/harness/foundation.mjs receipt graph-upgrade discovery pass \
+    --observed "fixture discovery passed" --source harness-test \
+    --reference fixture://discovery --discovered 1 --minimum 1 >/dev/null
+  node .claude/harness/foundation.mjs prove graph-upgrade >/dev/null
+)
+delivered="$(bash "$ROOT/cli.sh" --project "$graph_target" \
+  advance graph-upgrade --through archived --pretty)"
+assert_contains "the upgraded graph-v2 change reaches archived" "$delivered" '"action": "DONE"'
+assert_contains "the upgraded graph-v2 change reports delivery" "$delivered" '"userState": "DELIVERED"'
+assert_eq "upgrade delivery preserves Git HEAD" "$head_before" \
+  "$(git -C "$graph_target" rev-parse HEAD)"
+assert_eq "upgrade delivery preserves the Git index" "$index_before" \
+  "$(git -C "$graph_target" diff --cached --binary | shasum -a 256)"
+
+(
+  cd "$graph_target"
+  node .claude/harness/foundation.mjs receipt graph-reverify test pass \
+    --observed "fixture test passed" --source harness-test \
+    --reference fixture://test >/dev/null
+  node .claude/harness/foundation.mjs receipt graph-reverify discovery pass \
+    --observed "fixture discovery passed" --source harness-test \
+    --reference fixture://discovery --discovered 1 --minimum 1 >/dev/null
+  node .claude/harness/foundation.mjs prove graph-reverify >/dev/null
+)
+reverified_delivery="$(bash "$ROOT/cli.sh" --project "$graph_target" \
+  advance graph-reverify --through archived --pretty)"
+assert_contains "automatic verification recovery reaches archived" \
+  "$reverified_delivery" '"userState": "DELIVERED"'
+assert_eq "verification recovery preserves Git HEAD" "$head_before" \
+  "$(git -C "$graph_target" rev-parse HEAD)"
+assert_eq "verification recovery preserves the Git index" "$index_before" \
+  "$(git -C "$graph_target" diff --cached --binary | shasum -a 256)"
+
 finish "upgrade compatibility"

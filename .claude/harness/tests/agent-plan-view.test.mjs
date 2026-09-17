@@ -17,8 +17,10 @@ import {
   enrichAgentTasks,
   groupAgentTasks,
   invalidatedPlanTasks,
+  legacyExecutionAuthoritySnapshot,
   persistedPlanOutput,
   propagateInvalidatedTasks,
+  recoverCompletedTasksForExecution,
   selectAgentPlanView,
   showAgentTask,
   showAgentPlan,
@@ -118,6 +120,129 @@ test("task execution preserves history and binds the current graph", () => {
   assert.equal(agentTaskExecutionRows([task("T1")], true, {}, {
     revision: 1, identity: "one"
   }).T1.mode, "single-agent-observed");
+});
+
+test("completed legacy single-session tasks are reused or automatically re-verified", () => {
+  const currentTasks = [task("T1"), task("T2")].map((value) => ({
+    ...value, done: true, claims: [], contracts: [],
+    inputSchema: null, outputSchema: null, lifecycle: "build",
+    authorityDigest: value.id
+  }));
+  const nodes = currentTasks.map((value) => ({
+    id: `task:${value.id}`, kind: "task", repository: value.repository,
+    required: true, dependsOn: [], paths: value.paths, contracts: [],
+    resources: value.resources, claims: [], inputSchema: null, outputSchema: null,
+    lifecycle: "build", authorityDigest: value.authorityDigest
+  }));
+  const graph = {
+    version: 3, revision: "graph-v3-current", identity: "current",
+    claims: [], nodes
+  };
+  const oldGraph = {
+    ...graph, version: 2, revision: "graph-v2-old", identity: "old"
+  };
+  const priorPlan = {
+    changeId: "change", planDigest: "prior", contractRevision: 2,
+    contractFingerprint: "contract", graph: oldGraph,
+    graphRevision: oldGraph.revision, graphIdentity: oldGraph.identity,
+    taskExecution: Object.fromEntries(currentTasks.map((value) => [value.id, {
+      mode: "single-agent-observed", graphRevision: oldGraph.revision,
+      graphIdentity: oldGraph.identity
+    }]))
+  };
+  const compatible = recoverCompletedTasksForExecution({
+    id: "change", allTasks: currentTasks, graph,
+    state: { contractRevision: 2 }, priorPlan,
+    currentContractFingerprint: "contract"
+  });
+  assert.equal(compatible.requiresVerification, false);
+  assert.ok(compatible.tasks.every((value) => value.done));
+
+  const missingHistory = recoverCompletedTasksForExecution({
+    id: "change", allTasks: currentTasks, graph,
+    state: { contractRevision: 2 }, priorPlan: {},
+    currentContractFingerprint: "contract"
+  });
+  assert.equal(missingHistory.requiresVerification, true);
+  assert.ok(missingHistory.tasks.every((value) => !value.done));
+
+  const precompleted = recoverCompletedTasksForExecution({
+    id: "change", allTasks: currentTasks, graph,
+    state: { contractRevision: 2 }, priorPlan: {},
+    currentContractFingerprint: "contract", precompletedAtIsolation: true
+  });
+  assert.equal(precompleted.requiresVerification, false);
+  assert.ok(precompleted.tasks.every((value) => value.done));
+
+  const changedContract = recoverCompletedTasksForExecution({
+    id: "change", allTasks: currentTasks, graph,
+    state: { contractRevision: 2 }, priorPlan,
+    currentContractFingerprint: "changed-contract"
+  });
+  assert.equal(changedContract.requiresVerification, true);
+  assert.ok(changedContract.tasks.every((value) => !value.done));
+
+  const staleLease = recoverCompletedTasksForExecution({
+    id: "change", allTasks: currentTasks, graph,
+    state: { contractRevision: 2 }, priorPlan,
+    currentContractFingerprint: "contract",
+    taskLease: (_id, taskId) => taskId === "T1" ? { leaseId: "stale" } : null
+  });
+  assert.equal(staleLease.tasks[0].done, false);
+  assert.equal(staleLease.tasks[1].done, true);
+
+  const selectivelyChangedGraph = {
+    ...graph,
+    nodes: [{ ...nodes[0], authorityDigest: "changed-T1" }, nodes[1]]
+  };
+  const selectivelyChanged = recoverCompletedTasksForExecution({
+    id: "change", allTasks: currentTasks, graph: selectivelyChangedGraph,
+    state: { contractRevision: 2 }, priorPlan,
+    currentContractFingerprint: "contract"
+  });
+  assert.equal(selectivelyChanged.tasks[0].done, false);
+  assert.equal(selectivelyChanged.tasks[1].done, true);
+
+  const dependentTasks = currentTasks.map((value) => value.id === "T2"
+    ? { ...value, dependsOn: ["T1"] }
+    : value);
+  const dependentNodes = nodes.map((value) => value.id === "task:T2"
+    ? { ...value, dependsOn: ["task:T1"] }
+    : value);
+  const dependentGraph = { ...graph, nodes: dependentNodes };
+  const dependentOldGraph = {
+    ...dependentGraph, version: 2, revision: "dependent-old", identity: "dependent-old"
+  };
+  const dependentPlan = {
+    ...priorPlan, graph: dependentOldGraph,
+    graphRevision: dependentOldGraph.revision,
+    graphIdentity: dependentOldGraph.identity,
+    taskExecution: Object.fromEntries(currentTasks.map((value) => [value.id, {
+      mode: "single-agent-observed", graphRevision: dependentOldGraph.revision,
+      graphIdentity: dependentOldGraph.identity
+    }]))
+  };
+  const downstream = recoverCompletedTasksForExecution({
+    id: "change", allTasks: dependentTasks, graph: dependentGraph,
+    state: { contractRevision: 2 }, priorPlan: dependentPlan,
+    currentContractFingerprint: "contract",
+    taskLease: (_id, taskId) => taskId === "T1" ? { leaseId: "stale" } : null
+  });
+  assert.ok(downstream.tasks.every((value) => !value.done));
+
+  const snapshot = legacyExecutionAuthoritySnapshot(priorPlan);
+  const rewrittenPlan = {
+    changeId: "change", graph, graphRevision: graph.revision,
+    graphIdentity: graph.identity, legacyExecutionAuthority: snapshot,
+    taskExecution: priorPlan.taskExecution
+  };
+  const preserved = recoverCompletedTasksForExecution({
+    id: "change", allTasks: currentTasks, graph,
+    state: { contractRevision: 2 }, priorPlan: rewrittenPlan,
+    currentContractFingerprint: "contract"
+  });
+  assert.equal(preserved.requiresVerification, false);
+  assert.equal(legacyExecutionAuthoritySnapshot(rewrittenPlan), snapshot);
 });
 
 test("blocking reasons combine ambiguity and active scope conflicts", () => {

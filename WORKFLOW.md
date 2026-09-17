@@ -263,6 +263,16 @@ A force-released lease grants no result authority. If its task was already
 checked complete, the planner returns it for leased verification without
 rewriting the checkbox; only an accepted release clears that recovery.
 
+An upgrade from execution graph v2 preserves a completed multi-task
+single-session Build only when the persisted plan still binds the same task
+authority, claims, contract revision, and contract fingerprint. The current
+proof records that compatibility witness without manufacturing lease results.
+If the binding is absent, stale, or superseded by a force-released lease, the
+planner returns only the affected completed task and its dependency descendants
+to current leased verification without rewriting `tasks.md`; a packet already
+complete at isolation keeps its independent proof route. This deterministic
+recovery never asks the user for a semantic decision.
+
 For multi-repository work, the committed topology selects repositories and
 access modes before task, provider, or worker planning. Providers may execute
 in one repository while consuming a declared set of other isolated

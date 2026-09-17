@@ -314,9 +314,26 @@ assert_cmd_zero "review packet exposes executable app inspection metadata" \
       select(.repositoryId == "app" and .baseHead == $base) |
       .paths | index("app.txt") != null' \
     "$TMP/committed-review-packet.json"
-sed -i.bak 's/- \[ \]/- [x]/g' \
-  .foundation/sandboxes/cross-repository-profile/openspec/changes/cross-repository-profile/tasks.md
-rm .foundation/sandboxes/cross-repository-profile/openspec/changes/cross-repository-profile/tasks.md.bak
+tasks_path=.foundation/sandboxes/cross-repository-profile/openspec/changes/cross-repository-profile/tasks.md
+# T001 already has an accepted lease result above. Complete the remaining DAG
+# through the same acquire/release authority path used by Build before the
+# parent records each completed checkbox.
+sed -i.bak 's/- \[ \] \*\*T001\*\*/- [x] **T001**/' "$tasks_path"
+rm "$tasks_path.bak"
+for task_id in T002 T003; do
+  node .claude/harness/foundation.mjs agent-acquire \
+    cross-repository-profile "$task_id" --owner "fixture-$task_id" >/dev/null
+  node .claude/harness/foundation.mjs agent-release \
+    cross-repository-profile "$task_id" --owner "fixture-$task_id" >/dev/null
+  sed -i.bak "s/- \\[ \\] \\*\\*$task_id\\*\\*/- [x] **$task_id**/" "$tasks_path"
+  rm "$tasks_path.bak"
+done
+node .claude/harness/foundation.mjs agent-acquire \
+  cross-repository-profile T004 --owner fixture-T004 >/dev/null
+node .claude/harness/foundation.mjs agent-release \
+  cross-repository-profile T004 --owner fixture-T004 >/dev/null
+sed -i.bak 's/- \[ \] \*\*T004\*\*/- [x] **T004**/' "$tasks_path"
+rm "$tasks_path.bak"
 # The cross-repository contract is checked by hashing the same declared
 # artifact on both sides. Asserting agreement in a receipt proves nothing.
 printf '{"profile":"v2"}\n' > "$sandboxes/app/contract.json"

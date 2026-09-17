@@ -17,7 +17,7 @@ does not replace your coding agent, test framework, CI system, or Git workflow.
 The product is **Change Loop**; the installed package and CLI remain
 `claude-foundation`, so existing commands do not change.
 
-**Version 3.5.19** — runtime API 40, provider protocol 13. Receipts recorded by
+**Version 3.5.19** — runtime API 41, provider protocol 13. Receipts recorded by
 earlier versions read as `provider-version-stale` and must be re-proven.
 `claude-foundation metrics <change-id>` also reports the exact runtime source
 cohort: semantic version, the loaded protocol bundle, and a SHA-256 digest of
@@ -88,6 +88,12 @@ the result. Change Loop separates those concerns:
   uncommitted for your review. It never pushes or opens a pull request.
 - **Work can be resumed.** Tasks, runtime state, receipts, and recovery journals
   survive a new agent session.
+
+An in-flight pre-graph-v3 Build also resumes after an upgrade. The Harness
+reuses persisted multi-task single-session authority only while its task and
+contract identities still match; otherwise it automatically returns the
+affected completed tasks and their dependency descendants to leased verification
+without rewriting `tasks.md`.
 
 The intended result is less ceremony than a fixed multi-agent phase pipeline,
 without relying on “the agent says it is done” as proof.

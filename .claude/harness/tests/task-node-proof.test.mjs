@@ -58,6 +58,9 @@ try {
   }, id), false);
   assert.equal(taskPacketWasPrecompletedOperation({
     ...packetDependencies, loadRuntime: () => ({})
+  }, id), true);
+  assert.equal(taskPacketWasPrecompletedOperation({
+    ...packetDependencies, loadRuntime: () => ({ workspace: {} })
   }, id), false);
 
   assert.equal(taskNodeProof(dependencies(), id, node, graph, {}, runRoot).source,
@@ -75,7 +78,7 @@ try {
   const ineligibleNode = { ...node, resources: ["shared-database"] };
   const ineligibleGraph = { ...graph, nodes: [ineligibleNode] };
   assert.throws(() => taskNodeProof(dependencies(), id, ineligibleNode,
-    ineligibleGraph, state, runRoot), /lacks an accepted lease result/);
+    ineligibleGraph, state, runRoot), /requires current Build verification/);
 
   const savedPlan = () => ({
     taskExecution: {
@@ -92,7 +95,69 @@ try {
     }
   });
   assert.throws(() => taskNodeProof(dependencies({ savedAgentPlan: stalePlan }), id,
-    ineligibleNode, ineligibleGraph, state, runRoot), /lacks an accepted lease result/);
+    ineligibleNode, ineligibleGraph, state, runRoot), /requires current Build verification/);
+
+  const legacySecondNode = {
+    ...node, id: "task:T2", paths: ["src/second/**"], claims: ["claim-2"]
+  };
+  const legacyCurrentGraph = {
+    version: 3, revision: "graph-v3-current", identity: "current-identity",
+    claims: [], nodes: [node, legacySecondNode]
+  };
+  const legacySavedGraph = {
+    ...legacyCurrentGraph, version: 2,
+    revision: "graph-v2-legacy", identity: "legacy-identity"
+  };
+  const legacySavedPlan = () => ({
+    changeId: id,
+    planDigest: "legacy-plan",
+    contractRevision: 4,
+    contractFingerprint: "contract-fingerprint",
+    graphRevision: legacySavedGraph.revision,
+    graphIdentity: legacySavedGraph.identity,
+    graph: legacySavedGraph,
+    taskExecution: Object.fromEntries(["T1", "T2"].map((taskId) => [taskId, {
+      mode: "single-agent-observed",
+      graphRevision: legacySavedGraph.revision,
+      graphIdentity: legacySavedGraph.identity
+    }]))
+  });
+  const compatible = taskNodeProof(dependencies({
+    savedAgentPlan: legacySavedPlan,
+    contractFingerprint: () => "contract-fingerprint"
+  }), id, node, legacyCurrentGraph, state, runRoot);
+  assert.equal(compatible.source, "single-agent-observed");
+  assert.equal(compatible.compatibility.kind, "graph-v2-single-session");
+  assert.equal(compatible.compatibility.priorPlanDigest, "legacy-plan");
+  assert.throws(() => taskNodeProof(dependencies({
+    savedAgentPlan: legacySavedPlan,
+    contractFingerprint: () => "contract-fingerprint"
+  }), id, node, { ...legacyCurrentGraph, version: 4 }, state, runRoot),
+  /requires current Build verification/);
+  const preservedAfterPlanning = taskNodeProof(dependencies({
+    savedAgentPlan: () => ({
+      graph: legacyCurrentGraph,
+      graphRevision: legacyCurrentGraph.revision,
+      graphIdentity: legacyCurrentGraph.identity,
+      legacyExecutionAuthority: legacySavedPlan()
+    }),
+    contractFingerprint: () => "contract-fingerprint"
+  }), id, node, legacyCurrentGraph, state, runRoot);
+  assert.equal(preservedAfterPlanning.compatibility.priorGraphRevision,
+    "graph-v2-legacy");
+  assert.throws(() => taskNodeProof(dependencies({
+    savedAgentPlan: legacySavedPlan,
+    contractFingerprint: () => "changed-contract"
+  }), id, node, legacyCurrentGraph, state, runRoot), /requires current Build verification/);
+  const changedLegacyGraph = {
+    ...legacyCurrentGraph,
+    nodes: [{ ...node, paths: ["other/**"] }, legacySecondNode]
+  };
+  assert.throws(() => taskNodeProof(dependencies({
+    savedAgentPlan: legacySavedPlan,
+    contractFingerprint: () => "contract-fingerprint"
+  }), id, changedLegacyGraph.nodes[0], changedLegacyGraph, state, runRoot),
+  /requires current Build verification/);
 
   const accepted = taskNodeProof(dependencies({
     taskResult: () => ({ path: resultPath, value: structuredClone(validResult) })

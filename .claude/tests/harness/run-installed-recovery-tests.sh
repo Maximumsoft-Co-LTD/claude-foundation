@@ -59,8 +59,15 @@ for repo in api app; do
   printf '%s-after\n' "$repo" > ".foundation/repository-sandboxes/installed-repository-recovery/$repo/app.txt"
 done
 workspace="$(node -p 'require("./.foundation/runtime/installed-repository-recovery.json").workspace.path')"
-sed -i.bak 's/- \[ \]/- [x]/g' "$workspace/$packet/tasks.md"
-rm "$workspace/$packet/tasks.md.bak"
+tasks_path="$workspace/$packet/tasks.md"
+for task_id in T001 T002; do
+  node .claude/harness/foundation.mjs agent-acquire \
+    installed-repository-recovery "$task_id" --owner "fixture-$task_id" >/dev/null
+  node .claude/harness/foundation.mjs agent-release \
+    installed-repository-recovery "$task_id" --owner "fixture-$task_id" >/dev/null
+  sed -i.bak "s/- \\[ \\] \\*\\*$task_id\\*\\*/- [x] **$task_id**/" "$tasks_path"
+  rm "$tasks_path.bak"
+done
 node .claude/harness/foundation.mjs proof-collect installed-repository-recovery >/dev/null
 node .claude/harness/foundation.mjs receipt installed-repository-recovery review pass --observed 'Deterministic fixture reviewer approves both changes' --reviewer harness-test --subject-actor implementation-agent --unresolved-blockers 0 --reference fixture://review >/dev/null
 node .claude/harness/foundation.mjs prove installed-repository-recovery >/dev/null

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Active graph-v2 changes that completed several Build tasks in one session no
+  longer dead-end after upgrade when graph v3 asks for per-task lease results.
+  Matching persisted authority is reused with an auditable compatibility
+  witness; stale, missing, or force-released authority returns only the
+  affected completed task and its dependency descendants to Harness-owned
+  leased verification instead of fabricating evidence or asking the user to
+  repair runtime state. Future graph versions fail closed until their migration
+  pair is reviewed explicitly.
+
+### Changed
+
+- Runtime API is now 41 and agent-plan schema 6 retains the bounded graph-v2
+  authority snapshot needed for read-only planning and resumed proof.
+
 ## [3.5.19] - 2026-09-17
 
 ### Added

@@ -1,6 +1,6 @@
 {
   "runtime": "3.5.19",
-  "runtimeApi": "40",
+  "runtimeApi": "41",
   "semanticDraftSchema": "4",
   "semanticIntakeStateSchema": "2",
   "semanticSourceBindingSchema": "1",
@@ -14,7 +14,7 @@
   "adapterProtocol": "7",
   "proofProtocol": "7",
   "packetSchema": "11",
-  "agentPlanSchema": "5",
+  "agentPlanSchema": "6",
   "agentContractProtocol": "1",
   "contextEventSchema": "2",
   "metricsSchema": "10",

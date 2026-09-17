@@ -125,7 +125,7 @@ import {
 } from "./runtime/workflow/pull-request-runtime.mjs";
 
 const VERSION = "3.5.19";
-const RUNTIME_API_VERSION = "40";
+const RUNTIME_API_VERSION = "41";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
 // every command up to `archive` and then threw partway through Land.
@@ -140,7 +140,7 @@ const PROVIDER_PROTOCOL_VERSION = "13";
 const ADAPTER_PROTOCOL_VERSION = "7";
 const PROOF_PROTOCOL_VERSION = "7";
 const PACKET_SCHEMA_VERSION = "11";
-const AGENT_PLAN_SCHEMA_VERSION = "5";
+const AGENT_PLAN_SCHEMA_VERSION = "6";
 const CONTEXT_EVENT_SCHEMA_VERSION = "2";
 const METRICS_SCHEMA_VERSION = "10";
 const COMMAND_TELEMETRY_SCHEMA_VERSION = "5";
@@ -1130,6 +1130,17 @@ const {
   resourcesConflict,
   authorityPreflight,
   executionContract,
+  taskResult: (id, taskId) => {
+    const path = join(LEASES, "results", id, `${taskId}.json`);
+    return existsSync(path) ? { path, value: readJson(path, null) } : null;
+  },
+  taskLease: (id, taskId) => {
+    const path = join(LEASES, "tasks", id, `${taskId}.json`);
+    return existsSync(path) ? readJson(path, null) : null;
+  },
+  taskPacketWasPrecompleted: (id) => taskPacketWasPrecompletedOperation({
+    loadRuntime, activeChangePath, exists: existsSync, fileDigest
+  }, id),
   relevantHash,
   contractFingerprint,
   stableHash,
@@ -1583,6 +1594,10 @@ const { finalize: prove, audit: proofAudit } = createProofRuntime({
   taskResult: (id, taskId) => {
     const path = join(LEASES, "results", id, `${taskId}.json`);
     return existsSync(path) ? { path, value: readJson(path, null) } : null;
+  },
+  taskLease: (id, taskId) => {
+    const path = join(LEASES, "tasks", id, `${taskId}.json`);
+    return existsSync(path) ? readJson(path, null) : null;
   },
   taskPacketWasPrecompleted,
   legacyExecutionPolicy: () =>

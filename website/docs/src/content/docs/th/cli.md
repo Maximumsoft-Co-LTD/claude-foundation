@@ -165,7 +165,7 @@ Feedback ตรวจ validity จาก runtime ปัจจุบัน ส่
 | Pin | v3.5.19 |
 |---|---|
 | runtime | 3.5.19 |
-| runtime API | 40 |
+| runtime API | 41 |
 | semantic draft schema | 4 |
 | semantic intake state schema | 2 |
 | semantic amendment schema | 1 |

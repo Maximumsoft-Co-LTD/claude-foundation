@@ -560,8 +560,9 @@ export function proofReadinessValueOperation(context, id, stage = "prove", optio
         context, id, stage, repositoryIssues, error);
     throw error;
   }
-  const pending = context.pendingTasks(id);
   const plan = context.agentPlanValue?.(id, options) || null;
+  const authoredPending = context.pendingTasks(id);
+  const pending = Array.isArray(plan?.tasks) ? plan.tasks : authoredPending;
   const externalOperations = context.handoffReadiness(id);
   const leases = stage === "prove" ? context.activeChangeLeases(id) : [];
   // Another change's live proof run blocks this one only over a declared

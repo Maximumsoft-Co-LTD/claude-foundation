@@ -7,6 +7,7 @@ import {
   blockingConflictRows, compileExecutionGraph, conflictKeysForTask, conflictKeysOverlap,
   scheduleReadyBatch, singleAgentExecutionEligible
 } from "../core/graph-execution.mjs";
+import { resolveTaskExecutionAuthority } from "../core/task-execution-authority.mjs";
 import { findCyclePath } from "../core/graph.mjs";
 
 export function taskIsHighRisk(state, task) {
@@ -362,6 +363,75 @@ export function agentTaskExecutionRows(tasks, singleAgent, priorPlan, graph) {
   return execution;
 }
 
+export function legacyExecutionAuthoritySnapshot(plan = {}) {
+  if (plan.legacyExecutionAuthority) return plan.legacyExecutionAuthority;
+  if (plan.graph?.version !== 2) return null;
+  const graph = {
+    version: plan.graph.version,
+    revision: plan.graph.revision,
+    identity: plan.graph.identity,
+    claims: plan.graph.claims || [],
+    nodes: (plan.graph.nodes || []).filter((node) => node.kind === "task")
+  };
+  return {
+    changeId: plan.changeId,
+    planDigest: plan.planDigest,
+    contractRevision: plan.contractRevision,
+    contractFingerprint: plan.contractFingerprint,
+    graphRevision: plan.graphRevision,
+    graphIdentity: plan.graphIdentity,
+    graph,
+    taskExecution: plan.taskExecution || {}
+  };
+}
+
+export function recoverCompletedTasksForExecution({
+  id, allTasks, graph, state, priorPlan, currentContractFingerprint,
+  taskResult = null, taskLease = null, precompletedAtIsolation = false
+}) {
+  let requiresVerification = false;
+  const invalidated = new Set();
+  const tasks = allTasks.map((task) => {
+    if (!task.done) return task;
+    const resultRecord = taskResult?.(id, task.id) || null;
+    const lease = taskLease?.(id, task.id) || null;
+    const recordedAuthority = Boolean(resultRecord || lease?.leaseId ||
+      priorPlan.graph?.version === 2 || priorPlan.legacyExecutionAuthority);
+    // A packet that was already complete when isolation captured it has an
+    // independent proof path. Completion added after isolation must carry
+    // execution authority; if that record disappeared, verify it again.
+    if (!recordedAuthority && precompletedAtIsolation) return task;
+    const node = graph.nodes.find((entry) => entry.id === `task:${task.id}`);
+    const authority = resolveTaskExecutionAuthority({
+      id, taskId: task.id, node, graph, state, savedPlan: priorPlan,
+      resultRecord, taskLease: lease,
+      currentContractFingerprint
+    });
+    if (["accepted-lease-result", "single-agent-observed",
+      "compatible-legacy-single-session"].includes(authority.status)) return task;
+    invalidated.add(task.id);
+    return { ...task, done: false };
+  });
+  // Re-verifying an upstream task also invalidates completed dependants. This
+  // preserves unaffected independent tasks without trusting downstream work
+  // whose declared input authority changed.
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    for (const task of tasks) {
+      if (!task.done || invalidated.has(task.id) ||
+          !task.dependsOn.some((dependency) => invalidated.has(dependency))) continue;
+      invalidated.add(task.id);
+      expanded = true;
+    }
+  }
+  requiresVerification = invalidated.size > 0;
+  return {
+    tasks: tasks.map((task) => invalidated.has(task.id) ? { ...task, done: false } : task),
+    requiresVerification
+  };
+}
+
 export function agentPlanBlockingReasons(state, conflicts, authority = null) {
   return [
     ...(state.ambiguity === "unclear" ? ["ambiguity requires /investigate"] : []),
@@ -437,6 +507,9 @@ export function createAgentPlanner({
   resourcesConflict, relevantHash, contractFingerprint, stableHash, now,
   authorityPreflight = () => ({ status: "READY", blockers: [] }),
   executionContract = null,
+  taskResult = null,
+  taskLease = null,
+  taskPacketWasPrecompleted = null,
   readJson, writeJson, compactStrings, serializedJson, recordContextMetric,
   recordInstructionManifest, modelForTask, showPacket, fail,
   recordScheduler
@@ -482,28 +555,70 @@ export function createAgentPlanner({
         ...taskMetadata(task),
         authorityDigest: stableHash(task.text.replace(/\s+/g, " ").trim())
       }));
-    // A checkbox cannot restore authority abandoned by force release. Keep
-    // that task dispatchable for re-verification without rewriting tasks.md.
-    let requiresLeaseRecovery = false;
-    const schedulableTasks = allTasks.map((task) => {
-      if (!task.done) return task;
-      const leasePath = join(root, ".foundation", "leases", "tasks", id, `${task.id}.json`);
-      const lease = existsSync(leasePath) ? readJson(leasePath, {}) : null;
-      if (!lease?.leaseId) return task;
-      requiresLeaseRecovery = true;
-      return { ...task, done: false };
+    const contract = evidence(id);
+    const claims = contract.claims;
+    const priorPlanPath = join(plans, `${id}.json`);
+    const priorPlan = existsSync(priorPlanPath) ? readJson(priorPlanPath, {}) : {};
+    const workspaceHash = relevantHash(id);
+    const currentContractFingerprint = contractFingerprint(id);
+    let graph;
+    try {
+      graph = compileExecutionGraph({
+        changeId: id,
+        contractRevision: Number(state.contractRevision || 0),
+        workspaceHash,
+        repositories,
+        tasks: allTasks.map((task) => ({
+          ...task,
+          resources: [...new Set([`workspace:${task.repository}`, ...(task.resources || [])])]
+        })),
+        claims,
+        providers: agentGraphProviderRows({
+          requiredProviders, providerConfig, providerCapability,
+          providerRepositories, claimsForProvider, stableHash
+        }, id, contract),
+        services: Object.entries(contract.execution?.services || {}).map(([serviceId, config]) => ({
+          id: serviceId,
+          dependsOn: config.dependsOn || [],
+          resources: config.resources || [],
+          port: config.port || null,
+          command: config.command || null
+        })),
+        stableHash
+      });
+    } catch (error) {
+      const message = error?.message || String(error);
+      if (/^execution graph dependency cycle: (?:task:[^ ]+ -> )+task:[^ ]+$/.test(message))
+        fail(message.replace("execution graph dependency cycle: ", "task dependency cycle: ")
+          .replaceAll("task:", ""));
+      throw error;
+    }
+    // Completion checkboxes describe product work, not execution authority.
+    // Reuse a current result or a structurally equivalent graph-v2
+    // single-session plan; otherwise schedule deterministic verification under
+    // the current graph without rewriting tasks.md.
+    const readTaskResult = taskResult || ((changeId, taskId) => {
+      const path = join(root, ".foundation", "leases", "results", changeId, `${taskId}.json`);
+      return existsSync(path) ? { path, value: readJson(path, null) } : null;
     });
+    const readTaskLease = taskLease || ((changeId, taskId) => {
+      const path = join(root, ".foundation", "leases", "tasks", changeId, `${taskId}.json`);
+      return existsSync(path) ? readJson(path, null) : null;
+    });
+    const recovered = recoverCompletedTasksForExecution({
+      id, allTasks, graph, state, priorPlan, currentContractFingerprint,
+      taskResult: readTaskResult, taskLease: readTaskLease,
+      precompletedAtIsolation: Boolean(taskPacketWasPrecompleted?.(id))
+    });
+    const schedulableTasks = recovered.tasks;
+    const requiresVerification = recovered.requiresVerification;
     const { tasks, completed } = enrichAgentTasks({ modelForTask, fail },
       id, schedulableTasks, repositories, selectedPolicy);
     const schedulingWaves = [];
     const groups = groupAgentTasks(tasks, completed,
       selectedPolicy.execution.maxParallelAgents, taskResourcesConflict, fail,
       (wave) => schedulingWaves.push(wave));
-    const contract = evidence(id);
-    const claims = contract.claims;
-    const singleAgent = !requiresLeaseRecovery && singleAgentExecutionEligible(tasks, claims);
-    const priorPlanPath = join(plans, `${id}.json`);
-    const priorPlan = existsSync(priorPlanPath) ? readJson(priorPlanPath, {}) : {};
+    const singleAgent = !requiresVerification && singleAgentExecutionEligible(tasks, claims);
     const activeConflicts = activeRepositoryConflicts(id, repositories);
     const conflicts = blockingConflictRows(activeConflicts);
     // Scope overlaps with other active changes are reported, never enforced:
@@ -520,31 +635,8 @@ export function createAgentPlanner({
       scope: "plan",
       requestedModel: singleAgent ? execution.sessionTask?.model?.tier || null : null
     });
-    const workspaceHash = relevantHash(id);
-    const graph = compileExecutionGraph({
-      changeId: id,
-      contractRevision: Number(state.contractRevision || 0),
-      workspaceHash,
-      repositories,
-      tasks: allTasks.map((task) => ({
-        ...task,
-        resources: [...new Set([`workspace:${task.repository}`, ...(task.resources || [])])]
-      })),
-      claims,
-      providers: agentGraphProviderRows({
-        requiredProviders, providerConfig, providerCapability,
-        providerRepositories, claimsForProvider, stableHash
-      }, id, contract),
-      services: Object.entries(contract.execution?.services || {}).map(([serviceId, config]) => ({
-        id: serviceId,
-        dependsOn: config.dependsOn || [],
-        resources: config.resources || [],
-        port: config.port || null,
-        command: config.command || null
-      })),
-      stableHash
-    });
     const taskExecution = agentTaskExecutionRows(tasks, singleAgent, priorPlan, graph);
+    const legacyExecutionAuthority = legacyExecutionAuthoritySnapshot(priorPlan);
     schedulingWaves.forEach((wave, index) => recordScheduler({
       scheduler: "build-task-plan", wave: wave.wave,
       readyNodes: wave.readyNodes, executedNodes: wave.executedNodes,
@@ -562,6 +654,7 @@ export function createAgentPlanner({
       graphRevision: graph.revision,
       graphIdentity: graph.identity,
       taskExecution,
+      ...(legacyExecutionAuthority ? { legacyExecutionAuthority } : {}),
       maxParallelAgents: selectedPolicy.execution.maxParallelAgents,
       repositories: repositories.map((repository) => ({
         id: repository.id, mode: repository.mode, workspacePath: repository.workspacePath,
@@ -588,7 +681,7 @@ export function createAgentPlanner({
         manifestDigest: instructionManifest.manifestDigest,
         requestedModel: instructionManifest.execution?.requestedModel || null
       } : null,
-      contractFingerprint: contractFingerprint(id),
+      contractFingerprint: currentContractFingerprint,
       repositoryContractHashes: Object.fromEntries(repositories.map((repository) => [
         repository.id,
         stableHash(claims.filter((claim) =>
