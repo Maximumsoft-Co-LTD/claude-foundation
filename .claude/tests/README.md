@@ -34,7 +34,8 @@ exposing the checkout or another suite to a mutant, and interrupted or
 overlapping runs remove only their temporary trees. Set `FOUNDATION_TEST_JOBS=1`
 to force fully serial execution when bisecting.
 The default watchdog is 300 seconds per suite, or 600 seconds for the combined
-topology/planning fixture. `FOUNDATION_SUITE_TIMEOUT_SECONDS` overrides both.
+topology/planning fixture and the real-Git pull request delivery suite.
+`FOUNDATION_SUITE_TIMEOUT_SECONDS` overrides both.
 
 ## Current suites
 

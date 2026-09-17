@@ -333,10 +333,11 @@ if [ "${1:-}" = "--suite" ]; then
     ( eval "${line#*|}" ) > "$work/$index.out" 2>&1 &
     child=$!
     timeout="${FOUNDATION_SUITE_TIMEOUT_SECONDS:-300}"
-    # This slice deliberately shares one fixture across both domains. It can
-    # exceed five minutes under the full pool despite passing alone.
+    # Topology shares one fixture across both domains. Deliver exercises dozens
+    # of real-Git publication/recovery cases. Both can exceed five minutes on
+    # the macOS CI runner; retain a bounded watchdog without dropping cases.
     case "${line%%|*}" in
-      'harness contracts (topology planning)') timeout="${FOUNDATION_SUITE_TIMEOUT_SECONDS:-600}" ;;
+      'harness contracts (topology planning)'|'pull request delivery') timeout="${FOUNDATION_SUITE_TIMEOUT_SECONDS:-600}" ;;
     esac
     (
       sleep "$timeout"
