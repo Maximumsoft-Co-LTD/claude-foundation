@@ -26,6 +26,35 @@ assert_file_contains "build names terminal completion" \
   "$ROOT/.claude/commands/build.md" '`DONE`'
 assert_file_contains "build follows the exact resume route" \
   "$ROOT/.claude/commands/build.md" 'exact `resume` route'
+assert_file_contains "build classifies follow-up intent before mutation" \
+  "$ROOT/.claude/commands/references/build-policy.md" \
+  'Classify every new user request received during an active Change'
+assert_file_contains "build repairs already-approved outcomes without amendment" \
+  "$ROOT/.claude/commands/references/build-policy.md" \
+  'implementation in contract without an amendment'
+assert_file_contains "build amends new observable outcomes before implementation" \
+  "$ROOT/.claude/commands/references/build-policy.md" \
+  'semantic amendment and follow its harness-owned approval and resume route'
+assert_file_contains "build keeps product decisions with the user" \
+  "$ROOT/.claude/commands/references/build-policy.md" \
+  'The user decides product intent and material trade-offs'
+assert_file_contains "build keeps amendment authoring with the agent" \
+  "$ROOT/.claude/commands/references/build-policy.md" \
+  'that decision into the amendment, code, tests, and durable documentation'
+assert_file_contains "build keeps lifecycle automation with the harness" \
+  "$ROOT/.claude/commands/references/build-policy.md" \
+  'harness automates validation, revision state, invalidation, evidence execution'
+assert_file_contains "build never delegates change mechanics to the user" \
+  "$ROOT/.claude/commands/references/build-policy.md" \
+  'commands, tests, or recovery steps'
+assert_file_contains "build distinguishes ambiguous product requests" \
+  "$ROOT/.claude/commands/references/build-policy.md" \
+  'Ask only for the unresolved product choice'
+assert_file_contains "build routes archived independent work to a successor" \
+  "$ROOT/.claude/commands/references/build-policy.md" 'Successor Change'
+assert_file_contains "prove-time scope expansion returns through Build" \
+  "$ROOT/.claude/commands/references/build-policy.md" \
+  'user outcome returns through amendment and Build before Prove resumes'
 assert_file_contains "change partitions defect inputs beyond the reported repro" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
   'partitions and source-language representation/coercion boundaries'

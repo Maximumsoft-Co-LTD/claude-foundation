@@ -1,0 +1,63 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "classify-follow-up-before-mutation-in-contract-repair",
+      "requirementKey": "classify-follow-up-before-mutation",
+      "scenario": "Repair an implementation that misses the approved agreement",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "classify-follow-up-before-mutation-new-observable-outcome",
+      "requirementKey": "classify-follow-up-before-mutation",
+      "scenario": "Record a new observable outcome before implementation",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "classify-follow-up-before-mutation-ambiguous-follow-up",
+      "requirementKey": "classify-follow-up-before-mutation",
+      "scenario": "Escalate only unresolved product meaning",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preserve-development-ownership",
+      "requirementKey": "preserve-development-ownership",
+      "scenario": "A user gives a clear product decision during an active Change",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "document-classification-examples",
+      "requirementKey": "document-classification-examples",
+      "scenario": "An agent must classify a follow-up request",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(rtk test sh .claude/tests/harness/run-agent-contract-tests.sh) && (rtk test sh .claude/tests/docs/run-doc-consistency.sh) && (rtk test sh .claude/tests/harness/run-instruction-contract-tests.sh)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

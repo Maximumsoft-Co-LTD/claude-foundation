@@ -4,13 +4,12 @@
 Investigate? → Change → Build → Prove → Land
 ```
 
-OpenSpec owns the agreement, code owns truth, and the harness owns
-state, evidence, budgets, isolation, and Land guards. `tasks.md` is the ledger;
+OpenSpec owns the agreement, code owns truth, and Harness owns lifecycle
+controls. `tasks.md` is the ledger;
 `handoffs.yaml` is the external-operation contract. `.workflow/` is read-only
 legacy state.
 
-Use the `claude-foundation` CLI. Do not reproduce runtime logic in
-prompts or Markdown.
+Use the `claude-foundation` CLI; do not duplicate runtime logic in prompts.
 
 ## Resolve
 
@@ -34,9 +33,9 @@ Plans, packets, leases, and dispatch are compatible primitives, not a model-buil
 Worktrees isolate files, not processes or host authority. Unattended work must
 pass the runtime guard; never enable a host permission bypass by implication.
 
-If intent changes, submit one `change amend`; its transaction preserves completed
-work, validates, and rolls back. Repository-scope changes require explicit topology;
-never expose an unsandboxed repository.
+Classify follow-ups with `commands/references/build-policy.md` before editing.
+The agent authors required amendments; Harness validates and revises. Repository
+scope changes require explicit topology; never expose an unsandboxed repository.
 
 Unauthorized external work belongs to `handoffs.yaml`, never unchecked tasks;
 unresolved operations return the owner and resume route.

@@ -590,6 +590,17 @@ workspace hash ข้อมูลเหล่านี้เป็น machine pr
 ไม่ต้องเปิด change ที่สองเพียงเพราะพบข้อมูลใหม่ก่อน Land ให้แก้ agreement เดิม
 Agent ส่ง semantic amendment หนึ่งชุดแล้ว resume coordinator:
 
+ขอบเขตความรับผิดชอบยังคงเรียบง่าย: ผู้ใช้ตัดสินใจผลลัพธ์ของผลิตภัณฑ์ Agent เขียน
+amendment, code, test และเอกสาร ส่วน Harness ทำ validation, invalidation,
+evidence, recovery และ lifecycle state อัตโนมัติ ผู้ใช้ไม่ต้องเขียน amendment
+JSON แก้ `tasks.md` หรือรันคำสั่ง recovery เอง Outcome ที่ approve แล้วแต่ทำผิด
+ให้ repair โดยไม่ต้อง amend ส่วนสีหรือตำแหน่ง control ใหม่, filter/search,
+validation, accessibility outcome, API หรือ data contract, permission,
+performance target, notification, integration, compatibility หรือ rollout
+ที่ขอเพิ่มต้อง amend ก่อน implementation คำขอที่กำกวมให้ถามเฉพาะ product choice
+ที่ยังไม่ชัด และงานที่แยกส่งมอบได้หลัง archive ให้เปิด successor Change ดูตาราง
+[การจำแนก follow-up ฉบับเต็ม](WORKFLOW.md#follow-up-requests-during-an-active-change)
+
 ```text
 /investigate <change-id>: how does the existing verification flow work?
 /change <change-id>

@@ -18,6 +18,16 @@ done
 assert_eq "skill frontmatter includes name and description" "0" "$missing"
 
 assert_file_contains "Build contract requires isolation" "$ROOT/.claude/commands/build.md" "Edit only allowed sandbox paths"
+assert_file_contains "Build command delegates follow-up detail to selective policy" \
+  "$ROOT/.claude/commands/build.md" 'policy owns follow-up intent routing'
+assert_file_contains "orchestrator classifies follow-ups before editing" \
+  "$ROOT/.claude/orchestrator.md" 'Classify follow-ups with'
+assert_file_contains "orchestrator keeps amendment authoring with the agent" \
+  "$ROOT/.claude/orchestrator.md" 'The agent authors required amendments'
+assert_file_contains "agent contract states the development ownership mnemonic" \
+  "$ROOT/.claude/harness/AGENT.md" 'User decides; agent codes/documents; Harness automates'
+assert_file_contains "agent contract delegates follow-up detail to Build policy" \
+  "$ROOT/.claude/harness/AGENT.md" 'follow-up routing lives in Build policy'
 assert_file_contains "Prove contract rejects fabricated evidence" "$ROOT/.claude/skills/prove/references/workflow.md" "Never substitute self-review for a required reviewer"
 # The ban above is on faking a reviewer the policy demanded, not on the
 # supported solo configuration. Prove used to forbid self-review flatly while

@@ -624,6 +624,18 @@ Do not create a second change merely because you learned something before Land.
 Revise the same agreement. The agent submits one semantic amendment and resumes
 the coordinator:
 
+The ownership boundary stays simple: the user decides the product outcome, the
+agent writes the amendment, code, tests, and documentation, and the harness
+automates validation, invalidation, evidence, recovery, and lifecycle state.
+Users do not write amendment JSON, edit `tasks.md`, or run recovery commands.
+An already-approved outcome that was implemented incorrectly is repaired without
+an amendment. A newly requested color or control position, filter/search mode,
+validation rule, accessibility outcome, API or data contract, permission,
+performance target, notification, integration, compatibility rule, or rollout
+behavior is amended before implementation. Ambiguous requests ask only for the
+unresolved product choice; independent work after archive starts a successor
+Change. See the complete [follow-up classification](WORKFLOW.md#follow-up-requests-during-an-active-change).
+
 ```text
 /investigate <change-id>: how does the existing verification flow work?
 /change <change-id>

@@ -309,6 +309,32 @@ Double-edited files stop as named `CONFLICT` entries and leave the existing
 sandbox intact. Merge the target version in the sandbox and sync again, using
 `--resolve` for a copy.
 
+### Follow-up requests during an active Change
+
+Treat a new user instruction as a product decision, not as a request for the
+user to maintain OpenSpec. Before product mutation, the agent compares it with
+the approved agreement and owns the resulting amendment, implementation, tests,
+and documentation. The harness owns validation, revision state, invalidation,
+evidence, recovery, and lifecycle progression. Ask the user only when material
+product meaning or a trade-off remains unresolved; never ask them to author
+amendment JSON, edit ledgers, or run routine recovery.
+
+| Follow-up | Route |
+|---|---|
+| Fix the approved color, button position, filter result, validation, API mapping, permission, or failure behavior | Repair in contract; no amendment |
+| Choose a new color or location; add a filter, saved search, field, action, responsive state, accessibility outcome, or user-visible copy meaning | Amend before implementation |
+| Add or change an API contract, stored-data rule, migration, role, security boundary, performance target, notification, retry, integration, external effect, compatibility, or rollout behavior | Amend before implementation |
+| Add a regression test, documentation correction, or internal refactor without changing approved behavior | Implement in contract; no amendment |
+| Change a test expectation or public documentation because intended behavior changed | Amend before implementation |
+| Request “make it better” or similar wording with materially different valid outcomes | Ask only for the unresolved product choice |
+| Add an independently deliverable objective, or request it after archive | Start a successor Change |
+
+A clear instruction supplies the decision input, so do not ask the same question
+again. The revised compiled agreement still follows its explicit approval gate;
+present the product delta, not harness commands or machine inputs. A new outcome
+received during Prove returns through amendment and Build before selective proof
+resumes. Any relevant product or agreement edit makes the affected proof stale.
+
 Several changes may be active at once. Overlapping path or repository scopes
 never block Build, Prove, or Land across changes; whichever lands later
 synchronizes onto the moved target as above, resolves any double edit, and

@@ -1,7 +1,7 @@
 # Change Loop agent contract
 
 Before work, verify Change Loop 3.5.19/runtime API `41`; run doctors. Harness repairs setup.
-Surface product decisions or external owners.
+Surface product decisions/external owners.
 `single-model` review retains distinct identity.
 
 Compile one semantic draft. Use `advance <change> --through
@@ -18,8 +18,8 @@ Use AskUserQuestion, plain text otherwise; never offer only a passing option.
 For `notification.surface: true`, load `.claude/harness/README.md#agent-update-policy`; false is the
 suppression decision.
 
-Settle semantics and authority once; reask only after material change.
-Build/Prove fix product defects; Harness owns setup, permission, and recovery.
+User decides; agent codes/documents; Harness automates. Reask only material
+semantics. Build/Prove repair product defects; follow-up routing lives in Build policy.
 
 Land: `.claude/orchestrator.md`. Follow `.claude/rules/fundamentals.md` for conduct and skill routing.
 After archive, `/deliver` grants commit/push/PR authority; Harness returns provider-verified URLs.

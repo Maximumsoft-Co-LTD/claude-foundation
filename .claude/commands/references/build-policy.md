@@ -13,6 +13,48 @@ primitives unless its recovery explicitly names one. Update `tasks.md` only for
 the returned task after focused checks; the coordinator owns planning and phase
 transitions.
 
+## Follow-up intent gate
+
+Classify every new user request received during an active Change against the
+approved agreement before product mutation:
+
+- If the agreement already requires the requested outcome, repair the
+  implementation in contract without an amendment or another product decision.
+- If the request adds or changes an observable outcome, author one batched
+  semantic amendment and follow its harness-owned approval and resume route
+  before editing product code. This includes UI, interaction, filter/search,
+  validation, accessibility, API, data, permission, performance, integration,
+  external-effect, compatibility, and rollout semantics.
+- If materially different interpretations remain, ask only for that unresolved
+  product decision. Do not ask the user to write specs, tasks, amendment JSON,
+  commands, tests, or recovery steps.
+- If the active Change is archived or the request is an independently deliverable
+  outcome, start a successor Change instead of rewriting history or widening the
+  current agreement silently.
+
+The user decides product intent and material trade-offs. The agent translates
+that decision into the amendment, code, tests, and durable documentation. The
+harness automates validation, revision state, invalidation, evidence execution,
+recovery, and lifecycle progression. A clear user instruction is decision input;
+do not ask the same semantic question again. Keep the required compiled-agreement
+approval explicit, but present only the product delta rather than its CLI or JSON.
+
+Use these boundaries consistently:
+
+| Request during an active Change | Classification |
+|---|---|
+| Apply the already-approved primary color, restore the specified button position, or fix the approved filter result | In-contract repair |
+| Choose a new color, move an action to a newly requested location, add a filter, saved search, validation rule, responsive layout, or accessibility outcome | Semantic amendment |
+| Add or change an API field, permission, persistence/migration rule, performance target, notification, retry, external integration, or rollout behavior | Semantic amendment |
+| Add a regression test or refactor internals while preserving the approved observable behavior | In-contract implementation work |
+| Change a test expectation, public documentation, or UI copy because the intended product behavior changed | Semantic amendment |
+| “Make it better”, “clean up the filters”, or another request with materially different valid outcomes | Ask only for the unresolved product choice |
+| Add a separate feature after archive or an independently deliverable objective | Successor Change |
+
+During Prove, an in-contract defect follows repair and selective re-proof. A new
+user outcome returns through amendment and Build before Prove resumes. After any
+product or agreement edit, never treat the prior proof as fresh.
+
 For every mutating Bash command — redirects and heredocs, `sed -i`, `ln`,
 `cp`, `mv`, `rm`, `touch`, package scripts, `npx` — begin with
 `cd <workspace or a directory inside it> && ...`; the live phase guard proves
