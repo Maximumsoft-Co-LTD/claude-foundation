@@ -1,20 +1,25 @@
 # Planning, diagnostics, abandon, and lease contracts.
 # Large brownfield plans remain navigable without injecting every task into the
 # orchestrator context. Full detail stays in the persisted plan and task packet.
+large_change="planning-large"
+node .claude/harness/foundation.mjs new 'Planning large' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve "$large_change" \
+  --impact low --coupling isolated >/dev/null
+node .claude/harness/foundation.mjs sandbox create "$large_change" >/dev/null
 large_workspace="$(jq -r '.workspace.path' \
-  .foundation/runtime/cross-repository-profile.json)"
-large_tasks="$large_workspace/openspec/changes/cross-repository-profile/tasks.md"
+  ".foundation/runtime/$large_change.json")"
+large_tasks="$large_workspace/openspec/changes/$large_change/tasks.md"
 printf '%s\n' '# Tasks' '' > "$large_tasks"
 task_number=1
 while [ "$task_number" -le 100 ]; do
   task_id="$(printf 'T%03d' "$task_number")"
   printf '%s\n' \
-    "- [ ] **$task_id** Brownfield task $task_number [repo:api] [kind:implementation] [paths:api.txt]" \
+    "- [ ] **$task_id** Brownfield task $task_number [repo:root] [kind:implementation] [paths:app.txt]" \
     >> "$large_tasks"
   task_number=$((task_number + 1))
 done
 large_plan="$(node .claude/harness/foundation.mjs agent-plan \
-  cross-repository-profile)"
+  "$large_change")"
 assert_contains "large plan reports all tasks" "$large_plan" '"taskCount":100'
 assert_contains "large plan compacts group details" "$large_plan" '"preview":'
 if [ "$(printf '%s' "$large_plan" | wc -c | tr -d ' ')" -le 4096 ]; then
@@ -23,14 +28,14 @@ else
   fail "100-task plan summary stays within 4 KiB"
 fi
 large_packet="$(node .claude/harness/foundation.mjs packet \
-  cross-repository-profile)"
+  "$large_change")"
 if [ "$(printf '%s' "$large_packet" | wc -c | tr -d ' ')" -le 16384 ]; then
   pass "100-task global packet stays within 16 KiB"
 else
   fail "100-task global packet stays within 16 KiB"
 fi
 context_metrics="$(node .claude/harness/foundation.mjs metrics \
-  cross-repository-profile)"
+  "$large_change")"
 assert_contains "metrics expose context byte totals" \
   "$context_metrics" '"estimatedTokens":'
 assert_contains "metrics separate plan and packet context" \

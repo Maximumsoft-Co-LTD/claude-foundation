@@ -402,21 +402,26 @@ test("separate CLI host processes retain decisions, protect inspection, and resu
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
-test("a proven lifecycle label cannot bypass stale evidence at either requested target", async () => {
-  for (const target of ["proven", "archived"]) {
-    let current = false;
-    let proofs = 0;
-    let lands = 0;
-    const f = fixture({ proofIsCurrent: () => current, hasLandGrant: () => true,
-      runProof: async () => { proofs++; current = true; return { status: "PASS" }; },
-      runLand: async () => { assert.equal(current, true); lands++; f.setState({ status: "archived" }); }
-    });
-    f.setState({ status: "proven" }); f.setCursor({ status: "PASS", workspaceHash: "original" });
-    const value = await f.runtime().advanceThrough("demo", target);
-    assert.equal(value.reached, target);
-    assert.equal(proofs, 1);
-    assert.equal(lands, target === "archived" ? 1 : 0);
-  }
+test("proof target refreshes stale evidence while explicit Land accepts its assurance", async () => {
+  let current = false;
+  let proofs = 0;
+  const prove = fixture({ proofIsCurrent: () => current,
+    runProof: async () => { proofs++; current = true; return { status: "PASS" }; }
+  });
+  prove.setState({ status: "proven" });
+  prove.setCursor({ status: "PASS", workspaceHash: "original" });
+  assert.equal((await prove.runtime().advanceThrough("demo", "proven")).reached, "proven");
+  assert.equal(proofs, 1);
+
+  let lands = 0;
+  const land = fixture({ proofIsCurrent: () => false, hasLandGrant: () => true,
+    runProof: async () => { throw new Error("explicit Land must not rerun proof"); },
+    runLand: async () => { lands++; land.setState({ status: "archived" }); }
+  });
+  land.setState({ status: "proven" });
+  land.setCursor({ status: "PASS", workspaceHash: "original" });
+  assert.equal((await land.runtime().advanceThrough("demo", "archived")).reached, "archived");
+  assert.equal(lands, 1);
 });
 
 test("current proof requires durable audit, matching content, current receipts and the proven manifest", () => {

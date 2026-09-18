@@ -1,6 +1,6 @@
 ---
 title: /land
-description: Apply ตรวจ archive และ cleanup change ที่ proven ด้วยอำนาจชัดเจน
+description: Apply ตรวจ archive และ cleanup งานปัจจุบันด้วยอำนาจชัดเจน
 ---
 
 ```text
@@ -10,11 +10,11 @@ description: Apply ตรวจ archive และ cleanup change ที่ prove
 Slash command นี้คือ boundary ที่ให้อำนาจ Land อย่างชัดเจน และรัน:
 
 ```bash
-claude-foundation advance <change> --through archived
+claude-foundation land advance <change>
 ```
 
-Coordinator ตรวจ proof freshness และสถานะ external operation เตรียม apply
-transaction ที่กู้คืนได้ apply projection ที่ proven ตรวจ identity ของ target archive
+Coordinator บันทึก proof และ external-operation assurance ปัจจุบัน เตรียม apply
+transaction ที่กู้คืนได้ apply projection ที่ผู้ใช้อนุญาต ตรวจ identity ของ target archive
 ผ่าน OpenSpec และ cleanup ทุก writable repository ได้ diff แบบยังไม่ commit โดย
 HEAD และ index ไม่เปลี่ยน งานจบเมื่อ runtime เป็น `archived`; `proven` ยังไม่จบ
 

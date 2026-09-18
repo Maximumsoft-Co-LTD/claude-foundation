@@ -39,7 +39,7 @@ Safe to run at any time. These mutate nothing.
 | `feedback <change>` | Explain reviewer, evidenced repair, human-wait, and unattributed timing; show reuse and the next action |
 | `change audit <change>` | Audit scenario, claim, task, and provider traceability |
 | `proof readiness <change>` | Typed blockers and canonical next commands |
-| `land check <change>` | Validate that the proven projection remains landable |
+| `land check <change>` | Validate mechanical Land safety and report current assurance |
 | `handoff status <change>` | Inspect permission-bound operations and their Land disposition |
 | `handoff list [--open] [--owner <team>] [--environment <env>] [--json]` | List operational obligations across active and archived changes |
 | `handoff packet <change> [--id <H00n>]` | Read the credential-free packet for a named DevOps/SRE owner |

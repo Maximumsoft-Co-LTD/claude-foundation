@@ -1,6 +1,6 @@
 ---
 title: /land
-description: Explicitly apply, verify, archive, and clean up a proven change.
+description: Explicitly apply, verify, archive, and clean up the current change.
 ---
 
 ```text
@@ -10,11 +10,11 @@ description: Explicitly apply, verify, archive, and clean up a proven change.
 This slash command is the explicit Land authority boundary. It runs:
 
 ```bash
-claude-foundation advance <change> --through archived
+claude-foundation land advance <change>
 ```
 
-The coordinator checks proof freshness and external-operation disposition,
-prepares the recoverable apply transaction, applies the proven projection,
+The coordinator records current proof and external-operation assurance,
+prepares the recoverable apply transaction, applies the explicitly authorized projection,
 verifies target identity, archives through OpenSpec, and cleans up. Every
 writable repository receives an uncommitted diff while its HEAD and index stay
 unchanged. Completion
@@ -26,8 +26,8 @@ implies permission to commit, push, publish, or open a pull request. While Land
 is active, the phase guard rejects those mutating shell commands unless they are
 children of the marked runtime transaction. After archive, delivery uses the
 project's normal process under separate authority. A moved
-base, projection conflict, interrupted transaction, unavailable external owner, child
-repository delivery, or pending pre-Land handoff stops with `WAIT`, `REPAIR`,
+base, projection conflict, interrupted transaction, or unsafe repository
+identity stops with `WAIT`, `REPAIR`,
 `RUN_EXTERNAL`, or `ASK_USER`. The result names the cause, responsible actor,
 safe alternatives, state retained, and exact resume route.
 

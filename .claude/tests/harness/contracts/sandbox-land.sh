@@ -106,7 +106,7 @@ node .claude/harness/foundation.mjs receipt copy-sandbox dependency-supply-chain
   --observed "lockfile inspected" --source harness-test --artifact package-lock.json >/dev/null
 node .claude/harness/foundation.mjs prove copy-sandbox >/dev/null
 archive_output="$(PATH="$TMP/bin:$PATH" node .claude/harness/foundation.mjs archive copy-sandbox)"
-assert_contains "archive delegates once to pinned OpenSpec" "$archive_output" "ARCHIVED copy-sandbox"
+assert_contains "archive delegates once to pinned OpenSpec" "$archive_output" "LANDED copy-sandbox"
 copy_applied="$(tr -d '\n' < app.txt)"
 assert_eq "archive re-projects sandbox work done after the first apply" \
   "v2-critical-fix" "$copy_applied"
@@ -219,11 +219,9 @@ node .claude/harness/foundation.mjs receipt sandbox-copy discovery pass \
 node .claude/harness/foundation.mjs prove sandbox-copy >/dev/null
 rm .foundation/sandboxes/sandbox-copy/current-link
 ln -s target-a.txt .foundation/sandboxes/sandbox-copy/current-link
-if node .claude/harness/foundation.mjs land-check sandbox-copy >/dev/null 2>&1; then
-  fail "dirty symlink target change invalidates proof"
-else
-  pass "dirty symlink target change invalidates proof"
-fi
+stale_symlink_land="$(node .claude/harness/foundation.mjs land-check sandbox-copy 2>&1)"
+assert_contains "dirty symlink target change makes assurance stale" \
+  "$stale_symlink_land" "assurance: stale"
 rm .foundation/sandboxes/sandbox-copy/current-link
 ln -s target-b.txt .foundation/sandboxes/sandbox-copy/current-link
 node .claude/harness/foundation.mjs receipt sandbox-copy test pass \
@@ -234,11 +232,9 @@ node .claude/harness/foundation.mjs receipt sandbox-copy discovery pass \
 node .claude/harness/foundation.mjs prove sandbox-copy >/dev/null
 printf '\nSecond revision after proof.\n' >> openspec/changes/sandbox-copy/proposal.md
 node .claude/harness/foundation.mjs sandbox sync sandbox-copy >/dev/null
-if node .claude/harness/foundation.mjs land-check sandbox-copy >/dev/null 2>&1; then
-  fail "sandbox revision invalidates prior proof"
-else
-  pass "sandbox revision invalidates prior proof"
-fi
+stale_revision_land="$(node .claude/harness/foundation.mjs land-check sandbox-copy 2>&1)"
+assert_contains "sandbox revision remains Land-ready with non-passing assurance" \
+  "$stale_revision_land" "LAND READY sandbox-copy"
 node .claude/harness/foundation.mjs receipt sandbox-copy test pass \
   --observed "fixture test evidence" --source harness-test --artifact app.txt >/dev/null
 node .claude/harness/foundation.mjs receipt sandbox-copy discovery pass \

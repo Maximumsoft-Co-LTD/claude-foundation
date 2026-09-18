@@ -356,8 +356,9 @@ claude-foundation advance <change> --through proven
 Proof validates the agreement, hashes relevant inputs, resolves claims to
 providers, reuses valid receipts, runs missing or stale project-owned evidence,
 routes review before acceptance, and writes a proof bound to the workspace.
-Required evidence that is failed, missing, stale, erroneous, or inconclusive
-blocks Land.
+Failed, missing, stale, erroneous, or inconclusive evidence remains visible as
+assurance status. It blocks a `PROVEN` result, but an explicit `/land` may still
+authorize the current workspace projection.
 
 Composite identity binds repository content and agreement revision rather than
 Git commit identity. Recorded base heads remain explicit recovery and Land
@@ -402,16 +403,17 @@ remain diagnostic or integration primitives behind `advance`.
 
 ### `/land <change>`
 
-The complete delivery command is:
+The internal command behind `/land` is:
 
 ```bash
-claude-foundation advance <change> --through archived
+claude-foundation land advance <change>
 ```
 
 This explicit invocation supplies Land authority. Land has one user-visible
-goal: place the exact proven projection in the declared main workspace. The
-Harness binds a resumable grant to the exact change, proof, repository graph,
-and target roots, then owns checking, Apply, verification, semantic spec
+goal: place the exact current workspace projection in the declared main
+workspace. The Harness binds a resumable grant to the exact change, workspace
+hash, available assurance, repository graph, and target roots, then owns
+checking, Apply, verification, semantic spec
 synchronization, archival, recovery, and cleanup as internal checkpoints. It
 finishes only at `archived`; `proven` is not completion.
 
@@ -423,7 +425,7 @@ a semantic choice that the Harness cannot safely infer.
 
 The projection is confined to Git-tracked files plus paths declared in
 `tasks.md`. An untracked path no task names is neither evidence surface nor a
-Land deletion. A target path is deleted only when the proven sandbox removed
+Land deletion. A target path is deleted only when the authorized sandbox removed
 it. Conflicts never overwrite unrelated target edits.
 
 Every writable selected repository is prepared before the first target write
@@ -880,7 +882,8 @@ this workflow names them only where their lifecycle meaning matters.
 - Missing expected evidence cannot silently pass.
 - Browser capability mismatch is inconclusive.
 - Mutation crash is not a behavioral kill.
-- Stale proof cannot Land or archive.
+- Missing, failed, inconclusive, invalid, or stale proof is preserved as Land
+  assurance and cannot be misreported as passing.
 - A sandbox diff cannot overwrite a conflicting target.
 - OpenSpec performs semantic spec sync before archive.
 - Required assurance is never dropped because of size or budget.

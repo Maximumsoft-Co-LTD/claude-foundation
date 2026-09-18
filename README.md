@@ -361,18 +361,19 @@ workspace.
 The agent uses `advance <change-id> --through proven`; compatible `proof ...`
 commands remain available for diagnostics and integrations.
 
-### 4. Land the proven change
+### 4. Land the current change
 
 ```text
 /land <change-id>
 ```
 
-Land has one visible goal: move the exact proven work into its declared main
-workspace. The Harness verifies that proof is still fresh, checks for conflicting
-target edits, applies only the proven sandbox diff, then performs spec sync,
+Land has one visible goal: move the exact current work into its declared main
+workspace. Passing, failed, stale, inconclusive, or missing proof is recorded as
+assurance rather than used as authority. The Harness checks for conflicting
+target edits, applies only the authorized sandbox diff, then performs spec sync,
 archive, recovery, and cleanup as internal automation. If the code, tests,
 configuration, agreement, or
-relevant target paths moved after Prove, Land stops instead of overwriting them.
+relevant target paths moved, Land stops instead of overwriting them.
 If the target branch simply advanced, the agent synchronizes the existing
 sandbox, re-proves it, and continues Land. Your work is preserved and you do
 not create a new change. A real replay conflict still stops for your judgment.
@@ -383,7 +384,7 @@ and re-proves. Only a shared resource declared with `[resources:]` serializes.
 Why this step exists: applying code and updating the durable requirements are
 one guarded, resumable completion boundary.
 
-The agent uses `advance <change-id> --through archived`. `/land` is the only
+The agent uses internal `land advance <change-id>`. `/land` is the only
 user-facing Land operation; interrupted internal checkpoints resume without a
 manual check, recovery, or archive command. Land is complete only at `archived`;
 it still grants no authority to commit, push, publish, or open a pull request.
@@ -430,8 +431,8 @@ flowchart LR
     B --> D{Requirement changed?}
     D -- Yes --> X
     D -- No --> P[Prove]
-    P -- Evidence fails --> B
-    P -- Evidence passes --> L[Land]
+    P -- Evidence fails; continue repair --> B
+    P -- Evidence passes or user explicitly accepts risk --> L[Land]
     L --> A[Sync specs and archive]
     A -. Optional explicit authority .-> R[Deliver verified PR URL]
 ```
@@ -451,7 +452,7 @@ After Land, a new requirement should normally become a new change.
 | Change | States intent, requirements, scenarios, task outcomes, and evidence needs | Compiles stable links and validates schema, risk, scope, and revision state |
 | Build | Implements code and tests, runs focused checks, and completes tasks | Creates an isolated workspace, bounds authority, and persists progress |
 | Prove | Diagnoses and fixes failures exposed by evidence | Runs providers, validates claim coverage and receipts, and creates content-bound proof |
-| Land | Helps resolve a conflict when human judgment or implementation changes are needed | Checks freshness, applies the proven diff, supports rollback/resume, syncs specs, and archives |
+| Land | Decides whether the current workspace should enter the main workspace | Records assurance, applies the authorized diff, supports rollback/resume, syncs specs, and archives |
 | Deliver (optional) | Composes bounded reviewer-facing narrative from archived sources | Reconstructs the proven projection in isolation, commits, pushes, opens/reuses and verifies the PR |
 
 ## Which command should I use?
@@ -734,9 +735,10 @@ you to.
   project, agreement, nonce, expiry, and exact permissions, then supplies the
   single-use envelope with `--attestation`. Exposed host-control sockets or
   credentials still block execution.
-- Land refuses stale proof and conflicting edits on touched target paths, and
-  apply refuses to overwrite uncommitted target edits — it names the clobbered
-  paths instead of letting the last writer win.
+- Land records missing, failed, inconclusive, invalid, or stale proof as
+  assurance; those outcomes do not override an explicit user decision. Apply
+  still refuses conflicts and uncommitted edits on touched target paths — it
+  names the clobbered paths instead of letting the last writer win.
 - Apply uses backups and a journal; an interrupted Land can be retried.
 - Land warns — without blocking — when the target is checked out on
   `main`/`master`; every land guard stays commit-based.

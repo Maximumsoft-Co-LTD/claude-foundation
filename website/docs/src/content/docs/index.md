@@ -46,7 +46,7 @@ Change Loop deliberately splits responsibility so that no single party can both 
 
 **Reuse before rerun.** Receipts bind to code, agreement, claims, configuration, environment, protocol, and artifacts. Change a bound input and the receipt goes stale; leave it alone and the work is reused instead of repeated.
 
-**Transactional finish.** Land checks proof freshness, applies only the proven sandbox, verifies identity, syncs specs, archives, and cleans up. An interrupted or multi-repository Land resumes from its journal rather than leaving you half-applied.
+**Transactional finish.** Land records proof assurance, applies the explicitly authorized current sandbox, verifies identity, syncs specs, archives, and cleans up. An interrupted or multi-repository Land resumes from its journal rather than leaving you half-applied.
 
 **Risk, not size, selects rigor.** Size only controls budget and slicing. A one-line change that touches an auth boundary is not treated as trivial.
 

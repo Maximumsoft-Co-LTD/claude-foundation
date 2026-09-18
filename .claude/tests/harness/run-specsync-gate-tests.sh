@@ -134,7 +134,7 @@ printf '%s\n' \
 prove_change spec-sync-clean feature-clean.txt
 clean_archive="$({ PATH="$TMP/bin:$PATH" FOUNDATION_TEST_MERGED_SPECS="$TMP/merged" \
   node .claude/harness/foundation.mjs archive spec-sync-clean; } 2>&1 || true)"
-assert_contains "a faithful merge archives" "$clean_archive" "ARCHIVED spec-sync-clean"
+assert_contains "a faithful merge archives" "$clean_archive" "LANDED spec-sync-clean"
 assert_eq "a faithful merge records no spec-sync violations" "false" \
   "$(jq -r 'has("specSyncViolations")' .foundation/runtime/spec-sync-clean.json)"
 assert_eq "a faithful merge completes Land" "sandbox-cleaned" \
@@ -198,7 +198,7 @@ corrupt_archive="$({ PATH="$TMP/bin:$PATH" FOUNDATION_TEST_MERGED_SPECS="$TMP/me
 assert_contains "a merge that contradicts the delta fails Land" \
   "$corrupt_archive" "archived specs do not match the change delta"
 assert_not_contains "a failed spec sync does not report a successful archive" \
-  "$corrupt_archive" "ARCHIVED spec-sync-corrupt"
+  "$corrupt_archive" "LANDED spec-sync-corrupt"
 assert_contains "the failure names the capability and the modified requirement" \
   "$corrupt_archive" "layout/The grid is responsive"
 assert_contains "the failure names the scenario the merge dropped" \
@@ -242,7 +242,7 @@ assert_contains "a retry over an unrepaired spec tree is refused" \
 assert_contains "the retry repeats the specific violation" \
   "$retry_archive" "layout/The grid is responsive"
 assert_not_contains "the retry does not report the change as archived" \
-  "$retry_archive" "ARCHIVED spec-sync-corrupt"
+  "$retry_archive" "LANDED spec-sync-corrupt"
 assert_eq "the retry does not advance Land" "specs-archived" \
   "$(jq -r '.land.status' "$corrupt_state")"
 assert_eq "the retry does not clear the violations" "2" \
@@ -302,7 +302,7 @@ cp openspec/specs/appearance/spec.md "$TMP/appearance-before.md"
 none_archive="$({ PATH="$TMP/bin:$PATH" \
   node .claude/harness/foundation.mjs archive spec-sync-none; } 2>&1 || true)"
 assert_contains "a change with no specs directory archives" "$none_archive" \
-  "ARCHIVED spec-sync-none"
+  "LANDED spec-sync-none"
 assert_eq "a change with no specs directory records no violations" "false" \
   "$(jq -r 'has("specSyncViolations")' .foundation/runtime/spec-sync-none.json)"
 
@@ -317,7 +317,7 @@ prove_change spec-sync-orphan-specs feature-orphan.txt
 orphan_archive="$({ PATH="$TMP/bin:$PATH" \
   node .claude/harness/foundation.mjs archive spec-sync-orphan-specs; } 2>&1 || true)"
 assert_contains "a directory under specs/ without a spec.md is not a capability" \
-  "$orphan_archive" "ARCHIVED spec-sync-orphan-specs"
+  "$orphan_archive" "LANDED spec-sync-orphan-specs"
 assert_eq "an orphan specs directory records no violations" "false" \
   "$(jq -r 'has("specSyncViolations")' .foundation/runtime/spec-sync-orphan-specs.json)"
 assert_cmd_zero "a change with no capability delta leaves openspec/specs alone" \
@@ -356,7 +356,7 @@ new_capability_archive="$({ PATH="$TMP/bin:$PATH" \
   FOUNDATION_TEST_MERGED_SPECS="$TMP/merged" \
   node .claude/harness/foundation.mjs archive spec-sync-new-capability; } 2>&1 || true)"
 assert_contains "a brand-new capability archives without a 'before' spec" \
-  "$new_capability_archive" "ARCHIVED spec-sync-new-capability"
+  "$new_capability_archive" "LANDED spec-sync-new-capability"
 assert_eq "a brand-new capability records no violations" "false" \
   "$(jq -r 'has("specSyncViolations")' \
     .foundation/runtime/spec-sync-new-capability.json)"

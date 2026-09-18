@@ -295,9 +295,9 @@ assert_file_contains "English Prove continues through one coordinator" \
 assert_file_contains "Thai Prove continues through one coordinator" \
   "$DOCS/th/loop/prove.md" 'advance <change> --through proven'
 assert_file_contains "English Land continues through one coordinator" \
-  "$DOCS/loop/land.md" 'advance <change> --through archived'
+  "$DOCS/loop/land.md" 'land advance <change>'
 assert_file_contains "Thai Land continues through one coordinator" \
-  "$DOCS/th/loop/land.md" 'advance <change> --through archived'
+  "$DOCS/th/loop/land.md" 'land advance <change>'
 assert_file_contains "landing demonstrates unified lifecycle advance" \
   "$SITE" 'claude-foundation advance profile-auth --through proven'
 
@@ -462,8 +462,8 @@ if [ -z "$overclaims" ]; then
 else
   fail "documentation claims Land is gated on consent: $(printf '%s' "$overclaims" | tr '\n' ' ')"
 fi
-assert_file_contains "the approval page says what Land actually gates on" \
-  "$APPROVAL" "Land gates on **evidence**, not on consent"
+assert_file_contains "the approval page keeps mechanical safety fail-closed" \
+  "$APPROVAL" "Land still fails closed on target conflicts"
 
 # Compare the agent entrypoints with their canonical contracts. These checks
 # reject the previously contradictory instructions, not just missing keywords.
@@ -477,7 +477,7 @@ const read = (file) => readFileSync(resolve(root, file), "utf8");
 const prose = (file) => read(file).replace(/\s+/g, " ");
 const land = prose(".claude/commands/land.md");
 const route = land.match(/Run `([^`]+)`/)?.[1];
-assert.equal(route, "claude-foundation advance <change> --through archived");
+assert.equal(route, "claude-foundation land advance <change>");
 assert.ok(read("WORKFLOW.md").includes(route));
 for (const boundary of ["Authority", "resource", "budget", "conflict", "external dependency", "repeated no-progress"])
   assert.ok(land.includes(boundary), `Land omits ${boundary}`);

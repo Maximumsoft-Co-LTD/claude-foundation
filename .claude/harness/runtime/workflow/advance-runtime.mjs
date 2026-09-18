@@ -813,14 +813,15 @@ export function createAdvanceRuntime({
           await recoverWorkspace(id);
           initial = loadRuntime(id);
         }
-        assertApproval?.(id, initial, { workspace: false });
+        const explicitLand = through === "archived" && hasLandGrant(id);
+        if (!explicitLand) assertApproval?.(id, initial, { workspace: false });
         const pending = recovery.pending(id);
         if (pending && (pending.paused || pending.decision.kind !== "external-dependency"))
           return pendingAction(id, through, pending);
         // Preparation is identity-reused and also owns recovery of failed
         // sandbox setup. Re-enter it while Build is active so a prior setup
         // failure cannot be bypassed by the next coordinator invocation.
-        if (["change", "building"].includes(initial.status) && prepareBuild) {
+        if (!explicitLand && ["change", "building"].includes(initial.status) && prepareBuild) {
           recordActivePhase("build");
           await prepareBuild(id);
         }
@@ -834,7 +835,10 @@ export function createAdvanceRuntime({
         while (true) {
           const completed = reached(id, through);
           if (completed) return done(id, completed, through);
-          let value = readAdvanceValue(id);
+          let value = through === "archived" && (explicitLand || hasLandGrant(id))
+            ? { action: "WORKING", legacyAction: "LAND_READY", actor: "harness",
+              reason: "explicit Land authority accepts the current assurance" }
+            : readAdvanceValue(id);
           if (through !== "build" && value.legacyAction === "REPAIR_REVIEW_INFRASTRUCTURE" &&
               recoverReviewBindings) {
             stage = "prove";
@@ -856,8 +860,8 @@ export function createAdvanceRuntime({
           } else if (value.legacyAction === "LAND_READY" && through === "archived") {
             // The explicit archived target authorizes Land only once the exact
             // proof is ready. Earlier phases and inspection grant nothing.
-            if (!hasLandGrant(id) && authorizeLand) await authorizeLand(id);
-            if (!hasLandGrant(id)) return finish(targetResume(value));
+            if (!explicitLand && !hasLandGrant(id) && authorizeLand) await authorizeLand(id);
+            if (!explicitLand && !hasLandGrant(id)) return finish(targetResume(value));
             if (!runLand) return finish(targetResume(value));
             stage = "land";
             operation = runLand;

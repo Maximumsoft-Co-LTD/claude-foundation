@@ -42,14 +42,15 @@ unresolved operations return the owner and resume route.
 
 ## Prove
 
-Use `advance <change> --through proven`; its deterministic chain owns validation,
-readiness, receipt reuse, provider execution, collection, authority routing, and
-proof finalization. Low-level proof commands are diagnostics/integration paths.
+Use `advance <change> --through proven`; it owns validation, receipt reuse,
+provider execution, authority routing, and proof finalization. Low-level proof
+commands are diagnostics/integration paths.
 
 Validate the active change, snapshot relevant workspaces once, resolve claims to
 providers, reuse only fingerprint/hash-valid receipts, and execute missing
 evidence by a safe DAG. Required failed, missing, stale, error, or inconclusive
-evidence blocks Land; external waits never cause provider reruns.
+evidence blocks a `PROVEN` result; explicit `/land` records the assurance and
+may still apply the current workspace. External waits never cause provider reruns.
 
 Review independently when risk policy requires it. Findings are
 `verified|hypothesis|disproved|accepted-risk`; only deterministic verified
@@ -77,11 +78,10 @@ reference; each exhausted continuation asks again.
 
 ## Land
 
-Land explicitly moves the exact proven projection into its main workspace.
-`/land` uses `advance <change> --through archived`; Harness owns readiness,
-Apply, verification, OpenSpec archive, recovery, and cleanup as internal
-checkpoints. Never expose those mechanics. Reject stale proof, preserve unrelated
-edits, and never commit, push, or open a PR without separate authority.
+Land moves the current workspace projection into its main workspace.
+`/land` uses `land advance <change>`; Harness owns readiness, Apply,
+verification, archive, recovery, and cleanup. Record stale or failed proof truthfully,
+preserve unrelated edits, and never commit, push, or open a PR without separate authority.
 
 Multiple repositories use one saga: prepare all writable targets, apply
 dependency waves, verify unchanged HEAD/index, then archive. Diffs remain

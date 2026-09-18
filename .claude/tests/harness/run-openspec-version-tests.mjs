@@ -175,12 +175,14 @@ try {
     "landCheck refuses a missing CLI");
   check(calls, ["scenarios"], "the refusal happens before proof is even read");
 
-  // With a usable CLI the gate is transparent: landCheck proceeds to its own
-  // proof checks rather than stopping on the environment.
+  // With a usable CLI the mechanical gate is transparent. Missing proof is
+  // reported as assurance metadata and explicit Land remains available.
   fakeCli({ stdout: "1.7.0" });
-  assertions += 1;
-  assert.throws(() => runtime.landCheck("demo"), /has no passing proof/,
-    "a usable CLI lets landCheck reach its proof checks");
+  const ready = runtime.landCheck("demo");
+  check(ready.assurance.status, "missing",
+    "a usable CLI lets Land report missing assurance without refusing");
+  check(calls, ["scenarios", "scenarios", "proof"],
+    "Land reads assurance only after the OpenSpec gate passes");
 } finally {
   process.env.PATH = originalPath;
   rmSync(workspace, { recursive: true, force: true });

@@ -180,8 +180,8 @@ const CASES = [
     sourcePath: ".claude/harness/runtime/workflow/land-runtime.mjs",
     expectedKiller: "CASE-SINGLE-CHILD-LAND-SAGA",
     detector: LAND_DETECTOR,
-    before: "const state = loadRuntime(id);\n  const multiRepository = compositeRepositorySelection(selectedRepositories(id, state));",
-    after: "const state = loadRuntime(id);\n  const multiRepository = Object.keys(state.repositories || {}).length > 1;"
+    before: "const multiRepository = compositeRepositorySelection(selectedRepositories(id, initial));",
+    after: "const multiRepository = Object.keys(initial.repositories || {}).length > 1;"
   },
   {
     id: "MUT-SINGLE-CHILD-LOCAL-APPLY-ALLOWED",

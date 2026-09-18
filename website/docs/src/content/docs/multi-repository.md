@@ -213,7 +213,7 @@ complete local delivery transaction:
 ```
 
 The harness prepares every writable target before the first write, then applies
-the proven projections in dependency order with durable checkpoints. Each node
+the explicitly authorized projections in dependency order with durable checkpoints. Each node
 finishes `applied-uncommitted`; Git HEAD and the index remain unchanged in every
 repository, and existing non-overlapping edits are preserved. A later `/land`
 resumes the same transaction and skips verified nodes. `land check`, legacy

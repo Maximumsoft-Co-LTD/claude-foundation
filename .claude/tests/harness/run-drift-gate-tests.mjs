@@ -1,7 +1,7 @@
-// A gate is only a gate if it refuses. The classifier and the manifest join are
-// pinned elsewhere; what nothing covered is the seam itself — that landCheck
-// consults the drift inspector and stops Land on a proven downgrade, and that it
-// stays out of the way in every other case. These fixtures drive the real
+// Model drift is Land assurance, not Land authority. The classifier and the
+// manifest join are pinned elsewhere; this covers the seam where landCheck
+// consults the drift inspector and reports a downgrade without overriding an
+// explicit Land decision. These fixtures drive the real
 // createModelDriftInspector through the real createLandRuntime rather than
 // stubbing blockingDrift, so the wiring foundation.mjs performs is what is under
 // test, not a restatement of it.
@@ -93,14 +93,15 @@ function landRuntime(overrides = {}) {
   });
 }
 
-/** Run landCheck with stdout captured: landed=true means the gate let it through. */
+/** Run landCheck with stdout captured. */
 function land(runtime, id) {
   const lines = [];
   const originalLog = console.log;
   console.log = (line) => lines.push(String(line));
   try {
-    runtime.landCheck(id);
-    return { landed: true, threw: false, error: null, errorName: null, log: lines.join("\n") };
+    const result = runtime.landCheck(id);
+    return { landed: true, result, threw: false, error: null, errorName: null,
+      log: lines.join("\n") };
   } catch (error) {
     return {
       landed: false, threw: true, error: error.message,
@@ -180,17 +181,18 @@ try {
   });
   const gated = landRuntime({ blockingDrift: (id) => inspector.blockingDrift(id) });
 
-  // 1. A proven downgrade on a risk-sensitive task stops Land.
+  // 1. A proven downgrade on a risk-sensitive task lowers assurance but does
+  // not override explicit Land authority.
   const blocked = land(gated, BLOCKED);
-  check(blocked.landed, false, "a downgrade on a security task refuses Land");
-  matches(blocked.error, /model tier downgrade on risk-sensitive task/,
-    "the refusal names the reason a human can act on");
-  matches(blocked.error, /T001/, "the refusal names the task");
-  matches(blocked.error, /security/, "the refusal names the risk-sensitive kind");
-  matches(blocked.error, /requested deep/, "the refusal names the planned tier");
-  matches(blocked.error, new RegExp(`ran ${HAIKU.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
-    "the refusal names the model that actually ran");
-  check(blocked.log.includes("LAND READY"), false, "a refused change is never announced ready");
+  check(blocked.landed, true, "a downgrade on a security task remains landable");
+  check(blocked.result.assurance.status, "failed",
+    "the downgrade is preserved as failed assurance");
+  check(blocked.result.assurance.reason, "model-tier-drift",
+    "the assurance reason identifies model drift");
+  matches(blocked.log, /LAND READY blocked-security/,
+    "the explicitly authorized change is announced ready");
+  matches(blocked.log, /assurance: failed/,
+    "the ready announcement exposes the failed assurance");
 
   // 2. The same downgrade on a task kind the policy does not protect.
   const unblocked = land(gated, UNBLOCKED);
@@ -222,26 +224,26 @@ try {
   check(land(gated, FALLBACK).landed, true, "a declared fallback lands on a contract task");
   check(inspector.driftRows(FALLBACK)[0].kind, "fallback", "the declared hop is a fallback");
 
-  // 6. Ambiguous attribution fails closed.
+  // 6. Ambiguous attribution remains visible without becoming authority.
   const ambiguous = land(gated, AMBIGUOUS);
-  check(ambiguous.landed, false,
-    "an ambiguous downgrade refuses Land when any candidate is risk-sensitive");
-  matches(ambiguous.error, /T101/, "the risk-sensitive candidate is named in the refusal");
-  matches(ambiguous.error, /\(ambiguous\)/,
-    "the refusal states the attribution is ambiguous rather than asserting one task");
+  check(ambiguous.landed, true,
+    "an ambiguous downgrade remains landable under explicit authority");
+  check(ambiguous.result.assurance.status, "failed",
+    "ambiguous risk-sensitive drift lowers assurance");
+  check(ambiguous.result.assurance.reason, "model-tier-drift",
+    "ambiguous drift retains the model-drift assurance reason");
   check(inspector.blockingDrift(AMBIGUOUS)[0].blockingTasks, ["T101"],
     "only the risk-sensitive candidate is reported as blocking");
   check(inspector.blockingDrift(AMBIGUOUS)[0].taskId, null,
     "an ambiguous finding claims no single task");
 
-  // Control: the same fixture with an explicitly permissive gate lands. This is
-  // what proves case 1 refuses for the gate's reason and not because some
-  // unrelated Land guard rejected the fixture.
+  // Control: a permissive inspector retains passing assurance for the same
+  // otherwise-landable fixture.
   const permissive = landRuntime({ blockingDrift: () => [] });
   const control = land(permissive, BLOCKED);
   check(control.landed, true, "a permissive gate lands the blocking fixture");
   matches(control.log, /LAND READY blocked-security/,
-    "the blocking fixture is otherwise fully landable — only the gate stops it");
+    "the fixture remains fully landable when no drift is reported");
 
   // The gate must not be silently omittable. blockingDrift is a required
   // dependency: a caller that stops passing it gets a loud failure at Land rather

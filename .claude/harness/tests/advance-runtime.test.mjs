@@ -460,6 +460,7 @@ test("advance convergence stops only after repeated unchanged automation", async
 test("a weak host can finish by reading one action and calling its resume", async () => {
   const state = { status: "building", workspace: { path: "/tmp/change" } };
   let edited = false;
+  let landGranted = false;
   const runtime = createAdvanceRuntime({
     loadRuntime: () => state,
     agentDispatchValue: () => edited
@@ -477,7 +478,8 @@ test("a weak host can finish by reading one action and calling its resume", asyn
     readJson: () => state.status === "proven"
       ? { status: "PASS", workspaceHash: "workspace-a" } : {},
     proofAdvancePath: () => "/proof.json", stableHash,
-    hasLandGrant: () => true,
+    hasLandGrant: () => landGranted,
+    authorizeLand: async () => { landGranted = true; },
     runProof: async () => { state.status = "proven"; return { progressed: true }; },
     runLand: async () => { state.status = "archived"; }
   });

@@ -107,7 +107,7 @@ test("archive without a bound transcript completes and warns once", () => {
   provenChange(fixture);
   const result = cliRaw(fixture, {}, "archive", "telemetry-probe");
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /ARCHIVED telemetry-probe/);
+  assert.match(result.stdout, /LANDED telemetry-probe/);
   assert.match(result.stderr, /WARNING: no model usage was imported/);
   const events = join(fixture.root, ".foundation", "logs", "telemetry-probe", "events.jsonl");
   assert.ok(!existsSync(events) || statSync(events).size === 0);
@@ -131,7 +131,7 @@ test("archive drains the bound transcript into the change's events", () => {
       usage: { input_tokens: 11, output_tokens: 7 } }
   }) + "\n");
   const output = cli(fixture, env, "archive", "telemetry-probe");
-  assert.match(output, /ARCHIVED telemetry-probe/);
+  assert.match(output, /LANDED telemetry-probe/);
   assert.match(output, /telemetry: partial-measurement/,
     "Claude token usage without host cost must remain truthfully partial");
   assert.doesNotMatch(output, /telemetry: not-ingested/,
@@ -149,7 +149,7 @@ test("an unreadable telemetry source never gates the archive", () => {
   };
   provenChange(fixture, env);
   const output = cli(fixture, env, "archive", "telemetry-probe");
-  assert.match(output, /ARCHIVED telemetry-probe/);
+  assert.match(output, /LANDED telemetry-probe/);
 });
 
 test("a corrupt complete transcript line stays advisory during archive", () => {
@@ -164,7 +164,7 @@ test("a corrupt complete transcript line stays advisory during archive", () => {
   appendFileSync(transcript, "this is not json\n");
   const result = cliRaw(fixture, env, "archive", "telemetry-probe");
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /ARCHIVED telemetry-probe/);
+  assert.match(result.stdout, /LANDED telemetry-probe/);
   assert.match(result.stderr, /WARNING: skipped unreadable Claude transcript/);
 });
 

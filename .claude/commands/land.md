@@ -5,7 +5,7 @@ argument-hint: <change>
 
 Land **$ARGUMENTS** explicitly.
 
-Run `claude-foundation advance <change> --through archived`. It creates the session-bound
+Run `claude-foundation land advance <change>`. It creates the session-bound
 grant and converges checks, Apply, verification, archive, recovery, and cleanup.
 These are internal checkpoints; the user supplies no follow-up command.
 

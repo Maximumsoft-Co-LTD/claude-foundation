@@ -618,7 +618,8 @@ export async function routeRuntimeCommand(command, values, api) {
     },
     "land-advance": async () => {
       if (grantLand) grantLand(values[0]);
-      await advanceLand(values[0]);
+      if (showAdvance) await showAdvance(values[0], { through: "archived" });
+      else await advanceLand(values[0]);
     },
     "land-recover": async () => {
       const {

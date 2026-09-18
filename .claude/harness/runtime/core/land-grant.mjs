@@ -7,7 +7,8 @@ function sessionId(env = process.env) {
     env.CODEX_THREAD_ID || env.CLAUDE_SESSION_ID || null;
 }
 
-export function landGrantBinding({ state, proof, repositories, stableHash }) {
+export function landGrantBinding({ state, proof = null, workspaceHash = null,
+  repositories, stableHash }) {
   const targets = repositories.filter((repository) => repository.mode === "write")
     .map((repository) => ({
       id: repository.id,
@@ -22,8 +23,9 @@ export function landGrantBinding({ state, proof, repositories, stableHash }) {
     revision: Number(state.revision || 0),
     contractRevision: Number(state.contractRevision || 0),
     executionRevision: Number(state.executionRevision || 0),
-    proofRunId: proof.proofRunId || null,
-    proofWorkspaceHash: proof.workspaceHash || null,
+    workspaceHash,
+    proofRunId: proof?.proofRunId || null,
+    proofWorkspaceHash: proof?.workspaceHash || null,
     repositoryGraph: stableHash(repositories.map((repository) => ({
       id: repository.id,
       type: repository.type || "git",
@@ -37,7 +39,8 @@ export function landGrantBinding({ state, proof, repositories, stableHash }) {
 
 export function createLandGrantRuntime({
   transactions, loadRuntime, selectedRepositories, proofPath, readJson, writeJson,
-  stableHash, now, landCheck, archiveRecoveryReady = null, env = process.env
+  stableHash, now, landCheck, workspaceHash = () => null,
+  archiveRecoveryReady = null, env = process.env
 }) {
   const grantPath = (id) => join(transactions, id, "land-grant.json");
 
@@ -47,6 +50,7 @@ export function createLandGrantRuntime({
     return landGrantBinding({
       state,
       proof,
+      workspaceHash: workspaceHash(id),
       repositories: selectedRepositories(id, state),
       stableHash
     });

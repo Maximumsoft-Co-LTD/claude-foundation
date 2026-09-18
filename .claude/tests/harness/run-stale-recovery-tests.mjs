@@ -1,10 +1,8 @@
-// Staleness refusals carry their own recovery order.
+// Staleness remains visible without overriding explicit Land authority.
 //
-// The defect this pins: "proof is stale" and "authority request is stale"
-// stated the refusal and nothing else, so a consumer round replayed the
-// edit→prove→attest loop four times in eight minutes. The refusal itself now
-// names the order — content first, one fresh prove, attestations last — and
-// the command that resumes.
+// Proof staleness is assurance metadata. Authority-request staleness remains a
+// refusal because the response is bound to different content and therefore
+// still carries its recovery order.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -83,14 +81,13 @@ test("a fresh proof carries no recovery hint", () => {
   assert.doesNotMatch(result.stdout + result.stderr, /finish contract and code edits/);
 });
 
-test("a stale proof names the recovery order and the prove command", () => {
+test("a stale proof remains landable and is reported truthfully", () => {
   const { fixture, workspacePath } = proven();
   appendFileSync(join(workspacePath, "app.txt"), "post-prove edit\n");
   const result = cli(fixture, "land-check", "stale-probe");
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /proof is stale \(/);
-  assert.match(result.stderr,
-    /finish contract and code edits first, sync, then run one fresh prove: claude-foundation proof run stale-probe/);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /LAND READY stale-probe/);
+  assert.match(result.stdout, /assurance: stale/);
 });
 
 test("a stale authority request says attest last and how to re-request", () => {

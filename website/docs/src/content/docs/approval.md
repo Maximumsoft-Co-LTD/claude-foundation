@@ -15,11 +15,10 @@ routinely confused with one another, and they do different jobs.
 
 :::caution[What Land actually enforces]
 An exact `/land <change>` supplies one internal, session-bound grant for that
-recoverable transaction. Readiness itself gates on **evidence**, not a second
-consent receipt: missing, stale, failed, or inconclusive evidence still stops
-before Apply, and every receipt digest is re-checked against the proof manifest.
-In short: Land gates on **evidence**, not on consent beyond that explicit
-invocation.
+recoverable transaction. Missing, stale, failed, inconclusive, or invalid
+evidence is retained as truthful assurance, but does not override that explicit
+authority. Land still fails closed on target conflicts, unsafe paths, ambiguous
+repository identity, and transaction corruption.
 
 Users never construct the grant or a decision-reference command. `land record`
 requires `--decision-ref` only as compatibility for an already-active legacy

@@ -337,17 +337,18 @@ next: /land <change-id>
 Agent ใช้ `advance <change-id> --through proven`; คำสั่ง `proof ...` เดิมยังอยู่
 สำหรับ diagnostic และ integration
 
-### 4. Land งานที่พิสูจน์แล้ว
+### 4. Land งานปัจจุบัน
 
 ```text
 /land <change-id>
 ```
 
-Land มีเป้าหมายที่ผู้ใช้เห็นเพียงอย่างเดียว: นำงานที่ prove แล้วเข้า main
-workspace ที่ประกาศไว้ Harness จะตรวจว่า proof ยัง fresh ตรวจ conflict ใน target
-และ apply เฉพาะ diff ที่ prove แล้ว จากนั้นจัดการ spec sync, archive, recovery
+Land มีเป้าหมายที่ผู้ใช้เห็นเพียงอย่างเดียว: นำงานปัจจุบันเข้า main workspace
+ที่ประกาศไว้ Proof ที่ pass, fail, stale, inconclusive หรือ missing จะถูกบันทึกเป็น
+assurance ไม่ใช่ authority Harness ตรวจ conflict ใน target และ apply เฉพาะ diff
+จาก sandbox ที่ผู้ใช้อนุญาต จากนั้นจัดการ spec sync, archive, recovery
 และ cleanup เป็น automation ภายใน ถ้า code, test, config, agreement หรือ target
-path ที่เกี่ยวข้องเปลี่ยนหลัง Prove ระบบจะหยุดแทนการเขียนทับ
+path ที่เกี่ยวข้องเปลี่ยน ระบบจะหยุดแทนการเขียนทับ
 ถ้า target branch แค่มี commit ใหม่ Agent จะ sync sandbox เดิม, Prove ใหม่ และ
 Land ต่อให้เอง งานไม่หายและไม่ต้องเปิด Change ใหม่ แต่ถ้า replay conflict จริง
 ระบบจะหยุดเพื่อให้คุณตัดสินใจ เปิดหลาย change พร้อมกันได้แม้แตะไฟล์เดียวกัน ไม่มี
@@ -357,7 +358,7 @@ change ไหนต้องรออีก change ระหว่าง Build, 
 ทำไมต้องมีขั้นนี้: การนำ code เข้า project กับการอัปเดต requirement ถาวรถูกผูก
 เป็น completion boundary เดียวที่มี guard และ resume ได้
 
-Agent ใช้ `advance <change-id> --through archived` โดย `/land` เป็น Land operation
+Agent ใช้ internal `land advance <change-id>` โดย `/land` เป็น Land operation
 เดียวที่ผู้ใช้ต้องเรียก checkpoint ภายในที่ถูกขัดจังหวะจะ resume เองโดยไม่ต้องสั่ง
 check, recovery หรือ archive เพิ่ม งานจะเสร็จจริงเมื่อ state เป็น `archived` และ
 Land ยังไม่ได้ให้อำนาจ commit, push, publish หรือเปิด pull request
@@ -402,8 +403,8 @@ flowchart LR
     B --> D{Requirement เปลี่ยน?}
     D -- ใช่ --> X
     D -- ไม่ --> P[Prove]
-    P -- Evidence ไม่ผ่าน --> B
-    P -- ผ่าน --> L[Land]
+    P -- Evidence ไม่ผ่าน; แก้ต่อ --> B
+    P -- ผ่าน หรือผู้ใช้ยอมรับ risk โดย explicit --> L[Land]
     L --> A[Sync specs และ archive]
     A -. Explicit และ optional .-> R[Deliver URL ของ PR ที่ตรวจแล้ว]
 ```
@@ -422,7 +423,7 @@ Investigate ⇄ Change ⇄ Build ⇄ Prove → Land
 | Change | ระบุ intent, requirement, scenario, task outcome และ evidence ที่ต้องใช้ | Compile stable link และ validate schema, risk, scope กับ revision state |
 | Build | Implement code และ test, รัน focused check และทำ task ให้เสร็จ | สร้าง isolated workspace จำกัดอำนาจ และเก็บความคืบหน้า |
 | Prove | วิเคราะห์และแก้ failure ที่ evidence พบ | รัน provider ตรวจ claim coverage และ receipt แล้วสร้าง content-bound proof |
-| Land | ช่วยแก้ conflict เมื่อจำเป็นต้องใช้ judgment หรือแก้ implementation | ตรวจ freshness, apply proven diff, รองรับ rollback/resume, sync spec และ archive |
+| Land | ตัดสินใจว่าจะนำ workspace ปัจจุบันเข้า main workspace หรือไม่ | บันทึก assurance, apply diff ที่ผู้ใช้อนุมัติ, รองรับ rollback/resume, sync spec และ archive |
 | Deliver (optional) | เรียบเรียง narrative สำหรับ reviewer จาก archived source แบบมีขอบเขต | สร้าง proven projection ใน isolation, commit, push, เปิด/ใช้ PR เดิมและตรวจยืนยัน |
 
 ## ควรใช้ Command ไหน
@@ -433,7 +434,7 @@ Investigate ⇄ Change ⇄ Build ⇄ Prove → Land
 | `/change` | รู้ outcome แล้ว หรือต้องแก้ active agreement | สร้างหรือแก้ OpenSpec artifact โดยไม่แก้ product |
 | `/build` | ข้อตกลงพร้อม implement | Code และ focused check ใน isolated workspace |
 | `/prove` | Implementation task และ focused check เสร็จ | Required receipts และ `proof.json` ที่ผูกกับ content |
-| `/land` | Proof ผ่านและคุณยอมรับ change | Apply proven diff, sync specs และ archive |
+| `/land` | คุณต้องการนำ workspace ปัจจุบันเข้า main แม้ proof จะไม่ผ่านหรือไม่พร้อม | Apply diff ที่อนุมัติ, บันทึก assurance ตามจริง, sync specs และ archive |
 | `/deliver` | ต้องการส่ง archived change ไป review | Commit แบบ isolated, push feature branch และคืน PR URL ที่ตรวจยืนยันแล้ว |
 | `/changes` | กลับมาทำงานต่อหรือมีหลาย active changes | State ปัจจุบันและ operation ที่ควรทำต่อ |
 | `/dev` | Intent ชัดและต้องการ Change → Build → Prove ครั้งเดียว | ปกติหยุดที่ proven candidate; automation lane ที่มี Land authority ล่วงหน้าอาจทำต่อถึง `archived` |
@@ -688,9 +689,10 @@ product requirement หรือซ่อม state ด้วยมือถ้�
   agreement, nonce, expiry และ permission ที่แน่นอน ก่อนส่ง envelope แบบใช้ครั้ง
   เดียวผ่าน `--attestation`; ถ้ายังเปิด host-control socket หรือ credential ระบบ
   จะ block ต่อไป
-- Land ปฏิเสธ stale proof และ conflicting edit ใน target path ที่แตะ และ apply
-  ปฏิเสธที่จะทับ edit ใน target ที่ยังไม่ commit — มันระบุ path ที่จะถูกทับแทน
-  ที่จะปล่อยให้คนเขียนทีหลังชนะ
+- Land บันทึก proof ที่ missing, failed, inconclusive, invalid หรือ stale เป็น
+  assurance โดยไม่ล้ม explicit decision ของผู้ใช้ ส่วน apply ยังปฏิเสธ conflict
+  และ edit ใน target path ที่ยังไม่ commit — มันระบุ path ที่จะถูกทับแทนที่จะ
+  ปล่อยให้คนเขียนทีหลังชนะ
 - Apply มี backup และ journal ทำให้ Land ที่ถูกขัดจังหวะ retry ได้
 - Land เตือน — โดยไม่บล็อก — เมื่อ target checkout อยู่บน `main`/`master`
   โดย guard ของ land ทุกตัวยังอิง commit

@@ -410,26 +410,12 @@ app_record="$({ node .claude/harness/foundation.mjs land-record cross-repository
 assert_not_contains "a feature branch stays silent at record" "$app_record" "WARNING"
 resume_stage="$(node .claude/harness/foundation.mjs land-advance \
   cross-repository-profile)"
-assert_contains "Land advance stages eligible root gitlinks transactionally" \
-  "$resume_stage" "ROOT POINTERS STAGED"
-assert_cmd_zero "root pointer staging preserves content-bound composite proof" \
+assert_contains "Land advance completes the authorized repository transaction" \
+  "$resume_stage" '"reached":"archived"'
+assert_cmd_zero "archived repository transaction remains inspectable" \
   node .claude/harness/foundation.mjs land-check cross-repository-profile
-node .claude/harness/foundation.mjs proof-collect cross-repository-profile >/dev/null 2>&1 || true
-node .claude/harness/foundation.mjs receipt cross-repository-profile \
-  compatibility pass --observed "contract change is backward compatible" \
-  --source harness-test --reference https://example.invalid/compat-review >/dev/null
-node .claude/harness/foundation.mjs receipt cross-repository-profile \
-review pass --observed "fixture review found no blockers" \
-  --reviewer harness-test --subject-actor implementation-agent \
-  --unresolved-blockers 0 \
-  --reference "fixture://review" >/dev/null
-assert_cmd_zero "pointer-aware composite proof refreshes" \
-  node .claude/harness/foundation.mjs prove cross-repository-profile
-resume_plan="$(node .claude/harness/foundation.mjs land-resume cross-repository-profile)"
-assert_contains "Land resume observes landed children" \
-  "$resume_plan" '"status": "child-landed"'
-assert_contains "root target gitlink matches recorded commit" \
-  "$resume_plan" '"readyToArchive": true'
+assert_eq "root target gitlink matches recorded commit" "$api_commit" \
+  "$(git ls-files -s api | awk '{print $2}')"
 
 # Per-repository setup: a topology row's `setupCommand` runs inside that
 # repository's worktree, and `sandbox.setupCommand` still covers the root

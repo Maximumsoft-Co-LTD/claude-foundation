@@ -34,7 +34,8 @@ function archiveRuntime(root, state, overrides = {}) {
     saveRuntime: () => {},
     changePath: (id) => join(root, "openspec", "changes", id),
     proofPath: (id) => join(root, ".foundation", "proof", `${id}.json`),
-    readJson: (path) => JSON.parse(readFileSync(path, "utf8")),
+    readJson: (path, fallback) => existsSync(path)
+      ? JSON.parse(readFileSync(path, "utf8")) : fallback,
     syncClaudeTelemetry: () => {},
     modelUsageRecorded: () => true,
     foundationPolicy: () => ({ telemetry: { requireUsage: false } }),
@@ -64,8 +65,9 @@ function activeArchiveFixture(id, options = {}) {
   const change = join(root, "openspec", "changes", id);
   mkdirSync(change, { recursive: true });
   if (options.delta) write(join(change, "specs", "sample", "spec.md"), options.delta);
-  write(join(root, ".foundation", "proof", `${id}.json`),
-    JSON.stringify({ proofRunId: "proof-run" }));
+  if (!options.proofMissing)
+    write(join(root, ".foundation", "proof", `${id}.json`),
+      JSON.stringify({ proofRunId: "proof-run" }));
   const bin = join(root, "bin");
   const openspec = join(bin, "openspec");
   write(openspec, options.cliFailure ? [
@@ -105,7 +107,11 @@ function activeArchiveFixture(id, options = {}) {
       landChecks += 1;
       if (options.mode === "worktree" && landChecks === 2)
         return { archived: true, state, hash: "workspace-hash" };
-      return { archived: false, state, hash: "workspace-hash" };
+      return { archived: false, state, hash: "workspace-hash",
+        assurance: options.assurance || {
+          status: options.proofMissing ? "missing" : "passed",
+          workspaceHash: "workspace-hash", acceptedBy: "explicit-land-authority"
+        } };
     }
   });
   return {
@@ -333,7 +339,7 @@ test("interrupted archive readiness and execution reject changed retained inputs
   try {
     assert.equal(runtime.archiveRecoveryReady(id), true);
     auditValid = false;
-    rejected(/invalid proof/);
+    assert.equal(runtime.archiveRecoveryReady(id), true);
     auditValid = true;
     projectionValid = false;
     rejected(/invalid applied projection/);
@@ -471,11 +477,21 @@ test("an OpenSpec failure reported on stdout is preserved", () => {
   rmSync(fixture.root, { recursive: true, force: true });
 });
 
-test("a successful archive still refuses a failed post-archive proof audit", () => {
+test("a successful archive records completion despite a failed proof audit", () => {
   const fixture = activeArchiveFixture("audit-failure", { invalidAudit: true });
 
-  assert.throws(() => fixture.run(), /post-archive proof audit failed/);
+  quiet(() => fixture.run());
   assert.equal(fixture.state.status, "archived");
+  rmSync(fixture.root, { recursive: true, force: true });
+});
+
+test("explicit Land archives without a proof and records missing assurance", () => {
+  const fixture = activeArchiveFixture("missing-proof", { proofMissing: true });
+
+  quiet(() => fixture.run());
+  assert.equal(fixture.state.status, "archived");
+  assert.equal(fixture.state.land.assurance.status, "missing");
+  assert.equal(fixture.state.land.proofRunId, null);
   rmSync(fixture.root, { recursive: true, force: true });
 });
 

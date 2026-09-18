@@ -1741,6 +1741,7 @@ const landGrantRuntime = createLandGrantRuntime({
   stableHash,
   now,
   landCheck,
+  workspaceHash: (id) => relevantHash(id, null, true),
   archiveRecoveryReady: (id) => applyRuntime.archiveRecoveryReady(id)
 });
 const applyRuntime = createApplyRuntime({

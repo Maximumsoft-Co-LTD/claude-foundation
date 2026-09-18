@@ -15,6 +15,7 @@ import { compositeRepositorySelection } from "../core/repository-binding.mjs";
 import { createRepositoryDeliverySaga } from "./repository-delivery-saga.mjs";
 import { deliveryTreeEntries, assertDeliveryEntries } from "./delivery-integrity.mjs";
 import { agreementIdentity } from "../core/user-decisions.mjs";
+import { legacyRepositoryLandTransaction } from "./land-runtime.mjs";
 
 // Whether an empty root diff is an acceptable apply outcome rather than an
 // error: true when the change selected any non-root repository, because the
@@ -371,12 +372,12 @@ export function prepareApplyTransactionOperation(context, id, state, prepared = 
   const transactionRoot = context.applyTransactionRoot(id, transactionId);
   context.makeDirectory(transactionRoot, { recursive: true });
   backupApplyEntries(context, transactionRoot, entries);
-  const proof = context.readJson(context.proofPath(id));
+  const proof = context.readJson(context.proofPath(id), {});
   const journal = {
     version: 1,
     changeId: id,
     transactionId,
-    proofRunId: proof.proofRunId,
+    proofRunId: proof.proofRunId || null,
     mode: state.workspace.mode,
     status: "prepared",
     sandboxPath: state.workspace.path,
@@ -411,18 +412,13 @@ export function refreshAppliedProjectionOperation(context, state) {
   const journal = context.readJson(journalPath);
   for (const entry of journal.entries) refreshProjectionEntry(context, state, entry);
   journal.projectionHash = projectionHash(context.stableHash, journal.entries);
-  journal.proofRunId = context.readJson(context.proofPath(state.id)).proofRunId;
+  journal.proofRunId = context.readJson(context.proofPath(state.id), {}).proofRunId || null;
   journal.status = "verified";
   journal.refreshedAt = context.now();
   context.saveApplyJournal(journal);
   state.workspace.apply.projectionHash = journal.projectionHash;
   state.workspace.apply.status = "verified";
   context.saveRuntime(state);
-}
-
-export function assertRecoveredProof(context, id) {
-  const audit = context.proofAudit(id, true);
-  if (!audit.valid) context.fail(`recovered archive has invalid proof: ${audit.reason}`);
 }
 
 export function assertRecoveredProjection(context, id, state, archivedPath) {
@@ -435,17 +431,9 @@ export function assertRecoveredProjection(context, id, state, archivedPath) {
     context.fail(`recovered archive has an invalid applied projection: ${verification.reason}`);
 }
 
-export function assertRecoveredTasksComplete(context, id, archivedPath) {
-  const pending = context.pendingTasks(id, resolve(context.root, archivedPath));
-  if (pending.length)
-    context.fail(`${pending.length} implementation task(s) remain unchecked`);
-}
-
 export function assertRecoveredArchiveReadyOperation(context, id, state, archivedPath) {
-  assertRecoveredProof(context, id);
   context.assertMultiRepositoryArchiveReady(id, state);
   assertRecoveredProjection(context, id, state, archivedPath);
-  assertRecoveredTasksComplete(context, id, archivedPath);
 }
 
 export function createApplyRuntime({
@@ -763,10 +751,8 @@ export function createApplyRuntime({
 
   const assertRecoveredArchiveReady = assertRecoveredArchiveReadyOperation.bind(null, {
     root,
-    proofAudit,
     assertMultiRepositoryArchiveReady,
     verifyAppliedProjection,
-    pendingTasks,
     fail
   });
 
@@ -777,8 +763,6 @@ export function createApplyRuntime({
       saveRuntime(state);
       failSpecSync(outstanding);
     }
-    const audit = proofAudit(id, true);
-    if (!audit.valid) fail(`archived proof audit failed: ${audit.reason}`);
     if (!state.deliveryIntegrity && Array.isArray(state.specSyncInputs) &&
         typeof pathIdentity === "function") {
       const archivedPath = state.archivedChangePath || archivedChangeRelativePath(id);
@@ -897,12 +881,14 @@ export function createApplyRuntime({
     return true;
   }
 
-  function snapshotArchiveEvidence(id) {
+  function snapshotArchiveEvidence(id, readiness) {
     const journal = loadRuntime(id);
+    const proof = readJson(proofPath(id), {});
     journal.land = {
       ...(journal.land || {}),
       status: "evidence-snapshotted",
-      proofRunId: readJson(proofPath(id)).proofRunId,
+      proofRunId: proof.proofRunId || null,
+      assurance: readiness.assurance,
       updatedAt: now()
     };
     saveRuntime(journal);
@@ -911,8 +897,13 @@ export function createApplyRuntime({
   function applyArchiveWorkspace(id, readiness) {
     if (!["worktree", "copy"].includes(readiness.state.workspace?.mode))
       return readiness;
-    if (compositeRepositorySelection(selectedRepositories(id, readiness.state)))
-      repositoryDelivery.apply(id);
+    if (compositeRepositorySelection(selectedRepositories(id, readiness.state))) {
+      // Legacy repository Land records already name commits applied by the
+      // user. Their root gitlinks are staged by resumeLand; replaying the
+      // workspace-uncommitted delivery saga would misclassify those expected
+      // child HEADs as target drift.
+      if (!legacyRepositoryLandTransaction(readiness.state)) repositoryDelivery.apply(id);
+    }
     else applySandbox(id, { controlPlane: true });
     const journal = loadRuntime(id);
     journal.land = { ...journal.land, status: "code-applied", updatedAt: now() };
@@ -1001,8 +992,6 @@ export function createApplyRuntime({
 
   function finalizeArchivedChange(id, state, telemetry, cli) {
     archiveCheckpoint("before-final-audit", state);
-    const audit = proofAudit(id, true);
-    if (!audit.valid) fail(`post-archive proof audit failed: ${audit.reason}`);
     archiveCheckpoint("after-final-audit", state);
     state.land = { ...state.land, status: "archive-audited", updatedAt: now() };
     archiveCheckpoint("before-cleanup", state);
@@ -1027,7 +1016,10 @@ export function createApplyRuntime({
     if (!telemetry && !modelUsageRecorded(id))
       console.error(`WARNING: no model usage was imported for this change; cost and token columns stay empty — claude-foundation telemetry sync ${id} [transcript.jsonl]`);
     console.log(cli.stdout.trim());
-    console.log(`ARCHIVED ${id}`);
+    const assurance = state.land?.assurance?.status || "legacy-unknown";
+    console.log(`${assurance === "passed" ? "LANDED" :
+      ["failed", "inconclusive"].includes(assurance)
+        ? "LANDED_WITH_RISK" : "LANDED_UNPROVEN"} ${id}\n  assurance: ${assurance}\n  lifecycle: archived`);
   }
 
   function archive(id) {
@@ -1057,7 +1049,7 @@ export function createApplyRuntime({
     let readiness = landCheck(id);
     if (readiness.archived) return;
     archiveCheckpoint("before-evidence-snapshot", readiness.state);
-    snapshotArchiveEvidence(id);
+    snapshotArchiveEvidence(id, readiness);
     archiveCheckpoint("after-evidence-snapshot", readiness.state);
     // Unconditional, including when the sandbox is already applied: work done
     // after the first projection is proven and would otherwise archive as a
@@ -1071,8 +1063,6 @@ export function createApplyRuntime({
     // object predates the journal write above, and saving it below would
     // silently erase land.proofRunId from the record.
     const state = loadRuntime(id);
-    const pending = pendingTasks(id);
-    if (pending.length) fail(`${pending.length} implementation task(s) remain unchecked`);
     const telemetry = recordArchiveTelemetry(id, state);
     const cli = runOpenSpecArchive(id, state, readiness);
     finalizeArchivedChange(id, state, telemetry, cli);

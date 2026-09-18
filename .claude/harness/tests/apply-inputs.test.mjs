@@ -415,13 +415,13 @@ function recoveryContext(overrides = {}) {
   };
 }
 
-test("interrupted archive readiness enforces proof, projection, and completed tasks", () => {
+test("interrupted archive readiness enforces projection while assurance stays advisory", () => {
   const direct = { workspace: { mode: "direct" } };
   assert.doesNotThrow(() => assertRecoveredArchiveReadyOperation(
     recoveryContext(), "change", direct, "archive/change"));
-  assert.throws(() => assertRecoveredArchiveReadyOperation(recoveryContext({
+  assert.doesNotThrow(() => assertRecoveredArchiveReadyOperation(recoveryContext({
     proofAudit: () => ({ valid: false, reason: "bad signature" })
-  }), "change", direct, "archive/change"), /invalid proof: bad signature/);
+  }), "change", direct, "archive/change"));
   assert.throws(() => assertRecoveredArchiveReadyOperation(recoveryContext(), "change", {
     workspace: { mode: "copy", applied: false }
   }, "archive/change"), /never projected the sandbox/);
@@ -430,9 +430,9 @@ test("interrupted archive readiness enforces proof, projection, and completed ta
   }), "change", {
     workspace: { mode: "worktree", applied: true }
   }, "archive/change"), /invalid applied projection: changed/);
-  assert.throws(() => assertRecoveredArchiveReadyOperation(recoveryContext({
+  assert.doesNotThrow(() => assertRecoveredArchiveReadyOperation(recoveryContext({
     pendingTasks: () => [{ id: "task" }]
-  }), "change", direct, "archive/change"), /1 implementation task\(s\) remain unchecked/);
+  }), "change", direct, "archive/change"));
 });
 
 test("apply runtime factory supports default and explicit telemetry policy dependencies", () => {

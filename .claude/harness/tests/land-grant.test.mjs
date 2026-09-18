@@ -6,6 +6,7 @@ import { createLandGrantRuntime } from "../runtime/core/land-grant.mjs";
 const stableHash = (value) => JSON.stringify(value);
 
 function fixture(overrides = {}) {
+  const { proofMissing = false, ...runtimeOverrides } = overrides;
   const values = new Map();
   const env = { FOUNDATION_CLAUDE_SESSION_ID: "session-a" };
   const state = {
@@ -18,6 +19,7 @@ function fixture(overrides = {}) {
     }
   };
   const proof = { status: "pass", proofRunId: "proof-a", workspaceHash: "hash-a" };
+  let currentWorkspaceHash = "hash-a";
   const repositories = [
     { id: "root", path: "/root", mode: "write", dependsOn: [] },
     { id: "api", path: "/api", mode: "write", dependsOn: ["root"] },
@@ -30,15 +32,18 @@ function fixture(overrides = {}) {
     selectedRepositories: () => repositories,
     proofPath: () => "/proof.json",
     readJson: (path, fallback) => path === "/proof.json"
-      ? proof : values.has(path) ? values.get(path) : fallback,
+      ? proofMissing ? fallback : proof
+      : values.has(path) ? values.get(path) : fallback,
     writeJson: (path, value) => values.set(path, structuredClone(value)),
     stableHash,
     now: () => "2026-09-05T00:00:00.000Z",
     landCheck: () => { checks += 1; return { archived: false }; },
+    workspaceHash: () => currentWorkspaceHash,
     env,
-    ...overrides
+    ...runtimeOverrides
   });
-  return { runtime, state, proof, env, checks: () => checks };
+  return { runtime, state, proof, env, checks: () => checks,
+    setWorkspaceHash: (value) => { currentWorkspaceHash = value; } };
 }
 
 test("Land grant binds session, proof, revisions, graph, and writable targets", () => {
@@ -59,6 +64,16 @@ test("Land grant cannot cross a session or stale proof identity", () => {
   env.FOUNDATION_CLAUDE_SESSION_ID = "session-a";
   proof.workspaceHash = "hash-b";
   assert.equal(runtime.valid("change-a").reason, "stale-land-grant");
+});
+
+test("Land grant binds the current workspace even without proof", () => {
+  const f = fixture({ proofMissing: true });
+  const grant = f.runtime.issue("change-a");
+  assert.equal(grant.binding.proofRunId, null);
+  assert.equal(grant.binding.workspaceHash, "hash-a");
+  assert.equal(f.runtime.valid("change-a").valid, true);
+  f.setWorkspaceHash("hash-b");
+  assert.equal(f.runtime.valid("change-a").reason, "stale-land-grant");
 });
 
 test("consumed Land authority cannot be reused", () => {

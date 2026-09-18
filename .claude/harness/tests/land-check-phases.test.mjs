@@ -21,12 +21,14 @@ test("land advance handles single repositories and multi-repository resume state
   });
 
   await advanceLandOperation(dependencies([{ repositories: {} }]), "single");
-  assert.deepEqual(calls.splice(0), [["check", "single"], ["archive", "single"]]);
+  assert.deepEqual(calls.splice(0), [["archive", "single"]]);
 
   await advanceLandOperation(dependencies([
     { repositories: { root: {}, api: {} } }, { status: "building" }
   ], {}, [{ id: "root" }, { id: "api" }]), "building");
-  assert.deepEqual(calls.splice(0), [["plan", "building"], ["resume", "building"]]);
+  assert.deepEqual(calls.splice(0), [
+    ["plan", "building"], ["resume", "building"], ["plan", "building"]
+  ]);
 
   await advanceLandOperation(dependencies([
     { repositories: { root: {}, api: {} } }, { status: "proven" }
@@ -216,7 +218,7 @@ test("land check phases preserve every refusal and ready route", () => {
     const archivedBad = make({
       state: { status: "archived" }, audit: { valid: false, reason: "tampered" }
     });
-    assert.throws(() => archivedBad.runtime.landCheck(archivedBad.id), /archived proof audit/);
+    assert.equal(archivedBad.runtime.landCheck(archivedBad.id).archived, true);
 
     const recovery = make({ state: { workspace: { recovery: { requiresSync: true } } } });
     assert.throws(() => recovery.runtime.landCheck(recovery.id), /sandbox sync/);
@@ -298,36 +300,34 @@ test("land check phases preserve every refusal and ready route", () => {
     assert.equal(cleanDependency.runtime.landCheck(cleanDependency.id).archived, false);
 
     const missingProof = make({ proofMissing: true });
-    assert.throws(() => missingProof.runtime.landCheck(missingProof.id), /no passing proof/);
+    assert.equal(missingProof.runtime.landCheck(missingProof.id).assurance.status, "missing");
     const badAudit = make({ audit: { valid: false, reason: "bad audit" } });
-    assert.throws(() => badAudit.runtime.landCheck(badAudit.id), /proof audit failed/);
+    assert.equal(badAudit.runtime.landCheck(badAudit.id).assurance.status, "invalid");
     const stale = make({ currentHash: "different-hash" });
-    assert.throws(() => stale.runtime.landCheck(stale.id), /proof is stale/);
+    assert.equal(stale.runtime.landCheck(stale.id).assurance.status, "stale");
 
     const graph = { identity: "graph-a", revision: "r1" };
     const graphMissing = make({ graph });
-    assert.throws(() => graphMissing.runtime.landCheck(graphMissing.id), /graph proof is missing/);
+    assert.equal(graphMissing.runtime.landCheck(graphMissing.id).assurance.status, "invalid");
     const graphStale = make({ graph, proof: { aggregateGraphProof: {
       status: "pass", graphIdentity: "other", graphRevision: "r1", workspaceHash: HASH
     } } });
-    assert.throws(() => graphStale.runtime.landCheck(graphStale.id), /graph proof is stale/);
+    assert.equal(graphStale.runtime.landCheck(graphStale.id).assurance.status, "invalid");
     const graphIncomplete = make({ graph, proof: { aggregateGraphProof: {
       status: "pass", graphIdentity: "graph-a", graphRevision: "r1", workspaceHash: HASH,
       requiredNodes: ["a"], coveredNodes: [], requiredEdges: ["a>b"], coveredEdges: []
     } } });
-    assert.throws(() => graphIncomplete.runtime.landCheck(graphIncomplete.id), /graph proof is incomplete/);
+    assert.equal(graphIncomplete.runtime.landCheck(graphIncomplete.id).assurance.status, "invalid");
     const graphNodesOnly = make({ graph, proof: { aggregateGraphProof: {
       status: "pass", graphIdentity: "graph-a", graphRevision: "r1", workspaceHash: HASH,
       requiredNodes: ["a"], coveredNodes: []
     } } });
-    assert.throws(() => graphNodesOnly.runtime.landCheck(graphNodesOnly.id),
-      /edges none/);
+    assert.equal(graphNodesOnly.runtime.landCheck(graphNodesOnly.id).assurance.status, "invalid");
     const graphEdgesOnly = make({ graph, proof: { aggregateGraphProof: {
       status: "pass", graphIdentity: "graph-a", graphRevision: "r1", workspaceHash: HASH,
       requiredEdges: ["a>b"], coveredEdges: []
     } } });
-    assert.throws(() => graphEdgesOnly.runtime.landCheck(graphEdgesOnly.id),
-      /nodes none/);
+    assert.equal(graphEdgesOnly.runtime.landCheck(graphEdgesOnly.id).assurance.status, "invalid");
     const graphWithoutCoverageLists = make({ graph, proof: { aggregateGraphProof: {
       status: "pass", graphIdentity: "graph-a", graphRevision: "r1", workspaceHash: HASH
     } } });
@@ -340,9 +340,9 @@ test("land check phases preserve every refusal and ready route", () => {
     assert.equal(graphComplete.runtime.landCheck(graphComplete.id).archived, false);
 
     const invalidReceipt = make({ providers: ["test"], validity: { test: "stale" } });
-    assert.throws(() => invalidReceipt.runtime.landCheck(invalidReceipt.id), /test evidence is stale/);
+    assert.equal(invalidReceipt.runtime.landCheck(invalidReceipt.id).assurance.status, "invalid");
     const changedReceipt = make({ providers: ["test"], receiptDigest: "changed" });
-    assert.throws(() => changedReceipt.runtime.landCheck(changedReceipt.id), /live receipt differs/);
+    assert.equal(changedReceipt.runtime.landCheck(changedReceipt.id).assurance.status, "invalid");
     const compiled = make({
       providers: ["test"], executionContract: {
         evidence: { providers: ["test"] }, land: { signedCiRequired: false }
@@ -354,8 +354,8 @@ test("land check phases preserve every refusal and ready route", () => {
         evidence: { providers: ["other"] }, land: { signedCiRequired: false }
       }
     });
-    assert.throws(() => contractProviderMismatch.runtime.landCheck(contractProviderMismatch.id),
-      /execution contract provider projection disagrees/);
+    assert.equal(contractProviderMismatch.runtime.landCheck(contractProviderMismatch.id)
+      .assurance.status, "invalid");
     const signedCi = make({
       providers: ["ci"], signedCi: true,
       state: { riskBasedCiRequired: true, impact: "high" }
@@ -364,7 +364,7 @@ test("land check phases preserve every refusal and ready route", () => {
     const missingCi = make({
       providers: ["test"], state: { riskBasedCiRequired: true, impact: "high" }
     });
-    assert.throws(() => missingCi.runtime.landCheck(missingCi.id), /requires signed CI/);
+    assert.equal(missingCi.runtime.landCheck(missingCi.id).assurance.status, "invalid");
 
     const blockedHandoff = make({ handoffs: {
       blocking: ["op"], tracked: [], status: "WAITING_EXTERNAL",
@@ -372,7 +372,8 @@ test("land check phases preserve every refusal and ready route", () => {
         validity: "valid", status: "pending", timing: "post-land", activation: "manual",
         landBlocking: true }]
     } });
-    assert.throws(() => blockedHandoff.runtime.landCheck(blockedHandoff.id), /WAITING_EXTERNAL/);
+    assert.equal(blockedHandoff.runtime.landCheck(blockedHandoff.id)
+      .assurance.status, "inconclusive");
     const invalidApplied = make({
       state: { workspace: { applied: true } }, applied: { valid: false, reason: "projection drift" }
     });
@@ -383,12 +384,12 @@ test("land check phases preserve every refusal and ready route", () => {
       taskId: "T001", taskKind: "security", requestedTier: "deep",
       actualModel: "fast", reason: "downgrade"
     }] });
-    assert.throws(() => drifted.runtime.landCheck(drifted.id), /model tier downgrade/);
+    assert.equal(drifted.runtime.landCheck(drifted.id).assurance.status, "failed");
     const fallbackDrift = make({ drift: [
       { blockingTasks: ["T002"], requestedTier: "deep", reason: "downgrade" },
       { blockingTasks: [], requestedTier: "standard", reason: "unknown actor" }
     ] });
-    assert.throws(() => fallbackDrift.runtime.landCheck(fallbackDrift.id), /T002/);
+    assert.equal(fallbackDrift.runtime.landCheck(fallbackDrift.id).assurance.status, "failed");
 
     const rich = make({
       branch: "main",
