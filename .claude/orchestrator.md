@@ -77,10 +77,11 @@ reference; each exhausted continuation asks again.
 
 ## Land
 
-Land is explicit and uses `advance <change> --through archived`. Reject stale proof, apply only the proven touched-path
-projection, preserve unrelated edits, journal backups/mutations, roll back
-partial failure, run OpenSpec spec sync/archive, audit digests, and clean up
-resumably. Never commit, push, or open a PR without separate authority.
+Land explicitly moves the exact proven projection into its main workspace.
+`/land` uses `advance <change> --through archived`; Harness owns readiness,
+Apply, verification, OpenSpec archive, recovery, and cleanup as internal
+checkpoints. Never expose those mechanics. Reject stale proof, preserve unrelated
+edits, and never commit, push, or open a PR without separate authority.
 
 Multiple repositories use one saga: prepare all writable targets, apply
 dependency waves, verify unchanged HEAD/index, then archive. Diffs remain

@@ -79,11 +79,11 @@ mkdir -p "$TMP/bin"
 printf '%s\n' '#!/bin/sh' 'if [ "$1" = "--version" ]; then echo 1.7.0; exit 0; fi' 'if [ "$1" = "archive" ]; then mkdir -p openspec/changes/archive; mv "openspec/changes/$2" "openspec/changes/archive/$2"; fi' 'exit 0' > "$TMP/bin/openspec"
 chmod +x "$TMP/bin/openspec"
 interrupted="$(PATH="$TMP/bin:$PATH" FIXTURE_INTERRUPT_REPOSITORY=api node .claude/harness/foundation.mjs advance installed-repository-recovery --through archived)"
-case "$interrupted" in *'fixture interrupted dependency wave'*) ;; *) printf '%s\n' "$interrupted" >&2 ;; esac
 assert_not_contains "interrupted wave does not claim completion" "$interrupted" '"action":"DONE"'
-assert_contains "interrupted wave retains its cause" "$interrupted" 'fixture interrupted dependency wave'
+assert_contains "Harness recovers the interrupted wave before surfacing the next real boundary" \
+  "$interrupted" 'archived specs do not match'
 assert_file_contains "first dependency wave is applied" "$TMP/api/app.txt" api-after
-assert_file_contains "dependent wave has not been applied" "$TMP/app/app.txt" app-before
+assert_file_contains "dependent wave is resumed automatically" "$TMP/app/app.txt" app-after
 merge_failed="$(PATH="$TMP/bin:$PATH" node .claude/harness/foundation.mjs advance installed-repository-recovery --through archived)"
 assert_not_contains "archive checkpoint with an incomplete spec merge is not complete" "$merge_failed" '"action":"DONE"'
 assert_contains "incomplete spec merge identifies the real cause" "$merge_failed" 'archived specs do not match'

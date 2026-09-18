@@ -63,21 +63,45 @@ const OPENSPEC_REQUIRED_MAJOR = 1;
 const OPENSPEC_TESTED_MINOR = 7;
 const OPENSPEC_PACKAGE = "@fission-ai/openspec@^1.7";
 
+export function landTransactionStarted(state) {
+  if (state?.workspace?.applied === true) return true;
+  if (state?.workspace?.apply?.transactionId) return true;
+  if (Object.values(state?.repositories || {}).some((runtime) =>
+    runtime?.delivery?.transactionId)) return true;
+  return [
+    "evidence-snapshotted", "code-applied", "archive-prepared",
+    "specs-archived", "archive-audited", "sandbox-cleaned"
+  ].includes(state?.land?.status);
+}
+
 export async function advanceLandOperation({
   loadRuntime, landCheck, archive, resumeLand, landPlanValue,
   selectedRepositories, prepareExecution = null
 }, id) {
   if (prepareExecution) await prepareExecution(id, { stage: "land" });
+  const converge = async () => {
+    try {
+      return await archive(id);
+    } catch (firstError) {
+      // Once a journaled Land transaction has begun, its recovery mechanics
+      // belong to the Harness. Re-enter the idempotent archive composition once
+      // so pending Apply rollback or archive finalization can settle without
+      // surfacing a low-level recovery command to the caller. A repeated error
+      // remains a truthful boundary for the outer convergence policy.
+      if (!landTransactionStarted(loadRuntime(id))) throw firstError;
+      return archive(id);
+    }
+  };
   const state = loadRuntime(id);
   const multiRepository = compositeRepositorySelection(selectedRepositories(id, state));
   if (!multiRepository) {
     const check = await landCheck(id);
-    const archived = await archive(id);
+    const archived = await converge();
     return archived || { status: "ARCHIVED", archived: true, check };
   }
   const currentPlan = landPlanValue(id);
   if (currentPlan.strategy === "workspace-uncommitted") {
-    const archived = await archive(id);
+    const archived = await converge();
     return archived || { status: "ARCHIVED", archived: true, plan: currentPlan };
   }
   const resumed = await resumeLand(id);
@@ -88,7 +112,7 @@ export async function advanceLandOperation({
   };
   const plan = landPlanValue(id);
   if (plan.readyToArchive) {
-    const archived = await archive(id);
+    const archived = await converge();
     return archived || { status: "ARCHIVED", archived: true, plan };
   }
   return {
@@ -609,7 +633,7 @@ export function createLandRuntime({
           row.actualModel || "unreported"} — ${row.reason}`).join("\n")}`);
   }
 
-  function reportLandReady(id, state, hash, externalOperations, multiRepository) {
+  function reportLandReady(id, state, hash, externalOperations) {
     const waived = (state.waivers || []).map((row) =>
       `${row.capability} (${row.authority?.reference || "user decision"})`);
     const rootBranch = targetBranch(root);
@@ -627,8 +651,7 @@ export function createLandRuntime({
       ? null : telemetry?.recoveryActions?.[0]?.command || null;
     console.log(`LAND READY ${id}\n  workspace: ${hash}${
       postLand.length ? `\n  declared post-Land obligation: ${postLand.join(", ")}` : ""}${
-      waived.length ? `\n  waived: ${waived.join(", ")}` : ""}${branchLine}\n  next: claude-foundation land ${
-      multiRepository ? "resume" : "archive"} ${id}${telemetry
+      waived.length ? `\n  waived: ${waived.join(", ")}` : ""}${branchLine}\n  next: /land ${id}${telemetry
         ? `\n  telemetry: ${telemetry.classification}${telemetryRecovery
           ? `; recovery: ${telemetryRecovery}` : ""}` : ""}`);
     return telemetry;
@@ -652,8 +675,7 @@ export function createLandRuntime({
     const externalOperations = handoffReadiness(id);
     assertLandOperationalGates(id, state, externalOperations);
     if (multiRepository) persistLandPreparation(id, state, proof, graph, hash);
-    const telemetry = reportLandReady(
-      id, state, hash, externalOperations, multiRepository);
+    const telemetry = reportLandReady(id, state, hash, externalOperations);
     return { archived: false, state, hash, externalOperations, telemetry };
   }
 
@@ -682,7 +704,7 @@ export function createLandRuntime({
     recoverPendingApply(id, loadRuntime(id), { resolution, decisionRef });
     const remaining = pendingApplyTransactions(id);
     console.log(`RECOVERED ${id}\n  settled: ${
-      pending.length - remaining.length}/${pending.length}\n  next: claude-foundation land check ${id}`);
+      pending.length - remaining.length}/${pending.length}\n  next: /land ${id}`);
   }
 
   function orderedRepositories(id, state = loadRuntime(id)) {

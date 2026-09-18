@@ -408,17 +408,18 @@ The complete delivery command is:
 claude-foundation advance <change> --through archived
 ```
 
-This explicit invocation supplies Land authority. Land checks proof freshness,
-binds a resumable grant to the exact change, proof, repository graph, and target
-roots, applies the proven isolated diff when necessary, verifies state identity,
-delegates semantic spec synchronization and archival to the pinned OpenSpec
-CLI, and finishes only at `archived`. `proven` is not completion.
+This explicit invocation supplies Land authority. Land has one user-visible
+goal: place the exact proven projection in the declared main workspace. The
+Harness binds a resumable grant to the exact change, proof, repository graph,
+and target roots, then owns checking, Apply, verification, semantic spec
+synchronization, archival, recovery, and cleanup as internal checkpoints. It
+finishes only at `archived`; `proven` is not completion.
 
-`land check` is read-only. Apply is a transaction over the target. An
-interrupted transaction remains pending until `land recover` settles it under a
-recorded decision. `restore-backup` restores and verifies the pre-apply state;
-`keep-current` preserves the target, marks the projection unapplied, and
-requires sandbox sync before Land resumes.
+Apply is a journaled transaction over the target. An interruption is recovered
+and resumed by the Harness through the same `/land` invocation. Restore,
+keep-current, journal, check, resume, and archive mechanics are not separate
+user operations. The user is asked only when divergent target content requires
+a semantic choice that the Harness cannot safely infer.
 
 The projection is confined to Git-tracked files plus paths declared in
 `tasks.md`. An untracked path no task names is neither evidence surface nor a
@@ -431,7 +432,7 @@ Each target finishes `applied-uncommitted`: its intended diff is visible for
 the user to inspect, while Git HEAD and index remain unchanged. Read-only
 repositories remain unchanged. Re-entering `/land` resumes the same grant and
 skips already verified nodes; it never requires the user to assemble a journal,
-grant, commit, or recovery command.
+grant, commit, recovery command, or archive command.
 
 Land never implies permission to commit, push, publish, deploy, or open a pull
 request. Those effects require separate explicit authority.

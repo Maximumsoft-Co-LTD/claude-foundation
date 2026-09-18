@@ -265,15 +265,17 @@ claude-foundation doctor --stage prove --change <change>
 | `sandbox create <change> --unattended --attestation <file>` | Verifies and consumes one trusted host attestation | Unattended Build only |
 | `sandbox create <change> --all` | Creates selected repository sandboxes or repairs missing bindings while preserving valid worktrees | Advanced multi-repo primitive and recovery behind `advance` |
 | `sandbox sync <change> [--resolve <path,path>]` | Synchronizes a revised agreement and reconciles a moved target: a worktree replays onto the new commit, a copy fast-forwards what it left alone; `--resolve` accepts a merged double-edit | When requirements change during Build, or the target moved (another change landed) |
-| `land check <change>` | Checks proof freshness and landing readiness | Before accepting the change |
-| `land record <change> ...` | Legacy compatibility: binds a commit for an already-active commit-oriented transaction | Diagnosing/resuming a legacy transaction only |
-| `land resume <change>` | Rechecks a resumable Land saga | Diagnostic primitive; normal recovery repeats `/land` |
-| `land archive <change>` | Applies, verifies, archives, and safely cleans up | Completing an accepted change |
 | `handoff status <change>` | Shows external operations and Land disposition | Checking work owned by DevOps/SRE/security |
 | `handoff list [--open] [--owner <team>] [--environment <env>] [--json]` | Lists operational obligations across active and archived changes | Finding post-Land work without knowing a change ID |
 | `handoff packet <change> [--id H00n]` | Emits one credential-free operator packet | Sending the exact operation to its named owner |
 | `handoff record <change> ...` | Records accepted/completed/rejected/cancelled/superseded outcomes with durable references | Updating operational state without reopening developer tasks |
 | `migrate [legacy-id] [--apply]` | Reads legacy `.workflow/` state and optionally creates migration candidates | Recovering an older installation without promoting unverified prose |
+
+`/land <change>` is the only user-facing Land operation. The registered
+`land check`, `land advance`, `land recover`, `land archive`, `land record`,
+`land resume`, `land plan`, and `land pointers` routes are internal compatibility
+or diagnostic primitives. The Harness invokes them through the convergent Land
+transaction; agents must not ask users to compose or run them.
 | `host instruction <command> --protocol 1 --format json --arguments <text>` | Resolves the package-owned command instruction | Host integration without reading consumer command files |
 | `host agent-contract --protocol 1 --format json` | Resolves the portable package-owned agent contract | Installing or refreshing a host adapter |
 

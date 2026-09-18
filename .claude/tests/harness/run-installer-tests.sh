@@ -242,14 +242,14 @@ assert_cmd_zero "command registry has one unique entry per public name" \
   "$TARGET/.claude/harness/commands.json"
 # The additional read-only surfaces are the resumable budget checkpoint and
 # aggregate handoff list; neither grants authority or widens continuation.
-assert_eq "agent command surface is bounded" "25" \
+assert_eq "agent command surface is bounded" "22" \
   "$(jq '[.commands[] | select(.audience == "agent")] | length' \
     "$TARGET/.claude/harness/commands.json")"
-# 28 includes the bounded proof controller, its internal execution commands,
+# 25 includes the bounded proof controller, its internal execution commands,
 # explicit authority dispatch/abort/configured-reviewer/reset routes,
 # consumer-quality reporting, and the operator-owned handoff record. Keep this
 # count intentional so a newly exposed recovery command cannot appear silently.
-assert_eq "conditional recovery surface is bounded" "28" \
+assert_eq "conditional recovery surface is bounded" "25" \
   "$(jq '[.commands[] | select(.audience == "conditional")] | length' \
     "$TARGET/.claude/harness/commands.json")"
 assert_cmd_zero "provider-running proof commands are not marked retry-safe" \

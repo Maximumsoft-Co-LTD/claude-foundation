@@ -343,9 +343,11 @@ Agent ใช้ `advance <change-id> --through proven`; คำสั่ง `proo
 /land <change-id>
 ```
 
-Land จะตรวจว่า proof ยัง fresh ตรวจ conflict ใน target apply เฉพาะ diff ที่
-prove แล้ว sync delta spec ที่ยอมรับ และ archive change ถ้า code, test, config,
-agreement หรือ target path ที่เกี่ยวข้องเปลี่ยนหลัง Prove ระบบจะหยุดแทนการเขียนทับ
+Land มีเป้าหมายที่ผู้ใช้เห็นเพียงอย่างเดียว: นำงานที่ prove แล้วเข้า main
+workspace ที่ประกาศไว้ Harness จะตรวจว่า proof ยัง fresh ตรวจ conflict ใน target
+และ apply เฉพาะ diff ที่ prove แล้ว จากนั้นจัดการ spec sync, archive, recovery
+และ cleanup เป็น automation ภายใน ถ้า code, test, config, agreement หรือ target
+path ที่เกี่ยวข้องเปลี่ยนหลัง Prove ระบบจะหยุดแทนการเขียนทับ
 ถ้า target branch แค่มี commit ใหม่ Agent จะ sync sandbox เดิม, Prove ใหม่ และ
 Land ต่อให้เอง งานไม่หายและไม่ต้องเปิด Change ใหม่ แต่ถ้า replay conflict จริง
 ระบบจะหยุดเพื่อให้คุณตัดสินใจ เปิดหลาย change พร้อมกันได้แม้แตะไฟล์เดียวกัน ไม่มี
@@ -355,8 +357,10 @@ change ไหนต้องรออีก change ระหว่าง Build, 
 ทำไมต้องมีขั้นนี้: การนำ code เข้า project กับการอัปเดต requirement ถาวรถูกผูก
 เป็น completion boundary เดียวที่มี guard และ resume ได้
 
-Agent ใช้ `advance <change-id> --through archived` งานจะเสร็จจริงเมื่อ state เป็น
-`archived` และ Land ยังไม่ได้ให้อำนาจ commit, push, publish หรือเปิด pull request
+Agent ใช้ `advance <change-id> --through archived` โดย `/land` เป็น Land operation
+เดียวที่ผู้ใช้ต้องเรียก checkpoint ภายในที่ถูกขัดจังหวะจะ resume เองโดยไม่ต้องสั่ง
+check, recovery หรือ archive เพิ่ม งานจะเสร็จจริงเมื่อ state เป็น `archived` และ
+Land ยังไม่ได้ให้อำนาจ commit, push, publish หรือเปิด pull request
 
 ### 5. เลือก Deliver เป็น pull request (ไม่บังคับ)
 

@@ -367,9 +367,11 @@ commands remain available for diagnostics and integrations.
 /land <change-id>
 ```
 
-Land verifies that proof is still fresh, checks for conflicting target edits,
-applies only the proven sandbox diff, synchronizes the accepted delta specs,
-and archives the change. If the code, tests, configuration, agreement, or
+Land has one visible goal: move the exact proven work into its declared main
+workspace. The Harness verifies that proof is still fresh, checks for conflicting
+target edits, applies only the proven sandbox diff, then performs spec sync,
+archive, recovery, and cleanup as internal automation. If the code, tests,
+configuration, agreement, or
 relevant target paths moved after Prove, Land stops instead of overwriting them.
 If the target branch simply advanced, the agent synchronizes the existing
 sandbox, re-proves it, and continues Land. Your work is preserved and you do
@@ -381,9 +383,10 @@ and re-proves. Only a shared resource declared with `[resources:]` serializes.
 Why this step exists: applying code and updating the durable requirements are
 one guarded, resumable completion boundary.
 
-The agent uses `advance <change-id> --through archived`. Land is complete only
-at `archived`; it still grants no authority to commit, push, publish, or open a
-pull request.
+The agent uses `advance <change-id> --through archived`. `/land` is the only
+user-facing Land operation; interrupted internal checkpoints resume without a
+manual check, recovery, or archive command. Land is complete only at `archived`;
+it still grants no authority to commit, push, publish, or open a pull request.
 
 ### 5. Optionally deliver a pull request
 

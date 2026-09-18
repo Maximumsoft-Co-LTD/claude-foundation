@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
-  advanceLandOperation, createLandRuntime
+  advanceLandOperation, createLandRuntime, landTransactionStarted
 } from "../runtime/workflow/land-runtime.mjs";
 
 const HASH = "workspacehash0000000000000000000000000000000000000000000000000000";
@@ -59,6 +59,47 @@ test("land advance handles single repositories and multi-repository resume state
   assert.deepEqual(calls.slice(-2), [
     ["plan", "local-saga"], ["archive", "local-saga"]
   ]);
+});
+
+test("land advance automatically re-enters an interrupted internal transaction", async () => {
+  let state = { status: "proven", repositories: {} };
+  let archiveCalls = 0;
+  const result = await advanceLandOperation({
+    loadRuntime: () => state,
+    selectedRepositories: () => [{ id: "root" }],
+    landCheck: () => ({ archived: false }),
+    landPlanValue: () => ({}),
+    resumeLand: () => null,
+    archive: () => {
+      archiveCalls += 1;
+      if (archiveCalls === 1) {
+        state = { ...state, workspace: { applied: true }, land: { status: "code-applied" } };
+        throw new Error("interrupted after Apply");
+      }
+      return { status: "ARCHIVED", archived: true };
+    }
+  }, "automatic-recovery");
+  assert.equal(archiveCalls, 2);
+  assert.equal(result.archived, true);
+});
+
+test("land automatic re-entry is limited to a started transaction", async () => {
+  let archiveCalls = 0;
+  await assert.rejects(() => advanceLandOperation({
+    loadRuntime: () => ({ status: "proven", repositories: {} }),
+    selectedRepositories: () => [{ id: "root" }],
+    landCheck: () => ({ archived: false }),
+    landPlanValue: () => ({}),
+    resumeLand: () => null,
+    archive: () => {
+      archiveCalls += 1;
+      throw new Error("readiness failed before mutation");
+    }
+  }, "pre-transaction-failure"), /readiness failed/);
+  assert.equal(archiveCalls, 1);
+  assert.equal(landTransactionStarted({ workspace: { applied: true } }), true);
+  assert.equal(landTransactionStarted({ land: { status: "archive-prepared" } }), true);
+  assert.equal(landTransactionStarted({ status: "proven" }), false);
 });
 
 test("land check phases preserve every refusal and ready route", () => {

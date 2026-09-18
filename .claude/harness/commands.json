@@ -172,7 +172,7 @@
     {
       "name": "land check",
       "usage": "land check <change>",
-      "audience": "agent",
+      "audience": "internal",
       "kind": "read",
       "idempotent": true,
       "description": "Validate that the proven projection remains landable."
@@ -180,7 +180,7 @@
     {
       "name": "land advance",
       "usage": "land advance <change>",
-      "audience": "agent",
+      "audience": "internal",
       "kind": "write",
       "idempotent": true,
       "description": "Advance the resumable Land saga and archive when every repository is ready."
@@ -220,7 +220,7 @@
     {
       "name": "land recover",
       "usage": "land recover <change> --decision-ref <ref> [--resolution keep-current|restore-backup]",
-      "audience": "conditional",
+      "audience": "internal",
       "kind": "authority",
       "idempotent": true,
       "description": "Settle an interrupted apply transaction after an explicit host-recorded user decision; manual recovery requires an explicit resolution."
@@ -228,7 +228,7 @@
     {
       "name": "land archive",
       "usage": "land archive <change>",
-      "audience": "agent",
+      "audience": "internal",
       "kind": "authority",
       "idempotent": true,
       "description": "Apply, synchronize, audit, archive, and clean up explicitly."
@@ -372,7 +372,7 @@
     {
       "name": "land record",
       "usage": "land record <change> --repo <id> --commit <sha> --decision-ref <ref> [--ci pass|fail|pending] [--ci-attestation <signed.json>] [--ci-required]",
-      "audience": "conditional",
+      "audience": "internal",
       "kind": "authority",
       "idempotent": true,
       "description": "Bind a child repository commit after an explicit host-recorded user decision."
@@ -380,7 +380,7 @@
     {
       "name": "land resume",
       "usage": "land resume <change>",
-      "audience": "conditional",
+      "audience": "internal",
       "kind": "write",
       "idempotent": true,
       "description": "Resume an interrupted or multi-repository Land saga."
