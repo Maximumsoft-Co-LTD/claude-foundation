@@ -151,6 +151,7 @@ verification planning|node --test "$ROOT/.claude/harness/tests/verification-plan
 change draft materialization|node --test "$ROOT/.claude/harness/tests/change-draft-materialization.test.mjs" "$ROOT/.claude/harness/tests/semantic-draft.test.mjs" "$ROOT/.claude/harness/tests/semantic-intake.test.mjs" "$ROOT/.claude/harness/tests/semantic-intake-state.test.mjs" "$ROOT/.claude/harness/tests/semantic-source-inventory.test.mjs" "$ROOT/.claude/harness/tests/semantic-intake-intelligence.test.mjs" "$ROOT/.claude/harness/tests/repository-intelligence.test.mjs" "$ROOT/.claude/harness/tests/investigation-runtime.test.mjs" "$ROOT/.claude/harness/tests/amendment-invalidation.test.mjs" "$ROOT/.claude/harness/tests/selective-proof-plan.test.mjs"
 reference governance|node --test "$HERE/harness/reference-governance.test.mjs"
 atomic change start|node --test "$ROOT/.claude/harness/tests/change-atomic-start.test.mjs"
+pre-build change revision|node --test "$ROOT/.claude/harness/tests/change-revise.test.mjs"
 land root pointers|node --test "$ROOT/.claude/harness/tests/land-root-pointers.test.mjs"
 telemetry phase context|node --test "$ROOT/.claude/harness/tests/telemetry-phase-context.test.mjs"
 adapter runtime|node --test "$HERE/harness/run-adapter-runtime-tests.mjs"

@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `change revise <change> <draft.json> [--inspect | --consume-draft]` edits an
+  agreed change that has not started Build in place instead of abandoning it
+  and rewriting the draft. The revised semantic draft keeps the change id,
+  passes the same intake gate as `change start`, recompiles the packet
+  transactionally, and restores the prior packet and runtime state byte-for-byte
+  on failure. It is refused once Build has a workspace, receipt, or completed
+  task, pointing to `change amend`. It shares the amendment lock and rechecks
+  the revision before the packet moves.
+- Semantic amendments accept `reviseRequirements` and `removeRequirements`.
+  A revision replaces the requirement's own spec block and claims in place,
+  needs an open task, and keeps its capability and operation. A removal needs a
+  `migration`, retires its claims from evidence, tasks, and provider bindings,
+  and cannot orphan a task. Only affected claims, tasks, and providers are
+  invalidated; removals are planned from the pre-amendment claims.
+- Revisions and amendments record the added/revised/removed requirement delta
+  until the next approval, fold unapproved deltas together, and
+  `change resolve --approve-spec` prints and clears the approved delta.
+
+### Fixed
+
+- A requirement block is identified by its exact scenario set, so requirements
+  that share a scenario name are never rewritten or removed by mistake; an
+  ambiguous match fails the amendment.
+
 ## [3.5.20] - 2026-09-18
 
 ### Fixed

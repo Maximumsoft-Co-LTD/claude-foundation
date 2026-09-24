@@ -16,7 +16,7 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 |---|---|
 | `investigate --template \| <record.json>` | ตรวจ fact และ hypothesis ที่ผูก source เก็บ resume state และสร้าง Change handoff |
 | `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect intake หรือ compile และเริ่ม semantic agreement หนึ่งชุดแบบ atomic |
-| `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake หรือขยาย agreement ระหว่าง Build แบบ transaction |
+| `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake หรือเพิ่ม แก้ หรือลบ requirement ระหว่าง Build แบบ transaction |
 | `advance <change> --through build\|proven\|archived` | รัน deterministic lifecycle แล้วคืนหนึ่งในหก action ที่ boundary จริง |
 | `deliver advance <change>` | หลังสั่ง `/deliver` อย่างชัดเจน ให้ harness ทำ isolated commit, push feature branch, เปิด/ใช้ PR เดิม, ตรวจผ่าน provider และคืน URL |
 | `changes` | อ่าน active state และ route ถัดไป |
@@ -69,7 +69,8 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 | `investigate --template \| <record.json>` | พิมพ์หรือตรวจ investigation record แล้วคืน typed action หนึ่งรายการ |
 | `change new <intent> [--rapid]` | Compatible primitive สำหรับเขียน agreement ด้วยมือ |
 | `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect intake หรือ compile agreement จาก semantic draft ที่ผ่านการตรวจ โดยพื้นที่แยกจะสร้างภายหลังใน Build |
-| `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake หรือเพิ่ม semantic requirement แบบ transaction และรักษางานที่เสร็จแล้ว |
+| `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake หรือเพิ่ม แก้ หรือลบ semantic requirement แบบ transaction และรักษางานที่เสร็จแล้ว |
+| `change revise <change> <draft.json> [--inspect] [--consume-draft]` | ก่อน Build คอมไพล์ semantic draft ฉบับแก้ทับ change id เดิมพร้อม rollback และแสดง requirement delta เพื่อขอ approve ใหม่ |
 | `change resolve <change> …` | บันทึกการตัดสินใจเรื่อง impact coupling security และ review |
 | `change validate <change>` | ตรวจ change และ evidence contract ที่รันได้ |
 | `sandbox create <change> [--all]` | สร้างพื้นที่ Build ที่แยกออกมา |

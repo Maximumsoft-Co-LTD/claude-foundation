@@ -24,7 +24,9 @@ approved agreement before product mutation:
   semantic amendment and follow its harness-owned approval and resume route
   before editing product code. This includes UI, interaction, filter/search,
   validation, accessibility, API, data, permission, performance, integration,
-  external-effect, compatibility, and rollout semantics.
+  external-effect, compatibility, and rollout semantics. Revise or remove an
+  existing requirement through that amendment; never abandon and rewrite the
+  change merely to edit it.
 - If materially different interpretations remain, ask only for that unresolved
   product decision. Do not ask the user to write specs, tasks, amendment JSON,
   commands, tests, or recovery steps.

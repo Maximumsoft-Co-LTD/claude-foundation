@@ -412,4 +412,108 @@ assert_contains "fresh installed runtime resumes completed Land idempotently" "$
 assert_eq "repeated archive preserves target HEAD" "$head_before" "$(git rev-parse HEAD)"
 assert_eq "repeated archive preserves target index" "$index_before" "$(git ls-files --stage | shasum)"
 
+# A pre-Build revision recompiles the agreed packet under the same id through
+# the public intake gate, reports its approval delta, and is refused after Build.
+setup_project revise-before-build
+node .claude/harness/foundation.mjs start --template > draft.json
+node -e '
+  const { readFileSync, writeFileSync } = require("fs");
+  const d = JSON.parse(readFileSync("draft.json", "utf8"));
+  d.id = "revise-before-build";
+  d.intent = "Revise before build";
+  d.requirements = [{ key: "greeting-updated", capability: "application",
+    operation: "added", scenario: "the change is built", outcome: "write v2 to app.txt" }];
+  d.tasks = [{ key: "update-app", outcome: "Update app.txt", paths: ["app.txt"],
+    verify: "sh run-test.sh test-results/report.json", covers: ["greeting-updated"] }];
+  d.evidence = { "greeting-updated": { capabilities: ["test"] } };
+  d.discovery.coverage = d.discovery.coverage.map((row) => ({
+    dimension: row.dimension, status: "covered", covers: ["greeting-updated"] }));
+  writeFileSync("draft.json", JSON.stringify(d, null, 2));'
+acknowledge_intake() {
+  node .claude/harness/foundation.mjs "$@" --inspect > .foundation/intake-inspect.json
+  SOURCE_DIGEST="$(node -p 'require("./.foundation/intake-inspect.json").intakeState.sourceDigest')" node -e '
+    const { readFileSync, writeFileSync } = require("fs");
+    const inspected = JSON.parse(readFileSync(".foundation/intake-inspect.json", "utf8"));
+    const d = JSON.parse(readFileSync("draft.json", "utf8"));
+    const keys = d.requirements.map((row) => row.key);
+    d.discovery.coverage = inspected.intelligence.depth.requiredDimensions.map(
+      (dimension) => ({ dimension, status: "covered", covers: keys }));
+    d.discovery.sourceDigest = process.env.SOURCE_DIGEST;
+    writeFileSync("draft.json", JSON.stringify(d, null, 2));'
+  node .claude/harness/foundation.mjs "$@" --inspect > .foundation/intake-inspect.json
+  node -e 'if (require("./.foundation/intake-inspect.json").action !== "DONE") process.exit(1)'
+}
+mkdir -p .foundation
+acknowledge_intake start draft.json
+node .claude/harness/foundation.mjs start draft.json > start.log 2>&1
+node -e '
+  const { readFileSync, writeFileSync } = require("fs");
+  const d = JSON.parse(readFileSync("draft.json", "utf8"));
+  d.requirements[0].outcome = "write v3 to app.txt";
+  d.requirements.push({ key: "greeting-logged", capability: "application",
+    operation: "added", scenario: "the greeting is written", outcome: "log the greeting" });
+  d.tasks[0].covers.push("greeting-logged");
+  d.evidence["greeting-logged"] = { capabilities: ["test"] };
+  writeFileSync("draft.json", JSON.stringify(d, null, 2));'
+unacknowledged="$({ node .claude/harness/foundation.mjs revise revise-before-build draft.json; } 2>&1 || true)"
+assert_contains "revision requires its own completed intake" "$unacknowledged" \
+  "claude-foundation change revise revise-before-build draft.json --inspect"
+acknowledge_intake revise revise-before-build draft.json
+revised="$(node .claude/harness/foundation.mjs revise revise-before-build draft.json --consume-draft)"
+assert_contains "revision keeps the change id" "$revised" "REVISED revise-before-build"
+assert_contains "revision reports the added requirement" "$revised" "added: greeting-logged"
+assert_contains "revision reports the revised requirement" "$revised" "revised: greeting-updated"
+assert_file_contains "revised packet carries the new outcome" \
+  openspec/changes/revise-before-build/proposal.md "v3"
+assert_eq "revision increments the contract revision" 1 \
+  "$(node -p 'require("./.foundation/runtime/revise-before-build.json").contractRevision')"
+assert_file_absent "revision consumes its draft" draft.json
+approved="$(node .claude/harness/foundation.mjs resolve revise-before-build --approve-spec \
+  --decision-ref fixture://user/revised-spec)"
+assert_contains "approval records the revised agreement" "$approved" "DECISION RECORDED"
+node .claude/harness/foundation.mjs advance revise-before-build --through build > build.log 2>&1 || true
+printf '{"version":4}\n' > late.json
+late="$({ node .claude/harness/foundation.mjs revise revise-before-build late.json; } 2>&1 || true)"
+assert_contains "revision after Build routes to amendment" "$late" \
+  "claude-foundation change amend revise-before-build"
+
+# During Build the same change revises and removes requirements through one
+# v4 amendment instead of being abandoned and rewritten.
+node -e '
+  const { writeFileSync } = require("fs");
+  writeFileSync("draft.json", JSON.stringify({ version: 1,
+    reason: "Measured behavior changed the greeting and dropped logging",
+    reviseRequirements: [{ key: "greeting-updated", capability: "application",
+      operation: "added", scenario: "the change is built", outcome: "write v4 to app.txt" }],
+    removeRequirements: [{ key: "greeting-logged", migration: "Logging moves to a successor change" }],
+    evidence: { "greeting-updated": { capabilities: ["test"] } },
+    discovery: { coverage: [], decisions: [] } }, null, 2));'
+node .claude/harness/foundation.mjs amend revise-before-build draft.json --inspect \
+  > .foundation/intake-inspect.json
+SOURCE_DIGEST="$(node -p 'require("./.foundation/intake-inspect.json").intakeState.sourceDigest')" node -e '
+  const { readFileSync, writeFileSync } = require("fs");
+  const inspected = JSON.parse(readFileSync(".foundation/intake-inspect.json", "utf8"));
+  const a = JSON.parse(readFileSync("draft.json", "utf8"));
+  a.discovery.coverage = inspected.intelligence.depth.requiredDimensions.map(
+    (dimension) => ({ dimension, status: "covered", covers: ["greeting-updated"] }));
+  a.discovery.sourceDigest = process.env.SOURCE_DIGEST;
+  writeFileSync("draft.json", JSON.stringify(a, null, 2));'
+node .claude/harness/foundation.mjs amend revise-before-build draft.json --inspect \
+  > .foundation/intake-inspect.json
+assert_contains "revise/remove amendment reaches the DONE gate" \
+  "$(cat .foundation/intake-inspect.json)" '"action": "DONE"'
+amended_revision="$(node .claude/harness/foundation.mjs amend revise-before-build draft.json \
+  --consume-amendment)"
+assert_contains "amendment revises the existing requirement" "$amended_revision" \
+  "invalidated claims: greeting-updated"
+assert_contains "amendment reports the removed claim" "$amended_revision" \
+  "greeting-logged (removed)"
+revise_ws="$(node -p 'require("./.foundation/runtime/revise-before-build.json").workspace.path')"
+assert_file_not_contains "removed requirement leaves the amended contract" \
+  "$revise_ws/openspec/changes/revise-before-build/evidence.yaml" "greeting-logged"
+assert_file_contains "revised requirement keeps its claim" \
+  "$revise_ws/openspec/changes/revise-before-build/evidence.yaml" "greeting-updated"
+assert_file_contains "removal records its migration in the proposal" \
+  "$revise_ws/openspec/changes/revise-before-build/proposal.md" "Logging moves to a successor change"
+
 finish "proof loop"

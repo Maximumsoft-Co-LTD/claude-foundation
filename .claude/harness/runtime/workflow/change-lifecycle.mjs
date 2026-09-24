@@ -1,7 +1,7 @@
 import { agreementIdentity, REVIEW_WINDOW_MS } from "../core/user-decisions.mjs";
 import { createHash } from "node:crypto";
 import {
-  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync,
+  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync,
   realpathSync, statSync, writeFileSync
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -85,6 +85,106 @@ export function atomicStartPreflight(draft, { groundingRequired = false } = {}) 
   if (!rapid && !Array.isArray(draft?.decisions))
     issues.push("standard start draft requires decisions to be an array; use [] when no durable decision qualifies");
   return { issues, classification: { impact, coupling, securityTriggers: safeTriggers }, rapid };
+}
+
+function specRequirementBlocks(specTexts) {
+  const blocks = [];
+  for (const text of specTexts) {
+    let current = null;
+    for (const line of String(text || "").split("\n")) {
+      if (/^###\s+Requirement:/.test(line)) {
+        current = { lines: [line], scenarios: new Set() };
+        blocks.push(current);
+        continue;
+      }
+      if (/^##\s/.test(line) || /^###\s/.test(line)) { current = null; continue; }
+      if (!current) continue;
+      current.lines.push(line);
+      const scenario = line.match(/^####\s+Scenario:\s*(.+?)\s*$/);
+      if (scenario) current.scenarios.add(scenario[1]);
+    }
+  }
+  return blocks.map((block) => ({
+    text: block.lines.join("\n").trim(), scenarios: block.scenarios
+  }));
+}
+
+/**
+ * Fingerprint each semantic requirement of a compiled packet by its claims and
+ * the spec block that carries those claims' scenarios. Keys come from
+ * `claim.requirementKey`, so legacy claims without one are not tracked.
+ */
+export function requirementFingerprints({ claims = [], specTexts = [] } = {}) {
+  const blocks = specRequirementBlocks(specTexts);
+  const byKey = new Map();
+  for (const claim of claims) {
+    const key = String(claim?.requirementKey || "").trim();
+    if (!key) continue;
+    byKey.set(key, [...(byKey.get(key) || []), claim]);
+  }
+  const fingerprints = {};
+  for (const [key, rows] of byKey) {
+    const scenarios = new Set(rows.map((claim) => claim.scenario).filter(Boolean));
+    const text = blocks.filter((block) =>
+      [...scenarios].some((name) => block.scenarios.has(name))).map((block) => block.text);
+    const ordered = [...rows].sort((left, right) => String(left.id).localeCompare(String(right.id)));
+    fingerprints[key] = createHash("sha256")
+      .update(JSON.stringify({ claims: ordered, text })).digest("hex");
+  }
+  return fingerprints;
+}
+
+/**
+ * Fingerprint each semantic requirement from its authored draft row and
+ * evidence entry, so outcome-only edits are visible even in spec-less packets.
+ */
+export function draftRequirementFingerprints(draft) {
+  const fingerprints = {};
+  for (const row of Array.isArray(draft?.requirements) ? draft.requirements : []) {
+    const key = String(row?.key || "").trim();
+    if (!key) continue;
+    fingerprints[key] = createHash("sha256")
+      .update(JSON.stringify({ requirement: row, evidence: draft.evidence?.[key] ?? null }))
+      .digest("hex");
+  }
+  return fingerprints;
+}
+
+export function requirementDelta(before = {}, after = {}) {
+  const keys = (object) => Object.keys(object).sort();
+  return {
+    added: keys(after).filter((key) => !(key in before)),
+    revised: keys(after).filter((key) => key in before && before[key] !== after[key]),
+    removed: keys(before).filter((key) => !(key in after))
+  };
+}
+
+/**
+ * Fold a new revision delta into the unapproved one so a single approval covers
+ * every change since the last approved agreement.
+ */
+export function mergeApprovalDelta(prior, next) {
+  const added = new Set(prior?.added || []);
+  const revised = new Set(prior?.revised || []);
+  const removed = new Set(prior?.removed || []);
+  for (const key of next.added || []) {
+    if (removed.delete(key)) revised.add(key);
+    else added.add(key);
+  }
+  for (const key of next.revised || [])
+    if (!added.has(key)) revised.add(key);
+  for (const key of next.removed || []) {
+    revised.delete(key);
+    if (!added.delete(key)) removed.add(key);
+  }
+  const sorted = (set) => [...set].sort();
+  return { added: sorted(added), revised: sorted(revised), removed: sorted(removed) };
+}
+
+export function formatApprovalDelta(delta) {
+  const list = (values) => values?.length ? values.join(", ") : "none";
+  return `  added: ${list(delta.added)}\n  revised: ${list(delta.revised)}\n` +
+    `  removed: ${list(delta.removed)}`;
 }
 
 export function priorChangeResidue(root, id) {
@@ -451,20 +551,22 @@ export function createChangeLifecycle({
     });
   }
 
-  function assertAmendmentRevision(id, expected) {
+  function assertAmendmentRevision(id, expected, label = "change amendment") {
     if (amendmentRevision(loadRuntime(id)) !== expected)
-      fail(`change amendment for '${id}' conflicted with a newer change revision; ` +
+      fail(`${label} for '${id}' conflicted with a newer change revision; ` +
         "reload the active agreement and retry");
   }
 
-  function withAmendmentLock(id, observedRevision, operation) {
+  // Amend and revise share one per-change lock so neither can replace the
+  // packet or runtime state while the other is mid-transaction.
+  function withAmendmentLock(id, observedRevision, operation, label = "change amendment") {
     const lock = acquireProcessLock(
       join(root, ".foundation", "locks", `amend-${id}.lock`), { now });
     if (!lock.acquired)
-      fail(`change amendment for '${id}' is already in progress; ` +
+      fail(`${label} for '${id}' is already in progress; ` +
         "reload the active agreement and retry");
     try {
-      assertAmendmentRevision(id, observedRevision);
+      assertAmendmentRevision(id, observedRevision, label);
       return operation();
     } finally {
       lock.release();
@@ -997,7 +1099,8 @@ export function createChangeLifecycle({
       coupling: amendment.coupling || "isolated",
       size: amendment.size,
       changeSize: amendment.changeSize,
-      requirements: amendment.addRequirements || [],
+      requirements: [...(amendment.addRequirements || []),
+        ...(amendment.reviseRequirements || [])],
       integrations: amendment.integrations || [],
       externalOperations: amendment.externalOperations || [],
       securityTriggers: amendment.securityTriggers || [],
@@ -1201,6 +1304,7 @@ export function createChangeLifecycle({
         fail("Record one user decision at a time, separately from agreement edits");
       const state = loadRuntime(id);
       if (state.status === "archived") fail(`change '${id}' is already archived`);
+      let approvedDelta = null;
       if (flags["approve-spec"]) {
         validate(id, "root", { quiet: true });
         const current = loadRuntime(id);
@@ -1209,6 +1313,8 @@ export function createChangeLifecycle({
           ? current.workspace.path : root;
         current.specApproval = { required: true, identity: agreementIdentity(approvalRoot, id),
           revision: Number(current.contractRevision || 0), decisionRef, approvedAt: now() };
+        approvedDelta = current.pendingApprovalDelta || null;
+        delete current.pendingApprovalDelta;
         saveRuntime(current);
       } else {
         if (!state.reviewWindow) fail("No review window has started for this change");
@@ -1217,7 +1323,9 @@ export function createChangeLifecycle({
         state.reviewWindow = { startedAt, deadline: new Date(Date.parse(startedAt) + REVIEW_WINDOW_MS).toISOString(), decisionRef };
         saveRuntime(state);
       }
-      console.log(`DECISION RECORDED ${id}\n  next: claude-foundation advance ${id} --through ${flags["approve-spec"] ? "build" : "proven"}`);
+      console.log(`DECISION RECORDED ${id}\n` +
+        (approvedDelta ? `  approved requirement delta:\n${formatApprovalDelta(approvedDelta)}\n` : "") +
+        `  next: claude-foundation advance ${id} --through ${flags["approve-spec"] ? "build" : "proven"}`);
       return;
     }
     const state = loadRuntime(id);
@@ -1254,46 +1362,43 @@ export function createChangeLifecycle({
     };
   }
 
-  function startAtomic(draftPath, options = {}) {
-    const source = draftSource(draftPath);
-    let completedIntakeEffectiveness = null;
-    if (source.version === 4) {
-      const statePath = semanticIntakeStatePath(draftPath);
-      const resume = `claude-foundation change start ${draftPath} --inspect`;
-      let intakeState = null;
-      if (existsSync(statePath)) {
-        try { intakeState = JSON.parse(readFileSync(statePath, "utf8")); }
-        catch { intakeState = null; }
-      }
-      if (!intakeState) {
-        const inspected = inspectDraft(draftPath, {
-          quiet: true,
-          preparedSource: source
-        });
-        if (inspected.action !== "DONE")
-          fail(`version-4 drafts require a current completed semantic intake; ` +
-            `resume with '${resume}'`);
-        completedIntakeEffectiveness = inspected.effectiveness || null;
-      } else {
-        const sourcePath = relative(root, resolve(root, draftPath)).replaceAll("\\", "/");
-        const intelligence = repositoryIntelligence(source, [sourcePath]);
-        const sourceInspection = intelligence.repository.status === "ready"
-          ? semanticSourceInspection(source, null, intelligence.selected)
-          : inspectSemanticSources({ projectRoot: root, sourcePaths: [] });
-        const projection = semanticIntakeResumeProjection(intakeState, source, {
-          resumeRoute: resume, sourceInventory: sourceInspection.inventory
-        });
-        const investigationIssues = source.investigation === undefined ? []
-          : validateInvestigationBinding({ projectRoot: root, binding: source.investigation, git });
-        if (intelligence.repository.status !== "ready" || sourceInspection.findings.length ||
-            investigationIssues.length ||
-            source.discovery?.sourceDigest !== sourceInspection.inventory.digest ||
-            projection.status !== "current" || projection.action?.action !== "DONE")
-          fail(`version-4 drafts require a current completed semantic intake; ` +
-            `resume with '${resume}'`);
-        completedIntakeEffectiveness = intakeState.effectiveness || null;
-      }
+  // Draft v4 compilation requires the semantic intake snapshot for the same
+  // draft path to be current and DONE. Start and revise share this gate; only
+  // their snapshot namespace and resume route differ.
+  function completedDraftIntake(source, draftPath, { statePath, resume, inspect }) {
+    if (source.version !== 4) return null;
+    let intakeState = null;
+    if (existsSync(statePath)) {
+      try { intakeState = JSON.parse(readFileSync(statePath, "utf8")); }
+      catch { intakeState = null; }
     }
+    if (!intakeState) {
+      const inspected = inspect();
+      if (inspected.action !== "DONE")
+        fail(`version-4 drafts require a current completed semantic intake; ` +
+          `resume with '${resume}'`);
+      return inspected.effectiveness || null;
+    }
+    const sourcePath = relative(root, resolve(root, draftPath)).replaceAll("\\", "/");
+    const intelligence = repositoryIntelligence(source, [sourcePath]);
+    const sourceInspection = intelligence.repository.status === "ready"
+      ? semanticSourceInspection(source, null, intelligence.selected)
+      : inspectSemanticSources({ projectRoot: root, sourcePaths: [] });
+    const projection = semanticIntakeResumeProjection(intakeState, source, {
+      resumeRoute: resume, sourceInventory: sourceInspection.inventory
+    });
+    const investigationIssues = source.investigation === undefined ? []
+      : validateInvestigationBinding({ projectRoot: root, binding: source.investigation, git });
+    if (intelligence.repository.status !== "ready" || sourceInspection.findings.length ||
+        investigationIssues.length ||
+        source.discovery?.sourceDigest !== sourceInspection.inventory.digest ||
+        projection.status !== "current" || projection.action?.action !== "DONE")
+      fail(`version-4 drafts require a current completed semantic intake; ` +
+        `resume with '${resume}'`);
+    return intakeState.effectiveness || null;
+  }
+
+  function preflightDraft(draftPath, source) {
     const draft = measureStage("change.load-draft", () =>
       loadDraft(draftPath, { deferPolicy: true, preparedSource: source }));
     const preflight = measureStage("change.preflight", () => atomicStartPreflight(draft, {
@@ -1303,7 +1408,17 @@ export function createChangeLifecycle({
     if (preflight.issues.length)
       fail(`start draft preflight failed:\n  - ${preflight.issues.join("\n  - ")}`);
     const { classification, rapid } = preflight;
-    const resolutionFlags = startResolutionFlags(draft, classification, rapid);
+    return { draft, rapid, resolutionFlags: startResolutionFlags(draft, classification, rapid) };
+  }
+
+  function startAtomic(draftPath, options = {}) {
+    const source = draftSource(draftPath);
+    const completedIntakeEffectiveness = completedDraftIntake(source, draftPath, {
+      statePath: semanticIntakeStatePath(draftPath),
+      resume: `claude-foundation change start ${draftPath} --inspect`,
+      inspect: () => inspectDraft(draftPath, { quiet: true, preparedSource: source })
+    });
+    const { draft, rapid, resolutionFlags } = preflightDraft(draftPath, source);
     const id = slugify(draft.id || draft.intent);
     assertChangeAvailable(id);
     try {
@@ -1324,6 +1439,8 @@ export function createChangeLifecycle({
         bindClaudeSession(id, "change");
         const pending = loadRuntime(id);
         pending.specApproval = { required: true };
+        if ([3, 4].includes(draft._semanticVersion))
+          pending.requirementFingerprints = draftRequirementFingerprints(draft);
         if (completedIntakeEffectiveness)
           pending.semanticIntakeEffectiveness = completedIntakeEffectiveness;
         saveRuntime(pending);
@@ -1354,6 +1471,184 @@ export function createChangeLifecycle({
       console.error(`WARNING: atomic start succeeded but could not remove semantic intake state: ${
         error.message}`);
     }
+  }
+
+  function packetFingerprints(dir) {
+    const evidencePath = join(dir, "evidence.yaml");
+    const claims = existsSync(evidencePath) ? readJson(evidencePath).claims || [] : [];
+    const specsDir = join(dir, "specs");
+    const specTexts = existsSync(specsDir)
+      ? readdirSync(specsDir, { withFileTypes: true }).filter((entry) => entry.isDirectory())
+        .map((entry) => join(specsDir, entry.name, "spec.md"))
+        .filter((path) => existsSync(path)).sort()
+        .map((path) => readFileSync(path, "utf8"))
+      : [];
+    return requirementFingerprints({ claims, specTexts });
+  }
+
+  function recordApprovalDelta(state, delta) {
+    state.pendingApprovalDelta = {
+      ...mergeApprovalDelta(state.pendingApprovalDelta, delta),
+      revision: Number(state.contractRevision || 0)
+    };
+    return state.pendingApprovalDelta;
+  }
+
+  function revisionRuntimePath(id) {
+    return join(root, ".foundation", "runtime", `${id}.json`);
+  }
+
+  // A pre-Build revision replaces the whole compiled packet, so it is limited
+  // to changes whose agreement has not produced any Build or Prove result.
+  function assertRevisable(id) {
+    // Archive moves the packet but keeps runtime state, so status is checked
+    // first to return the successor-change route rather than "not found".
+    if (!existsSync(revisionRuntimePath(id)))
+      fail(`change revise requires an existing active change; '${id}' was not found`);
+    const state = loadRuntime(id);
+    if (["proven", "landing", "archived"].includes(state.status))
+      fail(`change revise cannot rewrite an agreement in '${state.status}' status; ` +
+        "start a successor change");
+    if (!existsSync(changePath(id)))
+      fail(`change revise requires an existing active change; '${id}' was not found`);
+    if (![3, 4].includes(state.semanticDraftVersion))
+      fail(`change revise requires a semantic-draft v3 or v4 change; '${id}' is a legacy agreement`);
+    const amend = `claude-foundation change amend ${id} <amendment.json> --inspect`;
+    const receipts = join(root, ".foundation", "receipts", id);
+    const built = (state.workspace && (state.workspace.mode !== "current" ||
+        resolve(state.workspace.path || root) !== resolve(root))) ||
+      (existsSync(receipts) && readdirSync(receipts).length > 0) ||
+      /^\s*-\s*\[[xX]\]/m.test(readFileSync(join(changePath(id), "tasks.md"), "utf8"));
+    if (built)
+      fail(`change revise is only available before Build; '${id}' has Build or proof state. ` +
+        `Use '${amend}' instead`);
+    return state;
+  }
+
+  function revisionSource(id, draftPath) {
+    const source = draftSource(draftPath);
+    if (source.id !== undefined && slugify(source.id) !== id)
+      fail(`change revise draft id '${source.id}' does not match change '${id}'`);
+    return { ...source, id };
+  }
+
+  function revisionIntakeOptions(id, draftPath, source) {
+    const resume = `claude-foundation change revise ${id} ${draftPath} --inspect`;
+    return {
+      statePath: semanticIntakeStatePath(draftPath, `revise:${id}`),
+      resume,
+      inspect: () => inspectRevision(id, draftPath, { quiet: true, preparedSource: source })
+    };
+  }
+
+  function inspectRevision(id, draftPath, options = {}) {
+    assertRevisable(id);
+    const source = options.preparedSource || revisionSource(id, draftPath);
+    if (source.version !== 4)
+      fail(`change revise --inspect requires a semantic-draft v4 draft; got version ${source.version}`);
+    const { statePath, resume } = revisionIntakeOptions(id, draftPath, source);
+    return inspectSemanticIntakeSource(source, {
+      statePath, resume, quiet: options.quiet,
+      excludedSourcePath: relative(root, resolve(root, draftPath)).replaceAll("\\", "/")
+    });
+  }
+
+  function reviseChange(id, draftPath, options = {}) {
+    const observedRevision = amendmentRevision(assertRevisable(id));
+    return withAmendmentLock(id, observedRevision,
+      () => reviseChangeUnlocked(id, draftPath, options, observedRevision), "change revision");
+  }
+
+  function reviseChangeUnlocked(id, draftPath, options, expectedRevision) {
+    const prior = assertRevisable(id);
+    setOperationChangeId(id);
+    const source = revisionSource(id, draftPath);
+    const intake = revisionIntakeOptions(id, draftPath, source);
+    const completedIntakeEffectiveness = completedDraftIntake(source, draftPath, intake);
+    const { draft, rapid, resolutionFlags } = preflightDraft(draftPath, source);
+
+    // Build does not take this lock, so recheck that no workspace, receipt, or
+    // revision appeared during intake and compilation before anything moves.
+    assertAmendmentRevision(id, expectedRevision, "change revision");
+    assertRevisable(id);
+    const basePath = changePath(id);
+    const runtimeFile = revisionRuntimePath(id);
+    // Changes compiled before draft fingerprints existed compare both sides
+    // from their packets so one method never marks every requirement revised.
+    const storedBefore = prior.requirementFingerprints;
+    const before = storedBefore || packetFingerprints(basePath);
+    const priorRuntime = readFileSync(runtimeFile);
+    const transactionRoot = mkdtempSync(join(dirname(basePath), `.${id}-revise-`));
+    const priorPath = join(transactionRoot, "prior");
+    let moved = false;
+    let delta;
+    try {
+      renameSync(basePath, priorPath);
+      moved = true;
+      trapFailures(() => {
+        createChange(draft.intent, { rapid, id }, draft, {
+          availabilityChecked: true, deferSessionBinding: true
+        });
+        const resolution = resolveChange(id, resolutionFlags);
+        if (resolution.upgraded) materializeDraft(id, draft);
+        validate(id, "root");
+        bindClaudeSession(id, "change");
+        const next = loadRuntime(id);
+        next.revision = Number(prior.revision || 0) + 1;
+        next.contractRevision = Number(prior.contractRevision || 0) + 1;
+        next.executionRevision = Number(prior.executionRevision || 0) + 1;
+        next.createdAt = prior.createdAt || next.createdAt;
+        if (prior.budget) next.budget = prior.budget;
+        next.specApproval = { required: true };
+        if (completedIntakeEffectiveness)
+          next.semanticIntakeEffectiveness = completedIntakeEffectiveness;
+        const draftFingerprints = draftRequirementFingerprints(draft);
+        delta = requirementDelta(before,
+          storedBefore ? draftFingerprints : packetFingerprints(basePath));
+        next.requirementFingerprints = draftFingerprints;
+        if (prior.pendingApprovalDelta) next.pendingApprovalDelta = prior.pendingApprovalDelta;
+        recordApprovalDelta(next, delta);
+        next.revisions = [...(prior.revisions || []), {
+          version: 1, revision: next.contractRevision, kind: "pre-build-revision",
+          delta, appliedAt: now()
+        }];
+        saveRuntime(next);
+      });
+    } catch (error) {
+      const issues = [];
+      try {
+        if (moved) {
+          rmSync(basePath, { recursive: true, force: true });
+          renameSync(priorPath, basePath);
+        }
+        writeFileSync(runtimeFile, priorRuntime);
+      } catch (restoreError) {
+        issues.push(`restore failed: ${restoreError.message || restoreError}; ` +
+          `prior packet retained at ${relative(root, priorPath)}`);
+      }
+      if (!issues.length) rmSync(transactionRoot, { recursive: true, force: true });
+      fail(`${error?.message || error}; ${issues.length
+        ? issues.join("; ") : "change revision rolled back"}`);
+    }
+    rmSync(transactionRoot, { recursive: true, force: true });
+    if (options.consumeDraft) {
+      try { rmSync(resolve(root, draftPath)); }
+      catch (error) {
+        console.error(`WARNING: revision succeeded but could not remove draft '${
+          draftPath}': ${error.message}`);
+      }
+    }
+    try { rmSync(intake.statePath, { force: true }); }
+    catch (error) {
+      console.error(`WARNING: revision succeeded but could not remove semantic intake state: ${
+        error.message}`);
+    }
+    const state = loadRuntime(id);
+    console.log(`REVISED ${id}\n  revision: ${state.contractRevision}\n` +
+      `  requirement delta awaiting approval:\n${formatApprovalDelta(state.pendingApprovalDelta)}\n` +
+      `  inspect: openspec/changes/${id}/\n` +
+      `  next: claude-foundation change resolve ${id} --approve-spec --decision-ref <user-decision>`);
+    return delta;
   }
 
   function amendChangeUnlocked(id, amendmentPath, options, state, expectedRevision) {
@@ -1395,7 +1690,11 @@ export function createChangeLifecycle({
     const tasksContent = readFileSync(join(basePath, "tasks.md"), "utf8");
     const compiled = compileSemanticAmendment({
       amendment, contract, tasksContent, slugify, renderTask: renderDraftTask,
-      semanticDraftVersion: state.semanticDraftVersion
+      semanticDraftVersion: state.semanticDraftVersion,
+      loadCanonicalSpec: (capability) => {
+        const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
+        return existsSync(path) ? readFileSync(path, "utf8") : null;
+      }
     });
     if (compiled.issues.length)
       fail(`semantic amendment validation failed:\n  - ${compiled.issues.join("\n  - ")}`);
@@ -1413,7 +1712,8 @@ export function createChangeLifecycle({
     }
     const providers = Object.fromEntries([...providerEntries].map(([name, config]) => [name, {
         capability: config.capability || name,
-        ...(Array.isArray(config.claims) ? { claims: config.claims } : {}),
+        ...(Array.isArray(config.claims) ? { claims: config.claims.filter((claim) =>
+          !compiled.removedClaimIds.includes(claim)) } : {}),
         ...(Array.isArray(config.dependsOn) ? { dependsOn: config.dependsOn } : {})
       }]
     ));
@@ -1422,9 +1722,12 @@ export function createChangeLifecycle({
       tasks: taskBlocks(compiled.tasksContent).map(taskMetadata),
       providers,
       coverageDelta: {
-        addedClaimIds: compiled.invalidatedClaims,
+        addedClaimIds: compiled.addedClaimIds,
+        changedClaimIds: compiled.changedClaimIds,
+        removedClaimIds: compiled.removedClaimIds,
         coverageChanges
-      }
+      },
+      priorClaims: compiled.priorClaims
     });
     if (invalidation.status !== "READY")
       fail(`semantic amendment invalidation planning failed:\n  - ${
@@ -1453,7 +1756,11 @@ export function createChangeLifecycle({
     const stagedPath = join(transactionRoot, "next");
     const priorPath = join(transactionRoot, "prior");
     cpSync(basePath, stagedPath, { recursive: true, errorOnExist: true });
-    writeSemanticAmendment(stagedPath, compiled, slugify, { schema: state.schema });
+    try { writeSemanticAmendment(stagedPath, compiled, slugify, { schema: state.schema }); }
+    catch (error) {
+      rmSync(transactionRoot, { recursive: true, force: true });
+      fail(`${error?.message || error}; semantic amendment rolled back`);
+    }
     const priorState = structuredClone(state);
     const rebindAuditPaths = [];
     const rebindAudits = [];
@@ -1532,6 +1839,9 @@ export function createChangeLifecycle({
         revision: nextState.contractRevision,
         reason: String(amendment.reason || "Agreement expanded during Build"),
         requirementKeys: compiled.addedRequirementKeys,
+        revisedRequirementKeys: compiled.revisedRequirementKeys,
+        removedRequirementKeys: compiled.removedRequirementKeys,
+        removedClaims: compiled.removedClaimIds,
         invalidatedClaims: compiled.invalidatedClaims,
         invalidation: {
           affectedTasks: invalidation.affectedTasks,
@@ -1546,6 +1856,21 @@ export function createChangeLifecycle({
           ? { semanticIntakeEffectiveness: completedAmendmentIntakeEffectiveness } : {}),
         appliedAt: now()
       }];
+      recordApprovalDelta(nextState, {
+        added: compiled.addedRequirementKeys,
+        revised: compiled.revisedRequirementKeys,
+        removed: compiled.removedRequirementKeys
+      });
+      if (nextState.requirementFingerprints) {
+        const fingerprints = { ...nextState.requirementFingerprints,
+          ...draftRequirementFingerprints({
+            requirements: [...(amendment.addRequirements || []),
+              ...(amendment.reviseRequirements || [])],
+            evidence: amendment.evidence
+          }) };
+        for (const key of compiled.removedRequirementKeys) delete fingerprints[key];
+        nextState.requirementFingerprints = fingerprints;
+      }
       saveRuntime(nextState);
       // A prior proof-advance checkpoint describes the old contract. Even when
       // every executable receipt is preserved, the coordinator must re-enter
@@ -1583,9 +1908,12 @@ export function createChangeLifecycle({
         error.message}`);
     }
     console.log(`AMENDED ${id}\n  revision: ${loadRuntime(id).contractRevision}\n` +
-      `  invalidated claims: ${compiled.invalidatedClaims.join(", ")}\n` +
+      `  invalidated claims: ${[...compiled.invalidatedClaims, ...compiled.removedClaimIds.map((claim) =>
+        `${claim} (removed)`)].join(", ") || "none"}\n` +
       `  proof: ${compiled.invalidation.proofRecovery?.recovery?.instruction ||
         "re-enter Prove so receipt bindings are recomputed"}\n` +
+      `  requirement delta awaiting approval:\n${
+        formatApprovalDelta(loadRuntime(id).pendingApprovalDelta || {})}\n` +
       `  proof command: ${compiled.invalidation.proofRecovery?.recovery?.command ||
         `claude-foundation advance ${id} --through proven`}\n` +
       `  next: claude-foundation advance ${id}`);
@@ -1609,6 +1937,8 @@ export function createChangeLifecycle({
     inspectDraft,
     inspectAmendment,
     startAtomic,
+    inspectRevision,
+    reviseChange,
     amendChange,
     resolveChange
   };

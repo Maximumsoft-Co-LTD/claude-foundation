@@ -17,7 +17,7 @@ surface is:
 |---|---|
 | `investigate --template \| <record.json>` | Validate source-bound facts and hypotheses, persist resume state, and emit a Change handoff |
 | `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect intake or compile and atomically start one semantic agreement |
-| `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake or transactionally extend that agreement during Build |
+| `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake or transactionally add, revise, or remove requirements during Build |
 | `advance <change> --through build\|proven\|archived` | Run deterministic lifecycle work and return one of six bounded actions at the next real boundary |
 | `deliver advance <change>` | After explicit `/deliver`, automate isolated commit, feature-branch push, PR creation/reuse, provider verification, and return the URL |
 | `changes` | Read active state and the next useful route |
@@ -70,7 +70,8 @@ language profiles, baselines, and rollout policy.
 | `investigate --template \| <record.json>` | Print or validate a versioned investigation record and return one typed action |
 | `change new <intent> [--rapid]` | Compatible primitive for manually authoring a change agreement |
 | `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect intake or compile and start an agreement from one validated semantic draft; Build creates isolation later |
-| `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake or add semantic requirements transactionally while preserving completed work |
+| `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake or add, revise, or remove semantic requirements transactionally while preserving completed work |
+| `change revise <change> <draft.json> [--inspect] [--consume-draft]` | Before Build, recompile a revised semantic draft over the same change id with rollback and a requirement delta for re-approval |
 | `change resolve <change> …` | Persist impact, coupling, security, and review decisions |
 | `change validate <change>` | Validate the change and its executable evidence contract |
 | `sandbox create <change> [--all]` | Create the isolated Build workspace |

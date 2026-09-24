@@ -93,7 +93,7 @@ function propagateProviders(rows, seeds) {
  * This keeps policy/provider resolution outside this pure planner.
  */
 export function planAmendmentInvalidation({
-  claims, tasks, providers, coverageDelta
+  claims, tasks, providers, coverageDelta, priorClaims
 } = {}) {
   const findings = [];
   if (!Array.isArray(claims)) findings.push({ code: "INVALID_CLAIMS", path: "claims",
@@ -140,11 +140,22 @@ export function planAmendmentInvalidation({
   for (const id of delta.added)
     if (!claimIds.has(id)) findings.push({ code: "MISSING_ADDED_CLAIM", path: "claims",
       message: `added claim '${id}' is missing from claims` });
-  for (const id of delta.removed)
-    findings.push({ code: "REMOVED_CLAIM_HISTORY_REQUIRED",
+  // Removal is planned against the pre-amendment claims: they are the only
+  // record of which providers once bound a claim that no longer exists.
+  const priorRows = Array.isArray(priorClaims) ? priorClaims : null;
+  const priorIds = new Set((priorRows || []).map((claim) => String(claim?.id || "").trim()));
+  for (const id of delta.removed) {
+    if (!priorRows) findings.push({ code: "REMOVED_CLAIM_HISTORY_REQUIRED",
       path: "coverageDelta.removedClaimIds",
       message: `removed claim '${id}' requires prior claim and provider bindings; ` +
         "removal cannot be planned from the post-amendment contract alone" });
+    else if (!priorIds.has(id)) findings.push({ code: "UNKNOWN_REMOVED_CLAIM",
+      path: "coverageDelta.removedClaimIds",
+      message: `removed claim '${id}' is not in the prior agreement` });
+    else if (claimIds.has(id)) findings.push({ code: "REMOVED_CLAIM_STILL_PRESENT",
+      path: "coverageDelta.removedClaimIds",
+      message: `removed claim '${id}' is still present after the amendment` });
+  }
 
   const taskIds = new Set();
   const affectedTasks = [];
@@ -203,9 +214,14 @@ export function planAmendmentInvalidation({
           message: `provider '${id || index}' depends on unknown provider '${dependency}'` });
   }
 
+  // A removed claim may already be gone from an explicit provider claim list,
+  // so its prior capability binding is matched conservatively as well.
+  const removedPriorClaims = (priorRows || []).filter((claim) =>
+    removed.has(String(claim?.id || "").trim()));
   const providerSeeds = providersNormalized.filter((provider) =>
     WHOLE_PACKET_CAPABILITIES.has(provider.capability) ||
-    (providerClaims.get(provider.id) || []).some((id) => direct.has(id)))
+    (providerClaims.get(provider.id) || []).some((id) => direct.has(id)) ||
+    claimIdsForProvider({ capability: provider.capability }, removedPriorClaims).length > 0)
     .map((provider) => provider.id);
   const affectedProviderSet = propagateProviders(providersNormalized, providerSeeds);
   const affectedProviders = sortedUnique([...affectedProviderSet]);

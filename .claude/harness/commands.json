@@ -103,7 +103,15 @@
       "audience": "agent",
       "kind": "write",
       "idempotent": false,
-      "description": "Transactionally add semantic requirements during Build while preserving the canonical agreement."
+      "description": "Transactionally add, revise, or remove semantic requirements during Build while preserving the canonical agreement."
+    },
+    {
+      "name": "change revise",
+      "usage": "change revise <change> <draft.json> [--inspect | --consume-draft]",
+      "audience": "agent",
+      "kind": "write",
+      "idempotent": false,
+      "description": "Recompile a revised semantic draft over a change that has not started Build, keeping its id and reporting the requirement delta for approval."
     },
     {
       "name": "change validate",
@@ -774,6 +782,7 @@
     "start",
     "resolve",
     "amend",
+    "revise",
     "abandon",
     "waive",
     "audit-change",

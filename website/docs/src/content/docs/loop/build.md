@@ -69,7 +69,9 @@ claude-foundation change amend <change> <amendment.json> --consume-amendment
 The compiler preserves completed tasks and manual sections, validates the new
 agreement transactionally, and returns to `advance`. `updateTasks` may extend
 claim coverage but cannot replace an existing outcome or verification command;
-add a new task when that contract changes. Permission-bound cloud,
+add a new task when that contract changes. `reviseRequirements` and
+`removeRequirements` change or drop an existing requirement in the same
+amendment, so a changed decision never requires abandoning the change. Permission-bound cloud,
 secret, Terraform, deployment, or restart work becomes a typed external
 operation; Build never asks for credentials.
 

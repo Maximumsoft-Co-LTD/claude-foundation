@@ -63,7 +63,9 @@ claude-foundation change amend <change> <amendment.json> --consume-amendment
 
 Compiler รักษา task ที่เสร็จและ manual section ตรวจ agreement ใหม่แบบ transaction
 แล้วกลับมา `advance` โดย `updateTasks` เพิ่ม claim coverage ได้ แต่เปลี่ยน outcome
-หรือ verify command เดิมไม่ได้ ถ้าสัญญาของ task เปลี่ยนต้องเพิ่ม task ใหม่ งาน cloud,
+หรือ verify command เดิมไม่ได้ ถ้าสัญญาของ task เปลี่ยนต้องเพิ่ม task ใหม่
+`reviseRequirements` และ `removeRequirements` แก้หรือลบ requirement เดิมใน
+amendment เดียวกัน จึงไม่ต้อง abandon change เพียงเพราะการตัดสินใจเปลี่ยน งาน cloud,
 secret, Terraform, deploy หรือ restart ที่ต้องใช้
 สิทธิ์จะเป็น external operation แบบมีชนิด Build ไม่ขอ credential
 

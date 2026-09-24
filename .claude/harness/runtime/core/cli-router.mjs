@@ -12,6 +12,8 @@ export async function routeRuntimeCommand(command, values, api) {
     startAtomic,
     inspectAmendment,
     amendChange,
+    inspectRevision,
+    reviseChange,
     resolveChange,
     abandonChange,
     waiveGate,
@@ -167,6 +169,20 @@ export async function routeRuntimeCommand(command, values, api) {
         inspectAmendment(rest[0], rest[1]);
       } else amendChange(rest[0], rest[1], {
         consumeAmendment: flags["consume-amendment"]
+      });
+    },
+    "revise": async () => {
+      const { flags, rest } = parseStrictCommandFlags(values, "change revise", {
+        boolean: ["inspect", "consume-draft"]
+      });
+      if (rest.length !== 2)
+        die("change revise requires <change> <draft.json>");
+      if (flags.inspect) {
+        if (flags["consume-draft"])
+          die("change revise --inspect cannot be combined with --consume-draft");
+        inspectRevision(rest[0], rest[1]);
+      } else reviseChange(rest[0], rest[1], {
+        consumeDraft: flags["consume-draft"]
       });
     },
     "abandon": async () => {

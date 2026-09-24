@@ -652,10 +652,16 @@ For a version-4 agreement, first run `change amend <change-id> <amendment.json>
 `--consume-amendment` after `DONE`. The runtime applies the amendment
 transactionally. It
 preserves completed tasks and manual Markdown sections, validates before keeping
-the revision, rolls back a rejected amendment, and invalidates only claims added
-by that amendment before resuming `advance`. Version-4 amendments must include
-discovery coverage for the added requirements; the validated delta remains in
-the compiled proposal. Unaffected passing receipts survive only when their
+the revision, rolls back a rejected amendment, and invalidates only claims it
+adds, revises, or removes before resuming `advance`. An amendment can revise an
+existing requirement in place (`reviseRequirements`, with an open task) or
+remove one (`removeRequirements`, with a migration) instead of abandoning the
+change. Version-4 amendments must include discovery coverage for the added and
+revised requirements; the validated delta remains in the compiled proposal.
+Before Build starts, `change revise <change-id> <draft.json> --inspect` then
+`--consume-draft` recompiles the whole agreement under the same id. Either
+route reports the added/revised/removed requirement delta, and only that delta
+needs re-approval. Unaffected passing receipts survive only when their
 declared provider, claim, and input bindings remain exact; every ambiguous or
 affected provider is routed back through Prove.
 The result prints the exact `advance <change-id> --through proven` recovery

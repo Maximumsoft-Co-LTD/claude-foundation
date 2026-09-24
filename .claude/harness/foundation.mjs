@@ -1394,6 +1394,8 @@ const {
   inspectDraft,
   inspectAmendment,
   startAtomic,
+  inspectRevision,
+  reviseChange,
   amendChange,
   resolveChange
 } = createChangeLifecycle({
@@ -2053,6 +2055,8 @@ await routeRuntimeCommand(command, values, {
   inspectDraft,
   inspectAmendment,
   startAtomic,
+  inspectRevision,
+  reviseChange,
   amendChange,
   resolveChange,
   abandonChange,

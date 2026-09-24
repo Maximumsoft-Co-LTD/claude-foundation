@@ -147,6 +147,28 @@ Runtime approval binds agreement content and revision; task checkboxes alone
 do not invalidate it. Agreement edits require renewed approval. Legacy
 primitive-created/in-flight changes retain their compatibility route.
 
+To change an agreement that has not started Build, revise it in place instead
+of abandoning it and writing a new draft:
+
+```bash
+claude-foundation change revise <change> <draft.json> --inspect
+```
+
+The revised semantic draft keeps the change id (a different `id` is refused)
+and passes the same intake gate as `change start`, under its own snapshot;
+replace `--inspect` with `--consume-draft` after `DONE`. The transaction
+recompiles the whole packet, increments the contract revision, and restores the
+prior packet and runtime state byte-for-byte on any failure. It is refused once
+the change has a Build workspace, a receipt, or a completed task, and in
+`proven`, `landing`, or `archived` status; the refusal names the amendment or
+successor-change route.
+
+Every revision or amendment records its requirement delta (`added`, `revised`,
+`removed` keys) until the next approval. Unapproved deltas fold together: a key
+added and then removed disappears, and a key added and then revised stays added.
+Present only that delta for re-approval; `change resolve --approve-spec` prints
+the approved delta and clears it, while approval still binds the whole agreement.
+
 Referenced diagrams, prototype selections, and local integration documentation
 must resolve to regular files inside the project. Remote integration sources
 must use HTTPS and a fixed version rather than `latest`, a branch, or another
@@ -160,11 +182,24 @@ When Build discovers new behavior, amend the same agreement before continuing:
 claude-foundation change amend <change> <amendment.json> --inspect
 ```
 
-A version-4 amendment includes discovery coverage for every added requirement;
-follow its typed intake actions and source digest, then replace `--inspect` with
-`--consume-amendment` after `DONE`. The returned proof command is the exact
-post-amendment recovery route. The transaction validates and appends that delta
-to the compiled proposal.
+An amendment may add (`addRequirements`), revise (`reviseRequirements`, the
+full replacement row for an existing key), or remove (`removeRequirements`,
+each with a `migration`) requirements; a key may appear in only one of them. A
+revised requirement replaces its spec block and claims in place and needs an
+open task, so add one with `addTasks` when only completed work covers it. It
+keeps its capability and operation; moving a requirement is a removal plus an
+addition. A
+removal deletes the block, retires its claims from evidence, tasks, and
+provider bindings, records the migration in the proposal, and is refused if a
+task would be left without coverage unless `updateTasks` moves it. Only the
+claims and providers bound to added, revised, or removed claims are
+invalidated; removals are planned from the pre-amendment claims.
+
+A version-4 amendment includes discovery coverage for every added or revised
+requirement; follow its typed intake actions and source digest, then replace
+`--inspect` with `--consume-amendment` after `DONE`. The returned proof command
+is the exact post-amendment recovery route. The transaction validates and
+appends that delta to the compiled proposal.
 During Build, the amended packet stays in the isolated workspace until Land.
 After approval of that revision, `advance` resumes from this packet without
 importing the older target agreement. `sandbox sync` can replay code onto a moved

@@ -132,9 +132,15 @@ completed tasks and custom prose/assets, increments the revision, invalidates
 the affected contract, validates, and rolls back on failure. Existing legacy
 changes keep their legacy authoring path; do not rewrite them merely to migrate.
 An amendment to a v4 agreement must include discovery coverage for the added
-requirements; the compiler retains that delta in the proposal.
+and revised requirements; the compiler retains that delta in the proposal.
 `updateTasks` may extend claim coverage but must not replace an existing outcome
 or verification command; add a new task when that contract changes.
+`reviseRequirements` replaces an existing requirement row in its same
+capability and operation and needs an open task; `removeRequirements` needs a `migration` and must not orphan a task.
+Before Build starts, revise the whole agreement in place with
+`change revise <change> <draft.json> --inspect`, then `--consume-draft` after
+`DONE`; never abandon and rewrite a change only to edit it. Present only the
+reported requirement delta for re-approval.
 
 After a successful start, read the compiled proposal, tasks, evidence, and any
 specs/design. Check that the intended detail and document language survived

@@ -78,9 +78,27 @@ draft และ local sources ก่อน inspect repository intelligence แ�
 เมื่อ source เปลี่ยนจะคืน `refresh-source-coverage`; snapshot เก็บ effectiveness
 metrics แบบย่อแต่ไม่เก็บ transcript
 
+## แก้ข้อตกลงก่อน Build
+
+ถ้าต้องแก้ change ที่ agreed แล้วแต่ยังไม่เริ่ม Build ให้ revise change เดิมแทนการ
+abandon:
+
+```bash
+claude-foundation change revise <change> <draft.json> --inspect
+claude-foundation change revise <change> <draft.json> --consume-draft
+```
+
+Draft ฉบับแก้ใช้ id เดิมและผ่าน intake gate เดียวกับ `change start` Packet ทั้งชุด
+ถูกคอมไพล์ใหม่แบบ transaction, contract revision เพิ่มขึ้น และถ้าล้มเหลวจะคืน
+packet กับ runtime state เดิม เมื่อ Build มี workspace, receipt หรือ task ที่เสร็จแล้ว
+คำสั่งจะชี้ไปที่ `change amend` ผลลัพธ์แสดง requirement ที่ added, revised และ
+removed และขอ approve ใหม่เฉพาะ delta นั้น
+
 ## แก้ข้อตกลงระหว่าง Build
 
-ถ้า Build พบ observable requirement ใหม่ ให้ใช้ semantic amendment หนึ่งชุด:
+ถ้า Build พบ observable requirement ใหม่หรือที่เปลี่ยนไป ให้ใช้ semantic amendment
+หนึ่งชุด `reviseRequirements` แทน requirement เดิม (ต้องมี task ที่ยังไม่เสร็จครอบคลุม)
+และ `removeRequirements` ลบ requirement พร้อม `migration`:
 
 ```bash
 claude-foundation change amend <change> <amendment.json> --consume-amendment

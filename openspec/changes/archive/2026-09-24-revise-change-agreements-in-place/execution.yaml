@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "unset FORCE_COLOR; export NO_COLOR=1; node --test .claude/harness/tests/change-revise.test.mjs .claude/harness/tests/change-resolution.test.mjs .claude/harness/tests/semantic-draft.test.mjs .claude/harness/tests/amendment-invalidation.test.mjs .claude/harness/tests/public-command-golden.test.mjs && node .claude/tests/harness/run-guard-fix-cli-tests.mjs && bash .claude/tests/docs/run-doc-consistency.sh && bash .claude/tests/harness/run-context-budget-tests.sh && bash .claude/tests/harness/run-proof-loop-tests.sh"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "timeoutMs": 1800000,
+      "claims": "declared"
+    }
+  },
+  "services": {}
+}

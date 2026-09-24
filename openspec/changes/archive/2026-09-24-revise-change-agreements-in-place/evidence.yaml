@@ -1,0 +1,243 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "pre-build-revision-revise-success",
+      "requirementKey": "pre-build-revision",
+      "scenario": "Revise an agreed change before Build",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "pre-build-revision-revise-rollback",
+      "requirementKey": "pre-build-revision",
+      "scenario": "A failed revision restores the prior agreement",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "pre-build-revision-revise-refused-after-build",
+      "requirementKey": "pre-build-revision",
+      "scenario": "Revision is refused once Build started",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "pre-build-revision-revise-id-boundary",
+      "requirementKey": "pre-build-revision",
+      "scenario": "The revised draft keeps the change identity",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "pre-build-revision-revise-intake",
+      "requirementKey": "pre-build-revision",
+      "scenario": "A version-4 revision passes the same intake gate",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-revises-and-removes-the-agent-submits-one-amendment-th",
+      "requirementKey": "amendment-revises-and-removes",
+      "scenario": "Build discovers new required behavior",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-revises-and-removes-an-amendment-targets-a-version-4-a",
+      "requirementKey": "amendment-revises-and-removes",
+      "scenario": "A version-4 amendment adds behavior",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-revises-and-removes-build-discovers-new-observable-beh",
+      "requirementKey": "amendment-revises-and-removes",
+      "scenario": "A version-4 amendment is inspected before mutation",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-revises-and-removes-an-amendment-adds-claims-to-an-act",
+      "requirementKey": "amendment-revises-and-removes",
+      "scenario": "Amendment invalidation is planned before mutation",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-revises-and-removes-a-passing-unaffected-provider-reta",
+      "requirementKey": "amendment-revises-and-removes",
+      "scenario": "An unaffected proof receipt crosses one amendment revision",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-revises-and-removes-a-receipt-is-affected-missing-unsc",
+      "requirementKey": "amendment-revises-and-removes",
+      "scenario": "Receipt preservation is ambiguous",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-revises-and-removes-one-preservation-candidate-is-ambi",
+      "requirementKey": "amendment-revises-and-removes",
+      "scenario": "One preserved receipt is ambiguous",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-revises-and-removes-the-transaction-preserves-and-rebi",
+      "requirementKey": "amendment-revises-and-removes",
+      "scenario": "A receipt is rebound across an amendment",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-revises-and-removes-strict-validation-rejects-the-stag",
+      "requirementKey": "amendment-revises-and-removes",
+      "scenario": "The amended packet is invalid",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-revises-and-removes-updatetasks-supplies-a-replacement",
+      "requirementKey": "amendment-revises-and-removes",
+      "scenario": "An amendment tries to redefine an existing task",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-revises-and-removes-amend-revise",
+      "requirementKey": "amendment-revises-and-removes",
+      "scenario": "An amendment revises an existing requirement",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-revises-and-removes-amend-revise-needs-open-task",
+      "requirementKey": "amendment-revises-and-removes",
+      "scenario": "A revised requirement needs open implementation work",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-revises-and-removes-amend-remove",
+      "requirementKey": "amendment-revises-and-removes",
+      "scenario": "An amendment removes an existing requirement",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-revises-and-removes-amend-remove-orphans-task",
+      "requirementKey": "amendment-revises-and-removes",
+      "scenario": "Removal cannot orphan a task",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-revises-and-removes-amend-key-boundaries",
+      "requirementKey": "amendment-revises-and-removes",
+      "scenario": "Amendment keys are unambiguous",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-revises-and-removes-amend-revise-discovery",
+      "requirementKey": "amendment-revises-and-removes",
+      "scenario": "A version-4 revision carries discovery coverage",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "delta-approval-delta-recorded",
+      "requirementKey": "delta-approval",
+      "scenario": "A revision records the pending approval delta",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "delta-approval-delta-approved",
+      "requirementKey": "delta-approval",
+      "scenario": "Approving a revision clears its delta",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "delta-approval-delta-accumulates",
+      "requirementKey": "delta-approval",
+      "scenario": "Unapproved revisions accumulate one delta",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "revise-public-contract",
+      "requirementKey": "revise-public-contract",
+      "scenario": "The golden contract includes change revise",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/change-revise.test.mjs && node .claude/tests/harness/run-guard-fix-cli-tests.mjs && bash .claude/tests/harness/run-proof-loop-tests.sh) && (node --test .claude/harness/tests/semantic-draft.test.mjs .claude/harness/tests/amendment-invalidation.test.mjs && bash .claude/tests/harness/run-proof-loop-tests.sh) && (node --test .claude/harness/tests/change-revise.test.mjs .claude/harness/tests/change-resolution.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh && bash .claude/tests/harness/run-context-budget-tests.sh) && (node --test .claude/harness/tests/public-command-golden.test.mjs)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

@@ -618,9 +618,14 @@ performance target, notification, integration, compatibility หรือ rollou
 `--consume-amendment` เมื่อได้ `DONE` จากนั้น runtime จะ apply amendment แบบ
 transaction โดยรักษา
 task ที่เสร็จและ manual Markdown section, validate ก่อนเก็บ revision, rollback
-amendment ที่ไม่ผ่าน และ invalidate เฉพาะ claim ใหม่ก่อน resume `advance`
-Amendment ของ version 4 ต้องมี discovery coverage ของ requirement ที่เพิ่ม และ
-delta ที่ผ่าน validation จะอยู่ใน compiled proposal receipt ที่ผ่านแล้วจะถูกเก็บ
+amendment ที่ไม่ผ่าน และ invalidate เฉพาะ claim ที่เพิ่ม แก้ หรือลบก่อน resume
+`advance` Amendment แก้ requirement เดิมในที่เดิมได้ (`reviseRequirements` ต้องมี
+task ที่ยังไม่เสร็จ) หรือลบได้ (`removeRequirements` ต้องมี migration) โดยไม่ต้อง
+abandon change Amendment ของ version 4 ต้องมี discovery coverage ของ requirement
+ที่เพิ่มและที่แก้ และ delta ที่ผ่าน validation จะอยู่ใน compiled proposal
+ก่อนเริ่ม Build ใช้ `change revise <change-id> <draft.json> --inspect` แล้ว
+`--consume-draft` เพื่อคอมไพล์ agreement ทั้งฉบับใหม่ใน id เดิม ทั้งสองทางจะแสดง
+delta ของ requirement (added/revised/removed) และขอ approve ใหม่เฉพาะ delta นั้น receipt ที่ผ่านแล้วจะถูกเก็บ
 ไว้เฉพาะเมื่อ provider, claim และ declared-input binding ไม่เปลี่ยน ส่วน provider
 ที่ affected หรือคลุมเครือต้องกลับไปผ่าน Prove
 ผลลัพธ์จะแสดงคำสั่ง recovery `advance <change-id> --through proven` ที่แน่นอน

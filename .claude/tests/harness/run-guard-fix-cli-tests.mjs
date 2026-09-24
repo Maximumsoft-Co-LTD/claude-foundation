@@ -93,6 +93,7 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
     ["new", ["intent"], "createChange"],
     ["start", ["draft.json"], "startAtomic"],
     ["amend", ["change", "amendment.json"], "amendChange"],
+    ["revise", ["change", "draft.json"], "reviseChange"],
     ["resolve", ["change"], "resolveChange"],
     ["abandon", ["change"], "abandonChange"],
     ["waive", ["change"], "waiveGate"],
@@ -276,6 +277,20 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
   await assert.rejects(route("amend", [
     "change", "amendment.json", "--inspect", "--consume-amendment"
   ], {}), /cannot be combined/);
+  let consumedRevision = null;
+  await route("revise", ["change", "draft.json", "--consume-draft"], {
+    reviseChange: (...args) => { consumedRevision = args; }
+  });
+  assert.deepEqual(consumedRevision, ["change", "draft.json", { consumeDraft: true }]);
+  let inspectedRevision = null;
+  await route("revise", ["change", "draft.json", "--inspect"], {
+    inspectRevision: (...args) => { inspectedRevision = args; }
+  });
+  assert.deepEqual(inspectedRevision, ["change", "draft.json"]);
+  await assert.rejects(route("revise", [
+    "change", "draft.json", "--inspect", "--consume-draft"
+  ], {}), /cannot be combined/);
+  await assert.rejects(route("revise", ["change"], {}), /requires <change> <draft.json>/);
   let advanced = null;
   await route("advance", ["change", "--through", "archived", "--pretty"], {
     showAdvance: (...args) => { advanced = args; }

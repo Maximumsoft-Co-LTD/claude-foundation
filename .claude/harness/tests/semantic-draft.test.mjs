@@ -816,3 +816,306 @@ test("change amend installs atomically and restores files and state on validatio
     console.log = priorLog;
   }
 });
+
+function revisionFixture(taskLines) {
+  return {
+    contract: {
+      version: 1,
+      claims: [
+        { id: "a", requirementKey: "a", scenario: "A runs", capabilities: ["test"] },
+        { id: "b", requirementKey: "b", scenario: "B runs", capabilities: ["test"] }
+      ],
+      providers: {
+        test: { adapter: "test-discovery", command: ["sh", "-c", "npm test"] },
+        lint: { adapter: "command", capability: "lint", claims: ["a", "b"],
+          command: ["sh", "-c", "npm run lint"] }
+      }
+    },
+    tasksContent: ["# Tasks", "", ...taskLines, ""].join("\n"),
+    slugify,
+    renderTask: (task) => `- [ ] **${task.id}** ${task.outcome} [key:${task.key}] ` +
+      `[claims:${task.claims.join(",")}] — verify: \`${task.verify}\``
+  };
+}
+
+const revisionSpec = [
+  "# change", "", "## ADDED Requirements", "",
+  "### Requirement: a", "", "The system SHALL run A.", "",
+  "#### Scenario: A runs", "", "- **WHEN** a", "- **THEN** 20 per second", "",
+  "### Requirement: b", "", "The system SHALL run B.", "",
+  "#### Scenario: B runs", "", "- **WHEN** b", "- **THEN** ok", "",
+  "## Operator notes", "", "Preserve this manual section.", ""
+].join("\n");
+
+test("semantic amendment revises an existing requirement in place", (t) => {
+  const compiled = compileSemanticAmendment({
+    ...revisionFixture([
+      "- [x] **T001** Build A and B [key:impl] [claims:a,b] — verify: `npm test`"
+    ]),
+    amendment: {
+      version: 1,
+      reason: "Measured load changed the throughput target",
+      reviseRequirements: [{
+        key: "a", capability: "change", scenario: "A runs faster",
+        outcome: "A runs at 50 per second"
+      }],
+      addTasks: [{ key: "rework-a", outcome: "Raise A throughput", covers: ["a"],
+        paths: ["src/**"], verify: "npm test" }],
+      evidence: { a: { capabilities: ["test"] } }
+    }
+  });
+  assert.deepEqual(compiled.issues, []);
+  assert.deepEqual(compiled.changedClaimIds, ["a"]);
+  assert.deepEqual(compiled.addedClaimIds, []);
+  assert.deepEqual(compiled.removedClaimIds, []);
+  assert.deepEqual(compiled.revisedRequirementKeys, ["a"]);
+  assert.deepEqual(compiled.claims.map((claim) => claim.id), ["b", "a"]);
+  assert.equal(compiled.claims.find((claim) => claim.id === "a").scenario, "A runs faster");
+  assert.match(compiled.tasksContent, /^- \[x\] \*\*T001\*\*.*\[claims:a,b\]/m);
+  assert.match(compiled.tasksContent, /^- \[ \] \*\*T002\*\* Raise A throughput.*\[claims:a\]/m);
+  assert.deepEqual(compiled.revisedSpecs[0].priorScenarios, ["A runs"]);
+
+  const root = mkdtempSync(join(tmpdir(), "revise-amend-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "specs", "change"), { recursive: true });
+  writeFileSync(join(root, "specs", "change", "spec.md"), revisionSpec);
+  writeFileSync(join(root, "proposal.md"), "# Change\n");
+  writeFileSync(join(root, "evidence.yaml"), JSON.stringify({ version: 1 }));
+  writeSemanticAmendment(root, compiled, slugify, { schema: "foundation-standard" });
+  const spec = readFileSync(join(root, "specs", "change", "spec.md"), "utf8");
+  assert.match(spec, /#### Scenario: A runs faster[\s\S]*50 per second/);
+  assert.doesNotMatch(spec, /20 per second/);
+  assert.match(spec, /### Requirement: b[\s\S]*#### Scenario: B runs/);
+  assert.match(spec, /## Operator notes\n\nPreserve this manual section\./);
+  assert.equal(spec.match(/### Requirement:/g).length, 2);
+});
+
+test("revise and remove match the key's own block when scenario names are shared", (t) => {
+  const contract = {
+    version: 1,
+    claims: [
+      { id: "a-success", requirementKey: "a", scenario: "Success", capabilities: ["test"] },
+      { id: "a-failure", requirementKey: "a", scenario: "Failure", capabilities: ["test"] },
+      { id: "b", requirementKey: "b", scenario: "Success", capabilities: ["test"] }
+    ],
+    providers: {}
+  };
+  const spec = [
+    "# change", "", "## ADDED Requirements", "",
+    "### Requirement: a", "", "The system SHALL run A.", "",
+    "#### Scenario: Success", "", "- **WHEN** a", "- **THEN** a ok", "",
+    "#### Scenario: Failure", "", "- **WHEN** a fails", "- **THEN** a reported", "",
+    "### Requirement: b", "", "The system SHALL run B.", "",
+    "#### Scenario: Success", "", "- **WHEN** b", "- **THEN** b old", ""
+  ].join("\n");
+  const tasksContent = "# Tasks\n\n- [ ] **T001** Build [key:impl] [claims:a-success,a-failure,b] — verify: `npm test`\n";
+  const write = (amendment) => {
+    const compiled = compileSemanticAmendment({
+      amendment: { version: 1, ...amendment }, contract, tasksContent, slugify,
+      renderTask: () => ""
+    });
+    assert.deepEqual(compiled.issues, []);
+    const root = mkdtempSync(join(tmpdir(), "shared-scenario-"));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    mkdirSync(join(root, "specs", "change"), { recursive: true });
+    writeFileSync(join(root, "specs", "change", "spec.md"), spec);
+    writeFileSync(join(root, "evidence.yaml"), JSON.stringify({ version: 1 }));
+    writeSemanticAmendment(root, compiled, slugify, { schema: "foundation-standard" });
+    return readFileSync(join(root, "specs", "change", "spec.md"), "utf8");
+  };
+  const revised = write({
+    reviseRequirements: [{ key: "b", capability: "change", scenario: "Success",
+      outcome: "B returns new" }],
+    evidence: { b: { capabilities: ["test"] } }
+  });
+  assert.match(revised, /### Requirement: a[\s\S]*a ok[\s\S]*a reported/);
+  assert.match(revised, /B returns new/);
+  assert.doesNotMatch(revised, /b old/);
+  const removed = write({ removeRequirements: [{ key: "b", migration: "Dropped" }] });
+  assert.match(removed, /### Requirement: a[\s\S]*a ok[\s\S]*a reported/);
+  assert.doesNotMatch(removed, /Requirement: b|b old/);
+});
+
+test("a revision cannot move a requirement to another capability or operation", (t) => {
+  for (const [row, expected] of [
+    [{ capability: "payments" }, /cannot revise 'a' from change\/added to payments\/added; remove it and add/],
+    [{ capability: "change", operation: "modified" },
+      /cannot revise 'a' from change\/added to change\/modified; remove it and add/]
+  ]) {
+    const compiled = compileSemanticAmendment({
+      ...revisionFixture([
+        "- [ ] **T001** Build A and B [key:impl] [claims:a,b] — verify: `npm test`"
+      ]),
+      amendment: {
+        version: 1,
+        reviseRequirements: [{ key: "a", scenario: "A runs", outcome: "A moved", ...row }],
+        evidence: { a: { capabilities: ["test"] } }
+      },
+      loadCanonicalSpec: () => "## Requirements\n\n### Requirement: a\n\n#### Scenario: A runs\n"
+    });
+    assert.deepEqual(compiled.issues, []);
+    const root = mkdtempSync(join(tmpdir(), "revise-move-"));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    mkdirSync(join(root, "specs", "change"), { recursive: true });
+    writeFileSync(join(root, "specs", "change", "spec.md"), revisionSpec);
+    writeFileSync(join(root, "evidence.yaml"), JSON.stringify({ version: 1 }));
+    assert.throws(() => writeSemanticAmendment(root, compiled, slugify,
+      { schema: "foundation-standard" }), expected);
+    assert.equal(readFileSync(join(root, "specs", "change", "spec.md"), "utf8"), revisionSpec);
+    assert.equal(existsSync(join(root, "specs", "payments")), false);
+  }
+});
+
+test("an ambiguous requirement block fails the amendment instead of guessing", (t) => {
+  const contract = { version: 1, providers: {}, claims: [
+    { id: "a", requirementKey: "a", scenario: "Success", capabilities: ["test"] },
+    { id: "b", requirementKey: "b", scenario: "Other", capabilities: ["test"] }
+  ] };
+  const compiled = compileSemanticAmendment({
+    amendment: { version: 1, removeRequirements: [{ key: "a", migration: "Dropped" }] },
+    contract, slugify, renderTask: () => "",
+    tasksContent: "# Tasks\n\n- [ ] **T001** Build [key:impl] [claims:a,b] — verify: `npm test`\n"
+  });
+  assert.deepEqual(compiled.issues, []);
+  const root = mkdtempSync(join(tmpdir(), "ambiguous-block-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "specs", "change"), { recursive: true });
+  const spec = ["# change", "", "## ADDED Requirements", "",
+    "### Requirement: a", "", "A.", "", "#### Scenario: Success", "",
+    "### Requirement: a copy", "", "A again.", "", "#### Scenario: Success", ""].join("\n");
+  writeFileSync(join(root, "specs", "change", "spec.md"), spec);
+  writeFileSync(join(root, "evidence.yaml"), JSON.stringify({ version: 1 }));
+  assert.throws(() => writeSemanticAmendment(root, compiled, slugify,
+    { schema: "foundation-standard" }),
+  /cannot identify the requirement block for 'a': 2 blocks carry its scenarios/);
+  assert.equal(readFileSync(join(root, "specs", "change", "spec.md"), "utf8"), spec);
+});
+
+test("a revised requirement needs an open task", () => {
+  const compiled = compileSemanticAmendment({
+    ...revisionFixture([
+      "- [x] **T001** Build A and B [key:impl] [claims:a,b] — verify: `npm test`"
+    ]),
+    amendment: {
+      version: 1,
+      reviseRequirements: [{ key: "a", capability: "change", scenario: "A runs",
+        outcome: "A runs at 50 per second" }],
+      evidence: { a: { capabilities: ["test"] } }
+    }
+  });
+  assert.match(compiled.issues.join("\n"),
+    /revises 'a' but no open task covers it; add a task with addTasks/);
+  assert.equal(compiled.tasksContent, undefined);
+
+  const open = compileSemanticAmendment({
+    ...revisionFixture([
+      "- [ ] **T001** Build A and B [key:impl] [claims:a,b] — verify: `npm test`"
+    ]),
+    amendment: {
+      version: 1,
+      reviseRequirements: [{ key: "a", capability: "change", scenario: "A runs",
+        outcome: "A runs at 50 per second" }],
+      evidence: { a: { capabilities: ["test"] } }
+    }
+  });
+  assert.deepEqual(open.issues, []);
+});
+
+test("semantic amendment removes a requirement and its claims", (t) => {
+  const compiled = compileSemanticAmendment({
+    ...revisionFixture([
+      "- [x] **T001** Build A and B [key:impl] [claims:a,b] — verify: `npm test`"
+    ]),
+    amendment: {
+      version: 1,
+      reason: "B moved to a follow-up",
+      removeRequirements: [{ key: "b", migration: "B ships in a successor change" }]
+    }
+  });
+  assert.deepEqual(compiled.issues, []);
+  assert.deepEqual(compiled.removedClaimIds, ["b"]);
+  assert.deepEqual(compiled.invalidatedClaims, []);
+  assert.deepEqual(compiled.claims.map((claim) => claim.id), ["a"]);
+  assert.deepEqual(compiled.providers.lint.claims, ["a"]);
+  assert.match(compiled.tasksContent, /^- \[x\] \*\*T001\*\*.*\[claims:a\]/m);
+
+  const root = mkdtempSync(join(tmpdir(), "remove-amend-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "specs", "change"), { recursive: true });
+  writeFileSync(join(root, "specs", "change", "spec.md"), revisionSpec);
+  writeFileSync(join(root, "proposal.md"), "# Change\n");
+  writeFileSync(join(root, "evidence.yaml"), JSON.stringify({ version: 1 }));
+  writeSemanticAmendment(root, compiled, slugify, { schema: "foundation-standard" });
+  const spec = readFileSync(join(root, "specs", "change", "spec.md"), "utf8");
+  assert.doesNotMatch(spec, /Requirement: b|B runs/);
+  assert.match(spec, /### Requirement: a[\s\S]*## Operator notes/);
+  assert.match(readFileSync(join(root, "proposal.md"), "utf8"),
+    /## Amendment removed requirements[\s\S]*\| b \| B ships in a successor change \|/);
+});
+
+test("removing a requirement cannot orphan a task", () => {
+  const args = revisionFixture([
+    "- [x] **T001** Build A [key:impl-a] [claims:a] — verify: `npm test`",
+    "- [ ] **T002** Build B [key:impl-b] [claims:b] — verify: `npm test`"
+  ]);
+  const orphaned = compileSemanticAmendment({ ...args, amendment: {
+    version: 1, removeRequirements: [{ key: "b", migration: "Dropped" }]
+  } });
+  assert.match(orphaned.issues.join("\n"),
+    /would leave task\(s\) T002 without requirement coverage; move their coverage with updateTasks/);
+  const moved = compileSemanticAmendment({ ...args, amendment: {
+    version: 1, removeRequirements: [{ key: "b", migration: "Dropped" }],
+    updateTasks: [{ key: "impl-b", covers: ["a"] }]
+  } });
+  assert.deepEqual(moved.issues, []);
+  assert.match(moved.tasksContent, /^- \[ \] \*\*T002\*\*.*\[claims:a\]/m);
+});
+
+test("amendment requirement keys are unambiguous", () => {
+  const args = revisionFixture([
+    "- [ ] **T001** Build A and B [key:impl] [claims:a,b] — verify: `npm test`"
+  ]);
+  const compile = (amendment) =>
+    compileSemanticAmendment({ ...args, amendment: { version: 1, ...amendment } }).issues.join("\n");
+  assert.match(compile({}),
+    /requires a non-empty addRequirements, reviseRequirements, or removeRequirements array/);
+  assert.match(compile({
+    reviseRequirements: [{ key: "missing", capability: "change", scenario: "x", outcome: "y" }],
+    evidence: { missing: { capabilities: ["test"] } }
+  }), /'missing' does not exist; only existing requirements can be revised or removed/);
+  assert.match(compile({
+    reviseRequirements: [{ key: "a", capability: "change", scenario: "x", outcome: "y" }],
+    removeRequirements: [{ key: "a", migration: "gone" }],
+    evidence: { a: { capabilities: ["test"] } }
+  }), /'a' is named more than once across add, revise, and remove/);
+  assert.match(compile({ removeRequirements: [{ key: "b" }] }),
+    /removeRequirements\[0\]\.migration is required/);
+  assert.match(compile({
+    removeRequirements: [{ key: "b", migration: "gone" }],
+    updateTasks: [{ key: "impl", covers: ["b"] }]
+  }), /covers removed requirement 'b'/);
+});
+
+test("a version-4 revision requires discovery coverage for revised requirements", () => {
+  const args = revisionFixture([
+    "- [ ] **T001** Build A and B [key:impl] [claims:a,b] — verify: `npm test`"
+  ]);
+  const amendment = {
+    version: 1,
+    reviseRequirements: [{ key: "a", capability: "change", scenario: "A runs",
+      outcome: "A runs at 50 per second" }],
+    evidence: { a: { capabilities: ["test"] } }
+  };
+  assert.match(compileSemanticAmendment({ ...args, amendment, semanticDraftVersion: 4 })
+    .issues.join("\n"), /version 4 requires a 'discovery' object/);
+  amendment.discovery = {
+    coverage: [
+      "current-behavior", "affected-actor", "desired-behavior", "success-path",
+      "failure-path", "input-boundary", "compatibility", "non-goals", "verification"
+    ].map((dimension) => ({ dimension, status: "covered", covers: ["a"] })),
+    decisions: []
+  };
+  const compiled = compileSemanticAmendment({ ...args, amendment, semanticDraftVersion: 4 });
+  assert.deepEqual(compiled.issues, []);
+  assert.equal(compiled.discovery.coverage.length, 9);
+});

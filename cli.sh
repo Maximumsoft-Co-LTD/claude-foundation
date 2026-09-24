@@ -79,7 +79,7 @@ run_runtime() {
   local phase=""
   case "${1:-}" in
     investigate) phase="investigate" ;;
-    new|start|resolve|amend|validate|audit-change|abandon|waive|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade|quality-discover|quality-init|quality-doctor) phase="change" ;;
+    new|start|resolve|amend|revise|validate|audit-change|abandon|waive|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade|quality-discover|quality-init|quality-doctor) phase="change" ;;
     sandbox|agent-plan|agent-dispatch|agent-acquire|agent-release) phase="build" ;;
     proof-plan|proof-readiness|proof-advance|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-dispatch|authority-run|authority-abort|authority-status|authority-record|authority-reset-infra|authority-reset-base-move|quality-run|quality-report|quality-baseline|quality-debt) phase="prove" ;;
     handoff-list|handoff-status|handoff-packet|handoff-record|land-check|land-advance|land-recover|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
@@ -351,6 +351,9 @@ case "${1:-}" in
       amend)
         [ "$#" -ge 2 ] || fail "change amend requires <change> <amendment.json>"
         run_runtime write amend "$@" ;;
+      revise)
+        [ "$#" -ge 2 ] || fail "change revise requires <change> <draft.json>"
+        run_runtime write revise "$@" ;;
       validate)
         need_arg "change validate" "${1:-}"
         run_runtime write validate "$@" ;;
@@ -363,7 +366,7 @@ case "${1:-}" in
       waive)
         need_arg "change waive" "${1:-}"
         run_runtime write waive "$@" ;;
-      *) fail "change requires 'new', 'start', 'resolve', 'amend', 'validate', 'audit', 'abandon', or 'waive'" ;;
+      *) fail "change requires 'new', 'start', 'resolve', 'amend', 'revise', 'validate', 'audit', 'abandon', or 'waive'" ;;
     esac ;;
   validate)
     warn "'validate' is deprecated; use 'change validate'"

@@ -87,6 +87,40 @@ test("added claims are planned and removed claims fail closed without history", 
     finding.code === "REMOVED_CLAIM_HISTORY_REQUIRED"));
 });
 
+test("removed claims are planned from prior claims and their provider bindings", () => {
+  const priorClaims = [
+    { id: "profile-read", capabilities: ["test"] },
+    { id: "legacy-export", capabilities: ["browser"] }
+  ];
+  const result = planAmendmentInvalidation({
+    claims: [{ id: "profile-read", capabilities: ["test"] }],
+    tasks: [{ id: "T001", claims: ["profile-read"] }],
+    providers: {
+      test: { capability: "test" },
+      browser: { capability: "browser", claims: [] }
+    },
+    coverageDelta: { removedClaimIds: ["legacy-export"] },
+    priorClaims
+  });
+  assert.equal(result.status, "READY");
+  assert.deepEqual(result.affectedClaims, ["legacy-export"]);
+  assert.deepEqual(result.affectedTasks, []);
+  assert.deepEqual(result.affectedProviders, ["browser"]);
+  assert.deepEqual(result.preservedProviders, ["test"]);
+
+  const unknown = planAmendmentInvalidation({
+    claims: [], tasks: [], providers: {},
+    coverageDelta: { removedClaimIds: ["never-existed"] }, priorClaims
+  });
+  assert.ok(unknown.findings.some((finding) => finding.code === "UNKNOWN_REMOVED_CLAIM"));
+  const present = planAmendmentInvalidation({
+    claims: [{ id: "profile-read", capabilities: ["test"] }],
+    tasks: [{ id: "T001", claims: ["profile-read"] }], providers: {},
+    coverageDelta: { removedClaimIds: ["profile-read"] }, priorClaims
+  });
+  assert.ok(present.findings.some((finding) => finding.code === "REMOVED_CLAIM_STILL_PRESENT"));
+});
+
 test("planner fails closed for incomplete bindings and unknown identities", () => {
   const result = planAmendmentInvalidation({
     claims: [{ id: "changed" }],

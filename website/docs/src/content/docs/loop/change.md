@@ -116,9 +116,28 @@ handoff, and grounding files appear only for real overrides.
 After compilation, `openspec/changes/<id>/` is the source of truth. The draft is
 temporary and `.foundation/` is derived runtime state.
 
+## Revising before Build
+
+To change an agreed change before Build starts, revise the same change instead
+of abandoning it:
+
+```bash
+claude-foundation change revise <change> <draft.json> --inspect
+claude-foundation change revise <change> <draft.json> --consume-draft
+```
+
+The revised draft keeps the change id and passes the same intake gate as
+`change start`. The whole packet is recompiled transactionally, the contract
+revision increments, and any failure restores the prior packet and runtime
+state. Once Build has a workspace, a receipt, or a completed task, the command
+routes to `change amend`. The result lists the added, revised, and removed
+requirements; only that delta needs re-approval.
+
 ## Revising during Build
 
-If Build discovers a new observable requirement, use one semantic amendment:
+If Build discovers a new or changed observable requirement, use one semantic
+amendment. `reviseRequirements` replaces an existing requirement (an open task
+must cover it) and `removeRequirements` drops one with a `migration`:
 
 ```bash
 claude-foundation change amend <change> <amendment.json> --consume-amendment

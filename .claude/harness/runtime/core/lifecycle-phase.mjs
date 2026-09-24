@@ -94,6 +94,7 @@ export const PHASE_BY_COMMAND = {
   "telemetry-import": "meta",
   advance: "meta",
   amend: "change",
+  revise: "change",
   feedback: "meta"
 };
 
