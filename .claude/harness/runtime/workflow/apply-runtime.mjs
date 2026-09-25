@@ -14,7 +14,7 @@ import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 import { compositeRepositorySelection } from "../core/repository-binding.mjs";
 import { createRepositoryDeliverySaga } from "./repository-delivery-saga.mjs";
 import { deliveryTreeEntries, assertDeliveryEntries } from "./delivery-integrity.mjs";
-import { agreementIdentity } from "../core/user-decisions.mjs";
+import { approvalMatches } from "../core/user-decisions.mjs";
 import { legacyRepositoryLandTransaction } from "./land-runtime.mjs";
 
 // Whether an empty root diff is an acceptable apply outcome rather than an
@@ -846,7 +846,7 @@ export function createApplyRuntime({
   function assertRetainedArchiveIntegrity(id, state, archivedPath) {
     if (state.specApproval?.required &&
         (state.specApproval.revision !== Number(state.contractRevision || 0) ||
-        state.specApproval.identity !== agreementIdentity(root,
+        !approvalMatches(state.specApproval.identity, root,
           archivedPath.slice("openspec/changes/".length))))
       fail("interrupted archive no longer matches the approved agreement; preserve both versions and restore the approved packet before retrying Land");
     if (state.land?.archivePacketEntries) {

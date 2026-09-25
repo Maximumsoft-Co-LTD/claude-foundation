@@ -143,8 +143,10 @@ changed selected source invalidates readiness and returns agent-owned coverage r
 For newly started changes, present the compiled spec, scope, and acceptance
 criteria and wait for explicit user approval before Build, including `/dev`.
 Record it with `change resolve <change> --approve-spec --decision-ref <ref>`.
-Runtime approval binds agreement content and revision; task checkboxes alone
-do not invalidate it. Agreement edits require renewed approval. Legacy
+Runtime approval binds agreement content and revision; task checkboxes and
+task `[paths:]` write scope are bookkeeping and do not invalidate it. Other
+agreement edits require renewed approval; during Build they go through
+`change amend`, and a hand-edited isolated packet is agent-owned drift repair. Legacy
 primitive-created/in-flight changes retain their compatibility route.
 
 To change an agreement that has not started Build, revise it in place instead

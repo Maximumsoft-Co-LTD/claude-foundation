@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
+  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -196,6 +196,21 @@ test("spec approval is explicit, content-bound, and separate from edits", (t) =>
   assert.doesNotThrow(() => assertSpecApproval(value.root, "atomic-change", state()));
   writeFileSync(join(value.changes, "atomic-change", "proposal.md"), "Different behavior");
   assert.throws(() => assertSpecApproval(value.root, "atomic-change", state()), { code: "SPEC_APPROVAL_REQUIRED" });
+});
+
+test("spec approval refuses to bind an unamended isolated packet that drifted", (t) => {
+  const value = fixture(t);
+  value.lifecycle.startAtomic(value.draftPath);
+  const statePath = join(value.runtime, "atomic-change.json");
+  const workspace = join(value.root, "workspace");
+  cpSync(join(value.changes, "atomic-change"), join(workspace, "openspec/changes/atomic-change"),
+    { recursive: true });
+  writeFileSync(join(workspace, "openspec/changes/atomic-change/proposal.md"), "Edited in place");
+  writeJson(statePath, { ...JSON.parse(readFileSync(statePath)), workspace: { path: workspace } });
+  assert.throws(() => value.lifecycle.resolveChange("atomic-change", {
+    "approve-spec": true, "decision-ref": "fixture://approval"
+  }), /edited outside a semantic amendment/);
+  assert.equal(JSON.parse(readFileSync(statePath)).specApproval.identity, undefined);
 });
 
 test("review continuation requires authority and preserves the previous window", (t) => {

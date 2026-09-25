@@ -348,6 +348,23 @@ test("literal heredoc bodies and single-quoted words are inert to Build scans", 
     "cd /workspace && cat > a.md <<'EOF'\nx\nEOF\necho y > /outside/y"), new RegExp(`^${ESCAPE}`));
 });
 
+// A consumer Build widened a task's `[paths:]` with a sed address script and
+// the guard reported the script itself as a path outside the workspace.
+test("a sed script that starts with / is program text, not a mutation target", () => {
+  for (const command of [
+    "cd /workspace && sed -i '' '/\\*\\*T005\\*\\*/s#\\[paths:a,#[paths:a,b,#' openspec/changes/x/tasks.md",
+    "cd /workspace && sed -i '/^T005/d' tasks.md",
+    "cd /workspace && sed -i -e '/a/d' -e '/b/d' tasks.md",
+    'cd /workspace && sed -i "" "/T005/s#a#b#" tasks.md',
+    "cd /workspace && sed -i '' '/T005/s|a|a,b|' tasks.md"
+  ]) assert.equal(shellMutationViolation("build", WS, command), null, command);
+  // The edited file is still an operand.
+  assert.match(shellMutationViolation("build", WS, "cd /workspace && sed -i '' '/a/d' '/outside/tasks.md'"),
+    new RegExp(`^${ESCAPE}`));
+  assert.match(shellMutationViolation("build", WS, "cd /workspace && sed -i '/a/d' /outside/tasks.md"),
+    new RegExp(`^${ESCAPE}`));
+});
+
 // `> "$OUT"` read as a literal word: the expansion screen skips a `$` behind
 // a quote so `-m "$MSG"` stays allowed, but a quoted mutation target still
 // expands to wherever the variable points.

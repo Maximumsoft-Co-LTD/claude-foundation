@@ -231,7 +231,8 @@ export function observedLeaseWrites(context, id, taskLease, force) {
   if (currentPlan.graphRevision !== taskLease.graphRevision ||
       currentPlan.graphIdentity !== taskLease.graphIdentity ||
       Number(currentPlan.contractRevision) !== Number(taskLease.contractRevision))
-    context.fail(`stale result authority for '${id}/${taskLease.taskId}': graph or contract changed after lease acquisition`);
+    context.fail(`stale result authority for '${id}/${taskLease.taskId}': graph or contract changed after lease acquisition; ` +
+      `re-acquire with 'claude-foundation agents acquire ${id} ${taskLease.taskId} --owner ${taskLease.owner}', then release again`);
   const baseline = new Map();
   for (const row of taskLease.baselineSurface || []) baseline.set(row.path, row.identity);
   const current = new Map();
@@ -247,7 +248,10 @@ export function observedLeaseWrites(context, id, taskLease, force) {
     for (const path of observedWrites)
       if (!leasePathIsAllowed(path, allowed)) outside.push(path);
     if (outside.length)
-      context.fail(`task '${taskLease.taskId}' changed outside granted scope: ${outside.join(", ")}; result and proof were not accepted`);
+      context.fail(`task '${taskLease.taskId}' changed outside granted scope: ${outside.join(", ")}; result and proof were not accepted. ` +
+        `Revert edits that belong to another task, or add the paths to this task's [paths:] in the isolated ` +
+        `openspec/changes/${id}/tasks.md (bookkeeping; no amendment or approval), then ` +
+        `'claude-foundation agents acquire ${id} ${taskLease.taskId} --owner ${taskLease.owner}' and release again`);
   }
   return observedWrites;
 }

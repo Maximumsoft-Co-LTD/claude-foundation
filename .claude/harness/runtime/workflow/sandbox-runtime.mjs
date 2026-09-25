@@ -1,4 +1,4 @@
-import { assertSpecApproval, agreementIdentity, userDecisionError } from "../core/user-decisions.mjs";
+import { assertSpecApproval, agreementIdentity, approvalMatches, userDecisionError } from "../core/user-decisions.mjs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -1894,7 +1894,7 @@ export function createSandboxRuntime({
     sourceHash = directoryHash(source)) {
     const approvedSource = state.specApproval?.identity &&
       state.specApproval.revision === Number(state.contractRevision || 0) &&
-      state.specApproval.identity === agreementIdentity(root, id);
+      approvalMatches(state.specApproval.identity, root, id);
     state.workspace.changeSourceHash = sourceHash;
     delete state.workspace.recovery;
     if (invalidated)

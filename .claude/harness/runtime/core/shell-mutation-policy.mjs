@@ -160,6 +160,33 @@ function operandText(command) {
   return maskSingleQuoted(withoutHeredocBodies(command));
 }
 
+// A sed script is program text, not a path: an address such as
+// `'/\*\*T005\*\*/s#a#b#'` starts with `/` and was refused as a write outside
+// the workspace. Only the script operands are exempt; the edited files are
+// still read as operands. BSD `-i ''` takes a separate empty suffix word.
+// Quoted words are consumed whole: `s|a|b|` must not end the invocation.
+const SED_INVOCATION = new RegExp(String.raw`(?:^|[;&|()]|\b(?:then|do)\b)\s*(?:sudo\s+|env\s+)*(?:[^\s;&|()]+\/)*sed\b((?:${QUOTED_WORD}|[^;&|\n'"])*)`, "gm");
+
+function sedScriptWords(commandLine) {
+  const scripts = new Set();
+  for (const match of commandLine.matchAll(SED_INVOCATION)) {
+    const words = shellWords(match[1]);
+    let explicit = false;
+    let positional = null;
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      if (word === "-e" || word === "--expression") {
+        explicit = true;
+        if (words[i + 1] !== undefined) scripts.add(words[++i]);
+      } else if (word === "-f" || word === "--file") i++;
+      else if (word === "-i" && /^(?:''|"")$/.test(words[i + 1] || "")) i++;
+      else if (!word.startsWith("-") && positional === null) positional = word;
+    }
+    if (!explicit && positional !== null) scripts.add(positional);
+  }
+  return scripts;
+}
+
 // Return every path that a recognized filesystem command may mutate. Reading
 // an extra source path is harmless to containment, while omitting a destination
 // is not, so multi-path commands deliberately inspect all operands.
@@ -185,7 +212,10 @@ function filesystemMutationTargets(command) {
   // the command carries code that resolves paths itself.
   const scoped = operandText(command);
   const executableRanges = absoluteExecutableRanges(scoped);
+  const sedScripts = sedScriptWords(commandLine);
   for (const match of scoped.matchAll(LITERAL_ABSOLUTE)) {
+    if (match[1] !== undefined && sedScripts.has(`"${match[1]}"`) ||
+        match[2] !== undefined && sedScripts.has(`'${match[2]}'`)) continue;
     const raw = match[1] ?? match[2] ?? match[3];
     const start = match.index + match[0].indexOf(raw);
     if (executableRanges.some(([from, to]) => start >= from && start < to)) continue;
@@ -194,7 +224,8 @@ function filesystemMutationTargets(command) {
   }
   if (scoped !== command)
     for (const match of commandLine.matchAll(QUOTED_REGION))
-      if (match[0].startsWith("'/")) targets.push(shellUnquote(match[0]));
+      if (match[0].startsWith("'/") && !sedScripts.has(match[0]))
+        targets.push(shellUnquote(match[0]));
   return [...new Set(targets)].filter((target) => target && target !== "/dev/null");
 }
 

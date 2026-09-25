@@ -36,7 +36,46 @@ test("spec approval binds semantics and revision, not task completion", (t) => {
   state.specApproval = { required: true, identity: agreementIdentity(workspace, "demo"), revision: 1 };
   assert.doesNotThrow(() => assertSpecApproval(root, "demo", state));
   state.amendments = [];
-  assert.throws(() => assertSpecApproval(root, "demo", state), { code: "SPEC_APPROVAL_REQUIRED" });
+  // Without an amendment no single approval identity can equal both packets.
+  assert.throws(() => assertSpecApproval(root, "demo", state), { code: "AGREEMENT_DRIFT" });
+});
+
+// A consumer Build widened a task's `[paths:]` in its isolated packet; the
+// approval could then never match both packets and `advance` asked the user to
+// approve again forever, until the agent asked the user to copy tasks.md.
+test("task write scope is bookkeeping and packet drift is agent repair", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "spec-scope-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const workspace = join(root, "workspace");
+  const tasks = (paths) => `- [ ] T001 Build it [paths:${paths}] — verify: npm test\n`;
+  for (const base of [root, workspace]) {
+    mkdirSync(join(base, "openspec/changes/demo"), { recursive: true });
+    writeFileSync(join(base, "openspec/changes/demo/proposal.md"), "Change the greeting");
+    writeFileSync(join(base, "openspec/changes/demo/tasks.md"), tasks("src/a.ts"));
+  }
+  const legacy = agreementIdentity(root, "demo", { legacy: true });
+  const state = { status: "building", contractRevision: 0, workspace: { path: workspace },
+    specApproval: { required: true, identity: agreementIdentity(root, "demo"), revision: 0 } };
+  writeFileSync(join(workspace, "openspec/changes/demo/tasks.md"),
+    tasks("src/a.ts,app/[tenant]/**"));
+  assert.doesNotThrow(() => assertSpecApproval(root, "demo", state));
+  // Approvals recorded before the upgrade keep their exact-bytes identity,
+  // including when the sandbox later widens only its write scope.
+  writeFileSync(join(workspace, "openspec/changes/demo/tasks.md"), tasks("src/a.ts"));
+  state.specApproval.identity = legacy;
+  assert.doesNotThrow(() => assertSpecApproval(root, "demo", state));
+  writeFileSync(join(workspace, "openspec/changes/demo/tasks.md"), tasks("src/a.ts,src/b.ts"));
+  assert.doesNotThrow(() => assertSpecApproval(root, "demo", state));
+  // Changing what a task does still changes consent.
+  writeFileSync(join(workspace, "openspec/changes/demo/tasks.md"),
+    "- [ ] T001 Delete it [paths:src/a.ts] — verify: npm test\n");
+  let drift;
+  assert.throws(() => assertSpecApproval(root, "demo", state), (error) => (drift = error, true));
+  assert.equal(drift.code, "AGREEMENT_DRIFT");
+  const action = advanceFailureAction("demo", drift, { through: "build" });
+  assert.equal(action.action, "REPAIR");
+  assert.equal(action.actor, "agent");
+  assert.match(action.command, /^claude-foundation change amend demo /);
 });
 
 test("legacy in-flight state needs no invented approval", () => {

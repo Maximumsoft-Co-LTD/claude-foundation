@@ -11,7 +11,9 @@ amendment/decision route. Preserve scope settled before this session.
 The protocol-v6 `advance` action is the current authority. Do not call lifecycle
 primitives unless its recovery explicitly names one. Update `tasks.md` only for
 the returned task after focused checks; the coordinator owns planning and phase
-transitions.
+transitions. In the isolated packet only checkboxes and a task's `[paths:]` are
+bookkeeping; express other agreement changes with `change amend`. Never ask the
+user to copy agreement files between checkouts.
 
 ## Follow-up intent gate
 
