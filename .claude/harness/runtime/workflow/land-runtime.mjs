@@ -463,6 +463,7 @@ export function createLandRuntime({
   clearSnapshotCache,
   relevantHash,
   workspaceIsolationIssues = () => [],
+  targetEditNotices = () => [],
   reviewPolicy = () => null,
   requiredProviders,
   receiptValidity,
@@ -697,6 +698,7 @@ export function createLandRuntime({
     assertLandTargetReady(id, state);
     const isolationIssues = workspaceIsolationIssues(id);
     if (isolationIssues.length) fail(isolationIssues.join("; "));
+    for (const notice of targetEditNotices(state)) console.error(`NOTICE: ${notice}`);
     assertReadOnlyLandDependencies(id, state);
     const { proof, graph, hash, assurance } = landAssuranceSnapshot(
       id, state, multiRepository);

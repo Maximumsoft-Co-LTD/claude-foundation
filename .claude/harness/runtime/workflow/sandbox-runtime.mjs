@@ -1438,10 +1438,13 @@ export function createSandboxRuntime({
     if (carriesGit)
       rmSync(join(path, ".git", "worktrees"), { recursive: true, force: true });
     const preexisting = state.workspace?.preexisting || {};
-    state.workspace = sandboxCopyWorkspace({
-      id, root, path, reason, carriesGit, preexisting, gitHead, workspaceManifest,
-      fileDigest, directoryHash, changePath, packetManifest
-    });
+    state.workspace = {
+      ...sandboxCopyWorkspace({
+        id, root, path, reason, carriesGit, preexisting, gitHead, workspaceManifest,
+        fileDigest, directoryHash, changePath, packetManifest
+      }),
+      targetDirty: targetDirtySnapshot()
+    };
     transitionLifecycleState(state, "building", "copy-sandbox-created");
     saveRuntime(state);
     const setup = runWorkspaceSetup(state);
@@ -1518,6 +1521,22 @@ export function createSandboxRuntime({
     fail
   });
 
+  // The target's dirty files at isolation, by digest. Prove and Land compare
+  // against it to find target edits made outside the sandbox.
+  function targetDirtySnapshot() {
+    const dirty = git(["status", "--porcelain", "-z", "--untracked-files=all"], root);
+    const snapshot = {};
+    if (dirty.status !== 0) return snapshot;
+    for (const { path: rel } of porcelainStatusRecords(dirty.stdout)) {
+      try {
+        const absolute = join(root, rel);
+        if (rel && existsSync(absolute) && lstatSync(absolute).isFile())
+          snapshot[rel] = fileDigest(absolute);
+      } catch {}
+    }
+    return snapshot;
+  }
+
   function createSingle(id) {
     const state = loadRuntime(id);
     if (state.status === "archived") fail(`change '${id}' is already archived`);
@@ -1525,8 +1544,15 @@ export function createSandboxRuntime({
     if (rebindRelocatedSandbox(id, state)) return;
     if (["worktree", "copy"].includes(state.workspace?.mode) && existsSync(state.workspace.path))
       fail(`sandbox already exists: ${state.workspace.path}`);
+    // The sandbox is taken from the current HEAD, so portability is judged
+    // against it. The HEAD recorded when the change was created made "commit
+    // the source" a dead end: a committed readSet file still read as
+    // missing-from-base until the change was recompiled.
+    const head = gitHead(root);
+    if (head && (!state.workspace || state.workspace.mode === "current"))
+      state.workspace = { ...(state.workspace || {}), baseHead: head };
     assertGroundingPortable(id, state);
-    if (!gitHead(root)) {
+    if (!head) {
       createCopy(id, state, "no-git");
       return;
     }
@@ -1575,6 +1601,7 @@ export function createSandboxRuntime({
       { recursive: true, ...VERBATIM_COPY });
     state.workspace = {
       preexisting: state.workspace?.preexisting || {},
+      targetDirty: targetDirtySnapshot(),
       mode: "worktree", path, baseHead: gitHead(root), applied: false,
       changeSourceHash: directoryHash(changePath(id)),
       packetSnapshot: packetManifest(join(path, "openspec", "changes", id))

@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The phase guard no longer blocks shell mutations during Investigate, Change,
+  Build, or Prove. Refusals inferred from command text (sed scripts, `$(…)`
+  captures, copies from scratch directories) are recorded as `shell-audit`
+  rows and the command runs with a notice to the agent. Structured Write/Edit
+  targets stay enforced, and Land/Deliver shell authority stays blocked.
+  `FOUNDATION_SHELL_GUARD=block` restores shell blocking.
+
+### Added
+
+- Sandboxes snapshot the target checkout's dirty files at isolation. Prove
+  readiness and `land check` report target edits made outside the sandbox;
+  after a `shell-audit` row for the change they stop as agent-owned
+  `TARGET_EDITED_OUTSIDE_SANDBOX` repair.
+  `change resolve <change> --accept-target-edits --decision-ref <ref>` records
+  the user's confirmation that the exact edited files are their own.
+
+### Fixed
+
+- Committing a grounding readSet source now clears `missing-from-base`: the
+  first sandbox's portability check uses the current HEAD instead of the HEAD
+  recorded when the change was created.
+- A Build phase recorded before its sandbox exists no longer treats the main
+  checkout as the isolated workspace; Write/Edit outside `.foundation/` and
+  change packets is refused with a route to create the sandbox.
+
 ## [3.5.22] - 2026-09-25
 
 ### Added

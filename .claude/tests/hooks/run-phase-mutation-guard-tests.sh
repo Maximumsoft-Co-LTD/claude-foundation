@@ -15,15 +15,35 @@ HOOK="$ROOT/.claude/hooks/phase-mutation-guard.mjs"
 node --test "$ROOT/.claude/tests/hooks/phase-state.test.mjs"
 node --test "$ROOT/.claude/tests/hooks/phase-guard-policy.test.mjs"
 
+# Shell containment blocks only with FOUNDATION_SHELL_GUARD=block; the strict
+# policy assertions below keep that mode, and the default audit-only behavior
+# has its own assertions.
 invoke() {
   phase="$1" mode="$2" workspace="$3" event="$4"
   printf '%s' "$event" | CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_ACTIVE_PHASE="$phase" \
-    FOUNDATION_GUARDRAIL_MODE="$mode" FOUNDATION_WORKSPACE_ROOT="$workspace" node "$HOOK"
+    FOUNDATION_GUARDRAIL_MODE="$mode" FOUNDATION_WORKSPACE_ROOT="$workspace" \
+    FOUNDATION_SHELL_GUARD="${SHELL_GUARD-block}" node "$HOOK"
 }
 
 write_event() { printf '{"tool_name":"Write","tool_input":{"file_path":"%s"}}' "$1"; }
 bash_event() { printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$1"; }
 bash_event_at() { printf '{"cwd":"%s","tool_name":"Bash","tool_input":{"command":"%s","description":"d"}}' "$1" "$2"; }
+
+# Default shell guard: a refused shell mutation is recorded, not blocked, in
+# the audit phases; Land keeps its authority block.
+audit_log="$TMP/project/.foundation/logs/guardrail-audit.jsonl"
+out="$(SHELL_GUARD= invoke build block "$TMP/workspace" \
+  "$(bash_event "cd $TMP/workspace && sed -i '' '/T005/s#a#b#' x && cp /tmp/draft.json .foundation/d.json")")"
+assert_not_contains "default shell guard does not block a Build shell mutation" "$out" '"decision":"block"'
+assert_contains "default shell guard tells the agent the mutation ran unguarded" "$out" 'ran unguarded'
+assert_contains "default shell guard records the refused shell mutation" \
+  "$(tail -1 "$audit_log")" '"outcome":"shell-audit"'
+out="$(SHELL_GUARD= invoke prove block "" "$(bash_event 'touch src/x.js')")"
+assert_not_contains "default shell guard does not block a Prove shell mutation" "$out" '"decision":"block"'
+out="$(SHELL_GUARD= invoke build block "$TMP/workspace" "$(write_event "$TMP/outside/app.js")")"
+assert_contains "default shell guard keeps structured writes enforced" "$out" '"decision":"block"'
+out="$(SHELL_GUARD= invoke land block "" "$(bash_event 'touch src/x.js')")"
+assert_contains "default shell guard keeps Land shell authority" "$out" '"decision":"block"'
 
 out="$(invoke change block "" "$(write_event "$TMP/project/openspec/changes/demo/tasks.md")")"
 assert_eq "Change permits its OpenSpec draft" "" "$out"
@@ -473,6 +493,17 @@ printf '{"workspace":{"path":"%s"}}\n' \
 out="$(printf '%s' "$(write_event "$TMP/buildpre/.foundation/sandboxes/build-change/src/app.js")" |
   CLAUDE_PROJECT_DIR="$TMP/buildpre" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
 assert_eq "Build derives the recorded sandbox when the host exports no workspace" "" "$out"
+
+# Before the sandbox exists the recorded workspace is the main checkout itself.
+printf '{"status":"change","workspace":{"mode":"current","path":"%s"}}\n' \
+  "$TMP/buildpre" > "$TMP/buildpre/.foundation/runtime/build-change.json"
+out="$(printf '%s' "$(write_event "$TMP/buildpre/src/app.js")" |
+  CLAUDE_PROJECT_DIR="$TMP/buildpre" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
+assert_contains "Build refuses target edits before its sandbox exists" "$out" \
+  'Build workspace has not been created yet'
+out="$(printf '%s' "$(write_event "$TMP/buildpre/.foundation/drafts/d.json")" |
+  CLAUDE_PROJECT_DIR="$TMP/buildpre" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
+assert_eq "Build still writes machine state before its sandbox exists" "" "$out"
 
 # Logs outlive their change. A fixture change left a fresh `building` row with
 # no workspace in a real repository, and because it was the newest row every

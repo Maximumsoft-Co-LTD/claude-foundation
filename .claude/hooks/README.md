@@ -38,6 +38,7 @@ the active transcript's prompt starts with `/dev`.
 
 Environment: `CLAUDE_PROJECT_DIR` names the project root (default: cwd).
 `FOUNDATION_GUARDRAIL_MODE` (`off|audit|block|auto`) governs the phase guard;
+shell refusals outside Land/Deliver are audited unless `FOUNDATION_SHELL_GUARD=block`;
 phase context comes from `FOUNDATION_ACTIVE_PHASE` or `.foundation/logs/`.
 The normal slash-command path records that context through the unified
 `advance` coordinator; read-only Stop inspection uses `advance --inspect`, does

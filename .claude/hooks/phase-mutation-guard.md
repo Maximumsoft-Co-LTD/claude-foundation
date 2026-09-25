@@ -37,6 +37,19 @@ The host may also supply:
 - `FOUNDATION_ALLOWED_PATHS_JSON='["/absolute/extra/path"]'` for explicitly
   declared Build paths
 - `FOUNDATION_GUARDRAIL_MODE=auto|audit|block|off` (`auto` is the default)
+- `FOUNDATION_SHELL_GUARD=block` to block refused shell mutations during
+  Investigate, Change, Build, and Prove
+
+By default those shell refusals are recorded as `shell-audit` rows and the
+command runs, with a notice to the agent: shell containment is inferred from
+command text and misread sed scripts, `$(…)` captures, and scratch copies.
+Structured Write/Edit targets stay enforced, including before the Build sandbox
+exists, and Land/Deliver shell authority stays blocked. Prove readiness and
+`land check` compare the target checkout with its snapshot at isolation; target
+edits after a `shell-audit` row stop as agent-owned
+`TARGET_EDITED_OUTSIDE_SANDBOX` repair, and edits the user confirms as their own
+are recorded with `change resolve <change> --accept-target-edits --decision-ref
+<ref>`.
 
 `FOUNDATION_LAND_TRANSACTION=1` is set by the runtime itself, for the duration
 of the Land apply transaction and its child processes. Do not set it by hand:

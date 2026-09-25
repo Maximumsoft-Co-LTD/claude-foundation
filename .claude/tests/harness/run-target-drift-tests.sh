@@ -115,6 +115,26 @@ create_multi_change() {
   $F sandbox create "$change" --all > /dev/null
 }
 
+# --- A readSet source committed after Change is portable at isolation. -------
+# The first sandbox is taken from the current HEAD, but portability was judged
+# against the HEAD recorded when the change was created, so committing the
+# source — the recovery the refusal names — could never clear it.
+setup_project committed-readset
+$F new "readset committed after change" --rapid > /dev/null
+C=readset-committed-after-change
+mkdir -p notes && printf 'decision\n' > notes/decision.md
+digest="$(node -e "process.stdout.write(require('crypto').createHash('sha256').update(require('fs').readFileSync('notes/decision.md')).digest('hex'))")"
+printf '{"readSet":[{"repository":"root","path":"notes/decision.md","sha256":"%s"}]}\n' \
+  "$digest" > "openspec/changes/$C/grounding.yaml"
+node -e "const f='.foundation/runtime/$C.json',fs=require('fs'),s=JSON.parse(fs.readFileSync(f));s.groundingRequired=true;fs.writeFileSync(f,JSON.stringify(s))"
+git add notes && git commit -qm "commit the grounding source" > /dev/null
+created="$($F sandbox create "$C" 2>&1 || true)"
+assert_not_contains "a source committed after Change is not missing from base" \
+  "$created" "not sandbox-portable"
+assert_eq "the sandbox is based on the current HEAD" \
+  "$(git rev-parse HEAD)" "$(state_of "$C" baseHead)"
+cd "$TMP"
+
 # --- A moved target replays at sync. -----------------------------------------
 setup_project replays-worktree
 $F new "worktree replays onto the target" --rapid > /dev/null

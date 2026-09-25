@@ -56,6 +56,7 @@ function fixture(t, { validationFailure = null, sandboxFailure = null } = {}) {
   const changes = join(root, "openspec", "changes");
   const runtime = join(root, ".foundation", "runtime");
   const calls = { draftReads: 0, rollback: 0, sequence: [] };
+  const dirtyTarget = {};
   for (const schema of ["foundation-rapid", "foundation-standard"]) {
     const templates = join(root, "openspec", "schemas", schema, "templates");
     mkdirSync(templates, { recursive: true });
@@ -98,7 +99,7 @@ function fixture(t, { validationFailure = null, sandboxFailure = null } = {}) {
     setOperationChangeId: () => {},
     initialBudget: () => ({}),
     gitHead: () => "head",
-    preexistingDirty: () => ({}),
+    preexistingDirty: () => ({ ...dirtyTarget }),
     now: () => "2026-09-02T00:00:00.000Z",
     bindClaudeSession: () => { calls.sequence.push("bind"); },
     validate: (...args) => {
@@ -119,7 +120,7 @@ function fixture(t, { validationFailure = null, sandboxFailure = null } = {}) {
       return [];
     }
   });
-  return { root, changes, runtime, draftPath, lifecycle, calls };
+  return { root, changes, runtime, draftPath, lifecycle, calls, dirtyTarget };
 }
 
 test("atomic start reads once, validates explicitly, then publishes agreement state", (t) => {
@@ -211,6 +212,28 @@ test("spec approval refuses to bind an unamended isolated packet that drifted", 
     "approve-spec": true, "decision-ref": "fixture://approval"
   }), /edited outside a semantic amendment/);
   assert.equal(JSON.parse(readFileSync(statePath)).specApproval.identity, undefined);
+});
+
+test("accepting target edits binds the exact edited bytes to a user decision", (t) => {
+  const value = fixture(t);
+  value.lifecycle.startAtomic(value.draftPath);
+  const statePath = join(value.runtime, "atomic-change.json");
+  writeJson(statePath, { ...JSON.parse(readFileSync(statePath)),
+    workspace: { mode: "worktree", path: "/sandbox", targetDirty: {} } });
+  assert.throws(() => value.lifecycle.resolveChange("atomic-change", {
+    "accept-target-edits": true, "decision-ref": "fixture://accept"
+  }), /No target checkout edits/);
+  value.dirtyTarget["src/user.js"] = "digest-1";
+  value.dirtyTarget[".foundation/x"] = "machine";
+  assert.throws(() => value.lifecycle.resolveChange("atomic-change", {
+    "accept-target-edits": true, "approve-spec": true, "decision-ref": "fixture://accept"
+  }), /one user decision at a time/);
+  value.lifecycle.resolveChange("atomic-change", {
+    "accept-target-edits": true, "decision-ref": "fixture://accept"
+  });
+  const accepted = JSON.parse(readFileSync(statePath)).targetEditsAccepted;
+  assert.deepEqual(accepted.paths, ["src/user.js"]);
+  assert.equal(accepted.decisionRef, "fixture://accept");
 });
 
 test("review continuation requires authority and preserves the previous window", (t) => {

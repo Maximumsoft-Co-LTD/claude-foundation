@@ -96,6 +96,15 @@ const recordedRuntime = recorded?.changeId ? runtimeState(recorded.changeId) : n
 const recordedWorkspace = recordedRuntime?.workspace?.path
   ? canonicalTarget(recordedRuntime.workspace.path, projectRoot) || "" : "";
 const violations = [];
+// Shell containment is inferred from command text, so it misreads program
+// text (sed scripts, `$(…)` captures, scratch copies) as escapes and cost
+// Builds whole turns. Outside Land and Deliver authority it records instead
+// of blocking; structured Write/Edit targets stay enforced, and Land detects
+// target edits made outside the sandbox. FOUNDATION_SHELL_GUARD=block restores
+// shell blocking.
+const shellAuditPhases = new Set(["investigate", "change", "build", "prove"]);
+const shellGuardBlocks = (process.env.FOUNDATION_SHELL_GUARD || "").toLowerCase() === "block";
+let shellAudit = null;
 // A Build shell command rewritten with the reported working directory as its
 // literal anchor. Set only when the policy accepts the pinned form.
 let pinnedCommand = null;
@@ -128,6 +137,20 @@ if (!phase && prePhaseDraftMutationAllowed()) {
   inspectBash(String(input.command || ""));
 } else {
   for (const rawPath of eventPaths(input)) inspectPath(rawPath);
+}
+
+if (violations.length === 0 && shellAudit !== null) {
+  recordAudit({ phase, tool, mode, changeId: recorded?.changeId || null,
+    outcome: "shell-audit", reason: shellAudit, command: String(input.command || "") });
+  if (mode === "block") process.stdout.write(JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      additionalContext: `phase guard (${phase}/Bash) recorded an unverified shell mutation: ` +
+        `${shellAudit}. It ran unguarded; keep mutations inside the active phase workspace. ` +
+        "Land reports target-checkout edits made outside the sandbox."
+    }
+  }));
+  process.exit(0);
 }
 
 if (violations.length === 0) {
@@ -170,6 +193,17 @@ function inspectPath(rawPath) {
 
   const investigations = join(projectRoot, "openspec", "investigations");
   const prototypes = join(projectRoot, ".foundation", "prototypes");
+  // A Build phase recorded before its sandbox exists still points at the main
+  // checkout; treating that as the isolated workspace let product edits land
+  // in the target. Only machine state and change packets are writable then.
+  if (phase === "build" && !process.env.FOUNDATION_WORKSPACE_ROOT &&
+      recordedRuntime?.workspace?.mode === "current") {
+    if (!isWithin(target, join(projectRoot, ".foundation")) &&
+        !isWithin(target, join(projectRoot, "openspec", "changes")))
+      violations.push("the Build workspace has not been created yet; run " +
+        `'claude-foundation advance ${recorded.changeId} --through build' to create it, then edit inside it`);
+    return;
+  }
   const workspace = process.env.FOUNDATION_WORKSPACE_ROOT || recordedWorkspace;
   const status = phase === "build" ? "building" : phase === "prove" ? "proven"
     : phase === "land" ? "applied" : "change";
@@ -244,9 +278,10 @@ function inspectBash(command) {
   if (!violation) return;
   const pinned = phase === "build" && mode === "block" && workspace
     ? pinnedWorkspaceCommand(command, workspace, environment, inspection) : null;
-  if (pinned === null) violations.push(violation);
-  else if (pinned.violation) violations.push(pinned.violation);
-  else pinnedCommand = pinned.command;
+  const refusal = pinned === null ? violation : pinned.violation || null;
+  if (refusal === null) pinnedCommand = pinned.command;
+  else if (shellAuditPhases.has(phase) && !shellGuardBlocks) shellAudit = refusal;
+  else violations.push(refusal);
 }
 
 // The host reports where the shell is. That report is never authority — it

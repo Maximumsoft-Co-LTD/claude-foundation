@@ -13,7 +13,9 @@ primitives unless its recovery explicitly names one. Update `tasks.md` only for
 the returned task after focused checks; the coordinator owns planning and phase
 transitions. In the isolated packet only checkboxes and a task's `[paths:]` are
 bookkeeping; express other agreement changes with `change amend`. Never ask the
-user to copy agreement files between checkouts.
+user to copy agreement files between checkouts. Shell mutations run audited,
+not blocked: anchor them in the workspace, and on
+`TARGET_EDITED_OUTSIDE_SANDBOX` move your target edits into the sandbox.
 
 ## Follow-up intent gate
 

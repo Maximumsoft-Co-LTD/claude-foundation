@@ -139,7 +139,9 @@ be packaged as live hook self-tests.
 ## Add a regression
 
 `user-decisions.test.mjs` runs with advance lifecycle outcomes and covers spec
-approval, shared review deadlines, explicit decision routes, and waiver expiry.
+approval, shared review deadlines, explicit decision routes, and waiver expiry;
+`target-edits.test.mjs` beside it covers target-checkout edits made outside
+the sandbox while shell mutations are audited.
 
 Put a regression at the lowest deterministic boundary that caught the defect:
 

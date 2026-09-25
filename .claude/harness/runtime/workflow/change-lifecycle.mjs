@@ -36,6 +36,7 @@ import { validateInvestigationBinding } from "./investigation-runtime.mjs";
 import {
   designBlueprintWarnings, draftHasBlueprints, renderDesignBlueprints
 } from "./validation/design-blueprints.mjs";
+import { targetEditDigest, targetEditPaths } from "./target-edits.mjs";
 
 export function atomicStartPreflight(draft, { groundingRequired = false } = {}) {
   const issues = [];
@@ -1309,11 +1310,12 @@ export function createChangeLifecycle({
   }
 
   function resolveChange(id, flags) {
-    if (flags["approve-spec"] || flags["continue-review"]) {
+    const decisionFlags = ["approve-spec", "continue-review", "accept-target-edits"];
+    if (decisionFlags.some((key) => flags[key])) {
       const decisionRef = String(flags["decision-ref"] || "").trim();
       if (!decisionRef) fail("This operation requires --decision-ref from an explicit user answer");
-      if (Object.keys(flags).some((key) => !["approve-spec", "continue-review", "decision-ref"].includes(key)) ||
-          flags["approve-spec"] && flags["continue-review"])
+      if (Object.keys(flags).some((key) => ![...decisionFlags, "decision-ref"].includes(key)) ||
+          decisionFlags.filter((key) => flags[key]).length > 1)
         fail("Record one user decision at a time, separately from agreement edits");
       const state = loadRuntime(id);
       if (state.status === "archived") fail(`change '${id}' is already archived`);
@@ -1338,6 +1340,15 @@ export function createChangeLifecycle({
         approvedDelta = current.pendingApprovalDelta || null;
         delete current.pendingApprovalDelta;
         saveRuntime(current);
+      } else if (flags["accept-target-edits"]) {
+        // Binds the exact edited bytes: a later edit is a new question.
+        const dirtyNow = preexistingDirty(root);
+        const snapshot = state.workspace?.targetDirty || state.workspace?.preexisting || {};
+        const paths = targetEditPaths(snapshot, dirtyNow);
+        if (!paths.length) fail("No target checkout edits outside the sandbox need a decision");
+        state.targetEditsAccepted = { digest: targetEditDigest(paths, dirtyNow), paths,
+          decisionRef, acceptedAt: now() };
+        saveRuntime(state);
       } else {
         if (!state.reviewWindow) fail("No review window has started for this change");
         const startedAt = now();
@@ -1347,7 +1358,8 @@ export function createChangeLifecycle({
       }
       console.log(`DECISION RECORDED ${id}\n` +
         (approvedDelta ? `  approved requirement delta:\n${formatApprovalDelta(approvedDelta)}\n` : "") +
-        `  next: claude-foundation advance ${id} --through ${flags["approve-spec"] ? "build" : "proven"}`);
+        `  next: claude-foundation advance ${id} --through ${flags["approve-spec"] ? "build"
+          : flags["accept-target-edits"] ? "archived" : "proven"}`);
       return;
     }
     const state = loadRuntime(id);

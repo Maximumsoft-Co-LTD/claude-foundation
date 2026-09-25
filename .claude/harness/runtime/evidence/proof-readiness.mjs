@@ -675,6 +675,7 @@ export function createProofReadinessRuntime({
   saveRuntime,
   authorityPreflight = () => ({ status: "READY", blockers: [], decision: null }),
   executionContract = null,
+  targetEditIssues = () => [],
   root = null,
   fail
 }) {
@@ -694,7 +695,8 @@ export function createProofReadinessRuntime({
 
   function workspaceIsolationIssues(id) {
     const state = loadRuntime(id);
-    return workspaceIsolationIssuesValue(state, canonicalChangedSurface(id, state));
+    return [...workspaceIsolationIssuesValue(state, canonicalChangedSurface(id, state)),
+      ...targetEditIssues(state)];
   }
 
   // `details`, when supplied, collects `{ repositoryId, paths }` per blocked

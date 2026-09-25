@@ -119,6 +119,7 @@ import {
   ADAPTERS, INPUT_MODES, PROVIDER_CONTRACTS, PROVIDERS, providerCapability
 } from "./runtime/evidence/provider-catalog.mjs";
 import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
+import { targetEditIssues as targetEditFindings } from "./runtime/workflow/target-edits.mjs";
 import { createQualityRuntime } from "./runtime/quality/quality-runtime.mjs";
 import {
   createPullRequestRuntime, DELIVERY_PROTOCOL_VERSION, DELIVERY_RECEIPT_SCHEMA_VERSION
@@ -1214,6 +1215,8 @@ const {
   upgradeEvidence
 } = createProofReadinessRuntime({
   root: ROOT,
+  targetEditIssues: (state) =>
+    targetEditFindings({ root: ROOT, state, dirtyNow: preexistingDirty(ROOT) }).issues,
   markBlocked,
   evidence,
   loadRuntime,
@@ -1711,6 +1714,8 @@ const {
   clearSnapshotCache,
   relevantHash,
   workspaceIsolationIssues,
+  targetEditNotices: (state) =>
+    targetEditFindings({ root: ROOT, state, dirtyNow: preexistingDirty(ROOT) }).notices,
   reviewPolicy,
   requiredProviders,
   receiptValidity,
