@@ -63,28 +63,14 @@ clear. Do not create extra artifacts merely to make the packet look thorough.
 For changes across components, supply a diagram explaining the affected
 boundaries and dependencies. For changed state, async, or workflow behavior,
 show the relevant transitions or sequence, including failure/recovery paths.
-Declare `workType` (a list) on every standard draft; it selects the design
-blueprints the compiler expects, and each one renders as a `design.md` section:
-
-| workType | Expected blueprint |
-|---|---|
-| any except `chore`/`docs` | `fileMap` [{path, change: new\|modify\|delete, responsibility, tasks}], `failureMatrix` [{failure, userSees, recovery, covers}], `testMap` [{scenario, level, file}] |
-| `api` | `apiContracts` [{method, path, auth, request, response, errors [{status, when}], idempotency, compatibility}] |
-| `data` | `dataModel` [{entity, fields [{name, type, constraints}], invariants, migration, rollback}] |
-| `ui` | `uiStates` [{screen, states [{state, shows, actions}] including an error state, accessibility, copy}] |
-| `config` | `configContract` [{key, default, secret, validation, scope}] |
-| `async` | `jobContract` [{key, states, transitions, retry, timeout, idempotency, cancellation}] and a sequence or state diagram |
-| `integration` | `integrations` |
-| `bugfix` | `bugfix` {reproduction, rootCause, regression} |
-| `refactor` | `refactor` {invariants, characterization} |
-
-Other values: `feature`; `coupling: coupled` also expects `diagrams`. Missing
-or thin blueprints are `designWarnings` in `--inspect` and `design warning`
-lines on AGREED/REVISED; they never block, so resolve each before presenting the
-spec for approval. Keep every `fileMap` path inside a task's `paths`. Use
-`currentState` for verified brownfield facts, `diagrams` for Mermaid or local
-image references, and give every decision its `consequences`. Rapid work need
-not create an empty design.
+Declare `workType` (a list: feature, bugfix, refactor, api, ui, data, config,
+async, integration, chore, docs). Except chore/docs it expects `fileMap`,
+`failureMatrix`, and `testMap`; `api` adds `apiContracts`, `data` `dataModel`,
+`ui` `uiStates`, `config` `configContract`, `async` `jobContract` plus a
+sequence/state diagram, `integration` `integrations`, `bugfix` and `refactor`
+their own objects; `coupling: coupled` adds `diagrams`. Resolve every
+`--inspect` `designWarnings` entry before presenting the spec; keep `fileMap`
+paths inside task `paths`.
 
 ## Compile and inspect
 
