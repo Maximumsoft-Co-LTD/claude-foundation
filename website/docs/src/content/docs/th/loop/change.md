@@ -39,7 +39,8 @@ claude-foundation change start .foundation/drafts/<id>.json --consume-draft
 - `workType` (list เช่น `["feature", "api", "ui"]`) และ design blueprint ที่
   workType เลือก: `fileMap`, `failureMatrix`, `testMap` และ `apiContracts`,
   `dataModel`, `uiStates`, `configContract`, `jobContract`, `bugfix` หรือ
-  `refactor` ถ้าขาดจะเป็น design warning ที่ไม่บล็อก
+  `refactor` ถ้าขาดจะเป็น design warning ที่ไม่บล็อก เช่นเดียวกับ task ที่เทสของตัวเอง
+  อยู่นอก `paths`
 - `decisions` สำหรับมติที่มีผลต่อ implementation พร้อมผลที่ตามมา
 - diagram แบบ Mermaid หรืออ้าง SVG/PNG
 - `prototypeSelection` ที่ชี้ไป selection note ที่มีจริง

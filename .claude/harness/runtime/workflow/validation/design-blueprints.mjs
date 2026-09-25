@@ -32,7 +32,7 @@ const BY_WORK_TYPE = {
 const ENTRY_FIELDS = {
   fileMap: ["path", "change", "responsibility"],
   failureMatrix: ["failure", "userSees", "recovery"],
-  testMap: ["scenario", "level", "file"],
+  testMap: ["scenario", "level", "file", "task"],
   apiContracts: ["method", "path", "auth", "request", "response", "errors"],
   dataModel: ["entity", "fields", "migration"],
   uiStates: ["screen", "states", "accessibility"],
@@ -137,10 +137,43 @@ export function designBlueprintWarnings(draft) {
           !leasePathIsAllowed(path.replace(/\/\*\*?$/, ""), taskPaths))
         warnings.push(`fileMap[${index}] '${path}' is outside every task's paths`);
     });
+  warnings.push(...taskTestOwnershipWarnings(draft));
   (draft?.decisions || []).forEach((decision, index) => {
     if (!present(decision?.consequences))
       warnings.push(`decisions[${index}] states no consequences`);
   });
+  return warnings;
+}
+
+// A test path named in a task's verify command, e.g. `npx vitest
+// tests/unit/card.spec.js`. Only file-shaped tokens with a test marker count.
+const TEST_FILE = /(?:^|\s|["'=])((?:[\w.@-]+\/)*[\w.@-]+\.(?:spec|test)\.[a-z]+)(?=$|[\s"';:)])/gi;
+
+function verifyTestFiles(verify) {
+  return [...String(verify || "").matchAll(TEST_FILE)].map((match) => match[1]);
+}
+
+// A task that changes behavior must own the tests for it. A consumer plan kept
+// every spec in a final test task, so the first behavior task could not update
+// the spec it broke and Build refused the edit as outside the granted scope.
+function taskTestOwnershipWarnings(draft) {
+  const tasks = (draft?.tasks || []).filter((task) => Array.isArray(task?.paths) && task.paths.length);
+  const byKey = new Map(tasks.map((task) => [String(task.key || task.id || ""), task]));
+  const warnings = [];
+  const seen = new Set();
+  const check = (task, file) => {
+    const key = String(task.key || task.id);
+    if (seen.has(`${key}\0${file}`) || leasePathIsAllowed(file, task.paths)) return;
+    seen.add(`${key}\0${file}`);
+    const owner = tasks.find((other) => other !== task && leasePathIsAllowed(file, other.paths));
+    warnings.push(`task '${key}' verifies with '${file}' outside its paths${
+      owner ? ` (owned by '${owner.key || owner.id}')` : ""}; add it to the task that changes the behavior`);
+  };
+  for (const task of tasks) for (const file of verifyTestFiles(task.verify)) check(task, file);
+  for (const row of Array.isArray(draft?.testMap) ? draft.testMap : []) {
+    const task = byKey.get(String(row?.task || ""));
+    if (task && row?.file) check(task, String(row.file));
+  }
   return warnings;
 }
 
@@ -238,7 +271,7 @@ export function renderDesignBlueprints(draft) {
     ["Failure", "failure"], ["User sees", "userSees"], ["Recovery", "recovery"], ["Covers", "covers"]
   ], draft.failureMatrix));
   if (present(draft.testMap)) sections.push(`## Test map\n\n` + table([
-    ["Scenario", "scenario"], ["Level", "level"], ["File", "file"]
+    ["Scenario", "scenario"], ["Level", "level"], ["File", "file"], ["Task", "task"]
   ], draft.testMap));
   return sections.join("\n\n");
 }

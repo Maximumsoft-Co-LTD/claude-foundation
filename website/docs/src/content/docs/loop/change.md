@@ -90,7 +90,8 @@ Add complexity only when the work needs it:
 - `workType` (a list such as `["feature", "api", "ui"]`) and the design
   blueprints it selects: `fileMap`, `failureMatrix`, `testMap`, plus
   `apiContracts`, `dataModel`, `uiStates`, `configContract`, `jobContract`,
-  `bugfix`, or `refactor`; missing ones are non-blocking design warnings
+  `bugfix`, or `refactor`; missing ones are non-blocking design warnings, as
+  is a task whose own tests sit outside its `paths`
 - `decisions` for load-bearing choices, each with its consequences
 - Mermaid or referenced SVG/PNG `diagrams`
 - `prototypeSelection` pointing at an existing selection note

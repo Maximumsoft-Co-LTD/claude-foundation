@@ -20,7 +20,8 @@ const COMPLETE = {
     responsibility: "Create an import job", tasks: ["api"] }],
   failureMatrix: [{ failure: "Extractor times out", userSees: "Retry banner",
     recovery: "Job marked failed; user retries" }],
-  testMap: [{ scenario: "timeout", level: "integration", file: "route.test.ts" }],
+  testMap: [{ scenario: "timeout", level: "integration", task: "api",
+    file: "apps/editor/src/app/api/import/route.test.ts" }],
   apiContracts: [{ method: "POST", path: "/api/import", auth: "internal session",
     request: { url: "string" }, response: { jobId: "string" },
     errors: [{ status: 400, when: "URL rejected by guard" }], idempotency: "none" }],
@@ -59,6 +60,26 @@ test("missing or thin blueprints warn without blocking compilation", () => {
 
   assert.match(designBlueprintWarnings({ version: 4 })[0], /^declare workType/);
   assert.deepEqual(designBlueprintWarnings({ version: 3 }), []);
+});
+
+// A consumer plan kept every spec in a final test task: T006 changed card
+// behavior but its spec belonged to T012, so Build refused the spec update.
+test("a task must own the tests that verify the behavior it changes", () => {
+  const tasks = [
+    { key: "cards", paths: ["pages/campaign/**"],
+      verify: "npx vitest run tests/unit/campaignPageCards.spec.js" },
+    { key: "tests", paths: ["tests/**"], verify: "npx vitest run" }
+  ];
+  const warnings = designBlueprintWarnings(draft({ ...COMPLETE, tasks,
+    fileMap: [], testMap: [{ scenario: "cards", level: "unit", task: "cards",
+      file: "tests/unit/campaignPageCards.spec.js" }] }));
+  assert.deepEqual(warnings.filter((warning) => warning.startsWith("task ")), [
+    "task 'cards' verifies with 'tests/unit/campaignPageCards.spec.js' outside its paths " +
+    "(owned by 'tests'); add it to the task that changes the behavior"
+  ]);
+  const owned = designBlueprintWarnings(draft({ ...COMPLETE, fileMap: [], tasks: [{
+    ...tasks[0], paths: ["pages/campaign/**", "tests/unit/campaignPageCards.spec.js"] }] }));
+  assert.equal(owned.some((warning) => warning.startsWith("task ")), false);
 });
 
 test("a typo in workType or a wrong section shape is a draft error", () => {

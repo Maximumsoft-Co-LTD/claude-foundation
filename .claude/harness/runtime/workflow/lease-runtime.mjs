@@ -351,7 +351,7 @@ export function createLeaseRuntime({
     return rows;
   }
 
-  function acquire(id, taskId, flags) {
+  function acquire(id, taskId, flags, { quiet = false } = {}) {
     const request = leaseAcquisitionRequest({
       agentPlanValue, policy, leases, exists: existsSync, readJson,
       nowMs: Date.now, fail
@@ -362,14 +362,16 @@ export function createLeaseRuntime({
       leasePath, observedTaskSurface, workspaceLeases: () => active(id)
     });
     const result = withAcquisitionLock(operation);
+    if (quiet) return { ...result, taskId: request.task.id, owner: request.owner };
     console.log(`LEASE ACQUIRED ${id}/${request.task.id}\n  owner: ${request.owner}\n  lease: ${result.leaseId}\n  generation: ${result.fencingGeneration}\n  attempt: ${result.executionAttempt}\n  expires: ${request.expiresAt}`);
   }
 
-  function release(id, taskId, flags) {
+  function release(id, taskId, flags, { quiet = false } = {}) {
     const identity = leaseReleaseIdentity({
-      leases, exists: existsSync, readJson, nowMs: Date.now, fail, log: console.log
+      leases, exists: existsSync, readJson, nowMs: Date.now, fail,
+      log: quiet ? () => {} : console.log
     }, id, taskId, flags);
-    if (identity.absent) return;
+    if (identity.absent) return { absent: true, observedWrites: [] };
     const { owner, index, taskLease, force } = identity;
     const observedWrites = observedLeaseWrites({
       agentPlanValue, observedTaskSurface, fail
@@ -380,9 +382,27 @@ export function createLeaseRuntime({
       remove: rmSync, writeJson, now
     });
     withAcquisitionLock(operation);
+    if (quiet) return { absent: false, observedWrites };
     console.log(`LEASE RELEASED ${id}/${taskLease.taskId}${
       taskLease.owner === owner ? "" : `\n  taken over from: ${taskLease.owner}`}${
       observedWrites.length ? `\n  observed writes: ${observedWrites.join(", ")}` : ""}`);
+  }
+
+  // Drops a lease no worker ever received (the one `advance` holds for its
+  // session task) without recording a result or a takeover, so an explicit
+  // acquire starts the task's first real attempt.
+  function discard(id, taskId, owner) {
+    const index = join(leases, "tasks", id, `${String(taskId).toUpperCase()}.json`);
+    if (!existsSync(index)) return;
+    withAcquisitionLock(() => {
+      const taskLease = readJson(index, {});
+      if (taskLease.owner !== owner) return;
+      for (const resource of taskLease.resources || []) {
+        const path = leasePath(resource);
+        if (existsSync(path) && readJson(path, {}).leaseId === taskLease.leaseId) rmSync(path);
+      }
+      rmSync(index, { force: true });
+    });
   }
 
   function active(id) {
@@ -400,5 +420,5 @@ export function createLeaseRuntime({
     readJson, remove: rmSync
   });
 
-  return { leasePath, acquire, release, active, cleanup };
+  return { leasePath, acquire, release, discard, active, cleanup };
 }

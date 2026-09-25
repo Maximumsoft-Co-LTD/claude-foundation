@@ -4,12 +4,13 @@ The native host owns spawning, cancellation, leases, and the task ledger.
 Foundation returns one `EDIT` envelope with `execution.mode`, bounded tasks,
 allowed paths, verification, and one resume route.
 
-For a session-mode leased task, acquire the returned lease and implement the
-task already embedded in the action. Release the
-matching lease after focused checks, then mark only an accepted success
-complete in `tasks.md` and dispatch again. This action deliberately keeps a
-singleton runnable frontier out of a new worker while preserving the same
-fencing, observed-write, and result authority as spawned work.
+For a session-mode leased task, `advance` holds the lease itself
+(`execution.managedLease`). Implement the embedded task and run its focused
+checks; do not acquire or release it. After a success, mark it complete in the
+isolated `tasks.md` and resume `advance`, which releases the lease and checks
+observed writes against the task scope. An unmarked task keeps its lease.
+This keeps a singleton runnable frontier out of a new worker while preserving
+the same fencing, observed-write, and result authority as spawned work.
 
 For parallel mode, the parent is the orchestrator and join owner. Before
 acquiring, determine the native worker slots currently available and select

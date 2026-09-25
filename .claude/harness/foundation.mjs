@@ -120,6 +120,7 @@ import {
 } from "./runtime/evidence/provider-catalog.mjs";
 import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
 import { targetEditIssues as targetEditFindings } from "./runtime/workflow/target-edits.mjs";
+import { createSessionLeaseRuntime, isSessionOwner } from "./runtime/workflow/session-lease.mjs";
 import { createQualityRuntime } from "./runtime/quality/quality-runtime.mjs";
 import {
   createPullRequestRuntime, DELIVERY_PROTOCOL_VERSION, DELIVERY_RECEIPT_SCHEMA_VERSION
@@ -1161,6 +1162,7 @@ const {
   leasePath,
   acquire: acquireAgentLease,
   release: releaseAgentLease,
+  discard: discardAgentLease,
   active: activeChangeLeases,
   cleanup: cleanupChangeLeases
 } = createLeaseRuntime({
@@ -1192,7 +1194,10 @@ const {
   showDispatch: showAgentDispatch
 } = createAgentDispatchRuntime({
   agentPlanValue,
-  activeChangeLeases,
+  // A lease `advance` holds for its session task is not a live worker: the
+  // same task is still the frontier and dispatch returns it again.
+  activeChangeLeases: (id) => activeChangeLeases(id)
+    .filter((lease) => !isSessionOwner(lease.owner)),
   stableHash,
   policy: foundationPolicy,
   serializedJson,
@@ -1889,7 +1894,13 @@ async function runAdvanceQuietly(operation) {
     console.log = priorLog;
   }
 }
+const sessionLeases = createSessionLeaseRuntime({
+  loadRuntime, activeChangeLeases, stableHash,
+  acquire: acquireAgentLease, release: releaseAgentLease, discard: discardAgentLease
+});
 const { advanceValue, showAdvance } = createAdvanceRuntime({
+  settleSessionLeases: sessionLeases.settle,
+  issueSessionLease: sessionLeases.issue,
   assertApproval: (id, state, options) => assertSpecApproval(ROOT, id, state, options),
   inspectSnapshots,
   capture: trapFailures,
@@ -2073,7 +2084,10 @@ await routeRuntimeCommand(command, values, {
   showAgentPlan,
   showAgentDispatch,
   showAgentTask,
-  acquireAgentLease,
+  acquireAgentLease: (id, taskId, flags) => {
+    sessionLeases.yieldTo(id);
+    return acquireAgentLease(id, taskId, flags);
+  },
   releaseAgentLease,
   prepareClaudeTelemetry,
   recordPhaseContext,

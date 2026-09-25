@@ -70,7 +70,7 @@ async, integration, chore, docs). Except chore/docs it expects `fileMap`,
 sequence/state diagram, `integration` `integrations`, `bugfix` and `refactor`
 their own objects; `coupling: coupled` adds `diagrams`. Resolve every
 `--inspect` `designWarnings` entry before presenting the spec; keep `fileMap`
-paths inside task `paths`.
+paths and task tests inside task `paths`.
 
 ## Compile and inspect
 

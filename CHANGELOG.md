@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- A session-mode leased Build task no longer needs `agents acquire` and
+  `agents release`. `advance` holds the lease (`execution.managedLease`); after
+  the agent marks the task complete in `tasks.md`, the next `advance` releases
+  it with the same observed-write and scope checks. An unmarked task keeps its
+  lease across resumes. A `[paths:]` widening renews the lease; an out-of-scope
+  write returns agent-owned repair that resumes through `advance`. An explicit
+  `agents acquire` takes the task over. Parallel groups keep explicit
+  per-worker leases.
+
+### Added
+
+- Design warnings flag a task whose own tests — named in its `verify` command
+  or in a `testMap` row with the new `task` key — sit outside its `paths`,
+  naming the task that owns them.
+
 ## [3.5.23] - 2026-09-25
 
 ### Changed

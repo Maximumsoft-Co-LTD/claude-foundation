@@ -573,6 +573,7 @@ export function createAdvanceRuntime({
   recoverWorkspace = null,
   recoverArchive = null,
   recoverSandbox = null, saveRuntime = () => {}, proofIsCurrent = null,
+  settleSessionLeases = null, issueSessionLease = null,
   authorizeLand = null,
   hasLandGrant = () => false,
   recordPhase = null, output = console.log,
@@ -758,6 +759,10 @@ export function createAdvanceRuntime({
   async function advanceThrough(id, through) {
     let stage = "build";
     const finish = async (value) => {
+      if (issueSessionLease && value?.action === "EDIT") {
+        try { value = capture(() => issueSessionLease(id, value)); }
+        catch (error) { value = advanceFailureAction(id, error, { stage, through }); }
+      }
       value = projected({ ...value, resume: resume(id, through), resumeCommand: resume(id, through) });
       try { value = projected(recovery.observe(id, value)); }
       catch (error) {
@@ -825,6 +830,10 @@ export function createAdvanceRuntime({
           recordActivePhase("build");
           await prepareBuild(id);
         }
+        // Resuming after a session task is its completion signal: release the
+        // harness-issued lease and record the task before dispatching again.
+        if (!explicitLand && settleSessionLeases && loadRuntime(id).status === "building")
+          capture(() => settleSessionLeases(id));
         if (!through) return finish(readAdvanceValue(id));
         const targetResume = (value) => ({
           ...value,
