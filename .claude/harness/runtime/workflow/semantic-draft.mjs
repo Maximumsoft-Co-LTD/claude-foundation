@@ -2,6 +2,7 @@ import { parseSpecDocument } from "../contracts/change-artifacts.mjs";
 import {
   normalizeDiscovery, semanticIntakeIssues
 } from "./validation/semantic-intake.mjs";
+import { designBlueprintIssues } from "./validation/design-blueprints.mjs";
 
 const OPERATIONS = new Set(["added", "modified", "removed"]);
 const AUTHORITY_CAPABILITIES = new Set(["review", "acceptance", "semantic-acceptance"]);
@@ -152,6 +153,7 @@ function semanticDraftIssues(source) {
     else if (choices.has(key)) issues.push(`semantic draft decision key '${key}' is duplicated`);
     choices.set(key, choice);
   }
+  issues.push(...designBlueprintIssues(source));
   issues.push(...semanticIntakeIssues(source));
   return issues;
 }
@@ -425,6 +427,7 @@ export function semanticDraftTemplate() {
     why: "Explain the concrete user or system value",
     impact: "low",
     coupling: "isolated",
+    workType: ["feature"],
     requirements: [{
       key: "observable-outcome",
       capability: "change",

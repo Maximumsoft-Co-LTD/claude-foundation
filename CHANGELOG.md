@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Semantic draft v4 accepts `workType` (a list of feature, bugfix, refactor,
+  api, ui, data, config, async, integration, chore, docs) and typed design
+  blueprints rendered into `design.md`: `fileMap`, `failureMatrix`, `testMap`,
+  `apiContracts`, `dataModel`, `uiStates`, `configContract`, `jobContract`,
+  `bugfix`, and `refactor`. Each work type selects the blueprints it expects;
+  missing or thin ones (absent fields, placeholders, a UI without an error
+  state, a `fileMap` path outside every task scope, a decision without
+  consequences) are non-blocking `designWarnings` in `--inspect` and
+  `design warning` lines on AGREED/REVISED. An unknown work type or a wrong
+  section shape is a draft error.
+
+### Changed
+
+- A decision without `consequences` renders "Not stated in the draft" instead
+  of the invented "No consequence beyond the bounded change".
+
+### Fixed
+
+- Editing a task's `[paths:]` in the isolated packet no longer invalidates spec
+  approval: task write scope is bookkeeping like checkboxes. Approvals recorded
+  before this release remain valid.
+- An isolated agreement hand-edited outside a semantic amendment now returns an
+  agent-owned `AGREEMENT_DRIFT` repair naming `change amend` instead of an
+  endless `SPEC_APPROVAL_REQUIRED` loop that ended with the user copying
+  agreement files; `change resolve --approve-spec` refuses to record an
+  approval that check could never accept.
+- Out-of-scope and stale-lease release failures name their recovery route.
+- The Build shell guard no longer reads a sed script such as `'/T005/s#a#b#'`
+  as a path outside the workspace.
+
 ## [3.5.21] - 2026-09-24
 
 ### Added

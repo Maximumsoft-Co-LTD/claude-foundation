@@ -8,6 +8,10 @@
 
 <Only load-bearing brownfield facts, verified against code.>
 
+<!-- Draft `workType` selects typed blueprint sections rendered here: Work type,
+Bugfix analysis, Refactor invariants, File map, API contracts, Data model,
+UI states, Config contract, Job contract, Failure matrix, and Test map. -->
+
 ## Domain language
 
 | Canonical term | Meaning | Avoid |

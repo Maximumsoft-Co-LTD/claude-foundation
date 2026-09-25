@@ -87,7 +87,11 @@ not a transcript.
 Add complexity only when the work needs it:
 
 - multiple requirements with separate `capability` and `operation` values
-- `decisions` for load-bearing choices
+- `workType` (a list such as `["feature", "api", "ui"]`) and the design
+  blueprints it selects: `fileMap`, `failureMatrix`, `testMap`, plus
+  `apiContracts`, `dataModel`, `uiStates`, `configContract`, `jobContract`,
+  `bugfix`, or `refactor`; missing ones are non-blocking design warnings
+- `decisions` for load-bearing choices, each with its consequences
 - Mermaid or referenced SVG/PNG `diagrams`
 - `prototypeSelection` pointing at an existing selection note
 - `integrations` with documentation source/version, linked requirements, and

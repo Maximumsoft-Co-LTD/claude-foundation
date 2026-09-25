@@ -63,12 +63,28 @@ clear. Do not create extra artifacts merely to make the packet look thorough.
 For changes across components, supply a diagram explaining the affected
 boundaries and dependencies. For changed state, async, or workflow behavior,
 show the relevant transitions or sequence, including failure/recovery paths.
-For added or moved structure, put an affected folder tree and a mapping of
-path, responsibility, intended change, requirement/task, and verification in
-`currentState` with `design: true`; the compiler carries this Markdown into
-`design.md`. Distinguish existing paths from proposed paths. Use `diagrams` for
-Mermaid or local image references. Omit unrelated folders and diagrams that add
-no implementation constraint; rapid work need not create an empty design.
+Declare `workType` (a list) on every standard draft; it selects the design
+blueprints the compiler expects, and each one renders as a `design.md` section:
+
+| workType | Expected blueprint |
+|---|---|
+| any except `chore`/`docs` | `fileMap` [{path, change: new\|modify\|delete, responsibility, tasks}], `failureMatrix` [{failure, userSees, recovery, covers}], `testMap` [{scenario, level, file}] |
+| `api` | `apiContracts` [{method, path, auth, request, response, errors [{status, when}], idempotency, compatibility}] |
+| `data` | `dataModel` [{entity, fields [{name, type, constraints}], invariants, migration, rollback}] |
+| `ui` | `uiStates` [{screen, states [{state, shows, actions}] including an error state, accessibility, copy}] |
+| `config` | `configContract` [{key, default, secret, validation, scope}] |
+| `async` | `jobContract` [{key, states, transitions, retry, timeout, idempotency, cancellation}] and a sequence or state diagram |
+| `integration` | `integrations` |
+| `bugfix` | `bugfix` {reproduction, rootCause, regression} |
+| `refactor` | `refactor` {invariants, characterization} |
+
+Other values: `feature`; `coupling: coupled` also expects `diagrams`. Missing
+or thin blueprints are `designWarnings` in `--inspect` and `design warning`
+lines on AGREED/REVISED; they never block, so resolve each before presenting the
+spec for approval. Keep every `fileMap` path inside a task's `paths`. Use
+`currentState` for verified brownfield facts, `diagrams` for Mermaid or local
+image references, and give every decision its `consequences`. Rapid work need
+not create an empty design.
 
 ## Compile and inspect
 

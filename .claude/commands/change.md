@@ -11,9 +11,10 @@ then inspect the compiled documents; obtain explicit spec approval before Build.
 Follow its semantic-intake reference. Write a semantic
 draft v4 under `.foundation/drafts/`. Use
 semantic requirement/task keys; never invent claim IDs or create
-OpenSpec artifacts by hand. Include typed `decisions`, `diagrams`,
-`prototypeSelection`, `integrations`, repositories, or external operations only
-when the change needs them.
+OpenSpec artifacts by hand. Declare `workType` and supply the design blueprints
+it selects; include typed `decisions`, `diagrams`, `prototypeSelection`,
+`integrations`, repositories, or external operations only when the change needs
+them. Resolve every design warning before presenting the spec.
 
 Run `change start <draft.json> --inspect`; follow its typed action and resume
 route. On `DONE`, rerun with `--consume-draft`. The compiler owns classification,

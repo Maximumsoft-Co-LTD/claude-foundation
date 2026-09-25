@@ -33,6 +33,9 @@ import {
   compileSemanticAmendment, writeSemanticAmendment
 } from "./semantic-amendment.mjs";
 import { validateInvestigationBinding } from "./investigation-runtime.mjs";
+import {
+  designBlueprintWarnings, draftHasBlueprints, renderDesignBlueprints
+} from "./validation/design-blueprints.mjs";
 
 export function atomicStartPreflight(draft, { groundingRequired = false } = {}) {
   const issues = [];
@@ -294,7 +297,7 @@ export function renderDraftDecisions(decisions) {
       `  - **Decision:** ${decision.choice}\n  - **Why:** ${decision.why || decision.reason}\n` +
       `  - **Rejected:** ${Array.isArray(decision.rejected)
         ? decision.rejected.join(", ") : decision.rejected || "none"}\n` +
-      `  - **Consequences:** ${decision.consequences || "No consequence beyond the bounded change"}\n` +
+      `  - **Consequences:** ${decision.consequences || "Not stated in the draft"}\n` +
       `  - **Supersedes:** ${decision.supersedes || "none"}\n` +
       `  - **Superseded by:** ${decision.supersededBy || "none"}`;
   }).join("\n");
@@ -381,7 +384,9 @@ export function renderDraftDesign(draft) {
     `| ${integration.key} | ${integration.kind} | ${integration.documentation?.source} | ` +
     `${integration.documentation?.version} | ${(integration.concerns || []).join(", ") || "none"} |`
   );
+  const blueprints = renderDesignBlueprints(draft);
   return `# Design\n\n## Current state\n\n${draft.currentState}\n\n` +
+    (blueprints ? `${blueprints}\n\n` : "") +
     `## Domain language\n\n| Canonical term | Meaning | Avoid |\n|---|---|---|\n` +
     `${draftDomainRows(draft.domainLanguage)}\n\n## Decisions\n\n` +
     renderDraftDecisions(draft.decisions) +
@@ -395,7 +400,7 @@ export function renderDraftDesign(draft) {
 
 export function draftNeedsDesign(draft) {
   return Boolean(
-    draft.design || draft.prototypeSelection || (draft.diagrams || []).length ||
+    draft.design || draftHasBlueprints(draft) || draft.prototypeSelection || (draft.diagrams || []).length ||
     (draft.integrations || []).length || (draft.decisions || []).length ||
     (draft.risks || []).length ||
     (draft.compatibility && String(draft.compatibility).toLowerCase() !== "none") ||
@@ -865,6 +870,13 @@ export function createChangeLifecycle({
       (scenarios ? `\n\n${scenarios}` : "");
   }
 
+  // Design blueprints warn rather than block: the agent completes a thin
+  // design before presenting it for approval.
+  function designWarningLines(draft, schema) {
+    if (schema !== "foundation-standard" || ![3, 4].includes(draft._semanticVersion)) return "";
+    return designBlueprintWarnings(draft).map((warning) => `  design warning: ${warning}\n`).join("");
+  }
+
   function materializeDraft(id, draft) {
     const state = loadRuntime(id);
     const basePath = changePath(id);
@@ -1058,6 +1070,7 @@ export function createChangeLifecycle({
     writeJson(statePath, state);
     const result = {
       ...action,
+      designWarnings: designBlueprintWarnings(source),
       intakeState: {
         path: relative(root, statePath),
         revision: state.revision,
@@ -1453,7 +1466,9 @@ export function createChangeLifecycle({
         if (completedIntakeEffectiveness)
           pending.semanticIntakeEffectiveness = completedIntakeEffectiveness;
         saveRuntime(pending);
-        console.log(`AGREED ${id}\n  inspect: openspec/changes/${id}/\n  awaiting user approval before Build\n  next: claude-foundation change resolve ${id} --approve-spec --decision-ref <user-decision>`);
+        console.log(`AGREED ${id}\n  inspect: openspec/changes/${id}/\n  awaiting user approval before Build\n` +
+          designWarningLines(draft, loadRuntime(id).schema) +
+          `  next: claude-foundation change resolve ${id} --approve-spec --decision-ref <user-decision>`);
       });
     } catch (error) {
       let rollbackIssues;
@@ -1655,7 +1670,7 @@ export function createChangeLifecycle({
     const state = loadRuntime(id);
     console.log(`REVISED ${id}\n  revision: ${state.contractRevision}\n` +
       `  requirement delta awaiting approval:\n${formatApprovalDelta(state.pendingApprovalDelta)}\n` +
-      `  inspect: openspec/changes/${id}/\n` +
+      `  inspect: openspec/changes/${id}/\n` + designWarningLines(draft, state.schema) +
       `  next: claude-foundation change resolve ${id} --approve-spec --decision-ref <user-decision>`);
     return delta;
   }
