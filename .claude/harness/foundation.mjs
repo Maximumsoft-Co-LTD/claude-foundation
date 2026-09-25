@@ -126,7 +126,7 @@ import {
   createPullRequestRuntime, DELIVERY_PROTOCOL_VERSION, DELIVERY_RECEIPT_SCHEMA_VERSION
 } from "./runtime/workflow/pull-request-runtime.mjs";
 
-const VERSION = "3.5.23";
+const VERSION = "3.5.24";
 const RUNTIME_API_VERSION = "41";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed

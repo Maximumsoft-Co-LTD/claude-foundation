@@ -1,6 +1,6 @@
 # Change Loop agent contract
 
-Before work, verify Change Loop 3.5.23/runtime API `41`; run doctors. Harness repairs setup.
+Before work, verify Change Loop 3.5.24/runtime API `41`; run doctors. Harness repairs setup.
 `single-model` retains identity.
 
 Compile one draft. Use `advance <change> --through
