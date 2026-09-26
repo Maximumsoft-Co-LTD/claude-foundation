@@ -3,7 +3,7 @@ import {
   renameSync, rmSync, writeFileSync
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { conflictKeysOverlap } from "../core/graph-execution.mjs";
+import { conflictKeysOverlap, scopeAllowsPath } from "../core/graph-execution.mjs";
 import { acquireProcessLock } from "../core/process-lock.mjs";
 
 export function leaseDescriptorIsOwned(descriptor, id, taskId, owner) {
@@ -231,11 +231,7 @@ export function leaseReleaseIdentity(context, id, taskId, flags) {
 }
 
 export function leasePathIsAllowed(path, allowed) {
-  for (const scope of allowed) {
-    const prefix = String(scope).replace(/\/\*\*?$/, "").replace(/\/$/, "");
-    if (scope === "*" || path === prefix || path.startsWith(`${prefix}/`)) return true;
-  }
-  return false;
+  return allowed.some((scope) => scopeAllowsPath(scope, path));
 }
 
 export function observedLeaseWrites(context, id, taskLease, force) {

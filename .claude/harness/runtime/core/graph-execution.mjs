@@ -321,12 +321,30 @@ export function conflictKeysOverlap(left, right) {
   return false;
 }
 
+// A task scope is a directory prefix (`src`, `src/**`) or a glob with `*`,
+// `**`, or `?` — the same forms change validation accepts for `[paths:]`.
+export function scopeAllowsPath(scope, path) {
+  const raw = String(scope).replace(/^\.\//, "");
+  if (raw === "*") return true;
+  const prefix = raw.replace(/\/\*\*?$/, "").replace(/\/$/, "");
+  if (path === prefix || path.startsWith(`${prefix}/`)) return true;
+  if (!/[*?]/.test(raw)) return false;
+  let pattern = "";
+  for (let index = 0; index < raw.length; index += 1) {
+    const character = raw[index];
+    if (character === "*" && raw[index + 1] === "*") {
+      pattern += raw[index + 2] === "/" ? "(?:.*/)?" : ".*";
+      index += raw[index + 2] === "/" ? 2 : 1;
+    } else if (character === "*") pattern += "[^/]*";
+    else if (character === "?") pattern += "[^/]";
+    else pattern += character.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${pattern}$`).test(path);
+}
+
 function pathMatches(path, scopes) {
-  if (!(scopes || []).length || (scopes || []).includes("*")) return true;
-  return (scopes || []).some((scope) => {
-    const prefix = String(scope).replace(/\/\*\*?$/, "").replace(/\/$/, "");
-    return path === prefix || path.startsWith(`${prefix}/`);
-  });
+  if (!(scopes || []).length) return true;
+  return scopes.some((scope) => scopeAllowsPath(scope, path));
 }
 
 export function validateNodeResult(authority, result, observedWrites = []) {

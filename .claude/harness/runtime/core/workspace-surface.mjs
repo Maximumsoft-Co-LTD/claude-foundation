@@ -56,8 +56,28 @@ export function declaredPathMatcher(globs) {
   if (scopes.includes("*")) return () => true;
   const prefixes = scopes.map((scope) =>
     scope.replace(/\/\*\*?$/, "").replace(/\/$/, ""));
+  // Validation accepts globs such as `tsconfig*.json`; a prefix-only match
+  // left those files out of the proven hash.
+  const patterns = scopes.filter((scope) => /[*?]/.test(scope.replace(/\/\*\*?$/, "")))
+    .map(globPattern);
   return (rel) => prefixes.some((prefix) =>
-    rel === prefix || rel.startsWith(`${prefix}/`));
+    rel === prefix || rel.startsWith(`${prefix}/`)) ||
+    patterns.some((pattern) => pattern.test(rel));
+}
+
+function globPattern(glob) {
+  const raw = glob.replace(/^\.\//, "");
+  let pattern = "";
+  for (let index = 0; index < raw.length; index += 1) {
+    const character = raw[index];
+    if (character === "*" && raw[index + 1] === "*") {
+      pattern += raw[index + 2] === "/" ? "(?:.*/)?" : ".*";
+      index += raw[index + 2] === "/" ? 2 : 1;
+    } else if (character === "*") pattern += "[^/]*";
+    else if (character === "?") pattern += "[^/]";
+    else pattern += character.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${pattern}$`);
 }
 
 // The change packet: proposal, design, tasks, spec deltas, evidence contract.

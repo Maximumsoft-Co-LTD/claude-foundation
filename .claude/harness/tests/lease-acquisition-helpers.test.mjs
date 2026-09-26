@@ -346,6 +346,12 @@ test("observed release writes enforce graph authority and granted path scopes", 
   assert.equal(leasePathIsAllowed("src", ["src/**"]), true);
   assert.equal(leasePathIsAllowed("src/app.mjs", ["src/"]), true);
   assert.equal(leasePathIsAllowed("docs/readme.md", ["src/**"]), false);
+  // `[paths:]` globs accepted by validation must also match at settle time.
+  assert.equal(leasePathIsAllowed("tsconfig.json", ["tsconfig*.json"]), true);
+  assert.equal(leasePathIsAllowed("tsconfig.node.json", ["tsconfig*.json"]), true);
+  assert.equal(leasePathIsAllowed("src/a.test.ts", ["src/**/*.test.ts"]), true);
+  assert.equal(leasePathIsAllowed("src/a/b.ts", ["src/*.ts"]), false);
+  assert.equal(leasePathIsAllowed("package.json.bak", ["package.json"]), false);
   const lease = {
     taskId: "T001", graphRevision: "g", graphIdentity: "gi", contractRevision: 1,
     baselineSurface: [

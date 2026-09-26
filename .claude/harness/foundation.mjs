@@ -119,7 +119,9 @@ import {
   ADAPTERS, INPUT_MODES, PROVIDER_CONTRACTS, PROVIDERS, providerCapability
 } from "./runtime/evidence/provider-catalog.mjs";
 import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
-import { targetEditIssues as targetEditFindings } from "./runtime/workflow/target-edits.mjs";
+import {
+  landAppliedOutput, targetEditIssues as targetEditFindings
+} from "./runtime/workflow/target-edits.mjs";
 import { createSessionLeaseRuntime, isSessionOwner } from "./runtime/workflow/session-lease.mjs";
 import { createQualityRuntime } from "./runtime/quality/quality-runtime.mjs";
 import {
@@ -1221,7 +1223,10 @@ const {
 } = createProofReadinessRuntime({
   root: ROOT,
   targetEditIssues: (state) =>
-    targetEditFindings({ root: ROOT, state, dirtyNow: preexistingDirty(ROOT) }).issues,
+    targetEditFindings({
+      root: ROOT, state, dirtyNow: preexistingDirty(ROOT),
+      landOutput: landAppliedOutput(readTransactionJournals(TRANSACTIONS, state.id, readJson))
+    }).issues,
   markBlocked,
   evidence,
   loadRuntime,

@@ -7,11 +7,28 @@ import { join } from "node:path";
 // Machine state and change packets are expected to change on the target.
 const EXPECTED_PREFIXES = [".foundation/", "openspec/changes/", "openspec/investigations/"];
 
-export function targetEditPaths(snapshot = {}, dirtyNow = {}) {
+export function targetEditPaths(snapshot = {}, dirtyNow = {}, landOutput = {}) {
   return Object.keys(dirtyNow)
     .filter((path) => !EXPECTED_PREFIXES.some((prefix) => path.startsWith(prefix)))
     .filter((path) => snapshot[path] !== dirtyNow[path])
+    .filter((path) => landOutput[path] !== dirtyNow[path])
     .sort();
+}
+
+const UNAPPLIED_JOURNAL_STATUSES = new Set(["aborted", "rolling-back", "rolled-back"]);
+
+// Target bytes this change's own Land Apply wrote, keyed by path. A target
+// file equal to one of them is Land output, not an edit made outside the
+// sandbox; any other content still counts.
+export function landAppliedOutput(journals = []) {
+  const output = {};
+  for (const journal of journals) {
+    if (!journal || UNAPPLIED_JOURNAL_STATUSES.has(journal.status)) continue;
+    for (const entry of journal.entries || [])
+      if (entry?.path && typeof entry.after === "string" && !entry.after.includes(":"))
+        output[entry.path] = entry.after;
+  }
+  return output;
 }
 
 // Rows the phase guard wrote for this change when it let a shell mutation run
@@ -40,10 +57,10 @@ export function targetEditDigest(paths, dirtyNow) {
 // edits are plausibly the agent's and it repairs them. Otherwise they are the
 // operator's concurrent work and only reported. A user decision recorded for
 // the exact same edits clears the stop.
-export function targetEditIssues({ root, state, dirtyNow }) {
+export function targetEditIssues({ root, state, dirtyNow, landOutput = {} }) {
   if (!["worktree", "copy"].includes(state?.workspace?.mode)) return { issues: [], notices: [] };
   const snapshot = state.workspace.targetDirty || state.workspace.preexisting || {};
-  const paths = targetEditPaths(snapshot, dirtyNow);
+  const paths = targetEditPaths(snapshot, dirtyNow, landOutput);
   if (!paths.length) return { issues: [], notices: [] };
   const listed = paths.slice(0, 10).join(", ") + (paths.length > 10 ? ", ..." : "");
   const accepted = state.targetEditsAccepted?.digest === targetEditDigest(paths, dirtyNow);

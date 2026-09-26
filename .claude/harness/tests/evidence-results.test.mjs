@@ -10,6 +10,7 @@ import {
   numericReportValue,
   parseJsonOutput,
   parseAssertionSummaryOutput,
+  parseRunnerSummaryOutput,
   parseNodeTestSpecOutput,
   parseTapOutput,
   playwrightAnnotationCriticalCases,
@@ -303,4 +304,16 @@ test("visitPlaywrightReport ignores repeated object identities", () => {
   collectPlaywrightAttachments(null, state.attachments);
   recordPlaywrightTest(null, { claims: [], criticalCases: [] }, state);
   assert.equal(state.tests, 1);
+});
+
+test("vitest and jest counted footers provide a test count", () => {
+  const colored = "\x1b[2m Test Files \x1b[22m \x1b[1m\x1b[32m4 passed\x1b[39m\x1b[22m\x1b[90m (4)\x1b[39m\n" +
+    "\x1b[2m      Tests \x1b[22m \x1b[1m\x1b[32m41 passed\x1b[39m\x1b[22m\x1b[90m (41)\x1b[39m\n";
+  assert.deepEqual(parseRunnerSummaryOutput(colored), {
+    totalTests: 41, passed: 41, failed: 0, format: "vitest-summary", criticalCases: [] });
+  assert.equal(parseRunnerSummaryOutput("      Tests  2 failed | 39 passed (41)").failed, 2);
+  assert.deepEqual(parseRunnerSummaryOutput("Tests:       1 failed, 40 passed, 41 total"), {
+    totalTests: 41, passed: 40, failed: 1, format: "jest-summary", criticalCases: [] });
+  assert.equal(parseRunnerSummaryOutput(" Test Files  4 passed (4)"), null);
+  assert.equal(parseRunnerSummaryOutput("all tests passed"), null);
 });

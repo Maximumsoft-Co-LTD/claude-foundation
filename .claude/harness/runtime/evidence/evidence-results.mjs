@@ -88,6 +88,25 @@ export function parseNodeTestSpecOutput(value) {
   };
 }
 
+// Vitest (`Tests  2 failed | 39 passed (41)`) and Jest
+// (`Tests:       1 failed, 40 passed, 41 total`) print a counted footer,
+// usually colored. The last footer wins so a watch rerun reports once.
+export function parseRunnerSummaryOutput(value) {
+  const text = String(value || "").replace(/\x1b\[[0-9;]*m/g, "");
+  const vitest = [...text.matchAll(/^\s*Tests\s{2,}(.+?)\s+\((\d+)\)\s*$/gm)].at(-1);
+  const jest = [...text.matchAll(/^\s*Tests:\s+(.+?),?\s+(\d+) total\s*$/gm)].at(-1);
+  const match = vitest || jest;
+  if (!match) return null;
+  const count = (label) => {
+    const found = match[1].match(new RegExp(`(\\d+) ${label}`));
+    return found ? Number(found[1]) : 0;
+  };
+  const totalTests = Number(match[2]);
+  if (!Number.isSafeInteger(totalTests)) return null;
+  return { totalTests, passed: count("passed"), failed: count("failed"),
+    format: vitest ? "vitest-summary" : "jest-summary", criticalCases: [] };
+}
+
 // The dependency-free shell suites emit counted summaries, including when a
 // host captures only their final lines. Bare PASS text is never a test count.
 export function parseAssertionSummaryOutput(value) {

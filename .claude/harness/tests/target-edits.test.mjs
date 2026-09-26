@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
-  shellAuditCount, targetEditDigest, targetEditIssues, targetEditPaths
+  landAppliedOutput, shellAuditCount, targetEditDigest, targetEditIssues, targetEditPaths
 } from "../runtime/workflow/target-edits.mjs";
 
 function project(t, rows = []) {
@@ -62,4 +62,26 @@ test("target edits block only after unverified shell mutations", (t) => {
   }).issues.length, 1);
   assert.deepEqual(targetEditIssues({ root, dirtyNow,
     state: { id: "demo", workspace: { mode: "current" } } }), { issues: [], notices: [] });
+});
+
+// Land's own Apply writes the proven files into the target. Re-checking
+// readiness after that Apply must see them as Land output, not as edits made
+// outside the sandbox, while any other content still blocks.
+test("target files equal to this change's applied Land output are not outside edits", (t) => {
+  const root = project(t, [{ outcome: "shell-audit", changeId: "demo" }]);
+  const journals = [
+    { status: "verified", entries: [
+      { path: "src/app.js", after: "proven" },
+      { path: "openspec/changes/demo", after: "directory:abc" }
+    ] },
+    { status: "rolled-back", entries: [{ path: "src/old.js", after: "old" }] }
+  ];
+  const landOutput = landAppliedOutput(journals);
+  assert.deepEqual(landOutput, { "src/app.js": "proven" });
+  const applied = targetEditIssues({ root, state: isolated(), landOutput,
+    dirtyNow: { "keep.md": "a", "src/app.js": "proven" } });
+  assert.deepEqual(applied, { issues: [], notices: [] });
+  const divergent = targetEditIssues({ root, state: isolated(), landOutput,
+    dirtyNow: { "keep.md": "a", "src/app.js": "edited", "src/old.js": "old" } });
+  assert.match(divergent.issues[0], /outside the sandbox at: src\/app\.js, src\/old\.js\./);
 });

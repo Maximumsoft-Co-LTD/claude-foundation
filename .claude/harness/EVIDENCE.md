@@ -423,7 +423,10 @@ With automatic report detection, counted shell summaries such as
 `suite: ALL PASS (12/12 assertions)` and `suite: 2/12 assertion(s) FAILED`
 also provide discovery counts, including when retained by RTK. Suite names
 must be unique and counts consistent; bare `PASS` and malformed summaries do
-not establish a count. These summaries do not establish critical-case IDs.
+not establish a count. The colored Vitest (`Tests  39 passed | 2 failed (41)`)
+and Jest (`Tests: 1 failed, 40 passed, 41 total`) footers are also counted, so
+a default `npm test` needs no extra reporter. These summaries do not establish
+critical-case IDs.
 
 The configured structured JSON report must expose a non-negative integer such as
 `numTotalTests`, `totalTests`, `testCount`, or `expected`. If the command passes

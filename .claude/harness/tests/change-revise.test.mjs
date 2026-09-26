@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
-  existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync
+  existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync,
+  writeFileSync
 } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { tmpdir } from "node:os";
@@ -136,6 +137,25 @@ const revisedDraft = () => semanticDraft({ requirements: [
   requirement("throughput", "The service accepts 50 messages per second"),
   requirement("outbox", "The webhook acknowledges after the Mongo outbox commit")
 ] });
+
+test("revise keeps a legacy id that ends in a separator", (t) => {
+  const value = fixture(t);
+  // Ids created before truncation stopped leaving a trailing "-".
+  const id = "legacy-truncated-";
+  value.start(semanticDraft({ id: "legacy-truncated" }));
+  renameSync(join(value.changes, "legacy-truncated"), join(value.changes, id));
+  const legacyState = JSON.parse(readFileSync(join(value.runtime, "legacy-truncated.json"), "utf8"));
+  rmSync(join(value.runtime, "legacy-truncated.json"));
+  writeJson(join(value.runtime, `${id}.json`), { ...legacyState, id });
+  for (const draft of [semanticDraft({ id: null }), semanticDraft({ id })]) {
+    writeJson(value.draftPath, { ...revisedDraft(), id: draft.id });
+    const log = console.log;
+    console.log = () => {};
+    try { value.lifecycle.reviseChange(id, value.draftPath); }
+    finally { console.log = log; }
+  }
+  assert.deepEqual(readdirSync(value.changes).filter((name) => !name.startsWith(".")), [id]);
+});
 
 test("revise recompiles an agreed change in place and reports its delta", (t) => {
   const value = fixture(t);

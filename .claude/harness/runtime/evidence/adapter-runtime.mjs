@@ -4,7 +4,8 @@ import {
 import { spawnSync } from "node:child_process";
 import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
-  aggregateEvidenceStatus, evidenceResultValue, parseAssertionSummaryOutput
+  aggregateEvidenceStatus, evidenceResultValue, parseAssertionSummaryOutput,
+  parseRunnerSummaryOutput
 } from "./evidence-results.mjs";
 import { repositoryBaseHead } from "../core/repository-binding.mjs";
 
@@ -528,9 +529,10 @@ export function createAdapterRuntime({
     const spec = !tap && builtInNodeTest &&
       ["tap", "spec", "auto"].includes(config.reportFormat || "auto")
       ? parseNodeTestSpecOutput(content) : null;
-    const assertions = (config.reportFormat || "auto") === "auto"
-      ? parseAssertionSummaryOutput(content) : null;
-    return json || tap || spec || assertions;
+    const auto = (config.reportFormat || "auto") === "auto";
+    const assertions = auto ? parseAssertionSummaryOutput(content) : null;
+    const runner = auto && !assertions ? parseRunnerSummaryOutput(content) : null;
+    return json || tap || spec || assertions || runner;
   }
 
   function adapterEvidence(id, provider, config, execution) {

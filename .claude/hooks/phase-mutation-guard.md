@@ -49,7 +49,8 @@ exists, and Land/Deliver shell authority stays blocked. Prove readiness and
 edits after a `shell-audit` row stop as agent-owned
 `TARGET_EDITED_OUTSIDE_SANDBOX` repair, and edits the user confirms as their own
 are recorded with `change resolve <change> --accept-target-edits --decision-ref
-<ref>`.
+<ref>`. Target bytes equal to what this change's own Land Apply journal wrote
+are Land output and never count as such edits.
 
 `FOUNDATION_LAND_TRANSACTION=1` is set by the runtime itself, for the duration
 of the Land apply transaction and its child processes. Do not set it by hand:

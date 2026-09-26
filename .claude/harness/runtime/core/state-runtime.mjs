@@ -68,7 +68,8 @@ export function createStateRuntime({
 
   function slugify(value) {
     return value.toLowerCase().trim()
-      .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64) || "change";
+      .replace(/[^a-z0-9]+/g, "-").replace(/^-+/, "").slice(0, 64)
+      .replace(/-+$/, "") || "change";
   }
 
   // `recoverable` is for the one caller that must work precisely when the
@@ -247,7 +248,11 @@ export function createStateRuntime({
   // change owns that path.
   function declaredSurfaceMatcher(id, state = {}) {
     const globs = [...(state.declaredSurface || [])];
-    const tasks = join(changePath(id), "tasks.md");
+    // The active packet owns `[paths:]`: Build widens it in the sandbox, and
+    // Land later projects that packet onto the target. Reading the target copy
+    // left the widened paths out of the proven hash, then Land's own packet
+    // projection changed the hash and staled its grant and proof.
+    const tasks = join(activeChangePath(id, state), "tasks.md");
     if (existsSync(tasks))
       for (const task of taskBlocks(readFileSync(tasks, "utf8")).map(taskMetadata))
         globs.push(...(task.paths || []));

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A generated change id no longer ends in `-` when truncation lands on a
+  separator, and `change revise` keeps an existing id verbatim. A revise of
+  such an id previously failed with ENOENT and left a duplicate change.
+- `[paths:]` globs such as `tsconfig*.json` or `src/**/*.test.ts` now match at
+  lease settle and graph result validation, as change validation already
+  accepted them; only directory prefixes matched before.
+- Test discovery counts the default colored Vitest and Jest summary footers,
+  so a plain `npm test` no longer leaves discovery `inconclusive`.
+- Land no longer invalidates its own grant: the declared surface is read from
+  the isolated packet, whose `[paths:]` Build may widen, instead of the target
+  packet that Apply later overwrites. Target files byte-identical to this
+  change's applied Land output are recognized as Land output rather than
+  edits outside the sandbox, so an interrupted Apply resumes without asking.
+
 ## [3.5.25] - 2026-09-26
 
 ### Changed

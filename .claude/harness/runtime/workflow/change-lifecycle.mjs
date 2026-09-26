@@ -934,7 +934,10 @@ export function createChangeLifecycle({
   }
 
   function createChange(intent, flags, preparedDraft = undefined, options = {}) {
-    const id = slugify(flags.id || intent);
+    // An existing well-formed id is kept verbatim so a revise targets the same
+    // packet, including one created before ids stopped ending in "-".
+    const id = /^[a-z0-9][a-z0-9-]{0,63}$/.test(String(flags.id || ""))
+      ? flags.id : slugify(flags.id || intent);
     setOperationChangeId(id);
     // An archived change keeps its runtime state, receipts, and evidence vault
     // as history. A new change reusing the id would inherit them — review
@@ -1595,7 +1598,7 @@ export function createChangeLifecycle({
 
   function revisionSource(id, draftPath) {
     const source = draftSource(draftPath);
-    if (source.id !== undefined && slugify(source.id) !== id)
+    if (source.id !== undefined && source.id !== id && slugify(source.id) !== id)
       fail(`change revise draft id '${source.id}' does not match change '${id}'`);
     return { ...source, id };
   }

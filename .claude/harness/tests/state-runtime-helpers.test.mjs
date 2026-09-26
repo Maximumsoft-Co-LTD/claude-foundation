@@ -82,6 +82,10 @@ test("archive lookup, slugging, and runtime recovery reject ambiguous state", (t
   assert.equal(f.state.slugify("  Hello, WORLD!  "), "hello-world");
   assert.equal(f.state.slugify("!!!"), "change");
   assert.equal(f.state.slugify("x".repeat(80)).length, 64);
+  // Truncation must not leave a trailing separator: revise re-slugifies the id.
+  const cut = f.state.slugify(`${"a".repeat(63)} tail`);
+  assert.equal(cut, "a".repeat(63));
+  assert.equal(f.state.slugify(cut), cut);
 
   assert.throws(() => f.state.loadRuntime("missing"), /unknown change/);
   assert.throws(() => f.state.loadRuntime("missing", { recoverable: true }),
@@ -214,4 +218,35 @@ test("snapshot invalidation, porcelain parsing, and dirty baselines are determin
     id, workspace, true, ["untracked.txt"]);
   assert.equal(gitSnapshot.workspace, workspace);
   assert.equal(gitSnapshot.fileCount, 2);
+});
+
+// Build widens `[paths:]` in the isolated packet; Land later projects that
+// packet onto the target. The snapshot must read the active packet, or the
+// proven hash omits widened files and Land's own projection changes it.
+test("declared surface follows the active isolated packet", (t) => {
+  const f = fixture(t);
+  const id = "widened";
+  const task = (paths) => `# Tasks\n\n- [ ] **T001** Build it [paths:${paths}] — verify: \`true\`\n`;
+  mkdirSync(join(f.changes, id), { recursive: true });
+  writeFileSync(join(f.changes, id, "tasks.md"), task("src/a.js"));
+  const workspace = join(f.root, "sandbox");
+  const packet = join(workspace, "openspec", "changes", id);
+  mkdirSync(packet, { recursive: true });
+  writeFileSync(join(packet, "tasks.md"), task("src/a.js,src/b.js,tsconfig*.json"));
+  mkdirSync(join(workspace, "src"));
+  writeFileSync(join(workspace, "src", "a.js"), "a\n");
+  writeFileSync(join(workspace, "src", "b.js"), "b\n");
+  execFileSync("git", ["init", "-q"], { cwd: workspace });
+  const state = { id, status: "building", contractRevision: 0,
+    workspace: { mode: "worktree", path: workspace } };
+  f.writeJson(f.state.runtimePath(id), state);
+  const declared = f.state.declaredSurfaceMatcher(id, state);
+  assert.equal(declared("src/b.js"), true);
+  assert.equal(declared("tsconfig.json"), true);
+  assert.equal(declared("tsconfig.node.json"), true);
+  assert.equal(declared("src/tsconfig.json"), false);
+  const proven = f.state.singleRelevantSnapshot(id, null, true).workspaceHash;
+  writeFileSync(join(f.changes, id, "tasks.md"), task("src/a.js,src/b.js,tsconfig*.json"));
+  f.state.clearSnapshotCache(id);
+  assert.equal(f.state.singleRelevantSnapshot(id, null, true).workspaceHash, proven);
 });
