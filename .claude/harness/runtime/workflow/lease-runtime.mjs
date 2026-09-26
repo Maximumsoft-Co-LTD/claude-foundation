@@ -95,8 +95,14 @@ export function acquireLeaseUnderLock(context) {
   }
   const sameRenewal = sameLeaseRenewalAuthority(
     renewal, keys, prior, owner, plan);
-  if (renewal.length && !sameRenewal)
+  // The owner's own unreleased lease is the same worker's attempt: a changed
+  // graph, contract, or widened `[paths:]` re-grants it under a new generation
+  // instead of stranding the task behind a refusal only a takeover could clear.
+  const ownPrior = prior.owner === owner && prior.status !== "taken-over" &&
+    (prior.repository || "root") === (task.repository || "root");
+  if (renewal.length && !sameRenewal && !ownPrior)
     throw new Error(`stale lease authority for '${id}/${task.id}'; release or take over the prior lease before reacquiring`);
+  if (!sameRenewal) for (const row of renewal) rmSync(row.path, { force: true });
   if (sameRenewal) {
     for (const row of renewal) context.writeJson(row.path, {
       ...row.descriptor, expiresAt, renewedAt: context.now()
@@ -144,7 +150,10 @@ export function acquireLeaseUnderLock(context) {
     workspaceHash: plan.workspaceHash, repository: task.repository,
     paths: task.paths || [], claimIds: task.claims || [],
     outputSchema: taskNodeOutputSchema(plan, task.id),
-    resources: keys, baselineSurface: context.observedTaskSurface(id, task),
+    // Writes since the owner's unreleased lease was first granted still
+    // belong to this task, so a re-grant keeps judging them against its scope.
+    resources: keys, baselineSurface: ownPrior && Array.isArray(prior.baselineSurface)
+      ? prior.baselineSurface : context.observedTaskSurface(id, task),
     acquiredAt, expiresAt
   };
   context.writeJson(taskLeasePath, lease);
@@ -212,7 +221,11 @@ export function leaseReleaseIdentity(context, id, taskId, flags) {
     return { absent: true };
   }
   const taskLease = context.readJson(index);
-  const force = Boolean(flags.force);
+  // A foreign lease past its TTL has no live worker left to protect, so taking
+  // it over is recovery the harness owns, not a flag or decision to supply.
+  const expiredForeign = taskLease.owner !== owner && taskLease.status !== "taken-over" &&
+    Date.parse(taskLease.expiresAt || "") <= context.nowMs();
+  const force = Boolean(flags.force) || expiredForeign;
   validateLeaseReleaseClaim({ ...context, owner }, id, taskLease, force, flags);
   return { absent: false, owner, index, taskLease, force };
 }
@@ -405,13 +418,16 @@ export function createLeaseRuntime({
     });
   }
 
-  function active(id) {
+  // `includeExpired` lists unreleased task leases past their TTL too, so the
+  // harness can still settle a lease it holds for a long-running session task.
+  function active(id, { includeExpired = false } = {}) {
     const root = join(leases, "tasks", id);
     if (!existsSync(root)) return [];
     return readdirSync(root, { withFileTypes: true })
       .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
       .map((entry) => readJson(join(root, entry.name), {}))
-      .filter((lease) => Date.parse(lease.expiresAt || "") > Date.now());
+      .filter((lease) => lease.status !== "taken-over" &&
+        (includeExpired || Date.parse(lease.expiresAt || "") > Date.now()));
   }
 
   const cleanup = cleanupLeaseOperation.bind(null, {

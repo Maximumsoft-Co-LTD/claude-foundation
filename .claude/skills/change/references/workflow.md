@@ -141,8 +141,7 @@ or verification command; add a new task when that contract changes.
 capability and operation and needs an open task; `removeRequirements` needs a `migration` and must not orphan a task.
 Before Build starts, revise the whole agreement in place with
 `change revise <change> <draft.json> --inspect`, then `--consume-draft` after
-`DONE`; never abandon and rewrite a change only to edit it. Present only the
-reported requirement delta for re-approval.
+`DONE`; never abandon and rewrite a change only to edit it.
 
 After a successful start, read the compiled proposal, tasks, evidence, and any
 specs/design. Check that the intended detail and document language survived
@@ -164,8 +163,8 @@ behavior, and acceptance criteria to the user. Wait for explicit approval of
 this spec before Build, including `/dev`; validation is not user approval.
 Record the answer with `claude-foundation change resolve <id> --approve-spec
 --decision-ref <user-decision>`, then continue with
-`claude-foundation advance <id> --through build`. A changed agreement requires
-fresh approval; task checkboxes alone do not. At a real decision,
+`claude-foundation advance <id> --through build`. Revisions and amendments
+carry that approval unless they remove a requirement. At a real decision,
 authority, resource, contradiction, or repeated no-progress boundary, preserve
 the draft, present supported alternatives and the exact resume route. The agent
 must never retire one unasked or infer acceptance from silence.

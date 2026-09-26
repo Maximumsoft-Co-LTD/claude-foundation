@@ -1255,7 +1255,7 @@ try {
     authorityStore.replace(recordEntry, originalRecordRequest);
   };
   workspaceHash = "workspace-record-validation-changed";
-  recordRejected({}, /is stale/);
+  recordRejected({}, /superseded workspace.*re-requested review/);
   workspaceHash = "workspace-record-validation";
   recordRejected({ status: "completed" }, /is completed/);
   recordRejected({}, /must be dispatched/);

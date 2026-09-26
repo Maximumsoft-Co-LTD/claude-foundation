@@ -52,10 +52,8 @@ export function targetHeadMovedDecision({
         id: "inspect",
         outcome: "Compare the recorded base with the current target history before choosing."
       },
-      {
-        id: "abandon",
-        outcome: "Retire this change and reopen it against the current commit."
-      },
+      // Replay keeps the work; retiring the change is never offered for a
+      // moved base, because a fresh change would redo what sync preserves.
       { id: "pause", outcome: "Change nothing and leave both workspaces as they are." }
     ],
     recommended: "sync",

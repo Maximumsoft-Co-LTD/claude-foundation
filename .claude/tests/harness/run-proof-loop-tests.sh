@@ -180,6 +180,9 @@ assert_eq "fresh installed runtime retries restored setup" ok \
 unset FOUNDATION_CLAUDE_SESSION_ID FOUNDATION_CLAUDE_TRANSCRIPT_PATH CODEX_THREAD_ID FOUNDATION_SESSION_ID
 export FOUNDATION_RUN_ID=fixture-budget-recovery
 node .claude/harness/foundation.mjs event review-waiver --request fixture-exhaustion --input 800000 --output 0 >/dev/null
+assert_eq "installed consumer continues its first exhausted budget once" harness-auto-continue \
+  "$(node -p 'require("./.foundation/runtime/review-waiver.json").budget.window.reason')"
+node .claude/harness/foundation.mjs event review-waiver --request fixture-exhaustion-2 --input 800000 --output 0 >/dev/null
 assert_eq "installed consumer stops at exhausted budget" operator-required \
   "$(node -p 'require("./.foundation/runtime/review-waiver.json").budget.window.mode')"
 node .claude/harness/foundation.mjs budget-continue review-waiver --reason "Fixture user authorizes completion" --decision-ref fixture://user/budget >/dev/null
@@ -276,15 +279,11 @@ lint_execution_before="$(node -p \
 assert_cmd_zero "amendment writes one digest-bound rebind audit" sh -c '
   set -- .foundation/evidence/selective-amendment/receipt-rebinds/*.json
   [ "$#" -eq 1 ] && grep -q priorReceiptDigest "$1" && grep -q reboundReceiptDigest "$1"'
-amendment_blocked="$(node .claude/harness/foundation.mjs advance selective-amendment --through proven)"
-assert_contains "amended agreement fails closed until its exact spec is re-approved" \
-  "$amendment_blocked" 'spec-approval-required'
-assert_contains "blocked advance preserves the exact recovery command" \
-  "$amendment_blocked" 'claude-foundation advance selective-amendment --through proven'
-assert_eq "authority pause does not spend the affected test receipt" "$test_before" \
-  "$(shasum .foundation/receipts/selective-amendment/test.json)"
-node .claude/harness/foundation.mjs resolve selective-amendment --approve-spec \
-  --decision-ref fixture://user/amended-spec >/dev/null
+assert_contains "an additive amendment carries the approved spec" \
+  "$amended" 'covered by the current approval'
+assert_eq "the carried approval keeps the user decision and binds the new revision" \
+  "fixture://user/spec:true" \
+  "$(node -p 'const s=require("./.foundation/runtime/selective-amendment.json"); [s.specApproval.decisionRef, s.specApproval.revision===s.contractRevision].join(":")')"
 
 # Replay must carry the isolated amended agreement, never import the old
 # target packet or erase it while replacing the worktree.

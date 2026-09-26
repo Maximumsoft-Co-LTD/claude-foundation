@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import { createAdvanceRuntime } from "../runtime/workflow/advance-runtime.mjs";
+import { createLeaseRuntime } from "../runtime/workflow/lease-runtime.mjs";
 import {
   createSessionLeaseRuntime, sessionLeaseOwner, taskLineChecked
 } from "../runtime/workflow/session-lease.mjs";
@@ -132,4 +136,87 @@ test("advance settles the previous session task before dispatching the next", as
   assert.equal(value.action, "EDIT");
   assert.equal(value.issued, true);
   assert.deepEqual(order, ["settle", "dispatch", "issue"]);
+});
+
+// The fakes above cannot see the lease primitive's authority checks. These
+// drive the real runtime, where a widened `[paths:]` changes both the lease
+// keys and the graph identity of a task the agent has not ticked yet.
+function realLeases(t, root) {
+  const leases = mkdtempSync(join(tmpdir(), "session-lease-real-"));
+  t.after(() => rmSync(leases, { recursive: true, force: true }));
+  const plan = {
+    dispatchable: true, planDigest: "p", graphRevision: "g1", graphIdentity: "gi1",
+    contractRevision: 1, workspaceHash: "w", graph: { nodes: [] },
+    tasks: [{ id: "T001", dependsOn: [], leaseKeys: ["path:root:src/a.js"],
+      paths: ["src/a.js"], claims: [], repository: "root" }]
+  };
+  const surface = new Map();
+  const json = (path, fallback = {}) => {
+    try { return JSON.parse(readFileSync(path, "utf8")); } catch { return fallback; }
+  };
+  const leaseRuntime = createLeaseRuntime({
+    leases,
+    stableHash: (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex"),
+    agentPlanValue: () => plan,
+    policy: () => ({ execution: { leaseMinutes: 45 } }),
+    readJson: json,
+    writeJson: (path, value) => {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, `${JSON.stringify(value)}\n`);
+    },
+    now: () => new Date().toISOString(),
+    observedTaskSurface: () => [...surface].map(([path, identity]) => ({ path, identity })),
+    fail: (message) => { throw new Error(message); }
+  });
+  const runtime = createSessionLeaseRuntime({
+    stableHash, loadRuntime: () => ({ workspace: { path: root } }),
+    activeChangeLeases: leaseRuntime.active, acquire: leaseRuntime.acquire,
+    release: leaseRuntime.release, discard: leaseRuntime.discard
+  });
+  const edit = { action: "EDIT", workspace: root, tasks: [{ id: "T001" }],
+    execution: { mode: "session", leases: [{ taskId: "T001" }] } };
+  return { leases, plan, surface, runtime, edit, json };
+}
+
+function tick(root, taskId) {
+  const path = join(root, "openspec", "changes", "demo", "tasks.md");
+  writeFileSync(path, readFileSync(path, "utf8").replace(`[ ] **${taskId}**`, `[x] **${taskId}**`));
+}
+
+test("resuming an unticked task after widening its paths renews the harness lease", (t) => {
+  const root = workspace(t);
+  const { leases, plan, surface, runtime, edit, json } = realLeases(t, root);
+  const first = runtime.issue("demo", edit).execution.managedLease;
+  surface.set("src/a.js", "edited");
+  surface.set("tests/a.test.js", "edited");
+  plan.tasks[0].leaseKeys = ["path:root:src/a.js", "path:root:tests/a.test.js"];
+  plan.tasks[0].paths = ["src/a.js", "tests/a.test.js"];
+  plan.graphRevision = "g2";
+  plan.graphIdentity = "gi2";
+  const second = runtime.issue("demo", edit).execution.managedLease;
+  assert.notEqual(second.leaseId, first.leaseId);
+  tick(root, "T001");
+  assert.deepEqual(runtime.settle("demo"), ["T001"]);
+  const result = json(join(leases, "results", "demo", "T001.json"));
+  assert.deepEqual(result.observedWrites, ["src/a.js", "tests/a.test.js"],
+    "writes made before the renewal still count against the widened scope");
+});
+
+test("a harness lease past its TTL is still settled when the agent ticks the task", (t) => {
+  const root = workspace(t);
+  const { leases, surface, runtime, edit, json } = realLeases(t, root);
+  runtime.issue("demo", edit);
+  surface.set("src/a.js", "edited");
+  const past = "2020-01-01T00:00:00.000Z";
+  const index = join(leases, "tasks", "demo", "T001.json");
+  writeFileSync(index, `${JSON.stringify({ ...json(index), expiresAt: past })}\n`);
+  for (const name of readdirSync(join(leases, "resources"))) {
+    const path = join(leases, "resources", name);
+    writeFileSync(path, `${JSON.stringify({ ...json(path), expiresAt: past })}\n`);
+  }
+  tick(root, "T001");
+  assert.deepEqual(runtime.settle("demo"), ["T001"]);
+  assert.equal(existsSync(index), false);
+  assert.deepEqual(json(join(leases, "results", "demo", "T001.json")).observedWrites,
+    ["src/a.js"]);
 });

@@ -70,7 +70,7 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 | `change new <intent> [--rapid]` | Compatible primitive สำหรับเขียน agreement ด้วยมือ |
 | `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect intake หรือ compile agreement จาก semantic draft ที่ผ่านการตรวจ โดยพื้นที่แยกจะสร้างภายหลังใน Build |
 | `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake หรือเพิ่ม แก้ หรือลบ semantic requirement แบบ transaction และรักษางานที่เสร็จแล้ว |
-| `change revise <change> <draft.json> [--inspect] [--consume-draft]` | ก่อน Build คอมไพล์ semantic draft ฉบับแก้ทับ change id เดิมพร้อม rollback และแสดง requirement delta เพื่อขอ approve ใหม่ |
+| `change revise <change> <draft.json> [--inspect] [--consume-draft]` | ก่อน Build คอมไพล์ semantic draft ฉบับแก้ทับ change id เดิมพร้อม rollback และแสดง requirement delta (ใช้ approval เดิมต่อ เว้นแต่มีการลบ requirement) |
 | `change resolve <change> …` | บันทึกการตัดสินใจเรื่อง impact coupling security และ review |
 | `change validate <change>` | ตรวจ change และ evidence contract ที่รันได้ |
 | `sandbox create <change> [--all]` | สร้างพื้นที่ Build ที่แยกออกมา |

@@ -309,6 +309,13 @@ function runChecked(run, executable, args, options, label) {
   return result;
 }
 
+function workspaceDrift(message) {
+  const error = new Error(message);
+  error.code = "DELIVERY_PROJECTION_DRIFT";
+  error.stage = "delivery-workspace";
+  return error;
+}
+
 function copyEntry(source, destination) {
   rmSync(destination, { recursive: true, force: true });
   const stat = lstatSync(source, { throwIfNoEntry: false });
@@ -512,6 +519,24 @@ export function createPullRequestRuntime({
     return saved;
   }
 
+  // The delivery workspace is harness-owned scratch until its branch is
+  // pushed. Drift there (an interrupted attempt, a stray edit) is repaired by
+  // rebuilding it once from the Land-bound projection, never by a new change.
+  const UNPUBLISHED = ["binding-verified", "workspace-prepared", "commit-created"];
+  function rebuildWorkspace(delivery, reason) {
+    const workspace = delivery.workspace;
+    if (workspace && existsSync(workspace)) {
+      if (git(["worktree", "remove", "--force", workspace], root).status !== 0)
+        rmSync(workspace, { recursive: true, force: true });
+      git(["worktree", "prune"], root);
+    }
+    if (delivery.branch) git(["branch", "-D", delivery.branch], root);
+    for (const key of ["workspace", "commit", "stagedPaths", "recovered"]) delete delivery[key];
+    return checkpoint(delivery, "binding-verified", {
+      workspaceRebuilt: { at: now(), reason }
+    });
+  }
+
   function archivedSources(id, lifecycle) {
     const changeRoot = activeChangePath(id, lifecycle);
     const read = (name) => existsSync(join(changeRoot, name))
@@ -636,7 +661,7 @@ export function createPullRequestRuntime({
     const count = Number(gitOutput(git,
       ["rev-list", "--count", `${projection.baseHead}..${head}`], workspace,
       "cannot inspect delivery commit history"));
-    if (count !== 1) throw new Error("delivery branch contains an unexpected commit history");
+    if (count !== 1) throw workspaceDrift("delivery branch contains an unexpected commit history");
     const changed = gitOutput(git,
       ["diff", "--name-only", "-z", projection.baseHead, head], workspace,
       "cannot inspect recovered delivery commit").split("\0").filter(Boolean);
@@ -644,7 +669,7 @@ export function createPullRequestRuntime({
     const outside = changed.filter((path) => !allowedGitlinks.has(path) &&
       !projection.roots.some((rootPath) => path === rootPath || path.startsWith(`${rootPath}/`)));
     if (outside.length)
-      throw new Error(`delivery commit contains paths outside the proven projection: ${outside.join(", ")}`);
+      throw workspaceDrift(`delivery commit contains paths outside the proven projection: ${outside.join(", ")}`);
     const dirty = gitOutput(git, ["status", "--porcelain"], workspace,
       "cannot inspect recovered delivery workspace");
     const unexpectedDirty = dirty.split("\n").filter(Boolean).filter((line) => {
@@ -652,7 +677,7 @@ export function createPullRequestRuntime({
       return !allowedGitlinks.has(path);
     });
     if (unexpectedDirty.length)
-      throw new Error("delivery workspace changed after its commit");
+      throw workspaceDrift("delivery workspace changed after its commit");
     return { commit: head, stagedPaths: changed, recovered: true };
   }
 
@@ -987,7 +1012,7 @@ export function createPullRequestRuntime({
       } else {
         const observed = gitOutput(git, ["rev-parse", "HEAD"], workspace,
           "cannot verify delivery commit");
-        if (observed !== commit) throw new Error("delivery workspace commit changed after checkpoint");
+        if (observed !== commit) throw workspaceDrift("delivery workspace commit changed after checkpoint");
       }
       integrity.assertTree(workspace, projection, commit);
       integrity.assertPullRequestBase(workspace, provider, projection);
@@ -1043,10 +1068,25 @@ export function createPullRequestRuntime({
         version: 1, changeId: id, status: "failed", code: delivery.lastError.code,
         at: delivery.lastError.at
       })}\n`);
+      const resumeCommand = `claude-foundation deliver advance ${id}`;
+      if (error.stage === "delivery-workspace" && !delivery.repositories &&
+          UNPUBLISHED.includes(delivery.status) && !delivery.workspaceRebuilt) {
+        rebuildWorkspace(delivery, error.message);
+        return advance(id);
+      }
+      if (error.stage === "delivery-workspace")
+        return deliveryEnvelope(id, "ASK_USER", {
+          completed: false, boundary: "delivery-workspace", owner: "repository-operator",
+          reason: `${error.message}; a rebuilt delivery workspace still differs from the proven ` +
+            "content, usually because a repository commit hook rewrites staged files",
+          options: ["fix-the-repository-hook-and-retry-deliver", "leave-archived-without-deliver"],
+          resumeCommand
+        });
       if (["DELIVERY_PROJECTION_DRIFT", "DELIVERY_TARGET_MOVED", "DELIVERY_PR_BASE_DRIFT"].includes(error.code))
         return deliveryEnvelope(id, "ASK_USER", {
           completed: false, boundary: "content-identity", reason: error.message,
-          options: ["create-a-new-change-for-the-current-content", "cancel-delivery"]
+          options: ["restore-the-proven-content-and-retry-deliver", "leave-archived-without-deliver"],
+          resumeCommand
         });
       if (error.code === "DELIVERY_EVIDENCE_BLOCKED")
         return deliveryEnvelope(id, "ASK_USER", {
@@ -1067,7 +1107,7 @@ export function createPullRequestRuntime({
       if (error.code === "DELIVERY_CONVERSION_CHANGED")
         return deliveryEnvelope(id, "WAIT", {
           completed: false, boundary: "git-conversion", owner: "repository-operator",
-          reason: error.message, resumeCommand: `claude-foundation deliver advance ${id}`
+          reason: error.message, resumeCommand
         });
       if (error.code === "DELIVERY_DEFAULT_BRANCH_FORBIDDEN")
         return deliveryEnvelope(id, "WAIT", {

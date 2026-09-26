@@ -69,4 +69,5 @@ amendment เดียวกัน จึงไม่ต้อง abandon change
 secret, Terraform, deploy หรือ restart ที่ต้องใช้
 สิทธิ์จะเป็น external operation แบบมีชนิด Build ไม่ขอ credential
 
-`DONE` ของ Build ยังไม่ใช่ proof และยังไม่ Land
+`DONE` ของ Build ยังไม่ใช่ proof `/build` จึงเดินต่อเข้า Prove ให้อัตโนมัติ เพราะ Prove
+ไม่มี side effect ภายนอก และหยุดที่ `proven` โดยไม่ Land

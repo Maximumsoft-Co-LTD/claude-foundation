@@ -323,7 +323,7 @@ test("a moved target offers replaying, and recommends it", () => {
   assert.equal(decision.recordedBase, "aaa");
   assert.equal(decision.currentHead, "bbb");
   const ids = decision.options.map((option) => option.id);
-  assert.deepEqual(ids, ["sync", "inspect", "abandon", "pause"]);
+  assert.deepEqual(ids, ["sync", "inspect", "pause"]);
   assert.match(decision.options[0].outcome, /sandbox sync confine-surface/);
 });
 
@@ -395,7 +395,7 @@ test("a multi-repository sandbox offers the conflict-atomic replay", () => {
   assert.equal(decision.recommended, "sync");
   assert.equal(decision.automaticRecovery, "sync");
   assert.deepEqual(decision.options.map((option) => option.id),
-    ["sync", "inspect", "abandon", "pause"]);
+    ["sync", "inspect", "pause"]);
   assert.match(decision.options[0].outcome, /every moved repository sandbox/);
 });
 

@@ -34,7 +34,7 @@ assert_file_contains "build repairs already-approved outcomes without amendment"
   'implementation in contract without an amendment'
 assert_file_contains "build amends new observable outcomes before implementation" \
   "$ROOT/.claude/commands/references/build-policy.md" \
-  'semantic amendment and follow its harness-owned approval and resume route'
+  'semantic amendment and follow its harness-owned resume route before editing'
 assert_file_contains "build keeps product decisions with the user" \
   "$ROOT/.claude/commands/references/build-policy.md" \
   'The user decides product intent and material trade-offs'

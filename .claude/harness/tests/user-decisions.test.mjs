@@ -4,7 +4,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { agreementIdentity, assertSpecApproval, REVIEW_WINDOW_MS,
-  reviewWindowRemaining, reviewWindowError, currentWaivers } from "../runtime/core/user-decisions.mjs";
+  reviewWindowRemaining, reviewWindowError, currentWaivers, autoExtendReviewWindow,
+  AUTO_REVIEW_EXTENSION_REF } from "../runtime/core/user-decisions.mjs";
 import { advanceFailureAction, createAdvanceRuntime } from "../runtime/workflow/advance-runtime.mjs";
 import { workspaceCapabilityValue } from "../runtime/core/execution-contract.mjs";
 
@@ -105,8 +106,46 @@ test("waivers expire on changed product or agreement without rewriting findings"
   assert.deepEqual(state.waivers, [waiver]);
 });
 
-test("resuming an expired review returns a user decision without dispatching work", () => {
+test("the first expired review window extends itself once as a harness decision", () => {
+  const state = { reviewWindow: { startedAt: "2026-09-09T00:00:00Z", deadline: "2026-09-09T00:30:00Z" } };
+  const at = Date.parse("2026-09-09T00:31:00Z");
+  assert.equal(autoExtendReviewWindow({ reviewWindow: { deadline: "2026-09-09T01:00:00Z" } }, at), false);
+  assert.equal(autoExtendReviewWindow({}, at), false);
+  assert.equal(autoExtendReviewWindow(state, at), true);
+  assert.equal(state.reviewWindow.decisionRef, AUTO_REVIEW_EXTENSION_REF);
+  assert.equal(state.reviewWindow.owner, "harness");
+  assert.equal(state.reviewWindow.deadline, "2026-09-09T01:01:00.000Z");
+  assert.deepEqual(state.reviewWindowHistory, [
+    { startedAt: "2026-09-09T00:00:00Z", deadline: "2026-09-09T00:30:00Z" }]);
+  assert.equal(reviewWindowRemaining(state, at), REVIEW_WINDOW_MS);
+  assert.equal(autoExtendReviewWindow(state, Date.parse("2026-09-09T01:02:00Z")), false);
+  // A user-granted window after the automatic one still asks when it ends.
+  state.reviewWindowHistory.push(state.reviewWindow);
+  state.reviewWindow = { deadline: "2026-09-09T01:30:00Z", decisionRef: "user://continue" };
+  assert.equal(autoExtendReviewWindow(state, Date.parse("2026-09-09T01:31:00Z")), false);
+});
+
+test("advance persists the automatic review extension instead of asking", () => {
   const state = { status: "building", reviewWindow: { deadline: "2026-09-09T00:30:00Z" } };
+  const saved = [];
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => state,
+    saveRuntime: (value) => saved.push(structuredClone(value)),
+    nowMs: () => Date.parse("2026-09-09T00:31:00Z"),
+    agentDispatchValue: () => ({ action: "build-complete" }),
+    authorityStatusValue: () => ({ requests: [{ type: "review", status: "requested" }] }),
+    relevantHash: assert.fail, deliveredAiAttempts: assert.fail,
+    readJson: assert.fail, proofAdvancePath: assert.fail, stableHash: assert.fail
+  });
+  const action = runtime.advanceValue("demo");
+  assert.notEqual(action.boundary, "review-time-exhausted");
+  assert.equal(saved[0]?.reviewWindow.decisionRef, AUTO_REVIEW_EXTENSION_REF);
+});
+
+test("resuming an expired review after the automatic extension returns a user decision without dispatching work", () => {
+  const auto = { deadline: "2026-09-09T00:30:00Z", decisionRef: AUTO_REVIEW_EXTENSION_REF };
+  const state = { status: "building", reviewWindow: auto,
+    reviewWindowHistory: [{ deadline: "2026-09-09T00:00:00Z" }] };
   const runtime = createAdvanceRuntime({
     loadRuntime: () => state,
     nowMs: () => Date.parse("2026-09-09T00:31:00Z"),
@@ -120,5 +159,5 @@ test("resuming an expired review returns a user decision without dispatching wor
     assert.equal(action.action, "ASK_USER");
     assert.equal(action.boundary, "review-time-exhausted");
   }
-  assert.equal(state.reviewWindow.deadline, "2026-09-09T00:30:00Z");
+  assert.equal(state.reviewWindow, auto);
 });

@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The harness no longer stops the user for work it can decide itself.
+  - A first spec approval carries across later `change revise` and
+    `change amend` deltas that add or revise requirements. A delta that removes
+    a requirement still asks, and a never-approved change still needs its
+    first approval.
+  - The first budget exhaustion and the first expired 30-minute review window
+    each open one more same-size window automatically, recorded as harness
+    decisions. The next exhaustion asks as before, and the automatic window
+    does not use one of the three user continuations.
+  - `/build` continues through Prove to `proven`; Land still needs explicit
+    authority.
+  - An external `WAIT` returns the named owner and resume route instead of
+    asking the user. The third identical repair first gets one
+    `TRY_ALTERNATE_APPROACH` repair; only the next repeat asks.
+  - Deliver no longer offers "create a new Change". Drift inside the
+    unpublished delivery workspace is rebuilt from the Land projection once,
+    then asks for an in-place fix. Target-drift recovery no longer offers
+    abandon or recreate; it syncs and asks only on a real content conflict.
+  - The `/dev` Stop guard lets the turn end after a user permission denial and
+    shares one 24-second deadline across its checks, failing open as
+    `UNVERIFIED` on timeout.
+- Leases recover without a user decision. The same owner re-acquiring after
+  its keys, graph, or contract changed gets a fresh lease. An expired lease
+  owned by someone else is taken over without `--force` or `--decision-ref`.
+  Harness-held session leases past their TTL are still settled.
+- `authority record` on a stale review request creates the replacement request
+  for the current workspace and returns `AUTHORITY_REREQUESTED` with the
+  resume route. It records no verdict.
+
+### Fixed
+
+- Widening `[paths:]` on an unticked session-leased task no longer fails with
+  "stale lease authority" and escalates to a no-progress question.
+
 ## [3.5.24] - 2026-09-25
 
 ### Changed

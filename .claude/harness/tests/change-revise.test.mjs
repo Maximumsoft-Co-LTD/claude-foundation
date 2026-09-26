@@ -9,6 +9,7 @@ import {
   createChangeLifecycle, mergeApprovalDelta, requirementDelta, requirementFingerprints
 } from "../runtime/workflow/change-lifecycle.mjs";
 import { acquireProcessLock } from "../runtime/core/process-lock.mjs";
+import { assertSpecApproval } from "../runtime/core/user-decisions.mjs";
 
 function writeJson(path, value) {
   mkdirSync(dirname(path), { recursive: true });
@@ -310,6 +311,106 @@ test("an amendment folds into the unapproved delta and approval clears it", (t) 
   assert.equal(approved.specApproval.revision, amended.contractRevision);
   assert.match(value.control.output.join("\n"),
     /DECISION RECORDED revisable-change\n  approved requirement delta:\n  added: retry\n  revised: throughput\n  removed: ack-path/);
+});
+
+function approve(value, decisionRef) {
+  const log = console.log;
+  console.log = () => {};
+  try {
+    value.lifecycle.resolveChange("revisable-change", {
+      "approve-spec": true, "decision-ref": decisionRef
+    });
+  } finally { console.log = log; }
+}
+
+test("an approved change keeps its approval across an additive revision", (t) => {
+  const value = fixture(t);
+  value.start();
+  approve(value, "fixture://user/spec");
+  const approved = value.state();
+  value.control.output.length = 0;
+  value.revise(semanticDraft({ requirements: [
+    requirement("throughput", "The service accepts 50 messages per second"),
+    requirement("ack-path", "The webhook acknowledges after Temporal accepts"),
+    requirement("outbox", "The webhook acknowledges after the Mongo outbox commit")
+  ] }));
+  const after = value.state();
+  assert.equal(after.pendingApprovalDelta, undefined);
+  assert.equal(after.specApproval.decisionRef, "fixture://user/spec");
+  assert.equal(after.specApproval.approvedAt, approved.specApproval.approvedAt);
+  assert.equal(after.specApproval.revision, after.contractRevision);
+  assert.deepEqual(after.specApproval.carriedFrom.revision, approved.specApproval.revision);
+  assert.equal(after.specApproval.carriedFrom.reason, "pre-build-revision");
+  assert.deepEqual(after.approvalCarries.at(-1).delta,
+    { added: ["outbox"], revised: ["throughput"], removed: [] });
+  assert.doesNotThrow(() => assertSpecApproval(value.root, "revisable-change", after));
+  const output = value.control.output.join("\n");
+  assert.match(output, /requirement delta \(covered by the current approval\):\n  added: outbox/);
+  assert.doesNotMatch(output, /awaiting approval/);
+  assert.match(output, /next: claude-foundation advance revisable-change --through build/);
+});
+
+test("a revision that removes a requirement still asks for approval", (t) => {
+  const value = fixture(t);
+  value.start();
+  approve(value, "fixture://user/spec");
+  value.revise(revisedDraft());
+  const after = value.state();
+  assert.deepEqual(after.specApproval, { required: true });
+  assert.deepEqual(after.pendingApprovalDelta.removed, ["ack-path"]);
+  assert.throws(() => assertSpecApproval(value.root, "revisable-change", after),
+    (error) => error.code === "SPEC_APPROVAL_REQUIRED");
+});
+
+test("an approved change keeps its approval across an additive amendment", (t) => {
+  const value = fixture(t);
+  value.start();
+  approve(value, "fixture://user/spec");
+  const amendmentPath = join(value.root, "amendment.json");
+  writeJson(amendmentPath, {
+    version: 1,
+    reason: "User asked for retries",
+    addRequirements: [requirement("retry", "The webhook retries a failed delivery")],
+    updateTasks: [{ key: "implement", covers: ["retry"] }],
+    evidence: { retry: { capabilities: ["test"] } }
+  });
+  const log = console.log;
+  value.control.output.length = 0;
+  console.log = (line) => value.control.output.push(String(line));
+  try { value.lifecycle.amendChange("revisable-change", amendmentPath); }
+  finally { console.log = log; }
+  const amended = value.state();
+  assert.equal(amended.pendingApprovalDelta, undefined);
+  assert.equal(amended.specApproval.decisionRef, "fixture://user/spec");
+  assert.equal(amended.specApproval.revision, amended.contractRevision);
+  assert.match(amended.specApproval.carriedFrom.reason, /^semantic-amendment: User asked for retries/);
+  assert.doesNotThrow(() => assertSpecApproval(value.root, "revisable-change", amended));
+  assert.match(value.control.output.join("\n"),
+    /AMENDED revisable-change[\s\S]*requirement delta \(covered by the current approval\):\n  added: retry/);
+});
+
+test("an amendment that removes a requirement from an approved change asks again", (t) => {
+  const value = fixture(t);
+  value.start();
+  approve(value, "fixture://user/spec");
+  const amendmentPath = join(value.root, "amendment.json");
+  writeJson(amendmentPath, {
+    version: 1,
+    reason: "Drop the ack path",
+    addRequirements: [requirement("retry", "The webhook retries a failed delivery")],
+    removeRequirements: [{ key: "ack-path", migration: "Moves to a successor change" }],
+    updateTasks: [{ key: "implement", covers: ["retry"] }],
+    evidence: { retry: { capabilities: ["test"] } }
+  });
+  const log = console.log;
+  console.log = () => {};
+  try { value.lifecycle.amendChange("revisable-change", amendmentPath); }
+  finally { console.log = log; }
+  const amended = value.state();
+  assert.deepEqual(amended.pendingApprovalDelta.removed, ["ack-path"]);
+  assert.notEqual(amended.specApproval.revision, amended.contractRevision);
+  assert.throws(() => assertSpecApproval(value.root, "revisable-change", amended),
+    (error) => error.code === "SPEC_APPROVAL_REQUIRED");
 });
 
 test("approval without a pending delta keeps its prior output", (t) => {

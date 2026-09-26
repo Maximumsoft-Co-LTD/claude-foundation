@@ -144,8 +144,12 @@ For newly started changes, present the compiled spec, scope, and acceptance
 criteria and wait for explicit user approval before Build, including `/dev`.
 Record it with `change resolve <change> --approve-spec --decision-ref <ref>`.
 Runtime approval binds agreement content and revision; task checkboxes and
-task `[paths:]` write scope are bookkeeping and do not invalidate it. Other
-agreement edits require renewed approval; during Build they go through
+task `[paths:]` write scope are bookkeeping and do not invalidate it. The user
+approves a change once: a later `change revise` or `change amend` that only adds
+or revises requirements carries the current approval to the new revision and
+packet, with an audit row (`approvalCarries`), and needs no second approval. A
+revision or amendment that removes a requirement, or one of a change that was
+never approved, still waits for approval. During Build agreement edits go through
 `change amend`, and a hand-edited isolated packet is agent-owned drift repair. Legacy
 primitive-created/in-flight changes retain their compatibility route.
 
@@ -165,11 +169,13 @@ the change has a Build workspace, a receipt, or a completed task, and in
 `proven`, `landing`, or `archived` status; the refusal names the amendment or
 successor-change route.
 
-Every revision or amendment records its requirement delta (`added`, `revised`,
-`removed` keys) until the next approval. Unapproved deltas fold together: a key
-added and then removed disappears, and a key added and then revised stays added.
-Present only that delta for re-approval; `change resolve --approve-spec` prints
-the approved delta and clears it, while approval still binds the whole agreement.
+Every revision or amendment reports its requirement delta (`added`, `revised`,
+`removed` keys). A carried approval prints it as covered by the current
+approval. Otherwise the delta waits for the next approval, and unapproved deltas
+fold together: a key added and then removed disappears, and a key added and then
+revised stays added. Present only that delta for approval; `change resolve
+--approve-spec` prints the approved delta and clears it, while approval still
+binds the whole agreement.
 
 Referenced diagrams, prototype selections, and local integration documentation
 must resolve to regular files inside the project. Remote integration sources
@@ -203,7 +209,7 @@ requirement; follow its typed intake actions and source digest, then replace
 is the exact post-amendment recovery route. The transaction validates and
 appends that delta to the compiled proposal.
 During Build, the amended packet stays in the isolated workspace until Land.
-After approval of that revision, `advance` resumes from this packet without
+Once that revision is approved (or carries the approval), `advance` resumes from this packet without
 importing the older target agreement. `sandbox sync` can replay code onto a moved
 base while preserving the amended packet, approval, and contract revision. The
 packet is copied and verified in staging before replacing the worktree; an
@@ -247,7 +253,9 @@ claude-foundation advance <change> --through build
 
 The coordinator validates the agreement, prepares or synchronizes isolation,
 compiles the task graph, and returns one bounded protocol-v6 action:
-`EDIT`, `REPAIR`, `RUN_EXTERNAL`, `WAIT`, `ASK_USER`, or `DONE`.
+`EDIT`, `REPAIR`, `RUN_EXTERNAL`, `WAIT`, `ASK_USER`, or `DONE`. At Build
+`DONE`, `/build` continues with `advance <change> --through proven`, because
+Prove has no external side effects; it stops at `proven` and never Lands.
 `tasks.md` is the only implementation ledger. `handoffs.yaml` separately owns
 AWS, cluster, secret, Terraform, deploy, restart, or other operations that need
 external authority.
@@ -295,6 +303,15 @@ leases them all-or-none with fencing generations, and accepts only observed
 writes inside the granted authority. Load one primary construction skill per
 task and only the cross-cutting security or observability skills whose triggers
 apply.
+
+Lease recovery is harness work, not a user decision. An owner reacquiring its
+own unreleased lease after the graph, contract, or `[paths:]` changed is
+re-granted under a new fencing generation and keeps its original write
+baseline, so earlier writes are still judged against the widened scope. A
+lease past its TTL is released or taken over without `--force` or a decision
+reference; only a live lease held by another worker needs one. `advance` settles
+the session lease it holds even after its TTL. A lease conflict between two
+active changes remains a real resource boundary.
 
 A force-released lease grants no result authority. If its task was already
 checked complete, the planner returns it for leased verification without
@@ -367,10 +384,14 @@ amendment JSON, edit ledgers, or run routine recovery.
 | Add an independently deliverable objective, or request it after archive | Start a successor Change |
 
 A clear instruction supplies the decision input, so do not ask the same question
-again. The revised compiled agreement still follows its explicit approval gate;
-present the product delta, not harness commands or machine inputs. A new outcome
+again. An additive amendment carries the existing approval; only a removal
+waits for approval. Report the product delta, not harness commands or machine
+inputs. A new outcome
 received during Prove returns through amendment and Build before selective proof
 resumes. Any relevant product or agreement edit makes the affected proof stale.
+A review or acceptance response for a superseded workspace is never recorded;
+the harness re-requests that authority bound to the current workspace, spending
+no review attempt until dispatch, and `advance` resumes from it.
 
 Several changes may be active at once. Overlapping path or repository scopes
 never block Build, Prove, or Land across changes; whichever lands later
@@ -502,9 +523,14 @@ Before committing, Deliver verifies staged Git blobs against the retained Land
 projection. Before publishing, it verifies the actual commit tree again, including
 resumed commits and changes made by Git hooks. Changed bytes, file modes, missing
 files, or additional paths block publication rather than inheriting old proof.
-It fetches the proposed remote PR base on each unfinished attempt and requires
-that base to contain the proven Land base; unrelated feature-branch history or
-a force-moved base requires a new proven change. Independent sibling repositories
+Drift inside the unpublished delivery workspace (an interrupted attempt or a
+stray edit) is Harness-owned: Deliver rebuilds that workspace once from the Land
+projection and resumes. Only drift that survives the rebuild, such as a commit
+hook rewriting staged files, asks the user to fix the hook and retry or leave the
+work archived. It fetches the proposed remote PR base on each unfinished attempt
+and requires that base to contain the proven Land base. Target content, HEAD, or
+PR-base drift asks the user to restore the proven content and retry Deliver, or
+leave the work archived; it never asks for a new change. Independent sibling repositories
 receive their own PRs; only declared submodules produce root gitlink updates.
 
 Delivery protocol 2 binds file modes to Land and archive evidence. Legacy changes
@@ -645,9 +671,11 @@ preselected passing receipt.
 
 Review has one persisted 30-minute window beginning at the first dispatch.
 Retries, fallbacks, and delta review share its deadline; resume never resets it.
-At expiry, report completed findings and unreviewed scope and ask whether to
-continue, Land with explicit acceptance of remaining risks, or pause. Only a
-user decision may open another 30-minute window, recorded through
+The first expiry opens one more 30-minute window automatically, recorded as a
+harness decision (`harness://auto-extend/review-window/1`). At the next expiry,
+report completed findings and unreviewed scope and ask whether to continue,
+Land with explicit acceptance of remaining risks, or pause. Only a user decision
+may open a further window, recorded through
 `change resolve <change> --continue-review --decision-ref <ref>`.
 Timeout is not a pass. Try repair first; if it cannot progress, explain the
 attempted remedies and offer further work or explicit waivers for the current
@@ -736,20 +764,25 @@ the harness and explained by the agent without opening a user interview. The
 coordinator executes sandbox sync and resumes the original target; a conflicting
 sync preserves the work and asks for the intended resolution. Other options are
 translated into the user's language; the agent never treats a stop as a dead
-end or infers authority. Retiring with `change abandon` is offered where valid.
+end or infers authority. A moved target base is replayed, never answered with a
+recreated sandbox or a retired change. Retiring with `change abandon` is offered
+only where the work itself cannot continue.
 
 Advance protocol 6 retains the existing actions and command routes. Recovery
 observations and answers live in `advanceRecovery` on the existing runtime
-record. Three unchanged repair handoffs across invocations request a decision;
-two unchanged internal automated transitions do likewise. New process sessions,
+record. The third unchanged repair handoff across invocations first returns one
+agent-owned `REPAIR` (`TRY_ALTERNATE_APPROACH`) asking for a materially different
+approach inside the approved agreement; only a further unchanged handoff
+requests a decision. Two unchanged internal automated transitions request a
+decision directly. New process sessions,
 proof run IDs, diagnostic wording, retry counters and bookkeeping revisions do not reset progress.
 Relevant content, agreement, execution policy or actual delivery changes do.
 Read-only inspection never counts as a repair attempt or records an answer.
 
 Every question offers concrete alternatives, a recommendation and pause, with
-the cause and retained repair observations. External waiting first asks whether
-to retry, wait for the named owner/condition, or pause. An explicit wait answer
-is reused only for the unchanged dependency, owner, condition and checking route.
+the cause and retained repair observations. External waiting is the default,
+not a question: `WAIT` names the owner, condition and checking route, and the
+agent reports it and resumes when the condition changes.
 Live proof workers remain working;
 a dead worker returns to harness-owned diagnosis. Resumable internal Land
 checkpoints advance automatically while their state progresses.
@@ -876,7 +909,11 @@ Budget actions are:
 
 - 70%: batch remaining work and reuse evidence;
 - 85%: stop speculative exploration and optional expansion;
-- 100%: stop model work and request split, re-scope, continuation, or pause.
+- 100%: the first exhaustion of a change opens one more window of the same
+  size automatically, recorded as a harness decision
+  (`harness://auto-extend/budget/1`) that does not use an operator-approved
+  continuation; the next exhaustion stops model work and requests split,
+  re-scope, continuation, or pause.
 
 Budget stops apply to model exploration, not deterministic recovery. Packet,
 readiness, evidence execution, receipt reuse, metrics, Land recovery, and

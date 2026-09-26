@@ -124,6 +124,24 @@ export function reviewWindowRemaining(state, timestamp = Date.now()) {
   return Math.max(0, Math.min(REVIEW_WINDOW_MS, deadline - timestamp));
 }
 
+export const AUTO_REVIEW_EXTENSION_REF = "harness://auto-extend/review-window/1";
+
+// The first exhausted review window extends itself once, recorded as a harness
+// decision, so a slow reviewer does not stop the user. Only a later exhaustion
+// asks. Mutates `state`; the caller persists it when this returns true.
+export function autoExtendReviewWindow(state, timestamp = Date.now()) {
+  const window = state.reviewWindow;
+  if (!window || reviewWindowRemaining(state, timestamp)) return false;
+  if ([...(state.reviewWindowHistory || []), window]
+    .some((row) => row?.decisionRef === AUTO_REVIEW_EXTENSION_REF)) return false;
+  const startedAt = new Date(timestamp).toISOString();
+  state.reviewWindowHistory = [...(state.reviewWindowHistory || []), window];
+  state.reviewWindow = { startedAt,
+    deadline: new Date(timestamp + REVIEW_WINDOW_MS).toISOString(),
+    decisionRef: AUTO_REVIEW_EXTENSION_REF, owner: "harness" };
+  return true;
+}
+
 export function reviewWindowError(id) {
   return userDecisionError("REVIEW_TIME_EXHAUSTED",
     "The shared 30-minute review window has ended. Report completed findings and unreviewed scope; no passing verdict is implied.", [

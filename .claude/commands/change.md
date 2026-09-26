@@ -20,9 +20,9 @@ route. On `DONE`, rerun with `--consume-draft`. The compiler owns classification
 stable links, validation, and rollback; Build `advance` owns setup.
 Draft v3 remains readable. Edit an existing change, never
 abandon it: before Build use `change revise <change> <draft.json>`; after, use
-one `change amend` with its v4 discovery delta. Re-approve only the
-reported delta. On compiler errors, repair the named draft
-fields as one batch and retry. Ask the user only for behavior,
+one `change amend` with its v4 discovery delta; approval carries unless a
+requirement is removed. Repair named compiler-error draft fields as
+one batch and retry. Ask the user only for behavior,
 compatibility, security, migration, rollout, prototype, or authority decision.
 Do not implement product code during Change.
 

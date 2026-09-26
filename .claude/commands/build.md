@@ -14,7 +14,7 @@ diagnosis.
 - `REPAIR`: apply the ordered batch; amend new behavior.
 - `RUN_EXTERNAL`: run the operation.
 - `WAIT`/`ASK_USER`: report waits; ask only for the decision; resume yourself.
-- `DONE`: stop at Build, before Proof.
+- `DONE`: continue `--through proven`; never Land.
 
 Read `references/build-policy.md` before editing and `references/build-dispatch.md`
 only for parallel work or leases. The policy owns follow-up intent routing.

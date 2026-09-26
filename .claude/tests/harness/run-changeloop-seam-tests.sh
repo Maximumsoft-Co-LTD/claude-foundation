@@ -141,7 +141,9 @@ mode_of() {
 }
 
 $F event "$C" --request b1 --input 800000 --output 0 > /dev/null 2>&1
-assert_eq "an exhausted first window asks the user" "operator-required:0" "$(mode_of)"
+assert_eq "the first exhausted window continues automatically once" "normal:0" "$(mode_of)"
+$F event "$C" --request b1b --input 800000 --output 0 > /dev/null 2>&1
+assert_eq "an exhausted automatic window asks the user" "operator-required:0" "$(mode_of)"
 
 # A run rename cannot spend or manufacture user authority.
 $F event "$C" --request b2 --run rollover --input 10 --output 0 > /dev/null 2>&1

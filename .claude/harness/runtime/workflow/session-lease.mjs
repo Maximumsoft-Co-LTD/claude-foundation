@@ -54,10 +54,11 @@ export function createSessionLeaseRuntime({
   // Releases every harness-issued session lease whose task the agent ticked.
   // A graph changed by a bookkeeping `[paths:]` widening is re-granted first:
   // the widening is the repair the scope refusal named, so it must not strand
-  // the task behind a stale-authority error.
+  // the task behind a stale-authority error. A lease past its TTL is still
+  // the harness's own: a long task must not skip its observed-write check.
   function settle(id) {
     const settled = [];
-    for (const lease of activeChangeLeases(id)) {
+    for (const lease of activeChangeLeases(id, { includeExpired: true })) {
       if (!isSessionOwner(lease.owner) || !checked(id, lease.taskId)) continue;
       const flags = { owner: lease.owner, "lease-id": lease.leaseId };
       try {
@@ -66,7 +67,7 @@ export function createSessionLeaseRuntime({
         const message = String(error?.message || error);
         const scope = message.match(/^(task '[^']+' changed outside granted scope: [^;]+)/);
         if (scope) throw sessionScopeError(id, scope[1]);
-        if (!/stale result authority/.test(message)) throw error;
+        if (!/stale result authority|stale lease result/.test(message)) throw error;
         const renewed = acquire(id, lease.taskId, { owner: lease.owner }, { quiet: true });
         release(id, lease.taskId, { owner: lease.owner, "lease-id": renewed.leaseId },
           { quiet: true });

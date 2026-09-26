@@ -226,8 +226,9 @@ assumption ใหม่
 ## สอนทำ Change แรก
 
 หลัง Change ให้ตรวจ spec ที่ compile แล้วและยืนยันก่อนเข้า Build รวมถึง `/dev`
+revision และ amendment ที่เพิ่มหรือแก้ requirement ภายหลังใช้การยืนยันเดิมต่อได้
 Review ใช้กรอบเวลารวม 30 นาที ครอบคลุม retry, fallback และการตรวจส่วนที่แก้
-ถ้าซ่อมต่อไม่ได้หรือ review หมดเวลา ให้เลือกทำต่อ, Land โดยยอมรับปัญหาที่เหลือ
+หมดเวลาครั้งแรกระบบต่อเวลาให้เองหนึ่งรอบ ถ้าซ่อมต่อไม่ได้หรือ review หมดเวลาอีกครั้ง ให้เลือกทำต่อ, Land โดยยอมรับปัญหาที่เหลือ
 อย่างชัดเจน หรือพักงาน ผลตรวจที่ fail หรือหลักฐานที่ขาดยังแสดงตามจริง
 ดูรายละเอียดการยืนยัน การต่อเวลา และ waiver ที่ผูกกับเนื้อหางานใน
 [workflow](WORKFLOW.md)
@@ -625,7 +626,7 @@ abandon change Amendment ของ version 4 ต้องมี discovery covera
 ที่เพิ่มและที่แก้ และ delta ที่ผ่าน validation จะอยู่ใน compiled proposal
 ก่อนเริ่ม Build ใช้ `change revise <change-id> <draft.json> --inspect` แล้ว
 `--consume-draft` เพื่อคอมไพล์ agreement ทั้งฉบับใหม่ใน id เดิม ทั้งสองทางจะแสดง
-delta ของ requirement (added/revised/removed) และขอ approve ใหม่เฉพาะ delta นั้น receipt ที่ผ่านแล้วจะถูกเก็บ
+delta ของ requirement (added/revised/removed) change ที่ approve แล้วใช้ approval เดิมต่อสำหรับ delta ที่เพิ่มหรือแก้ requirement และขอ approve ใหม่เฉพาะ delta ที่ลบ requirement receipt ที่ผ่านแล้วจะถูกเก็บ
 ไว้เฉพาะเมื่อ provider, claim และ declared-input binding ไม่เปลี่ยน ส่วน provider
 ที่ affected หรือคลุมเครือต้องกลับไปผ่าน Prove
 ผลลัพธ์จะแสดงคำสั่ง recovery `advance <change-id> --through proven` ที่แน่นอน

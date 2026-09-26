@@ -1069,8 +1069,14 @@ if [ -f foundation.json ]; then
 fi
 printf '{"version":1,"execution":{"tokenBudgets":{"rapid":10000,"standard":10000}}}\n' \
   > foundation.json
+auto_event="$(node .claude/harness/foundation.mjs event tiny-copy-edit \
+  --request req-token-auto --operation build --input 19838)"
+assert_not_contains "first exhaustion auto-continues without asking the user" \
+  "$auto_event" "ASK_USER"
+assert_eq "harness records its one automatic continuation" "harness" \
+  "$(jq -r '.budget.autoContinuation.owner // empty' .foundation/runtime/tiny-copy-edit.json)"
 budget_event="$(node .claude/harness/foundation.mjs event tiny-copy-edit \
-  --request req-token-limit --operation build --input 19838)"
+  --request req-token-limit --operation build --input 20001)"
 assert_contains "token budget asks the user without failing accounting" \
   "$budget_event" "OPERATOR_REQUIRED ASK_USER"
 assert_contains "the event names the user-decision boundary" \
@@ -1089,7 +1095,7 @@ else
 fi
 assert_file_contains "budget continuation is audited" \
   ".foundation/logs/tiny-copy-edit/budget-events.jsonl" '"action":"continue"'
-assert_eq "continuation preserves lifetime usage" "4" \
+assert_eq "continuation preserves lifetime usage" "5" \
   "$(jq -r '.budget.lifetime.usedRequests' .foundation/runtime/tiny-copy-edit.json)"
 assert_eq "continuation resets only the active window" "0" \
   "$(jq -r '.budget.window.usedRequests' .foundation/runtime/tiny-copy-edit.json)"

@@ -97,27 +97,23 @@ export function createAdvanceRecovery({ loadRuntime, saveRuntime, subject, now =
     saveRuntime(state);
   }
 
-  function decision(id, value, record, kind) {
+  function decision(id, value, record) {
     const key = recoveryBoundaryKey(value);
-    const external = kind === "external-dependency";
+    const kind = "repair-no-progress";
     const fingerprint = gateDigest({ subject: record.subject, key, kind });
     const options = [
-      { id: "retry", outcome: external
-        ? "Choose an available source or repair the dependency, then retry within the existing scope."
-        : "Choose a different repair strategy or explain what changed, then retry within the existing scope." },
-      ...(external ? [{ id: "wait", outcome: "Wait for the named owner and condition; retain the same resume route." }] : []),
+      { id: "retry", outcome: "Choose a different repair strategy or explain what changed, then retry within the existing scope." },
       { id: "pause", outcome: "Keep all work and evidence and pause this delivery attempt." }
     ].map((row) => ({ ...row,
       command: `claude-foundation advance ${id} --decision ${row.id} --decision-fingerprint ${fingerprint} --decision-ref <user-answer> --reason <chosen-approach>`
     }));
     return {
       kind, fingerprint,
-      summary: external ? value.reason
-        : `Recovery has not changed the delivery state: ${value.reason}`,
-      options, recommended: external ? "wait" : "retry",
+      summary: `Recovery has not changed the delivery state: ${value.reason}`,
+      options, recommended: "retry",
       attemptedStrategies: record.attempts.slice(-8).map(({ action, reason, command, count }) =>
         ({ action, reason, command, observations: count })),
-      wait: external ? value.wait : null
+      wait: null
     };
   }
 
@@ -128,28 +124,41 @@ export function createAdvanceRecovery({ loadRuntime, saveRuntime, subject, now =
       return value;
     }
     const key = recoveryBoundaryKey(value);
-    const external = value.action === "WAIT" && value.owner === "external";
-    const repair = value.action === "REPAIR";
-    if (!repair && !external) return value;
-    const answer = [...record.answers].reverse().find((row) =>
-      row.subject === record.subject && row.key === key);
-    if (external && answer?.choice === "wait") return value;
+    // Only repeated repair can become a question. Waiting on a named external
+    // owner is the default, not a question: the WAIT already carries the
+    // owner, condition, and resume route.
+    if (value.action !== "REPAIR") return value;
     const prior = record.attempts.find((row) => row.key === key);
     const attempt = {
       key, action: value.action, reason: value.reason, command: value.command || null,
-      count: (prior?.count || 0) + 1, observedAt: now()
+      count: (prior?.count || 0) + 1, observedAt: now(),
+      ...(prior?.alternateRequested ? { alternateRequested: prior.alternateRequested } : {})
     };
     record.attempts = [...record.attempts.filter((row) => row.key !== key), attempt].slice(-16);
-    if (force || external || attempt.count >= 3) {
+    // Before asking, the agent gets one turn to try a materially different
+    // repair inside the approved agreement. Recorded so it happens once per key.
+    if (!force && attempt.count >= 3 && !attempt.alternateRequested) {
+      attempt.alternateRequested = now();
+      save(state, record);
+      return { ...value, action: "REPAIR", actor: "agent", owner: "agent",
+        legacyAction: "TRY_ALTERNATE_APPROACH", boundary: "alternate-approach",
+        reason: `The same repair returned ${attempt.count} times without progress: ${value.reason}. ` +
+          "Try a materially different approach inside the approved agreement, then resume.",
+        attemptedStrategies: record.attempts.slice(-8).map(({ action, reason, command, count }) =>
+          ({ action, reason, command, observations: count })),
+        recoveryType: "EDIT"
+      };
+    }
+    if (force || attempt.count >= 3) {
       const pending = record.pending?.key === key ? record.pending : {
-        key, decision: decision(id, value, record, external ? "external-dependency" : "repair-no-progress"),
+        key, decision: decision(id, value, record),
         through: value.resume?.match(/--through (build|proven|archived)/)?.[1] || null
       };
       record.pending = pending;
       save(state, record);
       return { ...value, action: "ASK_USER", actor: "user", owner: "user",
-        legacyAction: external ? "EXTERNAL_DEPENDENCY_DECISION" : "NO_PROGRESS_BOUNDARY",
-        boundary: external ? "external-authority" : "repeated-no-progress",
+        legacyAction: "NO_PROGRESS_BOUNDARY",
+        boundary: "repeated-no-progress",
         reason: pending.decision.summary, decision: pending.decision,
         recovery: { type: "ASK_USER", statePreserved: true,
           alternatives: pending.decision.options.map((row) => row.outcome) }

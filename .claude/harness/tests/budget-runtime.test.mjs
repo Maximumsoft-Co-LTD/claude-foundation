@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createBudgetRuntime } from "../runtime/workflow/budget.mjs";
+import { AUTO_BUDGET_CONTINUATION_REF, createBudgetRuntime } from "../runtime/workflow/budget.mjs";
 
 function fixture(execution = {}) {
   let ticks = 0;
@@ -311,8 +311,8 @@ test("budget decisions cover unknown, normal, conserve, completion, and operator
   ]);
 });
 
-test("applying a decision asks the user at the first exhausted window", () => {
-  const { runtime, ticks } = fixture();
+test("first exhaustion auto-continues once; the second asks the user", () => {
+  const { runtime } = fixture();
   const state = { id: "change", schema: "foundation-standard", budget: currentBudget() };
   state.budget.window.usedRequests = 15;
   let decision = runtime.applyBudgetDecision(state);
@@ -321,15 +321,42 @@ test("applying a decision asks the user at the first exhausted window", () => {
 
   state.budget.window.usedRequests = 20;
   decision = runtime.applyBudgetDecision(state);
-  assert.equal(state.budget.window.exhaustedAt, "time-1");
-  assert.equal(decision.mode, "operator-required");
-  assert.equal(ticks(), 1);
+  assert.equal(decision.status, "CONTINUE");
+  assert.equal(decision.mode, "normal");
+  assert.equal(state.budget.autoContinuation.decisionRef, AUTO_BUDGET_CONTINUATION_REF);
+  assert.equal(state.budget.autoContinuation.owner, "harness");
+  assert.equal(state.budget.autoContinuation.previous.usedRequests, 20);
+  const window = state.budget.window;
+  assert.equal(window.id, "run-1");
+  assert.equal(window.reason, "harness-auto-continue");
+  assert.equal(window.sequence, 2);
+  assert.equal(window.extensionNumber, 0, "an automatic window never spends an operator continuation");
+  assert.equal(window.baselineRequests, 20);
+  assert.equal(window.usedRequests, 0);
+  assert.equal(window.targetRequests, 20);
 
+  state.budget.window.usedRequests = 20;
+  decision = runtime.applyBudgetDecision(state);
+  assert.equal(decision.status, "NEEDS_USER_DECISION");
+  assert.equal(decision.mode, "operator-required");
+  assert.equal(state.budget.window.reason, "harness-auto-continue");
+  assert.ok(state.budget.window.exhaustedAt);
+  const exhaustedAt = state.budget.window.exhaustedAt;
   runtime.applyBudgetDecision(state);
-  assert.equal(ticks(), 1);
+  assert.equal(state.budget.window.exhaustedAt, exhaustedAt);
 });
 
-test("first exhaustion asks the user for every workload profile", () => {
+test("an operator stop is never auto-continued", () => {
+  const { runtime } = fixture();
+  const state = { id: "change", schema: "foundation-standard", budget: currentBudget() };
+  state.budget.window.mode = "operator-required";
+  state.budget.window.usedRequests = 20;
+  const decision = runtime.applyBudgetDecision(state);
+  assert.equal(decision.status, "NEEDS_USER_DECISION");
+  assert.equal(state.budget.autoContinuation, undefined);
+});
+
+test("second exhaustion asks the user for every workload profile", () => {
   const workloads = [
     {
       name: "rapid-greenfield", schema: "foundation-rapid", impact: "low", size: "xs"
@@ -355,7 +382,10 @@ test("first exhaustion asks the user for every workload profile", () => {
     runtime.ensureBudgetState(state);
     state.budget.window.usedRequests = state.budget.window.targetRequests;
     state.budget.window.usedTokens = 0;
-    const decision = runtime.applyBudgetDecision(state);
+    let decision = runtime.applyBudgetDecision(state);
+    assert.equal(decision.status, "CONTINUE", workload.name);
+    state.budget.window.usedRequests = state.budget.window.targetRequests;
+    decision = runtime.applyBudgetDecision(state);
     assert.equal(decision.status, "NEEDS_USER_DECISION", workload.name);
     assert.equal(decision.mode, "operator-required", workload.name);
     assert.equal(decision.userActionRequired, true, workload.name);

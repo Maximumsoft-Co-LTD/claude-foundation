@@ -108,9 +108,9 @@ test("consumer inspection preserves lifecycle files and resumes amended current 
       "--consume-amendment");
     assert.throws(() => readFileSync(join(project, ".foundation/amendment.json")),
       { code: "ENOENT" });
-    assert.equal(JSON.parse(runtime("advance", "inspect-resume", "--through", "build")).boundary,
-      "spec-approval-required");
-    runtime("resolve", "inspect-resume", "--approve-spec", "--decision-ref", "fixture://user/amended-spec");
+    // An additive amendment carries the recorded approval; Build resumes unasked.
+    assert.equal(JSON.parse(readFileSync(join(project, ".foundation/runtime/inspect-resume.json"),
+      "utf8")).specApproval.decisionRef, "fixture://user/spec");
     const targetTasksPath = join(project, "openspec/changes/inspect-resume/tasks.md");
     const targetTasks = readFileSync(targetTasksPath, "utf8");
     const amended = JSON.parse(runtime("packet", "inspect-resume", "--resume"));

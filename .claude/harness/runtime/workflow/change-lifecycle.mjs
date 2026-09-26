@@ -1530,6 +1530,38 @@ export function createChangeLifecycle({
     return state.pendingApprovalDelta;
   }
 
+  function approvalPacketRoot(state, id) {
+    return state.workspace?.path &&
+      existsSync(join(state.workspace.path, "openspec", "changes", id))
+      ? state.workspace.path : root;
+  }
+
+  // The user approves a change once. A later revision or amendment that only
+  // adds or revises requirements is the agent carrying out that consent, so
+  // the current approval moves to the new packet with an audit row; Land still
+  // shows the real diff. Removing a requirement narrows what the user agreed
+  // to and still asks, as does a change that was never approved.
+  function carrySpecApproval(prior, next, id, delta, reason) {
+    const approval = prior.specApproval;
+    if (!approval?.identity || !approval.decisionRef || prior.pendingApprovalDelta ||
+        Number(approval.revision) !== Number(prior.contractRevision || 0) ||
+        delta.removed?.length) return false;
+    const carriedAt = now();
+    const fromRevision = Number(approval.revision);
+    const toRevision = Number(next.contractRevision || 0);
+    const { carriedFrom: _prior, ...consent } = approval;
+    next.specApproval = { ...consent,
+      identity: agreementIdentity(approvalPacketRoot(next, id), id),
+      revision: toRevision, carriedFrom: { revision: fromRevision, reason, carriedAt } };
+    next.approvalCarries = [...(prior.approvalCarries || []), {
+      fromRevision, toRevision, reason,
+      delta: { added: delta.added || [], revised: delta.revised || [], removed: [] },
+      carriedAt
+    }];
+    delete next.pendingApprovalDelta;
+    return true;
+  }
+
   function revisionRuntimePath(id) {
     return join(root, ".foundation", "runtime", `${id}.json`);
   }
@@ -1642,8 +1674,10 @@ export function createChangeLifecycle({
         delta = requirementDelta(before,
           storedBefore ? draftFingerprints : packetFingerprints(basePath));
         next.requirementFingerprints = draftFingerprints;
-        if (prior.pendingApprovalDelta) next.pendingApprovalDelta = prior.pendingApprovalDelta;
-        recordApprovalDelta(next, delta);
+        if (!carrySpecApproval(prior, next, id, delta, "pre-build-revision")) {
+          if (prior.pendingApprovalDelta) next.pendingApprovalDelta = prior.pendingApprovalDelta;
+          recordApprovalDelta(next, delta);
+        }
         next.revisions = [...(prior.revisions || []), {
           version: 1, revision: next.contractRevision, kind: "pre-build-revision",
           delta, appliedAt: now()
@@ -1680,10 +1714,15 @@ export function createChangeLifecycle({
         error.message}`);
     }
     const state = loadRuntime(id);
+    const pending = state.pendingApprovalDelta;
     console.log(`REVISED ${id}\n  revision: ${state.contractRevision}\n` +
-      `  requirement delta awaiting approval:\n${formatApprovalDelta(state.pendingApprovalDelta)}\n` +
+      (pending
+        ? `  requirement delta awaiting approval:\n${formatApprovalDelta(pending)}\n`
+        : `  requirement delta (covered by the current approval):\n${formatApprovalDelta(delta)}\n`) +
       `  inspect: openspec/changes/${id}/\n` + designWarningLines(draft, state.schema) +
-      `  next: claude-foundation change resolve ${id} --approve-spec --decision-ref <user-decision>`);
+      `  next: ${pending || !state.specApproval?.identity
+        ? `claude-foundation change resolve ${id} --approve-spec --decision-ref <user-decision>`
+        : `claude-foundation advance ${id} --through build`}`);
     return delta;
   }
 
@@ -1892,11 +1931,14 @@ export function createChangeLifecycle({
           ? { semanticIntakeEffectiveness: completedAmendmentIntakeEffectiveness } : {}),
         appliedAt: now()
       }];
-      recordApprovalDelta(nextState, {
+      const amendmentDelta = {
         added: compiled.addedRequirementKeys,
         revised: compiled.revisedRequirementKeys,
         removed: compiled.removedRequirementKeys
-      });
+      };
+      if (!carrySpecApproval(priorState, nextState, id, amendmentDelta,
+        `semantic-amendment: ${String(amendment.reason || "Agreement expanded during Build")}`))
+        recordApprovalDelta(nextState, amendmentDelta);
       if (nextState.requirementFingerprints) {
         const fingerprints = { ...nextState.requirementFingerprints,
           ...draftRequirementFingerprints({
@@ -1943,13 +1985,17 @@ export function createChangeLifecycle({
       console.error(`WARNING: amendment succeeded but could not remove semantic intake state: ${
         error.message}`);
     }
-    console.log(`AMENDED ${id}\n  revision: ${loadRuntime(id).contractRevision}\n` +
+    const amended = loadRuntime(id);
+    console.log(`AMENDED ${id}\n  revision: ${amended.contractRevision}\n` +
       `  invalidated claims: ${[...compiled.invalidatedClaims, ...compiled.removedClaimIds.map((claim) =>
         `${claim} (removed)`)].join(", ") || "none"}\n` +
       `  proof: ${compiled.invalidation.proofRecovery?.recovery?.instruction ||
         "re-enter Prove so receipt bindings are recomputed"}\n` +
-      `  requirement delta awaiting approval:\n${
-        formatApprovalDelta(loadRuntime(id).pendingApprovalDelta || {})}\n` +
+      (amended.pendingApprovalDelta
+        ? `  requirement delta awaiting approval:\n${formatApprovalDelta(amended.pendingApprovalDelta)}\n`
+        : `  requirement delta (covered by the current approval):\n${formatApprovalDelta({
+          added: compiled.addedRequirementKeys, revised: compiled.revisedRequirementKeys,
+          removed: compiled.removedRequirementKeys })}\n`) +
       `  proof command: ${compiled.invalidation.proofRecovery?.recovery?.command ||
         `claude-foundation advance ${id} --through proven`}\n` +
       `  next: claude-foundation advance ${id}`);

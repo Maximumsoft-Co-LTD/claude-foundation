@@ -71,7 +71,7 @@ language profiles, baselines, and rollout policy.
 | `change new <intent> [--rapid]` | Compatible primitive for manually authoring a change agreement |
 | `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect intake or compile and start an agreement from one validated semantic draft; Build creates isolation later |
 | `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake or add, revise, or remove semantic requirements transactionally while preserving completed work |
-| `change revise <change> <draft.json> [--inspect] [--consume-draft]` | Before Build, recompile a revised semantic draft over the same change id with rollback and a requirement delta for re-approval |
+| `change revise <change> <draft.json> [--inspect] [--consume-draft]` | Before Build, recompile a revised semantic draft over the same change id with rollback and a requirement delta (approval carries unless a requirement is removed) |
 | `change resolve <change> …` | Persist impact, coupling, security, and review decisions |
 | `change validate <change>` | Validate the change and its executable evidence contract |
 | `sandbox create <change> [--all]` | Create the isolated Build workspace |

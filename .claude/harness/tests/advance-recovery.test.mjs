@@ -142,9 +142,13 @@ test("repair handoffs persist across process-shaped runtime recreation and requi
   const f = fixture();
   assert.equal((await f.runtime().advanceThrough("demo", "archived")).action, "REPAIR");
   assert.equal((await f.runtime().advanceThrough("demo", "archived")).action, "REPAIR");
+  const alternate = await f.runtime().advanceThrough("demo", "archived");
+  assert.equal(alternate.action, "REPAIR", "the agent tries one different approach before any question");
+  assert.equal(alternate.legacyAction, "TRY_ALTERNATE_APPROACH");
+  assert.equal(alternate.owner, "agent");
   const stopped = await f.runtime().advanceThrough("demo", "archived");
   assert.equal(stopped.action, "ASK_USER");
-  assert.equal(stopped.decision.attemptedStrategies[0].observations, 3);
+  assert.equal(stopped.decision.attemptedStrategies[0].observations, 4);
   const calls = f.calls();
   const repeated = await f.runtime().advanceThrough("demo", "archived");
   assert.equal(repeated.decision.fingerprint, stopped.decision.fingerprint);
@@ -161,7 +165,7 @@ test("repair handoffs persist across process-shaped runtime recreation and requi
 test("changed content expires a pending recovery decision and stale answers cannot authorize work", async () => {
   const f = fixture();
   let value;
-  for (let index = 0; index < 3; index++) value = await f.runtime().advanceThrough("demo", "proven");
+  for (let index = 0; index < 4; index++) value = await f.runtime().advanceThrough("demo", "proven");
   f.setContent("actual repair");
   await assert.rejects(f.runtime().showAdvance("demo", answer(value)), /stale/);
   assert.equal((await f.runtime().advanceThrough("demo", "proven")).action, "REPAIR");
@@ -173,24 +177,24 @@ test("changing diagnostic text alone cannot reset the no-progress boundary", asy
     throw new Error(`tool unavailable on connection attempt ${++attempt}`);
   } });
   let value;
-  for (let index = 0; index < 3; index++) value = await f.runtime().advanceThrough("demo", "archived");
+  for (let index = 0; index < 4; index++) value = await f.runtime().advanceThrough("demo", "archived");
   assert.equal(value.action, "ASK_USER");
-  assert.match(value.decision.summary, /connection attempt 3/);
-  assert.equal(value.decision.attemptedStrategies[0].observations, 3);
+  assert.match(value.decision.summary, /connection attempt 4/);
+  assert.equal(value.decision.attemptedStrategies[0].observations, 4);
 });
 
 test("repeated setup exceptions survive restart and pause prevents setup writes", async () => {
   let preparations = 0;
   const f = fixture({ prepareBuild: async () => { preparations++; throw new Error("tool unavailable"); } });
   let value;
-  for (let index = 0; index < 3; index++) value = await f.runtime().advanceThrough("demo", "archived");
+  for (let index = 0; index < 4; index++) value = await f.runtime().advanceThrough("demo", "archived");
   assert.equal(value.action, "ASK_USER");
   assert.match(value.decision.summary, /tool unavailable/);
   const paused = await f.runtime().showAdvance("demo", answer(value, "pause"));
   assert.equal(paused.userState, "PAUSED");
   assert.equal(paused.user.decision, undefined, "a recorded pause does not ask the same question again");
   assert.equal((await f.runtime().advanceThrough("demo", "archived")).userState, "PAUSED");
-  assert.equal(preparations, 3);
+  assert.equal(preparations, 4);
 });
 
 test("recovery snapshots after a setup exception stay inside the runtime failure trap", async () => {
@@ -211,7 +215,7 @@ test("recovery snapshots after a setup exception stay inside the runtime failure
   assert.equal(f.state().advanceRecovery.attempts.length, 1);
 });
 
-test("external waiting is an explicit durable choice, and completion resumes automatically", async () => {
+test("external waiting is the default without a question, and completion resumes automatically", async () => {
   let available = false;
   const f = fixture({ runProof: async () => {
     if (!available) return { status: "WAITING_EXTERNAL", requests: [{ requestId: "r1", owner: "CI team" }],
@@ -219,14 +223,12 @@ test("external waiting is an explicit durable choice, and completion resumes aut
     f.setState({ status: "proven" });
     return { status: "PASS" };
   } });
-  const value = await f.runtime().advanceThrough("demo", "proven");
-  assert.equal(value.action, "ASK_USER");
-  assert.equal(value.decision.wait.owner, "CI team");
-  const waiting = await f.runtime().showAdvance("demo", answer(value, "wait"));
-  assert.equal(waiting.action, "WAIT");
-  assert.equal(waiting.user.owner, "CI team");
-  assert.match(waiting.wait.checkCommand, /advance demo/);
-  assert.equal((await f.runtime().advanceThrough("demo", "proven")).action, "WAIT");
+  for (let index = 0; index < 4; index++) {
+    const waiting = await f.runtime().advanceThrough("demo", "proven");
+    assert.equal(waiting.action, "WAIT", "a named external owner is waited on, never turned into a question");
+    assert.equal(waiting.wait.owner, "CI team");
+    assert.match(waiting.wait.checkCommand, /advance demo/);
+  }
   available = true;
   assert.equal((await f.runtime().advanceThrough("demo", "proven")).reached, "proven");
 });
@@ -259,7 +261,7 @@ test("malformed legacy decisions retain honest choices and advance v6 rejects em
 test("a dead proof worker cannot leave delivery looking active indefinitely", async () => {
   const f = fixture({ runProof: async () => ({ status: "IN_PROGRESS", owner: { pid: -1 } }) });
   let value;
-  for (let index = 0; index < 3; index++) value = await f.runtime().advanceThrough("demo", "proven");
+  for (let index = 0; index < 4; index++) value = await f.runtime().advanceThrough("demo", "proven");
   assert.equal(value.action, "ASK_USER");
   assert.match(value.decision.summary, /no longer live/);
 });
@@ -312,18 +314,15 @@ test("stopped configured reviewers return the bounded run route with retained su
   }
 });
 
-test("accepted external waiting expires when its owner, condition or checking route changes", async () => {
+test("external waiting follows its current owner, condition and checking route", async () => {
   for (const field of ["owner", "condition", "checkCommand"]) {
     let wait = { owner: "CI team", condition: "Publish signed result", checkCommand: "check-ci" };
     const f = fixture({ runProof: async () => ({ status: "WAITING_EXTERNAL", wait }) });
-    const question = await f.runtime().advanceThrough("demo", "proven");
-    assert.equal((await f.runtime().showAdvance("demo", answer(question, "wait"))).action, "WAIT");
+    assert.equal((await f.runtime().advanceThrough("demo", "proven")).action, "WAIT");
     wait = { ...wait, [field]: `changed ${field}` };
     const changed = await f.runtime().advanceThrough("demo", "proven");
-    assert.equal(changed.action, "ASK_USER");
-    assert.notEqual(changed.decision.fingerprint, question.decision.fingerprint);
-    assert.equal(changed.decision.wait[field], wait[field]);
-    assert.equal((await f.runtime().showAdvance("demo", answer(changed, "wait", "user:updated-wait"))).action, "WAIT");
+    assert.equal(changed.action, "WAIT");
+    assert.equal(changed.wait[field], wait[field]);
   }
 });
 
@@ -347,7 +346,7 @@ test("partial Land checkpoints converge, but a stuck checkpoint asks before repe
 test("retry does not grant Land, waive evidence or extend model/review budgets", async () => {
   const f = fixture();
   let value;
-  for (let index = 0; index < 3; index++) value = await f.runtime().advanceThrough("demo", "proven");
+  for (let index = 0; index < 4; index++) value = await f.runtime().advanceThrough("demo", "proven");
   await assert.rejects(f.runtime().showAdvance("demo", answer(value, "land")), /not offered/);
   await assert.rejects(f.runtime().showAdvance("demo", { ...answer(value), "decision-ref": "" }), /explicit user/);
   await f.runtime().showAdvance("demo", answer(value));
@@ -383,7 +382,7 @@ test("separate CLI host processes retain decisions, protect inspection, and resu
     const run = (flags) => JSON.parse(execFileSync(process.execPath, [scriptPath, JSON.stringify(flags)], {
       encoding: "utf8", timeout: 10_000
     }));
-    for (let index = 0; index < 2; index++)
+    for (let index = 0; index < 3; index++)
       assert.equal(run({ through: "archived" }).action, "REPAIR");
     const stopped = run({ through: "archived" });
     assert.equal(stopped.action, "ASK_USER");

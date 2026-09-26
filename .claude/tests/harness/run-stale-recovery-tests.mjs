@@ -90,7 +90,7 @@ test("a stale proof remains landable and is reported truthfully", () => {
   assert.match(result.stdout, /assurance: stale/);
 });
 
-test("a stale authority request says attest last and how to re-request", () => {
+test("a stale authority request is re-requested by the harness, never recorded", () => {
   const { fixture, workspacePath } = proven({ review: true });
   const requested = cli(fixture, "authority-request", "stale-probe", "--type", "review");
   assert.equal(requested.status, 0, requested.stderr);
@@ -98,8 +98,12 @@ test("a stale authority request says attest last and how to re-request", () => {
   appendFileSync(join(workspacePath, "app.txt"), "post-request edit\n");
   const result = cli(fixture, "authority-record", "stale-probe",
     "--request", requestId, "--response", join(fixture.root, "missing-response.json"));
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, new RegExp(`authority request '${requestId}' is stale`));
-  assert.match(result.stderr,
-    /request review and acceptance last, after the workspace stops changing, then re-request: claude-foundation authority request stale-probe --type review/);
+  assert.notEqual(result.status, 0, "a verdict on a superseded workspace is never recorded");
+  const fresh = result.stderr.match(/re-requested review as '([^']+)'/)?.[1];
+  assert.ok(fresh && fresh !== requestId, result.stderr);
+  assert.match(result.stderr, /Resume with 'claude-foundation advance stale-probe'/);
+  assert.doesNotMatch(result.stderr, /then re-request: claude-foundation authority request/);
+  const status = JSON.parse(cli(fixture, "authority-status", "stale-probe").stdout);
+  const replacement = status.requests.find((row) => row.requestId === fresh);
+  assert.equal(replacement.status, "requested", "the replacement is bound to the current workspace");
 });

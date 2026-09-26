@@ -403,7 +403,12 @@ starts a model process itself.
 The host copies `executionAuthority.leaseId` from the acquired task packet into
 `agents release --lease-id`. After any takeover, a generation-less release is
 refused so a late executor with the same stable owner cannot clear the current
-lease.
+lease. `agents acquire` by the lease's own owner after a graph, contract, or
+key change re-grants it under a new generation with the original write
+baseline instead of refusing. `agents release` of another owner's expired lease
+takes it over without `--force`; only a live foreign lease needs `--force
+--decision-ref`. `authority record` on a stale request records nothing, issues
+the replacement request, and names it with the `advance` resume route.
 
 JSON output is compact by default and `--pretty` is inspection-only. Plan
 schema 6 compiles a deterministic setup/service/task/provider/repository/Land

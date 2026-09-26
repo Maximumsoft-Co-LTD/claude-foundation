@@ -136,7 +136,8 @@ The revised draft keeps the change id and passes the same intake gate as
 revision increments, and any failure restores the prior packet and runtime
 state. Once Build has a workspace, a receipt, or a completed task, the command
 routes to `change amend`. The result lists the added, revised, and removed
-requirements; only that delta needs re-approval.
+requirements. An approved change keeps its approval for additive deltas; only
+a delta that removes a requirement needs approval.
 
 ## Revising during Build
 

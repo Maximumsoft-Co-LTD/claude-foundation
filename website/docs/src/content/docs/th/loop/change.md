@@ -97,7 +97,8 @@ Draft ฉบับแก้ใช้ id เดิมและผ่าน intake
 ถูกคอมไพล์ใหม่แบบ transaction, contract revision เพิ่มขึ้น และถ้าล้มเหลวจะคืน
 packet กับ runtime state เดิม เมื่อ Build มี workspace, receipt หรือ task ที่เสร็จแล้ว
 คำสั่งจะชี้ไปที่ `change amend` ผลลัพธ์แสดง requirement ที่ added, revised และ
-removed และขอ approve ใหม่เฉพาะ delta นั้น
+removed change ที่ approve แล้วใช้ approval เดิมต่อสำหรับ delta ที่เพิ่มหรือแก้
+requirement และขอ approve ใหม่เฉพาะ delta ที่ลบ requirement
 
 ## แก้ข้อตกลงระหว่าง Build
 

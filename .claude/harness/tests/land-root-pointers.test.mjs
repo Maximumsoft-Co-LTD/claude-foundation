@@ -127,6 +127,13 @@ test("stageRootPointersOperation handles no-op, decisions and successful staging
   assert.throws(() => stageRootPointersOperation(moved.context, "c"), /control-head-moved/);
   assert.equal(controlHeadMovedStageDecision(stateFor(), "head").currentHead, "head");
   assert.equal(controlHeadMovedStageDecision({}, "head").recordedBase, null);
+  // A moved control base replays automatically; it never offers to recreate
+  // the sandbox or retire the change.
+  const stage = controlHeadMovedStageDecision(stateFor(), "head", "c");
+  assert.deepEqual(stage.options.map((option) => option.id), ["sync", "inspect", "pause"]);
+  assert.equal(stage.recommended, "sync");
+  assert.equal(stage.automaticRecovery, "sync");
+  assert.match(stage.options[0].outcome, /sandbox sync c/);
 
   const none = operationContext(stateFor(), { orderedRepositories: () => [] });
   stageRootPointersOperation(none.context, "c");

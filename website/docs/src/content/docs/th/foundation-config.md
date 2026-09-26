@@ -100,7 +100,9 @@ independent หรือ diverse receipt จะบันทึก `independence-
 | `leaseMinutes` | ตัวเลข `1..1440` | เพิ่มสำหรับ build ช้า หรือลดเพื่อคืนงานจาก worker ที่ค้างเร็วขึ้น |
 
 เมื่อใช้ budget ถึง 85% Change Loop จะเข้า completion-only mode และหยุดงาน
-สำรวจหรือ refactor ที่ไม่จำเป็น เมื่อถึง 100% operator สามารถอนุมัติ window ใหม่
+สำรวจหรือ refactor ที่ไม่จำเป็น เมื่อ change ถึง 100% ครั้งแรก
+harness จะเปิด window ขนาดเท่าเดิมให้เองหนึ่งครั้งพร้อมบันทึก โดยไม่นับรวมใน
+`maxContinuationWindows` เมื่อถึง 100% อีกครั้ง operator สามารถอนุมัติ window ใหม่
 แบบมี audit ได้ตราบใดที่ยังมีงานใน scope เดิมค้างอยู่ จนถึงเพดาน
 `maxContinuationWindows` ส่วน readiness, receipt reuse, recovery และ archive
 ยังทำงานต่อได้โดยไม่ต้องขยาย budget

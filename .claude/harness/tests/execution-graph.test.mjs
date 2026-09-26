@@ -284,15 +284,24 @@ test("lease: independent workspaces acquire atomically with increasing fencing",
     fail: (message) => { throw new Error(message); }
   });
   runtime.acquire("c", "T001", { owner: "a" });
+  const granted = json(join(root, "tasks", "c", "T001.json"));
+  // The owner's own lease under changed keys is re-granted, not refused: the
+  // superseded resource is freed and the new generation fences stragglers.
   plans.get("T001").leaseKeys = ["path:root:src/changed"];
-  assert.throws(() => runtime.acquire("c", "T001", { owner: "a" }),
-    /stale lease authority/);
+  runtime.acquire("c", "T001", { owner: "a" });
+  const regranted = json(join(root, "tasks", "c", "T001.json"));
+  assert.ok(regranted.fencingGeneration > granted.fencingGeneration);
+  assert.equal(existsSync(runtime.leasePath("path:root:src/api")), false);
+  assert.ok(existsSync(runtime.leasePath("path:root:src/changed")));
+  assert.throws(() => runtime.acquire("c", "T001", { owner: "other" }),
+    /stale lease authority|conflicts with/);
   plans.get("T001").leaseKeys = ["path:root:src/api"];
+  runtime.acquire("c", "T001", { owner: "a" });
   runtime.acquire("c", "T002", { owner: "b" });
   const one = json(join(root, "tasks", "c", "T001.json"));
   const two = json(join(root, "tasks", "c", "T002.json"));
   assert.ok(one.fencingGeneration < two.fencingGeneration);
-  assert.equal(one.executionAttempt, 1);
+  assert.equal(one.executionAttempt, 3);
   assert.equal(two.executionAttempt, 1);
   assert.ok(existsSync(join(root, "tasks", "c", "T001.json")));
   assert.throws(() => runtime.acquire("c", "T003", { owner: "c" }), /conflicts with/);

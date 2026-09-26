@@ -111,13 +111,15 @@ export function evaluateDevTerminal({
       ? `Agent: recover the selected change ${explicit} without switching to a sibling change.`
       : "Agent: select the change that belongs to this session before continuing."
   };
+  // A permission the user just denied is their answer. Forcing the agent to
+  // keep working would override it, so the turn may end and report instead.
   if (hostBoundary?.kind === "host-permission-denied") return {
-    applies: true, complete: false, stopAllowed: false,
-    status: "INCOMPLETE", blockerKind: "host-integration-recovery",
-    changeId, phase: "prove", action: "WORKING", actor: "harness",
-    boundary: "host-integration",
-    reason: "the Harness must recover the denied internal operation",
-    resumeAction: `Agent: resume ${changeId} through the trusted lifecycle wrapper; do not ask the user to run an internal command.`
+    applies: true, complete: false, stopAllowed: true,
+    status: "BOUNDARY", blockerKind: "host-permission-denied",
+    changeId, phase: "prove", action: "ASK_USER", actor: "user",
+    boundary: "host-permission",
+    reason: "the user denied a tool permission; report what was blocked and the resume route",
+    resumeAction: `Agent: resume ${changeId} with /dev --resume ${changeId} once the user allows it.`
   };
   const proof = proofFor(changeId);
   if (!proof || proof.status !== "pass") {
@@ -152,10 +154,27 @@ export function evaluateDevTerminal({
   return { applies: true, complete: true, status: "PROVEN", changeId, phase: "prove" };
 }
 
+// The Stop hook has a 30s host timeout. Every CLI check shares one deadline
+// under it, and a check that cannot finish in time fails open: an unverified
+// terminal state must never trap the user in a turn that cannot end.
+export const CHECK_BUDGET_MS = 24000;
+// Tests may shorten the budget; nothing may lengthen it past the host timeout.
+const budgetOverride = Number(process.env.FOUNDATION_DEV_TERMINAL_BUDGET_MS);
+const checks = {
+  deadline: Date.now() + (budgetOverride > 0
+    ? Math.min(budgetOverride, CHECK_BUDGET_MS) : CHECK_BUDGET_MS),
+  timedOut: false
+};
+
 function runCli(root, ...args) {
-  return spawnSync(process.execPath,
+  const remaining = checks.deadline - Date.now();
+  if (remaining < 500) {
+    checks.timedOut = true;
+    return { status: null, stdout: "", stderr: "dev terminal check budget exhausted" };
+  }
+  const child = spawnSync(process.execPath,
     [join(root, ".claude", "harness", "foundation.mjs"), ...args], {
-      cwd: root, encoding: "utf8", timeout: 25000,
+      cwd: root, encoding: "utf8", timeout: remaining,
       env: {
         ...process.env,
         FOUNDATION_GUARDRAIL_MODE: "off",
@@ -164,6 +183,8 @@ function runCli(root, ...args) {
         FOUNDATION_READ_ONLY_INSPECTION: "1"
       }
     });
+  if (child.error?.code === "ETIMEDOUT" || child.signal) checks.timedOut = true;
+  return child;
 }
 
 function nextAction(root, id) {
@@ -246,6 +267,9 @@ async function main() {
   });
   const result = {
     ...evaluated,
+    ...(checks.timedOut && !evaluated.complete ? {
+      stopAllowed: true, status: "UNVERIFIED", blockerKind: "terminal-check-timeout"
+    } : {}),
     wallMs: transcriptWallMs(transcript),
     cost: null,
     costStatus: "provider-envelope-not-final-until-stop"

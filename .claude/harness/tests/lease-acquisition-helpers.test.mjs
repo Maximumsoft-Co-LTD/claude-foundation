@@ -335,6 +335,10 @@ test("release identity validates absence, owner, generation, and takeover decisi
   assert.equal(leaseReleaseIdentity(present, "change", "T001", {
     owner: "agent", force: true, "decision-ref": "host://decision"
   }).force, true);
+  // No live worker holds an expired lease: recovery needs no flag or decision.
+  const expired = { ...base, exists: () => true,
+    readJson: () => ({ ...live, expiresAt: "2026-08-26T00:00:00.000Z" }) };
+  assert.equal(leaseReleaseIdentity(expired, "change", "T001", { owner: "agent" }).force, true);
 });
 
 test("observed release writes enforce graph authority and granted path scopes", () => {

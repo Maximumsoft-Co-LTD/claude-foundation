@@ -102,9 +102,11 @@ Re-run readiness and Prove rather than editing receipts.
 | `planSummaryBytes` | Integer `1024..16384` | Bound the compact plan handed between phases |
 | `leaseMinutes` | Number `1..1440` | Allow longer workspaces for slow builds or shorten stale-worker recovery |
 
-At 85% of a budget, Change Loop enters completion-only mode. At 100%, an
-operator can approve another audited window while unresolved in-scope model
-work remains, up to `maxContinuationWindows`. Deterministic readiness, receipt
+At 85% of a budget, Change Loop enters completion-only mode. The first time a
+change reaches 100%, the harness opens one more same-size window by itself and
+records it; this does not count toward `maxContinuationWindows`. At the next
+100%, an operator can approve another audited window while unresolved in-scope
+model work remains, up to `maxContinuationWindows`. Deterministic readiness, receipt
 reuse, recovery, and archive operations remain available without an extension.
 
 :::tip

@@ -1,4 +1,4 @@
-import { REVIEW_WINDOW_MS, reviewWindowRemaining, reviewWindowError, currentWaivers } from "../core/user-decisions.mjs";
+import { REVIEW_WINDOW_MS, reviewWindowRemaining, reviewWindowError, autoExtendReviewWindow, currentWaivers } from "../core/user-decisions.mjs";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
@@ -669,6 +669,13 @@ export function createAuthorityRuntime({
     return { handled: false, entry, request, requestId, reviewerType };
   }
 
+  function assertReviewWindow(id, state) {
+    const timestamp = Date.parse(now());
+    if (reviewWindowRemaining(state, timestamp)) return;
+    if (!autoExtendReviewWindow(state, timestamp)) throw reviewWindowError(id);
+    saveRuntime(state);
+  }
+
   function dispatchAuthorityUnlocked(id, flags = {}) {
     const context = dispatchRequestContext(id, flags);
     if (context.handled) return context.value;
@@ -679,7 +686,7 @@ export function createAuthorityRuntime({
         deadline: new Date(Date.parse(startedAt) + REVIEW_WINDOW_MS).toISOString() };
       saveRuntime(windowState);
     }
-    if (!reviewWindowRemaining(windowState, Date.parse(now()))) throw reviewWindowError(id);
+    assertReviewWindow(id, windowState);
     const { entry, request, requestId, reviewerType } = context;
     function dispatchRouting() {
     const routing = reviewPolicy(id);
@@ -1339,7 +1346,7 @@ export function createAuthorityRuntime({
         ]
       };
       authorityStore.replace(failedEntry, failedRequest);
-      if (!reviewWindowRemaining(loadRuntime(id), Date.parse(now()))) throw reviewWindowError(id);
+      assertReviewWindow(id, loadRuntime(id));
       // Validation is deterministic for this packet/result. Changing models
       // cannot repair its binding; retain the error and existing resume route.
       const nextReviewer = report.retryable === false ? null
@@ -1606,8 +1613,20 @@ export function createAuthorityRuntime({
     const effective = authorityStatusValue(id, requestId).requests[0];
     const request = effective || entry.value;
     if (request.status === "stale" ||
-        request.workspaceHash !== authorityWorkspaceHash(id, request.provider))
-      fail(`authority request '${requestId}' is stale — the workspace changed after it was issued; request review and acceptance last, after the workspace stops changing, then re-request: claude-foundation authority request ${id} --type ${request.type}`);
+        request.workspaceHash !== authorityWorkspaceHash(id, request.provider)) {
+      // A verdict on a superseded workspace can never be recorded, but asking
+      // anyone to re-request is harness bookkeeping. Issue the replacement
+      // bound to the current workspace now; it spends no review attempt until
+      // it is dispatched, and `advance` routes it like any open request.
+      const repository = providerConfig(id, request.provider)?.repository || null;
+      const fresh = requestAuthorityUnlocked(id, {
+        type: request.type, ...(repository ? { repo: repository } : {})
+      }, { quiet: true });
+      fail(`authority request '${requestId}' judged a superseded workspace, so its response was not recorded; ` +
+        `the harness re-requested ${request.type} as '${fresh.requestId}' bound to the current workspace. ` +
+        `Resume with 'claude-foundation advance ${id}'.`, 1,
+      { owner: "harness", boundary: "stale-authority-request", code: "AUTHORITY_REREQUESTED" });
+    }
     if (!authorityStore.isOpen(request.status))
       fail(`authority request '${requestId}' is ${request.status}`);
     if (request.type === "review" && request.reviewCircuit === "full-delta" &&

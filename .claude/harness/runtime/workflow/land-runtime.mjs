@@ -289,17 +289,19 @@ export function rootPointerLandState(state, entries, signature, now) {
   };
 }
 
-export function controlHeadMovedStageDecision(state, currentHead) {
+export function controlHeadMovedStageDecision(state, currentHead, id = state.id) {
   return {
     kind: "control-head-moved",
     summary: "The control repository moved to a different commit after this change's sandbox was created, so staging submodule pointers now could bind them to a base nobody proved.",
     options: [
+      { id: "sync", outcome: `Replay every moved repository sandbox onto the current control commit and re-prove it: 'claude-foundation sandbox sync ${id}'.` },
       { id: "inspect", outcome: "Compare the recorded base with the current control repository history before choosing." },
-      { id: "recreate-sandbox", outcome: "Re-create the sandbox on the current control commit and re-prove the change against it." },
-      { id: "abandon", outcome: "Retire this change and reopen it against the current control commit." },
       { id: "pause", outcome: "Stage nothing and leave both repositories as they are." }
     ],
-    recommended: "inspect",
+    recommended: "sync",
+    // Same deterministic replay as the single-repository stop; a moved base
+    // never forces a recreated sandbox or a retired change.
+    automaticRecovery: "sync",
     recordedBase: state.workspace?.baseHead || null,
     currentHead
   };
@@ -336,7 +338,7 @@ export function stageRootPointersOperation(context, id) {
   const currentHead = gitHead(root);
   if (currentHead !== state.workspace?.baseHead)
     blockWithDecision(id, "control-head-moved",
-      controlHeadMovedStageDecision(state, currentHead));
+      controlHeadMovedStageDecision(state, currentHead, id));
   const entries = eligibleRootPointerEntries(context, id, state);
   if (!entries.length) {
     log(`ROOT POINTERS ${id}: no submodule pointers required`);

@@ -238,8 +238,10 @@ any point before Land when implementation reveals a new assumption.
 ## Your first change
 
 After Change, inspect the compiled spec and explicitly approve it before Build;
-this also applies to `/dev`. Review shares a 30-minute window across retries,
-fallbacks, and delta review. If repair cannot progress or review time expires,
+this also applies to `/dev`. Later additive revisions and amendments keep that
+approval. Review shares a 30-minute window across retries, fallbacks, and delta
+review; the first expiry extends it once automatically. If repair cannot
+progress or review time expires again,
 choose further work, Land with explicitly accepted remaining risks, or pause.
 Failed and missing evidence remains visible. See [the workflow](WORKFLOW.md)
 for approval, continuation, and content-bound waiver semantics.
@@ -660,8 +662,9 @@ change. Version-4 amendments must include discovery coverage for the added and
 revised requirements; the validated delta remains in the compiled proposal.
 Before Build starts, `change revise <change-id> <draft.json> --inspect` then
 `--consume-draft` recompiles the whole agreement under the same id. Either
-route reports the added/revised/removed requirement delta, and only that delta
-needs re-approval. Unaffected passing receipts survive only when their
+route reports the added/revised/removed requirement delta. An approved change
+keeps its approval for additive deltas; only a delta that removes a requirement
+needs approval. Unaffected passing receipts survive only when their
 declared provider, claim, and input bindings remain exact; every ambiguous or
 affected provider is routed back through Prove.
 The result prints the exact `advance <change-id> --through proven` recovery

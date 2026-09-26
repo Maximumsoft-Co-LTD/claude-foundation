@@ -102,7 +102,17 @@ export function createDeliveryIntegrity({ git, run, runChecked, gitOutput }) {
     }
   }
 
+  // Drift found here is in the harness-built delivery workspace, not in the
+  // user's target checkout, so Deliver can rebuild the workspace in place.
   function assertTree(workspace, projection, tree, gitlinks = []) {
+    try { assertWorkspaceTree(workspace, projection, tree, gitlinks); }
+    catch (error) {
+      if (error.code === "DELIVERY_PROJECTION_DRIFT") error.stage = "delivery-workspace";
+      throw error;
+    }
+  }
+
+  function assertWorkspaceTree(workspace, projection, tree, gitlinks) {
     assertConversion(workspace, projection);
     const links = new Map(gitlinks.map((row) => [row.path, row.commit]));
     const underLink = (path) => [...links.keys()].some((link) =>
@@ -163,7 +173,7 @@ export function createDeliveryIntegrity({ git, run, runChecked, gitOutput }) {
     const base = gitOutput(git, ["rev-parse", "FETCH_HEAD^{commit}"], workspace,
       "cannot resolve fetched pull request base");
     if (git(["merge-base", "--is-ancestor", projection.baseHead, base], workspace).status !== 0)
-      drift("The remote PR base does not contain the proven Land base; delivery would include unapproved branch history. Reconcile the base through a new proven change before delivery.",
+      drift("The remote PR base does not contain the proven Land base; delivery would include unapproved branch history. Restore the remote base so it contains the proven Land base, then retry Deliver.",
         "DELIVERY_PR_BASE_DRIFT");
   }
 

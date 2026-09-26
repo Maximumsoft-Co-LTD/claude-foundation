@@ -1,4 +1,4 @@
-import { reviewWindowRemaining, reviewWindowError, currentWaivers } from "../core/user-decisions.mjs";
+import { reviewWindowRemaining, reviewWindowError, autoExtendReviewWindow, currentWaivers } from "../core/user-decisions.mjs";
 import { repairActionForWorkspace } from "../evidence/repair-runtime.mjs";
 import { isProcessAlive } from "../core/process-lock.mjs";
 import { shellDisplayArgument } from "../core/shell-mutation-policy.mjs";
@@ -629,7 +629,10 @@ export function createAdvanceRuntime({
         const openRequests = authority.requests || [];
         if (openRequests.some((request) => request.type === "review" &&
             ["requested", "dispatched", "infrastructure-exhausted"].includes(request.status)) &&
-            !reviewWindowRemaining(state, nowMs())) throw reviewWindowError(id);
+            !reviewWindowRemaining(state, nowMs())) {
+          if (!autoExtendReviewWindow(state, nowMs())) throw reviewWindowError(id);
+          saveRuntime(state);
+        }
         let plan = null;
         if (agentPlanValue && ["run-in-session", "run-leased-in-session", "spawn-group"]
           .includes(dispatch.action)) {

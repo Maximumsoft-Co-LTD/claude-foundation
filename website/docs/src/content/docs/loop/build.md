@@ -75,4 +75,6 @@ amendment, so a changed decision never requires abandoning the change. Permissio
 secret, Terraform, deployment, or restart work becomes a typed external
 operation; Build never asks for credentials.
 
-`DONE` at Build does not prove or land the change.
+`DONE` at Build is not proof. `/build` continues into Prove automatically,
+because Prove has no external side effects, and stops at `proven`; it never
+Lands the change.

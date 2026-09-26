@@ -25,8 +25,8 @@ approved agreement before product mutation:
 - If the agreement already requires the requested outcome, repair the
   implementation in contract without an amendment or another product decision.
 - If the request adds or changes an observable outcome, author one batched
-  semantic amendment and follow its harness-owned approval and resume route
-  before editing product code. This includes UI, interaction, filter/search,
+  semantic amendment and follow its harness-owned resume route before editing
+  product code (an additive amendment keeps the approval; a removal asks). This includes UI, interaction, filter/search,
   validation, accessibility, API, data, permission, performance, integration,
   external-effect, compatibility, and rollout semantics. Revise or remove an
   existing requirement through that amendment; never abandon and rewrite the
@@ -42,8 +42,9 @@ The user decides product intent and material trade-offs. The agent translates
 that decision into the amendment, code, tests, and durable documentation. The
 harness automates validation, revision state, invalidation, evidence execution,
 recovery, and lifecycle progression. A clear user instruction is decision input;
-do not ask the same semantic question again. Keep the required compiled-agreement
-approval explicit, but present only the product delta rather than its CLI or JSON.
+do not ask the same semantic question again. The first compiled-agreement
+approval stays explicit; later additive deltas carry it. Report only the product
+delta rather than its CLI or JSON.
 
 Use these boundaries consistently:
 

@@ -502,9 +502,31 @@ test(`delivery verifies publication boundaries: ${scenario}`, async (t) => {
     assert.equal(checkedGit(["diff", "--cached"], root), originalIndex);
     return;
   }
-  if (["resume-edit", "resume-mode", "commit-hook", "hook-extra-path", "recovered-commit", "unrelated-base", "post-land-mode", "post-land-mode-remove", "archive-mode"].includes(scenario)) {
+  if (["resume-edit", "resume-mode", "recovered-commit"].includes(scenario)) {
+    // Drift in the unpublished harness workspace is rebuilt in place, once,
+    // from the Land-bound projection; it never becomes a new-change question.
+    const state = readJson(runtime.statePath(id));
+    assert.match(state.workspaceRebuilt.reason, /delivery|proven/);
+    assert.equal(interrupted.action, "WAIT", "the rebuilt workspace reaches the first push attempt");
+    assert.equal(checkedGit(["show", `${commit}:src/booking.js`], root),
+      "export const booking = true;");
+  }
+  if (["commit-hook", "hook-extra-path"].includes(scenario)) {
+    assert.equal(interrupted.action, "ASK_USER");
+    assert.equal(interrupted.boundary, "delivery-workspace");
+    assert.equal(interrupted.options.some((option) => /new-change/.test(option)), false);
+    assert.equal(interrupted.resumeCommand, `claude-foundation deliver advance ${id}`);
+    assert.equal(pushes, 0);
+    assert.equal(creates, 0);
+    assert.equal(checkedGit(["rev-parse", "HEAD"], root), originalHead);
+    assert.equal(checkedGit(["diff", "--cached"], root), originalIndex);
+    return;
+  }
+  if (["unrelated-base", "post-land-mode", "post-land-mode-remove", "archive-mode"].includes(scenario)) {
     assert.equal(interrupted.action, "ASK_USER");
     assert.equal(interrupted.boundary, "content-identity");
+    assert.deepEqual(interrupted.options,
+      ["restore-the-proven-content-and-retry-deliver", "leave-archived-without-deliver"]);
     assert.equal(pushes, 0);
     assert.equal(creates, 0);
     assert.equal(checkedGit(["rev-parse", "HEAD"], root), originalHead);

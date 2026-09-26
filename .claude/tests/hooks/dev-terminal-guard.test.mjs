@@ -120,17 +120,17 @@ test("dev cannot complete without exactly one passing fresh audited proof", () =
     nextActionFor: () => ({ action: "REPAIR", actor: "agent" }),
     hostBoundary: { kind: "host-permission-denied" }
   });
-  assert.equal(denied.blockerKind, "host-integration-recovery");
-  assert.equal(denied.stopAllowed, false,
-    "an internal permission denial remains Harness-owned work");
-  assert.equal(denied.action, "WORKING");
+  assert.equal(denied.blockerKind, "host-permission-denied");
+  assert.equal(denied.stopAllowed, true,
+    "a permission the user just denied ends the turn instead of forcing more work");
+  assert.equal(denied.complete, false, "a denial never marks the change proven");
   const staleDenied = evaluateDevTerminal({
     ...base,
     currentHash: () => "changed",
     nextActionFor: () => ({ action: "REPAIR", actor: "agent" }),
     hostBoundary: { kind: "host-permission-denied" }
   });
-  assert.equal(staleDenied.blockerKind, "host-integration-recovery",
+  assert.equal(staleDenied.blockerKind, "host-permission-denied",
     "a stale passing receipt cannot hide the later permission stop");
   assert.equal(evaluateDevTerminal({ ...base,
     auditProof: () => ({ valid: false, reason: "bad" }) }).blockerKind,
@@ -222,7 +222,7 @@ test("Stop hook allows a real external review wait without marking proof complet
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test("Stop hook keeps an internal permission denial inside the Harness", () => {
+test("Stop hook lets the turn end right after the user denies a permission", () => {
   const root = mkdtempSync(join(tmpdir(), "dev-terminal-permission-"));
   const transcript = join(root, "transcript.jsonl");
   try {
@@ -251,12 +251,43 @@ test("Stop hook keeps an internal permission denial inside the Harness", () => {
       env: { ...process.env, CLAUDE_PROJECT_DIR: root }
     });
     assert.equal(child.status, 0);
-    assert.match(child.stdout, /"decision":"block"/,
-      "a denied internal operation must not be handed to the user");
+    assert.equal(child.stdout, "", "a user's denial must not be overridden by a forced resume");
     const verdict = JSON.parse(readFileSync(join(root, ".foundation", "logs",
       "dev-terminal", "permission-session.json"), "utf8"));
     assert.equal(verdict.terminal, "incomplete");
-    assert.equal(verdict.stopAllowed, false);
-    assert.equal(verdict.blockerKind, "host-integration-recovery");
+    assert.equal(verdict.stopAllowed, true);
+    assert.equal(verdict.blockerKind, "host-permission-denied");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("Stop hook fails open when terminal checks exceed their shared deadline", () => {
+  const root = mkdtempSync(join(tmpdir(), "dev-terminal-deadline-"));
+  const transcript = join(root, "transcript.jsonl");
+  try {
+    mkdirSync(join(root, "openspec", "changes", "demo"), { recursive: true });
+    mkdirSync(join(root, ".foundation", "receipts", "demo"), { recursive: true });
+    mkdirSync(join(root, ".claude", "harness"), { recursive: true });
+    writeFileSync(transcript, `${JSON.stringify({
+      type: "last-prompt", lastPrompt: "/dev --resume demo"
+    })}\n`);
+    writeFileSync(join(root, ".foundation", "receipts", "demo", "proof.json"),
+      JSON.stringify({ status: "pass", workspaceHash: "same" }));
+    // Every CLI check hangs past the whole hook budget.
+    writeFileSync(join(root, ".claude", "harness", "foundation.mjs"),
+      "setTimeout(() => {}, 60000);\n");
+    const hook = fileURLToPath(new URL("../../hooks/dev-terminal-guard.mjs", import.meta.url));
+    const started = Date.now();
+    const child = spawnSync(process.execPath, [hook], {
+      cwd: root, encoding: "utf8",
+      input: JSON.stringify({ session_id: "deadline-session", transcript_path: transcript }),
+      env: { ...process.env, CLAUDE_PROJECT_DIR: root, FOUNDATION_DEV_TERMINAL_BUDGET_MS: "1500" }
+    });
+    assert.ok(Date.now() - started < 10000, "every check shares one deadline instead of 25s each");
+    assert.equal(child.status, 0);
+    assert.equal(child.stdout, "", "an unverifiable terminal state never traps the turn");
+    const verdict = JSON.parse(readFileSync(join(root, ".foundation", "logs",
+      "dev-terminal", "deadline-session.json"), "utf8"));
+    assert.equal(verdict.status, "UNVERIFIED");
+    assert.equal(verdict.complete, false, "a timeout never reports proof as complete");
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

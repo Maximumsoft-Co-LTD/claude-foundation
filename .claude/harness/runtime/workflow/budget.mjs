@@ -1,6 +1,8 @@
 import { measuredNumber } from "../core/measured-number.mjs";
 import { executionSurfaceBudgetScale } from "../core/authority-policy.mjs";
 
+export const AUTO_BUDGET_CONTINUATION_REF = "harness://auto-extend/budget/1";
+
 export function budgetDirective(ratio, operatorRequired) {
   if (operatorRequired || ratio >= 1)
     return {
@@ -411,7 +413,34 @@ export function createBudgetRuntime({ policy, now }) {
     };
   }
 
+  // The first exhaustion of a change opens one more window of the same size
+  // for the same run, recorded as a harness decision, so the user is asked
+  // only when that one is also spent. It does not use an operator-approved
+  // continuation (`extensionNumber` is unchanged).
+  function autoContinueBudget(state, window) {
+    const budget = state.budget;
+    if (budget.autoContinuation || window.mode === "operator-required") return false;
+    const next = budgetWindow(window.id, {
+      requests: Number(budget.targetRequests), tokens: Number(budget.targetTokens)
+    }, {
+      measured: true,
+      requests: Number(window.baselineRequests || 0) + Number(window.usedRequests || 0),
+      tokens: knownNumber(window.usedTokens)
+        ? Number(window.baselineTokens || 0) + Number(window.usedTokens) : null
+    }, Number(window.sequence || 0) + 1, "harness-auto-continue");
+    next.extensionRootId = window.extensionRootId || window.id;
+    next.extensionNumber = Number(window.extensionNumber || 0);
+    budget.autoContinuation = {
+      decisionRef: AUTO_BUDGET_CONTINUATION_REF, owner: "harness", at: now(),
+      previous: { ...window, exhaustedAt: window.exhaustedAt || now(), closedAt: now() }
+    };
+    budget.window = next;
+    return true;
+  }
+
   function applyBudgetDecision(state) {
+    const preliminaryWindow = state.budget.window;
+    if (budgetDecision(state).ratio >= 1) autoContinueBudget(state, preliminaryWindow);
     const window = state.budget.window;
     const preliminary = budgetDecision(state);
     if (window.mode !== "operator-required") window.mode = preliminary.mode;
