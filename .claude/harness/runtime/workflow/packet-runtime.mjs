@@ -5,6 +5,7 @@ import {
 } from "../core/update-advisory.mjs";
 import { verificationPlanValue } from "./verification-plan.mjs";
 import { authorityPreflightValue } from "../core/authority-policy.mjs";
+import { scopeAllowsPath } from "../core/graph-execution.mjs";
 import { repositoryBaseHead } from "../core/repository-binding.mjs";
 import { archivedResumeSource, resumePacketValue } from "./resume-packet.mjs";
 
@@ -271,10 +272,8 @@ export function createPacketRuntime({
       .map((row) => repository || !multiRepository
         ? row.path : `${row.repositoryId}/${row.path}`);
     if (selectedTask?.paths.length)
-      paths = paths.filter((path) => selectedTask.paths.some((scope) => {
-        const normalized = scope.replace(/\/\*\*?$/, "").replace(/\/$/, "");
-        return scope === "*" || path === normalized || path.startsWith(`${normalized}/`);
-      }));
+      paths = paths.filter((path) => selectedTask.paths.some((scope) =>
+        scopeAllowsPath(scope, path)));
     return paths;
   }
 

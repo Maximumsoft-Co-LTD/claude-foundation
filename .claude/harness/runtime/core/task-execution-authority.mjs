@@ -1,4 +1,4 @@
-import { singleAgentExecutionEligible } from "./graph-execution.mjs";
+import { scopeAllowsPath, singleAgentExecutionEligible } from "./graph-execution.mjs";
 
 function sorted(values) {
   return [...new Set((values || []).filter(Boolean))].sort();
@@ -126,10 +126,7 @@ export function taskResultMismatches(result, taskId, node, graph, state) {
       mismatches.push(field);
   const unexpectedWrites = (result?.observedWrites || []).filter((path) => {
     if (!(node?.paths || []).length) return false;
-    return !(node.paths || []).some((scope) => {
-      const prefix = String(scope).replace(/\/\*\*?$/, "").replace(/\/$/, "");
-      return scope === "*" || path === prefix || path.startsWith(`${prefix}/`);
-    });
+    return !(node.paths || []).some((scope) => scopeAllowsPath(scope, path));
   });
   if (unexpectedWrites.length) mismatches.push("observedWrites");
   return [...new Set(mismatches)];

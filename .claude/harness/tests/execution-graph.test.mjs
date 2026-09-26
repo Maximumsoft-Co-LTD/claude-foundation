@@ -495,3 +495,14 @@ test("land: target drift invalidates a prepared remote wave", () => {
   assert.equal(prepared.status, "prepared");
   assert.equal(landPreparationMatches(prepared, drifted), false);
 });
+
+test("task scopes match directory prefixes and the globs validation accepts", async () => {
+  const { scopeAllowsPath } = await import("../runtime/core/graph-execution.mjs");
+  for (const [scope, path, expected] of [
+    ["*", "any/file", true], ["src", "src/a.ts", true], ["src/**", "src/a/b.ts", true],
+    ["src/", "src/a.ts", true], ["tsconfig*.json", "tsconfig.json", true],
+    ["tsconfig*.json", "tsconfig.node.json", true], ["src/**/*.test.ts", "src/a.test.ts", true],
+    ["src/*.ts", "src/a/b.ts", false], ["package.json", "package.json.bak", false],
+    ["a.b", "aXb", false], ["docs/**", "src/a.ts", false]
+  ]) assert.equal(scopeAllowsPath(scope, path), expected, `${scope} ~ ${path}`);
+});

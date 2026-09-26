@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { blockingConflictRows, dependentClosure } from "../core/graph-execution.mjs";
+import {
+  blockingConflictRows, dependentClosure, scopeAllowsPath
+} from "../core/graph-execution.mjs";
 import { worktreeOwnedByTarget } from "../core/repository-binding.mjs";
 import { declaredPathMatcher } from "../core/workspace-surface.mjs";
 
@@ -722,10 +724,7 @@ export function createProofReadinessRuntime({
         .map((row) => row.path);
       const outside = repositoryWide ? [] : changed.filter((path) =>
         !generatedReports.some((report) => report.repository === repository.id &&
-          report.path === path) && !allowed.some((scope) => {
-        const normalized = scope.replace(/\/\*\*?$/, "").replace(/\/$/, "");
-        return scope === "*" || path === normalized || path.startsWith(`${normalized}/`);
-      }));
+          report.path === path) && !allowed.some((scope) => scopeAllowsPath(scope, path)));
       if (outside.length) {
         // Work landing in the root workspace while every implementation task
         // targets a child repository is almost always a misplaced sandbox:
