@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Change packets read better for people. Draft v4 scenarios take a short
+  `name`, optional `given` and `and` lines, and render GIVEN/WHEN/THEN/AND;
+  one case per scenario is enforced (no `;` in scenario text). Requirement
+  statements come from `description` (SHALL/MUST) or a grammatical
+  `outcome`, are limited to 60 words, 400 characters, and two `;`, and may
+  carry `details` bullets. `capabilityOverviews` titles each spec file, and
+  `language` records the prose language (keywords stay English).
+- `proposal.md` opens with a summary, prioritized user stories, success
+  criteria, and a capability index; discovery coverage and investigation
+  provenance move to appendices. `design.md` adds an optional Mermaid
+  overview, assumptions and open questions (spec approval refuses while any
+  question is open), and a task overview with a dependency graph. Empty or
+  `none` placeholders are omitted.
+
+### Fixed
+
+- A low-impact semantic draft that authors design content (file map, UI
+  states, decisions, answered intake choices, assumptions, risks) compiles as
+  `foundation-standard` instead of `foundation-rapid`, which dropped
+  `design.md` and `specs/` and forced the agent to rewrite the draft. A work
+  type alone does not count, and legacy drafts keep their lane.
+- Answered intake decisions are recorded as durable decisions in
+  `design.md` instead of `none`.
+- The design file map fills its Tasks column from task `[paths:]`.
+- Thai and other non-Latin scenario keys no longer collapse into duplicate
+  claim ids.
+
 ## [3.5.26] - 2026-09-26
 
 ### Fixed

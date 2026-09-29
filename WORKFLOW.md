@@ -94,7 +94,9 @@ The transactional compiler creates
 agreement, installs it, and prepares isolation. The draft records:
 
 - harness-required discovery coverage, ambiguity, impact, coupling, and size;
-- semantic requirements and task outcomes;
+- semantic requirements and task outcomes, rendered for people: one case per
+  scenario with a short name, optional GIVEN/AND lines, and a titled overview
+  per capability;
 - claim-to-task coverage and required evidence capabilities;
 - semantic security and review triggers;
 - typed extensions only when the change needs them.
@@ -107,6 +109,16 @@ and `grounding.yaml` appear only when execution differs from detected defaults,
 multiple repositories participate, external authority is required, or a
 non-derived material decision must be recorded. Absence has versioned
 virtual-default semantics.
+
+The packet is written for a human reviewer first. `proposal.md` opens with an
+optional plain-language summary, prioritized user stories, measurable success
+criteria, and a capability index (capability, requirements, tasks); discovery
+coverage and investigation provenance close it as appendices. `design.md`
+records every settled intake answer as a durable decision (context, choice,
+rejected options, decided by), adds an optional overview diagram, assumptions,
+open questions, and a task overview with its dependency graph, fills the file
+map's task column from task `[paths:]`, and omits sections the change leaves
+empty. Spec approval is refused while any open question remains.
 
 Before compilation, the harness requires every risk-derived discovery dimension
 to be covered, source-grounded as not applicable, investigated, or resolved by
@@ -593,7 +605,10 @@ Rapid is allowed only when all are true:
 - impact is low and coupling is isolated;
 - no public contract or persistent migration changes;
 - no semantic security or irreversible-effect trigger applies;
-- unit or static evidence is sufficient.
+- unit or static evidence is sufficient;
+- a semantic draft authors no design content (file map, UI states, failure
+  matrix, decisions or answered intake choices, assumptions, risks); such a
+  draft compiles as standard so that content is kept.
 
 ### `foundation-standard`
 

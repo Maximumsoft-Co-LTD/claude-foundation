@@ -220,17 +220,24 @@ function dataEntity(row) {
   const fields = Array.isArray(row.fields) && row.fields.some((field) => field && typeof field === "object")
     ? table([["Field", "name"], ["Type", "type"], ["Constraints", "constraints"]], row.fields)
     : list(row.fields);
-  return `### ${cell(row.entity)}\n\n${fields}\n\n` +
-    `- **Invariants:** ${cell(row.invariants)}\n` +
-    `- **Migration:** ${cell(row.migration)}\n- **Rollback:** ${cell(row.rollback)}`;
+  return `### ${cell(row.entity)}\n\n${fields}` + facts([
+    ["Invariants", row.invariants], ["Migration", row.migration], ["Rollback", row.rollback]
+  ]);
+}
+
+// Labelled facts render only when supplied; an empty field is not a finding.
+function facts(rows) {
+  const lines = rows.filter(([, value]) => present(value))
+    .map(([label, value]) => `- **${label}:** ${cell(value)}`);
+  return lines.length ? `\n\n${lines.join("\n")}` : "";
 }
 
 function uiScreen(row) {
   const states = Array.isArray(row.states) && row.states.some((state) => state && typeof state === "object")
     ? table([["State", "state"], ["Shows", "shows"], ["Actions", "actions"]], row.states)
     : list(row.states);
-  return `### ${cell(row.screen)}\n\n${states}\n\n` +
-    `- **Accessibility:** ${cell(row.accessibility)}\n- **Copy:** ${cell(row.copy)}`;
+  return `### ${cell(row.screen)}\n\n${states}` +
+    facts([["Accessibility", row.accessibility], ["Copy", row.copy]]);
 }
 
 function jobContract(row) {

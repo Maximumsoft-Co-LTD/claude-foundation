@@ -2,7 +2,9 @@ import {
   existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 } from "node:fs";
 import { join } from "node:path";
-import { normalizeSemanticDraft } from "./semantic-draft.mjs";
+import {
+  normalizeSemanticDraft, renderRequirementMarkdown, renderSpecHeading
+} from "./semantic-draft.mjs";
 
 const stringList = (value) => Array.isArray(value)
   ? value.map((item) => String(item || "").trim()).filter(Boolean) : [];
@@ -42,21 +44,15 @@ export function updateTaskClaimAnnotation(line, claimIds) {
     : `${line.slice(0, marker).trimEnd()} ${claims}${line.slice(marker)}`;
 }
 
-function renderRequirement(spec) {
-  const scenarios = (spec.scenarios || []).map((scenario) =>
-    `#### Scenario: ${scenario.name}\n\n- **WHEN** ${scenario.when}\n` +
-    `- **THEN** ${scenario.then}`).join("\n\n");
-  const migration = String(spec.operation || "added").toLowerCase() === "removed"
-    ? `\n\n**Migration:** ${spec.migration}` : "";
-  return `### Requirement: ${spec.requirement}\n\n${spec.description}${migration}` +
-    (scenarios ? `\n\n${scenarios}` : "");
-}
+const renderRequirement = (spec) => renderRequirementMarkdown(spec);
 
 export function appendRequirementToSpec(content, spec) {
   const operation = String(spec.operation || "added").toUpperCase();
   const heading = `## ${operation} Requirements`;
   const rendered = renderRequirement(spec);
-  const source = String(content || "").replace(/\s+$/, "");
+  const existing = String(content || "").replace(/\s+$/, "");
+  // A new capability file starts with its human heading, as start renders it.
+  const source = existing || renderSpecHeading(spec);
   const start = source.indexOf(heading);
   if (start < 0) return `${source}\n\n${heading}\n\n${rendered}\n`;
   const afterHeading = start + heading.length;
@@ -231,13 +227,16 @@ export function compileSemanticAmendment({
     version: semanticDraftVersion,
     intent: amendment.reason || "Amend the active agreement",
     impact: amendment.impact || "low",
-    requirements: [...addRequirements, ...reviseRequirements],
+    requirements: [...addRequirements,
+      ...reviseRequirements.map((row) => ({ ...row, _revision: true }))],
     tasks: coverageTasks,
     evidence: amendment.evidence,
     integrations: amendment.integrations || [],
     securityTriggers: amendment.securityTriggers || [],
     riskSignals: amendment.riskSignals || [],
     externalOperations: amendment.externalOperations || [],
+    ...(Array.isArray(amendment.capabilityOverviews)
+      ? { capabilityOverviews: amendment.capabilityOverviews } : {}),
     discovery: amendment.discovery
   }, slugify, loadCanonicalSpec ? { loadCanonicalSpec } : {});
   issues.push(...normalized.issues.map((issue) => `amendment ${issue}`));

@@ -3,6 +3,7 @@ import {
   normalizeDiscovery, semanticIntakeIssues
 } from "./validation/semantic-intake.mjs";
 import { designBlueprintIssues } from "./validation/design-blueprints.mjs";
+import { readerGuideIssues } from "./validation/reader-guide.mjs";
 
 const OPERATIONS = new Set(["added", "modified", "removed"]);
 const AUTHORITY_CAPABILITIES = new Set(["review", "acceptance", "semantic-acceptance"]);
@@ -22,6 +23,16 @@ function unique(values) {
   return [...new Set(values)];
 }
 
+function textList(value) {
+  return typeof value === "string" ? [text(value)].filter(Boolean) : stringList(value);
+}
+
+// Readability limits for v4 requirement statements. A statement longer than
+// this is almost always several requirements or scenario detail in one clause.
+const STATEMENT_MAX_WORDS = 60;
+const STATEMENT_MAX_CHARACTERS = 400;
+const STATEMENT_MAX_SEMICOLONS = 2;
+
 function placeholderIssue(value, label, issues) {
   if (PLACEHOLDER.test(text(value))) issues.push(`${label} contains unresolved placeholder text`);
 }
@@ -34,14 +45,96 @@ function semanticScenarios(requirement) {
     const object = typeof entry === "string" ? { scenario: entry } : entry || {};
     const fallbackName = text(object.scenario) || text(object.when) ||
       `${text(requirement.key) || "scenario"}-${index + 1}`;
+    const given = textList(object.given);
+    const and = textList(object.and);
     return {
       key: text(object.key) || fallbackName,
       name: text(object.name) || fallbackName,
+      ...(given.length ? { given } : {}),
       when: text(object.when) || text(object.scenario),
       then: text(object.then) || text(object.outcome) || text(requirement.outcome),
+      ...(and.length ? { and } : {}),
       ...(text(object.kind) ? { kind: text(object.kind).toLowerCase() } : {})
     };
   });
+}
+
+function rawScenarioEntries(requirement) {
+  return Array.isArray(requirement?.scenarios) ? requirement.scenarios
+    : requirement?.scenario !== undefined ? [requirement.scenario] : [];
+}
+
+function comparableLabel(value) {
+  return text(value).toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, " ").trim();
+}
+
+// A v4 scenario reads as one titled case: a short name distinct from WHEN,
+// preconditions in GIVEN, one trigger, and one outcome plus optional AND lines.
+// A modified or amendment-revised requirement may name an existing scenario
+// by its title alone, so only a new scenario must carry its own name.
+function readableScenarioIssues(requirement, operation, label, issues) {
+  for (const [index, entry] of rawScenarioEntries(requirement).entries()) {
+    const scenario = typeof entry === "string" ? { when: entry } : entry || {};
+    const at = `${label}.scenarios[${index}]`;
+    const name = text(scenario.name);
+    const when = text(scenario.when) || text(scenario.scenario);
+    if (!name && operation !== "modified" && !requirement?._revision)
+      issues.push(`${at}.name is required: give the scenario a short title; without one the heading repeats WHEN`);
+    else if (name && comparableLabel(name) === comparableLabel(when))
+      issues.push(`${at}.name repeats WHEN; use a short title and keep the trigger in 'when'`);
+    else if (name && name.length > 80)
+      issues.push(`${at}.name is longer than 80 characters; shorten it to a title`);
+    const fields = [
+      ["given", textList(scenario.given)], ["when", [when]],
+      ["then", [text(scenario.then) || text(scenario.outcome)]], ["and", textList(scenario.and)]
+    ];
+    for (const [field, values] of fields)
+      if (values.some((value) => value.includes(";")))
+        issues.push(`${at}.${field} joins several cases with ';'; split them into separate ` +
+          "scenarios, put preconditions in 'given', and extra outcomes in 'and'");
+  }
+}
+
+function lowerFirst(value) {
+  return value.replace(/^([A-Z])(?=[a-z])/, (letter) => letter.toLowerCase());
+}
+
+// v3 keeps its historical stem. v4 never glues an English stem onto a whole
+// sentence: an explicit description wins, an outcome that already states
+// SHALL/MUST is used as written, an English result clause becomes "The system
+// SHALL ensure that <outcome>", an English verb phrase follows "The system
+// SHALL", and any other language must supply the statement itself.
+function requirementStatement(requirement, outcome, version, operation, label, issues) {
+  const description = text(requirement?.description);
+  if (version !== 4)
+    return description || (outcome ? `The system SHALL ${outcome.replace(/[.]$/, "")}.` : "");
+  let statement = description;
+  if (!statement && outcome) {
+    if (/\b(?:SHALL|MUST)\b/.test(outcome)) statement = outcome;
+    else if (/[^\x00-\x7F]/.test(outcome))
+      issues.push(`${label}.description is required: write the full statement in the ` +
+        "document language and keep the SHALL marker");
+    else {
+      // A result clause ("The card appears", "a board renders") takes "ensure
+      // that"; a verb phrase ("record one payment") follows SHALL directly.
+      const body = outcome.replace(/[.]$/, "");
+      statement = /^(?:[A-Z]|(?:a|an|the|each|every|no|all|any|its|their|this|these|those)\b)/
+        .test(body)
+        ? `The system SHALL ensure that ${lowerFirst(body)}.`
+        : `The system SHALL ${body}.`;
+    }
+  }
+  if (!statement || operation === "removed") return statement;
+  if (!/\b(?:SHALL|MUST)\b/.test(statement))
+    issues.push(`${label}.description must state the requirement with SHALL or MUST`);
+  const words = statement.split(/\s+/).filter(Boolean).length;
+  const semicolons = (statement.match(/;/g) || []).length;
+  if (words > STATEMENT_MAX_WORDS || statement.length > STATEMENT_MAX_CHARACTERS ||
+      semicolons > STATEMENT_MAX_SEMICOLONS)
+    issues.push(`${label} statement is too long (${words} words, ${statement.length} characters, ` +
+      `${semicolons} ';'); split it into separate requirements, move cases into scenarios, ` +
+      "or list constraints in 'details'");
+  return statement;
 }
 
 function canonicalScenarioDetails(body) {
@@ -55,10 +148,14 @@ function canonicalScenarioDetails(body) {
       continue;
     }
     if (!current) continue;
+    const given = line.match(/^\s*-\s*\*\*GIVEN\*\*\s+(.+?)\s*$/i);
     const when = line.match(/^\s*-\s*\*\*WHEN\*\*\s+(.+?)\s*$/i);
     const then = line.match(/^\s*-\s*\*\*THEN\*\*\s+(.+?)\s*$/i);
+    const and = line.match(/^\s*-\s*\*\*AND\*\*\s+(.+?)\s*$/i);
+    if (given) current.given = [...(current.given || []), given[1]];
     if (when) current.when = when[1];
     if (then) current.then = then[1];
+    if (and) current.and = [...(current.and || []), and[1]];
   }
   return scenarios;
 }
@@ -120,6 +217,11 @@ function semanticDraftIssues(source) {
     issues.push("semantic draft requires an 'evidence' object keyed by requirement key");
   if (source?.integrations !== undefined && !Array.isArray(source.integrations))
     issues.push("semantic draft integrations must be an array");
+  if (source?.capabilityOverviews !== undefined && !Array.isArray(source.capabilityOverviews))
+    issues.push("semantic draft capabilityOverviews must be an array");
+  if (source?.language !== undefined &&
+      !/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(text(source.language)))
+    issues.push("semantic draft language must be a BCP 47 tag such as 'en' or 'th'");
   if (source?.diagrams !== undefined && !Array.isArray(source.diagrams))
     issues.push("semantic draft diagrams must be an array");
   if (source?.decisions !== undefined && !Array.isArray(source.decisions))
@@ -187,6 +289,10 @@ function normalizeRequirements(source, slugify, issues, { loadCanonicalSpec = nu
       : semanticScenarios(requirement);
     if (!scenarios.length && operation !== "removed")
       issues.push(`${label}.scenario or .scenarios is required`);
+    if (source.version === 4) readableScenarioIssues(requirement, operation, label, issues);
+    const statement = requirementStatement(
+      requirement, outcome, source.version, operation, label, issues);
+    const details = textList(requirement?.details);
     for (const [scenarioIndex, scenario] of scenarios.entries()) {
       for (const field of ["name", "when", "then"])
         if (!scenario[field]) issues.push(`${label}.scenarios[${scenarioIndex}].${field} is required`);
@@ -211,8 +317,11 @@ function normalizeRequirements(source, slugify, issues, { loadCanonicalSpec = nu
     if (repositories.length > 1 && !capabilities.includes("cross-repo-contract"))
       capabilities.push("cross-repo-contract");
     const scenarioClaims = scenarios.map((scenario, scenarioIndex) => {
-      const id = slugify(scenarios.length === 1
-        ? key : `${key}-${scenario.key || scenarioIndex + 1}`);
+      // A title in a non-Latin script slugifies to nothing; its position keeps
+      // the claim id stable instead.
+      const rawSuffix = String(scenario.key || "");
+      const suffix = /[a-z0-9]/i.test(rawSuffix) ? rawSuffix : String(scenarioIndex + 1);
+      const id = slugify(scenarios.length === 1 ? key : `${key}-${suffix}`);
       if (!id) issues.push(`${label} cannot derive a stable claim ID`);
       else if (claimIds.has(id)) issues.push(`${label} derives duplicate claim ID '${id}'`);
       claimIds.add(id);
@@ -233,14 +342,40 @@ function normalizeRequirements(source, slugify, issues, { loadCanonicalSpec = nu
         name: capability,
         operation,
         requirement: text(requirement?.requirement || requirement?.title) || key,
-        description: text(requirement?.description) ||
-          (outcome ? `The system SHALL ${outcome.replace(/[.]$/, "")}.` : ""),
+        description: statement,
+        ...(details.length ? { details } : {}),
         scenarios,
         ...(operation === "removed" ? { migration: text(requirement.migration) } : {})
       }
     });
   }
   return { requirements, requirementKeys };
+}
+
+// A capability overview gives its spec file a human title and a short
+// orientation paragraph above the requirement deltas.
+function applyCapabilityOverviews(source, requirements, slugify, issues) {
+  if (!Array.isArray(source.capabilityOverviews)) return;
+  const seen = new Set();
+  for (const [index, entry] of source.capabilityOverviews.entries()) {
+    const label = `semantic draft capabilityOverviews[${index}]`;
+    const capability = slugify(text(entry?.capability));
+    const specs = requirements.map((row) => row.spec)
+      .filter((spec) => text(entry?.capability) && slugify(spec.name) === capability);
+    if (!text(entry?.capability)) issues.push(`${label}.capability is required`);
+    else if (!specs.length)
+      issues.push(`${label}.capability '${entry.capability}' matches no requirement capability`);
+    else if (seen.has(capability))
+      issues.push(`${label}.capability '${entry.capability}' is duplicated`);
+    seen.add(capability);
+    if (!text(entry?.overview)) issues.push(`${label}.overview is required`);
+    placeholderIssue(entry?.title, `${label}.title`, issues);
+    placeholderIssue(entry?.overview, `${label}.overview`, issues);
+    for (const spec of specs) {
+      if (text(entry?.title)) spec.title = text(entry.title);
+      if (text(entry?.overview)) spec.overview = text(entry.overview);
+    }
+  }
 }
 
 function applyIntegrationRequirements(source, requirements, requirementKeys, issues) {
@@ -368,7 +503,9 @@ export function normalizeSemanticDraft(source, slugify, options = {}) {
   const { requirements, requirementKeys } = normalizeRequirements(
     source, slugify, issues, options);
   applyIntegrationRequirements(source, requirements, requirementKeys, issues);
+  applyCapabilityOverviews(source, requirements, slugify, issues);
   const tasks = normalizeTasks(source, requirements, requirementKeys, issues);
+  issues.push(...readerGuideIssues(source, requirementKeys));
   const claims = requirements.flatMap((row) => row.claims);
   const acceptance = source.acceptance || { required: false, reason: null, claimIds: [] };
   const acceptanceRequirements = stringList(acceptance.requirements);
@@ -411,6 +548,7 @@ export function normalizeSemanticDraft(source, slugify, options = {}) {
     tasks,
     claims,
     specs: requirements.map((row) => row.spec),
+    _requirementKeys: requirements.map((row) => row.key),
     execution: derivedExecution(source, claims, tasks),
     externalOperations: Array.isArray(source.externalOperations)
       ? source.externalOperations : undefined,
@@ -420,11 +558,43 @@ export function normalizeSemanticDraft(source, slugify, options = {}) {
   return { draft, issues };
 }
 
+// One renderer for start, revise, and amendments. Structural keywords stay
+// English so OpenSpec parses them; everything between them is document prose.
+export function renderScenarioMarkdown(scenario) {
+  return [
+    `#### Scenario: ${scenario.name}`, "",
+    ...textList(scenario.given).map((value) => `- **GIVEN** ${value}`),
+    `- **WHEN** ${scenario.when}`,
+    `- **THEN** ${scenario.then}`,
+    ...textList(scenario.and).map((value) => `- **AND** ${value}`)
+  ].join("\n");
+}
+
+export function renderRequirementMarkdown(spec, scenarios = spec.scenarios || []) {
+  const details = textList(spec.details).map((value) => `- ${value}`).join("\n");
+  const migration = String(spec.operation || "added").toLowerCase() === "removed"
+    ? `\n\n**Migration:** ${spec.migration}` : "";
+  const rendered = scenarios.map(renderScenarioMarkdown).join("\n\n");
+  return `### Requirement: ${spec.requirement}\n\n${spec.description}` +
+    (details ? `\n\n${details}` : "") + migration + (rendered ? `\n\n${rendered}` : "");
+}
+
+export function renderSpecHeading(spec) {
+  const title = text(spec?.title) || text(spec?.name);
+  return `# ${title}` + (text(spec?.overview) ? `\n\n${text(spec.overview)}` : "");
+}
+
 export function semanticDraftTemplate() {
   return {
     version: 4,
     intent: "Describe one observable outcome",
+    summary: "Say in 1-3 plain sentences what changes and who benefits",
     why: "Explain the concrete user or system value",
+    userStories: [{
+      priority: "P1", asA: "a named user", iWant: "the observable outcome",
+      soThat: "the benefit", covers: ["observable-outcome"]
+    }],
+    successCriteria: ["State how the result is judged, with a measurable threshold"],
     impact: "low",
     coupling: "isolated",
     workType: ["feature"],
@@ -432,8 +602,15 @@ export function semanticDraftTemplate() {
       key: "observable-outcome",
       capability: "change",
       operation: "added",
-      scenario: "Describe the bounded input or event",
-      outcome: "Describe the observable result"
+      description: "The system SHALL provide the observable behavior",
+      outcome: "Describe the observable result",
+      scenarios: [{
+        name: "Short scenario title",
+        given: "The precondition or state before the trigger",
+        when: "One triggering input or event",
+        then: "One observable result",
+        and: ["Another result of the same case, if any"]
+      }]
     }],
     tasks: [{
       key: "implement-outcome",

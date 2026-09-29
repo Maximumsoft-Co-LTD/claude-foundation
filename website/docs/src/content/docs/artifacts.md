@@ -100,7 +100,7 @@ what a reviewer reads.
 
 | File | What it holds | Profile |
 |---|---|---|
-| `proposal.md` | Why the change exists, what observably changes, impact, and non-goals | both |
+| `proposal.md` | Summary, why, user stories, success criteria, a capability index, what observably changes, impact, and non-goals; discovery coverage as an appendix | both |
 | `tasks.md` | The sole implementation ledger — the only place work is tracked | both |
 | `evidence.yaml` | The stable behavioral contract: claim IDs, scenarios, capabilities | both |
 | `grounding.yaml` | Semantic v3 non-derived material decisions; legacy read-set grounding remains readable | conditional when a decision must be locked |
@@ -108,7 +108,7 @@ what a reviewer reads.
 | `repositories.yaml` | Explicit repository selection and write modes | conditional for multi-repository scope |
 | `handoffs.yaml` | Permission-bound external operations and activation safety | conditional when such work exists |
 | `.openspec.yaml` | Which assurance profile governs the packet | both |
-| `design.md` | Durable decisions, diagrams, versioned integrations, prototype selection, compatibility, and risks | standard, conditional on design context |
+| `design.md` | Overview, assumptions and open questions, typed blueprints, a task overview, durable decisions (including settled intake answers), diagrams, integrations, compatibility, and risks; empty sections are omitted | standard, conditional on design context |
 | `specs/**/spec.md` | Requirement deltas — `ADDED`, `MODIFIED`, `REMOVED` | standard |
 
 A `foundation-rapid` packet omits spec deltas and normally omits `design.md`. The moment

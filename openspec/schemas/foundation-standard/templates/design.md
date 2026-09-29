@@ -10,7 +10,9 @@
 
 <!-- Draft `workType` selects typed blueprint sections rendered here: Work type,
 Bugfix analysis, Refactor invariants, File map, API contracts, Data model,
-UI states, Config contract, Job contract, Failure matrix, and Test map. -->
+UI states, Config contract, Job contract, Failure matrix, and Test map. The
+compiler also adds Overview, Assumptions and open questions, and Task overview,
+and omits any section this change leaves empty. -->
 
 ## Domain language
 

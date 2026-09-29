@@ -8,7 +8,9 @@ import {
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
-import { normalizeSemanticDraft, semanticDraftTemplate } from "../runtime/workflow/semantic-draft.mjs";
+import {
+  normalizeSemanticDraft, renderRequirementMarkdown, renderSpecHeading, semanticDraftTemplate
+} from "../runtime/workflow/semantic-draft.mjs";
 import {
   createChangeLifecycle, draftNeedsDesign, renderDraftProposal
 } from "../runtime/workflow/change-lifecycle.mjs";
@@ -77,8 +79,18 @@ function semanticDraft(overrides = {}) {
   };
 }
 
+// v4 requires a short scenario title distinct from WHEN; the shared fixtures
+// use the v3 shorthand, so name each shorthand case here.
+function namedScenarios(requirement) {
+  if (typeof requirement?.scenario !== "string") return requirement;
+  const { scenario, ...rest } = requirement;
+  return { ...rest, scenarios: [{ name: `${requirement.key} case`, when: scenario,
+    then: requirement.outcome || "the result is observable" }] };
+}
+
 function semanticDraftV4(overrides = {}) {
   const value = semanticDraft({ version: 4, ...overrides });
+  value.requirements = value.requirements.map(namedScenarios);
   value.discovery = {
     coverage: [
       "current-behavior", "affected-actor", "desired-behavior", "success-path",
@@ -230,11 +242,15 @@ test("semantic v4 renders discovery coverage into the compiled agreement", () =>
     "Preserve caller | exporter";
   const compiled = normalizeSemanticDraft(input, slugify).draft;
   const proposal = renderDraftProposal(compiled, { intent: compiled.intent });
-  assert.match(proposal, /## Requirement discovery coverage/);
+  assert.match(proposal, /## Appendix: discovery coverage/);
   assert.match(proposal, /\| compatibility \| covered \| payment-retry \|/);
   assert.match(proposal, /Preserve caller \\\| exporter/);
   assert.match(proposal, /## Investigation handoff[\s\S]*payment-investigation/);
-  assert.match(proposal, /Change retry behavior/);
+  // Provenance hashes and the raw intent follow the human sections.
+  assert.ok(proposal.indexOf("## Appendix: investigation provenance") >
+    proposal.indexOf("## Appendix: discovery coverage"));
+  assert.match(proposal, /## Appendix: investigation provenance[\s\S]*Change retry behavior[\s\S]*state-digest/);
+  assert.doesNotMatch(proposal.slice(0, proposal.indexOf("## Appendix")), /state-digest|Change retry behavior/);
 });
 
 test("semantic compiler aggregates unknown references, cycles, and placeholders", () => {
@@ -474,7 +490,9 @@ test("v4 semantic amendment requires discovery delta and records it in proposal"
     reason: "Build exposed an additional bounded failure",
     addRequirements: [{
       key: "bounded-failure", capability: "mutation-control", operation: "added",
-      scenario: "A bounded failure occurs", outcome: "The failure is reported"
+      scenarios: [{ name: "Bounded failure", when: "A bounded failure occurs",
+        then: "The failure is reported" }],
+      outcome: "The failure is reported"
     }],
     addTasks: [{
       key: "handle-bounded-failure", outcome: "Handle the bounded failure",
@@ -617,7 +635,8 @@ test("change amend installs atomically and restores files and state on validatio
     reason: `Add ${key}`,
     addRequirements: [{
       key, capability: "payment-control", operation: "added",
-      scenario: `${key} is observed`, outcome: `${key} is handled`
+      scenarios: [{ name: `${key} case`, when: `${key} is observed`, then: `${key} is handled` }],
+      outcome: `${key} is handled`
     }],
     updateTasks: [{ key: "existing-task", covers: ["existing-behavior", key] }],
     evidence: { [key]: { capabilities: ["test"] } },
@@ -1118,4 +1137,124 @@ test("a version-4 revision requires discovery coverage for revised requirements"
   const compiled = compileSemanticAmendment({ ...args, amendment, semanticDraftVersion: 4 });
   assert.deepEqual(compiled.issues, []);
   assert.equal(compiled.discovery.coverage.length, 9);
+});
+
+function readableDraft(requirement, extra = {}) {
+  const value = semanticDraftV4(extra);
+  value.requirements = [{ key: "payment-retry", capability: "payment-control",
+    operation: "added", ...requirement }];
+  value.tasks = [{ key: "implement-retry", outcome: "Implement retries",
+    covers: ["payment-retry"], paths: ["src/**"], verify: "npm test" }];
+  value.evidence = { "payment-retry": { capabilities: ["test"] } };
+  delete value.integrations;
+  return value;
+}
+
+test("v4 specs render a titled capability, GIVEN/AND scenarios, and detail bullets", () => {
+  const { draft, issues } = normalizeSemanticDraft(readableDraft({
+    description: "The service SHALL record at most one payment per retry.",
+    details: ["A retry reuses the original idempotency key"],
+    outcome: "one payment is recorded",
+    scenarios: [{ name: "Retry succeeds", given: "a payment timed out once",
+      when: "the client retries", then: "one payment is recorded",
+      and: ["the retry returns the original receipt"] }]
+  }, { language: "en", capabilityOverviews: [{ capability: "payment-control",
+    title: "Payment retries", overview: "Retries never charge twice." }] }), slugify);
+  assert.deepEqual(issues, []);
+  const [spec] = draft.specs;
+  assert.equal(renderSpecHeading(spec), "# Payment retries\n\nRetries never charge twice.");
+  assert.equal(renderRequirementMarkdown(spec), [
+    "### Requirement: payment-retry", "",
+    "The service SHALL record at most one payment per retry.", "",
+    "- A retry reuses the original idempotency key", "",
+    "#### Scenario: Retry succeeds", "",
+    "- **GIVEN** a payment timed out once",
+    "- **WHEN** the client retries",
+    "- **THEN** one payment is recorded",
+    "- **AND** the retry returns the original receipt"
+  ].join("\n"));
+});
+
+test("v4 rejects scenarios and statements that are hard to read", () => {
+  const issuesFor = (requirement, extra) =>
+    normalizeSemanticDraft(readableDraft(requirement, extra), slugify).issues.join("\n");
+  assert.match(issuesFor({ outcome: "one payment is recorded",
+    scenario: "the client retries" }), /scenarios\[0\]\.name is required/);
+  assert.match(issuesFor({ outcome: "x is recorded", scenarios: [{
+    name: "The client retries", when: "the client retries", then: "x" }] }),
+  /name repeats WHEN/);
+  assert.match(issuesFor({ outcome: "x is recorded", scenarios: [{ name: "Mixed",
+    when: "the client retries; or the server restarts", then: "x" }] }),
+  /when joins several cases with ';'/);
+  assert.match(issuesFor({ outcome: "x", description: "The service SHALL a; b; c; d.",
+    scenarios: [{ name: "One", when: "w", then: "t" }] }), /statement is too long/);
+  assert.match(issuesFor({ outcome: "บันทึกการชำระเงินครั้งเดียว",
+    scenarios: [{ name: "หนึ่ง", when: "w", then: "t" }] }), /description is required/);
+  assert.match(issuesFor({ outcome: "x", description: "Payments are recorded once.",
+    scenarios: [{ name: "One", when: "w", then: "t" }] }), /SHALL or MUST/);
+  assert.match(issuesFor({ outcome: "x", scenarios: [{ name: "One", when: "w", then: "t" }] },
+    { language: "thai language" }), /BCP 47/);
+  assert.match(issuesFor({ outcome: "x", scenarios: [{ name: "One", when: "w", then: "t" }] },
+    { capabilityOverviews: [{ capability: "unknown", overview: "o" }] }),
+  /matches no requirement capability/);
+});
+
+test("v4 builds a grammatical SHALL statement; v3 keeps its historical stem", () => {
+  const statement = (outcome, version = 4) => {
+    const value = readableDraft({ outcome,
+      scenarios: [{ name: "One", when: "w", then: "t" }] });
+    value.version = version;
+    return normalizeSemanticDraft(value, slugify).draft.specs[0].description;
+  };
+  assert.equal(statement("a board renders three columns"),
+    "The system SHALL ensure that a board renders three columns.");
+  assert.equal(statement("The card appears in To Do."),
+    "The system SHALL ensure that the card appears in To Do.");
+  assert.equal(statement("record at most one payment"),
+    "The system SHALL record at most one payment.");
+  assert.equal(statement("The board SHALL keep three columns."),
+    "The board SHALL keep three columns.");
+  assert.equal(statement("a board renders three columns", 3),
+    "The system SHALL a board renders three columns.");
+});
+
+test("non-Latin scenario titles get positional claim ids and usable trace labels", () => {
+  const { draft, issues } = normalizeSemanticDraft(readableDraft({
+    description: "ระบบ SHALL บันทึกการชำระเงินครั้งเดียว", outcome: "บันทึกครั้งเดียว",
+    scenarios: [
+      { name: "สำเร็จ", given: "ชำระเงินหมดเวลาหนึ่งครั้ง", when: "ลองใหม่", then: "บันทึกหนึ่งรายการ" },
+      { name: "หมดเวลาอีก", when: "ลองใหม่แล้วหมดเวลา", then: "ยังลองใหม่ได้" }
+    ]
+  }, { language: "th" }), slugify);
+  assert.deepEqual(issues, []);
+  assert.deepEqual(draft.claims.map((claim) => claim.id),
+    ["payment-retry-1", "payment-retry-2"]);
+  assert.match(renderRequirementMarkdown(draft.specs[0]), /- \*\*GIVEN\*\* ชำระเงินหมดเวลาหนึ่งครั้ง/);
+});
+
+test("an amendment that opens a new capability file starts with its heading", () => {
+  const content = appendRequirementToSpec("", {
+    name: "payment-control", title: "Payment retries", overview: "Retries never charge twice.",
+    operation: "added", requirement: "Retry", description: "The service SHALL retry.",
+    scenarios: [{ name: "Retry", when: "w", then: "t" }]
+  });
+  assert.match(content, /^# Payment retries\n\nRetries never charge twice\.\n\n## ADDED Requirements/);
+});
+
+test("modifying a canonical requirement preserves its GIVEN and AND lines", () => {
+  const canonical = [
+    "# payment-control", "", "## Requirements", "",
+    "### Requirement: payment-retry", "", "The service SHALL retry.", "",
+    "#### Scenario: Retry succeeds", "",
+    "- **GIVEN** a payment timed out", "- **WHEN** the client retries",
+    "- **THEN** one payment is recorded", "- **AND** the receipt is reused"
+  ].join("\n");
+  const { draft } = normalizeSemanticDraft(readableDraft({
+    operation: "modified", requirement: "payment-retry",
+    description: "The service SHALL retry once.", outcome: "x",
+    scenarios: [{ name: "Retry fails", when: "the retry fails", then: "an error is shown" }]
+  }), slugify, { loadCanonicalSpec: () => canonical });
+  const rendered = renderRequirementMarkdown(draft.specs[0]);
+  assert.match(rendered, /GIVEN\*\* a payment timed out[\s\S]*AND\*\* the receipt is reused/);
+  assert.match(rendered, /Scenario: Retry fails/);
 });

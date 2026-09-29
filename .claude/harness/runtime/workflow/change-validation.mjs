@@ -545,17 +545,24 @@ export function semanticInvariantIssues(invariants, contract, decisionIds,
   return issues;
 }
 
+// Supersession links and human context are optional: an absent link means
+// none, so a compiled design shows only the fields a reader needs.
+const DURABLE_DECISION_REQUIRED = ["Status", "Decision", "Why", "Rejected", "Consequences"];
 const DURABLE_DECISION_FIELDS = [
-  "Status", "Decision", "Why", "Rejected", "Consequences",
-  "Supersedes", "Superseded by"
+  ...DURABLE_DECISION_REQUIRED, "Supersedes", "Superseded by",
+  "Context", "Decided by", "Decision ref"
 ];
 
 export function durableDecisionSection(content) {
-  const rawSection = String(content || "").match(
-    /^## Decisions\s*$([\s\S]*?)(?=^## Compatibility and migration\s*$)/m
+  const text = String(content || "");
+  // A compiled design omits the section when the change records no durable
+  // decision; a hand-authored one may still end it with the next heading.
+  if (!/^## Decisions\s*$/m.test(text)) return { issues: [] };
+  const rawSection = text.match(
+    /^## Decisions\s*$([\s\S]*?)(?=^## |(?![\s\S]))/m
   )?.[1]?.trim();
   if (!rawSection)
-    return { issues: ["design.md requires a Decisions section"] };
+    return { issues: ["design.md Decisions section is empty; list decisions or `none`"] };
   const section = rawSection.replace(/<!--[\s\S]*?-->/g, "").trim();
   if (/^`?none`?[.!]?$/i.test(section)) return { issues: [] };
   if (/^- \*\*Decision:\*\*/m.test(section))
@@ -588,7 +595,7 @@ export function durableDecisionBlockIssues(block, id, ids, values) {
   );
   if (block.split("\n").some((line) => line.trim() && !allowedLine.test(line)))
     issues.push(`${label} contains content outside its metadata fields`);
-  for (const field of DURABLE_DECISION_FIELDS)
+  for (const field of DURABLE_DECISION_REQUIRED)
     if (!values[field]) issues.push(`${label} requires ${field}`);
   if (values.Status && !["accepted", "superseded"].includes(values.Status.toLowerCase()))
     issues.push(`${label} Status must be accepted|superseded`);
@@ -663,8 +670,8 @@ export function durableDecisionGraphIssues(decisions) {
   const issues = [];
   const byId = new Map(decisions.map((decision) => [decision.id, decision]));
   for (const decision of decisions) {
-    const supersedes = decision.values.Supersedes || "";
-    const supersededBy = decision.values["Superseded by"] || "";
+    const supersedes = decision.values.Supersedes || "none";
+    const supersededBy = decision.values["Superseded by"] || "none";
     issues.push(...durableDecisionReferenceIssues(
       decision, "Supersedes", supersedes, byId));
     issues.push(...durableDecisionReferenceIssues(

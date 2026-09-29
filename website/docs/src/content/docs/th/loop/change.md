@@ -27,6 +27,14 @@ spec → claim → task → provider ให้อัตโนมัติ รว
 ถ้า compile ไม่ผ่านจะไม่เหลือ change ครึ่งชุด Draft version 1 ถึง 3 ยังใช้ได้กับ
 integration เดิม
 
+Spec เขียนให้คนอ่าน แต่ละ scenario คือหนึ่งกรณี มี `name` สั้น ๆ, `given` สำหรับ
+สถานะก่อนเริ่ม (ไม่บังคับ), `when` หนึ่งเหตุการณ์, `then` หนึ่งผลลัพธ์ และ `and`
+สำหรับผลลัพธ์เพิ่ม (ไม่บังคับ) Compiler ปฏิเสธ `when` หรือ `then` ที่รวมหลายกรณีด้วย
+`;` และประโยค requirement ที่ยาวจนซ่อนหลาย requirement ไว้ (ใส่ข้อจำกัดใน `details`
+แทน) `capabilityOverviews` ให้ชื่อและภาพรวมสั้น ๆ แก่แต่ละไฟล์ spec ส่วน `language`
+บันทึกภาษาของเอกสาร เนื้อความเป็นภาษานั้น แต่ `SHALL`, `GIVEN`, `WHEN`, `THEN`
+และ `AND` คงเป็นภาษาอังกฤษเพื่อให้ OpenSpec parse ได้
+
 ```bash
 claude-foundation change start .foundation/drafts/<id>.json --consume-draft
 ```

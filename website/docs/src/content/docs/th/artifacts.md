@@ -98,7 +98,7 @@ design บันทึกเฉพาะการตัดสินใจที�
 
 | ไฟล์ | เก็บอะไร | Profile |
 |---|---|---|
-| `proposal.md` | ทำไมต้องมี change นี้ อะไรเปลี่ยนแบบที่สังเกตได้ impact และสิ่งที่ไม่ทำ | ทั้งคู่ |
+| `proposal.md` | สรุปสั้น ทำไมต้องมี change นี้ user story เกณฑ์ความสำเร็จ ดัชนี capability อะไรเปลี่ยนแบบที่สังเกตได้ impact และสิ่งที่ไม่ทำ โดยมี discovery coverage เป็นภาคผนวก | ทั้งคู่ |
 | `tasks.md` | ledger เดียวของการ implement — ที่เดียวที่ติดตามงาน | ทั้งคู่ |
 | `evidence.yaml` | สัญญาเชิงพฤติกรรมที่คงที่ — claim ID, scenario, capability | ทั้งคู่ |
 | `grounding.yaml` | Semantic v3 เก็บ non-derived material decision; grounding read-set รุ่นเดิมยังอ่านได้ | มีเมื่อมี decision ที่ต้อง lock |
@@ -106,7 +106,7 @@ design บันทึกเฉพาะการตัดสินใจที�
 | `repositories.yaml` | การเลือก repository และโหมดการเขียนแบบชัดเจน | มีเมื่อเป็น multi-repository |
 | `handoffs.yaml` | Permission-bound external operation และ activation safety | มีเมื่องานแบบนี้มีจริง |
 | `.openspec.yaml` | assurance profile ที่ควบคุม packet นี้ | ทั้งคู่ |
-| `design.md` | Durable decision, diagram, versioned integration, prototype selection, compatibility และความเสี่ยง | standard และมีเมื่อมี design context |
+| `design.md` | ภาพรวม สมมติฐานและคำถามที่ค้าง blueprint แบบ typed ภาพรวม task, durable decision (รวมคำตอบที่ตกลงระหว่าง intake), diagram, integration, compatibility และความเสี่ยง โดยไม่แสดงหัวข้อที่ว่าง | standard และมีเมื่อมี design context |
 | `specs/**/spec.md` | delta ของ requirement — `ADDED`, `MODIFIED`, `REMOVED` | standard |
 
 packet แบบ `foundation-rapid` จะไม่มี spec delta และปกติไม่มี `design.md` ทันทีที่ impact

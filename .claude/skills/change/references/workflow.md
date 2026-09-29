@@ -29,13 +29,11 @@ and unchanged text when modifying an existing spec; do not rename identities
 or translate unrelated documents. If a mixed-language request leaves the
 preference unclear, follow the surrounding conversation.
 
-For each non-English requirement, supply `description` as the complete
-requirement statement in the document language, retaining the `SHALL` marker
-(for example, `ระบบ SHALL ปฏิเสธคำขอที่ไม่มีสิทธิ์`). Keep `outcome` as the
-observable result. Without `description`, the compiler prefixes the outcome
-with the English stem `The system SHALL`; translating only `outcome` leaves
-a mixed-language statement. `requirement`/`title` names the requirement,
-not its statement.
+Write each `description` as one short statement with `SHALL` in the document
+language (for example, `ระบบ SHALL ปฏิเสธคำขอที่ไม่มีสิทธิ์`); list constraints
+in `details` and split a statement that joins cases with `;`. `outcome` is the
+observable result; `requirement`/`title` names it. Set `language`, and give each
+capability a `capabilityOverviews` entry (`title`, `overview`).
 
 Keep bookkeeping compact, but make the agreement understandable without chat
 history. Before compiling, cover the following with facts from the canonical
@@ -44,17 +42,19 @@ sources and the user's settled intent:
 - In `why`, explain the current behavior, concrete problem, affected actor or
   system, and desired result. Use `changes` for observable before/after behavior
   and affected surfaces, and `nonGoals` for meaningful scope exclusions.
-- Give each requirement a bounded outcome. Scenarios identify the triggering
-  input or precondition and a result that can be checked; cover the main path
-  and relevant failure, boundary, permission, or compatibility cases. Do not
-  substitute "works correctly" or an implementation step for observable behavior.
+- Give each requirement a bounded outcome. Each scenario is one case: a short
+  `name`, state or configuration in `given`, one trigger in `when`, one checkable
+  result in `then`, extra results in `and`. Cover the main path and relevant
+  failure, boundary, permission, or compatibility cases. Do not substitute
+  "works correctly" or an implementation step for observable behavior.
 - Tasks name implementation outcomes and affected paths, link requirement
   coverage, and name verification that can detect a violation. Evidence should
   explain what establishes the claim; running a command alone is not acceptance.
-- Record material assumptions, constraints, tradeoffs, and compatibility or
-  migration consequences in the existing proposal/scenarios or qualifying typed
-  extensions. Resolve discoverable facts yourself; ask only for unresolved
-  material choices. Do not invent decisions or facts to fill a section.
+- Write reviewer prose in the user's language: `summary`, `userStories`
+  (P1-P3, `covers`), measurable `successCriteria`, `assumptions`, and
+  `openQuestions`, which block approval until answered. Record each settled
+  answer as a resolved `discovery.decisions` row with `decidedBy`. Resolve
+  discoverable facts yourself; never invent facts to fill a section.
 
 Scale detail to behavior and risk, not word count or a fixed number of
 scenarios. A small change can be brief if its boundaries and acceptance are
@@ -132,7 +132,7 @@ source-digest and intake actions; after `DONE`, rerun with `--consume-amendment`
 It preserves
 completed tasks and custom prose/assets, increments the revision, invalidates
 the affected contract, validates, and rolls back on failure. Existing legacy
-changes keep their legacy authoring path; do not rewrite them merely to migrate.
+changes keep their legacy authoring path; never rewrite them only to migrate.
 An amendment to a v4 agreement must include discovery coverage for the added
 and revised requirements; the compiler retains that delta in the proposal.
 `updateTasks` may extend claim coverage but must not replace an existing outcome

@@ -132,6 +132,8 @@ function decisionIssues(decisions = []) {
       if (!text(decision?.choice)) issues.push(`${label}.choice is required`);
       if (!text(decision?.reason)) issues.push(`${label}.reason is required`);
     }
+    if (text(decision?.decidedBy) && !["user", "agent"].includes(text(decision.decidedBy).toLowerCase()))
+      issues.push(`${label}.decidedBy must be user|agent`);
   }
   for (const [index, decision] of decisions.entries())
     for (const prerequisite of strings(decision?.prerequisites))
@@ -329,7 +331,9 @@ export function normalizeDiscovery(source = {}) {
       question: text(row?.question) || undefined,
       recommended: text(row?.recommended) || undefined,
       choice: text(row?.choice) || undefined,
-      reason: text(row?.reason) || undefined
+      reason: text(row?.reason) || undefined,
+      decidedBy: text(row?.decidedBy).toLowerCase() || undefined,
+      decisionRef: text(row?.decisionRef) || undefined
     }))
   };
 }

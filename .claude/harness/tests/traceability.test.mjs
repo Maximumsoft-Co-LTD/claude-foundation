@@ -132,3 +132,8 @@ test("audit traceability reports warning when no errors exist", () => {
   assert.equal(result.summary.configuredProviders, 0);
   assert.equal(result.summary.linkedTasks, 0);
 });
+
+test("trace labels keep letters of any script", () => {
+  assert.equal(normalizedTraceLabel("สมัคร สำเร็จ!"), "สมัคร สำเร็จ");
+  assert.equal(normalizedTraceLabel("Retry  succeeds."), "retry succeeds");
+});

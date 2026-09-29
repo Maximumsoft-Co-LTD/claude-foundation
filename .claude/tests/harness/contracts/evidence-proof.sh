@@ -534,12 +534,14 @@ jq 'del(.domainLanguage)' .foundation/domain-language-draft.json \
   > .foundation/domain-language-default-draft.json
 node .claude/harness/foundation.mjs new 'Draft domain default' \
   --draft .foundation/domain-language-default-draft.json >/dev/null
+# A draft with no project-specific term omits the section instead of
+# rendering a `none` placeholder row.
 assert_cmd_zero "[standard-domain-language-section] template, upgrade, and direct drafts enforce and render domain language" \
-  sh -c 'for path in "$1" "$2" "$3" "$4"; do
+  sh -c 'for path in "$1" "$2" "$3"; do
       grep -F "## Domain language" "$path" >/dev/null || exit 1
     done
     grep -F "| Order | A confirmed purchase request | Transaction |" "$3" >/dev/null &&
-    grep -F "| \`none\` | This change introduces no project-specific term. | \`none\` |" "$4" >/dev/null &&
+    ! grep -F "## Domain language" "$4" >/dev/null &&
     grep -F "<replace-with-project-specific-term-or-none>" "$5" >/dev/null &&
     grep -F "<replace-with-tight-domain-meaning>" "$5" >/dev/null &&
     grep -F "<replace-with-ambiguous-alias-or-none>" "$5" >/dev/null' sh \

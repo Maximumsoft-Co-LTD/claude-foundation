@@ -154,7 +154,9 @@ test("v4 start persists completed intake effectiveness before deleting its snaps
     coupling: "isolated",
     requirements: [{
       key: "semantic-outcome", capability: "semantic-intake-change", operation: "added",
-      scenario: "A bounded input arrives", outcome: "The bounded result is returned"
+      scenarios: [{ name: "Bounded input", when: "A bounded input arrives",
+        then: "The bounded result is returned" }],
+      outcome: "The bounded result is returned"
     }],
     tasks: [{
       key: "implement-semantic-outcome", outcome: "Implement the bounded result",
@@ -281,4 +283,19 @@ test("atomic start never rolls back a pre-existing change", (t) => {
   assert.throws(() => value.lifecycle.startAtomic(value.draftPath), /change already exists/);
   assert.equal(value.calls.rollback, 0);
   assert.equal(readFileSync(join(existing, "owned-by-user"), "utf8"), "keep\n");
+});
+
+test("a low-impact semantic draft with design content keeps the standard schema", async () => {
+  const { semanticDraftKeepsDesign } = await import("../runtime/workflow/change-lifecycle.mjs");
+  const designed = { _semanticVersion: 4, fileMap: [{ path: "src/a.ts", change: "added" }] };
+  const answered = { _semanticVersion: 4,
+    discovery: { decisions: [{ key: "stack", status: "resolved", choice: "Vite",
+      alternatives: ["Vite", "Plain HTML"] }] } };
+  assert.equal(semanticDraftKeepsDesign(designed, true), true);
+  assert.equal(semanticDraftKeepsDesign(answered, true), true);
+  assert.equal(semanticDraftKeepsDesign({ _semanticVersion: 4 }, true), false);
+  assert.equal(semanticDraftKeepsDesign({ _semanticVersion: 4, workType: ["feature"] }, true), false);
+  assert.equal(semanticDraftKeepsDesign(designed, false), false);
+  // Legacy drafts always carry decisions and keep their rapid lane.
+  assert.equal(semanticDraftKeepsDesign({ decisions: [{ choice: "x" }] }, true), false);
 });

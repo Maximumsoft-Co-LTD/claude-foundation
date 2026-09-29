@@ -53,9 +53,11 @@ assert_file_contains "Change protects machine syntax during localization" \
 assert_file_contains "Change preserves amendment identities" \
   "$CHANGE_WORKFLOW" "Preserve canonical requirement/scenario names"
 assert_file_contains "Change supplies localized requirement statements" \
-  "$CHANGE_WORKFLOW" 'supply `description` as the complete'
-assert_file_contains "Change explains the compiler's English fallback" \
-  "$CHANGE_WORKFLOW" 'with the English stem `The system SHALL`'
+  "$CHANGE_WORKFLOW" 'one short statement with `SHALL` in the document'
+assert_file_contains "Change writes one case per scenario" \
+  "$CHANGE_WORKFLOW" 'Each scenario is one case: a short'
+assert_file_contains "Change gives each capability an overview" \
+  "$CHANGE_WORKFLOW" '`capabilityOverviews` entry'
 assert_file_contains "Change records current behavior and value" \
   "$CHANGE_WORKFLOW" "current behavior, concrete problem, affected actor"
 assert_file_contains "Change covers relevant negative scenarios" \

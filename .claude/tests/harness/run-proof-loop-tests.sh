@@ -57,6 +57,7 @@ draft() {
     const { readFileSync, writeFileSync } = require("fs");
     const d = JSON.parse(readFileSync("draft.json", "utf8"));
     d.intent = process.env.TITLE;
+    delete d.userStories;
     d.requirements = [{ key: "greeting-updated", capability: "application",
       operation: "added", scenario: { name: "app.txt carries v2",
         when: "the change is built", then: "app.txt carries v2" },
@@ -239,7 +240,8 @@ node -e '
   const amendment = { version: 1, reason: "Cover the observed v2 persistence",
     size: "l", coupling: "isolated",
     addRequirements: [{ key: "v2-persists", capability: "application", operation: "added",
-      scenario: "The updated value is read", outcome: "v2 remains observable" }],
+      scenario: { name: "v2 persists", when: "The updated value is read",
+        then: "v2 remains observable" }, outcome: "v2 remains observable" }],
     updateTasks: [{ key: "update-app", covers: ["greeting-updated", "v2-persists"] }],
     evidence: { "v2-persists": { capabilities: ["test"] } },
     discovery: { coverage: dimensions.map((dimension) => ({ dimension,
@@ -420,8 +422,10 @@ node -e '
   const d = JSON.parse(readFileSync("draft.json", "utf8"));
   d.id = "revise-before-build";
   d.intent = "Revise before build";
+  delete d.userStories;
   d.requirements = [{ key: "greeting-updated", capability: "application",
-    operation: "added", scenario: "the change is built", outcome: "write v2 to app.txt" }];
+    operation: "added", scenario: { name: "Build writes v2", when: "the change is built",
+      then: "app.txt carries v2" }, outcome: "write v2 to app.txt" }];
   d.tasks = [{ key: "update-app", outcome: "Update app.txt", paths: ["app.txt"],
     verify: "sh run-test.sh test-results/report.json", covers: ["greeting-updated"] }];
   d.evidence = { "greeting-updated": { capabilities: ["test"] } };
@@ -449,8 +453,10 @@ node -e '
   const { readFileSync, writeFileSync } = require("fs");
   const d = JSON.parse(readFileSync("draft.json", "utf8"));
   d.requirements[0].outcome = "write v3 to app.txt";
+  d.requirements[0].scenario.then = "app.txt carries v3";
   d.requirements.push({ key: "greeting-logged", capability: "application",
-    operation: "added", scenario: "the greeting is written", outcome: "log the greeting" });
+    operation: "added", scenario: { name: "Greeting logged", when: "the greeting is written",
+      then: "the greeting is logged" }, outcome: "log the greeting" });
   d.tasks[0].covers.push("greeting-logged");
   d.evidence["greeting-logged"] = { capabilities: ["test"] };
   writeFileSync("draft.json", JSON.stringify(d, null, 2));'
@@ -483,7 +489,8 @@ node -e '
   writeFileSync("draft.json", JSON.stringify({ version: 1,
     reason: "Measured behavior changed the greeting and dropped logging",
     reviseRequirements: [{ key: "greeting-updated", capability: "application",
-      operation: "added", scenario: "the change is built", outcome: "write v4 to app.txt" }],
+      operation: "added", scenario: { name: "Build writes v2", when: "the change is built",
+        then: "app.txt carries v4" }, outcome: "write v4 to app.txt" }],
     removeRequirements: [{ key: "greeting-logged", migration: "Logging moves to a successor change" }],
     evidence: { "greeting-updated": { capabilities: ["test"] } },
     discovery: { coverage: [], decisions: [] } }, null, 2));'

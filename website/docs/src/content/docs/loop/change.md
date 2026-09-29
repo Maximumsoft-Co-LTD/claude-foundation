@@ -26,8 +26,14 @@ The required core is deliberately small:
     "key": "orphan-row-does-not-lock",
     "capability": "mutation-control",
     "operation": "added",
-    "scenario": "An orphaned phase row exists",
-    "outcome": "Unrelated mutations remain available"
+    "description": "The mutation guard SHALL ignore phase rows of inactive changes.",
+    "outcome": "Unrelated mutations remain available",
+    "scenarios": [{
+      "name": "Orphaned row",
+      "given": "a phase row belongs to an archived change",
+      "when": "another change edits a product file",
+      "then": "the edit is allowed"
+    }]
   }],
   "tasks": [{
     "key": "filter-orphan-rows",
@@ -63,6 +69,15 @@ decisions at a time. The compiler creates stable claim/task IDs,
 spec-to-claim-to-task-to-provider links, classification, and versioned defaults.
 It reports every independent draft problem together, pointing back to the input
 field. A failed compile leaves no partial change.
+
+Specs are written for people. Each scenario is one case with a short `name`,
+optional `given` preconditions, one `when`, one `then`, and optional `and`
+results; a `when` or `then` that joins cases with `;` is refused, as is a
+requirement statement long enough to hide several requirements (list
+constraints in `details` instead). `capabilityOverviews` gives each spec file a
+human title and a short overview, and `language` records the document language:
+prose follows it while `SHALL`, `GIVEN`, `WHEN`, `THEN`, and `AND` stay English
+for the OpenSpec parser.
 
 Print the current schema with `change start --template`; inspect with
 `change start <draft.json> --inspect`. The harness returns agent-owned source

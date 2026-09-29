@@ -103,7 +103,8 @@ test("blueprints render into design.md and force its creation", () => {
   assert.match(design, /### POST \/api\/import/);
   assert.match(design, /- `400` URL rejected by guard/);
   assert.match(design, /\| error \| message \|/);
-  assert.ok(design.indexOf("## File map") < design.indexOf("## Domain language"));
+  // Placeholder sections are omitted instead of rendering `none`.
+  assert.ok(!design.includes("## Domain language") && !design.includes("## Risks"));
   assert.equal(renderDesignBlueprints({ version: 4 }), "");
   assert.equal(draftNeedsDesign({ workType: ["docs"] }), false);
   assert.match(renderDraftDesign({ ...value, decisions: [{ choice: "a", reason: "b" }] }),

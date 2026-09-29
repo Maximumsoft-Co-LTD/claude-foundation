@@ -503,7 +503,7 @@ rm -rf "$atomic_workspace" \
 v4_draft="$TARGET/v4-cli-draft.json"
 jq -n --argjson dimensions '["current-behavior","affected-actor","desired-behavior","success-path","failure-path","input-boundary","compatibility","non-goals","verification"]' \
   '{version:4,id:"v4-cli-intake",intent:"Verify v4 CLI intake",impact:"low",coupling:"isolated",
-    requirements:[{key:"v4-outcome",capability:"v4-cli-intake",operation:"added",scenario:"A v4 draft is inspected",outcome:"The CLI binds its sources"}],
+    requirements:[{key:"v4-outcome",capability:"v4-cli-intake",operation:"added",scenarios:[{name:"CLI inspection",when:"A v4 draft is inspected",then:"The CLI binds its sources"}],outcome:"The CLI binds its sources"}],
     tasks:[{key:"implement-v4",outcome:"Verify v4 intake",covers:["v4-outcome"],paths:["app.txt"],verify:"sh atomic-test.sh"}],
     evidence:{"v4-outcome":{capabilities:["test"]}},
     discovery:{coverage:($dimensions | map({dimension:.,status:"covered",covers:["v4-outcome"]})),decisions:[]}}' \

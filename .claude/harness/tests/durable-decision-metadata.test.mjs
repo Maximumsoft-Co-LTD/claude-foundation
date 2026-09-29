@@ -48,8 +48,10 @@ function parsed(section) {
 }
 
 test("decision section recognizes missing, none, legacy, and unidentified content", () => {
-  assert.deepEqual(durableDecisionMetadataIssues(""),
-    ["design.md requires a Decisions section"]);
+  // A compiled design omits the section when no durable decision exists.
+  assert.deepEqual(durableDecisionMetadataIssues(""), []);
+  assert.deepEqual(durableDecisionMetadataIssues("## Decisions\n\n## Risks\n"),
+    ["design.md Decisions section is empty; list decisions or `none`"]);
   assert.deepEqual(durableDecisionMetadataIssues(design("`none`.")), []);
   assert.match(durableDecisionMetadataIssues(design(
     "- **Decision:** legacy"))[0], /legacy Decision entries/);
@@ -138,12 +140,15 @@ test("decision graph validates both directions of reciprocal local links", () =>
   ].join("\n"))), []);
 });
 
-test("decision graph treats missing reference metadata as invalid empty values", () => {
+test("decision graph treats absent supersession links as none", () => {
   const issues = durableDecisionGraphIssues([{
     id: "DEC-ONE",
     label: "decision 'DEC-ONE'",
     values: {}
   }]);
-  assert.equal(issues.filter((issue) => /must be none/.test(issue)).length, 2);
+  assert.deepEqual(issues, []);
+  assert.equal(durableDecisionGraphIssues([{
+    id: "DEC-ONE", label: "decision 'DEC-ONE'", values: { Supersedes: "" }
+  }]).length, 0);
   assert.deepEqual(durableDecisionGraphIssues([]), []);
 });

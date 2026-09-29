@@ -10,7 +10,7 @@ import { nextCommand } from "../core/next-step.mjs";
 import { taskBlocks, taskMetadata } from "../contracts/change-artifacts.mjs";
 import { materialSecurityTriggers } from "./security-policy.mjs";
 import {
-  normalizeSemanticDraft, semanticDraftTemplate
+  normalizeSemanticDraft, renderRequirementMarkdown, renderSpecHeading, semanticDraftTemplate
 } from "./semantic-draft.mjs";
 import {
   semanticIntakeAction, semanticIntakeIssues
@@ -37,6 +37,11 @@ import {
   designBlueprintWarnings, draftHasBlueprints, renderDesignBlueprints
 } from "./validation/design-blueprints.mjs";
 import { targetEditDigest, targetEditPaths } from "./target-edits.mjs";
+import {
+  fileMapWithTasks, intakeDecisions, openQuestionItems, readerGuideWarnings,
+  renderDesignOverview, renderDiscoveryAppendix, renderInvestigationAppendix,
+  renderInvestigationSummary, renderProposalLead, renderProposalReader, renderTaskOverview
+} from "./validation/reader-guide.mjs";
 
 export function atomicStartPreflight(draft, { groundingRequired = false } = {}) {
   const issues = [];
@@ -291,16 +296,23 @@ export function renderDraftDecisions(decisions) {
   if (!Array.isArray(decisions))
     throw new Error("standard start draft requires decisions to be an array; use [] when no durable decision qualifies");
   if (!decisions.length) return "`none`";
+  const optional = (label, value) => value && !/^none$/i.test(String(value))
+    ? `\n  - **${label}:** ${value}` : "";
   return decisions.map((decision, index) => {
     const decisionId = decision.id || `DEC-${String(index + 1).padStart(3, "0")}`;
+    const rejected = Array.isArray(decision.rejected ?? decision.alternatives)
+      ? (decision.rejected ?? decision.alternatives).filter((option) => option !== decision.choice)
+        .join(", ") : decision.rejected;
     return `- **Decision ID:** ${decisionId}\n` +
-      `  - **Status:** ${decision.status || "accepted"}\n` +
-      `  - **Decision:** ${decision.choice}\n  - **Why:** ${decision.why || decision.reason}\n` +
-      `  - **Rejected:** ${Array.isArray(decision.rejected)
-        ? decision.rejected.join(", ") : decision.rejected || "none"}\n` +
-      `  - **Consequences:** ${decision.consequences || "Not stated in the draft"}\n` +
-      `  - **Supersedes:** ${decision.supersedes || "none"}\n` +
-      `  - **Superseded by:** ${decision.supersededBy || "none"}`;
+      `  - **Status:** ${decision.status || "accepted"}` +
+      optional("Context", decision.context || decision.question) +
+      `\n  - **Decision:** ${decision.choice}\n  - **Why:** ${decision.why || decision.reason}\n` +
+      `  - **Rejected:** ${rejected || "none"}\n` +
+      `  - **Consequences:** ${decision.consequences || "Not stated in the draft"}` +
+      optional("Decided by", decision.decidedBy) +
+      optional("Decision ref", decision.decisionRef) +
+      optional("Supersedes", decision.supersedes) +
+      optional("Superseded by", decision.supersededBy);
   }).join("\n");
 }
 
@@ -312,36 +324,24 @@ function tableCell(value) {
   return String(value ?? "").replace(/\r?\n/g, " ").replaceAll("|", "\\|");
 }
 
+// Reading order: what and why first, then who benefits and how success is
+// judged, then scope; machine provenance and coverage close as appendices.
 export function renderDraftProposal(draft, state) {
   const title = draft.title || state.intent;
-  const discovery = draft.discovery?.coverage?.length
-    ? `\n\n## Requirement discovery coverage\n\n` +
-      `| Dimension | Status | Requirements | Sources | Rationale |\n` +
-      `|---|---|---|---|---|\n` +
-      draft.discovery.coverage.map((row) =>
-        `| ${tableCell(row.dimension)} | ${tableCell(row.status)} | ` +
-        `${tableCell((row.covers || []).join(", ") || "none")} | ` +
-        `${tableCell((row.sources || []).join(", ") || "none")} | ` +
-        `${tableCell(row.rationale || "none")} |`
-      ).join("\n")
-    : "";
-  const investigation = draft.investigation
-    ? `\n\n## Investigation handoff\n\n` +
-      `- **ID:** ${tableCell(draft.investigation.id)}\n` +
-      `- **Outcome:** ${tableCell(draft.investigation.outcome)}\n` +
-      `- **Summary:** ${tableCell(draft.investigation.summary)}\n` +
-      `- **Change intent:** ${tableCell(draft.investigation.changeIntent)}\n` +
-      `- **State:** ${tableCell(draft.investigation.statePath)} @ ` +
-      `${tableCell(draft.investigation.stateDigest)}\n` +
-      `- **Sources:** ${tableCell(draft.investigation.sourceDigest)}`
-    : "";
-  return `# Change: ${title}\n\n## Why\n\n${draft.why}\n\n` +
-    `## What changes\n\n${draftBullets(draft.changes)}\n\n## Impact\n\n` +
+  const section = (value) => (value ? `\n\n${value}` : "");
+  const triggers = (draft.securityTriggers || []).filter(Boolean);
+  const nonGoals = (draft.nonGoals || []).length
+    ? `\n\n## Non-goals\n\n${draftBullets(draft.nonGoals)}` : "";
+  return `# Change: ${title}` + section(renderProposalLead(draft)) +
+    `\n\n## Why\n\n${draft.why}` + section(renderProposalReader(draft)) +
+    `\n\n## What changes\n\n${draftBullets(draft.changes)}\n\n## Impact\n\n` +
     `- **Impact:** ${draft.impact || state.impact || "medium"}\n` +
     `- **Coupling:** ${draft.coupling || state.coupling || "coupled"}\n` +
     `- **Affected surfaces:** ${(draft.surfaces || ["code"]).join(", ")}\n` +
-    `- **Security triggers:** ${(draft.securityTriggers || ["none"]).join(", ")}\n\n` +
-    `## Non-goals\n\n${draftBullets(draft.nonGoals)}${investigation}${discovery}\n`;
+    `- **Security triggers:** ${triggers.length ? triggers.join(", ") : "none detected"}` +
+    nonGoals + section(renderInvestigationSummary(draft.investigation)) +
+    section(renderDiscoveryAppendix(draft)) +
+    section(renderInvestigationAppendix(draft.investigation)) + "\n";
 }
 
 export function synchronizeProposalClassification(proposal, state) {
@@ -364,11 +364,17 @@ export function draftDomainRows(domainLanguage = []) {
     : "| `none` | This change introduces no project-specific term. | `none` |";
 }
 
+function meaningful(value) {
+  const normalized = String(value ?? "").trim();
+  return normalized && !/^`?none`?[.]?$/i.test(normalized) ? normalized : "";
+}
+
+// Empty sections are omitted rather than rendered as `none` placeholders, so a
+// reviewer reads only what this change actually decides.
 export function renderDraftDesign(draft) {
-  const risks = draft.risks.length
-    ? draft.risks.map((risk) =>
-      `| ${risk.risk} | ${risk.mitigation} | ${risk.owner} |`).join("\n")
-    : "| none | none | none |";
+  const risks = (draft.risks || []).filter((risk) => meaningful(risk?.risk))
+    .map((risk) => `| ${risk.risk} | ${risk.mitigation} | ${risk.owner} |`).join("\n");
+  const decisions = [...(draft.decisions || []), ...intakeDecisions(draft)];
   const diagrams = (draft.diagrams || []).map((diagram) => {
     const title = diagram.title || diagram.key;
     if (diagram.type === "mermaid" && diagram.source)
@@ -385,24 +391,43 @@ export function renderDraftDesign(draft) {
     `| ${integration.key} | ${integration.kind} | ${integration.documentation?.source} | ` +
     `${integration.documentation?.version} | ${(integration.concerns || []).join(", ") || "none"} |`
   );
-  const blueprints = renderDesignBlueprints(draft);
-  return `# Design\n\n## Current state\n\n${draft.currentState}\n\n` +
-    (blueprints ? `${blueprints}\n\n` : "") +
-    `## Domain language\n\n| Canonical term | Meaning | Avoid |\n|---|---|---|\n` +
-    `${draftDomainRows(draft.domainLanguage)}\n\n## Decisions\n\n` +
-    renderDraftDecisions(draft.decisions) +
-    `\n\n## Compatibility and migration\n\n${draft.compatibility}\n\n## Risks\n\n` +
-    `| Risk | Mitigation | Evidence owner |\n|---|---|---|\n` +
-    risks + (diagrams.length ? `\n\n## Diagrams\n\n${diagrams.join("\n\n")}` : "") +
+  const blueprints = renderDesignBlueprints({
+    ...draft, fileMap: fileMapWithTasks(draft.fileMap, draft.tasks)
+  });
+  const sections = [
+    meaningful(draft.currentState) ? `## Current state\n\n${draft.currentState}` : "",
+    renderDesignOverview(draft),
+    blueprints,
+    renderTaskOverview(draft),
+    (draft.domainLanguage || []).length
+      ? `## Domain language\n\n| Canonical term | Meaning | Avoid |\n|---|---|---|\n` +
+        draftDomainRows(draft.domainLanguage) : "",
+    decisions.length ? `## Decisions\n\n${renderDraftDecisions(decisions)}` : "",
+    meaningful(draft.compatibility)
+      ? `## Compatibility and migration\n\n${draft.compatibility}` : "",
+    risks ? `## Risks\n\n| Risk | Mitigation | Evidence owner |\n|---|---|---|\n${risks}` : ""
+  ].filter(Boolean);
+  return `# Design\n\n${sections.join("\n\n")}` +
+    (diagrams.length ? `\n\n## Diagrams\n\n${diagrams.join("\n\n")}` : "") +
     (integrations.length
       ? `\n\n## Integrations\n\n| Integration | Kind | Documentation | Version | Concerns |\n` +
         `|---|---|---|---|---|\n${integrations.join("\n")}` : "") + prototype + "\n";
+}
+
+// Legacy v1/v2 drafts always declare decisions and keep their rapid lane; a
+// semantic draft that authored design content must not lose it to rapid.
+export function semanticDraftKeepsDesign(draft, rapid) {
+  // Authored content only: a declared work type alone is not design content.
+  return Boolean(rapid) && [3, 4].includes(draft?._semanticVersion) &&
+    draftNeedsDesign({ ...draft, workType: [] });
 }
 
 export function draftNeedsDesign(draft) {
   return Boolean(
     draft.design || draftHasBlueprints(draft) || draft.prototypeSelection || (draft.diagrams || []).length ||
     (draft.integrations || []).length || (draft.decisions || []).length ||
+    intakeDecisions(draft).length || draft.diagram ||
+    (draft.assumptions || []).length || (draft.openQuestions || []).length ||
     (draft.risks || []).length ||
     (draft.compatibility && String(draft.compatibility).toLowerCase() !== "none") ||
     (draft.specs || []).some((spec) =>
@@ -451,7 +476,8 @@ export function renderDraftSpecDocument(specs, renderRequirement) {
     return [`## ${operation.toUpperCase()} Requirements\n\n` +
       requirements.map(renderRequirement).join("\n\n")];
   });
-  return `# ${specs[0].name}\n\n${sections.join("\n\n")}\n`;
+  return `${renderSpecHeading(specs.find((spec) => spec.title || spec.overview) || specs[0])}` +
+    `\n\n${sections.join("\n\n")}\n`;
 }
 
 export function materializeDraftSpecs({
@@ -860,22 +886,15 @@ export function createChangeLifecycle({
   }
 
   function renderDraftRequirement(spec) {
-    const scenarios = normalizedDraftScenarios(spec).map((scenario) =>
-      `#### Scenario: ${scenario.name}\n\n- **WHEN** ${scenario.when}\n` +
-      `- **THEN** ${scenario.then}`
-    ).join("\n\n");
-    const migration = String(spec.operation || "added").toLowerCase() === "removed"
-      ? `\n\n**Migration:** ${spec.migration}`
-      : "";
-    return `### Requirement: ${spec.requirement}\n\n${spec.description}${migration}` +
-      (scenarios ? `\n\n${scenarios}` : "");
+    return renderRequirementMarkdown(spec, normalizedDraftScenarios(spec));
   }
 
   // Design blueprints warn rather than block: the agent completes a thin
   // design before presenting it for approval.
   function designWarningLines(draft, schema) {
     if (schema !== "foundation-standard" || ![3, 4].includes(draft._semanticVersion)) return "";
-    return designBlueprintWarnings(draft).map((warning) => `  design warning: ${warning}\n`).join("");
+    return [...designBlueprintWarnings(draft), ...readerGuideWarnings(draft)]
+      .map((warning) => `  design warning: ${warning}\n`).join("");
   }
 
   function materializeDraft(id, draft) {
@@ -977,6 +996,10 @@ export function createChangeLifecycle({
         ? (draft.externalOperations?.length ? 1 : null) : 1,
       designRequired: !semantic || draftNeedsDesign(draft)
     });
+    // The document language is recorded, never applied: the agent writes the
+    // prose and the harness does not translate it.
+    if (semantic && String(draft.language || "").trim())
+      state.documentLanguage = String(draft.language).trim();
     saveRuntime(state);
     if (draft) materializeDraft(id, draft);
     if (!options.deferSessionBinding) bindClaudeSession(id, "change");
@@ -1338,6 +1361,14 @@ export function createChangeLifecycle({
           const drift = agreementDriftError(id, approvalRoot);
           fail(drift.message, 1, { owner: drift.owner, boundary: drift.boundary, code: drift.code });
         }
+        // Consent covers a settled agreement: an open question is answered and
+        // revised into the change first, never approved around.
+        const designPath = join(approvalRoot, "openspec", "changes", id, "design.md");
+        const openQuestions = existsSync(designPath)
+          ? openQuestionItems(readFileSync(designPath, "utf8")) : [];
+        if (openQuestions.length)
+          fail("resolve the design's open questions before approving the spec:\n  - " +
+            `${openQuestions.join("\n  - ")}\nAsk the user, record the answers, and revise the change.`);
         current.specApproval = { required: true, identity: agreementIdentity(approvalRoot, id),
           revision: Number(current.contractRevision || 0), decisionRef, approvedAt: now() };
         approvedDelta = current.pendingApprovalDelta || null;
@@ -1444,7 +1475,16 @@ export function createChangeLifecycle({
     }));
     if (preflight.issues.length)
       fail(`start draft preflight failed:\n  - ${preflight.issues.join("\n  - ")}`);
-    const { classification, rapid } = preflight;
+    const { classification } = preflight;
+    // A low-impact draft that already carries design content (file map, UI
+    // states, decisions, answered intake choices...) would lose it in the rapid
+    // packet, which has no design.md or specs/. Keep it on the standard schema;
+    // the preflight gates above still apply the rapid lane's requirements.
+    const keepsDesign = semanticDraftKeepsDesign(draft, preflight.rapid);
+    const rapid = preflight.rapid && !keepsDesign;
+    if (keepsDesign)
+      console.log("NOTE: the draft carries design content, so it uses foundation-standard " +
+        "to keep design.md and specs/");
     return { draft, rapid, resolutionFlags: startResolutionFlags(draft, classification, rapid) };
   }
 
