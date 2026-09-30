@@ -354,26 +354,6 @@ export function scopeAllowsPath(scope, path) {
   return new RegExp(`^${pattern}$`).test(path);
 }
 
-function pathMatches(path, scopes) {
-  if (!(scopes || []).length) return true;
-  return scopes.some((scope) => scopeAllowsPath(scope, path));
-}
-
-export function validateNodeResult(authority, result, observedWrites = []) {
-  const fields = [
-    "graphRevision", "planDigest", "contractRevision", "workspaceHash",
-    "leaseId", "fencingGeneration", "executionAttempt", "repository"
-  ];
-  const mismatches = fields.filter((field) => String(result?.[field] ?? "") !==
-    String(authority?.[field] ?? ""));
-  const allowedClaims = new Set(authority.claimIds || []);
-  const unexpectedClaims = (result?.claimIds || []).filter((claim) => !allowedClaims.has(claim));
-  const unexpectedWrites = observedWrites.filter((path) => !pathMatches(path, authority.paths || []));
-  const valid = !mismatches.length && !unexpectedClaims.length && !unexpectedWrites.length &&
-    schemasCompatible(result?.outputSchema, authority.outputSchema);
-  return { valid, mismatches, unexpectedClaims, unexpectedWrites };
-}
-
 export function compileLandPreparation({
   changeId, graphRevision = null, graphIdentity = null,
   aggregateProofRunId = null, aggregateProofIdentity = null,

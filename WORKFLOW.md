@@ -526,6 +526,14 @@ This explicit invocation supplies Land authority. Any other explicit user
 instruction to land, in any wording (for example "land it when proven" in a
 `/dev` request), supplies it too. Silence never does. `land advance` remains an
 internal compatibility route that the agent does not call.
+Tests and checks run only inside the returned workspace, never in the main
+checkout. If Land's apply conflicts with target files that are regenerable
+artifacts (for example `__pycache__/*.pyc`) and were clean at isolation,
+`advance` returns a REPAIR whose command,
+`advance <change> --through archived --restore-target <paths>`, restores them to
+the sandbox base inside Land. Any other conflicting target edit is a user
+decision listing the files; `--restore-target` then requires `--decision-ref`,
+and a file changed after the restore was recorded is never overwritten.
 Land has one user-visible
 goal: place the exact current workspace projection in the declared main
 workspace. The Harness binds a resumable grant to the exact change, workspace
@@ -749,7 +757,11 @@ the correction circuit bounded by risk. The review reads the change's diff and
 the agreement's requirements, not whole files. Low risk runs one diff-only
 review on the fast model tier (`review.lowRiskModel: "configured"` or a
 reviewer `fastModelId` overrides it); medium and high keep the configured
-model. Security triggers are declared (draft `securityTriggers` or
+model. Every full round receives the agreement's scenario checklist and must
+report each scenario as covered, missing, or unsure; a missing scenario becomes
+a blocking finding. If a fast first round cannot confirm every scenario, the
+harness re-runs that review once on the configured model without consuming a
+review round. Security triggers are declared (draft `securityTriggers` or
 `resolve --security`) or inferred from intent keywords: declared triggers
 select the standard lane and security evidence, while an intent keyword alone
 only makes review required at the low tier and the change keeps its lane.
@@ -760,6 +772,12 @@ only makes review required at the low tier and the change keeps its lane.
   delta review closing the first-round finding IDs;
 - **high** — material risks are settled in the initial Decision Sheet, followed
   by one full AI review and at most one post-correction delta.
+
+A delta review that no longer reports an earlier finding closes it. When a
+repaired final finding has no declared critical case to bind and current checks
+pass, Prove stops at the review-exhausted user decision (accept the review risk
+with `change waive --capability review`, revise the agreement, or pause); it
+never returns an unsatisfiable repair.
 
 High risk includes authorization or secrets, public or cross-repository
 contracts, migration or destructive state, money, concurrency,

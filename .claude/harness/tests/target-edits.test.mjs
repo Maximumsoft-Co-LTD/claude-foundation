@@ -4,8 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
-  landAppliedOutput, shellAuditCount, targetEditDigest, targetEditIssues, targetEditPaths
+  isGeneratedArtifactPath, landAppliedOutput, parseRestoreTargetPaths, restorableTargetPaths,
+  shellAuditCount, targetConflictStop, targetEditDigest, targetEditIssues, targetEditPaths
 } from "../runtime/workflow/target-edits.mjs";
+import { advanceFailureAction } from "../runtime/workflow/advance-runtime.mjs";
 
 function project(t, rows = []) {
   const root = mkdtempSync(join(tmpdir(), "target-edits-"));
@@ -84,4 +86,49 @@ test("target files equal to this change's applied Land output are not outside ed
   const divergent = targetEditIssues({ root, state: isolated(), landOutput,
     dirtyNow: { "keep.md": "a", "src/app.js": "edited", "src/old.js": "old" } });
   assert.match(divergent.issues[0], /outside the sandbox at: src\/app\.js, src\/old\.js\./);
+});
+
+test("generated artifacts are recognized and restorable only when clean at isolation", () => {
+  for (const path of ["__pycache__/a.cpython-312.pyc", "pkg/__pycache__/b.pyc", "x.pyo",
+    "build/A.class", "node_modules/.cache/v/x", "coverage/lcov.info", ".pytest_cache/v/x"])
+    assert.ok(isGeneratedArtifactPath(path), path);
+  for (const path of ["src/app.py", "coverage.md", "lib/classic.js", "node_modules/pkg/index.js"])
+    assert.equal(isGeneratedArtifactPath(path), false, path);
+  assert.deepEqual(restorableTargetPaths(["a.pyc", "b.pyc", "src/app.py"], { "b.pyc": "h" }), ["a.pyc"]);
+  assert.deepEqual(parseRestoreTargetPaths(" b.pyc, a.pyc ,,a.pyc"), ["a.pyc", "b.pyc"]);
+});
+
+test("a conflict only on clean-at-isolation artifacts is an agent REPAIR with the harness restore command", () => {
+  const stop = targetConflictStop({ changeId: "demo", paths: ["__pycache__/a.pyc"],
+    snapshot: {}, cause: "sandbox diff conflicts with target" });
+  assert.equal(stop.decision, undefined);
+  assert.equal(stop.details.owner, "agent");
+  assert.doesNotMatch(stop.message, /git checkout/);
+  const action = advanceFailureAction("demo", Object.assign(new Error(stop.message), stop.details),
+    { stage: "land", through: "archived" });
+  assert.equal(action.action, "REPAIR");
+  assert.equal(action.actor, "agent");
+  assert.equal(action.command,
+    "claude-foundation advance demo --through archived --restore-target __pycache__/a.pyc");
+});
+
+test("a conflict on user work or an artifact dirty at isolation asks the user with the file list", () => {
+  const user = targetConflictStop({ changeId: "demo", paths: ["src/app.py", "a.pyc"],
+    snapshot: {}, cause: "apply would overwrite uncommitted target edits" });
+  assert.equal(user.decision.kind, "target-edit-conflict");
+  assert.deepEqual(user.decision.paths, ["src/app.py", "a.pyc"]);
+  assert.match(user.decision.summary, /src\/app\.py, a\.pyc/);
+  assert.equal(user.decision.recommended, "keep-target");
+  assert.deepEqual(user.decision.options.map((option) => option.id),
+    ["keep-target", "restore-target", "pause"]);
+  assert.match(user.decision.options[1].outcome,
+    /--restore-target src\/app\.py,a\.pyc --decision-ref <user-decision>/);
+  const action = advanceFailureAction("demo",
+    Object.assign(new Error(user.decision.summary), { decision: user.decision }),
+    { stage: "land", through: "archived" });
+  assert.equal(action.action, "ASK_USER");
+
+  const preexisting = targetConflictStop({ changeId: "demo", paths: ["a.pyc"],
+    snapshot: { "a.pyc": "dirty" }, cause: "sandbox diff conflicts with target" });
+  assert.equal(preexisting.decision.recommended, "restore-target");
 });

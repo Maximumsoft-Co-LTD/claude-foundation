@@ -7,8 +7,8 @@ test("the versioned cross-domain matrix is valid and every workload is executabl
   const matrix = loadMatrix();
   assert.equal(matrix.protocol, "foundation-openspec-native-matrix-v2");
   assert.deepEqual(matrixIssues(matrix), []);
-  assert.equal(matrix.scenarios.length, 8);
-  assert.equal(matrix.scenarios.filter((scenario) => scenario.status === "ready").length, 8);
+  assert.equal(matrix.scenarios.length, 11);
+  assert.equal(matrix.scenarios.filter((scenario) => scenario.status === "ready").length, 11);
   assert.equal(matrix.scenarios.filter((scenario) => scenario.baseline !== null).length, 1);
 });
 
@@ -58,6 +58,36 @@ test("the tiny-feature scenario caps host tool calls and binds its oracle", () =
   assert.match(plan.fixture, /20-tiny-feature\/seed$/);
   assert.match(plan.oracle, /20-tiny-feature\/oracle\/run\.sh$/);
   assert.match(plan.prompt, /discount\(total, percent\)/);
+});
+
+test("the ~10-minute feature scenarios bind their hidden oracles and budgets", () => {
+  const matrix = loadMatrix();
+  for (const [id, task, prompt] of [
+    ["notes-api", "21-notes-api", /NOTES-API\.md/],
+    ["cart-coupons", "22-cart-coupons", /COUPONS\.md/]
+  ]) {
+    const plan = executionPlan(matrix, id);
+    assert.equal(plan.execution, "paid");
+    assert.deepEqual(plan.budget,
+      { wall_ms: 1800000, cost_usd: 10, model_requests: 150, tool_calls: 150 });
+    assert.match(plan.fixture, new RegExp(`${task}/seed$`));
+    assert.match(plan.oracle, new RegExp(`${task}/oracle/run\\.sh$`));
+    assert.match(plan.prompt, prompt);
+    assert.ok(plan.criticalCaseIds.includes("CASE_TESTS_EXIST"));
+  }
+});
+
+test("the large project-tracker scenario binds its hidden oracle and budget", () => {
+  const plan = executionPlan(loadMatrix(), "project-tracker-api");
+  assert.equal(plan.execution, "paid");
+  assert.deepEqual(plan.budget,
+    { wall_ms: 3600000, cost_usd: 15, model_requests: 300, tool_calls: 300 });
+  assert.match(plan.fixture, /23-project-tracker-api\/seed$/);
+  assert.match(plan.oracle, /23-project-tracker-api\/oracle\/run\.sh$/);
+  assert.match(plan.prompt, /TRACKER-API\.md/);
+  assert.ok(plan.criticalCaseIds.length >= 30);
+  assert.ok(plan.criticalCaseIds.includes("CASE_TESTS_EXIST"));
+  assert.ok(plan.criticalCaseIds.includes("CASE_NO_LOST_UPDATE"));
 });
 
 test("budget exhaustion pauses for a resumable user decision", () => {

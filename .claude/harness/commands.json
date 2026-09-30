@@ -43,11 +43,11 @@
     },
     {
       "name": "advance",
-      "usage": "advance <change> [--through build|proven|archived] [--host-result <result.json>] [--decision retry|wait|pause --decision-fingerprint <hash> --decision-ref <ref> --reason <approach>] [--approve-spec --decision-ref <ref>] [--inspect] [--pretty]",
+      "usage": "advance <change> [--through build|proven|archived] [--host-result <result.json>] [--decision retry|wait|pause --decision-fingerprint <hash> --decision-ref <ref> --reason <approach>] [--approve-spec --decision-ref <ref>] [--restore-target <path,path> [--decision-ref <ref>]] [--inspect] [--pretty]",
       "audience": "agent",
       "kind": "write",
       "idempotent": true,
-      "description": "Run deterministic lifecycle work through a requested target, including detected evidence wiring, safe sandbox sync, configured review, and task check completion, and return one bounded action at the next real model, user, resource, or authority boundary. --approve-spec records the user's spec approval (alias of change resolve --approve-spec)."
+      "description": "Run deterministic lifecycle work through a requested target, including detected evidence wiring, safe sandbox sync, configured review, and task check completion, and return one bounded action at the next real model, user, resource, or authority boundary. --approve-spec records the user's spec approval (alias of change resolve --approve-spec). --restore-target records the target files Land restores to the sandbox base when its apply conflicts; paths other than generated artifacts clean at isolation require --decision-ref."
     },
     {
       "name": "feedback",

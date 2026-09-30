@@ -137,9 +137,12 @@ export function parseAssertionSummaryOutput(value) {
 
 // Rapid-lane fallback when no count parses: a line that only an executed,
 // passing test prints. It proves "at least one test ran", never a count, and a
-// runner line saying nothing ran vetoes every positive marker.
+// runner line saying nothing ran vetoes every positive marker. A bare `✔` is
+// also printed by linters and builders, so it counts only beside node's own
+// runner summary reporting at least one test.
+const NODE_RUNNER_SUMMARY = /^(?:ℹ|#) (?:tests|pass)\s+[1-9]\d*\s*$/m;
 const EXECUTED_TEST_MARKERS = Object.freeze([
-  ["node-spec-pass", /^\s*✔\s+\S/m],
+  ["node-spec-pass", /^\s*✔\s+\S/m, NODE_RUNNER_SUMMARY],
   ["tap-ok", /^\s*ok\s+[1-9]\d*\b/m],
   ["jest-file-pass", /^\s*PASS\s+\S+/m],
   ["go-test-pass", /^\s*--- PASS: \S+/m],
@@ -154,9 +157,9 @@ const NO_TESTS_RAN = /\bno tests? (?:found|ran|were run|executed|to run)\b|\bno 
 export function parseExecutedTestEvidence(value) {
   const text = String(value || "").replace(/\x1b\[[0-9;]*m/g, "");
   if (!text.trim() || NO_TESTS_RAN.test(text)) return null;
-  for (const [marker, pattern] of EXECUTED_TEST_MARKERS) {
+  for (const [marker, pattern, requires] of EXECUTED_TEST_MARKERS) {
     const match = text.match(pattern);
-    if (match) return { marker, line: match[0].trim().slice(0, 160) };
+    if (match && (!requires || requires.test(text))) return { marker, line: match[0].trim().slice(0, 160) };
   }
   return null;
 }

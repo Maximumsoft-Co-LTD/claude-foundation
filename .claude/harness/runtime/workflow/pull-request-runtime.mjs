@@ -13,17 +13,6 @@ import {
 export const DELIVERY_PROTOCOL_VERSION = 2;
 export const DELIVERY_RECEIPT_SCHEMA_VERSION = 1;
 
-export const PULL_REQUEST_TYPES = [
-  "feature-frontend",
-  "feature-backend",
-  "bug-fix",
-  "refactor-technical-debt",
-  "database-migration",
-  "infrastructure-devops",
-  "performance",
-  "security-hotfix"
-];
-
 const TYPE_LABELS = {
   "feature-frontend": "Feature — Frontend",
   "feature-backend": "Feature — Backend",

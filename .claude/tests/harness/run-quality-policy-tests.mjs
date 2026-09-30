@@ -5,7 +5,7 @@ import {
 } from "../../harness/runtime/quality/quality-policy.mjs";
 import {
   aggregateQualityLanes, classifyMutationSurfaces, evaluateCrapRatchet,
-  evaluateMutationRatchet, pathMatches, scopeViolations
+  evaluateMutationRatchet, pathMatches
 } from "../../harness/runtime/quality/quality-evaluator.mjs";
 
 const policy = structuredClone(DEFAULT_CONSUMER_QUALITY_POLICY);
@@ -29,9 +29,7 @@ assert.equal(capabilityRequirement({ status: "unsupported", capability: "crap", 
 assert.equal(capabilityRequirement({ status: "unsupported", capability: "crap", impact: "low", policy }).assurance, "reduced");
 
 assert.equal(pathMatches("src/auth/index.ts", ["src/auth/**"]), true);
-assert.deepEqual(scopeViolations(["src/auth/index.ts", "src/payment/pay.ts"], {
-  include: ["src/auth/**"], allowedSupportingChanges: [], exclude: []
-}), ["src/payment/pay.ts"]);
+assert.equal(pathMatches("src/payment/pay.ts", ["src/auth/**"]), false);
 
 const tool = { name: "fixture", version: "1", adapterVersion: "1", configDigest: `sha256:${"a".repeat(64)}` };
 const baseFunction = { id: "authorize", path: "src/auth.ts", line: 1, endLine: 4,

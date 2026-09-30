@@ -1,5 +1,6 @@
 import {
-  existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync
+  existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync,
+  writeFileSync
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -16,6 +17,10 @@ import { createRepositoryDeliverySaga } from "./repository-delivery-saga.mjs";
 import { deliveryTreeEntries, assertDeliveryEntries } from "./delivery-integrity.mjs";
 import { approvalMatches } from "../core/user-decisions.mjs";
 import { legacyRepositoryLandTransaction } from "./land-runtime.mjs";
+import { rejectedPaths } from "./sandbox-runtime.mjs";
+import {
+  parseRestoreTargetPaths, restorableTargetPaths, targetConflictStop
+} from "./target-edits.mjs";
 
 // Whether an empty root diff is an acceptable apply outcome rather than an
 // error: true when the change selected any non-root repository, because the
@@ -205,9 +210,39 @@ export function sandboxDiffNamesOperation(context, id, sandboxPath, state,
   ].filter(Boolean))].sort();
 }
 
+// A recorded `--restore-target` returns those target files to the sandbox
+// base inside Land, only while each still holds the exact bytes the
+// restore was recorded against; a later edit is a new question.
+export function restoreAuthorizedTargetPaths(context, state, names) {
+  const restore = state.targetRestore;
+  if (!restore?.identities) return [];
+  const base = context.sandboxBase(state);
+  const restored = [];
+  for (const path of names) {
+    if (!Object.hasOwn(restore.identities, path)) continue;
+    const target = join(context.root, path);
+    if (context.pathIdentity(target) !== restore.identities[path]) continue;
+    const shown = context.gitBuffer(["show", `${base}:${path}`], context.root);
+    if (shown.status === 0) context.writeFile(target, shown.stdout);
+    else context.removePath(target);
+    restored.push(path);
+  }
+  return restored;
+}
+
+function stopForTargetConflict(context, id, state, paths, cause) {
+  const snapshot = state.workspace?.targetDirty || state.workspace?.preexisting || {};
+  const stop = targetConflictStop({ changeId: id, paths, snapshot, cause });
+  if (stop.decision && context.blockWithDecision)
+    return context.blockWithDecision(id, stop.code, stop.decision);
+  if (stop.decision) return context.fail(stop.decision.summary);
+  return context.fail(stop.message, 1, stop.details);
+}
+
 export function gitApplyInputsOperation(context, id, sandboxPath) {
   const state = context.loadRuntime(id);
   const names = context.sandboxDiffNames(id, sandboxPath, state);
+  restoreAuthorizedTargetPaths(context, state, names);
   const pending = names.filter((path) =>
     context.pathIdentity(join(context.root, path)) !==
       context.pathIdentity(join(sandboxPath, path)) ||
@@ -230,8 +265,12 @@ export function gitApplyInputsOperation(context, id, sandboxPath) {
     const check = context.spawn("git", ["apply", "--check", "--whitespace=nowarn", "-"], {
       cwd: context.root, input: diff.stdout, encoding: "utf8"
     });
-    if (check.status !== 0)
-      context.fail(`sandbox diff conflicts with target: ${check.stderr.trim()}`);
+    if (check.status !== 0) {
+      const conflicts = rejectedPaths(check.stderr);
+      if (!conflicts.length)
+        context.fail(`sandbox diff conflicts with target: ${check.stderr.trim()}`);
+      stopForTargetConflict(context, id, state, conflicts, "sandbox diff conflicts with target");
+    }
   }
   const base = context.sandboxBase(state);
   const workingBlob = (path) => {
@@ -248,11 +287,9 @@ export function gitApplyInputsOperation(context, id, sandboxPath) {
     const shown = context.gitBuffer(["show", `${base}:${path}`], context.root);
     return shown.status !== 0 || !target.equals(shown.stdout);
   });
-  if (clobbered.length) {
-    const listed = clobbered.slice(0, 10).join(", ") +
-      (clobbered.length > 10 ? ", ..." : "");
-    context.fail(`apply would overwrite uncommitted target edits at: ${listed} — commit or reconcile the landed work first, then sync the sandbox and prove again`);
-  }
+  if (clobbered.length)
+    stopForTargetConflict(context, id, state, clobbered,
+      "apply would overwrite uncommitted target edits");
   return names;
 }
 
@@ -542,8 +579,42 @@ export function createApplyRuntime({
     spawn: spawnSync,
     readlink: readlinkSync,
     readFile: readFileSync,
+    writeFile: writeFileSync,
+    removePath: (path) => rmSync(path, { force: true }),
+    blockWithDecision,
     fail
   });
+
+  // Records the `--restore-target` authorization Land consumes. Regenerable
+  // artifacts clean at isolation need none; any other path needs the user's
+  // decision reference, because restoring discards target bytes.
+  function recordTargetRestore(id, value, decisionRef = null) {
+    const state = loadRuntime(id);
+    if (state.status === "archived") fail(`change '${id}' is already archived`);
+    if (state.workspace?.mode !== "worktree")
+      fail(`change '${id}' has no worktree sandbox whose target files Land could restore`);
+    const paths = parseRestoreTargetPaths(value);
+    if (!paths.length) fail("--restore-target requires comma-separated target paths");
+    for (const path of paths) {
+      try { safeRootPath(path); } catch (error) { fail(error.message); }
+    }
+    const snapshot = state.workspace.targetDirty || state.workspace.preexisting || {};
+    const needsDecision = paths.filter((path) =>
+      !restorableTargetPaths([path], snapshot).length);
+    const ref = String(decisionRef || "").trim() || null;
+    if (needsDecision.length && !ref)
+      fail(`--restore-target would discard target edits that may be user work at: ${
+        needsDecision.join(", ")}; ask the user, then pass --decision-ref <user-decision>`);
+    state.targetRestore = {
+      paths,
+      identities: Object.fromEntries(paths.map((path) =>
+        [path, pathIdentity(safeRootPath(path))])),
+      decisionRef: ref,
+      recordedAt: now()
+    };
+    saveRuntime(state);
+    return state.targetRestore;
+  }
 
   function assertTargetHeadUnmoved(id, state) {
     const currentHead = gitHead(root);
@@ -1075,6 +1146,7 @@ export function createApplyRuntime({
 
   return {
     gitApplyInputs,
+    recordTargetRestore,
     buildApplyEntries,
     prepareApplyTransaction,
     refreshAppliedProjection,

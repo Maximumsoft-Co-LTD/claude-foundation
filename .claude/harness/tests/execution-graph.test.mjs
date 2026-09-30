@@ -8,8 +8,7 @@ import { createHash } from "node:crypto";
 import {
   compileExecutionGraph, conflictKeysForTask, conflictKeysOverlap,
   compileLandPreparation, dependentClosure, landPreparationMatches,
-  schemasCompatible, scheduleReadyBatch, sequentialSessionEligible, singleAgentExecutionEligible,
-  validateNodeResult
+  schemasCompatible, scheduleReadyBatch, sequentialSessionEligible, singleAgentExecutionEligible
 } from "../runtime/core/graph-execution.mjs";
 
 import { createLeaseRuntime } from "../runtime/workflow/lease-runtime.mjs";
@@ -232,44 +231,6 @@ test("graph: setup and service nodes gate tasks and providers", () => {
   const graph = compileExecutionGraph(value);
   assert.ok(graph.edges.some((edge) => edge.id === "setup:api->task:T001"));
   assert.ok(graph.edges.some((edge) => edge.id === "service:api->provider:test"));
-});
-
-const authority = {
-  graphRevision: "g1", planDigest: "p1", contractRevision: 1,
-  workspaceHash: "w1", leaseId: "l1", fencingGeneration: 4,
-  executionAttempt: 2, repository: "root", paths: ["src/api/**"],
-  claimIds: ["api"], outputSchema: { name: "foundation.node-data", version: 1 }
-};
-
-test("authority: matching fenced result and observed writes advance", () => {
-  const result = validateNodeResult(authority, {
-    ...authority, claimIds: ["api"], outputSchema: authority.outputSchema
-  }, ["src/api/index.mjs"]);
-  assert.equal(result.valid, true);
-});
-
-test("authority: a late worker generation is rejected", () => {
-  const result = validateNodeResult(authority, {
-    ...authority, fencingGeneration: 3, claimIds: ["api"], outputSchema: authority.outputSchema
-  }, []);
-  assert.equal(result.valid, false);
-  assert.deepEqual(result.mismatches, ["fencingGeneration"]);
-});
-
-test("authority: observed writes override an incomplete worker report", () => {
-  const result = validateNodeResult(authority, {
-    ...authority, claimIds: ["api"], outputSchema: authority.outputSchema
-  }, ["src/web/undeclared.mjs"]);
-  assert.equal(result.valid, false);
-  assert.deepEqual(result.unexpectedWrites, ["src/web/undeclared.mjs"]);
-});
-
-test("authority: an undeclared path scope grants whole-tree write authority", () => {
-  const wholeTree = { ...authority, paths: [] };
-  const result = validateNodeResult(wholeTree, {
-    ...wholeTree, claimIds: ["api"], outputSchema: wholeTree.outputSchema
-  }, ["src/anywhere/index.mjs"]);
-  assert.equal(result.valid, true);
 });
 
 function json(path, fallback = {}) {

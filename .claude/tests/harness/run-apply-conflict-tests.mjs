@@ -196,3 +196,70 @@ test("a mode-only executable change is applied", () => {
   assert.equal(archived.status, 0, archived.stderr);
   assert.equal(statSync(join(fixture.root, "app.txt")).mode & 0o777, 0o755);
 });
+
+// R1: a test run in the main checkout rewrote a tracked `__pycache__/*.pyc`,
+// Land's patch no longer applied, and the only offered fix was a Git command
+// the Land guard blocks. Land now names the paths and restores them itself.
+function trackedArtifactProject() {
+  const fixture = project();
+  mkdirSync(join(fixture.root, "__pycache__"), { recursive: true });
+  writeFileSync(join(fixture.root, "__pycache__", "app.cpython-312.pyc"), Buffer.from([0, 1, 2, 3]));
+  execFileSync("git", ["add", "-A"], { cwd: fixture.root });
+  execFileSync("git", ["commit", "-qm", "tracked artifact"], { cwd: fixture.root });
+  return fixture;
+}
+
+test("a regenerated tracked artifact on the target is restored by Land on request", () => {
+  const fixture = trackedArtifactProject();
+  const pyc = "__pycache__/app.cpython-312.pyc";
+  const proven = Buffer.from([0, 9, 9, 9]);
+  provenEdit(fixture, "Artifact probe", "artifact-probe", pyc, proven);
+  // A test run in the main checkout after isolation.
+  writeFileSync(join(fixture.root, pyc), Buffer.from([0, 7, 7, 7]));
+  const refused = cli(fixture, "sandbox", "apply", "artifact-probe");
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /generated artifact\(s\) changed in the main checkout after isolation: __pycache__\/app\.cpython-312\.pyc/);
+  assert.match(refused.stderr,
+    /'claude-foundation advance artifact-probe --through archived --restore-target __pycache__\/app\.cpython-312\.pyc'/);
+  assert.doesNotMatch(refused.stderr, /git checkout/);
+  const recorded = cli(fixture, "advance", "artifact-probe", "--restore-target", pyc);
+  assert.equal(recorded.status, 0, recorded.stderr);
+  assert.match(recorded.stdout, /TARGET RESTORE RECORDED artifact-probe/);
+  const applied = cli(fixture, "sandbox", "apply", "artifact-probe");
+  assert.equal(applied.status, 0, applied.stderr);
+  assert.deepEqual(readFileSync(join(fixture.root, pyc)), proven);
+});
+
+test("a restore recorded against other bytes never overwrites a later target edit", () => {
+  const fixture = trackedArtifactProject();
+  const pyc = "__pycache__/app.cpython-312.pyc";
+  provenEdit(fixture, "Artifact probe", "artifact-probe", pyc, Buffer.from([0, 9, 9, 9]));
+  writeFileSync(join(fixture.root, pyc), Buffer.from([0, 7, 7, 7]));
+  assert.equal(cli(fixture, "advance", "artifact-probe", "--restore-target", pyc).status, 0);
+  const later = Buffer.from([0, 5, 5, 5]);
+  writeFileSync(join(fixture.root, pyc), later);
+  const refused = cli(fixture, "sandbox", "apply", "artifact-probe");
+  assert.notEqual(refused.status, 0);
+  assert.deepEqual(readFileSync(join(fixture.root, pyc)), later);
+});
+
+test("restoring a non-generated target edit requires the user's decision", () => {
+  const fixture = project();
+  provenEdit(fixture, "Source probe", "source-probe", "lib.txt", "lib proven\n");
+  writeFileSync(join(fixture.root, "lib.txt"), "user work\n");
+  const refused = cli(fixture, "sandbox", "apply", "source-probe");
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /lib\.txt/);
+  assert.match(refused.stdout, /"kind": "target-edit-conflict"/);
+  assert.match(refused.stdout, /--restore-target lib\.txt --decision-ref <user-decision>/);
+  const undecided = cli(fixture, "advance", "source-probe", "--restore-target", "lib.txt");
+  assert.notEqual(undecided.status, 0);
+  assert.match(undecided.stderr, /may be user work at: lib\.txt; ask the user/);
+  assert.equal(readFileSync(join(fixture.root, "lib.txt"), "utf8"), "user work\n");
+  const decided = cli(fixture, "advance", "source-probe", "--restore-target", "lib.txt",
+    "--decision-ref", "fixture://user-discards");
+  assert.equal(decided.status, 0, decided.stderr);
+  const applied = cli(fixture, "sandbox", "apply", "source-probe");
+  assert.equal(applied.status, 0, applied.stderr);
+  assert.equal(readFileSync(join(fixture.root, "lib.txt"), "utf8"), "lib proven\n");
+});

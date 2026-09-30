@@ -149,9 +149,9 @@ export function stopProofCollection(context, readiness, options = {}) {
   return readiness;
 }
 
-export function beginProofCollection(context, id, snapshot) {
+export function beginProofCollection(context, id, snapshot, explicitRunId = null) {
   const state = context.loadRuntime(id);
-  const proofRunId = `collect-${context.timestamp()}`;
+  const proofRunId = explicitRunId || `collect-${context.timestamp()}`;
   state.activeProofRun = {
     id: proofRunId,
     snapshotId: snapshot.id,
@@ -424,7 +424,8 @@ export function createProofExecutionRuntime({
       collectable.nodes.map((node) => node.provider), options);
     if (reservation) return reservation;
     const proofRunId = beginProofCollection(
-      { loadRuntime, saveRuntime, now, timestamp: Date.now }, id, snapshot);
+      { loadRuntime, saveRuntime, now, timestamp: Date.now }, id, snapshot,
+      options.proofRunId);
     rebindProofCollectionReceipts({
       requiredProviders, receiptValidity, rebindReusableReceipt,
       rebindDiffBoundReceipt
@@ -765,7 +766,8 @@ export function createProofExecutionRuntime({
   // the bounded-closure route, several review providers) keeps the serial
   // path. The returned promise never rejects: an unsettled review stays an
   // open request that the next pass routes exactly as before.
-  function startAdvanceReview(id, flags, snapshot, readiness, authorityRequests) {
+  function startAdvanceReview(id, flags, snapshot, readiness, authorityRequests,
+    proofRunId) {
     if (!flags.concurrentReview || !startConcurrentReview) return null;
     if (readiness.status !== "NEEDS_USER_DECISION" ||
         snapshot.workspaceHash !== readiness.workspaceHash) return null;
@@ -787,8 +789,14 @@ export function createProofExecutionRuntime({
         id, reviewProviders, "review", readiness.workspaceHash, known);
       if (request?.status !== "requested" || request.mainSessionFallback ||
           request.workspaceHash !== subjectHash) return null;
+      // The receipt binds this pass's run and snapshot explicitly; reading
+      // activeProofRun when the review finishes would depend on whether the
+      // providers had already cleared it.
       running = startConcurrentReview(
-        id, request, authorityNext(id, "review", [request])[0]?.command);
+        id, request, authorityNext(id, "review", [request])[0]?.command, {
+          proofRunId, workspaceSnapshotId: snapshot.id || null,
+          workspaceHash: subjectHash
+        });
     } catch { return null; }
     return running ? Promise.resolve(running).then(() => true, () => false) : null;
   }
@@ -856,11 +864,13 @@ export function createProofExecutionRuntime({
       requests: [],
       recoveryDecisionRef: decisionRef || null
     });
+    const proofRunId = `collect-${Date.now()}`;
     const review = startAdvanceReview(
-      id, flags, snapshot, readiness, authorityRequests);
+      id, flags, snapshot, readiness, authorityRequests, proofRunId);
     let collection;
     try {
       collection = await proofCollectUnlocked(id, {
+        proofRunId,
         readiness,
         snapshot,
         execution,
@@ -1009,6 +1019,72 @@ export function createProofExecutionRuntime({
     die(`proof advance could not classify readiness for '${id}'`);
   }
 
+  // Every allowed AI wave is delivered, the last one still raised findings the
+  // agent has since repaired, current non-review proof passes, and no declared
+  // critical case can close those findings deterministically. Only a person
+  // can end this: the same review-exhausted gate `REVIEW_ROUTE_COMPLETE`
+  // names, never a REPAIR the agent cannot satisfy.
+  function writeReviewExhaustedStop(id, readiness, exhausted, executedProviders) {
+    const delivered = deliveredAiAttempts(id);
+    const findingIds = [...new Set(exhausted.flatMap((row) => row.findingIds || []))].sort();
+    const findings = (delivered.at(-1)?.findings || [])
+      .filter((finding) => findingIds.includes(finding.id));
+    const progress = gateProgressValue({
+      phase: "prove", gate: "review", findings,
+      strategy: { route: "review-route-exhausted" },
+      workspaceHash: readiness.workspaceHash
+    });
+    const decision = noProgressDecision({
+      changeId: id,
+      phase: "prove",
+      gate: "review",
+      progress,
+      findings,
+      attemptedStrategies: [{
+        id: "repair-final-review-findings",
+        result: "repaired-without-remaining-review-wave"
+      }],
+      recommended: "accept-review-risk",
+      options: [{
+        id: "accept-review-risk",
+        outcome: "Accept the unreviewed final repair explicitly and continue to Land.",
+        command: `claude-foundation change waive ${id} --capability review --reason <remaining-risk> --decision-ref <user-decision>`
+      }, {
+        id: "revise-agreement",
+        outcome: "Amend the agreement to declare a critical case that proves the repaired findings, then resume."
+      }, {
+        id: "pause",
+        outcome: "Preserve the change and all completed work."
+      }],
+      resumeCommand: `claude-foundation advance ${id} --through proven`
+    });
+    return writeAdvance(id, {
+      version: 1,
+      changeId: id,
+      command: "proof advance",
+      status: "NEEDS_USER_DECISION",
+      route: "NO_PROGRESS_DECISION",
+      stage: "review-repair-closure",
+      completed: false,
+      workspaceHash: readiness.workspaceHash,
+      progressFingerprint: progress.fingerprint,
+      closures: exhausted,
+      decision: {
+        ...decision.decision,
+        kind: "review-route-exhausted",
+        summary: `All ${delivered.length} AI review wave(s) are delivered and the last one raised ${findingIds.join(", ") || "findings"}. The repair is in place and current tests pass, but no review wave or declared critical case remains to close those findings.`
+      },
+      attemptedStrategies: decision.attemptedStrategies,
+      requests: [],
+      executedProviders,
+      next: [{
+        kind: "review-route-exhausted",
+        reason: "Report the repaired findings, passing checks, and the unreviewed final repair; let the user accept that risk, revise the agreement, or pause.",
+        command: `claude-foundation change waive ${id} --capability review --reason <remaining-risk> --decision-ref <user-decision>`
+      }, ...decision.next]
+    });
+  }
+
   function closeBoundedReviewAttempts(id, readiness, authorityRequests,
     executedProviders) {
     const delivered = deliveredAiAttempts(id);
@@ -1023,6 +1099,12 @@ export function createProofExecutionRuntime({
       .filter(Boolean);
     const blockedClosures = closures.filter((row) => !row.closed);
     if (blockedClosures.length) {
+      const exhausted = blockedClosures.filter((row) =>
+        row.route === "REVIEW_ROUTE_EXHAUSTED");
+      if (exhausted.length && !blockedClosures.some((row) =>
+        row.route === "CONTRACT_DECISION_REQUIRED"))
+        return { outcome: stopProofAdvance(
+          writeReviewExhaustedStop(id, readiness, exhausted, executedProviders)) };
       const outcome = writeAdvance(id, {
         version: 1,
         changeId: id,
@@ -1039,7 +1121,11 @@ export function createProofExecutionRuntime({
         executedProviders,
         next: [{
           kind: "repair-final-review-findings",
-          reason: "Repair the final finding batch inside the locked contract and bind each blocker to a current declared critical case; do not dispatch another AI or open a generic choice interview.",
+          // The closure's own reason names what is still unmet (unchanged
+          // workspace, failing proof, or a contract decision).
+          reason: ["Repair the final finding batch inside the locked contract; do not dispatch another AI or open a generic choice interview",
+            ...new Set(blockedClosures.map((row) => row.reason).filter(Boolean))]
+            .join(": "),
           command: `claude-foundation packet ${id} --phase build`
         }]
       });

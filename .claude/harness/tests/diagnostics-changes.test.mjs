@@ -4,9 +4,12 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   changeListingRow,
-  changeReadiness,
   createDiagnosticsRuntime
 } from "../runtime/core/diagnostics-runtime.mjs";
+import { deriveChangeProjection } from "../runtime/core/state-projections.mjs";
+
+const changeReadiness = (state, proof, currentHash) =>
+  deriveChangeProjection({ state, proof, currentHash }).readiness;
 
 const root = mkdtempSync(join(tmpdir(), "foundation-diagnostics-changes-"));
 const runtimePath = (id) => join(root, `${id}.json`);

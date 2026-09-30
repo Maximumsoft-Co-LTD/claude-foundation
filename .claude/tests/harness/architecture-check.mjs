@@ -5,8 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const DOMAINS = new Set([
-  "composition", "contracts", "core", "evidence", "observability",
-  "reliability", "workflow"
+  "composition", "contracts", "core", "evidence", "observability", "workflow"
 ]);
 
 // Dependencies point upward through this table. Stateful cross-domain behavior
@@ -15,11 +14,10 @@ const DOMAINS = new Set([
 const ALLOWED = {
   composition: new Set([...DOMAINS]),
   contracts: new Set(["contracts"]),
-  core: new Set(["contracts", "core", "reliability"]),
-  evidence: new Set(["contracts", "core", "evidence", "reliability"]),
-  observability: new Set(["contracts", "core", "observability", "reliability"]),
-  reliability: new Set(["contracts", "core", "reliability"]),
-  workflow: new Set(["contracts", "core", "evidence", "reliability", "workflow"])
+  core: new Set(["contracts", "core"]),
+  evidence: new Set(["contracts", "core", "evidence"]),
+  observability: new Set(["contracts", "core", "observability"]),
+  workflow: new Set(["contracts", "core", "evidence", "workflow"])
 };
 
 function walk(dir) {

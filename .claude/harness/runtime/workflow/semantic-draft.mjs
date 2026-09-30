@@ -298,6 +298,7 @@ function normalizeRequirements(source, slugify, issues, {
   const requirements = [];
   const requirementKeys = new Set();
   const pendingClaims = [];
+  let capabilityChoiceReported = false;
   const knownRequirementKeys = new Set((source.requirements || []).map((row) => text(row?.key)));
   for (const evidenceKey of evidence.keys())
     if (!knownRequirementKeys.has(evidenceKey))
@@ -310,7 +311,14 @@ function normalizeRequirements(source, slugify, issues, {
     else if (requirementKeys.has(key)) issues.push(`${label}.key '${key}' is duplicated`);
     requirementKeys.add(key);
     const capability = text(requirement?.capability);
-    if (!capability) issues.push(`${label}.capability is required`);
+    if (!capability && Array.isArray(source._capabilityChoices)) {
+      // One repair for the whole minimal draft, naming the real choices.
+      if (!capabilityChoiceReported)
+        issues.push("semantic draft 'capability' is required: no existing capability " +
+          "matched this draft confidently; set 'capability' on each requirement to one " +
+          `of: ${source._capabilityChoices.join(", ")} (or name a new capability)`);
+      capabilityChoiceReported = true;
+    } else if (!capability) issues.push(`${label}.capability is required`);
     const operation = text(requirement?.operation || "added").toLowerCase();
     if (!OPERATIONS.has(operation))
       issues.push(`${label}.operation must be added|modified|removed`);
@@ -494,6 +502,7 @@ function minimalScenarioName(when, index) {
 }
 
 function minimalCapability(source) {
+  // Used only when the repository has no canonical capability yet.
   const fromIntent = shortSlug(source.intent, 40);
   if (fromIntent) return fromIntent;
   for (const task of source.tasks)
@@ -505,33 +514,61 @@ function minimalCapability(source) {
   return "change";
 }
 
-// Several tasks: a requirement goes to the one task whose outcome and paths
-// share strictly the most significant words with it. A tie or no overlap
-// leaves `covers` to the author, and validation names the field.
+// Coverage is inferred only where it is unambiguous: one task covers every
+// requirement, or one requirement is covered by every task. Several tasks and
+// several requirements need explicit `covers`; word overlap could silently
+// assign a requirement to the wrong task.
 function inferredCovers(requirements, tasks) {
   if (tasks.length === 1) return [requirements.map((row) => row.key)];
-  const covers = tasks.map(() => []);
-  const taskWords = tasks.map((task) =>
-    significantWords([task.outcome, task.key, ...stringList(task.paths)]));
-  for (const requirement of requirements) {
-    const words = significantWords([
-      requirement.key, requirement.description,
-      ...rawScenarioEntries(requirement).flatMap((row) => [row?.when, row?.then])
-    ]);
-    const scores = taskWords.map((set) => [...words].filter((word) => set.has(word)).length);
-    const best = Math.max(...scores);
-    if (best > 0 && scores.filter((score) => score === best).length === 1)
-      covers[scores.indexOf(best)].push(requirement.key);
-  }
-  return covers;
+  if (requirements.length === 1) return tasks.map(() => [requirements[0].key]);
+  return tasks.map(() => []);
 }
 
-export function expandMinimalSemanticDraft(input, { loadCanonicalSpec = null } = {}) {
+function canonicalRequirementMatch(row, rows) {
+  const name = text(row.requirement || row.title).toLowerCase();
+  const description = text(row.description);
+  return rows.find((spec) =>
+    (name && spec.name.toLowerCase() === name) ||
+    (description && spec.body.includes(description)));
+}
+
+// When the repository already has capabilities, a minimal draft belongs to
+// one of them. A requirement that restates a canonical requirement decides it;
+// otherwise the capability whose name and requirement titles share strictly
+// the most significant words with the draft's text and task paths wins, with
+// at least one capability-name word or two title words. Anything weaker is
+// left to the author rather than inventing a parallel spec.
+function existingCapability(source, names, canonicalRows) {
+  const open = source.requirements.filter((row) => !text(row.capability));
+  const exact = names.map((name) =>
+    open.filter((row) => canonicalRequirementMatch(row, canonicalRows(name))).length);
+  const bestExact = Math.max(0, ...exact);
+  if (bestExact > 0 && exact.filter((count) => count === bestExact).length === 1)
+    return names[exact.indexOf(bestExact)];
+  const draftWords = significantWords([
+    source.intent,
+    ...open.flatMap((row) => [row.description, row.requirement, row.title,
+      ...rawScenarioEntries(row).flatMap((scenario) => [scenario?.when, scenario?.then])]),
+    ...source.tasks.flatMap((task) => [task.outcome, ...stringList(task.paths)])
+  ]);
+  const scores = names.map((name) => {
+    const nameHits = [...significantWords([name])].filter((word) => draftWords.has(word)).length;
+    const titleHits = [...significantWords(canonicalRows(name).map((row) => row.name))]
+      .filter((word) => draftWords.has(word)).length;
+    return nameHits * 2 + titleHits;
+  });
+  const best = Math.max(0, ...scores);
+  return best >= 2 && scores.filter((score) => score === best).length === 1
+    ? names[scores.indexOf(best)] : "";
+}
+
+export function expandMinimalSemanticDraft(input, {
+  loadCanonicalSpec = null, listCanonicalCapabilities = null
+} = {}) {
   if (!isMinimalSemanticDraft(input)) return input;
   const source = structuredClone(input);
   source.version = 4;
   source._minimalDraft = true;
-  const capability = minimalCapability(source);
   const requirementKeys = new Set(source.requirements.map((row) => text(row.key)).filter(Boolean));
   const canonical = new Map();
   const canonicalRows = (name) => {
@@ -539,6 +576,12 @@ export function expandMinimalSemanticDraft(input, { loadCanonicalSpec = null } =
       canonical.set(name, loadCanonicalSpec ? parseSpecDocument(loadCanonicalSpec(name) || "") : []);
     return canonical.get(name);
   };
+  const existing = unique(stringList(listCanonicalCapabilities ? listCanonicalCapabilities() : []));
+  let capability = minimalCapability(source);
+  if (existing.length && source.requirements.some((row) => !text(row.capability))) {
+    capability = existingCapability(source, existing, canonicalRows);
+    if (!capability) source._capabilityChoices = existing;
+  }
   source.requirements = source.requirements.map((input, index) => {
     const row = { ...input };
     const description = text(row.description);
@@ -547,7 +590,7 @@ export function expandMinimalSemanticDraft(input, { loadCanonicalSpec = null } =
       row.key = uniqueKey(shortSlug(body) || shortSlug(row.outcome) ||
         `requirement-${index + 1}`, requirementKeys);
     }
-    if (!text(row.capability)) row.capability = capability;
+    if (!text(row.capability) && capability) row.capability = capability;
     if (Array.isArray(row.scenarios))
       row.scenarios = row.scenarios.map((scenario, scenarioIndex) =>
         plainObject(scenario) && !text(scenario.name) && text(scenario.when)
@@ -557,11 +600,8 @@ export function expandMinimalSemanticDraft(input, { loadCanonicalSpec = null } =
       const first = rawScenarioEntries(row).find((scenario) => text(scenario?.then));
       if (first) row.outcome = text(first.then);
     }
-    if (!text(row.operation)) {
-      const name = text(row.requirement || row.title).toLowerCase();
-      const match = canonicalRows(row.capability).find((spec) =>
-        (name && spec.name.toLowerCase() === name) ||
-        (description && spec.body.includes(description)));
+    if (!text(row.operation) && text(row.capability)) {
+      const match = canonicalRequirementMatch(row, canonicalRows(row.capability));
       row.operation = match ? "modified" : "added";
       if (match && !text(row.requirement || row.title)) row.requirement = match.name;
     }
@@ -667,8 +707,8 @@ function normalizeTasks(source, requirements, requirementKeys, issues) {
     if (!text(task?.outcome)) issues.push(`${label}.outcome is required`);
     if (!text(task?.verify)) issues.push(`${label}.verify is required`);
     if (!covers.length) issues.push(`${label}.covers must name at least one requirement` +
-      (source._minimalDraft ? " (several tasks: the compiler could not match this task " +
-        `to one requirement by text or paths; keys: ${[...requirementKeys].join(", ")})` : ""));
+      (source._minimalDraft ? " (several tasks and requirements: name the requirement keys " +
+        `this task implements; keys: ${[...requirementKeys].join(", ")})` : ""));
     const unknown = covers.filter((value) => !requirementKeys.has(value));
     if (unknown.length) issues.push(`${label}.covers references unknown requirement(s): ${unknown.join(", ")}`);
     covers.forEach((value) => covered.add(value));

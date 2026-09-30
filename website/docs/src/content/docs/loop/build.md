@@ -23,7 +23,7 @@ chain.
 
 | Action | Meaning |
 |---|---|
-| `EDIT` | Implement only the returned task(s), workspace, and allowed paths; run the listed focused checks once |
+| `EDIT` | Implement only the returned task(s), workspace, and allowed paths; open the listed `contextFiles`, create `newFiles`; run the focused checks once |
 | `REPAIR` | Apply one complete dependency-ordered repair batch, then resume |
 | `RUN_EXTERNAL` | Run the one configured boundary operation |
 | `WAIT` | A live resource/external owner must finish; state is preserved |
@@ -34,6 +34,12 @@ Every non-done action names the cause, responsible actor, safe alternatives,
 preserved state, and exact resume command. Automatic recovery stays inside the
 agent's current authority; the harness never turns a stale lease or repeated
 execution into a pass.
+
+When every pending task must run one at a time in one repository, `EDIT`
+hands all of them at once in dependency order. Implement them all and resume
+once: `advance` reruns each task's `verify`, ticks every passing task in
+`tasks.md`, and returns only failures (`verificationFailures`) with their
+dependents. The agent never edits checkboxes.
 
 ## Isolation and concurrency
 

@@ -28,6 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rapid-lane proof accepts a clean test run whose count cannot be parsed when
   the output shows at least one executed test, recording
   `countMeasurement: "exit-code"` instead of a fabricated count.
+- Prove's AI review receives a checklist of every agreement scenario and
+  reports `scenarioCoverage` (`covered`, `missing`, `unsure`); a missing
+  scenario with no backing finding becomes a major finding. A low-risk
+  fast-model first round whose coverage is missing, unsure, or unparseable is
+  re-run once on the configured model without consuming a review wave, and the
+  attempt records the final model and `escalatedFrom`.
+- Removed unused runtime exports and `runtime/reliability/bounded-retry.mjs`,
+  and trimmed the phase reference docs by about 20%.
 - The refactor benchmark oracle accepts any shared helper name, and workload
   tests require every declared critical case in the oracle output.
 
@@ -107,6 +115,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A repaired final review finding with no declared critical case no longer
+  loops on an unsatisfiable "bind each blocker" repair; a delta review that
+  drops a finding closes it, and otherwise Prove stops at the review-exhausted
+  decision. The concurrent review receipt carries the collection's proof run
+  and snapshot.
+- Land conflicts on regenerable artifacts that were clean at isolation return
+  a runnable `advance --through archived --restore-target <paths>` repair;
+  other conflicts ask with the file list. Agents run tests only inside the
+  workspace.
+- A bare `✔` line no longer counts as executed-test evidence without node's
+  runner summary, and EDIT/REPAIR `contextFiles` exclude paths outside the
+  workspace or repository bases.
+- An unanswered discovery question no longer passes as settled; a decision
+  without `status` is settled only by a `choice` and otherwise reaches the user.
+- A minimal draft joins an existing capability (or asks for one) instead of
+  adding a new spec named after the intent, and needs explicit `covers` when
+  there are several tasks and several requirements.
+- An explicit `--review` raises verification risk to high again; a fast
+  reviewer records the model family it actually ran, so diversity checks judge
+  that model. `packetSchema` 12 and `reviewPacketSchema` 6.
 - `claude-foundation` no longer warns "ignoring sandbox copy" when run inside
   a Build sandbox owned by the resolved project.
 - Proof execution progress lines no longer leak into `advance` JSON output.

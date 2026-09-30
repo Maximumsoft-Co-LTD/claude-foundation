@@ -1,0 +1,9 @@
+{
+  "name": "notes-api-fixture",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  }
+}

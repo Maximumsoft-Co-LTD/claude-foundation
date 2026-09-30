@@ -15,6 +15,7 @@ export async function routeRuntimeCommand(command, values, api) {
     inspectRevision,
     reviseChange,
     resolveChange,
+    recordTargetRestore,
     abandonChange,
     waiveGate,
     showChanges,
@@ -353,9 +354,28 @@ export async function routeRuntimeCommand(command, values, api) {
     "advance": async () => {
       const { flags, rest } = parseStrictCommandFlags(values, "advance", {
         boolean: ["pretty", "inspect", "approve-spec"],
-        value: ["host-result", "through", "decision", "decision-fingerprint", "decision-ref", "reason"]
+        value: ["host-result", "through", "decision", "decision-fingerprint", "decision-ref", "reason",
+          "restore-target"]
       });
       if (rest.length !== 1) die("advance requires exactly one change id");
+      // Land's target-conflict route: record which target files Land restores
+      // to the sandbox base, then resume the same lifecycle route.
+      if (flags["restore-target"] !== undefined) {
+        const extra = Object.keys(flags).filter((flag) =>
+          !["restore-target", "decision-ref", "through", "pretty"].includes(flag));
+        if (extra.length)
+          die(`advance --restore-target combines only with --through and --decision-ref; drop --${extra.join(", --")}`);
+        if (flags.through && flags.through !== "archived")
+          die("advance --restore-target applies only to Land; use --through archived");
+        const restore = recordTargetRestore(rest[0], flags["restore-target"], flags["decision-ref"]);
+        if (!flags.through) {
+          console.log(`TARGET RESTORE RECORDED ${rest[0]}\n  paths: ${restore.paths.join(", ")}` +
+            `\n  next: claude-foundation advance ${rest[0]} --through archived`);
+          return;
+        }
+        delete flags["restore-target"];
+        delete flags["decision-ref"];
+      }
       // Alias of `change resolve <change> --approve-spec --decision-ref <ref>`
       // so the agent's normal path needs only `change start` and `advance`.
       if (flags["approve-spec"]) {

@@ -108,3 +108,248 @@ export function reviewDepthForTier(tier, deliveredAiCount = 0) {
 export function reviewModelTierForDepth(depth) {
   return depth === "diff-only" ? "fast" : "configured";
 }
+
+// Scenario coverage checklist (N8). One item per agreement scenario so the
+// reviewer states, per scenario, whether the diff backs it with a test or code.
+// Pure and deterministic: callers inject file access (the same shape as the
+// review diff context), and item order follows sorted spec paths.
+export const REVIEW_CHECKLIST_LIMITS = Object.freeze({ items: 40, bytes: 8 * 1024 });
+export const SCENARIO_COVERAGE_STATUSES = Object.freeze(
+  ["covered-by-test", "covered-by-code-only", "missing", "unsure"]);
+
+function checklistSlug(value) {
+  return String(value || "").toLowerCase().normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
+}
+
+function checklistFiles(access, directory, prefix) {
+  const list = access.readDirectory || access.listDir;
+  let names;
+  try { names = [...list(join(directory, prefix))].map(String).sort(); }
+  catch { return []; }
+  return names.flatMap((name) => {
+    const relativePath = `${prefix}/${name}`;
+    let nested;
+    try {
+      nested = access.isDirectory ? access.isDirectory(join(directory, relativePath))
+        : (list(join(directory, relativePath)), true);
+    } catch { nested = false; }
+    if (nested) return checklistFiles(access, directory, relativePath);
+    return relativePath.endsWith(".md") ? [relativePath] : [];
+  });
+}
+
+function readText(access, path) {
+  try {
+    if (access.exists && !access.exists(path)) return null;
+    return String(access.readFile(path, "utf8"));
+  } catch { return null; }
+}
+
+// OpenSpec delta markdown: `### Requirement:` blocks holding `#### Scenario:`
+// cases with GIVEN/WHEN/THEN/AND bullets. AND extends the preceding clause.
+// REMOVED requirements carry no behavior to back and are skipped.
+export function parseSpecScenarios(markdown) {
+  const scenarios = [];
+  let removed = false;
+  let requirement = null;
+  let scenario = null;
+  let clause = null;
+  for (const line of String(markdown || "").split(/\r?\n/)) {
+    const section = line.match(/^##\s+(.+?)\s*$/);
+    if (section) {
+      removed = /^removed\b/i.test(section[1]);
+      requirement = null; scenario = null;
+      continue;
+    }
+    const heading = line.match(/^###\s+Requirement:\s*(.+?)\s*$/i);
+    if (heading) { requirement = heading[1]; scenario = null; continue; }
+    if (/^#{1,3}\s/.test(line)) { requirement = null; scenario = null; continue; }
+    const title = line.match(/^####\s+Scenario:\s*(.+?)\s*$/i);
+    if (title) {
+      scenario = null;
+      if (!requirement || removed) continue;
+      scenario = { requirement, scenario: title[1], given: [], when: [], then: [] };
+      scenarios.push(scenario);
+      clause = null;
+      continue;
+    }
+    if (/^#{4,}\s/.test(line)) { scenario = null; continue; }
+    if (!scenario) continue;
+    const bullet = line.match(/^\s*[-*]\s*(?:\*\*)?(GIVEN|WHEN|THEN|AND)(?:\*\*)?[:\s]\s*(.*?)\s*$/i);
+    if (!bullet) continue;
+    const keyword = bullet[1].toLowerCase();
+    if (keyword !== "and") clause = keyword;
+    if (clause && bullet[2]) scenario[clause].push(bullet[2]);
+  }
+  return scenarios.map((row) => ({
+    requirement: row.requirement,
+    scenario: row.scenario,
+    ...(row.given.length ? { given: row.given.join("; ") } : {}),
+    when: row.when.join("; ") || null,
+    then: row.then.join("; ") || null
+  }));
+}
+
+function evidenceClaims(access, directory) {
+  const content = readText(access, join(directory, "evidence.yaml"));
+  if (content == null) return [];
+  try {
+    const claims = JSON.parse(content)?.claims;
+    return Array.isArray(claims) ? claims.filter((claim) => claim && typeof claim === "object") : [];
+  } catch { return []; }
+}
+
+// Stable ids: the compiled claim id whose scenario names this case (the same
+// id findings already bind), else requirement slug plus 1-based scenario index.
+function assignChecklistIds(rows, claims) {
+  const byScenario = new Map();
+  for (const claim of claims) {
+    const name = String(claim.scenario || "").trim();
+    if (name && claim.id && !byScenario.has(name)) byScenario.set(name, String(claim.id));
+  }
+  const used = new Set();
+  const perRequirement = new Map();
+  return rows.map((row) => {
+    const requirementSlug = checklistSlug(row.requirement) || "requirement";
+    const index = (perRequirement.get(requirementSlug) || 0) + 1;
+    perRequirement.set(requirementSlug, index);
+    let id = byScenario.get(String(row.scenario || "").trim()) || `${requirementSlug}-s${index}`;
+    for (let suffix = 2; used.has(id); suffix += 1) id = `${id.replace(/~\d+$/, "")}~${suffix}`;
+    used.add(id);
+    return { id, ...row };
+  });
+}
+
+function capChecklist(items, limits) {
+  const kept = [];
+  let bytes = 2;
+  for (const item of items) {
+    const size = Buffer.byteLength(JSON.stringify(item)) + 1;
+    if (kept.length >= limits.items || bytes + size > limits.bytes) break;
+    kept.push(item);
+    bytes += size;
+  }
+  return { items: kept, truncated: kept.length < items.length };
+}
+
+export function reviewScenarioChecklist(access, limits = REVIEW_CHECKLIST_LIMITS) {
+  const directory = access?.packetDir;
+  if (!directory) return { items: [], source: "none", truncated: false };
+  const claims = evidenceClaims(access, directory);
+  let source = "none";
+  let rows = [];
+  const specs = checklistFiles(access, directory, "specs");
+  if (specs.length) {
+    rows = specs.flatMap((path) => parseSpecScenarios(readText(access, join(directory, path))));
+    if (rows.length) source = "specs";
+  }
+  if (!rows.length) {
+    rows = parseSpecScenarios(readText(access, join(directory, "proposal.md")));
+    if (rows.length) source = "proposal";
+  }
+  if (!rows.length && claims.length) {
+    // A compiled rapid packet renders no scenarios into proposal.md; its
+    // evidence claims carry the requirement key and scenario statement.
+    rows = claims.filter((claim) => String(claim.scenario || "").trim()).map((claim) => ({
+      requirement: String(claim.requirementKey || claim.id || ""),
+      scenario: String(claim.scenario).trim(), when: null, then: null
+    }));
+    if (rows.length) source = "claims";
+  }
+  const capped = capChecklist(assignChecklistIds(rows, claims), limits);
+  return { items: capped.items, source, truncated: capped.truncated };
+}
+
+export function reviewChecklistInstruction(items, { truncated = false } = {}) {
+  const rows = Array.isArray(items) ? items : [];
+  if (!rows.length) return "";
+  const lines = rows.map((item) => {
+    const parts = [item.given && `GIVEN ${item.given}`, item.when && `WHEN ${item.when}`,
+      item.then && `THEN ${item.then}`].filter(Boolean).join(" ");
+    return `- ${item.id}: [${item.requirement}] ${item.scenario}${parts ? ` — ${parts}` : ""}`;
+  });
+  return [
+    "SCENARIO COVERAGE CHECKLIST. For every scenario below decide from the diff whether it is " +
+      "covered-by-test (a changed or existing test exercises it), covered-by-code-only " +
+      "(implemented but no test exercises it), missing (nothing in the diff implements it), " +
+      "or unsure. Do not guess coverage; answer unsure when you cannot tell. Report every " +
+      "missing or unsure scenario as a finding bound to that scenario's id.",
+    ...lines,
+    ...(truncated ? ["(Checklist truncated; the agreement holds further scenarios. " +
+      "Review those too, but only the listed ids go in scenarioCoverage.)"] : []),
+    "End your report with exactly one JSON block of this shape, one entry per listed id:",
+    "```json",
+    '{"scenarioCoverage":[{"id":"<id>","status":"covered-by-test|covered-by-code-only|missing|unsure","evidence":"path:line or null"}]}',
+    "```"
+  ].join("\n");
+}
+
+// Extract the balanced JSON object that starts at `start`, string-aware.
+function balancedObject(text, start) {
+  let depth = 0;
+  let inString = false;
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+    if (inString) {
+      if (char === "\\") index += 1;
+      else if (char === "\"") inString = false;
+      continue;
+    }
+    if (char === "\"") inString = true;
+    else if (char === "{") depth += 1;
+    else if (char === "}" && --depth === 0) return text.slice(start, index + 1);
+  }
+  return null;
+}
+
+function coverageCandidates(text) {
+  const found = [];
+  const key = /"scenarioCoverage"\s*:/g;
+  for (let match = key.exec(text); match; match = key.exec(text)) {
+    // The key sits at most a few objects deep; bound the walk-back so a large
+    // brace-heavy report stays linear.
+    let attempts = 4;
+    for (let open = text.lastIndexOf("{", match.index); open >= 0 && attempts-- > 0;
+      open = open > 0 ? text.lastIndexOf("{", open - 1) : -1) {
+      const body = balancedObject(text, open);
+      if (!body || open + body.length <= match.index) continue;
+      try {
+        const value = JSON.parse(body);
+        if (Array.isArray(value?.scenarioCoverage)) { found.push(value); break; }
+      } catch {}
+    }
+  }
+  return found;
+}
+
+// Tolerant parse of the reviewer's coverage block (fenced or bare JSON, or an
+// already-structured object). Returns null when no block exists. Unknown or
+// malformed statuses stay null and count as unsure; with `expectedIds`, an id
+// the reviewer did not answer is unsure too. Coverage is never inferred.
+export function parseScenarioCoverage(review, { expectedIds } = {}) {
+  let block = null;
+  if (review && typeof review === "object" && Array.isArray(review.scenarioCoverage)) block = review;
+  else if (typeof review === "string") block = coverageCandidates(review).at(-1) || null;
+  if (!block) return null;
+  const seen = new Map();
+  for (const entry of block.scenarioCoverage) {
+    const id = entry && typeof entry === "object" ? String(entry.id ?? "").trim() : "";
+    if (!id || seen.has(id)) continue;
+    const status = String(entry.status ?? "").trim().toLowerCase();
+    const evidence = typeof entry.evidence === "string" && entry.evidence.trim() &&
+      !/^null$/i.test(entry.evidence.trim()) ? entry.evidence.trim() : null;
+    seen.set(id, { id, status: SCENARIO_COVERAGE_STATUSES.includes(status) ? status : null,
+      evidence });
+  }
+  if (Array.isArray(expectedIds))
+    for (const id of expectedIds.map(String))
+      if (!seen.has(id)) seen.set(id, { id, status: null, evidence: null });
+  const items = [...seen.values()];
+  return {
+    items,
+    missing: items.filter((item) => item.status === "missing").map((item) => item.id),
+    unsure: items.filter((item) => item.status === "unsure" || item.status === null)
+      .map((item) => item.id)
+  };
+}

@@ -244,6 +244,12 @@ assumption ใหม่
 ## สอนทำ Change แรก
 
 หลัง Change ให้ตรวจ spec ที่ compile แล้วและยืนยันก่อนเข้า Build รวมถึง `/dev`
+ถ้าคำขอของคุณอนุมัติ spec ไว้แล้ว (เช่น "I approve the spec") ถือว่าอนุมัติแล้ว และคำสั่ง
+ให้ Land แบบใดก็ได้ (เช่น "land it when proven") ถือเป็นสิทธิ์ Land `/dev` ทำเหมือน
+`/change` → `/build` → `/prove` → `/land` ทุกประการ งานทั่วไปใช้แค่ draft แบบขั้นต่ำ
+(intent, requirement พร้อม scenario และ task พร้อมคำสั่ง verify) ส่วนที่เหลือ harness เติม
+ให้ ส่ง task ทั้งหมดในครั้งเดียว ติ๊ก task ให้เมื่อ check ผ่าน และรัน AI review บน diff
+พร้อมกับ test
 revision และ amendment ที่เพิ่มหรือแก้ requirement ภายหลังใช้การยืนยันเดิมต่อได้
 Review ใช้กรอบเวลารวม 30 นาที ครอบคลุม retry, fallback และการตรวจส่วนที่แก้
 หมดเวลาครั้งแรกระบบต่อเวลาให้เองหนึ่งรอบ ถ้าซ่อมต่อไม่ได้หรือ review หมดเวลาอีกครั้ง ให้เลือกทำต่อ, Land โดยยอมรับปัญหาที่เหลือ
@@ -382,6 +388,8 @@ Agent รัน `advance <change-id> --through archived` ซึ่งเป็�
 เดียวที่ผู้ใช้ต้องเรียก checkpoint ภายในที่ถูกขัดจังหวะจะ resume เองโดยไม่ต้องสั่ง
 check, recovery หรือ archive เพิ่ม งานจะเสร็จจริงเมื่อ state เป็น `archived` และ
 Land ยังไม่ได้ให้อำนาจ commit, push, publish หรือเปิด pull request
+Test รันเฉพาะใน workspace ของ change ถ้า Land ชนกับไฟล์ที่สร้างซ้ำได้ เช่น
+`__pycache__/*.pyc` harness จะคืนไฟล์นั้นภายใน Land transaction แทนการหยุดงาน
 
 ### 5. เลือก Deliver เป็น pull request (ไม่บังคับ)
 

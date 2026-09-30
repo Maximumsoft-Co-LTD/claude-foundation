@@ -409,8 +409,22 @@ reviewer sees a projection without reference-only fields and may open a file
 only when its hunk is truncated, omitted, or unavailable. It runs on the fast
 model tier: the reviewer's `fastModelId` (optional `fastModelFamily`), else the
 `models.fast.family` alias for `claude-cli`; `review.lowRiskModel:
-"configured"` opts out. Provider family never changes, so diversity and
-independence rules are unaffected. Medium, high, promoted, and legacy routes
+"configured"` opts out. Provider family never changes; model family records
+the fast model actually run (`fastModelFamily`, else the `models.fast.family`
+alias), so diversity and separation checks judge that model. Review packet
+schema 6 adds `reviewDepth`, `reviewDiff`, `agreement`, and, on a full round
+with agreement scenarios, `scenarioChecklist` (one digest-bound item per
+scenario; ids are claim ids when a claim names the scenario). The reviewer
+returns `scenarioCoverage` per item (`covered-by-test`, `covered-by-code-only`,
+`missing`, `unsure`); a `missing` item without a bound finding becomes a major
+finding on that id. A fast-tier round whose coverage is unparseable or has any
+`missing`/`unsure` item is re-run once on the configured model with the same
+packet and dispatch: no new AI wave, the configured verdict is final, and the
+attempt and dispatch record the model actually run plus `modelEscalation`
+(`escalatedFrom: "fast"`). An explicit
+`--review` (or impact, coupling, or declared security triggers) raises
+verification risk to high even at the low review tier; review required only by
+intent keywords follows its tier. Medium, high, promoted, and legacy routes
 are `diff-first` on the configured model. Intent keywords alone make review
 required at the low tier; they raise the tier or require diversity only
 alongside declared risk.
@@ -442,7 +456,15 @@ has no mandatory human-final gate. Reviewer infrastructure failures receive one
 full retry and never create a delivered baseline. If the final delta reports an
 in-contract blocker, it must bind that finding to affected claims and declared
 critical cases; a later current pass of those providers creates a deterministic
-repair-closure receipt, not a third AI review. A change-level hash chain binds
+repair-closure receipt, not a third AI review. A delta review that no longer
+reports an earlier finding closes it. When the repaired final finding has no
+declared critical case to bind (for example a rapid change) and current
+non-review proof passes, no wave or binding remains, so Prove stops at the
+review-exhausted user decision (accept the review risk with `change waive
+--capability review`, revise the agreement, or pause) instead of returning an
+unsatisfiable repair. A review that `advance` runs beside the providers binds
+its receipt to that pass's explicit proof run and snapshot, and its failure
+leaves an open request without marking the operation blocked. A change-level hash chain binds
 dispatch, completion, scope, findings, closure evidence, and receipt payload.
 Corrupt history fails closed. Legacy review receipts remain readable but cannot
 satisfy protocol v3.

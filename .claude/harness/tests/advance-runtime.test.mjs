@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  coordinatorAction, createAdvanceRuntime, hasValidLandGrant,
+  coordinatorAction, createAdvanceRuntime, envelopeContextFiles, hasValidLandGrant,
   prepareAdvanceBuild, runAdvanceProof
 } from "../runtime/workflow/advance-runtime.mjs";
 import {
@@ -797,4 +797,31 @@ test("a rapid two-task EDIT names the files to open: packet, existing task paths
   assert.deepEqual(value.contextScope, { paths: "absolute", specs: "none" });
   // Existing fields stay.
   assert.deepEqual(value.allowedPaths, ["src/a.js", "src/b.js", "src/**"]);
+});
+
+test("envelope context keeps only files inside the workspace or repository bases", async (t) => {
+  const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const root = mkdtempSync(join(tmpdir(), "advance-context-bound-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const packet = join(root, "packet");
+  const workspace = join(root, "box");
+  const service = join(root, "service");
+  const outside = join(root, "secret.txt");
+  for (const dir of [packet, join(workspace, "src"), service]) mkdirSync(dir, { recursive: true });
+  writeFileSync(join(workspace, "src", "a.js"), "");
+  writeFileSync(join(service, "b.js"), "");
+  writeFileSync(outside, "");
+  const value = envelopeContextFiles({
+    packetDir: packet,
+    state: { workspace: { path: workspace }, repositories: { service: { path: service } } },
+    tasks: [{ repository: "service", allowedPaths: ["b.js", "../box/src/a.js", "../secret.txt"] }],
+    // Repair-node paths: relative, absolute inside, absolute outside, escaping.
+    paths: ["src/a.js", join(service, "b.js"), outside, "../secret.txt", "/etc/passwd", "src/new.js"]
+  });
+  assert.deepEqual(value.contextFiles, [join(service, "b.js"), join(workspace, "src", "a.js")]);
+  assert.deepEqual(value.newFiles, [join(workspace, "src", "new.js")]);
+  assert.ok(![...value.contextFiles, ...value.newFiles].some((file) =>
+    file === outside || file === "/etc/passwd"));
 });

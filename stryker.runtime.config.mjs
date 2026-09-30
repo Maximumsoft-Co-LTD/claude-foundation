@@ -1,12 +1,11 @@
 export default {
   mutate: [
-    ".claude/harness/runtime/reliability/bounded-retry.mjs",
     ".claude/harness/runtime/core/measured-number.mjs",
     ".claude/harness/runtime/core/cli-flags.mjs"
   ],
   testRunner: "command",
   commandRunner: {
-    command: "node --test .claude/tests/harness/run-bounded-retry-tests.mjs .claude/tests/harness/run-telemetry-truth-tests.mjs .claude/tests/harness/run-guard-fix-cli-tests.mjs"
+    command: "node --test .claude/tests/harness/run-telemetry-truth-tests.mjs .claude/tests/harness/run-guard-fix-cli-tests.mjs"
   },
   coverageAnalysis: "off",
   ignorePatterns: [

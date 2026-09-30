@@ -366,7 +366,9 @@ try {
       if (interruptReceipt) { interruptReceipt = false; throw new Error("receipt interrupted"); }
       return writeJson(
       join(fixture, `${id}-receipt.json`), {
-        status, review: { attemptDigest: flags["review-attempt"] }
+        status, review: { attemptDigest: flags["review-attempt"] },
+        proofRunId: flags.proofRunId || null,
+        workspaceSnapshotId: flags.workspaceSnapshotId || null
       });
     },
     receiptValidity: () => receiptValidityResult,
@@ -614,7 +616,9 @@ try {
   try {
     const asyncRun = authority.runAuthorityReviewerAsync("change-async", {
       request: asyncRequest.requestId,
-      "subject-actor": "human-implementer"
+      "subject-actor": "human-implementer",
+      proofRun: { proofRunId: "collect-explicit", workspaceSnapshotId: "snapshot-explicit",
+        workspaceHash: asyncRequest.workspaceHash }
     });
     assert.equal(existsSync(join(fixture, ".foundation", "locks", "authority-change-async.lock")), true,
       "the asynchronous reviewer holds the authority lock across its await");
@@ -623,6 +627,10 @@ try {
   assert.equal(existsSync(join(fixture, ".foundation", "locks", "authority-change-async.lock")), false);
   assert.equal(attemptStore.reviewAttemptByDigest(
     "change-async", state.reviewHistory.chainHead).status, "completed");
+  const asyncReceipt = JSON.parse(readFileSync(join(fixture, "change-async-receipt.json"), "utf8"));
+  assert.equal(asyncReceipt.proofRunId, "collect-explicit",
+    "a concurrent review receipt binds the run it was started for, not the active run at completion");
+  assert.equal(asyncReceipt.workspaceSnapshotId, "snapshot-explicit");
 
   state = { version: 2, changeId: "change-saved", reviewHistory: null };
   const savedRequest = quiet(() => authority.requestAuthority("change-saved", { type: "review" }));

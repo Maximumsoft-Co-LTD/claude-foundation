@@ -151,3 +151,14 @@ protect-secrets, evidence freshness, public command names/args
 - ผู้ใช้: อนุมัติขอบเขต (แล้ว), อนุมัติค่าใช้จ่าย R1, สั่ง release
 - Agent: N1–N5, test, เอกสาร EN/TH, รวมงาน
 - Harness: context budget, contract tests, benchmark scorecard (`hostToolCalls`)
+
+## N8 — review ตรวจว่า spec มี test รองรับครบ (ผู้ใช้เลือก "ข้อ 2 + 3a", 2026-10-01)
+
+- ข้อ 2: packet ของ review มี checklist ของทุก scenario ใน agreement (rapid ดึงจาก
+  requirement/scenario ใน proposal/packet; standard ดึงจาก specs/**) ให้ reviewer
+  ระบุต่อข้อว่ามี test หรือโค้ดรองรับหรือไม่; scenario ที่ไม่มีรองรับเป็น finding
+- ข้อ 3a: review รอบแรกใช้ model เร็ว ถ้าผลระบุ scenario ที่ไม่มีรองรับ หรือระบุว่า
+  ไม่มั่นใจ ให้ harness รัน review ซ้ำด้วย model ที่ตั้งค่าไว้ (ไม่นับเป็น wave เพิ่ม
+  ของงาน และบันทึก model ที่ใช้จริง)
+- ต้นทุนที่คาด: +5–15 วินาทีต่องานปกติ; งานที่ต้อง escalate เพิ่มราว 60–90 วินาที
+- ทำหลังทีม T1 (review closure) และ T2 (model/tier) เสร็จ

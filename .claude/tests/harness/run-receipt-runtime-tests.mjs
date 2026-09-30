@@ -114,6 +114,15 @@ test("records manual and harness-executed receipts with durable evidence", () =>
   assert.equal(detailed.recorded().executionId, "execution-1");
   assert.equal(detailed.recorded().durationMs, 12);
 
+  const bound = fixture();
+  bound.runtime.recordReceipt("change", "provider", "pass", {
+    ...externalEvidence, proofRunId: "collect-explicit",
+    workspaceSnapshotId: "snapshot-explicit"
+  });
+  assert.equal(bound.recorded().proofRunId, "collect-explicit");
+  assert.equal(bound.recorded().workspaceSnapshotId, "snapshot-explicit",
+    "an explicit run binding does not depend on the active proof run");
+
   const unconfigured = fixture("test", {}, {
     providerConfig: () => null, providerCapability: () => "test"
   });

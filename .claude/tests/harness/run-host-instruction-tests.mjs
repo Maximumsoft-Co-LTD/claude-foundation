@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import {
-  HOST_COMMANDS, HostInstructionError, hostInstructionResponse, resolveHostInstruction
+  HOST_COMMANDS, HostInstructionError, hostInstructionResponseWithUpdate, resolveHostInstruction
 } from "../../harness/runtime/core/host-instruction.mjs";
 import {
   HostAgentContractError, resolveHostAgentContract
@@ -25,24 +25,25 @@ const criticalCases = new Map([
 ]);
 let resolvedCommands = 0;
 
-test("synchronous host instruction response preserves success and stable errors", () => {
-  const success = hostInstructionResponse([
-    "build", "--arguments", "direct response"
+test("host instruction response preserves success and stable errors", async () => {
+  const success = await hostInstructionResponseWithUpdate([
+    "prove", "--arguments", "direct response"
   ], { packageRoot: ROOT });
   assert.equal(success.status, 0);
-  assert.equal(success.body.command, "build");
+  assert.equal(success.body.command, "prove");
   assert.match(success.body.instruction, /direct response/);
 
-  const known = hostInstructionResponse(["unknown"], { packageRoot: ROOT });
+  const known = await hostInstructionResponseWithUpdate(["unknown"], { packageRoot: ROOT });
   assert.equal(known.status, 1);
   assert.equal(known.body.error.code, "unknown_host_command");
   assert.match(known.body.error.message, /Unknown Foundation host command/);
 
   const unexpected = {};
   Object.defineProperty(unexpected, "packageRoot", {
+    enumerable: true,
     get() { throw new Error("internal path failure"); }
   });
-  const fallback = hostInstructionResponse(["build"], unexpected);
+  const fallback = await hostInstructionResponseWithUpdate(["prove"], unexpected);
   assert.equal(fallback.status, 1);
   assert.deepEqual(fallback.body.error, {
     code: "instruction_unavailable",

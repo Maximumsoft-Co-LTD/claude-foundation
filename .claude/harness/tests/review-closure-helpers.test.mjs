@@ -293,9 +293,10 @@ test("closure operation reports unchanged workspaces and incomplete findings", (
   incomplete.source.findings = [{
     id: "F-1", severity: "minor", path: "app.mjs"
   }];
-  assert.match(recordDeterministicReviewClosureOperation(
-    incomplete.context, "change-a", "review", "workspace-new").reason,
-  /must name a path/);
+  const incompleteResult = recordDeterministicReviewClosureOperation(
+    incomplete.context, "change-a", "review", "workspace-new");
+  assert.match(incompleteResult.reason, /must name a path/);
+  assert.equal(incompleteResult.route, "REVIEW_ROUTE_EXHAUSTED");
 });
 
 test("closure operation reports invalid proof and missing claim-case bindings", () => {
@@ -313,6 +314,20 @@ test("closure operation reports invalid proof and missing claim-case bindings", 
     missing.context, "change-a", "review", "workspace-new");
   assert.equal(missingResult.findingId, "F-1");
   assert.equal(missingResult.caseId, "CASE-A");
+  assert.equal(missingResult.route, "REVIEW_ROUTE_EXHAUSTED",
+    "a binding no Build edit can create is the exhausted-review gate, not AUTO_REPAIR");
+  assert.deepEqual(missingResult.findingIds, ["F-1"]);
+
+  // Failing non-review proof stays agent work even when bindings are missing.
+  const failingUnbound = operationContext({
+    claimsForProvider: () => [],
+    receiptValidity: (_id, provider) => ({
+      validity: provider === "test" ? "fail" : "valid"
+    })
+  });
+  assert.equal(recordDeterministicReviewClosureOperation(
+    failingUnbound.context, "change-a", "review", "workspace-new").route,
+  "AUTO_REPAIR");
 });
 
 test("closure operation records a deterministic pass with current evidence", () => {

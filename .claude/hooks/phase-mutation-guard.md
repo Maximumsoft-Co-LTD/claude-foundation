@@ -115,15 +115,3 @@ the prefix or path shape that repairs the command, so an agent can continue
 without asking the user or retrying unchanged.
 Host process isolation remains required for shell commands, network authority,
 and indirect mutations.
-
-## Bounded retry integration
-
-`../harness/runtime/reliability/bounded-retry.mjs` is intentionally standalone. Runtime
-providers may wrap only read-only/idempotent infrastructure operations and must
-pass `idempotent: true`. Its default classifier retries timeouts, transient
-network codes, HTTP 408/429, and HTTP 5xx; validation, security, test assertion,
-and business failures are not retried. Pass `onAttempt` to project attempt
-metadata into the host execution contract without recording payloads.
-
-Mutation providers and Land transactions must never use this helper unless they
-independently implement an idempotency key and recovery contract.

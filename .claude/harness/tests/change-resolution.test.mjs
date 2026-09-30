@@ -105,6 +105,7 @@ try {
   assert.deepEqual(inferred.securityTriggers, ["manual"]);
   assert.deepEqual(inferred.keywordSecurityTriggers, ["auth token", "a+b"]);
   assert.equal(inferred.reviewRequired, true);
+  assert.equal(inferred.reviewKeywordOnly, undefined, "a declared trigger is not keyword-only");
   // A re-resolve keeps keyword triggers keyword-only instead of promoting them.
   state = inferred; lifecycle.resolveChange("change-1", {});
   assert.deepEqual(state.securityTriggers, ["manual"]);
@@ -125,6 +126,12 @@ try {
   assert.equal(run({}, { impact: "medium", coupling: "coupled", securityTriggers: [] }).reviewRequired, true);
   assert.equal(run({}, { impact: "low", coupling: "coupled", securityTriggers: [] }).reviewRequired, false);
   assert.equal(run({ review: true }, { securityTriggers: [] }).reviewRequired, true);
+  const declaredWithKeyword = run({ review: true, impact: "low", coupling: "isolated" }, {
+    intent: "Rename the auth token label", securityTriggers: []
+  });
+  assert.deepEqual(declaredWithKeyword.keywordSecurityTriggers, ["auth token"]);
+  assert.equal(declaredWithKeyword.reviewKeywordOnly, undefined,
+    "an explicit --review stays declared even when a keyword also matches");
 
   rejected({ "acceptance-required": true, "acceptance-not-required": true }, /cannot combine/);
   rejected({ "acceptance-reason": "needed" }, /require --acceptance-required/);
@@ -156,6 +163,8 @@ try {
   assert.equal(keywordOnly.reviewRequired, true);
   assert.deepEqual(keywordOnly.securityTriggers, []);
   assert.deepEqual(keywordOnly.keywordSecurityTriggers, ["auth token"]);
+  assert.equal(keywordOnly.reviewKeywordOnly, true,
+    "keyword-only review is marked so verification risk follows its tier");
   assert.match(output, /security: auth token \(intent keyword: review only\)/);
   assert.match(output, /review: required/);
   assert.match(output, /schema: foundation-rapid\n/);
@@ -166,6 +175,7 @@ try {
   });
   assert.deepEqual(declaredRapid.securityTriggers, ["auth token"]);
   assert.equal(declaredRapid.keywordSecurityTriggers, undefined);
+  assert.equal(declaredRapid.reviewKeywordOnly, undefined);
   assert.equal(declaredRapid.schema, "foundation-standard");
   assert.equal(declaredRapid.upgradedFrom, "foundation-rapid");
   rmSync(join(changeDir, "design.md"), { force: true });

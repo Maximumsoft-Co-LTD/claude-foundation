@@ -2,6 +2,7 @@ import { reviewWindowRemaining, reviewWindowError, autoExtendReviewWindow, curre
 import { repairActionForWorkspace } from "../evidence/repair-runtime.mjs";
 import { isProcessAlive } from "../core/process-lock.mjs";
 import { shellDisplayArgument } from "../core/shell-mutation-policy.mjs";
+import { pathInside } from "../core/process-runtime.mjs";
 import {
   lifecycleOutcome, lifecycleUserProjection, lifecycleUserState
 } from "../core/lifecycle-outcome.mjs";
@@ -63,6 +64,8 @@ function packetSpecFiles(dir) {
 // packet files that exist, plus declared task paths split into the ones that
 // exist in the workspace (`contextFiles`) and the ones the task creates
 // (`newFiles`). Globs are scope, not files, and are left to `allowedPaths`.
+// A path outside every workspace/repository base (absolute or `../`) is never
+// handed to the agent as a file to open.
 export function envelopeContextFiles({ packetDir, state = {}, tasks = [], paths = [] }) {
   const specs = packetSpecFiles(join(packetDir, "specs"));
   const packet = ["proposal.md", "design.md", "tasks.md"]
@@ -73,11 +76,16 @@ export function envelopeContextFiles({ packetDir, state = {}, tasks = [], paths 
     ...tasks.flatMap((task) => (task.allowedPaths || []).map((path) => [task.repository, path])),
     ...paths.map((path) => [null, path])
   ];
+  const bases = [state.workspace?.path,
+    ...Object.values(state.repositories || {}).map((entry) => entry?.path)]
+    .filter((base) => typeof base === "string" && base);
   const existing = [], created = [];
   for (const [repository, path] of declared) {
     const base = root(repository);
-    if (typeof path !== "string" || !path || /[*?[\]{}]/.test(path) || (!base && !isAbsolute(path))) continue;
-    const file = isAbsolute(path) ? path : resolve(base, path);
+    if (typeof path !== "string" || !path || /[*?[\]{}]/.test(path) || !base) continue;
+    const file = resolve(base, path);
+    if (isAbsolute(path) ? !bases.some((candidate) => pathInside(candidate, file))
+      : !pathInside(base, file)) continue;
     const exists = existsSync(file) && (statSync(file).isFile() || statSync(file).isDirectory());
     (exists ? existing : created).push(file);
   }

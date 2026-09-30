@@ -1791,7 +1791,10 @@ export function createChangeValidationRuntime({
     normalizeValidationAcceptance(id, state, claims, acceptance,
       fail, console.error, acceptance.required ? now() : null);
 
-    if (claims.some((claim) => claim.impact === "high")) state.reviewRequired = true;
+    if (claims.some((claim) => claim.impact === "high")) {
+      state.reviewRequired = true;
+      delete state.reviewKeywordOnly;
+    }
     state.evidenceCapabilities = [...new Set(claims.flatMap((claim) => claim.capabilities))];
     const budgetReviewRisk = changedSurfaceResolvable(id, state)
       ? reviewPolicy(id, state, executableEvidence) : null;

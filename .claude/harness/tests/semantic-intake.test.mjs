@@ -8,6 +8,7 @@ import {
   semanticIntakeAction,
   semanticIntakeIssues
 } from "../runtime/workflow/validation/semantic-intake.mjs";
+import { intakeDecisions } from "../runtime/workflow/validation/reader-guide.mjs";
 
 function source(overrides = {}) {
   return {
@@ -235,7 +236,7 @@ test("a settled decision needs only its choice; reason is owed only among altern
   value.discovery.decisions = [
     { key: "format", question: "Which format?", choice: "json" },
     { key: "storage", status: "resolved", choice: "disk" },
-    { key: "fact", status: "resolved", question: "Does the API already paginate?" }
+    { key: "fact", choice: "The API already paginates" }
   ];
   assert.deepEqual(semanticIntakeIssues(value), []);
   assert.equal(semanticIntakeAction(value).action, "DONE");
@@ -244,13 +245,39 @@ test("a settled decision needs only its choice; reason is owed only among altern
 
   value.discovery.decisions = [
     { key: "retention", status: "resolved", alternatives: ["30d", "90d"] },
-    { key: "empty", status: "resolved" }
+    { key: "empty", status: "resolved" },
+    { key: "fact", status: "resolved", question: "Does the API already paginate?" }
   ];
   const message = semanticIntakeIssues(value).join("\n");
   assert.match(message, /decisions\[0\]\.choice is required/);
   assert.match(message, /decisions\[0\]\.reason is required/);
-  assert.match(message, /decisions\[1\] records nothing/);
+  assert.match(message, /decisions\[1\]\.choice is required/);
+  assert.match(message, /decisions\[2\]\.choice is required/);
   assert.doesNotMatch(message, /prerequisites must be an array/);
+});
+
+test("an unanswered question without status or choice is never settled", () => {
+  const value = source();
+  value.discovery.decisions = [
+    { key: "retain-invoices", question: "Should deleted users keep their invoices?" }
+  ];
+  assert.equal(normalizeDiscovery(value).decisions[0].status, "open");
+  assert.equal(normalizeDiscovery(value).decisions[0].choice, undefined);
+  // An open row never becomes a durable decision with an undefined choice.
+  assert.deepEqual(intakeDecisions({ discovery: normalizeDiscovery(value) }), []);
+  const action = semanticIntakeAction(value);
+  assert.notEqual(action.action, "DONE");
+  assert.equal(action.action, "EDIT");
+  const message = action.intake.issues.join("\n");
+  assert.match(message, /decisions\[0\]\.alternatives must name at least two choices.*add 'choice' if it is settled/);
+  assert.match(message, /decisions\[0\]\.recommended is required/);
+
+  value.discovery.decisions[0] = {
+    ...value.discovery.decisions[0], alternatives: ["keep", "delete"], recommended: "keep"
+  };
+  const ask = semanticIntakeAction(value);
+  assert.equal(ask.action, "ASK_USER");
+  assert.deepEqual(ask.decision.items.map((row) => row.key), ["retain-invoices"]);
 });
 
 test("a decision with alternatives and no choice stays an open user question", () => {

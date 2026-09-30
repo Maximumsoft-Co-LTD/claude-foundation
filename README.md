@@ -256,7 +256,13 @@ any point before Land when implementation reveals a new assumption.
 ## Your first change
 
 After Change, inspect the compiled spec and explicitly approve it before Build;
-this also applies to `/dev`. Later additive revisions and amendments keep that
+this also applies to `/dev`. If your request already approves the spec (for
+example "I approve the spec"), that counts, and any explicit instruction to land
+("land it when proven") grants Land. `/dev` runs exactly `/change` → `/build` →
+`/prove` → `/land`. An ordinary change needs only a minimal draft (intent,
+requirements with scenarios, tasks with a verify command); the harness fills in
+the rest, hands all tasks in one step, ticks them when their checks pass, and
+runs the AI review on the diff in parallel with your tests. Later additive revisions and amendments keep that
 approval. Review shares a 30-minute window across retries, fallbacks, and delta
 review; the first expiry extends it once automatically. If repair cannot
 progress or review time expires again,
@@ -409,6 +415,9 @@ uses. `/land` is the only
 user-facing Land operation; interrupted internal checkpoints resume without a
 manual check, recovery, or archive command. Land is complete only at `archived`;
 it still grants no authority to commit, push, publish, or open a pull request.
+Tests run only inside the change's workspace; if Land meets a conflicting
+regenerable artifact such as `__pycache__/*.pyc`, the harness restores it within
+the Land transaction instead of stopping.
 
 ### 5. Optionally deliver a pull request
 

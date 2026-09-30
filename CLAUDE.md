@@ -76,8 +76,8 @@ Shipped product:
 
 - `.claude/orchestrator.md` and `.claude/commands/` — agent-facing lifecycle.
 - `.claude/harness/foundation.mjs` — composition root and compatibility entry.
-- `.claude/harness/runtime/` — core, evidence, workflow, observability,
-  reliability, and portable contracts.
+- `.claude/harness/runtime/` — core, evidence, workflow, observability, and
+  portable contracts.
 - `.claude/rules/`, `.claude/skills/`, `.claude/hooks/` — routing, procedures,
   and host enforcement.
 - `openspec/schemas/` — rapid and standard assurance profiles.

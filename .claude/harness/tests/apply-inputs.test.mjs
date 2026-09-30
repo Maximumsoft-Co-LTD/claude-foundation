@@ -149,6 +149,53 @@ test("git apply inputs reports textual conflicts before inspecting target blobs"
     /sandbox diff conflicts with target: patch does not apply/);
 });
 
+test("git apply inputs names conflicting generated artifacts with the harness restore route", () => {
+  const fixture = applyContext({
+    sandboxDiffNames: () => ["__pycache__/a.pyc"],
+    spawn: () => ({ status: 1, stderr: "error: __pycache__/a.pyc: patch does not apply" })
+  });
+  let details = null;
+  fixture.context.fail = (message, code, extra) => { details = extra; throw new Error(message); };
+  assert.throws(() => gitApplyInputsOperation(fixture.context, "change", "/sandbox"),
+    /--through archived --restore-target __pycache__\/a\.pyc'/);
+  assert.equal(details.owner, "agent");
+});
+
+test("git apply inputs asks the user before touching conflicting non-generated target edits", () => {
+  const blocked = [];
+  const fixture = applyContext({
+    spawn: () => ({ status: 1, stderr: "error: file.js: patch does not apply" }),
+    blockWithDecision: (id, code, decision) => {
+      blocked.push({ id, code, decision });
+      throw new Error(decision.summary);
+    },
+    writeFile: assert.fail, removePath: assert.fail
+  });
+  assert.throws(() => gitApplyInputsOperation(fixture.context, "change", "/sandbox"),
+    /sandbox diff conflicts with target at: file\.js/);
+  assert.equal(blocked[0].code, "target-edit-conflict");
+  assert.deepEqual(blocked[0].decision.paths, ["file.js"]);
+});
+
+test("git apply inputs restores only authorized target paths still at the recorded bytes", () => {
+  const writes = [];
+  const fixture = applyContext({
+    sandboxDiffNames: () => ["a.pyc", "b.pyc", "c.pyc"],
+    writeFile: (path, bytes) => writes.push([path, bytes.toString()]),
+    removePath: (path) => writes.push([path, null])
+  });
+  fixture.state.targetRestore = { identities: {
+    "a.pyc": "dirty", "b.pyc": "recorded-other", "c.pyc": "dirty" } };
+  fixture.identities.set("/target/a.pyc", "dirty");
+  fixture.identities.set("/target/b.pyc", "edited-later");
+  fixture.identities.set("/target/c.pyc", "dirty");
+  const shown = fixture.context.gitBuffer;
+  fixture.context.gitBuffer = (args, cwd) => args[0] === "show" && args[1] === "base:c.pyc"
+    ? { status: 128, stdout: Buffer.alloc(0) } : shown(args, cwd);
+  gitApplyInputsOperation(fixture.context, "change", "/sandbox");
+  assert.deepEqual(writes, [["/target/a.pyc", "base"], ["/target/c.pyc", null]]);
+});
+
 test("git apply inputs preserves missing, equal, base-matching, and symlink paths", () => {
   const fixture = applyContext({
     sandboxDiffNames: () => ["missing.js", "equal.js", "base.js", "link.js"]

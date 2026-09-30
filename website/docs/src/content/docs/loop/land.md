@@ -20,6 +20,12 @@ writable repository receives an uncommitted diff while its HEAD and index stay
 unchanged. Completion
 means runtime status `archived`; `proven` is not completion.
 
+If Apply conflicts only with regenerable artifacts in the target (for example
+`__pycache__/*.pyc`) that were clean at isolation, the returned REPAIR restores
+them with `advance <change> --through archived --restore-target <paths>` inside
+the transaction. Any other conflicting file is a user decision, and a file
+changed after the restore was recorded is never overwritten.
+
 Only the harness-owned recoverable Land transaction may apply product files and
 synchronize the agreement; the agent does not edit them ad hoc. Land never
 implies permission to commit, push, publish, or open a pull request. While Land

@@ -86,13 +86,14 @@ export function requiredDiscoveryDimensions(source = {}) {
   return unique(required);
 }
 
-// A decision is open only when it states it, or when it offers alternatives
-// without a choice. An entry with a choice, or with no alternative to choose
-// between, is settled; authors need not restate status for recorded facts.
+// Without an explicit status, only a recorded choice settles a decision. A
+// row without a choice (even a bare question) is open, so it reaches the user
+// frontier or names what an open decision still lacks; it never passes as
+// settled with nothing decided.
 export function decisionStatus(row) {
   const status = text(row?.status).toLowerCase();
   if (status) return status;
-  return !text(row?.choice) && strings(row?.alternatives).length >= 2 ? "open" : "resolved";
+  return text(row?.choice) ? "resolved" : "open";
 }
 
 export function decisionFrontier(decisions = [], limit = 3) {
@@ -121,19 +122,21 @@ function decisionIssues(decisions = []) {
     if (decision?.prerequisites !== undefined && !Array.isArray(decision.prerequisites))
       issues.push(`${label}.prerequisites must be an array`);
     if (status === "open") {
+      // An implicit open row may just be a settled fact missing its choice.
+      const hint = text(decision?.status) ? ""
+        : " (no 'choice' recorded, so it is open; add 'choice' if it is settled)";
       if (alternatives < 2)
-        issues.push(`${label}.alternatives must name at least two choices`);
-      if (!text(decision?.recommended)) issues.push(`${label}.recommended is required`);
-      if (!text(decision?.question)) issues.push(`${label}.question is required`);
+        issues.push(`${label}.alternatives must name at least two choices${hint}`);
+      if (!text(decision?.recommended)) issues.push(`${label}.recommended is required${hint}`);
+      if (!text(decision?.question)) issues.push(`${label}.question is required${hint}`);
     }
-    // Only a choice among real alternatives needs the choice and its reason.
-    // A settled fact with no alternative needs just enough text to read.
-    if (status === "resolved" && alternatives >= 2) {
+    // A settled decision needs only its key and choice; a choice among real
+    // alternatives also owes its reason.
+    if (status === "resolved") {
       if (!text(decision?.choice)) issues.push(`${label}.choice is required`);
-      if (!text(decision?.reason)) issues.push(`${label}.reason is required`);
-    } else if (status === "resolved" && !text(decision?.choice) &&
-        !text(decision?.question) && !text(decision?.reason))
-      issues.push(`${label} records nothing; state its choice or remove it`);
+      if (alternatives >= 2 && !text(decision?.reason))
+        issues.push(`${label}.reason is required`);
+    }
     if (text(decision?.decidedBy) && !["user", "agent"].includes(text(decision.decidedBy).toLowerCase()))
       issues.push(`${label}.decidedBy must be user|agent`);
   }

@@ -20,7 +20,11 @@ returns `DONE` only when the requested `proven` target is reached.
 
 Failed evidence returns one `REPAIR` or `EDIT` batch with the invalidated claim
 closure. After a fix, only invalidated/downstream checks rerun. A configured
-review is `RUN_EXTERNAL`; a named external owner is `WAIT` without a question; a material
+review that the harness can run starts in parallel with the tests for the same
+workspace hash, reads only the diff and the agreement's requirements, and uses
+the fast model tier for low risk; its findings and failed tests return as one
+`REPAIR`. Other configured reviews are `RUN_EXTERNAL`; a named external owner
+is `WAIT` without a question; a material
 contract or acceptance decision is `ASK_USER`. Each boundary preserves state
 and gives one exact resume route. Repeating an unchanged wait does not poll,
 rerun evidence, or spend another model request.
@@ -34,6 +38,11 @@ retry/pause answer with
 The harness resumes the original target and reuses the answer while its scope is
 unchanged. Waiting names the owner and condition; pausing does not run setup or
 providers. A retry grants no waiver, extra budget, or Land authority.
+
+On the rapid lane, a clean test run whose count cannot be parsed passes when its
+output shows an executed test; the receipt records `countMeasurement:
+"exit-code"` rather than a count. Standard lanes still require a counted
+result.
 
 The harness never fabricates evidence, converts unavailable measurements to
 zero/pass, or lets review prose replace a missing behavioral result. Prototype

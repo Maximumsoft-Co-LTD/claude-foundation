@@ -1,17 +1,15 @@
 # Change workflow
 
-Before drafting, reconcile all available conversation context relevant to this
-intent, including earlier constraints, examples, corrections, investigation
-conclusions, and selected prototypes. The latest explicit correction supersedes
-the earlier choice; retain earlier requirements that it did not change. Separate
-confirmed decisions from proposals, rejected alternatives, and unresolved
-choices. Do not turn an assistant suggestion or user silence into agreement.
-Use retained project notes for unavailable sessions; never claim to have read
-missing conversation history. Ask only for material gaps that cannot be recovered.
+Before drafting, reconcile the conversation's constraints, examples,
+corrections, investigation conclusions, and selected prototypes; the latest
+explicit correction supersedes only what it conflicts with. Separate confirmed
+decisions from proposals, rejected alternatives, and unresolved choices; an
+assistant suggestion or user silence is not agreement. Use retained project
+notes for unavailable sessions; never claim to have read missing history.
 
-Read the smallest canonical sources that settle the requested behavior:
-existing OpenSpec requirements, relevant code/tests, architecture decisions,
-prototype selection, and versioned integration documentation. Reuse settled answers without asking them again.
+Read the smallest canonical sources that settle the behavior: OpenSpec
+requirements, relevant code/tests, architecture decisions, prototype selection,
+and versioned integration documentation. Reuse settled answers without asking them again.
 Read [semantic-intake.md](semantic-intake.md) when the draft declares
 `impact: high`, `riskSignals`, integrations, or external operations, or inspect
 returns discovery rows or `ASK_USER`; follow its ownership, frontier, and
@@ -20,16 +18,13 @@ coverage rules.
 ## Agreement detail and language
 
 Write agent-authored document prose in the user's requested document language;
-otherwise use the language of their current request. This applies to proposal
-text, requirements, scenario descriptions and outcomes, tasks, evidence
-descriptions, and any design rationale, including new prose in amendments.
-An English template or existing repository does not override that default.
+otherwise use the language of their current request, including amendment
+prose; an English template or repository does not override it.
 Preserve schema keys, enums, IDs, paths, commands, code identifiers, and
 parser-required headings/markers such as `Requirement:`, `Scenario:`,
 `WHEN`, `THEN`, and `SHALL`. Preserve canonical requirement/scenario names
 and unchanged text when modifying an existing spec; do not rename identities
-or translate unrelated documents. If a mixed-language request leaves the
-preference unclear, follow the surrounding conversation.
+or translate unrelated documents.
 
 Write each `description` as one short statement with `SHALL` in the document
 language (for example, `ระบบ SHALL ปฏิเสธคำขอที่ไม่มีสิทธิ์`); list constraints
@@ -37,9 +32,8 @@ in `details` and split a statement that joins cases with `;`. `outcome` is the
 observable result; `requirement`/`title` names it. Set `language`; each
 capability gets a `capabilityOverviews` entry `{capability, title, overview}`.
 
-Keep bookkeeping compact, but make the agreement understandable without chat
-history. Before compiling, cover the following with facts from the canonical
-sources and the user's settled intent:
+Make the agreement understandable without chat history, using facts from the
+canonical sources and the user's settled intent:
 
 - In `why`, explain the current behavior, concrete problem, affected actor or
   system, and desired result. Use `changes` for observable before/after behavior
@@ -47,60 +41,52 @@ sources and the user's settled intent:
 - Give each requirement a bounded outcome. Each scenario is one case: a short
   `name`, state or configuration in `given`, one trigger in `when`, one checkable
   result in `then`, extra results in `and`. Cover the main path and relevant
-  failure, boundary, permission, or compatibility cases. Do not substitute
-  "works correctly" or an implementation step for observable behavior.
-- Tasks name implementation outcomes and affected paths, link requirement
-  coverage, and name verification that can detect a violation. Evidence should
-  explain what establishes the claim; running a command alone is not acceptance.
-- Write reviewer prose in the user's language. Optional `summary`,
-  `userStories` (P1-P3, `covers`), `successCriteria`, and `assumptions` help
-  reviewers; `openQuestions` block approval until answered. Record each settled
-  answer as a resolved `discovery.decisions` row with `decidedBy`. Resolve
-  discoverable facts yourself; never invent facts to fill a section.
+  failure, boundary, permission, or compatibility cases, never "works correctly"
+  or an implementation step.
+- Tasks name outcomes and affected paths, link requirement coverage, and name
+  verification that can detect a violation; a command run alone is not acceptance.
+- Optional `summary`, `userStories` (P1-P3, `covers`), `successCriteria`, and
+  `assumptions` help reviewers; `openQuestions` block approval until answered.
+  Record each settled answer as a resolved `discovery.decisions` row with
+  `decidedBy`. Resolve discoverable facts yourself; never invent facts.
 
-Scale detail to behavior and risk, not word count or a fixed number of
-scenarios. A small change can be brief if its boundaries and acceptance are
-clear. Do not create extra artifacts merely to make the packet look thorough.
-
-For changes across components, supply a diagram explaining the affected
-boundaries and dependencies. For changed state, async, or workflow behavior,
-show the relevant transitions or sequence, including failure/recovery paths.
+Scale detail to behavior and risk, not word count or scenario count.
+Cross-component changes need a boundary/dependency diagram; changed state,
+async, or workflow behavior needs transitions or sequence, including
+failure/recovery paths.
 Declare `workType` (a list: feature, bugfix, refactor, api, ui, data, config,
 async, integration, chore, docs). `designWarnings` suggest blueprints
 (`fileMap`, `failureMatrix`, `testMap`;
 `api` `apiContracts`, `data` `dataModel`, `ui` `uiStates`, `config`
 `configContract`, `async` `jobContract` plus a sequence/state diagram,
 `integration` `integrations`, `bugfix` and `refactor` their own objects;
-`coupling: coupled` `diagrams`). Advisory (none for small rapid drafts):
-author blueprints only for real content, never to silence a warning; without
-them a small change stays rapid. Keep `fileMap` paths and task tests inside task `paths`.
+`coupling: coupled` `diagrams`). They are advisory (none for small rapid
+drafts): author blueprints only for real content, never to silence a warning.
+Keep `fileMap` paths and task tests inside task `paths`.
 
 ## Compile and inspect
 
-Create one semantic draft v4 from `change start --template`. Its core is:
-`intent`, semantic `requirements`, implementation `tasks` with `covers`, and
-evidence capabilities keyed by requirement. Its discovery contract is defined
-once in [semantic-intake.md](semantic-intake.md). Draft v3 remains the
-compatibility path for existing callers. Put only real complexity in typed
-extensions:
+Create one semantic draft v4 from `change start --template`: `intent`, semantic
+`requirements`, `tasks` with `covers`, and evidence capabilities keyed by
+requirement. Its discovery contract is defined once in
+[semantic-intake.md](semantic-intake.md). Draft v3 remains the compatibility
+path for existing callers. Put only real complexity in typed extensions:
 
 - `decisions` only for choices hard to reverse, surprising without context,
   and selected among meaningful alternatives;
 - `diagrams` for Mermaid or referenced SVG/PNG contracts;
 - `prototypeSelection` for an existing selection note (never prototype code or
-  prototype output as proof);
+  output as proof);
 - `integrations` with documentation source/version, linked requirements, and
   security/resilience/compatibility concerns;
-- repositories only for multi-repository work;
-- external operations only for permission-bound work;
-- Grounding v3 only for non-derived material decisions.
+- repositories only for multi-repository work; external operations only for
+  permission-bound work; Grounding v3 only for non-derived material decisions.
 
-Local references must be regular files inside the project; remote integration
-sources need HTTPS and a fixed version, not `latest` or a branch.
+Local references must be project files; remote integration sources need HTTPS
+and a fixed version, not `latest` or a branch.
 
 Create no decision-tree or interview ledger. Never create `CONTEXT.md`, a glossary artifact, or an ADR store;
-durable terms and choices belong in the
-compiled packet. Always hash grounding reads in the draft `grounding` field
+durable terms and choices belong in the compiled packet. Always hash grounding reads in the draft `grounding` field
 when a material decision needs one; the compiler writes `grounding.yaml`.
 
 Compare canonical requirements before choosing `ADDED`, `MODIFIED`, or
@@ -113,59 +99,43 @@ or user-decision boundary.
 For defect behavior, include adjacent input partitions and source-language representation/coercion boundaries,
 not only the reported reproduction.
 
-Write the draft to `.foundation/drafts/<id>.json` and run
-`claude-foundation change start .foundation/drafts/<id>.json`. It inspects and
-starts in one call when clean; otherwise follow the returned typed intake
-action and exact resume route.
+`claude-foundation change start .foundation/drafts/<id>.json` inspects and
+starts in one call when clean; otherwise follow the returned intake action.
 Never inspect managed `.claude/harness/**` merely to reconstruct this schema.
-The compiler owns classification and the deterministic intake responsibilities
-defined in [semantic-intake.md](semantic-intake.md), plus stable requirement/claim/task IDs,
-cross-links,
-conditional artifacts, versioned defaults, structural validation, and rollback.
-The first Build `advance` owns idempotent sandbox creation and
-setup. Repair only the draft fields it reports, as one
-batch, then retry. Never patch a partially generated packet or create parallel
-IDs by hand.
+The compiler owns classification, the intake responsibilities in
+[semantic-intake.md](semantic-intake.md), stable requirement/claim/task IDs,
+cross-links, conditional artifacts, versioned defaults, structural validation,
+and rollback; the first Build `advance` owns sandbox creation and setup.
+Repair only the draft fields it reports, as one batch, then retry. Never create
+parallel IDs by hand.
 
 If Build discovers new observable behavior, create a semantic amendment v1 and
-run `change amend <change> <amendment.json> --inspect`. Follow the same returned
-intake actions; after `DONE`, rerun with `--consume-amendment`.
-It preserves
-completed tasks and custom prose/assets, increments the revision, invalidates
-the affected contract, validates, and rolls back on failure. Existing legacy
-changes keep their legacy authoring path; never rewrite them only to migrate.
-An amendment to a v4 agreement must include discovery coverage for the added
-and revised requirements; the compiler retains that delta in the proposal.
-`updateTasks` may extend claim coverage but must not replace an existing outcome
-or verification command; add a new task when that contract changes.
-`reviseRequirements` replaces an existing requirement row in its same
-capability and operation and needs an open task; `removeRequirements` needs a `migration` and must not orphan a task.
-Before Build starts, revise the whole agreement in place with
-`change revise <change> <draft.json> --inspect`, then `--consume-draft` after
-`DONE`; never abandon and rewrite a change only to edit it.
+run `change amend <change> <amendment.json> --inspect`; after `DONE`, rerun with
+`--consume-amendment`. It preserves completed tasks and custom prose/assets,
+increments the revision, invalidates the affected contract, and rolls back on
+failure. Never rewrite a legacy change only to migrate it. An amendment to a v4 agreement must include discovery coverage
+for added and revised requirements. `updateTasks` may extend claim coverage but
+must not replace an existing outcome or verification command; add a new task
+when that contract changes. `reviseRequirements` replaces a requirement row in
+its same capability and operation and needs an open task; `removeRequirements`
+needs a `migration` and must not orphan a task. Before Build starts, revise the
+whole agreement with `change revise <change> <draft.json> --inspect`, then
+`--consume-draft` after `DONE`.
 
 After a successful start, read the compiled proposal, tasks, evidence, and any
-specs/design. Check that the intended detail and document language survived
-compilation, and that the packet alone explains scope and acceptance.
-Reconcile each confirmed conversation requirement and constraint against its
-compiled requirement/scenario, proposal exclusion, or design decision. Report
-any uncovered material point before approval; keep this reconciliation in the
-existing packet and approval summary, not a separate conversation ledger.
+specs/design: detail and document language must survive compilation. Reconcile each confirmed
+conversation requirement and constraint against its compiled
+requirement/scenario, proposal exclusion, or design decision; report any
+uncovered material point in the approval summary, not a separate ledger.
 Structural validation alone does not establish semantic completeness; check
-that cited sources support the claimed meaning. If material content is
-missing, repair through the supported draft/amendment workflow;
-never patch generated ledgers independently or silently proceed to Build.
+that cited sources support the claimed meaning. Repair missing content through
+the draft/amendment workflow, never by silently proceeding to Build.
 
-The compiled `openspec/changes/<id>/` documents—not the temporary draft or
-`.foundation` state—are the source of truth. Never create product code during
-Change. After successful validation, present the compiled packet links, scope,
-behavior, and acceptance criteria to the user. Wait for explicit approval of
+The compiled `openspec/changes/<id>/` documents—not the draft or `.foundation`
+state—are the source of truth. Wait for explicit approval of
 this spec before Build unless the request already approves it; validation is not approval.
-Record the answer with `claude-foundation advance <id> --approve-spec
---decision-ref <user-decision>`, then continue with
-`claude-foundation advance <id> --through build`. Revisions and amendments
-carry that approval unless they remove a requirement. At a real decision,
-authority, resource, contradiction, or repeated no-progress boundary, preserve
-the draft, present supported alternatives and the exact resume route. The agent
+Revisions and amendments carry that approval unless they remove a requirement.
+At a real decision, authority, resource, contradiction, or repeated no-progress
+boundary, preserve the draft and present supported alternatives. The agent
 must never retire one unasked or infer acceptance from silence.
 Optional audit warnings are advisory and do not invent missing grounding.

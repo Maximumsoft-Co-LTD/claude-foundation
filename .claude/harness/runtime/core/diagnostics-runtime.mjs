@@ -9,10 +9,6 @@ import { nextCommand } from "./next-step.mjs";
 import { deriveChangeProjection } from "./state-projections.mjs";
 import { upgradeCompatibilityDiagnostics } from "./update-advisory.mjs";
 
-export function changeReadiness(state, proof, current) {
-  return deriveChangeProjection({ state, proof, currentHash: current }).readiness;
-}
-
 export function shouldReportOutOfBandDelivery(state, delivery) {
   return ["change", "building", "waiting", "proven"].includes(state?.status) &&
     state?.workspace?.applied !== true &&

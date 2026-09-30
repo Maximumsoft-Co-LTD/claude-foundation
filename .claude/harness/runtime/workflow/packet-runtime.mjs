@@ -458,6 +458,7 @@ export function createPacketRuntime({
       impact: state.impact,
       coupling: state.coupling,
       reviewRequired: Boolean(state.reviewRequired),
+      ...(state.reviewRequired && state.reviewKeywordOnly ? { reviewKeywordOnly: true } : {}),
       changePath: relative(ROOT, activePath) || ".",
       repository: repository ? {
         id: repository.id, type: repository.type, mode: repository.mode,

@@ -6,7 +6,9 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createBlockedDecision } from "../../harness/runtime/core/blocked-decision.mjs";
+import {
+  createBlockedDecision, createDetachedBlockScope
+} from "../../harness/runtime/core/blocked-decision.mjs";
 
 const HARNESS = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "harness");
 
@@ -106,4 +108,23 @@ for (const path of harnessSources(HARNESS))
 assert.deepEqual([...found].sort(), [...REGISTERED].sort(),
   "every terminal stop must be registered with its exits");
 
-console.log(`blocked decisions: ALL PASS (16/16 assertions, ${found.size} registered stops)`);
+// A refusal inside work detached from the operation (the concurrent review)
+// stays with that work; the operation it runs beside is not marked blocked.
+const detached = createDetachedBlockScope();
+let processBlocked = 0;
+const markBlocked = (message) => {
+  if (!detached.capture(message)) processBlocked += 1;
+};
+const concurrent = detached.run(async () => {
+  await new Promise((resolve) => setImmediate(resolve));
+  markBlocked("REVIEW_ROUTE_COMPLETE: review refused");
+  throw new Error("review refused");
+}).then(() => null, (error) => error);
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(processBlocked, 0, "the operation continues unblocked beside the review");
+assert.match((await concurrent)?.message || "", /review refused/);
+assert.equal(processBlocked, 0, "a detached review refusal never marks the process blocked");
+markBlocked("operation stop");
+assert.equal(processBlocked, 1, "the operation's own stop still marks the process blocked");
+
+console.log(`blocked decisions: ALL PASS (19/19 assertions, ${found.size} registered stops)`);

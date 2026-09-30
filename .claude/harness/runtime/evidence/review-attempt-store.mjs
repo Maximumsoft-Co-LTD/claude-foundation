@@ -324,6 +324,16 @@ export function completedReviewAttemptValue(context, dispatched, details,
     verifiedFindingIds,
     completedAt: context.now()
   };
+  // A same-packet model escalation (N8) keeps one attempt and one wave; the
+  // completed attempt binds the model whose verdict is final.
+  const escalation = details.modelEscalation;
+  if (escalation && typeof escalation === "object") {
+    completed.reviewerModelId = escalation.modelId || completed.reviewerModelId;
+    completed.reviewerModelFamily = escalation.modelFamily || completed.reviewerModelFamily;
+    completed.modelEscalation = escalation;
+  }
+  if (details.scenarioCoverage && typeof details.scenarioCoverage === "object")
+    completed.scenarioCoverage = details.scenarioCoverage;
   delete completed.digest;
   completed.digest = context.stableHash(completed);
   return completed;

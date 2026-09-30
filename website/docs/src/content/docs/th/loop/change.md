@@ -12,7 +12,33 @@ source และเขียน semantic draft ส่วน Change Loop derive �
 ตามความเสี่ยง ตรวจ decision frontier สร้าง bookkeeping และติดตั้งผลลัพธ์แบบ
 transaction
 
-## Semantic draft
+## Draft แบบขั้นต่ำ
+
+งานทั่วไปเขียนแค่ intent, พฤติกรรมที่ต้องการ และ task โดยไม่ต้องใส่ `version`
+คำสั่ง `change start --template` แสดงรูปแบบนี้เป็นอันดับแรกในชื่อ `minimalDraft`
+
+```json
+{
+  "intent": "Reject empty note titles",
+  "requirements": [{
+    "description": "The system SHALL reject a note whose title is empty",
+    "scenarios": [{ "when": "a user submits an empty title", "then": "the note is not created" }]
+  }],
+  "tasks": [{ "outcome": "Validate note titles", "verify": "npm test", "paths": ["src/note.js"] }]
+}
+```
+
+Compiler เติมให้เอง ได้แก่ version, key ของ requirement และ task, capability
+(เลือกจาก capability ใน `openspec/specs` ที่ตรงกับข้อความของ requirement หรือ path
+ของ task ถ้าจับคู่ไม่ได้จะคืน `EDIT` เดียวพร้อมรายชื่อ capability ให้เลือก และใช้ชื่อจาก
+intent เฉพาะเมื่อยังไม่มี spec เลย), operation (`modified` เมื่อตรงกับ requirement
+เดิม ไม่เช่นนั้นเป็น `added`), ชื่อ scenario, `covers` (เดาให้เฉพาะเมื่อมี task เดียว
+หรือ requirement เดียว ถ้ามีหลายทั้งคู่จะคืน `EDIT` เดียวที่ระบุ `tasks[i].covers`), ค่า default ของ rapid และ
+evidence แบบ test จาก `verify` สั่ง `change start <draft>` ครั้งเดียวก็ตรวจและเริ่ม
+change พร้อมแสดงรายชื่อไฟล์ใน packet และ task ถ้าใส่ `version: 4` หรือประกาศ
+ความเสี่ยงไว้ จะใช้รูปแบบเต็มด้านล่าง
+
+## Semantic draft แบบเต็ม
 
 แกนใช้ `version: 4`, `intent`, `requirements`, `tasks` ที่ระบุ `covers`,
 `evidence` ที่ใช้ requirement key เดียวกัน ส่วน `discovery.coverage` เป็น optional

@@ -18,6 +18,11 @@ transaction ที่กู้คืนได้ apply projection ที่ผ�
 ผ่าน OpenSpec และ cleanup ทุก writable repository ได้ diff แบบยังไม่ commit โดย
 HEAD และ index ไม่เปลี่ยน งานจบเมื่อ runtime เป็น `archived`; `proven` ยังไม่จบ
 
+ถ้า Apply ชนเฉพาะไฟล์ใน target ที่สร้างซ้ำได้ (เช่น `__pycache__/*.pyc`) และสะอาดตอน
+isolate REPAIR ที่คืนมาจะคืนไฟล์เหล่านั้นเป็นค่าจาก base ด้วย
+`advance <change> --through archived --restore-target <paths>` ภายใน transaction
+ไฟล์อื่นที่ชนต้องให้ผู้ใช้ตัดสินใจ และไฟล์ที่ถูกแก้หลังบันทึกจะไม่ถูกเขียนทับ
+
 มีเพียง recoverable Land transaction ของ harness ที่ apply product และ sync
 agreement ได้ Agent ไม่แก้ไฟล์เหล่านั้นนอก transaction และ Land ไม่ให้อำนาจ
 commit, push, publish หรือเปิด PR ระหว่างที่ Land ยัง active phase guard จะปฏิเสธ

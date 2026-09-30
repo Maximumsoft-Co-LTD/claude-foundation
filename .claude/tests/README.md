@@ -110,7 +110,7 @@ topology/planning fixture and the real-Git pull request delivery suite.
 | `harness/run-specsync-gate-tests.sh` | Spec-sync Land gate |
 | `interview/run-interview-tests.sh` | Human-interaction contracts |
 | `docs/run-doc-consistency.sh` | Shipped documentation contracts, canonical lifecycle routes, PRD versus compiled-spec approval, post-Land handoffs, evidence reuse, skill routing, and shipped-path resolution |
-| `harness/*.mjs` node suites | Bounded retry, blocked decisions, OpenSpec version policy, model drift, drift gate, spec-sync verification |
+| `harness/*.mjs` node suites | Blocked decisions, OpenSpec version policy, model drift, drift gate, spec-sync verification |
 | `dashboard` (`npm test`) | Dashboard server, snapshot projection, usage scan, and client |
 
 `run-all.sh` is the authoritative list; this table follows it.

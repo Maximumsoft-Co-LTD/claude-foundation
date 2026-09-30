@@ -12,9 +12,37 @@ The agent interprets sources and writes one semantic draft; Change Loop derives
 the required discovery dimensions, validates the decision frontier, generates
 the bookkeeping, and installs the result transactionally.
 
-## The semantic draft
+## Minimal draft
 
-The required core is deliberately small:
+For an ordinary change, write only the intent, the behavior, and the tasks, and
+leave `version` out. `change start --template` prints this form first as
+`minimalDraft`:
+
+```json
+{
+  "intent": "Reject empty note titles",
+  "requirements": [{
+    "description": "The system SHALL reject a note whose title is empty",
+    "scenarios": [{ "when": "a user submits an empty title", "then": "the note is not created" }]
+  }],
+  "tasks": [{ "outcome": "Validate note titles", "verify": "npm test", "paths": ["src/note.js"] }]
+}
+```
+
+The compiler fills in the version, requirement and task keys, capability (an
+existing `openspec/specs` capability matched by requirement text or task paths;
+with no confident match one `EDIT` lists the capabilities to choose from; the
+intent slug only when no specs exist), operation (`modified` when a canonical
+requirement matches, otherwise `added`), scenario names, `covers` (inferred
+only with one task or one requirement; several of both return one `EDIT`
+naming each `tasks[i].covers`),
+rapid defaults, and test evidence from `verify`. One `change start <draft>`
+inspects and starts it, and prints the packet files and tasks. A draft that
+states `version: 4` or declares risk uses the full form below.
+
+## The full semantic draft
+
+The full core stays small:
 
 ```json
 {

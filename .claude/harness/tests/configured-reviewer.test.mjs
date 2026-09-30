@@ -24,6 +24,7 @@ import {
 } from "../runtime/evidence/review-diff.mjs";
 import { reviewPromptPayload, reviewerConfigValue } from
   "../runtime/evidence/configured-reviewer.mjs";
+import { reviewSubjectsDiverse } from "../runtime/evidence/review-protocol.mjs";
 
 const root = mkdtempSync(join(tmpdir(), "foundation-configured-reviewer-"));
 const workspace = join(root, "workspace");
@@ -374,7 +375,7 @@ try {
   assert(!capture.args.join(" ").includes("Edit"));
   assert(!capture.args.join(" ").includes("Write"));
   assert.deepEqual(capture.schemaRequired,
-    ["status", "summary", "findings", "verifiedFindingIds"]);
+    ["status", "summary", "findings", "verifiedFindingIds", "scenarioCoverage"]);
   assert.equal(readFileSync(join(workspace, "claude-invocations.txt"), "utf8")
     .trim().split("\n").length, 1, "one review must use one Claude invocation");
   const codexResult = codexRuntime.runReview({
@@ -596,8 +597,19 @@ try {
   assert.equal(fastClaude.modelId, "haiku");
   assert.equal(fastClaude.modelTier, "fast");
   assert.equal(fastClaude.providerFamily, "anthropic");
-  assert.equal(fastClaude.modelFamily, "claude",
-    "the fast tier must not change the family seen by diversity checks");
+  assert.equal(fastClaude.modelFamily, "haiku",
+    "the fast alias records the family of the model actually run");
+  const haikuSubject = [{
+    type: "ai", identity: "implementer", sessionId: "subject-session",
+    providerFamily: "anthropic", modelFamily: "haiku", modelId: "haiku"
+  }];
+  assert.equal(reviewSubjectsDiverse({ type: "ai", ...fastClaude }, haikuSubject, true, false),
+    false, "a haiku fast reviewer is not diverse from a haiku subject");
+  assert.equal(reviewSubjectsDiverse({ type: "ai", ...reviewer }, haikuSubject, true, false),
+    true, "the configured reviewer family stays distinct from a haiku subject");
+  assert.equal(reviewerConfigValue(tierPolicy({}, {
+    fastModelId: "claude-haiku-5", fastModelFamily: "Haiku"
+  }), null, "fast").modelFamily, "Haiku", "a declared fastModelFamily wins");
   assert.deepEqual(reviewerConfigValue(tierPolicy(), null, "configured"),
     { identity: "claude-opus", ...reviewer }, "high/medium keep the configured model");
   assert.deepEqual(reviewerConfigValue(tierPolicy(), null, null),

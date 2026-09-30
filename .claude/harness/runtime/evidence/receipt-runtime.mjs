@@ -359,16 +359,8 @@ export function recordDeterministicReviewClosureOperation(
       route: "AUTO_REPAIR",
       reason: "The final AI delta still describes the current workspace; repair its blocker/major findings before advancing."
     };
-  const blockers = repairClosureFindings(
-    (source.findings || []).filter((finding) =>
-      ["blocker", "major"].includes(finding.severity)),
-    (finding) => groundedRepairBinding(context.groundingForReview(id), finding));
-  if (!repairClosureBindingsComplete(blockers))
-    return {
-      closed: false,
-      route: "AUTO_REPAIR",
-      reason: "Final blocker/major findings must name a path, claimIds, and verificationCaseIds before deterministic closure is possible."
-    };
+  // Passing non-review proof is the agent-satisfiable half of closure, so it
+  // is checked before the bindings the agent cannot author.
   const { current, invalid: invalidProviders } = currentRepairProviders(context,
     id, workspaceHash);
   if (invalidProviders.length)
@@ -380,9 +372,29 @@ export function recordDeterministicReviewClosureOperation(
         provider: row.provider, validity: row.validity.validity
       }))
     };
+  const blockers = repairClosureFindings(
+    (source.findings || []).filter((finding) =>
+      ["blocker", "major"].includes(finding.severity)),
+    (finding) => groundedRepairBinding(context.groundingForReview(id), finding));
+  // Critical-case bindings come from the reviewer and the locked contract; no
+  // Build edit can create them. Without them only another delta review could
+  // close the final findings, and the wave cap forbids one: that is the
+  // review-exhausted user gate, never an unsatisfiable repair.
+  const exhausted = (reason, details = {}) => ({
+    closed: false,
+    route: "REVIEW_ROUTE_EXHAUSTED",
+    reason,
+    findingIds: blockers.map((finding) => finding.id).sort(),
+    ...details
+  });
+  if (!repairClosureBindingsComplete(blockers))
+    return exhausted("Final blocker/major findings must name a path, claimIds, and verificationCaseIds before deterministic closure is possible; the final AI delta used the last review wave.");
   const bindingResult = repairClosureEvidenceBindings(
     context, id, blockers, current);
-  if (bindingResult.error) return bindingResult.error;
+  if (bindingResult.error) {
+    const { closed: _closed, route: _route, reason, ...details } = bindingResult.error;
+    return exhausted(`${reason} No declared critical case can close it and the final AI delta used the last review wave.`, details);
+  }
   const evidenceBindings = uniqueRepairEvidenceBindings(bindingResult.bindings);
   const scopePaths = [...new Set(blockers.map((finding) => finding.path))].sort();
   const scopeDigest = context.stableHash({
@@ -701,7 +713,8 @@ export function createReceiptRuntime({
       providerProtocolVersion: PROVIDER_PROTOCOL_VERSION,
       contractFingerprint: contractFingerprint(id), executionFingerprint: executionFingerprint(id),
       providerFingerprint: receiptProviderFingerprint(id, provider, flags, context),
-      workspaceHash, workspaceSnapshotId: context.state.activeProofRun?.snapshotId || null,
+      workspaceHash, workspaceSnapshotId: flags.workspaceSnapshotId ||
+        context.state.activeProofRun?.snapshotId || null,
       inputIdentity,
       rebind: receiptRebind(id, context),
       claims: requestedClaims, status, observed: suppliedEvidence.observed,

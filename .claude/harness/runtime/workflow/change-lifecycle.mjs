@@ -656,10 +656,22 @@ export function createChangeLifecycle({
     // draft without `version` in the minimal v4 shape compiles as v4.
     const raw = readJson(source);
     if (!raw || typeof raw !== "object" || Array.isArray(raw) || !("minimalDraft" in raw))
-      return expandMinimalSemanticDraft(raw, { loadCanonicalSpec: canonicalSpecText });
+      return expandMinimalSemanticDraft(raw, minimalDraftContext);
     const { minimalDraft: _example, ...draft } = raw;
-    return expandMinimalSemanticDraft(draft, { loadCanonicalSpec: canonicalSpecText });
+    return expandMinimalSemanticDraft(draft, minimalDraftContext);
   }
+
+  // A minimal draft chooses among existing capabilities before inventing one.
+  const minimalDraftContext = {
+    loadCanonicalSpec: canonicalSpecText,
+    listCanonicalCapabilities: () => {
+      const specs = join(root, "openspec", "specs");
+      if (!existsSync(specs)) return [];
+      return readdirSync(specs, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && existsSync(join(specs, entry.name, "spec.md")))
+        .map((entry) => entry.name).sort();
+    }
+  };
 
   function canonicalSpecText(capability) {
     const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
@@ -1353,6 +1365,10 @@ export function createChangeLifecycle({
       (state.coupling === "coupled" && state.impact !== "low") ||
       state.securityTriggers.length > 0 || Boolean(flags.review);
     state.reviewRequired = declaredReview || keywordTriggers.length > 0;
+    // Persisted only for the keyword-only case so verification risk can tell
+    // it from a declared review (`--review`, impact, coupling, triggers).
+    if (!declaredReview && keywordTriggers.length) state.reviewKeywordOnly = true;
+    else delete state.reviewKeywordOnly;
     return { declaredReview };
   }
 

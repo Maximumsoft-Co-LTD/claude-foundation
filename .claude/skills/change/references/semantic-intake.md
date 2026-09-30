@@ -35,7 +35,7 @@ A row is `covered`, `not-applicable` (with rationale), `needs-investigation`,
 or `needs-user-decision`. Never turn an unresolved status into an assumption.
 The harness rejects missing required dimensions, unresolved coverage, unknown
 links, decision cycles, and open decisions, exposing at most three
-dependency-ready decisions. Declare known concerns as `riskSignals`:
+dependency-ready decisions. Without `status`, only a `choice` settles a decision. Declare known concerns as `riskSignals`:
 `access-control`, `persisted-data-change`, `external-integration`,
 `performance-slo`, `user-interface`, `high-operational-risk`, or
 `external-side-effect`. Prose is never scanned for risk keywords.

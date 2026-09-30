@@ -22,7 +22,7 @@ task ตรวจ lease ที่ยังทำงาน แล้วคืน 
 
 | Action | ความหมาย |
 |---|---|
-| `EDIT` | ทำเฉพาะ task, workspace และ path ที่คืนมา แล้วรัน focused check ที่ระบุหนึ่งครั้ง |
+| `EDIT` | ทำเฉพาะ task, workspace และ path ที่คืนมา เปิดเฉพาะไฟล์ใน `contextFiles` สร้างไฟล์ใน `newFiles` แล้วรัน focused check หนึ่งครั้ง |
 | `REPAIR` | แก้ repair batch ที่เรียงตาม dependency ให้ครบแล้ว resume |
 | `RUN_EXTERNAL` | รัน boundary operation ที่ตั้งค่าไว้หนึ่งตัว |
 | `WAIT` | รอ resource หรือเจ้าของภายนอก โดย state ถูกเก็บไว้ |
@@ -32,6 +32,11 @@ task ตรวจ lease ที่ยังทำงาน แล้วคืน 
 ทุก action ที่ยังไม่จบระบุสาเหตุ actor ทางเลือกที่ปลอดภัย state ที่เก็บไว้ และ
 resume command ที่แน่นอน Automatic recovery ทำได้เฉพาะในอำนาจปัจจุบัน ระบบไม่
 เปลี่ยน lease เก่าหรือการรันซ้ำให้กลายเป็น pass
+
+เมื่อ task ที่ค้างทั้งหมดต้องทำทีละตัวใน repository เดียว `EDIT` จะส่งทุก task มาพร้อมกัน
+เรียงตาม dependency ให้ทำให้ครบแล้ว resume ครั้งเดียว `advance` จะรัน `verify` ของแต่ละ
+task ใหม่ ติ๊ก task ที่ผ่านใน `tasks.md` ให้เอง และคืนเฉพาะ task ที่ล้ม
+(`verificationFailures`) พร้อม task ที่ต้องรอมัน Agent ไม่ต้องแก้ checkbox เอง
 
 ## Isolation และ concurrency
 

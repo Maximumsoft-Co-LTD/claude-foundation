@@ -476,13 +476,15 @@ test("a minimal draft with ambiguous covers returns one EDIT naming covers", (t)
   const value = fixture(t);
   writeJson(value.draftPath, {
     intent: "Tidy note titles",
-    requirements: [{
-      description: "The system SHALL trim note titles",
-      scenarios: [{ when: "a title has spaces", then: "the stored title is trimmed" }]
-    }],
+    requirements: [
+      { description: "The system SHALL trim note titles",
+        scenarios: [{ when: "a title has spaces", then: "the stored title is trimmed" }] },
+      { description: "The system SHALL collapse repeated spaces in note titles",
+        scenarios: [{ when: "a title has double spaces", then: "one space is stored" }] }
+    ],
     tasks: [
       { outcome: "Trim the title", verify: "npm test", paths: ["src/note.js"] },
-      { outcome: "Trim the title again", verify: "npm test", paths: ["src/note.js"] }
+      { outcome: "Collapse repeated spaces", verify: "npm test", paths: ["src/note.js"] }
     ]
   });
   const { result } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
@@ -491,4 +493,43 @@ test("a minimal draft with ambiguous covers returns one EDIT naming covers", (t)
   assert.match(issues, /tasks\[0\]\.covers must name at least one requirement/);
   assert.match(issues, /tasks\[1\]\.covers must name at least one requirement/);
   assert.equal(existsSync(value.changes), false);
+});
+
+test("a minimal draft joins an existing capability or asks which one", (t) => {
+  const value = fixture(t);
+  const specDir = join(value.root, "openspec", "specs", "notes");
+  mkdirSync(specDir, { recursive: true });
+  writeFileSync(join(specDir, "spec.md"), [
+    "# notes", "", "### Requirement: Note creation", "",
+    "The system SHALL create a note with a title", "",
+    "#### Scenario: Create", "", "- **WHEN** a user saves a note", "- **THEN** the note exists"
+  ].join("\n"));
+  mkdirSync(join(value.root, "openspec", "specs", "billing"), { recursive: true });
+  writeFileSync(join(value.root, "openspec", "specs", "billing", "spec.md"), "# billing\n");
+  writeJson(value.draftPath, {
+    intent: "Send weekly digests",
+    requirements: [{
+      description: "The system SHALL send a weekly digest",
+      scenarios: [{ when: "a week ends", then: "a digest is sent" }]
+    }],
+    tasks: [{ outcome: "Send digests", verify: "npm test", paths: ["src/digest.js"] }]
+  });
+  const { result } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.equal(result.action, "EDIT");
+  assert.match(result.intake.issues.join("\n"),
+    /'capability' is required: .*one of: billing, notes/);
+  assert.equal(existsSync(value.changes), false);
+
+  writeJson(value.draftPath, {
+    intent: "Reject empty note titles",
+    requirements: [{
+      description: "The system SHALL reject a note whose title is empty",
+      scenarios: [{ when: "a user submits an empty title", then: "the note is not created" }]
+    }],
+    tasks: [{ outcome: "Validate note titles", verify: "npm test", paths: ["src/notes/title.js"] }]
+  });
+  const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.match(output, /^AGREED reject-empty-note-titles/m);
+  assert.match(readFileSync(join(value.changes, "reject-empty-note-titles", "proposal.md"), "utf8"),
+    /^\| notes \| reject-a-note-whose-title-is-empty \|/m);
 });

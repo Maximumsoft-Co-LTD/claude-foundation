@@ -8,7 +8,8 @@ import { reviewFindingIssues, reviewPacketIssues, validReview } from "../evidenc
 import { checkpointReviewResult, recoverReviewResult } from "../evidence/review-result-recovery.mjs";
 import { normalizeReviewCompletionFindings } from "../evidence/review-attempt-store.mjs";
 import {
-  reviewAgreementValue, reviewDepthForTier, reviewDiffValue, reviewModelTierForDepth
+  reviewAgreementValue, reviewDepthForTier, reviewDiffValue, reviewModelTierForDepth,
+  reviewScenarioChecklist
 } from "../evidence/review-diff.mjs";
 
 export function authorityRequestDisplayValue(request, limit = 8192) {
@@ -931,6 +932,13 @@ export function createAuthorityRuntime({
         packet.reviewDiff = reviewDiffValue(reviewDiffContext, scopeRows,
           packet.changedSurface?.inspection || []);
         packet.agreement = reviewAgreementValue(reviewDiffContext, packet);
+        // One checklist item per agreement scenario (N8), bound by the packet
+        // digest. A delta round reviews only its correction scope.
+        if (scopeMode === "full") {
+          const checklist = reviewScenarioChecklist({
+            ...reviewDiffContext, packetDir: packet.contractWorkspacePath });
+          if (checklist.items.length) packet.scenarioChecklist = checklist;
+        }
       }
     }
     delete packet.packetDigest;
@@ -1133,16 +1141,40 @@ export function createAuthorityRuntime({
     };
   }
 
-  function assertAuthorityReviewerSeparation(reviewerName, configured, reviewSettings, subject) {
+  function authorityReviewerSeparationIssue(reviewerName, configured, reviewSettings, subject) {
     const configuredProvider = String(configured.providerFamily).toLowerCase();
     const configuredFamily = String(configured.modelFamily).toLowerCase();
     const sameFamily = subject.aiSubject && subject.subjectProvider === configuredProvider &&
       subject.subjectFamily === configuredFamily;
     if (sameFamily && reviewSettings.diversity !== "single-model")
-      fail(`configured reviewer '${reviewerName}' shares the implementation provider/model family; choose a diverse configured reviewer or commit review.diversity='single-model' before Build`);
+      return `configured reviewer '${reviewerName}' shares the implementation provider/model family; choose a diverse configured reviewer or commit review.diversity='single-model' before Build`;
     if (subject.aiSubject && reviewSettings.independence !== "self" &&
         subject.subjectActor.toLowerCase() === configured.identity.toLowerCase())
-      fail(`configured reviewer '${reviewerName}' shares the implementation identity; use a distinct reviewer identity/session or commit review.independence='self' before Build`);
+      return `configured reviewer '${reviewerName}' shares the implementation identity; use a distinct reviewer identity/session or commit review.independence='self' before Build`;
+    return null;
+  }
+
+  function assertAuthorityReviewerSeparation(reviewerName, configured, reviewSettings, subject) {
+    const issue = authorityReviewerSeparationIssue(reviewerName, configured, reviewSettings, subject);
+    if (issue) fail(issue);
+  }
+
+  // N8 (3a): a fast-tier round whose scenario coverage is unparseable or has
+  // any missing/unsure scenario is re-run once on the configured model with
+  // the same dispatched packet. It is not a new dispatch or AI wave. Returns
+  // the configured reviewer to escalate to, or null.
+  function scenarioEscalationReviewer(reviewerName, configured, requestValue,
+    reviewSettings, subject, packet, report) {
+    if (configured.modelTier !== "fast" || reviewerName === "main-session" ||
+        report?.status === "error" || !packet?.scenarioChecklist?.items?.length) return null;
+    const coverage = report.scenarioCoverage;
+    if (coverage && coverage.missing.length + coverage.unsure.length === 0) return null;
+    const escalated = authorityReviewerConfiguration(reviewerName, requestValue, "configured");
+    if (!escalated || escalated.modelTier === "fast" || escalated.modelId === configured.modelId)
+      return null;
+    if (authorityReviewerSeparationIssue(reviewerName, escalated, reviewSettings, subject))
+      return null;
+    return escalated;
   }
 
   function authorityRunReviewer(id, flags, subject) {
@@ -1269,8 +1301,15 @@ export function createAuthorityRuntime({
         fail(`configured review dispatch '${requestId}' is indeterminate; do not rerun it automatically. Abort it with a reason, then request the next bounded route or pause`);
       if (controller && isProcessAlive(Number(controller.pid)))
         fail(`configured review dispatch '${requestId}' is still running in controller PID ${controller.pid}`);
-      recoveredReport = recoverReviewResult(root, entry.value, subject, configured,
+      // An escalated checkpoint binds the configured model that produced it.
+      const recoveredEscalation = entry.value.configuredResult?.modelEscalation || null;
+      const expectedReviewer = recoveredEscalation
+        ? authorityReviewerConfiguration(reviewerName, entry.value, "configured") : configured;
+      recoveredReport = recoverReviewResult(root, entry.value, subject, expectedReviewer,
         authorityWorkspaceHash(id, entry.value.provider));
+      if (recoveredReport && recoveredEscalation)
+        recoveredReport = { ...recoveredReport, modelEscalation: recoveredEscalation,
+          finalReviewer: expectedReviewer };
       if (recoveredReport) return entry;
       const attemptDigest = requestEntry.value.dispatch?.attemptDigest;
       const attempt = attemptDigest ? reviewAttemptByDigest(id, attemptDigest) : null;
@@ -1340,7 +1379,7 @@ export function createAuthorityRuntime({
         startedAt: now()
       }
     });
-    const report = recoveredReport || (yield {
+    const reviewRequest = {
       changeId: id,
       timeoutMs: reviewWindowRemaining(loadRuntime(id), Date.parse(now())),
       reviewer: reviewerName,
@@ -1351,13 +1390,39 @@ export function createAuthorityRuntime({
         subjectSession,
         ...(scope === "delta" ? [deliveredAi.at(-1)?.reviewerSessionId] : [])
       ].filter(Boolean)
-    });
+    };
+    let report = recoveredReport || (yield reviewRequest);
+    let finalReviewer = recoveredReport?.finalReviewer || configured;
+    let modelEscalation = recoveredReport?.modelEscalation || null;
+    const escalated = recoveredReport ? null : scenarioEscalationReviewer(reviewerName,
+      configured, requestEntry.value, reviewSettings, subject, dispatched.packet, report);
+    if (escalated) {
+      // Same dispatch, packet, and digest; only the model changes. The fast
+      // report stays on disk but is never checkpointed or recorded.
+      modelEscalation = {
+        escalatedFrom: "fast",
+        reason: report.scenarioCoverage ? "scenario-coverage-gap" : "scenario-coverage-unparseable",
+        fastModelId: configured.modelId,
+        fastModelFamily: configured.modelFamily,
+        fastReportReference: report.reportReference || null,
+        modelId: escalated.modelId,
+        modelFamily: String(escalated.modelFamily || "").toLowerCase() || null
+      };
+      finalReviewer = escalated;
+      report = yield {
+        ...reviewRequest,
+        timeoutMs: reviewWindowRemaining(loadRuntime(id), Date.parse(now())),
+        modelTier: "configured",
+        escalatedFrom: "fast"
+      };
+    }
     const checkpoint = checkpointReviewResult(root, dispatched, subject, report);
     if (checkpoint) {
       const resultEntry = authorityStore.list(id)
         .find((row) => row.value.requestId === requestId);
       authorityStore.replace(resultEntry, {
-        ...resultEntry.value, configuredResult: checkpoint
+        ...resultEntry.value,
+        configuredResult: modelEscalation ? { ...checkpoint, modelEscalation } : checkpoint
       });
     }
     function handleConfiguredInfrastructureError() {
@@ -1537,7 +1602,10 @@ export function createAuthorityRuntime({
         reviewerSessionId: reviewerSession,
         resultStatus: report.status,
         findings: report.findings,
-        verifiedFindingIds: report.verifiedFindingIds
+        verifiedFindingIds: report.verifiedFindingIds,
+        ...(modelEscalation ? { modelEscalation } : {}),
+        ...(report.scenarioCoverage !== undefined
+          ? { scenarioCoverage: report.scenarioCoverage } : {})
       };
     const currentAttempt = recoveredReport && reviewAttemptByDigest(id,
       loadRuntime(id).reviewHistory?.chainHead);
@@ -1565,8 +1633,12 @@ export function createAuthorityRuntime({
         attemptDigest: completed.digest,
         reviewer: {
           ...dispatchedEntry.value.dispatch.reviewer,
+          ...(modelEscalation ? {
+            modelFamily: modelEscalation.modelFamily, modelId: modelEscalation.modelId
+          } : {}),
           sessionId: reviewerSession || null
-        }
+        },
+        ...(modelEscalation ? { modelEscalation } : {})
       }
     };
     authorityStore.replace(dispatchedEntry, finalizedRequest);
@@ -1582,11 +1654,11 @@ export function createAuthorityRuntime({
       evidence: {
         observed: report.summary,
         reference: [report.reportReference],
-        reviewer: configured.identity,
+        reviewer: finalReviewer.identity,
         "reviewer-type": "ai",
-        "reviewer-provider-family": configured.providerFamily,
-        "reviewer-model-family": configured.modelFamily,
-        "reviewer-model": configured.modelId,
+        "reviewer-provider-family": finalReviewer.providerFamily,
+        "reviewer-model-family": finalReviewer.modelFamily,
+        "reviewer-model": finalReviewer.modelId,
         "reviewer-session": reviewerSession || null,
         "subject-actor": subjectActor,
         ...(aiSubject ? {
@@ -1604,7 +1676,10 @@ export function createAuthorityRuntime({
           ? { "scope-path": dispatched.dispatch.scope.paths } : {})
       }
     });
-    recordAuthorityUnlocked(id, { request: requestId, response: responsePath });
+    recordAuthorityUnlocked(id, {
+      request: requestId, response: responsePath,
+      ...(flags.proofRun ? { proofRun: flags.proofRun } : {})
+    });
     return report;
   }
 
@@ -1797,11 +1872,19 @@ export function createAuthorityRuntime({
   }
 
   function recordAuthorityReceipt(id, entry, request, requestId, response,
-    responsePath, evidenceFlags) {
+    responsePath, evidenceFlags, proofRun = null) {
     const priorPath = receiptPath(id, request.provider);
     const prior = existsSync(priorPath) ? readFileSync(priorPath) : null;
+    // A review started beside proof collection names its run explicitly, so
+    // the receipt never depends on whether collection is still active.
+    const runBinding = proofRun?.proofRunId &&
+      proofRun.workspaceHash === request.workspaceHash ? {
+        proofRunId: proofRun.proofRunId,
+        workspaceSnapshotId: proofRun.workspaceSnapshotId || null
+      } : {};
     recordReceipt(id, request.provider, response.status, {
       ...evidenceFlags,
+      ...runBinding,
       claims: request.claimIds.join(","), workspaceHash: request.workspaceHash,
       "review-attempt": request.dispatch?.attemptDigest,
       source: evidenceFlags.source || `authority-request:${requestId}`,
@@ -1839,7 +1922,7 @@ export function createAuthorityRuntime({
       return;
     }
     recordAuthorityReceipt(id, entry, request, requestId, response, responsePath,
-      evidenceFlags);
+      evidenceFlags, flags.proofRun || null);
   }
 
   function recordAuthority(id, flags = {}) {

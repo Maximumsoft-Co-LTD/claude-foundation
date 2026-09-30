@@ -5,6 +5,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import {
+  SCENARIO_COVERAGE_STATUSES, parseScenarioCoverage, reviewChecklistInstruction
+} from "./review-diff.mjs";
 
 // No `uniqueItems` anywhere in this schema: OpenAI structured output rejects
 // the keyword, failing every dispatch as an infrastructure error. `validReview`
@@ -12,7 +15,9 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 export const REVIEW_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["status", "summary", "findings", "verifiedFindingIds"],
+  // Structured-output providers require every property in `required`; a
+  // reviewer with no scenario checklist returns an empty scenarioCoverage.
+  required: ["status", "summary", "findings", "verifiedFindingIds", "scenarioCoverage"],
   properties: {
     status: { type: "string", enum: ["pass", "fail", "inconclusive"] },
     summary: { type: "string", minLength: 1 },
@@ -42,6 +47,19 @@ export const REVIEW_SCHEMA = {
     },
     verifiedFindingIds: {
       type: "array", items: { type: "string", minLength: 1 }
+    },
+    scenarioCoverage: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "status", "evidence"],
+        properties: {
+          id: { type: "string", minLength: 1 },
+          status: { type: "string", enum: [...SCENARIO_COVERAGE_STATUSES] },
+          evidence: { anyOf: [{ type: "string" }, { type: "null" }] }
+        }
+      }
     }
   }
 };
@@ -274,6 +292,53 @@ const DIFF_FIRST_INSTRUCTIONS =
   "When reviewDiff and agreement are supplied, start from those hunks and requirements " +
   "instead of reading whole files. ";
 
+function scenarioChecklistItems(packet) {
+  const items = packet?.scenarioChecklist?.items;
+  return Array.isArray(items) ? items : [];
+}
+
+// The checklist instruction rides with the diff-scoped depths only; legacy
+// packets carry no checklist and keep their prompt unchanged.
+function scenarioChecklistPrompt(packet) {
+  if (!["diff-only", "diff-first"].includes(packet?.reviewDepth)) return "";
+  const instruction = reviewChecklistInstruction(scenarioChecklistItems(packet),
+    { truncated: packet?.scenarioChecklist?.truncated === true });
+  return instruction ? "\n\n" + instruction + "\nPut that scenarioCoverage array in the " +
+    "required JSON object rather than in a separate block." : "";
+}
+
+// Missing scenarios the reviewer left without a bound finding become major
+// findings on the checklist id (a claim id when the scenario has one). The
+// anchor is a dispatched scope path, preferring the agreement's spec files.
+export function scenarioCoverageFindings(review, packet, coverage) {
+  if (!coverage?.missing?.length) return [];
+  const paths = Array.isArray(packet?.reviewScope?.paths)
+    ? packet.reviewScope.paths.map(String) : [];
+  const anchor = paths.find((path) => /(^|\/)specs\/.+\.md$/.test(path)) ||
+    paths.find((path) => path.endsWith("proposal.md")) || paths[0];
+  if (!anchor) return [];
+  const claimIds = new Set((Array.isArray(packet?.claims) ? packet.claims : [])
+    .map((claim) => String(claim?.id || "")).filter(Boolean));
+  const findings = review.findings || [];
+  const ids = new Set(findings.map((finding) => text(finding.id)));
+  const items = new Map(scenarioChecklistItems(packet).map((item) => [String(item.id), item]));
+  return coverage.missing.filter((id) => !findings.some((finding) =>
+    text(finding.id) === id || (finding.claimIds || []).map(text).includes(id)))
+    .map((id) => {
+      let findingId = `scenario-missing-${id}`;
+      for (let suffix = 2; ids.has(findingId); suffix += 1)
+        findingId = `scenario-missing-${id}-${suffix}`;
+      ids.add(findingId);
+      const item = items.get(id);
+      return {
+        id: findingId, severity: "major", path: anchor, line: null,
+        message: `Agreement scenario '${id}' has no test or code backing it in the ` +
+          `reviewed diff${item ? `: [${item.requirement}] ${item.scenario}` : ""}`,
+        claimIds: claimIds.has(id) ? [id] : [], verificationCaseIds: []
+      };
+    });
+}
+
 export function configuredReviewPrompt(packet) {
   const payload = JSON.stringify(reviewPromptPayload(packet));
   const depth = packet?.reviewDepth === "diff-only" ? DIFF_ONLY_INSTRUCTIONS
@@ -298,7 +363,9 @@ export function configuredReviewPrompt(packet) {
     "surface. Bind every blocker/major finding to non-empty claimIds and " +
     "verificationCaseIds from the supplied packet so a final bounded repair can be " +
     "closed by current deterministic evidence without a third AI. Report findings " +
-    "precisely, keep minor findings non-blocking, and return only the required JSON object.\n\n" +
+    "precisely, keep minor findings non-blocking, and return only the required JSON object " +
+    "(scenarioCoverage is an empty array when no checklist is supplied)." +
+    scenarioChecklistPrompt(packet) + "\n\n" +
     `FOUNDATION REVIEW PACKET (${Buffer.byteLength(payload)} UTF-8 bytes of JSON data)\n` +
     payload;
 }
@@ -313,18 +380,22 @@ export function validReviewerConfig(config) {
 // Low-risk review runs on the fast model tier. An explicit per-reviewer
 // `fastModelId` wins; otherwise a Claude Code reviewer uses the policy's fast
 // family alias. `review.lowRiskModel: "configured"` opts out. Provider family
-// never changes, and model family changes only when declared, so diversity and
-// independence checks see the same identity axes as the configured model.
+// never changes. Model family records the model actually run — the declared
+// `fastModelFamily`, else the fast alias family when the alias substitutes —
+// so receipts and diversity/separation checks judge that model, not the
+// configured one.
 export function reviewerModelForTier(config, modelTier, policy = {}) {
   if (modelTier !== "fast" || policy.review?.lowRiskModel === "configured") return config;
-  const fastModelId = String(config.fastModelId || "").trim() ||
-    (config.adapter === "claude-cli"
-      ? String(policy.models?.fast?.family || "").trim() : "");
+  const explicitId = String(config.fastModelId || "").trim();
+  const aliasFamily = !explicitId && config.adapter === "claude-cli"
+    ? String(policy.models?.fast?.family || "").trim() : "";
+  const fastModelId = explicitId || aliasFamily;
   if (!fastModelId || fastModelId === config.modelId) return config;
   return {
     ...config,
     modelId: fastModelId,
-    modelFamily: String(config.fastModelFamily || "").trim() || config.modelFamily,
+    modelFamily: String(config.fastModelFamily || "").trim() ||
+      aliasFamily.toLowerCase() || config.modelFamily,
     modelTier: "fast"
   };
 }
@@ -618,7 +689,8 @@ export function createConfiguredReviewerRuntime({
   }
 
   function persist(config, changeId, workspace, {
-    status, summary, findings = [], verifiedFindingIds = [], sessionId = null
+    status, summary, findings = [], verifiedFindingIds = [], sessionId = null,
+    scenarioCoverage = undefined
   }) {
     const reportDir = join(root, ".foundation", "reviews", changeId);
     mkdirSync(reportDir, { recursive: true });
@@ -645,6 +717,8 @@ export function createConfiguredReviewerRuntime({
         sandbox: config.sandbox,
         ephemeral: config.ephemeral
       },
+      ...(scenarioCoverage !== undefined ? { scenarioCoverage } : {}),
+      ...(config.escalatedFrom ? { escalatedFrom: config.escalatedFrom } : {}),
       recordedAt: now()
     };
     writeFileSync(reportPath, `${JSON.stringify(durable, null, 2)}\n`);
@@ -672,6 +746,14 @@ export function createConfiguredReviewerRuntime({
         summary: `${config.adapter} reviewer returned findings that do not bind to the dispatched workspace: ${findingIssues.join("; ")}`
       }), retryable: false, bindingFailure: "result" };
     review = normalizeReviewFindingPaths(review, packet);
+    // Coverage is recorded only when the packet carried a checklist; null
+    // means no parseable block, which the authority treats as all unsure.
+    const expectedIds = scenarioChecklistItems(packet).map((item) => String(item.id));
+    const scenarioCoverage = expectedIds.length
+      ? parseScenarioCoverage(review, { expectedIds }) : undefined;
+    const coverageFindings = scenarioCoverageFindings(review, packet, scenarioCoverage);
+    if (coverageFindings.length)
+      review = { ...review, findings: [...review.findings, ...coverageFindings] };
     const blockers = review.findings.filter((finding) =>
       ["blocker", "major"].includes(finding.severity));
     if (review.status === "fail" && review.findings.length === 0)
@@ -685,7 +767,7 @@ export function createConfiguredReviewerRuntime({
       summary: review.summary,
       findings: review.findings,
       verifiedFindingIds: review.verifiedFindingIds,
-      sessionId
+      sessionId, scenarioCoverage
     });
   }
 
@@ -752,11 +834,12 @@ export function createConfiguredReviewerRuntime({
 
   function* reviewSteps({
     changeId, reviewer = null, workspace, packet, forbiddenSessionIds = [],
-    timeoutMs = 30 * 60 * 1000, modelTier = null
+    timeoutMs = 30 * 60 * 1000, modelTier = null, escalatedFrom = null
   }) {
     const startedAt = Date.now();
     const original = reviewerConfig(reviewer, modelTier);
-    const config = { ...original, timeoutMs: Math.max(1, Math.min(
+    const config = { ...original, ...(escalatedFrom ? { escalatedFrom } : {}),
+      timeoutMs: Math.max(1, Math.min(
       Number(original.timeoutMs) || 30 * 60 * 1000, timeoutMs, 30 * 60 * 1000)) };
     // A stale/malformed packet cannot be repaired by spending a reviewer call.
     // Reuse the same containment checks as returned findings before any spawn.

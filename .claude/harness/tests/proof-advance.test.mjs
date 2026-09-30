@@ -14,6 +14,7 @@ import {
   stopProofCollection
 } from "../runtime/evidence/proof-execution-runtime.mjs";
 import { createReceiptValidity } from "../runtime/evidence/receipt-validity.mjs";
+import { recordDeterministicReviewClosureOperation } from "../runtime/evidence/receipt-runtime.mjs";
 
 function fixture(options = {}) {
   let state = { version: 2, id: "change-a", status: "building" };
@@ -841,6 +842,7 @@ function concurrentFixture(options = {}) {
   const delivered = [...(options.deliveredAiAttempts || [])];
   const events = [];
   const reviewCommands = [];
+  const testRunIds = [];
   const validity = (provider, hash = workspaceHash) => {
     const receipt = receipts[provider];
     if (!receipt) return "missing";
@@ -872,9 +874,10 @@ function concurrentFixture(options = {}) {
     }),
     collectableExecutionNodes: (_id, nodes) => ({ nodes, blocked: [] }),
     startRequiredServices: async () => [],
-    runExecutionDag: async (_id, nodes) => {
+    runExecutionDag: async (_id, nodes, proofRunId) => {
       if (!nodes.length) return [];
       const hash = workspaceHash;
+      testRunIds.push(proofRunId);
       events.push("test:start");
       testStarted?.resolve();
       await new Promise((resolve) => setImmediate(resolve));
@@ -909,8 +912,8 @@ function concurrentFixture(options = {}) {
       return request;
     },
     startConcurrentReview: options.agentRunnable === false ? () => null
-      : (_id, request, command) => {
-        reviewCommands.push({ command, workspaceHash: request.workspaceHash });
+      : (_id, request, command, proofRun) => {
+        reviewCommands.push({ command, workspaceHash: request.workspaceHash, proofRun });
         testStarted = Promise.withResolvers();
         events.push("review:start");
         return (async () => {
@@ -925,18 +928,23 @@ function concurrentFixture(options = {}) {
           delivered.push({
             digest: `attempt-${delivered.length + 1}`, resultStatus: reviewOutcome,
             workspaceHash: request.workspaceHash,
+            scope: { mode: delivered.length ? "delta" : "full" },
             findings: reviewOutcome === "pass" ? [] : [{
-              id: "R1", severity: "major", path: "src/a.js", message: "review blocker",
-              claimIds: [], verificationCaseIds: []
+              id: `R${delivered.length + 1}`, severity: "major", path: "src/a.js",
+              message: "review blocker",
+              claimIds: [], verificationCaseIds: [], ...(options.findingBinding || {})
             }]
           });
         })();
       },
+    recordDeterministicReviewClosure: options.closure
+      ? (...args) => options.closure({ delivered, receipts, validity }, ...args)
+      : undefined,
     markBlocked: () => {},
     die: (message) => { throw new Error(message); }
   });
   return {
-    runtime, events, reviewCommands, receipts,
+    runtime, events, reviewCommands, receipts, testRunIds,
     advance: () => quiet(() => within(
       runtime.proofAdvance("change-a", { concurrentReview: true }), 2000,
       "concurrent review and providers must overlap, not run serially")),
@@ -1028,6 +1036,145 @@ function concurrentFixture(options = {}) {
   const passed = await run.advance();
   assert.equal(passed.status, "PASS");
   assert.equal(run.reviewCommands.length, 2);
+  process.exitCode = priorExitCode;
+}
+
+// The real deterministic closure over the fixture's stub reviewer history.
+function realClosure(criticalCases) {
+  return ({ delivered, receipts, validity }, id, provider, workspaceHash) =>
+    recordDeterministicReviewClosureOperation({
+      providerConfig: (_id, name) => name === "test"
+        ? { capability: "test", adapter: "command", criticalCases }
+        : { capability: "review", adapter: "external" },
+      providerCapability: (_name, config) => config?.capability,
+      deliveredAiAttempts: () => delivered,
+      receiptPath: (_id, name) => `/receipts/${name}.json`,
+      exists: (path) => Boolean(receipts[path.split("/").pop().replace(".json", "")]),
+      readJson: (path) => {
+        const name = path.split("/").pop().replace(".json", "");
+        const receipt = receipts[name] || {};
+        return {
+          status: receipt.status, workspaceHash: receipt.hash,
+          contractFingerprint: "contract",
+          review: {
+            attemptDigest: delivered.find((row) => row.workspaceHash === receipt.hash)?.digest,
+            subjects: []
+          }
+        };
+      },
+      reviewAttemptByDigest: () => null,
+      reviewAttemptIsValid: () => false,
+      contractFingerprint: () => "contract",
+      loadRuntime: () => ({}),
+      groundingForReview: () => null,
+      requiredProviders: () => ["test", "review"],
+      receiptValidity: (_id, name, hash) => ({ validity: validity(name, hash) }),
+      claimsForProvider: () => [{ id: "claim-a" }],
+      stableHash: (value) => JSON.stringify(value),
+      relativeReceipt: (path) => path,
+      recordRepairClosureAttempt: () => ({ digest: "closure-1" }),
+      recordReceipt: (_id, name, status, flags) => {
+        receipts[name] = { status, hash: flags.workspaceHash };
+      }
+    }, id, provider, workspaceHash);
+}
+
+{
+  const priorExitCode = process.exitCode;
+  // R1 regression: a rapid change (no declared critical case) whose two AI
+  // waves both failed. After the repair of the final delta's finding, proof
+  // used to return the same impossible REPAIR ("bind each blocker to a
+  // current declared critical case") forever with the old finding.
+  const run = concurrentFixture({
+    reviewOutcome: "fail",
+    findingBinding: { claimIds: ["claim-a"], verificationCaseIds: ["T001", "npm test"] },
+    closure: realClosure(undefined)
+  });
+  const first = await run.advance();
+  assert.equal(first.stage, "review-rejected");
+  assert.equal(first.route, "AUTO_REPAIR");
+  // The explicit run/snapshot binding reaches the concurrent review.
+  assert.deepEqual(run.reviewCommands[0].proofRun, {
+    proofRunId: run.testRunIds[0],
+    workspaceSnapshotId: "snapshot-workspace-a",
+    workspaceHash: "workspace-a"
+  }, "the concurrent review receipt names the collection run, not whatever run is active when it finishes");
+  assert.match(run.testRunIds[0], /^collect-/);
+
+  run.repair("workspace-b");
+  const second = await run.advance();
+  assert.equal(run.reviewCommands.length, 2, "the repaired diff gets its delta review wave");
+  assert.equal(run.reviewCommands[1].workspaceHash, "workspace-b");
+  assert.equal(second.route, "AUTO_REPAIR", "the unrepaired final finding is agent work");
+  assert.match(second.next[0].reason, /still describes the current workspace/);
+
+  run.repair("workspace-c");
+  for (const pass of [1, 2]) {
+    const gate = await run.advance();
+    assert.equal(run.reviewCommands.length, 2, "no third AI wave is dispatched");
+    assert.equal(gate.status, "NEEDS_USER_DECISION", `pass ${pass}: waves exhausted is a user gate`);
+    assert.equal(gate.route, "NO_PROGRESS_DECISION");
+    assert.equal(gate.stage, "review-repair-closure");
+    assert.equal(gate.decision.kind, "review-route-exhausted");
+    assert.equal(gate.decision.recommended, "accept-review-risk");
+    assert.ok(gate.decision.options.some((option) => option.id === "pause"));
+    assert.match(gate.decision.summary, /R2/);
+    assert.doesNotMatch(JSON.stringify(gate), /bind each blocker/,
+      "never demand a critical-case binding the agent cannot create");
+    assert.match(gate.next[0].command, /change waive change-a --capability review/);
+  }
+  process.exitCode = priorExitCode;
+}
+
+{
+  const priorExitCode = process.exitCode;
+  // The same loop closes deterministically when the final finding binds to a
+  // declared critical case with current passing evidence.
+  const run = concurrentFixture({
+    reviewOutcome: "fail",
+    findingBinding: { claimIds: ["claim-a"], verificationCaseIds: ["CASE-A"] },
+    closure: realClosure(["CASE-A"])
+  });
+  await run.advance();
+  run.repair("workspace-b");
+  await run.advance();
+  run.repair("workspace-c");
+  const closed = await run.advance();
+  assert.equal(closed.status, "PASS");
+  assert.equal(run.reviewCommands.length, 2);
+  assert.deepEqual(run.receipts.review, { status: "pass", hash: "workspace-c" });
+  process.exitCode = priorExitCode;
+}
+
+{
+  const priorExitCode = process.exitCode;
+  // A delta review that no longer reports the first wave's finding closes it.
+  const run = concurrentFixture({ reviewOutcome: "fail" });
+  await run.advance();
+  run.repair("workspace-b");
+  run.setReviewOutcome("pass");
+  const passed = await run.advance();
+  assert.equal(passed.status, "PASS");
+  assert.equal(run.reviewCommands.length, 2);
+  process.exitCode = priorExitCode;
+}
+
+{
+  const priorExitCode = process.exitCode;
+  // Before the repair, the closure stop says what is unmet instead of the
+  // generic binding demand.
+  const run = concurrentFixture({
+    closure: () => ({ closed: false, route: "AUTO_REPAIR",
+      reason: "The final AI delta still describes the current workspace; repair its blocker/major findings before advancing." }),
+    deliveredAiAttempts: [
+      { digest: "wave-1", resultStatus: "fail", workspaceHash: "workspace-0" },
+      { digest: "wave-2", resultStatus: "fail", workspaceHash: "workspace-a" }
+    ]
+  });
+  const stop = await run.advance();
+  assert.equal(stop.route, "AUTO_REPAIR");
+  assert.match(stop.next[0].reason, /still describes the current workspace/);
+  assert.doesNotMatch(stop.next[0].reason, /bind each blocker/);
   process.exitCode = priorExitCode;
 }
 

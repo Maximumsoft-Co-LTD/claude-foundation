@@ -1433,8 +1433,15 @@ function minimalDraft(overrides = {}) {
   };
 }
 
-test("a minimal draft infers version, keys, capability, names, operation, and covers", () => {
-  const expanded = expandMinimalSemanticDraft(minimalDraft());
+function explicitCovers(overrides = {}) {
+  const value = minimalDraft(overrides);
+  value.tasks[0].covers = ["export-every-invoice-row-as-csv"];
+  value.tasks[1].covers = ["escape-commas-inside-invoice-fields"];
+  return value;
+}
+
+test("a minimal draft infers version, keys, capability, names, and operation", () => {
+  const expanded = expandMinimalSemanticDraft(explicitCovers());
   assert.equal(expanded.version, 4);
   assert.deepEqual(expanded.requirements.map((row) => [row.key, row.capability, row.operation]), [
     ["export-every-invoice-row-as-csv", "export-invoices-as-csv", "added"],
@@ -1451,7 +1458,7 @@ test("a minimal draft infers version, keys, capability, names, operation, and co
   assert.equal(draft.impact, "low");
   assert.deepEqual(draft.claims.map((claim) => claim.capabilities), [["test"], ["test"]]);
   // Expansion is deterministic, so recompiling yields the same IDs.
-  assert.deepEqual(expandMinimalSemanticDraft(minimalDraft()), expanded);
+  assert.deepEqual(expandMinimalSemanticDraft(explicitCovers()), expanded);
 });
 
 test("minimal draft keys stay collision-safe and one task covers every requirement", () => {
@@ -1479,17 +1486,84 @@ test("a minimal requirement matching the canonical spec compiles as modified", (
   assert.equal(expanded.requirements[1].operation, "added");
 });
 
-test("ambiguous covers across several tasks is left to the author and named", () => {
-  const expanded = expandMinimalSemanticDraft(minimalDraft({
-    tasks: [
-      { outcome: "Build the module", verify: "npm test", paths: ["src/a.js"] },
-      { outcome: "Build the module again", verify: "npm test", paths: ["src/b.js"] }
-    ]
-  }));
-  assert.equal(expanded.tasks[0].covers, undefined);
+test("several tasks and requirements require explicit covers, even when words overlap", () => {
+  // Word overlap would pair these tasks and requirements; it is never guessed.
+  const expanded = expandMinimalSemanticDraft(minimalDraft());
+  assert.deepEqual(expanded.tasks.map((task) => task.covers), [undefined, undefined]);
   const { issues } = normalizeSemanticDraft(expanded, slugify, { defaultRapidEvidence: true });
-  assert.ok(issues.some((issue) => /tasks\[0\]\.covers must name at least one requirement/.test(issue)));
+  assert.ok(issues.some((issue) =>
+    /tasks\[0\]\.covers must name at least one requirement \(several tasks and requirements/.test(issue)));
+  assert.ok(issues.some((issue) => /tasks\[1\]\.covers must name/.test(issue)));
   assert.ok(issues.some((issue) => /no implementation task: .*name each in one task's 'covers'/.test(issue)));
+});
+
+test("one requirement is covered by every task of a minimal draft", () => {
+  const expanded = expandMinimalSemanticDraft(minimalDraft({
+    requirements: [minimalDraft().requirements[0]]
+  }));
+  assert.deepEqual(expanded.tasks.map((task) => task.covers),
+    [["export-every-invoice-row-as-csv"], ["export-every-invoice-row-as-csv"]]);
+  const { issues } = normalizeSemanticDraft(expanded, slugify, { defaultRapidEvidence: true });
+  assert.deepEqual(issues, []);
+});
+
+const invoiceSpec = [
+  "# invoices", "", "### Requirement: Invoice export", "",
+  "The system SHALL export every invoice row as CSV", "",
+  "#### Scenario: Export", "", "- **WHEN** an operator exports", "- **THEN** CSV is returned"
+].join("\n");
+const authSpec = [
+  "# auth", "", "### Requirement: Session login", "",
+  "The system SHALL start a session after a valid login", "",
+  "#### Scenario: Login", "", "- **WHEN** a user logs in", "- **THEN** a session starts"
+].join("\n");
+const specContext = (specs) => ({
+  loadCanonicalSpec: (name) => specs[name] ?? null,
+  listCanonicalCapabilities: () => Object.keys(specs)
+});
+
+test("a minimal draft restating a canonical requirement joins that capability as modified", () => {
+  const expanded = expandMinimalSemanticDraft(explicitCovers(),
+    specContext({ auth: authSpec, invoices: invoiceSpec }));
+  assert.deepEqual(expanded.requirements.map((row) => [row.capability, row.operation]),
+    [["invoices", "modified"], ["invoices", "added"]]);
+  assert.equal(expanded.requirements[0].requirement, "Invoice export");
+});
+
+test("a minimal draft matching an existing capability by paths and words adds to it", () => {
+  const expanded = expandMinimalSemanticDraft(minimalDraft({
+    intent: "Lock accounts after repeated failures",
+    requirements: [{ description: "The system SHALL lock an account after five failures",
+      scenarios: [{ when: "a fifth login fails", then: "the account is locked" }] }],
+    tasks: [{ outcome: "Lock accounts", verify: "npm test", paths: ["src/auth/lockout.js"] }]
+  }), specContext({ auth: authSpec, invoices: invoiceSpec }));
+  assert.deepEqual(expanded.requirements.map((row) => [row.capability, row.operation]),
+    [["auth", "added"]]);
+});
+
+test("a minimal draft matching no existing capability asks for one by name", () => {
+  const expanded = expandMinimalSemanticDraft(minimalDraft({
+    intent: "Send weekly digest emails",
+    requirements: [
+      { description: "The system SHALL email a weekly digest",
+        scenarios: [{ when: "a week ends", then: "a digest email is sent" }] },
+      { description: "The system SHALL skip empty digests",
+        scenarios: [{ when: "nothing happened", then: "no email is sent" }] }
+    ],
+    tasks: [{ outcome: "Send digests", verify: "npm test", paths: ["src/digest.js"] }]
+  }), specContext({ auth: authSpec, invoices: invoiceSpec }));
+  assert.deepEqual(expanded.requirements.map((row) => row.capability), [undefined, undefined]);
+  const { issues } = normalizeSemanticDraft(expanded, slugify, { defaultRapidEvidence: true });
+  const capabilityIssues = issues.filter((issue) => /capability/.test(issue));
+  assert.equal(capabilityIssues.length, 1);
+  assert.match(capabilityIssues[0], /'capability' is required: .*one of: auth, invoices/);
+  // An explicit capability is always kept.
+  const chosen = expandMinimalSemanticDraft(minimalDraft({
+    requirements: [{ ...minimalDraft().requirements[0], capability: "digest" }],
+    tasks: [{ outcome: "Send digests", verify: "npm test", paths: ["src/digest.js"] }]
+  }), specContext({ auth: authSpec }));
+  assert.equal(chosen.requirements[0].capability, "digest");
+  assert.equal(chosen._capabilityChoices, undefined);
 });
 
 test("explicit versions and non-minimal shapes are never expanded", () => {

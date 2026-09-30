@@ -42,7 +42,7 @@ assert_words_at_most "always-on fundamentals budget" 700 \
 assert_file_contains "fundamentals separates skill judgment from harness control" \
   "$ROOT/.claude/rules/fundamentals.md" \
   'Skills supply judgment and procedures; the harness owns lifecycle'
-assert_words_at_most "orchestrator troubleshooting budget" 750 \
+assert_words_at_most "orchestrator troubleshooting budget" 585 \
   "$ROOT/.claude/orchestrator.md"
 assert_words_at_most "portable agent contract budget" 300 \
   "$ROOT/.claude/harness/AGENT.md"
@@ -130,7 +130,7 @@ assert_file_contains "change workflow delegates semantic intake to one canonical
 # `/build` → `/prove` → `/land`. Shared rules live only in AGENT.md; each phase
 # command is the single source for its phase. The full Change workflow,
 # semantic intake, and Build policy stay selectively loaded on named triggers.
-assert_words_at_most "build policy reference budget" 1060 \
+assert_words_at_most "build policy reference budget" 875 \
   "$ROOT/.claude/commands/references/build-policy.md"
 assert_file_absent "rapid path reference is retired" \
   "$ROOT/.claude/commands/references/rapid-path.md"
@@ -227,8 +227,10 @@ if grep -En 'change resolve [^ ]* ?--approve-spec|--consume-draft|mark it comple
 else
   pass "phase instructions omit harness-owned manual steps"
 fi
-assert_words_at_most "change workflow reference budget" 1400 \
+assert_words_at_most "change workflow reference budget" 1150 \
   "$ROOT/.claude/skills/change/references/workflow.md"
+assert_words_at_most "prove workflow reference budget" 435 \
+  "$ROOT/.claude/skills/prove/references/workflow.md"
 assert_words_at_most "semantic intake reference budget" 400 \
   "$ROOT/.claude/skills/change/references/semantic-intake.md"
 assert_words_at_most "semantic intelligence reference budget" 220 \

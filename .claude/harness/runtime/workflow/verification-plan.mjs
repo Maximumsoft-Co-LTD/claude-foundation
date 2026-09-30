@@ -2,11 +2,13 @@ export function verificationRisk(packet) {
   const providerRows = Array.isArray(packet.providers) ? packet.providers : [];
   const repositories = new Set(providerRows.flatMap((provider) =>
     Array.isArray(provider.repositories) ? provider.repositories : []));
-  // A resolved review tier decides review-driven risk: an intent keyword
-  // makes review required at the low tier without raising verification risk.
-  // Packets without a tier (legacy routing) keep reviewRequired as high.
+  // A declared review (`--review`, impact, coupling, security triggers) or a
+  // high review tier raises verification risk. A review required only by an
+  // intent keyword (reviewKeywordOnly) follows its resolved tier. Packets
+  // without a tier (legacy routing) keep reviewRequired as high.
+  const declaredReview = Boolean(packet.reviewRequired) && !packet.reviewKeywordOnly;
   const reviewHigh = packet.reviewTier
-    ? packet.reviewTier === "high" : Boolean(packet.reviewRequired);
+    ? packet.reviewTier === "high" || declaredReview : Boolean(packet.reviewRequired);
   if (packet.impact === "high" || packet.coupling === "coupled" ||
       reviewHigh || repositories.size > 1) return "high";
   if (packet.schema === "foundation-rapid" && packet.impact === "low") return "rapid";

@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { shellDisplayArgument } from "../core/shell-mutation-policy.mjs";
 
 // Shell mutations during Build are recorded rather than blocked, so the
 // guarantee that Build never touches the target checkout moves here: Prove and
@@ -77,5 +78,64 @@ export function targetEditIssues({ root, state, dirtyNow, landOutput = {} }) {
       "files, then rerun. If a listed file is the user's own work, ask the user and record it " +
       `with 'claude-foundation change resolve ${state.id} --accept-target-edits --decision-ref <user-decision>'`],
     notices: []
+  };
+}
+
+// Byproducts a build or test run regenerates. A tracked one changed on the
+// target after isolation is a test run in the main checkout, not user work.
+const GENERATED_ARTIFACT_PATTERNS = Object.freeze([
+  /(^|\/)__pycache__\//, /\.py[co]$/, /\.class$/, /(^|\/)node_modules\/\.cache\//,
+  /(^|\/)coverage\//, /(^|\/)\.pytest_cache\//, /(^|\/)\.nyc_output\//
+]);
+
+export function isGeneratedArtifactPath(path) {
+  return GENERATED_ARTIFACT_PATTERNS.some((pattern) => pattern.test(String(path || "")));
+}
+
+// Restorable without a user decision only when the path is a generated
+// artifact that was clean on the target when the sandbox was isolated.
+export function restorableTargetPaths(paths, snapshot = {}) {
+  return paths.filter((path) =>
+    isGeneratedArtifactPath(path) && !Object.hasOwn(snapshot || {}, path));
+}
+
+export function parseRestoreTargetPaths(value) {
+  return [...new Set(String(value ?? "").split(",").map((path) => path.trim())
+    .filter(Boolean))].sort();
+}
+
+export function restoreTargetCommand(changeId, paths, decisionRef = null) {
+  return `claude-foundation advance ${changeId} --through archived --restore-target ${
+    shellDisplayArgument(paths.join(","))}${decisionRef ? ` --decision-ref ${decisionRef}` : ""}`;
+}
+
+// Land's stop for target edits its apply would overwrite. Regenerable
+// artifacts get one harness-executed restore command; anything else is the
+// user's call, with the same command offered only behind their decision.
+export function targetConflictStop({ changeId, paths, snapshot = {}, cause }) {
+  const listed = paths.slice(0, 10).join(", ") + (paths.length > 10 ? ", ..." : "");
+  const restorable = restorableTargetPaths(paths, snapshot);
+  if (restorable.length === paths.length) return {
+    message: `${cause} at generated artifact(s) changed in the main checkout after isolation: ${
+      listed}. Tests and checks run only in the sandbox. Restore them to the recorded base ` +
+      `inside Land with '${restoreTargetCommand(changeId, paths)}'`,
+    details: { owner: "agent", boundary: "target-conflict", code: "TARGET_ARTIFACT_CONFLICT" }
+  };
+  return {
+    decision: {
+      kind: "target-edit-conflict",
+      summary: `${cause} at: ${listed} — commit or reconcile the landed work first, then sync ` +
+        "the sandbox and prove again, or let Land restore those target files to the recorded base.",
+      paths,
+      options: [
+        { id: "keep-target", outcome: "Keep the target edits: commit or reconcile them, then " +
+          `'claude-foundation sandbox sync ${changeId}' and prove again.` },
+        { id: "restore-target", outcome: "Discard the target edits at the listed paths and land " +
+          `the proven projection: '${restoreTargetCommand(changeId, paths, "<user-decision>")}'.` },
+        { id: "pause", outcome: "Change nothing and leave both workspaces as they are." }
+      ],
+      recommended: paths.every(isGeneratedArtifactPath) ? "restore-target" : "keep-target"
+    },
+    code: "target-edit-conflict"
   };
 }

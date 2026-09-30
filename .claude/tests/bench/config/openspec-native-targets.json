@@ -40,6 +40,24 @@
       "target": {
         "tool_calls_max": 20
       }
+    },
+    "notes-api": {
+      "baseline": null,
+      "target": {
+        "wall_minutes_max": 10
+      }
+    },
+    "cart-coupons": {
+      "baseline": null,
+      "target": {
+        "wall_minutes_max": 10
+      }
+    },
+    "project-tracker-api": {
+      "baseline": null,
+      "target": {
+        "wall_minutes_max": 20
+      }
     }
   },
   "quality_invariants": [

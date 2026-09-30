@@ -401,7 +401,7 @@ function laneLoadRuntime(schema) {
 
 test("rapid lane accepts exit 0 with executed-test evidence as exit-code measurement", async () => {
   const config = { capability: "test", adapter: "test-discovery", minimum: 1 };
-  const world = fixture(config, result({ stdout: "running\n✔ adds (0.4ms)\ndone" }),
+  const world = fixture(config, result({ stdout: "running\n✔ adds (0.4ms)\n# tests 1\ndone" }),
     { loadRuntime: laneLoadRuntime("foundation-rapid") });
   const outcome = await world.runtime.executeAdapter(
     "change", "provider", config, "run", new Map());
@@ -416,7 +416,8 @@ test("rapid lane accepts exit 0 with executed-test evidence as exit-code measure
 
 test("rapid lane without executed-test evidence stays inconclusive with the repair", async () => {
   const config = { capability: "test", adapter: "test-discovery", minimum: 1 };
-  for (const stdout of ["build complete", "no tests found\n✔ lint", "Ran 0 tests in 0.0s"]) {
+  for (const stdout of ["build complete", "no tests found\n✔ lint", "Ran 0 tests in 0.0s",
+    "✔ No problems found", "✔ Compiled successfully\n✔ Linted 12 files"]) {
     const world = fixture(config, result({ stdout }),
       { loadRuntime: laneLoadRuntime("foundation-rapid") });
     assert.equal((await world.runtime.executeAdapter(
@@ -450,15 +451,16 @@ test("exit-code measurement is rapid-only, minimum-1-only, and never excuses a f
 
 test("executed-test evidence recognizes runner pass lines and rejects empty runs", () => {
   for (const text of [
-    "✔ works (1ms)", "ok 3 - parses", "PASS src/a.test.js", "--- PASS: TestAdd (0.00s)",
+    "✔ works (1ms)\nℹ tests 1", "✔ works\n# pass 2", "ok 3 - parses", "PASS src/a.test.js", "--- PASS: TestAdd (0.00s)",
     "ok  \texample.com/pkg\t0.012s", "test_add (tests.Math) ... ok",
     "test tests::adds ... ok", "===== 5 passed in 0.12s =====", "  3 passing (8ms)",
-    "Ran 4 tests in 0.001s", "2 examples, 0 failures", "\x1b[32m✔\x1b[39m colored"
+    "Ran 4 tests in 0.001s", "2 examples, 0 failures", "\x1b[32m✔\x1b[39m colored\nℹ tests 1"
   ]) assert.ok(parseExecutedTestEvidence(text), text);
   for (const text of [
     "", "build complete", "PASS", "0 passed", "Ran 0 tests in 0.0s", "0 examples, 0 failures",
     "No tests found, exiting with code 0", "ok  \tpkg\t0.01s [no tests to run]",
-    "?   \tpkg\t[no test files]", "all good ✔", "ok"
+    "?   \tpkg\t[no test files]", "all good ✔", "ok",
+    "✔ No problems", "✔ Build complete\n✔ Linted 3 files", "✔ works\nℹ tests 0"
   ]) assert.equal(parseExecutedTestEvidence(text), null, text);
 });
 

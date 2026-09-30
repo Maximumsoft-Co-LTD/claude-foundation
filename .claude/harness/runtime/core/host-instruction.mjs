@@ -119,26 +119,6 @@ export function parseHostInstructionArguments(argv) {
   return { command, options };
 }
 
-export function hostInstructionResponse(argv, options = {}) {
-  try {
-    const parsed = parseHostInstructionArguments(argv);
-    return { status: 0, body: resolveHostInstruction(parsed.command,
-      { ...parsed.options, packageRoot: options.packageRoot }) };
-  } catch (error) {
-    const known = error instanceof HostInstructionError;
-    return {
-      status: 1,
-      body: {
-        protocol: HOST_INSTRUCTION_PROTOCOL,
-        error: {
-          code: known ? error.code : "instruction_unavailable",
-          message: known ? error.message : "The installed Foundation instruction is unavailable."
-        }
-      }
-    };
-  }
-}
-
 export async function hostInstructionResponseWithUpdate(argv, options = {}) {
   try {
     const parsed = parseHostInstructionArguments(argv);

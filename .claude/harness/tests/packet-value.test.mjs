@@ -268,6 +268,15 @@ try {
   assert.deepEqual(watched.budget, { mode: "active" });
   assert.deepEqual(watched.budgetDecision, { allowed: true });
   budgetWatchdog = undefined;
+  // Declared review carries no keyword marker; a keyword-only requirement does,
+  // so verification risk can follow its resolved review tier.
+  assert.equal(global.reviewKeywordOnly, undefined);
+  state.reviewKeywordOnly = true;
+  assert.equal(runtime.packetValue("packet-test").reviewKeywordOnly, true);
+  state.reviewRequired = false;
+  assert.equal(runtime.packetValue("packet-test").reviewKeywordOnly, undefined);
+  state.reviewRequired = true;
+  delete state.reviewKeywordOnly;
 
   state.riskBasedCiRequired = true;
   state.impact = "high";

@@ -105,7 +105,7 @@ import { createReceiptValidity } from "./runtime/evidence/receipt-validity.mjs";
 import { createAdapterRuntime } from "./runtime/evidence/adapter-runtime.mjs";
 import { createProofExecutionRuntime } from "./runtime/evidence/proof-execution-runtime.mjs";
 import { createConfiguredReviewerRuntime } from "./runtime/evidence/codex-reviewer.mjs";
-import { createBlockedDecision } from "./runtime/core/blocked-decision.mjs";
+import { createBlockedDecision, createDetachedBlockScope } from "./runtime/core/blocked-decision.mjs";
 import { createLandGrantRuntime } from "./runtime/core/land-grant.mjs";
 import {
   assertExecutionPreparationReady, ensureProjectOpenSpec,
@@ -147,7 +147,7 @@ if (RUNTIME_MODULE_API !== RUNTIME_API_VERSION) {
 const PROVIDER_PROTOCOL_VERSION = "13";
 const ADAPTER_PROTOCOL_VERSION = "7";
 const PROOF_PROTOCOL_VERSION = "7";
-const PACKET_SCHEMA_VERSION = "11";
+const PACKET_SCHEMA_VERSION = "12";
 const AGENT_PLAN_SCHEMA_VERSION = "6";
 const CONTEXT_EVENT_SCHEMA_VERSION = "2";
 const METRICS_SCHEMA_VERSION = "10";
@@ -155,7 +155,7 @@ const COMMAND_TELEMETRY_SCHEMA_VERSION = "5";
 const REVIEW_PROTOCOL_VERSION = "4";
 const ACCEPTANCE_PROTOCOL_VERSION = "2";
 const SEMANTIC_ACCEPTANCE_PROTOCOL_VERSION = "1";
-const REVIEW_PACKET_SCHEMA_VERSION = "5";
+const REVIEW_PACKET_SCHEMA_VERSION = "6";
 const ATTESTATION_PROTOCOL_VERSION = "1";
 const AUTHORITY_PROTOCOL_VERSION = "2";
 const CI_EVIDENCE_PROTOCOL_VERSION = "1";
@@ -167,11 +167,16 @@ const AUTOMATED_MUTATION_PROTOCOL_VERSION = "1";
 let operationBlocked = false;
 let operationBlocker = null;
 let trappedFailureDepth = 0;
+// Work that runs beside an operation (the concurrent review in `advance`)
+// records its own refusal here instead of marking the whole process blocked:
+// its failure is an open request the next pass routes, not this command's stop.
+const detachedBlockScope = createDetachedBlockScope();
 // A command that prints a structured non-ready result and returns has also
 // ended in a refusal, not a crash — but it never reaches `die`. `block()` is
 // that second spelling: it records the decision without exiting, so the exit
 // handler reports what the command decided instead of inferring it.
 function markBlocked(message) {
+  if (detachedBlockScope.capture(message)) return;
   operationBlocked = true;
   operationBlocker = blockerTelemetryValue(message, {
     changeId: operationChangeId,
@@ -1712,9 +1717,11 @@ const {
   requestAuthority,
   // Only the exact placeholder-free `authority run` route `advance` would run
   // inline qualifies; it runs under the proof lock the caller already holds.
-  startConcurrentReview: (id, _request, command) => {
+  startConcurrentReview: (id, _request, command, proofRun = null) => {
     const flags = automaticReviewRun(id, command);
-    return flags ? runAuthorityReviewerAsync(id, { ...flags }) : null;
+    return flags ? detachedBlockScope.run(() => trapFailuresAsync(() =>
+      runAuthorityReviewerAsync(id, { ...flags, ...(proofRun ? { proofRun } : {}) })))
+      : null;
   },
   stableHash,
   die
@@ -1866,6 +1873,7 @@ const applyRuntime = createApplyRuntime({
 });
 const {
   gitApplyInputs,
+  recordTargetRestore,
   buildApplyEntries,
   prepareApplyTransaction,
   refreshAppliedProjection,
@@ -2174,6 +2182,7 @@ await routeRuntimeCommand(command, values, {
   showPacket,
   showMetrics,
   showAdvance,
+  recordTargetRestore,
   showFeedback,
   execObserved,
   checkpointBudget,
