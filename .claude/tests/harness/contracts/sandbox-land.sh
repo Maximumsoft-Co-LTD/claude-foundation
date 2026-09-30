@@ -1,4 +1,11 @@
 # Sandbox, apply transaction, recovery, spec-sync, and Land contracts.
+# Sourced by run-harness-tests.sh only. Run directly, $TMP and the assertion
+# helpers are missing and the fixture would init, configure, and commit inside
+# the real repository, so refuse before touching anything.
+[ -n "${TMP:-}" ] && [ -d "$TMP" ] && command -v assert_eq >/dev/null 2>&1 || {
+  echo "contract fragment: run it through .claude/tests/harness/run-harness-tests.sh" >&2
+  exit 2
+}
 # Non-Git repositories use a manifest-guarded isolated copy.
 node .claude/harness/foundation.mjs new 'Copy sandbox' --rapid >/dev/null
 node .claude/harness/foundation.mjs resolve copy-sandbox --impact low --coupling isolated >/dev/null

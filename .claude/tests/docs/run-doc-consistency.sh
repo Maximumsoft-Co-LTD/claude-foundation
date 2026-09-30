@@ -500,7 +500,8 @@ assert.match(feature, /PRD Decision Sheet does not replace it/);
 assert.match(feature, /coordinator reuse identity-valid receipts and proof/);
 assert.doesNotMatch(feature, /Never Land, publish, weaken evidence, or reuse proof/);
 assert.match(prose(".claude/commands/prove.md"), /coordinator reuses fresh receipts/);
-assert.match(prose(".claude/commands/dev.md"), /With explicit Land authority, follow `\/land` through `archived`/);
+// Any explicit instruction to land, in any wording, grants Land (user decision 2026-09-30).
+assert.match(prose(".claude/commands/dev.md"), /With explicit Land authority in any wording, run `advance <id> --through archived`; never infer it/);
 
 const description = read(".claude/skills/land/SKILL.md").match(/^description: (.+)$/m)[1];
 assert.doesNotMatch(description, /apply a proven change, commit, publish/);

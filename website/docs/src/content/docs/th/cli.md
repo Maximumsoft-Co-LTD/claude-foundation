@@ -15,9 +15,10 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
 | `investigate --template \| <record.json>` | ตรวจ fact และ hypothesis ที่ผูก source เก็บ resume state และสร้าง Change handoff |
-| `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect intake หรือ compile และเริ่ม semantic agreement หนึ่งชุดแบบ atomic |
+| `change start --template \| <draft.json> [--inspect] [--consume-draft]` | ตรวจ draft และถ้าครบจะ compile และเริ่ม agreement แบบ atomic ในคำสั่งเดียว; `--inspect` ตรวจอย่างเดียว |
 | `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake หรือเพิ่ม แก้ หรือลบ requirement ระหว่าง Build แบบ transaction |
-| `advance <change> --through build\|proven\|archived` | รัน deterministic lifecycle แล้วคืนหนึ่งในหก action ที่ boundary จริง |
+| `advance <change> --through build\|proven\|archived` | รัน deterministic lifecycle (evidence wiring, sandbox sync, review ที่ agent รันได้, ติ๊ก task) แล้วคืนหนึ่งในหก action ที่ boundary จริง |
+| `advance <change> --approve-spec --decision-ref <ref>` | บันทึกการอนุมัติ spec ของผู้ใช้ (alias ของ `change resolve --approve-spec`) |
 | `deliver advance <change>` | หลังสั่ง `/deliver` อย่างชัดเจน ให้ harness ทำ isolated commit, push feature branch, เปิด/ใช้ PR เดิม, ตรวจผ่าน provider และคืน URL |
 | `changes` | อ่าน active state และ route ถัดไป |
 | `doctor …` | วิเคราะห์เฉพาะเมื่อ coordinator ขอ |
@@ -68,7 +69,7 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 |---|---|
 | `investigate --template \| <record.json>` | พิมพ์หรือตรวจ investigation record แล้วคืน typed action หนึ่งรายการ |
 | `change new <intent> [--rapid]` | Compatible primitive สำหรับเขียน agreement ด้วยมือ |
-| `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect intake หรือ compile agreement จาก semantic draft ที่ผ่านการตรวจ โดยพื้นที่แยกจะสร้างภายหลังใน Build |
+| `change start --template \| <draft.json> [--inspect] [--consume-draft]` | ตรวจและถ้าครบจะ compile และเริ่ม agreement จาก semantic draft ในคำสั่งเดียว โดยพื้นที่แยกจะสร้างภายหลังใน Build |
 | `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake หรือเพิ่ม แก้ หรือลบ semantic requirement แบบ transaction และรักษางานที่เสร็จแล้ว |
 | `change revise <change> <draft.json> [--inspect] [--consume-draft]` | ก่อน Build คอมไพล์ semantic draft ฉบับแก้ทับ change id เดิมพร้อม rollback และแสดง requirement delta (ใช้ approval เดิมต่อ เว้นแต่มีการลบ requirement) |
 | `change resolve <change> …` | บันทึกการตัดสินใจเรื่อง impact coupling security และ review |

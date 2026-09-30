@@ -17,6 +17,7 @@ ticking, validation, and proof. You own the draft, product code, and tests.
   agreement changes only through the draft or one semantic amendment.
 - Never infer approval or Land authority from silence. Never commit, push, or
   open a PR.
+- One command per shell call (a `cd <workspace> &&` prefix is fine).
 
 ## Load more only on a trigger
 
@@ -111,10 +112,11 @@ workflow reference.
 
 ## 4. Land (explicit authority only)
 
-Only when the user explicitly grants Land, follow `/land`
-(`claude-foundation land advance <id>`) until `archived`. It applies the
-proven diff uncommitted to the main workspace and archives the change.
-`proven` alone is not delivery.
+Any explicit user instruction to land grants Land: `/land`, or "land it
+when proven" in the request. Then run
+`claude-foundation advance <id> --through archived`; it applies the proven
+diff uncommitted and archives. Otherwise stop at `proven`, which is not
+delivery.
 
 ## Status and resume
 

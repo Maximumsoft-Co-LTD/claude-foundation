@@ -16,9 +16,10 @@ surface is:
 | Command | Purpose |
 |---|---|
 | `investigate --template \| <record.json>` | Validate source-bound facts and hypotheses, persist resume state, and emit a Change handoff |
-| `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect intake or compile and atomically start one semantic agreement |
+| `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect a draft and, when complete, compile and atomically start it in one call; `--inspect` inspects only |
 | `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake or transactionally add, revise, or remove requirements during Build |
-| `advance <change> --through build\|proven\|archived` | Run deterministic lifecycle work and return one of six bounded actions at the next real boundary |
+| `advance <change> --through build\|proven\|archived` | Run deterministic lifecycle work (evidence wiring, sandbox sync, agent-runnable review, task ticking) and return one of six bounded actions at the next real boundary |
+| `advance <change> --approve-spec --decision-ref <ref>` | Record the user's spec approval (alias of `change resolve --approve-spec`) |
 | `deliver advance <change>` | After explicit `/deliver`, automate isolated commit, feature-branch push, PR creation/reuse, provider verification, and return the URL |
 | `changes` | Read active state and the next useful route |
 | `doctor …` | Diagnose a route only when the coordinator asks for it |
@@ -69,7 +70,7 @@ language profiles, baselines, and rollout policy.
 |---|---|
 | `investigate --template \| <record.json>` | Print or validate a versioned investigation record and return one typed action |
 | `change new <intent> [--rapid]` | Compatible primitive for manually authoring a change agreement |
-| `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect intake or compile and start an agreement from one validated semantic draft; Build creates isolation later |
+| `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect and, when complete, compile and start an agreement from one semantic draft in one call; Build creates isolation later |
 | `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake or add, revise, or remove semantic requirements transactionally while preserving completed work |
 | `change revise <change> <draft.json> [--inspect] [--consume-draft]` | Before Build, recompile a revised semantic draft over the same change id with rollback and a requirement delta (approval carries unless a requirement is removed) |
 | `change resolve <change> …` | Persist impact, coupling, security, and review decisions |

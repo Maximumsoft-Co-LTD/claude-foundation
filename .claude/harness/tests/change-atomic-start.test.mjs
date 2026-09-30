@@ -217,6 +217,11 @@ test("bare start inspects and starts a correct v4 draft in one command", (t) => 
   // The compiled files are listed so the agent never guesses artifact paths.
   assert.match(output, /\n  file: openspec\/changes\/single-shot-change\/proposal\.md\n/);
   assert.match(output, /\n  file: openspec\/changes\/single-shot-change\/tasks\.md\n/);
+  assert.match(output, /\n  specs: none \(rapid packet/);
+  assert.match(output, /\n  task: T001\b/);
+  // One authoritative next step: no per-step `next` from CREATED/RESOLVED.
+  assert.doesNotMatch(output, /complete artifacts, validate, then \/build/);
+  assert.equal((output.match(/\n  next: /g) || []).length, 1);
   assert.match(output, /then: claude-foundation advance single-shot-change --through build/);
   assert.equal(existsSync(join(value.changes, "single-shot-change")), true);
   const runtime = JSON.parse(readFileSync(join(value.runtime, "single-shot-change.json"), "utf8"));

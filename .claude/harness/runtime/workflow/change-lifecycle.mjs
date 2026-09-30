@@ -919,7 +919,20 @@ export function createChangeLifecycle({
       }
     };
     try { walk(base); } catch { return ""; }
-    return files.sort().map((file) => `  file: ${file}\n`).join("");
+    const lines = files.sort().map((file) => `  file: ${file}\n`);
+    if (!files.some((file) => file.includes("/specs/")))
+      lines.push("  specs: none (rapid packet; requirements are in proposal.md)\n");
+    // The task list, so the agent can start Build without opening tasks.md.
+    try {
+      for (const line of readFileSync(join(base, "tasks.md"), "utf8").split("\n")) {
+        const task = line.match(/^\s*-\s*\[[ xX]\]\s*\*{0,2}(T\d+)\*{0,2}\s*(.*)$/);
+        if (!task) continue;
+        // Drop the bracketed ledger metadata; keep the outcome and its verify.
+        const summary = task[2].replace(/\s*\[[a-z-]+:[^\]]*\]/g, "").replace(/\s+/g, " ").trim();
+        lines.push(`  task: ${task[1]} ${summary.slice(0, 200)}\n`);
+      }
+    } catch {}
+    return lines.join("");
   }
 
   function designWarningLines(draft, schema) {
@@ -1041,7 +1054,10 @@ export function createChangeLifecycle({
     const next = schema === "foundation-standard"
       ? `resolve decisions with change resolve ${id} before authoring or validation`
       : `complete artifacts, validate, then /build ${id}`;
-    console.log(`CREATED ${id}\n  schema: ${schema}\n  next: ${next}`);
+    // Atomic start and revise print one authoritative next step after AGREED
+    // or REVISED; a per-step `next` here contradicted it.
+    console.log(`CREATED ${id}\n  schema: ${schema}` +
+      (options.deferSessionBinding ? "" : `\n  next: ${next}`));
     return id;
   }
 
@@ -1353,6 +1369,10 @@ export function createChangeLifecycle({
     return false;
   }
 
+  // Set while atomic start or revise runs its create/resolve steps, which
+  // print their own single `next` at the end.
+  let atomicStepOutput = false;
+
   function printResolution(id, state, upgraded) {
     // The surface line appears only when one was declared, so a change that
     // never used the flag keeps producing the output it produced before it
@@ -1362,7 +1382,7 @@ export function createChangeLifecycle({
     // Named only when a decision waived it, so every earlier output is intact.
     const ciLine = state.ciWaiver
       ? `\n  signed CI: waived (${state.ciWaiver.decisionRef})` : "";
-    console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${state.reviewRequired ? "required" : "not required"}\n  acceptance: ${state.acceptance?.decision || (state.acceptance?.required ? "required" : "legacy-not-required")}\n  security: ${state.securityTriggers.join(", ") || "none"}${surfaceLine}${ciLine}\n  schema: ${state.schema}${upgraded ? " (upgraded from foundation-rapid; design.md and specs/ added)" : ""}\n  next: ${nextCommand(state.status, id)}`);
+    console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${state.reviewRequired ? "required" : "not required"}\n  acceptance: ${state.acceptance?.decision || (state.acceptance?.required ? "required" : "legacy-not-required")}\n  security: ${state.securityTriggers.join(", ") || "none"}${surfaceLine}${ciLine}\n  schema: ${state.schema}${upgraded ? " (upgraded from foundation-rapid; design.md and specs/ added)" : ""}${atomicStepOutput ? "" : `\n  next: ${nextCommand(state.status, id)}`}`);
   }
 
   function resolveChange(id, flags) {
@@ -1553,7 +1573,10 @@ export function createChangeLifecycle({
           availabilityChecked: true,
           deferSessionBinding: true
         }));
-        const resolution = measureStage("change.resolve", () => resolveChange(id, resolutionFlags));
+        atomicStepOutput = true;
+        let resolution;
+        try { resolution = measureStage("change.resolve", () => resolveChange(id, resolutionFlags)); }
+        finally { atomicStepOutput = false; }
         // A rapid draft can still upgrade when semantic security terms in the
         // intent trigger standard policy during resolve. Only that transition
         // needs a second projection; the common path was previously rewritten
@@ -1751,7 +1774,10 @@ export function createChangeLifecycle({
         createChange(draft.intent, { rapid, id }, draft, {
           availabilityChecked: true, deferSessionBinding: true
         });
-        const resolution = resolveChange(id, resolutionFlags);
+        atomicStepOutput = true;
+        let resolution;
+        try { resolution = resolveChange(id, resolutionFlags); }
+        finally { atomicStepOutput = false; }
         if (resolution.upgraded) materializeDraft(id, draft);
         validate(id, "root");
         bindClaudeSession(id, "change");

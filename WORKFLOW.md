@@ -506,7 +506,11 @@ The internal command behind `/land` is:
 claude-foundation land advance <change>
 ```
 
-This explicit invocation supplies Land authority. Land has one user-visible
+This explicit invocation supplies Land authority. Any other explicit user
+instruction to land, in any wording (for example "land it when proven" in a
+`/dev` request), supplies it too; the agent then runs
+`claude-foundation advance <change> --through archived`. Silence never does.
+Land has one user-visible
 goal: place the exact current workspace projection in the declared main
 workspace. The Harness binds a resumable grant to the exact change, workspace
 hash, available assurance, repository graph, and target roots, then owns

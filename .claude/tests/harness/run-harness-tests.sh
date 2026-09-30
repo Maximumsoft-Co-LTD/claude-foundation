@@ -25,6 +25,16 @@ assert_cmd_zero "cross-domain benchmark matrix is valid" \
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
+
+# A contract fragment run directly once committed fixtures and a test identity
+# into the real repository. Each must refuse without touching its cwd.
+mkdir -p "$TMP/direct-run"
+for fragment in "$HERE"/contracts/*.sh; do
+  status=0
+  (cd "$TMP/direct-run" && env -u TMP sh "$fragment" >/dev/null 2>&1) || status=$?
+  assert_eq "contract fragment refuses a direct run: ${fragment##*/}" "2" "$status"
+done
+assert_eq "direct fragment runs leave their cwd untouched" "" "$(ls -A "$TMP/direct-run")"
 mkdir -p "$TMP/project/.claude/harness" "$TMP/project/openspec"
 install_harness_fixture "$ROOT" "$TMP/project"
 cp "$ROOT/.claude/harness/commands.json" "$TMP/project/.claude/harness/"

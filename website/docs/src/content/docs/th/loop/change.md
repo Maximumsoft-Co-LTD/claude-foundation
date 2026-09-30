@@ -39,7 +39,7 @@ Spec เขียนให้คนอ่าน แต่ละ scenario คื�
 และ `AND` คงเป็นภาษาอังกฤษเพื่อให้ OpenSpec parse ได้
 
 ```bash
-claude-foundation change start .foundation/drafts/<id>.json --consume-draft
+claude-foundation change start .foundation/drafts/<id>.json
 ```
 
 ## Extension แบบมีชนิด
@@ -79,10 +79,12 @@ execution, repository, handoff และ grounding จะเกิดเมื�
 หลัง compile แล้ว `openspec/changes/<id>/` คือ source of truth Draft เป็นข้อมูล
 ชั่วคราว และ `.foundation/` เป็น runtime state ที่ derive ได้
 
-ก่อน compile ให้ใช้ `change start <draft.json> --inspect` Harness จะคืน action
-เดียวพร้อม resume route: `EDIT` สำหรับการค้นข้อเท็จจริงหรือซ่อม draft,
-`ASK_USER` สำหรับ decision ที่เชื่อมกับ coverage และพร้อมถามไม่เกินสามข้อ หรือ
-`DONE` เมื่อพร้อม compile จากนั้นจึงรันไฟล์เดิมด้วย `--consume-draft`
+รัน `change start <draft.json>` ถ้า draft ครบ harness จะตรวจ compile และเริ่ม
+change ในคำสั่งเดียว และแสดงรายชื่อไฟล์ใน packet กับ task ถ้ายังไม่ครบจะคืน action
+เดียวพร้อม resume route โดยไม่สร้างอะไร: `EDIT` สำหรับการค้นข้อเท็จจริงหรือซ่อม
+draft หรือ `ASK_USER` สำหรับ decision ที่เชื่อมกับ coverage ไม่เกินสามข้อ ใช้
+`--inspect` เมื่อต้องการตรวจอย่างเดียว และบันทึกการอนุมัติ spec ของผู้ใช้ด้วย
+`advance <change> --approve-spec --decision-ref <ref>`
 ใช้ `riskSignals` แบบ typed สำหรับ access control, persisted data, integration,
 performance SLO, UI, operational risk และ external side effect เพื่อให้ coverage
 ที่บังคับใช้ไม่ขึ้นกับภาษาของ prose Harness บันทึก source digest เอง draft ที่ถูกต้องจึงได้

@@ -1,4 +1,11 @@
 # Multi-repository topology, evidence identity, and ordered Land contracts.
+# Sourced by run-harness-tests.sh only. Run directly, $TMP and the assertion
+# helpers are missing and the fixture would init, configure, and commit inside
+# the real repository, so refuse before touching anything.
+[ -n "${TMP:-}" ] && [ -d "$TMP" ] && command -v assert_eq >/dev/null 2>&1 || {
+  echo "contract fragment: run it through .claude/tests/harness/run-harness-tests.sh" >&2
+  exit 2
+}
 # A superproject fixture proves that topology discovery, worktree fan-out,
 # repository packets, model routing, and receipt invalidation share one
 # composite control-plane identity without invalidating unrelated repo proof.

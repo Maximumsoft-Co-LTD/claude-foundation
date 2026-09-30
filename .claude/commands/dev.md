@@ -11,10 +11,10 @@ references unless one of its triggers applies.
 Await spec approval. Then run
 `claude-foundation advance <id> --through proven`; execute each protocol-v6
 action and `resume`. These are agent-only control fields. The coordinator skips
-completed Build work and reused evidence automatically. Do not reconstruct chains.
+completed Build work and reused evidence automatically.
 
-Stop at `DONE`/`proven` or a real typed boundary. With explicit Land authority,
-follow `/land` through `archived`; never infer it. `ASK_USER` asks only for a
+Stop at `DONE`/`proven` or a real typed boundary. With explicit Land authority in
+any wording, run `advance <id> --through archived`; never infer it. `ASK_USER` asks only for a
 work decision; `WAIT` reports an external
 owner and condition, not a user command. Resume internal work yourself.
 

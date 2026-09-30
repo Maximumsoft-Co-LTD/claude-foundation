@@ -1,4 +1,11 @@
 # Evidence, receipt, proof, telemetry, and execution contracts.
+# Sourced by run-harness-tests.sh only. Run directly, $TMP and the assertion
+# helpers are missing and the fixture would init, configure, and commit inside
+# the real repository, so refuse before touching anything.
+[ -n "${TMP:-}" ] && [ -d "$TMP" ] && command -v assert_eq >/dev/null 2>&1 || {
+  echo "contract fragment: run it through .claude/tests/harness/run-harness-tests.sh" >&2
+  exit 2
+}
 # A CI system can return a signed, workspace-bound evidence envelope. The
 # harness verifies trust, identity, run provenance, and artifact digests before
 # creating the ordinary durable receipt used by proof.

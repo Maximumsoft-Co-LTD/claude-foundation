@@ -1,4 +1,11 @@
 # Planning, diagnostics, abandon, and lease contracts.
+# Sourced by run-harness-tests.sh only. Run directly, $TMP and the assertion
+# helpers are missing and the fixture would init, configure, and commit inside
+# the real repository, so refuse before touching anything.
+[ -n "${TMP:-}" ] && [ -d "$TMP" ] && command -v assert_eq >/dev/null 2>&1 || {
+  echo "contract fragment: run it through .claude/tests/harness/run-harness-tests.sh" >&2
+  exit 2
+}
 # Large brownfield plans remain navigable without injecting every task into the
 # orchestrator context. Full detail stays in the persisted plan and task packet.
 large_change="planning-large"

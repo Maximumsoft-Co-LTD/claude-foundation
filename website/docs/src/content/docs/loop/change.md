@@ -82,11 +82,14 @@ human title and a short overview, and `language` records the document language:
 prose follows it while `SHALL`, `GIVEN`, `WHEN`, `THEN`, and `AND` stay English
 for the OpenSpec parser.
 
-Print the current schema with `change start --template`; inspect with
-`change start <draft.json> --inspect`. The harness returns agent-owned source
-investigation or repair, at most three linked user decisions, or `DONE`, plus
-an exact resume route. On `DONE`, start with
-`change start <draft.json> --consume-draft`. Versions 1 through 3 remain
+Print the current schema with `change start --template`, then run
+`change start <draft.json>`. A complete draft is inspected, compiled, and
+started in one call, and the output lists the packet files and tasks.
+Otherwise the harness returns agent-owned source investigation or repair, or at
+most three linked user decisions, plus an exact resume route, and creates
+nothing. `--inspect` inspects without starting; `--consume-draft` also removes
+the draft after a successful start. Record the user's spec approval with
+`advance <change> --approve-spec --decision-ref <ref>`. Versions 1 through 3 remain
 supported for existing integrations.
 Use typed `riskSignals` for access control, persisted data, integrations,
 performance SLOs, UI, operational risk, and external side effects so required

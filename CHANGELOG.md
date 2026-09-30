@@ -71,6 +71,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "changed outside the sandbox"; issues and notices share one computation.
 - `change start` and `change revise` list the compiled packet files, so agents
   open real artifact paths instead of guessing them.
+- `change start` and `change revise` also list each task with its verify and
+  say when a rapid packet has no `specs/`; atomic start prints one
+  authoritative `next` instead of contradictory per-step hints.
+- Any explicit user instruction to land, in any wording, grants Land; rapid
+  `/dev` lands with `advance <change> --through archived`. Agents run one
+  command per shell call.
+- Website CLI and Change pages (EN/TH) document one-call `change start` and
+  `advance --approve-spec`.
+- Harness contract fragments refuse to run outside `run-harness-tests.sh`, so
+  a direct run can no longer write fixtures, commits, or a test git identity
+  into the real repository.
 - Rapid `/dev` no longer sends agents through the `/change`, `/build`, and
   `/prove` command files; `rapid-path.md` replaces them.
 - The Land guard recognizes a typed `/land` from its own transcript row, so
