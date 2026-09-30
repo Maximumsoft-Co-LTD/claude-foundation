@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {
-  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
+  cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -178,6 +178,67 @@ test("v4 start persists completed intake effectiveness before deleting its snaps
   assert.equal(existsSync(join(value.root, acknowledgement.intakeState.path)), false);
 });
 
+function minimalRapidV4(overrides = {}) {
+  return {
+    version: 4,
+    id: "single-shot-change",
+    intent: "Return the bounded result",
+    impact: "low",
+    coupling: "isolated",
+    requirements: [{
+      key: "bounded-result", capability: "single-shot-change", operation: "added",
+      scenarios: [{ name: "Bounded input", when: "A bounded input arrives",
+        then: "The bounded result is returned" }],
+      outcome: "The bounded result is returned"
+    }],
+    tasks: [{
+      key: "implement-bounded-result", outcome: "Implement the bounded result",
+      covers: ["bounded-result"], paths: ["src/**"], verify: "npm test"
+    }],
+    evidence: { "bounded-result": { capabilities: ["test"] } },
+    ...overrides
+  };
+}
+
+function captureLog(operation) {
+  const lines = [];
+  const prior = console.log;
+  console.log = (...args) => { lines.push(args.join(" ")); };
+  try { return { result: operation(), output: lines.join("\n") }; }
+  finally { console.log = prior; }
+}
+
+test("bare start inspects and starts a correct v4 draft in one command", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4());
+  const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.match(output, /^AGREED single-shot-change/m);
+  assert.match(output, /next: claude-foundation advance single-shot-change --approve-spec/);
+  assert.match(output, /then: claude-foundation advance single-shot-change --through build/);
+  assert.equal(existsSync(join(value.changes, "single-shot-change")), true);
+  const runtime = JSON.parse(readFileSync(join(value.runtime, "single-shot-change.json"), "utf8"));
+  assert.equal(runtime.status, "change");
+  assert.equal(runtime.schema, "foundation-rapid");
+  assert.equal(runtime.semanticIntakeEffectiveness.version, 1);
+  assert.equal(existsSync(value.draftPath), true, "bare start keeps the draft unless --consume-draft");
+  const intakeDir = join(value.root, ".foundation", "intake");
+  assert.deepEqual(existsSync(intakeDir) ? readdirSync(intakeDir) : [], []);
+});
+
+test("bare start returns the inspect action for an incomplete draft and creates nothing", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4({ requirements: [] }));
+  const { result, output } = captureLog(() =>
+    value.lifecycle.startAtomic(value.draftPath, { consumeDraft: true }));
+  assert.equal(result.action, "EDIT");
+  assert.deepEqual(JSON.parse(output), JSON.parse(JSON.stringify(result)));
+  assert.equal(existsSync(value.changes), false);
+  assert.equal(existsSync(value.runtime), false);
+  assert.equal(existsSync(value.draftPath), true);
+  assert.equal(value.calls.rollback, 0);
+  assert.deepEqual(value.calls.sequence, []);
+});
+
 test("spec approval is explicit, content-bound, and separate from edits", (t) => {
   const value = fixture(t);
   value.lifecycle.startAtomic(value.draftPath);
@@ -297,4 +358,45 @@ test("a low-impact semantic draft with design content keeps the standard schema"
   assert.equal(semanticDraftKeepsDesign(designed, false), false);
   // Legacy drafts always carry decisions and keep their rapid lane.
   assert.equal(semanticDraftKeepsDesign({ decisions: [{ choice: "x" }] }, true), false);
+});
+
+function rapidV3WithoutEvidence(overrides = {}) {
+  return {
+    version: 3,
+    id: "derived-evidence",
+    intent: "Return the derived result",
+    acceptance: { required: false },
+    requirements: [{
+      key: "derived-result", capability: "derived-evidence", operation: "added",
+      scenario: "A derived input arrives", outcome: "The derived result is returned"
+    }],
+    tasks: [{
+      key: "implement-derived-result", outcome: "Implement the derived result",
+      covers: ["derived-result"], paths: ["src/**"], verify: "npm test"
+    }],
+    ...overrides
+  };
+}
+
+test("a rapid draft without evidence capabilities starts with a derived test provider", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, rapidV3WithoutEvidence());
+  value.lifecycle.startAtomic(value.draftPath);
+  const runtime = JSON.parse(readFileSync(join(value.runtime, "derived-evidence.json"), "utf8"));
+  assert.equal(runtime.schema, "foundation-rapid");
+  const contract = JSON.parse(readFileSync(
+    join(value.changes, "derived-evidence", "evidence.yaml"), "utf8"));
+  assert.deepEqual(contract.claims.map((claim) => claim.capabilities), [["test"]]);
+  assert.equal(contract.providers.test.adapter, "test-discovery");
+  assert.deepEqual(contract.providers.test.command, ["sh", "-c", "npm test"]);
+});
+
+test("a draft that lands on the standard lane must declare evidence capabilities", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, rapidV3WithoutEvidence({
+    decisions: [{ key: "shape", choice: "Keep one module", reason: "Smallest change" }]
+  }));
+  assert.throws(() => value.lifecycle.startAtomic(value.draftPath),
+    /foundation-standard, which requires explicit evidence capabilities; add evidence\['derived-result'\]\.capabilities/);
+  assert.equal(existsSync(join(value.changes, "derived-evidence")), false);
 });

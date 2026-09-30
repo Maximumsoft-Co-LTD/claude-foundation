@@ -144,6 +144,29 @@ test("v2 producer payload is accepted exactly once", () => {
   });
 });
 
+test("tiny-feature fixture requires a range-checked discount and covering tests", () => {
+  verifyWorkload("20-tiny-feature", (project) => {
+    const path = join(project, "src/cart.js");
+    write(path, readFileSync(path, "utf8").replace("module.exports = { total };", `
+function discount(amount, percent) {
+  if (!(percent >= 0 && percent <= 100)) throw new RangeError("percent must be 0-100");
+  return amount * (1 - percent / 100);
+}
+
+module.exports = { total, discount };`));
+    write(join(project, "test/discount.test.js"), `
+const assert = require("node:assert/strict");
+const test = require("node:test");
+const { discount } = require("../src/cart");
+test("discount applies a percent and rejects out-of-range values", () => {
+  assert.equal(discount(200, 25), 150);
+  assert.throws(() => discount(100, -1), RangeError);
+  assert.throws(() => discount(100, 101), RangeError);
+});
+`);
+  });
+});
+
 test("budget decision workload has a zero-cost deterministic sentinel", () => {
   const result = spawnSync(process.execPath, ["--test", resolve(
     TASKS, "../../../harness/tests/budget-continuation.test.mjs")], {

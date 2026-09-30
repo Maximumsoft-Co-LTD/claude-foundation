@@ -90,7 +90,7 @@ npm run bench:openspec-native:sentinel
 ```
 
 It validates the matrix, checks every frozen fixture digest, and runs the
-deterministic defect/repair oracle for all seven workload rows. Its versioned
+deterministic defect/repair oracle for every workload row. Its versioned
 JSON report includes the matrix, source patch, command-output, and fixture
 digests. A dirty source tree is reported explicitly and is not presented as an
 immutable release baseline.
@@ -134,7 +134,8 @@ Paid runs should bind every matrix lane directly to the runner:
 ```bash
   --timeout-ms <budget.wall_ms> \
   --max-cost-usd <budget.cost_usd> \
-  --max-model-requests <budget.model_requests>
+  --max-model-requests <budget.model_requests> \
+  --max-tool-calls <budget.tool_calls>
 ```
 
 The wall and cost ceilings are delegated to the stopwatch and Claude CLI. The
@@ -143,7 +144,9 @@ happy path. Increasing a ceiling never changes the measured result or its
 baseline comparison; the scorecard still reports actual wall time and request
 count, and a run is green only at `archived` with delivery checks complete. The
 runner counts distinct streamed model request IDs and terminates at the request
-ceiling. Budget termination records `needs-user-decision`; it is resumable and
+ceiling; `--max-tool-calls` likewise counts distinct streamed `tool_use` IDs
+(failure class `budget-exhausted-tool-calls`). Budget termination records
+`needs-user-decision`; it is resumable and
 is never classified as completed or permanently blocked.
 
 For an existing change, the runner executes deterministic proof readiness
@@ -212,6 +215,13 @@ is `null` and its measurement state is `unavailable`; absence is never rendered
 as zero. A run is complete only when the host completed, no tasks remain, and a
 passing durable proof exists, plus a passing oracle when one was configured.
 
+`operations.hostToolCalls` records the host's distinct `tool_use` calls from the
+stream: `total`, `byTool`, and `byCategory` over the closed set `harnessCli`,
+`harnessDocReads`, `stateReads`, `harnessArtifactWrites`, `productWrites`,
+`testRuns`, and `other`. The categorizer is shared with the runtime transcript
+importer (`metrics <change>` → `hostToolProfile`). Without a host stream every
+count is `null`.
+
 Completed Node.js runs collect coverage and CRAP from the delivered sandbox.
 Projects with an npm test script use it; bare CommonJS/ESM projects fall back to
 discovered `*.test.*` and `*.spec.*` files under `node --test`.
@@ -228,7 +238,8 @@ distinct control paths:
 
 The machine-enforced cross-domain plan lives in
 [`../config/openspec-native-matrix.json`](../config/openspec-native-matrix.json).
-All seven workload classes now have executable frozen fixtures; a future row
+Every workload class has an executable frozen fixture (including the
+`tiny-feature` overhead probe, target `tool_calls_max: 20`); a future row
 must remain `planned` until its seed digest, prompt, host, risk, project and
 clean-install commands, critical cases, oracle, quality policy, and budgets are
 complete. Inspect the matrix or one ready execution plan with:

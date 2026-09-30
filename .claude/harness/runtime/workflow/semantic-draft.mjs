@@ -205,7 +205,23 @@ function requiredIntegrationCapabilities(integration) {
   return capabilities;
 }
 
-function semanticDraftIssues(source) {
+// Mirrors the rapid-lane test in change-lifecycle atomicStartPreflight. Only a
+// draft that can land on foundation-rapid may leave evidence capabilities to
+// the compiler; preflight rejects a defaulted draft that ends up standard.
+export function semanticRapidCandidate(source) {
+  const triggers = [
+    ...stringList(source?.securityTriggers),
+    ...(Array.isArray(source?.integrations) ? source.integrations : [])
+      .filter((integration) =>
+        requiredIntegrationCapabilities(integration || {}).includes("security-static"))
+      .map(() => "external-integration-authentication")
+  ].filter((trigger) => trigger.toLowerCase() !== "none");
+  return (text(source?.impact) || "low") === "low" &&
+    (text(source?.coupling) || "isolated") === "isolated" &&
+    !triggers.length && !source?.reviewRequired && !source?.acceptance?.required;
+}
+
+function semanticDraftIssues(source, { defaultTestEvidence = false } = {}) {
   const issues = [];
   if (![3, 4].includes(source?.version)) issues.push("semantic draft requires version 3 or 4");
   if (!text(source?.intent)) issues.push("semantic draft requires non-empty 'intent'");
@@ -213,7 +229,8 @@ function semanticDraftIssues(source) {
     issues.push("semantic draft requires a non-empty 'requirements' array");
   if (!Array.isArray(source?.tasks) || source.tasks.length === 0)
     issues.push("semantic draft requires a non-empty 'tasks' array");
-  if (!source?.evidence || typeof source.evidence !== "object" || Array.isArray(source.evidence))
+  if (!(defaultTestEvidence && source?.evidence === undefined) &&
+      (!source?.evidence || typeof source.evidence !== "object" || Array.isArray(source.evidence)))
     issues.push("semantic draft requires an 'evidence' object keyed by requirement key");
   if (source?.integrations !== undefined && !Array.isArray(source.integrations))
     issues.push("semantic draft integrations must be an array");
@@ -260,7 +277,9 @@ function semanticDraftIssues(source) {
   return issues;
 }
 
-function normalizeRequirements(source, slugify, issues, { loadCanonicalSpec = null } = {}) {
+function normalizeRequirements(source, slugify, issues, {
+  loadCanonicalSpec = null, defaultTestEvidence = false, defaultedEvidence = []
+} = {}) {
   const evidence = evidenceEntries(source.evidence);
   const requirements = [];
   const requirementKeys = new Set();
@@ -308,8 +327,16 @@ function normalizeRequirements(source, slugify, issues, { loadCanonicalSpec = nu
       ...stringList(evidenceValue?.capabilities),
       ...stringList(requirement?.capabilities)
     ]);
-    if (!evidenceValue && !requirement?.capabilities)
-      issues.push(`${label} requires evidence['${key}'].capabilities`);
+    // A rapid draft proves every requirement with its covering tasks' verify
+    // commands, so an omitted capability list means exactly that: "test".
+    if (defaultTestEvidence && !capabilities.length &&
+        evidenceValue?.capabilities === undefined && requirement?.capabilities === undefined) {
+      capabilities.push("test");
+      defaultedEvidence.push(key);
+    } else if (!evidenceValue && !requirement?.capabilities)
+      issues.push(`${label} requires evidence['${key}'].capabilities ` +
+        "(only a low-impact, isolated draft without security triggers, review, or acceptance " +
+        "may omit it and default to [\"test\"])");
     if (!capabilities.length)
       issues.push(`${label} requires at least one evidence capability`);
 
@@ -513,9 +540,12 @@ function derivedExecution(source, claims, tasks) {
 export function normalizeSemanticDraft(input, slugify, options = {}) {
   const source = input?.capabilityOverviews === undefined ? input
     : { ...input, capabilityOverviews: capabilityOverviewList(input.capabilityOverviews) };
-  const issues = semanticDraftIssues(source);
+  const defaultTestEvidence = Boolean(options.defaultRapidEvidence) &&
+    semanticRapidCandidate(source);
+  const defaultedEvidence = [];
+  const issues = semanticDraftIssues(source, { defaultTestEvidence });
   const { requirements, requirementKeys } = normalizeRequirements(
-    source, slugify, issues, options);
+    source, slugify, issues, { ...options, defaultTestEvidence, defaultedEvidence });
   applyIntegrationRequirements(source, requirements, requirementKeys, issues);
   applyCapabilityOverviews(source, requirements, slugify, issues);
   const tasks = normalizeTasks(source, requirements, requirementKeys, issues);
@@ -538,6 +568,7 @@ export function normalizeSemanticDraft(input, slugify, options = {}) {
     ...source,
     _semanticVersion: source.version,
     _derivedExecution: !source.execution,
+    ...(defaultedEvidence.length ? { _defaultedEvidence: defaultedEvidence } : {}),
     why: text(source.why) || text(source.intent),
     currentState: text(source.currentState) || "none",
     compatibility: text(source.compatibility) || "none",

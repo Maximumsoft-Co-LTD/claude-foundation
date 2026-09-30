@@ -117,15 +117,53 @@ assert_cmd_zero "[feature-single-finalized-sheet] feature reuses PRD choices wit
 assert_file_contains "[change-reuses-agreement] change intake reuses settled answers" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
   'Reuse settled answers without asking them again'
-assert_file_contains "change intake always hashes grounding reads after sheet reuse" \
+assert_file_contains "change intake always hashes grounding reads in the draft field" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
-  'Always hash reads in `grounding.yaml`'
+  'Always hash grounding reads in the draft `grounding` field'
 assert_file_contains "change intake creates no parallel interview ledger" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
   'Create no decision-tree or interview ledger'
 assert_file_contains "change workflow delegates semantic intake to one canonical reference" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
   '[semantic-intake.md](semantic-intake.md)'
+# Rapid-path simplification (2026-09-30, user decision D3): the rapid lane
+# loads one bounded reference instead of the change workflow, semantic intake,
+# and Build policy. Those stay selectively loaded on explicit triggers, and
+# Build policy gains its own ratchet.
+assert_words_at_most "rapid path reference budget" 950 \
+  "$ROOT/.claude/commands/references/rapid-path.md"
+rapid_lines="$(wc -l < "$ROOT/.claude/commands/references/rapid-path.md" | tr -d ' ')"
+if [ "$rapid_lines" -le 150 ]; then
+  pass "rapid path stays near 150 lines ($rapid_lines <= 150)"
+else
+  fail_context_budget "rapid path line budget" "$rapid_lines" 150 lines \
+    "$ROOT/.claude/commands/references/rapid-path.md"
+fi
+assert_words_at_most "build policy reference budget" 1060 \
+  "$ROOT/.claude/commands/references/build-policy.md"
+assert_file_contains "dev loads the rapid path by default" \
+  "$ROOT/.claude/commands/dev.md" '.claude/commands/references/rapid-path.md'
+assert_file_contains "change loads its full workflow only on triggers" \
+  "$ROOT/.claude/commands/change.md" 'completely only for'
+assert_file_contains "build loads its policy only on triggers" \
+  "$ROOT/.claude/commands/build.md" 'Rapid work needs only `references/rapid-path.md`'
+assert_file_contains "rapid path forbids harness source archaeology" \
+  "$ROOT/.claude/commands/references/rapid-path.md" \
+  'Never read `.claude/harness/**` source'
+assert_file_contains "rapid path records spec approval through advance" \
+  "$ROOT/.claude/commands/references/rapid-path.md" \
+  'advance <id> --approve-spec --decision-ref'
+assert_cmd_zero "rapid path uses only change start, advance, changes, exec, and land advance" \
+  sh -c '! grep -oE "claude-foundation [a-z-]+( [a-z-]+)?" "$1" |
+    grep -vE "^claude-foundation (change start|advance|changes|exec|land advance)( |$)"' \
+  sh "$ROOT/.claude/commands/references/rapid-path.md"
+if grep -En 'change resolve [^ ]* ?--approve-spec|--consume-draft|mark it complete|claude-foundation (evidence init|evidence upgrade|sandbox sync|authority run)' \
+    "$ROOT/.claude/commands/references/rapid-path.md" "$ROOT/.claude/commands/dev.md" \
+    "$ROOT/.claude/commands/change.md" "$ROOT/.claude/commands/build.md" >/dev/null; then
+  fail "rapid path instructions omit harness-owned manual steps"
+else
+  pass "rapid path instructions omit harness-owned manual steps"
+fi
 assert_words_at_most "change workflow reference budget" 1400 \
   "$ROOT/.claude/skills/change/references/workflow.md"
 assert_words_at_most "semantic intake reference budget" 400 \
@@ -229,7 +267,9 @@ assert_file_contains "fundamentals records decision answers in the change packet
 # on self-review, which had made a supported solo setup unusable.
 # `dev.md` carries 30 more by explicit maintainer decision so the orchestrator
 # can distinguish ordinary Prove completion from an invocation that already
-# grants Land authority and must reach archived.
+# grants Land authority and must reach archived. `dev.md` and `build.md` carry
+# 10 and 15 more (D3, 2026-09-30) to route the rapid path and name the
+# conditional triggers that keep the full references out of rapid work.
 #
 # Raised deliberately and per command, so the standing budget still binds
 # everywhere else. Raise a limit here only to admit a rule that removes a
@@ -238,8 +278,8 @@ assert_file_contains "fundamentals records decision answers in the change packet
 for command in "$ROOT"/.claude/commands/*.md; do
   case "$(basename "$command")" in
     change.md) limit=200 ;;
-    build.md) limit=145 ;;
-    dev.md) limit=150 ;;
+    build.md) limit=160 ;;
+    dev.md) limit=160 ;;
     prove.md) limit=170 ;;
     # `land check` no longer settles an interrupted apply, so Land owns a route
     # it did not have: read the projection counts, then recover under an explicit
@@ -380,6 +420,12 @@ assert_cmd_zero "rapid request budget is explicit" \
   jq -e '.execution.requestBudgets.rapid == 100' "$ROOT/foundation.json"
 assert_cmd_zero "standard request budget is explicit" \
   jq -e '.execution.requestBudgets.standard == 200' "$ROOT/foundation.json"
+assert_cmd_zero "budget watchdog is opt-in (default off)" \
+  jq -e '.execution.budgetWatchdog == false' "$ROOT/foundation.json"
+assert_cmd_zero "model tier routing is opt-in (default off)" \
+  jq -e '.models.routing == false' "$ROOT/foundation.json"
+assert_cmd_zero "quality change gate defaults off" \
+  jq -e '.quality.changeGate == "off"' "$ROOT/foundation.json"
 
 if [ "$budget_failures" -gt 0 ]; then
   budget_decision_guidance >&2

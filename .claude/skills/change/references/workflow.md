@@ -12,8 +12,10 @@ missing conversation history. Ask only for material gaps that cannot be recovere
 Read the smallest canonical sources that settle the requested behavior:
 existing OpenSpec requirements, relevant code/tests, architecture decisions,
 prototype selection, and versioned integration documentation. Reuse settled answers without asking them again.
-Read [semantic-intake.md](semantic-intake.md) completely and follow its
-harness/agent/user ownership, dependency-frontier, and coverage rules.
+Read [semantic-intake.md](semantic-intake.md) when the draft declares
+`impact: high`, `riskSignals`, integrations, or external operations, or inspect
+returns discovery rows or `ASK_USER`; follow its ownership, frontier, and
+coverage rules.
 
 ## Agreement detail and language
 
@@ -93,15 +95,13 @@ extensions:
 - external operations only for permission-bound work;
 - Grounding v3 only for non-derived material decisions.
 
-Local diagram, prototype-selection, and integration references must resolve to
-regular files inside the project; reject directories and escaping symlinks.
-Remote integration sources must use HTTPS and name a fixed version rather than
-`latest` or a branch.
+Local references must be regular files inside the project; remote integration
+sources need HTTPS and a fixed version, not `latest` or a branch.
 
 Create no decision-tree or interview ledger. Never create `CONTEXT.md`, a glossary artifact, or an ADR store;
 durable terms and choices belong in the
-compiled packet. Always hash reads in `grounding.yaml` when a material decision
-needs a grounding read; do not create an empty file.
+compiled packet. Always hash grounding reads in the draft `grounding` field
+when a material decision needs one; the compiler writes `grounding.yaml`.
 
 Compare canonical requirements before choosing `ADDED`, `MODIFIED`, or
 `REMOVED`. Do not default to `ADDED`. For `MODIFIED`, copy the complete
@@ -114,9 +114,9 @@ For defect behavior, include adjacent input partitions and source-language repre
 not only the reported reproduction.
 
 Write the draft to `.foundation/drafts/<id>.json` and run
-`claude-foundation change start .foundation/drafts/<id>.json --inspect`.
-Follow the returned typed intake action and exact resume route. When it returns
-`DONE`, run the same command with `--consume-draft` instead of `--inspect`.
+`claude-foundation change start .foundation/drafts/<id>.json`. It inspects and
+starts in one call when clean; otherwise follow the returned typed intake
+action and exact resume route.
 Never inspect managed `.claude/harness/**` merely to reconstruct this schema.
 The compiler owns classification and the deterministic intake responsibilities
 defined in [semantic-intake.md](semantic-intake.md), plus stable requirement/claim/task IDs,
@@ -161,7 +161,7 @@ The compiled `openspec/changes/<id>/` documents—not the temporary draft or
 Change. After successful validation, present the compiled packet links, scope,
 behavior, and acceptance criteria to the user. Wait for explicit approval of
 this spec before Build, including `/dev`; validation is not user approval.
-Record the answer with `claude-foundation change resolve <id> --approve-spec
+Record the answer with `claude-foundation advance <id> --approve-spec
 --decision-ref <user-decision>`, then continue with
 `claude-foundation advance <id> --through build`. Revisions and amendments
 carry that approval unless they remove a requirement. At a real decision,

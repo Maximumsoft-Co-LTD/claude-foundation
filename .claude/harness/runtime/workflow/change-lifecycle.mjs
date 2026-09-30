@@ -16,7 +16,9 @@ import {
   semanticIntakeAction, semanticIntakeIssues
 } from "./validation/semantic-intake.mjs";
 import { inspectSemanticSources } from "./validation/semantic-source-inventory.mjs";
-import { inspectRepositoryIntelligence } from "./validation/repository-intelligence.mjs";
+import {
+  inspectRepositoryIntelligence, repositoryIntelligenceRequired, skippedRepositoryIntelligence
+} from "./validation/repository-intelligence.mjs";
 import {
   planSemanticIntakeDepth,
   semanticIntakeEffectivenessSnapshot,
@@ -42,6 +44,9 @@ import {
   renderDesignOverview, renderDiscoveryAppendix, renderInvestigationAppendix,
   renderInvestigationSummary, renderProposalLead, renderProposalReader, renderTaskOverview
 } from "./validation/reader-guide.mjs";
+
+// Marks a start whose re-inspected intake is not DONE (see completedDraftIntake).
+const INCOMPLETE_INTAKE = Symbol("incomplete-intake");
 
 export function atomicStartPreflight(draft, { groundingRequired = false } = {}) {
   const issues = [];
@@ -686,7 +691,16 @@ export function createChangeLifecycle({
     };
   }
 
-  function repositoryIntelligence(source, excludedPaths = []) {
+  // "skipped" (rapid-shaped change) is usable like "ready"; only "blocked" is not.
+  const intelligenceUsable = (intelligence) =>
+    ["ready", "skipped"].includes(intelligence.repository.status);
+
+  function repositoryIntelligence(source, excludedPaths = [], { standardLane = false } = {}) {
+    if (!repositoryIntelligenceRequired(source, { standardLane })) {
+      const repository = skippedRepositoryIntelligence();
+      const depth = planSemanticIntakeDepth(source, { repository: {} });
+      return { repository, depth, selected: [], selectedBytes: 0 };
+    }
     const query = [source.intent, source.why, ...(source.changes || []),
       ...(source.requirements || []).flatMap((row) => [
         row?.key, row?.requirement, row?.description, row?.outcome
@@ -796,6 +810,7 @@ export function createChangeLifecycle({
     if (source.version === 2) draft = deriveDraftBookkeeping(source, slugify);
     if ([3, 4].includes(source.version)) {
       const normalized = normalizeSemanticDraft(source, slugify, {
+        defaultRapidEvidence: true,
         loadCanonicalSpec: (capability) => {
           const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
           return existsSync(path) ? readFileSync(path, "utf8") : null;
@@ -970,6 +985,10 @@ export function createChangeLifecycle({
     if (preparedDraft === undefined && flags.draft && draft?._semanticVersion === 4)
       fail("semantic draft v4 must use 'change start <draft.json>' so repository intake is enforced");
     const schema = flags.rapid ? "foundation-rapid" : "foundation-standard";
+    if (schema !== "foundation-rapid" && draft?._defaultedEvidence?.length)
+      fail("foundation-standard requires explicit evidence capabilities; add " +
+        draft._defaultedEvidence.map((key) => `evidence['${key}'].capabilities`).join(", ") +
+        " (for example [\"test\"]) or create the change with --rapid");
     const source = templateDir(schema);
     const target = changePath(id);
     const groundingRequired = workflowPolicy().workflow.grounding === "required" ||
@@ -1016,7 +1035,7 @@ export function createChangeLifecycle({
 
   function inspectSemanticIntakeSource(source, {
     statePath, resume, quiet = false, validateCompiledDraft = true,
-    excludedSourcePath = null
+    excludedSourcePath = null, standardLane = false
   }) {
     let previous = null;
     if (existsSync(statePath)) {
@@ -1025,14 +1044,15 @@ export function createChangeLifecycle({
     }
     const sameDraft = previous?.draftDigest === semanticDraftDigest(source);
     const intelligence = repositoryIntelligence(source,
-      excludedSourcePath ? [excludedSourcePath] : []);
-    const sourceInspection = intelligence.repository.status === "ready"
+      excludedSourcePath ? [excludedSourcePath] : [], { standardLane });
+    const sourceInspection = intelligenceUsable(intelligence)
       ? semanticSourceInspection(
         source, sameDraft ? previous?.sourceInventory : null, intelligence.selected)
       : inspectSemanticSources({ projectRoot: root, sourcePaths: [] });
     const intakeIssues = semanticIntakeIssues(source);
     const normalized = validateCompiledDraft
       ? normalizeSemanticDraft(source, slugify, {
+        defaultRapidEvidence: true,
         loadCanonicalSpec: (capability) => {
           const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
           return existsSync(path) ? readFileSync(path, "utf8") : null;
@@ -1156,7 +1176,8 @@ export function createChangeLifecycle({
       resume: `claude-foundation change amend ${id} ${amendmentPath} --inspect`,
       quiet: options.quiet,
       validateCompiledDraft: false,
-      excludedSourcePath: relative(root, path).replaceAll("\\", "/")
+      excludedSourcePath: relative(root, path).replaceAll("\\", "/"),
+      standardLane: active.schema === "foundation-standard"
     });
   }
 
@@ -1425,24 +1446,27 @@ export function createChangeLifecycle({
 
   // Draft v4 compilation requires the semantic intake snapshot for the same
   // draft path to be current and DONE. Start and revise share this gate; only
-  // their snapshot namespace and resume route differ.
-  function completedDraftIntake(source, draftPath, { statePath, resume, inspect }) {
+  // their snapshot namespace and resume route differ. With `reinspect`, a
+  // missing or stale snapshot is re-inspected in place: DONE continues, and any
+  // other action is returned under INCOMPLETE_INTAKE instead of failing.
+  function completedDraftIntake(source, draftPath, { statePath, resume, inspect, reinspect = false }) {
     if (source.version !== 4) return null;
+    const inspectedIntake = () => {
+      const inspected = inspect();
+      if (inspected.action === "DONE") return inspected.effectiveness || null;
+      if (reinspect) return { [INCOMPLETE_INTAKE]: inspected };
+      fail(`version-4 drafts require a current completed semantic intake; ` +
+        `resume with '${resume}'`);
+    };
     let intakeState = null;
     if (existsSync(statePath)) {
       try { intakeState = JSON.parse(readFileSync(statePath, "utf8")); }
       catch { intakeState = null; }
     }
-    if (!intakeState) {
-      const inspected = inspect();
-      if (inspected.action !== "DONE")
-        fail(`version-4 drafts require a current completed semantic intake; ` +
-          `resume with '${resume}'`);
-      return inspected.effectiveness || null;
-    }
+    if (!intakeState) return inspectedIntake();
     const sourcePath = relative(root, resolve(root, draftPath)).replaceAll("\\", "/");
     const intelligence = repositoryIntelligence(source, [sourcePath]);
-    const sourceInspection = intelligence.repository.status === "ready"
+    const sourceInspection = intelligenceUsable(intelligence)
       ? semanticSourceInspection(source, null, intelligence.selected)
       : inspectSemanticSources({ projectRoot: root, sourcePaths: [] });
     const projection = semanticIntakeResumeProjection(intakeState, source, {
@@ -1450,11 +1474,13 @@ export function createChangeLifecycle({
     });
     const investigationIssues = source.investigation === undefined ? []
       : validateInvestigationBinding({ projectRoot: root, binding: source.investigation, git });
-    if (intelligence.repository.status !== "ready" || sourceInspection.findings.length ||
+    if (!intelligenceUsable(intelligence) || sourceInspection.findings.length ||
         investigationIssues.length ||
-        projection.status !== "current" || projection.action?.action !== "DONE")
+        projection.status !== "current" || projection.action?.action !== "DONE") {
+      if (reinspect) return inspectedIntake();
       fail(`version-4 drafts require a current completed semantic intake; ` +
         `resume with '${resume}'`);
+    }
     return intakeState.effectiveness || null;
   }
 
@@ -1474,19 +1500,34 @@ export function createChangeLifecycle({
     // the preflight gates above still apply the rapid lane's requirements.
     const keepsDesign = semanticDraftKeepsDesign(draft, preflight.rapid);
     const rapid = preflight.rapid && !keepsDesign;
+    // Only the rapid lane may leave evidence capabilities to the compiler.
+    if (!rapid && draft._defaultedEvidence?.length)
+      fail("start draft preflight failed:\n  - the draft carries design content, so it uses " +
+        "foundation-standard, which requires explicit evidence capabilities; add " +
+        draft._defaultedEvidence.map((key) => `evidence['${key}'].capabilities`).join(", ") +
+        " (for example [\"test\"]) or remove the design content to stay rapid");
     if (keepsDesign)
       console.log("NOTE: the draft carries design content, so it uses foundation-standard " +
         "to keep design.md and specs/");
     return { draft, rapid, resolutionFlags: startResolutionFlags(draft, classification, rapid) };
   }
 
+  // Bare `change start <draft>` inspects and starts in one command: a DONE
+  // intake continues to the atomic start, while any other inspect action is
+  // printed exactly as `--inspect` would and returned without creating state.
   function startAtomic(draftPath, options = {}) {
     const source = draftSource(draftPath);
     const completedIntakeEffectiveness = completedDraftIntake(source, draftPath, {
       statePath: semanticIntakeStatePath(draftPath),
       resume: `claude-foundation change start ${draftPath} --inspect`,
-      inspect: () => inspectDraft(draftPath, { quiet: true, preparedSource: source })
+      inspect: () => inspectDraft(draftPath, { quiet: true, preparedSource: source }),
+      reinspect: true
     });
+    const incomplete = completedIntakeEffectiveness?.[INCOMPLETE_INTAKE];
+    if (incomplete) {
+      console.log(JSON.stringify(incomplete, null, 2));
+      return incomplete;
+    }
     const { draft, rapid, resolutionFlags } = preflightDraft(draftPath, source);
     const id = slugify(draft.id || draft.intent);
     assertChangeAvailable(id);
@@ -1515,7 +1556,8 @@ export function createChangeLifecycle({
         saveRuntime(pending);
         console.log(`AGREED ${id}\n  inspect: openspec/changes/${id}/\n  awaiting user approval before Build\n` +
           designWarningLines(draft, loadRuntime(id).schema) +
-          `  next: claude-foundation change resolve ${id} --approve-spec --decision-ref <user-decision>`);
+          `  next: claude-foundation advance ${id} --approve-spec --decision-ref <user-decision>\n` +
+          `  then: claude-foundation advance ${id} --through build`);
       });
     } catch (error) {
       let rollbackIssues;
@@ -1756,7 +1798,7 @@ export function createChangeLifecycle({
         : `  requirement delta (covered by the current approval):\n${formatApprovalDelta(delta)}\n`) +
       `  inspect: openspec/changes/${id}/\n` + designWarningLines(draft, state.schema) +
       `  next: ${pending || !state.specApproval?.identity
-        ? `claude-foundation change resolve ${id} --approve-spec --decision-ref <user-decision>`
+        ? `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision>`
         : `claude-foundation advance ${id} --through build`}`);
     return delta;
   }
@@ -1781,14 +1823,15 @@ export function createChangeLifecycle({
       }
       const intakeSource = amendmentIntakeSource(amendment);
       const amendmentRelativePath = relative(root, source).replaceAll("\\", "/");
-      const intelligence = repositoryIntelligence(intakeSource, [amendmentRelativePath]);
-      const sourceInspection = intelligence.repository.status === "ready"
+      const intelligence = repositoryIntelligence(intakeSource, [amendmentRelativePath],
+        { standardLane: state.schema === "foundation-standard" });
+      const sourceInspection = intelligenceUsable(intelligence)
         ? semanticSourceInspection(intakeSource, null, intelligence.selected)
         : inspectSemanticSources({ projectRoot: root, sourcePaths: [] });
       const projection = semanticIntakeResumeProjection(intakeState, intakeSource, {
         resumeRoute: resume, sourceInventory: sourceInspection.inventory
       });
-      if (intelligence.repository.status !== "ready" || sourceInspection.findings.length ||
+      if (!intelligenceUsable(intelligence) || sourceInspection.findings.length ||
           projection.status !== "current" || projection.action?.action !== "DONE")
         fail(`version-4 amendments require a current completed semantic intake; ` +
           `resume with '${resume}'`);

@@ -20,9 +20,11 @@
     },
     "maxContinuationWindows": 3,
     "planSummaryBytes": 4096,
-    "leaseMinutes": 45
+    "leaseMinutes": 45,
+    "budgetWatchdog": false
   },
   "models": {
+    "routing": false,
     "fast": {
       "family": "haiku",
       "fallbackTier": "standard",
@@ -82,7 +84,7 @@
     "requireUsage": true
   },
   "quality": {
-    "changeGate": "warn"
+    "changeGate": "off"
   },
   "land": {
     "riskBasedCi": false

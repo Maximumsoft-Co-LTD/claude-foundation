@@ -27,6 +27,26 @@ assert_eq "legacy repository budget migrates" "12288" \
   "$(jq -r '.execution.packetBytes.repository' "$legacy/foundation.json")"
 assert_eq "legacy global budget migrates" "16384" \
   "$(jq -r '.execution.packetBytes.global' "$legacy/foundation.json")"
+assert_eq "upgrade adds budget watchdog default off" "false" \
+  "$(jq -r '.execution.budgetWatchdog' "$legacy/foundation.json")"
+assert_eq "upgrade adds model routing default off" "false" \
+  "$(jq -r '.models.routing' "$legacy/foundation.json")"
+assert_eq "upgrade adds quality gate default off" "off" \
+  "$(jq -r '.quality.changeGate' "$legacy/foundation.json")"
+
+optin="$TMP/optin"
+mkdir -p "$optin"
+printf '%s\n' \
+  '{"version":1,"execution":{"budgetWatchdog":true},"models":{"routing":true},"quality":{"changeGate":"warn"}}' \
+  > "$optin/foundation.json"
+assert_cmd_zero "installer upgrades an opted-in policy" \
+  bash "$ROOT/install.sh" "$optin" --source "$ROOT" --yes
+assert_eq "consumer budget watchdog opt-in survives upgrade" "true" \
+  "$(jq -r '.execution.budgetWatchdog' "$optin/foundation.json")"
+assert_eq "consumer model routing opt-in survives upgrade" "true" \
+  "$(jq -r '.models.routing' "$optin/foundation.json")"
+assert_eq "consumer quality gate survives upgrade" "warn" \
+  "$(jq -r '.quality.changeGate' "$optin/foundation.json")"
 
 custom="$TMP/custom"
 mkdir -p "$custom"

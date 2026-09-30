@@ -12,9 +12,15 @@ const DEFAULT_POLICY = {
     requestBudgets: { rapid: 100, standard: 200 },
     maxContinuationWindows: 3,
     planSummaryBytes: 4096,
-    leaseMinutes: 45
+    leaseMinutes: 45,
+    // Opt-in: when false, usage is still recorded for metrics but packets
+    // carry no spend-mode directives or limits.
+    budgetWatchdog: false
   },
   models: {
+    // Opt-in: when false, every task uses the single standard tier unless the
+    // task itself requests a tier.
+    routing: false,
     fast: { family: "haiku", fallbackTier: "standard", purposes: ["inventory", "logs", "mechanical-docs"] },
     standard: { family: "sonnet", fallbackTier: "deep", purposes: ["implementation", "tests", "focused-investigation"] },
     deep: { family: "opus", fallbackTier: null, purposes: ["architecture", "security", "migration", "independent-review"] }
@@ -29,7 +35,7 @@ const DEFAULT_POLICY = {
     fallbackReviewers: [], infraFailureThreshold: 1
   },
   telemetry: { requireUsage: false },
-  quality: { changeGate: "warn" },
+  quality: { changeGate: "off" },
   land: { riskBasedCi: false },
   sandbox: { setupCommand: null, setupTimeoutMs: 600000 },
   workflow: {
@@ -147,9 +153,12 @@ export function createRuntimeEnvironment({
     return {
       ...DEFAULT_POLICY, ...configured,
       execution: { ...DEFAULT_POLICY.execution, ...(configured.execution || {}) },
-      models: Object.fromEntries(["fast", "standard", "deep"].map((tier) => [
-        tier, { ...DEFAULT_POLICY.models[tier], ...(configured.models?.[tier] || {}) }
-      ])),
+      models: {
+        routing: configured.models?.routing ?? DEFAULT_POLICY.models.routing,
+        ...Object.fromEntries(["fast", "standard", "deep"].map((tier) => [
+          tier, { ...DEFAULT_POLICY.models[tier], ...(configured.models?.[tier] || {}) }
+        ]))
+      },
       review: {
         ...DEFAULT_POLICY.review, ...(configured.review || {}),
         reviewers: {
@@ -233,6 +242,8 @@ export function createRuntimeEnvironment({
     validatePacketPolicy(policy);
     validateBudgetPolicy(policy);
     validateExecutionLimits(policy);
+    if (typeof policy.execution.budgetWatchdog !== "boolean")
+      fail("foundation.json execution.budgetWatchdog must be boolean");
   }
 
   function validateWorkflowPolicy(policy) {
@@ -326,6 +337,8 @@ export function createRuntimeEnvironment({
   }
 
   function validateModelPolicy(policy) {
+    if (typeof policy.models.routing !== "boolean")
+      fail("foundation.json models.routing must be boolean");
     for (const tier of ["fast", "standard", "deep"])
       if (!policy.models[tier] || typeof policy.models[tier].family !== "string")
         fail(`foundation.json models.${tier}.family is required`);

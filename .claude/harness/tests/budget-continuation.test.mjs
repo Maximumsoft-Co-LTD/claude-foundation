@@ -50,6 +50,22 @@ test("budget reporter formats measured state and limits quiet output to warnings
   ], "advisory budget never asks: a legacy stop below 70% neither warns nor needs the user");
 });
 
+test("budget reporter suppresses quiet spend warnings when the watchdog is off", () => {
+  const reporter = createBudgetReporter({
+    applyBudgetDecision: () => ({
+      measured: true, ratio: 0.9, action: "COMPLETION_ONLY",
+      recommendation: "STOP_EXPLORATION", limiter: "tokens", mode: "completion-only"
+    }),
+    watchdogEnabled: () => false
+  });
+  const warnings = [];
+  const originalError = console.error;
+  console.error = (value) => warnings.push(String(value));
+  try { assert.equal(reporter.reportBudget("change", {}, true).ratio, 0.9); }
+  finally { console.error = originalError; }
+  assert.deepEqual(warnings, []);
+});
+
 test("continuation inputs require trimmed reason and decision identity", () => {
   assert.deepEqual(budgetContinuationInputs({
     reason: "  finish proof ", "decision-ref": " user-1 "

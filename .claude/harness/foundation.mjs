@@ -124,7 +124,9 @@ import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
 import {
   landAppliedOutput, targetEditIssues as targetEditFindings
 } from "./runtime/workflow/target-edits.mjs";
-import { createSessionLeaseRuntime, isSessionOwner } from "./runtime/workflow/session-lease.mjs";
+import {
+  createSessionLeaseRuntime, isSessionOwner, runTaskCheck
+} from "./runtime/workflow/session-lease.mjs";
 import { createQualityRuntime } from "./runtime/quality/quality-runtime.mjs";
 import {
   createPullRequestRuntime, DELIVERY_PROTOCOL_VERSION, DELIVERY_RECEIPT_SCHEMA_VERSION
@@ -473,7 +475,10 @@ const {
   eventUsage,
   synchronizeBudgetUsage
 } = createBudgetRuntime({ policy: foundationPolicy, now });
-const { reportBudget } = createBudgetReporter({ applyBudgetDecision });
+const { reportBudget } = createBudgetReporter({
+  applyBudgetDecision,
+  watchdogEnabled: () => foundationPolicy().execution.budgetWatchdog === true
+});
 const { metricsValue, showMetrics } = createMetricsRuntime({
   logs: LOGS,
   receipts: RECEIPTS,
@@ -1926,7 +1931,10 @@ async function runAdvanceQuietly(operation) {
   }
 }
 const sessionLeases = createSessionLeaseRuntime({
-  loadRuntime, activeChangeLeases, stableHash,
+  loadRuntime, activeChangeLeases, stableHash, saveRuntime,
+  // D5: advance runs the handed-off task's own verify check and ticks it.
+  runCheck: (id, check) => commandPhaseRecorder.measure("build.task-check",
+    () => runTaskCheck({ loadRuntime }, id, check)),
   acquire: acquireAgentLease, release: releaseAgentLease, discard: discardAgentLease
 });
 const { advanceValue, showAdvance } = createAdvanceRuntime({
@@ -1939,7 +1947,27 @@ const { advanceValue, showAdvance } = createAdvanceRuntime({
   markBlocked,
   loadRuntime,
   saveRuntime,
-  recoverSandbox: (id) => runAdvanceQuietly(() => syncSandbox(id)),
+  recoverSandbox: (id) => commandPhaseRecorder.measureAsync("advance.sandbox-sync",
+    () => runAdvanceQuietly(() => syncSandbox(id))),
+  synchronizeAgreement: async (id) => sandboxRuntime.agreementStale(id)
+    ? commandPhaseRecorder.measureAsync("advance.sandbox-sync",
+      () => runAdvanceQuietly(() => sandboxRuntime.synchronizeAgreement(id)))
+    : false,
+  // Detected provider wiring is a write, not a question: upgrade a legacy
+  // packet, write the recommended providers, then sync the revised agreement
+  // into Build so Land never sees an edited-after-sync packet.
+  wireEvidence: (id) => commandPhaseRecorder.measureAsync("advance.evidence-wiring",
+    () => runAdvanceQuietly(async () => {
+      if (readJson(join(changePath(id), "evidence.yaml"), {}).version === 1) upgradeEvidence(id);
+      // Wiring-only, like `evidence upgrade`: an approval valid before the
+      // write stays valid; the agreement's behavior did not change.
+      preserveSpecApprovalAcross(ROOT, id, { loadRuntime, saveRuntime, now },
+        () => initializeEvidence(id, { write: true }), "evidence-wiring");
+      if (loadRuntime(id).status === "building") prepareBuildSandbox(id);
+      else await sandboxRuntime.synchronizeAgreement(id);
+    })),
+  runReview: (id, flags) => commandPhaseRecorder.measureAsync("advance.review-run",
+    () => runAdvanceQuietly(() => guardedRunAuthorityReviewer(id, { ...flags }))),
   recoverWorkspace: (id) => runAdvanceQuietly(() => sandboxRuntime.recoverReplay(id)),
   recoverArchive: (id) => runAdvanceQuietly(() =>
     applyRuntime.recoverArchive(id, landGrantRuntime.issue)),

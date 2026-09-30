@@ -487,7 +487,7 @@ export function createDiagnosticsRuntime({
       // the capability a change under time pressure omits, and its absence looks
       // identical to a change that considered it and decided against. Naming it
       // is not the same as requiring it — the contract stays the author's.
-      const qualityMode = foundationPolicy().quality?.changeGate || "warn";
+      const qualityMode = foundationPolicy().quality?.changeGate || "off";
       const highRisk = state.impact === "high" ||
         (state.securityTriggers || []).length > 0;
       const executableSurface = (state.declaredSurface || []).some((path) =>

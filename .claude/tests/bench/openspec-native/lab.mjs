@@ -231,6 +231,8 @@ export function runScenarioLab({ matrixPath, scenarioId, outputRoot = DEFAULT_RE
     args.push("--max-cost-usd", String(plan.budget.cost_usd));
   if (plan.budget.model_requests !== undefined)
     args.push("--max-model-requests", String(plan.budget.model_requests));
+  if (plan.budget.tool_calls !== undefined)
+    args.push("--max-tool-calls", String(plan.budget.tool_calls));
   if (scenario.execution === "paid")
     args.push("--test-self-review", "true", "--test-land", "true");
   const startedAt = new Date().toISOString();

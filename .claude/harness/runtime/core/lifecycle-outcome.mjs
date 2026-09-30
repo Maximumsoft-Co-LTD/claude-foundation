@@ -19,6 +19,8 @@ const INTERNAL_DECISION_KINDS = new Set([
   "review-invocation", "machine-state", "internal-recovery"
 ]);
 
+const hasText = (value) => typeof value === "string" && value.trim().length > 0;
+
 export function lifecycleOwner(actor, explicitOwner = null) {
   return explicitOwner || OWNER_BY_ACTOR.get(actor) || null;
 }
@@ -54,6 +56,9 @@ export function validateLifecycleOutcome(value) {
   if (value.action === "WAIT" && value.protocol >= 6 &&
       (!value.wait?.owner || !value.wait?.condition || !value.wait?.checkCommand))
     throw new Error("WAIT requires a named owner, condition, and checking route");
+  if (value.action === "REPAIR" && !hasText(value.command) && !hasText(value.instruction))
+    throw new Error(`REPAIR lifecycle outcome '${value.legacyAction || "(unnamed)"}' requires an ` +
+      "actionable 'command' or 'instruction' naming what to fix");
   if (value.action === "DONE" && value.owner !== "harness")
     throw new Error("DONE lifecycle outcomes belong to the harness");
   return value;

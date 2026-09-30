@@ -146,7 +146,7 @@ change policy surface|node --test "$ROOT/.claude/harness/tests/change-policy-sur
 sandbox replay preparation|node --test "$ROOT/.claude/harness/tests/sandbox-replay-preparation.test.mjs"
 evidence results|node --test "$ROOT/.claude/harness/tests/evidence-results.test.mjs"
 telemetry append|node --test "$ROOT/.claude/harness/tests/telemetry-append.test.mjs"
-operation profiling|node --test "$ROOT/.claude/harness/tests/operation-profile.test.mjs"
+operation profiling|node --test "$ROOT/.claude/harness/tests/operation-profile.test.mjs" "$ROOT/.claude/harness/tests/host-tool-profile.test.mjs"
 verification planning|node --test "$ROOT/.claude/harness/tests/verification-plan.test.mjs"
 change draft materialization|node --test "$ROOT/.claude/harness/tests/change-draft-materialization.test.mjs" "$ROOT/.claude/harness/tests/semantic-draft.test.mjs" "$ROOT/.claude/harness/tests/design-blueprints.test.mjs" "$ROOT/.claude/harness/tests/reader-guide.test.mjs" "$ROOT/.claude/harness/tests/semantic-intake.test.mjs" "$ROOT/.claude/harness/tests/semantic-intake-state.test.mjs" "$ROOT/.claude/harness/tests/semantic-source-inventory.test.mjs" "$ROOT/.claude/harness/tests/semantic-intake-intelligence.test.mjs" "$ROOT/.claude/harness/tests/repository-intelligence.test.mjs" "$ROOT/.claude/harness/tests/investigation-runtime.test.mjs" "$ROOT/.claude/harness/tests/amendment-invalidation.test.mjs" "$ROOT/.claude/harness/tests/selective-proof-plan.test.mjs"
 reference governance|node --test "$HERE/harness/reference-governance.test.mjs"

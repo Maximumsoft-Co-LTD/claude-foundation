@@ -5,6 +5,8 @@ argument-hint: <intent> | --resume <change> | --plan-only <intent>
 
 `--resume` reads state; `--plan-only` runs `/change` only.
 
+Read `.claude/commands/references/rapid-path.md` and follow it; load other
+references only on its triggers.
 For fresh work use `/change`; it compiles one semantic draft.
 Await spec approval. Then run
 `claude-foundation advance <id> --through proven`; execute each protocol-v6
@@ -17,8 +19,6 @@ work decision; `WAIT` reports an external
 owner and condition, not a user command. Resume internal work yourself.
 
 Do not reread framework files. Report evidence in the user's language.
-
-Use Edit/Write.
 
 Code/test success without the corresponding Foundation state is incomplete.
 

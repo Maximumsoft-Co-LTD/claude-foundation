@@ -222,7 +222,7 @@
       "stack": "foundation-runtime",
       "size": "small",
       "fixture": ".claude/harness/tests/budget-continuation.test.mjs",
-      "fixture_digest": "sha256:9fb1d447cf61d307b074c6667e6b48e3ce53fe8423916d60ac73086aeb92ea42",
+      "fixture_digest": "sha256:dd1f0f90a0e34e0d2978b8e0889a1312ad6dbceac07f8cb7cf0f762578060bb7",
       "prompt": "/dev continue until the deterministic request budget pauses",
       "host": "foundation-runtime",
       "risk": "low",
@@ -233,6 +233,44 @@
       "quality_required": false,
       "budget": { "wall_ms": 120000, "cost_usd": 0, "model_requests": 3 },
       "expected_terminal": "needs-user-decision",
+      "baseline": null
+    },
+    {
+      "id": "tiny-feature",
+      "status": "ready",
+      "execution": "paid",
+      "workload": "tiny-greenfield-feature",
+      "stack": "node-commonjs",
+      "size": "tiny",
+      "fixture": ".claude/tests/bench/tasks/20-tiny-feature/seed",
+      "fixture_digest": "sha256:69e05fcf319a428d242c7e0d50fe1492b5641d3f904b2d8dad198a3e839034b0",
+      "prompt": "/dev add a discount(total, percent) function to src/cart.js that throws RangeError when percent is outside 0-100, with tests",
+      "host": "claude-code",
+      "risk": "low",
+      "project_command": "node --test",
+      "clean_install_command": "npm install --ignore-scripts",
+      "critical_case_ids": [
+        "CASE_DISCOUNT_EXPORTED",
+        "CASE_DISCOUNT_VALUE",
+        "CASE_BOUNDS_INCLUSIVE",
+        "CASE_RANGE_BELOW",
+        "CASE_RANGE_ABOVE",
+        "CASE_TOTAL_INTACT",
+        "CASE_TESTS_PASS",
+        "CASE_TESTS_COVER_DISCOUNT"
+      ],
+      "oracle": {
+        "required": true,
+        "path": ".claude/tests/bench/tasks/20-tiny-feature/oracle/run.sh"
+      },
+      "quality_required": true,
+      "budget": {
+        "wall_ms": 900000,
+        "cost_usd": 5,
+        "model_requests": 60,
+        "tool_calls": 80
+      },
+      "expected_terminal": "completed",
       "baseline": null
     }
   ]

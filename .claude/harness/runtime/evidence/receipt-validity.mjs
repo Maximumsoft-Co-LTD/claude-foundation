@@ -16,7 +16,7 @@ const VALIDITY_RECOVERY = {
   // "Re-run" is correct when the gate caught a real defect and useless when
   // the gate itself is wrong, so all three honest exits are stated. There is
   // deliberately no route that lands a failing proof.
-  fail: (id, provider) => `provider '${provider}' executed and failed. Fix the cause and re-run: claude-foundation proof run ${id}. If the gate itself is wrong, rewire it in openspec/changes/${id}/execution.yaml. If the user decides to land without it, withdraw it on record: claude-foundation change waive ${id} --capability <capability> --reason <why> --decision-ref <ref>`,
+  fail: (id, provider) => `provider '${provider}' executed and failed. Fix the cause and re-run: claude-foundation proof run ${id}. If the gate itself is wrong, change the task verify or evidence through a semantic amendment (claude-foundation change amend ${id} <amendment.json>). If the user decides to land without it, withdraw it on record: claude-foundation change waive ${id} --capability <capability> --reason <why> --decision-ref <ref>`,
   stale: (id) => `the workspace moved after this receipt was earned; re-run: claude-foundation proof run ${id}. A provider that declares "inputs" in its config keeps its receipt when the edit falls outside them, and a review or acceptance verdict rebinds automatically when the change's diff and packet are unchanged on the moved base`,
   "reusable-diff": (id) => `the change's diff and packet are unchanged on the moved base, so the verdict rebinds without a new review; run: claude-foundation proof run ${id}`,
   "provider-inputs-stale": (id) => `the provider's declared inputs changed; re-run: claude-foundation proof run ${id}`,
@@ -365,7 +365,14 @@ export function createReceiptValidity({
 
   function completionValidity(context) {
     const { id, provider, value } = context;
-    if (value.status !== "pass") return { provider, validity: value.status };
+    // An inconclusive executed receipt already names its exact repair (for
+    // example the reporter that makes a test count parseable); carry it so the
+    // repair batch states it instead of a bare validity code.
+    if (value.status !== "pass") return {
+      provider, validity: value.status,
+      ...(value.status === "inconclusive" && String(value.observed || "").trim()
+        ? { reason: String(value.observed).trim() } : {})
+    };
     const requiredClaims = claimsForProvider(id, provider).map((claim) => claim.id);
     const covered = new Set(value.claims || []);
     if (requiredClaims.some((claim) => !covered.has(claim)))

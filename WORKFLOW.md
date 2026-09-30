@@ -162,7 +162,18 @@ changed selected source invalidates readiness and returns agent-owned coverage r
 
 For newly started changes, present the compiled spec, scope, and acceptance
 criteria and wait for explicit user approval before Build, including `/dev`.
-Record it with `change resolve <change> --approve-spec --decision-ref <ref>`.
+Record it with `advance <change> --approve-spec --decision-ref <ref>` (alias of
+`change resolve <change> --approve-spec`). The normal agent path uses only
+`change start <draft>`, which inspects and starts a complete draft in one call,
+`advance`, and `changes`: `advance` wires detected evidence, synchronizes the
+sandbox, runs agent-runnable configured reviewers, and ticks a handed-off task
+in `tasks.md` when its verify passes (a failed check returns
+`verificationFailures`). Every REPAIR carries a command or instruction, so the
+agent never reads harness source to recover. Rapid `/dev` loads
+`.claude/commands/references/rapid-path.md`; the full Change, intake, and Build
+references load only on their triggers. Unauthorized external work enters
+`handoffs.yaml` only through a semantic amendment, and grounding reads belong in
+the draft's `grounding` field.
 Runtime approval binds agreement content and revision; task checkboxes and
 task `[paths:]` write scope are bookkeeping and do not invalidate it. The user
 approves a change once: a later `change revise` or `change amend` that only adds
@@ -659,7 +670,7 @@ An inferred capability is binding only when a claim declares it or the project
 has wired a provider; otherwise it remains a visible advisory. Review stays a
 gate and has its own policy.
 
-Consumer quality is opt-in through
+Consumer quality is opt-in (`quality.changeGate` defaults to `off`) through
 `quality/foundation-quality.json`. It is report-only until explicitly enforced,
 never expands the Change surface, and never converts unsupported, unavailable,
 or unmapped measurements into zero or pass. The installed operational contract

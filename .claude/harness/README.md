@@ -379,7 +379,8 @@ live in `handoffs.yaml` and durable state under `.foundation/handoffs/`.
 `[repo:<id>]`, `[depends:<task-ids>]`,
 `[kind:<kind>]`, `[paths:<paths>]`, and `[resources:<locks>]` are compact
 execution annotations. `agents plan` uses them to prevent same-workspace or
-shared-resource concurrency and applies the model tiers in `foundation.json`.
+shared-resource concurrency and applies the model tiers in `foundation.json` when `models.routing` is true;
+otherwise every task uses the standard tier unless it requests one.
 The complete plan is persisted under `.foundation/plans/`; stdout is a compact
 summary, or one group selected with `--group`. `packet --task` emits only the
 chosen task's claims, files, providers, and model. A one-task change recommends
@@ -623,6 +624,13 @@ Use metrics to inspect the actual cost of a run:
 ```bash
 claude-foundation metrics <change>
 ```
+
+`hostToolProfile` (`measurement`, `total`, `byTool`, `byCategory`) counts
+imported Claude transcript `tool_use` blocks by category (harness CLI, harness
+doc reads, state reads, harness artifact writes, product writes, test runs,
+other); without transcript data every count is null. Automatic `advance` work
+is recorded as the stages `advance.evidence-wiring`, `advance.review-run`,
+`advance.sandbox-sync`, and `build.task-check`.
 
 `commandProfile` separates lifecycle mutations from read-only inspections,
 reports elapsed union time and the most expensive commands, and identifies

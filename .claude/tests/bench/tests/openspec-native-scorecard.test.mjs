@@ -87,6 +87,38 @@ test("scorecard validates and keeps runner walltime separate from host duration"
   delete legacy.oracle;
   assert.equal(validate(legacy), true,
     "the additive oracle field keeps historical v1 scorecards schema-valid");
+  const beforeToolCalls = structuredClone(scorecard);
+  delete beforeToolCalls.operations.hostToolCalls;
+  assert.equal(validate(beforeToolCalls), true,
+    "the additive hostToolCalls field keeps historical v1 scorecards schema-valid");
+});
+
+test("scorecard persists host tool calls by tool and overhead category", () => {
+  const scorecard = buildScorecard(fixture({
+    hostTelemetry: {
+      total: 5, browserCalls: 0, taskMirrorOperations: 0,
+      byTool: { Bash: 3, Read: 1, Write: 1 },
+      byCategory: {
+        harnessCli: 2, harnessDocReads: 1, stateReads: 0, harnessArtifactWrites: 0,
+        productWrites: 1, testRuns: 1, other: 0
+      }
+    }
+  }));
+  assert.deepEqual(scorecard.operations.hostToolCalls, {
+    measurement: "measured", total: 5, byTool: { Bash: 3, Read: 1, Write: 1 },
+    byCategory: {
+      harnessCli: 2, harnessDocReads: 1, stateReads: 0, harnessArtifactWrites: 0,
+      productWrites: 1, testRuns: 1, other: 0
+    }
+  });
+  assert.equal(validate(scorecard), true, JSON.stringify(validate.errors));
+  const uncategorized = buildScorecard(fixture());
+  assert.equal(uncategorized.operations.hostToolCalls.total, 12);
+  assert.equal(uncategorized.operations.hostToolCalls.measurement, "partial");
+  assert.equal(uncategorized.operations.hostToolCalls.byCategory.harnessCli, null);
+  const invalid = structuredClone(scorecard);
+  invalid.operations.hostToolCalls.byCategory.unknownBucket = 1;
+  assert.equal(validate(invalid), false, "categories are a closed set");
 });
 
 test("scorecard preserves measured oracle results", () => {
@@ -124,6 +156,12 @@ test("unknown measurements stay null and cannot make incomplete work complete", 
   assert.equal(scorecard.usage.costUsd, null);
   assert.equal(scorecard.usage.modelRequests, null);
   assert.equal(scorecard.operations.total, null);
+  const unknown = buildScorecard(fixture({ hostTelemetry: {} })).operations.hostToolCalls;
+  assert.equal(unknown.measurement, "unavailable");
+  assert.equal(unknown.total, null);
+  assert.equal(unknown.byTool, null);
+  assert.ok(Object.values(unknown.byCategory).every((value) => value === null),
+    "unknown tool calls are null, never zero");
   assert.equal(scorecard.quality.crapMaximum, null);
   assert.equal(scorecard.outcome.complete, false);
   assert.equal(validate(scorecard), true, JSON.stringify(validate.errors));

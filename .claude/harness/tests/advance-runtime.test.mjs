@@ -603,3 +603,129 @@ test("feedback keeps legacy blocker cause explicitly unavailable", () => {
     { version: 3, status: "failed" }
   ]), { blocked: 2, typed: 1, legacyUnavailable: 1, untypedCurrent: 0 });
 });
+
+// S1: the agent issues only `change start` and `advance`; the harness performs
+// the wiring, sync, and configured-review primitives it used to hand back.
+function selfDrivingRuntime(overrides = {}) {
+  const state = { status: "building", workspace: { path: "/tmp/change" } };
+  const calls = [];
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => state,
+    agentDispatchValue: () => ({ action: "build-complete" }),
+    relevantHash: () => "workspace-a",
+    deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => state.status === "proven" ? { status: "PASS", workspaceHash: "workspace-a" } : {},
+    proofAdvancePath: () => "/proof.json",
+    stableHash,
+    runProof: async () => { calls.push("proof"); state.status = "proven"; return { completed: true }; },
+    ...overrides(state, calls)
+  });
+  return { state, calls, runtime };
+}
+
+test("automatic review accepts only an exact harness-generated authority run route", async () => {
+  const { automaticReviewRun } = await import("../runtime/workflow/advance-recovery.mjs");
+  assert.deepEqual(automaticReviewRun("change-a",
+    "claude-foundation authority run change-a --request review-1 --subject-actor implementation-agent"),
+  { request: "review-1", "subject-actor": "implementation-agent" });
+  for (const route of [
+    "claude-foundation authority run change-a --request review-1 --subject-actor <original-implementer>",
+    "claude-foundation authority run change-a --request review-1 --subject-actor x --main-session-model <model>",
+    "claude-foundation authority run other --request review-1 --subject-actor x",
+    "claude-foundation authority run change-a --request review-1",
+    "claude-foundation authority status change-a --request review-1 --template",
+    "claude-foundation authority run change-a --request r1 --subject-actor x; rm -rf /"
+  ]) assert.equal(automaticReviewRun("change-a", route), null, route);
+});
+
+test("advance wires detected evidence itself, then proves without an agent command", async () => {
+  let wired = 0;
+  const { runtime, calls } = selfDrivingRuntime(() => ({
+    proofReadinessValue: () => wired ? { status: "READY", workspaceHash: "workspace-a", next: [] } : {
+      status: "NEEDS_USER_DECISION", workspaceHash: "workspace-a",
+      authorityPreflight: { status: "READY" },
+      next: [{ provider: "test", kind: "user-decision",
+        wiring: { kind: "configure-provider", command: "claude-foundation evidence init change-a --write" },
+        decision: { kind: "external-evidence", summary: "wire test", options: [] } }]
+    },
+    wireEvidence: async (id, wiring) => { wired += 1; assert.deepEqual(wiring.providers, ["test"]); }
+  }));
+  const value = await runtime.advanceThrough("change-a", "proven");
+  assert.equal(value.action, "DONE");
+  assert.equal(value.reached, "proven");
+  assert.equal(wired, 1);
+  assert.deepEqual(calls, ["proof"]);
+});
+
+test("wiring that does not clear the gap falls back to the evidence decision once", async () => {
+  let wired = 0;
+  const { runtime, calls } = selfDrivingRuntime(() => ({
+    proofReadinessValue: () => ({
+      status: "NEEDS_USER_DECISION", workspaceHash: "workspace-a",
+      next: [{ provider: "test", wiring: { kind: "configure-provider" },
+        decision: { kind: "external-evidence", summary: "Provider 'test' needs evidence", options: [] } }]
+    }),
+    wireEvidence: async () => { wired += 1; }
+  }));
+  const value = await runtime.advanceThrough("change-a", "proven");
+  assert.equal(value.action, "ASK_USER");
+  assert.equal(value.decision.kind, "external-evidence");
+  assert.equal(wired, 1);
+  assert.deepEqual(calls, []);
+  // The Build target never performs Prove-side wiring.
+  const build = await runtime.advanceThrough("change-a", "build");
+  assert.equal(build.reached, "build");
+  assert.equal(wired, 1);
+});
+
+test("advance runs an agent-runnable configured reviewer inline and keeps placeholders a handoff", async () => {
+  const request = { requestId: "review-1", type: "review", status: "requested" };
+  const reviews = [];
+  const { runtime, calls } = selfDrivingRuntime(() => ({
+    authorityStatusValue: () => ({ requests: request.status === "requested" ? [request] : [] }),
+    authorityNext: () => [{ requestId: "review-1",
+      command: "claude-foundation authority run change-a --request review-1 --subject-actor implementation-agent" }],
+    runReview: async (id, flags) => { reviews.push([id, flags]); request.status = "completed"; }
+  }));
+  const value = await runtime.advanceThrough("change-a", "proven");
+  assert.equal(value.reached, "proven");
+  assert.deepEqual(reviews, [["change-a", { request: "review-1", "subject-actor": "implementation-agent" }]]);
+  assert.deepEqual(calls, ["proof"]);
+
+  const fallback = { requestId: "review-2", type: "review", status: "requested" };
+  const handoff = selfDrivingRuntime(() => ({
+    authorityStatusValue: () => ({ requests: [fallback] }),
+    authorityNext: () => [{ requestId: "review-2",
+      command: "claude-foundation authority run change-a --request review-2 --subject-actor x --main-session-model <model>" }],
+    runReview: async () => { throw new Error("placeholder routes must not run"); }
+  }));
+  const stopped = await handoff.runtime.advanceThrough("change-a", "proven");
+  assert.equal(stopped.action, "RUN_EXTERNAL");
+  assert.equal(stopped.legacyAction, "RUN_CONFIGURED_REVIEW");
+  assert.equal(stopped.automaticReview, undefined);
+});
+
+test("a reviewer run that changes nothing stops at the no-progress boundary", async () => {
+  const request = { requestId: "review-1", type: "review", status: "requested" };
+  let runs = 0;
+  const { runtime } = selfDrivingRuntime(() => ({
+    authorityStatusValue: () => ({ requests: [request] }),
+    authorityNext: () => [{ requestId: "review-1",
+      command: "claude-foundation authority run change-a --request review-1 --subject-actor implementation-agent" }],
+    runReview: async () => { runs += 1; }
+  }));
+  const value = await runtime.advanceThrough("change-a", "proven");
+  assert.equal(value.boundary, "repeated-no-progress");
+  assert.equal(runs, 2);
+});
+
+test("a proven change with a revised agreement is synchronized by advance itself", async () => {
+  const synced = [];
+  const { runtime } = selfDrivingRuntime((state) => {
+    state.status = "proven";
+    return { synchronizeAgreement: async (id) => { synced.push(id); return true; } };
+  });
+  await runtime.advanceThrough("change-a", "proven");
+  assert.deepEqual(synced, ["change-a"]);
+});

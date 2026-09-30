@@ -6,9 +6,9 @@ allowed paths, verification, and one resume route.
 
 For a session-mode leased task, `advance` holds the lease itself
 (`execution.managedLease`). Implement the embedded task and run its focused
-checks; do not acquire or release it. After a success, mark it complete in the
-isolated `tasks.md` and resume `advance`, which releases the lease and checks
-observed writes against the task scope. An unmarked task keeps its lease.
+checks; do not acquire or release it. After a success, resume `advance`: it
+reruns the task's verify, ticks it in `tasks.md`, releases the lease, and checks
+observed writes against the task scope. A failing task keeps its lease.
 This keeps a singleton runnable frontier out of a new worker while preserving
 the same fencing, observed-write, and result authority as spawned work.
 
@@ -20,9 +20,9 @@ lease. Give each native worker only its action task and repository state; never
 replay the parent transcript. Spawn every
 successfully leased worker before waiting for any worker. Never serialize the
 selected group or implement its tasks in the parent. Wait for the selected
-group, release each matching lease, then mark only accepted successes complete
-in `tasks.md`. Leave unselected, failed, or blocked tasks pending and dispatch
-again.
+group, release each matching lease, then resume `advance`; it ticks only
+accepted successes whose verify passes. Leave unselected, failed, or blocked
+tasks pending and dispatch again.
 
 The task packet carries the worker contract. A worker implements only its
 leased task and allowed paths. It reports its summary, focused checks, and
@@ -32,11 +32,11 @@ Resume `advance`; Proof owns the aggregate graph join.
 The planner serializes tasks in a shared repository workspace because lease
 release observes the repository diff. Parallel groups use independent
 workspaces; do not widen a returned group just because paths look disjoint.
-Force release abandons result authority. Never toggle completed checkboxes to
-manufacture a result; keep incomplete work pending and follow runtime recovery.
-If a completed checkbox is returned with unresolved lease authority, preserve
-valid implementation and rerun its focused verification under the returned
-lease before releasing the result; do not rewrite the checkbox to reacquire.
+Force release abandons result authority. Never edit checkboxes yourself; keep
+incomplete work pending and follow runtime recovery. If a ticked task is
+returned with unresolved lease authority, preserve valid implementation and
+rerun its focused verification under the returned lease before releasing the
+result.
 
 If an acquire loses to another host, do not spawn that worker. Keep and run any
 leases already acquired by this host, release their results, then dispatch

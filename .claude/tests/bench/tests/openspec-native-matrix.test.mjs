@@ -7,8 +7,8 @@ test("the versioned cross-domain matrix is valid and every workload is executabl
   const matrix = loadMatrix();
   assert.equal(matrix.protocol, "foundation-openspec-native-matrix-v2");
   assert.deepEqual(matrixIssues(matrix), []);
-  assert.equal(matrix.scenarios.length, 7);
-  assert.equal(matrix.scenarios.filter((scenario) => scenario.status === "ready").length, 7);
+  assert.equal(matrix.scenarios.length, 8);
+  assert.equal(matrix.scenarios.filter((scenario) => scenario.status === "ready").length, 8);
   assert.equal(matrix.scenarios.filter((scenario) => scenario.baseline !== null).length, 1);
 });
 
@@ -49,6 +49,15 @@ test("planned scenarios cannot accidentally spend a live-run budget", () => {
   assert.equal(attempt.baseline_eligible, false);
   assert.equal(scenario.prior_attempt.post_stop_oracle.verdict, "pass");
   assert.equal(scenario.prior_attempt.post_stop_quality.fail, 3);
+});
+
+test("the tiny-feature scenario caps host tool calls and binds its oracle", () => {
+  const plan = executionPlan(loadMatrix(), "tiny-feature");
+  assert.equal(plan.execution, "paid");
+  assert.equal(plan.budget.tool_calls, 80);
+  assert.match(plan.fixture, /20-tiny-feature\/seed$/);
+  assert.match(plan.oracle, /20-tiny-feature\/oracle\/run\.sh$/);
+  assert.match(plan.prompt, /discount\(total, percent\)/);
 });
 
 test("budget exhaustion pauses for a resumable user decision", () => {

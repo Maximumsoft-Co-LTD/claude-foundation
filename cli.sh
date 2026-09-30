@@ -134,13 +134,16 @@ const showAll = process.argv[3] === "--all";
 const groups = [["Workflow", "agent"], ["Conditional recovery", "conditional"],
   ["Administration", "admin"], ["Host integration", "host"],
   ["Internal compatibility", "internal"]];
-const primary = new Set([
-  "advance", "investigate", "change start", "change amend", "changes", "doctor", "describe"
-]);
+// The agent's normal path: start a change, then advance it. Everything else
+// is recovery or operator surface behind `help --all`.
+const primaryOrder = ["change start", "advance", "changes"];
+const primary = new Set(primaryOrder);
 console.log("claude-foundation — OpenSpec-native software-change harness\n");
 for (const [title, audience] of groups) {
   const rows = registry.commands.filter((command) => command.audience === audience &&
     (showAll || primary.has(command.name)));
+  if (!showAll) rows.sort((left, right) =>
+    primaryOrder.indexOf(left.name) - primaryOrder.indexOf(right.name));
   if (!rows.length) continue;
   console.log(`${title}:`);
   for (const command of rows) {

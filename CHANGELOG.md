@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Core path: the agent needs only `change start`, `advance`, and `changes`.
+  `change start <draft>` inspects and starts a complete draft in one call;
+  `advance --through proven|archived` wires detected evidence, synchronizes the
+  sandbox, runs agent-runnable configured reviewers inline, and ticks a
+  handed-off task when its verify passes (`verificationFailures` otherwise).
+  `advance <change> --approve-spec --decision-ref <ref>` aliases
+  `change resolve --approve-spec`. Default `help` lists only those commands.
+- Every `advance` REPAIR carries an actionable command or instruction; a
+  failure without an exact command returns `repairTarget` (field, value,
+  expected shape). Proof repairs lead with the first finding's diagnosis.
+- Rapid drafts may omit `evidence[key].capabilities` (default `["test"]` from
+  verify). An uncountable test run names the exact reporter fix.
+- Rapid `/dev` loads one bounded reference (`rapid-path.md`, about 930 words)
+  instead of about 3,500 words; full references load on explicit triggers.
+- New consumers default to `models.routing: false`,
+  `execution.budgetWatchdog: false` (usage still recorded), and
+  `quality.changeGate: off`; upgrades keep existing values. Rapid low-impact
+  drafts skip the repository-intelligence scan (`status: skipped`), and the
+  multi-repository saga is built only when a child repository is selected.
+- Benchmarks record `operations.hostToolCalls` by category, accept
+  `--max-tool-calls`, and add a `tiny-feature` scenario targeting at most 20
+  tool calls; `metrics <change>` reports `hostToolProfile`.
+
 - Budget exhaustion never asks the user; every exhausted window auto-continues
   as a harness decision. `budget continue` is an optional explicit widening.
 - Change intake no longer forces discovery coverage rows, keyword-derived risk
@@ -43,6 +66,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Proof execution progress lines no longer leak into `advance` JSON output.
+- The Land guard recognizes a typed `/land` from its own transcript row, so
+  the first `land advance` is no longer refused while Claude Code has not yet
+  written the late `last-prompt` row.
 - `evidence upgrade` no longer resets spec approval; a valid approval carries
   to the rewritten packet with an `evidence-upgrade` audit row, and the
   sandbox packet is upgraded too.

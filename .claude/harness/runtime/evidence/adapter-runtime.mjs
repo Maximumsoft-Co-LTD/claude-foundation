@@ -133,6 +133,49 @@ export function mutationV2Result(report, required, mutantKillers = {}) {
   };
 }
 
+const NODE_TEST = /(?:^|[\s;&|(])node\s+(?:[^;&|]*\s)?--test(?:[\s=]|$)/;
+const COUNTABLE_NODE_REPORTER = /--test-reporter(?:=|\s+)(?:tap|spec)\b/;
+const SCRIPT_RUNNER = /(?:^|[\s;&|(])(npm|pnpm|yarn|bun)\s+([^;&|)]*)/;
+
+function packageScriptName(command) {
+  const match = command.match(SCRIPT_RUNNER);
+  if (!match) return null;
+  const [first, second] = match[2].split(/\s+/).filter((token) =>
+    token && !token.startsWith("-"));
+  if (["run", "run-script"].includes(first)) return second || null;
+  if (["test", "t", "tst"].includes(first)) return "test";
+  return match[1] === "npm" ? null : first || null;
+}
+
+function nodeTestReporterFix(command) {
+  const replaced = command.replace(/--test-reporter(?:=|\s+)\S+/, "--test-reporter=tap");
+  return replaced !== command ? replaced
+    : command.replace(/(node\s+(?:[^;&|]*\s)?--test)(?=[\s=]|$)/, "$1 --test-reporter=tap");
+}
+
+// Discovery without a structured count stays inconclusive; this names the one
+// edit that makes the same verify command countable so the agent never has to
+// reverse-engineer the parser or rewire execution by hand.
+export function discoveryCountRepair(command, packageScripts = null) {
+  const text = (Array.isArray(command) ? command : [command])
+    .map((part) => String(part ?? "")).join(" ").replace(/^sh -c /, "");
+  const name = NODE_TEST.test(` ${text}`) ? null : packageScriptName(text);
+  const script = name ? packageScripts?.[name] : null;
+  const wrapped = typeof script === "string" && NODE_TEST.test(` ${script}`);
+  const nodeCommand = wrapped ? script : NODE_TEST.test(` ${text}`) ? text : null;
+  if (!nodeCommand)
+    return "make the verify command print a counted result (TAP '1..N', node " +
+      "'ℹ tests N', a Jest/Vitest summary, or JSON numTotalTests); for node --test add " +
+      "--test-reporter=tap";
+  const where = wrapped ? `package.json scripts.${name}`
+    : "the task verify (through a semantic amendment)";
+  if (COUNTABLE_NODE_REPORTER.test(nodeCommand))
+    return `node --test already uses a countable reporter but its count never reached ` +
+      `stdout; remove the pipe or redirection in ${where}`;
+  return `node --test prints no countable reporter; change ${where} to ` +
+    `'${nodeTestReporterFix(nodeCommand)}' so discovery can count tests`;
+}
+
 export function mutationReceiptClassification(protocol, legacyResult, configured) {
   // Receipt classification describes how the fault was exposed. The provider
   // fingerprint separately binds the result protocol and its full contract.
@@ -575,6 +618,13 @@ export function createAdapterRuntime({
     };
   }
 
+  function workspacePackageScripts(cwd) {
+    try {
+      const scripts = JSON.parse(readFileSync(join(cwd || ROOT, "package.json"), "utf8")).scripts;
+      return scripts && typeof scripts === "object" ? scripts : null;
+    } catch { return null; }
+  }
+
   function adapterInfrastructureFailed(result, readinessMissed) {
     return Boolean(result.timedOut || result.error || readinessMissed);
   }
@@ -607,7 +657,10 @@ export function createAdapterRuntime({
       ...baseFlags, config: discoveryConfig,
       claims: providerClaims(id, discoveryProvider, discoveryConfig).join(","),
       discovered, minimum,
-      observed: discovered === null ? "structured test count unavailable" :
+      observed: discovered === null
+        ? `structured test count unavailable: provider '${testProvider}' output had no JSON, TAP, ` +
+          `node spec, or runner summary; ${discoveryCountRepair(
+            config.command, workspacePackageScripts(execution.cwd))}` :
         `${discovered} discovered; minimum ${minimum}`
     }, { executed: true });
     return evidenceResultValue({

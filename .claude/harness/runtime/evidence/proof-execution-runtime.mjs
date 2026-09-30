@@ -591,7 +591,11 @@ export function createProofExecutionRuntime({
       executedProviders,
       next: noProgress ? decision.next : [{
         kind: gate === "review" ? "correct-workspace" : "correct-failed-evidence",
-        reason: nextReason,
+        // Lead with the first finding's own diagnosis so the agent can act on
+        // the returned envelope instead of reading receipts.
+        reason: [nextReason, (findings.find((finding) => finding?.message || finding?.reason) || {})
+          .message || (findings.find((finding) => finding?.reason) || {}).reason]
+          .filter(Boolean).join(": "),
         command: `claude-foundation packet ${id} --phase build`
       }]
     });

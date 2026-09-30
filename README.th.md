@@ -65,7 +65,7 @@ Harness ตรวจ Proof
 ```
 
 Harness ไม่ถือว่าคำพูดว่า “เสร็จแล้ว” ของ AI เป็น evidence ระบบอาจสร้าง execution
-plan แบบจำกัดขอบเขตและแนะนำ model tier แต่ runtime ไม่ได้เรียก model เอง การเรียก
+plan แบบจำกัดขอบเขตและแนะนำ model tier (เปิดใช้ด้วย `models.routing`) แต่ runtime ไม่ได้เรียก model เอง การเรียก
 agent และ model ยังเป็นหน้าที่ของ native agent host
 
 ## ทำไมต้องใช้

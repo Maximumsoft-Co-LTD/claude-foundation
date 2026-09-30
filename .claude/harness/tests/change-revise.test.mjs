@@ -182,7 +182,7 @@ test("revise recompiles an agreed change in place and reports its delta", (t) =>
   assert.match(output, /added: outbox/);
   assert.match(output, /revised: throughput/);
   assert.match(output, /removed: ack-path/);
-  assert.match(output, /change resolve revisable-change --approve-spec/);
+  assert.match(output, /advance revisable-change --approve-spec/);
   assert.deepEqual(readdirSync(value.changes).filter((name) => name.startsWith(".")), []);
 });
 

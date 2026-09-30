@@ -67,7 +67,7 @@ User explicitly authorizes Land
 ```
 
 The harness does not accept “the agent says it is done” as evidence. It may
-produce a bounded execution plan and recommend a model tier, but the runtime
+produce a bounded execution plan and recommend a model tier (opt-in `models.routing`), but the runtime
 does not invoke a model itself; the native agent host remains responsible for
 running agents and models.
 

@@ -4,6 +4,22 @@ import { join } from "node:path";
 import { measuredNumber } from "../core/measured-number.mjs";
 import { createModelDriftInspector } from "./host-execution-contract.mjs";
 import { commandProfile, operationPhaseRows } from "./operation-profile.mjs";
+import { toolCallProfile } from "./telemetry.mjs";
+
+// Host tool calls observed in imported Claude transcript rows. Rows imported
+// before tool calls were recorded carry no `toolCalls` array: they make the
+// profile partial, and with no observable row every count stays null.
+export function hostToolProfile(events = []) {
+  const transcript = events.filter((event) => event?.source === "claude-transcript");
+  const observed = transcript.filter((event) => Array.isArray(event.toolCalls));
+  const measurement = !observed.length ? "unavailable"
+    : observed.length < transcript.length ? "partial" : "measured";
+  return {
+    measurement,
+    source: observed.length ? "claude-transcript" : null,
+    ...toolCallProfile(observed.length ? observed.flatMap((event) => event.toolCalls) : null)
+  };
+}
 
 export function runtimeSourceDigest(directory) {
   const digest = createHash("sha256");
@@ -708,6 +724,7 @@ export function createMetricsRuntime({
         providerRebindings: reuseRows.length
       },
       commandProfile: commandProfile(operations, inspections),
+      hostToolProfile: hostToolProfile(events),
       orchestratorTokenShare: tokenTotal > 0 ? orchestratorTokens / tokenTotal : null,
       orchestratorCostShare: totalCost > 0 && orchestratorCost !== null
         ? orchestratorCost / totalCost : null,

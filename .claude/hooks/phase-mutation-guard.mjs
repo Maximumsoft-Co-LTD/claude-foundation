@@ -338,20 +338,42 @@ function currentTranscriptIsDev(path) {
   finally { if (descriptor !== null) closeSync(descriptor); }
 }
 
+// The prompt the user typed last. Claude Code appends the `last-prompt` row
+// late — after the first tool calls of the turn — so a newly typed `/land` also
+// counts through its own user row (`<command-name>/land</command-name>`).
+// Whichever row appears later in the transcript wins.
+function latestTypedPrompt(source) {
+  let latest = "";
+  for (const line of source.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const row = JSON.parse(line);
+      if (row.type === "last-prompt" && typeof row.lastPrompt === "string") {
+        latest = row.lastPrompt.trim();
+        continue;
+      }
+      if (row.type !== "user" || row.isMeta) continue;
+      const content = row.message?.content;
+      const text = typeof content === "string" ? content
+        : Array.isArray(content) && !content.some((part) => part?.type === "tool_result")
+          ? content.filter((part) => part?.type === "text").map((part) => part.text).join("\n")
+          : "";
+      const command = text.match(/<command-name>\s*(\/[\w:-]+)\s*<\/command-name>/);
+      if (command) {
+        const args = text.match(/<command-args>([\s\S]*?)<\/command-args>/)?.[1]?.trim();
+        latest = args ? `${command[1]} ${args}` : command[1];
+      } else if (text.trim() && !/^<(?:local-command|system-reminder)/.test(text.trim())) {
+        latest = text.trim();
+      }
+    } catch { /* tolerate a partially flushed final line */ }
+  }
+  return latest;
+}
+
 function currentTranscriptIsLand(path) {
   if (!path || !existsSync(path)) return false;
   try {
-    const source = readFileSync(path, "utf8");
-    let latest = "";
-    for (const line of source.split("\n")) {
-      if (!line.trim()) continue;
-      try {
-        const row = JSON.parse(line);
-        if (row.type === "last-prompt" && typeof row.lastPrompt === "string")
-          latest = row.lastPrompt.trim();
-      } catch { /* tolerate a partially flushed final line */ }
-    }
-    return /^\/land(?:\s|$)/.test(latest);
+    return /^\/land(?:\s|$)/.test(latestTypedPrompt(readFileSync(path, "utf8")));
   } catch { return false; }
 }
 

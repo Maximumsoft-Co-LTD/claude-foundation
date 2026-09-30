@@ -298,13 +298,17 @@ export function validationChangeDirectory(id, source, state,
 export function validateImplementationTasks(tasks, fail) {
   const taskIds = tasks.map((task) => task.id).filter(Boolean);
   if (tasks.length && taskIds.length !== tasks.length)
-    fail("every implementation task requires a stable ID such as T001");
+    fail("every implementation task requires a stable ID such as T001; tasks without one: " +
+      tasks.filter((task) => !task.id).map((task) => `'${String(task.text || "").slice(0, 60)}'`).join(", ") +
+      ". Set tasks[].id in the semantic draft or amendment; the compiler writes tasks.md");
   if (new Set(taskIds).size !== taskIds.length)
-    fail("tasks.md contains duplicate task IDs");
+    fail(`tasks.md contains duplicate task IDs: ${[...new Set(taskIds.filter((id, index) =>
+      taskIds.indexOf(id) !== index))].join(", ")}; give each task a unique tasks[].id in the semantic draft or amendment`);
   const lifecycleTasks = tasks.filter((task) =>
     !task.done && /(?:^|[\s(`"'])\/(?:prove|land)\b/.test(task.text));
   if (lifecycleTasks.length)
-    fail("tasks.md contains a lifecycle gate; /prove and /land are commands, not implementation tasks");
+    fail(`tasks.md contains a lifecycle gate (${lifecycleTasks.map((task) => task.id || task.text).join(", ")}); ` +
+      "/prove and /land are commands, not implementation tasks; remove those tasks from the draft or amendment");
   return taskIds;
 }
 
@@ -737,7 +741,7 @@ export function requiredProvidersOperation(context, id) {
     addRequiredCapability(capabilityContext, "acceptance");
   for (const capability of context.policyCapabilitySplit(id, contract).enforced)
     addRequiredCapability(capabilityContext, capability);
-  const qualityMode = context.foundationPolicy?.().quality?.changeGate || "warn";
+  const qualityMode = context.foundationPolicy?.().quality?.changeGate || "off";
   const highRisk = state.impact === "high" ||
     (state.securityTriggers || []).length > 0;
   if (qualityMode === "enforce-high-risk" && highRisk)
@@ -785,7 +789,7 @@ export function createChangeValidationRuntime({
   now,
   authorityPreflight = () => ({ status: "READY", blockers: [], decision: null }),
   executionContract = null,
-  foundationPolicy = () => ({ quality: { changeGate: "warn" } }),
+  foundationPolicy = () => ({ quality: { changeGate: "off" } }),
   fail: terminalFail
 }) {
   let activeValidationCapture = null;

@@ -8,9 +8,11 @@ import test from "node:test";
 
 import {
   assertReadRepositoriesUnchanged, createAdapterRuntime, criticalCaseResult,
-  providerRepositoryManifestValue, repositoryStatus
+  discoveryCountRepair, providerRepositoryManifestValue, repositoryStatus
 } from "../../harness/runtime/evidence/adapter-runtime.mjs";
-import { playwrightReportSummary } from "../../harness/runtime/evidence/evidence-results.mjs";
+import {
+  numericReportValue, parseNodeTestSpecOutput, parseTapOutput, playwrightReportSummary
+} from "../../harness/runtime/evidence/evidence-results.mjs";
 
 const stableHash = (value) => createHash("sha256")
   .update(JSON.stringify(value)).digest("hex");
@@ -549,4 +551,66 @@ test("generic command and mutation failures preserve failure semantics", async (
       resultProtocol: "foundation-mutation-v2", requiredMutants: ["missing"],
       mutantKillers: { missing: "case" }
     }, "run", new Map())).status, "fail");
+});
+
+const realParsers = { parseTapOutput, parseNodeTestSpecOutput, numericReportValue };
+
+function npmNodeTestOutput(t, script) {
+  const project = mkdtempSync(join(tmpdir(), "adapter-npm-node-test-"));
+  t.after(() => rmSync(project, { recursive: true, force: true }));
+  writeFileSync(join(project, "package.json"), JSON.stringify({
+    name: "fixture", private: true, scripts: { test: script }
+  }));
+  writeFileSync(join(project, "a.test.mjs"),
+    "import test from 'node:test';\ntest('adds', () => {});\ntest('subtracts', () => {});\n");
+  const env = { ...process.env, NO_COLOR: "1" };
+  delete env.FORCE_COLOR;
+  // This suite runs under node --test; the child must not report to it.
+  delete env.NODE_TEST_CONTEXT;
+  return execFileSync("npm", ["test", "--silent"], { cwd: project, encoding: "utf8", env });
+}
+
+for (const script of ["node --test", "node --test --test-reporter=tap"])
+test(`real node --test output behind npm test proves discovery: ${script}`, async (t) => {
+  const config = {
+    capability: "test", adapter: "test-discovery", command: ["sh", "-c", "npm test"],
+    discoveryProvider: "discovery", minimum: 1, reportFormat: "auto"
+  };
+  const world = fixture(config, result({ stdout: npmNodeTestOutput(t, script) }), realParsers);
+  const outcome = await world.runtime.executeAdapter(
+    "change", "provider", config, "run", new Map());
+  assert.equal(outcome.status, "pass");
+  assert.equal(world.receipts[1].flags.discovered, 2);
+});
+
+test("discovery repair names the exact reporter fix for node --test commands", () => {
+  assert.match(discoveryCountRepair(["sh", "-c", "npm test"], { test: "node --test --test-reporter=dot" }),
+    /package\.json scripts\.test .*'node --test --test-reporter=tap'/);
+  assert.match(discoveryCountRepair(["sh", "-c", "pnpm run unit"], { unit: "node --test test/" }),
+    /scripts\.unit .*'node --test --test-reporter=tap test\/'/);
+  assert.match(discoveryCountRepair(["sh", "-c", "node --test --test-reporter=dot"]),
+    /task verify .*'node --test --test-reporter=tap'/);
+  assert.match(discoveryCountRepair(["sh", "-c", "node --test --test-reporter=tap | tail -1"]),
+    /remove the pipe or redirection in the task verify/);
+  assert.match(discoveryCountRepair(["sh", "-c", "npm test"], { test: "mocha" }),
+    /counted result .*--test-reporter=tap/);
+  assert.match(discoveryCountRepair(["sh", "-c", "make check"], null), /counted result/);
+});
+
+test("uncountable npm-wrapped node --test stays inconclusive and states the fix", async () => {
+  const config = {
+    capability: "test", adapter: "test-discovery", command: ["sh", "-c", "npm test"],
+    discoveryProvider: "discovery", minimum: 1, reportFormat: "auto"
+  };
+  const world = fixture(config, result({ stdout: "..\n" }), realParsers);
+  writeFileSync(join(world.root, "package.json"), JSON.stringify({
+    scripts: { test: "node --test --test-reporter=dot" }
+  }));
+  const outcome = await world.runtime.executeAdapter(
+    "change", "provider", config, "run", new Map());
+  assert.equal(outcome.status, "inconclusive");
+  assert.equal(world.receipts[0].status, "pass");
+  assert.equal(world.receipts[1].status, "inconclusive");
+  assert.match(world.receipts[1].flags.observed,
+    /scripts\.test .*'node --test --test-reporter=tap'/);
 });

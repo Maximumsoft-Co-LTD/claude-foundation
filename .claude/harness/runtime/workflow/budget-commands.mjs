@@ -1,7 +1,9 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-export function createBudgetReporter({ applyBudgetDecision }) {
+// `watchdogEnabled` reflects the opt-in `execution.budgetWatchdog`: off, usage
+// is still synchronized, but background syncs emit no spend-mode warning.
+export function createBudgetReporter({ applyBudgetDecision, watchdogEnabled = () => true }) {
   function reportBudget(id, state, quiet = false) {
     const decision = applyBudgetDecision(state);
     const spent = decision.measured
@@ -9,7 +11,7 @@ export function createBudgetReporter({ applyBudgetDecision }) {
     const message = `BUDGET ${id}: ${spent} ` +
       `${decision.action} ${decision.recommendation} (${decision.limiter || "unknown"})`;
     if (!quiet) console.log(message);
-    else if (decision.ratio >= 0.7)
+    else if (decision.ratio >= 0.7 && watchdogEnabled())
       console.error(`WARNING: ${message}`);
     return decision;
   }

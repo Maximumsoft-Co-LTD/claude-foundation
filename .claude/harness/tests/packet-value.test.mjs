@@ -72,6 +72,7 @@ let surface = [
 let attempts = [];
 let compositeHash = "composite-hash";
 let instructionManifest = null;
+let budgetWatchdog;
 const packetLimits = {
   global: 1_000_000, repository: 1_000_000, task: 1_000_000, review: 1_000_000
 };
@@ -236,7 +237,7 @@ const runtime = createPacketRuntime({
   contractFingerprint: () => "fingerprint", reviewPolicy: () => ({}),
   resolvedAcceptance: () => ({}), handoffReadiness: () => ({ status: "ready" }),
   deliveredAiAttempts: () => attempts, serializedJson: JSON.stringify,
-  foundationPolicy: () => ({ execution: { packetBytes: packetLimits } }),
+  foundationPolicy: () => ({ execution: { packetBytes: packetLimits, budgetWatchdog } }),
   recordContextMetric: (...args) => contextMetrics.push(args),
   recordInstructionManifest: () => instructionManifest,
   fail: (message) => { throw new Error(message); }
@@ -258,6 +259,15 @@ try {
   });
   assert.equal(global.repairContext, undefined);
   assert.equal(global.authorityPreflight.status, "READY");
+  // Budget watchdog is opt-in: by default the packet carries no spend mode or limit.
+  assert.equal(global.budget, undefined);
+  assert.deepEqual(global.budgetDecision,
+    { watchdog: "off", status: "CONTINUE", userActionRequired: false });
+  budgetWatchdog = true;
+  const watched = runtime.packetValue("packet-test");
+  assert.deepEqual(watched.budget, { mode: "active" });
+  assert.deepEqual(watched.budgetDecision, { allowed: true });
+  budgetWatchdog = undefined;
 
   state.riskBasedCiRequired = true;
   state.impact = "high";

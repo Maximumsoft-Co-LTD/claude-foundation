@@ -440,6 +440,26 @@ out="$(printf '%s' "$dev_land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
 assert_contains "/dev cannot infer Land through the trusted wrapper" "$out" \
   'requires the current /land invocation'
 
+# Claude Code writes the `last-prompt` row late. A /land typed after /dev is
+# already in the transcript as its own user row before that row lands.
+{
+  printf '%s\n' '{"type":"last-prompt","lastPrompt":"/dev build it"}'
+  printf '%s\n' '{"type":"user","message":{"role":"user","content":"<command-message>land</command-message>\n<command-name>/land</command-name>\n<command-args>delivery-change</command-args>"}}'
+} > "$TMP/late-land-transcript.jsonl"
+late_land_event="{\"transcript_path\":\"$TMP/late-land-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation land advance delivery-change\"}}"
+out="$(printf '%s' "$late_land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
+  FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
+assert_eq "a typed /land counts before its last-prompt row is written" "" "$out"
+{
+  printf '%s\n' '{"type":"user","message":{"role":"user","content":"<command-name>/land</command-name>"}}'
+  printf '%s\n' '{"type":"last-prompt","lastPrompt":"/dev next thing"}'
+} > "$TMP/stale-land-transcript.jsonl"
+stale_land_event="{\"transcript_path\":\"$TMP/stale-land-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation land advance delivery-change\"}}"
+out="$(printf '%s' "$stale_land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
+  FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
+assert_contains "an earlier /land does not authorize a later /dev turn" "$out" \
+  'requires the current /land invocation'
+
 chained_land_event="{\"transcript_path\":\"$TMP/land-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation land advance delivery-change && git commit -am bad\"}}"
 out="$(printf '%s' "$chained_land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
   FOUNDATION_GUARDRAIL_MODE=block FOUNDATION_ACTIVE_PHASE=land node "$HOOK")"

@@ -76,7 +76,10 @@ test("consumer inspection preserves lifecycle files and resumes amended current 
     runtime("start", join(project, ".foundation/draft.json"));
     const unapproved = JSON.parse(runtime("advance", "inspect-resume", "--through", "build"));
     assert.equal(unapproved.boundary, "spec-approval-required");
-    runtime("resolve", "inspect-resume", "--approve-spec", "--decision-ref", "fixture://user/spec");
+    // `advance --approve-spec` is the agent-path alias of `change resolve --approve-spec`.
+    assert.throws(() => runtime("advance", "inspect-resume", "--approve-spec"),
+      /requires --decision-ref/);
+    runtime("advance", "inspect-resume", "--approve-spec", "--decision-ref", "fixture://user/spec");
     runtime("advance", "inspect-resume", "--through", "build");
     const before = protectedFiles();
     const action = JSON.parse(runtime("advance", "inspect-resume", "--inspect"));
@@ -99,8 +102,10 @@ test("consumer inspection preserves lifecycle files and resumes amended current 
     const amendment = {
       version: 1, reason: "New requirement after interruption",
       addRequirements: [{ ...requirement, key: "after-resume" }],
+      // A still-failing focused check keeps the task pending across resumes.
       addTasks: [{ ...task, key: "after-resume", covers: ["after-resume"],
-        paths: ["second.txt"], dependsOn: ["implement"] }],
+        paths: ["second.txt"], dependsOn: ["implement"],
+        verify: "node -e 'process.exit(require(\"fs\").existsSync(\"second.txt\") ? 0 : 1)'" }],
       evidence: { "after-resume": { capabilities: ["test"] } }
     };
     writeFileSync(join(project, ".foundation/amendment.json"), JSON.stringify(amendment));
@@ -113,6 +118,13 @@ test("consumer inspection preserves lifecycle files and resumes amended current 
       "utf8")).specApproval.decisionRef, "fixture://user/spec");
     const targetTasksPath = join(project, "openspec/changes/inspect-resume/tasks.md");
     const targetTasks = readFileSync(targetTasksPath, "utf8");
+    // D5: resuming reruns the handed-off T001's own verify check and ticks it
+    // in the isolated ledger; the agent never edits tasks.md.
+    const settled = JSON.parse(runtime("advance", "inspect-resume", "--through", "build"));
+    assert.equal(settled.action, "EDIT");
+    assert.match(readFileSync(join(project,
+      ".foundation/sandboxes/inspect-resume/openspec/changes/inspect-resume/tasks.md"), "utf8"),
+    /^- \[x\] \*\*T001\*\*/m);
     const amended = JSON.parse(runtime("packet", "inspect-resume", "--resume"));
     for (let attempt = 0; attempt < 2; attempt++) {
       const continued = JSON.parse(runtime("advance", "inspect-resume", "--through", "build"));
@@ -133,13 +145,14 @@ test("consumer inspection preserves lifecycle files and resumes amended current 
     runtime("sandbox", "sync", "inspect-resume", "--resolve", "openspec/changes/inspect-resume");
     assert.equal(JSON.parse(runtime("advance", "inspect-resume", "--through", "build")).action, "EDIT");
     const after = JSON.parse(runtime("packet", "inspect-resume", "--resume"));
-    assert.equal(after.pendingTaskCount, 2);
+    // T001 was completed by its passing check; only the amended task remains.
+    assert.equal(after.pendingTaskCount, 1);
     assert.equal(after.frontier.count, 1);
     assert.notEqual(after.sourcePacketDigest, resume.sourcePacketDigest);
     assert.notEqual(after.references["tasks.md"].sha256, resume.references["tasks.md"].sha256);
     assert.equal(after.nextAction.action,
       JSON.parse(runtime("advance", "inspect-resume", "--inspect")).action);
-    runtime("agent-acquire", "inspect-resume", "T001", "--owner", "worker-a");
+    runtime("agent-acquire", "inspect-resume", "T002", "--owner", "worker-a");
     const leasedBefore = protectedFiles();
     const leasedResume = JSON.parse(runtime("packet", "inspect-resume", "--resume"));
     assert.equal(leasedResume.leases.count, 1);
@@ -147,7 +160,7 @@ test("consumer inspection preserves lifecycle files and resumes amended current 
     assert.equal(leasedResume.nextAction.owner, "harness");
     runtime("feedback", "inspect-resume", "--diagnostics");
     assert.deepEqual(protectedFiles(), leasedBefore);
-    runtime("agent-release", "inspect-resume", "T001", "--owner", "worker-a",
+    runtime("agent-release", "inspect-resume", "T002", "--owner", "worker-a",
       "--lease-id", leasedResume.leases.preview[0].leaseId);
     const current = JSON.parse(runtime("packet", "inspect-resume", "--resume"));
     const workspace = current.workspacePath;

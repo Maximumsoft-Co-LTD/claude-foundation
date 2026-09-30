@@ -6,7 +6,8 @@ import {
   lifecycleOutcome, lifecycleUserProjection, lifecycleUserState
 } from "../core/lifecycle-outcome.mjs";
 import {
-  actionableGuidance, automaticRecoveryAction, createAdvanceRecovery
+  actionableGuidance, automaticEvidenceWiring, automaticRecoveryAction,
+  automaticReviewRun, createAdvanceRecovery
 } from "./advance-recovery.mjs";
 
 export const ADVANCE_PROTOCOL_VERSION = 6;
@@ -89,6 +90,31 @@ function exactRecoveryCommand(message) {
   return text.match(/[\'\"`](claude-foundation\s+[^\'\"`\n]+)[\'\"`]/)?.[1] || null;
 }
 
+// Without an exact command, name what to change: the offending field, the
+// value seen, and the expected shape. Typed error details win over prose.
+export function repairTargetFromError(error) {
+  const details = error?.details;
+  if (details && typeof details === "object" && typeof details.field === "string")
+    return { field: details.field, value: details.value ?? null, expected: details.expected ?? null };
+  const lines = String(error?.message || error || "").split("\n")
+    .map((line) => line.replace(/^\s*-\s+/, "").trim()).filter(Boolean);
+  const field = "(-{0,2}[A-Za-z_$][\\w$.\\[\\]-]*)";
+  const patterns = [
+    [new RegExp(`['\`]?${field}['\`]? must (?:be|equal|use) ([^;\\n]+?)(?:[;.]\\s|[;.]?$)`), (m) => m[2].trim()],
+    [new RegExp(`requires (?:a )?non-empty ['\`]${field}['\`]( array)?`), (m) => m[2] ? "a non-empty array" : "a non-empty value"],
+    [new RegExp(`['\`]?${field}['\`]? is required`), () => "a value"]
+  ];
+  for (const line of lines) for (const [pattern, expected] of patterns) {
+    const match = line.match(pattern);
+    if (match) return {
+      field: match[1],
+      value: line.match(/(?:got|found) (?:version )?['`]?([^'`\s;,]+)['`]?/)?.[1] || null,
+      expected: expected(match)
+    };
+  }
+  return null;
+}
+
 export function advanceFailureAction(id, error, { stage = "build", through = null } = {}) {
   const reason = error?.message || String(error);
   const automatic = automaticRecoveryAction(id, error?.decision);
@@ -134,17 +160,36 @@ export function advanceFailureAction(id, error, { stage = "build", through = nul
   const fallback = stage === "land"
     ? command(`land check ${id}`)
     : command(`doctor --stage ${stage === "prove" ? "prove" : "build"} --change ${id}`);
+  const exact = exactRecoveryCommand(reason);
+  const repairTarget = exact ? null : repairTargetFromError(error);
   return envelope(id, "REPAIR", {
     legacyAction: `REPAIR_${stage.toUpperCase()}_RUNTIME`,
     actor: error?.owner === "agent" ? "agent" : "harness",
     boundary: error?.boundary || "resource",
     reason,
     details: error?.details || null,
-    command: exactRecoveryCommand(reason) || fallback,
+    command: exact || fallback,
+    ...(exact ? {} : {
+      repairTarget,
+      instruction: repairTarget
+        ? `Set '${repairTarget.field}' to ${repairTarget.expected}` +
+          `${repairTarget.value ? ` (found '${repairTarget.value}')` : ""}, then resume; ` +
+          `'${fallback}' diagnoses the stage if the cause is elsewhere.`
+        : `Fix the reported cause: ${reason}. '${fallback}' names the failing stage check; then resume.`
+    }),
     recoveryType: "RECONFIGURE",
-    alternatives: ["run the exact recovery command, then resume the same lifecycle route"],
+    alternatives: [exact ? "run the exact recovery command, then resume the same lifecycle route"
+      : "apply the named fix, then resume the same lifecycle route"],
     resumeCommand: resume(id, through)
   });
+}
+
+// A configured reviewer the harness can start with no host-supplied input runs
+// inside `advance --through`, in the foreground and bounded by the review
+// window. A route with placeholders stays a handoff.
+function configuredReviewAutomation(id, commandText) {
+  const automaticReview = automaticReviewRun(id, commandText);
+  return automaticReview ? { automaticReview, automatic: true } : {};
 }
 
 function configuredReviewWait(id, request) {
@@ -162,6 +207,8 @@ function configuredReviewWait(id, request) {
   // Old controller records did not retain provenance. The host must supply its
   // original implementer identity, never silently downgrade an AI subject.
   if (!subject?.subjectActor) subjectFlags.unshift("--subject-actor <original-implementer>");
+  const runCommand = command(`authority run ${id} --request ${request.requestId} ${subjectFlags.join(" ")}`);
+  const automaticReview = live ? null : automaticReviewRun(id, runCommand);
   return envelope(id, live ? "WAIT" : "RUN_EXTERNAL", {
     actor: live ? "harness" : "configured-reviewer",
     legacyAction: live ? "WAIT_CONFIGURED_REVIEW" : "RUN_CONFIGURED_REVIEW",
@@ -170,8 +217,8 @@ function configuredReviewWait(id, request) {
       : "Resume the stopped reviewer through bounded authority recovery; reuse a valid checkpoint before starting another attempt.",
     requestId: request.requestId,
     ...(!live && !subject?.subjectActor ? { requiredContext: "original implementation subject provenance" } : {}),
-    command: live ? command(`authority status ${id} --request ${request.requestId}`)
-      : command(`authority run ${id} --request ${request.requestId} ${subjectFlags.join(" ")}`),
+    command: live ? command(`authority status ${id} --request ${request.requestId}`) : runCommand,
+    ...(automaticReview ? { automaticReview, automatic: true } : {}),
     wait: live ? { owner: controller.reviewer || "configured-reviewer",
       condition: `Review request ${request.requestId} returns its verdict.`, pid: controller.pid } : null,
     recoveryType: live ? "PAUSE" : "HANDOFF"
@@ -229,6 +276,7 @@ function proofOperationAction(id, result) {
       reason: "configured review is ready",
       requestId: review.requestId,
       command: next.command,
+      ...configuredReviewAutomation(id, next.command),
       recoveryType: "HANDOFF",
       alternatives: ["run the configured reviewer", "record an authorized external verdict"]
     });
@@ -386,7 +434,7 @@ function buildAction(id, dispatch, state, plan = null) {
 export function coordinatorAction({
   id, state, dispatch, workspaceHash, latestReview = null,
   proofCursor = {}, authorityRequests = [], stableHash, authorityActions = null,
-  proofPreflight = null, plan = null, proofIsCurrent = null
+  proofPreflight = null, plan = null, proofIsCurrent = null, automation = {}
 }) {
   if (state.status === "archived") return envelope(id, "DONE", {
     legacyAction: "ARCHIVED", boundary: null, reason: "change is archived",
@@ -458,6 +506,7 @@ export function coordinatorAction({
           : "external authority is pending",
       requestId: open.requestId,
       command: authorityCommand || command(`authority status ${id} --request ${open.requestId}`),
+      ...(configuredReview ? configuredReviewAutomation(id, authorityCommand) : {}),
       recoveryType: configuredReview ? "HANDOFF" : "PAUSE",
       alternatives: configuredReview
         ? ["run the configured reviewer", "record an authorized external verdict"]
@@ -509,6 +558,16 @@ export function coordinatorAction({
         recoveryType: "AUTO_RECOVER",
         alternatives: ["collect current evidence and prepare required review"]
       });
+    const wiring = automation.wiringAttempted ? null : automaticEvidenceWiring(id, proofPreflight);
+    if (wiring) return envelope(id, "RUN_EXTERNAL", {
+      legacyAction: "WIRE_EVIDENCE", actor: "harness",
+      reason: `wire detected project-owned providers: ${wiring.providers.join(", ")}`,
+      command: wiring.command,
+      automaticWiring: wiring,
+      automatic: true,
+      recoveryType: "AUTO_RECOVER",
+      alternatives: ["write the detected provider wiring, then continue proof"]
+    });
     const first = (needsDecision && next.find((row) =>
       row.decision && row.decision.kind !== "independent-review")) || next[0] || null;
     const decision = proofPreflight.authorityPreflight?.decision ||
@@ -562,6 +621,9 @@ export function createAdvanceRuntime({
   recoverArchive = null,
   recoverSandbox = null, saveRuntime = () => {}, proofIsCurrent = null,
   settleSessionLeases = null, issueSessionLease = null,
+  // Harness-owned operations advance performs itself instead of handing the
+  // agent a primitive: detected provider wiring and a configured reviewer.
+  wireEvidence = null, runReview = null, synchronizeAgreement = null,
   authorizeLand = null,
   hasLandGrant = () => false,
   recordPhase = null, output = console.log,
@@ -595,7 +657,7 @@ export function createAdvanceRuntime({
       recoveryType: pending.paused ? "PAUSE" : "ASK_USER", resumeCommand: resume(id, through || pending.through)
     });
   }
-  function readAdvanceValue(id, options = {}) {
+  function readAdvanceValue(id, options = {}, automation = {}) {
     let stage = "build";
     try {
       return capture(() => {
@@ -643,7 +705,8 @@ export function createAdvanceRuntime({
             ? proofIsCurrent(id) : null,
           authorityActions: authorityNext
             ? authorityNext(id, openRequests[0]?.type || "review", openRequests) : null,
-          stableHash
+          stableHash,
+          automation
         });
       });
     } catch (error) {
@@ -657,7 +720,7 @@ export function createAdvanceRuntime({
     if (value.legacyAction === "REPAIR_LAND_RUNTIME") return "land";
     if (value.action === "EDIT" || value.action === "REPAIR") return "build";
     if (value.legacyAction === "LAND_READY" || value.reached === "archived") return "land";
-    if (["RUN_PROOF", "RUN_INVALIDATED_EVIDENCE", "RUN_CONFIGURED_REVIEW",
+    if (["RUN_PROOF", "RUN_INVALIDATED_EVIDENCE", "RUN_CONFIGURED_REVIEW", "WIRE_EVIDENCE",
       "WAIT_EXTERNAL", "REQUEST_DECISION"].includes(value.legacyAction)) return "prove";
     return null;
   }
@@ -732,6 +795,17 @@ export function createAdvanceRuntime({
           kind: row.kind || null, command: row.command || null
         }))
       }
+    });
+  }
+
+  // Review runs change authority state that the delivery fingerprint does not
+  // bind; count them as progress only when a request actually moved.
+  function reviewProgressFingerprint(id) {
+    let requests = [];
+    try { requests = authorityStatusValue(id).requests || []; } catch { /* unavailable */ }
+    return stableHash({
+      delivery: convergenceFingerprint(id),
+      requests: requests.map((row) => [row.requestId, row.status, row.dispatch?.attemptDigest || null])
     });
   }
 
@@ -823,6 +897,12 @@ export function createAdvanceRuntime({
         // harness-issued lease and record the task before dispatching again.
         if (!explicitLand && settleSessionLeases && loadRuntime(id).status === "building")
           capture(() => settleSessionLeases(id));
+        // Build preparation already synchronizes a revised agreement. After
+        // proof, the same safe sync replaces an operator `sandbox sync`: it
+        // invalidates only evidence the revision touched, and Land would
+        // otherwise refuse the edited packet.
+        if (synchronizeAgreement && loadRuntime(id).status === "proven")
+          await synchronizeAgreement(id);
         if (!through) return finish(readAdvanceValue(id));
         const targetResume = (value) => ({
           ...value,
@@ -830,27 +910,43 @@ export function createAdvanceRuntime({
           resumeCommand: resume(id, through)
         });
         let unchangedAutomations = 0;
+        const automation = { wiringAttempted: false };
         while (true) {
           const completed = reached(id, through);
           if (completed) return done(id, completed, through);
           let value = through === "archived" && (explicitLand || hasLandGrant(id))
             ? { action: "WORKING", legacyAction: "LAND_READY", actor: "harness",
               reason: "explicit Land authority accepts the current assurance" }
-            : readAdvanceValue(id);
+            : readAdvanceValue(id, {}, automation);
           if (through !== "build" && value.legacyAction === "REPAIR_REVIEW_INFRASTRUCTURE" &&
               recoverReviewBindings) {
             stage = "prove";
             recordActivePhase("prove");
-            if (await recoverReviewBindings(id)) value = readAdvanceValue(id);
+            if (await recoverReviewBindings(id)) value = readAdvanceValue(id, {}, automation);
           }
-          if (through === "build" && ["RUN_PROOF", "LAND_READY"].includes(value.legacyAction)) {
+          if (through === "build" && ["RUN_PROOF", "WIRE_EVIDENCE", "LAND_READY"].includes(value.legacyAction)) {
             recordActivePhase("build");
             return done(id, "build", through);
           }
           const phase = phaseForAction(value);
           recordActivePhase(phase);
           let operation = null;
-          if (["RUN_PROOF", "RUN_INVALIDATED_EVIDENCE"].includes(value.legacyAction) &&
+          let harnessOwned = false;
+          if (value.legacyAction === "WIRE_EVIDENCE" && value.automaticWiring &&
+              ["proven", "archived"].includes(through) && wireEvidence) {
+            // Once per invocation: wiring that did not clear the gap falls
+            // back to the external-evidence decision instead of repeating.
+            stage = "prove";
+            automation.wiringAttempted = true;
+            harnessOwned = true;
+            operation = (change) => wireEvidence(change, value.automaticWiring);
+          } else if (value.legacyAction === "RUN_CONFIGURED_REVIEW" && value.automaticReview &&
+              ["proven", "archived"].includes(through) && runReview) {
+            // Foreground and bounded by the review window, like `authority run`.
+            stage = "prove";
+            harnessOwned = true;
+            operation = (change) => runReview(change, value.automaticReview);
+          } else if (["RUN_PROOF", "RUN_INVALIDATED_EVIDENCE"].includes(value.legacyAction) &&
               ["proven", "archived"].includes(through)) {
             if (!runProof) return finish(targetResume(value));
             stage = "prove";
@@ -865,7 +961,8 @@ export function createAdvanceRuntime({
             operation = runLand;
           }
           if (!operation) return finish(targetResume(value));
-          const before = convergenceFingerprint(id);
+          const fingerprint = harnessOwned ? reviewProgressFingerprint : convergenceFingerprint;
+          const before = fingerprint(id);
           const operationResult = await operation(id);
           // Archive may remove the sandbox and active agreement. Do not hash
           // those retired paths after the authoritative lifecycle reached its
@@ -875,12 +972,15 @@ export function createAdvanceRuntime({
           // An operation is the authoritative source for its own boundary.
           // Consume it before consulting projections, otherwise quiet proof or
           // Land composition can discard a decision and repeat the operation.
-          const boundaryResult = stage === "land"
+          // Wiring and review results are consumed by the next proof pass.
+          const boundaryResult = harnessOwned ? null : stage === "land"
             ? landOperationAction(id, operationResult)
             : proofOperationAction(id, operationResult);
-          if (boundaryResult && boundaryResult.legacyAction !== "LAND_IN_PROGRESS")
+          // A reviewer the harness can run is consumed by the next pass.
+          const reviewNext = boundaryResult?.automaticReview && runReview;
+          if (boundaryResult && boundaryResult.legacyAction !== "LAND_IN_PROGRESS" && !reviewNext)
             return finish(targetResume(boundaryResult));
-          const after = convergenceFingerprint(id);
+          const after = fingerprint(id);
           unchangedAutomations = before === after ? unchangedAutomations + 1 : 0;
           if (unchangedAutomations >= 2) return noProgress(id, through);
         }

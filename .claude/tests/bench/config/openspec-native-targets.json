@@ -34,6 +34,12 @@
         "review_cycles_max": 1,
         "known_data_loss_blocked_before_land": true
       }
+    },
+    "tiny-feature": {
+      "baseline": null,
+      "target": {
+        "tool_calls_max": 20
+      }
     }
   },
   "quality_invariants": [

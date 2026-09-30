@@ -2073,26 +2073,36 @@ export function createSandboxRuntime({
     runSetupBatch, git
   });
 
+  // Brings an intentionally revised target agreement into Build. Returns
+  // whether a sync ran; an unchanged source is a no-op.
+  function synchronizeAgreement(id) {
+    const state = loadRuntime(id);
+    // Semantic amendments live in the sandbox until Land. A changed target
+    // packet must not make automatic preparation import the older agreement
+    // or deadlock on the explicit sync overwrite guard.
+    if (activeSandboxAmendment(id, state)) {
+      assertAmendedSource(id, state);
+      return false;
+    }
+    if (!agreementStale(id, state)) return false;
+    sync(id);
+    return true;
+  }
+
+  function agreementStale(id, state = loadRuntime(id)) {
+    return Boolean(state.workspace?.changeSourceHash &&
+      state.workspace.changeSourceHash !== directoryHash(changePath(id)));
+  }
+
   const prepareBuild = prepareBuildSandbox.bind(null, {
     root, loadRuntime, validate, workspaceInspection, create, retryFailedSetups, recoverReplay,
-    synchronizeAgreement: (id) => {
-      const state = loadRuntime(id);
-      // Semantic amendments live in the sandbox until Land. A changed target
-      // packet must not make automatic preparation import the older agreement
-      // or deadlock on the explicit sync overwrite guard.
-      if (activeSandboxAmendment(id, state)) {
-        assertAmendedSource(id, state);
-        return;
-      }
-      if (state.workspace?.changeSourceHash &&
-          state.workspace.changeSourceHash !== directoryHash(changePath(id)))
-        sync(id);
-    }
+    synchronizeAgreement
   });
 
   return {
     createChallenge, workspaceInspection, inspect, showInspection,
     createSingle, create, retryFailedSetups, prepareBuild, mergeTaskProgress, sync,
+    synchronizeAgreement, agreementStale,
     recoverReplay: (id) => recoverReplay(id, loadRuntime(id)),
     changeDiffIdentity
   };

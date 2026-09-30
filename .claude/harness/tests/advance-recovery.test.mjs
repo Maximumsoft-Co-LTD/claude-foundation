@@ -449,3 +449,111 @@ test("successful archive never re-hashes a sandbox that Land has already cleaned
   assert.equal((await f.runtime().advanceThrough("demo", "archived")).userState, "DELIVERED",
     "re-entering an archived change also avoids the retired workspace");
 });
+
+// S2: every non-terminal advance outcome carries its own recovery. A REPAIR
+// without a command or instruction is rejected at the lifecycle boundary.
+function assertActionable(value, label) {
+  const hasText = (item) => typeof item === "string" && item.trim().length > 0;
+  if (value.action === "DONE") return;
+  if (value.action === "REPAIR")
+    assert.ok(hasText(value.command) || hasText(value.instruction), `${label}: REPAIR lacks command/instruction`);
+  else if (value.action === "ASK_USER")
+    assert.ok(value.decision?.options?.length >= 2, `${label}: ASK_USER lacks options`);
+  else if (value.action === "WAIT")
+    assert.ok(hasText(value.wait?.checkCommand), `${label}: WAIT lacks checkCommand`);
+  else assert.ok(hasText(value.command) || hasText(value.instruction) ||
+    (value.tasks?.length && hasText(value.resume)), `${label}: ${value.action} lacks a route`);
+  assert.doesNotMatch(`${value.instruction || ""} ${value.reason || ""}`,
+    /read (?:the )?(?:harness )?source|\.mjs\b/, `${label}: points the agent at harness source`);
+}
+
+test("REPAIR outcomes require an actionable command or instruction", () => {
+  assert.throws(() => lifecycleOutcome({ action: "REPAIR", actor: "agent" }), /actionable 'command' or 'instruction'/);
+  assert.throws(() => lifecycleOutcome({ action: "REPAIR", actor: "agent", command: " " }), /actionable/);
+  assert.equal(lifecycleOutcome({ action: "REPAIR", actor: "agent", instruction: "Fix x" }).action, "REPAIR");
+  const filled = actionableGuidance({ action: "REPAIR", legacyAction: "REPAIR_PROOF_RESULT", reason: "test failed",
+    next: [{ command: "claude-foundation proof readiness demo" }] });
+  assert.match(filled.instruction, /test failed/);
+  assert.match(filled.instruction, /proof readiness demo/);
+});
+
+test("every coordinator legacyAction and readiness status yields an actionable recovery", async () => {
+  const { coordinatorAction } = await import("../runtime/workflow/advance-runtime.mjs");
+  const base = { id: "demo", state: { status: "building" }, dispatch: { action: "build-complete" },
+    workspaceHash: "w1", proofCursor: {}, authorityRequests: [], stableHash: gateDigest };
+  const plan = { tasks: [{ id: "T001", text: "do — verify: `npm test`", repository: "root", paths: ["src/a.js"] }] };
+  const failedReview = { digest: "a1", workspaceHash: "w1", resultStatus: "fail",
+    findings: [{ id: "F1", severity: "major", path: "src/a.mjs" }] };
+  const scenarios = {
+    archived: { state: { status: "archived" } },
+    buildPlanMissing: { dispatch: { action: "run-in-session" } },
+    buildTask: { dispatch: { action: "run-in-session", task: { taskId: "T001" } }, plan },
+    buildWait: { dispatch: { action: "wait", reason: "lease held" } },
+    buildBlocked: { dispatch: { action: "blocked", reason: "graph cycle" } },
+    buildBlockedCommand: { dispatch: { action: "blocked", reason: "x", nextCommand: "claude-foundation change validate demo" } },
+    staleProof: { state: { status: "proven" }, proofIsCurrent: false },
+    landReady: { state: { status: "proven" }, proofCursor: { status: "PASS", workspaceHash: "w1" } },
+    reviewExhausted: { authorityRequests: [{ requestId: "r1", type: "review", status: "infrastructure-exhausted" }] },
+    reviewReady: { authorityRequests: [{ requestId: "r1", type: "review", status: "requested" }],
+      authorityActions: [{ requestId: "r1", command: "claude-foundation authority run demo --request r1" }] },
+    externalPending: { authorityRequests: [{ requestId: "r1", type: "acceptance", status: "pending" }] },
+    repairBatch: { latestReview: failedReview },
+    invalidated: { latestReview: failedReview, workspaceHash: "w2" },
+    proofDecision: { proofCursor: { status: "NEEDS_USER_DECISION", decision: { kind: "work-decision", summary: "pick" } } },
+    runProof: {}
+  };
+  for (const status of ["NEEDS_CODE_CHANGE", "CONFIGURATION_ERROR", "BLOCKED_BY_ACTIVE_WORK",
+    "INFRASTRUCTURE_ERROR", "NEEDS_USER_DECISION", "UNKNOWN_STATUS"]) {
+    scenarios[`readiness:${status}`] = { proofPreflight: { status, issues: [`${status} issue`], next: [] } };
+    scenarios[`readiness:${status}:next`] = { proofPreflight: { status, issues: ["x"],
+      next: [{ reason: "wire provider", command: "claude-foundation evidence init demo --write" }] } };
+  }
+  scenarios["readiness:READY"] = { proofPreflight: { status: "READY", issues: [], next: [] } };
+  const seen = new Set();
+  for (const [label, overrides] of Object.entries(scenarios)) {
+    const value = coordinatorAction({ ...base, ...overrides });
+    seen.add(value.legacyAction);
+    assertActionable(value, label);
+  }
+  for (const legacyAction of ["ARCHIVED", "REPAIR_BUILD_PLAN", "EXECUTE_TASK", "WAIT_RESOURCE",
+    "RUN_INVALIDATED_EVIDENCE", "LAND_READY", "REPAIR_REVIEW_INFRASTRUCTURE", "RUN_CONFIGURED_REVIEW",
+    "WAIT_EXTERNAL", "EXECUTE_REPAIR_BATCH", "REQUEST_DECISION", "RUN_PROOF", "REPAIR_PROOF_CONTRACT",
+    "REPAIR_PROVIDER_ENVIRONMENT", "REPAIR_PROOF_PREFLIGHT"])
+    assert.ok(seen.has(legacyAction), `scenario matrix no longer reaches ${legacyAction}`);
+
+  for (const stage of ["build", "prove", "land"]) {
+    for (const error of [new Error("root sandbox unavailable"),
+      Object.assign(new Error("agent-owned failure"), { owner: "agent" }),
+      new Error("semantic draft validation failed:\n  - semantic draft capabilityOverviews must be an array of { capability, title, overview } or an object keyed by capability")])
+      assertActionable(advanceFailureAction("demo", error, { stage }), `failure:${stage}:${error.message}`);
+  }
+});
+
+test("runtime failures without an exact command name the field and expected shape", () => {
+  const shape = advanceFailureAction("demo", new Error(
+    "semantic draft validation failed:\n  - semantic draft capabilityOverviews must be an array of { capability, title, overview } or an object keyed by capability"));
+  assert.equal(shape.repairTarget.field, "capabilityOverviews");
+  assert.match(shape.repairTarget.expected, /^an array of/);
+  assert.match(shape.instruction, /Set 'capabilityOverviews' to an array/);
+  const typed = advanceFailureAction("demo", Object.assign(new Error("bad"),
+    { details: { field: "evidence.test.minimum", value: 0, expected: "an integer >= 1" } }));
+  assert.deepEqual(typed.repairTarget, { field: "evidence.test.minimum", value: 0, expected: "an integer >= 1" });
+  const exact = advanceFailureAction("demo", new Error("fix with 'claude-foundation sandbox create demo --all'"));
+  assert.equal(exact.command, "claude-foundation sandbox create demo --all");
+  assert.equal(exact.instruction, undefined);
+  const unknown = advanceFailureAction("demo", new Error("root sandbox unavailable"));
+  assert.equal(unknown.repairTarget, null);
+  assert.match(unknown.instruction, /root sandbox unavailable/);
+});
+
+test("proof repair and alternate-approach outcomes carry instructions", async () => {
+  const f = fixture();
+  const first = await f.runtime().advanceThrough("demo", "proven");
+  assert.equal(first.legacyAction, "REPAIR_PROOF_RESULT");
+  assertActionable(first, "REPAIR_PROOF_RESULT");
+  await f.runtime().advanceThrough("demo", "proven");
+  const alternate = await f.runtime().advanceThrough("demo", "proven");
+  assert.equal(alternate.legacyAction, "TRY_ALTERNATE_APPROACH");
+  assert.match(alternate.instruction, /materially different/);
+  assertActionable(alternate, "TRY_ALTERNATE_APPROACH");
+});

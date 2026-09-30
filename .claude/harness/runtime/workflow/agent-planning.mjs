@@ -29,7 +29,10 @@ export function modelForTaskOperation(context, id, task,
   let tier = task.requestedModel;
   if (tier && !["fast", "standard", "deep"].includes(tier))
     context.fail(`task '${task.id}' model must be fast|standard|deep`);
-  if (!tier) tier = defaultTaskModelTier(task, highRisk);
+  // Tier routing is opt-in (`models.routing`). Off, every task shares the
+  // single standard tier; an explicit per-task request is still honored.
+  const routing = selectedPolicy.models.routing === true;
+  if (!tier) tier = routing ? defaultTaskModelTier(task, highRisk) : "standard";
   if (tier === "fast" && highRisk) tier = "standard";
   const fallbackTier = selectedPolicy.models[tier].fallbackTier ?? null;
   return {
@@ -37,7 +40,8 @@ export function modelForTaskOperation(context, id, task,
     family: selectedPolicy.models[tier].family,
     fallbackTier,
     fallbackFamily: fallbackTier ? selectedPolicy.models[fallbackTier].family : null,
-    reason: highRisk ? "risk-sensitive task" : `${task.kind} task`
+    reason: !routing && !task.requestedModel ? "single default model"
+      : highRisk ? "risk-sensitive task" : `${task.kind} task`
   };
 }
 

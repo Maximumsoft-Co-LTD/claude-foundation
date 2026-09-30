@@ -13,7 +13,8 @@ Use the `claude-foundation` CLI; do not duplicate runtime logic in prompts.
 
 ## Resolve
 
-Follow Change's semantic-intake reference and compile one v4 draft. Never hand-create
+Follow `commands/references/rapid-path.md`, loading Change's workflow only on
+its triggers, and compile one v4 draft. Never hand-create
 cross-ledger IDs or empty artifacts. Persist ambiguity, impact, coupling, evidence,
 and size; size controls slicing, not assurance. Investigate ambiguity.
 
@@ -24,8 +25,8 @@ public contract, migration, trust boundary, irreversible effect, or sensitive da
 
 Approve before Build.
 
-Start from the compact packet. Read needed files, edit only the
-sandbox's allowed paths, and check `tasks.md` after focused verification.
+Start from the compact packet. Read needed files and edit only the
+sandbox's allowed paths; `advance` ticks `tasks.md` when verification passes.
 
 Use `advance <change> --through build`; execute its action and resume route.
 Plans, packets, leases, and dispatch are compatible primitives, not a model-built chain.
@@ -37,8 +38,9 @@ Classify follow-ups with `commands/references/build-policy.md` before editing.
 The agent authors required amendments; Harness validates and revises. Repository
 scope changes require explicit topology; never expose an unsandboxed repository.
 
-Unauthorized external work belongs to `handoffs.yaml`, never unchecked tasks;
-unresolved operations return the owner and resume route.
+Unauthorized external work enters `handoffs.yaml` only through a semantic
+amendment, never unchecked tasks; unresolved operations return the owner and
+resume route.
 
 ## Prove
 
@@ -67,7 +69,7 @@ A phase boundary is a context boundary: each phase inherits only its packet.
 
 ## Budget
 
-Count input, output, and cache writes; unknown is never zero. At 70%, batch and
+When `execution.budgetWatchdog` is true: count input, output, and cache writes; unknown is never zero. At 70%, batch and
 reuse. At 85%, allow focused fixes and proof only: no scope expansion.
 At 100%, the harness auto-opens a new same-size window every time; budget is
 advisory and never asks the user. Never silently reduce acceptance criteria

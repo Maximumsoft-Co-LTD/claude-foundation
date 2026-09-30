@@ -37,7 +37,31 @@ export function actionableGuidance(value) {
       requestId: value.wait?.requestId || value.requestId || request?.requestId || null
     } };
   }
+  if (value.action === "REPAIR" && !text(value.command) && !text(value.instruction))
+    return { ...value, instruction: repairInstruction(value) };
   return value;
+}
+
+// Every REPAIR names what to change. Routes without an exact command describe
+// the field or artifact that carries the fix; never "go read the source".
+const REPAIR_INSTRUCTIONS = {
+  REPAIR_PROOF_RESULT: "Fix the findings listed in next[] (and repairGraph when present) inside the Build workspace",
+  EXECUTE_REPAIR_BATCH: "Apply the dependency-ordered repairGraph.nodes batch inside the Build workspace, touching only each node's paths",
+  REPAIR_BUILD_PLAN: "Give every task in openspec/changes/<change>/tasks.md a stable ID (T001) and a [paths: ...] scope through a semantic amendment",
+  REPAIR_REVIEW_INFRASTRUCTURE: "Repair or switch the configured reviewer named in requests[] (see its infrastructureError)",
+  TRY_ALTERNATE_APPROACH: "Apply a materially different repair than attemptedStrategies[] inside the approved agreement",
+  REPAIR_SYNC_CONFLICT: "Resolve the conflicting paths in details.conflicts inside the Build workspace to the intended result",
+  NO_PROGRESS_BOUNDARY: "Change the input that keeps the operation idempotent (code, agreement, or evidence wiring)"
+};
+
+function repairInstruction(value) {
+  const base = REPAIR_INSTRUCTIONS[value.legacyAction] ||
+    `Fix the reported cause${value.repairTarget?.field ? ` in '${value.repairTarget.field}'` : ""}`;
+  const commands = (Array.isArray(value.next) ? value.next : [])
+    .map((row) => text(row?.command)).filter(Boolean).slice(0, 3);
+  const cause = text(value.reason) ? `: ${value.reason}` : "";
+  return `${base}${cause}${commands.length ? `. Listed commands: ${commands.join("; ")}` : ""}` +
+    ". Then run the resume command.";
 }
 
 export function automaticRecoveryAction(id, decision) {
@@ -144,6 +168,7 @@ export function createAdvanceRecovery({ loadRuntime, saveRuntime, subject, now =
         legacyAction: "TRY_ALTERNATE_APPROACH", boundary: "alternate-approach",
         reason: `The same repair returned ${attempt.count} times without progress: ${value.reason}. ` +
           "Try a materially different approach inside the approved agreement, then resume.",
+        instruction: repairInstruction({ legacyAction: "TRY_ALTERNATE_APPROACH", reason: value.reason }),
         attemptedStrategies: record.attempts.slice(-8).map(({ action, reason, command, count }) =>
           ({ action, reason, command, observations: count })),
         recoveryType: "EDIT"
@@ -209,4 +234,45 @@ export function createAdvanceRecovery({ loadRuntime, saveRuntime, subject, now =
   }
 
   return { observe, pending, resolve };
+}
+
+// Harness-owned automatic operations `advance` performs instead of handing the
+// agent a primitive command. Inputs are typed harness output only: a reviewer
+// command must be the exact harness-generated `authority run` route, with no
+// placeholder the host would have to fill in (those stay a handoff).
+const REVIEW_RUN_FLAGS = new Set([
+  "request", "reviewer", "subject-actor", "subject-session",
+  "subject-provider-family", "subject-model-family", "subject-model"
+]);
+
+export function automaticReviewRun(id, commandText) {
+  const tokens = String(commandText || "").trim().split(/\s+/);
+  if (tokens[0] !== "claude-foundation" || tokens[1] !== "authority" ||
+      tokens[2] !== "run" || tokens[3] !== id || (tokens.length - 4) % 2 !== 0) return null;
+  const flags = {};
+  for (let index = 4; index < tokens.length; index += 2) {
+    const flag = tokens[index].startsWith("--") ? tokens[index].slice(2) : null;
+    const value = tokens[index + 1];
+    if (!flag || !REVIEW_RUN_FLAGS.has(flag) || Object.hasOwn(flags, flag) ||
+        value.startsWith("--") || /[<>'"`$;&|\\(){}]/.test(value)) return null;
+    flags[flag] = value;
+  }
+  return flags.request && flags["subject-actor"] ? flags : null;
+}
+
+// Missing provider wiring that the project already owns a safe command for is
+// a write to execution.yaml, not a user decision. Only detection-recommended
+// candidates qualify; anything else remains the external-evidence question.
+export function automaticEvidenceWiring(id, preflight) {
+  if (preflight?.status !== "NEEDS_USER_DECISION") return null;
+  if (preflight.authorityPreflight && preflight.authorityPreflight.status !== "READY") return null;
+  const providers = [...new Set((preflight.next || [])
+    .filter((row) => row?.wiring?.kind === "configure-provider" && row.provider)
+    .map((row) => row.provider))].sort();
+  if (!providers.length) return null;
+  return {
+    kind: "evidence-wiring",
+    providers,
+    command: `claude-foundation evidence init ${id} --write`
+  };
 }

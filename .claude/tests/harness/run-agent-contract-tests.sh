@@ -108,7 +108,8 @@ cp "$ROOT/openspec/config.yaml" "$TMP/project/openspec/"
 cp "$ROOT/foundation.json" "$TMP/project/"
 jq '.workflow.grounding = "optional" |
     .workflow.reviewCircuit = "legacy" |
-    .workflow.reviewPolicy = "legacy"' \
+    .workflow.reviewPolicy = "legacy" |
+    .models.routing = true' \
   "$TMP/project/foundation.json" > "$TMP/project/foundation.json.tmp"
 mv "$TMP/project/foundation.json.tmp" "$TMP/project/foundation.json"
 printf 'initial\n' > "$TMP/project/app.txt"

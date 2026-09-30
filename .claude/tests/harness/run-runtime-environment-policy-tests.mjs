@@ -119,7 +119,15 @@ test("policy defaults and legacy execution values normalize deterministically", 
   const defaults = policy({}, join(root, "missing-foundation.json"));
   assert.equal(defaults.execution.packetBytes.task, 8192);
   assert.equal(defaults.execution.maxContinuationWindows, 3);
-  assert.equal(defaults.quality.changeGate, "warn");
+  assert.equal(defaults.quality.changeGate, "off");
+  assert.equal(defaults.execution.budgetWatchdog, false);
+  assert.equal(defaults.models.routing, false);
+  const optedIn = policy({ execution: { budgetWatchdog: true }, models: { routing: true } });
+  assert.equal(optedIn.execution.budgetWatchdog, true);
+  assert.equal(optedIn.models.routing, true);
+  assert.equal(optedIn.models.deep.family, "opus");
+  assert.throws(() => policy({ execution: { budgetWatchdog: "yes" } }), /budgetWatchdog/);
+  assert.throws(() => policy({ models: { routing: 1 } }), /models.routing/);
   assert.deepEqual(defaults.review.fallbackReviewers, []);
 
   const legacy = policy({

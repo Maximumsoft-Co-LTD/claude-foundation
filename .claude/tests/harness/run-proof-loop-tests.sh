@@ -53,7 +53,7 @@ setup_project() {
 # $1 = change id, $2 = report path the provider writes
 draft() {
   node .claude/harness/foundation.mjs start --template > draft.json
-  REPORT="$2" TITLE="$1" DECLARE_REPORT="${3:-}" ADD_LINT="${4:-}" node -e '
+  REPORT="$2" TITLE="$1" DECLARE_REPORT="${3:-}" ADD_LINT="${4:-}" DERIVED="${6:-}" node -e '
     const { readFileSync, writeFileSync } = require("fs");
     const d = JSON.parse(readFileSync("draft.json", "utf8"));
     d.intent = process.env.TITLE;
@@ -78,6 +78,14 @@ draft() {
       adapter: "command", capability: "static-analysis", claims: ["greeting-updated"],
       inputs: ["run-test.sh"], command: ["sh", "-n", "run-test.sh"], timeoutMs: 60000
     };
+    // Rapid lane: no evidence capabilities and no execution; the compiler
+    // derives a test-discovery provider from the task verify command.
+    if (process.env.DERIVED) {
+      d.tasks[0].verify = "npm test";
+      d.tasks[0].paths = ["app.txt"];
+      delete d.evidence;
+      delete d.execution;
+    }
     writeFileSync("draft.json", JSON.stringify(d, null, 2));'
   mkdir -p .foundation
   node .claude/harness/foundation.mjs start draft.json --inspect > .foundation/start-inspect.json
@@ -165,6 +173,25 @@ assert_contains "land check confirms the proven projection" \
   "$(node .claude/harness/foundation.mjs land-check report-excluded)" "LAND READY"
 assert_contains "changes reports the change as ready to land" \
   "$(node .claude/harness/foundation.mjs changes)" "ready-to-land"
+
+# --- Rapid draft without evidence capabilities, proven by npm test -> node --test.
+setup_project rapid-derived
+printf '%s\n' '{"name":"rapid-derived","private":true,"scripts":{"test":"node --test app.test.mjs"}}' > package.json
+printf '%s\n' "import test from 'node:test';" "import assert from 'node:assert';" \
+  "import { readFileSync } from 'node:fs';" \
+  "test('app carries v2', () => assert.match(readFileSync('app.txt', 'utf8'), /v2/));" > app.test.mjs
+git add -A && git commit -qm 'node test fixture'
+draft "Rapid derived evidence" "unused" "" "" "" 1
+assert_eq "a draft without evidence capabilities stays on the rapid lane" foundation-rapid \
+  "$(node -p 'require("./.foundation/runtime/rapid-derived-evidence.json").schema')"
+assert_eq "the omitted capability defaults to test" test \
+  "$(node -p 'JSON.parse(require("fs").readFileSync("openspec/changes/rapid-derived-evidence/evidence.yaml", "utf8")).claims[0].capabilities.join(",")')"
+implement rapid-derived-evidence
+rapid_proof="$(node .claude/harness/foundation.mjs proof-run rapid-derived-evidence 2>&1 || true)"
+assert_contains "npm test wrapping node --test proves the derived provider" \
+  "$rapid_proof" "PROVEN rapid-derived-evidence"
+assert_cmd_zero "discovery counted the node --test result" node -e \
+  'const r=require("./.foundation/receipts/rapid-derived-evidence/discovery.json"); if (r.status !== "pass" || r.discovery.discovered !== 1) process.exit(1)'
 
 # A user may accept the remaining review risk without discarding earned tests.
 setup_project review-waiver

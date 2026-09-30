@@ -1,13 +1,16 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 
 // A session-mode Build task runs in the coordinating session itself, one task
 // at a time. The agent used to acquire the lease, implement, release it, and
-// tick tasks.md for every task; only the tick carried a decision. `advance`
-// now issues the lease with the task and, once the agent has ticked it,
-// releases it on the next mutating `advance` with the same observed-write and
-// scope checks. An unticked task is an interrupted one: resuming keeps its
-// lease. Parallel groups keep explicit per-worker leases.
+// tick tasks.md for every task. `advance` now issues the lease with the task
+// and, on the next mutating `advance`, runs the task's own focused check
+// (`— verify: \`...\``) in its workspace: a pass marks the task [x] in the
+// isolated tasks.md and releases the lease with the same observed-write and
+// scope checks. A failing or absent check leaves the task pending (a task the
+// agent ticked itself is still accepted). Parallel groups keep explicit
+// per-worker leases.
 export const SESSION_OWNER_PREFIX = "session-";
 
 export function sessionLeaseOwner(id, taskId, stableHash) {
@@ -24,6 +27,23 @@ export function taskLineChecked(content, taskId) {
   return new RegExp(`^\\s*-\\s*\\[[xX]\\]\\s*\\*{0,2}${taskId}\\*{0,2}\\b`, "m").test(content);
 }
 
+const TASK_LINE = (taskId) =>
+  new RegExp(`^(\\s*-\\s*\\[)\\s(\\]\\s*\\*{0,2}${taskId}\\*{0,2}\\b.*)$`, "m");
+
+// The pending ledger line's focused check and repository, or null when the
+// task has no runnable check (no verify, or the amendment marker "existing").
+export function taskCheck(content, taskId) {
+  const line = String(content || "").match(TASK_LINE(taskId))?.[0];
+  if (!line) return null;
+  const command = line.match(/—\s*verify:\s*`([^`]+)`/i)?.[1]?.trim() || "";
+  if (!command || command === "existing") return null;
+  return { taskId, command, repository: line.match(/\[repo:([^\]\s]+)\]/)?.[1] || "root" };
+}
+
+export function tickTaskLine(content, taskId) {
+  return String(content).replace(TASK_LINE(taskId), "$1x$2");
+}
+
 // The primitive's refusal names `agents acquire`; a harness-owned lease is
 // renewed by resuming, so the repair names that route instead.
 function sessionScopeError(id, detail) {
@@ -35,8 +55,10 @@ function sessionScopeError(id, detail) {
 }
 
 export function createSessionLeaseRuntime({
-  loadRuntime, activeChangeLeases, acquire, release, discard, stableHash
+  loadRuntime, activeChangeLeases, acquire, release, discard, stableHash,
+  runCheck = null, saveRuntime = null
 }) {
+  const failedChecks = new Map();
   function ledgerPath(id) {
     const state = loadRuntime(id);
     const base = state.workspace?.path || null;
@@ -49,6 +71,28 @@ export function createSessionLeaseRuntime({
       taskLineChecked(readFileSync(path, "utf8"), taskId));
   }
 
+  // Runs the handed-off task's focused check and ticks the isolated ledger on
+  // a pass. The check is the approved task's own command in its workspace;
+  // the harness never invents one and never ticks on a failure.
+  function completeByCheck(id, taskId) {
+    if (!runCheck || checked(id, taskId)) return checked(id, taskId);
+    const path = ledgerPath(id);
+    if (!path || !existsSync(path)) return false;
+    const check = taskCheck(readFileSync(path, "utf8"), taskId);
+    if (!check) return false;
+    const result = runCheck(id, check);
+    if (result?.status !== "pass") {
+      failedChecks.set(`${id}\0${taskId}`, {
+        taskId, command: check.command, exitCode: result?.exitCode ?? null,
+        output: String(result?.output || "").slice(-2000)
+      });
+      return false;
+    }
+    failedChecks.delete(`${id}\0${taskId}`);
+    writeFileSync(path, tickTaskLine(readFileSync(path, "utf8"), taskId));
+    return true;
+  }
+
   // Releases every harness-issued session lease whose task the agent ticked.
   // A graph changed by a bookkeeping `[paths:]` widening is re-granted first
   // so it does not strand the task behind a stale-authority error. A lease past its TTL is still
@@ -56,7 +100,7 @@ export function createSessionLeaseRuntime({
   function settle(id) {
     const settled = [];
     for (const lease of activeChangeLeases(id, { includeExpired: true })) {
-      if (!isSessionOwner(lease.owner) || !checked(id, lease.taskId)) continue;
+      if (!isSessionOwner(lease.owner) || !completeByCheck(id, lease.taskId)) continue;
       const flags = { owner: lease.owner, "lease-id": lease.leaseId };
       try {
         release(id, lease.taskId, flags, { quiet: true });
@@ -71,19 +115,50 @@ export function createSessionLeaseRuntime({
       }
       settled.push(lease.taskId);
     }
+    // A single-agent plan takes no lease; the handed-off tasks are recorded
+    // on the runtime instead so only work the agent was given is checked.
+    const state = loadRuntime(id);
+    const handoff = state.sessionHandoff?.taskIds || [];
+    if (handoff.length && saveRuntime) {
+      const remaining = handoff.filter((taskId) => !completeByCheck(id, taskId));
+      settled.push(...handoff.filter((taskId) => !remaining.includes(taskId)));
+      const current = loadRuntime(id);
+      if (remaining.length) current.sessionHandoff = { ...current.sessionHandoff, taskIds: remaining };
+      else delete current.sessionHandoff;
+      saveRuntime(current);
+    }
     return settled;
+  }
+
+  function withCheckFailures(id, value) {
+    const failures = (value.tasks || []).map((task) =>
+      failedChecks.get(`${id}\0${task.id}`)).filter(Boolean);
+    return failures.length ? { ...value, verificationFailures: failures } : value;
+  }
+
+  function recordHandoff(id, value) {
+    if (!saveRuntime) return value;
+    const state = loadRuntime(id);
+    const taskIds = (value.tasks || []).map((task) => task.id).filter(Boolean);
+    if (JSON.stringify(state.sessionHandoff?.taskIds || []) === JSON.stringify(taskIds)) return value;
+    state.sessionHandoff = { version: 1, taskIds };
+    saveRuntime(state);
+    return value;
   }
 
   // Grants the single session task its lease and tells the agent the harness
   // owns it. Parallel groups and non-EDIT actions pass through unchanged.
   function issue(id, value) {
     // Only a leased session task: a single-agent plan never took leases.
+    if (value?.action === "EDIT" && value.execution?.mode === "session" &&
+        !value.execution?.leases?.length && value.tasks?.length)
+      return withCheckFailures(id, recordHandoff(id, value));
     if (value?.action !== "EDIT" || value.execution?.mode !== "session" ||
         value.tasks?.length !== 1 || value.execution?.leases?.length !== 1) return value;
     const taskId = value.tasks[0].id;
     const owner = sessionLeaseOwner(id, taskId, stableHash);
     const granted = acquire(id, taskId, { owner }, { quiet: true });
-    return {
+    return withCheckFailures(id, {
       ...value,
       execution: {
         ...value.execution,
@@ -92,12 +167,13 @@ export function createSessionLeaseRuntime({
       },
       instructions: [
         `Implement ${taskId} inside ${value.workspace} within its allowed paths.`,
-        "Run its focused checks; do not acquire or release the lease.",
-        `When the checks pass, mark ${taskId} [x] in the isolated tasks.md and run the resume ` +
-        "command: advance releases the lease and checks the observed writes against the task scope.",
+        "Run its focused checks; do not acquire or release the lease, and do not edit tasks.md.",
+        "When the checks pass, run the resume command: advance reruns the task's verify check, " +
+        `marks ${taskId} [x] when it passes, releases the lease, and checks the observed writes ` +
+        "against the task scope.",
         "A needed file outside the task paths is fine; Prove records it into the change surface."
       ]
-    };
+    });
   }
 
   // An explicit lease primitive supersedes the harness-held one: the caller
@@ -108,4 +184,26 @@ export function createSessionLeaseRuntime({
   }
 
   return { settle, issue, yieldTo };
+}
+
+// Runs one task's focused check in the task's isolated repository, in the
+// foreground and bounded. The command is the approved ledger's own verify.
+export function runTaskCheck({
+  loadRuntime, spawn = spawnSync, env = process.env, timeoutMs = 10 * 60 * 1000
+}, id, check) {
+  const state = loadRuntime(id);
+  const cwd = state.repositories?.[check.repository]?.path ||
+    (check.repository === "root" ? state.workspace?.path : null);
+  if (!cwd) return {
+    status: "unavailable", exitCode: null,
+    output: `no isolated workspace is recorded for repository '${check.repository}'`
+  };
+  const result = spawn("sh", ["-c", check.command], {
+    cwd, env, encoding: "utf8", timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024
+  });
+  return {
+    status: result.status === 0 && !result.error ? "pass" : "fail",
+    exitCode: result.status ?? null,
+    output: `${result.stdout || ""}${result.stderr || ""}${result.error ? `\n${result.error.message}` : ""}`
+  };
 }

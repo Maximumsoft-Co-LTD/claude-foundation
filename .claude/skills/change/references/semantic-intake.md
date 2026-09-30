@@ -15,8 +15,8 @@ frontier closes.
 For intake intelligence see
 [semantic-intelligence.md](semantic-intelligence.md).
 
-Before compilation, run `change start <draft.json> --inspect`. The harness
-returns one typed action: agent-owned `EDIT` for source investigation or draft
+`change start <draft.json>` inspects before compiling and returns one typed
+action: agent-owned `EDIT` for source investigation or draft
 repair, user-owned `ASK_USER` for at most three dependency-ready consequential
 decisions, or harness-owned `DONE` when compilation may start. Follow its
 `resume` route after updating the same draft. Every `needs-user-decision` row

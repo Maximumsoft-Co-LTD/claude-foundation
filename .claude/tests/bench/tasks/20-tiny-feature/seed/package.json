@@ -1,0 +1,5 @@
+{
+  "name": "tiny-cart-fixture",
+  "private": true,
+  "scripts": { "test": "node --test" }
+}

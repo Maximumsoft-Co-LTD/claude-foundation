@@ -10,6 +10,9 @@ import { fileURLToPath } from "node:url";
 
 import { buildScorecard, digest } from "./scorecard.mjs";
 import { benchmarkWorkspace, collectBenchmarkQuality } from "./quality.mjs";
+import {
+  messageToolCalls, toolCallProfile
+} from "../../../harness/runtime/observability/telemetry.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "../../../..");
@@ -427,7 +430,7 @@ export function collectNativeScorecard({
 }
 
 export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
-  maxModelRequests = null, selfReviewAuthorized = false,
+  maxModelRequests = null, maxToolCalls = null, selfReviewAuthorized = false,
   stopOnArchived = false, stopOnProven = false }) {
   return new Promise((resolveRun) => {
     const initialChangeId = discoverChangeId(project);
@@ -445,6 +448,7 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
     const stdout = [];
     const stderr = [];
     const requestIds = new Set();
+    const toolUseIds = new Set();
     let partialLine = "";
     let budgetExhausted = null;
     let decisionBoundary = null;
@@ -487,6 +491,7 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
         const requestId = row?.type === "assistant"
           ? row.message?.id || row.request_id || null : null;
         if (requestId) requestIds.add(requestId);
+        for (const toolUseId of streamToolUseIds(row)) toolUseIds.add(toolUseId);
         const detected = externalAuthorityBoundary(row);
         const benchmarkSelfReview = selfReviewAuthorized &&
           detected?.kind === "independent-review" &&
@@ -510,6 +515,12 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
           target: maxModelRequests };
         terminate();
       }
+      if (!decisionBoundary && !budgetExhausted && Number.isInteger(maxToolCalls) &&
+          maxToolCalls > 0 && toolUseIds.size >= maxToolCalls) {
+        budgetExhausted = { kind: "tool-calls", used: toolUseIds.size,
+          target: maxToolCalls };
+        terminate();
+      }
     });
     child.stderr.on("data", (chunk) => stderr.push(chunk));
     let timedOut = false;
@@ -526,6 +537,7 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
         decisionBoundary, terminalReached,
         stdout: "", stderr: error.message,
         observedModelRequests: requestIds.size || null,
+        observedToolCalls: toolUseIds.size || null,
         stopwatch: {
           wallMs: performance.now() - started, startedAt,
           finishedAt: new Date().toISOString(), startedEpochMs
@@ -548,6 +560,7 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
         stdout: Buffer.concat(stdout).toString("utf8"),
         stderr: Buffer.concat(stderr).toString("utf8"),
         observedModelRequests: requestIds.size || null,
+        observedToolCalls: toolUseIds.size || null,
         stopwatch: {
           wallMs: performance.now() - started, startedAt,
           finishedAt: new Date().toISOString(), startedEpochMs
@@ -575,8 +588,17 @@ function hostToolCalls(rows) {
     return /(?:task(?:s)?[-_ ]mirror|mirror[-_ ]task(?:s)?|task[-_ ]ledger)/i
       .test(`${call.name || ""} ${command}`);
   });
+  const profile = toolCallProfile(rows.flatMap((row) => row?.type === "assistant"
+    ? messageToolCalls(row.message) || [] : []));
   return { total: unique.length, browserCalls: browser.length,
-    taskMirrorOperations: taskMirror.length };
+    taskMirrorOperations: taskMirror.length,
+    byTool: profile.byTool, byCategory: profile.byCategory };
+}
+
+// Counts distinct tool_use ids in one stream-json row for the live stop.
+export function streamToolUseIds(row) {
+  if (row?.type !== "assistant") return [];
+  return (messageToolCalls(row.message) || []).map((call) => call.id).filter(Boolean);
 }
 
 export function parseHostOutput(stdout) {
@@ -592,10 +614,12 @@ export function parseHostOutput(stdout) {
     try {
       const envelope = JSON.parse(stdout);
       return { envelope, hostTelemetry: { total: null, browserCalls: null,
-        taskMirrorOperations: null }, observedUsage, rows: [envelope] };
+        taskMirrorOperations: null, byTool: null, byCategory: null },
+      observedUsage, rows: [envelope] };
     } catch {
       return { envelope: {}, hostTelemetry: { total: null, browserCalls: null,
-        taskMirrorOperations: null }, observedUsage, rows: [] };
+        taskMirrorOperations: null, byTool: null, byCategory: null },
+      observedUsage, rows: [] };
     }
   }
   const envelope = [...rows].reverse().find((row) => row?.type === "result") || {};
@@ -619,6 +643,8 @@ export function mergeHostExecutions(base, next) {
     stderr: `${base.stderr || ""}${next.stderr || ""}`,
     observedModelRequests: Number(base.observedModelRequests || 0) +
       Number(next.observedModelRequests || 0),
+    observedToolCalls: Number(base.observedToolCalls || 0) +
+      Number(next.observedToolCalls || 0),
     stopwatch: {
       ...base.stopwatch,
       wallMs: Number(base.stopwatch?.wallMs || 0) + Number(next.stopwatch?.wallMs || 0),
@@ -734,6 +760,7 @@ async function main() {
         timeoutMs: Number(args["timeout-ms"] || 1800000),
         maxModelRequests: args["max-model-requests"]
           ? Number(args["max-model-requests"]) : null,
+        maxToolCalls: args["max-tool-calls"] ? Number(args["max-tool-calls"]) : null,
         selfReviewAuthorized,
         stopOnArchived: landAuthorized && !args.oracle,
         stopOnProven: landAuthorized && Boolean(args.oracle)
@@ -757,7 +784,12 @@ async function main() {
       const remainingMs = totalTimeoutMs - execution.stopwatch.wallMs;
       const remainingRequests = Number.isInteger(totalRequestCap)
         ? totalRequestCap - Number(execution.observedModelRequests || 0) : null;
-      if (remainingMs <= 5000 || (remainingRequests !== null && remainingRequests <= 0))
+      const totalToolCallCap = args["max-tool-calls"]
+        ? Number(args["max-tool-calls"]) : null;
+      const remainingToolCalls = Number.isInteger(totalToolCallCap)
+        ? totalToolCallCap - Number(execution.observedToolCalls || 0) : null;
+      if (remainingMs <= 5000 || (remainingRequests !== null && remainingRequests <= 0) ||
+          (remainingToolCalls !== null && remainingToolCalls <= 0))
         break;
       const failedCases = Object.entries(oracle.results || {})
         .filter(([, status]) => status !== "pass").map(([id]) => id);
@@ -774,6 +806,7 @@ async function main() {
         claudeArgs: repairArgs,
         timeoutMs: remainingMs,
         maxModelRequests: remainingRequests,
+        maxToolCalls: remainingToolCalls,
         selfReviewAuthorized: args["test-self-review"] === "true",
         stopOnProven: true
       });
@@ -820,6 +853,7 @@ async function main() {
       maxCostUsd: args["max-cost-usd"] ? Number(args["max-cost-usd"]) : null,
       maxModelRequests: args["max-model-requests"]
         ? Number(args["max-model-requests"]) : null,
+      maxToolCalls: args["max-tool-calls"] ? Number(args["max-tool-calls"]) : null,
       claudeArgs: args["claude-arg"],
       oracle: args.oracle || null
     },

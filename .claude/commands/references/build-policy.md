@@ -9,11 +9,12 @@ source; resolve missing or contradictory material through the existing
 amendment/decision route. Preserve scope settled before this session.
 
 The protocol-v6 `advance` action is the current authority. Do not call lifecycle
-primitives unless its recovery explicitly names one. Update `tasks.md` only for
-the returned task after focused checks; the coordinator owns planning and phase
-transitions. In the isolated packet only checkboxes and a task's `[paths:]` are
-bookkeeping; express other agreement changes with `change amend`. Never ask the
-user to copy agreement files between checkouts. Shell mutations run audited,
+primitives unless its recovery explicitly names one. The coordinator owns
+planning, phase transitions, evidence setup, sandbox sync, agent-runnable
+review, and ticking a task in `tasks.md` once its verify passes; never edit
+checkboxes or generated packet files. Express agreement changes with one
+semantic amendment. Never ask the user to copy agreement files between
+checkouts. Shell mutations run audited,
 not blocked: anchor them in the workspace, and on
 `TARGET_EDITED_OUTSIDE_SANDBOX` move your target edits into the sandbox.
 

@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, posix, relative, resolve, sep } from "node:path";
 import { EXCLUDED_WORKSPACE_DIRS } from "../../core/workspace-policy.mjs";
 import { isExcludedPath } from "../../core/workspace-surface.mjs";
+import { requiredDiscoveryDimensions } from "./semantic-intake.mjs";
 
 const DEFAULT_LIMITS = Object.freeze({
   maxEntries: 12_000,
@@ -231,6 +232,44 @@ function rankFiles(files, terms, seedPaths, graph) {
 function boundedReadSet(ranked, maximum) {
   return ranked.filter((row) => row.score > 0 || row.reasons.includes("declared-seed"))
     .slice(0, maximum);
+}
+
+const trimmed = (value) => typeof value === "string" ? value.trim().toLowerCase() : "";
+
+/**
+ * Repository discovery serves the standard lane. A rapid-shaped change (low
+ * impact, isolated, no security trigger, review, acceptance, or risk-derived
+ * discovery dimension) that is not already on the standard lane skips it.
+ */
+export function repositoryIntelligenceRequired(source = {}, { standardLane = false } = {}) {
+  if (standardLane) return true;
+  if (["medium", "high"].includes(trimmed(source.impact))) return true;
+  if (trimmed(source.coupling) && trimmed(source.coupling) !== "isolated") return true;
+  const triggers = (Array.isArray(source.securityTriggers) ? source.securityTriggers : [])
+    .filter((trigger) => trimmed(trigger) && trimmed(trigger) !== "none");
+  if (triggers.length) return true;
+  if (source.reviewRequired || source.acceptance?.required === true) return true;
+  return requiredDiscoveryDimensions({ ...source, securityTriggers: triggers }).length > 0;
+}
+
+/**
+ * A valid "not scanned" result. Nothing was measured, so counts, scan, and
+ * graph stay null (unknown), never zero, and `complete` is false.
+ */
+export function skippedRepositoryIntelligence(reason = "rapid-lane") {
+  return {
+    version: 1,
+    status: "skipped",
+    complete: false,
+    reason,
+    queryTerms: [],
+    limits: null,
+    scan: null,
+    findings: [],
+    candidates: null,
+    readSet: [],
+    graph: null
+  };
 }
 
 function blockedResult({ limits, terms, scan, findings }) {

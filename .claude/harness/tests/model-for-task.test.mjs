@@ -13,7 +13,8 @@ const models = {
   standard: { family: "standard-family", fallbackTier: "fast" },
   deep: { family: "deep-family", fallbackTier: "standard" }
 };
-const selectedPolicy = { models };
+const selectedPolicy = { models: { routing: true, ...models } };
+const singleModelPolicy = { models: { routing: false, ...models } };
 const fail = (message) => { throw new Error(message); };
 
 test("task risk recognizes impact, security triggers, and drift-blocking kinds", () => {
@@ -76,4 +77,25 @@ test("model router uses configured policy by default and accepts an override", (
     id: "TASK-2", kind: "code", requestedModel: "deep"
   }, { models: { ...models, deep: { family: "override", fallbackTier: null } } })
     .family, "override");
+});
+
+test("routing off assigns the single standard tier but honors explicit requests", () => {
+  const off = (state = {}) => ({ loadRuntime: () => state, policy: () => singleModelPolicy, fail });
+  for (const kind of ["inventory", "architecture", "code"])
+    assert.deepEqual(modelForTaskOperation(off({ impact: "high" }), "change", {
+      id: "TASK-1", kind
+    }, singleModelPolicy), {
+      tier: "standard", family: "standard-family", fallbackTier: "fast",
+      fallbackFamily: "fast-family", reason: "single default model"
+    });
+  assert.equal(modelForTaskOperation(off(), "change", {
+    id: "TASK-2", kind: "code", requestedModel: "deep"
+  }, singleModelPolicy).tier, "deep");
+  assert.equal(modelForTaskOperation(off({ impact: "high" }), "change", {
+    id: "TASK-3", kind: "code", requestedModel: "fast"
+  }, singleModelPolicy).tier, "standard");
+  // An absent flag is the shipped default: routing stays off.
+  assert.equal(modelForTaskOperation(off(), "change", {
+    id: "TASK-4", kind: "architecture"
+  }, { models }).tier, "standard");
 });

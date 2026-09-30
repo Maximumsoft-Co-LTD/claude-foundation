@@ -9,7 +9,7 @@ import test from "node:test";
 import { createAdvanceRuntime } from "../runtime/workflow/advance-runtime.mjs";
 import { createLeaseRuntime } from "../runtime/workflow/lease-runtime.mjs";
 import {
-  createSessionLeaseRuntime, sessionLeaseOwner, taskLineChecked
+  createSessionLeaseRuntime, runTaskCheck, sessionLeaseOwner, taskCheck, taskLineChecked, tickTaskLine
 } from "../runtime/workflow/session-lease.mjs";
 
 const stableHash = (value) => JSON.stringify(value).length.toString(16).padStart(12, "0");
@@ -219,4 +219,92 @@ test("a harness lease past its TTL is still settled when the agent ticks the tas
   assert.equal(existsSync(index), false);
   assert.deepEqual(json(join(leases, "results", "demo", "T001.json")).observedWrites,
     ["src/a.js"]);
+});
+
+// D5: the harness, not the agent, ticks a task once its own focused check passes.
+function checkedWorkspace(t) {
+  const root = mkdtempSync(join(tmpdir(), "session-check-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "openspec", "changes", "demo"), { recursive: true });
+  writeFileSync(join(root, "openspec", "changes", "demo", "tasks.md"),
+    "- [ ] **T001** First [paths:src/a.js] — verify: `node -e 'process.exit(0)'`\n" +
+    "- [ ] **T002** Second [repo:api] [paths:src/b.js] — verify: `npm test -- b`\n" +
+    "- [ ] **T003** Third [paths:src/c.js] — verify: `existing`\n");
+  return root;
+}
+
+test("task checks parse the ledger's own verify and tick exactly one line", () => {
+  const ledger = "- [ ] **T001** a — verify: `npm test`\n- [ ] **T0010** b — verify: `x`\n";
+  assert.deepEqual(taskCheck(ledger, "T001"), { taskId: "T001", command: "npm test", repository: "root" });
+  assert.equal(taskCheck("- [ ] **T001** a — verify: `existing`", "T001"), null);
+  assert.equal(taskCheck("- [ ] **T001** a", "T001"), null);
+  assert.equal(tickTaskLine(ledger, "T001"),
+    "- [x] **T001** a — verify: `npm test`\n- [ ] **T0010** b — verify: `x`\n");
+});
+
+test("settle ticks a leased task whose focused check passes and keeps a failing one pending", (t) => {
+  const root = checkedWorkspace(t);
+  const leases = [
+    { taskId: "T001", owner: sessionLeaseOwner("demo", "T001", stableHash), leaseId: "l1" },
+    { taskId: "T002", owner: sessionLeaseOwner("demo", "T002", stableHash), leaseId: "l2" },
+    { taskId: "T003", owner: sessionLeaseOwner("demo", "T003", stableHash), leaseId: "l3" }
+  ];
+  const checks = [];
+  const calls = [];
+  const runtime = createSessionLeaseRuntime({
+    stableHash, loadRuntime: () => ({ workspace: { path: root } }),
+    activeChangeLeases: () => leases,
+    acquire: () => ({ leaseId: "renewed" }), discard: () => {},
+    release: (id, taskId) => { calls.push(taskId); },
+    runCheck: (id, check) => {
+      checks.push(check);
+      return check.taskId === "T001" ? { status: "pass", exitCode: 0 }
+        : { status: "fail", exitCode: 1, output: "1 failing" };
+    }
+  });
+  assert.deepEqual(runtime.settle("demo"), ["T001"]);
+  assert.deepEqual(calls, ["T001"]);
+  assert.deepEqual(checks.map((row) => [row.taskId, row.repository]), [["T001", "root"], ["T002", "api"]]);
+  const ledger = readFileSync(join(root, "openspec", "changes", "demo", "tasks.md"), "utf8");
+  assert.match(ledger, /^- \[x\] \*\*T001\*\*/m);
+  assert.match(ledger, /^- \[ \] \*\*T002\*\*/m);
+  // The failing check reaches the agent with the re-issued task.
+  const issued = runtime.issue("demo", { action: "EDIT", workspace: root, tasks: [{ id: "T002" }],
+    execution: { mode: "session", leases: [{ taskId: "T002" }] } });
+  assert.deepEqual(issued.verificationFailures, [{ taskId: "T002", command: "npm test -- b",
+    exitCode: 1, output: "1 failing" }]);
+  assert.match(issued.instructions.join(" "), /do not edit tasks\.md/);
+});
+
+test("a single-agent handoff is recorded, then completed by its passing check", (t) => {
+  const root = checkedWorkspace(t);
+  let state = { workspace: { path: root } };
+  const runtime = createSessionLeaseRuntime({
+    stableHash, loadRuntime: () => structuredClone(state),
+    saveRuntime: (value) => { state = structuredClone(value); },
+    activeChangeLeases: () => [], acquire: () => { throw new Error("no lease"); },
+    discard: () => {}, release: () => {},
+    runCheck: (id, check) => runTaskCheck({ loadRuntime: () => state }, id, check)
+  });
+  // Nothing was handed off yet: resuming runs no check.
+  assert.deepEqual(runtime.settle("demo"), []);
+  const edit = { action: "EDIT", workspace: root, tasks: [{ id: "T001" }],
+    execution: { mode: "session", leases: [] } };
+  assert.equal(runtime.issue("demo", edit), edit);
+  assert.deepEqual(state.sessionHandoff.taskIds, ["T001"]);
+  assert.deepEqual(runtime.settle("demo"), ["T001"]);
+  assert.equal(state.sessionHandoff, undefined);
+  assert.match(readFileSync(join(root, "openspec", "changes", "demo", "tasks.md"), "utf8"),
+    /^- \[x\] \*\*T001\*\*/m);
+});
+
+test("the task check runs in the task repository and reports an unavailable workspace", () => {
+  const seen = [];
+  const spawn = (shell, args, options) => { seen.push([shell, args, options.cwd]); return { status: 3, stdout: "o", stderr: "e" }; };
+  const loadRuntime = () => ({ workspace: { path: "/root-box" }, repositories: { api: { path: "/api-box" } } });
+  assert.deepEqual(runTaskCheck({ loadRuntime, spawn }, "demo", { command: "make t", repository: "api" }),
+    { status: "fail", exitCode: 3, output: "oe" });
+  assert.deepEqual(seen, [["sh", ["-c", "make t"], "/api-box"]]);
+  assert.equal(runTaskCheck({ loadRuntime, spawn }, "demo", { command: "x", repository: "web" }).status,
+    "unavailable");
 });

@@ -242,8 +242,9 @@ assert_cmd_zero "command registry has one unique entry per public name" \
   "$TARGET/.claude/harness/commands.json"
 # The additional read-only surfaces are the resumable budget checkpoint and
 # aggregate handoff list; neither grants authority or widens continuation.
-# `change revise` is the pre-Build sibling of `change amend`.
-assert_eq "agent command surface is bounded" "23" \
+# `change revise` is the pre-Build sibling of `change amend`. `advance` is the
+# agent's lifecycle driver (it performs wiring, sync, and configured review).
+assert_eq "agent command surface is bounded" "24" \
   "$(jq '[.commands[] | select(.audience == "agent")] | length' \
     "$TARGET/.claude/harness/commands.json")"
 # 25 includes the bounded proof controller, its internal execution commands,
@@ -458,7 +459,7 @@ assert_file_exists "atomic start inspection does not consume its draft" \
 atomic_start="$(bash "$ROOT/cli.sh" --project "$TARGET" change start \
   .foundation/atomic-draft.json --consume-draft)"
 assert_contains "atomic start requires spec approval" "$atomic_start" \
-  'claude-foundation change resolve atomic-start --approve-spec'
+  'claude-foundation advance atomic-start --approve-spec'
 assert_file_absent "successful atomic start consumes its transient draft" \
   "$TARGET/.foundation/atomic-draft.json"
 assert_eq "atomic start remains agreement-only" "change" \
@@ -531,7 +532,7 @@ printf '%s\n' \
 standard_start="$(bash "$ROOT/cli.sh" --project "$TARGET" change start \
   .foundation/atomic-migration-draft.json)"
 assert_contains "atomic standard start requires spec approval" "$standard_start" \
-  'claude-foundation change resolve atomic-migration --approve-spec'
+  'claude-foundation advance atomic-migration --approve-spec'
 assert_eq "atomic standard start selects standard schema" "foundation-standard" \
   "$(jq -r '.schema' "$TARGET/.foundation/runtime/atomic-migration.json")"
 assert_eq "atomic standard start preserves required review" "true" \

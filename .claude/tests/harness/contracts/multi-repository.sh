@@ -28,6 +28,7 @@ jq '.workflow.grounding = "optional" |
     .workflow.reviewPolicy = "legacy" |
     .workflow.reviewCircuit = "legacy" |
     .land.riskBasedCi = false |
+    .models.routing = true |
     .telemetry.requireUsage = false' \
   "$TMP/multi-project/foundation.json" > "$TMP/multi-foundation.json"
 mv "$TMP/multi-foundation.json" "$TMP/multi-project/foundation.json"

@@ -499,6 +499,49 @@ test("collect-only CLI emits a schema-valid scorecard without a paid host run", 
     assert.equal(scorecard.outcome.status, "completed");
     assert.equal(scorecard.usage.costUsd, 1.25);
     assert.equal(scorecard.timing.wallMs, 4000);
+    assert.equal(scorecard.operations.hostToolCalls.measurement, "unavailable",
+      "no host stream means unknown tool calls, not zero");
+    assert.equal(validate(scorecard), true, JSON.stringify(validate.errors));
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(outputDir, { recursive: true, force: true });
+  }
+});
+
+test("collect-only CLI persists categorized host tool calls from a saved stream", () => {
+  const project = projectFixture();
+  const outputDir = mkdtempSync(join(tmpdir(), "foundation-native-tool-calls-"));
+  const output = join(outputDir, "rows.jsonl");
+  const stream = join(outputDir, "host.stream.jsonl");
+  const call = (id, name, input) => ({ type: "assistant", message: { id: `m-${id}`,
+    content: [{ type: "tool_use", id, name, input }] } });
+  write(stream, `${[
+    call("t1", "Bash", { command: "node .claude/harness/foundation.mjs advance todo" }),
+    call("t2", "Read", { file_path: ".claude/skills/build/SKILL.md" }),
+    call("t3", "Read", { file_path: ".foundation/runtime/todo.json" }),
+    call("t4", "Write", { file_path: "openspec/changes/todo/draft.json" }),
+    call("t5", "Edit", { file_path: "src/cart.js" }),
+    call("t6", "Bash", { command: "node --test" }),
+    call("t7", "TodoWrite", { todos: [] }),
+    { type: "result", total_cost_usd: 1.25, num_turns: 7 }
+  ].map(JSON.stringify).join("\n")}\n`);
+  try {
+    const runner = new URL("../openspec-native/run.mjs", import.meta.url);
+    const result = spawnSync(process.execPath, [
+      runner.pathname, "--collect-only", "--scenario", "tiny-feature",
+      "--project", project, "--change-id", "todo", "--run-id", "tool-calls",
+      "--envelope", stream, "--wall-ms", "4000", "--output", output
+    ], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    const scorecard = JSON.parse(readFileSync(output, "utf8").trim());
+    assert.deepEqual(scorecard.operations.hostToolCalls, {
+      measurement: "measured", total: 7,
+      byTool: { Bash: 2, Read: 2, Write: 1, Edit: 1, TodoWrite: 1 },
+      byCategory: {
+        harnessCli: 1, harnessDocReads: 1, stateReads: 1, harnessArtifactWrites: 1,
+        productWrites: 1, testRuns: 1, other: 1
+      }
+    });
     assert.equal(validate(scorecard), true, JSON.stringify(validate.errors));
   } finally {
     rmSync(project, { recursive: true, force: true });
@@ -622,6 +665,46 @@ sleep 30
   }
 });
 
+test("live tool-call ceilings stop the host at a resumable user-decision boundary", () => {
+  const project = projectFixture();
+  const outputDir = mkdtempSync(join(tmpdir(), "foundation-native-tool-stub-"));
+  const output = join(outputDir, "rows.jsonl");
+  const host = join(outputDir, "claude-stub");
+  write(host, `#!/bin/sh
+printf '%s\n' '{"type":"assistant","message":{"id":"request-1","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"node .claude/harness/foundation.mjs advance todo"}}]}}'
+printf '%s\n' '{"type":"assistant","message":{"id":"request-2","content":[{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":".claude/skills/build/SKILL.md"}}]}}'
+sleep 30
+`);
+  chmodSync(host, 0o755);
+  try {
+    const runner = new URL("../openspec-native/run.mjs", import.meta.url);
+    const result = spawnSync(process.execPath, [
+      runner.pathname,
+      "--scenario", "tool-budget-boundary",
+      "--project", project,
+      "--prompt", "/dev bounded work",
+      "--change-id", "todo",
+      "--run-id", "tool-budget-stub",
+      "--claude-bin", host,
+      "--max-tool-calls", "2",
+      "--timeout-ms", "5000",
+      "--output", output
+    ], { encoding: "utf8" });
+    assert.equal(result.status, 1, "a user-decision boundary is not completion");
+    const scorecard = JSON.parse(readFileSync(output, "utf8").trim());
+    assert.equal(scorecard.outcome.status, "needs-user-decision");
+    assert.equal(scorecard.outcome.failureClass, "budget-exhausted-tool-calls");
+    assert.ok(scorecard.timing.wallMs < 15000);
+    assert.equal(scorecard.operations.hostToolCalls.total, 2);
+    assert.equal(scorecard.operations.hostToolCalls.byCategory.harnessCli, 1);
+    assert.equal(scorecard.operations.hostToolCalls.byCategory.harnessDocReads, 1);
+    assert.equal(validate(scorecard), true, JSON.stringify(validate.errors));
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(outputDir, { recursive: true, force: true });
+  }
+});
+
 test("stream parser preserves partial tool telemetry before a final result", () => {
   const output = [
     { type: "assistant", message: { content: [{
@@ -638,7 +721,12 @@ test("stream parser preserves partial tool telemetry before a final result", () 
   const parsed = parseHostOutput(output);
   assert.deepEqual(parsed.envelope, {});
   assert.deepEqual(parsed.hostTelemetry, {
-    total: 2, browserCalls: 1, taskMirrorOperations: 1
+    total: 2, browserCalls: 1, taskMirrorOperations: 1,
+    byTool: { "mcp__browseros-neo__run": 1, Bash: 1 },
+    byCategory: {
+      harnessCli: 0, harnessDocReads: 0, stateReads: 0, harnessArtifactWrites: 0,
+      productWrites: 0, testRuns: 0, other: 2
+    }
   });
   assert.equal(parsed.observedUsage.observedModelRequests, null,
     "tool-use rows sharing no message id are not model-request identities");
@@ -647,7 +735,8 @@ test("stream parser preserves partial tool telemetry before a final result", () 
 test("missing collect-only host telemetry remains unknown rather than zero", () => {
   const parsed = parseHostOutput("{}");
   assert.deepEqual(parsed.hostTelemetry, {
-    total: null, browserCalls: null, taskMirrorOperations: null
+    total: null, browserCalls: null, taskMirrorOperations: null,
+    byTool: null, byCategory: null
   });
   assert.equal(parsed.observedUsage.observedModelRequests, null);
 });

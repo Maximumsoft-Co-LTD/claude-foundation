@@ -212,6 +212,15 @@ export function createPacketRuntime({
 }) {
   const die = fail;
 
+  // The budget watchdog is opt-in (`execution.budgetWatchdog`). Off, usage is
+  // still recorded in runtime state for metrics, but the packet carries no
+  // spend-mode directive or limit for the agent to act on.
+  function packetBudget(state) {
+    if (foundationPolicy?.().execution?.budgetWatchdog !== true)
+      return { budgetDecision: { watchdog: "off", status: "CONTINUE", userActionRequired: false } };
+    return { budget: ensureBudgetState(state), budgetDecision: budgetDecision(state) };
+  }
+
   function packetScope(id, state, allTasks, repositoryId, taskId) {
     const selectedTask = taskId
       ? allTasks.find((task) => task.id === String(taskId).toUpperCase())
@@ -513,8 +522,7 @@ export function createPacketRuntime({
       invariants: packetInvariants(contract, packetType),
       references: artifactReferences,
       ...taskExecutionContext(id, selectedTask),
-      budget: ensureBudgetState(state),
-      budgetDecision: budgetDecision(state)
+      ...packetBudget(state)
     };
     if (packetType !== "task") {
       packet.authorityPreflight = authorityPreflight(id);

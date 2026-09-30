@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
-import { inspectRepositoryIntelligence } from
-  "../runtime/workflow/validation/repository-intelligence.mjs";
+import {
+  inspectRepositoryIntelligence, repositoryIntelligenceRequired, skippedRepositoryIntelligence
+} from "../runtime/workflow/validation/repository-intelligence.mjs";
+import { createChangeLifecycle } from "../runtime/workflow/change-lifecycle.mjs";
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "repository-intelligence-"));
@@ -224,4 +226,72 @@ test("filesystem errors fail closed and injected adapters make behavior testable
     code: "scan-directory-unreadable", path: "", detail: "EACCES", blocking: true
   }]);
   assert.deepEqual(value.readSet, []);
+});
+
+test("repository discovery runs only for the standard lane or medium-plus risk", () => {
+  const rapid = { impact: "low", coupling: "isolated", securityTriggers: ["none"] };
+  assert.equal(repositoryIntelligenceRequired(rapid), false);
+  assert.equal(repositoryIntelligenceRequired({}), false);
+  assert.equal(repositoryIntelligenceRequired(rapid, { standardLane: true }), true);
+  for (const change of [
+    { impact: "medium" }, { impact: "high" }, { coupling: "coupled" },
+    { securityTriggers: ["auth"] }, { reviewRequired: true },
+    { acceptance: { required: true } }, { riskSignals: ["access-control"] },
+    { integrations: [{ name: "billing" }] }, { externalOperations: [{ kind: "deploy" }] }
+  ]) assert.equal(repositoryIntelligenceRequired({ ...rapid, ...change }), true,
+    JSON.stringify(change));
+  const skipped = skippedRepositoryIntelligence();
+  assert.equal(skipped.status, "skipped");
+  assert.equal(skipped.complete, false);
+  // Nothing was scanned: unknown stays null, never a measured zero.
+  assert.equal(skipped.scan, null);
+  assert.equal(skipped.candidates, null);
+  assert.equal(skipped.graph, null);
+  assert.deepEqual(skipped.readSet, []);
+});
+
+test("rapid draft inspection skips the repository scan; medium impact runs it", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "repository-intelligence-lane-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "openspec", "specs"), { recursive: true });
+  writeFileSync(join(root, "README.md"), "readme\n");
+  let scans = 0;
+  const lifecycle = createChangeLifecycle({
+    root, policy: () => ({ workflow: { grounding: "optional" } }), securityTerms: [],
+    fail: (message) => { throw new Error(message); },
+    pathInside: () => true,
+    readJson: (path) => JSON.parse(readFileSync(path, "utf8")),
+    writeJson: (path, value) => {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, `${JSON.stringify(value)}\n`);
+    },
+    slugify: (value) => String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+    measureStage: (_stage, operation) => operation(),
+    git: (args) => {
+      if (args[0] === "ls-files") scans += 1;
+      return { status: 0, stdout: "README.md\0" };
+    },
+    changePath: (id) => join(root, "openspec", "changes", id),
+    loadRuntime: () => ({}), saveRuntime: () => {}, setOperationChangeId: () => {},
+    initialBudget: () => ({}), gitHead: () => "head", preexistingDirty: () => [],
+    now: () => "2026-09-30T00:00:00.000Z", bindClaudeSession: () => {},
+    validate: () => {}, rollbackStart: () => []
+  });
+  const inspect = (impact) => {
+    const draftPath = `draft-${impact}.json`;
+    writeFileSync(join(root, draftPath), JSON.stringify({
+      version: 4, intent: "Adjust the readme wording", impact, coupling: "isolated",
+      securityTriggers: [], acceptance: { required: false }
+    }));
+    return lifecycle.inspectDraft(draftPath, { quiet: true });
+  };
+  const rapid = inspect("low");
+  assert.equal(scans, 0);
+  assert.equal(rapid.intelligence.repository.status, "skipped");
+  assert.equal(rapid.intelligence.repository.complete, false);
+  assert.equal(rapid.intelligence.repository.scan, null);
+  assert.deepEqual(rapid.intelligence.repository.selectedSources, []);
+  const medium = inspect("medium");
+  assert.ok(scans > 0);
+  assert.equal(medium.intelligence.repository.status, "ready");
 });

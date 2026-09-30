@@ -106,7 +106,31 @@
         "duplicateCandidates": { "$ref": "#/$defs/nullableCount" },
         "duplicateMeasurement": { "$ref": "#/$defs/measurement" },
         "browserCalls": { "$ref": "#/$defs/nullableCount" },
-        "taskMirrorOperations": { "$ref": "#/$defs/nullableCount" }
+        "taskMirrorOperations": { "$ref": "#/$defs/nullableCount" },
+        "hostToolCalls": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["measurement", "total", "byTool", "byCategory"],
+          "properties": {
+            "measurement": { "$ref": "#/$defs/measurement" },
+            "total": { "$ref": "#/$defs/nullableCount" },
+            "byTool": { "type": ["object", "null"], "additionalProperties": { "type": "integer", "minimum": 0 } },
+            "byCategory": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["harnessCli", "harnessDocReads", "stateReads", "harnessArtifactWrites", "productWrites", "testRuns", "other"],
+              "properties": {
+                "harnessCli": { "$ref": "#/$defs/nullableCount" },
+                "harnessDocReads": { "$ref": "#/$defs/nullableCount" },
+                "stateReads": { "$ref": "#/$defs/nullableCount" },
+                "harnessArtifactWrites": { "$ref": "#/$defs/nullableCount" },
+                "productWrites": { "$ref": "#/$defs/nullableCount" },
+                "testRuns": { "$ref": "#/$defs/nullableCount" },
+                "other": { "$ref": "#/$defs/nullableCount" }
+              }
+            }
+          }
+        }
       }
     },
     "quality": {

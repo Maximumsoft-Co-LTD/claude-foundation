@@ -68,6 +68,8 @@ cp -R "$TMP/project/.claude" .
 cp -R "$TMP/project/openspec" .
 rm -rf openspec/changes .foundation
 printf 'x\n' > app.txt
+# The quality change gate is opt-in (shipped default "off"); this fixture opts in.
+printf '{"version":1,"quality":{"changeGate":"warn"}}\n' > foundation.json
 git init -q
 git config user.name "Foundation Test"
 git config user.email "foundation@example.invalid"

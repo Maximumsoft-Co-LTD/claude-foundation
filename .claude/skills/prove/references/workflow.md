@@ -9,7 +9,9 @@ repair-count stop while the progress fingerprint changes. A decision,
 authority, resource, conflict, or repeated no-progress boundary preserves state
 and returns the responsible actor plus supported alternatives.
 
-A review dispatch or `authority run` dies with the session: in a
+`advance` runs agent-runnable reviewers itself; external reviewers return
+`WAIT`. A review it runs, a dispatch, or an `authority run` a returned action
+names dies with the session: in a
 non-interactive run your final reply terminates the process, kills the
 in-flight dispatch, and burns an infrastructure retry. Never end the reply
 while a dispatch or background task is pending — stay in-session and wait for
@@ -37,8 +39,8 @@ The waiver binds the current workspace and agreement; it never creates a pass.
 Reopen one Decision Sheet only for changed behavior, compatibility, security,
 data, or rollout.
 
-For a missing adapter follow the `REPAIR` action; its advanced recovery may use
-`evidence init --write`. Identity may be shared only
+`advance` wires a missing or stale adapter itself (`evidence init --write` or
+upgrade); follow any `REPAIR` it still returns. Identity may be shared only
 with committed `review.independence: "self"`. Codex-only or Claude-Code-only
 review uses `review.diversity: "single-model"`; it requires a fresh
 identity/session. Never substitute self-review for a required reviewer.

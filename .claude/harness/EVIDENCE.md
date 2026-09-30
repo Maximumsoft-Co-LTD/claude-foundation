@@ -31,6 +31,13 @@ not repeat `discovery` on every claim.
 
 ## Readiness and selective execution
 
+`evidence` is optional for a rapid draft (low impact, isolated, no security
+triggers, review or acceptance not required, no design content); omitted
+capabilities default to `["test"]` proven by the tasks' verify commands. When a
+test run prints no countable result, discovery stays inconclusive and its repair
+names the exact fix (for example `--test-reporter=tap` on the `package.json`
+script that wraps `node --test`).
+
 Before Build, the harness records an execution-preparation identity covering
 the agreement revisions, selected repository bases/setup state, and provider
 wiring. It prepares only missing project-local tools and failed repository

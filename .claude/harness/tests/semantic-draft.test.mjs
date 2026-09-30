@@ -11,6 +11,8 @@ import test from "node:test";
 import {
   normalizeSemanticDraft, renderRequirementMarkdown, renderSpecHeading, semanticDraftTemplate
 } from "../runtime/workflow/semantic-draft.mjs";
+import { requiredProvidersOperation } from "../runtime/workflow/change-validation.mjs";
+import { classifyReviewRisk } from "../runtime/evidence/review-routing.mjs";
 import {
   createChangeLifecycle, draftNeedsDesign, renderDraftProposal
 } from "../runtime/workflow/change-lifecycle.mjs";
@@ -221,8 +223,12 @@ test("draft inspection persists source freshness and blocks stale compilation", 
     assert.deepEqual(languagePlans[0], languagePlans[1]);
     assert.deepEqual(languagePlans[1], languagePlans[2]);
     writeFileSync(join(root, "README.md"), "third\n");
-    assert.throws(() => lifecycle.startAtomic("draft.json"),
-      /current completed semantic intake/);
+    // Bare start re-inspects a stale snapshot and returns its action unchanged
+    // instead of starting; nothing is materialized.
+    const staleStart = lifecycle.startAtomic("draft.json");
+    assert.equal(staleStart.action, "EDIT");
+    assert.equal(staleStart.intake.kind, "refresh-source-coverage");
+    assert.equal(existsSync(join(root, "openspec", "changes")), false);
   } finally {
     console.log = priorLog;
   }
@@ -1283,4 +1289,72 @@ test("modifying a canonical requirement preserves its GIVEN and AND lines", () =
   const rendered = renderRequirementMarkdown(draft.specs[0]);
   assert.match(rendered, /GIVEN\*\* a payment timed out[\s\S]*AND\*\* the receipt is reused/);
   assert.match(rendered, /Scenario: Retry fails/);
+});
+
+function rapidDraftWithoutEvidence(overrides = {}) {
+  const { evidence: _omitted, integrations: _none, ...draft } = semanticDraft({
+    impact: "low", coupling: "isolated", acceptance: { required: false }
+  });
+  return { ...draft, ...overrides };
+}
+
+test("a rapid draft may omit evidence capabilities and proves with test, discovery, and review", () => {
+  const result = normalizeSemanticDraft(rapidDraftWithoutEvidence(), slugify,
+    { defaultRapidEvidence: true });
+  assert.deepEqual(result.issues, []);
+  assert.deepEqual(result.draft._defaultedEvidence, ["payment-retry", "audit-result"]);
+  assert.ok(result.draft.claims.every((claim) => claim.capabilities.join() === "test"));
+  const test = result.draft.execution.providers.test;
+  assert.equal(test.adapter, "test-discovery");
+  assert.deepEqual(test.command.slice(0, 2), ["sh", "-c"]);
+  assert.match(test.command[2], /npm test -- payment-retry/);
+  // Installed consumers run risk-tiered review: a low-risk rapid change needs
+  // exactly one ai-full attempt and nothing more from the author.
+  const state = { impact: "low", coupling: "isolated", securityTriggers: [], waivers: [] };
+  const route = classifyReviewRisk({ state, claims: result.draft.claims,
+    capabilities: new Set(["test"]), grounding: {} });
+  assert.deepEqual([route.tier, route.route, route.maxAiAttempts], ["low", ["ai-full"], 1]);
+  const required = requiredProvidersOperation({
+    loadRuntime: () => state,
+    evidence: () => ({ providers: result.draft.execution.providers, claims: result.draft.claims }),
+    providerCapability: (provider, config) => config?.capability || provider,
+    reviewPolicy: () => ({ required: true, tier: route.tier }),
+    resolvedAcceptance: () => ({ required: false }),
+    policyCapabilitySplit: () => ({ enforced: [] }),
+    foundationPolicy: () => ({ quality: { changeGate: "warn" } })
+  }, "rapid");
+  assert.deepEqual(required, ["discovery", "review", "test"]);
+});
+
+test("evidence defaults stay off for standard drafts, explicit opt-out, and v3 callers", () => {
+  const missing = /requires evidence\['payment-retry'\]\.capabilities/;
+  // Standard lane: medium impact must still declare capabilities.
+  const standard = normalizeSemanticDraft(rapidDraftWithoutEvidence({ impact: "medium" }),
+    slugify, { defaultRapidEvidence: true });
+  assert.ok(standard.issues.some((issue) => /requires an 'evidence' object/.test(issue)));
+  const standardEmpty = normalizeSemanticDraft(
+    rapidDraftWithoutEvidence({ impact: "medium", evidence: {} }), slugify,
+    { defaultRapidEvidence: true });
+  assert.ok(standardEmpty.issues.some((issue) => missing.test(issue)));
+  for (const overrides of [{ securityTriggers: ["auth"] }, { reviewRequired: true },
+    { acceptance: { required: true, reason: "UX" } }, { coupling: "coupled" }])
+    assert.ok(normalizeSemanticDraft(rapidDraftWithoutEvidence({ ...overrides, evidence: {} }),
+      slugify, { defaultRapidEvidence: true }).issues.some((issue) => missing.test(issue)),
+    JSON.stringify(overrides));
+  // Callers that do not opt in (amendments) keep the explicit contract.
+  assert.ok(normalizeSemanticDraft(rapidDraftWithoutEvidence({ evidence: {} }), slugify)
+    .issues.some((issue) => missing.test(issue)));
+  // An explicit empty list is an authored decision, not an omission.
+  assert.ok(normalizeSemanticDraft(rapidDraftWithoutEvidence({
+    evidence: { "payment-retry": { capabilities: [] }, "audit-result": { capabilities: ["test"] } }
+  }), slugify, { defaultRapidEvidence: true }).issues
+    .some((issue) => /requires at least one evidence capability/.test(issue)));
+  // Declared capabilities are kept verbatim.
+  const declared = normalizeSemanticDraft(rapidDraftWithoutEvidence({
+    evidence: { "payment-retry": { capabilities: ["test", "static-analysis"] } }
+  }), slugify, { defaultRapidEvidence: true });
+  assert.deepEqual(declared.issues, []);
+  assert.deepEqual(declared.draft._defaultedEvidence, ["audit-result"]);
+  assert.deepEqual(declared.draft.claims.find((claim) =>
+    claim.requirementKey === "payment-retry").capabilities, ["test", "static-analysis"]);
 });

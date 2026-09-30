@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { TOOL_CALL_CATEGORIES } from "../../../harness/runtime/observability/telemetry.mjs";
+
 export const SCORECARD_PROTOCOL = "foundation-openspec-native-scorecard-v1";
 export const MEASUREMENT_STATES = new Set(["measured", "partial", "unavailable"]);
 export const OUTCOME_STATES = new Set([
@@ -193,6 +195,28 @@ function boundedByWall(value, wallMs) {
   return result !== null && (wallMs === null || result <= wallMs) ? result : null;
 }
 
+function countMap(value) {
+  const input = object(value);
+  const entries = Object.entries(input).map(([key, entry]) => [key, count(entry)]);
+  return entries.every(([, entry]) => entry !== null) ? Object.fromEntries(entries) : null;
+}
+
+// Host tool calls come only from the host stream. A missing stream is unknown:
+// every count stays null rather than becoming a misleading zero.
+function hostToolCallSummary(hostTelemetry = {}) {
+  const total = count(hostTelemetry.total);
+  const categories = object(hostTelemetry.byCategory);
+  const byCategory = Object.fromEntries(TOOL_CALL_CATEGORIES.map((key) =>
+    [key, total === null ? null : count(categories[key])]));
+  const categorized = Object.values(byCategory).every((value) => value !== null);
+  return {
+    measurement: total === null ? "unavailable" : categorized ? "measured" : "partial",
+    total,
+    byTool: total === null ? null : countMap(hostTelemetry.byTool),
+    byCategory
+  };
+}
+
 function operationSummary(rows, metrics, hostTelemetry = {}) {
   const operations = Array.isArray(rows) ? rows : [];
   const profile = object(metrics.commandProfile);
@@ -216,7 +240,8 @@ function operationSummary(rows, metrics, hostTelemetry = {}) {
     duplicateMeasurement: profile.measurement
       ? measurement(profile.measurement) : "unavailable",
     browserCalls: count(hostTelemetry.browserCalls),
-    taskMirrorOperations: count(hostTelemetry.taskMirrorOperations)
+    taskMirrorOperations: count(hostTelemetry.taskMirrorOperations),
+    hostToolCalls: hostToolCallSummary(hostTelemetry)
   };
 }
 

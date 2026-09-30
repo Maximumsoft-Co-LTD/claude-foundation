@@ -352,13 +352,27 @@ export async function routeRuntimeCommand(command, values, api) {
     },
     "advance": async () => {
       const { flags, rest } = parseStrictCommandFlags(values, "advance", {
-        boolean: ["pretty", "inspect"],
+        boolean: ["pretty", "inspect", "approve-spec"],
         value: ["host-result", "through", "decision", "decision-fingerprint", "decision-ref", "reason"]
       });
       if (rest.length !== 1) die("advance requires exactly one change id");
+      // Alias of `change resolve <change> --approve-spec --decision-ref <ref>`
+      // so the agent's normal path needs only `change start` and `advance`.
+      if (flags["approve-spec"]) {
+        const extra = Object.keys(flags).filter((flag) =>
+          !["approve-spec", "decision-ref"].includes(flag));
+        if (extra.length)
+          die(`advance --approve-spec records only the user's spec approval; drop --${extra.join(", --")} ` +
+            `and resume with 'claude-foundation advance ${rest[0]} --through <target>'`);
+        if (!flags["decision-ref"])
+          die(`advance --approve-spec requires --decision-ref <ref> naming the user's approval`);
+        resolveChange(rest[0], { "approve-spec": true, "decision-ref": flags["decision-ref"] });
+        return;
+      }
       if (flags.inspect && (flags.through || flags["host-result"] || flags.decision ||
           flags["decision-fingerprint"] || flags["decision-ref"] || flags.reason))
-        die("advance --inspect cannot be combined with through or host-result or decision flags");
+        die(`advance --inspect is read-only and cannot be combined with --through, --host-result, or decision flags; ` +
+          `run 'claude-foundation advance ${rest[0]} --inspect' alone, or drop --inspect to execute`);
       if (!flags.decision && (flags["decision-fingerprint"] || flags["decision-ref"] || flags.reason))
         die("advance decision metadata requires --decision");
       if (flags.through && !["build", "proven", "archived"].includes(flags.through))

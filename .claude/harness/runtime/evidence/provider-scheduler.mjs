@@ -113,7 +113,9 @@ export function createProviderScheduler({
   resourcesConflict,
   executeAdapter,
   fail,
-  log = console.log,
+  // Resolved per call: `advance` silences console.log around quiet proof,
+  // and a reference captured at construction leaked into its JSON output.
+  log = (...args) => console.log(...args),
   logError = console.error,
   maxParallelProviders,
   recordScheduler,

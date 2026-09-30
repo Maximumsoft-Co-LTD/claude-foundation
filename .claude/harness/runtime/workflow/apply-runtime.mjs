@@ -667,7 +667,10 @@ export function createApplyRuntime({
     fail
   });
 
-  const repositoryDelivery = createRepositoryDeliverySaga({
+  // The multi-repository delivery saga is only needed when a non-root
+  // repository is selected; single-repository Apply never constructs it.
+  let repositoryDeliverySaga = null;
+  const repositoryDelivery = () => repositoryDeliverySaga ||= createRepositoryDeliverySaga({
     root,
     transactions,
     loadRuntime,
@@ -904,7 +907,7 @@ export function createApplyRuntime({
       // user. Their root gitlinks are staged by resumeLand; replaying the
       // workspace-uncommitted delivery saga would misclassify those expected
       // child HEADs as target drift.
-      if (!legacyRepositoryLandTransaction(readiness.state)) repositoryDelivery.apply(id);
+      if (!legacyRepositoryLandTransaction(readiness.state)) repositoryDelivery().apply(id);
     }
     else applySandbox(id, { controlPlane: true });
     const journal = loadRuntime(id);
@@ -1000,7 +1003,7 @@ export function createApplyRuntime({
     state.workspace.cleanup = cleanupAppliedSandbox(id, state);
     if (state.repositories &&
         compositeRepositorySelection(selectedRepositories(id, state)))
-      repositoryDelivery.cleanup(id, state);
+      repositoryDelivery().cleanup(id, state);
     if (state.repositories)
       state.repositoryCleanup = cleanupRepositorySandboxes(id, state);
     cleanupChangeLeases(id);

@@ -314,6 +314,7 @@ export function normalizeTelemetryBatch({
 }) {
   const normalized = [];
   const transitions = [];
+  const batchEvents = new Map();
   const rollingContext = { ...context };
   for (const row of rows) {
     if (format === "codex" && row.type === "session_meta") {
@@ -336,8 +337,18 @@ export function normalizeTelemetryBatch({
       }
     }
     const event = normalizeEvent(id, row, format, rollingContext, now());
-    if (!event || known.has(event.requestId)) continue;
+    if (!event) continue;
+    if (known.has(event.requestId)) {
+      // Claude writes one transcript row per content block of a single
+      // request; keep the request once but retain every tool_use it made.
+      const first = batchEvents.get(event.requestId);
+      if (Array.isArray(first?.toolCalls) && Array.isArray(event.toolCalls))
+        first.toolCalls.push(...event.toolCalls.filter((call) =>
+          !call.id || !first.toolCalls.some((prior) => prior.id === call.id)));
+      continue;
+    }
     known.add(event.requestId);
+    batchEvents.set(event.requestId, event);
     normalized.push(event);
   }
   return { normalized, transitions };
