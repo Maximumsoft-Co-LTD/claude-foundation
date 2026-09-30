@@ -31,8 +31,7 @@ ticking, validation, and proof. You own the draft, product code, and tests.
 | A structured `decision` | `decision-policy.md` |
 | Prove stops at a non-automatic boundary | `.claude/skills/prove/references/workflow.md` |
 
-Bare names are siblings of this file. Otherwise this file is sufficient; do
-not preload the others.
+Bare names are siblings of this file. Otherwise this file suffices.
 
 ## 1. Change
 
@@ -71,9 +70,9 @@ not preload the others.
 
 ## Gate: spec approval
 
-Present the packet links, scope, behavior, and acceptance criteria in the
-user's language. Wait for explicit approval; validation is not approval. Then
-record it with
+If the request already approves the spec, in any wording, that is the
+approval. Otherwise present the packet links, scope, behavior, and acceptance
+criteria and wait; validation is not approval. Record it with
 `claude-foundation advance <id> --approve-spec --decision-ref <user-decision>`.
 
 ## 2. Build and 3. Prove

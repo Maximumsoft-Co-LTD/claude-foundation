@@ -74,6 +74,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `change start` and `change revise` also list each task with its verify and
   say when a rapid packet has no `specs/`; atomic start prints one
   authoritative `next` instead of contradictory per-step hints.
+- A request that already approves the spec, in any wording, is the spec
+  approval; agents record it without stopping to ask again.
 - Any explicit user instruction to land, in any wording, grants Land; rapid
   `/dev` lands with `advance <change> --through archived`. Agents run one
   command per shell call.

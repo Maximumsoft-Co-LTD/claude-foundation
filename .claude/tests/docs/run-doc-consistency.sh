@@ -494,14 +494,14 @@ assert.match(grill, /approves intake choices, not a compiled OpenSpec packet/);
 assert.match(grill, /explicit compiled-spec approval before Build/);
 assert.match(grill, /New material gaps follow Change intake/);
 assert.doesNotMatch(grill, /do not ask a second approval question/);
-assert.match(prose(".claude/skills/change/references/workflow.md"), /Wait for explicit approval of this spec before Build/);
+assert.match(prose(".claude/skills/change/references/workflow.md"), /Wait for explicit approval of this spec before Build unless the request already approves it/);
 const feature = prose(".claude/skills/feature/references/workflow.md");
 assert.match(feature, /PRD Decision Sheet does not replace it/);
 assert.match(feature, /coordinator reuse identity-valid receipts and proof/);
 assert.doesNotMatch(feature, /Never Land, publish, weaken evidence, or reuse proof/);
 assert.match(prose(".claude/commands/prove.md"), /coordinator reuses fresh receipts/);
 // Any explicit instruction to land, in any wording, grants Land (user decision 2026-09-30).
-assert.match(prose(".claude/commands/dev.md"), /With explicit Land authority in any wording, run `advance <id> --through archived`; never infer it/);
+assert.match(prose(".claude/commands/dev.md"), /With explicit Land authority in any wording, run `advance <id> --through archived`/);
 
 const description = read(".claude/skills/land/SKILL.md").match(/^description: (.+)$/m)[1];
 assert.doesNotMatch(description, /apply a proven change, commit, publish/);

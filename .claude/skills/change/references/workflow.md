@@ -160,7 +160,7 @@ The compiled `openspec/changes/<id>/` documents—not the temporary draft or
 `.foundation` state—are the source of truth. Never create product code during
 Change. After successful validation, present the compiled packet links, scope,
 behavior, and acceptance criteria to the user. Wait for explicit approval of
-this spec before Build, including `/dev`; validation is not user approval.
+this spec before Build unless the request already approves it; validation is not approval.
 Record the answer with `claude-foundation advance <id> --approve-spec
 --decision-ref <user-decision>`, then continue with
 `claude-foundation advance <id> --through build`. Revisions and amendments

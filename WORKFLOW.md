@@ -162,6 +162,8 @@ changed selected source invalidates readiness and returns agent-owned coverage r
 
 For newly started changes, present the compiled spec, scope, and acceptance
 criteria and wait for explicit user approval before Build, including `/dev`.
+When the request itself already approves the spec, in any wording (for example
+"I approve the spec" in a `/dev` request), that is the approval; silence never is.
 Record it with `advance <change> --approve-spec --decision-ref <ref>` (alias of
 `change resolve <change> --approve-spec`). The normal agent path uses only
 `change start <draft>`, which inspects and starts a complete draft in one call,
