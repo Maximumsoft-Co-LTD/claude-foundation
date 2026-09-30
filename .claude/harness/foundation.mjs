@@ -1212,6 +1212,16 @@ const {
   serializedJson,
   fail: die
 });
+
+// Issues and notices must judge the same edits: Land's own applied bytes are
+// not edits made outside the sandbox. Both views read this one computation.
+function targetEditsFor(state) {
+  return targetEditFindings({
+    root: ROOT, state, dirtyNow: preexistingDirty(ROOT),
+    landOutput: landAppliedOutput(readTransactionJournals(TRANSACTIONS, state.id, readJson))
+  });
+}
+
 const {
   activeWorkRecovery,
   changedSurfaceIssues,
@@ -1229,11 +1239,7 @@ const {
   upgradeEvidence: upgradeTargetEvidence
 } = createProofReadinessRuntime({
   root: ROOT,
-  targetEditIssues: (state) =>
-    targetEditFindings({
-      root: ROOT, state, dirtyNow: preexistingDirty(ROOT),
-      landOutput: landAppliedOutput(readTransactionJournals(TRANSACTIONS, state.id, readJson))
-    }).issues,
+  targetEditIssues: (state) => targetEditsFor(state).issues,
   markBlocked,
   evidence,
   loadRuntime,
@@ -1755,8 +1761,7 @@ const {
   clearSnapshotCache,
   relevantHash,
   workspaceIsolationIssues,
-  targetEditNotices: (state) =>
-    targetEditFindings({ root: ROOT, state, dirtyNow: preexistingDirty(ROOT) }).notices,
+  targetEditNotices: (state) => targetEditsFor(state).notices,
   reviewPolicy,
   requiredProviders,
   receiptValidity,

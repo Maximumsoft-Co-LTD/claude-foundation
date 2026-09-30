@@ -67,6 +67,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Proof execution progress lines no longer leak into `advance` JSON output.
+- The Land notice no longer reports files that Land itself just applied as
+  "changed outside the sandbox"; issues and notices share one computation.
+- `change start` and `change revise` list the compiled packet files, so agents
+  open real artifact paths instead of guessing them.
+- Rapid `/dev` no longer sends agents through the `/change`, `/build`, and
+  `/prove` command files; `rapid-path.md` replaces them.
 - The Land guard recognizes a typed `/land` from its own transcript row, so
   the first `land advance` is no longer refused while Claude Code has not yet
   written the late `last-prompt` row.

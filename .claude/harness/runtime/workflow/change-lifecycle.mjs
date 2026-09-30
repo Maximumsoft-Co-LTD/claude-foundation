@@ -906,6 +906,22 @@ export function createChangeLifecycle({
 
   // Design blueprints warn rather than block: the agent completes a thin
   // design before presenting it for approval.
+  // The compiled packet's files, so the agent opens real paths instead of
+  // guessing where the compiler put each artifact.
+  function packetFileLines(id) {
+    const base = changePath(id);
+    const files = [];
+    const walk = (dir) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (entry.isFile()) files.push(relative(root, path).split("\\").join("/"));
+      }
+    };
+    try { walk(base); } catch { return ""; }
+    return files.sort().map((file) => `  file: ${file}\n`).join("");
+  }
+
   function designWarningLines(draft, schema) {
     if (schema !== "foundation-standard" || ![3, 4].includes(draft._semanticVersion)) return "";
     return [...designBlueprintWarnings(draft), ...readerGuideWarnings(draft)]
@@ -1554,7 +1570,8 @@ export function createChangeLifecycle({
         if (completedIntakeEffectiveness)
           pending.semanticIntakeEffectiveness = completedIntakeEffectiveness;
         saveRuntime(pending);
-        console.log(`AGREED ${id}\n  inspect: openspec/changes/${id}/\n  awaiting user approval before Build\n` +
+        console.log(`AGREED ${id}\n  inspect: openspec/changes/${id}/\n` + packetFileLines(id) +
+          "  awaiting user approval before Build\n" +
           designWarningLines(draft, loadRuntime(id).schema) +
           `  next: claude-foundation advance ${id} --approve-spec --decision-ref <user-decision>\n` +
           `  then: claude-foundation advance ${id} --through build`);
@@ -1796,7 +1813,8 @@ export function createChangeLifecycle({
       (pending
         ? `  requirement delta awaiting approval:\n${formatApprovalDelta(pending)}\n`
         : `  requirement delta (covered by the current approval):\n${formatApprovalDelta(delta)}\n`) +
-      `  inspect: openspec/changes/${id}/\n` + designWarningLines(draft, state.schema) +
+      `  inspect: openspec/changes/${id}/\n` + packetFileLines(id) +
+      designWarningLines(draft, state.schema) +
       `  next: ${pending || !state.specApproval?.identity
         ? `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision>`
         : `claude-foundation advance ${id} --through build`}`);

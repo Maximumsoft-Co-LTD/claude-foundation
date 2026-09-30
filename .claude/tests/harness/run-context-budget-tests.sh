@@ -316,11 +316,13 @@ assert_file_contains "dev command forbids redundant framework exploration" \
   "$ROOT/.claude/commands/dev.md" \
   "Do not reread framework files"
 assert_file_contains "dev command uses atomic rapid start" \
+  "$ROOT/.claude/commands/references/rapid-path.md" \
+  'claude-foundation change start'
+# Rapid /dev reaches Change intake through rapid-path.md; reopening the
+# /change, /build, and /prove command files only duplicated instructions.
+assert_file_contains "dev routes fresh intent through the rapid path, not /change" \
   "$ROOT/.claude/commands/dev.md" \
-  'compiles one semantic draft'
-assert_file_contains "dev routes every fresh intent through complete Change intake" \
-  "$ROOT/.claude/commands/dev.md" \
-  'For fresh work use `/change`'
+  '`/change`, `/build`, and `/prove`, so do not open those files'
 assert_file_contains "dev uses the unified lifecycle coordinator" \
   "$ROOT/.claude/commands/dev.md" \
   'advance <id> --through proven'

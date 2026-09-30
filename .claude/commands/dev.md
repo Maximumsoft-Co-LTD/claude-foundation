@@ -5,9 +5,9 @@ argument-hint: <intent> | --resume <change> | --plan-only <intent>
 
 `--resume` reads state; `--plan-only` runs `/change` only.
 
-Read `.claude/commands/references/rapid-path.md` and follow it; load other
-references only on its triggers.
-For fresh work use `/change`; it compiles one semantic draft.
+Read `.claude/commands/references/rapid-path.md` and follow it; it replaces
+`/change`, `/build`, and `/prove`, so do not open those files or other
+references unless one of its triggers applies.
 Await spec approval. Then run
 `claude-foundation advance <id> --through proven`; execute each protocol-v6
 action and `resume`. These are agent-only control fields. The coordinator skips
