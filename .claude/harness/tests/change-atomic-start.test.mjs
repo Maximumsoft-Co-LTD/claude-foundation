@@ -408,3 +408,87 @@ test("a draft that lands on the standard lane must declare evidence capabilities
     /foundation-standard, which requires explicit evidence capabilities; add evidence\['derived-result'\]\.capabilities/);
   assert.equal(existsSync(join(value.changes, "derived-evidence")), false);
 });
+
+test("one start reports every detectable draft issue in a single EDIT", (t) => {
+  const value = fixture(t);
+  const { evidence: _omitted, ...withoutEvidence } = minimalRapidV4();
+  writeJson(value.draftPath, {
+    ...withoutEvidence,
+    decisions: [{ key: "shape", choice: "Keep one module" }],
+    domainLanguage: [{ term: "result", meaning: "The bounded output" }],
+    discovery: { decisions: [{ key: "scope", status: "open", question: "Which?" }] }
+  });
+  const { result } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.equal(result.action, "EDIT");
+  const issues = result.intake.issues.join("\n");
+  assert.match(issues, /alternatives must name at least two choices/);
+  assert.match(issues, /domainLanguage\[0\]\.avoid is required/);
+  assert.match(issues, /requires explicit evidence capabilities; add evidence\['bounded-result'\]/);
+  assert.equal(existsSync(value.changes), false);
+});
+
+test("a draft with colliding scenario titles and a settled decision starts in one pass", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4({
+    requirements: [{
+      key: "bounded-result", capability: "single-shot-change", operation: "added",
+      scenarios: [
+        { name: "New consumer", when: "A consumer arrives (v2)", then: "v2 is returned" },
+        { name: "Old consumer", when: "A consumer arrives: v2", then: "v1 is returned" }
+      ],
+      outcome: "The bounded result is returned"
+    }],
+    discovery: { decisions: [{ key: "format", question: "Which format?", choice: "json" }] }
+  }));
+  const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.match(output, /^AGREED single-shot-change/m);
+  const contract = JSON.parse(readFileSync(
+    join(value.changes, "single-shot-change", "evidence.yaml"), "utf8"));
+  assert.deepEqual(contract.claims.map((claim) => claim.id),
+    ["bounded-result-a-consumer-arrives-v2", "bounded-result-a-consumer-arrives-v2-2"]);
+});
+
+test("a minimal draft without version compiles and starts in one call", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, {
+    intent: "Reject empty note titles",
+    requirements: [{
+      description: "The system SHALL reject a note whose title is empty",
+      scenarios: [{ when: "a user submits an empty title", then: "the note is not created" }]
+    }],
+    tasks: [{ outcome: "Validate note titles", verify: "npm test", paths: ["src/note.js"] }]
+  });
+  const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.match(output, /^AGREED reject-empty-note-titles/m);
+  const runtime = JSON.parse(readFileSync(
+    join(value.runtime, "reject-empty-note-titles.json"), "utf8"));
+  assert.equal(runtime.schema, "foundation-rapid");
+  const contract = JSON.parse(readFileSync(
+    join(value.changes, "reject-empty-note-titles", "evidence.yaml"), "utf8"));
+  assert.deepEqual(contract.claims.map((claim) => [claim.id, claim.capabilities]),
+    [["reject-a-note-whose-title-is-empty", ["test"]]]);
+  assert.equal(contract.providers.test.adapter, "test-discovery");
+  assert.match(readFileSync(join(value.changes, "reject-empty-note-titles", "tasks.md"), "utf8"),
+    /\[key:validate-note-titles\]/);
+});
+
+test("a minimal draft with ambiguous covers returns one EDIT naming covers", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, {
+    intent: "Tidy note titles",
+    requirements: [{
+      description: "The system SHALL trim note titles",
+      scenarios: [{ when: "a title has spaces", then: "the stored title is trimmed" }]
+    }],
+    tasks: [
+      { outcome: "Trim the title", verify: "npm test", paths: ["src/note.js"] },
+      { outcome: "Trim the title again", verify: "npm test", paths: ["src/note.js"] }
+    ]
+  });
+  const { result } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.equal(result.action, "EDIT");
+  const issues = result.intake.issues.join("\n");
+  assert.match(issues, /tasks\[0\]\.covers must name at least one requirement/);
+  assert.match(issues, /tasks\[1\]\.covers must name at least one requirement/);
+  assert.equal(existsSync(value.changes), false);
+});

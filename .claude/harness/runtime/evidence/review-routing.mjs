@@ -7,10 +7,28 @@ const HIGH_SEMANTICS =
 const HIGH_CLASSES =
   /money|authori[sz]|secret|destructive|concurren|replay|idempoten|queue|wire|legacy|activation|cutover/;
 
+// Intent keywords alone make review required at the low tier (user
+// decision). They escalate the tier or require reviewer diversity only when
+// the change also declares risk: security triggers, non-low impact, coupling,
+// a non-low claim, or a grounded risk tier/class.
+export function declaredReviewRisk({ state = {}, claims = [], grounding = null }) {
+  return Boolean((state.securityTriggers || []).length ||
+    (state.impact && state.impact !== "low") || state.coupling === "coupled" ||
+    claims.some((claim) => claim.impact && claim.impact !== "low") ||
+    ["medium", "high"].includes(grounding?.risk?.tier) ||
+    (grounding?.risk?.classes || []).length);
+}
+
+export function reviewSemanticText({ state = {}, claims = [], grounding = null }) {
+  const declared = (state.securityTriggers || []).join(" ");
+  const text = declaredReviewRisk({ state, claims, grounding })
+    ? `${state.intent || ""} ${declared}` : declared;
+  return text.toLowerCase();
+}
+
 export function highReviewRiskTriggers({ state, claims, capabilities, grounding }) {
   const triggers = [];
-  const semantic = `${state.intent || ""} ${(state.securityTriggers || []).join(" ")}`
-    .toLowerCase();
+  const semantic = reviewSemanticText({ state, claims, grounding });
   if (grounding?.risk?.tier === "high") triggers.push("declared-high-risk");
   for (const value of grounding?.risk?.classes || []) {
     if (!HIGH_CLASSES.test(String(value).toLowerCase())) continue;

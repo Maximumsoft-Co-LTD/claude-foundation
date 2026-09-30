@@ -10,7 +10,8 @@ import { nextCommand } from "../core/next-step.mjs";
 import { taskBlocks, taskMetadata } from "../contracts/change-artifacts.mjs";
 import { materialSecurityTriggers } from "./security-policy.mjs";
 import {
-  normalizeSemanticDraft, renderRequirementMarkdown, renderSpecHeading, semanticDraftTemplate
+  expandMinimalSemanticDraft, minimalSemanticDraftTemplate, normalizeSemanticDraft,
+  renderRequirementMarkdown, renderSpecHeading, semanticDraftTemplate
 } from "./semantic-draft.mjs";
 import {
   semanticIntakeAction, semanticIntakeIssues
@@ -651,7 +652,18 @@ export function createChangeLifecycle({
     const source = resolve(root, draftPath);
     if (!pathInside(root, source) || !existsSync(source))
       fail("new --draft requires a JSON file inside the project");
-    return readJson(source);
+    // `minimalDraft` is the template's example key, never draft content. A
+    // draft without `version` in the minimal v4 shape compiles as v4.
+    const raw = readJson(source);
+    if (!raw || typeof raw !== "object" || Array.isArray(raw) || !("minimalDraft" in raw))
+      return expandMinimalSemanticDraft(raw, { loadCanonicalSpec: canonicalSpecText });
+    const { minimalDraft: _example, ...draft } = raw;
+    return expandMinimalSemanticDraft(draft, { loadCanonicalSpec: canonicalSpecText });
+  }
+
+  function canonicalSpecText(capability) {
+    const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
+    return existsSync(path) ? readFileSync(path, "utf8") : null;
   }
 
   function semanticSourcePaths(source) {
@@ -751,15 +763,18 @@ export function createChangeLifecycle({
         fail(`draft requires a non-empty '${field}' array`);
   }
 
+  function domainLanguageIssues(draft) {
+    if (draft.domainLanguage === undefined) return [];
+    if (!Array.isArray(draft.domainLanguage)) return ["draft domainLanguage must be an array"];
+    return draft.domainLanguage.flatMap((term, index) => ["term", "meaning", "avoid"]
+      .filter((field) => !String(term?.[field] || "").trim())
+      .map((field) => `draft domainLanguage[${index}].${field} is required`));
+  }
+
   function validateDraftDomainLanguage(draft) {
-    if (draft.domainLanguage !== undefined) {
-      if (!Array.isArray(draft.domainLanguage))
-        fail("draft domainLanguage must be an array");
-      for (const [index, term] of draft.domainLanguage.entries())
-        for (const field of ["term", "meaning", "avoid"])
-          if (!String(term?.[field] || "").trim())
-            fail(`draft domainLanguage[${index}].${field} is required`);
-    }
+    const issues = domainLanguageIssues(draft);
+    if (issues.length === 1) fail(issues[0]);
+    if (issues.length) fail(`draft domain language validation failed:\n  - ${issues.join("\n  - ")}`);
   }
 
   function validateDraftPolicy(draft) {
@@ -1061,8 +1076,9 @@ export function createChangeLifecycle({
     return id;
   }
 
+  // The minimal form leads; the full v4 template follows for richer drafts.
   function rapidStartTemplate() {
-    return semanticDraftTemplate();
+    return { minimalDraft: minimalSemanticDraftTemplate(), ...semanticDraftTemplate() };
   }
 
   function inspectSemanticIntakeSource(source, {
@@ -1093,6 +1109,10 @@ export function createChangeLifecycle({
       : { issues: [], draft: source };
     const additionalIssues = [
       ...normalized.issues.filter((issue) => !intakeIssues.includes(issue)),
+      // Start rejects these after intake; report them in this same EDIT batch.
+      ...(validateCompiledDraft
+        ? startDraftChecks(normalized.draft, { structural: !normalized.issues.length }).issues
+        : []),
       ...semanticReferenceIssues(normalized.draft),
       ...(source.version === 4 && source.investigation !== undefined
         ? validateInvestigationBinding({ projectRoot: root, binding: source.investigation, git })
@@ -1293,31 +1313,47 @@ export function createChangeLifecycle({
   }
 
   function applyResolveSecurity(state, flags) {
-    const semanticText = `${state.intent} ${flags.security || ""}`.toLowerCase();
     // Word boundaries, not substrings. `includes("access")` fired on
     // "accessibility" and `includes("migration")` on "migration guide", so
     // routine work acquired external review it did not need — while the
     // trigger the docs promise ("semantic, not syntax") went unmet either way.
-    const inferred = securityTerms.filter((term) => {
-      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "[\\s-]+");
-      return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`).test(semanticText);
-    });
+    const termsIn = (value) => {
+      const semanticText = String(value || "").toLowerCase();
+      return securityTerms.filter((term) => {
+        const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "[\\s-]+");
+        return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`).test(semanticText);
+      });
+    };
     const explicitSecurity = String(flags.security || "").split(",")
       .map((value) => value.trim()).filter((value) => value && value.toLowerCase() !== "none");
+    // Declared triggers (the draft, `--security`, or a prior resolve) keep
+    // their full weight. A term found only in the intent text is a keyword
+    // signal: it makes review required and nothing else, so a rapid change
+    // that mentions "billing" stays on the rapid lane (user decision).
+    const keywordOnly = new Set((state.keywordSecurityTriggers || [])
+      .map((value) => String(value).trim().toLowerCase()));
     state.securityTriggers = materialSecurityTriggers([
       ...(state.securityTriggers || []).filter((value) =>
-        String(value).trim().toLowerCase() !== "none"),
-      ...inferred, ...explicitSecurity
+        !["", "none"].includes(String(value).trim().toLowerCase()) &&
+        !keywordOnly.has(String(value).trim().toLowerCase())),
+      ...termsIn(flags.security), ...explicitSecurity
     ], state.intent, securityTerms);
+    const declared = new Set(state.securityTriggers.map((value) => value.toLowerCase()));
+    const keywordTriggers = materialSecurityTriggers(termsIn(state.intent), state.intent, securityTerms)
+      .filter((value) => !declared.has(value.toLowerCase()));
+    if (keywordTriggers.length) state.keywordSecurityTriggers = keywordTriggers;
+    else delete state.keywordSecurityTriggers;
     // Coupling alone no longer summons a reviewer. `coupled` means the change
     // spans components, which earns the standard schema's design.md and specs/
     // below — but at low impact there is nothing for an independent reader to
     // protect, and the cross-repository cases that do matter are caught
     // separately: reviewPolicy raises `multi-repository-claim` for any claim
     // above low impact that spans repositories, without consulting this flag.
-    state.reviewRequired = state.impact === "high" ||
+    const declaredReview = state.impact === "high" ||
       (state.coupling === "coupled" && state.impact !== "low") ||
       state.securityTriggers.length > 0 || Boolean(flags.review);
+    state.reviewRequired = declaredReview || keywordTriggers.length > 0;
+    return { declaredReview };
   }
 
   function applyResolveAcceptance(state, flags) {
@@ -1347,9 +1383,10 @@ export function createChangeLifecycle({
       };
   }
 
-  function upgradeResolvedSchema(id, state) {
+  // A review required only by intent keywords does not upgrade the lane.
+  function upgradeResolvedSchema(id, state, { declaredReview = state.reviewRequired } = {}) {
     if (state.schema === "foundation-rapid" &&
-        (state.impact !== "low" || state.coupling !== "isolated" || state.reviewRequired ||
+        (state.impact !== "low" || state.coupling !== "isolated" || declaredReview ||
          state.acceptance?.required)) {
       state.schema = "foundation-standard";
       state.upgradedFrom = "foundation-rapid";
@@ -1382,7 +1419,9 @@ export function createChangeLifecycle({
     // Named only when a decision waived it, so every earlier output is intact.
     const ciLine = state.ciWaiver
       ? `\n  signed CI: waived (${state.ciWaiver.decisionRef})` : "";
-    console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${state.reviewRequired ? "required" : "not required"}\n  acceptance: ${state.acceptance?.decision || (state.acceptance?.required ? "required" : "legacy-not-required")}\n  security: ${state.securityTriggers.join(", ") || "none"}${surfaceLine}${ciLine}\n  schema: ${state.schema}${upgraded ? " (upgraded from foundation-rapid; design.md and specs/ added)" : ""}${atomicStepOutput ? "" : `\n  next: ${nextCommand(state.status, id)}`}`);
+    console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${state.reviewRequired ? "required" : "not required"}\n  acceptance: ${state.acceptance?.decision || (state.acceptance?.required ? "required" : "legacy-not-required")}\n  security: ${[...state.securityTriggers,
+      ...(state.keywordSecurityTriggers || []).map((value) => `${value} (intent keyword: review only)`)
+    ].join(", ") || "none"}${surfaceLine}${ciLine}\n  schema: ${state.schema}${upgraded ? " (upgraded from foundation-rapid; design.md and specs/ added)" : ""}${atomicStepOutput ? "" : `\n  next: ${nextCommand(state.status, id)}`}`);
   }
 
   function resolveChange(id, flags) {
@@ -1449,10 +1488,10 @@ export function createChangeLifecycle({
     const state = loadRuntime(id);
     applyGroundingReopen(state, flags);
     applyResolveAttributes(state, flags);
-    applyResolveSecurity(state, flags);
+    const { declaredReview } = applyResolveSecurity(state, flags);
     applyResolveAcceptance(state, flags);
     applyResolveCiPolicy(state, flags);
-    const upgraded = upgradeResolvedSchema(id, state);
+    const upgraded = upgradeResolvedSchema(id, state, { declaredReview });
     const proposalPath = join(changePath(id), "proposal.md");
     if (existsSync(proposalPath)) {
       const proposal = readFileSync(proposalPath, "utf8");
@@ -1520,28 +1559,38 @@ export function createChangeLifecycle({
     return intakeState.effectiveness || null;
   }
 
-  function preflightDraft(draftPath, source) {
-    const draft = measureStage("change.load-draft", () =>
-      loadDraft(draftPath, { deferPolicy: true, preparedSource: source }));
-    const preflight = measureStage("change.preflight", () => atomicStartPreflight(draft, {
+  // Every start-time draft check that does not need created state. Inspect
+  // reports these with the compiler's issues, so one EDIT carries them all;
+  // `structural: false` skips preflight rows that restate compiler issues.
+  function startDraftChecks(draft, { structural = true } = {}) {
+    const preflight = atomicStartPreflight(draft, {
       groundingRequired: workflowPolicy().workflow.grounding === "required" ||
         Boolean(draft.grounding)
-    }));
-    if (preflight.issues.length)
-      fail(`start draft preflight failed:\n  - ${preflight.issues.join("\n  - ")}`);
-    const { classification } = preflight;
+    });
     // A low-impact draft that already carries design content (file map, UI
     // states, decisions, answered intake choices...) would lose it in the rapid
     // packet, which has no design.md or specs/. Keep it on the standard schema;
-    // the preflight gates above still apply the rapid lane's requirements.
+    // the preflight gates still apply the rapid lane's requirements.
     const keepsDesign = semanticDraftKeepsDesign(draft, preflight.rapid);
     const rapid = preflight.rapid && !keepsDesign;
+    const issues = [...(structural ? preflight.issues : []), ...domainLanguageIssues(draft)];
     // Only the rapid lane may leave evidence capabilities to the compiler.
     if (!rapid && draft._defaultedEvidence?.length)
-      fail("start draft preflight failed:\n  - the draft carries design content, so it uses " +
+      issues.push("the draft carries design content, so it uses " +
         "foundation-standard, which requires explicit evidence capabilities; add " +
         draft._defaultedEvidence.map((key) => `evidence['${key}'].capabilities`).join(", ") +
         " (for example [\"test\"]) or remove the design content to stay rapid");
+    return { issues, preflight, keepsDesign, rapid };
+  }
+
+  function preflightDraft(draftPath, source) {
+    const draft = measureStage("change.load-draft", () =>
+      loadDraft(draftPath, { deferPolicy: true, preparedSource: source }));
+    const { issues, preflight, keepsDesign, rapid } =
+      measureStage("change.preflight", () => startDraftChecks(draft));
+    if (issues.length)
+      fail(`start draft preflight failed:\n  - ${issues.join("\n  - ")}`);
+    const { classification } = preflight;
     if (keepsDesign)
       console.log("NOTE: the draft carries design content, so it uses foundation-standard " +
         "to keep design.md and specs/");
@@ -1577,10 +1626,10 @@ export function createChangeLifecycle({
         let resolution;
         try { resolution = measureStage("change.resolve", () => resolveChange(id, resolutionFlags)); }
         finally { atomicStepOutput = false; }
-        // A rapid draft can still upgrade when semantic security terms in the
-        // intent trigger standard policy during resolve. Only that transition
-        // needs a second projection; the common path was previously rewritten
-        // unconditionally after createChange had already materialized it.
+        // Resolve upgrades a rapid draft only on a declared signal; intent
+        // keywords make review required without changing the lane. Only an
+        // upgrade needs a second projection; the common path was previously
+        // rewritten unconditionally after createChange had already materialized it.
         if (resolution.upgraded) materializeDraft(id, draft);
         // Atomic start is a public Change gate. Use the same explicit validation
         // as `change validate`, including OpenSpec strict lint when available.

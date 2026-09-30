@@ -9,13 +9,21 @@ import { join } from "node:path";
 import {
   REVIEW_SCHEMA, claudeResultEnvelope, configuredReviewPrompt,
   createConfiguredReviewerRuntime, reviewFindingIssues, validReview,
-  validReviewFinding, normalizeReviewFindingPaths, reviewerUsageRow
+  validReviewFinding, normalizeReviewFindingPaths, reviewerUsageRow,
+  spawnCapturedAsync
 } from
   "../runtime/evidence/configured-reviewer.mjs";
 import { createRuntimeEnvironment } from
   "../runtime/core/runtime-environment.mjs";
 import { checkpointReviewResult, recoverReviewResult } from
   "../runtime/evidence/review-result-recovery.mjs";
+import { spawnSync } from "node:child_process";
+import { lstatSync, readdirSync } from "node:fs";
+import {
+  reviewAgreementValue, reviewDepthForTier, reviewDiffValue, reviewModelTierForDepth
+} from "../runtime/evidence/review-diff.mjs";
+import { reviewPromptPayload, reviewerConfigValue } from
+  "../runtime/evidence/configured-reviewer.mjs";
 
 const root = mkdtempSync(join(tmpdir(), "foundation-configured-reviewer-"));
 const workspace = join(root, "workspace");
@@ -380,6 +388,20 @@ try {
   assert.equal(codexUsage.cacheReadTokens, 10);
   assert.equal(codexUsage.cost, null);
   assert.equal(codexUsage.requestId, "configured-reviewer:codex-review-session:turn:1");
+  // N5: the non-blocking route runs the same reviewer child to the same verdict.
+  const codexAsync = await codexRuntime.runReviewAsync({
+    changeId: "codex-async", workspace, packet: scopedPacket,
+    forbiddenSessionIds: ["implementation-session"]
+  });
+  assert.equal(codexAsync.status, "pass");
+  assert.equal(codexAsync.reviewer.sessionId, "codex-review-session");
+  const echoed = await spawnCapturedAsync(process.execPath,
+    ["-e", "process.stdin.pipe(process.stdout)"], { input: "packet", encoding: "utf8" });
+  assert.deepEqual([echoed.status, echoed.stdout, echoed.error], [0, "packet", null]);
+  const timedOut = await spawnCapturedAsync(process.execPath,
+    ["-e", "setTimeout(() => {}, 10000)"], { timeout: 100 });
+  assert.equal(timedOut.status, null);
+  assert.equal(timedOut.error?.code, "ETIMEDOUT");
   const priorInvocations = readFileSync(join(workspace, "claude-invocations.txt"), "utf8");
   const invalidPacket = runtime.runReview({
     changeId: "missing-packet-file", workspace, packet: missingPacket
@@ -551,6 +573,134 @@ try {
   assert.throws(() => recover({}, recoverySubject, "changed"), /binding changed/);
   writeFileSync(recoveryPath, JSON.stringify({ ...recoveryReport, summary: "tampered" }));
   assert.throws(() => recover(), /integrity or reviewer provenance/);
+
+  // Diff-scoped review: low risk before any delivered AI round is diff-only on
+  // the fast model tier; promoted, medium, high, and legacy routes keep depth
+  // and model.
+  assert.equal(reviewDepthForTier("low", 0), "diff-only");
+  assert.equal(reviewDepthForTier("low", 1), "diff-first");
+  assert.equal(reviewDepthForTier("medium", 0), "diff-first");
+  assert.equal(reviewDepthForTier("high", 0), "diff-first");
+  assert.equal(reviewDepthForTier(undefined, 0), "diff-first");
+  assert.equal(reviewModelTierForDepth("diff-only"), "fast");
+  assert.equal(reviewModelTierForDepth("diff-first"), "configured");
+  const tierPolicy = (review = {}, extra = {}) => ({
+    foundationPolicy: () => ({ models: { fast: { family: "haiku" } }, review: {
+      defaultReviewer: "claude-opus", reviewers: {
+        "claude-opus": { ...reviewer, ...extra }, codex: codexReviewer
+      }, ...review
+    } }),
+    fail: (message) => { throw new Error(message); }
+  });
+  const fastClaude = reviewerConfigValue(tierPolicy(), null, "fast");
+  assert.equal(fastClaude.modelId, "haiku");
+  assert.equal(fastClaude.modelTier, "fast");
+  assert.equal(fastClaude.providerFamily, "anthropic");
+  assert.equal(fastClaude.modelFamily, "claude",
+    "the fast tier must not change the family seen by diversity checks");
+  assert.deepEqual(reviewerConfigValue(tierPolicy(), null, "configured"),
+    { identity: "claude-opus", ...reviewer }, "high/medium keep the configured model");
+  assert.deepEqual(reviewerConfigValue(tierPolicy(), null, null),
+    { identity: "claude-opus", ...reviewer });
+  assert.equal(reviewerConfigValue(tierPolicy({}, {
+    fastModelId: "claude-sonnet-5", fastModelFamily: "claude"
+  }), null, "fast").modelId, "claude-sonnet-5", "explicit fastModelId wins");
+  assert.equal(reviewerConfigValue(tierPolicy({ lowRiskModel: "configured" }),
+    null, "fast").modelId, "opus", "lowRiskModel: configured opts out");
+  assert.equal(reviewerConfigValue(tierPolicy(), "codex", "fast").modelId, "gpt-5",
+    "a Codex reviewer without fastModelId keeps its configured model");
+
+  const diffRepo = join(root, "diff-repo");
+  mkdirSync(join(diffRepo, "src"), { recursive: true });
+  const git = (args, cwd) => spawnSync("git", args, { cwd, encoding: "utf8" });
+  writeFileSync(join(diffRepo, "src", "app.mjs"), "export const a = 1;\nexport const b = 2;\n");
+  writeFileSync(join(diffRepo, "src", "same.mjs"), "export const same = 1;\n");
+  git(["init", "-q"], diffRepo);
+  git(["add", "."], diffRepo);
+  git(["-c", "user.email=t@example.com", "-c", "user.name=t", "-c", "commit.gpgsign=false",
+    "commit", "-q", "-m", "base"], diffRepo);
+  const baseHead = git(["rev-parse", "HEAD"], diffRepo).stdout.trim();
+  writeFileSync(join(diffRepo, "src", "app.mjs"), "export const a = 1;\nexport const b = 3;\n");
+  writeFileSync(join(diffRepo, "src", "new.mjs"), "export const added = true;\n");
+  mkdirSync(join(diffRepo, "change", "specs", "todo"), { recursive: true });
+  writeFileSync(join(diffRepo, "change", "specs", "todo", "spec.md"),
+    "## ADDED Requirements\n### Requirement: B is three\n#### Scenario: read b\n- **THEN** b is 3\n");
+  const diffContext = {
+    git, pathExists: existsSync, readFile: readFileSync,
+    readDirectory: readdirSync, isDirectory: (path) => lstatSync(path).isDirectory()
+  };
+  const diffRows = [
+    { repositoryId: "root", path: "src/app.mjs", kind: "code", identity: "x" },
+    { repositoryId: "root", path: "src/new.mjs", kind: "code", identity: "y" },
+    { repositoryId: "root", path: "src/same.mjs", kind: "code", identity: "z" },
+    { repositoryId: "contract", path: "proposal.md", kind: "contract-artifact", identity: "p" }
+  ];
+  const diffInspection = [{ repositoryId: "root", workspacePath: diffRepo, baseHead, paths: [] }];
+  const reviewDiff = reviewDiffValue(diffContext, diffRows, diffInspection);
+  assert.deepEqual(reviewDiff.files.map((file) => [file.path, file.status]), [
+    ["root/src/app.mjs", "diff"], ["root/src/new.mjs", "diff"], ["root/src/same.mjs", "unchanged"]
+  ], "only code rows carry diffs; the agreement is summarized separately");
+  assert.match(reviewDiff.files[0].diff, /-export const b = 2;\n\+export const b = 3;/);
+  assert.match(reviewDiff.files[1].diff, /\+export const added = true;/);
+  assert.equal(reviewDiffValue(diffContext, diffRows.slice(0, 1),
+    [{ ...diffInspection[0], baseHead: null }]).files[0].status, "unavailable");
+  const clipped = reviewDiffValue(diffContext, diffRows.slice(0, 2), diffInspection,
+    { fileBytes: 40, totalBytes: 40, agreementBytes: 10 });
+  assert.equal(clipped.files[0].status, "truncated");
+  assert.equal(clipped.files[1].status, "omitted");
+  const agreement = reviewAgreementValue(diffContext, {
+    contractWorkspacePath: join(diffRepo, "change"), intent: "make b three",
+    claims: [{ id: "C1", scenario: "read b" }], acceptance: { required: false }
+  });
+  assert.deepEqual(agreement.requirements.map((row) => [row.path, row.status]),
+    [["contract/specs/todo/spec.md", "included"]]);
+  assert.match(agreement.requirements[0].text, /Requirement: B is three/);
+  assert.equal(agreement.claims[0].id, "C1");
+
+  const lowPacket = {
+    ...scopedPacket, reviewDepth: "diff-only", reviewDiff, agreement,
+    decisions: { proposal: { relativePath: "proposal.md" } },
+    contractArtifacts: { "proposal.md": {} }, references: { tasks: {} },
+    grounding: { readSet: ["src/everything.mjs"] }, priorReview: null,
+    externalOperations: []
+  };
+  const lowPayload = reviewPromptPayload(lowPacket);
+  assert.deepEqual(Object.keys(lowPayload).sort(), [
+    "agreement", "changedSurface", "reviewDepth", "reviewDiff", "reviewScope"
+  ], "a low-tier packet shows only scope binding, diffs, and the agreement summary");
+  assert.equal(lowPayload.changedSurface.manifest, undefined);
+  assert.ok(lowPacket.changedSurface.manifest, "the bound packet itself is not mutated");
+  const lowPrompt = configuredReviewPrompt(lowPacket);
+  assert.match(lowPrompt, /DIFF-ONLY review/);
+  assert.match(lowPrompt, /Do not open whole files, search the repository/);
+  assert.doesNotMatch(lowPrompt, /src\/everything\.mjs/);
+  const highPacket = { ...lowPacket, reviewDepth: "diff-first" };
+  assert.equal(reviewPromptPayload(highPacket), highPacket, "high tier payload is unchanged");
+  const highPrompt = configuredReviewPrompt(highPacket);
+  assert.doesNotMatch(highPrompt, /DIFF-ONLY/);
+  assert.match(highPrompt, /Read adjacent code only/);
+  assert.match(highPrompt, /Read the full referenced requirements/);
+
+  const fastRuntime = createConfiguredReviewerRuntime({
+    root, foundationPolicy: tierPolicy().foundationPolicy,
+    commandExists: (command) => existsSync(command),
+    now: () => "2026-08-14T00:00:00.000Z",
+    uuid: () => "22222222-2222-4222-8222-222222222222",
+    fail: (message) => { throw new Error(message); }
+  });
+  delete process.env.FAKE_CLAUDE_SESSION;
+  const fastResult = fastRuntime.runReview({
+    changeId: "fast-tier", workspace, packet: { ...lowPacket, changedSurface:
+      scopedPacket.changedSurface }, modelTier: "fast"
+  });
+  const fastCapture = JSON.parse(readFileSync(join(workspace, "claude-capture.json"), "utf8"));
+  assert.equal(fastCapture.args[fastCapture.args.indexOf("--model") + 1], "haiku");
+  assert.equal(fastResult.reviewer.modelId, "haiku");
+  assert.equal(fastResult.command.modelTier, "fast");
+  fastRuntime.runReview({ changeId: "high-tier", workspace, packet: highPacket,
+    modelTier: "configured" });
+  const highCapture = JSON.parse(readFileSync(join(workspace, "claude-capture.json"), "utf8"));
+  assert.equal(highCapture.args[highCapture.args.indexOf("--model") + 1], "opus");
 
   process.stdout.write("configured reviewer tests: PASS\n");
 } finally {

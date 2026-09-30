@@ -30,7 +30,7 @@ installed_version() {
 }
 
 find_project_root() {
-  local cursor="$PROJECT_START"
+  local cursor="$PROJECT_START" skipped="" owner=""
   [ -d "$cursor" ] || cursor="$(dirname "$cursor")"
   cursor="$(cd "$cursor" 2>/dev/null && pwd)" ||
     fail "cannot access project path: $PROJECT_START"
@@ -40,16 +40,25 @@ find_project_root() {
       # A Build sandbox is a full copy of the project, marker files included.
       # Resolving to the copy would split runtime state between the sandbox's
       # .foundation/ and the project's, so resolution walks past a sandbox
-      # unless CLAUDE_FOUNDATION_PROJECT deliberately pins one.
+      # unless CLAUDE_FOUNDATION_PROJECT deliberately pins one. Walking past
+      # the copy to the project that owns it is the ordinary Build case and
+      # stays silent; only a different resolved root is worth a warning.
       case "${CLAUDE_FOUNDATION_PROJECT:+pinned}:$cursor" in
         pinned:*)
           printf '%s\n' "$cursor"
           return
           ;;
         *:*/.foundation/sandboxes/*|*:*/.foundation/repository-sandboxes/*)
-          warn "ignoring sandbox copy at $cursor; resolving the project root"
+          if [ -z "$skipped" ]; then
+            skipped="$cursor"
+            owner="${cursor%%/.foundation/sandboxes/*}"
+            owner="${owner%%/.foundation/repository-sandboxes/*}"
+          fi
           ;;
         *)
+          if [ -n "$skipped" ] && [ "$cursor" != "$owner" ]; then
+            warn "ignoring sandbox copy at $skipped; resolved project root $cursor is not its owner $owner"
+          fi
           printf '%s\n' "$cursor"
           return
           ;;

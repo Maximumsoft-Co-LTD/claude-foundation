@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createChangeLifecycle } from "../runtime/workflow/change-lifecycle.mjs";
+import { atomicStartPreflight, createChangeLifecycle } from "../runtime/workflow/change-lifecycle.mjs";
+import { SECURITY_TERMS } from "../runtime/workflow/security-policy.mjs";
+import { semanticRapidCandidate } from "../runtime/workflow/semantic-draft.mjs";
+import { repositoryIntelligenceRequired } from "../runtime/workflow/validation/repository-intelligence.mjs";
 
 const root = mkdtempSync(join(tmpdir(), "foundation-change-resolution-"));
 const changeDir = join(root, "openspec", "changes", "change-1");
@@ -99,8 +102,13 @@ try {
   const inferred = run({ security: "none, manual" }, {
     intent: "Rotate an AUTH-TOKEN and an a+b marker", securityTriggers: ["none", "manual"]
   });
-  assert.deepEqual(inferred.securityTriggers, ["manual", "auth token", "a+b"]);
+  assert.deepEqual(inferred.securityTriggers, ["manual"]);
+  assert.deepEqual(inferred.keywordSecurityTriggers, ["auth token", "a+b"]);
   assert.equal(inferred.reviewRequired, true);
+  // A re-resolve keeps keyword triggers keyword-only instead of promoting them.
+  state = inferred; lifecycle.resolveChange("change-1", {});
+  assert.deepEqual(state.securityTriggers, ["manual"]);
+  assert.deepEqual(state.keywordSecurityTriggers, ["auth token", "a+b"]);
   const businessValidation = run({
     security: "untrusted-input,type-confusion-validation-bypass,schema-validation"
   }, { intent: "Reject boolean seat counts in workspace API validation", securityTriggers: [] });
@@ -110,7 +118,8 @@ try {
     security: "untrusted-input,type-confusion-validation-bypass"
   }, { intent: "Reject an auth token bypass in workspace API validation", securityTriggers: [] });
   assert.deepEqual(trustBoundaryValidation.securityTriggers,
-    ["auth token", "untrusted-input", "type-confusion-validation-bypass"]);
+    ["untrusted-input", "type-confusion-validation-bypass"]);
+  assert.deepEqual(trustBoundaryValidation.keywordSecurityTriggers, ["auth token"]);
   assert.equal(trustBoundaryValidation.reviewRequired, true);
   assert.equal(run({}, { impact: "high", securityTriggers: [] }).reviewRequired, true);
   assert.equal(run({}, { impact: "medium", coupling: "coupled", securityTriggers: [] }).reviewRequired, true);
@@ -136,6 +145,71 @@ try {
 
   const rapid = run({}, { schema: "foundation-rapid", securityTriggers: [] });
   assert.equal(rapid.schema, "foundation-rapid");
+  // User decision: an intent keyword alone only makes review required; the
+  // change keeps the rapid lane and gains no design.md or specs/.
+  const keywordOnly = run({ impact: "low", coupling: "isolated", security: "" }, {
+    intent: "Rename the auth token label on the billing page",
+    schema: "foundation-rapid", securityTriggers: []
+  });
+  assert.equal(keywordOnly.schema, "foundation-rapid");
+  assert.equal(keywordOnly.upgradedFrom, undefined);
+  assert.equal(keywordOnly.reviewRequired, true);
+  assert.deepEqual(keywordOnly.securityTriggers, []);
+  assert.deepEqual(keywordOnly.keywordSecurityTriggers, ["auth token"]);
+  assert.match(output, /security: auth token \(intent keyword: review only\)/);
+  assert.match(output, /review: required/);
+  assert.match(output, /schema: foundation-rapid\n/);
+  assert.equal(existsSync(join(changeDir, "design.md")), false);
+  // A declared trigger keeps upgrading the lane exactly as before.
+  const declaredRapid = run({ security: "auth token" }, {
+    intent: "Rename the auth token label", schema: "foundation-rapid", securityTriggers: []
+  });
+  assert.deepEqual(declaredRapid.securityTriggers, ["auth token"]);
+  assert.equal(declaredRapid.keywordSecurityTriggers, undefined);
+  assert.equal(declaredRapid.schema, "foundation-standard");
+  assert.equal(declaredRapid.upgradedFrom, "foundation-rapid");
+  rmSync(join(changeDir, "design.md"), { force: true });
+  rmSync(join(changeDir, "grounding.yaml"), { force: true });
+  rmSync(join(changeDir, "specs"), { recursive: true, force: true });
+
+  // The shipped term list: a /dev intent naming "Billing" with no declared
+  // trigger stays rapid end to end — draft lane, evidence defaults, repository
+  // intelligence, and resolve — and only requires review.
+  const billingDraft = {
+    version: 4, intent: "Show the Billing page total in bold",
+    acceptance: { required: false }, execution: { version: 1, providers: { test: {} } }
+  };
+  assert.equal(atomicStartPreflight(billingDraft).rapid, true);
+  assert.equal(semanticRapidCandidate(billingDraft), true);
+  assert.equal(repositoryIntelligenceRequired(billingDraft), false);
+  const shipped = createChangeLifecycle({
+    root, policy: () => ({ workflow: { grounding }, land: { riskBasedCi } }),
+    securityTerms: SECURITY_TERMS, fail, pathInside: () => true, readJson: () => ({}),
+    writeJson: () => {}, slugify: (value) => String(value), changePath: () => changeDir,
+    loadRuntime: () => state, saveRuntime: (value) => { saved = value; },
+    setOperationChangeId: () => {}, initialBudget: () => ({}), gitHead: () => "head",
+    preexistingDirty: () => [], now: () => "2026-08-26T00:00:00.000Z",
+    bindClaudeSession: () => {}, validate: () => {}, createSandbox: () => {}, showPacket: () => {}
+  });
+  state = { ...baseState(), intent: billingDraft.intent, schema: "foundation-rapid", securityTriggers: [] };
+  output = "";
+  shipped.resolveChange("change-1", { impact: "low", coupling: "isolated", security: "" });
+  assert.equal(state.schema, "foundation-rapid");
+  assert.equal(state.reviewRequired, true);
+  assert.deepEqual(state.securityTriggers, []);
+  assert.deepEqual(state.keywordSecurityTriggers, ["billing"]);
+  assert.match(output, /security: billing \(intent keyword: review only\)/);
+  assert.equal(existsSync(join(changeDir, "design.md")), false);
+  state = { ...baseState(), intent: billingDraft.intent, schema: "foundation-rapid", securityTriggers: [] };
+  shipped.resolveChange("change-1", { impact: "low", coupling: "isolated", security: "billing" });
+  assert.equal(state.schema, "foundation-standard");
+  assert.deepEqual(state.securityTriggers, ["billing"]);
+  assert.equal(atomicStartPreflight({ ...billingDraft, securityTriggers: ["billing"] }).rapid, false);
+  assert.equal(semanticRapidCandidate({ ...billingDraft, securityTriggers: ["billing"] }), false);
+  assert.equal(repositoryIntelligenceRequired({ ...billingDraft, securityTriggers: ["billing"] }), true);
+  rmSync(join(changeDir, "design.md"), { force: true });
+  rmSync(join(changeDir, "grounding.yaml"), { force: true });
+  rmSync(join(changeDir, "specs"), { recursive: true, force: true });
   grounding = "required";
   riskBasedCi = true;
   const upgraded = run({ impact: "medium" }, {

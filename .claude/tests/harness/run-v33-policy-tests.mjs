@@ -49,18 +49,33 @@ assert.deepEqual(medium.route, ["ai-full", "ai-delta-after-correction"]);
 assert.equal(medium.maxAiAttempts, 2);
 pass("medium risk permits one bounded delta closure");
 
+const keywordOnly = classifyReviewRisk({
+  state: {
+    intent: "Activate the legacy RabbitMQ consumer for billing", impact: "low",
+    coupling: "isolated", securityTriggers: [], keywordSecurityTriggers: ["billing"],
+    reviewRequired: true
+  },
+  claims: [{ impact: "low" }], capabilities: new Set(), grounding: {},
+  requiredTriggers: []
+});
+assert.equal(keywordOnly.tier, "low");
+assert.deepEqual(keywordOnly.route, ["ai-full"]);
+assert.equal(keywordOnly.maxAiAttempts, 1);
+pass("intent keywords alone keep the low tier: one full AI review");
+
 const high = classifyReviewRisk({
   state: {
-    intent: "Activate the legacy RabbitMQ consumer", impact: "low", coupling: "isolated",
+    intent: "Activate the legacy RabbitMQ consumer", impact: "medium", coupling: "isolated",
     securityTriggers: []
   },
   claims: [{ impact: "low" }], capabilities: new Set(), grounding: {},
   requiredTriggers: []
 });
+assert.equal(high.tier, "high");
 assert.deepEqual(high.route, ["ai-full", "ai-delta-after-correction"]);
 assert.equal(high.maxAiAttempts, 2);
 assert.equal(high.requiresHumanFinal, false);
-pass("legacy queue activation uses bounded AI full and correction closure");
+pass("declared risk plus queue activation keeps bounded AI full and correction closure");
 
 const compositeInput = {
   state: {

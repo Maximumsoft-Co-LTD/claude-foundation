@@ -95,7 +95,8 @@ export function createAgentDispatchRuntime({
       action: "run-in-session",
       reason: plan.executionReason,
       pendingTaskCount: plan.tasks.length,
-      pendingTaskIds: plan.tasks.slice(0, 20).map((task) => task.id),
+      // Wave order is dependency order: the session takes the whole chain.
+      pendingTaskIds: (plan.groups?.flat() || plan.tasks.map((task) => task.id)).slice(0, 20),
       pendingTaskIdsTruncated: plan.tasks.length > 20,
       model: plan.sessionModel,
       packetCommand: command(`packet ${id} --phase build`),

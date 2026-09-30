@@ -32,6 +32,8 @@ function textList(value) {
 const STATEMENT_MAX_WORDS = 60;
 const STATEMENT_MAX_CHARACTERS = 400;
 const STATEMENT_MAX_SEMICOLONS = 2;
+// Matches the slug limit, so a disambiguated claim ID is no longer than a derived one.
+const CLAIM_ID_MAX_LENGTH = 64;
 
 function placeholderIssue(value, label, issues) {
   if (PLACEHOLDER.test(text(value))) issues.push(`${label} contains unresolved placeholder text`);
@@ -221,6 +223,17 @@ export function semanticRapidCandidate(source) {
     !triggers.length && !source?.reviewRequired && !source?.acceptance?.required;
 }
 
+// Alternatives the decision set aside. Only a decision that rejected one owes
+// a reason; a settled fact with nothing to choose between does not.
+function rejectedAlternatives(decision) {
+  const choice = text(decision?.choice);
+  const listed = decision?.rejected ?? decision?.alternatives;
+  return (Array.isArray(listed) ? stringList(listed) : textList(listed))
+    .filter((option) => option !== choice && !/^none$/i.test(option));
+}
+
+const SETTLED_REASON = "No alternative was open; recorded as settled";
+
 function semanticDraftIssues(source, { defaultTestEvidence = false } = {}) {
   const issues = [];
   if (![3, 4].includes(source?.version)) issues.push("semantic draft requires version 3 or 4");
@@ -259,7 +272,7 @@ function semanticDraftIssues(source, { defaultTestEvidence = false } = {}) {
   for (const [index, decision] of (source?.decisions || []).entries()) {
     if (!text(decision?.key)) issues.push(`semantic draft decisions[${index}].key is required`);
     if (!text(decision?.choice)) issues.push(`semantic draft decisions[${index}].choice is required`);
-    if (!text(decision?.reason || decision?.why))
+    if (!text(decision?.reason || decision?.why) && rejectedAlternatives(decision).length)
       issues.push(`semantic draft decisions[${index}].reason is required`);
   }
   const choices = new Map();
@@ -278,12 +291,13 @@ function semanticDraftIssues(source, { defaultTestEvidence = false } = {}) {
 }
 
 function normalizeRequirements(source, slugify, issues, {
-  loadCanonicalSpec = null, defaultTestEvidence = false, defaultedEvidence = []
+  loadCanonicalSpec = null, defaultTestEvidence = false, defaultedEvidence = [],
+  reservedClaimIds = []
 } = {}) {
   const evidence = evidenceEntries(source.evidence);
   const requirements = [];
   const requirementKeys = new Set();
-  const claimIds = new Set();
+  const pendingClaims = [];
   const knownRequirementKeys = new Set((source.requirements || []).map((row) => text(row?.key)));
   for (const evidenceKey of evidence.keys())
     if (!knownRequirementKeys.has(evidenceKey))
@@ -343,6 +357,8 @@ function normalizeRequirements(source, slugify, issues, {
     const repositories = unique(stringList(requirement?.repositories));
     if (repositories.length > 1 && !capabilities.includes("cross-repo-contract"))
       capabilities.push("cross-repo-contract");
+    const explicitKeys = new Set(rawScenarioEntries(requirement)
+      .map((entry) => text(entry?.key)).filter(Boolean));
     const scenarioClaims = scenarios.map((scenario, scenarioIndex) => {
       // A title in a non-Latin script slugifies to nothing; its position keeps
       // the claim id stable instead.
@@ -350,8 +366,11 @@ function normalizeRequirements(source, slugify, issues, {
       const suffix = /[a-z0-9]/i.test(rawSuffix) ? rawSuffix : String(scenarioIndex + 1);
       const id = slugify(scenarios.length === 1 ? key : `${key}-${suffix}`);
       if (!id) issues.push(`${label} cannot derive a stable claim ID`);
-      else if (claimIds.has(id)) issues.push(`${label} derives duplicate claim ID '${id}'`);
-      claimIds.add(id);
+      // Only an explicit scenario key is an author-chosen claim suffix; IDs
+      // from requirement keys and titles are slugged and truncated, so the
+      // compiler owns their collisions.
+      const explicit = scenarios.length > 1 && explicitKeys.has(scenario.key);
+      pendingClaims.push({ label, explicit });
       return {
         id,
         requirementKey: key,
@@ -376,7 +395,188 @@ function normalizeRequirements(source, slugify, issues, {
       }
     });
   }
+  assignClaimIds(requirements, pendingClaims, reservedClaimIds, issues);
   return { requirements, requirementKeys };
+}
+
+// Claim IDs are compiler-owned. Author-chosen IDs (and IDs an active change
+// already owns) keep their value; a derived ID that collides, e.g. two long
+// scenario titles that share their first 64 slug characters, takes the first
+// free numeric suffix in draft order, so recompiling the same draft yields the
+// same IDs. Only two author-chosen scenario keys that collide are an error.
+function assignClaimIds(requirements, pending, reservedClaimIds, issues) {
+  const claims = requirements.flatMap((row) => row.claims);
+  const explicit = new Set();
+  claims.forEach((claim, index) => {
+    if (!claim.id || !pending[index].explicit) return;
+    if (explicit.has(claim.id))
+      issues.push(`${pending[index].label} derives duplicate claim ID '${claim.id}'`);
+    explicit.add(claim.id);
+  });
+  // Callers own collisions between author-chosen and reserved IDs.
+  const taken = new Set([...reservedClaimIds, ...explicit]);
+  claims.forEach((claim, index) => {
+    if (!claim.id || pending[index].explicit) return;
+    let id = claim.id;
+    for (let counter = 2; taken.has(id); counter += 1) {
+      const suffix = `-${counter}`;
+      id = `${claim.id.slice(0, CLAIM_ID_MAX_LENGTH - suffix.length).replace(/-+$/, "")}${suffix}`;
+    }
+    claim.id = id;
+    taken.add(id);
+  });
+  for (const row of requirements) row.claimIds = row.claims.map((claim) => claim.id);
+}
+
+// ---- Minimal v4 draft -------------------------------------------------------
+// A draft without `version` whose shape is unambiguously the minimal v4 form
+// (intent + requirements[{description, scenarios[{when, then}]}] +
+// tasks[{outcome, verify, paths}]) is expanded here, before intake, into an
+// ordinary v4 draft. Explicit drafts (any `version`) are never touched.
+
+const MINIMAL_KEY_MAX = 48;
+const MINIMAL_STOPWORDS = new Set([
+  "the", "and", "for", "with", "that", "this", "these", "those", "from", "into",
+  "onto", "when", "then", "shall", "must", "not", "system", "are", "was", "were",
+  "its", "their", "any", "all", "each", "every", "one", "has", "have", "can", "will",
+  "src", "lib", "app", "test", "tests", "spec", "index", "mjs", "cjs", "js", "ts",
+  "tsx", "jsx", "json", "md", "implement", "add", "update", "change", "make", "use"
+]);
+
+function shortSlug(value, max = MINIMAL_KEY_MAX) {
+  const slug = text(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  if (slug.length <= max) return slug;
+  const cut = slug.slice(0, max);
+  const boundary = cut.lastIndexOf("-");
+  return (boundary > max / 2 ? cut.slice(0, boundary) : cut).replace(/-+$/, "");
+}
+
+function uniqueKey(base, taken) {
+  let key = base;
+  for (let counter = 2; taken.has(key); counter += 1) {
+    const suffix = `-${counter}`;
+    key = `${base.slice(0, MINIMAL_KEY_MAX - suffix.length).replace(/-+$/, "")}${suffix}`;
+  }
+  taken.add(key);
+  return key;
+}
+
+function significantWords(values) {
+  return new Set(values.flatMap((value) =>
+    text(value).toLowerCase().split(/[^a-z0-9]+/))
+    .filter((word) => word.length >= 3 && !MINIMAL_STOPWORDS.has(word))
+    .map((word) => word.replace(/(?:ies|es|s)$/, "")));
+}
+
+function plainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+export function isMinimalSemanticDraft(source) {
+  return plainObject(source) && source.version === undefined && Boolean(text(source.intent)) &&
+    source.claims === undefined && source.specs === undefined &&
+    Array.isArray(source.requirements) && source.requirements.length > 0 &&
+    source.requirements.every((row) => plainObject(row) &&
+      (text(row.description) || Array.isArray(row.scenarios))) &&
+    Array.isArray(source.tasks) && source.tasks.length > 0 &&
+    source.tasks.every((row) => plainObject(row) && (text(row.outcome) || text(row.verify)));
+}
+
+function minimalScenarioName(when, index) {
+  const trigger = text(when).replace(/^when\s+/i, "").replace(/[.]$/, "");
+  const words = trigger.split(/\s+/).filter(Boolean);
+  let name = words.slice(0, 6).join(" ");
+  if (name.length > 60) name = name.slice(0, 60).trim();
+  name = name.replace(/^\p{Ll}/u, (letter) => letter.toUpperCase());
+  if (!name || comparableLabel(name) === comparableLabel(when))
+    name = `${name || "Scenario"} (case ${index + 1})`;
+  return name;
+}
+
+function minimalCapability(source) {
+  const fromIntent = shortSlug(source.intent, 40);
+  if (fromIntent) return fromIntent;
+  for (const task of source.tasks)
+    for (const path of stringList(task?.paths)) {
+      const segment = path.split("/").map((part) => shortSlug(part.replace(/\.[^.]*$/, ""), 40))
+        .find((part) => part && !MINIMAL_STOPWORDS.has(part));
+      if (segment) return segment;
+    }
+  return "change";
+}
+
+// Several tasks: a requirement goes to the one task whose outcome and paths
+// share strictly the most significant words with it. A tie or no overlap
+// leaves `covers` to the author, and validation names the field.
+function inferredCovers(requirements, tasks) {
+  if (tasks.length === 1) return [requirements.map((row) => row.key)];
+  const covers = tasks.map(() => []);
+  const taskWords = tasks.map((task) =>
+    significantWords([task.outcome, task.key, ...stringList(task.paths)]));
+  for (const requirement of requirements) {
+    const words = significantWords([
+      requirement.key, requirement.description,
+      ...rawScenarioEntries(requirement).flatMap((row) => [row?.when, row?.then])
+    ]);
+    const scores = taskWords.map((set) => [...words].filter((word) => set.has(word)).length);
+    const best = Math.max(...scores);
+    if (best > 0 && scores.filter((score) => score === best).length === 1)
+      covers[scores.indexOf(best)].push(requirement.key);
+  }
+  return covers;
+}
+
+export function expandMinimalSemanticDraft(input, { loadCanonicalSpec = null } = {}) {
+  if (!isMinimalSemanticDraft(input)) return input;
+  const source = structuredClone(input);
+  source.version = 4;
+  source._minimalDraft = true;
+  const capability = minimalCapability(source);
+  const requirementKeys = new Set(source.requirements.map((row) => text(row.key)).filter(Boolean));
+  const canonical = new Map();
+  const canonicalRows = (name) => {
+    if (!canonical.has(name))
+      canonical.set(name, loadCanonicalSpec ? parseSpecDocument(loadCanonicalSpec(name) || "") : []);
+    return canonical.get(name);
+  };
+  source.requirements = source.requirements.map((input, index) => {
+    const row = { ...input };
+    const description = text(row.description);
+    if (!text(row.key)) {
+      const body = description.replace(/^.*?\b(?:SHALL|MUST)\b\s*/, "");
+      row.key = uniqueKey(shortSlug(body) || shortSlug(row.outcome) ||
+        `requirement-${index + 1}`, requirementKeys);
+    }
+    if (!text(row.capability)) row.capability = capability;
+    if (Array.isArray(row.scenarios))
+      row.scenarios = row.scenarios.map((scenario, scenarioIndex) =>
+        plainObject(scenario) && !text(scenario.name) && text(scenario.when)
+          ? { ...scenario, name: minimalScenarioName(scenario.when, scenarioIndex) }
+          : scenario);
+    if (!text(row.outcome)) {
+      const first = rawScenarioEntries(row).find((scenario) => text(scenario?.then));
+      if (first) row.outcome = text(first.then);
+    }
+    if (!text(row.operation)) {
+      const name = text(row.requirement || row.title).toLowerCase();
+      const match = canonicalRows(row.capability).find((spec) =>
+        (name && spec.name.toLowerCase() === name) ||
+        (description && spec.body.includes(description)));
+      row.operation = match ? "modified" : "added";
+      if (match && !text(row.requirement || row.title)) row.requirement = match.name;
+    }
+    return row;
+  });
+  const taskKeys = new Set(source.tasks.map((row) => text(row.key)).filter(Boolean));
+  source.tasks = source.tasks.map((task, index) => text(task.key) ? task
+    : { ...task, key: uniqueKey(shortSlug(task.outcome) || `task-${index + 1}`, taskKeys) });
+  const missing = source.tasks.map((task) => task.covers === undefined);
+  if (missing.some(Boolean)) {
+    const covers = inferredCovers(source.requirements, source.tasks);
+    source.tasks = source.tasks.map((task, index) =>
+      missing[index] && covers[index].length ? { ...task, covers: covers[index] } : task);
+  }
+  return source;
 }
 
 // Authors naturally key overviews by capability:
@@ -466,7 +666,9 @@ function normalizeTasks(source, requirements, requirementKeys, issues) {
     const covers = stringList(task?.covers);
     if (!text(task?.outcome)) issues.push(`${label}.outcome is required`);
     if (!text(task?.verify)) issues.push(`${label}.verify is required`);
-    if (!covers.length) issues.push(`${label}.covers must name at least one requirement`);
+    if (!covers.length) issues.push(`${label}.covers must name at least one requirement` +
+      (source._minimalDraft ? " (several tasks: the compiler could not match this task " +
+        `to one requirement by text or paths; keys: ${[...requirementKeys].join(", ")})` : ""));
     const unknown = covers.filter((value) => !requirementKeys.has(value));
     if (unknown.length) issues.push(`${label}.covers references unknown requirement(s): ${unknown.join(", ")}`);
     covers.forEach((value) => covered.add(value));
@@ -495,7 +697,8 @@ function normalizeTasks(source, requirements, requirementKeys, issues) {
   });
   const uncovered = [...requirementKeys].filter((key) => !covered.has(key));
   if (uncovered.length)
-    issues.push(`semantic draft requirements have no implementation task: ${uncovered.join(", ")}`);
+    issues.push(`semantic draft requirements have no implementation task: ${uncovered.join(", ")}` +
+      (source._minimalDraft ? "; name each in one task's 'covers'" : ""));
   const graph = new Map(tasks.map((task) => [task.id, task.dependsOn]));
   const visiting = new Set();
   const visited = new Set();
@@ -576,7 +779,10 @@ export function normalizeSemanticDraft(input, slugify, options = {}) {
       ? stringList(source.changes)
       : unique(requirements.map((row) => row.spec.scenarios[0]?.then).filter(Boolean)),
     nonGoals: stringList(source.nonGoals),
-    decisions: Array.isArray(source.decisions) ? source.decisions : [],
+    decisions: Array.isArray(source.decisions)
+      ? source.decisions.map((decision) =>
+        text(decision?.reason || decision?.why) ? decision : { ...decision, why: SETTLED_REASON })
+      : [],
     risks: Array.isArray(source.risks) ? source.risks : [],
     domainLanguage: Array.isArray(source.domainLanguage) ? source.domainLanguage : [],
     impact: text(source.impact) || "low",
@@ -627,6 +833,23 @@ export function renderRequirementMarkdown(spec, scenarios = spec.scenarios || []
 export function renderSpecHeading(spec) {
   const title = text(spec?.title) || text(spec?.name);
   return `# ${title}` + (text(spec?.overview) ? `\n\n${text(spec.overview)}` : "");
+}
+
+// The smallest draft the compiler accepts: omit `version` and it infers keys,
+// capability, operation, scenario names, covers, and rapid defaults.
+export function minimalSemanticDraftTemplate() {
+  return {
+    intent: "Describe one observable outcome",
+    requirements: [{
+      description: "The system SHALL provide the observable behavior",
+      scenarios: [{ when: "One triggering input or event", then: "One observable result" }]
+    }],
+    tasks: [{
+      outcome: "Implement and verify the bounded outcome",
+      verify: "npm test",
+      paths: ["src/**"]
+    }]
+  };
 }
 
 export function semanticDraftTemplate() {

@@ -44,7 +44,7 @@ assert_file_contains "fundamentals separates skill judgment from harness control
   'Skills supply judgment and procedures; the harness owns lifecycle'
 assert_words_at_most "orchestrator troubleshooting budget" 750 \
   "$ROOT/.claude/orchestrator.md"
-assert_words_at_most "portable agent contract budget" 150 \
+assert_words_at_most "portable agent contract budget" 300 \
   "$ROOT/.claude/harness/AGENT.md"
 assert_file_contains "fundamentals routes abstraction depth" \
   "$ROOT/.claude/rules/fundamentals.md" 'module boundary, abstraction depth'
@@ -126,43 +126,106 @@ assert_file_contains "change intake creates no parallel interview ledger" \
 assert_file_contains "change workflow delegates semantic intake to one canonical reference" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
   '[semantic-intake.md](semantic-intake.md)'
-# Rapid-path simplification (2026-09-30, user decision D3): the rapid lane
-# loads one bounded reference instead of the change workflow, semantic intake,
-# and Build policy. Those stay selectively loaded on explicit triggers, and
-# Build policy gains its own ratchet.
-assert_words_at_most "rapid path reference budget" 950 \
-  "$ROOT/.claude/commands/references/rapid-path.md"
-rapid_lines="$(wc -l < "$ROOT/.claude/commands/references/rapid-path.md" | tr -d ' ')"
-if [ "$rapid_lines" -le 150 ]; then
-  pass "rapid path stays near 150 lines ($rapid_lines <= 150)"
-else
-  fail_context_budget "rapid path line budget" "$rapid_lines" 150 lines \
-    "$ROOT/.claude/commands/references/rapid-path.md"
-fi
+# Structure B (N1, user decision 2026-10-01): `/dev` is exactly `/change` →
+# `/build` → `/prove` → `/land`. Shared rules live only in AGENT.md; each phase
+# command is the single source for its phase. The full Change workflow,
+# semantic intake, and Build policy stay selectively loaded on named triggers.
 assert_words_at_most "build policy reference budget" 1060 \
   "$ROOT/.claude/commands/references/build-policy.md"
-assert_file_contains "dev loads the rapid path by default" \
-  "$ROOT/.claude/commands/dev.md" '.claude/commands/references/rapid-path.md'
+assert_file_absent "rapid path reference is retired" \
+  "$ROOT/.claude/commands/references/rapid-path.md"
+if grep -rlF --exclude-dir=tests 'rapid-path.md' "$ROOT/.claude" "$ROOT/openspec/schemas" >/dev/null 2>&1; then
+  fail "no shipped file references rapid-path.md: $(grep -rlF --exclude-dir=tests 'rapid-path.md' "$ROOT/.claude" "$ROOT/openspec/schemas" | tr '\n' ' ')"
+else
+  pass "no shipped file references rapid-path.md"
+fi
+assert_cmd_zero "dev references all four phase commands in order" \
+  node -e '
+    const s = require("fs").readFileSync(process.argv[1], "utf8");
+    const at = ["change", "build", "prove", "land"]
+      .map((p) => s.indexOf(".claude/commands/" + p + ".md"));
+    if (at.some((i) => i < 0) || at.some((i, n) => n && i <= at[n - 1])) process.exit(1);
+  ' "$ROOT/.claude/commands/dev.md"
+assert_file_contains "dev reaches land only with Land authority" \
+  "$ROOT/.claude/commands/dev.md" '`.claude/commands/land.md`, only with Land authority'
+dev_bundle_words="$(cat "$ROOT/.claude/harness/AGENT.md" \
+  "$ROOT/.claude/commands/dev.md" "$ROOT/.claude/commands/change.md" \
+  "$ROOT/.claude/commands/build.md" "$ROOT/.claude/commands/prove.md" \
+  "$ROOT/.claude/commands/land.md" | wc -w | tr -d ' ')"
+if [ "$dev_bundle_words" -le 1150 ]; then
+  pass "/dev context bundle (AGENT + dev + four phases) ($dev_bundle_words <= 1150 words)"
+else
+  fail_context_budget "/dev context bundle" "$dev_bundle_words" 1150 words \
+    "AGENT.md + dev.md + change/build/prove/land.md"
+fi
+# Shared rules have one home. Spot-check distinctive phrases.
+for phrase in 'No preflight' 'agent-only control data' 'One command per shell call' \
+  'hand-edit' 'Never read `.claude/harness/**`' 'in any wording' \
+  'Silence grants neither' 'contextScope.specs'; do
+  assert_file_contains "shared rule lives in AGENT.md: $phrase" \
+    "$ROOT/.claude/harness/AGENT.md" "$phrase"
+  for doc in commands/dev commands/change commands/build commands/prove \
+    commands/land orchestrator; do
+    assert_file_not_contains "shared rule not duplicated in $doc.md: $phrase" \
+      "$ROOT/.claude/$doc.md" "$phrase"
+  done
+done
+for doc in change build prove land; do
+  assert_file_contains "$doc points to the shared rules" \
+    "$ROOT/.claude/commands/$doc.md" 'Shared rules: `.claude/harness/AGENT.md`'
+done
+assert_file_contains "agent contract names the lifecycle CLI surface" \
+  "$ROOT/.claude/harness/AGENT.md" '`change start <draft>` and `advance <change> --through'
+assert_file_contains "agent contract routes every repair through its returned fix" \
+  "$ROOT/.claude/harness/AGENT.md" 'carries its fix'
+assert_file_contains "agent contract grants Land on any explicit instruction" \
+  "$ROOT/.claude/harness/AGENT.md" 'Any explicit user instruction to land grants Land'
+assert_file_contains "agent contract accepts spec approval given in the request" \
+  "$ROOT/.claude/harness/AGENT.md" 'Spec approval given in the request, in any wording'
+assert_file_contains "agent contract rejects success without lifecycle state" \
+  "$ROOT/.claude/harness/AGENT.md" \
+  'Code/test success without the matching lifecycle state is incomplete'
 assert_file_contains "change loads its full workflow only on triggers" \
   "$ROOT/.claude/commands/change.md" 'completely only for'
+assert_file_contains "change leaves the rapid lane only on declared risk" \
+  "$ROOT/.claude/commands/change.md" 'draft declaring `impact` medium/high'
+assert_file_contains "change keeps keyword-only security on the rapid lane" \
+  "$ROOT/.claude/commands/change.md" 'a keyword like billing only adds review'
+assert_file_contains "change describes the minimal draft" \
+  "$ROOT/.claude/commands/change.md" '`tasks[{outcome, verify, paths}]`'
+assert_file_contains "change trusts the printed packet" \
+  "$ROOT/.claude/commands/change.md" 'do not reopen them'
+assert_file_contains "change records spec approval through advance" \
+  "$ROOT/.claude/commands/change.md" 'advance <id> --approve-spec --decision-ref'
+assert_file_contains "change uses atomic start" \
+  "$ROOT/.claude/commands/change.md" 'claude-foundation change start'
 assert_file_contains "build loads its policy only on triggers" \
-  "$ROOT/.claude/commands/build.md" 'Rapid work needs only `references/rapid-path.md`'
-assert_file_contains "rapid path forbids harness source archaeology" \
-  "$ROOT/.claude/commands/references/rapid-path.md" \
-  'Never read `.claude/harness/**` source'
-assert_file_contains "rapid path records spec approval through advance" \
-  "$ROOT/.claude/commands/references/rapid-path.md" \
-  'advance <id> --approve-spec --decision-ref'
-assert_cmd_zero "rapid path uses only change start, advance, changes, exec, and land advance" \
-  sh -c '! grep -oE "claude-foundation [a-z-]+( [a-z-]+)?" "$1" |
-    grep -vE "^claude-foundation (change start|advance|changes|exec|land advance)( |$)"' \
-  sh "$ROOT/.claude/commands/references/rapid-path.md"
+  "$ROOT/.claude/commands/build.md" 'Read `references/build-policy.md` for a new user request'
+assert_file_contains "build implements a whole single-session batch" \
+  "$ROOT/.claude/commands/build.md" 'all tasks in one `EDIT`'
+assert_file_contains "prove keeps review in-session" \
+  "$ROOT/.claude/commands/prove.md" 'Stay in-session while a review runs'
+assert_file_contains "prove owns the review timeout gate" \
+  "$ROOT/.claude/commands/prove.md" 'Gate: review timeout or no progress'
+assert_file_contains "land uses the same advance route as /dev" \
+  "$ROOT/.claude/commands/land.md" 'Run `claude-foundation advance <change> --through archived`'
+assert_file_not_contains "land never teaches the internal land advance route" \
+  "$ROOT/.claude/commands/land.md" 'Run `claude-foundation land'
+assert_file_contains "agent contract forbids preflight" \
+  "$ROOT/.claude/harness/AGENT.md" 'No preflight (`doctor`'
+assert_cmd_zero "phase commands use only change start, advance, and exec" \
+  sh -c '! cat "$@" | grep -oE "claude-foundation [a-z-]+( [a-z-]+)?" |
+    grep -vE "^claude-foundation (change start|advance|exec)( |$)"' \
+  sh "$ROOT/.claude/commands/dev.md" "$ROOT/.claude/commands/change.md" \
+  "$ROOT/.claude/commands/build.md" "$ROOT/.claude/commands/prove.md" \
+  "$ROOT/.claude/commands/land.md"
 if grep -En 'change resolve [^ ]* ?--approve-spec|--consume-draft|mark it complete|claude-foundation (evidence init|evidence upgrade|sandbox sync|authority run)' \
-    "$ROOT/.claude/commands/references/rapid-path.md" "$ROOT/.claude/commands/dev.md" \
-    "$ROOT/.claude/commands/change.md" "$ROOT/.claude/commands/build.md" >/dev/null; then
-  fail "rapid path instructions omit harness-owned manual steps"
+    "$ROOT/.claude/commands/dev.md" "$ROOT/.claude/commands/change.md" \
+    "$ROOT/.claude/commands/build.md" "$ROOT/.claude/commands/prove.md" \
+    "$ROOT/.claude/commands/land.md" >/dev/null; then
+  fail "phase instructions omit harness-owned manual steps"
 else
-  pass "rapid path instructions omit harness-owned manual steps"
+  pass "phase instructions omit harness-owned manual steps"
 fi
 assert_words_at_most "change workflow reference budget" 1400 \
   "$ROOT/.claude/skills/change/references/workflow.md"
@@ -252,41 +315,17 @@ assert_file_contains "fundamentals records decision answers in the change packet
   "$ROOT/.claude/rules/fundamentals.md" \
   'record the answers in the change packet'
 
-# 120 words is the standing budget for a slash command. `change.md` carries 80
-# more for semantic draft authoring, transactional amendments, and routing the
-# author to agreement-detail, document-language, and compiled-packet inspection
-# rules. The maintainer explicitly authorized raising its limit from 175 to
-# 200 words to retain these instructions.
-# `build.md` carries 25 more because it must also route
-# long external commands through `exec`: without that instruction the largest
-# block of wall time never reaches metrics. `prove.md` carries 50 more because
-# it owns the two instructions that keep a blocked Prove from reading as a dead
-# end — wire a missing adapter before asking a person, and relay the route the
-# harness prints — plus the fact that `review.independence: "self"` is a real
-# configuration rather than a rule to break. That last one replaced a flat ban
-# on self-review, which had made a supported solo setup unusable.
-# `dev.md` carries 30 more by explicit maintainer decision so the orchestrator
-# can distinguish ordinary Prove completion from an invocation that already
-# grants Land authority and must reach archived. `dev.md` and `build.md` carry
-# 10 and 15 more (D3, 2026-09-30) to route the rapid path and name the
-# conditional triggers that keep the full references out of rapid work.
+# 120 words is the standing budget for a slash command. Structure B (N1, user
+# decision 2026-10-01) makes each phase command the single source for its phase,
+# absorbing the retired rapid-path reference: change, build, prove, and land
+# may use 250 words each, and `dev.md` only composes them in 120. The combined
+# /dev bundle budget above still binds all of them together.
 #
-# Raised deliberately and per command, so the standing budget still binds
-# everywhere else. Raise a limit here only to admit a rule that removes a
-# failure the command cannot otherwise avoid; never to make room by deleting an
-# existing one.
+# Raise a limit here only to admit a rule that removes a failure the command
+# cannot otherwise avoid; never to make room by deleting an existing one.
 for command in "$ROOT"/.claude/commands/*.md; do
   case "$(basename "$command")" in
-    change.md) limit=200 ;;
-    build.md) limit=160 ;;
-    dev.md) limit=160 ;;
-    prove.md) limit=170 ;;
-    # `land check` no longer settles an interrupted apply, so Land owns a route
-    # it did not have: read the projection counts, then recover under an explicit
-    # decision reference. Without it the agent's only options on a pending
-    # transaction are to invent a command or to stop — the failure the command
-    # cannot otherwise avoid.
-    land.md) limit=140 ;;
+    change.md|build.md|prove.md|land.md) limit=250 ;;
     *) limit=120 ;;
   esac
   assert_words_at_most "command budget: $(basename "$command")" "$limit" "$command"
@@ -309,26 +348,11 @@ assert_file_contains "compare mode scopes writes to prototypes" \
   "$ROOT/.claude/skills/investigate/references/workflow.md" 'only under'
 assert_file_contains "prove owns fresh independent review" \
   "$ROOT/.claude/skills/prove/references/workflow.md" 'fresh independent'
-assert_file_contains "dev command forbids direct implementation bypass" \
-  "$ROOT/.claude/commands/dev.md" \
-  "Code/test success without the corresponding Foundation state is incomplete"
 assert_file_contains "dev command forbids redundant framework exploration" \
   "$ROOT/.claude/commands/dev.md" \
   "Do not reread framework files"
-assert_file_contains "dev command uses atomic rapid start" \
-  "$ROOT/.claude/commands/references/rapid-path.md" \
-  'claude-foundation change start'
-# Rapid /dev reaches Change intake through rapid-path.md; reopening the
-# /change, /build, and /prove command files only duplicated instructions.
-assert_file_contains "dev routes fresh intent through the rapid path, not /change" \
-  "$ROOT/.claude/commands/dev.md" \
-  '`/change`, `/build`, and `/prove`, so do not open those files'
-assert_file_contains "dev uses the unified lifecycle coordinator" \
-  "$ROOT/.claude/commands/dev.md" \
-  'advance <id> --through proven'
 assert_file_contains "dev resume skips completed lifecycle work" \
-  "$ROOT/.claude/commands/dev.md" \
-  'completed Build work and reused evidence automatically'
+  "$ROOT/.claude/commands/dev.md" 'completed Build work and reuses fresh evidence'
 assert_file_contains "change forbids runtime archaeology" \
   "$ROOT/.claude/skills/change/references/workflow.md" \
   'Never inspect managed `.claude/harness/**`'

@@ -9,12 +9,13 @@ controls. `tasks.md` is the ledger;
 `handoffs.yaml` is the external-operation contract. `.workflow/` is read-only
 legacy state.
 
-Use the `claude-foundation` CLI; do not duplicate runtime logic in prompts.
+Shared agent rules live only in `.claude/harness/AGENT.md`; each phase's
+procedure lives only in its command (`commands/change.md`, `commands/build.md`,
+`commands/prove.md`, `commands/land.md`). Do not duplicate runtime logic in prompts.
 
 ## Resolve
 
-Follow `commands/references/rapid-path.md`, loading Change's workflow only on
-its triggers, and compile one v4 draft. Never hand-create
+Follow `commands/change.md` and compile one v4 draft. Never hand-create
 cross-ledger IDs or empty artifacts. Persist ambiguity, impact, coupling, evidence,
 and size; size controls slicing, not assurance. Investigate ambiguity.
 
@@ -28,8 +29,7 @@ Approve before Build.
 Start from the compact packet. Read needed files and edit only the
 sandbox's allowed paths; `advance` ticks `tasks.md` when verification passes.
 
-Use `advance <change> --through build`; execute its action and resume route.
-Plans, packets, leases, and dispatch are compatible primitives, not a model-built chain.
+Follow `commands/build.md`. Plans, packets, leases, and dispatch are compatible primitives, not a model-built chain.
 
 Worktrees isolate files, not processes or host authority. Unattended work must
 pass the runtime guard; never enable a host permission bypass by implication.
@@ -78,7 +78,7 @@ or move unfinished work out of the contract.
 ## Land
 
 Land moves the current workspace projection into its main workspace.
-`/land` uses `land advance <change>`; Harness owns readiness, Apply,
+`/land` follows `commands/land.md`; Harness owns readiness, Apply,
 verification, archive, recovery, and cleanup. Record stale or failed proof truthfully,
 preserve unrelated edits, and never commit, push, or open a PR without separate authority.
 
@@ -86,8 +86,8 @@ Multiple repositories use one saga: prepare all writable targets, apply
 dependency waves, verify unchanged HEAD/index, then archive. Diffs remain
 uncommitted; never manufacture child commits or gitlink SHAs.
 
-`/dev` runs Change → Build → Prove without inferring Land authority. With
-explicit Land authority, it may continue and succeeds only at `archived`.
+`/dev` runs the four phase commands in order without inferring Land
+authority; with Land authority it succeeds only at `archived`.
 
 ## Deliver (optional)
 
@@ -102,11 +102,9 @@ no delivery work; `DONE` requires provider-verified PR URLs.
 
 Match the user's language. Lead with outcome, work done, verification, remaining
 work, and next action; omit empty sections. Do not paste runtime protocol or ask
-the user to run a safe authorized operation the agent can run. Command, resume,
-next, and hook resumeAction values are agent-only control data: execute them and
-expose them only for requested diagnosis. `ASK_USER` asks only for a decision or
-authority; the agent records it and resumes. `WAIT` reports owner and condition,
-not a user command. Keep hashes, receipts, provider codes, and task IDs internal.
+the user to run a safe authorized operation the agent can run. Hook
+resumeAction values follow the same control-data rule; expose them only for
+requested diagnosis. A `WAIT` is not a user command. Keep hashes, receipts, provider codes, and task IDs internal.
 
 On any structured `decision`, read
 `.claude/commands/references/decision-policy.md` completely. Execute only its

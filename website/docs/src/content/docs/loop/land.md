@@ -10,7 +10,7 @@ description: Explicitly apply, verify, archive, and clean up the current change.
 This slash command is the explicit Land authority boundary. It runs:
 
 ```bash
-claude-foundation land advance <change>
+claude-foundation advance <change> --through archived
 ```
 
 The coordinator records current proof and external-operation assurance,

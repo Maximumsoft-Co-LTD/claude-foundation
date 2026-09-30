@@ -171,9 +171,15 @@ Record it with `advance <change> --approve-spec --decision-ref <ref>` (alias of
 sandbox, runs agent-runnable configured reviewers, and ticks a handed-off task
 in `tasks.md` when its verify passes (a failed check returns
 `verificationFailures`). Every REPAIR carries a command or instruction, so the
-agent never reads harness source to recover. Rapid `/dev` loads
-`.claude/commands/references/rapid-path.md`; the full Change, intake, and Build
-references load only on their triggers. Unauthorized external work enters
+agent never reads harness source to recover. `/dev` runs `/change` → `/build`
+→ `/prove` → `/land` (Land only with authority) exactly as the separate
+commands: shared agent rules live only in `.claude/harness/AGENT.md`, each phase
+command is the single source for its phase, and the full Change, intake, and
+Build references load only on their triggers. A minimal draft (`intent`,
+`requirements[{description, scenarios[{when, then}]}]`,
+`tasks[{outcome, verify, paths}]`, no `version`) is expanded by the compiler.
+Every EDIT or REPAIR lists `contextFiles` (absolute paths to open), `newFiles`
+(declared paths to create), and `contextScope`. Unauthorized external work enters
 `handoffs.yaml` only through a semantic amendment, and grounding reads belong in
 the draft's `grounding` field.
 Runtime approval binds agreement content and revision; task checkboxes and
@@ -358,6 +364,14 @@ A force-released lease grants no result authority. If its task was already
 checked complete, the planner returns it for leased verification without
 rewriting the checkbox; only an accepted release clears that recovery.
 
+When every pending Build task must run one at a time (a dependency chain or
+overlapping paths) in one repository with no cross-repository claim or
+external resource, `advance` hands all of them in one session EDIT, in
+dependency order, with no lease. The next `advance` runs each handed task's
+`verify`, ticks every passing task, and returns an EDIT only for failed tasks
+(with `verificationFailures`) and their dependents. Plans with a parallel wave,
+several repositories, or shared external resources keep leased dispatch.
+
 An upgrade from execution graph v2 preserves a completed multi-task
 single-session Build only when the persisted plan still binds the same task
 authority, claims, contract revision, and contract fingerprint. The current
@@ -502,16 +516,16 @@ remain diagnostic or integration primitives behind `advance`.
 
 ### `/land <change>`
 
-The internal command behind `/land` is:
+`/land` runs the same route `/dev` uses:
 
 ```bash
-claude-foundation land advance <change>
+claude-foundation advance <change> --through archived
 ```
 
 This explicit invocation supplies Land authority. Any other explicit user
 instruction to land, in any wording (for example "land it when proven" in a
-`/dev` request), supplies it too; the agent then runs
-`claude-foundation advance <change> --through archived`. Silence never does.
+`/dev` request), supplies it too. Silence never does. `land advance` remains an
+internal compatibility route that the agent does not call.
 Land has one user-visible
 goal: place the exact current workspace projection in the declared main
 workspace. The Harness binds a resumable grant to the exact change, workspace
@@ -731,7 +745,14 @@ diff before Land. Conflicts, incomplete Apply, and missing side-effect authority
 still require their actual resolution, never a claim of successful delivery.
 
 Under `workflow.reviewPolicy: "risk-tiered"` every change receives review, with
-the correction circuit bounded by risk:
+the correction circuit bounded by risk. The review reads the change's diff and
+the agreement's requirements, not whole files. Low risk runs one diff-only
+review on the fast model tier (`review.lowRiskModel: "configured"` or a
+reviewer `fastModelId` overrides it); medium and high keep the configured
+model. Security triggers are declared (draft `securityTriggers` or
+`resolve --security`) or inferred from intent keywords: declared triggers
+select the standard lane and security evidence, while an intent keyword alone
+only makes review required at the low tier and the change keeps its lane.
 
 - **low** — one full AI review; a material correction promotes the route to
   medium;

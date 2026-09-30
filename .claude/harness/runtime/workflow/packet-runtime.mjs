@@ -508,6 +508,7 @@ export function createPacketRuntime({
     const artifactReferences = packetArtifactReferences(activePath);
     const providers = compactList(providerRows, 30);
     const claimPayload = packetClaimRows(claims, packetType);
+    const reviewTier = reviewPolicy(id, state, contract).tier || null;
     const packet = {
       version: Number(PACKET_SCHEMA_VERSION),
       packetType, changeId: id, intent: state.intent, schema: state.schema,
@@ -515,6 +516,7 @@ export function createPacketRuntime({
       externalOperations: handoffReadiness(id),
       ...packetMetadata(state, activePath, repository, compositeSnapshot.workspaceHash),
       workspaceHash: hash,
+      ...(reviewTier ? { reviewTier } : {}),
       pendingTaskCount: scopedTasks.filter((task) => !task.done).length,
       tasks: taskPayload,
       claims: claimPayload,

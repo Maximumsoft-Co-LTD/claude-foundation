@@ -330,9 +330,10 @@ try {
       workflow: { reviewCircuit: "full-delta" },
       review: reviewSettings
     }),
-    reviewerConfig: (name) => name === "claude-opus" ? ({
+    reviewerConfig: (name, modelTier = null) => name === "claude-opus" ? ({
       identity: "claude-opus", providerFamily: "anthropic",
-      modelFamily: "claude", modelId: "opus"
+      modelFamily: "claude", modelId: modelTier === "fast" ? "haiku" : "opus",
+      ...(modelTier === "fast" ? { modelTier } : {})
     }) : ({
       identity: "codex-sol", providerFamily: "openai",
       modelFamily: "gpt-5.6", modelId: "gpt-5.6-sol"
@@ -603,6 +604,25 @@ try {
   assert.equal(completedCodex.status, "completed");
   assert.equal(completedCodex.reviewerSessionId, "actual-codex-thread",
     "configured review completion binds the real thread.started session");
+
+  // N5: the awaited route shares every guard and record rule with the sync one
+  // and holds the authority lock until the verdict is recorded.
+  state = { version: 2, changeId: "change-async", reviewHistory: null };
+  const asyncRequest = quiet(() => authority.requestAuthority("change-async", { type: "review" }));
+  const priorAsyncLog = console.log;
+  console.log = () => {};
+  try {
+    const asyncRun = authority.runAuthorityReviewerAsync("change-async", {
+      request: asyncRequest.requestId,
+      "subject-actor": "human-implementer"
+    });
+    assert.equal(existsSync(join(fixture, ".foundation", "locks", "authority-change-async.lock")), true,
+      "the asynchronous reviewer holds the authority lock across its await");
+    await asyncRun;
+  } finally { console.log = priorAsyncLog; }
+  assert.equal(existsSync(join(fixture, ".foundation", "locks", "authority-change-async.lock")), false);
+  assert.equal(attemptStore.reviewAttemptByDigest(
+    "change-async", state.reviewHistory.chainHead).status, "completed");
 
   state = { version: 2, changeId: "change-saved", reviewHistory: null };
   const savedRequest = quiet(() => authority.requestAuthority("change-saved", { type: "review" }));
@@ -1738,6 +1758,8 @@ try {
   }));
   assert.equal(lowRecovery.dispatch.scope.mode, "full",
     "an aborted low-risk provider gets one infrastructure recovery without consuming its review wave");
+  assert.equal(lowRecovery.packet.reviewDepth, "diff-only",
+    "a first low-risk AI round is a diff-only review");
   quiet(() => authority.abortAuthority("change-low", {
     request: lowRetry.requestId, reason: "recovery provider also failed"
   }));
@@ -1788,6 +1810,26 @@ try {
     }));
   assert.equal(promotedSecond.requirements.tier, "medium");
   assert.equal(promotedSecond.requirements.promotionReason, "post-review-correction");
+  assert.equal(promotedSecond.packet.reviewDepth, "diff-first",
+    "a promoted low-risk round keeps the configured review depth");
+
+  state = { version: 2, changeId: "change-low-run", reviewHistory: null };
+  const savedLowSettings = reviewSettings;
+  reviewSettings = { defaultReviewer: "claude-opus", diversity: "single-model",
+    independence: "required" };
+  const lowRunRequest = quiet(() => authority.requestAuthority(
+    "change-low-run", { type: "review" }));
+  quiet(() => authority.runAuthorityReviewer("change-low-run", {
+    request: lowRunRequest.requestId, "subject-actor": "human-implementer"
+  }));
+  assert.equal(lastConfiguredReviewArgs.modelTier, "fast",
+    "low-risk configured review runs on the fast model tier");
+  assert.equal(lastConfiguredReviewArgs.packet.reviewDepth, "diff-only");
+  const lowRunEntry = authorityStore.list("change-low-run")
+    .find((row) => row.value.requestId === lowRunRequest.requestId);
+  assert.equal(lowRunEntry.value.dispatch.reviewer.modelId, "haiku",
+    "dispatch provenance binds the fast model actually run");
+  reviewSettings = savedLowSettings;
   workspaceHash = "workspace-a";
 
   state = { version: 2, changeId: "change-high", reviewHistory: null };
@@ -1813,6 +1855,8 @@ try {
   }));
   assert.equal(highRecovery.dispatch.scope.mode, "full",
     "an aborted high-risk dispatch permits one bounded full AI recovery without a human gate");
+  assert.equal(highRecovery.packet.reviewDepth, "diff-first",
+    "high-risk review keeps the configured depth");
 
   state = { version: 2, changeId: "change-human", reviewHistory: null };
   riskTier = "high";
@@ -1915,7 +1959,8 @@ try {
   assert.match(feature, /never dispatch a\s+third AI/i);
   const agentContract = readFileSync(join(root, ".claude/harness/AGENT.md"), "utf8");
   const runtimeApi = readJson(join(root, ".claude/harness/protocol.json")).runtimeApi;
-  assert.match(agentContract, /Before work, verify Change Loop/i);
+  assert.match(agentContract, /Harness checks Change Loop/);
+  assert.match(agentContract, /No preflight \(`doctor`, `--version`, `which`, `changes`/);
   assert.match(agentContract, new RegExp("runtime API `" + runtimeApi + "`"));
   const developerSetup = readFileSync(
     join(root, ".claude/harness/DEVELOPER-SETUP.md"), "utf8");

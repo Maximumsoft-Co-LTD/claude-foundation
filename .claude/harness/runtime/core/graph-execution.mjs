@@ -8,11 +8,23 @@ export const NODE_DATA_SCHEMA = Object.freeze({ name: "foundation.node-data", ve
 // resource. Multiple ready tasks use the planner even in one repository so
 // disjoint paths can execute concurrently under leases.
 export function singleAgentExecutionEligible(tasks = [], claims = []) {
-  return tasks.length === 1 &&
-    new Set(tasks.map((task) => task.repository)).size === 1 &&
+  return tasks.length === 1 && sessionConfined(tasks, claims);
+}
+
+function sessionConfined(tasks, claims) {
+  return new Set(tasks.map((task) => task.repository)).size === 1 &&
     !claims.some((claim) => (claim.repositories || []).length > 1) &&
     !tasks.some((task) => (task.resources || [])
       .some((resource) => !resource.startsWith("workspace:")));
+}
+
+// Pending tasks the scheduler can only run one at a time (every wave holds a
+// single task: a dependency chain or conflicting scopes) gain nothing from
+// leased workers. The same confinement as a single task lets the session take
+// the whole chain in wave order; any wave with two tasks keeps planned dispatch.
+export function sequentialSessionEligible(tasks = [], claims = [], groups = []) {
+  return tasks.length > 1 && groups.length === tasks.length &&
+    groups.every((group) => group.length === 1) && sessionConfined(tasks, claims);
 }
 
 export function criticalPathDepths(nodes = []) {

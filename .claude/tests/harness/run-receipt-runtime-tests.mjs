@@ -505,3 +505,24 @@ test("review findings, dispatch scope, and attempt binding are validated", () =>
   assert.throws(() => fixture("review", {}, { reviewAttemptIsValid: () => false }).runtime
     .recordReceipt("change", "provider", "pass", humanReview), /does not match/);
 });
+
+test("exit-code discovery passes only for harness-executed rapid runs at minimum 1", () => {
+  const rapidState = () => ({ schema: "foundation-rapid", activeProofRun: {
+    id: "proof-run", workspaceHash: "run-hash", snapshotId: "snapshot"
+  } });
+  const executed = { artifact: [{ path: "run.log", type: "command-log", required: true }] };
+  const exitCode = { discovered: null, minimum: 1, countMeasurement: "exit-code" };
+  const rapid = fixture("discovery", {}, { loadRuntime: rapidState });
+  rapid.runtime.recordReceipt("change", "provider", "pass",
+    { ...executed, ...exitCode }, { executed: true, quiet: true });
+  assert.deepEqual(rapid.recorded().discovery,
+    { discovered: null, minimum: 1, countMeasurement: "exit-code" });
+
+  assert.throws(() => fixture("discovery").runtime.recordReceipt("change", "provider", "pass",
+    { ...executed, ...exitCode }, { executed: true, quiet: true }), /exit-code discovery receipt/);
+  assert.throws(() => fixture("discovery", {}, { loadRuntime: rapidState }).runtime.recordReceipt(
+    "change", "provider", "pass", { ...externalEvidence, ...exitCode }), /exit-code discovery receipt/);
+  assert.throws(() => fixture("discovery", {}, { loadRuntime: rapidState }).runtime.recordReceipt(
+    "change", "provider", "pass", { ...executed, ...exitCode, minimum: 2 },
+    { executed: true, quiet: true }), /exit-code discovery receipt/);
+});

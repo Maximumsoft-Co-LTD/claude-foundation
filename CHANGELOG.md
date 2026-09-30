@@ -9,6 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `/dev` composes `/change`, `/build`, `/prove`, and `/land` exactly: shared
+  agent rules live only in `AGENT.md`, each phase command owns its phase,
+  `/land` runs `advance <change> --through archived` (the `/dev` route), and
+  `commands/references/rapid-path.md` is removed.
+- `change start` accepts a minimal draft (`intent`,
+  `requirements[{description, scenarios[{when, then}]}]`,
+  `tasks[{outcome, verify, paths}]`, no `version`) and fills in the version,
+  keys, capability, operation, scenario names, `covers`, and rapid defaults;
+  ambiguous `covers` returns one EDIT naming the field. `change start
+  --template` shows this form first under `minimalDraft`.
+- Every EDIT and REPAIR from `advance` lists `contextFiles`, `newFiles`, and
+  `contextScope`; a task whose dependency failed verify in the same batch is
+  handed back unticked with it.
+- Prove runs a harness-runnable configured review in parallel with the
+  project's tests for the same workspace hash and returns review findings and
+  failed evidence as one REPAIR batch.
+- Rapid-lane proof accepts a clean test run whose count cannot be parsed when
+  the output shows at least one executed test, recording
+  `countMeasurement: "exit-code"` instead of a fabricated count.
+- The refactor benchmark oracle accepts any shared helper name, and workload
+  tests require every declared critical case in the oracle output.
+
+- Intent keywords that name a security term (for example "billing",
+  "payment", "login") only make review required, at the low review tier; they
+  no longer upgrade a rapid change to foundation-standard, add design.md or
+  specs/, or trigger reviewer diversity. Declared `securityTriggers` and
+  `--security` keep their full effect.
+- Prove's AI review reads a diff-scoped packet (changed hunks plus the
+  agreement's requirements). Low-risk reviews run diff-only on the fast model
+  tier; `review.lowRiskModel: "configured"` or a reviewer `fastModelId`
+  overrides it. Medium and high risk keep the configured model.
+- A single-session plan hands every pending task in one EDIT in dependency
+  order; one resume verifies and ticks them all and returns only failures.
+- The compiler disambiguates colliding derived claim IDs (`-2`, `-3`)
+  deterministically; a settled decision needs only `key` and `choice`
+  (`reason` only when alternatives exist); every start-time draft issue is
+  reported in one EDIT.
+- Agents run no preflight (`doctor`, `--version`, `which`, `changes`, config or
+  state reads) unless a harness result names it, and trust the packet printed
+  by `change start`.
+
 - Core path: the agent needs only `change start`, `advance`, and `changes`.
   `change start <draft>` inspects and starts a complete draft in one call;
   `advance --through proven|archived` wires detected evidence, synchronizes the
@@ -66,6 +107,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `claude-foundation` no longer warns "ignoring sandbox copy" when run inside
+  a Build sandbox owned by the resolved project.
 - Proof execution progress lines no longer leak into `advance` JSON output.
 - The Land notice no longer reports files that Land itself just applied as
   "changed outside the sandbox"; issues and notices share one computation.

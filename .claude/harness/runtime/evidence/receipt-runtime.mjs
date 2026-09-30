@@ -971,10 +971,19 @@ export function createReceiptRuntime({
       die("passing OS-input browser receipt requires foreground-required=yes and foreground-available=yes");
   }
 
-  function applyDiscoveryReceipt(status, flags, receipt) {
+  function applyDiscoveryReceipt(status, flags, receipt, context) {
     if (status !== "pass") return;
-    const discovered = Number(flags.discovered);
     const minimum = Number(flags.minimum);
+    if (flags.countMeasurement === "exit-code") {
+      // Only the harness-run rapid-lane adapter may prove "at least one test
+      // ran" without a count; it never satisfies a floor above 1.
+      if (!context.harnessExecuted || context.state?.schema !== "foundation-rapid" ||
+          minimum !== 1 || (flags.discovered !== null && flags.discovered !== undefined))
+        die("exit-code discovery receipt requires a harness-executed rapid-lane run, minimum 1, and no count");
+      receipt.discovery = { discovered: null, minimum, countMeasurement: "exit-code" };
+      return;
+    }
+    const discovered = Number(flags.discovered);
     if (!Number.isFinite(discovered) || !Number.isFinite(minimum) ||
         minimum <= 0 || discovered < minimum)
       die("passing discovery receipt requires --discovered N --minimum N with discovered >= minimum > 0");
@@ -996,7 +1005,7 @@ export function createReceiptRuntime({
     if (context.capability === "semantic-acceptance")
       applySemanticAcceptanceReceipt(id, flags, receipt, context);
     if (context.capability === "browser") validateBrowserReceipt(status, receipt);
-    if (context.capability === "discovery") applyDiscoveryReceipt(status, flags, receipt);
+    if (context.capability === "discovery") applyDiscoveryReceipt(status, flags, receipt, context);
     if (context.capability === "mutation") applyMutationReceipt(status, flags, receipt);
   }
 

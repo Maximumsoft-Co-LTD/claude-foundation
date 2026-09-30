@@ -9,7 +9,8 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import {
-  normalizeSemanticDraft, renderRequirementMarkdown, renderSpecHeading, semanticDraftTemplate
+  expandMinimalSemanticDraft, minimalSemanticDraftTemplate, normalizeSemanticDraft,
+  renderRequirementMarkdown, renderSpecHeading, semanticDraftTemplate
 } from "../runtime/workflow/semantic-draft.mjs";
 import { requiredProvidersOperation } from "../runtime/workflow/change-validation.mjs";
 import { classifyReviewRisk } from "../runtime/evidence/review-routing.mjs";
@@ -1357,4 +1358,159 @@ test("evidence defaults stay off for standard drafts, explicit opt-out, and v3 c
   assert.deepEqual(declared.draft._defaultedEvidence, ["audit-result"]);
   assert.deepEqual(declared.draft.claims.find((claim) =>
     claim.requirementKey === "payment-retry").capabilities, ["test", "static-analysis"]);
+});
+
+test("colliding derived claim IDs are disambiguated deterministically", () => {
+  // Truncates like the runtime slugify, so long shared title prefixes collide.
+  const truncating = (value) => String(value).toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+/, "").slice(0, 64).replace(/-+$/, "");
+  const prefix = "producer emits v2 envelopes with the negotiated schema version header";
+  const input = (version) => {
+    const value = semanticDraft({ version, integrations: [] });
+    value.requirements[0].scenarios = [
+      { name: "New consumer", when: `${prefix} for new consumers`, then: "v2 is sent" },
+      { name: "Old consumer", when: `${prefix} for old consumers`, then: "v1 is sent" },
+      { key: "producer-emits-v2-envelopes-with-the-negotiated-sc", name: "Pinned",
+        when: "a consumer pins", then: "the pinned version is sent" }
+    ];
+    return version === 4 ? { ...value, requirements: value.requirements.map(namedScenarios) } : value;
+  };
+  for (const version of [3, 4]) {
+    const first = normalizeSemanticDraft(input(version), truncating);
+    assert.deepEqual(first.issues.filter((issue) => /claim ID/.test(issue)), [], `v${version}`);
+    const ids = first.draft.claims.map((claim) => claim.id);
+    assert.equal(new Set(ids).size, ids.length);
+    assert.ok(ids.every((id) => id.length <= 64));
+    // The explicit scenario key keeps its ID; both derived IDs step around it.
+    assert.equal(ids[2], "payment-retry-producer-emits-v2-envelopes-with-the-negotiated-sc");
+    assert.match(ids[0], /-2$/);
+    assert.match(ids[1], /-3$/);
+    assert.deepEqual(first.draft.tasks[0].claims, ids.slice(0, 3));
+    assert.deepEqual(normalizeSemanticDraft(input(version), truncating).draft.claims
+      .map((claim) => claim.id), ids, "recompiling yields the same IDs");
+  }
+  const reserved = normalizeSemanticDraft(semanticDraft(), slugify,
+    { reservedClaimIds: ["audit-result", "payment-retry-success"] });
+  // A derived ID steps around a reserved one; an author-chosen key is left to the caller.
+  assert.deepEqual(reserved.draft.claims.map((claim) => claim.id),
+    ["payment-retry-success", "payment-retry-timeout", "audit-result-2"]);
+});
+
+test("two author-chosen scenario keys that collide remain an error", () => {
+  const value = semanticDraft();
+  value.requirements[0].scenarios[1].key = "success";
+  assert.match(normalizeSemanticDraft(value, slugify).issues.join("\n"),
+    /derives duplicate claim ID 'payment-retry-success'/);
+});
+
+test("a draft decision without alternatives needs no reason", () => {
+  const settled = normalizeSemanticDraft(semanticDraft({
+    decisions: [{ key: "shape", choice: "Keep one module" }]
+  }), slugify);
+  assert.deepEqual(settled.issues, []);
+  assert.match(settled.draft.decisions[0].why, /No alternative was open/);
+  const chosen = normalizeSemanticDraft(semanticDraft({
+    decisions: [{ key: "shape", choice: "Keep one module", rejected: ["Split modules"] }]
+  }), slugify);
+  assert.match(chosen.issues.join("\n"), /decisions\[0\]\.reason is required/);
+});
+
+function minimalDraft(overrides = {}) {
+  return {
+    intent: "Export invoices as CSV",
+    requirements: [
+      { description: "The system SHALL export every invoice row as CSV",
+        scenarios: [{ when: "an operator exports invoices", then: "a CSV file is returned" }] },
+      { description: "The system SHALL escape commas inside invoice fields",
+        scenarios: [{ when: "a field contains a comma", then: "the field is quoted" }] }
+    ],
+    tasks: [
+      { outcome: "Write the invoice CSV exporter", verify: "npm test", paths: ["src/export.js"] },
+      { outcome: "Quote comma fields during escaping", verify: "npm test",
+        paths: ["src/escape.js"] }
+    ],
+    ...overrides
+  };
+}
+
+test("a minimal draft infers version, keys, capability, names, operation, and covers", () => {
+  const expanded = expandMinimalSemanticDraft(minimalDraft());
+  assert.equal(expanded.version, 4);
+  assert.deepEqual(expanded.requirements.map((row) => [row.key, row.capability, row.operation]), [
+    ["export-every-invoice-row-as-csv", "export-invoices-as-csv", "added"],
+    ["escape-commas-inside-invoice-fields", "export-invoices-as-csv", "added"]
+  ]);
+  assert.equal(expanded.requirements[0].scenarios[0].name, "An operator exports invoices (case 1)");
+  assert.deepEqual(expanded.tasks.map((task) => [task.key, task.covers]), [
+    ["write-the-invoice-csv-exporter", ["export-every-invoice-row-as-csv"]],
+    ["quote-comma-fields-during-escaping", ["escape-commas-inside-invoice-fields"]]
+  ]);
+  const { draft, issues } = normalizeSemanticDraft(expanded, slugify, { defaultRapidEvidence: true });
+  assert.deepEqual(issues, []);
+  assert.equal(draft.why, "Export invoices as CSV");
+  assert.equal(draft.impact, "low");
+  assert.deepEqual(draft.claims.map((claim) => claim.capabilities), [["test"], ["test"]]);
+  // Expansion is deterministic, so recompiling yields the same IDs.
+  assert.deepEqual(expandMinimalSemanticDraft(minimalDraft()), expanded);
+});
+
+test("minimal draft keys stay collision-safe and one task covers every requirement", () => {
+  const same = { description: "The system SHALL keep invoices",
+    scenarios: [{ when: "invoices are kept", then: "they persist" }] };
+  const expanded = expandMinimalSemanticDraft(minimalDraft({
+    requirements: [same, same],
+    tasks: [{ outcome: "Keep invoices", verify: "npm test", paths: ["src/a.js"] }]
+  }));
+  assert.deepEqual(expanded.requirements.map((row) => row.key), ["keep-invoices", "keep-invoices-2"]);
+  assert.deepEqual(expanded.tasks[0].covers, ["keep-invoices", "keep-invoices-2"]);
+});
+
+test("a minimal requirement matching the canonical spec compiles as modified", () => {
+  const canonical = [
+    "# export-invoices-as-csv", "", "### Requirement: Invoice export", "",
+    "The system SHALL export every invoice row as CSV", "",
+    "#### Scenario: Export", "", "- **WHEN** an operator exports", "- **THEN** CSV is returned"
+  ].join("\n");
+  const expanded = expandMinimalSemanticDraft(minimalDraft(), {
+    loadCanonicalSpec: (capability) => capability === "export-invoices-as-csv" ? canonical : null
+  });
+  assert.equal(expanded.requirements[0].operation, "modified");
+  assert.equal(expanded.requirements[0].requirement, "Invoice export");
+  assert.equal(expanded.requirements[1].operation, "added");
+});
+
+test("ambiguous covers across several tasks is left to the author and named", () => {
+  const expanded = expandMinimalSemanticDraft(minimalDraft({
+    tasks: [
+      { outcome: "Build the module", verify: "npm test", paths: ["src/a.js"] },
+      { outcome: "Build the module again", verify: "npm test", paths: ["src/b.js"] }
+    ]
+  }));
+  assert.equal(expanded.tasks[0].covers, undefined);
+  const { issues } = normalizeSemanticDraft(expanded, slugify, { defaultRapidEvidence: true });
+  assert.ok(issues.some((issue) => /tasks\[0\]\.covers must name at least one requirement/.test(issue)));
+  assert.ok(issues.some((issue) => /no implementation task: .*name each in one task's 'covers'/.test(issue)));
+});
+
+test("explicit versions and non-minimal shapes are never expanded", () => {
+  const v3 = semanticDraft();
+  assert.equal(expandMinimalSemanticDraft(v3), v3);
+  const v4 = minimalDraft({ version: 4 });
+  assert.equal(expandMinimalSemanticDraft(v4), v4);
+  const legacy = { intent: "x", claims: [], specs: [], requirements: [{ description: "y" }],
+    tasks: [{ outcome: "z" }] };
+  assert.equal(expandMinimalSemanticDraft(legacy), legacy);
+});
+
+test("a minimal draft that declares risk still owes explicit evidence", () => {
+  const expanded = expandMinimalSemanticDraft(minimalDraft({ impact: "high" }));
+  const { issues } = normalizeSemanticDraft(expanded, slugify, { defaultRapidEvidence: true });
+  assert.ok(issues.some((issue) => /requires evidence\['export-every-invoice-row-as-csv'\]/.test(issue)));
+});
+
+test("the minimal template compiles once expanded", () => {
+  const { issues } = normalizeSemanticDraft(
+    expandMinimalSemanticDraft(minimalSemanticDraftTemplate()), slugify,
+    { defaultRapidEvidence: true });
+  assert.deepEqual(issues, []);
 });

@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import { DRIFT_BLOCKING_TASK_KINDS } from "../contracts/model-policy.mjs";
 import {
   blockingConflictRows, compileExecutionGraph, conflictKeysForTask, conflictKeysOverlap,
-  scheduleReadyBatch, singleAgentExecutionEligible
+  scheduleReadyBatch, sequentialSessionEligible, singleAgentExecutionEligible
 } from "../core/graph-execution.mjs";
 import { resolveTaskExecutionAuthority } from "../core/task-execution-authority.mjs";
 import { findCyclePath } from "../core/graph.mjs";
@@ -133,7 +133,7 @@ export function agentPlanNext(output, id) {
   if (output.recommendedExecution === "proof-ready")
     return `claude-foundation proof readiness ${id}`;
   if (output.recommendedExecution === "single-agent")
-    return `claude-foundation packet ${id} --task ${output.tasks[0].id}`;
+    return `claude-foundation packet ${id} --task ${output.groups?.[0]?.[0] || output.tasks[0].id}`;
   return `claude-foundation agents plan ${id} --group 1`;
 }
 
@@ -622,7 +622,8 @@ export function createAgentPlanner({
     const groups = groupAgentTasks(tasks, completed,
       selectedPolicy.execution.maxParallelAgents, taskResourcesConflict, fail,
       (wave) => schedulingWaves.push(wave));
-    const singleAgent = !requiresVerification && singleAgentExecutionEligible(tasks, claims);
+    const singleAgent = !requiresVerification && (singleAgentExecutionEligible(tasks, claims) ||
+      sequentialSessionEligible(tasks, claims, groups));
     const activeConflicts = activeRepositoryConflicts(id, repositories);
     const conflicts = blockingConflictRows(activeConflicts);
     // Scope overlaps with other active changes are reported, never enforced:

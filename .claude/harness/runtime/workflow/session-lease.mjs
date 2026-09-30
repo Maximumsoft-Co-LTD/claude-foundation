@@ -40,8 +40,21 @@ export function taskCheck(content, taskId) {
   return { taskId, command, repository: line.match(/\[repo:([^\]\s]+)\]/)?.[1] || "root" };
 }
 
+// The ledger line's `[depends: ...]` task ids, upper-cased like the plan.
+export function taskDependencies(content, taskId) {
+  const line = String(content || "").split("\n").find((row) =>
+    new RegExp(`^\\s*-\\s*\\[[ xX]\\]\\s*\\*{0,2}${taskId}\\*{0,2}\\b`).test(row));
+  const value = line?.match(/\[depends:\s*([^\]]*)\]/i)?.[1] || "";
+  return value.split(",").map((item) => item.trim().toUpperCase()).filter(Boolean);
+}
+
 export function tickTaskLine(content, taskId) {
   return String(content).replace(TASK_LINE(taskId), "$1x$2");
+}
+
+export function untickTaskLine(content, taskId) {
+  return String(content).replace(
+    new RegExp(`^(\\s*-\\s*\\[)[xX](\\]\\s*\\*{0,2}${taskId}\\*{0,2}\\b.*)$`, "m"), "$1 $2");
 }
 
 // The primitive's refusal names `agents acquire`; a harness-owned lease is
@@ -120,7 +133,25 @@ export function createSessionLeaseRuntime({
     const state = loadRuntime(id);
     const handoff = state.sessionHandoff?.taskIds || [];
     if (handoff.length && saveRuntime) {
-      const remaining = handoff.filter((taskId) => !completeByCheck(id, taskId));
+      // Dependency order: a task whose dependency failed in this batch is not
+      // verified or ticked; it is handed back with that dependency.
+      const remaining = [];
+      for (const taskId of handoff) {
+        const path = ledgerPath(id);
+        const blockedBy = path && existsSync(path)
+          ? taskDependencies(readFileSync(path, "utf8"), taskId).filter((dep) => remaining.includes(dep))
+          : [];
+        if (blockedBy.length) {
+          // A self-ticked dependent is reopened so it returns with its dependency.
+          if (taskLineChecked(readFileSync(path, "utf8"), taskId))
+            writeFileSync(path, untickTaskLine(readFileSync(path, "utf8"), taskId));
+          failedChecks.set(`${id}\0${taskId}`, {
+            taskId, command: null, exitCode: null, blockedBy,
+            output: `not verified: depends on ${blockedBy.join(", ")}, whose verify failed`
+          });
+          remaining.push(taskId);
+        } else if (!completeByCheck(id, taskId)) remaining.push(taskId);
+      }
       settled.push(...handoff.filter((taskId) => !remaining.includes(taskId)));
       const current = loadRuntime(id);
       if (remaining.length) current.sessionHandoff = { ...current.sessionHandoff, taskIds: remaining };

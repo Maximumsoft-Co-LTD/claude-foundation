@@ -34,7 +34,8 @@ assert_file_contains "orchestrator avoids command handoffs" "$ORCH" "agent can r
 assert_file_contains "orchestrator keeps wait commands with the agent" "$ORCH" \
   "not a user command"
 
-for command in investigate change dev feature changes; do
+# /dev composes the phase commands (N1 structure B); its guidance is theirs.
+for command in investigate change prove feature changes; do
   guidance="$COMMANDS/$command.md"
   [ "$command" = "investigate" ] && \
     guidance="$ROOT/.claude/skills/investigate/references/workflow.md"
@@ -72,10 +73,14 @@ assert_file_contains "Prove distinguishes proof from remaining risk" "$COMMANDS/
   "unproven"
 assert_file_contains "Land performs deterministic recovery" "$COMMANDS/land.md" \
   '`automaticRecovery`'
-for command in build prove dev land; do
+# Control-data ownership is a shared rule stated once in AGENT.md; every phase
+# command inherits it through its shared-rules pointer.
+for command in change build prove land; do
   assert_file_contains "$command keeps control commands agent-owned" \
-    "$COMMANDS/$command.md" "agent-only control"
+    "$COMMANDS/$command.md" 'Shared rules: `.claude/harness/AGENT.md`'
 done
+assert_file_contains "dev inherits phase guidance" "$COMMANDS/dev.md" \
+  '`.claude/commands/prove.md`'
 
 assert_file_contains "session digest tells the agent to translate" \
   "$ROOT/.claude/hooks/session-context.mjs" "never paste it verbatim"

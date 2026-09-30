@@ -248,6 +248,9 @@ export function createProofExecutionRuntime({
   reviewPolicy = () => ({ tier: "low", requiresHumanFinal: false }),
   deliveredAiAttempts = () => [], recordDeterministicReviewClosure = () => null,
   authorityStatusValue = () => ({ requests: [] }), requestAuthority = () => null,
+  // (id, request, command) => Promise | null. Starts the harness-runnable
+  // configured review in the foreground; null means the route is a handoff.
+  startConcurrentReview = null,
   stableHash = (value) => JSON.stringify(value), die, markBlocked = () => {}
 }) {
   const memoryAdvance = new Map();
@@ -609,7 +612,11 @@ export function createProofExecutionRuntime({
       providerCapability(provider, providerConfig(id, provider)) === "review") || "review";
     const subjectHash = currentProviderHash(id, reviewProvider, readiness.workspaceHash);
     const repairBatch = reviewRepairBatch(id);
-    const findings = repairBatch?.findings || failures.map((failure) => ({
+    // Review findings and executable failures at the same workspace are one
+    // repair batch; neither hides the other.
+    const findings = repairBatch ? [...repairBatch.findings, ...evidenceFailureFindings(
+      failures.filter((failure) => failure.capability && failure.capability !== "review"))]
+      : failures.map((failure) => ({
       id: `${failure.provider || "review"}:${failure.validity || "invalid"}`,
       provider: failure.provider || reviewProvider,
       classification: failure.validity === "unavailable" ? "infrastructure" : "product",
@@ -752,8 +759,53 @@ export function createProofExecutionRuntime({
     return printOutcome(outcome);
   }
 
+  // During `advance --through proven|archived`, a required configured review
+  // that the harness can run starts beside the executable providers for the
+  // same workspace hash. Anything else (handoff routes, external reviewers,
+  // the bounded-closure route, several review providers) keeps the serial
+  // path. The returned promise never rejects: an unsettled review stays an
+  // open request that the next pass routes exactly as before.
+  function startAdvanceReview(id, flags, snapshot, readiness, authorityRequests) {
+    if (!flags.concurrentReview || !startConcurrentReview) return null;
+    if (readiness.status !== "NEEDS_USER_DECISION" ||
+        snapshot.workspaceHash !== readiness.workspaceHash) return null;
+    const reviewProviders = missingByCapability(id, readiness, "review");
+    if (reviewProviders.length !== 1) return null;
+    const subjectHash = currentProviderHash(id, reviewProviders[0], readiness.workspaceHash);
+    const delivered = deliveredAiAttempts(id);
+    if (delivered.length >= 2 && delivered.at(-1)?.resultStatus === "fail") return null;
+    if (delivered.length >= effectiveReviewAttemptLimit(
+      reviewPolicy(id), delivered, subjectHash).maxAiAttempts) return null;
+    const known = authorityRequests.length ? authorityRequests : statusRequests(id);
+    if (currentRequests(id, reviewProviders, readiness.workspaceHash,
+      ["dispatched", "pending", "infrastructure-exhausted", "rejected"], known).length)
+      return null;
+    let request = null;
+    let running = null;
+    try {
+      [request] = requestMissingAuthority(
+        id, reviewProviders, "review", readiness.workspaceHash, known);
+      if (request?.status !== "requested" || request.mainSessionFallback ||
+          request.workspaceHash !== subjectHash) return null;
+      running = startConcurrentReview(
+        id, request, authorityNext(id, "review", [request])[0]?.command);
+    } catch { return null; }
+    return running ? Promise.resolve(running).then(() => true, () => false) : null;
+  }
+
+  // Executable evidence failed while the concurrent review rejected the same
+  // workspace: report both in one repair stop instead of the provider error.
+  function concurrentFailureStop(id, advanceStart) {
+    const readiness = proofReadinessValue(id, "prove");
+    const failed = terminalEvidence(id, readiness);
+    if (!failed.some((row) => row.capability === "review") ||
+        !failed.some((row) => row.capability !== "review")) return null;
+    return stopProofAdvance(writeReviewRepairStop(
+      id, readiness, advanceStart, { failures: failed }));
+  }
+
   async function collectAdvanceExecution(id, flags, snapshot, readiness,
-    authorityRequests) {
+    authorityRequests, advanceStart = {}) {
     const execution = executionNodes(id, snapshot.workspaceHash);
     const collectable = collectableExecutionNodes(
       id, execution.nodes, snapshot.workspaceHash);
@@ -804,17 +856,34 @@ export function createProofExecutionRuntime({
       requests: [],
       recoveryDecisionRef: decisionRef || null
     });
-    const collection = await proofCollectUnlocked(id, {
-      readiness,
-      snapshot,
-      execution,
-      collectable,
-      quiet: true,
-      includeReadiness: true,
-      manageReservation: false
-    });
+    const review = startAdvanceReview(
+      id, flags, snapshot, readiness, authorityRequests);
+    let collection;
+    try {
+      collection = await proofCollectUnlocked(id, {
+        readiness,
+        snapshot,
+        execution,
+        collectable,
+        quiet: true,
+        includeReadiness: true,
+        manageReservation: false
+      });
+    } catch (error) {
+      if (!review) throw error;
+      await review;
+      const combined = concurrentFailureStop(id, advanceStart);
+      if (combined) return { outcome: combined };
+      throw error;
+    }
     executedProviders = collection.executedProviders || [];
     readiness = collection.readiness;
+    // Join before classifying: the review verdict is bound to this same
+    // workspace hash and belongs to this pass's readiness.
+    if (review) {
+      await review;
+      readiness = proofReadinessValue(id, "prove");
+    }
     authorityRequests = readiness.status === "NEEDS_USER_DECISION"
       ? statusRequests(id) : [];
     if (!["READY", "NEEDS_USER_DECISION"].includes(readiness.status)) {
@@ -1133,7 +1202,7 @@ export function createProofExecutionRuntime({
       }
     }
     const executionResult = await collectAdvanceExecution(
-      id, flags, snapshot, readiness, authorityRequests);
+      id, flags, snapshot, readiness, authorityRequests, advanceStart);
     if (executionResult.outcome) return executionResult.outcome;
     ({ readiness, authorityRequests } = executionResult);
     const { executedProviders } = executionResult;

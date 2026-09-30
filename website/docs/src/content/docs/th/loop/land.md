@@ -10,7 +10,7 @@ description: Apply ตรวจ archive และ cleanup งานปัจจ�
 Slash command นี้คือ boundary ที่ให้อำนาจ Land อย่างชัดเจน และรัน:
 
 ```bash
-claude-foundation land advance <change>
+claude-foundation advance <change> --through archived
 ```
 
 Coordinator บันทึก proof และ external-operation assurance ปัจจุบัน เตรียม apply

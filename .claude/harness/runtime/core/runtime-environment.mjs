@@ -328,9 +328,16 @@ export function createRuntimeEnvironment({
       fail(`foundation.json review.reviewers.${name}.reasoningEffort must be high`);
     if (reviewer.sandbox !== "read-only" || reviewer.ephemeral !== true)
       fail(`foundation.json review.reviewers.${name} must use read-only sandbox and ephemeral true`);
+    for (const field of ["fastModelId", "fastModelFamily"])
+      if (reviewer[field] !== undefined &&
+          (typeof reviewer[field] !== "string" || !reviewer[field].trim()))
+        fail(`foundation.json review.reviewers.${name}.${field} must be a non-empty string`);
   }
 
   function validateReviewPolicy(policy, configured) {
+    if (policy.review.lowRiskModel !== undefined &&
+        !["fast", "configured"].includes(policy.review.lowRiskModel))
+      fail("foundation.json review.lowRiskModel must be fast|configured");
     normalizeReviewFallbacks(policy, configured);
     for (const [name, reviewer] of Object.entries(policy.review.reviewers))
       validateReviewer(name, reviewer);

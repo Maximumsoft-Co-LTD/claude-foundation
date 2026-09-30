@@ -135,6 +135,32 @@ export function parseAssertionSummaryOutput(value) {
     format: "assertion-summary", criticalCases: [] };
 }
 
+// Rapid-lane fallback when no count parses: a line that only an executed,
+// passing test prints. It proves "at least one test ran", never a count, and a
+// runner line saying nothing ran vetoes every positive marker.
+const EXECUTED_TEST_MARKERS = Object.freeze([
+  ["node-spec-pass", /^\s*✔\s+\S/m],
+  ["tap-ok", /^\s*ok\s+[1-9]\d*\b/m],
+  ["jest-file-pass", /^\s*PASS\s+\S+/m],
+  ["go-test-pass", /^\s*--- PASS: \S+/m],
+  ["go-package-ok", /^ok\s+\S+\s+[\d.]+s\s*$/m],
+  ["unittest-case-ok", /^test\S*\s.*\.\.\.\s+ok\s*$/m],
+  ["passed-count", /(?:^|[\s,|(])[1-9]\d*\s+(?:tests?\s+)?(?:passed|passing)\b/im],
+  ["unittest-ran", /^Ran\s+[1-9]\d*\s+tests?\b/m],
+  ["rspec-examples", /^\s*[1-9]\d*\s+examples?,\s+0\s+failures\b/m]
+]);
+const NO_TESTS_RAN = /\bno tests? (?:found|ran|were run|executed|to run)\b|\bno test files found\b|^Ran\s+0\s+tests?\b|(?:^|\s)0\s+(?:tests?\s+)?(?:passed|passing)\b|^\s*0\s+examples?\b/im;
+
+export function parseExecutedTestEvidence(value) {
+  const text = String(value || "").replace(/\x1b\[[0-9;]*m/g, "");
+  if (!text.trim() || NO_TESTS_RAN.test(text)) return null;
+  for (const [marker, pattern] of EXECUTED_TEST_MARKERS) {
+    const match = text.match(pattern);
+    if (match) return { marker, line: match[0].trim().slice(0, 160) };
+  }
+  return null;
+}
+
 export function mutationProtocolResult(value) {
   const text = String(value || "");
   const line = text.match(

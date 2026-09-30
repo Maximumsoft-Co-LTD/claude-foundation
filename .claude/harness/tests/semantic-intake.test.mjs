@@ -229,3 +229,36 @@ test("semantic intake routes changed grounded sources back to the agent", () => 
 test("semantic draft v3 keeps its compatibility path without discovery", () => {
   assert.deepEqual(semanticIntakeIssues({ version: 3 }), []);
 });
+
+test("a settled decision needs only its choice; reason is owed only among alternatives", () => {
+  const value = source();
+  value.discovery.decisions = [
+    { key: "format", question: "Which format?", choice: "json" },
+    { key: "storage", status: "resolved", choice: "disk" },
+    { key: "fact", status: "resolved", question: "Does the API already paginate?" }
+  ];
+  assert.deepEqual(semanticIntakeIssues(value), []);
+  assert.equal(semanticIntakeAction(value).action, "DONE");
+  assert.deepEqual(normalizeDiscovery(value).decisions.map((row) => row.status),
+    ["resolved", "resolved", "resolved"]);
+
+  value.discovery.decisions = [
+    { key: "retention", status: "resolved", alternatives: ["30d", "90d"] },
+    { key: "empty", status: "resolved" }
+  ];
+  const message = semanticIntakeIssues(value).join("\n");
+  assert.match(message, /decisions\[0\]\.choice is required/);
+  assert.match(message, /decisions\[0\]\.reason is required/);
+  assert.match(message, /decisions\[1\] records nothing/);
+  assert.doesNotMatch(message, /prerequisites must be an array/);
+});
+
+test("a decision with alternatives and no choice stays an open user question", () => {
+  const value = source();
+  value.discovery.decisions = [{
+    key: "scope", question: "Which scope?", alternatives: ["one", "all"], recommended: "one"
+  }];
+  const action = semanticIntakeAction(value);
+  assert.equal(action.action, "ASK_USER");
+  assert.deepEqual(action.decision.items.map((row) => row.key), ["scope"]);
+});

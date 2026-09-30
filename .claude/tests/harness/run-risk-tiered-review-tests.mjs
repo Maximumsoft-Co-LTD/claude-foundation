@@ -48,7 +48,10 @@ for (const testCase of cases) {
   if (!executions.has(key)) {
     const [command, ...args] = testCase.command;
     executions.set(key, spawnSync(command, args, {
-      cwd: process.cwd(), encoding: "utf8", timeout: 180_000,
+      cwd: process.cwd(), encoding: "utf8",
+      // The upgrade-compat case takes ~130s alone; parallel full-suite load
+      // pushed it past 180s and failed a correct run.
+      timeout: 360_000,
       maxBuffer: 32 * 1024 * 1024
     }));
   }

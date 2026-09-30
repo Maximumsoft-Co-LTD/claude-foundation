@@ -8,7 +8,8 @@ import { createHash } from "node:crypto";
 import {
   compileExecutionGraph, conflictKeysForTask, conflictKeysOverlap,
   compileLandPreparation, dependentClosure, landPreparationMatches,
-  schemasCompatible, scheduleReadyBatch, singleAgentExecutionEligible, validateNodeResult
+  schemasCompatible, scheduleReadyBatch, sequentialSessionEligible, singleAgentExecutionEligible,
+  validateNodeResult
 } from "../runtime/core/graph-execution.mjs";
 
 import { createLeaseRuntime } from "../runtime/workflow/lease-runtime.mjs";
@@ -179,6 +180,22 @@ test("authority: multiple single-repository tasks use planned dispatch", () => {
   assert.equal(singleAgentExecutionEligible(tasks, [
     { repositories: ["root", "contracts"] }
   ]), false);
+});
+
+test("authority: a one-at-a-time chain in one repository runs in the session", () => {
+  const tasks = ["T001", "T002", "T003"].map((id) =>
+    ({ id, repository: "root", resources: ["workspace:root"] }));
+  const chain = [["T001"], ["T002"], ["T003"]];
+  assert.equal(sequentialSessionEligible(tasks, [], chain), true);
+  assert.equal(sequentialSessionEligible(tasks, [], [["T001", "T002"], ["T003"]]), false);
+  assert.equal(sequentialSessionEligible([tasks[0]], [], [["T001"]]), false);
+  assert.equal(sequentialSessionEligible([
+    tasks[0], tasks[1], { ...tasks[2], repository: "api" }
+  ], [], chain), false);
+  assert.equal(sequentialSessionEligible(tasks, [{ repositories: ["root", "api"] }], chain), false);
+  assert.equal(sequentialSessionEligible([
+    tasks[0], tasks[1], { ...tasks[2], resources: ["workspace:root", "dev-server"] }
+  ], [], chain), false);
 });
 
 test("scheduler: longest ready dependency chain wins before deterministic siblings", () => {

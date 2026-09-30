@@ -10,6 +10,9 @@ import {
   automaticReviewRun, createAdvanceRecovery
 } from "./advance-recovery.mjs";
 
+import { existsSync, readdirSync, statSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
+
 export const ADVANCE_PROTOCOL_VERSION = 6;
 
 const command = (value) => `claude-foundation ${value}`;
@@ -45,6 +48,43 @@ function envelope(id, action, values = {}) {
     ...value,
     userState: lifecycleUserState(value),
     user: lifecycleUserProjection(value)
+  };
+}
+
+function packetSpecFiles(dir) {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true })
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .flatMap((entry) => entry.isDirectory() ? packetSpecFiles(join(dir, entry.name))
+      : entry.isFile() ? [join(dir, entry.name)] : []);
+}
+
+// Resolved read set for an EDIT/REPAIR envelope, as absolute paths: the
+// packet files that exist, plus declared task paths split into the ones that
+// exist in the workspace (`contextFiles`) and the ones the task creates
+// (`newFiles`). Globs are scope, not files, and are left to `allowedPaths`.
+export function envelopeContextFiles({ packetDir, state = {}, tasks = [], paths = [] }) {
+  const specs = packetSpecFiles(join(packetDir, "specs"));
+  const packet = ["proposal.md", "design.md", "tasks.md"]
+    .map((name) => join(packetDir, name)).filter((file) => existsSync(file));
+  const root = (repository) =>
+    state.repositories?.[repository]?.path || state.workspace?.path || null;
+  const declared = [
+    ...tasks.flatMap((task) => (task.allowedPaths || []).map((path) => [task.repository, path])),
+    ...paths.map((path) => [null, path])
+  ];
+  const existing = [], created = [];
+  for (const [repository, path] of declared) {
+    const base = root(repository);
+    if (typeof path !== "string" || !path || /[*?[\]{}]/.test(path) || (!base && !isAbsolute(path))) continue;
+    const file = isAbsolute(path) ? path : resolve(base, path);
+    const exists = existsSync(file) && (statSync(file).isFile() || statSync(file).isDirectory());
+    (exists ? existing : created).push(file);
+  }
+  return {
+    contextFiles: [...new Set([...packet, ...specs, ...existing])],
+    newFiles: [...new Set(created)].filter((file) => !existing.includes(file)),
+    contextScope: { paths: "absolute", specs: specs.length ? "included" : "none" }
   };
 }
 
@@ -372,7 +412,9 @@ function selectedBuildTasks(dispatch, plan) {
   const ids = dispatch.action === "spawn-group"
     ? (dispatch.workers || []).map((worker) => worker.taskId)
     : dispatch.task?.taskId ? [dispatch.task.taskId]
-      : (plan?.groups?.[0] || plan?.tasks?.slice(0, 1).map((task) => task.id) || []);
+      // A session plan hands every pending task at once, in dependency order;
+      // the next advance verifies and ticks each one.
+      : (plan?.groups?.flat() || plan?.tasks?.slice(0, 1).map((task) => task.id) || []);
   return ids.map((id) => plan?.tasks?.find((task) => task.id === id))
     .filter(Boolean).map((task) => ({
       id: task.id,
@@ -410,6 +452,11 @@ function buildAction(id, dispatch, state, plan = null) {
         leases: dispatch.action === "spawn-group" ? dispatch.workers :
           dispatch.task ? [dispatch.task] : []
       },
+      ...(dispatch.action === "run-in-session" && tasks.length > 1 ? { instructions: [
+        `Implement ${tasks.map((task) => task.id).join(", ")} in this order inside the workspace.`,
+        "Run each task's focused check, then the resume command once: advance reruns every " +
+        "task's verify check, marks each passing task [x], and hands back only failures."
+      ] } : {}),
       recoveryType: "EDIT",
       alternatives: ["amend the agreement if Build discovers new behavior"]
     });
@@ -621,6 +668,8 @@ export function createAdvanceRuntime({
   recoverArchive = null,
   recoverSandbox = null, saveRuntime = () => {}, proofIsCurrent = null,
   settleSessionLeases = null, issueSessionLease = null,
+  // Resolves a change's packet directory; enables `contextFiles` on EDIT/REPAIR.
+  changePath = null,
   // Harness-owned operations advance performs itself instead of handing the
   // agent a primitive: detected provider wiring and a configured reviewer.
   wireEvidence = null, runReview = null, synchronizeAgreement = null,
@@ -642,6 +691,24 @@ export function createAdvanceRuntime({
   function projected(value) {
     const result = lifecycleOutcome(actionableGuidance(value));
     return { ...result, userState: lifecycleUserState(result), user: lifecycleUserProjection(result) };
+  }
+
+  // Agents open only these files: the packet and the handed tasks' paths.
+  function withContext(id, value) {
+    if (!changePath || !value || !["EDIT", "REPAIR"].includes(value.action) || value.contextFiles)
+      return value;
+    try {
+      return capture(() => {
+        const tasks = value.tasks || [];
+        const paths = [
+          ...(tasks.length ? [] : value.allowedPaths || []),
+          ...(value.repairGraph?.nodes || []).flatMap((node) => node.paths || [])
+        ];
+        return { ...value, ...envelopeContextFiles({
+          packetDir: changePath(id), state: loadRuntime(id), tasks, paths
+        }) };
+      });
+    } catch { return value; }
   }
 
   function pendingAction(id, through, pending) {
@@ -810,13 +877,13 @@ export function createAdvanceRuntime({
   }
 
   function noProgress(id, through) {
-    return projected(recovery.observe(id, envelope(id, "REPAIR", {
+    return projected(recovery.observe(id, withContext(id, envelope(id, "REPAIR", {
       legacyAction: "NO_PROGRESS_BOUNDARY", actor: "harness",
       boundary: "repeated-no-progress",
       reason: "The same authorized operation completed twice without changing delivery state",
       recoveryType: "RECONFIGURE",
       resumeCommand: resume(id, through)
-    }), { force: true }));
+    })), { force: true }));
   }
 
   async function advanceThrough(id, through) {
@@ -826,7 +893,7 @@ export function createAdvanceRuntime({
         try { value = capture(() => issueSessionLease(id, value)); }
         catch (error) { value = advanceFailureAction(id, error, { stage, through }); }
       }
-      value = projected({ ...value, resume: resume(id, through), resumeCommand: resume(id, through) });
+      value = projected({ ...withContext(id, value), resume: resume(id, through), resumeCommand: resume(id, through) });
       try { value = projected(recovery.observe(id, value)); }
       catch (error) {
         // Recovery bookkeeping must not hide the original failure or turn a
@@ -842,11 +909,11 @@ export function createAdvanceRuntime({
         try {
           const result = await captureAsync(() => recoverSandbox(id));
           if (result?.conflicts?.length || result?.status === "CONFLICT")
-            return projected(recovery.observe(id, envelope(id, "REPAIR", {
+            return projected(recovery.observe(id, withContext(id, envelope(id, "REPAIR", {
               actor: "agent", legacyAction: "REPAIR_SYNC_CONFLICT", boundary: "conflict",
               reason: "Sandbox synchronization found conflicting changes; choose the intended result before merging.",
               details: result, recoveryType: "EDIT", resumeCommand: resume(id, through)
-            }), { force: true }));
+            })), { force: true }));
           return advanceThrough(id, through);
         } catch (error) {
           return projected(recovery.observe(id, advanceFailureAction(id, error, { stage, through })));
@@ -993,7 +1060,7 @@ export function createAdvanceRuntime({
 
   function advanceValue(id, options = {}) {
     const read = () => {
-      const value = readAdvanceValue(id, options);
+      const value = withContext(id, readAdvanceValue(id, options));
       try {
         const pending = recovery.pending(id);
         if (pending)
@@ -1032,9 +1099,14 @@ export async function prepareAdvanceBuild(context, id) {
   }));
 }
 
+// Only the `advance --through proven|archived` route runs a harness-runnable
+// configured review beside the executable providers; `proof advance` stays
+// serial.
 export async function runAdvanceProof(context, id) {
   return context.measureAsync("prove.execute", () =>
-    context.runQuietly(() => context.proofAdvance(id, { quiet: true })));
+    context.runQuietly(() => context.proofAdvance(id, {
+      quiet: true, concurrentReview: true
+    })));
 }
 
 export function hasValidLandGrant(landGrantRuntime, id) {

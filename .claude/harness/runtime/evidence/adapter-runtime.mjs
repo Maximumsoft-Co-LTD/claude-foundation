@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
   aggregateEvidenceStatus, evidenceResultValue, parseAssertionSummaryOutput,
-  parseRunnerSummaryOutput
+  parseExecutedTestEvidence, parseRunnerSummaryOutput
 } from "./evidence-results.mjs";
 import { repositoryBaseHead } from "../core/repository-binding.mjs";
 
@@ -650,14 +650,24 @@ export function createAdapterRuntime({
       "numTotalTests", "totalTests", "tests", "testCount", "expected"
     ]);
     const minimum = Number(config.minimum || 1);
-    const discoveryStatus = adapterInfrastructureFailed(result, readinessMissed)
-      ? "error" : discovered === null ? "inconclusive"
+    const infrastructureFailed = adapterInfrastructureFailed(result, readinessMissed);
+    // Rapid lane only: a clean exit plus a line only an executed test prints
+    // proves minimum 1, recorded as exit-code measurement with no count.
+    const executedEvidence = discovered === null && !infrastructureFailed &&
+      result.status === 0 && minimum === 1 && execution.state?.schema === "foundation-rapid"
+      ? parseExecutedTestEvidence(`${result.stdout || ""}\n${result.stderr || ""}`) : null;
+    const countMeasurement = executedEvidence ? "exit-code" : discovered === null ? null : "count";
+    const discoveryStatus = infrastructureFailed
+      ? "error" : executedEvidence ? "pass" : discovered === null ? "inconclusive"
         : discovered >= minimum ? "pass" : "fail";
     recordReceipt(id, discoveryProvider, discoveryStatus, {
       ...baseFlags, config: discoveryConfig,
       claims: providerClaims(id, discoveryProvider, discoveryConfig).join(","),
-      discovered, minimum,
-      observed: discovered === null
+      discovered, minimum, countMeasurement,
+      observed: executedEvidence
+        ? `test count unavailable; exit 0 with executed-test marker ${
+          executedEvidence.marker} ('${executedEvidence.line}'); rapid lane accepts minimum 1` :
+        discovered === null
         ? `structured test count unavailable: provider '${testProvider}' output had no JSON, TAP, ` +
           `node spec, or runner summary; ${discoveryCountRepair(
             config.command, workspacePackageScripts(execution.cwd))}` :
@@ -671,7 +681,7 @@ export function createAdapterRuntime({
           kind: "critical-case", ...row
         })),
         { kind: "discovery", provider: discoveryProvider, status: discoveryStatus,
-          discovered, minimum }
+          discovered, minimum, countMeasurement }
       ]
     });
   }

@@ -31,6 +31,21 @@ not repeat `discovery` on every claim.
 
 ## Readiness and selective execution
 
+During `advance --through proven|archived`, a harness-runnable configured review
+starts beside the executable providers for the same workspace hash and is joined
+before Prove classifies the result; it runs in the foreground and holds the
+authority lock until its verdict is recorded. A verdict recorded while tests
+fail stays reusable only while its workspace hash is unchanged, and review
+findings plus failed evidence at the same hash return as one REPAIR batch.
+Handoff routes, external reviewers, and plain `proof advance` stay serial.
+
+On the rapid lane with `minimum: 1`, a test-discovery run that exits 0 without
+a parseable count passes discovery only when its output shows an executed test
+(for example `✔`, `ok N`, `PASS file`, `--- PASS:`, `test … ok`, or `N passed`
+with N ≥ 1, and no "no tests ran" line). The receipt records
+`countMeasurement: "exit-code"` and `discovered: null`; standard lanes, floors
+above 1, and non-zero exits still require a counted result.
+
 `evidence` is optional for a rapid draft (low impact, isolated, no security
 triggers, review or acceptance not required, no design content); omitted
 capabilities default to `["test"]` proven by the tasks' verify commands. When a
@@ -385,6 +400,20 @@ commits both waivers: `independence: "self"` and
 `diversity: "single-model"`. Claude Code Opus is the selected reviewer and
 Codex is the alternate. `doctor` and `change validate` expose the normalized
 posture and consequences; risk-tiered routing does not restore either assurance axis.
+AI review packets are diff-scoped: dispatch adds `reviewDiff` (changed code
+hunks against each repository's base, bounded per file and in total; contract
+artifacts excluded) and `agreement` (claims, acceptance, and delta spec
+requirements), all bound by the packet digest alongside the unchanged scope,
+workspace hash, and finding binding. A low-tier first round is `diff-only`: the
+reviewer sees a projection without reference-only fields and may open a file
+only when its hunk is truncated, omitted, or unavailable. It runs on the fast
+model tier: the reviewer's `fastModelId` (optional `fastModelFamily`), else the
+`models.fast.family` alias for `claude-cli`; `review.lowRiskModel:
+"configured"` opts out. Provider family never changes, so diversity and
+independence rules are unaffected. Medium, high, promoted, and legacy routes
+are `diff-first` on the configured model. Intent keywords alone make review
+required at the low tier; they raise the tier or require diversity only
+alongside declared risk.
 A configured `defaultReviewer` runs first, followed by `fallbackReviewers` in
 order only after infrastructure errors. `fail` and `inconclusive` are delivered
 verdicts and never trigger fallback. Uninspectable packets and finding/closure

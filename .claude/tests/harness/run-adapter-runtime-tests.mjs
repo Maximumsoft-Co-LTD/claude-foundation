@@ -11,7 +11,8 @@ import {
   discoveryCountRepair, providerRepositoryManifestValue, repositoryStatus
 } from "../../harness/runtime/evidence/adapter-runtime.mjs";
 import {
-  numericReportValue, parseNodeTestSpecOutput, parseTapOutput, playwrightReportSummary
+  numericReportValue, parseExecutedTestEvidence, parseNodeTestSpecOutput, parseTapOutput,
+  playwrightReportSummary
 } from "../../harness/runtime/evidence/evidence-results.mjs";
 
 const stableHash = (value) => createHash("sha256")
@@ -387,6 +388,78 @@ test("test-discovery distinguishes unavailable counts and infrastructure errors"
     result({ status: 1, stdout: JSON.stringify({ numTotalTests: 2 }) }));
   assert.equal((await failedTest.runtime.executeAdapter(
     "change", "provider", config, "run", new Map())).status, "fail");
+});
+
+function laneLoadRuntime(schema) {
+  return () => ({
+    schema,
+    workspace: { path: "/tmp", baseHead: "base" },
+    repositories: { root: { baseHead: "base" } },
+    activeProofRun: { workspaceHash: "workspace" }
+  });
+}
+
+test("rapid lane accepts exit 0 with executed-test evidence as exit-code measurement", async () => {
+  const config = { capability: "test", adapter: "test-discovery", minimum: 1 };
+  const world = fixture(config, result({ stdout: "running\n✔ adds (0.4ms)\ndone" }),
+    { loadRuntime: laneLoadRuntime("foundation-rapid") });
+  const outcome = await world.runtime.executeAdapter(
+    "change", "provider", config, "run", new Map());
+  assert.equal(outcome.status, "pass");
+  const discovery = world.receipts[1];
+  assert.equal(discovery.status, "pass");
+  assert.equal(discovery.flags.discovered, null);
+  assert.equal(discovery.flags.countMeasurement, "exit-code");
+  assert.match(discovery.flags.observed, /exit 0 with executed-test marker node-spec-pass/);
+  assert.equal(outcome.observations.at(-1).countMeasurement, "exit-code");
+});
+
+test("rapid lane without executed-test evidence stays inconclusive with the repair", async () => {
+  const config = { capability: "test", adapter: "test-discovery", minimum: 1 };
+  for (const stdout of ["build complete", "no tests found\n✔ lint", "Ran 0 tests in 0.0s"]) {
+    const world = fixture(config, result({ stdout }),
+      { loadRuntime: laneLoadRuntime("foundation-rapid") });
+    assert.equal((await world.runtime.executeAdapter(
+      "change", "provider", config, "run", new Map())).status, "inconclusive", stdout);
+    assert.equal(world.receipts[1].flags.countMeasurement, null);
+    assert.match(world.receipts[1].flags.observed, /structured test count unavailable/);
+  }
+});
+
+test("exit-code measurement is rapid-only, minimum-1-only, and never excuses a failure", async () => {
+  const config = { capability: "test", adapter: "test-discovery", minimum: 1 };
+  const stdout = "ok 1 - adds";
+  const standard = fixture(config, result({ stdout }),
+    { loadRuntime: laneLoadRuntime("foundation-standard") });
+  assert.equal((await standard.runtime.executeAdapter(
+    "change", "provider", config, "run", new Map())).status, "inconclusive");
+  assert.equal(standard.receipts[1].flags.countMeasurement, null);
+
+  const floor = { ...config, minimum: 2 };
+  const aboveOne = fixture(floor, result({ stdout }),
+    { loadRuntime: laneLoadRuntime("foundation-rapid") });
+  assert.equal((await aboveOne.runtime.executeAdapter(
+    "change", "provider", floor, "run", new Map())).status, "inconclusive");
+
+  const failed = fixture(config, result({ stdout, status: 1 }),
+    { loadRuntime: laneLoadRuntime("foundation-rapid") });
+  assert.equal((await failed.runtime.executeAdapter(
+    "change", "provider", config, "run", new Map())).status, "fail");
+  assert.deepEqual(failed.receipts.map((row) => row.status), ["fail", "inconclusive"]);
+});
+
+test("executed-test evidence recognizes runner pass lines and rejects empty runs", () => {
+  for (const text of [
+    "✔ works (1ms)", "ok 3 - parses", "PASS src/a.test.js", "--- PASS: TestAdd (0.00s)",
+    "ok  \texample.com/pkg\t0.012s", "test_add (tests.Math) ... ok",
+    "test tests::adds ... ok", "===== 5 passed in 0.12s =====", "  3 passing (8ms)",
+    "Ran 4 tests in 0.001s", "2 examples, 0 failures", "\x1b[32m✔\x1b[39m colored"
+  ]) assert.ok(parseExecutedTestEvidence(text), text);
+  for (const text of [
+    "", "build complete", "PASS", "0 passed", "Ran 0 tests in 0.0s", "0 examples, 0 failures",
+    "No tests found, exiting with code 0", "ok  \tpkg\t0.01s [no tests to run]",
+    "?   \tpkg\t[no test files]", "all good ✔", "ok"
+  ]) assert.equal(parseExecutedTestEvidence(text), null, text);
 });
 
 for (const results of [null, {}, [], [{}], [null], [{ status: "unknown" }],

@@ -3,7 +3,7 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { measuredNumber } from "../core/measured-number.mjs";
 import { isExcludedPath } from "../core/workspace-surface.mjs";
-import { classifyReviewRisk } from "./review-routing.mjs";
+import { classifyReviewRisk, reviewSemanticText } from "./review-routing.mjs";
 
 // Named once and read by both `reviewPolicy` and the change-time forecast. The
 // forecast has to answer "will this need a reviewer?" from the same lists, but
@@ -174,14 +174,17 @@ export function environmentDescriptorOperation({
   };
 }
 
-export function collectReviewSignals(state, contract, configuredCapabilities = []) {
+export function collectReviewSignals(state, contract, configuredCapabilities = [],
+  grounding = null) {
   const capabilities = new Set([
     ...(state.evidenceCapabilities || []),
     ...contract.claims.flatMap((claim) => claim.capabilities || []),
     ...configuredCapabilities
   ]);
-  const semantic = `${state.intent || ""} ${(state.securityTriggers || []).join(" ")}`
-    .toLowerCase();
+  // Keyword-only intent never forces diversity or a higher tier; see
+  // reviewSemanticText. Review itself stays required for such changes through
+  // state.reviewRequired set by resolve.
+  const semantic = reviewSemanticText({ state, claims: contract.claims, grounding });
   const requiredTriggers = [];
   const diversityTriggers = [];
   const riskClaims = contract.claims.filter((claim) => claim.impact !== "low");
@@ -1134,7 +1137,7 @@ export function createEvidenceContract({
   
   function reviewPolicy(id, state = loadRuntime(id), contract = evidence(id)) {
     const grounding = readJson(join(activeChangePath(id), "grounding.yaml"), {});
-    const signals = collectReviewSignals(state, contract, policyCapabilities(id));
+    const signals = collectReviewSignals(state, contract, policyCapabilities(id), grounding);
     const riskRoute = classifyReviewRisk({
       state, claims: contract.claims, capabilities: signals.capabilities, grounding,
       requiredTriggers: signals.requiredTriggers

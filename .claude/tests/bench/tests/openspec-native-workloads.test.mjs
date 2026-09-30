@@ -9,6 +9,17 @@ import test from "node:test";
 import { runBenchmarkOracle } from "../openspec-native/run.mjs";
 
 const TASKS = fileURLToPath(new URL("../tasks", import.meta.url));
+const MATRIX = JSON.parse(readFileSync(
+  fileURLToPath(new URL("../config/openspec-native-matrix.json", import.meta.url)), "utf8"));
+
+// Every declared critical case must be reported and passing after the repair.
+// A silent oracle yields only the shell-side cases, which once let a broken
+// check.mjs pass with a perfect score.
+function criticalCases(name) {
+  const scenario = MATRIX.scenarios.find((row) =>
+    String(row.fixture || "").endsWith(`/tasks/${name}/seed`));
+  return scenario?.critical_case_ids || [];
+}
 
 function write(path, value) {
   mkdirSync(dirname(path), { recursive: true });
@@ -26,6 +37,13 @@ function verifyWorkload(name, repair) {
     const after = runBenchmarkOracle({ project, oraclePath: join(task, "oracle/run.sh") });
     assert.equal(after.verdict, "pass", JSON.stringify(after));
     assert.equal(after.score, after.max);
+    // Oracles may suffix an id (`AC1_regression_first`); match exact or prefix.
+    for (const id of criticalCases(name)) {
+      const keys = Object.keys(after.results || {}).filter((key) =>
+        key === id || key.startsWith(`${id}_`));
+      assert.ok(keys.length && keys.every((key) => after.results[key] === "pass"),
+        `${name}: critical case ${id} missing or failing`);
+    }
   } finally {
     rmSync(project, { recursive: true, force: true });
   }

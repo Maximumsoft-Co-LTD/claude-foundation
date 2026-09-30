@@ -404,7 +404,8 @@ and re-proves. Only a shared resource declared with `[resources:]` serializes.
 Why this step exists: applying code and updating the durable requirements are
 one guarded, resumable completion boundary.
 
-The agent uses internal `land advance <change-id>`. `/land` is the only
+The agent runs `advance <change-id> --through archived`, the same route `/dev`
+uses. `/land` is the only
 user-facing Land operation; interrupted internal checkpoints resume without a
 manual check, recovery, or archive command. Land is complete only at `archived`;
 it still grants no authority to commit, push, publish, or open a pull request.

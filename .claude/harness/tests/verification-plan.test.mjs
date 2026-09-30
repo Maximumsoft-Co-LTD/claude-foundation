@@ -28,6 +28,12 @@ test("risk routing preserves high assurance across security and multi-repo shape
   assert.equal(verificationRisk(packet()), "standard");
   assert.equal(verificationRisk(packet({ impact: "high" })), "high");
   assert.equal(verificationRisk(packet({ reviewRequired: true })), "high");
+  assert.equal(verificationRisk(packet({ reviewRequired: true, reviewTier: "low" })),
+    "standard", "a keyword-only review requirement follows its low review tier");
+  assert.equal(verificationRisk(packet({
+    schema: "foundation-rapid", impact: "low", reviewRequired: true, reviewTier: "low"
+  })), "rapid");
+  assert.equal(verificationRisk(packet({ reviewRequired: true, reviewTier: "high" })), "high");
   assert.equal(verificationRisk(packet({
     providers: [{ provider: "contract", repositories: ["api", "web"] }]
   })), "high");

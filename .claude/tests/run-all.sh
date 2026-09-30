@@ -59,6 +59,7 @@ harness contracts (evidence service)|sh "$HERE/harness/run-harness-tests.sh" evi
 change loop seams|sh "$HERE/harness/run-changeloop-seam-tests.sh"
 feedback review|sh "$HERE/harness/run-feedback-review-tests.sh"
 installer smoke|sh "$HERE/harness/run-installer-tests.sh"
+cli root resolution|node --test "$HERE/harness/run-cli-root-resolution-tests.mjs"
 host instruction contract|FOUNDATION_UPDATE_CHECK=0 node --test "$HERE/harness/run-host-instruction-tests.mjs"
 update advisory contract|sh "$HERE/harness/run-update-advisory-tests.sh"
 harness contracts (sandbox land)|sh "$HERE/harness/run-harness-tests.sh" sandbox-land

@@ -3,28 +3,36 @@ description: Create or complete an OpenSpec change and evidence contract.
 argument-hint: <intent|existing-change> [--prototype-selection <path>]
 ---
 
-Create or update **$ARGUMENTS**.
+Create or update **$ARGUMENTS**. Shared rules: `.claude/harness/AGENT.md`.
 
-For a low-impact isolated change follow
-`.claude/commands/references/rapid-path.md`. Read
-`.claude/skills/change/references/workflow.md` completely only for `impact`
-medium/high, `riskSignals`, integrations, external operations, several
-repositories, a revision or amendment, or a `standard` lane; it owns the full
-agreement-detail and document-language rules. Inspect the compiled documents;
-obtain explicit spec approval before Build. Start from
-`change start --template`; save draft v4 under `.foundation/drafts/`. Use
-semantic requirement/task keys; never invent claim IDs or create
-OpenSpec artifacts by hand. Declare `workType`; design warnings advise.
+1. Read only sources that settle the behavior: code, tests, and
+   `openspec/specs`. Reuse settled answers; resolve facts yourself.
+2. Run `claude-foundation change start --template` and save its
+   `minimalDraft` (no `version`) at `.foundation/drafts/<id>.json`: `intent`,
+   `requirements[{description with SHALL, scenarios[{when, then}]}]`, and
+   `tasks[{outcome, verify, paths}]`; `verify` is an existing test command
+   that fails when the behavior is wrong. The compiler infers the rest. Write prose in the requested document
+   language, otherwise the request's language.
+3. Run `claude-foundation change start .foundation/drafts/<id>.json`:
+   - `EDIT`: fix every named field in one batch, rerun.
+   - `ASK_USER`: ask, record each answer in the draft, rerun.
+   - `DONE`: packet files and tasks are printed; do not reopen them.
 
-Run `change start <draft.json>`; it inspects and starts in one call when clean;
-else follow its typed action and resume route. The compiler owns
-classification, stable links, validation, and rollback; Build `advance` owns
-setup. Edit an existing change, never abandon it: before Build use `change
-revise`; after, one semantic amendment. Repair named draft fields in one batch;
-retry. Ask the user only for behavior, compatibility, security, migration,
-rollout, prototype, or authority decisions. Record approval with `advance <id>
---approve-spec --decision-ref <ref>`. Do not implement product code during
-Change.
+Read `.claude/skills/change/references/workflow.md` completely only for a
+draft declaring `impact` medium/high, `riskSignals`, `integrations`, external
+operations, or several repositories; lane `standard`; or a revision or
+amendment (a keyword like billing only adds review). It owns the
+agreement-detail and document-language rules. Read its sibling
+`semantic-intake.md` for discovery rows or an `ASK_USER` frontier.
 
-Keep protocol fields internal. Return the outcome, material decisions, compiled
-agreement, and `advance` action in the user's language.
+Edit an existing change, never abandon it: before Build use `change revise`;
+after, one semantic amendment. Do not implement product code during Change.
+
+## Gate: spec approval
+
+Unless the request approved the spec, present packet links, scope, behavior,
+and acceptance criteria; validation is not approval. Record it with
+`claude-foundation advance <id> --approve-spec --decision-ref <ref>`. Change
+stops here.
+
+Report outcome, decisions, and next action in the user's language.

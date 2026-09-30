@@ -2,7 +2,7 @@
 import { assertSpecApproval, preserveSpecApprovalAcross } from "./runtime/core/user-decisions.mjs";
 
 import {
-  appendFileSync, existsSync, lstatSync, mkdirSync, rmSync
+  appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync
 } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { delimiter, dirname, join } from "node:path";
@@ -57,7 +57,7 @@ import {
   ADVANCE_PROTOCOL_VERSION, createAdvanceRuntime, hasValidLandGrant,
   prepareAdvanceBuild, runAdvanceProof
 } from "./runtime/workflow/advance-runtime.mjs";
-import { currentDeliveryProof } from "./runtime/workflow/advance-recovery.mjs";
+import { automaticReviewRun, currentDeliveryProof } from "./runtime/workflow/advance-recovery.mjs";
 import { createSandboxRuntime } from "./runtime/workflow/sandbox-runtime.mjs";
 import { createSandboxCleanup } from "./runtime/workflow/sandbox-cleanup.mjs";
 import {
@@ -345,7 +345,8 @@ const { recordInstructionManifest } = createInstructionRecorder({
 const {
   reviewerConfig,
   reviewerStatus,
-  runReview: runConfiguredReview
+  runReview: runConfiguredReview,
+  runReviewAsync: runConfiguredReviewAsync
 } = createConfiguredReviewerRuntime({
   root: ROOT,
   foundationPolicy,
@@ -1051,6 +1052,7 @@ const {
   requestAuthority,
   dispatchAuthority,
   runAuthorityReviewer,
+  runAuthorityReviewerAsync,
   abortAuthority,
   resetInfrastructureAuthority,
   recoverReviewBindings,
@@ -1093,6 +1095,7 @@ const {
   reviewerConfig,
   reviewerStatus,
   runConfiguredReview,
+  runConfiguredReviewAsync,
   acknowledgeInfrastructureAttempts,
   acknowledgeBaseMoveAttempts,
   writeJson,
@@ -1106,7 +1109,14 @@ const {
   gitHead,
   validateSignedCiEnvelope,
   providerClaims,
-  fail: die
+  fail: die,
+  reviewDiffContext: {
+    git,
+    pathExists: existsSync,
+    readFile: readFileSync,
+    readDirectory: readdirSync,
+    isDirectory: (path) => lstatSync(path).isDirectory()
+  }
 });
 const {
   planValue: agentPlanValue,
@@ -1700,6 +1710,12 @@ const {
   recordDeterministicReviewClosure,
   authorityStatusValue,
   requestAuthority,
+  // Only the exact placeholder-free `authority run` route `advance` would run
+  // inline qualifies; it runs under the proof lock the caller already holds.
+  startConcurrentReview: (id, _request, command) => {
+    const flags = automaticReviewRun(id, command);
+    return flags ? runAuthorityReviewerAsync(id, { ...flags }) : null;
+  },
   stableHash,
   die
 });
@@ -1945,6 +1961,7 @@ const sessionLeases = createSessionLeaseRuntime({
 const { advanceValue, showAdvance } = createAdvanceRuntime({
   settleSessionLeases: sessionLeases.settle,
   issueSessionLease: sessionLeases.issue,
+  changePath,
   assertApproval: (id, state, options) => assertSpecApproval(ROOT, id, state, options),
   inspectSnapshots,
   capture: trapFailures,

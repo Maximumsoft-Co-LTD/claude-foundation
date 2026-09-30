@@ -1,25 +1,20 @@
 ---
-description: Compose change → build → prove.
+description: Compose change → build → prove → land.
 argument-hint: <intent> | --resume <change> | --plan-only <intent>
 ---
 
-`--resume` reads state; `--plan-only` runs `/change` only.
+Run **$ARGUMENTS** exactly as the separate commands, reading each file once:
 
-Read `.claude/commands/references/rapid-path.md` and follow it; it replaces
-`/change`, `/build`, and `/prove`, so do not open those files or other
-references unless one of its triggers applies.
-Get spec approval (a request may give it), then run
-`claude-foundation advance <id> --through proven`; execute each protocol-v6
-action and `resume`. These are agent-only control fields. The coordinator skips
-completed Build work and reused evidence automatically.
+1. `.claude/commands/change.md`
+2. `.claude/commands/build.md`
+3. `.claude/commands/prove.md`
+4. `.claude/commands/land.md`, only with Land authority.
 
-Stop at `DONE`/`proven` or a real typed boundary. With explicit Land authority in
-any wording, run `advance <id> --through archived`. `ASK_USER` asks only for a
-work decision; `WAIT` reports an external
-owner and condition, not a user command. Resume internal work yourself.
+Do not stop between phases except at a user gate or a real boundary. Without
+Land authority, stop at `proven`; with it, success is `archived`.
 
-Do not reread framework files. Report evidence in the user's language.
+`--resume <change>`: continue from its current phase; `advance` skips
+completed Build work and reuses fresh evidence.
+`--plan-only`: run Change only.
 
-Code/test success without the corresponding Foundation state is incomplete.
-
-Never infer Land authority, commit, push, open PR, or add a ledger.
+Do not reread framework files.

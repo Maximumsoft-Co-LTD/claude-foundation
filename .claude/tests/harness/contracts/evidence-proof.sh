@@ -508,11 +508,19 @@ assert_contains "an accessibility change triggers no security review" \
 assert_contains "resolve names the schema it settled on" \
   "$accessibility_resolved" "schema: foundation-rapid"
 node .claude/harness/foundation.mjs new 'Let users sign in with a passkey' --rapid >/dev/null
-passkey_resolved="$(node .claude/harness/foundation.mjs resolve \
+passkey_keyword="$(node .claude/harness/foundation.mjs resolve \
   let-users-sign-in-with-a-passkey --impact low --coupling isolated)"
-assert_contains "a passkey sign-in change is a security trigger" \
+# An intent keyword alone only requires review; the change stays rapid.
+assert_contains "an intent keyword is reported as a review-only trigger" \
+  "$passkey_keyword" "passkey (intent keyword: review only)"
+assert_contains "an intent keyword requires review" "$passkey_keyword" "review: required"
+assert_contains "an intent keyword keeps the rapid schema" \
+  "$passkey_keyword" "schema: foundation-rapid"
+passkey_resolved="$(node .claude/harness/foundation.mjs resolve \
+  let-users-sign-in-with-a-passkey --impact low --coupling isolated --security passkey)"
+assert_contains "a declared passkey trigger is a security trigger" \
   "$passkey_resolved" "passkey"
-# The trigger upgrades the schema, and the upgrade must leave a change that can
+# A declared trigger upgrades the schema, and the upgrade must leave a change that can
 # actually be validated rather than one missing the artifacts it now requires.
 assert_contains "a schema upgrade is announced" \
   "$passkey_resolved" "upgraded from foundation-rapid"

@@ -7,6 +7,9 @@ import { effectiveReviewAttemptLimit } from "../core/authority-policy.mjs";
 import { reviewFindingIssues, reviewPacketIssues, validReview } from "../evidence/configured-reviewer.mjs";
 import { checkpointReviewResult, recoverReviewResult } from "../evidence/review-result-recovery.mjs";
 import { normalizeReviewCompletionFindings } from "../evidence/review-attempt-store.mjs";
+import {
+  reviewAgreementValue, reviewDepthForTier, reviewDiffValue, reviewModelTierForDepth
+} from "../evidence/review-diff.mjs";
 
 export function authorityRequestDisplayValue(request, limit = 8192) {
   const packetBytes = Buffer.byteLength(JSON.stringify(request.packet || null));
@@ -551,10 +554,16 @@ export function createAuthorityRuntime({
   reviewerConfig,
   reviewerStatus,
   runConfiguredReview,
+  // Optional non-blocking twin of runConfiguredReview; absent means the
+  // asynchronous route awaits the synchronous reviewer.
+  runConfiguredReviewAsync = null,
   acknowledgeInfrastructureAttempts,
   acknowledgeBaseMoveAttempts,
   writeJson,
-  fail
+  fail,
+  // { git, pathExists, readFile, readDirectory, isDirectory }; absent means
+  // AI dispatch carries no inline diff and the reviewer inspects the workspace.
+  reviewDiffContext = null
 }) {
   function withAuthorityLock(id, operation) {
     const locks = join(root, ".foundation", "locks");
@@ -914,6 +923,16 @@ export function createAuthorityRuntime({
     }
     }
     applyDeltaPacket();
+    if (reviewerType === "ai") {
+      // Diff-scoped by default: changed hunks plus the agreement, bound by
+      // the packet digest. Low risk before any delivered AI round is diff-only.
+      packet.reviewDepth = reviewDepthForTier(routing.tier, deliveredAi.length);
+      if (reviewDiffContext) {
+        packet.reviewDiff = reviewDiffValue(reviewDiffContext, scopeRows,
+          packet.changedSurface?.inspection || []);
+        packet.agreement = reviewAgreementValue(reviewDiffContext, packet);
+      }
+    }
     delete packet.packetDigest;
     packet.packetDigest = canonicalPacketDigest(packet);
     return packet;
@@ -1105,8 +1124,8 @@ export function createAuthorityRuntime({
       subjectFamily, subjectModel, aiSubject };
   }
 
-  function authorityReviewerConfiguration(reviewerName, request) {
-    if (reviewerName !== "main-session") return reviewerConfig(reviewerName);
+  function authorityReviewerConfiguration(reviewerName, request, modelTier = null) {
+    if (reviewerName !== "main-session") return reviewerConfig(reviewerName, modelTier);
     return {
       identity: request.fallbackAttempts?.at(-1)?.reviewer || "configured-reviewer",
       providerFamily: "",
@@ -1145,12 +1164,34 @@ export function createAuthorityRuntime({
       fail("configured reviewer infrastructure retries are exhausted; configure a fallback reviewer or pause");
     if (reviewerName === "main-session" && !requestEntry.value.mainSessionFallback)
       fail("main-session fallback was selected without a recorded configured reviewer failure");
-    const configured = authorityReviewerConfiguration(reviewerName, requestEntry.value);
+    // Same derivation as dispatch: low risk with no delivered AI round uses the
+    // fast model tier; every other route keeps the configured model.
+    const modelTier = reviewModelTierForDepth(
+      reviewDepthForTier(reviewPolicy(id).tier, deliveredAiAttempts(id).length));
+    const configured = authorityReviewerConfiguration(
+      reviewerName, requestEntry.value, modelTier);
     assertAuthorityReviewerSeparation(reviewerName, configured, reviewSettings, subject);
     return { reviewSettings, requestEntry, reviewerName, configured };
   }
 
+  // The reviewer call is the one yielded step, so `authority run` (sync) and
+  // the concurrent Prove review (async) share every guard and record rule.
   function runAuthorityReviewerUnlocked(id, flags = {}) {
+    const steps = authorityReviewerSteps(id, flags);
+    let step = steps.next();
+    while (!step.done) step = steps.next(runConfiguredReview(step.value));
+    return step.value;
+  }
+
+  async function runAuthorityReviewerUnlockedAsync(id, flags = {}) {
+    const steps = authorityReviewerSteps(id, flags);
+    let step = steps.next();
+    while (!step.done) step = steps.next(await (runConfiguredReviewAsync
+      ? runConfiguredReviewAsync(step.value) : runConfiguredReview(step.value)));
+    return step.value;
+  }
+
+  function* authorityReviewerSteps(id, flags = {}) {
     const subject = authorityRunSubject(flags);
     const { requestId, subjectActor, subjectSession, subjectProvider,
       subjectFamily, subjectModel, aiSubject } = subject;
@@ -1299,10 +1340,11 @@ export function createAuthorityRuntime({
         startedAt: now()
       }
     });
-    const report = recoveredReport || runConfiguredReview({
+    const report = recoveredReport || (yield {
       changeId: id,
       timeoutMs: reviewWindowRemaining(loadRuntime(id), Date.parse(now())),
       reviewer: reviewerName,
+      modelTier: configured.modelTier || null,
       workspace,
       packet: dispatched.packet,
       forbiddenSessionIds: reviewSettings.independence === "self" ? [] : [
@@ -1357,8 +1399,7 @@ export function createAuthorityRuntime({
           reviewer: undefined,
           "automatic-reviewer": nextReviewer
         };
-        return { handled: true,
-          value: runAuthorityReviewerUnlocked(id, nextFlags) };
+        return { handled: true, retryFlags: nextFlags };
       }
       if (!nextReviewer) {
         authorityStore.replace(failedEntry, {
@@ -1463,6 +1504,8 @@ export function createAuthorityRuntime({
       return { handled: true, value: handback };
     }
     const infrastructureResult = handleConfiguredInfrastructureError();
+    if (infrastructureResult.retryFlags)
+      return yield* authorityReviewerSteps(id, infrastructureResult.retryFlags);
     if (infrastructureResult.handled) return infrastructureResult.value;
     function validateConfiguredReviewResult() {
     const reviewerSession = String(report.reviewer?.sessionId || "").trim();
@@ -1567,6 +1610,17 @@ export function createAuthorityRuntime({
 
   function runAuthorityReviewer(id, flags = {}) {
     return withAuthorityLock(id, () => runAuthorityReviewerUnlocked(id, flags));
+  }
+
+  // Foreground and awaited by its caller: the authority lock is held across
+  // the reviewer child, exactly like the synchronous route.
+  async function runAuthorityReviewerAsync(id, flags = {}) {
+    const locks = join(root, ".foundation", "locks");
+    const lock = acquireProcessLock(join(locks, `authority-${id}.lock`), { now });
+    if (!lock.acquired)
+      fail(`authority mutation for '${id}' is already in progress; retry after it completes`);
+    try { return await runAuthorityReviewerUnlockedAsync(id, flags); }
+    finally { lock.release(); }
   }
 
   function authorityStatusValue(id, requestId = null) {
@@ -1847,6 +1901,7 @@ export function createAuthorityRuntime({
     requestAuthority,
     dispatchAuthority,
     runAuthorityReviewer,
+    runAuthorityReviewerAsync,
     abortAuthority,
     resetInfrastructureAuthority,
     recoverReviewBindings,

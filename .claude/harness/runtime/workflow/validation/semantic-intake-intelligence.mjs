@@ -1,4 +1,4 @@
-import { requiredDiscoveryDimensions } from "./semantic-intake.mjs";
+import { decisionStatus, requiredDiscoveryDimensions } from "./semantic-intake.mjs";
 
 const DEPTHS = Object.freeze({
   focused: Object.freeze({ maxSourceFiles: 12, maxSourceBytes: 192_000, frontierLimit: 2 }),
@@ -140,7 +140,7 @@ export function semanticQuestionQualityFindings(source = {}, {
   }
 
   for (const [index, decision] of decisions.entries()) {
-    if (text(decision?.status).toLowerCase() !== "open") continue;
+    if (decisionStatus(decision) !== "open") continue;
     const key = text(decision?.key);
     const path = `discovery.decisions[${index}]`;
     const alternatives = strings(decision?.alternatives);
@@ -220,9 +220,9 @@ export function semanticIntakeEffectivenessSnapshot(source = {}, options = {}) {
     ["covered", "not-applicable"].includes(text(row?.status).toLowerCase())).length;
   const grounded = requiredRows.filter((row) => strings(row?.sources).length > 0).length;
   const openQuestions = (source.discovery?.decisions || []).filter((row) =>
-    text(row?.status).toLowerCase() === "open").length;
+    decisionStatus(row) === "open").length;
   const resolvedQuestions = (source.discovery?.decisions || []).filter((row) =>
-    text(row?.status).toLowerCase() === "resolved" && text(row?.choice) && text(row?.reason)).length;
+    decisionStatus(row) === "resolved" && text(row?.choice) && text(row?.reason)).length;
   const qualityFindings = semanticQuestionQualityFindings(source, options);
   const rejectedQuestions = new Set(qualityFindings.map((row) => row.key || row.path)).size;
 

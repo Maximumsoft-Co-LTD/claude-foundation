@@ -308,3 +308,100 @@ test("the task check runs in the task repository and reports an unavailable work
   assert.equal(runTaskCheck({ loadRuntime, spawn }, "demo", { command: "x", repository: "web" }).status,
     "unavailable");
 });
+
+// Headless E2E: a two-task chain paid one advance round-trip per task. The
+// session now takes the whole chain and one resume verifies and ticks both.
+function chainWorkspace(t) {
+  const root = mkdtempSync(join(tmpdir(), "session-chain-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "openspec", "changes", "demo"), { recursive: true });
+  writeFileSync(join(root, "openspec", "changes", "demo", "tasks.md"),
+    "- [ ] **T001** Add [paths:src/a.js] — verify: `test -f a.done`\n" +
+    "- [ ] **T002** Use [paths:src/b.js] — verify: `test -f b.done`\n");
+  return root;
+}
+
+function chainAdvance(root) {
+  const ledger = join(root, "openspec", "changes", "demo", "tasks.md");
+  let state = { status: "building", workspace: { path: root } };
+  const loadRuntime = () => structuredClone(state);
+  const saveRuntime = (value) => { state = structuredClone(value); };
+  const session = createSessionLeaseRuntime({
+    stableHash, loadRuntime, saveRuntime,
+    activeChangeLeases: () => [], acquire: () => { throw new Error("no lease"); },
+    discard: () => {}, release: () => {},
+    runCheck: (id, check) => runTaskCheck({ loadRuntime }, id, check)
+  });
+  const pending = () => ["T002", "T001"].filter((id) =>
+    !taskLineChecked(readFileSync(ledger, "utf8"), id));
+  const runtime = createAdvanceRuntime({
+    loadRuntime, saveRuntime,
+    settleSessionLeases: session.settle, issueSessionLease: session.issue,
+    agentDispatchValue: () => pending().length
+      ? { action: "run-in-session", reason: "one repository" } : { action: "build-complete" },
+    // T002 depends on T001, so each wave holds one task.
+    agentPlanValue: () => ({
+      groups: ["T001", "T002"].filter((id) => pending().includes(id)).map((id) => [id]),
+      tasks: pending().map((id) => ({ id, text: readFileSync(ledger, "utf8")
+        .split("\n").find((line) => line.includes(`**${id}**`)), repository: "root",
+      paths: [`src/${id}.js`] }))
+    }),
+    runProof: async () => { state.status = "proven"; return { status: "PASS" }; },
+    relevantHash: () => "workspace-a", deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => ({}), proofAdvancePath: () => "/proof.json", stableHash
+  });
+  return { runtime, state: () => state };
+}
+
+test("a two-task session chain is handed in one EDIT and proven after one resume", async (t) => {
+  const root = chainWorkspace(t);
+  const { runtime, state } = chainAdvance(root);
+  const first = await runtime.advanceThrough("demo", "proven");
+  assert.equal(first.action, "EDIT");
+  assert.deepEqual(first.tasks.map((task) => task.id), ["T001", "T002"]);
+  assert.deepEqual(state().sessionHandoff.taskIds, ["T001", "T002"]);
+  writeFileSync(join(root, "a.done"), "");
+  writeFileSync(join(root, "b.done"), "");
+  const second = await runtime.advanceThrough("demo", "proven");
+  assert.equal(second.action, "DONE");
+  assert.equal(second.reached, "proven");
+  assert.match(readFileSync(join(root, "openspec", "changes", "demo", "tasks.md"), "utf8"),
+    /^- \[x\] \*\*T001\*\*[^\n]*\n- \[x\] \*\*T002\*\*/);
+});
+
+test("a failed task in a session chain is handed back alone with its failure", async (t) => {
+  const root = chainWorkspace(t);
+  const { runtime, state } = chainAdvance(root);
+  await runtime.advanceThrough("demo", "proven");
+  writeFileSync(join(root, "a.done"), "");
+  const second = await runtime.advanceThrough("demo", "proven");
+  assert.equal(second.action, "EDIT");
+  assert.deepEqual(second.tasks.map((task) => task.id), ["T002"]);
+  assert.deepEqual(second.verificationFailures.map((row) => [row.taskId, row.command]),
+    [["T002", "test -f b.done"]]);
+  assert.deepEqual(state().sessionHandoff.taskIds, ["T002"]);
+  writeFileSync(join(root, "b.done"), "");
+  assert.equal((await runtime.advanceThrough("demo", "proven")).reached, "proven");
+});
+
+test("a dependent is not ticked when its dependency fails verify in the same batch", async (t) => {
+  const root = chainWorkspace(t);
+  const ledger = join(root, "openspec", "changes", "demo", "tasks.md");
+  writeFileSync(ledger,
+    "- [ ] **T001** Add [paths:src/a.js] — verify: `test -f a.done`\n" +
+    "- [ ] **T002** Use [depends: T001] [paths:src/b.js] — verify: `test -f b.done`\n");
+  const { runtime, state } = chainAdvance(root);
+  await runtime.advanceThrough("demo", "proven");
+  // T002's own check would pass; T001's fails.
+  writeFileSync(join(root, "b.done"), "");
+  const second = await runtime.advanceThrough("demo", "proven");
+  assert.equal(second.action, "EDIT");
+  assert.match(readFileSync(ledger, "utf8"), /^- \[ \] \*\*T001\*\*[^\n]*\n- \[ \] \*\*T002\*\*/);
+  assert.deepEqual(second.tasks.map((task) => task.id), ["T001", "T002"]);
+  assert.deepEqual(second.verificationFailures.map((row) => [row.taskId, row.blockedBy || null]),
+    [["T001", null], ["T002", ["T001"]]]);
+  assert.deepEqual(state().sessionHandoff.taskIds, ["T001", "T002"]);
+  writeFileSync(join(root, "a.done"), "");
+  assert.equal((await runtime.advanceThrough("demo", "proven")).reached, "proven");
+});

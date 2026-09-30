@@ -377,7 +377,8 @@ change ไหนต้องรออีก change ระหว่าง Build, 
 ทำไมต้องมีขั้นนี้: การนำ code เข้า project กับการอัปเดต requirement ถาวรถูกผูก
 เป็น completion boundary เดียวที่มี guard และ resume ได้
 
-Agent ใช้ internal `land advance <change-id>` โดย `/land` เป็น Land operation
+Agent รัน `advance <change-id> --through archived` ซึ่งเป็นเส้นทางเดียวกับ `/dev`
+โดย `/land` เป็น Land operation
 เดียวที่ผู้ใช้ต้องเรียก checkpoint ภายในที่ถูกขัดจังหวะจะ resume เองโดยไม่ต้องสั่ง
 check, recovery หรือ archive เพิ่ม งานจะเสร็จจริงเมื่อ state เป็น `archived` และ
 Land ยังไม่ได้ให้อำนาจ commit, push, publish หรือเปิด pull request

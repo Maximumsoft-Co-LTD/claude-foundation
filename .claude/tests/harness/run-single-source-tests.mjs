@@ -147,7 +147,7 @@ const releaseSurfaces = {
   "foundation.mjs VERSION": runtimeVersion,
   "protocol.json runtime": protocolRuntime,
   "AGENT.md Change Loop version":
-    read(".claude/harness/AGENT.md").match(/verify Change Loop ([0-9]+\.[0-9]+\.[0-9]+)/)?.[1],
+    read(".claude/harness/AGENT.md").match(/checks Change Loop ([0-9]+\.[0-9]+\.[0-9]+)/)?.[1],
   "DEVELOPER-SETUP.md heading version":
     read(".claude/harness/DEVELOPER-SETUP.md").match(/Change Loop v([0-9]+\.[0-9]+\.[0-9]+)/)?.[1],
   "DEVELOPER-SETUP.md CLI version":

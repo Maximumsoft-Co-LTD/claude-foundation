@@ -825,6 +825,212 @@ try {
     "an unexhausted AI review route prescribes an executable authority command");
 }
 
+// N5: during `advance --through proven|archived` the harness-runnable
+// configured review starts beside the executable providers for the same
+// workspace hash, is joined before classification, and reports its findings
+// with failed evidence in one repair batch.
+function concurrentFixture(options = {}) {
+  let state = { version: 2, id: "change-a", status: "building" };
+  let workspaceHash = "workspace-a";
+  let proof = null;
+  let testOutcome = options.testOutcome || "pass";
+  let reviewOutcome = options.reviewOutcome || "pass";
+  let testStarted = null;
+  const receipts = {};
+  const requests = [];
+  const delivered = [...(options.deliveredAiAttempts || [])];
+  const events = [];
+  const reviewCommands = [];
+  const validity = (provider, hash = workspaceHash) => {
+    const receipt = receipts[provider];
+    if (!receipt) return "missing";
+    if (receipt.hash !== hash) return "stale";
+    return receipt.status === "pass" ? "valid" : receipt.status;
+  };
+  const readiness = () => {
+    const pending = ["test", "review"].filter((provider) => validity(provider) !== "valid");
+    return {
+      version: 1, changeId: "change-a", workspaceHash, issues: [],
+      status: pending.length ? "NEEDS_USER_DECISION" : "READY",
+      externalProviders: pending.filter((provider) => provider === "review"),
+      unavailableProviders: [], pendingTasks: [], next: []
+    };
+  };
+  const runtime = createProofExecutionRuntime({
+    proofReadinessValue: readiness,
+    relevantSnapshot: () => ({ id: `snapshot-${workspaceHash}`, workspaceHash }),
+    loadRuntime: () => state,
+    saveRuntime: (next) => { state = next; },
+    now: () => "2026-10-01T00:00:00.000Z",
+    requiredProviders: () => ["test", "review"],
+    receiptValidity: (_id, provider, hash) => ({ provider, validity: validity(provider, hash) }),
+    rebindReusableReceipt: () => {},
+    executionNodes: () => ({
+      nodes: validity("test") === "valid" ? []
+        : [{ provider: "test", covers: ["test"], dependsOn: [] }],
+      unconfigured: [], unavailable: []
+    }),
+    collectableExecutionNodes: (_id, nodes) => ({ nodes, blocked: [] }),
+    startRequiredServices: async () => [],
+    runExecutionDag: async (_id, nodes) => {
+      if (!nodes.length) return [];
+      const hash = workspaceHash;
+      events.push("test:start");
+      testStarted?.resolve();
+      await new Promise((resolve) => setImmediate(resolve));
+      events.push("test:end");
+      if (testOutcome === "interrupted") throw new Error("simulated provider interruption");
+      receipts.test = { status: testOutcome, hash };
+      return [{ provider: "test", status: testOutcome }];
+    },
+    durableArtifact: () => { throw new Error("no service artifacts expected"); },
+    pendingTasks: () => [],
+    proofPreflight: () => {},
+    prove: () => {
+      proof = { version: 2, status: "pass", proofRunId: "proof-1", workspaceHash,
+        providers: ["test", "review"] };
+      state = { ...state, status: "proven" };
+    },
+    proofAudit: () => proof?.workspaceHash === workspaceHash
+      ? { valid: true, proof } : { valid: false, reason: "missing-proof" },
+    readJson: () => proof,
+    proofPath: () => "proof.json",
+    providerCapability: (provider) => provider,
+    providerConfig: (_id, provider) => ({ adapter: provider === "test" ? "command" : "external" }),
+    deliveredAiAttempts: () => delivered,
+    authorityStatusValue: () => ({ requests: requests.map((request) => ({ ...request })) }),
+    requestAuthority: (_id, flags) => {
+      const existing = requests.find((request) => request.workspaceHash === workspaceHash &&
+        ["requested", "dispatched", "pending"].includes(request.status));
+      if (existing) return existing;
+      const request = { requestId: `review-${requests.length + 1}`, type: flags.type,
+        provider: "review", status: "requested", workspaceHash };
+      requests.push(request);
+      return request;
+    },
+    startConcurrentReview: options.agentRunnable === false ? () => null
+      : (_id, request, command) => {
+        reviewCommands.push({ command, workspaceHash: request.workspaceHash });
+        testStarted = Promise.withResolvers();
+        events.push("review:start");
+        return (async () => {
+          // Finishes only after the providers started: a serial controller
+          // never resolves this and the bounded wait below fails the test.
+          await testStarted.promise;
+          testStarted = null;
+          events.push("review:end");
+          const stored = requests.find((row) => row.requestId === request.requestId);
+          stored.status = reviewOutcome === "pass" ? "completed" : "rejected";
+          receipts.review = { status: reviewOutcome, hash: request.workspaceHash };
+          delivered.push({
+            digest: `attempt-${delivered.length + 1}`, resultStatus: reviewOutcome,
+            workspaceHash: request.workspaceHash,
+            findings: reviewOutcome === "pass" ? [] : [{
+              id: "R1", severity: "major", path: "src/a.js", message: "review blocker",
+              claimIds: [], verificationCaseIds: []
+            }]
+          });
+        })();
+      },
+    markBlocked: () => {},
+    die: (message) => { throw new Error(message); }
+  });
+  return {
+    runtime, events, reviewCommands, receipts,
+    advance: () => quiet(() => within(
+      runtime.proofAdvance("change-a", { concurrentReview: true }), 2000,
+      "concurrent review and providers must overlap, not run serially")),
+    setTestOutcome: (value) => { testOutcome = value; },
+    setReviewOutcome: (value) => { reviewOutcome = value; },
+    repair: (next) => { workspaceHash = next; }
+  };
+}
+
+{
+  const run = concurrentFixture();
+  const passed = await run.advance();
+  assert.equal(passed.status, "PASS");
+  assert.deepEqual(run.events.slice(0, 2), ["review:start", "test:start"],
+    "review and test providers both start before either finishes");
+  assert.equal(run.reviewCommands.length, 1);
+  assert.match(run.reviewCommands[0].command,
+    /^claude-foundation authority run change-a --request review-1 --subject-actor implementation-agent$/);
+  assert.equal(run.reviewCommands[0].workspaceHash, "workspace-a",
+    "the review binds to the same workspace hash as the providers");
+}
+
+{
+  // Plain `proof advance` (no advance flag) keeps the serial route.
+  const run = concurrentFixture();
+  const wait = await quiet(() => within(run.runtime.proofAdvance("change-a"), 2000, "serial"));
+  assert.equal(run.reviewCommands.length, 0);
+  assert.equal(wait.status, "WAITING_EXTERNAL");
+  assert.equal(wait.stage, "review");
+}
+
+{
+  // A route the harness cannot run stays the same WAIT handoff.
+  const run = concurrentFixture({ agentRunnable: false });
+  const wait = await run.advance();
+  assert.equal(run.reviewCommands.length, 0);
+  assert.equal(wait.status, "WAITING_EXTERNAL");
+  assert.equal(wait.stage, "review");
+}
+
+{
+  // The wave cap never starts a concurrent AI review.
+  const run = concurrentFixture({ deliveredAiAttempts: [
+    { digest: "wave-1", resultStatus: "fail" }, { digest: "wave-2", resultStatus: "pass" }
+  ] });
+  const wait = await run.advance();
+  assert.equal(run.reviewCommands.length, 0);
+  assert.equal(wait.status, "WAITING_EXTERNAL");
+}
+
+{
+  const priorExitCode = process.exitCode;
+  // Failed tests and a rejected review at one hash are one REPAIR batch.
+  const run = concurrentFixture({ testOutcome: "fail", reviewOutcome: "fail" });
+  const stop = await run.advance();
+  assert.equal(stop.status, "ACTION_REQUIRED");
+  assert.equal(stop.stage, "review-rejected");
+  assert.equal(stop.route, "AUTO_REPAIR");
+  const plan = JSON.stringify(stop.repairPlan);
+  assert.match(plan, /R1/, "the review finding is in the batch");
+  assert.match(plan, /test:fail/, "the failed test is in the same batch");
+
+  // A repair that changes the diff invalidates the review exactly as before.
+  run.repair("workspace-b");
+  run.setTestOutcome("pass");
+  run.setReviewOutcome("pass");
+  const passed = await run.advance();
+  assert.equal(passed.status, "PASS");
+  assert.equal(run.reviewCommands.length, 2);
+  assert.equal(run.reviewCommands[1].workspaceHash, "workspace-b");
+  process.exitCode = priorExitCode;
+}
+
+{
+  const priorExitCode = process.exitCode;
+  // Tests failed, review passed: the provider failure surfaces as today and
+  // the verdict is reused while the workspace hash is unchanged.
+  const run = concurrentFixture({ testOutcome: "fail" });
+  await assert.rejects(run.advance(), /evidence collection failed: test:fail/);
+  assert.equal(run.reviewCommands.length, 1);
+  assert.deepEqual(run.receipts.review, { status: "pass", hash: "workspace-a" });
+  const stop = await run.advance();
+  assert.equal(stop.stage, "evidence-failed");
+  assert.doesNotMatch(JSON.stringify(stop.repairPlan), /R1|review/);
+  assert.equal(run.reviewCommands.length, 1, "a current review verdict is reused, not rerun");
+  // Once the repair changes the diff, the review is invalidated and rerun.
+  run.repair("workspace-b");
+  run.setTestOutcome("pass");
+  const passed = await run.advance();
+  assert.equal(passed.status, "PASS");
+  assert.equal(run.reviewCommands.length, 2);
+  process.exitCode = priorExitCode;
+}
+
 process.exitCode = 0;
 
 console.log("proof advance tests: PASS");

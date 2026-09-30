@@ -39,7 +39,7 @@ test("advance phase operations measure harness-owned Build and Prove work", asyn
   assert.deepEqual(calls, [
     "build.prepare", ["sandbox", "change-a"],
     ["execution", "change-a", { stage: "build" }],
-    "prove.execute", ["proof", "change-a", { quiet: true }]
+    "prove.execute", ["proof", "change-a", { quiet: true, concurrentReview: true }]
   ]);
 });
 
@@ -60,6 +60,36 @@ test("advance returns bounded Build work without invoking a model", () => {
   assert.equal(value.legacyAction, "EXECUTE_TASK");
   assert.equal(value.boundary, "host-execution");
   assert.equal(value.resumeCommand, "claude-foundation advance change-a");
+});
+
+test("a sequential session plan hands every pending task in dependency order", () => {
+  const value = coordinatorAction({
+    ...base,
+    dispatch: { action: "run-in-session", reason: "one repository" },
+    plan: {
+      groups: [["T001"], ["T002"]],
+      tasks: [
+        { id: "T002", text: "Use it — verify: `npm test -- b`", repository: "root", paths: ["src/b.js"] },
+        { id: "T001", text: "Add it — verify: `npm test -- a`", repository: "root", paths: ["src/a.js"] }
+      ]
+    }
+  });
+  assert.equal(value.action, "EDIT");
+  assert.equal(value.legacyAction, "EXECUTE_TASK");
+  assert.deepEqual(value.tasks.map((task) => task.id), ["T001", "T002"]);
+  assert.deepEqual(value.verification, ["npm test -- a", "npm test -- b"]);
+  assert.deepEqual(value.execution, { mode: "session", leases: [] });
+  assert.match(value.instructions.join(" "), /T001, T002 in this order/);
+  // Parallel groups still hand one wave to leased workers.
+  const group = coordinatorAction({
+    ...base,
+    dispatch: { action: "spawn-group", workers: [{ taskId: "T001" }, { taskId: "T002" }] },
+    plan: { groups: [["T001", "T002"], ["T003"]], tasks: ["T001", "T002", "T003"].map((id) =>
+      ({ id, text: id, repository: "root", paths: [`src/${id}.js`] })) }
+  });
+  assert.deepEqual(group.tasks.map((task) => task.id), ["T001", "T002"]);
+  assert.equal(group.execution.mode, "parallel");
+  assert.equal(group.instructions, undefined);
 });
 
 test("advance exposes current review findings as a repair graph", () => {
@@ -728,4 +758,43 @@ test("a proven change with a revised agreement is synchronized by advance itself
   });
   await runtime.advanceThrough("change-a", "proven");
   assert.deepEqual(synced, ["change-a"]);
+});
+
+test("a rapid two-task EDIT names the files to open: packet, existing task paths, new files", async (t) => {
+  const { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join, isAbsolute } = await import("node:path");
+  const root = mkdtempSync(join(tmpdir(), "advance-context-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const packet = join(root, "openspec", "changes", "change-a");
+  const workspace = join(root, "box");
+  mkdirSync(packet, { recursive: true });
+  mkdirSync(join(workspace, "src"), { recursive: true });
+  writeFileSync(join(packet, "proposal.md"), "# Proposal\n");
+  writeFileSync(join(packet, "tasks.md"), "- [ ] **T001** a\n- [ ] **T002** b\n");
+  writeFileSync(join(workspace, "src", "a.js"), "");
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => ({ status: "building", workspace: { path: workspace } }),
+    changePath: () => packet,
+    agentDispatchValue: () => ({ action: "run-in-session", reason: "one repository" }),
+    agentPlanValue: () => ({ groups: [["T001"], ["T002"]], tasks: [
+      { id: "T001", text: "Edit a — verify: `true`", repository: "root", paths: ["src/a.js"] },
+      { id: "T002", text: "Add b — verify: `true`", repository: "root", paths: ["src/b.js", "src/**"] }
+    ] }),
+    relevantHash: () => "workspace-a", deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => ({}), proofAdvancePath: () => "/proof.json", stableHash,
+    output: () => {}
+  });
+  const value = await runtime.advanceThrough("change-a", "build");
+  assert.equal(value.action, "EDIT", JSON.stringify(value));
+  assert.deepEqual(value.tasks.map((task) => task.id), ["T001", "T002"]);
+  assert.deepEqual(value.contextFiles, [
+    join(packet, "proposal.md"), join(packet, "tasks.md"), join(workspace, "src", "a.js")]);
+  assert.ok(value.contextFiles.every((file) => isAbsolute(file) && existsSync(file)));
+  assert.ok(!value.contextFiles.some((file) => file.includes(`${join("change-a", "specs")}`)));
+  assert.deepEqual(value.newFiles, [join(workspace, "src", "b.js")]);
+  assert.deepEqual(value.contextScope, { paths: "absolute", specs: "none" });
+  // Existing fields stay.
+  assert.deepEqual(value.allowedPaths, ["src/a.js", "src/b.js", "src/**"]);
 });

@@ -253,7 +253,8 @@ export function intakeDecisions(draft) {
       key: row.key,
       context: row.question,
       choice: row.choice,
-      why: row.reason,
+      // A settled fact had no alternative, so it carries no separate reason.
+      why: row.reason || "No alternative was open; recorded as settled",
       rejected: (row.alternatives || []).filter((option) => option !== row.choice),
       decidedBy: row.decidedBy || "user",
       decisionRef: row.decisionRef

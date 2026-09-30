@@ -238,7 +238,11 @@ export function compileSemanticAmendment({
     ...(amendment.capabilityOverviews && typeof amendment.capabilityOverviews === "object"
       ? { capabilityOverviews: amendment.capabilityOverviews } : {}),
     discovery: amendment.discovery
-  }, slugify, loadCanonicalSpec ? { loadCanonicalSpec } : {});
+  }, slugify, {
+    ...(loadCanonicalSpec ? { loadCanonicalSpec } : {}),
+    // Derived IDs for new scenarios step around the claims this change keeps.
+    reservedClaimIds: [...priorClaimById.keys()].filter((id) => !retiredClaimIds.has(id))
+  });
   issues.push(...normalized.issues.map((issue) => `amendment ${issue}`));
   const duplicateClaims = normalized.draft.claims
     .map((claim) => claim.id).filter((id) => priorClaimById.has(id) && !retiredClaimIds.has(id));

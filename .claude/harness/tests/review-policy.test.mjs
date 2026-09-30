@@ -43,6 +43,22 @@ test("review signals combine claim, repository, and semantic risk", () => {
   ]);
 });
 
+test("intent keywords alone add no risk semantics or diversity trigger", () => {
+  const signals = collectReviewSignals({
+    intent: "Show billing totals after payment", impact: "low", coupling: "isolated",
+    securityTriggers: [], keywordSecurityTriggers: ["billing", "payment"],
+    reviewRequired: true
+  }, { claims: [{ impact: "low", capabilities: ["test"] }] });
+  assert.deepEqual(signals.requiredTriggers, []);
+  assert.deepEqual(signals.diversityTriggers, []);
+  const declared = collectReviewSignals({
+    intent: "Show billing totals after payment", impact: "medium",
+    securityTriggers: []
+  }, { claims: [{ impact: "low", capabilities: ["test"] }] });
+  assert.deepEqual(declared.requiredTriggers, ["risk-semantics"]);
+  assert.deepEqual(declared.diversityTriggers, ["critical-semantics"]);
+});
+
 test("legacy review policy preserves its compact default shape", () => {
   const result = assembleReviewPolicy({
     state: {},

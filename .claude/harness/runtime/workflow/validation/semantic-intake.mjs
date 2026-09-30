@@ -86,12 +86,21 @@ export function requiredDiscoveryDimensions(source = {}) {
   return unique(required);
 }
 
+// A decision is open only when it states it, or when it offers alternatives
+// without a choice. An entry with a choice, or with no alternative to choose
+// between, is settled; authors need not restate status for recorded facts.
+export function decisionStatus(row) {
+  const status = text(row?.status).toLowerCase();
+  if (status) return status;
+  return !text(row?.choice) && strings(row?.alternatives).length >= 2 ? "open" : "resolved";
+}
+
 export function decisionFrontier(decisions = [], limit = 3) {
   const resolved = new Set(decisions
-    .filter((row) => text(row?.status).toLowerCase() === "resolved")
+    .filter((row) => decisionStatus(row) === "resolved")
     .map((row) => text(row?.key)));
   return decisions.filter((row) => {
-    if (text(row?.status).toLowerCase() === "resolved") return false;
+    if (decisionStatus(row) === "resolved") return false;
     return strings(row?.prerequisites).every((key) => resolved.has(key));
   }).slice(0, Math.max(1, Number(limit) || 3));
 }
@@ -102,24 +111,29 @@ function decisionIssues(decisions = []) {
   for (const [index, decision] of decisions.entries()) {
     const label = `semantic draft discovery.decisions[${index}]`;
     const key = text(decision?.key);
-    const status = text(decision?.status).toLowerCase();
+    const status = decisionStatus(decision);
+    const alternatives = strings(decision?.alternatives).length;
     if (!key) issues.push(`${label}.key is required`);
     else if (keys.has(key)) issues.push(`${label}.key '${key}' is duplicated`);
     keys.add(key);
     if (!['open', 'resolved'].includes(status))
       issues.push(`${label}.status must be open|resolved`);
-    if (!Array.isArray(decision?.prerequisites))
+    if (decision?.prerequisites !== undefined && !Array.isArray(decision.prerequisites))
       issues.push(`${label}.prerequisites must be an array`);
     if (status === "open") {
-      if (strings(decision?.alternatives).length < 2)
+      if (alternatives < 2)
         issues.push(`${label}.alternatives must name at least two choices`);
       if (!text(decision?.recommended)) issues.push(`${label}.recommended is required`);
       if (!text(decision?.question)) issues.push(`${label}.question is required`);
     }
-    if (status === "resolved") {
+    // Only a choice among real alternatives needs the choice and its reason.
+    // A settled fact with no alternative needs just enough text to read.
+    if (status === "resolved" && alternatives >= 2) {
       if (!text(decision?.choice)) issues.push(`${label}.choice is required`);
       if (!text(decision?.reason)) issues.push(`${label}.reason is required`);
-    }
+    } else if (status === "resolved" && !text(decision?.choice) &&
+        !text(decision?.question) && !text(decision?.reason))
+      issues.push(`${label} records nothing; state its choice or remove it`);
     if (text(decision?.decidedBy) && !["user", "agent"].includes(text(decision.decidedBy).toLowerCase()))
       issues.push(`${label}.decidedBy must be user|agent`);
   }
@@ -207,7 +221,7 @@ export function semanticIntakeIssues(source = {}) {
       issues.push(`${label}.decisionKeys references unknown decision(s): ${unknown.join(", ")}`);
   }
   issues.push(...decisionIssues(decisions));
-  if (decisions.some((row) => text(row?.status).toLowerCase() !== "resolved")) {
+  if (decisions.some((row) => decisionStatus(row) !== "resolved")) {
     const frontier = decisionFrontier(decisions).map((row) => text(row?.key)).filter(Boolean);
     issues.push(`semantic draft discovery has unresolved decisions; ready frontier: ${frontier.join(", ") || "none"}`);
   }
@@ -311,7 +325,7 @@ export function normalizeDiscovery(source = {}) {
     })),
     decisions: (source.discovery?.decisions || []).map((row) => ({
       key: text(row?.key),
-      status: text(row?.status).toLowerCase(),
+      status: decisionStatus(row),
       prerequisites: unique(strings(row?.prerequisites)),
       alternatives: unique(strings(row?.alternatives)),
       question: text(row?.question) || undefined,
