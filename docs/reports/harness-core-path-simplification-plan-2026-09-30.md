@@ -182,3 +182,11 @@ Scenario เดียวกัน (`/dev add a discount(total, percent) ... Land
 5. คำเตือน "changed outside the sandbox" หลัง Land เป็น false alarm จาก diff ของ Land เอง
 
 Transcript และ metrics: `/tmp/cl-baseline-*`, `/tmp/cl-after-*`
+
+## ผลวัดรอบ 3 (`9e5b65043`, 2026-09-30)
+
+ใช้วิธีเดียวกับรอบก่อน: 29 tool calls, 30 turns, 103s API / 107s wall, $0.68 จบที่ `archived` ในการรันเดียวโดยไม่ต้อง resume, BLOCKED 0 ครั้ง, อ่านเอกสารของ harness 2 ไฟล์ (`dev.md`, `rapid-path.md`) และไม่มี NOTICE เตือนผิดหลัง Land
+
+พบว่า agent Land ผ่าน `advance --through archived` โดยถือว่าประโยค "Land it when proven" ใน prompt เป็นสิทธิ์ Land ซึ่ง phase guard ไม่ได้ตรวจเส้นทางนี้ (guard ตรวจเฉพาะ `land advance`) ต้องให้ผู้ใช้ตัดสินใจว่าจะยอมรับหรือจะบังคับ `/land`
+
+ที่ยังค้าง: agent ยังเดา path `specs/` ของ change rapid, บรรทัด `next: … /build` ที่ขัดกันใน output ของ `change start`, และเรื่องของสภาพแวดล้อม (allowlist ปฏิเสธคำสั่งต่อกัน, CLI บน PATH เป็น 3.5.26)
