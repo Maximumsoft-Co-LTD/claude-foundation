@@ -235,7 +235,7 @@ export function compileSemanticAmendment({
     securityTriggers: amendment.securityTriggers || [],
     riskSignals: amendment.riskSignals || [],
     externalOperations: amendment.externalOperations || [],
-    ...(Array.isArray(amendment.capabilityOverviews)
+    ...(amendment.capabilityOverviews && typeof amendment.capabilityOverviews === "object"
       ? { capabilityOverviews: amendment.capabilityOverviews } : {}),
     discovery: amendment.discovery
   }, slugify, loadCanonicalSpec ? { loadCanonicalSpec } : {});

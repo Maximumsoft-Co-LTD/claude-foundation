@@ -188,23 +188,22 @@ test("draft inspection persists source freshness and blocks stale compilation", 
       /investigation binding state is missing or unsafe/);
     delete source.investigation;
     saveDraft();
-    const discovery = lifecycle.inspectDraft("draft.json");
-    assert.equal(discovery.action, "EDIT");
-    assert.equal(discovery.intelligence.repository.findings.some((finding) =>
-      finding.path === "ignored-output.json"), false);
-    source.discovery.sourceDigest = discovery.intakeState.sourceDigest;
-    saveDraft();
+    // The harness records the source digest; no acknowledgement round-trip.
     const ready = lifecycle.inspectDraft("draft.json");
+    assert.equal(ready.intelligence.repository.findings.some((finding) =>
+      finding.path === "ignored-output.json"), false);
     assert.equal(ready.action, "DONE");
     assert.equal(existsSync(join(root, ready.intakeState.path)), true);
     writeFileSync(join(root, "README.md"), "second\n");
     const stale = lifecycle.inspectDraft("draft.json");
     assert.equal(stale.action, "EDIT");
     assert.equal(stale.intake.kind, "refresh-source-coverage");
+    // After the agent re-reads, an unchanged draft reaches DONE: the snapshot
+    // adopted the current inventory instead of staying stale forever.
+    assert.equal(lifecycle.inspectDraft("draft.json").action, "DONE");
+    writeFileSync(join(root, "README.md"), "second, revised\n");
+    assert.equal(lifecycle.inspectDraft("draft.json").action, "EDIT");
     source.why = "Acknowledge the refreshed source";
-    source.discovery.sourceDigest = stale.intake?.findings?.find((finding) =>
-      finding.code === "source-acknowledgement-required")?.detail?.expected ||
-      stale.intakeState.sourceDigest;
     saveDraft();
     assert.equal(lifecycle.inspectDraft("draft.json").action, "DONE");
     const languagePlans = [];
@@ -484,7 +483,7 @@ test("semantic amendment preserves completed tasks and custom spec sections", ()
   "- [ ] **T001** Work [claims:a] — verify: `npm test`");
 });
 
-test("v4 semantic amendment requires discovery delta and records it in proposal", (t) => {
+test("v4 semantic amendment records an optional discovery delta in proposal", (t) => {
   const amendment = {
     version: 1,
     reason: "Build exposed an additional bounded failure",
@@ -509,8 +508,12 @@ test("v4 semantic amendment requires discovery delta and records it in proposal"
     renderTask: (task) => `- [ ] **${task.id}** ${task.outcome} [key:${task.key}] ` +
       `[claims:${task.claims.join(",")}] — verify: \`${task.verify}\`\n`
   };
+  // An ordinary amendment needs no discovery delta; high impact still does.
+  assert.deepEqual(compileSemanticAmendment(args).issues, []);
+  amendment.impact = "high";
   assert.match(compileSemanticAmendment(args).issues.join("\n"),
-    /version 4 requires a 'discovery' object/);
+    /missing required dimension 'current-behavior'/);
+  delete amendment.impact;
 
   amendment.discovery = {
     coverage: [
@@ -736,19 +739,16 @@ test("change amend installs atomically and restores files and state on validatio
   try {
     writeAmendment("malformed-row");
     const firstInspection = lifecycle.inspectAmendment(id, "amendment.json");
-    assert.equal(firstInspection.action, "EDIT");
+    assert.equal(firstInspection.action, "DONE");
     const firstAmendment = JSON.parse(readFileSync(amendmentPath, "utf8"));
-    firstAmendment.discovery.sourceDigest = firstInspection.intakeState.sourceDigest;
-    writeFileSync(amendmentPath, `${JSON.stringify(firstAmendment, null, 2)}\n`);
-    assert.equal(lifecycle.inspectAmendment(id, "amendment.json").action, "DONE");
     const specPath = join(change, "specs", "payment-control", "spec.md");
     writeFileSync(join(root, "README.md"), "Changed amendment source.\n");
     assert.throws(() => lifecycle.amendChange(id, "amendment.json"),
       /current completed semantic intake/);
     const refreshed = lifecycle.inspectAmendment(id, "amendment.json");
     assert.equal(refreshed.action, "EDIT");
-    firstAmendment.discovery.sourceDigest = refreshed.intake.findings.find((finding) =>
-      finding.code === "source-acknowledgement-required").detail.expected;
+    // Changed sources still require the author to re-read and touch the draft.
+    firstAmendment.discovery.sourceDigest = refreshed.intakeState.sourceDigest;
     writeFileSync(amendmentPath, `${JSON.stringify(firstAmendment, null, 2)}\n`);
     assert.equal(lifecycle.inspectAmendment(id, "amendment.json").action, "DONE");
     runContender = true;
@@ -757,7 +757,7 @@ test("change amend installs atomically and restores files and state on validatio
     assert.equal(state.contractRevision, 1);
     assert.equal(state.amendments.length, 1);
     assert.deepEqual(state.amendments[0].requirementKeys, ["malformed-row"]);
-    assert.equal(state.amendments[0].semanticIntakeEffectiveness.history.inspections, 4);
+    assert.equal(state.amendments[0].semanticIntakeEffectiveness.history.inspections, 3);
     assert.deepEqual(state.amendments[0].invalidation.affectedTasks, ["T001"]);
     assert.deepEqual(state.amendments[0].invalidation.affectedProviders, ["test"]);
     assert.deepEqual(state.amendments[0].invalidation.proofRecovery.providers.preserved,
@@ -1115,7 +1115,7 @@ test("amendment requirement keys are unambiguous", () => {
   }), /covers removed requirement 'b'/);
 });
 
-test("a version-4 revision requires discovery coverage for revised requirements", () => {
+test("a version-4 revision accepts optional discovery coverage for revised requirements", () => {
   const args = revisionFixture([
     "- [ ] **T001** Build A and B [key:impl] [claims:a,b] — verify: `npm test`"
   ]);
@@ -1125,8 +1125,8 @@ test("a version-4 revision requires discovery coverage for revised requirements"
       outcome: "A runs at 50 per second" }],
     evidence: { a: { capabilities: ["test"] } }
   };
-  assert.match(compileSemanticAmendment({ ...args, amendment, semanticDraftVersion: 4 })
-    .issues.join("\n"), /version 4 requires a 'discovery' object/);
+  assert.deepEqual(compileSemanticAmendment({ ...args, amendment, semanticDraftVersion: 4 })
+    .issues, []);
   amendment.discovery = {
     coverage: [
       "current-behavior", "affected-actor", "desired-behavior", "success-path",
@@ -1197,6 +1197,32 @@ test("v4 rejects scenarios and statements that are hard to read", () => {
   assert.match(issuesFor({ outcome: "x", scenarios: [{ name: "One", when: "w", then: "t" }] },
     { capabilityOverviews: [{ capability: "unknown", overview: "o" }] }),
   /matches no requirement capability/);
+});
+
+// A headless agent wrote capabilityOverviews keyed by capability and spent an
+// inspect round on "must be an array"; the natural map form now normalizes.
+test("capabilityOverviews accepts an object keyed by capability", () => {
+  const heading = (capabilityOverviews) => {
+    const { draft, issues } = normalizeSemanticDraft(readableDraft({
+      outcome: "one payment is recorded",
+      scenarios: [{ name: "Retry succeeds", when: "the client retries", then: "one payment" }]
+    }, { capabilityOverviews }), slugify);
+    assert.deepEqual(issues, []);
+    assert.ok(Array.isArray(draft.capabilityOverviews));
+    return renderSpecHeading(draft.specs[0]);
+  };
+  assert.equal(heading({ "payment-control": { title: "Payment retries",
+    overview: "Retries never charge twice." } }),
+  "# Payment retries\n\nRetries never charge twice.");
+  assert.equal(heading({ "payment-control": "Retries never charge twice." }),
+    "# payment-control\n\nRetries never charge twice.");
+  const bad = normalizeSemanticDraft(readableDraft({ outcome: "x",
+    scenarios: [{ name: "One", when: "w", then: "t" }] },
+  { capabilityOverviews: "payment-control" }), slugify).issues.join("\n");
+  assert.match(bad, /capabilityOverviews must be an array of \{ capability, title, overview \} or an object keyed by capability/);
+  // Optional and capability-bound: the template leaves it out so editing a
+  // requirement capability can never strand a stale overview.
+  assert.equal(semanticDraftTemplate().capabilityOverviews, undefined);
 });
 
 test("v4 builds a grammatical SHALL statement; v3 keeps its historical stem", () => {

@@ -207,7 +207,11 @@ export function createProviderScheduler({
         } else {
           failedOutputs.add(batch[index].provider);
           for (const covered of batch[index].covers) failedOutputs.add(covered);
-          logError(`PROVIDER ${batch[index].provider}: ${results[index].status}`);
+          // Name the command so a missing or broken provider script is
+          // actionable without reading the receipt.
+          const command = Array.isArray(batch[index].config?.command)
+            ? ` (${batch[index].config.command.join(" ")})` : "";
+          logError(`PROVIDER ${batch[index].provider}: ${results[index].status}${command}`);
         }
       }
     }

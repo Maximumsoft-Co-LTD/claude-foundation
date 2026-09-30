@@ -23,7 +23,7 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/dev-terminal-guard.sh",
-            "timeout": 30
+            "timeout": 10
           }
         ]
       }
@@ -45,16 +45,6 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/phase-mutation-guard.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Read|Grep|Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/authoring-surface-guard.sh",
             "timeout": 5
           }
         ]

@@ -8,10 +8,10 @@ Create or update **$ARGUMENTS**.
 Read `.claude/skills/change/references/workflow.md` completely.
 Apply its agreement-detail and document-language rules to the authored packet,
 then inspect the compiled documents; obtain explicit spec approval before Build.
-Follow its semantic-intake reference. Write a semantic
-draft v4 under `.foundation/drafts/`. Use
+Follow its semantic-intake reference. Start from
+`change start --template`; save draft v4 under `.foundation/drafts/`. Use
 semantic requirement/task keys; never invent claim IDs or create
-OpenSpec artifacts by hand. Declare `workType`; resolve design warnings. Add
+OpenSpec artifacts by hand. Declare `workType`; design warnings advise. Add
 `decisions`, `diagrams`, `prototypeSelection`, `integrations`, repositories, or
 external operations when needed.
 
@@ -21,8 +21,8 @@ stable links, validation, and rollback; Build `advance` owns setup.
 Draft v3 remains readable. Edit an existing change, never
 abandon it: before Build use `change revise <change> <draft.json>`; after, use
 one `change amend` with its v4 discovery delta; approval carries unless a
-requirement is removed. Repair named compiler-error draft fields as
-one batch and retry. Ask the user only for behavior,
+requirement is removed. Repair named draft fields in
+one batch; retry. Ask the user only for behavior,
 compatibility, security, migration, rollout, prototype, or authority decision.
 Do not implement product code during Change.
 

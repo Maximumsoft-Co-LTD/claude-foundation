@@ -448,15 +448,33 @@ function leaseRuntimeFixture(root, task, surfaces) {
   });
 }
 
-test("release: a write outside the granted path scope is not accepted", () => {
+test("release: a write outside the path scope that no other task holds is accepted", () => {
   const root = mkdtempSync(join(tmpdir(), "graph-lease-authority-"));
   const task = { id: "T001", dependsOn: [], leaseKeys: ["path:root:src/api"], paths: ["src/api/**"], claims: [], repository: "root" };
   const runtime = leaseRuntimeFixture(root, task, [
     [], [{ path: "src/web/undeclared.mjs", identity: "sha:1" }]
   ]);
   runtime.acquire("c", "T001", { owner: "a" });
+  runtime.release("c", "T001", { owner: "a" });
+  const record = json(join(root, "results", "c", "T001.json"));
+  assert.deepEqual(record.observedWrites, ["src/web/undeclared.mjs"]);
+});
+
+test("release: a write inside another active task's scope is not accepted", () => {
+  const root = mkdtempSync(join(tmpdir(), "graph-lease-authority-"));
+  const task = { id: "T001", dependsOn: [], leaseKeys: ["path:root:src/api"], paths: ["src/api/**"], claims: [], repository: "root" };
+  const runtime = leaseRuntimeFixture(root, task, [
+    [], [{ path: "src/web/owned.mjs", identity: "sha:1" }]
+  ]);
+  runtime.acquire("c", "T001", { owner: "a" });
+  const { mkdirSync, writeFileSync } = awaitImportFs;
+  mkdirSync(join(root, "tasks", "c"), { recursive: true });
+  writeFileSync(join(root, "tasks", "c", "T002.json"), JSON.stringify({
+    changeId: "c", taskId: "T002", owner: "b", paths: ["src/web/**"],
+    expiresAt: "2999-01-01T00:00:00.000Z"
+  }));
   assert.throws(() => runtime.release("c", "T001", { owner: "a" }),
-    /changed outside granted scope/);
+    /changed outside granted scope: src\/web\/owned\.mjs/);
 });
 
 test("release: an undeclared path scope grants whole-tree write authority", () => {

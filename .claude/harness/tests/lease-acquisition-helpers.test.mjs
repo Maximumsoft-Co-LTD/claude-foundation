@@ -380,9 +380,12 @@ test("observed release writes enforce graph authority and granted path scopes", 
       graphRevision: "changed", graphIdentity: "gi", contractRevision: 1
     })
   }, "change", lease, false), /graph or contract changed/);
+  // Outside `[paths:]` is bookkeeping: accepted unless another live task owns it.
+  const stray = { ...context, observedTaskSurface: () => [{ path: "docs/readme.md", identity: "new" }] };
+  assert.ok(observedLeaseWrites(stray, "change", lease, false).includes("docs/readme.md"));
   assert.throws(() => observedLeaseWrites({
-    ...context, observedTaskSurface: () => [{ path: "docs/readme.md", identity: "new" }]
-  }, "change", lease, false), /outside granted scope/);
+    ...stray, workspaceLeases: () => [{ taskId: "T002", paths: ["docs/**"] }]
+  }, "change", lease, false), /outside granted scope: docs\/readme\.md/);
 });
 
 test("locked release fences resources and persists observed or takeover results", () => {

@@ -26,7 +26,7 @@ test("budget reporter formats measured state and limits quiet output to warnings
     { measured: true, ratio: 0.5, action: "CONTINUE", recommendation: "BUILD", limiter: "tokens", mode: "active" },
     { measured: false, ratio: 0.2, action: "WAIT", recommendation: "MEASURE", limiter: null, mode: "active" },
     { measured: true, ratio: 0.7, action: "STOP", recommendation: "RESCOPE", limiter: "requests", mode: "active" },
-    { measured: true, ratio: 0.1, action: "STOP", recommendation: "ASK", limiter: "tokens", mode: "operator-required", userActionRequired: true }
+    { measured: true, ratio: 0.1, action: "CONTINUE", recommendation: "BUILD", limiter: "tokens", mode: "operator-required", userActionRequired: true }
   ];
   const reporter = createBudgetReporter({ applyBudgetDecision: () => decisions.shift() });
   const logs = [];
@@ -46,9 +46,8 @@ test("budget reporter formats measured state and limits quiet output to warnings
   }
   assert.deepEqual(logs, ["BUDGET change: 50.0% CONTINUE BUILD (tokens)"]);
   assert.deepEqual(warnings, [
-    "WARNING: BUDGET change: 70.0% STOP RESCOPE (requests)",
-    "WARNING: BUDGET change: 10.0% STOP ASK (tokens) [NEEDS_USER_DECISION]"
-  ]);
+    "WARNING: BUDGET change: 70.0% STOP RESCOPE (requests)"
+  ], "advisory budget never asks: a legacy stop below 70% neither warns nor needs the user");
 });
 
 test("continuation inputs require trimmed reason and decision identity", () => {
@@ -61,24 +60,18 @@ test("continuation inputs require trimmed reason and decision identity", () => {
     /requires --decision-ref/);
 });
 
-test("continuation availability requires an exhaustion decision and accepts approvals up to the ceiling", () => {
+test("optional continuation is available at any point up to the ceiling", () => {
   const context = {
     fail, blockWithDecision: stop,
     foundationPolicy: () => ({ execution: { maxContinuationWindows: 3 } })
   };
   const budget = { window: { usedTokens: 4, targetTokens: 10 } };
-  assert.throws(() => assertBudgetContinuationAvailable(
-    context, "change", budget, { mode: "completion-only" }), /after exhaustion/);
-  assert.equal(assertBudgetContinuationAvailable(
-    context, "change", budget, { mode: "operator-required" }), 0);
-  assert.throws(() => assertBudgetContinuationAvailable(
-    context, "change", budget, { mode: "active" }), /after exhaustion/);
+  assert.equal(assertBudgetContinuationAvailable(context, "change", budget), 0);
   budget.window.extensionNumber = 2;
-  assert.equal(assertBudgetContinuationAvailable(
-    context, "change", budget, { mode: "operator-required" }), 2);
+  assert.equal(assertBudgetContinuationAvailable(context, "change", budget), 2);
   budget.window.extensionNumber = 3;
   try {
-    assertBudgetContinuationAvailable(context, "change", budget, { mode: "operator-required" });
+    assertBudgetContinuationAvailable(context, "change", budget);
     assert.fail("expected stop");
   } catch (error) {
     assert.equal(error.message, "budget-continuation-spent");
@@ -140,7 +133,7 @@ test("continuation unblock maps every ineligible work class", () => {
   assert.equal(budgetContinuationUnblock({}).id, "run-proof");
 });
 
-test("checkpoint exposes the user decision and exact durable resume route", () => {
+test("checkpoint always resumes: an exhausted window is advisory, never a user decision", () => {
   const state = {};
   const value = budgetCheckpointValue({
     ...readinessContext({ pendingTasks: () => [{ id: "T1" }] }),
@@ -153,14 +146,13 @@ test("checkpoint exposes the user decision and exact durable resume route", () =
       decision: { prompt: "Choose continue, rescope, or pause." }
     })
   }, "change");
-  assert.equal(value.status, "NEEDS_USER_DECISION");
-  assert.equal(value.forecast.status, "USER_DECISION_REQUIRED");
+  assert.equal(value.status, "READY_TO_RESUME");
+  assert.notEqual(value.forecast.status, "USER_DECISION_REQUIRED");
   assert.deepEqual(value.remainingWork.pendingTasks, ["T1"]);
-  assert.equal(value.checkpoint.resumeCommand, null);
-  assert.equal(value.checkpoint.afterContinuationCommand,
+  assert.equal(value.checkpoint.resumeCommand,
     "claude-foundation packet change --phase build");
   assert.equal(value.checkpoint.sequence, 4);
-  assert.match(value.userPrompt, /Choose continue/);
+  assert.equal("userPrompt" in value, false);
 });
 
 test("checkpoint routes deterministic proof without asking for more model budget", () => {
@@ -177,7 +169,6 @@ test("checkpoint routes deterministic proof without asking for more model budget
   assert.equal(value.forecast.status, "NO_ADDITIONAL_MODEL_BUDGET_NEEDED");
   assert.equal(value.checkpoint.resumeCommand,
     "claude-foundation proof advance change");
-  assert.equal(value.userPrompt, null);
 });
 
 test("eligible continuation passes and ineligible readiness produces a typed stop", () => {

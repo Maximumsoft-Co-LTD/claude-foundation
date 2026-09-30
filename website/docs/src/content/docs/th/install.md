@@ -75,6 +75,17 @@ claude-foundation doctor --stage change
 
 `doctor` คือคำสั่งที่ควรหยิบใช้ทุกครั้งที่รู้สึกว่ามีอะไรผิดปกติ มันวินิจฉัยสถานะของโปรเจกต์ provider และ lifecycle และรายงาน apply transaction ที่ค้างอยู่ก่อนที่ Land จะไปเจอเข้า
 
+## Headless / CI (`claude -p`)
+
+Claude Code จะไม่ใช้ `permissions.allow` ของโปรเจกต์จนกว่า workspace จะถูก trust ใน checkout ใหม่ การรัน `claude -p` แบบ headless จะแสดง `Ignoring ... permissions.allow entry ... this workspace has not been trusted` ทำให้ rule `Bash(claude-foundation *)` ที่ installer ใส่ไว้ไม่มีผล และทุกคำสั่ง harness ถูกปฏิเสธ ให้รัน `claude` แบบ interactive ในโปรเจกต์หนึ่งครั้งแล้วยอมรับ trust prompt หรือให้สิทธิ์ tool ทุกครั้งที่รัน headless:
+
+```bash
+claude -p "/change <intent>" --allowedTools "Bash(claude-foundation *)" \
+  "Bash(node *)" "Bash(npm *)" "Bash(git *)"
+```
+
+เพิ่ม build และ test tool ของโปรเจกต์ตามที่ต้องใช้ Claude Code ถือว่า path ใต้ `~/.claude/` เป็น sensitive path จึงควรวาง consumer project ไว้นอก directory นั้นเมื่อรันแบบไม่มีคนเฝ้า
+
 ## Commit การติดตั้ง
 
 ถ้าเป็น Git project installer จะ stage ไฟล์ setup ที่ดูแลให้ แต่จะไม่ commit

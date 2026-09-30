@@ -127,7 +127,9 @@ if (!phase && prePhaseDraftMutationAllowed()) {
   // cannot smuggle additional mutations into the bootstrap boundary.
   process.exit(0);
 } else if (!phase) {
-  violations.push("active phase is unavailable");
+  violations.push("active phase is unavailable; write the semantic draft to " +
+    ".foundation/drafts/<change-id>.json and run 'claude-foundation change start " +
+    "<draft> --inspect' before editing product files");
 } else if (!new Set(["investigate", "change", "build", "prove", "land", "deliver"])
   .has(phase)) {
   violations.push(`unsupported active phase: ${phase}`);
@@ -411,6 +413,9 @@ function prePhaseDraftMutationAllowed() {
     const target = canonicalTarget(rawPath, projectRoot);
     if (!target) return false;
     const rel = relative(projectRoot, target).split(sep).join("/");
+    // Scratch outside the project is not product code; before a phase exists
+    // it is the only other place an agent can think on disk.
+    if (rel === ".." || rel.startsWith("../") || isAbsolute(rel)) return true;
     return /^(?:\.foundation\/change-start-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.json|\.foundation\/drafts\/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.json)$/.test(rel);
   });
 }

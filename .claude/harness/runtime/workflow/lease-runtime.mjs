@@ -253,13 +253,20 @@ export function observedLeaseWrites(context, id, taskLease, force) {
   observedWrites.sort();
   const allowed = taskLease.paths || [];
   if (allowed.length) {
-    const outside = [];
+    // `[paths:]` is bookkeeping, so a write outside it is accepted and Prove
+    // records it into the change surface. What still refuses is a write inside
+    // another live task's scope: that is the concurrent-task conflict leases
+    // exist to prevent.
+    const others = (context.workspaceLeases?.() || []).filter((lease) =>
+      lease.taskId !== taskLease.taskId && (lease.paths || []).length);
+    const contested = [];
     for (const path of observedWrites)
-      if (!leasePathIsAllowed(path, allowed)) outside.push(path);
-    if (outside.length)
-      context.fail(`task '${taskLease.taskId}' changed outside granted scope: ${outside.join(", ")}; result and proof were not accepted. ` +
-        `Revert edits that belong to another task, or add the paths to this task's [paths:] in the isolated ` +
-        `openspec/changes/${id}/tasks.md (bookkeeping; no amendment or approval), then ` +
+      if (!leasePathIsAllowed(path, allowed) &&
+          others.some((lease) => leasePathIsAllowed(path, lease.paths)))
+        contested.push(path);
+    if (contested.length)
+      context.fail(`task '${taskLease.taskId}' changed outside granted scope: ${contested.join(", ")}; result and proof were not accepted. ` +
+        `These paths belong to another active task; revert them, then ` +
         `'claude-foundation agents acquire ${id} ${taskLease.taskId} --owner ${taskLease.owner}' and release again`);
   }
   return observedWrites;
@@ -383,7 +390,7 @@ export function createLeaseRuntime({
     if (identity.absent) return { absent: true, observedWrites: [] };
     const { owner, index, taskLease, force } = identity;
     const observedWrites = observedLeaseWrites({
-      agentPlanValue, observedTaskSurface, fail
+      agentPlanValue, observedTaskSurface, fail, workspaceLeases: () => active(id)
     }, id, taskLease, force);
     const operation = releaseLeaseUnderLock.bind(null, {
       id, owner, index, taskLease, force, observedWrites,

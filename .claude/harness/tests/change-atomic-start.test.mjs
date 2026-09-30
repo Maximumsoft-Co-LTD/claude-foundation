@@ -162,20 +162,13 @@ test("v4 start persists completed intake effectiveness before deleting its snaps
       key: "implement-semantic-outcome", outcome: "Implement the bounded result",
       covers: ["semantic-outcome"], paths: ["src/**"], verify: "npm test"
     }],
-    evidence: { "semantic-outcome": { capabilities: ["test"] } },
-    discovery: {
-      coverage: CORE_DISCOVERY_DIMENSIONS.map((dimension) => ({
-        dimension, status: "covered", covers: ["semantic-outcome"]
-      })),
-      decisions: []
-    }
+    evidence: { "semantic-outcome": { capabilities: ["test"] } }
   };
+  // An ordinary v4 draft needs neither coverage rows nor a copied source
+  // digest: the first inspection completes intake.
   writeJson(value.draftPath, semantic);
   const acknowledgement = value.lifecycle.inspectDraft(value.draftPath);
-  assert.equal(acknowledgement.action, "EDIT");
-  semantic.discovery.sourceDigest = acknowledgement.intakeState.sourceDigest;
-  writeJson(value.draftPath, semantic);
-  assert.equal(value.lifecycle.inspectDraft(value.draftPath).action, "DONE");
+  assert.equal(acknowledgement.action, "DONE");
 
   value.lifecycle.startAtomic(value.draftPath);
   const runtime = JSON.parse(readFileSync(join(
@@ -295,6 +288,12 @@ test("a low-impact semantic draft with design content keeps the standard schema"
   assert.equal(semanticDraftKeepsDesign(answered, true), true);
   assert.equal(semanticDraftKeepsDesign({ _semanticVersion: 4 }, true), false);
   assert.equal(semanticDraftKeepsDesign({ _semanticVersion: 4, workType: ["feature"] }, true), false);
+  // Optional reader-guide prose lives in the proposal and never forces standard.
+  assert.equal(semanticDraftKeepsDesign({
+    _semanticVersion: 4, workType: ["feature"], summary: "Adds search",
+    userStories: [{ priority: "P1", story: "Find a contact", covers: ["search"] }],
+    successCriteria: ["A contact is found in one query"]
+  }, true), false);
   assert.equal(semanticDraftKeepsDesign(designed, false), false);
   // Legacy drafts always carry decisions and keep their rapid lane.
   assert.equal(semanticDraftKeepsDesign({ decisions: [{ choice: "x" }] }, true), false);

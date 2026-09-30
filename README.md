@@ -175,6 +175,24 @@ managed destination is preserved and reported: choose a real installation
 directory or explicitly relocate shared configuration, then retry. Host adapters
 also check their destinations before installing the shared runtime.
 
+### Headless / CI (`claude -p`)
+
+Claude Code ignores project `permissions.allow` entries until the workspace is
+trusted. In a fresh checkout, a headless `claude -p` run prints `Ignoring ...
+permissions.allow entry ... this workspace has not been trusted`, so the
+installed `Bash(claude-foundation *)` rule does nothing and every harness call
+is denied. Either run `claude` once interactively in the project and accept the
+trust prompt, or grant the tools on each headless run:
+
+```bash
+claude -p "/change <intent>" --allowedTools "Bash(claude-foundation *)" \
+  "Bash(node *)" "Bash(npm *)" "Bash(git *)"
+```
+
+Add the project's own build and test tools as needed. Claude Code treats paths
+under `~/.claude/` as sensitive, so keep consumer projects outside that
+directory for unattended runs.
+
 ## Investigate before committing to a change
 
 Use `/investigate` when you do not yet know enough to write a reliable change
@@ -265,8 +283,8 @@ and ranks relevant specs, tests, callers, integrations, persistence, and
 permission boundaries under fixed enumeration safety limits, then applies a
 risk-adaptive budget to the selected read-set. Intake stores one
 machine-owned snapshot bound to the draft and selected local-source digests,
-using Git's tracked/non-ignored file set when available. The agent acknowledges
-the returned `discovery.sourceDigest`; keyed facts and recommendation evidence
+using Git's tracked/non-ignored file set when available. The harness records the
+source digest itself (`discovery.sourceDigest` is optional); keyed facts and recommendation evidence
 must bind a selected path and digest. Intake also retains coverage and
 question-effectiveness measurements in the change runtime; a source change reopens coverage
 instead of compiling stale requirements. It then compiles one semantic draft into

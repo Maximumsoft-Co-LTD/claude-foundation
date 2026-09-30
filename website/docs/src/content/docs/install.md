@@ -76,6 +76,17 @@ claude-foundation doctor --stage change
 
 `doctor` is the readiness check you should reach for whenever something looks wrong. It diagnoses project, provider, and lifecycle state, and it reports unresolved apply transactions before Land ever reaches them.
 
+## Headless / CI (`claude -p`)
+
+Claude Code ignores project `permissions.allow` entries until the workspace is trusted. In a fresh checkout, a headless `claude -p` run prints `Ignoring ... permissions.allow entry ... this workspace has not been trusted`, so the installed `Bash(claude-foundation *)` rule does nothing and every harness call is denied. Either run `claude` once interactively in the project and accept the trust prompt, or grant the tools on each headless run:
+
+```bash
+claude -p "/change <intent>" --allowedTools "Bash(claude-foundation *)" \
+  "Bash(node *)" "Bash(npm *)" "Bash(git *)"
+```
+
+Add the project's own build and test tools as needed. Claude Code treats paths under `~/.claude/` as sensitive, so keep consumer projects outside that directory for unattended runs.
+
 ## Commit the installation
 
 In a Git project, the installer stages the managed setup files but does not

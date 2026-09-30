@@ -123,13 +123,11 @@ $F sandbox create second-change > "$LOGS/second.log" 2>&1
 assert_file_not_contains "an unrelated draft does not force a copy" "$LOGS/second.log" "isolated-copy"
 assert_file_not_contains "the draft is not reported as a dirty target" "$LOGS/second.log" "dirty-target"
 
-# --- The budget stop survives a renamed run. --------------------------------
+# --- Budget is advisory: exhaustion never asks the user. -------------------
 #
-# A new run id resets the window's usage, which is what a genuine host session
-# rollover means. It must not also hand back the allowance: the id is
-# caller-supplied. `activateBudgetWindow` carries `operator-required` across for
-# exactly that reason. The first exhausted window must raise it: otherwise
-# `--run anything-new` can reset the gate with no user decision recorded.
+# Every exhausted window opens a new same-size window recorded as a harness
+# decision. A renamed run, an optional operator continuation, and repeated
+# exhaustion all keep the loop moving without a user decision.
 setup_project budget-stop
 $F new "budget stop" --rapid > /dev/null
 C=budget-stop
@@ -141,38 +139,23 @@ mode_of() {
 }
 
 $F event "$C" --request b1 --input 800000 --output 0 > /dev/null 2>&1
-assert_eq "the first exhausted window continues automatically once" "normal:0" "$(mode_of)"
+assert_eq "the first exhausted window continues automatically" "normal:0" "$(mode_of)"
 $F event "$C" --request b1b --input 800000 --output 0 > /dev/null 2>&1
-assert_eq "an exhausted automatic window asks the user" "operator-required:0" "$(mode_of)"
+assert_eq "the second exhausted window also continues automatically" "normal:0" "$(mode_of)"
+$F event "$C" --request b1c --input 800000 --output 0 > /dev/null 2>&1
+assert_eq "the third exhausted window also continues automatically" "normal:0" "$(mode_of)"
 
-# A run rename cannot spend or manufacture user authority.
 $F event "$C" --request b2 --run rollover --input 10 --output 0 > /dev/null 2>&1
-assert_eq "a rollover before approval preserves the decision boundary" \
-  "operator-required:0" "$(mode_of)"
+assert_eq "a run rollover keeps the loop moving" "normal:0" "$(mode_of)"
 
 $F budget-continue "$C" --reason "operator window" --decision-ref ops-1 > /dev/null 2>&1
-$F event "$C" --request b4 --input 800000 --output 0 > /dev/null 2>&1
-assert_eq "an exhausted approved window asks again" \
-  "operator-required:1" "$(mode_of)"
-$F budget-continue "$C" --reason "operator window two" --decision-ref ops-2 > /dev/null 2>&1
-$F event "$C" --request b5 --input 800000 --output 0 > /dev/null 2>&1
-$F budget-continue "$C" --reason "operator window three" --decision-ref ops-3 > /dev/null 2>&1
-$F event "$C" --request b6 --input 800000 --output 0 > /dev/null 2>&1
-assert_eq "exhausting the configured continuation ceiling raises the operator stop" \
-  "operator-required:3" "$(mode_of)"
+assert_eq "an optional operator continuation still opens a window" "normal:1" "$(mode_of)"
 
-$F event "$C" --request b7 --run escape-hatch --input 10 --output 0 > /dev/null 2>&1
-assert_eq "a renamed run cannot clear that stop" "operator-required:3" "$(mode_of)"
-
-stopped="$($F packet "$C" --phase change 2>/dev/null)"
-assert_contains "the agent is told an operator decision is required" \
-  "$stopped" '"action":"OPERATOR_REQUIRED"'
-assert_contains "the packet exposes a resumable user-decision state" \
-  "$stopped" '"status":"NEEDS_USER_DECISION"'
-# The stop withholds new work, not the loop's own completion path.
-assert_contains "required proof stays permitted under the stop" "$stopped" '"provider-run"'
-assert_contains "Land recovery stays permitted under the stop" "$stopped" '"land-recovery"'
-assert_contains "scope expansion does not" "$stopped" '"scope-expansion"'
+running="$($F packet "$C" --phase change 2>/dev/null)"
+assert_contains "the packet never exposes a budget user decision" \
+  "$running" '"status":"CONTINUE"'
+assert_not_contains "the packet never asks the operator" \
+  "$running" '"action":"OPERATOR_REQUIRED"'
 
 # --- Prototype output cannot become evidence. -------------------------------
 #
@@ -608,7 +591,7 @@ if command -v jq > /dev/null 2>&1; then
 
   target="$TMP/upgrade-target"
   mkdir -p "$target/.claude"
-  printf '%s\n' '{"hooks":{"PreToolUse":[{"matcher":"Edit|Write|MultiEdit|NotebookEdit|Bash","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/phase-mutation-guard.mjs","timeout":5}]}]}}' \
+  printf '%s\n' '{"hooks":{"PreToolUse":[{"matcher":"Edit|Write|MultiEdit|NotebookEdit|Bash","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/phase-mutation-guard.mjs","timeout":5}]},{"matcher":"Read|Grep|Bash","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/authoring-surface-guard.sh","timeout":5}]}]}}' \
     > "$target/.claude/settings.json"
 
   # `bash`, not `sh`: install.sh declares `#!/usr/bin/env bash` and uses
@@ -625,8 +608,8 @@ if command -v jq > /dev/null 2>&1; then
     "$target/.claude/settings.json" "phase-mutation-guard.mjs"
   assert_eq "exactly one phase guard is wired after upgrading" "1" \
     "$(grep -c 'phase-mutation-guard\.sh' "$target/.claude/settings.json")"
-  assert_eq "exactly one authoring surface guard is wired after upgrading" "1" \
-    "$(grep -c 'authoring-surface-guard\.sh' "$target/.claude/settings.json")"
+  assert_file_not_contains "upgrading retires the authoring surface guard" \
+    "$target/.claude/settings.json" "authoring-surface-guard"
 else
   pass "upgrade retirement skipped: jq unavailable, installer merges manually"
   pass "upgrade retirement skipped: jq unavailable, installer merges manually"

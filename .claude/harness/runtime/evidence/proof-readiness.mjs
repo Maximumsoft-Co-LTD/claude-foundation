@@ -4,10 +4,26 @@ import {
   blockingConflictRows, dependentClosure, scopeAllowsPath
 } from "../core/graph-execution.mjs";
 import { worktreeOwnedByTarget } from "../core/repository-binding.mjs";
-import { declaredPathMatcher } from "../core/workspace-surface.mjs";
+import {
+  declaredPathMatcher, mergeSurfaceAdditions, surfaceAdditionEntries
+} from "../core/workspace-surface.mjs";
 
 const PREFLIGHT_SCAN_MAX_FILES = 20000;
 const PREFLIGHT_SCAN_MAX_BYTES = 1024 * 1024;
+// More out-of-scope paths than this is almost always generated output that
+// belongs in .gitignore, not work the change means to land.
+const SURFACE_ADDITION_LIMIT = 100;
+// Control-plane, CI, and secret paths are never recorded silently: an edit to
+// hook wiring or CI must be declared in a task's `[paths:]` to land.
+const PROTECTED_SURFACE = [
+  /^\.claude\//, /^\.codex\//, /^\.github\//, /^\.gitlab-ci\.yml$/,
+  /^foundation\.json$/, /^openspec\/[^/]+\.ya?ml$/, /^openspec\/schemas\//,
+  /(^|\/)\.env(\.(?!example$|sample$|template$)[^/]+)?$/, /\.(pem|key|p12|pfx)$/,
+  /(^|\/)id_(rsa|ed25519|ecdsa)[^/]*$/
+];
+export function protectedSurfacePath(path) {
+  return PROTECTED_SURFACE.some((pattern) => pattern.test(path));
+}
 
 export function filesystemLiteralSearch(root, literal, inputs = ["*"]) {
   const matches = declaredPathMatcher(inputs?.length ? inputs : ["*"]);
@@ -545,6 +561,7 @@ export function proofReadinessValueOperation(context, id, stage = "prove", optio
     ? context.repositoryInfrastructureIssues(id) : [];
   let issues;
   let surfaceFixits;
+  const surfaceRecorded = [];
   let hash;
   let unconfigured;
   let unavailable;
@@ -552,7 +569,11 @@ export function proofReadinessValueOperation(context, id, stage = "prove", optio
     context.validate(id, "active", { quiet: true, inspect: options.inspect === true });
     issues = context.topologyIssues(id);
     surfaceFixits = [];
-    if (stage === "prove") issues.push(...context.changedSurfaceIssues(id, surfaceFixits));
+    if (stage === "prove")
+      issues.push(...context.changedSurfaceIssues(id, surfaceFixits, surfaceRecorded, {
+        persist: options.inspect !== true &&
+          process.env.FOUNDATION_READ_ONLY_INSPECTION !== "1"
+      }));
     if (stage === "prove") issues.push(...context.criticalCaseIssues(id));
     hash = context.relevantHash(id);
     ({ unconfigured, unavailable } = context.executionNodes(id, hash));
@@ -601,6 +622,9 @@ export function proofReadinessValueOperation(context, id, stage = "prove", optio
     repositoryConflicts,
     graph: readinessGraph(plan, pending),
     issues,
+    // Edits outside every task's `[paths:]`, recorded into the change surface
+    // rather than refused; they land with the rest of the sandbox.
+    surfaceAdditions: surfaceRecorded,
     advisories: context.advisoryCapabilities(id),
     budget: context.readinessBudgetPolicy(status),
     authorityPreflight,
@@ -678,6 +702,7 @@ export function createProofReadinessRuntime({
   authorityPreflight = () => ({ status: "READY", blockers: [], decision: null }),
   executionContract = null,
   targetEditIssues = () => [],
+  clearSnapshotCache = () => {},
   root = null,
   fail
 }) {
@@ -704,8 +729,19 @@ export function createProofReadinessRuntime({
   // `details`, when supplied, collects `{ repositoryId, paths }` per blocked
   // repository so the recovery can render a paste-ready annotation. The string
   // return stays as-is — proof-runtime consumes it verbatim.
-  function changedSurfaceIssues(id, details = null) {
+  //
+  // `[paths:]` is bookkeeping inside the isolated sandbox, so an edit outside
+  // it no longer blocks Prove. The path is recorded in `surfaceAdditions`,
+  // which puts it in the proven hash and the Land projection, and `recorded`
+  // (when supplied) collects it for the readiness output. A misplaced sandbox,
+  // an implausibly large spill, a deletion (Land's deletion guard must keep
+  // meaning something), and a control-plane, CI, or secret path still block.
+  // Read-only inspection reports additions without persisting them.
+  function changedSurfaceIssues(id, details = null, recorded = null, { persist = true } = {}) {
     const state = loadRuntime(id);
+    const additions = surfaceAdditionEntries(state.surfaceAdditions);
+    const before = additions.length;
+    const recordedEntries = [];
     const tasks = taskBlocks(readFileSync(join(activeChangePath(id), "tasks.md"), "utf8"))
       .map(taskMetadata);
     const generatedReports = Object.keys(evidence(id).providers || {}).map((provider) => {
@@ -741,10 +777,27 @@ export function createProofReadinessRuntime({
             ".foundation/repository-sandboxes/<change>/<repository> (the root " +
             "workspace under .foundation/sandboxes/ is a different checkout)"
           : "";
+        const workspace = repository.workspacePath;
+        const recordable = misplacedHint || outside.length > SURFACE_ADDITION_LIMIT
+          ? [] : outside.filter((path) => !protectedSurfacePath(path) &&
+            (!workspace || existsSync(join(workspace, path))));
+        if (recordable.length) {
+          for (const path of recordable)
+            recordedEntries.push({ repositoryId: repository.id, path });
+          recorded?.push({ repositoryId: repository.id, paths: recordable });
+        }
+        const refused = outside.filter((path) => !recordable.includes(path));
+        if (!refused.length) continue;
         issues.push(`repository '${repository.id}' changed outside task paths: ${
-          outside.join(", ")}${misplacedHint}`);
-        details?.push({ repositoryId: repository.id, paths: outside });
+          refused.join(", ")}${misplacedHint}`);
+        details?.push({ repositoryId: repository.id, paths: refused });
       }
+    }
+    const merged = mergeSurfaceAdditions(additions, recordedEntries);
+    if (persist && merged.length !== before) {
+      state.surfaceAdditions = merged;
+      saveRuntime?.(state);
+      clearSnapshotCache(id);
     }
     return issues;
   }

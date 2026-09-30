@@ -597,7 +597,9 @@ export function createApplyRuntime({
   });
 
   function assertDeletionsAreDeclared(id, state, entries) {
-    const undeclared = undeclaredDeletions(entries, declaredSurfaceMatcher(id, state));
+    // Apply projects the root workspace; child repositories land by commit.
+    const undeclared = undeclaredDeletions(entries,
+      declaredSurfaceMatcher(id, state, "root"));
     if (!undeclared.length) return;
     const preview = undeclared.slice(0, 10).map((entry) => entry.path);
     fail(`apply would delete ${undeclared.length} path(s) no task declares: ${

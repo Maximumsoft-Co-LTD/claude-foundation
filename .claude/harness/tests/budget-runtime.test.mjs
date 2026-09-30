@@ -158,8 +158,8 @@ test("initial and upgraded budgets preserve only compatible measured usage", () 
   runtime.ensureBudgetState(v3Exhausted);
   assert.equal(v3Exhausted.budget.version, 4);
   assert.equal(v3Exhausted.budget.window.id, "run-1");
-  assert.equal(v3Exhausted.budget.window.mode, "operator-required");
   assert.equal(v3Exhausted.budget.window.exhaustedAt, "earlier");
+  assert.equal(runtime.budgetDecision(v3Exhausted).status, "CONTINUE");
 
   const v3Untimestamped = {
     id: "v3-untimestamped", schema: "foundation-standard",
@@ -172,7 +172,8 @@ test("initial and upgraded budgets preserve only compatible measured usage", () 
     }
   };
   runtime.ensureBudgetState(v3Untimestamped);
-  assert.equal(v3Untimestamped.budget.window.mode, "operator-required");
+  assert.equal(runtime.applyBudgetDecision(v3Untimestamped).status, "CONTINUE");
+  assert.equal(v3Untimestamped.budget.window.reason, "harness-auto-continue");
 });
 
 test("current budgets normalize lifetime, heal invented zeros, and refresh targets", () => {
@@ -232,7 +233,7 @@ test("budget activation is idempotent and carries extension authority across run
   assert.equal(next.baselineTokens, 3);
   assert.equal(next.extensionRootId, "root");
   assert.equal(next.extensionNumber, 1);
-  assert.equal(next.mode, "operator-required");
+  assert.notEqual(next.mode, "operator-required", "a new run never inherits a stop");
 
   state.budget.window = { ...next, id: "prior-2", extensionRootId: "", extensionNumber: null };
   const fallback = runtime.activateBudgetWindow(state, "run-3");
@@ -240,7 +241,7 @@ test("budget activation is idempotent and carries extension authority across run
   assert.equal(fallback.extensionNumber, 0);
 });
 
-test("budget decisions cover unknown, normal, conserve, completion, and operator modes", () => {
+test("budget decisions cover unknown, normal, conserve, completion, and legacy operator modes", () => {
   const { runtime } = fixture();
   const state = { id: "change", schema: "foundation-standard", budget: currentBudget() };
   state.budget.window.usedRequests = null;
@@ -276,20 +277,10 @@ test("budget decisions cover unknown, normal, conserve, completion, and operator
 
   state.budget.window.usedTokens = 200;
   decision = runtime.budgetDecision(state);
-  assert.equal(decision.action, "OPERATOR_REQUIRED");
-  assert.equal(decision.recommendation, "ASK_USER");
-  assert.equal(decision.status, "NEEDS_USER_DECISION");
-  assert.equal(decision.userActionRequired, true);
-  assert.equal(decision.decision.kind, "budget-exhausted");
-  assert.equal(decision.decision.recommended, "pause");
-  assert.match(decision.decision.prompt, /Ask the user/);
-  assert.match(decision.decision.continuationCommand,
-    /budget continue change.*host-user-decision/);
-  assert.deepEqual(decision.decision.options.map(({ id }) => id), [
-    "continue", "rescope", "pause"
-  ]);
-  assert.ok(decision.allowed.includes("provider-run"));
-  assert.ok(!decision.allowed.includes("focused-fix"));
+  assert.equal(decision.mode, "completion-only", "exhaustion is advisory");
+  assert.equal(decision.status, "CONTINUE");
+  assert.equal(decision.userActionRequired, false);
+  assert.equal(decision.decision, null);
 
   state.budget.window.mode = "normal";
   state.budget.window.reason = "operator-continue";
@@ -303,60 +294,49 @@ test("budget decisions cover unknown, normal, conserve, completion, and operator
 
   state.budget.window.mode = "operator-required";
   decision = runtime.budgetDecision(state);
-  assert.equal(decision.action, "OPERATOR_REQUIRED");
-  assert.equal(decision.recommendation, "ASK_USER");
-  assert.ok(decision.allowed.includes("budget-continue"));
-  assert.deepEqual(decision.forbidden, [
-    "model-exploration", "new-subagent", "scope-expansion"
-  ]);
+  assert.equal(decision.status, "CONTINUE", "a legacy stop never asks");
 });
 
-test("first exhaustion auto-continues once; the second asks the user", () => {
+test("every exhaustion auto-continues and never asks the user", () => {
   const { runtime } = fixture();
   const state = { id: "change", schema: "foundation-standard", budget: currentBudget() };
   state.budget.window.usedRequests = 15;
   let decision = runtime.applyBudgetDecision(state);
   assert.equal(decision.mode, "conserve");
-  assert.equal(state.budget.window.exhaustedAt, null);
 
-  state.budget.window.usedRequests = 20;
-  decision = runtime.applyBudgetDecision(state);
-  assert.equal(decision.status, "CONTINUE");
-  assert.equal(decision.mode, "normal");
-  assert.equal(state.budget.autoContinuation.decisionRef, AUTO_BUDGET_CONTINUATION_REF);
-  assert.equal(state.budget.autoContinuation.owner, "harness");
-  assert.equal(state.budget.autoContinuation.previous.usedRequests, 20);
-  const window = state.budget.window;
-  assert.equal(window.id, "run-1");
-  assert.equal(window.reason, "harness-auto-continue");
-  assert.equal(window.sequence, 2);
-  assert.equal(window.extensionNumber, 0, "an automatic window never spends an operator continuation");
-  assert.equal(window.baselineRequests, 20);
-  assert.equal(window.usedRequests, 0);
-  assert.equal(window.targetRequests, 20);
-
-  state.budget.window.usedRequests = 20;
-  decision = runtime.applyBudgetDecision(state);
-  assert.equal(decision.status, "NEEDS_USER_DECISION");
-  assert.equal(decision.mode, "operator-required");
-  assert.equal(state.budget.window.reason, "harness-auto-continue");
-  assert.ok(state.budget.window.exhaustedAt);
-  const exhaustedAt = state.budget.window.exhaustedAt;
-  runtime.applyBudgetDecision(state);
-  assert.equal(state.budget.window.exhaustedAt, exhaustedAt);
+  for (const sequence of [2, 3, 4]) {
+    state.budget.window.usedRequests = 20;
+    decision = runtime.applyBudgetDecision(state);
+    assert.equal(decision.status, "CONTINUE");
+    assert.equal(decision.userActionRequired, false);
+    assert.equal(decision.mode, "normal");
+    assert.equal(state.budget.autoContinuation.decisionRef, AUTO_BUDGET_CONTINUATION_REF);
+    assert.equal(state.budget.autoContinuation.owner, "harness");
+    assert.equal(state.budget.autoContinuation.count, sequence - 1);
+    assert.equal(state.budget.autoContinuation.previous.usedRequests, 20);
+    const window = state.budget.window;
+    assert.equal(window.id, "run-1");
+    assert.equal(window.reason, "harness-auto-continue");
+    assert.equal(window.sequence, sequence);
+    assert.equal(window.extensionNumber, 0, "an automatic window never spends an operator continuation");
+    assert.equal(window.usedRequests, 0);
+    assert.equal(window.targetRequests, 20);
+  }
 });
 
-test("an operator stop is never auto-continued", () => {
+test("a legacy operator stop auto-continues instead of asking", () => {
   const { runtime } = fixture();
   const state = { id: "change", schema: "foundation-standard", budget: currentBudget() };
   state.budget.window.mode = "operator-required";
-  state.budget.window.usedRequests = 20;
+  state.budget.window.usedRequests = 5;
+  assert.equal(runtime.budgetDecision(state).status, "CONTINUE");
   const decision = runtime.applyBudgetDecision(state);
-  assert.equal(decision.status, "NEEDS_USER_DECISION");
-  assert.equal(state.budget.autoContinuation, undefined);
+  assert.equal(decision.status, "CONTINUE");
+  assert.equal(state.budget.window.reason, "harness-auto-continue");
+  assert.notEqual(state.budget.window.mode, "operator-required");
 });
 
-test("second exhaustion asks the user for every workload profile", () => {
+test("repeated exhaustion auto-continues for every workload profile", () => {
   const workloads = [
     {
       name: "rapid-greenfield", schema: "foundation-rapid", impact: "low", size: "xs"
@@ -380,17 +360,13 @@ test("second exhaustion asks the user for every workload profile", () => {
     const state = { id: workload.name, ...workload };
     state.budget = runtime.initialBudget(workload.schema, workload.name);
     runtime.ensureBudgetState(state);
-    state.budget.window.usedRequests = state.budget.window.targetRequests;
-    state.budget.window.usedTokens = 0;
-    let decision = runtime.applyBudgetDecision(state);
-    assert.equal(decision.status, "CONTINUE", workload.name);
-    state.budget.window.usedRequests = state.budget.window.targetRequests;
-    decision = runtime.applyBudgetDecision(state);
-    assert.equal(decision.status, "NEEDS_USER_DECISION", workload.name);
-    assert.equal(decision.mode, "operator-required", workload.name);
-    assert.equal(decision.userActionRequired, true, workload.name);
-    assert.ok(decision.allowed.includes("proof-resume"), workload.name);
-    assert.ok(decision.forbidden.includes("model-exploration"), workload.name);
+    for (let round = 0; round < 3; round += 1) {
+      state.budget.window.usedRequests = state.budget.window.targetRequests;
+      state.budget.window.usedTokens = 0;
+      const decision = runtime.applyBudgetDecision(state);
+      assert.equal(decision.status, "CONTINUE", workload.name);
+      assert.equal(decision.userActionRequired, false, workload.name);
+    }
   }
 });
 

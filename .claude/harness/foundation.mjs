@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { assertSpecApproval } from "./runtime/core/user-decisions.mjs";
+import { assertSpecApproval, preserveSpecApprovalAcross } from "./runtime/core/user-decisions.mjs";
 
 import {
   appendFileSync, existsSync, lstatSync, mkdirSync, rmSync
@@ -97,7 +97,9 @@ import { createProviderScheduler } from "./runtime/evidence/provider-scheduler.m
 import { createReviewProtocol } from "./runtime/evidence/review-protocol.mjs";
 import { createArtifactStore } from "./runtime/evidence/artifact-store.mjs";
 import { createReviewAttemptStore } from "./runtime/evidence/review-attempt-store.mjs";
-import { createProofReadinessRuntime } from "./runtime/evidence/proof-readiness.mjs";
+import {
+  createProofReadinessRuntime, upgradeEvidenceOperation
+} from "./runtime/evidence/proof-readiness.mjs";
 import { createReceiptRuntime } from "./runtime/evidence/receipt-runtime.mjs";
 import { createReceiptValidity } from "./runtime/evidence/receipt-validity.mjs";
 import { createAdapterRuntime } from "./runtime/evidence/adapter-runtime.mjs";
@@ -1219,7 +1221,7 @@ const {
   topologyIssues,
   unavailableProviderRecovery,
   workspaceIsolationIssues,
-  upgradeEvidence
+  upgradeEvidence: upgradeTargetEvidence
 } = createProofReadinessRuntime({
   root: ROOT,
   targetEditIssues: (state) =>
@@ -1258,8 +1260,32 @@ const {
   saveRuntime,
   authorityPreflight,
   executionContract,
+  clearSnapshotCache,
   fail: die
 });
+// Evidence upgrade is wiring-only: it rewrites the target packet, mirrors the
+// same rewrite into an isolated packet (which Prove reads), and keeps spec
+// approval that was valid before it.
+function upgradeEvidence(id) {
+  preserveSpecApprovalAcross(ROOT, id, { loadRuntime, saveRuntime, now }, () => {
+    const workspace = loadRuntime(id).workspace?.path;
+    upgradeTargetEvidence(id);
+    if (!workspace || workspace === ROOT ||
+        !existsSync(join(workspace, "openspec", "changes", id))) return;
+    upgradeEvidenceOperation({
+      loadRuntime: () => ({ status: "active" }),
+      fail: die,
+      changePath: (change) => join(workspace, "openspec", "changes", change),
+      proofPath: () => null,
+      readJson,
+      writeJson,
+      saveRuntime: () => {},
+      pathExists: (path) => Boolean(path) && existsSync(path),
+      remove: () => {},
+      output: { log: () => {} }
+    }, id);
+  }, "evidence-upgrade");
+}
 const { continueBudget, checkpointBudget } = createBudgetContinuation({
   logs: LOGS,
   loadRuntime,
@@ -1927,7 +1953,6 @@ const { advanceValue, showAdvance } = createAdvanceRuntime({
   authorityStatusValue,
   authorityNext,
   proofReadinessValue,
-  budgetDecisionValue: budgetDecision,
   hasLandGrant: hasValidLandGrant.bind(null, landGrantRuntime),
   authorizeLand: (id) => runAdvanceQuietly(() => landGrantRuntime.issue(id)),
   prepareBuild: prepareAdvanceBuild.bind(null, {

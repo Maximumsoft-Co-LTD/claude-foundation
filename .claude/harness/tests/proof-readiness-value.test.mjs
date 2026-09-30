@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  createProofReadinessRuntime,
   filesystemLiteralSearch,
   proofReadinessValueOperation,
   readinessGraph,
@@ -301,4 +302,128 @@ test("prove readiness ignores path overlaps and blocks only on shared resources"
   assert.deepEqual(shared.repositoryConflicts.map((row) => row.key),
     ["resource:staging-db <> resource:staging-db"]);
   assert.deepEqual(shared.next, ["active-recovery"]);
+});
+
+test("an edit outside task paths is recorded into the change surface, not refused", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-surface-additions-"));
+  try {
+    writeFileSync(join(root, "tasks.md"), "- [x] T001 [paths:src/**]\n");
+    let state = { id: "demo", surfaceAdditions: ["docs/old.md"] };
+    let surface = [];
+    let cleared = 0;
+    const saves = [];
+    const runtime = createProofReadinessRuntime({
+      evidence: () => ({ providers: {} }),
+      loadRuntime: () => structuredClone(state),
+      saveRuntime: (value) => { saves.push(value); state = value; },
+      clearSnapshotCache: () => { cleared += 1; },
+      taskBlocks: (text) => text.split("\n").filter(Boolean),
+      taskMetadata: () => ({ repository: "root", paths: ["src/**"] }),
+      activeChangePath: () => root,
+      canonicalChangedSurface: () => surface,
+      selectedRepositories: () => [{ id: "root", mode: "write" }],
+      providerConfig: () => ({}),
+      fail: (message) => { throw new Error(message); }
+    });
+    surface = [
+      { repositoryId: "root", path: "src/app.mjs" },
+      { repositoryId: "root", path: "README.md" }
+    ];
+    const recorded = [];
+    assert.deepEqual(runtime.changedSurfaceIssues("demo", [], recorded), []);
+    assert.deepEqual(recorded, [{ repositoryId: "root", paths: ["README.md"] }]);
+    // Legacy bare strings are root entries; new entries are repository-qualified.
+    assert.deepEqual(state.surfaceAdditions, [
+      { repositoryId: "root", path: "README.md" }, { repositoryId: "root", path: "docs/old.md" }
+    ]);
+    assert.equal(cleared, 1);
+    // Already recorded: nothing to persist on the next readiness pass.
+    runtime.changedSurfaceIssues("demo");
+    assert.equal(saves.length, 1);
+    // A spill this large is generated output, not work to land: still refused.
+    surface = Array.from({ length: 101 }, (_, index) =>
+      ({ repositoryId: "root", path: `build/out-${index}.js` }));
+    const fixits = [];
+    assert.match(runtime.changedSurfaceIssues("demo", fixits)[0],
+      /changed outside task paths: build\/out-0\.js/);
+    assert.equal(fixits[0].paths.length, 101);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("deletions and control-plane paths outside task paths still block", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-surface-protected-"));
+  try {
+    writeFileSync(join(root, "tasks.md"), "- [x] T001 [paths:src/**]\n");
+    mkdirSync(join(root, ".claude"), { recursive: true });
+    writeFileSync(join(root, ".claude", "settings.json"), "{}\n");
+    writeFileSync(join(root, ".env"), "TOKEN=x\n");
+    writeFileSync(join(root, ".env.example"), "TOKEN=\n");
+    writeFileSync(join(root, "README.md"), "docs\n");
+    let state = { id: "demo" };
+    const saves = [];
+    const runtime = createProofReadinessRuntime({
+      evidence: () => ({ providers: {} }),
+      loadRuntime: () => structuredClone(state),
+      saveRuntime: (value) => { saves.push(value); state = value; },
+      taskBlocks: (text) => text.split("\n").filter(Boolean),
+      taskMetadata: () => ({ repository: "root", paths: ["src/**"] }),
+      activeChangePath: () => root,
+      canonicalChangedSurface: () => [
+        ".claude/settings.json", ".env", ".env.example", "README.md", "fixtures/gone.json"
+      ].map((path) => ({ repositoryId: "root", path })),
+      selectedRepositories: () => [{ id: "root", mode: "write", workspacePath: root }],
+      providerConfig: () => ({}),
+      fail: (message) => { throw new Error(message); }
+    });
+    // Read-only inspection reports but does not persist.
+    const inspected = [];
+    runtime.changedSurfaceIssues("demo", null, inspected, { persist: false });
+    assert.equal(saves.length, 0);
+    assert.deepEqual(inspected, [{ repositoryId: "root", paths: [".env.example", "README.md"] }]);
+    const fixits = [];
+    const issues = runtime.changedSurfaceIssues("demo", fixits);
+    assert.equal(issues.length, 1);
+    assert.deepEqual(fixits[0].paths, [".claude/settings.json", ".env", "fixtures/gone.json"]);
+    assert.deepEqual(state.surfaceAdditions, [".env.example", "README.md"]
+      .map((path) => ({ repositoryId: "root", path })));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("surface additions are recorded against the repository that changed", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-surface-multi-"));
+  try {
+    writeFileSync(join(root, "tasks.md"), "- [x] T001\n- [x] T002\n");
+    let state = { id: "demo" };
+    const tasks = [
+      { repository: "api", paths: ["src/**"] }, { repository: "web", paths: ["src/**"] }
+    ];
+    let index = 0;
+    const runtime = createProofReadinessRuntime({
+      evidence: () => ({ providers: {} }),
+      loadRuntime: () => structuredClone(state),
+      saveRuntime: (value) => { state = value; },
+      taskBlocks: (text) => text.split("\n").filter(Boolean),
+      taskMetadata: () => tasks[index++ % tasks.length],
+      activeChangePath: () => root,
+      canonicalChangedSurface: () => [
+        { repositoryId: "api", path: "docs/api.md" },
+        { repositoryId: "web", path: "src/page.js" }
+      ],
+      selectedRepositories: () => [
+        { id: "api", mode: "write" }, { id: "web", mode: "write" }
+      ],
+      providerConfig: () => ({}),
+      fail: (message) => { throw new Error(message); }
+    });
+    const recorded = [];
+    assert.deepEqual(runtime.changedSurfaceIssues("demo", [], recorded), []);
+    assert.deepEqual(recorded, [{ repositoryId: "api", paths: ["docs/api.md"] }]);
+    assert.deepEqual(state.surfaceAdditions, [{ repositoryId: "api", path: "docs/api.md" }]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

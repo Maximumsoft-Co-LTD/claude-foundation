@@ -386,22 +386,11 @@ function buildAction(id, dispatch, state, plan = null) {
 export function coordinatorAction({
   id, state, dispatch, workspaceHash, latestReview = null,
   proofCursor = {}, authorityRequests = [], stableHash, authorityActions = null,
-  proofPreflight = null, plan = null, budget = null, proofIsCurrent = null
+  proofPreflight = null, plan = null, proofIsCurrent = null
 }) {
   if (state.status === "archived") return envelope(id, "DONE", {
     legacyAction: "ARCHIVED", boundary: null, reason: "change is archived",
     completed: true, reached: "archived", resumeCommand: null
-  });
-
-  if (dispatch.action !== "build-complete" &&
-      budget?.status === "NEEDS_USER_DECISION") return envelope(id, "ASK_USER", {
-    legacyAction: "BUDGET_DECISION_REQUIRED",
-    actor: "user",
-    boundary: "user-authority",
-    reason: budget.decision?.summary || "the active model budget is exhausted",
-    decision: budget.decision,
-    recoveryType: "ASK_USER",
-    alternatives: budget.decision?.options?.map((option) => option.outcome) || []
   });
 
   const pendingBuild = buildAction(id, dispatch, state, plan);
@@ -565,7 +554,6 @@ export function createAdvanceRuntime({
   loadRuntime, agentDispatchValue, relevantHash, deliveredAiAttempts,
   authorityStatusValue, authorityNext, readJson, proofAdvancePath, stableHash,
   proofReadinessValue = null, agentPlanValue = null,
-  budgetDecisionValue = null,
   nowMs = Date.now,
   assertApproval = null,
   prepareBuild = null, runProof = null, runLand = null,
@@ -620,7 +608,6 @@ export function createAdvanceRuntime({
         if (["proven", "landing"].includes(state.status)) stage = "land";
         const authority = authorityStatusValue(id);
         const dispatch = agentDispatchValue(id, options);
-        const budget = budgetDecisionValue ? budgetDecisionValue(state) : null;
         let proofPreflight = null;
         if (dispatch.action === "build-complete") {
           stage = "prove";
@@ -652,7 +639,6 @@ export function createAdvanceRuntime({
           authorityRequests: openRequests,
           proofPreflight,
           plan,
-          budget,
           proofIsCurrent: proofIsCurrent && ["proven", "landing"].includes(state.status)
             ? proofIsCurrent(id) : null,
           authorityActions: authorityNext

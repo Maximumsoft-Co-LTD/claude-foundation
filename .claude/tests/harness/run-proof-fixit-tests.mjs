@@ -4,6 +4,8 @@
 // the agent reconstruct the `[paths:]` annotation by hand — a consumer round
 // hit that block ten times. The recovery must restate the same paths in the
 // exact form `tasks.md` accepts, and stay silent when the surface is declared.
+// An ordinary out-of-path edit is now recorded, not refused; the recovery
+// remains for a misplaced sandbox or an oversized spill.
 
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -52,7 +54,7 @@ function runtimeWith({ changed, repositories = { root: {}, api: {} } }) {
   });
 }
 
-test("an undeclared path raises the issue and collects fix-it details", () => {
+test("an undeclared path is recorded, not raised as an issue", () => {
   const runtime = runtimeWith({
     changed: [
       { repositoryId: "api", path: "api/src/index.js" },
@@ -60,11 +62,31 @@ test("an undeclared path raises the issue and collects fix-it details", () => {
     ]
   });
   const details = [];
-  const issues = runtime.changedSurfaceIssues("fixit-change", details);
-  assert.equal(issues.length, 1);
-  assert.match(issues[0], /changed outside task paths: api\/test\/new\.spec\.js/);
-  assert.deepEqual(details, [
+  const recorded = [];
+  assert.deepEqual(runtime.changedSurfaceIssues("fixit-change", details, recorded), []);
+  assert.deepEqual(details, []);
+  assert.deepEqual(recorded, [
     { repositoryId: "api", paths: ["api/test/new.spec.js"] }
+  ]);
+});
+
+test("a misplaced root sandbox still raises the issue and collects fix-it details", () => {
+  const details = [];
+  const issues = createProofReadinessRuntime({
+    evidence: () => ({ providers: {} }),
+    loadRuntime: () => ({}),
+    taskBlocks: () => [{ id: "T001" }],
+    activeChangePath: () => packet,
+    taskMetadata: () => ({ repository: "api", paths: ["api/src/**"] }),
+    canonicalChangedSurface: () => [{ repositoryId: "root", path: "api/test/new.spec.js" }],
+    selectedRepositories: () => [{ id: "root", mode: "write" }, { id: "api", mode: "write" }],
+    providerConfig: () => ({}),
+    fail: (message) => { throw new Error(message); }
+  }).changedSurfaceIssues("fixit-change", details);
+  assert.equal(issues.length, 1);
+  assert.match(issues[0], /changed outside task paths: api\/test\/new\.spec\.js; all implementation tasks target 'api'/);
+  assert.deepEqual(details, [
+    { repositoryId: "root", paths: ["api/test/new.spec.js"] }
   ]);
 });
 
@@ -75,15 +97,6 @@ test("a fully declared surface stays silent and collects nothing", () => {
   const details = [];
   assert.deepEqual(runtime.changedSurfaceIssues("fixit-change", details), []);
   assert.deepEqual(details, []);
-});
-
-test("a single-repository change still rejects writes outside task scope", () => {
-  const runtime = runtimeWith({
-    repositories: { api: {} },
-    changed: [{ repositoryId: "api", path: "api/test/rogue.spec.js" }]
-  });
-  assert.match(runtime.changedSurfaceIssues("fixit-change")[0],
-    /changed outside task paths: api\/test\/rogue\.spec\.js/);
 });
 
 test("configuration recovery leads with a paste-ready annotation", () => {
@@ -105,15 +118,15 @@ test("recovery without fix-its keeps its established shape", () => {
   assert.equal(recovery.length, 2);
 });
 
-test("the readiness value routes fix-its into the recovery entries", () => {
+test("the readiness value reports recorded surface additions and stays ready", () => {
   const runtime = runtimeWith({
     changed: [{ repositoryId: "api", path: "api/test/new.spec.js" }]
   });
   const value = runtime.proofReadinessValue("fixit-change", "prove");
-  assert.equal(value.status, "CONFIGURATION_ERROR");
-  assert.equal(value.next[0].kind, "declare-surface");
-  assert.match(value.next[0].choices[0].instruction,
-    /repository 'api': \[paths:api\/test\/new\.spec\.js\]/);
+  assert.notEqual(value.status, "CONFIGURATION_ERROR");
+  assert.deepEqual(value.surfaceAdditions, [
+    { repositoryId: "api", paths: ["api/test/new.spec.js"] }
+  ]);
 });
 
 test("recovery prose preserves summaries, commands, decisions and instructions", () => {

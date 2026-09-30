@@ -352,6 +352,15 @@ for target in \
   assert_contains "pre-phase draft capability rejects $target" "$out" 'active phase is unavailable'
 done
 
+out="$(printf '%s' "$(write_event "$TMP/project/src/app.js")" |
+  CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
+assert_contains "pre-phase refusal names the draft route" "$out" 'change start'
+
+mkdir -p "$TMP/scratch"
+out="$(printf '%s' "$(write_event "$TMP/scratch/notes.md")" |
+  CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
+assert_eq "pre-phase scratch outside the project is writable" "" "$out"
+
 out="$(printf '%s' "$(bash_event 'echo x > .foundation/change-start-fix.json')" |
   CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
 assert_contains "pre-phase draft capability never permits shell mutation" \

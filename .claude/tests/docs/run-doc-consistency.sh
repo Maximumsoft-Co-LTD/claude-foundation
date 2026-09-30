@@ -479,7 +479,7 @@ const land = prose(".claude/commands/land.md");
 const route = land.match(/Run `([^`]+)`/)?.[1];
 assert.equal(route, "claude-foundation land advance <change>");
 assert.ok(read("WORKFLOW.md").includes(route));
-for (const boundary of ["Authority", "resource", "budget", "conflict", "external dependency", "repeated no-progress"])
+for (const boundary of ["Authority", "resource", "conflict", "external dependency", "repeated no-progress"])
   assert.ok(land.includes(boundary), `Land omits ${boundary}`);
 assert.doesNotMatch(land, /Only semantic conflicts/);
 

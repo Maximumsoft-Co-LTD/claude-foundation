@@ -665,8 +665,8 @@ test("an explicit nonzero window is not erased while host totals are unavailable
   const decision = budgetRuntime.budgetDecision(state);
   assert.equal(state.budget.window.usedTokens, 2000001);
   assert.equal(decision.measured, true);
-  assert.equal(decision.mode, "operator-required");
-  assert.equal(decision.status, "NEEDS_USER_DECISION");
+  assert.equal(decision.mode, "completion-only");
+  assert.equal(decision.status, "CONTINUE");
 });
 
 test("Codex thread identity correlates imported rows without creating usage", () => {

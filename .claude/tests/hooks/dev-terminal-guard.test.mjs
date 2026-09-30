@@ -74,6 +74,15 @@ test("dev cannot complete without exactly one passing fresh audited proof", () =
   const missing = evaluateDevTerminal({ ...base, activeIds: [] });
   assert.equal(missing.blockerKind, "missing-active-change");
   assert.match(missing.resumeAction, /^Agent: select the change/);
+  const archived = evaluateDevTerminal({
+    ...base, activeIds: [], archivedThisSession: ["2026-09-29-demo"]
+  });
+  assert.equal(archived.complete, true, "a change archived this session is delivered");
+  assert.equal(archived.status, "ARCHIVED");
+  assert.equal(evaluateDevTerminal({
+    ...base, prompt: "/dev --resume demo", activeIds: [],
+    archivedThisSession: ["2026-09-29-other"]
+  }).blockerKind, "selected-change-unavailable");
   assert.equal(evaluateDevTerminal({ ...base, proofFor: () => null }).blockerKind,
     "proof-not-passing");
   const automatic = evaluateDevTerminal({
@@ -162,7 +171,7 @@ test("terminal verdict remains canonical when the host later returns a success e
   assert.equal(row.sessionId, "session-1");
 });
 
-test("Stop hook persists an incomplete verdict before asking the host to continue", () => {
+test("Stop hook persists an incomplete verdict and only warns", () => {
   const root = mkdtempSync(join(tmpdir(), "dev-terminal-guard-"));
   const transcript = join(root, "transcript.jsonl");
   try {
@@ -178,9 +187,9 @@ test("Stop hook persists an incomplete verdict before asking the host to continu
       env: { ...process.env, CLAUDE_PROJECT_DIR: root }
     });
     assert.equal(child.status, 0);
-    assert.match(child.stdout, /"decision":"block"/);
-    assert.match(child.stdout, /Execute the recorded agent resumeAction yourself/);
-    assert.doesNotMatch(child.stdout, /Run \/dev/);
+    assert.doesNotMatch(child.stdout, /"decision"/);
+    assert.match(child.stdout,
+      /"systemMessage":"\/dev stopped before proof passed \(proof-not-passing for demo\)/);
     const verdict = JSON.parse(readFileSync(join(root, ".foundation", "logs",
       "dev-terminal", "live-session.json"), "utf8"));
     assert.equal(verdict.protocol, "foundation-dev-terminal-v1");

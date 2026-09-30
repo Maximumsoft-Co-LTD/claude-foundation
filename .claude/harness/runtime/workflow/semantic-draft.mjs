@@ -218,7 +218,7 @@ function semanticDraftIssues(source) {
   if (source?.integrations !== undefined && !Array.isArray(source.integrations))
     issues.push("semantic draft integrations must be an array");
   if (source?.capabilityOverviews !== undefined && !Array.isArray(source.capabilityOverviews))
-    issues.push("semantic draft capabilityOverviews must be an array");
+    issues.push("semantic draft capabilityOverviews must be an array of { capability, title, overview } or an object keyed by capability");
   if (source?.language !== undefined &&
       !/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(text(source.language)))
     issues.push("semantic draft language must be a BCP 47 tag such as 'en' or 'th'");
@@ -350,6 +350,18 @@ function normalizeRequirements(source, slugify, issues, { loadCanonicalSpec = nu
     });
   }
   return { requirements, requirementKeys };
+}
+
+// Authors naturally key overviews by capability:
+// `{ "<capability>": { title, overview } }` or `{ "<capability>": "overview" }`.
+// Normalize that map to the canonical array; any other shape stays as given so
+// validation reports it.
+export function capabilityOverviewList(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  return Object.entries(value).map(([capability, entry]) =>
+    entry && typeof entry === "object" && !Array.isArray(entry)
+      ? { ...entry, capability: text(entry.capability) || capability }
+      : { capability, overview: entry });
 }
 
 // A capability overview gives its spec file a human title and a short
@@ -498,7 +510,9 @@ function derivedExecution(source, claims, tasks) {
   return { version: 1, providers, services: {} };
 }
 
-export function normalizeSemanticDraft(source, slugify, options = {}) {
+export function normalizeSemanticDraft(input, slugify, options = {}) {
+  const source = input?.capabilityOverviews === undefined ? input
+    : { ...input, capabilityOverviews: capabilityOverviewList(input.capabilityOverviews) };
   const issues = semanticDraftIssues(source);
   const { requirements, requirementKeys } = normalizeRequirements(
     source, slugify, issues, options);

@@ -334,6 +334,21 @@ test("test-discovery falls back to Node spec output for the built-in runner", as
   assert.equal(world.receipts[1].flags.discovered, 1);
 });
 
+test("auto format reads Node spec output behind an npm test wrapper", async () => {
+  const config = {
+    capability: "test", adapter: "test-discovery", command: ["sh", "-c", "npm test"],
+    discoveryProvider: "discovery", minimum: 1, reportFormat: "auto"
+  };
+  const world = fixture(config, result({ stdout: "✔ works (1ms)\nℹ tests 8\nℹ pass 8\nℹ fail 0" }), {
+    parseNodeTestSpecOutput: () => ({ totalTests: 8, criticalCases: [] }),
+    numericReportValue: (report) => report?.totalTests ?? null
+  });
+  const outcome = await world.runtime.executeAdapter(
+    "change", "provider", config, "run", new Map());
+  assert.equal(outcome.status, "pass");
+  assert.equal(world.receipts[1].flags.discovered, 8);
+});
+
 test("test-discovery reads counted shell summaries retained by RTK", async () => {
   const config = { capability: "test", adapter: "test-discovery", minimum: 1 };
   for (const [stdout, status, count, expected] of [

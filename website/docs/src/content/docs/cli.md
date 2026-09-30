@@ -137,7 +137,7 @@ delivery receipt.
 | `sandbox create <change> --all` | Repair missing multi-repository bindings in place; valid existing worktrees are preserved |
 | `change abandon <change> --reason <r> --decision-ref <ref>` | Quarantine a change that cannot be proven |
 | `change waive <change> --capability <c> --reason <r> --decision-ref <ref>` | Withdraw one capability's enforcement after its provider ran and failed; `--revoke` restores it |
-| `budget continue <change> --reason <r> --decision-ref <ref>` | Open one policy-gated completion window |
+| `budget continue <change> --reason <r> --decision-ref <ref>` | Optional explicit widening; exhausted windows auto-continue |
 | `agents release <change> <task> --owner <id> [--lease-id <id>] [--force]` | Release a lease; a taken-over generation requires its acquired lease id, and `--force` takes over one whose owner crashed |
 
 Commands marked as needing a `--decision-ref` require an **explicit host-recorded user decision**. The runtime will not accept the agent's own judgement in their place.

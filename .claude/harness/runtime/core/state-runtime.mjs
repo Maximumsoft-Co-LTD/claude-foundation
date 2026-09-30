@@ -5,7 +5,8 @@ import {
 import { join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import {
-  declaredPathMatcher, isChangePacketPath, isExcludedPath, trackedPathSet
+  declaredPathMatcher, isChangePacketPath, isExcludedPath, mergeSurfaceAdditions,
+  surfaceAdditionPaths, trackedPathSet
 } from "./workspace-surface.mjs";
 import { taskBlocks, taskMetadata } from "../contracts/change-artifacts.mjs";
 
@@ -100,8 +101,19 @@ export function createStateRuntime({
   }
 
   function saveRuntime(state) {
+    // `surfaceAdditions` only grows. A caller holding a state loaded before
+    // readiness recorded an addition must not drop it, or Land's hash would
+    // diverge from the proven one.
+    const path = runtimePath(state.id);
+    if (existsSync(path)) {
+      try {
+        const stored = JSON.parse(readFileSync(path, "utf8")).surfaceAdditions || [];
+        if (stored.length || state.surfaceAdditions?.length) state.surfaceAdditions =
+          mergeSurfaceAdditions(state.surfaceAdditions, stored);
+      } catch {}
+    }
     state.updatedAt = now();
-    writeJson(runtimePath(state.id), state);
+    writeJson(path, state);
   }
 
   function activeChanges() {
@@ -246,8 +258,27 @@ export function createStateRuntime({
   // Declared means the resolved `--surface` globs plus every task's `[paths:]`,
   // so a file the change creates is surface as soon as the ledger says the
   // change owns that path.
-  function declaredSurfaceMatcher(id, state = {}) {
-    const globs = [...(state.declaredSurface || [])];
+  // Which selected repository a workspace (sandbox or target checkout) belongs
+  // to. Anything not recorded as a child repository is the root workspace.
+  function workspaceRepositoryId(state = {}, workspace = null) {
+    if (!workspace) return "root";
+    const target = canonicalPath(workspace);
+    for (const [repositoryId, runtime] of Object.entries(state.repositories || {})) {
+      if (repositoryId === "root" || !runtime) continue;
+      for (const candidate of [runtime.path, runtime.targetPath])
+        if (candidate && canonicalPath(candidate) === target) return repositoryId;
+    }
+    return "root";
+  }
+
+  function declaredSurfaceMatcher(id, state = {}, repositoryId = "root") {
+    // `surfaceAdditions` are exact sandbox paths Prove found outside every
+    // task's `[paths:]` and recorded instead of refusing; the hash and the Land
+    // projection must carry them or a created file would silently not land.
+    // Only this repository's additions apply: another repository's path must
+    // not widen this repository's manifest, hash, or deletion guard.
+    const globs = [...(state.declaredSurface || []),
+      ...surfaceAdditionPaths(state.surfaceAdditions, repositoryId)];
     // The active packet owns `[paths:]`: Build widens it in the sandbox, and
     // Land later projects that packet onto the target. Reading the target copy
     // left the widened paths out of the proven hash, then Land's own packet
@@ -462,7 +493,8 @@ export function createStateRuntime({
     // (every tracked byte) expires it on upstream commits the change never
     // touched. Paired with the sandbox diff identity, this is the narrow
     // binding that lets an unchanged verdict survive a moved base.
-    const declared = declaredSurfaceMatcher(id, state);
+    const declared = declaredSurfaceMatcher(id, state,
+      workspaceRepositoryId(state, workspace));
     const allowed = snapshotPathPolicy(id, ignored, declared);
     let files = collectGitSnapshot(workspace, allowed);
     if (files === null) files = collectFilesystemSnapshot(workspace, allowed)
@@ -541,8 +573,9 @@ export function createStateRuntime({
     // what apply projects, so a path either manifest admits and the other does
     // not becomes a create or a delete; confining both to one surface is what
     // keeps an unrelated tree out of that diff.
-    const declared = declaredSurfaceMatcher(id,
-      existsSync(runtimePath(id)) ? readJson(runtimePath(id)) : {});
+    const manifestState = existsSync(runtimePath(id)) ? readJson(runtimePath(id)) : {};
+    const declared = declaredSurfaceMatcher(id, manifestState,
+      workspaceRepositoryId(manifestState, workspace));
     function collect(dir) {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         const path = join(dir, entry.name);
@@ -596,6 +629,7 @@ export function createStateRuntime({
     inspectSnapshots,
     writeSnapshot,
     declaredSurfaceMatcher,
+    workspaceRepositoryId,
     clearSnapshotCache,
     registerPolicyCacheClearer,
     workspaceManifest,

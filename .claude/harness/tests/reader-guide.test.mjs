@@ -157,6 +157,9 @@ test("reader fields are shape-checked and missing guidance only warns", () => {
   assert.ok(warnings.some((warning) => /successCriteria/.test(warning)));
   assert.ok(warnings.some((warning) => /currentState/.test(warning)));
   assert.deepEqual(readerGuideWarnings({ ...compile(), version: 3 }), []);
+  // A small rapid-lane draft gets no reader scaffolding prompts.
+  const tiny = readerGuideWarnings({ ...compile(), impact: "low", fileMap: [] });
+  assert.equal(tiny.some((warning) => /summary|userStories|successCriteria/.test(warning)), false);
 });
 
 test("assumptions, open questions, and the overview diagram render in design", () => {

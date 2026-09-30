@@ -166,6 +166,24 @@ Installer ตรวจปลายทางที่จะเขียนก่�
 configuration ตามการตัดสินใจของผู้ใช้แล้วลองใหม่ ตัวติดตั้งของแต่ละ host ตรวจ
 ปลายทางของตนก่อนติดตั้ง runtime ร่วมด้วย
 
+### Headless / CI (`claude -p`)
+
+Claude Code จะไม่ใช้ `permissions.allow` ของ project จนกว่า workspace จะถูก trust
+ใน checkout ใหม่ การรัน `claude -p` แบบ headless จะแสดง `Ignoring ...
+permissions.allow entry ... this workspace has not been trusted` ทำให้ rule
+`Bash(claude-foundation *)` ที่ installer ใส่ไว้ไม่มีผล และทุกคำสั่ง harness ถูกปฏิเสธ
+ให้รัน `claude` แบบ interactive ใน project หนึ่งครั้งแล้วยอมรับ trust prompt หรือให้สิทธิ์
+tool ทุกครั้งที่รัน headless:
+
+```bash
+claude -p "/change <intent>" --allowedTools "Bash(claude-foundation *)" \
+  "Bash(node *)" "Bash(npm *)" "Bash(git *)"
+```
+
+เพิ่ม build และ test tool ของ project ตามที่ต้องใช้ Claude Code ถือว่า path ใต้
+`~/.claude/` เป็น sensitive path จึงควรวาง consumer project ไว้นอก directory นั้น
+เมื่อรันแบบไม่มีคนเฝ้า
+
 ## ใช้ Investigate ก่อนตกลงว่าจะเปลี่ยนอะไร
 
 ใช้ `/investigate` เมื่อข้อมูลยังไม่พอสำหรับเขียน change agreement ที่เชื่อถือได้
@@ -250,8 +268,8 @@ choice ใน frontier ที่พร้อมตาม dependency พร้อ
 Harness จะค้นและจัดอันดับ spec, test, caller, integration, persistence และ
 permission boundary ที่เกี่ยวข้องโดยอัตโนมัติ โดย enumerate ภายใต้ hard safety
 limit แล้วใช้ risk-adaptive budget กับ read-set
-ที่เลือก และใช้ชุดไฟล์ tracked/non-ignored ของ Git เมื่อใช้ได้ จากนั้น agent ต้องยืนยัน
-`discovery.sourceDigest` ที่ harness คืนมา ส่วน source fact และหลักฐาน recommendation
+ที่เลือก และใช้ชุดไฟล์ tracked/non-ignored ของ Git เมื่อใช้ได้ โดย harness บันทึก
+source digest เอง (`discovery.sourceDigest` เป็น optional) ส่วน source fact และหลักฐาน recommendation
 ต้องผูก path และ digest ของ local source ที่เลือก ระบบจะเก็บ measurement ด้าน
 coverage และคุณภาพคำถามไว้ใน runtime ของ change หาก source เปลี่ยน coverage จะเปิดใหม่แทนการ compile requirement
 ที่ stale แล้วจึง compile semantic draft หนึ่งชุดเป็น `openspec/changes/<change-id>/`

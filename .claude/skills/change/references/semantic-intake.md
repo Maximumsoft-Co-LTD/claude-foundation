@@ -27,19 +27,18 @@ draft and grounded-source digests. Changed sources invalidate `DONE` and return
 `refresh-source-coverage`; changing the draft acknowledges the refreshed
 interpretation. No transcript or answer history is retained.
 
-Draft v4 `discovery.coverage` records every harness-required dimension as
-`covered`, `not-applicable`, `needs-investigation`, or
-`needs-user-decision`. Map covered dimensions to requirements or grounded local
-sources. Explain every not-applicable result. Never turn an unresolved status
-into an assumption: investigate discoverable facts and ask only consequential
-semantics. The harness rejects missing dimensions, unresolved coverage,
-unknown requirement links, decision dependency cycles, and open decisions. It
-exposes at most three dependency-ready decisions as the next frontier.
-Use stable, language-neutral `riskSignals` when a concern is known:
+Draft v4 `discovery.coverage` is optional for an ordinary change; its
+requirements carry coverage. Only typed declarations require rows:
+`impact: high` (nine core dimensions plus operability and recoverability),
+`riskSignals`, security triggers, `integrations`, and `externalOperations`.
+A row is `covered`, `not-applicable` (with rationale), `needs-investigation`,
+or `needs-user-decision`. Never turn an unresolved status into an assumption.
+The harness rejects missing required dimensions, unresolved coverage, unknown
+links, decision cycles, and open decisions, exposing at most three
+dependency-ready decisions. Declare known concerns as `riskSignals`:
 `access-control`, `persisted-data-change`, `external-integration`,
 `performance-slo`, `user-interface`, `high-operational-risk`, or
-`external-side-effect`. The harness maps these signals to required dimensions;
-natural-language matching remains only a compatibility aid.
+`external-side-effect`. Prose is never scanned for risk keywords.
 
 Every settled answer must land in a requirement, scenario, non-goal, constraint,
 or qualifying typed decision before compilation. The compiled proposal retains

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  designBlueprintIssues, designBlueprintWarnings, renderDesignBlueprints, requiredBlueprints
+  designBlueprintIssues, designBlueprintWarnings, lightweightDraft, renderDesignBlueprints,
+  requiredBlueprints
 } from "../runtime/workflow/validation/design-blueprints.mjs";
 import { draftNeedsDesign, renderDraftDesign } from "../runtime/workflow/change-lifecycle.mjs";
 
@@ -9,6 +10,7 @@ function draft(overrides = {}) {
   return {
     version: 4,
     workType: ["feature", "api", "ui"],
+    impact: "medium",
     coupling: "isolated",
     tasks: [{ key: "api", paths: ["apps/editor/src/app/api/**"] }],
     ...overrides
@@ -58,8 +60,34 @@ test("missing or thin blueprints warn without blocking compilation", () => {
   assert.ok(thin.includes("fileMap[0] 'packages/core/src/x.ts' is outside every task's paths"));
   assert.ok(thin.includes("decisions[0] states no consequences"));
 
-  assert.match(designBlueprintWarnings({ version: 4 })[0], /^declare workType/);
+  assert.match(designBlueprintWarnings({ version: 4, impact: "medium" })[0], /^declare workType/);
   assert.deepEqual(designBlueprintWarnings({ version: 3 }), []);
+});
+
+// A headless E2E of a three-line rapid feature warned on every inspect that
+// workType feature expects fileMap, failureMatrix, and testMap.
+test("small rapid-lane drafts get no missing-section prompts", () => {
+  const tiny = { version: 4, workType: ["feature"], impact: "low", coupling: "isolated",
+    requirements: [{ key: "sum" }], tasks: [{ key: "sum", paths: ["src/sum.js"] }] };
+  assert.equal(lightweightDraft(tiny), true);
+  assert.deepEqual(designBlueprintWarnings(tiny), []);
+  assert.deepEqual(designBlueprintWarnings({ ...tiny, workType: undefined }), []);
+  // Authored sections are still checked.
+  assert.deepEqual(designBlueprintWarnings({ ...tiny,
+    fileMap: [{ path: "lib/x.js", change: "new", responsibility: "x" }] }),
+  ["fileMap[0] 'lib/x.js' is outside every task's paths"]);
+  // Risk, declared size, or breadth restores the prompts.
+  const many = Array.from({ length: 4 }, (_, index) => ({ key: `k${index}` }));
+  for (const override of [{ impact: "medium" }, { coupling: "coupled" },
+    { securityTriggers: ["auth"] }, { reviewRequired: true },
+    { acceptance: { required: true } }, { size: "m" },
+    { requirements: many, tasks: many }]) {
+    assert.equal(lightweightDraft({ ...tiny, ...override }), false, JSON.stringify(override));
+    assert.ok(designBlueprintWarnings({ ...tiny, ...override })
+      .some((warning) => warning.includes("'fileMap'")), JSON.stringify(override));
+  }
+  assert.equal(lightweightDraft({ ...tiny, size: "s", requirements: many, tasks: many }), true);
+  assert.equal(lightweightDraft({ ...tiny, securityTriggers: ["none"] }), true);
 });
 
 // A consumer plan kept every spec in a final test task: T006 changed card

@@ -9,7 +9,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -51,7 +51,7 @@ const git = (root, ...args) =>
 // A workspace that looks like a real project: a git repository with tracked
 // content, an active change packet, and the runtime state that names its
 // declared surface.
-function workspace({ declaredSurface = [], taskPaths = [] } = {}) {
+function workspace({ declaredSurface = [], taskPaths = [], surfaceAdditions, repositories } = {}) {
   const root = mkdtempSync(join(tmpdir(), "foundation-land-surface-"));
   git(root, "init", "-q");
   git(root, "config", "user.email", "test@example.com");
@@ -72,7 +72,8 @@ function workspace({ declaredSurface = [], taskPaths = [] } = {}) {
   mkdirSync(runtime, { recursive: true });
   writeFileSync(join(runtime, `${id}.json`), JSON.stringify({
     version: 2, id, status: "building", schema: "foundation-standard",
-    declaredSurface
+    declaredSurface, ...(surfaceAdditions ? { surfaceAdditions } : {}),
+    ...(repositories ? { repositories } : {})
   }));
 
   const state = createStateRuntime({
@@ -121,6 +122,51 @@ test("a file the change declares is surface even before it is tracked", () => {
     "a declared path the change created must reach the projection");
   assert.notEqual(after, before,
     "a declared new file must bind the evidence it was proven against");
+});
+
+test("a new file Prove recorded outside task paths reaches the projection", () => {
+  const { root, id, state } = workspace({
+    taskPaths: ["src/**"], surfaceAdditions: ["docs/guide.md"]
+  });
+  write(root, "docs/guide.md", "# Guide\n");
+  const manifest = state.workspaceManifest(root, id, true);
+  assert.ok(Object.hasOwn(manifest, "docs/guide.md"),
+    "a recorded surface addition must land, not be silently dropped");
+  assert.equal(state.declaredSurfaceMatcher(id, state.loadRuntime(id))("docs/guide.md"), true);
+});
+
+test("a surface addition widens only the repository it was recorded for", () => {
+  const app = mkdtempSync(join(tmpdir(), "foundation-land-surface-app-"));
+  git(app, "init", "-q");
+  const { root, id, state } = workspace({
+    taskPaths: ["src/**"],
+    // Legacy bare strings mean the root workspace.
+    surfaceAdditions: ["docs/guide.md", { repositoryId: "app", path: "notes.md" }],
+    repositories: { app: { mode: "worktree", path: app, targetPath: app } }
+  });
+  for (const dir of [root, app]) {
+    write(dir, "docs/guide.md", "# Guide\n");
+    write(dir, "notes.md", "notes\n");
+  }
+  const runtime = state.loadRuntime(id);
+  const rootMatcher = state.declaredSurfaceMatcher(id, runtime);
+  const appMatcher = state.declaredSurfaceMatcher(id, runtime, "app");
+  assert.equal(rootMatcher("docs/guide.md"), true);
+  assert.equal(rootMatcher("notes.md"), false,
+    "an addition recorded for 'app' must not widen the root surface");
+  assert.equal(appMatcher("notes.md"), true);
+  assert.equal(appMatcher("docs/guide.md"), false);
+  const rootManifest = state.workspaceManifest(root, id, true);
+  const appManifest = state.workspaceManifest(app, id, true);
+  assert.ok(Object.hasOwn(rootManifest, "docs/guide.md"));
+  assert.ok(!Object.hasOwn(rootManifest, "notes.md"));
+  assert.ok(Object.hasOwn(appManifest, "notes.md"));
+  assert.ok(!Object.hasOwn(appManifest, "docs/guide.md"));
+  const appHash = state.singleRelevantSnapshot(id, app, true).workspaceHash;
+  write(app, "docs/guide.md", "# Changed\n");
+  assert.equal(state.singleRelevantSnapshot(id, app, true).workspaceHash, appHash,
+    "a root addition must not bind the child repository's hash");
+  rmSync(app, { recursive: true, force: true });
 });
 
 test("review identity ignores progress and handoff tracking but binds semantics", () => {

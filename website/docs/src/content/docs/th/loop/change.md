@@ -15,8 +15,11 @@ transaction
 ## Semantic draft
 
 แกนใช้ `version: 4`, `intent`, `requirements`, `tasks` ที่ระบุ `covers`,
-`evidence` ที่ใช้ requirement key เดียวกัน และ `discovery.coverage` ซึ่งระบุว่า
-แต่ละมิติถูก cover, ไม่เกี่ยวข้องพร้อมเหตุผล, ต้อง investigate หรือต้องถามผู้ใช้
+`evidence` ที่ใช้ requirement key เดียวกัน ส่วน `discovery.coverage` เป็น optional
+สำหรับ change ทั่วไป และบังคับเฉพาะเมื่อ `impact: high` หรือประกาศ typed risk
+(`riskSignals`, security trigger, integration, external operation) แต่ละมิติระบุว่า
+ถูก cover, ไม่เกี่ยวข้องพร้อมเหตุผล (เหตุผลอย่างเดียวก็พอ), ต้อง investigate หรือต้องถามผู้ใช้
+Harness ไม่สแกน keyword จาก prose
 ตัวอย่างโครงสร้างเต็มดูได้
 จาก `claude-foundation change start --template`
 
@@ -82,7 +85,8 @@ execution, repository, handoff และ grounding จะเกิดเมื�
 `DONE` เมื่อพร้อม compile จากนั้นจึงรันไฟล์เดิมด้วย `--consume-draft`
 ใช้ `riskSignals` แบบ typed สำหรับ access control, persisted data, integration,
 performance SLO, UI, operational risk และ external side effect เพื่อให้ coverage
-ที่บังคับใช้ไม่ขึ้นกับภาษาของ prose
+ที่บังคับใช้ไม่ขึ้นกับภาษาของ prose Harness บันทึก source digest เอง draft ที่ถูกต้องจึงได้
+`DONE` ตั้งแต่ inspect ครั้งแรก และ warning ของ design กับ reader guide เป็นเพียงคำแนะนำ
 การ inspect เก็บ snapshot ที่ harness เป็นเจ้าของเพียงชุดเดียว โดยผูก digest ของ
 draft และ local sources ก่อน inspect repository intelligence แบบ bounded จะ
 จัดอันดับ spec, test, caller, integration, persistence และ permission boundary

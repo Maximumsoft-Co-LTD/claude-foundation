@@ -27,8 +27,8 @@ function source(overrides = {}) {
   };
 }
 
-test("semantic intake requires every core dimension and rejects unresolved coverage", () => {
-  const value = source();
+test("semantic intake requires every core dimension at high impact and rejects unresolved coverage", () => {
+  const value = source({ impact: "high" });
   value.discovery.coverage = value.discovery.coverage
     .filter((row) => row.dimension !== "compatibility");
   value.discovery.coverage.find((row) => row.dimension === "failure-path").status =
@@ -52,16 +52,39 @@ test("semantic intake validates coverage mappings and sourced N/A rationale", ()
   assert.match(message, /not-applicable status requires rationale/);
 });
 
-test("semantic intake rejects unknown dimensions and unsupported risk N/A", () => {
+test("semantic intake rejects unknown dimensions and accepts a rationale for risk N/A", () => {
   const value = source({ securityTriggers: ["authorization"] });
   value.discovery.coverage.push(
-    { dimension: "security-privacy", status: "not-applicable", rationale: "Claimed safe" },
+    { dimension: "security-privacy", status: "not-applicable", rationale: "No trust boundary changes" },
     { dimension: "permission-rejection", status: "covered", covers: ["search"] },
     { dimension: "made-up", status: "covered", covers: ["search"] }
   );
   const message = semanticIntakeIssues(value).join("\n");
-  assert.match(message, /risk-derived not-applicable status requires a grounded source/);
+  assert.doesNotMatch(message, /security-privacy|grounded source/);
   assert.match(message, /dimension 'made-up' is unknown/);
+});
+
+test("prose keywords and modified requirements add no discovery dimensions", () => {
+  const required = requiredDiscoveryDimensions(source({
+    intent: "Show the author name and uid on the schema page",
+    requirements: [{
+      key: "search", capability: "contacts", operation: "modified",
+      description: "The UI SHALL persist the database author and uid"
+    }]
+  }));
+  assert.deepEqual(required, []);
+});
+
+test("an ordinary draft without discovery reaches DONE; high impact still needs coverage", () => {
+  const minimal = source();
+  delete minimal.discovery;
+  assert.deepEqual(semanticIntakeIssues(minimal), []);
+  assert.equal(semanticIntakeAction(minimal).action, "DONE");
+  const high = source({ impact: "high" });
+  delete high.discovery;
+  const action = semanticIntakeAction(high);
+  assert.equal(action.action, "EDIT");
+  assert.match(action.intake.issues.join("\n"), /missing required dimension 'current-behavior'/);
 });
 
 test("risk signals add dimensions without allowing the agent to downgrade them", () => {

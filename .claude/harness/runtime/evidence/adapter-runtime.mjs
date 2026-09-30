@@ -526,10 +526,12 @@ export function createAdapterRuntime({
     const command = Array.isArray(config.command) ? config.command : [];
     const builtInNodeTest = command.some((part) => part === "--test" ||
       String(part).startsWith("--test="));
-    const spec = !tap && builtInNodeTest &&
+    const auto = (config.reportFormat || "auto") === "auto";
+    // `npm test` wrapping `node --test` hides the flag from the command, so
+    // auto also accepts the node spec footer (`ℹ tests N`) on its own.
+    const spec = !tap && (builtInNodeTest || auto) &&
       ["tap", "spec", "auto"].includes(config.reportFormat || "auto")
       ? parseNodeTestSpecOutput(content) : null;
-    const auto = (config.reportFormat || "auto") === "auto";
     const assertions = auto ? parseAssertionSummaryOutput(content) : null;
     const runner = auto && !assertions ? parseRunnerSummaryOutput(content) : null;
     return json || tap || spec || assertions || runner;

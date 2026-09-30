@@ -126,6 +126,9 @@ test("notification value helpers preserve timing, identity, and bounded history"
   assert.equal(notificationSessionId({ env: {
     FOUNDATION_SESSION_ID: " environment "
   } }), "environment");
+  assert.equal(notificationSessionId({ env: {
+    FOUNDATION_CLAUDE_SESSION_ID: "claude"
+  } }), "claude");
 
   const sessions = {};
   for (let index = 0; index < 101; index += 1)
@@ -506,13 +509,37 @@ test("Build packet advisory leaves the deterministic digest unchanged", () => {
     const packet = { version: 7, packetDigest: "deterministic-digest" };
     attachPhaseUpdateAdvisory(packet, "build", {
       installedCliVersion: "3.3.2", foundationVersion: "3.3.1",
-      cachePath: item.cachePath, now: NOW
+      cachePath: item.cachePath, now: NOW, env: {}
     });
     assert.equal(packet.packetDigest, "deterministic-digest");
     assert.equal(packet.update.trigger, "build");
     assert.equal(packet.update.status, "project-refresh-required");
     assert.equal(packet.notification.surface, true);
     assert.equal(packet.notification.timing, "before-build");
+  } finally {
+    rmSync(item.directory, { recursive: true, force: true });
+  }
+});
+
+test("a patch-behind CLI with a current runtime surfaces once per session", () => {
+  const item = fixture();
+  try {
+    // Brew CLI 3.5.26 driving a 3.5.27 project runtime (same runtime API):
+    // Change and Build packets must not both surface the same upgrade notice.
+    cached(item.cachePath, "3.5.27");
+    const options = {
+      installedCliVersion: "3.5.26", foundationVersion: "3.5.27",
+      cachePath: item.cachePath, now: NOW,
+      notificationStatePath: join(item.directory, "notifications.json"),
+      env: { FOUNDATION_CLAUDE_SESSION_ID: "claude-session" }
+    };
+    const change = attachPhaseUpdateAdvisory({}, "change", options);
+    const build = attachPhaseUpdateAdvisory({}, "build", options);
+    assert.equal(change.update.status, "cli-update-available");
+    assert.equal(change.notification.surface, true);
+    assert.equal(build.notification.surface, false);
+    assert.equal(build.notification.reason, "already-notified-in-session");
+    assert.equal(build.notification.blocking, false);
   } finally {
     rmSync(item.directory, { recursive: true, force: true });
   }

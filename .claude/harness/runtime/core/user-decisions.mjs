@@ -104,6 +104,44 @@ export function assertSpecApproval(root, id, state, { workspace = true } = {}) {
     ], "approve");
 }
 
+// A harness-owned rewrite of evidence wiring (moving providers into
+// execution.yaml) changes packet bytes but not the requirements, tasks, or
+// acceptance the user approved. Consent valid before the rewrite therefore
+// moves to the rewritten packet with an audit row, as an additive amendment's
+// does. Consent already stale before the rewrite is never refreshed by it.
+export function preserveSpecApprovalAcross(root, id, {
+  loadRuntime, saveRuntime, now = () => new Date().toISOString()
+}, rewrite, reason) {
+  const before = loadRuntime(id);
+  const approval = before.specApproval;
+  let valid = Boolean(approval?.required && approval.identity && approval.decisionRef &&
+    !before.pendingApprovalDelta);
+  if (valid) {
+    try { assertSpecApproval(root, id, before); } catch { valid = false; }
+  }
+  const workspace = before.workspace?.path && before.workspace.path !== root &&
+    existsSync(join(before.workspace.path, "openspec", "changes", id))
+    ? before.workspace.path : null;
+  const packet = valid && workspace && !approvalMatches(approval.identity, root, id)
+    ? workspace : root;
+  const result = rewrite();
+  if (!valid) return result;
+  const state = loadRuntime(id);
+  const identity = agreementIdentity(packet, id);
+  if (!state.specApproval || identity === state.specApproval.identity) return result;
+  const revision = Number(state.contractRevision || 0);
+  const carriedAt = now();
+  const { carriedFrom: _prior, ...consent } = state.specApproval;
+  state.specApproval = { ...consent, identity,
+    carriedFrom: { revision, reason, carriedAt } };
+  state.approvalCarries = [...(state.approvalCarries || []), {
+    fromRevision: revision, toRevision: revision, reason,
+    delta: { added: [], revised: [], removed: [] }, carriedAt
+  }];
+  saveRuntime(state);
+  return result;
+}
+
 export function agreementDriftError(id, workspacePath) {
   const error = new Error(
     `isolated agreement for '${id}' at ${workspacePath}/openspec/changes/${id} was edited outside a ` +

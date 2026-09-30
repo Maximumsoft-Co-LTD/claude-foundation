@@ -62,8 +62,11 @@ The required core is deliberately small:
 }
 ```
 
-The agent uses meaningful keys. The harness adds risk-derived coverage
-dimensions, refuses unresolved investigation or user-decision statuses, checks
+The agent uses meaningful keys. Discovery coverage is optional for an ordinary
+change: `impact: high` and typed risk declarations (`riskSignals`, security
+triggers, integrations, external operations) add required dimensions, prose is
+never scanned for keywords, and a risk-derived `not-applicable` row needs only
+a rationale. The harness refuses unresolved investigation or user-decision statuses, checks
 decision prerequisite cycles, and exposes at most three dependency-ready
 decisions at a time. The compiler creates stable claim/task IDs,
 spec-to-claim-to-task-to-provider links, classification, and versioned defaults.
@@ -87,7 +90,9 @@ an exact resume route. On `DONE`, start with
 supported for existing integrations.
 Use typed `riskSignals` for access control, persisted data, integrations,
 performance SLOs, UI, operational risk, and external side effects so required
-coverage does not depend on the language used in prose.
+coverage does not depend on the language used in prose. The harness records
+the source digest itself, so a correct draft reaches `DONE` on its first
+inspect; design and reader-guide warnings are advisory.
 Inspection stores one machine-owned snapshot bound to the draft and its local
 source digests. Before inspection, bounded repository intelligence ranks specs,
 tests, callers, integrations, persistence, and permission boundaries. Typed

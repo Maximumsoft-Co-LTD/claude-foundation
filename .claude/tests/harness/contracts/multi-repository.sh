@@ -147,8 +147,14 @@ printf 'unauthorized\n' > \
   .foundation/repository-sandboxes/cross-repository-profile/app/rogue.txt
 surface_output="$(node .claude/harness/foundation.mjs proof-preflight \
   cross-repository-profile 2>&1 || true)"
-assert_contains "changed-surface authority rejects undeclared paths" \
-  "$surface_output" "changed outside task paths: rogue.txt"
+assert_not_contains "an edit outside task paths does not block Prove" \
+  "$surface_output" "changed outside task paths"
+assert_contains "an edit outside task paths is recorded into the change surface" \
+  "$(jq -c '.surfaceAdditions' .foundation/runtime/cross-repository-profile.json)" \
+  '"rogue.txt"'
+assert_contains "a recorded surface addition is qualified by its repository" \
+  "$(jq -c '.surfaceAdditions' .foundation/runtime/cross-repository-profile.json)" \
+  '{"repositoryId":"app","path":"rogue.txt"}'
 rm .foundation/repository-sandboxes/cross-repository-profile/app/rogue.txt
 printf 'committed unauthorized\n' > \
   .foundation/repository-sandboxes/cross-repository-profile/app/rogue.txt
@@ -158,8 +164,8 @@ git -C .foundation/repository-sandboxes/cross-repository-profile/app \
   commit -qm "committed unauthorized path"
 surface_output="$(node .claude/harness/foundation.mjs proof-preflight \
   cross-repository-profile 2>&1 || true)"
-assert_contains "committed changed-surface authority rejects undeclared paths" \
-  "$surface_output" "changed outside task paths: rogue.txt"
+assert_not_contains "a committed edit outside task paths does not block Prove" \
+  "$surface_output" "changed outside task paths"
 git -C .foundation/repository-sandboxes/cross-repository-profile/app rm -q rogue.txt
 git -C .foundation/repository-sandboxes/cross-repository-profile/app \
   -c user.name="Foundation Test" -c user.email="foundation@example.invalid" \

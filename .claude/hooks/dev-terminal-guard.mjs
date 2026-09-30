@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import {
-  appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync
+  appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -95,12 +95,19 @@ function pendingTerminalBoundary(changeId, hostBoundary, nextActionFor) {
 
 export function evaluateDevTerminal({
   prompt, activeIds, proofFor, currentHash, auditProof,
-  nextActionFor = () => null, hostBoundary = null, selectedChangeId = null
+  nextActionFor = () => null, hostBoundary = null, selectedChangeId = null,
+  archivedThisSession = []
 }) {
   if (!prompt) return { applies: false, complete: true };
   if (/\s--plan-only(?:\s|$)/.test(prompt))
     return { applies: true, complete: true, status: "PLAN_COMPLETE" };
   const explicit = selectedChangeId || devResumeChange(prompt);
+  // A change this session archived is the delivered outcome, not a missing one.
+  const archived = explicit
+    ? archivedThisSession.find((name) => name.endsWith(`-${explicit}`))
+    : !activeIds.length && archivedThisSession.length ? archivedThisSession.at(-1) : null;
+  if (archived && !activeIds.includes(explicit))
+    return { applies: true, complete: true, status: "ARCHIVED", changeId: explicit || archived };
   const changeId = explicit || (activeIds.length === 1 ? activeIds[0] : null);
   if (!changeId || !activeIds.includes(changeId)) return {
     applies: true, complete: false, status: "INCOMPLETE",
@@ -154,10 +161,10 @@ export function evaluateDevTerminal({
   return { applies: true, complete: true, status: "PROVEN", changeId, phase: "prove" };
 }
 
-// The Stop hook has a 30s host timeout. Every CLI check shares one deadline
+// The Stop hook has a 10s host timeout. Every CLI check shares one deadline
 // under it, and a check that cannot finish in time fails open: an unverified
 // terminal state must never trap the user in a turn that cannot end.
-export const CHECK_BUDGET_MS = 24000;
+export const CHECK_BUDGET_MS = 8000;
 // Tests may shorten the budget; nothing may lengthen it past the host timeout.
 const budgetOverride = Number(process.env.FOUNDATION_DEV_TERMINAL_BUDGET_MS);
 const checks = {
@@ -245,9 +252,19 @@ async function main() {
     readText: readFileSync,
     nowMs: Date.now
   });
+  const wallMs = transcriptWallMs(transcript);
+  const sessionStart = wallMs === null ? null : Date.now() - wallMs;
+  const archiveDir = join(changes, "archive");
+  const archivedThisSession = sessionStart !== null && existsSync(archiveDir)
+    ? readdirSync(archiveDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() &&
+        statSync(join(archiveDir, entry.name)).mtimeMs >= sessionStart)
+      .map((entry) => entry.name).sort()
+    : [];
   const evaluated = evaluateDevTerminal({
     prompt,
     activeIds,
+    archivedThisSession,
     selectedChangeId: devResumeChange(prompt) || recorded?.changeId || null,
     hostBoundary: latestHostPermissionBoundary(transcript),
     proofFor: (id) => {
@@ -276,9 +293,11 @@ async function main() {
   };
   record(root, event, result);
   if (result.complete || result.stopAllowed) return;
+  // Advisory only: forcing continuation looped turns and cost a CLI round per
+  // Stop. The verdict above stays recorded as incomplete, so a stopped /dev is
+  // never mistaken for passing proof.
   process.stdout.write(JSON.stringify({
-    decision: "block",
-    reason: `DEV_TERMINAL ${JSON.stringify(result)}. /dev still has an automatic action available. Execute the recorded agent resumeAction yourself; stop and report only when proof passes or the coordinator returns WAIT/ASK_USER.`
+    systemMessage: `/dev stopped before proof passed (${result.blockerKind} for ${result.changeId}). ${result.resumeAction || ""}`.trim()
   }));
 }
 

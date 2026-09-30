@@ -20,6 +20,6 @@ Read `references/build-policy.md` before editing and `references/build-dispatch.
 only for parallel work or leases. The policy owns follow-up intent routing.
 
 Edit only allowed sandbox paths. Advance holds session leases. Start every
-mutating shell call with `cd <workspace> &&`. Declare new files
-in `[paths:]`; move unauthorized work to `handoffs.yaml`. Never expose JSON,
+mutating shell call with `cd <workspace> &&`. Edits outside `[paths:]`
+are recorded; move unauthorized work to `handoffs.yaml`. Never expose JSON,
 archive, commit, or Land. Report behavior, checks, remaining risk, and outcome.

@@ -46,7 +46,7 @@ Each requires a real `--decision-ref`. Review dispatches share a persisted
 30-minute deadline. See [WORKFLOW.md](../../WORKFLOW.md) for the user contract.
 
 Every phase view is derived from one versioned execution contract. Semantic
-draft v4 validates risk-derived discovery coverage and decision prerequisites,
+draft v4 validates typed-risk discovery coverage (optional for ordinary changes) and decision prerequisites,
 then compiles meaningful keys into stable cross-ledger IDs and writes only
 the OpenSpec artifacts the change needs. After Change, protocol-v6 `advance`
 is the normal model-facing entrypoint; primitive commands remain compatible
@@ -244,10 +244,10 @@ claude-foundation doctor --stage prove --change <change>
 | `packet <change> --repo <id> [--task <id>] [--pretty]` | Prints a bounded repository or task packet | Starting a native subagent |
 | `metrics <change>` | Reports measured phase/provider cost and emitted context bytes | Finding latency or orchestration overhead |
 | `feedback <change> [--pretty] [--diagnostics]` | Reports current readiness, source-aware timing, repair intervals, blocker coverage, evidence reuse, and the next action; diagnostics exports allowlisted metadata | Explaining why Prove took time without labeling repair as wait |
-| `budget checkpoint <change>` | Reports measured remaining allowance, unfinished work, and the exact resume route | Before deciding whether an exhausted run should continue, rescope, or pause |
+| `budget checkpoint <change>` | Reports measured remaining allowance, unfinished work, and the exact resume route | Checking remaining allowance and the resume route |
 | `exec <change> [--phase <phase>] -- <command…>` | Derives the phase, runs Build commands in the canonical workspace under the shared mutation policy, passes the exit code through, and records duration | Long build-phase commands (container builds, installs, full test runs) |
 | `telemetry host-import <change> <result.json>` | Imports a validated host execution result without prompt or tool payloads | Recording actual model attempts, fallback, usage, and instruction provenance |
-| `budget continue <change> --reason <reason>` | Opens one policy-gated audited completion window without deleting usage | Required model work after exhaustion |
+| `budget continue <change> --reason <reason>` | Opens one policy-gated audited window without deleting usage | Optional explicit widening; exhaustion auto-continues |
 | `change validate <change>` | Validates change artifacts | After creating or revising an agreement |
 | `change audit <change> [--json]` | Audits scenario → claim → task → provider traceability | Before Build or after contract edits |
 | `proof readiness <change>` | Returns READY or a typed blocker with exact next commands | At the end of Build and start of Prove |
@@ -661,21 +661,14 @@ never multiplication. Only a
 window opened by
 `budget continue` keeps its granted numbers. At 85% the packet enters `completion-only`: it
 forbids speculative investigation, scope expansion, optional refactors, and new
-subagents while allowing focused fixes and required proof work. Crossing 100%
-raises `NEEDS_USER_DECISION` on the first exhausted window. New model work waits
-for continue, explicit contract revision, or pause; the runtime never silently
-drops acceptance criteria or moves unfinished work out of the contract. Packet,
-readiness, provider execution, receipt reuse, proof-resume, metrics, Land
-recovery, and archive remain available. A user may open a fresh audited window
-with `budget continue` only when readiness identifies required model-completable
-code or configuration work. Every exhausted continuation asks again, up to the
-configured ceiling. Active leases, external evidence, infrastructure failures,
-and ready deterministic work do not qualify. The reason is audit context, not
-the policy gate; counters and requirements are never deleted or silently reset.
-`budget checkpoint` makes that pause resumable: it reports measured capacity,
-remaining tasks/provider blockers, the user prompt, and the command the agent
-will run after an approved continuation without pretending to forecast unknown
-model demand.
+subagents while allowing focused fixes and required proof work. Budget is
+advisory: crossing 100% opens a new same-size harness window every time and
+never asks the user; the runtime never silently drops acceptance criteria or
+moves unfinished work out of the contract. `budget continue` is an optional,
+audited explicit widening up to the configured ceiling; counters and
+requirements are never deleted or silently reset.
+`budget checkpoint` reports measured capacity and remaining tasks/provider
+blockers without pretending to forecast unknown model demand.
 
 A control-target HEAD move remains `control-head-moved` unless target bytes
 match the change projection or an explicit external delivery reference exists.

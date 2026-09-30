@@ -441,7 +441,7 @@ cp "$TMP/operator-required-budget.json" \
   .foundation/runtime/missing-artifact-budget-recovery.json
 legacy_window_id="$(jq -r '.budget.window.id' \
   .foundation/runtime/missing-artifact-budget-recovery.json)"
-assert_cmd_fails_with "budget continuation stops for a user decision" \
+assert_cmd_fails_with "optional budget continuation still records a decision ref" \
   "requires --decision-ref" \
   node .claude/harness/foundation.mjs budget-continue \
   missing-artifact-budget-recovery --reason "complete required artifacts"

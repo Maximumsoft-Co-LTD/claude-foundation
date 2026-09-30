@@ -1057,25 +1057,18 @@ export function createChangeLifecycle({
       ...sourceInspection.findings.map((finding) =>
         `semantic source ${finding.code}: ${finding.path || "(unknown)"}`)
     ];
-    const acknowledgedDigest = String(source.discovery?.sourceDigest || "").trim();
-    const acknowledgementFindings = acknowledgedDigest === sourceInspection.inventory.digest
-      ? [] : [{
-        code: "source-acknowledgement-required",
-        path: "discovery.sourceDigest",
-        detail: {
-          expected: sourceInspection.inventory.digest,
-          actual: acknowledgedDigest || null
-        }
-      }];
+    // The harness records the inventory digest itself. `discovery.sourceDigest`
+    // is optional; freshness comes from comparing the selected sources against
+    // the previous snapshot, so a correct first draft can reach DONE at once.
     const action = semanticIntakeAction(source, {
       resume, additionalIssues,
-      sourceFreshnessFindings: [
-        ...sourceInspection.staleFindings, ...acknowledgementFindings
-      ],
+      sourceFreshnessFindings: sourceInspection.staleFindings,
       frontierLimit: intelligence.depth.limits.frontierLimit
     });
-    const retainedInventory = sameDraft && sourceInspection.staleFindings.length
-      ? previous.sourceInventory : sourceInspection.inventory;
+    // Stale sources return one EDIT; the snapshot then adopts the current
+    // inventory so the re-inspect after the agent re-reads can reach DONE.
+    // Retaining the old inventory made every re-inspect stale again.
+    const retainedInventory = sourceInspection.inventory;
     const effectiveness = semanticIntakeEffectivenessSnapshot(source, {
       repository: {
         candidateFileCount: intelligence.repository.candidates?.length || 0,
@@ -1459,7 +1452,6 @@ export function createChangeLifecycle({
       : validateInvestigationBinding({ projectRoot: root, binding: source.investigation, git });
     if (intelligence.repository.status !== "ready" || sourceInspection.findings.length ||
         investigationIssues.length ||
-        source.discovery?.sourceDigest !== sourceInspection.inventory.digest ||
         projection.status !== "current" || projection.action?.action !== "DONE")
       fail(`version-4 drafts require a current completed semantic intake; ` +
         `resume with '${resume}'`);
@@ -1797,7 +1789,6 @@ export function createChangeLifecycle({
         resumeRoute: resume, sourceInventory: sourceInspection.inventory
       });
       if (intelligence.repository.status !== "ready" || sourceInspection.findings.length ||
-          intakeSource.discovery?.sourceDigest !== sourceInspection.inventory.digest ||
           projection.status !== "current" || projection.action?.action !== "DONE")
         fail(`version-4 amendments require a current completed semantic intake; ` +
           `resume with '${resume}'`);

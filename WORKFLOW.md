@@ -93,7 +93,7 @@ The transactional compiler creates
 `openspec/changes/<id>/`, assigns stable cross-ledger IDs, validates the complete
 agreement, installs it, and prepares isolation. The draft records:
 
-- harness-required discovery coverage, ambiguity, impact, coupling, and size;
+- optional discovery coverage (required for high impact or typed risk), ambiguity, impact, coupling, and size;
 - semantic requirements and task outcomes, rendered for people: one case per
   scenario with a short name, optional GIVEN/AND lines, and a titled overview
   per capability;
@@ -121,8 +121,8 @@ map's task column from task `[paths:]`, and omits sections the change leaves
 empty. Spec approval is refused while any open question remains.
 
 Before compilation, the harness requires every risk-derived discovery dimension
-to be covered, source-grounded as not applicable, investigated, or resolved by
-the user. It validates decision dependencies and exposes only the current
+to be covered, marked not applicable with a rationale, investigated, or resolved
+by the user. It validates decision dependencies and exposes only the current
 frontier; the agent interprets sources and authors requirements, while the user
 owns consequential choices. After compilation, the OpenSpec packet is the
 source of truth. The semantic draft is temporary and `.foundation/` is derived
@@ -147,9 +147,17 @@ bound only the selected read-set and question frontier. Questions already answer
 alternatives, and unsupported recommendations are rejected. Git-aware discovery
 omits ignored output; an oversized undeclared file is reported but cannot poison
 the whole scan, and unsupported dependency languages are reported as partial
-graph coverage. `discovery.sourceDigest`, source facts, and recommendation
-evidence must match the selected inventory. Compact effectiveness counts survive
-successful compilation in runtime, but no chat or interview history is kept. A
+graph coverage. The harness records the source digest itself;
+`discovery.sourceDigest` is optional, and a correct draft completes intake on
+its first inspect. Source facts and recommendation evidence must match the
+selected inventory. Discovery coverage is optional for an ordinary change;
+`impact: high`, `riskSignals`, security triggers, integrations, and external
+operations require their mapped dimensions. Prose is never scanned for risk
+keywords, a modified requirement does not imply migration or rollback coverage,
+and a risk-derived `not-applicable` row needs only a rationale. Design and
+reader-guide warnings are advisory, and small rapid-lane drafts get no
+missing-section prompts; sections the agent writes are always checked.
+Compact effectiveness counts survive successful compilation in runtime, but no chat or interview history is kept. A
 changed selected source invalidates readiness and returns agent-owned coverage refresh.
 
 For newly started changes, present the compiled spec, scope, and acceptance
@@ -315,6 +323,14 @@ leases them all-or-none with fencing generations, and accepts only observed
 writes inside the granted authority. Load one primary construction skill per
 task and only the cross-cutting security or observability skills whose triggers
 apply.
+
+An edit inside the sandbox outside every task's `[paths:]` does not block Build
+or Prove. Prove records it in the change surface (`surfaceAdditions`), so it is
+proven and lands with the change. Prove still refuses a deletion, a
+control-plane, CI, or secret path (for example `.claude/`, `.github/`,
+`foundation.json`, `.env`), a misplaced root sandbox, or more than 100 such
+paths until a task's `[paths:]` declares them; Build refuses a write inside
+another active task's scope.
 
 Lease recovery is harness work, not a user decision. An owner reacquiring its
 own unreleased lease after the graph, contract, or `[paths:]` changed is
@@ -767,8 +783,7 @@ was delivered, not that deployment, activation, or production verification ran.
 ## Recovery and user decisions
 
 Some guards end a run rather than returning another repair action: exhausted AI
-review waves, corrupt review history, a spent budget continuation, model budget
-that cannot unblock the next step, a moved control repository during
+review waves, corrupt review history, a moved control repository during
 multi-repository Land, reset staged submodule pointers, or an apply rollback
 that could not complete.
 
@@ -924,22 +939,16 @@ Budget actions are:
 
 - 70%: batch remaining work and reuse evidence;
 - 85%: stop speculative exploration and optional expansion;
-- 100%: the first exhaustion of a change opens one more window of the same
-  size automatically, recorded as a harness decision
+- 100%: every exhaustion opens one more window of the same size
+  automatically, recorded as a harness decision
   (`harness://auto-extend/budget/1`) that does not use an operator-approved
-  continuation; the next exhaustion stops model work and requests split,
-  re-scope, continuation, or pause.
+  continuation. Budget is advisory and never asks the user.
 
-Budget stops apply to model exploration, not deterministic recovery. Packet,
-readiness, evidence execution, receipt reuse, metrics, Land recovery, and
-archive remain available. A continuation is audited and allowed only when more
-model work can move a required code or configuration blocker; it never deletes
-usage or lowers assurance.
+`budget continue` remains an optional, audited explicit widening; it never
+deletes usage or lowers assurance.
 
 `budget checkpoint` reports the measured remaining window, unfinished work, and
-exact resume route. It never guesses future model demand. A continuation that
-cannot unblock the change returns the external evidence, provider, deterministic
-operation, re-scope, retire, or pause choice that actually can.
+exact resume route. It never guesses future model demand.
 
 ## Compatibility and operator references
 

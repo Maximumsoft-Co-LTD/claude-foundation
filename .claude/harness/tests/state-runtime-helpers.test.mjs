@@ -250,3 +250,30 @@ test("declared surface follows the active isolated packet", (t) => {
   f.state.clearSnapshotCache(id);
   assert.equal(f.state.singleRelevantSnapshot(id, null, true).workspaceHash, proven);
 });
+
+test("saving a stale state keeps surface additions recorded since it was loaded", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-surface-save-"));
+  try {
+    const runtime = join(root, "runtime");
+    mkdirSync(runtime);
+    const { saveRuntime } = createStateRuntime({
+      root, runtime,
+      writeJson: (path, value) => writeFileSync(path, JSON.stringify(value)),
+      now: () => "2026-09-29T00:00:00.000Z"
+    });
+    const stale = { id: "demo", status: "building" };
+    saveRuntime({ id: "demo", status: "building", surfaceAdditions: ["README.md"] });
+    saveRuntime(stale);
+    const stored = JSON.parse(readFileSync(join(runtime, "demo.json"), "utf8"));
+    assert.deepEqual(stored.surfaceAdditions, [{ repositoryId: "root", path: "README.md" }]);
+    // Repository-qualified entries union with legacy ones, deduplicated.
+    saveRuntime({ id: "demo", surfaceAdditions: [
+      { repositoryId: "root", path: "README.md" }, { repositoryId: "app", path: "README.md" }
+    ] });
+    assert.deepEqual(JSON.parse(readFileSync(join(runtime, "demo.json"), "utf8")).surfaceAdditions, [
+      { repositoryId: "app", path: "README.md" }, { repositoryId: "root", path: "README.md" }
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

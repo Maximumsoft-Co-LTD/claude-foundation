@@ -93,14 +93,38 @@ export function requiredBlueprints(draft) {
   return [...required];
 }
 
+const SMALL_DRAFT_ITEMS = 6;
+
+// A rapid-lane draft (low impact, isolated, no security/review/acceptance) that
+// is small: declared size xs|s, or no size and few requirements plus tasks.
+// Asking it for missing sections was noise: a tiny feature's agent authored a
+// file map and failure matrix it did not need, and authored design content
+// moves a rapid draft onto the standard schema.
+export function lightweightDraft(draft) {
+  const triggers = Array.isArray(draft?.securityTriggers) ? draft.securityTriggers : [];
+  const rapidLane = String(draft?.impact || "low").toLowerCase() === "low" &&
+    String(draft?.coupling || "isolated").toLowerCase() === "isolated" &&
+    !triggers.some((trigger) => String(trigger).trim().toLowerCase() !== "none") &&
+    !draft?.reviewRequired && !draft?.acceptance?.required;
+  if (!rapidLane) return false;
+  const size = String(draft?.size || "").trim().toLowerCase();
+  if (size) return size === "xs" || size === "s";
+  const count = (value) => (Array.isArray(value) ? value.length : 0);
+  return count(draft?.requirements) + count(draft?.tasks) <= SMALL_DRAFT_ITEMS;
+}
+
 // Non-blocking findings. Each names the section and what makes it incomplete.
+// Missing-section prompts apply only to work large or risky enough to need
+// them; authored sections are still checked for thin or misplaced content.
 export function designBlueprintWarnings(draft) {
   const warnings = [];
+  const light = lightweightDraft(draft);
   if (draft?.version === 4 && !draftWorkTypes(draft).length) {
-    warnings.push(`declare workType (${WORK_TYPES.join("|")}) so the compiler can select the design sections this change needs`);
+    if (!light)
+      warnings.push(`declare workType (${WORK_TYPES.join("|")}) so the compiler can select the design sections this change needs`);
     return warnings;
   }
-  for (const key of requiredBlueprints(draft))
+  if (!light) for (const key of requiredBlueprints(draft))
     if (!present(draft[key]))
       warnings.push(`workType ${draftWorkTypes(draft).join(",")} expects '${key}'; add it or state why it does not apply`);
   if (requiredBlueprints(draft).includes("diagrams") && draftWorkTypes(draft).includes("async") &&

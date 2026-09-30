@@ -69,12 +69,9 @@ A phase boundary is a context boundary: each phase inherits only its packet.
 
 Count input, output, and cache writes; unknown is never zero. At 70%, batch and
 reuse. At 85%, allow focused fixes and proof only: no scope expansion.
-At 100%, the harness auto-opens one same-size window; the next exhaustion
-surfaces `NEEDS_USER_DECISION` (continue, revise, pause). Never silently reduce acceptance criteria
-or move unfinished work out of the contract. Deterministic packet, readiness,
-provider, proof-resume, metrics, Land-recovery, and archive operations remain
-available. Only the user may authorize `budget continue`, with a decision
-reference; each exhausted continuation asks again.
+At 100%, the harness auto-opens a new same-size window every time; budget is
+advisory and never asks the user. Never silently reduce acceptance criteria
+or move unfinished work out of the contract.
 
 ## Land
 

@@ -32,8 +32,8 @@ preference unclear, follow the surrounding conversation.
 Write each `description` as one short statement with `SHALL` in the document
 language (for example, `ระบบ SHALL ปฏิเสธคำขอที่ไม่มีสิทธิ์`); list constraints
 in `details` and split a statement that joins cases with `;`. `outcome` is the
-observable result; `requirement`/`title` names it. Set `language`, and give each
-capability a `capabilityOverviews` entry (`title`, `overview`).
+observable result; `requirement`/`title` names it. Set `language`; each
+capability gets a `capabilityOverviews` entry `{capability, title, overview}`.
 
 Keep bookkeeping compact, but make the agreement understandable without chat
 history. Before compiling, cover the following with facts from the canonical
@@ -50,9 +50,9 @@ sources and the user's settled intent:
 - Tasks name implementation outcomes and affected paths, link requirement
   coverage, and name verification that can detect a violation. Evidence should
   explain what establishes the claim; running a command alone is not acceptance.
-- Write reviewer prose in the user's language: `summary`, `userStories`
-  (P1-P3, `covers`), measurable `successCriteria`, `assumptions`, and
-  `openQuestions`, which block approval until answered. Record each settled
+- Write reviewer prose in the user's language. Optional `summary`,
+  `userStories` (P1-P3, `covers`), `successCriteria`, and `assumptions` help
+  reviewers; `openQuestions` block approval until answered. Record each settled
   answer as a resolved `discovery.decisions` row with `decidedBy`. Resolve
   discoverable facts yourself; never invent facts to fill a section.
 
@@ -64,13 +64,14 @@ For changes across components, supply a diagram explaining the affected
 boundaries and dependencies. For changed state, async, or workflow behavior,
 show the relevant transitions or sequence, including failure/recovery paths.
 Declare `workType` (a list: feature, bugfix, refactor, api, ui, data, config,
-async, integration, chore, docs). Except chore/docs it expects `fileMap`,
-`failureMatrix`, and `testMap`; `api` adds `apiContracts`, `data` `dataModel`,
-`ui` `uiStates`, `config` `configContract`, `async` `jobContract` plus a
-sequence/state diagram, `integration` `integrations`, `bugfix` and `refactor`
-their own objects; `coupling: coupled` adds `diagrams`. Resolve every
-`--inspect` `designWarnings` entry before presenting the spec; keep `fileMap`
-paths and task tests inside task `paths`.
+async, integration, chore, docs). `designWarnings` suggest blueprints
+(`fileMap`, `failureMatrix`, `testMap`;
+`api` `apiContracts`, `data` `dataModel`, `ui` `uiStates`, `config`
+`configContract`, `async` `jobContract` plus a sequence/state diagram,
+`integration` `integrations`, `bugfix` and `refactor` their own objects;
+`coupling: coupled` `diagrams`). Advisory (none for small rapid drafts):
+author blueprints only for real content, never to silence a warning; without
+them a small change stays rapid. Keep `fileMap` paths and task tests inside task `paths`.
 
 ## Compile and inspect
 
@@ -128,7 +129,7 @@ IDs by hand.
 
 If Build discovers new observable behavior, create a semantic amendment v1 and
 run `change amend <change> <amendment.json> --inspect`. Follow the same returned
-source-digest and intake actions; after `DONE`, rerun with `--consume-amendment`.
+intake actions; after `DONE`, rerun with `--consume-amendment`.
 It preserves
 completed tasks and custom prose/assets, increments the revision, invalidates
 the affected contract, validates, and rolls back on failure. Existing legacy
@@ -150,9 +151,8 @@ Reconcile each confirmed conversation requirement and constraint against its
 compiled requirement/scenario, proposal exclusion, or design decision. Report
 any uncovered material point before approval; keep this reconciliation in the
 existing packet and approval summary, not a separate conversation ledger.
-Structural validation alone does not establish semantic completeness. Draft v4
-therefore requires explicit discovery coverage, but the agent must still check
-that each source actually supports the claimed meaning. If material content is
+Structural validation alone does not establish semantic completeness; check
+that cited sources support the claimed meaning. If material content is
 missing, repair through the supported draft/amendment workflow;
 never patch generated ledgers independently or silently proceed to Build.
 

@@ -375,7 +375,7 @@ test("Codex source reimport atomically replaces stale normalization", (t) => {
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const logs = join(root, "logs");
   const state = { budget: { window: {
-    id: "session-a", mode: "operator-required", exhaustedAt: "earlier"
+    id: "session-a"
   } } };
   const runtime = createTelemetryRuntime({
     root, logs, now: () => "2026-09-03T00:00:03.000Z",
@@ -402,8 +402,6 @@ test("Codex source reimport atomically replaces stale normalization", (t) => {
   const events = readLines(join(logs, "change", "events.jsonl"));
   assert.equal(events.length, 1);
   assert.equal(events[0].inputTokens, 10);
-  assert.equal(state.budget.window.mode, "normal");
-  assert.equal(state.budget.window.exhaustedAt, null);
 });
 
 test("appendTelemetryRows records Claude user transitions without token events", (t) => {

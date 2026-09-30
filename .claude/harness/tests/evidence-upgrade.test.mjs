@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
+import {
+  agreementIdentity, assertSpecApproval, preserveSpecApprovalAcross
+} from "../runtime/core/user-decisions.mjs";
 import { upgradeEvidenceOperation } from "../runtime/evidence/proof-readiness.mjs";
 
 function context({
@@ -106,4 +112,90 @@ test("version two upgrade preserves execution overrides and increments revisions
     executionRevision: 8
   });
   assert.deepEqual(harness.removed, []);
+});
+
+function approvedPacket(t, { workspace = false } = {}) {
+  const root = mkdtempSync(join(tmpdir(), "foundation-evidence-upgrade-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const write = (base) => {
+    const dir = join(base, "openspec", "changes", "change");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "proposal.md"), "# Change\n");
+    writeFileSync(join(dir, "tasks.md"), "- [ ] **T001** implement\n");
+    writeFileSync(join(dir, "evidence.yaml"), JSON.stringify({
+      version: 1, providers: { test: { command: ["npm", "test"] } }, claims: []
+    }));
+    return dir;
+  };
+  write(root);
+  const sandbox = workspace ? join(root, "sandbox") : null;
+  if (sandbox) write(sandbox);
+  let state = {
+    id: "change", status: "built", contractRevision: 2,
+    ...(sandbox ? { workspace: { mode: "copy", path: sandbox } } : {}),
+    specApproval: {
+      required: true, revision: 2, decisionRef: "user:ok",
+      identity: agreementIdentity(root, "change")
+    }
+  };
+  const io = {
+    loadRuntime: () => structuredClone(state),
+    saveRuntime: (value) => { state = structuredClone(value); },
+    now: () => "2026-09-30T00:00:00.000Z"
+  };
+  const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
+  const writeJson = (path, value) => writeFileSync(path, JSON.stringify(value));
+  const upgrade = (base) => upgradeEvidenceOperation({
+    ...io, fail: (message) => { throw new Error(message); },
+    changePath: (id) => join(base, "openspec", "changes", id),
+    proofPath: () => join(root, "proof.json"),
+    readJson, writeJson, output: { log: () => {} }
+  }, "change");
+  return {
+    root, sandbox, io, upgrade, state: () => state,
+    edit: (base) => writeFileSync(join(base, "openspec", "changes", "change", "proposal.md"),
+      "# Change\n\nUnapproved scope.\n")
+  };
+}
+
+test("evidence upgrade keeps spec approval that was valid before it", (t) => {
+  const packet = approvedPacket(t);
+  const before = packet.state().specApproval.identity;
+  preserveSpecApprovalAcross(packet.root, "change", packet.io,
+    () => packet.upgrade(packet.root), "evidence-upgrade");
+
+  const state = packet.state();
+  assert.notEqual(state.specApproval.identity, before, "wiring rewrite changed packet bytes");
+  assert.doesNotThrow(() => assertSpecApproval(packet.root, "change", state));
+  assert.equal(state.specApproval.decisionRef, "user:ok");
+  assert.equal(state.approvalCarries.at(-1).reason, "evidence-upgrade");
+  assert.deepEqual(state.approvalCarries.at(-1).delta, { added: [], revised: [], removed: [] });
+});
+
+test("evidence upgrade keeps approval when the isolated packet is upgraded too", (t) => {
+  const packet = approvedPacket(t, { workspace: true });
+  preserveSpecApprovalAcross(packet.root, "change", packet.io, () => {
+    packet.upgrade(packet.root);
+    packet.upgrade(packet.sandbox);
+  }, "evidence-upgrade");
+  assert.doesNotThrow(() => assertSpecApproval(packet.root, "change", packet.state()));
+});
+
+test("evidence upgrade never refreshes approval for an unapproved agreement edit", (t) => {
+  const packet = approvedPacket(t);
+  packet.edit(packet.root);
+  preserveSpecApprovalAcross(packet.root, "change", packet.io,
+    () => packet.upgrade(packet.root), "evidence-upgrade");
+  assert.equal(packet.state().approvalCarries, undefined);
+  assert.throws(() => assertSpecApproval(packet.root, "change", packet.state()),
+    (error) => error.code === "SPEC_APPROVAL_REQUIRED");
+});
+
+test("an agreement edit after an evidence upgrade still requires approval", (t) => {
+  const packet = approvedPacket(t);
+  preserveSpecApprovalAcross(packet.root, "change", packet.io,
+    () => packet.upgrade(packet.root), "evidence-upgrade");
+  packet.edit(packet.root);
+  assert.throws(() => assertSpecApproval(packet.root, "change", packet.state()),
+    (error) => error.code === "SPEC_APPROVAL_REQUIRED");
 });

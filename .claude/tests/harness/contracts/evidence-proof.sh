@@ -1075,18 +1075,18 @@ auto_event="$(node .claude/harness/foundation.mjs event tiny-copy-edit \
   --request req-token-auto --operation build --input 19838)"
 assert_not_contains "first exhaustion auto-continues without asking the user" \
   "$auto_event" "ASK_USER"
-assert_eq "harness records its one automatic continuation" "harness" \
+assert_eq "harness records its automatic continuation" "harness" \
   "$(jq -r '.budget.autoContinuation.owner // empty' .foundation/runtime/tiny-copy-edit.json)"
 budget_event="$(node .claude/harness/foundation.mjs event tiny-copy-edit \
   --request req-token-limit --operation build --input 20001)"
-assert_contains "token budget asks the user without failing accounting" \
-  "$budget_event" "OPERATOR_REQUIRED ASK_USER"
-assert_contains "the event names the user-decision boundary" \
+assert_not_contains "a second exhaustion also auto-continues" \
+  "$budget_event" "ASK_USER"
+assert_not_contains "the event never names a budget user decision" \
   "$budget_event" "NEEDS_USER_DECISION"
 assert_file_contains "over-budget request remains auditable" \
   ".foundation/logs/tiny-copy-edit/events.jsonl" '"requestId":"req-token-limit"'
 budget_status="$(node .claude/harness/foundation.mjs metrics tiny-copy-edit)"
-assert_contains "metrics exposes the operator decision mode" \
+assert_not_contains "metrics never exposes an operator decision mode" \
   "$budget_status" '"mode": "operator-required"'
 if budget_continue_output="$(node .claude/harness/foundation.mjs budget-continue \
   tiny-copy-edit --reason "finish required proof" --run tiny-copy-edit \
@@ -1202,22 +1202,12 @@ resume_packet="$(FOUNDATION_CLAUDE_SESSION_ID=bound-session \
   2>"$TMP/over-budget-resume.err")"
 assert_contains "over-budget telemetry does not block lifecycle resume" \
   "$resume_packet" '"packetType":"global"'
-# This change already spent every configured continuation window above, so it
-# remains an operator stop rather than another completion boundary — otherwise
-# renaming the run would hand back a full allowance with no decision recorded.
-assert_contains "over-budget packet after a spent extension requires an operator" \
+# Budget is advisory: even after every optional continuation is spent, the
+# exhausted window auto-continues and the packet never asks the operator.
+assert_not_contains "over-budget packet never requires an operator" \
   "$resume_packet" '"mode":"operator-required"'
-assert_contains "the stopped packet forbids scope expansion" \
-  "$resume_packet" '"scope-expansion"'
-# The stop withholds new work, not the loop's own completion path.
-assert_contains "required proof still runs under the operator stop" \
-  "$resume_packet" '"provider-run"'
-assert_contains "Land can still be resumed under the operator stop" \
-  "$resume_packet" '"land-recovery"'
-assert_file_contains "over-budget lifecycle resume still emits stop warning" \
+assert_file_not_contains "over-budget lifecycle resume never asks the user" \
   "$TMP/over-budget-resume.err" "ASK_USER"
-assert_file_contains "over-budget lifecycle resume names the decision state" \
-  "$TMP/over-budget-resume.err" "NEEDS_USER_DECISION"
 if [ -n "$tiny_copy_policy_backup" ]; then
   cp "$TMP/tiny-copy-policy-backup.json" foundation.json
 else

@@ -64,35 +64,23 @@ const unresolvedIssue = (issue) =>
   issue.includes(" remains unresolved with status '") ||
   issue.startsWith("semantic draft discovery has unresolved decisions;");
 
+// Required coverage comes only from typed, declared signals. Free-text keyword
+// matching misfired on ordinary words ("author", "uid") and on every modified
+// requirement, forcing ceremony onto small changes. The nine core dimensions
+// are mandatory only for declared high impact; elsewhere the requirements and
+// scenarios themselves carry that coverage.
 export function requiredDiscoveryDimensions(source = {}) {
-  const semantic = [
-    source.intent,
-    source.why,
-    ...(source.changes || []),
-    ...(source.securityTriggers || []),
-    ...(source.requirements || []).flatMap((row) => [
-      row?.key, row?.capability, row?.requirement, row?.description, row?.outcome
-    ])
-  ].filter(Boolean).join(" ").toLowerCase();
-  const required = [...CORE_DISCOVERY_DIMENSIONS];
+  const highImpact = text(source.impact).toLowerCase() === "high";
+  const required = highImpact ? [...CORE_DISCOVERY_DIMENSIONS] : [];
   const add = (...dimensions) => required.push(...dimensions);
   for (const signal of strings(source.riskSignals))
     add(...(RISK_SIGNAL_DIMENSIONS[signal.toLowerCase()] || []));
 
-  if ((source.securityTriggers || []).length ||
-      /\b(auth|permission|credential|secret|security|privacy|pii)\w*\b/.test(semantic))
+  if ((source.securityTriggers || []).length)
     add("security-privacy", "permission-rejection");
-  if ((source.requirements || []).some((row) =>
-      ["modified", "removed"].includes(text(row?.operation).toLowerCase())) ||
-      /\b(migrat|persist|database|schema|backfill|data loss)\w*\b/.test(semantic))
-    add("data-migration", "rollout-rollback", "recoverability");
   if ((source.integrations || []).length)
     add("integration-contract", "timeout-retry-idempotency", "operability", "recoverability");
-  if (/\b(performance|latency|throughput|capacity|scalab|availability|uptime)\w*\b/.test(semantic))
-    add("performance-capacity-availability");
-  if (/\b(accessib|screen reader|keyboard|aria|contrast|responsive|ui|ux)\w*\b/.test(semantic))
-    add("accessibility");
-  if (text(source.impact).toLowerCase() === "high") add("operability", "recoverability");
+  if (highImpact) add("operability", "recoverability");
   if ((source.externalOperations || []).length) add("external-authority");
 
   return unique(required);
@@ -160,10 +148,13 @@ function decisionIssues(decisions = []) {
 export function semanticIntakeIssues(source = {}) {
   if (source.version !== 4) return [];
   const issues = [];
-  const discovery = source.discovery;
+  // Omitted discovery or coverage is an empty record; required dimensions
+  // below still name what a declared-risk change must cover.
+  const discovery = source.discovery === undefined ? {} : source.discovery;
   if (!discovery || typeof discovery !== "object" || Array.isArray(discovery))
-    return ["semantic draft version 4 requires a 'discovery' object"];
-  if (!Array.isArray(discovery.coverage))
+    return ["semantic draft discovery must be an object"];
+  const coverage = discovery.coverage === undefined ? [] : discovery.coverage;
+  if (!Array.isArray(coverage))
     return ["semantic draft discovery.coverage must be an array"];
   if (discovery.decisions !== undefined && !Array.isArray(discovery.decisions))
     issues.push("semantic draft discovery.decisions must be an array");
@@ -177,7 +168,7 @@ export function semanticIntakeIssues(source = {}) {
   const requirementKeys = new Set((source.requirements || []).map((row) => text(row?.key)));
   const requiredDimensions = requiredDiscoveryDimensions(source);
   const rows = new Map();
-  for (const [index, row] of discovery.coverage.entries()) {
+  for (const [index, row] of coverage.entries()) {
     const label = `semantic draft discovery.coverage[${index}]`;
     const dimension = text(row?.dimension).toLowerCase();
     const status = text(row?.status).toLowerCase();
@@ -195,11 +186,6 @@ export function semanticIntakeIssues(source = {}) {
       issues.push(`${label} covered status requires covers or sources`);
     if (status === "not-applicable" && !text(row?.rationale))
       issues.push(`${label} not-applicable status requires rationale`);
-    if (status === "not-applicable" &&
-        CONDITIONAL_DISCOVERY_DIMENSIONS.includes(dimension) &&
-        requiredDimensions.includes(dimension) &&
-        !strings(row?.sources).length)
-      issues.push(`${label} risk-derived not-applicable status requires a grounded source`);
     if (["needs-investigation", "needs-user-decision"].includes(status))
       issues.push(`${label} remains unresolved with status '${status}'`);
   }
@@ -210,7 +196,7 @@ export function semanticIntakeIssues(source = {}) {
 
   const decisions = Array.isArray(discovery.decisions) ? discovery.decisions : [];
   const decisionKeys = new Set(decisions.map((row) => text(row?.key)).filter(Boolean));
-  for (const [index, row] of discovery.coverage.entries()) {
+  for (const [index, row] of coverage.entries()) {
     const label = `semantic draft discovery.coverage[${index}]`;
     const status = text(row?.status).toLowerCase();
     const links = strings(row?.decisionKeys);

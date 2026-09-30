@@ -181,11 +181,11 @@ assert_eq "fresh installed runtime retries restored setup" ok \
 unset FOUNDATION_CLAUDE_SESSION_ID FOUNDATION_CLAUDE_TRANSCRIPT_PATH CODEX_THREAD_ID FOUNDATION_SESSION_ID
 export FOUNDATION_RUN_ID=fixture-budget-recovery
 node .claude/harness/foundation.mjs event review-waiver --request fixture-exhaustion --input 800000 --output 0 >/dev/null
-assert_eq "installed consumer continues its first exhausted budget once" harness-auto-continue \
+assert_eq "installed consumer continues its first exhausted budget" harness-auto-continue \
   "$(node -p 'require("./.foundation/runtime/review-waiver.json").budget.window.reason')"
 node .claude/harness/foundation.mjs event review-waiver --request fixture-exhaustion-2 --input 800000 --output 0 >/dev/null
-assert_eq "installed consumer stops at exhausted budget" operator-required \
-  "$(node -p 'require("./.foundation/runtime/review-waiver.json").budget.window.mode')"
+assert_eq "installed consumer continues a second exhausted budget" harness-auto-continue \
+  "$(node -p 'require("./.foundation/runtime/review-waiver.json").budget.window.reason')"
 node .claude/harness/foundation.mjs budget-continue review-waiver --reason "Fixture user authorizes completion" --decision-ref fixture://user/budget >/dev/null
 assert_eq "installed continuation records one authorized window" 1 \
   "$(node -p 'require("./.foundation/runtime/review-waiver.json").budget.window.extensionNumber')"
@@ -238,7 +238,7 @@ node -e '
     "success-path", "failure-path", "input-boundary", "compatibility", "non-goals",
     "verification"];
   const amendment = { version: 1, reason: "Cover the observed v2 persistence",
-    size: "l", coupling: "isolated",
+    size: "l", coupling: "isolated", riskSignals: ["persisted-data-change"],
     addRequirements: [{ key: "v2-persists", capability: "application", operation: "added",
       scenario: { name: "v2 persists", when: "The updated value is read",
         then: "v2 remains observable" }, outcome: "v2 remains observable" }],
@@ -460,10 +460,7 @@ node -e '
   d.tasks[0].covers.push("greeting-logged");
   d.evidence["greeting-logged"] = { capabilities: ["test"] };
   writeFileSync("draft.json", JSON.stringify(d, null, 2));'
-unacknowledged="$({ node .claude/harness/foundation.mjs revise revise-before-build draft.json; } 2>&1 || true)"
-assert_contains "revision requires its own completed intake" "$unacknowledged" \
-  "claude-foundation change revise revise-before-build draft.json --inspect"
-acknowledge_intake revise revise-before-build draft.json
+# An ordinary revision completes its own intake without a separate inspect.
 revised="$(node .claude/harness/foundation.mjs revise revise-before-build draft.json --consume-draft)"
 assert_contains "revision keeps the change id" "$revised" "REVISED revise-before-build"
 assert_contains "revision reports the added requirement" "$revised" "added: greeting-logged"

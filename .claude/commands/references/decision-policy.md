@@ -10,7 +10,7 @@ decision, explain the cause and attempted work, the offered choices and their
 consequences. Record the explicit answer with `advance --decision`, its exact
 `--decision-fingerprint`, a `--decision-ref`, and the chosen approach as `--reason`.
 The harness retains the target and prior answers. A retry is not permission to
-waive evidence or extend a budget. A wait must name its owner and condition.
+waive evidence. A wait must name its owner and condition.
 Do not repeat a failed route or ask the same question after restart; read the
 current action and reuse an unchanged recorded decision. Pausing preserves work.
 

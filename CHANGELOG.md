@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Budget exhaustion never asks the user; every exhausted window auto-continues
+  as a harness decision. `budget continue` is an optional explicit widening.
+- Change intake no longer forces discovery coverage rows, keyword-derived risk
+  dimensions, or a source-digest round-trip on ordinary changes. Coverage is
+  required only for `impact: high` or typed risk declarations, a risk-derived
+  `not-applicable` row needs only a rationale, and design warnings are
+  advisory, so ordinary feature and bugfix work stays on the rapid lane.
+- Prove and Build no longer block on sandbox edits outside task `[paths:]`;
+  they are recorded as `surfaceAdditions`, proven, and landed. Deletions and
+  control-plane, CI, or secret paths still require a declared `[paths:]`.
+  Entries are repository-qualified (`{repositoryId, path}`), so an addition
+  widens only its own repository; legacy bare strings mean root.
+- Small, low-risk rapid drafts (low impact, isolated, no security, review, or
+  acceptance triggers, size xs|s or at most six requirements plus tasks) get no
+  missing-section prompts for `fileMap`, `failureMatrix`, `testMap`,
+  `workType`, or reader-guide sections; authored sections are still checked.
+- Semantic drafts accept `capabilityOverviews` as an object keyed by
+  capability and normalize it to the array form.
+- The `/dev` Stop hook is advisory: it reports an incomplete proof and the
+  resume route in a `systemMessage` instead of forcing continuation, stays
+  quiet after the session archives its change, and checks within 8s.
+- The update notice appears once per Claude Code session; session dedupe now
+  reads `FOUNDATION_CLAUDE_SESSION_ID`.
+- `budget checkpoint` always reports `READY_TO_RESUME`; the unreachable
+  budget ask-user paths, `userPrompt`, and `afterContinuationCommand` are gone.
+- README and the install page (EN/TH) explain headless `claude -p`: trust the
+  workspace or pass `--allowedTools "Bash(claude-foundation *)"`, and keep
+  consumers outside `~/.claude/`.
+- Before a `/dev` phase exists, scratch writes outside the project are allowed
+  and the refusal names the draft route (`change start <draft> --inspect`);
+  the installer prints a one-line headless hint.
+
+### Fixed
+
+- `evidence upgrade` no longer resets spec approval; a valid approval carries
+  to the rewritten packet with an `evidence-upgrade` audit row, and the
+  sandbox packet is upgraded too.
+- Proof reads Node spec output behind an `npm test` wrapper instead of
+  reporting `test:inconclusive`, and a failing provider names its command.
+- Stale selected sources return one refresh edit instead of re-failing every
+  inspect; read-only inspection no longer persists surface additions.
+
+### Removed
+
+- The `/dev` authoring-surface read guard. Reading the managed runtime or hooks
+  is no longer refused; upgrades retire its settings wiring.
+
 ## [3.5.27] - 2026-09-29
 
 ### Changed

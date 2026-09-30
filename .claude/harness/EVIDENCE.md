@@ -44,6 +44,13 @@ on rather than duplicated. Infrastructure exhaustion leaves a non-dispatchable
 external or Harness-owned boundary; it cannot remain a review request that gets
 invoked repeatedly. No unavailable measurement is converted to zero or pass.
 
+A sandbox path changed outside every task's `[paths:]` is recorded as a
+repository-qualified `surfaceAdditions` entry (`{repositoryId, path}`; legacy
+bare strings mean root) that widens only its own repository, included in the proven hash and the Land projection,
+and does not block readiness. Deletions, control-plane/CI/secret paths, a
+misplaced root sandbox, or more than 100 such paths still refuse Prove until
+declared.
+
 ## Execution wiring
 
 `execution.yaml` may change as Build discovers the actual commands, ports, and

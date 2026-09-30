@@ -131,3 +131,34 @@ export function trackedPathSet(relativePaths) {
   }
   return set;
 }
+
+// `surfaceAdditions` are repository-qualified: a path recorded for one
+// repository must not widen another repository's manifest, hash, or Land
+// deletion guard. Legacy runtime state stored bare repository-relative strings,
+// which always meant the root workspace.
+export function surfaceAdditionEntries(value) {
+  const entries = new Map();
+  for (const entry of Array.isArray(value) ? value : []) {
+    const row = typeof entry === "string"
+      ? { repositoryId: "root", path: entry }
+      : entry && typeof entry.path === "string"
+        ? { repositoryId: String(entry.repositoryId || "root"), path: entry.path }
+        : null;
+    if (row?.path) entries.set(`${row.repositoryId}\0${row.path}`, row);
+  }
+  // Code-unit order, locale-independent, so persisted state is stable.
+  const order = (left, right) => left < right ? -1 : left > right ? 1 : 0;
+  return [...entries.values()].sort((left, right) =>
+    order(left.repositoryId, right.repositoryId) || order(left.path, right.path));
+}
+
+export function mergeSurfaceAdditions(...values) {
+  return surfaceAdditionEntries(values.flatMap((value) =>
+    Array.isArray(value) ? value : []));
+}
+
+export function surfaceAdditionPaths(value, repositoryId = "root") {
+  return surfaceAdditionEntries(value)
+    .filter((entry) => entry.repositoryId === repositoryId)
+    .map((entry) => entry.path);
+}

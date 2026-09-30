@@ -11,11 +11,11 @@ selected read-set and question frontier.
 
 Intake depth adapts from typed size, impact, coupling, risk, and repository
 signals. The tier changes source and question-frontier budgets; it never removes
-a mandatory discovery dimension. Before exposing `ASK_USER`, the harness rejects
+a required discovery dimension. Before exposing `ASK_USER`, the harness rejects
 duplicate alternatives, a recommendation outside its alternatives, an
 unsupported recommendation, and a question already answered by a keyed source
-fact. Before `DONE`, copy the returned inventory digest to
-`discovery.sourceDigest`. Every source fact carries `sourcePath` and
+fact. The harness records the inventory digest; `discovery.sourceDigest` is
+optional. Every source fact carries `sourcePath` and
 `sourceDigest`; recommendation evidence names a selected path or carries the same
 binding. Keep `riskSignals` and `discovery.sourceFacts` language-neutral; Thai,
 English, and mixed prose must produce the same result from the same typed facts.

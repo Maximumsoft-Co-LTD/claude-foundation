@@ -27,10 +27,8 @@ export function taskLineChecked(content, taskId) {
 // The primitive's refusal names `agents acquire`; a harness-owned lease is
 // renewed by resuming, so the repair names that route instead.
 function sessionScopeError(id, detail) {
-  const error = new Error(`${detail}. Revert edits that belong to another task, or add the ` +
-    `paths to this task's [paths:] in the isolated openspec/changes/${id}/tasks.md ` +
-    `(bookkeeping; no amendment or approval), then resume with ` +
-    `'claude-foundation advance ${id} --through build'`);
+  const error = new Error(`${detail}. Revert edits that belong to another active task, ` +
+    `then resume with 'claude-foundation advance ${id} --through build'`);
   error.owner = "agent";
   error.boundary = "task-scope";
   return error;
@@ -52,9 +50,8 @@ export function createSessionLeaseRuntime({
   }
 
   // Releases every harness-issued session lease whose task the agent ticked.
-  // A graph changed by a bookkeeping `[paths:]` widening is re-granted first:
-  // the widening is the repair the scope refusal named, so it must not strand
-  // the task behind a stale-authority error. A lease past its TTL is still
+  // A graph changed by a bookkeeping `[paths:]` widening is re-granted first
+  // so it does not strand the task behind a stale-authority error. A lease past its TTL is still
   // the harness's own: a long task must not skip its observed-write check.
   function settle(id) {
     const settled = [];
@@ -98,8 +95,7 @@ export function createSessionLeaseRuntime({
         "Run its focused checks; do not acquire or release the lease.",
         `When the checks pass, mark ${taskId} [x] in the isolated tasks.md and run the resume ` +
         "command: advance releases the lease and checks the observed writes against the task scope.",
-        "If a needed file is outside the task paths, add it to the task's [paths:] in the " +
-        "isolated tasks.md before resuming."
+        "A needed file outside the task paths is fine; Prove records it into the change surface."
       ]
     };
   }

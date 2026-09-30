@@ -1,4 +1,5 @@
 import { scopeAllowsPath } from "../../core/graph-execution.mjs";
+import { lightweightDraft } from "./design-blueprints.mjs";
 
 // Reader guide: the parts of a compiled packet written for a human reviewer
 // rather than for the harness. Every field is optional and renders only when
@@ -77,11 +78,13 @@ export function readerGuideIssues(source, requirementKeys = new Set()) {
 export function readerGuideWarnings(draft) {
   if (draft?.version !== 4) return [];
   const warnings = [];
-  if (!text(draft.summary))
+  // A small rapid-lane change needs no reader scaffolding prompts.
+  const light = lightweightDraft(draft);
+  if (!light && !text(draft.summary))
     warnings.push("add a plain-language 'summary' (1-3 sentences) so a reviewer understands the change quickly");
-  if (!Array.isArray(draft.userStories) || !draft.userStories.length)
+  if (!light && (!Array.isArray(draft.userStories) || !draft.userStories.length))
     warnings.push("add prioritized 'userStories' (P1-P3) that name who benefits and link requirement keys");
-  if (!Array.isArray(draft.successCriteria) || !draft.successCriteria.length)
+  if (!light && (!Array.isArray(draft.successCriteria) || !draft.successCriteria.length))
     warnings.push("add measurable 'successCriteria' that say how the result is judged");
   const modifies = (Array.isArray(draft.fileMap) ? draft.fileMap : []).some((row) =>
     /^modif/i.test(text(row?.change)));

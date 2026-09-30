@@ -328,9 +328,9 @@ assert_file_not_contains "superseded phase guard command retired on upgrade" \
   "$TARGET/.claude/settings.json" "phase-mutation-guard.mjs"
 assert_eq "exactly one phase guard is wired after upgrade" "1" \
   "$(grep -c 'phase-mutation-guard\.sh' "$TARGET/.claude/settings.json")"
-assert_eq "exactly one authoring surface guard is wired after upgrade" "1" \
-  "$(grep -c 'authoring-surface-guard\.sh' "$TARGET/.claude/settings.json")"
-assert_file_exists "authoring surface guard is installed" \
+assert_file_not_contains "retired authoring surface guard is unwired after upgrade" \
+  "$TARGET/.claude/settings.json" "authoring-surface-guard"
+assert_file_absent "retired authoring surface guard is not installed" \
   "$TARGET/.claude/hooks/authoring-surface-guard.mjs"
 assert_file_contains "request telemetry binds once at session lifecycle" \
   "$TARGET/.claude/settings.json" "session-context.sh"
@@ -508,15 +508,8 @@ jq -n --argjson dimensions '["current-behavior","affected-actor","desired-behavi
     evidence:{"v4-outcome":{capabilities:["test"]}},
     discovery:{coverage:($dimensions | map({dimension:.,status:"covered",covers:["v4-outcome"]})),decisions:[]}}' \
   > "$v4_draft"
-v4_ack="$(bash "$ROOT/cli.sh" --project "$TARGET" change start v4-cli-draft.json --inspect)"
-assert_contains "v4 CLI inspection requests source acknowledgement" "$v4_ack" \
-  '"code": "source-acknowledgement-required"'
-v4_source_digest="$(printf '%s' "$v4_ack" | jq -r '.intakeState.sourceDigest')"
-jq --arg digest "$v4_source_digest" '.discovery.sourceDigest = $digest' \
-  "$v4_draft" > "$TMP/v4-cli-draft.json"
-mv "$TMP/v4-cli-draft.json" "$v4_draft"
 v4_ready="$(bash "$ROOT/cli.sh" --project "$TARGET" change start v4-cli-draft.json --inspect)"
-assert_contains "v4 CLI inspection reaches DONE after bound acknowledgement" "$v4_ready" \
+assert_contains "v4 CLI inspection reaches DONE without a source acknowledgement round-trip" "$v4_ready" \
   '"action": "DONE"'
 rm "$v4_draft"
 printf '%s\n' \

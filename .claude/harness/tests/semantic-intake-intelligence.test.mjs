@@ -34,7 +34,8 @@ test("adaptive depth grows with impact, coupling, and risk without dropping dime
   assert.equal(focused.tier, "focused");
   assert.equal(deep.tier, "deep");
   assert.ok(deep.limits.maxSourceFiles > focused.limits.maxSourceFiles);
-  assert.deepEqual(focused.requiredDimensions, CORE_DISCOVERY_DIMENSIONS);
+  // Ordinary changes derive no dimensions; only typed declarations add them.
+  assert.deepEqual(focused.requiredDimensions, []);
   for (const dimension of CORE_DISCOVERY_DIMENSIONS)
     assert.ok(deep.requiredDimensions.includes(dimension), dimension);
   assert.ok(deep.requiredDimensions.includes("security-privacy"));
@@ -146,7 +147,10 @@ test("source facts and recommendation evidence must match the current inventory 
 });
 
 test("effectiveness snapshot reports coverage, quality, and observed history", () => {
-  const value = source();
+  const value = source({ impact: "high" });
+  value.discovery.coverage.push(
+    { dimension: "operability", status: "covered", covers: ["search"] },
+    { dimension: "recoverability", status: "covered", covers: ["search"] });
   value.discovery.coverage[0].sources = ["README.md"];
   value.discovery.decisions = [{
     key: "scope", status: "open", question: "Scope?",
@@ -158,7 +162,7 @@ test("effectiveness snapshot reports coverage, quality, and observed history", (
     history: [{ type: "inspection" }, { type: "question-round" }]
   });
 
-  assert.equal(snapshot.coverage.completed, CORE_DISCOVERY_DIMENSIONS.length);
+  assert.equal(snapshot.coverage.completed, CORE_DISCOVERY_DIMENSIONS.length + 2);
   assert.equal(snapshot.coverage.completionRatio, 1);
   assert.equal(snapshot.coverage.grounded, 1);
   assert.equal(snapshot.questions.accepted, null);

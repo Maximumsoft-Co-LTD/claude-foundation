@@ -600,27 +600,6 @@ test("Build never emits an empty edit packet", () => {
   assert.equal(value.legacyAction, "REPAIR_BUILD_PLAN");
 });
 
-test("model budget decisions reach the coordinator before Build dispatch", () => {
-  const decision = {
-    kind: "budget-exhausted",
-    summary: "The active model budget is exhausted",
-    options: [
-      { id: "continue", outcome: "authorize another bounded window" },
-      { id: "pause", outcome: "preserve the current state" }
-    ]
-  };
-  const value = coordinatorAction({
-    id: "change-a",
-    state: { status: "building", workspace: { path: "/sandbox" } },
-    dispatch: { action: "run-in-session", reason: "ready" },
-    workspaceHash: "workspace-a",
-    budget: { status: "NEEDS_USER_DECISION", decision },
-    stableHash
-  });
-  assert.equal(value.action, "ASK_USER");
-  assert.deepEqual(value.decision, { ...decision, recommended: "pause" });
-});
-
 test("Build preparation is re-entered after a setup repair boundary", async () => {
   let preparations = 0;
   const { runtime } = fixture();

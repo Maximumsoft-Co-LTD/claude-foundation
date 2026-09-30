@@ -950,12 +950,6 @@ export function createTelemetryRuntime({
         appendTelemetryJsonLines(target, normalized);
       const allEvents = readJsonLines(target);
       const activeRunId = activeTelemetryRunId(normalized, context, id);
-      if (removedCount &&
-          !readJsonLines(join(logs, id, "budget-events.jsonl")).length &&
-          state.budget?.window?.mode === "operator-required") {
-        state.budget.window.mode = "normal";
-        state.budget.window.exhaustedAt = null;
-      }
       synchronizeBudgetUsage(state, allEvents, activeRunId, format === "claude"
         ? "claude-transcript" : `host-events:${format}`,
       replacesSource ? 0 : normalized.length);

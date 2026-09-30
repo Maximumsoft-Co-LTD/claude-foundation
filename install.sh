@@ -344,7 +344,7 @@ elif command -v jq >/dev/null 2>&1; then
         .value |= map(
           .hooks |= map(select(
             if (.command? | type) == "string"
-            then (.command | test("hooks/(dev-agent-guard|dev-state-mark|dev-state-validate|artifact-lint)\\.sh|hooks/phase-mutation-guard\\.mjs")) | not
+            then (.command | test("hooks/(dev-agent-guard|dev-state-mark|dev-state-validate|artifact-lint|authoring-surface-guard)\\.sh|hooks/phase-mutation-guard\\.mjs")) | not
             else true end
           ))
         ) | .value |= map(select((.hooks | length) > 0))
@@ -489,3 +489,4 @@ if command -v git >/dev/null 2>&1 &&
   fi
 fi
 printf 'Next: describe the outcome with /change <intent>; the agent handles the workflow details.\n'
+printf 'Headless (claude -p): trust the workspace by running claude once interactively, or pass --allowedTools "Bash(claude-foundation *)".\n'
