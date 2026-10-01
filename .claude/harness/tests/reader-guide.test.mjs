@@ -99,6 +99,7 @@ test("design omits placeholder sections and fills the file map task column", () 
 test("proposal leads with summary, stories, criteria, and a capability index", () => {
   const compiled = compile({
     summary: "ผู้ใช้จัดการการ์ดบนบอร์ดได้",
+    why: "Work items are lost without one shared board",
     userStories: [
       { priority: "P2", story: "As a user, I want cards kept after reload.", covers: ["persist"] },
       { priority: "P1", asA: "a user", iWant: "to add and move cards", soThat: "I track work",

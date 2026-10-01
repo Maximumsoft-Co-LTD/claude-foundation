@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { atomicStartPreflight, createChangeLifecycle } from "../runtime/workflow/change-lifecycle.mjs";
+import {
+  atomicStartPreflight, createChangeLifecycle, reviewRouteLabel
+} from "../runtime/workflow/change-lifecycle.mjs";
 import { SECURITY_TERMS } from "../runtime/workflow/security-policy.mjs";
 import { semanticRapidCandidate } from "../runtime/workflow/semantic-draft.mjs";
 import { repositoryIntelligenceRequired } from "../runtime/workflow/validation/repository-intelligence.mjs";
@@ -19,6 +21,7 @@ let state;
 let saved;
 let grounding = "optional";
 let riskBasedCi = false;
+let reviewPolicy = "legacy";
 let output = "";
 const priorLog = console.log;
 console.log = (message) => { output += `${message}\n`; };
@@ -37,7 +40,7 @@ const baseState = () => ({
 });
 const lifecycle = createChangeLifecycle({
   root,
-  policy: () => ({ workflow: { grounding }, land: { riskBasedCi } }),
+  policy: () => ({ workflow: { grounding, reviewPolicy }, land: { riskBasedCi } }),
   securityTerms: ["access", "auth token", "a+b"], fail,
   pathInside: () => true, readJson: () => ({}), writeJson: () => {},
   slugify: (value) => String(value).toLowerCase().replaceAll(" ", "-"),
@@ -258,6 +261,42 @@ try {
   assert.equal(waivedUpgrade.schema, "foundation-standard");
   assert.equal(waivedUpgrade.riskBasedCiRequired, false, "a schema upgrade keeps the waiver");
   assert.doesNotMatch(run({}, { riskBasedCiRequired: true }) && output, /signed CI: waived/);
+
+  // Upgrading a compiled rapid packet keeps its delta specs and adds no
+  // placeholder spec beside them.
+  rmSync(join(changeDir, "specs"), { recursive: true, force: true });
+  mkdirSync(join(changeDir, "specs", "board"), { recursive: true });
+  writeFileSync(join(changeDir, "specs", "board", "spec.md"), "# board\n");
+  const upgradedRapidSpecs = run({ impact: "medium" }, {
+    schema: "foundation-rapid", securityTriggers: [], groundingRequired: false
+  });
+  assert.equal(upgradedRapidSpecs.schema, "foundation-standard");
+  assert.equal(existsSync(join(changeDir, "specs", "change", "spec.md")), false);
+  rmSync(join(changeDir, "specs"), { recursive: true, force: true });
+
+  // Under risk-tiered policy every change gets an AI review: "not required"
+  // was false (benchmark v3.5.29), so the route is named instead.
+  reviewPolicy = "risk-tiered";
+  run({}, { intent: "Create kanban board", schema: "foundation-rapid", securityTriggers: [] });
+  assert.match(output, /review: risk-tiered AI review \(low tier, fast model\)\n/);
+  assert.doesNotMatch(output, /not required/);
+  run({ impact: "high" }, { intent: "Create kanban board", securityTriggers: [] });
+  assert.match(output, /review: risk-tiered AI review \(high tier, configured model\)\n/);
+  reviewPolicy = "legacy";
+  run({}, { intent: "Create kanban board", schema: "foundation-rapid", securityTriggers: [] });
+  assert.match(output, /review: not required \(legacy review policy: no AI review runs\)\n/);
+  // The label follows the same signals validation uses.
+  assert.equal(reviewRouteLabel({ reviewPolicy: "legacy", state: { reviewRequired: true } }), "required");
+  assert.equal(reviewRouteLabel({
+    reviewPolicy: "legacy", state: { reviewRequired: false },
+    claims: [{ id: "c", impact: "low", capabilities: ["test", "review"] }]
+  }), "required");
+  assert.equal(reviewRouteLabel({
+    reviewPolicy: "risk-tiered", state: { impact: "medium", securityTriggers: [] },
+    claims: [{ id: "c", impact: "low", capabilities: ["test"] }]
+  }), "risk-tiered AI review (medium tier, configured model)");
+  assert.equal(reviewRouteLabel({ reviewPolicy: "risk-tiered", lowRiskModel: "configured",
+    state: { impact: "low", securityTriggers: [] } }), "risk-tiered AI review (low tier, configured model)");
 
   console.log = priorLog;
   priorLog("change resolution tests: PASS");

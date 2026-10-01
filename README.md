@@ -591,7 +591,8 @@ design and other extensions appear only when their concern exists. Use it for pu
 coupled behavior, high impact, irreversible effects, or any change needing more
 than unit/static evidence.
 
-`foundation-rapid` intentionally omits delta specs and normally omits design. It is eligible
+`foundation-rapid` compiles a concise delta spec (merged into `openspec/specs` at
+Land) and normally omits design; agent defaults are listed in its proposal. It is eligible
 only for low-impact, isolated work with no public contract, persistent
 migration, security trigger, or irreversible effect. If stronger requirements
 appear, `/change` upgrades the same change to standard.

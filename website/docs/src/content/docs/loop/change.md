@@ -30,13 +30,29 @@ leave `version` out. `change start --template` prints this form first as
 ```
 
 The compiler fills in the version, requirement and task keys, capability (an
-existing `openspec/specs` capability matched by requirement text or task paths;
-with no confident match one `EDIT` lists the capabilities to choose from; the
-intent slug only when no specs exist), operation (`modified` when a canonical
-requirement matches, otherwise `added`), scenario names, `covers` (inferred
+optional top-level `capability` names it; otherwise an existing `openspec/specs`
+capability matched by requirement text or task paths; with no confident match
+one `EDIT` lists the capabilities to choose from; when no specs exist, the
+intent's noun phrase in at most three words, such as `kanban-board`), operation
+(`modified` when a canonical requirement matches, otherwise `added`), scenario
+names, `covers` (inferred
 only with one task or one requirement; several of both return one `EDIT`
 naming each `tasks[i].covers`),
-rapid defaults, and test evidence from `verify`. One `change start <draft>`
+rapid defaults, and test evidence from `verify`. A derived requirement key is
+whole words from the SHALL clause (at most five words and 40 characters, no
+trailing word such as "and" or "to"), and the requirement heading is that
+clause as a readable title, such as "Persist its cards in browser
+localStorage". A delta for a capability with no living spec states a
+`## Purpose` (the capability overview, else the intent, with requirement titles
+when the intent is short) that archive carries into the new spec; an existing
+spec's Purpose is never replaced. A derived scenario name is a
+short whole-word title from `when` (at most 60 characters, no leading article or
+dangling word); two that read the same are told apart by their `given` or
+`then`, else a number. Add `decisions: [{ "key", "choice", "reason"? }]` for
+each default you chose without asking (stack, storage): they are recorded as
+`decidedBy: agent`, listed under Decisions in the proposal, and keep the rapid
+lane. With no `why`, the proposal omits Why rather than repeat the intent.
+One `change start <draft>`
 inspects and starts it, and prints the packet files and tasks. A draft that
 states `version: 4` or declares risk uses the full form below.
 
@@ -164,9 +180,11 @@ and a fixed version rather than `latest` or a branch.
 
 ## Conditional artifacts and source of truth
 
-Rapid changes normally contain only `proposal.md`, `tasks.md`, and
-`evidence.yaml`. Standard changes add delta specs; `design.md` appears only for
-a load-bearing decision or architecture context. Execution, repository,
+Rapid changes contain `proposal.md`, `tasks.md`, `evidence.yaml`, and a concise
+delta `specs/<capability>/spec.md` rendered exactly as in standard; Land merges
+it into `openspec/specs`. Only a legacy rapid packet declaring `skip_specs` has
+no delta. Standard changes may add `design.md`, which appears only for a
+load-bearing decision or architecture context. Execution, repository,
 handoff, and grounding files appear only for real overrides.
 
 After compilation, `openspec/changes/<id>/` is the source of truth. The draft is

@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Rapid-lane changes compiled from a semantic draft now carry a concise delta
+  `specs/<capability>/spec.md` (one SHALL statement with GIVEN/WHEN/THEN/AND
+  scenarios, the standard renderer) instead of declaring `skip_specs`, so Land's
+  `openspec archive` records the behavior in `openspec/specs` exactly as for
+  standard changes and `change validate` runs the OpenSpec strict lint on it.
+  The `foundation-rapid` schema declares the optional `specs` artifact; legacy
+  rapid packets declaring `skip_specs` keep working unchanged (no strict lint,
+  no amendment deltas).
+- Minimal drafts accept `decisions: [{key, choice, reason?}]` for defaults the
+  agent chose without asking (stack, storage). They are recorded as
+  `decidedBy: agent`, listed under Decisions in the rapid proposal, and no
+  longer push the draft onto the standard lane; `change start --template`
+  prints this as `minimalDraftDecisions`.
+- A semantic draft without `why` gets no Why section instead of the intent
+  repeated under the title.
+- Derived scenario names are whole-word titles from `when` (at most 60
+  characters, no leading article, never ending on a dangling word such as
+  "titled" or "to the", never cut inside a quote); a title that would repeat
+  WHEN uses the outcome, and colliding titles are told apart by their `given`
+  or `then` before falling back to a number instead of "(case N)".
+
+- Minimal drafts name things for the living spec: an optional top-level
+  `capability` names it (printed by `change start --template` as
+  `minimalDraftCapability`); otherwise, with no existing specs, the capability
+  is the intent's noun phrase in at most three words (`kanban-board`, not
+  `users-can-manage-tasks-on-a-browser`). Derived requirement keys are at most
+  five whole words and 40 characters without a trailing "and"/"to"/"the", and
+  the `### Requirement:` heading is the readable SHALL clause ("Persist its
+  cards in browser localStorage"). A pre-Build `change revise` keeps the keys
+  and capability its change already uses; amendments never re-derive keys, and
+  an amendment revision without a title keeps the requirement's heading.
+
+### Fixed
+
+- A change that creates a capability no longer archives a living spec whose
+  Purpose is OpenSpec's `TBD - created by archiving change ...` placeholder:
+  its delta states `## Purpose` (the capability overview, else the intent with
+  requirement titles when short), which OpenSpec 1.7 archive carries into the
+  new spec. Deltas for existing capabilities state none, so an existing
+  Purpose is never replaced.
+- `RESOLVED` no longer prints `review: not required` when a review will run:
+  under `workflow.reviewPolicy: "risk-tiered"` it names the route, such as
+  `review: risk-tiered AI review (low tier, fast model)`; legacy policy prints
+  `required` or `not required (legacy review policy: no AI review runs)`.
+
 ## [3.5.29] - 2026-10-01
 
 ### Changed

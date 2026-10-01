@@ -489,6 +489,8 @@ export function compileSemanticAmendment({
     revisedSpecs: specs.slice(addRequirements.length).map((spec, index) => ({
       key: keyOf(reviseRequirements[index]),
       spec,
+      explicitTitle: Boolean(String(reviseRequirements[index]?.requirement ||
+        reviseRequirements[index]?.title || "").trim()),
       priorScenarios: priorScenarios(keyOf(reviseRequirements[index]))
     })),
     removedRequirements: removeRequirements.map((row) => ({
@@ -526,13 +528,16 @@ function specFiles(dir) {
 function rewriteRequirementBlock(dir, key, scenarios, replacement, target = null) {
   const candidates = specFiles(dir).flatMap((path) => {
     const content = readFileSync(path, "utf8");
-    return requirementBlocks(content, scenarios).matches.map((match) =>
-      ({ path, content, operation: match.operation }));
+    const lines = content.split("\n");
+    return requirementBlocks(content, scenarios).matches.map((match) => ({
+      path, content, operation: match.operation,
+      name: lines[match.start].match(/^###\s+Requirement:\s*(.+?)\s*$/)?.[1] || ""
+    }));
   });
   if (candidates.length !== 1)
     throw new Error(`amendment cannot identify the requirement block for '${key}': ` +
       `${candidates.length} blocks carry its scenarios (${stringList(scenarios).join(", ") || "none"})`);
-  const [{ path, content, operation }] = candidates;
+  const [{ path, content, operation, name }] = candidates;
   // A revision replaces the block in place, so it must stay in the same
   // capability delta and operation section; moving it is a remove plus an add.
   if (target) {
@@ -542,7 +547,8 @@ function rewriteRequirementBlock(dir, key, scenarios, replacement, target = null
       throw new Error(`amendment cannot revise '${key}' from ${capability}/${operation || "unknown"} ` +
         `to ${target.capability}/${nextOperation}; remove it and add a new requirement instead`);
   }
-  const result = replaceRequirementBlock(content, scenarios, replacement);
+  const result = replaceRequirementBlock(content, scenarios,
+    typeof replacement === "function" ? replacement(name) : replacement);
   if (/^###\s+Requirement:/m.test(result.content)) writeFileSync(path, result.content);
   else {
     // A delta file with no requirement left is not a valid OpenSpec delta.
@@ -582,21 +588,30 @@ export function writeSemanticAmendment(dir, compiled, slugify, { schema } = {}) 
       `Reason: ${markdownCell(compiled.amendmentReason)}\n\n` +
       `| Requirement | Migration |\n|---|---|\n${rows}\n`);
   }
-  // Rapid agreements carry their scenarios in evidence.yaml, just like start.
-  // Writing a delta while skip_specs remains true creates an unmergeable packet.
-  if (schema === "foundation-rapid") return;
+  // A legacy rapid agreement (skip_specs) carries its scenarios in
+  // evidence.yaml only; writing a delta beside skip_specs creates an
+  // unmergeable packet. A compiled rapid packet has deltas and amends them.
+  const marker = existsSync(join(dir, ".openspec.yaml"))
+    ? readFileSync(join(dir, ".openspec.yaml"), "utf8") : "skip_specs: true";
+  if (schema === "foundation-rapid" && /^\s*skip_specs:\s*true\s*$/m.test(marker)) return;
   const appendSpec = (spec) => {
     const capability = slugify(spec.name);
     const specDir = join(dir, "specs", capability);
     mkdirSync(specDir, { recursive: true });
     const specPath = join(specDir, "spec.md");
-    const current = existsSync(specPath)
-      ? readFileSync(specPath, "utf8") : `# ${spec.name}\n`;
+    // A capability with no living spec states its Purpose, as start does.
+    const current = existsSync(specPath) ? readFileSync(specPath, "utf8")
+      : `${renderSpecHeading({ name: spec.name, purpose: spec.purpose }, {
+        newCapability: !existsSync(join(dir, "..", "..", "specs", capability, "spec.md"))
+      })}\n`;
     writeFileSync(specPath, appendRequirementToSpec(current, spec));
   };
   for (const spec of compiled.specs) appendSpec(spec);
   for (const row of compiled.revisedSpecs || [])
-    rewriteRequirementBlock(dir, row.key, row.priorScenarios, renderRequirement(row.spec), {
+    // A revision without its own title keeps the requirement's heading, so a
+    // derived title is not replaced by the key.
+    rewriteRequirementBlock(dir, row.key, row.priorScenarios, (priorName) => renderRequirement(
+      row.explicitTitle || !priorName ? row.spec : { ...row.spec, requirement: priorName }), {
       capability: slugify(row.spec.name), operation: row.spec.operation
     });
   for (const row of compiled.removedRequirements || [])

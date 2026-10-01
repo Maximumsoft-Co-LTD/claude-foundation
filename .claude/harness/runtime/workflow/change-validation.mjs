@@ -20,6 +20,16 @@ const CRITICAL_CASE_ORACLES = [
   "production-entry", "real-wire", "contract-oracle", "failure-path"
 ];
 
+// A legacy rapid change declares skip_specs and has no deltas to lint; a
+// compiled rapid change drops the marker, carries concise deltas, and is
+// linted like any other.
+export function openSpecStrictLintApplies(state, dir, read = readFileSync) {
+  if (state?.schema !== "foundation-rapid") return true;
+  let marker = "";
+  try { marker = String(read(join(dir, ".openspec.yaml"), "utf8")); } catch { return false; }
+  return !/^\s*skip_specs:\s*true\s*$/m.test(marker);
+}
+
 // Module scope, taking `fail` explicitly: the check has no runtime state and
 // the deterministic tests exercise it against a stubbed CLI.
 export function assertOpenSpecStrictValid(id, dir, fail, options = {}) {
@@ -1769,8 +1779,7 @@ export function createChangeValidationRuntime({
     // after the code had landed, so a pure wording defect forced a re-prove.
     // Same tool, same mode, earlier. Quiet changes presentation only; skipping
     // the subprocess here let an invalid agreement travel all the way to Land.
-    // Rapid changes declare skip_specs and have no deltas to lint.
-    if (state.schema !== "foundation-rapid")
+    if (openSpecStrictLintApplies(state, dir))
       assertOpenSpecStrictValid(id, dir, fail, { quiet: options.quiet });
 
     // The gate is about a task that names a lifecycle *command*, so the slash

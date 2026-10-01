@@ -5,7 +5,9 @@ import {
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
 import { createChangeLifecycle } from "../runtime/workflow/change-lifecycle.mjs";
+import { verifySpecSync } from "../runtime/workflow/spec-sync-verify.mjs";
 import { CORE_DISCOVERY_DIMENSIONS } from
   "../runtime/workflow/validation/semantic-intake.mjs";
 import { assertSpecApproval, reviewWindowRemaining, REVIEW_WINDOW_MS } from "../runtime/core/user-decisions.mjs";
@@ -217,7 +219,12 @@ test("bare start inspects and starts a correct v4 draft in one command", (t) => 
   // The compiled files are listed so the agent never guesses artifact paths.
   assert.match(output, /\n  file: openspec\/changes\/single-shot-change\/proposal\.md\n/);
   assert.match(output, /\n  file: openspec\/changes\/single-shot-change\/tasks\.md\n/);
-  assert.match(output, /\n  specs: none \(rapid packet/);
+  // A compiled rapid packet carries a concise delta spec, so Land records the
+  // behavior in openspec/specs; skip_specs would contradict it.
+  assert.match(output, /\n  file: openspec\/changes\/single-shot-change\/specs\/[a-z0-9-]+\/spec\.md\n/);
+  assert.doesNotMatch(output, /\n  specs: none/);
+  assert.equal(readFileSync(join(value.changes, "single-shot-change", ".openspec.yaml"), "utf8"),
+    "schema: foundation-rapid\n");
   assert.match(output, /\n  task: T001\b/);
   // One authoritative next step: no per-step `next` from CREATED/RESOLVED.
   assert.doesNotMatch(output, /complete artifacts, validate, then \/build/);
@@ -466,10 +473,80 @@ test("a minimal draft without version compiles and starts in one call", (t) => {
   const contract = JSON.parse(readFileSync(
     join(value.changes, "reject-empty-note-titles", "evidence.yaml"), "utf8"));
   assert.deepEqual(contract.claims.map((claim) => [claim.id, claim.capabilities]),
-    [["reject-a-note-whose-title-is-empty", ["test"]]]);
+    [["reject-note-title-empty", ["test"]]]);
   assert.equal(contract.providers.test.adapter, "test-discovery");
   assert.match(readFileSync(join(value.changes, "reject-empty-note-titles", "tasks.md"), "utf8"),
     /\[key:validate-note-titles\]/);
+});
+
+// Seam: a rapid packet's concise delta spec is valid OpenSpec and Land's
+// archive step (the real CLI, as apply-runtime runs it) merges it into the
+// living spec exactly as for a standard change. Benchmark v3.5.29 archived a
+// kanban board with no spec at all.
+const REPOSITORY = join(dirname(new URL(import.meta.url).pathname), "..", "..", "..");
+const OPENSPEC_CLI = join(REPOSITORY, "node_modules", ".bin", "openspec");
+
+test("a rapid minimal draft compiles a delta spec that archive merges into openspec/specs", (t) => {
+  if (!existsSync(OPENSPEC_CLI)) return t.skip("repository OpenSpec CLI is not installed");
+  const value = fixture(t);
+  writeJson(value.draftPath, {
+    intent: "Create kanban board",
+    requirements: [{
+      description: "The system SHALL let a user add, move, and delete board cards",
+      scenarios: [
+        { when: "The user adds a card titled \"Buy milk\" to the To Do column of the board",
+          then: "the card appears in To Do" },
+        { when: "The user deletes a card", then: "the card is removed" },
+        { when: "The user deletes a card", given: "the card is the last one in its column",
+          then: "the column shows an empty state" }
+      ]
+    }],
+    tasks: [{ outcome: "Build the board page", verify: "npm test", paths: ["index.html"] }],
+    decisions: [{ key: "stack", choice: "Plain HTML and JavaScript", reason: "No build step" }]
+  });
+  const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.match(output, /^AGREED create-kanban-board/m);
+  const id = "create-kanban-board";
+  const change = join(value.changes, id);
+  const runtime = JSON.parse(readFileSync(join(value.runtime, `${id}.json`), "utf8"));
+  assert.equal(runtime.schema, "foundation-rapid", "an agent default does not force the standard lane");
+  assert.equal(readFileSync(join(change, ".openspec.yaml"), "utf8"), "schema: foundation-rapid\n");
+  // No capability matched and none was named: the intent's noun phrase names
+  // it, and the readable heading is the requirement's clause.
+  assert.equal(existsSync(join(change, "specs", id)), false);
+  const delta = readFileSync(join(change, "specs", "kanban-board", "spec.md"), "utf8");
+  assert.match(delta, /^# kanban-board\n\n## Purpose\n\nCreate kanban board\. Requirements: Let a user add, move, and delete board cards\.\n\n## ADDED Requirements\n\n### Requirement: Let a user add, move, and delete board cards\n/);
+  assert.match(delta, /The system SHALL let a user add, move, and delete board cards/);
+  assert.match(delta, /#### Scenario: User adds a card titled "Buy milk" to the To Do column\n/);
+  assert.match(delta, /#### Scenario: User deletes a card \(card is the last one in its column\)\n\n- \*\*GIVEN\*\* the card is the last one in its column\n- \*\*WHEN\*\* The user deletes a card\n- \*\*THEN\*\* the column shows an empty state/);
+  assert.doesNotMatch(delta, /\(case \d+\)|design/i);
+  const proposal = readFileSync(join(change, "proposal.md"), "utf8");
+  assert.doesNotMatch(proposal, /## Why/);
+  assert.match(proposal, /## Decisions\n\n- \*\*stack:\*\* Plain HTML and JavaScript — No build step \(decided by agent\)/);
+  assert.equal(existsSync(join(change, "design.md")), false);
+
+  // Archive with the shipped schemas, exactly as Land runs it.
+  rmSync(join(value.root, "openspec", "schemas"), { recursive: true, force: true });
+  cpSync(join(REPOSITORY, "openspec", "schemas"), join(value.root, "openspec", "schemas"),
+    { recursive: true });
+  cpSync(join(REPOSITORY, "openspec", "config.yaml"), join(value.root, "openspec", "config.yaml"));
+  writeFileSync(join(change, "tasks.md"),
+    readFileSync(join(change, "tasks.md"), "utf8").replace(/- \[ \]/g, "- [x]"));
+  const run = (...args) => spawnSync(OPENSPEC_CLI, args, {
+    cwd: value.root, encoding: "utf8", env: { ...process.env, NO_COLOR: "1" }
+  });
+  const validation = run("validate", id, "--type", "change", "--strict", "--no-interactive");
+  assert.equal(validation.status, 0, validation.stdout + validation.stderr);
+  const archive = run("archive", id, "--yes");
+  assert.equal(archive.status, 0, archive.stdout + archive.stderr);
+  const living = readFileSync(join(value.root, "openspec", "specs", "kanban-board", "spec.md"), "utf8");
+  // OpenSpec carries the delta's Purpose instead of its TBD placeholder.
+  assert.match(living, /## Purpose\nCreate kanban board\. Requirements: /);
+  assert.doesNotMatch(living, /TBD/);
+  assert.match(living, /### Requirement: Let a user add, move, and delete board cards\n/);
+  assert.match(living, /The system SHALL let a user add, move, and delete board cards/);
+  assert.match(living, /#### Scenario: User deletes a card\n/);
+  assert.deepEqual(verifySpecSync({ before: "", after: living, delta }).violations, []);
 });
 
 test("a minimal draft with ambiguous covers returns one EDIT naming covers", (t) => {
@@ -531,5 +608,5 @@ test("a minimal draft joins an existing capability or asks which one", (t) => {
   const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
   assert.match(output, /^AGREED reject-empty-note-titles/m);
   assert.match(readFileSync(join(value.changes, "reject-empty-note-titles", "proposal.md"), "utf8"),
-    /^\| notes \| reject-a-note-whose-title-is-empty \|/m);
+    /^\| notes \| Reject a note whose title is empty \|/m);
 });

@@ -10,9 +10,13 @@ import { nextCommand } from "../core/next-step.mjs";
 import { taskBlocks, taskMetadata } from "../contracts/change-artifacts.mjs";
 import { materialSecurityTriggers } from "./security-policy.mjs";
 import {
-  expandMinimalSemanticDraft, minimalSemanticDraftTemplate, normalizeSemanticDraft,
-  renderRequirementMarkdown, renderSpecHeading, semanticDraftTemplate
+  agentDecision, authoredDecisionReason, expandMinimalSemanticDraft,
+  minimalSemanticDraftTemplate, normalizeSemanticDraft, renderRequirementMarkdown,
+  renderSpecHeading, semanticDraftTemplate
 } from "./semantic-draft.mjs";
+import { collectReviewSignals } from "../evidence/evidence-contract.mjs";
+import { classifyReviewRisk } from "../evidence/review-routing.mjs";
+import { reviewDepthForTier, reviewModelTierForDepth } from "../evidence/review-diff.mjs";
 import {
   semanticIntakeAction, semanticIntakeIssues
 } from "./validation/semantic-intake.mjs";
@@ -331,22 +335,41 @@ function tableCell(value) {
   return String(value ?? "").replace(/\r?\n/g, " ").replaceAll("|", "\\|");
 }
 
+// A rapid packet has no design.md, so the decisions it records (normally the
+// defaults the agent chose without asking) are listed in the proposal.
+export function renderRapidDecisions(decisions = []) {
+  const rows = (Array.isArray(decisions) ? decisions : [])
+    .filter((decision) => String(decision?.key || "").trim() && String(decision?.choice || "").trim())
+    .map((decision) => {
+      const reason = authoredDecisionReason(decision);
+      const by = String(decision.decidedBy || "").trim().toLowerCase() || "agent";
+      return `- **${decision.key}:** ${decision.choice}` + (reason ? ` — ${reason}` : "") +
+        ` (decided by ${by})`;
+    });
+  return rows.length ? `## Decisions\n\n${rows.join("\n")}` : "";
+}
+
 // Reading order: what and why first, then who benefits and how success is
 // judged, then scope; machine provenance and coverage close as appendices.
+// A draft without a stated reason gets no Why section rather than the intent
+// repeated under the title.
 export function renderDraftProposal(draft, state) {
   const title = draft.title || state.intent;
   const section = (value) => (value ? `\n\n${value}` : "");
   const triggers = (draft.securityTriggers || []).filter(Boolean);
   const nonGoals = (draft.nonGoals || []).length
     ? `\n\n## Non-goals\n\n${draftBullets(draft.nonGoals)}` : "";
+  const why = String(draft.why || "").trim();
+  const decisions = state?.schema === "foundation-rapid"
+    ? section(renderRapidDecisions(draft.decisions)) : "";
   return `# Change: ${title}` + section(renderProposalLead(draft)) +
-    `\n\n## Why\n\n${draft.why}` + section(renderProposalReader(draft)) +
+    (why ? `\n\n## Why\n\n${why}` : "") + section(renderProposalReader(draft)) +
     `\n\n## What changes\n\n${draftBullets(draft.changes)}\n\n## Impact\n\n` +
     `- **Impact:** ${draft.impact || state.impact || "medium"}\n` +
     `- **Coupling:** ${draft.coupling || state.coupling || "coupled"}\n` +
     `- **Affected surfaces:** ${(draft.surfaces || ["code"]).join(", ")}\n` +
     `- **Security triggers:** ${triggers.length ? triggers.join(", ") : "none detected"}` +
-    nonGoals + section(renderInvestigationSummary(draft.investigation)) +
+    decisions + nonGoals + section(renderInvestigationSummary(draft.investigation)) +
     section(renderDiscoveryAppendix(draft)) +
     section(renderInvestigationAppendix(draft.investigation)) + "\n";
 }
@@ -421,12 +444,43 @@ export function renderDraftDesign(draft) {
         `|---|---|---|---|---|\n${integrations.join("\n")}` : "") + prototype + "\n";
 }
 
+// The review route a change will take, in words that cannot be misread.
+// Under risk-tiered policy every change gets an AI review, so "not required"
+// would be false; the tier and the model class of its first pass are named
+// instead. Legacy policy keeps its required/not-required meaning.
+export function reviewRouteLabel({
+  reviewPolicy = "legacy", lowRiskModel = "fast", state = {}, claims = [], grounding = null
+} = {}) {
+  const rows = (Array.isArray(claims) ? claims : []).filter((claim) =>
+    claim && typeof claim === "object" && Array.isArray(claim.capabilities));
+  let signals;
+  try { signals = collectReviewSignals(state, { claims: rows }, [], grounding); }
+  catch { signals = null; }
+  if (reviewPolicy === "risk-tiered") {
+    if (!signals) return "risk-tiered AI review (tier set at validation)";
+    const { tier } = classifyReviewRisk({
+      state, claims: rows, capabilities: signals.capabilities, grounding,
+      requiredTriggers: signals.requiredTriggers
+    });
+    const model = lowRiskModel === "configured"
+      ? "configured" : reviewModelTierForDepth(reviewDepthForTier(tier));
+    return `risk-tiered AI review (${tier} tier, ${model} model)`;
+  }
+  const required = Boolean(state.reviewRequired) ||
+    Boolean(signals && (signals.requiredTriggers.length || signals.capabilities.has("review")));
+  return required ? "required" : "not required (legacy review policy: no AI review runs)";
+}
+
 // Legacy v1/v2 drafts always declare decisions and keep their rapid lane; a
 // semantic draft that authored design content must not lose it to rapid.
 export function semanticDraftKeepsDesign(draft, rapid) {
-  // Authored content only: a declared work type alone is not design content.
+  // Authored content only: a declared work type alone is not design content,
+  // and neither is a default the agent recorded without asking.
   return Boolean(rapid) && [3, 4].includes(draft?._semanticVersion) &&
-    draftNeedsDesign({ ...draft, workType: [] });
+    draftNeedsDesign({
+      ...draft, workType: [],
+      decisions: (draft.decisions || []).filter((decision) => !agentDecision(decision))
+    });
 }
 
 export function draftNeedsDesign(draft) {
@@ -474,7 +528,7 @@ export function groupDraftSpecs(specs, slugify) {
   return grouped;
 }
 
-export function renderDraftSpecDocument(specs, renderRequirement) {
+export function renderDraftSpecDocument(specs, renderRequirement, { newCapability = false } = {}) {
   const operationOrder = ["added", "modified", "removed"];
   const sections = operationOrder.flatMap((operation) => {
     const requirements = specs.filter((spec) =>
@@ -483,12 +537,15 @@ export function renderDraftSpecDocument(specs, renderRequirement) {
     return [`## ${operation.toUpperCase()} Requirements\n\n` +
       requirements.map(renderRequirement).join("\n\n")];
   });
-  return `${renderSpecHeading(specs.find((spec) => spec.title || spec.overview) || specs[0])}` +
+  const lead = specs.find((spec) => spec.title || spec.overview) || specs[0];
+  return `${renderSpecHeading(lead, { newCapability })}` +
     `\n\n${sections.join("\n\n")}\n`;
 }
 
+// `capabilityExists` reports whether openspec/specs already holds the
+// capability; only a new capability's delta states a Purpose.
 export function materializeDraftSpecs({
-  basePath, specs, slugify, renderRequirement,
+  basePath, specs, slugify, renderRequirement, capabilityExists = () => true,
   remove = rmSync, makeDirectory = mkdirSync, write = writeFileSync
 }) {
   remove(join(basePath, "specs"), { recursive: true, force: true });
@@ -496,7 +553,8 @@ export function materializeDraftSpecs({
     const specDir = join(basePath, "specs", capability);
     makeDirectory(specDir, { recursive: true });
     write(join(specDir, "spec.md"),
-      renderDraftSpecDocument(capabilitySpecs, renderRequirement));
+      renderDraftSpecDocument(capabilitySpecs, renderRequirement,
+        { newCapability: !capabilityExists(capability) }));
   }
 }
 
@@ -649,17 +707,18 @@ export function createChangeLifecycle({
         `(${residue.map((path) => path.slice(root.length + 1)).join(", ")}); pick a new id`);
   }
 
-  function draftSource(draftPath) {
+  function draftSource(draftPath, prior = {}) {
     const source = resolve(root, draftPath);
     if (!pathInside(root, source) || !existsSync(source))
       fail("new --draft requires a JSON file inside the project");
     // `minimalDraft` is the template's example key, never draft content. A
     // draft without `version` in the minimal v4 shape compiles as v4.
     const raw = readJson(source);
+    const context = { ...minimalDraftContext, ...prior };
     if (!raw || typeof raw !== "object" || Array.isArray(raw) || !("minimalDraft" in raw))
-      return expandMinimalSemanticDraft(raw, minimalDraftContext);
+      return expandMinimalSemanticDraft(raw, context);
     const { minimalDraft: _example, ...draft } = raw;
-    return expandMinimalSemanticDraft(draft, minimalDraftContext);
+    return expandMinimalSemanticDraft(draft, context);
   }
 
   // A minimal draft chooses among existing capabilities before inventing one.
@@ -764,7 +823,10 @@ export function createChangeLifecycle({
   }
 
   function validateDraftFields(draft) {
-    const requiredStrings = ["why", "currentState", "compatibility"];
+    // A semantic draft may leave 'why' out; its proposal then has no Why
+    // section instead of repeating the intent.
+    const requiredStrings = [3, 4].includes(draft._semanticVersion)
+      ? ["currentState", "compatibility"] : ["why", "currentState", "compatibility"];
     for (const field of requiredStrings)
       if (!String(draft[field] || "").trim())
         fail(`draft requires non-empty '${field}'`);
@@ -949,7 +1011,7 @@ export function createChangeLifecycle({
     try { walk(base); } catch { return ""; }
     const lines = files.sort().map((file) => `  file: ${file}\n`);
     if (!files.some((file) => file.includes("/specs/")))
-      lines.push("  specs: none (rapid packet; requirements are in proposal.md)\n");
+      lines.push("  specs: none (legacy rapid packet without delta specs)\n");
     // The task list, so the agent can start Build without opening tasks.md.
     try {
       for (const line of readFileSync(join(base, "tasks.md"), "utf8").split("\n")) {
@@ -995,11 +1057,19 @@ export function createChangeLifecycle({
       version: 1,
       repositories: draft.repositories
     });
-    if (state.schema === "foundation-standard")
+    // A semantic rapid draft compiles the same concise delta specs as the
+    // standard lane, so Land merges its behavior into openspec/specs. The
+    // template's skip_specs marker would contradict them; only a legacy rapid
+    // packet without deltas keeps it.
+    const rapidSpecs = state.schema === "foundation-rapid" &&
+      [3, 4].includes(draft._semanticVersion) && (draft.specs || []).length > 0;
+    if (state.schema === "foundation-standard" || rapidSpecs)
       materializeDraftSpecs({
         basePath, specs: draft.specs, slugify,
-        renderRequirement: renderDraftRequirement
+        renderRequirement: renderDraftRequirement,
+        capabilityExists: (capability) => canonicalSpecText(capability) !== null
       });
+    if (rapidSpecs) writeFileSync(join(basePath, ".openspec.yaml"), "schema: foundation-rapid\n");
   }
 
   // The artifacts the standard schema adds over the rapid one. Written only
@@ -1014,7 +1084,13 @@ export function createChangeLifecycle({
     if (workflowPolicy().workflow.grounding === "required" && !existsSync(grounding))
       writeFileSync(grounding, instantiate(join(source, "grounding.yaml"), intent));
     const spec = join(target, "specs", "change", "spec.md");
-    if (!existsSync(spec)) {
+    // A compiled rapid packet already carries its delta specs.
+    let hasSpecs = false;
+    try {
+      hasSpecs = readdirSync(join(target, "specs"), { withFileTypes: true })
+        .some((entry) => entry.isDirectory() && existsSync(join(target, "specs", entry.name, "spec.md")));
+    } catch {}
+    if (!hasSpecs && !existsSync(spec)) {
       mkdirSync(join(target, "specs", "change"), { recursive: true });
       writeFileSync(spec, instantiate(join(source, "spec.md"), intent));
     }
@@ -1090,8 +1166,19 @@ export function createChangeLifecycle({
   }
 
   // The minimal form leads; the full v4 template follows for richer drafts.
+  // The decisions note travels with the template the agent already reads, so
+  // recording unasked defaults costs no always-loaded instruction words.
   function rapidStartTemplate() {
-    return { minimalDraft: minimalSemanticDraftTemplate(), ...semanticDraftTemplate() };
+    return {
+      minimalDraft: minimalSemanticDraftTemplate(),
+      minimalDraftCapability: "Optionally add a top-level capability to the minimal draft: a " +
+        "short noun phrase naming the living spec, such as kanban-board. Omitted, the draft " +
+        "joins the matching existing capability or derives a short name from the intent.",
+      minimalDraftDecisions: "Add decisions: [{ key, choice, reason? }] to the minimal draft " +
+        "for every default you chose without asking the user (for example stack, storage, " +
+        "framework); they are listed in the proposal as decided by the agent.",
+      ...semanticDraftTemplate()
+    };
   }
 
   function inspectSemanticIntakeSource(source, {
@@ -1423,6 +1510,23 @@ export function createChangeLifecycle({
     return false;
   }
 
+  // Best effort: the packet's claims and grounding as they stand at resolve.
+  // Validation recomputes the authoritative route from the same inputs.
+  function resolutionReviewLabel(id, state) {
+    const dir = changePath(id);
+    const parse = (name) => {
+      try { return JSON.parse(readFileSync(join(dir, name), "utf8")); } catch { return null; }
+    };
+    const claims = parse("evidence.yaml")?.claims;
+    return reviewRouteLabel({
+      reviewPolicy: workflowPolicy().workflow?.reviewPolicy,
+      lowRiskModel: workflowPolicy().review?.lowRiskModel,
+      state,
+      claims: Array.isArray(claims) ? claims : [],
+      grounding: parse("grounding.yaml")
+    });
+  }
+
   // Set while atomic start or revise runs its create/resolve steps, which
   // print their own single `next` at the end.
   let atomicStepOutput = false;
@@ -1436,7 +1540,7 @@ export function createChangeLifecycle({
     // Named only when a decision waived it, so every earlier output is intact.
     const ciLine = state.ciWaiver
       ? `\n  signed CI: waived (${state.ciWaiver.decisionRef})` : "";
-    console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${state.reviewRequired ? "required" : "not required"}\n  acceptance: ${state.acceptance?.decision || (state.acceptance?.required ? "required" : "legacy-not-required")}\n  security: ${[...state.securityTriggers,
+    console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${resolutionReviewLabel(id, state)}\n  acceptance: ${state.acceptance?.decision || (state.acceptance?.required ? "required" : "legacy-not-required")}\n  security: ${[...state.securityTriggers,
       ...(state.keywordSecurityTriggers || []).map((value) => `${value} (intent keyword: review only)`)
     ].join(", ") || "none"}${surfaceLine}${ciLine}\n  schema: ${state.schema}${upgraded ? " (upgraded from foundation-rapid; design.md and specs/ added)" : ""}${atomicStepOutput ? "" : `\n  next: ${nextCommand(state.status, id)}`}`);
   }
@@ -1776,8 +1880,26 @@ export function createChangeLifecycle({
     return state;
   }
 
+  // A revise recompiles the whole draft; requirement keys and the capability
+  // the replaced packet already uses keep their identity.
+  function priorDraftIdentity(id) {
+    const evidencePath = join(changePath(id), "evidence.yaml");
+    const claims = existsSync(evidencePath) ? readJson(evidencePath).claims || [] : [];
+    const specs = join(changePath(id), "specs");
+    return {
+      priorRequirementKeys: [...new Set([
+        ...Object.keys(loadRuntime(id).requirementFingerprints || {}),
+        ...claims.map((claim) => String(claim?.requirementKey || "").trim()).filter(Boolean)
+      ])],
+      priorCapabilities: existsSync(specs)
+        ? readdirSync(specs, { withFileTypes: true })
+          .filter((entry) => entry.isDirectory()).map((entry) => entry.name)
+        : []
+    };
+  }
+
   function revisionSource(id, draftPath) {
-    const source = draftSource(draftPath);
+    const source = draftSource(draftPath, priorDraftIdentity(id));
     if (source.id !== undefined && source.id !== id && slugify(source.id) !== id)
       fail(`change revise draft id '${source.id}' does not match change '${id}'`);
     return { ...source, id };

@@ -107,9 +107,11 @@ design บันทึกเฉพาะการตัดสินใจที�
 | `handoffs.yaml` | Permission-bound external operation และ activation safety | มีเมื่องานแบบนี้มีจริง |
 | `.openspec.yaml` | assurance profile ที่ควบคุม packet นี้ | ทั้งคู่ |
 | `design.md` | ภาพรวม สมมติฐานและคำถามที่ค้าง blueprint แบบ typed ภาพรวม task, durable decision (รวมคำตอบที่ตกลงระหว่าง intake), diagram, integration, compatibility และความเสี่ยง โดยไม่แสดงหัวข้อที่ว่าง | standard และมีเมื่อมี design context |
-| `specs/**/spec.md` | delta ของ requirement — `ADDED`, `MODIFIED`, `REMOVED` | standard |
+| `specs/**/spec.md` | delta ของ requirement — `ADDED`, `MODIFIED`, `REMOVED` | ทั้งคู่ (rapid แบบกระชับ ไม่มีเฉพาะ packet เดิมที่ใช้ `skip_specs`) |
 
-packet แบบ `foundation-rapid` จะไม่มี spec delta และปกติไม่มี `design.md` ทันทีที่ impact
+packet แบบ `foundation-rapid` มี spec delta แบบกระชับที่ merge เข้า `openspec/specs`
+ตอน Land และปกติไม่มี `design.md` ค่า default ที่ agent เลือกเองแสดงใต้ Decisions
+ใน proposal ทันทีที่ impact
 สูงกว่า low, coupling ไม่ใช่ isolated แล้ว หรือมีการบังคับ review หรือ acceptance
 change จะ **อัปเกรดตัวเองเป็น standard** และสร้าง delta artifact ให้อัตโนมัติ
 ส่วน extension อื่นยังสร้างเฉพาะเมื่อมี concern จริง

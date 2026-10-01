@@ -101,8 +101,20 @@ agreement, installs it, and prepares isolation. The draft records:
 - semantic security and review triggers;
 - typed extensions only when the change needs them.
 
-Rapid changes contain `proposal.md`, `tasks.md`, and `evidence.yaml`. Standard
-changes add delta specs and add `design.md` only for a load-bearing decision,
+Rapid changes contain `proposal.md`, `tasks.md`, `evidence.yaml`, and a concise
+delta `specs/<capability>/spec.md` (one SHALL statement and its scenarios per
+requirement, rendered exactly as in standard), which Land merges into
+`openspec/specs` like any other delta; only a legacy rapid packet declaring
+`skip_specs` has none. A delta for a capability with no living spec states a
+`## Purpose` (the capability overview, else the intent) that archive carries
+into the new spec instead of OpenSpec's TBD placeholder; an existing spec's
+Purpose is never replaced. A minimal draft's derived names stay short: the
+capability is a top-level `capability` or the intent's noun phrase (such as
+`kanban-board`), a requirement key is at most five whole words, and its
+heading is the readable SHALL clause. A rapid proposal omits Why when the draft states no
+reason, and lists recorded `decisions` (defaults the agent chose without
+asking, `decidedBy: agent`) under Decisions. Standard
+changes add `design.md` only for a load-bearing decision,
 migration, compatibility boundary, architecture, diagram, integration, or
 prototype selection. `execution.yaml`, `repositories.yaml`, `handoffs.yaml`,
 and `grounding.yaml` appear only when execution differs from detected defaults,
@@ -670,8 +682,9 @@ Rapid is allowed only when all are true:
 - no semantic security or irreversible-effect trigger applies;
 - unit or static evidence is sufficient;
 - a semantic draft authors no design content (file map, UI states, failure
-  matrix, decisions or answered intake choices, assumptions, risks); such a
-  draft compiles as standard so that content is kept.
+  matrix, user decisions or answered intake choices, assumptions, risks); such a
+  draft compiles as standard so that content is kept. Agent defaults
+  (`decidedBy: agent`, the minimal-draft default) stay rapid.
 
 ### `foundation-standard`
 
@@ -761,7 +774,10 @@ diff before Land. Conflicts, incomplete Apply, and missing side-effect authority
 still require their actual resolution, never a claim of successful delivery.
 
 Under `workflow.reviewPolicy: "risk-tiered"` every change receives review, with
-the correction circuit bounded by risk. The review reads the change's diff and
+the correction circuit bounded by risk; `RESOLVED` prints the route, such as
+`review: risk-tiered AI review (low tier, fast model)`, never "not required".
+Under legacy policy it prints `required` or
+`not required (legacy review policy: no AI review runs)`. The review reads the change's diff and
 the agreement's requirements, not whole files. Low risk runs one diff-only
 review on the fast model tier (`review.lowRiskModel: "configured"` or a
 reviewer `fastModelId` overrides it); medium and high keep the configured

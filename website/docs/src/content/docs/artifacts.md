@@ -109,9 +109,11 @@ what a reviewer reads.
 | `handoffs.yaml` | Permission-bound external operations and activation safety | conditional when such work exists |
 | `.openspec.yaml` | Which assurance profile governs the packet | both |
 | `design.md` | Overview, assumptions and open questions, typed blueprints, a task overview, durable decisions (including settled intake answers), diagrams, integrations, compatibility, and risks; empty sections are omitted | standard, conditional on design context |
-| `specs/**/spec.md` | Requirement deltas — `ADDED`, `MODIFIED`, `REMOVED` | standard |
+| `specs/**/spec.md` | Requirement deltas — `ADDED`, `MODIFIED`, `REMOVED` | both (rapid: concise; absent only in legacy `skip_specs` packets) |
 
-A `foundation-rapid` packet omits spec deltas and normally omits `design.md`. The moment
+A `foundation-rapid` packet has a concise spec delta, merged into `openspec/specs`
+at Land, and normally omits `design.md`; agent defaults appear under Decisions
+in its proposal. The moment
 impact rises above low, coupling stops being isolated, or review or acceptance
 becomes required, the change **upgrades itself to standard** and its delta
 artifacts are created for you. Optional extensions still appear only when their

@@ -29,12 +29,24 @@ transaction
 ```
 
 Compiler เติมให้เอง ได้แก่ version, key ของ requirement และ task, capability
-(เลือกจาก capability ใน `openspec/specs` ที่ตรงกับข้อความของ requirement หรือ path
-ของ task ถ้าจับคู่ไม่ได้จะคืน `EDIT` เดียวพร้อมรายชื่อ capability ให้เลือก และใช้ชื่อจาก
-intent เฉพาะเมื่อยังไม่มี spec เลย), operation (`modified` เมื่อตรงกับ requirement
+(ใส่ `capability` ระดับบนสุดเพื่อตั้งชื่อเองได้ ไม่เช่นนั้นเลือกจาก capability ใน
+`openspec/specs` ที่ตรงกับข้อความของ requirement หรือ path ของ task ถ้าจับคู่ไม่ได้จะคืน
+`EDIT` เดียวพร้อมรายชื่อ capability ให้เลือก และเมื่อยังไม่มี spec เลยจะใช้นามวลีของ
+intent ไม่เกินสามคำ เช่น `kanban-board`), operation (`modified` เมื่อตรงกับ requirement
 เดิม ไม่เช่นนั้นเป็น `added`), ชื่อ scenario, `covers` (เดาให้เฉพาะเมื่อมี task เดียว
 หรือ requirement เดียว ถ้ามีหลายทั้งคู่จะคืน `EDIT` เดียวที่ระบุ `tasks[i].covers`), ค่า default ของ rapid และ
-evidence แบบ test จาก `verify` สั่ง `change start <draft>` ครั้งเดียวก็ตรวจและเริ่ม
+evidence แบบ test จาก `verify` key ของ requirement ที่ derive ให้เป็นคำเต็มจากประโยค
+SHALL (ไม่เกินห้าคำและ 40 ตัวอักษร ไม่ลงท้ายด้วยคำอย่าง "and" หรือ "to") และหัวข้อ
+requirement คือประโยคเดียวกันในรูปหัวข้อที่อ่านง่าย เช่น "Persist its cards in browser
+localStorage" delta ของ capability ที่ยังไม่มี living spec จะมี `## Purpose` (จาก
+capability overview ไม่เช่นนั้นจาก intent และต่อด้วยชื่อ requirement เมื่อ intent สั้น)
+ซึ่ง archive นำไปใส่ใน spec ใหม่ และไม่แทนที่ Purpose ของ spec ที่มีอยู่แล้ว
+ชื่อ scenario ที่ derive ให้เป็นหัวข้อสั้นจาก `when`
+ตัดที่ขอบคำ (ไม่เกิน 60 ตัวอักษร ไม่มี article นำหน้าหรือคำค้างท้าย) ถ้าสองชื่อซ้ำกันจะแยกด้วย
+`given` หรือ `then` ไม่เช่นนั้นใช้ตัวเลข ใส่ `decisions: [{ "key", "choice", "reason"? }]`
+สำหรับค่า default ทุกข้อที่เลือกเองโดยไม่ได้ถามผู้ใช้ (stack, storage) ระบบบันทึกเป็น
+`decidedBy: agent` แสดงใต้หัวข้อ Decisions ใน proposal และยังอยู่ใน rapid lane ถ้าไม่มี
+`why` proposal จะไม่มีหัวข้อ Why แทนการซ้ำ intent สั่ง `change start <draft>` ครั้งเดียวก็ตรวจและเริ่ม
 change พร้อมแสดงรายชื่อไฟล์ใน packet และ task ถ้าใส่ `version: 4` หรือประกาศ
 ความเสี่ยงไว้ จะใช้รูปแบบเต็มด้านล่าง
 
@@ -98,8 +110,10 @@ local ต้อง resolve เป็นไฟล์ปกติภายใน p
 
 ## Artifact แบบ conditional และ source of truth
 
-Rapid ปกติมีเพียง `proposal.md`, `tasks.md`, `evidence.yaml` Standard เพิ่ม delta
-spec และสร้าง `design.md` เฉพาะเมื่อมีมติหรือบริบทสถาปัตยกรรมที่จำเป็น ไฟล์
+Rapid มี `proposal.md`, `tasks.md`, `evidence.yaml` และ delta
+`specs/<capability>/spec.md` แบบกระชับที่ render แบบเดียวกับ standard ซึ่ง Land จะ merge
+เข้า `openspec/specs` มีเพียง rapid packet แบบเดิมที่ประกาศ `skip_specs` ที่ไม่มี delta
+Standard อาจเพิ่ม `design.md` เฉพาะเมื่อมีมติหรือบริบทสถาปัตยกรรมที่จำเป็น ไฟล์
 execution, repository, handoff และ grounding จะเกิดเมื่อมี override จริงเท่านั้น
 
 หลัง compile แล้ว `openspec/changes/<id>/` คือ source of truth Draft เป็นข้อมูล

@@ -10,6 +10,7 @@ import {
   createChangeValidationRuntime,
   lockValidatedGrounding,
   normalizeValidationAcceptance,
+  openSpecStrictLintApplies,
   proposalClassificationIssues,
   reportDeclaredSurfaceForecast,
   reportValidationReviewAssurance,
@@ -537,4 +538,17 @@ test("optional grounding still enforces cross-artifact task claims", () => {
     "- [ ] T001 Implement behavior [claims:unknown] [paths:src/runtime.mjs]\n");
   assert.throws(() => fixture.runtime.validate("change-a", "root", { quiet: true }),
     /references unknown claim\(s\): unknown/);
+});
+
+test("strict OpenSpec lint covers compiled rapid deltas and skips only legacy rapid packets", () => {
+  const marker = (text) => (path) => {
+    if (path !== "/c/.openspec.yaml" || text === null) throw new Error("ENOENT");
+    return text;
+  };
+  assert.equal(openSpecStrictLintApplies({ schema: "foundation-standard" }, "/c", marker(null)), true);
+  assert.equal(openSpecStrictLintApplies({ schema: "foundation-rapid" }, "/c",
+    marker("schema: foundation-rapid\n")), true);
+  assert.equal(openSpecStrictLintApplies({ schema: "foundation-rapid" }, "/c",
+    marker("schema: foundation-rapid\nskip_specs: true\n")), false);
+  assert.equal(openSpecStrictLintApplies({ schema: "foundation-rapid" }, "/c", marker(null)), false);
 });

@@ -356,14 +356,24 @@ assert_not_contains "advance replaces the affected test receipt" \
   "$(shasum .foundation/receipts/selective-amendment/test.json)" "$test_before"
 
 # Restore the accepted bytes and complete the local saga with a deterministic
-# OpenSpec stub. No remote/model execution is part of this regression.
+# OpenSpec stub. No remote/model execution is part of this regression. Compiled
+# rapid packets carry delta specs, so the stub merges each ADDED requirement
+# into openspec/specs the way the real archive does; post-archive spec-sync
+# verification then sees the behavior recorded.
 cd "$TMP/review-waiver"
 ws="$review_ws"
 printf 'v2\n' > "$ws/app.txt"
 mkdir -p "$TMP/bin"
 printf '%s\n' '#!/usr/bin/env sh' \
   'if [ "$1" = "--version" ]; then echo 1.7.0; exit 0; fi' \
-  'if [ "$1" = "archive" ]; then mkdir -p openspec/changes/archive; mv "openspec/changes/$2" "openspec/changes/archive/$2"; if [ -f .foundation/interrupt-archive ]; then rm .foundation/interrupt-archive; exit 1; fi; fi' \
+  'if [ "$1" = "archive" ]; then' \
+  '  for delta in openspec/changes/"$2"/specs/*/spec.md; do' \
+  '    [ -f "$delta" ] || continue' \
+  '    cap="$(basename "$(dirname "$delta")")"; mkdir -p "openspec/specs/$cap"' \
+  '    { printf "# %s Specification\n\n## Purpose\nFixture.\n## Requirements\n" "$cap"; sed -n "/^### Requirement:/,\$p" "$delta"; } > "openspec/specs/$cap/spec.md"' \
+  '  done' \
+  '  mkdir -p openspec/changes/archive; mv "openspec/changes/$2" "openspec/changes/archive/$2"; if [ -f .foundation/interrupt-archive ]; then rm .foundation/interrupt-archive; exit 1; fi' \
+  'fi' \
   'exit 0' > "$TMP/bin/openspec"
 chmod +x "$TMP/bin/openspec"
 

@@ -9,13 +9,14 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import {
-  expandMinimalSemanticDraft, minimalSemanticDraftTemplate, normalizeSemanticDraft,
+  derivedCapabilityPurpose, expandMinimalSemanticDraft, minimalSemanticDraftTemplate,
+  normalizeSemanticDraft,
   renderRequirementMarkdown, renderSpecHeading, semanticDraftTemplate
 } from "../runtime/workflow/semantic-draft.mjs";
 import { requiredProvidersOperation } from "../runtime/workflow/change-validation.mjs";
 import { classifyReviewRisk } from "../runtime/evidence/review-routing.mjs";
 import {
-  createChangeLifecycle, draftNeedsDesign, renderDraftProposal
+  createChangeLifecycle, draftNeedsDesign, renderDraftProposal, semanticDraftKeepsDesign
 } from "../runtime/workflow/change-lifecycle.mjs";
 import {
   appendRequirementToSpec, compileSemanticAmendment, semanticAmendmentTemplate,
@@ -560,6 +561,23 @@ test("rapid amendments preserve skip_specs while retaining claims and tasks", (t
     "schema: foundation-rapid\nskip_specs: true\n");
   assert.deepEqual(JSON.parse(readFileSync(join(root, "evidence.yaml"))).claims, draft.claims);
   assert.equal(readFileSync(join(root, "tasks.md"), "utf8"), compiled.tasksContent);
+});
+
+test("a compiled rapid packet amends its delta spec like a standard change", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "rapid-amend-specs-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, ".openspec.yaml"), "schema: foundation-rapid\n");
+  writeFileSync(join(root, "evidence.yaml"), JSON.stringify({ version: 1 }));
+  const draft = normalizeSemanticDraft(semanticDraft(), slugify).draft;
+  const capability = slugify(draft.specs[0].name);
+  mkdirSync(join(root, "specs", capability), { recursive: true });
+  writeFileSync(join(root, "specs", capability, "spec.md"), `# ${capability}\n`);
+  const compiled = { tasksContent: "- [x] existing task\n", claims: draft.claims,
+    providers: draft.execution.providers, specs: draft.specs };
+  writeSemanticAmendment(root, compiled, slugify, { schema: "foundation-rapid" });
+  assert.match(readFileSync(join(root, "specs", capability, "spec.md"), "utf8"),
+    new RegExp(`### Requirement: ${draft.specs[0].requirement}`));
+  assert.equal(readFileSync(join(root, ".openspec.yaml"), "utf8"), "schema: foundation-rapid\n");
 });
 
 test("semantic amendment rejects unknown task references without writing", () => {
@@ -1637,7 +1655,7 @@ function minimalDraft(overrides = {}) {
 
 function explicitCovers(overrides = {}) {
   const value = minimalDraft(overrides);
-  value.tasks[0].covers = ["export-every-invoice-row-as-csv"];
+  value.tasks[0].covers = ["export-invoice-row-as-csv"];
   value.tasks[1].covers = ["escape-commas-inside-invoice-fields"];
   return value;
 }
@@ -1646,17 +1664,19 @@ test("a minimal draft infers version, keys, capability, names, and operation", (
   const expanded = expandMinimalSemanticDraft(explicitCovers());
   assert.equal(expanded.version, 4);
   assert.deepEqual(expanded.requirements.map((row) => [row.key, row.capability, row.operation]), [
-    ["export-every-invoice-row-as-csv", "export-invoices-as-csv", "added"],
-    ["escape-commas-inside-invoice-fields", "export-invoices-as-csv", "added"]
+    ["export-invoice-row-as-csv", "export-invoices", "added"],
+    ["escape-commas-inside-invoice-fields", "export-invoices", "added"]
   ]);
-  assert.equal(expanded.requirements[0].scenarios[0].name, "An operator exports invoices (case 1)");
+  assert.equal(expanded.requirements[0].scenarios[0].name, "Operator exports invoices");
+  assert.equal(expanded.requirements[1].scenarios[0].name, "Field contains a comma");
   assert.deepEqual(expanded.tasks.map((task) => [task.key, task.covers]), [
-    ["write-the-invoice-csv-exporter", ["export-every-invoice-row-as-csv"]],
+    ["write-the-invoice-csv-exporter", ["export-invoice-row-as-csv"]],
     ["quote-comma-fields-during-escaping", ["escape-commas-inside-invoice-fields"]]
   ]);
   const { draft, issues } = normalizeSemanticDraft(expanded, slugify, { defaultRapidEvidence: true });
   assert.deepEqual(issues, []);
-  assert.equal(draft.why, "Export invoices as CSV");
+  // No stated reason: the proposal omits Why instead of repeating the intent.
+  assert.equal(draft.why, "");
   assert.equal(draft.impact, "low");
   assert.deepEqual(draft.claims.map((claim) => claim.capabilities), [["test"], ["test"]]);
   // Expansion is deterministic, so recompiling yields the same IDs.
@@ -1676,12 +1696,12 @@ test("minimal draft keys stay collision-safe and one task covers every requireme
 
 test("a minimal requirement matching the canonical spec compiles as modified", () => {
   const canonical = [
-    "# export-invoices-as-csv", "", "### Requirement: Invoice export", "",
+    "# export-invoices", "", "### Requirement: Invoice export", "",
     "The system SHALL export every invoice row as CSV", "",
     "#### Scenario: Export", "", "- **WHEN** an operator exports", "- **THEN** CSV is returned"
   ].join("\n");
   const expanded = expandMinimalSemanticDraft(minimalDraft(), {
-    loadCanonicalSpec: (capability) => capability === "export-invoices-as-csv" ? canonical : null
+    loadCanonicalSpec: (capability) => capability === "export-invoices" ? canonical : null
   });
   assert.equal(expanded.requirements[0].operation, "modified");
   assert.equal(expanded.requirements[0].requirement, "Invoice export");
@@ -1704,7 +1724,7 @@ test("one requirement is covered by every task of a minimal draft", () => {
     requirements: [minimalDraft().requirements[0]]
   }));
   assert.deepEqual(expanded.tasks.map((task) => task.covers),
-    [["export-every-invoice-row-as-csv"], ["export-every-invoice-row-as-csv"]]);
+    [["export-invoice-row-as-csv"], ["export-invoice-row-as-csv"]]);
   const { issues } = normalizeSemanticDraft(expanded, slugify, { defaultRapidEvidence: true });
   assert.deepEqual(issues, []);
 });
@@ -1781,7 +1801,7 @@ test("explicit versions and non-minimal shapes are never expanded", () => {
 test("a minimal draft that declares risk still owes explicit evidence", () => {
   const expanded = expandMinimalSemanticDraft(minimalDraft({ impact: "high" }));
   const { issues } = normalizeSemanticDraft(expanded, slugify, { defaultRapidEvidence: true });
-  assert.ok(issues.some((issue) => /requires evidence\['export-every-invoice-row-as-csv'\]/.test(issue)));
+  assert.ok(issues.some((issue) => /requires evidence\['export-invoice-row-as-csv'\]/.test(issue)));
 });
 
 test("the minimal template compiles once expanded", () => {
@@ -1789,4 +1809,275 @@ test("the minimal template compiles once expanded", () => {
     expandMinimalSemanticDraft(minimalSemanticDraftTemplate()), slugify,
     { defaultRapidEvidence: true });
   assert.deepEqual(issues, []);
+});
+
+// Benchmark v3.5.29 (kanban, no capability named, no existing specs): the
+// capability was the cut intent sentence and keys were description slugs cut
+// mid-phrase, both of which became living-spec names.
+const kanbanRequirements = [
+  { description: "The board SHALL show three fixed columns (To Do, In Progress, Done)",
+    scenarios: [{ when: "the page opens", then: "three columns show" }] },
+  { description: "The board SHALL let the user move a card to any other column",
+    scenarios: [{ when: "a card is dropped on another column", then: "the card moves" }] },
+  { description: "The board SHALL persist its cards in browser localStorage and restore them",
+    scenarios: [{ when: "the page reloads", then: "the cards remain" }] }
+];
+const kanbanDraft = (overrides = {}) => ({
+  intent: "Users can manage tasks on a browser kanban board",
+  requirements: kanbanRequirements,
+  tasks: [{ outcome: "Build the board page", verify: "npm test", paths: ["index.html"] }],
+  ...overrides
+});
+
+test("a new capability is named by the intent's short noun phrase", () => {
+  const capability = (intent, paths = ["src/a.js"]) => expandMinimalSemanticDraft(minimalDraft({
+    intent, requirements: [minimalDraft().requirements[0]],
+    tasks: [{ outcome: "Do it", verify: "npm test", paths }]
+  })).requirements[0].capability;
+  assert.equal(capability("Users can manage tasks on a browser kanban board"), "kanban-board");
+  assert.equal(capability("Users can manage tasks on a browser-based kanban board stored in localStorage"),
+    "kanban-board");
+  assert.equal(capability("Create kanban board"), "kanban-board");
+  assert.equal(capability("Add a dark mode toggle to the settings page"), "dark-mode-toggle");
+  assert.equal(capability("Provide a todo list app with localStorage persistence"), "todo-list-app");
+  assert.equal(capability("Users can export reports as CSV"), "reports");
+  // Nothing sensible remains: the previous intent slug, then a path segment.
+  assert.equal(capability("Users can manage"), "users-can-manage");
+  assert.equal(capability("ทำบอร์ด", ["src/board/view.js"]), "board");
+  for (const intent of ["Users can manage tasks on a browser kanban board", "Create kanban board"])
+    assert.ok(capability(intent).split("-").length <= 3);
+});
+
+test("a minimal draft's top-level capability names the living spec", () => {
+  const named = expandMinimalSemanticDraft(kanbanDraft({ capability: "task-board" }),
+    specContext({ auth: authSpec, invoices: invoiceSpec }));
+  assert.equal(named.capability, undefined, "the top-level name is not a v4 field");
+  assert.deepEqual(named.requirements.map((row) => row.capability),
+    ["task-board", "task-board", "task-board"]);
+  assert.equal(named._capabilityChoices, undefined);
+  const { issues } = normalizeSemanticDraft(named, slugify, { defaultRapidEvidence: true });
+  assert.deepEqual(issues, []);
+});
+
+test("derived requirement keys are short whole words and headings are readable titles", () => {
+  const expanded = expandMinimalSemanticDraft(kanbanDraft());
+  assert.deepEqual(expanded.requirements.map((row) => [row.key, row.requirement]), [
+    ["show-three-fixed-columns", "Show three fixed columns"],
+    ["move-card-to-other-column", "Let the user move a card to any other column"],
+    ["persist-cards-in-browser-localstorage", "Persist its cards in browser localStorage"]
+  ]);
+  for (const { key } of expanded.requirements) {
+    assert.ok(key.length <= 40 && key.split("-").length <= 5, key);
+    assert.doesNotMatch(key, /-(?:and|the|to|in|of|a|an|or)$/, key);
+  }
+  assert.deepEqual(expandMinimalSemanticDraft(kanbanDraft()), expanded, "deterministic");
+  // Same clause twice: keys and headings stay unique.
+  const twice = expandMinimalSemanticDraft(kanbanDraft({
+    requirements: [kanbanRequirements[0], kanbanRequirements[0]]
+  }));
+  assert.deepEqual(twice.requirements.map((row) => [row.key, row.requirement]), [
+    ["show-three-fixed-columns", "Show three fixed columns"],
+    ["show-three-fixed-columns-2", "Show three fixed columns (2)"]
+  ]);
+  // Explicit keys and titles are kept verbatim.
+  const explicit = expandMinimalSemanticDraft(kanbanDraft({
+    requirements: [{ ...kanbanRequirements[0], key: "columns", requirement: "Fixed columns" }]
+  }));
+  assert.deepEqual([explicit.requirements[0].key, explicit.requirements[0].requirement],
+    ["columns", "Fixed columns"]);
+  const { draft, issues } = normalizeSemanticDraft(expanded, slugify, { defaultRapidEvidence: true });
+  assert.deepEqual(issues, []);
+  assert.match(renderRequirementMarkdown(draft.specs[2]),
+    /^### Requirement: Persist its cards in browser localStorage\n/);
+});
+
+test("a revise keeps the requirement keys and capability its change already uses", () => {
+  const legacyKeys = ["show-three-fixed-columns-to-do-in-progress-done",
+    "let-the-user-move-a-card-to-any-other-column"];
+  const revised = expandMinimalSemanticDraft(kanbanDraft(), {
+    priorRequirementKeys: legacyKeys, priorCapabilities: ["users-can-manage-tasks-on-a-browser"]
+  });
+  assert.deepEqual(revised.requirements.map((row) => [row.key, row.requirement, row.capability]), [
+    [legacyKeys[0], undefined, "users-can-manage-tasks-on-a-browser"],
+    [legacyKeys[1], undefined, "users-can-manage-tasks-on-a-browser"],
+    ["persist-cards-in-browser-localstorage", "Persist its cards in browser localStorage",
+      "users-can-manage-tasks-on-a-browser"]
+  ]);
+});
+
+test("a new capability's delta states a Purpose; an existing one never does", () => {
+  const { draft } = normalizeSemanticDraft(expandMinimalSemanticDraft(kanbanDraft()), slugify,
+    { defaultRapidEvidence: true });
+  assert.equal(draft.specs[0].purpose,
+    "Users can manage tasks on a browser kanban board. Requirements: Show three fixed columns; " +
+    "Let the user move a card to any other column; Persist its cards in browser localStorage.");
+  assert.equal(renderSpecHeading(draft.specs[0], { newCapability: true }),
+    `# kanban-board\n\n## Purpose\n\n${draft.specs[0].purpose}`);
+  assert.equal(renderSpecHeading(draft.specs[0]), "# kanban-board");
+  // A long intent is the whole Purpose; an overview replaces the derivation.
+  assert.equal(derivedCapabilityPurpose("Users can drag cards between the three columns of a board", ["X"]),
+    "Users can drag cards between the three columns of a board.");
+  const overview = normalizeSemanticDraft(expandMinimalSemanticDraft(kanbanDraft({
+    capabilityOverviews: { "kanban-board": "Lets one person track work as cards in three columns." }
+  })), slugify, { defaultRapidEvidence: true }).draft;
+  assert.equal(renderSpecHeading(overview.specs[0], { newCapability: true }),
+    "# kanban-board\n\n## Purpose\n\nLets one person track work as cards in three columns.");
+});
+
+test("an amendment adding a new capability states its Purpose and a revise keeps headings", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "amend-purpose-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const change = join(root, "openspec", "changes", "board");
+  mkdirSync(join(change, "specs", "kanban-board"), { recursive: true });
+  mkdirSync(join(root, "openspec", "specs", "auth"), { recursive: true });
+  writeFileSync(join(root, "openspec", "specs", "auth", "spec.md"), authSpec);
+  writeFileSync(join(change, "specs", "kanban-board", "spec.md"), [
+    "# kanban-board", "", "## Purpose", "", "Track cards.", "", "## ADDED Requirements", "",
+    "### Requirement: Show three fixed columns", "", "The board SHALL show three columns.", "",
+    "#### Scenario: Page opens", "", "- **WHEN** the page opens", "- **THEN** three columns show", ""
+  ].join("\n"));
+  writeFileSync(join(change, "evidence.yaml"), JSON.stringify({ version: 1 }));
+  const contract = { version: 1, providers: {}, claims: [{ id: "show-three-fixed-columns",
+    requirementKey: "show-three-fixed-columns", scenario: "Page opens", capabilities: ["test"] }] };
+  const compiled = compileSemanticAmendment({
+    amendment: {
+      version: 1, reason: "Build found the board needs an archive of finished cards",
+      addRequirements: [
+        { key: "archive-done-cards", capability: "card-archive", scenarios: [{ name: "Archive",
+          when: "a done card is archived", then: "it leaves the board" }], outcome: "archived" },
+        { key: "session-expiry", capability: "auth", scenarios: [{ name: "Expiry",
+          when: "a session is idle", then: "it expires" }], outcome: "expired" }
+      ],
+      reviseRequirements: [{ key: "show-three-fixed-columns", capability: "kanban-board",
+        scenario: "Page opens", outcome: "Four columns show" }],
+      addTasks: [{ key: "archive", outcome: "Archive cards", paths: ["src/**"], verify: "npm test",
+        covers: ["archive-done-cards", "session-expiry", "show-three-fixed-columns"] }],
+      evidence: { "archive-done-cards": { capabilities: ["test"] },
+        "session-expiry": { capabilities: ["test"] },
+        "show-three-fixed-columns": { capabilities: ["test"] } }
+    },
+    contract, slugify, renderTask: () => "",
+    tasksContent: "# Tasks\n\n- [ ] **T001** Build [key:impl] [claims:show-three-fixed-columns] — verify: `npm test`\n"
+  });
+  assert.deepEqual(compiled.issues, []);
+  writeSemanticAmendment(change, compiled, slugify, { schema: "foundation-standard" });
+  const added = readFileSync(join(change, "specs", "card-archive", "spec.md"), "utf8");
+  assert.match(added, /^# card-archive\n\n## Purpose\n\nBuild found the board needs an archive of finished cards\.\n\n## ADDED Requirements\n/);
+  assert.doesNotMatch(readFileSync(join(change, "specs", "auth", "spec.md"), "utf8"), /## Purpose/);
+  const revised = readFileSync(join(change, "specs", "kanban-board", "spec.md"), "utf8");
+  assert.match(revised, /### Requirement: Show three fixed columns\n[\s\S]*Four columns show/);
+});
+
+// Derived scenario titles (benchmark: "The user adds a card titled" was cut
+// mid-phrase and repeated cases became "(case 2)").
+function derivedScenarioNames(scenarios) {
+  return expandMinimalSemanticDraft(minimalDraft({
+    requirements: [{ description: "The system SHALL manage board cards", scenarios }],
+    tasks: [{ outcome: "Build the board", verify: "npm test", paths: ["src/board.js"] }]
+  })).requirements[0].scenarios.map((scenario) => scenario.name);
+}
+
+test("derived scenario names are whole-word titles without dangling words", () => {
+  const names = derivedScenarioNames([
+    { when: "The user adds a card titled \"Buy milk\" to the To Do column of the board",
+      then: "the card appears in To Do" },
+    { when: "The user moves a To Do card into the Done column of the board after review",
+      then: "the card appears in Done" },
+    { when: "the user opens the board", then: "three columns render" }
+  ]);
+  assert.deepEqual(names, [
+    "User adds a card titled \"Buy milk\" to the To Do column",
+    "User moves a To Do card into the Done column of the board",
+    "User opens the board"
+  ]);
+  for (const name of names) {
+    assert.ok(name.length <= 60, name);
+    assert.doesNotMatch(name, /\b(?:a|an|the|to|of|titled|into|from)$/i, name);
+    assert.doesNotMatch(name, /\(case \d+\)/);
+  }
+});
+
+test("a derived name never cuts inside a quoted title or repeats WHEN", () => {
+  const [quoted, short] = derivedScenarioNames([
+    { when: "the user adds a card titled \"Prepare the quarterly planning review deck\"",
+      then: "the card appears" },
+    { when: "user exports", then: "a CSV file is returned" }
+  ]);
+  // The quote cannot close within the limit, and "titled" would dangle.
+  assert.equal(quoted, "User adds a card");
+  assert.equal(quoted.includes("\""), false);
+  // A short trigger without an article would repeat WHEN; the outcome names it.
+  assert.equal(short, "CSV file is returned");
+  const { issues } = normalizeSemanticDraft(expandMinimalSemanticDraft(minimalDraft({
+    requirements: [{ description: "The system SHALL export",
+      scenarios: [{ when: "user exports", then: "a CSV file is returned" }] }],
+    tasks: [{ outcome: "Export", verify: "npm test", paths: ["src/export.js"] }]
+  })), slugify, { defaultRapidEvidence: true });
+  assert.deepEqual(issues, []);
+});
+
+test("colliding derived names are told apart by their precondition or outcome", () => {
+  const names = derivedScenarioNames([
+    { when: "The user deletes a card", then: "the card is removed" },
+    { when: "The user deletes a card", given: "the card is the last one in its column",
+      then: "the column shows an empty state" },
+    { when: "The user deletes a card", then: "an undo notice appears" },
+    { when: "The user deletes a card", then: "an undo notice appears" }
+  ]);
+  assert.deepEqual(names, [
+    "User deletes a card",
+    "User deletes a card (card is the last one in its column)",
+    "User deletes a card (undo notice appears)",
+    "User deletes a card (2)"
+  ]);
+  assert.equal(new Set(names).size, names.length);
+  // Deterministic: the same draft yields the same names.
+  assert.deepEqual(derivedScenarioNames([
+    { when: "The user deletes a card", then: "the card is removed" },
+    { when: "The user deletes a card", given: "the card is the last one in its column",
+      then: "the column shows an empty state" },
+    { when: "The user deletes a card", then: "an undo notice appears" },
+    { when: "The user deletes a card", then: "an undo notice appears" }
+  ]), names);
+});
+
+test("minimal draft decisions record agent defaults without forcing design", () => {
+  const expanded = expandMinimalSemanticDraft(minimalDraft({
+    requirements: [minimalDraft().requirements[0]],
+    decisions: [
+      { key: "stack", choice: "Plain HTML and JavaScript", reason: "No build step is needed" },
+      { key: "storage", choice: "localStorage" }
+    ]
+  }));
+  assert.deepEqual(expanded.decisions.map((row) => [row.key, row.decidedBy]),
+    [["stack", "agent"], ["storage", "agent"]]);
+  const { draft, issues } = normalizeSemanticDraft(expanded, slugify, { defaultRapidEvidence: true });
+  assert.deepEqual(issues, []);
+  // Agent defaults keep the rapid lane; a user decision is design content.
+  assert.equal(semanticDraftKeepsDesign(draft, true), false);
+  assert.equal(semanticDraftKeepsDesign({
+    ...draft, decisions: [{ ...draft.decisions[0], decidedBy: "user" }]
+  }, true), true);
+  const proposal = renderDraftProposal(draft, { intent: "Export invoices as CSV", schema: "foundation-rapid" });
+  assert.match(proposal, /## Decisions\n\n- \*\*stack:\*\* Plain HTML and JavaScript — No build step is needed \(decided by agent\)\n- \*\*storage:\*\* localStorage \(decided by agent\)/);
+  assert.doesNotMatch(proposal, /No alternative was open/);
+  // The standard lane keeps decisions in design.md, not the proposal.
+  assert.doesNotMatch(renderDraftProposal(draft, { intent: "x", schema: "foundation-standard" }),
+    /## Decisions/);
+  const invalid = normalizeSemanticDraft({ ...expanded,
+    decisions: [{ key: "stack", choice: "Vue", decidedBy: "robot" }] }, slugify,
+  { defaultRapidEvidence: true });
+  assert.match(invalid.issues.join("\n"), /decisions\[0\]\.decidedBy must be user\|agent/);
+});
+
+test("a proposal without a stated why does not repeat the intent", () => {
+  const { draft } = normalizeSemanticDraft(expandMinimalSemanticDraft(explicitCovers()), slugify,
+    { defaultRapidEvidence: true });
+  const proposal = renderDraftProposal(draft, { intent: "Export invoices as CSV", schema: "foundation-rapid" });
+  assert.match(proposal, /^# Change: Export invoices as CSV\n/);
+  assert.doesNotMatch(proposal, /## Why/);
+  assert.equal(proposal.split("Export invoices as CSV").length - 1, 1);
+  const stated = renderDraftProposal({ ...draft, why: "Accountants reconcile invoices in spreadsheets" },
+    { intent: "Export invoices as CSV", schema: "foundation-rapid" });
+  assert.match(stated, /## Why\n\nAccountants reconcile invoices in spreadsheets/);
 });

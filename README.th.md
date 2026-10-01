@@ -559,7 +559,8 @@ authentication, data หรือ migration, behavior
 ที่ coupled, impact สูง, irreversible effect หรืองานที่ต้องใช้ evidence มากกว่า
 unit/static
 
-`foundation-rapid` จงใจไม่มี delta specs และปกติไม่มี design ใช้ได้เฉพาะงาน impact ต่ำ
+`foundation-rapid` compile delta spec แบบกระชับ (merge เข้า `openspec/specs` ตอน
+Land) และปกติไม่มี design ค่า default ที่ agent เลือกเองจะแสดงใน proposal ใช้ได้เฉพาะงาน impact ต่ำ
 แยกขาด ไม่มี public contract, persistent migration, security trigger หรือ
 irreversible effect หากพบ requirement ที่เข้มขึ้น `/change` จะ upgrade change เดิม
 เป็น standard
