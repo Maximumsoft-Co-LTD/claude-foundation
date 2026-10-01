@@ -60,8 +60,8 @@ const CASES = [
     sourcePath: ".claude/harness/runtime/workflow/semantic-amendment.mjs",
     expectedKiller: "CASE-AMENDMENT-TASK-CONTRACT",
     detector: SEMANTIC_DETECTOR,
-    before: "const unsupported = [\"outcome\", \"verify\"].filter((field) =>",
-    after: "const unsupported = [].filter((field) =>"
+    before: "const unsupported = [",
+    after: "const unsupported = [] || ["
   },
   {
     id: "MUT-SEMANTIC-REFERENCE-REALPATH-DROPPED",

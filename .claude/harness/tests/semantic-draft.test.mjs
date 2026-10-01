@@ -18,8 +18,8 @@ import {
   createChangeLifecycle, draftNeedsDesign, renderDraftProposal
 } from "../runtime/workflow/change-lifecycle.mjs";
 import {
-  appendRequirementToSpec, compileSemanticAmendment, updateTaskClaimAnnotation,
-  writeSemanticAmendment
+  appendRequirementToSpec, compileSemanticAmendment, semanticAmendmentTemplate,
+  taskContractOnlyAmendment, updateTaskClaimAnnotation, writeSemanticAmendment
 } from "../runtime/workflow/semantic-amendment.mjs";
 
 const slugify = (value) => String(value).toLowerCase()
@@ -607,6 +607,87 @@ test("semantic amendment never silently replaces a completed task contract", () 
   assert.equal(compiled.tasksContent, undefined);
 });
 
+function verifyFixture(taskLines, provider = { adapter: "test-discovery", command: ["sh", "-c", "npm tset"] }) {
+  return {
+    contract: {
+      version: 1,
+      claims: [
+        { id: "a", requirementKey: "a", scenario: "A runs", capabilities: ["test"] },
+        { id: "b", requirementKey: "b", scenario: "B runs", capabilities: ["lint"] }
+      ],
+      providers: {
+        test: provider,
+        lint: { adapter: "command", capability: "lint", claims: ["b"],
+          command: ["sh", "-c", "npm run lint"] }
+      }
+    },
+    tasksContent: ["# Tasks", "", ...taskLines, ""].join("\n"),
+    slugify,
+    renderTask: () => { throw new Error("no new task expected"); }
+  };
+}
+
+test("a verify-only amendment corrects an unfinished task without requirement input", () => {
+  const amendment = { version: 1, reason: "Fix the typo in the verify command",
+    updateTasks: [{ key: "impl", verify: "npm test", paths: ["src/a.js"] }] };
+  assert.equal(taskContractOnlyAmendment(amendment), true);
+  const compiled = compileSemanticAmendment({ ...verifyFixture([
+    "- [ ] **T001** Build A [key:impl] [paths:src/**] [claims:a] — verify: `npm tset`",
+    "- [x] **T002** Build B [key:lint] [claims:b] — verify: `npm run lint`"
+  ], { adapter: "test-discovery", command: ["sh", "-c", "(npm tset) && (npm run lint)"] }),
+  amendment });
+  assert.deepEqual(compiled.issues, []);
+  assert.match(compiled.tasksContent,
+    /^- \[ \] \*\*T001\*\* Build A \[key:impl\] \[paths:src\/a\.js\] \[claims:a\] — verify: `npm test`$/m);
+  assert.match(compiled.tasksContent, /^- \[x\] \*\*T002\*\*.*verify: `npm run lint`$/m);
+  // The derived provider command follows the tasks; an explicit one does not.
+  assert.deepEqual(compiled.providers.test.command, ["sh", "-c", "(npm test) && (npm run lint)"]);
+  assert.deepEqual(compiled.providers.lint.command, ["sh", "-c", "npm run lint"]);
+  assert.deepEqual(compiled.taskContractChanges, [{
+    key: "impl", id: "T001", claims: ["a"], verify: "npm test", paths: ["src/a.js"]
+  }]);
+  assert.deepEqual(compiled.invalidatedClaims, ["a"]);
+  assert.deepEqual(compiled.claims, verifyFixture([]).contract.claims);
+  assert.deepEqual([compiled.addedRequirementKeys, compiled.revisedRequirementKeys,
+    compiled.removedRequirementKeys], [[], [], []]);
+});
+
+test("a verify-only amendment cannot rewrite completed or proven work", () => {
+  const amendment = { version: 1, updateTasks: [{ key: "impl", verify: "npm test" }] };
+  const checked = compileSemanticAmendment({ ...verifyFixture([
+    "- [x] **T001** Build A [key:impl] [claims:a] — verify: `npm tset`"
+  ]), amendment });
+  assert.match(checked.issues.join("\n"),
+    /updateTasks\[0\] cannot replace verify; add a new task so completed work keeps its meaning/);
+  assert.equal(checked.tasksContent, undefined);
+  const open = verifyFixture(["- [ ] **T001** Build A [key:impl] [claims:a] — verify: `npm tset`"]);
+  assert.match(compileSemanticAmendment({ ...open, amendment, provenClaimIds: ["a"] })
+    .issues.join("\n"), /cannot replace verify/);
+  assert.deepEqual(compileSemanticAmendment({ ...open, amendment, provenClaimIds: ["b"] })
+    .issues, []);
+  // Resending the current command changes nothing and is refused as a no-op.
+  assert.match(compileSemanticAmendment({ ...open, amendment: { version: 1,
+    updateTasks: [{ key: "impl", verify: "npm tset" }] } }).issues.join("\n"),
+  /changes no verify command or paths/);
+  assert.match(compileSemanticAmendment({ ...open, amendment: { version: 1,
+    updateTasks: [{ key: "impl", verify: "npm `x`" }] } }).issues.join("\n"),
+  /verify must be a non-empty one-line command without backticks/);
+  // Outcome and covers are not verify-only; they still need a requirement change.
+  for (const row of [{ key: "impl", verify: "npm test", outcome: "Other" },
+    { key: "impl", verify: "npm test", covers: ["a"] }]) {
+    assert.equal(taskContractOnlyAmendment({ version: 1, updateTasks: [row] }), false);
+    assert.match(compileSemanticAmendment({ ...open, amendment: { version: 1, updateTasks: [row] } })
+      .issues.join("\n"), /requires a non-empty addRequirements/);
+  }
+});
+
+test("the amendment template leads with the verify-only form", () => {
+  const template = semanticAmendmentTemplate();
+  assert.deepEqual(Object.keys(template), ["verifyOnly", "requirementChange"]);
+  assert.equal(taskContractOnlyAmendment(template.verifyOnly), true);
+  assert.equal(taskContractOnlyAmendment(template.requirementChange), false);
+});
+
 test("change amend installs atomically and restores files and state on validation failure", (t) => {
   const root = mkdtempSync(join(tmpdir(), "semantic-amend-transaction-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -837,6 +918,127 @@ test("change amend installs atomically and restores files and state on validatio
     assert.equal(readFileSync(join(receipts, "lint.json"), "utf8"), receiptBeforeFailedRebind);
     assert.equal(readdirSync(join(root, ".foundation", "evidence", id,
       "receipt-rebinds")).length, auditCountBefore);
+    assert.deepEqual(state, before.state);
+  } finally {
+    console.log = priorLog;
+  }
+});
+
+test("a verify-only change amend reruns that task's evidence and keeps the rest", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "verify-amend-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const id = "verify-change";
+  const change = join(root, ".foundation", "sandboxes", id, "openspec", "changes", id);
+  mkdirSync(change, { recursive: true });
+  writeFileSync(join(change, "tasks.md"), [
+    "# Tasks", "",
+    "- [ ] **T001** Build A [key:impl] [claims:a] — verify: `npm tset`",
+    "- [x] **T002** Build B [key:style] [claims:b] — verify: `npm run lint`", ""
+  ].join("\n"));
+  writeFileSync(join(change, "evidence.yaml"), `${JSON.stringify({
+    version: 1,
+    claims: [
+      { id: "a", requirementKey: "a", scenario: "A runs", capabilities: ["test"] },
+      { id: "b", requirementKey: "b", scenario: "B runs", capabilities: ["lint"] }
+    ],
+    providers: {
+      test: { adapter: "test-discovery", capability: "test", claims: ["a"],
+        command: ["sh", "-c", "(npm tset) && (npm run lint)"] },
+      lint: { adapter: "command", capability: "lint", claims: ["b"],
+        command: ["sh", "-c", "npm run lint"] }
+    }
+  }, null, 2)}\n`);
+  let state = { id, status: "building", semanticDraftVersion: 4,
+    revision: 0, contractRevision: 0, executionRevision: 0 };
+  let rejectValidation = false;
+  const stableHash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+  const contract = () => JSON.parse(readFileSync(join(change, "evidence.yaml"), "utf8"));
+  const contractFingerprint = () => stableHash(contract());
+  const receipts = join(root, ".foundation", "receipts", id);
+  mkdirSync(receipts, { recursive: true });
+  const writeReceipt = (provider, status) => writeFileSync(join(receipts, `${provider}.json`),
+    `${JSON.stringify({ provider, status, contractFingerprint: contractFingerprint() })}\n`);
+  writeReceipt("test", "fail");
+  writeReceipt("lint", "pass");
+  const lifecycle = createChangeLifecycle({
+    root,
+    policy: () => ({ workflow: { grounding: "optional" } }),
+    securityTerms: [],
+    fail: (message) => { throw new Error(message); },
+    pathInside: (parent, candidate) => {
+      const rel = relative(parent, candidate);
+      return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+    },
+    readJson: (path) => JSON.parse(readFileSync(path, "utf8")),
+    writeJson: (path, value) => writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`),
+    slugify,
+    changePath: () => change,
+    activeChangePath: () => change,
+    loadRuntime: () => state,
+    saveRuntime: (value) => { state = structuredClone(value); },
+    validate: () => { if (rejectValidation) throw new Error("synthetic validator failure"); },
+    now: () => "2026-10-01T00:00:00.000Z",
+    receiptPath: (_changeId, provider) => join(receipts, `${provider}.json`),
+    receiptValidity: (_changeId, provider) => {
+      const receipt = JSON.parse(readFileSync(join(receipts, `${provider}.json`), "utf8"));
+      return { provider, status: receipt.status,
+        validity: receipt.contractFingerprint === contractFingerprint() ? "valid" : "contract-stale" };
+    },
+    contractFingerprint,
+    requiredProviders: () => Object.keys(contract().providers),
+    providerConfig: (_changeId, provider) => contract().providers[provider],
+    claimsForProvider: (_changeId, provider) => contract().claims.filter((claim) =>
+      contract().providers[provider].claims.includes(claim.id)),
+    relevantHash: () => "workspace",
+    providerWorkspaceHash: () => "workspace",
+    providerInputIdentity: () => ({ mode: "declared", fingerprint: "inputs" }),
+    stableHash
+  });
+  const amend = (verify) => {
+    writeFileSync(join(root, "amendment.json"), JSON.stringify({
+      version: 1, reason: "Correct the verify command",
+      updateTasks: [{ key: "impl", verify }]
+    }));
+    return lifecycle.amendChange(id, "amendment.json");
+  };
+  const priorLog = console.log;
+  console.log = () => {};
+  try {
+    const failedReceipt = readFileSync(join(receipts, "test.json"), "utf8");
+    // Version 4 needs no semantic intake for a verify-only correction.
+    amend("npm test");
+    assert.equal(state.contractRevision, 1);
+    assert.equal(state.pendingApprovalDelta, undefined);
+    const [row] = state.amendments;
+    assert.deepEqual(row.taskContractChanges,
+      [{ key: "impl", id: "T001", claims: ["a"], verify: "npm test" }]);
+    assert.deepEqual(row.invalidation.affectedTasks, ["T001"]);
+    assert.deepEqual(row.invalidation.proofRecovery.providers.rerun, ["test"]);
+    assert.deepEqual(row.invalidation.proofRecovery.providers.preserved, ["lint"]);
+    assert.match(readFileSync(join(change, "tasks.md"), "utf8"),
+      /^- \[ \] \*\*T001\*\* Build A \[key:impl\] \[claims:a\] — verify: `npm test`$/m);
+    assert.deepEqual(contract().providers.test.command,
+      ["sh", "-c", "(npm test) && (npm run lint)"]);
+    // The task's receipt is left stale for Prove to rerun; the other is rebound.
+    assert.equal(readFileSync(join(receipts, "test.json"), "utf8"), failedReceipt);
+    assert.notEqual(JSON.parse(failedReceipt).contractFingerprint, contractFingerprint());
+    const lint = JSON.parse(readFileSync(join(receipts, "lint.json"), "utf8"));
+    assert.equal(lint.contractFingerprint, contractFingerprint());
+    assert.equal(lint.contractRebind.reason, "unaffected-semantic-amendment");
+
+    const before = { tasks: readFileSync(join(change, "tasks.md"), "utf8"),
+      evidence: readFileSync(join(change, "evidence.yaml"), "utf8"), state: structuredClone(state) };
+    rejectValidation = true;
+    assert.throws(() => amend("npm run test:unit"),
+      /synthetic validator failure; semantic amendment rolled back/);
+    assert.equal(readFileSync(join(change, "tasks.md"), "utf8"), before.tasks);
+    assert.equal(readFileSync(join(change, "evidence.yaml"), "utf8"), before.evidence);
+    assert.deepEqual(state, before.state);
+
+    // Once that task's command evidence passes, its verify is finished work.
+    rejectValidation = false;
+    writeReceipt("test", "pass");
+    assert.throws(() => amend("npm run test:unit"), /updateTasks\[0\] cannot replace verify/);
     assert.deepEqual(state, before.state);
   } finally {
     console.log = priorLog;

@@ -378,6 +378,25 @@ out="$(printf '%s' "$(write_event "$TMP/outside/adoption.js")" |
   CLAUDE_PROJECT_DIR="$TMP/outside" node "$HOOK")"
 assert_eq "default auto mode stays out of adoption-only sessions" "" "$out"
 
+# Harness CLI spellings (npx, npx flags, bin paths) classify exactly like the
+# bare CLI: a pre-phase read-only command stays allowed and an authority
+# command outside its invocation stays blocked.
+for cli in "npx claude-foundation" "npx --no-install claude-foundation" \
+  "npx -y claude-foundation" "./node_modules/.bin/claude-foundation" \
+  "$TMP/project/node_modules/.bin/claude-foundation"; do
+  out="$(printf '%s' "$(bash_event "$cli change start --template")" |
+    CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
+  assert_eq "pre-phase '$cli change start' is allowed like the bare CLI" "" "$out"
+  out="$(printf '%s' "$(bash_event "$cli land advance delivery-change")" |
+    CLAUDE_PROJECT_DIR="$TMP/project" node "$HOOK")"
+  assert_contains "'$cli land advance' still requires the current /land invocation" \
+    "$out" 'requires the current /land invocation'
+  out="$(printf '%s' "$(bash_event "$cli deliver advance delivery-change")" |
+    CLAUDE_PROJECT_DIR="$TMP/project" node "$HOOK")"
+  assert_contains "'$cli deliver advance' still requires the current /deliver invocation" \
+    "$out" 'requires the current /deliver invocation'
+done
+
 # --- The prefilter: what it may skip, and what it must never skip. ----------
 #
 # The wired hook is the shell prefilter; the guard above is what it execs. These
@@ -433,6 +452,10 @@ land_event="{\"transcript_path\":\"$TMP/land-transcript.jsonl\",\"tool_name\":\"
 out="$(printf '%s' "$land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
   FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
 assert_eq "current /land may invoke the stable lifecycle wrapper" "" "$out"
+npx_land_event="{\"transcript_path\":\"$TMP/land-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"npx --no-install claude-foundation land advance delivery-change\"}}"
+out="$(printf '%s' "$npx_land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
+  FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
+assert_eq "current /land may invoke the wrapper through npx" "" "$out"
 
 dev_land_event="{\"transcript_path\":\"$TMP/dev-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation land advance delivery-change\"}}"
 out="$(printf '%s' "$dev_land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \

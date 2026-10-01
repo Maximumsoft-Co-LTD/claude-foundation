@@ -17,7 +17,7 @@ surface is:
 |---|---|
 | `investigate --template \| <record.json>` | Validate source-bound facts and hypotheses, persist resume state, and emit a Change handoff |
 | `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect a draft and, when complete, compile and atomically start it in one call; `--inspect` inspects only |
-| `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake or transactionally add, revise, or remove requirements during Build |
+| `change amend --template \| <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake or transactionally add, revise, or remove requirements, or fix an unfinished task's verify command, during Build |
 | `advance <change> --through build\|proven\|archived` | Run deterministic lifecycle work (evidence wiring, sandbox sync, agent-runnable review, task ticking) and return one of six bounded actions at the next real boundary |
 | `advance <change> --approve-spec --decision-ref <ref>` | Record the user's spec approval (alias of `change resolve --approve-spec`) |
 | `deliver advance <change>` | After explicit `/deliver`, automate isolated commit, feature-branch push, PR creation/reuse, provider verification, and return the URL |
@@ -71,7 +71,7 @@ language profiles, baselines, and rollout policy.
 | `investigate --template \| <record.json>` | Print or validate a versioned investigation record and return one typed action |
 | `change new <intent> [--rapid]` | Compatible primitive for manually authoring a change agreement |
 | `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect and, when complete, compile and start an agreement from one semantic draft in one call; Build creates isolation later |
-| `change amend <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake or add, revise, or remove semantic requirements transactionally while preserving completed work |
+| `change amend --template \| <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake or add, revise, or remove semantic requirements, or fix an unfinished task's verify command, transactionally while preserving completed work |
 | `change revise <change> <draft.json> [--inspect] [--consume-draft]` | Before Build, recompile a revised semantic draft over the same change id with rollback and a requirement delta (approval carries unless a requirement is removed) |
 | `change resolve <change> …` | Persist impact, coupling, security, and review decisions |
 | `change validate <change>` | Validate the change and its executable evidence contract |

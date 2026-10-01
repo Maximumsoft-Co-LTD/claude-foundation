@@ -48,6 +48,18 @@ test("every frozen public command retains a successful non-mutating help route",
   }
 });
 
+test("change amend --template prints the amendment template without a change", () => {
+  const run = (...args) => spawnSync("bash", ["./cli.sh", "change", "amend", ...args], {
+    cwd: root, encoding: "utf8", env: { ...process.env, CLAUDE_FOUNDATION_PROJECT: root }
+  });
+  const result = run("--template");
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout).verifyOnly.updateTasks,
+    [{ key: "<existing-task-key>", verify: "<command>" }]);
+  assert.notEqual(run("--template", "demo").status, 0);
+  assert.match(run("demo").stderr, /change amend requires --template or <change> <amendment\.json>/);
+});
+
 test("golden corpus keeps durable coverage for public outcome categories", () => {
   assert.deepEqual(Object.keys(fixture.observableOutcomeCoverage).sort(), [
     "blockedDecision", "invalidFlags", "recoveryCommand", "resumableFailure",

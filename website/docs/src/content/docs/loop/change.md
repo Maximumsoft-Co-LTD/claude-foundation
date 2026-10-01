@@ -202,8 +202,11 @@ claude-foundation change amend <change> <amendment.json> --consume-amendment
 
 It preserves completed tasks, custom prose, diagrams, and unrelated sections;
 adds stable links, increments the revision, validates, and rolls back on
-failure. An existing task may gain claim coverage, but replacing its outcome or
-verification command requires a new task. Legacy changes retain their
+failure. An existing task may gain claim coverage, but replacing its outcome,
+or a completed task's verify command, requires a new task. To fix the verify
+command of an unfinished task, send only `updateTasks: [{"key", "verify",
+"paths"?}]`: no requirement, evidence, or intake is needed, and Prove reruns
+that task's evidence. `change amend --template` prints both forms. Legacy changes retain their
 compatible manual path. A version-4 amendment must include discovery coverage
 for its added requirements; the validated delta is appended to `proposal.md`.
 Before mutation, the harness records the affected claims, tasks, and

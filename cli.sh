@@ -361,7 +361,8 @@ case "${1:-}" in
         [ "$#" -ge 1 ] || fail "change resolve requires <change>"
         run_runtime write resolve "$@" ;;
       amend)
-        [ "$#" -ge 2 ] || fail "change amend requires <change> <amendment.json>"
+        [ "$#" -ge 2 ] || [ "${1:-}" = "--template" ] ||
+          fail "change amend requires --template or <change> <amendment.json>"
         run_runtime write amend "$@" ;;
       revise)
         [ "$#" -ge 2 ] || fail "change revise requires <change> <draft.json>"

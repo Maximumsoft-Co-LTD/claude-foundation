@@ -153,7 +153,10 @@ claude-foundation change amend <change> <amendment.json> --consume-amendment
 มันรักษา task ที่เสร็จแล้ว prose/diagram/section ที่ไม่เกี่ยวข้อง เพิ่ม link แบบ
 stable เพิ่ม revision แล้ว validate ทั้งชุด หากล้มเหลวจะ rollback Change เก่ายังใช้
 manual path เดิมได้ Existing task เพิ่ม claim coverage ได้ แต่ถ้าจะเปลี่ยน outcome
-หรือ verify command ต้องเพิ่ม task ใหม่ Amendment ของ agreement v4 ต้องมี
+หรือ verify command ของ task ที่เสร็จแล้วต้องเพิ่ม task ใหม่ ถ้าจะแก้ verify command
+ของ task ที่ยังไม่เสร็จ ให้ส่งเฉพาะ `updateTasks: [{"key", "verify", "paths"?}]`
+โดยไม่ต้องมี requirement, evidence หรือ intake และ Prove จะ rerun evidence ของ task
+นั้น `change amend --template` แสดงทั้งสองรูปแบบ Amendment ของ agreement v4 ต้องมี
 discovery coverage สำหรับ requirement ที่เพิ่ม และ compiler จะต่อ delta ที่ผ่าน
 validation เข้า `proposal.md` ก่อน mutation harness จะบันทึก claim, task และ
 provider dependency closure ที่ได้รับผลไว้เป็น bounded input สำหรับ proof scheduling

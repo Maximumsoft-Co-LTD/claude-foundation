@@ -34,6 +34,73 @@ function taskVerify(line) {
   return String(line).match(/—\s*verify:\s*`([^`]+)`/i)?.[1]?.trim() || "";
 }
 
+function taskPaths(line) {
+  return stringList(String(line).match(/\[paths:([^\]]*)\]/i)?.[1]?.split(","));
+}
+
+function replaceTaskVerify(line, verify) {
+  return /—\s*verify:\s*`[^`]+`/i.test(line)
+    ? line.replace(/—\s*verify:\s*`[^`]+`/i, `— verify: \`${verify}\``)
+    : `${line.trimEnd()} — verify: \`${verify}\``;
+}
+
+function replaceTaskPaths(line, paths) {
+  const annotation = paths.length ? `[paths:${paths.join(",")}]` : "";
+  if (/\[paths:[^\]]*\]/i.test(line))
+    return line.replace(/ ?\[paths:[^\]]*\]/i, annotation ? ` ${annotation}` : "");
+  if (!annotation) return line;
+  const marker = line.indexOf(" — verify:");
+  return marker < 0
+    ? `${line.trimEnd()} ${annotation}`
+    : `${line.slice(0, marker).trimEnd()} ${annotation}${line.slice(marker)}`;
+}
+
+const TASK_CONTRACT_FIELDS = ["verify", "paths"];
+const hasField = (row, field) => Object.prototype.hasOwnProperty.call(row || {}, field);
+
+/**
+ * A task-contract amendment only corrects the verify command (and optionally
+ * the paths) of existing tasks. It carries no requirement change, so it needs
+ * no requirement, evidence, or semantic-intake input.
+ */
+export function taskContractOnlyAmendment(amendment) {
+  const updates = amendment?.updateTasks;
+  return ["addRequirements", "reviseRequirements", "removeRequirements", "addTasks"]
+    .every((field) => !amendmentList(amendment, field).length) &&
+    Array.isArray(updates) && updates.length > 0 &&
+    updates.every((row) => row && typeof row === "object" && !Array.isArray(row) &&
+      hasField(row, "verify") &&
+      Object.keys(row).every((field) => ["key", ...TASK_CONTRACT_FIELDS].includes(field)));
+}
+
+/** The shape `change amend --template` prints; the verify-only form leads. */
+export function semanticAmendmentTemplate() {
+  return {
+    verifyOnly: {
+      version: 1,
+      reason: "Correct the verify command of an unfinished task",
+      updateTasks: [{ key: "<existing-task-key>", verify: "<command>" }]
+    },
+    requirementChange: {
+      version: 1,
+      reason: "<what Build discovered>",
+      addRequirements: [{
+        key: "<new-requirement-key>", capability: "<capability>", operation: "added",
+        scenarios: [{ name: "<scenario>", when: "<condition>", then: "<outcome>" }],
+        outcome: "<observable outcome>"
+      }],
+      reviseRequirements: [],
+      removeRequirements: [{ key: "<requirement-key>", migration: "<why and what replaces it>" }],
+      updateTasks: [{ key: "<existing-task-key>", covers: ["<requirement-key>"] }],
+      addTasks: [{
+        key: "<new-task-key>", outcome: "<task outcome>", covers: ["<new-requirement-key>"],
+        paths: ["<path/glob>"], verify: "<command>"
+      }],
+      evidence: { "<new-requirement-key>": { capabilities: ["test"] } }
+    }
+  };
+}
+
 export function updateTaskClaimAnnotation(line, claimIds) {
   const claims = `[claims:${unique(claimIds).join(",")}]`;
   if (/\[claims:[^\]]*\]/i.test(line))
@@ -128,9 +195,10 @@ function amendmentIssues(amendment) {
   const added = amendmentList(amendment, "addRequirements");
   const revised = amendmentList(amendment, "reviseRequirements");
   const removed = amendmentList(amendment, "removeRequirements");
-  if (!added.length && !revised.length && !removed.length)
+  if (!added.length && !revised.length && !removed.length && !taskContractOnlyAmendment(amendment))
     issues.push("semantic amendment requires a non-empty addRequirements, " +
-      "reviseRequirements, or removeRequirements array");
+      "reviseRequirements, or removeRequirements array, or only updateTasks " +
+      "{key, verify, paths?} rows");
   if ((added.length || revised.length) && (!amendment?.evidence ||
       typeof amendment.evidence !== "object" || Array.isArray(amendment.evidence)))
     issues.push("semantic amendment requires evidence keyed by each added or revised requirement");
@@ -141,12 +209,16 @@ function amendmentIssues(amendment) {
   }
   if (amendment?.updateTasks !== undefined && !Array.isArray(amendment.updateTasks))
     issues.push("semantic amendment updateTasks must be an array");
-  for (const [index, task] of (amendment?.updateTasks || []).entries()) {
-    const unsupported = ["outcome", "verify"].filter((field) =>
-      Object.prototype.hasOwnProperty.call(task || {}, field));
-    if (unsupported.length)
-      issues.push(`semantic amendment updateTasks[${index}] cannot replace ${
-        unsupported.join(" or ")}; add a new task so completed work keeps its meaning`);
+  for (const [index, task] of (Array.isArray(amendment?.updateTasks)
+    ? amendment.updateTasks : []).entries()) {
+    if (hasField(task, "verify") && (typeof task.verify !== "string" ||
+        !task.verify.trim() || /[`\r\n]/.test(task.verify)))
+      issues.push(`semantic amendment updateTasks[${index}].verify must be a ` +
+        "non-empty one-line command without backticks");
+    if (hasField(task, "paths") && (!Array.isArray(task.paths) ||
+        task.paths.some((path) => typeof path !== "string" || !path.trim() || /[,\]\s]/.test(path))))
+      issues.push(`semantic amendment updateTasks[${index}].paths must be an array of ` +
+        "path globs without commas, brackets, or spaces");
   }
   if (amendment?.addTasks !== undefined && !Array.isArray(amendment.addTasks))
     issues.push("semantic amendment addTasks must be an array");
@@ -155,7 +227,7 @@ function amendmentIssues(amendment) {
 
 export function compileSemanticAmendment({
   amendment, contract, tasksContent, slugify, renderTask, semanticDraftVersion = 3,
-  loadCanonicalSpec = null
+  loadCanonicalSpec = null, provenClaimIds = []
 }) {
   const issues = amendmentIssues(amendment);
   if (![3, 4].includes(semanticDraftVersion))
@@ -177,6 +249,43 @@ export function compileSemanticAmendment({
     if (id) maxTask = Math.max(maxTask, Number(id.slice(1)) || 0);
     const key = semanticTaskKey(line);
     if (key) tasksByKey.set(key, { index, line, id });
+  }
+
+  // Outcome never changes in place. Verify and paths change in place only on
+  // an unfinished task: unchecked and without a passing command receipt.
+  const proven = new Set(stringList(provenClaimIds));
+  const taskContractChanges = [];
+  for (const [index, update] of (Array.isArray(amendment?.updateTasks)
+    ? amendment.updateTasks : []).entries()) {
+    const row = tasksByKey.get(keyOf(update));
+    const completed = row && (taskCompleted(row.line) ||
+      taskClaims(row.line).some((id) => proven.has(id)));
+    const changes = {};
+    if (row && typeof update?.verify === "string" && update.verify.trim() !== taskVerify(row.line))
+      changes.verify = update.verify.trim();
+    if (row && Array.isArray(update?.paths) &&
+        JSON.stringify(stringList(update.paths)) !== JSON.stringify(taskPaths(row.line)))
+      changes.paths = stringList(update.paths);
+    const unsupported = [
+      ...(hasField(update, "outcome") ? ["outcome"] : []),
+      ...(completed ? TASK_CONTRACT_FIELDS.filter((field) => hasField(changes, field)) : [])
+    ];
+    if (unsupported.length)
+      issues.push(`semantic amendment updateTasks[${index}] cannot replace ${
+        unsupported.join(" or ")}; add a new task so completed work keeps its meaning`);
+    else if (row && Object.keys(changes).length)
+      taskContractChanges.push({ key: keyOf(update), index: row.index, ...changes });
+  }
+  if (taskContractOnlyAmendment(amendment) && !taskContractChanges.length &&
+      amendment.updateTasks.every((update) => tasksByKey.has(keyOf(update))) &&
+      !issues.some((issue) => issue.startsWith("semantic amendment updateTasks[")))
+    issues.push("semantic amendment updateTasks changes no verify command or paths");
+  for (const change of taskContractChanges) {
+    let line = taskLines[change.index];
+    if (change.verify !== undefined) line = replaceTaskVerify(line, change.verify);
+    if (change.paths !== undefined) line = replaceTaskPaths(line, change.paths);
+    taskLines[change.index] = line;
+    tasksByKey.set(change.key, { ...tasksByKey.get(change.key), line });
   }
 
   const addRequirements = amendmentList(amendment, "addRequirements");
@@ -343,6 +452,24 @@ export function compileSemanticAmendment({
     else if (providers[name].command && ["command", "test-discovery"].includes(providers[name].adapter))
       providers[name] = { ...providers[name], command: allCommand };
   }
+  // A provider command derived from the task verify commands follows them;
+  // an explicitly configured command stays as the author wrote it.
+  if (taskContractChanges.some((change) => change.verify !== undefined)) {
+    const priorCommand = JSON.stringify(combinedCommand(tasksContent));
+    for (const [name, config] of Object.entries(providers))
+      if (["command", "test-discovery"].includes(config?.adapter) &&
+          JSON.stringify(config.command) === priorCommand)
+        providers[name] = { ...config, command: allCommand };
+  }
+  const taskContractTasks = taskContractChanges.map((change) => {
+    const line = taskLines[change.index];
+    return {
+      key: change.key, id: taskId(line), claims: taskClaims(line),
+      ...(change.verify !== undefined ? { verify: change.verify } : {}),
+      ...(change.paths !== undefined ? { paths: change.paths } : {})
+    };
+  });
+  const taskContractClaimIds = unique(taskContractTasks.flatMap((task) => task.claims));
   const priorScenarios = (key) => (claimsByRequirement.get(key) || [])
     .map((id) => priorClaimById.get(id)?.scenario).filter(Boolean);
   const specs = normalized.draft.specs;
@@ -371,9 +498,11 @@ export function compileSemanticAmendment({
     })),
     discovery: normalized.draft.discovery,
     amendmentReason: amendment.reason || "Agreement expanded during Build",
-    invalidatedClaims: [...addedClaimIds, ...changedClaimIds],
+    invalidatedClaims: unique([...addedClaimIds, ...changedClaimIds, ...taskContractClaimIds]),
     addedClaimIds,
     changedClaimIds,
+    taskContractChanges: taskContractTasks,
+    taskContractClaimIds,
     removedClaimIds: [...retiredClaimIds].filter((id) => !nextClaimIds.has(id)),
     priorClaims: existingClaims,
     addedRequirementKeys: [...addedKeys],

@@ -298,13 +298,24 @@ const MUTATING_WORD = /(?:^|[;&|`()]|\b(?:then|do)\b)\s*(?:sudo\s+|env\s+)*(?:[^
 const IN_PLACE_EDIT = /(^|[;&|`()]|\b(?:then|do)\b)\s*(?:sudo\s+|env\s+)*(?:sed|perl|ruby)\s+(?:-\S+\s+)*-\S*i/m;
 const REDIRECT = /(?:^|[^<])(?:>>?|2>>?)\s*(?!&)(?!\/dev\/null(?:[\s;&|)]|$))\S/m;
 
+// The harness CLI is one program however the host spells it: through `npx`
+// (optionally `--no-install`, `--no`, `-y`, `--yes`) or by a path to its bin.
+// Every spelling at a command position is rewritten to bare `claude-foundation`
+// so classification — including authority patterns — cannot differ by spelling.
+const HARNESS_CLI_SPELLING = /((?:^|[;&|`()]|\b(?:then|do)\b)\s*(?:sudo\s+|env\s+)*)(?:npx(?:\s+(?:--no-install|--no|--yes|-y))*\s+|[^\s;&|()`'"<>]*\/)claude-foundation(?=[\s;&|()`]|$)/gm;
+
+export function normalizeHarnessCliInvocations(command) {
+  return String(command || "").replace(HARNESS_CLI_SPELLING, "$1claude-foundation");
+}
+
 // The matched command words, not merely whether one exists: a phase rule that
 // permits some operations and refuses others has to name the ones it refused.
 export function mutatingShellOperations(command) {
   const value = String(command || "");
   // Quoted text is opaque to the word screens, but it is still an operand:
   // erasing it entirely made `> "/etc/x"` read as a redirect with no target.
-  const stripped = value.replace(/(['"])(?:\\.|(?!\1).)*\1/g, " _ ");
+  const stripped = normalizeHarnessCliInvocations(
+    value.replace(/(['"])(?:\\.|(?!\1).)*\1/g, " _ "));
   const operations = [];
   if (INTERPRETER.test(value) && INTERPRETER_WRITE.test(value))
     operations.push("interpreter write");

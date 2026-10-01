@@ -33,7 +33,8 @@ import {
   reduceSemanticIntakeState, semanticDraftDigest, semanticIntakeResumeProjection
 } from "./semantic-intake-state.mjs";
 import {
-  compileSemanticAmendment, writeSemanticAmendment
+  compileSemanticAmendment, semanticAmendmentTemplate, taskContractOnlyAmendment,
+  writeSemanticAmendment
 } from "./semantic-amendment.mjs";
 import { validateInvestigationBinding } from "./investigation-runtime.mjs";
 import {
@@ -1912,6 +1913,22 @@ export function createChangeLifecycle({
     return delta;
   }
 
+  // Claims whose command evidence already passed and is still valid: the task
+  // verify commands those receipts ran are finished work, not open drafts.
+  function provenCommandClaimIds(id) {
+    if (!receiptPath || !receiptValidity || !requiredProviders || !providerConfig ||
+        !claimsForProvider) return [];
+    return [...new Set(requiredProviders(id).flatMap((provider) => {
+      if (!["command", "test-discovery"].includes(providerConfig(id, provider)?.adapter)) return [];
+      const path = receiptPath(id, provider);
+      if (!existsSync(path)) return [];
+      let receipt = null;
+      try { receipt = readJson(path); } catch { return []; }
+      if (receipt?.status !== "pass" || receiptValidity(id, provider).validity !== "valid") return [];
+      return claimsForProvider(id, provider).map((claim) => claim.id);
+    }))];
+  }
+
   function amendChangeUnlocked(id, amendmentPath, options, state, expectedRevision) {
     if (![3, 4].includes(state.semanticDraftVersion))
       fail(`change amend requires a semantic-draft v3 or v4 change; '${id}' is a legacy agreement`);
@@ -1923,7 +1940,9 @@ export function createChangeLifecycle({
     const amendment = readJson(source);
     const amendmentStatePath = semanticIntakeStatePath(amendmentPath, `amend:${id}`);
     let completedAmendmentIntakeEffectiveness = null;
-    if (state.semanticDraftVersion === 4) {
+    // A verify-only correction changes no requirement, so it has no semantic
+    // intake to complete.
+    if (state.semanticDraftVersion === 4 && !taskContractOnlyAmendment(amendment)) {
       const resume = `claude-foundation change amend ${id} ${amendmentPath} --inspect`;
       let intakeState = null;
       if (existsSync(amendmentStatePath)) {
@@ -1952,6 +1971,9 @@ export function createChangeLifecycle({
     const compiled = compileSemanticAmendment({
       amendment, contract, tasksContent, slugify, renderTask: renderDraftTask,
       semanticDraftVersion: state.semanticDraftVersion,
+      provenClaimIds: (amendment?.updateTasks || []).some((task) =>
+        task && (Object.hasOwn(task, "verify") || Object.hasOwn(task, "paths")))
+        ? provenCommandClaimIds(id) : [],
       loadCanonicalSpec: (capability) => {
         const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
         return existsSync(path) ? readFileSync(path, "utf8") : null;
@@ -1959,11 +1981,15 @@ export function createChangeLifecycle({
     });
     if (compiled.issues.length)
       fail(`semantic amendment validation failed:\n  - ${compiled.issues.join("\n  - ")}`);
-    const coverageChanges = (compiled.discovery?.coverage || []).map((row) => ({
+    const coverageChanges = [...(compiled.discovery?.coverage || []).map((row) => ({
       dimension: row.dimension,
       claimIds: compiled.claims.filter((claim) =>
         (row.covers || []).includes(claim.requirementKey)).map((claim) => claim.id)
-    }));
+    })),
+    // A changed task verify command invalidates the evidence for that task's
+    // claims (every claim when the task binds none), so Prove reruns it.
+    ...(compiled.taskContractChanges.length
+      ? [{ dimension: "task-verify", claimIds: compiled.taskContractClaimIds }] : [])];
     const configuredProviderNames = requiredProviders ? requiredProviders(id) : [];
     const providerEntries = new Map(Object.entries(compiled.providers || {}));
     for (const name of configuredProviderNames) {
@@ -2104,6 +2130,8 @@ export function createChangeLifecycle({
         removedRequirementKeys: compiled.removedRequirementKeys,
         removedClaims: compiled.removedClaimIds,
         invalidatedClaims: compiled.invalidatedClaims,
+        ...(compiled.taskContractChanges.length
+          ? { taskContractChanges: compiled.taskContractChanges } : {}),
         invalidation: {
           affectedTasks: invalidation.affectedTasks,
           affectedProviders: invalidation.affectedProviders,
@@ -2122,8 +2150,10 @@ export function createChangeLifecycle({
         revised: compiled.revisedRequirementKeys,
         removed: compiled.removedRequirementKeys
       };
+      const requirementDelta = Object.values(amendmentDelta).some((keys) => keys.length);
       if (!carrySpecApproval(priorState, nextState, id, amendmentDelta,
-        `semantic-amendment: ${String(amendment.reason || "Agreement expanded during Build")}`))
+        `semantic-amendment: ${String(amendment.reason || "Agreement expanded during Build")}`) &&
+          (requirementDelta || nextState.pendingApprovalDelta))
         recordApprovalDelta(nextState, amendmentDelta);
       if (nextState.requirementFingerprints) {
         const fingerprints = { ...nextState.requirementFingerprints,
@@ -2202,6 +2232,7 @@ export function createChangeLifecycle({
     materializeDraft,
     createChange,
     rapidStartTemplate,
+    amendmentTemplate: semanticAmendmentTemplate,
     inspectDraft,
     inspectAmendment,
     startAtomic,

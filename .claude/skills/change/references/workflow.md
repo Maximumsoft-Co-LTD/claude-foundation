@@ -115,8 +115,10 @@ run `change amend <change> <amendment.json> --inspect`; after `DONE`, rerun with
 increments the revision, invalidates the affected contract, and rolls back on
 failure. Never rewrite a legacy change only to migrate it. An amendment to a v4 agreement must include discovery coverage
 for added and revised requirements. `updateTasks` may extend claim coverage but
-must not replace an existing outcome or verification command; add a new task
-when that contract changes. `reviseRequirements` replaces a requirement row in
+must not replace an outcome or a completed task's verify command; add a new task
+when that contract changes. An unfinished task's wrong verify command is fixed by
+an amendment of only `updateTasks: [{key, verify, paths?}]` (no intake;
+`change amend --template`). `reviseRequirements` replaces a requirement row in
 its same capability and operation and needs an open task; `removeRequirements`
 needs a `migration` and must not orphan a task. Before Build starts, revise the
 whole agreement with `change revise <change> <draft.json> --inspect`, then

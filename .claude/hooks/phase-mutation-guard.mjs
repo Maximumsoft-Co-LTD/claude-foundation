@@ -10,7 +10,8 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
-  looksMutatingShellCommand, pinShellAnchor, shellMutationViolation
+  looksMutatingShellCommand, normalizeHarnessCliInvocations, pinShellAnchor,
+  shellMutationViolation
 } from "./phase-guard-policy.mjs";
 import { recordedPhaseContext } from "./phase-state.mjs";
 import { devPrompt } from "./dev-terminal-guard.mjs";
@@ -63,12 +64,14 @@ const investigateSession = currentTranscriptIsInvestigate(transcriptPath);
 const tool = String(event.tool_name || "");
 const input = event.tool_input || {};
 const mutatingTools = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+// `npx claude-foundation …` and bin-path spellings match exactly as the bare CLI.
+const harnessCommand = normalizeHarnessCliInvocations(String(input.command || ""));
 const landAuthorityCommand = tool === "Bash" &&
   /^\s*(?:claude-foundation|node\s+(?:"[^"]*foundation\.mjs"|'[^']*foundation\.mjs'|\S*foundation\.mjs))\s+(?:(?:land(?:-|\s+)advance)|archive|sandbox\s+apply)\s+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\s*$/
-    .test(String(input.command || ""));
+    .test(harnessCommand);
 const deliverAuthorityCommand = tool === "Bash" &&
   /^\s*(?:claude-foundation\s+deliver\s+advance|node\s+(?:"[^"]*foundation\.mjs"|'[^']*foundation\.mjs'|\S*foundation\.mjs)\s+delivery-advance)\s+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\s*$/
-    .test(String(input.command || ""));
+    .test(harnessCommand);
 if (!mutatingTools.has(tool) && tool !== "Bash") process.exit(0);
 if (tool === "Bash" && !landAuthorityCommand && !deliverAuthorityCommand &&
     !looksMutatingShellCommand(String(input.command || ""))) process.exit(0);

@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  looksMutatingShellCommand, mutatingShellOperations, pinShellAnchor,
-  shellMutationViolation
+  looksMutatingShellCommand, mutatingShellOperations, normalizeHarnessCliInvocations,
+  pinShellAnchor, shellMutationViolation
 } from "../../hooks/phase-guard-policy.mjs";
 
 test("shell mutation detection covers formatters, package scripts, and script runners", () => {
@@ -15,6 +15,31 @@ test("shell mutation detection covers formatters, package scripts, and script ru
   ]) assert.equal(looksMutatingShellCommand(command), true, command);
   for (const command of ["git status", "node --test", "python3 -m unittest", "cat README.md"])
     assert.equal(looksMutatingShellCommand(command), false, command);
+});
+
+test("harness CLI spellings classify exactly like bare claude-foundation", () => {
+  const spellings = [
+    "npx claude-foundation", "npx --no-install claude-foundation",
+    "npx -y claude-foundation", "npx --yes claude-foundation",
+    "./node_modules/.bin/claude-foundation",
+    "/opt/app/node_modules/.bin/claude-foundation"
+  ];
+  for (const spelling of spellings) {
+    const command = `${spelling} change start --template`;
+    assert.equal(normalizeHarnessCliInvocations(command),
+      "claude-foundation change start --template", command);
+    assert.equal(looksMutatingShellCommand(command), false, command);
+    // Normalization never hides a mutation chained after the CLI.
+    assert.deepEqual(mutatingShellOperations(`${command} && rm -rf src`), ["rm"], command);
+    assert.deepEqual(mutatingShellOperations(`${command} > out.json`), ["redirect"], command);
+  }
+  // Only a command-position harness CLI is rewritten; other npx packages and
+  // lookalike names stay mutating.
+  for (const command of ["npx prettier --write .", "npx claude-foundation-evil x",
+    "npx claude-foundation@latest change start"])
+    assert.equal(looksMutatingShellCommand(command), true, command);
+  assert.equal(normalizeHarnessCliInvocations("echo npx claude-foundation"),
+    "echo npx claude-foundation");
 });
 
 test("shell mutation detection names the operations it matched", () => {

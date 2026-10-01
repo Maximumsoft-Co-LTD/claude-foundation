@@ -220,8 +220,16 @@ Referenced diagrams, prototype selections, and local integration documentation
 must resolve to regular files inside the project. Remote integration sources
 must use HTTPS and a fixed version rather than `latest`, a branch, or another
 floating alias. An amendment may extend a task's claim coverage, but changing
-its outcome or verification command requires a new task so completed work
-cannot silently change meaning.
+its outcome, or the verify command of a completed task, requires a new task so
+completed work cannot silently change meaning.
+
+An unfinished task (unchecked, with no valid passing command receipt for its
+claims) may change its verify command, and optionally `paths`, through an
+amendment with only `updateTasks: [{key, verify, paths?}]` rows. It needs no
+requirement, evidence, or version-4 intake; `change amend --template` prints
+it. Derived provider commands follow the new verify, the task's claims are
+invalidated so Prove reruns their evidence, and the revision, validation, and
+rollback match any amendment.
 
 When Build discovers new behavior, amend the same agreement before continuing:
 

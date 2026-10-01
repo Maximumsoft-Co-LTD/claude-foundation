@@ -221,7 +221,7 @@ claude-foundation doctor --stage prove --change <change>
 | `change start <draft.json> --inspect` | Returns the next typed intake action and exact resume route without creating a change | Iterating on a semantic draft |
 | `change start <draft.json>` | Compiles, validates, installs, and prepares one isolated change transactionally | Completing Change |
 | `change revise <change> <draft.json>` | Recompiles a revised semantic draft over the same change id through the start intake gate, with rollback and a requirement delta for approval | An agreed semantic change must change before Build starts |
-| `change amend <change> <amendment.json>` | Adds, revises, or removes requirements, requiring and retaining a discovery delta for v4 | A semantic v3/v4 Build discovers new or changed behavior |
+| `change amend <change> <amendment.json>` | Adds, revises, or removes requirements, requiring and retaining a discovery delta for v4; a verify-only `updateTasks` amendment fixes an unfinished task's verify command (`--template` prints both) | A semantic v3/v4 Build discovers new or changed behavior or a wrong verify command |
 | `advance <change> --through build\|proven\|archived` | Runs deterministic steps and returns one `EDIT`, `RUN_EXTERNAL`, `REPAIR`, `WAIT`, `ASK_USER`, or `DONE` action | Every normal step after Change |
 
 ## Advanced operator and compatibility commands

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `change amend` accepts an amendment of only `updateTasks: [{key, verify,
+  paths?}]` rows to fix the verify command of an unfinished task (unchecked,
+  no valid passing command receipt): no requirement, evidence, or v4 intake is
+  needed, derived provider commands follow, and the task's claims are
+  invalidated so Prove reruns them. A completed task's verify still needs a new
+  task. `change amend --template` prints this form and the requirement form.
+
+### Fixed
+
+- The phase guard classifies `npx claude-foundation …` (including `--no-install`,
+  `--no`, `-y`, `--yes`) and bin-path spellings exactly like bare
+  `claude-foundation`: a pre-phase `change start` is no longer blocked as `npx`,
+  and Land/Deliver authority commands still require their invocation.
+
 ## [3.5.28] - 2026-09-30
 
 ### Changed

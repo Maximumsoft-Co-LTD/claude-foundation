@@ -8,6 +8,7 @@ export async function routeRuntimeCommand(command, values, api) {
     inspectInvestigation,
     investigationRecordTemplate,
     rapidStartTemplate,
+    amendmentTemplate,
     inspectDraft,
     startAtomic,
     inspectAmendment,
@@ -160,8 +161,15 @@ export async function routeRuntimeCommand(command, values, api) {
     },
     "amend": async () => {
       const { flags, rest } = parseStrictCommandFlags(values, "change amend", {
-        boolean: ["inspect", "consume-amendment"]
+        boolean: ["template", "inspect", "consume-amendment"]
       });
+      if (flags.template) {
+        if (rest.length) die("change amend --template takes no change or amendment path");
+        if (flags.inspect || flags["consume-amendment"])
+          die("change amend --template cannot be combined with --inspect or --consume-amendment");
+        console.log(JSON.stringify(amendmentTemplate(), null, 2));
+        return;
+      }
       if (rest.length !== 2)
         die("change amend requires <change> <amendment.json>");
       if (flags.inspect) {
