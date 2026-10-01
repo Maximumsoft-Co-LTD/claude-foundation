@@ -43,6 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A spawned proof service that fails to start or exits while readiness polling
+  overruns its deadline now reports that failure instead of "readiness timed
+  out".
 - A change that creates a capability no longer archives a living spec whose
   Purpose is OpenSpec's `TBD - created by archiving change ...` placeholder:
   its delta states `## Purpose` (the capability overview, else the intent with

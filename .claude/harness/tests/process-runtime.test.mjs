@@ -290,6 +290,14 @@ test("spawned service reports spawn, early-exit, and timeout failures", async (t
     wait: async () => { spawnFailed.handlers.child.error(new Error("ENOENT")); }
   })), /could not start: ENOENT/);
 
+  const slowSpawnFailed = fakeChild();
+  await assert.rejects(() => startSpawnedService(input(slowSpawnFailed, {
+    wait: async () => {
+      await new Promise((complete) => setTimeout(complete, 40));
+      slowSpawnFailed.handlers.child.error(new Error("ENOENT"));
+    }
+  })), /could not start: ENOENT/);
+
   const exited = fakeChild();
   await assert.rejects(() => startSpawnedService(input(exited, {
     wait: async () => {
