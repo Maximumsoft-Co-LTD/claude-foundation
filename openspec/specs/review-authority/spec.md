@@ -64,6 +64,22 @@ reference has not been used before, acknowledges the consumed reviewer
 infrastructure attempts so they no longer count against the infrastructure
 retry bound, without mutating the recorded attempt chain.
 
+#### Scenario: Harness resets once per review wave
+
+- **WHEN** a review dispatch finds the infrastructure retry exhausted and the
+  configured reviewer diagnosis passes
+- **THEN** the harness acknowledges the consumed attempts under the reference
+  `harness:infra:wave-<n>` without a user decision
+- **AND** a second exhaustion in the same wave keeps the bound consumed and
+  names `authority reset-infra` as the user-decided route
+
+#### Scenario: Harness releases a base-move expiry
+
+- **WHEN** a review dispatch finds a recorded sandbox base move that changed
+  the diff and expired a delivered passing verdict, and no AI review is live
+- **THEN** the harness releases exactly that attempt under the reference
+  `harness:base-move:<movement>` without a user decision
+
 #### Scenario: Reset after provider repair
 
 - **WHEN** the infrastructure retry is exhausted, the provider diagnosis

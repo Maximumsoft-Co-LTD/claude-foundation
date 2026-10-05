@@ -1,5 +1,7 @@
 import { acquireProcessLock } from "../core/process-lock.mjs";
-import { effectiveReviewAttemptLimit } from "../core/authority-policy.mjs";
+import {
+  effectiveReviewAttemptLimit, reviewClosureWaveAvailable
+} from "../core/authority-policy.mjs";
 import {
   compareGateProgress,
   gateProgressValue,
@@ -8,6 +10,7 @@ import {
 } from "../core/convergent-gate.mjs";
 import { createServiceSessions } from "./proof-execution/service-sessions.mjs";
 import { derivedReviewRepairGraph } from "./repair-runtime.mjs";
+import { blockedOutcomeStop } from "../core/blocked-decision.mjs";
 
 export function requestSummary(id, request) {
   if (!request) return null;
@@ -119,7 +122,7 @@ export function stopProofRun(context, readiness, options = {}) {
     completed: false
   };
   if (!options.quiet) context.printOutcome(stopped);
-  context.markBlocked();
+  context.markBlocked(blockedOutcomeStop(stopped));
   context.runtimeProcess.exitCode = 2;
   return readiness;
 }
@@ -144,7 +147,7 @@ export function stopProofCollection(context, readiness, options = {}) {
     completed: false
   };
   if (!options.quiet) context.printOutcome(stopped);
-  context.markBlocked();
+  context.markBlocked(blockedOutcomeStop(stopped));
   context.runtimeProcess.exitCode = 2;
   return readiness;
 }
@@ -382,7 +385,7 @@ export function createProofExecutionRuntime({
           command: `claude-foundation proof advance ${id} --retry-indeterminate --decision-ref <host-decision-reference>`
         }]
       });
-      markBlocked();
+      markBlocked(blockedOutcomeStop(outcome));
       process.exitCode = 2;
       if (!options.quiet) printOutcome(outcome);
       return outcome;
@@ -755,7 +758,7 @@ export function createProofExecutionRuntime({
   }
 
   function stopProofAdvance(outcome) {
-    markBlocked();
+    markBlocked(blockedOutcomeStop(outcome));
     process.exitCode = 2;
     return printOutcome(outcome);
   }
@@ -775,6 +778,8 @@ export function createProofExecutionRuntime({
     if (reviewProviders.length !== 1) return null;
     const subjectHash = currentProviderHash(id, reviewProviders[0], readiness.workspaceHash);
     const delivered = deliveredAiAttempts(id);
+    // A failed final wave first tries deterministic closure in this pass; its
+    // closure review, if still needed, is requested only after that.
     if (delivered.length >= 2 && delivered.at(-1)?.resultStatus === "fail") return null;
     if (delivered.length >= effectiveReviewAttemptLimit(
       reviewPolicy(id), delivered, subjectHash).maxAiAttempts) return null;
@@ -1102,9 +1107,14 @@ export function createProofExecutionRuntime({
       const exhausted = blockedClosures.filter((row) =>
         row.route === "REVIEW_ROUTE_EXHAUSTED");
       if (exhausted.length && !blockedClosures.some((row) =>
-        row.route === "CONTRACT_DECISION_REQUIRED"))
+        row.route === "CONTRACT_DECISION_REQUIRED")) {
+        // The repaired final delta gets one closure review before any person
+        // is asked to accept it unreviewed.
+        if (reviewClosureWaveAvailable(delivered, readiness.workspaceHash))
+          return { readiness, authorityRequests };
         return { outcome: stopProofAdvance(
           writeReviewExhaustedStop(id, readiness, exhausted, executedProviders)) };
+      }
       const outcome = writeAdvance(id, {
         version: 1,
         changeId: id,
@@ -1282,7 +1292,7 @@ export function createProofExecutionRuntime({
           executedProviders: [],
           reusedProviders: reusable.map((row) => row.provider)
         });
-        markBlocked();
+        markBlocked(blockedOutcomeStop(outcome));
         process.exitCode = 2;
         return printOutcome(outcome);
       }

@@ -89,6 +89,26 @@ export function evidenceObservationGroups(providers = {}) {
     left.commandExecutionId.localeCompare(right.commandExecutionId));
 }
 
+// Where a change stopped: blocked operations by code, phase, and operation,
+// with the latest locally recorded reason for each code.
+export function blockerMetrics(operations = []) {
+  const byCode = {};
+  let total = 0;
+  for (const row of operations) {
+    if (row?.status !== "blocked") continue;
+    total += 1;
+    const code = row.blocker?.code || "untyped";
+    const current = byCode[code] ||= { count: 0, phases: {}, operations: {}, latestReason: null };
+    current.count += 1;
+    const phase = row.phase || "unknown";
+    current.phases[phase] = (current.phases[phase] || 0) + 1;
+    const operation = row.operation || "unknown";
+    current.operations[operation] = (current.operations[operation] || 0) + 1;
+    if (row.blocker?.reason) current.latestReason = row.blocker.reason;
+  }
+  return { total, byCode };
+}
+
 export function lifecycleStageMetrics(operations = []) {
   const result = {};
   for (const span of operations.flatMap((row) => Array.isArray(row.stageSpans)
@@ -638,6 +658,7 @@ export function createMetricsRuntime({
         "transcript was never ingested remain inside unattributedWaitMs",
       phases, providers,
       stages: lifecycleStageMetrics(operations),
+      blockers: blockerMetrics(operations),
       schedulers: lifecycleSchedulerMetrics(operations),
       evidenceObservationGroups: evidenceObservationGroups(providers),
       evidenceExecutionTimeMs,

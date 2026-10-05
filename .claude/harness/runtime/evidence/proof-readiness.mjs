@@ -7,6 +7,7 @@ import { worktreeOwnedByTarget } from "../core/repository-binding.mjs";
 import {
   declaredPathMatcher, mergeSurfaceAdditions, surfaceAdditionEntries
 } from "../core/workspace-surface.mjs";
+import { blockedOutcomeStop } from "../core/blocked-decision.mjs";
 
 const PREFLIGHT_SCAN_MAX_FILES = 20000;
 const PREFLIGHT_SCAN_MAX_BYTES = 1024 * 1024;
@@ -1058,7 +1059,10 @@ export function createProofReadinessRuntime({
     console.log(JSON.stringify(value, null, 2));
     // A non-ready readiness is a typed lifecycle stop, so it says so rather
     // than leaving the exit handler to infer it from the exit code.
-    if (value.status !== "READY") { markBlocked(); process.exitCode = 2; }
+    if (value.status !== "READY") {
+      markBlocked(blockedOutcomeStop(value));
+      process.exitCode = 2;
+    }
     return value;
   }
 

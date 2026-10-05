@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import {
-  existsSync, lstatSync, readFileSync, readdirSync, readlinkSync
+  copyFileSync, existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, renameSync
 } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -25,6 +25,9 @@ export function createStateRuntime({
   fail
 }) {
   function runtimePath(id) { return join(runtime, `${id}.json`); }
+  // The last state that parsed, kept beside the live file so an unreadable
+  // state is a harness repair rather than a reason to throw the work away.
+  function previousRuntimePath(id) { return `${runtimePath(id)}.prev`; }
   function changePath(id) { return join(changes, id); }
   function receiptPath(id, provider) { return join(receipts, id, `${provider}.json`); }
   function proofPath(id) { return join(receipts, id, "proof.json"); }
@@ -89,6 +92,8 @@ export function createStateRuntime({
     try {
       return JSON.parse(readFileSync(path, "utf8"));
     } catch (error) {
+      const restored = restorePreviousRuntime(id, error);
+      if (restored) return restored;
       if (!recoverable)
         fail(`invalid JSON: ${runtimeRelativePath(id)} (${error.message}); ` +
           `retire it with 'claude-foundation change abandon ${id} --reason <reason> --decision-ref <ref>'`);
@@ -100,6 +105,24 @@ export function createStateRuntime({
     return relative(root, runtimePath(id));
   }
 
+  // Quarantine the unreadable file and reinstate the last state that parsed.
+  // Proof freshness is recomputed from content, so a state one save behind
+  // cannot pass stale evidence; it only replays the latest transition.
+  function restorePreviousRuntime(id, error) {
+    const path = runtimePath(id);
+    const previous = previousRuntimePath(id);
+    if (!existsSync(previous)) return null;
+    let state;
+    try { state = JSON.parse(readFileSync(previous, "utf8")); }
+    catch { return null; }
+    if (state?.id !== id) return null;
+    renameSync(path, `${path}.corrupt-${Date.now()}`);
+    copyFileSync(previous, path);
+    console.error(`RECOVERED: ${runtimeRelativePath(id)} was unreadable (${error.message}); ` +
+      "restored the last valid state and kept the unreadable copy beside it");
+    return state;
+  }
+
   function saveRuntime(state) {
     // `surfaceAdditions` only grows. A caller holding a state loaded before
     // readiness recorded an addition must not drop it, or Land's hash would
@@ -107,9 +130,11 @@ export function createStateRuntime({
     const path = runtimePath(state.id);
     if (existsSync(path)) {
       try {
-        const stored = JSON.parse(readFileSync(path, "utf8")).surfaceAdditions || [];
-        if (stored.length || state.surfaceAdditions?.length) state.surfaceAdditions =
-          mergeSurfaceAdditions(state.surfaceAdditions, stored);
+        const stored = JSON.parse(readFileSync(path, "utf8"));
+        copyFileSync(path, previousRuntimePath(state.id));
+        const additions = stored.surfaceAdditions || [];
+        if (additions.length || state.surfaceAdditions?.length) state.surfaceAdditions =
+          mergeSurfaceAdditions(state.surfaceAdditions, additions);
       } catch {}
     }
     state.updatedAt = now();

@@ -106,8 +106,8 @@ export function baseMoveResetRecovery(state, id) {
   if (!move || !move.movementKey || !move.preDiffIdentity || !move.postDiffIdentity ||
       move.preDiffIdentity === move.postDiffIdentity) return "";
   return " If the passing verdict expired because this recorded sandbox sync changed the diff, " +
-    "that is not a quality round: ask the user to authorize " +
-    `'claude-foundation authority reset-base-move ${id} --decision-ref <ref>' and dispatch the review again.`;
+    "that is not a quality round: the harness releases that attempt on the next dispatch once no " +
+    `review is live, so dispatch the review again (manual route: 'claude-foundation authority reset-base-move ${id} --decision-ref <ref>').`;
 }
 
 export function assertNoLiveBaseMoveReview(attempts, id, fail) {
@@ -195,7 +195,7 @@ export function validateReviewDispatchBudget(context, id, reviewerType,
   if (completedAi.length >= maxAiAttempts)
     context.blockAiExhausted(id, history, maxAiAttempts);
   if (infrastructureAi.length > maxInfrastructureRetries)
-    context.fail(`REVIEW_INFRASTRUCTURE_ERROR: ${maxInfrastructureRetries} automatic reviewer infrastructure retry has already been used. Repair the configured provider and run doctor --stage prove; this is not a product decision and must not open another user interview.`);
+    context.fail(`REVIEW_INFRASTRUCTURE_ERROR: ${maxInfrastructureRetries} automatic reviewer infrastructure retry has already been used. Repair the configured provider and run doctor --stage prove; this is not a product decision and must not open another user interview. The harness resets this itself once per review wave when the reviewer diagnosis passes; beyond that, after the repair, the user's decision is recorded with 'claude-foundation authority reset-infra <change> --decision-ref <ref>'.`);
 }
 
 export function reviewDispatchScope(details, reviewerType, aiAttempts,
@@ -562,6 +562,45 @@ export function createReviewAttemptStore({
     reviewHistoryState, reviewHistoryChainValid, reviewAttempts, deliveredAiAttempts
   });
 
+  // Accounting the harness caused is released by the harness, never by a user
+  // decision: a base move that changed the diff always releases its expired
+  // verdict, and a healthy reviewer gets one infrastructure reset per wave.
+  // Each release records a harness-owned reference instead of a user's.
+  function autoReleaseReviewBudget(id, {
+    maxInfrastructureRetries = 1, reviewerHealthy = () => false
+  } = {}) {
+    const released = [];
+    const refuse = (message) => { throw new Error(message); };
+    const state = loadRuntime(id);
+    const history = reviewHistoryState(id, state);
+    if (history.chainHead && !reviewHistoryChainValid(id, history)) return released;
+    const attempts = reviewAttempts(id, history);
+    if (attempts.some((attempt) =>
+      attempt.reviewerType === "ai" && attempt.status === "dispatched")) return released;
+    const move = state.lastBaseMove;
+    if (move?.movementKey) {
+      const reference = `harness:base-move:${move.movementKey}`;
+      try {
+        assertBaseMoveResetAllowed(history, move, reference, refuse);
+        baseMoveReleasedAttempt(attempts, move, refuse);
+        acknowledgeBaseMoveAttempts(id, reference);
+        released.push(reference);
+      } catch {}
+    }
+    const current = reviewHistoryState(id, loadRuntime(id));
+    const infrastructure = infrastructureAiAttempts(id, current);
+    if (infrastructure.length <= Number(maxInfrastructureRetries) ||
+        !infrastructure.some((attempt) =>
+          attempt.status === "completed" && attempt.resultStatus === "error"))
+      return released;
+    const reference = `harness:infra:wave-${deliveredAiAttempts(id, current).length + 1}`;
+    if ((current.infraResets || []).some((row) => row.decisionRef === reference) ||
+        !reviewerHealthy()) return released;
+    acknowledgeInfrastructureAttempts(id, reference);
+    released.push(reference);
+    return released;
+  }
+
   function blockAiExhausted(id, history, maxAiAttempts = 2) {
     const delivered = deliveredAiAttempts(id, history).length;
     const baseMoveRecovery = baseMoveResetRecovery(loadRuntime(id), id);
@@ -593,7 +632,7 @@ export function createReviewAttemptStore({
       if (deliveredAiAttempts(id, history).length >= Number(maxAiAttempts))
         blockAiExhausted(id, history, Number(maxAiAttempts));
       if (infrastructureAiAttempts(id, history).length > Number(maxInfrastructureRetries))
-        fail(`REVIEW_INFRASTRUCTURE_ERROR: ${maxInfrastructureRetries} automatic reviewer infrastructure retry has already been used. Repair the configured provider and run doctor --stage prove; this is not a product decision and must not open another user interview.`);
+        fail(`REVIEW_INFRASTRUCTURE_ERROR: ${maxInfrastructureRetries} automatic reviewer infrastructure retry has already been used. Repair the configured provider and run doctor --stage prove; this is not a product decision and must not open another user interview. The harness resets this itself once per review wave when the reviewer diagnosis passes; beyond that, after the repair, the user's decision is recorded with 'claude-foundation authority reset-infra <change> --decision-ref <ref>'.`);
     }
     return history;
   }
@@ -676,6 +715,7 @@ export function createReviewAttemptStore({
     deliveredAiAttempts,
     infrastructureAiAttempts,
     acknowledgeInfrastructureAttempts,
-    acknowledgeBaseMoveAttempts
+    acknowledgeBaseMoveAttempts,
+    autoReleaseReviewBudget
   };
 }

@@ -19,8 +19,8 @@ Review is fresh independent work: full, then one changed delta. When configured
 reviewer infrastructure fails and policy names `main-session`, review the
 returned bounded packet in this calling session, fill the pre-attributed
 response template, and record it; do not rerun the failed adapter. Final
-in-contract findings close only from their current claim/critical-case
-receipts—never AI round three or a generic redesign/split/pause question.
+in-contract findings close from current claim/critical-case receipts, else
+one harness-requested closure review—never a generic redesign/split/pause question.
 All review dispatches share one persisted 30-minute window, including retries,
 fallbacks, and delta review; resuming does not reset it. Record an authorized
 extension through `change resolve <id> --continue-review --decision-ref <ref>`.

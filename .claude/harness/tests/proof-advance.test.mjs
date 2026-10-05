@@ -1109,20 +1109,13 @@ function realClosure(criticalCases) {
   assert.match(second.next[0].reason, /still describes the current workspace/);
 
   run.repair("workspace-c");
-  for (const pass of [1, 2]) {
-    const gate = await run.advance();
-    assert.equal(run.reviewCommands.length, 2, "no third AI wave is dispatched");
-    assert.equal(gate.status, "NEEDS_USER_DECISION", `pass ${pass}: waves exhausted is a user gate`);
-    assert.equal(gate.route, "NO_PROGRESS_DECISION");
-    assert.equal(gate.stage, "review-repair-closure");
-    assert.equal(gate.decision.kind, "review-route-exhausted");
-    assert.equal(gate.decision.recommended, "accept-review-risk");
-    assert.ok(gate.decision.options.some((option) => option.id === "pause"));
-    assert.match(gate.decision.summary, /R2/);
-    assert.doesNotMatch(JSON.stringify(gate), /bind each blocker/,
-      "never demand a critical-case binding the agent cannot create");
-    assert.match(gate.next[0].command, /change waive change-a --capability review/);
-  }
+  const closure = await run.advance();
+  assert.equal(run.reviewCommands.length, 2,
+    "deterministic closure is tried before any closure review");
+  assert.equal(closure.status, "WAITING_EXTERNAL", JSON.stringify(closure));
+  assert.deepEqual(closure.requests.map((request) =>
+    [request.type, request.workspaceHash]), [["review", "workspace-c"]],
+  "the repaired final delta is requested for its one closure review");
   process.exitCode = priorExitCode;
 }
 
@@ -1175,6 +1168,31 @@ function realClosure(criticalCases) {
   assert.equal(stop.route, "AUTO_REPAIR");
   assert.match(stop.next[0].reason, /still describes the current workspace/);
   assert.doesNotMatch(stop.next[0].reason, /bind each blocker/);
+  process.exitCode = priorExitCode;
+}
+
+{
+  const priorExitCode = process.exitCode;
+  // Once the closure wave is delivered and still failed, the repaired result
+  // is the user gate; with only two waves it is a closure review request.
+  const exhaustedClosure = () => ({ closed: false, route: "REVIEW_ROUTE_EXHAUSTED",
+    findingIds: ["R3"], reason: "no wave remains" });
+  const waves = [
+    { digest: "wave-1", resultStatus: "fail", workspaceHash: "workspace-0" },
+    { digest: "wave-2", resultStatus: "fail", workspaceHash: "workspace-1" },
+    { digest: "wave-3", resultStatus: "fail", workspaceHash: "workspace-2",
+      findings: [{ id: "R3", severity: "major" }] }
+  ];
+  const twoWaves = await concurrentFixture({
+    closure: exhaustedClosure, deliveredAiAttempts: waves.slice(0, 2)
+  }).advance();
+  assert.equal(twoWaves.status, "WAITING_EXTERNAL", JSON.stringify(twoWaves));
+  const threeWaves = await concurrentFixture({
+    closure: exhaustedClosure, deliveredAiAttempts: waves
+  }).advance();
+  assert.equal(threeWaves.status, "NEEDS_USER_DECISION", JSON.stringify(threeWaves));
+  assert.equal(threeWaves.decision.kind, "review-route-exhausted");
+  assert.match(threeWaves.decision.summary, /All 3 AI review wave\(s\).*R3/);
   process.exitCode = priorExitCode;
 }
 

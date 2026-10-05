@@ -197,6 +197,7 @@ try {
   let configuredReviewSession = "actual-codex-thread";
   let lastConfiguredReviewArgs = null;
   let configuredReviewResults = {};
+  let installedReviewers = null;
   let configuredReviewCalls = 0;
   let persistConfiguredResult = false;
   let interruptReceipt = false;
@@ -226,6 +227,7 @@ try {
     readJson, writeJson, now
   });
   const authority = createAuthorityRuntime({
+    reviewerInstalled: (name) => !installedReviewers || installedReviewers.includes(name),
     root: fixture,
     protocolVersion: "1",
     ciEvidenceProtocolVersion: "1",
@@ -780,6 +782,21 @@ try {
     ["claude-opus", "error"], ["claude-opus", "error"],
     ["codex-sol", "pass"]
   ], "two infrastructure failures switch to the configured diverse reviewer");
+
+  state = { version: 2, changeId: "change-codex-only", reviewHistory: null };
+  installedReviewers = ["codex-sol"];
+  const codexOnlyRequest = quiet(() => authority.requestAuthority(
+    "change-codex-only", { type: "review" }));
+  const codexOnlyResult = quiet(() => authority.runAuthorityReviewer(
+    "change-codex-only", {
+      request: codexOnlyRequest.requestId,
+      "subject-actor": "human-implementer"
+    }));
+  assert.equal(codexOnlyResult.status, "pass");
+  assert.deepEqual(attemptStore.reviewAttempts("change-codex-only", state.reviewHistory)
+    .map((attempt) => [attempt.reviewerIdentity, attempt.resultStatus]),
+  [["codex-sol", "pass"]], "a host without the default reviewer routes straight to an installed one");
+  installedReviewers = null;
 
   state = { version: 2, changeId: "change-fallback", reviewHistory: null };
   reviewSettings = {
@@ -1964,7 +1981,7 @@ try {
   assert.match(feature, /Medium permits one correction[\s\S]*one fresh-session delta closure/i);
   assert.match(feature,
     /High\s+asks material risk decisions in the initial Decision Sheet/i);
-  assert.match(feature, /never dispatch a\s+third AI/i);
+  assert.match(feature, /one\s+closure review of a repaired final delta, never dispatch another AI/i);
   const agentContract = readFileSync(join(root, ".claude/harness/AGENT.md"), "utf8");
   const runtimeApi = readJson(join(root, ".claude/harness/protocol.json")).runtimeApi;
   assert.match(agentContract, /Harness checks Change Loop/);

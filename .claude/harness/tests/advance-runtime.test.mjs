@@ -825,3 +825,32 @@ test("envelope context keeps only files inside the workspace or repository bases
   assert.ok(![...value.contextFiles, ...value.newFiles].some((file) =>
     file === outside || file === "/etc/passwd"));
 });
+
+test("spec approval carries authority gates the change already needs", async () => {
+  const state = { status: "change", workspace: { path: "/tmp/change" } };
+  const approval = Object.assign(new Error("approve"), {
+    code: "SPEC_APPROVAL_REQUIRED", owner: "user", boundary: "spec-approval-required",
+    decision: { kind: "spec-approval-required", summary: "approve",
+      options: [{ id: "approve", outcome: "Approve" }], recommended: "approve" }
+  });
+  const fixture = (pendingApprovalDecisions) => createAdvanceRuntime({
+    loadRuntime: () => state,
+    prepareBuild: async () => { throw approval; },
+    agentDispatchValue: () => ({ action: "build-complete" }),
+    relevantHash: () => "workspace-a", deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => ({}), proofAdvancePath: () => "/proof.json", stableHash,
+    pendingApprovalDecisions, output: () => {}
+  });
+  const ci = { code: "SIGNED_CI_CONFIGURATION_REQUIRED", summary: "needs CI", next: "configure" };
+  const asked = await fixture(() => [ci]).advanceThrough("change-a", "build");
+  assert.equal(asked.action, "ASK_USER", JSON.stringify(asked));
+  assert.deepEqual(asked.decision.alongside, [ci]);
+  assert.match(asked.decision.summary, /^approve Ask in the same question, before Build: needs CI \(configure\)$/);
+  approval.decision = { ...approval.decision, summary: "approve" };
+  delete approval.decision.alongside;
+  const plain = await fixture(() => { throw new Error("unresolvable"); })
+    .advanceThrough("change-a", "build");
+  assert.equal(plain.action, "ASK_USER");
+  assert.equal(plain.decision.alongside, undefined);
+});

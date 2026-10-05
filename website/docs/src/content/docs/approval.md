@@ -118,9 +118,9 @@ the contract fingerprint.
 The tier limit is enforced before dispatch: low receives one full review; a
 correction promotes it to the bounded full/delta route used by medium and high.
 Reviewer infrastructure gets one separate full retry. After two delivered AI
-waves, Change Loop refuses another open review. A final in-contract blocker can
-close only through the claims and current critical-case receipts named by that
-finding; a real contract contradiction reopens one batched Decision Sheet, and
+waves, Change Loop refuses another open review. A final in-contract blocker
+closes through the claims and current critical-case receipts named by that
+finding, or else through one closure review of the repaired delta; a real contract contradiction reopens one batched Decision Sheet, and
 missing authority becomes an external handoff. The attempt history is a
 SHA-256 hash chain; a broken chain fails closed.
 

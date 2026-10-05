@@ -5,10 +5,13 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
+import { blockedOutcomeReason, blockedOutcomeStop } from "../runtime/core/blocked-decision.mjs";
+import { blockerMetrics } from "../runtime/observability/metrics-runtime.mjs";
 import {
   activeTelemetryRunId,
   appendTelemetryJsonLines,
   blockerTelemetryValue,
+  sanitizedBlockerReason,
   commandTelemetryEligible,
   commandTelemetryRow,
   commandTelemetryStatus,
@@ -162,8 +165,9 @@ test("blocked command telemetry carries bounded cause and recovery without raw e
   }), 2);
   assert.equal(row.version, 5);
   assert.deepEqual(Object.keys(row.blocker).sort(), [
-    "classification", "code", "fingerprint", "recovery", "summary"
+    "classification", "code", "fingerprint", "reason", "recovery", "summary"
   ]);
+  assert.equal(row.blocker.reason, "budget exceeded while reading token <redacted> at <path>");
   assert.equal(row.blocker.code, "budget-exhausted");
   assert.equal(row.blocker.classification, "budget");
   assert.match(row.blocker.recovery, /budget checkpoint change-a/);
@@ -182,14 +186,56 @@ test("blocked command telemetry carries bounded cause and recovery without raw e
   assert.equal(commandTelemetryRow(commandContext(), 0).blocker, null);
 });
 
-test("ambiguous legacy blocker text falls back to a safe policy guard", () => {
+test("blocker text naming several kinds takes the first by precedence", () => {
   const blocker = blockerTelemetryValue(
     "authority token conflicts with workspace evidence",
     { changeId: "change-a", operationName: "proof-advance", phase: "prove" }
   );
+  assert.equal(blocker.code, "authority-required");
+  assert.equal(blocker.reason, "authority token conflicts with workspace evidence");
+  assert.equal(blockerTelemetryValue("sandbox lease conflict", {}).code, "resource-conflict");
+  assert.equal(blockerTelemetryValue("token count drifted", {}).code, "policy-guard");
+});
+
+test("unmatched blocker text keeps the policy guard but records its reason", () => {
+  const blocker = blockerTelemetryValue("unclassified stop", {
+    changeId: "change-a", operationName: "proof-advance", phase: "prove"
+  });
   assert.equal(blocker.code, "policy-guard");
-  assert.equal(blocker.classification, "policy");
+  assert.equal(blocker.reason, "unclassified stop");
   assert.equal(blocker.recovery, "claude-foundation packet change-a --phase prove");
+  assert.equal(blockerTelemetryValue("", {}).reason, null);
+});
+
+test("a declared blocker code wins over message text", () => {
+  const decision = blockerTelemetryValue(
+    { code: "decision-required", reason: "choose workspace strategy" },
+    { changeId: "change-a", operationName: "proof-advance", phase: "prove" }
+  );
+  assert.equal(decision.code, "decision-required");
+  assert.equal(decision.classification, "decision");
+  assert.equal(decision.reason, "choose workspace strategy");
+  assert.equal(decision.recovery, "claude-foundation packet change-a --phase prove");
+  assert.equal(blockerTelemetryValue({ code: "execution-indeterminate", reason: "x" },
+    { changeId: "change-a" }).recovery, "claude-foundation proof advance change-a");
+  assert.equal(blockerTelemetryValue({ code: "unknown-code", reason: "budget hit" }, {}).code,
+    "budget-exhausted");
+});
+
+test("blocker reasons are bounded and strip credentials and paths", () => {
+  assert.equal(sanitizedBlockerReason(null), null);
+  assert.equal(sanitizedBlockerReason("   "), null);
+  assert.equal(sanitizedBlockerReason("api_key=abc123 failed"), "api_key=<redacted> failed");
+  assert.equal(sanitizedBlockerReason("used ghp_abcdefghijkl0123"), "used <redacted>");
+  assert.equal(sanitizedBlockerReason("Authorization: Bearer xyz"),
+    "Authorization: <redacted>");
+  assert.equal(sanitizedBlockerReason("send Bearer xyz now"), "send Bearer <redacted> now");
+  assert.equal(sanitizedBlockerReason("read ~/work/app/.env and C:\\Users\\me\\x"),
+    "read <path> and <path>");
+  assert.equal(sanitizedBlockerReason("line one\n  line two"), "line one line two");
+  const long = sanitizedBlockerReason("x".repeat(500));
+  assert.equal(long.length, 200);
+  assert.equal(long.endsWith("…"), true);
 });
 
 test("command telemetry eligibility excludes disabled, incomplete and archived work", () => {
@@ -451,4 +497,38 @@ test("appendTelemetryRows records Claude user transitions without token events",
   assert.equal(loads, 1);
   assert.equal(readLines(join(logs, "change", "events.jsonl"))[0].source,
     "claude-transcript");
+});
+
+test("non-ready outcomes declare their stop kind and reason", () => {
+  assert.deepEqual(blockedOutcomeStop({
+    status: "NEEDS_USER_DECISION", decision: { summary: "pick a reviewer" }
+  }), { code: "decision-required", reason: "pick a reviewer" });
+  assert.deepEqual(blockedOutcomeStop({
+    stage: "execution-indeterminate", next: [{ reason: "inspect side effects" }]
+  }), { code: "execution-indeterminate", reason: "inspect side effects" });
+  assert.deepEqual(blockedOutcomeStop({ status: "BLOCKED", issues: ["provider missing"] }),
+    { code: null, reason: "provider missing" });
+  assert.equal(blockedOutcomeReason({ blockers: [{ summary: "lease held" }] }), "lease held");
+  assert.equal(blockedOutcomeReason({ command: "proof run", status: "BLOCKED" }),
+    "proof run BLOCKED");
+  assert.equal(blockedOutcomeReason({}), null);
+});
+
+test("metrics group blocked operations by code, phase and operation", () => {
+  const value = blockerMetrics([
+    { status: "completed", operation: "advance" },
+    { status: "blocked", phase: "prove", operation: "proof-advance",
+      blocker: { code: "authority-required", reason: "first" } },
+    { status: "blocked", phase: "prove", operation: "authority-run",
+      blocker: { code: "authority-required", reason: "latest" } },
+    { status: "blocked", operation: "start" }
+  ]);
+  assert.equal(value.total, 3);
+  assert.deepEqual(value.byCode["authority-required"], {
+    count: 2, phases: { prove: 2 },
+    operations: { "proof-advance": 1, "authority-run": 1 }, latestReason: "latest"
+  });
+  assert.deepEqual(value.byCode.untyped, {
+    count: 1, phases: { unknown: 1 }, operations: { start: 1 }, latestReason: null
+  });
 });

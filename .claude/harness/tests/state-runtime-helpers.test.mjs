@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
-  chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync,
+  chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync,
   symlinkSync, writeFileSync
 } from "node:fs";
 import { dirname, join } from "node:path";
@@ -276,4 +276,29 @@ test("saving a stale state keeps surface additions recorded since it was loaded"
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("unreadable runtime state is restored from the last valid save", (t) => {
+  const f = fixture(t);
+  const id = "restore";
+  mkdirSync(join(f.changes, id));
+  f.state.saveRuntime({ id, status: "change" });
+  f.state.saveRuntime({ id, status: "building" });
+  const path = f.state.runtimePath(id);
+  writeFileSync(path, "{");
+  const errors = [];
+  t.mock.method(console, "error", (line) => errors.push(line));
+  const restored = f.state.loadRuntime(id);
+  assert.equal(restored.status, "change");
+  assert.equal(JSON.parse(readFileSync(path, "utf8")).status, "change");
+  assert.equal(readdirSync(f.runtime).some((name) =>
+    name.startsWith(`${id}.json.corrupt-`)), true);
+  assert.match(errors.join("\n"), /RECOVERED: .*restored the last valid state/);
+  assert.equal(f.state.orphanRuntimeChanges().length, 0);
+
+  writeFileSync(path, "{");
+  writeFileSync(`${path}.prev`, "{");
+  assert.throws(() => f.state.loadRuntime(id), /invalid JSON.*change abandon/);
+  writeFileSync(`${path}.prev`, JSON.stringify({ id: "other", status: "change" }));
+  assert.throws(() => f.state.loadRuntime(id), /invalid JSON/);
 });

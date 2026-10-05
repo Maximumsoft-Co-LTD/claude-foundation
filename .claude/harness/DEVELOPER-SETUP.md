@@ -10,8 +10,9 @@ workflow adds:
   legacy Grounding v2 remains readable;
 - strictest-wins low/medium/high review routing with at most two delivered AI
   review waves: one full packet and one finding-bound delta;
-- deterministic repair closure after the second AI review instead of a third AI
-  loop or a mandatory human approval;
+- deterministic repair closure after the second AI review, else one closure
+  review of the repaired delta, instead of an open AI loop or a mandatory human
+  approval;
 - one resumable `advance --through build|proven|archived` coordinator, which
   invokes compatible proof/Land primitives, reruns only stale providers, and
   returns one bounded action at a real boundary;
@@ -118,7 +119,8 @@ Change → Build → Review → Prove without reopening locked choices.
 Existing changes can use `/change`, `/build`, `/prove`, and `/land` separately.
 A deterministic failure resumes at the affected provider. First-review findings
 receive one delta review; after two delivered AI waves Change Loop uses current
-test, mutation, integration, and static evidence to close verified repairs. It
+test, mutation, integration, and static evidence to close verified repairs, or
+one closure review when no evidence binds them. It
 asks again only for a real contract contradiction or new material risk, not for
 warnings or optional improvements.
 

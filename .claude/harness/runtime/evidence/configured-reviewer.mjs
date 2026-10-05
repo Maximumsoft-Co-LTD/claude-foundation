@@ -869,5 +869,12 @@ export function createConfiguredReviewerRuntime({
       : runClaude(config, changeId, workspace, packet, forbiddenSessionIds));
   }
 
-  return { reviewerConfig, reviewerStatus, runReview, runReviewAsync };
+  // Presence only, without login probes: routing skips a reviewer this host
+  // cannot run instead of spending infrastructure attempts discovering it.
+  function reviewerInstalled(name) {
+    const config = foundationPolicy().review?.reviewers?.[name];
+    return Boolean(config?.executable) && commandExists(config.executable, root);
+  }
+
+  return { reviewerConfig, reviewerStatus, reviewerInstalled, runReview, runReviewAsync };
 }

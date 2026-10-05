@@ -27,11 +27,13 @@ export function commandTelemetryStatus(code, blocked) {
   return code === 0 ? "completed" : blocked ? "blocked" : "failed";
 }
 
+// Ordered by precedence: a message naming several kinds takes the first, so a
+// stop is never demoted to the generic policy guard just for saying more.
 const BLOCKER_KINDS = Object.freeze([
   {
     code: "budget-exhausted", classification: "budget",
-    pattern: /budget|token|request limit|allowance/i,
-    summary: "Measured execution allowance requires an explicit continuation decision",
+    pattern: /\bbudget\b|request limit|allowance/i,
+    summary: "A measured execution budget checkpoint stopped the operation",
     recovery: (id) => `claude-foundation budget checkpoint ${id}`
   },
   {
@@ -60,6 +62,58 @@ const BLOCKER_KINDS = Object.freeze([
   }
 ]);
 
+// Codes only a caller can assert; message text never selects them.
+const DECLARED_BLOCKER_KINDS = Object.freeze([
+  {
+    code: "decision-required", classification: "decision",
+    summary: "A recorded decision is required before the operation can continue",
+    recovery: (id, phase) => `claude-foundation packet ${id} --phase ${phase}`
+  },
+  {
+    code: "execution-indeterminate", classification: "recovery",
+    summary: "Provider execution stopped before its receipt; inspect side effects before retrying",
+    recovery: (id) => `claude-foundation proof advance ${id}`
+  }
+]);
+
+const POLICY_GUARD_KIND = Object.freeze({
+  code: "policy-guard", classification: "policy",
+  summary: "A Change Loop policy guard stopped the operation",
+  recovery: (id, phase) => `claude-foundation packet ${id} --phase ${phase}`
+});
+
+const BLOCKER_REASON_LIMIT = 200;
+
+// The reason stays in local command telemetry only; exported projections carry
+// the code. Paths and credential-shaped values never reach the log.
+export function sanitizedBlockerReason(value) {
+  const text = String(value || "")
+    .replace(/\b(authorization)(\s*[:=]\s*|\s+)(?:(?:bearer|basic)\s+)?\S+/gi, "$1$2<redacted>")
+    .replace(/\b(bearer|token|password|passwd|secret|api[_-]?key)(\s*[:=]\s*)\S+/gi,
+      "$1$2<redacted>")
+    // A spaced value is prose unless it looks like a credential.
+    .replace(/\b(bearer|token|password|passwd|secret|api[_-]?key)(\s+)(\S+)/gi,
+      (match, name, space, word) => /\d|[-_]|^\S{16,}$/.test(word) ||
+        name.toLowerCase() === "bearer" ? `${name}${space}<redacted>` : match)
+    .replace(/\b(?:sk|pk|rk|ghp|gho|ghs|ghu|github_pat|xox[abprs]|AKIA|ASIA)[-_A-Za-z0-9]{8,}/g, "<redacted>")
+    .replace(/(?:~|[A-Za-z]:)?(?:[\\/][\w.@+-]+){2,}[\\/]?/g, "<path>")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return null;
+  return text.length > BLOCKER_REASON_LIMIT
+    ? `${text.slice(0, BLOCKER_REASON_LIMIT - 1)}…` : text;
+}
+
+function blockerKind(code, source) {
+  const declared = code
+    ? [...BLOCKER_KINDS, ...DECLARED_BLOCKER_KINDS, POLICY_GUARD_KIND]
+      .find((candidate) => candidate.code === code)
+    : null;
+  return declared ||
+    BLOCKER_KINDS.find((candidate) => candidate.pattern.test(source)) ||
+    POLICY_GUARD_KIND;
+}
+
 function safeChangeId(value) {
   const id = String(value || "");
   return /^[a-z0-9][a-z0-9-]*$/.test(id) ? id : "<change>";
@@ -71,21 +125,21 @@ function safeLifecyclePhase(value) {
     ? phase : "build";
 }
 
+// `message` is the refusal text, or `{ code, reason }` when the caller knows
+// the kind. A declared code wins; otherwise the first matching pattern does.
 export function blockerTelemetryValue(message, context = {}) {
-  const source = String(message || "");
-  const matches = BLOCKER_KINDS.filter((candidate) => candidate.pattern.test(source));
-  const kind = matches.length === 1 ? matches[0] : {
-    code: "policy-guard", classification: "policy",
-    summary: "A Change Loop policy guard stopped the operation",
-    recovery: (id) => `claude-foundation packet ${id} --phase ${safeLifecyclePhase(context.phase)}`
-  };
+  const declared = message && typeof message === "object" ? message : null;
+  const source = String((declared ? declared.reason : message) || "");
+  const kind = blockerKind(declared?.code || null, source);
   const operation = String(context.operationName || "unknown")
     .replace(/[^a-z0-9-]/gi, "-").slice(0, 64) || "unknown";
   return {
     code: kind.code,
     classification: kind.classification,
     summary: kind.summary,
-    recovery: kind.recovery(safeChangeId(context.changeId)),
+    reason: sanitizedBlockerReason(source),
+    recovery: kind.recovery(safeChangeId(context.changeId),
+      safeLifecyclePhase(context.phase)),
     fingerprint: `sha256:${createHash("sha256")
       .update(`${kind.code}\0${operation}`).digest("hex")}`
   };

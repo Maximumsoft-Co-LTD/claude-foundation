@@ -73,6 +73,26 @@ than instructing an operator to move runtime state files by hand.
 - **WHEN** `doctor` reports runtime state whose active change directory is gone
 - **THEN** the reported next action names `change abandon`
 
+### Requirement: Unreadable runtime state is a harness repair
+
+The runtime SHALL keep the last state that parsed beside each live runtime
+state file and, when the live file cannot be parsed, SHALL quarantine it beside
+the original and reinstate that last valid state instead of requiring a user
+decision. It SHALL offer `change abandon` only when no valid prior state for
+the same change exists.
+
+#### Scenario: Live state is unreadable
+
+- **WHEN** a command loads runtime state that fails to parse and a valid prior
+  save for the same change exists
+- **THEN** the prior state is restored, the unreadable copy is kept, and the
+  command continues with a recovery notice
+
+#### Scenario: No valid prior state
+
+- **WHEN** neither the live state nor the prior save parses for that change
+- **THEN** the command refuses and names `change abandon`
+
 ### Requirement: The phase guard costs nothing when there is nothing to guard
 
 The wired phase-mutation hook SHALL reach its no-op decision without starting a

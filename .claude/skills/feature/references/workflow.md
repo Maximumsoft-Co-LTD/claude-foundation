@@ -9,8 +9,8 @@ the PRD Decision Sheet does not replace it. Then use `advance --through proven`
 for isolated Build and Prove. Do not construct packet/dispatch/proof command
 chains manually. Low risk uses one full AI
 review; medium permits one correction and one fresh-session delta closure; high
-asks material risk decisions in the initial Decision Sheet. Never dispatch a
-third AI. In-contract findings auto-repair; provider failures recover;
+asks material risk decisions in the initial Decision Sheet. Beyond one
+closure review of a repaired final delta, never dispatch another AI. In-contract findings auto-repair; provider failures recover;
 missing permission becomes a DevOps handoff.
 
 `--resume` continues. Let the coordinator reuse identity-valid receipts and proof;

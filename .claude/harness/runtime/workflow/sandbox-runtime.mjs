@@ -197,7 +197,10 @@ export function showSandboxInspection(context, id, flags = {}) {
     for (const reason of result.execution.reasons) context.output.log(`  reason: ${reason}`);
   }
   if (flags.unattended && !result.execution.safeForUnattended) {
-    context.markBlocked();
+    context.markBlocked({
+      code: "workspace-boundary",
+      reason: `unsafe for unattended execution: ${result.execution.reasons.join("; ") || "unspecified"}`
+    });
     context.runtimeProcess.exitCode = 1;
   }
 }

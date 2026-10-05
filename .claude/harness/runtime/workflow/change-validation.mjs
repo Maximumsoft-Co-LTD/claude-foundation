@@ -923,7 +923,14 @@ export function createChangeValidationRuntime({
     // A failing traceability audit is a refusal, not a crash. It exits without
     // `die` because the findings are already printed above, so it declares the
     // block explicitly instead.
-    if (audit.status === "error") { markBlocked(); process.exitCode = 1; }
+    if (audit.status === "error") {
+      const finding = audit.findings.find((item) => item.level === "error");
+      markBlocked({
+        code: "contract-invalid",
+        reason: finding ? `${finding.code}: ${finding.message}` : "traceability audit failed"
+      });
+      process.exitCode = 1;
+    }
   }
 
   function changeArtifactGaps(state, dir) {

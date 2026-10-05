@@ -125,7 +125,8 @@ function fixture(id) {
     root, store, authority, dispatchAi, recordReceipt,
     unrecorded: () => authority.unrecordedDeliveredAiResponse(
       id, state.reviewHistory, "review"),
-    history: () => state.reviewHistory
+    history: () => state.reviewHistory,
+    update: (change) => { state = { ...state, ...change }; }
   };
 }
 
@@ -391,3 +392,60 @@ function fixture(id) {
 }
 
 console.log("review-guard-reconciliation: all cases passed");
+
+// Case — harness-owned release: one infrastructure reset per wave only when
+// the reviewer diagnosis passes, and a diff-changing base move always
+// releases its expired verdict, both under harness references.
+{
+  const id = "case-auto-release";
+  const world = fixture(id);
+  const exhaust = (first) => {
+    for (const n of [first, first + 1]) {
+      const attempt = world.dispatchAi(n, {
+        mode: "full", paths: ["root/a.mjs"], digest: `scope-${n}`
+      });
+      world.store.completeReviewAttempt(id, attempt.digest, {
+        reviewerSessionId: `session-${n}`, resultStatus: "error",
+        findings: [], verifiedFindingIds: []
+      });
+    }
+  };
+  exhaust(1);
+  assert.deepEqual(world.store.autoReleaseReviewBudget(id, {
+    reviewerHealthy: () => false
+  }), [], "an unhealthy reviewer keeps the circuit closed");
+  assert.deepEqual(world.store.autoReleaseReviewBudget(id, {
+    reviewerHealthy: () => true
+  }), ["harness:infra:wave-1"]);
+  assert.equal(world.store.infrastructureAiAttempts(id, world.history()).length, 0);
+  exhaust(3);
+  assert.deepEqual(world.store.autoReleaseReviewBudget(id, {
+    reviewerHealthy: () => true
+  }), [], "the automatic reset is spent once per wave");
+  assert.throws(() => world.dispatchAi(5, {
+    mode: "full", paths: ["root/a.mjs"], digest: "scope-5"
+  }), /REVIEW_INFRASTRUCTURE_ERROR.*authority reset-infra/);
+  world.store.acknowledgeInfrastructureAttempts(id, "user-decision");
+
+  const passed = world.dispatchAi(6, {
+    mode: "full", paths: ["root/a.mjs"], digest: "scope-6"
+  });
+  world.store.completeReviewAttempt(id, passed.digest, {
+    reviewerSessionId: "session-6", resultStatus: "pass",
+    findings: [], verifiedFindingIds: []
+  });
+  world.update({ lastBaseMove: {
+    movementKey: "move-1", preDiffIdentity: "before", postDiffIdentity: "after",
+    at: "9999-01-01T00:00:00.000Z"
+  } });
+  assert.deepEqual(world.store.autoReleaseReviewBudget(id),
+    ["harness:base-move:move-1"]);
+  assert.deepEqual(world.store.autoReleaseReviewBudget(id), [],
+    "one base move releases at most one attempt");
+  world.update({ lastBaseMove: {
+    movementKey: "move-2", preDiffIdentity: "same", postDiffIdentity: "same",
+    at: "9999-01-01T00:00:00.000Z"
+  } });
+  assert.deepEqual(world.store.autoReleaseReviewBudget(id), [],
+    "an unchanged diff rebinds instead of releasing");
+}

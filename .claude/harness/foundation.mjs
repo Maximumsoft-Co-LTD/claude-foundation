@@ -350,6 +350,7 @@ const { recordInstructionManifest } = createInstructionRecorder({
 const {
   reviewerConfig,
   reviewerStatus,
+  reviewerInstalled,
   runReview: runConfiguredReview,
   runReviewAsync: runConfiguredReviewAsync
 } = createConfiguredReviewerRuntime({
@@ -435,7 +436,8 @@ const {
   deliveredAiAttempts,
   infrastructureAiAttempts,
   acknowledgeInfrastructureAttempts,
-  acknowledgeBaseMoveAttempts
+  acknowledgeBaseMoveAttempts,
+  autoReleaseReviewBudget
 } = createReviewAttemptStore({
   receiptsRoot: RECEIPTS,
   evidenceVault: EVIDENCE_VAULT,
@@ -1099,10 +1101,12 @@ const {
   foundationPolicy,
   reviewerConfig,
   reviewerStatus,
+  reviewerInstalled,
   runConfiguredReview,
   runConfiguredReviewAsync,
   acknowledgeInfrastructureAttempts,
   acknowledgeBaseMoveAttempts,
+  autoReleaseReviewBudget,
   writeJson,
   receiptPath,
   recordReceipt,
@@ -1968,6 +1972,29 @@ const sessionLeases = createSessionLeaseRuntime({
   acquire: acquireAgentLease, release: releaseAgentLease, discard: discardAgentLease
 });
 const { advanceValue, showAdvance } = createAdvanceRuntime({
+  pendingApprovalDecisions: (id) => trapFailures(() => {
+    const preflight = authorityPreflight(id);
+    const authority = preflight.status === "READY" ? [] : preflight.blockers.map((blocker) => ({
+      code: blocker.code, summary: blocker.summary, next: blocker.next
+    }));
+    // External evidence nobody can wire automatically is the same Prove-time
+    // question; review and acceptance have their own routes.
+    const state = loadRuntime(id);
+    const providers = changedSurfaceResolvable(id, state) ? requiredProviders(id) : [];
+    const external = providers.flatMap((provider) => {
+      const config = providerConfig(id, provider);
+      if (config && config.adapter !== "external") return [];
+      if (["review", "acceptance"].includes(providerCapability(provider, config))) return [];
+      const recovery = externalEvidenceRecovery(id, provider);
+      if (recovery.kind !== "user-decision" ||
+          recovery.wiring?.kind === "configure-provider") return [];
+      return [{
+        code: "EXTERNAL_EVIDENCE_REQUIRED", summary: recovery.decision.summary,
+        next: `wire provider '${provider}' in openspec/changes/${id}/execution.yaml or agree how its external result will be supplied`
+      }];
+    });
+    return [...authority, ...external];
+  }),
   settleSessionLeases: sessionLeases.settle,
   issueSessionLease: sessionLeases.issue,
   changePath,

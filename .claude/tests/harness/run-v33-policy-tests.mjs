@@ -34,11 +34,24 @@ pass("low risk uses one full AI review");
 
 assert.deepEqual(effectiveReviewAttemptLimit(low, [{
   workspaceHash: "before-repair"
-}], "after-repair"), { promotesLow: true, maxAiAttempts: 2 });
+}], "after-repair"), { promotesLow: true, closureWave: false, maxAiAttempts: 2 });
 assert.deepEqual(effectiveReviewAttemptLimit(low, [{
   workspaceHash: "same"
-}], "same"), { promotesLow: false, maxAiAttempts: 1 });
+}], "same"), { promotesLow: false, closureWave: false, maxAiAttempts: 1 });
 pass("one shared route promotes low-risk review only after a real correction");
+
+const twoWaves = [{ workspaceHash: "first", resultStatus: "fail" },
+  { workspaceHash: "second", resultStatus: "fail" }];
+assert.deepEqual(effectiveReviewAttemptLimit({ maxAiAttempts: 2 }, twoWaves, "repaired"),
+  { promotesLow: false, closureWave: true, maxAiAttempts: 3 });
+assert.equal(effectiveReviewAttemptLimit({ maxAiAttempts: 2 }, twoWaves, "second").closureWave,
+  false, "an unrepaired final delta opens no closure wave");
+assert.equal(effectiveReviewAttemptLimit({ maxAiAttempts: 2 }, [twoWaves[0],
+  { workspaceHash: "second", resultStatus: "pass" }], "repaired").closureWave, false);
+assert.equal(effectiveReviewAttemptLimit({ maxAiAttempts: 2 },
+  [...twoWaves, { workspaceHash: "third", resultStatus: "fail" }], "again").maxAiAttempts,
+  2, "the closure wave is spent once");
+pass("a repaired failing final delta gets exactly one closure wave");
 
 const medium = classifyReviewRisk({
   state: { intent: "Change an internal calculation", impact: "medium", coupling: "isolated" },

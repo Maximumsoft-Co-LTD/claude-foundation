@@ -686,8 +686,26 @@ export function createAdvanceRuntime({
   recordPhase = null, output = console.log,
   capture = (operation) => operation(),
   captureAsync = async (operation) => operation(),
-  markBlocked = () => {}
+  markBlocked = () => {},
+  // Authority the change already needs (signed CI, ...); asked with spec
+  // approval so it never first surfaces at Build dispatch.
+  pendingApprovalDecisions = () => []
 }) {
+  // Spec approval is the one Change-time question; known authority gates ride
+  // along with it instead of stopping Build later.
+  function failureAction(id, error, options) {
+    if (error?.code !== "SPEC_APPROVAL_REQUIRED" || !error.decision)
+      return advanceFailureAction(id, error, options);
+    let alongside = [];
+    try { alongside = pendingApprovalDecisions(id) || []; } catch {}
+    if (!alongside.length) return advanceFailureAction(id, error, options);
+    const summary = `${error.decision.summary} Ask in the same question, before Build: ${
+      alongside.map((item) => `${item.summary} (${item.next})`).join("; ")}`;
+    return advanceFailureAction(id, Object.assign(error, {
+      message: summary, decision: { ...error.decision, summary, alongside }
+    }), options);
+  }
+
   const recovery = createAdvanceRecovery({
     loadRuntime, saveRuntime,
     // Failure recovery may run after captureAsync has unwound. Keep runtime
@@ -786,7 +804,7 @@ export function createAdvanceRuntime({
       });
     } catch (error) {
       markBlocked(error?.message || String(error));
-      return advanceFailureAction(id, error, { stage });
+      return failureAction(id, error, { stage });
     }
   }
 
@@ -899,7 +917,7 @@ export function createAdvanceRuntime({
     const finish = async (value) => {
       if (issueSessionLease && value?.action === "EDIT") {
         try { value = capture(() => issueSessionLease(id, value)); }
-        catch (error) { value = advanceFailureAction(id, error, { stage, through }); }
+        catch (error) { value = failureAction(id, error, { stage, through }); }
       }
       value = projected({ ...withContext(id, value), resume: resume(id, through), resumeCommand: resume(id, through) });
       try { value = projected(recovery.observe(id, value)); }
@@ -924,7 +942,7 @@ export function createAdvanceRuntime({
             })), { force: true }));
           return advanceThrough(id, through);
         } catch (error) {
-          return projected(recovery.observe(id, advanceFailureAction(id, error, { stage, through })));
+          return projected(recovery.observe(id, failureAction(id, error, { stage, through })));
         }
       }
       return value;
@@ -1062,7 +1080,7 @@ export function createAdvanceRuntime({
       });
     } catch (error) {
       markBlocked(error?.message || String(error));
-      return finish(advanceFailureAction(id, error, { stage, through }));
+      return finish(failureAction(id, error, { stage, through }));
     }
   }
 

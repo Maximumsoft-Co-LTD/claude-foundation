@@ -89,7 +89,10 @@ Low SHALL require one AI full review. Medium and high SHALL permit one AI full
 review and, only after correction, one fresh-session delta closure. High-risk
 material decisions SHALL be asked in the initial Decision Sheet and SHALL NOT
 create a mandatory human approval gate during Prove. No tier SHALL dispatch a
-third AI.
+third AI except one closure review: when the second wave failed, its findings
+were repaired, and deterministic closure cannot close them, Foundation SHALL
+request one fresh-session delta review of the repaired workspace before any
+user decision, and SHALL NOT dispatch a fourth.
 
 Reviewer executable, authentication, entitlement, timeout, or transport errors
 SHALL NOT create a delivered baseline or consume a correction wave. Foundation
@@ -141,6 +144,14 @@ hash-chained and SHALL NOT count as a third AI wave.
   the implementation repairs it, and all bound providers pass on the new workspace
 - **THEN** Foundation records a deterministic repair closure for those exact
   finding IDs and continues Prove without AI round three or human approval
+
+#### Scenario: The repaired final delta has no critical-case binding
+
+- **WHEN** the second AI fails, the implementation repairs its findings, and
+  no declared critical case can close them deterministically
+- **THEN** Foundation requests one closure review of the repaired workspace
+- **AND** only when that closure review also fails and its repair cannot close
+  does Prove stop at the review-exhausted user decision
 
 #### Scenario: Deterministic closure evidence changes
 

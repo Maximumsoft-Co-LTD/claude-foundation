@@ -242,7 +242,7 @@ claude-foundation doctor --stage prove --change <change>
 | `changes` | Lists active changes and readiness | Finding work to resume or land |
 | `packet <change> --phase <phase>` | Prints a compact diagnostic handoff; review packets are ≤8 KiB | Operator/debug inspection |
 | `packet <change> --repo <id> [--task <id>] [--pretty]` | Prints a bounded repository or task packet | Starting a native subagent |
-| `metrics <change>` | Reports measured phase/provider cost and emitted context bytes | Finding latency or orchestration overhead |
+| `metrics <change>` | Reports measured phase/provider cost, emitted context bytes, and blocked operations by code, phase, and operation with the latest local reason | Finding latency, orchestration overhead, or where a change keeps stopping |
 | `feedback <change> [--pretty] [--diagnostics]` | Reports current readiness, source-aware timing, repair intervals, blocker coverage, evidence reuse, and the next action; diagnostics exports allowlisted metadata | Explaining why Prove took time without labeling repair as wait |
 | `budget checkpoint <change>` | Reports measured remaining allowance, unfinished work, and the exact resume route | Checking remaining allowance and the resume route |
 | `exec <change> [--phase <phase>] -- <command…>` | Derives the phase, runs Build commands in the canonical workspace under the shared mutation policy, passes the exit code through, and records duration | Long build-phase commands (container builds, installs, full test runs) |
@@ -307,7 +307,7 @@ sessions, finding closure, and exact scope in a change-level hash-chained
 attempt history. Low gets one full AI review; medium and high get at most one
 full AI review plus one post-correction delta. One infrastructure retry is
 separate from delivered review waves. A final in-contract blocker is closed by
-its named claims and passing critical-case receipts, not a third AI. High-risk decisions are settled
+its named claims and passing critical-case receipts; without that binding, one closure review covers the repaired delta. High-risk decisions are settled
 in the initial Decision Sheet, not a mandatory human-final gate. Deleting a receipt, aborting, or
 renaming a provider cannot reset the circuit. Acceptance is revalidated against explicit claims, human
 identity, criteria, observation, provenance, durable evidence, contract reason,
@@ -597,9 +597,10 @@ moved base without altering either — the common shape of "another change
 landed first" — `proof run` / `proof advance` rebind the verdict to the new
 workspace hash instead of expiring it, and no review wave is consumed. A
 replay that does alter the diff expires the verdict as before; if that
-expiry would exhaust the AI review wave cap, `authority reset-base-move
-<change> --decision-ref <ref>` releases exactly the expired passing attempt
-from the count under a recorded user decision.
+expiry would exhaust the AI review wave cap, the next review dispatch
+releases exactly the expired passing attempt from the count under a
+harness-owned reference; `authority reset-base-move <change> --decision-ref
+<ref>` remains the manual route.
 
 Copy sandboxes also supply a review contribution identity, computed from
 the baseline and current Apply manifests. Forwarded untouched files disappear

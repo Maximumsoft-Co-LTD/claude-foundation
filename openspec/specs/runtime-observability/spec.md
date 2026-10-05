@@ -113,7 +113,7 @@ The system SHALL attach the producing Foundation semantic version, protocol bund
 
 ### Requirement: Blocked operations carry bounded causal diagnostics
 
-The operation ledger SHALL record a package-defined blocker code, classification, bounded summary, recovery route, and decision fingerprint when available, SHALL exclude raw untrusted error content, and SHALL leave unavailable cause data explicit.
+The operation ledger SHALL record a package-defined blocker code, classification, bounded summary, recovery route, decision fingerprint, and a sanitized local reason when available, SHALL strip credential-shaped values and filesystem paths from that reason and bound it to 200 characters, SHALL keep the reason out of exported feedback and dashboard projections, and SHALL leave unavailable cause data explicit.
 
 #### Scenario: Known decision boundary blocks
 
@@ -122,8 +122,14 @@ The operation ledger SHALL record a package-defined blocker code, classification
 
 #### Scenario: Hostile error text reaches a failed command
 
-- **WHEN** terminal output contains a credential-shaped value or user-controlled command text
-- **THEN** the operation ledger does not copy that text into blocker fields
+- **WHEN** terminal output contains a credential-shaped value or a filesystem path
+- **THEN** the recorded reason replaces it with a redaction marker
+- **AND** exported feedback and dashboard projections carry only the blocker code
+
+#### Scenario: Structured stop declares its own cause
+
+- **WHEN** a command stops with a structured non-ready outcome
+- **THEN** the operation row records that outcome's declared code and reason rather than an empty refusal
 
 ### Requirement: Budget targets explain their execution-surface calibration
 
@@ -155,14 +161,19 @@ The system SHALL normalize supported host-execution source aliases before classi
 - **WHEN** an ingested event names no supported source alias or host identity
 - **THEN** metrics report source unsupported and name only a safe normalization/import route
 
-### Requirement: Unstructured blocker fallback is ambiguity-safe
+### Requirement: Unstructured blocker fallback is precedence-ordered
 
-The system SHALL prefer a structured package-owned blocker cause, SHALL use textual classification only for compatibility input, and SHALL fall back to a generic policy guard rather than select a recovery route when multiple blocker classes match.
+The system SHALL prefer a structured package-owned blocker cause, SHALL use textual classification only for compatibility input, SHALL select the first matching class in the package precedence order (budget, authority, resource conflict, workspace, contract), and SHALL use the generic policy guard only when no class matches.
 
-#### Scenario: Legacy error text matches multiple blocker classes
+#### Scenario: Error text matches multiple blocker classes
 
 - **WHEN** an unstructured blocked error matches two or more package classifier patterns
-- **THEN** the retained operation uses the bounded `policy-guard` cause and packet recovery route
+- **THEN** the retained operation uses the highest-precedence matching cause and records the sanitized reason
+
+#### Scenario: Error text matches no blocker class
+
+- **WHEN** an unstructured blocked error matches no package classifier pattern
+- **THEN** the retained operation uses the `policy-guard` cause and packet recovery route with the sanitized reason
 
 #### Scenario: Historical operation predates typed blockers
 

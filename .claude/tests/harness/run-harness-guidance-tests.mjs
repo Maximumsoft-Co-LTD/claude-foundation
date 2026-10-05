@@ -30,7 +30,7 @@ check("codex-host-source-normalized", () => {
   assert.deepEqual(usageAvailability([event]).correlatedHosts, ["codex"]);
   assert.equal(blockerTelemetryValue("authority token conflict", {
     changeId: "change-a", operationName: "advance", phase: "prove"
-  }).code, "policy-guard");
+  }).code, "authority-required");
 });
 
 check("lazy-cohort-contained", () => {

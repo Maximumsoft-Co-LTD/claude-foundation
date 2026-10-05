@@ -554,12 +554,16 @@ export function createAuthorityRuntime({
   foundationPolicy,
   reviewerConfig,
   reviewerStatus,
+  // Absent in narrow compositions: every configured reviewer is routable.
+  reviewerInstalled = () => true,
   runConfiguredReview,
   // Optional non-blocking twin of runConfiguredReview; absent means the
   // asynchronous route awaits the synchronous reviewer.
   runConfiguredReviewAsync = null,
   acknowledgeInfrastructureAttempts,
   acknowledgeBaseMoveAttempts,
+  // Absent in narrow compositions: dispatch then keeps the manual reset routes.
+  autoReleaseReviewBudget = () => [],
   writeJson,
   fail,
   // { git, pathExists, readFile, readDirectory, isDirectory }; absent means
@@ -686,7 +690,38 @@ export function createAuthorityRuntime({
     saveRuntime(state);
   }
 
+  function reviewInfrastructureRetryLimit() {
+    const reviewSettings = foundationPolicy().review || {};
+    const configuredFallbacks = (Array.isArray(reviewSettings.fallbackReviewers)
+      ? reviewSettings.fallbackReviewers
+      : reviewSettings.fallbackReviewer ? [reviewSettings.fallbackReviewer] : [])
+      .filter((name) => name !== "main-session");
+    return Math.max(1,
+      (1 + configuredFallbacks.length) * Number(reviewSettings.infraFailureThreshold || 1));
+  }
+
+  // Release harness-caused review accounting before any dispatch guard reads
+  // it, and reopen requests an exhausted infrastructure circuit had closed.
+  function releaseHarnessReviewBudget(id) {
+    const released = autoReleaseReviewBudget(id, {
+      maxInfrastructureRetries: reviewInfrastructureRetryLimit(),
+      reviewerHealthy: () => reviewerStatus(null).ok === true
+    });
+    const infrastructure = released.find((reference) => reference.startsWith("harness:infra:"));
+    if (infrastructure) for (const entry of authorityStore.list(id)) {
+      if (entry.value.status !== "infrastructure-exhausted") continue;
+      authorityStore.replace(entry, {
+        ...entry.value, status: "requested",
+        infrastructureResetAt: now(), infrastructureResetDecisionRef: infrastructure
+      });
+    }
+    for (const reference of released)
+      console.error(`AUTHORITY ${id}: harness released review accounting (${reference})`);
+    return released;
+  }
+
   function dispatchAuthorityUnlocked(id, flags = {}) {
+    releaseHarnessReviewBudget(id);
     const context = dispatchRequestContext(id, flags);
     if (context.handled) return context.value;
     const windowState = loadRuntime(id);
@@ -704,13 +739,7 @@ export function createAuthorityRuntime({
     const deliveredSnapshot = deliveredAiAttempts(id, historySnapshot);
     const { promotesLow, maxAiAttempts } = effectiveReviewAttemptLimit(
       routing, deliveredSnapshot, request.workspaceHash);
-    const reviewSettings = foundationPolicy().review || {};
-    const configuredFallbacks = (Array.isArray(reviewSettings.fallbackReviewers)
-      ? reviewSettings.fallbackReviewers
-      : reviewSettings.fallbackReviewer ? [reviewSettings.fallbackReviewer] : [])
-      .filter((name) => name !== "main-session");
-    const maxInfrastructureRetries = Math.max(1,
-      (1 + configuredFallbacks.length) * Number(reviewSettings.infraFailureThreshold || 1));
+    const maxInfrastructureRetries = reviewInfrastructureRetryLimit();
     // The route-aware cap still wins over malformed scope/base details.
     const history = assertReviewDispatchAllowed(
       id, reviewerType, maxAiAttempts, maxInfrastructureRetries);
@@ -1058,6 +1087,7 @@ export function createAuthorityRuntime({
       ...fallbacks.filter((name) => name !== "main-session")].filter(Boolean);
     const attempts = request.fallbackAttempts || [];
     for (const reviewer of configured) {
+      if (!reviewerInstalled(reviewer)) continue;
       const failures = attempts.filter((attempt) =>
         attempt.reviewer === reviewer && !attempt.bindingRecoveredAt).length;
       if (failures < threshold) return reviewer;

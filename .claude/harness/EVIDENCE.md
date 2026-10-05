@@ -459,8 +459,9 @@ critical cases; a later current pass of those providers creates a deterministic
 repair-closure receipt, not a third AI review. A delta review that no longer
 reports an earlier finding closes it. When the repaired final finding has no
 declared critical case to bind (for example a rapid change) and current
-non-review proof passes, no wave or binding remains, so Prove stops at the
-review-exhausted user decision (accept the review risk with `change waive
+non-review proof passes, Prove requests one closure review of the repaired
+workspace; only after that closure wave also fails and its repair cannot close
+does Prove stop at the review-exhausted user decision (accept the review risk with `change waive
 --capability review`, revise the agreement, or pause) instead of returning an
 unsatisfiable repair. A review that `advance` runs beside the providers binds
 its receipt to that pass's explicit proof run and snapshot, and its failure
