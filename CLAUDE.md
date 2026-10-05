@@ -44,11 +44,9 @@ stale evidence. Change Loop makes completion content-bound and resumable:
 - Real authority, resource, budget, conflict, or repeated no-progress boundaries
   preserve state and return an exact resume route.
 - The normal code-delivery flow succeeds at `archived`, never merely `proven`.
-- Land applies every writable repository's proven projection as an uncommitted
-  target diff, archives only after the full saga succeeds, and leaves Git HEAD
-  and index unchanged. Land never commits, pushes, or opens a pull request;
-  the separate optional `/deliver` command may do those effects only under its
-  narrow explicit authority and must finish with a verified PR URL.
+- Land leaves an uncommitted target diff and never commits, pushes, or opens a
+  pull request; only the optional `/deliver` command may, under its own explicit
+  authority. `WORKFLOW.md` owns the full Land and Deliver contracts.
 
 ## Sources of truth
 

@@ -84,20 +84,8 @@ AI agent อาจเขียน code ที่ดูถูกต้อง แ�
 - **กลับมาทำต่อได้** Task, runtime state, receipt และ recovery journal ยังคงอยู่
   แม้เปลี่ยน agent session
 
-Build ที่เริ่มก่อน execution graph v3 กลับมาทำต่อหลังอัปเกรดได้เช่นกัน Harness
-จะใช้สิทธิ์แบบหลาย task ใน session เดียวจาก plan เดิมเฉพาะเมื่อ identity ของ task
-และ contract ยังตรงกัน หากพิสูจน์ไม่ได้ ระบบจะส่งเฉพาะ task ที่เสร็จแล้วแต่ต้องตรวจใหม่
-รวมถึง task ปลายทางที่พึ่งพามันกลับเข้า leased verification อัตโนมัติ โดยไม่เขียน
-`tasks.md` ใหม่
-
 เป้าหมายคือรักษาความน่าเชื่อถือโดยไม่ต้องใช้ phase pipeline หรือ agent หลายบทบาท
 ตลอดเวลา และไม่ถือว่าคำพูดว่า “เสร็จแล้ว” ของ agent เป็นหลักฐาน
-
-เมื่อทำหลาย change พร้อมกันแล้ว target เปลี่ยน sync สามารถใช้ review เดิมได้ทั้ง
-worktree และ copy sandbox หาก binding ยังครบ โดย copy mode เทียบ identity ของไฟล์
-ระหว่าง baseline กับงานปัจจุบัน และยังถือว่าการ reconcile ไฟล์เดียวกันต้องตรวจใหม่
-sync ที่ไม่เปลี่ยน input จะเก็บ proof เดิม ส่วน `proof plan` อธิบายเหตุที่ใช้ review
-เดิมไม่ได้ ดู [กติกา binding](.claude/harness/EVIDENCE.md)
 
 ## ติดตั้ง
 

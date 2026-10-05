@@ -89,20 +89,8 @@ the result. Change Loop separates those concerns:
 - **Work can be resumed.** Tasks, runtime state, receipts, and recovery journals
   survive a new agent session.
 
-An in-flight pre-graph-v3 Build also resumes after an upgrade. The Harness
-reuses persisted multi-task single-session authority only while its task and
-contract identities still match; otherwise it automatically returns the
-affected completed tasks and their dependency descendants to leased verification
-without rewriting `tasks.md`.
-
 The intended result is less ceremony than a fixed multi-agent phase pipeline,
 without relying on “the agent says it is done” as proof.
-
-When concurrent changes move the target, sync can reuse an unchanged review
-in either a worktree or a copy sandbox. Copy mode compares the change's
-baseline-to-current file identities; same-file reconciliation remains
-conservative. No-op sync keeps existing proof, and `proof plan` explains
-why a review cannot be reused. See the [binding rules](.claude/harness/EVIDENCE.md).
 
 ## Install
 
@@ -747,7 +735,7 @@ See [Configure foundation.json](https://claude-foundation.dev/docs/foundation-co
 for fields, validation ranges, model defaults, and review profiles, and
 [Budgets and progress](WORKFLOW.md#budgets-and-progress) for continuation rules.
 
-## What Change Loop owns
+## What is the source of truth
 
 | Information | Source of truth |
 |---|---|

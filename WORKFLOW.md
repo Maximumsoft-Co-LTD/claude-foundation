@@ -26,7 +26,8 @@ Land. Rigor scales with risk and evidence needs, not a task-size phase matrix.
 ## Ownership and user states
 
 The user owns intent, consequential product decisions, explicit Land authority,
-final diff review, and any later Git or external side effect. The coding agent
+final diff review, and the authority for any later Git or external side effect
+(such as an explicit `/deliver`). The coding agent
 owns implementation and product repair. The harness owns compilation, tool
 preparation, isolation, routing, evidence, permissions integration, recovery,
 Apply, and archive. An external owner owns credentials, remote systems, and
