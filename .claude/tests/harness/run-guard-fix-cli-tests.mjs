@@ -277,6 +277,21 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
   await assert.rejects(route("amend", [
     "change", "amendment.json", "--inspect", "--consume-amendment"
   ], {}), /cannot be combined/);
+  // The direct verify correction needs no amendment JSON.
+  let correctedVerify = null;
+  await route("amend", ["change", "--task", "T001", "--verify", "npm test -- --runInBand",
+    "--reason", "typo"], {
+    amendTaskVerify: (...args) => { correctedVerify = args; }
+  });
+  assert.deepEqual(correctedVerify, ["change",
+    { task: "T001", verify: "npm test -- --runInBand", reason: "typo" }]);
+  await assert.rejects(route("amend", ["change", "--task", "T001"], {
+    amendTaskVerify: () => {}
+  }), /requires <change> --task <task-key\|task-id> --verify <command>/);
+  await assert.rejects(route("amend", ["change", "amendment.json", "--task", "T001",
+    "--verify", "npm test"], { amendTaskVerify: () => {} }), /requires <change> --task/);
+  await assert.rejects(route("amend", ["change", "--task", "T001", "--verify", "npm test",
+    "--inspect"], { amendTaskVerify: () => {} }), /cannot be combined/);
   let consumedRevision = null;
   await route("revise", ["change", "draft.json", "--consume-draft"], {
     reviseChange: (...args) => { consumedRevision = args; }

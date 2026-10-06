@@ -8,14 +8,13 @@ import {
 import { constants as fsConstants } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
-  ROOT_ONLY_EXCLUDED_DIRS, isExcludedPath, sandboxCodePathspec, trackedPathSet
+  ROOT_ONLY_EXCLUDED_DIRS, isExcludedPath, isInvestigationPath, sandboxCodePathspec,
+  trackedPathSet
 } from "../core/workspace-surface.mjs";
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 import {
   compositeRepositorySelection, isolatedRepositoryState, worktreeOwnedByTarget
 } from "../core/repository-binding.mjs";
-import { shellDisplayArgument } from "../core/shell-mutation-policy.mjs";
-import { isOwnedInvestigationReport } from "./investigation-report.mjs";
 
 // A commit read, not executed. Inspection must not resolve a program through
 // PATH, so ref files are the authority for both ordinary and linked worktrees.
@@ -311,9 +310,9 @@ export function runMeasuredSandboxSetupBatch(context, records) {
 // dependencies, so a project that installs them at its root starts every Build
 // without them. Three consumer Builds rediscovered that by linking the
 // checkout's node_modules — which the phase guard refuses — before falling back
-// to an install. Name the sanctioned route when the sandbox is created, so the
-// first Build turn already knows it. Lockfile first: the advice must match the
-// package manager the project actually pins.
+// to an install. The harness therefore runs the pinned lockfile install itself
+// when no setup command is configured. Lockfile first: the install must match
+// the package manager the project actually pins.
 const DEPENDENCY_LOCKFILES = [
   ["package-lock.json", "npm ci"],
   ["npm-shrinkwrap.json", "npm ci"],
@@ -323,18 +322,40 @@ const DEPENDENCY_LOCKFILES = [
   ["bun.lockb", "bun install --frozen-lockfile"]
 ];
 
-export function missingDependencySetupAdvisory({ root, workspace, setupCommand, pathExists }) {
-  if (setupCommand) return null;
-  const lockfile = DEPENDENCY_LOCKFILES.find(([file]) => pathExists(join(root, file)));
-  if (!lockfile) return null;
-  const [file, install] = lockfile;
-  const installed = pathExists(join(root, "node_modules"));
-  return `NOTE: the workspace has no installed dependencies: ${file} is at ${root}` +
-    `${installed ? " and node_modules is installed there" : ""}, but foundation.json ` +
-    `declares no sandbox.setupCommand. Declare {"sandbox":{"setupCommand":"${install}"}} ` +
-    "so the harness prepares every workspace, or run " +
-    `\`cd ${shellDisplayArgument(workspace)} && ${install}\` once; linking or copying the ` +
-    "checkout's node_modules into the workspace is refused.";
+// The root workspace's setup: the configured command, otherwise the install
+// the workspace's own lockfile pins. `sandbox.installDependencies: false` opts
+// out of the detected install; a configured command always runs. Never links or
+// copies the checkout's node_modules — the install happens in the workspace.
+export function workspaceSetupPlan({ sandbox = {}, workspace, pathExists }) {
+  if (sandbox.setupCommand)
+    return { command: sandbox.setupCommand, source: "configured" };
+  // A lockfile without its manifest is not an installable project.
+  if (sandbox.installDependencies === false || !workspace ||
+      !pathExists(join(workspace, "package.json"))) return null;
+  const lockfile = DEPENDENCY_LOCKFILES.find(([file]) =>
+    pathExists(join(workspace, file)));
+  return lockfile
+    ? { command: lockfile[1], source: "lockfile", lockfile: lockfile[0] }
+    : null;
+}
+
+export function sandboxSetupLine(setup) {
+  if (!setup) return "";
+  return `\n  setup: ${setup.status}${setup.source === "lockfile"
+    ? ` (${setup.command}, detected from ${setup.lockfile})` : ""}`;
+}
+
+// A failed or retried run replaces record.setup; keep where the command came
+// from so retries and the preparation plan still treat a detected install
+// exactly like a configured one.
+export function runWorkspaceSetupPlan(runSetupCommand, record, plan, timeoutMs, cwd, label) {
+  runSetupCommand(record, plan.command, timeoutMs, cwd, label);
+  const setup = record.setup;
+  if (setup && plan.source === "lockfile") {
+    setup.source = "lockfile";
+    setup.lockfile = plan.lockfile;
+  }
+  return setup;
 }
 
 export function carrySandboxIgnoredArtifacts(context, sourcePath, stagingPath) {
@@ -450,6 +471,7 @@ export function unrelatedSandboxTargetChanges(context, id, state, statusOutput) 
     if (path === `openspec/changes/${id}` || path.startsWith(allowedPrefix)) continue;
     if (path === ".foundation" || path.startsWith(".foundation/")) continue;
     if (path === "openspec/changes" || path.startsWith("openspec/changes/")) continue;
+    if (isInvestigationPath(path)) continue;
     if (Object.prototype.hasOwnProperty.call(preexisting, path)) {
       const absolute = join(context.root, path);
       try {
@@ -848,8 +870,7 @@ export function reportSandboxSync({ id, state, movement, forwarded, conflicts,
 
 export function sandboxCreatePreflight(context, id, flags = {}) {
   const {
-    hostAttestation, loadRuntime, repositoryCatalog, git, root,
-    porcelainStatusRecords, selectedRepositories, fail
+    hostAttestation, loadRuntime, repositoryCatalog, root, selectedRepositories, fail
   } = context;
   if (flags.unattended) {
     const preflight = hostAttestation.preflight(id, flags, true);
@@ -862,17 +883,10 @@ export function sandboxCreatePreflight(context, id, flags = {}) {
   if (topology.drift.length)
     fail(`sandbox preflight found unregistered submodule(s): ${
       topology.drift.map((repository) => repository.path).join(", ")}\n  register the complete set in openspec/repositories.yaml, select the repositories for '${id}', validate once, then create the sandbox`);
-  const targetStatus = git([
-    "status", "--porcelain=v1", "-z", "--untracked-files=all"
-  ], root);
-  const unownedInvestigations = targetStatus.status === 0
-    ? porcelainStatusRecords(targetStatus.stdout).filter((row) =>
-      row.status === "??" && row.path.startsWith("openspec/investigations/") &&
-      !isOwnedInvestigationReport(root, row.path))
-    : [];
-  if (unownedInvestigations.length)
-    fail(`sandbox preflight found untracked investigation note(s): ${
-      unownedInvestigations.map((row) => row.path).join(", ")}\n  commit the investigation record in the control repository before Build so sandbox apply cannot race another writer at archive`);
+  // Uncommitted investigation records and notes do not gate Build. They are
+  // control-plane documents, never Land targets: the worktree decision ignores
+  // them, and the shared apply/replay pathspec plus copy apply exclude
+  // openspec/investigations/, so Land can neither project nor overwrite them.
   return {
     initial,
     // Creation and repair resolve the agreement against live targets. Runtime
@@ -1071,11 +1085,21 @@ export function retryFailedSandboxSetups(context, id,
   const attempted = [];
   const configured = context.policy().sandbox || {};
   const rootSelection = selected.find((repository) => repository.id === "root");
+  const prior = state.workspace?.setup;
+  // A detected lockfile install retries like a configured command unless the
+  // project has since configured one or opted out.
+  const detected = prior?.source === "lockfile" &&
+    configured.installDependencies !== false
+    ? { command: prior.command, source: "lockfile", lockfile: prior.lockfile } : null;
   const rootCommand = rootSelection?.setupCommand || configured.setupCommand;
-  if (state.workspace?.setup?.status === "failed" && rootCommand &&
-      state.workspace?.path) {
-    context.runSetupCommand(state.workspace, rootCommand,
+  const rootPlan = rootCommand ? { command: rootCommand, source: "configured" } : detected;
+  if (prior?.status === "failed" && rootPlan && state.workspace?.path) {
+    runWorkspaceSetupPlan(context.runSetupCommand, state.workspace, rootPlan,
       configured.setupTimeoutMs, state.workspace.path, "root");
+    attempted.push("root");
+  } else if (prior?.status === "failed" && prior.source === "lockfile" && !rootPlan) {
+    // Opting out after a failed detected install withdraws that install.
+    delete state.workspace.setup;
     attempted.push("root");
   }
   const jobs = [];
@@ -1365,19 +1389,16 @@ export function createSandboxRuntime({
   // Single-repository setup comes from foundation.json; a repository row in a
   // multi-repository change carries its own `setupCommand` because each
   // repository installs its own toolchain.
+  // Without a configured command the harness runs the workspace's pinned
+  // lockfile install itself, recorded exactly like a configured setup.
   function runWorkspaceSetup(state) {
     const configured = policy().sandbox || {};
-    if (!configured.setupCommand) return null;
-    return runSetupCommand(state.workspace, configured.setupCommand,
-      configured.setupTimeoutMs, state.workspace.path, null);
-  }
-
-  function noteMissingDependencySetup(workspacePath) {
-    const advisory = missingDependencySetupAdvisory({
-      root, workspace: workspacePath, setupCommand: policy().sandbox?.setupCommand,
-      pathExists: existsSync
+    const plan = workspaceSetupPlan({
+      sandbox: configured, workspace: state.workspace.path, pathExists: existsSync
     });
-    if (advisory) console.log(advisory);
+    if (!plan) return null;
+    return runWorkspaceSetupPlan(runSetupCommand, state.workspace, plan,
+      configured.setupTimeoutMs, state.workspace.path, null);
   }
 
   // Per-file digests of a packet directory. `sync` copies the target's packet
@@ -1459,8 +1480,7 @@ export function createSandboxRuntime({
     if (setup) saveRuntime(state);
     console.log(`SANDBOX ${id}\n  mode: isolated-copy\n  reason: ${reason}\n  git: ${
       carriesGit ? "carried" : "absent (target has no usable .git directory)"
-    }\n  path: ${path}${setup ? `\n  setup: ${setup.status}` : ""}`);
-    noteMissingDependencySetup(path);
+    }\n  path: ${path}${sandboxSetupLine(setup)}`);
   }
 
   function createChallenge(id) {
@@ -1618,8 +1638,7 @@ export function createSandboxRuntime({
     saveRuntime(state);
     const setup = runWorkspaceSetup(state);
     if (setup) saveRuntime(state);
-    console.log(`SANDBOX ${id}\n  path: ${path}${setup ? `\n  setup: ${setup.status}` : ""}`);
-    noteMissingDependencySetup(path);
+    console.log(`SANDBOX ${id}\n  path: ${path}${sandboxSetupLine(setup)}`);
   }
 
   function mergeTaskProgress(source, sandbox) {

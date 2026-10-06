@@ -253,6 +253,9 @@ export function createRuntimeEnvironment({
     if (setupCommand !== null && setupCommand !== undefined &&
         (typeof setupCommand !== "string" || setupCommand.trim() === ""))
       fail("foundation.json sandbox.setupCommand must be a non-empty string");
+    const installDependencies = policy.sandbox.installDependencies;
+    if (installDependencies !== undefined && typeof installDependencies !== "boolean")
+      fail("foundation.json sandbox.installDependencies must be boolean");
     const setupTimeoutMs = Number(policy.sandbox.setupTimeoutMs);
     if (!Number.isInteger(setupTimeoutMs) || setupTimeoutMs < 1000 || setupTimeoutMs > 3600000)
       fail("foundation.json sandbox.setupTimeoutMs must be 1000..3600000");

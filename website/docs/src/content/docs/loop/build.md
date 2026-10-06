@@ -47,10 +47,13 @@ Product writes are allowed only in the exact workspace and paths returned by
 `EDIT`. Shell mutation must anchor itself to that workspace; on Claude Code the
 phase guard pins the shell's reported directory as that anchor when it is
 already inside the workspace. A worktree contains
-tracked files only; configure `sandbox.setupCommand` or a per-repository setup
-command when dependencies must be installed. Sandbox creation prints a NOTE with
-the exact snippet when a lockfile is present and no setup command is declared;
-linking or copying the checkout's `node_modules` into the workspace is refused.
+tracked files only. With no setup command, the harness runs the workspace
+lockfile's pinned install itself (`npm ci`, or the pnpm, yarn, or bun
+frozen-lockfile install); `sandbox.installDependencies: false` opts out, and
+`sandbox.setupCommand` or a per-repository setup command replaces it. A failed
+install never blocks Build: the agent receives its command, directory, and log
+to finish it. Linking or copying the checkout's `node_modules` into the
+workspace is refused.
 
 The phase hook and `claude-foundation exec` use the same containment policy.
 They reject absolute outside operands, later directory escapes, and writes
@@ -74,8 +77,12 @@ claude-foundation change amend <change> <amendment.json> --consume-amendment
 
 The compiler preserves completed tasks and manual sections, validates the new
 agreement transactionally, and returns to `advance`. `updateTasks` may extend
-claim coverage but cannot replace an existing outcome or verification command;
-add a new task when that contract changes. `reviseRequirements` and
+claim coverage but cannot replace an existing outcome or a completed task's
+verification command; add a new task when that contract changes. A wrong verify
+command on an unfinished task is corrected directly, keeping the approval:
+`claude-foundation change amend <change> --task <task> --verify <command>`. The
+task is accepted only when the new command passes in the workspace, and a
+command that always passes is refused. `reviseRequirements` and
 `removeRequirements` change or drop an existing requirement in the same
 amendment, so a changed decision never requires abandoning the change. Permission-bound cloud,
 secret, Terraform, deployment, or restart work becomes a typed external

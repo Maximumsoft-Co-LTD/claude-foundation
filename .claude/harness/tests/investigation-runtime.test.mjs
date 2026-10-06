@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import {
   mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync
 } from "node:fs";
@@ -97,6 +98,32 @@ test("generated reports do not enter discovery or invalidate handoffs on repeate
   assert.equal(first.handoff.sourceDigest, second.handoff.sourceDigest);
   assert.deepEqual(validateInvestigationBinding({ projectRoot: value.root, binding: second.handoff }), []);
   assert(!value.readJson(join(value.root, second.state.path)).repository.selectedSources.some((path) => path.endsWith(".report.md")));
+});
+
+test("an authored investigation note written after DONE never makes discovery stale", (t) => {
+  const value = fixture(t);
+  const git = (args, cwd) => {
+    const listed = execFileSync("git", args, { cwd, encoding: "utf8" });
+    return { status: 0, stdout: listed, stderr: "" };
+  };
+  execFileSync("git", ["init", "-q"], { cwd: value.root });
+  const runtime = createInvestigationRuntime({
+    root: value.root, readJson: value.readJson,
+    writeJson: (path, json) => writeFileSync(path, `${JSON.stringify(json, null, 2)}\n`),
+    now: () => "2026-09-15T00:00:00.000Z", git,
+    fail: (message) => { throw new Error(message); }
+  });
+  const done = quiet(() => runtime.inspectInvestigation("openspec/investigations/retry-race.json"));
+  assert.equal(done.action, "DONE");
+  for (const name of ["retry-race.md", "nested/latest-revision-retry.md"]) {
+    mkdirSync(join(value.root, "openspec/investigations", name, ".."), { recursive: true });
+    writeFileSync(join(value.root, "openspec/investigations", name),
+      "Retry latest revision stale write evidence notes.\n");
+  }
+  for (const gitAware of [git, null])
+    assert.deepEqual(validateInvestigationBinding({
+      projectRoot: value.root, binding: done.handoff, git: gitAware
+    }), []);
 });
 
 test("Thai reports retain open hypotheses, choices and authored notes", (t) => {

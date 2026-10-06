@@ -220,7 +220,8 @@ claude-foundation doctor --stage prove --change <change>
 | `change start <draft.json> --inspect` | Returns the next typed intake action and exact resume route without creating a change | Iterating on a semantic draft |
 | `change start <draft.json>` | Compiles, validates, installs, and prepares one isolated change transactionally | Completing Change |
 | `change revise <change> <draft.json>` | Recompiles a revised semantic draft over the same change id through the start intake gate, with rollback and a requirement delta for approval | An agreed semantic change must change before Build starts |
-| `change amend <change> <amendment.json>` | Adds, revises, or removes requirements, requiring and retaining a discovery delta for v4; a verify-only `updateTasks` amendment fixes an unfinished task's verify command (`--template` prints both) | A semantic v3/v4 Build discovers new or changed behavior or a wrong verify command |
+| `change amend <change> <amendment.json>` | Adds, revises, or removes requirements, requiring and retaining a discovery delta for v4; a verify-only `updateTasks` amendment fixes an unfinished task's verify command (`--template` prints both) | A semantic v3/v4 Build discovers new or changed behavior |
+| `change amend <change> --task <key\|id> --verify <command>` | Corrects one unfinished task's verify command directly through the same transaction; keeps the spec approval, claims, and capabilities, refuses an always-passing command, and accepts the task only when the new command passes | A task's verify command is wrong |
 | `advance <change> --through build\|proven\|archived` | Runs deterministic steps and returns one `EDIT`, `RUN_EXTERNAL`, `REPAIR`, `WAIT`, `ASK_USER`, or `DONE` action | Every normal step after Change |
 
 ## Advanced operator and compatibility commands
@@ -481,9 +482,14 @@ runs it once inside every newly created sandbox:
 { "sandbox": { "setupCommand": "npm ci", "setupTimeoutMs": 600000 } }
 ```
 
-Without it, `sandbox create` prints a NOTE naming this snippet whenever the
-project has a lockfile, and the phase guard warns against linking or copying
-the checkout's `node_modules` from inside the sandbox.
+Without it, the harness runs the install the workspace lockfile pins
+(`package-lock.json`/`npm-shrinkwrap.json` → `npm ci`, `pnpm-lock.yaml`,
+`yarn.lock`, `bun.lock`/`bun.lockb` → their frozen-lockfile install) and
+records it on the workspace like a configured setup (`source: "lockfile"`).
+`{ "sandbox": { "installDependencies": false } }` opts out. A failed or missing
+install never blocks: preparation retries it, then `advance` hands it to the
+agent as a `REPAIR` with the command, directory, and log tail. The phase guard
+still refuses linking or copying the checkout's `node_modules` into the sandbox.
 
 In a multi-repository topology, each `openspec/repositories.yaml` row may
 declare its own `setupCommand`, which runs inside that repository's sandbox;
@@ -564,6 +570,7 @@ listings elsewhere name this file as their source rather than restating it.
 |---|---|
 | `.foundation/runtime/` | Runtime operation and handoff state, one file per change |
 | `.foundation/intake/` | One draft/source-bound semantic intake snapshot per inspected draft path |
+| `.foundation/amendments/` | Transient verify-only amendment staged by `change amend --task/--verify`; removed when the command ends |
 | `.foundation/investigations/` | Source-bound Investigate state, metrics, no-progress checkpoint, and Change handoff digest |
 | `.foundation/receipts/` | Live content-bound provider receipts and `proof.json` |
 | `.foundation/evidence/` | Immutable proof bundles: manifests, receipt copies, durable artifacts, and the hash-chained review-attempt ledger |

@@ -19,9 +19,11 @@ import {
   createChangeLifecycle, draftNeedsDesign, renderDraftProposal, semanticDraftKeepsDesign
 } from "../runtime/workflow/change-lifecycle.mjs";
 import {
-  appendRequirementToSpec, compileSemanticAmendment, semanticAmendmentTemplate,
-  taskContractOnlyAmendment, updateTaskClaimAnnotation, writeSemanticAmendment
+  amendTaskVerifyOperation, appendRequirementToSpec, compileSemanticAmendment,
+  semanticAmendmentTemplate, taskContractOnlyAmendment, taskVerifyAmendment,
+  updateTaskClaimAnnotation, verifyCannotFail, writeSemanticAmendment
 } from "../runtime/workflow/semantic-amendment.mjs";
+import { taskCheck } from "../runtime/workflow/session-lease.mjs";
 
 const slugify = (value) => String(value).toLowerCase()
   .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -676,7 +678,8 @@ test("a verify-only amendment corrects an unfinished task without requirement in
   assert.deepEqual(compiled.providers.test.command, ["sh", "-c", "(npm test) && (npm run lint)"]);
   assert.deepEqual(compiled.providers.lint.command, ["sh", "-c", "npm run lint"]);
   assert.deepEqual(compiled.taskContractChanges, [{
-    key: "impl", id: "T001", claims: ["a"], verify: "npm test", paths: ["src/a.js"]
+    key: "impl", id: "T001", claims: ["a"], verify: "npm test", priorVerify: "npm tset",
+    paths: ["src/a.js"]
   }]);
   assert.deepEqual(compiled.invalidatedClaims, ["a"]);
   assert.deepEqual(compiled.claims, verifyFixture([]).contract.claims);
@@ -711,6 +714,73 @@ test("a verify-only amendment cannot rewrite completed or proven work", () => {
     assert.match(compileSemanticAmendment({ ...open, amendment: { version: 1, updateTasks: [row] } })
       .issues.join("\n"), /requires a non-empty addRequirements/);
   }
+});
+
+// The agent corrects a wrong verify command directly: `change amend <change>
+// --task <key|id> --verify <command>`. Only the task's check changes; claims,
+// capabilities, and the approval stay, and the harness accepts the task only
+// when the new command passes in the workspace.
+test("a direct verify correction names a task by id and never weakens evidence", () => {
+  const fixture = verifyFixture([
+    "- [ ] **T001** Build A [key:impl] [claims:a] — verify: `npm tset`",
+    "- [x] **T002** Build B [key:lint] [claims:b] — verify: `npm run lint`"
+  ]);
+  const amendment = taskVerifyAmendment({ task: "t001", verify: " node --test a.test.js " });
+  assert.deepEqual(amendment, { version: 1,
+    reason: "Correct the verify command of task 't001'",
+    updateTasks: [{ key: "t001", verify: "node --test a.test.js" }] });
+  assert.equal(taskContractOnlyAmendment(amendment), true);
+  const compiled = compileSemanticAmendment({ ...fixture, amendment });
+  assert.deepEqual(compiled.issues, []);
+  assert.deepEqual(compiled.taskContractChanges, [{ key: "impl", id: "T001", claims: ["a"],
+    verify: "node --test a.test.js", priorVerify: "npm tset" }]);
+  // tasks.md stays the sole ledger, and the harness re-verification reads the
+  // corrected command from it before ticking the task.
+  assert.deepEqual(taskCheck(compiled.tasksContent, "T001"),
+    { taskId: "T001", command: "node --test a.test.js", repository: "root" });
+  assert.deepEqual(compiled.claims, fixture.contract.claims);
+  assert.deepEqual(Object.fromEntries(Object.entries(compiled.providers).map(([name, row]) =>
+    [name, [row.adapter, row.capability, row.claims]])),
+  Object.fromEntries(Object.entries(fixture.contract.providers).map(([name, row]) =>
+    [name, [row.adapter, row.capability, row.claims]])));
+  for (const noop of ["true", ":", "exit 0", "echo ok", "npm test || true", "(npm test || :)"]) {
+    assert.equal(verifyCannotFail(noop), true, noop);
+    assert.match(compileSemanticAmendment({ ...fixture,
+      amendment: taskVerifyAmendment({ task: "impl", verify: noop }) }).issues.join("\n"),
+    /cannot be a command that always passes/, noop);
+  }
+  for (const check of ["npm test", "node --test", "true-check", "pytest -k echo"])
+    assert.equal(verifyCannotFail(check), false, check);
+  assert.match(compileSemanticAmendment({ ...fixture,
+    amendment: taskVerifyAmendment({ task: "T002", verify: "npm test" }) }).issues.join("\n"),
+  /cannot replace verify/);
+});
+
+test("a direct verify correction runs through change amend and leaves no staged file", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "verify-direct-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const calls = [];
+  let exitCleanup = null;
+  const result = amendTaskVerifyOperation({
+    root, pid: 7, now: () => 42, onExit: (cleanup) => { exitCleanup = cleanup; },
+    amendChange: (id, path, options) => {
+      calls.push({ id, path, options, amendment: JSON.parse(readFileSync(path, "utf8")) });
+      return "amended";
+    }
+  }, "demo", { task: "impl", verify: "npm test", reason: "Typo in the test script" });
+  assert.equal(result, "amended");
+  assert.deepEqual(calls, [{
+    id: "demo", path: join(root, ".foundation", "amendments", "demo-verify-42-7.json"),
+    options: { consumeAmendment: true },
+    amendment: { version: 1, reason: "Typo in the test script",
+      updateTasks: [{ key: "impl", verify: "npm test" }] }
+  }]);
+  assert.equal(existsSync(calls[0].path), false);
+  assert.equal(typeof exitCleanup, "function");
+  assert.throws(() => amendTaskVerifyOperation({
+    root, onExit: () => {}, amendChange: () => { throw new Error("refused"); }
+  }, "demo", { task: "impl", verify: "npm test" }), /refused/);
+  assert.deepEqual(readdirSync(join(root, ".foundation", "amendments")), []);
 });
 
 test("the amendment template leads with the verify-only form", () => {
@@ -1043,7 +1113,8 @@ test("a verify-only change amend reruns that task's evidence and keeps the rest"
     assert.equal(state.pendingApprovalDelta, undefined);
     const [row] = state.amendments;
     assert.deepEqual(row.taskContractChanges,
-      [{ key: "impl", id: "T001", claims: ["a"], verify: "npm test" }]);
+      [{ key: "impl", id: "T001", claims: ["a"], verify: "npm test",
+        priorVerify: "npm tset" }]);
     assert.deepEqual(row.invalidation.affectedTasks, ["T001"]);
     assert.deepEqual(row.invalidation.proofRecovery.providers.rerun, ["test"]);
     assert.deepEqual(row.invalidation.proofRecovery.providers.preserved, ["lint"]);

@@ -17,6 +17,7 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | `investigate --template \| <record.json>` | ตรวจ fact และ hypothesis ที่ผูก source เก็บ resume state และสร้าง Change handoff |
 | `change start --template \| <draft.json> [--inspect] [--consume-draft]` | ตรวจ draft และถ้าครบจะ compile และเริ่ม agreement แบบ atomic ในคำสั่งเดียว; `--inspect` ตรวจอย่างเดียว |
 | `change amend --template \| <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake หรือเพิ่ม แก้ หรือลบ requirement หรือแก้ verify command ของ task ที่ยังไม่เสร็จ ระหว่าง Build แบบ transaction |
+| `change amend <change> --task <task> --verify <command> [--reason <text>]` | แก้ verify command ที่ผิดของ task ที่ยังไม่เสร็จได้ตรง ๆ โดยคง approval ไว้ task จะถูกรับเมื่อคำสั่งใหม่ผ่านเท่านั้น |
 | `advance <change> --through build\|proven\|archived` | รัน deterministic lifecycle (evidence wiring, sandbox sync, review ที่ agent รันได้, ติ๊ก task) แล้วคืนหนึ่งในหก action ที่ boundary จริง |
 | `advance <change> --approve-spec --decision-ref <ref>` | บันทึกการอนุมัติ spec ของผู้ใช้ (alias ของ `change resolve --approve-spec`) |
 | `deliver advance <change>` | หลังสั่ง `/deliver` อย่างชัดเจน ให้ harness ทำ isolated commit, push feature branch, เปิด/ใช้ PR เดิม, ตรวจผ่าน provider และคืน URL |
@@ -71,6 +72,7 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 | `change new <intent> [--rapid]` | Compatible primitive สำหรับเขียน agreement ด้วยมือ |
 | `change start --template \| <draft.json> [--inspect] [--consume-draft]` | ตรวจและถ้าครบจะ compile และเริ่ม agreement จาก semantic draft ในคำสั่งเดียว โดยพื้นที่แยกจะสร้างภายหลังใน Build |
 | `change amend --template \| <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake หรือเพิ่ม แก้ หรือลบ semantic requirement หรือแก้ verify command ของ task ที่ยังไม่เสร็จ แบบ transaction และรักษางานที่เสร็จแล้ว |
+| `change amend <change> --task <task> --verify <command> [--reason <text>]` | แก้ verify command ของ task ที่ยังไม่เสร็จหนึ่งตัวโดยไม่ต้องเขียน amendment JSON claim, capability และ approval คงเดิม และคำสั่งที่ผ่านเสมอจะถูกปฏิเสธ |
 | `change revise <change> <draft.json> [--inspect] [--consume-draft]` | ก่อน Build คอมไพล์ semantic draft ฉบับแก้ทับ change id เดิมพร้อม rollback และแสดง requirement delta (ใช้ approval เดิมต่อ เว้นแต่มีการลบ requirement) |
 | `change resolve <change> …` | บันทึกการตัดสินใจเรื่อง impact coupling security และ review |
 | `change validate <change>` | ตรวจ change และ evidence contract ที่รันได้ |

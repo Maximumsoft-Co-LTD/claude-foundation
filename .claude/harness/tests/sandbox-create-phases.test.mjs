@@ -22,7 +22,6 @@ import {
   ignoredSandboxPaths,
   inspectSandbox,
   isolateSelectedRepositories,
-  missingDependencySetupAdvisory,
   prepareBuildSandbox,
   repairSelectedRepositories,
   reportMultiRepositorySandbox,
@@ -30,6 +29,9 @@ import {
   runMeasuredSandboxSetupBatch,
   runSandboxSetupBatch,
   runSandboxSetupCommand,
+  runWorkspaceSetupPlan,
+  sandboxSetupLine,
+  workspaceSetupPlan,
   sandboxCopyPlan,
   sandboxCopyWorkspace,
   sandboxCreatePreflight,
@@ -37,6 +39,9 @@ import {
   setupSelectedRepositories,
   unrelatedSandboxTargetChanges
 } from "../runtime/workflow/sandbox-runtime.mjs";
+import {
+  isInvestigationPath, sandboxCodePathspec
+} from "../runtime/core/workspace-surface.mjs";
 
 const fail = (message) => { throw new Error(message); };
 
@@ -342,6 +347,8 @@ test("sandbox target dirt excludes owned and unchanged carried-in paths", () => 
     { status: "??", path: ".foundation/cache/data" },
     { status: "??", path: "openspec/changes" },
     { status: "??", path: "openspec/changes/other/proposal.md" },
+    { status: "??", path: "openspec/investigations/retry.json" },
+    { status: " M", path: "openspec/investigations/retry.md" },
     { status: " M", path: "carried.txt" },
     { status: " M", path: "changed.txt" },
     { status: " D", path: "missing.txt" },
@@ -361,7 +368,8 @@ test("sandbox target dirt excludes owned and unchanged carried-in paths", () => 
       return path.endsWith("carried.txt") ? "same" : "new";
     }
   }, "change", state, "ignored by fixture");
-  assert.deepEqual(result, rows.slice(7));
+  assert.deepEqual(result, rows.slice(9),
+    "investigation records are control-plane state and keep the worktree mode");
 
   assert.deepEqual(unrelatedSandboxTargetChanges({
     root: "/repo", porcelainStatusRecords: () => [{ status: "??", path: "new.txt" }],
@@ -425,7 +433,8 @@ test("sandbox create preflight accepts safe targets and selects repositories", (
   const result = sandboxCreatePreflight(f.context, "change", { unattended: true });
   assert.equal(result.initial, f.state);
   assert.deepEqual(result.repositories, f.repositories());
-  assert.equal(f.calls.git[0].path, f.root);
+  assert.equal(f.calls.git.length, 0,
+    "target dirt is decided by the worktree choice, not a preflight status gate");
 });
 
 test("sandbox create preflight rejects unsafe hosts and topology drift", (t) => {
@@ -448,33 +457,28 @@ test("sandbox create preflight rejects unsafe hosts and topology drift", (t) => 
   );
 });
 
-test("sandbox create preflight rejects only untracked investigation notes", (t) => {
+test("untracked investigation records and notes never block Build or ask for a commit", (t) => {
   const rows = [
     { status: " M", path: "openspec/investigations/tracked.md" },
-    { status: "??", path: "notes/other.md" },
-    { status: "??", path: "openspec/investigations/race.md" }
+    { status: "??", path: "openspec/investigations/retry.json" },
+    { status: "??", path: "openspec/investigations/race.md" },
+    { status: "??", path: "openspec/investigations/retry.report.md" }
   ];
   const f = fixture(t, { porcelainStatusRecords: () => rows });
-  assert.throws(
-    () => sandboxCreatePreflight(f.context, "change"),
-    /untracked investigation note.*race\.md/s
-  );
-
-  const failedStatus = fixture(t, {
-    git: () => ({ status: 128, stdout: "ignored", stderr: "not a repository" }),
-    porcelainStatusRecords: () => { throw new Error("must not parse"); }
-  });
-  assert.doesNotThrow(() => sandboxCreatePreflight(failedStatus.context, "change"));
+  mkdirSync(join(f.root, "openspec/investigations"), { recursive: true });
+  writeFileSync(join(f.root, "openspec/investigations/retry.report.md"), "authored report\n");
+  let result;
+  assert.doesNotThrow(() => { result = sandboxCreatePreflight(f.context, "change"); });
+  assert.deepEqual(result.repositories, f.repositories());
 });
 
-test("a generated investigation report cannot prevent Build, while authored report names stay protected", (t) => {
-  const path = "openspec/investigations/retry.report.md";
-  const f = fixture(t, { porcelainStatusRecords: () => [{ status: "??", path }] });
-  mkdirSync(join(f.root, "openspec/investigations"), { recursive: true });
-  writeFileSync(join(f.root, path), "authored report\n");
-  assert.throws(() => sandboxCreatePreflight(f.context, "change"), /untracked investigation/);
-  writeFileSync(join(f.root, path), "<!-- change-loop:generated-investigation-report:v1 -->\n# Report\n");
-  assert.doesNotThrow(() => sandboxCreatePreflight(f.context, "change"));
+test("Land never projects or replays investigation records", () => {
+  assert.ok(sandboxCodePathspec("change")
+    .includes(":(exclude)openspec/investigations/**"));
+  assert.equal(isInvestigationPath("openspec/investigations/retry.md"), true);
+  assert.equal(isInvestigationPath("openspec/investigations"), true);
+  assert.equal(isInvestigationPath("openspec/investigations-old/x.md"), false);
+  assert.equal(isInvestigationPath("src/openspec/investigations/x.md"), false);
 });
 
 test("repository isolation records root and child worktrees", (t) => {
@@ -1098,29 +1102,56 @@ test("createSingle creates clean worktrees and reports add failures", (t) => {
 
 // Three consumer Builds started in a worktree without node_modules and spent
 // their first turns linking the checkout's install — which the guard refuses —
-// before finding `npm ci`. Sandbox creation names that route up front.
-test("sandbox creation names sandbox.setupCommand when a lockfile has no setup", () => {
-  const present = (files) => (path) => files.some((file) => path.endsWith(`/${file}`));
-  const advisory = missingDependencySetupAdvisory({
-    root: "/proj", workspace: "/proj/.foundation/sandboxes/x", setupCommand: null,
-    pathExists: present(["package-lock.json", "node_modules"])
-  });
-  assert.match(advisory, /^NOTE: the workspace has no installed dependencies: package-lock\.json is at \/proj and node_modules is installed there/);
-  assert.match(advisory, /"sandbox":\{"setupCommand":"npm ci"\}/);
-  assert.match(advisory, /`cd \/proj\/\.foundation\/sandboxes\/x && npm ci` once/);
-  assert.match(advisory, /linking or copying the checkout's node_modules into the workspace is refused/);
-  // The advice follows the lockfile the project pins, quoted the way the
-  // guard's own anchor accepts it.
-  assert.match(missingDependencySetupAdvisory({
-    root: "/proj", workspace: "/my ws/sb", setupCommand: null,
-    pathExists: present(["pnpm-lock.yaml"])
-  }), /`cd '\/my ws\/sb' && pnpm install --frozen-lockfile` once/);
-  // A declared setup command or a project without a lockfile has nothing to add.
-  assert.equal(missingDependencySetupAdvisory({
-    root: "/proj", workspace: "/proj/sb", setupCommand: "npm ci",
+// before finding `npm ci`. The harness now runs that install itself.
+test("without a setup command the harness installs from the workspace lockfile", () => {
+  const present = (files) => (path) =>
+    ["package.json", ...files].some((file) => path === `/ws/${file}`);
+  // A lockfile without its manifest is not an installable project.
+  assert.equal(workspaceSetupPlan({ sandbox: {}, workspace: "/ws",
+    pathExists: (path) => path === "/ws/package-lock.json" }), null);
+  assert.deepEqual(workspaceSetupPlan({
+    sandbox: {}, workspace: "/ws", pathExists: present(["package-lock.json", "node_modules"])
+  }), { command: "npm ci", source: "lockfile", lockfile: "package-lock.json" });
+  assert.equal(workspaceSetupPlan({
+    sandbox: {}, workspace: "/ws", pathExists: present(["pnpm-lock.yaml"])
+  }).command, "pnpm install --frozen-lockfile");
+  assert.equal(workspaceSetupPlan({
+    sandbox: {}, workspace: "/ws", pathExists: present(["yarn.lock"])
+  }).command, "yarn install --frozen-lockfile");
+  assert.equal(workspaceSetupPlan({
+    sandbox: {}, workspace: "/ws", pathExists: present(["bun.lockb"])
+  }).command, "bun install --frozen-lockfile");
+  // Detection reads the workspace, never the checkout's installed tree.
+  assert.equal(workspaceSetupPlan({
+    sandbox: {}, workspace: "/ws", pathExists: (path) => path === "/proj/package-lock.json"
+  }), null);
+  // A configured command wins; an explicit opt-out or no lockfile runs nothing.
+  assert.deepEqual(workspaceSetupPlan({
+    sandbox: { setupCommand: "make deps" }, workspace: "/ws",
+    pathExists: present(["package-lock.json"])
+  }), { command: "make deps", source: "configured" });
+  assert.equal(workspaceSetupPlan({
+    sandbox: { installDependencies: false }, workspace: "/ws",
     pathExists: present(["package-lock.json"])
   }), null);
-  assert.equal(missingDependencySetupAdvisory({
-    root: "/proj", workspace: "/proj/sb", setupCommand: null, pathExists: () => false
+  assert.equal(workspaceSetupPlan({
+    sandbox: {}, workspace: "/ws", pathExists: () => false
   }), null);
+
+  const record = {};
+  const setup = runWorkspaceSetupPlan((target, command, timeoutMs, cwd) => {
+    target.setup = { command, status: "failed", exitCode: 127, cwd,
+      logTail: "exit 127\nsh: npm: not found" };
+  }, record, { command: "npm ci", source: "lockfile", lockfile: "package-lock.json" },
+  50, "/ws", null);
+  assert.equal(setup, record.setup);
+  assert.deepEqual(record.setup, {
+    command: "npm ci", status: "failed", exitCode: 127, cwd: "/ws",
+    logTail: "exit 127\nsh: npm: not found", source: "lockfile",
+    lockfile: "package-lock.json"
+  });
+  assert.equal(sandboxSetupLine(record.setup),
+    "\n  setup: failed (npm ci, detected from package-lock.json)");
+  assert.equal(sandboxSetupLine({ status: "ok", command: "make deps" }), "\n  setup: ok");
+  assert.equal(sandboxSetupLine(null), "");
 });

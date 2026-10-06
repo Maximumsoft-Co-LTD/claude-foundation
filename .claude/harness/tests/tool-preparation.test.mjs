@@ -144,6 +144,57 @@ test("a failed repository setup carries its handoff into the advance repair", as
   assert.equal(repair.recovery.type, "HANDOFF");
 });
 
+// With no configured setup the harness runs the detected lockfile install
+// itself; a failure is the same agent handoff a configured command gets.
+test("a failed detected lockfile install is planned and handed off like configured setup", async () => {
+  const { advanceFailureAction } = await import("../runtime/workflow/advance-runtime.mjs");
+  const state = { workspace: { path: "/ws", setup: {
+    command: "pnpm install --frozen-lockfile", status: "failed", exitCode: 127,
+    source: "lockfile", lockfile: "pnpm-lock.yaml", cwd: "/ws",
+    logTail: "exit 127\nsh: pnpm: not found"
+  } } };
+  const plan = executionPreparationValue({
+    id: "demo", state, repositories: [{ id: "root", mode: "write" }],
+    openSpec: { level: "ok" }, stableHash
+  });
+  assert.equal(plan.repositories[0].setupCommand, "pnpm install --frozen-lockfile");
+  assert.equal(plan.repositories[0].setupSource, "lockfile");
+  assert.equal(plan.status, "REPAIR_REQUIRED");
+  let error;
+  try { assertExecutionPreparationReady(plan); } catch (caught) { error = caught; }
+  const repair = advanceFailureAction("demo", error, { stage: "build", through: "proven" });
+  assert.equal(repair.action, "REPAIR");
+  assert.equal(repair.owner, "agent");
+  assert.equal(repair.command, "pnpm install --frozen-lockfile");
+  assert.equal(repair.handoff.cwd, "/ws");
+  assert.match(repair.handoff.log, /pnpm: not found/);
+
+  const calls = [];
+  const retried = retryFailedSandboxSetups({
+    loadRuntime: () => state, saveRuntime: () => {},
+    selectedRepositories: () => [{ id: "root" }],
+    policy: () => ({ sandbox: { setupTimeoutMs: 50 } }),
+    runSetupCommand: (record, command) => {
+      calls.push(command);
+      record.setup = { command, status: "ok", exitCode: 0 };
+    }
+  }, "demo", state);
+  assert.deepEqual(retried, ["root"]);
+  assert.deepEqual(calls, ["pnpm install --frozen-lockfile"]);
+  assert.equal(state.workspace.setup.source, "lockfile",
+    "a retried detected install stays recorded as detected");
+
+  state.workspace.setup.status = "failed";
+  retryFailedSandboxSetups({
+    loadRuntime: () => state, saveRuntime: () => {},
+    selectedRepositories: () => [{ id: "root" }],
+    policy: () => ({ sandbox: { installDependencies: false } }),
+    runSetupCommand: () => { throw new Error("opted out"); }
+  }, "demo", state);
+  assert.equal(state.workspace.setup, undefined,
+    "opting out withdraws a failed detected install instead of blocking Build");
+});
+
 test("a failed OpenSpec preparation hands its install command to the agent", () => {
   assert.throws(() => ensureProjectOpenSpec({
     root: "/project", status: () => ({ level: "error", detail: "missing" }),

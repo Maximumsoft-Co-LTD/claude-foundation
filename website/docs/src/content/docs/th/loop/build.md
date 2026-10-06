@@ -42,9 +42,11 @@ task ใหม่ ติ๊ก task ที่ผ่านใน `tasks.md` ใ�
 
 เขียน product ได้เฉพาะ workspace และ path ที่ `EDIT` คืนมา Shell mutation ต้องเริ่ม
 จาก workspace นั้น (บน Claude Code phase guard จะปัก directory ที่ shell รายงานมาเป็น
-anchor ให้เมื่ออยู่ใน workspace แล้ว) Worktree มีเฉพาะ tracked files ถ้าต้องติดตั้ง dependency ให้ตั้ง
-`sandbox.setupCommand` หรือ setup command ราย repository ถ้ามี lockfile แต่ยังไม่ประกาศ
-setup command ตอนสร้าง sandbox จะพิมพ์ NOTE พร้อม snippet ให้ ส่วนการ link หรือ copy
+anchor ให้เมื่ออยู่ใน workspace แล้ว) Worktree มีเฉพาะ tracked files ถ้าไม่มี setup
+command Harness จะรันคำสั่งติดตั้งตาม lockfile ของ workspace เอง (`npm ci` หรือคำสั่ง
+frozen-lockfile ของ pnpm, yarn, bun) ตั้ง `sandbox.installDependencies: false` เพื่อปิด
+และ `sandbox.setupCommand` หรือ setup command ราย repository ใช้แทนได้ การติดตั้งที่ล้ม
+ไม่ block Build: agent จะได้รับคำสั่ง directory และ log ไปทำต่อ ส่วนการ link หรือ copy
 `node_modules` ของ checkout เข้า workspace จะถูกปฏิเสธ
 
 Phase hook และ `claude-foundation exec` ใช้ containment policy เดียวกัน ทั้งคู่
@@ -68,7 +70,10 @@ claude-foundation change amend <change> <amendment.json> --consume-amendment
 
 Compiler รักษา task ที่เสร็จและ manual section ตรวจ agreement ใหม่แบบ transaction
 แล้วกลับมา `advance` โดย `updateTasks` เพิ่ม claim coverage ได้ แต่เปลี่ยน outcome
-หรือ verify command เดิมไม่ได้ ถ้าสัญญาของ task เปลี่ยนต้องเพิ่ม task ใหม่
+หรือ verify command ของ task ที่เสร็จแล้วไม่ได้ ถ้าสัญญาของ task เปลี่ยนต้องเพิ่ม task ใหม่
+verify command ที่ผิดของ task ที่ยังไม่เสร็จแก้ได้ตรง ๆ โดยคง approval ไว้:
+`claude-foundation change amend <change> --task <task> --verify <command>` task จะถูก
+รับเมื่อคำสั่งใหม่ผ่านใน workspace เท่านั้น และคำสั่งที่ผ่านเสมอจะถูกปฏิเสธ
 `reviseRequirements` และ `removeRequirements` แก้หรือลบ requirement เดิมใน
 amendment เดียวกัน จึงไม่ต้อง abandon change เพียงเพราะการตัดสินใจเปลี่ยน งาน cloud,
 secret, Terraform, deploy หรือ restart ที่ต้องใช้

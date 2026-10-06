@@ -79,7 +79,11 @@ export function executionPreparationValue({
       id: repository.id,
       mode: repository.mode || runtime.access || "write",
       workspace: runtime.path || repository.workspacePath || null,
-      setupCommand: repository.setupCommand || null,
+      // The root workspace's command may come from foundation.json or from the
+      // lockfile install the harness detected; both are recorded on the run.
+      setupCommand: repository.setupCommand || runtime.setup?.command || null,
+      setupSource: runtime.setup?.source ||
+        (repository.setupCommand || runtime.setup?.command ? "configured" : null),
       setupStatus: runtime.setup?.status ||
         (repository.setupCommand ? "pending" : "not-required"),
       setupExitCode: runtime.setup?.exitCode ?? null,
