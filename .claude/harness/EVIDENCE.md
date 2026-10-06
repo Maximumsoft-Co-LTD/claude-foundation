@@ -417,8 +417,9 @@ with agreement scenarios, `scenarioChecklist` (one digest-bound item per
 scenario; ids are claim ids when a claim names the scenario). The reviewer
 returns `scenarioCoverage` per item (`covered-by-test`, `covered-by-code-only`,
 `missing`, `unsure`); a `missing` item without a bound finding becomes a major
-finding on that id. A fast-tier round whose coverage is unparseable or has any
-`missing`/`unsure` item is re-run once on the configured model with the same
+finding on that id, and a fast-tier round with any `missing` item goes
+straight to repair. Otherwise a fast-tier round whose coverage is unparseable
+or has an `unsure` item is re-run once on the configured model with the same
 packet and dispatch: no new AI wave, the configured verdict is final, and the
 attempt and dispatch record the model actually run plus `modelEscalation`
 (`escalatedFrom: "fast"`). An explicit
