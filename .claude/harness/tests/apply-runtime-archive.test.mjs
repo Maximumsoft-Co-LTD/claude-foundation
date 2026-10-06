@@ -100,13 +100,22 @@ function activeArchiveFixture(id, options = {}) {
       ? { valid: false, reason: "audit failed" } : { valid: true },
     cleanupAppliedSandbox: () => options.cleanup || { status: "removed" },
     archiveCheckpoint: options.archiveCheckpoint,
+    ...(options.measure ? { measure: options.measure } : {}),
     ...(options.missingArchivePath ? {
       archivedChangeRelativePath: () => null
     } : {}),
     landCheck: () => {
       landChecks += 1;
-      if (options.mode === "worktree" && landChecks === 2)
-        return { archived: true, state, hash: "workspace-hash" };
+      // Apply now reuses archive's own readiness instead of re-checking. The
+      // double stands in for an apply that finds nothing left to project:
+      // the first consult (archive) is not archived, the second (apply) is.
+      let consults = 0;
+      if (options.mode === "worktree" && landChecks === 1) return {
+        get archived() { consults += 1; return consults > 1; },
+        state, hash: "workspace-hash",
+        assurance: { status: "passed", workspaceHash: "workspace-hash",
+          acceptedBy: "explicit-land-authority" }
+      };
       return { archived: false, state, hash: "workspace-hash",
         assurance: options.assurance || {
           status: options.proofMissing ? "missing" : "passed",
@@ -117,6 +126,7 @@ function activeArchiveFixture(id, options = {}) {
   return {
     root,
     state,
+    landChecks: () => landChecks,
     run() {
       const priorPath = process.env.PATH;
       process.env.PATH = `${bin}:${priorPath}`;
@@ -427,6 +437,24 @@ test("a worktree archive reapplies before recording advisory telemetry", () => {
 
   assert.equal(fixture.state.status, "archived");
   assert.equal(fixture.state.land.telemetry.classification, "not-ingested");
+  // One readiness before apply (reused by apply itself) and one after apply,
+  // immediately before the destructive OpenSpec archive.
+  assert.equal(fixture.landChecks(), 2);
+  rmSync(fixture.root, { recursive: true, force: true });
+});
+
+test("archive records Land stage timings around the real work", () => {
+  const stages = [];
+  const fixture = activeArchiveFixture("land-stages", {
+    mode: "worktree",
+    measure: (stage, operation) => { stages.push(stage); return operation(); }
+  });
+
+  fixture.run();
+
+  assert.equal(fixture.state.status, "archived");
+  assert.deepEqual(stages,
+    ["land.check", "land.apply", "land.check", "land.archive", "land.cleanup"]);
   rmSync(fixture.root, { recursive: true, force: true });
 });
 

@@ -370,9 +370,10 @@ Why this step exists: you can inspect or discard implementation work without
 mixing it with your current checkout.
 
 The agent drives Build with `claude-foundation advance <change-id> --through
-build`. That one coordinator validates, prepares isolation, chooses runnable
-work, and returns one bounded action; users do not assemble sandbox, packet,
-plan, lease, or dispatch commands.
+proven`. That one coordinator validates, prepares isolation, chooses runnable
+work, and returns one bounded action; once Build is complete it continues
+into Prove in the same call. Users do not assemble sandbox, packet, plan,
+lease, or dispatch commands.
 
 ### 3. Prove the result
 

@@ -4,7 +4,7 @@
 // - `change validate` must run the OpenSpec strict lint when the CLI is
 //   present, fail with its findings, and degrade to a warning when absent.
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 
@@ -445,9 +445,11 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
   const stubDir = join(root, "bin");
   mkdirSync(stubDir, { recursive: true });
   const stub = join(stubDir, "openspec");
+  const lintLog = join(root, "lint.log");
   const writeStub = (validateExit, message) => {
     writeFileSync(stub, `#!/bin/sh
 if [ "$1" = "--version" ]; then echo "1.7.0"; exit 0; fi
+printf 'lint\\n' >> "${lintLog}"
 echo "${message}"
 exit ${validateExit}
 `);
@@ -465,6 +467,27 @@ exit ${validateExit}
 
     writeStub(0, "Change 'lint-change' is valid");
     assertOpenSpecStrictValid("lint-change", changeDir, fail);
+
+    // A pass is memoized per process by lint-input bytes and CLI identity:
+    // identical bytes do not re-lint, any packet byte change does.
+    const lints = () => readFileSync(lintLog, "utf8").split("\n").filter(Boolean).length;
+    const before = lints();
+    writeFileSync(join(changeDir, "proposal.md"), "# Proposal\n");
+    assertOpenSpecStrictValid("lint-change", changeDir, fail);
+    assertOpenSpecStrictValid("lint-change", changeDir, fail);
+    assert.equal(lints(), before + 1, "unchanged lint inputs reuse one strict pass");
+    writeFileSync(join(changeDir, "proposal.md"), "# Proposal\n\nRevised.\n");
+    assertOpenSpecStrictValid("lint-change", changeDir, fail);
+    assert.equal(lints(), before + 2, "a packet byte change re-runs strict lint");
+    writeFileSync(join(root, "openspec", "config.yaml"), "schema: spec-driven\n");
+    assertOpenSpecStrictValid("lint-change", changeDir, fail);
+    assert.equal(lints(), before + 3, "a project OpenSpec input change re-runs strict lint");
+    writeStub(1, "Requirement must contain SHALL or MUST");
+    assert.throws(() => assertOpenSpecStrictValid("lint-change", changeDir, fail),
+      /strict validation failed/, "a changed CLI re-lints and can fail the memoized bytes");
+    assert.throws(() => assertOpenSpecStrictValid("lint-change", changeDir, fail),
+      /strict validation failed/, "a failing lint is never memoized");
+    assert.equal(lints(), before + 5, "every failing lint re-runs the CLI");
 
     // Absent CLI: PATH without the stub (and without any system openspec)
     // degrades to a warning instead of failing.

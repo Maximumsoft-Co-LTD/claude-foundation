@@ -342,14 +342,17 @@ keep or revert already-applied files before acting.
 The normal entrypoint is:
 
 ```bash
-claude-foundation advance <change> --through build
+claude-foundation advance <change> --through proven
 ```
 
 The coordinator validates the agreement, prepares or synchronizes isolation,
 compiles the task graph, and returns one bounded protocol-v6 action:
-`EDIT`, `REPAIR`, `RUN_EXTERNAL`, `WAIT`, `ASK_USER`, or `DONE`. At Build
-`DONE`, `/build` continues with `advance <change> --through proven`, because
-Prove has no external side effects; it stops at `proven` and never Lands.
+`EDIT`, `REPAIR`, `RUN_EXTERNAL`, `WAIT`, `ASK_USER`, or `DONE`. `/build`
+targets `proven` from its first call, because Prove has no external side
+effects: proof runs only once Build is complete, in the same coordinator
+call, without a separate Build `DONE` round trip. It stops at `proven` and
+never Lands. `advance <change> --through build` remains available to stop at
+Build.
 `tasks.md` is the only implementation ledger. `handoffs.yaml` separately owns
 AWS, cluster, secret, Terraform, deploy, restart, or other operations that need
 external authority.

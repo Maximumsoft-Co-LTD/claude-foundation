@@ -817,7 +817,15 @@ export function createAdvanceRuntime({
         });
         if (["proven", "landing"].includes(state.status)) stage = "land";
         const authority = authorityStatusValue(id);
-        const dispatch = agentDispatchValue(id, options);
+        // Plan once per read: dispatch and the Build action consume the same
+        // compiled graph. A planning failure leaves dispatch to plan (and
+        // report) exactly as before.
+        let readPlan = null;
+        if (agentPlanValue) {
+          try { readPlan = agentPlanValue(id, options); }
+          catch { readPlan = null; }
+        }
+        const dispatch = agentDispatchValue(id, options, readPlan);
         let proofPreflight = null;
         if (dispatch.action === "build-complete") {
           stage = "prove";
@@ -827,7 +835,7 @@ export function createAdvanceRuntime({
         let plan = null;
         if (agentPlanValue && ["run-in-session", "run-leased-in-session", "spawn-group"]
           .includes(dispatch.action)) {
-          try { plan = agentPlanValue(id, options); }
+          try { plan = readPlan || agentPlanValue(id, options); }
           catch { /* dispatch still carries an exact compatibility route */ }
         }
         const workspaceHash = dispatch.action === "build-complete" && proofPreflight

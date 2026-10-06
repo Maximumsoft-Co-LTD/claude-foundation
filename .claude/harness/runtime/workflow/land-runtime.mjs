@@ -1,6 +1,5 @@
 import { existsSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
-import { spawnSync } from "node:child_process";
 import { validateSignedCiEnvelope } from "../evidence/signed-ci.mjs";
 import { validityRecovery } from "../evidence/receipt-validity.mjs";
 import { MANUAL_APPLY_STATUS, targetHeadMovedDecision } from "./apply-recovery.mjs";
@@ -12,6 +11,7 @@ import {
 } from "../core/authority-policy.mjs";
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 import { compositeRepositorySelection } from "../core/repository-binding.mjs";
+import { probeOpenSpecVersion } from "../core/tool-identity.mjs";
 
 export { riskRequiresCi } from "../core/authority-policy.mjs";
 
@@ -169,7 +169,8 @@ export function openSpecVersionStatus(stdout) {
 }
 
 export function openSpecCliStatus(root) {
-  const probe = spawnSync("openspec", ["--version"], { cwd: root, encoding: "utf8" });
+  // Reused per process while the resolved CLI is byte-identical.
+  const probe = probeOpenSpecVersion({ cwd: root });
   if (probe.error?.code === "ENOENT")
     return {
       level: "error", version: null,

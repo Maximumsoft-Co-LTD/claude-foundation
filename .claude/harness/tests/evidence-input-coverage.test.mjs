@@ -73,6 +73,11 @@ test("an untracked undeclared command file requires explicit coverage", () => {
     assert.deepEqual(uncoveredCommandWorkspaceFiles({
       config, workspace, tracked: (path) => path === "tests/run.mjs"
     }), []);
+    // Git is consulted only for files no pure rule already covers.
+    assert.deepEqual(uncoveredCommandWorkspaceFiles({
+      config, workspace, declared: () => true,
+      tracked: () => { throw new Error("tracked must not be consulted"); }
+    }), []);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

@@ -3,6 +3,7 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { measuredNumber } from "../core/measured-number.mjs";
 import { isExcludedPath } from "../core/workspace-surface.mjs";
+import { memoizeByGitIndex } from "../core/tool-identity.mjs";
 import { classifyReviewRisk, reviewSemanticText } from "./review-routing.mjs";
 
 // Named once and read by both `reviewPolicy` and the change-time forecast. The
@@ -298,8 +299,9 @@ export function uncoveredCommandWorkspaceFiles({
   config, workspace, repositoryId = "root", tracked = () => false,
   declared = () => false
 }) {
+  // Pure checks first: `tracked` may have to consult Git.
   return commandWorkspaceFiles(config, workspace).filter((rel) =>
-    !tracked(rel) && !declared(rel) && !providerInputCovers(config, repositoryId, rel));
+    !declared(rel) && !providerInputCovers(config, repositoryId, rel) && !tracked(rel));
 }
 
 export function providerEvidencePolicy(config = {}) {
@@ -753,7 +755,10 @@ export function createEvidenceContract({
     const declared = declaredSurfaceMatcher(id, loadRuntime(id), repositoryId);
     const uncovered = uncoveredCommandWorkspaceFiles({
       config, workspace, repositoryId, declared,
-      tracked: (rel) => git(["ls-files", "--error-unmatch", "--", rel], workspace).status === 0
+      // Index membership only: reused while the repository index is
+      // unchanged, so repeated contract reads do not respawn Git per file.
+      tracked: (rel) => memoizeByGitIndex(workspace, `tracked:${rel}`, () =>
+        git(["ls-files", "--error-unmatch", "--", rel], workspace).status === 0)
     });
     if (uncovered.length)
       die(`provider '${provider}' command names untracked workspace file(s) outside its inputs and declared surface: ${

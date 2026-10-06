@@ -53,9 +53,9 @@ What you should read and push back on is `proposal.md` and the delta specs. That
 /build add-profile-auth
 ```
 
-The agent calls `advance add-profile-auth --through build`. The coordinator
+The agent calls `advance add-profile-auth --through proven`. The coordinator
 creates an isolated workspace, returns one bounded action, and resumes through
-the same route. **Your working tree is not touched.** `tasks.md` is the only
+the same route; proof starts only after Build is complete. **Your working tree is not touched.** `tasks.md` is the only
 ledger; the user never assembles sandbox, packet, plan, or dispatch commands.
 
 ## 3. Prove it

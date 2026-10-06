@@ -72,6 +72,7 @@ read-only argument.
 | Core | `runtime/core/lifecycle-outcome.mjs` | Owner-validated lifecycle outcomes and target-versus-delivery user projection |
 | Core | `runtime/core/land-grant.mjs` | Session/change/proof/target-bound explicit Land authority |
 | Core | `runtime/core/tool-preparation.mjs` | Project-local tool readiness, preparation identity, and setup boundaries |
+| Core | `runtime/core/tool-identity.mjs` | Per-process, content-keyed reuse of successful OpenSpec probes, strict lint, and Git index queries |
 | Core | `runtime/core/lifecycle-reducer.mjs` | Typed lifecycle transitions and compatibility-preserving state mutation |
 | Core | `runtime/core/process-runtime.mjs` | Provider process execution, readiness checks, and managed services |
 | Core | `runtime/core/shell-mutation-policy.mjs` | Shared phase-aware shell mutation and canonical Build containment policy |
@@ -641,7 +642,8 @@ imported Claude transcript `tool_use` blocks by category (harness CLI, harness
 doc reads, state reads, harness artifact writes, product writes, test runs,
 other); without transcript data every count is null. Automatic `advance` work
 is recorded as the stages `advance.evidence-wiring`, `advance.review-run`,
-`advance.sandbox-sync`, and `build.task-check`.
+`advance.sandbox-sync`, and `build.task-check`; Land work inside archive is
+recorded as `land.check`, `land.apply`, `land.archive`, and `land.cleanup`.
 
 `commandProfile` separates lifecycle mutations from read-only inspections,
 reports elapsed union time and the most expensive commands, and identifies

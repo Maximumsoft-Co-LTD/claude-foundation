@@ -168,13 +168,17 @@ export function executeApplyJournal({
   }
 }
 
-export function applySandboxOperation(context, id, options = {}) {
+// `checkedReadiness` is archive's own landCheck from the same Land pass. That
+// check already refused any pending apply, and only the evidence breadcrumb
+// was written since, so it is reused instead of recomputed. It is a separate
+// positional argument so no CLI flag can ever supply it.
+export function applySandboxOperation(context, id, options = {}, checkedReadiness = null) {
   const initialState = context.loadRuntime(id);
   assertLocalApply(initialState, options, context.fail);
   if (initialState.workspace?.applied && options.refresh)
     context.refreshAppliedProjection(initialState);
   context.recoverPendingApply(id, initialState);
-  if (context.landCheck(id).archived) return;
+  if ((checkedReadiness || context.landCheck(id)).archived) return;
   const state = context.loadRuntime(id);
   const reapply = reapplyProjection({ ...context, id, state });
   if (reapply.resumed) return;
@@ -549,6 +553,7 @@ export function createApplyRuntime({
   cleanupChangeLeases,
   now,
   archiveCheckpoint = () => {},
+  measure = (_stage, operation) => operation(),
   assertLandGrant = () => {},
   consumeLandGrant = () => {},
   blockWithDecision,
@@ -1030,18 +1035,22 @@ export function createApplyRuntime({
   function applyArchiveWorkspace(id, readiness) {
     if (!["worktree", "copy"].includes(readiness.state.workspace?.mode))
       return readiness;
-    if (compositeRepositorySelection(selectedRepositories(id, readiness.state))) {
-      // Legacy repository Land records already name commits applied by the
-      // user. Their root gitlinks are staged by resumeLand; replaying the
-      // workspace-uncommitted delivery saga would misclassify those expected
-      // child HEADs as target drift.
-      if (!legacyRepositoryLandTransaction(readiness.state)) repositoryDelivery().apply(id);
-    }
-    else applySandbox(id, { controlPlane: true });
+    measure("land.apply", () => {
+      if (compositeRepositorySelection(selectedRepositories(id, readiness.state))) {
+        // Legacy repository Land records already name commits applied by the
+        // user. Their root gitlinks are staged by resumeLand; replaying the
+        // workspace-uncommitted delivery saga would misclassify those expected
+        // child HEADs as target drift.
+        if (!legacyRepositoryLandTransaction(readiness.state)) repositoryDelivery().apply(id);
+      }
+      else applySandbox(id, { controlPlane: true }, readiness);
+    });
     const journal = loadRuntime(id);
     journal.land = { ...journal.land, status: "code-applied", updatedAt: now() };
     saveRuntime(journal);
-    return landCheck(id);
+    // Post-apply readiness binds the hash recorded before the destructive
+    // OpenSpec archive; it is never reused.
+    return measure("land.check", () => landCheck(id));
   }
 
   function recordArchiveTelemetry(id, state) {
@@ -1182,7 +1191,7 @@ export function createApplyRuntime({
     // Prepared/applying journals are rolled back safely; only a divergent
     // manual-recovery journal becomes a user work decision.
     recoverPendingApply(id, initial);
-    let readiness = landCheck(id);
+    let readiness = measure("land.check", () => landCheck(id));
     if (readiness.archived) return;
     archiveCheckpoint("before-evidence-snapshot", readiness.state);
     snapshotArchiveEvidence(id, readiness);
@@ -1200,8 +1209,8 @@ export function createApplyRuntime({
     // silently erase land.proofRunId from the record.
     const state = loadRuntime(id);
     const telemetry = recordArchiveTelemetry(id, state);
-    const cli = runOpenSpecArchive(id, state, readiness);
-    finalizeArchivedChange(id, state, telemetry, cli);
+    const cli = measure("land.archive", () => runOpenSpecArchive(id, state, readiness));
+    measure("land.cleanup", () => finalizeArchivedChange(id, state, telemetry, cli));
   }
 
   return {
