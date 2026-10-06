@@ -229,7 +229,7 @@ test("bare start inspects and starts a correct v4 draft in one command", (t) => 
   // One authoritative next step: no per-step `next` from CREATED/RESOLVED.
   assert.doesNotMatch(output, /complete artifacts, validate, then \/build/);
   assert.equal((output.match(/\n  next: /g) || []).length, 1);
-  assert.match(output, /then: claude-foundation advance single-shot-change --through build/);
+  assert.match(output, /next: claude-foundation advance single-shot-change --approve-spec --decision-ref <user-decision> --through build/);
   assert.equal(existsSync(join(value.changes, "single-shot-change")), true);
   const runtime = JSON.parse(readFileSync(join(value.runtime, "single-shot-change.json"), "utf8"));
   assert.equal(runtime.status, "change");

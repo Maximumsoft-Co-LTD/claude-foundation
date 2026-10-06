@@ -1764,8 +1764,7 @@ export function createChangeLifecycle({
         console.log(`AGREED ${id}\n  inspect: openspec/changes/${id}/\n` + packetFileLines(id) +
           "  awaiting user approval before Build\n" +
           designWarningLines(draft, loadRuntime(id).schema) +
-          `  next: claude-foundation advance ${id} --approve-spec --decision-ref <user-decision>\n` +
-          `  then: claude-foundation advance ${id} --through build`);
+          `  next: claude-foundation advance ${id} --approve-spec --decision-ref <user-decision> --through build`);
       });
     } catch (error) {
       let rollbackIssues;
@@ -2028,7 +2027,7 @@ export function createChangeLifecycle({
       `  inspect: openspec/changes/${id}/\n` + packetFileLines(id) +
       designWarningLines(draft, state.schema) +
       `  next: ${pending || !state.specApproval?.identity
-        ? `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision>`
+        ? `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision> --through build`
         : `claude-foundation advance ${id} --through build`}`);
     return delta;
   }

@@ -386,16 +386,21 @@ export async function routeRuntimeCommand(command, values, api) {
       }
       // Alias of `change resolve <change> --approve-spec --decision-ref <ref>`
       // so the agent's normal path needs only `change start` and `advance`.
+      // With --through, the same call records the approval and continues:
+      // approving and starting Build is one step, not two commands.
       if (flags["approve-spec"]) {
         const extra = Object.keys(flags).filter((flag) =>
-          !["approve-spec", "decision-ref"].includes(flag));
+          !["approve-spec", "decision-ref", "through"].includes(flag));
         if (extra.length)
-          die(`advance --approve-spec records only the user's spec approval; drop --${extra.join(", --")} ` +
-            `and resume with 'claude-foundation advance ${rest[0]} --through <target>'`);
+          die(`advance --approve-spec combines only with --decision-ref and --through; drop --${extra.join(", --")}`);
         if (!flags["decision-ref"])
           die(`advance --approve-spec requires --decision-ref <ref> naming the user's approval`);
+        if (flags.through && !["build", "proven", "archived"].includes(flags.through))
+          die("advance --through must be build|proven|archived");
         resolveChange(rest[0], { "approve-spec": true, "decision-ref": flags["decision-ref"] });
-        return;
+        if (!flags.through) return;
+        delete flags["approve-spec"];
+        delete flags["decision-ref"];
       }
       if (flags.inspect && (flags.through || flags["host-result"] || flags.decision ||
           flags["decision-fingerprint"] || flags["decision-ref"] || flags.reason))

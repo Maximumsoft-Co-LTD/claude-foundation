@@ -104,7 +104,7 @@ export function assertSpecApproval(root, id, state, { workspace = true } = {}) {
   throw userDecisionError("SPEC_APPROVAL_REQUIRED",
     "Inspect the compiled spec with the user and obtain approval before Build.", [
       { id: "approve", outcome: "Approve this exact spec, then begin Build",
-        command: `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision>` },
+        command: `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision> --through build` },
       { id: "revise", outcome: "Revise the spec before implementation" }
     ], "approve");
 }

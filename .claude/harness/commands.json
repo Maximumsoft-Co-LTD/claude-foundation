@@ -47,7 +47,7 @@
       "audience": "agent",
       "kind": "write",
       "idempotent": true,
-      "description": "Run deterministic lifecycle work through a requested target, including detected evidence wiring, safe sandbox sync, configured review, and task check completion, and return one bounded action at the next real model, user, resource, or authority boundary. --approve-spec records the user's spec approval (alias of change resolve --approve-spec). --restore-target records the target files Land restores to the sandbox base when its apply conflicts; paths other than generated artifacts clean at isolation require --decision-ref."
+      "description": "Run deterministic lifecycle work through a requested target, including detected evidence wiring, safe sandbox sync, configured review, and task check completion, and return one bounded action at the next real model, user, resource, or authority boundary. --approve-spec records the user's spec approval (alias of change resolve --approve-spec); with --through it continues in the same call. --restore-target records the target files Land restores to the sandbox base when its apply conflicts; paths other than generated artifacts clean at isolation require --decision-ref."
     },
     {
       "name": "feedback",

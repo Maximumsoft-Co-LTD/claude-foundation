@@ -302,6 +302,22 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
   assert.deepEqual(advanced, ["change", { inspect: true }]);
   await assert.rejects(route("advance", ["change", "--through", "invalid"], {}),
     /advance --through must be build\|proven\|archived/);
+  // Approval and the requested target are one call, not two commands.
+  const approvals = [];
+  await route("advance", ["change", "--approve-spec", "--decision-ref", "user://ok",
+    "--through", "build"], {
+    resolveChange: (id, flags) => approvals.push([id, flags]),
+    showAdvance: (...args) => { advanced = args; }
+  });
+  assert.deepEqual(approvals, [["change", { "approve-spec": true, "decision-ref": "user://ok" }]]);
+  assert.deepEqual(advanced, ["change", { through: "build" }]);
+  advanced = null;
+  await route("advance", ["change", "--approve-spec", "--decision-ref", "user://ok"], {
+    resolveChange: () => {}, showAdvance: (...args) => { advanced = args; }
+  });
+  assert.equal(advanced, null, "approval alone records and stops");
+  await assert.rejects(route("advance", ["change", "--approve-spec", "--decision-ref", "r",
+    "--inspect"], { resolveChange: () => {} }), /combines only with --decision-ref and --through/);
   await route("describe", ["--json"], { describeCommand: () => {} });
   await route("repos", [], { showRepositories: (value) => assert.equal(value, null) });
   await route("hash", ["change", "provider"], {
