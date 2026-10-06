@@ -58,10 +58,11 @@ Run `cd <workspace>` once as its own shell call; the shell keeps that
 directory, and the live phase guard proves each mutating command from it
 (hosts that report no shell directory need a `cd <workspace> &&` prefix). A
 compound `cd … && …` costs a host approval prompt per call. It rejects absolute outside operands, later directory escapes,
-symlink traversal, and copying or linking from outside the workspace. A fresh
-workspace has no installed dependencies: rely on `sandbox.setupCommand` in
-`foundation.json`, or run the project's install once inside the workspace;
-never link or copy the checkout's `node_modules`. Run returned long commands
+symlink traversal, and copying or linking from outside the workspace. The
+harness installs dependencies (setup command or lockfile install); finish a
+handed-off failed install inside the workspace, never linking or copying the
+checkout's `node_modules`. Fix an unfinished task's wrong verify with `change
+amend <change> --task <task> --verify <command>`. Run returned long commands
 through `claude-foundation exec`, which starts Build children in the canonical
 workspace; time one only when its action requests observed execution. Prefer
 structured Edit/Write tools for product changes.

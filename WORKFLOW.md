@@ -252,9 +252,15 @@ An unfinished task (unchecked, with no valid passing command receipt for its
 claims) may change its verify command, and optionally `paths`, through an
 amendment with only `updateTasks: [{key, verify, paths?}]` rows. It needs no
 requirement, evidence, or version-4 intake; `change amend --template` prints
-it. Derived provider commands follow the new verify, the task's claims are
-invalidated so Prove reruns their evidence, and the revision, validation, and
-rollback match any amendment.
+it. The agent may make that correction directly, without amendment JSON or a
+new approval: `change amend <change> --task <task-key|task-id> --verify
+<command> [--reason <text>]`. Derived provider commands follow the new verify,
+the task's claims are invalidated so Prove reruns their evidence, and the
+revision, validation, and rollback match any amendment. Claims, capabilities,
+and the spec approval do not change; a command that always passes (`true`,
+`echo`, `|| true`) is refused; the prior command is kept in the amendment
+record; and the harness accepts the task only after the corrected command
+passes in the workspace.
 
 When Build discovers new behavior, amend the same agreement before continuing:
 
@@ -359,9 +365,13 @@ runners may run; and an isolated packet edited outside a semantic amendment is
 restored to the approved text by the harness (whitespace in place; any other
 edit saved under `.foundation/agreement-drift/<change>/` for an amendment), not
 reported as drift for the agent to undo. A
-workspace never borrows the checkout's dependencies. Sandbox creation
-prints a NOTE with the exact `sandbox.setupCommand` snippet when the project
-has a lockfile but declares no setup command.
+workspace never borrows the checkout's dependencies. When no setup command is
+declared, the harness runs the workspace lockfile's pinned install itself
+(`npm ci`, `pnpm install --frozen-lockfile`, `yarn install --frozen-lockfile`,
+or `bun install --frozen-lockfile`) and records it like a configured setup;
+`sandbox.installDependencies: false` opts out. If that install fails or its
+tool is missing, Build is not blocked: `advance` returns a `REPAIR` handoff with
+the command, workspace directory, and log tail for the agent to finish.
 
 Before Build, the harness compiles and persists an execution-preparation plan
 from selected repositories, setup commands, provider wiring, and tool identity.

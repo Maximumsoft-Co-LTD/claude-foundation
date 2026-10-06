@@ -72,6 +72,7 @@ import { createPacketRuntime } from "./runtime/workflow/packet-runtime.mjs";
 import { createChangePolicy } from "./runtime/workflow/change-policy.mjs";
 import { taskBlocks, taskMetadata } from "./runtime/contracts/change-artifacts.mjs";
 import { createChangeLifecycle } from "./runtime/workflow/change-lifecycle.mjs";
+import { amendTaskVerifyOperation } from "./runtime/workflow/semantic-amendment.mjs";
 import { createInvestigationRuntime } from "./runtime/workflow/investigation-runtime.mjs";
 import { createLeaseRuntime } from "./runtime/workflow/lease-runtime.mjs";
 import { createAuthorityRuntime } from "./runtime/workflow/authority-runtime.mjs";
@@ -1505,6 +1506,7 @@ const {
   trapFailures,
   rollbackStart: rollbackAtomicStart
 });
+const amendTaskVerify = amendTaskVerifyOperation.bind(null, { root: ROOT, amendChange });
 const { inspectInvestigation, investigationRecordTemplate } = createInvestigationRuntime({
   root: ROOT,
   readJson,
@@ -2196,6 +2198,7 @@ await routeRuntimeCommand(command, values, {
   inspectRevision,
   reviseChange,
   amendChange,
+  amendTaskVerify,
   resolveChange,
   // An approval over open questions becomes the user's questions, not a refusal.
   approvalQuestionAction: (id, through = null) => {

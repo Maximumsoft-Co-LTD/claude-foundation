@@ -186,6 +186,45 @@ function amendmentList(amendment, field) {
   return Array.isArray(amendment?.[field]) ? amendment[field] : [];
 }
 
+// A corrected verify command replaces a failing check, so it must still be a
+// check: a command that cannot fail would turn the task's acceptance (and any
+// provider command derived from it) into a pass with no evidence behind it.
+export function verifyCannotFail(command) {
+  const text = String(command || "").trim();
+  return /^(?:true|:|exit(?:\s+0)?|echo(?:\s.*)?|printf(?:\s.*)?)$/i.test(text) ||
+    /\|\|\s*(?:true|:|exit(?:\s+0)?)\s*\)?\s*$/i.test(text);
+}
+
+/**
+ * The verify-only amendment `change amend <change> --task <key> --verify
+ * <command>` submits: an unfinished task's check corrected in place, with the
+ * spec approval, requirements, claims, and capabilities untouched.
+ */
+export function taskVerifyAmendment({ task, verify, reason = "" }) {
+  return {
+    version: 1,
+    reason: String(reason || "").trim() ||
+      `Correct the verify command of task '${String(task || "").trim()}'`,
+    updateTasks: [{ key: String(task || "").trim(), verify: String(verify || "").trim() }]
+  };
+}
+
+// Runs the verify-only amendment through the same transactional `change
+// amend` path (validation, invalidation, rollback, approval carry) without the
+// agent authoring a JSON file. The staged file lives in machine state and is
+// removed on success, failure, or exit.
+export function amendTaskVerifyOperation({ root, amendChange, pid = process.pid,
+  now = Date.now, onExit = (cleanup) => process.once("exit", cleanup) }, id, options) {
+  const directory = join(root, ".foundation", "amendments");
+  mkdirSync(directory, { recursive: true });
+  const path = join(directory, `${id}-verify-${now()}-${pid}.json`);
+  writeFileSync(path, `${JSON.stringify(taskVerifyAmendment(options), null, 2)}\n`);
+  const cleanup = () => rmSync(path, { force: true });
+  onExit(cleanup);
+  try { return amendChange(id, path, { consumeAmendment: true }); }
+  finally { cleanup(); }
+}
+
 function amendmentIssues(amendment) {
   const issues = [];
   if (amendment?.version !== 1) issues.push("semantic amendment requires version 1");
@@ -215,6 +254,9 @@ function amendmentIssues(amendment) {
         !task.verify.trim() || /[`\r\n]/.test(task.verify)))
       issues.push(`semantic amendment updateTasks[${index}].verify must be a ` +
         "non-empty one-line command without backticks");
+    else if (hasField(task, "verify") && verifyCannotFail(task.verify))
+      issues.push(`semantic amendment updateTasks[${index}].verify cannot be a command ` +
+        "that always passes; name the focused check that proves the task");
     if (hasField(task, "paths") && (!Array.isArray(task.paths) ||
         task.paths.some((path) => typeof path !== "string" || !path.trim() || /[,\]\s]/.test(path))))
       issues.push(`semantic amendment updateTasks[${index}].paths must be an array of ` +
@@ -250,6 +292,17 @@ export function compileSemanticAmendment({
     const key = semanticTaskKey(line);
     if (key) tasksByKey.set(key, { index, line, id });
   }
+  // The agent sees task ids in every Build action; a task-contract row may
+  // name one (`T002`) in place of the semantic key it resolves to.
+  if (Array.isArray(amendment?.updateTasks)) {
+    const keyById = new Map([...tasksByKey].filter(([, row]) => row.id)
+      .map(([key, row]) => [row.id, key]));
+    amendment = { ...amendment, updateTasks: amendment.updateTasks.map((row) => {
+      const named = keyOf(row);
+      const resolved = !tasksByKey.has(named) && keyById.get(named.toUpperCase());
+      return resolved ? { ...row, key: resolved } : row;
+    }) };
+  }
 
   // Outcome never changes in place. Verify and paths change in place only on
   // an unfinished task: unchecked and without a passing command receipt.
@@ -261,8 +314,10 @@ export function compileSemanticAmendment({
     const completed = row && (taskCompleted(row.line) ||
       taskClaims(row.line).some((id) => proven.has(id)));
     const changes = {};
-    if (row && typeof update?.verify === "string" && update.verify.trim() !== taskVerify(row.line))
+    if (row && typeof update?.verify === "string" && update.verify.trim() !== taskVerify(row.line)) {
       changes.verify = update.verify.trim();
+      changes.priorVerify = taskVerify(row.line) || null;
+    }
     if (row && Array.isArray(update?.paths) &&
         JSON.stringify(stringList(update.paths)) !== JSON.stringify(taskPaths(row.line)))
       changes.paths = stringList(update.paths);
@@ -465,7 +520,10 @@ export function compileSemanticAmendment({
     const line = taskLines[change.index];
     return {
       key: change.key, id: taskId(line), claims: taskClaims(line),
-      ...(change.verify !== undefined ? { verify: change.verify } : {}),
+      // The prior command stays in the amendment audit, so a corrected check
+      // is reviewable against the one it replaced.
+      ...(change.verify !== undefined
+        ? { verify: change.verify, priorVerify: change.priorVerify } : {}),
       ...(change.paths !== undefined ? { paths: change.paths } : {})
     };
   });

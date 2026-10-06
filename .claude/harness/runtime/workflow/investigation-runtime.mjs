@@ -3,7 +3,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from "no
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import { inspectRepositoryIntelligence } from "./validation/repository-intelligence.mjs";
 import {
-  investigationReportPaths, isInvestigationReport, writeInvestigationReport
+  investigationDiscoveryExclusions, isInvestigationReport, writeInvestigationReport
 } from "./investigation-report.mjs";
 import {
   inspectSemanticSources, semanticSourceInventoryFindings
@@ -362,7 +362,8 @@ export function validateInvestigationBinding({ projectRoot, binding, git = null 
       if (digest(record, "foundation-investigation-record:1") !== state.requestDigest) {
         issues.push("investigation binding request changed after the investigation completed");
       } else {
-        const excludedPaths = [state.requestPath, state.path, ...investigationReportPaths(sourceRoot)];
+        const excludedPaths = unique([state.requestPath, state.path,
+          ...investigationDiscoveryExclusions(sourceRoot, strings(record.sources))]);
         let includedPaths = null;
         let trackedPaths = [];
         if (typeof git === "function") {
@@ -437,7 +438,8 @@ export function createInvestigationRuntime({
     const relativeRecord = relative(projectRoot, absolute).replaceAll("\\", "/");
     const relativeState = `.foundation/investigations/${id}.json`;
     const paths = sourceRoot
-      ? repositoryPaths([relativeRecord, relativeState, ...investigationReportPaths(sourceRoot)], sourceRoot)
+      ? repositoryPaths(unique([relativeRecord, relativeState,
+        ...investigationDiscoveryExclusions(sourceRoot, strings(record?.sources))]), sourceRoot)
       : { includedPaths: [], trackedPaths: [], excludedPaths: [] };
     const repository = sourceRoot ? inspectRepositoryIntelligence({
       projectRoot: sourceRoot,

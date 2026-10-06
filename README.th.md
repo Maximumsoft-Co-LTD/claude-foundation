@@ -310,13 +310,16 @@ change อยู่แล้วหรือไม่ใช่ Git repository จ
 jq -r '.workspace.path' .foundation/runtime/<change-id>.json
 ```
 
-worktree มีแค่ไฟล์ที่ Git ติดตาม ถ้า provider ต้องติดตั้ง dependency ก่อน ให้
-ประกาศ `sandbox.setupCommand` (พร้อม `setupTimeoutMs`) ใน `foundation.json`
-หรือ `setupCommand` รายรีโปใน `openspec/repositories.yaml` setup ที่ผ่านแล้วจะถูก
-reuse ส่วนตัวที่ล้มจะเก็บ sandbox ไว้และ Harness retry ให้โดยไม่รัน sibling ที่พร้อม
-แล้วซ้ำหรือส่ง recovery command ให้ user ถ้ามี lockfile แต่ยังไม่ประกาศ setup command
-ตอนสร้าง sandbox จะพิมพ์ NOTE พร้อม snippet ของ `foundation.json` ให้ ส่วนการ link
-หรือ copy `node_modules` ของ checkout เข้า workspace จะถูก phase guard ปฏิเสธ
+worktree มีแค่ไฟล์ที่ Git ติดตาม ถ้าไม่ได้ประกาศ setup ไว้ Harness จะติดตั้ง
+dependency เองจาก lockfile ของ workspace (`npm ci` หรือคำสั่ง frozen-lockfile
+ของ pnpm, yarn, bun) ตั้ง `sandbox.installDependencies: false` ใน
+`foundation.json` เพื่อปิด ถ้าต้องการ setup แบบอื่น ให้ประกาศ
+`sandbox.setupCommand` (พร้อม `setupTimeoutMs`) ใน `foundation.json` หรือ
+`setupCommand` รายรีโปใน `openspec/repositories.yaml` setup ที่ผ่านแล้วจะถูก reuse
+ส่วนตัวที่ล้มจะเก็บ sandbox ไว้และ Harness retry ให้โดยไม่รัน sibling ที่พร้อมแล้วซ้ำ
+หรือส่ง recovery command ให้ user ถ้ายังล้ม agent จะได้รับคำสั่ง directory และ log
+ไปทำต่อ ส่วนการ link หรือ copy `node_modules` ของ checkout เข้า workspace จะถูก
+phase guard ปฏิเสธ
 
 ถ้าต้องใช้ Bash โดยตรงระหว่าง Build ให้รัน `cd <workspace>` หนึ่งครั้งเป็นคำสั่งแยก
 shell จะอยู่ที่ directory นั้นต่อ คำสั่งถัดไปจึงเขียนแบบธรรมดาได้และไม่มี prompt ขออนุญาต

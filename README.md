@@ -328,15 +328,17 @@ To find the workspace:
 jq -r '.workspace.path' .foundation/runtime/<change-id>.json
 ```
 
-A worktree carries tracked files only. If providers need dependencies
-installed, declare `sandbox.setupCommand` (plus `setupTimeoutMs`) in
-`foundation.json`, or a per-repository `setupCommand` in
-`openspec/repositories.yaml`. A successful setup is reused; a failed one keeps
-the sandbox and is retried by the harness without repeating ready siblings or
-handing a recovery command to the user. When a lockfile is present and no setup
-command is declared, sandbox creation prints a NOTE with the exact
-`foundation.json` snippet; linking or copying the checkout's `node_modules`
-into the workspace is refused by the phase guard.
+A worktree carries tracked files only. With no setup declared, the harness
+installs dependencies itself from the workspace lockfile (`npm ci`, or the
+frozen-lockfile install for pnpm, yarn, or bun); `sandbox.installDependencies:
+false` in `foundation.json` opts out. For any other setup, declare
+`sandbox.setupCommand` (plus `setupTimeoutMs`) in `foundation.json`, or a
+per-repository `setupCommand` in `openspec/repositories.yaml`. A successful
+setup is reused; a failed one keeps the sandbox and is retried by the harness
+without repeating ready siblings or handing a recovery command to the user. If
+it still fails, the agent receives the command, directory, and log to finish
+it. Linking or copying the checkout's `node_modules` into the workspace is
+refused by the phase guard.
 
 For direct Bash use during Build, run `cd <workspace>` once as its own call;
 the shell keeps that directory, so later commands stay plain and need no host

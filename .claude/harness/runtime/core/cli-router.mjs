@@ -13,6 +13,7 @@ export async function routeRuntimeCommand(command, values, api) {
     startAtomic,
     inspectAmendment,
     amendChange,
+    amendTaskVerify = null,
     inspectRevision,
     reviseChange,
     resolveChange,
@@ -162,8 +163,23 @@ export async function routeRuntimeCommand(command, values, api) {
     },
     "amend": async () => {
       const { flags, rest } = parseStrictCommandFlags(values, "change amend", {
-        boolean: ["template", "inspect", "consume-amendment"]
+        boolean: ["template", "inspect", "consume-amendment"],
+        value: ["task", "verify", "reason"]
       });
+      // The verify-only correction an agent makes directly: no amendment JSON,
+      // same transaction, the spec approval carried.
+      if (flags.task !== undefined || flags.verify !== undefined || flags.reason !== undefined) {
+        if (flags.template || flags.inspect || flags["consume-amendment"])
+          die("change amend --task/--verify cannot be combined with --template, --inspect, or --consume-amendment");
+        if (rest.length !== 1 || !String(flags.task || "").trim() ||
+            !String(flags.verify || "").trim())
+          die("change amend requires <change> --task <task-key|task-id> --verify <command>");
+        if (!amendTaskVerify) die("change amend --task/--verify is unavailable in this runtime");
+        amendTaskVerify(rest[0], {
+          task: flags.task, verify: flags.verify, reason: flags.reason
+        });
+        return;
+      }
       if (flags.template) {
         if (rest.length) die("change amend --template takes no change or amendment path");
         if (flags.inspect || flags["consume-amendment"])

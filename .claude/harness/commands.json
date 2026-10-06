@@ -99,11 +99,11 @@
     },
     {
       "name": "change amend",
-      "usage": "change amend --template | <change> <amendment.json> [--inspect | --consume-amendment]",
+      "usage": "change amend --template | <change> <amendment.json> [--inspect | --consume-amendment] | <change> --task <task-key|task-id> --verify <command> [--reason <text>]",
       "audience": "agent",
       "kind": "write",
       "idempotent": false,
-      "description": "Transactionally add, revise, or remove semantic requirements during Build, or correct an unfinished task's verify command, while preserving the canonical agreement. --template prints an amendment template."
+      "description": "Transactionally add, revise, or remove semantic requirements during Build, or correct an unfinished task's verify command, while preserving the canonical agreement. --task/--verify corrects one verify command directly and keeps the spec approval. --template prints an amendment template."
     },
     {
       "name": "change revise",

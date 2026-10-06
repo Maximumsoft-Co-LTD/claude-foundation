@@ -9,7 +9,7 @@ import {
   projectionCounts, targetHeadMovedDecision, undeclaredDeletions
 } from "./apply-recovery.mjs";
 import {
-  nestedRepositoryPathMatcher, sandboxCodePathspec
+  isInvestigationPath, nestedRepositoryPathMatcher, sandboxCodePathspec
 } from "../core/workspace-surface.mjs";
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 import { compositeRepositorySelection } from "../core/repository-binding.mjs";
@@ -571,7 +571,8 @@ export function createApplyRuntime({
     const sandbox = workspaceManifest(state.workspace.path, id, true);
     const nested = nestedRepositoryPathMatcher(nestedRepositoryPaths(id, state));
     return [...new Set([...Object.keys(baseline), ...Object.keys(sandbox)])]
-      .filter((path) => baseline[path] !== sandbox[path] && !nested(path)).sort();
+      .filter((path) => baseline[path] !== sandbox[path] && !nested(path) &&
+        !isInvestigationPath(path)).sort();
   }
 
   // Against the base the sandbox branched from, not its HEAD: an agent that

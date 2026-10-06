@@ -19,12 +19,26 @@ export function isOwnedInvestigationReport(root, path) {
   } catch { return false; }
 }
 
-export function investigationReportPaths(root) {
-  const directory = join(root, "openspec", "investigations");
-  try {
-    return readdirSync(directory).map((name) => `openspec/investigations/${name}`)
-      .filter(isInvestigationReport);
-  } catch { return []; }
+// Everything under openspec/investigations/ is investigation output, not a
+// discoverable project source: records, generated reports, and notes authored
+// after DONE. Only paths a record explicitly acknowledges as sources stay
+// discoverable, so a later note cannot make a completed handoff look stale.
+// Generated reports are never sources, acknowledged or not.
+export function investigationDiscoveryExclusions(root, acknowledged = []) {
+  const keep = new Set(acknowledged.filter((path) => !isInvestigationReport(path)));
+  const paths = [];
+  const walk = (absolute, relativePath) => {
+    let entries;
+    try { entries = readdirSync(absolute, { withFileTypes: true }); }
+    catch { return; }
+    for (const entry of entries) {
+      const path = `${relativePath}/${entry.name}`;
+      if (entry.isDirectory()) walk(join(absolute, entry.name), path);
+      else if (!keep.has(path)) paths.push(path);
+    }
+  };
+  walk(join(root, "openspec", "investigations"), "openspec/investigations");
+  return paths.sort();
 }
 
 const labels = {
