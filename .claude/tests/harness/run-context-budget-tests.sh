@@ -205,8 +205,8 @@ assert_file_contains "build implements a whole single-session batch" \
   "$ROOT/.claude/commands/build.md" 'One `EDIT` may carry several tasks'
 assert_file_contains "prove keeps review in-session" \
   "$ROOT/.claude/commands/prove.md" 'Stay in-session while a review runs'
-assert_file_contains "prove owns the review timeout gate" \
-  "$ROOT/.claude/commands/prove.md" 'Gate: review timeout or no progress'
+assert_file_contains "prove owns the no-progress gate" \
+  "$ROOT/.claude/commands/prove.md" 'Gate: no progress'
 assert_file_contains "land uses the same advance route as /dev" \
   "$ROOT/.claude/commands/land.md" 'Run `claude-foundation advance <change> --through archived`'
 assert_file_not_contains "land never teaches the internal land advance route" \

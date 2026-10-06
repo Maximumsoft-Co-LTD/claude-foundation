@@ -39,11 +39,10 @@ provider and receipt contract.
 Runtime API 39 adds bounded repository intelligence, adaptive intake metrics,
 and selective amendment proof recovery. Typed intake inspection uses
 `change start <draft.json> --inspect` and discovery deltas for v4 amendments.
-Spec approval uses `change resolve --approve-spec`, with review continuation
-through `change resolve --continue-review`,
+Spec approval uses `change resolve --approve-spec`,
 and content-bound review waivers through `change waive --capability review`.
-Each requires a real `--decision-ref`. Review dispatches share a persisted
-30-minute deadline. See [WORKFLOW.md](../../WORKFLOW.md) for the user contract.
+Each requires a real `--decision-ref`. Review is bounded by its rounds; each
+dispatch has its own timeout. See [WORKFLOW.md](../../WORKFLOW.md) for the user contract.
 
 Every phase view is derived from one versioned execution contract. Semantic
 draft v4 validates typed-risk discovery coverage (optional for ordinary changes) and decision prerequisites,

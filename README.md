@@ -254,9 +254,8 @@ example "I approve the spec"), that counts, and any explicit instruction to land
 requirements with scenarios, tasks with a verify command); the harness fills in
 the rest, hands all tasks in one step, ticks them when their checks pass, and
 runs the AI review on the diff in parallel with your tests. Later additive revisions and amendments keep that
-approval. Review shares a 30-minute window across retries, fallbacks, and delta
-review; the first expiry extends it once automatically. If repair cannot
-progress or review time expires again,
+approval. Review is bounded by its rounds (full, then one delta), not by elapsed
+time. If repair cannot progress,
 choose further work, Land with explicitly accepted remaining risks, or pause.
 Failed and missing evidence remains visible. See [the workflow](WORKFLOW.md)
 for approval, continuation, and content-bound waiver semantics.

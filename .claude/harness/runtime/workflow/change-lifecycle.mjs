@@ -1,4 +1,4 @@
-import { agreementDriftError, agreementIdentity, REVIEW_WINDOW_MS } from "../core/user-decisions.mjs";
+import { agreementDriftError, agreementIdentity } from "../core/user-decisions.mjs";
 import { createHash } from "node:crypto";
 import {
   cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync,
@@ -1594,11 +1594,9 @@ export function createChangeLifecycle({
           decisionRef, acceptedAt: now() };
         saveRuntime(state);
       } else {
-        if (!state.reviewWindow) fail("No review window has started for this change");
-        const startedAt = now();
-        state.reviewWindowHistory = [...(state.reviewWindowHistory || []), state.reviewWindow];
-        state.reviewWindow = { startedAt, deadline: new Date(Date.parse(startedAt) + REVIEW_WINDOW_MS).toISOString(), decisionRef };
-        saveRuntime(state);
+        // Compatibility: review is bounded by its rounds, not elapsed time,
+        // so there is no window to extend. The flag stays accepted.
+        console.log(`NOTE: review has no time window; '--continue-review' changes nothing`);
       }
       console.log(`DECISION RECORDED ${id}\n` +
         (approvedDelta ? `  approved requirement delta:\n${formatApprovalDelta(approvedDelta)}\n` : "") +

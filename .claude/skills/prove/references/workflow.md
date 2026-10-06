@@ -21,9 +21,8 @@ returned bounded packet in this calling session, fill the pre-attributed
 response template, and record it; do not rerun the failed adapter. Final
 in-contract findings close from current claim/critical-case receipts, else
 one harness-requested closure review—never a generic redesign/split/pause question.
-All review dispatches share one persisted 30-minute window, including retries,
-fallbacks, and delta review; resuming does not reset it. Record an authorized
-extension through `change resolve <id> --continue-review --decision-ref <ref>`.
+Review is bounded by its rounds, not elapsed time; each dispatch has its own
+timeout, and an expired dispatch is reviewer infrastructure failure.
 Try in-contract repairs first; if repair cannot progress, explain what was
 tried and offer further investigation or Land with the remaining risks.
 Use `change waive <id> --capability <capability> --reason <remaining-risk>

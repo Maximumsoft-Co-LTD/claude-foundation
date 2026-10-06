@@ -785,14 +785,11 @@ preselected passing receipt.
 
 ## Review, acceptance, and external authority
 
-Review has one persisted 30-minute window beginning at the first dispatch.
-Retries, fallbacks, and delta review share its deadline; resume never resets it.
-The first expiry opens one more 30-minute window automatically, recorded as a
-harness decision (`harness://auto-extend/review-window/1`). At the next expiry,
-report completed findings and unreviewed scope and ask whether to continue,
-Land with explicit acceptance of remaining risks, or pause. Only a user decision
-may open a further window, recorded through
-`change resolve <change> --continue-review --decision-ref <ref>`.
+Review is bounded by its rounds (one full review, then one changed delta), not
+by elapsed time: the agent's repair between rounds and reviewer retries never
+spend a user-facing budget. Each dispatch has its own 30-minute timeout, and an
+expired dispatch is a reviewer infrastructure failure, not a user question.
+`change resolve --continue-review` is still accepted and changes nothing.
 Timeout is not a pass. Try repair first; if it cannot progress, explain the
 attempted remedies and offer further work or explicit waivers for the current
 diff before Land. Conflicts, incomplete Apply, and missing side-effect authority

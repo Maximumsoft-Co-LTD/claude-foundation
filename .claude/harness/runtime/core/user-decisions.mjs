@@ -2,7 +2,12 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const REVIEW_WINDOW_MS = 30 * 60 * 1000;
+// Review is bounded by its rounds (full, then one delta), not by elapsed
+// time: a shared wall-clock window also counted the agent's repair between
+// rounds and reviewer retries, and asked the user about neither. Each
+// dispatch still has its own timeout, which counts as an infrastructure
+// failure when it expires.
+export const REVIEW_DISPATCH_TIMEOUT_MS = 30 * 60 * 1000;
 
 // Task write scope is agent-owned bookkeeping, like completion: readiness and
 // apply repairs direct the agent to widen `[paths:]`, and Land still shows the
@@ -153,43 +158,6 @@ export function agreementDriftError(id, workspacePath) {
   error.owner = "agent";
   error.boundary = "agreement-drift";
   return error;
-}
-
-export function reviewWindowRemaining(state, timestamp = Date.now()) {
-  const window = state.reviewWindow;
-  if (!window) return REVIEW_WINDOW_MS;
-  const deadline = Date.parse(window.deadline);
-  if (!Number.isFinite(deadline)) return 0;
-  return Math.max(0, Math.min(REVIEW_WINDOW_MS, deadline - timestamp));
-}
-
-export const AUTO_REVIEW_EXTENSION_REF = "harness://auto-extend/review-window/1";
-
-// The first exhausted review window extends itself once, recorded as a harness
-// decision, so a slow reviewer does not stop the user. Only a later exhaustion
-// asks. Mutates `state`; the caller persists it when this returns true.
-export function autoExtendReviewWindow(state, timestamp = Date.now()) {
-  const window = state.reviewWindow;
-  if (!window || reviewWindowRemaining(state, timestamp)) return false;
-  if ([...(state.reviewWindowHistory || []), window]
-    .some((row) => row?.decisionRef === AUTO_REVIEW_EXTENSION_REF)) return false;
-  const startedAt = new Date(timestamp).toISOString();
-  state.reviewWindowHistory = [...(state.reviewWindowHistory || []), window];
-  state.reviewWindow = { startedAt,
-    deadline: new Date(timestamp + REVIEW_WINDOW_MS).toISOString(),
-    decisionRef: AUTO_REVIEW_EXTENSION_REF, owner: "harness" };
-  return true;
-}
-
-export function reviewWindowError(id) {
-  return userDecisionError("REVIEW_TIME_EXHAUSTED",
-    "The shared 30-minute review window has ended. Report completed findings and unreviewed scope; no passing verdict is implied.", [
-      { id: "continue", outcome: "Authorize another 30-minute review window",
-        command: `claude-foundation change resolve ${id} --continue-review --decision-ref <user-decision>` },
-      { id: "land", outcome: "Accept the remaining review risk explicitly and Land the current diff",
-        command: `claude-foundation change waive ${id} --capability review --reason <remaining-risk> --decision-ref <user-decision>` },
-      { id: "pause", outcome: "Preserve the work and pause" }
-    ], "continue");
 }
 
 export function currentWaivers(state, workspaceHash) {

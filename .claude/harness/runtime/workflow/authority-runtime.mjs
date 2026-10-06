@@ -1,4 +1,4 @@
-import { REVIEW_WINDOW_MS, reviewWindowRemaining, reviewWindowError, autoExtendReviewWindow, currentWaivers } from "../core/user-decisions.mjs";
+import { REVIEW_DISPATCH_TIMEOUT_MS, currentWaivers } from "../core/user-decisions.mjs";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
@@ -683,13 +683,6 @@ export function createAuthorityRuntime({
     return { handled: false, entry, request, requestId, reviewerType };
   }
 
-  function assertReviewWindow(id, state) {
-    const timestamp = Date.parse(now());
-    if (reviewWindowRemaining(state, timestamp)) return;
-    if (!autoExtendReviewWindow(state, timestamp)) throw reviewWindowError(id);
-    saveRuntime(state);
-  }
-
   function reviewInfrastructureRetryLimit() {
     const reviewSettings = foundationPolicy().review || {};
     const configuredFallbacks = (Array.isArray(reviewSettings.fallbackReviewers)
@@ -724,14 +717,6 @@ export function createAuthorityRuntime({
     releaseHarnessReviewBudget(id);
     const context = dispatchRequestContext(id, flags);
     if (context.handled) return context.value;
-    const windowState = loadRuntime(id);
-    if (!windowState.reviewWindow) {
-      const startedAt = now();
-      windowState.reviewWindow = { startedAt,
-        deadline: new Date(Date.parse(startedAt) + REVIEW_WINDOW_MS).toISOString() };
-      saveRuntime(windowState);
-    }
-    assertReviewWindow(id, windowState);
     const { entry, request, requestId, reviewerType } = context;
     function dispatchRouting() {
     const routing = reviewPolicy(id);
@@ -1411,7 +1396,7 @@ export function createAuthorityRuntime({
     });
     const reviewRequest = {
       changeId: id,
-      timeoutMs: reviewWindowRemaining(loadRuntime(id), Date.parse(now())),
+      timeoutMs: REVIEW_DISPATCH_TIMEOUT_MS,
       reviewer: reviewerName,
       modelTier: configured.modelTier || null,
       workspace,
@@ -1441,7 +1426,7 @@ export function createAuthorityRuntime({
       finalReviewer = escalated;
       report = yield {
         ...reviewRequest,
-        timeoutMs: reviewWindowRemaining(loadRuntime(id), Date.parse(now())),
+        timeoutMs: REVIEW_DISPATCH_TIMEOUT_MS,
         modelTier: "configured",
         escalatedFrom: "fast"
       };
@@ -1483,7 +1468,6 @@ export function createAuthorityRuntime({
         ]
       };
       authorityStore.replace(failedEntry, failedRequest);
-      assertReviewWindow(id, loadRuntime(id));
       // Validation is deterministic for this packet/result. Changing models
       // cannot repair its binding; retain the error and existing resume route.
       const nextReviewer = report.retryable === false ? null

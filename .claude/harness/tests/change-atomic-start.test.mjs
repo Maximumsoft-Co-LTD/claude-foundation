@@ -10,7 +10,7 @@ import { createChangeLifecycle } from "../runtime/workflow/change-lifecycle.mjs"
 import { verifySpecSync } from "../runtime/workflow/spec-sync-verify.mjs";
 import { CORE_DISCOVERY_DIMENSIONS } from
   "../runtime/workflow/validation/semantic-intake.mjs";
-import { assertSpecApproval, reviewWindowRemaining, REVIEW_WINDOW_MS } from "../runtime/core/user-decisions.mjs";
+import { assertSpecApproval } from "../runtime/core/user-decisions.mjs";
 
 function writeJson(path, value) {
   mkdirSync(dirname(path), { recursive: true });
@@ -307,7 +307,7 @@ test("accepting target edits binds the exact edited bytes to a user decision", (
   assert.equal(accepted.decisionRef, "fixture://accept");
 });
 
-test("review continuation requires authority and preserves the previous window", (t) => {
+test("review continuation is accepted for compatibility and changes nothing", (t) => {
   const value = fixture(t);
   value.lifecycle.startAtomic(value.draftPath);
   const path = join(value.runtime, "atomic-change.json");
@@ -317,9 +317,8 @@ test("review continuation requires authority and preserves the previous window",
   assert.throws(() => value.lifecycle.resolveChange("atomic-change", { "continue-review": true }), /decision-ref/);
   value.lifecycle.resolveChange("atomic-change", { "continue-review": true, "decision-ref": "fixture://continue" });
   const next = JSON.parse(readFileSync(path));
-  assert.deepEqual(next.reviewWindowHistory, [state.reviewWindow]);
-  assert.equal(next.reviewWindow.decisionRef, "fixture://continue");
-  assert.equal(reviewWindowRemaining(next, Date.parse("2026-09-02T00:00:00Z")), REVIEW_WINDOW_MS);
+  assert.deepEqual(next.reviewWindow, state.reviewWindow, "there is no window to extend");
+  assert.equal(next.reviewWindowHistory, undefined);
 });
 
 test("atomic start removes change and runtime state after late validation failure", (t) => {
