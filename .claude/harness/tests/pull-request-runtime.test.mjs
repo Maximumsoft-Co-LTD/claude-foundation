@@ -260,7 +260,7 @@ for (const scenario of ["normal", "mixed-files", "resume-edit", "resume-mode", "
   "default-branch", "dangling-link", "post-land-mode", "archive-mode", "legacy-mode",
   "crlf", "autocrlf", "conversion-resume", "custom-filter", "reserved-filter",
   "encoding", "legacy-archive-mode", "post-land-mode-remove", "non-main-default",
-  "unknown-default", "stale-default", "modified-links"])
+  "unknown-default", "stale-default", "modified-links", "head-advanced"])
 test(`delivery verifies publication boundaries: ${scenario}`, async (t) => {
   const root = mkdtempSync(join(tmpdir(), "foundation-delivery-e2e-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -425,6 +425,13 @@ test(`delivery verifies publication boundaries: ${scenario}`, async (t) => {
     fail: (message) => { throw new Error(message); }
   });
 
+  if (scenario === "head-advanced") {
+    // The user commits other work after Land; the Land base stays an ancestor
+    // and the proven change is still the uncommitted target diff.
+    write(join(root, "notes.txt"), "unrelated committed work\n");
+    checkedGit(["add", "notes.txt"], root);
+    checkedGit(["commit", "-m", "docs: unrelated work after Land"], root);
+  }
   const originalHead = checkedGit(["rev-parse", "HEAD"], root);
   const originalIndex = checkedGit(["diff", "--cached"], root);
   if (scenario === "post-land-mode") chmodSync(join(root, "src/booking.js"), 0o755);

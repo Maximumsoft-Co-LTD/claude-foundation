@@ -579,7 +579,13 @@ export function createPullRequestRuntime({
     workspace = workspacePath(id)) {
     const currentHead = gitOutput(git, ["rev-parse", "HEAD"], repositoryRoot,
       "cannot inspect target HEAD");
-    if (!projection.baseHead || currentHead !== projection.baseHead) {
+    // The delivery branch is built from the Land base and the proven content
+    // is verified separately, so commits added on top of that base (the user
+    // committing other work) do not change what is delivered. A rewritten
+    // history — reset or rebase away from the base — still stops for a choice.
+    const descendsFromBase = projection.baseHead && currentHead !== projection.baseHead &&
+      git(["merge-base", "--is-ancestor", projection.baseHead, currentHead], repositoryRoot).status === 0;
+    if (!projection.baseHead || (currentHead !== projection.baseHead && !descendsFromBase)) {
       const error = new Error(`target HEAD moved after Land (expected ${projection.baseHead || "unknown"}, observed ${currentHead})`);
       error.code = "DELIVERY_TARGET_MOVED";
       throw error;

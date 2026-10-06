@@ -657,8 +657,11 @@ publish, evidence disclosure to a new store, or product edits.
 
 Deliver reconstructs the projection in a separate Git worktree, leaving the
 user's checkout, HEAD, index, and unrelated edits unchanged. It binds durable
-checkpoints to the archived change, proof run, target head, and Land projection;
-after interruption it reconciles the local commit, remote branch, and provider
+checkpoints to the archived change, proof run, target head, and Land projection.
+Commits added on top of the Land base after Land do not stop delivery: the
+branch is built from that base and the proven content is verified separately.
+Only a history that no longer contains the base (reset or rebase) asks the user.
+After interruption it reconciles the local commit, remote branch, and provider
 state before taking the next missing action. A repeated invocation verifies and
 returns the existing pull request rather than creating another.
 
