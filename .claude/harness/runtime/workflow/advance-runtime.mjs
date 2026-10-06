@@ -826,13 +826,24 @@ export function createAdvanceRuntime({
     return null;
   }
 
+  // The latest AI review's advisory spec gaps ride on a proven or archived
+  // result so the agent reports them; they never change the outcome.
+  function reviewSpecGaps(id) {
+    try {
+      const gaps = deliveredAiAttempts(id).at(-1)?.specGaps;
+      return Array.isArray(gaps) ? gaps : [];
+    } catch { return []; }
+  }
+
   function done(id, stage, through) {
     const next = stage === "build" ? resume(id, "proven")
       : stage === "proven" ? resume(id, "archived") : null;
+    const specGaps = stage === "build" ? [] : reviewSpecGaps(id);
     return envelope(id, "DONE", {
       legacyAction: stage === "archived" ? "ARCHIVED" : "TARGET_REACHED",
       reason: `${stage} target reached`, completed: true, reached: stage,
       resumeCommand: null,
+      ...(specGaps.length ? { reviewAdvisories: { specGaps } } : {}),
       next
     });
   }

@@ -5,8 +5,24 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 
 import {
-  parseScenarioCoverage, parseSpecScenarios, reviewChecklistInstruction, reviewScenarioChecklist
+  SPEC_GAP_LIMITS, parseScenarioCoverage, parseSpecGaps, parseSpecScenarios,
+  reviewChecklistInstruction, reviewScenarioChecklist
 } from "../runtime/evidence/review-diff.mjs";
+
+test("spec gaps parse tolerantly and stay bounded", () => {
+  assert.deepEqual(parseSpecGaps(null), []);
+  assert.deepEqual(parseSpecGaps({ specGaps: "nope" }), []);
+  assert.deepEqual(parseSpecGaps({ specGaps: [
+    null, { scenario: "" }, { scenario: " negative count ", reason: "" },
+    { scenario: "negative count", reason: "duplicate" }
+  ] }), [{ scenario: "negative count", reason: null }]);
+  const many = Array.from({ length: 25 }, (_, index) => ({
+    scenario: `${index}`.padEnd(SPEC_GAP_LIMITS.chars + 50, "x"), reason: "r"
+  }));
+  const bounded = parseSpecGaps({ specGaps: many });
+  assert.equal(bounded.length, SPEC_GAP_LIMITS.items);
+  assert.ok(bounded.every((gap) => gap.scenario.length === SPEC_GAP_LIMITS.chars));
+});
 
 function packet(files) {
   const dir = mkdtempSync(join(tmpdir(), "scenario-checklist-"));

@@ -257,6 +257,22 @@ test("advance uses proof readiness hash and does not hash failed infrastructure 
     "claude-foundation sandbox create change-a --all");
 });
 
+test("a reached target reports the latest AI review's spec gaps without changing the outcome", async () => {
+  const gaps = [{ scenario: "fractional count", reason: "not named" }];
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => ({ status: "archived" }), stableHash,
+    deliveredAiAttempts: () => [{ specGaps: [{ scenario: "stale" }] }, { specGaps: gaps }]
+  });
+  const result = await runtime.advanceThrough("change-a", "archived");
+  assert.equal(result.action, "DONE");
+  assert.equal(result.reached, "archived");
+  assert.deepEqual(result.reviewAdvisories, { specGaps: gaps });
+  const clean = await createAdvanceRuntime({
+    loadRuntime: () => ({ status: "archived" }), stableHash, deliveredAiAttempts: () => [{}]
+  }).advanceThrough("change-a", "archived");
+  assert.equal(clean.reviewAdvisories, undefined, "no gaps add no advisory field");
+});
+
 test("explicit archive continuation recovers the moved packet before active approval checks", async () => {
   const state = { status: "applied" };
   let recoveries = 0;

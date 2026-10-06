@@ -25,5 +25,5 @@ explicit risk acceptance, or pause; record the answer through
 only for a named non-automatic boundary.
 
 Never Land. `DONE` at `proven` is success for this command, not delivery.
-Report what passed, what remains unproven, and the next action in the
-user's language.
+Report what passed, what remains unproven, any `reviewAdvisories.specGaps`,
+and the next action in the user's language.

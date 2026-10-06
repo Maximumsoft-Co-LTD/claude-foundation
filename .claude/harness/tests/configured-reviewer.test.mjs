@@ -73,6 +73,13 @@ const review = process.env.FAKE_CLAUDE_INVALID === "1"
     ? { status: "fail", summary: "advisory only", verifiedFindingIds: [], findings: [
         { id: "F-MINOR", severity: "minor", path: "a.mjs", line: 1, message: "advisory", claimIds: [], verificationCaseIds: [] }
       ] }
+  : process.env.FAKE_CLAUDE_SPEC_GAPS === "1"
+    ? { status: "pass", summary: "covered, with gaps", findings: [], verifiedFindingIds: [],
+        scenarioCoverage: [], specGaps: [
+          { scenario: "fractional count", reason: "lastN(items, 0.4) is not named" },
+          { scenario: "fractional count", reason: "duplicate" },
+          { scenario: "  ", reason: "blank" }
+        ] }
   : process.env.FAKE_CLAUDE_DUPLICATE === "1"
     ? { status: "pass", summary: "duplicate ids", findings: [], verifiedFindingIds: ["F1", " F1"] }
     : process.env.FAKE_CLAUDE_DUPLICATE_FINDINGS === "1"
@@ -375,7 +382,7 @@ try {
   assert(!capture.args.join(" ").includes("Edit"));
   assert(!capture.args.join(" ").includes("Write"));
   assert.deepEqual(capture.schemaRequired,
-    ["status", "summary", "findings", "verifiedFindingIds", "scenarioCoverage"]);
+    ["status", "summary", "findings", "verifiedFindingIds", "scenarioCoverage", "specGaps"]);
   assert.equal(readFileSync(join(workspace, "claude-invocations.txt"), "utf8")
     .trim().split("\n").length, 1, "one review must use one Claude invocation");
   const codexResult = codexRuntime.runReview({
@@ -454,6 +461,20 @@ try {
   delete process.env.FAKE_CLAUDE_MINOR_FAIL;
   assert.equal(advisory.status, "pass",
     "minor-only findings are advisory and cannot keep the review gate cycling");
+
+  process.env.FAKE_CLAUDE_SPEC_GAPS = "1";
+  const gapped = runtime.runReview({
+    changeId: "claude-spec-gaps", workspace, packet: {}
+  });
+  delete process.env.FAKE_CLAUDE_SPEC_GAPS;
+  assert.equal(gapped.status, "pass", "spec gaps are advisory and never fail the review");
+  assert.deepEqual(gapped.findings, [], "spec gaps never become findings");
+  assert.deepEqual(gapped.specGaps, [
+    { scenario: "fractional count", reason: "lastN(items, 0.4) is not named" }
+  ], "spec gaps are recorded deduplicated and without blank rows");
+  assert.equal(runtime.runReview({
+    changeId: "claude-no-gaps", workspace, packet: {}
+  }).specGaps, undefined, "a review without gaps records none");
 
   process.env.FAKE_CLAUDE_EMPTY_FAIL = "1";
   const emptyFail = runtime.runReview({

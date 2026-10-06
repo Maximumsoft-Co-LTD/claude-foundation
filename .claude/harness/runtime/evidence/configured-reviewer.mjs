@@ -6,7 +6,8 @@ import {
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
-  SCENARIO_COVERAGE_STATUSES, parseScenarioCoverage, reviewChecklistInstruction
+  SCENARIO_COVERAGE_STATUSES, parseScenarioCoverage, parseSpecGaps,
+  reviewChecklistInstruction
 } from "./review-diff.mjs";
 
 // No `uniqueItems` anywhere in this schema: OpenAI structured output rejects
@@ -16,8 +17,9 @@ export const REVIEW_SCHEMA = {
   type: "object",
   additionalProperties: false,
   // Structured-output providers require every property in `required`; a
-  // reviewer with no scenario checklist returns an empty scenarioCoverage.
-  required: ["status", "summary", "findings", "verifiedFindingIds", "scenarioCoverage"],
+  // reviewer with no scenario checklist returns an empty scenarioCoverage, and
+  // one with no advisory gap an empty specGaps.
+  required: ["status", "summary", "findings", "verifiedFindingIds", "scenarioCoverage", "specGaps"],
   properties: {
     status: { type: "string", enum: ["pass", "fail", "inconclusive"] },
     summary: { type: "string", minLength: 1 },
@@ -58,6 +60,18 @@ export const REVIEW_SCHEMA = {
           id: { type: "string", minLength: 1 },
           status: { type: "string", enum: [...SCENARIO_COVERAGE_STATUSES] },
           evidence: { anyOf: [{ type: "string" }, { type: "null" }] }
+        }
+      }
+    },
+    specGaps: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["scenario", "reason"],
+        properties: {
+          scenario: { type: "string", minLength: 1 },
+          reason: { type: "string" }
         }
       }
     }
@@ -364,7 +378,10 @@ export function configuredReviewPrompt(packet) {
     "verificationCaseIds from the supplied packet so a final bounded repair can be " +
     "closed by current deterministic evidence without a third AI. Report findings " +
     "precisely, keep minor findings non-blocking, and return only the required JSON object " +
-    "(scenarioCoverage is an empty array when no checklist is supplied)." +
+    "(scenarioCoverage is an empty array when no checklist is supplied). " +
+    "In specGaps, list input partitions or scenarios the change plausibly needs but " +
+    "the agreement does not name (an empty array when none); they are advisory, so " +
+    "never turn them into findings or a fail status." +
     scenarioChecklistPrompt(packet) + "\n\n" +
     `FOUNDATION REVIEW PACKET (${Buffer.byteLength(payload)} UTF-8 bytes of JSON data)\n` +
     payload;
@@ -690,7 +707,7 @@ export function createConfiguredReviewerRuntime({
 
   function persist(config, changeId, workspace, {
     status, summary, findings = [], verifiedFindingIds = [], sessionId = null,
-    scenarioCoverage = undefined
+    scenarioCoverage = undefined, specGaps = []
   }) {
     const reportDir = join(root, ".foundation", "reviews", changeId);
     mkdirSync(reportDir, { recursive: true });
@@ -718,6 +735,7 @@ export function createConfiguredReviewerRuntime({
         ephemeral: config.ephemeral
       },
       ...(scenarioCoverage !== undefined ? { scenarioCoverage } : {}),
+      ...(specGaps.length ? { specGaps } : {}),
       ...(config.escalatedFrom ? { escalatedFrom: config.escalatedFrom } : {}),
       recordedAt: now()
     };
@@ -767,7 +785,7 @@ export function createConfiguredReviewerRuntime({
       summary: review.summary,
       findings: review.findings,
       verifiedFindingIds: review.verifiedFindingIds,
-      sessionId, scenarioCoverage
+      sessionId, scenarioCoverage, specGaps: parseSpecGaps(review)
     });
   }
 

@@ -1635,7 +1635,8 @@ export function createAuthorityRuntime({
         verifiedFindingIds: report.verifiedFindingIds,
         ...(modelEscalation ? { modelEscalation } : {}),
         ...(report.scenarioCoverage !== undefined
-          ? { scenarioCoverage: report.scenarioCoverage } : {})
+          ? { scenarioCoverage: report.scenarioCoverage } : {}),
+        ...(report.specGaps?.length ? { specGaps: report.specGaps } : {})
       };
     const currentAttempt = recoveredReport && reviewAttemptByDigest(id,
       loadRuntime(id).reviewHistory?.chainHead);

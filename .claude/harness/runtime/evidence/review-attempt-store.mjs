@@ -334,6 +334,9 @@ export function completedReviewAttemptValue(context, dispatched, details,
   }
   if (details.scenarioCoverage && typeof details.scenarioCoverage === "object")
     completed.scenarioCoverage = details.scenarioCoverage;
+  // Advisory only: recorded with the verdict, never part of the gate.
+  if (Array.isArray(details.specGaps) && details.specGaps.length)
+    completed.specGaps = details.specGaps;
   delete completed.digest;
   completed.digest = context.stableHash(completed);
   return completed;

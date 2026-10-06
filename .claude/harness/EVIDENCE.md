@@ -421,7 +421,12 @@ finding on that id. A fast-tier round whose coverage is unparseable or has any
 `missing`/`unsure` item is re-run once on the configured model with the same
 packet and dispatch: no new AI wave, the configured verdict is final, and the
 attempt and dispatch record the model actually run plus `modelEscalation`
-(`escalatedFrom: "fast"`). An explicit
+(`escalatedFrom: "fast"`). The reviewer may also return advisory `specGaps`:
+input partitions or scenarios the change plausibly needs but the agreement does
+not name. They are bounded, recorded on the durable report and the completed
+attempt, and reported as `reviewAdvisories.specGaps` on a reached `proven` or
+`archived` target; they never become findings, change the verdict, or block.
+Closing one is a semantic amendment the user decides. An explicit
 `--review` (or impact, coupling, or declared security triggers) raises
 verification risk to high even at the low review tier; review required only by
 intent keywords follows its tier. Medium, high, promoted, and legacy routes
