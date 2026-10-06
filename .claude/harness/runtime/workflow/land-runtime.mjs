@@ -506,7 +506,11 @@ export function createLandRuntime({
         })),
         options: [
           { id: "inspect", outcome: "Inspect the transaction journal and the working tree before recovering." },
-          { id: "recover", outcome: `Settle it with 'claude-foundation land recover ${id} --decision-ref <ref>'.` },
+          { id: "recover", outcome: "Settle it and continue Land: " +
+            `'claude-foundation advance ${id} --through archived --recover-apply ${
+              pending.some((transaction) => ["rolling-back", "manual-recovery", "recovering-backup",
+                "settling-current"].includes(transaction.status))
+                ? "<keep-current|restore-backup>" : "settle"} --decision-ref <user-decision>'.` },
           { id: "pause", outcome: "Leave the transaction pending and make no change." }
         ],
         recommended: "inspect"
@@ -721,7 +725,8 @@ export function createLandRuntime({
   function recoverLand(id, flags = {}) {
     const decisionRef = String(flags["decision-ref"] || "").trim();
     if (!decisionRef)
-      fail("land recover requires --decision-ref <host-user-decision>; ask the user to authorize settling the interrupted apply before running it");
+      fail("settling an interrupted apply requires --decision-ref <user-decision>; ask the user, then run " +
+        `'claude-foundation advance ${id} --through archived --recover-apply settle --decision-ref <user-decision>'`);
     const pending = pendingApplyTransactions(id);
     if (!pending.length) {
       console.log(`NOTHING TO RECOVER ${id}\n  no unresolved apply transaction`);
@@ -732,7 +737,9 @@ export function createLandRuntime({
         .includes(transaction.status));
     const resolution = String(flags.resolution || "").trim();
     if (manual && !["keep-current", "restore-backup"].includes(resolution))
-      fail("land recover requires --resolution keep-current|restore-backup for a manual recovery");
+      fail("this interrupted apply needs a manual resolution: ask the user, then run " +
+        `'claude-foundation advance ${id} --through archived --recover-apply keep-current|restore-backup ` +
+        "--decision-ref <user-decision>'");
     for (const transaction of pending)
       console.log(`RECOVERING ${transaction.transactionId}\n  status: ${
         transaction.status}\n  update: ${transaction.counts.update}; create: ${
@@ -740,7 +747,7 @@ export function createLandRuntime({
     recoverPendingApply(id, loadRuntime(id), { resolution, decisionRef });
     const remaining = pendingApplyTransactions(id);
     console.log(`RECOVERED ${id}\n  settled: ${
-      pending.length - remaining.length}/${pending.length}\n  next: /land ${id}`);
+      pending.length - remaining.length}/${pending.length}\n  next: claude-foundation advance ${id} --through archived`);
   }
 
   function orderedRepositories(id, state = loadRuntime(id)) {

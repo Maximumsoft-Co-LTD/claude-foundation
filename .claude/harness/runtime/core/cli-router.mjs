@@ -364,9 +364,28 @@ export async function routeRuntimeCommand(command, values, api) {
       const { flags, rest } = parseStrictCommandFlags(values, "advance", {
         boolean: ["pretty", "inspect", "approve-spec"],
         value: ["host-result", "through", "decision", "decision-fingerprint", "decision-ref", "reason",
-          "restore-target"]
+          "restore-target", "recover-apply"]
       });
       if (rest.length !== 1) die("advance requires exactly one change id");
+      // Land's interrupted-apply route: settle the journaled apply under the
+      // user's decision, then resume the same lifecycle route. The internal
+      // `land recover` primitive is never the agent's command.
+      if (flags["recover-apply"] !== undefined) {
+        const extra = Object.keys(flags).filter((flag) =>
+          !["recover-apply", "decision-ref", "through", "pretty"].includes(flag));
+        if (extra.length)
+          die(`advance --recover-apply combines only with --through and --decision-ref; drop --${extra.join(", --")}`);
+        if (flags.through && flags.through !== "archived")
+          die("advance --recover-apply applies only to Land; use --through archived");
+        const resolution = String(flags["recover-apply"]);
+        if (!["settle", "keep-current", "restore-backup"].includes(resolution))
+          die("advance --recover-apply takes settle|keep-current|restore-backup");
+        recoverLand(rest[0], { "decision-ref": flags["decision-ref"],
+          ...(resolution === "settle" ? {} : { resolution }) });
+        if (!flags.through) return;
+        delete flags["recover-apply"];
+        delete flags["decision-ref"];
+      }
       // Land's target-conflict route: record which target files Land restores
       // to the sandbox base, then resume the same lifecycle route.
       if (flags["restore-target"] !== undefined) {

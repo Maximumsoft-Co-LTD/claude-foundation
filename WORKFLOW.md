@@ -619,7 +619,10 @@ Apply is a journaled transaction over the target. An interruption is recovered
 and resumed by the Harness through the same `/land` invocation. Restore,
 keep-current, journal, check, resume, and archive mechanics are not separate
 user operations. The user is asked only when divergent target content requires
-a semantic choice that the Harness cannot safely infer.
+a semantic choice that the Harness cannot safely infer; that answer is recorded
+through the same route, `advance <change> --through archived --recover-apply
+settle|keep-current|restore-backup --decision-ref <user-decision>`, which settles
+the journal and continues Land in one call.
 
 The projection is confined to Git-tracked files plus paths declared in
 `tasks.md`. An untracked path no task names is neither evidence surface nor a

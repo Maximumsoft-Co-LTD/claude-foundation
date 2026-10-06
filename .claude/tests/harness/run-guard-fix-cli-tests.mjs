@@ -316,6 +316,24 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
     resolveChange: () => {}, showAdvance: (...args) => { advanced = args; }
   });
   assert.equal(advanced, null, "approval alone records and stops");
+  // An interrupted Land apply is settled through advance under the user's
+  // decision and Land continues in the same call.
+  const recoveries = [];
+  advanced = null;
+  await route("advance", ["change", "--through", "archived", "--recover-apply", "keep-current",
+    "--decision-ref", "user://keep"], {
+    recoverLand: (id, flags) => recoveries.push([id, flags]),
+    showAdvance: (...args) => { advanced = args; }
+  });
+  assert.deepEqual(recoveries, [["change", { "decision-ref": "user://keep", resolution: "keep-current" }]]);
+  assert.deepEqual(advanced, ["change", { through: "archived" }]);
+  await route("advance", ["change", "--recover-apply", "settle", "--decision-ref", "user://ok"], {
+    recoverLand: (id, flags) => recoveries.push([id, flags]),
+    showAdvance: () => assert.fail("recovery alone records and stops")
+  });
+  assert.deepEqual(recoveries.at(-1), ["change", { "decision-ref": "user://ok" }]);
+  await assert.rejects(route("advance", ["change", "--recover-apply", "wipe"], { recoverLand: () => {} }),
+    /settle\|keep-current\|restore-backup/);
   // Open questions turn an approval into the user's questions, never a refusal.
   const asked = [];
   const originalLog = console.log;

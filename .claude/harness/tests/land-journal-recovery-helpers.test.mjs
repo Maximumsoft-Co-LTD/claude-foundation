@@ -37,7 +37,7 @@ test("land recovery requires authority and settles automatic and manual journals
   const originalLog = console.log;
   console.log = (message) => logs.push(String(message));
   try {
-    assert.throws(() => runtime.recoverLand("change-a"), /requires --decision-ref/);
+    assert.throws(() => runtime.recoverLand("change-a"), /requires --decision-ref <user-decision>.*--recover-apply settle/);
     runtime.recoverLand("change-a", { "decision-ref": "decision-1" });
     assert.match(logs.at(-1), /NOTHING TO RECOVER/);
 
@@ -47,7 +47,7 @@ test("land recovery requires authority and settles automatic and manual journals
     }];
     assert.throws(() => runtime.recoverLand("change-a", {
       "decision-ref": "decision-2"
-    }), /requires --resolution/);
+    }), /needs a manual resolution.*--recover-apply keep-current\|restore-backup/);
     runtime.recoverLand("change-a", {
       "decision-ref": "decision-2", resolution: "restore-backup"
     });
