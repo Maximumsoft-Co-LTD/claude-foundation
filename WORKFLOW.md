@@ -861,9 +861,9 @@ review on the fast model tier at medium effort (`review.lowRiskModel:
 "configured"` or a reviewer `fastModelId` overrides it); medium and high keep
 the configured model at high effort. Every full round receives the agreement's scenario checklist and must
 report each scenario as covered, missing, or unsure; a missing scenario becomes
-a blocking finding. If a fast first round cannot confirm every scenario, the
-harness re-runs that review once on the configured model without consuming a
-review round. Security triggers are declared (draft `securityTriggers` or
+a blocking finding that goes straight to repair. If a fast first round is
+only unsure of a scenario or its coverage is unreadable, the harness re-runs
+that review once on the configured model without consuming a review round. Security triggers are declared (draft `securityTriggers` or
 `resolve --security`) or inferred from intent keywords: declared triggers
 select the standard lane and security evidence, while an intent keyword alone
 only makes review required at the low tier and the change keeps its lane.

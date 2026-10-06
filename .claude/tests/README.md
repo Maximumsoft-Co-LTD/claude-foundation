@@ -57,6 +57,7 @@ topology/planning fixture and the real-Git pull request delivery suite.
 | `harness/run-v33-policy-tests.mjs` | Risk-tier review routing, named critical-case and mutation-v2 oracles, and the pinned read-only ephemeral Codex reviewer invocation |
 | `harness/run-risk-tiered-review-tests.mjs` | End-to-end legacy Grounding v2/current Grounding v3, bounded review, configured reviewer, proof recovery, upgrade, handoff, and repair-closure critical cases |
 | `harness/run-review-guard-fix-tests.mjs` | Receipt-guard reconciliation (overwrite/human/error), reviewer-schema portability and session handshake, infra-retry reset, `sandbox apply --refresh` routing, validate-time OpenSpec strict lint, and grounding readSet portability |
+| `.claude/harness/tests/task-check-evidence.test.mjs` | A Build task check that is exactly a provider's command becomes Prove's execution only for the same argv, cwd, environment, and content; edits, other environments, report files, and altered records rerun |
 | `harness/run-risk-tiered-review-mutation.mjs` | Mutation-v2 rejects a mutant killed by any case other than its declared killer |
 | `harness/run-lifecycle-safety-mutation.mjs` | Mutation-v2 proves Land authority, Build shell/exec containment, immutable completed-task semantics, and canonical HTTPS/local reference validation each have an exact killer |
 | `harness/run-land-surface-tests.mjs` | Change surface confined to tracked-or-declared paths, deletion provenance, and read-only pending-apply reporting |

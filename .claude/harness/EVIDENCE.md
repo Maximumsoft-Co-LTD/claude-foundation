@@ -303,6 +303,15 @@ Valid receipts are reused. Commands with identical executable arguments,
 environment, working directory, and timeout are deduplicated within one proof
 execution. Providers with non-conflicting resources run concurrently.
 
+Tests run once across Build and Prove. A Build task `verify:` that is exactly a
+required `command` or `test-discovery` provider's argv in the same repository
+runs the provider's way (cwd, environment, timeout, captured output). A clean
+pass whose content hash did not move during the run is kept for Prove, which
+parses and receipts that output like a fresh run when the execution identity,
+environment (minus run ids), and the provider's content hash still match.
+Shell syntax, report files, readiness or services, `dependsOn`, multi-repository
+scope, any later edit, or an unreadable or altered record means Prove reruns.
+
 For a single selected writable npm repository containing both `package.json`
 and `package-lock.json`, Change Loop supplies the built-in
 `dependency-supply-chain` lockfile provider automatically. No
@@ -417,8 +426,9 @@ with agreement scenarios, `scenarioChecklist` (one digest-bound item per
 scenario; ids are claim ids when a claim names the scenario). The reviewer
 returns `scenarioCoverage` per item (`covered-by-test`, `covered-by-code-only`,
 `missing`, `unsure`); a `missing` item without a bound finding becomes a major
-finding on that id. A fast-tier round whose coverage is unparseable or has any
-`missing`/`unsure` item is re-run once on the configured model with the same
+finding on that id, and a fast-tier round with any `missing` item goes
+straight to repair. Otherwise a fast-tier round whose coverage is unparseable
+or has an `unsure` item is re-run once on the configured model with the same
 packet and dispatch: no new AI wave, the configured verdict is final, and the
 attempt and dispatch record the model actually run plus `modelEscalation`
 (`escalatedFrom: "fast"`). The reviewer may also return advisory `specGaps`:

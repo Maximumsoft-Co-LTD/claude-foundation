@@ -20,6 +20,8 @@ try {
   writeFileSync(modulePath, mutated);
   cpSync(resolve(".claude/harness/runtime/evidence/evidence-results.mjs"),
     join(scratch, "evidence", "evidence-results.mjs"));
+  cpSync(resolve(".claude/harness/runtime/evidence/task-check-evidence.mjs"),
+    join(scratch, "evidence", "task-check-evidence.mjs"));
   mkdirSync(join(scratch, "core"), { recursive: true });
   cpSync(resolve(".claude/harness/runtime/core/repository-binding.mjs"),
     join(scratch, "core", "repository-binding.mjs"));

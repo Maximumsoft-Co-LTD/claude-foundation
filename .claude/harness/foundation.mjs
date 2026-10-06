@@ -960,7 +960,8 @@ const adapterRuntime = createAdapterRuntime({
   maxParallelServices: maxParallelProviders,
   recordScheduler: commandPhaseRecorder.scheduler,
   timestamp: Date.now,
-  die
+  die,
+  clearSnapshotCache
 });
 const {
   runProvider,
@@ -1969,7 +1970,8 @@ const sessionLeases = createSessionLeaseRuntime({
   loadRuntime, activeChangeLeases, stableHash, saveRuntime,
   // D5: advance runs the handed-off task's own verify check and ticks it.
   runCheck: (id, check) => commandPhaseRecorder.measure("build.task-check",
-    () => runTaskCheck({ loadRuntime }, id, check)),
+    () => adapterRuntime.runTaskCheckAsEvidence(id, check) ||
+      runTaskCheck({ loadRuntime }, id, check)),
   acquire: acquireAgentLease, release: releaseAgentLease, discard: discardAgentLease
 });
 const { advanceValue, showAdvance } = createAdvanceRuntime({

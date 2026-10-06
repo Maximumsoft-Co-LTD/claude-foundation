@@ -1176,15 +1176,16 @@ export function createAuthorityRuntime({
   }
 
   // N8 (3a): a fast-tier round whose scenario coverage is unparseable or has
-  // any missing/unsure scenario is re-run once on the configured model with
-  // the same dispatched packet. It is not a new dispatch or AI wave. Returns
-  // the configured reviewer to escalate to, or null.
+  // an unsure scenario is re-run once on the configured model with the same
+  // dispatched packet. It is not a new dispatch or AI wave. A missing scenario
+  // is already an actionable major finding, so it goes straight to repair.
+  // Returns the configured reviewer to escalate to, or null.
   function scenarioEscalationReviewer(reviewerName, configured, requestValue,
     reviewSettings, subject, packet, report) {
     if (configured.modelTier !== "fast" || reviewerName === "main-session" ||
         report?.status === "error" || !packet?.scenarioChecklist?.items?.length) return null;
     const coverage = report.scenarioCoverage;
-    if (coverage && coverage.missing.length + coverage.unsure.length === 0) return null;
+    if (coverage && (coverage.missing.length > 0 || coverage.unsure.length === 0)) return null;
     const escalated = authorityReviewerConfiguration(reviewerName, requestValue, "configured");
     if (!escalated || escalated.modelTier === "fast" || escalated.modelId === configured.modelId)
       return null;
