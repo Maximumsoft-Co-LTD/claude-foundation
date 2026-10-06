@@ -21,7 +21,7 @@ repair, user-owned `ASK_USER` for at most three dependency-ready consequential
 decisions, or harness-owned `DONE` when compilation may start. Follow its
 `resume` route after updating the same draft. Every `needs-user-decision` row
 must name its related decisions in `decisionKeys`; missing or unknown links are
-draft errors rather than an empty decision frontier.
+draft errors. A recorded `choice` settles its linked rows.
 Inspection keeps one machine-owned snapshot keyed by draft path, binding the
 draft and grounded-source digests. Changed sources invalidate `DONE` and return
 `refresh-source-coverage`; changing the draft acknowledges the refreshed

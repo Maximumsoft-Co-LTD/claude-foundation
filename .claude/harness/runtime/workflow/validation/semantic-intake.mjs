@@ -166,8 +166,30 @@ function decisionIssues(decisions = []) {
   return issues;
 }
 
-export function semanticIntakeIssues(source = {}) {
-  if (source.version !== 4) return [];
+// A coverage row waiting on user decisions is settled the moment every
+// decision it links is resolved: the harness projects it to `covered`, sourced
+// from those decisions, instead of handing the agent another draft edit.
+export function projectResolvedDecisions(source = {}) {
+  const discovery = source?.discovery;
+  if (source?.version !== 4 || !discovery || !Array.isArray(discovery.coverage) ||
+      !Array.isArray(discovery.decisions)) return source;
+  const resolved = new Set(discovery.decisions
+    .filter((row) => decisionStatus(row) === "resolved").map((row) => text(row?.key)));
+  let changed = false;
+  const coverage = discovery.coverage.map((row) => {
+    const links = strings(row?.decisionKeys);
+    if (text(row?.status).toLowerCase() !== "needs-user-decision" || !links.length ||
+        !links.every((key) => resolved.has(key))) return row;
+    changed = true;
+    return { ...row, status: "covered",
+      sources: unique([...strings(row?.sources), ...links.map((key) => `decision:${key}`)]) };
+  });
+  return changed ? { ...source, discovery: { ...discovery, coverage } } : source;
+}
+
+export function semanticIntakeIssues(input = {}) {
+  if (input.version !== 4) return [];
+  const source = projectResolvedDecisions(input);
   const issues = [];
   // Omitted discovery or coverage is an empty record; required dimensions
   // below still name what a declared-risk change must cover.
@@ -235,9 +257,10 @@ export function semanticIntakeIssues(source = {}) {
   return issues;
 }
 
-export function semanticIntakeAction(source = {}, {
+export function semanticIntakeAction(input = {}, {
   resume = null, additionalIssues = [], sourceFreshnessFindings = [], frontierLimit = 3
 } = {}) {
+  const source = projectResolvedDecisions(input);
   if (source.version !== 4) return lifecycleOutcome({
     action: "DONE", owner: "harness", boundary: "semantic-intake",
     reached: "intake-ready", reason: "The compatible semantic draft can be compiled.",
@@ -319,8 +342,9 @@ export function semanticIntakeAction(source = {}, {
   });
 }
 
-export function normalizeDiscovery(source = {}) {
-  if (source.version !== 4) return undefined;
+export function normalizeDiscovery(input = {}) {
+  if (input.version !== 4) return undefined;
+  const source = projectResolvedDecisions(input);
   return {
     coverage: (source.discovery?.coverage || []).map((row) => ({
       dimension: text(row?.dimension).toLowerCase(),

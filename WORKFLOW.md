@@ -147,7 +147,9 @@ unambiguous bookkeeping behavior, and draft v3 remains readable.
 Run `change start <draft.json> --inspect` before compilation. It returns one
 typed `EDIT`, `ASK_USER`, or `DONE` action with an exact resume route. An
 unresolved user-owned coverage row must link to its decisions through
-`decisionKeys`; repository-owned investigation is returned before user
+`decisionKeys`; once every linked decision is resolved, the harness treats the
+row as covered by those decisions, so recording an answer needs no further
+coverage edit. Repository-owned investigation is returned before user
 questions. After `DONE`, rerun with `--consume-draft` to compile atomically.
 Typed `riskSignals` provide language-neutral triggers for access control,
 persisted data, integrations, performance SLOs, UI accessibility, operational

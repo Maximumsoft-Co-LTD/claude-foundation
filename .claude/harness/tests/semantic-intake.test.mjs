@@ -291,3 +291,33 @@ test("a decision with alternatives and no choice stays an open user question", (
   assert.equal(action.action, "ASK_USER");
   assert.deepEqual(action.decision.items.map((row) => row.key), ["scope"]);
 });
+
+// Answering a decision used to cost two or three more draft edits to mark the
+// linked coverage rows. The harness projects them itself once every linked
+// decision is resolved; a row still waiting on an open decision stays open.
+test("resolved decisions settle their linked coverage without another draft edit", () => {
+  const value = source();
+  value.discovery.decisions = [
+    { key: "actor", status: "resolved", choice: "admins", reason: "owners", alternatives: ["admins", "all"] },
+    { key: "limit", status: "open", question: "limit?", alternatives: ["10", "50"], recommended: "10" }
+  ];
+  const actor = value.discovery.coverage.find((row) => row.dimension === "affected-actor");
+  actor.status = "needs-user-decision";
+  actor.decisionKeys = ["actor"];
+  delete actor.covers;
+  assert.deepEqual(semanticIntakeIssues(value).filter((issue) => issue.includes("coverage[")), []);
+  assert.equal(semanticIntakeAction(value).action, "ASK_USER", "the open decision is still asked");
+  value.discovery.decisions[1] = { ...value.discovery.decisions[1], status: "resolved", choice: "10",
+    reason: "default" };
+  const boundary = value.discovery.coverage.find((row) => row.dimension === "input-boundary");
+  boundary.status = "needs-user-decision";
+  boundary.decisionKeys = ["limit"];
+  const ready = semanticIntakeAction(value);
+  assert.equal(ready.action, "DONE");
+  const normalized = normalizeDiscovery(value).coverage;
+  const projected = normalized.find((row) => row.dimension === "affected-actor");
+  assert.equal(projected.status, "covered");
+  assert.deepEqual(projected.sources, ["decision:actor"]);
+  assert.equal(value.discovery.coverage.find((row) => row.dimension === "affected-actor").status,
+    "needs-user-decision", "the projection never rewrites the agent's draft object");
+});
