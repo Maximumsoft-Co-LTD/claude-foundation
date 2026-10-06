@@ -711,8 +711,8 @@ test("dev document sections and draft checks arrive together on the first inspec
   assert.equal(first.action, "EDIT");
   assert.equal(first.owner, "agent");
   const issues = first.intake.issues.join("\n");
-  assert.match(issues, /dev document \(api\) needs 'why'/);
-  assert.match(issues, /dev document \(api\) needs 'apiContracts'/);
+  assert.match(issues, /dev document \(api[^)]*\) needs 'why'/);
+  assert.match(issues, /dev document \(api[^)]*\) needs 'apiContracts'/);
   assert.match(issues, /verify references 'tests\/api\/results\.test\.mjs'/);
 });
 
