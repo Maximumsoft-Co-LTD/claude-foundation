@@ -14,6 +14,12 @@ What the default does with a call that leaves the active phase's rules:
   readiness, and recovery.
 - `deliver advance` outside `/deliver` is replaced by the question the agent
   must ask the user, because delivery commits, pushes, and opens a pull request.
+  When the user's latest prompt directly asks to open a PR or deliver ("เปิด PR
+  ให้เลย", "open a PR"), or answers yes to that question, it runs as `/deliver`.
+- `git commit` or `git push` during Build or Prove from outside the isolated
+  workspace is replaced by the question the agent must ask, unless the user's
+  latest prompt asked for it (a push request covers its commit) or answers yes
+  to that question. `prompt-authority.mjs` holds these word rules.
 - Anything else runs, with `additionalContext` naming the rule and the route.
 
 `FOUNDATION_GUARDRAIL_MODE=block` restores the refusals described below for a

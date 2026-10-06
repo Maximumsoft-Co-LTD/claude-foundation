@@ -31,9 +31,14 @@ authority take precedence over convenience or customary workflow.
 ## Authority and handoff
 
 - Read-only Git inspection needs no workflow mutation authority.
-- Branching/staging/local commits require the user's request or workflow phase.
-- Push, force update, PR creation, merge, and Foundation Land each require the
-  applicable explicit authority; one does not imply another.
+- Commit and push only through `/deliver` or the user's direct instruction
+  ("commit this", "push it"; a push covers its commit). No lifecycle phase
+  grants them, and Land never commits. A natural request to open a PR
+  ("เปิด PR ให้เลย") is `/deliver`. See WORKFLOW.md "Authority from the user's
+  words".
+- Branching and staging need the user's request. Force update, merge, and
+  Foundation Land each require their own explicit authority; one does not
+  imply another.
 - Never bypass hooks or checks unless the user explicitly approves the specific
   bypass and its risk.
 

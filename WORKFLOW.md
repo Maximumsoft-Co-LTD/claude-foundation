@@ -42,6 +42,34 @@ projects `DELIVERED`. Internal worker and proof-lock waits remain harness-owned
 `WORKING`; `WAITING_EXTERNAL` requires a real external owner. Internal commands,
 request IDs, journals, repair graphs, and resume tokens remain machine-facing.
 
+### Authority from the user's words
+
+One rule decides what the user's chat words authorize; `AGENT.md` carries it
+for every host, and the phase guard enforces its Git and Deliver parts.
+
+- **Approval.** A reply to the spec-approval or amendment question in the
+  user's own words—"ลุยเลย", "ทำเลย", "ทำไปเลย", "go ahead", "approve"—is the
+  approval. The agent records it through the existing
+  `advance <change> --approve-spec --decision-ref <ref>` path and does not ask
+  again. Approval stated in the original request counts the same way.
+- **Land.** Any explicit instruction to land grants Land. A user who said up
+  front "ทำจนจบ", "ทำให้เสร็จ", or "finish it" also authorized Land for that
+  change.
+- **Not authority.** Silence, and urgency alone ("ด่วน", "รีบ demo"), never
+  approve or grant Land. A negated request ("don't push yet") is never
+  authority. Authority for an external side effect is never inferred beyond
+  what was said.
+- **Commit and push.** Only `/deliver` or the user's direct instruction
+  ("commit this", "push it") commits or pushes; a push instruction covers the
+  commit it publishes. Land never commits. During Build or Prove, a
+  `git commit` or `git push` from the main checkout that the user's latest
+  prompt did not ask for does not run: the phase guard replaces it with the
+  question for the user, and a yes reply lets the same command run. Inside the
+  isolated workspace it is ordinary Build work.
+- **Pull requests.** A direct request to open a PR or deliver ("เปิด PR ให้เลย",
+  "open a PR") is `/deliver` for that one composite command, as is a yes to the
+  delivery question the guard asked.
+
 ## Lifecycle commands
 
 ### `/investigate <problem>`
@@ -220,7 +248,9 @@ changed selected source invalidates readiness and returns agent-owned coverage r
 For newly started changes, present the compiled spec, scope, and acceptance
 criteria and wait for explicit user approval before Build, including `/dev`.
 When the request itself already approves the spec, in any wording (for example
-"I approve the spec" in a `/dev` request), that is the approval; silence never is.
+"I approve the spec" in a `/dev` request), that is the approval, as is a reply
+such as "ลุยเลย" to the approval question; silence and urgency never are
+([authority from the user's words](#authority-from-the-users-words)).
 Record it with `advance <change> --approve-spec --decision-ref <ref>` (alias of
 `change resolve <change> --approve-spec`); add `--through <target>` to continue
 in the same call. The same `--approve-spec --decision-ref <ref> [--through
@@ -720,15 +750,18 @@ repositories remain unchanged. Re-entering `/land` resumes the same grant and
 skips already verified nodes; it never requires the user to assemble a journal,
 grant, commit, recovery command, or archive command.
 
-Land never implies permission to commit, push, publish, deploy, or open a pull
-request. Those effects require separate explicit authority.
+Land never commits, and never implies permission to commit, push, publish,
+deploy, or open a pull request. Commit and push happen only through `/deliver`
+or the user's direct instruction
+([authority from the user's words](#authority-from-the-users-words)).
 
 ### `/deliver <change>` (optional)
 
 Deliver is an optional post-Land transaction. The normal change lifecycle is
 still complete at `archived`; no delivery state, provider work, presentation
 evidence, prompt, or gate exists unless the user explicitly invokes
-`/deliver <change>`.
+`/deliver <change>` or directly asks to open a PR or deliver ("เปิด PR ให้เลย"),
+which is the same invocation.
 
 The agent runs one composition command, `claude-foundation deliver advance
 <change>`, and executes its automatic recovery internally. The user never
@@ -757,6 +790,21 @@ Only a history that no longer contains the base (reset or rebase) asks the user.
 After interruption it reconciles the local commit, remote branch, and provider
 state before taking the next missing action. A repeated invocation verifies and
 returns the existing pull request rather than creating another.
+
+A review follow-up updates the pull request it answers instead of opening a
+second one. The follow-up change records the original delivery by citing that
+pull request's URL in its proposal or design (for example "Address the
+requested changes on <PR URL>"). Deliver binds only a URL that a verified
+delivery receipt of another change in this project produced; an ordinary
+related link never redirects publication. When exactly one such pull request is
+cited and the provider reports it still open on its delivered branch and base,
+Deliver builds the follow-up commit on that branch's current head, pushes it as
+a fast-forward (never forced) to the same branch, and returns
+`reached: pr-updated` with the updated URL. A closed or merged pull request, a
+moved branch or base, or more than one cited delivery opens a new pull request
+instead, and the result's `followUp.notice` says why. The binding is
+checkpointed, so a resumed delivery never re-decides it. Multi-repository
+deliveries do not bind follow-ups yet.
 
 Before committing, Deliver verifies staged Git blobs against the retained Land
 projection. Before publishing, it verifies the actual commit tree again, including

@@ -249,7 +249,10 @@ assumption ใหม่
 
 หลัง Change ให้ตรวจ spec ที่ compile แล้วและยืนยันก่อนเข้า Build รวมถึง `/dev`
 ถ้าคำขอของคุณอนุมัติ spec ไว้แล้ว (เช่น "I approve the spec") ถือว่าอนุมัติแล้ว และคำสั่ง
-ให้ Land แบบใดก็ได้ (เช่น "land it when proven") ถือเป็นสิทธิ์ Land `/dev` ทำเหมือน
+ให้ Land แบบใดก็ได้ (เช่น "land it when proven") ถือเป็นสิทธิ์ Land การตอบคำถามขออนุมัติว่า
+"ลุยเลย", "ทำเลย" หรือ "go ahead" ถือเป็นการอนุมัติ ส่วน "ทำจนจบ" ที่บอกไว้ตั้งแต่ต้นก็ให้สิทธิ์ Land
+แต่คำเร่งอย่างเดียว ("ด่วน") ไม่ใช่การอนุมัติ ดู [อำนาจจากคำพูดของผู้ใช้](WORKFLOW.md#authority-from-the-users-words)
+`/dev` ทำเหมือน
 `/change` → `/build` → `/prove` → `/land` ทุกประการ งานทั่วไปใช้แค่ draft แบบขั้นต่ำ
 (intent, requirement พร้อม scenario และ task พร้อมคำสั่ง verify) ส่วนที่เหลือ harness เติม
 ให้ ส่ง task ทั้งหมดในครั้งเดียว ติ๊ก task ให้เมื่อ check ผ่าน และรัน AI review บน diff
@@ -415,6 +418,11 @@ prove แล้วแต่ยังไม่ archive การเรียก�
 ใช้ PR เดิม, ตรวจกลับผ่าน provider และคืน URL โดยไม่เปลี่ยน HEAD/index ของ checkout
 ผู้ใช้ และไม่ force-push, push เข้า default branch, merge, deploy, publish หรือแก้
 product code
+
+คำขอตรง ๆ อย่าง "เปิด PR ให้เลย" หรือ "open a PR" ถือเป็น `/deliver` เมื่อเพื่อนร่วมทีม
+ขอให้แก้ ให้ follow-up change อ้าง URL ของ PR ที่ deliver ไปแล้ว Deliver จะ push ต่อบน
+branch ของ PR นั้น (fast-forward ไม่ force) และอัปเดต PR เดิม ถ้า PR นั้นถูกปิดหรือ merge
+ไปแล้ว Deliver จะเปิด PR ใหม่และบอกเหตุผล
 
 Deliver เป็น cold path: ถ้าไม่เรียก Change, Build, Prove และ Land จะไม่มี prompt,
 การเก็บ evidence หรือ validation เฉพาะ PR เพิ่ม หลักฐาน presentation ที่ไม่บังคับ
@@ -752,6 +760,8 @@ product requirement หรือซ่อม state ด้วยมือถ้�
 - Land ไม่ commit, push หรือเปิด pull request มีเพียง `/deliver` แบบ explicit และ
   optional ที่ให้อำนาจแคบ ๆ เพื่อ commit proven projection บน isolated feature
   branch, push และเปิดหรือใช้ PR เดิมที่ตรวจยืนยันแล้ว โดย worker ห้ามอนุมาน authority
+  นอกจากนั้น commit และ push ต้องมาจากคำสั่งตรงของคุณ ระหว่าง Build หรือ Prove
+  `git commit`/`git push` จาก main checkout ที่ไม่ได้สั่งจะไม่รัน และกลายเป็นคำถามถึงคุณ
 - `protect-secrets.sh` และ `lint.sh` เปิดเป็นค่าเริ่มต้น และไม่หยุด agent ทั้งคู่:
   การอ่านไฟล์ลับจะเห็นสำเนาที่ปิดค่า (เห็น key และโครงสร้าง แต่ทุกค่าเป็น
   `<redacted>`) การค้นที่อาจโดนไฟล์ลับจะข้ามไฟล์เหล่านั้นหรือแสดงแค่ชื่อไฟล์

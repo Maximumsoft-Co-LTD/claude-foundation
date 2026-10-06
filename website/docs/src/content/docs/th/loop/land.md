@@ -34,7 +34,9 @@ change ถัดไปจะ Land เมื่อ diff ที่ change ก่�
 agreement ได้ Agent ไม่แก้ไฟล์เหล่านั้นนอก transaction และ Land ไม่ให้อำนาจ
 commit, push, publish หรือเปิด PR ระหว่างที่ Land ยัง active phase guard จะปฏิเสธ
 คำสั่ง shell เหล่านี้ เว้นแต่เป็น child ของ runtime transaction ที่มี marker หลัง
-archive แล้วจึงส่งมอบผ่าน process ปกติของ project ด้วยอำนาจแยกต่างหาก Base ที่ขยับ
+archive แล้ว commit, push และ PR เกิดได้เฉพาะผ่าน `/deliver` (คำขอตรง ๆ อย่าง
+"เปิด PR ให้เลย" ก็นับ) หรือคำสั่งตรงของคุณ follow-up จาก review ที่อ้าง URL ของ PR
+ที่ deliver แล้วจะอัปเดต PR เดิมแทนการเปิดใหม่ Base ที่ขยับ
 conflict, transaction ที่ค้าง, external owner ที่ยังใช้ไม่ได้,
 child repository หรือ pre-Land handoff ที่ยังไม่เสร็จจะหยุดด้วย `WAIT`, `REPAIR`,
 `RUN_EXTERNAL` หรือ `ASK_USER` พร้อมสาเหตุ actor ทางเลือกปลอดภัย state ที่เก็บไว้
