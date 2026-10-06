@@ -144,6 +144,22 @@ function relatedReferences(source) {
   return unique(urls).slice(0, 20);
 }
 
+function pullRequestUrlKey(value) {
+  return clean(value).replace(/[#?].*$/, "").replace(/[.,;:]+$/, "").replace(/\/+$/, "")
+    .replace(/\/(?:files|commits|checks)$/, "").toLowerCase();
+}
+
+// A follow-up change records the delivery it continues by citing that
+// delivery's pull-request URL in its agreement (proposal or design). Only a
+// URL that a verified receipt of another change in this project produced
+// binds; an ordinary related link never redirects publication.
+export function followUpDeliveryCandidates({ changeId, proposal = "", design = "", receipts = [] }) {
+  const cited = new Set(relatedReferences(`${proposal}\n${design}`).map(pullRequestUrlKey));
+  return receipts.filter((receipt) => receipt && receipt.changeId !== changeId &&
+    !receipt.multiRepository && receipt.branch && receipt.pullRequest?.url &&
+    cited.has(pullRequestUrlKey(receipt.pullRequest.url)));
+}
+
 export function pullRequestNarrative({ changeId, state, proposal, design, tasks, proof, paths }) {
   const why = markdownSection(proposal, "Why") || clean(state.intent) || `Deliver ${changeId}`;
   const changes = markdownSection(proposal, "What changes") || markdownSection(proposal, "What Changes");
@@ -480,6 +496,14 @@ function deliveryDecision(changeId, { boundary, reason, options, recommended, ..
 
 const LANDABLE_STATUSES = new Set(["proven", "applied", "landing"]);
 
+function followUpNotice(followUp) {
+  return followUp.mode === "update-existing"
+    ? { mode: followUp.mode, of: followUp.of, url: followUp.url,
+      notice: `Updated the existing pull request ${followUp.url} instead of opening a new one.` }
+    : { mode: followUp.mode, of: followUp.of, ...(followUp.url ? { url: followUp.url } : {}),
+      notice: followUp.notice };
+}
+
 export function createPullRequestRuntime({
   root,
   deliveriesRoot,
@@ -554,6 +578,7 @@ export function createPullRequestRuntime({
     }
     if (delivery.branch) git(["branch", "-D", delivery.branch], root);
     for (const key of ["workspace", "commit", "stagedPaths", "recovered"]) delete delivery[key];
+    if (delivery.followUp) delete delivery.followUp.parent;
     return checkpoint(delivery, "binding-verified", {
       workspaceRebuilt: { at: now(), reason }
     });
@@ -614,7 +639,7 @@ export function createPullRequestRuntime({
   }
 
   function prepareWorkspace(id, state, projection, branch, repositoryRoot = root,
-    workspace = workspacePath(id)) {
+    workspace = workspacePath(id), start = projection.baseHead) {
     const currentHead = gitOutput(git, ["rev-parse", "HEAD"], repositoryRoot,
       "cannot inspect target HEAD");
     // The delivery branch is built from the Land base and the proven content
@@ -635,7 +660,7 @@ export function createPullRequestRuntime({
         runChecked(run, "git", ["worktree", "add", workspace, branch],
           { cwd: repositoryRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }, "cannot restore delivery worktree");
       } else {
-        runChecked(run, "git", ["worktree", "add", "--detach", workspace, projection.baseHead],
+        runChecked(run, "git", ["worktree", "add", "--detach", workspace, start],
           { cwd: repositoryRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }, "cannot create delivery worktree");
         runChecked(run, "git", ["switch", "-c", branch],
           { cwd: workspace, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }, "cannot create delivery branch");
@@ -754,6 +779,61 @@ export function createPullRequestRuntime({
     if (!clean(value.url).startsWith(`https://${provider.remote.host}/`))
       throw new Error("pull-request URL is outside the approved Git host");
     return value;
+  }
+
+  function priorReceipts(id) {
+    if (!existsSync(deliveriesRoot)) return [];
+    return readdirSync(deliveriesRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name !== id)
+      .map((entry) => readJson(receiptPath(entry.name), null))
+      .filter((receipt) => receipt?.version === DELIVERY_RECEIPT_SCHEMA_VERSION);
+  }
+
+  // Review follow-up: when the change cites exactly one pull request this
+  // project delivered and that pull request is still open on the same base,
+  // Deliver pushes to its branch (fast-forward only) and updates it instead
+  // of opening a second one. Anything else opens a new pull request and says
+  // why. The binding is checkpointed so a resumed delivery never re-decides.
+  function bindFollowUp(id, provider, sources) {
+    const candidates = followUpDeliveryCandidates({
+      changeId: id, ...sources, receipts: priorReceipts(id)
+    });
+    if (candidates.length === 0) return null;
+    if (candidates.length > 1) return {
+      mode: "new-pull-request", of: candidates.map((row) => row.changeId).sort(),
+      notice: "The change cites more than one delivered pull request; a new pull request was opened instead of guessing which to update."
+    };
+    const [original] = candidates;
+    const result = run("gh", ["pr", "view", original.pullRequest.url, "--repo", provider.remote.slug,
+      "--json", "number,url,state,headRefName,baseRefName,headRefOid"],
+    { cwd: root, encoding: "utf8", maxBuffer: 8 * 1024 * 1024 });
+    if (result.status !== 0)
+      throw providerUnavailable(`cannot read the pull request this change follows up: ${resultText(result)}`);
+    let current;
+    try { current = JSON.parse(result.stdout || "{}"); }
+    catch { throw providerUnavailable("GitHub returned invalid pull-request JSON"); }
+    const reusable = current.state === "OPEN" && current.headRefName === original.branch &&
+      current.baseRefName === provider.baseBranch &&
+      ![provider.baseBranch, provider.defaultBranch].includes(original.branch);
+    if (!reusable) return {
+      mode: "new-pull-request", of: original.changeId, url: original.pullRequest.url,
+      notice: `The pull request ${original.pullRequest.url} is ${
+        current.state === "OPEN" ? "no longer on its delivered branch and base"
+          : String(current.state || "unavailable").toLowerCase()
+      }; a new pull request was opened for this follow-up.`
+    };
+    return {
+      mode: "update-existing", of: original.changeId, url: current.url || original.pullRequest.url,
+      number: current.number ?? original.pullRequest.number, branch: original.branch
+    };
+  }
+
+  function fetchFollowUpHead(workspace, provider, branch) {
+    runChecked(run, "git", ["fetch", "--no-tags", provider.remoteName, `refs/heads/${branch}`],
+      { cwd: workspace, encoding: "utf8", maxBuffer: 8 * 1024 * 1024, timeout: 60_000 },
+      "cannot fetch the pull-request branch this change follows up");
+    return gitOutput(git, ["rev-parse", "FETCH_HEAD^{commit}"], workspace,
+      "cannot resolve the pull-request branch this change follows up");
   }
 
   function existingReceipt(id, lifecycle) {
@@ -1048,19 +1128,37 @@ export function createPullRequestRuntime({
       const branch = delivery.branch || deliveryBranchName(policy.branchPattern, id);
       assertDeliveryBranch(branch, provider);
       if (!delivery.provider) delivery = checkpoint(delivery, delivery.status, { provider });
+      if (delivery.followUp === undefined)
+        delivery = checkpoint(delivery, delivery.status, {
+          // A delivery already under way keeps the branch it started on.
+          followUp: delivery.workspace || delivery.commit ? null : bindFollowUp(id, provider, sources)
+        });
+      const followUp = delivery.followUp?.mode === "update-existing" ? delivery.followUp : null;
+      // The remote branch receiving the commit. A follow-up publishes onto the
+      // pull request it continues; its local branch keeps this change's name.
+      const pushBranch = followUp ? followUp.branch : branch;
+      assertDeliveryBranch(pushBranch, provider);
       let workspace = delivery.workspace;
       if (!workspace || !existsSync(workspace)) {
-        workspace = prepareWorkspace(id, delivery, projection, branch);
+        if (followUp && !followUp.parent) {
+          followUp.parent = fetchFollowUpHead(root, provider, followUp.branch);
+          delivery = checkpoint(delivery, delivery.status);
+        }
+        workspace = prepareWorkspace(id, delivery, projection, branch, root, workspacePath(id),
+          followUp ? followUp.parent : projection.baseHead);
         delivery = checkpoint(delivery, "workspace-prepared", { workspace, branch, narrative, draft });
       }
+      // Tree and history checks compare against the commit the delivery
+      // builds on: the Land base, or the followed pull request's head.
+      const parentProjection = followUp ? { ...projection, baseHead: followUp.parent } : projection;
       let commit = delivery.commit;
       if (!commit) {
-        const recovered = recoverCommit(workspace, projection);
+        const recovered = recoverCommit(workspace, parentProjection);
         if (recovered) {
           commit = recovered.commit;
           delivery = checkpoint(delivery, "commit-created", recovered);
         } else {
-          const stagedPaths = stageProjection(workspace, projection);
+          const stagedPaths = stageProjection(workspace, parentProjection);
           commit = createCommit(workspace, narrative.title);
           delivery = checkpoint(delivery, "commit-created", { commit, stagedPaths });
         }
@@ -1069,20 +1167,22 @@ export function createPullRequestRuntime({
           "cannot verify delivery commit");
         if (observed !== commit) throw workspaceDrift("delivery workspace commit changed after checkpoint");
       }
-      integrity.assertTree(workspace, projection, commit);
+      integrity.assertTree(workspace, parentProjection, commit);
       integrity.assertPullRequestBase(workspace, provider, projection);
       if (delivery.status === "commit-created") {
         const currentProvider = providerContext(policy, workspace);
         assertProviderBinding(provider, currentProvider);
-        assertDeliveryBranch(branch, currentProvider);
+        assertDeliveryBranch(pushBranch, currentProvider);
+        // Never forced: a follow-up whose pull request moved after its head
+        // was fetched is refused by the remote instead of overwritten.
         runChecked(run, "git", ["push", "--set-upstream", provider.remoteName,
-          `${commit}:refs/heads/${branch}`],
+          `${commit}:refs/heads/${pushBranch}`],
         { cwd: workspace, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }, "cannot push delivery branch");
         delivery = checkpoint(delivery, "branch-pushed", { pushedAt: now(), provider });
       }
-      let pullRequest = findPullRequest(provider, branch, provider.baseBranch);
+      let pullRequest = findPullRequest(provider, pushBranch, provider.baseBranch);
       let url = pullRequest?.url || delivery.pullRequest?.url || null;
-      if (!pullRequest) url = openPullRequest(provider, branch, narrative, body, draft);
+      if (!pullRequest) url = openPullRequest(provider, pushBranch, narrative, body, draft);
       pullRequest = verifyPullRequest(provider, url, commit);
       delivery = checkpoint(delivery, "pr-opened", { pullRequest });
       const receipt = {
@@ -1092,8 +1192,9 @@ export function createPullRequestRuntime({
         bindingDigest,
         projectionHash: stableHash(projection.entries),
         commit,
-        branch,
+        branch: pushBranch,
         baseBranch: provider.baseBranch,
+        ...(delivery.followUp ? { followUp: delivery.followUp } : {}),
         pullRequest: {
           provider: "github",
           number: pullRequest.number,
@@ -1112,8 +1213,9 @@ export function createPullRequestRuntime({
       writeJson(receiptPath(id), receipt);
       checkpoint(delivery, "verified", { receiptDigest: stableHash(receipt) });
       return deliveryEnvelope(id, "DONE", {
-        completed: true, reached: "pr-opened", reused: false,
-        pullRequests: [receipt.pullRequest]
+        completed: true, reached: followUp ? "pr-updated" : "pr-opened", reused: false,
+        pullRequests: [receipt.pullRequest],
+        ...(delivery.followUp ? { followUp: followUpNotice(delivery.followUp) } : {})
       });
     } catch (error) {
       delivery.lastError = { message: error.message, code: error.code || "DELIVERY_FAILED", at: now() };

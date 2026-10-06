@@ -432,3 +432,35 @@ test("Build refuses a quoted variable as a mutation target", () => {
   assert.equal(shellMutationViolation("build", WS, 'cd /workspace && git commit -m "$MSG"'), null);
   assert.equal(shellMutationViolation("build", WS, 'cd /workspace && echo "$VAR" > out.txt'), null);
 });
+
+// One authority rule for chat words: approval and direct requests count,
+// urgency alone and negated requests never do.
+test("prompt authority reads approval, delivery, and Git requests from the user's words", async () => {
+  const {
+    gitPublicationOperations, isApprovalReply, promptExchange, promptRequestsDelivery,
+    requestedGitPublication
+  } = await import("../../hooks/prompt-authority.mjs");
+  for (const text of ["ลุยเลย", "ทำเลย", "ทำไปเลย", "go ahead", "approve", "ok ด่วนด้วย", "ใช่ ทำได้เลย"])
+    assert.equal(isApprovalReply(text), true, text);
+  for (const text of ["ด่วน", "รีบ demo", "อย่าเพิ่งทำเลย", "not yet, don't proceed", "ไม่ใช่"])
+    assert.equal(isApprovalReply(text), false, text);
+  for (const text of ["เปิด PR ให้เลย", "ส่ง PR ด้วย", "open a pull request", "please deliver it"])
+    assert.equal(promptRequestsDelivery(text), true, text);
+  for (const text of ["don't open a PR", "อย่าเปิด PR", "review the PR comments", "ด่วน"])
+    assert.equal(promptRequestsDelivery(text), false, text);
+  assert.deepEqual(requestedGitPublication("commit this"), { commit: true, push: false });
+  assert.deepEqual(requestedGitPublication("ช่วย push ด้วย"), { commit: true, push: true });
+  assert.deepEqual(requestedGitPublication("commit but don't push"), { commit: true, push: false });
+  assert.deepEqual(requestedGitPublication("ด่วน"), { commit: false, push: false });
+  assert.deepEqual(gitPublicationOperations("git add . && git commit -m x && git push"),
+    ["git commit", "git push"]);
+  assert.deepEqual(gitPublicationOperations("git status && echo 'git commit'"), []);
+  const exchange = promptExchange([
+    { type: "user", message: { content: "fix it" } },
+    { type: "user", message: { content: [{ type: "tool_result", content: "ASK_USER: question" }] } },
+    { type: "last-prompt", lastPrompt: "fix it" },
+    { type: "user", message: { content: "ลุยเลย" } }
+  ].map((row) => JSON.stringify(row)).join("\n"));
+  assert.equal(exchange.latest, "ลุยเลย");
+  assert.match(exchange.previousTurn, /ASK_USER: question/);
+});

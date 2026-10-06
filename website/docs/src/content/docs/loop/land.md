@@ -30,8 +30,10 @@ Only the harness-owned recoverable Land transaction may apply product files and
 synchronize the agreement; the agent does not edit them ad hoc. Land never
 implies permission to commit, push, publish, or open a pull request. While Land
 is active, the phase guard rejects those mutating shell commands unless they are
-children of the marked runtime transaction. After archive, delivery uses the
-project's normal process under separate authority. A moved
+children of the marked runtime transaction. After archive, commit, push, and
+pull requests happen only through `/deliver` (a direct request such as "open a
+PR" counts) or your direct instruction; a review follow-up that cites the
+delivered PR's URL updates that same PR instead of opening another. A moved
 base, projection conflict, interrupted transaction, or unsafe repository
 identity stops with `WAIT`, `REPAIR`,
 `RUN_EXTERNAL`, or `ASK_USER`. The result names the cause, responsible actor,

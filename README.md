@@ -264,7 +264,10 @@ any point before Land when implementation reveals a new assumption.
 After Change, inspect the compiled spec and explicitly approve it before Build;
 this also applies to `/dev`. If your request already approves the spec (for
 example "I approve the spec"), that counts, and any explicit instruction to land
-("land it when proven") grants Land. `/dev` runs exactly `/change` → `/build` →
+("land it when proven") grants Land. Replying "ลุยเลย", "ทำเลย", or "go ahead" to
+the approval question approves too; "ทำจนจบ" up front also grants Land; urgency
+alone ("ด่วน") never does. See [authority from the user's
+words](WORKFLOW.md#authority-from-the-users-words). `/dev` runs exactly `/change` → `/build` →
 `/prove` → `/land`. An ordinary change needs only a minimal draft (intent,
 requirements with scenarios, tasks with a verify command); the harness fills in
 the rest, hands all tasks in one step, ticks them when their checks pass, and
@@ -442,6 +445,12 @@ proof receipts, commits, pushes, opens or reuses the PR, verifies it through the
 provider, and returns its URL. It does not touch your checkout's HEAD or index,
 and it never force-pushes, pushes a default branch, merges, deploys, publishes,
 or edits product code.
+
+A direct request such as "เปิด PR ให้เลย" or "open a PR" counts as `/deliver`.
+When a teammate requests changes, make the follow-up change cite the delivered
+PR's URL: Deliver then pushes onto that PR's branch (fast-forward, never forced)
+and updates the same PR. If that PR was closed or merged meanwhile, Deliver
+opens a new PR and says why.
 
 Deliver is a cold path: if it is not invoked, Change, Build, Prove, and Land do
 no PR-specific prompting, evidence collection, or validation. Missing optional
@@ -793,7 +802,9 @@ you to.
 - Land never commits, pushes, or opens a pull request. Only an explicit optional
   `/deliver` grants narrow authority to commit the proven projection in an
   isolated feature branch, push it, and open or reuse a verified PR; workers
-  never infer that authority.
+  never infer that authority. Otherwise commit and push need your direct
+  instruction: during Build or Prove an uninstructed `git commit`/`git push`
+  from the main checkout does not run and becomes a question for you.
 - `protect-secrets.sh` and `lint.sh` are enabled by default. Neither stops the
   agent: a secret read shows a redacted copy (keys and layout, every value
   `<redacted>`), a search that could reach secret files skips them or lists only

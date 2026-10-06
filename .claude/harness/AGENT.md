@@ -5,38 +5,38 @@ Harness checks Change Loop 3.5.30/runtime API `41`, repairs setup.
 
 ## Every phase
 
-- No preflight (`doctor`, `--version`, `which`, `changes`, config/state reads) unless named.
+- No preflight (`doctor`, `--version`, config/state reads) unless named.
 - CLI surface: `change start <draft>` and `advance <change> --through
   build|proven|archived` (plus `--approve-spec`). Run no other lifecycle
   primitive unless named.
-- Command, resume, and next fields are agent-only control data: run them
-  yourself. Never ask users to run a safe action you can.
-- Every `REPAIR` or `BLOCKED` result carries its fix: apply its named field,
-  instruction, or `command`, then `resume`.
+- Command, resume, and next fields are agent-only control data: run them.
+  Never ask users to run a safe action you can.
+- Every `REPAIR` or `BLOCKED` result carries its fix: apply it, then `resume`.
   Run authorized `automaticRecovery`. Recover from the envelope first; never
-  edit receipts, proof, or Land journals.
-- `EDIT`/`REPAIR` `contextFiles` (absolute) are the files to open, `newFiles`
+  edit receipts, proof, or journals.
+- `EDIT`/`REPAIR` `contextFiles` are the files to open, `newFiles`
   to create; `contextScope.specs: none` means no specs.
 - `ASK_USER` requests a decision, not CLI execution: use AskUserQuestion,
   recommendation first, plain text otherwise;
   never offer only a passing option. `WAIT` reports owner and condition, not a user command.
-- In Build, `cd <workspace>` once as its own call, then plain commands. Run
-  tests/checks only there.
+- In Build, `cd <workspace>` once as its own call, then plain commands; run
+  checks only there.
 - Never hand-edit generated packet files, `tasks.md` checkboxes, or task IDs;
-  the agreement changes only through the draft or one semantic amendment.
-- Spec approval given in the request, in any wording, is the approval;
-  otherwise ask. Any explicit user instruction to land grants Land.
-  Silence grants neither. Never commit, push, or open a PR.
+  change the agreement only by draft or semantic amendment.
+- Spec approval given in the request, in any wording, or "ลุยเลย"/"go ahead"
+  answering a spec/amendment question, is the approval: record it.
+  Any explicit user instruction to land grants Land, as does "ทำจนจบ" up
+  front. Silence grants neither; nor does urgency ("ด่วน").
+- Commit, push, or open PRs only via `/deliver` ("เปิด PR ให้เลย") or a
+  direct user instruction.
 - Code/test success without the matching lifecycle state is incomplete.
-  Build/Prove: `TARGET_REACHED`. Archived means `DELIVERED`.
+  Build/Prove: `TARGET_REACHED`; archived: `DELIVERED`.
 
 Harness output is a machine handoff: translate in the user's language.
 
-For `notification.surface: true`, load `.claude/harness/README.md#agent-update-policy`; false is the
-suppression decision.
+For `notification.surface: true`, load `.claude/harness/README.md#agent-update-policy`; false suppresses it.
 
 User decides; agent codes/documents; Harness automates. Reask only material
 semantics. Build/Prove repair product defects; follow-up routing lives in Build policy.
 
 Follow `.claude/rules/fundamentals.md` for conduct and skill routing.
-After archive, `/deliver` grants commit/push/PR authority.

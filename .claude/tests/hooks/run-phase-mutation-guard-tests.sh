@@ -536,6 +536,75 @@ out="$(printf '%s' "$chained_deliver_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
 assert_contains "Deliver wrapper authority cannot cover a chained force push" "$out" \
   'decision":"block'
 
+# A natural request to open a PR is the user's /deliver for the one composite
+# command; a negated request, or none, stays the question.
+prompt_transcript() {
+  printf '{"type":"last-prompt","lastPrompt":"%s"}\n' "$2" > "$TMP/$1.jsonl"
+}
+deliver_with() {
+  printf '{"transcript_path":"%s","tool_name":"Bash","tool_input":{"command":"claude-foundation deliver advance delivery-change"}}' \
+    "$TMP/$1.jsonl" | CLAUDE_PROJECT_DIR="$TMP/pre" FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK"
+}
+prompt_transcript natural-deliver "เปิด PR ให้เลย"
+assert_eq "'เปิด PR ให้เลย' counts as /deliver" "" "$(deliver_with natural-deliver)"
+prompt_transcript english-deliver "looks good, open a PR for it"
+assert_eq "'open a PR' counts as /deliver" "" "$(deliver_with english-deliver)"
+prompt_transcript negated-deliver "don't open a PR yet"
+assert_contains "a negated PR request stays the question" "$(deliver_with negated-deliver)" \
+  'ASK_USER: delivering delivery-change'
+prompt_transcript urgent-deliver "ด่วน รีบ demo"
+assert_contains "urgency alone is not delivery authority" "$(deliver_with urgent-deliver)" \
+  'ASK_USER: delivering delivery-change'
+{
+  printf '%s\n' '{"type":"user","message":{"role":"user","content":"finish the change"}}'
+  printf '%s\n' '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ASK_USER: delivering delivery-change commits, pushes, and opens a pull request."}]}}'
+  printf '%s\n' '{"type":"last-prompt","lastPrompt":"ลุยเลย"}'
+} > "$TMP/answered-deliver.jsonl"
+assert_eq "a yes to the delivery question counts as /deliver" "" "$(deliver_with answered-deliver)"
+
+# git commit/push from the main checkout during Build or Prove does not run
+# unless the user's latest prompt asked for it; otherwise it becomes the
+# question. Inside the isolated workspace it is ordinary Build work.
+git_with() {
+  printf '{"transcript_path":"%s","cwd":"%s","tool_name":"Bash","tool_input":{"command":"%s"}}' \
+    "$TMP/$1.jsonl" "$2" "$3" | CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_ACTIVE_PHASE="$4" \
+    FOUNDATION_WORKSPACE_ROOT="$TMP/workspace" FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK"
+}
+prompt_transcript no-git-request "fix the booking bug"
+out="$(git_with no-git-request "$TMP/project" "git commit -am wip" build)"
+assert_contains "Build main-checkout commit becomes the question" "$out" \
+  'ASK_USER: git commit from the main checkout during build was not run'
+assert_not_contains "Build main-checkout commit does not run" "$out" '"command":"git commit'
+out="$(git_with no-git-request "$TMP/project" "git push origin feature" prove)"
+assert_contains "Prove main-checkout push becomes the question" "$out" \
+  'ASK_USER: git push from the main checkout during prove was not run'
+out="$(printf '%s' "$(bash_event 'git commit -am wip')" | CLAUDE_PROJECT_DIR="$TMP/project" \
+  FOUNDATION_ACTIVE_PHASE=build FOUNDATION_WORKSPACE_ROOT="$TMP/workspace" \
+  FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
+assert_contains "strict mode refuses an uninstructed main-checkout commit" "$out" '"decision":"block'
+prompt_transcript commit-request "commit this please"
+assert_eq "a direct commit instruction lets the commit run" "" \
+  "$(git_with commit-request "$TMP/project" "git commit -am wip" build)"
+prompt_transcript thai-push-request "ช่วย push ขึ้นไปด้วย"
+assert_eq "a direct push instruction covers commit and push" "" \
+  "$(git_with thai-push-request "$TMP/project" "git commit -am wip && git push" build)"
+assert_contains "a commit instruction never covers a push" \
+  "$(git_with commit-request "$TMP/project" "git commit -am wip && git push" build)" \
+  'ASK_USER: git commit and git push from the main checkout'
+prompt_transcript negated-push "commit locally but don't push"
+assert_contains "a negated push instruction stays the question" \
+  "$(git_with negated-push "$TMP/project" "git push" build)" 'ASK_USER: git push'
+{
+  printf '%s\n' '{"type":"user","message":{"role":"user","content":"fix the booking bug"}}'
+  printf '%s\n' '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ASK_USER: git commit from the main checkout during build was not run."}]}}'
+  printf '%s\n' '{"type":"last-prompt","lastPrompt":"ok ทำเลย"}'
+} > "$TMP/answered-git.jsonl"
+assert_eq "a yes to the commit question lets the commit run" "" \
+  "$(git_with answered-git "$TMP/project" "git commit -am wip" build)"
+out="$(git_with no-git-request "$TMP/workspace" "git commit -am wip" build)"
+assert_not_contains "a commit inside the isolated workspace is not a main-checkout question" \
+  "$out" 'ASK_USER'
+
 out="$(pre block "" "$(write_event "$TMP/pre/src/app.js")")"
 assert_contains "block mode delegates even when no phase is recorded" \
   "$out" 'active phase is unavailable'

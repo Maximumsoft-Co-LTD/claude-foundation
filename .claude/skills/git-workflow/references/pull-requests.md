@@ -109,6 +109,7 @@ The author's etiquette:
 - **Use a "fixup" commit** for each round of changes, then squash before merge. Reviewers can see exactly what you changed in response to feedback; the final history stays clean.
 - **Don't resolve a thread you didn't open.** If the reviewer raised it, let the reviewer close it. (You can mark it "addressed in <commit-sha>" and they'll close it.)
 - **Push back when you disagree.** "I considered that, but X" is a real reply; quietly making the change you didn't believe in is worse than not making it.
+- **Update the same PR; don't open a second one.** In Foundation, the follow-up change cites the reviewed PR's URL and `/deliver` pushes its commit onto that PR's branch (fast-forward only). If the PR was closed or merged meanwhile, Deliver opens a new one and says why.
 - **Don't force-push during active review** if you can help it. Reviewers lose track of what changed since their last read. If you must (e.g., to rebase onto a hot `main` fix), drop a comment saying "rebased only, no logic changes" or "rebased plus addressed X."
 
 The reviewer's etiquette:

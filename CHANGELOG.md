@@ -19,8 +19,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rules after the user's own, keeps their order (it no longer sorts the list),
   and is idempotent. `--no-permission-allowlist` skips it; the Cursor,
   OpenCode, and Codex adapters pass the flag through.
+- Review follow-up delivery updates the existing pull request. A follow-up
+  change that cites a PR another change delivered (its URL in the proposal or
+  design) makes `deliver advance` build on that PR's current head, push a
+  fast-forward to the same branch, and return `reached: pr-updated`. A closed
+  or merged PR, a moved branch or base, or more than one cited delivery opens
+  a new PR with a `followUp.notice` saying why.
+- A natural request to open a PR ("เปิด PR ให้เลย", "open a PR"), or a yes to
+  the guard's delivery question, now runs `deliver advance` as `/deliver`
+  instead of turning it into a question.
 
 ### Changed
+
+- One authority rule for the user's chat words (`AGENT.md`, WORKFLOW.md
+  "Authority from the user's words"). A reply such as "ลุยเลย", "ทำเลย",
+  "ทำไปเลย", or "go ahead" to the spec or amendment question is approval and is
+  recorded without asking again; "ทำจนจบ" up front also authorizes Land.
+  Urgency alone ("ด่วน", "รีบ demo") and negated requests never authorize.
+  Commit and push happen only through `/deliver` or the user's direct
+  instruction, which removes the contradiction between `AGENT.md` and the
+  git-workflow skill; Land never commits.
+- During Build or Prove, `git commit` or `git push` from the main checkout no
+  longer runs as an audited shell mutation. Unless the user's latest prompt
+  asked for it, the phase guard replaces it with a question for the user
+  (block mode refuses it); a yes reply lets the same command run. Commits
+  inside the isolated workspace are unchanged.
 
 - Change produces a dev document that Build executes and a reviewer reads.
   Every proposal shows a folder tree of touched paths. A rapid proposal adds

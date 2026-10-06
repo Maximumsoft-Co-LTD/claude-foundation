@@ -20,4 +20,4 @@ Never run or tell the user to run `land advance`, `land check`, `land resume`,
 blockers in plain language.
 
 `DONE` requires `archived`. Never store credentials, commit, push, or open a PR
-without separate authority.
+without separate authority (`/deliver` or a direct user instruction).

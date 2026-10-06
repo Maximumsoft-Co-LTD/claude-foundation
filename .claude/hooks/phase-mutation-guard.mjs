@@ -17,6 +17,10 @@ import {
 import { recordedPhaseContext } from "./phase-state.mjs";
 import { devPrompt } from "./dev-terminal-guard.mjs";
 import {
+  gitPublicationOperations, isApprovalReply, promptExchange, promptRequestsDelivery,
+  requestedGitPublication
+} from "./prompt-authority.mjs";
+import {
   workspaceCapabilityValue, workspaceMutationDecision
 } from "../harness/runtime/core/execution-contract.mjs";
 
@@ -86,7 +90,15 @@ const recorded = recordedPhaseContext({
 });
 const landSession = landAuthorityCommand && currentTranscriptIsLand(transcriptPath);
 const deliverInvocation = currentTranscriptIsDeliver(transcriptPath);
-const deliverSession = deliverAuthorityCommand && deliverInvocation;
+// "เปิด PR ให้เลย", "open a PR", or a yes to the delivery question the hook
+// asked last turn is the user's /deliver for this one composite command. It
+// authorizes nothing else in the turn.
+const exchange = deliverAuthorityCommand || looksGitPublication()
+  ? currentPromptExchange(transcriptPath) : { latest: "", previousTurn: "" };
+const deliverSession = deliverAuthorityCommand && (deliverInvocation ||
+  promptRequestsDelivery(exchange.latest) ||
+  (isApprovalReply(exchange.latest) && exchange.previousTurn.includes("ASK_USER: delivering ")));
+let gitAuthorityQuestion = null;
 const phase = String(process.env.FOUNDATION_ACTIVE_PHASE ||
   (deliverInvocation ? "deliver" : recorded?.phase ||
     (landSession ? "land" : investigateSession.active ? "investigate" : ""))).toLowerCase();
@@ -201,6 +213,17 @@ function guide() {
       reason: violations.join("; "), command: String(input.command || "") });
     respond({ ...input, command: routed },
       `phase guard routed '${command}' to '${routed}', the public Land route. Land only on an explicit user instruction to land.`);
+    return;
+  }
+  if (gitAuthorityQuestion) {
+    // A commit or push from the main checkout during Build or Prove is the
+    // user's call, not the agent's: it does not run, and becomes the question.
+    const message = `ASK_USER: ${gitAuthorityQuestion} from the main checkout during ${phase} was not run. ` +
+      "Commit and push happen through /deliver or on the user's direct instruction; " +
+      "ask the user, and on their yes run the same command again.";
+    recordAudit({ phase, tool, mode, outcome: "routed",
+      reason: violations.join("; "), command: String(input.command || "") });
+    respond({ ...input, command: `printf '%s\\n' '${message.replaceAll("'", "")}'` }, message);
     return;
   }
   if (deliverAuthorityCommand && !deliverSession) {
@@ -382,6 +405,7 @@ function inspectBash(command) {
     canonicalTarget: (target) => canonicalTarget(target, workspace),
     contains: (target, root) => isWithin(target, canonical(root))
   } : null;
+  if (gitPublicationFromMainCheckout(command, workspace, environment, inspection)) return;
   const violation = shellMutationViolation(phase, environment, command, inspection);
   if (!violation) return;
   const pinned = phase === "build" && mode === "block" && workspace
@@ -390,6 +414,33 @@ function inspectBash(command) {
   if (refusal === null) return;
   if (shellAuditPhases.has(phase) && !shellGuardBlocks) shellAudit = refusal;
   else violations.push(refusal);
+}
+
+// `git commit` / `git push` during Build or Prove outside the isolated
+// workspace targets the user's checkout or remote. It runs only when the
+// user's latest prompt asked for it directly, or answered yes to the question
+// this hook asked; otherwise it becomes that question. Returns true when the
+// command is settled here.
+function gitPublicationFromMainCheckout(command, workspace, environment, inspection) {
+  if (!["build", "prove"].includes(phase)) return false;
+  const operations = gitPublicationOperations(command);
+  if (!operations.length) return false;
+  if (workspace && (shellMutationViolation("build", environment, command, inspection) === null ||
+      pinnedWorkspaceCommand(command, workspace, environment, inspection, "build")?.violation === null))
+    return false;
+  const requested = requestedGitPublication(exchange.latest);
+  const answered = isApprovalReply(exchange.latest) &&
+    exchange.previousTurn.includes("from the main checkout during");
+  if (answered || operations.every((operation) => requested[operation.slice(4)])) {
+    recordAudit({ phase, tool, mode, changeId: recorded?.changeId || null,
+      outcome: "user-instructed", reason: `${operations.join(", ")} on the user's instruction`,
+      command: String(command) });
+    return true;
+  }
+  gitAuthorityQuestion = operations.join(" and ");
+  violations.push(`${gitAuthorityQuestion} from the main checkout during ${phase} needs the user's ` +
+    "direct instruction or /deliver");
+  return true;
 }
 
 // The host reports where the shell is. That report is never authority — it
@@ -402,7 +453,7 @@ function inspectBash(command) {
 // or a pinned form the policy still refuses keeps the refusal; a refusal of
 // the pinned form is the more exact reason (an outside operand, a dynamic
 // path) and replaces the anchor complaint.
-function pinnedWorkspaceCommand(command, workspace, environment, inspection) {
+function pinnedWorkspaceCommand(command, workspace, environment, inspection, policyPhase = phase) {
   const reported = typeof event.cwd === "string" ? event.cwd : "";
   if (!reported || !isAbsolute(reported)) return null;
   const canonicalCwd = canonicalTarget(reported, projectRoot);
@@ -415,7 +466,7 @@ function pinnedWorkspaceCommand(command, workspace, environment, inspection) {
   for (const directory of [...new Set([resolve(reported), canonicalCwd, respelled])]) {
     const pinned = pinShellAnchor(command, directory);
     if (pinned === null) continue;
-    const violation = shellMutationViolation(phase, environment, pinned, inspection);
+    const violation = shellMutationViolation(policyPhase, environment, pinned, inspection);
     if (violation && violation.startsWith("Build shell mutations must start inside")) continue;
     return { command: pinned, violation };
   }
@@ -482,6 +533,16 @@ function currentTranscriptIsLand(path) {
   try {
     return /^\/land(?:\s|$)/.test(latestTypedPrompt(readFileSync(path, "utf8")));
   } catch { return false; }
+}
+
+function looksGitPublication() {
+  return tool === "Bash" && gitPublicationOperations(String(input.command || "")).length > 0;
+}
+
+function currentPromptExchange(path) {
+  if (!path || !existsSync(path)) return { latest: "", previousTurn: "" };
+  try { return promptExchange(readFileSync(path, "utf8")); }
+  catch { return { latest: "", previousTurn: "" }; }
 }
 
 function currentTranscriptIsDeliver(path) {
