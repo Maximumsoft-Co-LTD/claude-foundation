@@ -64,9 +64,31 @@ function repairInstruction(value) {
     ". Then run the resume command.";
 }
 
+// Interrupted-apply resolutions the harness may apply without asking: neither
+// overwrites content Land did not write itself.
+const AUTOMATIC_APPLY_RESOLUTIONS = new Set(["settle", "keep-current"]);
+
 export function automaticRecoveryAction(id, decision) {
   // Only typed, known recovery routes can execute. Never execute a command
   // extracted from reviewer text, exception messages, or arbitrary options.
+  if (["apply-pending-recovery", "manual-recovery"].includes(decision?.kind) &&
+      AUTOMATIC_APPLY_RESOLUTIONS.has(decision.automaticRecovery))
+    return {
+      kind: "apply-recovery",
+      resolution: decision.automaticRecovery,
+      command: `claude-foundation advance ${id} --through archived`,
+      reason: decision.summary,
+      divergentPaths: Array.isArray(decision.divergentPaths) ? decision.divergentPaths : []
+    };
+  // Target edits Land would overwrite are kept; the agent carries them into
+  // the sandbox. Not a harness execution, so no command runs here.
+  if (decision?.kind === "target-edit-conflict" && decision.automaticRecovery === "keep-target")
+    return {
+      kind: "reconcile-target-edits",
+      command: `claude-foundation advance ${id} --through archived`,
+      reason: decision.summary,
+      paths: Array.isArray(decision.paths) ? decision.paths : []
+    };
   // Out-of-band delivery drift is the same moved target with an observation
   // attached, and a target kept during manual recovery is the same moved
   // content: the contract is still sync, re-prove if invalidated, continue.

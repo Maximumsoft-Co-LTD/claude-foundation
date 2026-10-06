@@ -4,6 +4,7 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { deriveApplyProjection } from "../core/state-projections.mjs";
+import { manualRecoveryDecision } from "./apply-recovery.mjs";
 
 export function transactionJournals(transactions, id, readJson) {
   const root = join(transactions, id);
@@ -174,6 +175,19 @@ export function restoreLandJournalEntry(context, journal, entry) {
     throw new Error(`rollback verification failed at '${entry.path}'`);
 }
 
+// Paths whose current target content is neither what Land found nor what it
+// wrote: someone else's bytes. Reported to the agent, never overwritten.
+export function divergentJournalPaths(context, journal) {
+  try {
+    return (journal.entries || []).filter((entry) => {
+      const target = context.safeRootPath(entry.path);
+      return !context.matches(target, entry, "before") && !context.matches(target, entry, "after");
+    }).map((entry) => entry.path);
+  } catch {
+    return [];
+  }
+}
+
 export function rollbackLandJournalOperation(context, journal, reason) {
   journal.status = "rolling-back";
   journal.failure = String(reason?.message || reason);
@@ -188,18 +202,14 @@ export function rollbackLandJournalOperation(context, journal, reason) {
   } catch (error) {
     journal.status = "manual-recovery";
     journal.recoveryError = error.message;
-    journal.decision = {
-      kind: "manual-recovery",
-      summary: "The target changed during rollback, so Foundation stopped without overwriting the divergent content.",
-      options: [
-        { id: "inspect", outcome: "Inspect the target and transaction backup before choosing a recovery." },
-        { id: "keep-current", outcome: "Preserve the current target and abandon automatic rollback." },
-        { id: "restore-backup", outcome: "Restore the recorded backup after explicitly resolving the divergence." },
-        { id: "pause", outcome: "Leave the journal pending and make no further changes." }
-      ],
-      recommended: "inspect",
-      transactionRoot: context.transactionRoot(journal.changeId, journal.transactionId)
-    };
+    journal.divergentPaths = divergentJournalPaths(context, journal);
+    journal.decision = manualRecoveryDecision(
+      context.transactionRoot(journal.changeId, journal.transactionId), {
+        changeId: journal.changeId,
+        summary: "The target changed during rollback, so Foundation stopped without overwriting the divergent content.",
+        divergentPaths: journal.divergentPaths,
+        recoveryError: error.message
+      });
     context.save(journal);
     throw error;
   }
@@ -327,7 +337,7 @@ export function createLandJournal({
     safeRootPath, pathIdentity, matches, remove: rmSync, copyPath, transactionRoot
   });
   const rollback = rollbackLandJournalOperation.bind(null, {
-    restoreEntry, save, now, transactionRoot
+    restoreEntry, save, now, transactionRoot, safeRootPath, matches
   });
 
   const settle = settleLandJournalOperation.bind(null, {

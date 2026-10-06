@@ -5,10 +5,10 @@ argument-hint: <change>
 
 Deliver **$ARGUMENTS** explicitly.
 
-Run `claude-foundation deliver advance <change>` once. It grants only authority
-to isolate, commit the proven Land projection, push its feature branch, and open
-or update a pull request—not force-push, default-branch push, merge, deploy,
-publish, or product edits.
+Run `claude-foundation deliver advance <change>` once; on a proven change it
+Lands first. It grants only authority to Land, isolate, commit the proven
+projection, push its feature branch, and open or update a pull request—not
+force-push, default-branch push, merge, deploy, publish, or product edits.
 
 Execute automatic recovery and resume internally. Never give the user an
 internal command, SHA, JSON, or retry procedure. Ask only for a consequential

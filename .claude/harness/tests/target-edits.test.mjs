@@ -5,7 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   isGeneratedArtifactPath, landAppliedOutput, parseRestoreTargetPaths, restorableTargetPaths,
-  shellAuditCount, targetConflictStop, targetEditDigest, targetEditIssues, targetEditPaths
+  shellAuditCount, targetConflictStop, targetEditCarried, targetEditDigest, targetEditIssues,
+  targetEditPaths
 } from "../runtime/workflow/target-edits.mjs";
 import { advanceFailureAction } from "../runtime/workflow/advance-runtime.mjs";
 
@@ -112,23 +113,68 @@ test("a conflict only on clean-at-isolation artifacts is an agent REPAIR with th
     "claude-foundation advance demo --through archived --restore-target __pycache__/a.pyc");
 });
 
-test("a conflict on user work or an artifact dirty at isolation asks the user with the file list", () => {
+// Keeping target edits loses nothing, so it is the automatic route: the agent
+// carries them into the sandbox. No option asks anyone to commit.
+test("a conflict on user work keeps the target edits and hands reconciliation to the agent", () => {
   const user = targetConflictStop({ changeId: "demo", paths: ["src/app.py", "a.pyc"],
     snapshot: {}, cause: "apply would overwrite uncommitted target edits" });
   assert.equal(user.decision.kind, "target-edit-conflict");
   assert.deepEqual(user.decision.paths, ["src/app.py", "a.pyc"]);
   assert.match(user.decision.summary, /src\/app\.py, a\.pyc/);
   assert.equal(user.decision.recommended, "keep-target");
+  assert.equal(user.decision.automaticRecovery, "keep-target");
   assert.deepEqual(user.decision.options.map((option) => option.id),
     ["keep-target", "restore-target", "pause"]);
+  for (const option of user.decision.options)
+    assert.doesNotMatch(`${user.decision.summary} ${option.outcome}`, /\bcommit\b/i);
   assert.match(user.decision.options[1].outcome,
     /--restore-target src\/app\.py,a\.pyc --decision-ref <user-decision>/);
   const action = advanceFailureAction("demo",
     Object.assign(new Error(user.decision.summary), { decision: user.decision }),
     { stage: "land", through: "archived" });
-  assert.equal(action.action, "ASK_USER");
+  assert.equal(action.action, "REPAIR");
+  assert.equal(action.actor, "agent");
+  assert.equal(action.legacyAction, "RECONCILE_TARGET_EDITS");
+  assert.deepEqual(action.paths, ["src/app.py", "a.pyc"]);
+  assert.equal(action.command, "claude-foundation advance demo --through archived");
 
   const preexisting = targetConflictStop({ changeId: "demo", paths: ["a.pyc"],
     snapshot: { "a.pyc": "dirty" }, cause: "sandbox diff conflicts with target" });
-  assert.equal(preexisting.decision.recommended, "restore-target");
+  assert.equal(preexisting.decision.recommended, "keep-target");
+});
+
+test("a target edit already merged into the sandbox copy is carried, a divergent one is not", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "target-carried-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const target = join(root, "target");
+  const sandbox = join(root, "sandbox");
+  mkdirSync(target);
+  mkdirSync(sandbox);
+  const base = Buffer.from("one\ntwo\nthree\nfour\nfive\n");
+  writeFileSync(join(target, "a.txt"), "ONE\ntwo\nthree\nfour\nfive\n");
+  writeFileSync(join(sandbox, "a.txt"), "one\ntwo\nthree\nfour\nFIVE\n");
+  const carried = () => targetEditCarried({ root: target, sandboxPath: sandbox, path: "a.txt", baseBytes: base });
+  assert.equal(carried(), false, "the sandbox lacks the target's first-line edit");
+  writeFileSync(join(sandbox, "a.txt"), "ONE\ntwo\nthree\nfour\nFIVE\n");
+  assert.equal(carried(), true, "the merged sandbox copy carries the target edit");
+  assert.equal(targetEditCarried({ root: target, sandboxPath: sandbox, path: "missing.txt",
+    baseBytes: base }), false);
+});
+
+test("a blocking target edit outside the Land projection is reported, not a stop", (t) => {
+  const root = project(t, [{ outcome: "shell-audit", changeId: "demo" }]);
+  const dirtyNow = { "keep.md": "a", "src/app.js": "x", "notes/todo.md": "y" };
+  const narrowed = targetEditIssues({ root, state: isolated(), dirtyNow,
+    projectionPaths: () => new Set(["src/app.js"]) });
+  assert.equal(narrowed.issues.length, 1);
+  assert.match(narrowed.issues[0], /outside the sandbox at: src\/app\.js\./);
+  assert.match(narrowed.notices[0], /outside this change's Land projection .*notes\/todo\.md/);
+  const unrelated = targetEditIssues({ root, state: isolated(), dirtyNow,
+    projectionPaths: () => new Set(["src/other.js"]) });
+  assert.deepEqual(unrelated.issues, []);
+  assert.equal(unrelated.notices.length, 1);
+  // An unresolvable projection stays fail-closed.
+  const unknown = targetEditIssues({ root, state: isolated(), dirtyNow,
+    projectionPaths: () => { throw new Error("surface unavailable"); } });
+  assert.match(unknown.issues[0], /notes\/todo\.md, src\/app\.js/);
 });

@@ -127,7 +127,8 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 | `deliver advance <change>` | Composition command เดียวสำหรับ archived change โดย harness เป็นเจ้าของ readiness, isolated worktree, projection guard, PR-standard rendering, commit, push, provider read-back, retry และ resume |
 
 ถ้าไม่เรียก `/deliver` จะไม่สร้าง delivery directory, งาน evidence เฉพาะ PR หรือ
-gate เพิ่ม คำสั่งนี้ไม่อนุญาต force-push, push เข้า default branch, merge, deploy,
+gate เพิ่ม ถ้า change prove แล้วแต่ยังไม่ archive การเรียก `/deliver` ถือเป็นอำนาจ
+Land ด้วย harness จะ Land ผ่าน `advance --through archived` แล้วส่งต่อ คำสั่งนี้ไม่อนุญาต force-push, push เข้า default branch, merge, deploy,
 publish หรือแก้ product และสำเร็จได้เมื่อ provider ยืนยันว่า base, head กับ commit
 ของ PR ที่เปิดอยู่ตรงกับ delivery receipt เท่านั้น
 

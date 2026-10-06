@@ -19,7 +19,7 @@ import { approvalMatches } from "../core/user-decisions.mjs";
 import { legacyRepositoryLandTransaction } from "./land-runtime.mjs";
 import { rejectedPaths } from "./sandbox-runtime.mjs";
 import {
-  parseRestoreTargetPaths, restorableTargetPaths, targetConflictStop
+  parseRestoreTargetPaths, restorableTargetPaths, targetConflictStop, targetEditCarried
 } from "./target-edits.mjs";
 
 // Whether an empty root diff is an acceptable apply outcome rather than an
@@ -38,13 +38,6 @@ export function telemetryUsageSatisfied(telemetry) {
     ["measured", "no-usage"].includes(telemetry.classification) ||
     Object.values(telemetry.measuredDimensions || {}).some(Boolean)
   ));
-}
-
-export function telemetryLandIssue(policy, telemetry) {
-  // Usage measurement is operational evidence, not product correctness or
-  // delivery authority. Missing host telemetry stays explicit and recoverable
-  // but can never strand a proven local delivery.
-  return null;
 }
 
 export function assertLocalApply(initialState, options, fail) {
@@ -249,6 +242,11 @@ function restoreRegenerableConflicts(context, state, paths) {
   return true;
 }
 
+function baseBlob(context, state, path) {
+  const shown = context.gitBuffer(["show", `${context.sandboxBase(state)}:${path}`], context.root);
+  return shown.status === 0 ? shown.stdout : null;
+}
+
 function stopForTargetConflict(context, id, state, paths, cause) {
   const snapshot = targetSnapshot(state);
   const stop = targetConflictStop({ changeId: id, paths, snapshot, cause });
@@ -277,6 +275,9 @@ export function gitApplyInputsOperation(context, id, sandboxPath, { regenerated 
     "diff", "--binary", context.sandboxBase(state), "--", ...pending
   ], sandboxPath);
   if (diff.status !== 0) context.fail("cannot inspect sandbox diff");
+  // A target edit the sandbox copy already carries is not overwritten work.
+  const carried = (path) => targetEditCarried({ root: context.root, sandboxPath, path,
+    baseBytes: baseBlob(context, state, path) });
   // An untracked-only or mode-only projection has no Git patch, but the
   // transaction below still copies it and binds its bytes/mode. Patch-check
   // only the tracked part; target-clobber checks still cover every path.
@@ -285,12 +286,14 @@ export function gitApplyInputsOperation(context, id, sandboxPath, { regenerated 
       cwd: context.root, input: diff.stdout, encoding: "utf8"
     });
     if (check.status !== 0) {
-      const conflicts = rejectedPaths(check.stderr);
-      if (!conflicts.length)
+      const rejected = rejectedPaths(check.stderr);
+      if (!rejected.length)
         context.fail(`sandbox diff conflicts with target: ${check.stderr.trim()}`);
-      if (!regenerated && restoreRegenerableConflicts(context, state, conflicts))
+      const conflicts = rejected.filter((path) => !carried(path));
+      if (conflicts.length && !regenerated && restoreRegenerableConflicts(context, state, conflicts))
         return gitApplyInputsOperation(context, id, sandboxPath, { regenerated: true });
-      stopForTargetConflict(context, id, state, conflicts, "sandbox diff conflicts with target");
+      if (conflicts.length)
+        stopForTargetConflict(context, id, state, conflicts, "sandbox diff conflicts with target");
     }
   }
   const base = context.sandboxBase(state);
@@ -306,7 +309,7 @@ export function gitApplyInputsOperation(context, id, sandboxPath, { regenerated 
     const sandboxContent = workingBlob(join(sandboxPath, path));
     if (sandboxContent !== null && target.equals(sandboxContent)) return false;
     const shown = context.gitBuffer(["show", `${base}:${path}`], context.root);
-    return shown.status !== 0 || !target.equals(shown.stdout);
+    return (shown.status !== 0 || !target.equals(shown.stdout)) && !carried(path);
   });
   if (clobbered.length && !regenerated && restoreRegenerableConflicts(context, state, clobbered))
     return gitApplyInputsOperation(context, id, sandboxPath, { regenerated: true });
@@ -833,10 +836,15 @@ export function createApplyRuntime({
     };
   }
 
+  // Not a dead end: the inputs are retained, so after the agent repairs the
+  // listed openspec/specs files, `advance --through archived` re-verifies the
+  // merge from them and finishes the archive.
   function failSpecSync(violations) {
     fail(`archived specs do not match the change delta:\n${violations
       .map((violation) => `  ${violation.capability}/${violation.requirement || "-"}: ${
-        violation.detail}`).join("\n")}`);
+        violation.detail}`).join("\n")}\nRepair each listed openspec/specs/<capability>/spec.md so ` +
+      "it carries the change delta; Land re-verifies the merge from the retained inputs.",
+    1, { owner: "agent", boundary: "spec-sync", code: "SPEC_SYNC_VIOLATION" });
   }
 
   // The gate can only fire once the change is already recorded archived, so a
@@ -1050,15 +1058,11 @@ export function createApplyRuntime({
     };
     saveRuntime(state);
     if (telemetry && !["measured", "no-usage"].includes(telemetry.classification)) {
-      const telemetryIssue = telemetryLandIssue(foundationPolicy(), telemetry);
       console.error(telemetry.classification === "not-ingested"
         ? "WARNING: no model usage was imported for this change; cost and token columns stay empty — telemetry not-ingested"
         : telemetryUsageSatisfied(telemetry)
           ? `WARNING: telemetry ${telemetry.classification}; unavailable dimensions remain empty`
           : `WARNING: telemetry ${telemetry.classification}; cost and token columns may stay empty`);
-      if (telemetryIssue) for (const action of telemetry.recoveryActions || [])
-        console.error(`  recovery: ${action.command}`);
-      if (telemetryIssue) fail(telemetryIssue);
     }
     return telemetry;
   }

@@ -435,8 +435,9 @@ the Land transaction instead of stopping.
 ```
 
 The normal workflow remains complete at `archived`. If you explicitly invoke
-Deliver, one command creates an isolated feature branch from the archived,
-proven projection, prepares the company-standard PR body from OpenSpec and
+Deliver on a proven change that is not archived yet, that invocation also
+authorizes Land: the harness lands it first and continues. One command creates
+an isolated feature branch from the archived, proven projection, prepares the company-standard PR body from OpenSpec and
 proof receipts, commits, pushes, opens or reuses the PR, verifies it through the
 provider, and returns its URL. It does not touch your checkout's HEAD or index,
 and it never force-pushes, pushes a default branch, merges, deploys, publishes,

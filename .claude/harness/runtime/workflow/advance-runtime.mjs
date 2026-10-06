@@ -166,6 +166,23 @@ export function repairTargetFromError(error) {
 export function advanceFailureAction(id, error, { stage = "build", through = null } = {}) {
   const reason = error?.message || String(error);
   const automatic = automaticRecoveryAction(id, error?.decision);
+  if (automatic?.kind === "reconcile-target-edits") return envelope(id, "REPAIR", {
+    legacyAction: "RECONCILE_TARGET_EDITS", actor: "agent", owner: "agent",
+    boundary: "target-conflict", reason, decision: error.decision,
+    paths: automatic.paths, command: resume(id, "archived"),
+    instruction: "Keep the target checkout's edits at the listed paths: do not revert or commit " +
+      "them. Merge each target edit into the sandbox copy of the same path so the sandbox keeps " +
+      "both the change and the target edit, then run the resume command; Land proves the merged " +
+      "files again and applies them once they carry the target edits.",
+    recoveryType: "EDIT", resumeCommand: resume(id, "archived")
+  });
+  if (automatic?.kind === "apply-recovery") return envelope(id, "REPAIR", {
+    legacyAction: "RECOVER_APPLY_TRANSACTION", actor: "harness",
+    boundary: "internal-recovery", reason,
+    automaticRecovery: automatic, decision: error.decision,
+    command: automatic.command, recoveryType: "AUTO_RECOVER",
+    resumeCommand: resume(id, through)
+  });
   if (automatic) return envelope(id, "REPAIR", {
     legacyAction: "RECOVER_SANDBOX_SYNC", actor: "harness",
     boundary: "internal-recovery", reason,
@@ -224,8 +241,10 @@ export function advanceFailureAction(id, error, { stage = "build", through = nul
     alternatives: ["finish the harness step yourself, then resume the same lifecycle route"],
     resumeCommand: resume(id, through)
   });
+  // Land's diagnosis is Land itself: resuming the archived route re-runs every
+  // Land check and recovery. `land check` is an internal primitive.
   const fallback = stage === "land"
-    ? command(`land check ${id}`)
+    ? resume(id, "archived")
     : command(`doctor --stage ${stage === "prove" ? "prove" : "build"} --change ${id}`);
   const exact = exactRecoveryCommand(reason);
   const repairTarget = exact ? null : repairTargetFromError(error);
@@ -238,7 +257,10 @@ export function advanceFailureAction(id, error, { stage = "build", through = nul
     command: exact || fallback,
     ...(exact ? {} : {
       repairTarget,
-      instruction: repairTarget
+      instruction: stage === "land"
+        ? `Fix the reported cause: ${reason}. Then run '${fallback}'; it re-runs every Land check ` +
+          "and resumes Land from its retained state."
+        : repairTarget
         ? `Set '${repairTarget.field}' to ${repairTarget.expected}` +
           `${repairTarget.value ? ` (found '${repairTarget.value}')` : ""}, then resume; ` +
           `'${fallback}' diagnoses the stage if the cause is elsewhere.`
@@ -707,7 +729,7 @@ export function createAdvanceRuntime({
   recoverReviewBindings = null,
   recoverWorkspace = null,
   recoverArchive = null,
-  recoverSandbox = null, saveRuntime = () => {}, proofIsCurrent = null,
+  recoverSandbox = null, recoverApply = null, saveRuntime = () => {}, proofIsCurrent = null,
   settleSessionLeases = null, issueSessionLease = null, reverifyCompletedTasks = null,
   // Resolves a change's packet directory; enables `contextFiles` on EDIT/REPAIR.
   changePath = null,
@@ -962,7 +984,42 @@ export function createAdvanceRuntime({
     }))));
   }
 
-  async function advanceThrough(id, through) {
+  // An interrupted apply is settled by the harness under the Land route that
+  // started it: `settle` finishes or reverses only bytes Land wrote, and
+  // `keep-current` overwrites nothing (the kept target is then synchronized
+  // and proved again through `recovery-sync-required`). Each resolution runs
+  // at most once per invocation; if it cannot finish, the agent receives the
+  // divergent paths and the transaction location, never the user.
+  async function recoverInterruptedApply(id, through, value, internal) {
+    const { resolution, divergentPaths = [] } = value.automaticRecovery;
+    const notice = `Land kept an interrupted apply recoverable (${resolution})` +
+      (divergentPaths.length ? `; the target held other content at: ${divergentPaths.join(", ")}` : "");
+    const handoff = (reason) => projected(recovery.observe(id, withContext(id, envelope(id, "REPAIR", {
+      actor: "agent", owner: "agent", legacyAction: "REPAIR_APPLY_RECOVERY",
+      boundary: "internal-recovery", reason,
+      details: { resolution, divergentPaths, transactions: value.decision?.transactions || [],
+        transactionRoot: value.decision?.transactionRoot || null },
+      instruction: "Automatic apply recovery could not finish. Compare the listed target paths " +
+        "with the sandbox and the transaction backup, make each target path hold the intended " +
+        "content without deleting anyone's work, then run the resume command.",
+      recoveryType: "EDIT", resumeCommand: resume(id, through)
+    }))));
+    if (internal.applyRecovered.includes(resolution))
+      return handoff(`The ${resolution} recovery already ran and the interrupted apply is still pending: ${value.reason}`);
+    const next = { ...internal, applyRecovered: [...internal.applyRecovered, resolution],
+      notices: [...internal.notices, notice] };
+    try {
+      await captureAsync(() => recoverApply(id, resolution));
+    } catch (error) {
+      // A settle that meets divergent content leaves a manual-recovery journal;
+      // the next pass keeps the current target instead of stopping.
+      if (resolution !== "settle") return handoff(`Automatic ${resolution} recovery failed: ${error.message}`);
+    }
+    const result = await advanceThrough(id, through, next);
+    return { ...result, notices: [...new Set([...(result.notices || []), ...next.notices])] };
+  }
+
+  async function advanceThrough(id, through, internal = { applyRecovered: [], notices: [] }) {
     let stage = "build";
     const finish = async (value) => {
       if (issueSessionLease && value?.action === "EDIT") {
@@ -990,11 +1047,14 @@ export function createAdvanceRuntime({
               reason: "Sandbox synchronization found conflicting changes; choose the intended result before merging.",
               details: result, recoveryType: "EDIT", resumeCommand: resume(id, through)
             }))));
-          return advanceThrough(id, through);
+          return advanceThrough(id, through, internal);
         } catch (error) {
           return projected(recovery.observe(id, failureAction(id, error, { stage, through })));
         }
       }
+      if (value.action === "REPAIR" && value.automaticRecovery?.kind === "apply-recovery" &&
+          recoverApply && through === "archived")
+        return recoverInterruptedApply(id, through, value, internal);
       return value;
     };
     let recordedPhase = null;

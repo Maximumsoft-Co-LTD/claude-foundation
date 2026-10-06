@@ -286,11 +286,24 @@ function resultText(result) {
   return clean(result?.stderr || result?.stdout || result?.error?.message);
 }
 
+// Remote and provider operations fail for reasons the repository operator
+// owns (credentials, network, remote configuration). They are typed here so
+// Deliver waits on that owner only for them, never for an unrelated failure
+// whose message happens to mention a remote.
+const PROVIDER_GIT_COMMANDS = new Set(["push", "fetch", "ls-remote"]);
+
+function providerUnavailable(message) {
+  const error = new Error(message);
+  error.code = "DELIVERY_PROVIDER_UNAVAILABLE";
+  return error;
+}
+
 function runChecked(run, executable, args, options, label) {
   const result = run(executable, args, options);
   if (result.status !== 0) {
     const error = new Error(`${label}: ${resultText(result) || `exit ${result.status}`}`);
-    error.code = "DELIVERY_EXTERNAL_COMMAND_FAILED";
+    error.code = executable === "gh" || (executable === "git" && PROVIDER_GIT_COMMANDS.has(args[0]))
+      ? "DELIVERY_PROVIDER_UNAVAILABLE" : "DELIVERY_EXTERNAL_COMMAND_FAILED";
     error.command = executable;
     error.result = result;
     throw error;
@@ -449,6 +462,24 @@ function deliveryEnvelope(changeId, action, fields = {}) {
   return { version: DELIVERY_PROTOCOL_VERSION, changeId, action, ...fields };
 }
 
+// A Deliver question in the blocked-decision shape: typed options with
+// outcomes, a recommendation, and a preserved pause. `options` keeps the
+// legacy id list for existing hosts.
+function deliveryDecision(changeId, { boundary, reason, options, recommended, ...fields }) {
+  const choices = [...options, ["pause", "Keep the current state and deliver nothing for now."]];
+  return deliveryEnvelope(changeId, "ASK_USER", {
+    completed: false, boundary, reason, ...fields,
+    options: options.map(([id]) => id),
+    decision: {
+      kind: boundary, summary: reason,
+      options: choices.map(([id, outcome]) => ({ id, outcome })),
+      recommended: recommended || options[0][0]
+    }
+  });
+}
+
+const LANDABLE_STATUSES = new Set(["proven", "applied", "landing"]);
+
 export function createPullRequestRuntime({
   root,
   deliveriesRoot,
@@ -464,6 +495,8 @@ export function createPullRequestRuntime({
   transactions = null,
   selectedRepositories = null,
   foundationPolicy = () => ({}),
+  // `advance --through archived` for a proven change Deliver was invoked on.
+  landChange = null,
   now = () => new Date().toISOString(),
   run = spawnSync,
   fail = (message) => { throw new Error(message); }
@@ -533,28 +566,33 @@ export function createPullRequestRuntime({
     return { proposal: read("proposal.md"), design: read("design.md"), tasks: read("tasks.md") };
   }
 
+  function providerGitOutput(args, cwd, label) {
+    try { return gitOutput(git, args, cwd, label); }
+    catch (error) { throw providerUnavailable(error.message); }
+  }
+
   function providerContext(policy, repositoryRoot = root) {
-    const remoteUrl = gitOutput(git, ["remote", "get-url", policy.remote], repositoryRoot,
+    const remoteUrl = providerGitOutput(["remote", "get-url", policy.remote], repositoryRoot,
       `cannot resolve Git remote '${policy.remote}'`);
     const remote = parseGitHubRemote(remoteUrl);
     if (!remote || (policy.provider !== "auto" && policy.provider !== "github"))
-      throw new Error(`Deliver currently requires a GitHub remote; found '${remoteUrl}'`);
+      throw providerUnavailable(`Deliver currently requires a GitHub remote; found '${remoteUrl}'`);
     if (!policy.allowedHosts.includes(remote.host))
-      throw new Error(`Git remote host '${remote.host}' is not allowed by delivery policy`);
-    const pushUrls = gitOutput(git, ["remote", "get-url", "--push", "--all", policy.remote],
+      throw providerUnavailable(`Git remote host '${remote.host}' is not allowed by delivery policy`);
+    const pushUrls = providerGitOutput(["remote", "get-url", "--push", "--all", policy.remote],
       repositoryRoot, "cannot resolve effective push remote").split("\n").filter(Boolean);
     if (!pushUrls.length || pushUrls.some((url) => {
       const destination = parseGitHubRemote(url);
       return !destination || destination.host !== remote.host ||
         destination.slug.toLowerCase() !== remote.slug.toLowerCase();
-    })) throw new Error("Git push remote does not match the approved GitHub repository; correct the push URLs or URL rewrite rules and retry Deliver");
+    })) throw providerUnavailable("Git push remote does not match the approved GitHub repository; correct the push URLs or URL rewrite rules and retry Deliver");
     // Query the remote: a cached origin/HEAD may be stale, and a configured PR
     // base is not authority to publish to the actual default branch.
     const heads = runChecked(run, "git", ["ls-remote", "--symref", policy.remote, "HEAD"],
       { cwd: repositoryRoot, encoding: "utf8", timeout: 60_000, maxBuffer: 1024 * 1024 },
       "cannot determine remote default branch");
     const defaultBranch = String(heads.stdout).match(/^ref: refs\/heads\/(.+)\tHEAD$/m)?.[1];
-    if (!defaultBranch) throw new Error("Git remote default branch is unavailable; restore remote access and retry Deliver");
+    if (!defaultBranch) throw providerUnavailable("Git remote default branch is unavailable; restore remote access and retry Deliver");
     return { remote, remoteName: policy.remote, pushUrls: [...new Set(pushUrls)].sort(),
       defaultBranch, baseBranch: policy.defaultBaseBranch || defaultBranch };
   }
@@ -564,7 +602,7 @@ export function createPullRequestRuntime({
       remoteName: value.remoteName, baseBranch: value.baseBranch,
       ...(expected?.pushUrls ? { pushUrls: value.pushUrls } : {}) });
     if (expected && stableHash(identity(expected)) !== stableHash(identity(observed)))
-      throw new Error("Git remote delivery binding changed; restore the approved remote, push URLs and base branch before retrying Deliver");
+      throw providerUnavailable("Git remote delivery binding changed; restore the approved remote, push URLs and base branch before retrying Deliver");
   }
 
   function assertDeliveryBranch(branch, provider) {
@@ -681,10 +719,10 @@ export function createPullRequestRuntime({
       "--head", branch, "--base", baseBranch, "--state", "open",
       "--json", "number,url,state,isDraft,headRefOid", "--limit", "10"],
     { cwd: root, encoding: "utf8", maxBuffer: 8 * 1024 * 1024 });
-    if (result.status !== 0) throw new Error(`cannot query pull requests: ${resultText(result)}`);
+    if (result.status !== 0) throw providerUnavailable(`cannot query pull requests: ${resultText(result)}`);
     let rows;
     try { rows = JSON.parse(result.stdout || "[]"); }
-    catch { throw new Error("GitHub returned invalid pull-request JSON"); }
+    catch { throw providerUnavailable("GitHub returned invalid pull-request JSON"); }
     return Array.isArray(rows) ? rows[0] || null : null;
   }
 
@@ -702,14 +740,14 @@ export function createPullRequestRuntime({
   }
 
   function verifyPullRequest(provider, url, commit) {
-    if (!url) throw new Error("GitHub did not return a pull-request URL");
+    if (!url) throw providerUnavailable("GitHub did not return a pull-request URL");
     const result = run("gh", ["pr", "view", url, "--repo", provider.remote.slug,
       "--json", "number,url,state,isDraft,headRefName,baseRefName,headRefOid"],
     { cwd: root, encoding: "utf8", maxBuffer: 8 * 1024 * 1024 });
-    if (result.status !== 0) throw new Error(`cannot verify pull request: ${resultText(result)}`);
+    if (result.status !== 0) throw providerUnavailable(`cannot verify pull request: ${resultText(result)}`);
     let value;
     try { value = JSON.parse(result.stdout || "{}"); }
-    catch { throw new Error("GitHub returned invalid pull-request verification JSON"); }
+    catch { throw providerUnavailable("GitHub returned invalid pull-request verification JSON"); }
     if (value.state !== "OPEN" || value.headRefOid !== commit ||
         value.baseRefName !== provider.baseBranch)
       throw new Error("pull-request read-back does not match the delivered commit and base branch");
@@ -899,14 +937,36 @@ export function createPullRequestRuntime({
     });
   }
 
+  // Invoking Deliver on a proven change is the user's authority to Land it
+  // first: the normal `advance --through archived` route lands (issuing its
+  // grant under this invocation), then delivery continues in the same call.
+  async function landThenDeliver(id) {
+    saveDelivery({ ...loadDelivery(id), landAuthority: {
+      kind: "explicit-deliver-command", requestedAt: now()
+    } });
+    const landed = await landChange(id);
+    if (loadRuntime(id).status !== "archived")
+      return deliveryEnvelope(id, landed?.action && landed.action !== "DONE" ? landed.action : "WAIT", {
+        completed: false, boundary: landed?.boundary || "land",
+        reason: landed?.reason || "Land has not reached archived yet.",
+        land: landed || null, resumeCommand: `claude-foundation deliver advance ${id}`
+      });
+    const delivered = await advance(id);
+    return { ...delivered, land: { reached: "archived", authority: "explicit-deliver-command" } };
+  }
+
   async function advance(id) {
     const lifecycle = loadRuntime(id);
-    if (lifecycle.status !== "archived") return deliveryEnvelope(id, "ASK_USER", {
-      completed: false,
-      boundary: "land-authority",
-      reason: "Deliver requires an archived change; decide whether to Land first.",
-      options: ["authorize-land-and-continue", "leave-change-pending"]
-    });
+    if (lifecycle.status !== "archived") {
+      if (landChange && LANDABLE_STATUSES.has(lifecycle.status)) return landThenDeliver(id);
+      return deliveryDecision(id, {
+        boundary: "change-not-proven",
+        reason: `Deliver needs a proven change; '${id}' is ${lifecycle.status || "not started"}.`,
+        options: [["finish-build-and-prove-then-deliver",
+          `Finish Build and Prove with 'claude-foundation advance ${id} --through archived', then run Deliver again.`]],
+        resumeCommand: `claude-foundation deliver advance ${id}`
+      });
+    }
     let delivery = loadDelivery(id);
     try {
       const policy = deliveryPolicy(foundationPolicy());
@@ -1070,34 +1130,48 @@ export function createPullRequestRuntime({
         return advance(id);
       }
       if (error.stage === "delivery-workspace")
-        return deliveryEnvelope(id, "ASK_USER", {
-          completed: false, boundary: "delivery-workspace", owner: "repository-operator",
+        return deliveryDecision(id, {
+          boundary: "delivery-workspace", owner: "repository-operator",
           reason: `${error.message}; a rebuilt delivery workspace still differs from the proven ` +
             "content, usually because a repository commit hook rewrites staged files",
-          options: ["fix-the-repository-hook-and-retry-deliver", "leave-archived-without-deliver"],
+          options: [
+            ["fix-the-repository-hook-and-retry-deliver", "Stop the hook from rewriting staged files, then retry Deliver."],
+            ["leave-archived-without-deliver", "Keep the change archived and open no pull request."]
+          ],
           resumeCommand
         });
       if (["DELIVERY_PROJECTION_DRIFT", "DELIVERY_TARGET_MOVED", "DELIVERY_PR_BASE_DRIFT"].includes(error.code))
-        return deliveryEnvelope(id, "ASK_USER", {
-          completed: false, boundary: "content-identity", reason: error.message,
-          options: ["restore-the-proven-content-and-retry-deliver", "leave-archived-without-deliver"],
+        return deliveryDecision(id, {
+          boundary: "content-identity", reason: error.message,
+          options: [
+            ["restore-the-proven-content-and-retry-deliver", "Restore the proven content or Land base, then retry Deliver."],
+            ["leave-archived-without-deliver", "Keep the change archived and open no pull request."]
+          ],
           resumeCommand
         });
       if (error.code === "DELIVERY_EVIDENCE_BLOCKED")
-        return deliveryEnvelope(id, "ASK_USER", {
-          completed: false, boundary: "required-evidence", reason: error.message,
-          options: ["create-a-follow-up-change-with-required-evidence", "cancel-delivery"]
+        return deliveryDecision(id, {
+          boundary: "required-evidence", reason: error.message,
+          options: [
+            ["create-a-follow-up-change-with-required-evidence", "Produce the missing required evidence in a follow-up change, then deliver."],
+            ["cancel-delivery", "Keep the change archived and open no pull request."]
+          ]
         });
       if (error.code === "DELIVERY_MODE_EVIDENCE_UNAVAILABLE")
-        return deliveryEnvelope(id, "ASK_USER", {
-          completed: false, boundary: "legacy-mode-evidence", reason: error.message,
-          options: ["review-current-diff-for-separate-git-publication", "leave-archived-without-deliver"]
+        return deliveryDecision(id, {
+          boundary: "legacy-mode-evidence", reason: error.message,
+          options: [
+            ["review-current-diff-for-separate-git-publication", "Review the current diff for a separately authorized Git publication."],
+            ["leave-archived-without-deliver", "Keep the change archived and open no pull request."]
+          ]
         });
       if (error.code === "DELIVERY_CONVERSION_UNSUPPORTED")
-        return deliveryEnvelope(id, "ASK_USER", {
-          completed: false, boundary: "git-conversion", owner: "repository-operator",
-          reason: error.message,
-          options: ["review-converted-content-for-separate-git-publication", "leave-archived-without-deliver"]
+        return deliveryDecision(id, {
+          boundary: "git-conversion", owner: "repository-operator", reason: error.message,
+          options: [
+            ["review-converted-content-for-separate-git-publication", "Review the converted content for a separately authorized Git publication."],
+            ["leave-archived-without-deliver", "Keep the change archived and open no pull request."]
+          ]
         });
       if (error.code === "DELIVERY_CONVERSION_CHANGED")
         return deliveryEnvelope(id, "WAIT", {
@@ -1109,10 +1183,10 @@ export function createPullRequestRuntime({
           completed: false, boundary: "delivery-policy", owner: "repository-operator",
           reason: error.message
         });
-      if (/auth|credential|remote|GitHub|push|pull request/i.test(error.message))
+      if (error.code === "DELIVERY_PROVIDER_UNAVAILABLE")
         return deliveryEnvelope(id, "WAIT", {
           completed: false, boundary: "external-owner", owner: "repository-operator",
-          reason: error.message
+          reason: error.message, resumeCommand
         });
       fail(error.message);
     }

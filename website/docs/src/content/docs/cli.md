@@ -128,7 +128,9 @@ these directly for diagnosis or an explicit integration.
 | `deliver advance <change>` | One composition command for an archived change; the harness owns readiness, isolated worktree, projection guard, PR-standard rendering, commit, push, provider read-back, retry, and resume |
 
 If `/deliver` is absent, no delivery directory, PR-specific evidence work, or
-gate is created. The explicit command never authorizes force-push,
+gate is created. On a proven change that is not archived yet, `/deliver` is
+also Land authority: the harness lands it through `advance --through archived`
+and continues delivery. The explicit command never authorizes force-push,
 default-branch push, merge, deploy, publish, or product edits. Success requires
 an open PR whose provider-reported base, head, and commit match the durable
 delivery receipt.

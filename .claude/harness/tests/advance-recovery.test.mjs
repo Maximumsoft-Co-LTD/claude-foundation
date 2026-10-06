@@ -5,9 +5,11 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAdvanceRuntime, advanceFailureAction } from "../runtime/workflow/advance-runtime.mjs";
-import { targetHeadMovedDecision } from "../runtime/workflow/apply-recovery.mjs";
+import { manualRecoveryDecision, targetHeadMovedDecision } from "../runtime/workflow/apply-recovery.mjs";
 import { gateDigest } from "../runtime/core/convergent-gate.mjs";
-import { actionableGuidance, currentDeliveryProof } from "../runtime/workflow/advance-recovery.mjs";
+import {
+  actionableGuidance, automaticRecoveryAction, currentDeliveryProof
+} from "../runtime/workflow/advance-recovery.mjs";
 import { lifecycleOutcome } from "../runtime/core/lifecycle-outcome.mjs";
 
 function fixture(overrides = {}) {
@@ -574,4 +576,82 @@ test("proof repair and alternate-approach outcomes carry instructions", async ()
   assert.equal(alternate.legacyAction, "TRY_ALTERNATE_APPROACH");
   assert.match(alternate.instruction, /materially different/);
   assertActionable(alternate, "TRY_ALTERNATE_APPROACH");
+});
+
+// An interrupted apply never stops for the user: the harness settles what Land
+// wrote, keeps divergent target content, and hands the paths to the agent.
+function pendingApplyDecision(kind, resolution, divergentPaths = []) {
+  return kind === "manual-recovery"
+    ? manualRecoveryDecision("/transactions/tx", { changeId: "demo", divergentPaths })
+    : { kind, summary: "An earlier apply is unresolved.", divergentPaths,
+      options: [{ id: resolution, outcome: "recover" }, { id: "pause", outcome: "pause" }],
+      recommended: resolution, automaticRecovery: resolution };
+}
+
+test("interrupted apply resolutions are typed automatic routes; restore-backup never is", () => {
+  const settle = automaticRecoveryAction("demo", pendingApplyDecision("apply-pending-recovery", "settle"));
+  assert.deepEqual([settle.kind, settle.resolution, settle.command],
+    ["apply-recovery", "settle", "claude-foundation advance demo --through archived"]);
+  const keep = automaticRecoveryAction("demo",
+    pendingApplyDecision("manual-recovery", "keep-current", ["src/a.js"]));
+  assert.equal(keep.resolution, "keep-current");
+  assert.deepEqual(keep.divergentPaths, ["src/a.js"]);
+  assert.equal(automaticRecoveryAction("demo",
+    pendingApplyDecision("apply-pending-recovery", "restore-backup")), null);
+  const value = advanceFailureAction("demo", { message: "pending",
+    decision: pendingApplyDecision("apply-pending-recovery", "settle") },
+  { stage: "land", through: "archived" });
+  assert.equal(value.action, "REPAIR");
+  assert.equal(value.legacyAction, "RECOVER_APPLY_TRANSACTION");
+  assert.equal(value.recovery.type, "AUTO_RECOVER");
+});
+
+test("Land settles, keeps divergent content, and archives without a user stop", async () => {
+  let journal = "applying";
+  const recovered = [];
+  const f = fixture({
+    hasLandGrant: () => true,
+    recoverApply: async (_id, resolution) => {
+      recovered.push(resolution);
+      // Settling meets divergent content: the journal becomes a manual recovery.
+      if (resolution === "settle") {
+        journal = "manual-recovery";
+        throw new Error("rollback requires manual recovery at 'src/a.js'");
+      }
+      journal = "settled-current";
+    },
+    runLand: async () => {
+      if (journal === "applying") throw Object.assign(new Error("pending"), {
+        decision: pendingApplyDecision("apply-pending-recovery", "settle") });
+      if (journal === "manual-recovery") throw Object.assign(new Error("manual"), {
+        decision: pendingApplyDecision("manual-recovery", "keep-current", ["src/a.js"]) });
+      f.setState({ status: "archived" });
+      return { archived: true };
+    }
+  });
+  f.setState({ status: "proven" });
+  f.setCursor({ status: "PASS", workspaceHash: "original" });
+  const value = await f.runtime().advanceThrough("demo", "archived");
+  assert.equal(value.userState, "DELIVERED");
+  assert.deepEqual(recovered, ["settle", "keep-current"]);
+  assert.ok(value.notices.some((notice) => /keep-current.*src\/a\.js/.test(notice)));
+});
+
+test("an automatic apply recovery that cannot finish goes to the agent, not the user", async () => {
+  const f = fixture({
+    hasLandGrant: () => true,
+    recoverApply: async () => { throw new Error("backup unreadable"); },
+    runLand: async () => {
+      throw Object.assign(new Error("manual"), {
+        decision: pendingApplyDecision("manual-recovery", "keep-current", ["src/a.js"]) });
+    }
+  });
+  f.setState({ status: "proven" });
+  f.setCursor({ status: "PASS", workspaceHash: "original" });
+  const value = await f.runtime().advanceThrough("demo", "archived");
+  assert.equal(value.action, "REPAIR");
+  assert.equal(value.actor, "agent");
+  assert.equal(value.legacyAction, "REPAIR_APPLY_RECOVERY");
+  assert.deepEqual(value.details.divergentPaths, ["src/a.js"]);
+  assert.match(value.reason, /backup unreadable/);
 });
