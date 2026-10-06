@@ -156,6 +156,29 @@ test("tracked content under a normally excluded directory can be included explic
   assert.equal(value.candidates.some((row) => row.path === "node_modules/pkg/index.js"), true);
 });
 
+// Dogfooding: a consumer's source scan selected `.claude/harness/**` files.
+test("a consumer's managed install paths are not product sources unless seeded", async (t) => {
+  const root = await fixture(t);
+  for (const directory of [".claude/harness/runtime", ".claude/skills/change", "openspec/schemas/x"])
+    mkdirSync(join(root, directory), { recursive: true });
+  writeFileSync(join(root, ".claude/harness/runtime/policy.mjs"), "export const permission = 'admin';\n");
+  writeFileSync(join(root, ".claude/skills/change/SKILL.md"), "permission login\n");
+  writeFileSync(join(root, "WORKFLOW.md"), "permission login\n");
+  const managed = (row) => /^(?:\.claude\/(?:harness|skills)|WORKFLOW\.md)/.test(row.path);
+  const consumer = inspectRepositoryIntelligence({ projectRoot: root, query: "permission login" });
+  assert.equal(consumer.status, "ready");
+  assert.equal(consumer.candidates.some(managed), false);
+  const seeded = inspectRepositoryIntelligence({ projectRoot: root, query: "permission",
+    seedPaths: [".claude/harness/runtime/policy.mjs"] });
+  assert.equal(seeded.status, "ready");
+  assert.deepEqual(seeded.candidates.filter(managed).map((row) => row.path),
+    [".claude/harness/runtime/policy.mjs"]);
+  // The upstream source tree (it carries install.sh) keeps its harness sources.
+  writeFileSync(join(root, "install.sh"), "#!/bin/sh\n");
+  const upstream = inspectRepositoryIntelligence({ projectRoot: root, query: "permission login" });
+  assert.equal(upstream.candidates.some(managed), true);
+});
+
 test("symlinks are never followed and are reported without making coverage partial", async (t) => {
   const root = await fixture(t);
   symlinkSync(join(root, "src/auth/policy.ts"), join(root, "policy-link.ts"));

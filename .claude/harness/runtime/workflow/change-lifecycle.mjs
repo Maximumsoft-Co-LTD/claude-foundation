@@ -45,11 +45,11 @@ import {
 } from "./semantic-amendment.mjs";
 import { validateInvestigationBinding } from "./investigation-runtime.mjs";
 import {
-  designBlueprintWarnings, draftHasBlueprints, renderDesignBlueprints
+  designBlueprintWarnings, draftHasBlueprints, draftWorkTypes, renderDesignBlueprints, renderWorkType
 } from "./validation/design-blueprints.mjs";
 import {
-  derivedFailureMatrix, derivedFileMap, derivedTestMap, renderComponentMap, renderFolderTree,
-  renderPlan, renderUserFlow
+  derivedFailureMatrix, derivedFileMap, derivedTestMap, inferWorkTypes, renderComponentMap,
+  renderFolderTree, renderPlan, renderUserFlow, withNewPaths
 } from "./validation/dev-document.mjs";
 import { targetEditDigest, targetEditPaths } from "./target-edits.mjs";
 import {
@@ -392,14 +392,18 @@ export function renderDraftProposal(draft, state) {
   const rapid = state?.schema === "foundation-rapid";
   const decisions = rapid ? section(renderRapidDecisions(draft.decisions)) : "";
   // A rapid change has no design.md, so its compact dev document (flow,
-  // failures, plan for Build) lives here.
+  // components, descriptive sections the agent wrote, failures, plan for
+  // Build) lives here. Authoring them never moves the change off rapid.
   const compact = rapid && [3, 4].includes(draft._semanticVersion);
   const flow = compact ? section(renderUserFlow(draft)) : "";
-  const plan = compact ? section(renderDesignBlueprints({ failureMatrix: derivedFailureMatrix(draft) })) +
-    section(renderPlan(draft)) : "";
+  const plan = compact ? section(renderComponentMap(draft)) + section(renderDesignBlueprints({
+    refactor: draft.refactor, configContract: draft.configContract,
+    failureMatrix: derivedFailureMatrix(draft),
+    fileMap: fileMapWithTasks(draft.fileMap, draft.tasks), testMap: draft.testMap
+  })) + section(renderPlan(draft)) : "";
   return `# Change: ${title}` + section(renderProposalLead(draft)) +
-    (why ? `\n\n## Why\n\n${why}` : "") + section(renderProposalReader(draft)) + flow +
-    `\n\n## What changes\n\n${draftBullets(draft.changes)}` + section(renderFolderTree(draft)) +
+    (why ? `\n\n## Why\n\n${why}` : "") + section(renderProposalReader(draft)) +
+    `\n\n## What changes\n\n${draftBullets(draft.changes)}` + flow + section(renderFolderTree(draft)) +
     plan + `\n\n## Impact\n\n` +
     `- **Impact:** ${draft.impact || state.impact || "medium"}\n` +
     `- **Coupling:** ${draft.coupling || state.coupling || "coupled"}\n` +
@@ -459,11 +463,15 @@ export function renderDraftDesign(draft) {
   );
   // File and test maps fall back to what the tasks already say, and the
   // failure matrix to the failure scenarios, so each fact is written once.
+  // Reading order: user flow, components, contracts and states, failures,
+  // file map, test map, then the plan Build executes.
   const blueprints = renderDesignBlueprints({
-    ...draft, fileMap: fileMapWithTasks(derivedFileMap(draft), draft.tasks),
+    ...draft, workType: [], fileMap: fileMapWithTasks(derivedFileMap(draft), draft.tasks),
     testMap: derivedTestMap(draft), failureMatrix: derivedFailureMatrix(draft)
   });
+  const declared = draftWorkTypes(draft);
   const sections = [
+    renderWorkType(declared, declared.length ? [] : inferWorkTypes(draft)),
     meaningful(draft.currentState) ? `## Current state\n\n${draft.currentState}` : "",
     renderDesignOverview(draft),
     renderUserFlow(draft),
@@ -516,14 +524,21 @@ export function reviewRouteLabel({
 // semantic draft that authored design content must not lose it to rapid.
 export function semanticDraftKeepsDesign(draft, rapid) {
   // Authored content only: a declared work type alone is not design content,
-  // and neither is a default the agent recorded without asking.
-  // The compact dev document (failure matrix) renders in a rapid proposal.
+  // and neither is a default the agent recorded without asking. Purely
+  // descriptive dev-document sections render compactly in a rapid proposal,
+  // so they never move a low-risk change to standard; risk still does.
   return Boolean(rapid) && [3, 4].includes(draft?._semanticVersion) &&
     draftNeedsDesign({
-      ...draft, workType: [], failureMatrix: undefined,
+      ...draft, workType: [],
+      ...Object.fromEntries(RAPID_DESCRIPTIVE_SECTIONS.map((key) => [key, undefined])),
       decisions: (draft.decisions || []).filter((decision) => !agentDecision(decision))
     });
 }
+
+// Dev-document sections that describe the change rather than decide it.
+const RAPID_DESCRIPTIVE_SECTIONS = Object.freeze([
+  "fileMap", "failureMatrix", "testMap", "componentMap", "userFlow", "configContract", "refactor"
+]);
 
 export function draftNeedsDesign(draft) {
   return Boolean(
@@ -1076,13 +1091,15 @@ export function createChangeLifecycle({
   function materializeDraft(id, draft) {
     const state = loadRuntime(id);
     const basePath = changePath(id);
-    writeFileSync(join(basePath, "proposal.md"), renderDraftProposal(draft, state));
+    // Task paths the main checkout does not have yet read as additions.
+    const documented = withNewPaths(draft, (path) => existsSync(join(root, path)));
+    writeFileSync(join(basePath, "proposal.md"), renderDraftProposal(documented, state));
     // A standard v4 change is built from its dev document, so design.md is
     // always written; v3 keeps writing it only for authored design content.
     if (state.schema === "foundation-standard" &&
         (![3, 4].includes(draft._semanticVersion) || draft._semanticVersion === 4 ||
           draftNeedsDesign(draft)))
-      writeFileSync(join(basePath, "design.md"), renderDraftDesign(draft));
+      writeFileSync(join(basePath, "design.md"), renderDraftDesign(documented));
     if (state.groundingRequired && draft.grounding)
       writeJson(join(basePath, "grounding.yaml"), draft.grounding);
     writeFileSync(join(basePath, "tasks.md"), renderDraftTasks(draft.tasks));

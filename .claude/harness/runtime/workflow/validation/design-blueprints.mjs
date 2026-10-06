@@ -98,8 +98,7 @@ const SMALL_DRAFT_ITEMS = 6;
 // A rapid-lane draft (low impact, isolated, no security/review/acceptance) that
 // is small: declared size xs|s, or no size and few requirements plus tasks.
 // Asking it for missing sections was noise: a tiny feature's agent authored a
-// file map and failure matrix it did not need, and authored design content
-// moves a rapid draft onto the standard schema.
+// file map and failure matrix it did not need.
 export function lightweightDraft(draft) {
   const triggers = Array.isArray(draft?.securityTriggers) ? draft.securityTriggers : [];
   const rapidLane = String(draft?.impact || "low").toLowerCase() === "low" &&
@@ -210,10 +209,14 @@ function flatObject(value) {
     Array.isArray(item) ? item.join(", ") : item}`).join(", ");
 }
 
+// A column marked optional renders only when some row supplies it, so a
+// reader never scans a column of dashes.
 function table(headers, rows) {
-  return `| ${headers.map(([label]) => label).join(" | ")} |\n` +
-    `|${headers.map(() => "---").join("|")}|\n` +
-    rows.map((row) => `| ${headers.map(([, field]) => cell(row?.[field])).join(" | ")} |`).join("\n");
+  const shown = headers.filter(([, field, optional]) =>
+    !optional || rows.some((row) => present(row?.[field])));
+  return `| ${shown.map(([label]) => label).join(" | ")} |\n` +
+    `|${shown.map(() => "---").join("|")}|\n` +
+    rows.map((row) => `| ${shown.map(([, field]) => cell(row?.[field])).join(" | ")} |`).join("\n");
 }
 
 function list(value) {
@@ -230,10 +233,10 @@ function apiContract(row) {
     ? `\n\n\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\`` : ` ${cell(value)}`);
   return `### ${cell(row.method)} ${cell(row.path)}\n\n` +
     (row.purpose ? `${row.purpose}\n\n` : "") +
-    `- **Auth:** ${cell(row.auth)}\n` +
-    `- **Idempotency:** ${cell(row.idempotency)}\n` +
-    `- **Compatibility:** ${cell(row.compatibility)}\n\n` +
-    `**Request:**${block(row.request)}\n\n**Response:**${block(row.response)}\n\n` +
+    `- **Auth:** ${cell(row.auth)}` +
+    (present(row.idempotency) ? `\n- **Idempotency:** ${cell(row.idempotency)}` : "") +
+    (present(row.compatibility) ? `\n- **Compatibility:** ${cell(row.compatibility)}` : "") +
+    `\n\n**Request:**${block(row.request)}\n\n**Response:**${block(row.response)}\n\n` +
     `**Errors:**\n\n${errors}`;
 }
 
@@ -262,27 +265,32 @@ function uiScreen(row) {
 }
 
 function jobContract(row) {
-  return `### ${cell(row.key)}\n\n- **States:** ${cell(row.states)}\n` +
-    `- **Transitions:** ${cell(row.transitions)}\n- **Retry:** ${cell(row.retry)}\n` +
-    `- **Timeout:** ${cell(row.timeout)}\n- **Idempotency:** ${cell(row.idempotency)}\n` +
-    `- **Cancellation:** ${cell(row.cancellation)}`;
+  return `### ${cell(row.key)}` + facts([
+    ["States", row.states], ["Transitions", row.transitions], ["Retry", row.retry],
+    ["Timeout", row.timeout], ["Idempotency", row.idempotency], ["Cancellation", row.cancellation]
+  ]);
 }
 
-// Sections render only when the draft supplies them, in reading order: where
-// code lands, what it exposes, how it fails, and how it is proven.
-export function renderDesignBlueprints(draft) {
+// The work type a design states: declared, or inferred from the paths (said
+// so, with how to override it).
+export function renderWorkType(declared, inferred = []) {
+  if (declared.length) return `## Work type\n\n${declared.join(", ")}`;
+  return inferred.length
+    ? `## Work type\n\n${inferred.join(", ")} (inferred from paths; declare workType to override)` : "";
+}
+
+// Sections render only when the draft supplies them, in reading order: what
+// it exposes, how it fails, where code lands, and how it is proven.
+export function renderDesignBlueprints(draft, { inferredWorkTypes = [] } = {}) {
   const sections = [];
-  const types = draftWorkTypes(draft);
-  if (types.length) sections.push(`## Work type\n\n${types.join(", ")}`);
+  const types = renderWorkType(draftWorkTypes(draft), inferredWorkTypes);
+  if (types) sections.push(types);
   if (draft.bugfix) sections.push(`## Bugfix analysis\n\n` +
     `- **Reproduction:** ${cell(draft.bugfix.reproduction)}\n` +
     `- **Root cause:** ${cell(draft.bugfix.rootCause)}\n` +
     `- **Regression proof:** ${cell(draft.bugfix.regression)}`);
   if (draft.refactor) sections.push(`## Refactor invariants\n\n${list(draft.refactor.invariants)}\n\n` +
     `- **Characterization:** ${cell(draft.refactor.characterization)}`);
-  if (present(draft.fileMap)) sections.push(`## File map\n\n` + table([
-    ["Path", "path"], ["Change", "change"], ["Responsibility", "responsibility"], ["Tasks", "tasks"]
-  ], draft.fileMap));
   if (present(draft.apiContracts))
     sections.push(`## API contracts\n\n${draft.apiContracts.map(apiContract).join("\n\n")}`);
   if (present(draft.dataModel))
@@ -290,16 +298,22 @@ export function renderDesignBlueprints(draft) {
   if (present(draft.uiStates))
     sections.push(`## UI states\n\n${draft.uiStates.map(uiScreen).join("\n\n")}`);
   if (present(draft.configContract)) sections.push(`## Config contract\n\n` + table([
-    ["Key", "key"], ["Default", "default"], ["Secret", "secret"], ["Validation", "validation"],
-    ["Scope", "scope"]
+    ["Key", "key"], ["Default", "default"], ["Secret", "secret", true], ["Validation", "validation"],
+    ["Scope", "scope", true]
   ], draft.configContract));
   if (present(draft.jobContract))
     sections.push(`## Job contract\n\n${draft.jobContract.map(jobContract).join("\n\n")}`);
   if (present(draft.failureMatrix)) sections.push(`## Failure matrix\n\n` + table([
-    ["Failure", "failure"], ["User sees", "userSees"], ["Recovery", "recovery"], ["Covers", "covers"]
+    ["Failure", "failure"], ["User sees", "userSees"], ["Recovery", "recovery"], ["Covers", "covers", true]
   ], draft.failureMatrix));
+  if (present(draft.fileMap)) sections.push(`## File map\n\n` + table([
+    ["Path", "path"], ["Change", "change"], ["Responsibility", "responsibility"], ["Tasks", "tasks", true]
+  ], draft.fileMap));
+  // A derived row names the check command that proves it; an authored row
+  // may name a test file. Either column shows only when used.
   if (present(draft.testMap)) sections.push(`## Test map\n\n` + table([
-    ["Scenario", "scenario"], ["Level", "level"], ["File", "file"], ["Task", "task"]
+    ["Scenario", "scenario"], ["Level", "level"], ["File", "file", true], ["Check", "check", true],
+    ["Task", "task"]
   ], draft.testMap));
   return sections.join("\n\n");
 }

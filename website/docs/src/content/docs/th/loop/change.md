@@ -124,9 +124,13 @@ local ต้อง resolve เป็นไฟล์ปกติภายใน p
 Rapid มี `proposal.md`, `tasks.md`, `evidence.yaml` และ delta
 `specs/<capability>/spec.md` แบบกระชับที่ render แบบเดียวกับ standard ซึ่ง Land จะ merge
 เข้า `openspec/specs` มีเพียง rapid packet แบบเดิมที่ประกาศ `skip_specs` ที่ไม่มี delta
-Proposal ของ rapid คือ dev document แบบกระชับ: summary, user flow, folder tree,
-failure matrix และ plan ที่ Build ใช้ทำงาน ส่วน standard v4 มี `design.md` ที่เป็น
-dev document เต็มเสมอ ไฟล์
+Proposal ของ rapid คือ dev document แบบกระชับ: summary, what changes, user flow,
+folder tree (path ที่ยังไม่มีใน base ถูกทำเครื่องหมาย `+`), failure matrix และ plan
+ที่ Build ใช้ทำงาน section เชิงบรรยาย (`fileMap`, `testMap`, `componentMap`,
+`userFlow`, `configContract`, `refactor`) ก็ render ที่นี่ และไม่ทำให้ change
+ความเสี่ยงต่ำย้ายไป standard ส่วน standard v4 มี `design.md` ที่เป็น dev document
+เต็มเสมอ และระบุชนิดงานพร้อมบอกเมื่อเป็นค่าที่อนุมาน label ของ node ใน flowchart
+ที่มี `(`, `)` หรือ `"` ต้องใส่เครื่องหมายคำพูด เช่น `A["mean(values)"]` ไฟล์
 execution, repository, handoff และ grounding จะเกิดเมื่อมี override จริงเท่านั้น
 
 หลัง compile แล้ว `openspec/changes/<id>/` คือ source of truth Draft เป็นข้อมูล

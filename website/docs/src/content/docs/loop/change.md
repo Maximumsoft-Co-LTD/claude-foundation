@@ -195,9 +195,14 @@ and a fixed version rather than `latest` or a branch.
 Rapid changes contain `proposal.md`, `tasks.md`, `evidence.yaml`, and a concise
 delta `specs/<capability>/spec.md` rendered exactly as in standard; Land merges
 it into `openspec/specs`. Only a legacy rapid packet declaring `skip_specs` has
-no delta. The rapid proposal is the compact dev document: summary, user flow,
-folder tree, failure matrix, and the plan Build executes. A standard v4 change
-always adds `design.md` with the full dev document. Execution, repository,
+no delta. The rapid proposal is the compact dev document: summary, what
+changes, user flow, folder tree (paths new at the base marked `+`), failure
+matrix, and the plan Build executes. Descriptive sections (`fileMap`,
+`testMap`, `componentMap`, `userFlow`, `configContract`, `refactor`) render
+there too and never move a low-risk change to standard. A standard v4 change
+always adds `design.md` with the full dev document and states its work type,
+noting when it was inferred. Flowchart node labels holding `(`, `)`, or `"`
+must be quoted, as in `A["mean(values)"]`. Execution, repository,
 handoff, and grounding files appear only for real overrides.
 
 After compilation, `openspec/changes/<id>/` is the source of truth. The draft is

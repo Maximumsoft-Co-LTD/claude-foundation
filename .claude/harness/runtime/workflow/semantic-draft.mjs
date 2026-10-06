@@ -560,10 +560,19 @@ function wholeWordTitle(value, max = SCENARIO_NAME_MAX) {
   return title.replace(/^\p{Ll}/u, (letter) => letter.toUpperCase());
 }
 
-function minimalScenarioName(scenario, index) {
+// A trigger written as code (`sum([1, 2, 3]) is called`) cut at a word
+// boundary reads as a broken fragment, so it never becomes a title.
+function codeLikeTitle(title) {
+  const count = (pattern) => (title.match(pattern) || []).length;
+  return /^[^\s]*[([{=<>`]/.test(title) || count(/\(/g) !== count(/\)/g) ||
+    count(/\[/g) !== count(/\]/g) || count(/\{/g) !== count(/\}/g);
+}
+
+function minimalScenarioName(scenario, index, requirementTitle = "") {
   const when = text(scenario.when);
   const repeatsWhen = (value) => comparableLabel(value) === comparableLabel(when);
   let name = wholeWordTitle(when);
+  if (name && codeLikeTitle(name) && requirementTitle) return requirementTitle;
   // A short trigger with no leading article would repeat WHEN; the outcome
   // names the case instead.
   if (!name || repeatsWhen(name)) {
@@ -593,12 +602,13 @@ function distinctScenarioName(name, scenario, taken) {
   }
 }
 
-function minimalScenarioNames(scenarios) {
+function minimalScenarioNames(scenarios, requirementTitle = "") {
   const taken = new Set(scenarios.filter((scenario) => plainObject(scenario) && text(scenario.name))
     .map((scenario) => comparableLabel(scenario.name)));
   return scenarios.map((scenario, index) => {
     if (!plainObject(scenario) || text(scenario.name) || !text(scenario.when)) return scenario;
-    const name = distinctScenarioName(minimalScenarioName(scenario, index), scenario, taken);
+    const name = distinctScenarioName(minimalScenarioName(scenario, index, requirementTitle),
+      scenario, taken);
     taken.add(comparableLabel(name));
     return { ...scenario, name };
   });
@@ -839,7 +849,9 @@ export function expandMinimalSemanticDraft(input, {
       }
     }
     if (!text(row.capability) && capability) row.capability = capability;
-    if (Array.isArray(row.scenarios)) row.scenarios = minimalScenarioNames(row.scenarios);
+    if (Array.isArray(row.scenarios))
+      row.scenarios = minimalScenarioNames(row.scenarios, text(row.requirement || row.title) ||
+        wholeWordTitle(requirementClause(row.description), REQUIREMENT_TITLE_MAX));
     if (!text(row.outcome)) {
       const first = rawScenarioEntries(row).find((scenario) => text(scenario?.then));
       if (first) row.outcome = text(first.then);
@@ -1106,7 +1118,7 @@ export function normalizeSemanticDraft(input, slugify, options = {}) {
     compatibility: text(source.compatibility) || "none",
     changes: stringList(source.changes).length
       ? stringList(source.changes)
-      : unique(requirements.map((row) => row.spec.scenarios[0]?.then).filter(Boolean)),
+      : unique((source.requirements || []).map(whatChanges).filter(Boolean)),
     nonGoals: stringList(source.nonGoals),
     decisions: Array.isArray(source.decisions)
       ? source.decisions.map((decision) =>
@@ -1136,6 +1148,21 @@ export function normalizeSemanticDraft(input, slugify, options = {}) {
   };
   if (source.version === 4) draft.discovery = normalizeDiscovery(source);
   return { draft, issues };
+}
+
+// "What changes" names the behavior a requirement adds, not one example of
+// it: an authored outcome, else the requirement heading, else its statement.
+// An outcome copied from the first scenario ("it returns 6") is an example.
+function whatChanges(row) {
+  const outcome = text(row?.outcome);
+  const first = rawScenarioEntries(row || {}).find((scenario) =>
+    text(scenario?.then) || text(scenario?.outcome));
+  if (outcome && outcome !== (text(first?.then) || text(first?.outcome))) return outcome;
+  const heading = text(row?.requirement || row?.title);
+  if (heading && heading !== text(row?.key)) return heading;
+  const statement = text(row?.description).replace(/^.*?\b(?:SHALL|MUST)\b\s*/, "")
+    .replace(/[\s.]+$/u, "");
+  return statement ? statement.replace(/^\p{Ll}/u, (letter) => letter.toUpperCase()) : outcome;
 }
 
 // One renderer for start, revise, and amendments. Structural keywords stay
@@ -1202,7 +1229,9 @@ export function semanticDraftTemplate() {
     workType: ["feature"],
     userFlow: {
       purpose: "The user's path through the change, including the error path",
-      source: "flowchart LR\n  A[User acts] --> B{Valid?}\n  B -->|yes| C[Result shown]\n  B -->|no| D[Error shown]"
+      // Quote a label that holds ( ) or ", e.g. A["mean(values)"].
+      source: "flowchart LR\n  A[\"User acts\"] --> B{\"Valid?\"}\n  B -->|yes| C[\"Result shown\"]\n" +
+        "  B -->|no| D[\"Error shown\"]"
     },
     requirements: [{
       key: "observable-outcome",
@@ -1246,6 +1275,36 @@ export function semanticDraftTemplate() {
         { dimension: "non-goals", status: "needs-user-decision" }
       ],
       decisions: []
+    },
+    // Shapes only: copy the block for the work type you have into the draft
+    // top level. The compiler ignores this key, and the rows hold no
+    // placeholder text, so a copied row compiles once its facts are true.
+    workTypeExamples: {
+      use: "Examples of section shapes; copy the block for your work type to the draft top level",
+      ui: {
+        uiStates: [{
+          screen: "Board",
+          states: [{ state: "loading", shows: "Skeleton cards" },
+            { state: "empty", shows: "Add your first card" },
+            { state: "error", shows: "Could not load cards, with Retry" },
+            { state: "success", shows: "Cards by column" }],
+          accessibility: "Columns are lists; cards are reachable by keyboard"
+        }],
+        componentMap: [{
+          component: "Board", responsibility: "Lays out columns and cards",
+          files: ["src/components/Board.tsx"]
+        }]
+      },
+      api: {
+        apiContracts: [{
+          method: "POST", path: "/api/cards", auth: "Signed-in user",
+          request: { title: "string" }, response: { id: "string", title: "string" },
+          errors: [{ status: 400, when: "Title is empty" }]
+        }]
+      },
+      config: {
+        configContract: [{ key: "CARD_LIMIT", default: "100", validation: "Integer from 1 to 1000" }]
+      }
     }
   };
 }
