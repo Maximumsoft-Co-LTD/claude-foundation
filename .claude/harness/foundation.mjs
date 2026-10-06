@@ -2047,7 +2047,7 @@ const { advanceValue, showAdvance } = createAdvanceRuntime({
   }),
   runProof: runAdvanceProof.bind(null, {
     measureAsync: commandPhaseRecorder.measureAsync,
-    runQuietly: runAdvanceQuietly, proofAdvance
+    runQuietly: runAdvanceQuietly, prepareExecution, proofAdvance
   }),
   recoverReviewBindings,
   runLand: (id) => runAdvanceQuietly(() => advanceLand(id)),

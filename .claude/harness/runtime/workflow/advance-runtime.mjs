@@ -1130,9 +1130,12 @@ export async function prepareAdvanceBuild(context, id) {
 // serial.
 export async function runAdvanceProof(context, id) {
   return context.measureAsync("prove.execute", () =>
-    context.runQuietly(() => context.proofAdvance(id, {
-      quiet: true, concurrentReview: true
-    })));
+    context.runQuietly(() => {
+      // Prove validates the agreement with the strict OpenSpec lint, so a
+      // resumed Prove re-prepares the tool Build prepared, like Land does.
+      context.prepareExecution(id, { stage: "prove" });
+      return context.proofAdvance(id, { quiet: true, concurrentReview: true });
+    }));
 }
 
 export function hasValidLandGrant(landGrantRuntime, id) {

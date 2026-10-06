@@ -34,12 +34,14 @@ test("advance phase operations measure harness-owned Build and Prove work", asyn
   }, "change-a");
   await runAdvanceProof({
     measureAsync, runQuietly,
+    prepareExecution: (id, options) => calls.push(["execution", id, options]),
     proofAdvance: (id, options) => calls.push(["proof", id, options])
   }, "change-a");
   assert.deepEqual(calls, [
     "build.prepare", ["sandbox", "change-a"],
     ["execution", "change-a", { stage: "build" }],
-    "prove.execute", ["proof", "change-a", { quiet: true, concurrentReview: true }]
+    "prove.execute", ["execution", "change-a", { stage: "prove" }],
+    ["proof", "change-a", { quiet: true, concurrentReview: true }]
   ]);
 });
 

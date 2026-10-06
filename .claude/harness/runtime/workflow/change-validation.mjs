@@ -40,6 +40,12 @@ export function assertOpenSpecStrictValid(id, dir, fail, options = {}) {
     cwd: projectRoot, encoding: "utf8", timeout: 15_000
   });
   if (probe.error || probe.status !== 0) {
+    // Before Build the harness has not prepared its tools yet, so the lint
+    // waits for preparation. Once Prove needs the agreement, a skipped lint
+    // would let an invalid delta reach archive after the code landed.
+    if (options.requireCli)
+      fail(`OpenSpec CLI is required for strict spec validation of '${id}' before Prove; ` +
+        "the harness prepares it with the next 'advance' (npm access needed when it is not installed)");
     if (!options.quiet)
       console.error("WARNING: OpenSpec CLI unavailable; strict spec lint deferred to tool preparation");
     return;
@@ -1787,7 +1793,9 @@ export function createChangeValidationRuntime({
     // Same tool, same mode, earlier. Quiet changes presentation only; skipping
     // the subprocess here let an invalid agreement travel all the way to Land.
     if (openSpecStrictLintApplies(state, dir))
-      assertOpenSpecStrictValid(id, dir, fail, { quiet: options.quiet });
+      assertOpenSpecStrictValid(id, dir, fail, {
+        quiet: options.quiet, requireCli: options.requireOpenSpec === true
+      });
 
     // The gate is about a task that names a lifecycle *command*, so the slash
     // has to start a token. Matching a bare `/land` anywhere also matched the

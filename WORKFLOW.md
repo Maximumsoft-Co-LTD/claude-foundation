@@ -338,7 +338,10 @@ Before Build, the harness compiles and persists an execution-preparation plan
 from selected repositories, setup commands, provider wiring, and tool identity.
 It reuses ready records, prepares only missing project-local dependencies, and
 retries only failed repository setup records. The pinned OpenSpec CLI may be
-installed under `.foundation/tools`; it is never installed globally. A setup or
+installed under `.foundation/tools`; it is never installed globally. Prove and
+Land re-check the same plan. Before Build, an unavailable OpenSpec CLI only
+defers the strict spec lint; from Prove on, the lint is required and an absent
+CLI fails closed rather than letting an unlinted agreement reach archive. A setup or
 host-integration failure remains Harness-owned repair and is not emitted as a
 command for the user.
 

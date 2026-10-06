@@ -567,7 +567,10 @@ export function proofReadinessValueOperation(context, id, stage = "prove", optio
   let unconfigured;
   let unavailable;
   try {
-    context.validate(id, "active", { quiet: true, inspect: options.inspect === true });
+    context.validate(id, "active", {
+      quiet: true, inspect: options.inspect === true,
+      requireOpenSpec: stage === "prove" && options.inspect !== true
+    });
     issues = context.topologyIssues(id);
     surfaceFixits = [];
     if (stage === "prove")

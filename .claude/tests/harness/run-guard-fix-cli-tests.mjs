@@ -408,6 +408,13 @@ exit ${validateExit}
     // degrades to a warning instead of failing.
     process.env.PATH = stubDir === "/nonexistent" ? "" : "/nonexistent";
     assertOpenSpecStrictValid("lint-change", changeDir, fail);
+
+    // Prove requires the lint: an absent CLI fails closed instead of letting
+    // an unlinted agreement travel to archive.
+    assert.throws(() =>
+      assertOpenSpecStrictValid("lint-change", changeDir, fail, { requireCli: true }),
+    /OpenSpec CLI is required for strict spec validation of 'lint-change' before Prove/,
+    "a required strict lint must not skip silently when the CLI is absent");
   } finally {
     process.env.PATH = priorPath;
   }
