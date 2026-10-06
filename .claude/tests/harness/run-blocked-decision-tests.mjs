@@ -87,6 +87,7 @@ const REGISTERED = new Set([
   "budget-continuation-rejected",
   "budget-continuation-spent",
   "control-head-moved",
+  "recovery-sync-required",
   "review-history-corrupt",
   "root-pointers-restaged"
 ]);

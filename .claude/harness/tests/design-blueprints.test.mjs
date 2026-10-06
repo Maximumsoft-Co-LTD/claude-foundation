@@ -4,7 +4,13 @@ import {
   designBlueprintIssues, designBlueprintWarnings, lightweightDraft, renderDesignBlueprints,
   requiredBlueprints
 } from "../runtime/workflow/validation/design-blueprints.mjs";
-import { draftNeedsDesign, renderDraftDesign } from "../runtime/workflow/change-lifecycle.mjs";
+import {
+  draftNeedsDesign, renderDraftDesign, renderDraftProposal, semanticDraftKeepsDesign
+} from "../runtime/workflow/change-lifecycle.mjs";
+import {
+  derivedFileMap, derivedTestMap, devDocumentIssues, devDocumentShapeIssues, inferWorkTypes,
+  renderComponentMap, renderFolderTree, renderPlan, renderUserFlow, requiredDevSections
+} from "../runtime/workflow/validation/dev-document.mjs";
 
 function draft(overrides = {}) {
   return {
@@ -43,7 +49,8 @@ test("declared work types select the design sections a change needs", () => {
 });
 
 test("missing or thin blueprints warn without blocking compilation", () => {
-  const warnings = designBlueprintWarnings(draft());
+  // v3 is prompted here; a v4 draft's missing sections are dev document repairs.
+  const warnings = designBlueprintWarnings(draft({ version: 3 }));
   for (const key of ["apiContracts", "uiStates", "fileMap", "failureMatrix", "testMap"])
     assert.ok(warnings.some((warning) => warning.includes(`'${key}'`)), key);
   assert.deepEqual(designBlueprintIssues(draft()), []);
@@ -60,7 +67,8 @@ test("missing or thin blueprints warn without blocking compilation", () => {
   assert.ok(thin.includes("fileMap[0] 'packages/core/src/x.ts' is outside every task's paths"));
   assert.ok(thin.includes("decisions[0] states no consequences"));
 
-  assert.match(designBlueprintWarnings({ version: 4, impact: "medium" })[0], /^declare workType/);
+  assert.deepEqual(designBlueprintWarnings({ version: 4, impact: "medium" }), []);
+  assert.deepEqual(designBlueprintWarnings(draft()), []);
   assert.deepEqual(designBlueprintWarnings({ version: 3 }), []);
 });
 
@@ -83,7 +91,7 @@ test("small rapid-lane drafts get no missing-section prompts", () => {
     { acceptance: { required: true } }, { size: "m" },
     { requirements: many, tasks: many }]) {
     assert.equal(lightweightDraft({ ...tiny, ...override }), false, JSON.stringify(override));
-    assert.ok(designBlueprintWarnings({ ...tiny, ...override })
+    assert.ok(designBlueprintWarnings({ ...tiny, version: 3, ...override })
       .some((warning) => warning.includes("'fileMap'")), JSON.stringify(override));
   }
   assert.equal(lightweightDraft({ ...tiny, size: "s", requirements: many, tasks: many }), true);
@@ -137,4 +145,87 @@ test("blueprints render into design.md and force its creation", () => {
   assert.equal(draftNeedsDesign({ workType: ["docs"] }), false);
   assert.match(renderDraftDesign({ ...value, decisions: [{ choice: "a", reason: "b" }] }),
     /\*\*Consequences:\*\* Not stated in the draft/);
+});
+
+// A Change is a conversation that produces the document Build executes and a
+// reviewer approves: what they get, what changes, and the plan to get there.
+test("the dev document infers work type from paths and names missing sections", () => {
+  const paths = (...list) => ({ version: 4, tasks: [{ key: "t", paths: list }] });
+  assert.deepEqual(inferWorkTypes(paths("src/components/Board.tsx")), ["ui"]);
+  assert.deepEqual(inferWorkTypes(paths("src/routes/cards.ts", "db/migrations/001.sql")),
+    ["api", "data"]);
+  assert.deepEqual(inferWorkTypes(paths("docs/guide.md", "README.md")), ["docs"]);
+  assert.deepEqual(inferWorkTypes(paths("src/sum.js")), ["code"]);
+  assert.deepEqual(inferWorkTypes({ ...paths("src/sum.js"), workType: ["bugfix"] }), ["bugfix"]);
+
+  assert.deepEqual(requiredDevSections(paths("docs/guide.md")), ["summary"]);
+  assert.deepEqual(requiredDevSections(paths("src/sum.js")), ["summary", "failureMatrix"]);
+  assert.deepEqual(requiredDevSections(paths("src/components/Board.tsx")),
+    ["summary", "failureMatrix", "userFlow", "uiStates", "componentMap"]);
+
+  const ui = paths("src/components/Board.tsx");
+  assert.deepEqual(devDocumentIssues(ui, { standard: false }), []);
+  assert.deepEqual(devDocumentIssues({ ...ui, version: 3 }), []);
+  assert.deepEqual(devDocumentIssues(ui).map((issue) => issue.match(/needs '(\w+)'/)[1]),
+    ["summary", "failureMatrix", "userFlow", "uiStates", "componentMap"]);
+  assert.deepEqual(devDocumentIssues({ ...ui, summary: "s",
+    failureMatrix: [{ failure: "f" }], userFlow: "flowchart LR\n  A --> B",
+    uiStates: [{ screen: "Board" }], componentMap: [{ component: "Board", responsibility: "r" }] }), []);
+
+  assert.deepEqual(devDocumentShapeIssues({ userFlow: { purpose: "p" }, componentMap: [{}] }), [
+    "semantic draft userFlow needs Mermaid source (a string or { purpose, source })",
+    "semantic draft componentMap[0].component is required",
+    "semantic draft componentMap[0].responsibility is required"
+  ]);
+});
+
+test("the dev document derives its folder tree, plan, and maps from the tasks", () => {
+  const value = {
+    fileMap: [{ path: "src/board/Board.tsx", change: "new" },
+      { path: "src/legacy.js", change: "delete" }],
+    claims: [{ id: "add-card", requirementKey: "add-card" }],
+    tasks: [
+      { id: "T001", outcome: "Board UI", paths: ["src/board/**"], verify: "npm test -- board",
+        claims: ["add-card"] },
+      { id: "T002", outcome: "Store", paths: ["src/store.ts"], dependsOn: ["T001"], verify: "npm test" }
+    ],
+    componentMap: [{ component: "Board", responsibility: "Shows cards", files: ["src/board/Board.tsx"] }],
+    userFlow: { purpose: "Add a card", source: "flowchart LR\n  A --> B" }
+  };
+  const tree = renderFolderTree(value);
+  assert.match(tree, /^## Folder tree/);
+  assert.match(tree, /└── src\/\n {4}├── ~ board\/\n {4}│ {3}└── \+ Board\.tsx/);
+  assert.match(tree, /- legacy\.js/);
+  assert.match(tree, /~ store\.ts/);
+
+  const plan = renderPlan(value);
+  assert.match(plan, /\| T001 \| Board UI \| src\/board\/\*\* \| `npm test -- board` \| — \| add-card \|/);
+  assert.match(plan, /```mermaid\ngraph TD\n {2}T001 --> T002\n```/);
+
+  assert.deepEqual(derivedFileMap({ tasks: value.tasks }).map((row) => [row.path, row.tasks]),
+    [["src/board/", ["T001"]], ["src/store.ts", ["T002"]]]);
+  assert.deepEqual(derivedTestMap(value).map((row) => [row.scenario, row.task]),
+    [["add-card", "T001"], ["Store", "T002"]]);
+  assert.match(renderUserFlow(value), /## User flow\n\nAdd a card\n\n```mermaid\nflowchart LR/);
+  assert.match(renderComponentMap(value), /\| Board \| Shows cards \| src\/board\/Board\.tsx \| T001 \|/);
+  assert.equal(renderFolderTree({}), "");
+  assert.equal(renderPlan({}), "");
+});
+
+// A rapid change has no design.md: its compact dev document is the proposal.
+test("a rapid proposal carries the compact dev document and keeps the rapid lane", () => {
+  const value = {
+    _semanticVersion: 4, title: "Sum", summary: "Users can add two numbers.",
+    changes: ["Add a sum helper"], userFlow: "flowchart LR\n  A[Input] --> B[Sum]",
+    failureMatrix: [{ failure: "Non-number input", userSees: "An error", recovery: "Re-enter" }],
+    claims: [], tasks: [{ id: "T001", outcome: "Sum helper", paths: ["src/sum.js"], verify: "npm test" }]
+  };
+  const proposal = renderDraftProposal(value, { schema: "foundation-rapid" });
+  const order = ["## Summary", "## User flow", "## What changes", "## Folder tree",
+    "## Failure matrix", "## Plan", "## Impact"].map((heading) => proposal.indexOf(heading));
+  assert.ok(order.every((index, position) => index > (order[position - 1] ?? -1)), proposal);
+  assert.equal(semanticDraftKeepsDesign(value, true), false);
+  const standard = renderDraftProposal(value, { schema: "foundation-standard" });
+  assert.ok(standard.includes("## Folder tree"));
+  assert.ok(!standard.includes("## Plan") && !standard.includes("## User flow"));
 });

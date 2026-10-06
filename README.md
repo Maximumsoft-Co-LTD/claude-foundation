@@ -555,7 +555,7 @@ openspec/changes/<change-id>/
 ├── tasks.md
 ├── evidence.yaml
 ├── specs/<area>/spec.md       # standard lane
-├── design.md                  # only when durable design context exists
+├── design.md                  # standard lane: the full dev document
 ├── grounding.yaml             # only when a material decision must be locked
 ├── execution.yaml             # only for custom provider/service wiring
 ├── repositories.yaml          # only for explicit multi-repository scope
@@ -565,9 +565,9 @@ openspec/changes/<change-id>/
 | File | What it answers | Why the harness needs it |
 |---|---|---|
 | `.openspec.yaml` | Is this `foundation-standard` or `foundation-rapid`? | Selects the artifact workflow for this change |
-| `proposal.md` | Why change, what changes, and what is excluded? | Prevents scope and impact from being implicit |
+| `proposal.md` | Why change, what changes (with a folder tree), and what is excluded? | Prevents scope and impact from being implicit; a rapid proposal also carries the user flow, failure matrix, and Plan |
 | `specs/<area>/spec.md` | What observable behavior is added, modified, or removed? | Gives Prove stable requirements and `WHEN`/`THEN` scenarios; Land merges the deltas into current specs |
-| `design.md` | Which technical decisions, diagrams, integrations, or prototype selection constrain implementation? | Records only load-bearing context instead of forcing an empty design document |
+| `design.md` | How is it built: user flow, components, contracts, data, UI states, failures, decisions, and the Plan? | The dev document Build executes; sections follow the work type and empty ones are omitted |
 | `tasks.md` | What implementation work remains? | The sole implementation ledger; stable IDs and checkboxes make Build resumable |
 | `evidence.yaml` | Which behavioral claims must be proven? | Separates the proof obligation from whichever tool happens to run it |
 | `grounding.yaml` | Which material decisions were settled up front? | Semantic v3 stores non-derived decisions only; legacy grounding remains readable |

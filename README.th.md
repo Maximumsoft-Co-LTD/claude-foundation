@@ -523,7 +523,7 @@ openspec/changes/<change-id>/
 ├── tasks.md
 ├── evidence.yaml
 ├── specs/<area>/spec.md       # standard lane
-├── design.md                  # เมื่อมี durable design context
+├── design.md                  # standard lane: dev document เต็ม
 ├── grounding.yaml             # เมื่อมี material decision ที่ต้อง lock
 ├── execution.yaml             # เมื่อ override provider/service wiring
 ├── repositories.yaml          # เมื่อประกาศ multi-repository scope
@@ -533,9 +533,9 @@ openspec/changes/<change-id>/
 | File | ตอบคำถามอะไร | Harness ต้องใช้ทำไม |
 |---|---|---|
 | `.openspec.yaml` | ใช้ `foundation-standard` หรือ `foundation-rapid` | เลือก artifact workflow ของ change |
-| `proposal.md` | เปลี่ยนทำไม เปลี่ยนอะไร และไม่ทำอะไร | ทำให้ scope กับ impact ไม่ถูกซ่อนไว้เป็น assumption |
+| `proposal.md` | เปลี่ยนทำไม เปลี่ยนอะไร (พร้อม folder tree) และไม่ทำอะไร | ทำให้ scope กับ impact ไม่ถูกซ่อนไว้เป็น assumption และ proposal ของ rapid มี user flow, failure matrix และ Plan ด้วย |
 | `specs/<area>/spec.md` | Observable behavior ใดถูกเพิ่ม แก้ หรือลบ | ให้ Prove มี requirement และ `WHEN`/`THEN` scenario ที่คงที่ และให้ Land merge delta เข้า current specs |
-| `design.md` | Technical decision, diagram, integration หรือ prototype selection ใดบังคับวิธี implement | เก็บเฉพาะ context สำคัญ ไม่บังคับสร้าง design ว่าง |
+| `design.md` | สร้างอย่างไร: user flow, component, contract, data, UI state, failure, decision และ Plan | dev document ที่ Build ใช้ทำงาน section ตามชนิดงานและตัดส่วนว่างออก |
 | `tasks.md` | Implementation ใดยังเหลือ | เป็น implementation ledger เพียงที่เดียว Stable ID และ checkbox ทำให้ Build resume ได้ |
 | `evidence.yaml` | Behavioral claim ใดต้องพิสูจน์ | แยก proof obligation ออกจาก tool ที่นำมารัน |
 | `grounding.yaml` | Material decision ใดถูกตกลงไว้ล่วงหน้า | Semantic v3 เก็บเฉพาะ non-derived decision ส่วน grounding รุ่นเดิมยังอ่านได้ |

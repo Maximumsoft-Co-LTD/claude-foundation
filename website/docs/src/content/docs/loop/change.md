@@ -154,11 +154,13 @@ not a transcript.
 Add complexity only when the work needs it:
 
 - multiple requirements with separate `capability` and `operation` values
-- `workType` (a list such as `["feature", "api", "ui"]`) and the design
-  blueprints it selects: `fileMap`, `failureMatrix`, `testMap`, plus
-  `apiContracts`, `dataModel`, `uiStates`, `configContract`, `jobContract`,
-  `bugfix`, or `refactor`; missing ones are non-blocking design warnings, as
-  is a task whose own tests sit outside its `paths`
+- dev document sections: `summary`, `userFlow` (Mermaid), `failureMatrix`,
+  `componentMap`, `apiContracts`, `dataModel`, `uiStates`, `configContract`,
+  `jobContract`, `bugfix`, or `refactor`. The harness infers `workType` from
+  task paths (declare it to override) and derives the folder tree, plan, file
+  map, and test map. A standard change must carry the sections its work type
+  needs; a missing one is a draft repair for the agent, never a user question.
+  A task whose own tests sit outside its `paths` is a design warning
 - `decisions` for load-bearing choices, each with its consequences
 - Mermaid or referenced SVG/PNG `diagrams`
 - `prototypeSelection` pointing at an existing selection note
@@ -183,8 +185,9 @@ and a fixed version rather than `latest` or a branch.
 Rapid changes contain `proposal.md`, `tasks.md`, `evidence.yaml`, and a concise
 delta `specs/<capability>/spec.md` rendered exactly as in standard; Land merges
 it into `openspec/specs`. Only a legacy rapid packet declaring `skip_specs` has
-no delta. Standard changes may add `design.md`, which appears only for a
-load-bearing decision or architecture context. Execution, repository,
+no delta. The rapid proposal is the compact dev document: summary, user flow,
+folder tree, failure matrix, and the plan Build executes. A standard v4 change
+always adds `design.md` with the full dev document. Execution, repository,
 handoff, and grounding files appear only for real overrides.
 
 After compilation, `openspec/changes/<id>/` is the source of truth. The draft is

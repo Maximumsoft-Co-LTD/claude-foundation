@@ -85,11 +85,13 @@ claude-foundation change start .foundation/drafts/<id>.json
 เพิ่มเฉพาะเมื่อจำเป็น:
 
 - requirement หลายตัว แยก `capability` และ `operation`
-- `workType` (list เช่น `["feature", "api", "ui"]`) และ design blueprint ที่
-  workType เลือก: `fileMap`, `failureMatrix`, `testMap` และ `apiContracts`,
-  `dataModel`, `uiStates`, `configContract`, `jobContract`, `bugfix` หรือ
-  `refactor` ถ้าขาดจะเป็น design warning ที่ไม่บล็อก เช่นเดียวกับ task ที่เทสของตัวเอง
-  อยู่นอก `paths`
+- section ของ dev document: `summary`, `userFlow` (Mermaid), `failureMatrix`,
+  `componentMap`, `apiContracts`, `dataModel`, `uiStates`, `configContract`,
+  `jobContract`, `bugfix` หรือ `refactor` โดย harness อนุมาน `workType` จาก
+  `paths` ของ task (ประกาศเองเพื่อ override ได้) และสร้าง folder tree, plan,
+  file map และ test map ให้เอง Standard change ต้องมี section ที่ชนิดงานต้องการ
+  ถ้าขาดจะเป็นงานแก้ draft ของ agent ไม่ใช่คำถามถึงผู้ใช้ ส่วน task ที่เทสของตัวเอง
+  อยู่นอก `paths` เป็น design warning
 - `decisions` สำหรับมติที่มีผลต่อ implementation พร้อมผลที่ตามมา
 - diagram แบบ Mermaid หรืออ้าง SVG/PNG
 - `prototypeSelection` ที่ชี้ไป selection note ที่มีจริง
@@ -113,7 +115,9 @@ local ต้อง resolve เป็นไฟล์ปกติภายใน p
 Rapid มี `proposal.md`, `tasks.md`, `evidence.yaml` และ delta
 `specs/<capability>/spec.md` แบบกระชับที่ render แบบเดียวกับ standard ซึ่ง Land จะ merge
 เข้า `openspec/specs` มีเพียง rapid packet แบบเดิมที่ประกาศ `skip_specs` ที่ไม่มี delta
-Standard อาจเพิ่ม `design.md` เฉพาะเมื่อมีมติหรือบริบทสถาปัตยกรรมที่จำเป็น ไฟล์
+Proposal ของ rapid คือ dev document แบบกระชับ: summary, user flow, folder tree,
+failure matrix และ plan ที่ Build ใช้ทำงาน ส่วน standard v4 มี `design.md` ที่เป็น
+dev document เต็มเสมอ ไฟล์
 execution, repository, handoff และ grounding จะเกิดเมื่อมี override จริงเท่านั้น
 
 หลัง compile แล้ว `openspec/changes/<id>/` คือ source of truth Draft เป็นข้อมูล

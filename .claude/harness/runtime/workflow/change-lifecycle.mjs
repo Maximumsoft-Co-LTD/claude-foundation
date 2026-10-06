@@ -47,11 +47,14 @@ import { validateInvestigationBinding } from "./investigation-runtime.mjs";
 import {
   designBlueprintWarnings, draftHasBlueprints, renderDesignBlueprints
 } from "./validation/design-blueprints.mjs";
+import {
+  derivedFileMap, derivedTestMap, renderComponentMap, renderFolderTree, renderPlan, renderUserFlow
+} from "./validation/dev-document.mjs";
 import { targetEditDigest, targetEditPaths } from "./target-edits.mjs";
 import {
   fileMapWithTasks, intakeDecisions, openQuestionItems, readerGuideWarnings,
   renderDesignOverview, renderDiscoveryAppendix, renderInvestigationAppendix,
-  renderInvestigationSummary, renderProposalLead, renderProposalReader, renderTaskOverview
+  renderInvestigationSummary, renderProposalLead, renderProposalReader
 } from "./validation/reader-guide.mjs";
 
 // Marks a start whose re-inspected intake is not DONE (see completedDraftIntake).
@@ -363,11 +366,18 @@ export function renderDraftProposal(draft, state) {
   const nonGoals = (draft.nonGoals || []).length
     ? `\n\n## Non-goals\n\n${draftBullets(draft.nonGoals)}` : "";
   const why = String(draft.why || "").trim();
-  const decisions = state?.schema === "foundation-rapid"
-    ? section(renderRapidDecisions(draft.decisions)) : "";
+  const rapid = state?.schema === "foundation-rapid";
+  const decisions = rapid ? section(renderRapidDecisions(draft.decisions)) : "";
+  // A rapid change has no design.md, so its compact dev document (flow,
+  // failures, plan for Build) lives here.
+  const compact = rapid && [3, 4].includes(draft._semanticVersion);
+  const flow = compact ? section(renderUserFlow(draft)) : "";
+  const plan = compact ? section(renderDesignBlueprints({ failureMatrix: draft.failureMatrix })) +
+    section(renderPlan(draft)) : "";
   return `# Change: ${title}` + section(renderProposalLead(draft)) +
-    (why ? `\n\n## Why\n\n${why}` : "") + section(renderProposalReader(draft)) +
-    `\n\n## What changes\n\n${draftBullets(draft.changes)}\n\n## Impact\n\n` +
+    (why ? `\n\n## Why\n\n${why}` : "") + section(renderProposalReader(draft)) + flow +
+    `\n\n## What changes\n\n${draftBullets(draft.changes)}` + section(renderFolderTree(draft)) +
+    plan + `\n\n## Impact\n\n` +
     `- **Impact:** ${draft.impact || state.impact || "medium"}\n` +
     `- **Coupling:** ${draft.coupling || state.coupling || "coupled"}\n` +
     `- **Affected surfaces:** ${(draft.surfaces || ["code"]).join(", ")}\n` +
@@ -424,14 +434,19 @@ export function renderDraftDesign(draft) {
     `| ${integration.key} | ${integration.kind} | ${integration.documentation?.source} | ` +
     `${integration.documentation?.version} | ${(integration.concerns || []).join(", ") || "none"} |`
   );
+  // File and test maps fall back to what the tasks already say, so a reader
+  // and Build always see where code lands and how each step is proven.
   const blueprints = renderDesignBlueprints({
-    ...draft, fileMap: fileMapWithTasks(draft.fileMap, draft.tasks)
+    ...draft, fileMap: fileMapWithTasks(derivedFileMap(draft), draft.tasks),
+    testMap: derivedTestMap(draft)
   });
   const sections = [
     meaningful(draft.currentState) ? `## Current state\n\n${draft.currentState}` : "",
     renderDesignOverview(draft),
+    renderUserFlow(draft),
+    renderComponentMap(draft),
     blueprints,
-    renderTaskOverview(draft),
+    renderPlan(draft),
     (draft.domainLanguage || []).length
       ? `## Domain language\n\n| Canonical term | Meaning | Avoid |\n|---|---|---|\n` +
         draftDomainRows(draft.domainLanguage) : "",
@@ -479,9 +494,10 @@ export function reviewRouteLabel({
 export function semanticDraftKeepsDesign(draft, rapid) {
   // Authored content only: a declared work type alone is not design content,
   // and neither is a default the agent recorded without asking.
+  // The compact dev document (failure matrix) renders in a rapid proposal.
   return Boolean(rapid) && [3, 4].includes(draft?._semanticVersion) &&
     draftNeedsDesign({
-      ...draft, workType: [],
+      ...draft, workType: [], failureMatrix: undefined,
       decisions: (draft.decisions || []).filter((decision) => !agentDecision(decision))
     });
 }
@@ -1038,8 +1054,11 @@ export function createChangeLifecycle({
     const state = loadRuntime(id);
     const basePath = changePath(id);
     writeFileSync(join(basePath, "proposal.md"), renderDraftProposal(draft, state));
+    // A standard v4 change is built from its dev document, so design.md is
+    // always written; v3 keeps writing it only for authored design content.
     if (state.schema === "foundation-standard" &&
-        (![3, 4].includes(draft._semanticVersion) || draftNeedsDesign(draft)))
+        (![3, 4].includes(draft._semanticVersion) || draft._semanticVersion === 4 ||
+          draftNeedsDesign(draft)))
       writeFileSync(join(basePath, "design.md"), renderDraftDesign(draft));
     if (state.groundingRequired && draft.grounding)
       writeJson(join(basePath, "grounding.yaml"), draft.grounding);

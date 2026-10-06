@@ -92,8 +92,14 @@ function namedScenarios(requirement) {
     then: requirement.outcome || "the result is observable" }] };
 }
 
+// A standard v4 change carries the dev document sections its work needs.
+const DEV_DOCUMENT = {
+  summary: "Payment retries record one payment and an audit result.",
+  failureMatrix: [{ failure: "Retry times out", userSees: "A retryable error", recovery: "Retry later" }]
+};
+
 function semanticDraftV4(overrides = {}) {
-  const value = semanticDraft({ version: 4, ...overrides });
+  const value = semanticDraft({ version: 4, ...DEV_DOCUMENT, ...overrides });
   value.requirements = value.requirements.map(namedScenarios);
   value.discovery = {
     coverage: [

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Change produces a dev document that Build executes and a reviewer reads.
+  Every proposal shows a folder tree of touched paths. A rapid proposal adds
+  the compact form: summary, user flow, failure matrix, and a Plan table with
+  files, verify command, dependencies, and requirements. A standard v4 change
+  always writes `design.md`, adds a user flow and component map, derives the
+  file map and test map from tasks, and replaces the task overview with the
+  Plan. The harness infers `workType` from task paths. A standard v4 draft
+  missing a section its work type needs (`summary`, `failureMatrix`,
+  `userFlow`, `uiStates`, `componentMap`, `apiContracts`, `dataModel`, and so
+  on) gets a draft issue the agent repairs.
+
 ## [3.5.30] - 2026-10-01
 
 ### Changed

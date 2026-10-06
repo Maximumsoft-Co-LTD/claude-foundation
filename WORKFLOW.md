@@ -114,10 +114,15 @@ capability is a top-level `capability` or the intent's noun phrase (such as
 `kanban-board`), a requirement key is at most five whole words, and its
 heading is the readable SHALL clause. A rapid proposal omits Why when the draft states no
 reason, and lists recorded `decisions` (defaults the agent chose without
-asking, `decidedBy: agent`) under Decisions. Standard
-changes add `design.md` only for a load-bearing decision,
-migration, compatibility boundary, architecture, diagram, integration, or
-prototype selection. `execution.yaml`, `repositories.yaml`, `handoffs.yaml`,
+asking, `decidedBy: agent`) under Decisions. Every packet is a dev document:
+the proposal shows a folder tree of touched paths (`+` add, `~` change, `-`
+remove), and a rapid proposal also carries the compact form (summary, user
+flow, failure matrix, and the Plan Build executes). A standard v4 change
+always has `design.md`, and its draft must author the sections its work type
+needs (summary and failure matrix; user flow, UI states, component map, API
+contracts, data model, config or job contract by type); the harness infers the
+work type from task paths and derives the file map, test map, and plan. A
+missing section is an agent draft repair, never a user question. `execution.yaml`, `repositories.yaml`, `handoffs.yaml`,
 and `grounding.yaml` appear only when execution differs from detected defaults,
 multiple repositories participate, external authority is required, or a
 non-derived material decision must be recorded. Absence has versioned
@@ -129,9 +134,10 @@ criteria, and a capability index (capability, requirements, tasks); discovery
 coverage and investigation provenance close it as appendices. `design.md`
 records every settled intake answer as a durable decision (context, choice,
 rejected options, decided by), adds an optional overview diagram, assumptions,
-open questions, and a task overview with its dependency graph, fills the file
-map's task column from task `[paths:]`, and omits sections the change leaves
-empty. While any open question remains, an approval request returns those
+open questions, the user flow, a component map, and the Plan (task, outcome,
+files, verify, dependencies, requirements) with its dependency graph, fills the
+file map's task column from task `[paths:]`, and omits sections the change
+leaves empty. While any open question remains, an approval request returns those
 questions as one `ASK_USER` decision instead of recording consent; the agent
 asks them, records the answers, and asks for approval again.
 

@@ -4,6 +4,7 @@ import {
 } from "./validation/semantic-intake.mjs";
 import { designBlueprintIssues } from "./validation/design-blueprints.mjs";
 import { readerGuideIssues } from "./validation/reader-guide.mjs";
+import { devDocumentIssues, devDocumentShapeIssues } from "./validation/dev-document.mjs";
 
 const OPERATIONS = new Set(["added", "modified", "removed"]);
 const AUTHORITY_CAPABILITIES = new Set(["review", "acceptance", "semantic-acceptance"]);
@@ -300,6 +301,8 @@ function semanticDraftIssues(source, { defaultTestEvidence = false } = {}) {
     choices.set(key, choice);
   }
   issues.push(...designBlueprintIssues(source));
+  issues.push(...devDocumentShapeIssues(source));
+  issues.push(...devDocumentIssues(source, { standard: !semanticRapidCandidate(source) }));
   issues.push(...semanticIntakeIssues(source));
   return issues;
 }
@@ -1197,6 +1200,14 @@ export function semanticDraftTemplate() {
     impact: "low",
     coupling: "isolated",
     workType: ["feature"],
+    userFlow: {
+      purpose: "The user's path through the change, including the error path",
+      source: "flowchart LR\n  A[User acts] --> B{Valid?}\n  B -->|yes| C[Result shown]\n  B -->|no| D[Error shown]"
+    },
+    failureMatrix: [{
+      failure: "Name one way this can fail", userSees: "What the user sees",
+      recovery: "How the user or system recovers"
+    }],
     requirements: [{
       key: "observable-outcome",
       capability: "change",

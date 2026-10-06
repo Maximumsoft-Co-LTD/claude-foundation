@@ -118,12 +118,9 @@ export function lightweightDraft(draft) {
 // them; authored sections are still checked for thin or misplaced content.
 export function designBlueprintWarnings(draft) {
   const warnings = [];
-  const light = lightweightDraft(draft);
-  if (draft?.version === 4 && !draftWorkTypes(draft).length) {
-    if (!light)
-      warnings.push(`declare workType (${WORK_TYPES.join("|")}) so the compiler can select the design sections this change needs`);
-    return warnings;
-  }
+  // A v4 draft's work type is inferred and its missing sections are dev
+  // document repairs (dev-document.mjs); only v3 is prompted here.
+  const light = draft?.version === 4 || lightweightDraft(draft);
   if (!light) for (const key of requiredBlueprints(draft))
     if (!present(draft[key]))
       warnings.push(`workType ${draftWorkTypes(draft).join(",")} expects '${key}'; add it or state why it does not apply`);

@@ -54,15 +54,14 @@ Scale detail to behavior and risk, not word count or scenario count.
 Cross-component changes need a boundary/dependency diagram; changed state,
 async, or workflow behavior needs transitions or sequence, including
 failure/recovery paths.
-Declare `workType` (a list: feature, bugfix, refactor, api, ui, data, config,
-async, integration, chore, docs). `designWarnings` suggest blueprints
-(`fileMap`, `failureMatrix`, `testMap`;
-`api` `apiContracts`, `data` `dataModel`, `ui` `uiStates`, `config`
-`configContract`, `async` `jobContract` plus a sequence/state diagram,
-`integration` `integrations`, `bugfix` and `refactor` their own objects;
-`coupling: coupled` `diagrams`). They are advisory (none for small rapid
-drafts): author blueprints only for real content, never to silence a warning.
-Keep `fileMap` paths and task tests inside task `paths`.
+The packet is the dev document Build executes. The harness infers `workType`
+from task `paths` and derives folder tree, plan, file and test maps. A
+standard draft authors `summary` and, except docs/chore, `failureMatrix` plus
+per type: feature `userFlow` (Mermaid); ui `userFlow`, `uiStates`,
+`componentMap`; api `apiContracts`; data `dataModel`; config
+`configContract`; async `jobContract` and a sequence diagram; bugfix/refactor
+their objects. Compile issues name what is missing. Keep `fileMap` paths and
+task tests inside task `paths`.
 
 ## Compile and inspect
 
