@@ -9,6 +9,7 @@ import test from "node:test";
 import { createAdvanceRuntime } from "../runtime/workflow/advance-runtime.mjs";
 import { createLeaseRuntime } from "../runtime/workflow/lease-runtime.mjs";
 import { recoverCompletedTasksForExecution } from "../runtime/workflow/agent-planning.mjs";
+import { taskAuthorityShape } from "../runtime/core/task-execution-authority.mjs";
 import {
   createSessionLeaseRuntime, runTaskCheck, sessionLeaseOwner, taskCheck, taskLineChecked, tickTaskLine
 } from "../runtime/workflow/session-lease.mjs";
@@ -208,6 +209,55 @@ test("an amended, out-of-lease Build settles to verified without handing work ba
     "the untouched T001 keeps its result across the amendment");
   assert.deepEqual(sessions.reverify("demo", planValue().verification), ["T002"]);
   assert.deepEqual(recover().verification, []);
+});
+
+// A parallel worker released T001 and asked the user to tick tasks.md
+// because the host blocked its own checkbox edit. The harness owns the tick.
+test("a released parallel result is ticked by the harness once its verify passes", (t) => {
+  const root = workspace(t);
+  const ledger = join(root, "openspec", "changes", "demo", "tasks.md");
+  writeFileSync(ledger,
+    "- [ ] **T001** First — verify: `npm test -- a` [paths:src/a.js]\n" +
+    "- [ ] **T002** Second — verify: `npm test -- b` [paths:src/b.js]\n");
+  const runtime = createSessionLeaseRuntime({
+    stableHash, loadRuntime: () => ({ workspace: { path: root } }),
+    activeChangeLeases: () => [], acquire: () => ({}), release: () => {}, discard: () => {},
+    runCheck: (id, check) => ({ status: check.command.endsWith("a") ? "pass" : "fail",
+      exitCode: check.command.endsWith("a") ? 0 : 1, output: "b broke" })
+  });
+  assert.deepEqual(runtime.tickAccepted("demo", ["T001", "T002"]), ["T001"]);
+  const content = readFileSync(ledger, "utf8");
+  assert.equal(taskLineChecked(content, "T001"), true);
+  assert.equal(taskLineChecked(content, "T002"), false, "a failing verify stays pending");
+  const handed = runtime.issue("demo", {
+    action: "EDIT", tasks: [{ id: "T002" }], execution: { mode: "parallel", leases: [] }
+  });
+  assert.equal(handed.verificationFailures[0].taskId, "T002",
+    "the next parallel EDIT carries the failure instead of a bare pending task");
+});
+
+test("the planner reports an accepted unticked result as ready for the harness tick", () => {
+  const graph = { version: 3, revision: "r1", identity: "i1", claims: [], nodes: [{
+    id: "task:T001", kind: "task", repository: "root", required: true, dependsOn: [],
+    paths: ["src/a.js"], contracts: [], resources: [], claims: [], inputSchema: null,
+    outputSchema: null, lifecycle: "build", authorityDigest: "a"
+  }] };
+  const result = { value: {
+    taskId: "T001", repository: "root", status: "observed", paths: ["src/a.js"], claimIds: [],
+    outputSchema: null, planDigest: "p", workspaceHash: "w", leaseId: "l",
+    fencingGeneration: 1, executionAttempt: 1, observedWrites: ["src/a.js"],
+    taskAuthority: taskAuthorityShape(graph, "T001")
+  } };
+  const tasks = [{ id: "T001", done: false, dependsOn: [] }];
+  const base = { id: "demo", allTasks: tasks, graph, state: { contractRevision: 1 },
+    priorPlan: {}, currentContractFingerprint: "c" };
+  assert.deepEqual(recoverCompletedTasksForExecution({
+    ...base, taskResult: () => result }).resultReady, ["T001"]);
+  assert.deepEqual(recoverCompletedTasksForExecution({
+    ...base, taskResult: () => result, taskLease: () => ({ leaseId: "live" }) }).resultReady, [],
+  "a task a worker still holds is not ready");
+  assert.deepEqual(recoverCompletedTasksForExecution({ ...base }).resultReady, [],
+    "no released result, no tick");
 });
 
 test("issue grants only a leased session task and removes the manual lease route", (t) => {

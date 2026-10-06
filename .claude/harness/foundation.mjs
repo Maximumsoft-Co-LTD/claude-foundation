@@ -1996,8 +1996,10 @@ const { advanceValue, showAdvance } = createAdvanceRuntime({
     return [...authority, ...external];
   }),
   settleSessionLeases: sessionLeases.settle,
-  reverifyCompletedTasks: (id) => sessionLeases.reverify(id,
-    agentPlanValue(id, { inspect: true }).verification || []),
+  reverifyCompletedTasks: (id) => {
+    sessionLeases.tickAccepted(id, agentPlanValue(id, { inspect: true }).resultReady || []);
+    return sessionLeases.reverify(id, agentPlanValue(id, { inspect: true }).verification || []);
+  },
   issueSessionLease: sessionLeases.issue,
   changePath,
   assertApproval: (id, state, options) => assertSpecApproval(ROOT, id, state, options),

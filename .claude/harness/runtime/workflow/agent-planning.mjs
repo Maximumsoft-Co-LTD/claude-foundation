@@ -396,8 +396,22 @@ export function recoverCompletedTasksForExecution({
   let requiresVerification = false;
   const invalidated = new Set();
   const reasons = new Map();
+  // An unticked task whose released lease result is accepted under current
+  // authority is finished work awaiting its ledger tick, which the harness
+  // owns; the worker never edits checkboxes.
+  const resultReady = [];
   const tasks = allTasks.map((task) => {
-    if (!task.done) return task;
+    if (!task.done) {
+      const resultRecord = taskResult?.(id, task.id) || null;
+      if (resultRecord && !taskLease?.(id, task.id)?.leaseId) {
+        const node = graph.nodes.find((entry) => entry.id === `task:${task.id}`);
+        if (resolveTaskExecutionAuthority({
+          id, taskId: task.id, node, graph, state, savedPlan: priorPlan,
+          resultRecord, taskLease: null, currentContractFingerprint
+        }).status === "accepted-lease-result") resultReady.push(task.id);
+      }
+      return task;
+    }
     const resultRecord = taskResult?.(id, task.id) || null;
     const lease = taskLease?.(id, task.id) || null;
     const recordedAuthority = Boolean(resultRecord || lease?.leaseId ||
@@ -437,6 +451,7 @@ export function recoverCompletedTasksForExecution({
   return {
     tasks: tasks.map((task) => invalidated.has(task.id) ? { ...task, done: false } : task),
     requiresVerification,
+    resultReady,
     // Implemented tasks whose execution record is stale, in ledger order: the
     // work exists and needs only re-verification, never re-implementation.
     verification: allTasks.filter((task) => invalidated.has(task.id))
@@ -676,6 +691,7 @@ export function createAgentPlanner({
       tasks,
       groups,
       verification: recovered.verification,
+      resultReady: recovered.resultReady,
       scheduling: {
         strategy: "critical-path-resource-aware",
         capacity: selectedPolicy.execution.maxParallelAgents,

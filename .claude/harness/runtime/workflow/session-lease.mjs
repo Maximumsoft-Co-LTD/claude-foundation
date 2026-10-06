@@ -185,7 +185,9 @@ export function createSessionLeaseRuntime({
         !value.execution?.leases?.length && value.tasks?.length)
       return withCheckFailures(id, recordHandoff(id, value));
     if (value?.action !== "EDIT" || value.execution?.mode !== "session" ||
-        value.tasks?.length !== 1 || value.execution?.leases?.length !== 1) return value;
+        value.tasks?.length !== 1 || value.execution?.leases?.length !== 1)
+      // A parallel group still learns which released task failed its verify.
+      return value?.action === "EDIT" ? withCheckFailures(id, value) : value;
     const taskId = value.tasks[0].id;
     const owner = sessionLeaseOwner(id, taskId, stableHash);
     const granted = acquire(id, taskId, { owner }, { quiet: true });
@@ -207,6 +209,32 @@ export function createSessionLeaseRuntime({
         ...(value.instructions || [])
       ]
     });
+  }
+
+  // A parallel worker releases its lease; the harness, not the worker, ticks
+  // the ledger. Each accepted result is ticked once its verify check passes
+  // in the workspace; a failure stays pending with its output.
+  function tickAccepted(id, taskIds = []) {
+    const ticked = [];
+    for (const taskId of taskIds) {
+      const path = ledgerPath(id);
+      if (!path || !existsSync(path) || checked(id, taskId)) continue;
+      const check = taskCheck(readFileSync(path, "utf8"), taskId);
+      if (check && runCheck) {
+        const result = runCheck(id, check);
+        if (result?.status !== "pass") {
+          failedChecks.set(`${id}\0${taskId}`, {
+            taskId, command: check.command, exitCode: result?.exitCode ?? null,
+            output: String(result?.output || "").slice(-2000)
+          });
+          continue;
+        }
+      }
+      failedChecks.delete(`${id}\0${taskId}`);
+      writeFileSync(path, tickTaskLine(readFileSync(path, "utf8"), taskId));
+      ticked.push(taskId);
+    }
+    return ticked;
   }
 
   // A ticked task whose execution record went stale (an amendment, an
@@ -256,7 +284,7 @@ export function createSessionLeaseRuntime({
       if (isSessionOwner(lease.owner)) discard(id, lease.taskId, lease.owner);
   }
 
-  return { settle, issue, yieldTo, reverify };
+  return { settle, issue, yieldTo, reverify, tickAccepted };
 }
 
 // Runs one task's focused check in the task's isolated repository, in the
