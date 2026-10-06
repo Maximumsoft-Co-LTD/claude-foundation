@@ -1044,7 +1044,9 @@ export function createAdvanceRuntime({
           if (result?.conflicts?.length || result?.status === "CONFLICT")
             return projected(recovery.observe(id, withContext(id, envelope(id, "REPAIR", {
               actor: "agent", legacyAction: "REPAIR_SYNC_CONFLICT", boundary: "conflict",
-              reason: "Sandbox synchronization found conflicting changes; choose the intended result before merging.",
+              reason: "Sandbox synchronization found conflicting changes; choose the intended result before merging." +
+                (result.conflicts?.some((row) => row?.landedBy) ? " Keep every earlier change's landed " +
+                  "content; ask the user only if the two changes' intents contradict." : ""),
               details: result, recoveryType: "EDIT", resumeCommand: resume(id, through)
             }))));
           return advanceThrough(id, through, internal);

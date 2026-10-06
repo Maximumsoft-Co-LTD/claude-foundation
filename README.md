@@ -787,6 +787,11 @@ you to.
   assurance; those outcomes do not override an explicit user decision. Apply
   still refuses conflicts and uncommitted edits on touched target paths — it
   names the clobbered paths instead of letting the last writer win.
+- Land is always allowed for stacked changes: you never commit one landed
+  change before the next one lands. A later change merges an earlier change's
+  landed, uncommitted diff into its sandbox (the harness does it when the
+  merge is clean, the agent when both edited the same lines), proves again
+  what changed, and lands without overwriting the earlier landed work.
 - Apply uses backups and a journal; an interrupted Land can be retried.
 - Land warns — without blocking — when the target is checked out on
   `main`/`master`; every land guard stays commit-based.

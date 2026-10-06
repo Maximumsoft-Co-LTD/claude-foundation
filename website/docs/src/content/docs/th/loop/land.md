@@ -23,6 +23,13 @@ isolate REPAIR ที่คืนมาจะคืนไฟล์เหล่�
 `advance <change> --through archived --restore-target <paths>` ภายใน transaction
 ไฟล์อื่นที่ชนต้องให้ผู้ใช้ตัดสินใจ และไฟล์ที่ถูกแก้หลังบันทึกจะไม่ถูกเขียนทับ
 
+Land ทำได้เสมอแม้ change ซ้อนกัน ไม่มีใครต้อง commit change แรกที่ Land แล้วก่อน
+change ถัดไปจะ Land เมื่อ diff ที่ change ก่อนหน้า Land ไว้และยังไม่ commit แตะไฟล์
+ที่ change นี้แก้ด้วย harness จะ merge edit ที่ Land แล้วเข้า sandbox copy ของ change
+นี้ Prove ใหม่เฉพาะส่วนที่ merge ทำให้หมดอายุ แล้วจึง apply ถ้าทั้งสองแก้บรรทัด
+เดียวกัน agent จะ merge ใน sandbox copy โดยเก็บเนื้อหาที่ Land แล้วไว้ ระบบไม่เสนอให้
+ทิ้ง bytes ที่ Land ไปก่อน และถามผู้ใช้เฉพาะเมื่อ intent ของสอง change ขัดกันจริง
+
 มีเพียง recoverable Land transaction ของ harness ที่ apply product และ sync
 agreement ได้ Agent ไม่แก้ไฟล์เหล่านั้นนอก transaction และ Land ไม่ให้อำนาจ
 commit, push, publish หรือเปิด PR ระหว่างที่ Land ยัง active phase guard จะปฏิเสธ

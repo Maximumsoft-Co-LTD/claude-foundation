@@ -123,7 +123,7 @@ import {
 } from "./runtime/evidence/provider-catalog.mjs";
 import { SECURITY_TERMS } from "./runtime/workflow/security-policy.mjs";
 import {
-  landAppliedOutput, targetEditIssues as targetEditFindings
+  landAppliedOutput, otherLandedOutput, targetEditIssues as targetEditFindings
 } from "./runtime/workflow/target-edits.mjs";
 import {
   createSessionLeaseRuntime, isSessionOwner, runTaskCheck
@@ -1234,12 +1234,17 @@ const {
   fail: die
 });
 
-// Issues and notices must judge the same edits: Land's own applied bytes are
-// not edits made outside the sandbox. Both views read this one computation.
+// Issues and notices must judge the same edits: bytes a Land wrote (this
+// change's, or another change's landed but uncommitted diff) are not edits
+// made outside the sandbox. Both views read this one computation.
 function targetEditsFor(state) {
+  const landedElsewhere = Object.fromEntries(Object.entries(otherLandedOutput({
+    transactions: TRANSACTIONS, changeId: state.id, readJson
+  })).map(([path, row]) => [path, row.after]));
   return targetEditFindings({
     root: ROOT, state, dirtyNow: preexistingDirty(ROOT),
-    landOutput: landAppliedOutput(readTransactionJournals(TRANSACTIONS, state.id, readJson)),
+    landOutput: { ...landedElsewhere,
+      ...landAppliedOutput(readTransactionJournals(TRANSACTIONS, state.id, readJson)) },
     // Only the paths this change's Land would apply can stop it.
     // An unresolvable surface throws (trapped) and the stop stays fail-closed.
     projectionPaths: () => trapFailures(() => new Set(canonicalChangedSurface(state.id, state)
