@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `install.sh` appends a narrow `permissions.allow` list to the project's
+  `.claude/settings.json` so the harness CLI and Build-workspace edits no
+  longer prompt on every change: `Bash(claude-foundation *)`,
+  `Bash(.foundation/bin/claude-foundation *)`,
+  `Bash(node .claude/harness/foundation.mjs *)`,
+  `Edit(/.foundation/sandboxes/**)`, and
+  `Edit(/.foundation/repository-sandboxes/**)`. The merge adds only missing
+  rules after the user's own, keeps their order (it no longer sorts the list),
+  and is idempotent. `--no-permission-allowlist` skips it; the Cursor,
+  OpenCode, and Codex adapters pass the flag through.
+
 ### Changed
 
 - Change produces a dev document that Build executes and a reviewer reads.
