@@ -197,7 +197,8 @@ function requiredIntegrationCapabilities(integration) {
   const concerns = new Set(stringList(integration.concerns).map((value) => value.toLowerCase()));
   const capabilities = ["integration"];
   if ([...concerns].some((value) =>
-    /auth|credential|signature|webhook|secret|permission/.test(value)))
+    /auth|credential|signature|webhook|secret|permission|ยืนยันตัวตน|ข้อมูลรับรอง|ลายเซ็น|เว็บฮุก|ความลับ|รหัสลับ|สิทธิ์/u
+      .test(value)))
     capabilities.push("security-static");
   if ([...concerns].some((value) =>
     /retry|timeout|rate.limit|partial|degrad|recover/.test(value)))

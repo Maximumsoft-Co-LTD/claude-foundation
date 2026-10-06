@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Thai intents now trigger the same review, security, and migration routing as
+  English. Thai terms such as ล็อกอิน, เข้าสู่ระบบ, รหัสผ่าน, สิทธิ์,
+  โทเคนเข้าถึง, ชำระเงิน, จ่ายเงิน, ย้ายข้อมูล, ลบข้อมูล, ข้อมูลส่วนตัว, and
+  ความปลอดภัย, plus common transliterations, match as substrings because Thai
+  has no word spaces. Bare โทเคน stays out, like bare "token", because it also
+  names model token budgets.
+
 - `install.sh` appends a narrow `permissions.allow` list to the project's
   `.claude/settings.json` so the harness CLI and Build-workspace edits no
   longer prompt on every change: `Bash(claude-foundation *)`,
@@ -22,6 +29,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Investigate acknowledges discovered sources automatically and still hashes
+  them for freshness; the `inspect-sources` round is gone. Facts and options
+  must cite an inventoried source, and the report lists discoveries no fact
+  cites. Open decisions derive `conclusion.status: needs-user-decision`, and a
+  settled record with `changeIntent` concludes in one run; explicit statuses
+  stay accepted. Repeated no-progress asks the user only when the repeated
+  action was a user question; sandbox or discovery failures go to the harness
+  and other stalls to the agent.
 - Change produces a dev document that Build executes and a reviewer reads.
   Every proposal shows a folder tree of touched paths. A rapid proposal adds
   the compact form: summary, user flow, failure matrix, and a Plan table with

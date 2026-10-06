@@ -11,7 +11,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { acquireProcessLock } from "../core/process-lock.mjs";
 import { nextCommand } from "../core/next-step.mjs";
 import { taskBlocks, taskMetadata } from "../contracts/change-artifacts.mjs";
-import { materialSecurityTriggers } from "./security-policy.mjs";
+import { matchesSecurityTerm, materialSecurityTriggers } from "./security-policy.mjs";
 import {
   agentDecision, authoredDecisionReason, expandMinimalSemanticDraft,
   minimalSemanticDraftTemplate, normalizeSemanticDraft, renderRequirementMarkdown,
@@ -1440,13 +1440,9 @@ export function createChangeLifecycle({
     // "accessibility" and `includes("migration")` on "migration guide", so
     // routine work acquired external review it did not need — while the
     // trigger the docs promise ("semantic, not syntax") went unmet either way.
-    const termsIn = (value) => {
-      const semanticText = String(value || "").toLowerCase();
-      return securityTerms.filter((term) => {
-        const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "[\\s-]+");
-        return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`).test(semanticText);
-      });
-    };
+    // Thai terms, written without word spaces, match as substrings.
+    const termsIn = (value) =>
+      securityTerms.filter((term) => matchesSecurityTerm(value, term));
     const explicitSecurity = String(flags.security || "").split(",")
       .map((value) => value.trim()).filter((value) => value && value.toLowerCase() !== "none");
     // Declared triggers (the draft, `--security`, or a prior resolve) keep

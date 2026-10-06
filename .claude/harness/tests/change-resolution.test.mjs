@@ -213,6 +213,14 @@ try {
   assert.deepEqual(state.keywordSecurityTriggers, ["billing"]);
   assert.match(output, /security: billing \(intent keyword: review only\)/);
   assert.equal(existsSync(join(changeDir, "design.md")), false);
+  // A Thai intent (no word spaces) names the same boundary and routes the same.
+  state = { ...baseState(), intent: "เพิ่มหน้าเข้าสู่ระบบด้วยรหัสผ่านใหม่",
+    schema: "foundation-rapid", securityTriggers: [] };
+  shipped.resolveChange("change-1", { impact: "low", coupling: "isolated", security: "" });
+  assert.equal(state.schema, "foundation-rapid");
+  assert.equal(state.reviewRequired, true);
+  assert.deepEqual(state.keywordSecurityTriggers, ["เข้าสู่ระบบ", "รหัสผ่าน"]);
+  assert.equal(existsSync(join(changeDir, "design.md")), false);
   state = { ...baseState(), intent: billingDraft.intent, schema: "foundation-rapid", securityTriggers: [] };
   shipped.resolveChange("change-1", { impact: "low", coupling: "isolated", security: "billing" });
   assert.equal(state.schema, "foundation-standard");

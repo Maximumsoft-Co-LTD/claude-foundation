@@ -3,7 +3,11 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { measuredNumber } from "../core/measured-number.mjs";
 import { isExcludedPath } from "../core/workspace-surface.mjs";
-import { classifyReviewRisk, reviewSemanticText } from "./review-routing.mjs";
+import { classifyReviewRisk, reviewSemanticText, thaiRiskPattern } from "./review-routing.mjs";
+
+const THAI_REQUIRED_SEMANTICS =
+  thaiRiskPattern("concurrency", "money", "migration", "irreversible");
+const THAI_CRITICAL_SEMANTICS = thaiRiskPattern("money", "migration", "irreversible");
 
 // Named once and read by both `reviewPolicy` and the change-time forecast. The
 // forecast has to answer "will this need a reviewer?" from the same lists, but
@@ -193,12 +197,14 @@ export function collectReviewSignals(state, contract, configuredCapabilities = [
     requiredTriggers.push("risk-capability");
   if (riskClaims.some((claim) => (claim.repositories || []).length > 1))
     requiredTriggers.push("multi-repository-claim");
-  if (/\b(concurren|race|deadlock|money|payment|billing|financial|migration|irreversible)\w*\b/.test(semantic))
+  if (/\b(concurren|race|deadlock|money|payment|billing|financial|migration|irreversible)\w*\b/.test(semantic) ||
+      THAI_REQUIRED_SEMANTICS.test(semantic))
     requiredTriggers.push("risk-semantics");
   if ((state.securityTriggers || []).length ||
       REVIEW_DIVERSITY_CAPABILITIES.some((value) => capabilities.has(value)))
     diversityTriggers.push("critical-capability");
-  if (/\b(money|payment|billing|financial|migration|irreversible)\b/.test(semantic))
+  if (/\b(money|payment|billing|financial|migration|irreversible)\b/.test(semantic) ||
+      THAI_CRITICAL_SEMANTICS.test(semantic))
     diversityTriggers.push("critical-semantics");
   return { capabilities, requiredTriggers, diversityTriggers };
 }

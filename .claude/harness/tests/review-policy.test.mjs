@@ -6,6 +6,7 @@ import {
   collectReviewSignals,
   createEvidenceContract
 } from "../runtime/evidence/evidence-contract.mjs";
+import { classifyReviewRisk } from "../runtime/evidence/review-routing.mjs";
 
 const lowRoute = {
   tier: "low", route: ["ai-full"], maxAiAttempts: 1,
@@ -57,6 +58,33 @@ test("intent keywords alone add no risk semantics or diversity trigger", () => {
   }, { claims: [{ impact: "low", capabilities: ["test"] }] });
   assert.deepEqual(declared.requiredTriggers, ["risk-semantics"]);
   assert.deepEqual(declared.diversityTriggers, ["critical-semantics"]);
+});
+
+test("Thai intents raise the same review semantics as English", () => {
+  const claims = { claims: [{ impact: "low", capabilities: ["test"] }] };
+  for (const intent of ["รองรับการชำระเงินด้วยบัตร", "ย้ายข้อมูลลูกค้าไปตารางใหม่",
+    "ลบข้อมูลถาวรเมื่อปิดบัญชี"]) {
+    const signals = collectReviewSignals({ intent, impact: "medium", securityTriggers: [] }, claims);
+    assert.deepEqual(signals.requiredTriggers, ["risk-semantics"], intent);
+    assert.deepEqual(signals.diversityTriggers, ["critical-semantics"], intent);
+  }
+  const concurrent = collectReviewSignals({
+    intent: "กันการเขียนพร้อมกันในคำสั่งซื้อ", impact: "medium", securityTriggers: []
+  }, claims);
+  assert.deepEqual(concurrent.requiredTriggers, ["risk-semantics"]);
+  assert.deepEqual(concurrent.diversityTriggers, []);
+  const keywordOnly = collectReviewSignals({
+    intent: "แสดงยอดชำระเงินเป็นตัวหนา", impact: "low", coupling: "isolated",
+    securityTriggers: [], keywordSecurityTriggers: ["ชำระเงิน"], reviewRequired: true
+  }, claims);
+  assert.deepEqual(keywordOnly.requiredTriggers, []);
+  assert.deepEqual(keywordOnly.diversityTriggers, []);
+  for (const intent of ["ตรวจสิทธิ์ก่อนอนุมัติ", "ส่งซ้ำผ่านคิวข้อความ"]) {
+    const route = classifyReviewRisk({ state: { intent, impact: "medium", securityTriggers: [] },
+      claims: [], capabilities: new Set(), grounding: null });
+    assert.ok(route.triggers.includes("critical-semantics"), intent);
+    assert.equal(route.tier, "high");
+  }
 });
 
 test("legacy review policy preserves its compact default shape", () => {

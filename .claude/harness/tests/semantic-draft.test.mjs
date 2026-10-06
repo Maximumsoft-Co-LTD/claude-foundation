@@ -136,6 +136,16 @@ test("semantic compiler creates stable cross-ledger links from semantic keys", (
   assert.ok(result.draft.execution.providers.integration);
 });
 
+test("Thai integration concerns derive the same security capability", () => {
+  const base = semanticDraft();
+  const thai = normalizeSemanticDraft(semanticDraft({
+    integrations: [{ ...base.integrations[0], concerns: ["ยืนยันตัวตนของผู้ให้บริการ"] }]
+  }), slugify);
+  assert.deepEqual(thai.issues, []);
+  assert.ok(thai.draft.claims[0].capabilities.includes("security-static"));
+  assert.ok(thai.draft.securityTriggers.includes("external-integration-authentication"));
+});
+
 test("semantic compiler accepts discovery-complete v4 and retains v3 compatibility", () => {
   const current = normalizeSemanticDraft(semanticDraftV4(), slugify);
   assert.deepEqual(current.issues, []);
