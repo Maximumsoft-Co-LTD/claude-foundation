@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync
@@ -293,6 +294,40 @@ test("a task an amendment removed is refused with its cause, not an acquire rout
     assert.doesNotMatch(error.message, /agents acquire/);
     return true;
   });
+});
+
+test("a busy lease lock waits for a parallel worker instead of asking for a retry", async () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-dispatch-lock-"));
+  const lockPath = join(root, "acquire.lock");
+  const processLock = new URL("../runtime/core/process-lock.mjs", import.meta.url).href;
+  const holder = spawn(process.execPath, ["--input-type=module", "-e", `
+    const { acquireProcessLock } = await import(${JSON.stringify(processLock)});
+    const lock = acquireProcessLock(${JSON.stringify(lockPath)});
+    if (!lock.acquired) process.exit(2);
+    process.stdout.write("held\\n");
+    setTimeout(() => { lock.release(); process.exit(0); }, 300);
+  `], { stdio: ["ignore", "pipe", "inherit"] });
+  await new Promise((resolve, reject) => {
+    holder.stdout.on("data", (chunk) => { if (String(chunk).includes("held")) resolve(); });
+    holder.on("exit", (code) => reject(new Error(`lock holder exited early (${code})`)));
+  });
+  const planValue = plan({ maxParallelAgents: 1, groups: [["T001"]], tasks: [task("T001", "api")] });
+  planValue.tasks.forEach((entry) => { entry.dependsOn = []; entry.leaseKeys = ["path:root:T001"]; });
+  const make = (lockWaitMs) => createLeaseRuntime({
+    leases: root, stableHash: hash, agentPlanValue: () => planValue,
+    policy: () => ({ execution: { leaseMinutes: 45 } }),
+    readJson, writeJson, now: () => new Date().toISOString(), lockWaitMs,
+    fail: (message) => { throw new Error(message); }
+  });
+  assert.throws(() => make(20).acquire("lock-change", "T001", { owner: "worker-a" }, { quiet: true }),
+    (error) => {
+      assert.match(error.message, /stayed busy/);
+      assert.doesNotMatch(error.message, /retry the same command/);
+      return true;
+    });
+  const acquired = make(5_000).acquire("lock-change", "T001", { owner: "worker-a" }, { quiet: true });
+  assert.ok(acquired.leaseId, "the second contender acquires once the holder releases");
+  await new Promise((resolve) => holder.exitCode === null ? holder.on("exit", resolve) : resolve());
 });
 
 test("single-agent and completed plans preserve the cheap path", () => {

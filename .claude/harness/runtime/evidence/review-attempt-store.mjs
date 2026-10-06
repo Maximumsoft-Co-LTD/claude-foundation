@@ -110,13 +110,22 @@ export function baseMoveResetRecovery(state, id) {
     `review is live, so dispatch the review again (manual route: 'claude-foundation authority reset-base-move ${id} --decision-ref <ref>').`;
 }
 
+// The live attempt already records its request, so the refusal names the exact
+// abort instead of sending the agent to look it up first.
+export function liveReviewAbortCommand(id, attempt) {
+  const requestId = String(attempt?.requestId || "").trim();
+  return requestId
+    ? `claude-foundation authority abort ${id} --request ${requestId} --reason <why>`
+    : `find the open request with 'claude-foundation authority status ${id}', then ` +
+      `claude-foundation authority abort ${id} --request <requestId> --reason <why>`;
+}
+
 export function assertNoLiveBaseMoveReview(attempts, id, fail) {
   const live = attempts.find((attempt) =>
     attempt.reviewerType === "ai" && attempt.status === "dispatched");
   if (live)
-    fail("an AI review attempt is still dispatched; complete or abort it before a base-move reset. " +
-      `Find the open request with 'claude-foundation authority status ${id}', ` +
-      `then abort it: claude-foundation authority abort ${id} --request <requestId> --reason <why>`);
+    fail("an AI review attempt is still dispatched; complete or abort it before a base-move reset: " +
+      liveReviewAbortCommand(id, live));
 }
 
 export function baseMoveReleasedAttempt(attempts, move, fail) {
@@ -530,9 +539,8 @@ export function createReviewAttemptStore({
     const liveDispatch = reviewAttempts(id, history).find((attempt) =>
       attempt.reviewerType === "ai" && attempt.status === "dispatched");
     if (liveDispatch)
-      fail("an AI review attempt is still dispatched; complete or abort it before resetting infrastructure retries. " +
-        `Find the open request with 'claude-foundation authority status ${id}', ` +
-        `then abort it: claude-foundation authority abort ${id} --request <requestId> --reason <why>`);
+      fail("an AI review attempt is still dispatched; complete or abort it before resetting infrastructure retries: " +
+        liveReviewAbortCommand(id, liveDispatch));
     // Completed infrastructure errors only. Anything else is not an
     // infrastructure outcome the bounded recovery circuit consumed.
     const attempts = infrastructureAiAttempts(id, history).filter((attempt) =>

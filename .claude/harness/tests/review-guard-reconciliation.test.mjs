@@ -352,7 +352,14 @@ function fixture(id) {
   });
   assert.throws(() =>
     world.store.acknowledgeInfrastructureAttempts(id, "decision-1"),
-  /still dispatched/);
+  (error) => {
+    assert.match(error.message, /still dispatched/);
+    assert.match(error.message,
+      /claude-foundation authority abort case-inflight-reset --request request-1 --reason <why>/,
+      "the refusal names the live request instead of a status lookup");
+    assert.doesNotMatch(error.message, /authority status/);
+    return true;
+  });
   world.store.completeReviewAttempt(id, attempt.digest, {
     reviewerSessionId: "session-1", resultStatus: "error",
     findings: [], verifiedFindingIds: []

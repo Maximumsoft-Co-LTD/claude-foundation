@@ -269,8 +269,8 @@ export function observedLeaseWrites(context, id, taskLease, force) {
         contested.push(path);
     if (contested.length)
       context.fail(`task '${taskLease.taskId}' changed outside granted scope: ${contested.join(", ")}; result and proof were not accepted. ` +
-        `These paths belong to another active task; revert them, then ` +
-        `'claude-foundation agents acquire ${id} ${taskLease.taskId} --owner ${taskLease.owner}' and release again`);
+        `These paths belong to another active task; revert them, then release again ` +
+        "(the lease is still held, so no re-acquire is needed)");
   }
   return observedWrites;
 }
@@ -328,7 +328,11 @@ export function createLeaseRuntime({
   writeJson,
   now,
   observedTaskSurface = () => [],
-  fail
+  fail,
+  // Parallel workers release at nearly the same moment and the critical
+  // section is a few file writes, so contention waits briefly instead of
+  // handing each worker a "retry the same command" step.
+  lockWaitMs = 10_000
 }) {
   function leasePath(resource) {
     return join(leases, "resources", `${stableHash(resource)}.json`);
@@ -347,8 +351,15 @@ export function createLeaseRuntime({
 
   function withAcquisitionLock(action) {
     const path = join(leases, "acquire.lock");
-    const lock = acquireProcessLock(path, { now });
-    if (!lock.acquired) fail("lease acquisition is busy; retry the same command");
+    const deadline = Date.now() + lockWaitMs;
+    let lock = acquireProcessLock(path, { now });
+    while (!lock.acquired && Date.now() < deadline) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+      lock = acquireProcessLock(path, { now });
+    }
+    if (!lock.acquired)
+      fail(`lease acquisition stayed busy for ${Math.round(lockWaitMs / 1000)}s; ` +
+        `another harness process holds ${path}`);
     try { return action(); }
     finally { lock.release(); }
   }
