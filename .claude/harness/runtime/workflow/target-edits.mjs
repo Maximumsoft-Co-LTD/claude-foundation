@@ -128,8 +128,8 @@ export function targetConflictStop({ changeId, paths, snapshot = {}, cause }) {
         "the sandbox and prove again, or let Land restore those target files to the recorded base.",
       paths,
       options: [
-        { id: "keep-target", outcome: "Keep the target edits: commit or reconcile them, then " +
-          `'claude-foundation sandbox sync ${changeId}' and prove again.` },
+        { id: "keep-target", outcome: "Keep the target edits: commit or reconcile them, then resume " +
+          `'claude-foundation advance ${changeId} --through archived'; it syncs the sandbox and proves again.` },
         { id: "restore-target", outcome: "Discard the target edits at the listed paths and land " +
           `the proven projection: '${restoreTargetCommand(changeId, paths, "<user-decision>")}'.` },
         { id: "pause", outcome: "Change nothing and leave both workspaces as they are." }

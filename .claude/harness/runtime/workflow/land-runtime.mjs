@@ -488,9 +488,20 @@ export function createLandRuntime({
   fail
 }) {
   function assertLandTargetReady(id, state) {
+    // Kept target content must reach the sandbox and be proven again. That is
+    // the harness's own sync, never a command handed to the agent.
     if (state.workspace?.recovery?.requiresSync)
-      fail(`the target was preserved during manual recovery; run 'claude-foundation sandbox sync ${
-        id}' before proving and landing again`);
+      blockWithDecision(id, "recovery-sync-required", {
+        kind: "recovery-sync-required",
+        summary: "The target was preserved during manual recovery; the sandbox is synchronized " +
+          "onto it and proved again before Land continues.",
+        automaticRecovery: "sync",
+        options: [
+          { id: "sync", outcome: "Synchronize the sandbox onto the preserved target and prove it again." },
+          { id: "pause", outcome: "Leave both workspaces as they are." }
+        ],
+        recommended: "sync"
+      });
     const pending = pendingApplyTransactions(id);
     if (pending.length)
       blockWithDecision(id, "apply-pending-recovery", {
