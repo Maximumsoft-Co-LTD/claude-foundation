@@ -522,9 +522,14 @@ test("advance convergence stops only after repeated unchanged automation", async
     runProof: async () => { proofRuns += 1; return { progressed: false }; }
   });
   const value = await runtime.advanceThrough("change-a", "proven");
-  assert.equal(value.action, "ASK_USER");
+  // Unchanged automation hands the stuck step to the agent with what it
+  // returned; the recovery ladder asks the user only after repeated repair.
+  assert.equal(value.action, "REPAIR");
+  assert.equal(value.owner, "agent");
   assert.equal(value.boundary, "repeated-no-progress");
-  assert.equal(value.decision.kind, "repair-no-progress");
+  assert.equal(value.recovery.type, "HANDOFF");
+  assert.match(value.reason, /RUN_PROOF/);
+  assert.equal(value.command, "claude-foundation advance change-a --inspect");
   assert.equal(proofRuns, 2);
 });
 

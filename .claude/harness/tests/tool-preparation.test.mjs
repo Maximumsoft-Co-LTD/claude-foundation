@@ -116,3 +116,43 @@ test("failed repository setup is retried without repeating ready siblings", () =
   assert.deepEqual(calls, ["root setup", "api setup"]);
   assert.equal(saves, 1);
 });
+
+// A failed setup the harness cannot finish is handed to the agent with the
+// exact command, directory, and output, never a bare diagnostic loop.
+test("a failed repository setup carries its handoff into the advance repair", async () => {
+  const { advanceFailureAction } = await import("../runtime/workflow/advance-runtime.mjs");
+  const plan = executionPreparationValue({
+    id: "demo",
+    state: { workspace: { path: "/ws" }, repositories: { root: {
+      path: "/ws", setup: { status: "failed", exitCode: 1, logTail: "exit 1\nnpm ERR! missing lockfile" }
+    } } },
+    repositories: [{ id: "root", setupCommand: "npm ci" }],
+    openSpec: { level: "ok" }, stableHash
+  });
+  assert.deepEqual(plan.issues[0].handoff, {
+    step: "sandbox setup for repository 'root'", command: "npm ci", cwd: "/ws",
+    log: "exit 1\nnpm ERR! missing lockfile"
+  });
+  let error;
+  try { assertExecutionPreparationReady(plan); } catch (caught) { error = caught; }
+  const repair = advanceFailureAction("demo", error, { stage: "build", through: "proven" });
+  assert.equal(repair.action, "REPAIR");
+  assert.equal(repair.owner, "agent");
+  assert.equal(repair.command, "npm ci");
+  assert.equal(repair.handoff.cwd, "/ws");
+  assert.match(repair.instruction, /could not finish sandbox setup/);
+  assert.equal(repair.recovery.type, "HANDOFF");
+});
+
+test("a failed OpenSpec preparation hands its install command to the agent", () => {
+  assert.throws(() => ensureProjectOpenSpec({
+    root: "/project", status: () => ({ level: "error", detail: "missing" }),
+    spawn: () => ({ status: 1, stderr: "ENOTFOUND registry.npmjs.org" }),
+    prependPath: () => []
+  }), (error) => {
+    assert.match(error.details.handoff.command, /^npm install --prefix \.foundation\/tools /);
+    assert.equal(error.details.handoff.cwd, "/project");
+    assert.match(error.details.handoff.log, /ENOTFOUND/);
+    return true;
+  });
+});

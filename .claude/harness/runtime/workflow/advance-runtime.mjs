@@ -205,6 +205,25 @@ export function advanceFailureAction(id, error, { stage = "build", through = nul
     alternatives: error?.details?.alternatives || [],
     resumeCommand: resume(id, through)
   });
+  // Harness automation that could not finish hands its exact step to the
+  // agent — command, directory, and output — instead of a diagnostic loop
+  // that ends at the user.
+  const handoff = error?.details?.handoff;
+  if (handoff?.command) return envelope(id, "REPAIR", {
+    legacyAction: `REPAIR_${stage.toUpperCase()}_RUNTIME`,
+    actor: "agent",
+    boundary: error?.boundary || "resource",
+    reason,
+    details: error?.details || null,
+    command: handoff.command,
+    handoff,
+    instruction: `The harness could not finish ${handoff.step || "this step"}. Run \`${
+      handoff.command}\`${handoff.cwd ? ` in ${handoff.cwd}` : ""}, fix what its output reports ` +
+      "(inside the workspace or the declared setup in foundation.json), then resume.",
+    recoveryType: "HANDOFF",
+    alternatives: ["finish the harness step yourself, then resume the same lifecycle route"],
+    resumeCommand: resume(id, through)
+  });
   const fallback = stage === "land"
     ? command(`land check ${id}`)
     : command(`doctor --stage ${stage === "prove" ? "prove" : "build"} --change ${id}`);
@@ -921,14 +940,26 @@ export function createAdvanceRuntime({
     });
   }
 
-  function noProgress(id, through) {
+  // An automated step that keeps completing without progress is handed to the
+  // agent with what the step returned; the user is asked only if repeated
+  // agent repair also makes no progress (the recovery ladder decides).
+  function noProgress(id, through, operation = null, result = null) {
+    const name = operation?.legacyAction || "the automated step";
+    const output = result && typeof result === "object"
+      ? { issues: result.issues || null, next: result.next || null, reason: result.reason || null }
+      : null;
     return projected(recovery.observe(id, withContext(id, envelope(id, "REPAIR", {
-      legacyAction: "NO_PROGRESS_BOUNDARY", actor: "harness",
+      legacyAction: "NO_PROGRESS_BOUNDARY", actor: "agent",
       boundary: "repeated-no-progress",
-      reason: "The same authorized operation completed twice without changing delivery state",
-      recoveryType: "RECONFIGURE",
+      reason: `The harness ran ${name} twice without changing delivery state`,
+      details: output,
+      command: command(`advance ${id} --inspect`),
+      instruction: `The harness could not move ${name} forward. Read its result in details and ` +
+        `'${command(`advance ${id} --inspect`)}', fix what keeps it from progressing ` +
+        "(workspace, evidence wiring in execution.yaml, or setup), then resume.",
+      recoveryType: "HANDOFF",
       resumeCommand: resume(id, through)
-    })), { force: true }));
+    }))));
   }
 
   async function advanceThrough(id, through) {
@@ -958,7 +989,7 @@ export function createAdvanceRuntime({
               actor: "agent", legacyAction: "REPAIR_SYNC_CONFLICT", boundary: "conflict",
               reason: "Sandbox synchronization found conflicting changes; choose the intended result before merging.",
               details: result, recoveryType: "EDIT", resumeCommand: resume(id, through)
-            })), { force: true }));
+            }))));
           return advanceThrough(id, through);
         } catch (error) {
           return projected(recovery.observe(id, failureAction(id, error, { stage, through })));
@@ -1098,7 +1129,7 @@ export function createAdvanceRuntime({
             return finish(targetResume(boundaryResult));
           const after = fingerprint(id);
           unchangedAutomations = before === after ? unchangedAutomations + 1 : 0;
-          if (unchangedAutomations >= 2) return noProgress(id, through);
+          if (unchangedAutomations >= 2) return noProgress(id, through, value, operationResult);
         }
       });
     } catch (error) {

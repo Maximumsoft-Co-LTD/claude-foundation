@@ -1,5 +1,6 @@
 import {
-  agreementDriftError, agreementIdentity, repairWhitespaceDrift
+  agreementDriftError, agreementIdentity, agreementRestoredNotice, repairWhitespaceDrift,
+  restoreDriftedAgreement, userDecisionError
 } from "../core/user-decisions.mjs";
 import { createHash } from "node:crypto";
 import {
@@ -1547,6 +1548,33 @@ export function createChangeLifecycle({
     ].join(", ") || "none"}${surfaceLine}${ciLine}\n  schema: ${state.schema}${upgraded ? " (upgraded from foundation-rapid; design.md and specs/ added)" : ""}${atomicStepOutput ? "" : `\n  next: ${nextCommand(state.status, id)}`}`);
   }
 
+  function approvalPacketRoot(id) {
+    const current = loadRuntime(id);
+    return current.workspace?.path &&
+      existsSync(join(current.workspace.path, "openspec", "changes", id))
+      ? current.workspace.path : root;
+  }
+
+  function designOpenQuestions(id, packetRoot = approvalPacketRoot(id)) {
+    const designPath = join(packetRoot, "openspec", "changes", id, "design.md");
+    return existsSync(designPath) ? openQuestionItems(readFileSync(designPath, "utf8")) : [];
+  }
+
+  // The questions an approval would be refused over, as the user decision the
+  // agent asks in one batch. Null when nothing is open.
+  function openQuestionsDecision(id) {
+    const questions = designOpenQuestions(id);
+    if (!questions.length) return null;
+    const error = userDecisionError("OPEN_QUESTIONS",
+      `Ask the user the design's open questions before approving the spec: ${questions.join(" | ")}`, [
+        { id: "answer", outcome: "Answer each open question; the agent records the answers in the " +
+          "draft and revises the change, then asks for spec approval again" },
+        { id: "pause", outcome: "Leave the change unapproved for now" }
+      ], "answer");
+    error.decision.questions = questions;
+    return error;
+  }
+
   function resolveChange(id, flags) {
     const decisionFlags = ["approve-spec", "continue-review", "accept-target-edits"];
     if (decisionFlags.some((key) => flags[key])) {
@@ -1571,14 +1599,16 @@ export function createChangeLifecycle({
         if (approvalRoot !== root && !amended &&
             agreementIdentity(approvalRoot, id) !== agreementIdentity(root, id) &&
             !repairWhitespaceDrift(root, approvalRoot, id)) {
-          const drift = agreementDriftError(id, approvalRoot);
-          fail(drift.message, 1, { owner: drift.owner, boundary: drift.boundary, code: drift.code });
+          const saved = restoreDriftedAgreement(root, approvalRoot, id);
+          if (saved) console.error(agreementRestoredNotice(id, saved));
+          else {
+            const drift = agreementDriftError(id, approvalRoot);
+            fail(drift.message, 1, { owner: drift.owner, boundary: drift.boundary, code: drift.code });
+          }
         }
         // Consent covers a settled agreement: an open question is answered and
         // revised into the change first, never approved around.
-        const designPath = join(approvalRoot, "openspec", "changes", id, "design.md");
-        const openQuestions = existsSync(designPath)
-          ? openQuestionItems(readFileSync(designPath, "utf8")) : [];
+        const openQuestions = designOpenQuestions(id, approvalRoot);
         if (openQuestions.length)
           fail("resolve the design's open questions before approving the spec:\n  - " +
             `${openQuestions.join("\n  - ")}\nAsk the user, record the answers, and revise the change.`);
@@ -2361,6 +2391,7 @@ export function createChangeLifecycle({
     inspectRevision,
     reviseChange,
     amendChange,
-    resolveChange
+    resolveChange,
+    openQuestionsDecision
   };
 }

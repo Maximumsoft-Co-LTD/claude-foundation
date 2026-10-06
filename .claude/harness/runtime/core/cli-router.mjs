@@ -16,6 +16,7 @@ export async function routeRuntimeCommand(command, values, api) {
     inspectRevision,
     reviseChange,
     resolveChange,
+    approvalQuestionAction = null,
     recordTargetRestore,
     abandonChange,
     waiveGate,
@@ -397,6 +398,11 @@ export async function routeRuntimeCommand(command, values, api) {
           die(`advance --approve-spec requires --decision-ref <ref> naming the user's approval`);
         if (flags.through && !["build", "proven", "archived"].includes(flags.through))
           die("advance --through must be build|proven|archived");
+        const ask = approvalQuestionAction?.(rest[0], flags.through || null);
+        if (ask) {
+          console.log(JSON.stringify(ask, null, flags.pretty ? 2 : 0));
+          return;
+        }
         resolveChange(rest[0], { "approve-spec": true, "decision-ref": flags["decision-ref"] });
         if (!flags.through) return;
         delete flags["approve-spec"];

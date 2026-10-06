@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { agreementIdentity, assertSpecApproval, currentWaivers,
+import { agreementDriftError, agreementIdentity, assertSpecApproval, currentWaivers,
   repairWhitespaceDrift, REVIEW_DISPATCH_TIMEOUT_MS } from "../runtime/core/user-decisions.mjs";
 import { advanceFailureAction, createAdvanceRuntime } from "../runtime/workflow/advance-runtime.mjs";
 import { workspaceCapabilityValue } from "../runtime/core/execution-contract.mjs";
@@ -36,8 +36,10 @@ test("spec approval binds semantics and revision, not task completion", (t) => {
   state.specApproval = { required: true, identity: agreementIdentity(workspace, "demo"), revision: 1 };
   assert.doesNotThrow(() => assertSpecApproval(root, "demo", state));
   state.amendments = [];
-  // Without an amendment no single approval identity can equal both packets.
-  assert.throws(() => assertSpecApproval(root, "demo", state), { code: "AGREEMENT_DRIFT" });
+  // Without an amendment the target packet is canonical: the harness restores
+  // the isolated packet to it, so consent is checked against the target alone.
+  assert.throws(() => assertSpecApproval(root, "demo", state), { code: "SPEC_APPROVAL_REQUIRED" });
+  assert.equal(readFileSync(join(workspacePacket, "proposal.md"), "utf8"), "Delete the greeting");
 });
 
 // A consumer Build widened a task's `[paths:]` in its isolated packet; the
@@ -66,12 +68,21 @@ test("task write scope is bookkeeping and packet drift is agent repair", (t) => 
   assert.doesNotThrow(() => assertSpecApproval(root, "demo", state));
   writeFileSync(join(workspace, "openspec/changes/demo/tasks.md"), tasks("src/a.ts,src/b.ts"));
   assert.doesNotThrow(() => assertSpecApproval(root, "demo", state));
-  // Changing what a task does still changes consent.
+  // Changing what a task does is not consented: the harness restores the
+  // approved task, keeps its bookkeeping, and saves the edit for an amendment.
   writeFileSync(join(workspace, "openspec/changes/demo/tasks.md"),
-    "- [ ] T001 Delete it [paths:src/a.ts] — verify: npm test\n");
-  let drift;
-  assert.throws(() => assertSpecApproval(root, "demo", state), (error) => (drift = error, true));
-  assert.equal(drift.code, "AGREEMENT_DRIFT");
+    "- [x] T001 Delete it [paths:src/a.ts] — verify: npm test\n");
+  const notices = [];
+  const original = console.error;
+  console.error = (line) => notices.push(String(line));
+  try { assert.doesNotThrow(() => assertSpecApproval(root, "demo", state)); }
+  finally { console.error = original; }
+  assert.equal(readFileSync(join(workspace, "openspec/changes/demo/tasks.md"), "utf8"), tasks("src/a.ts"));
+  const saved = notices.join("\n").match(/saved the edit at (\S+)\. /)?.[1];
+  assert.ok(saved, notices.join("\n"));
+  assert.match(readFileSync(join(saved, "tasks.md"), "utf8"), /Delete it/);
+  // When restoring cannot reproduce consent, the agent still gets the amend route.
+  const drift = agreementDriftError("demo", workspace);
   const action = advanceFailureAction("demo", drift, { through: "build" });
   assert.equal(action.action, "REPAIR");
   assert.equal(action.actor, "agent");
@@ -116,7 +127,7 @@ test("an old expired review window never stops advance or asks the user", () => 
 // A formatter pass over the isolated packet is not agreement drift: the
 // harness restores the target's bytes and keeps checkbox and `[paths:]`
 // bookkeeping. A wording change is still drift and is left untouched.
-test("whitespace-only packet drift is restored by the harness, wording drift is not", (t) => {
+test("whitespace drift is repaired in place and wording drift is restored with the edit saved", (t) => {
   const root = mkdtempSync(join(tmpdir(), "spec-whitespace-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const write = (base, files) => {
@@ -139,6 +150,9 @@ test("whitespace-only packet drift is restored by the harness, wording drift is 
 
   writeFileSync(join(packet, "proposal.md"), "# Greeting\n\nDelete the greeting.\n");
   assert.equal(repairWhitespaceDrift(root, workspace, "demo"), false);
-  assert.throws(() => assertSpecApproval(root, "demo", state), { code: "AGREEMENT_DRIFT" });
-  assert.equal(readFileSync(join(packet, "proposal.md"), "utf8"), "# Greeting\n\nDelete the greeting.\n");
+  const original = console.error;
+  console.error = () => {};
+  try { assert.doesNotThrow(() => assertSpecApproval(root, "demo", state)); }
+  finally { console.error = original; }
+  assert.equal(readFileSync(join(packet, "proposal.md"), "utf8"), "# Greeting\n\nChange the greeting.\n");
 });

@@ -218,8 +218,13 @@ export function runSandboxSetupCommand(context, record, command, timeoutMs, cwd,
     const cause = result.error
       ? String(result.error.code || result.error.message)
       : `exit ${result.status}`;
-    const tail = `${result.stdout || ""}\n${result.stderr || ""}`
-      .trim().split("\n").filter(Boolean).slice(-5).join("\n    ");
+    const lines = `${result.stdout || ""}\n${result.stderr || ""}`
+      .trim().split("\n").filter(Boolean);
+    // Kept with the record so a failed setup the harness cannot finish is
+    // handed to the agent with its command, directory, and output.
+    record.setup.cwd = cwd;
+    record.setup.logTail = [cause, ...lines.slice(-40)].join("\n").slice(-4000);
+    const tail = lines.slice(-5).join("\n    ");
     context.output.error(`WARNING: sandbox setup command failed${
       label ? ` for '${label}'` : ""} (${cause}) in the isolated workspace. ` +
       `Harness preparation will repair or route this failure before Build.${

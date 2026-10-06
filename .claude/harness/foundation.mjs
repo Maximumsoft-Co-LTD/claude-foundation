@@ -54,7 +54,7 @@ import { createInstructionRecorder } from "./runtime/core/instruction-recorder.m
 import { createAgentPlanner, createModelRouter } from "./runtime/workflow/agent-planning.mjs";
 import { createAgentDispatchRuntime } from "./runtime/workflow/agent-dispatch.mjs";
 import {
-  ADVANCE_PROTOCOL_VERSION, createAdvanceRuntime, hasValidLandGrant,
+  ADVANCE_PROTOCOL_VERSION, advanceFailureAction, createAdvanceRuntime, hasValidLandGrant,
   prepareAdvanceBuild, runAdvanceProof
 } from "./runtime/workflow/advance-runtime.mjs";
 import { automaticReviewRun, currentDeliveryProof } from "./runtime/workflow/advance-recovery.mjs";
@@ -1467,7 +1467,8 @@ const {
   inspectRevision,
   reviseChange,
   amendChange,
-  resolveChange
+  resolveChange,
+  openQuestionsDecision
 } = createChangeLifecycle({
   root: ROOT,
   policy: foundationPolicy,
@@ -2196,6 +2197,11 @@ await routeRuntimeCommand(command, values, {
   reviseChange,
   amendChange,
   resolveChange,
+  // An approval over open questions becomes the user's questions, not a refusal.
+  approvalQuestionAction: (id, through = null) => {
+    const decision = openQuestionsDecision(id);
+    return decision ? advanceFailureAction(id, decision, { stage: "build", through }) : null;
+  },
   abandonChange,
   waiveGate,
   showChanges,

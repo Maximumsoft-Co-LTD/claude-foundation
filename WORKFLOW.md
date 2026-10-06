@@ -131,7 +131,9 @@ records every settled intake answer as a durable decision (context, choice,
 rejected options, decided by), adds an optional overview diagram, assumptions,
 open questions, and a task overview with its dependency graph, fills the file
 map's task column from task `[paths:]`, and omits sections the change leaves
-empty. Spec approval is refused while any open question remains.
+empty. While any open question remains, an approval request returns those
+questions as one `ASK_USER` decision instead of recording consent; the agent
+asks them, records the answers, and asks for approval again.
 
 Before compilation, the harness requires every risk-derived discovery dimension
 to be covered, marked not applicable with a rationale, investigated, or resolved
@@ -345,8 +347,10 @@ The harness also absorbs what used to cost a turn: the agent's scratchpad
 (`<tmp>/claude-*`) and `~/.claude` are writable in every phase unless they hold
 the project or a repository the change writes; after Prove, edits inside the
 isolated workspace only make the proof stale; during Land, test and script
-runners may run; and a whitespace-only formatter pass over the isolated packet
-is restored to the target's bytes instead of reported as agreement drift. A
+runners may run; and an isolated packet edited outside a semantic amendment is
+restored to the approved text by the harness (whitespace in place; any other
+edit saved under `.foundation/agreement-drift/<change>/` for an amendment), not
+reported as drift for the agent to undo. A
 workspace never borrows the checkout's dependencies. Sandbox creation
 prints a NOTE with the exact `sandbox.setupCommand` snippet when the project
 has a lockfile but declares no setup command.
@@ -566,11 +570,17 @@ explicitly with `[claims:<claim-id>]`.
 Every phase gate follows the same convergence rule: collect independent
 findings, repair one dependency-ordered in-contract batch, and selectively
 rerun invalidated checks. Product repair has no fixed cycle ceiling while its
-semantic progress identity changes. Two unchanged automated transitions produce
-the typed no-progress boundary.
+semantic progress identity changes. Two unchanged automated transitions hand
+the stuck step to the agent as a no-progress repair carrying what the step
+returned.
 
-Thrown Build, Prove, or Land dependencies are captured in the same action
-envelope with their original reason and exact recovery route. Decisions,
+Harness automation that cannot finish is handed to the agent rather than
+stopping the flow: a failed sandbox setup or OpenSpec preparation returns an
+agent `REPAIR` with `recovery.type: HANDOFF` and a `handoff` naming the step,
+its exact command, working directory, and output. The agent finishes the step
+(or fixes its declared setup) and resumes. Thrown Build, Prove, or Land
+dependencies are captured in the same action envelope with their original
+reason and exact recovery route. Decisions,
 authority, resources, conflicts, and repeated no-progress preserve state.
 `proof readiness`, `proof advance`, `proof run`, and direct authority commands
 remain diagnostic or integration primitives behind `advance`.
@@ -921,8 +931,9 @@ observations and answers live in `advanceRecovery` on the existing runtime
 record. The third unchanged repair handoff across invocations first returns one
 agent-owned `REPAIR` (`TRY_ALTERNATE_APPROACH`) asking for a materially different
 approach inside the approved agreement; only a further unchanged handoff
-requests a decision. Two unchanged internal automated transitions request a
-decision directly. New process sessions,
+requests a decision. Two unchanged internal automated transitions, and a sandbox
+sync conflict, first return that agent repair and follow the same ladder. New
+process sessions,
 proof run IDs, diagnostic wording, retry counters and bookkeeping revisions do not reset progress.
 Relevant content, agreement, execution policy or actual delivery changes do.
 Read-only inspection never counts as a repair attempt or records an answer.

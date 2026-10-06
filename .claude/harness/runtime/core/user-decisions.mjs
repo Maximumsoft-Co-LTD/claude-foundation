@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Review is bounded by its rounds (full, then one delta), not by elapsed
@@ -96,12 +96,18 @@ export function assertSpecApproval(root, id, state, { workspace = true } = {}) {
   if (revisionMatches && currentAmendment && workspaceApproved) return;
   // Without an amendment the target packet is canonical, so an isolated packet
   // that differs from it can never be approved: recording consent binds one
-  // identity that cannot equal both. That is agent-owned repair, never a user
-  // decision or a user-run copy between checkouts.
+  // identity that cannot equal both. The harness restores it (whitespace in
+  // place, any other edit saved aside for an amendment); only a restore that
+  // cannot reproduce consent is agent repair, never a user decision.
   if (workspaceAgreement && !currentAmendment &&
       agreementIdentity(root, id) !== agreementIdentity(state.workspace.path, id)) {
     if (repairWhitespaceDrift(root, state.workspace.path, id))
       return assertSpecApproval(root, id, state, { workspace });
+    const saved = restoreDriftedAgreement(root, state.workspace.path, id);
+    if (saved) {
+      console.error(agreementRestoredNotice(id, saved));
+      return assertSpecApproval(root, id, state, { workspace });
+    }
     throw agreementDriftError(id, state.workspace.path);
   }
   throw userDecisionError("SPEC_APPROVAL_REQUIRED",
@@ -204,6 +210,47 @@ export function repairWhitespaceDrift(root, workspacePath, id) {
   if (agreementIdentity(root, id) === agreementIdentity(workspacePath, id)) return true;
   for (const [name, , original] of writes) writeFileSync(join(isolated, name), original);
   return false;
+}
+
+// An isolated packet edited outside a semantic amendment cannot be approved,
+// and asking the agent to undo it cost a turn. The harness saves the edited
+// packet, puts the approved text back (keeping checkbox and `[paths:]`
+// bookkeeping), and returns where the edit was saved so the agent can turn a
+// real change of intent into one amendment. Null when restoring could not
+// reproduce the approved identity; nothing is changed then.
+export function restoreDriftedAgreement(root, workspacePath, id, stamp = Date.now()) {
+  const target = join(root, "openspec", "changes", id);
+  const isolated = join(workspacePath, "openspec", "changes", id);
+  if (!existsSync(target) || !existsSync(isolated)) return null;
+  const saved = join(root, ".foundation", "agreement-drift", id, String(stamp));
+  mkdirSync(saved, { recursive: true });
+  cpSync(isolated, saved, { recursive: true });
+  const wanted = new Set(packetFiles(target));
+  for (const name of packetFiles(isolated)) if (!wanted.has(name)) rmSync(join(isolated, name), { force: true });
+  for (const name of wanted) {
+    let content = readFileSync(join(target, name), "utf8");
+    const mine = join(isolated, name);
+    if (name === "tasks.md" && existsSync(mine)) {
+      const bookkeeping = new Map(readFileSync(mine, "utf8").split("\n")
+        .filter((line) => CHECKBOX.test(line)).map((line) => [taskKey(line), line]));
+      content = content.split("\n").map((line) =>
+        CHECKBOX.test(line) && bookkeeping.has(taskKey(line)) ? bookkeeping.get(taskKey(line)) : line)
+        .join("\n");
+    }
+    mkdirSync(join(mine, ".."), { recursive: true });
+    writeFileSync(mine, content);
+  }
+  if (agreementIdentity(root, id) === agreementIdentity(workspacePath, id)) return saved;
+  rmSync(isolated, { recursive: true, force: true });
+  cpSync(saved, isolated, { recursive: true });
+  rmSync(saved, { recursive: true, force: true });
+  return null;
+}
+
+export function agreementRestoredNotice(id, saved) {
+  return `NOTICE: the isolated agreement for '${id}' was edited outside a semantic amendment; ` +
+    `the harness restored the approved text and saved the edit at ${saved}. If that edit ` +
+    `changes intent, express it with 'claude-foundation change amend ${id} <amendment.json>'.`;
 }
 
 export function agreementDriftError(id, workspacePath) {

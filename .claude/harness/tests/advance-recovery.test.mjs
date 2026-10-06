@@ -123,7 +123,9 @@ test("restarted advance restores an interrupted amendment before checking approv
   }
 });
 
-test("sync conflicts are preserved and request a decision before another attempt", async () => {
+// A sync conflict is the agent's to resolve first; only repeated conflict
+// without progress reaches the user.
+test("sync conflicts go to the agent first and reach the user only after repeated attempts", async () => {
   let syncs = 0;
   const f = fixture({ hasLandGrant: () => true,
     recoverSandbox: async () => { syncs++; return { status: "CONFLICT", conflicts: ["app.js"] }; },
@@ -131,10 +133,14 @@ test("sync conflicts are preserved and request a decision before another attempt
   });
   f.setState({ status: "proven" }); f.setCursor({ status: "PASS", workspaceHash: "original" });
   const value = await f.runtime().advanceThrough("demo", "archived");
-  assert.equal(value.action, "ASK_USER");
+  assert.equal(value.action, "REPAIR");
+  assert.equal(value.owner, "agent");
+  assert.equal(value.legacyAction, "REPAIR_SYNC_CONFLICT");
   assert.equal(value.details.status, "CONFLICT");
-  await f.runtime().advanceThrough("demo", "archived");
-  assert.equal(syncs, 1);
+  let last = value;
+  for (let index = 0; index < 4 && last.action !== "ASK_USER"; index++)
+    last = await f.runtime().advanceThrough("demo", "archived");
+  assert.equal(last.action, "ASK_USER");
   assert.equal(f.state().status, "proven");
 });
 
@@ -242,8 +248,14 @@ test("repair counters and fresh proof IDs alone do not manufacture progress", as
   } });
   const value = await f.runtime().advanceThrough("demo", "proven");
   assert.equal(calls, 2);
-  assert.equal(value.action, "ASK_USER");
-  assert.ok(value.decision.fingerprint);
+  assert.equal(value.action, "REPAIR", "the agent gets the stuck step before the user is asked");
+  assert.equal(value.owner, "agent");
+  assert.equal(value.recovery.type, "HANDOFF");
+  let last = value;
+  for (let index = 0; index < 4 && last.action !== "ASK_USER"; index++)
+    last = await f.runtime().advanceThrough("demo", "proven");
+  assert.equal(last.action, "ASK_USER");
+  assert.ok(last.decision.fingerprint);
 });
 
 test("malformed legacy decisions retain honest choices and advance v6 rejects empty guidance", () => {
@@ -338,8 +350,14 @@ test("partial Land checkpoints converge, but a stuck checkpoint asks before repe
     } });
     f.setState({ status: "proven" }); f.setCursor({ status: "PASS", workspaceHash: "original" });
     const value = await f.runtime().advanceThrough("demo", "archived");
-    assert.equal(value.action, progresses ? "DONE" : "ASK_USER");
+    assert.equal(value.action, progresses ? "DONE" : "REPAIR");
     assert.equal(runs, progresses ? 3 : 2);
+    if (progresses) continue;
+    assert.equal(value.owner, "agent");
+    let last = value;
+    for (let index = 0; index < 4 && last.action !== "ASK_USER"; index++)
+      last = await f.runtime().advanceThrough("demo", "archived");
+    assert.equal(last.action, "ASK_USER", "a stuck checkpoint still asks before repeating forever");
   }
 });
 

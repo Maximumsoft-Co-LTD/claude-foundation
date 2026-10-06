@@ -581,11 +581,12 @@ listings elsewhere name this file as their source rather than restating it.
 | `.foundation/attestations/` | Unattended-execution challenges and consumed nonces |
 | `.foundation/instruction-manifests/` | Instruction provenance per command |
 | `.foundation/recovery/` | Quarantined abandoned changes and orphaned runtime state |
+| `.foundation/agreement-drift/` | Isolated-packet edits made outside an amendment, saved when the harness restores the approved text |
 | `.foundation/prototypes/` | Disposable comparison prototypes, never admissible as evidence |
 | `.foundation/policy.json` | Optional project rules mapping paths to required capabilities |
 | `.foundation/install-manifest.txt` | Installer-owned record of managed files |
 
-`intake/`, `repository-sandboxes/`, `prototypes/`, `recovery/`, and `policy.json` appear
+`intake/`, `repository-sandboxes/`, `prototypes/`, `recovery/`, `agreement-drift/`, and `policy.json` appear
 only once something creates them.
 
 Receipts are reusable only while their bound inputs remain unchanged. Every

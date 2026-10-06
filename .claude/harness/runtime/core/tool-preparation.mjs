@@ -82,7 +82,8 @@ export function executionPreparationValue({
       setupCommand: repository.setupCommand || null,
       setupStatus: runtime.setup?.status ||
         (repository.setupCommand ? "pending" : "not-required"),
-      setupExitCode: runtime.setup?.exitCode ?? null
+      setupExitCode: runtime.setup?.exitCode ?? null,
+      setupLog: runtime.setup?.logTail || null
     };
   });
   const issues = repositoryRows.filter((row) => row.setupStatus === "failed")
@@ -90,7 +91,13 @@ export function executionPreparationValue({
       code: "REPOSITORY_SETUP_FAILED",
       owner: "harness",
       repository: row.id,
-      summary: `isolated setup failed for repository '${row.id}'`
+      summary: `isolated setup failed for repository '${row.id}'`,
+      handoff: {
+        step: `sandbox setup for repository '${row.id}'`,
+        command: row.setupCommand,
+        cwd: row.workspace,
+        log: row.setupLog
+      }
     }));
   if (openSpec?.level === "error") issues.push({
     code: "OPENSPEC_UNAVAILABLE",
@@ -142,7 +149,14 @@ export function ensureProjectOpenSpec({
         tool: "openspec",
         installExitCode: installed.status ?? null,
         detail: detail.slice(-2000),
-        observed
+        observed,
+        handoff: {
+          step: "prepare the pinned OpenSpec CLI",
+          command: "npm install --prefix .foundation/tools --ignore-scripts --no-audit " +
+            "--no-fund --save-exact @fission-ai/openspec@1.7.0",
+          cwd: root,
+          log: detail.slice(-2000) || null
+        }
       });
   }
   return { ...observed, source: ".foundation/tools" };
@@ -153,6 +167,6 @@ export function assertExecutionPreparationReady(plan) {
   throw new ExecutionPreparationError(
     plan.issues.map((issue) => issue.summary).join("; ") ||
       "execution preparation is not ready",
-    { plan }
+    { plan, handoff: plan.issues.find((issue) => issue.handoff?.command)?.handoff || null }
   );
 }

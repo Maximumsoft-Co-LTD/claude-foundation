@@ -316,6 +316,19 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
     resolveChange: () => {}, showAdvance: (...args) => { advanced = args; }
   });
   assert.equal(advanced, null, "approval alone records and stops");
+  // Open questions turn an approval into the user's questions, never a refusal.
+  const asked = [];
+  const originalLog = console.log;
+  console.log = (line) => asked.push(String(line));
+  try {
+    await route("advance", ["change", "--approve-spec", "--decision-ref", "user://ok",
+      "--through", "build"], {
+      approvalQuestionAction: (id, through) => ({ action: "ASK_USER", changeId: id, through }),
+      resolveChange: () => assert.fail("approval is not recorded over open questions"),
+      showAdvance: () => assert.fail("Build does not start over open questions")
+    });
+  } finally { console.log = originalLog; }
+  assert.deepEqual(JSON.parse(asked[0]), { action: "ASK_USER", changeId: "change", through: "build" });
   await assert.rejects(route("advance", ["change", "--approve-spec", "--decision-ref", "r",
     "--inspect"], { resolveChange: () => {} }), /combines only with --decision-ref and --through/);
   await route("describe", ["--json"], { describeCommand: () => {} });

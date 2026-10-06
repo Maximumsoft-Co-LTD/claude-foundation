@@ -270,7 +270,9 @@ test("spec approval is explicit, content-bound, and separate from edits", (t) =>
   assert.throws(() => assertSpecApproval(value.root, "atomic-change", state()), { code: "SPEC_APPROVAL_REQUIRED" });
 });
 
-test("spec approval refuses to bind an unamended isolated packet that drifted", (t) => {
+// An unamended isolated packet that drifted is restored by the harness before
+// consent binds, so approval covers the approved text and the edit is saved.
+test("spec approval restores a drifted unamended isolated packet before binding", (t) => {
   const value = fixture(t);
   value.lifecycle.startAtomic(value.draftPath);
   const statePath = join(value.runtime, "atomic-change.json");
@@ -279,10 +281,18 @@ test("spec approval refuses to bind an unamended isolated packet that drifted", 
     { recursive: true });
   writeFileSync(join(workspace, "openspec/changes/atomic-change/proposal.md"), "Edited in place");
   writeJson(statePath, { ...JSON.parse(readFileSync(statePath)), workspace: { path: workspace } });
-  assert.throws(() => value.lifecycle.resolveChange("atomic-change", {
-    "approve-spec": true, "decision-ref": "fixture://approval"
-  }), /edited outside a semantic amendment/);
-  assert.equal(JSON.parse(readFileSync(statePath)).specApproval.identity, undefined);
+  const notices = [];
+  const original = console.error;
+  console.error = (line) => notices.push(String(line));
+  try {
+    value.lifecycle.resolveChange("atomic-change", {
+      "approve-spec": true, "decision-ref": "fixture://approval"
+    });
+  } finally { console.error = original; }
+  assert.match(notices.join("\n"), /restored the approved text and saved the edit/);
+  assert.equal(readFileSync(join(workspace, "openspec/changes/atomic-change/proposal.md"), "utf8"),
+    readFileSync(join(value.changes, "atomic-change/proposal.md"), "utf8"));
+  assert.ok(JSON.parse(readFileSync(statePath)).specApproval.identity);
 });
 
 test("accepting target edits binds the exact edited bytes to a user decision", (t) => {
