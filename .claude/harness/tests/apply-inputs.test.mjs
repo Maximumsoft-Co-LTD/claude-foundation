@@ -161,6 +161,41 @@ test("git apply inputs names conflicting generated artifacts with the harness re
   assert.equal(details.owner, "agent");
 });
 
+test("git apply inputs restores conflicting regenerable artifacts itself, once", () => {
+  const writes = [];
+  let checks = 0;
+  const fixture = applyContext({
+    sandboxDiffNames: () => ["__pycache__/a.pyc"],
+    spawn: () => (checks += 1) === 1
+      ? { status: 1, stderr: "error: __pycache__/a.pyc: patch does not apply" }
+      : { status: 0, stderr: "" },
+    writeFile: (path, bytes) => writes.push([path, bytes.toString()]),
+    removePath: assert.fail
+  });
+  assert.deepEqual(gitApplyInputsOperation(fixture.context, "change", "/sandbox"),
+    ["__pycache__/a.pyc"]);
+  assert.deepEqual(writes, [["/target/__pycache__/a.pyc", "base"]]);
+  assert.equal(checks, 2);
+
+  const stuck = applyContext({
+    sandboxDiffNames: () => ["__pycache__/a.pyc"],
+    spawn: () => ({ status: 1, stderr: "error: __pycache__/a.pyc: patch does not apply" }),
+    writeFile: () => {}, removePath: assert.fail
+  });
+  assert.throws(() => gitApplyInputsOperation(stuck.context, "change", "/sandbox"),
+    /--restore-target __pycache__\/a\.pyc'/);
+
+  const dirtyAtIsolation = applyContext({
+    sandboxDiffNames: () => ["__pycache__/a.pyc"],
+    spawn: () => ({ status: 1, stderr: "error: __pycache__/a.pyc: patch does not apply" }),
+    blockWithDecision: (id, code) => { throw new Error(code); },
+    writeFile: assert.fail, removePath: assert.fail
+  });
+  dirtyAtIsolation.state.workspace.targetDirty = { "__pycache__/a.pyc": "user" };
+  assert.throws(() => gitApplyInputsOperation(dirtyAtIsolation.context, "change", "/sandbox"),
+    /target-edit-conflict/);
+});
+
 test("git apply inputs asks the user before touching conflicting non-generated target edits", () => {
   const blocked = [];
   const fixture = applyContext({

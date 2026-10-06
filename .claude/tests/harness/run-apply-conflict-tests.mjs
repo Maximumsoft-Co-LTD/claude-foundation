@@ -199,7 +199,7 @@ test("a mode-only executable change is applied", () => {
 
 // R1: a test run in the main checkout rewrote a tracked `__pycache__/*.pyc`,
 // Land's patch no longer applied, and the only offered fix was a Git command
-// the Land guard blocks. Land now names the paths and restores them itself.
+// the Land guard blocks. Land now restores regenerable artifacts itself.
 function trackedArtifactProject() {
   const fixture = project();
   mkdirSync(join(fixture.root, "__pycache__"), { recursive: true });
@@ -209,38 +209,30 @@ function trackedArtifactProject() {
   return fixture;
 }
 
-test("a regenerated tracked artifact on the target is restored by Land on request", () => {
+test("a regenerated tracked artifact on the target is restored by Land itself", () => {
   const fixture = trackedArtifactProject();
   const pyc = "__pycache__/app.cpython-312.pyc";
   const proven = Buffer.from([0, 9, 9, 9]);
   provenEdit(fixture, "Artifact probe", "artifact-probe", pyc, proven);
   // A test run in the main checkout after isolation.
   writeFileSync(join(fixture.root, pyc), Buffer.from([0, 7, 7, 7]));
-  const refused = cli(fixture, "sandbox", "apply", "artifact-probe");
-  assert.notEqual(refused.status, 0);
-  assert.match(refused.stderr, /generated artifact\(s\) changed in the main checkout after isolation: __pycache__\/app\.cpython-312\.pyc/);
-  assert.match(refused.stderr,
-    /'claude-foundation advance artifact-probe --through archived --restore-target __pycache__\/app\.cpython-312\.pyc'/);
-  assert.doesNotMatch(refused.stderr, /git checkout/);
-  const recorded = cli(fixture, "advance", "artifact-probe", "--restore-target", pyc);
-  assert.equal(recorded.status, 0, recorded.stderr);
-  assert.match(recorded.stdout, /TARGET RESTORE RECORDED artifact-probe/);
   const applied = cli(fixture, "sandbox", "apply", "artifact-probe");
   assert.equal(applied.status, 0, applied.stderr);
+  assert.doesNotMatch(applied.stderr, /--restore-target|git checkout/);
   assert.deepEqual(readFileSync(join(fixture.root, pyc)), proven);
 });
 
-test("a restore recorded against other bytes never overwrites a later target edit", () => {
+test("a generated artifact already dirty at isolation is never restored without the user", () => {
   const fixture = trackedArtifactProject();
   const pyc = "__pycache__/app.cpython-312.pyc";
+  const dirty = Buffer.from([0, 5, 5, 5]);
+  writeFileSync(join(fixture.root, pyc), dirty);
   provenEdit(fixture, "Artifact probe", "artifact-probe", pyc, Buffer.from([0, 9, 9, 9]));
   writeFileSync(join(fixture.root, pyc), Buffer.from([0, 7, 7, 7]));
-  assert.equal(cli(fixture, "advance", "artifact-probe", "--restore-target", pyc).status, 0);
-  const later = Buffer.from([0, 5, 5, 5]);
-  writeFileSync(join(fixture.root, pyc), later);
   const refused = cli(fixture, "sandbox", "apply", "artifact-probe");
   assert.notEqual(refused.status, 0);
-  assert.deepEqual(readFileSync(join(fixture.root, pyc)), later);
+  assert.match(refused.stdout, /"kind": "target-edit-conflict"/);
+  assert.deepEqual(readFileSync(join(fixture.root, pyc)), Buffer.from([0, 7, 7, 7]));
 });
 
 test("restoring a non-generated target edit requires the user's decision", () => {

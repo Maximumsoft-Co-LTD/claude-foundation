@@ -230,8 +230,27 @@ export function restoreAuthorizedTargetPaths(context, state, names) {
   return restored;
 }
 
+function targetSnapshot(state) {
+  return state.workspace?.targetDirty || state.workspace?.preexisting || {};
+}
+
+// A conflict made only of regenerable artifacts that were clean at isolation
+// is a test run in the main checkout, not user work. Land returns them to the
+// sandbox base itself, once, instead of handing a restore command back.
+function restoreRegenerableConflicts(context, state, paths) {
+  if (!paths.length || !context.writeFile || !context.removePath ||
+      restorableTargetPaths(paths, targetSnapshot(state)).length !== paths.length) return false;
+  const base = context.sandboxBase(state);
+  for (const path of paths) {
+    const shown = context.gitBuffer(["show", `${base}:${path}`], context.root);
+    if (shown.status === 0) context.writeFile(join(context.root, path), shown.stdout);
+    else context.removePath(join(context.root, path));
+  }
+  return true;
+}
+
 function stopForTargetConflict(context, id, state, paths, cause) {
-  const snapshot = state.workspace?.targetDirty || state.workspace?.preexisting || {};
+  const snapshot = targetSnapshot(state);
   const stop = targetConflictStop({ changeId: id, paths, snapshot, cause });
   if (stop.decision && context.blockWithDecision)
     return context.blockWithDecision(id, stop.code, stop.decision);
@@ -239,7 +258,7 @@ function stopForTargetConflict(context, id, state, paths, cause) {
   return context.fail(stop.message, 1, stop.details);
 }
 
-export function gitApplyInputsOperation(context, id, sandboxPath) {
+export function gitApplyInputsOperation(context, id, sandboxPath, { regenerated = false } = {}) {
   const state = context.loadRuntime(id);
   const names = context.sandboxDiffNames(id, sandboxPath, state);
   restoreAuthorizedTargetPaths(context, state, names);
@@ -269,6 +288,8 @@ export function gitApplyInputsOperation(context, id, sandboxPath) {
       const conflicts = rejectedPaths(check.stderr);
       if (!conflicts.length)
         context.fail(`sandbox diff conflicts with target: ${check.stderr.trim()}`);
+      if (!regenerated && restoreRegenerableConflicts(context, state, conflicts))
+        return gitApplyInputsOperation(context, id, sandboxPath, { regenerated: true });
       stopForTargetConflict(context, id, state, conflicts, "sandbox diff conflicts with target");
     }
   }
@@ -287,6 +308,8 @@ export function gitApplyInputsOperation(context, id, sandboxPath) {
     const shown = context.gitBuffer(["show", `${base}:${path}`], context.root);
     return shown.status !== 0 || !target.equals(shown.stdout);
   });
+  if (clobbered.length && !regenerated && restoreRegenerableConflicts(context, state, clobbered))
+    return gitApplyInputsOperation(context, id, sandboxPath, { regenerated: true });
   if (clobbered.length)
     stopForTargetConflict(context, id, state, clobbered,
       "apply would overwrite uncommitted target edits");
@@ -1036,8 +1059,6 @@ export function createApplyRuntime({
     const cli = spawnSync("openspec", ["archive", id, "--yes"], { cwd: root, encoding: "utf8" });
     if (cli.status !== 0) fail(`OpenSpec archive failed: ${(cli.stderr || cli.stdout).trim()}`);
     archiveCheckpoint("after-archive-command", state);
-    transitionLifecycleState(state, "archived", "openspec-archive-complete");
-    state.archivedAt = now();
     state.preArchiveWorkspaceHash = preArchiveWorkspaceHash;
     state.archivedChangePath = archivedChangeRelativePath(id);
     // `land.status` is a breadcrumb, not the saga's position. Resume branches on
@@ -1058,6 +1079,11 @@ export function createApplyRuntime({
       saveRuntime(state);
       failSpecSync(specViolations);
     }
+    // `archived` is reported only once the merged specs are verified; a crash
+    // or violation before this resumes through interrupted-archive recovery,
+    // which re-verifies from the retained inputs.
+    transitionLifecycleState(state, "archived", "openspec-archive-complete");
+    state.archivedAt = now();
     recordDeliveryIntegrity(state, state.archivedChangePath, specSyncInputs);
     delete state.specSyncInputs;
     delete state.specSyncViolations;

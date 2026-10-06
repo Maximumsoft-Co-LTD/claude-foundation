@@ -575,11 +575,11 @@ internal compatibility route that the agent does not call.
 Tests and checks run only inside the returned workspace, never in the main
 checkout. If Land's apply conflicts with target files that are regenerable
 artifacts (for example `__pycache__/*.pyc`) and were clean at isolation,
-`advance` returns a REPAIR whose command,
-`advance <change> --through archived --restore-target <paths>`, restores them to
-the sandbox base inside Land. Any other conflicting target edit is a user
-decision listing the files; `--restore-target` then requires `--decision-ref`,
-and a file changed after the restore was recorded is never overwritten.
+Land restores them to the sandbox base itself and continues. Any other
+conflicting target edit is a user decision listing the files; its restore
+option, `advance <change> --through archived --restore-target <paths>`, requires
+`--decision-ref`, and a file changed after the restore was recorded is never
+overwritten.
 Land has one user-visible
 goal: place the exact current workspace projection in the declared main
 workspace. The Harness binds a resumable grant to the exact change, workspace
@@ -1086,6 +1086,7 @@ this workflow names them only where their lifecycle meaning matters.
 - Missing, failed, inconclusive, invalid, or stale proof is preserved as Land
   assurance and cannot be misreported as passing.
 - A sandbox diff cannot overwrite a conflicting target.
-- OpenSpec performs semantic spec sync before archive.
+- OpenSpec performs semantic spec sync before archive; the change is recorded
+  `archived` only after the harness verifies the merged specs.
 - Required assurance is never dropped because of size or budget.
 - A delivery flow is complete only at `archived`.
