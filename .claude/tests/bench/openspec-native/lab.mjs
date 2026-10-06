@@ -234,7 +234,12 @@ export function runScenarioLab({ matrixPath, scenarioId, outputRoot = DEFAULT_RE
   if (plan.budget.tool_calls !== undefined)
     args.push("--max-tool-calls", String(plan.budget.tool_calls));
   if (scenario.execution === "paid")
-    args.push("--test-self-review", "true", "--test-land", "true");
+    args.push("--test-self-review", "true", "--test-land", "true",
+      // A fresh disposable consumer is never a trusted workspace, so headless
+      // Claude ignores its settings allow-list. Pass the installer's documented
+      // headless route (edits plus the harness CLI) instead of trusting it.
+      "--claude-arg", "--permission-mode", "--claude-arg", "acceptEdits",
+      "--claude-arg", "--allowedTools", "--claude-arg", "Bash(claude-foundation *)");
   const startedAt = new Date().toISOString();
   const source = sourceRevision();
   let result;
