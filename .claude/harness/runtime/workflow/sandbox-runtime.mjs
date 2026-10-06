@@ -15,6 +15,7 @@ import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 import {
   compositeRepositorySelection, isolatedRepositoryState, worktreeOwnedByTarget
 } from "../core/repository-binding.mjs";
+import { landedTargetPaths, otherLandedOutput, replayLandedEdit } from "./target-edits.mjs";
 
 // A commit read, not executed. Inspection must not resolve a program through
 // PATH, so ref files are the authority for both ordinary and linked worktrees.
@@ -1944,6 +1945,84 @@ export function createSandboxRuntime({
     return { forwarded, conflicts };
   }
 
+  // Land leaves each projection uncommitted, so a worktree that branched
+  // before another change landed meets that landed diff in the target without
+  // HEAD moving. For every path this sandbox also changed while the target
+  // still holds the landed bytes, the landed edit is replayed into the sandbox
+  // copy (3-way against the recorded base). A clean merge invalidates proof
+  // like any sync; a conflict goes to the agent. The target is never written,
+  // and paths this change left alone land beside it untouched.
+  function replayLandedChanges(id, state) {
+    const workspace = state.workspace;
+    const result = { merged: [], conflicts: [] };
+    if (workspace.mode !== "worktree" || workspace.applied) return result;
+    const landed = otherLandedOutput({
+      transactions: join(root, ".foundation", "transactions"), changeId: id,
+      readJson: (path, fallback) => {
+        try { return JSON.parse(readFileSync(path, "utf8")); } catch { return fallback; }
+      }
+    });
+    const identity = (path) =>
+      lstatSync(path, { throwIfNoEntry: false })?.isFile() ? fileDigest(path) : null;
+    const landedBy = landedTargetPaths({ root, paths: Object.keys(landed), landed, identity });
+    const base = workspace.baseHead || "HEAD";
+    const priorConflicts = workspace.landedConflicts || {};
+    const priorResolved = workspace.landedResolved || {};
+    const pending = {};
+    const resolved = {};
+    for (const path of Object.keys(landedBy).sort()) {
+      const shown = gitBuffer(["show", `${base}:${path}`], root);
+      const baseBytes = shown.status === 0 ? shown.stdout : null;
+      const sandboxFile = join(workspace.path, path);
+      const sandboxBytes = identity(sandboxFile) === null ? null : readFileSync(sandboxFile);
+      const untouched = baseBytes && sandboxBytes ? baseBytes.equals(sandboxBytes)
+        : !baseBytes && !lstatSync(sandboxFile, { throwIfNoEntry: false });
+      if (untouched) continue;
+      const replay = replayLandedEdit({ root, sandboxPath: workspace.path, path, baseBytes });
+      if (replay.status === "merged") {
+        writeFileSync(sandboxFile, replay.bytes);
+        result.merged.push({ path, landedBy: landedBy[path] });
+      } else if (replay.status === "conflict") {
+        // Both changes rewrote the same lines. The agent's edit of the sandbox
+        // copy after the conflict was reported is its merge of the two; it is
+        // bound to the exact target and sandbox bytes it was made against.
+        const row = { target: identity(join(root, path)), sandbox: identity(sandboxFile),
+          landedBy: landedBy[path] };
+        const answered = priorConflicts[path]?.target === row.target &&
+          priorConflicts[path].sandbox !== row.sandbox;
+        const kept = priorResolved[path]?.target === row.target &&
+          priorResolved[path].sandbox === row.sandbox;
+        if (answered || kept) resolved[path] = row;
+        else {
+          pending[path] = row;
+          result.conflicts.push({ repository: "root", path, landedBy: landedBy[path] });
+        }
+      }
+    }
+    // What the replay wrote, so Land can tell a replay that already ran and
+    // still does not carry the landed bytes from one that has not run yet.
+    const record = (field, value) => {
+      if (Object.keys(value).length) workspace[field] = value;
+      else delete workspace[field];
+    };
+    record("landedReplay", Object.fromEntries(result.merged.map(({ path }) =>
+      [path, identity(join(workspace.path, path))])));
+    record("landedConflicts", pending);
+    record("landedResolved", resolved);
+    return result;
+  }
+
+  function reportLandedReplay({ merged, conflicts }, log = console.log) {
+    for (const row of merged)
+      log(`REPLAYED ${row.path}: merged the landed, uncommitted work of ${row.landedBy} into the ` +
+        "sandbox copy; evidence covering it runs again before Land.");
+    for (const row of conflicts)
+      log(`CONFLICT ${row.path}: this change and the landed, uncommitted work of ${row.landedBy} ` +
+        "both changed the same lines. Edit the sandbox copy into the merge of both, keeping the " +
+        "landed content, then resume; that edit is taken as the merge. Ask the user only if the " +
+        "two changes' intents contradict.");
+  }
+
   function updateSandboxSyncState(id, state, source, fingerprints, invalidated,
     sourceHash = directoryHash(source)) {
     const approvedSource = state.specApproval?.identity &&
@@ -2039,12 +2118,15 @@ export function createSandboxRuntime({
     if (preserveAmendment) resolves.delete(`openspec/changes/${id}`);
     const { forwarded, conflicts } = reconcileCopyWorkspace(id, state,
       { ...flags, resolve: [...resolves].join(",") });
+    const landedReplay = movement?.conflicts?.length
+      ? { merged: [], conflicts: [] } : replayLandedChanges(id, state);
     clearSnapshotCache(id);
     const invalidated = !priorHash || priorHash !== relevantHash(id) ||
       fingerprints.priorContract !== fingerprints.nextContract ||
       fingerprints.priorExecution !== fingerprints.nextExecution ||
       conflicts.length > 0 || (movement && !movement.rebased) ||
-      Boolean(movement?.conflicts?.length);
+      Boolean(movement?.conflicts?.length) ||
+      landedReplay.merged.length > 0 || landedReplay.conflicts.length > 0;
     if (preserveAmendment && directoryHash(source) !== acceptedSourceHash)
       fail(`target agreement changed during sandbox sync for '${id}'; both packets are preserved, retry sync to resolve the current target`);
     updateSandboxSyncState(id, state, source, fingerprints, invalidated,
@@ -2067,10 +2149,13 @@ export function createSandboxRuntime({
     reportSandboxSync({
       id, state, movement, forwarded, conflicts, relevantHash
     });
+    reportLandedReplay(landedReplay);
     return {
-      status: conflicts.length || movement?.conflicts?.length ? "CONFLICT" : "SYNCED",
-      conflicts: [...conflicts, ...(movement?.conflicts || [])],
-      movement
+      status: conflicts.length || movement?.conflicts?.length || landedReplay.conflicts.length
+        ? "CONFLICT" : "SYNCED",
+      conflicts: [...conflicts, ...(movement?.conflicts || []), ...landedReplay.conflicts],
+      movement,
+      ...(landedReplay.merged.length ? { landedReplayed: landedReplay.merged } : {})
     };
   }
 

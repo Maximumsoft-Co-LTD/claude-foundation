@@ -51,6 +51,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-inspected, `DONE` applies the edit, and any other action is printed and
   changes nothing. A separate `--inspect` call is no longer needed; every
   existing form keeps working.
+- Land is always allowed for stacked changes. A change whose worktree
+  branched before another change landed no longer needs that landed,
+  uncommitted diff committed first. Land treats the earlier landed bytes, read
+  from that change's verified apply journal, as part of the target. When this
+  change touched the same file, Land stops with `landed-change-sync`, an
+  automatic sync. The sync replays the landed edit into the sandbox copy with
+  a 3-way `git merge-file`, proves again what that invalidated, and applies.
+  Same-line edits go to the agent as a sync conflict. The agent merges them in
+  the sandbox copy, and that edit, bound to the exact target and sandbox
+  bytes, is the resolution. Earlier landed bytes are never offered for
+  `--restore-target` or restored by it. They no longer appear as "changed
+  outside the sandbox" notices or stops. Each change archives in Land order.
 
 - Change produces a dev document that Build executes and a reviewer reads.
   Every proposal shows a folder tree of touched paths. A rapid proposal adds

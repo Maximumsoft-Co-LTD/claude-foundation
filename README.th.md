@@ -741,6 +741,11 @@ product requirement หรือซ่อม state ด้วยมือถ้�
   assurance โดยไม่ล้ม explicit decision ของผู้ใช้ ส่วน apply ยังปฏิเสธ conflict
   และ edit ใน target path ที่ยังไม่ commit — มันระบุ path ที่จะถูกทับแทนที่จะ
   ปล่อยให้คนเขียนทีหลังชนะ
+- Land ทำได้เสมอแม้ change ซ้อนกัน: คุณไม่ต้อง commit change ที่ Land แล้วก่อน
+  change ถัดไปจะ Land change ที่ Land ทีหลังจะ merge diff ที่ Land ไปก่อนและยังไม่
+  commit เข้า sandbox ของตัวเอง (harness ทำเองเมื่อ merge ได้สะอาด, agent ทำเมื่อ
+  ทั้งสองแก้บรรทัดเดียวกัน) แล้ว Prove ใหม่เฉพาะส่วนที่เปลี่ยน และ Land โดยไม่ทับ
+  งานที่ Land ไปก่อน
 - Apply มี backup และ journal ทำให้ Land ที่ถูกขัดจังหวะ retry ได้
 - Land เตือน — โดยไม่บล็อก — เมื่อ target checkout อยู่บน `main`/`master`
   โดย guard ของ land ทุกตัวยังอิง commit

@@ -687,6 +687,20 @@ path, and Land applies the merged file once merging the target edit into it
 changes nothing. Edits made outside the sandbox stop Land only on paths in this
 change's Land projection; others are reported.
 
+Land is always allowed for stacked changes. Because Land leaves its diff
+uncommitted, a change that branched before another change landed meets that
+landed diff in the target; nobody has to commit the first change before the
+second one lands. The harness treats the earlier landed bytes as part of the
+target: paths the later change left alone land beside it untouched, and for a
+path both changed it replays the landed edit into the later change's sandbox
+copy (a 3-way merge), proves again only what that invalidated, and applies.
+When both rewrote the same lines, the later change's agent merges them in its
+sandbox copy, keeping the landed content; that edit is the resolution. Earlier
+landed bytes are never restored over or offered for discard, and the user is
+asked only when the two changes' intents genuinely contradict. Each change
+archives in Land order, so OpenSpec merges each change's spec delta onto the
+specs the earlier Land already synchronized.
+
 The projection is confined to Git-tracked files plus paths declared in
 `tasks.md`. An untracked path no task names is neither evidence surface nor a
 Land deletion. A target path is deleted only when the authorized sandbox removed

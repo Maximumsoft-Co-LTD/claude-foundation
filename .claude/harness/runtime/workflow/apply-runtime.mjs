@@ -19,7 +19,8 @@ import { approvalMatches } from "../core/user-decisions.mjs";
 import { legacyRepositoryLandTransaction } from "./land-runtime.mjs";
 import { rejectedPaths } from "./sandbox-runtime.mjs";
 import {
-  parseRestoreTargetPaths, restorableTargetPaths, targetConflictStop, targetEditCarried
+  landedChangeSyncStop, landedTargetPaths, otherLandedOutput, parseRestoreTargetPaths,
+  restorableTargetPaths, targetConflictStop, targetEditCarried
 } from "./target-edits.mjs";
 
 // Whether an empty root diff is an acceptable apply outcome rather than an
@@ -236,7 +237,8 @@ function targetSnapshot(state) {
 // sandbox base itself, once, instead of handing a restore command back.
 function restoreRegenerableConflicts(context, state, paths) {
   if (!paths.length || !context.writeFile || !context.removePath ||
-      restorableTargetPaths(paths, targetSnapshot(state)).length !== paths.length) return false;
+      restorableTargetPaths(paths, targetSnapshot(state)).length !== paths.length ||
+      Object.keys(context.landedBy?.(state.id, paths) || {}).length) return false;
   const base = context.sandboxBase(state);
   for (const path of paths) {
     const shown = context.gitBuffer(["show", `${base}:${path}`], context.root);
@@ -251,9 +253,27 @@ function baseBlob(context, state, path) {
   return shown.status === 0 ? shown.stdout : null;
 }
 
+// Whether the sandbox replay already wrote the current sandbox bytes for every
+// landed path and Land still finds them not carried: another automatic sync
+// would change nothing, so the agent reconciles instead of the harness looping.
+function landedReplayExhausted(context, state, landedPaths) {
+  const replayed = state.workspace?.landedReplay || {};
+  return landedPaths.every((path) => Object.hasOwn(replayed, path) &&
+    replayed[path] === context.pathIdentity(join(state.workspace.path, path)));
+}
+
 function stopForTargetConflict(context, id, state, paths, cause) {
   const snapshot = targetSnapshot(state);
-  const stop = targetConflictStop({ changeId: id, paths, snapshot, cause });
+  // Bytes an earlier change landed are part of the target: the harness first
+  // replays the sandbox onto them through its own sync, then proves again.
+  const landedBy = context.landedBy?.(id, paths) || {};
+  const landed = Object.keys(landedBy);
+  if (landed.length && context.blockWithDecision && state.workspace?.mode === "worktree" &&
+      !landedReplayExhausted(context, state, landed)) {
+    const stop = landedChangeSyncStop({ changeId: id, landedBy });
+    return context.blockWithDecision(id, stop.code, stop.decision);
+  }
+  const stop = targetConflictStop({ changeId: id, paths, snapshot, cause, landedBy });
   if (stop.decision && context.blockWithDecision)
     return context.blockWithDecision(id, stop.code, stop.decision);
   if (stop.decision) return context.fail(stop.decision.summary);
@@ -279,9 +299,16 @@ export function gitApplyInputsOperation(context, id, sandboxPath, { regenerated 
     "diff", "--binary", context.sandboxBase(state), "--", ...pending
   ], sandboxPath);
   if (diff.status !== 0) context.fail("cannot inspect sandbox diff");
-  // A target edit the sandbox copy already carries is not overwritten work.
-  const carried = (path) => targetEditCarried({ root: context.root, sandboxPath, path,
-    baseBytes: baseBlob(context, state, path) });
+  // A target edit the sandbox copy already carries is not overwritten work,
+  // nor is landed work the agent merged by hand into these exact bytes after
+  // the sandbox replay reported a same-line conflict.
+  const resolvedLanded = (path) => {
+    const row = state.workspace?.landedResolved?.[path];
+    return Boolean(row) && row.target === context.pathIdentity(join(context.root, path)) &&
+      row.sandbox === context.pathIdentity(join(sandboxPath, path));
+  };
+  const carried = (path) => resolvedLanded(path) || targetEditCarried({
+    root: context.root, sandboxPath, path, baseBytes: baseBlob(context, state, path) });
   // An untracked-only or mode-only projection has no Git patch, but the
   // transaction below still copies it and binds its bytes/mode. Patch-check
   // only the tracked part; target-clobber checks still cover every path.
@@ -591,6 +618,14 @@ export function createApplyRuntime({
     return state.workspace?.baseHead || "HEAD";
   }
 
+  // Paths whose target bytes are still another change's landed, uncommitted
+  // projection: path -> landing change id.
+  function landedBy(id, paths) {
+    if (!paths.length || !transactions) return {};
+    return landedTargetPaths({ root, paths, identity: pathIdentity,
+      landed: otherLandedOutput({ transactions, changeId: id, readJson }) });
+  }
+
   const sandboxDiffNames = sandboxDiffNamesOperation.bind(null, {
     applyPathspec,
     git,
@@ -613,6 +648,7 @@ export function createApplyRuntime({
     readFile: readFileSync,
     writeFile: writeFileSync,
     removePath: (path) => rmSync(path, { force: true }),
+    landedBy,
     blockWithDecision,
     fail
   });
@@ -630,6 +666,12 @@ export function createApplyRuntime({
     for (const path of paths) {
       try { safeRootPath(path); } catch (error) { fail(error.message); }
     }
+    const landed = landedBy(id, paths);
+    if (Object.keys(landed).length)
+      fail(`--restore-target would discard the landed, uncommitted work of ${
+        [...new Set(Object.values(landed))].sort().join(", ")} at: ${Object.keys(landed).sort()
+        .join(", ")}; Land never overwrites an earlier landed change. Resume with ` +
+        `'claude-foundation advance ${id} --through archived' and it merges that work instead.`);
     const snapshot = state.workspace.targetDirty || state.workspace.preexisting || {};
     const needsDecision = paths.filter((path) =>
       !restorableTargetPaths([path], snapshot).length);
