@@ -8,7 +8,7 @@ import {
   draftNeedsDesign, renderDraftDesign, renderDraftProposal, semanticDraftKeepsDesign
 } from "../runtime/workflow/change-lifecycle.mjs";
 import {
-  derivedFileMap, derivedTestMap, devDocumentIssues, devDocumentShapeIssues, inferWorkTypes,
+  derivedFailureMatrix, derivedFileMap, derivedTestMap, devDocumentIssues, devDocumentShapeIssues, inferWorkTypes,
   renderComponentMap, renderFolderTree, renderPlan, renderUserFlow, requiredDevSections
 } from "../runtime/workflow/validation/dev-document.mjs";
 
@@ -167,7 +167,7 @@ test("the dev document infers work type from paths and names missing sections", 
   assert.deepEqual(devDocumentIssues(ui, { standard: false }), []);
   assert.deepEqual(devDocumentIssues({ ...ui, version: 3 }), []);
   assert.deepEqual(devDocumentIssues(ui).map((issue) => issue.match(/needs '(\w+)'/)[1]),
-    ["summary", "failureMatrix", "userFlow", "uiStates", "componentMap"]);
+    ["why", "failureMatrix", "userFlow", "uiStates", "componentMap"]);
   assert.deepEqual(devDocumentIssues({ ...ui, summary: "s",
     failureMatrix: [{ failure: "f" }], userFlow: "flowchart LR\n  A --> B",
     uiStates: [{ screen: "Board" }], componentMap: [{ component: "Board", responsibility: "r" }] }), []);
@@ -228,4 +228,39 @@ test("a rapid proposal carries the compact dev document and keeps the rapid lane
   const standard = renderDraftProposal(value, { schema: "foundation-standard" });
   assert.ok(standard.includes("## Folder tree"));
   assert.ok(!standard.includes("## Plan") && !standard.includes("## User flow"));
+});
+
+// Each fact is written once: failure scenarios fill the failure matrix, and
+// 'why' gives the reader the lead a separate summary would only repeat.
+test("the dev document fills its failure matrix and lead from facts already written", () => {
+  const value = {
+    version: 4, why: "Users can add two numbers without a calculator.",
+    tasks: [{ key: "t", paths: ["src/sum.js"], verify: "npm test" }],
+    requirements: [{ key: "sum", scenarios: [
+      { name: "Two numbers", kind: "success", when: "2 and 3 are given", then: "5 is shown" },
+      { name: "Non-number", kind: "failure", when: "a letter is given", then: "an error is shown",
+        recovery: "Re-enter a number" },
+      { name: "Overflow", kind: "failure", when: "a huge value is given", then: "a limit message is shown" }
+    ] }]
+  };
+  assert.deepEqual(devDocumentIssues(value), []);
+  assert.deepEqual(derivedFailureMatrix(value), [
+    { failure: "Non-number", userSees: "an error is shown", recovery: "Re-enter a number", covers: ["sum"] },
+    { failure: "Overflow", userSees: "a limit message is shown",
+      recovery: "No separate step; the outcome is the handling", covers: ["sum"] }
+  ]);
+  const authored = [{ failure: "Disk full", userSees: "Banner", recovery: "Free space" }];
+  assert.equal(derivedFailureMatrix({ ...value, failureMatrix: authored }), authored);
+  // Without failure scenarios or a matrix, and without why or summary, both are asked.
+  const bare = { ...value, why: "", requirements: [{ key: "sum", scenarios: [{ when: "w", then: "t" }] }] };
+  assert.deepEqual(devDocumentIssues(bare).map((issue) => issue.match(/needs '(\w+)'/)[1]),
+    ["why", "failureMatrix"]);
+  assert.deepEqual(devDocumentIssues({ ...bare, summary: "s", failureMatrix: authored }), []);
+
+  const design = renderDraftDesign({ ...value, workType: ["feature"], tasks: [] });
+  assert.match(design, /## Failure matrix[\s\S]*\| Non-number \| an error is shown \| Re-enter a number \| sum \|/);
+  const proposal = renderDraftProposal({ ...value, _semanticVersion: 4, claims: [], changes: [],
+    tasks: [{ id: "T001", outcome: "Sum", paths: ["src/sum.js"], verify: "npm test" }] },
+  { schema: "foundation-rapid" });
+  assert.match(proposal, /## Failure matrix[\s\S]*\| Overflow \|/);
 });

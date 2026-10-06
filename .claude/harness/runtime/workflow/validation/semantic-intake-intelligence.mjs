@@ -1,4 +1,6 @@
-import { decisionStatus, requiredDiscoveryDimensions } from "./semantic-intake.mjs";
+import {
+  decisionStatus, projectDiscovery, requiredDiscoveryDimensions
+} from "./semantic-intake.mjs";
 
 const DEPTHS = Object.freeze({
   focused: Object.freeze({ maxSourceFiles: 12, maxSourceBytes: 192_000, frontierLimit: 2 }),
@@ -214,7 +216,9 @@ function measuredHistory(history) {
 /** Produce a deterministic snapshot; unavailable history is null, never a false zero. */
 export function semanticIntakeEffectivenessSnapshot(source = {}, options = {}) {
   const required = requiredDiscoveryDimensions(source);
-  const rows = Array.isArray(source.discovery?.coverage) ? source.discovery.coverage : [];
+  // Derived rows count: the draft content already covers those dimensions.
+  const projected = source.version === 4 ? projectDiscovery(source) : source;
+  const rows = Array.isArray(projected.discovery?.coverage) ? projected.discovery.coverage : [];
   const byDimension = new Map(rows.map((row) => [text(row?.dimension).toLowerCase(), row]));
   const requiredRows = required.map((dimension) => byDimension.get(dimension)).filter(Boolean);
   const complete = requiredRows.filter((row) =>

@@ -128,6 +128,23 @@ test("proposal leads with summary, stories, criteria, and a capability index", (
   assert.match(proposal, /\| compatibility \| covered \| add-card \| {2}\| {2}\|/);
 });
 
+test("the appendix marks coverage the harness derived from the draft", () => {
+  const compiled = compile({
+    impact: "high", compatibility: "Boards saved before this change still load",
+    discovery: {
+      coverage: [...DIMENSIONS.filter((dimension) => dimension !== "compatibility"), "operability"]
+        .map((dimension) => ({ dimension, status: "covered", covers: ["add-card"] })),
+      decisions: []
+    }
+  });
+  const proposal = renderDraftProposal(compiled, { intent: compiled.intent });
+  assert.match(proposal, /\| compatibility \| covered \(derived\) \| {2}\| {2}\| Derived from compatibility \|/);
+  assert.match(proposal, /\| current-behavior \| covered \| add-card \| {2}\| {2}\|/);
+  // 'why' already leads the proposal, so a missing summary is not prompted.
+  const warnings = readerGuideWarnings({ ...compiled, summary: undefined, why: "Cards get lost" });
+  assert.equal(warnings.some((warning) => /summary/.test(warning)), false);
+});
+
 test("long appendix lists are counted instead of dumped", () => {
   const keys = Array.from({ length: 9 }, (_, index) => `req-${index}`);
   const compiled = compile({

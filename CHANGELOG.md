@@ -21,6 +21,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on) gets a draft issue the agent repairs.
 - Low-risk fast-tier review runs at medium reasoning effort; the configured
   model and any escalation keep high effort.
+- Change derives discovery coverage from the draft. A required dimension with
+  no authored row becomes `covered` when draft content states it:
+  `currentState`, `userStories`, requirements, scenario `kind`
+  (`success`, `failure`, and the new `boundary`), `compatibility`, `nonGoals`,
+  tasks with `verify` and evidence, `failureMatrix`, `apiContracts`,
+  `dataModel`, `uiStates`, `jobContract`, and documented `integrations`. The
+  proposal appendix marks these rows `covered (derived)` and names the source
+  fields. Without backing content the dimension stays missing, an authored row
+  always wins, and `needs-user-decision` rows are still asked. The template no
+  longer asks for derivable rows. Draft v3 is unchanged.
+- Each fact is written once. Without an authored `failureMatrix`, scenarios of
+  `kind: "failure"` become its rows (an optional scenario `recovery` fills the
+  recovery column), so the draft no longer has to repeat them. `why` now
+  satisfies the dev document's lead; `summary` stays optional, and the template
+  asks only for `why`.
 
 ## [3.5.30] - 2026-10-01
 

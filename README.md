@@ -300,7 +300,8 @@ Change carries forward relevant conversation decisions and latest corrections.
 Affected diagrams and folder mappings live in the agreement when needed;
 Build and resumed sessions read the full relevant scenarios and design context.
 The compiled proposal also records which discovery dimensions were covered or
-source-grounded as not applicable, so no settled answer has to live only in chat.
+source-grounded as not applicable, marking those the harness derived from content
+the draft already states, so no settled answer has to live only in chat.
 
 The agent answers in your language and leads with the outcome. It performs safe
 recovery and routine commands itself, then reports what it changed and checked.
