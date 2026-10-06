@@ -54,8 +54,20 @@ function writeIntegrity(runDir) {
   return value;
 }
 
-function commandResult(command, args, cwd) {
-  return spawnSync(command, args, { cwd, encoding: "utf8", env: process.env });
+function commandResult(command, args, cwd, env = process.env) {
+  return spawnSync(command, args, { cwd, encoding: "utf8", env });
+}
+
+// A source-checkout install puts no `claude-foundation` on PATH, but every
+// command the agent follows names it. Give the run the same CLI a Homebrew
+// install provides, pointing at this checkout's cli.sh.
+function cliShimEnv(runDir) {
+  const bin = join(runDir, "bin");
+  mkdirSync(bin, { recursive: true });
+  const shim = join(bin, "claude-foundation");
+  writeFileSync(shim, `#!/bin/sh\nexec "${join(ROOT, "cli.sh")}" "$@"\n`);
+  chmodSync(shim, 0o755);
+  return { ...process.env, PATH: `${bin}:${process.env.PATH || ""}` };
 }
 
 function sourceRevision(root = ROOT) {
@@ -244,7 +256,7 @@ export function runScenarioLab({ matrixPath, scenarioId, outputRoot = DEFAULT_RE
   const source = sourceRevision();
   let result;
   try {
-    result = commandResult(process.execPath, args, ROOT);
+    result = commandResult(process.execPath, args, ROOT, cliShimEnv(runDir));
     const verification = result.status === 0
       ? deliveryChecks(scenario, prepared.project, tempParent)
       : {
