@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  createReceiptRuntime, groundedRepairBinding, normalizedReviewFinding,
+  createReceiptRuntime, executedReceiptFlake, groundedRepairBinding, normalizedReviewFinding,
   proofPlanOperation, receiptBindingNote
 } from "../../harness/runtime/evidence/receipt-runtime.mjs";
 
@@ -534,4 +534,48 @@ test("exit-code discovery passes only for harness-executed rapid runs at minimum
   assert.throws(() => fixture("discovery", {}, { loadRuntime: rapidState }).runtime.recordReceipt(
     "change", "provider", "pass", { ...executed, ...exitCode, minimum: 2 },
     { executed: true, quiet: true }), /exit-code discovery receipt/);
+});
+
+test("a provider that fails then passes on unchanged content records a flake, not proof", () => {
+  const store = new Map();
+  let hash = "workspace-hash";
+  const flaky = fixture("test", {}, {
+    writeJson: (path, value) => store.set(path, structuredClone(value)),
+    readJson: (path, fallback) => store.has(path) ? structuredClone(store.get(path)) : fallback,
+    providerWorkspaceHash: () => hash
+  });
+  const run = (status) => flaky.runtime.recordReceipt("change", "provider", status, {
+    artifact: [{ path: "run.log", type: "command-log", required: true }],
+    observed: `exit ${status === "pass" ? 0 : 1}`
+  }, { executed: true, quiet: true });
+  const read = () => [...store.values()].at(-1);
+  run("fail");
+  assert.equal(read().status, "fail");
+  run("pass");
+  assert.equal(read().status, "fail", "resuming unchanged cannot turn a flaky pass into proof");
+  assert.equal(read().observedStatus, "pass");
+  assert.equal(read().flake.rule, "fail-then-pass-on-unchanged-content");
+  assert.equal(read().flake.firstFailure.observed, "exit 1");
+  assert.match(read().observed, /^flaky: failed then passed/);
+  run("pass");
+  assert.equal(read().status, "fail", "repeated passes on the same content stay flaky");
+  assert.equal(read().flake.passes, 2);
+  assert.equal(read().flake.firstFailure.observed, "exit 1", "the first failure stays the evidence");
+  hash = "repaired-hash";
+  run("pass");
+  assert.equal(read().status, "pass", "a pass on changed content is proof again");
+  assert.equal(read().flake, undefined);
+});
+
+test("only harness-executed fail-then-pass on identical inputs is a flake", () => {
+  const prior = { status: "fail", execution: "harness", workspaceHash: "h", inputIdentity: { mode: "workspace" },
+    providerFingerprint: "p", contractFingerprint: "c", executionFingerprint: "e", observed: "exit 1" };
+  const next = { ...prior, status: "pass", observed: "exit 0" };
+  assert.equal(executedReceiptFlake(prior, next).passes, 1);
+  assert.equal(executedReceiptFlake({ ...prior, status: "error" }, next), null,
+    "an infrastructure error never produced a product verdict");
+  assert.equal(executedReceiptFlake(prior, { ...next, execution: "manual" }), null);
+  assert.equal(executedReceiptFlake(prior, { ...next, providerFingerprint: "changed" }), null);
+  assert.equal(executedReceiptFlake(prior, { ...next, inputIdentity: { mode: "declared" } }), null);
+  assert.equal(executedReceiptFlake({}, next), null);
 });

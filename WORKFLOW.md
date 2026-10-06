@@ -449,10 +449,12 @@ the command, workspace directory, and log tail for the agent to finish.
 Before Build, the harness compiles and persists an execution-preparation plan
 from selected repositories, setup commands, provider wiring, and tool identity.
 It reuses ready records, prepares only missing project-local dependencies, and
-retries only failed repository setup records. The pinned OpenSpec CLI may be
-installed under `.foundation/tools`; it is never installed globally. Prove and
-Land re-check the same plan. Before Build, an unavailable OpenSpec CLI only
-defers the strict spec lint; from Prove on, the lint is required and an absent
+retries only failed repository setup records. OpenSpec is required only from
+Prove onward: Build neither installs nor stops for a missing CLI and records the
+tool as `deferred`; the first Prove installs the pinned CLI under
+`.foundation/tools` (never globally) and keeps the existing `HANDOFF` when that
+fails. Prove and Land re-check the same plan. Before Build, an unavailable
+OpenSpec CLI only defers the strict spec lint; from Prove on, the lint is required and an absent
 CLI fails closed rather than letting an unlinted agreement reach archive. A setup or
 host-integration failure remains Harness-owned repair and is not emitted as a
 command for the user.
@@ -639,6 +641,11 @@ A provider that executed and failed has three honest exits:
 - fix the cause and rerun;
 - rewire the provider in `execution.yaml`;
 - withdraw the capability under a recorded decision with `change waive`.
+
+Resuming unchanged is not one of them. A harness-executed provider that failed
+and then passes on byte-identical inputs is recorded as a flake: the receipt
+stays `fail` with `flake` evidence (the first failure and the observed pass), so
+the claim needs a repair, and only a pass on changed content is proof again.
 
 A waiver removes the capability from the required set while the claim continues
 to declare it. It remains visible as `user-waived`, preserves receipts already
@@ -1077,15 +1084,42 @@ only where the work itself cannot continue.
 
 Advance protocol 6 retains the existing actions and command routes. Recovery
 observations and answers live in `advanceRecovery` on the existing runtime
-record. The third unchanged repair handoff across invocations first returns one
-agent-owned `REPAIR` (`TRY_ALTERNATE_APPROACH`) asking for a materially different
-approach inside the approved agreement; only a further unchanged handoff
-requests a decision. Two unchanged internal automated transitions, and a sandbox
-sync conflict, first return that agent repair and follow the same ladder. New
-process sessions,
-proof run IDs, diagnostic wording, retry counters and bookkeeping revisions do not reset progress.
-Relevant content, agreement, execution policy or actual delivery changes do.
-Read-only inspection never counts as a repair attempt or records an answer.
+record. The ladder has three rungs: the first unchanged repair handoff is the
+agent's repair, the second returns one agent-owned `REPAIR`
+(`TRY_ALTERNATE_APPROACH`) asking for a materially different approach inside the
+approved agreement, and the third requests a decision (`NO_PROGRESS_BOUNDARY`)
+whose `decision.repetition` carries the evidence: rounds, first and last
+observation, and the output that kept repeating. Two unchanged internal
+automated transitions, a sandbox sync conflict, and a Build task verify that
+keeps failing with identical output (durations and timestamps ignored) follow
+the same ladder. New process sessions, proof run IDs, diagnostic wording, retry
+counters and bookkeeping revisions do not reset progress. Relevant content,
+agreement, execution policy, a different verify output, or actual delivery
+changes do. Read-only inspection never counts as a repair attempt or records an
+answer.
+
+Causes only the user can clear skip the ladder and return `ASK_USER`
+(`USER_ENVIRONMENT_REQUIRED`, boundary `user-environment`) on the first
+observation: a missing or expired credential or token, VPN, proxy or network
+denial, a reviewer CLI that is not logged in, a full disk (`ENOSPC`), or private
+registry authentication. They are classified from typed error codes and known
+signatures on harness, setup, and reviewer routes; a full disk is recognized on
+every route, while credential or network words inside failing product output
+remain a product repair. The question names the fix (for example "run `claude
+/login`" or "free disk space") and the resume command; nothing is counted, and
+an uncleared cause is reported again the same way.
+
+No agent-facing route names a lifecycle primitive. Any `command`, `next`,
+instruction, reason, or decision option that would point at `proof run|advance`,
+`land check|advance`, `sandbox sync|create`, or `evidence init` is rewritten to
+`advance <change>` with the route's target: proof primitives resume `--through
+proven`, Land primitives `--through archived`, and sandbox primitives keep the
+current target, so a rewrite never widens a route to Land. Two primitives that
+needed a user answer are now advance decisions: an indeterminate provider run
+(`DECIDE_INDETERMINATE_EXECUTION`, options `retry|pause`) whose `retry` answer
+reaches the next proof run once, and an amended-agreement conflict
+(`RESOLVE_AGREEMENT_CONFLICT`, options `merge|retain|pause`) whose answer
+performs the resolving synchronization.
 
 Every question offers concrete alternatives, a recommendation and pause, with
 the cause and retained repair observations. External waiting is the default,
@@ -1105,11 +1139,13 @@ The agent records an explicit recovery answer using the fingerprint returned
 with the decision:
 
 ```bash
-claude-foundation advance <change> --decision retry|wait|pause \
+claude-foundation advance <change> --decision <offered-option> \
   --decision-fingerprint <hash> --decision-ref <user-answer> --reason <approach>
 ```
 
-The answer retains the prior `--through` target. Retry records the chosen
+The offered options are `retry|wait|pause` for recovery decisions, and the
+options listed by an advance decision such as `merge|retain|pause`. The answer
+retains the prior `--through` target. Retry records the chosen
 approach; wait is available only for an external dependency; pause preserves
 the work without running setup or providers again. A recorded pause projects
 `WAIT` with user state `PAUSED`, not another question or a claim of active work.
@@ -1220,7 +1256,10 @@ Budget actions are:
 - 100%: every exhaustion opens one more window of the same size
   automatically, recorded as a harness decision
   (`harness://auto-extend/budget/1`) that does not use an operator-approved
-  continuation. Budget is advisory and never asks the user.
+  continuation. Budget is advisory and never asks the user while delivery
+  progresses; three windows reopened without delivery progress (unchanged
+  content and lifecycle state) return the `budget-no-progress` decision with
+  the window evidence, and an answer starts a new count.
 
 `budget continue` remains an optional, audited explicit widening; it never
 deletes usage or lowers assurance.

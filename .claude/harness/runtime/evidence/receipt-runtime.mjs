@@ -442,6 +442,39 @@ export function recordDeterministicReviewClosureOperation(
   };
 }
 
+// A harness-executed provider that failed and then passes on byte-identical
+// inputs is nondeterministic, not fixed. Resuming unchanged must not turn the
+// second observation into proof: the pass is recorded as a failing receipt
+// carrying the flake, so the claim needs a repair (a content change) and the
+// next pass on new content is proof again. Only a prior `fail` counts; an
+// `error` is infrastructure that never produced a product verdict.
+export function executedReceiptFlake(prior, receipt) {
+  if (!prior || receipt?.status !== "pass" || receipt.execution !== "harness" ||
+      prior.execution !== "harness" || !["fail"].includes(prior.status)) return null;
+  const same = (field) => JSON.stringify(prior[field] ?? null) === JSON.stringify(receipt[field] ?? null);
+  if (!["workspaceHash", "inputIdentity", "providerFingerprint", "contractFingerprint",
+    "executionFingerprint"].every(same)) return null;
+  const first = prior.flake?.firstFailure || {
+    observed: prior.observed || null, finishedAt: prior.finishedAt || null,
+    log: prior.log || null
+  };
+  return {
+    version: 1,
+    rule: "fail-then-pass-on-unchanged-content",
+    firstFailure: first,
+    passes: Number(prior.flake?.passes || 0) + 1,
+    observedPass: { observed: receipt.observed || null, log: receipt.log || null },
+    repair: "Make the provider deterministic for this content (fix the flaky test or the code it exercises); a pass on changed content is proof again."
+  };
+}
+
+export function markExecutedFlake(prior, receipt) {
+  const flake = executedReceiptFlake(prior, receipt);
+  if (!flake) return receipt;
+  return { ...receipt, status: "fail", observedStatus: "pass", flake,
+    observed: `flaky: failed then passed on unchanged content (${receipt.observed || "pass"})` };
+}
+
 export function createReceiptRuntime({
   ROOT, LOGS, PROVIDERS, INPUT_MODES, providerWorkspace,
   ADAPTER_PROTOCOL_VERSION, PROVIDER_PROTOCOL_VERSION,
@@ -1032,8 +1065,11 @@ export function createReceiptRuntime({
     const suppliedEvidence = receiptEvidence(id, provider, status, preparedFlags, context);
     const receipt = baseReceipt(id, provider, status, preparedFlags, context, suppliedEvidence);
     applyCapabilityReceipt(id, provider, status, preparedFlags, options, receipt, context);
-    writeJson(receiptPath(id, provider), receipt);
-    if (!options.quiet) console.log(`RECEIPT ${id}/${provider}: ${status}`);
+    const path = receiptPath(id, provider);
+    const flaky = markExecutedFlake(readJson(path, {}), receipt);
+    writeJson(path, flaky);
+    if (!options.quiet) console.log(`RECEIPT ${id}/${provider}: ${flaky.status}${
+      flaky.flake ? " (flaky: failed then passed on unchanged content)" : ""}`);
   }
 
   const recordDeterministicReviewClosure =

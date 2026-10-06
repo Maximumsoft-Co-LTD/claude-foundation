@@ -184,7 +184,7 @@ test("checkpoint routes deterministic proof without asking for more model budget
   assert.equal(value.status, "READY_TO_RESUME");
   assert.equal(value.forecast.status, "NO_ADDITIONAL_MODEL_BUDGET_NEEDED");
   assert.equal(value.checkpoint.resumeCommand,
-    "claude-foundation proof advance change");
+    "claude-foundation advance change --through proven");
 });
 
 test("eligible continuation passes and ineligible readiness produces a typed stop", () => {

@@ -1948,7 +1948,8 @@ function prepareExecution(id, { stage = "build" } = {}) {
   const openSpec = ensureProjectOpenSpec({
     root: ROOT,
     status: openSpecCliStatus,
-    spawn: spawnSync
+    spawn: spawnSync,
+    stage
   });
   const prior = readJsonOrNull(preparationPlanPath(id));
   const plan = executionPreparationValue({
@@ -2034,9 +2035,9 @@ const { advanceValue, advanceThrough, showAdvance } = createAdvanceRuntime({
     "decision-ref": `harness:automatic-apply-recovery:${resolution}`,
     ...(resolution === "settle" ? {} : { resolution })
   })),
-  synchronizeAgreement: async (id) => sandboxRuntime.agreementStale(id)
+  synchronizeAgreement: async (id, flags = {}) => flags.resolve || sandboxRuntime.agreementStale(id)
     ? commandPhaseRecorder.measureAsync("advance.sandbox-sync",
-      () => runAdvanceQuietly(() => sandboxRuntime.synchronizeAgreement(id)))
+      () => runAdvanceQuietly(() => sandboxRuntime.synchronizeAgreement(id, flags)))
     : false,
   // Detected provider wiring is a write, not a question: upgrade a legacy
   // packet, write the recommended providers, then sync the revised agreement

@@ -1155,3 +1155,33 @@ test("without a setup command the harness installs from the workspace lockfile",
   assert.equal(sandboxSetupLine({ status: "ok", command: "make deps" }), "\n  setup: ok");
   assert.equal(sandboxSetupLine(null), "");
 });
+
+test("grounding that cites an untracked investigation record never blocks the sandbox or asks for a commit", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "sandbox-grounding-investigation-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const packet = join(root, "openspec", "changes", "change");
+  mkdirSync(packet, { recursive: true });
+  mkdirSync(join(root, "openspec", "investigations"), { recursive: true });
+  writeFileSync(join(root, "openspec", "investigations", "retry.report.md"), "finding\n");
+  writeFileSync(join(root, "notes.md"), "untracked note\n");
+  const context = {
+    changePath: () => packet,
+    pathExists: existsSync,
+    readText: readFileSync,
+    selectedRepositories: () => [{ id: "root", path: root, baseHead: "head" }],
+    fileDigest: () => "digest",
+    gitBuffer: () => ({ status: 128 }),
+    fail
+  };
+  const cite = (path) => writeFileSync(join(packet, "grounding.yaml"), JSON.stringify({ readSet: [{
+    repository: "root", path, sha256: "digest"
+  }] }));
+  cite("openspec/investigations/retry.report.md");
+  assert.doesNotThrow(() => assertSandboxGroundingPortable(context, "change", { groundingRequired: true }),
+    "a digest-pinned investigation record is portable untracked evidence");
+  cite("notes.md");
+  assert.throws(() => assertSandboxGroundingPortable(context, "change", { groundingRequired: true }),
+    (error) => /not sandbox-portable/.test(error.message) && !/commit/i.test(error.message) &&
+      /openspec\/changes\/change\//.test(error.message),
+    "other untracked sources name the packet route, never a commit");
+});

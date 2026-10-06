@@ -2,9 +2,130 @@ import { gateDigest } from "../core/convergent-gate.mjs";
 
 const text = (value) => typeof value === "string" ? value.trim() : "";
 
+// The recovery ladder: the agent repairs, then tries one materially different
+// approach, then the user is asked. Each rung is one unchanged round.
+export const ALTERNATE_AFTER_ROUNDS = 2;
+export const ASK_AFTER_ROUNDS = 3;
+
+// Lifecycle primitives AGENT.md does not let the agent run. A route that names
+// one is rewritten to the `advance` route that performs the same step.
+const PRIMITIVE_COMMAND =
+  /claude-foundation\s+(proof|land|sandbox|evidence)\s+(?:run|advance|execute|collect|finalize|check|apply|recover|archive|sync|create|copy-path|init|upgrade)\b[^'"`\n;]*/g;
+
+function routeThrough(value) {
+  return String(value?.resume || value?.resumeCommand || "")
+    .match(/--through (build|proven|archived)/)?.[1] || null;
+}
+
+export function agentLifecycleRoute(id, family, through = null) {
+  // Land authority is never inferred: only a route already headed to
+  // `archived`, or one that names Land itself, may resume through archived.
+  const target = family === "land" ? "archived"
+    : family === "proof" ? (through === "archived" ? "archived" : "proven")
+      : through;
+  return `claude-foundation advance ${id}${target ? ` --through ${target}` : ""}`;
+}
+
+function routeText(id, through, input) {
+  if (typeof input !== "string" || !input.includes("claude-foundation")) return input;
+  return input.replace(PRIMITIVE_COMMAND, (match, family) =>
+    agentLifecycleRoute(id, family, through));
+}
+
+// Every agent-facing route stays on the public `advance` surface.
+export function agentSafeRoutes(value) {
+  const id = value?.changeId;
+  if (!id || typeof value !== "object") return value;
+  const through = routeThrough(value);
+  const route = (input) => routeText(id, through, input);
+  const rows = (list, fields) => Array.isArray(list)
+    ? list.map((row) => row && typeof row === "object"
+      ? { ...row, ...Object.fromEntries(fields.filter((field) => typeof row[field] === "string")
+        .map((field) => [field, route(row[field])])) } : row)
+    : list;
+  const next = { ...value };
+  for (const field of ["command", "instruction", "reason"])
+    if (typeof next[field] === "string") next[field] = route(next[field]);
+  if (Array.isArray(next.instructions)) next.instructions = next.instructions.map(route);
+  if (Array.isArray(next.next)) next.next = rows(next.next, ["command", "reason"]);
+  if (next.decision && typeof next.decision === "object") next.decision = {
+    ...next.decision,
+    ...(typeof next.decision.summary === "string" ? { summary: route(next.decision.summary) } : {}),
+    ...(Array.isArray(next.decision.options)
+      ? { options: rows(next.decision.options, ["command", "outcome"]) } : {})
+  };
+  if (next.automaticRecovery?.command)
+    next.automaticRecovery = { ...next.automaticRecovery, command: route(next.automaticRecovery.command) };
+  if (next.wait?.checkCommand) next.wait = { ...next.wait, checkCommand: route(next.wait.checkCommand) };
+  if (Array.isArray(next.recovery?.alternatives))
+    next.recovery = { ...next.recovery, alternatives: next.recovery.alternatives.map(route) };
+  return next;
+}
+
+// Causes only the user can clear. They go to the user on the first
+// observation with the exact fix, instead of the agent resuming unchanged.
+// `product: true` causes are recognized on every route; the others only on
+// harness, setup, and reviewer infrastructure routes, never in product output.
+const USER_ENVIRONMENT_CAUSES = [
+  { cause: "disk-full", codes: ["ENOSPC", "EDQUOT"], product: true,
+    pattern: /\bENOSPC\b|no space left on device|disk quota exceeded/i,
+    fix: "Free disk space on the volume that holds the repository and its .foundation sandboxes" },
+  { cause: "reviewer-login", codes: [],
+    pattern: /please run \/login|run `?claude \/login|\bnot logged in\b|oauth token (?:has )?expired|invalid api key/i,
+    fix: "Run `claude /login` (or log the configured reviewer CLI in) on this machine" },
+  { cause: "registry-auth", codes: ["E401"],
+    pattern: /\bE401\b|ERR_PNPM_FETCH_40[13]|\bE403\b[^\n]*registry|registry[^\n]*\b(?:401|403)\b|unable to authenticate[^\n]*registry/i,
+    fix: "Log in to the private package registry (for example `npm login --registry <url>`) or export its token in the environment" },
+  { cause: "credential", codes: [],
+    pattern: /\b\w*(?:token|credentials?|api[ _-]?key|access[ _-]?key)\b[^.\n]{0,40}\b(?:expired|missing|invalid|revoked|not set)\b|\b(?:expired|revoked)\s+(?:token|credentials?)\b|\b401 Unauthorized\b|bad credentials|authentication failed/i,
+    fix: "Renew or supply the named credential or token (log in again or export it in the environment)" },
+  { cause: "network", codes: ["ENOTFOUND", "EAI_AGAIN", "ENETUNREACH", "EHOSTUNREACH", "ECONNREFUSED", "ETIMEDOUT"],
+    pattern: /\b(?:ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ECONNREFUSED|ETIMEDOUT)\b|proxy authentication required|\b407 Proxy\b|tunneling socket could not be established|network is unreachable|could not resolve host|\bVPN\b/i,
+    fix: "Connect the VPN or allow the network and proxy access the named host needs" }
+];
+
+// Routes whose output describes the product under change. A credential or
+// network word in a failing product test is a product finding, not a cause
+// only the user can clear.
+const PRODUCT_ROUTES = new Set([
+  "REPAIR_PROOF_RESULT", "EXECUTE_REPAIR_BATCH", "REPAIR_SYNC_CONFLICT",
+  "RECONCILE_TARGET_EDITS", "REPAIR_BUILD_PLAN", "TRY_ALTERNATE_APPROACH",
+  "REPAIR_APPLY_RECOVERY", "EXECUTE_TASK", "EXECUTE_TASK_GROUP"
+]);
+
+function observedText(value) {
+  const parts = [value.reason, value.handoff?.log, value.details?.detail, value.details?.log,
+    ...(value.requests || []).map((row) => row?.infrastructureError)];
+  try { parts.push(JSON.stringify(value.details ?? null).slice(0, 4000)); } catch {}
+  return parts.filter((part) => typeof part === "string").join("\n");
+}
+
+export function userEnvironmentCause(value) {
+  if (!value || !["REPAIR", "WAIT"].includes(value.action)) return null;
+  const product = PRODUCT_ROUTES.has(value.legacyAction);
+  const codes = [value.errorCode, value.details?.code].filter(Boolean).map(String);
+  const observed = observedText(value);
+  for (const row of USER_ENVIRONMENT_CAUSES) {
+    if (product && !row.product) continue;
+    if (codes.some((code) => row.codes.includes(code)) || row.pattern.test(observed))
+      return { cause: row.cause, fix: row.fix };
+  }
+  return null;
+}
+
+// Verify output carries durations and timestamps; identical failures must
+// compare equal so a Build verify that keeps failing the same way is counted.
+function stableOutput(value) {
+  return String(value || "")
+    .replace(/\d{4}-\d\d-\d\dT[\d:.]+Z?/g, "<time>")
+    .replace(/\b\d+(?:\.\d+)?\s?(?:ms|s|sec|seconds)\b/g, "<duration>")
+    .replace(/\s+/g, " ").trim();
+}
+
 // Complete legacy diagnostic packets at the lifecycle boundary. Missing detail
 // offers investigation, never a fabricated approval, waiver, or successful run.
-export function actionableGuidance(value) {
+export function actionableGuidance(input) {
+  const value = agentSafeRoutes(input);
   if (value.action === "ASK_USER") {
     const supplied = value.decision || {};
     const options = [...new Map((Array.isArray(supplied.options) ? supplied.options : [])
@@ -124,6 +245,12 @@ export function recoveryBoundaryKey(value) {
     boundary: value.boundary || null,
     decision: value.decision?.kind || null,
     command: value.command || null,
+    ...(value.action === "EDIT" && value.verificationFailures?.length ? {
+      verification: value.verificationFailures.map((row) => ({
+        task: row.taskId || null, command: row.command || null, exitCode: row.exitCode ?? null,
+        output: stableOutput(row.output)
+      }))
+    } : {}),
     ...(value.action === "WAIT" ? { wait: {
       owner: value.wait?.owner || null,
       condition: value.wait?.condition || null,
@@ -134,6 +261,23 @@ export function recoveryBoundaryKey(value) {
     }))
   });
 }
+
+// Decisions `advance` records and resumes itself. Their options are answered
+// through the advance decision route, never the primitive the raising module
+// would otherwise name (`proof advance --retry-indeterminate`,
+// `sandbox sync --resolve`).
+export const ADVANCE_DECISIONS = {
+  "indeterminate-execution": {
+    legacyAction: "DECIDE_INDETERMINATE_EXECUTION", boundary: "external-side-effect"
+  },
+  "amended-agreement-conflict": {
+    legacyAction: "RESOLVE_AGREEMENT_CONFLICT", boundary: "amended-agreement-conflict"
+  }
+};
+
+const decisionCommand = (id, option, fingerprint) =>
+  `claude-foundation advance ${id} --decision ${option} --decision-fingerprint ${fingerprint} ` +
+  "--decision-ref <user-answer> --reason <chosen-approach>";
 
 export function createAdvanceRecovery({ loadRuntime, saveRuntime, subject, now = () => new Date().toISOString() }) {
   function read(id, state = loadRuntime(id)) {
@@ -149,24 +293,110 @@ export function createAdvanceRecovery({ loadRuntime, saveRuntime, subject, now =
     saveRuntime(state);
   }
 
-  function decision(id, value, record) {
-    const key = recoveryBoundaryKey(value);
-    const kind = "repair-no-progress";
+  const strategies = (record) => record.attempts.slice(-8).map(({ action, reason, command, count }) =>
+    ({ action, reason, command, observations: count }));
+
+  function decision(id, value, record, attempt = null, kind = "repair-no-progress", summary = null) {
+    const key = kind === "repair-no-progress" ? recoveryBoundaryKey(value) : kind;
     const fingerprint = gateDigest({ subject: record.subject, key, kind });
     const options = [
       { id: "retry", outcome: "Choose a different repair strategy or explain what changed, then retry within the existing scope." },
       { id: "pause", outcome: "Keep all work and evidence and pause this delivery attempt." }
-    ].map((row) => ({ ...row,
-      command: `claude-foundation advance ${id} --decision ${row.id} --decision-fingerprint ${fingerprint} --decision-ref <user-answer> --reason <chosen-approach>`
-    }));
+    ].map((row) => ({ ...row, command: decisionCommand(id, row.id, fingerprint) }));
     return {
       kind, fingerprint,
-      summary: `Recovery has not changed the delivery state: ${value.reason}`,
+      summary: summary || `Recovery has not changed the delivery state: ${value.reason}`,
       options, recommended: "retry",
-      attemptedStrategies: record.attempts.slice(-8).map(({ action, reason, command, count }) =>
-        ({ action, reason, command, observations: count })),
+      attemptedStrategies: strategies(record),
+      // The evidence of repetition the user decides on: how many unchanged
+      // rounds, since when, and the output that kept repeating.
+      ...(attempt ? { repetition: {
+        rounds: attempt.count,
+        firstObservedAt: attempt.firstObservedAt || attempt.observedAt,
+        lastObservedAt: attempt.observedAt,
+        output: String(value.reason || "").slice(0, 2000),
+        ...(value.verificationFailures?.length ? {
+          verification: value.verificationFailures.slice(0, 8).map((row) => ({
+            taskId: row.taskId || null, command: row.command || null,
+            exitCode: row.exitCode ?? null, output: String(row.output || "").slice(-1000)
+          }))
+        } : {})
+      } } : {}),
       wait: null
     };
+  }
+
+  function typedDecision(id, value, record, kind) {
+    const supplied = value.decision;
+    const key = gateDigest({ typed: kind, summary: supplied.summary || value.reason || null });
+    const fingerprint = gateDigest({ subject: record.subject, key, kind });
+    const options = (Array.isArray(supplied.options) ? supplied.options : [])
+      .filter((row) => text(row?.id) && text(row?.outcome))
+      .map((row) => ({ id: row.id, outcome: row.outcome }));
+    if (!options.some((row) => row.id === "pause"))
+      options.push({ id: "pause", outcome: "Preserve the work and pause until a decision is made." });
+    return { key, decision: {
+      ...supplied, kind, fingerprint,
+      summary: supplied.summary || value.reason,
+      options: options.map((row) => ({ ...row, command: decisionCommand(id, row.id, fingerprint) })),
+      recommended: options.some((row) => row.id === supplied.recommended)
+        ? supplied.recommended : options[0].id
+    } };
+  }
+
+  // A cause only the user can clear goes to the user now, with the fix and
+  // the resume route. Nothing is recorded: resuming after the fix re-runs the
+  // same route, and an uncleared cause is reported again the same way.
+  function userEnvironmentAction(id, value, found) {
+    const resumeCommand = value.resume || `claude-foundation advance ${id}`;
+    const summary = `${found.fix}. Only the user can clear this (${found.cause}): ${value.reason}`;
+    return { ...value, action: "ASK_USER", actor: "user", owner: "user",
+      legacyAction: "USER_ENVIRONMENT_REQUIRED", boundary: "user-environment",
+      reason: summary, command: resumeCommand,
+      decision: { kind: "user-environment", cause: found.cause, fix: found.fix, summary,
+        options: [
+          { id: "fixed", outcome: `${found.fix}; then the agent runs '${resumeCommand}'.`, command: resumeCommand },
+          { id: "pause", outcome: "Keep all work and evidence and pause until the environment is fixed." }
+        ], recommended: "fixed" },
+      recovery: { type: "ASK_USER", statePreserved: true,
+        alternatives: [found.fix, "pause with all work preserved"] }
+    };
+  }
+
+  function ask(value, pending) {
+    return { ...value, action: "ASK_USER", actor: "user", owner: "user",
+      legacyAction: pending.legacyAction || "NO_PROGRESS_BOUNDARY",
+      boundary: pending.boundary || "repeated-no-progress",
+      reason: pending.decision.summary, decision: pending.decision,
+      recovery: { type: "ASK_USER", statePreserved: true,
+        alternatives: pending.decision.options.map((row) => row.outcome) }
+    };
+  }
+
+  // Budget windows auto-continue, but not forever without progress: the
+  // record is bound to the delivery subject (content and lifecycle), so any
+  // progress starts a new baseline; unchanged reopening reaches the user.
+  function budgetBoundary(id, value, state, record) {
+    if (!state.budget) return null;
+    const reopened = Number(state.budget.autoContinuation?.count || 0);
+    if (record.budgetBaseline === undefined) {
+      record.budgetBaseline = reopened;
+      save(state, record);
+      return null;
+    }
+    const rounds = reopened - Number(record.budgetBaseline);
+    if (rounds < ASK_AFTER_ROUNDS) return null;
+    const pending = record.pending?.key === "budget-no-progress" ? record.pending : {
+      key: "budget-no-progress", budgetCount: reopened, through: routeThrough(value),
+      boundary: "budget-no-progress",
+      decision: { ...decision(id, value, record, null, "budget-no-progress",
+        `The budget window reopened ${rounds} times without delivery progress: ${value.reason || value.action}`),
+      repetition: { rounds, windows: reopened, baseline: Number(record.budgetBaseline),
+        lastReopenedAt: state.budget.autoContinuation?.at || null } }
+    };
+    record.pending = pending;
+    save(state, record);
+    return ask(value, pending);
   }
 
   function observe(id, value, { force = false } = {}) {
@@ -175,47 +405,58 @@ export function createAdvanceRecovery({ loadRuntime, saveRuntime, subject, now =
       if (state.advanceRecovery) save(state, { ...record, attempts: [], pending: null });
       return value;
     }
+    const typed = value.action === "ASK_USER" && ADVANCE_DECISIONS[value.decision?.kind];
+    if (typed) {
+      const built = typedDecision(id, value, record, value.decision.kind);
+      const pending = record.pending?.key === built.key ? record.pending : {
+        key: built.key, decision: built.decision, through: routeThrough(value), ...typed
+      };
+      record.pending = pending;
+      save(state, record);
+      return ask(value, pending);
+    }
+    const environment = userEnvironmentCause(value);
+    if (environment) return userEnvironmentAction(id, value, environment);
+    const budget = budgetBoundary(id, value, state, record);
+    if (budget) return budget;
+    // Only repeated repair, or a Build verify that keeps failing the same
+    // way, can become a question. Waiting on a named external owner is the
+    // default: the WAIT already carries the owner, condition, and resume route.
+    const counted = value.action === "REPAIR" ||
+      (value.action === "EDIT" && value.verificationFailures?.length > 0);
+    if (!counted) return value;
     const key = recoveryBoundaryKey(value);
-    // Only repeated repair can become a question. Waiting on a named external
-    // owner is the default, not a question: the WAIT already carries the
-    // owner, condition, and resume route.
-    if (value.action !== "REPAIR") return value;
     const prior = record.attempts.find((row) => row.key === key);
+    const observedAt = now();
     const attempt = {
       key, action: value.action, reason: value.reason, command: value.command || null,
-      count: (prior?.count || 0) + 1, observedAt: now(),
+      count: (prior?.count || 0) + 1, observedAt,
+      firstObservedAt: prior?.firstObservedAt || prior?.observedAt || observedAt,
       ...(prior?.alternateRequested ? { alternateRequested: prior.alternateRequested } : {})
     };
     record.attempts = [...record.attempts.filter((row) => row.key !== key), attempt].slice(-16);
     // Before asking, the agent gets one turn to try a materially different
     // repair inside the approved agreement. Recorded so it happens once per key.
-    if (!force && attempt.count >= 3 && !attempt.alternateRequested) {
+    if (!force && attempt.count >= ALTERNATE_AFTER_ROUNDS && !attempt.alternateRequested) {
       attempt.alternateRequested = now();
       save(state, record);
       return { ...value, action: "REPAIR", actor: "agent", owner: "agent",
         legacyAction: "TRY_ALTERNATE_APPROACH", boundary: "alternate-approach",
-        reason: `The same repair returned ${attempt.count} times without progress: ${value.reason}. ` +
+        reason: `The same ${value.action === "EDIT" ? "verify failure" : "repair"} returned ${
+          attempt.count} times without progress: ${value.reason}. ` +
           "Try a materially different approach inside the approved agreement, then resume.",
         instruction: repairInstruction({ legacyAction: "TRY_ALTERNATE_APPROACH", reason: value.reason }),
-        attemptedStrategies: record.attempts.slice(-8).map(({ action, reason, command, count }) =>
-          ({ action, reason, command, observations: count })),
+        attemptedStrategies: strategies(record),
         recoveryType: "EDIT"
       };
     }
-    if (force || attempt.count >= 3) {
+    if (force || attempt.count >= ASK_AFTER_ROUNDS) {
       const pending = record.pending?.key === key ? record.pending : {
-        key, decision: decision(id, value, record),
-        through: value.resume?.match(/--through (build|proven|archived)/)?.[1] || null
+        key, decision: decision(id, value, record, attempt), through: routeThrough(value)
       };
       record.pending = pending;
       save(state, record);
-      return { ...value, action: "ASK_USER", actor: "user", owner: "user",
-        legacyAction: "NO_PROGRESS_BOUNDARY",
-        boundary: "repeated-no-progress",
-        reason: pending.decision.summary, decision: pending.decision,
-        recovery: { type: "ASK_USER", statePreserved: true,
-          alternatives: pending.decision.options.map((row) => row.outcome) }
-      };
+      return ask(value, pending);
     }
     save(state, record);
     return value;
@@ -240,7 +481,7 @@ export function createAdvanceRecovery({ loadRuntime, saveRuntime, subject, now =
     if (previous) {
       if (previous.subject === record.subject && previous.fingerprint === flags["decision-fingerprint"] &&
           previous.choice === choice && previous.reason === reason)
-        return { choice, through: previous.through };
+        return { choice, through: previous.through, kind: previous.kind || null, reference };
       throw new Error("This decision reference already records a different or stale recovery answer.");
     }
     if (!current || flags["decision-fingerprint"] !== current.decision.fingerprint)
@@ -250,15 +491,18 @@ export function createAdvanceRecovery({ loadRuntime, saveRuntime, subject, now =
       throw new Error("Recovery decision references are limited to 160 characters and reasons to 2000 characters.");
     if (!current.decision.options.some((row) => row.id === choice))
       throw new Error("Recovery choice is not offered by the current decision.");
+    const kind = current.decision.kind || null;
     record.answers.push({ subject: record.subject, key: current.key,
-      fingerprint: current.decision.fingerprint, choice, reference, reason,
+      fingerprint: current.decision.fingerprint, choice, reference, reason, kind,
       through: current.through, recordedAt: now() });
     if (choice !== "pause") {
       record.attempts = record.attempts.filter((row) => row.key !== current.key);
+      // A user who continues past repeated budget windows starts a new count.
+      if (kind === "budget-no-progress") record.budgetBaseline = current.budgetCount;
       record.pending = null;
     } else record.pending.paused = true;
     save(state, record);
-    return { choice, through: current.through };
+    return { choice, through: current.through, kind, reference };
   }
 
   return { observe, pending, resolve };

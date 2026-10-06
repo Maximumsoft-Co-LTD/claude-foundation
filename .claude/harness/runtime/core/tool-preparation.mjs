@@ -103,6 +103,8 @@ export function executionPreparationValue({
         log: row.setupLog
       }
     }));
+  // OpenSpec validates and archives the agreement: Prove and Land need it,
+  // Build does not. A Build-time absence is deferred, never a stop.
   if (openSpec?.level === "error") issues.push({
     code: "OPENSPEC_UNAVAILABLE",
     owner: "harness",
@@ -119,7 +121,9 @@ export function executionPreparationValue({
     tools: [{
       id: "openspec",
       requiredBy: ["change-validation", "archive"],
-      status: openSpec?.level === "error" ? "unavailable" : "ready",
+      status: openSpec?.level === "error" ? "unavailable"
+        : openSpec?.level === "deferred" ? "deferred" : "ready",
+      ...(openSpec?.level === "deferred" ? { deferredTo: openSpec.deferredTo } : {}),
       version: openSpec?.version || null,
       source: openSpec?.source || null
     }],
@@ -129,11 +133,17 @@ export function executionPreparationValue({
 }
 
 export function ensureProjectOpenSpec({
-  root, status, spawn, prependPath = prependFoundationToolPath
+  root, status, spawn, prependPath = prependFoundationToolPath, stage = "prove"
 }) {
   prependPath(root);
   let observed = status(root);
   if (observed.level !== "error") return { ...observed, source: "path" };
+  // Only Prove onward runs OpenSpec. Build neither installs nor stops for it;
+  // the first Prove prepares it and keeps the existing HANDOFF on failure.
+  if (stage === "build") return {
+    level: "deferred", version: null, source: null, deferredTo: "prove",
+    detail: `OpenSpec CLI is not on PATH; it is prepared at Prove (${observed.detail || "missing"})`
+  };
   const toolRoot = join(root, ".foundation", "tools");
   const installed = spawn("npm", [
     "install", "--prefix", toolRoot, "--ignore-scripts", "--no-audit",

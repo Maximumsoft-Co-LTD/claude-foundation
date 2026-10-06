@@ -509,13 +509,18 @@ export function assertSandboxGroundingPortable(context, id, state) {
       if (!matchesDigest) return "working-tree-digest-mismatch";
       if (repository.id === "root" &&
           isPacketLocalSource(context.changePath(id), absolute)) return null;
+      // A cited investigation record is digest-pinned control-plane
+      // evidence: it is read from the target checkout, never replayed into
+      // the sandbox, so an untracked one is portable as it stands.
+      if (repository.id === "root" && isInvestigationPath(String(source.path || "")
+        .replace(/^\.\//, ""))) return null;
       return gitBaseCheckoutStatus(repository, source.path, context.gitBuffer);
     }
   );
   if (portability.length)
     context.fail(`grounding readSet is not sandbox-portable: ${
       portability.map((entry) => `${entry.repository}:${entry.path} (${entry.reason})`).join(", ")
-    } — commit the source or move the required decision/evidence into the change packet before creating a sandbox`);
+    } — move the cited decision or evidence into openspec/changes/${id}/ or refresh its readSet digest through one semantic amendment, then resume with 'claude-foundation advance ${id} --through build'`);
 }
 
 export function plannedGroundingPortabilityStatus(source, pathExists) {
@@ -2187,12 +2192,17 @@ export function createSandboxRuntime({
 
   // Brings an intentionally revised target agreement into Build. Returns
   // whether a sync ran; an unchanged source is a no-op.
-  function synchronizeAgreement(id) {
+  function synchronizeAgreement(id, flags = {}) {
     const state = loadRuntime(id);
     // Semantic amendments live in the sandbox until Land. A changed target
     // packet must not make automatic preparation import the older agreement
-    // or deadlock on the explicit sync overwrite guard.
+    // or deadlock on the explicit sync overwrite guard. A recorded user
+    // answer (`advance --decision`) is the explicit resolution.
     if (activeSandboxAmendment(id, state)) {
+      if (flags.resolve) {
+        sync(id, { resolve: flags.resolve });
+        return true;
+      }
       assertAmendedSource(id, state);
       return false;
     }
