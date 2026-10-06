@@ -329,6 +329,16 @@ assert_cmd_zero "stable lifecycle wrapper permission is installed" \
 assert_cmd_zero "user permission is preserved during permission merge" \
   jq -e '.permissions.allow | index("Bash(user-tool *)") != null' \
     "$TARGET/.claude/settings.json"
+# The allowlist exists so the harness CLI and Build-workspace edits do not
+# prompt on every change. It must stay that narrow, append after the user's
+# own rules, and never grow on a rerun.
+SHIPPED_ALLOW="$(jq -c '.permissions.allow' "$ROOT/.claude/settings.json")"
+assert_eq "shipped allowlist is exactly the harness CLI and Build workspaces" \
+  '["Bash(claude-foundation *)","Bash(.foundation/bin/claude-foundation *)","Bash(node .claude/harness/foundation.mjs *)","Edit(/.foundation/sandboxes/**)","Edit(/.foundation/repository-sandboxes/**)"]' \
+  "$SHIPPED_ALLOW"
+assert_eq "upgrade appends the shipped allowlist after user rules in order" \
+  "$(printf '%s' "$SHIPPED_ALLOW" | jq -c '["Bash(user-tool *)"] + .')" \
+  "$(jq -c '.permissions.allow' "$TARGET/.claude/settings.json")"
 assert_file_not_contains "superseded phase guard command retired on upgrade" \
   "$TARGET/.claude/settings.json" "phase-mutation-guard.mjs"
 assert_eq "exactly one phase guard is wired after upgrade" "1" \
@@ -365,8 +375,11 @@ fi
 assert_file_exists "a refused manifest path deletes nothing outside the project" \
   "$outside_probe"
 cp "$TMP/manifest-backup.txt" "$TARGET/.foundation/install-manifest.txt"
+allow_before_rerun="$(jq -c '.permissions.allow' "$TARGET/.claude/settings.json")"
 assert_cmd_zero "installer update removes only stale managed files" \
   bash "$ROOT/install.sh" "$TARGET" --source "$ROOT" --yes
+assert_eq "rerunning the installer leaves the allowlist unchanged" \
+  "$allow_before_rerun" "$(jq -c '.permissions.allow' "$TARGET/.claude/settings.json")"
 assert_file_absent "stale managed file removed from prior manifest" \
   "$TARGET/.claude/harness/stale-owned.md"
 assert_file_absent "retired prototype command removed on upgrade" \
@@ -928,5 +941,42 @@ assert_contains "the installer prepares pinned OpenSpec project-locally" \
   "$online_install" "Prepared pinned OpenSpec project-locally under .foundation/tools"
 assert_file_exists "the prepared OpenSpec CLI is project-local" \
   "$ONLINE_TARGET/.foundation/tools/node_modules/.bin/openspec"
+
+assert_eq "a fresh install seeds the shipped allowlist" \
+  "$SHIPPED_ALLOW" "$(jq -c '.permissions.allow' "$ONLINE_TARGET/.claude/settings.json")"
+
+# An install from before the allowlist already carried the CLI rule beside the
+# user's own; the upgrade keeps both where they were and adds only the rest.
+ALLOW_UPGRADE="$TMP/allowlist-upgrade-project"
+mkdir -p "$ALLOW_UPGRADE/.claude"
+printf '%s\n' '{"permissions":{"allow":["Bash(user-tool *)","Bash(claude-foundation *)"],"deny":["Bash(rm *)"]},"model":"user-choice"}' \
+  > "$ALLOW_UPGRADE/.claude/settings.json"
+assert_cmd_zero "installer upgrades a pre-allowlist settings file" \
+  bash "$ROOT/install.sh" "$ALLOW_UPGRADE" --source "$ROOT" --yes
+assert_eq "pre-allowlist upgrade adds missing rules without duplicates" \
+  '["Bash(user-tool *)","Bash(claude-foundation *)","Bash(.foundation/bin/claude-foundation *)","Bash(node .claude/harness/foundation.mjs *)","Edit(/.foundation/sandboxes/**)","Edit(/.foundation/repository-sandboxes/**)"]' \
+  "$(jq -c '.permissions.allow' "$ALLOW_UPGRADE/.claude/settings.json")"
+assert_cmd_zero "allowlist merge keeps unrelated user settings" \
+  jq -e '.permissions.deny == ["Bash(rm *)"] and .model == "user-choice"' \
+    "$ALLOW_UPGRADE/.claude/settings.json"
+
+OPT_OUT="$TMP/allowlist-opt-out-project"
+mkdir -p "$OPT_OUT/.claude"
+printf '%s\n' '{"permissions":{"allow":["Bash(user-tool *)"]}}' > "$OPT_OUT/.claude/settings.json"
+assert_cmd_zero "installer accepts the allowlist opt-out" \
+  bash "$ROOT/install.sh" "$OPT_OUT" --source "$ROOT" --yes --no-permission-allowlist
+assert_eq "opt-out leaves the user's allowlist untouched" '["Bash(user-tool *)"]' \
+  "$(jq -c '.permissions.allow' "$OPT_OUT/.claude/settings.json")"
+assert_file_contains "opt-out still wires the shipped hooks" \
+  "$OPT_OUT/.claude/settings.json" "phase-mutation-guard.sh"
+OPT_OUT_FRESH="$TMP/allowlist-opt-out-fresh"
+mkdir -p "$OPT_OUT_FRESH"
+assert_cmd_zero "a fresh install accepts the allowlist opt-out" \
+  bash "$ROOT/install.sh" "$OPT_OUT_FRESH" --source "$ROOT" --yes --no-permission-allowlist
+assert_cmd_zero "a fresh opt-out install seeds no permission rules" \
+  jq -e 'has("permissions") | not' "$OPT_OUT_FRESH/.claude/settings.json"
+assert_contains "host adapters pass the allowlist opt-out to the shared installer" \
+  "$(bash "$ROOT/install-cursor.sh" "$TMP/cursor-opt-out-dry" --source "$ROOT" --yes --dry-run --no-permission-allowlist)" \
+  "permission allowlist skipped"
 
 finish "installer"

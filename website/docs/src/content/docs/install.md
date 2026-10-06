@@ -76,6 +76,10 @@ claude-foundation doctor --stage change
 
 `doctor` is the readiness check you should reach for whenever something looks wrong. It diagnoses project, provider, and lifecycle state, and it reports unresolved apply transactions before Land ever reaches them.
 
+## Permission allowlist
+
+`.claude/settings.json` stays project-owned. The installer merges the shipped hooks and appends a narrow `permissions.allow` list, so Claude Code does not ask for approval on every harness step: `Bash(claude-foundation *)`, `Bash(.foundation/bin/claude-foundation *)`, `Bash(node .claude/harness/foundation.mjs *)`, `Edit(/.foundation/sandboxes/**)`, and `Edit(/.foundation/repository-sandboxes/**)`. It adds only missing rules after your own, never removes or reorders entries, and a rerun adds nothing. The PreToolUse guards still run before these rules. Pass `--no-permission-allowlist` on every install or upgrade to leave `permissions.allow` untouched.
+
 ## Headless / CI (`claude -p`)
 
 Claude Code ignores project `permissions.allow` entries until the workspace is trusted. In a fresh checkout, a headless `claude -p` run prints `Ignoring ... permissions.allow entry ... this workspace has not been trusted`, so the installed `Bash(claude-foundation *)` rule does nothing and every harness call is denied. Either run `claude` once interactively in the project and accept the trust prompt, or grant the tools on each headless run:

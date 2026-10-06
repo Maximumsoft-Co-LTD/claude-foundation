@@ -154,6 +154,17 @@ Installer จะรักษา specs, active changes, runtime state, custom age
 ของ project ไว้ การ upgrade จะ refresh เฉพาะ command, schema, harness, rule,
 skill และ hook ที่ Change Loop เป็นเจ้าของตาม install manifest
 
+`.claude/settings.json` ยังเป็นของ project Installer จะ merge hook ที่ ship มา
+และต่อท้าย `permissions.allow` แบบแคบ เพื่อไม่ให้ Claude Code ขออนุมัติทุกขั้นของ
+harness ได้แก่ `Bash(claude-foundation *)`,
+`Bash(.foundation/bin/claude-foundation *)`,
+`Bash(node .claude/harness/foundation.mjs *)`,
+`Edit(/.foundation/sandboxes/**)` และ
+`Edit(/.foundation/repository-sandboxes/**)` โดยเพิ่มเฉพาะ rule ที่ยังไม่มีต่อจาก
+rule ของผู้ใช้ ไม่ลบหรือสลับลำดับ entry เดิม และการรันซ้ำไม่เพิ่มอะไร guard ของ
+PreToolUse ยังทำงานก่อน rule เหล่านี้ ให้ใส่ `--no-permission-allowlist` ทุกครั้งที่
+install หรือ upgrade หากไม่ต้องการให้แตะ `permissions.allow`
+
 Installer ตรวจปลายทางที่จะเขียนก่อนเปลี่ยนไฟล์ หากพบ symlink ในปลายทางที่จัดการ
 จะรักษา link ไว้และแจ้งสาเหตุ ให้เลือก directory จริงสำหรับติดตั้ง หรือย้าย shared
 configuration ตามการตัดสินใจของผู้ใช้แล้วลองใหม่ ตัวติดตั้งของแต่ละ host ตรวจ

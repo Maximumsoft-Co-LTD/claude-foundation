@@ -164,6 +164,18 @@ custom agents, and hooks. Upgrades refresh only Change Loop-owned commands,
 schemas, harness code, rules, skills, and hooks recorded in the install
 manifest.
 
+`.claude/settings.json` stays project-owned. The installer merges the shipped
+hooks and appends a narrow `permissions.allow` list, so Claude Code does not ask
+for approval on every harness step: `Bash(claude-foundation *)`,
+`Bash(.foundation/bin/claude-foundation *)`,
+`Bash(node .claude/harness/foundation.mjs *)`,
+`Edit(/.foundation/sandboxes/**)`, and
+`Edit(/.foundation/repository-sandboxes/**)`. It adds only missing rules after
+your own, never removes or reorders entries, and a rerun adds nothing. The
+PreToolUse guards still run before these rules. Pass
+`--no-permission-allowlist` on every install or upgrade to leave
+`permissions.allow` untouched.
+
 Installation checks writable destinations before changing files. A symlink in a
 managed destination is preserved and reported: choose a real installation
 directory or explicitly relocate shared configuration, then retry. Host adapters
