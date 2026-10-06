@@ -235,7 +235,7 @@ reviewer definition อยู่ใต้ `review.reviewers` โดย reviewer 
 
 - ใช้ adapter `claude-cli` หรือ `codex-cli` คู่กับ provider family ที่ถูกต้อง;
 - ระบุ executable ที่ติดตั้งแล้วและ model ID;
-- ใช้ `reasoningEffort: "high"`;
+- ใช้ `reasoningEffort: "high"` (fast tier ของงานความเสี่ยงต่ำรันที่ medium);
 - ใช้ `sandbox: "read-only"` และ `ephemeral: true`
 
 อย่าใส่ credential, token หรือ login command ใน `foundation.json` ให้ติดตั้งและ

@@ -240,7 +240,7 @@ Reviewer definitions live under `review.reviewers`. A configured reviewer must:
 
 - use adapter `claude-cli` or `codex-cli` with the matching provider family;
 - name an installed executable and model ID;
-- use `reasoningEffort: "high"`;
+- use `reasoningEffort: "high"` (the low-risk fast tier runs at medium);
 - use `sandbox: "read-only"` and `ephemeral: true`.
 
 Do not put credentials, tokens, or login commands in `foundation.json`. Install

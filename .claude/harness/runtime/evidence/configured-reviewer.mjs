@@ -400,7 +400,9 @@ export function validReviewerConfig(config) {
 // never changes. Model family records the model actually run — the declared
 // `fastModelFamily`, else the fast alias family when the alias substitutes —
 // so receipts and diversity/separation checks judge that model, not the
-// configured one.
+// configured one. The fast tier reasons at medium effort: low-risk review is
+// already scoped, and an unsure result still escalates to the configured
+// model at high effort.
 export function reviewerModelForTier(config, modelTier, policy = {}) {
   if (modelTier !== "fast" || policy.review?.lowRiskModel === "configured") return config;
   const explicitId = String(config.fastModelId || "").trim();
@@ -413,7 +415,8 @@ export function reviewerModelForTier(config, modelTier, policy = {}) {
     modelId: fastModelId,
     modelFamily: String(config.fastModelFamily || "").trim() ||
       aliasFamily.toLowerCase() || config.modelFamily,
-    modelTier: "fast"
+    modelTier: "fast",
+    reasoningEffort: "medium"
   };
 }
 

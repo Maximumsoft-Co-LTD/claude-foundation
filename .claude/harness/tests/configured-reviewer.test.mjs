@@ -730,10 +730,13 @@ try {
   assert.equal(fastCapture.args[fastCapture.args.indexOf("--model") + 1], "haiku");
   assert.equal(fastResult.reviewer.modelId, "haiku");
   assert.equal(fastResult.command.modelTier, "fast");
+  assert.equal(fastCapture.args[fastCapture.args.indexOf("--effort") + 1], "medium");
+  assert.equal(fastResult.command.reasoningEffort, "medium");
   fastRuntime.runReview({ changeId: "high-tier", workspace, packet: highPacket,
     modelTier: "configured" });
   const highCapture = JSON.parse(readFileSync(join(workspace, "claude-capture.json"), "utf8"));
   assert.equal(highCapture.args[highCapture.args.indexOf("--model") + 1], "opus");
+  assert.equal(highCapture.args[highCapture.args.indexOf("--effort") + 1], "high");
 
   process.stdout.write("configured reviewer tests: PASS\n");
 } finally {

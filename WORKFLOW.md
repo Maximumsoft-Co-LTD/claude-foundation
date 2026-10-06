@@ -841,9 +841,9 @@ the correction circuit bounded by risk; `RESOLVED` prints the route, such as
 Under legacy policy it prints `required` or
 `not required (legacy review policy: no AI review runs)`. The review reads the change's diff and
 the agreement's requirements, not whole files. Low risk runs one diff-only
-review on the fast model tier (`review.lowRiskModel: "configured"` or a
-reviewer `fastModelId` overrides it); medium and high keep the configured
-model. Every full round receives the agreement's scenario checklist and must
+review on the fast model tier at medium effort (`review.lowRiskModel:
+"configured"` or a reviewer `fastModelId` overrides it); medium and high keep
+the configured model at high effort. Every full round receives the agreement's scenario checklist and must
 report each scenario as covered, missing, or unsure; a missing scenario becomes
 a blocking finding. If a fast first round cannot confirm every scenario, the
 harness re-runs that review once on the configured model without consuming a

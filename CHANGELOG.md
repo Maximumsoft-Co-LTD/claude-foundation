@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   missing a section its work type needs (`summary`, `failureMatrix`,
   `userFlow`, `uiStates`, `componentMap`, `apiContracts`, `dataModel`, and so
   on) gets a draft issue the agent repairs.
+- Low-risk fast-tier review runs at medium reasoning effort; the configured
+  model and any escalation keep high effort.
 
 ## [3.5.30] - 2026-10-01
 

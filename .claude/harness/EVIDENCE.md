@@ -407,7 +407,7 @@ requirements), all bound by the packet digest alongside the unchanged scope,
 workspace hash, and finding binding. A low-tier first round is `diff-only`: the
 reviewer sees a projection without reference-only fields and may open a file
 only when its hunk is truncated, omitted, or unavailable. It runs on the fast
-model tier: the reviewer's `fastModelId` (optional `fastModelFamily`), else the
+model tier at medium reasoning effort: the reviewer's `fastModelId` (optional `fastModelFamily`), else the
 `models.fast.family` alias for `claude-cli`; `review.lowRiskModel:
 "configured"` opts out. Provider family never changes; model family records
 the fast model actually run (`fastModelFamily`, else the `models.fast.family`
