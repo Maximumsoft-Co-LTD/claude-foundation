@@ -119,6 +119,9 @@ cd claude-foundation
 ./install.sh /path/to/your-project
 ```
 
+การติดตั้งจาก source จะเขียน shim `.foundation/bin/claude-foundation` (ถูก ignore)
+และ session ของ Claude Code จะได้คำสั่งนี้ใน `PATH` เมื่อยังไม่มี `claude-foundation` ตัวอื่น
+
 Claude Code ไม่ต้องใช้ adapter ส่วน agent host อื่นใช้ `--host` วาง adapter
 ทับการติดตั้งชุดเดียวกัน:
 

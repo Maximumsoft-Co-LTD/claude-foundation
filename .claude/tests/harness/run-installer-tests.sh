@@ -82,6 +82,10 @@ printf '%s\n' '{"permissions":{"allow":["Bash(user-tool *)"]},"hooks":{"PreToolU
 
 assert_cmd_zero "installer applies non-interactively" \
   bash "$ROOT/install.sh" "$TARGET" --source "$ROOT" --yes
+# Harness next steps name `claude-foundation`; a source-checkout install must
+# still give the session that command, from a path with a space.
+assert_contains "installer writes a working project-local CLI shim" \
+  "$(cd "$TARGET" && "$TARGET/.foundation/bin/claude-foundation" version)" "claude-foundation "
 assert_file_exists "change command installed" "$TARGET/.claude/commands/change.md"
 assert_file_contains "installed change command accepts explicit prototype handoff" \
   "$TARGET/.claude/commands/change.md" "--prototype-selection <path>"

@@ -126,6 +126,9 @@ cd claude-foundation
 ./install.sh /path/to/your-project
 ```
 
+A source install writes an ignored `.foundation/bin/claude-foundation` shim;
+Claude Code sessions get it on `PATH` when no other `claude-foundation` resolves.
+
 Claude Code needs no adapter. For other agent hosts, `--host` layers one over
 the same shared install:
 

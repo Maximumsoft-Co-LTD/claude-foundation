@@ -82,4 +82,25 @@ assert_file_contains "session hook exports only the session identity" \
 assert_file_contains "session hook preserves transcript paths with spaces" \
   "$ENV_FILE" "FOUNDATION_CLAUDE_TRANSCRIPT_PATH='/tmp/project session/session-123.jsonl'"
 
+assert_file_not_contains "session hook adds no PATH entry without an installed CLI shim" \
+  "$ENV_FILE" "export PATH="
+
+# A source-checkout install has no global `claude-foundation`; the hook puts
+# the installer's project-local shim on PATH, and only when nothing resolves.
+SHIM_PROJECT="$(mktemp -d)"
+trap 'rm -f "$ENV_FILE"; rm -rf "$SHIM_PROJECT"' EXIT HUP INT TERM
+mkdir -p "$SHIM_PROJECT/.foundation/bin" "$SHIM_PROJECT/global"
+touch "$SHIM_PROJECT/.foundation/bin/claude-foundation" "$SHIM_PROJECT/global/claude-foundation"
+NODE_DIR="$(dirname "$(command -v node)")"
+: > "$ENV_FILE"
+printf '%s' "$session" | CLAUDE_PROJECT_DIR="$SHIM_PROJECT" CLAUDE_ENV_FILE="$ENV_FILE" \
+  PATH="$NODE_DIR:/usr/bin:/bin" node "$ROOT/.claude/hooks/session-context.mjs" >/dev/null
+assert_file_contains "session hook puts the installed CLI shim on PATH" \
+  "$ENV_FILE" "export PATH='$SHIM_PROJECT/.foundation/bin':\"\$PATH\""
+: > "$ENV_FILE"
+printf '%s' "$session" | CLAUDE_PROJECT_DIR="$SHIM_PROJECT" CLAUDE_ENV_FILE="$ENV_FILE" \
+  PATH="$SHIM_PROJECT/global:$NODE_DIR:/usr/bin:/bin" node "$ROOT/.claude/hooks/session-context.mjs" >/dev/null
+assert_file_not_contains "session hook keeps a CLI already on PATH first" \
+  "$ENV_FILE" "export PATH="
+
 finish "current hooks"

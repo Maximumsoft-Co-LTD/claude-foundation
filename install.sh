@@ -485,6 +485,22 @@ if command -v node >/dev/null 2>&1; then
 fi
 
 INSTALL_COMMITTED=yes
+# Every next step the harness prints names `claude-foundation`, which a source
+# checkout does not put on PATH. This ignored, project-local shim points at the
+# CLI that ran this install; the SessionStart hook adds it to PATH only when no
+# other `claude-foundation` resolves.
+cli_shim="$TARGET_PATH/.foundation/bin/claude-foundation"
+cli_quoted="'$(printf '%s' "$SOURCE_PATH/cli.sh" | sed "s/'/'\\\\''/g")'"
+mkdir -p "$(dirname "$cli_shim")"
+{
+  printf '#!/usr/bin/env sh\n'
+  printf '# Written by claude-foundation init; rerun init if the CLI source moves.\n'
+  printf 'cli=%s\n' "$cli_quoted"
+  printf '[ -f "$cli" ] || { printf %s "$cli" >&2; exit 127; }\n' \
+    "'claude-foundation: CLI source %s is gone; rerun claude-foundation init\\n'"
+  printf 'exec bash "$cli" "$@"\n'
+} > "$cli_shim"
+chmod +x "$cli_shim"
 ok "Change Loop installed at $TARGET_PATH"
 printf '  Your product source was not changed; managed workflow files were installed or updated.\n'
 
