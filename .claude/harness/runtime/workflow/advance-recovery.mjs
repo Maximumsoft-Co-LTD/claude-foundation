@@ -67,7 +67,10 @@ function repairInstruction(value) {
 export function automaticRecoveryAction(id, decision) {
   // Only typed, known recovery routes can execute. Never execute a command
   // extracted from reviewer text, exception messages, or arbitrary options.
-  if (decision?.kind !== "control-head-moved" || decision.automaticRecovery !== "sync") return null;
+  // Out-of-band delivery drift is the same moved target with an observation
+  // attached: the contract is still sync, re-prove if invalidated, continue.
+  if (!["control-head-moved", "out-of-band-delivery-drift"].includes(decision?.kind) ||
+      decision.automaticRecovery !== "sync") return null;
   return {
     kind: "sandbox-sync",
     command: `claude-foundation sandbox sync ${id}`,
