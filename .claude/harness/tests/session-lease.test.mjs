@@ -71,14 +71,13 @@ test("settle releases only harness-issued session leases the agent completed", (
   assert.deepEqual(interrupted.calls, []);
 });
 
-test("a widened scope renews the lease and a scope refusal routes back to advance", (t) => {
+test("a scope refusal routes back to advance; release owns stale-authority renewal", (t) => {
   const root = workspace(t, "T001 T002");
   const owner = sessionLeaseOwner("demo", "T001", stableHash);
-  const stale = fakeLeases(root, [{ taskId: "T001", owner, leaseId: "l1" }], {
-    releaseError: ["stale result authority for 'demo/T001': graph or contract changed after lease acquisition; re-acquire"]
-  });
-  assert.deepEqual(stale.runtime.settle("demo"), ["T001"]);
-  assert.deepEqual(stale.calls.map((row) => row[0]), ["release", "acquire", "release"]);
+  const settled = fakeLeases(root, [{ taskId: "T001", owner, leaseId: "l1" }]);
+  assert.deepEqual(settled.runtime.settle("demo"), ["T001"]);
+  assert.deepEqual(settled.calls.map((row) => row[0]), ["release"],
+    "settle never composes acquire-then-release itself");
 
   const scoped = fakeLeases(root, [{ taskId: "T002", owner, leaseId: "l1" }], {
     releaseError: ["task 'T002' changed outside granted scope: tests/b.spec.js; result and proof were not accepted. Revert ... 'claude-foundation agents acquire demo T002 --owner x'"]
