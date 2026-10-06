@@ -120,7 +120,7 @@ test("task execution preserves history and binds the current graph", () => {
   });
   assert.equal(agentTaskExecutionRows([task("T1")], true, {}, {
     revision: 1, identity: "one"
-  }).T1.mode, "single-agent-observed");
+  }).T1.mode, "harness-verified", "planning grants no single-agent authority");
 });
 
 test("completed legacy single-session tasks are reused or automatically re-verified", () => {

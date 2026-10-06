@@ -271,9 +271,58 @@ test("issue grants only a leased session task and removes the manual lease route
   assert.match(issued.instructions.join(" "), /do not acquire or release the lease/);
   const single = { ...edit, execution: { mode: "session", leases: [] } };
   assert.equal(runtime.issue("demo", single), single);
-  const group = { ...edit, execution: { mode: "parallel", leases: [{}, {}] } };
-  assert.equal(runtime.issue("demo", group), group);
   assert.equal(calls.length, 1);
+});
+
+test("a parallel group runs on harness-held leases; the parent only spawns and waits", (t) => {
+  const { runtime, calls } = fakeLeases(workspace(t), []);
+  const group = {
+    action: "EDIT", workspace: "/sandbox", tasks: [{ id: "T001" }, { id: "T002" }],
+    execution: { mode: "parallel", leases: [
+      { taskId: "T001", repository: "api", owner: "dispatch-t001-x",
+        acquireCommand: "claude-foundation agents acquire demo T001 --owner dispatch-t001-x",
+        packetCommand: "claude-foundation packet demo --task T001",
+        releaseCommand: "claude-foundation agents release demo T001 --owner dispatch-t001-x" },
+      { taskId: "T002", repository: "web", owner: "dispatch-t002-x",
+        acquireCommand: "claude-foundation agents acquire demo T002 --owner dispatch-t002-x",
+        packetCommand: "claude-foundation packet demo --task T002",
+        releaseCommand: "claude-foundation agents release demo T002 --owner dispatch-t002-x" }
+    ] }
+  };
+  const issued = runtime.issue("demo", group);
+  assert.deepEqual(calls, [
+    ["acquire", "T001", sessionLeaseOwner("demo", "T001", stableHash)],
+    ["acquire", "T002", sessionLeaseOwner("demo", "T002", stableHash)]
+  ], "the harness acquires every lease with its own owner");
+  assert.deepEqual(issued.execution.leases, []);
+  assert.deepEqual(issued.execution.workers.map((worker) => worker.packetCommand), [
+    "claude-foundation packet demo --task T001", "claude-foundation packet demo --task T002"
+  ]);
+  assert.ok(issued.execution.managedLeases.every((lease) => lease.managedBy === "harness"));
+  const text = JSON.stringify(issued);
+  assert.doesNotMatch(text, /agents (acquire|release)/, "no lease command reaches the agent");
+  assert.match(issued.instructions.join(" "), /Nobody acquires or releases a lease or edits tasks\.md/);
+});
+
+test("a no-lease session handoff records a harness-verified result for each passing task", (t) => {
+  const root = workspace(t);
+  writeFileSync(join(root, "openspec", "changes", "demo", "tasks.md"),
+    "- [ ] **T001** First — verify: `npm test -- a` [paths:src/a.js]\n" +
+    "- [ ] **T002** Second — verify: `npm test -- b` [paths:src/b.js]\n");
+  let state = { workspace: { path: root }, sessionHandoff: { version: 1, taskIds: ["T001", "T002"] } };
+  const calls = [];
+  const runtime = createSessionLeaseRuntime({
+    stableHash, loadRuntime: () => state, saveRuntime: (value) => { state = value; },
+    activeChangeLeases: () => [],
+    acquire: (id, taskId, flags) => { calls.push(["acquire", taskId, flags.owner]); return { leaseId: `l-${taskId}` }; },
+    release: (id, taskId, flags) => { calls.push(["release", taskId, flags["lease-id"]]); },
+    discard: () => {},
+    runCheck: (id, check) => ({ status: check.command.endsWith("a") ? "pass" : "fail", exitCode: 1 })
+  });
+  assert.deepEqual(runtime.settle("demo"), ["T001"]);
+  assert.deepEqual(calls.map((row) => `${row[0]}:${row[1]}`), ["acquire:T001", "release:T001"],
+    "only the passing task gets a recorded result");
+  assert.deepEqual(state.sessionHandoff.taskIds, ["T002"]);
 });
 
 test("an explicit acquire takes over the harness-held lease without completing it", (t) => {

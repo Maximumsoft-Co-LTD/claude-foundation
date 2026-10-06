@@ -10,14 +10,13 @@ protocol-v6 action, then follow its exact `resume` route until `DONE`
 or a real boundary.
 
 - `EDIT`: implement the returned work inside its workspace and allowed
-  `paths`; run its focused check. A single-session plan may return
-  all tasks in one `EDIT`: implement all, then resume once. `advance` ticks
-  each task whose verify passes.
+  `paths`; run its focused check. One `EDIT` may carry several tasks:
+  implement all, resume once; `advance` ticks each passing task.
 - `REPAIR`: apply the whole ordered batch; amend new behavior.
 - `RUN_EXTERNAL`: run the named operation; long commands go through
   `claude-foundation exec`.
 - `WAIT`/`ASK_USER`: report the wait; ask only for the decision; resume.
-- `DONE`: Build is complete.
+- `DONE`: continue with `--through proven` and stop at `proven`.
 
 Edit only allowed sandbox paths. Start every mutating shell call with
 `cd <workspace> &&`. New observable behavior, or unauthorized infrastructure

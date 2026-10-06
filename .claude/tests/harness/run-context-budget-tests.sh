@@ -202,7 +202,7 @@ assert_file_contains "change uses atomic start" \
 assert_file_contains "build loads its policy only on triggers" \
   "$ROOT/.claude/commands/build.md" 'Read `references/build-policy.md` for a new user request'
 assert_file_contains "build implements a whole single-session batch" \
-  "$ROOT/.claude/commands/build.md" 'all tasks in one `EDIT`'
+  "$ROOT/.claude/commands/build.md" 'One `EDIT` may carry several tasks'
 assert_file_contains "prove keeps review in-session" \
   "$ROOT/.claude/commands/prove.md" 'Stay in-session while a review runs'
 assert_file_contains "prove owns the review timeout gate" \

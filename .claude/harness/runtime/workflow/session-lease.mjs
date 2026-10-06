@@ -151,6 +151,7 @@ export function createSessionLeaseRuntime({
           });
           remaining.push(taskId);
         } else if (!completeByCheck(id, taskId)) remaining.push(taskId);
+        else recordVerified(id, taskId);
       }
       settled.push(...handoff.filter((taskId) => !remaining.includes(taskId)));
       const current = loadRuntime(id);
@@ -159,6 +160,18 @@ export function createSessionLeaseRuntime({
       saveRuntime(current);
     }
     return settled;
+  }
+
+  // Every completion carries one kind of authority: a result the harness
+  // records under its own lease after the task's verify passed. A no-lease
+  // session handoff gets the same record here; if the plan cannot grant it
+  // yet, the next advance re-verifies the ticked task.
+  function recordVerified(id, taskId) {
+    const owner = sessionLeaseOwner(id, taskId, stableHash);
+    try {
+      const granted = acquire(id, taskId, { owner }, { quiet: true });
+      release(id, taskId, { owner, "lease-id": granted.leaseId }, { quiet: true });
+    } catch { /* reverify settles it on the next advance */ }
   }
 
   function withCheckFailures(id, value) {
@@ -184,9 +197,11 @@ export function createSessionLeaseRuntime({
     if (value?.action === "EDIT" && value.execution?.mode === "session" &&
         !value.execution?.leases?.length && value.tasks?.length)
       return withCheckFailures(id, recordHandoff(id, value));
+    if (value?.action === "EDIT" && value.execution?.mode === "parallel" &&
+        value.execution?.leases?.length)
+      return withCheckFailures(id, issueGroup(id, value));
     if (value?.action !== "EDIT" || value.execution?.mode !== "session" ||
         value.tasks?.length !== 1 || value.execution?.leases?.length !== 1)
-      // A parallel group still learns which released task failed its verify.
       return value?.action === "EDIT" ? withCheckFailures(id, value) : value;
     const taskId = value.tasks[0].id;
     const owner = sessionLeaseOwner(id, taskId, stableHash);
@@ -275,6 +290,39 @@ export function createSessionLeaseRuntime({
       }
     }
     return verified;
+  }
+
+  // A parallel group runs in native workers, but its leases are the
+  // harness's, exactly as for a session task: `advance` acquires them here and
+  // settles each on resume (verify, tick, release, scope check). The parent
+  // only spawns workers and waits; nobody acquires, releases, or ticks.
+  function issueGroup(id, value) {
+    const managedLeases = value.execution.leases.map((worker) => {
+      const owner = sessionLeaseOwner(id, worker.taskId, stableHash);
+      const granted = acquire(id, worker.taskId, { owner }, { quiet: true });
+      return { taskId: worker.taskId, owner, leaseId: granted.leaseId, managedBy: "harness" };
+    });
+    return {
+      ...value,
+      execution: {
+        ...value.execution,
+        leases: [],
+        workers: value.execution.leases.map((worker) => ({
+          taskId: worker.taskId, repository: worker.repository || null,
+          model: worker.model || null, packetCommand: worker.packetCommand
+        })),
+        managedLeases
+      },
+      instructions: [
+        "Spawn one native worker per execution.workers entry and give it only the output of " +
+        "its packetCommand and the repository state; never replay this transcript.",
+        "Each worker implements only its task inside its allowed paths and runs the task's " +
+        "focused check. Nobody acquires or releases a lease or edits tasks.md.",
+        "Wait for every worker, then run the resume command once: advance reruns each task's " +
+        "verify, ticks the passing tasks, releases their leases, and hands back only failures.",
+        ...(value.instructions || [])
+      ]
+    };
   }
 
   // An explicit lease primitive supersedes the harness-held one: the caller

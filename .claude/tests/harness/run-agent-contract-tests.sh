@@ -64,21 +64,21 @@ assert_file_contains "build verifies coercion boundaries before task completion"
 assert_file_contains "dispatch preserves lease authority for singleton frontiers" \
   "$ROOT/.claude/commands/references/build-dispatch.md" \
   'singleton runnable frontier out of a new worker'
-assert_file_contains "build forbids serializing a spawn group in the parent" \
-  "$ROOT/.claude/commands/references/build-dispatch.md" 'Never serialize the'
-assert_file_contains "dispatch spawns the leased group before waiting" \
+assert_file_contains "build forbids implementing a spawn group in the parent" \
   "$ROOT/.claude/commands/references/build-dispatch.md" \
-  'successfully leased worker before waiting for any worker'
-assert_file_contains "dispatch makes the parent the join owner" \
+  "never implement a worker's task in the parent"
+assert_file_contains "dispatch spawns the whole group before waiting" \
+  "$ROOT/.claude/commands/references/build-dispatch.md" 'Spawn every worker'
+assert_file_contains "dispatch leaves the group's leases to the harness" \
   "$ROOT/.claude/commands/references/build-dispatch.md" \
-  'the parent is the orchestrator and join owner'
+  '`advance` holds every lease of the returned group'
 assert_file_contains "dispatch keeps workers away from the task ledger" \
   "$ROOT/.claude/harness/runtime/workflow/packet-runtime.mjs" 'edit-task-ledger'
 assert_file_contains "dispatch keeps worker reports non-authoritative" \
   "$ROOT/.claude/commands/references/build-dispatch.md" 'report is not evidence'
-assert_file_contains "dispatch acquires only immediately spawnable workers" \
+assert_file_contains "dispatch keeps lease bookkeeping out of the agent" \
   "$ROOT/.claude/commands/references/build-dispatch.md" \
-  'Never acquire a lease that cannot be spawned immediately'
+  'Never acquire or release a lease or edit checkboxes yourself'
 assert_file_contains "agent contract selectively loads update policy" \
   "$ROOT/.claude/harness/AGENT.md" 'For `notification.surface: true`, load `.claude/harness/README.md#agent-update-policy`'
 assert_file_contains "update policy suppresses the duplicate Change notice" \

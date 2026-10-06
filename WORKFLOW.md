@@ -404,9 +404,18 @@ When every pending Build task must run one at a time (a dependency chain or
 overlapping paths) in one repository with no cross-repository claim or
 external resource, `advance` hands all of them in one session EDIT, in
 dependency order, with no lease. The next `advance` runs each handed task's
-`verify`, ticks every passing task, and returns an EDIT only for failed tasks
-(with `verificationFailures`) and their dependents. Plans with a parallel wave,
-several repositories, or shared external resources keep leased dispatch.
+`verify`, ticks every passing task, records its result under a harness lease,
+and returns an EDIT only for failed tasks (with `verificationFailures`) and
+their dependents. Plans with a parallel wave, several repositories, or shared
+external resources use native workers, but the harness still holds every
+lease: `advance` acquires the group's leases, the parent only spawns one worker
+per `execution.workers` entry and waits, and the next `advance` verifies, ticks,
+releases, and scope-checks each task. No agent acquires, releases, or ticks.
+
+Every completed task carries one kind of authority: a result the harness
+recorded after the task's `verify` passed, bound to that task's own authority.
+Planning records none. Older `single-agent-observed` and graph-v2 records stay
+readable for in-flight changes only.
 
 An upgrade from execution graph v2 preserves a completed multi-task
 single-session Build only when the persisted plan still binds the same task

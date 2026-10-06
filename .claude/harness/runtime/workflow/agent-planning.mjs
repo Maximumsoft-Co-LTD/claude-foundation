@@ -359,7 +359,9 @@ export function agentExecutionSummary(tasks, singleAgent) {
 export function agentTaskExecutionRows(tasks, singleAgent, priorPlan, graph) {
   const execution = { ...(priorPlan.taskExecution || {}) };
   for (const task of tasks) execution[task.id] = {
-    mode: singleAgent ? "single-agent-observed" : "lease-result",
+    // Planning grants no authority: a completion is recorded only when the
+    // harness verifies it. Earlier single-agent-observed rows stay readable.
+    mode: singleAgent ? "harness-verified" : "lease-result",
     repository: task.repository,
     graphRevision: graph.revision,
     graphIdentity: graph.identity
@@ -638,15 +640,14 @@ export function createAgentPlanner({
       precompletedAtIsolation: Boolean(taskPacketWasPrecompleted?.(id))
     });
     const schedulableTasks = recovered.tasks;
-    const requiresVerification = recovered.requiresVerification;
     const { tasks, completed } = enrichAgentTasks({ modelForTask, fail },
       id, schedulableTasks, repositories, selectedPolicy);
     const schedulingWaves = [];
     const groups = groupAgentTasks(tasks, completed,
       selectedPolicy.execution.maxParallelAgents, taskResourcesConflict, fail,
       (wave) => schedulingWaves.push(wave));
-    const singleAgent = !requiresVerification && (singleAgentExecutionEligible(tasks, claims) ||
-      sequentialSessionEligible(tasks, claims, groups));
+    const singleAgent = singleAgentExecutionEligible(tasks, claims) ||
+      sequentialSessionEligible(tasks, claims, groups);
     const activeConflicts = activeRepositoryConflicts(id, repositories);
     const conflicts = blockingConflictRows(activeConflicts);
     // Scope overlaps with other active changes are reported, never enforced:
