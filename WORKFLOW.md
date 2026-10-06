@@ -1117,6 +1117,7 @@ this workflow names them only where their lifecycle meaning matters.
 - Missing, failed, inconclusive, invalid, or stale proof is preserved as Land
   assurance and cannot be misreported as passing.
 - A sandbox diff cannot overwrite a conflicting target.
-- OpenSpec performs semantic spec sync before archive.
+- OpenSpec performs semantic spec sync before archive; the change is recorded
+  `archived` only after the harness verifies the merged specs.
 - Required assurance is never dropped because of size or budget.
 - A delivery flow is complete only at `archived`.

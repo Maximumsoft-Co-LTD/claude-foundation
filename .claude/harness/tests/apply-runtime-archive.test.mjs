@@ -178,10 +178,11 @@ test("a crash after archive cannot bypass deferred spec-sync verification", () =
     write(join(fixture.root, "openspec", "specs", "sample", "spec.md"),
       `# Sample\n\n## Requirements\n\n### Requirement: Stable output\nThe system SHALL return the old output.\n\n#### Scenario: Old output\n- **WHEN** it runs\n- **THEN** the old output is returned\n`);
     assert.throws(() => fixture.run(), /injected before spec verification/);
-    assert.equal(fixture.state.status, "archived");
+    assert.notEqual(fixture.state.status, "archived", "archived waits for verified specs");
     assert.ok(Array.isArray(fixture.state.specSyncInputs));
     assert.throws(() => fixture.run(), /archived specs do not match the change delta/);
     assert.ok(fixture.state.specSyncViolations.length > 0);
+    assert.notEqual(fixture.state.status, "archived");
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });
   }

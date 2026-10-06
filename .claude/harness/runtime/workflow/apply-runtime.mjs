@@ -855,6 +855,29 @@ export function createApplyRuntime({
     fail
   });
 
+  // OpenSpec already moved the packet and merged the specs, but the merge was
+  // not yet verified (a crash, or a violation the user is repairing).
+  function specSyncPending(id, state = loadRuntime(id)) {
+    return state.status !== "archived" && state.land?.status === "specs-archived" &&
+      !existsSync(changePath(id));
+  }
+
+  // The change becomes `archived` only here, once the merged specs verify;
+  // cleanup then resumes exactly as for any archived change.
+  function completeSpecSync(id, state) {
+    const outstanding = outstandingSpecSync(state);
+    if (outstanding.length) {
+      state.specSyncViolations = outstanding;
+      saveRuntime(state);
+      failSpecSync(outstanding);
+    }
+    transitionLifecycleState(state, "archived", "openspec-archive-complete");
+    state.archivedAt ||= now();
+    state.archivedChangePath ||= archivedChangeRelativePath(id);
+    saveRuntime(state);
+    resumeArchivedChange(id, state);
+  }
+
   function resumeArchivedChange(id, state) {
     const outstanding = outstandingSpecSync(state);
     if (outstanding.length) {
@@ -958,6 +981,8 @@ export function createApplyRuntime({
 
   function archiveRecoveryReady(id) {
     const state = loadRuntime(id);
+    // Only verification remains; completeSpecSync re-checks it before archiving.
+    if (specSyncPending(id, state)) return true;
     if (state.status === "archived" || state.land?.status !== "archive-prepared" ||
         existsSync(changePath(id))) return false;
     const archivedPath = archivedChangeRelativePath(id);
@@ -970,7 +995,7 @@ export function createApplyRuntime({
   }
 
   function recoverArchive(id, authorizeLand) {
-    if (loadRuntime(id).status === "archived") {
+    if (loadRuntime(id).status === "archived" || specSyncPending(id)) {
       archive(id);
       return true;
     }
@@ -1059,8 +1084,6 @@ export function createApplyRuntime({
     const cli = spawnSync("openspec", ["archive", id, "--yes"], { cwd: root, encoding: "utf8" });
     if (cli.status !== 0) fail(`OpenSpec archive failed: ${(cli.stderr || cli.stdout).trim()}`);
     archiveCheckpoint("after-archive-command", state);
-    transitionLifecycleState(state, "archived", "openspec-archive-complete");
-    state.archivedAt = now();
     state.preArchiveWorkspaceHash = preArchiveWorkspaceHash;
     state.archivedChangePath = archivedChangeRelativePath(id);
     // `land.status` is a breadcrumb, not the saga's position. Resume branches on
@@ -1081,6 +1104,11 @@ export function createApplyRuntime({
       saveRuntime(state);
       failSpecSync(specViolations);
     }
+    // `archived` is reported only once the merged specs verify; a crash or a
+    // violation before this resumes through interrupted-archive recovery,
+    // which re-verifies from the retained inputs.
+    transitionLifecycleState(state, "archived", "openspec-archive-complete");
+    state.archivedAt = now();
     recordDeliveryIntegrity(state, state.archivedChangePath, specSyncInputs);
     delete state.specSyncInputs;
     delete state.specSyncViolations;
@@ -1125,6 +1153,10 @@ export function createApplyRuntime({
     const initial = loadRuntime(id);
     if (initial.status === "archived") {
       resumeArchivedChange(id, initial);
+      return;
+    }
+    if (specSyncPending(id, initial)) {
+      completeSpecSync(id, initial);
       return;
     }
     assertLandGrant(id);
