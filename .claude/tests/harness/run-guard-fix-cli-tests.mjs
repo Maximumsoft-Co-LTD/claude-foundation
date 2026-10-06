@@ -306,6 +306,70 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
     "change", "draft.json", "--inspect", "--consume-draft"
   ], {}), /cannot be combined/);
   await assert.rejects(route("revise", ["change"], {}), /requires <change> <draft.json>/);
+
+  // One call: the agreement call records the user's approval and continues.
+  for (const [command, values, method, result] of [
+    ["start", ["draft.json"], "startAtomic", "change"],
+    ["revise", ["change", "draft.json"], "reviseChange", { added: [] }],
+    ["amend", ["change", "amendment.json"], "amendChange", { issues: [] }]
+  ]) {
+    const calls = [];
+    await route(command, [...values, "--approve-spec", "--decision-ref", "chat://ok",
+      "--through", "build"], {
+      [method]: () => { calls.push(method); return result; },
+      approvalQuestionAction: () => null,
+      resolveChange: (id, flags) => { calls.push(["resolve", id, flags]); },
+      showAdvance: (id, flags) => { calls.push(["advance", id, flags]); }
+    });
+    assert.deepEqual(calls, [method,
+      ["resolve", "change", { "approve-spec": true, "decision-ref": "chat://ok" }],
+      ["advance", "change", { through: "build" }]], `${command} approves in one call`);
+    // An intake stop approves nothing.
+    const stopped = [];
+    await route(command, [...values, "--approve-spec", "--decision-ref", "chat://ok"], {
+      [method]: () => ({ action: "EDIT", intakeState: { path: "x" } }),
+      approvalQuestionAction: () => null,
+      resolveChange: () => { stopped.push("resolve"); },
+      showAdvance: () => { stopped.push("advance"); }
+    });
+    assert.deepEqual(stopped, [], `${command} does not approve an incomplete intake`);
+    // Open questions become the user's questions instead of an approval.
+    const asked = [];
+    const priorLog = console.log;
+    console.log = (line) => { asked.push(String(line)); };
+    try {
+      await route(command, [...values, "--approve-spec", "--decision-ref", "chat://ok"], {
+        [method]: () => result,
+        approvalQuestionAction: () => ({ action: "ASK_USER", code: "OPEN_QUESTIONS" }),
+        resolveChange: () => { asked.push("resolve"); }
+      });
+    } finally { console.log = priorLog; }
+    assert.deepEqual(asked, [JSON.stringify({ action: "ASK_USER", code: "OPEN_QUESTIONS" })]);
+    await assert.rejects(route(command, [...values, "--approve-spec"], {
+      [method]: () => result
+    }), /--approve-spec requires --decision-ref/);
+    await assert.rejects(route(command, [...values, "--decision-ref", "chat://ok"], {
+      [method]: () => result
+    }), /--decision-ref requires --approve-spec/);
+    await assert.rejects(route(command, [...values, "--through", "build"], {
+      [method]: () => result
+    }), /--through requires --approve-spec/);
+    await assert.rejects(route(command, [...values, "--approve-spec", "--decision-ref", "r",
+      "--through", "land"], { [method]: () => result }), /--through must be build\|proven\|archived/);
+    await assert.rejects(route(command, [...values, "--inspect", "--approve-spec",
+      "--decision-ref", "r"], {}), /cannot be combined/);
+  }
+  // Without --approve-spec the existing single-call forms record nothing.
+  {
+    const calls = [];
+    await route("revise", ["change", "draft.json"], {
+      reviseChange: () => { calls.push("revise"); return { added: [] }; },
+      resolveChange: () => { calls.push("resolve"); }
+    });
+    assert.deepEqual(calls, ["revise"]);
+  }
+  await assert.rejects(route("amend", ["change", "--task", "T001", "--verify", "npm test",
+    "--approve-spec", "--decision-ref", "r"], { amendTaskVerify: () => {} }), /cannot be combined/);
   let advanced = null;
   await route("advance", ["change", "--through", "archived", "--pretty"], {
     showAdvance: (...args) => { advanced = args; }

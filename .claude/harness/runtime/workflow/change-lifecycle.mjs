@@ -40,8 +40,8 @@ import {
   reduceSemanticIntakeState, semanticDraftDigest, semanticIntakeResumeProjection
 } from "./semantic-intake-state.mjs";
 import {
-  compileSemanticAmendment, semanticAmendmentTemplate, taskContractOnlyAmendment,
-  writeSemanticAmendment
+  amendmentVerifyPathIssues, compileSemanticAmendment, semanticAmendmentTemplate,
+  taskContractOnlyAmendment, verifyPathIssues, writeSemanticAmendment
 } from "./semantic-amendment.mjs";
 import { validateInvestigationBinding } from "./investigation-runtime.mjs";
 import {
@@ -60,6 +60,28 @@ import {
 
 // Marks a start whose re-inspected intake is not DONE (see completedDraftIntake).
 const INCOMPLETE_INTAKE = Symbol("incomplete-intake");
+
+// Each API error a contract lists needs the status or code a client matches
+// on; without one the design renders `?` and Build guesses the wire shape.
+// An agent repair at inspect, never a user question.
+export function apiContractErrorIssues(draft) {
+  const contracts = Array.isArray(draft?.apiContracts) ? draft.apiContracts : [];
+  const issues = [];
+  contracts.forEach((contract, index) => {
+    if (!Array.isArray(contract?.errors)) return;
+    contract.errors.forEach((error, position) => {
+      const identified = error && typeof error === "object"
+        ? [error.status, error.code].some((value) =>
+          (typeof value === "number" && Number.isFinite(value)) ||
+          (typeof value === "string" && value.trim()))
+        : /\b[1-5]\d\d\b|\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b/.test(String(error ?? ""));
+      if (!identified)
+        issues.push(`apiContracts[${index}].errors[${position}] needs a status or code ` +
+          "(for example { status: 404, code: \"NOT_FOUND\", when: \"...\" })");
+    });
+  });
+  return issues;
+}
 
 export function atomicStartPreflight(draft, { groundingRequired = false } = {}) {
   const issues = [];
@@ -1206,7 +1228,7 @@ export function createChangeLifecycle({
 
   function inspectSemanticIntakeSource(source, {
     statePath, resume, quiet = false, validateCompiledDraft = true,
-    excludedSourcePath = null, standardLane = false
+    excludedSourcePath = null, standardLane = false, extraIssues = []
   }) {
     let previous = null;
     if (existsSync(statePath)) {
@@ -1237,6 +1259,7 @@ export function createChangeLifecycle({
         ? startDraftChecks(normalized.draft, { structural: !normalized.issues.length }).issues
         : []),
       ...semanticReferenceIssues(normalized.draft),
+      ...extraIssues,
       ...(source.version === 4 && source.investigation !== undefined
         ? validateInvestigationBinding({ projectRoot: root, binding: source.investigation, git })
           .map((issue) => `investigation ${issue}`)
@@ -1346,13 +1369,21 @@ export function createChangeLifecycle({
     if (!pathInside(root, path) || !existsSync(path))
       fail("change amend requires a JSON file inside the project");
     const amendment = options.preparedSource || readJson(path);
+    // Build creates files in the workspace, so a verify path is checked there.
+    const workspaceRoot = active.workspace?.path && existsSync(active.workspace.path)
+      ? active.workspace.path : root;
+    const tasksPath = join(activeChangePath(id, active), "tasks.md");
     return inspectSemanticIntakeSource(amendmentIntakeSource(amendment), {
       statePath: semanticIntakeStatePath(amendmentPath, `amend:${id}`),
       resume: `claude-foundation change amend ${id} ${amendmentPath} --inspect`,
       quiet: options.quiet,
       validateCompiledDraft: false,
       excludedSourcePath: relative(root, path).replaceAll("\\", "/"),
-      standardLane: active.schema === "foundation-standard"
+      standardLane: active.schema === "foundation-standard",
+      extraIssues: amendmentVerifyPathIssues(amendment,
+        existsSync(tasksPath) ? readFileSync(tasksPath, "utf8") : "",
+        { exists: (candidate) => existsSync(join(workspaceRoot, candidate)) ||
+          existsSync(join(root, candidate)) })
     });
   }
 
@@ -1741,7 +1772,10 @@ export function createChangeLifecycle({
     // the preflight gates still apply the rapid lane's requirements.
     const keepsDesign = semanticDraftKeepsDesign(draft, preflight.rapid);
     const rapid = preflight.rapid && !keepsDesign;
-    const issues = [...(structural ? preflight.issues : []), ...domainLanguageIssues(draft)];
+    const issues = [...(structural ? preflight.issues : []), ...domainLanguageIssues(draft),
+      // Caught here, in the same EDIT batch, instead of when Build runs the check.
+      ...verifyPathIssues(draft.tasks, { exists: (path) => existsSync(join(root, path)) }),
+      ...apiContractErrorIssues(draft)];
     // Only the rapid lane may leave evidence capabilities to the compiler.
     if (!rapid && draft._defaultedEvidence?.length)
       issues.push("the draft carries design content, so it uses " +
@@ -1810,10 +1844,14 @@ export function createChangeLifecycle({
         if (completedIntakeEffectiveness)
           pending.semanticIntakeEffectiveness = completedIntakeEffectiveness;
         saveRuntime(pending);
+        const openQuestions = designOpenQuestions(id, root);
         console.log(`AGREED ${id}\n  inspect: openspec/changes/${id}/\n` + packetFileLines(id) +
           "  awaiting user approval before Build\n" +
+          openQuestionLines(openQuestions) +
           designWarningLines(draft, loadRuntime(id).schema) +
-          `  next: claude-foundation advance ${id} --approve-spec --decision-ref <user-decision> --through build`);
+          `  next: ${openQuestions.length
+            ? `ask these with the approval, record the answers in the draft, then claude-foundation change revise ${id} ${draftPath} --approve-spec --decision-ref <user-decision> --through build`
+            : `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision> --through build`}`);
       });
     } catch (error) {
       let rollbackIssues;
@@ -1840,6 +1878,16 @@ export function createChangeLifecycle({
       console.error(`WARNING: atomic start succeeded but could not remove semantic intake state: ${
         error.message}`);
     }
+    return id;
+  }
+
+  // Open questions travel with the approval packet, so the user answers them
+  // in the same exchange instead of after an approval is refused.
+  function openQuestionLines(questions) {
+    return questions.length
+      ? `  open questions (ask with the approval):\n${questions.map((question) =>
+        `    - ${question}`).join("\n")}\n`
+      : "";
   }
 
   function packetFingerprints(dir) {
@@ -1983,7 +2031,15 @@ export function createChangeLifecycle({
     setOperationChangeId(id);
     const source = revisionSource(id, draftPath);
     const intake = revisionIntakeOptions(id, draftPath, source);
-    const completedIntakeEffectiveness = completedDraftIntake(source, draftPath, intake);
+    // One call: a missing or stale intake is inspected in place. DONE revises;
+    // any other action is printed as `--inspect` would and nothing changes.
+    const completedIntakeEffectiveness = completedDraftIntake(source, draftPath,
+      { ...intake, reinspect: true });
+    const incomplete = completedIntakeEffectiveness?.[INCOMPLETE_INTAKE];
+    if (incomplete) {
+      console.log(JSON.stringify(incomplete, null, 2));
+      return incomplete;
+    }
     const { draft, rapid, resolutionFlags } = preflightDraft(draftPath, source);
 
     // Build does not take this lock, so recheck that no workspace, receipt, or
@@ -2069,15 +2125,19 @@ export function createChangeLifecycle({
     }
     const state = loadRuntime(id);
     const pending = state.pendingApprovalDelta;
+    const openQuestions = designOpenQuestions(id, root);
     console.log(`REVISED ${id}\n  revision: ${state.contractRevision}\n` +
       (pending
         ? `  requirement delta awaiting approval:\n${formatApprovalDelta(pending)}\n`
         : `  requirement delta (covered by the current approval):\n${formatApprovalDelta(delta)}\n`) +
       `  inspect: openspec/changes/${id}/\n` + packetFileLines(id) +
+      openQuestionLines(openQuestions) +
       designWarningLines(draft, state.schema) +
-      `  next: ${pending || !state.specApproval?.identity
-        ? `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision> --through build`
-        : `claude-foundation advance ${id} --through build`}`);
+      `  next: ${openQuestions.length
+        ? `ask these with the approval, record the answers in the draft, then claude-foundation change revise ${id} ${draftPath} --approve-spec --decision-ref <user-decision> --through build`
+        : pending || !state.specApproval?.identity
+          ? `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision> --through build`
+          : `claude-foundation advance ${id} --through build`}`);
     return delta;
   }
 
@@ -2128,10 +2188,17 @@ export function createChangeLifecycle({
         resumeRoute: resume, sourceInventory: sourceInspection.inventory
       });
       if (!intelligenceUsable(intelligence) || sourceInspection.findings.length ||
-          projection.status !== "current" || projection.action?.action !== "DONE")
-        fail(`version-4 amendments require a current completed semantic intake; ` +
-          `resume with '${resume}'`);
-      completedAmendmentIntakeEffectiveness = intakeState?.effectiveness || null;
+          projection.status !== "current" || projection.action?.action !== "DONE") {
+        // One call: inspect in place. DONE amends; any other action is printed
+        // as `--inspect` would and the agreement is left untouched.
+        const inspected = inspectAmendment(id, amendmentPath,
+          { quiet: true, preparedSource: amendment });
+        if (inspected.action !== "DONE") {
+          console.log(JSON.stringify(inspected, null, 2));
+          return inspected;
+        }
+        completedAmendmentIntakeEffectiveness = inspected.effectiveness || null;
+      } else completedAmendmentIntakeEffectiveness = intakeState?.effectiveness || null;
     }
     const basePath = activeChangePath(id, state);
     const contract = readJson(join(basePath, "evidence.yaml"));

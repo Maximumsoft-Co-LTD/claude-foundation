@@ -108,8 +108,8 @@ Repair only the draft fields it reports, as one batch, then retry. Never create
 parallel IDs by hand.
 
 If Build discovers new observable behavior, create a semantic amendment v1 and
-run `change amend <change> <amendment.json> --inspect`; after `DONE`, rerun with
-`--consume-amendment`. It preserves completed tasks and custom prose/assets,
+run `change amend <change> <amendment.json>`: it inspects, then amends only
+at `DONE`. It preserves completed tasks and custom prose/assets,
 increments the revision, invalidates the affected contract, and rolls back on
 failure. Never rewrite a legacy change only to migrate it. An amendment to a v4 agreement must include discovery coverage
 for added and revised requirements. `updateTasks` may extend claim coverage but
@@ -119,8 +119,8 @@ an amendment of only `updateTasks: [{key, verify, paths?}]` (no intake;
 `change amend --template`). `reviseRequirements` replaces a requirement row in
 its same capability and operation and needs an open task; `removeRequirements`
 needs a `migration` and must not orphan a task. Before Build starts, revise the
-whole agreement with `change revise <change> <draft.json> --inspect`, then
-`--consume-draft` after `DONE`.
+whole agreement with `change revise <change> <draft.json>`, which likewise
+inspects first.
 
 After a successful start, read the compiled proposal, tasks, evidence, and any
 specs/design: detail and document language must survive compilation. Reconcile each confirmed

@@ -26,6 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rules after the user's own, keeps their order (it no longer sorts the list),
   and is idempotent. `--no-permission-allowlist` skips it; the Cursor,
   OpenCode, and Codex adapters pass the flag through.
+- `change start`, `change revise`, and `change amend` accept
+  `--approve-spec --decision-ref <ref> [--through build|proven|archived]`, so
+  the call that applies the user's approving answer also records the approval
+  (and may continue); a call that stops at an intake action approves nothing.
+- Change inspection reports, in the first `EDIT` batch, a task `verify` that
+  names a test file which neither exists nor falls inside any task's `paths`
+  (also for an amendment's added or updated tasks), and an `apiContracts`
+  error listed without a status or code. `AGREED` and `REVISED` list the
+  design's open questions with the approval packet.
 
 ### Changed
 
@@ -37,6 +46,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stay accepted. Repeated no-progress asks the user only when the repeated
   action was a user question; sandbox or discovery failures go to the harness
   and other stalls to the agent.
+- Bare `change revise <change> <draft.json>` and `change amend <change>
+  <amendment.json>` inspect in the same call: a missing or stale intake is
+  re-inspected, `DONE` applies the edit, and any other action is printed and
+  changes nothing. A separate `--inspect` call is no longer needed; every
+  existing form keeps working.
+
 - Change produces a dev document that Build executes and a reviewer reads.
   Every proposal shows a folder tree of touched paths. A rapid proposal adds
   the compact form: summary, user flow, failure matrix, and a Plan table with

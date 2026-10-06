@@ -161,13 +161,17 @@ source of truth. The semantic draft is temporary and `.foundation/` is derived
 coordination state. Draft v1 remains compatible, draft v2 retains its
 unambiguous bookkeeping behavior, and draft v3 remains readable.
 
-Run `change start <draft.json> --inspect` before compilation. It returns one
-typed `EDIT`, `ASK_USER`, or `DONE` action with an exact resume route. An
+`change start <draft.json>` inspects before compilation (`--inspect` only
+inspects). Inspection returns one typed `EDIT`, `ASK_USER`, or `DONE` action
+with an exact resume route. Its `EDIT` batch also names, as agent repairs, a
+task `verify` that references a test file which neither exists nor falls inside
+any task's `paths`, and an `apiContracts` error listed without a status or code. An
 unresolved user-owned coverage row must link to its decisions through
 `decisionKeys`; once every linked decision is resolved, the harness treats the
 row as covered by those decisions, so recording an answer needs no further
 coverage edit. Repository-owned investigation is returned before user
-questions. After `DONE`, rerun with `--consume-draft` to compile atomically.
+questions. At `DONE` the same call compiles atomically; `--consume-draft` also
+removes the draft.
 Typed `riskSignals` provide language-neutral triggers for access control,
 persisted data, integrations, performance SLOs, UI accessibility, operational
 risk, external side effects, and input domains (`input-domain` requires
@@ -213,7 +217,11 @@ When the request itself already approves the spec, in any wording (for example
 "I approve the spec" in a `/dev` request), that is the approval; silence never is.
 Record it with `advance <change> --approve-spec --decision-ref <ref>` (alias of
 `change resolve <change> --approve-spec`); add `--through <target>` to continue
-in the same call. The normal agent path uses only
+in the same call. The same `--approve-spec --decision-ref <ref> [--through
+<target>]` flags on `change start`, `change revise`, or `change amend` record the
+approval in the call that applies the approving answer; a call that stops at an
+intake action approves nothing. Design open questions print with the approval
+packet so the user answers them with the approval. The normal agent path uses only
 `change start <draft>`, which inspects and starts a complete draft in one call,
 `advance`, and `changes`: `advance` wires detected evidence, synchronizes the
 sandbox, runs agent-runnable configured reviewers, and ticks a handed-off task
@@ -244,12 +252,14 @@ To change an agreement that has not started Build, revise it in place instead
 of abandoning it and writing a new draft:
 
 ```bash
-claude-foundation change revise <change> <draft.json> --inspect
+claude-foundation change revise <change> <draft.json>
 ```
 
 The revised semantic draft keeps the change id (a different `id` is refused)
-and passes the same intake gate as `change start`, under its own snapshot;
-replace `--inspect` with `--consume-draft` after `DONE`. The transaction
+and passes the same intake gate as `change start`, under its own snapshot: the
+call inspects first, revises only at `DONE`, and otherwise prints the intake
+action and changes nothing. `--inspect` only inspects; `--consume-draft` also
+removes the draft. The transaction
 recompiles the whole packet, increments the contract revision, and restores the
 prior packet and runtime state byte-for-byte on any failure. It is refused once
 the change has a Build workspace, a receipt, or a completed task, and in
@@ -288,7 +298,7 @@ passes in the workspace.
 When Build discovers new behavior, amend the same agreement before continuing:
 
 ```bash
-claude-foundation change amend <change> <amendment.json> --inspect
+claude-foundation change amend <change> <amendment.json>
 ```
 
 An amendment may add (`addRequirements`), revise (`reviseRequirements`, the
@@ -305,8 +315,9 @@ claims and providers bound to added, revised, or removed claims are
 invalidated; removals are planned from the pre-amendment claims.
 
 A version-4 amendment includes discovery coverage for every added or revised
-requirement; follow its typed intake actions and source digest, then replace
-`--inspect` with `--consume-amendment` after `DONE`. The returned proof command
+requirement. The call inspects first and amends only at `DONE`; otherwise it
+prints the typed intake action and changes nothing. `--inspect` only inspects;
+`--consume-amendment` also removes the amendment file. The returned proof command
 is the exact post-amendment recovery route. The transaction validates and
 appends that delta to the compiled proposal.
 During Build, the amended packet stays in the isolated workspace until Land.

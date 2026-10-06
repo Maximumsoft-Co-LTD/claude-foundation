@@ -134,7 +134,12 @@ Otherwise the harness returns agent-owned source investigation or repair, or at
 most three linked user decisions, plus an exact resume route, and creates
 nothing. `--inspect` inspects without starting; `--consume-draft` also removes
 the draft after a successful start. Record the user's spec approval with
-`advance <change> --approve-spec --decision-ref <ref>`. Versions 1 through 3 remain
+`advance <change> --approve-spec --decision-ref <ref>`, or add
+`--approve-spec --decision-ref <ref>` to the `change start`, `change revise`, or
+`change amend` call that applies the approving answer. Open design questions are
+printed with the approval packet. The first inspection also returns, as agent
+repairs, a task `verify` naming a test file that neither exists nor falls in any
+task's `paths`, and an `apiContracts` error without a status or code. Versions 1 through 3 remain
 supported for existing integrations.
 Use typed `riskSignals` for access control, persisted data, integrations,
 performance SLOs, UI, operational risk, and external side effects so required
@@ -204,12 +209,12 @@ To change an agreed change before Build starts, revise the same change instead
 of abandoning it:
 
 ```bash
-claude-foundation change revise <change> <draft.json> --inspect
-claude-foundation change revise <change> <draft.json> --consume-draft
+claude-foundation change revise <change> <draft.json>
 ```
 
 The revised draft keeps the change id and passes the same intake gate as
-`change start`. The whole packet is recompiled transactionally, the contract
+`change start` in the same call: an incomplete intake prints its action and
+changes nothing. The whole packet is recompiled transactionally, the contract
 revision increments, and any failure restores the prior packet and runtime
 state. Once Build has a workspace, a receipt, or a completed task, the command
 routes to `change amend`. The result lists the added, revised, and removed
