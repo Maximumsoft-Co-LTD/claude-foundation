@@ -778,7 +778,10 @@ you to.
   `/deliver` grants narrow authority to commit the proven projection in an
   isolated feature branch, push it, and open or reuse a verified PR; workers
   never infer that authority.
-- `protect-secrets.sh` and `lint.sh` are enabled by default.
+- `protect-secrets.sh` and `lint.sh` are enabled by default. Neither stops the
+  agent: a secret read shows a redacted copy (keys and layout, every value
+  `<redacted>`), a search that could reach secret files skips them or lists only
+  file names, and Go files are formatted in place.
 - `no-direct-main-commit.sh` is opt-in because some projects allow controlled
   commits on their default branch; `doctor` reports whether it is enabled.
 

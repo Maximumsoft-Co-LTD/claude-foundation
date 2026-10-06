@@ -326,26 +326,28 @@ Build writes only inside the declared isolated workspace. Git projects normally
 use detached worktrees; a dirty target or non-Git project uses an isolated copy.
 This is workspace integrity, not OS process, network, or secret containment.
 The agent runs `cd <workspace>` once as its own shell call and then plain
-commands; the phase guard checks each mutating command from the shell's
-reported directory without rewriting it, so no compound command asks the user
-for approval. Shell analysis reads command text, so outside Land and Deliver
-the phase guard and `claude-foundation exec` record path escapes, symlink
-traversal, and copies from outside the workspace as warnings instead of
-refusing them (`FOUNDATION_SHELL_GUARD=block` restores refusal). Structured
-Edit/Write targets stay enforced, Land reports target edits made outside the
-sandbox, and the host still owns process isolation for indirect or dynamically
-computed effects. A workspace never borrows the checkout's dependencies.
+commands, so no compound command asks the user for approval.
 
-What the guard leaves open on purpose: before a change exists, shell commands
-are recorded rather than refused, and a draft may be written with either Write
-or the shell. Temporary and agent-memory files (the system temp directory and
-`~/.claude`) are writable in every phase unless they hold the project or a
-repository the change writes. After Prove, edits inside the isolated workspace
-are allowed, because proof is content-bound and simply becomes stale. During
-Land, test and script runners may run, while direct writes still need Land's
-transaction. A whitespace-only formatter pass over the isolated packet is
-restored to the target's bytes by the harness, never reported as agreement
-drift. Sandbox creation
+The live guards never refuse the agent by default; they automate or route. A
+product edit aimed at the main checkout while a workspace exists is redirected
+to the same path in the workspace. Internal Land commands run as `advance
+<change> --through archived`, and a delivery outside `/deliver` becomes the
+question for the user. Everything else runs with guidance naming the rule and
+the route: shell findings (path escapes, copies from outside the workspace),
+edits before a change exists, and edits outside the phase's surface. Land
+reports target edits made outside the sandbox, and the host still owns process
+isolation for indirect or dynamically computed effects. A secret read shows a
+redacted copy, and a detached `authority run` runs attached. Hosts that want
+refusals set `FOUNDATION_GUARDRAIL_MODE=block` (or `FOUNDATION_SHELL_GUARD=block`,
+`FOUNDATION_SECRETS_GUARD=block`).
+
+The harness also absorbs what used to cost a turn: the agent's scratchpad
+(`<tmp>/claude-*`) and `~/.claude` are writable in every phase unless they hold
+the project or a repository the change writes; after Prove, edits inside the
+isolated workspace only make the proof stale; during Land, test and script
+runners may run; and a whitespace-only formatter pass over the isolated packet
+is restored to the target's bytes instead of reported as agreement drift. A
+workspace never borrows the checkout's dependencies. Sandbox creation
 prints a NOTE with the exact `sandbox.setupCommand` snippet when the project
 has a lockfile but declares no setup command.
 

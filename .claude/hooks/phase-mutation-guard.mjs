@@ -38,12 +38,9 @@ let event;
 try {
   event = JSON.parse(await readStdin());
 } catch {
-  // A broken hook must not brick an audit-mode host — but a host that asked
-  // for enforcement asked for it on the event axis too: an unreadable event
-  // could be any mutation, so allowing it would fail open exactly where the
-  // guard was told not to.
-  if (configuredMode === "block" ||
-      (configuredMode === "auto" && process.env.FOUNDATION_ACTIVE_PHASE))
+  // A broken hook never stops the agent. Only a host that explicitly asked
+  // for enforcement refuses an unreadable event, which could be any mutation.
+  if (configuredMode === "block")
     process.stdout.write(JSON.stringify({
       decision: "block",
       reason: "phase guard: hook event is unreadable; retry the tool call"
@@ -165,6 +162,20 @@ if (violations.length === 0 && shellAudit !== null) {
 
 if (violations.length === 0) process.exit(0);
 
+// The harness guides instead of refusing. A refused tool call costs the agent
+// a turn and tells it nothing it can run; a redirected or routed call keeps
+// the work moving on the path the workflow wants. Only a host that explicitly
+// configures FOUNDATION_GUARDRAIL_MODE=block keeps the refusals below.
+if (configuredMode === "auto") {
+  guide();
+  process.exit(0);
+}
+if (configuredMode === "audit") {
+  recordAudit({ phase: phase || "unknown", tool, mode: "audit", outcome: "audit-only",
+    reason: violations.join("; ") });
+  process.exit(0);
+}
+
 const changeShellRecovery = phase === "change" && tool === "Bash"
   ? " Use Edit or Write for openspec/changes artifacts; Bash remains read-only during Change."
   : "";
@@ -176,6 +187,94 @@ recordAudit({ phase: phase || "unknown", tool, mode,
 
 if (mode === "block") {
   process.stdout.write(JSON.stringify({ decision: "block", reason }));
+}
+
+function guide() {
+  const changeId = recorded?.changeId || "<change>";
+  const command = harnessCommand.trim();
+  const changeArgument = command.match(/([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\s*$/)?.[1] || changeId;
+  if (landAuthorityCommand && !landSession) {
+    // The internal Land routes become the public one, which owns the grant,
+    // readiness, recovery, and the exact Land boundary.
+    const routed = `claude-foundation advance ${changeArgument} --through archived`;
+    recordAudit({ phase: phase || "unknown", tool, mode, outcome: "routed",
+      reason: violations.join("; "), command: String(input.command || "") });
+    respond({ ...input, command: routed },
+      `phase guard routed '${command}' to '${routed}', the public Land route. Land only on an explicit user instruction to land.`);
+    return;
+  }
+  if (deliverAuthorityCommand && !deliverSession) {
+    // Delivery commits, pushes, and opens a pull request: that is the user's
+    // call. The command becomes the question the agent must ask.
+    const message = `ASK_USER: delivering '${changeArgument}' commits, pushes, and opens a pull request. ` +
+      `Ask the user; on their explicit yes they run /deliver ${changeArgument}.`;
+    recordAudit({ phase: phase || "unknown", tool, mode, outcome: "routed",
+      reason: violations.join("; "), command: String(input.command || "") });
+    respond({ ...input, command: `printf '%s\\n' '${message.replaceAll("'", "")}'` }, message);
+    return;
+  }
+  const redirected = mutatingTools.has(tool) ? redirectToWorkspace(input) : null;
+  if (redirected) {
+    recordAudit({ phase: phase || "unknown", tool, mode, outcome: "redirected",
+      reason: violations.join("; ") });
+    respond(redirected.input, `phase guard redirected ${redirected.from.join(", ")} to the isolated ` +
+      `workspace (${redirected.to.join(", ")}); the main checkout changes only through Land. ` +
+      "Read the workspace file first if the tool asks for it.");
+    return;
+  }
+  recordAudit({ phase: phase || "unknown", tool, mode, outcome: "guided",
+    reason: violations.join("; "), command: tool === "Bash" ? String(input.command || "") : undefined });
+  respond(null, `phase guard (${phase || "no phase"}/${tool}) let this run: ${violations.join("; ")}. ${route()}`);
+}
+
+function route() {
+  const id = recorded?.changeId || "<change>";
+  if (!phase) return "To make this a tracked change, write .foundation/drafts/<change-id>.json and run " +
+    "'claude-foundation change start <draft>'; edits made now become part of that change's starting surface.";
+  if (phase === "investigate") return "Investigate records findings; turn them into a change with /change.";
+  if (phase === "change") return `Product work belongs to Build: get spec approval, then run ` +
+    `'claude-foundation advance ${id} --through build' and edit in the workspace it returns.`;
+  if (phase === "build" || phase === "prove") return `Keep product edits in the isolated workspace` +
+    `${recordedWorkspace ? ` (${recordedWorkspace})` : ""}; Land reports main-checkout edits made outside it.`;
+  return "Land and Deliver own the main checkout; repair in the isolated workspace and resume " +
+    `'claude-foundation advance ${id} --through archived', or start a new change for new work.`;
+}
+
+function respond(updatedInput, context) {
+  process.stdout.write(JSON.stringify({ hookSpecificOutput: {
+    hookEventName: "PreToolUse",
+    ...(updatedInput ? { updatedInput } : {}),
+    additionalContext: context
+  } }));
+}
+
+// A product edit aimed at the main checkout while an isolated workspace
+// exists is moved to the same path inside that workspace (or the workspace of
+// the repository it belongs to), so the agent's intent lands where the
+// workflow wants it instead of being refused.
+function redirectToWorkspace(value) {
+  if (!["build", "prove", "land"].includes(phase) || !recordedRuntime) return null;
+  const pairs = [[projectRoot, recordedWorkspace],
+    ...Object.values(recordedRuntime.repositories || {}).map((repository) =>
+      [repository?.targetPath, repository?.workspacePath || repository?.path])]
+    .map(([from, to]) => [from && canonicalTarget(from, projectRoot), to && canonicalTarget(to, projectRoot)])
+    .filter(([from, to]) => from && to && existsSync(to));
+  const machine = join(projectRoot, ".foundation");
+  const from = [];
+  const to = [];
+  const next = { ...value };
+  for (const key of ["file_path", "notebook_path"]) {
+    if (typeof value[key] !== "string") continue;
+    const target = canonicalTarget(value[key], projectRoot);
+    if (!target || isWithin(target, machine)) return null;
+    const pair = pairs.filter(([source, workspace]) => isWithin(target, source) && !isWithin(target, workspace))
+      .sort((left, right) => right[0].length - left[0].length)[0];
+    if (!pair) return null;
+    next[key] = join(pair[1], relative(pair[0], target));
+    from.push(value[key]);
+    to.push(next[key]);
+  }
+  return from.length ? { input: next, from, to } : null;
 }
 
 function inspectPath(rawPath) {

@@ -728,7 +728,10 @@ product requirement หรือซ่อม state ด้วยมือถ้�
 - Land ไม่ commit, push หรือเปิด pull request มีเพียง `/deliver` แบบ explicit และ
   optional ที่ให้อำนาจแคบ ๆ เพื่อ commit proven projection บน isolated feature
   branch, push และเปิดหรือใช้ PR เดิมที่ตรวจยืนยันแล้ว โดย worker ห้ามอนุมาน authority
-- `protect-secrets.sh` และ `lint.sh` เปิดเป็นค่าเริ่มต้น
+- `protect-secrets.sh` และ `lint.sh` เปิดเป็นค่าเริ่มต้น และไม่หยุด agent ทั้งคู่:
+  การอ่านไฟล์ลับจะเห็นสำเนาที่ปิดค่า (เห็น key และโครงสร้าง แต่ทุกค่าเป็น
+  `<redacted>`) การค้นที่อาจโดนไฟล์ลับจะข้ามไฟล์เหล่านั้นหรือแสดงแค่ชื่อไฟล์
+  และไฟล์ Go จะถูก format ให้ทันที
 - `no-direct-main-commit.sh` เป็น opt-in เพราะบาง project อนุญาต controlled
   commit บน default branch โดย `doctor` จะรายงานว่าเปิดอยู่หรือไม่
 

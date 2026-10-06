@@ -25,9 +25,12 @@
 # round-trips, `c""at`) can still slip through a regex; treat this as one layer,
 # not the whole wall. Edit the pattern lists in is_secret_path() to tune.
 #
-# On a match the hook emits {"decision":"block","reason":...} (the same shape
-# dev-agent-guard.sh uses) so Claude Code denies the call and feeds the reason
-# back to the model. Otherwise it exits 0 and the tool proceeds.
+# On a match the hook never refuses the call. It rewrites it so the agent
+# still gets what it needs without the secret: a Read or Bash reader is pointed
+# at a redacted copy (keys and layout kept, values replaced by <redacted>), a
+# Grep that could print secret lines is scoped away from secret files or limited
+# to file names. Only when no redacted copy can be made (Node is missing) does
+# it fall back to refusing. FOUNDATION_SECRETS_GUARD=block restores refusals.
 
 set -uo pipefail
 
@@ -163,12 +166,37 @@ token_is_file() {
   [ -e "${event_cwd:-.}/$t" ]
 }
 
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+event_cwd="$(printf '%s' "$input" | jq -r '.cwd // ""')"
+strict="$(printf '%s' "${FOUNDATION_SECRETS_GUARD:-}" | tr '[:upper:]' '[:lower:]')"
+
+# redacted_copy PATH  ->  prints the path of a redacted copy, or nothing.
+redacted_copy() {
+  command -v node >/dev/null 2>&1 || return 0
+  node "$HOOK_DIR/secret-redaction.mjs" "$1" "${event_cwd:-$PWD}" 2>/dev/null || true
+}
+
+# secret_absent PATH  ->  exit 0 if the named file does not exist. Nothing can
+# leak from it, so the call runs and the tool reports its own error.
+secret_absent() {
+  case "$1" in /*) [ ! -e "$1" ] ;; *) [ ! -e "${event_cwd:-$PWD}/$1" ] ;; esac
+}
+
+# rewrite FIELD VALUE CONTEXT  ->  run the call with one tool_input field replaced.
+rewrite() {
+  printf '%s' "$input" | jq -c --arg f "$1" --arg v "$2" --arg ctx "$3" \
+    '{hookSpecificOutput: {hookEventName: "PreToolUse",
+      updatedInput: (.tool_input + {($f): $v}), additionalContext: $ctx}}'
+  exit 0
+}
+
 block() {
   jq -n --arg reason "$1 No secret contents were read; use a template, public key, or metadata-only search instead." \
     '{decision: "block", reason: $reason}'
   exit 0
 }
 
+SHOWN="secrets guard: showing a redacted copy, so keys and layout are visible and every value reads <redacted>. To change the real file, ask the user; never ask for secret values."
 REF="See .claude/hooks/protect-secrets.sh. Keep the blocked command internal. If secret-bearing work is genuinely required, ask for an external result or scope decision without requesting secret contents or suggesting that this guard be disabled."
 
 case "$tool_name" in
@@ -176,6 +204,9 @@ case "$tool_name" in
   Read)
     file_path="$(printf '%s' "$input" | jq -r '.tool_input.file_path // ""')"
     if [ -n "$file_path" ] && is_secret_path "$file_path"; then
+      copy=""; [ "$strict" = block ] || copy="$(redacted_copy "$file_path")"
+      [ -z "$copy" ] || rewrite file_path "$copy" "$SHOWN"
+      [ "$strict" = block ] || ! secret_absent "$file_path" || exit 0
       block "BLOCKED by secrets guard: \"$file_path\" looks like a secret/credential file (.env, private key, credentials, …). Reading it would pull its contents into context. $REF"
     fi
     ;;
@@ -188,9 +219,15 @@ case "$tool_name" in
     g_pattern="$(printf '%s' "$input" | jq -r '.tool_input.pattern // ""')"
     g_type="$(printf '%s' "$input" | jq -r '.tool_input.type // ""')"
     if [ -n "$g_path" ] && is_secret_path "$g_path"; then
+      copy=""; [ "$strict" = block ] || copy="$(redacted_copy "$g_path")"
+      [ -z "$copy" ] || rewrite path "$copy" "$SHOWN"
+      [ "$strict" = block ] || ! secret_absent "$g_path" || exit 0
       block "BLOCKED by secrets guard: Grep path \"$g_path\" is a secret/credential file; matching lines would leak its contents. $REF"
     fi
     if [ -n "$g_glob" ] && glob_targets_secret "$g_glob"; then
+      [ "$strict" = block ] || [ "$g_mode" != "content" ] ||
+        rewrite output_mode files_with_matches "secrets guard: this glob targets secret files, so the search lists matching file names without printing their lines."
+      [ "$strict" = block ] || exit 0
       block "BLOCKED by secrets guard: Grep glob \"$g_glob\" targets secret/credential files; with output_mode \"content\" this would leak their contents. Narrow the glob to exclude .env/credential files. $REF"
     fi
     # is_secret_path is a *filename* matcher, so a directory path with no glob
@@ -210,6 +247,11 @@ case "$tool_name" in
        { [ -z "$g_glob" ] || { ! glob_is_docs_only "$g_glob" && ! glob_is_scoped "$g_glob"; }; } &&
        printf '%s' "$g_pattern" | grep -Eqi \
          '(api[_-]?key|secret|passwd|password|private[_-]?key|access[_-]?token|auth[_-]?token|bearer|credential|client[_-]?secret|aws_[a-z_]*key)'; then
+      if [ "$strict" != block ]; then
+        [ -n "$g_glob" ] || rewrite glob '!{**/.env,**/.env.*,**/*.env,**/*.pem,**/*.key,**/*.p12,**/*.pfx,**/*secret*,**/*credential*,**/.npmrc,**/.netrc}' \
+          "secrets guard: this credential-shaped search skips secret files (.env, keys, credentials) so their values are never printed."
+        rewrite output_mode files_with_matches "secrets guard: this credential-shaped search lists matching file names without printing lines, because its glob could reach secret files."
+      fi
       block "BLOCKED by secrets guard: Grep pattern \"$g_pattern\" with output_mode \"content\" would print credential-shaped lines from every matching file, including .env files under \"${g_path:-the working directory}\". Use output_mode \"files_with_matches\" to locate them without printing their contents. $REF"
     fi
     ;;
@@ -301,6 +343,17 @@ case "$tool_name" in
 $segments
 EOF
 
+    if [ -n "$found" ] && [ "$strict" != block ]; then
+      copy="$(redacted_copy "$found")"
+      if [ -n "$copy" ]; then
+        # Every spelling of the secret operand in the command reads the copy.
+        rewritten="$(FOUND="$found" COPY="$copy" CMD="$cmd" node -e '
+          const { FOUND: found, COPY: copy, CMD: cmd } = process.env;
+          process.stdout.write(cmd.split(found).join(copy));')"
+        rewrite command "$rewritten" "$SHOWN The command ran against the redacted copy."
+      fi
+      ! secret_absent "$found" || exit 0
+    fi
     if [ -n "$found" ]; then
       block "BLOCKED by secrets guard: this Bash command reads \"$found\", a secret/credential file, into context. $REF"
     fi

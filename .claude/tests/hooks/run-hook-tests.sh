@@ -6,65 +6,65 @@ ROOT="$(cd "$HERE/../../.." && pwd)"
 . "$ROOT/.claude/tests/lib/assert.sh"
 
 if command -v jq >/dev/null 2>&1; then
-  blocked="$(printf '%s' '{"tool_name":"Read","tool_input":{"file_path":".env"}}' |
-    bash "$ROOT/.claude/hooks/protect-secrets.sh")"
-  assert_contains "secret hook blocks dotenv reads" "$blocked" '"decision": "block"'
-  assert_contains "secret hook keeps its blocked command with the agent" "$blocked" \
-    "Keep the blocked command internal"
-  assert_not_contains "secret hook does not delegate a bypass" "$blocked" \
-    "user can run the command"
-  assert_not_contains "secret hook does not recommend disabling itself" "$blocked" \
-    "temporarily disable the hook"
+  SECRETS="$ROOT/.claude/hooks/protect-secrets.sh"
+  SECRET_DIR="$(mktemp -d)"
+  printf 'API_KEY=hunter2\n# retired: oldkey\nDB_URL=postgres://u:p@h/db\n' > "$SECRET_DIR/.env"
+  secret_event() { printf '{"cwd":"%s","tool_name":"%s","tool_input":%s}' "$SECRET_DIR" "$1" "$2"; }
 
-  allowed="$(printf '%s' '{"tool_name":"Read","tool_input":{"file_path":".env.example"}}' |
-    bash "$ROOT/.claude/hooks/protect-secrets.sh")"
+  # The guard never refuses: a secret read is pointed at a redacted copy that
+  # keeps every key and the layout, and no value reaches the model.
+  shown="$(secret_event Read "{\"file_path\":\"$SECRET_DIR/.env\"}" | bash "$SECRETS")"
+  assert_not_contains "secret hook never refuses a dotenv read" "$shown" '"decision"'
+  copy="$(printf '%s' "$shown" | jq -r '.hookSpecificOutput.updatedInput.file_path')"
+  assert_file_contains "the redacted copy keeps the key" "$copy" 'API_KEY=<redacted>'
+  assert_file_not_contains "the redacted copy withholds the value" "$copy" 'hunter2'
+  assert_file_not_contains "the redacted copy withholds a commented-out key" "$copy" 'oldkey'
+  assert_contains "the redirect tells the agent how to change the real file" "$shown" 'ask the user'
+
+  for command in 'cat .env' 'cat \".env\"' "cat '.env'"; do
+    out="$(secret_event Bash "{\"command\":\"$command\"}" | bash "$SECRETS")"
+    assert_contains "secret hook reads the redacted copy for: $command" "$out" 'claude-foundation-redacted'
+    assert_not_contains "secret hook never refuses: $command" "$out" '"decision"'
+  done
+
+  absent="$(printf '%s' '{"tool_name":"Read","tool_input":{"file_path":"/nonexistent/.env"}}' | bash "$SECRETS")"
+  assert_eq "a missing secret file passes through to the tool's own error" "" "$absent"
+
+  allowed="$(printf '%s' '{"tool_name":"Read","tool_input":{"file_path":".env.example"}}' | bash "$SECRETS")"
   assert_eq "secret hook allows templates" "" "$allowed"
 
-  # Quoting a path is a common accidental shape; blanking quoted spans wholesale
-  # let `cat ".env"` through while `cat .env` was caught. Single plain words in
-  # quotes must survive dequoting; prose strings must still be exempt.
-  quoted="$(printf '%s' '{"tool_name":"Bash","tool_input":{"command":"cat \".env\""}}' |
-    bash "$ROOT/.claude/hooks/protect-secrets.sh")"
-  assert_contains "secret hook catches a double-quoted secret path" "$quoted" '"decision": "block"'
-
-  quoted_single="$(printf '%s' "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cat '.env'\"}}" |
-    bash "$ROOT/.claude/hooks/protect-secrets.sh")"
-  assert_contains "secret hook catches a single-quoted secret path" "$quoted_single" '"decision": "block"'
-
-  message="$(printf '%s' '{"tool_name":"Bash","tool_input":{"command":"git commit -m \"fix: cat .env handling\""}}' |
-    bash "$ROOT/.claude/hooks/protect-secrets.sh")"
+  message="$(printf '%s' '{"tool_name":"Bash","tool_input":{"command":"git commit -m \"fix: cat .env handling\""}}' | bash "$SECRETS")"
   assert_eq "secret hook still exempts secret names inside prose strings" "" "$message"
 
-  # A content-mode Grep glob-scoped to "*.md" can never match a .env or
-  # credential file, so searching docs for mentions of example variable names
-  # like "password" or "API_KEY" is safe documentation work, not exfiltration.
-  docs_search="$(printf '%s' '{"tool_name":"Grep","tool_input":{"path":"docs","glob":"*.md","pattern":"password","output_mode":"content"}}' |
-    bash "$ROOT/.claude/hooks/protect-secrets.sh")"
+  docs_search="$(printf '%s' '{"tool_name":"Grep","tool_input":{"path":"docs","glob":"*.md","pattern":"password","output_mode":"content"}}' | bash "$SECRETS")"
   assert_eq "secret hook allows docs-scoped content search for credential-shaped words" "" "$docs_search"
 
-  # The same pattern with no glob (or a glob that can still hit real secret
-  # files) is a genuine repo-wide leak risk and must stay blocked.
-  unscoped_search="$(printf '%s' '{"tool_name":"Grep","tool_input":{"pattern":"password","output_mode":"content"}}' |
-    bash "$ROOT/.claude/hooks/protect-secrets.sh")"
-  assert_contains "secret hook still blocks unscoped content search for credential-shaped words" "$unscoped_search" '"decision": "block"'
+  # A content search that could reach secret files is scoped away from them,
+  # or limited to file names, instead of refused.
+  unscoped="$(printf '%s' '{"tool_name":"Grep","tool_input":{"pattern":"password","output_mode":"content"}}' | bash "$SECRETS")"
+  assert_contains "an unscoped credential search skips secret files" "$unscoped" '"glob":"!{**/.env'
+  broad="$(printf '%s' '{"tool_name":"Grep","tool_input":{"pattern":"password","glob":"**/*","output_mode":"content"}}' | bash "$SECRETS")"
+  assert_contains "a broad-glob credential search lists file names only" "$broad" '"output_mode":"files_with_matches"'
+  targeted="$(printf '%s' '{"tool_name":"Grep","tool_input":{"pattern":"x","glob":"**/.env*","output_mode":"content"}}' | bash "$SECRETS")"
+  assert_contains "a secret-file glob lists file names only" "$targeted" '"output_mode":"files_with_matches"'
 
-  # Code search for environment access and auth code is ordinary work: a
-  # pattern that merely ends in `.env` is not a file, and a glob or type that
-  # names a source extension can never reach a dotenv or key file.
   for event in \
     '{"tool_name":"Bash","tool_input":{"command":"rg -n process.env src"}}' \
     '{"tool_name":"Bash","tool_input":{"command":"grep -rn \\"import.meta.env\\" src"}}' \
     '{"tool_name":"Grep","tool_input":{"pattern":"password","glob":"*.ts","output_mode":"content"}}' \
     '{"tool_name":"Grep","tool_input":{"pattern":"secret","type":"py","output_mode":"content"}}'; do
     assert_eq "secret hook allows ordinary code search: $event" "" \
-      "$(printf '%s' "$event" | bash "$ROOT/.claude/hooks/protect-secrets.sh")"
+      "$(printf '%s' "$event" | bash "$SECRETS")"
   done
-  for event in \
-    '{"tool_name":"Bash","tool_input":{"command":"cat config/prod.env"}}' \
-    '{"tool_name":"Grep","tool_input":{"pattern":"password","glob":"**/*","output_mode":"content"}}'; do
-    assert_contains "secret hook still blocks secret reads: $event" \
-      "$(printf '%s' "$event" | bash "$ROOT/.claude/hooks/protect-secrets.sh")" '"decision": "block"'
-  done
+
+  # A host that explicitly asks for refusals keeps them.
+  strict="$(secret_event Read "{\"file_path\":\"$SECRET_DIR/.env\"}" | FOUNDATION_SECRETS_GUARD=block bash "$SECRETS")"
+  assert_contains "strict secrets mode still refuses" "$strict" '"decision": "block"'
+  assert_not_contains "strict refusal does not recommend disabling itself" "$strict" "temporarily disable the hook"
+  rm -rf "$SECRET_DIR"
+
+  assert_cmd_zero "detached authority run is rewritten to run attached" \
+    node --test "$ROOT/.claude/tests/hooks/no-detached-authority.test.mjs"
 
   assert_cmd_zero "opt-in direct-main hook self-test" \
     bash "$ROOT/.claude/hooks/no-direct-main-commit.sh" --self-test
@@ -76,6 +76,17 @@ event='{"tool_name":"Write","tool_input":{"file_path":"/not/a/project/file.js"}}
 assert_cmd_zero "lint hook safely ignores files outside project" \
   sh -c 'printf "%s" "$1" | CLAUDE_PROJECT_DIR="$2" bash "$3"' \
   _ "$event" "$ROOT" "$ROOT/.claude/hooks/lint.sh"
+
+if command -v gofmt >/dev/null 2>&1; then
+  GO_DIR="$(mktemp -d)"
+  printf 'package main\nfunc main(){x:=1;_=x}\n' > "$GO_DIR/main.go"
+  assert_cmd_zero "lint hook formats Go itself instead of returning the diff" \
+    sh -c 'printf "%s" "$1" | CLAUDE_PROJECT_DIR="$2" bash "$3"' \
+    _ "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$GO_DIR/main.go\"}}" "$GO_DIR" \
+    "$ROOT/.claude/hooks/lint.sh"
+  assert_eq "gofmt rewrote the file" "" "$(gofmt -l "$GO_DIR/main.go")"
+  rm -rf "$GO_DIR"
+fi
 
 ENV_FILE="$(mktemp)"
 trap 'rm -f "$ENV_FILE"' EXIT HUP INT TERM

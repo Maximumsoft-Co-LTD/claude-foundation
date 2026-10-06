@@ -785,9 +785,10 @@ plugin_probe() {
       const { FoundationGuard } = await import(plugin);
       const hooks = await FoundationGuard({ directory: process.cwd() });
       try {
-        await hooks["tool.execute.before"](
-          { tool, callID: "probe" }, { args: JSON.parse(argsJson) });
-        console.log("ALLOWED");
+        const output = { args: JSON.parse(argsJson) };
+        await hooks["tool.execute.before"]({ tool, callID: "probe" }, output);
+        console.log(JSON.stringify(output.args) === argsJson
+          ? "ALLOWED" : "REWRITTEN " + JSON.stringify(output.args));
       } catch (error) {
         console.log("BLOCKED: " + error.message);
       }
@@ -797,9 +798,12 @@ plugin_probe() {
 probe="$(plugin_probe prove block write '{"filePath":"src/app.js"}')"
 assert_contains "opencode plugin enforces the phase guard" "$probe" "BLOCKED: phase guard"
 if command -v jq >/dev/null 2>&1; then
+  printf 'API_KEY=hunter2\n' > "$OPENCODE_TARGET/.env"
   probe="$(plugin_probe "" audit read '{"filePath":".env"}')"
-  assert_contains "opencode plugin enforces the secrets guard" \
-    "$probe" "BLOCKED by secrets guard"
+  assert_contains "opencode plugin points a secret read at the redacted copy" \
+    "$probe" "claude-foundation-redacted"
+  assert_not_contains "opencode plugin never refuses the secret read" "$probe" "BLOCKED"
+  rm -f "$OPENCODE_TARGET/.env"
 fi
 probe="$(plugin_probe prove block read '{"filePath":"README.md"}')"
 assert_eq "opencode plugin allows a harmless read" "ALLOWED" "$probe"

@@ -270,7 +270,9 @@ assert_eq "explicit compare Investigate permits its prototype" "" "$out"
 compare_event="{\"transcript_path\":\"$TMP/investigate-transcript.jsonl\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$TMP/project/.foundation/prototypes/other/a.html\"}}"
 out="$(printf '%s' "$compare_event" | CLAUDE_PROJECT_DIR="$TMP/project" \
   FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
-assert_contains "compare Investigate blocks an undeclared prototype" "$out" '"decision":"block"'
+# The default guard never refuses: it lets the call run and names the route.
+assert_not_contains "compare Investigate never refuses an undeclared prototype" "$out" '"decision":"block"'
+assert_contains "compare Investigate names the undeclared prototype" "$out" 'approved prototype directory'
 
 out="$(invoke investigate block "" "$(bash_event 'touch src/app.js')")"
 assert_contains "Investigate blocks mutating shell commands" "$out" '"decision":"block"'
@@ -374,8 +376,10 @@ assert_eq "read-only shell commands do not require phase context" "" "$out"
 
 out="$(printf '%s' "$(write_event "$TMP/project/src/app.js")" |
   CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_ACTIVE_PHASE=prove node "$HOOK")"
-assert_contains "default auto mode blocks an active lifecycle phase" \
+assert_not_contains "default auto mode never refuses in an active lifecycle phase" \
   "$out" '"decision":"block"'
+assert_contains "default auto mode explains the active phase rule" \
+  "$out" 'Prove keeps product and instruction files read-only'
 
 out="$(printf '%s' "$(write_event "$TMP/outside/adoption.js")" |
   CLAUDE_PROJECT_DIR="$TMP/outside" node "$HOOK")"
@@ -392,12 +396,14 @@ for cli in "npx claude-foundation" "npx --no-install claude-foundation" \
   assert_eq "pre-phase '$cli change start' is allowed like the bare CLI" "" "$out"
   out="$(printf '%s' "$(bash_event "$cli land advance delivery-change")" |
     CLAUDE_PROJECT_DIR="$TMP/project" node "$HOOK")"
-  assert_contains "'$cli land advance' still requires the current /land invocation" \
-    "$out" 'requires the current /land invocation'
+  assert_contains "'$cli land advance' is routed to the public Land route" \
+    "$out" '"command":"claude-foundation advance delivery-change --through archived"'
   out="$(printf '%s' "$(bash_event "$cli deliver advance delivery-change")" |
     CLAUDE_PROJECT_DIR="$TMP/project" node "$HOOK")"
-  assert_contains "'$cli deliver advance' still requires the current /deliver invocation" \
-    "$out" 'requires the current /deliver invocation'
+  assert_contains "'$cli deliver advance' becomes the question for the user" \
+    "$out" 'ASK_USER: delivering delivery-change'
+  assert_not_contains "'$cli deliver advance' never runs delivery without /deliver" \
+    "$out" '"command":"'"$cli"' deliver advance'
 done
 
 # --- The prefilter: what it may skip, and what it must never skip. ----------
@@ -427,24 +433,27 @@ assert_cmd_zero "guardrail mode off resolves without starting Node" \
 out="$(pre audit "" "$(write_event "$TMP/pre/src/app.js")")"
 assert_eq "audit mode delegates event-local transcript detection to the guard" "" "$out"
 
-# /dev opts into the lifecycle. Its transcript makes even an explicit audit
-# rollout enforce from the first mutation, before a phase packet has been read.
+# /dev opts into the lifecycle. Before its first phase packet the default guard
+# lets the edit run and names the route into a tracked change.
 printf '%s\n' '{"type":"last-prompt","lastPrompt":"/dev --yes build it"}' \
   > "$TMP/dev-transcript.jsonl"
 out="$(printf '%s' "$(write_event "$TMP/pre/src/app.js")" |
-  CLAUDE_PROJECT_DIR="$TMP/pre" FOUNDATION_GUARDRAIL_MODE=audit \
+  CLAUDE_PROJECT_DIR="$TMP/pre" FOUNDATION_GUARDRAIL_MODE=auto \
   FOUNDATION_CLAUDE_TRANSCRIPT_PATH="$TMP/dev-transcript.jsonl" sh "$PREFILTER")"
-assert_contains "a dev session fails closed before its first phase packet" \
-  "$out" 'active phase is unavailable'
+assert_not_contains "a dev session never refuses before its first phase packet" "$out" '"decision":"block"'
+assert_contains "a dev session names the route into a change" "$out" 'change start'
 
 # The real Claude PreToolUse schema carries transcript_path on the event. A
 # claude -p hook process may not inherit SessionStart's CLAUDE_ENV_FILE export,
 # so event-local identity must enforce /dev on its own.
 event_with_transcript="{\"transcript_path\":\"$TMP/dev-transcript.jsonl\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$TMP/pre/src/app.js\"}}"
 out="$(printf '%s' "$event_with_transcript" |
-  CLAUDE_PROJECT_DIR="$TMP/pre" FOUNDATION_GUARDRAIL_MODE=audit sh "$PREFILTER")"
-assert_contains "a dev PreToolUse event enforces without exported transcript env" \
+  CLAUDE_PROJECT_DIR="$TMP/pre" FOUNDATION_GUARDRAIL_MODE=auto sh "$PREFILTER")"
+assert_contains "a dev PreToolUse event is guided without exported transcript env" \
   "$out" 'active phase is unavailable'
+out="$(printf '%s' "$event_with_transcript" |
+  CLAUDE_PROJECT_DIR="$TMP/pre" FOUNDATION_GUARDRAIL_MODE=audit sh "$PREFILTER")"
+assert_eq "explicit audit mode records without speaking" "" "$out"
 
 # /land is the one authority bootstrap. The stable wrapper itself is allowed
 # only when the current event transcript starts with /land; its child file
@@ -463,8 +472,8 @@ assert_eq "current /land may invoke the wrapper through npx" "" "$out"
 dev_land_event="{\"transcript_path\":\"$TMP/dev-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation land advance delivery-change\"}}"
 out="$(printf '%s' "$dev_land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
   FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
-assert_contains "/dev cannot infer Land through the trusted wrapper" "$out" \
-  'requires the current /land invocation'
+assert_contains "/dev Land through the internal wrapper is routed to advance" "$out" \
+  '"command":"claude-foundation advance delivery-change --through archived"'
 
 # Claude Code writes the `last-prompt` row late. A /land typed after /dev is
 # already in the transcript as its own user row before that row lands.
@@ -483,8 +492,8 @@ assert_eq "a typed /land counts before its last-prompt row is written" "" "$out"
 stale_land_event="{\"transcript_path\":\"$TMP/stale-land-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation land advance delivery-change\"}}"
 out="$(printf '%s' "$stale_land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
   FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
-assert_contains "an earlier /land does not authorize a later /dev turn" "$out" \
-  'requires the current /land invocation'
+assert_contains "an earlier /land does not let a later /dev turn use the internal wrapper" "$out" \
+  '"command":"claude-foundation advance delivery-change --through archived"'
 
 chained_land_event="{\"transcript_path\":\"$TMP/land-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation land advance delivery-change && git commit -am bad\"}}"
 out="$(printf '%s' "$chained_land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
@@ -516,8 +525,10 @@ assert_eq "event transcript remains authoritative for /deliver" "" "$out"
 forged_deliver_event="{\"transcript_path\":\"$TMP/dev-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation deliver advance delivery-change\"}}"
 out="$(printf '%s' "$forged_deliver_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
   FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
-assert_contains "/dev cannot infer Deliver through the trusted wrapper" "$out" \
-  'requires the current /deliver invocation'
+assert_contains "/dev Deliver becomes the question for the user" "$out" \
+  'ASK_USER: delivering delivery-change'
+assert_not_contains "/dev never runs delivery through the trusted wrapper" "$out" \
+  '"command":"claude-foundation deliver advance'
 
 chained_deliver_event="{\"transcript_path\":\"$TMP/deliver-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation deliver advance delivery-change && git push --force\"}}"
 out="$(printf '%s' "$chained_deliver_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
@@ -639,5 +650,24 @@ out="$(printf '%s' "$(write_event "$SCRATCH_ROOT/project/src/app.js")" |
   FOUNDATION_GUARDRAIL_MODE=block FOUNDATION_WORKSPACE_ROOT="$TMP/workspace" node "$HOOK")"
 assert_contains "a project inside a scratch-shaped directory is never scratch" "$out" '"decision":"block"'
 rm -rf "$SCRATCH_ROOT"
+
+# The default guard redirects a Build edit aimed at the main checkout into the
+# same path in the isolated workspace, instead of refusing it.
+RD="$TMP/redirect"
+mkdir -p "$RD/project/openspec/changes/demo" "$RD/project/.foundation/runtime" \
+  "$RD/project/.foundation/logs/demo" "$RD/ws/src"
+printf '{"status":"building","workspace":{"path":"%s"}}' "$RD/ws" \
+  > "$RD/project/.foundation/runtime/demo.json"
+printf '{"timestamp":"%s","phase":"build","changeId":"demo"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  > "$RD/project/.foundation/logs/demo/phase-context.jsonl"
+out="$(printf '%s' "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$RD/project/src/app.js\",\"content\":\"x\"}}" |
+  CLAUDE_PROJECT_DIR="$RD/project" FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
+assert_not_contains "a main-checkout Build edit is never refused" "$out" '"decision":"block"'
+assert_contains "a main-checkout Build edit is redirected into the workspace" "$out" \
+  "\"file_path\":\"$(node -p 'require("fs").realpathSync(process.argv[1])' "$RD/ws")/src/app.js\""
+assert_contains "the redirect keeps the rest of the tool input" "$out" '"content":"x"'
+out="$(printf '%s' "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$RD/ws/src/app.js\",\"content\":\"x\"}}" |
+  CLAUDE_PROJECT_DIR="$RD/project" FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
+assert_eq "an edit already inside the workspace runs untouched" "" "$out"
 
 finish "phase mutation guard"
