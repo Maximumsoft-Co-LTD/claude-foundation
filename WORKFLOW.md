@@ -624,11 +624,21 @@ finishes only at `archived`; `proven` is not completion.
 Apply is a journaled transaction over the target. An interruption is recovered
 and resumed by the Harness through the same `/land` invocation. Restore,
 keep-current, journal, check, resume, and archive mechanics are not separate
-user operations. The user is asked only when divergent target content requires
-a semantic choice that the Harness cannot safely infer; that answer is recorded
-through the same route, `advance <change> --through archived --recover-apply
-settle|keep-current|restore-backup --decision-ref <user-decision>`, which settles
-the journal and continues Land in one call.
+user operations. The Harness settles an interrupted apply itself when doing so
+cannot lose bytes: it finishes or reverses only content Land wrote, and when the
+target holds other content it keeps the current target, synchronizes the sandbox
+onto it, and proves again. The agent receives the divergent paths as a notice;
+if automatic recovery cannot finish, the agent gets a repair with the transaction
+location, not the user. Restoring the recorded backup over divergent content is
+never automatic; a user who wants it records it through the same route,
+`advance <change> --through archived --recover-apply restore-backup
+--decision-ref <user-decision>`, which settles the journal and continues Land.
+
+Uncommitted target edits that Land would overwrite are kept, never committed or
+discarded automatically: the agent merges each into the sandbox copy of the same
+path, and Land applies the merged file once merging the target edit into it
+changes nothing. Edits made outside the sandbox stop Land only on paths in this
+change's Land projection; others are reported.
 
 The projection is confined to Git-tracked files plus paths declared in
 `tasks.md`. An untracked path no task names is neither evidence surface nor a
@@ -656,10 +666,20 @@ evidence, prompt, or gate exists unless the user explicitly invokes
 The agent runs one composition command, `claude-foundation deliver advance
 <change>`, and executes its automatic recovery internally. The user never
 assembles readiness, preparation, commit, push, provider, or resume commands.
-The invocation grants only the authority to create an isolated feature branch,
-commit the proven Land projection, push that branch, and open or reuse a pull
-request. It does not authorize force-push, default-branch push, merge, deploy,
-publish, evidence disclosure to a new store, or product edits.
+Invoking `/deliver` on a proven change that is not yet archived is also the
+user's Land authority: Deliver runs the normal `advance <change> --through
+archived` route, which issues the Land grant under this invocation, and continues
+delivery in the same call once the change is archived. A Land boundary on the
+way (a real decision or an agent repair) is returned with the Deliver resume
+route. A change that is not proven yet is not landed; Deliver recommends
+finishing Build and Prove first. The invocation grants only the authority to
+Land, create an isolated feature branch, commit the proven Land projection,
+push that branch, and open or reuse a pull request. It does not authorize
+force-push, default-branch push, merge, deploy, publish, evidence disclosure to
+a new store, or product edits. Deliver questions use the blocked-decision shape
+(options with outcomes, a recommendation, and `pause`); only typed provider
+failures (remote, credentials, push, or pull-request service) wait on the
+repository operator.
 
 Deliver reconstructs the projection in a separate Git worktree, leaving the
 user's checkout, HEAD, index, and unrelated edits unchanged. It binds durable

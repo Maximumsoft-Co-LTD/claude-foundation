@@ -33,10 +33,11 @@ assert.deepEqual(MANUAL_APPLY_STATUS, [
 ]);
 const decision = defaultManualRecoveryDecision("/transactions/tx");
 assert.equal(decision.kind, "manual-recovery");
-assert.equal(decision.recommended, "inspect");
+assert.equal(decision.recommended, "keep-current");
+assert.equal(decision.automaticRecovery, "keep-current");
 assert.equal(decision.transactionRoot, "/transactions/tx");
 assert.deepEqual(decision.options.map((option) => option.id), [
-  "inspect", "keep-current", "restore-backup", "pause"
+  "keep-current", "restore-backup", "pause"
 ]);
 
 {
@@ -54,13 +55,20 @@ assert.deepEqual(decision.options.map((option) => option.id), [
 
 {
   const { context, calls } = fixture();
-  const custom = { kind: "custom" };
+  // A journal written before automatic keep-current keeps its summary and
+  // facts, but the decision is rebuilt so the harness can apply keep-current.
+  const legacy = { kind: "manual-recovery", summary: "legacy summary", recommended: "inspect" };
   recoverApplyJournal(context, {
     id: "c", state: { workspace: {} },
-    journal: { status: "manual-recovery", decision: custom },
+    journal: { status: "manual-recovery", decision: legacy, divergentPaths: ["src/a.js"],
+      recoveryError: "rollback requires manual recovery at 'src/a.js'" },
     transactionRoot: "/tx", options: {}
   });
-  assert.equal(calls.block[0][2], custom);
+  const rebuilt = calls.block[0][2];
+  assert.equal(rebuilt.summary, "legacy summary");
+  assert.equal(rebuilt.automaticRecovery, "keep-current");
+  assert.deepEqual(rebuilt.divergentPaths, ["src/a.js"]);
+  assert.match(rebuilt.options[1].outcome, /--recover-apply restore-backup/);
 }
 
 {

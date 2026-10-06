@@ -3,7 +3,7 @@ import { join, resolve as resolvePath } from "node:path";
 import { spawnSync } from "node:child_process";
 import { validateSignedCiEnvelope } from "../evidence/signed-ci.mjs";
 import { validityRecovery } from "../evidence/receipt-validity.mjs";
-import { targetHeadMovedDecision } from "./apply-recovery.mjs";
+import { MANUAL_APPLY_STATUS, targetHeadMovedDecision } from "./apply-recovery.mjs";
 import {
   compileLandPreparation, landPreparationMatches
 } from "../core/graph-execution.mjs";
@@ -503,7 +503,14 @@ export function createLandRuntime({
         recommended: "sync"
       });
     const pending = pendingApplyTransactions(id);
-    if (pending.length)
+    if (pending.length) {
+      // Both automatic resolutions are non-destructive: settle only finishes
+      // or reverses bytes Land itself wrote (divergent content turns the
+      // journal into a manual recovery instead), and keep-current overwrites
+      // nothing. `advance --through archived` applies them itself; restoring
+      // a backup over divergent content stays the user's explicit choice.
+      const manual = pending.some((transaction) => MANUAL_APPLY_STATUS.includes(transaction.status));
+      const resolution = manual ? "keep-current" : "settle";
       blockWithDecision(id, "apply-pending-recovery", {
         kind: "apply-pending-recovery",
         summary: `An earlier apply for '${id}' is unresolved. Land check changes nothing while it is pending.`,
@@ -515,17 +522,24 @@ export function createLandRuntime({
           create: transaction.counts.create,
           delete: transaction.counts.delete
         })),
-        options: [
-          { id: "inspect", outcome: "Inspect the transaction journal and the working tree before recovering." },
-          { id: "recover", outcome: "Settle it and continue Land: " +
-            `'claude-foundation advance ${id} --through archived --recover-apply ${
-              pending.some((transaction) => ["rolling-back", "manual-recovery", "recovering-backup",
-                "settling-current"].includes(transaction.status))
-                ? "<keep-current|restore-backup>" : "settle"} --decision-ref <user-decision>'.` },
+        divergentPaths: [...new Set(pending.flatMap((transaction) =>
+          transaction.divergentPaths || []))].slice(0, 50),
+        options: manual ? [
+          { id: "keep-current", outcome: "Keep the current target files (nothing is overwritten), " +
+            "then synchronize the sandbox onto them and prove again before Land continues." },
+          { id: "restore-backup", outcome: "Replace the divergent target files with the recorded " +
+            `pre-apply backup: 'claude-foundation advance ${id} --through archived --recover-apply ` +
+            "restore-backup --decision-ref <user-decision>'." },
+          { id: "pause", outcome: "Leave the transaction pending and make no change." }
+        ] : [
+          { id: "settle", outcome: "Finish or reverse the interrupted apply from its journal, touching " +
+            "only bytes Land itself wrote, then continue Land." },
           { id: "pause", outcome: "Leave the transaction pending and make no change." }
         ],
-        recommended: "inspect"
+        recommended: resolution,
+        automaticRecovery: resolution
       });
+    }
     assertNoDroppedScenarios(id);
     assertOpenSpecCli(root, fail);
     if (state.workspace?.mode === "worktree" && !state.workspace.applied &&

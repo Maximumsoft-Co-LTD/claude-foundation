@@ -10,8 +10,6 @@ import {
   assertOpenSpecCli, createLandRuntime, openSpecCliStatus, openSpecVersionStatus,
   riskRequiresCi, signedCiProvider
 } from "../../harness/runtime/workflow/land-runtime.mjs";
-import { telemetryLandIssue } from
-  "../../harness/runtime/workflow/apply-runtime.mjs";
 
 let assertions = 0;
 function check(actual, expected, message) {
@@ -59,25 +57,6 @@ check(signedCiProvider(["test", "deployment"], (provider) => provider,
 check(signedCiProvider(["test"], (provider) => provider,
   () => ({ provenance: { source: "self-reported" } })), null,
 "self-reported evidence cannot satisfy risk CI");
-check(telemetryLandIssue({ telemetry: { requireUsage: true } }, {
-  classification: "not-ingested",
-  recoveryActions: [{ command: "telemetry import change events.jsonl" }]
-}), null,
-"missing usage remains advisory and cannot strand proven delivery");
-check(telemetryLandIssue({ telemetry: { requireUsage: true } }, {
-  classification: "measured", recoveryActions: []
-}), null, "measured telemetry satisfies the Land policy");
-check(telemetryLandIssue({ telemetry: { requireUsage: true } }, {
-  classification: "partial-measurement",
-  measuredDimensions: { tokens: true, cost: false },
-  recoveryActions: [{ command: "telemetry host-import change result.json" }]
-}), null, "measured tokens satisfy usage policy even when host cost is unavailable");
-check(telemetryLandIssue({ telemetry: { requireUsage: true } }, {
-  classification: "partial-measurement",
-  measuredDimensions: { tokens: false, cost: false },
-  recoveryActions: [{ command: "telemetry sync change" }]
-}), null,
-"partial rows with no measured usage dimension remain advisory at Land");
 
 // The loose-match regression: a warning line mentioning the pinned version must
 // not vouch for a CLI that reports a different one.

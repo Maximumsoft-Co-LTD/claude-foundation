@@ -1237,7 +1237,11 @@ const {
 function targetEditsFor(state) {
   return targetEditFindings({
     root: ROOT, state, dirtyNow: preexistingDirty(ROOT),
-    landOutput: landAppliedOutput(readTransactionJournals(TRANSACTIONS, state.id, readJson))
+    landOutput: landAppliedOutput(readTransactionJournals(TRANSACTIONS, state.id, readJson)),
+    // Only the paths this change's Land would apply can stop it.
+    // An unresolvable surface throws (trapped) and the stop stays fail-closed.
+    projectionPaths: () => trapFailures(() => new Set(canonicalChangedSurface(state.id, state)
+      .filter((row) => (row.repositoryId || "root") === "root").map((row) => row.path)))
   });
 }
 
@@ -1901,6 +1905,8 @@ const pullRequestRuntime = createPullRequestRuntime({
   transactions: TRANSACTIONS,
   selectedRepositories,
   foundationPolicy,
+  // `/deliver` on a proven change is Land authority: the normal Land route.
+  landChange: (id) => advanceThrough(id, "archived"),
   now,
   fail: die
 });
@@ -1972,7 +1978,7 @@ const sessionLeases = createSessionLeaseRuntime({
     () => runTaskCheck({ loadRuntime }, id, check)),
   acquire: acquireAgentLease, release: releaseAgentLease, discard: discardAgentLease
 });
-const { advanceValue, showAdvance } = createAdvanceRuntime({
+const { advanceValue, advanceThrough, showAdvance } = createAdvanceRuntime({
   pendingApprovalDecisions: (id) => trapFailures(() => {
     const preflight = authorityPreflight(id);
     const authority = preflight.status === "READY" ? [] : preflight.blockers.map((blocker) => ({
@@ -2012,6 +2018,12 @@ const { advanceValue, showAdvance } = createAdvanceRuntime({
   saveRuntime,
   recoverSandbox: (id) => commandPhaseRecorder.measureAsync("advance.sandbox-sync",
     () => runAdvanceQuietly(() => syncSandbox(id))),
+  // Non-destructive interrupted-apply resolutions only (settle|keep-current),
+  // recorded under the Land route that started the apply.
+  recoverApply: (id, resolution) => runAdvanceQuietly(() => recoverLand(id, {
+    "decision-ref": `harness:automatic-apply-recovery:${resolution}`,
+    ...(resolution === "settle" ? {} : { resolution })
+  })),
   synchronizeAgreement: async (id) => sandboxRuntime.agreementStale(id)
     ? commandPhaseRecorder.measureAsync("advance.sandbox-sync",
       () => runAdvanceQuietly(() => sandboxRuntime.synchronizeAgreement(id)))

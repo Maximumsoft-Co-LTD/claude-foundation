@@ -226,15 +226,23 @@ test("rollback processes entries in reverse and records manual recovery failures
   assert.deepEqual(journal.inFlightPaths, []);
 
   const failed = {
-    changeId: "change", transactionId: "tx", inFlightPaths: [], entries: [{ path: "a" }]
+    changeId: "change", transactionId: "tx", inFlightPaths: [],
+    entries: [{ path: "a" }, { path: "b" }]
   };
   assert.throws(() => rollbackLandJournalOperation({
     restoreEntry: () => { throw new Error("target diverged"); },
-    save: () => {}, now: () => "now", transactionRoot: () => "/transaction"
+    save: () => {}, now: () => "now", transactionRoot: () => "/transaction",
+    safeRootPath: (path) => `/root/${path}`,
+    // 'a' holds neither the pre-apply nor the applied bytes; 'b' is Land's own.
+    matches: (path, _entry, side) => path === "/root/b" && side === "after"
   }, failed, "apply failed"), /target diverged/);
   assert.equal(failed.status, "manual-recovery");
   assert.equal(failed.recoveryError, "target diverged");
-  assert.equal(failed.decision.recommended, "inspect");
+  assert.deepEqual(failed.divergentPaths, ["a"]);
+  // Keeping the current target overwrites nothing, so the harness applies it.
+  assert.equal(failed.decision.recommended, "keep-current");
+  assert.equal(failed.decision.automaticRecovery, "keep-current");
+  assert.deepEqual(failed.decision.divergentPaths, ["a"]);
   assert.equal(failed.decision.transactionRoot, "/transaction");
 });
 

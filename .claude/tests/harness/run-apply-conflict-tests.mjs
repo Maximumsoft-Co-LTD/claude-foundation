@@ -135,9 +135,29 @@ test("a second land over the same file refuses instead of overwriting", () => {
   const second = cli(fixture, "archive", "second-probe");
   assert.notEqual(second.status, 0, "the clobbering land must refuse");
   assert.match(second.stderr, /apply would overwrite uncommitted target edits at: app\.txt/);
-  assert.match(second.stderr, /commit or reconcile the landed work first/);
+  assert.match(second.stderr, /target edits are kept and carried into the sandbox/);
+  assert.doesNotMatch(second.stdout + second.stderr, /\bcommit\b/i, "Land never asks for a commit");
   assert.equal(readFileSync(join(fixture.root, "app.txt"), "utf8"), firstContent,
     "the refused land must leave the first land's work untouched");
+});
+
+// Keep-target: once the sandbox copy carries the target's uncommitted edit,
+// applying it loses nothing, so Land applies it without anyone committing.
+test("a sandbox copy that carries the target edit lands over it", () => {
+  const fixture = project();
+  const firstContent = editedLine(fixture, "app.txt", 2, "first edit");
+  const secondContent = editedLine(fixture, "app.txt", 18, "second edit");
+  provenEdit(fixture, "First probe", "first-probe", "app.txt", firstContent);
+  const second = provenEdit(fixture, "Second probe", "second-probe", "app.txt", secondContent);
+  assert.equal(cli(fixture, "archive", "first-probe").status, 0);
+  assert.notEqual(cli(fixture, "sandbox", "apply", "second-probe").status, 0);
+  const lines = firstContent.split("\n");
+  lines[17] = "second edit";
+  const merged = lines.join("\n");
+  writeFileSync(join(second.workspace.path, "app.txt"), merged);
+  const applied = cli(fixture, "sandbox", "apply", "second-probe");
+  assert.equal(applied.status, 0, applied.stderr);
+  assert.equal(readFileSync(join(fixture.root, "app.txt"), "utf8"), merged);
 });
 
 test("a land over a different file still passes beside uncommitted work", () => {

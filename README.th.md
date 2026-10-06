@@ -392,8 +392,9 @@ Test รันเฉพาะใน workspace ของ change ถ้า Land �
 /deliver <change-id>
 ```
 
-Workflow ปกติยังจบสมบูรณ์ที่ `archived` ถ้าเรียก Deliver อย่างชัดเจน คำสั่งเดียว
-จะสร้าง feature branch ใน isolated worktree จาก projection ที่ prove และ archive
+Workflow ปกติยังจบสมบูรณ์ที่ `archived` ถ้าเรียก Deliver อย่างชัดเจนกับ change ที่
+prove แล้วแต่ยังไม่ archive การเรียกนั้นถือเป็นอำนาจ Land ด้วย harness จะ Land ก่อนแล้ว
+ทำต่อ คำสั่งเดียวจะสร้าง feature branch ใน isolated worktree จาก projection ที่ prove และ archive
 แล้ว สร้าง PR body มาตรฐานจาก OpenSpec กับ proof receipt, commit, push, เปิดหรือ
 ใช้ PR เดิม, ตรวจกลับผ่าน provider และคืน URL โดยไม่เปลี่ยน HEAD/index ของ checkout
 ผู้ใช้ และไม่ force-push, push เข้า default branch, merge, deploy, publish หรือแก้

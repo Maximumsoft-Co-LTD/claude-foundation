@@ -484,7 +484,9 @@ test("advance --through converts prepare and Land failures without rejecting", a
   assert.equal(land.action, "REPAIR");
   assert.equal(land.legacyAction, "REPAIR_LAND_RUNTIME");
   assert.equal(land.reason, "land conflict route");
-  assert.equal(land.command, "claude-foundation land check change-a");
+  // Land's fallback is the Land route itself, never the internal `land check`.
+  assert.equal(land.command, "claude-foundation advance change-a --through archived");
+  assert.doesNotMatch(JSON.stringify(land), /land check/);
 });
 
 test("advance convergence follows semantic progress beyond 32 proof runs", async () => {

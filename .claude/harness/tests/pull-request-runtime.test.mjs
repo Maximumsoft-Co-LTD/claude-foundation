@@ -534,6 +534,9 @@ test(`delivery verifies publication boundaries: ${scenario}`, async (t) => {
     assert.equal(interrupted.boundary, "content-identity");
     assert.deepEqual(interrupted.options,
       ["restore-the-proven-content-and-retry-deliver", "leave-archived-without-deliver"]);
+    assert.equal(interrupted.decision.recommended, "restore-the-proven-content-and-retry-deliver");
+    assert.deepEqual(interrupted.decision.options.map((option) => option.id),
+      [...interrupted.options, "pause"]);
     assert.equal(pushes, 0);
     assert.equal(creates, 0);
     assert.equal(checkedGit(["rev-parse", "HEAD"], root), originalHead);
@@ -748,4 +751,50 @@ test(`multi-repository delivery preserves ${topology} topology and target HEADs:
   const reused = await runtime.advance(id);
   assert.equal(reused.reused, true);
   assert.equal(pullRequests.size, 2);
+});
+
+// Invoking Deliver on a proven change is Land authority: it lands through the
+// normal route and continues, instead of asking the user to authorize Land.
+test("Deliver on a proven change lands first, then continues delivery", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-deliver-land-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  checkedGit(["init", "-b", "main"], root);
+  const lifecycle = { id: "booking", status: "proven" };
+  const landed = [];
+  const runtime = (landChange) => createPullRequestRuntime({
+    root, deliveriesRoot: join(root, ".foundation", "deliveries"),
+    loadRuntime: () => lifecycle, activeChangePath: () => root, proofPath: () => join(root, "proof.json"),
+    transactionJournalPath: () => join(root, "journal.json"), pathIdentity, readJson, writeJson,
+    stableHash: (value) => hash(JSON.stringify(value)), git, landChange,
+    fail: (message) => { throw new Error(message); }
+  });
+
+  const blocked = await runtime(async (id) => {
+    landed.push(id);
+    return { action: "ASK_USER", boundary: "user-authority", reason: "a real Land decision" };
+  }).advance("booking");
+  assert.deepEqual(landed, ["booking"]);
+  assert.equal(blocked.action, "ASK_USER");
+  assert.equal(blocked.land.reason, "a real Land decision");
+  assert.equal(blocked.resumeCommand, "claude-foundation deliver advance booking");
+  assert.equal(blocked.options, undefined, "no authorize-land question");
+
+  // Landed: delivery continues in the same call. Without a remote that is the
+  // repository operator's typed wait, not a failure.
+  const continued = await runtime(async () => {
+    lifecycle.status = "archived";
+    return { action: "DONE", reached: "archived" };
+  }).advance("booking");
+  assert.deepEqual(continued.land, { reached: "archived", authority: "explicit-deliver-command" });
+  assert.equal(continued.action, "WAIT");
+  assert.equal(continued.boundary, "external-owner");
+  assert.equal(readJson(join(root, ".foundation", "deliveries", "booking", "state.json"))
+    .landAuthority.kind, "explicit-deliver-command");
+
+  lifecycle.status = "building";
+  const unfinished = await runtime(async () => assert.fail("never lands an unproven change"))
+    .advance("booking");
+  assert.equal(unfinished.action, "ASK_USER");
+  assert.equal(unfinished.decision.recommended, "finish-build-and-prove-then-deliver");
+  assert.ok(unfinished.decision.options.some((option) => option.id === "pause"));
 });
