@@ -22,6 +22,12 @@ function percentile(values, fraction) {
   return measured[Math.max(0, Math.ceil(fraction * measured.length) - 1)];
 }
 
+// Unknown stays unknown: null when no run measured the value.
+function sum(values) {
+  const measured = values.filter(Number.isFinite);
+  return measured.length ? measured.reduce((total, value) => total + value, 0) : null;
+}
+
 function measurement(values) {
   const measured = values.filter(Number.isFinite).length;
   return { measured, unavailable: values.length - measured };
@@ -96,7 +102,15 @@ export function aggregateLabRuns(root, source = null) {
           row.scorecard?.evidenceReuse?.resumptions)),
         p95Resumptions: percentile(rows.map((row) =>
           row.scorecard?.evidenceReuse?.resumptions), 0.95),
+        // Friction the harness put on the agent. The target for a normal run
+        // is zero hook refusals; prompts are host approvals the agent waited on.
+        hookBlocks: sum(rows.map((row) => row.scorecard?.friction?.hookBlocks)),
+        permissionPrompts: sum(rows.map((row) => row.scorecard?.friction?.permissionPrompts)),
+        medianToolErrors: median(rows.map((row) => row.scorecard?.friction?.toolErrors)),
+        askUserActions: sum(rows.map((row) => row.scorecard?.friction?.advanceActions?.ASK_USER)),
+        repairActions: sum(rows.map((row) => row.scorecard?.friction?.advanceActions?.REPAIR)),
         measurements: {
+          friction: measurement(rows.map((row) => row.scorecard?.friction?.toolErrors)),
           wallMs: measurement(rows.map((row) => row.scorecard?.timing?.wallMs)),
           costUsd: measurement(rows.map((row) => row.scorecard?.usage?.costUsd)),
           modelRequests: measurement(rows.map((row) =>

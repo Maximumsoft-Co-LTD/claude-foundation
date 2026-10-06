@@ -13,7 +13,7 @@ import addFormats from "ajv-formats";
 
 import {
   assertDisposableProject, backendLandArgs, collectNativeScorecard, discoverChangeId,
-  externalAuthorityBoundary, observedOutcome, operationRowsInWindow,
+  externalAuthorityBoundary, guardrailOutcomes, hostFriction, observedOutcome, operationRowsInWindow,
   mergeHostExecutions, parseHostOutput, pendingTaskCount,
   provenLandReady, remainingTimeoutMs, runBenchmarkOracle, runClaude, terminalChangeId
 } from "../openspec-native/run.mjs";
@@ -726,7 +726,9 @@ test("stream parser preserves partial tool telemetry before a final result", () 
     byCategory: {
       harnessCli: 0, harnessDocReads: 0, stateReads: 0, harnessArtifactWrites: 0,
       productWrites: 0, testRuns: 0, other: 2
-    }
+    },
+    friction: { toolErrors: 0, hookBlocks: 0, permissionPrompts: 0, advanceActions: {
+      EDIT: 0, REPAIR: 0, RUN_EXTERNAL: 0, WAIT: 0, ASK_USER: 0, DONE: 0 } }
   });
   assert.equal(parsed.observedUsage.observedModelRequests, null,
     "tool-use rows sharing no message id are not model-request identities");
@@ -906,4 +908,38 @@ setTimeout(() => {}, 30000);
     rmSync(project, { recursive: true, force: true });
     rmSync(outputDir, { recursive: true, force: true });
   }
+});
+
+// The baseline paid run lost a turn in every lane to a hook refusal and waited
+// on host approval prompts; the stream must count both exactly.
+test("host friction counts hook refusals, approval prompts, and harness actions", () => {
+  const result = (content, isError = true) => ({ type: "user", message: { content: [
+    { type: "tool_result", is_error: isError, content } ] } });
+  const rows = [
+    result("PreToolUse:Bash hook error: BLOCKED: phase guard (unknown/Bash): active phase is unavailable"),
+    result("This Bash command contains multiple operations. The following part requires approval: node --test"),
+    result("Exit code 2"),
+    result('{"protocol":6,"action":"EDIT"}', false),
+    result([{ type: "text", text: '{"action":"REPAIR"} {"action":"DONE"}' }], false)
+  ];
+  assert.deepEqual(hostFriction(rows), {
+    toolErrors: 3, hookBlocks: 1, permissionPrompts: 1,
+    advanceActions: { EDIT: 1, REPAIR: 1, RUN_EXTERNAL: 0, WAIT: 0, ASK_USER: 0, DONE: 1 }
+  });
+});
+
+test("guard outcomes are counted inside the run window", () => {
+  const project = mkdtempSync(join(tmpdir(), "bench-guardrail-"));
+  try {
+    mkdirSync(join(project, ".foundation/logs"), { recursive: true });
+    writeFileSync(join(project, ".foundation/logs/guardrail-audit.jsonl"), [
+      { timestamp: "2026-10-06T08:00:00.000Z", outcome: "blocked" },
+      { timestamp: "2026-10-06T09:00:00.000Z", outcome: "redirected" },
+      { timestamp: "2026-10-06T09:00:01.000Z", outcome: "redirected" },
+      { timestamp: "2026-10-06T09:00:02.000Z", outcome: "guided" }
+    ].map((row) => JSON.stringify(row)).join("\n"));
+    assert.deepEqual(guardrailOutcomes(project, {
+      startedAt: "2026-10-06T08:59:00.000Z", finishedAt: "2026-10-06T09:10:00.000Z"
+    }), { redirected: 2, guided: 1 });
+  } finally { rmSync(project, { recursive: true, force: true }); }
 });

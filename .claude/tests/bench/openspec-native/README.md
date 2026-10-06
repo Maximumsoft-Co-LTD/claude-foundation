@@ -222,6 +222,16 @@ stream: `total`, `byTool`, and `byCategory` over the closed set `harnessCli`,
 importer (`metrics <change>` → `hostToolProfile`). Without a host stream every
 count is `null`.
 
+`friction` records what the harness cost the agent: `hookBlocks` (tool calls a
+hook refused), `permissionPrompts` (host approvals the agent waited on),
+`toolErrors`, `advanceActions` (protocol-6 actions the agent was handed), and
+`guardrail` (the guard's own audit outcomes in the run window: `redirected`,
+`routed`, `guided`, `shell-audit`, `blocked`). The target for a normal run is
+zero `hookBlocks`; the lab aggregate sums `hookBlocks`, `permissionPrompts`,
+`askUserActions`, and `repairActions` per scenario. The 2026-10-06 baseline
+before the guards stopped refusing was one hook block in every lane and eight
+approval prompts across six lanes.
+
 Completed Node.js runs collect coverage and CRAP from the delivered sandbox.
 Projects with an npm test script use it; bare CommonJS/ESM projects fall back to
 discovered `*.test.*` and `*.spec.*` files under `node --test`.

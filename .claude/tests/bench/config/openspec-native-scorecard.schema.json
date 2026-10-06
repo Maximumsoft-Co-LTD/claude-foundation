@@ -133,6 +133,19 @@
         }
       }
     },
+    "friction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["measurement", "hookBlocks", "permissionPrompts", "toolErrors", "advanceActions", "guardrail"],
+      "properties": {
+        "measurement": { "enum": ["measured", "unavailable"] },
+        "hookBlocks": { "$ref": "#/$defs/nullableCount" },
+        "permissionPrompts": { "$ref": "#/$defs/nullableCount" },
+        "toolErrors": { "$ref": "#/$defs/nullableCount" },
+        "advanceActions": { "type": ["object", "null"], "additionalProperties": { "type": "integer", "minimum": 0 } },
+        "guardrail": { "type": ["object", "null"], "additionalProperties": { "type": "integer", "minimum": 0 } }
+      }
+    },
     "quality": {
       "type": "object",
       "additionalProperties": false,
