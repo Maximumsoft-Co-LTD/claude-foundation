@@ -182,6 +182,8 @@ test("review identity ignores progress and handoff tracking but binds semantics"
   assert.notEqual(progress.workspaceHash, before.workspaceHash);
   assert.equal(progress.reviewHash, before.reviewHash,
     "controller progress and delivery tracking do not invalidate review");
+  assert.equal(progress.codeHash, before.codeHash,
+    "a tasks.md tick does not invalidate executable provider receipts");
   write(root, `${changeRel}/tasks.md`,
     "# Tasks\n\n- [x] **T001** Changed scope — verify: `true` [paths:src/**]\n");
   const taskSemantics = state.singleRelevantSnapshot(id, root, true);

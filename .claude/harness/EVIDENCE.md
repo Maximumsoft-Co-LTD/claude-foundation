@@ -303,6 +303,15 @@ Valid receipts are reused. Commands with identical executable arguments,
 environment, working directory, and timeout are deduplicated within one proof
 execution. Providers with non-conflicting resources run concurrently.
 
+Tests run once across Build and Prove. A Build task `verify:` that is exactly a
+required `command` or `test-discovery` provider's argv in the same repository
+runs the provider's way (cwd, environment, timeout, captured output). A clean
+pass whose content hash did not move during the run is kept for Prove, which
+parses and receipts that output like a fresh run when the execution identity,
+environment (minus run ids), and the provider's content hash still match.
+Shell syntax, report files, readiness or services, `dependsOn`, multi-repository
+scope, any later edit, or an unreadable or altered record means Prove reruns.
+
 For a single selected writable npm repository containing both `package.json`
 and `package-lock.json`, Change Loop supplies the built-in
 `dependency-supply-chain` lockfile provider automatically. No
