@@ -6,7 +6,12 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
-import { createChangeLifecycle } from "../runtime/workflow/change-lifecycle.mjs";
+import {
+  apiContractErrorIssues, createChangeLifecycle
+} from "../runtime/workflow/change-lifecycle.mjs";
+import {
+  amendmentVerifyPathIssues, verifyPathIssues, verifyTestFileReferences
+} from "../runtime/workflow/semantic-amendment.mjs";
 import { verifySpecSync } from "../runtime/workflow/spec-sync-verify.mjs";
 import { CORE_DISCOVERY_DIMENSIONS } from
   "../runtime/workflow/validation/semantic-intake.mjs";
@@ -618,4 +623,104 @@ test("a minimal draft joins an existing capability or asks which one", (t) => {
   assert.match(output, /^AGREED reject-empty-note-titles/m);
   assert.match(readFileSync(join(value.changes, "reject-empty-note-titles", "proposal.md"), "utf8"),
     /^\| notes \| Reject a note whose title is empty \|/m);
+});
+
+// Problems Build used to discover are agent repairs on the first inspect.
+test("a verify naming a test file nobody creates is an EDIT at start", (t) => {
+  const value = fixture(t);
+  const missing = minimalRapidV4({ tasks: [{
+    key: "implement-bounded-result", outcome: "Implement the bounded result",
+    covers: ["bounded-result"], paths: ["src/**"],
+    verify: "node --test tests/bounded-result.test.mjs"
+  }] });
+  writeJson(value.draftPath, missing);
+  const { result } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.equal(result.action, "EDIT");
+  assert.equal(result.owner, "agent");
+  assert.match(result.intake.issues.join("\n"),
+    /task 'implement-bounded-result' verify references 'tests\/bounded-result\.test\.mjs', which does not exist and no task's paths create it/);
+  assert.equal(existsSync(value.changes), false);
+  // A task that creates the file is accepted.
+  missing.tasks[0].paths = ["src/**", "tests/bounded-result.test.mjs"];
+  writeJson(value.draftPath, missing);
+  assert.match(captureLog(() => value.lifecycle.startAtomic(value.draftPath)).output,
+    /^AGREED single-shot-change/m);
+});
+
+test("an existing test file named by verify needs no task path", (t) => {
+  const value = fixture(t);
+  mkdirSync(join(value.root, "tests"), { recursive: true });
+  writeFileSync(join(value.root, "tests", "bounded.test.mjs"), "");
+  writeJson(value.draftPath, minimalRapidV4({ tasks: [{
+    key: "implement-bounded-result", outcome: "Implement the bounded result",
+    covers: ["bounded-result"], paths: ["src/**"],
+    verify: "node --test ./tests/bounded.test.mjs && npm test -- tests/bounded.test.mjs:12"
+  }] }));
+  assert.match(captureLog(() => value.lifecycle.startAtomic(value.draftPath)).output,
+    /^AGREED single-shot-change/m);
+});
+
+test("verify path references skip commands that change directory", () => {
+  assert.deepEqual(verifyTestFileReferences(
+    "pytest tests/test_api.py::test_ok --cov=src && sh run-test.sh reports/test.json"),
+  ["tests/test_api.py", "run-test.sh"]);
+  assert.deepEqual(verifyTestFileReferences("cd web && npx vitest run src/a.test.ts"), []);
+  assert.deepEqual(verifyTestFileReferences("npm test -- 'src/**/*.test.ts'"), []);
+  assert.deepEqual(verifyPathIssues([{ key: "a", verify: "node --test tests/x.test.mjs",
+    repository: "api" }], { exists: () => false }), []);
+  assert.deepEqual(amendmentVerifyPathIssues({
+    addTasks: [{ key: "added", verify: "node --test tests/new.test.mjs", paths: ["src/**"] }],
+    updateTasks: [{ key: "existing", verify: "node --test tests/old.test.mjs" }]
+  }, "- [ ] **T001** Existing [key:existing] [paths:tests/old.test.mjs] — verify: `npm test`\n",
+  { exists: () => false }), [
+    "amendment task 'added' verify references 'tests/new.test.mjs', which does not exist and " +
+      "no task's paths create it; correct the path in verify or add it to that task's paths"
+  ]);
+});
+
+test("api contract errors without a status or code are an EDIT at start", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4({
+    apiContracts: [{ method: "GET", path: "/results", auth: "session",
+      request: "none", response: "200 list",
+      errors: [{ status: 404, when: "missing" }, { when: "the store is down" },
+        "rate limited", "429 too many requests", { code: "CONFLICT_STATE" }] }]
+  }));
+  const { result } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.equal(result.action, "EDIT");
+  const issues = result.intake.issues.filter((issue) => /apiContracts/.test(issue));
+  assert.deepEqual(issues.map((issue) => issue.match(/errors\[\d\]/)[0]),
+    ["errors[1]", "errors[2]"]);
+  assert.deepEqual(apiContractErrorIssues({ apiContracts: [{ errors: "none" }] }), []);
+});
+
+test("dev document sections and draft checks arrive together on the first inspect", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4({
+    impact: "medium",
+    tasks: [{
+      key: "implement-bounded-result", outcome: "Implement the endpoint",
+      covers: ["bounded-result"], paths: ["src/api/results.js"],
+      verify: "node --test tests/api/results.test.mjs"
+    }]
+  }));
+  const first = captureLog(() => value.lifecycle.inspectDraft(value.draftPath)).result;
+  assert.equal(first.action, "EDIT");
+  assert.equal(first.owner, "agent");
+  const issues = first.intake.issues.join("\n");
+  assert.match(issues, /dev document \(api\) needs 'why'/);
+  assert.match(issues, /dev document \(api\) needs 'apiContracts'/);
+  assert.match(issues, /verify references 'tests\/api\/results\.test\.mjs'/);
+});
+
+test("open questions are listed with the approval packet", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4({
+    openQuestions: ["How long are results retained?"]
+  }));
+  const { result, output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.equal(result, "single-shot-change");
+  assert.match(output, /open questions \(ask with the approval\):\n {4}- How long are results retained\?/);
+  assert.match(output, /next: ask these with the approval, record the answers in the draft, then claude-foundation change revise single-shot-change .*draft\.json --approve-spec --decision-ref <user-decision> --through build/);
+  assert.equal((output.match(/\n  next: /g) || []).length, 1);
 });

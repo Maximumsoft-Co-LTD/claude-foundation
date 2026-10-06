@@ -653,9 +653,9 @@ performance target, notification, integration, compatibility หรือ rollou
 /prove <change-id>
 ```
 
-สำหรับ agreement version 4 ให้รัน `change amend <change-id> <amendment.json>
---inspect` ก่อน ทำตาม intake/source-digest action แล้วเปลี่ยน `--inspect` เป็น
-`--consume-amendment` เมื่อได้ `DONE` จากนั้น runtime จะ apply amendment แบบ
+สำหรับ agreement version 4 ให้รัน `change amend <change-id> <amendment.json>`
+คำสั่งเดียวจะ inspect ก่อน แสดง intake/source-digest action ถ้ามี และ apply
+amendment เฉพาะเมื่อได้ `DONE` (`--inspect` ใช้ inspect อย่างเดียว) runtime จะ apply amendment แบบ
 transaction โดยรักษา
 task ที่เสร็จและ manual Markdown section, validate ก่อนเก็บ revision, rollback
 amendment ที่ไม่ผ่าน และ invalidate เฉพาะ claim ที่เพิ่ม แก้ หรือลบก่อน resume
@@ -663,8 +663,10 @@ amendment ที่ไม่ผ่าน และ invalidate เฉพาะ cl
 task ที่ยังไม่เสร็จ) หรือลบได้ (`removeRequirements` ต้องมี migration) โดยไม่ต้อง
 abandon change Amendment ของ version 4 ต้องมี discovery coverage ของ requirement
 ที่เพิ่มและที่แก้ และ delta ที่ผ่าน validation จะอยู่ใน compiled proposal
-ก่อนเริ่ม Build ใช้ `change revise <change-id> <draft.json> --inspect` แล้ว
-`--consume-draft` เพื่อคอมไพล์ agreement ทั้งฉบับใหม่ใน id เดิม ทั้งสองทางจะแสดง
+ก่อนเริ่ม Build ใช้ `change revise <change-id> <draft.json>` ซึ่ง inspect และเมื่อได้
+`DONE` จะคอมไพล์ agreement ทั้งฉบับใหม่ใน id เดิมในคำสั่งเดียว เพิ่ม
+`--approve-spec --decision-ref <ref>` ให้ `change start`, `change revise` หรือ
+`change amend` เพื่อบันทึก approval ของผู้ใช้ในคำสั่งเดียวกับที่ apply คำตอบนั้น ทั้งสองทางจะแสดง
 delta ของ requirement (added/revised/removed) change ที่ approve แล้วใช้ approval เดิมต่อสำหรับ delta ที่เพิ่มหรือแก้ requirement และขอ approve ใหม่เฉพาะ delta ที่ลบ requirement receipt ที่ผ่านแล้วจะถูกเก็บ
 ไว้เฉพาะเมื่อ provider, claim และ declared-input binding ไม่เปลี่ยน ส่วน provider
 ที่ affected หรือคลุมเครือต้องกลับไปผ่าน Prove

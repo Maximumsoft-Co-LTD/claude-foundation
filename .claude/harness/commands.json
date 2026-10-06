@@ -83,11 +83,11 @@
     },
     {
       "name": "change start",
-      "usage": "change start --template | <draft.json> [--inspect | --consume-draft]",
+      "usage": "change start --template | <draft.json> [--inspect | --consume-draft] [--approve-spec --decision-ref <ref> [--through build|proven|archived]]",
       "audience": "agent",
       "kind": "write",
       "idempotent": false,
-      "description": "Inspect semantic intake or create and start an isolated change from one validated draft."
+      "description": "Inspect semantic intake or create and start an isolated change from one validated draft. The bare form inspects in place and starts only when intake is DONE; otherwise it prints the intake action and changes nothing. --approve-spec records the user's spec approval in the same call; with --through it continues."
     },
     {
       "name": "change resolve",
@@ -99,19 +99,19 @@
     },
     {
       "name": "change amend",
-      "usage": "change amend --template | <change> <amendment.json> [--inspect | --consume-amendment] | <change> --task <task-key|task-id> --verify <command> [--reason <text>]",
+      "usage": "change amend --template | <change> <amendment.json> [--inspect | --consume-amendment] [--approve-spec --decision-ref <ref> [--through build|proven|archived]] | <change> --task <task-key|task-id> --verify <command> [--reason <text>]",
       "audience": "agent",
       "kind": "write",
       "idempotent": false,
-      "description": "Transactionally add, revise, or remove semantic requirements during Build, or correct an unfinished task's verify command, while preserving the canonical agreement. --task/--verify corrects one verify command directly and keeps the spec approval. --template prints an amendment template."
+      "description": "Transactionally add, revise, or remove semantic requirements during Build, or correct an unfinished task's verify command, while preserving the canonical agreement. --task/--verify corrects one verify command directly and keeps the spec approval. The bare form inspects in place and amends only when intake is DONE; otherwise it prints the intake action and changes nothing. --approve-spec records the user's spec approval in the same call. --template prints an amendment template."
     },
     {
       "name": "change revise",
-      "usage": "change revise <change> <draft.json> [--inspect | --consume-draft]",
+      "usage": "change revise <change> <draft.json> [--inspect | --consume-draft] [--approve-spec --decision-ref <ref> [--through build|proven|archived]]",
       "audience": "agent",
       "kind": "write",
       "idempotent": false,
-      "description": "Recompile a revised semantic draft over a change that has not started Build, keeping its id and reporting the requirement delta for approval."
+      "description": "Recompile a revised semantic draft over a change that has not started Build, keeping its id and reporting the requirement delta for approval. The bare form inspects in place and revises only when intake is DONE; otherwise it prints the intake action and changes nothing. --approve-spec records the user's spec approval in the same call; with --through it continues."
     },
     {
       "name": "change validate",

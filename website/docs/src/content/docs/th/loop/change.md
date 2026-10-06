@@ -137,7 +137,12 @@ change ในคำสั่งเดียว และแสดงรายช
 เดียวพร้อม resume route โดยไม่สร้างอะไร: `EDIT` สำหรับการค้นข้อเท็จจริงหรือซ่อม
 draft หรือ `ASK_USER` สำหรับ decision ที่เชื่อมกับ coverage ไม่เกินสามข้อ ใช้
 `--inspect` เมื่อต้องการตรวจอย่างเดียว และบันทึกการอนุมัติ spec ของผู้ใช้ด้วย
-`advance <change> --approve-spec --decision-ref <ref>`
+`advance <change> --approve-spec --decision-ref <ref>` หรือเพิ่ม
+`--approve-spec --decision-ref <ref>` ในคำสั่ง `change start`, `change revise` หรือ
+`change amend` ที่ apply คำตอบอนุมัตินั้น Open question ของ design จะแสดงพร้อม
+approval packet การ inspect ครั้งแรกยังคืน task `verify` ที่อ้างไฟล์ test ซึ่งไม่มีอยู่
+และไม่อยู่ใน `paths` ของ task ใด และ error ใน `apiContracts` ที่ไม่มี status หรือ code
+เป็นงานซ่อมของ agent
 ใช้ `riskSignals` แบบ typed สำหรับ access control, persisted data, integration,
 performance SLO, UI, operational risk และ external side effect เพื่อให้ coverage
 ที่บังคับใช้ไม่ขึ้นกับภาษาของ prose Harness บันทึก source digest เอง draft ที่ถูกต้องจึงได้
@@ -156,11 +161,11 @@ metrics แบบย่อแต่ไม่เก็บ transcript
 abandon:
 
 ```bash
-claude-foundation change revise <change> <draft.json> --inspect
-claude-foundation change revise <change> <draft.json> --consume-draft
+claude-foundation change revise <change> <draft.json>
 ```
 
-Draft ฉบับแก้ใช้ id เดิมและผ่าน intake gate เดียวกับ `change start` Packet ทั้งชุด
+Draft ฉบับแก้ใช้ id เดิมและผ่าน intake gate เดียวกับ `change start` ในคำสั่งเดียว
+ถ้า intake ยังไม่ครบจะแสดง action และไม่เปลี่ยนอะไร Packet ทั้งชุด
 ถูกคอมไพล์ใหม่แบบ transaction, contract revision เพิ่มขึ้น และถ้าล้มเหลวจะคืน
 packet กับ runtime state เดิม เมื่อ Build มี workspace, receipt หรือ task ที่เสร็จแล้ว
 คำสั่งจะชี้ไปที่ `change amend` ผลลัพธ์แสดง requirement ที่ added, revised และ

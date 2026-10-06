@@ -688,9 +688,9 @@ Change. See the complete [follow-up classification](WORKFLOW.md#follow-up-reques
 /prove <change-id>
 ```
 
-For a version-4 agreement, first run `change amend <change-id> <amendment.json>
---inspect`, follow its intake/source-digest action, then replace `--inspect` with
-`--consume-amendment` after `DONE`. The runtime applies the amendment
+For a version-4 agreement, run `change amend <change-id> <amendment.json>`: the
+same call inspects first, prints any intake/source-digest action, and applies the
+amendment only at `DONE` (`--inspect` only inspects). The runtime applies the amendment
 transactionally. It
 preserves completed tasks and manual Markdown sections, validates before keeping
 the revision, rolls back a rejected amendment, and invalidates only claims it
@@ -699,8 +699,10 @@ existing requirement in place (`reviseRequirements`, with an open task) or
 remove one (`removeRequirements`, with a migration) instead of abandoning the
 change. Version-4 amendments must include discovery coverage for the added and
 revised requirements; the validated delta remains in the compiled proposal.
-Before Build starts, `change revise <change-id> <draft.json> --inspect` then
-`--consume-draft` recompiles the whole agreement under the same id. Either
+Before Build starts, `change revise <change-id> <draft.json>` inspects and, at
+`DONE`, recompiles the whole agreement under the same id in one call. Add
+`--approve-spec --decision-ref <ref>` to `change start`, `change revise`, or
+`change amend` to record the user's approval in the call that applies it. Either
 route reports the added/revised/removed requirement delta. An approved change
 keeps its approval for additive deltas; only a delta that removes a requirement
 needs approval. Unaffected passing receipts survive only when their

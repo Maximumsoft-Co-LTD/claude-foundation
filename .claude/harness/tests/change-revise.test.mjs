@@ -283,13 +283,37 @@ test("revision keeps the change identity and rejects legacy or missing changes",
   assert.throws(() => value.revise(revisedDraft()), /legacy agreement/);
 });
 
-test("a version-4 revision must pass the revise intake gate", (t) => {
+test("a version-4 revision inspects in the same call and stops at an incomplete intake", (t) => {
   const value = fixture(t);
   value.start();
   const before = snapshot(value.root);
-  assert.throws(() => value.revise({ ...revisedDraft(), version: 4 }),
-    /resume with 'claude-foundation change revise revisable-change .*draft\.json --inspect'/);
+  // No separate --inspect: the bare revise inspects in place, prints the
+  // action, and leaves the agreement untouched until the draft is repaired.
+  const result = value.revise({ ...revisedDraft(), version: 4 });
+  assert.equal(result.action, "EDIT");
+  assert.match(result.resume, /change revise revisable-change .*draft\.json --inspect/);
+  assert.deepEqual(JSON.parse(value.control.output.at(-1)), JSON.parse(JSON.stringify(result)));
   assert.deepEqual(snapshot(value.root), before);
+});
+
+test("a clean version-4 revision inspects and revises in one call", (t) => {
+  const value = fixture(t);
+  value.start();
+  const draft = {
+    version: 4, id: "revisable-change", intent: "Revisable change", impact: "low",
+    coupling: "isolated",
+    requirements: [{ key: "throughput", capability: "change", operation: "added",
+      scenarios: [{ name: "Fast intake", when: "messages arrive",
+        then: "50 messages per second are accepted" }],
+      outcome: "The service accepts 50 messages per second" }],
+    tasks: [{ key: "implement", outcome: "Implement the requirement", covers: ["throughput"],
+      paths: ["src/**"], verify: "npm test" }],
+    evidence: { throughput: { capabilities: ["test"] } }
+  };
+  value.revise(draft);
+  const output = value.control.output.join("\n");
+  assert.match(output, /^REVISED revisable-change/m);
+  assert.equal(value.state().contractRevision, 1);
 });
 
 test("an amendment folds into the unapproved delta and approval clears it", (t) => {

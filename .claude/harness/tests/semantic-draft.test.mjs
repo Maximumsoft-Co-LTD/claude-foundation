@@ -933,10 +933,11 @@ test("change amend installs atomically and restores files and state on validatio
     const firstAmendment = JSON.parse(readFileSync(amendmentPath, "utf8"));
     const specPath = join(change, "specs", "payment-control", "spec.md");
     writeFileSync(join(root, "README.md"), "Changed amendment source.\n");
-    assert.throws(() => lifecycle.amendChange(id, "amendment.json"),
-      /current completed semantic intake/);
-    const refreshed = lifecycle.inspectAmendment(id, "amendment.json");
+    // A stale intake is inspected in the same call: the action is returned
+    // and nothing is amended until the author repairs the amendment.
+    const refreshed = lifecycle.amendChange(id, "amendment.json");
     assert.equal(refreshed.action, "EDIT");
+    assert.equal(state.contractRevision || 0, 0);
     // Changed sources still require the author to re-read and touch the draft.
     firstAmendment.discovery.sourceDigest = refreshed.intakeState.sourceDigest;
     writeFileSync(amendmentPath, `${JSON.stringify(firstAmendment, null, 2)}\n`);

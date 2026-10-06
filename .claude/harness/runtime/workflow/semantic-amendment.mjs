@@ -6,6 +6,7 @@ import {
   normalizeSemanticDraft, renderRequirementMarkdown, renderSpecHeading
 } from "./semantic-draft.mjs";
 import { coverageRationale, coverageStatus } from "./validation/reader-guide.mjs";
+import { scopeAllowsPath } from "../core/graph-execution.mjs";
 
 const stringList = (value) => Array.isArray(value)
   ? value.map((item) => String(item || "").trim()).filter(Boolean) : [];
@@ -194,6 +195,69 @@ export function verifyCannotFail(command) {
   const text = String(command || "").trim();
   return /^(?:true|:|exit(?:\s+0)?|echo(?:\s.*)?|printf(?:\s.*)?)$/i.test(text) ||
     /\|\|\s*(?:true|:|exit(?:\s+0)?)\s*\)?\s*$/i.test(text);
+}
+
+// A test source file named in a verify command. Build used to discover a
+// mistyped or never-created test path only when the check ran; the draft
+// already says which files exist and which files its tasks create.
+const TEST_SOURCE = /\.(?:[cm]?[jt]sx?|py|rb|go|rs|java|kts?|scala|php|cs|fs|swift|exs?|sh|bash|lua|dart|c|cc|cpp|clj)$/i;
+const TEST_NAME = /(?:^|[/._-])(?:tests?|specs?|__tests__|e2e)(?:[/._-]|$)/i;
+// A command that changes its working directory resolves paths elsewhere.
+const WORKING_DIRECTORY_CHANGE =
+  /(?:^|[;&|(]\s*)(?:cd|pushd)\s|--prefix\b|--cwd\b|--dir(?:ectory)?\b|--workspace\b|--filter\b|--root-dir\b|--rootDir\b|(?:^|\s)-C\s/;
+
+export function verifyTestFileReferences(command) {
+  const text = String(command || "");
+  if (!text.trim() || WORKING_DIRECTORY_CHANGE.test(text)) return [];
+  return unique(text.split(/\s+/).map((token) => token
+    .replace(/^['"(]+|['");,]+$/g, "")
+    .replace(/^--?[\w-]+=/, "")
+    .replace(/::.*$/, "")
+    .replace(/:\d+(?::\d+)?$/, "")
+    .replace(/^\.\//, ""))
+    .filter((token) => token && !token.startsWith("-") && !token.startsWith("/") &&
+      !token.includes("..") && !/[*?{}[\]$<>`~]/.test(token) && !/^[a-z]+:\/\//i.test(token) &&
+      TEST_SOURCE.test(token) && TEST_NAME.test(token)));
+}
+
+/**
+ * Agent repairs for task verify commands that name a test file which neither
+ * exists nor falls inside any task's paths (the files Build may create).
+ * `tasks` rows carry { key|semanticKey|id, verify, paths, repository? };
+ * `scopes` adds paths owned by tasks outside this batch.
+ */
+export function verifyPathIssues(tasks, { exists, scopes = [], label = "task" } = {}) {
+  const rows = Array.isArray(tasks) ? tasks.filter((task) => task && typeof task === "object") : [];
+  const owned = [...stringList(scopes), ...rows.flatMap((task) => stringList(task.paths))];
+  const issues = [];
+  rows.forEach((task, index) => {
+    const repository = String(task.repository || "").trim();
+    if (repository && repository !== "root") return;
+    const name = String(task.semanticKey || task.key || task.id || "").trim() || `#${index + 1}`;
+    for (const path of verifyTestFileReferences(task.verify)) {
+      if (exists(path) || owned.some((scope) => scopeAllowsPath(scope, path))) continue;
+      issues.push(`${label} '${name}' verify references '${path}', which does not exist and ` +
+        "no task's paths create it; correct the path in verify or add it to that task's paths");
+    }
+  });
+  return issues;
+}
+
+/** The same check for an amendment's added and updated tasks. */
+export function amendmentVerifyPathIssues(amendment, tasksContent, { exists }) {
+  const lines = String(tasksContent || "").split("\n").filter((line) => taskId(line));
+  const existing = new Map(lines.map((line) => [semanticTaskKey(line) || taskId(line), line]));
+  const updated = amendmentList(amendment, "updateTasks").filter((task) =>
+    task && hasField(task, "verify")).map((task) => {
+    const line = existing.get(keyOf(task)) || existing.get(String(task.key || "").toUpperCase());
+    return { key: keyOf(task), verify: task.verify,
+      paths: hasField(task, "paths") ? task.paths : line ? taskPaths(line) : [] };
+  });
+  const added = amendmentList(amendment, "addTasks");
+  return verifyPathIssues([...added, ...updated], {
+    exists, label: "amendment task",
+    scopes: lines.flatMap((line) => taskPaths(line))
+  });
 }
 
 /**
