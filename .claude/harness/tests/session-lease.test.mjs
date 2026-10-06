@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { createAdvanceRuntime } from "../runtime/workflow/advance-runtime.mjs";
 import { createLeaseRuntime } from "../runtime/workflow/lease-runtime.mjs";
+import { recoverCompletedTasksForExecution } from "../runtime/workflow/agent-planning.mjs";
 import {
   createSessionLeaseRuntime, runTaskCheck, sessionLeaseOwner, taskCheck, taskLineChecked, tickTaskLine
 } from "../runtime/workflow/session-lease.mjs";
@@ -89,6 +90,124 @@ test("a scope refusal routes back to advance; release owns stale-authority renew
     assert.doesNotMatch(error.message, /agents acquire/);
     return true;
   });
+});
+
+test("reverify settles ticked tasks with stale records and leaves real work to the plan", (t) => {
+  const root = workspace(t, "T001 T002");
+  const calls = [];
+  let blockOnce = true;
+  const runtime = createSessionLeaseRuntime({
+    stableHash,
+    loadRuntime: () => ({ workspace: { path: root } }),
+    activeChangeLeases: () => [],
+    acquire: (id, taskId, flags) => {
+      // T002 waits for T001 in the first pass, as acquire refuses a task
+      // behind a pending dependency.
+      if (taskId === "T002" && blockOnce) { blockOnce = false; throw new Error("blocked by T001"); }
+      calls.push(["acquire", taskId, flags.owner]);
+      return { leaseId: `lease-${taskId}` };
+    },
+    release: (id, taskId, flags) => { calls.push(["release", taskId, flags["lease-id"]]); },
+    discard: () => {}
+  });
+  const rows = [
+    { taskId: "T002", reason: "depends on T001, which needs verification" },
+    { taskId: "T001", reason: "stale or invalid result authority: taskAuthority" },
+    { taskId: "T003", reason: "never ticked" }
+  ];
+  assert.deepEqual(runtime.reverify("demo", rows), ["T001", "T002"]);
+  assert.deepEqual(calls.map((row) => `${row[0]}:${row[1]}`),
+    ["acquire:T001", "release:T001", "acquire:T002", "release:T002"]);
+  assert.ok(calls.every((row) => row[0] !== "acquire" || row[2] ===
+    sessionLeaseOwner("demo", row[1], stableHash)), "the harness owns every re-verification lease");
+});
+
+test("reverify skips a task a live worker holds and one whose check fails", (t) => {
+  const root = workspace(t, "T001 T002");
+  const calls = [];
+  const runtime = createSessionLeaseRuntime({
+    stableHash,
+    loadRuntime: () => ({ workspace: { path: root } }),
+    activeChangeLeases: () => [{ taskId: "T001", owner: "dispatch-t001-live" }],
+    acquire: (id, taskId) => { calls.push(taskId); return { leaseId: "l" }; },
+    release: () => {}, discard: () => {},
+    runCheck: () => ({ status: "fail", exitCode: 1, output: "FAIL" })
+  });
+  writeFileSync(join(root, "openspec", "changes", "demo", "tasks.md"),
+    "- [x] **T001** First [paths:src/a.js]\n- [x] **T002** Second — verify: `npm test` [paths:src/b.js]\n");
+  assert.deepEqual(runtime.reverify("demo", [{ taskId: "T001" }, { taskId: "T002" }]), []);
+  assert.deepEqual(calls, [], "no lease is taken for held or failing tasks");
+});
+
+// A consumer amended the spec mid-Build, its leases expired, and workers
+// finished the rest outside any lease. All tasks are ticked; none needs work.
+test("an amended, out-of-lease Build settles to verified without handing work back", (t) => {
+  const root = workspace(t, "T001 T002");
+  const leases = join(root, ".foundation", "leases");
+  const node = (id, digest, dependsOn = []) => ({
+    id: `task:${id}`, kind: "task", repository: "root", required: true,
+    dependsOn: dependsOn.map((value) => `task:${value}`), paths: [`src/${id.toLowerCase()}.js`],
+    contracts: [], resources: ["workspace:root"], claims: [], inputSchema: null,
+    outputSchema: null, lifecycle: "build", authorityDigest: digest
+  });
+  const ledger = [
+    { id: "T001", done: true, dependsOn: [], paths: ["src/t001.js"], repository: "root" },
+    { id: "T002", done: true, dependsOn: ["T001"], paths: ["src/t002.js"], repository: "root" }
+  ];
+  let graph = { version: 3, revision: "r1", identity: "i1", claims: [],
+    nodes: [node("T001", "a"), node("T002", "b", ["T001"])] };
+  let contractRevision = 1;
+  const readJson = (path, fallback = null) => existsSync(path)
+    ? JSON.parse(readFileSync(path, "utf8")) : fallback;
+  const recover = () => recoverCompletedTasksForExecution({
+    id: "demo", allTasks: ledger, graph, state: { contractRevision }, priorPlan: {},
+    currentContractFingerprint: "c",
+    taskResult: (id, taskId) => {
+      const path = join(leases, "results", id, `${taskId}.json`);
+      return existsSync(path) ? { path, value: readJson(path) } : null;
+    },
+    taskLease: (id, taskId) => {
+      const path = join(leases, "tasks", id, `${taskId}.json`);
+      return existsSync(path) ? readJson(path) : null;
+    }
+  });
+  const planValue = () => {
+    const recovered = recover();
+    return {
+      dispatchable: true, graph, graphRevision: graph.revision, graphIdentity: graph.identity,
+      contractRevision, planDigest: "p", workspaceHash: "w",
+      tasks: recovered.tasks.filter((task) => !task.done), verification: recovered.verification
+    };
+  };
+  const leaseRuntime = createLeaseRuntime({
+    leases, stableHash, agentPlanValue: planValue,
+    policy: () => ({ execution: { leaseMinutes: 45 } }),
+    readJson, writeJson: (path, value) => {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, `${JSON.stringify(value)}\n`);
+    },
+    now: () => new Date().toISOString(),
+    fail: (message) => { throw new Error(message); }
+  });
+  const sessions = createSessionLeaseRuntime({
+    stableHash, loadRuntime: () => ({ workspace: { path: root } }),
+    activeChangeLeases: (id) => leaseRuntime.active(id, { includeExpired: true }),
+    acquire: leaseRuntime.acquire, release: leaseRuntime.release, discard: leaseRuntime.discard
+  });
+
+  // No lease ever recorded these tasks: both need verification.
+  assert.deepEqual(recover().verification.map((row) => row.taskId), ["T001", "T002"]);
+  assert.deepEqual(sessions.reverify("demo", planValue().verification), ["T001", "T002"]);
+  assert.deepEqual(recover().verification, [], "both tasks now carry current authority");
+
+  // An amendment moves the graph and contract and rewrites T002 only.
+  graph = { ...graph, revision: "r2", identity: "i2",
+    nodes: [node("T001", "a"), node("T002", "b-amended", ["T001"])] };
+  contractRevision = 2;
+  assert.deepEqual(recover().verification.map((row) => row.taskId), ["T002"],
+    "the untouched T001 keeps its result across the amendment");
+  assert.deepEqual(sessions.reverify("demo", planValue().verification), ["T002"]);
+  assert.deepEqual(recover().verification, []);
 });
 
 test("issue grants only a leased session task and removes the manual lease route", (t) => {

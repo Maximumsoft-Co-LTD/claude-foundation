@@ -389,6 +389,17 @@ A force-released lease grants no result authority. If its task was already
 checked complete, the planner returns it for leased verification without
 rewriting the checkbox; only an accepted release clears that recovery.
 
+An accepted task result binds that task's own authority: its node (text,
+repository, paths, dependencies, schemas) and the claims it proves. An
+amendment that leaves a task unchanged keeps its result; a rewritten task and
+its dependants need verification. Results recorded before this binding keep
+the whole-graph comparison they were written under. `advance` re-verifies a
+checked task with a stale record itself, under a harness lease: its `verify`
+check must pass, and work finished outside a lease is never split per task.
+Only a task a live worker holds, a failing check, or one behind an unverified
+dependency returns as an EDIT, listed under `reverification` with its cause as
+implemented work to repair, not to redo.
+
 When every pending Build task must run one at a time (a dependency chain or
 overlapping paths) in one repository with no cross-repository claim or
 external resource, `advance` hands all of them in one session EDIT, in

@@ -64,6 +64,29 @@ test("advance returns bounded Build work without invoking a model", () => {
   assert.equal(value.resumeCommand, "claude-foundation advance change-a");
 });
 
+test("a task with a stale execution record is handed back as re-verification, not new work", () => {
+  const value = coordinatorAction({
+    ...base,
+    dispatch: { action: "run-in-session", reason: "one repository" },
+    plan: {
+      tasks: [{ id: "T002", text: "Add it — verify: `go test ./...`", repository: "root",
+        paths: ["api.go"] }],
+      verification: [
+        { taskId: "T002", reason: "stale or invalid result authority: taskAuthority" },
+        { taskId: "T009", reason: "not selected" }
+      ]
+    }
+  });
+  assert.equal(value.action, "EDIT");
+  assert.deepEqual(value.reverification, [
+    { taskId: "T002", reason: "stale or invalid result authority: taskAuthority" }
+  ]);
+  const notes = value.instructions.join(" ");
+  assert.match(notes, /T002 is already implemented; its execution record is stale/);
+  assert.match(notes, /Do not re-implement it or split the diff per task/);
+  assert.doesNotMatch(notes, /T009/);
+});
+
 test("a sequential session plan hands every pending task in dependency order", () => {
   const value = coordinatorAction({
     ...base,

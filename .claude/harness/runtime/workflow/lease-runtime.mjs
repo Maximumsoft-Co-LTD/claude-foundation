@@ -5,6 +5,7 @@ import {
 import { dirname, join } from "node:path";
 import { conflictKeysOverlap, scopeAllowsPath } from "../core/graph-execution.mjs";
 import { acquireProcessLock } from "../core/process-lock.mjs";
+import { taskAuthorityShape } from "../core/task-execution-authority.mjs";
 
 export function leaseDescriptorIsOwned(descriptor, id, taskId, owner) {
   return descriptor.changeId === id && descriptor.taskId === taskId &&
@@ -150,6 +151,7 @@ export function acquireLeaseUnderLock(context) {
     workspaceHash: plan.workspaceHash, repository: task.repository,
     paths: task.paths || [], claimIds: task.claims || [],
     outputSchema: taskNodeOutputSchema(plan, task.id),
+    taskAuthority: taskAuthorityShape(plan.graph, task.id),
     // Writes since the owner's unreleased lease was first granted still
     // belong to this task, so a re-grant keeps judging them against its scope.
     resources: keys, baselineSurface: ownPrior && Array.isArray(prior.baselineSurface)

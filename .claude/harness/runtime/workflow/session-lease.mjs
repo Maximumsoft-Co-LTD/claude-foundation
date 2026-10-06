@@ -32,8 +32,11 @@ const TASK_LINE = (taskId) =>
 
 // The pending ledger line's focused check and repository, or null when the
 // task has no runnable check (no verify, or the amendment marker "existing").
-export function taskCheck(content, taskId) {
-  const line = String(content || "").match(TASK_LINE(taskId))?.[0];
+export function taskCheck(content, taskId, { ticked = false } = {}) {
+  const pattern = ticked
+    ? new RegExp(`^\\s*-\\s*\\[[xX]\\]\\s*\\*{0,2}${taskId}\\*{0,2}\\b.*$`, "m")
+    : TASK_LINE(taskId);
+  const line = String(content || "").match(pattern)?.[0];
   if (!line) return null;
   const command = line.match(/—\s*verify:\s*`([^`]+)`/i)?.[1]?.trim() || "";
   if (!command || command === "existing") return null;
@@ -199,9 +202,51 @@ export function createSessionLeaseRuntime({
         "When the checks pass, run the resume command: advance reruns the task's verify check, " +
         `marks ${taskId} [x] when it passes, releases the lease, and checks the observed writes ` +
         "against the task scope.",
-        "A needed file outside the task paths is fine; Prove records it into the change surface."
+        "A needed file outside the task paths is fine; Prove records it into the change surface.",
+        // Keep the plan's own notes, such as a stale record to re-verify.
+        ...(value.instructions || [])
       ]
     });
+  }
+
+  // A ticked task whose execution record went stale (an amendment, an
+  // expired lease, work finished outside a lease) is implemented, not
+  // pending. The harness re-verifies it under its own lease: the task's check
+  // must pass, and the result is recorded against the current authority.
+  // A task a live worker holds, an unticked task, a failing check, or one
+  // blocked behind an unverified dependency stays with the plan.
+  function reverify(id, rows = []) {
+    const verified = [];
+    let progressed = true;
+    while (progressed) {
+      progressed = false;
+      for (const { taskId } of rows) {
+        if (verified.includes(taskId) || !checked(id, taskId)) continue;
+        if (activeChangeLeases(id).some((lease) =>
+          lease.taskId === taskId && !isSessionOwner(lease.owner))) continue;
+        const path = ledgerPath(id);
+        const check = path && existsSync(path)
+          ? taskCheck(readFileSync(path, "utf8"), taskId, { ticked: true }) : null;
+        if (check && runCheck) {
+          const result = runCheck(id, check);
+          if (result?.status !== "pass") {
+            failedChecks.set(`${id}\0${taskId}`, {
+              taskId, command: check.command, exitCode: result?.exitCode ?? null,
+              output: String(result?.output || "").slice(-2000)
+            });
+            continue;
+          }
+        }
+        const owner = sessionLeaseOwner(id, taskId, stableHash);
+        try {
+          const granted = acquire(id, taskId, { owner }, { quiet: true });
+          release(id, taskId, { owner, "lease-id": granted.leaseId }, { quiet: true });
+        } catch { continue; }
+        verified.push(taskId);
+        progressed = true;
+      }
+    }
+    return verified;
   }
 
   // An explicit lease primitive supersedes the harness-held one: the caller
@@ -211,7 +256,7 @@ export function createSessionLeaseRuntime({
       if (isSessionOwner(lease.owner)) discard(id, lease.taskId, lease.owner);
   }
 
-  return { settle, issue, yieldTo };
+  return { settle, issue, yieldTo, reverify };
 }
 
 // Runs one task's focused check in the task's isolated repository, in the

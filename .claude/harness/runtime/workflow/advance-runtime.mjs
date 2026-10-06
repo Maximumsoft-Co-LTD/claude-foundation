@@ -446,6 +446,23 @@ function buildAction(id, dispatch, state, plan = null) {
       recoveryType: "AUTO_RECOVER",
       alternatives: ["regenerate the compiled task graph from the current agreement"]
     });
+    // A task listed here is already implemented; only its execution record is
+    // stale and the harness could not re-verify it (its check failed, a worker
+    // still holds it, or a dependency is unverified). Say so, so the agent
+    // repairs that instead of redoing the work or splitting diffs per task.
+    const reverification = (plan.verification || [])
+      .filter((row) => tasks.some((task) => task.id === row.taskId));
+    const instructions = [
+      ...(dispatch.action === "run-in-session" && tasks.length > 1 ? [
+        `Implement ${tasks.map((task) => task.id).join(", ")} in this order inside the workspace.`,
+        "Run each task's focused check, then the resume command once: advance reruns every " +
+        "task's verify check, marks each passing task [x], and hands back only failures."
+      ] : []),
+      ...reverification.map((row) =>
+        `${row.taskId} is already implemented; its execution record is stale (${row.reason}). ` +
+        "Do not re-implement it or split the diff per task: make its focused check pass, " +
+        "then resume and the harness re-verifies it.")
+    ];
     return envelope(id, "EDIT", {
       legacyAction: dispatch.action === "spawn-group" ? "EXECUTE_TASK_GROUP" : "EXECUTE_TASK",
       actor: "agent",
@@ -460,11 +477,8 @@ function buildAction(id, dispatch, state, plan = null) {
         leases: dispatch.action === "spawn-group" ? dispatch.workers :
           dispatch.task ? [dispatch.task] : []
       },
-      ...(dispatch.action === "run-in-session" && tasks.length > 1 ? { instructions: [
-        `Implement ${tasks.map((task) => task.id).join(", ")} in this order inside the workspace.`,
-        "Run each task's focused check, then the resume command once: advance reruns every " +
-        "task's verify check, marks each passing task [x], and hands back only failures."
-      ] } : {}),
+      ...(reverification.length ? { reverification } : {}),
+      ...(instructions.length ? { instructions } : {}),
       recoveryType: "EDIT",
       alternatives: ["amend the agreement if Build discovers new behavior"]
     });
@@ -675,7 +689,7 @@ export function createAdvanceRuntime({
   recoverWorkspace = null,
   recoverArchive = null,
   recoverSandbox = null, saveRuntime = () => {}, proofIsCurrent = null,
-  settleSessionLeases = null, issueSessionLease = null,
+  settleSessionLeases = null, issueSessionLease = null, reverifyCompletedTasks = null,
   // Resolves a change's packet directory; enables `contextFiles` on EDIT/REPAIR.
   changePath = null,
   // Harness-owned operations advance performs itself instead of handing the
@@ -1001,6 +1015,10 @@ export function createAdvanceRuntime({
         // harness-issued lease and record the task before dispatching again.
         if (!explicitLand && settleSessionLeases && loadRuntime(id).status === "building")
           capture(() => settleSessionLeases(id));
+        // Implemented tasks whose execution record went stale are re-verified
+        // by the harness, never handed back as work to redo or diffs to split.
+        if (!explicitLand && reverifyCompletedTasks && loadRuntime(id).status === "building")
+          capture(() => reverifyCompletedTasks(id));
         // Build preparation already synchronizes a revised agreement. After
         // proof, the same safe sync replaces an operator `sandbox sync`: it
         // invalidates only evidence the revision touched, and Land would

@@ -395,6 +395,7 @@ export function recoverCompletedTasksForExecution({
 }) {
   let requiresVerification = false;
   const invalidated = new Set();
+  const reasons = new Map();
   const tasks = allTasks.map((task) => {
     if (!task.done) return task;
     const resultRecord = taskResult?.(id, task.id) || null;
@@ -414,6 +415,7 @@ export function recoverCompletedTasksForExecution({
     if (["accepted-lease-result", "single-agent-observed",
       "compatible-legacy-single-session"].includes(authority.status)) return task;
     invalidated.add(task.id);
+    reasons.set(task.id, authority.reason || "task lacks current execution authority");
     return { ...task, done: false };
   });
   // Re-verifying an upstream task also invalidates completed dependants. This
@@ -426,13 +428,19 @@ export function recoverCompletedTasksForExecution({
       if (!task.done || invalidated.has(task.id) ||
           !task.dependsOn.some((dependency) => invalidated.has(dependency))) continue;
       invalidated.add(task.id);
+      reasons.set(task.id, `depends on ${task.dependsOn.filter((dependency) =>
+        invalidated.has(dependency)).join(", ")}, which needs verification`);
       expanded = true;
     }
   }
   requiresVerification = invalidated.size > 0;
   return {
     tasks: tasks.map((task) => invalidated.has(task.id) ? { ...task, done: false } : task),
-    requiresVerification
+    requiresVerification,
+    // Implemented tasks whose execution record is stale, in ledger order: the
+    // work exists and needs only re-verification, never re-implementation.
+    verification: allTasks.filter((task) => invalidated.has(task.id))
+      .map((task) => ({ taskId: task.id, reason: reasons.get(task.id) }))
   };
 }
 
@@ -667,6 +675,7 @@ export function createAgentPlanner({
       })),
       tasks,
       groups,
+      verification: recovered.verification,
       scheduling: {
         strategy: "critical-path-resource-aware",
         capacity: selectedPolicy.execution.maxParallelAgents,
