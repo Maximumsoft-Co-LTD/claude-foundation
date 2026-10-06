@@ -77,8 +77,8 @@ function workflowDigest() {
       // Name the exact prefix where the session begins, so it is in context
       // before the first command instead of after the first refusal.
       if (status === "building" && typeof state.workspace?.path === "string")
-        lines.push(`    Build shell rule: start every mutating Bash call with \`cd ${
-          shellDisplayArgument(state.workspace.path)} && \`; the phase guard refuses unanchored writes.`);
+        lines.push(`    Build shell: run \`cd ${
+          shellDisplayArgument(state.workspace.path)}\` once, then plain commands; the shell stays there.`);
     }
     lines.push("  Proof freshness is not checked here; run `claude-foundation changes` for readiness.");
   }

@@ -107,8 +107,8 @@ assert_eq "Build permits an anchored package script for the isolated workspace" 
 
 out="$(invoke build block "$TMP/workspace" "$(bash_event 'npx tsc --noEmit 2>&1 | tail -20')")"
 assert_contains "Build refusal names the refused operation" "$out" '(refused: npx)'
-assert_contains "Build refusal names the workspace prefix to use" "$out" \
-  "start the command with \`cd $TMP/workspace && \`"
+assert_contains "Build refusal names the workspace directory to enter" "$out" \
+  "run \`cd $TMP/workspace\` as its own call first"
 
 mkdir -p "$TMP/workspace/packages/app"
 out="$(invoke build block "$TMP/workspace" \
@@ -191,23 +191,19 @@ ln -s "$TMP/outside" "$TMP/workspace/escape"
 out="$(invoke build block "$TMP/workspace" "$(write_event "$TMP/workspace/escape/app.js")")"
 assert_contains "Build resolves symlink escape before allowing" "$out" '"decision":"block"'
 
-# The host reports the shell's directory. Inside the workspace it is pinned
-# into the command as the literal anchor the policy already demands, so the
-# write runs where the agent meant it instead of costing a refused turn.
+# The host reports the shell's directory. Inside the workspace the policy
+# proves the command from it, and the command is accepted unchanged: a
+# rewritten `cd … && …` is a compound command the host asks the user to
+# approve on every test run.
 out="$(invoke build block "$TMP/workspace" "$(bash_event_at "$TMP/workspace" 'echo x > out.txt')")"
-assert_contains "Build pins a reported workspace cwd as the shell anchor" "$out" \
-  "\"updatedInput\":{\"command\":\"cd $TMP/workspace && echo x > out.txt\""
-assert_contains "Build keeps the rest of the tool input when pinning" "$out" '"description":"d"'
-assert_not_contains "a pinned command is not a refusal" "$out" '"decision":"block"'
-assert_file_contains "anchor audit distinguishes rewrite from block" \
+assert_eq "Build accepts a write from a reported workspace cwd unchanged" "" "$out"
+assert_file_not_contains "an accepted in-workspace command is never rewritten" \
   "$TMP/project/.foundation/logs/guardrail-audit.jsonl" '"outcome":"rewritten"'
 out="$(invoke build block "$TMP/workspace" "$(bash_event_at "$TMP/workspace/src" 'echo x > out.txt')")"
-assert_contains "Build pins the reported subdirectory, not the workspace root" "$out" \
-  "cd $TMP/workspace/src && echo x > out.txt"
+assert_eq "Build accepts a reported workspace subdirectory" "" "$out"
 ln -s "$TMP/workspace" "$TMP/wslink"
 out="$(invoke build block "$TMP/workspace" "$(bash_event_at "$TMP/wslink/src" 'echo x > out.txt')")"
-assert_contains "Build pins a cwd reported through a symlink to the workspace" "$out" \
-  "cd $TMP/workspace/src && echo x > out.txt"
+assert_eq "Build accepts a cwd reported through a symlink to the workspace" "" "$out"
 out="$(invoke build block "$TMP/workspace" "$(bash_event_at "$TMP/outside" 'echo x > out.txt')")"
 assert_contains "Build refuses a reported cwd outside the workspace" "$out" '"decision":"block"'
 out="$(invoke build block "$TMP/workspace" "$(bash_event_at "$TMP/workspace/escape" 'echo x > out.txt')")"
@@ -361,9 +357,16 @@ out="$(printf '%s' "$(write_event "$TMP/scratch/notes.md")" |
   CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
 assert_eq "pre-phase scratch outside the project is writable" "" "$out"
 
-out="$(printf '%s' "$(bash_event 'echo x > .foundation/change-start-fix.json')" |
+# Every paid lane wrote its draft with `mkdir -p .foundation/drafts && cat >`
+# and lost a turn to this refusal. Before a change exists the shell is
+# recorded, not refused; FOUNDATION_SHELL_GUARD=block restores the refusal.
+out="$(printf '%s' "$(bash_event 'mkdir -p .foundation/drafts && echo x > .foundation/drafts/fix.json')" |
   CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
-assert_contains "pre-phase draft capability never permits shell mutation" \
+assert_eq "pre-phase shell draft write is recorded, not refused" "" "$out"
+out="$(printf '%s' "$(bash_event 'echo x > .foundation/change-start-fix.json')" |
+  CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_GUARDRAIL_MODE=block \
+  FOUNDATION_SHELL_GUARD=block node "$HOOK")"
+assert_contains "strict shell guard still refuses pre-phase shell mutation" \
   "$out" 'active phase is unavailable'
 
 out="$(printf '%s' "$(bash_event 'git status')" | CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
@@ -612,5 +615,29 @@ assert_eq "the rotated log is the only generation kept" "1" \
   "$(ls "$TMP/rot/.foundation/logs" | grep -c 'guardrail-audit.jsonl.1')"
 assert_cmd_zero "the new audit log starts under the cap" \
   node -e 'process.exit(require("fs").statSync(process.argv[1]).size < 1024*1024 ? 0 : 1)' "$audit"
+
+# Proof is content-bound: a repair inside the isolated workspace after Prove
+# only makes the proof stale, so it is allowed; the main checkout is not.
+out="$(invoke prove block "$TMP/workspace" "$(write_event "$TMP/workspace/src/fix.js")")"
+assert_eq "Prove permits a repair inside the isolated workspace" "" "$out"
+out="$(invoke prove block "$TMP/workspace" "$(write_event "$TMP/project/src/app.js")")"
+assert_contains "Prove still keeps the main checkout read-only" "$out" '"decision":"block"'
+
+# The agent's scratchpad and memory are not product code in any phase, but a
+# scratch-shaped path that holds the project is never scratch.
+SCRATCH_ROOT="$(node -p 'require("fs").realpathSync(require("os").tmpdir())')/claude-guard-test-$$"
+mkdir -p "$SCRATCH_ROOT"
+for phase in investigate change build prove; do
+  out="$(invoke "$phase" block "$TMP/workspace" "$(write_event "$SCRATCH_ROOT/notes.md")")"
+  assert_eq "$phase permits a write to the agent scratchpad" "" "$out"
+done
+out="$(invoke build block "$TMP/workspace" "$(write_event "$TMP/outside/notes.md")")"
+assert_contains "a plain temp path outside the workspace is still not scratch" "$out" '"decision":"block"'
+mkdir -p "$SCRATCH_ROOT/project/openspec/changes/demo"
+out="$(printf '%s' "$(write_event "$SCRATCH_ROOT/project/src/app.js")" |
+  CLAUDE_PROJECT_DIR="$SCRATCH_ROOT/project" FOUNDATION_ACTIVE_PHASE=build \
+  FOUNDATION_GUARDRAIL_MODE=block FOUNDATION_WORKSPACE_ROOT="$TMP/workspace" node "$HOOK")"
+assert_contains "a project inside a scratch-shaped directory is never scratch" "$out" '"decision":"block"'
+rm -rf "$SCRATCH_ROOT"
 
 finish "phase mutation guard"

@@ -8,6 +8,7 @@ import {
   appendFileSync, closeSync, existsSync, mkdirSync, openSync, readSync,
   readdirSync, readFileSync, realpathSync, renameSync, statSync
 } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   looksMutatingShellCommand, normalizeHarnessCliInvocations, pinShellAnchor,
@@ -108,9 +109,6 @@ const violations = [];
 const shellAuditPhases = new Set(["investigate", "change", "build", "prove"]);
 const shellGuardBlocks = (process.env.FOUNDATION_SHELL_GUARD || "").toLowerCase() === "block";
 let shellAudit = null;
-// A Build shell command rewritten with the reported working directory as its
-// literal anchor. Set only when the policy accepts the pinned form.
-let pinnedCommand = null;
 
 if (landAuthorityCommand && !landSession)
   violations.push("Land authority command requires the current /land invocation");
@@ -128,6 +126,13 @@ if (!phase && prePhaseDraftMutationAllowed()) {
   // drafts directory are temporary data consumed by `change start`; neither
   // is product code or authority. Shell writes remain blocked so redirects
   // cannot smuggle additional mutations into the bootstrap boundary.
+  process.exit(0);
+} else if (!phase && tool === "Bash" && !shellGuardBlocks && violations.length === 0) {
+  // Before a change exists the shell only reproduces, inspects, and writes the
+  // draft the loop asks for. It is recorded, not refused: structured product
+  // edits stay blocked, and Build isolation starts once the change does.
+  recordAudit({ phase: "unknown", tool, mode, outcome: "shell-audit",
+    reason: "no active phase", command: String(input.command || "") });
   process.exit(0);
 } else if (!phase) {
   violations.push("active phase is unavailable; write the semantic draft to " +
@@ -158,19 +163,7 @@ if (violations.length === 0 && shellAudit !== null) {
   process.exit(0);
 }
 
-if (violations.length === 0) {
-  if (pinnedCommand !== null) {
-    recordAudit({ phase, tool, mode, outcome: "rewritten", reason:
-      "phase guard: pinned the reported shell directory as the Build workspace anchor" });
-    process.stdout.write(JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        updatedInput: { ...input, command: pinnedCommand }
-      }
-    }));
-  }
-  process.exit(0);
-}
+if (violations.length === 0) process.exit(0);
 
 const changeShellRecovery = phase === "change" && tool === "Bash"
   ? " Use Edit or Write for openspec/changes artifacts; Bash remains read-only during Change."
@@ -195,6 +188,7 @@ function inspectPath(rawPath) {
     violations.push("mutation target is missing or invalid");
     return;
   }
+  if (scratchTarget(target)) return;
 
   const investigations = join(projectRoot, "openspec", "investigations");
   const prototypes = join(projectRoot, ".foundation", "prototypes");
@@ -210,6 +204,16 @@ function inspectPath(rawPath) {
     return;
   }
   const workspace = process.env.FOUNDATION_WORKSPACE_ROOT || recordedWorkspace;
+  // Proof is bound to workspace content, so a repair inside the isolated
+  // workspace after Prove only makes the proof stale; the next advance proves
+  // it again. The main checkout stays read-only.
+  if (phase === "prove" && workspace && workspaceCapabilityValue(
+    recorded?.changeId || "active", {
+      ...(recordedRuntime || {}), status: "building",
+      workspace: { ...(recordedRuntime?.workspace || {}),
+        path: canonicalTarget(workspace, projectRoot) }
+    }).roots.some((root) => isWithin(target, canonicalTarget(root, projectRoot) || root)))
+    return;
   const status = phase === "build" ? "building" : phase === "prove" ? "proven"
     : phase === "land" ? "applied" : "change";
   const capability = phase === "investigate" ? { phase: "investigate", roots: [] } :
@@ -284,16 +288,17 @@ function inspectBash(command) {
   const pinned = phase === "build" && mode === "block" && workspace
     ? pinnedWorkspaceCommand(command, workspace, environment, inspection) : null;
   const refusal = pinned === null ? violation : pinned.violation || null;
-  if (refusal === null) pinnedCommand = pinned.command;
-  else if (shellAuditPhases.has(phase) && !shellGuardBlocks) shellAudit = refusal;
+  if (refusal === null) return;
+  if (shellAuditPhases.has(phase) && !shellGuardBlocks) shellAudit = refusal;
   else violations.push(refusal);
 }
 
 // The host reports where the shell is. That report is never authority — it
 // cannot let a mutation run where the policy would refuse it — but a report
-// inside the workspace can be pinned into the command as a literal anchor, so
-// the same policy proves the mutation and an unanchored write an agent meant
-// for its sandbox runs there instead of costing a refused turn. No report
+// inside the workspace is checked by pinning it into the command as a literal
+// anchor, so the same policy proves the mutation. The command itself is not
+// rewritten: it already runs in that directory, and a `cd … &&` prefix turns
+// every test run into a compound command the host asks the user to approve. No report
 // (OpenCode synthesizes events without one), a report outside the workspace,
 // or a pinned form the policy still refuses keeps the refusal; a refusal of
 // the pinned form is the more exact reason (an outside operand, a dynamic
@@ -428,6 +433,27 @@ function eventPaths(value) {
   if (!Array.isArray(value.edits)) return paths;
   for (const edit of value.edits) appendStringPath(paths, edit?.file_path);
   return paths;
+}
+
+// The agent's own scratchpad (`<tmp>/claude-*`) and memory (`~/.claude`) are
+// not product code. A path there is scratch unless it is the project itself or
+// a repository the change writes.
+function scratchTarget(target) {
+  const memory = canonicalTarget(join(homedir(), ".claude"), projectRoot);
+  const scratchpad = [tmpdir(), "/tmp"].map((root) => canonicalTarget(root, projectRoot))
+    .filter(Boolean).some((root) => {
+      const rel = relative(root, target).split(sep);
+      return rel.length > 1 && rel[0].startsWith("claude-") && !rel[0].startsWith("..");
+    });
+  if (!scratchpad && !(memory && isWithin(target, memory))) return false;
+  const owned = [projectRoot, process.env.FOUNDATION_WORKSPACE_ROOT,
+    recordedRuntime?.workspace?.path,
+    recordedRuntime?.workspace?.targetPath,
+    ...Object.values(recordedRuntime?.repositories || {}).flatMap((repository) =>
+      [repository?.path, repository?.workspacePath, repository?.targetPath])]
+    .filter((path) => typeof path === "string" && path)
+    .map((path) => canonicalTarget(path, projectRoot)).filter(Boolean);
+  return !owned.some((root) => isWithin(target, root) || isWithin(root, target));
 }
 
 function prePhaseDraftMutationAllowed() {

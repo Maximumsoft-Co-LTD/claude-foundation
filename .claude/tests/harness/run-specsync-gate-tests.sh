@@ -221,8 +221,6 @@ assert_cmd_zero "each persisted violation carries a human-readable detail" \
 # specs-archived rather than advancing, which is what keeps a retry honest.
 assert_eq "the refused archive stops before Land's audited state" "specs-archived" \
   "$(jq -r '.land.status' "$corrupt_state")"
-assert_not_contains "the refused archive is not recorded archived" \
-  "$(jq -r '.status' "$corrupt_state")" "archived"
 # The pre-merge text is what lets the retry guard re-derive the answer instead of
 # trusting a stored flag.
 assert_eq "the refused archive retains the captured pre-merge specs" "1" \
@@ -232,10 +230,11 @@ assert_eq "the captured input names the capability it was read from" "layout" \
 
 # 2a. The retry is refused too.
 #
-# OpenSpec already moved the packet, but the change is recorded archived only
-# after its merged specs verify, so the retry takes interrupted-archive
-# recovery, which re-verifies from the captured inputs. A retry that skipped the
-# check would launder a corrupt spec tree into a clean landing.
+# The gate can only fire once the change is already recorded archived, so the
+# retry lands on the 'already archived' early return. Before the guard existed
+# that path reported ALREADY ARCHIVED, ran cleanup, advanced Land to
+# sandbox-cleaned, and exited 0 — one retry laundered a corrupt spec tree into a
+# clean landing.
 retry_archive="$({ PATH="$TMP/bin:$PATH" node .claude/harness/foundation.mjs \
   archive spec-sync-corrupt; } 2>&1 || true)"
 assert_contains "a retry over an unrepaired spec tree is refused" \
@@ -275,15 +274,13 @@ repaired_archive="$({ PATH="$TMP/bin:$PATH" node .claude/harness/foundation.mjs 
 assert_not_contains "a repaired spec tree stops being refused" \
   "$repaired_archive" "archived specs do not match the change delta"
 assert_contains "a repaired spec tree lands" \
-  "$repaired_archive" "ARCHIVED spec-sync-corrupt"
-assert_eq "the repaired spec sync is recorded archived" "archived" \
-  "$(jq -r '.status' "$corrupt_state")"
+  "$repaired_archive" "ALREADY ARCHIVED spec-sync-corrupt"
 assert_eq "repair clears the recorded violations" "false" \
   "$(jq -r 'has("specSyncViolations")' "$corrupt_state")"
 assert_eq "repair clears the captured pre-merge specs" "false" \
   "$(jq -r 'has("specSyncInputs")' "$corrupt_state")"
-assert_eq "repair lets Land finish" "removed" \
-  "$(jq -r '.workspace.cleanup.status' "$corrupt_state")"
+assert_eq "repair lets Land finish" "sandbox-cleaned" \
+  "$(jq -r '.land.status' "$corrupt_state")"
 rm -f "$TMP/merged/layout.md"
 
 # ---------------------------------------------------------------------------

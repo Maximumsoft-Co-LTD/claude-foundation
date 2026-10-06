@@ -325,14 +325,27 @@ external authority.
 Build writes only inside the declared isolated workspace. Git projects normally
 use detached worktrees; a dirty target or non-Git project uses an isolated copy.
 This is workspace integrity, not OS process, network, or secret containment.
-Mutating shell commands must start with `cd` to the workspace root or a literal
-directory inside it, joined by `&&`; on Claude Code the phase guard pins the
-shell's reported directory as that anchor when it is already inside the
-workspace, and audits the pin. The phase guard and
-`claude-foundation exec` reject direct path escapes and symlink traversal, but
-the host still owns process isolation for indirect or dynamically computed
-effects. Copying or linking files from outside the workspace is refused as
-well: a workspace never borrows the checkout's dependencies. Sandbox creation
+The agent runs `cd <workspace>` once as its own shell call and then plain
+commands; the phase guard checks each mutating command from the shell's
+reported directory without rewriting it, so no compound command asks the user
+for approval. Shell analysis reads command text, so outside Land and Deliver
+the phase guard and `claude-foundation exec` record path escapes, symlink
+traversal, and copies from outside the workspace as warnings instead of
+refusing them (`FOUNDATION_SHELL_GUARD=block` restores refusal). Structured
+Edit/Write targets stay enforced, Land reports target edits made outside the
+sandbox, and the host still owns process isolation for indirect or dynamically
+computed effects. A workspace never borrows the checkout's dependencies.
+
+What the guard leaves open on purpose: before a change exists, shell commands
+are recorded rather than refused, and a draft may be written with either Write
+or the shell. Temporary and agent-memory files (the system temp directory and
+`~/.claude`) are writable in every phase unless they hold the project or a
+repository the change writes. After Prove, edits inside the isolated workspace
+are allowed, because proof is content-bound and simply becomes stale. During
+Land, test and script runners may run, while direct writes still need Land's
+transaction. A whitespace-only formatter pass over the isolated packet is
+restored to the target's bytes by the harness, never reported as agreement
+drift. Sandbox creation
 prints a NOTE with the exact `sandbox.setupCommand` snippet when the project
 has a lockfile but declares no setup command.
 
@@ -1086,7 +1099,6 @@ this workflow names them only where their lifecycle meaning matters.
 - Missing, failed, inconclusive, invalid, or stale proof is preserved as Land
   assurance and cannot be misreported as passing.
 - A sandbox diff cannot overwrite a conflicting target.
-- OpenSpec performs semantic spec sync before archive; the change is recorded
-  `archived` only after the harness verifies the merged specs.
+- OpenSpec performs semantic spec sync before archive.
 - Required assurance is never dropped because of size or budget.
 - A delivery flow is complete only at `archived`.

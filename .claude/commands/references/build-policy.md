@@ -54,10 +54,10 @@ product or agreement edit, never treat the prior proof as fresh.
 
 ## Workspace commands
 
-Every mutating Bash command — redirects and heredocs, `sed -i`, `ln`, `cp`,
-`mv`, `rm`, `touch`, package scripts, `npx` — begins with `cd <workspace or a directory inside it> &&`; the
-live phase guard proves the command text (Claude Code pins an in-workspace
-shell directory; other hosts refuse unanchored commands). It rejects absolute outside operands, later directory escapes,
+Run `cd <workspace>` once as its own shell call; the shell keeps that
+directory, and the live phase guard proves each mutating command from it
+(hosts that report no shell directory need a `cd <workspace> &&` prefix). A
+compound `cd … && …` costs a host approval prompt per call. It rejects absolute outside operands, later directory escapes,
 symlink traversal, and copying or linking from outside the workspace. A fresh
 workspace has no installed dependencies: rely on `sandbox.setupCommand` in
 `foundation.json`, or run the project's install once inside the workspace;

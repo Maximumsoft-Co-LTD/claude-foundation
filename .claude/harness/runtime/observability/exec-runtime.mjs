@@ -18,6 +18,12 @@ function phasesForStatus(status) {
   return [];
 }
 
+const AUDITED_PHASES = new Set(["investigate", "change", "build", "prove"]);
+
+function shellGuardBlocks() {
+  return (process.env.FOUNDATION_SHELL_GUARD || "").toLowerCase() === "block";
+}
+
 function isWithin(target, root) {
   const rel = relative(root, target);
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
@@ -100,8 +106,19 @@ export function createExecRuntime({ logs, loadRuntime, now, fail, assertApproval
         if (!statSync(cwd).isDirectory()) throw new Error("workspace is not a directory");
       } catch { fail("Build exec requires an existing isolated workspace"); }
     }
+    // After Build, proof reads the isolated workspace, so a check run then
+    // belongs there too, never in the main checkout.
+    if (!cwd && state.status === "proven" && state.workspace?.path &&
+        existsSync(state.workspace.path))
+      cwd = realpathSync(state.workspace.path);
     const violation = executionCommandViolation(runtimePhase, commandArgs, cwd);
-    if (violation) fail(violation);
+    // The same text-inferred shell policy as the live hook, enforced the same
+    // way: outside Land it records instead of refusing, because it misreads
+    // program text as escapes. A missing workspace is structural and refuses.
+    if (violation && (!AUDITED_PHASES.has(runtimePhase) || shellGuardBlocks() ||
+        /requires an (?:existing )?isolated workspace/.test(violation)))
+      fail(violation);
+    if (violation) console.error(`NOTICE: exec recorded an unverified shell mutation: ${violation}`);
     const startedAtMs = Date.now();
     const startedAt = now();
     const result = spawnSync(commandArgs[0], commandArgs.slice(1), {

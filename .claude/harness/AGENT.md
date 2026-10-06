@@ -13,15 +13,15 @@ Harness checks Change Loop 3.5.30/runtime API `41`, repairs setup.
   yourself. Never ask users to run a safe action you can.
 - Every `REPAIR` or `BLOCKED` result carries its fix: apply its named field,
   instruction, or `command`, then `resume`.
-  Run authorized `automaticRecovery`. Never read `.claude/harness/**`
-  source, receipts, or `.foundation` state to recover.
+  Run authorized `automaticRecovery`. Recover from the envelope first; never
+  edit receipts, proof, or Land journals.
 - `EDIT`/`REPAIR` `contextFiles` (absolute) are the files to open, `newFiles`
   to create; `contextScope.specs: none` means no specs.
 - `ASK_USER` requests a decision, not CLI execution: use AskUserQuestion,
   recommendation first, plain text otherwise;
   never offer only a passing option. `WAIT` reports owner and condition, not a user command.
-- One command per shell call; a `cd <workspace> &&` prefix is fine. Run
-  tests/checks only there, never in the main checkout.
+- In Build, `cd <workspace>` once as its own call, then plain commands. Run
+  tests/checks only there.
 - Never hand-edit generated packet files, `tasks.md` checkboxes, or task IDs;
   the agreement changes only through the draft or one semantic amendment.
 - Spec approval given in the request, in any wording, is the approval;

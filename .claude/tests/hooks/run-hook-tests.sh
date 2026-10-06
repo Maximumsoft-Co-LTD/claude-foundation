@@ -48,6 +48,24 @@ if command -v jq >/dev/null 2>&1; then
     bash "$ROOT/.claude/hooks/protect-secrets.sh")"
   assert_contains "secret hook still blocks unscoped content search for credential-shaped words" "$unscoped_search" '"decision": "block"'
 
+  # Code search for environment access and auth code is ordinary work: a
+  # pattern that merely ends in `.env` is not a file, and a glob or type that
+  # names a source extension can never reach a dotenv or key file.
+  for event in \
+    '{"tool_name":"Bash","tool_input":{"command":"rg -n process.env src"}}' \
+    '{"tool_name":"Bash","tool_input":{"command":"grep -rn \\"import.meta.env\\" src"}}' \
+    '{"tool_name":"Grep","tool_input":{"pattern":"password","glob":"*.ts","output_mode":"content"}}' \
+    '{"tool_name":"Grep","tool_input":{"pattern":"secret","type":"py","output_mode":"content"}}'; do
+    assert_eq "secret hook allows ordinary code search: $event" "" \
+      "$(printf '%s' "$event" | bash "$ROOT/.claude/hooks/protect-secrets.sh")"
+  done
+  for event in \
+    '{"tool_name":"Bash","tool_input":{"command":"cat config/prod.env"}}' \
+    '{"tool_name":"Grep","tool_input":{"pattern":"password","glob":"**/*","output_mode":"content"}}'; do
+    assert_contains "secret hook still blocks secret reads: $event" \
+      "$(printf '%s' "$event" | bash "$ROOT/.claude/hooks/protect-secrets.sh")" '"decision": "block"'
+  done
+
   assert_cmd_zero "opt-in direct-main hook self-test" \
     bash "$ROOT/.claude/hooks/no-direct-main-commit.sh" --self-test
 else

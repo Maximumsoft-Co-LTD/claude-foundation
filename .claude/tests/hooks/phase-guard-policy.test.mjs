@@ -6,6 +6,34 @@ import {
   pinShellAnchor, shellMutationViolation
 } from "../../hooks/phase-guard-policy.mjs";
 
+const LAND_REFUSAL = "Land shell mutations require the runtime transaction marker; " +
+  "Land writes the target itself, and test or script runs need no write";
+
+// Read-only commands and data inside a quoted heredoc are not mutations; each
+// of these was flagged and cost turns or blocked pre-phase and Land work.
+test("shell mutation detection ignores read-only forms and quoted heredoc data", () => {
+  for (const command of [
+    "git stash list", "git stash show -p", "git worktree list", "git submodule status",
+    "node -e \"process.stdout.write('ok')\"", "python3 -c \"import sys; sys.stderr.write('x')\"",
+    "perl -Mstrict -e 'print 1'", "perl -MList::Util=sum -e 'print sum(1,2)'",
+    "node --test 2>/dev/stderr",
+    "node - <<'EOF'\nconst keep = (a) => a > 1;\ninstall\nEOF"
+  ]) assert.equal(looksMutatingShellCommand(command), false, command);
+  for (const command of [
+    "git stash", "git worktree add ../x", "perl -pi -e 's/a/b/' f",
+    "node -e \"require('fs').writeFileSync('f', '1')\"", "echo x > out.txt",
+    "cat > f <<'EOF'\nx\nEOF"
+  ]) assert.equal(looksMutatingShellCommand(command), true, command);
+});
+
+test("Land lets test and script runners through but still refuses direct writes", () => {
+  for (const command of ["npm run test", "npx vitest run", "bash scripts/check.sh", "node --test"])
+    assert.equal(shellMutationViolation("land", {}, command), null, command);
+  for (const command of ["git stash", "echo x > app.js", "sed -i s/a/b/ app.js",
+    "npm run test > app.log", "sh -c \"git commit -m y\"", "bash -c 'rm -rf src'"])
+    assert.equal(shellMutationViolation("land", {}, command), LAND_REFUSAL, command);
+});
+
 test("shell mutation detection covers formatters, package scripts, and script runners", () => {
   for (const command of [
     "npx prettier --write src", "eslint src --fix", "ruff check --fix .",
@@ -64,10 +92,10 @@ test("shell mutation policy blocks read-only lifecycle phases", () => {
 
 test("shell mutation policy requires Land transaction authority", () => {
   assert.equal(shellMutationViolation("land", {}),
-    "Land shell mutations require the runtime transaction marker");
+    LAND_REFUSAL);
   assert.equal(shellMutationViolation("land", {
     FOUNDATION_LAND_TRANSACTION: "0"
-  }), "Land shell mutations require the runtime transaction marker");
+  }), LAND_REFUSAL);
   assert.equal(shellMutationViolation("land", {
     FOUNDATION_LAND_TRANSACTION: "1"
   }), null);
@@ -90,7 +118,7 @@ test("Land never infers delivery authority from the active phase", () => {
     "sh -c \"cd /repo && git commit -m y\""
   ]) {
     const violation = shellMutationViolation("land", {}, command);
-    assert.equal(violation, "Land shell mutations require the runtime transaction marker",
+    assert.equal(violation, LAND_REFUSAL,
       command);
   }
 });
@@ -104,11 +132,11 @@ test("Land refuses delivery that hides a command [land-delivery-substitution-ref
     'git commit -m "notes $(<(cat plan))"'
   ]) {
     const violation = shellMutationViolation("land", {}, command);
-    assert.equal(violation, "Land shell mutations require the runtime transaction marker",
+    assert.equal(violation, LAND_REFUSAL,
       command);
   }
   assert.equal(shellMutationViolation("land", {}, 'git commit -m "release $VERSION"'),
-    "Land shell mutations require the runtime transaction marker");
+    LAND_REFUSAL);
   assert.equal(shellMutationViolation("land", {
     FOUNDATION_LAND_TRANSACTION: "1"
   }, 'git commit -m "$(date)"'), null);
@@ -163,7 +191,7 @@ test("Build refusals name the refused operation, the workspace, and the required
   assert.equal(shellMutationViolation("build", WS,
     'npx tsc --noEmit 2>&1 | tail -20; npm run lint'),
   `${UNANCHORED} (refused: npx, npm run); ` +
-  "start the command with `cd /workspace && ` or `cd /workspace/<subdir> && `");
+  "run `cd /workspace` as its own call first (the shell keeps it), or start the command with `cd /workspace/<subdir> && `");
   assert.equal(shellMutationViolation("build", WS, "cd /workspace && cp $SOURCE ./source"),
     `${DYNAMIC} (\`$SOURCE\`); use literal paths inside /workspace`);
   assert.equal(shellMutationViolation("build", WS, "cd /workspace && cp $(pwd)/source ./source"),
@@ -174,7 +202,7 @@ test("Build refusals name the refused operation, the workspace, and the required
     `${BORROW} (\`../secret\`); ${borrowRepair("/workspace")}`);
   assert.equal(shellMutationViolation("build", { FOUNDATION_WORKSPACE_ROOT: "/my ws" }, "npm install"),
     `${UNANCHORED} (refused: npm install); ` +
-    "start the command with `cd '/my ws' && ` or `cd '/my ws/<subdir>' && `");
+    "run `cd '/my ws'` as its own call first (the shell keeps it), or start the command with `cd '/my ws/<subdir>' && `");
   assert.equal(shellMutationViolation("build", WS, "cd /workspace/nope; rm -rf ./build"),
     `${UNANCHORED} (\`cd /workspace/nope;\` continues even when the directory change fails); ` +
     "start the command with `cd /workspace/nope && `");
@@ -295,7 +323,7 @@ test("Build anchors accept quoted workspaces and the hint they are given", () =>
     "cd '/it'\\''s/ws' && npm run lint"), null);
   assert.equal(shellMutationViolation("build", apostrophe, "npm run lint"),
     `${UNANCHORED} (refused: npm run); ` +
-    "start the command with `cd '/it'\\''s/ws' && ` or `cd '/it'\\''s/ws/<subdir>' && `");
+    "run `cd '/it'\\''s/ws'` as its own call first (the shell keeps it), or start the command with `cd '/it'\\''s/ws/<subdir>' && `");
 });
 
 test("shell mutation detection keeps a quoted operand as an operand", () => {

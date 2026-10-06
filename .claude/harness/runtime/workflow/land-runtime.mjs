@@ -661,10 +661,7 @@ export function createLandRuntime({
 
   function assertLandOperationalSafety(_id, state) {
     if (state.workspace?.applied) {
-      // OpenSpec already moved the packet when an archive stopped before its
-      // spec sync was verified; the projection is checked at its new home.
-      const applied = verifyAppliedProjection(state, state.archivedChangePath
-        ? { archivedChangePath: state.archivedChangePath } : undefined);
+      const applied = verifyAppliedProjection(state);
       if (!applied.valid) fail(`applied projection is invalid: ${applied.reason}`);
     }
   }

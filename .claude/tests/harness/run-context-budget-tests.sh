@@ -159,8 +159,8 @@ else
     "AGENT.md + dev.md + change/build/prove/land.md"
 fi
 # Shared rules have one home. Spot-check distinctive phrases.
-for phrase in 'No preflight' 'agent-only control data' 'One command per shell call' \
-  'hand-edit' 'Never read `.claude/harness/**`' 'in any wording' \
+for phrase in 'No preflight' 'agent-only control data' 'cd <workspace>` once' \
+  'hand-edit' 'Recover from the envelope first' 'in any wording' \
   'Silence grants neither' 'contextScope.specs'; do
   assert_file_contains "shared rule lives in AGENT.md: $phrase" \
     "$ROOT/.claude/harness/AGENT.md" "$phrase"

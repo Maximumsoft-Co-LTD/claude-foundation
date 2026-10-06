@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Review is bounded by its rounds (full, then one delta), not by elapsed
@@ -99,8 +99,11 @@ export function assertSpecApproval(root, id, state, { workspace = true } = {}) {
   // identity that cannot equal both. That is agent-owned repair, never a user
   // decision or a user-run copy between checkouts.
   if (workspaceAgreement && !currentAmendment &&
-      agreementIdentity(root, id) !== agreementIdentity(state.workspace.path, id))
+      agreementIdentity(root, id) !== agreementIdentity(state.workspace.path, id)) {
+    if (repairWhitespaceDrift(root, state.workspace.path, id))
+      return assertSpecApproval(root, id, state, { workspace });
     throw agreementDriftError(id, state.workspace.path);
+  }
   throw userDecisionError("SPEC_APPROVAL_REQUIRED",
     "Inspect the compiled spec with the user and obtain approval before Build.", [
       { id: "approve", outcome: "Approve this exact spec, then begin Build",
@@ -145,6 +148,62 @@ export function preserveSpecApprovalAcross(root, id, {
   }];
   saveRuntime(state);
   return result;
+}
+
+function packetFiles(base, prefix = "") {
+  const files = [];
+  for (const entry of readdirSync(join(base, prefix), { withFileTypes: true })) {
+    const name = `${prefix}${entry.name}`;
+    if (entry.isDirectory()) files.push(...packetFiles(base, `${name}/`));
+    else if (entry.isFile()) files.push(name);
+  }
+  return files.sort();
+}
+
+const CHECKBOX = /^(\s*-\s*)\[([ xX])\]/;
+const squeeze = (text) => text.replace(/\s+/g, "");
+const taskKey = (line) => squeeze(stripPathAnnotations(line.replace(CHECKBOX, "$1[ ]")));
+
+// A formatter or editor pass over the isolated packet (trailing spaces, wrap,
+// blank lines) changes bytes but no agreement text. The harness puts the
+// target's bytes back itself, keeping checkbox and `[paths:]` bookkeeping, so
+// whitespace never becomes agreement drift the agent must repair. Any other
+// difference is left untouched and still reported.
+export function repairWhitespaceDrift(root, workspacePath, id) {
+  const target = join(root, "openspec", "changes", id);
+  const isolated = join(workspacePath, "openspec", "changes", id);
+  if (!existsSync(target) || !existsSync(isolated)) return false;
+  const names = packetFiles(target);
+  if (names.join("\0") !== packetFiles(isolated).join("\0")) return false;
+  const writes = [];
+  for (const name of names) {
+    const want = readFileSync(join(target, name), "utf8");
+    const have = readFileSync(join(isolated, name), "utf8");
+    if (want === have) continue;
+    if (name !== "tasks.md") {
+      if (squeeze(want) !== squeeze(have)) return false;
+      writes.push([name, want, have]);
+      continue;
+    }
+    const wantLines = want.split("\n").filter((line) => line.trim());
+    const haveLines = have.split("\n").filter((line) => line.trim());
+    if (wantLines.length !== haveLines.length ||
+        wantLines.some((line, index) => taskKey(line) !== taskKey(haveLines[index]))) return false;
+    let index = 0;
+    const merged = want.split("\n").map((line) => {
+      if (!line.trim()) return line;
+      const mine = haveLines[index++];
+      if (stripPathAnnotations(mine) !== mine || stripPathAnnotations(line) !== line) return mine;
+      const mark = CHECKBOX.exec(mine)?.[2];
+      return mark ? line.replace(CHECKBOX, `$1[${mark}]`) : line;
+    }).join("\n");
+    writes.push([name, merged, have]);
+  }
+  if (!writes.length) return false;
+  for (const [name, content] of writes) writeFileSync(join(isolated, name), content);
+  if (agreementIdentity(root, id) === agreementIdentity(workspacePath, id)) return true;
+  for (const [name, , original] of writes) writeFileSync(join(isolated, name), original);
+  return false;
 }
 
 export function agreementDriftError(id, workspacePath) {

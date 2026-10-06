@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { agreementIdentity, assertSpecApproval, currentWaivers,
-  REVIEW_DISPATCH_TIMEOUT_MS } from "../runtime/core/user-decisions.mjs";
+  repairWhitespaceDrift, REVIEW_DISPATCH_TIMEOUT_MS } from "../runtime/core/user-decisions.mjs";
 import { advanceFailureAction, createAdvanceRuntime } from "../runtime/workflow/advance-runtime.mjs";
 import { workspaceCapabilityValue } from "../runtime/core/execution-contract.mjs";
 
@@ -111,4 +111,34 @@ test("an old expired review window never stops advance or asks the user", () => 
   assert.notEqual(action.boundary, "review-time-exhausted");
   assert.notEqual(action.decision?.kind, "REVIEW_TIME_EXHAUSTED");
   assert.equal(REVIEW_DISPATCH_TIMEOUT_MS, 30 * 60 * 1000, "each dispatch keeps its own timeout");
+});
+
+// A formatter pass over the isolated packet is not agreement drift: the
+// harness restores the target's bytes and keeps checkbox and `[paths:]`
+// bookkeeping. A wording change is still drift and is left untouched.
+test("whitespace-only packet drift is restored by the harness, wording drift is not", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "spec-whitespace-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const write = (base, files) => {
+    const packet = join(base, "openspec/changes/demo");
+    mkdirSync(packet, { recursive: true });
+    for (const [name, content] of Object.entries(files)) writeFileSync(join(packet, name), content);
+    return packet;
+  };
+  write(root, { "proposal.md": "# Greeting\n\nChange the greeting.\n",
+    "tasks.md": "## 1\n- [ ] 1.1 Implement [paths: a.js]\n- [ ] 1.2 Test\n" });
+  const workspace = join(root, "workspace");
+  const packet = write(workspace, { "proposal.md": "# Greeting\n\nChange the   greeting.  \n\n",
+    "tasks.md": "## 1\n\n- [x] 1.1 Implement [paths: a.js, b.js]\n-  [ ] 1.2 Test\n" });
+  const state = { status: "building", contractRevision: 0, workspace: { path: workspace },
+    specApproval: { required: true, identity: agreementIdentity(root, "demo"), revision: 0 } };
+  assert.doesNotThrow(() => assertSpecApproval(root, "demo", state));
+  assert.equal(readFileSync(join(packet, "proposal.md"), "utf8"), "# Greeting\n\nChange the greeting.\n");
+  assert.equal(readFileSync(join(packet, "tasks.md"), "utf8"),
+    "## 1\n- [x] 1.1 Implement [paths: a.js, b.js]\n- [ ] 1.2 Test\n");
+
+  writeFileSync(join(packet, "proposal.md"), "# Greeting\n\nDelete the greeting.\n");
+  assert.equal(repairWhitespaceDrift(root, workspace, "demo"), false);
+  assert.throws(() => assertSpecApproval(root, "demo", state), { code: "AGREEMENT_DRIFT" });
+  assert.equal(readFileSync(join(packet, "proposal.md"), "utf8"), "# Greeting\n\nDelete the greeting.\n");
 });

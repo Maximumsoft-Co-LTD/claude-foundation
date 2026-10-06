@@ -110,6 +110,9 @@ test("Build exec runs in the isolated workspace and refuses path escapes", (t) =
   ], { phase: "build" }), 0);
   assert.equal(readFileSync(join(workspace, "cwd.txt"), "utf8"), realpathSync(workspace));
 
+  // The strict shell guard refuses escapes before the command starts.
+  process.env.FOUNDATION_SHELL_GUARD = "block";
+  t.after(() => { delete process.env.FOUNDATION_SHELL_GUARD; });
   const escaped = join(outside, "escaped.txt");
   assert.throws(() => runtime.execObserved("change", ["touch", escaped], {
     phase: "build"
@@ -141,4 +144,38 @@ test("exec preserves real phase overlaps but never bypasses phase mutation polic
   assert.throws(() => runtime.execObserved("change", ["git", "push"], {
     phase: "land"
   }), /Land shell mutations require the runtime transaction marker/);
+});
+
+// The live hook records text-inferred shell findings outside Land; exec did
+// the same check as a hard refusal, so `exec -- npm run e2e` failed in Prove.
+test("exec records shell findings outside Land like the live hook and runs Prove checks in the workspace", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-exec-audit-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const workspace = join(root, "workspace");
+  const outside = join(root, "outside");
+  mkdirSync(workspace);
+  mkdirSync(outside);
+  let status = "building";
+  const notices = [];
+  const original = console.error;
+  console.error = (line) => notices.push(String(line));
+  t.after(() => { console.error = original; });
+  const runtime = createExecRuntime({
+    logs: join(root, "logs"),
+    loadRuntime: () => ({ status, workspace: { path: workspace } }),
+    now: () => "2026-09-04T00:00:00.000Z",
+    fail: (message) => { throw new Error(message); }
+  });
+  const escaped = join(outside, "recorded.txt");
+  assert.equal(runtime.execObserved("change", ["touch", escaped], { phase: "build" }), 0);
+  assert.equal(existsSync(escaped), true);
+  assert.match(notices.join("\n"), /NOTICE: exec recorded an unverified shell mutation/);
+
+  status = "proven";
+  assert.equal(runtime.execObserved("change", [
+    process.execPath, "-e", "require('node:fs').writeFileSync('prove-cwd.txt', process.cwd())"
+  ], { phase: "prove" }), 0);
+  assert.equal(readFileSync(join(workspace, "prove-cwd.txt"), "utf8"), realpathSync(workspace));
+  assert.throws(() => runtime.execObserved("change", ["git", "push"], { phase: "land" }),
+    /Land shell mutations require the runtime transaction marker/);
 });

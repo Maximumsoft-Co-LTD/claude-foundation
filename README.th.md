@@ -318,15 +318,17 @@ reuse ส่วนตัวที่ล้มจะเก็บ sandbox ไว�
 ตอนสร้าง sandbox จะพิมพ์ NOTE พร้อม snippet ของ `foundation.json` ให้ ส่วนการ link
 หรือ copy `node_modules` ของ checkout เข้า workspace จะถูก phase guard ปฏิเสธ
 
-ถ้าต้องใช้ Bash โดยตรงระหว่าง Build ให้เริ่มคำสั่งที่แก้ไฟล์ด้วย
-`cd <workspace-or-subdirectory> && ...` บน Claude Code phase guard จะปัก directory
-ที่ shell รายงานมาเป็น anchor ให้เองเมื่ออยู่ใน workspace แล้ว ลืมใส่ prefix จึงไม่เสีย
-turn ส่วน host อื่นจะปฏิเสธคำสั่ง phase guard จะบล็อก package manager หรือ formatter
-ที่ไม่ได้ผูกกับ workspace, path ที่หนีด้วย `..`, การ `cd` ออกภายหลัง, filesystem
-operand แบบ absolute และการเขียนผ่าน symlink ออกนอก workspace ก่อน shell เริ่ม
-ทำงาน `claude-foundation exec` จะ derive phase จาก runtime state ใช้นโยบายเดียวกัน
-และเริ่มคำสั่ง Build ใน canonical workspace ควรใช้ Edit/Write แบบ structured เมื่อ
-ทำได้ และยังต้องพึ่ง process isolation ของ host สำหรับผลข้างเคียงทางอ้อมจาก script
+ถ้าต้องใช้ Bash โดยตรงระหว่าง Build ให้รัน `cd <workspace>` หนึ่งครั้งเป็นคำสั่งแยก
+shell จะอยู่ที่ directory นั้นต่อ คำสั่งถัดไปจึงเขียนแบบธรรมดาได้และไม่มี prompt ขออนุญาต
+จาก host (คำสั่งรวมแบบ `cd … && …` จะถูกถามทุกครั้ง) phase guard ตรวจคำสั่งที่แก้ไฟล์
+จาก directory ที่ shell รายงาน เพราะการวิเคราะห์ shell อ่านจากข้อความคำสั่ง นอก Land
+และ Deliver จึงบันทึกสิ่งที่เจอ เช่น path ที่หนีด้วย `..` หรือ operand แบบ absolute
+นอก workspace เป็นคำเตือนแทนการปฏิเสธ ส่วน Edit/Write แบบ structured ยังถูกบังคับ
+และ Land จะรายงานการแก้ checkout หลักที่เกิดนอก sandbox ตั้ง
+`FOUNDATION_SHELL_GUARD=block` เพื่อกลับไปปฏิเสธ `claude-foundation exec` จะ derive
+phase จาก runtime state ใช้นโยบายเดียวกันแบบเดียวกัน และเริ่มคำสั่ง Build ใน
+canonical workspace ยังต้องพึ่ง process isolation ของ host สำหรับผลข้างเคียงทางอ้อมจาก
+script
 
 ทำไมต้องมีขั้นนี้: คุณ inspect หรือทิ้ง implementation ที่ยังไม่พร้อมได้ โดยไม่
 ปนกับ checkout ที่กำลังใช้งาน

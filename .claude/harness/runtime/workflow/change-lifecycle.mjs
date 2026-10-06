@@ -1,4 +1,6 @@
-import { agreementDriftError, agreementIdentity } from "../core/user-decisions.mjs";
+import {
+  agreementDriftError, agreementIdentity, repairWhitespaceDrift
+} from "../core/user-decisions.mjs";
 import { createHash } from "node:crypto";
 import {
   cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync,
@@ -1567,7 +1569,8 @@ export function createChangeLifecycle({
         const amended = (current.amendments || []).some((entry) =>
           Number(entry?.revision) === Number(current.contractRevision || 0));
         if (approvalRoot !== root && !amended &&
-            agreementIdentity(approvalRoot, id) !== agreementIdentity(root, id)) {
+            agreementIdentity(approvalRoot, id) !== agreementIdentity(root, id) &&
+            !repairWhitespaceDrift(root, approvalRoot, id)) {
           const drift = agreementDriftError(id, approvalRoot);
           fail(drift.message, 1, { owner: drift.owner, boundary: drift.boundary, code: drift.code });
         }

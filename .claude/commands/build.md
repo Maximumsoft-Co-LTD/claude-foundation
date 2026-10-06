@@ -18,8 +18,7 @@ or a real boundary.
 - `WAIT`/`ASK_USER`: report the wait; ask only for the decision; resume.
 - `DONE`: continue with `--through proven` and stop at `proven`.
 
-Edit only allowed sandbox paths. Start every mutating shell call with
-`cd <workspace> &&`. New observable behavior, or unauthorized infrastructure
+Edit only allowed sandbox paths. New observable behavior, or unauthorized infrastructure
 or external work, goes through one semantic amendment (Change workflow,
 amendment section); never ask for credentials.
 

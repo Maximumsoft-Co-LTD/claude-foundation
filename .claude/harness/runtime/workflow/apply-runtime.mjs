@@ -1059,6 +1059,8 @@ export function createApplyRuntime({
     const cli = spawnSync("openspec", ["archive", id, "--yes"], { cwd: root, encoding: "utf8" });
     if (cli.status !== 0) fail(`OpenSpec archive failed: ${(cli.stderr || cli.stdout).trim()}`);
     archiveCheckpoint("after-archive-command", state);
+    transitionLifecycleState(state, "archived", "openspec-archive-complete");
+    state.archivedAt = now();
     state.preArchiveWorkspaceHash = preArchiveWorkspaceHash;
     state.archivedChangePath = archivedChangeRelativePath(id);
     // `land.status` is a breadcrumb, not the saga's position. Resume branches on
@@ -1079,11 +1081,6 @@ export function createApplyRuntime({
       saveRuntime(state);
       failSpecSync(specViolations);
     }
-    // `archived` is reported only once the merged specs are verified; a crash
-    // or violation before this resumes through interrupted-archive recovery,
-    // which re-verifies from the retained inputs.
-    transitionLifecycleState(state, "archived", "openspec-archive-complete");
-    state.archivedAt = now();
     recordDeliveryIntegrity(state, state.archivedChangePath, specSyncInputs);
     delete state.specSyncInputs;
     delete state.specSyncViolations;

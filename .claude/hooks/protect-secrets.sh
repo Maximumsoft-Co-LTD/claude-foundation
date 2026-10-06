@@ -140,6 +140,29 @@ glob_is_docs_only() {
   return 1
 }
 
+# glob_is_scoped GLOB  ->  exit 0 if the glob names a file extension, so it
+# cannot reach a dotenv or key file (secret-shaped globs are refused earlier).
+# "*.ts" and "src/**/*.{ts,tsx}" are scoped; "*", "**/*", and "src/" are not.
+glob_is_scoped() {
+  case "$1" in
+    *'*'|*/|'') return 1 ;;
+    *.*) return 0 ;;
+  esac
+  return 1
+}
+
+# token_is_file TOKEN  ->  exit 0 if a Bash argument can name a file: it has a
+# path separator or a leading dot, or it exists. `process.env` and
+# `import.meta.env` are search patterns in `rg process.env src`, not files.
+token_is_file() {
+  local t="$1"
+  t="${t%\"}"; t="${t#\"}"; t="${t%\'}"; t="${t#\'}"
+  case "$t" in
+    */*|.*|~*) return 0 ;;
+  esac
+  [ -e "${event_cwd:-.}/$t" ]
+}
+
 block() {
   jq -n --arg reason "$1 No secret contents were read; use a template, public key, or metadata-only search instead." \
     '{decision: "block", reason: $reason}'
@@ -163,6 +186,7 @@ case "$tool_name" in
     g_glob="$(printf '%s' "$input" | jq -r '.tool_input.glob // ""')"
     g_mode="$(printf '%s' "$input" | jq -r '.tool_input.output_mode // ""')"
     g_pattern="$(printf '%s' "$input" | jq -r '.tool_input.pattern // ""')"
+    g_type="$(printf '%s' "$input" | jq -r '.tool_input.type // ""')"
     if [ -n "$g_path" ] && is_secret_path "$g_path"; then
       block "BLOCKED by secrets guard: Grep path \"$g_path\" is a secret/credential file; matching lines would leak its contents. $REF"
     fi
@@ -178,8 +202,12 @@ case "$tool_name" in
     # proves no secret file could ever match (glob_is_docs_only), so a search
     # scoped to "*.md" for documentation mentioning "password" or "API_KEY"
     # is not treated the same as an unscoped repo-wide leak.
-    if [ "$g_mode" = "content" ] && [ -n "$g_pattern" ] &&
-       { [ -z "$g_glob" ] || ! glob_is_docs_only "$g_glob"; } &&
+    # A file type, a regular file, or a glob that names an extension keeps
+    # the search out of dotenv and key files, so `password` in `*.ts` during
+    # auth work is ordinary code search.
+    if [ "$g_mode" = "content" ] && [ -n "$g_pattern" ] && [ -z "$g_type" ] &&
+       ! { [ -n "$g_path" ] && [ -f "$g_path" ]; } &&
+       { [ -z "$g_glob" ] || { ! glob_is_docs_only "$g_glob" && ! glob_is_scoped "$g_glob"; }; } &&
        printf '%s' "$g_pattern" | grep -Eqi \
          '(api[_-]?key|secret|passwd|password|private[_-]?key|access[_-]?token|auth[_-]?token|bearer|credential|client[_-]?secret|aws_[a-z_]*key)'; then
       block "BLOCKED by secrets guard: Grep pattern \"$g_pattern\" with output_mode \"content\" would print credential-shaped lines from every matching file, including .env files under \"${g_path:-the working directory}\". Use output_mode \"files_with_matches\" to locate them without printing their contents. $REF"
@@ -189,6 +217,7 @@ case "$tool_name" in
   # ---- Bash --------------------------------------------------------------
   Bash)
     cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // ""')"
+    event_cwd="$(printf '%s' "$input" | jq -r '.cwd // ""')"
     [ -n "$cmd" ] || exit 0
 
     # (1) Neutralise quoted spans first, so a secret filename that only appears
@@ -265,7 +294,7 @@ case "$tool_name" in
       # shellcheck disable=SC2086 -- intentional word-splitting
       set -- $args
       for tok in "$@"; do
-        if is_secret_path "$tok"; then found="$tok"; break; fi
+        if is_secret_path "$tok" && token_is_file "$tok"; then found="$tok"; break; fi
       done
       [ -n "$found" ] && break
     done <<EOF

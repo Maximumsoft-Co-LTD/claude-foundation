@@ -338,17 +338,18 @@ command is declared, sandbox creation prints a NOTE with the exact
 `foundation.json` snippet; linking or copying the checkout's `node_modules`
 into the workspace is refused by the phase guard.
 
-For direct Bash use during Build, start an obviously mutating command with
-`cd <workspace-or-subdirectory> && ...`. On Claude Code the phase guard pins
-the shell's reported directory as that anchor when it is already inside the
-workspace, so a forgotten prefix costs nothing; other hosts refuse the
-command. The phase guard blocks unanchored package-manager
-or formatter mutations, `..` escapes, later `cd` escapes, absolute filesystem
-operands, and writes through symlinks outside the workspace before the shell
-starts. `claude-foundation exec` derives the phase from runtime state, applies
-the same policy, and starts Build commands in the canonical workspace.
-Structured Edit/Write operations remain the preferred mutation path; host
-process isolation is still required for indirect script effects.
+For direct Bash use during Build, run `cd <workspace>` once as its own call;
+the shell keeps that directory, so later commands stay plain and need no host
+approval prompt (a compound `cd … && …` asks for one each time). The phase
+guard checks each mutating command from the reported directory. Because shell
+analysis reads command text, it records `..` escapes, outside absolute operands,
+and similar findings as warnings outside Land and Deliver instead of refusing
+them; structured Edit/Write targets stay enforced, and Land reports
+target-checkout edits made outside the sandbox. `FOUNDATION_SHELL_GUARD=block`
+restores refusal. `claude-foundation exec` derives the phase from runtime state,
+applies the same policy the same way, and starts Build commands in the
+canonical workspace. Host process isolation is still required for indirect
+script effects.
 
 Why this step exists: you can inspect or discard implementation work without
 mixing it with your current checkout.

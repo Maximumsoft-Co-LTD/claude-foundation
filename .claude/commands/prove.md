@@ -12,8 +12,8 @@ agent-runnable review, routes configured review, and finalizes proof.
 Execute each protocol-v6 action, then its exact `resume`. `REPAIR` and `EDIT`
 return a bounded invalidation/repair set to apply whole; `RUN_EXTERNAL` names
 one configured external boundary. Stay in-session while a review runs: ending
-the reply kills it. Never rerun unchanged checks or search for alternate
-commands. Never fabricate evidence or invent a checker.
+the reply kills it. Unchanged checks are reused; rerun one only to
+diagnose a failure. Never fabricate evidence or invent a checker.
 
 ## Gate: no progress
 
