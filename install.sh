@@ -456,10 +456,26 @@ else
   printf '\n%s\n' "$AGENTS_BLOCK" >> "$AGENTS_DST"
 fi
 
+# Prepare the pinned OpenSpec CLI now, through the same harness routine Build,
+# Prove, and Land use, so a machine without npm access learns it at install
+# time rather than when Land needs spec sync. It is a no-op when a compatible
+# CLI already resolves, and never fails the install.
 if ! command -v node >/dev/null 2>&1; then
   printf '⚠ Node.js >=20.19 is required by OpenSpec and the Change Loop harness\n' >&2
-elif ! command -v openspec >/dev/null 2>&1; then
-  printf '▸ The harness prepares pinned OpenSpec project-locally under .foundation/tools when needed.\n'
+elif ! openspec_source="$(cd "$TARGET_PATH" && node --input-type=module -e '
+  const { pathToFileURL } = await import("node:url");
+  const { spawnSync } = await import("node:child_process");
+  const harness = (path) => import(pathToFileURL(`${process.cwd()}/.claude/harness/runtime/${path}`).href);
+  const { ensureProjectOpenSpec } = await harness("core/tool-preparation.mjs");
+  const { openSpecCliStatus } = await harness("workflow/land-runtime.mjs");
+  const prepared = ensureProjectOpenSpec({ root: process.cwd(), status: openSpecCliStatus, spawn: spawnSync });
+  console.log(prepared.source);
+' 2>/dev/null)"; then
+  printf '⚠ OpenSpec could not be prepared now; Land needs it for spec sync and archive.\n' >&2
+  printf '  Give this machine npm registry access, or install @fission-ai/openspec@1.7 in the\n' >&2
+  printf '  project (node_modules/.bin) or on PATH; the harness retries before Build, Prove, and Land.\n' >&2
+elif [ "$openspec_source" = ".foundation/tools" ]; then
+  printf '▸ Prepared pinned OpenSpec project-locally under .foundation/tools.\n'
 fi
 
 if command -v node >/dev/null 2>&1; then

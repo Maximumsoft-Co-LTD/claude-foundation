@@ -880,4 +880,45 @@ else
   pass "cli init refuses an unknown host"
 fi
 
+# The installer prepares the pinned OpenSpec CLI through the harness routine.
+# Stubs keep it offline: a broken host `openspec` makes the CLI unavailable,
+# and a stub `npm` either fails (no registry) or installs a fake 1.7.0 CLI.
+OPENSPEC_STUBS="$TMP/openspec-stubs"
+mkdir -p "$OPENSPEC_STUBS/offline" "$OPENSPEC_STUBS/online"
+for mode in offline online; do
+  printf '#!/bin/sh\nexit 127\n' > "$OPENSPEC_STUBS/$mode/openspec"
+done
+printf '#!/bin/sh\necho "npm ERR! network unreachable" >&2\nexit 1\n' \
+  > "$OPENSPEC_STUBS/offline/npm"
+cat > "$OPENSPEC_STUBS/online/npm" <<'STUB'
+#!/bin/sh
+mkdir -p "$3/node_modules/.bin"
+printf '#!/bin/sh\necho 1.7.0\n' > "$3/node_modules/.bin/openspec"
+chmod +x "$3/node_modules/.bin/openspec"
+STUB
+chmod +x "$OPENSPEC_STUBS"/*/*
+host_path="$(printf '%s' "$PATH" | tr ':' '\n' | grep -v '/node_modules/\.bin$' | paste -sd: -)"
+
+OFFLINE_TARGET="$TMP/openspec-offline-project"
+mkdir -p "$OFFLINE_TARGET"
+offline_status=0
+offline_install="$(PATH="$OPENSPEC_STUBS/offline:$host_path" \
+  bash "$ROOT/install.sh" "$OFFLINE_TARGET" --source "$ROOT" --yes 2>&1)" || offline_status=$?
+assert_eq "an unreachable npm registry does not fail the install" "0" "$offline_status"
+assert_contains "the installer names the missing OpenSpec preparation" \
+  "$offline_install" "OpenSpec could not be prepared now"
+offline_doctor="$(cd "$OFFLINE_TARGET" && PATH="$OPENSPEC_STUBS/offline:$host_path" \
+  node .claude/harness/foundation.mjs doctor --stage change 2>&1 || true)"
+assert_contains "doctor names how the harness prepares OpenSpec" \
+  "$offline_doctor" "installs it under .foundation/tools before Build, Prove, and Land"
+
+ONLINE_TARGET="$TMP/openspec-online-project"
+mkdir -p "$ONLINE_TARGET"
+online_install="$(PATH="$OPENSPEC_STUBS/online:$host_path" \
+  bash "$ROOT/install.sh" "$ONLINE_TARGET" --source "$ROOT" --yes 2>&1)"
+assert_contains "the installer prepares pinned OpenSpec project-locally" \
+  "$online_install" "Prepared pinned OpenSpec project-locally under .foundation/tools"
+assert_file_exists "the prepared OpenSpec CLI is project-local" \
+  "$ONLINE_TARGET/.foundation/tools/node_modules/.bin/openspec"
+
 finish "installer"

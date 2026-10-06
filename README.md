@@ -102,9 +102,12 @@ Requirements:
 Git is recommended for worktree isolation; dirty or non-Git projects use an
 isolated copy. `jq` is recommended for merging existing Claude settings.
 Without it, the installer preserves the existing file and writes a companion
-file for review. The harness verifies OpenSpec early and, when necessary,
-installs the pinned CLI project-locally under `.foundation/tools`; no global
-installation command is part of the user workflow.
+file for review. The installer prepares the pinned OpenSpec CLI project-locally
+under `.foundation/tools` when no compatible CLI resolves, and the harness
+re-checks it before Build, Prove, and Land; no global installation command is
+part of the user workflow. Without npm access the install still succeeds and
+names the gap: put `@fission-ai/openspec@1.7` in the project's
+`node_modules/.bin` or on `PATH` before Land.
 
 Install with Homebrew:
 

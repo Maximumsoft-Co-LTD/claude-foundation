@@ -96,9 +96,11 @@ AI agent อาจเขียน code ที่ดูถูกต้อง แ�
 
 แนะนำให้มี Git สำหรับ worktree isolation; ถ้าโปรเจกต์ dirty หรือไม่ใช่ Git จะใช้
 isolated copy และแนะนำให้มี `jq` สำหรับ merge Claude settings เดิม หากไม่มี
-installer จะรักษาไฟล์เดิมและสร้าง companion file ให้ตรวจเอง Harness ตรวจ OpenSpec
-ตั้งแต่ต้น และถ้าจำเป็นจะติดตั้ง CLI ที่ pin ไว้เฉพาะ project ใต้
-`.foundation/tools`; user workflow ไม่มีคำสั่งติดตั้ง global
+installer จะรักษาไฟล์เดิมและสร้าง companion file ให้ตรวจเอง Installer เตรียม
+OpenSpec CLI ที่ pin ไว้เฉพาะ project ใต้ `.foundation/tools` เมื่อยังไม่มี CLI ที่ใช้ได้
+และ harness ตรวจซ้ำก่อน Build, Prove และ Land; user workflow ไม่มีคำสั่งติดตั้ง global
+ถ้าเครื่องเข้า npm ไม่ได้ การติดตั้งยังสำเร็จและแจ้งว่าขาดอะไร ให้ติดตั้ง
+`@fission-ai/openspec@1.7` ไว้ใน `node_modules/.bin` ของ project หรือใน `PATH` ก่อน Land
 
 ติดตั้งด้วย Homebrew:
 
