@@ -392,6 +392,48 @@ test("plain advance prepares the amended agreement before choosing work", async 
   assert.equal(value.action, "EDIT", JSON.stringify(value));
 });
 
+test("one coordinator read plans the task graph once for dispatch and Build", () => {
+  const plan = { tasks: [{ id: "T001", text: "Implement", repository: "root", paths: ["src/**"] }] };
+  let plans = 0;
+  const handed = [];
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => ({ status: "building", workspace: { path: "/tmp/change" } }),
+    agentPlanValue: () => { plans += 1; return plan; },
+    agentDispatchValue: (_id, _options, planned) => {
+      handed.push(planned);
+      return { action: "run-in-session", packetCommand: "packet", task: { taskId: "T001" } };
+    },
+    relevantHash: () => "workspace-a", deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => ({}), proofAdvancePath: () => "/proof.json", stableHash
+  });
+  const value = runtime.advanceValue("change-a");
+  assert.equal(value.action, "EDIT", JSON.stringify(value));
+  assert.equal(plans, 1);
+  assert.deepEqual(handed, [plan]);
+  // A second read re-plans: reuse never outlives the read that compiled it.
+  runtime.advanceValue("change-a");
+  assert.equal(plans, 2);
+});
+
+test("a planning failure still reaches dispatch, which reports it", () => {
+  const handed = [];
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => ({ status: "building" }),
+    agentPlanValue: () => { throw new Error("task dependency cycle: T001 -> T001"); },
+    agentDispatchValue: (_id, _options, planned) => {
+      handed.push(planned);
+      throw new Error("task dependency cycle: T001 -> T001");
+    },
+    relevantHash: () => "workspace-a", deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => ({}), proofAdvancePath: () => "/proof.json", stableHash
+  });
+  const value = runtime.advanceValue("change-a");
+  assert.deepEqual(handed, [null]);
+  assert.match(value.reason, /task dependency cycle/);
+});
+
 test("advance preserves exact runtime failures in a repair envelope", () => {
   const reason = "isolated runtime state is missing repository 'api'; repair it with 'claude-foundation sandbox create change-a --all'";
   const runtime = createAdvanceRuntime({

@@ -10,14 +10,16 @@ description: Implement the compiled agreement in isolation through one coordinat
 Build uses one model-facing command:
 
 ```bash
-claude-foundation advance <change> --through build
+claude-foundation advance <change> --through proven
 ```
 
 The coordinator validates the agreement, creates or synchronizes the isolated
 workspace, compiles task dependencies, accounts for active leases, and returns
 one protocol-v6 action. After doing that action, the agent calls the exact
 `resume` route. It never reconstructs a `sandbox → packet → plan → dispatch`
-chain.
+chain. Proof starts in the same call only once Build is complete, so `/build`
+needs no separate Build `DONE` round trip; it stops at `proven` and never
+Lands. `--through build` still stops at Build when that is all you want.
 
 ## The six actions
 

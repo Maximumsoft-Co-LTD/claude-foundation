@@ -10,13 +10,15 @@ description: ทำตามข้อตกลงที่ compile แล้ว�
 Build ใช้คำสั่งหลักของ agent เพียงคำสั่งเดียว:
 
 ```bash
-claude-foundation advance <change> --through build
+claude-foundation advance <change> --through proven
 ```
 
 Coordinator ตรวจ agreement สร้างหรือ sync workspace แยก compile dependency ของ
 task ตรวจ lease ที่ยังทำงาน แล้วคืน action protocol v6 เพียงหนึ่งตัว เมื่อทำ action
 นั้นเสร็จ Agent เรียก `resume` ที่ส่งกลับมา โดยไม่ประกอบ chain ของ `sandbox`,
-`packet`, plan และ dispatch เอง
+`packet`, plan และ dispatch เอง Proof เริ่มในการเรียกเดียวกันก็ต่อเมื่อ Build เสร็จแล้ว
+`/build` จึงไม่ต้องวนกลับมาที่ `DONE` ของ Build แยกอีกรอบ หยุดที่ `proven` และไม่ Land
+ถ้าต้องการหยุดแค่ Build ยังใช้ `--through build` ได้
 
 ## Action หกแบบ
 

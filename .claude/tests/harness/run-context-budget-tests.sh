@@ -372,7 +372,7 @@ assert_file_contains "change audit warnings do not reopen grounding" \
   'Optional audit warnings are advisory'
 assert_file_contains "build command names unified transition" \
   "$ROOT/.claude/commands/build.md" \
-  'advance <change> --through build'
+  'advance <change> --through proven'
 if grep -qF 'proof execute' "$ROOT/website/index.html"; then
   fail "public website uses canonical proof command"
 else

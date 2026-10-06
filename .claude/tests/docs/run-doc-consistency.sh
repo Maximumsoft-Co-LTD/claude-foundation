@@ -287,9 +287,9 @@ assert_file_contains "English artifacts document conditional execution wiring" \
 assert_file_contains "Thai artifacts document conditional execution wiring" \
   "$DOCS/th/artifacts.md" 'มีเมื่อ derived wiring ไม่พอ'
 assert_file_contains "English Build continues through one coordinator" \
-  "$DOCS/loop/build.md" 'advance <change> --through build'
+  "$DOCS/loop/build.md" 'advance <change> --through proven'
 assert_file_contains "Thai Build continues through one coordinator" \
-  "$DOCS/th/loop/build.md" 'advance <change> --through build'
+  "$DOCS/th/loop/build.md" 'advance <change> --through proven'
 assert_file_contains "English Prove continues through one coordinator" \
   "$DOCS/loop/prove.md" 'advance <change> --through proven'
 assert_file_contains "Thai Prove continues through one coordinator" \

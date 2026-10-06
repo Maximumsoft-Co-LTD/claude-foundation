@@ -1871,6 +1871,7 @@ const applyRuntime = createApplyRuntime({
   proofAudit,
   cleanupChangeLeases,
   now,
+  measure: commandPhaseRecorder.measure,
   assertLandGrant: landGrantRuntime.assert,
   consumeLandGrant: landGrantRuntime.consume,
   blockWithDecision,

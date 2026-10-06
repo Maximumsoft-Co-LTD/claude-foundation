@@ -9,6 +9,13 @@ import {
 } from "../runtime/core/tool-preparation.mjs";
 import { retryFailedSandboxSetups } from
   "../runtime/workflow/sandbox-runtime.mjs";
+import {
+  executableIdentity, gitIndexIdentity, memoizeByGitIndex
+} from "../runtime/core/tool-identity.mjs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const stableHash = (value) => JSON.stringify(value);
 
@@ -115,4 +122,54 @@ test("failed repository setup is retried without repeating ready siblings", () =
   assert.deepEqual(attempted, ["root", "api"]);
   assert.deepEqual(calls, ["root setup", "api setup"]);
   assert.equal(saves, 1);
+});
+
+test("Git index queries are reused only while the index is unchanged", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "foundation-index-memo-"));
+  const run = (...args) => spawnSync("git", args, { cwd: workspace, encoding: "utf8" });
+  try {
+    run("init", "-q");
+    writeFileSync(join(workspace, "a.txt"), "a\n");
+    writeFileSync(join(workspace, "b.txt"), "b\n");
+    run("add", "a.txt");
+    let computed = 0;
+    const tracked = (rel) => memoizeByGitIndex(workspace, `tracked:${rel}`, () => {
+      computed += 1;
+      return run("ls-files", "--error-unmatch", "--", rel).status === 0;
+    });
+    assert.equal(tracked("b.txt"), false);
+    assert.equal(tracked("b.txt"), false);
+    assert.equal(computed, 1, "an unchanged index answers from the memo");
+    run("add", "b.txt");
+    assert.equal(tracked("b.txt"), true, "an index write invalidates the memo");
+    assert.equal(computed, 2);
+    assert.equal(gitIndexIdentity(workspace, { GIT_INDEX_FILE: "/elsewhere" }), null,
+      "an overridden index is never identified");
+    assert.equal(gitIndexIdentity(join(workspace, "missing")), null);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("executable identity follows content, not the path", () => {
+  const dir = mkdtempSync(join(tmpdir(), "foundation-exe-identity-"));
+  const env = { PATH: dir };
+  try {
+    const exe = join(dir, "tool");
+    writeFileSync(exe, "#!/bin/sh\necho 1\n");
+    chmodSync(exe, 0o755);
+    const first = executableIdentity("tool", env, dir);
+    assert.ok(first);
+    assert.equal(executableIdentity("tool", env, dir), first);
+    writeFileSync(exe, "#!/bin/sh\necho 2\n");
+    assert.notEqual(executableIdentity("tool", env, dir), first);
+    writeFileSync(join(dir, "package.json"), "{\"version\":\"1.0.0\"}");
+    const withManifest = executableIdentity("tool", env, dir);
+    writeFileSync(join(dir, "package.json"), "{\"version\":\"1.0.1\"}");
+    assert.notEqual(executableIdentity("tool", env, dir), withManifest,
+      "a package version change is a different CLI");
+    assert.equal(executableIdentity("absent-tool", env, dir), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

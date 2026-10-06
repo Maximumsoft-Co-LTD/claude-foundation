@@ -338,9 +338,10 @@ operand แบบ absolute และการเขียนผ่าน symlink
 ทำไมต้องมีขั้นนี้: คุณ inspect หรือทิ้ง implementation ที่ยังไม่พร้อมได้ โดยไม่
 ปนกับ checkout ที่กำลังใช้งาน
 
-Agent ขับ Build ด้วย `claude-foundation advance <change-id> --through build`
+Agent ขับ Build ด้วย `claude-foundation advance <change-id> --through proven`
 Coordinator เดียวนี้ validate เตรียม isolation เลือกงานที่รันได้ และคืน action ที่
-มีขอบเขตหนึ่งตัว ผู้ใช้ไม่ต้องประกอบ sandbox, packet, plan, lease หรือ dispatch เอง
+มีขอบเขตหนึ่งตัว เมื่อ Build เสร็จจะทำ Prove ต่อในการเรียกเดียวกัน ผู้ใช้ไม่ต้องประกอบ
+sandbox, packet, plan, lease หรือ dispatch เอง
 
 ### 3. Prove ผลลัพธ์
 

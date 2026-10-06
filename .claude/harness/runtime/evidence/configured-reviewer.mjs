@@ -1,5 +1,5 @@
 import { spawn as spawnChild, spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync
 } from "node:fs";
@@ -8,6 +8,7 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   SCENARIO_COVERAGE_STATUSES, parseScenarioCoverage, reviewChecklistInstruction
 } from "./review-diff.mjs";
+import { executableIdentity } from "../core/tool-identity.mjs";
 
 // No `uniqueItems` anywhere in this schema: OpenAI structured output rejects
 // the keyword, failing every dispatch as an infrastructure error. `validReview`
@@ -604,29 +605,32 @@ export function createConfiguredReviewerRuntime({
     }
   }
 
-  function codexStatus(config) {
-    const login = spawn(config.executable, ["login", "status"], {
+  // Status probes are yielded spawn steps like the review itself, so the
+  // concurrent Prove review checks reviewer health without blocking the event
+  // loop that drives the executable providers.
+  function* codexStatusSteps(config) {
+    const login = yield [config.executable, ["login", "status"], {
       cwd: root, encoding: "utf8", timeout: 15_000,
       maxBuffer: 4 * 1024 * 1024
-    });
+    }];
     if (login.error || login.status !== 0)
       return {
         ok: false, reviewer: config.identity, check: "authentication",
         detail: `Codex CLI is not authenticated; run 'codex login' (${diagnostic(login)})`
       };
-    const doctor = spawn(config.executable, ["doctor"], {
+    const doctor = yield [config.executable, ["doctor"], {
       cwd: root, encoding: "utf8", timeout: 30_000,
       maxBuffer: 8 * 1024 * 1024
-    });
+    }];
     if (doctor.error || doctor.status !== 0)
       return {
         ok: false, reviewer: config.identity, check: "runtime",
         detail: `Codex CLI doctor failed; repair or reinstall Codex (${diagnostic(doctor)})`
       };
-    const surface = spawn(config.executable, ["exec", "--help"], {
+    const surface = yield [config.executable, ["exec", "--help"], {
       cwd: root, encoding: "utf8", timeout: 15_000,
       maxBuffer: 4 * 1024 * 1024
-    });
+    }];
     const help = `${surface.stdout || ""}\n${surface.stderr || ""}`;
     if (surface.error || surface.status !== 0 ||
         !["--output-schema", "--ephemeral", "--sandbox", "--model", "--cd"]
@@ -638,21 +642,21 @@ export function createConfiguredReviewerRuntime({
     return null;
   }
 
-  function claudeStatus(config) {
-    const auth = spawn(config.executable, ["auth", "status", "--json"], {
+  function* claudeStatusSteps(config) {
+    const auth = yield [config.executable, ["auth", "status", "--json"], {
       cwd: root, encoding: "utf8", timeout: 15_000,
       maxBuffer: 4 * 1024 * 1024
-    });
+    }];
     const authValue = parseJson(auth.stdout);
     if (auth.error || auth.status !== 0 || authValue?.loggedIn !== true)
       return {
         ok: false, reviewer: config.identity, check: "authentication",
         detail: "Claude Code is not authenticated; run 'claude auth login'"
       };
-    const surface = spawn(config.executable, ["--help"], {
+    const surface = yield [config.executable, ["--help"], {
       cwd: root, encoding: "utf8", timeout: 15_000,
       maxBuffer: 8 * 1024 * 1024
-    });
+    }];
     const help = `${surface.stdout || ""}\n${surface.stderr || ""}`;
     if (surface.error || surface.status !== 0 || ![
       "--print", "--output-format", "--json-schema", "--model", "--effort",
@@ -666,7 +670,7 @@ export function createConfiguredReviewerRuntime({
     return null;
   }
 
-  function reviewerStatus(name = null) {
+  function* reviewerStatusSteps(name = null) {
     const config = reviewerConfig(name);
     if (!commandExists(config.executable, root)) {
       const install = config.adapter === "codex-cli"
@@ -677,8 +681,8 @@ export function createConfiguredReviewerRuntime({
         detail: `${config.executable} is not installed; run '${install}'`
       };
     }
-    const failure = config.adapter === "codex-cli"
-      ? codexStatus(config) : claudeStatus(config);
+    const failure = yield* (config.adapter === "codex-cli"
+      ? codexStatusSteps(config) : claudeStatusSteps(config));
     if (failure) return failure;
     return {
       ok: true, reviewer: config.identity, check: "ready",
@@ -686,6 +690,37 @@ export function createConfiguredReviewerRuntime({
         `(remote entitlement checked on dispatch); read-only; ephemeral; ` +
         "diversity checked from required implementation provenance"
     };
+  }
+
+  // Doctor and authority checks always probe the host afresh.
+  function reviewerStatus(name = null) {
+    return driveReviewSteps(reviewerStatusSteps(name), spawn);
+  }
+
+  // Within one process, a reviewer that already proved ready is not
+  // re-probed before a later dispatch (an escalated or follow-up review),
+  // while its executable bytes and authentication environment are unchanged.
+  // Failures are never retained; dispatch still surfaces any later failure as
+  // a durable infrastructure result.
+  const readyReviewers = new Map();
+  function reviewerReadyKey(name) {
+    const config = reviewerConfig(name);
+    const executable = executableIdentity(config.executable, process.env, root);
+    if (!executable) return null;
+    const environment = Object.entries(process.env)
+      .filter(([key]) => key === "HOME" || /^(ANTHROPIC|CLAUDE|CODEX|OPENAI)_/.test(key))
+      .sort(([left], [right]) => left.localeCompare(right));
+    return createHash("sha256").update(JSON.stringify([
+      config.identity, config.adapter, config.executable, executable, environment
+    ])).digest("hex");
+  }
+
+  function* dispatchReadinessSteps(name) {
+    const key = reviewerReadyKey(name);
+    if (key && readyReviewers.has(key)) return readyReviewers.get(key);
+    const status = yield* reviewerStatusSteps(name);
+    if (key && status.ok && reviewerReadyKey(name) === key) readyReviewers.set(key, status);
+    return status;
   }
 
   function persist(config, changeId, workspace, {
@@ -847,7 +882,7 @@ export function createConfiguredReviewerRuntime({
     if (packetIssues.length) return { ...persist(config, changeId, workspace, {
       status: "error", summary: `Review packet is not inspectable: ${packetIssues.join("; ")}`
     }), retryable: false, bindingFailure: "packet" };
-    const status = reviewerStatus(config.identity);
+    const status = yield* dispatchReadinessSteps(config.identity);
     // Authority reserves the attempt before this call. Every later failure is
     // therefore a durable infrastructure result, never a thrown orphan.
     if (!status.ok)
