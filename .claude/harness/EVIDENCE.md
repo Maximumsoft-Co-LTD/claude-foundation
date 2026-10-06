@@ -688,3 +688,23 @@ The final proof covers the remaining required set and records the exceptions.
 `acceptance` retains its withdrawal route through
 `change resolve --acceptance-not-required` or an explicit claim amendment.
 The review deadline and continuation contract is in [WORKFLOW.md](../../WORKFLOW.md).
+
+## A gate that failed and then passed unchanged
+
+Resuming without a change is not a fourth exit. When a harness-executed
+provider recorded `fail` and its next run passes with the same workspace hash,
+input identity, provider, contract, and execution fingerprints, the new receipt
+is written with `status: fail`, `observedStatus: pass`, and a `flake` record:
+`rule: fail-then-pass-on-unchanged-content`, the first failure (`observed`,
+`finishedAt`, `log`), the number of passes seen since, the observed pass, and
+the repair. Further passes on the same content keep that first failure as the
+evidence and stay `fail`.
+
+This is the least-weakening rule: a failure observed on byte-identical inputs
+is never erased by a later pass, and no fixed rerun count is trusted to turn a
+nondeterministic gate into proof. The claim needs a repair — make the test or
+the code it exercises deterministic — and the first pass on changed content is
+proof again. Only a prior `fail` counts; an `error` never produced a product
+verdict, and manual receipts are unaffected. An unchanged flake that keeps
+recurring reaches the user through the no-progress ladder in
+[WORKFLOW.md § Recovery and user decisions](../../WORKFLOW.md#recovery-and-user-decisions).

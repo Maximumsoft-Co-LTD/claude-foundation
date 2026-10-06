@@ -232,6 +232,7 @@ export function advanceFailureAction(id, error, { stage = "build", through = nul
     boundary: error?.boundary || "resource",
     reason,
     details: error?.details || null,
+    errorCode: error?.code || null,
     command: handoff.command,
     handoff,
     instruction: `The harness could not finish ${handoff.step || "this step"}. Run \`${
@@ -254,6 +255,7 @@ export function advanceFailureAction(id, error, { stage = "build", through = nul
     boundary: error?.boundary || "resource",
     reason,
     details: error?.details || null,
+    errorCode: error?.code || null,
     command: exact || fallback,
     ...(exact ? {} : {
       repairTarget,
@@ -399,6 +401,26 @@ function proofOperationAction(id, result) {
       recoveryType: "ASK_USER",
       alternatives: result.decision?.options?.map((option) => option.outcome) || []
     });
+  // A provider reserved but never proved its receipt. Whether to run it again
+  // is the user's external side-effect decision, answered through `advance`.
+  if (result.stage === "execution-indeterminate") return envelope(id, "ASK_USER", {
+    legacyAction: "DECIDE_INDETERMINATE_EXECUTION", actor: "user",
+    boundary: "external-side-effect",
+    reason: result.next?.[0]?.reason ||
+      "A provider execution stopped before proving its receipt.",
+    decision: {
+      kind: "indeterminate-execution",
+      summary: `${result.next?.[0]?.reason || "A provider execution stopped before proving its receipt."} ` +
+        `Providers: ${(result.providers || []).join(", ") || "unknown"}.`,
+      providers: result.providers || [],
+      options: [
+        { id: "retry", outcome: "The interrupted run's side effects were inspected; run the providers again." },
+        { id: "pause", outcome: "Keep the reservation and pause until the side effects are inspected." }
+      ],
+      recommended: "retry"
+    },
+    recoveryType: "ASK_USER"
+  });
   if (result.status === "ACTION_REQUIRED" || result.status === "BLOCKED")
     return envelope(id, "REPAIR", {
       legacyAction: "REPAIR_PROOF_RESULT",
@@ -794,9 +816,10 @@ export function createAdvanceRuntime({
 
   function pendingAction(id, through, pending) {
     return envelope(id, pending.paused ? "WAIT" : "ASK_USER", {
-      legacyAction: pending.paused ? "PAUSED_BY_USER" : "NO_PROGRESS_BOUNDARY",
+      legacyAction: pending.paused ? "PAUSED_BY_USER" : pending.legacyAction || "NO_PROGRESS_BOUNDARY",
       actor: pending.paused ? "harness" : "user",
-      boundary: pending.paused ? "user-paused" : "repeated-no-progress", decision: pending.decision,
+      boundary: pending.paused ? "user-paused" : pending.boundary || "repeated-no-progress",
+      decision: pending.decision,
       ...(pending.paused ? { paused: true, wait: {
         owner: "user", condition: "The user explicitly chooses to resume the preserved work."
       } } : {}),
@@ -1089,6 +1112,16 @@ export function createAdvanceRuntime({
         const pending = recovery.pending(id);
         if (pending && (pending.paused || pending.decision.kind !== "external-dependency"))
           return pendingAction(id, through, pending);
+        // A recorded user answer to an advance-owned decision is consumed
+        // once, by the step that raised it: the agreement resolution by the
+        // synchronization, the indeterminate retry by the next proof run.
+        const answer = internal.answer;
+        if (answer) delete internal.answer;
+        if (answer?.kind === "amended-agreement-conflict" && answer.choice !== "pause" &&
+            synchronizeAgreement)
+          await synchronizeAgreement(id, { resolve: `openspec/changes/${id}` });
+        const proofFlags = answer?.kind === "indeterminate-execution" && answer.choice === "retry"
+          ? { "retry-indeterminate": true, "decision-ref": answer.reference } : null;
         // Preparation is identity-reused and also owns recovery of failed
         // sandbox setup. Re-enter it while Build is active so a prior setup
         // failure cannot be bypassed by the next coordinator invocation.
@@ -1157,7 +1190,9 @@ export function createAdvanceRuntime({
               ["proven", "archived"].includes(through)) {
             if (!runProof) return finish(targetResume(value));
             stage = "prove";
-            operation = runProof;
+            const flags = proofFlags && !automation.proofFlagsUsed ? proofFlags : null;
+            if (flags) automation.proofFlagsUsed = true;
+            operation = flags ? (change) => runProof(change, flags) : runProof;
           } else if (value.legacyAction === "LAND_READY" && through === "archived") {
             // The explicit archived target authorizes Land only once the exact
             // proof is ready. Earlier phases and inspection grant nothing.
@@ -1215,12 +1250,13 @@ export function createAdvanceRuntime({
     if (flags.inspect && (flags.through || flags.decision || flags["decision-ref"] || flags["decision-fingerprint"] || flags.reason))
       throw new Error("advance --inspect cannot execute --through; inspect first, then advance");
     let through = flags.through || null;
+    let answer = null;
     if (flags.decision) {
-      const answer = recovery.resolve(id, flags);
+      answer = recovery.resolve(id, flags);
       through ||= answer.through;
     }
     const value = flags.inspect ? advanceValue(id, { inspect: true })
-      : await advanceThrough(id, through);
+      : await advanceThrough(id, through, { applyRecovered: [], notices: [], answer });
     if (!flags.through && !flags.inspect &&
         process.env.FOUNDATION_READ_ONLY_INSPECTION !== "1") {
       const phase = phaseForAction(value);
@@ -1242,13 +1278,14 @@ export async function prepareAdvanceBuild(context, id) {
 // Only the `advance --through proven|archived` route runs a harness-runnable
 // configured review beside the executable providers; `proof advance` stays
 // serial.
-export async function runAdvanceProof(context, id) {
+export async function runAdvanceProof(context, id, flags = null) {
   return context.measureAsync("prove.execute", () =>
     context.runQuietly(() => {
       // Prove validates the agreement with the strict OpenSpec lint, so a
       // resumed Prove re-prepares the tool Build prepared, like Land does.
       context.prepareExecution(id, { stage: "prove" });
-      return context.proofAdvance(id, { quiet: true, concurrentReview: true });
+      // `flags` carries only a recorded user answer to an indeterminate run.
+      return context.proofAdvance(id, { ...(flags || {}), quiet: true, concurrentReview: true });
     }));
 }
 

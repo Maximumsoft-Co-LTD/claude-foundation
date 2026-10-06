@@ -170,7 +170,8 @@ logic independently testable.
 - Project-owned test and browser dependencies required by configured evidence
 
 Change Loop prepares its pinned OpenSpec CLI under `.foundation/tools` when it
-is absent and runs declared repository setup commands in isolated workspaces.
+is absent at Prove or Land (Build records it as `deferred` and never stops for
+it) and runs declared repository setup commands in isolated workspaces.
 It does not globally install Playwright, browser binaries, test frameworks, or
 application dependencies; each application locks and maintains those versions.
 
@@ -223,6 +224,15 @@ claude-foundation doctor --stage prove --change <change>
 | `change amend <change> <amendment.json>` | Adds, revises, or removes requirements, requiring and retaining a discovery delta for v4; a verify-only `updateTasks` amendment fixes an unfinished task's verify command (`--template` prints both) | A semantic v3/v4 Build discovers new or changed behavior |
 | `change amend <change> --task <key\|id> --verify <command>` | Corrects one unfinished task's verify command directly through the same transaction; keeps the spec approval, claims, and capabilities, refuses an always-passing command, and accepts the task only when the new command passes | A task's verify command is wrong |
 | `advance <change> --through build\|proven\|archived` | Runs deterministic steps and returns one `EDIT`, `RUN_EXTERNAL`, `REPAIR`, `WAIT`, `ASK_USER`, or `DONE` action | Every normal step after Change |
+
+Every route `advance` returns stays on this surface: a `command`, `next`,
+instruction, or decision option that would name an operator primitive below
+(`proof`, `land`, `sandbox`, `evidence init`) is rewritten to the matching
+`advance` route, and the recovery ladder (agent repair, `TRY_ALTERNATE_APPROACH`,
+then a decision with repetition evidence on the third unchanged round), the
+first-observation `user-environment` question for causes only the user can
+clear, and the budget no-progress cap are specified in
+[WORKFLOW.md § Recovery and user decisions](../../WORKFLOW.md#recovery-and-user-decisions).
 
 ## Advanced operator and compatibility commands
 

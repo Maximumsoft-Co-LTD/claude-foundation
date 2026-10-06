@@ -207,3 +207,29 @@ test("a failed OpenSpec preparation hands its install command to the agent", () 
     return true;
   });
 });
+
+test("a missing OpenSpec CLI defers to Prove and never stops or installs during Build", () => {
+  const calls = [];
+  const missing = () => ({ level: "error", version: null, detail: "openspec: not found" });
+  const deferred = ensureProjectOpenSpec({
+    root: "/repo", status: missing, prependPath: () => {}, stage: "build",
+    spawn: (...args) => { calls.push(args); return { status: 0 }; }
+  });
+  assert.equal(deferred.level, "deferred");
+  assert.equal(deferred.deferredTo, "prove");
+  assert.equal(calls.length, 0, "Build does not spend time installing a Prove-only tool");
+  const plan = executionPreparationValue({
+    id: "change-a", state: { revision: 1 }, repositories: [], providers: [],
+    openSpec: deferred, stableHash, now: () => "2026-10-06T00:00:00.000Z"
+  });
+  assert.equal(plan.status, "READY");
+  assert.equal(plan.tools[0].status, "deferred");
+  assert.doesNotThrow(() => assertExecutionPreparationReady(plan));
+
+  assert.throws(() => ensureProjectOpenSpec({
+    root: "/repo", status: missing, prependPath: () => {}, stage: "prove",
+    spawn: () => ({ status: 1, stderr: "registry unreachable" })
+  }), (error) => error.code === "EXECUTION_PREPARATION_FAILED" &&
+    /npm install --prefix \.foundation\/tools/.test(error.details.handoff.command),
+  "Prove keeps preparing OpenSpec with the existing HANDOFF");
+});

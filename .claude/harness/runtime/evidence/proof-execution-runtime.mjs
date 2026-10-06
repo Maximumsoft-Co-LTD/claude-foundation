@@ -86,7 +86,7 @@ export function proofExecutionAdvanceValue(id, options, snapshot, proofRunId, no
     executedProviders: nodes.map((node) => node.provider),
     next: audit.valid ? [{
       kind: "land",
-      command: `claude-foundation land check ${id}`
+      command: `claude-foundation advance ${id} --through archived`
     }] : []
   };
 }
@@ -382,7 +382,7 @@ export function createProofExecutionRuntime({
         next: [{
           kind: "decide-indeterminate-execution",
           reason: "A prior command stopped after reserving provider execution but before proving its receipt. Inspect side effects before retrying.",
-          command: `claude-foundation proof advance ${id} --retry-indeterminate --decision-ref <host-decision-reference>`
+          command: `claude-foundation advance ${id} --through proven`
         }]
       });
       markBlocked(blockedOutcomeStop(outcome));
@@ -849,7 +849,7 @@ export function createProofExecutionRuntime({
         next: [{
           kind: "decide-indeterminate-execution",
           reason: "A prior controller stopped after reserving provider execution but before proving its receipt. Inspect side effects before retrying.",
-          command: `claude-foundation proof advance ${id} --retry-indeterminate --decision-ref <host-decision-reference>`
+          command: `claude-foundation advance ${id} --through proven`
         }]
       });
       return { outcome: stopProofAdvance(outcome) };
@@ -930,7 +930,7 @@ export function createProofExecutionRuntime({
         requests: [],
         executedProviders,
         reused: false,
-        next: [{ kind: "land", command: `claude-foundation land check ${id}` }]
+        next: [{ kind: "land", command: `claude-foundation advance ${id} --through archived` }]
       }));
     }
 

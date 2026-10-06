@@ -19,8 +19,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rules after the user's own, keeps their order (it no longer sorts the list),
   and is idempotent. `--no-permission-allowlist` skips it; the Cursor,
   OpenCode, and Codex adapters pass the flag through.
+- `advance` asks the user on the first observation of a cause only the user can
+  clear (missing or expired credential or token, VPN/proxy/network denial, a
+  reviewer CLI that is not logged in, a full disk, private registry
+  authentication) with the fix and the resume command, instead of letting the
+  agent resume unchanged three or four times.
+- A harness-executed provider that failed and then passes on unchanged content
+  is recorded as a flake (`status: fail`, `flake` evidence) and needs a repair;
+  resuming unchanged no longer turns it into proof.
 
 ### Changed
+
+- The recovery ladder asks after three unchanged rounds (agent repair,
+  `TRY_ALTERNATE_APPROACH`, then a decision with `repetition` evidence). A
+  Build verify that keeps failing with identical output now counts, and budget
+  windows that reopen three times without delivery progress return a
+  `budget-no-progress` decision; changed output or content resets the count.
+- No `advance` route hands the agent a lifecycle primitive: `proof run`,
+  `proof advance`, `land check`, `land advance`, `sandbox sync|create`, and
+  `evidence init` routes are rewritten to `advance <change> --through <target>`.
+  An indeterminate provider run and an amended-agreement conflict are answered
+  through `advance --decision` instead of `proof advance --retry-indeterminate`
+  and `sandbox sync --resolve`.
+- OpenSpec is required only from Prove onward: a missing CLI no longer stops or
+  installs during Build; Prove prepares it with the existing handoff.
+- A grounding readSet that cites an untracked `openspec/investigations/` record
+  no longer blocks sandbox creation, and no portability refusal asks for a
+  commit.
 
 - Change produces a dev document that Build executes and a reviewer reads.
   Every proposal shows a folder tree of touched paths. A rapid proposal adds

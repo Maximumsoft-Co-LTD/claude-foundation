@@ -52,7 +52,7 @@ const BLOCKER_KINDS = Object.freeze([
     code: "workspace-boundary", classification: "workspace",
     pattern: /workspace|sandbox|base move|outside.*scope|undeclared path/i,
     summary: "The isolated workspace or declared write boundary is not ready",
-    recovery: (id) => `claude-foundation sandbox sync ${id}`
+    recovery: (id) => `claude-foundation advance ${id}`
   },
   {
     code: "contract-invalid", classification: "contract",
@@ -72,7 +72,7 @@ const DECLARED_BLOCKER_KINDS = Object.freeze([
   {
     code: "execution-indeterminate", classification: "recovery",
     summary: "Provider execution stopped before its receipt; inspect side effects before retrying",
-    recovery: (id) => `claude-foundation proof advance ${id}`
+    recovery: (id) => `claude-foundation advance ${id} --through proven`
   }
 ]);
 

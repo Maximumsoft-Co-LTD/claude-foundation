@@ -146,7 +146,7 @@ test("changed repair workspace routes to invalidated evidence", () => {
   assert.equal(value.action, "RUN_EXTERNAL");
   assert.equal(value.legacyAction, "RUN_INVALIDATED_EVIDENCE");
   assert.equal(value.boundary, null);
-  assert.equal(value.command, "claude-foundation proof advance change-a");
+  assert.equal(value.command, "claude-foundation advance change-a --through proven");
 });
 
 test("advance returns configured review and user authority boundaries", () => {
@@ -277,7 +277,7 @@ test("advance uses proof readiness hash and does not hash failed infrastructure 
   assert.equal(value.action, "REPAIR");
   assert.equal(value.legacyAction, "REPAIR_PROVIDER_ENVIRONMENT");
   assert.equal(value.command,
-    "claude-foundation sandbox create change-a --all");
+    "claude-foundation advance change-a");
 });
 
 test("a reached target reports the latest AI review's spec gaps without changing the outcome", async () => {
@@ -446,9 +446,10 @@ test("advance preserves exact runtime failures in a repair envelope", () => {
   const value = runtime.advanceValue("change-a");
   assert.equal(value.action, "REPAIR");
   assert.equal(value.legacyAction, "REPAIR_BUILD_RUNTIME");
-  assert.equal(value.reason, reason);
+  assert.equal(value.reason, reason.replace("sandbox create change-a --all", "advance change-a"),
+    "a primitive named in diagnostic text is routed through advance");
   assert.equal(value.command,
-    "claude-foundation sandbox create change-a --all");
+    "claude-foundation advance change-a");
   assert.equal(value.resume, "claude-foundation advance change-a");
 });
 

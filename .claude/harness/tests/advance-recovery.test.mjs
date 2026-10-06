@@ -8,8 +8,10 @@ import { createAdvanceRuntime, advanceFailureAction } from "../runtime/workflow/
 import { manualRecoveryDecision, targetHeadMovedDecision } from "../runtime/workflow/apply-recovery.mjs";
 import { gateDigest } from "../runtime/core/convergent-gate.mjs";
 import {
-  actionableGuidance, automaticRecoveryAction, currentDeliveryProof
+  actionableGuidance, agentSafeRoutes, automaticRecoveryAction, createAdvanceRecovery,
+  currentDeliveryProof, userEnvironmentCause
 } from "../runtime/workflow/advance-recovery.mjs";
+import { userDecisionError } from "../runtime/core/user-decisions.mjs";
 import { lifecycleOutcome } from "../runtime/core/lifecycle-outcome.mjs";
 
 function fixture(overrides = {}) {
@@ -65,7 +67,9 @@ test("typed automatic sync stays harness-owned and arbitrary commands never beco
   assert.equal(value.action, "REPAIR");
   assert.equal(value.owner, "harness");
   assert.equal(value.recovery.type, "AUTO_RECOVER");
-  assert.equal(value.command, "claude-foundation sandbox sync demo");
+  assert.equal(value.command, "claude-foundation advance demo --through archived",
+    "the agent is never handed the sandbox sync primitive; advance performs the sync");
+  assert.equal(value.automaticRecovery.kind, "sandbox-sync");
   const unknown = advanceFailureAction("demo", { decision: {
     kind: "unknown", automaticRecovery: "run-arbitrary-shell", summary: "do something"
   } });
@@ -149,14 +153,15 @@ test("sync conflicts go to the agent first and reach the user only after repeate
 test("repair handoffs persist across process-shaped runtime recreation and require a decision", async () => {
   const f = fixture();
   assert.equal((await f.runtime().advanceThrough("demo", "archived")).action, "REPAIR");
-  assert.equal((await f.runtime().advanceThrough("demo", "archived")).action, "REPAIR");
   const alternate = await f.runtime().advanceThrough("demo", "archived");
   assert.equal(alternate.action, "REPAIR", "the agent tries one different approach before any question");
   assert.equal(alternate.legacyAction, "TRY_ALTERNATE_APPROACH");
   assert.equal(alternate.owner, "agent");
   const stopped = await f.runtime().advanceThrough("demo", "archived");
-  assert.equal(stopped.action, "ASK_USER");
-  assert.equal(stopped.decision.attemptedStrategies[0].observations, 4);
+  assert.equal(stopped.action, "ASK_USER", "the third unchanged round asks the user");
+  assert.equal(stopped.decision.attemptedStrategies[0].observations, 3);
+  assert.equal(stopped.decision.repetition.rounds, 3);
+  assert.match(stopped.decision.repetition.output, /test failed/);
   const calls = f.calls();
   const repeated = await f.runtime().advanceThrough("demo", "archived");
   assert.equal(repeated.decision.fingerprint, stopped.decision.fingerprint);
@@ -185,24 +190,24 @@ test("changing diagnostic text alone cannot reset the no-progress boundary", asy
     throw new Error(`tool unavailable on connection attempt ${++attempt}`);
   } });
   let value;
-  for (let index = 0; index < 4; index++) value = await f.runtime().advanceThrough("demo", "archived");
+  for (let index = 0; index < 3; index++) value = await f.runtime().advanceThrough("demo", "archived");
   assert.equal(value.action, "ASK_USER");
-  assert.match(value.decision.summary, /connection attempt 4/);
-  assert.equal(value.decision.attemptedStrategies[0].observations, 4);
+  assert.match(value.decision.summary, /connection attempt 3/);
+  assert.equal(value.decision.attemptedStrategies[0].observations, 3);
 });
 
 test("repeated setup exceptions survive restart and pause prevents setup writes", async () => {
   let preparations = 0;
   const f = fixture({ prepareBuild: async () => { preparations++; throw new Error("tool unavailable"); } });
   let value;
-  for (let index = 0; index < 4; index++) value = await f.runtime().advanceThrough("demo", "archived");
+  for (let index = 0; index < 3; index++) value = await f.runtime().advanceThrough("demo", "archived");
   assert.equal(value.action, "ASK_USER");
   assert.match(value.decision.summary, /tool unavailable/);
   const paused = await f.runtime().showAdvance("demo", answer(value, "pause"));
   assert.equal(paused.userState, "PAUSED");
   assert.equal(paused.user.decision, undefined, "a recorded pause does not ask the same question again");
   assert.equal((await f.runtime().advanceThrough("demo", "archived")).userState, "PAUSED");
-  assert.equal(preparations, 4);
+  assert.equal(preparations, 3);
 });
 
 test("recovery snapshots after a setup exception stay inside the runtime failure trap", async () => {
@@ -402,7 +407,7 @@ test("separate CLI host processes retain decisions, protect inspection, and resu
     const run = (flags) => JSON.parse(execFileSync(process.execPath, [scriptPath, JSON.stringify(flags)], {
       encoding: "utf8", timeout: 10_000
     }));
-    for (let index = 0; index < 3; index++)
+    for (let index = 0; index < 2; index++)
       assert.equal(run({ through: "archived" }).action, "REPAIR");
     const stopped = run({ through: "archived" });
     assert.equal(stopped.action, "ASK_USER");
@@ -559,7 +564,8 @@ test("runtime failures without an exact command name the field and expected shap
     { details: { field: "evidence.test.minimum", value: 0, expected: "an integer >= 1" } }));
   assert.deepEqual(typed.repairTarget, { field: "evidence.test.minimum", value: 0, expected: "an integer >= 1" });
   const exact = advanceFailureAction("demo", new Error("fix with 'claude-foundation sandbox create demo --all'"));
-  assert.equal(exact.command, "claude-foundation sandbox create demo --all");
+  assert.equal(exact.command, "claude-foundation advance demo",
+    "an exact primitive named by an error is routed through advance");
   assert.equal(exact.instruction, undefined);
   const unknown = advanceFailureAction("demo", new Error("root sandbox unavailable"));
   assert.equal(unknown.repairTarget, null);
@@ -571,7 +577,6 @@ test("proof repair and alternate-approach outcomes carry instructions", async ()
   const first = await f.runtime().advanceThrough("demo", "proven");
   assert.equal(first.legacyAction, "REPAIR_PROOF_RESULT");
   assertActionable(first, "REPAIR_PROOF_RESULT");
-  await f.runtime().advanceThrough("demo", "proven");
   const alternate = await f.runtime().advanceThrough("demo", "proven");
   assert.equal(alternate.legacyAction, "TRY_ALTERNATE_APPROACH");
   assert.match(alternate.instruction, /materially different/);
@@ -654,4 +659,189 @@ test("an automatic apply recovery that cannot finish goes to the agent, not the 
   assert.equal(value.legacyAction, "REPAIR_APPLY_RECOVERY");
   assert.deepEqual(value.details.divergentPaths, ["src/a.js"]);
   assert.match(value.reason, /backup unreadable/);
+});
+
+// --- User-only causes, loop cap, forbidden routes, typed advance decisions ---
+
+const FORBIDDEN = /claude-foundation (?:proof (?:run|advance)|land (?:check|advance)|sandbox sync|sandbox create)/;
+
+test("a cause only the user can clear asks on the first observation with the fix and resume", async () => {
+  const disk = fixture({ prepareBuild: async () => {
+    throw Object.assign(new Error("write failed"), { code: "ENOSPC" });
+  } });
+  const full = await disk.runtime().advanceThrough("demo", "build");
+  assert.equal(full.action, "ASK_USER", "no agent repair rounds for a full disk");
+  assert.equal(full.boundary, "user-environment");
+  assert.equal(full.decision.cause, "disk-full");
+  assert.match(full.decision.fix, /Free disk space/);
+  assert.equal(full.decision.options[0].command, "claude-foundation advance demo --through build");
+  assert.equal(disk.state().advanceRecovery?.attempts?.length || 0, 0, "nothing is counted or pending");
+
+  const login = fixture({ prepareBuild: async () => {
+    throw Object.assign(new Error("reviewer failed"), { details: { handoff: {
+      step: "reviewer", command: "claude -p", log: "Invalid API key · Please run /login" } } });
+  } });
+  const reviewer = await login.runtime().advanceThrough("demo", "proven");
+  assert.equal(reviewer.action, "ASK_USER");
+  assert.equal(reviewer.decision.cause, "reviewer-login");
+  assert.match(reviewer.reason, /claude \/login/);
+  assert.equal(reviewer.resume, "claude-foundation advance demo --through proven");
+
+  const cases = [
+    [{ action: "REPAIR", legacyAction: "REPAIR_BUILD_RUNTIME", reason: "npm ERR! code E401 Unable to authenticate" }, "registry-auth"],
+    [{ action: "REPAIR", legacyAction: "REPAIR_BUILD_RUNTIME", reason: "getaddrinfo ENOTFOUND registry.internal" }, "network"],
+    [{ action: "REPAIR", legacyAction: "REPAIR_PROVIDER_ENVIRONMENT", reason: "GITHUB_TOKEN has expired" }, "credential"],
+    [{ action: "REPAIR", legacyAction: "REPAIR_REVIEW_INFRASTRUCTURE", reason: "reviewer exhausted",
+      requests: [{ infrastructureError: "tunneling socket could not be established, statusCode=407" }] }, "network"]
+  ];
+  for (const [value, cause] of cases) assert.equal(userEnvironmentCause(value)?.cause, cause, value.reason);
+  assert.equal(userEnvironmentCause({ action: "REPAIR", legacyAction: "REPAIR_PROOF_RESULT",
+    reason: "test expected 401 Unauthorized from the login route" }), null,
+  "credential words in failing product output stay a product repair");
+  assert.equal(userEnvironmentCause({ action: "REPAIR", legacyAction: "REPAIR_PROOF_RESULT",
+    reason: "ENOSPC: no space left on device" })?.cause, "disk-full");
+  assert.equal(userEnvironmentCause({ action: "REPAIR", legacyAction: "REPAIR_BUILD_RUNTIME",
+    reason: "tool unavailable on connection attempt 2" }), null);
+});
+
+function recoveryHarness(initial = {}) {
+  let stored = { id: "demo", status: "building", ...initial };
+  let subject = "content-a";
+  const recovery = createAdvanceRecovery({
+    loadRuntime: () => structuredClone(stored),
+    saveRuntime: (state) => { stored = structuredClone(state); },
+    subject: () => subject, now: () => "2026-10-06T00:00:00.000Z"
+  });
+  return { recovery, set: (patch) => { stored = { ...stored, ...patch }; },
+    setSubject: (value) => { subject = value; }, state: () => stored };
+}
+
+test("a Build verify that keeps failing identically is counted; changed output or content resets", () => {
+  const h = recoveryHarness();
+  const edit = (output, ms = 12) => ({ action: "EDIT", changeId: "demo", legacyAction: "EXECUTE_TASK",
+    reason: "implement T001", resume: "claude-foundation advance demo --through build",
+    verificationFailures: [{ taskId: "T001", command: "npm test", exitCode: 1,
+      output: `${output} (${ms}ms) at 2026-10-0${ms % 9}T01:02:03.000Z` }] });
+  assert.equal(h.recovery.observe("demo", edit("expected 2 got 3", 10)).action, "EDIT");
+  const alternate = h.recovery.observe("demo", edit("expected 2 got 3", 31));
+  assert.equal(alternate.legacyAction, "TRY_ALTERNATE_APPROACH", "durations and timestamps are not progress");
+  const asked = h.recovery.observe("demo", edit("expected 2 got 3", 47));
+  assert.equal(asked.action, "ASK_USER");
+  assert.equal(asked.boundary, "repeated-no-progress");
+  assert.equal(asked.decision.repetition.rounds, 3);
+  assert.equal(asked.decision.repetition.verification[0].command, "npm test");
+
+  const changed = recoveryHarness();
+  changed.recovery.observe("demo", edit("expected 2 got 3"));
+  changed.recovery.observe("demo", edit("expected 2 got 3"));
+  assert.equal(changed.recovery.observe("demo", edit("expected 2 got 4")).action, "EDIT",
+    "a different verify output is progress");
+  changed.setSubject("content-b");
+  assert.equal(changed.recovery.observe("demo", edit("expected 2 got 3")).action, "EDIT",
+    "changed content starts a new count");
+  assert.equal(changed.recovery.observe("demo", { action: "EDIT", changeId: "demo", reason: "next task" }).action,
+    "EDIT", "ordinary Build work is never counted");
+});
+
+test("budget windows that keep reopening without progress ask with the evidence; an answer resets the count", () => {
+  const h = recoveryHarness({ budget: { autoContinuation: { count: 1 } } });
+  const working = { action: "EDIT", changeId: "demo", reason: "implement T001",
+    resume: "claude-foundation advance demo --through build" };
+  assert.equal(h.recovery.observe("demo", working).action, "EDIT");
+  h.set({ budget: { autoContinuation: { count: 3, at: "2026-10-06T00:00:00.000Z" } } });
+  assert.equal(h.recovery.observe("demo", working).action, "EDIT", "two reopened windows still continue");
+  h.set({ budget: { autoContinuation: { count: 4, at: "2026-10-06T00:00:00.000Z" } } });
+  const asked = h.recovery.observe("demo", working);
+  assert.equal(asked.action, "ASK_USER");
+  assert.equal(asked.boundary, "budget-no-progress");
+  assert.equal(asked.decision.repetition.rounds, 3);
+  assert.match(asked.decision.options[0].command, /^claude-foundation advance demo --decision retry /);
+  const answer = h.recovery.resolve("demo", { decision: "retry", "decision-fingerprint": asked.decision.fingerprint,
+    "decision-ref": "user:keep-going", reason: "narrow the scope" });
+  assert.equal(answer.through, "build");
+  assert.equal(h.recovery.observe("demo", working).action, "EDIT", "the answer starts a new count");
+
+  const progressed = recoveryHarness({ budget: { autoContinuation: { count: 0 } } });
+  progressed.recovery.observe("demo", working);
+  progressed.setSubject("content-b");
+  progressed.set({ budget: { autoContinuation: { count: 5 } } });
+  assert.equal(progressed.recovery.observe("demo", working).action, "EDIT", "progress resets the baseline");
+});
+
+test("no agent-facing route names a forbidden lifecycle primitive", () => {
+  const routed = agentSafeRoutes({ changeId: "demo", action: "REPAIR",
+    resume: "claude-foundation advance demo --through archived",
+    command: "claude-foundation sandbox sync demo --resolve openspec/changes/demo",
+    reason: "run 'claude-foundation land check demo' after repair",
+    next: [{ kind: "land", command: "claude-foundation land check demo" },
+      { kind: "retry", command: "claude-foundation proof advance demo --retry-indeterminate --decision-ref <ref>" }],
+    decision: { kind: "x", summary: "then 'claude-foundation proof run demo'",
+      options: [{ id: "sync", outcome: "replay: 'claude-foundation sandbox sync demo'" }] } });
+  assert.doesNotMatch(JSON.stringify(routed), FORBIDDEN);
+  assert.equal(routed.command, "claude-foundation advance demo --through archived");
+  assert.equal(routed.next[1].command, "claude-foundation advance demo --through archived");
+  const building = agentSafeRoutes({ changeId: "demo", action: "REPAIR",
+    resume: "claude-foundation advance demo --through build",
+    command: "claude-foundation proof run demo", reason: "rerun 'claude-foundation sandbox sync demo'" });
+  assert.equal(building.command, "claude-foundation advance demo --through proven");
+  assert.match(building.reason, /claude-foundation advance demo --through build/,
+    "a sandbox primitive never widens the route to Land");
+  const inspect = agentSafeRoutes({ changeId: "demo", action: "ASK_USER",
+    command: "claude-foundation land advance demo" });
+  assert.equal(inspect.command, "claude-foundation advance demo --through archived");
+  const authority = agentSafeRoutes({ changeId: "demo", action: "RUN_EXTERNAL",
+    command: "claude-foundation authority run demo --request r1 --subject-actor a" });
+  assert.equal(authority.command, "claude-foundation authority run demo --request r1 --subject-actor a",
+    "harness-runnable reviewer routes are unchanged");
+});
+
+test("an indeterminate provider run is a recorded advance decision whose retry reaches the proof run", async () => {
+  const flags = [];
+  let indeterminate = true;
+  const f = fixture({ runProof: async (_id, received) => {
+    flags.push(received || null);
+    if (indeterminate) return { status: "ACTION_REQUIRED", stage: "execution-indeterminate",
+      providers: ["test"], next: [{ kind: "decide-indeterminate-execution",
+        reason: "A prior controller stopped after reserving provider execution.",
+        command: "claude-foundation advance demo --through proven" }] };
+    f.setState({ status: "proven" });
+    return { status: "PASS" };
+  } });
+  const asked = await f.runtime().advanceThrough("demo", "proven");
+  assert.equal(asked.action, "ASK_USER");
+  assert.equal(asked.legacyAction, "DECIDE_INDETERMINATE_EXECUTION");
+  assert.doesNotMatch(JSON.stringify(asked), FORBIDDEN);
+  assert.match(asked.decision.options.find((row) => row.id === "retry").command,
+    /^claude-foundation advance demo --decision retry --decision-fingerprint /);
+  assert.equal((await f.runtime().advanceThrough("demo", "proven")).decision.fingerprint,
+    asked.decision.fingerprint, "the question stays pending until answered");
+  assert.equal(flags.length, 1, "a pending decision never re-runs provider side effects");
+  indeterminate = false;
+  const done = await f.runtime().showAdvance("demo", { decision: "retry",
+    "decision-fingerprint": asked.decision.fingerprint, "decision-ref": "user:inspected",
+    reason: "side effects inspected" });
+  assert.equal(done.reached, "proven");
+  assert.deepEqual(flags.at(-1), { "retry-indeterminate": true, "decision-ref": "user:inspected" });
+});
+
+test("an amended-agreement conflict is answered through advance and resolves the sync, never sandbox sync", async () => {
+  const synchronized = [];
+  let conflict = true;
+  const f = fixture({
+    prepareBuild: async () => {
+      if (conflict) throw userDecisionError("AMENDED_AGREEMENT_CONFLICT", "The target agreement changed.", [
+        { id: "merge", outcome: "Merge, approve, then synchronize.", command: "claude-foundation sandbox sync demo --resolve openspec/changes/demo" },
+        { id: "retain", outcome: "Keep the isolated agreement.", command: "claude-foundation sandbox sync demo --resolve openspec/changes/demo" },
+        { id: "pause", outcome: "Pause." }], "merge");
+    },
+    synchronizeAgreement: async (id, flags) => { synchronized.push([id, flags]); conflict = false; return true; }
+  });
+  const asked = await f.runtime().advanceThrough("demo", "build");
+  assert.equal(asked.action, "ASK_USER");
+  assert.equal(asked.legacyAction, "RESOLVE_AGREEMENT_CONFLICT");
+  assert.doesNotMatch(JSON.stringify(asked), FORBIDDEN);
+  assert.deepEqual(asked.decision.options.map((row) => row.id), ["merge", "retain", "pause"]);
+  await f.runtime().showAdvance("demo", { decision: "retain",
+    "decision-fingerprint": asked.decision.fingerprint, "decision-ref": "user:retain", reason: "keep isolated" });
+  assert.deepEqual(synchronized[0], ["demo", { resolve: "openspec/changes/demo" }]);
 });
