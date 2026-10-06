@@ -369,12 +369,13 @@ metrics, and no-progress state, and return one owner-tagged action with an exact
 resume route. It SHALL keep product code read-only and emit a digest-bound
 handoff only from a source-current `ready-for-change` conclusion.
 
-#### Scenario: Investigation discovers an unacknowledged source
+#### Scenario: Investigation discovers an undeclared source
 
 - **WHEN** repository discovery selects a relevant path absent from the record's
-  acknowledged sources
-- **THEN** the harness returns agent-owned source interpretation and cannot
-  report the investigation complete
+  declared sources
+- **THEN** the harness acknowledges and hashes it automatically, still requires
+  every fact to cite an inventoried source, and lists discoveries no fact cites
+  in the report
 
 #### Scenario: Change consumes an investigation conclusion
 
@@ -386,7 +387,9 @@ handoff only from a source-current `ready-for-change` conclusion.
 
 - **WHEN** the same unresolved evidence and action recur three times
 - **THEN** the harness records a no-progress boundary while preserving the exact
-  record command needed to resume after new evidence or a decision
+  record command needed to resume after new evidence or a decision, asking the
+  user only when the repeated action was a user question and routing sandbox or
+  discovery failures to the harness and other stalls to the agent
 
 ### Requirement: One Decision Sheet grounds operated service boundaries
 

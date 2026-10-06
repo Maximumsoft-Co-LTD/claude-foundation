@@ -58,7 +58,12 @@ Agent เริ่มจาก `claude-foundation investigate --template` เก
 <record.json>` หลังอ่านหลักฐานแต่ละ batch Harness จะค้นและ hash source ที่
 เกี่ยวข้อง ตรวจ link ของ fact, hypothesis และ recommendation เก็บ metrics กับ
 no-progress state แล้วคืน `EDIT`, `ASK_USER` หรือ `DONE` พร้อม resume route
-source ใหม่ที่ค้นพบต้องถูกอ่านและยืนยันใน record ก่อนจบ
+source ใหม่ที่ค้นพบจะถูกยืนยันโดยอัตโนมัติและยังถูก hash เพื่อตรวจความสดใหม่
+ทุก fact ต้องอ้าง source ที่อยู่ใน inventory และรายงานจะแสดง source ที่ค้นพบแต่ยัง
+ไม่มี fact อ้างอิง decision ที่ยังเปิดอยู่ทำให้ข้อสรุปเป็น `needs user decision`
+และ record ที่สรุปครบพร้อม change intent จบได้ในรอบเดียว เมื่อไม่คืบหน้าซ้ำ
+ระบบจะถามผู้ใช้เฉพาะเมื่อขั้นตอนที่ซ้ำคือคำถามถึงผู้ใช้ ส่วนปัญหาของ sandbox
+หรือการค้นหา source จะส่งให้ harness
 
 แต่ละ batch สร้างรายงานที่อ่านได้ที่ `openspec/investigations/<id>.report.md`
 แสดงข้อสรุป เหตุผล แหล่งอ้างอิง สมมติฐานที่ทดสอบ ทางเลือก สิ่งที่ยังไม่รู้ และ

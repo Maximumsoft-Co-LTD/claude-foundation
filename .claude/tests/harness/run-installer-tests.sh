@@ -147,17 +147,7 @@ printf '%s\n' '{
 }' > "$TARGET/openspec/investigations/retry-boundary.json"
 investigation_result="$(bash "$ROOT/cli.sh" --project "$TARGET" investigate \
   openspec/investigations/retry-boundary.json)"
-if printf '%s' "$investigation_result" | jq -e '.action == "EDIT" and .investigation.kind == "inspect-sources"' >/dev/null; then
-  printf '%s' "$investigation_result" | jq -r '.investigation.paths[]' > "$TMP/investigation-sources.txt"
-  jq --rawfile paths "$TMP/investigation-sources.txt" \
-    '.sources = ((.sources + ($paths | split("\n") | map(select(length > 0)))) | unique)' \
-    "$TARGET/openspec/investigations/retry-boundary.json" \
-    > "$TMP/investigation-record.json"
-  mv "$TMP/investigation-record.json" \
-    "$TARGET/openspec/investigations/retry-boundary.json"
-  investigation_result="$(bash "$ROOT/cli.sh" --project "$TARGET" investigate \
-    openspec/investigations/retry-boundary.json)"
-fi
+# Discovered sources are acknowledged automatically: one run reaches DONE.
 assert_contains "public investigate reaches a harness-owned terminal action" \
   "$investigation_result" '"action": "DONE"'
 assert_contains "public investigate emits a Change-bound handoff" \

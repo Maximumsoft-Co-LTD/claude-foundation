@@ -54,7 +54,8 @@ const labels = {
     updated: "Updated", evidence: "Evidence", rejected: "Not selected", choice: "Choice",
     open: "Open", supported: "Supported", falsified: "Falsified", resolved: "Resolved",
     research: "Continue investigating", user: "User decision required", findings: "Findings",
-    tradeoffs: "Tradeoffs", prototype: "Prototype (not proof)"
+    tradeoffs: "Tradeoffs", prototype: "Prototype (not proof)",
+    unread: "Discovered sources not cited by a fact (hashed, not yet read)"
   },
   th: {
     title: "รายงานการสำรวจปัญหา", status: "สถานะ", current: "ข้อสรุปปัจจุบัน",
@@ -68,7 +69,8 @@ const labels = {
     updated: "อัปเดต", evidence: "หลักฐาน", rejected: "ไม่เลือก", choice: "ตัวเลือก",
     open: "ยังไม่สรุป", supported: "มีหลักฐานสนับสนุน", falsified: "มีหลักฐานหักล้าง", resolved: "ตัดสินใจแล้ว",
     research: "ต้องสำรวจต่อ", user: "ต้องการการตัดสินใจจากผู้ใช้", findings: "ข้อค้นพบ",
-    tradeoffs: "ข้อแลกเปลี่ยน", prototype: "ต้นแบบ (ไม่ใช่หลักฐานพิสูจน์)"
+    tradeoffs: "ข้อแลกเปลี่ยน", prototype: "ต้นแบบ (ไม่ใช่หลักฐานพิสูจน์)",
+    unread: "แหล่งที่ค้นพบแต่ยังไม่มีข้อเท็จจริงอ้างอิง (hash แล้ว ยังไม่ได้อ่าน)"
   }
 };
 
@@ -116,10 +118,11 @@ export function renderInvestigationReport({ record, state, projectRoot, sourceRo
     ...rows(state.hypotheses).filter((row) => row.status === "open").map((row) => escape(row.statement)),
     ...rows(state.action.investigation?.issues).map(escape),
     ...rows(validationIssues).filter((issue) => !rows(state.action.investigation?.issues).includes(issue)).map(escape),
-    ...rows(state.action.investigation?.paths).map(link),
     ...rows(state.decisions).filter((row) => row.status === "open").map((row) => escape(row.question))
   ]));
   output += section(l.sources, list(rows(state.sourceInventory?.sources).map((row) => link(row.path))));
+  if (rows(state.repository?.unreadSources).length)
+    output += section(l.unread, list(rows(state.repository.unreadSources).map(link)));
   const next = complete ? state.conclusion?.status === "ready-for-change" ? l.ready
     : state.conclusion?.status === "not-worth-changing" ? l.noChange : l.user
     : state.action.action === "ASK_USER" ? l.user : l.research;

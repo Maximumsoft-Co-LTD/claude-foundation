@@ -51,8 +51,15 @@ and read-only with respect to product code. `investigate --template` defines a
 versioned fact, hypothesis, option, decision, and conclusion record. Running
 `investigate <record.json>` discovers and hashes repository sources, persists a
 machine-owned resumable state with compact metrics, and returns one typed
-agent, user, or harness action. Three unchanged attempts expose a no-progress
-boundary without discarding the exact resume route.
+agent, user, or harness action. Discovered sources are acknowledged
+automatically and stay hashed for freshness; facts and options must cite an
+inventoried source, and discoveries no fact cites are listed in the report.
+Open decisions derive `conclusion.status: needs-user-decision`; a settled
+record with `changeIntent` concludes as `ready-for-change` in the same run, and
+explicit legacy statuses stay accepted. Three unchanged attempts expose a
+no-progress boundary without discarding the exact resume route: it reaches the
+user only when the repeated action was a user question, a sandbox or discovery
+failure goes to the harness, and any other stall returns to the agent.
 
 Each inspection also generates `openspec/investigations/<id>.report.md` from the
 validated state: conclusion, recommendation/reasons, facts and source links,

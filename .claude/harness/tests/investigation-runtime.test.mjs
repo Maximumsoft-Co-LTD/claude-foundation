@@ -260,18 +260,60 @@ test("an active-change investigation reads and binds the isolated Build sandbox"
   assert.deepEqual(value.readJson(join(value.root, blocked.state.path)).repository.selectedSources, []);
 });
 
-test("new repository sources require an agent acknowledgement before DONE", (t) => {
+test("discovered sources are acknowledged automatically, hashed, and listed as unread", (t) => {
   const value = fixture(t);
   writeFileSync(join(value.root, "second.md"),
     "A retry can overwrite a newer revision without a version check.\n");
-  writeFileSync(value.recordPath, `${JSON.stringify(value.record, null, 2)}\n`);
+  const result = quiet(() => value.runtime.inspectInvestigation(
+    "openspec/investigations/retry-race.json"));
+  assert.equal(result.action, "DONE");
+  assert.notEqual(result.handoff, null);
+  const state = value.readJson(join(value.root, result.state.path));
+  assert.ok(state.sourceInventory.sources.some((row) => row.path === "second.md"));
+  assert.deepEqual(state.repository.unreadSources, ["second.md"]);
+  const report = readFileSync(join(value.root, result.report.path), "utf8");
+  assert.match(report, /## Discovered sources not cited by a fact[^\n]*\n\n- \[second\.md\]/);
+  // An auto-acknowledged discovery is still freshness-bound.
+  writeFileSync(join(value.root, "second.md"), "A retry changed after the handoff.\n");
+  assert.match(validateInvestigationBinding({
+    projectRoot: value.root, binding: result.handoff
+  }).join("\n"), /sources changed|discovery is stale/);
+});
+
+test("facts must cite an inventoried source", (t) => {
+  const value = fixture(t);
+  writeFileSync(join(value.root, "unrelated.txt"), "zzz\n");
+  value.record.facts[0].sources = ["unrelated.txt"];
+  writeFileSync(value.recordPath, JSON.stringify(value.record));
   const result = quiet(() => value.runtime.inspectInvestigation(
     "openspec/investigations/retry-race.json"));
   assert.equal(result.action, "EDIT");
-  assert.equal(result.owner, "agent");
-  assert.equal(result.investigation.kind, "inspect-sources");
-  assert.ok(result.investigation.paths.includes("second.md"));
-  assert.equal(result.handoff, null);
+  assert.match(result.investigation.issues.join("\n"),
+    /fact 'latest-revision' cites source 'unrelated\.txt' outside the investigation inventory/);
+});
+
+test("conclusion status is derived: open decisions ask the user and a settled record concludes in one run", (t) => {
+  const value = fixture(t);
+  delete value.record.conclusion.status;
+  value.record.decisions = [{ key: "policy", status: "open", question: "Which policy?",
+    alternatives: ["strict", "compatible"], recommended: "strict",
+    recommendationFactKeys: ["latest-revision"] }];
+  writeFileSync(value.recordPath, JSON.stringify(value.record));
+  const asked = quiet(() => value.runtime.inspectInvestigation("openspec/investigations/retry-race.json"));
+  assert.equal(asked.action, "ASK_USER");
+  assert.equal(value.readJson(join(value.root, asked.state.path)).conclusion.status,
+    "needs-user-decision");
+  value.record.decisions = [{ key: "policy", status: "resolved", choice: "strict",
+    reason: "User chose strict." }];
+  writeFileSync(value.recordPath, JSON.stringify(value.record));
+  const done = quiet(() => value.runtime.inspectInvestigation("openspec/investigations/retry-race.json"));
+  assert.equal(done.action, "DONE");
+  assert.equal(done.handoff.outcome, "ready-for-change");
+  assert.deepEqual(validateInvestigationBinding({ projectRoot: value.root, binding: done.handoff }), []);
+  value.record.conclusion.status = "concluded";
+  writeFileSync(value.recordPath, JSON.stringify(value.record));
+  const invalid = quiet(() => value.runtime.inspectInvestigation("openspec/investigations/retry-race.json"));
+  assert.match(invalid.investigation.issues.join("\n"), /conclusion\.status must be/);
 });
 
 test("blocked repository discovery short-circuits source inventory reads", (t) => {
@@ -371,10 +413,40 @@ test("repeated unchanged work records a bounded no-progress recovery route", (t)
   assert.equal(result.noProgress.count, 3);
   assert.equal(result.noProgress.boundaryReached, true);
   assert.equal(result.noProgress.resume, route);
+  assert.equal(result.action, "EDIT");
+  assert.equal(result.owner, "agent");
+  assert.equal(result.boundary, "repeated-no-progress");
+  assert.equal(result.investigation.kind, "change-strategy");
+  assert.equal(result.investigation.repeated.kind, "test-hypotheses");
+});
+
+test("repeated no-progress from a missing sandbox goes to the harness, not the user", (t) => {
+  const value = fixture(t);
+  value.record.activeChange = "missing-change";
+  writeFileSync(value.recordPath, JSON.stringify(value.record));
+  let result;
+  for (let attempt = 0; attempt < 3; attempt += 1)
+    result = quiet(() => value.runtime.inspectInvestigation("openspec/investigations/retry-race.json"));
+  assert.equal(result.noProgress.boundaryReached, true);
+  assert.equal(result.action, "EDIT");
+  assert.equal(result.owner, "harness");
+  assert.equal(result.investigation.kind, "repair-harness");
+  assert.match(result.investigation.issues.join("\n"), /runtime state is missing/);
+});
+
+test("repeated no-progress asks the user only when the repeated action was a user question", (t) => {
+  const value = fixture(t);
+  value.record.decisions = [{ key: "policy", status: "open", question: "Which policy?",
+    alternatives: ["strict", "compatible"], recommended: "strict",
+    recommendationFactKeys: ["latest-revision"] }];
+  writeFileSync(value.recordPath, JSON.stringify(value.record));
+  let result;
+  for (let attempt = 0; attempt < 3; attempt += 1)
+    result = quiet(() => value.runtime.inspectInvestigation("openspec/investigations/retry-race.json"));
   assert.equal(result.action, "ASK_USER");
   assert.equal(result.owner, "user");
   assert.equal(result.boundary, "repeated-no-progress");
-  assert.equal(result.decision.kind, "repair-no-progress");
+  assert.equal(result.decision.items[0].key, "policy");
 });
 
 test("comparison requires grounded options, a selection, and bounded prototype paths", (t) => {
