@@ -431,8 +431,24 @@ console.log("review-guard-reconciliation: all cases passed");
   }), [], "the automatic reset is spent once per wave");
   assert.throws(() => world.dispatchAi(5, {
     mode: "full", paths: ["root/a.mjs"], digest: "scope-5"
-  }), /REVIEW_INFRASTRUCTURE_ERROR.*authority reset-infra/);
-  world.store.acknowledgeInfrastructureAttempts(id, "user-decision");
+  }), (error) => {
+    assert.match(error.message, /REVIEW_INFRASTRUCTURE_ERROR/);
+    assert.doesNotMatch(error.message, /authority reset-infra|user's decision/,
+      "reviewer repair is never routed through a user decision");
+    return true;
+  });
+  // The owner repairs the reviewer: a changed configuration earns its own
+  // reset, while the same configuration stays bounded to once per wave.
+  assert.deepEqual(world.store.autoReleaseReviewBudget(id, {
+    reviewerHealthy: () => true, reviewerIdentity: "config-a"
+  }), ["harness:infra:wave-1:config-a"]);
+  exhaust(7);
+  assert.deepEqual(world.store.autoReleaseReviewBudget(id, {
+    reviewerHealthy: () => true, reviewerIdentity: "config-a"
+  }), [], "the same repaired configuration resets once per wave");
+  assert.deepEqual(world.store.autoReleaseReviewBudget(id, {
+    reviewerHealthy: () => true, reviewerIdentity: "config-b"
+  }), ["harness:infra:wave-1:config-b"]);
 
   const passed = world.dispatchAi(6, {
     mode: "full", paths: ["root/a.mjs"], digest: "scope-6"

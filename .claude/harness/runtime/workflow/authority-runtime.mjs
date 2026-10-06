@@ -698,7 +698,8 @@ export function createAuthorityRuntime({
   function releaseHarnessReviewBudget(id) {
     const released = autoReleaseReviewBudget(id, {
       maxInfrastructureRetries: reviewInfrastructureRetryLimit(),
-      reviewerHealthy: () => reviewerStatus(null).ok === true
+      reviewerHealthy: () => reviewerStatus(null).ok === true,
+      reviewerIdentity: stableHash(foundationPolicy().review || {}).slice(0, 12)
     });
     const infrastructure = released.find((reference) => reference.startsWith("harness:infra:"));
     if (infrastructure) for (const entry of authorityStore.list(id)) {
