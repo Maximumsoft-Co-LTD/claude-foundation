@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   normalizeSemanticDraft, renderRequirementMarkdown, renderSpecHeading
 } from "./semantic-draft.mjs";
+import { coverageRationale, coverageStatus } from "./validation/reader-guide.mjs";
 
 const stringList = (value) => Array.isArray(value)
   ? value.map((item) => String(item || "").trim()).filter(Boolean) : [];
@@ -568,10 +569,10 @@ export function writeSemanticAmendment(dir, compiled, slugify, { schema } = {}) 
   const proposalPath = join(dir, "proposal.md");
   if (compiled.discovery?.coverage?.length && existsSync(proposalPath)) {
     const rows = compiled.discovery.coverage.map((row) =>
-      `| ${markdownCell(row.dimension)} | ${markdownCell(row.status)} | ` +
+      `| ${markdownCell(row.dimension)} | ${markdownCell(coverageStatus(row))} | ` +
       `${markdownCell((row.covers || []).join(", ") || "none")} | ` +
       `${markdownCell((row.sources || []).join(", ") || "none")} | ` +
-      `${markdownCell(row.rationale || "none")} |`
+      `${markdownCell(coverageRationale(row) || "none")} |`
     ).join("\n");
     const section = `\n\n## Amendment discovery coverage\n\n` +
       `Reason: ${markdownCell(compiled.amendmentReason)}\n\n` +

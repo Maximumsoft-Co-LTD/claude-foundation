@@ -48,7 +48,8 @@ import {
   designBlueprintWarnings, draftHasBlueprints, renderDesignBlueprints
 } from "./validation/design-blueprints.mjs";
 import {
-  derivedFileMap, derivedTestMap, renderComponentMap, renderFolderTree, renderPlan, renderUserFlow
+  derivedFailureMatrix, derivedFileMap, derivedTestMap, renderComponentMap, renderFolderTree,
+  renderPlan, renderUserFlow
 } from "./validation/dev-document.mjs";
 import { targetEditDigest, targetEditPaths } from "./target-edits.mjs";
 import {
@@ -372,7 +373,7 @@ export function renderDraftProposal(draft, state) {
   // failures, plan for Build) lives here.
   const compact = rapid && [3, 4].includes(draft._semanticVersion);
   const flow = compact ? section(renderUserFlow(draft)) : "";
-  const plan = compact ? section(renderDesignBlueprints({ failureMatrix: draft.failureMatrix })) +
+  const plan = compact ? section(renderDesignBlueprints({ failureMatrix: derivedFailureMatrix(draft) })) +
     section(renderPlan(draft)) : "";
   return `# Change: ${title}` + section(renderProposalLead(draft)) +
     (why ? `\n\n## Why\n\n${why}` : "") + section(renderProposalReader(draft)) + flow +
@@ -434,11 +435,11 @@ export function renderDraftDesign(draft) {
     `| ${integration.key} | ${integration.kind} | ${integration.documentation?.source} | ` +
     `${integration.documentation?.version} | ${(integration.concerns || []).join(", ") || "none"} |`
   );
-  // File and test maps fall back to what the tasks already say, so a reader
-  // and Build always see where code lands and how each step is proven.
+  // File and test maps fall back to what the tasks already say, and the
+  // failure matrix to the failure scenarios, so each fact is written once.
   const blueprints = renderDesignBlueprints({
     ...draft, fileMap: fileMapWithTasks(derivedFileMap(draft), draft.tasks),
-    testMap: derivedTestMap(draft)
+    testMap: derivedTestMap(draft), failureMatrix: derivedFailureMatrix(draft)
   });
   const sections = [
     meaningful(draft.currentState) ? `## Current state\n\n${draft.currentState}` : "",

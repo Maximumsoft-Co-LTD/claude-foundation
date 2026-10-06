@@ -12,8 +12,7 @@ requirements, relevant code/tests, architecture decisions, prototype selection,
 and versioned integration documentation. Reuse settled answers without asking them again.
 Read [semantic-intake.md](semantic-intake.md) when the draft declares
 `impact: high`, `riskSignals`, integrations, or external operations, or inspect
-returns discovery rows or `ASK_USER`; follow its ownership, frontier, and
-coverage rules.
+returns discovery rows or `ASK_USER`.
 
 ## Agreement detail and language
 
@@ -42,26 +41,26 @@ canonical sources and the user's settled intent:
   `name`, state or configuration in `given`, one trigger in `when`, one checkable
   result in `then`, extra results in `and`. Cover the main path and relevant
   failure, boundary, permission, or compatibility cases, never "works correctly"
-  or an implementation step.
+  or an implementation step; mark `kind` `success`, `failure`, or `boundary`.
 - Tasks name outcomes and affected paths, link requirement coverage, and name
   verification that can detect a violation; a command run alone is not acceptance.
-- Optional `summary`, `userStories` (P1-P3, `covers`), `successCriteria`, and
+- Optional `userStories` (P1-P3, `covers`), `successCriteria`, and
   `assumptions` help reviewers; `openQuestions` block approval until answered.
   Record each settled answer as a resolved `discovery.decisions` row with
   `decidedBy`. Resolve discoverable facts yourself; never invent facts.
 
-Scale detail to behavior and risk, not word count or scenario count.
+Scale detail to behavior and risk, not length.
 Cross-component changes need a boundary/dependency diagram; changed state,
 async, or workflow behavior needs transitions or sequence, including
 failure/recovery paths.
 The packet is the dev document Build executes. The harness infers `workType`
-from task `paths` and derives folder tree, plan, file and test maps. A
-standard draft authors `summary` and, except docs/chore, `failureMatrix` plus
-per type: feature `userFlow` (Mermaid); ui `userFlow`, `uiStates`,
-`componentMap`; api `apiContracts`; data `dataModel`; config
-`configContract`; async `jobContract` and a sequence diagram; bugfix/refactor
-their objects. Compile issues name what is missing. Keep `fileMap` paths and
-task tests inside task `paths`.
+from task `paths` and derives folder tree, plan, file and test maps, and the
+failure matrix from `failure` scenarios (optional `recovery`). A standard draft
+authors `why` (or `summary`) and, except docs/chore, failures plus per type:
+feature `userFlow` (Mermaid); ui `userFlow`, `uiStates`, `componentMap`; api
+`apiContracts`; data `dataModel`; config `configContract`; async `jobContract`
+and a sequence diagram; bugfix/refactor their objects. Keep `fileMap` paths
+and task tests inside task `paths`.
 
 ## Compile and inspect
 

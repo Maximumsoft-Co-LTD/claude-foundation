@@ -80,8 +80,9 @@ export function readerGuideWarnings(draft) {
   const warnings = [];
   // A small rapid-lane change needs no reader scaffolding prompts.
   const light = lightweightDraft(draft);
-  if (!light && !text(draft.summary))
-    warnings.push("add a plain-language 'summary' (1-3 sentences) so a reviewer understands the change quickly");
+  // 'why' already gives the reader the lead; a summary would repeat it.
+  if (!light && !text(draft.summary) && !text(draft.why))
+    warnings.push("add a plain-language 'why' or 'summary' (1-3 sentences) so a reviewer understands the change quickly");
   if (!light && (!Array.isArray(draft.userStories) || !draft.userStories.length))
     warnings.push("add prioritized 'userStories' (P1-P3) that name who benefits and link requirement keys");
   if (!light && (!Array.isArray(draft.successCriteria) || !draft.successCriteria.length))
@@ -174,9 +175,20 @@ export function renderDiscoveryAppendix(draft) {
   if (!coverage.length) return "";
   return "## Appendix: discovery coverage\n\n" +
     "| Dimension | Status | Requirements | Sources | Rationale |\n|---|---|---|---|---|\n" +
-    coverage.map((row) => `| ${cell(row.dimension)} | ${cell(row.status)} | ` +
+    coverage.map((row) => `| ${cell(row.dimension)} | ${cell(coverageStatus(row))} | ` +
       `${cell(previewList(row.covers || []))} | ${cell(previewList(row.sources || []))} | ` +
-      `${cell(row.rationale && row.rationale !== "none" ? row.rationale : "")} |`).join("\n");
+      `${cell(coverageRationale(row))} |`).join("\n");
+}
+
+// A row the harness derived from draft content says so and names that content,
+// so a reviewer can tell it from a row the agent wrote.
+export function coverageStatus(row) {
+  return row?.derived ? `${row.status} (derived)` : row?.status;
+}
+
+export function coverageRationale(row) {
+  if (row?.derived) return `Derived from ${strings(row.derivedFrom).join(", ")}`;
+  return row?.rationale && row.rationale !== "none" ? row.rationale : "";
 }
 
 export function renderInvestigationSummary(investigation) {

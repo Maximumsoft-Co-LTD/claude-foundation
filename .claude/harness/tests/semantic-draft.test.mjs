@@ -380,6 +380,14 @@ test("semantic template is compact and delegates bookkeeping", () => {
   assert.equal(template.grounding, undefined);
   assert.ok(template.discovery.coverage.length);
   assert.ok(template.discovery.coverage.some((row) => row.status === "needs-investigation"));
+  // The template asks only for coverage its own content cannot imply, and
+  // writes failures once, as scenarios, instead of a parallel matrix.
+  const dimensions = template.discovery.coverage.map((row) => row.dimension);
+  for (const derived of ["affected-actor", "desired-behavior", "success-path", "failure-path",
+    "verification"]) assert.ok(!dimensions.includes(derived), derived);
+  assert.equal(template.failureMatrix, undefined);
+  assert.equal(template.summary, undefined);
+  assert.deepEqual(template.requirements[0].scenarios.map((row) => row.kind), ["success", "failure"]);
 });
 
 test("semantic materialization omits virtual-default files and writes typed extensions", (t) => {

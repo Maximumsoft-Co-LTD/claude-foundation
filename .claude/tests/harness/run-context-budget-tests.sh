@@ -310,7 +310,7 @@ assert_cmd_zero "atomic draft template stays semantic and minimal" \
   sh -c 'node "$1" start --template | jq -e '\''
     .version == 4 and (.requirements | length) == 1 and
     (.tasks[0].covers | length) == 1 and (.evidence | type) == "object" and
-    (.discovery.coverage | length) == 9 and
+    (.discovery.coverage | length) == 4 and
     (has("domainLanguage") | not) and (has("execution") | not)'\'' >/dev/null' \
   sh "$ROOT/.claude/harness/foundation.mjs"
 assert_file_contains "fundamentals records decision answers in the change packet" \

@@ -74,6 +74,7 @@ The full core stays small:
     "outcome": "Unrelated mutations remain available",
     "scenarios": [{
       "name": "Orphaned row",
+      "kind": "success",
       "given": "a phase row belongs to an archived change",
       "when": "another change edits a product file",
       "then": "the edit is allowed"
@@ -92,14 +93,7 @@ The full core stays small:
   "discovery": {
     "coverage": [
       { "dimension": "current-behavior", "status": "covered", "sources": ["src/mutations.js"] },
-      { "dimension": "affected-actor", "status": "covered", "covers": ["orphan-row-does-not-lock"] },
-      { "dimension": "desired-behavior", "status": "covered", "covers": ["orphan-row-does-not-lock"] },
-      { "dimension": "success-path", "status": "covered", "covers": ["orphan-row-does-not-lock"] },
-      { "dimension": "failure-path", "status": "covered", "covers": ["orphan-row-does-not-lock"] },
-      { "dimension": "input-boundary", "status": "covered", "covers": ["orphan-row-does-not-lock"] },
-      { "dimension": "compatibility", "status": "not-applicable", "rationale": "No public contract changes." },
-      { "dimension": "non-goals", "status": "not-applicable", "rationale": "The behavior is already narrowly bounded." },
-      { "dimension": "verification", "status": "covered", "covers": ["orphan-row-does-not-lock"] }
+      { "dimension": "compatibility", "status": "not-applicable", "rationale": "No public contract changes." }
     ],
     "decisions": []
   }
@@ -110,7 +104,14 @@ The agent uses meaningful keys. Discovery coverage is optional for an ordinary
 change: `impact: high` and typed risk declarations (`riskSignals`, security
 triggers, integrations, external operations) add required dimensions, prose is
 never scanned for keywords, and a risk-derived `not-applicable` row needs only
-a rationale. The harness refuses unresolved investigation or user-decision statuses, checks
+a rationale. A required dimension the draft already states needs no row: the
+harness derives a `covered` row, marked derived in the proposal appendix, from
+`currentState`, `userStories`, requirements, scenario `kind` (`success`,
+`failure`, `boundary`), `compatibility`, `nonGoals`, tasks with `verify` and
+evidence, `failureMatrix`, `apiContracts`, `dataModel`, `uiStates`,
+`jobContract`, or documented `integrations`. Without such content the
+dimension stays missing, and an authored row always wins, so a
+`needs-user-decision` row is still asked. The harness refuses unresolved investigation or user-decision statuses, checks
 decision prerequisite cycles, and exposes at most three dependency-ready
 decisions at a time. The compiler creates stable claim/task IDs,
 spec-to-claim-to-task-to-provider links, classification, and versioned defaults.
@@ -160,6 +161,10 @@ Add complexity only when the work needs it:
   task paths (declare it to override) and derives the folder tree, plan, file
   map, and test map. A standard change must carry the sections its work type
   needs; a missing one is a draft repair for the agent, never a user question.
+  Each fact is written once: `why` satisfies the summary (add `summary` only
+  for more), and without an authored `failureMatrix` the scenarios with
+  `"kind": "failure"` become its rows, with an optional scenario `recovery`
+  for the recovery column.
   A task whose own tests sit outside its `paths` is a design warning
 - `decisions` for load-bearing choices, each with its consequences
 - Mermaid or referenced SVG/PNG `diagrams`

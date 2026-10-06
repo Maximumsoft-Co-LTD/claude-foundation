@@ -1190,8 +1190,7 @@ export function semanticDraftTemplate() {
   return {
     version: 4,
     intent: "Describe one observable outcome",
-    summary: "Say in 1-3 plain sentences what changes and who benefits",
-    why: "Explain the concrete user or system value",
+    why: "Say in 1-3 plain sentences what changes, who benefits, and why",
     userStories: [{
       priority: "P1", asA: "a named user", iWant: "the observable outcome",
       soThat: "the benefit", covers: ["observable-outcome"]
@@ -1204,10 +1203,6 @@ export function semanticDraftTemplate() {
       purpose: "The user's path through the change, including the error path",
       source: "flowchart LR\n  A[User acts] --> B{Valid?}\n  B -->|yes| C[Result shown]\n  B -->|no| D[Error shown]"
     },
-    failureMatrix: [{
-      failure: "Name one way this can fail", userSees: "What the user sees",
-      recovery: "How the user or system recovers"
-    }],
     requirements: [{
       key: "observable-outcome",
       capability: "change",
@@ -1216,10 +1211,17 @@ export function semanticDraftTemplate() {
       outcome: "Describe the observable result",
       scenarios: [{
         name: "Short scenario title",
+        kind: "success",
         given: "The precondition or state before the trigger",
         when: "One triggering input or event",
         then: "One observable result",
         and: ["Another result of the same case, if any"]
+      }, {
+        name: "One way it fails",
+        kind: "failure",
+        when: "The failing input or event",
+        then: "What the user sees",
+        recovery: "How the user or system recovers"
       }]
     }],
     tasks: [{
@@ -1233,16 +1235,14 @@ export function semanticDraftTemplate() {
       "observable-outcome": { capabilities: ["test"] }
     },
     discovery: {
+      // Rows only for what the draft cannot state: affected actor, desired,
+      // success, failure, and verification coverage derive from userStories,
+      // requirements, scenario kinds, and tasks with evidence.
       coverage: [
         { dimension: "current-behavior", status: "needs-investigation" },
-        { dimension: "affected-actor", status: "needs-user-decision" },
-        { dimension: "desired-behavior", status: "covered", covers: ["observable-outcome"] },
-        { dimension: "success-path", status: "covered", covers: ["observable-outcome"] },
-        { dimension: "failure-path", status: "needs-user-decision" },
         { dimension: "input-boundary", status: "needs-user-decision" },
         { dimension: "compatibility", status: "needs-investigation" },
-        { dimension: "non-goals", status: "needs-user-decision" },
-        { dimension: "verification", status: "covered", covers: ["observable-outcome"] }
+        { dimension: "non-goals", status: "needs-user-decision" }
       ],
       decisions: []
     }

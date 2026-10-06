@@ -119,9 +119,13 @@ the proposal shows a folder tree of touched paths (`+` add, `~` change, `-`
 remove), and a rapid proposal also carries the compact form (summary, user
 flow, failure matrix, and the Plan Build executes). A standard v4 change
 always has `design.md`, and its draft must author the sections its work type
-needs (summary and failure matrix; user flow, UI states, component map, API
-contracts, data model, config or job contract by type); the harness infers the
-work type from task paths and derives the file map, test map, and plan. A
+needs (`why` or `summary`, and failures; user flow, UI states, component map,
+API contracts, data model, config or job contract by type); the harness infers
+the work type from task paths and derives the file map, test map, and plan.
+Each fact is written once: without an authored `failureMatrix`, scenarios with
+`kind: "failure"` become its rows (an optional scenario `recovery` fills the
+recovery column), and `why` gives the reader the lead a separate summary would
+repeat. A
 missing section is an agent draft repair, never a user question. `execution.yaml`, `repositories.yaml`, `handoffs.yaml`,
 and `grounding.yaml` appear only when execution differs from detected defaults,
 multiple repositories participate, external authority is required, or a
@@ -176,7 +180,19 @@ graph coverage. The harness records the source digest itself;
 its first inspect. Source facts and recommendation evidence must match the
 selected inventory. Discovery coverage is optional for an ordinary change;
 `impact: high`, `riskSignals`, security triggers, integrations, and external
-operations require their mapped dimensions. Prose is never scanned for risk
+operations require their mapped dimensions. A required dimension the draft
+already states is derived as a `covered` row marked derived in the proposal
+appendix: current behavior from `currentState`, affected actor from
+`userStories`, desired behavior from requirements, success, failure, and input
+boundary from scenario `kind` (`success`, `failure`, `boundary`; failures also
+from `failureMatrix`, boundaries also from `apiContracts` with request and
+errors), compatibility and non-goals from their fields, verification when every
+requirement has a verifying task and evidence, data migration and rollback from
+every `dataModel` entry, integration contract from documented `integrations`,
+timeout/retry/idempotency from integration concerns or a complete
+`jobContract`, and accessibility from `uiStates`. Without backing content the
+dimension stays missing; an authored row always wins, so a
+`needs-user-decision` row is still asked. Draft v3 is unchanged. Prose is never scanned for risk
 keywords, a modified requirement does not imply migration or rollback coverage,
 and a risk-derived `not-applicable` row needs only a rationale. Design and
 reader-guide warnings are advisory, and small rapid-lane drafts get no

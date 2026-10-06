@@ -57,7 +57,13 @@ change พร้อมแสดงรายชื่อไฟล์ใน packet
 สำหรับ change ทั่วไป และบังคับเฉพาะเมื่อ `impact: high` หรือประกาศ typed risk
 (`riskSignals`, security trigger, integration, external operation) แต่ละมิติระบุว่า
 ถูก cover, ไม่เกี่ยวข้องพร้อมเหตุผล (เหตุผลอย่างเดียวก็พอ), ต้อง investigate หรือต้องถามผู้ใช้
-Harness ไม่สแกน keyword จาก prose
+Harness ไม่สแกน keyword จาก prose มิติที่บังคับซึ่ง draft เขียนไว้แล้วไม่ต้องมี row:
+harness จะ derive row `covered` ที่ระบุว่า derived ไว้ใน appendix ของ proposal จาก
+`currentState`, `userStories`, requirement, `kind` ของ scenario (`success`,
+`failure`, `boundary`), `compatibility`, `nonGoals`, task ที่มี `verify` และ evidence,
+`failureMatrix`, `apiContracts`, `dataModel`, `uiStates`, `jobContract` หรือ
+`integrations` ที่มีเอกสาร ถ้าไม่มีเนื้อหารองรับมิตินั้นจะยังขาดอยู่ และ row ที่ agent
+เขียนเองชนะเสมอ ดังนั้น row `needs-user-decision` ยังถูกถามผู้ใช้เหมือนเดิม
 ตัวอย่างโครงสร้างเต็มดูได้
 จาก `claude-foundation change start --template`
 
@@ -90,7 +96,10 @@ claude-foundation change start .foundation/drafts/<id>.json
   `jobContract`, `bugfix` หรือ `refactor` โดย harness อนุมาน `workType` จาก
   `paths` ของ task (ประกาศเองเพื่อ override ได้) และสร้าง folder tree, plan,
   file map และ test map ให้เอง Standard change ต้องมี section ที่ชนิดงานต้องการ
-  ถ้าขาดจะเป็นงานแก้ draft ของ agent ไม่ใช่คำถามถึงผู้ใช้ ส่วน task ที่เทสของตัวเอง
+  ถ้าขาดจะเป็นงานแก้ draft ของ agent ไม่ใช่คำถามถึงผู้ใช้ ข้อเท็จจริงแต่ละข้อเขียนครั้งเดียว:
+  `why` ใช้แทน summary ได้ (เพิ่ม `summary` เมื่อมีอะไรมากกว่านั้น) และถ้าไม่ได้เขียน
+  `failureMatrix` เอง scenario ที่มี `"kind": "failure"` จะกลายเป็นแถวของมัน
+  โดย `recovery` ของ scenario (ไม่บังคับ) เติมคอลัมน์ recovery ส่วน task ที่เทสของตัวเอง
   อยู่นอก `paths` เป็น design warning
 - `decisions` สำหรับมติที่มีผลต่อ implementation พร้อมผลที่ตามมา
 - diagram แบบ Mermaid หรืออ้าง SVG/PNG

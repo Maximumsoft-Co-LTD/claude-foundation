@@ -1,4 +1,5 @@
 import { lifecycleOutcome } from "../../core/lifecycle-outcome.mjs";
+import { deriveDiscoveryCoverage, isDerivedCoverage } from "./derived-coverage.mjs";
 
 const STATUSES = new Set([
   "covered", "not-applicable", "needs-investigation", "needs-user-decision"
@@ -187,9 +188,16 @@ export function projectResolvedDecisions(source = {}) {
   return changed ? { ...source, discovery: { ...discovery, coverage } } : source;
 }
 
+// The coverage the harness evaluates: authored rows, rows settled by resolved
+// decisions, and required rows the draft content already covers.
+export function projectDiscovery(input = {}) {
+  const source = projectResolvedDecisions(input);
+  return deriveDiscoveryCoverage(source, requiredDiscoveryDimensions(source));
+}
+
 export function semanticIntakeIssues(input = {}) {
   if (input.version !== 4) return [];
-  const source = projectResolvedDecisions(input);
+  const source = projectDiscovery(input);
   const issues = [];
   // Omitted discovery or coverage is an empty record; required dimensions
   // below still name what a declared-risk change must cover.
@@ -225,7 +233,8 @@ export function semanticIntakeIssues(input = {}) {
     const unknown = covers.filter((key) => !requirementKeys.has(key));
     if (unknown.length)
       issues.push(`${label}.covers references unknown requirement(s): ${unknown.join(", ")}`);
-    if (status === "covered" && !covers.length && !strings(row?.sources).length)
+    if (status === "covered" && !covers.length && !strings(row?.sources).length &&
+        !isDerivedCoverage(row))
       issues.push(`${label} covered status requires covers or sources`);
     if (status === "not-applicable" && !text(row?.rationale))
       issues.push(`${label} not-applicable status requires rationale`);
@@ -260,7 +269,7 @@ export function semanticIntakeIssues(input = {}) {
 export function semanticIntakeAction(input = {}, {
   resume = null, additionalIssues = [], sourceFreshnessFindings = [], frontierLimit = 3
 } = {}) {
-  const source = projectResolvedDecisions(input);
+  const source = projectDiscovery(input);
   if (source.version !== 4) return lifecycleOutcome({
     action: "DONE", owner: "harness", boundary: "semantic-intake",
     reached: "intake-ready", reason: "The compatible semantic draft can be compiled.",
@@ -344,7 +353,7 @@ export function semanticIntakeAction(input = {}, {
 
 export function normalizeDiscovery(input = {}) {
   if (input.version !== 4) return undefined;
-  const source = projectResolvedDecisions(input);
+  const source = projectDiscovery(input);
   return {
     coverage: (source.discovery?.coverage || []).map((row) => ({
       dimension: text(row?.dimension).toLowerCase(),
@@ -352,7 +361,8 @@ export function normalizeDiscovery(input = {}) {
       covers: unique(strings(row?.covers)),
       sources: unique(strings(row?.sources)),
       decisionKeys: unique(strings(row?.decisionKeys)),
-      rationale: text(row?.rationale) || undefined
+      rationale: text(row?.rationale) || undefined,
+      ...(isDerivedCoverage(row) ? { derived: true, derivedFrom: [...row.derivedFrom] } : {})
     })),
     decisions: (source.discovery?.decisions || []).map((row) => ({
       key: text(row?.key),

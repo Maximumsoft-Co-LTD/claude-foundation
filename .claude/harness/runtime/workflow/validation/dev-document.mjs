@@ -79,8 +79,9 @@ const REQUIRED_BY_TYPE = {
 const LIGHT_WORK = new Set(["docs", "chore"]);
 
 const SECTION_HELP = {
-  summary: "'summary': 1-3 plain sentences on what the user gets and what changes",
-  failureMatrix: "'failureMatrix': [{ failure, userSees, recovery }] for each way this can fail",
+  summary: "'why' (or 'summary'): 1-3 plain sentences on what the user gets and what changes",
+  failureMatrix: "'failureMatrix': [{ failure, userSees, recovery }] for each way this can fail, " +
+    "or a requirement scenario with kind 'failure' (optional 'recovery') it is derived from",
   userFlow: "'userFlow': { purpose, source } with a Mermaid flowchart of the user's path, including the error path",
   uiStates: "'uiStates': [{ screen, states: [loading, empty, error, success…], accessibility }]",
   componentMap: "'componentMap': [{ component, responsibility, files }] mapping each component to its files",
@@ -105,6 +106,38 @@ function userFlowSource(value) {
   return typeof value === "string" ? text(value) : text(value?.source);
 }
 
+const NO_SEPARATE_RECOVERY = "No separate step; the outcome is the handling";
+
+function failureScenarios(draft) {
+  return (Array.isArray(draft?.requirements) ? draft.requirements : []).flatMap((requirement) => {
+    const list = Array.isArray(requirement?.scenarios) ? requirement.scenarios
+      : requirement?.scenario !== undefined ? [requirement.scenario] : [];
+    return list.filter((row) => text(row?.kind).toLowerCase() === "failure")
+      .map((scenario) => ({ requirement: text(requirement?.key), scenario }));
+  });
+}
+
+// Failures are written once. An authored matrix is authoritative; without one,
+// each requirement scenario of kind 'failure' becomes a row.
+export function derivedFailureMatrix(draft) {
+  if (present(draft?.failureMatrix)) return draft.failureMatrix;
+  return failureScenarios(draft).map(({ requirement, scenario }) => ({
+    failure: text(scenario.name) || text(scenario.when) || text(scenario.scenario),
+    userSees: text(scenario.then) || text(scenario.outcome),
+    recovery: text(scenario.recovery) || NO_SEPARATE_RECOVERY,
+    ...(requirement ? { covers: [requirement] } : {})
+  })).filter((row) => row.failure && row.userSees);
+}
+
+// The title is the intent and 'why' states the value, so a separate summary
+// would say the same thing a third time; either one gives the reader the lead.
+function sectionValue(draft, key) {
+  if (key === "userFlow") return userFlowSource(draft?.userFlow);
+  if (key === "summary") return text(draft?.summary) || text(draft?.why);
+  if (key === "failureMatrix") return derivedFailureMatrix(draft);
+  return draft?.[key];
+}
+
 // A standard change is approved and built from its dev document, so each
 // section its kind of work needs is an agent repair before compilation —
 // never a user question and never a refusal of the edit itself.
@@ -113,7 +146,7 @@ export function devDocumentIssues(draft, { standard = true } = {}) {
   const issues = [];
   const types = inferWorkTypes(draft);
   for (const key of requiredDevSections(draft)) {
-    const value = key === "userFlow" ? userFlowSource(draft?.userFlow) : draft?.[key];
+    const value = sectionValue(draft, key);
     if (!present(value))
       issues.push(`dev document (${types.join(", ") || "change"}) needs ${SECTION_HELP[key]}`);
   }
