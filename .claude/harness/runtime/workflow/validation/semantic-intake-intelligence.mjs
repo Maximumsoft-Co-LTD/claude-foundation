@@ -13,7 +13,8 @@ const RISK_WEIGHTS = Object.freeze({
   "performance-slo": 2,
   "user-interface": 1,
   "high-operational-risk": 3,
-  "external-side-effect": 3
+  "external-side-effect": 3,
+  "input-domain": 1
 });
 
 const text = (value) => typeof value === "string" ? value.trim() : "";

@@ -149,7 +149,8 @@ unresolved user-owned coverage row must link to its decisions through
 questions. After `DONE`, rerun with `--consume-draft` to compile atomically.
 Typed `riskSignals` provide language-neutral triggers for access control,
 persisted data, integrations, performance SLOs, UI accessibility, operational
-risk, and external side effects.
+risk, external side effects, and input domains (`input-domain` requires
+`input-boundary` coverage of the adjacent input partitions).
 Inspection persists one machine-owned snapshot bound to the draft and its
 grounded-source digests. Before each v4 inspection the harness performs bounded,
 read-only repository discovery and ranks relevant specs, tests, callers,

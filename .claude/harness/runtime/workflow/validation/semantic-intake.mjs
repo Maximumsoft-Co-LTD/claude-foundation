@@ -43,7 +43,11 @@ const RISK_SIGNAL_DIMENSIONS = Object.freeze({
   "performance-slo": ["performance-capacity-availability"],
   "user-interface": ["accessibility"],
   "high-operational-risk": ["operability", "recoverability"],
-  "external-side-effect": ["external-authority"]
+  "external-side-effect": ["external-authority"],
+  // Behavior computed from caller-supplied values: the agreement must name the
+  // adjacent partitions (type/representation, zero, negative, fractional,
+  // empty, limits), not only the reported reproduction.
+  "input-domain": ["input-boundary"]
 });
 
 function text(value) {

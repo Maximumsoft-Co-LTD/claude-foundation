@@ -97,7 +97,7 @@ upstream API behavior when documentation or version is missing—return a resear
 or user-decision boundary.
 
 For defect behavior, include adjacent input partitions and source-language representation/coercion boundaries,
-not only the reported reproduction.
+not only the reported reproduction; declare `input-domain` when behavior uses caller-supplied values.
 
 `claude-foundation change start .foundation/drafts/<id>.json` inspects and
 starts in one call when clean; otherwise follow the returned intake action.

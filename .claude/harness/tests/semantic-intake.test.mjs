@@ -110,6 +110,8 @@ test("typed risk signals derive dimensions without depending on requirement lang
     "accessibility", "data-migration", "rollout-rollback", "recoverability",
     "performance-capacity-availability"
   ]) assert.ok(required.includes(dimension), dimension);
+  assert.ok(requiredDiscoveryDimensions(source({ riskSignals: ["input-domain"] }))
+    .includes("input-boundary"), "input-domain requires input-boundary coverage");
   const invalid = source({ riskSignals: ["invented-risk"] });
   assert.match(semanticIntakeIssues(invalid).join("\n"), /unknown signal\(s\): invented-risk/);
 });
