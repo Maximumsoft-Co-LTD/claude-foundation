@@ -16,6 +16,13 @@ set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 
+# Mirror CI, which puts the pinned workflow tools (openspec, c8) on PATH; the
+# suites otherwise depend on whatever the calling shell happens to export.
+if [ -d "$ROOT/node_modules/.bin" ]; then
+  PATH="$ROOT/node_modules/.bin:$PATH"
+  export PATH
+fi
+
 # The session-context hook exports the interactive Claude session's identity
 # into agent shells; node --test suites inherit it and the runtime then
 # prefers it over fixture ids. Deterministic suites must never see it.

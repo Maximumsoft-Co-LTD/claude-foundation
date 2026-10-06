@@ -6,6 +6,15 @@ ROOT="$(cd "$HERE/../../.." && pwd)"
 . "$ROOT/.claude/tests/lib/assert.sh"
 . "$ROOT/.claude/tests/lib/harness-fixture.sh"
 
+# The fixtures below archive real release tags. A shallow or tagless clone
+# lacks them, so name the setup gap instead of failing inside tar.
+for tag in v3.2.19 v3.5.13; do
+  if ! git -C "$ROOT" rev-parse --verify --quiet "refs/tags/$tag^{commit}" >/dev/null; then
+    echo "test setup incomplete: release tag $tag is missing; run git fetch --unshallow --tags in this checkout before retrying" >&2
+    exit 1
+  fi
+done
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 
