@@ -40,13 +40,31 @@ function draftPaths(draft) {
   ].map(scopePath).filter(Boolean);
 }
 
+const UI_FILE = /\.(?:tsx|jsx|vue|svelte|css|scss|sass|less|html)$/i;
 const PATH_TYPES = [
-  ["ui", /\.(?:tsx|jsx|vue|svelte|css|scss|sass|less|html)$|(?:^|\/)(?:components?|pages|views|screens|ui|layouts?)\//i],
+  ["ui", /(?:^|\/)(?:components?|pages|views|screens|ui|layouts?)\//i],
   ["api", /\.(?:proto|graphql|gql)$|openapi|swagger|(?:^|\/)(?:api|routes?|controllers?|handlers?|endpoints?|resolvers?)\//i],
   ["data", /\.(?:sql|prisma)$|(?:^|\/)(?:migrations?|db|database|models?|schema|schemas|entities|repositories)\//i],
   ["async", /(?:^|\/)(?:jobs?|workers?|queues?|consumers?|producers?|schedulers?|cron)\//i],
-  ["config", /(?:^|\/)config\/|\.env\.example$/i]
+  ["config", /(?:^|\/)config\/|(?:^|\/|\.)config\.[\w.]+$|\.env\.example$/i]
 ];
+// Paths that carry no product behavior of their own: documentation, tests,
+// and package manifests. A change made only of these is light work.
+const LIGHT_PATHS = [
+  ["docs", /\.(?:md|mdx|rst|txt)$|(?:^|\/)docs?\//i],
+  ["test", /(?:^|\/)(?:tests?|__tests__|spec)\/|\.(?:test|spec)\.[\w]+$/i],
+  ["chore", /(?:^|\/)(?:package(?:-lock)?\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?)$/i]
+];
+
+function lightKind(path) {
+  return LIGHT_PATHS.find(([, pattern]) => pattern.test(path))?.[0] || "";
+}
+
+// A UI file under routes/ or api/ (a page component) is UI, not an endpoint.
+function pathTypes(path) {
+  if (UI_FILE.test(path)) return ["ui"];
+  return PATH_TYPES.filter(([, pattern]) => pattern.test(path)).map(([type]) => type);
+}
 
 // Declared work types win. Otherwise the paths the change touches say what
 // kind of work it is, so the agent never has to classify its own change.
@@ -55,12 +73,17 @@ export function inferWorkTypes(draft) {
   if (declared.length) return declared;
   const paths = draftPaths(draft);
   if (!paths.length) return [];
-  if (paths.every((path) => /\.(?:md|mdx|rst|txt)$|(?:^|\/)docs?\//i.test(path))) return ["docs"];
-  const inferred = PATH_TYPES.filter(([, pattern]) => paths.some((path) => pattern.test(path)))
-    .map(([type]) => type);
+  const product = paths.filter((path) => !lightKind(path));
+  if (!product.length) return [...new Set(paths.map(lightKind))];
+  const found = new Set(product.flatMap(pathTypes));
+  const inferred = PATH_TYPES.map(([type]) => type).filter((type) => found.has(type));
   // Unclassified code owes only the common sections; a declared feature also
   // owes its user flow.
   return inferred.length ? inferred : ["code"];
+}
+
+export function workTypesInferred(draft) {
+  return !draftWorkTypes(draft).length && inferWorkTypes(draft).length > 0;
 }
 
 // Sections the reader and Build need per kind of work. File map, test map,
@@ -76,7 +99,7 @@ const REQUIRED_BY_TYPE = {
   bugfix: ["bugfix"],
   refactor: ["refactor", "componentMap"]
 };
-const LIGHT_WORK = new Set(["docs", "chore"]);
+const LIGHT_WORK = new Set(["docs", "chore", "test"]);
 
 const SECTION_HELP = {
   summary: "'why' (or 'summary'): 1-3 plain sentences on what the user gets and what changes",
@@ -145,18 +168,69 @@ export function devDocumentIssues(draft, { standard = true } = {}) {
   if (draft?.version !== 4 || !standard) return [];
   const issues = [];
   const types = inferWorkTypes(draft);
+  const label = workTypesInferred(draft)
+    ? `${types.join(", ")}, inferred from paths; or declare workType to override`
+    : types.join(", ") || "change";
   for (const key of requiredDevSections(draft)) {
     const value = sectionValue(draft, key);
-    if (!present(value))
-      issues.push(`dev document (${types.join(", ") || "change"}) needs ${SECTION_HELP[key]}`);
+    if (!present(value)) issues.push(`dev document (${label}) needs ${SECTION_HELP[key]}`);
   }
   return issues;
+}
+
+// Shape brackets around a node label: [x], [[x]], [(x)], ([x]), {x}, {{x}},
+// [/x/]. The opening and closing pair belong to the shape, not the label.
+const NODE_OPEN = /(?<![\w"'])([A-Za-z_][\w-]*)(\(\[|\[\[|\[\(|\[\/|\{\{|\[|\{)/g;
+const NODE_CLOSE = { "([": "])", "[[": "]]", "[(": ")]", "[/": "/]", "{{": "}}", "[": "]", "{": "}" };
+
+function nodeLabels(line) {
+  return [...line.matchAll(NODE_OPEN)].flatMap((match) => {
+    const start = match.index + match[0].length;
+    const close = NODE_CLOSE[match[2]];
+    // A quoted label may hold the closing bracket; it ends at the closing quote.
+    const quoted = line[start] === '"' ? line.indexOf('"', start + 1) : -1;
+    const end = line.indexOf(close, quoted >= 0 ? quoted : start);
+    return end < 0 ? [] : [{ id: match[1], open: match[2], close, content: line.slice(start, end) }];
+  });
+}
+
+// mermaid@11 rejects `A[mean(values)]`: an unquoted parenthesis or quote
+// inside a flowchart node label ends the label early. Quoting the label
+// (`A["mean(values)"]`) is the documented fix. Only flowcharts are checked;
+// sequence and state diagrams use brackets differently.
+export function mermaidLabelIssues(source, label) {
+  const body = text(source);
+  if (!/^(?:flowchart|graph)\b/i.test(body)) return [];
+  const issues = [];
+  for (const line of body.split(/\r?\n/)) {
+    if (/^\s*(?:%%|classDef\b|style\b|click\b|linkStyle\b)/.test(line)) continue;
+    for (const { id, open, close, content: raw } of nodeLabels(line)) {
+      const content = raw.trim();
+      if (/^".*"$/.test(content) || !/[()"]/.test(content)) continue;
+      issues.push(`semantic draft ${label} node label '${id}${open}${raw}${close}' has an unquoted ( ) or "; ` +
+        `quote it: ${id}${open}"${content.replaceAll('"', "#quot;")}"${close}`);
+    }
+  }
+  return issues;
+}
+
+function mermaidSources(draft) {
+  const sources = [];
+  if (userFlowSource(draft?.userFlow)) sources.push(["userFlow", userFlowSource(draft.userFlow)]);
+  const overview = typeof draft?.diagram === "string" ? draft.diagram : draft?.diagram?.source;
+  if (text(overview)) sources.push(["diagram", overview]);
+  (Array.isArray(draft?.diagrams) ? draft.diagrams : []).forEach((diagram, index) => {
+    if (text(diagram?.source) && (!diagram.type || diagram.type === "mermaid"))
+      sources.push([`diagrams[${index}]`, diagram.source]);
+  });
+  return sources;
 }
 
 export function devDocumentShapeIssues(draft) {
   const issues = [];
   if (draft?.userFlow !== undefined && !userFlowSource(draft.userFlow))
     issues.push("semantic draft userFlow needs Mermaid source (a string or { purpose, source })");
+  for (const [label, source] of mermaidSources(draft)) issues.push(...mermaidLabelIssues(source, label));
   if (draft?.componentMap !== undefined) {
     if (!Array.isArray(draft.componentMap))
       issues.push("semantic draft componentMap must be an array");
@@ -185,18 +259,42 @@ function changeMark(change) {
   return CHANGE_MARK.find(([pattern]) => pattern.test(text(change)))?.[1] || "~";
 }
 
+// Paths the change's base does not have yet (recorded by withNewPaths), so a
+// task path that creates a file reads as an addition without a file map.
+function newPaths(draft) {
+  return new Set(strings(draft?._newPaths).map(scopePath));
+}
+
+// Record which task paths do not exist at the base. `exists` answers for a
+// project-relative path; a path in another repository stays a change.
+export function withNewPaths(draft, exists) {
+  if (typeof exists !== "function") return draft;
+  const fresh = new Set();
+  for (const task of draft?.tasks || []) {
+    if (text(task?.repository)) continue;
+    for (const scope of strings(task?.paths)) {
+      const path = scopePath(scope);
+      if (!path || /[*?[]/.test(path) || path.startsWith("../") || path.startsWith("/")) continue;
+      try { if (!exists(path.replace(/\/$/, ""))) fresh.add(path); }
+      catch { /* unknown is never reported as an addition */ }
+    }
+  }
+  return fresh.size ? { ...draft, _newPaths: [...fresh] } : draft;
+}
+
 // A tree of every path the change touches, marked + add, ~ change, - remove.
 // Directory scopes end in `/`; the reader sees the shape of the change at once.
 export function renderFolderTree(draft) {
   const marks = new Map();
+  const fresh = newPaths(draft);
   for (const row of Array.isArray(draft?.fileMap) ? draft.fileMap : []) {
     const path = scopePath(row?.path);
-    if (path) marks.set(path, changeMark(row?.change));
+    if (path) marks.set(path, text(row?.change) ? changeMark(row.change) : fresh.has(path) ? "+" : "~");
   }
   for (const task of draft?.tasks || [])
     for (const scope of strings(task?.paths)) {
       const path = scopePath(scope);
-      if (path && !marks.has(path)) marks.set(path, "~");
+      if (path && !marks.has(path)) marks.set(path, fresh.has(path) ? "+" : "~");
     }
   if (!marks.size) return "";
   const root = new Map();
@@ -211,7 +309,7 @@ export function renderFolderTree(draft) {
       node = node.get(name).children;
     });
   }
-  const lines = [];
+  const lines = ["."];
   const walk = (node, prefix) => {
     const entries = [...node.entries()];
     entries.forEach(([name, value], index) => {
@@ -249,12 +347,14 @@ export function renderPlan(draft) {
 // Without an authored file map, each task scope is one row owned by its tasks.
 export function derivedFileMap(draft) {
   if (present(draft?.fileMap)) return draft.fileMap;
+  const fresh = newPaths(draft);
   const rows = new Map();
   for (const task of draft?.tasks || [])
     for (const scope of strings(task?.paths)) {
       const path = scopePath(scope);
       if (!path) continue;
-      const row = rows.get(path) || { path, change: "change", responsibility: "", tasks: [] };
+      const row = rows.get(path) ||
+        { path, change: fresh.has(path) ? "add" : "change", responsibility: "", tasks: [] };
       row.tasks = [...new Set([...row.tasks, task.id].filter(Boolean))];
       if (!row.responsibility) row.responsibility = text(task.outcome);
       rows.set(path, row);
@@ -262,17 +362,29 @@ export function derivedFileMap(draft) {
   return [...rows.values()];
 }
 
-// Without an authored test map, each requirement is proven by the checks of
-// the tasks that implement it.
+// Scenario names per requirement key, from the compiled specs.
+function scenarioNamesByRequirement(draft) {
+  const keys = Array.isArray(draft?._requirementKeys) ? draft._requirementKeys : [];
+  return new Map((draft?.specs || []).map((spec, index) => [keys[index],
+    (spec?.scenarios || []).map((scenario) => text(scenario?.name)).filter(Boolean)]));
+}
+
+// Without an authored test map, each task's check proves the scenarios of the
+// requirements it implements; the check is a command, not a file.
 export function derivedTestMap(draft) {
   if (present(draft?.testMap)) return draft.testMap;
   const requirements = requirementsByTask(draft);
-  return (draft?.tasks || []).filter((task) => text(task.verify)).map((task) => ({
-    scenario: (requirements.get(task.id) || []).join(", ") || text(task.outcome),
-    level: "task check",
-    file: `\`${text(task.verify)}\``,
-    task: task.id
-  }));
+  const scenarios = scenarioNamesByRequirement(draft);
+  return (draft?.tasks || []).filter((task) => text(task.verify)).map((task) => {
+    const names = [...new Set((requirements.get(task.id) || []).flatMap((key) =>
+      scenarios.get(key)?.length ? scenarios.get(key) : [key]))];
+    return {
+      scenario: names.join("; ") || text(task.outcome),
+      level: "task check",
+      check: `\`${text(task.verify)}\``,
+      task: task.id
+    };
+  });
 }
 
 export function renderUserFlow(draft) {

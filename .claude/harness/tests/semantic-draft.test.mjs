@@ -24,6 +24,8 @@ import {
   updateTaskClaimAnnotation, verifyCannotFail, writeSemanticAmendment
 } from "../runtime/workflow/semantic-amendment.mjs";
 import { taskCheck } from "../runtime/workflow/session-lease.mjs";
+import { designBlueprintWarnings } from "../runtime/workflow/validation/design-blueprints.mjs";
+import { devDocumentShapeIssues } from "../runtime/workflow/validation/dev-document.mjs";
 
 const slugify = (value) => String(value).toLowerCase()
   .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -1766,6 +1768,40 @@ test("a minimal draft infers version, keys, capability, names, and operation", (
   assert.deepEqual(draft.claims.map((claim) => claim.capabilities), [["test"], ["test"]]);
   // Expansion is deterministic, so recompiling yields the same IDs.
   assert.deepEqual(expandMinimalSemanticDraft(explicitCovers()), expanded);
+});
+
+// Dogfooding: "What changes" read "it returns 6" and a scenario was titled
+// "Sum([1" from a code-shaped trigger.
+test("a minimal draft names what changes and code-shaped scenarios after the requirement", () => {
+  const expanded = expandMinimalSemanticDraft({
+    intent: "Add a sum helper",
+    requirements: [{ description: "The library SHALL return the sum of a list of numbers",
+      scenarios: [{ when: "sum([1, 2, 3]) is called", then: "it returns 6" },
+        { when: "sum([]) is called", then: "it returns 0" }] }],
+    tasks: [{ outcome: "Add sum", verify: "npm test", paths: ["src/sum.js"] }]
+  });
+  assert.deepEqual(expanded.requirements[0].scenarios.map((row) => row.name), [
+    "Return the sum of a list of numbers", "Return the sum of a list of numbers (it returns 0)"
+  ]);
+  const { draft, issues } = normalizeSemanticDraft(expanded, slugify, { defaultRapidEvidence: true });
+  assert.deepEqual(issues, []);
+  assert.deepEqual(draft.changes, ["Return the sum of a list of numbers"]);
+  // An authored outcome that is not just the first example is used as written.
+  const outcome = structuredClone(expanded);
+  outcome.requirements[0].outcome = "Lists of numbers can be summed";
+  assert.deepEqual(normalizeSemanticDraft(outcome, slugify, { defaultRapidEvidence: true }).draft.changes,
+    ["Lists of numbers can be summed"]);
+});
+
+test("the template shows per-work-type section shapes that compile cleanly", () => {
+  const template = semanticDraftTemplate();
+  const examples = template.workTypeExamples;
+  assert.ok(examples.ui.uiStates.length && examples.ui.componentMap.length && examples.api.apiContracts.length);
+  const copied = { ...template, ...examples.ui, ...examples.api, ...examples.config,
+    tasks: [{ ...template.tasks[0], paths: ["src/**"] }] };
+  assert.deepEqual(designBlueprintWarnings(copied).filter((row) => /placeholder|missing/.test(row)), []);
+  assert.deepEqual(devDocumentShapeIssues(copied), []);
+  assert.match(template.userFlow.source, /A\["User acts"\]/);
 });
 
 test("minimal draft keys stay collision-safe and one task covers every requirement", () => {

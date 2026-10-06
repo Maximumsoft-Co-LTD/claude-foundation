@@ -115,13 +115,19 @@ capability is a top-level `capability` or the intent's noun phrase (such as
 heading is the readable SHALL clause. A rapid proposal omits Why when the draft states no
 reason, and lists recorded `decisions` (defaults the agent chose without
 asking, `decidedBy: agent`) under Decisions. Every packet is a dev document:
-the proposal shows a folder tree of touched paths (`+` add, `~` change, `-`
-remove), and a rapid proposal also carries the compact form (summary, user
-flow, failure matrix, and the Plan Build executes). A standard v4 change
+the proposal shows a folder tree of touched paths (`+` add, including paths
+absent at the base; `~` change; `-` remove), and a rapid proposal also carries
+the compact form (summary, what changes, user flow, failure matrix, the Plan
+Build executes, and any authored descriptive section: file map, test map,
+component map, config contract, refactor). Descriptive sections never move a
+low-risk draft to standard. A standard v4 change
 always has `design.md`, and its draft must author the sections its work type
 needs (`why` or `summary`, and failures; user flow, UI states, component map,
 API contracts, data model, config or job contract by type); the harness infers
-the work type from task paths and derives the file map, test map, and plan.
+the work type from task paths (stated in `design.md`; declare `workType` to
+override; test-, docs-, or manifest-only paths are light work) and derives the
+file map, test map (scenario and check command), and plan. Flowchart node
+labels holding `(`, `)`, or `"` must be quoted (`A["mean(values)"]`).
 Each fact is written once: without an authored `failureMatrix`, scenarios with
 `kind: "failure"` become its rows (an optional scenario `recovery` fills the
 recovery column), and `why` gives the reader the lead a separate summary would

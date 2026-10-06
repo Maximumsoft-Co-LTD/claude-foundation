@@ -9,7 +9,8 @@ import {
 } from "../runtime/workflow/change-lifecycle.mjs";
 import {
   derivedFailureMatrix, derivedFileMap, derivedTestMap, devDocumentIssues, devDocumentShapeIssues, inferWorkTypes,
-  renderComponentMap, renderFolderTree, renderPlan, renderUserFlow, requiredDevSections
+  mermaidLabelIssues, renderComponentMap, renderFolderTree, renderPlan, renderUserFlow,
+  requiredDevSections, withNewPaths
 } from "../runtime/workflow/validation/dev-document.mjs";
 
 function draft(overrides = {}) {
@@ -221,7 +222,7 @@ test("a rapid proposal carries the compact dev document and keeps the rapid lane
     claims: [], tasks: [{ id: "T001", outcome: "Sum helper", paths: ["src/sum.js"], verify: "npm test" }]
   };
   const proposal = renderDraftProposal(value, { schema: "foundation-rapid" });
-  const order = ["## Summary", "## User flow", "## What changes", "## Folder tree",
+  const order = ["## Summary", "## What changes", "## User flow", "## Folder tree",
     "## Failure matrix", "## Plan", "## Impact"].map((heading) => proposal.indexOf(heading));
   assert.ok(order.every((index, position) => index > (order[position - 1] ?? -1)), proposal);
   assert.equal(semanticDraftKeepsDesign(value, true), false);
@@ -263,4 +264,95 @@ test("the dev document fills its failure matrix and lead from facts already writ
     tasks: [{ id: "T001", outcome: "Sum", paths: ["src/sum.js"], verify: "npm test" }] },
   { schema: "foundation-rapid" });
   assert.match(proposal, /## Failure matrix[\s\S]*\| Overflow \|/);
+});
+
+// Dogfooding a disposable consumer: new files showed `~`, the tree had no root.
+test("task paths missing at the base read as additions in the tree and file map", () => {
+  const value = { tasks: [{ id: "T001", outcome: "Sum", paths: ["src/sum.js", "src/index.js", "lib/**"] }] };
+  const documented = withNewPaths(value, (path) => path === "src/index.js");
+  assert.deepEqual([...documented._newPaths].sort(), ["lib/", "src/sum.js"]);
+  assert.match(renderFolderTree(documented),
+    /```text\n\.\n├── \+ lib\/\n└── src\/\n {4}├── ~ index\.js\n {4}└── \+ sum\.js/);
+  assert.deepEqual(derivedFileMap(documented).map((row) => [row.path, row.change]),
+    [["src/sum.js", "add"], ["src/index.js", "change"], ["lib/", "add"]]);
+  // An authored delete keeps `-`; another repository's path stays a change.
+  assert.match(renderFolderTree({ ...documented, fileMap: [{ path: "src/sum.js", change: "delete" }] }),
+    /- sum\.js/);
+  assert.equal(withNewPaths({ tasks: [{ repository: "api", paths: ["x.js"] }] }, () => false)._newPaths,
+    undefined);
+});
+
+test("descriptive dev-document sections keep a small low-risk draft rapid", () => {
+  const base = { _semanticVersion: 4, title: "Limit", changes: ["Limit"], claims: [],
+    tasks: [{ id: "T001", outcome: "Limit", paths: ["src/config.ts"], verify: "npm test" }] };
+  const descriptive = {
+    fileMap: [{ path: "src/config.ts", change: "modify", responsibility: "Limit" }],
+    configContract: [{ key: "LIMIT", default: "10", validation: "1-100" }],
+    refactor: { invariants: ["Same output"], characterization: "npm test" },
+    componentMap: [{ component: "Config", responsibility: "Reads LIMIT", files: ["src/config.ts"] }],
+    testMap: [{ scenario: "Limit", level: "unit", file: "test/config.test.ts", task: "T001" }],
+    userFlow: "flowchart LR\n  A --> B"
+  };
+  for (const [key, section] of Object.entries(descriptive))
+    assert.equal(semanticDraftKeepsDesign({ ...base, [key]: section }, true), false, key);
+  // A contract still earns design.md; risk-based lane selection is unchanged.
+  assert.equal(semanticDraftKeepsDesign({ ...base, apiContracts: COMPLETE.apiContracts }, true), true);
+  const proposal = renderDraftProposal({ ...base, ...descriptive }, { schema: "foundation-rapid" });
+  for (const heading of ["## Component map", "## Refactor invariants", "## Config contract",
+    "## File map", "## Test map"]) assert.ok(proposal.includes(heading), heading);
+});
+
+test("an unquoted parenthesis or quote in a flowchart node label is a draft shape issue", () => {
+  assert.deepEqual(mermaidLabelIssues("flowchart LR\n  A[mean(values)] --> B{ok?}", "userFlow"), [
+    "semantic draft userFlow node label 'A[mean(values)]' has an unquoted ( ) or \"; " +
+    "quote it: A[\"mean(values)\"]"
+  ]);
+  for (const ok of ["A[\"mean(values)\"] --> B", "A[(Database)] --> B([Stadium])", "A{{Hex}} --> B"])
+    assert.deepEqual(mermaidLabelIssues(`flowchart LR\n  ${ok}`, "userFlow"), [], ok);
+  assert.deepEqual(mermaidLabelIssues("sequenceDiagram\n  A->>B: f(x)", "diagram"), []);
+  assert.equal(devDocumentShapeIssues({ diagram: { source: "graph TD\n  A[f(x)]" },
+    diagrams: [{ type: "mermaid", source: "graph TD\n  B[say \"hi\"]" }] }).length, 2);
+});
+
+test("derived maps name scenarios and checks, and omit columns nobody supplied", () => {
+  const value = {
+    specs: [{ scenarios: [{ name: "Adds numbers" }, { name: "Rejects letters" }] }],
+    _requirementKeys: ["sum"],
+    claims: [{ id: "sum", requirementKey: "sum" }],
+    tasks: [{ id: "T001", outcome: "Sum", paths: ["src/sum.js"], verify: "npm test", claims: ["sum"] }]
+  };
+  assert.deepEqual(derivedTestMap(value), [{ scenario: "Adds numbers; Rejects letters",
+    level: "task check", check: "`npm test`", task: "T001" }]);
+  const design = renderDesignBlueprints({ testMap: derivedTestMap(value),
+    failureMatrix: [{ failure: "Letter", userSees: "Error", recovery: "Re-enter" }],
+    apiContracts: [{ method: "GET", path: "/sum", auth: "none", request: "q", response: "n",
+      errors: ["400 on letters"] }] });
+  assert.match(design, /\| Scenario \| Level \| Check \| Task \|\n\|---\|---\|---\|---\|/);
+  assert.match(design, /\| Failure \| User sees \| Recovery \|\n/);
+  assert.ok(!design.includes("Idempotency") && !design.includes("Compatibility") && !design.includes("—"));
+});
+
+test("inferred work types are stated and overridable; light paths owe no failure matrix", () => {
+  const paths = (...list) => ({ version: 4, tasks: [{ id: "T001", key: "t", paths: list }] });
+  assert.deepEqual(inferWorkTypes(paths("app/routes/board.tsx")), ["ui"]);
+  assert.deepEqual(inferWorkTypes(paths("app/routes/cards.ts")), ["api"]);
+  assert.deepEqual(inferWorkTypes(paths("src/config.ts")), ["config"]);
+  assert.deepEqual(inferWorkTypes(paths("config.yaml")), ["config"]);
+  assert.deepEqual(inferWorkTypes(paths("test/sum.test.js")), ["test"]);
+  assert.deepEqual(inferWorkTypes(paths("package.json")), ["chore"]);
+  assert.deepEqual(inferWorkTypes(paths("src/sum.js", "tests/components/Sum.test.tsx")), ["code"]);
+  assert.deepEqual(requiredDevSections(paths("test/sum.test.js", "package.json")), ["summary"]);
+  assert.match(devDocumentIssues(paths("src/components/Board.tsx"))[0],
+    /^dev document \(ui, inferred from paths; or declare workType to override\) needs/);
+  assert.match(renderDraftDesign(paths("src/components/Board.tsx")),
+    /^# Design\n\n## Work type\n\nui \(inferred from paths; declare workType to override\)/);
+});
+
+test("design.md reads flow, components, contracts, failures, file map, tests, then plan", () => {
+  const design = renderDraftDesign({ ...draft(COMPLETE), userFlow: "flowchart LR\n  A --> B",
+    componentMap: [{ component: "Import", responsibility: "Dialog" }],
+    tasks: [{ id: "T001", outcome: "Import", paths: ["apps/editor/src/app/api/**"], verify: "npm test" }] });
+  const order = ["## Work type", "## User flow", "## Component map", "## API contracts", "## UI states",
+    "## Failure matrix", "## File map", "## Test map", "## Plan"].map((heading) => design.indexOf(heading));
+  assert.ok(order.every((index, position) => index > (order[position - 1] ?? -1)), design);
 });

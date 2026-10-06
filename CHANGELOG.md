@@ -32,6 +32,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   missing a section its work type needs (`summary`, `failureMatrix`,
   `userFlow`, `uiStates`, `componentMap`, `apiContracts`, `dataModel`, and so
   on) gets a draft issue the agent repairs.
+- Dev document fixes from dogfooding. Task paths absent from the main checkout
+  show `+` in the folder tree (now rooted at `.`) and `add` in the derived
+  file map. Descriptive sections (`fileMap`, `failureMatrix`, `testMap`,
+  `componentMap`, `userFlow`, `configContract`, `refactor`) no longer move a
+  small low-risk draft to standard; the rapid proposal renders them, with
+  User flow after What changes. What changes comes from the requirement
+  outcome or statement, not the first scenario's `then`, and a code-shaped
+  trigger names its scenario after the requirement. The derived test map
+  lists scenario names and a Check column. Optional columns and API lines
+  (Covers, Idempotency, Compatibility) render only when supplied. `design.md`
+  states an inferred work type and reads flow, components, contracts,
+  failures, file map, test map, then plan; repair messages say to declare
+  `workType` to override. Inference treats `.tsx`/`.jsx` under routes as UI,
+  matches `config.*` files, and treats test-, docs-, or manifest-only
+  changes as light work. The template adds `workTypeExamples` and quoted
+  flowchart labels.
+- Mermaid flowchart node labels with an unquoted `(`, `)`, or `"` are a draft
+  shape issue that names the quoted fix (`A["mean(values)"]`).
+- A consumer's source inventory skips install-managed paths
+  (`.claude/harness`, skills, rules, hooks, `WORKFLOW.md`, ...) unless a
+  draft names one as a source.
 - Low-risk fast-tier review runs at medium reasoning effort; the configured
   model and any escalation keep high effort.
 - Change derives discovery coverage from the draft. A required dimension with

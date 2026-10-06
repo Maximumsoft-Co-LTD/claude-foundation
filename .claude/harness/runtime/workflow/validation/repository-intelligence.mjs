@@ -54,6 +54,15 @@ const CATEGORY_RULES = Object.freeze({
   }
 });
 
+// The paths install.sh manages (its MANAGED array) in a consumer. They are the
+// harness, not the product, so a consumer's source inventory never selects
+// them. The upstream source tree (it carries install.sh) keeps them.
+export const MANAGED_INSTALL_PATHS = Object.freeze([
+  ".claude/orchestrator.md", ".claude/commands", ".claude/harness", ".claude/skills",
+  ".claude/rules", ".claude/hooks", "openspec/schemas", ".foundation/.gitignore",
+  ".foundation/README.md", "WORKFLOW.md"
+]);
+
 const compareText = (left, right) => left < right ? -1 : left > right ? 1 : 0;
 const normalizedPath = (value) => String(value || "").replaceAll("\\", "/");
 const withinRoot = (root, candidate) => {
@@ -302,6 +311,7 @@ export function inspectRepositoryIntelligence({
   trackedPaths = [],
   includedPaths = null,
   excludedPaths = [],
+  managedPaths = MANAGED_INSTALL_PATHS,
   limits: limitOverrides = {},
   fs = { readdir: readdirSync, readFile: readFileSync, realpath: realpathSync, stat: statSync }
 } = {}) {
@@ -326,6 +336,14 @@ export function inspectRepositoryIntelligence({
       code: "scan-root-unreadable", path: "", detail: error?.code || "unreadable"
     }] });
   }
+  // A seed the agent named inside a managed path is still read.
+  let upstream = false;
+  try { upstream = Boolean(fs.stat?.(resolve(root, "install.sh"))?.isFile?.()); }
+  catch { upstream = false; }
+  const managed = upstream ? [] : normalizedPathSet(managedPaths);
+  const isManaged = (path) => [...managed].some((prefix) =>
+    (path === prefix || path.startsWith(`${prefix}/`)) &&
+    ![...seeds].some((seed) => seed === path || seed.startsWith(`${path}/`) || path.startsWith(`${seed}/`)));
 
   const walk = (absoluteDirectory, relativeDirectory, depth) => {
     if (findings.some((row) => row.blocking)) return;
@@ -346,6 +364,7 @@ export function inspectRepositoryIntelligence({
       scan.entries += 1;
       const path = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name;
       if (!entry.isDirectory() && excludedFiles.has(path)) continue;
+      if (managed.size && isManaged(path)) continue;
       if (included && entry.isDirectory() && !includedAncestors.has(path)) continue;
       if (included && !entry.isDirectory() && !included.has(path)) continue;
       if (scan.entries > limits.maxEntries) {

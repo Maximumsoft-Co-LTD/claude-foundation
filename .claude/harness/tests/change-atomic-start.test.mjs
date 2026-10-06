@@ -365,7 +365,10 @@ test("atomic start never rolls back a pre-existing change", (t) => {
 
 test("a low-impact semantic draft with design content keeps the standard schema", async () => {
   const { semanticDraftKeepsDesign } = await import("../runtime/workflow/change-lifecycle.mjs");
-  const designed = { _semanticVersion: 4, fileMap: [{ path: "src/a.ts", change: "added" }] };
+  const designed = { _semanticVersion: 4, dataModel: [{ entity: "Card", fields: ["id"], migration: "none" }] };
+  // A descriptive section (file map) renders in the rapid proposal instead.
+  assert.equal(semanticDraftKeepsDesign({ _semanticVersion: 4,
+    fileMap: [{ path: "src/a.ts", change: "added" }] }, true), false);
   const answered = { _semanticVersion: 4,
     discovery: { decisions: [{ key: "stack", status: "resolved", choice: "Vite",
       alternatives: ["Vite", "Plain HTML"] }] } };
