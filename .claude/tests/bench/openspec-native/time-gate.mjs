@@ -170,7 +170,9 @@ const cell = (value, digits = 0) => value === null || value === undefined ? "n/a
 
 export function formatTimeGate(report) {
   const lines = [
-    `time gate (advisory): ${report.status.toUpperCase()}, target <= ${report.targetRatio}x baseline`,
+    `time gate (advisory): ${report.status.toUpperCase()}, target <= ${typeof report.targetRatio === "object"
+      ? Object.entries(report.targetRatio).map(([tier, ratio]) => `${ratio}x ${tier}`).join(" / ")
+      : `${report.targetRatio}x`} baseline`,
     ...(report.reason ? [`  ${report.reason}`] : []),
     "scenario | tier | baseline wall ms | change-loop wall ms | ratio | requests | " +
       "harnessActiveMs | permission prompts"
