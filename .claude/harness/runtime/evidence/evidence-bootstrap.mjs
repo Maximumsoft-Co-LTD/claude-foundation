@@ -357,7 +357,7 @@ export function detectEvidenceWiring({
     const aliasOf = providerConfig(row.provider)?.aliasOf;
     return aliasOf ? {
       ...row, aliasOf,
-      detail: `covered by review: its provider only repeats test provider '${aliasOf}'; ` +
+      detail: `its provider only repeats test provider '${aliasOf}'; ` +
         `wire a project-owned ${row.capability} command to observe it`
     } : row;
   });

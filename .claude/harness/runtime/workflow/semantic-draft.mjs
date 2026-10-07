@@ -905,25 +905,32 @@ export function expandMinimalSemanticDraft(input, {
 // `change revise --merge` applies a patch to the draft the change was compiled
 // from instead of requiring the whole draft again. Objects merge recursively
 // and `null` deletes a key (JSON Merge Patch). An array whose base entries all
-// carry one identity field (key, then dimension, then name) merges by it: a
-// patch entry with a known identity merges into that entry, `"$remove": true`
-// drops it, and any other entry is appended. Every other array is replaced.
+// carry an identity field (key, dimension, or name) merges by identity: a patch
+// entry names its item by any of those fields every base entry has (the first
+// it provides, in that order), merges into the matching entry, `"$remove":
+// true` drops it, and any other entry is appended. A `$remove` that matches no
+// entry is an error, never a silent no-op. Every other array is replaced.
 const MERGE_IDENTITIES = ["key", "dimension", "name"];
 
-function mergeIdentity(base) {
-  if (!Array.isArray(base) || !base.length || !base.every(plainObject)) return "";
-  return MERGE_IDENTITIES.find((field) => base.every((row) => text(row[field]))) || "";
+function mergeIdentities(base) {
+  if (!Array.isArray(base) || !base.length || !base.every(plainObject)) return [];
+  return MERGE_IDENTITIES.filter((field) => base.every((row) => text(row[field])));
 }
 
 function mergeArray(base, patch) {
-  const field = mergeIdentity(base);
-  if (!field || !patch.every(plainObject)) return structuredClone(patch);
+  const fields = mergeIdentities(base);
+  if (!fields.length || !patch.every(plainObject)) return structuredClone(patch);
   const result = base.map((row) => structuredClone(row));
   for (const entry of patch) {
-    const identity = text(entry[field]);
+    const field = fields.find((name) => text(entry[name]));
+    const identity = field ? text(entry[field]) : "";
     const index = identity ? result.findIndex((row) => text(row[field]) === identity) : -1;
     if (entry.$remove === true) {
-      if (index >= 0) result.splice(index, 1);
+      if (index < 0)
+        throw new Error(identity
+          ? `"$remove" names ${field} '${identity}', which matches no existing entry`
+          : `"$remove" entry names no ${fields.join(" or ")} to identify what it removes`);
+      result.splice(index, 1);
       continue;
     }
     const { $remove: _flag, ...value } = entry;

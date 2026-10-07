@@ -396,3 +396,27 @@ test("a specialist provider that repeats the test command resolves as unwired, n
     assert.equal(row.aliasOf, "test");
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test("a test alias ignores env key order but not a distinct execution context", () => {
+  const command = ["sh", "-c", "node --test test/api.test.mjs"];
+  const providers = {
+    test: { adapter: "test-discovery", command, env: { NODE_ENV: "test", TZ: "UTC" },
+      envFrom: ["CI", "HOME"] },
+    resilience: { adapter: "command", capability: "resilience", command,
+      env: { TZ: "UTC", NODE_ENV: "test" }, envFrom: ["HOME", "CI"] }
+  };
+  assert.equal(aliasedTestProvider(providers, "resilience"), "test",
+    "the same env pairs in another key order are the same environment");
+  assert.equal(aliasedTestProvider({ ...providers, resilience: {
+    ...providers.resilience, timeoutMs: 120000 } }, "resilience"), "test",
+  "the default timeout written out is the same timeout");
+  for (const [field, value] of [
+    ["service", "api"], ["readiness", { url: "http://127.0.0.1:3000/health" }],
+    ["environment", "staging"], ["timeoutMs", 600000], ["resources", ["port:3000"]],
+    ["dependsOn", ["static-analysis"]]
+  ]) {
+    assert.equal(aliasedTestProvider({ ...providers, resilience: {
+      ...providers.resilience, [field]: value } }, "resilience"), null,
+    `a specialist with its own ${field} runs in its own context`);
+  }
+});

@@ -316,8 +316,9 @@ action and changes nothing. `--inspect` only inspects; `--consume-draft` also
 removes the draft. With `--merge` the file is a partial draft applied to the
 draft the change was compiled from: objects merge, `null` deletes a key, and an
 entry in a list keyed by `key` (or `dimension`, or `name`) merges into the
-entry with that identity, `"$remove": true` drops it, and other entries are
-appended; any other list is replaced. Removing a requirement drops its evidence
+entry with the identity it names (any of those fields every listed entry
+has), `"$remove": true` drops it (an unmatched `$remove` is an error), and
+other entries are appended; any other list is replaced. Removing a requirement drops its evidence
 entry and task coverage. A change started before partial revision, or one an
 amendment changed after its draft was recorded, needs the whole draft instead. The transaction
 recompiles the whole packet, increments the contract revision, and restores the

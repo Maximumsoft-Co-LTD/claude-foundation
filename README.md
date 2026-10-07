@@ -717,7 +717,8 @@ and a completed task's verify changes only with `reopen: true`, which unticks it
 so the harness verifies it again.
 Before Build starts, `change revise <change-id> <draft.json>` inspects and, at
 `DONE`, recompiles the whole agreement under the same id in one call; with
-`--merge` the file holds only the changed keys and keyed entries. Add
+`--merge` the file holds only the keys and keyed entries it changes, adds, or
+removes. Add
 `--approve-spec --decision-ref <ref>` to `change start`, `change revise`, or
 `change amend` to record the user's approval in the call that applies it. Either
 route reports the added/revised/removed requirement delta. An approved change

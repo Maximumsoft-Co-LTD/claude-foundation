@@ -4,7 +4,9 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { measuredNumber } from "../core/measured-number.mjs";
 import { isExcludedPath } from "../core/workspace-surface.mjs";
 import { memoizeByGitIndex } from "../core/tool-identity.mjs";
-import { classifyReviewRisk, reviewSemanticText, thaiRiskPattern } from "./review-routing.mjs";
+import {
+  classifyReviewRisk, reviewSemanticText, securityRiskSignals, thaiRiskPattern
+} from "./review-routing.mjs";
 import { reviewCoveredProviders, unobservedAliasConfig } from "./provider-catalog.mjs";
 
 const THAI_REQUIRED_SEMANTICS =
@@ -201,6 +203,10 @@ export function collectReviewSignals(state, contract, configuredCapabilities = [
   // capabilities are high, resilience at least medium).
   for (const row of reviewCoveredProviders(contract.providers))
     requiredTriggers.push(`covered-by-review:${row.capability}`);
+  // An access-control risk signal declares an authorization boundary: review
+  // is required under every review policy, not only escalated in tier.
+  if (securityRiskSignals(state, "high").length)
+    requiredTriggers.push("access-control");
   if (/\b(concurren|race|deadlock|money|payment|billing|financial|migration|irreversible)\w*\b/.test(semantic) ||
       THAI_REQUIRED_SEMANTICS.test(semantic))
     requiredTriggers.push("risk-semantics");

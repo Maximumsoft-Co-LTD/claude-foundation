@@ -1,3 +1,5 @@
+import { canonicalJson } from "../core/trust.mjs";
+
 export const ADAPTERS = new Set([
   "command", "test-discovery", "playwright", "contract-digest", "external"
 ]);
@@ -43,13 +45,30 @@ export const SPECIALIST_CAPABILITIES = new Set([
   "security-static", "resilience", "compatibility", "data-migration", "cross-repo-contract"
 ]);
 
-const sameValue = (left, right) => JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+// Key order never distinguishes two values: `{ A: 1, B: 2 }` equals `{ B: 2, A: 1 }`.
+const sameValue = (left, right) => canonicalJson(left ?? null) === canonicalJson(right ?? null);
+const sameSet = (left, right) => sameValue(
+  Array.isArray(left) ? [...left].sort() : left, Array.isArray(right) ? [...right].sort() : right);
+
+// Everything that shapes how and where a command runs besides its argv. A
+// specialist provider that differs in any of these (its own service, readiness
+// probe, declared environment, timeout, resources, or ordering) runs in a
+// context of its own, so it is not a repeat of the test run.
+function sameExecutionContext(left, right) {
+  return sameValue(left.repository, right.repository) &&
+    sameValue(left.repositories, right.repositories) &&
+    sameValue(left.env, right.env) && sameSet(left.envFrom, right.envFrom) &&
+    sameValue(left.environment, right.environment) &&
+    sameValue(left.service, right.service) && sameValue(left.readiness, right.readiness) &&
+    Number(left.timeoutMs || 120000) === Number(right.timeoutMs || 120000) &&
+    sameSet(left.resources, right.resources) && sameSet(left.dependsOn, right.dependsOn);
+}
 
 // The test provider whose execution a specialist provider merely repeats, or
 // null. A command provider that runs exactly a test provider's argv, in the
-// same repository and environment, with no critical cases of its own, observes
-// only those tests: its exit code says nothing about its own capability, so it
-// must never be credited as that capability.
+// same repository and execution context, with no critical cases of its own,
+// observes only those tests: its exit code says nothing about its own
+// capability, so it must never be credited as that capability.
 export function aliasedTestProvider(providers = {}, provider, config = providers?.[provider]) {
   if (!config || config.adapter !== "command" || !Array.isArray(config.command) ||
       !SPECIALIST_CAPABILITIES.has(providerCapability(provider, config)) ||
@@ -58,10 +77,7 @@ export function aliasedTestProvider(providers = {}, provider, config = providers
     (a < b ? -1 : a > b ? 1 : 0))) {
     if (name === provider || providerCapability(name, other) !== "test" ||
         !["command", "test-discovery"].includes(other?.adapter)) continue;
-    if (sameValue(other.command, config.command) &&
-        sameValue(other.repository, config.repository) &&
-        sameValue(other.repositories, config.repositories) &&
-        sameValue(other.env, config.env) && sameValue(other.envFrom, config.envFrom))
+    if (sameValue(other.command, config.command) && sameExecutionContext(other, config))
       return name;
   }
   return null;

@@ -680,7 +680,7 @@ task ที่เสร็จแล้วเปลี่ยนได้เฉพ
 harness verify ใหม่
 ก่อนเริ่ม Build ใช้ `change revise <change-id> <draft.json>` ซึ่ง inspect และเมื่อได้
 `DONE` จะคอมไพล์ agreement ทั้งฉบับใหม่ใน id เดิมในคำสั่งเดียว ถ้าใส่ `--merge`
-ไฟล์มีเฉพาะ key และ entry ที่มี key ซึ่งเปลี่ยน เพิ่ม
+ไฟล์มีเฉพาะ key และ entry ที่มี key ซึ่งเปลี่ยน เพิ่ม หรือลบ ใส่
 `--approve-spec --decision-ref <ref>` ให้ `change start`, `change revise` หรือ
 `change amend` เพื่อบันทึก approval ของผู้ใช้ในคำสั่งเดียวกับที่ apply คำตอบนั้น ทั้งสองทางจะแสดง
 delta ของ requirement (added/revised/removed) change ที่ approve แล้วใช้ approval เดิมต่อสำหรับ delta ที่เพิ่มหรือแก้ requirement และขอ approve ใหม่เฉพาะ delta ที่ลบ requirement receipt ที่ผ่านแล้วจะถูกเก็บ

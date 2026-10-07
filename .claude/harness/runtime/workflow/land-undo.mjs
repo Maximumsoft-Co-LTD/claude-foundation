@@ -112,6 +112,14 @@ export function createLandUndo({
     return ok;
   }
 
+  // An earlier undo of the same id is evidence too: set its record aside
+  // instead of deleting it (the rule abandonment uses).
+  function setAside(destination) {
+    if (existsSync(destination))
+      renameSync(destination, `${destination}.previous-${
+        String(now()).replace(/[^0-9A-Za-z]/g, "-")}`);
+  }
+
   function quarantine(id, target) {
     const moved = [];
     for (const [name, source] of [
@@ -127,7 +135,7 @@ export function createLandUndo({
       if (!existsSync(source)) continue;
       const destination = join(target, name);
       mkdirSync(dirname(destination), { recursive: true });
-      rmSync(destination, { recursive: true, force: true });
+      setAside(destination);
       renameSync(source, destination);
       moved.push(name);
     }
@@ -168,6 +176,7 @@ export function createLandUndo({
     state.landUndo = { status: "reverting", decisionRef: ref, startedAt: now() };
     saveRuntime(state);
     // Every landed byte is preserved before anything is restored.
+    setAside(landed);
     for (const { entry } of plan.code)
       copyPath(safeRootPath(entry.path), join(landed, entry.path));
     for (const spec of plan.specs)
@@ -191,7 +200,7 @@ export function createLandUndo({
       }
     }
     if (plan.packet && existsSync(join(root, plan.packet))) {
-      rmSync(join(target, "change"), { recursive: true, force: true });
+      setAside(join(target, "change"));
       renameSync(join(root, plan.packet), join(target, "change"));
     }
     rmSync(stage, { recursive: true, force: true });
@@ -206,6 +215,7 @@ export function createLandUndo({
     state.landUndo = { ...state.landUndo, status: "undone", undoneAt: record.undoneAt };
     saveRuntime(state);
     record.quarantined = quarantine(id, target);
+    setAside(join(target, "undo.json"));
     writeJson(join(target, "undo.json"), record);
     mkdirSync(paths.logs, { recursive: true });
     appendFileSync(join(paths.logs, "land-undone.jsonl"), `${JSON.stringify(record)}\n`);

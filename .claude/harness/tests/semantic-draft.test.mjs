@@ -2524,3 +2524,26 @@ test("a partial draft merges by identity, deletes with null, and drops removed l
   assert.throws(() => mergeSemanticDraft(prior, []), /patch must be a JSON object/);
   assert.throws(() => mergeSemanticDraft(null, {}), /requires the change's prior draft/);
 });
+
+test("a partial draft entry merges by any identity it names, and an unmatched $remove fails", () => {
+  const prior = {
+    requirements: [
+      { key: "throughput", name: "Throughput", outcome: "20 per second" },
+      { key: "ack", name: "Acknowledge", outcome: "Acknowledge after commit" }
+    ]
+  };
+  const byName = mergeSemanticDraft(prior, {
+    requirements: [{ name: "Throughput", outcome: "50 per second" },
+      { name: "Acknowledge", $remove: true }]
+  });
+  assert.deepEqual(byName.requirements,
+    [{ key: "throughput", name: "Throughput", outcome: "50 per second" }],
+    "an entry named by name merges instead of appending a duplicate");
+  assert.throws(() => mergeSemanticDraft(prior, {
+    requirements: [{ key: "missing", $remove: true }]
+  }), /"\$remove" names key 'missing', which matches no existing entry/);
+  assert.throws(() => mergeSemanticDraft(prior, {
+    requirements: [{ outcome: "unnamed", $remove: true }]
+  }), /"\$remove" entry names no key or name/);
+  assert.deepEqual(prior.requirements.map((row) => row.key), ["throughput", "ack"]);
+});

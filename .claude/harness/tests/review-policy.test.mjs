@@ -289,3 +289,28 @@ test("typed trust-boundary risk signals escalate the review tier", () => {
   assert.ok(route(["access-control"], { intent: "fix billing rounding" }).triggers
     .includes("critical-semantics"));
 });
+
+test("an access-control risk signal requires review under both policies", () => {
+  const state = { intent: "show the order total", impact: "low", coupling: "isolated",
+    securityTriggers: [], riskSignals: ["access-control"] };
+  const contract = { claims: [{ id: "c", impact: "low", capabilities: ["test"] }] };
+  const signals = collectReviewSignals(state, contract);
+  assert.deepEqual(signals.requiredTriggers, ["access-control"]);
+  const riskRoute = classifyReviewRisk({
+    state, claims: contract.claims, capabilities: signals.capabilities,
+    grounding: null, requiredTriggers: signals.requiredTriggers
+  });
+  assert.equal(riskRoute.tier, "high");
+  for (const riskTiered of [false, true]) {
+    const policy = assembleReviewPolicy({ state, signals, riskRoute, policy: {}, riskTiered });
+    assert.equal(policy.required, true, `riskTiered=${riskTiered}`);
+    assert.ok(policy.triggers.includes("access-control"));
+  }
+  // input-domain only moves the tier; it does not require legacy review.
+  const input = { ...state, riskSignals: ["input-domain"] };
+  const inputSignals = collectReviewSignals(input, contract);
+  assert.deepEqual(inputSignals.requiredTriggers, []);
+  assert.equal(assembleReviewPolicy({
+    state: input, signals: inputSignals, riskRoute: lowRoute, policy: {}, riskTiered: false
+  }).required, false);
+});

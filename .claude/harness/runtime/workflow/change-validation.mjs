@@ -1968,6 +1968,16 @@ export function createChangeValidationRuntime({
   // precondition is checked instead of caught. `requiredProviders` deliberately
   // does not get this treatment: dropping an inferred capability there would
   // under-require evidence, so it must still stop.
+  // The providers review covers right now, decided exactly as
+  // requiredProviders does: only while review is required and not waived.
+  function reviewCoveredRows(id, active = null) {
+    const state = loadRuntime(id);
+    const waivers = active || currentWaivers(state,
+      state.waivers?.some((row) => row.binding) ? relevantHash(id) : undefined);
+    const reviewWaived = waivers.some((row) => row.capability === "review");
+    return reviewCoveredAdvisories(evidence(id), !reviewWaived && reviewPolicy(id).required);
+  }
+
   function advisoryCapabilities(id) {
     const state = loadRuntime(id);
     const active = currentWaivers(state, state.waivers?.some((row) => row.binding) ? relevantHash(id) : undefined);
@@ -1981,9 +1991,8 @@ export function createChangeValidationRuntime({
         row.capability} --revoke --decision-ref <ref>`
     }));
     if (!changedSurfaceResolvable(id)) return waived;
-    const reviewWaived = active.some((row) => row.capability === "review");
     return [
-      ...reviewCoveredAdvisories(evidence(id), !reviewWaived && reviewPolicy(id).required),
+      ...reviewCoveredRows(id, active),
       ...policyCapabilitySplit(id).advisory.map((capability) => ({
         capability,
         trigger: policyCapabilityTrigger(id, capability),
@@ -2088,9 +2097,12 @@ export function createChangeValidationRuntime({
       console.log(`  OK       ${row.provider}: ${row.adapter} (${row.repository})`);
     for (const row of detection.candidates)
       console.log(`  ${row.recommended ? "CANDIDATE" : "REVIEW   "} ${row.provider}: ${row.source}${row.detail ? `; ${row.detail}` : ""}`);
+    // A provider that only repeats a test run is covered only while review
+    // covers it; otherwise it stays required and unwired, so it blocks.
+    const covered = new Set(reviewCoveredRows(id).map((row) => row.provider));
     for (const row of detection.unresolved)
-      console.log(row.aliasOf
-        ? `  COVERED  ${row.provider}: ${row.detail}`
+      console.log(row.aliasOf && covered.has(row.provider)
+        ? `  COVERED  ${row.provider}: covered by review; ${row.detail}`
         : `  BLOCKED  ${row.provider}: ${row.reason}; next: ${row.next}`);
     for (const row of detection.unavailable)
       console.log(`  BLOCKED  ${row.provider}: ${row.reason}; next: ${row.next}`);

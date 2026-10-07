@@ -95,8 +95,9 @@ record it as an advisory with `status: "covered-by-review"` and `aliasOf`
 naming the repeated test provider. Prove continues without a user decision and
 completes only when that review passes. When review is waived or not required,
 nothing covers the capability: the provider stays required as unwired external
-evidence. `evidence detect` and `doctor` report it as covered by review with the
-next step to wire a project-owned command for that capability in
+evidence. `evidence doctor` reports it as covered by review only while review
+covers it, and otherwise as blocked; both `evidence detect` and `doctor` name
+the next step to wire a project-owned command for that capability in
 `execution.yaml`, which replaces the alias.
 
 ```json

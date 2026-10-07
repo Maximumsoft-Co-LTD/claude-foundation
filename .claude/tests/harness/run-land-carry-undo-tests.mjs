@@ -205,6 +205,33 @@ test("an archived, uncommitted Land is undone through advance and its landed byt
   assert.equal(head(fixture), base, "undo never commits");
 });
 
+test("a repeated Land undo of the same id sets the earlier undo's evidence aside", (t) => {
+  const fixture = project(t);
+  const recovery = join(fixture.root, ".foundation", "recovery", "land-undone", "redo-probe");
+  const first = editedLine(fixture, "app.txt", 18, "first edit");
+  provenEdit(fixture, "Redo probe", "redo-probe", "app.txt", first);
+  assert.equal(landed(fixture, "redo-probe").action, "DONE");
+  const once = undo(fixture, "redo-probe", "--decision-ref", "fixture://first-undo");
+  assert.equal(once.status, 0, once.stderr);
+
+  const second = editedLine(fixture, "app.txt", 18, "second edit");
+  provenEdit(fixture, "Redo probe", "redo-probe", "app.txt", second);
+  assert.equal(landed(fixture, "redo-probe").action, "DONE");
+  const twice = undo(fixture, "redo-probe", "--decision-ref", "fixture://second-undo");
+  assert.equal(twice.status, 0, twice.stderr);
+
+  assert.equal(readFileSync(join(recovery, "landed", "app.txt"), "utf8"), second);
+  assert.match(readFileSync(join(recovery, "undo.json"), "utf8"), /fixture:\/\/second-undo/);
+  const entries = readdirSync(recovery);
+  const previous = (name) => entries.filter((entry) => entry.startsWith(`${name}.previous-`));
+  for (const name of ["landed", "change", "runtime.json", "undo.json"])
+    assert.equal(previous(name).length, 1, `${name} of the first undo is set aside: ${entries}`);
+  assert.equal(readFileSync(join(recovery, previous("landed")[0], "app.txt"), "utf8"), first,
+    "the first undo's landed bytes survive the second undo");
+  assert.match(readFileSync(join(recovery, previous("undo.json")[0]), "utf8"),
+    /fixture:\/\/first-undo/);
+});
+
 test("Land undo restores a user's edit that Land had carried, from the retained backup", (t) => {
   const fixture = project(t);
   provenEdit(fixture, "Undo carry probe", "undo-carry-probe", "app.txt",

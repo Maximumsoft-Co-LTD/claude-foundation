@@ -103,7 +103,7 @@
       "audience": "agent",
       "kind": "write",
       "idempotent": false,
-      "description": "Transactionally add, revise, or remove semantic requirements during Build, or correct an unfinished task's verify command, while preserving the canonical agreement. --task/--verify corrects one verify command directly and keeps the spec approval. The bare form inspects in place and amends only when intake is DONE; otherwise it prints the intake action and changes nothing. --approve-spec records the user's spec approval in the same call. --template prints an amendment template."
+      "description": "Transactionally add, revise, or remove semantic requirements during Build, withdraw unfinished tasks (removeTasks), or correct a task's verify command, while preserving the canonical agreement. --task/--verify corrects one verify command directly and keeps the spec approval; a completed task's verify changes only with --reopen (reopen: true in an amendment), which unticks the task so its verify must pass again. The bare form inspects in place and amends only when intake is DONE; otherwise it prints the intake action and changes nothing. --approve-spec records the user's spec approval in the same call. --template prints an amendment template."
     },
     {
       "name": "change revise",
