@@ -111,7 +111,7 @@ packet scaling|sh "$HERE/harness/run-packet-scaling-tests.sh"
 packet value|node "$ROOT/.claude/harness/tests/packet-value.test.mjs"
 upgrade compatibility|sh "$HERE/harness/run-upgrade-compat-tests.sh"
 dashboard contracts|npm --prefix "$ROOT/dashboard" test
-quality tooling|node --test "$ROOT"/scripts/quality/test/*.test.mjs && node "$ROOT/scripts/quality/validate-config.mjs" && node "$ROOT/scripts/quality/validate-exceptions.mjs" && bash "$ROOT/scripts/quality/check-static-surfaces.sh"
+quality tooling|node --test "$ROOT"/scripts/quality/test/*.test.mjs
 consumer quality protocols|node --test "$HERE/harness/run-quality-protocol-tests.mjs"
 consumer quality policy|node --test "$HERE/harness/run-quality-policy-tests.mjs"
 consumer quality discovery|node --test "$HERE/harness/run-quality-discovery-tests.mjs"

@@ -1,5 +1,0 @@
-{
-  "$schema": "./schemas/quality-exceptions-v1.schema.json",
-  "version": 1,
-  "exceptions": []
-}

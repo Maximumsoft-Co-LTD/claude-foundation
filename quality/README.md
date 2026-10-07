@@ -1,83 +1,29 @@
-# Code quality controls
+# Release mutation gate
 
-This directory owns the enforced changed-code CRAP Score and mutation-testing
-policy for the complete repository. It is intentionally separate from Foundation's
-consumer-facing runtime configuration.
-
-For quality gates installed into consumer projects, use
+This directory holds the repository-internal policy and baseline for the
+automated dashboard mutation gate that `.github/workflows/release.yml` runs
+before publishing. It is separate from Foundation's consumer-facing quality
+feature; for gates installed into consumer projects, use
 `claude-foundation quality …` and see
-[`docs/consumer-quality.md`](../docs/consumer-quality.md). The files, protocols,
-baselines, output paths, and rollout policy are separate; do not copy this
-repository's internal thresholds into a consumer config blindly.
+[`docs/consumer-quality.md`](../docs/consumer-quality.md).
 
 ## Commands
 
 ```bash
-npm run test:quality
-npm run quality:config
-npm run quality:static
-npm run quality:exceptions
-npm run quality:coverage:dashboard
-npm run quality:coverage:runtime
-npm run quality:coverage:examples
-npm run quality:coverage:website
-npm run quality:complexity
-npm run quality:crap
-npm run quality:report:validate
-npm run quality:base -- --base-ref <ref>
-npm run quality:changed
-npm run quality:mutation:changed
-npm run quality:mutation:runtime
-npm run quality:mutation:examples
-npm run quality:mutation:website
-npm run quality:trend
-npm run quality:summary
-npm run quality:debt
-npm run quality:enforce
 npm run test:mutation:dashboard
-npm run test:mutation:runtime
-npm run test:mutation:examples
-npm run test:mutation:website
-npm run test:mutation:semantic
+npm run quality:mutation:coverage:dashboard
+npm run quality:mutation:normalize:dashboard
+npm run quality:mutation:changed
 ```
 
-`quality:report:dashboard` composes the fast dashboard report. Runtime coverage
-executes the complete deterministic harness, so the full report runs on demand
-with these commands; neither pull requests nor a schedule run it in CI.
-Semantic draft compilation, transactional amendment, and protocol-v6 `advance`
-belong to that runtime surface. Website Markdown and both root READMEs belong to
-the documentation surfaces, so changed-file selection cannot skip them merely
-because they are documentation rather than executable JavaScript.
+Stryker's command runner cannot identify uncovered mutants by itself, so the
+coverage step runs the same tests under c8 and the normalize step rewrites
+unexecuted survivors to `NoCoverage`. `quality:mutation:changed` then compares
+the normalized report with `baselines/dashboard-mutation-v1.json` under
+`policy.json` and fails on a score regression, new `NoCoverage` mutants, or a
+baseline snapshot mismatch. Reports are written under
+`.foundation/test-results/quality/` (ignored).
 
-## Result locations
-
-Generated evidence is ignored under:
-
-```text
-.foundation/test-results/quality/
-```
-
-The main outputs are `crap.json`, `changed-quality.json`, `summary.md`,
-`debt.json`, `debt.md`, `trend.json`, automated mutation reports and
-`mutation-semantic.json`.
-
-## Enforcement state
-
-The policy is `enforce` for changed functions and mutation regressions. Existing
-project debt remains inventory and does not block unrelated changes. Coverage
-lanes synthesize 0% for production files that a completed collector did not
-load; paths belonging to a collector that did not run remain explicitly
-unavailable. Merge-base reports distinguish new functions, existing regressions
-and untouched debt. Versioned mutation baselines ratchet dashboard, selected
-runtime, example and website scopes without demanding a blind 100% score.
-Because Stryker's command runner cannot identify uncovered mutants by itself,
-each shard runs the same test command under c8 and normalizes unexecuted
-survivors to `NoCoverage` before comparison.
-
-Required semantic mutation remains blocking independently of aggregate CRAP or
-automated mutation score. All catalog entries emit mutation-v2 evidence; a
-crash, timeout, compile failure, non-applying fault, missing ID, failed restore,
-or wrong critical killer is not a pass.
-
-See `docs/reports/project-wide-crap-and-mutation-testing-plan.md` for scope,
-rollout, exceptions, ownership and Definition of Done.
+Semantic mutation of shipped boundaries is not run here: the registered suites
+in `.claude/tests/run-all.sh` own it, including
+`scripts/quality/run-shipping-semantic-mutation.mjs`.

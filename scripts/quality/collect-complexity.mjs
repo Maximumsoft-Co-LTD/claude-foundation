@@ -2,7 +2,7 @@ import { ESLint } from "eslint";
 import { parse } from "espree";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { ROOT, isMain, parseArgs, readJson, repoPath, writeJson } from "./lib.mjs";
+import { ROOT, readJson, repoPath } from "./lib.mjs";
 
 const COMPLEXITY = /complexity of (\d+)\./i;
 const NAME = /(?:function|method|constructor|field initializer|class static block)\s+'([^']+)'/i;
@@ -110,14 +110,3 @@ export async function collectComplexity({ root = ROOT, policyPath = "quality/pol
     functions: attachFunctionRanges(records, sources)
   };
 }
-
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  const root = resolve(args.root || ROOT);
-  const output = resolve(ROOT, args.output || ".foundation/test-results/quality/complexity.json");
-  const report = await collectComplexity({ root, policyPath: args.policy || "quality/policy.json" });
-  writeJson(output, report);
-  process.stdout.write(`complexity: ${report.functions.length} function(s) -> ${repoPath(output)}\n`);
-}
-
-if (isMain(import.meta.url)) await main();

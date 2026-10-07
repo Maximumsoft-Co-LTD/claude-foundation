@@ -38,6 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Repository-internal quality tooling that no workflow runs anymore is
+  removed: coverage, CRAP, trend, debt, and refactoring-plan scripts; the
+  runtime, examples, and website mutation configs and baselines; the
+  semantic-mutant catalog; 32 `quality:*` / `test:mutation:*` npm scripts; and
+  the root `vitest` devDependencies. The release gate keeps only the dashboard
+  mutation run with coverage normalization and baseline delta. The
+  `claude-foundation quality …` consumer feature is unchanged.
 - Pull requests run only `workflow-tests` (`minimum-runtime` and
   `deterministic`). The `code-quality` and `mutation-nightly` workflows are
   removed: their coverage, CRAP, and mutation reports ran out of memory on
