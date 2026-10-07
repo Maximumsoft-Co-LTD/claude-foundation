@@ -59,11 +59,11 @@
     },
     {
       "name": "exec",
-      "usage": "exec <change> [--phase change|build|prove|land] -- <command...>",
+      "usage": "exec <change> [--phase change|build|prove|land] [--repo <id>] [--task <id>] -- <command...>",
       "audience": "agent",
       "kind": "write",
       "idempotent": false,
-      "description": "Run and time an external command (build, container, tests), recording its duration for metrics."
+      "description": "Run and time an external command (build, container, tests) in the change's sandbox for the named repository or task (else the caller's directory or the pending tasks' repository), recording its duration for metrics."
     },
     {
       "name": "describe",

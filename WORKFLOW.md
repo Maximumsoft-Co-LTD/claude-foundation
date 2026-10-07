@@ -289,7 +289,10 @@ Every EDIT or REPAIR lists `contextFiles` (absolute paths to open), `newFiles`
 `workspace`: a non-root repository's task names
 `.foundation/repository-sandboxes/<change>/<repository>`, never the shared
 sandbox's empty submodule directory, and the top-level `workspace` (plus a
-`workspaces` map by repository) is that sandbox whenever every task shares it. Unauthorized external work enters
+`workspaces` map by repository) is that sandbox whenever every task shares it.
+`claude-foundation exec <change> --repo <id>` (or `--task <id>`) runs a check in
+that same sandbox; without either, the caller's directory or a single pending
+task repository selects it, and nothing runs in the main checkout. Unauthorized external work enters
 `handoffs.yaml` only through a semantic amendment, and grounding reads belong in
 the draft's `grounding` field.
 Runtime approval binds agreement content and revision; task checkboxes and

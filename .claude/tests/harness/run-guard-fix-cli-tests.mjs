@@ -225,6 +225,16 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
   await route("exec", ["change"], execApi);
   await route("exec", ["change", "--phase", "build", "--", "true"], execApi);
   assert.equal(execCalls.length, 2);
+  // A multi-repository change names the repository (or task) sandbox to run in.
+  await route("exec", ["change", "--repo", "api", "--task", "T001", "--", "npm", "test",
+    "--repo", "inner"], execApi);
+  assert.deepEqual(execCalls[2], ["change", ["npm", "test", "--repo", "inner"], {
+    phase: undefined, repository: "api", task: "T001"
+  }]);
+  await route("exec", ["change", "--repository", "web", "--", "true"], execApi);
+  assert.equal(execCalls[3][2].repository, "web");
+  await assert.rejects(route("exec", ["change", "--repo", "a", "--repository", "b"], execApi),
+    /one of --repo and --repository/);
   await assert.rejects(route("exec", ["change", "--phase", "unknown"], execApi),
     /exec --phase must be/);
   await assert.rejects(route("exec", [], execApi), /exec requires a change id/);

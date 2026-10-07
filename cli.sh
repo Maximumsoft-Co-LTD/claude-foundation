@@ -72,7 +72,8 @@ find_project_root() {
 
 run_runtime() {
   local access="$1"; shift
-  local root runtime actual_api telemetry
+  local root runtime actual_api telemetry caller_cwd
+  caller_cwd="$PWD"
   root="$(find_project_root)"
   runtime="$root/.claude/harness/foundation.mjs"
   command -v node >/dev/null 2>&1 || fail "Node.js is required to run the project harness"
@@ -96,7 +97,10 @@ run_runtime() {
   esac
   telemetry=1
   [ "$access" != "inspect" ] || telemetry=0
+  # The runtime starts at the project root; `exec` maps the caller's directory
+  # into the matching sandbox, so it receives where the caller stood.
   FOUNDATION_TELEMETRY="$telemetry" FOUNDATION_PUBLIC_OPERATION="$phase" \
+    FOUNDATION_CALLER_CWD="$caller_cwd" \
     FOUNDATION_INSTALLED_CLI_VERSION="$(installed_version)" exec node "$runtime" "$@"
 }
 

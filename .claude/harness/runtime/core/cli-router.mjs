@@ -526,15 +526,20 @@ export async function routeRuntimeCommand(command, values, api) {
         flags,
         rest
       } = parseStrictCommandFlags(own, "exec", {
-        value: ["phase"]
+        value: ["phase", "repo", "repository", "task"]
       });
       if (!rest.length) die("exec requires a change id");
+      // `--repo` matches `packet`; `--repository` is accepted as its spelled-out form.
+      if (flags.repo !== undefined && flags.repository !== undefined)
+        die("exec accepts one of --repo and --repository");
       // The registry advertises this as an enum but nothing checked it, so
       // `--phase buidl` wrote a `buidl` bucket straight into `metrics.phases`
       // and the typo looked like a phase.
       if (flags.phase !== undefined && !LIFECYCLE_PHASES.includes(flags.phase)) die(`exec --phase must be ${LIFECYCLE_PHASES.join("|")}`);
       process.exitCode = execObserved(rest[0], commandArgs, {
-        phase: flags.phase
+        phase: flags.phase,
+        repository: flags.repo || flags.repository || null,
+        task: flags.task || null
       });
     },
     "budget-continue": async () => {

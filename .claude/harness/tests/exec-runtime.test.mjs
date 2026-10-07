@@ -179,3 +179,133 @@ test("exec records shell findings outside Land like the live hook and runs Prove
   assert.throws(() => runtime.execObserved("change", ["git", "push"], { phase: "land" }),
     /Land shell mutations require the runtime transaction marker/);
 });
+
+// A multi-repository change: the shared sandbox holds only an empty mirror of
+// the `api` submodule; its work and checks live in its repository sandbox.
+function multiRepositoryFixture(t) {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "foundation-exec-repositories-")));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const shared = join(root, ".foundation", "sandboxes", "change");
+  const api = join(root, ".foundation", "repository-sandboxes", "change", "api");
+  for (const path of [join(root, "services", "api", "src"), join(shared, "services", "api"),
+    join(shared, "docs"), join(api, "src")]) mkdirSync(path, { recursive: true });
+  const state = {
+    status: "building",
+    workspace: { path: shared },
+    repositories: {
+      root: { path: shared, targetPath: root, access: "write" },
+      api: { path: api, targetPath: join(root, "services", "api"), access: "write" }
+    }
+  };
+  let tasks = [{ id: "T001", repository: "api", done: false }];
+  let caller = root;
+  const failures = [];
+  const runtime = createExecRuntime({
+    logs: join(root, ".foundation", "logs"), root,
+    loadRuntime: () => state,
+    changeTasks: () => tasks,
+    callerCwd: () => caller,
+    now: () => "2026-10-07T00:00:00.000Z",
+    fail: (message, code, details) => {
+      failures.push(details?.code || null);
+      throw new Error(message);
+    }
+  });
+  const where = (options = {}) => {
+    const out = join(root, "where.txt");
+    assert.equal(runtime.execObserved("change", [process.execPath, "-e",
+      `require('node:fs').writeFileSync(${JSON.stringify(out)}, ` +
+      "process.cwd() + '\\n' + process.env.FOUNDATION_WORKSPACE_ROOT)"
+    ], { phase: "build", ...options }), 0);
+    return readFileSync(out, "utf8").split("\n");
+  };
+  return {
+    root, shared, api, state, failures, runtime, where,
+    setTasks: (value) => { tasks = value; },
+    setCaller: (value) => { caller = value; }
+  };
+}
+
+test("CASE-EXEC-REPOSITORY-SANDBOX: a repository task's command runs in that repository's sandbox", (t) => {
+  const fixture = multiRepositoryFixture(t);
+  // The pending task belongs to `api`, so its check starts in the api sandbox,
+  // not in the shared sandbox's empty mirror of it.
+  assert.deepEqual(fixture.where(), [fixture.api, fixture.api]);
+  assert.deepEqual(fixture.where({ repository: "root" }), [fixture.shared, fixture.shared]);
+  assert.deepEqual(fixture.where({ repository: "api" }), [fixture.api, fixture.api]);
+  assert.deepEqual(fixture.where({ task: "t001" }), [fixture.api, fixture.api]);
+
+  // Pending work in several repositories is ambiguous: the shared sandbox, as
+  // before, plus a notice naming the repository form.
+  fixture.setTasks([
+    { id: "T001", repository: "api", done: false },
+    { id: "T002", repository: "root", done: false }
+  ]);
+  const notices = [];
+  const original = console.error;
+  console.error = (line) => notices.push(String(line));
+  try {
+    assert.deepEqual(fixture.where(), [fixture.shared, fixture.shared]);
+  } finally { console.error = original; }
+  assert.match(notices.join("\n"), /repository 'api'.*--repo <repository>/);
+  assert.deepEqual(fixture.where({ task: "T001" }), [fixture.api, fixture.api]);
+  assert.deepEqual(fixture.where({ task: "T002" }), [fixture.shared, fixture.shared]);
+
+  // Prove reads the same sandboxes.
+  fixture.state.status = "proven";
+  fixture.setTasks([{ id: "T001", repository: "api", done: true }]);
+  assert.equal(fixture.runtime.execObserved("change", [process.execPath, "-e",
+    `require('node:fs').writeFileSync('prove.txt', '')`], { repository: "api" }), 0);
+  assert.equal(existsSync(join(fixture.api, "prove.txt")), true);
+});
+
+test("exec maps the caller's directory into the matching sandbox", (t) => {
+  const fixture = multiRepositoryFixture(t);
+  fixture.setTasks([]);
+  const apiSource = join(fixture.api, "src");
+  // Inside the repository sandbox, the main checkout's copy of the
+  // repository, or the shared sandbox's mirror of it.
+  fixture.setCaller(apiSource);
+  assert.deepEqual(fixture.where(), [apiSource, fixture.api]);
+  fixture.setCaller(join(fixture.root, "services", "api", "src"));
+  assert.deepEqual(fixture.where(), [apiSource, fixture.api]);
+  fixture.setCaller(join(fixture.shared, "services", "api"));
+  assert.deepEqual(fixture.where(), [fixture.api, fixture.api]);
+  // A root-repository directory maps within the shared sandbox.
+  mkdirSync(join(fixture.root, "docs"));
+  fixture.setCaller(join(fixture.root, "docs"));
+  assert.deepEqual(fixture.where(), [join(fixture.shared, "docs"), fixture.shared]);
+  // An explicit repository still honours a caller already inside it.
+  fixture.setCaller(apiSource);
+  assert.deepEqual(fixture.where({ repository: "api" }), [apiSource, fixture.api]);
+  // A directory missing from the sandbox starts at the sandbox root.
+  mkdirSync(join(fixture.root, "untracked"));
+  fixture.setCaller(join(fixture.root, "untracked"));
+  assert.deepEqual(fixture.where(), [fixture.shared, fixture.shared]);
+});
+
+test("exec refuses unknown repositories and tasks and never runs in the main checkout", (t) => {
+  const fixture = multiRepositoryFixture(t);
+  const marker = join(fixture.root, "ran.txt");
+  const command = [process.execPath, "-e",
+    `require('node:fs').writeFileSync(${JSON.stringify(marker)}, '')`];
+  assert.throws(() => fixture.runtime.execObserved("change", command, { repository: "web" }),
+    /repository 'web', which has no sandbox in change 'change' \(known: root, api\); run `claude-foundation exec change --repo <repository>/);
+  assert.throws(() => fixture.runtime.execObserved("change", command, { task: "T404" }),
+    /'T404', which is not a task of change 'change'/);
+  assert.throws(() => fixture.runtime.execObserved("change", command, {
+    repository: "root", task: "T001"
+  }), /belongs to repository 'api', not 'root'/);
+  fixture.state.workspace.path = fixture.root;
+  assert.throws(() => fixture.runtime.execObserved("change", command),
+    /exec never runs in the main checkout/);
+  fixture.state.workspace.path = undefined;
+  fixture.state.status = "change";
+  assert.throws(() => fixture.runtime.execObserved("change", command, { repository: "api" }),
+    /needs the change's isolated Build workspace.*advance change --through build/);
+  assert.deepEqual(fixture.failures, [
+    "EXEC_REPOSITORY_UNKNOWN", "EXEC_TASK_UNKNOWN", "EXEC_REPOSITORY_CONFLICT",
+    "EXEC_WORKSPACE_NOT_ISOLATED", "EXEC_WORKSPACE_MISSING"
+  ]);
+  assert.equal(existsSync(marker), false);
+});

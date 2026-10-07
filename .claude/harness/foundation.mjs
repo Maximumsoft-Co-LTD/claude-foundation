@@ -511,6 +511,14 @@ const { metricsValue, showMetrics } = createMetricsRuntime({
 });
 const { execObserved } = createExecRuntime({
   assertApproval: (id, state) => assertSpecApproval(ROOT, id, state),
+  root: ROOT,
+  // Task repositories decide which sandbox an exec child starts in.
+  changeTasks: (id, state) => {
+    const path = join(activeChangePath(id, state), "tasks.md");
+    return existsSync(path)
+      ? taskBlocks(readFileSync(path, "utf8")).filter((task) => task.id).map(taskMetadata)
+      : [];
+  },
   logs: LOGS,
   loadRuntime,
   now,

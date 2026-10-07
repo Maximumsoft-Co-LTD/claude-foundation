@@ -60,7 +60,9 @@ workspace is refused.
 The phase hook and `claude-foundation exec` use the same containment policy.
 They reject absolute outside operands, later directory escapes, and writes
 through symlinks outside the workspace; `exec` derives the phase from runtime
-state and starts Build children in the canonical workspace. This is cooperative
+state and starts Build children in the canonical workspace; for a
+multi-repository change, `exec <change> --repo <id>` (or `--task <id>`) starts
+them in that repository's sandbox. This is cooperative
 containment, so the host still owns process isolation for indirect effects.
 
 Parallel mode returns only independent tasks and lease instructions. The host
