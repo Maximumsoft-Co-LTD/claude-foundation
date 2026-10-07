@@ -90,7 +90,8 @@
         "inputTokens": { "$ref": "#/$defs/nullableNumber" },
         "outputTokens": { "$ref": "#/$defs/nullableNumber" },
         "cacheCreationTokens": { "$ref": "#/$defs/nullableNumber" },
-        "cacheReadTokens": { "$ref": "#/$defs/nullableNumber" }
+        "cacheReadTokens": { "$ref": "#/$defs/nullableNumber" },
+        "tokenSource": { "$ref": "#/$defs/nullableString" }
       }
     },
     "operations": {

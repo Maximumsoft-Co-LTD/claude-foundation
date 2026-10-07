@@ -17,7 +17,9 @@ import {
   compositeRepositorySelection, isolatedRepositoryState, nestedRepositoryRelativePaths,
   worktreeOwnedByTarget
 } from "../core/repository-binding.mjs";
-import { landedTargetPaths, otherLandedOutput, replayLandedEdit } from "./target-edits.mjs";
+import {
+  landedTargetPaths, otherLandedOutput, replayLandedEdit, resolutionKeepsLanded
+} from "./target-edits.mjs";
 import {
   captureCopyBase, captureCopyBaseSurface, copyBaseBytes, copyEditCarried, fileSource
 } from "./copy-base.mjs";
@@ -2087,8 +2089,11 @@ export function createSandboxRuntime({
         // bound to the exact target and sandbox bytes it was made against.
         const row = { target: identity(join(root, path)), sandbox: identity(sandboxFile),
           landedBy: landedBy[path] };
+        // An edit that dropped other landed content is not a merge: Land would
+        // overwrite that content, so the conflict stays open for the agent.
         const answered = priorConflicts[path]?.target === row.target &&
-          priorConflicts[path].sandbox !== row.sandbox;
+          priorConflicts[path].sandbox !== row.sandbox &&
+          resolutionKeepsLanded({ root, sandboxPath: workspace.path, path, baseBytes });
         const kept = priorResolved[path]?.target === row.target &&
           priorResolved[path].sandbox === row.sandbox;
         if (answered || kept) resolved[path] = row;
@@ -2157,8 +2162,9 @@ export function createSandboxRuntime({
         "sandbox copy; evidence covering it runs again before Land.");
     for (const row of conflicts)
       log(`CONFLICT ${row.path}: this change and the landed, uncommitted work of ${row.landedBy} ` +
-        "both changed the same lines. Edit the sandbox copy into the merge of both, keeping the " +
-        "landed content, then resume; that edit is taken as the merge. Ask the user only if the " +
+        "both changed the same lines. Edit the sandbox copy into the merge of both, keeping all the " +
+        "landed content (also its other edits in this file), then resume; a merge that drops landed " +
+        "content is not taken. Ask the user only if the " +
         "two changes' intents contradict.");
   }
 

@@ -321,6 +321,19 @@ export function buildScorecard(input) {
       observedRequests > 0) ? "partial" : modelRequestsMeasurement;
   const usageClassification = forcedTermination ? "partial-measurement"
     : observedRequests === 0 && hostUsage.requests === null ? "no-usage" : text(usageClass);
+  const streamUsage = object(observedUsage.streamUsage);
+  const streamTokens = { used: false };
+  // The envelope (or Foundation metrics) wins; the stream fills only a missing
+  // count, and a count nobody measured stays null, never zero.
+  const tokenValue = (field, metricValue) => {
+    const value = attemptUsageValue(hostUsage[field], metricValue, {
+      noModelDispatch, forcedTermination, observedRequests
+    });
+    if (value !== null) return value;
+    const streamed = noModelDispatch ? null : measured(streamUsage[field]);
+    if (streamed !== null) streamTokens.used = true;
+    return streamed;
+  };
   const startedAt = timestamp(stopwatch.startedAt);
   const finishedAt = timestamp(stopwatch.finishedAt);
   const oracle = oracleSummary(input.oracle);
@@ -365,17 +378,14 @@ export function buildScorecard(input) {
       observedModelRequests: observedRequests,
       hostReportedModelRequests: hostUsage.requests,
       capConsumedModelRequests: capConsumedRequests,
-      inputTokens: attemptUsageValue(hostUsage.inputTokens, metrics.inputTokens, {
-        noModelDispatch, forcedTermination, observedRequests
-      }),
-      outputTokens: attemptUsageValue(hostUsage.outputTokens, metrics.outputTokens, {
-        noModelDispatch, forcedTermination, observedRequests
-      }),
-      cacheCreationTokens: attemptUsageValue(hostUsage.cacheCreationTokens,
-        metrics.cacheCreationTokens, { noModelDispatch, forcedTermination, observedRequests }),
-      cacheReadTokens: attemptUsageValue(hostUsage.cacheReadTokens, metrics.cacheReadTokens, {
-        noModelDispatch, forcedTermination, observedRequests
-      })
+      inputTokens: tokenValue("inputTokens", metrics.inputTokens),
+      outputTokens: tokenValue("outputTokens", metrics.outputTokens),
+      cacheCreationTokens: tokenValue("cacheCreationTokens", metrics.cacheCreationTokens),
+      cacheReadTokens: tokenValue("cacheReadTokens", metrics.cacheReadTokens),
+      // Where the token counts came from. A host stopped before its result
+      // envelope still streamed per-request usage: a floor, so `partial`.
+      tokenSource: streamTokens.used ? "stream-derived"
+        : hostUsage.inputTokens !== null ? "host-result-envelope" : null
     },
     operations: operationSummary(input.operationRows, metrics, input.hostTelemetry),
     friction: frictionSummary(input.hostTelemetry),

@@ -882,7 +882,8 @@ target: paths the later change left alone land beside it untouched, and for a
 path both changed it replays the landed edit into the later change's sandbox
 copy (a 3-way merge), proves again only what that invalidated, and applies.
 When both rewrote the same lines, the later change's agent merges them in its
-sandbox copy, keeping the landed content; that edit is the resolution. Earlier
+sandbox copy, keeping the landed content; that edit is the resolution unless it drops
+landed edits, which keeps the conflict with the agent. Earlier
 landed bytes are never restored over or offered for discard, and the user is
 asked only when the two changes' intents genuinely contradict. Each change
 archives in Land order, so OpenSpec merges each change's spec delta onto the

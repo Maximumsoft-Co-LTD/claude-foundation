@@ -189,6 +189,41 @@ timeout can therefore keep observed browser and task-mirror counts even when
 the final result envelope never arrives. Cost remains unavailable in that case;
 the scorecard never guesses dollars from an external price table.
 
+The final result envelope is the only source of cost, and the runner used to
+stop the host at `proven`/`archived` before it was sent. A stopped host now gets
+`--final-envelope-grace-ms` (default 15000, `0` disables) to finish its closing
+message. The scorecard's wall time stays the moment the backend reached the
+terminal state; the wait is not counted. When no envelope arrives anyway, token
+counts fall back to the host's streamed per-request `usage` (largest value per
+request id, summed), flagged `usage.tokenSource: "stream-derived"` and
+`partial`; an unmeasured count stays `null`, and cost stays `unavailable`
+because no dollars are derived from tokens.
+
+## Time gate (advisory, 1.3x)
+
+The product target is Change Loop wall time of at most 1.3x the same task
+without the harness. `time-gate.mjs` checks it from scorecards of both arms
+(rows with `arm: "baseline"` against Change Loop rows, which carry no arm or
+`arm: "change-loop"`; a lab run directory, `scorecard.json` files, or scorecard
+JSONL are all read):
+
+```bash
+node .claude/tests/bench/openspec-native/time-gate.mjs \
+  .claude/tests/bench/results/openspec-native-lab [more roots] [--target 1.3] [--strict] [--json]
+```
+
+Scenarios group into a `rapid` or `standard` tier by the lane recorded on the
+row, else by matrix risk (`low` is rapid). Per scenario it prints baseline and
+Change Loop median wall time, the ratio, median model requests, median
+`harnessActiveMs`, and total permission prompts; only completed runs count. A
+tier's ratio is the median of its paired scenarios' Change Loop medians over the
+median of their baseline medians. Exit 2 when any tier exceeds the target.
+
+This is advisory paid evidence like the rest of this lab: with no paired
+baseline it reports `advisory` and exits 0 (`--strict` exits 2), and
+`release-report.mjs` lists it under `advisories` without affecting
+`releaseReady`. It is never a deterministic CI failure.
+
 Request accounting keeps the effective, stream-observed, host-reported, and
 cap-consumed counts separately. On forced termination, an observed request
 count wins over a synthetic zero result envelope. A zero-cost envelope paired

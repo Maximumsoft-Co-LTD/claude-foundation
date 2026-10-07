@@ -486,7 +486,7 @@ export async function settleProjectProcesses(project, { timeoutMs = 60000, pollM
 export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
   maxModelRequests = null, maxToolCalls = null, selfReviewAuthorized = false,
   stopOnArchived = false, stopOnProven = false, terminalGraceMs = 120000,
-  settleTimeoutMs = 60000 }) {
+  settleTimeoutMs = 60000, finalEnvelopeGraceMs = 0 }) {
   return new Promise((resolveRun) => {
     const initialChangeId = discoverChangeId(project);
     const initialStatus = initialChangeId
@@ -506,6 +506,8 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
     const toolUseIds = new Set();
     const pendingToolUseIds = new Set();
     let terminalSeenAt = null;
+    let terminalWallMs = null;
+    let sawResult = false;
     let partialLine = "";
     let budgetExhausted = null;
     let decisionBoundary = null;
@@ -540,6 +542,12 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
       // mid-Land and race the backend Land, so let it return first.
       terminalSeenAt ??= Date.now();
       if (pendingToolUseIds.size && Date.now() - terminalSeenAt < terminalGraceMs) return;
+      // The host's final result envelope carries the run's cost. Give it a short
+      // grace to finish its closing message, but the measured wall time is the
+      // moment the backend reached the terminal state, not the narration after.
+      terminalWallMs ??= performance.now() - started;
+      if (finalEnvelopeGraceMs > 0 && !sawResult &&
+          Date.now() - terminalSeenAt < finalEnvelopeGraceMs) return;
       terminalReached = { changeId, status: state.status, observedAt: new Date().toISOString() };
       clearInterval(terminalTimer);
       terminate();
@@ -551,6 +559,7 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
       for (const line of lines) {
         let row;
         try { row = JSON.parse(line); } catch { continue; }
+        if (row?.type === "result") sawResult = true;
         const requestId = row?.type === "assistant"
           ? row.message?.id || row.request_id || null : null;
         if (requestId) requestIds.add(requestId);
@@ -633,8 +642,11 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
         observedModelRequests: requestIds.size || null,
         observedToolCalls: toolUseIds.size || null,
         stopwatch: {
-          wallMs: performance.now() - started, startedAt,
-          finishedAt: new Date().toISOString(), startedEpochMs
+          wallMs: terminalReached && terminalWallMs !== null && finalEnvelopeGraceMs > 0
+            ? terminalWallMs : performance.now() - started,
+          finalEnvelopeWaitMs: terminalReached && terminalWallMs !== null && finalEnvelopeGraceMs > 0
+            ? Math.max(0, performance.now() - started - terminalWallMs) : 0,
+          startedAt, finishedAt: new Date().toISOString(), startedEpochMs
         }
       });
     });
@@ -735,12 +747,42 @@ export function streamToolResultIds(row) {
     .map((item) => item.tool_use_id);
 }
 
+// Token usage the host streamed per model request: the largest value each
+// request reported (a request repeats its usage per content block), summed over
+// distinct request ids. It covers a host stopped before its result envelope;
+// the last request's output count may still be growing, so it is a floor.
+// Null when the stream carries no usage; dollars are never derived from it.
+export function streamUsage(rows) {
+  const byRequest = new Map();
+  for (const row of rows) {
+    const usage = row?.type === "assistant" ? row.message?.usage : null;
+    const id = row?.message?.id || row?.request_id;
+    if (!usage || !id) continue;
+    const seen = byRequest.get(id) || {};
+    for (const [key, field] of [["inputTokens", "input_tokens"], ["outputTokens", "output_tokens"],
+      ["cacheCreationTokens", "cache_creation_input_tokens"],
+      ["cacheReadTokens", "cache_read_input_tokens"]]) {
+      const value = Number(usage[field]);
+      if (Number.isFinite(value) && value >= 0) seen[key] = Math.max(seen[key] ?? 0, value);
+    }
+    byRequest.set(id, seen);
+  }
+  if (!byRequest.size) return null;
+  const total = (key) => {
+    const values = [...byRequest.values()].map((row) => row[key]).filter(Number.isFinite);
+    return values.length ? values.reduce((left, right) => left + right, 0) : null;
+  };
+  return { inputTokens: total("inputTokens"), outputTokens: total("outputTokens"),
+    cacheCreationTokens: total("cacheCreationTokens"), cacheReadTokens: total("cacheReadTokens") };
+}
+
 export function parseHostOutput(stdout) {
   const rows = streamRows(stdout);
   const observedRequestIds = new Set(rows.flatMap((row) => row?.type === "assistant"
     ? [row.message?.id || row.request_id].filter(Boolean) : []));
   const observedUsage = {
-    observedModelRequests: observedRequestIds.size || null
+    observedModelRequests: observedRequestIds.size || null,
+    streamUsage: streamUsage(rows)
   };
   const isStream = rows.some((row) =>
     ["system", "assistant", "user", "result"].includes(row?.type));
@@ -934,7 +976,9 @@ async function main() {
         maxToolCalls: args["max-tool-calls"] ? Number(args["max-tool-calls"]) : null,
         selfReviewAuthorized,
         stopOnArchived: landAuthorized && !args.oracle,
-        stopOnProven: landAuthorized && Boolean(args.oracle)
+        stopOnProven: landAuthorized && Boolean(args.oracle),
+        finalEnvelopeGraceMs: args["final-envelope-grace-ms"] !== undefined
+          ? Number(args["final-envelope-grace-ms"]) : 15000
       });
       decisionBoundary = execution.decisionBoundary || null;
     }
@@ -1048,6 +1092,7 @@ async function main() {
     hostUsage: {
       observedModelRequests: execution.observedModelRequests ??
         parsedHost.observedUsage.observedModelRequests,
+      streamUsage: parsedHost.observedUsage.streamUsage ?? null,
       capConsumedModelRequests: execution.budgetExhausted?.kind === "model-requests"
         ? execution.budgetExhausted.used : null,
       forcedTermination: Boolean(execution.budgetExhausted || execution.timedOut ||

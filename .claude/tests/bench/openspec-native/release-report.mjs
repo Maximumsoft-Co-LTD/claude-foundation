@@ -7,11 +7,12 @@ import { fileURLToPath } from "node:url";
 import { aggregateLabRuns } from "./aggregate.mjs";
 import { loadMatrix, matrixIssues } from "./matrix.mjs";
 import { runDeterministicSentinel } from "./sentinel.mjs";
+import { timeGateReport } from "./time-gate.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_RESULTS = resolve(HERE, "../results/openspec-native-lab");
 
-export function buildReleaseReport({ matrix, sentinel, aggregates = [] }) {
+export function buildReleaseReport({ matrix, sentinel, aggregates = [], timeGate = null }) {
   const byScenario = new Map(aggregates.map((row) => [row.scenario, row]));
   const scenarios = matrix.scenarios.map((scenario) => {
     const deterministic = sentinel.scenarios.find((row) => row.id === scenario.id);
@@ -63,6 +64,10 @@ export function buildReleaseReport({ matrix, sentinel, aggregates = [] }) {
       zeroModelSpend: sentinel.zeroModelSpend
     },
     scenarios,
+    // Advisory paid evidence (1.3x wall-time target against the no-harness
+    // baseline): visible in the report, never part of `releaseReady`.
+    advisories: timeGate ? [{ id: "time-gate", status: timeGate.status,
+      reason: timeGate.reason, targetRatio: timeGate.targetRatio, tiers: timeGate.tiers }] : [],
     releaseReady: ready,
     status: ready ? "ready" : "blocked",
     blockedCount: scenarios.filter((row) => row.blocker).length
@@ -76,7 +81,8 @@ export function releaseReport(resultsRoot = DEFAULT_RESULTS) {
   const sentinel = runDeterministicSentinel();
   const aggregates = existsSync(resultsRoot)
     ? aggregateLabRuns(resultsRoot, sentinel.source) : [];
-  return buildReleaseReport({ matrix, sentinel, aggregates });
+  const timeGate = existsSync(resultsRoot) ? timeGateReport([resultsRoot]) : null;
+  return buildReleaseReport({ matrix, sentinel, aggregates, timeGate });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
