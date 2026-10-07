@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { checkNpmWorkspace } from "./npm-lockfile-check.mjs";
+import { aliasedTestProvider } from "./provider-catalog.mjs";
 
 const PROVIDER_SCRIPT_ALIASES = {
   "static-analysis": ["check", "typecheck", "type-check", "lint"],
@@ -212,7 +213,10 @@ export function capabilityRepositories(capability, repositories, contract) {
 export function configuredEvidenceProviders({
   contract, repositories, providerCapability, commandExists, root
 }) {
-  return Object.entries(contract.providers || {}).map(([provider, config]) => {
+  // A provider that only repeats a test provider's command is not wiring for
+  // its capability; detection treats it as missing (see aliasedTestProvider).
+  return Object.entries(contract.providers || {}).filter(([provider, config]) =>
+    !aliasedTestProvider(contract.providers, provider, config)).map(([provider, config]) => {
     const repositoryId = config.repository || "root";
     const repository = repositories.find((row) => row.id === repositoryId);
     const executable = config.adapter === "external" ? null : config.command?.[0] || null;
@@ -340,10 +344,22 @@ export function detectEvidenceWiring({
   const configured = configuredEvidenceProviders({
     contract, repositories, providerCapability, commandExists, root
   });
-  const missing = required.filter((provider) => !providerConfig(provider));
-  const { candidates, unresolved } = discoverMissingEvidence({
+  const missing = required.filter((provider) => {
+    const config = providerConfig(provider);
+    return !config || Boolean(config.aliasOf);
+  });
+  const discovered = discoverMissingEvidence({
     missing, providerConfig, providerCapability, knownProviders, repositories, contract,
     tooling, declaredSurface, root
+  });
+  const { candidates } = discovered;
+  const unresolved = discovered.unresolved.map((row) => {
+    const aliasOf = providerConfig(row.provider)?.aliasOf;
+    return aliasOf ? {
+      ...row, aliasOf,
+      detail: `covered by review: its provider only repeats test provider '${aliasOf}'; ` +
+        `wire a project-owned ${row.capability} command to observe it`
+    } : row;
   });
   const unavailable = unavailableEvidenceProviders(configured);
   return {

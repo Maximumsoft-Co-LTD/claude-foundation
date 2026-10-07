@@ -121,6 +121,9 @@ export function proofPreflightAdvisory(advisory) {
     return `  WAIVED ${advisory.capability}: withdrawn by ${
       advisory.authority?.reference || "user decision"}${
       advisory.detail ? ` — ${advisory.detail}` : ""}; not blocking`;
+  if (advisory.reason === "covered-by-review")
+    return `  COVERED BY REVIEW ${advisory.capability}: provider only repeats test provider '${
+      advisory.aliasOf}'; the required review covers it; ${advisory.next}`;
   return `  ADVISORY ${advisory.capability}: inferred from ${
     advisory.trigger || "the changed surface"} with no provider wired; not blocking`;
 }
@@ -215,16 +218,23 @@ export function acceptanceEvidenceRecovery(id, provider, acceptance = {}) {
   };
 }
 
-export function genericExternalEvidenceRecovery(provider, wiring) {
+// `aliasOf` names the test provider whose command this provider only
+// repeated; that run cannot stand in for the capability, so the summary says
+// why the provider is unwired rather than implying it never had a command.
+export function genericExternalEvidenceRecovery(provider, wiring, aliasOf = null) {
+  const repeated = aliasOf
+    ? ` Its configured command only repeats test provider '${aliasOf}', which observes nothing beyond those tests.`
+    : "";
   return {
     provider,
     kind: "user-decision",
     ...(wiring ? { wiring } : {}),
+    ...(aliasOf ? { aliasOf } : {}),
     decision: {
       kind: "external-evidence",
-      summary: wiring
+      summary: (wiring
         ? `Provider '${provider}' has no adapter yet, but this project already owns a command that can prove it (${wiring.source}).`
-        : `Provider '${provider}' needs verifiable evidence from outside the local harness.`,
+        : `Provider '${provider}' needs verifiable evidence from outside the local harness.`) + repeated,
       options: [
         ...(wiring ? [{ id: "wire-provider", outcome: `Wire the project-owned command detected at ${wiring.source}.` }] : []),
         { id: "provide-evidence", outcome: "Provide a real external result and durable reference." },
@@ -243,11 +253,13 @@ export function externalEvidenceRecoveryOperation({
   loadRuntime,
   wiringChoice
 }, id, provider) {
-  const capability = providerCapability(provider, providerConfig(id, provider));
+  const config = providerConfig(id, provider);
+  const capability = providerCapability(provider, config);
   if (capability === "review") return reviewEvidenceRecovery(id, provider);
   if (capability === "acceptance")
     return acceptanceEvidenceRecovery(id, provider, loadRuntime(id).acceptance || {});
-  return genericExternalEvidenceRecovery(provider, wiringChoice(id, provider));
+  return genericExternalEvidenceRecovery(provider, wiringChoice(id, provider),
+    config?.aliasOf || null);
 }
 
 export function repositoryRuntimeState(state, repository) {

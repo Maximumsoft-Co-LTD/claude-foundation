@@ -63,6 +63,12 @@ import {
 // Marks a start whose re-inspected intake is not DONE (see completedDraftIntake).
 const INCOMPLETE_INTAKE = Symbol("incomplete-intake");
 
+// Typed draft risk signals as persisted on the change: lowercased, unique, sorted.
+export function riskSignalValues(signals) {
+  return [...new Set((Array.isArray(signals) ? signals : [])
+    .map((value) => String(value).trim().toLowerCase()).filter(Boolean))].sort();
+}
+
 // Each API error a contract lists needs the status or code a client matches
 // on; without one the design renders `?` and Build guesses the wire shape.
 // An agent repair at inspect, never a user question.
@@ -1795,6 +1801,18 @@ export function createChangeLifecycle({
     return { state, upgraded };
   }
 
+  // Typed draft risk signals stay on the change so review routing can read
+  // them at Prove (see review-routing SECURITY_RISK_SIGNAL_TIERS). Absent
+  // signals leave the state untouched, so existing fingerprints do not move.
+  function persistRiskSignals(id, signals) {
+    const values = riskSignalValues(signals);
+    const state = loadRuntime(id);
+    if (!values.length && state.riskSignals === undefined) return;
+    if (values.length) state.riskSignals = values;
+    else delete state.riskSignals;
+    saveRuntime(state);
+  }
+
   function startResolutionFlags(draft, classification, rapid) {
     const { impact, coupling, securityTriggers } = classification;
     return {
@@ -1930,6 +1948,7 @@ export function createChangeLifecycle({
         // upgrade needs a second projection; the common path was previously
         // rewritten unconditionally after createChange had already materialized it.
         if (resolution.upgraded) materializeDraft(id, draft);
+        persistRiskSignals(id, draft.riskSignals);
         // Atomic start is a public Change gate. Use the same explicit validation
         // as `change validate`, including OpenSpec strict lint when available.
         measureStage("change.validate", () => validate(id, "root"));
@@ -2208,6 +2227,7 @@ export function createChangeLifecycle({
         try { resolution = resolveChange(id, resolutionFlags); }
         finally { atomicStepOutput = false; }
         if (resolution.upgraded) materializeDraft(id, draft);
+        persistRiskSignals(id, draft.riskSignals);
         validate(id, "root");
         bindClaudeSession(id, "change");
         const next = loadRuntime(id);
@@ -2565,6 +2585,9 @@ export function createChangeLifecycle({
         for (const key of compiled.removedRequirementKeys) delete fingerprints[key];
         nextState.requirementFingerprints = fingerprints;
       }
+      const amendedSignals = riskSignalValues([
+        ...(priorState.riskSignals || []), ...(amendment.riskSignals || [])]);
+      if (amendedSignals.length) nextState.riskSignals = amendedSignals;
       saveRuntime(nextState);
       // A prior proof-advance checkpoint describes the old contract. Even when
       // every executable receipt is preserved, the coordinator must re-enter

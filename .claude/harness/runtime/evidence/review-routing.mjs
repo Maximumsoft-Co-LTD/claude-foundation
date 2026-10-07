@@ -23,12 +23,34 @@ const THAI_HIGH_SEMANTICS = thaiRiskPattern(...Object.keys(THAI_RISK_SEMANTICS))
 const HIGH_CLASSES =
   /money|authori[sz]|secret|destructive|concurren|replay|idempoten|queue|wire|legacy|activation|cutover/;
 
+// Typed draft risk signals that name a trust boundary set the review tier the
+// same way a declared security trigger does. `access-control` is an
+// authorization boundary: the high tier. `input-domain` is caller-supplied
+// values reaching computation: at least the medium tier, so its first review
+// runs on the configured model instead of the fast low-risk one. Other typed
+// signals already reach review through the capabilities and coverage they
+// require; they do not move the tier here.
+export const SECURITY_RISK_SIGNAL_TIERS = Object.freeze({
+  "access-control": "high",
+  "input-domain": "medium"
+});
+
+// The declared trust-boundary signals that set `tier`, lowercased and sorted.
+export function securityRiskSignals(state = {}, tier = null) {
+  const values = Array.isArray(state?.riskSignals) ? state.riskSignals : [];
+  return [...new Set(values.map((value) => String(value).trim().toLowerCase())
+    .filter((value) => Object.hasOwn(SECURITY_RISK_SIGNAL_TIERS, value) &&
+      (!tier || SECURITY_RISK_SIGNAL_TIERS[value] === tier)))].sort();
+}
+
 // Intent keywords alone make review required at the low tier (user
 // decision). They escalate the tier or require reviewer diversity only when
-// the change also declares risk: security triggers, non-low impact, coupling,
-// a non-low claim, or a grounded risk tier/class.
+// the change also declares risk: security triggers, an access-control risk
+// signal, non-low impact, coupling, a non-low claim, or a grounded risk
+// tier/class.
 export function declaredReviewRisk({ state = {}, claims = [], grounding = null }) {
   return Boolean((state.securityTriggers || []).length ||
+    securityRiskSignals(state, "high").length ||
     (state.impact && state.impact !== "low") || state.coupling === "coupled" ||
     claims.some((claim) => claim.impact && claim.impact !== "low") ||
     ["medium", "high"].includes(grounding?.risk?.tier) ||
@@ -53,7 +75,8 @@ export function highReviewRiskTriggers({ state, claims, capabilities, grounding 
   }
   if (state.impact === "high" || claims.some((claim) => claim.impact === "high"))
     triggers.push("high-impact");
-  if ((state.securityTriggers || []).length || capabilities.has("security-static"))
+  if ((state.securityTriggers || []).length || capabilities.has("security-static") ||
+      securityRiskSignals(state, "high").length)
     triggers.push("authorization-or-secrets");
   for (const capability of HIGH_CAPABILITIES) {
     if (!capabilities.has(capability)) continue;
@@ -74,6 +97,8 @@ export function mediumReviewRiskTriggers({
     triggers.push("medium-impact-or-coupling");
   if (claims.some((claim) => claim.impact !== "low") || requiredTriggers.length)
     triggers.push("review-risk");
+  if (securityRiskSignals(state, "medium").length)
+    triggers.push("input-domain");
   return triggers;
 }
 

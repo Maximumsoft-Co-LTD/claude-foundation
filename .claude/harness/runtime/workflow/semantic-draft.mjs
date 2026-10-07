@@ -4,7 +4,9 @@ import {
 } from "./validation/semantic-intake.mjs";
 import { designBlueprintIssues } from "./validation/design-blueprints.mjs";
 import { readerGuideIssues } from "./validation/reader-guide.mjs";
-import { devDocumentIssues, devDocumentShapeIssues } from "./validation/dev-document.mjs";
+import {
+  devDocumentIssues, devDocumentShapeIssues, inferWorkTypes
+} from "./validation/dev-document.mjs";
 
 const OPERATIONS = new Set(["added", "modified", "removed"]);
 const AUTHORITY_CAPABILITIES = new Set(["review", "acceptance", "semantic-acceptance"]);
@@ -308,11 +310,22 @@ function semanticDraftIssues(source, { defaultTestEvidence = false } = {}) {
   return issues;
 }
 
+// Docs or chore work has no behavior for a test runner to count: its verify
+// command (a grep, a link check) is proven by its exit code, so an omitted
+// capability list means "static-analysis", never test discovery.
+const STATIC_EVIDENCE_WORK = new Set(["docs", "chore"]);
+export function defaultEvidenceCapability(source) {
+  const types = inferWorkTypes(source || {});
+  return types.length && types.every((type) => STATIC_EVIDENCE_WORK.has(type))
+    ? "static-analysis" : "test";
+}
+
 function normalizeRequirements(source, slugify, issues, {
   loadCanonicalSpec = null, defaultTestEvidence = false, defaultedEvidence = [],
   reservedClaimIds = []
 } = {}) {
   const evidence = evidenceEntries(source.evidence);
+  const defaultCapability = defaultTestEvidence ? defaultEvidenceCapability(source) : "test";
   const requirements = [];
   const requirementKeys = new Set();
   const pendingClaims = [];
@@ -368,15 +381,16 @@ function normalizeRequirements(source, slugify, issues, {
       ...stringList(requirement?.capabilities)
     ]);
     // A rapid draft proves every requirement with its covering tasks' verify
-    // commands, so an omitted capability list means exactly that: "test".
+    // commands, so an omitted capability list means exactly that: "test", or
+    // "static-analysis" for docs/chore work.
     if (defaultTestEvidence && !capabilities.length &&
         evidenceValue?.capabilities === undefined && requirement?.capabilities === undefined) {
-      capabilities.push("test");
+      capabilities.push(defaultCapability);
       defaultedEvidence.push(key);
     } else if (!evidenceValue && !requirement?.capabilities)
       issues.push(`${label} requires evidence['${key}'].capabilities ` +
         "(only a low-impact, isolated draft without security triggers, review, or acceptance " +
-        "may omit it and default to [\"test\"])");
+        "may omit it and default to [\"test\"], or [\"static-analysis\"] for docs/chore work)");
     if (!capabilities.length)
       issues.push(`${label} requires at least one evidence capability`);
 

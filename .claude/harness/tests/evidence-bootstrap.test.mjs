@@ -28,6 +28,9 @@ import {
   testCandidates,
   unavailableEvidenceProviders
 } from "../runtime/evidence/evidence-bootstrap.mjs";
+import {
+  aliasedTestProvider, unobservedAliasConfig
+} from "../runtime/evidence/provider-catalog.mjs";
 
 test("npm manifest and lockfile get a deterministic built-in consistency candidate", () => {
   const root = workspace();
@@ -333,5 +336,63 @@ test("dedupe and top-level detection return stable ready, configuration, and inf
     writeFileSync(join(root, "package.json"), "{");
     const warned = detectEvidenceWiring({ ...base, required: [] });
     assert.equal(warned.warnings[0].reason, "invalid-json");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("a specialist provider that repeats the test command resolves as unwired, not passed", () => {
+  const command = ["sh", "-c", "node --test test/api.test.mjs"];
+  const providers = {
+    test: { adapter: "test-discovery", command, minimum: 1, claims: "declared" },
+    "security-static": { adapter: "command", capability: "security-static", command,
+      claims: "declared" },
+    resilience: { adapter: "command", capability: "resilience", command },
+    "static-analysis": { adapter: "command", capability: "static-analysis", command },
+    compatibility: { adapter: "command", capability: "compatibility",
+      command: ["npm", "run", "test:compatibility"] },
+    "data-migration": { adapter: "command", capability: "data-migration", command,
+      criticalCases: ["migration-rollback"] }
+  };
+  assert.equal(aliasedTestProvider(providers, "security-static"), "test");
+  assert.equal(aliasedTestProvider(providers, "resilience"), "test");
+  // Only specialist capabilities; a distinct command, environment, or named
+  // critical cases observe something of their own.
+  assert.equal(aliasedTestProvider(providers, "static-analysis"), null);
+  assert.equal(aliasedTestProvider(providers, "compatibility"), null);
+  assert.equal(aliasedTestProvider(providers, "data-migration"), null);
+  assert.equal(aliasedTestProvider({ ...providers, resilience: {
+    ...providers.resilience, env: { FAULT_INJECTION: "1" } } }, "resilience"), null);
+  assert.equal(aliasedTestProvider({ "security-static": providers["security-static"] },
+    "security-static"), null, "no test provider, nothing repeated");
+
+  assert.deepEqual(unobservedAliasConfig(providers, "security-static",
+    providers["security-static"]), {
+    adapter: "external", capability: "security-static", claims: "declared", aliasOf: "test"
+  });
+  assert.equal(unobservedAliasConfig(providers, "compatibility", providers.compatibility),
+    providers.compatibility);
+  assert.equal(unobservedAliasConfig(providers, "test", providers.test), providers.test);
+
+  const root = workspace();
+  try {
+    writeFileSync(join(root, "package.json"), JSON.stringify({
+      scripts: { test: "node --test" }
+    }));
+    const contract = { claims: [], providers: {
+      test: providers.test, "security-static": providers["security-static"]
+    } };
+    const detection = detectEvidenceWiring({
+      id: "change", root, contract, repositories: [repository(root)],
+      required: ["test", "security-static"],
+      providerConfig: (provider) => unobservedAliasConfig(contract.providers, provider,
+        contract.providers[provider] || null),
+      providerCapability: (provider, config) => config?.capability || provider,
+      knownProviders: new Set(["test", "security-static"]),
+      commandExists: () => true, stableHash: JSON.stringify
+    });
+    assert.deepEqual(detection.configured.map((row) => row.provider), ["test"]);
+    assert.equal(detection.status, "NEEDS_CONFIGURATION");
+    const row = detection.unresolved.find((item) => item.provider === "security-static");
+    assert.equal(row.reason, "no-safe-project-command");
+    assert.equal(row.aliasOf, "test");
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

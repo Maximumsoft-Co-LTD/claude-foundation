@@ -1880,6 +1880,33 @@ test("a rapid draft may omit evidence capabilities and proves with test, discove
   assert.deepEqual(required, ["discovery", "review", "test"]);
 });
 
+test("docs or chore work defaults omitted capabilities to static-analysis by exit code", () => {
+  for (const workType of [["docs"], ["chore"], ["docs", "chore"]]) {
+    const result = normalizeSemanticDraft(rapidDraftWithoutEvidence({ workType }), slugify,
+      { defaultRapidEvidence: true });
+    assert.deepEqual(result.issues, [], workType.join());
+    assert.ok(result.draft.claims.every((claim) =>
+      claim.capabilities.join() === "static-analysis"), workType.join());
+    const providers = result.draft.execution.providers;
+    assert.deepEqual(Object.keys(providers), ["static-analysis"]);
+    assert.equal(providers["static-analysis"].adapter, "command");
+  }
+  // Inferred from paths: a task touching only Markdown is docs work.
+  const inferred = rapidDraftWithoutEvidence();
+  inferred.tasks = inferred.tasks.map((task) => ({ ...task, paths: ["README.md"] }));
+  assert.ok(normalizeSemanticDraft(inferred, slugify, { defaultRapidEvidence: true })
+    .draft.claims.every((claim) => claim.capabilities.join() === "static-analysis"));
+  // Mixed work, product work, and authored capabilities keep their evidence.
+  assert.ok(normalizeSemanticDraft(rapidDraftWithoutEvidence({ workType: ["docs", "feature"] }),
+    slugify, { defaultRapidEvidence: true }).draft.claims.every((claim) =>
+    claim.capabilities.join() === "test"));
+  assert.ok(normalizeSemanticDraft(rapidDraftWithoutEvidence({ workType: ["docs"],
+    evidence: { "payment-retry": { capabilities: ["test"] },
+      "audit-result": { capabilities: ["test"] } } }), slugify,
+  { defaultRapidEvidence: true }).draft.claims.every((claim) =>
+    claim.capabilities.join() === "test"));
+});
+
 test("evidence defaults stay off for standard drafts, explicit opt-out, and v3 callers", () => {
   const missing = /requires evidence\['payment-retry'\]\.capabilities/;
   // Standard lane: medium impact must still declare capabilities.

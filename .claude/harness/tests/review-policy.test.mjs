@@ -230,3 +230,62 @@ test("evidence contract review policy composes grounding, routing, and project p
   const defaultState = contract.reviewPolicy("change", undefined, { claims: [] });
   assert.equal(defaultState.required, false);
 });
+
+test("a capability covered by review requires review at its tier", () => {
+  const command = ["sh", "-c", "npm test"];
+  const contractFor = (capability) => ({
+    providers: {
+      test: { adapter: "test-discovery", command },
+      [capability]: { adapter: "command", capability, command }
+    },
+    claims: [{ id: "a", impact: "low", capabilities: ["test", capability] }]
+  });
+  const route = (capability) => {
+    const contract = contractFor(capability);
+    const signals = collectReviewSignals({ impact: "low" }, contract);
+    return { signals, route: classifyReviewRisk({
+      state: { impact: "low" }, claims: contract.claims,
+      capabilities: signals.capabilities, grounding: null,
+      requiredTriggers: signals.requiredTriggers
+    }) };
+  };
+  const security = route("security-static");
+  assert.deepEqual(security.signals.requiredTriggers, ["covered-by-review:security-static"]);
+  assert.equal(security.route.tier, "high");
+  const resilience = route("resilience");
+  assert.deepEqual(resilience.signals.requiredTriggers, ["covered-by-review:resilience"]);
+  assert.equal(resilience.route.tier, "medium");
+  // Legacy policy requires review for it too.
+  assert.equal(assembleReviewPolicy({
+    state: {}, signals: resilience.signals, riskRoute: resilience.route,
+    policy: {}, riskTiered: false
+  }).required, true);
+  // A real command observes the capability itself: no review trigger.
+  const wired = contractFor("resilience");
+  wired.providers.resilience.command = ["npm", "run", "chaos"];
+  assert.deepEqual(collectReviewSignals({}, wired).requiredTriggers, []);
+});
+
+test("typed trust-boundary risk signals escalate the review tier", () => {
+  const route = (riskSignals, extra = {}) => classifyReviewRisk({
+    state: { intent: "show the order total", impact: "low", coupling: "isolated",
+      securityTriggers: [], riskSignals, ...extra },
+    claims: [{ id: "c", impact: "low", capabilities: ["test"] }],
+    capabilities: new Set(["test"]), grounding: null
+  });
+  assert.equal(route([]).tier, "low", "no signal keeps the fast low tier");
+  assert.equal(route(["user-interface", "performance-slo"]).tier, "low",
+    "signals without a trust boundary do not move the tier");
+  const access = route(["access-control"]);
+  assert.equal(access.tier, "high");
+  assert.ok(access.triggers.includes("authorization-or-secrets"));
+  const input = route(["Input-Domain"]);
+  assert.equal(input.tier, "medium");
+  assert.deepEqual(input.triggers, ["input-domain"]);
+  assert.equal(input.maxAiAttempts, 2);
+  // input-domain alone is not declared risk, so an intent keyword stays a
+  // keyword; access-control is, so the intent semantics count.
+  assert.equal(route(["input-domain"], { intent: "fix billing rounding" }).tier, "medium");
+  assert.ok(route(["access-control"], { intent: "fix billing rounding" }).triggers
+    .includes("critical-semantics"));
+});

@@ -38,6 +38,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A security-static, resilience, compatibility, data-migration, or
+  cross-repo-contract provider that only re-runs a test provider's command is
+  never run or credited as passed. The required review covers it
+  (`covered-by-review`, with `aliasOf`, in readiness, proof plan, and the
+  proof): review is required and raised (high for security-static and the
+  contract and data capabilities, at least medium for resilience), and Prove
+  continues without a user decision. A waived review leaves it uncovered, and
+  a real command in execution.yaml replaces the alias.
+- Docs- or chore-only drafts default omitted evidence to `static-analysis`
+  (exit-code command) instead of test discovery.
+- Draft `riskSignals` are kept on the change: `access-control` selects the
+  high review tier and `input-domain` at least the medium tier.
 - `change start --template` shows the `repositories` selection and per-task
   `repository` when the project declares repositories besides root.
   Compilation rejects a root task whose paths reach into a declared

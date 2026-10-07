@@ -63,6 +63,13 @@ Select only what the claim needs — never the full catalog by default.
 
 Nineteen capabilities. Most changes use two or three.
 
+A `security-static`, `resilience`, `compatibility`, `data-migration`, or
+`cross-repo-contract` provider that only re-runs the test command observes
+nothing beyond the tests, so it is never run or credited. The required review
+covers that capability instead, at a higher tier, and the proof records it as
+`covered-by-review`. Wire a real command for the capability to observe it
+directly.
+
 ## Receipts
 
 A receipt is what a capability produces. It binds to everything that could invalidate it:

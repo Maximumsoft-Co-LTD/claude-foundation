@@ -248,6 +248,32 @@ test("bare start inspects and starts a correct v4 draft in one command", (t) => 
   assert.deepEqual(existsSync(intakeDir) ? readdirSync(intakeDir) : [], []);
 });
 
+test("start persists typed risk signals for review routing, and only when declared", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4({
+    riskSignals: ["input-domain", "Input-Domain"],
+    requirements: [{
+      key: "bounded-result", capability: "single-shot-change", operation: "added",
+      scenarios: [
+        { name: "Bounded input", when: "A bounded input arrives",
+          then: "The bounded result is returned" },
+        { name: "Negative input", kind: "boundary", when: "A negative input arrives",
+          then: "The input is rejected" }
+      ],
+      outcome: "The bounded result is returned"
+    }]
+  }));
+  captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  const runtime = JSON.parse(readFileSync(join(value.runtime, "single-shot-change.json"), "utf8"));
+  assert.deepEqual(runtime.riskSignals, ["input-domain"]);
+
+  const plain = fixture(t);
+  writeJson(plain.draftPath, minimalRapidV4());
+  captureLog(() => plain.lifecycle.startAtomic(plain.draftPath));
+  assert.equal(Object.hasOwn(JSON.parse(readFileSync(
+    join(plain.runtime, "single-shot-change.json"), "utf8")), "riskSignals"), false);
+});
+
 test("bare start returns the inspect action for an incomplete draft and creates nothing", (t) => {
   const value = fixture(t);
   writeJson(value.draftPath, minimalRapidV4({ requirements: [] }));

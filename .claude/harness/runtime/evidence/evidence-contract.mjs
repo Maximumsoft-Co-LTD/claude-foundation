@@ -5,6 +5,7 @@ import { measuredNumber } from "../core/measured-number.mjs";
 import { isExcludedPath } from "../core/workspace-surface.mjs";
 import { memoizeByGitIndex } from "../core/tool-identity.mjs";
 import { classifyReviewRisk, reviewSemanticText, thaiRiskPattern } from "./review-routing.mjs";
+import { reviewCoveredProviders, unobservedAliasConfig } from "./provider-catalog.mjs";
 
 const THAI_REQUIRED_SEMANTICS =
   thaiRiskPattern("concurrency", "money", "migration", "irreversible");
@@ -194,6 +195,12 @@ export function collectReviewSignals(state, contract, configuredCapabilities = [
     requiredTriggers.push("risk-capability");
   if (riskClaims.some((claim) => (claim.repositories || []).length > 1))
     requiredTriggers.push("multi-repository-claim");
+  // A specialist capability wired only to the test command is covered by
+  // review instead of by a re-run, so review is required and names it; the
+  // capability itself sets the tier (security-static and the contract/data
+  // capabilities are high, resilience at least medium).
+  for (const row of reviewCoveredProviders(contract.providers))
+    requiredTriggers.push(`covered-by-review:${row.capability}`);
   if (/\b(concurren|race|deadlock|money|payment|billing|financial|migration|irreversible)\w*\b/.test(semantic) ||
       THAI_REQUIRED_SEMANTICS.test(semantic))
     requiredTriggers.push("risk-semantics");
@@ -1026,9 +1033,13 @@ export function createEvidenceContract({
     };
   }
 
+  // A specialist capability wired to a test provider's own command observes
+  // only that test run; it resolves as unwired external evidence instead of
+  // a pass by the same exit code (see unobservedAliasConfig).
   function providerConfig(id, provider) {
-    return configuredProviderValue(evidence(id).providers || {}, provider) ||
-      builtInProviderConfig(id, provider);
+    const providers = evidence(id).providers || {};
+    return unobservedAliasConfig(providers, provider,
+      configuredProviderValue(providers, provider) || builtInProviderConfig(id, provider));
   }
 
   const resolvedAcceptance = resolvedAcceptanceOperation.bind(null, {

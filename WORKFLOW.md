@@ -1078,7 +1078,9 @@ only unsure of a scenario or its coverage is unreadable, the harness re-runs
 that review once on the configured model without consuming a review round. Security triggers are declared (draft `securityTriggers` or
 `resolve --security`) or inferred from intent keywords: declared triggers
 select the standard lane and security evidence, while an intent keyword alone
-only makes review required at the low tier and the change keeps its lane.
+only makes review required at the low tier and the change keeps its lane. A
+draft's `riskSignals` raise the tier too: `access-control` to high,
+`input-domain` to at least medium.
 
 - **low** — one full AI review; a material correction promotes the route to
   medium;

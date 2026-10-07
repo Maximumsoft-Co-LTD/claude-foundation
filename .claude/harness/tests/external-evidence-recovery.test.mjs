@@ -52,11 +52,17 @@ assert.equal(wired.wiring, wiring);
 assert.equal(wired.decision.recommended, "wire-provider");
 assert.equal(wired.decision.options[0].id, "wire-provider");
 assert.match(wired.decision.summary, /package.json/);
+assert.equal(Object.hasOwn(wired, "aliasOf"), false);
+const repeated = genericExternalEvidenceRecovery("security", null, "test");
+assert.equal(repeated.aliasOf, "test");
+assert.match(repeated.decision.summary, /only repeats test provider 'test'/);
+assert.equal(repeated.decision.recommended, "provide-evidence");
 
 const configs = {
   reviewer: { capability: "review" },
   acceptance: { capability: "acceptance" },
-  security: { capability: "security-static" }
+  security: { capability: "security-static" },
+  aliased: { capability: "security-static", adapter: "external", aliasOf: "test" }
 };
 const operation = (provider) => externalEvidenceRecoveryOperation({
   providerConfig: (_id, name) => configs[name],
@@ -69,6 +75,8 @@ const operation = (provider) => externalEvidenceRecoveryOperation({
 assert.equal(operation("reviewer").decision.kind, "independent-review");
 assert.equal(operation("acceptance").decision.scope.origin, "claim-capability");
 assert.equal(operation("security").wiring, wiring);
+assert.equal(Object.hasOwn(operation("security"), "aliasOf"), false);
+assert.equal(operation("aliased").aliasOf, "test");
 
 assert.equal(wiringChoiceOperation({
   evidenceDetectionValue: () => { throw new Error("unavailable"); }

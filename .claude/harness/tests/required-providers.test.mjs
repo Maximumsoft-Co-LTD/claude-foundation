@@ -5,7 +5,8 @@ import {
   addRequiredCapability,
   missingHighRiskQualityCapabilities,
   providersForCapability,
-  requiredProvidersOperation
+  requiredProvidersOperation,
+  reviewCoveredAdvisories
 } from "../runtime/workflow/change-validation.mjs";
 import { providerCapability as catalogCapability } from
   "../runtime/evidence/provider-catalog.mjs";
@@ -117,4 +118,39 @@ test("waiving test also suppresses automatic discovery while optional gates stay
     policyCapabilitySplit: () => ({ enforced: [] })
   }, "change-a");
   assert.deepEqual(result, []);
+});
+
+test("review covers a specialist provider that only repeats the test command", () => {
+  const command = ["sh", "-c", "npm test"];
+  const contract = {
+    providers: {
+      test: { adapter: "test-discovery", command },
+      "security-static": { adapter: "command", capability: "security-static", command },
+      resilience: { adapter: "command", capability: "resilience", command: ["npm", "run", "chaos"] }
+    },
+    claims: [{ id: "a", capabilities: ["test", "security-static", "resilience"] }]
+  };
+  const required = (reviewRequired, waivers = []) => requiredProvidersOperation({
+    loadRuntime: () => ({ waivers }),
+    evidence: () => contract,
+    providerCapability: capability,
+    reviewPolicy: () => ({ required: reviewRequired }),
+    resolvedAcceptance: () => ({ required: false }),
+    policyCapabilitySplit: () => ({ enforced: [] })
+  }, "change-a");
+  // Never run, never credited: review replaces it; a real command stays required.
+  assert.deepEqual(required(true), ["discovery", "resilience", "review", "test"]);
+  // Without review nothing covers it, so it stays required.
+  assert.deepEqual(required(false), ["discovery", "resilience", "security-static", "test"]);
+  assert.deepEqual(required(true, [{ capability: "review" }]),
+    ["discovery", "resilience", "security-static", "test"]);
+
+  assert.deepEqual(reviewCoveredAdvisories(contract, true), [{
+    capability: "security-static", provider: "security-static",
+    reason: "covered-by-review", status: "covered-by-review", aliasOf: "test",
+    detail: "its provider only repeats test provider 'test', so the required review " +
+      "covers it; no receipt claims it passed",
+    next: "wire a project-owned security-static command in execution.yaml to observe it"
+  }]);
+  assert.deepEqual(reviewCoveredAdvisories(contract, false), []);
 });

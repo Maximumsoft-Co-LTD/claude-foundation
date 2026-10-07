@@ -62,6 +62,12 @@ override อยู่ใน [`execution.yaml`](/docs/th/evidence/adapters/) แ�
 
 รวม 19 ตัว change ส่วนใหญ่ใช้แค่สองสามตัว
 
+provider ของ `security-static`, `resilience`, `compatibility`, `data-migration`
+หรือ `cross-repo-contract` ที่แค่รันคำสั่งเทสซ้ำ ไม่ได้สังเกตอะไรเกินกว่าเทส
+จึงไม่ถูกรันและไม่ถูกนับเป็นหลักฐาน การรีวิวที่บังคับจะครอบคลุม capability นั้นแทน
+ในระดับที่สูงขึ้น และ proof จะบันทึกไว้เป็น `covered-by-review`
+ถ้าต้องการสังเกต capability นั้นโดยตรง ให้ wire คำสั่งจริงสำหรับมัน
+
 ## Receipt
 
 receipt คือสิ่งที่ capability ผลิตออกมา มันผูกกับทุกอย่างที่ทำให้มันใช้ไม่ได้
