@@ -38,6 +38,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Pull requests run only `workflow-tests` (`minimum-runtime` and
+  `deterministic`). The `code-quality` workflow is removed: its coverage,
+  CRAP, and mutation report ran out of memory on every pull request and
+  duplicated `mutation-nightly`, which keeps the full quality report, while
+  `release.yml` still requires fresh mutation evidence before publishing.
 - Investigate acknowledges discovered sources automatically and still hashes
   them for freshness; the `inspect-sources` round is gone. Facts and options
   must cite an inventoried source, and the report lists discoveries no fact
