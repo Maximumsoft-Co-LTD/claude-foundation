@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
-  isGeneratedArtifactPath, landAppliedOutput, parseRestoreTargetPaths, restorableTargetPaths,
-  shellAuditCount, targetConflictStop, targetEditDigest, targetEditIssues, targetEditPaths
+  isGeneratedArtifactPath, landAppliedOutput, landedChangeSyncStop, landedTargetPaths,
+  otherLandedOutput, parseRestoreTargetPaths, replayLandedEdit, restorableTargetPaths,
+  shellAuditCount, targetConflictStop, targetEditCarried, targetEditDigest, targetEditIssues,
+  targetEditPaths
 } from "../runtime/workflow/target-edits.mjs";
 import { advanceFailureAction } from "../runtime/workflow/advance-runtime.mjs";
 
@@ -112,23 +114,146 @@ test("a conflict only on clean-at-isolation artifacts is an agent REPAIR with th
     "claude-foundation advance demo --through archived --restore-target __pycache__/a.pyc");
 });
 
-test("a conflict on user work or an artifact dirty at isolation asks the user with the file list", () => {
+// Keeping target edits loses nothing, so it is the automatic route: the agent
+// carries them into the sandbox. No option asks anyone to commit.
+test("a conflict on user work keeps the target edits and hands reconciliation to the agent", () => {
   const user = targetConflictStop({ changeId: "demo", paths: ["src/app.py", "a.pyc"],
     snapshot: {}, cause: "apply would overwrite uncommitted target edits" });
   assert.equal(user.decision.kind, "target-edit-conflict");
   assert.deepEqual(user.decision.paths, ["src/app.py", "a.pyc"]);
   assert.match(user.decision.summary, /src\/app\.py, a\.pyc/);
   assert.equal(user.decision.recommended, "keep-target");
+  assert.equal(user.decision.automaticRecovery, "keep-target");
   assert.deepEqual(user.decision.options.map((option) => option.id),
     ["keep-target", "restore-target", "pause"]);
+  for (const option of user.decision.options)
+    assert.doesNotMatch(`${user.decision.summary} ${option.outcome}`, /\bcommit\b/i);
   assert.match(user.decision.options[1].outcome,
     /--restore-target src\/app\.py,a\.pyc --decision-ref <user-decision>/);
   const action = advanceFailureAction("demo",
     Object.assign(new Error(user.decision.summary), { decision: user.decision }),
     { stage: "land", through: "archived" });
-  assert.equal(action.action, "ASK_USER");
+  assert.equal(action.action, "REPAIR");
+  assert.equal(action.actor, "agent");
+  assert.equal(action.legacyAction, "RECONCILE_TARGET_EDITS");
+  assert.deepEqual(action.paths, ["src/app.py", "a.pyc"]);
+  assert.equal(action.command, "claude-foundation advance demo --through archived");
 
   const preexisting = targetConflictStop({ changeId: "demo", paths: ["a.pyc"],
     snapshot: { "a.pyc": "dirty" }, cause: "sandbox diff conflicts with target" });
-  assert.equal(preexisting.decision.recommended, "restore-target");
+  assert.equal(preexisting.decision.recommended, "keep-target");
+});
+
+test("a target edit already merged into the sandbox copy is carried, a divergent one is not", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "target-carried-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const target = join(root, "target");
+  const sandbox = join(root, "sandbox");
+  mkdirSync(target);
+  mkdirSync(sandbox);
+  const base = Buffer.from("one\ntwo\nthree\nfour\nfive\n");
+  writeFileSync(join(target, "a.txt"), "ONE\ntwo\nthree\nfour\nfive\n");
+  writeFileSync(join(sandbox, "a.txt"), "one\ntwo\nthree\nfour\nFIVE\n");
+  const carried = () => targetEditCarried({ root: target, sandboxPath: sandbox, path: "a.txt", baseBytes: base });
+  assert.equal(carried(), false, "the sandbox lacks the target's first-line edit");
+  writeFileSync(join(sandbox, "a.txt"), "ONE\ntwo\nthree\nfour\nFIVE\n");
+  assert.equal(carried(), true, "the merged sandbox copy carries the target edit");
+  assert.equal(targetEditCarried({ root: target, sandboxPath: sandbox, path: "missing.txt",
+    baseBytes: base }), false);
+});
+
+test("a blocking target edit outside the Land projection is reported, not a stop", (t) => {
+  const root = project(t, [{ outcome: "shell-audit", changeId: "demo" }]);
+  const dirtyNow = { "keep.md": "a", "src/app.js": "x", "notes/todo.md": "y" };
+  const narrowed = targetEditIssues({ root, state: isolated(), dirtyNow,
+    projectionPaths: () => new Set(["src/app.js"]) });
+  assert.equal(narrowed.issues.length, 1);
+  assert.match(narrowed.issues[0], /outside the sandbox at: src\/app\.js\./);
+  assert.match(narrowed.notices[0], /outside this change's Land projection .*notes\/todo\.md/);
+  const unrelated = targetEditIssues({ root, state: isolated(), dirtyNow,
+    projectionPaths: () => new Set(["src/other.js"]) });
+  assert.deepEqual(unrelated.issues, []);
+  assert.equal(unrelated.notices.length, 1);
+  // An unresolvable projection stays fail-closed.
+  const unknown = targetEditIssues({ root, state: isolated(), dirtyNow,
+    projectionPaths: () => { throw new Error("surface unavailable"); } });
+  assert.match(unknown.issues[0], /notes\/todo\.md, src\/app\.js/);
+});
+
+// Stacked Land: another change's landed, uncommitted bytes are part of the
+// target. They are read from that change's verified journal and still count
+// only while the target holds exactly those bytes.
+test("other changes' landed output is read from verified journals, newest last", (t) => {
+  const transactions = mkdtempSync(join(tmpdir(), "target-landed-"));
+  t.after(() => rmSync(transactions, { recursive: true, force: true }));
+  const journal = (owner, run, value) => {
+    mkdirSync(join(transactions, owner, run), { recursive: true });
+    writeFileSync(join(transactions, owner, run, "journal.json"), JSON.stringify(value));
+  };
+  journal("first", "apply-1", { changeId: "first", status: "committed", verifiedAt: "2026-01-01",
+    entries: [{ path: "a.txt", role: "code", after: "aaa" },
+      { path: "openspec/changes/first", role: "change-artifacts", after: "directory:x" }] });
+  journal("later", "apply-1", { changeId: "later", status: "verified", verifiedAt: "2026-01-02",
+    entries: [{ path: "a.txt", role: "code", after: "bbb" }] });
+  journal("rolled", "apply-1", { changeId: "rolled", status: "rolled-back",
+    entries: [{ path: "b.txt", role: "code", after: "ccc" }] });
+  journal("self", "apply-1", { changeId: "self", status: "verified",
+    entries: [{ path: "c.txt", role: "code", after: "ddd" }] });
+  const readJson = (path, fallback) => {
+    try { return JSON.parse(readFileSync(path, "utf8")); } catch { return fallback; }
+  };
+  const landed = otherLandedOutput({ transactions, changeId: "self", readJson });
+  assert.deepEqual(landed, { "a.txt": { changeId: "later", after: "bbb" } });
+  assert.deepEqual(otherLandedOutput({ transactions: join(transactions, "none"), changeId: "x",
+    readJson }), {});
+  const identity = (path) => path.endsWith("a.txt") ? "bbb" : "zzz";
+  assert.deepEqual(landedTargetPaths({ root: "/t", paths: ["a.txt"], landed, identity }),
+    { "a.txt": "later" });
+  assert.deepEqual(landedTargetPaths({ root: "/t", paths: ["a.txt"], landed,
+    identity: () => "edited-after-land" }), {}, "a later edit is somebody's work, not Land's");
+});
+
+test("a landed edit replays into the sandbox copy cleanly or reports a conflict", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "target-replay-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const target = join(root, "target");
+  const sandbox = join(root, "sandbox");
+  mkdirSync(target);
+  mkdirSync(sandbox);
+  const base = Buffer.from("one\ntwo\nthree\nfour\nfive\n");
+  writeFileSync(join(target, "a.txt"), "ONE\ntwo\nthree\nfour\nfive\n");
+  writeFileSync(join(sandbox, "a.txt"), "one\ntwo\nthree\nfour\nFIVE\n");
+  const replay = () => replayLandedEdit({ root: target, sandboxPath: sandbox, path: "a.txt",
+    baseBytes: base });
+  const merged = replay();
+  assert.equal(merged.status, "merged");
+  assert.equal(merged.bytes.toString(), "ONE\ntwo\nthree\nfour\nFIVE\n");
+  writeFileSync(join(sandbox, "a.txt"), merged.bytes);
+  assert.equal(replay().status, "carried");
+  writeFileSync(join(sandbox, "a.txt"), "uno\ntwo\nthree\nfour\nfive\n");
+  assert.equal(replay().status, "conflict");
+  assert.equal(readFileSync(join(sandbox, "a.txt"), "utf8"), "uno\ntwo\nthree\nfour\nfive\n");
+});
+
+test("landed paths sync automatically and are never offered for discard", () => {
+  const sync = landedChangeSyncStop({ changeId: "later", landedBy: { "a.txt": "first" } });
+  assert.equal(sync.decision.kind, "landed-change-sync");
+  assert.equal(sync.decision.automaticRecovery, "sync");
+  assert.doesNotMatch(JSON.stringify(sync), /\bcommit\b|restore-target/i);
+  const action = advanceFailureAction("later",
+    Object.assign(new Error(sync.decision.summary), { decision: sync.decision }),
+    { stage: "land", through: "archived" });
+  assert.equal(action.action, "REPAIR");
+  assert.equal(action.actor, "harness");
+  assert.equal(action.automaticRecovery.kind, "sandbox-sync");
+
+  const mixed = targetConflictStop({ changeId: "later", paths: ["a.txt", "b.txt"],
+    snapshot: {}, cause: "apply would overwrite uncommitted target edits",
+    landedBy: { "a.txt": "first" } });
+  assert.match(mixed.decision.summary, /Landed work of first is preserved/);
+  assert.match(mixed.decision.options.find((option) => option.id === "restore-target").outcome,
+    /--restore-target b\.txt --decision-ref/);
+  const landedOnly = targetConflictStop({ changeId: "later", paths: ["a.pyc"], snapshot: {},
+    cause: "sandbox diff conflicts with target", landedBy: { "a.pyc": "first" } });
+  assert.deepEqual(landedOnly.decision.options.map((option) => option.id), ["keep-target", "pause"]);
 });

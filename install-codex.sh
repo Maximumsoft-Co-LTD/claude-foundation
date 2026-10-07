@@ -24,6 +24,7 @@ TARGET_PATH=""
 SOURCE_PATH="$SCRIPT_DIR"
 ASSUME_YES=no
 DRY_RUN=no
+INSTALL_FLAGS=()
 PROMPT_MARKER='<!-- claude-foundation:prompt -->'
 
 fail() { printf '✗ %s\n' "$*" >&2; exit 1; }
@@ -34,9 +35,11 @@ while [ "$#" -gt 0 ]; do
     --yes|-y) ASSUME_YES=yes ;;
     --dry-run) DRY_RUN=yes ;;
     --force|-f) : ;;
+    --no-permission-allowlist) INSTALL_FLAGS+=("$1") ;;
     --help|-h)
       cat <<'EOF'
 install-codex.sh [target-path] [--source path] [--yes] [--dry-run]
+  [--no-permission-allowlist]
 
 Installs the shared Foundation runtime plus Codex CLI prompt adapters.
 Prompts land in $CODEX_HOME/prompts (default ~/.codex/prompts); Codex has no
@@ -62,6 +65,7 @@ SOURCE_PATH="$(cd "$SOURCE_PATH" && pwd)"
 args=("$TARGET_PATH" "--source" "$SOURCE_PATH")
 [ "$ASSUME_YES" = no ] || args+=("--yes")
 [ "$DRY_RUN" = no ] || args+=("--dry-run")
+args+=(${INSTALL_FLAGS[@]+"${INSTALL_FLAGS[@]}"})
 
 # shellcheck source=.claude/harness/adapters/install-support.sh
 . "$SOURCE_PATH/.claude/harness/adapters/install-support.sh"

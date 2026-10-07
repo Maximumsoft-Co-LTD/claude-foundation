@@ -300,7 +300,11 @@ export function createDiagnosticsRuntime({
       level: openspec.level === "error" && !flags["require-archive"]
         ? "warn" : openspec.level,
       name: "openspec",
-      detail: openspec.detail
+      detail: openspec.level === "error"
+        ? `${openspec.detail}; the harness installs it under .foundation/tools before ` +
+          "Build, Prove, and Land when npm is reachable; otherwise install " +
+          "@fission-ai/openspec@1.7 in node_modules/.bin or on PATH"
+        : openspec.detail
     });
     }
     collectFoundationChecks();

@@ -84,20 +84,8 @@ AI agent อาจเขียน code ที่ดูถูกต้อง แ�
 - **กลับมาทำต่อได้** Task, runtime state, receipt และ recovery journal ยังคงอยู่
   แม้เปลี่ยน agent session
 
-Build ที่เริ่มก่อน execution graph v3 กลับมาทำต่อหลังอัปเกรดได้เช่นกัน Harness
-จะใช้สิทธิ์แบบหลาย task ใน session เดียวจาก plan เดิมเฉพาะเมื่อ identity ของ task
-และ contract ยังตรงกัน หากพิสูจน์ไม่ได้ ระบบจะส่งเฉพาะ task ที่เสร็จแล้วแต่ต้องตรวจใหม่
-รวมถึง task ปลายทางที่พึ่งพามันกลับเข้า leased verification อัตโนมัติ โดยไม่เขียน
-`tasks.md` ใหม่
-
 เป้าหมายคือรักษาความน่าเชื่อถือโดยไม่ต้องใช้ phase pipeline หรือ agent หลายบทบาท
 ตลอดเวลา และไม่ถือว่าคำพูดว่า “เสร็จแล้ว” ของ agent เป็นหลักฐาน
-
-เมื่อทำหลาย change พร้อมกันแล้ว target เปลี่ยน sync สามารถใช้ review เดิมได้ทั้ง
-worktree และ copy sandbox หาก binding ยังครบ โดย copy mode เทียบ identity ของไฟล์
-ระหว่าง baseline กับงานปัจจุบัน และยังถือว่าการ reconcile ไฟล์เดียวกันต้องตรวจใหม่
-sync ที่ไม่เปลี่ยน input จะเก็บ proof เดิม ส่วน `proof plan` อธิบายเหตุที่ใช้ review
-เดิมไม่ได้ ดู [กติกา binding](.claude/harness/EVIDENCE.md)
 
 ## ติดตั้ง
 
@@ -108,9 +96,11 @@ sync ที่ไม่เปลี่ยน input จะเก็บ proof เ�
 
 แนะนำให้มี Git สำหรับ worktree isolation; ถ้าโปรเจกต์ dirty หรือไม่ใช่ Git จะใช้
 isolated copy และแนะนำให้มี `jq` สำหรับ merge Claude settings เดิม หากไม่มี
-installer จะรักษาไฟล์เดิมและสร้าง companion file ให้ตรวจเอง Harness ตรวจ OpenSpec
-ตั้งแต่ต้น และถ้าจำเป็นจะติดตั้ง CLI ที่ pin ไว้เฉพาะ project ใต้
-`.foundation/tools`; user workflow ไม่มีคำสั่งติดตั้ง global
+installer จะรักษาไฟล์เดิมและสร้าง companion file ให้ตรวจเอง Installer เตรียม
+OpenSpec CLI ที่ pin ไว้เฉพาะ project ใต้ `.foundation/tools` เมื่อยังไม่มี CLI ที่ใช้ได้
+และ harness ตรวจซ้ำก่อน Build, Prove และ Land; user workflow ไม่มีคำสั่งติดตั้ง global
+ถ้าเครื่องเข้า npm ไม่ได้ การติดตั้งยังสำเร็จและแจ้งว่าขาดอะไร ให้ติดตั้ง
+`@fission-ai/openspec@1.7` ไว้ใน `node_modules/.bin` ของ project หรือใน `PATH` ก่อน Land
 
 ติดตั้งด้วย Homebrew:
 
@@ -128,6 +118,9 @@ git clone https://github.com/Maximumsoft-Co-LTD/claude-foundation.git
 cd claude-foundation
 ./install.sh /path/to/your-project
 ```
+
+การติดตั้งจาก source จะเขียน shim `.foundation/bin/claude-foundation` (ถูก ignore)
+และ session ของ Claude Code จะได้คำสั่งนี้ใน `PATH` เมื่อยังไม่มี `claude-foundation` ตัวอื่น
 
 Claude Code ไม่ต้องใช้ adapter ส่วน agent host อื่นใช้ `--host` วาง adapter
 ทับการติดตั้งชุดเดียวกัน:
@@ -160,6 +153,17 @@ git commit -m "chore: install Change Loop"
 Installer จะรักษา specs, active changes, runtime state, custom agents และ hooks
 ของ project ไว้ การ upgrade จะ refresh เฉพาะ command, schema, harness, rule,
 skill และ hook ที่ Change Loop เป็นเจ้าของตาม install manifest
+
+`.claude/settings.json` ยังเป็นของ project Installer จะ merge hook ที่ ship มา
+และต่อท้าย `permissions.allow` แบบแคบ เพื่อไม่ให้ Claude Code ขออนุมัติทุกขั้นของ
+harness ได้แก่ `Bash(claude-foundation *)`,
+`Bash(.foundation/bin/claude-foundation *)`,
+`Bash(node .claude/harness/foundation.mjs *)`,
+`Edit(/.foundation/sandboxes/**)` และ
+`Edit(/.foundation/repository-sandboxes/**)` โดยเพิ่มเฉพาะ rule ที่ยังไม่มีต่อจาก
+rule ของผู้ใช้ ไม่ลบหรือสลับลำดับ entry เดิม และการรันซ้ำไม่เพิ่มอะไร guard ของ
+PreToolUse ยังทำงานก่อน rule เหล่านี้ ให้ใส่ `--no-permission-allowlist` ทุกครั้งที่
+install หรือ upgrade หากไม่ต้องการให้แตะ `permissions.allow`
 
 Installer ตรวจปลายทางที่จะเขียนก่อนเปลี่ยนไฟล์ หากพบ symlink ในปลายทางที่จัดการ
 จะรักษา link ไว้และแจ้งสาเหตุ ให้เลือก directory จริงสำหรับติดตั้ง หรือย้าย shared
@@ -245,14 +249,17 @@ assumption ใหม่
 
 หลัง Change ให้ตรวจ spec ที่ compile แล้วและยืนยันก่อนเข้า Build รวมถึง `/dev`
 ถ้าคำขอของคุณอนุมัติ spec ไว้แล้ว (เช่น "I approve the spec") ถือว่าอนุมัติแล้ว และคำสั่ง
-ให้ Land แบบใดก็ได้ (เช่น "land it when proven") ถือเป็นสิทธิ์ Land `/dev` ทำเหมือน
+ให้ Land แบบใดก็ได้ (เช่น "land it when proven") ถือเป็นสิทธิ์ Land การตอบคำถามขออนุมัติว่า
+"ลุยเลย", "ทำเลย" หรือ "go ahead" ถือเป็นการอนุมัติ ส่วน "ทำจนจบ" ที่บอกไว้ตั้งแต่ต้นก็ให้สิทธิ์ Land
+แต่คำเร่งอย่างเดียว ("ด่วน") ไม่ใช่การอนุมัติ ดู [อำนาจจากคำพูดของผู้ใช้](WORKFLOW.md#authority-from-the-users-words)
+`/dev` ทำเหมือน
 `/change` → `/build` → `/prove` → `/land` ทุกประการ งานทั่วไปใช้แค่ draft แบบขั้นต่ำ
 (intent, requirement พร้อม scenario และ task พร้อมคำสั่ง verify) ส่วนที่เหลือ harness เติม
 ให้ ส่ง task ทั้งหมดในครั้งเดียว ติ๊ก task ให้เมื่อ check ผ่าน และรัน AI review บน diff
 พร้อมกับ test
 revision และ amendment ที่เพิ่มหรือแก้ requirement ภายหลังใช้การยืนยันเดิมต่อได้
-Review ใช้กรอบเวลารวม 30 นาที ครอบคลุม retry, fallback และการตรวจส่วนที่แก้
-หมดเวลาครั้งแรกระบบต่อเวลาให้เองหนึ่งรอบ ถ้าซ่อมต่อไม่ได้หรือ review หมดเวลาอีกครั้ง ให้เลือกทำต่อ, Land โดยยอมรับปัญหาที่เหลือ
+Review จำกัดด้วยจำนวนรอบ (ตรวจเต็มหนึ่งครั้ง แล้วตรวจส่วนที่แก้อีกหนึ่งครั้ง) ไม่ได้จำกัดด้วยเวลา
+ถ้าซ่อมต่อไม่ได้ ให้เลือกทำต่อ, Land โดยยอมรับปัญหาที่เหลือ
 อย่างชัดเจน หรือพักงาน ผลตรวจที่ fail หรือหลักฐานที่ขาดยังแสดงตามจริง
 ดูรายละเอียดการยืนยัน การต่อเวลา และ waiver ที่ผูกกับเนื้อหางานใน
 [workflow](WORKFLOW.md)
@@ -291,7 +298,8 @@ Change จะเก็บข้อสรุปจากบทสนทนาท�
 พร้อม diagram และ folder mapping เมื่อจำเป็น ส่วน Build และ session ที่กลับมาทำต่อ
 ต้องอ่าน scenario ฉบับเต็มและ design context ที่เกี่ยวข้อง
 Proposal ที่ compile แล้วจะบันทึกด้วยว่ามิติใดถูก cover หรือมี source รองรับว่า
-ไม่เกี่ยวข้อง เพื่อไม่ให้คำตอบที่ตกลงแล้วอยู่เฉพาะใน chat
+ไม่เกี่ยวข้อง และระบุมิติที่ harness derive จากเนื้อหาที่ draft เขียนไว้แล้ว
+เพื่อไม่ให้คำตอบที่ตกลงแล้วอยู่เฉพาะใน chat
 
 Agent จะตอบด้วยภาษาของคุณและเริ่มจากผลลัพธ์ งานกู้คืนที่ปลอดภัยกับคำสั่งปกติ
 Agent จะทำให้เอง แล้วบอกว่าแก้อะไรและตรวจอะไรแล้ว คุณจะถูกถามเฉพาะเมื่อ behavior,
@@ -317,30 +325,36 @@ change อยู่แล้วหรือไม่ใช่ Git repository จ
 jq -r '.workspace.path' .foundation/runtime/<change-id>.json
 ```
 
-worktree มีแค่ไฟล์ที่ Git ติดตาม ถ้า provider ต้องติดตั้ง dependency ก่อน ให้
-ประกาศ `sandbox.setupCommand` (พร้อม `setupTimeoutMs`) ใน `foundation.json`
-หรือ `setupCommand` รายรีโปใน `openspec/repositories.yaml` setup ที่ผ่านแล้วจะถูก
-reuse ส่วนตัวที่ล้มจะเก็บ sandbox ไว้และ Harness retry ให้โดยไม่รัน sibling ที่พร้อม
-แล้วซ้ำหรือส่ง recovery command ให้ user ถ้ามี lockfile แต่ยังไม่ประกาศ setup command
-ตอนสร้าง sandbox จะพิมพ์ NOTE พร้อม snippet ของ `foundation.json` ให้ ส่วนการ link
-หรือ copy `node_modules` ของ checkout เข้า workspace จะถูก phase guard ปฏิเสธ
+worktree มีแค่ไฟล์ที่ Git ติดตาม ถ้าไม่ได้ประกาศ setup ไว้ Harness จะติดตั้ง
+dependency เองจาก lockfile ของ workspace (`npm ci` หรือคำสั่ง frozen-lockfile
+ของ pnpm, yarn, bun) ตั้ง `sandbox.installDependencies: false` ใน
+`foundation.json` เพื่อปิด ถ้าต้องการ setup แบบอื่น ให้ประกาศ
+`sandbox.setupCommand` (พร้อม `setupTimeoutMs`) ใน `foundation.json` หรือ
+`setupCommand` รายรีโปใน `openspec/repositories.yaml` setup ที่ผ่านแล้วจะถูก reuse
+ส่วนตัวที่ล้มจะเก็บ sandbox ไว้และ Harness retry ให้โดยไม่รัน sibling ที่พร้อมแล้วซ้ำ
+หรือส่ง recovery command ให้ user ถ้ายังล้ม agent จะได้รับคำสั่ง directory และ log
+ไปทำต่อ ส่วนการ link หรือ copy `node_modules` ของ checkout เข้า workspace จะถูก
+phase guard ปฏิเสธ
 
-ถ้าต้องใช้ Bash โดยตรงระหว่าง Build ให้เริ่มคำสั่งที่แก้ไฟล์ด้วย
-`cd <workspace-or-subdirectory> && ...` บน Claude Code phase guard จะปัก directory
-ที่ shell รายงานมาเป็น anchor ให้เองเมื่ออยู่ใน workspace แล้ว ลืมใส่ prefix จึงไม่เสีย
-turn ส่วน host อื่นจะปฏิเสธคำสั่ง phase guard จะบล็อก package manager หรือ formatter
-ที่ไม่ได้ผูกกับ workspace, path ที่หนีด้วย `..`, การ `cd` ออกภายหลัง, filesystem
-operand แบบ absolute และการเขียนผ่าน symlink ออกนอก workspace ก่อน shell เริ่ม
-ทำงาน `claude-foundation exec` จะ derive phase จาก runtime state ใช้นโยบายเดียวกัน
-และเริ่มคำสั่ง Build ใน canonical workspace ควรใช้ Edit/Write แบบ structured เมื่อ
-ทำได้ และยังต้องพึ่ง process isolation ของ host สำหรับผลข้างเคียงทางอ้อมจาก script
+ถ้าต้องใช้ Bash โดยตรงระหว่าง Build ให้รัน `cd <workspace>` หนึ่งครั้งเป็นคำสั่งแยก
+shell จะอยู่ที่ directory นั้นต่อ คำสั่งถัดไปจึงเขียนแบบธรรมดาได้และไม่มี prompt ขออนุญาต
+จาก host (คำสั่งรวมแบบ `cd … && …` จะถูกถามทุกครั้ง) phase guard ตรวจคำสั่งที่แก้ไฟล์
+จาก directory ที่ shell รายงาน เพราะการวิเคราะห์ shell อ่านจากข้อความคำสั่ง นอก Land
+และ Deliver จึงบันทึกสิ่งที่เจอ เช่น path ที่หนีด้วย `..` หรือ operand แบบ absolute
+นอก workspace เป็นคำเตือนแทนการปฏิเสธ ส่วน Edit/Write แบบ structured ยังถูกบังคับ
+และ Land จะรายงานการแก้ checkout หลักที่เกิดนอก sandbox ตั้ง
+`FOUNDATION_SHELL_GUARD=block` เพื่อกลับไปปฏิเสธ `claude-foundation exec` จะ derive
+phase จาก runtime state ใช้นโยบายเดียวกันแบบเดียวกัน และเริ่มคำสั่ง Build ใน
+canonical workspace ยังต้องพึ่ง process isolation ของ host สำหรับผลข้างเคียงทางอ้อมจาก
+script
 
 ทำไมต้องมีขั้นนี้: คุณ inspect หรือทิ้ง implementation ที่ยังไม่พร้อมได้ โดยไม่
 ปนกับ checkout ที่กำลังใช้งาน
 
-Agent ขับ Build ด้วย `claude-foundation advance <change-id> --through build`
+Agent ขับ Build ด้วย `claude-foundation advance <change-id> --through proven`
 Coordinator เดียวนี้ validate เตรียม isolation เลือกงานที่รันได้ และคืน action ที่
-มีขอบเขตหนึ่งตัว ผู้ใช้ไม่ต้องประกอบ sandbox, packet, plan, lease หรือ dispatch เอง
+มีขอบเขตหนึ่งตัว เมื่อ Build เสร็จจะทำ Prove ต่อในการเรียกเดียวกัน ผู้ใช้ไม่ต้องประกอบ
+sandbox, packet, plan, lease หรือ dispatch เอง
 
 ### 3. Prove ผลลัพธ์
 
@@ -397,12 +411,18 @@ Test รันเฉพาะใน workspace ของ change ถ้า Land �
 /deliver <change-id>
 ```
 
-Workflow ปกติยังจบสมบูรณ์ที่ `archived` ถ้าเรียก Deliver อย่างชัดเจน คำสั่งเดียว
-จะสร้าง feature branch ใน isolated worktree จาก projection ที่ prove และ archive
+Workflow ปกติยังจบสมบูรณ์ที่ `archived` ถ้าเรียก Deliver อย่างชัดเจนกับ change ที่
+prove แล้วแต่ยังไม่ archive การเรียกนั้นถือเป็นอำนาจ Land ด้วย harness จะ Land ก่อนแล้ว
+ทำต่อ คำสั่งเดียวจะสร้าง feature branch ใน isolated worktree จาก projection ที่ prove และ archive
 แล้ว สร้าง PR body มาตรฐานจาก OpenSpec กับ proof receipt, commit, push, เปิดหรือ
 ใช้ PR เดิม, ตรวจกลับผ่าน provider และคืน URL โดยไม่เปลี่ยน HEAD/index ของ checkout
 ผู้ใช้ และไม่ force-push, push เข้า default branch, merge, deploy, publish หรือแก้
 product code
+
+คำขอตรง ๆ อย่าง "เปิด PR ให้เลย" หรือ "open a PR" ถือเป็น `/deliver` เมื่อเพื่อนร่วมทีม
+ขอให้แก้ ให้ follow-up change อ้าง URL ของ PR ที่ deliver ไปแล้ว Deliver จะ push ต่อบน
+branch ของ PR นั้น (fast-forward ไม่ force) และอัปเดต PR เดิม ถ้า PR นั้นถูกปิดหรือ merge
+ไปแล้ว Deliver จะเปิด PR ใหม่และบอกเหตุผล
 
 Deliver เป็น cold path: ถ้าไม่เรียก Change, Build, Prove และ Land จะไม่มี prompt,
 การเก็บ evidence หรือ validation เฉพาะ PR เพิ่ม หลักฐาน presentation ที่ไม่บังคับ
@@ -528,7 +548,7 @@ openspec/changes/<change-id>/
 ├── tasks.md
 ├── evidence.yaml
 ├── specs/<area>/spec.md       # standard lane
-├── design.md                  # เมื่อมี durable design context
+├── design.md                  # standard lane: dev document เต็ม
 ├── grounding.yaml             # เมื่อมี material decision ที่ต้อง lock
 ├── execution.yaml             # เมื่อ override provider/service wiring
 ├── repositories.yaml          # เมื่อประกาศ multi-repository scope
@@ -538,9 +558,9 @@ openspec/changes/<change-id>/
 | File | ตอบคำถามอะไร | Harness ต้องใช้ทำไม |
 |---|---|---|
 | `.openspec.yaml` | ใช้ `foundation-standard` หรือ `foundation-rapid` | เลือก artifact workflow ของ change |
-| `proposal.md` | เปลี่ยนทำไม เปลี่ยนอะไร และไม่ทำอะไร | ทำให้ scope กับ impact ไม่ถูกซ่อนไว้เป็น assumption |
+| `proposal.md` | เปลี่ยนทำไม เปลี่ยนอะไร (พร้อม folder tree) และไม่ทำอะไร | ทำให้ scope กับ impact ไม่ถูกซ่อนไว้เป็น assumption และ proposal ของ rapid มี user flow, failure matrix และ Plan ด้วย |
 | `specs/<area>/spec.md` | Observable behavior ใดถูกเพิ่ม แก้ หรือลบ | ให้ Prove มี requirement และ `WHEN`/`THEN` scenario ที่คงที่ และให้ Land merge delta เข้า current specs |
-| `design.md` | Technical decision, diagram, integration หรือ prototype selection ใดบังคับวิธี implement | เก็บเฉพาะ context สำคัญ ไม่บังคับสร้าง design ว่าง |
+| `design.md` | สร้างอย่างไร: user flow, component, contract, data, UI state, failure, decision และ Plan | dev document ที่ Build ใช้ทำงาน section ตามชนิดงานและตัดส่วนว่างออก |
 | `tasks.md` | Implementation ใดยังเหลือ | เป็น implementation ledger เพียงที่เดียว Stable ID และ checkbox ทำให้ Build resume ได้ |
 | `evidence.yaml` | Behavioral claim ใดต้องพิสูจน์ | แยก proof obligation ออกจาก tool ที่นำมารัน |
 | `grounding.yaml` | Material decision ใดถูกตกลงไว้ล่วงหน้า | Semantic v3 เก็บเฉพาะ non-derived decision ส่วน grounding รุ่นเดิมยังอ่านได้ |
@@ -553,8 +573,9 @@ lifecycle command ไม่ใช่ implementation task
 
 ### Standard กับ Rapid Lane
 
-`foundation-standard` มี proposal, delta specs, tasks และ evidence ส่วน design
-กับ extension อื่นสร้างเมื่อมี concern จริง ใช้กับ public contract,
+`foundation-standard` มี proposal, delta specs, tasks, evidence และ `design.md`
+ซึ่ง section ข้างในเลือกตามประเภทงานที่อนุมานได้ ส่วน extension อื่นสร้างเมื่อมี
+concern จริง ใช้กับ public contract,
 authentication, data หรือ migration, behavior
 ที่ coupled, impact สูง, irreversible effect หรืองานที่ต้องใช้ evidence มากกว่า
 unit/static
@@ -642,9 +663,9 @@ performance target, notification, integration, compatibility หรือ rollou
 /prove <change-id>
 ```
 
-สำหรับ agreement version 4 ให้รัน `change amend <change-id> <amendment.json>
---inspect` ก่อน ทำตาม intake/source-digest action แล้วเปลี่ยน `--inspect` เป็น
-`--consume-amendment` เมื่อได้ `DONE` จากนั้น runtime จะ apply amendment แบบ
+สำหรับ agreement version 4 ให้รัน `change amend <change-id> <amendment.json>`
+คำสั่งเดียวจะ inspect ก่อน แสดง intake/source-digest action ถ้ามี และ apply
+amendment เฉพาะเมื่อได้ `DONE` (`--inspect` ใช้ inspect อย่างเดียว) runtime จะ apply amendment แบบ
 transaction โดยรักษา
 task ที่เสร็จและ manual Markdown section, validate ก่อนเก็บ revision, rollback
 amendment ที่ไม่ผ่าน และ invalidate เฉพาะ claim ที่เพิ่ม แก้ หรือลบก่อน resume
@@ -652,8 +673,10 @@ amendment ที่ไม่ผ่าน และ invalidate เฉพาะ cl
 task ที่ยังไม่เสร็จ) หรือลบได้ (`removeRequirements` ต้องมี migration) โดยไม่ต้อง
 abandon change Amendment ของ version 4 ต้องมี discovery coverage ของ requirement
 ที่เพิ่มและที่แก้ และ delta ที่ผ่าน validation จะอยู่ใน compiled proposal
-ก่อนเริ่ม Build ใช้ `change revise <change-id> <draft.json> --inspect` แล้ว
-`--consume-draft` เพื่อคอมไพล์ agreement ทั้งฉบับใหม่ใน id เดิม ทั้งสองทางจะแสดง
+ก่อนเริ่ม Build ใช้ `change revise <change-id> <draft.json>` ซึ่ง inspect และเมื่อได้
+`DONE` จะคอมไพล์ agreement ทั้งฉบับใหม่ใน id เดิมในคำสั่งเดียว เพิ่ม
+`--approve-spec --decision-ref <ref>` ให้ `change start`, `change revise` หรือ
+`change amend` เพื่อบันทึก approval ของผู้ใช้ในคำสั่งเดียวกับที่ apply คำตอบนั้น ทั้งสองทางจะแสดง
 delta ของ requirement (added/revised/removed) change ที่ approve แล้วใช้ approval เดิมต่อสำหรับ delta ที่เพิ่มหรือแก้ requirement และขอ approve ใหม่เฉพาะ delta ที่ลบ requirement receipt ที่ผ่านแล้วจะถูกเก็บ
 ไว้เฉพาะเมื่อ provider, claim และ declared-input binding ไม่เปลี่ยน ส่วน provider
 ที่ affected หรือคลุมเครือต้องกลับไปผ่าน Prove
@@ -727,13 +750,19 @@ product requirement หรือซ่อม state ด้วยมือถ้�
   assurance โดยไม่ล้ม explicit decision ของผู้ใช้ ส่วน apply ยังปฏิเสธ conflict
   และ edit ใน target path ที่ยังไม่ commit — มันระบุ path ที่จะถูกทับแทนที่จะ
   ปล่อยให้คนเขียนทีหลังชนะ
-- Apply มี backup และ journal ทำให้ Land ที่ถูกขัดจังหวะ retry ได้
 - Land เตือน — โดยไม่บล็อก — เมื่อ target checkout อยู่บน `main`/`master`
   โดย guard ของ land ทุกตัวยังอิง commit
-- Land ไม่ commit, push หรือเปิด pull request มีเพียง `/deliver` แบบ explicit และ
-  optional ที่ให้อำนาจแคบ ๆ เพื่อ commit proven projection บน isolated feature
-  branch, push และเปิดหรือใช้ PR เดิมที่ตรวจยืนยันแล้ว โดย worker ห้ามอนุมาน authority
-- `protect-secrets.sh` และ `lint.sh` เปิดเป็นค่าเริ่มต้น
+- Land เป็น apply แบบมี journal ที่ resume ได้ รองรับ change ซ้อนกัน และไม่ commit,
+  push หรือเปิด pull request เอง มีเพียง `/deliver` แบบ explicit หรือคำสั่งตรงของคุณ
+  ดู [สัญญาของ Land](WORKFLOW.md#land-change),
+  [`/deliver`](WORKFLOW.md#deliver-change-optional) และ
+  [authority จากคำพูดของผู้ใช้](WORKFLOW.md#authority-from-the-users-words)
+- `protect-secrets.sh` และ `lint.sh` เปิดเป็นค่าเริ่มต้น: การอ่านไฟล์ลับจะเห็น
+  สำเนาที่ปิดค่า (ไฟล์ config คง key และโครงสร้างไว้ ทุกค่าเป็น `<redacted>`
+  ยกเว้น `null` และ boolean ใน JSON ส่วนเนื้อหา private key จะเป็น placeholder)
+  การค้นที่อาจโดนไฟล์ลับจะข้ามไฟล์เหล่านั้นหรือแสดงแค่ชื่อไฟล์ และไฟล์ Go จะถูก
+  format ให้ทันที secrets hook จะปฏิเสธการอ่านก็ต่อเมื่อสร้างสำเนาที่ปิดค่าไม่ได้
+  หรือตั้ง `FOUNDATION_SECRETS_GUARD=block`
 - `no-direct-main-commit.sh` เป็น opt-in เพราะบาง project อนุญาต controlled
   commit บน default branch โดย `doctor` จะรายงานว่าเปิดอยู่หรือไม่
 

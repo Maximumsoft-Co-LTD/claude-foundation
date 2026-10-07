@@ -20,9 +20,19 @@ the active transcript's prompt starts with `/dev`.
 
 ## Answer contract
 
-- **Deny before the tool runs**: print `{"decision":"block","reason":"..."}`
-  to stdout and exit 0. The host must cancel the call and surface `reason` to
-  the model. Used by `phase-mutation-guard` and `protect-secrets.sh`.
+- **Rewrite or guide before the tool runs** (the default): print
+  `{"hookSpecificOutput":{"hookEventName":"PreToolUse","updatedInput":{...},"additionalContext":"..."}}`
+  and exit 0. The host runs the call with `updatedInput` (when present) and
+  surfaces `additionalContext` to the model. The guards never refuse by
+  default: `phase-mutation-guard` redirects main-checkout edits into the
+  isolated workspace, routes internal Land commands to `advance`, and turns an
+  unauthorized delivery into the question for the user; `protect-secrets.sh`
+  points secret reads at a redacted copy; `no-detached-authority` runs a
+  detached reviewer attached.
+- **Deny before the tool runs** (explicit strict modes only): print
+  `{"decision":"block","reason":"..."}` to stdout and exit 0. Used only when a
+  host sets `FOUNDATION_GUARDRAIL_MODE=block`, `FOUNDATION_SHELL_GUARD=block`,
+  or `FOUNDATION_SECRETS_GUARD=block`.
 - **Feed back after the tool ran**: exit 2 with diagnostics on stderr. The
   host must surface stderr to the model. Used by `lint.sh`.
 - Exit 0 with no output means allow. Hooks fail open when a toolchain is
@@ -42,19 +52,18 @@ The normal slash-command path records that context through the unified
 not record a new phase, and agents do not have to prepare a packet solely to
 make a hook recognize the phase. Session identity selects the exact active
 change even when another session has a newer change.
-The default `auto` mode blocks mutations during every active lifecycle phase
-and stays out of adoption-only sessions with no phase context. A recorded Build
-phase recovers every selected repository workspace root from runtime state when
-the host does not export `FOUNDATION_WORKSPACE_ROOT`.
-Mutating Build shell commands must explicitly begin inside a granted workspace;
-unanchored package-manager/formatter commands and obvious path escapes are
-blocked before the shell starts. When the host reports the shell already inside
-the workspace, the guard pins that directory as the anchor instead of refusing.
+The default `auto` mode guides during every active lifecycle phase and stays
+out of adoption-only sessions with no phase context: a call that leaves the
+phase's rules still runs, redirected into the workspace when it can be, and the
+agent is told the route. A recorded Build phase recovers every selected
+repository workspace root from runtime state when the host does not export
+`FOUNDATION_WORKSPACE_ROOT`. Shell analysis reads command text, so its findings
+are recorded and explained, never refused, unless a host opts into strict mode.
 
-Hooks constrain unsafe mutations; they do not own lifecycle completion. A
-refusal must preserve state and point back to `claude-foundation advance
-<change>` (or its exact typed recovery), so an unavailable live hook or stale
-phase row cannot become an artificial dead end.
+Hooks guide mutations; they do not own lifecycle completion. Guidance (and a
+strict-mode refusal) must preserve state and point back to `claude-foundation
+advance <change>` (or its exact typed recovery), so an unavailable live hook or
+stale phase row cannot become an artificial dead end.
 
 ## Host wiring
 

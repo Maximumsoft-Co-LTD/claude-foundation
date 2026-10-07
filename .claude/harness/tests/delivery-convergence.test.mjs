@@ -103,9 +103,11 @@ test("consumer inspection preserves lifecycle files and resumes amended current 
       version: 1, reason: "New requirement after interruption",
       addRequirements: [{ ...requirement, key: "after-resume" }],
       // A still-failing focused check keeps the task pending across resumes.
+      // Its output varies per run so these restarts stay below the identical-
+      // failure no-progress cap, which would otherwise ask the user.
       addTasks: [{ ...task, key: "after-resume", covers: ["after-resume"],
         paths: ["second.txt"], dependsOn: ["implement"],
-        verify: "node -e 'process.exit(require(\"fs\").existsSync(\"second.txt\") ? 0 : 1)'" }],
+        verify: "node -e 'console.log(Math.random());process.exit(require(\"fs\").existsSync(\"second.txt\") ? 0 : 1)'" }],
       evidence: { "after-resume": { capabilities: ["test"] } }
     };
     writeFileSync(join(project, ".foundation/amendment.json"), JSON.stringify(amendment));
@@ -142,7 +144,12 @@ test("consumer inspection preserves lifecycle files and resumes amended current 
     assert.equal(conflict.decision.kind, "amended-agreement-conflict");
     assert.throws(() => runtime("sandbox", "sync", "inspect-resume"),
       /would overwrite the active amended agreement/);
-    runtime("sandbox", "sync", "inspect-resume", "--resolve", "openspec/changes/inspect-resume");
+    // The agent answers the recorded decision through advance, which keeps
+    // the approved isolated agreement and synchronizes the rest.
+    const retain = conflict.decision.options.find((row) => row.id === "retain");
+    const fingerprint = retain.command.match(/--decision-fingerprint (\S+)/)[1];
+    runtime("advance", "inspect-resume", "--decision", "retain", "--decision-fingerprint", fingerprint,
+      "--decision-ref", "fixture://user/retain", "--reason", "keep the approved isolated agreement");
     assert.equal(JSON.parse(runtime("advance", "inspect-resume", "--through", "build")).action, "EDIT");
     const after = JSON.parse(runtime("packet", "inspect-resume", "--resume"));
     // T001 was completed by its passing check; only the amended task remains.

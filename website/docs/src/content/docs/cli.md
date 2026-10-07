@@ -16,8 +16,9 @@ surface is:
 | Command | Purpose |
 |---|---|
 | `investigate --template \| <record.json>` | Validate source-bound facts and hypotheses, persist resume state, and emit a Change handoff |
-| `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect a draft and, when complete, compile and atomically start it in one call; `--inspect` inspects only |
-| `change amend --template \| <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake or transactionally add, revise, or remove requirements, or fix an unfinished task's verify command, during Build |
+| `change start --template \| <draft.json> [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | Inspect a draft and, when complete, compile and atomically start it in one call; `--inspect` inspects only; `--approve-spec` records the user's approval in the same call |
+| `change amend --template \| <change> <amendment.json> [--inspect] [--consume-amendment] [--approve-spec --decision-ref <ref> [--through <target>]]` | Inspect intake and, when complete, transactionally add, revise, or remove requirements, or fix an unfinished task's verify command, during Build in one call |
+| `change amend <change> --task <task> --verify <command> [--reason <text>]` | Correct an unfinished task's wrong verify command directly, keeping the approval; the task is accepted only when the new command passes |
 | `advance <change> --through build\|proven\|archived` | Run deterministic lifecycle work (evidence wiring, sandbox sync, agent-runnable review, task ticking) and return one of six bounded actions at the next real boundary |
 | `advance <change> --approve-spec --decision-ref <ref>` | Record the user's spec approval (alias of `change resolve --approve-spec`) |
 | `deliver advance <change>` | After explicit `/deliver`, automate isolated commit, feature-branch push, PR creation/reuse, provider verification, and return the URL |
@@ -70,9 +71,10 @@ language profiles, baselines, and rollout policy.
 |---|---|
 | `investigate --template \| <record.json>` | Print or validate a versioned investigation record and return one typed action |
 | `change new <intent> [--rapid]` | Compatible primitive for manually authoring a change agreement |
-| `change start --template \| <draft.json> [--inspect] [--consume-draft]` | Inspect and, when complete, compile and start an agreement from one semantic draft in one call; Build creates isolation later |
-| `change amend --template \| <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake or add, revise, or remove semantic requirements, or fix an unfinished task's verify command, transactionally while preserving completed work |
-| `change revise <change> <draft.json> [--inspect] [--consume-draft]` | Before Build, recompile a revised semantic draft over the same change id with rollback and a requirement delta (approval carries unless a requirement is removed) |
+| `change start --template \| <draft.json> [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | Inspect and, when complete, compile and start an agreement from one semantic draft in one call; Build creates isolation later; `--approve-spec` records the user's approval in the same call |
+| `change amend --template \| <change> <amendment.json> [--inspect] [--consume-amendment] [--approve-spec --decision-ref <ref> [--through <target>]]` | Inspect intake and, when complete, add, revise, or remove semantic requirements, or fix an unfinished task's verify command, transactionally while preserving completed work, in one call |
+| `change amend <change> --task <task> --verify <command> [--reason <text>]` | Correct one unfinished task's verify command without amendment JSON; claims, capabilities, and approval stay, and an always-passing command is refused |
+| `change revise <change> <draft.json> [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | Before Build, inspect and, when complete, recompile a revised semantic draft over the same change id in one call, with rollback and a requirement delta (approval carries unless a requirement is removed) |
 | `change resolve <change> …` | Persist impact, coupling, security, and review decisions |
 | `change validate <change>` | Validate the change and its executable evidence contract |
 | `sandbox create <change> [--all]` | Create the isolated Build workspace |
@@ -126,7 +128,9 @@ these directly for diagnosis or an explicit integration.
 | `deliver advance <change>` | One composition command for an archived change; the harness owns readiness, isolated worktree, projection guard, PR-standard rendering, commit, push, provider read-back, retry, and resume |
 
 If `/deliver` is absent, no delivery directory, PR-specific evidence work, or
-gate is created. The explicit command never authorizes force-push,
+gate is created. On a proven change that is not archived yet, `/deliver` is
+also Land authority: the harness lands it through `advance --through archived`
+and continues delivery. The explicit command never authorizes force-push,
 default-branch push, merge, deploy, publish, or product edits. Success requires
 an open PR whose provider-reported base, head, and commit match the durable
 delivery receipt.

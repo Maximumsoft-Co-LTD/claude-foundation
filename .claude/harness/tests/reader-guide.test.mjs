@@ -47,6 +47,10 @@ function draft(overrides = {}) {
       { path: "README.md", change: "modified", responsibility: "Docs" }
     ],
     failureMatrix: [{ failure: "blank title", userSees: "message", recovery: "retry" }],
+    summary: "Users add and move cards on one board that survives reloads.",
+    userFlow: { purpose: "Adding a card", source: "flowchart LR\n  A[Type title] --> B{Blank?}\n  B -->|no| C[Card shown]\n  B -->|yes| D[Message]" },
+    uiStates: [{ screen: "Board", states: ["empty", "loaded", "error"], accessibility: "Keyboard moves" }],
+    componentMap: [{ component: "Board reducer", responsibility: "Card state", files: ["src/board/reducer.ts"] }],
     testMap: [{ scenario: "add", level: "unit", file: "src/board/reducer.test.ts", task: "state" }],
     discovery: {
       coverage: DIMENSIONS.map((dimension) => ({
@@ -90,7 +94,7 @@ test("design omits placeholder sections and fills the file map task column", () 
     assert.ok(!design.includes(placeholder), `unexpected ${placeholder}`);
   assert.match(design, /\| src\/board\/reducer\.ts \| added \| State \| T001 \|/);
   assert.match(design, /\| tsconfig\.json \| added \| Config \| T002 \|/);
-  assert.match(design, /## Task overview[\s\S]*\| T002 \| Local storage \| T001 \| 1 \|/);
+  assert.match(design, /## Plan[\s\S]*\| T002 \| Local storage \| src\/storage\.ts, tsconfig\*\.json \| `npm test` \| T001 \| persist \|/);
   assert.match(design, /```mermaid\ngraph TD\n {2}T001 --> T002\n```/);
   // A design with no decisions at all is valid, not a missing section.
   assert.deepEqual(durableDecisionMetadataIssues("# Design\n\n## Risks\n"), []);
@@ -124,6 +128,23 @@ test("proposal leads with summary, stories, criteria, and a capability index", (
   assert.match(proposal, /\| compatibility \| covered \| add-card \| {2}\| {2}\|/);
 });
 
+test("the appendix marks coverage the harness derived from the draft", () => {
+  const compiled = compile({
+    impact: "high", compatibility: "Boards saved before this change still load",
+    discovery: {
+      coverage: [...DIMENSIONS.filter((dimension) => dimension !== "compatibility"), "operability"]
+        .map((dimension) => ({ dimension, status: "covered", covers: ["add-card"] })),
+      decisions: []
+    }
+  });
+  const proposal = renderDraftProposal(compiled, { intent: compiled.intent });
+  assert.match(proposal, /\| compatibility \| covered \(derived\) \| {2}\| {2}\| Derived from compatibility \|/);
+  assert.match(proposal, /\| current-behavior \| covered \| add-card \| {2}\| {2}\|/);
+  // 'why' already leads the proposal, so a missing summary is not prompted.
+  const warnings = readerGuideWarnings({ ...compiled, summary: undefined, why: "Cards get lost" });
+  assert.equal(warnings.some((warning) => /summary/.test(warning)), false);
+});
+
 test("long appendix lists are counted instead of dumped", () => {
   const keys = Array.from({ length: 9 }, (_, index) => `req-${index}`);
   const compiled = compile({
@@ -152,7 +173,7 @@ test("reader fields are shape-checked and missing guidance only warns", () => {
   assert.ok(bad.issues.some((issue) => /unknown requirement\(s\): missing/.test(issue)));
   assert.ok(bad.issues.some((issue) => /successCriteria must be an array/.test(issue)));
   assert.ok(bad.issues.some((issue) => /diagram needs Mermaid source/.test(issue)));
-  const warnings = readerGuideWarnings(compile());
+  const warnings = readerGuideWarnings({ ...compile(), summary: undefined });
   assert.ok(warnings.some((warning) => /summary/.test(warning)));
   assert.ok(warnings.some((warning) => /userStories/.test(warning)));
   assert.ok(warnings.some((warning) => /successCriteria/.test(warning)));

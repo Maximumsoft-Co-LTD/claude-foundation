@@ -13,9 +13,11 @@ export async function routeRuntimeCommand(command, values, api) {
     startAtomic,
     inspectAmendment,
     amendChange,
+    amendTaskVerify = null,
     inspectRevision,
     reviseChange,
     resolveChange,
+    approvalQuestionAction = null,
     recordTargetRestore,
     abandonChange,
     waiveGate,
@@ -103,6 +105,34 @@ export async function routeRuntimeCommand(command, values, api) {
     showQualityDebt
   } = api;
   const die = fail;
+  // The user's approval answer can be recorded in the same call that applies
+  // the agreement it approves: start, revise, or amend, then approve, then
+  // optionally continue with --through. Nothing is approved when the agreement
+  // call stopped at an intake action.
+  const sameCallApproval = (command, flags) => {
+    if (!flags["approve-spec"]) {
+      const stray = ["decision-ref", "through"].filter((flag) => flags[flag] !== undefined);
+      if (stray.length) die(`${command} --${stray.join(", --")} requires --approve-spec`);
+      return null;
+    }
+    const decisionRef = String(flags["decision-ref"] || "").trim();
+    if (!decisionRef)
+      die(`${command} --approve-spec requires --decision-ref <ref> naming the user's approval`);
+    if (flags.through !== undefined && !["build", "proven", "archived"].includes(flags.through))
+      die(`${command} --through must be build|proven|archived`);
+    return { decisionRef, through: flags.through || null };
+  };
+  const intakeStopped = (result) => Boolean(result && typeof result === "object" &&
+    typeof result.action === "string" && result.intakeState);
+  const recordSameCallApproval = async (id, approval) => {
+    const ask = approvalQuestionAction?.(id, approval.through);
+    if (ask) {
+      console.log(JSON.stringify(ask));
+      return;
+    }
+    resolveChange(id, { "approve-spec": true, "decision-ref": approval.decisionRef });
+    if (approval.through) await showAdvance(id, { through: approval.through });
+  };
   const handlers = {
     "investigate": async () => {
       const { flags, rest } = parseStrictCommandFlags(values, "investigate", {
@@ -129,20 +159,26 @@ export async function routeRuntimeCommand(command, values, api) {
         flags,
         rest
       } = parseStrictCommandFlags(values, "start", {
-        boolean: ["template", "inspect", "consume-draft"]
+        boolean: ["template", "inspect", "consume-draft", "approve-spec"],
+        value: ["decision-ref", "through"]
       });
+      const approval = sameCallApproval("start", flags);
       if (flags.template) {
         if (rest.length) die("start --template takes no draft path");
-        if (flags.inspect || flags["consume-draft"])
-          die("start --template cannot be combined with --inspect or --consume-draft");
+        if (flags.inspect || flags["consume-draft"] || approval)
+          die("start --template cannot be combined with --inspect, --consume-draft, or --approve-spec");
         console.log(JSON.stringify(rapidStartTemplate(), null, 2));
       } else {
         if (rest.length !== 1) die("start requires exactly one draft JSON path");
         if (flags.inspect) {
-          if (flags["consume-draft"])
-            die("start --inspect cannot be combined with --consume-draft");
+          if (flags["consume-draft"] || approval)
+            die("start --inspect cannot be combined with --consume-draft or --approve-spec");
           inspectDraft(rest[0]);
-        } else startAtomic(rest[0], { consumeDraft: flags["consume-draft"] });
+        } else {
+          const started = startAtomic(rest[0], { consumeDraft: flags["consume-draft"] });
+          if (approval && typeof started === "string")
+            await recordSameCallApproval(started, approval);
+        }
       }
     },
     "resolve": async () => {
@@ -161,38 +197,62 @@ export async function routeRuntimeCommand(command, values, api) {
     },
     "amend": async () => {
       const { flags, rest } = parseStrictCommandFlags(values, "change amend", {
-        boolean: ["template", "inspect", "consume-amendment"]
+        boolean: ["template", "inspect", "consume-amendment", "approve-spec"],
+        value: ["task", "verify", "reason", "decision-ref", "through"]
       });
+      const approval = sameCallApproval("change amend", flags);
+      // The verify-only correction an agent makes directly: no amendment JSON,
+      // same transaction, the spec approval carried.
+      if (flags.task !== undefined || flags.verify !== undefined || flags.reason !== undefined) {
+        if (flags.template || flags.inspect || flags["consume-amendment"] || approval)
+          die("change amend --task/--verify cannot be combined with --template, --inspect, --consume-amendment, or --approve-spec");
+        if (rest.length !== 1 || !String(flags.task || "").trim() ||
+            !String(flags.verify || "").trim())
+          die("change amend requires <change> --task <task-key|task-id> --verify <command>");
+        if (!amendTaskVerify) die("change amend --task/--verify is unavailable in this runtime");
+        amendTaskVerify(rest[0], {
+          task: flags.task, verify: flags.verify, reason: flags.reason
+        });
+        return;
+      }
       if (flags.template) {
         if (rest.length) die("change amend --template takes no change or amendment path");
-        if (flags.inspect || flags["consume-amendment"])
-          die("change amend --template cannot be combined with --inspect or --consume-amendment");
+        if (flags.inspect || flags["consume-amendment"] || approval)
+          die("change amend --template cannot be combined with --inspect, --consume-amendment, or --approve-spec");
         console.log(JSON.stringify(amendmentTemplate(), null, 2));
         return;
       }
       if (rest.length !== 2)
         die("change amend requires <change> <amendment.json>");
       if (flags.inspect) {
-        if (flags["consume-amendment"])
-          die("change amend --inspect cannot be combined with --consume-amendment");
+        if (flags["consume-amendment"] || approval)
+          die("change amend --inspect cannot be combined with --consume-amendment or --approve-spec");
         inspectAmendment(rest[0], rest[1]);
-      } else amendChange(rest[0], rest[1], {
+        return;
+      }
+      const amended = amendChange(rest[0], rest[1], {
         consumeAmendment: flags["consume-amendment"]
       });
+      if (approval && !intakeStopped(amended)) await recordSameCallApproval(rest[0], approval);
     },
     "revise": async () => {
       const { flags, rest } = parseStrictCommandFlags(values, "change revise", {
-        boolean: ["inspect", "consume-draft"]
+        boolean: ["inspect", "consume-draft", "approve-spec"],
+        value: ["decision-ref", "through"]
       });
+      const approval = sameCallApproval("change revise", flags);
       if (rest.length !== 2)
         die("change revise requires <change> <draft.json>");
       if (flags.inspect) {
-        if (flags["consume-draft"])
-          die("change revise --inspect cannot be combined with --consume-draft");
+        if (flags["consume-draft"] || approval)
+          die("change revise --inspect cannot be combined with --consume-draft or --approve-spec");
         inspectRevision(rest[0], rest[1]);
-      } else reviseChange(rest[0], rest[1], {
+        return;
+      }
+      const revised = reviseChange(rest[0], rest[1], {
         consumeDraft: flags["consume-draft"]
       });
+      if (approval && !intakeStopped(revised)) await recordSameCallApproval(rest[0], approval);
     },
     "abandon": async () => {
       const {
@@ -363,9 +423,28 @@ export async function routeRuntimeCommand(command, values, api) {
       const { flags, rest } = parseStrictCommandFlags(values, "advance", {
         boolean: ["pretty", "inspect", "approve-spec"],
         value: ["host-result", "through", "decision", "decision-fingerprint", "decision-ref", "reason",
-          "restore-target"]
+          "restore-target", "recover-apply"]
       });
       if (rest.length !== 1) die("advance requires exactly one change id");
+      // Land's interrupted-apply route: settle the journaled apply under the
+      // user's decision, then resume the same lifecycle route. The internal
+      // `land recover` primitive is never the agent's command.
+      if (flags["recover-apply"] !== undefined) {
+        const extra = Object.keys(flags).filter((flag) =>
+          !["recover-apply", "decision-ref", "through", "pretty"].includes(flag));
+        if (extra.length)
+          die(`advance --recover-apply combines only with --through and --decision-ref; drop --${extra.join(", --")}`);
+        if (flags.through && flags.through !== "archived")
+          die("advance --recover-apply applies only to Land; use --through archived");
+        const resolution = String(flags["recover-apply"]);
+        if (!["settle", "keep-current", "restore-backup"].includes(resolution))
+          die("advance --recover-apply takes settle|keep-current|restore-backup");
+        recoverLand(rest[0], { "decision-ref": flags["decision-ref"],
+          ...(resolution === "settle" ? {} : { resolution }) });
+        if (!flags.through) return;
+        delete flags["recover-apply"];
+        delete flags["decision-ref"];
+      }
       // Land's target-conflict route: record which target files Land restores
       // to the sandbox base, then resume the same lifecycle route.
       if (flags["restore-target"] !== undefined) {
@@ -386,16 +465,26 @@ export async function routeRuntimeCommand(command, values, api) {
       }
       // Alias of `change resolve <change> --approve-spec --decision-ref <ref>`
       // so the agent's normal path needs only `change start` and `advance`.
+      // With --through, the same call records the approval and continues:
+      // approving and starting Build is one step, not two commands.
       if (flags["approve-spec"]) {
         const extra = Object.keys(flags).filter((flag) =>
-          !["approve-spec", "decision-ref"].includes(flag));
+          !["approve-spec", "decision-ref", "through"].includes(flag));
         if (extra.length)
-          die(`advance --approve-spec records only the user's spec approval; drop --${extra.join(", --")} ` +
-            `and resume with 'claude-foundation advance ${rest[0]} --through <target>'`);
+          die(`advance --approve-spec combines only with --decision-ref and --through; drop --${extra.join(", --")}`);
         if (!flags["decision-ref"])
           die(`advance --approve-spec requires --decision-ref <ref> naming the user's approval`);
+        if (flags.through && !["build", "proven", "archived"].includes(flags.through))
+          die("advance --through must be build|proven|archived");
+        const ask = approvalQuestionAction?.(rest[0], flags.through || null);
+        if (ask) {
+          console.log(JSON.stringify(ask, null, flags.pretty ? 2 : 0));
+          return;
+        }
         resolveChange(rest[0], { "approve-spec": true, "decision-ref": flags["decision-ref"] });
-        return;
+        if (!flags.through) return;
+        delete flags["approve-spec"];
+        delete flags["decision-ref"];
       }
       if (flags.inspect && (flags.through || flags["host-result"] || flags.decision ||
           flags["decision-fingerprint"] || flags["decision-ref"] || flags.reason))

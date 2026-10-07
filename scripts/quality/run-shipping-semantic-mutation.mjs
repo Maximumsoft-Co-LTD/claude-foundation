@@ -32,8 +32,8 @@ const CASES = [
     sourcePath: ".claude/harness/runtime/evidence/configured-reviewer.mjs",
     expectedKiller: "CASE-REVIEW-SCHEMA-REQUIRED",
     detector: ["node", ".claude/tests/harness/run-v33-policy-tests.mjs"],
-    before: "required: [\"status\", \"summary\", \"findings\", \"verifiedFindingIds\", \"scenarioCoverage\"]",
-    after: "required: [\"status\", \"summary\", \"findings\", \"scenarioCoverage\"]",
+    before: "required: [\"status\", \"summary\", \"findings\", \"verifiedFindingIds\", \"scenarioCoverage\", \"specGaps\"]",
+    after: "required: [\"status\", \"summary\", \"findings\", \"scenarioCoverage\", \"specGaps\"]",
     compile: ["node", "--check", ".claude/harness/runtime/evidence/configured-reviewer.mjs"]
   }
 ];

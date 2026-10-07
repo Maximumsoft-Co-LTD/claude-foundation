@@ -8,6 +8,8 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { createAdvanceRuntime } from "../runtime/workflow/advance-runtime.mjs";
 import { createLeaseRuntime } from "../runtime/workflow/lease-runtime.mjs";
+import { recoverCompletedTasksForExecution } from "../runtime/workflow/agent-planning.mjs";
+import { taskAuthorityShape } from "../runtime/core/task-execution-authority.mjs";
 import {
   createSessionLeaseRuntime, runTaskCheck, sessionLeaseOwner, taskCheck, taskLineChecked, tickTaskLine
 } from "../runtime/workflow/session-lease.mjs";
@@ -71,14 +73,13 @@ test("settle releases only harness-issued session leases the agent completed", (
   assert.deepEqual(interrupted.calls, []);
 });
 
-test("a widened scope renews the lease and a scope refusal routes back to advance", (t) => {
+test("a scope refusal routes back to advance; release owns stale-authority renewal", (t) => {
   const root = workspace(t, "T001 T002");
   const owner = sessionLeaseOwner("demo", "T001", stableHash);
-  const stale = fakeLeases(root, [{ taskId: "T001", owner, leaseId: "l1" }], {
-    releaseError: ["stale result authority for 'demo/T001': graph or contract changed after lease acquisition; re-acquire"]
-  });
-  assert.deepEqual(stale.runtime.settle("demo"), ["T001"]);
-  assert.deepEqual(stale.calls.map((row) => row[0]), ["release", "acquire", "release"]);
+  const settled = fakeLeases(root, [{ taskId: "T001", owner, leaseId: "l1" }]);
+  assert.deepEqual(settled.runtime.settle("demo"), ["T001"]);
+  assert.deepEqual(settled.calls.map((row) => row[0]), ["release"],
+    "settle never composes acquire-then-release itself");
 
   const scoped = fakeLeases(root, [{ taskId: "T002", owner, leaseId: "l1" }], {
     releaseError: ["task 'T002' changed outside granted scope: tests/b.spec.js; result and proof were not accepted. Revert ... 'claude-foundation agents acquire demo T002 --owner x'"]
@@ -92,6 +93,173 @@ test("a widened scope renews the lease and a scope refusal routes back to advanc
   });
 });
 
+test("reverify settles ticked tasks with stale records and leaves real work to the plan", (t) => {
+  const root = workspace(t, "T001 T002");
+  const calls = [];
+  let blockOnce = true;
+  const runtime = createSessionLeaseRuntime({
+    stableHash,
+    loadRuntime: () => ({ workspace: { path: root } }),
+    activeChangeLeases: () => [],
+    acquire: (id, taskId, flags) => {
+      // T002 waits for T001 in the first pass, as acquire refuses a task
+      // behind a pending dependency.
+      if (taskId === "T002" && blockOnce) { blockOnce = false; throw new Error("blocked by T001"); }
+      calls.push(["acquire", taskId, flags.owner]);
+      return { leaseId: `lease-${taskId}` };
+    },
+    release: (id, taskId, flags) => { calls.push(["release", taskId, flags["lease-id"]]); },
+    discard: () => {}
+  });
+  const rows = [
+    { taskId: "T002", reason: "depends on T001, which needs verification" },
+    { taskId: "T001", reason: "stale or invalid result authority: taskAuthority" },
+    { taskId: "T003", reason: "never ticked" }
+  ];
+  assert.deepEqual(runtime.reverify("demo", rows), ["T001", "T002"]);
+  assert.deepEqual(calls.map((row) => `${row[0]}:${row[1]}`),
+    ["acquire:T001", "release:T001", "acquire:T002", "release:T002"]);
+  assert.ok(calls.every((row) => row[0] !== "acquire" || row[2] ===
+    sessionLeaseOwner("demo", row[1], stableHash)), "the harness owns every re-verification lease");
+});
+
+test("reverify skips a task a live worker holds and one whose check fails", (t) => {
+  const root = workspace(t, "T001 T002");
+  const calls = [];
+  const runtime = createSessionLeaseRuntime({
+    stableHash,
+    loadRuntime: () => ({ workspace: { path: root } }),
+    activeChangeLeases: () => [{ taskId: "T001", owner: "dispatch-t001-live" }],
+    acquire: (id, taskId) => { calls.push(taskId); return { leaseId: "l" }; },
+    release: () => {}, discard: () => {},
+    runCheck: () => ({ status: "fail", exitCode: 1, output: "FAIL" })
+  });
+  writeFileSync(join(root, "openspec", "changes", "demo", "tasks.md"),
+    "- [x] **T001** First [paths:src/a.js]\n- [x] **T002** Second — verify: `npm test` [paths:src/b.js]\n");
+  assert.deepEqual(runtime.reverify("demo", [{ taskId: "T001" }, { taskId: "T002" }]), []);
+  assert.deepEqual(calls, [], "no lease is taken for held or failing tasks");
+});
+
+// A consumer amended the spec mid-Build, its leases expired, and workers
+// finished the rest outside any lease. All tasks are ticked; none needs work.
+test("an amended, out-of-lease Build settles to verified without handing work back", (t) => {
+  const root = workspace(t, "T001 T002");
+  const leases = join(root, ".foundation", "leases");
+  const node = (id, digest, dependsOn = []) => ({
+    id: `task:${id}`, kind: "task", repository: "root", required: true,
+    dependsOn: dependsOn.map((value) => `task:${value}`), paths: [`src/${id.toLowerCase()}.js`],
+    contracts: [], resources: ["workspace:root"], claims: [], inputSchema: null,
+    outputSchema: null, lifecycle: "build", authorityDigest: digest
+  });
+  const ledger = [
+    { id: "T001", done: true, dependsOn: [], paths: ["src/t001.js"], repository: "root" },
+    { id: "T002", done: true, dependsOn: ["T001"], paths: ["src/t002.js"], repository: "root" }
+  ];
+  let graph = { version: 3, revision: "r1", identity: "i1", claims: [],
+    nodes: [node("T001", "a"), node("T002", "b", ["T001"])] };
+  let contractRevision = 1;
+  const readJson = (path, fallback = null) => existsSync(path)
+    ? JSON.parse(readFileSync(path, "utf8")) : fallback;
+  const recover = () => recoverCompletedTasksForExecution({
+    id: "demo", allTasks: ledger, graph, state: { contractRevision }, priorPlan: {},
+    currentContractFingerprint: "c",
+    taskResult: (id, taskId) => {
+      const path = join(leases, "results", id, `${taskId}.json`);
+      return existsSync(path) ? { path, value: readJson(path) } : null;
+    },
+    taskLease: (id, taskId) => {
+      const path = join(leases, "tasks", id, `${taskId}.json`);
+      return existsSync(path) ? readJson(path) : null;
+    }
+  });
+  const planValue = () => {
+    const recovered = recover();
+    return {
+      dispatchable: true, graph, graphRevision: graph.revision, graphIdentity: graph.identity,
+      contractRevision, planDigest: "p", workspaceHash: "w",
+      tasks: recovered.tasks.filter((task) => !task.done), verification: recovered.verification
+    };
+  };
+  const leaseRuntime = createLeaseRuntime({
+    leases, stableHash, agentPlanValue: planValue,
+    policy: () => ({ execution: { leaseMinutes: 45 } }),
+    readJson, writeJson: (path, value) => {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, `${JSON.stringify(value)}\n`);
+    },
+    now: () => new Date().toISOString(),
+    fail: (message) => { throw new Error(message); }
+  });
+  const sessions = createSessionLeaseRuntime({
+    stableHash, loadRuntime: () => ({ workspace: { path: root } }),
+    activeChangeLeases: (id) => leaseRuntime.active(id, { includeExpired: true }),
+    acquire: leaseRuntime.acquire, release: leaseRuntime.release, discard: leaseRuntime.discard
+  });
+
+  // No lease ever recorded these tasks: both need verification.
+  assert.deepEqual(recover().verification.map((row) => row.taskId), ["T001", "T002"]);
+  assert.deepEqual(sessions.reverify("demo", planValue().verification), ["T001", "T002"]);
+  assert.deepEqual(recover().verification, [], "both tasks now carry current authority");
+
+  // An amendment moves the graph and contract and rewrites T002 only.
+  graph = { ...graph, revision: "r2", identity: "i2",
+    nodes: [node("T001", "a"), node("T002", "b-amended", ["T001"])] };
+  contractRevision = 2;
+  assert.deepEqual(recover().verification.map((row) => row.taskId), ["T002"],
+    "the untouched T001 keeps its result across the amendment");
+  assert.deepEqual(sessions.reverify("demo", planValue().verification), ["T002"]);
+  assert.deepEqual(recover().verification, []);
+});
+
+// A parallel worker released T001 and asked the user to tick tasks.md
+// because the host blocked its own checkbox edit. The harness owns the tick.
+test("a released parallel result is ticked by the harness once its verify passes", (t) => {
+  const root = workspace(t);
+  const ledger = join(root, "openspec", "changes", "demo", "tasks.md");
+  writeFileSync(ledger,
+    "- [ ] **T001** First — verify: `npm test -- a` [paths:src/a.js]\n" +
+    "- [ ] **T002** Second — verify: `npm test -- b` [paths:src/b.js]\n");
+  const runtime = createSessionLeaseRuntime({
+    stableHash, loadRuntime: () => ({ workspace: { path: root } }),
+    activeChangeLeases: () => [], acquire: () => ({}), release: () => {}, discard: () => {},
+    runCheck: (id, check) => ({ status: check.command.endsWith("a") ? "pass" : "fail",
+      exitCode: check.command.endsWith("a") ? 0 : 1, output: "b broke" })
+  });
+  assert.deepEqual(runtime.tickAccepted("demo", ["T001", "T002"]), ["T001"]);
+  const content = readFileSync(ledger, "utf8");
+  assert.equal(taskLineChecked(content, "T001"), true);
+  assert.equal(taskLineChecked(content, "T002"), false, "a failing verify stays pending");
+  const handed = runtime.issue("demo", {
+    action: "EDIT", tasks: [{ id: "T002" }], execution: { mode: "parallel", leases: [] }
+  });
+  assert.equal(handed.verificationFailures[0].taskId, "T002",
+    "the next parallel EDIT carries the failure instead of a bare pending task");
+});
+
+test("the planner reports an accepted unticked result as ready for the harness tick", () => {
+  const graph = { version: 3, revision: "r1", identity: "i1", claims: [], nodes: [{
+    id: "task:T001", kind: "task", repository: "root", required: true, dependsOn: [],
+    paths: ["src/a.js"], contracts: [], resources: [], claims: [], inputSchema: null,
+    outputSchema: null, lifecycle: "build", authorityDigest: "a"
+  }] };
+  const result = { value: {
+    taskId: "T001", repository: "root", status: "observed", paths: ["src/a.js"], claimIds: [],
+    outputSchema: null, planDigest: "p", workspaceHash: "w", leaseId: "l",
+    fencingGeneration: 1, executionAttempt: 1, observedWrites: ["src/a.js"],
+    taskAuthority: taskAuthorityShape(graph, "T001")
+  } };
+  const tasks = [{ id: "T001", done: false, dependsOn: [] }];
+  const base = { id: "demo", allTasks: tasks, graph, state: { contractRevision: 1 },
+    priorPlan: {}, currentContractFingerprint: "c" };
+  assert.deepEqual(recoverCompletedTasksForExecution({
+    ...base, taskResult: () => result }).resultReady, ["T001"]);
+  assert.deepEqual(recoverCompletedTasksForExecution({
+    ...base, taskResult: () => result, taskLease: () => ({ leaseId: "live" }) }).resultReady, [],
+  "a task a worker still holds is not ready");
+  assert.deepEqual(recoverCompletedTasksForExecution({ ...base }).resultReady, [],
+    "no released result, no tick");
+});
+
 test("issue grants only a leased session task and removes the manual lease route", (t) => {
   const { runtime, calls } = fakeLeases(workspace(t), []);
   const edit = { action: "EDIT", workspace: "/sandbox", tasks: [{ id: "T001" }],
@@ -103,9 +271,77 @@ test("issue grants only a leased session task and removes the manual lease route
   assert.match(issued.instructions.join(" "), /do not acquire or release the lease/);
   const single = { ...edit, execution: { mode: "session", leases: [] } };
   assert.equal(runtime.issue("demo", single), single);
-  const group = { ...edit, execution: { mode: "parallel", leases: [{}, {}] } };
-  assert.equal(runtime.issue("demo", group), group);
   assert.equal(calls.length, 1);
+});
+
+test("a parallel group runs on harness-held leases; the parent only spawns and waits", (t) => {
+  const { runtime, calls } = fakeLeases(workspace(t), []);
+  const group = {
+    action: "EDIT", workspace: "/sandbox", tasks: [{ id: "T001" }, { id: "T002" }],
+    execution: { mode: "parallel", leases: [
+      { taskId: "T001", repository: "api", owner: "dispatch-t001-x",
+        acquireCommand: "claude-foundation agents acquire demo T001 --owner dispatch-t001-x",
+        packetCommand: "claude-foundation packet demo --task T001",
+        releaseCommand: "claude-foundation agents release demo T001 --owner dispatch-t001-x" },
+      { taskId: "T002", repository: "web", owner: "dispatch-t002-x",
+        acquireCommand: "claude-foundation agents acquire demo T002 --owner dispatch-t002-x",
+        packetCommand: "claude-foundation packet demo --task T002",
+        releaseCommand: "claude-foundation agents release demo T002 --owner dispatch-t002-x" }
+    ] }
+  };
+  const issued = runtime.issue("demo", group);
+  assert.deepEqual(calls, [
+    ["acquire", "T001", sessionLeaseOwner("demo", "T001", stableHash)],
+    ["acquire", "T002", sessionLeaseOwner("demo", "T002", stableHash)]
+  ], "the harness acquires every lease with its own owner");
+  assert.deepEqual(issued.execution.leases, []);
+  assert.deepEqual(issued.execution.workers.map((worker) => worker.packetCommand), [
+    "claude-foundation packet demo --task T001", "claude-foundation packet demo --task T002"
+  ]);
+  assert.ok(issued.execution.managedLeases.every((lease) => lease.managedBy === "harness"));
+  const text = JSON.stringify(issued);
+  assert.doesNotMatch(text, /agents (acquire|release)/, "no lease command reaches the agent");
+  assert.match(issued.instructions.join(" "), /Nobody acquires or releases a lease or edits tasks\.md/);
+});
+
+test("a parallel group that cannot lease every worker returns the leases it took", () => {
+  const calls = [];
+  const runtime = createSessionLeaseRuntime({
+    stableHash, loadRuntime: () => ({}), activeChangeLeases: () => [], release: () => {},
+    acquire: (id, taskId) => {
+      if (taskId === "T002") throw new Error("T002 is held");
+      calls.push(["acquire", taskId]);
+      return { leaseId: `lease-${taskId}` };
+    },
+    discard: (id, taskId, owner) => { calls.push(["discard", taskId, owner]); }
+  });
+  const group = { action: "EDIT", tasks: [{ id: "T001" }, { id: "T002" }],
+    execution: { mode: "parallel", leases: [{ taskId: "T001" }, { taskId: "T002" }] } };
+  assert.throws(() => runtime.issue("demo", group), /T002 is held/);
+  assert.deepEqual(calls, [
+    ["acquire", "T001"], ["discard", "T001", sessionLeaseOwner("demo", "T001", stableHash)]
+  ]);
+});
+
+test("a no-lease session handoff records a harness-verified result for each passing task", (t) => {
+  const root = workspace(t);
+  writeFileSync(join(root, "openspec", "changes", "demo", "tasks.md"),
+    "- [ ] **T001** First — verify: `npm test -- a` [paths:src/a.js]\n" +
+    "- [ ] **T002** Second — verify: `npm test -- b` [paths:src/b.js]\n");
+  let state = { workspace: { path: root }, sessionHandoff: { version: 1, taskIds: ["T001", "T002"] } };
+  const calls = [];
+  const runtime = createSessionLeaseRuntime({
+    stableHash, loadRuntime: () => state, saveRuntime: (value) => { state = value; },
+    activeChangeLeases: () => [],
+    acquire: (id, taskId, flags) => { calls.push(["acquire", taskId, flags.owner]); return { leaseId: `l-${taskId}` }; },
+    release: (id, taskId, flags) => { calls.push(["release", taskId, flags["lease-id"]]); },
+    discard: () => {},
+    runCheck: (id, check) => ({ status: check.command.endsWith("a") ? "pass" : "fail", exitCode: 1 })
+  });
+  assert.deepEqual(runtime.settle("demo"), ["T001"]);
+  assert.deepEqual(calls.map((row) => `${row[0]}:${row[1]}`), ["acquire:T001", "release:T001"],
+    "only the passing task gets a recorded result");
+  assert.deepEqual(state.sessionHandoff.taskIds, ["T002"]);
 });
 
 test("an explicit acquire takes over the harness-held lease without completing it", (t) => {
@@ -296,6 +532,24 @@ test("a single-agent handoff is recorded, then completed by its passing check", 
   assert.equal(state.sessionHandoff, undefined);
   assert.match(readFileSync(join(root, "openspec", "changes", "demo", "tasks.md"), "utf8"),
     /^- \[x\] \*\*T001\*\*/m);
+});
+
+test("a no-lease handoff surfaces an out-of-scope write and keeps the handoff pending", (t) => {
+  const root = checkedWorkspace(t);
+  let state = { workspace: { path: root }, sessionHandoff: { version: 1, taskIds: ["T001"] } };
+  const runtime = createSessionLeaseRuntime({
+    stableHash, loadRuntime: () => structuredClone(state),
+    saveRuntime: (value) => { state = structuredClone(value); },
+    activeChangeLeases: () => [], acquire: () => ({ leaseId: "l1" }), discard: () => {},
+    release: () => { throw new Error("task 'T001' changed outside granted scope: src/other.js; result and proof were not accepted."); },
+    runCheck: (id, check) => runTaskCheck({ loadRuntime: () => state }, id, check)
+  });
+  assert.throws(() => runtime.settle("demo"), (error) => {
+    assert.equal(error.boundary, "task-scope");
+    assert.match(error.message, /outside granted scope: src\/other\.js\. Revert/);
+    return true;
+  });
+  assert.deepEqual(state.sessionHandoff.taskIds, ["T001"]);
 });
 
 test("the task check runs in the task repository and reports an unavailable workspace", () => {

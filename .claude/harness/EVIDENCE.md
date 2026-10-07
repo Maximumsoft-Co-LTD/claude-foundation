@@ -303,6 +303,15 @@ Valid receipts are reused. Commands with identical executable arguments,
 environment, working directory, and timeout are deduplicated within one proof
 execution. Providers with non-conflicting resources run concurrently.
 
+Tests run once across Build and Prove. A Build task `verify:` that is exactly a
+required `command` or `test-discovery` provider's argv in the same repository
+runs the provider's way (cwd, environment, timeout, captured output). A clean
+pass whose content hash did not move during the run is kept for Prove, which
+parses and receipts that output like a fresh run when the execution identity,
+environment (minus run ids), and the provider's content hash still match.
+Shell syntax, report files, readiness or services, `dependsOn`, multi-repository
+scope, any later edit, or an unreadable or altered record means Prove reruns.
+
 For a single selected writable npm repository containing both `package.json`
 and `package-lock.json`, Change Loop supplies the built-in
 `dependency-supply-chain` lockfile provider automatically. No
@@ -407,7 +416,7 @@ requirements), all bound by the packet digest alongside the unchanged scope,
 workspace hash, and finding binding. A low-tier first round is `diff-only`: the
 reviewer sees a projection without reference-only fields and may open a file
 only when its hunk is truncated, omitted, or unavailable. It runs on the fast
-model tier: the reviewer's `fastModelId` (optional `fastModelFamily`), else the
+model tier at medium reasoning effort: the reviewer's `fastModelId` (optional `fastModelFamily`), else the
 `models.fast.family` alias for `claude-cli`; `review.lowRiskModel:
 "configured"` opts out. Provider family never changes; model family records
 the fast model actually run (`fastModelFamily`, else the `models.fast.family`
@@ -417,11 +426,17 @@ with agreement scenarios, `scenarioChecklist` (one digest-bound item per
 scenario; ids are claim ids when a claim names the scenario). The reviewer
 returns `scenarioCoverage` per item (`covered-by-test`, `covered-by-code-only`,
 `missing`, `unsure`); a `missing` item without a bound finding becomes a major
-finding on that id. A fast-tier round whose coverage is unparseable or has any
-`missing`/`unsure` item is re-run once on the configured model with the same
+finding on that id, and a fast-tier round with any `missing` item goes
+straight to repair. Otherwise a fast-tier round whose coverage is unparseable
+or has an `unsure` item is re-run once on the configured model with the same
 packet and dispatch: no new AI wave, the configured verdict is final, and the
 attempt and dispatch record the model actually run plus `modelEscalation`
-(`escalatedFrom: "fast"`). An explicit
+(`escalatedFrom: "fast"`). The reviewer may also return advisory `specGaps`:
+input partitions or scenarios the change plausibly needs but the agreement does
+not name. They are bounded, recorded on the durable report and the completed
+attempt, and reported as `reviewAdvisories.specGaps` on a reached `proven` or
+`archived` target; they never become findings, change the verdict, or block.
+Closing one is a semantic amendment the user decides. An explicit
 `--review` (or impact, coupling, or declared security triggers) raises
 verification risk to high even at the low review tier; review required only by
 intent keywords follows its tier. Medium, high, promoted, and legacy routes
@@ -673,3 +688,23 @@ The final proof covers the remaining required set and records the exceptions.
 `acceptance` retains its withdrawal route through
 `change resolve --acceptance-not-required` or an explicit claim amendment.
 The review deadline and continuation contract is in [WORKFLOW.md](../../WORKFLOW.md).
+
+## A gate that failed and then passed unchanged
+
+Resuming without a change is not a fourth exit. When a harness-executed
+provider recorded `fail` and its next run passes with the same workspace hash,
+input identity, provider, contract, and execution fingerprints, the new receipt
+is written with `status: fail`, `observedStatus: pass`, and a `flake` record:
+`rule: fail-then-pass-on-unchanged-content`, the first failure (`observed`,
+`finishedAt`, `log`), the number of passes seen since, the observed pass, and
+the repair. Further passes on the same content keep that first failure as the
+evidence and stay `fail`.
+
+This is the least-weakening rule: a failure observed on byte-identical inputs
+is never erased by a later pass, and no fixed rerun count is trusted to turn a
+nondeterministic gate into proof. The claim needs a repair — make the test or
+the code it exercises deterministic — and the first pass on changed content is
+proof again. Only a prior `fail` counts; an `error` never produced a product
+verdict, and manual receipts are unaffected. An unchanged flake that keeps
+recurring reaches the user through the no-progress ladder in
+[WORKFLOW.md § Recovery and user decisions](../../WORKFLOW.md#recovery-and-user-decisions).

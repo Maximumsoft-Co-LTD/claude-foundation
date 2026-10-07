@@ -412,7 +412,9 @@ export function collectNativeScorecard({
     join(project, ".foundation/test-results/quality/crap.json"));
   return buildScorecard({
     scenario, repeat, runId, config, envelope, metrics: resolvedMetrics,
-    quality: qualityReport, operationRows: operations, hostTelemetry, hostUsage,
+    quality: qualityReport, operationRows: operations,
+    hostTelemetry: { ...hostTelemetry, guardrail: guardrailOutcomes(project, stopwatch) },
+    hostUsage,
     stopwatch,
     outcome: observedOutcome({
       project, changeId: discovered, envelope, exitCode, timedOut, oracle,
@@ -592,7 +594,45 @@ function hostToolCalls(rows) {
     ? messageToolCalls(row.message) || [] : []));
   return { total: unique.length, browserCalls: browser.length,
     taskMirrorOperations: taskMirror.length,
-    byTool: profile.byTool, byCategory: profile.byCategory };
+    byTool: profile.byTool, byCategory: profile.byCategory,
+    friction: hostFriction(rows) };
+}
+
+const ADVANCE_ACTIONS = ["EDIT", "REPAIR", "RUN_EXTERNAL", "WAIT", "ASK_USER", "DONE"];
+
+function toolResultText(item) {
+  return typeof item?.content === "string" ? item.content
+    : Array.isArray(item?.content) ? item.content.map((part) => part?.text || "").join("\n") : "";
+}
+
+// What the run cost the agent in friction, read from the host stream: hook
+// refusals, host permission prompts, failed tool calls, and the harness actions
+// it was handed. The harness goal is zero hook refusals in a normal run.
+export function hostFriction(rows) {
+  const results = rows.flatMap((row) => row?.type === "user" &&
+    Array.isArray(row.message?.content) ? row.message.content : [])
+    .filter((item) => item?.type === "tool_result");
+  const errors = results.filter((item) => item.is_error === true).map(toolResultText);
+  const actions = Object.fromEntries(ADVANCE_ACTIONS.map((action) => [action, 0]));
+  for (const body of results.map(toolResultText))
+    for (const match of body.matchAll(/"action"\s*:\s*"([A-Z_]+)"/g))
+      if (Object.hasOwn(actions, match[1])) actions[match[1]] += 1;
+  return {
+    toolErrors: errors.length,
+    hookBlocks: errors.filter((body) => /hook error: BLOCKED|BLOCKED by secrets guard|BLOCKED: phase guard/
+      .test(body)).length,
+    permissionPrompts: errors.filter((body) => /requires approval/i.test(body)).length,
+    advanceActions: actions
+  };
+}
+
+// The guard's own audit of what it did instead of refusing, inside the run window.
+export function guardrailOutcomes(project, stopwatch = {}) {
+  const rows = operationRowsInWindow(readJsonLines(join(project, ".foundation/logs/guardrail-audit.jsonl"))
+    .map((row) => ({ ...row, startedAt: row.timestamp })), stopwatch);
+  const outcomes = {};
+  for (const row of rows) outcomes[row.outcome || "unknown"] = (outcomes[row.outcome || "unknown"] || 0) + 1;
+  return outcomes;
 }
 
 // Counts distinct tool_use ids in one stream-json row for the live stop.

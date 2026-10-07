@@ -6,11 +6,16 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
-import { createChangeLifecycle } from "../runtime/workflow/change-lifecycle.mjs";
+import {
+  apiContractErrorIssues, createChangeLifecycle
+} from "../runtime/workflow/change-lifecycle.mjs";
+import {
+  amendmentVerifyPathIssues, verifyPathIssues, verifyTestFileReferences
+} from "../runtime/workflow/semantic-amendment.mjs";
 import { verifySpecSync } from "../runtime/workflow/spec-sync-verify.mjs";
 import { CORE_DISCOVERY_DIMENSIONS } from
   "../runtime/workflow/validation/semantic-intake.mjs";
-import { assertSpecApproval, reviewWindowRemaining, REVIEW_WINDOW_MS } from "../runtime/core/user-decisions.mjs";
+import { assertSpecApproval } from "../runtime/core/user-decisions.mjs";
 
 function writeJson(path, value) {
   mkdirSync(dirname(path), { recursive: true });
@@ -229,7 +234,7 @@ test("bare start inspects and starts a correct v4 draft in one command", (t) => 
   // One authoritative next step: no per-step `next` from CREATED/RESOLVED.
   assert.doesNotMatch(output, /complete artifacts, validate, then \/build/);
   assert.equal((output.match(/\n  next: /g) || []).length, 1);
-  assert.match(output, /then: claude-foundation advance single-shot-change --through build/);
+  assert.match(output, /next: claude-foundation advance single-shot-change --approve-spec --decision-ref <user-decision> --through build/);
   assert.equal(existsSync(join(value.changes, "single-shot-change")), true);
   const runtime = JSON.parse(readFileSync(join(value.runtime, "single-shot-change.json"), "utf8"));
   assert.equal(runtime.status, "change");
@@ -270,7 +275,9 @@ test("spec approval is explicit, content-bound, and separate from edits", (t) =>
   assert.throws(() => assertSpecApproval(value.root, "atomic-change", state()), { code: "SPEC_APPROVAL_REQUIRED" });
 });
 
-test("spec approval refuses to bind an unamended isolated packet that drifted", (t) => {
+// An unamended isolated packet that drifted is restored by the harness before
+// consent binds, so approval covers the approved text and the edit is saved.
+test("spec approval restores a drifted unamended isolated packet before binding", (t) => {
   const value = fixture(t);
   value.lifecycle.startAtomic(value.draftPath);
   const statePath = join(value.runtime, "atomic-change.json");
@@ -279,10 +286,18 @@ test("spec approval refuses to bind an unamended isolated packet that drifted", 
     { recursive: true });
   writeFileSync(join(workspace, "openspec/changes/atomic-change/proposal.md"), "Edited in place");
   writeJson(statePath, { ...JSON.parse(readFileSync(statePath)), workspace: { path: workspace } });
-  assert.throws(() => value.lifecycle.resolveChange("atomic-change", {
-    "approve-spec": true, "decision-ref": "fixture://approval"
-  }), /edited outside a semantic amendment/);
-  assert.equal(JSON.parse(readFileSync(statePath)).specApproval.identity, undefined);
+  const notices = [];
+  const original = console.error;
+  console.error = (line) => notices.push(String(line));
+  try {
+    value.lifecycle.resolveChange("atomic-change", {
+      "approve-spec": true, "decision-ref": "fixture://approval"
+    });
+  } finally { console.error = original; }
+  assert.match(notices.join("\n"), /restored the approved text and saved the edit/);
+  assert.equal(readFileSync(join(workspace, "openspec/changes/atomic-change/proposal.md"), "utf8"),
+    readFileSync(join(value.changes, "atomic-change/proposal.md"), "utf8"));
+  assert.ok(JSON.parse(readFileSync(statePath)).specApproval.identity);
 });
 
 test("accepting target edits binds the exact edited bytes to a user decision", (t) => {
@@ -307,7 +322,7 @@ test("accepting target edits binds the exact edited bytes to a user decision", (
   assert.equal(accepted.decisionRef, "fixture://accept");
 });
 
-test("review continuation requires authority and preserves the previous window", (t) => {
+test("review continuation is accepted for compatibility and changes nothing", (t) => {
   const value = fixture(t);
   value.lifecycle.startAtomic(value.draftPath);
   const path = join(value.runtime, "atomic-change.json");
@@ -317,9 +332,8 @@ test("review continuation requires authority and preserves the previous window",
   assert.throws(() => value.lifecycle.resolveChange("atomic-change", { "continue-review": true }), /decision-ref/);
   value.lifecycle.resolveChange("atomic-change", { "continue-review": true, "decision-ref": "fixture://continue" });
   const next = JSON.parse(readFileSync(path));
-  assert.deepEqual(next.reviewWindowHistory, [state.reviewWindow]);
-  assert.equal(next.reviewWindow.decisionRef, "fixture://continue");
-  assert.equal(reviewWindowRemaining(next, Date.parse("2026-09-02T00:00:00Z")), REVIEW_WINDOW_MS);
+  assert.deepEqual(next.reviewWindow, state.reviewWindow, "there is no window to extend");
+  assert.equal(next.reviewWindowHistory, undefined);
 });
 
 test("atomic start removes change and runtime state after late validation failure", (t) => {
@@ -356,7 +370,10 @@ test("atomic start never rolls back a pre-existing change", (t) => {
 
 test("a low-impact semantic draft with design content keeps the standard schema", async () => {
   const { semanticDraftKeepsDesign } = await import("../runtime/workflow/change-lifecycle.mjs");
-  const designed = { _semanticVersion: 4, fileMap: [{ path: "src/a.ts", change: "added" }] };
+  const designed = { _semanticVersion: 4, dataModel: [{ entity: "Card", fields: ["id"], migration: "none" }] };
+  // A descriptive section (file map) renders in the rapid proposal instead.
+  assert.equal(semanticDraftKeepsDesign({ _semanticVersion: 4,
+    fileMap: [{ path: "src/a.ts", change: "added" }] }, true), false);
   const answered = { _semanticVersion: 4,
     discovery: { decisions: [{ key: "stack", status: "resolved", choice: "Vite",
       alternatives: ["Vite", "Plain HTML"] }] } };
@@ -609,4 +626,104 @@ test("a minimal draft joins an existing capability or asks which one", (t) => {
   assert.match(output, /^AGREED reject-empty-note-titles/m);
   assert.match(readFileSync(join(value.changes, "reject-empty-note-titles", "proposal.md"), "utf8"),
     /^\| notes \| Reject a note whose title is empty \|/m);
+});
+
+// Problems Build used to discover are agent repairs on the first inspect.
+test("a verify naming a test file nobody creates is an EDIT at start", (t) => {
+  const value = fixture(t);
+  const missing = minimalRapidV4({ tasks: [{
+    key: "implement-bounded-result", outcome: "Implement the bounded result",
+    covers: ["bounded-result"], paths: ["src/**"],
+    verify: "node --test tests/bounded-result.test.mjs"
+  }] });
+  writeJson(value.draftPath, missing);
+  const { result } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.equal(result.action, "EDIT");
+  assert.equal(result.owner, "agent");
+  assert.match(result.intake.issues.join("\n"),
+    /task 'implement-bounded-result' verify references 'tests\/bounded-result\.test\.mjs', which does not exist and no task's paths create it/);
+  assert.equal(existsSync(value.changes), false);
+  // A task that creates the file is accepted.
+  missing.tasks[0].paths = ["src/**", "tests/bounded-result.test.mjs"];
+  writeJson(value.draftPath, missing);
+  assert.match(captureLog(() => value.lifecycle.startAtomic(value.draftPath)).output,
+    /^AGREED single-shot-change/m);
+});
+
+test("an existing test file named by verify needs no task path", (t) => {
+  const value = fixture(t);
+  mkdirSync(join(value.root, "tests"), { recursive: true });
+  writeFileSync(join(value.root, "tests", "bounded.test.mjs"), "");
+  writeJson(value.draftPath, minimalRapidV4({ tasks: [{
+    key: "implement-bounded-result", outcome: "Implement the bounded result",
+    covers: ["bounded-result"], paths: ["src/**"],
+    verify: "node --test ./tests/bounded.test.mjs && npm test -- tests/bounded.test.mjs:12"
+  }] }));
+  assert.match(captureLog(() => value.lifecycle.startAtomic(value.draftPath)).output,
+    /^AGREED single-shot-change/m);
+});
+
+test("verify path references skip commands that change directory", () => {
+  assert.deepEqual(verifyTestFileReferences(
+    "pytest tests/test_api.py::test_ok --cov=src && sh run-test.sh reports/test.json"),
+  ["tests/test_api.py", "run-test.sh"]);
+  assert.deepEqual(verifyTestFileReferences("cd web && npx vitest run src/a.test.ts"), []);
+  assert.deepEqual(verifyTestFileReferences("npm test -- 'src/**/*.test.ts'"), []);
+  assert.deepEqual(verifyPathIssues([{ key: "a", verify: "node --test tests/x.test.mjs",
+    repository: "api" }], { exists: () => false }), []);
+  assert.deepEqual(amendmentVerifyPathIssues({
+    addTasks: [{ key: "added", verify: "node --test tests/new.test.mjs", paths: ["src/**"] }],
+    updateTasks: [{ key: "existing", verify: "node --test tests/old.test.mjs" }]
+  }, "- [ ] **T001** Existing [key:existing] [paths:tests/old.test.mjs] — verify: `npm test`\n",
+  { exists: () => false }), [
+    "amendment task 'added' verify references 'tests/new.test.mjs', which does not exist and " +
+      "no task's paths create it; correct the path in verify or add it to that task's paths"
+  ]);
+});
+
+test("api contract errors without a status or code are an EDIT at start", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4({
+    apiContracts: [{ method: "GET", path: "/results", auth: "session",
+      request: "none", response: "200 list",
+      errors: [{ status: 404, when: "missing" }, { when: "the store is down" },
+        "rate limited", "429 too many requests", { code: "CONFLICT_STATE" }] }]
+  }));
+  const { result } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.equal(result.action, "EDIT");
+  const issues = result.intake.issues.filter((issue) => /apiContracts/.test(issue));
+  assert.deepEqual(issues.map((issue) => issue.match(/errors\[\d\]/)[0]),
+    ["errors[1]", "errors[2]"]);
+  assert.deepEqual(apiContractErrorIssues({ apiContracts: [{ errors: "none" }] }), []);
+});
+
+test("dev document sections and draft checks arrive together on the first inspect", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4({
+    impact: "medium",
+    tasks: [{
+      key: "implement-bounded-result", outcome: "Implement the endpoint",
+      covers: ["bounded-result"], paths: ["src/api/results.js"],
+      verify: "node --test tests/api/results.test.mjs"
+    }]
+  }));
+  const first = captureLog(() => value.lifecycle.inspectDraft(value.draftPath)).result;
+  assert.equal(first.action, "EDIT");
+  assert.equal(first.owner, "agent");
+  const issues = first.intake.issues.join("\n");
+  assert.match(issues, /dev document \(api[^)]*\) needs 'why'/);
+  assert.match(issues, /dev document \(api[^)]*\) needs 'apiContracts'/);
+  assert.match(issues, /verify references 'tests\/api\/results\.test\.mjs'/);
+});
+
+test("open questions are listed with the approval packet", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4({
+    openQuestions: ["How long are results retained?"]
+  }));
+  const { result, output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.equal(result, "single-shot-change");
+  assert.match(output, /open questions \(ask with the approval\):\n {4}- How long are results retained\?/);
+  assert.match(output, /next: ask these with the approval, record the answers in the draft, then claude-foundation change revise single-shot-change .*draft\.json --approve-spec --decision-ref <user-decision> --through build/);
+  assert.equal((output.match(/\n  next: /g) || []).length, 1);
 });

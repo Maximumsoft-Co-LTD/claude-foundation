@@ -46,6 +46,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const args = process.argv.slice(2);
 if (args[0] === "auth" && args[1] === "status") {
+  fs.appendFileSync(path.join(process.cwd(), "claude-status-probes.txt"), "auth\\n");
   if (process.env.FAKE_CLAUDE_AUTH_FAIL === "1") process.exit(1);
   process.stdout.write(JSON.stringify({ loggedIn: true }));
   process.exit(0);
@@ -73,6 +74,13 @@ const review = process.env.FAKE_CLAUDE_INVALID === "1"
     ? { status: "fail", summary: "advisory only", verifiedFindingIds: [], findings: [
         { id: "F-MINOR", severity: "minor", path: "a.mjs", line: 1, message: "advisory", claimIds: [], verificationCaseIds: [] }
       ] }
+  : process.env.FAKE_CLAUDE_SPEC_GAPS === "1"
+    ? { status: "pass", summary: "covered, with gaps", findings: [], verifiedFindingIds: [],
+        scenarioCoverage: [], specGaps: [
+          { scenario: "fractional count", reason: "lastN(items, 0.4) is not named" },
+          { scenario: "fractional count", reason: "duplicate" },
+          { scenario: "  ", reason: "blank" }
+        ] }
   : process.env.FAKE_CLAUDE_DUPLICATE === "1"
     ? { status: "pass", summary: "duplicate ids", findings: [], verifiedFindingIds: ["F1", " F1"] }
     : process.env.FAKE_CLAUDE_DUPLICATE_FINDINGS === "1"
@@ -375,7 +383,7 @@ try {
   assert(!capture.args.join(" ").includes("Edit"));
   assert(!capture.args.join(" ").includes("Write"));
   assert.deepEqual(capture.schemaRequired,
-    ["status", "summary", "findings", "verifiedFindingIds", "scenarioCoverage"]);
+    ["status", "summary", "findings", "verifiedFindingIds", "scenarioCoverage", "specGaps"]);
   assert.equal(readFileSync(join(workspace, "claude-invocations.txt"), "utf8")
     .trim().split("\n").length, 1, "one review must use one Claude invocation");
   const codexResult = codexRuntime.runReview({
@@ -455,6 +463,20 @@ try {
   assert.equal(advisory.status, "pass",
     "minor-only findings are advisory and cannot keep the review gate cycling");
 
+  process.env.FAKE_CLAUDE_SPEC_GAPS = "1";
+  const gapped = runtime.runReview({
+    changeId: "claude-spec-gaps", workspace, packet: {}
+  });
+  delete process.env.FAKE_CLAUDE_SPEC_GAPS;
+  assert.equal(gapped.status, "pass", "spec gaps are advisory and never fail the review");
+  assert.deepEqual(gapped.findings, [], "spec gaps never become findings");
+  assert.deepEqual(gapped.specGaps, [
+    { scenario: "fractional count", reason: "lastN(items, 0.4) is not named" }
+  ], "spec gaps are recorded deduplicated and without blank rows");
+  assert.equal(runtime.runReview({
+    changeId: "claude-no-gaps", workspace, packet: {}
+  }).specGaps, undefined, "a review without gaps records none");
+
   process.env.FAKE_CLAUDE_EMPTY_FAIL = "1";
   const emptyFail = runtime.runReview({
     changeId: "claude-empty-fail", workspace, packet: {}
@@ -485,7 +507,37 @@ try {
   assert.equal(duplicatedFindings.status, "error");
   assert.match(duplicatedFindings.summary, /outside the required schema/);
 
+  // A reviewer proven ready is not re-probed by a later dispatch in the same
+  // process while its executable bytes are unchanged; explicit status checks
+  // always probe, and a failed probe is never retained.
+  const statusProbeLog = join(root, "claude-status-probes.txt");
+  const statusProbes = () => existsSync(statusProbeLog)
+    ? readFileSync(statusProbeLog, "utf8").split("\n").filter(Boolean).length : 0;
+  const readyRuntime = createConfiguredReviewerRuntime({
+    root, foundationPolicy: policy,
+    commandExists: (command) => existsSync(command),
+    now: () => "2026-08-14T00:00:00.000Z",
+    uuid: () => "11111111-1111-4111-8111-111111111111",
+    fail: (message) => { throw new Error(message); }
+  });
+  const probesBefore = statusProbes();
+  readyRuntime.runReview({ changeId: "status-reuse-1", workspace, packet: {} });
+  await readyRuntime.runReviewAsync({ changeId: "status-reuse-2", workspace, packet: {} });
+  assert.equal(statusProbes(), probesBefore + 1,
+    "a second dispatch reuses the ready reviewer status");
+  assert.equal(readyRuntime.reviewerStatus().ok, true);
+  assert.equal(statusProbes(), probesBefore + 2, "an explicit status check always probes");
+  writeFileSync(executable, `${readFileSync(executable, "utf8")}\n// upgraded\n`);
+  readyRuntime.runReview({ changeId: "status-reuse-3", workspace, packet: {} });
+  assert.equal(statusProbes(), probesBefore + 3, "a changed executable is re-probed");
+  writeFileSync(executable, `${readFileSync(executable, "utf8")}// upgraded again\n`);
   process.env.FAKE_CLAUDE_AUTH_FAIL = "1";
+  const unready = readyRuntime.runReview({ changeId: "status-reuse-4", workspace, packet: {} });
+  assert.equal(unready.status, "error");
+  assert.match(unready.summary, /claude auth login/);
+  readyRuntime.runReview({ changeId: "status-reuse-5", workspace, packet: {} });
+  assert.equal(statusProbes(), probesBefore + 5, "a failed status is never reused");
+
   const auth = runtime.reviewerStatus();
   delete process.env.FAKE_CLAUDE_AUTH_FAIL;
   assert.equal(auth.ok, false);
@@ -709,10 +761,13 @@ try {
   assert.equal(fastCapture.args[fastCapture.args.indexOf("--model") + 1], "haiku");
   assert.equal(fastResult.reviewer.modelId, "haiku");
   assert.equal(fastResult.command.modelTier, "fast");
+  assert.equal(fastCapture.args[fastCapture.args.indexOf("--effort") + 1], "medium");
+  assert.equal(fastResult.command.reasoningEffort, "medium");
   fastRuntime.runReview({ changeId: "high-tier", workspace, packet: highPacket,
     modelTier: "configured" });
   const highCapture = JSON.parse(readFileSync(join(workspace, "claude-capture.json"), "utf8"));
   assert.equal(highCapture.args[highCapture.args.indexOf("--model") + 1], "opus");
+  assert.equal(highCapture.args[highCapture.args.indexOf("--effort") + 1], "high");
 
   process.stdout.write("configured reviewer tests: PASS\n");
 } finally {

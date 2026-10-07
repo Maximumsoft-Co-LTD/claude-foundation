@@ -89,20 +89,8 @@ the result. Change Loop separates those concerns:
 - **Work can be resumed.** Tasks, runtime state, receipts, and recovery journals
   survive a new agent session.
 
-An in-flight pre-graph-v3 Build also resumes after an upgrade. The Harness
-reuses persisted multi-task single-session authority only while its task and
-contract identities still match; otherwise it automatically returns the
-affected completed tasks and their dependency descendants to leased verification
-without rewriting `tasks.md`.
-
 The intended result is less ceremony than a fixed multi-agent phase pipeline,
 without relying on “the agent says it is done” as proof.
-
-When concurrent changes move the target, sync can reuse an unchanged review
-in either a worktree or a copy sandbox. Copy mode compares the change's
-baseline-to-current file identities; same-file reconciliation remains
-conservative. No-op sync keeps existing proof, and `proof plan` explains
-why a review cannot be reused. See the [binding rules](.claude/harness/EVIDENCE.md).
 
 ## Install
 
@@ -114,9 +102,12 @@ Requirements:
 Git is recommended for worktree isolation; dirty or non-Git projects use an
 isolated copy. `jq` is recommended for merging existing Claude settings.
 Without it, the installer preserves the existing file and writes a companion
-file for review. The harness verifies OpenSpec early and, when necessary,
-installs the pinned CLI project-locally under `.foundation/tools`; no global
-installation command is part of the user workflow.
+file for review. The installer prepares the pinned OpenSpec CLI project-locally
+under `.foundation/tools` when no compatible CLI resolves, and the harness
+re-checks it before Build, Prove, and Land; no global installation command is
+part of the user workflow. Without npm access the install still succeeds and
+names the gap: put `@fission-ai/openspec@1.7` in the project's
+`node_modules/.bin` or on `PATH` before Land.
 
 Install with Homebrew:
 
@@ -134,6 +125,9 @@ git clone https://github.com/Maximumsoft-Co-LTD/claude-foundation.git
 cd claude-foundation
 ./install.sh /path/to/your-project
 ```
+
+A source install writes an ignored `.foundation/bin/claude-foundation` shim;
+Claude Code sessions get it on `PATH` when no other `claude-foundation` resolves.
 
 Claude Code needs no adapter. For other agent hosts, `--host` layers one over
 the same shared install:
@@ -169,6 +163,18 @@ The installer preserves project-owned specs, active changes, runtime state,
 custom agents, and hooks. Upgrades refresh only Change Loop-owned commands,
 schemas, harness code, rules, skills, and hooks recorded in the install
 manifest.
+
+`.claude/settings.json` stays project-owned. The installer merges the shipped
+hooks and appends a narrow `permissions.allow` list, so Claude Code does not ask
+for approval on every harness step: `Bash(claude-foundation *)`,
+`Bash(.foundation/bin/claude-foundation *)`,
+`Bash(node .claude/harness/foundation.mjs *)`,
+`Edit(/.foundation/sandboxes/**)`, and
+`Edit(/.foundation/repository-sandboxes/**)`. It adds only missing rules after
+your own, never removes or reorders entries, and a rerun adds nothing. The
+PreToolUse guards still run before these rules. Pass
+`--no-permission-allowlist` on every install or upgrade to leave
+`permissions.allow` untouched.
 
 Installation checks writable destinations before changing files. A symlink in a
 managed destination is preserved and reported: choose a real installation
@@ -258,14 +264,16 @@ any point before Land when implementation reveals a new assumption.
 After Change, inspect the compiled spec and explicitly approve it before Build;
 this also applies to `/dev`. If your request already approves the spec (for
 example "I approve the spec"), that counts, and any explicit instruction to land
-("land it when proven") grants Land. `/dev` runs exactly `/change` → `/build` →
+("land it when proven") grants Land. Replying "ลุยเลย", "ทำเลย", or "go ahead" to
+the approval question approves too; "ทำจนจบ" up front also grants Land; urgency
+alone ("ด่วน") never does. See [authority from the user's
+words](WORKFLOW.md#authority-from-the-users-words). `/dev` runs exactly `/change` → `/build` →
 `/prove` → `/land`. An ordinary change needs only a minimal draft (intent,
 requirements with scenarios, tasks with a verify command); the harness fills in
 the rest, hands all tasks in one step, ticks them when their checks pass, and
 runs the AI review on the diff in parallel with your tests. Later additive revisions and amendments keep that
-approval. Review shares a 30-minute window across retries, fallbacks, and delta
-review; the first expiry extends it once automatically. If repair cannot
-progress or review time expires again,
+approval. Review is bounded by its rounds (full, then one delta), not by elapsed
+time. If repair cannot progress,
 choose further work, Land with explicitly accepted remaining risks, or pause.
 Failed and missing evidence remains visible. See [the workflow](WORKFLOW.md)
 for approval, continuation, and content-bound waiver semantics.
@@ -307,7 +315,8 @@ Change carries forward relevant conversation decisions and latest corrections.
 Affected diagrams and folder mappings live in the agreement when needed;
 Build and resumed sessions read the full relevant scenarios and design context.
 The compiled proposal also records which discovery dimensions were covered or
-source-grounded as not applicable, so no settled answer has to live only in chat.
+source-grounded as not applicable, marking those the harness derived from content
+the draft already states, so no settled answer has to live only in chat.
 
 The agent answers in your language and leads with the outcome. It performs safe
 recovery and routine commands itself, then reports what it changed and checked.
@@ -335,35 +344,39 @@ To find the workspace:
 jq -r '.workspace.path' .foundation/runtime/<change-id>.json
 ```
 
-A worktree carries tracked files only. If providers need dependencies
-installed, declare `sandbox.setupCommand` (plus `setupTimeoutMs`) in
-`foundation.json`, or a per-repository `setupCommand` in
-`openspec/repositories.yaml`. A successful setup is reused; a failed one keeps
-the sandbox and is retried by the harness without repeating ready siblings or
-handing a recovery command to the user. When a lockfile is present and no setup
-command is declared, sandbox creation prints a NOTE with the exact
-`foundation.json` snippet; linking or copying the checkout's `node_modules`
-into the workspace is refused by the phase guard.
+A worktree carries tracked files only. With no setup declared, the harness
+installs dependencies itself from the workspace lockfile (`npm ci`, or the
+frozen-lockfile install for pnpm, yarn, or bun); `sandbox.installDependencies:
+false` in `foundation.json` opts out. For any other setup, declare
+`sandbox.setupCommand` (plus `setupTimeoutMs`) in `foundation.json`, or a
+per-repository `setupCommand` in `openspec/repositories.yaml`. A successful
+setup is reused; a failed one keeps the sandbox and is retried by the harness
+without repeating ready siblings or handing a recovery command to the user. If
+it still fails, the agent receives the command, directory, and log to finish
+it. Linking or copying the checkout's `node_modules` into the workspace is
+refused by the phase guard.
 
-For direct Bash use during Build, start an obviously mutating command with
-`cd <workspace-or-subdirectory> && ...`. On Claude Code the phase guard pins
-the shell's reported directory as that anchor when it is already inside the
-workspace, so a forgotten prefix costs nothing; other hosts refuse the
-command. The phase guard blocks unanchored package-manager
-or formatter mutations, `..` escapes, later `cd` escapes, absolute filesystem
-operands, and writes through symlinks outside the workspace before the shell
-starts. `claude-foundation exec` derives the phase from runtime state, applies
-the same policy, and starts Build commands in the canonical workspace.
-Structured Edit/Write operations remain the preferred mutation path; host
-process isolation is still required for indirect script effects.
+For direct Bash use during Build, run `cd <workspace>` once as its own call;
+the shell keeps that directory, so later commands stay plain and need no host
+approval prompt (a compound `cd … && …` asks for one each time). The phase
+guard checks each mutating command from the reported directory. Because shell
+analysis reads command text, it records `..` escapes, outside absolute operands,
+and similar findings as warnings outside Land and Deliver instead of refusing
+them; structured Edit/Write targets stay enforced, and Land reports
+target-checkout edits made outside the sandbox. `FOUNDATION_SHELL_GUARD=block`
+restores refusal. `claude-foundation exec` derives the phase from runtime state,
+applies the same policy the same way, and starts Build commands in the
+canonical workspace. Host process isolation is still required for indirect
+script effects.
 
 Why this step exists: you can inspect or discard implementation work without
 mixing it with your current checkout.
 
 The agent drives Build with `claude-foundation advance <change-id> --through
-build`. That one coordinator validates, prepares isolation, chooses runnable
-work, and returns one bounded action; users do not assemble sandbox, packet,
-plan, lease, or dispatch commands.
+proven`. That one coordinator validates, prepares isolation, chooses runnable
+work, and returns one bounded action; once Build is complete it continues
+into Prove in the same call. Users do not assemble sandbox, packet, plan,
+lease, or dispatch commands.
 
 ### 3. Prove the result
 
@@ -426,12 +439,19 @@ the Land transaction instead of stopping.
 ```
 
 The normal workflow remains complete at `archived`. If you explicitly invoke
-Deliver, one command creates an isolated feature branch from the archived,
-proven projection, prepares the company-standard PR body from OpenSpec and
+Deliver on a proven change that is not archived yet, that invocation also
+authorizes Land: the harness lands it first and continues. One command creates
+an isolated feature branch from the archived, proven projection, prepares the company-standard PR body from OpenSpec and
 proof receipts, commits, pushes, opens or reuses the PR, verifies it through the
 provider, and returns its URL. It does not touch your checkout's HEAD or index,
 and it never force-pushes, pushes a default branch, merges, deploys, publishes,
 or edits product code.
+
+A direct request such as "เปิด PR ให้เลย" or "open a PR" counts as `/deliver`.
+When a teammate requests changes, make the follow-up change cite the delivered
+PR's URL: Deliver then pushes onto that PR's branch (fast-forward, never forced)
+and updates the same PR. If that PR was closed or merged meanwhile, Deliver
+opens a new PR and says why.
 
 Deliver is a cold path: if it is not invoked, Change, Build, Prove, and Land do
 no PR-specific prompting, evidence collection, or validation. Missing optional
@@ -561,7 +581,7 @@ openspec/changes/<change-id>/
 ├── tasks.md
 ├── evidence.yaml
 ├── specs/<area>/spec.md       # standard lane
-├── design.md                  # only when durable design context exists
+├── design.md                  # standard lane: the full dev document
 ├── grounding.yaml             # only when a material decision must be locked
 ├── execution.yaml             # only for custom provider/service wiring
 ├── repositories.yaml          # only for explicit multi-repository scope
@@ -571,9 +591,9 @@ openspec/changes/<change-id>/
 | File | What it answers | Why the harness needs it |
 |---|---|---|
 | `.openspec.yaml` | Is this `foundation-standard` or `foundation-rapid`? | Selects the artifact workflow for this change |
-| `proposal.md` | Why change, what changes, and what is excluded? | Prevents scope and impact from being implicit |
+| `proposal.md` | Why change, what changes (with a folder tree), and what is excluded? | Prevents scope and impact from being implicit; a rapid proposal also carries the user flow, failure matrix, and Plan |
 | `specs/<area>/spec.md` | What observable behavior is added, modified, or removed? | Gives Prove stable requirements and `WHEN`/`THEN` scenarios; Land merges the deltas into current specs |
-| `design.md` | Which technical decisions, diagrams, integrations, or prototype selection constrain implementation? | Records only load-bearing context instead of forcing an empty design document |
+| `design.md` | How is it built: user flow, components, contracts, data, UI states, failures, decisions, and the Plan? | The dev document Build executes; sections follow the work type and empty ones are omitted |
 | `tasks.md` | What implementation work remains? | The sole implementation ledger; stable IDs and checkboxes make Build resumable |
 | `evidence.yaml` | Which behavioral claims must be proven? | Separates the proof obligation from whichever tool happens to run it |
 | `grounding.yaml` | Which material decisions were settled up front? | Semantic v3 stores non-derived decisions only; legacy grounding remains readable |
@@ -586,8 +606,9 @@ commands, not implementation tasks.
 
 ### Standard and rapid lanes
 
-`foundation-standard` includes proposal, delta specs, tasks, and evidence;
-design and other extensions appear only when their concern exists. Use it for public contracts, authentication, data or migrations,
+`foundation-standard` includes proposal, delta specs, tasks, evidence, and
+`design.md`, whose sections follow the inferred work type; other extensions
+appear only when their concern exists. Use it for public contracts, authentication, data or migrations,
 coupled behavior, high impact, irreversible effects, or any change needing more
 than unit/static evidence.
 
@@ -678,9 +699,9 @@ Change. See the complete [follow-up classification](WORKFLOW.md#follow-up-reques
 /prove <change-id>
 ```
 
-For a version-4 agreement, first run `change amend <change-id> <amendment.json>
---inspect`, follow its intake/source-digest action, then replace `--inspect` with
-`--consume-amendment` after `DONE`. The runtime applies the amendment
+For a version-4 agreement, run `change amend <change-id> <amendment.json>`: the
+same call inspects first, prints any intake/source-digest action, and applies the
+amendment only at `DONE` (`--inspect` only inspects). The runtime applies the amendment
 transactionally. It
 preserves completed tasks and manual Markdown sections, validates before keeping
 the revision, rolls back a rejected amendment, and invalidates only claims it
@@ -689,8 +710,10 @@ existing requirement in place (`reviseRequirements`, with an open task) or
 remove one (`removeRequirements`, with a migration) instead of abandoning the
 change. Version-4 amendments must include discovery coverage for the added and
 revised requirements; the validated delta remains in the compiled proposal.
-Before Build starts, `change revise <change-id> <draft.json> --inspect` then
-`--consume-draft` recompiles the whole agreement under the same id. Either
+Before Build starts, `change revise <change-id> <draft.json>` inspects and, at
+`DONE`, recompiles the whole agreement under the same id in one call. Add
+`--approve-spec --decision-ref <ref>` to `change start`, `change revise`, or
+`change amend` to record the user's approval in the call that applies it. Either
 route reports the added/revised/removed requirement delta. An approved change
 keeps its approval for additive deltas; only a delta that removes a requirement
 needs approval. Unaffected passing receipts survive only when their
@@ -747,7 +770,7 @@ See [Configure foundation.json](https://claude-foundation.dev/docs/foundation-co
 for fields, validation ranges, model defaults, and review profiles, and
 [Budgets and progress](WORKFLOW.md#budgets-and-progress) for continuation rules.
 
-## What Change Loop owns
+## What is the source of truth
 
 | Information | Source of truth |
 |---|---|
@@ -777,14 +800,19 @@ you to.
   assurance; those outcomes do not override an explicit user decision. Apply
   still refuses conflicts and uncommitted edits on touched target paths — it
   names the clobbered paths instead of letting the last writer win.
-- Apply uses backups and a journal; an interrupted Land can be retried.
 - Land warns — without blocking — when the target is checked out on
   `main`/`master`; every land guard stays commit-based.
-- Land never commits, pushes, or opens a pull request. Only an explicit optional
-  `/deliver` grants narrow authority to commit the proven projection in an
-  isolated feature branch, push it, and open or reuse a verified PR; workers
-  never infer that authority.
-- `protect-secrets.sh` and `lint.sh` are enabled by default.
+- Land is a journaled, resumable apply that allows stacked changes and never
+  commits, pushes, or opens a pull request; only an explicit `/deliver` or your
+  direct instruction does. See [the Land contract](WORKFLOW.md#land-change),
+  [`/deliver`](WORKFLOW.md#deliver-change-optional), and
+  [authority from your words](WORKFLOW.md#authority-from-the-users-words).
+- `protect-secrets.sh` and `lint.sh` are enabled by default. A secret read
+  shows a redacted copy (config keys and layout kept, values `<redacted>`
+  except JSON `null` and booleans; private-key material becomes a placeholder),
+  a search that could reach secret files skips them or lists only file names,
+  and Go files are formatted in place. The secrets hook refuses the read only
+  when no redacted copy can be made or `FOUNDATION_SECRETS_GUARD=block` is set.
 - `no-direct-main-commit.sh` is opt-in because some projects allow controlled
   commits on their default branch; `doctor` reports whether it is enabled.
 

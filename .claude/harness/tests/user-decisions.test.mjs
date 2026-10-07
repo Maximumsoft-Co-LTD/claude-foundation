@@ -1,11 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { agreementIdentity, assertSpecApproval, REVIEW_WINDOW_MS,
-  reviewWindowRemaining, reviewWindowError, currentWaivers, autoExtendReviewWindow,
-  AUTO_REVIEW_EXTENSION_REF } from "../runtime/core/user-decisions.mjs";
+import { agreementDriftError, agreementIdentity, assertSpecApproval, currentWaivers,
+  repairWhitespaceDrift, REVIEW_DISPATCH_TIMEOUT_MS } from "../runtime/core/user-decisions.mjs";
 import { advanceFailureAction, createAdvanceRuntime } from "../runtime/workflow/advance-runtime.mjs";
 import { workspaceCapabilityValue } from "../runtime/core/execution-contract.mjs";
 
@@ -37,8 +36,10 @@ test("spec approval binds semantics and revision, not task completion", (t) => {
   state.specApproval = { required: true, identity: agreementIdentity(workspace, "demo"), revision: 1 };
   assert.doesNotThrow(() => assertSpecApproval(root, "demo", state));
   state.amendments = [];
-  // Without an amendment no single approval identity can equal both packets.
-  assert.throws(() => assertSpecApproval(root, "demo", state), { code: "AGREEMENT_DRIFT" });
+  // Without an amendment the target packet is canonical: the harness restores
+  // the isolated packet to it, so consent is checked against the target alone.
+  assert.throws(() => assertSpecApproval(root, "demo", state), { code: "SPEC_APPROVAL_REQUIRED" });
+  assert.equal(readFileSync(join(workspacePacket, "proposal.md"), "utf8"), "Delete the greeting");
 });
 
 // A consumer Build widened a task's `[paths:]` in its isolated packet; the
@@ -67,12 +68,21 @@ test("task write scope is bookkeeping and packet drift is agent repair", (t) => 
   assert.doesNotThrow(() => assertSpecApproval(root, "demo", state));
   writeFileSync(join(workspace, "openspec/changes/demo/tasks.md"), tasks("src/a.ts,src/b.ts"));
   assert.doesNotThrow(() => assertSpecApproval(root, "demo", state));
-  // Changing what a task does still changes consent.
+  // Changing what a task does is not consented: the harness restores the
+  // approved task, keeps its bookkeeping, and saves the edit for an amendment.
   writeFileSync(join(workspace, "openspec/changes/demo/tasks.md"),
-    "- [ ] T001 Delete it [paths:src/a.ts] — verify: npm test\n");
-  let drift;
-  assert.throws(() => assertSpecApproval(root, "demo", state), (error) => (drift = error, true));
-  assert.equal(drift.code, "AGREEMENT_DRIFT");
+    "- [x] T001 Delete it [paths:src/a.ts] — verify: npm test\n");
+  const notices = [];
+  const original = console.error;
+  console.error = (line) => notices.push(String(line));
+  try { assert.doesNotThrow(() => assertSpecApproval(root, "demo", state)); }
+  finally { console.error = original; }
+  assert.equal(readFileSync(join(workspace, "openspec/changes/demo/tasks.md"), "utf8"), tasks("src/a.ts"));
+  const saved = notices.join("\n").match(/saved the edit at (\S+)\. /)?.[1];
+  assert.ok(saved, notices.join("\n"));
+  assert.match(readFileSync(join(saved, "tasks.md"), "utf8"), /Delete it/);
+  // When restoring cannot reproduce consent, the agent still gets the amend route.
+  const drift = agreementDriftError("demo", workspace);
   const action = advanceFailureAction("demo", drift, { through: "build" });
   assert.equal(action.action, "REPAIR");
   assert.equal(action.actor, "agent");
@@ -81,19 +91,6 @@ test("task write scope is bookkeeping and packet drift is agent repair", (t) => 
 
 test("legacy in-flight state needs no invented approval", () => {
   assert.doesNotThrow(() => assertSpecApproval("/missing", "legacy", { status: "building" }));
-});
-
-test("one deadline survives retry, fallback, and process resume", () => {
-  const start = Date.parse("2026-09-09T00:00:00Z");
-  const state = { reviewWindow: { startedAt: new Date(start).toISOString(),
-    deadline: new Date(start + REVIEW_WINDOW_MS).toISOString() } };
-  assert.equal(reviewWindowRemaining(state, start), 1_800_000);
-  assert.equal(reviewWindowRemaining(JSON.parse(JSON.stringify(state)), start + 1_200_000), 600_000);
-  assert.equal(reviewWindowRemaining(state, start + 1_800_000), 0);
-  assert.equal(reviewWindowRemaining({ reviewWindow: { deadline: "corrupt" } }, start), 0);
-  const action = advanceFailureAction("demo", reviewWindowError("demo"), { stage: "prove", through: "archived" });
-  assert.equal(action.action, "ASK_USER");
-  assert.deepEqual(action.decision.options.map((row) => row.id), ["continue", "land", "pause"]);
 });
 
 test("waivers expire on changed product or agreement without rewriting findings", () => {
@@ -106,58 +103,56 @@ test("waivers expire on changed product or agreement without rewriting findings"
   assert.deepEqual(state.waivers, [waiver]);
 });
 
-test("the first expired review window extends itself once as a harness decision", () => {
-  const state = { reviewWindow: { startedAt: "2026-09-09T00:00:00Z", deadline: "2026-09-09T00:30:00Z" } };
-  const at = Date.parse("2026-09-09T00:31:00Z");
-  assert.equal(autoExtendReviewWindow({ reviewWindow: { deadline: "2026-09-09T01:00:00Z" } }, at), false);
-  assert.equal(autoExtendReviewWindow({}, at), false);
-  assert.equal(autoExtendReviewWindow(state, at), true);
-  assert.equal(state.reviewWindow.decisionRef, AUTO_REVIEW_EXTENSION_REF);
-  assert.equal(state.reviewWindow.owner, "harness");
-  assert.equal(state.reviewWindow.deadline, "2026-09-09T01:01:00.000Z");
-  assert.deepEqual(state.reviewWindowHistory, [
-    { startedAt: "2026-09-09T00:00:00Z", deadline: "2026-09-09T00:30:00Z" }]);
-  assert.equal(reviewWindowRemaining(state, at), REVIEW_WINDOW_MS);
-  assert.equal(autoExtendReviewWindow(state, Date.parse("2026-09-09T01:02:00Z")), false);
-  // A user-granted window after the automatic one still asks when it ends.
-  state.reviewWindowHistory.push(state.reviewWindow);
-  state.reviewWindow = { deadline: "2026-09-09T01:30:00Z", decisionRef: "user://continue" };
-  assert.equal(autoExtendReviewWindow(state, Date.parse("2026-09-09T01:31:00Z")), false);
-});
-
-test("advance persists the automatic review extension instead of asking", () => {
-  const state = { status: "building", reviewWindow: { deadline: "2026-09-09T00:30:00Z" } };
-  const saved = [];
+// A shared 30-minute window counted the agent's repair between review rounds
+// and reviewer retries, then asked the user about elapsed time. Review is now
+// bounded by its rounds; each dispatch keeps its own timeout.
+test("an old expired review window never stops advance or asks the user", () => {
+  const state = { status: "building", reviewWindow: { deadline: "2026-09-09T00:30:00Z" },
+    reviewWindowHistory: [{ deadline: "2026-09-09T00:00:00Z", decisionRef: "harness://auto-extend/review-window/1" }] };
   const runtime = createAdvanceRuntime({
     loadRuntime: () => state,
-    saveRuntime: (value) => saved.push(structuredClone(value)),
-    nowMs: () => Date.parse("2026-09-09T00:31:00Z"),
+    saveRuntime: assert.fail,
+    nowMs: () => Date.parse("2026-09-10T00:00:00Z"),
     agentDispatchValue: () => ({ action: "build-complete" }),
     authorityStatusValue: () => ({ requests: [{ type: "review", status: "requested" }] }),
-    relevantHash: assert.fail, deliveredAiAttempts: assert.fail,
-    readJson: assert.fail, proofAdvancePath: assert.fail, stableHash: assert.fail
+    relevantHash: () => "w", deliveredAiAttempts: () => [],
+    readJson: () => ({}), proofAdvancePath: () => "/missing", stableHash: (value) => JSON.stringify(value)
   });
   const action = runtime.advanceValue("demo");
   assert.notEqual(action.boundary, "review-time-exhausted");
-  assert.equal(saved[0]?.reviewWindow.decisionRef, AUTO_REVIEW_EXTENSION_REF);
+  assert.notEqual(action.decision?.kind, "REVIEW_TIME_EXHAUSTED");
+  assert.equal(REVIEW_DISPATCH_TIMEOUT_MS, 30 * 60 * 1000, "each dispatch keeps its own timeout");
 });
 
-test("resuming an expired review after the automatic extension returns a user decision without dispatching work", () => {
-  const auto = { deadline: "2026-09-09T00:30:00Z", decisionRef: AUTO_REVIEW_EXTENSION_REF };
-  const state = { status: "building", reviewWindow: auto,
-    reviewWindowHistory: [{ deadline: "2026-09-09T00:00:00Z" }] };
-  const runtime = createAdvanceRuntime({
-    loadRuntime: () => state,
-    nowMs: () => Date.parse("2026-09-09T00:31:00Z"),
-    agentDispatchValue: () => ({ action: "build-complete" }),
-    authorityStatusValue: () => ({ requests: [{ type: "review", status: "requested" }] }),
-    relevantHash: assert.fail, deliveredAiAttempts: assert.fail,
-    readJson: assert.fail, proofAdvancePath: assert.fail, stableHash: assert.fail
-  });
-  for (let i = 0; i < 2; i++) {
-    const action = runtime.advanceValue("demo");
-    assert.equal(action.action, "ASK_USER");
-    assert.equal(action.boundary, "review-time-exhausted");
-  }
-  assert.equal(state.reviewWindow, auto);
+// A formatter pass over the isolated packet is not agreement drift: the
+// harness restores the target's bytes and keeps checkbox and `[paths:]`
+// bookkeeping. A wording change is still drift and is left untouched.
+test("whitespace drift is repaired in place and wording drift is restored with the edit saved", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "spec-whitespace-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const write = (base, files) => {
+    const packet = join(base, "openspec/changes/demo");
+    mkdirSync(packet, { recursive: true });
+    for (const [name, content] of Object.entries(files)) writeFileSync(join(packet, name), content);
+    return packet;
+  };
+  write(root, { "proposal.md": "# Greeting\n\nChange the greeting.\n",
+    "tasks.md": "## 1\n- [ ] 1.1 Implement [paths: a.js]\n- [ ] 1.2 Test\n" });
+  const workspace = join(root, "workspace");
+  const packet = write(workspace, { "proposal.md": "# Greeting\n\nChange the   greeting.  \n\n",
+    "tasks.md": "## 1\n\n- [x] 1.1 Implement [paths: a.js, b.js]\n-  [ ] 1.2 Test\n" });
+  const state = { status: "building", contractRevision: 0, workspace: { path: workspace },
+    specApproval: { required: true, identity: agreementIdentity(root, "demo"), revision: 0 } };
+  assert.doesNotThrow(() => assertSpecApproval(root, "demo", state));
+  assert.equal(readFileSync(join(packet, "proposal.md"), "utf8"), "# Greeting\n\nChange the greeting.\n");
+  assert.equal(readFileSync(join(packet, "tasks.md"), "utf8"),
+    "## 1\n- [x] 1.1 Implement [paths: a.js, b.js]\n- [ ] 1.2 Test\n");
+
+  writeFileSync(join(packet, "proposal.md"), "# Greeting\n\nDelete the greeting.\n");
+  assert.equal(repairWhitespaceDrift(root, workspace, "demo"), false);
+  const original = console.error;
+  console.error = () => {};
+  try { assert.doesNotThrow(() => assertSpecApproval(root, "demo", state)); }
+  finally { console.error = original; }
+  assert.equal(readFileSync(join(packet, "proposal.md"), "utf8"), "# Greeting\n\nChange the greeting.\n");
 });

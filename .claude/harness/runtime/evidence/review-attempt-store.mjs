@@ -110,13 +110,22 @@ export function baseMoveResetRecovery(state, id) {
     `review is live, so dispatch the review again (manual route: 'claude-foundation authority reset-base-move ${id} --decision-ref <ref>').`;
 }
 
+// The live attempt already records its request, so the refusal names the exact
+// abort instead of sending the agent to look it up first.
+export function liveReviewAbortCommand(id, attempt) {
+  const requestId = String(attempt?.requestId || "").trim();
+  return requestId
+    ? `claude-foundation authority abort ${id} --request ${requestId} --reason <why>`
+    : `find the open request with 'claude-foundation authority status ${id}', then ` +
+      `claude-foundation authority abort ${id} --request <requestId> --reason <why>`;
+}
+
 export function assertNoLiveBaseMoveReview(attempts, id, fail) {
   const live = attempts.find((attempt) =>
     attempt.reviewerType === "ai" && attempt.status === "dispatched");
   if (live)
-    fail("an AI review attempt is still dispatched; complete or abort it before a base-move reset. " +
-      `Find the open request with 'claude-foundation authority status ${id}', ` +
-      `then abort it: claude-foundation authority abort ${id} --request <requestId> --reason <why>`);
+    fail("an AI review attempt is still dispatched; complete or abort it before a base-move reset: " +
+      liveReviewAbortCommand(id, live));
 }
 
 export function baseMoveReleasedAttempt(attempts, move, fail) {
@@ -195,7 +204,7 @@ export function validateReviewDispatchBudget(context, id, reviewerType,
   if (completedAi.length >= maxAiAttempts)
     context.blockAiExhausted(id, history, maxAiAttempts);
   if (infrastructureAi.length > maxInfrastructureRetries)
-    context.fail(`REVIEW_INFRASTRUCTURE_ERROR: ${maxInfrastructureRetries} automatic reviewer infrastructure retry has already been used. Repair the configured provider and run doctor --stage prove; this is not a product decision and must not open another user interview. The harness resets this itself once per review wave when the reviewer diagnosis passes; beyond that, after the repair, the user's decision is recorded with 'claude-foundation authority reset-infra <change> --decision-ref <ref>'.`);
+    context.fail(`REVIEW_INFRASTRUCTURE_ERROR: ${maxInfrastructureRetries} automatic reviewer infrastructure retry has already been used. Repair or switch the configured reviewer (its owner, not the user) and resume: the harness resets this itself whenever the reviewer diagnosis passes under a changed reviewer configuration, and once per review wave for the same one. This is not a product decision and must not open a user interview.`);
 }
 
 export function reviewDispatchScope(details, reviewerType, aiAttempts,
@@ -334,6 +343,9 @@ export function completedReviewAttemptValue(context, dispatched, details,
   }
   if (details.scenarioCoverage && typeof details.scenarioCoverage === "object")
     completed.scenarioCoverage = details.scenarioCoverage;
+  // Advisory only: recorded with the verdict, never part of the gate.
+  if (Array.isArray(details.specGaps) && details.specGaps.length)
+    completed.specGaps = details.specGaps;
   delete completed.digest;
   completed.digest = context.stableHash(completed);
   return completed;
@@ -527,9 +539,8 @@ export function createReviewAttemptStore({
     const liveDispatch = reviewAttempts(id, history).find((attempt) =>
       attempt.reviewerType === "ai" && attempt.status === "dispatched");
     if (liveDispatch)
-      fail("an AI review attempt is still dispatched; complete or abort it before resetting infrastructure retries. " +
-        `Find the open request with 'claude-foundation authority status ${id}', ` +
-        `then abort it: claude-foundation authority abort ${id} --request <requestId> --reason <why>`);
+      fail("an AI review attempt is still dispatched; complete or abort it before resetting infrastructure retries: " +
+        liveReviewAbortCommand(id, liveDispatch));
     // Completed infrastructure errors only. Anything else is not an
     // infrastructure outcome the bounded recovery circuit consumed.
     const attempts = infrastructureAiAttempts(id, history).filter((attempt) =>
@@ -567,7 +578,7 @@ export function createReviewAttemptStore({
   // verdict, and a healthy reviewer gets one infrastructure reset per wave.
   // Each release records a harness-owned reference instead of a user's.
   function autoReleaseReviewBudget(id, {
-    maxInfrastructureRetries = 1, reviewerHealthy = () => false
+    maxInfrastructureRetries = 1, reviewerHealthy = () => false, reviewerIdentity = null
   } = {}) {
     const released = [];
     const refuse = (message) => { throw new Error(message); };
@@ -593,7 +604,12 @@ export function createReviewAttemptStore({
         !infrastructure.some((attempt) =>
           attempt.status === "completed" && attempt.resultStatus === "error"))
       return released;
-    const reference = `harness:infra:wave-${deliveredAiAttempts(id, current).length + 1}`;
+    // A repaired reviewer shows up as a changed configuration: it earns its
+    // own reset, so recovery after the repair never needs a user decision.
+    // The same configuration still gets one reset per wave, which bounds a
+    // reviewer that passes diagnosis but keeps failing dispatch.
+    const wave = `harness:infra:wave-${deliveredAiAttempts(id, current).length + 1}`;
+    const reference = reviewerIdentity ? `${wave}:${reviewerIdentity}` : wave;
     if ((current.infraResets || []).some((row) => row.decisionRef === reference) ||
         !reviewerHealthy()) return released;
     acknowledgeInfrastructureAttempts(id, reference);
@@ -632,7 +648,7 @@ export function createReviewAttemptStore({
       if (deliveredAiAttempts(id, history).length >= Number(maxAiAttempts))
         blockAiExhausted(id, history, Number(maxAiAttempts));
       if (infrastructureAiAttempts(id, history).length > Number(maxInfrastructureRetries))
-        fail(`REVIEW_INFRASTRUCTURE_ERROR: ${maxInfrastructureRetries} automatic reviewer infrastructure retry has already been used. Repair the configured provider and run doctor --stage prove; this is not a product decision and must not open another user interview. The harness resets this itself once per review wave when the reviewer diagnosis passes; beyond that, after the repair, the user's decision is recorded with 'claude-foundation authority reset-infra <change> --decision-ref <ref>'.`);
+        fail(`REVIEW_INFRASTRUCTURE_ERROR: ${maxInfrastructureRetries} automatic reviewer infrastructure retry has already been used. Repair or switch the configured reviewer (its owner, not the user) and resume: the harness resets this itself whenever the reviewer diagnosis passes under a changed reviewer configuration, and once per review wave for the same one. This is not a product decision and must not open a user interview.`);
     }
     return history;
   }

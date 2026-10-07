@@ -323,6 +323,29 @@ function coverageCandidates(text) {
   return found;
 }
 
+// Spec gaps are partitions or scenarios the change plausibly needs but the
+// agreement does not name. The checklist can only test what the agreement
+// states, so they are advisory: recorded and reported, never findings, and
+// never a reason to block. Malformed rows are dropped; the list is bounded.
+export const SPEC_GAP_LIMITS = Object.freeze({ items: 10, chars: 400 });
+
+export function parseSpecGaps(review) {
+  const rows = review && typeof review === "object" && Array.isArray(review.specGaps)
+    ? review.specGaps : [];
+  const gaps = [];
+  const seen = new Set();
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const scenario = String(row.scenario ?? "").trim().slice(0, SPEC_GAP_LIMITS.chars);
+    const reason = String(row.reason ?? "").trim().slice(0, SPEC_GAP_LIMITS.chars);
+    if (!scenario || seen.has(scenario)) continue;
+    seen.add(scenario);
+    gaps.push({ scenario, reason: reason || null });
+    if (gaps.length === SPEC_GAP_LIMITS.items) break;
+  }
+  return gaps;
+}
+
 // Tolerant parse of the reviewer's coverage block (fenced or bare JSON, or an
 // already-structured object). Returns null when no block exists. Unknown or
 // malformed statuses stay null and count as unsure; with `expectedIds`, an id

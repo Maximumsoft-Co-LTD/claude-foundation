@@ -182,6 +182,21 @@ things that would let "sandboxed" work reach outside the sandbox.
 Detection is not authorization. Finding that unattended execution is possible
 never implies permission to use it.
 
+## Approval in your own words
+
+Your chat reply is the decision. Answering the spec-approval or amendment
+question with "ลุยเลย", "ทำเลย", "ทำไปเลย", "go ahead", or "approve" approves it;
+the agent records it and does not ask again. Saying "ทำจนจบ" or "finish it" up
+front also authorizes Land for that change. Urgency alone ("ด่วน", "รีบ demo")
+and silence never approve, and a negated request ("don't push yet") is never
+authority.
+
+Commit and push happen only through `/deliver` or your direct instruction
+("commit this", "push it"). During Build or Prove an uninstructed `git commit`
+or `git push` from the main checkout does not run; it becomes a question, and
+your yes lets it run. "เปิด PR ให้เลย" or "open a PR" counts as `/deliver`. The
+full rule lives in `WORKFLOW.md` under "Authority from the user's words".
+
 ## Where decisions get recorded
 
 Decisions belong in the change packet, not in a chat transcript. An acceptance

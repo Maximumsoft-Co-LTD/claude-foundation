@@ -1,5 +1,5 @@
 import {
-  lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync
+  lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync
 } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname, join, relative, resolve } from "node:path";
@@ -10,21 +10,26 @@ const escape = (value) => String(value ?? "").replace(/[\\`*_[\]<>]/g, "\\$&");
 export const isInvestigationReport = (path) =>
   /^openspec\/investigations\/[^/]+\.report\.md$/.test(path);
 
-export function isOwnedInvestigationReport(root, path) {
-  if (!isInvestigationReport(path)) return false;
-  try {
-    const absolute = join(realpathSync(root), path);
-    return realpathSync(absolute) === absolute && lstatSync(absolute).isFile() &&
-      readFileSync(absolute, "utf8").startsWith(MARKER);
-  } catch { return false; }
-}
-
-export function investigationReportPaths(root) {
-  const directory = join(root, "openspec", "investigations");
-  try {
-    return readdirSync(directory).map((name) => `openspec/investigations/${name}`)
-      .filter(isInvestigationReport);
-  } catch { return []; }
+// Everything under openspec/investigations/ is investigation output, not a
+// discoverable project source: records, generated reports, and notes authored
+// after DONE. Only paths a record explicitly acknowledges as sources stay
+// discoverable, so a later note cannot make a completed handoff look stale.
+// Generated reports are never sources, acknowledged or not.
+export function investigationDiscoveryExclusions(root, acknowledged = []) {
+  const keep = new Set(acknowledged.filter((path) => !isInvestigationReport(path)));
+  const paths = [];
+  const walk = (absolute, relativePath) => {
+    let entries;
+    try { entries = readdirSync(absolute, { withFileTypes: true }); }
+    catch { return; }
+    for (const entry of entries) {
+      const path = `${relativePath}/${entry.name}`;
+      if (entry.isDirectory()) walk(join(absolute, entry.name), path);
+      else if (!keep.has(path)) paths.push(path);
+    }
+  };
+  walk(join(root, "openspec", "investigations"), "openspec/investigations");
+  return paths.sort();
 }
 
 const labels = {
@@ -40,7 +45,8 @@ const labels = {
     updated: "Updated", evidence: "Evidence", rejected: "Not selected", choice: "Choice",
     open: "Open", supported: "Supported", falsified: "Falsified", resolved: "Resolved",
     research: "Continue investigating", user: "User decision required", findings: "Findings",
-    tradeoffs: "Tradeoffs", prototype: "Prototype (not proof)"
+    tradeoffs: "Tradeoffs", prototype: "Prototype (not proof)",
+    unread: "Discovered sources not cited by a fact (hashed, not yet read)"
   },
   th: {
     title: "รายงานการสำรวจปัญหา", status: "สถานะ", current: "ข้อสรุปปัจจุบัน",
@@ -54,7 +60,8 @@ const labels = {
     updated: "อัปเดต", evidence: "หลักฐาน", rejected: "ไม่เลือก", choice: "ตัวเลือก",
     open: "ยังไม่สรุป", supported: "มีหลักฐานสนับสนุน", falsified: "มีหลักฐานหักล้าง", resolved: "ตัดสินใจแล้ว",
     research: "ต้องสำรวจต่อ", user: "ต้องการการตัดสินใจจากผู้ใช้", findings: "ข้อค้นพบ",
-    tradeoffs: "ข้อแลกเปลี่ยน", prototype: "ต้นแบบ (ไม่ใช่หลักฐานพิสูจน์)"
+    tradeoffs: "ข้อแลกเปลี่ยน", prototype: "ต้นแบบ (ไม่ใช่หลักฐานพิสูจน์)",
+    unread: "แหล่งที่ค้นพบแต่ยังไม่มีข้อเท็จจริงอ้างอิง (hash แล้ว ยังไม่ได้อ่าน)"
   }
 };
 
@@ -102,10 +109,11 @@ export function renderInvestigationReport({ record, state, projectRoot, sourceRo
     ...rows(state.hypotheses).filter((row) => row.status === "open").map((row) => escape(row.statement)),
     ...rows(state.action.investigation?.issues).map(escape),
     ...rows(validationIssues).filter((issue) => !rows(state.action.investigation?.issues).includes(issue)).map(escape),
-    ...rows(state.action.investigation?.paths).map(link),
     ...rows(state.decisions).filter((row) => row.status === "open").map((row) => escape(row.question))
   ]));
   output += section(l.sources, list(rows(state.sourceInventory?.sources).map((row) => link(row.path))));
+  if (rows(state.repository?.unreadSources).length)
+    output += section(l.unread, list(rows(state.repository.unreadSources).map(link)));
   const next = complete ? state.conclusion?.status === "ready-for-change" ? l.ready
     : state.conclusion?.status === "not-worth-changing" ? l.noChange : l.user
     : state.action.action === "ASK_USER" ? l.user : l.research;

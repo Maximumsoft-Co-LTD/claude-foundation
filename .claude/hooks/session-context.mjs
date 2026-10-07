@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { appendFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { accessSync, appendFileSync, constants, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nextCommand } from "../harness/runtime/core/next-step.mjs";
 import { shellDisplayArgument } from "../harness/runtime/core/shell-mutation-policy.mjs";
@@ -22,6 +22,25 @@ function exportSessionIdentity(input) {
   appendFileSync(envFile,
     `export FOUNDATION_CLAUDE_SESSION_ID=${shellQuote(input.session_id)}\n` +
     `export FOUNDATION_CLAUDE_TRANSCRIPT_PATH=${shellQuote(input.transcript_path)}\n`);
+}
+
+// A source-checkout install leaves no `claude-foundation` on PATH, yet every
+// next step the harness prints names it. The installer writes a project-local
+// shim; this puts it on the session's PATH only when nothing already resolves,
+// so a Homebrew or other global CLI keeps precedence. A non-executable file
+// or directory of that name does not resolve for the shell, so it does not count.
+function executableFile(path) {
+  try { accessSync(path, constants.X_OK); return statSync(path).isFile(); }
+  catch { return false; }
+}
+
+function exportCliPath() {
+  const envFile = process.env.CLAUDE_ENV_FILE;
+  const bin = join(ROOT, ".foundation", "bin");
+  if (!envFile || !existsSync(join(bin, "claude-foundation"))) return;
+  const resolves = (process.env.PATH || "").split(delimiter)
+    .some((dir) => dir && executableFile(join(dir, "claude-foundation")));
+  if (!resolves) appendFileSync(envFile, `export PATH=${shellQuote(bin)}:"$PATH"\n`);
 }
 
 function readState(runtimeDir, id) {
@@ -64,8 +83,8 @@ function workflowDigest() {
       // Name the exact prefix where the session begins, so it is in context
       // before the first command instead of after the first refusal.
       if (status === "building" && typeof state.workspace?.path === "string")
-        lines.push(`    Build shell rule: start every mutating Bash call with \`cd ${
-          shellDisplayArgument(state.workspace.path)} && \`; the phase guard refuses unanchored writes.`);
+        lines.push(`    Build shell: run \`cd ${
+          shellDisplayArgument(state.workspace.path)}\` once, then plain commands; the shell stays there.`);
     }
     lines.push("  Proof freshness is not checked here; run `claude-foundation changes` for readiness.");
   }
@@ -90,10 +109,11 @@ function workflowDigest() {
 let input = {};
 try { input = JSON.parse(readFileSync(0, "utf8")); }
 catch { /* stdin shape is the host's contract, not this hook's to enforce */ }
-// Both halves are best-effort and independently guarded: neither telemetry
-// identity nor a workflow digest is worth blocking a Claude session over, and
-// one failing must not take the other down with it.
+// Each part is best-effort and independently guarded: no telemetry identity,
+// PATH entry, or workflow digest is worth blocking a Claude session over, and
+// one failing must not take another down with it.
 try { exportSessionIdentity(input); } catch { /* best-effort */ }
+try { exportCliPath(); } catch { /* best-effort */ }
 try {
   const digest = workflowDigest();
   if (digest) process.stdout.write(JSON.stringify({

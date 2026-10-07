@@ -18,6 +18,7 @@ import {
   deliveryEvidenceAssessment,
   deliveryPolicy,
   deliveryProjection,
+  followUpDeliveryCandidates,
   markdownSection,
   parseGitHubRemote,
   pullRequestNarrative,
@@ -260,7 +261,7 @@ for (const scenario of ["normal", "mixed-files", "resume-edit", "resume-mode", "
   "default-branch", "dangling-link", "post-land-mode", "archive-mode", "legacy-mode",
   "crlf", "autocrlf", "conversion-resume", "custom-filter", "reserved-filter",
   "encoding", "legacy-archive-mode", "post-land-mode-remove", "non-main-default",
-  "unknown-default", "stale-default", "modified-links"])
+  "unknown-default", "stale-default", "modified-links", "head-advanced"])
 test(`delivery verifies publication boundaries: ${scenario}`, async (t) => {
   const root = mkdtempSync(join(tmpdir(), "foundation-delivery-e2e-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -425,6 +426,13 @@ test(`delivery verifies publication boundaries: ${scenario}`, async (t) => {
     fail: (message) => { throw new Error(message); }
   });
 
+  if (scenario === "head-advanced") {
+    // The user commits other work after Land; the Land base stays an ancestor
+    // and the proven change is still the uncommitted target diff.
+    write(join(root, "notes.txt"), "unrelated committed work\n");
+    checkedGit(["add", "notes.txt"], root);
+    checkedGit(["commit", "-m", "docs: unrelated work after Land"], root);
+  }
   const originalHead = checkedGit(["rev-parse", "HEAD"], root);
   const originalIndex = checkedGit(["diff", "--cached"], root);
   if (scenario === "post-land-mode") chmodSync(join(root, "src/booking.js"), 0o755);
@@ -527,6 +535,9 @@ test(`delivery verifies publication boundaries: ${scenario}`, async (t) => {
     assert.equal(interrupted.boundary, "content-identity");
     assert.deepEqual(interrupted.options,
       ["restore-the-proven-content-and-retry-deliver", "leave-archived-without-deliver"]);
+    assert.equal(interrupted.decision.recommended, "restore-the-proven-content-and-retry-deliver");
+    assert.deepEqual(interrupted.decision.options.map((option) => option.id),
+      [...interrupted.options, "pause"]);
     assert.equal(pushes, 0);
     assert.equal(creates, 0);
     assert.equal(checkedGit(["rev-parse", "HEAD"], root), originalHead);
@@ -741,4 +752,250 @@ test(`multi-repository delivery preserves ${topology} topology and target HEADs:
   const reused = await runtime.advance(id);
   assert.equal(reused.reused, true);
   assert.equal(pullRequests.size, 2);
+});
+
+// Invoking Deliver on a proven change is Land authority: it lands through the
+// normal route and continues, instead of asking the user to authorize Land.
+test("Deliver on a proven change lands first, then continues delivery", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-deliver-land-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  checkedGit(["init", "-b", "main"], root);
+  const lifecycle = { id: "booking", status: "proven" };
+  const landed = [];
+  const runtime = (landChange) => createPullRequestRuntime({
+    root, deliveriesRoot: join(root, ".foundation", "deliveries"),
+    loadRuntime: () => lifecycle, activeChangePath: () => root, proofPath: () => join(root, "proof.json"),
+    transactionJournalPath: () => join(root, "journal.json"), pathIdentity, readJson, writeJson,
+    stableHash: (value) => hash(JSON.stringify(value)), git, landChange,
+    fail: (message) => { throw new Error(message); }
+  });
+
+  const blocked = await runtime(async (id) => {
+    landed.push(id);
+    return { action: "ASK_USER", boundary: "user-authority", reason: "a real Land decision" };
+  }).advance("booking");
+  assert.deepEqual(landed, ["booking"]);
+  assert.equal(blocked.action, "ASK_USER");
+  assert.equal(blocked.land.reason, "a real Land decision");
+  assert.equal(blocked.resumeCommand, "claude-foundation deliver advance booking");
+  assert.equal(blocked.options, undefined, "no authorize-land question");
+
+  // Landed: delivery continues in the same call. Without a remote that is the
+  // repository operator's typed wait, not a failure.
+  const continued = await runtime(async () => {
+    lifecycle.status = "archived";
+    return { action: "DONE", reached: "archived" };
+  }).advance("booking");
+  assert.deepEqual(continued.land, { reached: "archived", authority: "explicit-deliver-command" });
+  assert.equal(continued.action, "WAIT");
+  assert.equal(continued.boundary, "external-owner");
+  assert.equal(readJson(join(root, ".foundation", "deliveries", "booking", "state.json"))
+    .landAuthority.kind, "explicit-deliver-command");
+
+  lifecycle.status = "building";
+  const unfinished = await runtime(async () => assert.fail("never lands an unproven change"))
+    .advance("booking");
+  assert.equal(unfinished.action, "ASK_USER");
+  assert.equal(unfinished.decision.recommended, "finish-build-and-prove-then-deliver");
+  assert.ok(unfinished.decision.options.some((option) => option.id === "pause"));
+});
+
+test("follow-up candidates bind only a cited URL another change delivered", () => {
+  const receipts = [
+    { changeId: "booking-flow", branch: "change/booking-flow",
+      pullRequest: { url: "https://github.com/acme/booking/pull/42" } },
+    { changeId: "other", branch: "change/other", multiRepository: true,
+      pullRequest: { url: "https://github.com/acme/booking/pull/7" } }
+  ];
+  const bound = (proposal, changeId = "review-fix") =>
+    followUpDeliveryCandidates({ changeId, proposal, receipts }).map((row) => row.changeId);
+  assert.deepEqual(bound("Address review on https://github.com/acme/booking/pull/42/files#r1."),
+    ["booking-flow"]);
+  assert.deepEqual(bound("See https://github.com/acme/booking/pull/420"), []);
+  assert.deepEqual(bound("See https://github.com/acme/booking/pull/7"), [], "multi-repository receipts never bind");
+  assert.deepEqual(bound("https://github.com/acme/booking/pull/42", "booking-flow"), [],
+    "a change never follows up itself");
+});
+
+// Teammate review on a delivered pull request: the follow-up change cites it,
+// and Deliver pushes onto the same branch instead of opening a second PR.
+for (const scenario of ["open", "merged"])
+test(`review follow-up delivery ${scenario === "open" ? "updates the open pull request" : "falls back to a new pull request"}`, async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-delivery-follow-up-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  checkedGit(["init", "-b", "main"], root);
+  checkedGit(["config", "user.name", "Foundation Test"], root);
+  checkedGit(["config", "user.email", "foundation@example.test"], root);
+  write(join(root, ".gitignore"), ".foundation/\n");
+  write(join(root, "src", "booking.js"), "export const booking = false;\n");
+  checkedGit(["add", "."], root);
+  checkedGit(["commit", "-m", "chore: baseline"], root);
+  const baseHead = checkedGit(["rev-parse", "HEAD"], root);
+  checkedGit(["remote", "add", "origin", "https://github.com/acme/booking.git"], root);
+
+  const lifecycles = {};
+  const archiveChange = (id, files, why) => {
+    const archive = `openspec/changes/archive/2026-09-16-${id}`;
+    for (const [path, value] of Object.entries(files)) write(join(root, path), value);
+    write(join(root, archive, "proposal.md"), [
+      "# Change", "", "## Why", "", why, "", "## What changes", "", `- ${id}`
+    ].join("\n"));
+    write(join(root, archive, "tasks.md"), `- [x] **T001** ${id}\n`);
+    write(join(root, archive, "specs", "booking", "spec.md"), `## ADDED Requirements (${id})\n`);
+    write(join(root, "openspec", "specs", "booking", "spec.md"), `# Booking (${id})\n`);
+    writeJson(join(root, ".foundation", "transactions", id, "tx", "journal.json"), {
+      status: "committed", projectionHash: `projection-${id}`,
+      entries: Object.keys(files).map((path) => ({
+        path, before: "before", after: pathIdentity(join(root, path)), afterMode: 0o644
+      }))
+    });
+    const receipt = join(root, ".foundation", "proof-runs", id, "proof-1", "receipts", "test.json");
+    writeJson(receipt, { observed: "integration test passed" });
+    writeJson(join(root, ".foundation", "receipts", id, "proof.json"), {
+      status: "pass", proofRunId: "proof-1", receipts: [{
+        provider: "test", path: relative(root, receipt).replaceAll("\\", "/"),
+        sha256: pathIdentity(receipt)
+      }]
+    });
+    lifecycles[id] = {
+      id, status: "archived", intent: id, impact: "low", coupling: "isolated",
+      archivedAt: "2026-09-16T00:00:00.000Z", archivedChangePath: archive,
+      deliveryIntegrity: { version: 2, entries: deliveryTreeEntries(root,
+        [archive, "openspec/specs/booking/spec.md"], pathIdentity) },
+      preArchiveWorkspaceHash: "workspace", land: { proofRunId: "proof-1" },
+      workspace: { baseHead, apply: { transactionId: "tx", projectionHash: `projection-${id}` } }
+    };
+  };
+
+  const remote = { main: baseHead };
+  const pullRequests = [];
+  const pushes = [];
+  const run = (executable, args, options) => {
+    if (executable === "git" && args[0] === "ls-remote")
+      return { status: 0, stdout: `ref: refs/heads/main\tHEAD\n${baseHead}\tHEAD\n`, stderr: "" };
+    if (executable === "git" && args[0] === "fetch") {
+      const sha = remote[args.at(-1).replace(/^refs\/heads\//, "")];
+      return spawnSync("git", ["fetch", "--no-tags", root, sha], options);
+    }
+    if (executable === "git" && args[0] === "push") {
+      const [commit, ref] = args.at(-1).split(":");
+      const branch = ref.replace(/^refs\/heads\//, "");
+      if (remote[branch])
+        assert.equal(git(["merge-base", "--is-ancestor", remote[branch], commit], root).status, 0,
+          "a follow-up push is a fast-forward, never a rewrite");
+      remote[branch] = commit;
+      pushes.push(branch);
+      return { status: 0, stdout: "", stderr: "" };
+    }
+    if (executable === "git") return spawnSync(executable, args, options);
+    const live = (row) => row && { ...row, headRefOid: remote[row.headRefName] };
+    if (args[1] === "list") {
+      const head = args[args.indexOf("--head") + 1];
+      return { status: 0, stdout: JSON.stringify(pullRequests
+        .filter((row) => row.headRefName === head && row.state === "OPEN").map(live)), stderr: "" };
+    }
+    if (args[1] === "create") {
+      const head = args[args.indexOf("--head") + 1];
+      const row = { number: 42 + pullRequests.length,
+        url: `https://github.com/acme/booking/pull/${42 + pullRequests.length}`,
+        state: "OPEN", isDraft: false, headRefName: head, baseRefName: "main" };
+      pullRequests.push(row);
+      return { status: 0, stdout: `${row.url}\n`, stderr: "" };
+    }
+    if (args[1] === "view")
+      return { status: 0, stdout: JSON.stringify(live(pullRequests.find((row) => row.url === args[2]))), stderr: "" };
+    return { status: 1, stdout: "", stderr: "unexpected gh command" };
+  };
+  const runtime = createPullRequestRuntime({
+    root, deliveriesRoot: join(root, ".foundation", "deliveries"),
+    loadRuntime: (id) => lifecycles[id],
+    activeChangePath: (id) => join(root, lifecycles[id].archivedChangePath),
+    proofPath: (id) => join(root, ".foundation", "receipts", id, "proof.json"),
+    transactionJournalPath: (id, tx) => join(root, ".foundation", "transactions", id, tx, "journal.json"),
+    pathIdentity, readJson, writeJson,
+    stableHash: (value) => hash(JSON.stringify(value)),
+    git,
+    foundationPolicy: () => ({ deliver: { defaultBaseBranch: "main", branchPattern: "change/{changeId}" } }),
+    now: () => "2026-09-16T01:00:00.000Z",
+    run,
+    fail: (message) => { throw new Error(message); }
+  });
+
+  archiveChange("booking-flow", { "src/booking.js": "export const booking = true;\n" },
+    "Let users book directly.");
+  const original = await runtime.advance("booking-flow");
+  assert.equal(original.action, "DONE");
+  const originalCommit = remote["change/booking-flow"];
+  assert.equal(original.pullRequests[0].url, "https://github.com/acme/booking/pull/42");
+  if (scenario === "merged") pullRequests[0].state = "MERGED";
+
+  archiveChange("booking-review-fix", {
+    "src/booking.js": "export const booking = 'reviewed';\n",
+    "src/review.js": "export const reviewed = true;\n"
+  }, "Address the requested changes on https://github.com/acme/booking/pull/42.");
+  const followUp = await runtime.advance("booking-review-fix");
+  assert.equal(followUp.action, "DONE", JSON.stringify(followUp));
+  const receipt = readJson(runtime.receiptPath("booking-review-fix"));
+  if (scenario === "open") {
+    assert.equal(followUp.reached, "pr-updated");
+    assert.equal(followUp.followUp.mode, "update-existing");
+    assert.equal(followUp.followUp.of, "booking-flow");
+    assert.equal(followUp.pullRequests[0].url, "https://github.com/acme/booking/pull/42");
+    assert.equal(pullRequests.length, 1, "no second pull request");
+    assert.deepEqual(pushes, ["change/booking-flow", "change/booking-flow"]);
+    assert.equal(receipt.branch, "change/booking-flow");
+    const head = remote["change/booking-flow"];
+    assert.equal(checkedGit(["rev-parse", `${head}^`], root), originalCommit);
+    assert.equal(checkedGit(["show", `${head}:src/review.js`], root), "export const reviewed = true;");
+    assert.equal(checkedGit(["show", `${head}:src/booking.js`], root), "export const booking = 'reviewed';");
+    assert.notEqual(checkedGit(["ls-tree", "--name-only", head,
+      "openspec/changes/archive/2026-09-16-booking-flow"], root), "", "the original delivery stays");
+  } else {
+    assert.equal(followUp.reached, "pr-opened");
+    assert.equal(followUp.followUp.mode, "new-pull-request");
+    assert.match(followUp.followUp.notice, /merged; a new pull request was opened/);
+    assert.equal(pullRequests.length, 2);
+    assert.equal(followUp.pullRequests[0].url, "https://github.com/acme/booking/pull/43");
+    assert.deepEqual(pushes, ["change/booking-flow", "change/booking-review-fix"]);
+    assert.equal(checkedGit(["rev-parse", `${remote["change/booking-review-fix"]}^`], root), baseHead);
+  }
+  assert.equal(checkedGit(["rev-parse", "HEAD"], root), baseHead, "the target checkout never moves");
+  const again = await runtime.advance("booking-review-fix");
+  assert.equal(again.reused, true);
+  if (scenario !== "open") return;
+  // The follow-up moved the original pull request's head forward. Re-running
+  // the original delivery recognizes the recorded follow-up as the reason and
+  // stays idempotent instead of reporting a mismatched head.
+  const head = remote["change/booking-flow"];
+  const rerun = await runtime.advance("booking-flow");
+  assert.equal(rerun.action, "DONE", JSON.stringify(rerun));
+  assert.equal(rerun.reused, true);
+  assert.equal(rerun.pullRequests[0].url, "https://github.com/acme/booking/pull/42");
+  assert.equal(rerun.pullRequests[0].headRefOid, head);
+  assert.deepEqual(rerun.pullRequests[0].followedUpBy, ["booking-review-fix"]);
+  assert.equal(pullRequests.length, 1, "no second pull request");
+  assert.equal(pushes.length, 2, "an idempotent re-run never pushes");
+  // A second review round citing the same pull request updates it again,
+  // building on the newest follow-up rather than opening another one.
+  archiveChange("booking-second-review", {
+    "src/booking.js": "export const booking = 'reviewed twice';\n"
+  }, "Address the second round on https://github.com/acme/booking/pull/42.");
+  const second = await runtime.advance("booking-second-review");
+  assert.equal(second.action, "DONE", JSON.stringify(second));
+  assert.equal(second.followUp.mode, "update-existing");
+  assert.equal(second.followUp.of, "booking-review-fix");
+  assert.equal(pullRequests.length, 1, "a second follow-up opens no new pull request");
+  const secondHead = remote["change/booking-flow"];
+  assert.equal(checkedGit(["rev-parse", `${secondHead}^`], root), head);
+  const chained = await runtime.advance("booking-flow");
+  assert.deepEqual(chained.pullRequests[0].followedUpBy,
+    ["booking-review-fix", "booking-second-review"]);
+  // History no recorded delivery accounts for still fails closed, even when
+  // it descends from the delivered commit.
+  remote["change/booking-flow"] = checkedGit(["commit-tree", `${secondHead}^{tree}`, "-p", secondHead,
+    "-m", "foreign"], root);
+  await assert.rejects(runtime.advance("booking-flow"),
+    /pull-request read-back does not match the delivered commit/);
+  await assert.rejects(runtime.advance("booking-review-fix"),
+    /pull-request read-back does not match the delivered commit/);
 });

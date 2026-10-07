@@ -35,6 +35,7 @@ import {
   shouldReportOutOfBandDelivery
 } from "../../harness/runtime/core/diagnostics-runtime.mjs";
 import { createApplyRuntime } from "../../harness/runtime/workflow/apply-runtime.mjs";
+import { automaticRecoveryAction } from "../../harness/runtime/workflow/advance-recovery.mjs";
 
 const EXCLUDED = new Set([".git", ".foundation", ".workflow", "node_modules"]);
 
@@ -182,6 +183,8 @@ test("review identity ignores progress and handoff tracking but binds semantics"
   assert.notEqual(progress.workspaceHash, before.workspaceHash);
   assert.equal(progress.reviewHash, before.reviewHash,
     "controller progress and delivery tracking do not invalidate review");
+  assert.equal(progress.codeHash, before.codeHash,
+    "a tasks.md tick does not invalidate executable provider receipts");
   write(root, `${changeRel}/tasks.md`,
     "# Tasks\n\n- [x] **T001** Changed scope — verify: `true` [paths:src/**]\n");
   const taskSemantics = state.singleRelevantSnapshot(id, root, true);
@@ -389,6 +392,10 @@ test("an external target move remains non-authoritative while Build is active", 
   assert.equal(drift.proofStatus, "unchanged");
   assert.match(drift.summary, /not Change Loop proof or lifecycle completion/);
   assert.match(drift.recoveryCommand, /sandbox sync confine-surface/);
+  // WORKFLOW: sync, re-prove when invalidated, and continue to archived.
+  assert.equal(drift.automaticRecovery, "sync");
+  assert.equal(automaticRecoveryAction("confine-surface", drift)?.kind, "sandbox-sync",
+    "observed out-of-band delivery still syncs automatically instead of asking");
 });
 
 test("delivery drift is reported only when target bytes match the change projection", () => {

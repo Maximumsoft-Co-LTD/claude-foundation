@@ -49,12 +49,8 @@ function sameTaskAuthority(savedGraph, currentGraph, taskId) {
     JSON.stringify(taskNodeAuthorityShape(taskNode(currentGraph, taskId) || {}));
 }
 
-function sameTaskClaims(savedGraph, currentGraph, taskId) {
-  const claimIds = new Set([
-    ...(taskNode(savedGraph, taskId)?.claims || []),
-    ...(taskNode(currentGraph, taskId)?.claims || [])
-  ]);
-  const shape = (claims = []) => claims.filter((claim) => claimIds.has(claim.id))
+function taskClaimsShape(claims = [], claimIds) {
+  return claims.filter((claim) => claimIds.has(claim.id))
     .map((claim) => ({
       id: claim.id || null,
       scenario: String(claim.scenario || ""),
@@ -62,8 +58,28 @@ function sameTaskClaims(savedGraph, currentGraph, taskId) {
       capabilities: sorted(claim.capabilities),
       repositories: sorted(claim.repositories)
     })).sort((left, right) => String(left.id).localeCompare(String(right.id)));
-  return JSON.stringify(shape(savedGraph.claims)) ===
-    JSON.stringify(shape(currentGraph.claims));
+}
+
+function sameTaskClaims(savedGraph, currentGraph, taskId) {
+  const claimIds = new Set([
+    ...(taskNode(savedGraph, taskId)?.claims || []),
+    ...(taskNode(currentGraph, taskId)?.claims || [])
+  ]);
+  return JSON.stringify(taskClaimsShape(savedGraph.claims, claimIds)) ===
+    JSON.stringify(taskClaimsShape(currentGraph.claims, claimIds));
+}
+
+// What one task's result is bound to: its own node (text digest, repository,
+// paths, claims, dependencies, schemas) and the claims it proves. An
+// amendment elsewhere in the graph leaves this unchanged, so it no longer
+// sends every completed task back for verification.
+export function taskAuthorityShape(graph = {}, taskId) {
+  const node = taskNode(graph, taskId);
+  if (!node) return null;
+  return {
+    task: taskNodeAuthorityShape(node),
+    claims: taskClaimsShape(graph.claims, new Set(node.claims || []))
+  };
 }
 
 export function legacySingleSessionCompatibility({
@@ -109,9 +125,16 @@ export function taskResultMismatches(result, taskId, node, graph, state) {
   };
   expect("taskId", result?.taskId, taskId);
   expect("repository", result?.repository, node?.repository);
-  expect("graphRevision", result?.graphRevision, graph?.revision);
-  expect("graphIdentity", result?.graphIdentity, graph?.identity);
-  expect("contractRevision", result?.contractRevision, state?.contractRevision);
+  // A result that recorded its own task authority is judged by that alone;
+  // older results keep the whole-graph binding they were written under.
+  if (result?.taskAuthority) {
+    if (JSON.stringify(result.taskAuthority) !== JSON.stringify(taskAuthorityShape(graph, taskId)))
+      mismatches.push("taskAuthority");
+  } else {
+    expect("graphRevision", result?.graphRevision, graph?.revision);
+    expect("graphIdentity", result?.graphIdentity, graph?.identity);
+    expect("contractRevision", result?.contractRevision, state?.contractRevision);
+  }
   if (JSON.stringify(sorted(result?.paths)) !== JSON.stringify(sorted(node?.paths)))
     mismatches.push("paths");
   if (JSON.stringify(sorted(result?.claimIds)) !== JSON.stringify(sorted(node?.claims)))

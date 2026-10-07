@@ -1,4 +1,4 @@
-import { REVIEW_WINDOW_MS, reviewWindowRemaining, reviewWindowError, autoExtendReviewWindow, currentWaivers } from "../core/user-decisions.mjs";
+import { REVIEW_DISPATCH_TIMEOUT_MS, currentWaivers } from "../core/user-decisions.mjs";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
@@ -683,13 +683,6 @@ export function createAuthorityRuntime({
     return { handled: false, entry, request, requestId, reviewerType };
   }
 
-  function assertReviewWindow(id, state) {
-    const timestamp = Date.parse(now());
-    if (reviewWindowRemaining(state, timestamp)) return;
-    if (!autoExtendReviewWindow(state, timestamp)) throw reviewWindowError(id);
-    saveRuntime(state);
-  }
-
   function reviewInfrastructureRetryLimit() {
     const reviewSettings = foundationPolicy().review || {};
     const configuredFallbacks = (Array.isArray(reviewSettings.fallbackReviewers)
@@ -705,7 +698,8 @@ export function createAuthorityRuntime({
   function releaseHarnessReviewBudget(id) {
     const released = autoReleaseReviewBudget(id, {
       maxInfrastructureRetries: reviewInfrastructureRetryLimit(),
-      reviewerHealthy: () => reviewerStatus(null).ok === true
+      reviewerHealthy: () => reviewerStatus(null).ok === true,
+      reviewerIdentity: stableHash(foundationPolicy().review || {}).slice(0, 12)
     });
     const infrastructure = released.find((reference) => reference.startsWith("harness:infra:"));
     if (infrastructure) for (const entry of authorityStore.list(id)) {
@@ -724,14 +718,6 @@ export function createAuthorityRuntime({
     releaseHarnessReviewBudget(id);
     const context = dispatchRequestContext(id, flags);
     if (context.handled) return context.value;
-    const windowState = loadRuntime(id);
-    if (!windowState.reviewWindow) {
-      const startedAt = now();
-      windowState.reviewWindow = { startedAt,
-        deadline: new Date(Date.parse(startedAt) + REVIEW_WINDOW_MS).toISOString() };
-      saveRuntime(windowState);
-    }
-    assertReviewWindow(id, windowState);
     const { entry, request, requestId, reviewerType } = context;
     function dispatchRouting() {
     const routing = reviewPolicy(id);
@@ -1190,15 +1176,16 @@ export function createAuthorityRuntime({
   }
 
   // N8 (3a): a fast-tier round whose scenario coverage is unparseable or has
-  // any missing/unsure scenario is re-run once on the configured model with
-  // the same dispatched packet. It is not a new dispatch or AI wave. Returns
-  // the configured reviewer to escalate to, or null.
+  // an unsure scenario is re-run once on the configured model with the same
+  // dispatched packet. It is not a new dispatch or AI wave. A missing scenario
+  // is already an actionable major finding, so it goes straight to repair.
+  // Returns the configured reviewer to escalate to, or null.
   function scenarioEscalationReviewer(reviewerName, configured, requestValue,
     reviewSettings, subject, packet, report) {
     if (configured.modelTier !== "fast" || reviewerName === "main-session" ||
         report?.status === "error" || !packet?.scenarioChecklist?.items?.length) return null;
     const coverage = report.scenarioCoverage;
-    if (coverage && coverage.missing.length + coverage.unsure.length === 0) return null;
+    if (coverage && (coverage.missing.length > 0 || coverage.unsure.length === 0)) return null;
     const escalated = authorityReviewerConfiguration(reviewerName, requestValue, "configured");
     if (!escalated || escalated.modelTier === "fast" || escalated.modelId === configured.modelId)
       return null;
@@ -1411,7 +1398,7 @@ export function createAuthorityRuntime({
     });
     const reviewRequest = {
       changeId: id,
-      timeoutMs: reviewWindowRemaining(loadRuntime(id), Date.parse(now())),
+      timeoutMs: REVIEW_DISPATCH_TIMEOUT_MS,
       reviewer: reviewerName,
       modelTier: configured.modelTier || null,
       workspace,
@@ -1441,7 +1428,7 @@ export function createAuthorityRuntime({
       finalReviewer = escalated;
       report = yield {
         ...reviewRequest,
-        timeoutMs: reviewWindowRemaining(loadRuntime(id), Date.parse(now())),
+        timeoutMs: REVIEW_DISPATCH_TIMEOUT_MS,
         modelTier: "configured",
         escalatedFrom: "fast"
       };
@@ -1483,7 +1470,6 @@ export function createAuthorityRuntime({
         ]
       };
       authorityStore.replace(failedEntry, failedRequest);
-      assertReviewWindow(id, loadRuntime(id));
       // Validation is deterministic for this packet/result. Changing models
       // cannot repair its binding; retain the error and existing resume route.
       const nextReviewer = report.retryable === false ? null
@@ -1635,7 +1621,8 @@ export function createAuthorityRuntime({
         verifiedFindingIds: report.verifiedFindingIds,
         ...(modelEscalation ? { modelEscalation } : {}),
         ...(report.scenarioCoverage !== undefined
-          ? { scenarioCoverage: report.scenarioCoverage } : {})
+          ? { scenarioCoverage: report.scenarioCoverage } : {}),
+        ...(report.specGaps?.length ? { specGaps: report.specGaps } : {})
       };
     const currentAttempt = recoveredReport && reviewAttemptByDigest(id,
       loadRuntime(id).reviewHistory?.chainHead);

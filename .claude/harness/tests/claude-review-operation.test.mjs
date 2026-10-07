@@ -7,9 +7,13 @@ import {
   claudeReviewerEnvironment,
   claudeReviewerFailure,
   claudeStructuredReview,
+  driveReviewSteps,
   reviewerSessionIsForbidden,
-  runClaudeReviewOperation
+  runClaudeReviewSteps
 } from "../runtime/evidence/configured-reviewer.mjs";
+
+const runClaudeReviewOperation = (context, ...args) =>
+  driveReviewSteps(runClaudeReviewSteps(context, ...args), context.spawn);
 
 const config = {
   executable: "claude", modelId: "opus", reasoningEffort: "high"

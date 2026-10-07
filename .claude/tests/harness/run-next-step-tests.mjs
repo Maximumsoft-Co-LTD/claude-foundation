@@ -95,12 +95,12 @@ try {
 
   // A building change names its exact anchor prefix in the digest, quoted the
   // way the guard accepts it; without a recorded workspace there is no prefix.
-  check(() => assert.doesNotMatch(active, /Build shell rule/));
+  check(() => assert.doesNotMatch(active, /Build shell:/));
   writeFileSync(join(fixture, ".foundation", "runtime", "demo-change.json"),
     JSON.stringify({ id: "demo-change", status: "building", schema: "foundation-rapid",
       workspace: { mode: "worktree", path: "/my ws/.foundation/sandboxes/demo-change" } }));
   check(() => assert.match(digest(fixture),
-    /Build shell rule: start every mutating Bash call with `cd '\/my ws\/\.foundation\/sandboxes\/demo-change' && `; the phase guard refuses unanchored writes\./));
+    /Build shell: run `cd '\/my ws\/\.foundation\/sandboxes\/demo-change'` once, then plain commands; the shell stays there\./));
 
   writeFileSync(join(fixture, ".foundation", "runtime", "demo-change.json"), "{ not json");
   check(() => assert.match(digest(fixture), /demo-change \[invalid-runtime-json\]/,

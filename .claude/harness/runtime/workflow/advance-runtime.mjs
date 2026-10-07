@@ -1,4 +1,4 @@
-import { reviewWindowRemaining, reviewWindowError, autoExtendReviewWindow, currentWaivers } from "../core/user-decisions.mjs";
+import { currentWaivers } from "../core/user-decisions.mjs";
 import { repairActionForWorkspace } from "../evidence/repair-runtime.mjs";
 import { isProcessAlive } from "../core/process-lock.mjs";
 import { shellDisplayArgument } from "../core/shell-mutation-policy.mjs";
@@ -166,6 +166,23 @@ export function repairTargetFromError(error) {
 export function advanceFailureAction(id, error, { stage = "build", through = null } = {}) {
   const reason = error?.message || String(error);
   const automatic = automaticRecoveryAction(id, error?.decision);
+  if (automatic?.kind === "reconcile-target-edits") return envelope(id, "REPAIR", {
+    legacyAction: "RECONCILE_TARGET_EDITS", actor: "agent", owner: "agent",
+    boundary: "target-conflict", reason, decision: error.decision,
+    paths: automatic.paths, command: resume(id, "archived"),
+    instruction: "Keep the target checkout's edits at the listed paths: do not revert or commit " +
+      "them. Merge each target edit into the sandbox copy of the same path so the sandbox keeps " +
+      "both the change and the target edit, then run the resume command; Land proves the merged " +
+      "files again and applies them once they carry the target edits.",
+    recoveryType: "EDIT", resumeCommand: resume(id, "archived")
+  });
+  if (automatic?.kind === "apply-recovery") return envelope(id, "REPAIR", {
+    legacyAction: "RECOVER_APPLY_TRANSACTION", actor: "harness",
+    boundary: "internal-recovery", reason,
+    automaticRecovery: automatic, decision: error.decision,
+    command: automatic.command, recoveryType: "AUTO_RECOVER",
+    resumeCommand: resume(id, through)
+  });
   if (automatic) return envelope(id, "REPAIR", {
     legacyAction: "RECOVER_SANDBOX_SYNC", actor: "harness",
     boundary: "internal-recovery", reason,
@@ -205,8 +222,30 @@ export function advanceFailureAction(id, error, { stage = "build", through = nul
     alternatives: error?.details?.alternatives || [],
     resumeCommand: resume(id, through)
   });
+  // Harness automation that could not finish hands its exact step to the
+  // agent — command, directory, and output — instead of a diagnostic loop
+  // that ends at the user.
+  const handoff = error?.details?.handoff;
+  if (handoff?.command) return envelope(id, "REPAIR", {
+    legacyAction: `REPAIR_${stage.toUpperCase()}_RUNTIME`,
+    actor: "agent",
+    boundary: error?.boundary || "resource",
+    reason,
+    details: error?.details || null,
+    errorCode: error?.code || null,
+    command: handoff.command,
+    handoff,
+    instruction: `The harness could not finish ${handoff.step || "this step"}. Run \`${
+      handoff.command}\`${handoff.cwd ? ` in ${handoff.cwd}` : ""}, fix what its output reports ` +
+      "(inside the workspace or the declared setup in foundation.json), then resume.",
+    recoveryType: "HANDOFF",
+    alternatives: ["finish the harness step yourself, then resume the same lifecycle route"],
+    resumeCommand: resume(id, through)
+  });
+  // Land's diagnosis is Land itself: resuming the archived route re-runs every
+  // Land check and recovery. `land check` is an internal primitive.
   const fallback = stage === "land"
-    ? command(`land check ${id}`)
+    ? resume(id, "archived")
     : command(`doctor --stage ${stage === "prove" ? "prove" : "build"} --change ${id}`);
   const exact = exactRecoveryCommand(reason);
   const repairTarget = exact ? null : repairTargetFromError(error);
@@ -216,10 +255,14 @@ export function advanceFailureAction(id, error, { stage = "build", through = nul
     boundary: error?.boundary || "resource",
     reason,
     details: error?.details || null,
+    errorCode: error?.code || null,
     command: exact || fallback,
     ...(exact ? {} : {
       repairTarget,
-      instruction: repairTarget
+      instruction: stage === "land"
+        ? `Fix the reported cause: ${reason}. Then run '${fallback}'; it re-runs every Land check ` +
+          "and resumes Land from its retained state."
+        : repairTarget
         ? `Set '${repairTarget.field}' to ${repairTarget.expected}` +
           `${repairTarget.value ? ` (found '${repairTarget.value}')` : ""}, then resume; ` +
           `'${fallback}' diagnoses the stage if the cause is elsewhere.`
@@ -358,6 +401,26 @@ function proofOperationAction(id, result) {
       recoveryType: "ASK_USER",
       alternatives: result.decision?.options?.map((option) => option.outcome) || []
     });
+  // A provider reserved but never proved its receipt. Whether to run it again
+  // is the user's external side-effect decision, answered through `advance`.
+  if (result.stage === "execution-indeterminate") return envelope(id, "ASK_USER", {
+    legacyAction: "DECIDE_INDETERMINATE_EXECUTION", actor: "user",
+    boundary: "external-side-effect",
+    reason: result.next?.[0]?.reason ||
+      "A provider execution stopped before proving its receipt.",
+    decision: {
+      kind: "indeterminate-execution",
+      summary: `${result.next?.[0]?.reason || "A provider execution stopped before proving its receipt."} ` +
+        `Providers: ${(result.providers || []).join(", ") || "unknown"}.`,
+      providers: result.providers || [],
+      options: [
+        { id: "retry", outcome: "The interrupted run's side effects were inspected; run the providers again." },
+        { id: "pause", outcome: "Keep the reservation and pause until the side effects are inspected." }
+      ],
+      recommended: "retry"
+    },
+    recoveryType: "ASK_USER"
+  });
   if (result.status === "ACTION_REQUIRED" || result.status === "BLOCKED")
     return envelope(id, "REPAIR", {
       legacyAction: "REPAIR_PROOF_RESULT",
@@ -446,6 +509,23 @@ function buildAction(id, dispatch, state, plan = null) {
       recoveryType: "AUTO_RECOVER",
       alternatives: ["regenerate the compiled task graph from the current agreement"]
     });
+    // A task listed here is already implemented; only its execution record is
+    // stale and the harness could not re-verify it (its check failed, a worker
+    // still holds it, or a dependency is unverified). Say so, so the agent
+    // repairs that instead of redoing the work or splitting diffs per task.
+    const reverification = (plan.verification || [])
+      .filter((row) => tasks.some((task) => task.id === row.taskId));
+    const instructions = [
+      ...(dispatch.action === "run-in-session" && tasks.length > 1 ? [
+        `Implement ${tasks.map((task) => task.id).join(", ")} in this order inside the workspace.`,
+        "Run each task's focused check, then the resume command once: advance reruns every " +
+        "task's verify check, marks each passing task [x], and hands back only failures."
+      ] : []),
+      ...reverification.map((row) =>
+        `${row.taskId} is already implemented; its execution record is stale (${row.reason}). ` +
+        "Do not re-implement it or split the diff per task: make its focused check pass, " +
+        "then resume and the harness re-verifies it.")
+    ];
     return envelope(id, "EDIT", {
       legacyAction: dispatch.action === "spawn-group" ? "EXECUTE_TASK_GROUP" : "EXECUTE_TASK",
       actor: "agent",
@@ -460,11 +540,8 @@ function buildAction(id, dispatch, state, plan = null) {
         leases: dispatch.action === "spawn-group" ? dispatch.workers :
           dispatch.task ? [dispatch.task] : []
       },
-      ...(dispatch.action === "run-in-session" && tasks.length > 1 ? { instructions: [
-        `Implement ${tasks.map((task) => task.id).join(", ")} in this order inside the workspace.`,
-        "Run each task's focused check, then the resume command once: advance reruns every " +
-        "task's verify check, marks each passing task [x], and hands back only failures."
-      ] } : {}),
+      ...(reverification.length ? { reverification } : {}),
+      ...(instructions.length ? { instructions } : {}),
       recoveryType: "EDIT",
       alternatives: ["amend the agreement if Build discovers new behavior"]
     });
@@ -674,8 +751,8 @@ export function createAdvanceRuntime({
   recoverReviewBindings = null,
   recoverWorkspace = null,
   recoverArchive = null,
-  recoverSandbox = null, saveRuntime = () => {}, proofIsCurrent = null,
-  settleSessionLeases = null, issueSessionLease = null,
+  recoverSandbox = null, recoverApply = null, saveRuntime = () => {}, proofIsCurrent = null,
+  settleSessionLeases = null, issueSessionLease = null, reverifyCompletedTasks = null,
   // Resolves a change's packet directory; enables `contextFiles` on EDIT/REPAIR.
   changePath = null,
   // Harness-owned operations advance performs itself instead of handing the
@@ -739,9 +816,10 @@ export function createAdvanceRuntime({
 
   function pendingAction(id, through, pending) {
     return envelope(id, pending.paused ? "WAIT" : "ASK_USER", {
-      legacyAction: pending.paused ? "PAUSED_BY_USER" : "NO_PROGRESS_BOUNDARY",
+      legacyAction: pending.paused ? "PAUSED_BY_USER" : pending.legacyAction || "NO_PROGRESS_BOUNDARY",
       actor: pending.paused ? "harness" : "user",
-      boundary: pending.paused ? "user-paused" : "repeated-no-progress", decision: pending.decision,
+      boundary: pending.paused ? "user-paused" : pending.boundary || "repeated-no-progress",
+      decision: pending.decision,
       ...(pending.paused ? { paused: true, wait: {
         owner: "user", condition: "The user explicitly chooses to resume the preserved work."
       } } : {}),
@@ -762,23 +840,25 @@ export function createAdvanceRuntime({
         });
         if (["proven", "landing"].includes(state.status)) stage = "land";
         const authority = authorityStatusValue(id);
-        const dispatch = agentDispatchValue(id, options);
+        // Plan once per read: dispatch and the Build action consume the same
+        // compiled graph. A planning failure leaves dispatch to plan (and
+        // report) exactly as before.
+        let readPlan = null;
+        if (agentPlanValue) {
+          try { readPlan = agentPlanValue(id, options); }
+          catch { readPlan = null; }
+        }
+        const dispatch = agentDispatchValue(id, options, readPlan);
         let proofPreflight = null;
         if (dispatch.action === "build-complete") {
           stage = "prove";
           if (proofReadinessValue) proofPreflight = proofReadinessValue(id, "prove", options);
         }
         const openRequests = authority.requests || [];
-        if (openRequests.some((request) => request.type === "review" &&
-            ["requested", "dispatched", "infrastructure-exhausted"].includes(request.status)) &&
-            !reviewWindowRemaining(state, nowMs())) {
-          if (!autoExtendReviewWindow(state, nowMs())) throw reviewWindowError(id);
-          saveRuntime(state);
-        }
         let plan = null;
         if (agentPlanValue && ["run-in-session", "run-leased-in-session", "spawn-group"]
           .includes(dispatch.action)) {
-          try { plan = agentPlanValue(id, options); }
+          try { plan = readPlan || agentPlanValue(id, options); }
           catch { /* dispatch still carries an exact compatibility route */ }
         }
         const workspaceHash = dispatch.action === "build-complete" && proofPreflight
@@ -826,13 +906,24 @@ export function createAdvanceRuntime({
     return null;
   }
 
+  // The latest AI review's advisory spec gaps ride on a proven or archived
+  // result so the agent reports them; they never change the outcome.
+  function reviewSpecGaps(id) {
+    try {
+      const gaps = deliveredAiAttempts(id).at(-1)?.specGaps;
+      return Array.isArray(gaps) ? gaps : [];
+    } catch { return []; }
+  }
+
   function done(id, stage, through) {
     const next = stage === "build" ? resume(id, "proven")
       : stage === "proven" ? resume(id, "archived") : null;
+    const specGaps = stage === "build" ? [] : reviewSpecGaps(id);
     return envelope(id, "DONE", {
       legacyAction: stage === "archived" ? "ARCHIVED" : "TARGET_REACHED",
       reason: `${stage} target reached`, completed: true, reached: stage,
       resumeCommand: null,
+      ...(specGaps.length ? { reviewAdvisories: { specGaps } } : {}),
       next
     });
   }
@@ -902,17 +993,64 @@ export function createAdvanceRuntime({
     });
   }
 
-  function noProgress(id, through) {
+  // An automated step that keeps completing without progress is handed to the
+  // agent with what the step returned; the user is asked only if repeated
+  // agent repair also makes no progress (the recovery ladder decides).
+  function noProgress(id, through, operation = null, result = null) {
+    const name = operation?.legacyAction || "the automated step";
+    const output = result && typeof result === "object"
+      ? { issues: result.issues || null, next: result.next || null, reason: result.reason || null }
+      : null;
     return projected(recovery.observe(id, withContext(id, envelope(id, "REPAIR", {
-      legacyAction: "NO_PROGRESS_BOUNDARY", actor: "harness",
+      legacyAction: "NO_PROGRESS_BOUNDARY", actor: "agent",
       boundary: "repeated-no-progress",
-      reason: "The same authorized operation completed twice without changing delivery state",
-      recoveryType: "RECONFIGURE",
+      reason: `The harness ran ${name} twice without changing delivery state`,
+      details: output,
+      command: command(`advance ${id} --inspect`),
+      instruction: `The harness could not move ${name} forward. Read its result in details and ` +
+        `'${command(`advance ${id} --inspect`)}', fix what keeps it from progressing ` +
+        "(workspace, evidence wiring in execution.yaml, or setup), then resume.",
+      recoveryType: "HANDOFF",
       resumeCommand: resume(id, through)
-    })), { force: true }));
+    }))));
   }
 
-  async function advanceThrough(id, through) {
+  // An interrupted apply is settled by the harness under the Land route that
+  // started it: `settle` finishes or reverses only bytes Land wrote, and
+  // `keep-current` overwrites nothing (the kept target is then synchronized
+  // and proved again through `recovery-sync-required`). Each resolution runs
+  // at most once per invocation; if it cannot finish, the agent receives the
+  // divergent paths and the transaction location, never the user.
+  async function recoverInterruptedApply(id, through, value, internal) {
+    const { resolution, divergentPaths = [] } = value.automaticRecovery;
+    const notice = `Land kept an interrupted apply recoverable (${resolution})` +
+      (divergentPaths.length ? `; the target held other content at: ${divergentPaths.join(", ")}` : "");
+    const handoff = (reason) => projected(recovery.observe(id, withContext(id, envelope(id, "REPAIR", {
+      actor: "agent", owner: "agent", legacyAction: "REPAIR_APPLY_RECOVERY",
+      boundary: "internal-recovery", reason,
+      details: { resolution, divergentPaths, transactions: value.decision?.transactions || [],
+        transactionRoot: value.decision?.transactionRoot || null },
+      instruction: "Automatic apply recovery could not finish. Compare the listed target paths " +
+        "with the sandbox and the transaction backup, make each target path hold the intended " +
+        "content without deleting anyone's work, then run the resume command.",
+      recoveryType: "EDIT", resumeCommand: resume(id, through)
+    }))));
+    if (internal.applyRecovered.includes(resolution))
+      return handoff(`The ${resolution} recovery already ran and the interrupted apply is still pending: ${value.reason}`);
+    const next = { ...internal, applyRecovered: [...internal.applyRecovered, resolution],
+      notices: [...internal.notices, notice] };
+    try {
+      await captureAsync(() => recoverApply(id, resolution));
+    } catch (error) {
+      // A settle that meets divergent content leaves a manual-recovery journal;
+      // the next pass keeps the current target instead of stopping.
+      if (resolution !== "settle") return handoff(`Automatic ${resolution} recovery failed: ${error.message}`);
+    }
+    const result = await advanceThrough(id, through, next);
+    return { ...result, notices: [...new Set([...(result.notices || []), ...next.notices])] };
+  }
+
+  async function advanceThrough(id, through, internal = { applyRecovered: [], notices: [] }) {
     let stage = "build";
     const finish = async (value) => {
       if (issueSessionLease && value?.action === "EDIT") {
@@ -937,14 +1075,19 @@ export function createAdvanceRuntime({
           if (result?.conflicts?.length || result?.status === "CONFLICT")
             return projected(recovery.observe(id, withContext(id, envelope(id, "REPAIR", {
               actor: "agent", legacyAction: "REPAIR_SYNC_CONFLICT", boundary: "conflict",
-              reason: "Sandbox synchronization found conflicting changes; choose the intended result before merging.",
+              reason: "Sandbox synchronization found conflicting changes; choose the intended result before merging." +
+                (result.conflicts?.some((row) => row?.landedBy) ? " Keep every earlier change's landed " +
+                  "content; ask the user only if the two changes' intents contradict." : ""),
               details: result, recoveryType: "EDIT", resumeCommand: resume(id, through)
-            })), { force: true }));
-          return advanceThrough(id, through);
+            }))));
+          return advanceThrough(id, through, internal);
         } catch (error) {
           return projected(recovery.observe(id, failureAction(id, error, { stage, through })));
         }
       }
+      if (value.action === "REPAIR" && value.automaticRecovery?.kind === "apply-recovery" &&
+          recoverApply && through === "archived")
+        return recoverInterruptedApply(id, through, value, internal);
       return value;
     };
     let recordedPhase = null;
@@ -979,6 +1122,16 @@ export function createAdvanceRuntime({
         const pending = recovery.pending(id);
         if (pending && (pending.paused || pending.decision.kind !== "external-dependency"))
           return pendingAction(id, through, pending);
+        // A recorded user answer to an advance-owned decision is consumed
+        // once, by the step that raised it: the agreement resolution by the
+        // synchronization, the indeterminate retry by the next proof run.
+        const answer = internal.answer;
+        if (answer) delete internal.answer;
+        if (answer?.kind === "amended-agreement-conflict" && answer.choice !== "pause" &&
+            synchronizeAgreement)
+          await synchronizeAgreement(id, { resolve: `openspec/changes/${id}` });
+        const proofFlags = answer?.kind === "indeterminate-execution" && answer.choice === "retry"
+          ? { "retry-indeterminate": true, "decision-ref": answer.reference } : null;
         // Preparation is identity-reused and also owns recovery of failed
         // sandbox setup. Re-enter it while Build is active so a prior setup
         // failure cannot be bypassed by the next coordinator invocation.
@@ -990,6 +1143,10 @@ export function createAdvanceRuntime({
         // harness-issued lease and record the task before dispatching again.
         if (!explicitLand && settleSessionLeases && loadRuntime(id).status === "building")
           capture(() => settleSessionLeases(id));
+        // Implemented tasks whose execution record went stale are re-verified
+        // by the harness, never handed back as work to redo or diffs to split.
+        if (!explicitLand && reverifyCompletedTasks && loadRuntime(id).status === "building")
+          capture(() => reverifyCompletedTasks(id));
         // Build preparation already synchronizes a revised agreement. After
         // proof, the same safe sync replaces an operator `sandbox sync`: it
         // invalidates only evidence the revision touched, and Land would
@@ -1043,7 +1200,9 @@ export function createAdvanceRuntime({
               ["proven", "archived"].includes(through)) {
             if (!runProof) return finish(targetResume(value));
             stage = "prove";
-            operation = runProof;
+            const flags = proofFlags && !automation.proofFlagsUsed ? proofFlags : null;
+            if (flags) automation.proofFlagsUsed = true;
+            operation = flags ? (change) => runProof(change, flags) : runProof;
           } else if (value.legacyAction === "LAND_READY" && through === "archived") {
             // The explicit archived target authorizes Land only once the exact
             // proof is ready. Earlier phases and inspection grant nothing.
@@ -1075,7 +1234,7 @@ export function createAdvanceRuntime({
             return finish(targetResume(boundaryResult));
           const after = fingerprint(id);
           unchangedAutomations = before === after ? unchangedAutomations + 1 : 0;
-          if (unchangedAutomations >= 2) return noProgress(id, through);
+          if (unchangedAutomations >= 2) return noProgress(id, through, value, operationResult);
         }
       });
     } catch (error) {
@@ -1101,12 +1260,13 @@ export function createAdvanceRuntime({
     if (flags.inspect && (flags.through || flags.decision || flags["decision-ref"] || flags["decision-fingerprint"] || flags.reason))
       throw new Error("advance --inspect cannot execute --through; inspect first, then advance");
     let through = flags.through || null;
+    let answer = null;
     if (flags.decision) {
-      const answer = recovery.resolve(id, flags);
+      answer = recovery.resolve(id, flags);
       through ||= answer.through;
     }
     const value = flags.inspect ? advanceValue(id, { inspect: true })
-      : await advanceThrough(id, through);
+      : await advanceThrough(id, through, { applyRecovered: [], notices: [], answer });
     if (!flags.through && !flags.inspect &&
         process.env.FOUNDATION_READ_ONLY_INSPECTION !== "1") {
       const phase = phaseForAction(value);
@@ -1128,11 +1288,15 @@ export async function prepareAdvanceBuild(context, id) {
 // Only the `advance --through proven|archived` route runs a harness-runnable
 // configured review beside the executable providers; `proof advance` stays
 // serial.
-export async function runAdvanceProof(context, id) {
+export async function runAdvanceProof(context, id, flags = null) {
   return context.measureAsync("prove.execute", () =>
-    context.runQuietly(() => context.proofAdvance(id, {
-      quiet: true, concurrentReview: true
-    })));
+    context.runQuietly(() => {
+      // Prove validates the agreement with the strict OpenSpec lint, so a
+      // resumed Prove re-prepares the tool Build prepared, like Land does.
+      context.prepareExecution(id, { stage: "prove" });
+      // `flags` carries only a recorded user answer to an indeterminate run.
+      return context.proofAdvance(id, { ...(flags || {}), quiet: true, concurrentReview: true });
+    }));
 }
 
 export function hasValidLandGrant(landGrantRuntime, id) {

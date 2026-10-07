@@ -8,6 +8,10 @@ import {
   parseExecutedTestEvidence, parseRunnerSummaryOutput
 } from "./evidence-results.mjs";
 import { repositoryBaseHead } from "../core/repository-binding.mjs";
+import {
+  environmentIdentity, readTaskCheckExecution, sameArgv, taskCheckArgv,
+  taskCheckExecutionPath, taskCheckReuseRefusal, writeTaskCheckExecution
+} from "./task-check-evidence.mjs";
 
 export function serviceStartBatch(entries, maxParallel, conflicts,
   completed = new Set()) {
@@ -374,13 +378,15 @@ export function createAdapterRuntime({
   serviceResourcesConflict,
   maxParallelServices,
   recordScheduler,
-  timestamp
+  timestamp,
+  clearSnapshotCache = null,
+  spawnCommandSync = spawnSync
 }) {
-  function providerRepositoryManifest(id, provider, config, proofRunId) {
+  function providerRepositoryManifest(id, provider, config, proofRunId, failWith = die) {
     const state = loadRuntime(id);
     const rows = providerRepositories(id, provider, config);
     const value = providerRepositoryManifestValue({
-      pathExists: existsSync, repositoryStatus, die
+      pathExists: existsSync, repositoryStatus, die: failWith
     }, id, provider, state, rows);
     const path = join(LOGS, id, `${proofRunId}-${provider}-repositories.json`);
     mkdirSync(dirname(path), { recursive: true });
@@ -507,19 +513,50 @@ export function createAdapterRuntime({
     });
   }
 
+  function adapterEnvironment(id, context, config, proofRunId, commandExecutionId) {
+    const { repository, repositoryManifest, cwd, envFrom } = context;
+    return providerExecutionEnvironment(process.env, {
+      ...envFrom, ...(config.env || {}),
+      FOUNDATION_CHANGE_ID: id, FOUNDATION_CONTROL_ROOT: ROOT,
+      FOUNDATION_REPOSITORY_ID: repository?.id || "root",
+      FOUNDATION_REPOSITORIES_FILE: repositoryManifest.path,
+      FOUNDATION_PROOF_RUN_ID: proofRunId,
+      FOUNDATION_COMMAND_EXECUTION_ID: commandExecutionId,
+      FOUNDATION_EXECUTION_ID: commandExecutionId
+    }, cwd);
+  }
+
+  // A Build task check that ran this exact execution on this exact content
+  // stands in for running it again; its captured output is parsed and
+  // receipted below exactly like a fresh run's.
+  function preparedTaskCheckExecution(id, context, config) {
+    const { provider } = context;
+    if (taskCheckReuseRefusal(config, providerCapability(provider, config))) return null;
+    const environment = environmentIdentity(
+      adapterEnvironment(id, context, config, "", ""), stableHash);
+    const record = readTaskCheckExecution(
+      taskCheckExecutionPath(LOGS, id, context.dedupKey), {
+        dedupKey: context.dedupKey, environment,
+        workspaceHash: providerWorkspaceHash(
+          id, provider, context.state.activeProofRun?.workspaceHash)
+      }, stableHash);
+    return record ? {
+      commandExecutionId: record.commandExecutionId,
+      reusedTaskCheck: record.taskId,
+      result: Promise.resolve({ ...record.result, error: null })
+    } : null;
+  }
+
   function cachedAdapterExecution(id, proofRunId, context, config, commandCache) {
-    const { repository, repositoryManifest, cwd, built, envFrom, dedupKey } = context;
+    const { cwd, built, dedupKey } = context;
     if (!commandCache.has(dedupKey)) {
+      const prepared = preparedTaskCheckExecution(id, context, config);
+      if (prepared) {
+        commandCache.set(dedupKey, prepared);
+        return prepared;
+      }
       const commandExecutionId = `command-${Date.now()}-${commandCache.size + 1}`;
-      const executionEnv = providerExecutionEnvironment(process.env, {
-        ...envFrom, ...(config.env || {}),
-        FOUNDATION_CHANGE_ID: id, FOUNDATION_CONTROL_ROOT: ROOT,
-        FOUNDATION_REPOSITORY_ID: repository?.id || "root",
-        FOUNDATION_REPOSITORIES_FILE: repositoryManifest.path,
-        FOUNDATION_PROOF_RUN_ID: proofRunId,
-        FOUNDATION_COMMAND_EXECUTION_ID: commandExecutionId,
-        FOUNDATION_EXECUTION_ID: commandExecutionId
-      }, cwd);
+      const executionEnv = adapterEnvironment(id, context, config, proofRunId, commandExecutionId);
       commandCache.set(dedupKey, {
         commandExecutionId,
         result: runCommand(built.command, built.args, {
@@ -540,12 +577,97 @@ export function createAdapterRuntime({
     const built = configuredCommand(provider, config);
     const envFrom = resolvedEnvironmentVariables(config);
     const context = {
-      state, repository, cwd, repositoryManifest, built, envFrom,
+      provider, state, repository, cwd, repositoryManifest, built, envFrom,
       dedupKey: adapterExecutionKey(cwd, built, repository, scope, config, envFrom)
     };
     return {
       ...context,
       cached: cachedAdapterExecution(id, proofRunId, context, config, commandCache)
+    };
+  }
+
+  function freshProviderHash(id, provider) {
+    if (!clearSnapshotCache) return null;
+    clearSnapshotCache(id);
+    return providerWorkspaceHash(id, provider);
+  }
+
+  // The required provider whose execution a task check's command is, or null.
+  function taskCheckProvider(id, check, state) {
+    const argv = taskCheckArgv(check.command);
+    const taskCwd = state.repositories?.[check.repository]?.path ||
+      (check.repository === "root" ? state.workspace?.path : null);
+    if (!argv || !taskCwd) return null;
+    for (const provider of requiredProviders(id)) {
+      const config = providerConfig(id, provider);
+      if (!Array.isArray(config?.command) ||
+          taskCheckReuseRefusal(config, providerCapability(provider, config))) continue;
+      const built = configuredCommand(provider, config);
+      if (!sameArgv(argv, built)) continue;
+      const repository = providerRepository(id, provider, config);
+      const cwd = repository?.workspacePath || state.workspace?.path || ROOT;
+      if (resolve(cwd) === resolve(taskCwd)) return { provider, config, repository, cwd, built };
+    }
+    return null;
+  }
+
+  function taskCheckContext(id, check, state, executionId) {
+    const matched = taskCheckProvider(id, check, state);
+    if (!matched) return null;
+    const { provider, config, repository, cwd, built } = matched;
+    const repositoryManifest = providerRepositoryManifest(id, provider, config, executionId,
+      (message) => { throw new Error(message); });
+    const envFrom = resolvedEnvironmentVariables(config);
+    const scope = repositoryExecutionRows(state, repositoryManifest);
+    return {
+      provider, config, state, repository, cwd, repositoryManifest, built, envFrom,
+      dedupKey: adapterExecutionKey(cwd, built, repository, scope, config, envFrom),
+      before: freshProviderHash(id, provider)
+    };
+  }
+
+  // Build: a task check that is exactly a required provider's command runs the
+  // provider's way, and a clean pass on content it did not change is kept for
+  // Prove. Returns null when no provider matches (or the match cannot be
+  // established), so the caller runs the plain shell check instead.
+  function runTaskCheckAsEvidence(id, check) {
+    const executionId = `taskcheck-${Date.now()}`;
+    let context;
+    try {
+      context = taskCheckContext(id, check, loadRuntime(id), executionId);
+    } catch {
+      return null;
+    }
+    if (!context) return null;
+    const { provider, config, cwd, built } = context;
+    const env = adapterEnvironment(id, context, config, executionId, executionId);
+    const startedAt = now();
+    const startedMs = Date.now();
+    const spawned = spawnCommandSync(built.command, built.args, {
+      cwd, env, encoding: "utf8", timeout: Number(config.timeoutMs || 120000),
+      maxBuffer: 64 * 1024 * 1024
+    });
+    const result = {
+      status: spawned.status ?? null, signal: spawned.signal || null, error: null,
+      stdout: spawned.stdout || "", stderr: spawned.stderr || "",
+      timedOut: false, readinessObserved: true,
+      startedAt, finishedAt: now(), durationMs: Date.now() - startedMs
+    };
+    // A spawn failure or timeout is not a verdict on the task: the caller's
+    // plain check (with its own budget) decides instead.
+    if (spawned.error) return null;
+    const passed = result.status === 0;
+    let after = null;
+    try { after = passed ? freshProviderHash(id, provider) : null; } catch { after = null; }
+    if (passed && context.before && context.before === after)
+      writeTaskCheckExecution(taskCheckExecutionPath(LOGS, id, context.dedupKey), {
+        changeId: id, taskId: check.taskId, provider, dedupKey: context.dedupKey,
+        environment: environmentIdentity(env, stableHash), workspaceHash: after,
+        commandExecutionId: executionId, result
+      }, stableHash);
+    return {
+      status: passed ? "pass" : "fail", exitCode: result.status, provider,
+      output: result.stdout + result.stderr
     };
   }
 
@@ -601,7 +723,9 @@ export function createAdapterRuntime({
   }
 
   function adapterBaseFlags(id, provider, config, proofRunId, execution, suppliedEvidence) {
-    const { state, built, result, commandExecutionId } = execution;
+    const { state, built, result, commandExecutionId, reusedTaskCheck } = execution;
+    const reused = reusedTaskCheck
+      ? `; reused Build task check ${reusedTaskCheck} (same command, cwd, environment, content)` : "";
     return {
       config, adapter: config.adapter, proofRunId, commandExecutionId,
       workspaceHash: providerWorkspaceHash(
@@ -611,7 +735,7 @@ export function createAdapterRuntime({
       observed: result.timedOut ? `timeout after ${result.durationMs}ms` :
         result.error ? result.error.message :
         `exit ${result.status}; ${result.durationMs}ms; readiness ${
-          result.readinessObserved ? "observed" : "not-observed"}`,
+          result.readinessObserved ? "observed" : "not-observed"}${reused}`,
       durationMs: result.durationMs,
       log: suppliedEvidence.logArtifact.path, artifacts: suppliedEvidence.artifacts,
       environment: config.environment || null, project: config.project || null
@@ -826,6 +950,7 @@ export function createAdapterRuntime({
       id, provider, config, proofRunId, commandCache);
     execution.result = await execution.cached.result;
     execution.commandExecutionId = execution.cached.commandExecutionId;
+    execution.reusedTaskCheck = execution.cached.reusedTaskCheck || null;
     assertReadRepositories(provider, execution.repositoryManifest.rows);
     const evidenceRow = adapterEvidence(id, provider, config, execution);
     const baseFlags = adapterBaseFlags(
@@ -857,6 +982,7 @@ export function createAdapterRuntime({
     startRequiredServices,
     executionLog,
     adapterResources,
-    executeAdapter
+    executeAdapter,
+    runTaskCheckAsEvidence
   };
 }

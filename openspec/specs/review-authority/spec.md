@@ -64,14 +64,17 @@ reference has not been used before, acknowledges the consumed reviewer
 infrastructure attempts so they no longer count against the infrastructure
 retry bound, without mutating the recorded attempt chain.
 
-#### Scenario: Harness resets once per review wave
+#### Scenario: Harness resets once per review wave and reviewer configuration
 
 - **WHEN** a review dispatch finds the infrastructure retry exhausted and the
   configured reviewer diagnosis passes
 - **THEN** the harness acknowledges the consumed attempts under the reference
-  `harness:infra:wave-<n>` without a user decision
-- **AND** a second exhaustion in the same wave keeps the bound consumed and
-  names `authority reset-infra` as the user-decided route
+  `harness:infra:wave-<n>:<reviewer-configuration>` without a user decision
+- **AND** a second exhaustion in the same wave under the same configuration
+  keeps the bound consumed and names the reviewer's owner, not the user
+- **AND** a repaired, changed reviewer configuration earns its own reset
+
+The `authority reset-infra` primitive remains an operator override.
 
 #### Scenario: Harness releases a base-move expiry
 

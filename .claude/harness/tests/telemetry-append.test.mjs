@@ -217,7 +217,7 @@ test("a declared blocker code wins over message text", () => {
   assert.equal(decision.reason, "choose workspace strategy");
   assert.equal(decision.recovery, "claude-foundation packet change-a --phase prove");
   assert.equal(blockerTelemetryValue({ code: "execution-indeterminate", reason: "x" },
-    { changeId: "change-a" }).recovery, "claude-foundation proof advance change-a");
+    { changeId: "change-a" }).recovery, "claude-foundation advance change-a --through proven");
   assert.equal(blockerTelemetryValue({ code: "unknown-code", reason: "budget hit" }, {}).code,
     "budget-exhausted");
 });

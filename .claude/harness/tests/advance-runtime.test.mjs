@@ -34,12 +34,14 @@ test("advance phase operations measure harness-owned Build and Prove work", asyn
   }, "change-a");
   await runAdvanceProof({
     measureAsync, runQuietly,
+    prepareExecution: (id, options) => calls.push(["execution", id, options]),
     proofAdvance: (id, options) => calls.push(["proof", id, options])
   }, "change-a");
   assert.deepEqual(calls, [
     "build.prepare", ["sandbox", "change-a"],
     ["execution", "change-a", { stage: "build" }],
-    "prove.execute", ["proof", "change-a", { quiet: true, concurrentReview: true }]
+    "prove.execute", ["execution", "change-a", { stage: "prove" }],
+    ["proof", "change-a", { quiet: true, concurrentReview: true }]
   ]);
 });
 
@@ -60,6 +62,29 @@ test("advance returns bounded Build work without invoking a model", () => {
   assert.equal(value.legacyAction, "EXECUTE_TASK");
   assert.equal(value.boundary, "host-execution");
   assert.equal(value.resumeCommand, "claude-foundation advance change-a");
+});
+
+test("a task with a stale execution record is handed back as re-verification, not new work", () => {
+  const value = coordinatorAction({
+    ...base,
+    dispatch: { action: "run-in-session", reason: "one repository" },
+    plan: {
+      tasks: [{ id: "T002", text: "Add it — verify: `go test ./...`", repository: "root",
+        paths: ["api.go"] }],
+      verification: [
+        { taskId: "T002", reason: "stale or invalid result authority: taskAuthority" },
+        { taskId: "T009", reason: "not selected" }
+      ]
+    }
+  });
+  assert.equal(value.action, "EDIT");
+  assert.deepEqual(value.reverification, [
+    { taskId: "T002", reason: "stale or invalid result authority: taskAuthority" }
+  ]);
+  const notes = value.instructions.join(" ");
+  assert.match(notes, /T002 is already implemented; its execution record is stale/);
+  assert.match(notes, /Do not re-implement it or split the diff per task/);
+  assert.doesNotMatch(notes, /T009/);
 });
 
 test("a sequential session plan hands every pending task in dependency order", () => {
@@ -121,7 +146,7 @@ test("changed repair workspace routes to invalidated evidence", () => {
   assert.equal(value.action, "RUN_EXTERNAL");
   assert.equal(value.legacyAction, "RUN_INVALIDATED_EVIDENCE");
   assert.equal(value.boundary, null);
-  assert.equal(value.command, "claude-foundation proof advance change-a");
+  assert.equal(value.command, "claude-foundation advance change-a --through proven");
 });
 
 test("advance returns configured review and user authority boundaries", () => {
@@ -252,7 +277,23 @@ test("advance uses proof readiness hash and does not hash failed infrastructure 
   assert.equal(value.action, "REPAIR");
   assert.equal(value.legacyAction, "REPAIR_PROVIDER_ENVIRONMENT");
   assert.equal(value.command,
-    "claude-foundation sandbox create change-a --all");
+    "claude-foundation advance change-a");
+});
+
+test("a reached target reports the latest AI review's spec gaps without changing the outcome", async () => {
+  const gaps = [{ scenario: "fractional count", reason: "not named" }];
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => ({ status: "archived" }), stableHash,
+    deliveredAiAttempts: () => [{ specGaps: [{ scenario: "stale" }] }, { specGaps: gaps }]
+  });
+  const result = await runtime.advanceThrough("change-a", "archived");
+  assert.equal(result.action, "DONE");
+  assert.equal(result.reached, "archived");
+  assert.deepEqual(result.reviewAdvisories, { specGaps: gaps });
+  const clean = await createAdvanceRuntime({
+    loadRuntime: () => ({ status: "archived" }), stableHash, deliveredAiAttempts: () => [{}]
+  }).advanceThrough("change-a", "archived");
+  assert.equal(clean.reviewAdvisories, undefined, "no gaps add no advisory field");
 });
 
 test("explicit archive continuation recovers the moved packet before active approval checks", async () => {
@@ -392,6 +433,48 @@ test("plain advance prepares the amended agreement before choosing work", async 
   assert.equal(value.action, "EDIT", JSON.stringify(value));
 });
 
+test("one coordinator read plans the task graph once for dispatch and Build", () => {
+  const plan = { tasks: [{ id: "T001", text: "Implement", repository: "root", paths: ["src/**"] }] };
+  let plans = 0;
+  const handed = [];
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => ({ status: "building", workspace: { path: "/tmp/change" } }),
+    agentPlanValue: () => { plans += 1; return plan; },
+    agentDispatchValue: (_id, _options, planned) => {
+      handed.push(planned);
+      return { action: "run-in-session", packetCommand: "packet", task: { taskId: "T001" } };
+    },
+    relevantHash: () => "workspace-a", deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => ({}), proofAdvancePath: () => "/proof.json", stableHash
+  });
+  const value = runtime.advanceValue("change-a");
+  assert.equal(value.action, "EDIT", JSON.stringify(value));
+  assert.equal(plans, 1);
+  assert.deepEqual(handed, [plan]);
+  // A second read re-plans: reuse never outlives the read that compiled it.
+  runtime.advanceValue("change-a");
+  assert.equal(plans, 2);
+});
+
+test("a planning failure still reaches dispatch, which reports it", () => {
+  const handed = [];
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => ({ status: "building" }),
+    agentPlanValue: () => { throw new Error("task dependency cycle: T001 -> T001"); },
+    agentDispatchValue: (_id, _options, planned) => {
+      handed.push(planned);
+      throw new Error("task dependency cycle: T001 -> T001");
+    },
+    relevantHash: () => "workspace-a", deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => ({}), proofAdvancePath: () => "/proof.json", stableHash
+  });
+  const value = runtime.advanceValue("change-a");
+  assert.deepEqual(handed, [null]);
+  assert.match(value.reason, /task dependency cycle/);
+});
+
 test("advance preserves exact runtime failures in a repair envelope", () => {
   const reason = "isolated runtime state is missing repository 'api'; repair it with 'claude-foundation sandbox create change-a --all'";
   const runtime = createAdvanceRuntime({
@@ -405,9 +488,10 @@ test("advance preserves exact runtime failures in a repair envelope", () => {
   const value = runtime.advanceValue("change-a");
   assert.equal(value.action, "REPAIR");
   assert.equal(value.legacyAction, "REPAIR_BUILD_RUNTIME");
-  assert.equal(value.reason, reason);
+  assert.equal(value.reason, reason.replace("sandbox create change-a --all", "advance change-a"),
+    "a primitive named in diagnostic text is routed through advance");
   assert.equal(value.command,
-    "claude-foundation sandbox create change-a --all");
+    "claude-foundation advance change-a");
   assert.equal(value.resume, "claude-foundation advance change-a");
 });
 
@@ -443,7 +527,9 @@ test("advance --through converts prepare and Land failures without rejecting", a
   assert.equal(land.action, "REPAIR");
   assert.equal(land.legacyAction, "REPAIR_LAND_RUNTIME");
   assert.equal(land.reason, "land conflict route");
-  assert.equal(land.command, "claude-foundation land check change-a");
+  // Land's fallback is the Land route itself, never the internal `land check`.
+  assert.equal(land.command, "claude-foundation advance change-a --through archived");
+  assert.doesNotMatch(JSON.stringify(land), /land check/);
 });
 
 test("advance convergence follows semantic progress beyond 32 proof runs", async () => {
@@ -481,9 +567,14 @@ test("advance convergence stops only after repeated unchanged automation", async
     runProof: async () => { proofRuns += 1; return { progressed: false }; }
   });
   const value = await runtime.advanceThrough("change-a", "proven");
-  assert.equal(value.action, "ASK_USER");
+  // Unchanged automation hands the stuck step to the agent with what it
+  // returned; the recovery ladder asks the user only after repeated repair.
+  assert.equal(value.action, "REPAIR");
+  assert.equal(value.owner, "agent");
   assert.equal(value.boundary, "repeated-no-progress");
-  assert.equal(value.decision.kind, "repair-no-progress");
+  assert.equal(value.recovery.type, "HANDOFF");
+  assert.match(value.reason, /RUN_PROOF/);
+  assert.equal(value.command, "claude-foundation advance change-a --inspect");
   assert.equal(proofRuns, 2);
 });
 

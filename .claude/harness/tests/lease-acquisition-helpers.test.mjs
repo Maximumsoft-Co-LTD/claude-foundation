@@ -385,7 +385,13 @@ test("observed release writes enforce graph authority and granted path scopes", 
   assert.ok(observedLeaseWrites(stray, "change", lease, false).includes("docs/readme.md"));
   assert.throws(() => observedLeaseWrites({
     ...stray, workspaceLeases: () => [{ taskId: "T002", paths: ["docs/**"] }]
-  }, "change", lease, false), /outside granted scope: docs\/readme\.md/);
+  }, "change", lease, false), (error) => {
+    assert.match(error.message, /outside granted scope: docs\/readme\.md/);
+    assert.match(error.message, /revert them, then release again/);
+    assert.doesNotMatch(error.message, /agents acquire/,
+      "the lease is still held, so recovery never re-acquires");
+    return true;
+  });
 });
 
 test("locked release fences resources and persists observed or takeover results", () => {

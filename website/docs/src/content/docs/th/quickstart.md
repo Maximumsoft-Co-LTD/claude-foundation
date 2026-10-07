@@ -52,8 +52,9 @@ execution, repository scope และ handoff จะมีเมื่อ concer
 /build add-profile-auth
 ```
 
-Agent เรียก `advance add-profile-auth --through build` Coordinator จะสร้าง
-workspace แยก คืน action ที่มีขอบเขตหนึ่งตัว และ resume ด้วย route เดิม
+Agent เรียก `advance add-profile-auth --through proven` Coordinator จะสร้าง
+workspace แยก คืน action ที่มีขอบเขตหนึ่งตัว และ resume ด้วย route เดิม โดย proof
+เริ่มหลัง Build เสร็จแล้วเท่านั้น
 **working tree ของคุณไม่ถูกแตะ** และ `tasks.md` เป็น ledger เดียว ผู้ใช้ไม่ต้อง
 ประกอบ sandbox, packet, plan หรือ dispatch command
 

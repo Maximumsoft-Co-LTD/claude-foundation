@@ -12,18 +12,17 @@ agent-runnable review, routes configured review, and finalizes proof.
 Execute each protocol-v6 action, then its exact `resume`. `REPAIR` and `EDIT`
 return a bounded invalidation/repair set to apply whole; `RUN_EXTERNAL` names
 one configured external boundary. Stay in-session while a review runs: ending
-the reply kills it. Never rerun unchanged checks or search for alternate
-commands. Never fabricate evidence or invent a checker.
+the reply kills it. Unchanged checks are reused; rerun one only to
+diagnose a failure. Never fabricate evidence or invent a checker.
 
-## Gate: review timeout or no progress
+## Gate: no progress
 
-Review shares one 30-minute window that extends once automatically. At the
-next expiry, or after repeated no-progress, report completed findings, what
-was tried, and unreviewed scope. Let the user choose another window, Land with
-explicit risk acceptance, or pause; record the answer through
+After repeated no-progress, report completed findings, what was tried, and
+unreviewed scope. Let the user choose further work, Land with explicit risk
+acceptance, or pause; record the answer through
 `.claude/skills/prove/references/workflow.md`. Read that reference otherwise
 only for a named non-automatic boundary.
 
 Never Land. `DONE` at `proven` is success for this command, not delivery.
-Report what passed, what remains unproven, and the next action in the
-user's language.
+Report what passed, what remains unproven, any `reviewAdvisories.specGaps`,
+and the next action in the user's language.

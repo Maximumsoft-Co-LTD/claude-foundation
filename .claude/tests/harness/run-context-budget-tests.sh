@@ -1,6 +1,10 @@
 #!/usr/bin/env sh
 
 set -eu
+# Word counts depend on the locale (UTF-8 punctuation counts as words in
+# C.UTF-8); pin CI's locale so local and CI budgets agree.
+LC_ALL=C.UTF-8
+export LC_ALL
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 . "$ROOT/.claude/tests/lib/assert.sh"
@@ -159,8 +163,8 @@ else
     "AGENT.md + dev.md + change/build/prove/land.md"
 fi
 # Shared rules have one home. Spot-check distinctive phrases.
-for phrase in 'No preflight' 'agent-only control data' 'One command per shell call' \
-  'hand-edit' 'Never read `.claude/harness/**`' 'in any wording' \
+for phrase in 'No preflight' 'agent-only control data' 'cd <workspace>` once' \
+  'hand-edit' 'Recover from the envelope first' 'in any wording' \
   'Silence grants neither' 'contextScope.specs'; do
   assert_file_contains "shared rule lives in AGENT.md: $phrase" \
     "$ROOT/.claude/harness/AGENT.md" "$phrase"
@@ -202,11 +206,11 @@ assert_file_contains "change uses atomic start" \
 assert_file_contains "build loads its policy only on triggers" \
   "$ROOT/.claude/commands/build.md" 'Read `references/build-policy.md` for a new user request'
 assert_file_contains "build implements a whole single-session batch" \
-  "$ROOT/.claude/commands/build.md" 'all tasks in one `EDIT`'
+  "$ROOT/.claude/commands/build.md" 'One `EDIT` may carry several tasks'
 assert_file_contains "prove keeps review in-session" \
   "$ROOT/.claude/commands/prove.md" 'Stay in-session while a review runs'
-assert_file_contains "prove owns the review timeout gate" \
-  "$ROOT/.claude/commands/prove.md" 'Gate: review timeout or no progress'
+assert_file_contains "prove owns the no-progress gate" \
+  "$ROOT/.claude/commands/prove.md" 'Gate: no progress'
 assert_file_contains "land uses the same advance route as /dev" \
   "$ROOT/.claude/commands/land.md" 'Run `claude-foundation advance <change> --through archived`'
 assert_file_not_contains "land never teaches the internal land advance route" \
@@ -310,7 +314,7 @@ assert_cmd_zero "atomic draft template stays semantic and minimal" \
   sh -c 'node "$1" start --template | jq -e '\''
     .version == 4 and (.requirements | length) == 1 and
     (.tasks[0].covers | length) == 1 and (.evidence | type) == "object" and
-    (.discovery.coverage | length) == 9 and
+    (.discovery.coverage | length) == 4 and
     (has("domainLanguage") | not) and (has("execution") | not)'\'' >/dev/null' \
   sh "$ROOT/.claude/harness/foundation.mjs"
 assert_file_contains "fundamentals records decision answers in the change packet" \
@@ -372,7 +376,7 @@ assert_file_contains "change audit warnings do not reopen grounding" \
   'Optional audit warnings are advisory'
 assert_file_contains "build command names unified transition" \
   "$ROOT/.claude/commands/build.md" \
-  'advance <change> --through build'
+  'advance <change> --through proven'
 if grep -qF 'proof execute' "$ROOT/website/index.html"; then
   fail "public website uses canonical proof command"
 else

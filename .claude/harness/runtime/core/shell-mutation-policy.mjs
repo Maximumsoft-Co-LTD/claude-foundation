@@ -292,11 +292,14 @@ function dynamicPathToken(command) {
 }
 
 const INTERPRETER = /\b(?:python(?:3(?:\.\d+)?)?|node|ruby|perl)\b/i;
-const INTERPRETER_WRITE = /(?:\bopen\s*\([^\n)]*,\s*['"][wax+]|\.write(?:_text|_bytes)?\s*\(|\b(?:writeFile|writeFileSync|appendFile|appendFileSync|createWriteStream|renameSync|rmSync|unlinkSync|mkdirSync|copyFileSync)\s*\()/i;
+// `process.stdout.write(` and `sys.stderr.write(` print; they write no file.
+const INTERPRETER_WRITE = /(?:\bopen\s*\([^\n)]*,\s*['"][wax+]|(?<!std(?:out|err))\.write(?:_text|_bytes)?\s*\(|\b(?:writeFile|writeFileSync|appendFile|appendFileSync|createWriteStream|renameSync|rmSync|unlinkSync|mkdirSync|copyFileSync)\s*\()/i;
 const FORMATTER_WRITE = /(^|[;&|`()]|\b(?:then|do)\b)\s*(?:sudo\s+|env\s+)*(?:(?:npx|pnpm\s+(?:exec|dlx)|yarn\s+dlx|bunx)\s+)?(?:prettier\b[^\n;&|]*\s--write\b|eslint\b[^\n;&|]*\s--fix\b|ruff\b[^\n;&|]*\s(?:format|check\b[^\n;&|]*\s--fix\b)|black\b|gofmt\b[^\n;&|]*\s-w\b|cargo\s+fmt\b)/m;
-const MUTATING_WORD = /(?:^|[;&|`()]|\b(?:then|do)\b)\s*(?:sudo\s+|env\s+)*(?:[^\s;&|()]+\/)*(rm|mv|cp|ln|install|mkdir|rmdir|touch|truncate|tee|chmod|chown|patch|git\s+(?:add|tag|commit|push|merge|rebase|checkout|switch|restore|reset|clean|apply|rm|mv|cherry-pick|revert|stash|am|pull|worktree|submodule)|npm\s+(?:install|publish|run|exec)|npx|pnpm\s+(?:install|publish|run|exec|dlx)|yarn\s+(?:add|install|publish|run|dlx)|bun\s+(?:install|run)|bunx|sh\s+\S+|bash\s+\S+|zsh\s+\S+)\b/gm;
-const IN_PLACE_EDIT = /(^|[;&|`()]|\b(?:then|do)\b)\s*(?:sudo\s+|env\s+)*(?:sed|perl|ruby)\s+(?:-\S+\s+)*-\S*i/m;
-const REDIRECT = /(?:^|[^<])(?:>>?|2>>?)\s*(?!&)(?!\/dev\/null(?:[\s;&|)]|$))\S/m;
+const MUTATING_WORD = /(?:^|[;&|`()]|\b(?:then|do)\b)\s*(?:sudo\s+|env\s+)*(?:[^\s;&|()]+\/)*(rm|mv|cp|ln|install|mkdir|rmdir|touch|truncate|tee|chmod|chown|patch|git\s+(?:add|tag|commit|push|merge|rebase|checkout|switch|restore|reset|clean|apply|rm|mv|cherry-pick|revert|stash(?!\s+(?:list|show)\b)|am|pull|worktree(?!\s+list\b)|submodule(?!\s+(?:status|summary)\b))|npm\s+(?:install|publish|run|exec)|npx|pnpm\s+(?:install|publish|run|exec|dlx)|yarn\s+(?:add|install|publish|run|dlx)|bun\s+(?:install|run)|bunx|sh\s+\S+|bash\s+\S+|zsh\s+\S+)\b/gm;
+// `-M`/`-I` take a module or include path (`perl -Mstrict`), not switches.
+const IN_PLACE_EDIT = /(^|[;&|`()]|\b(?:then|do)\b)\s*(?:sudo\s+|env\s+)*(?:sed|perl|ruby)\s+(?:-\S+\s+)*-(?![MI])\S*i/m;
+// Output sent to the terminal's own streams is not a file write.
+const REDIRECT = /(?:^|[^<])(?:>>?|2>>?)\s*(?!&)(?!\/dev\/(?:null|stdout|stderr)(?:[\s;&|)]|$))\S/m;
 
 // The harness CLI is one program however the host spells it: through `npx`
 // (optionally `--no-install`, `--no`, `-y`, `--yes`) or by a path to its bin.
@@ -312,10 +315,15 @@ export function normalizeHarnessCliInvocations(command) {
 // permits some operations and refuses others has to name the ones it refused.
 export function mutatingShellOperations(command) {
   const value = String(command || "");
+  // A quoted heredoc body is data: `a => b` or a line starting with `install`
+  // in a script fed to `node` is neither a redirect nor a command. Bodies the
+  // shell expands stay screened. The interpreter screen below still reads the
+  // whole command, because that code is what the interpreter runs.
+  const commandLine = withoutHeredocBodies(value, (body) => !body.literal);
   // Quoted text is opaque to the word screens, but it is still an operand:
   // erasing it entirely made `> "/etc/x"` read as a redirect with no target.
   const stripped = normalizeHarnessCliInvocations(
-    value.replace(/(['"])(?:\\.|(?!\1).)*\1/g, " _ "));
+    commandLine.replace(/(['"])(?:\\.|(?!\1).)*\1/g, " _ "));
   const operations = [];
   if (INTERPRETER.test(value) && INTERPRETER_WRITE.test(value))
     operations.push("interpreter write");
@@ -357,8 +365,12 @@ export function shellMutationViolation(phase, environment, command = null, inspe
   if (operations !== null && operations.length === 0) return null;
   if (phase === "prove" || phase === "change" || phase === "investigate")
     return `${phase === "prove" ? "Prove" : phase === "change" ? "Change" : "Investigate"} cannot run mutating shell commands`;
+  // An opaque script runner can write anywhere in the target, and Land only
+  // restores paths in its own projection, so it needs the transaction too.
+  // Read-only test commands (`node --test`) are not mutations and still run.
   if (phase === "land" && environment.FOUNDATION_LAND_TRANSACTION !== "1")
-    return "Land shell mutations require the runtime transaction marker";
+    return "Land shell mutations require the runtime transaction marker; Land writes the " +
+      "target itself, and Prove already ran the checks in the isolated workspace";
   if (phase === "build") {
     const workspace = environment.FOUNDATION_WORKSPACE_ROOT;
     if (!workspace) return "Build shell mutations require an isolated workspace";
@@ -374,7 +386,7 @@ export function shellMutationViolation(phase, environment, command = null, inspe
         !within(workspace, anchor.target)))
       return "Build shell mutations must start inside the isolated workspace " +
         `(refused: ${operations.join(", ")}); ` +
-        `start the command with \`cd ${root} && \` or \`cd ${hintPath(workspace, "/<subdir>")} && \``;
+        `run \`cd ${root}\` as its own call first (the shell keeps it), or start the command with \`cd ${hintPath(workspace, "/<subdir>")} && \``;
     if (dynamic === null && anchor.separator === ";" && !sameDirectory(workspace, anchor.target))
       return "Build shell mutations must start inside the isolated workspace " +
         `(\`${anchor.word};\` continues even when the directory change fails); ` +

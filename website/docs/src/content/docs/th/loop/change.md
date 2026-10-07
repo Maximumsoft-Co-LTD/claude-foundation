@@ -57,7 +57,13 @@ change พร้อมแสดงรายชื่อไฟล์ใน packet
 สำหรับ change ทั่วไป และบังคับเฉพาะเมื่อ `impact: high` หรือประกาศ typed risk
 (`riskSignals`, security trigger, integration, external operation) แต่ละมิติระบุว่า
 ถูก cover, ไม่เกี่ยวข้องพร้อมเหตุผล (เหตุผลอย่างเดียวก็พอ), ต้อง investigate หรือต้องถามผู้ใช้
-Harness ไม่สแกน keyword จาก prose
+Harness ไม่สแกน keyword จาก prose มิติที่บังคับซึ่ง draft เขียนไว้แล้วไม่ต้องมี row:
+harness จะ derive row `covered` ที่ระบุว่า derived ไว้ใน appendix ของ proposal จาก
+`currentState`, `userStories`, requirement, `kind` ของ scenario (`success`,
+`failure`, `boundary`), `compatibility`, `nonGoals`, task ที่มี `verify` และ evidence,
+`failureMatrix`, `apiContracts`, `dataModel`, `uiStates`, `jobContract` หรือ
+`integrations` ที่มีเอกสาร ถ้าไม่มีเนื้อหารองรับมิตินั้นจะยังขาดอยู่ และ row ที่ agent
+เขียนเองชนะเสมอ ดังนั้น row `needs-user-decision` ยังถูกถามผู้ใช้เหมือนเดิม
 ตัวอย่างโครงสร้างเต็มดูได้
 จาก `claude-foundation change start --template`
 
@@ -85,11 +91,16 @@ claude-foundation change start .foundation/drafts/<id>.json
 เพิ่มเฉพาะเมื่อจำเป็น:
 
 - requirement หลายตัว แยก `capability` และ `operation`
-- `workType` (list เช่น `["feature", "api", "ui"]`) และ design blueprint ที่
-  workType เลือก: `fileMap`, `failureMatrix`, `testMap` และ `apiContracts`,
-  `dataModel`, `uiStates`, `configContract`, `jobContract`, `bugfix` หรือ
-  `refactor` ถ้าขาดจะเป็น design warning ที่ไม่บล็อก เช่นเดียวกับ task ที่เทสของตัวเอง
-  อยู่นอก `paths`
+- section ของ dev document: `summary`, `userFlow` (Mermaid), `failureMatrix`,
+  `componentMap`, `apiContracts`, `dataModel`, `uiStates`, `configContract`,
+  `jobContract`, `bugfix` หรือ `refactor` โดย harness อนุมาน `workType` จาก
+  `paths` ของ task (ประกาศเองเพื่อ override ได้) และสร้าง folder tree, plan,
+  file map และ test map ให้เอง Standard change ต้องมี section ที่ชนิดงานต้องการ
+  ถ้าขาดจะเป็นงานแก้ draft ของ agent ไม่ใช่คำถามถึงผู้ใช้ ข้อเท็จจริงแต่ละข้อเขียนครั้งเดียว:
+  `why` ใช้แทน summary ได้ (เพิ่ม `summary` เมื่อมีอะไรมากกว่านั้น) และถ้าไม่ได้เขียน
+  `failureMatrix` เอง scenario ที่มี `"kind": "failure"` จะกลายเป็นแถวของมัน
+  โดย `recovery` ของ scenario (ไม่บังคับ) เติมคอลัมน์ recovery ส่วน task ที่เทสของตัวเอง
+  อยู่นอก `paths` เป็น design warning
 - `decisions` สำหรับมติที่มีผลต่อ implementation พร้อมผลที่ตามมา
 - diagram แบบ Mermaid หรืออ้าง SVG/PNG
 - `prototypeSelection` ที่ชี้ไป selection note ที่มีจริง
@@ -113,7 +124,13 @@ local ต้อง resolve เป็นไฟล์ปกติภายใน p
 Rapid มี `proposal.md`, `tasks.md`, `evidence.yaml` และ delta
 `specs/<capability>/spec.md` แบบกระชับที่ render แบบเดียวกับ standard ซึ่ง Land จะ merge
 เข้า `openspec/specs` มีเพียง rapid packet แบบเดิมที่ประกาศ `skip_specs` ที่ไม่มี delta
-Standard อาจเพิ่ม `design.md` เฉพาะเมื่อมีมติหรือบริบทสถาปัตยกรรมที่จำเป็น ไฟล์
+Proposal ของ rapid คือ dev document แบบกระชับ: summary, what changes, user flow,
+folder tree (path ที่ยังไม่มีใน base ถูกทำเครื่องหมาย `+`), failure matrix และ plan
+ที่ Build ใช้ทำงาน section เชิงบรรยาย (`fileMap`, `testMap`, `componentMap`,
+`userFlow`, `configContract`, `refactor`) ก็ render ที่นี่ และไม่ทำให้ change
+ความเสี่ยงต่ำย้ายไป standard ส่วน standard v4 มี `design.md` ที่เป็น dev document
+เต็มเสมอ และระบุชนิดงานพร้อมบอกเมื่อเป็นค่าที่อนุมาน label ของ node ใน flowchart
+ที่มี `(`, `)` หรือ `"` ต้องใส่เครื่องหมายคำพูด เช่น `A["mean(values)"]` ไฟล์
 execution, repository, handoff และ grounding จะเกิดเมื่อมี override จริงเท่านั้น
 
 หลัง compile แล้ว `openspec/changes/<id>/` คือ source of truth Draft เป็นข้อมูล
@@ -124,7 +141,12 @@ change ในคำสั่งเดียว และแสดงรายช
 เดียวพร้อม resume route โดยไม่สร้างอะไร: `EDIT` สำหรับการค้นข้อเท็จจริงหรือซ่อม
 draft หรือ `ASK_USER` สำหรับ decision ที่เชื่อมกับ coverage ไม่เกินสามข้อ ใช้
 `--inspect` เมื่อต้องการตรวจอย่างเดียว และบันทึกการอนุมัติ spec ของผู้ใช้ด้วย
-`advance <change> --approve-spec --decision-ref <ref>`
+`advance <change> --approve-spec --decision-ref <ref>` หรือเพิ่ม
+`--approve-spec --decision-ref <ref>` ในคำสั่ง `change start`, `change revise` หรือ
+`change amend` ที่ apply คำตอบอนุมัตินั้น Open question ของ design จะแสดงพร้อม
+approval packet การ inspect ครั้งแรกยังคืน task `verify` ที่อ้างไฟล์ test ซึ่งไม่มีอยู่
+และไม่อยู่ใน `paths` ของ task ใด และ error ใน `apiContracts` ที่ไม่มี status หรือ code
+เป็นงานซ่อมของ agent
 ใช้ `riskSignals` แบบ typed สำหรับ access control, persisted data, integration,
 performance SLO, UI, operational risk และ external side effect เพื่อให้ coverage
 ที่บังคับใช้ไม่ขึ้นกับภาษาของ prose Harness บันทึก source digest เอง draft ที่ถูกต้องจึงได้
@@ -143,11 +165,11 @@ metrics แบบย่อแต่ไม่เก็บ transcript
 abandon:
 
 ```bash
-claude-foundation change revise <change> <draft.json> --inspect
-claude-foundation change revise <change> <draft.json> --consume-draft
+claude-foundation change revise <change> <draft.json>
 ```
 
-Draft ฉบับแก้ใช้ id เดิมและผ่าน intake gate เดียวกับ `change start` Packet ทั้งชุด
+Draft ฉบับแก้ใช้ id เดิมและผ่าน intake gate เดียวกับ `change start` ในคำสั่งเดียว
+ถ้า intake ยังไม่ครบจะแสดง action และไม่เปลี่ยนอะไร Packet ทั้งชุด
 ถูกคอมไพล์ใหม่แบบ transaction, contract revision เพิ่มขึ้น และถ้าล้มเหลวจะคืน
 packet กับ runtime state เดิม เมื่อ Build มี workspace, receipt หรือ task ที่เสร็จแล้ว
 คำสั่งจะชี้ไปที่ `change amend` ผลลัพธ์แสดง requirement ที่ added, revised และ

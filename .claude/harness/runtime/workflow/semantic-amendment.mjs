@@ -5,6 +5,8 @@ import { join } from "node:path";
 import {
   normalizeSemanticDraft, renderRequirementMarkdown, renderSpecHeading
 } from "./semantic-draft.mjs";
+import { coverageRationale, coverageStatus } from "./validation/reader-guide.mjs";
+import { scopeAllowsPath } from "../core/graph-execution.mjs";
 
 const stringList = (value) => Array.isArray(value)
   ? value.map((item) => String(item || "").trim()).filter(Boolean) : [];
@@ -186,6 +188,111 @@ function amendmentList(amendment, field) {
   return Array.isArray(amendment?.[field]) ? amendment[field] : [];
 }
 
+// A corrected verify command replaces a failing check, so it must still be a
+// check: a command that cannot fail would turn the task's acceptance (and any
+// provider command derived from it) into a pass with no evidence behind it.
+// A text screen, so best-effort: it catches a no-op as the whole command or as
+// the last command after `;`, `||`, `|`, `&`, or a newline (`&&` still fails).
+export function verifyCannotFail(command) {
+  const text = String(command || "").trim().replace(/\s+#[^'"\n]*$/, "").trim();
+  return /^\(?\s*(?:true|:|exit(?:\s+0)?|echo(?:\s.*)?|printf(?:\s.*)?)\s*\)?$/i.test(text) ||
+    /(?:;|\n|\|\|?|(?<!&)&(?!&))\s*\(?\s*(?:true|:|exit(?:\s+0)?|echo(?:\s[^;&|\n]*)?|printf(?:\s[^;&|\n]*)?)\s*\)?\s*$/i
+      .test(text);
+}
+
+// A test source file named in a verify command. Build used to discover a
+// mistyped or never-created test path only when the check ran; the draft
+// already says which files exist and which files its tasks create.
+const TEST_SOURCE = /\.(?:[cm]?[jt]sx?|py|rb|go|rs|java|kts?|scala|php|cs|fs|swift|exs?|sh|bash|lua|dart|c|cc|cpp|clj)$/i;
+const TEST_NAME = /(?:^|[/._-])(?:tests?|specs?|__tests__|e2e)(?:[/._-]|$)/i;
+// A command that changes its working directory resolves paths elsewhere.
+const WORKING_DIRECTORY_CHANGE =
+  /(?:^|[;&|(]\s*)(?:cd|pushd)\s|--prefix\b|--cwd\b|--dir(?:ectory)?\b|--workspace\b|--filter\b|--root-dir\b|--rootDir\b|(?:^|\s)-C\s/;
+
+export function verifyTestFileReferences(command) {
+  const text = String(command || "");
+  if (!text.trim() || WORKING_DIRECTORY_CHANGE.test(text)) return [];
+  return unique(text.split(/\s+/).map((token) => token
+    .replace(/^['"(]+|['");,]+$/g, "")
+    .replace(/^--?[\w-]+=/, "")
+    .replace(/::.*$/, "")
+    .replace(/:\d+(?::\d+)?$/, "")
+    .replace(/^\.\//, ""))
+    .filter((token) => token && !token.startsWith("-") && !token.startsWith("/") &&
+      !token.includes("..") && !/[*?{}[\]$<>`~]/.test(token) && !/^[a-z]+:\/\//i.test(token) &&
+      TEST_SOURCE.test(token) && TEST_NAME.test(token)));
+}
+
+/**
+ * Agent repairs for task verify commands that name a test file which neither
+ * exists nor falls inside any task's paths (the files Build may create).
+ * `tasks` rows carry { key|semanticKey|id, verify, paths, repository? };
+ * `scopes` adds paths owned by tasks outside this batch.
+ */
+export function verifyPathIssues(tasks, { exists, scopes = [], label = "task" } = {}) {
+  const rows = Array.isArray(tasks) ? tasks.filter((task) => task && typeof task === "object") : [];
+  const owned = [...stringList(scopes), ...rows.flatMap((task) => stringList(task.paths))];
+  const issues = [];
+  rows.forEach((task, index) => {
+    const repository = String(task.repository || "").trim();
+    if (repository && repository !== "root") return;
+    const name = String(task.semanticKey || task.key || task.id || "").trim() || `#${index + 1}`;
+    for (const path of verifyTestFileReferences(task.verify)) {
+      if (exists(path) || owned.some((scope) => scopeAllowsPath(scope, path))) continue;
+      issues.push(`${label} '${name}' verify references '${path}', which does not exist and ` +
+        "no task's paths create it; correct the path in verify or add it to that task's paths");
+    }
+  });
+  return issues;
+}
+
+/** The same check for an amendment's added and updated tasks. */
+export function amendmentVerifyPathIssues(amendment, tasksContent, { exists }) {
+  const lines = String(tasksContent || "").split("\n").filter((line) => taskId(line));
+  const existing = new Map(lines.map((line) => [semanticTaskKey(line) || taskId(line), line]));
+  const updated = amendmentList(amendment, "updateTasks").filter((task) =>
+    task && hasField(task, "verify")).map((task) => {
+    const line = existing.get(keyOf(task)) || existing.get(String(task.key || "").toUpperCase());
+    return { key: keyOf(task), verify: task.verify,
+      paths: hasField(task, "paths") ? task.paths : line ? taskPaths(line) : [] };
+  });
+  const added = amendmentList(amendment, "addTasks");
+  return verifyPathIssues([...added, ...updated], {
+    exists, label: "amendment task",
+    scopes: lines.flatMap((line) => taskPaths(line))
+  });
+}
+
+/**
+ * The verify-only amendment `change amend <change> --task <key> --verify
+ * <command>` submits: an unfinished task's check corrected in place, with the
+ * spec approval, requirements, claims, and capabilities untouched.
+ */
+export function taskVerifyAmendment({ task, verify, reason = "" }) {
+  return {
+    version: 1,
+    reason: String(reason || "").trim() ||
+      `Correct the verify command of task '${String(task || "").trim()}'`,
+    updateTasks: [{ key: String(task || "").trim(), verify: String(verify || "").trim() }]
+  };
+}
+
+// Runs the verify-only amendment through the same transactional `change
+// amend` path (validation, invalidation, rollback, approval carry) without the
+// agent authoring a JSON file. The staged file lives in machine state and is
+// removed on success, failure, or exit.
+export function amendTaskVerifyOperation({ root, amendChange, pid = process.pid,
+  now = Date.now, onExit = (cleanup) => process.once("exit", cleanup) }, id, options) {
+  const directory = join(root, ".foundation", "amendments");
+  mkdirSync(directory, { recursive: true });
+  const path = join(directory, `${id}-verify-${now()}-${pid}.json`);
+  writeFileSync(path, `${JSON.stringify(taskVerifyAmendment(options), null, 2)}\n`);
+  const cleanup = () => rmSync(path, { force: true });
+  onExit(cleanup);
+  try { return amendChange(id, path, { consumeAmendment: true }); }
+  finally { cleanup(); }
+}
+
 function amendmentIssues(amendment) {
   const issues = [];
   if (amendment?.version !== 1) issues.push("semantic amendment requires version 1");
@@ -215,6 +322,9 @@ function amendmentIssues(amendment) {
         !task.verify.trim() || /[`\r\n]/.test(task.verify)))
       issues.push(`semantic amendment updateTasks[${index}].verify must be a ` +
         "non-empty one-line command without backticks");
+    else if (hasField(task, "verify") && verifyCannotFail(task.verify))
+      issues.push(`semantic amendment updateTasks[${index}].verify cannot be a command ` +
+        "that always passes; name the focused check that proves the task");
     if (hasField(task, "paths") && (!Array.isArray(task.paths) ||
         task.paths.some((path) => typeof path !== "string" || !path.trim() || /[,\]\s]/.test(path))))
       issues.push(`semantic amendment updateTasks[${index}].paths must be an array of ` +
@@ -250,6 +360,17 @@ export function compileSemanticAmendment({
     const key = semanticTaskKey(line);
     if (key) tasksByKey.set(key, { index, line, id });
   }
+  // The agent sees task ids in every Build action; a task-contract row may
+  // name one (`T002`) in place of the semantic key it resolves to.
+  if (Array.isArray(amendment?.updateTasks)) {
+    const keyById = new Map([...tasksByKey].filter(([, row]) => row.id)
+      .map(([key, row]) => [row.id, key]));
+    amendment = { ...amendment, updateTasks: amendment.updateTasks.map((row) => {
+      const named = keyOf(row);
+      const resolved = !tasksByKey.has(named) && keyById.get(named.toUpperCase());
+      return resolved ? { ...row, key: resolved } : row;
+    }) };
+  }
 
   // Outcome never changes in place. Verify and paths change in place only on
   // an unfinished task: unchecked and without a passing command receipt.
@@ -261,8 +382,10 @@ export function compileSemanticAmendment({
     const completed = row && (taskCompleted(row.line) ||
       taskClaims(row.line).some((id) => proven.has(id)));
     const changes = {};
-    if (row && typeof update?.verify === "string" && update.verify.trim() !== taskVerify(row.line))
+    if (row && typeof update?.verify === "string" && update.verify.trim() !== taskVerify(row.line)) {
       changes.verify = update.verify.trim();
+      changes.priorVerify = taskVerify(row.line) || null;
+    }
     if (row && Array.isArray(update?.paths) &&
         JSON.stringify(stringList(update.paths)) !== JSON.stringify(taskPaths(row.line)))
       changes.paths = stringList(update.paths);
@@ -465,7 +588,10 @@ export function compileSemanticAmendment({
     const line = taskLines[change.index];
     return {
       key: change.key, id: taskId(line), claims: taskClaims(line),
-      ...(change.verify !== undefined ? { verify: change.verify } : {}),
+      // The prior command stays in the amendment audit, so a corrected check
+      // is reviewable against the one it replaced.
+      ...(change.verify !== undefined
+        ? { verify: change.verify, priorVerify: change.priorVerify } : {}),
       ...(change.paths !== undefined ? { paths: change.paths } : {})
     };
   });
@@ -568,10 +694,10 @@ export function writeSemanticAmendment(dir, compiled, slugify, { schema } = {}) 
   const proposalPath = join(dir, "proposal.md");
   if (compiled.discovery?.coverage?.length && existsSync(proposalPath)) {
     const rows = compiled.discovery.coverage.map((row) =>
-      `| ${markdownCell(row.dimension)} | ${markdownCell(row.status)} | ` +
+      `| ${markdownCell(row.dimension)} | ${markdownCell(coverageStatus(row))} | ` +
       `${markdownCell((row.covers || []).join(", ") || "none")} | ` +
       `${markdownCell((row.sources || []).join(", ") || "none")} | ` +
-      `${markdownCell(row.rationale || "none")} |`
+      `${markdownCell(coverageRationale(row) || "none")} |`
     ).join("\n");
     const section = `\n\n## Amendment discovery coverage\n\n` +
       `Reason: ${markdownCell(compiled.amendmentReason)}\n\n` +

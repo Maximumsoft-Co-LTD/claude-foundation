@@ -59,8 +59,12 @@ record at `openspec/investigations/<id>.json`, and runs `claude-foundation
 investigate <record.json>` after each evidence batch. The harness discovers and
 hashes relevant sources, validates fact, hypothesis, and recommendation links,
 persists compact metrics and no-progress state, and returns `EDIT`, `ASK_USER`,
-or `DONE` with an exact resume route. Newly discovered sources must be read and
-acknowledged in the record before completion.
+or `DONE` with an exact resume route. Newly discovered sources are acknowledged
+automatically and stay hashed for freshness; every fact must cite an inventoried
+source, and the report lists discoveries no fact cites. Open decisions make the
+conclusion `needs user decision`, and a settled record with a change intent
+concludes in the same run. Repeated no-progress asks you only when the repeated
+step was your decision; sandbox or discovery failures go to the harness.
 
 Each batch produces a readable `openspec/investigations/<id>.report.md` with the
 conclusion, reasons, source links, tested hypotheses, alternatives, unknowns, and

@@ -39,11 +39,10 @@ provider and receipt contract.
 Runtime API 39 adds bounded repository intelligence, adaptive intake metrics,
 and selective amendment proof recovery. Typed intake inspection uses
 `change start <draft.json> --inspect` and discovery deltas for v4 amendments.
-Spec approval uses `change resolve --approve-spec`, with review continuation
-through `change resolve --continue-review`,
+Spec approval uses `change resolve --approve-spec`,
 and content-bound review waivers through `change waive --capability review`.
-Each requires a real `--decision-ref`. Review dispatches share a persisted
-30-minute deadline. See [WORKFLOW.md](../../WORKFLOW.md) for the user contract.
+Each requires a real `--decision-ref`. Review is bounded by its rounds; each
+dispatch has its own timeout. See [WORKFLOW.md](../../WORKFLOW.md) for the user contract.
 
 Every phase view is derived from one versioned execution contract. Semantic
 draft v4 validates typed-risk discovery coverage (optional for ordinary changes) and decision prerequisites,
@@ -73,6 +72,7 @@ read-only argument.
 | Core | `runtime/core/lifecycle-outcome.mjs` | Owner-validated lifecycle outcomes and target-versus-delivery user projection |
 | Core | `runtime/core/land-grant.mjs` | Session/change/proof/target-bound explicit Land authority |
 | Core | `runtime/core/tool-preparation.mjs` | Project-local tool readiness, preparation identity, and setup boundaries |
+| Core | `runtime/core/tool-identity.mjs` | Per-process, content-keyed reuse of successful OpenSpec probes, strict lint, and Git index queries |
 | Core | `runtime/core/lifecycle-reducer.mjs` | Typed lifecycle transitions and compatibility-preserving state mutation |
 | Core | `runtime/core/process-runtime.mjs` | Provider process execution, readiness checks, and managed services |
 | Core | `runtime/core/shell-mutation-policy.mjs` | Shared phase-aware shell mutation and canonical Build containment policy |
@@ -171,7 +171,8 @@ logic independently testable.
 - Project-owned test and browser dependencies required by configured evidence
 
 Change Loop prepares its pinned OpenSpec CLI under `.foundation/tools` when it
-is absent and runs declared repository setup commands in isolated workspaces.
+is absent at Prove or Land (Build records it as `deferred` and never stops for
+it) and runs declared repository setup commands in isolated workspaces.
 It does not globally install Playwright, browser binaries, test frameworks, or
 application dependencies; each application locks and maintains those versions.
 
@@ -220,9 +221,19 @@ claude-foundation doctor --stage prove --change <change>
 | `change start --template` | Prints the semantic draft v4 contract with machine-checkable discovery coverage | Beginning a fresh Change |
 | `change start <draft.json> --inspect` | Returns the next typed intake action and exact resume route without creating a change | Iterating on a semantic draft |
 | `change start <draft.json>` | Compiles, validates, installs, and prepares one isolated change transactionally | Completing Change |
-| `change revise <change> <draft.json>` | Recompiles a revised semantic draft over the same change id through the start intake gate, with rollback and a requirement delta for approval | An agreed semantic change must change before Build starts |
-| `change amend <change> <amendment.json>` | Adds, revises, or removes requirements, requiring and retaining a discovery delta for v4; a verify-only `updateTasks` amendment fixes an unfinished task's verify command (`--template` prints both) | A semantic v3/v4 Build discovers new or changed behavior or a wrong verify command |
+| `change revise <change> <draft.json>` | Recompiles a revised semantic draft over the same change id through the start intake gate in the same call (an incomplete intake prints its action and changes nothing), with rollback and a requirement delta for approval; `--approve-spec --decision-ref <ref> [--through <target>]` records the user's approval in that call | An agreed semantic change must change before Build starts |
+| `change amend <change> <amendment.json>` | Adds, revises, or removes requirements, requiring and retaining a discovery delta for v4; a verify-only `updateTasks` amendment fixes an unfinished task's verify command (`--template` prints both); inspects in the same call and amends only at `DONE`, and accepts the same approval flags as `change revise` | A semantic v3/v4 Build discovers new or changed behavior |
+| `change amend <change> --task <key\|id> --verify <command>` | Corrects one unfinished task's verify command directly through the same transaction; keeps the spec approval, claims, and capabilities, refuses an always-passing command, and accepts the task only when the new command passes | A task's verify command is wrong |
 | `advance <change> --through build\|proven\|archived` | Runs deterministic steps and returns one `EDIT`, `RUN_EXTERNAL`, `REPAIR`, `WAIT`, `ASK_USER`, or `DONE` action | Every normal step after Change |
+
+Every route `advance` returns stays on this surface: a `command`, `next`,
+instruction, or decision option that would name an operator primitive below
+(`proof`, `land`, `sandbox`, `evidence init`) is rewritten to the matching
+`advance` route, and the recovery ladder (agent repair, `TRY_ALTERNATE_APPROACH`,
+then a decision with repetition evidence on the third unchanged round), the
+first-observation `user-environment` question for causes only the user can
+clear, and the budget no-progress cap are specified in
+[WORKFLOW.md § Recovery and user decisions](../../WORKFLOW.md#recovery-and-user-decisions).
 
 ## Advanced operator and compatibility commands
 
@@ -406,7 +417,10 @@ The host copies `executionAuthority.leaseId` from the acquired task packet into
 refused so a late executor with the same stable owner cannot clear the current
 lease. `agents acquire` by the lease's own owner after a graph, contract, or
 key change re-grants it under a new generation with the original write
-baseline instead of refusing. `agents release` of another owner's expired lease
+baseline instead of refusing, and `agents release` performs that re-grant
+itself when the graph or contract moved after acquisition, so the worker never
+runs acquire-then-release; only a task an amendment removed from the plan is
+refused. `agents release` of another owner's expired lease
 takes it over without `--force`; only a live foreign lease needs `--force
 --decision-ref`. `authority record` on a stale request records nothing, issues
 the replacement request, and names it with the `advance` resume route.
@@ -479,9 +493,14 @@ runs it once inside every newly created sandbox:
 { "sandbox": { "setupCommand": "npm ci", "setupTimeoutMs": 600000 } }
 ```
 
-Without it, `sandbox create` prints a NOTE naming this snippet whenever the
-project has a lockfile, and the phase guard refuses linking or copying the
-checkout's `node_modules` from inside the sandbox.
+Without it, the harness runs the install the workspace lockfile pins
+(`package-lock.json`/`npm-shrinkwrap.json` → `npm ci`, `pnpm-lock.yaml`,
+`yarn.lock`, `bun.lock`/`bun.lockb` → their frozen-lockfile install) and
+records it on the workspace like a configured setup (`source: "lockfile"`).
+`{ "sandbox": { "installDependencies": false } }` opts out. A failed or missing
+install never blocks: preparation retries it, then `advance` hands it to the
+agent as a `REPAIR` with the command, directory, and log tail. The phase guard
+still refuses linking or copying the checkout's `node_modules` into the sandbox.
 
 In a multi-repository topology, each `openspec/repositories.yaml` row may
 declare its own `setupCommand`, which runs inside that repository's sandbox;
@@ -562,6 +581,7 @@ listings elsewhere name this file as their source rather than restating it.
 |---|---|
 | `.foundation/runtime/` | Runtime operation and handoff state, one file per change |
 | `.foundation/intake/` | One draft/source-bound semantic intake snapshot per inspected draft path |
+| `.foundation/amendments/` | Transient verify-only amendment staged by `change amend --task/--verify`; removed when the command ends |
 | `.foundation/investigations/` | Source-bound Investigate state, metrics, no-progress checkpoint, and Change handoff digest |
 | `.foundation/receipts/` | Live content-bound provider receipts and `proof.json` |
 | `.foundation/evidence/` | Immutable proof bundles: manifests, receipt copies, durable artifacts, and the hash-chained review-attempt ledger |
@@ -579,11 +599,12 @@ listings elsewhere name this file as their source rather than restating it.
 | `.foundation/attestations/` | Unattended-execution challenges and consumed nonces |
 | `.foundation/instruction-manifests/` | Instruction provenance per command |
 | `.foundation/recovery/` | Quarantined abandoned changes and orphaned runtime state |
+| `.foundation/agreement-drift/` | Isolated-packet edits made outside an amendment, saved when the harness restores the approved text |
 | `.foundation/prototypes/` | Disposable comparison prototypes, never admissible as evidence |
 | `.foundation/policy.json` | Optional project rules mapping paths to required capabilities |
 | `.foundation/install-manifest.txt` | Installer-owned record of managed files |
 
-`intake/`, `repository-sandboxes/`, `prototypes/`, `recovery/`, and `policy.json` appear
+`intake/`, `repository-sandboxes/`, `prototypes/`, `recovery/`, `agreement-drift/`, and `policy.json` appear
 only once something creates them.
 
 Receipts are reusable only while their bound inputs remain unchanged. Every
@@ -631,7 +652,8 @@ imported Claude transcript `tool_use` blocks by category (harness CLI, harness
 doc reads, state reads, harness artifact writes, product writes, test runs,
 other); without transcript data every count is null. Automatic `advance` work
 is recorded as the stages `advance.evidence-wiring`, `advance.review-run`,
-`advance.sandbox-sync`, and `build.task-check`.
+`advance.sandbox-sync`, and `build.task-check`; Land work inside archive is
+recorded as `land.check`, `land.apply`, `land.archive`, and `land.cleanup`.
 
 `commandProfile` separates lifecycle mutations from read-only inspections,
 reports elapsed union time and the most expensive commands, and identifies

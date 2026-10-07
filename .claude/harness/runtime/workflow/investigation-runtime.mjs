@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
+import { sortedJson } from "../core/trust.mjs";
 import { inspectRepositoryIntelligence } from "./validation/repository-intelligence.mjs";
 import {
-  investigationReportPaths, isInvestigationReport, writeInvestigationReport
+  investigationDiscoveryExclusions, isInvestigationReport, writeInvestigationReport
 } from "./investigation-report.mjs";
 import {
   inspectSemanticSources, semanticSourceInventoryFindings
@@ -34,23 +35,14 @@ export function investigationRecordTemplate() {
     options: [],
     selection: null,
     decisions: [],
-    conclusion: { status: "investigating", summary: "Investigation is in progress" },
+    conclusion: { summary: "Investigation is in progress" },
     changeIntent: null
   };
 }
 
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") return Object.fromEntries(
-    Object.keys(value).sort().filter((key) => value[key] !== undefined)
-      .map((key) => [key, canonical(value[key])])
-  );
-  return value;
-}
-
 function digest(value, domain = "foundation-investigation:1") {
   return createHash("sha256").update(`${domain}\0`)
-    .update(JSON.stringify(canonical(value))).digest("hex");
+    .update(sortedJson(value)).digest("hex");
 }
 
 function within(root, candidate) {
@@ -85,6 +77,19 @@ function repositoryQuery(record) {
   return [record?.problem, record?.changeIntent,
     ...(record?.facts || []).map((row) => row?.statement),
     ...(record?.hypotheses || []).map((row) => row?.statement)];
+}
+
+const isOpen = (row) => text(row?.status).toLowerCase() === "open";
+
+// The harness derives the outcome a record omits: open decisions always mean
+// needs-user-decision, and a settled record with a changeIntent concludes as
+// ready-for-change in the same run. Explicit legacy values remain accepted.
+export function derivedConclusionStatus(record) {
+  const declared = text(record?.conclusion?.status).toLowerCase();
+  if ((Array.isArray(record?.decisions) ? record.decisions : []).some(isOpen))
+    return "needs-user-decision";
+  if (declared && declared !== "needs-user-decision") return declared;
+  return text(record?.changeIntent) ? "ready-for-change" : "investigating";
 }
 
 function recordIssues(record) {
@@ -158,9 +163,10 @@ function recordIssues(record) {
       if (!factKeys.has(factKey))
         issues.push(`${label}.recommendationFactKeys references unknown fact '${factKey}'`);
   }
-  const outcome = text(record.conclusion?.status).toLowerCase();
-  if (!OUTCOMES.has(outcome))
+  const declaredOutcome = text(record.conclusion?.status).toLowerCase();
+  if (declaredOutcome && !OUTCOMES.has(declaredOutcome))
     issues.push("conclusion.status must be investigating|needs-user-decision|ready-for-change|not-worth-changing");
+  const outcome = derivedConclusionStatus(record);
   if (!text(record.conclusion?.summary)) issues.push("conclusion.summary is required");
   if (outcome === "ready-for-change" && !text(record.changeIntent))
     issues.push("changeIntent is required for a ready-for-change investigation");
@@ -362,7 +368,8 @@ export function validateInvestigationBinding({ projectRoot, binding, git = null 
       if (digest(record, "foundation-investigation-record:1") !== state.requestDigest) {
         issues.push("investigation binding request changed after the investigation completed");
       } else {
-        const excludedPaths = [state.requestPath, state.path, ...investigationReportPaths(sourceRoot)];
+        const excludedPaths = unique([state.requestPath, state.path,
+          ...investigationDiscoveryExclusions(sourceRoot, strings(record.sources))]);
         let includedPaths = null;
         let trackedPaths = [];
         if (typeof git === "function") {
@@ -437,7 +444,8 @@ export function createInvestigationRuntime({
     const relativeRecord = relative(projectRoot, absolute).replaceAll("\\", "/");
     const relativeState = `.foundation/investigations/${id}.json`;
     const paths = sourceRoot
-      ? repositoryPaths([relativeRecord, relativeState, ...investigationReportPaths(sourceRoot)], sourceRoot)
+      ? repositoryPaths(unique([relativeRecord, relativeState,
+        ...investigationDiscoveryExclusions(sourceRoot, strings(record?.sources))]), sourceRoot)
       : { includedPaths: [], trackedPaths: [], excludedPaths: [] };
     const repository = sourceRoot ? inspectRepositoryIntelligence({
       projectRoot: sourceRoot,
@@ -451,40 +459,43 @@ export function createInvestigationRuntime({
       version: 1, status: "blocked", complete: false,
       scan: { entries: 0, files: 0, bytes: 0 }, findings: [], readSet: []
     };
+    // Discovered sources are acknowledged automatically and hashed with the
+    // declared ones; facts and options must still cite an inventoried source.
     const discovered = (repository.readSet || []).map((row) => row.path);
-    const acknowledged = new Set(strings(record?.sources).filter((path) => !isInvestigationReport(path)));
-    const missingAcknowledgements = discovered.filter((path) => !acknowledged.has(path));
+    const declared = strings(record?.sources).filter((path) => !isInvestigationReport(path));
+    const inventoried = new Set(sourceRoot && repository.status === "ready"
+      ? [...declared, ...discovered] : declared);
     const sourceInspection = inspectSemanticSources({
       projectRoot: sourceRoot || projectRoot,
-      sourcePaths: sourceRoot && repository.status === "ready"
-        ? unique([...acknowledged, ...discovered]) : []
+      sourcePaths: sourceRoot && repository.status === "ready" ? unique([...inventoried]) : []
     });
-    for (const fact of record?.facts || [])
-      for (const source of strings(fact?.sources))
-        if (!acknowledged.has(source))
-          issues.push(`fact '${text(fact?.key) || "(missing)"}' uses unacknowledged source '${source}'`);
-    for (const option of record?.options || [])
-      for (const source of strings(option?.sources))
-        if (!acknowledged.has(source))
-          issues.push(`option '${text(option?.key) || "(missing)"}' uses unacknowledged source '${source}'`);
+    const cited = new Set();
+    for (const [kind, rows] of [["fact", record?.facts], ["option", record?.options]])
+      for (const row of Array.isArray(rows) ? rows : [])
+        for (const source of strings(row?.sources)) {
+          cited.add(source);
+          if (!inventoried.has(source))
+            issues.push(`${kind} '${text(row?.key) || "(missing)"}' cites source '${source}' ` +
+              "outside the investigation inventory; add it to sources");
+        }
+    const unreadSources = discovered.filter((path) => !cited.has(path) && !declared.includes(path));
+    const harnessIssues = [...workspace.issues];
     issues.push(...sourceInspection.findings.map((row) =>
       `investigation source ${row.code}: ${row.path || "(unknown)"}`));
-    if (repository.status !== "ready") issues.push(...repository.findings.map((row) =>
-      `repository discovery ${row.code}: ${row.path || "(root)"}`));
+    if (repository.status !== "ready") {
+      const discoveryIssues = repository.findings.map((row) =>
+        `repository discovery ${row.code}: ${row.path || "(root)"}`);
+      issues.push(...discoveryIssues);
+      harnessIssues.push(...discoveryIssues);
+    }
 
-    const openHypotheses = (record?.hypotheses || []).filter((row) =>
-      text(row?.status).toLowerCase() === "open");
-    const openDecisions = (record?.decisions || []).filter((row) =>
-      text(row?.status).toLowerCase() === "open");
+    const openHypotheses = (record?.hypotheses || []).filter(isOpen);
+    const openDecisions = (record?.decisions || []).filter(isOpen);
+    const outcome = derivedConclusionStatus(record);
     let action;
     if (issues.length) action = { action: "EDIT", owner: "agent", boundary: "investigation-record",
       reason: "Repair the investigation record and evidence bindings.",
       investigation: { kind: "repair-record", issues: unique(issues) }, resume };
-    else if (missingAcknowledgements.length) action = {
-      action: "EDIT", owner: "agent", boundary: "source-investigation",
-      reason: "Interpret and acknowledge the newly discovered repository sources.",
-      investigation: { kind: "inspect-sources", paths: missingAcknowledgements }, resume
-    };
     else if (!(record.facts || []).length) action = {
       action: "EDIT", owner: "agent", boundary: "source-investigation",
       reason: "Record at least one source-grounded verified fact.",
@@ -503,7 +514,7 @@ export function createInvestigationRuntime({
         recommended: row.recommended, recommendationFactKeys: unique(strings(row.recommendationFactKeys))
       })) }, resume
     };
-    else if (text(record.conclusion?.status).toLowerCase() === "investigating") action = {
+    else if (outcome === "investigating") action = {
       action: "EDIT", owner: "agent", boundary: "investigation-synthesis",
       reason: "Synthesize the settled evidence into a terminal investigation conclusion.",
       investigation: { kind: "conclude" }, resume
@@ -518,20 +529,39 @@ export function createInvestigationRuntime({
       action: action.action, kind: action.investigation?.kind || action.decision?.kind || null });
     const noProgressCount = previous?.progressDigest === progressDigest && action.action !== "DONE"
       ? Number(previous.noProgress?.count || 0) + 1 : action.action === "DONE" ? 0 : 1;
-    if (noProgressCount >= 3 && action.action !== "DONE") action = {
-      action: "ASK_USER", owner: "user", boundary: "repeated-no-progress",
-      reason: "The investigation produced the same unresolved result three times.",
-      decision: {
-        kind: "repair-no-progress",
-        recommended: "change-strategy",
-        options: [
-          { id: "change-strategy", outcome: "Revise the investigation approach or evidence." },
-          { id: "resolve-boundary", outcome: "Supply the missing decision, authority, or source." },
-          { id: "pause", outcome: "Preserve state and pause the investigation." }
-        ]
-      },
-      resume
-    };
+    // Repeated no-progress reaches the user only when the repeated action was
+    // itself a user question; harness or sandbox faults stay with the harness
+    // and record or evidence stalls stay with the agent.
+    if (noProgressCount >= 3 && action.action !== "DONE") {
+      const repeated = { action: action.action,
+        kind: action.investigation?.kind || action.decision?.kind || null };
+      if (action.action === "ASK_USER") action = {
+        action: "ASK_USER", owner: "user", boundary: "repeated-no-progress",
+        reason: "The same investigation question remained unanswered three times.",
+        decision: {
+          kind: "repair-no-progress",
+          recommended: "answer",
+          options: [
+            { id: "answer", outcome: "Answer the pending investigation decision." },
+            { id: "pause", outcome: "Preserve state and pause the investigation." }
+          ],
+          items: action.decision?.items || []
+        },
+        resume
+      };
+      else if (harnessIssues.length) action = {
+        action: "EDIT", owner: "harness", boundary: "repeated-no-progress",
+        reason: "The investigation workspace or repository discovery failed the same way " +
+          "three times; repair the harness or sandbox, then rerun the same record.",
+        investigation: { kind: "repair-harness", issues: unique(harnessIssues), repeated }, resume
+      };
+      else action = {
+        action: "EDIT", owner: "agent", boundary: "repeated-no-progress",
+        reason: "The investigation produced the same unresolved result three times; " +
+          "change the evidence strategy before rerunning.",
+        investigation: { kind: "change-strategy", issues: unique(issues), repeated }, resume
+      };
+    }
     const state = {
       version: INVESTIGATION_STATE_VERSION,
       kind: "investigation",
@@ -549,6 +579,7 @@ export function createInvestigationRuntime({
         complete: repository.complete,
         scan: repository.scan,
         selectedSources: discovered,
+        unreadSources,
         findings: repository.findings
       },
       facts: record?.facts || [],
@@ -556,7 +587,7 @@ export function createInvestigationRuntime({
       options: record?.options || [],
       selection: record?.selection || null,
       decisions: record?.decisions || [],
-      conclusion: record?.conclusion || null,
+      conclusion: record?.conclusion ? { ...record.conclusion, status: outcome } : null,
       changeIntent: text(record?.changeIntent) || null,
       action,
       noProgress: {

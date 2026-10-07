@@ -16,6 +16,13 @@ set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 
+# Mirror CI, which puts the pinned workflow tools (openspec, c8) on PATH; the
+# suites otherwise depend on whatever the calling shell happens to export.
+if [ -d "$ROOT/node_modules/.bin" ]; then
+  PATH="$ROOT/node_modules/.bin:$PATH"
+  export PATH
+fi
+
 # The session-context hook exports the interactive Claude session's identity
 # into agent shells; node --test suites inherit it and the runtime then
 # prefers it over fixture ids. Deterministic suites must never see it.
@@ -97,6 +104,7 @@ pull request delivery|node --test "$ROOT/.claude/harness/tests/pull-request-runt
 repository head|node --test "$ROOT/.claude/harness/tests/repository-head.test.mjs"
 proof readiness value|node --test "$ROOT/.claude/harness/tests/proof-readiness-value.test.mjs"
 provider claim scope|node --test "$ROOT/.claude/harness/tests/provider-claim-scope.test.mjs"
+task check evidence|node --test "$ROOT/.claude/harness/tests/task-check-evidence.test.mjs"
 harness reliability gaps|sh "$HERE/harness/run-reliability-gap-tests.sh"
 branch warning|node --test "$HERE/harness/run-branch-warning-tests.mjs"
 packet scaling|sh "$HERE/harness/run-packet-scaling-tests.sh"
@@ -171,6 +179,7 @@ proof advance runtime|node "$ROOT/.claude/harness/tests/proof-advance.test.mjs"
 advance lifecycle outcomes|node --test "$ROOT/.claude/harness/tests/advance-runtime.test.mjs" "$ROOT/.claude/harness/tests/delivery-convergence.test.mjs" "$ROOT/.claude/harness/tests/user-decisions.test.mjs" "$ROOT/.claude/harness/tests/target-edits.test.mjs" "$ROOT/.claude/harness/tests/session-lease.test.mjs"
 advance recovery decisions|node --test "$ROOT/.claude/harness/tests/advance-recovery.test.mjs"
 convergent gate controller|node "$ROOT/.claude/harness/tests/convergent-gate.test.mjs"
+canonical JSON digests|node --test "$ROOT/.claude/harness/tests/canonical-json-digests.test.mjs"
 authority preflight|node --test "$ROOT/.claude/harness/tests/authority-preflight.test.mjs"
 execution contract compiler|node --test "$ROOT/.claude/harness/tests/execution-contract.test.mjs"
 lifecycle reducer|node --test "$ROOT/.claude/harness/tests/lifecycle-reducer.test.mjs" "$ROOT/.claude/harness/tests/state-projections.test.mjs"
@@ -487,6 +496,7 @@ for index in $alone; do sh "$0" --suite "$index" "$WORK"; done
 
 # Replayed in table order: a parallel run has to read like a serial one.
 failed=0
+failed_labels=""
 for index in $selected; do
   label="$(label_of "$(nth "$index")")"
   duration="$(cat "$WORK/$index.duration" 2>/dev/null || echo '?')"
@@ -495,6 +505,9 @@ for index in $selected; do
   if [ "$(cat "$WORK/$index.status" 2>/dev/null || echo 1)" -eq 0 ]
   then printf '✓ %s\n\n' "$label"
   else printf '✗ %s\n\n' "$label" >&2; failed=1
+    failed_labels="${failed_labels}  ✗ ${label}
+"
+    failed_indexes="${failed_indexes:-} $index"
   fi
 done
 
@@ -508,5 +521,12 @@ if [ "$failed" -eq 0 ]; then
   echo "foundation tests: ALL SUITES PASS ($SELECTED_TOTAL suites, ${JOBS}-way${selection_mode:+, $selection_mode})"
   exit 0
 fi
+# Repeat the failures last: CI log viewers often show only the tail.
+for index in ${failed_indexes:-}; do
+  printf '── tail of %s (%ss) ──\n' "$(label_of "$(nth "$index")")" \
+    "$(cat "$WORK/$index.duration" 2>/dev/null || echo '?')" >&2
+  [ -f "$WORK/$index.out" ] && tail -n 40 "$WORK/$index.out" >&2
+done
+[ -z "$failed_labels" ] || printf 'failed suites:\n%s' "$failed_labels" >&2
 echo "foundation tests: SOME SUITES FAILED" >&2
 exit 1

@@ -221,6 +221,9 @@ assert_cmd_zero "each persisted violation carries a human-readable detail" \
 # specs-archived rather than advancing, which is what keeps a retry honest.
 assert_eq "the refused archive stops before Land's audited state" "specs-archived" \
   "$(jq -r '.land.status' "$corrupt_state")"
+# The change is recorded archived only once its merged specs verify.
+assert_not_contains "the refused archive is not recorded archived" \
+  "$(jq -r '.status' "$corrupt_state")" "archived"
 # The pre-merge text is what lets the retry guard re-derive the answer instead of
 # trusting a stored flag.
 assert_eq "the refused archive retains the captured pre-merge specs" "1" \
@@ -281,6 +284,8 @@ assert_eq "repair clears the captured pre-merge specs" "false" \
   "$(jq -r 'has("specSyncInputs")' "$corrupt_state")"
 assert_eq "repair lets Land finish" "sandbox-cleaned" \
   "$(jq -r '.land.status' "$corrupt_state")"
+assert_eq "the repaired spec sync is recorded archived" "archived" \
+  "$(jq -r '.status' "$corrupt_state")"
 rm -f "$TMP/merged/layout.md"
 
 # ---------------------------------------------------------------------------

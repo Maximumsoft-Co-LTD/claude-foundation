@@ -6,6 +6,39 @@ import {
   pinShellAnchor, shellMutationViolation
 } from "../../hooks/phase-guard-policy.mjs";
 
+const LAND_REFUSAL = "Land shell mutations require the runtime transaction marker; " +
+  "Land writes the target itself, and Prove already ran the checks in the isolated workspace";
+
+// Read-only commands and data inside a quoted heredoc are not mutations; each
+// of these was flagged and cost turns or blocked pre-phase and Land work.
+test("shell mutation detection ignores read-only forms and quoted heredoc data", () => {
+  for (const command of [
+    "git stash list", "git stash show -p", "git worktree list", "git submodule status",
+    "node -e \"process.stdout.write('ok')\"", "python3 -c \"import sys; sys.stderr.write('x')\"",
+    "perl -Mstrict -e 'print 1'", "perl -MList::Util=sum -e 'print sum(1,2)'",
+    "node --test 2>/dev/stderr",
+    "node - <<'EOF'\nconst keep = (a) => a > 1;\ninstall\nEOF"
+  ]) assert.equal(looksMutatingShellCommand(command), false, command);
+  for (const command of [
+    "git stash", "git worktree add ../x", "perl -pi -e 's/a/b/' f",
+    "node -e \"require('fs').writeFileSync('f', '1')\"", "echo x > out.txt",
+    "cat > f <<'EOF'\nx\nEOF"
+  ]) assert.equal(looksMutatingShellCommand(command), true, command);
+});
+
+// An opaque script runner can create files outside Land's projection, which
+// Land never restores; only the runtime transaction may mutate the target.
+test("Land refuses script runners and direct writes without the runtime transaction", () => {
+  for (const command of ["node --test", "git status"])
+    assert.equal(shellMutationViolation("land", {}, command), null, command);
+  for (const command of ["npm run test", "npx vitest run", "bash scripts/check.sh",
+    "git stash", "echo x > app.js", "sed -i s/a/b/ app.js",
+    "npm run test > app.log", "sh -c \"git commit -m y\"", "bash -c 'rm -rf src'"])
+    assert.equal(shellMutationViolation("land", {}, command), LAND_REFUSAL, command);
+  assert.equal(shellMutationViolation("land", { FOUNDATION_LAND_TRANSACTION: "1" },
+    "bash scripts/check.sh"), null);
+});
+
 test("shell mutation detection covers formatters, package scripts, and script runners", () => {
   for (const command of [
     "npx prettier --write src", "eslint src --fix", "ruff check --fix .",
@@ -64,10 +97,10 @@ test("shell mutation policy blocks read-only lifecycle phases", () => {
 
 test("shell mutation policy requires Land transaction authority", () => {
   assert.equal(shellMutationViolation("land", {}),
-    "Land shell mutations require the runtime transaction marker");
+    LAND_REFUSAL);
   assert.equal(shellMutationViolation("land", {
     FOUNDATION_LAND_TRANSACTION: "0"
-  }), "Land shell mutations require the runtime transaction marker");
+  }), LAND_REFUSAL);
   assert.equal(shellMutationViolation("land", {
     FOUNDATION_LAND_TRANSACTION: "1"
   }), null);
@@ -90,7 +123,7 @@ test("Land never infers delivery authority from the active phase", () => {
     "sh -c \"cd /repo && git commit -m y\""
   ]) {
     const violation = shellMutationViolation("land", {}, command);
-    assert.equal(violation, "Land shell mutations require the runtime transaction marker",
+    assert.equal(violation, LAND_REFUSAL,
       command);
   }
 });
@@ -104,11 +137,11 @@ test("Land refuses delivery that hides a command [land-delivery-substitution-ref
     'git commit -m "notes $(<(cat plan))"'
   ]) {
     const violation = shellMutationViolation("land", {}, command);
-    assert.equal(violation, "Land shell mutations require the runtime transaction marker",
+    assert.equal(violation, LAND_REFUSAL,
       command);
   }
   assert.equal(shellMutationViolation("land", {}, 'git commit -m "release $VERSION"'),
-    "Land shell mutations require the runtime transaction marker");
+    LAND_REFUSAL);
   assert.equal(shellMutationViolation("land", {
     FOUNDATION_LAND_TRANSACTION: "1"
   }, 'git commit -m "$(date)"'), null);
@@ -163,7 +196,7 @@ test("Build refusals name the refused operation, the workspace, and the required
   assert.equal(shellMutationViolation("build", WS,
     'npx tsc --noEmit 2>&1 | tail -20; npm run lint'),
   `${UNANCHORED} (refused: npx, npm run); ` +
-  "start the command with `cd /workspace && ` or `cd /workspace/<subdir> && `");
+  "run `cd /workspace` as its own call first (the shell keeps it), or start the command with `cd /workspace/<subdir> && `");
   assert.equal(shellMutationViolation("build", WS, "cd /workspace && cp $SOURCE ./source"),
     `${DYNAMIC} (\`$SOURCE\`); use literal paths inside /workspace`);
   assert.equal(shellMutationViolation("build", WS, "cd /workspace && cp $(pwd)/source ./source"),
@@ -174,7 +207,7 @@ test("Build refusals name the refused operation, the workspace, and the required
     `${BORROW} (\`../secret\`); ${borrowRepair("/workspace")}`);
   assert.equal(shellMutationViolation("build", { FOUNDATION_WORKSPACE_ROOT: "/my ws" }, "npm install"),
     `${UNANCHORED} (refused: npm install); ` +
-    "start the command with `cd '/my ws' && ` or `cd '/my ws/<subdir>' && `");
+    "run `cd '/my ws'` as its own call first (the shell keeps it), or start the command with `cd '/my ws/<subdir>' && `");
   assert.equal(shellMutationViolation("build", WS, "cd /workspace/nope; rm -rf ./build"),
     `${UNANCHORED} (\`cd /workspace/nope;\` continues even when the directory change fails); ` +
     "start the command with `cd /workspace/nope && `");
@@ -295,7 +328,7 @@ test("Build anchors accept quoted workspaces and the hint they are given", () =>
     "cd '/it'\\''s/ws' && npm run lint"), null);
   assert.equal(shellMutationViolation("build", apostrophe, "npm run lint"),
     `${UNANCHORED} (refused: npm run); ` +
-    "start the command with `cd '/it'\\''s/ws' && ` or `cd '/it'\\''s/ws/<subdir>' && `");
+    "run `cd '/it'\\''s/ws'` as its own call first (the shell keeps it), or start the command with `cd '/it'\\''s/ws/<subdir>' && `");
 });
 
 test("shell mutation detection keeps a quoted operand as an operand", () => {
@@ -403,4 +436,36 @@ test("Build refuses a quoted variable as a mutation target", () => {
   ]) assert.match(shellMutationViolation("build", WS, command), new RegExp(`^${DYNAMIC}`), command);
   assert.equal(shellMutationViolation("build", WS, 'cd /workspace && git commit -m "$MSG"'), null);
   assert.equal(shellMutationViolation("build", WS, 'cd /workspace && echo "$VAR" > out.txt'), null);
+});
+
+// One authority rule for chat words: approval and direct requests count,
+// urgency alone and negated requests never do.
+test("prompt authority reads approval, delivery, and Git requests from the user's words", async () => {
+  const {
+    gitPublicationOperations, isApprovalReply, promptExchange, promptRequestsDelivery,
+    requestedGitPublication
+  } = await import("../../hooks/prompt-authority.mjs");
+  for (const text of ["ลุยเลย", "ทำเลย", "ทำไปเลย", "go ahead", "approve", "ok ด่วนด้วย", "ใช่ ทำได้เลย"])
+    assert.equal(isApprovalReply(text), true, text);
+  for (const text of ["ด่วน", "รีบ demo", "อย่าเพิ่งทำเลย", "not yet, don't proceed", "ไม่ใช่"])
+    assert.equal(isApprovalReply(text), false, text);
+  for (const text of ["เปิด PR ให้เลย", "ส่ง PR ด้วย", "open a pull request", "please deliver it"])
+    assert.equal(promptRequestsDelivery(text), true, text);
+  for (const text of ["don't open a PR", "อย่าเปิด PR", "review the PR comments", "ด่วน"])
+    assert.equal(promptRequestsDelivery(text), false, text);
+  assert.deepEqual(requestedGitPublication("commit this"), { commit: true, push: false });
+  assert.deepEqual(requestedGitPublication("ช่วย push ด้วย"), { commit: true, push: true });
+  assert.deepEqual(requestedGitPublication("commit but don't push"), { commit: true, push: false });
+  assert.deepEqual(requestedGitPublication("ด่วน"), { commit: false, push: false });
+  assert.deepEqual(gitPublicationOperations("git add . && git commit -m x && git push"),
+    ["git commit", "git push"]);
+  assert.deepEqual(gitPublicationOperations("git status && echo 'git commit'"), []);
+  const exchange = promptExchange([
+    { type: "user", message: { content: "fix it" } },
+    { type: "user", message: { content: [{ type: "tool_result", content: "ASK_USER: question" }] } },
+    { type: "last-prompt", lastPrompt: "fix it" },
+    { type: "user", message: { content: "ลุยเลย" } }
+  ].map((row) => JSON.stringify(row)).join("\n"));
+  assert.equal(exchange.latest, "ลุยเลย");
+  assert.match(exchange.previousTurn, /ASK_USER: question/);
 });

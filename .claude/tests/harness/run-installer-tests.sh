@@ -82,6 +82,10 @@ printf '%s\n' '{"permissions":{"allow":["Bash(user-tool *)"]},"hooks":{"PreToolU
 
 assert_cmd_zero "installer applies non-interactively" \
   bash "$ROOT/install.sh" "$TARGET" --source "$ROOT" --yes
+# Harness next steps name `claude-foundation`; a source-checkout install must
+# still give the session that command, from a path with a space.
+assert_contains "installer writes a working project-local CLI shim" \
+  "$(cd "$TARGET" && "$TARGET/.foundation/bin/claude-foundation" version)" "claude-foundation "
 assert_file_exists "change command installed" "$TARGET/.claude/commands/change.md"
 assert_file_contains "installed change command accepts explicit prototype handoff" \
   "$TARGET/.claude/commands/change.md" "--prototype-selection <path>"
@@ -143,17 +147,7 @@ printf '%s\n' '{
 }' > "$TARGET/openspec/investigations/retry-boundary.json"
 investigation_result="$(bash "$ROOT/cli.sh" --project "$TARGET" investigate \
   openspec/investigations/retry-boundary.json)"
-if printf '%s' "$investigation_result" | jq -e '.action == "EDIT" and .investigation.kind == "inspect-sources"' >/dev/null; then
-  printf '%s' "$investigation_result" | jq -r '.investigation.paths[]' > "$TMP/investigation-sources.txt"
-  jq --rawfile paths "$TMP/investigation-sources.txt" \
-    '.sources = ((.sources + ($paths | split("\n") | map(select(length > 0)))) | unique)' \
-    "$TARGET/openspec/investigations/retry-boundary.json" \
-    > "$TMP/investigation-record.json"
-  mv "$TMP/investigation-record.json" \
-    "$TARGET/openspec/investigations/retry-boundary.json"
-  investigation_result="$(bash "$ROOT/cli.sh" --project "$TARGET" investigate \
-    openspec/investigations/retry-boundary.json)"
-fi
+# Discovered sources are acknowledged automatically: one run reaches DONE.
 assert_contains "public investigate reaches a harness-owned terminal action" \
   "$investigation_result" '"action": "DONE"'
 assert_contains "public investigate emits a Change-bound handoff" \
@@ -325,6 +319,16 @@ assert_cmd_zero "stable lifecycle wrapper permission is installed" \
 assert_cmd_zero "user permission is preserved during permission merge" \
   jq -e '.permissions.allow | index("Bash(user-tool *)") != null' \
     "$TARGET/.claude/settings.json"
+# The allowlist exists so the harness CLI and Build-workspace edits do not
+# prompt on every change. It must stay that narrow, append after the user's
+# own rules, and never grow on a rerun.
+SHIPPED_ALLOW="$(jq -c '.permissions.allow' "$ROOT/.claude/settings.json")"
+assert_eq "shipped allowlist is exactly the harness CLI and Build workspaces" \
+  '["Bash(claude-foundation *)","Bash(.foundation/bin/claude-foundation *)","Bash(node .claude/harness/foundation.mjs *)","Edit(/.foundation/sandboxes/**)","Edit(/.foundation/repository-sandboxes/**)"]' \
+  "$SHIPPED_ALLOW"
+assert_eq "upgrade appends the shipped allowlist after user rules in order" \
+  "$(printf '%s' "$SHIPPED_ALLOW" | jq -c '["Bash(user-tool *)"] + .')" \
+  "$(jq -c '.permissions.allow' "$TARGET/.claude/settings.json")"
 assert_file_not_contains "superseded phase guard command retired on upgrade" \
   "$TARGET/.claude/settings.json" "phase-mutation-guard.mjs"
 assert_eq "exactly one phase guard is wired after upgrade" "1" \
@@ -361,8 +365,11 @@ fi
 assert_file_exists "a refused manifest path deletes nothing outside the project" \
   "$outside_probe"
 cp "$TMP/manifest-backup.txt" "$TARGET/.foundation/install-manifest.txt"
+allow_before_rerun="$(jq -c '.permissions.allow' "$TARGET/.claude/settings.json")"
 assert_cmd_zero "installer update removes only stale managed files" \
   bash "$ROOT/install.sh" "$TARGET" --source "$ROOT" --yes
+assert_eq "rerunning the installer leaves the allowlist unchanged" \
+  "$allow_before_rerun" "$(jq -c '.permissions.allow' "$TARGET/.claude/settings.json")"
 assert_file_absent "stale managed file removed from prior manifest" \
   "$TARGET/.claude/harness/stale-owned.md"
 assert_file_absent "retired prototype command removed on upgrade" \
@@ -781,9 +788,10 @@ plugin_probe() {
       const { FoundationGuard } = await import(plugin);
       const hooks = await FoundationGuard({ directory: process.cwd() });
       try {
-        await hooks["tool.execute.before"](
-          { tool, callID: "probe" }, { args: JSON.parse(argsJson) });
-        console.log("ALLOWED");
+        const output = { args: JSON.parse(argsJson) };
+        await hooks["tool.execute.before"]({ tool, callID: "probe" }, output);
+        console.log(JSON.stringify(output.args) === argsJson
+          ? "ALLOWED" : "REWRITTEN " + JSON.stringify(output.args));
       } catch (error) {
         console.log("BLOCKED: " + error.message);
       }
@@ -793,9 +801,12 @@ plugin_probe() {
 probe="$(plugin_probe prove block write '{"filePath":"src/app.js"}')"
 assert_contains "opencode plugin enforces the phase guard" "$probe" "BLOCKED: phase guard"
 if command -v jq >/dev/null 2>&1; then
+  printf 'API_KEY=hunter2\n' > "$OPENCODE_TARGET/.env"
   probe="$(plugin_probe "" audit read '{"filePath":".env"}')"
-  assert_contains "opencode plugin enforces the secrets guard" \
-    "$probe" "BLOCKED by secrets guard"
+  assert_contains "opencode plugin points a secret read at the redacted copy" \
+    "$probe" "claude-foundation-redacted"
+  assert_not_contains "opencode plugin never refuses the secret read" "$probe" "BLOCKED"
+  rm -f "$OPENCODE_TARGET/.env"
 fi
 probe="$(plugin_probe prove block read '{"filePath":"README.md"}')"
 assert_eq "opencode plugin allows a harmless read" "ALLOWED" "$probe"
@@ -879,5 +890,83 @@ if bash "$ROOT/cli.sh" init "$HOST_ROUTE_TARGET" --host vscode --yes >/dev/null 
 else
   pass "cli init refuses an unknown host"
 fi
+
+# The installer prepares the pinned OpenSpec CLI through the harness routine.
+# Stubs keep it offline: a broken host `openspec` makes the CLI unavailable,
+# and a stub `npm` either fails (no registry) or installs a fake 1.7.0 CLI.
+OPENSPEC_STUBS="$TMP/openspec-stubs"
+mkdir -p "$OPENSPEC_STUBS/offline" "$OPENSPEC_STUBS/online"
+for mode in offline online; do
+  printf '#!/bin/sh\nexit 127\n' > "$OPENSPEC_STUBS/$mode/openspec"
+done
+printf '#!/bin/sh\necho "npm ERR! network unreachable" >&2\nexit 1\n' \
+  > "$OPENSPEC_STUBS/offline/npm"
+cat > "$OPENSPEC_STUBS/online/npm" <<'STUB'
+#!/bin/sh
+mkdir -p "$3/node_modules/.bin"
+printf '#!/bin/sh\necho 1.7.0\n' > "$3/node_modules/.bin/openspec"
+chmod +x "$3/node_modules/.bin/openspec"
+STUB
+chmod +x "$OPENSPEC_STUBS"/*/*
+host_path="$(printf '%s' "$PATH" | tr ':' '\n' | grep -v '/node_modules/\.bin$' | paste -sd: -)"
+
+OFFLINE_TARGET="$TMP/openspec-offline-project"
+mkdir -p "$OFFLINE_TARGET"
+offline_status=0
+offline_install="$(PATH="$OPENSPEC_STUBS/offline:$host_path" \
+  bash "$ROOT/install.sh" "$OFFLINE_TARGET" --source "$ROOT" --yes 2>&1)" || offline_status=$?
+assert_eq "an unreachable npm registry does not fail the install" "0" "$offline_status"
+assert_contains "the installer names the missing OpenSpec preparation" \
+  "$offline_install" "OpenSpec could not be prepared now"
+offline_doctor="$(cd "$OFFLINE_TARGET" && PATH="$OPENSPEC_STUBS/offline:$host_path" \
+  node .claude/harness/foundation.mjs doctor --stage change 2>&1 || true)"
+assert_contains "doctor names how the harness prepares OpenSpec" \
+  "$offline_doctor" "installs it under .foundation/tools before Build, Prove, and Land"
+
+ONLINE_TARGET="$TMP/openspec-online-project"
+mkdir -p "$ONLINE_TARGET"
+online_install="$(PATH="$OPENSPEC_STUBS/online:$host_path" \
+  bash "$ROOT/install.sh" "$ONLINE_TARGET" --source "$ROOT" --yes 2>&1)"
+assert_contains "the installer prepares pinned OpenSpec project-locally" \
+  "$online_install" "Prepared pinned OpenSpec project-locally under .foundation/tools"
+assert_file_exists "the prepared OpenSpec CLI is project-local" \
+  "$ONLINE_TARGET/.foundation/tools/node_modules/.bin/openspec"
+
+assert_eq "a fresh install seeds the shipped allowlist" \
+  "$SHIPPED_ALLOW" "$(jq -c '.permissions.allow' "$ONLINE_TARGET/.claude/settings.json")"
+
+# An install from before the allowlist already carried the CLI rule beside the
+# user's own; the upgrade keeps both where they were and adds only the rest.
+ALLOW_UPGRADE="$TMP/allowlist-upgrade-project"
+mkdir -p "$ALLOW_UPGRADE/.claude"
+printf '%s\n' '{"permissions":{"allow":["Bash(user-tool *)","Bash(claude-foundation *)"],"deny":["Bash(rm *)"]},"model":"user-choice"}' \
+  > "$ALLOW_UPGRADE/.claude/settings.json"
+assert_cmd_zero "installer upgrades a pre-allowlist settings file" \
+  bash "$ROOT/install.sh" "$ALLOW_UPGRADE" --source "$ROOT" --yes
+assert_eq "pre-allowlist upgrade adds missing rules without duplicates" \
+  '["Bash(user-tool *)","Bash(claude-foundation *)","Bash(.foundation/bin/claude-foundation *)","Bash(node .claude/harness/foundation.mjs *)","Edit(/.foundation/sandboxes/**)","Edit(/.foundation/repository-sandboxes/**)"]' \
+  "$(jq -c '.permissions.allow' "$ALLOW_UPGRADE/.claude/settings.json")"
+assert_cmd_zero "allowlist merge keeps unrelated user settings" \
+  jq -e '.permissions.deny == ["Bash(rm *)"] and .model == "user-choice"' \
+    "$ALLOW_UPGRADE/.claude/settings.json"
+
+OPT_OUT="$TMP/allowlist-opt-out-project"
+mkdir -p "$OPT_OUT/.claude"
+printf '%s\n' '{"permissions":{"allow":["Bash(user-tool *)"]}}' > "$OPT_OUT/.claude/settings.json"
+assert_cmd_zero "installer accepts the allowlist opt-out" \
+  bash "$ROOT/install.sh" "$OPT_OUT" --source "$ROOT" --yes --no-permission-allowlist
+assert_eq "opt-out leaves the user's allowlist untouched" '["Bash(user-tool *)"]' \
+  "$(jq -c '.permissions.allow' "$OPT_OUT/.claude/settings.json")"
+assert_file_contains "opt-out still wires the shipped hooks" \
+  "$OPT_OUT/.claude/settings.json" "phase-mutation-guard.sh"
+OPT_OUT_FRESH="$TMP/allowlist-opt-out-fresh"
+mkdir -p "$OPT_OUT_FRESH"
+assert_cmd_zero "a fresh install accepts the allowlist opt-out" \
+  bash "$ROOT/install.sh" "$OPT_OUT_FRESH" --source "$ROOT" --yes --no-permission-allowlist
+assert_cmd_zero "a fresh opt-out install seeds no permission rules" \
+  jq -e 'has("permissions") | not' "$OPT_OUT_FRESH/.claude/settings.json"
+assert_contains "host adapters pass the allowlist opt-out to the shared installer" \
+  "$(bash "$ROOT/install-cursor.sh" "$TMP/cursor-opt-out-dry" --source "$ROOT" --yes --dry-run --no-permission-allowlist)" \
+  "permission allowlist skipped"
 
 finish "installer"

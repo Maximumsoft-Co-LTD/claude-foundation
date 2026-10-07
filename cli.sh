@@ -143,9 +143,9 @@ const showAll = process.argv[3] === "--all";
 const groups = [["Workflow", "agent"], ["Conditional recovery", "conditional"],
   ["Administration", "admin"], ["Host integration", "host"],
   ["Internal compatibility", "internal"]];
-// The agent's normal path: start a change, then advance it. Everything else
+// The agent's normal path: start (or amend) a change, then advance it. Everything else
 // is recovery or operator surface behind `help --all`.
-const primaryOrder = ["change start", "advance", "changes"];
+const primaryOrder = ["change start", "change amend", "advance", "changes"];
 const primary = new Set(primaryOrder);
 console.log("claude-foundation — OpenSpec-native software-change harness\n");
 for (const [title, audience] of groups) {

@@ -1,6 +1,10 @@
 # Recovery review fixes
 
-## Consumer completion improvements — 2026-09-17 (active)
+> Historical maintainer task log, moved from the repository root. All items
+> were complete at v3.5.19; it is not an active ledger. Implementation
+> progress belongs to each active change's `tasks.md`.
+
+## Consumer completion improvements — 2026-09-17
 
 User authorized all work in `docs/reports/project-review-fix-plan-2026-09-17.md`
 directly in this repository without starting Change. Preserve earlier records

@@ -26,6 +26,7 @@ import {
   showAgentPlan,
   taskPlanIdentity
 } from "../runtime/workflow/agent-planning.mjs";
+import { taskAuthorityShape } from "../runtime/core/task-execution-authority.mjs";
 
 const fail = (message) => { throw new Error(message); };
 const stableHash = (value) => JSON.stringify(value);
@@ -119,7 +120,7 @@ test("task execution preserves history and binds the current graph", () => {
   });
   assert.equal(agentTaskExecutionRows([task("T1")], true, {}, {
     revision: 1, identity: "one"
-  }).T1.mode, "single-agent-observed");
+  }).T1.mode, "harness-verified", "planning grants no single-agent authority");
 });
 
 test("completed legacy single-session tasks are reused or automatically re-verified", () => {
@@ -243,6 +244,47 @@ test("completed legacy single-session tasks are reused or automatically re-verif
   });
   assert.equal(preserved.requiresVerification, false);
   assert.equal(legacyExecutionAuthoritySnapshot(rewrittenPlan), snapshot);
+});
+
+test("a task result bound to its own authority survives an amendment elsewhere", () => {
+  const tasks = [task("T1"), task("T2")].map((value) => ({
+    ...value, done: true, claims: [], contracts: [], inputSchema: null,
+    outputSchema: null, lifecycle: "build", authorityDigest: value.id
+  }));
+  const nodeFor = (value) => ({
+    id: `task:${value.id}`, kind: "task", repository: value.repository,
+    required: true, dependsOn: [], paths: value.paths, contracts: [],
+    resources: value.resources, claims: [], inputSchema: null, outputSchema: null,
+    lifecycle: "build", authorityDigest: value.authorityDigest
+  });
+  const before = { version: 3, revision: "r1", identity: "i1", claims: [], nodes: tasks.map(nodeFor) };
+  const result = (taskId, extra = {}) => ({ value: {
+    taskId, repository: "root", status: "observed", paths: [`src/${taskId}.js`], claimIds: [],
+    outputSchema: null, planDigest: "p", workspaceHash: "w", leaseId: "l",
+    fencingGeneration: 1, executionAttempt: 1, graphRevision: "r1", graphIdentity: "i1",
+    contractRevision: 1, observedWrites: [], ...extra
+  } });
+  const bound = (taskId) => result(taskId, { taskAuthority: taskAuthorityShape(before, taskId) });
+  // The amendment moved the graph and contract and rewrote T2 only.
+  const after = {
+    ...before, revision: "r2", identity: "i2",
+    nodes: [nodeFor(tasks[0]), { ...nodeFor(tasks[1]), authorityDigest: "T2-rewritten" }]
+  };
+  const recovered = recoverCompletedTasksForExecution({
+    id: "change", allTasks: tasks, graph: after, state: { contractRevision: 2 },
+    priorPlan: {}, currentContractFingerprint: "c", taskResult: (_id, taskId) => bound(taskId)
+  });
+  assert.equal(recovered.tasks[0].done, true, "an untouched task keeps its result");
+  assert.equal(recovered.tasks[1].done, false, "a rewritten task is re-verified");
+  assert.deepEqual(recovered.verification.map((row) => row.taskId), ["T2"]);
+  assert.match(recovered.verification[0].reason, /taskAuthority/);
+
+  const legacy = recoverCompletedTasksForExecution({
+    id: "change", allTasks: tasks, graph: after, state: { contractRevision: 2 },
+    priorPlan: {}, currentContractFingerprint: "c", taskResult: (_id, taskId) => result(taskId)
+  });
+  assert.ok(legacy.tasks.every((value) => !value.done),
+    "a result without task authority keeps the whole-graph binding");
 });
 
 test("blocking reasons combine ambiguity and active scope conflicts", () => {

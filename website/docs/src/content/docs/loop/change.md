@@ -74,6 +74,7 @@ The full core stays small:
     "outcome": "Unrelated mutations remain available",
     "scenarios": [{
       "name": "Orphaned row",
+      "kind": "success",
       "given": "a phase row belongs to an archived change",
       "when": "another change edits a product file",
       "then": "the edit is allowed"
@@ -92,14 +93,7 @@ The full core stays small:
   "discovery": {
     "coverage": [
       { "dimension": "current-behavior", "status": "covered", "sources": ["src/mutations.js"] },
-      { "dimension": "affected-actor", "status": "covered", "covers": ["orphan-row-does-not-lock"] },
-      { "dimension": "desired-behavior", "status": "covered", "covers": ["orphan-row-does-not-lock"] },
-      { "dimension": "success-path", "status": "covered", "covers": ["orphan-row-does-not-lock"] },
-      { "dimension": "failure-path", "status": "covered", "covers": ["orphan-row-does-not-lock"] },
-      { "dimension": "input-boundary", "status": "covered", "covers": ["orphan-row-does-not-lock"] },
-      { "dimension": "compatibility", "status": "not-applicable", "rationale": "No public contract changes." },
-      { "dimension": "non-goals", "status": "not-applicable", "rationale": "The behavior is already narrowly bounded." },
-      { "dimension": "verification", "status": "covered", "covers": ["orphan-row-does-not-lock"] }
+      { "dimension": "compatibility", "status": "not-applicable", "rationale": "No public contract changes." }
     ],
     "decisions": []
   }
@@ -110,7 +104,14 @@ The agent uses meaningful keys. Discovery coverage is optional for an ordinary
 change: `impact: high` and typed risk declarations (`riskSignals`, security
 triggers, integrations, external operations) add required dimensions, prose is
 never scanned for keywords, and a risk-derived `not-applicable` row needs only
-a rationale. The harness refuses unresolved investigation or user-decision statuses, checks
+a rationale. A required dimension the draft already states needs no row: the
+harness derives a `covered` row, marked derived in the proposal appendix, from
+`currentState`, `userStories`, requirements, scenario `kind` (`success`,
+`failure`, `boundary`), `compatibility`, `nonGoals`, tasks with `verify` and
+evidence, `failureMatrix`, `apiContracts`, `dataModel`, `uiStates`,
+`jobContract`, or documented `integrations`. Without such content the
+dimension stays missing, and an authored row always wins, so a
+`needs-user-decision` row is still asked. The harness refuses unresolved investigation or user-decision statuses, checks
 decision prerequisite cycles, and exposes at most three dependency-ready
 decisions at a time. The compiler creates stable claim/task IDs,
 spec-to-claim-to-task-to-provider links, classification, and versioned defaults.
@@ -133,7 +134,12 @@ Otherwise the harness returns agent-owned source investigation or repair, or at
 most three linked user decisions, plus an exact resume route, and creates
 nothing. `--inspect` inspects without starting; `--consume-draft` also removes
 the draft after a successful start. Record the user's spec approval with
-`advance <change> --approve-spec --decision-ref <ref>`. Versions 1 through 3 remain
+`advance <change> --approve-spec --decision-ref <ref>`, or add
+`--approve-spec --decision-ref <ref>` to the `change start`, `change revise`, or
+`change amend` call that applies the approving answer. Open design questions are
+printed with the approval packet. The first inspection also returns, as agent
+repairs, a task `verify` naming a test file that neither exists nor falls in any
+task's `paths`, and an `apiContracts` error without a status or code. Versions 1 through 3 remain
 supported for existing integrations.
 Use typed `riskSignals` for access control, persisted data, integrations,
 performance SLOs, UI, operational risk, and external side effects so required
@@ -154,11 +160,17 @@ not a transcript.
 Add complexity only when the work needs it:
 
 - multiple requirements with separate `capability` and `operation` values
-- `workType` (a list such as `["feature", "api", "ui"]`) and the design
-  blueprints it selects: `fileMap`, `failureMatrix`, `testMap`, plus
-  `apiContracts`, `dataModel`, `uiStates`, `configContract`, `jobContract`,
-  `bugfix`, or `refactor`; missing ones are non-blocking design warnings, as
-  is a task whose own tests sit outside its `paths`
+- dev document sections: `summary`, `userFlow` (Mermaid), `failureMatrix`,
+  `componentMap`, `apiContracts`, `dataModel`, `uiStates`, `configContract`,
+  `jobContract`, `bugfix`, or `refactor`. The harness infers `workType` from
+  task paths (declare it to override) and derives the folder tree, plan, file
+  map, and test map. A standard change must carry the sections its work type
+  needs; a missing one is a draft repair for the agent, never a user question.
+  Each fact is written once: `why` satisfies the summary (add `summary` only
+  for more), and without an authored `failureMatrix` the scenarios with
+  `"kind": "failure"` become its rows, with an optional scenario `recovery`
+  for the recovery column.
+  A task whose own tests sit outside its `paths` is a design warning
 - `decisions` for load-bearing choices, each with its consequences
 - Mermaid or referenced SVG/PNG `diagrams`
 - `prototypeSelection` pointing at an existing selection note
@@ -183,8 +195,14 @@ and a fixed version rather than `latest` or a branch.
 Rapid changes contain `proposal.md`, `tasks.md`, `evidence.yaml`, and a concise
 delta `specs/<capability>/spec.md` rendered exactly as in standard; Land merges
 it into `openspec/specs`. Only a legacy rapid packet declaring `skip_specs` has
-no delta. Standard changes may add `design.md`, which appears only for a
-load-bearing decision or architecture context. Execution, repository,
+no delta. The rapid proposal is the compact dev document: summary, what
+changes, user flow, folder tree (paths new at the base marked `+`), failure
+matrix, and the plan Build executes. Descriptive sections (`fileMap`,
+`testMap`, `componentMap`, `userFlow`, `configContract`, `refactor`) render
+there too and never move a low-risk change to standard. A standard v4 change
+always adds `design.md` with the full dev document and states its work type,
+noting when it was inferred. Flowchart node labels holding `(`, `)`, or `"`
+must be quoted, as in `A["mean(values)"]`. Execution, repository,
 handoff, and grounding files appear only for real overrides.
 
 After compilation, `openspec/changes/<id>/` is the source of truth. The draft is
@@ -196,12 +214,12 @@ To change an agreed change before Build starts, revise the same change instead
 of abandoning it:
 
 ```bash
-claude-foundation change revise <change> <draft.json> --inspect
-claude-foundation change revise <change> <draft.json> --consume-draft
+claude-foundation change revise <change> <draft.json>
 ```
 
 The revised draft keeps the change id and passes the same intake gate as
-`change start`. The whole packet is recompiled transactionally, the contract
+`change start` in the same call: an incomplete intake prints its action and
+changes nothing. The whole packet is recompiled transactionally, the contract
 revision increments, and any failure restores the prior packet and runtime
 state. Once Build has a workspace, a receipt, or a completed task, the command
 routes to `change amend`. The result lists the added, revised, and removed

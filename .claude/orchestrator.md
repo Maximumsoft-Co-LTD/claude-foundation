@@ -66,16 +66,17 @@ workspace. Record stale or failed proof truthfully and preserve unrelated
 edits. Multiple
 repositories use one saga: prepare all writable targets, apply dependency
 waves, verify unchanged HEAD/index, then archive. Diffs remain uncommitted;
-never manufacture child commits or gitlink SHAs, and never commit, push, or
-open a PR without separate authority.
+never manufacture child commits or gitlink SHAs. Land never commits, pushes,
+or opens a PR; only `/deliver` or a direct user instruction does.
 
 `/dev` runs the four phase commands in order without inferring Land
 authority; with Land authority it succeeds only at `archived`.
 
 ## Deliver (optional)
 
-After `archived`, `/deliver <change>` grants separate optional authority;
-`commands/deliver.md` owns its procedure. The agent composes only from archived
+After `archived`, `/deliver <change>` grants separate optional authority, as
+does a direct request such as "เปิด PR ให้เลย"; `commands/deliver.md` owns its
+procedure. The agent composes only from archived
 sources and asks only for authority or content-identity decisions.
 
 ## Human interaction boundary

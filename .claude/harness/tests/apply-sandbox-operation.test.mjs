@@ -74,6 +74,13 @@ try {
     pathMode: () => "100"
   }, "before"), undefined);
 
+  // Archive hands apply the readiness it just checked; apply must not
+  // recompute it.
+  const reused = fixture({ context: { landCheck: () => fail("landCheck must be reused") } });
+  applySandboxOperation(reused.context, "c", { controlPlane: true }, { archived: true });
+  assert.equal(reused.calls.recover, 1);
+  assert.equal(reused.calls.prepare, 0);
+
   const archived = fixture({ context: { landCheck: () => ({ archived: true }) } });
   applySandboxOperation(archived.context, "c");
   assert.equal(archived.calls.recover, 1);

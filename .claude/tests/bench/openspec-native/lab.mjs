@@ -54,8 +54,20 @@ function writeIntegrity(runDir) {
   return value;
 }
 
-function commandResult(command, args, cwd) {
-  return spawnSync(command, args, { cwd, encoding: "utf8", env: process.env });
+function commandResult(command, args, cwd, env = process.env) {
+  return spawnSync(command, args, { cwd, encoding: "utf8", env });
+}
+
+// A source-checkout install puts no `claude-foundation` on PATH, but every
+// command the agent follows names it. Give the run the same CLI a Homebrew
+// install provides, pointing at this checkout's cli.sh.
+function cliShimEnv(runDir) {
+  const bin = join(runDir, "bin");
+  mkdirSync(bin, { recursive: true });
+  const shim = join(bin, "claude-foundation");
+  writeFileSync(shim, `#!/bin/sh\nexec "${join(ROOT, "cli.sh")}" "$@"\n`);
+  chmodSync(shim, 0o755);
+  return { ...process.env, PATH: `${bin}:${process.env.PATH || ""}` };
 }
 
 function sourceRevision(root = ROOT) {
@@ -234,12 +246,17 @@ export function runScenarioLab({ matrixPath, scenarioId, outputRoot = DEFAULT_RE
   if (plan.budget.tool_calls !== undefined)
     args.push("--max-tool-calls", String(plan.budget.tool_calls));
   if (scenario.execution === "paid")
-    args.push("--test-self-review", "true", "--test-land", "true");
+    args.push("--test-self-review", "true", "--test-land", "true",
+      // A fresh disposable consumer is never a trusted workspace, so headless
+      // Claude ignores its settings allow-list. Pass the installer's documented
+      // headless route (edits plus the harness CLI) instead of trusting it.
+      "--claude-arg", "--permission-mode", "--claude-arg", "acceptEdits",
+      "--claude-arg", "--allowedTools", "--claude-arg", "Bash(claude-foundation *)");
   const startedAt = new Date().toISOString();
   const source = sourceRevision();
   let result;
   try {
-    result = commandResult(process.execPath, args, ROOT);
+    result = commandResult(process.execPath, args, ROOT, cliShimEnv(runDir));
     const verification = result.status === 0
       ? deliveryChecks(scenario, prepared.project, tempParent)
       : {

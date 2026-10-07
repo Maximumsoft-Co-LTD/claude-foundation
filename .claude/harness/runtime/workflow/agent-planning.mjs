@@ -359,7 +359,9 @@ export function agentExecutionSummary(tasks, singleAgent) {
 export function agentTaskExecutionRows(tasks, singleAgent, priorPlan, graph) {
   const execution = { ...(priorPlan.taskExecution || {}) };
   for (const task of tasks) execution[task.id] = {
-    mode: singleAgent ? "single-agent-observed" : "lease-result",
+    // Planning grants no authority: a completion is recorded only when the
+    // harness verifies it. Earlier single-agent-observed rows stay readable.
+    mode: singleAgent ? "harness-verified" : "lease-result",
     repository: task.repository,
     graphRevision: graph.revision,
     graphIdentity: graph.identity
@@ -395,8 +397,23 @@ export function recoverCompletedTasksForExecution({
 }) {
   let requiresVerification = false;
   const invalidated = new Set();
+  const reasons = new Map();
+  // An unticked task whose released lease result is accepted under current
+  // authority is finished work awaiting its ledger tick, which the harness
+  // owns; the worker never edits checkboxes.
+  const resultReady = [];
   const tasks = allTasks.map((task) => {
-    if (!task.done) return task;
+    if (!task.done) {
+      const resultRecord = taskResult?.(id, task.id) || null;
+      if (resultRecord && !taskLease?.(id, task.id)?.leaseId) {
+        const node = graph.nodes.find((entry) => entry.id === `task:${task.id}`);
+        if (resolveTaskExecutionAuthority({
+          id, taskId: task.id, node, graph, state, savedPlan: priorPlan,
+          resultRecord, taskLease: null, currentContractFingerprint
+        }).status === "accepted-lease-result") resultReady.push(task.id);
+      }
+      return task;
+    }
     const resultRecord = taskResult?.(id, task.id) || null;
     const lease = taskLease?.(id, task.id) || null;
     const recordedAuthority = Boolean(resultRecord || lease?.leaseId ||
@@ -414,6 +431,7 @@ export function recoverCompletedTasksForExecution({
     if (["accepted-lease-result", "single-agent-observed",
       "compatible-legacy-single-session"].includes(authority.status)) return task;
     invalidated.add(task.id);
+    reasons.set(task.id, authority.reason || "task lacks current execution authority");
     return { ...task, done: false };
   });
   // Re-verifying an upstream task also invalidates completed dependants. This
@@ -426,13 +444,20 @@ export function recoverCompletedTasksForExecution({
       if (!task.done || invalidated.has(task.id) ||
           !task.dependsOn.some((dependency) => invalidated.has(dependency))) continue;
       invalidated.add(task.id);
+      reasons.set(task.id, `depends on ${task.dependsOn.filter((dependency) =>
+        invalidated.has(dependency)).join(", ")}, which needs verification`);
       expanded = true;
     }
   }
   requiresVerification = invalidated.size > 0;
   return {
     tasks: tasks.map((task) => invalidated.has(task.id) ? { ...task, done: false } : task),
-    requiresVerification
+    requiresVerification,
+    resultReady,
+    // Implemented tasks whose execution record is stale, in ledger order: the
+    // work exists and needs only re-verification, never re-implementation.
+    verification: allTasks.filter((task) => invalidated.has(task.id))
+      .map((task) => ({ taskId: task.id, reason: reasons.get(task.id) }))
   };
 }
 
@@ -615,15 +640,14 @@ export function createAgentPlanner({
       precompletedAtIsolation: Boolean(taskPacketWasPrecompleted?.(id))
     });
     const schedulableTasks = recovered.tasks;
-    const requiresVerification = recovered.requiresVerification;
     const { tasks, completed } = enrichAgentTasks({ modelForTask, fail },
       id, schedulableTasks, repositories, selectedPolicy);
     const schedulingWaves = [];
     const groups = groupAgentTasks(tasks, completed,
       selectedPolicy.execution.maxParallelAgents, taskResourcesConflict, fail,
       (wave) => schedulingWaves.push(wave));
-    const singleAgent = !requiresVerification && (singleAgentExecutionEligible(tasks, claims) ||
-      sequentialSessionEligible(tasks, claims, groups));
+    const singleAgent = singleAgentExecutionEligible(tasks, claims) ||
+      sequentialSessionEligible(tasks, claims, groups);
     const activeConflicts = activeRepositoryConflicts(id, repositories);
     const conflicts = blockingConflictRows(activeConflicts);
     // Scope overlaps with other active changes are reported, never enforced:
@@ -667,6 +691,8 @@ export function createAgentPlanner({
       })),
       tasks,
       groups,
+      verification: recovered.verification,
+      resultReady: recovered.resultReady,
       scheduling: {
         strategy: "critical-path-resource-aware",
         capacity: selectedPolicy.execution.maxParallelAgents,

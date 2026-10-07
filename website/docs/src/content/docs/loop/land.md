@@ -26,12 +26,23 @@ them with `advance <change> --through archived --restore-target <paths>` inside
 the transaction. Any other conflicting file is a user decision, and a file
 changed after the restore was recorded is never overwritten.
 
+Land is always allowed for stacked changes; nobody commits the first landed
+change before the next one lands. When an earlier change's landed, uncommitted
+diff touches a file this change also changed, the harness merges that landed
+edit into this change's sandbox copy, proves again what the merge invalidated,
+and applies. If both changed the same lines, the agent merges them in the
+sandbox copy and keeps the landed content. Earlier landed bytes are never
+offered for discard, and the user is asked only when the two intents
+contradict.
+
 Only the harness-owned recoverable Land transaction may apply product files and
 synchronize the agreement; the agent does not edit them ad hoc. Land never
 implies permission to commit, push, publish, or open a pull request. While Land
 is active, the phase guard rejects those mutating shell commands unless they are
-children of the marked runtime transaction. After archive, delivery uses the
-project's normal process under separate authority. A moved
+children of the marked runtime transaction. After archive, commit, push, and
+pull requests happen only through `/deliver` (a direct request such as "open a
+PR" counts) or your direct instruction; a review follow-up that cites the
+delivered PR's URL updates that same PR instead of opening another. A moved
 base, projection conflict, interrupted transaction, or unsafe repository
 identity stops with `WAIT`, `REPAIR`,
 `RUN_EXTERNAL`, or `ASK_USER`. The result names the cause, responsible actor,

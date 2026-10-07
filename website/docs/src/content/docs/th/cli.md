@@ -15,8 +15,9 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
 | `investigate --template \| <record.json>` | ตรวจ fact และ hypothesis ที่ผูก source เก็บ resume state และสร้าง Change handoff |
-| `change start --template \| <draft.json> [--inspect] [--consume-draft]` | ตรวจ draft และถ้าครบจะ compile และเริ่ม agreement แบบ atomic ในคำสั่งเดียว; `--inspect` ตรวจอย่างเดียว |
-| `change amend --template \| <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake หรือเพิ่ม แก้ หรือลบ requirement หรือแก้ verify command ของ task ที่ยังไม่เสร็จ ระหว่าง Build แบบ transaction |
+| `change start --template \| <draft.json> [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | ตรวจ draft และถ้าครบจะ compile และเริ่ม agreement แบบ atomic ในคำสั่งเดียว; `--inspect` ตรวจอย่างเดียว; `--approve-spec` บันทึก approval ของผู้ใช้ในคำสั่งเดียวกัน |
+| `change amend --template \| <change> <amendment.json> [--inspect] [--consume-amendment] [--approve-spec --decision-ref <ref> [--through <target>]]` | Inspect intake และถ้าครบจะเพิ่ม แก้ หรือลบ requirement หรือแก้ verify command ของ task ที่ยังไม่เสร็จ ระหว่าง Build แบบ transaction ในคำสั่งเดียว |
+| `change amend <change> --task <task> --verify <command> [--reason <text>]` | แก้ verify command ที่ผิดของ task ที่ยังไม่เสร็จได้ตรง ๆ โดยคง approval ไว้ task จะถูกรับเมื่อคำสั่งใหม่ผ่านเท่านั้น |
 | `advance <change> --through build\|proven\|archived` | รัน deterministic lifecycle (evidence wiring, sandbox sync, review ที่ agent รันได้, ติ๊ก task) แล้วคืนหนึ่งในหก action ที่ boundary จริง |
 | `advance <change> --approve-spec --decision-ref <ref>` | บันทึกการอนุมัติ spec ของผู้ใช้ (alias ของ `change resolve --approve-spec`) |
 | `deliver advance <change>` | หลังสั่ง `/deliver` อย่างชัดเจน ให้ harness ทำ isolated commit, push feature branch, เปิด/ใช้ PR เดิม, ตรวจผ่าน provider และคืน URL |
@@ -69,9 +70,10 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 |---|---|
 | `investigate --template \| <record.json>` | พิมพ์หรือตรวจ investigation record แล้วคืน typed action หนึ่งรายการ |
 | `change new <intent> [--rapid]` | Compatible primitive สำหรับเขียน agreement ด้วยมือ |
-| `change start --template \| <draft.json> [--inspect] [--consume-draft]` | ตรวจและถ้าครบจะ compile และเริ่ม agreement จาก semantic draft ในคำสั่งเดียว โดยพื้นที่แยกจะสร้างภายหลังใน Build |
-| `change amend --template \| <change> <amendment.json> [--inspect] [--consume-amendment]` | Inspect intake หรือเพิ่ม แก้ หรือลบ semantic requirement หรือแก้ verify command ของ task ที่ยังไม่เสร็จ แบบ transaction และรักษางานที่เสร็จแล้ว |
-| `change revise <change> <draft.json> [--inspect] [--consume-draft]` | ก่อน Build คอมไพล์ semantic draft ฉบับแก้ทับ change id เดิมพร้อม rollback และแสดง requirement delta (ใช้ approval เดิมต่อ เว้นแต่มีการลบ requirement) |
+| `change start --template \| <draft.json> [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | ตรวจและถ้าครบจะ compile และเริ่ม agreement จาก semantic draft ในคำสั่งเดียว โดยพื้นที่แยกจะสร้างภายหลังใน Build; `--approve-spec` บันทึก approval ของผู้ใช้ในคำสั่งเดียวกัน |
+| `change amend --template \| <change> <amendment.json> [--inspect] [--consume-amendment] [--approve-spec --decision-ref <ref> [--through <target>]]` | Inspect intake และถ้าครบจะเพิ่ม แก้ หรือลบ semantic requirement หรือแก้ verify command ของ task ที่ยังไม่เสร็จ แบบ transaction และรักษางานที่เสร็จแล้ว ในคำสั่งเดียว |
+| `change amend <change> --task <task> --verify <command> [--reason <text>]` | แก้ verify command ของ task ที่ยังไม่เสร็จหนึ่งตัวโดยไม่ต้องเขียน amendment JSON claim, capability และ approval คงเดิม และคำสั่งที่ผ่านเสมอจะถูกปฏิเสธ |
+| `change revise <change> <draft.json> [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | ก่อน Build ตรวจและถ้าครบจะคอมไพล์ semantic draft ฉบับแก้ทับ change id เดิมในคำสั่งเดียว พร้อม rollback และแสดง requirement delta (ใช้ approval เดิมต่อ เว้นแต่มีการลบ requirement) |
 | `change resolve <change> …` | บันทึกการตัดสินใจเรื่อง impact coupling security และ review |
 | `change validate <change>` | ตรวจ change และ evidence contract ที่รันได้ |
 | `sandbox create <change> [--all]` | สร้างพื้นที่ Build ที่แยกออกมา |
@@ -125,7 +127,8 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 | `deliver advance <change>` | Composition command เดียวสำหรับ archived change โดย harness เป็นเจ้าของ readiness, isolated worktree, projection guard, PR-standard rendering, commit, push, provider read-back, retry และ resume |
 
 ถ้าไม่เรียก `/deliver` จะไม่สร้าง delivery directory, งาน evidence เฉพาะ PR หรือ
-gate เพิ่ม คำสั่งนี้ไม่อนุญาต force-push, push เข้า default branch, merge, deploy,
+gate เพิ่ม ถ้า change prove แล้วแต่ยังไม่ archive การเรียก `/deliver` ถือเป็นอำนาจ
+Land ด้วย harness จะ Land ผ่าน `advance --through archived` แล้วส่งต่อ คำสั่งนี้ไม่อนุญาต force-push, push เข้า default branch, merge, deploy,
 publish หรือแก้ product และสำเร็จได้เมื่อ provider ยืนยันว่า base, head กับ commit
 ของ PR ที่เปิดอยู่ตรงกับ delivery receipt เท่านั้น
 

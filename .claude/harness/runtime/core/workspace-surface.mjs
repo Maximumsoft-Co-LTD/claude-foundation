@@ -92,6 +92,17 @@ export function isChangePacketPath(rel, changeId) {
   return rel === base || rel.startsWith(`${base}/`);
 }
 
+// Investigation records, notes, and generated reports. They are control-plane
+// documents written in the target checkout during Investigate or Change, never
+// Land targets, so no sandbox carries, projects, or replays them.
+const INVESTIGATIONS_PREFIX = "openspec/investigations/";
+
+export function isInvestigationPath(rel) {
+  const path = String(rel || "");
+  return path === INVESTIGATIONS_PREFIX.slice(0, -1) ||
+    path.startsWith(INVESTIGATIONS_PREFIX);
+}
+
 // The git pathspec separating a change's own code work from everything a
 // sandbox carries but does not own: the packet (whose source of truth is the
 // target), provider output, machine state, and nested repositories.
@@ -105,6 +116,7 @@ export function sandboxCodePathspec(changeId, submoduleRelativePaths = []) {
   return [
     ".",
     `:(exclude)openspec/changes/${changeId}/**`,
+    `:(exclude)${INVESTIGATIONS_PREFIX}**`,
     ":(exclude)coverage/**", ":(exclude)test-results/**",
     ":(exclude)playwright-report/**", ":(exclude).foundation/**",
     ...submoduleRelativePaths.map((rel) => `:(exclude)${rel}`)

@@ -110,6 +110,8 @@ test("typed risk signals derive dimensions without depending on requirement lang
     "accessibility", "data-migration", "rollout-rollback", "recoverability",
     "performance-capacity-availability"
   ]) assert.ok(required.includes(dimension), dimension);
+  assert.ok(requiredDiscoveryDimensions(source({ riskSignals: ["input-domain"] }))
+    .includes("input-boundary"), "input-domain requires input-boundary coverage");
   const invalid = source({ riskSignals: ["invented-risk"] });
   assert.match(semanticIntakeIssues(invalid).join("\n"), /unknown signal\(s\): invented-risk/);
 });
@@ -288,4 +290,162 @@ test("a decision with alternatives and no choice stays an open user question", (
   const action = semanticIntakeAction(value);
   assert.equal(action.action, "ASK_USER");
   assert.deepEqual(action.decision.items.map((row) => row.key), ["scope"]);
+});
+
+// Answering a decision used to cost two or three more draft edits to mark the
+// linked coverage rows. The harness projects them itself once every linked
+// decision is resolved; a row still waiting on an open decision stays open.
+test("resolved decisions settle their linked coverage without another draft edit", () => {
+  const value = source();
+  value.discovery.decisions = [
+    { key: "actor", status: "resolved", choice: "admins", reason: "owners", alternatives: ["admins", "all"] },
+    { key: "limit", status: "open", question: "limit?", alternatives: ["10", "50"], recommended: "10" }
+  ];
+  const actor = value.discovery.coverage.find((row) => row.dimension === "affected-actor");
+  actor.status = "needs-user-decision";
+  actor.decisionKeys = ["actor"];
+  delete actor.covers;
+  assert.deepEqual(semanticIntakeIssues(value).filter((issue) => issue.includes("coverage[")), []);
+  assert.equal(semanticIntakeAction(value).action, "ASK_USER", "the open decision is still asked");
+  value.discovery.decisions[1] = { ...value.discovery.decisions[1], status: "resolved", choice: "10",
+    reason: "default" };
+  const boundary = value.discovery.coverage.find((row) => row.dimension === "input-boundary");
+  boundary.status = "needs-user-decision";
+  boundary.decisionKeys = ["limit"];
+  const ready = semanticIntakeAction(value);
+  assert.equal(ready.action, "DONE");
+  const normalized = normalizeDiscovery(value).coverage;
+  const projected = normalized.find((row) => row.dimension === "affected-actor");
+  assert.equal(projected.status, "covered");
+  assert.deepEqual(projected.sources, ["decision:actor"]);
+  assert.equal(value.discovery.coverage.find((row) => row.dimension === "affected-actor").status,
+    "needs-user-decision", "the projection never rewrites the agent's draft object");
+});
+
+// A high-impact draft used to restate its own content as nine-plus coverage
+// rows. The harness derives a row when the draft already says it, and only
+// then; everything else stays missing, and an authored row always wins.
+function rich(overrides = {}) {
+  return {
+    version: 4,
+    intent: "Import contacts from a partner",
+    impact: "high",
+    currentState: "Contacts are typed in by hand",
+    compatibility: "Existing contacts keep their IDs",
+    nonGoals: ["Two-way sync"],
+    userStories: [{ asA: "an admin", iWant: "to import contacts", covers: ["import"] }],
+    requirements: [{
+      key: "import", capability: "contacts", outcome: "Contacts are imported",
+      scenarios: [
+        { name: "Valid file", kind: "success", when: "a CSV is uploaded", then: "rows appear" },
+        { name: "Bad row", kind: "failure", when: "a row has no email", then: "the row is listed",
+          recovery: "Fix the row and re-upload" },
+        { name: "Empty file", kind: "boundary", when: "the CSV has no rows", then: "nothing changes" }
+      ]
+    }, {
+      key: "audit", capability: "contacts", outcome: "Imports are audited",
+      scenarios: [{ name: "Logged", when: "an import ends", then: "one audit entry exists" }]
+    }],
+    tasks: [{ key: "t", covers: ["import", "audit"], verify: "npm test", paths: ["src/**"] }],
+    evidence: { import: { capabilities: ["test"] }, audit: { capabilities: ["test"] } },
+    discovery: { coverage: [
+      { dimension: "operability", status: "not-applicable", rationale: "Batch job, existing logs" },
+      { dimension: "recoverability", status: "covered", covers: ["import"] }
+    ], decisions: [] },
+    ...overrides
+  };
+}
+
+test("required coverage the draft already states is derived, marked, and linked", () => {
+  const value = rich();
+  assert.deepEqual(semanticIntakeIssues(value), []);
+  assert.equal(semanticIntakeAction(value).action, "DONE");
+  const rows = new Map(normalizeDiscovery(value).coverage.map((row) => [row.dimension, row]));
+  const derived = (dimension) => {
+    const row = rows.get(dimension);
+    assert.equal(row?.derived, true, dimension);
+    assert.equal(row.status, "covered", dimension);
+    return [row.covers, row.derivedFrom];
+  };
+  assert.deepEqual(derived("current-behavior"), [[], ["currentState"]]);
+  assert.deepEqual(derived("affected-actor"), [["import"], ["userStories"]]);
+  assert.deepEqual(derived("desired-behavior"), [["import", "audit"], ["requirements"]]);
+  assert.deepEqual(derived("success-path"), [["import"], ["requirements[].scenarios kind:success"]]);
+  assert.deepEqual(derived("failure-path"), [["import"], ["requirements[].scenarios kind:failure"]]);
+  assert.deepEqual(derived("input-boundary"), [["import"], ["requirements[].scenarios kind:boundary"]]);
+  assert.deepEqual(derived("compatibility"), [[], ["compatibility"]]);
+  assert.deepEqual(derived("non-goals"), [[], ["nonGoals"]]);
+  assert.deepEqual(derived("verification"), [["import", "audit"], ["tasks[].verify", "evidence"]]);
+  // Authored rows are kept as written and never marked derived.
+  assert.equal(rows.get("operability").derived, undefined);
+  assert.equal(rows.get("recoverability").derived, undefined);
+  assert.equal(value.discovery.coverage.length, 2, "the draft object is not rewritten");
+});
+
+test("coverage is never derived without backing content", () => {
+  const value = rich({
+    currentState: "none", compatibility: "", nonGoals: [], userStories: [],
+    requirements: rich().requirements.map((row) => ({
+      ...row, scenarios: row.scenarios.map(({ kind, ...scenario }) => scenario)
+    })),
+    evidence: { import: { capabilities: ["test"] } }
+  });
+  const message = semanticIntakeIssues(value).join("\n");
+  for (const dimension of ["current-behavior", "affected-actor", "success-path", "failure-path",
+    "input-boundary", "compatibility", "non-goals", "verification"])
+    assert.match(message, new RegExp(`missing required dimension '${dimension}'`), dimension);
+  // Requirements with statements and scenarios still state the desired behavior.
+  assert.doesNotMatch(message, /'desired-behavior'/);
+  // Unrequired dimensions are not derived, so an ordinary draft gains no rows.
+  assert.deepEqual(normalizeDiscovery({ ...rich(), impact: "low", discovery: undefined }).coverage, []);
+  assert.deepEqual(semanticIntakeIssues({ ...rich(), version: 3 }), []);
+  assert.equal(normalizeDiscovery({ ...rich(), version: 3 }), undefined);
+});
+
+test("an authored row wins over derivation and its user decision is still asked", () => {
+  const value = rich();
+  value.discovery.coverage.push({
+    dimension: "non-goals", status: "needs-user-decision", decisionKeys: ["scope"]
+  });
+  value.discovery.decisions = [{
+    key: "scope", question: "Include sync?", alternatives: ["no", "yes"], recommended: "no"
+  }];
+  const action = semanticIntakeAction(value);
+  assert.equal(action.action, "ASK_USER");
+  assert.deepEqual(action.decision.items.map((row) => row.key), ["scope"]);
+  const row = normalizeDiscovery(value).coverage.find((entry) => entry.dimension === "non-goals");
+  assert.equal(row.status, "needs-user-decision");
+  assert.equal(row.derived, undefined);
+  // A `derived` flag written into the draft is ignored.
+  const forged = rich({ discovery: { coverage: [
+    { dimension: "current-behavior", status: "covered", derived: true, derivedFrom: ["x"] }
+  ], decisions: [] } });
+  assert.match(semanticIntakeIssues(forged).join("\n"), /covered status requires covers or sources/);
+});
+
+test("risk dimensions derive from the typed dev document sections", () => {
+  const value = rich({
+    impact: "low", riskSignals: ["persisted-data-change", "user-interface", "external-integration"],
+    dataModel: [{ entity: "Contact", fields: ["email"], migration: "add column", rollback: "drop column" }],
+    uiStates: [{ screen: "Import", states: ["error"], accessibility: "Labelled file input" }],
+    jobContract: [{ key: "import", states: ["queued"], retry: "3x", timeout: "60s", idempotency: "file hash" }],
+    integrations: [{ key: "partner", documentation: { source: "https://x.test/v1", version: "1" },
+      relatesTo: ["import"], concerns: ["timeout on large files"] }]
+  });
+  value.discovery.coverage = [];
+  const rows = new Map(normalizeDiscovery(value).coverage.map((row) => [row.dimension, row]));
+  assert.deepEqual(rows.get("data-migration").derivedFrom, ["dataModel[].migration"]);
+  assert.deepEqual(rows.get("rollout-rollback").derivedFrom, ["dataModel[].rollback"]);
+  assert.deepEqual(rows.get("accessibility").derivedFrom, ["uiStates[].accessibility"]);
+  assert.deepEqual([rows.get("integration-contract").covers, rows.get("integration-contract").derivedFrom],
+    [["import"], ["integrations"]]);
+  assert.deepEqual(rows.get("timeout-retry-idempotency").derivedFrom,
+    ["integrations[].concerns", "jobContract"]);
+  // Judgment-only dimensions are never derived.
+  assert.equal(rows.has("operability"), false);
+  assert.equal(rows.has("recoverability"), false);
+  const partial = rich({ impact: "low", riskSignals: ["persisted-data-change"],
+    dataModel: [{ entity: "A", migration: "m", rollback: "r" }, { entity: "B", migration: "m" }] });
+  partial.discovery.coverage = [];
+  assert.match(semanticIntakeIssues(partial).join("\n"), /missing required dimension 'rollout-rollback'/);
 });

@@ -4,7 +4,7 @@
 // - `change validate` must run the OpenSpec strict lint when the CLI is
 //   present, fail with its findings, and degrade to a warning when absent.
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 
@@ -277,6 +277,21 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
   await assert.rejects(route("amend", [
     "change", "amendment.json", "--inspect", "--consume-amendment"
   ], {}), /cannot be combined/);
+  // The direct verify correction needs no amendment JSON.
+  let correctedVerify = null;
+  await route("amend", ["change", "--task", "T001", "--verify", "npm test -- --runInBand",
+    "--reason", "typo"], {
+    amendTaskVerify: (...args) => { correctedVerify = args; }
+  });
+  assert.deepEqual(correctedVerify, ["change",
+    { task: "T001", verify: "npm test -- --runInBand", reason: "typo" }]);
+  await assert.rejects(route("amend", ["change", "--task", "T001"], {
+    amendTaskVerify: () => {}
+  }), /requires <change> --task <task-key\|task-id> --verify <command>/);
+  await assert.rejects(route("amend", ["change", "amendment.json", "--task", "T001",
+    "--verify", "npm test"], { amendTaskVerify: () => {} }), /requires <change> --task/);
+  await assert.rejects(route("amend", ["change", "--task", "T001", "--verify", "npm test",
+    "--inspect"], { amendTaskVerify: () => {} }), /cannot be combined/);
   let consumedRevision = null;
   await route("revise", ["change", "draft.json", "--consume-draft"], {
     reviseChange: (...args) => { consumedRevision = args; }
@@ -291,6 +306,70 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
     "change", "draft.json", "--inspect", "--consume-draft"
   ], {}), /cannot be combined/);
   await assert.rejects(route("revise", ["change"], {}), /requires <change> <draft.json>/);
+
+  // One call: the agreement call records the user's approval and continues.
+  for (const [command, values, method, result] of [
+    ["start", ["draft.json"], "startAtomic", "change"],
+    ["revise", ["change", "draft.json"], "reviseChange", { added: [] }],
+    ["amend", ["change", "amendment.json"], "amendChange", { issues: [] }]
+  ]) {
+    const calls = [];
+    await route(command, [...values, "--approve-spec", "--decision-ref", "chat://ok",
+      "--through", "build"], {
+      [method]: () => { calls.push(method); return result; },
+      approvalQuestionAction: () => null,
+      resolveChange: (id, flags) => { calls.push(["resolve", id, flags]); },
+      showAdvance: (id, flags) => { calls.push(["advance", id, flags]); }
+    });
+    assert.deepEqual(calls, [method,
+      ["resolve", "change", { "approve-spec": true, "decision-ref": "chat://ok" }],
+      ["advance", "change", { through: "build" }]], `${command} approves in one call`);
+    // An intake stop approves nothing.
+    const stopped = [];
+    await route(command, [...values, "--approve-spec", "--decision-ref", "chat://ok"], {
+      [method]: () => ({ action: "EDIT", intakeState: { path: "x" } }),
+      approvalQuestionAction: () => null,
+      resolveChange: () => { stopped.push("resolve"); },
+      showAdvance: () => { stopped.push("advance"); }
+    });
+    assert.deepEqual(stopped, [], `${command} does not approve an incomplete intake`);
+    // Open questions become the user's questions instead of an approval.
+    const asked = [];
+    const priorLog = console.log;
+    console.log = (line) => { asked.push(String(line)); };
+    try {
+      await route(command, [...values, "--approve-spec", "--decision-ref", "chat://ok"], {
+        [method]: () => result,
+        approvalQuestionAction: () => ({ action: "ASK_USER", code: "OPEN_QUESTIONS" }),
+        resolveChange: () => { asked.push("resolve"); }
+      });
+    } finally { console.log = priorLog; }
+    assert.deepEqual(asked, [JSON.stringify({ action: "ASK_USER", code: "OPEN_QUESTIONS" })]);
+    await assert.rejects(route(command, [...values, "--approve-spec"], {
+      [method]: () => result
+    }), /--approve-spec requires --decision-ref/);
+    await assert.rejects(route(command, [...values, "--decision-ref", "chat://ok"], {
+      [method]: () => result
+    }), /--decision-ref requires --approve-spec/);
+    await assert.rejects(route(command, [...values, "--through", "build"], {
+      [method]: () => result
+    }), /--through requires --approve-spec/);
+    await assert.rejects(route(command, [...values, "--approve-spec", "--decision-ref", "r",
+      "--through", "land"], { [method]: () => result }), /--through must be build\|proven\|archived/);
+    await assert.rejects(route(command, [...values, "--inspect", "--approve-spec",
+      "--decision-ref", "r"], {}), /cannot be combined/);
+  }
+  // Without --approve-spec the existing single-call forms record nothing.
+  {
+    const calls = [];
+    await route("revise", ["change", "draft.json"], {
+      reviseChange: () => { calls.push("revise"); return { added: [] }; },
+      resolveChange: () => { calls.push("resolve"); }
+    });
+    assert.deepEqual(calls, ["revise"]);
+  }
+  await assert.rejects(route("amend", ["change", "--task", "T001", "--verify", "npm test",
+    "--approve-spec", "--decision-ref", "r"], { amendTaskVerify: () => {} }), /cannot be combined/);
   let advanced = null;
   await route("advance", ["change", "--through", "archived", "--pretty"], {
     showAdvance: (...args) => { advanced = args; }
@@ -302,6 +381,53 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
   assert.deepEqual(advanced, ["change", { inspect: true }]);
   await assert.rejects(route("advance", ["change", "--through", "invalid"], {}),
     /advance --through must be build\|proven\|archived/);
+  // Approval and the requested target are one call, not two commands.
+  const approvals = [];
+  await route("advance", ["change", "--approve-spec", "--decision-ref", "user://ok",
+    "--through", "build"], {
+    resolveChange: (id, flags) => approvals.push([id, flags]),
+    showAdvance: (...args) => { advanced = args; }
+  });
+  assert.deepEqual(approvals, [["change", { "approve-spec": true, "decision-ref": "user://ok" }]]);
+  assert.deepEqual(advanced, ["change", { through: "build" }]);
+  advanced = null;
+  await route("advance", ["change", "--approve-spec", "--decision-ref", "user://ok"], {
+    resolveChange: () => {}, showAdvance: (...args) => { advanced = args; }
+  });
+  assert.equal(advanced, null, "approval alone records and stops");
+  // An interrupted Land apply is settled through advance under the user's
+  // decision and Land continues in the same call.
+  const recoveries = [];
+  advanced = null;
+  await route("advance", ["change", "--through", "archived", "--recover-apply", "keep-current",
+    "--decision-ref", "user://keep"], {
+    recoverLand: (id, flags) => recoveries.push([id, flags]),
+    showAdvance: (...args) => { advanced = args; }
+  });
+  assert.deepEqual(recoveries, [["change", { "decision-ref": "user://keep", resolution: "keep-current" }]]);
+  assert.deepEqual(advanced, ["change", { through: "archived" }]);
+  await route("advance", ["change", "--recover-apply", "settle", "--decision-ref", "user://ok"], {
+    recoverLand: (id, flags) => recoveries.push([id, flags]),
+    showAdvance: () => assert.fail("recovery alone records and stops")
+  });
+  assert.deepEqual(recoveries.at(-1), ["change", { "decision-ref": "user://ok" }]);
+  await assert.rejects(route("advance", ["change", "--recover-apply", "wipe"], { recoverLand: () => {} }),
+    /settle\|keep-current\|restore-backup/);
+  // Open questions turn an approval into the user's questions, never a refusal.
+  const asked = [];
+  const originalLog = console.log;
+  console.log = (line) => asked.push(String(line));
+  try {
+    await route("advance", ["change", "--approve-spec", "--decision-ref", "user://ok",
+      "--through", "build"], {
+      approvalQuestionAction: (id, through) => ({ action: "ASK_USER", changeId: id, through }),
+      resolveChange: () => assert.fail("approval is not recorded over open questions"),
+      showAdvance: () => assert.fail("Build does not start over open questions")
+    });
+  } finally { console.log = originalLog; }
+  assert.deepEqual(JSON.parse(asked[0]), { action: "ASK_USER", changeId: "change", through: "build" });
+  await assert.rejects(route("advance", ["change", "--approve-spec", "--decision-ref", "r",
+    "--inspect"], { resolveChange: () => {} }), /combines only with --decision-ref and --through/);
   await route("describe", ["--json"], { describeCommand: () => {} });
   await route("repos", [], { showRepositories: (value) => assert.equal(value, null) });
   await route("hash", ["change", "provider"], {
@@ -383,9 +509,11 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
   const stubDir = join(root, "bin");
   mkdirSync(stubDir, { recursive: true });
   const stub = join(stubDir, "openspec");
+  const lintLog = join(root, "lint.log");
   const writeStub = (validateExit, message) => {
     writeFileSync(stub, `#!/bin/sh
 if [ "$1" = "--version" ]; then echo "1.7.0"; exit 0; fi
+printf 'lint\\n' >> "${lintLog}"
 echo "${message}"
 exit ${validateExit}
 `);
@@ -404,10 +532,38 @@ exit ${validateExit}
     writeStub(0, "Change 'lint-change' is valid");
     assertOpenSpecStrictValid("lint-change", changeDir, fail);
 
+    // A pass is memoized per process by lint-input bytes and CLI identity:
+    // identical bytes do not re-lint, any packet byte change does.
+    const lints = () => readFileSync(lintLog, "utf8").split("\n").filter(Boolean).length;
+    const before = lints();
+    writeFileSync(join(changeDir, "proposal.md"), "# Proposal\n");
+    assertOpenSpecStrictValid("lint-change", changeDir, fail);
+    assertOpenSpecStrictValid("lint-change", changeDir, fail);
+    assert.equal(lints(), before + 1, "unchanged lint inputs reuse one strict pass");
+    writeFileSync(join(changeDir, "proposal.md"), "# Proposal\n\nRevised.\n");
+    assertOpenSpecStrictValid("lint-change", changeDir, fail);
+    assert.equal(lints(), before + 2, "a packet byte change re-runs strict lint");
+    writeFileSync(join(root, "openspec", "config.yaml"), "schema: spec-driven\n");
+    assertOpenSpecStrictValid("lint-change", changeDir, fail);
+    assert.equal(lints(), before + 3, "a project OpenSpec input change re-runs strict lint");
+    writeStub(1, "Requirement must contain SHALL or MUST");
+    assert.throws(() => assertOpenSpecStrictValid("lint-change", changeDir, fail),
+      /strict validation failed/, "a changed CLI re-lints and can fail the memoized bytes");
+    assert.throws(() => assertOpenSpecStrictValid("lint-change", changeDir, fail),
+      /strict validation failed/, "a failing lint is never memoized");
+    assert.equal(lints(), before + 5, "every failing lint re-runs the CLI");
+
     // Absent CLI: PATH without the stub (and without any system openspec)
     // degrades to a warning instead of failing.
     process.env.PATH = stubDir === "/nonexistent" ? "" : "/nonexistent";
     assertOpenSpecStrictValid("lint-change", changeDir, fail);
+
+    // Prove requires the lint: an absent CLI fails closed instead of letting
+    // an unlinted agreement travel to archive.
+    assert.throws(() =>
+      assertOpenSpecStrictValid("lint-change", changeDir, fail, { requireCli: true }),
+    /OpenSpec CLI is required for strict spec validation of 'lint-change' before Prove/,
+    "a required strict lint must not skip silently when the CLI is absent");
   } finally {
     process.env.PATH = priorPath;
   }

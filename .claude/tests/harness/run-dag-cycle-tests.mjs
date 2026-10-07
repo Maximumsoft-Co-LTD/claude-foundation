@@ -330,8 +330,11 @@ test("completed task with abandoned lease is reverified without rewriting its ch
   const plan = instance.planValue("c1");
   assert.equal(task.done, true, "the source ledger is unchanged");
   assert.deepEqual(plan.groups, [["T001"]]);
-  assert.notEqual(plan.recommendedExecution, "single-agent");
   assert.notEqual(plan.recommendedExecution, "proof-ready");
+  // Verification may run in the session: planning records no authority, so
+  // the task stays pending until the harness verifies it.
+  assert.equal(plan.taskExecution.T001.mode, "harness-verified");
+  assert.deepEqual(plan.verification.map((row) => row.taskId), ["T001"]);
   rmSync(path);
   assert.equal(instance.planValue("c1").recommendedExecution, "proof-ready");
 });

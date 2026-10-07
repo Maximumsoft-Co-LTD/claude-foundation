@@ -220,10 +220,27 @@ test("fast round fully covered does not escalate", (t) => {
   assert.equal(h.entry(requestId).dispatch.modelEscalation, undefined);
 });
 
-test("fast round with a missing scenario escalates once without consuming a wave", (t) => {
+test("fast round with a missing scenario goes straight to repair without escalation", (t) => {
   const h = harness(t);
   const { requestId } = h.request();
-  h.results.push({ status: "fail", findings: [], scenarioCoverage: covered("missing") },
+  const finding = { id: "scenario-missing-claim-export", severity: "major",
+    path: "contract/specs/export/spec.md", line: null, message: "no test",
+    claimIds: ["claim-export"], verificationCaseIds: [] };
+  h.results.push({ status: "fail", findings: [finding], scenarioCoverage: {
+    items: [], missing: ["claim-export"], unsure: ["csv-export-s2"] } },
+  { status: "pass", findings: [], scenarioCoverage: covered() });
+  const report = quiet(() => h.authority.runAuthorityReviewer("change-a", h.flags(requestId)));
+  assert.equal(h.calls.length, 1, "no second review on the configured model");
+  assert.equal(h.calls[0].modelTier, "fast");
+  assert.equal(report.status, "fail", "the actionable finding routes to repair");
+  assert.equal(h.entry(requestId).dispatch.modelEscalation, undefined);
+  assert.equal(h.delivered()[0].modelEscalation, undefined);
+});
+
+test("fast round with an unsure scenario escalates once without consuming a wave", (t) => {
+  const h = harness(t);
+  const { requestId } = h.request();
+  h.results.push({ status: "pass", findings: [], scenarioCoverage: covered("unsure") },
     { status: "pass", findings: [], scenarioCoverage: covered() });
   const report = quiet(() => h.authority.runAuthorityReviewer("change-a", h.flags(requestId)));
   assert.equal(h.calls.length, 2, "exactly one escalation");

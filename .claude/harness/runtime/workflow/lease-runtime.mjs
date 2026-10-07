@@ -5,6 +5,7 @@ import {
 import { dirname, join } from "node:path";
 import { conflictKeysOverlap, scopeAllowsPath } from "../core/graph-execution.mjs";
 import { acquireProcessLock } from "../core/process-lock.mjs";
+import { taskAuthorityShape } from "../core/task-execution-authority.mjs";
 
 export function leaseDescriptorIsOwned(descriptor, id, taskId, owner) {
   return descriptor.changeId === id && descriptor.taskId === taskId &&
@@ -150,6 +151,7 @@ export function acquireLeaseUnderLock(context) {
     workspaceHash: plan.workspaceHash, repository: task.repository,
     paths: task.paths || [], claimIds: task.claims || [],
     outputSchema: taskNodeOutputSchema(plan, task.id),
+    taskAuthority: taskAuthorityShape(plan.graph, task.id),
     // Writes since the owner's unreleased lease was first granted still
     // belong to this task, so a re-grant keeps judging them against its scope.
     resources: keys, baselineSurface: ownPrior && Array.isArray(prior.baselineSurface)
@@ -230,16 +232,19 @@ export function leaseReleaseIdentity(context, id, taskId, flags) {
   return { absent: false, owner, index, taskLease, force };
 }
 
+export function leaseAuthorityIsStale(plan, taskLease) {
+  return plan.graphRevision !== taskLease.graphRevision ||
+    plan.graphIdentity !== taskLease.graphIdentity ||
+    Number(plan.contractRevision) !== Number(taskLease.contractRevision);
+}
+
 export function leasePathIsAllowed(path, allowed) {
   return allowed.some((scope) => scopeAllowsPath(scope, path));
 }
 
 export function observedLeaseWrites(context, id, taskLease, force) {
   if (force) return [];
-  const currentPlan = context.agentPlanValue(id);
-  if (currentPlan.graphRevision !== taskLease.graphRevision ||
-      currentPlan.graphIdentity !== taskLease.graphIdentity ||
-      Number(currentPlan.contractRevision) !== Number(taskLease.contractRevision))
+  if (leaseAuthorityIsStale(context.agentPlanValue(id), taskLease))
     context.fail(`stale result authority for '${id}/${taskLease.taskId}': graph or contract changed after lease acquisition; ` +
       `re-acquire with 'claude-foundation agents acquire ${id} ${taskLease.taskId} --owner ${taskLease.owner}', then release again`);
   const baseline = new Map();
@@ -266,8 +271,8 @@ export function observedLeaseWrites(context, id, taskLease, force) {
         contested.push(path);
     if (contested.length)
       context.fail(`task '${taskLease.taskId}' changed outside granted scope: ${contested.join(", ")}; result and proof were not accepted. ` +
-        `These paths belong to another active task; revert them, then ` +
-        `'claude-foundation agents acquire ${id} ${taskLease.taskId} --owner ${taskLease.owner}' and release again`);
+        `These paths belong to another active task; revert them, then release again ` +
+        "(the lease is still held, so no re-acquire is needed)");
   }
   return observedWrites;
 }
@@ -325,7 +330,11 @@ export function createLeaseRuntime({
   writeJson,
   now,
   observedTaskSurface = () => [],
-  fail
+  fail,
+  // Parallel workers release at nearly the same moment and the critical
+  // section is a few file writes, so contention waits briefly instead of
+  // handing each worker a "retry the same command" step.
+  lockWaitMs = 10_000
 }) {
   function leasePath(resource) {
     return join(leases, "resources", `${stableHash(resource)}.json`);
@@ -344,8 +353,15 @@ export function createLeaseRuntime({
 
   function withAcquisitionLock(action) {
     const path = join(leases, "acquire.lock");
-    const lock = acquireProcessLock(path, { now });
-    if (!lock.acquired) fail("lease acquisition is busy; retry the same command");
+    const deadline = Date.now() + lockWaitMs;
+    let lock = acquireProcessLock(path, { now });
+    while (!lock.acquired && Date.now() < deadline) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+      lock = acquireProcessLock(path, { now });
+    }
+    if (!lock.acquired)
+      fail(`lease acquisition stayed busy for ${Math.round(lockWaitMs / 1000)}s; ` +
+        `another harness process holds ${path}`);
     try { return action(); }
     finally { lock.release(); }
   }
@@ -383,11 +399,27 @@ export function createLeaseRuntime({
   }
 
   function release(id, taskId, flags, { quiet = false } = {}) {
-    const identity = leaseReleaseIdentity({
+    const identityContext = {
       leases, exists: existsSync, readJson, nowMs: Date.now, fail,
       log: quiet ? () => {} : console.log
-    }, id, taskId, flags);
+    };
+    let identity = leaseReleaseIdentity(identityContext, id, taskId, flags);
     if (identity.absent) return { absent: true, observedWrites: [] };
+    // A graph or contract that moved after acquisition (a widened `[paths:]`
+    // elsewhere, an amendment) does not change what this owner already did.
+    // Renewing for the same owner keeps the original baseline, so the writes
+    // are still judged from the start of the task; the harness renews here
+    // instead of handing the worker an acquire-then-release recovery.
+    if (!identity.force && leaseAuthorityIsStale(agentPlanValue(id), identity.taskLease)) {
+      const staleLease = identity.taskLease;
+      if (!agentPlanValue(id).tasks?.some((task) => task.id === staleLease.taskId))
+        fail(`task '${id}/${staleLease.taskId}' is no longer in the change's plan after an ` +
+          "amendment; its result cannot be accepted. Revert its writes, or take the lease " +
+          "over with --force --decision-ref <host-user-decision>");
+      const renewed = acquire(id, staleLease.taskId, { owner: staleLease.owner }, { quiet: true });
+      identity = leaseReleaseIdentity(identityContext, id, taskId,
+        { ...flags, "lease-id": renewed.leaseId });
+    }
     const { owner, index, taskLease, force } = identity;
     const observedWrites = observedLeaseWrites({
       agentPlanValue, observedTaskSurface, fail, workspaceLeases: () => active(id)

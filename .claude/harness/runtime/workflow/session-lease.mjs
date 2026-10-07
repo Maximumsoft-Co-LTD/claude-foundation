@@ -32,8 +32,11 @@ const TASK_LINE = (taskId) =>
 
 // The pending ledger line's focused check and repository, or null when the
 // task has no runnable check (no verify, or the amendment marker "existing").
-export function taskCheck(content, taskId) {
-  const line = String(content || "").match(TASK_LINE(taskId))?.[0];
+export function taskCheck(content, taskId, { ticked = false } = {}) {
+  const pattern = ticked
+    ? new RegExp(`^\\s*-\\s*\\[[xX]\\]\\s*\\*{0,2}${taskId}\\*{0,2}\\b.*$`, "m")
+    : TASK_LINE(taskId);
+  const line = String(content || "").match(pattern)?.[0];
   if (!line) return null;
   const command = line.match(/—\s*verify:\s*`([^`]+)`/i)?.[1]?.trim() || "";
   if (!command || command === "existing") return null;
@@ -107,25 +110,14 @@ export function createSessionLeaseRuntime({
   }
 
   // Releases every harness-issued session lease whose task the agent ticked.
-  // A graph changed by a bookkeeping `[paths:]` widening is re-granted first
-  // so it does not strand the task behind a stale-authority error. A lease past its TTL is still
-  // the harness's own: a long task must not skip its observed-write check.
+  // Release itself renews authority a moved graph made stale. A lease past
+  // its TTL is still the harness's own: a long task must not skip its
+  // observed-write check.
   function settle(id) {
     const settled = [];
     for (const lease of activeChangeLeases(id, { includeExpired: true })) {
       if (!isSessionOwner(lease.owner) || !completeByCheck(id, lease.taskId)) continue;
-      const flags = { owner: lease.owner, "lease-id": lease.leaseId };
-      try {
-        release(id, lease.taskId, flags, { quiet: true });
-      } catch (error) {
-        const message = String(error?.message || error);
-        const scope = message.match(/^(task '[^']+' changed outside granted scope: [^;]+)/);
-        if (scope) throw sessionScopeError(id, scope[1]);
-        if (!/stale result authority|stale lease result/.test(message)) throw error;
-        const renewed = acquire(id, lease.taskId, { owner: lease.owner }, { quiet: true });
-        release(id, lease.taskId, { owner: lease.owner, "lease-id": renewed.leaseId },
-          { quiet: true });
-      }
+      releaseOwned(id, lease.taskId, { owner: lease.owner, "lease-id": lease.leaseId });
       settled.push(lease.taskId);
     }
     // A single-agent plan takes no lease; the handed-off tasks are recorded
@@ -151,6 +143,7 @@ export function createSessionLeaseRuntime({
           });
           remaining.push(taskId);
         } else if (!completeByCheck(id, taskId)) remaining.push(taskId);
+        else recordVerified(id, taskId);
       }
       settled.push(...handoff.filter((taskId) => !remaining.includes(taskId)));
       const current = loadRuntime(id);
@@ -159,6 +152,35 @@ export function createSessionLeaseRuntime({
       saveRuntime(current);
     }
     return settled;
+  }
+
+  // Every completion carries one kind of authority: a result the harness
+  // records under its own lease after the task's verify passed. A no-lease
+  // session handoff gets the same record here; if the plan cannot grant it
+  // yet, the next advance re-verifies the ticked task.
+  function recordVerified(id, taskId) {
+    const owner = sessionLeaseOwner(id, taskId, stableHash);
+    let granted;
+    try {
+      granted = acquire(id, taskId, { owner }, { quiet: true });
+    } catch { return; /* reverify settles it on the next advance */ }
+    try {
+      releaseOwned(id, taskId, { owner, "lease-id": granted.leaseId });
+    } catch (error) {
+      if (error?.boundary === "task-scope") throw error;
+    }
+  }
+
+  // An out-of-scope write is the agent's to revert; the handoff stays pending.
+  function releaseOwned(id, taskId, flags) {
+    try {
+      release(id, taskId, flags, { quiet: true });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const scope = message.match(/^(task '[^']+' changed outside granted scope: [^;]+)/);
+      if (scope) throw sessionScopeError(id, scope[1]);
+      throw error;
+    }
   }
 
   function withCheckFailures(id, value) {
@@ -184,8 +206,12 @@ export function createSessionLeaseRuntime({
     if (value?.action === "EDIT" && value.execution?.mode === "session" &&
         !value.execution?.leases?.length && value.tasks?.length)
       return withCheckFailures(id, recordHandoff(id, value));
+    if (value?.action === "EDIT" && value.execution?.mode === "parallel" &&
+        value.execution?.leases?.length)
+      return withCheckFailures(id, issueGroup(id, value));
     if (value?.action !== "EDIT" || value.execution?.mode !== "session" ||
-        value.tasks?.length !== 1 || value.execution?.leases?.length !== 1) return value;
+        value.tasks?.length !== 1 || value.execution?.leases?.length !== 1)
+      return value?.action === "EDIT" ? withCheckFailures(id, value) : value;
     const taskId = value.tasks[0].id;
     const owner = sessionLeaseOwner(id, taskId, stableHash);
     const granted = acquire(id, taskId, { owner }, { quiet: true });
@@ -202,9 +228,119 @@ export function createSessionLeaseRuntime({
         "When the checks pass, run the resume command: advance reruns the task's verify check, " +
         `marks ${taskId} [x] when it passes, releases the lease, and checks the observed writes ` +
         "against the task scope.",
-        "A needed file outside the task paths is fine; Prove records it into the change surface."
+        "A needed file outside the task paths is fine; Prove records it into the change surface.",
+        // Keep the plan's own notes, such as a stale record to re-verify.
+        ...(value.instructions || [])
       ]
     });
+  }
+
+  // A parallel worker releases its lease; the harness, not the worker, ticks
+  // the ledger. Each accepted result is ticked once its verify check passes
+  // in the workspace; a failure stays pending with its output.
+  function tickAccepted(id, taskIds = []) {
+    const ticked = [];
+    for (const taskId of taskIds) {
+      const path = ledgerPath(id);
+      if (!path || !existsSync(path) || checked(id, taskId)) continue;
+      const check = taskCheck(readFileSync(path, "utf8"), taskId);
+      if (check && runCheck) {
+        const result = runCheck(id, check);
+        if (result?.status !== "pass") {
+          failedChecks.set(`${id}\0${taskId}`, {
+            taskId, command: check.command, exitCode: result?.exitCode ?? null,
+            output: String(result?.output || "").slice(-2000)
+          });
+          continue;
+        }
+      }
+      failedChecks.delete(`${id}\0${taskId}`);
+      writeFileSync(path, tickTaskLine(readFileSync(path, "utf8"), taskId));
+      ticked.push(taskId);
+    }
+    return ticked;
+  }
+
+  // A ticked task whose execution record went stale (an amendment, an
+  // expired lease, work finished outside a lease) is implemented, not
+  // pending. The harness re-verifies it under its own lease: the task's check
+  // must pass, and the result is recorded against the current authority.
+  // A task a live worker holds, an unticked task, a failing check, or one
+  // blocked behind an unverified dependency stays with the plan.
+  function reverify(id, rows = []) {
+    const verified = [];
+    let progressed = true;
+    while (progressed) {
+      progressed = false;
+      for (const { taskId } of rows) {
+        if (verified.includes(taskId) || !checked(id, taskId)) continue;
+        if (activeChangeLeases(id).some((lease) =>
+          lease.taskId === taskId && !isSessionOwner(lease.owner))) continue;
+        const path = ledgerPath(id);
+        const check = path && existsSync(path)
+          ? taskCheck(readFileSync(path, "utf8"), taskId, { ticked: true }) : null;
+        if (check && runCheck) {
+          const result = runCheck(id, check);
+          if (result?.status !== "pass") {
+            failedChecks.set(`${id}\0${taskId}`, {
+              taskId, command: check.command, exitCode: result?.exitCode ?? null,
+              output: String(result?.output || "").slice(-2000)
+            });
+            continue;
+          }
+        }
+        const owner = sessionLeaseOwner(id, taskId, stableHash);
+        try {
+          const granted = acquire(id, taskId, { owner }, { quiet: true });
+          release(id, taskId, { owner, "lease-id": granted.leaseId }, { quiet: true });
+        } catch { continue; }
+        verified.push(taskId);
+        progressed = true;
+      }
+    }
+    return verified;
+  }
+
+  // A parallel group runs in native workers, but its leases are the
+  // harness's, exactly as for a session task: `advance` acquires them here and
+  // settles each on resume (verify, tick, release, scope check). The parent
+  // only spawns workers and waits; nobody acquires, releases, or ticks.
+  function issueGroup(id, value) {
+    const managedLeases = [];
+    try {
+      for (const worker of value.execution.leases) {
+        const owner = sessionLeaseOwner(id, worker.taskId, stableHash);
+        const granted = acquire(id, worker.taskId, { owner }, { quiet: true });
+        managedLeases.push({ taskId: worker.taskId, owner, leaseId: granted.leaseId, managedBy: "harness" });
+      }
+    } catch (error) {
+      // A partial group never runs; return the leases it already took.
+      for (const lease of managedLeases) {
+        try { discard(id, lease.taskId, lease.owner); } catch { /* the next advance renews or reclaims it */ }
+      }
+      throw error;
+    }
+    return {
+      ...value,
+      execution: {
+        ...value.execution,
+        leases: [],
+        workers: value.execution.leases.map((worker) => ({
+          taskId: worker.taskId, repository: worker.repository || null,
+          model: worker.model || null, packetCommand: worker.packetCommand
+        })),
+        managedLeases
+      },
+      instructions: [
+        "Spawn one native worker per execution.workers entry and give it only the output of " +
+        "its packetCommand and the repository state; never replay this transcript.",
+        "Each worker implements only its task inside its allowed paths and runs the task's " +
+        "focused check. Nobody acquires or releases a lease or edits tasks.md.",
+        "Wait for every worker, then run the resume command once: advance reruns each task's " +
+        "verify, ticks the passing tasks, releases their leases, and hands back only failures.",
+        ...(value.instructions || [])
+      ]
+    };
   }
 
   // An explicit lease primitive supersedes the harness-held one: the caller
@@ -214,7 +350,7 @@ export function createSessionLeaseRuntime({
       if (isSessionOwner(lease.owner)) discard(id, lease.taskId, lease.owner);
   }
 
-  return { settle, issue, yieldTo };
+  return { settle, issue, yieldTo, reverify, tickAccepted };
 }
 
 // Runs one task's focused check in the task's isolated repository, in the

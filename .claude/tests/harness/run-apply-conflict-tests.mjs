@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
-  chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync,
+  chmodSync, cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync,
   writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -121,6 +121,108 @@ function provenCopyEdit(fixture, title, id, file, content) {
   return runtime;
 }
 
+// Fixture evidence is recorded receipts, so "prove again" is recording them
+// against the replayed sandbox and resuming the same Land route.
+function reprove(fixture, id, file) {
+  cli(fixture, "receipt", id, "test", "pass",
+    "--observed", "fixture test evidence", "--source", "harness-test", "--artifact", file);
+  cli(fixture, "receipt", id, "discovery", "pass",
+    "--discovered", "1", "--minimum", "1", "--observed", "1 test discovered",
+    "--source", "harness-test", "--artifact", file);
+}
+
+function landed(fixture, id) {
+  const result = cli(fixture, "advance", id, "--through", "archived");
+  const value = JSON.parse(result.stdout);
+  return { ...value, status: result.status, stderr: result.stderr };
+}
+
+function head(fixture) {
+  return execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+}
+
+function archivedPackets(fixture) {
+  return readdirSync(join(fixture.root, "openspec", "changes", "archive")).sort();
+}
+
+// Owner rule: Land is always allowed. A change that branched before another
+// change landed treats that landed, uncommitted diff as part of the target;
+// whoever lands later merges it and lands, and nobody is asked to commit.
+test("stacked Land: a later change lands over an earlier landed, uncommitted change", () => {
+  const fixture = project();
+  const base = head(fixture);
+  const firstContent = editedLine(fixture, "app.txt", 2, "first edit");
+  const secondContent = editedLine(fixture, "app.txt", 18, "second edit");
+  provenEdit(fixture, "First probe", "first-probe", "app.txt", firstContent);
+  provenEdit(fixture, "Second probe", "second-probe", "lib.txt", "lib edit\n");
+  const second = provenEdit(fixture, "Third probe", "third-probe", "app.txt", secondContent);
+  assert.equal(landed(fixture, "first-probe").action, "DONE");
+
+  // Non-overlapping: lands beside the earlier landed diff, proof untouched.
+  const beside = landed(fixture, "second-probe");
+  assert.equal(beside.action, "DONE", beside.stderr);
+  assert.doesNotMatch(beside.stderr, /changed outside the sandbox/,
+    "an earlier change's landed bytes are Land output, not edits outside the sandbox");
+
+  // Overlapping: the harness replays the landed edit into the sandbox copy
+  // and proves again; the target keeps the earlier landed bytes meanwhile.
+  const replay = landed(fixture, "third-probe");
+  assert.notEqual(replay.action, "DONE");
+  assert.doesNotMatch(JSON.stringify(replay) + replay.stderr, /\bcommit\b/i,
+    "Land never asks for a commit");
+  assert.doesNotMatch(JSON.stringify(replay), /restore-target/,
+    "an earlier change's landed bytes are never offered for discard");
+  const merged = firstContent.split("\n");
+  merged[17] = "second edit";
+  assert.equal(readFileSync(join(second.workspace.path, "app.txt"), "utf8"), merged.join("\n"));
+  assert.equal(readFileSync(join(fixture.root, "app.txt"), "utf8"), firstContent);
+  reprove(fixture, "third-probe", "app.txt");
+  const third = landed(fixture, "third-probe");
+  assert.equal(third.action, "DONE", JSON.stringify(third));
+
+  assert.equal(readFileSync(join(fixture.root, "app.txt"), "utf8"), merged.join("\n"));
+  assert.equal(readFileSync(join(fixture.root, "lib.txt"), "utf8"), "lib edit\n");
+  assert.equal(head(fixture), base, "Land never commits");
+  assert.deepEqual(archivedPackets(fixture), ["first-probe", "second-probe", "third-probe"]);
+  for (const id of ["first-probe", "second-probe", "third-probe"])
+    assert.equal(JSON.parse(readFileSync(join(fixture.root, ".foundation", "runtime",
+      `${id}.json`), "utf8")).status, "archived");
+});
+
+test("stacked Land: same-line edits go to the agent and keep the landed bytes until merged", () => {
+  const fixture = project();
+  const firstContent = editedLine(fixture, "app.txt", 2, "first edit");
+  const secondContent = editedLine(fixture, "app.txt", 2, "second edit");
+  provenEdit(fixture, "First probe", "first-probe", "app.txt", firstContent);
+  const second = provenEdit(fixture, "Second probe", "second-probe", "app.txt", secondContent);
+  assert.equal(landed(fixture, "first-probe").action, "DONE");
+
+  const conflict = landed(fixture, "second-probe");
+  assert.equal(conflict.action, "REPAIR");
+  assert.equal(conflict.actor, "agent");
+  assert.match(conflict.reason, /Keep every earlier change's landed content/);
+  assert.deepEqual(conflict.details.conflicts.map((row) => [row.path, row.landedBy]),
+    [["app.txt", "first-probe"]]);
+  assert.doesNotMatch(JSON.stringify(conflict) + conflict.stderr, /\bcommit\b|restore-target/i);
+  assert.equal(readFileSync(join(fixture.root, "app.txt"), "utf8"), firstContent,
+    "the earlier landed bytes are untouched");
+  assert.equal(readFileSync(join(second.workspace.path, "app.txt"), "utf8"), secondContent,
+    "a conflicted replay never writes the sandbox");
+  const refused = cli(fixture, "advance", "second-probe", "--restore-target", "app.txt",
+    "--decision-ref", "fixture://user-discards");
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /landed, uncommitted work of first-probe/);
+
+  // The agent's merge of both edits is the resolution.
+  const merged = editedLine(fixture, "app.txt", 2, "first edit and second edit");
+  writeFileSync(join(second.workspace.path, "app.txt"), merged);
+  reprove(fixture, "second-probe", "app.txt");
+  const done = landed(fixture, "second-probe");
+  assert.equal(done.action, "DONE", JSON.stringify(done));
+  assert.equal(readFileSync(join(fixture.root, "app.txt"), "utf8"), merged);
+  assert.deepEqual(archivedPackets(fixture), ["first-probe", "second-probe"]);
+});
+
 test("a second land over the same file refuses instead of overwriting", () => {
   const fixture = project();
   // Both sandboxes branch from the same clean base before anything lands, and
@@ -134,10 +236,31 @@ test("a second land over the same file refuses instead of overwriting", () => {
   assert.equal(readFileSync(join(fixture.root, "app.txt"), "utf8"), firstContent);
   const second = cli(fixture, "archive", "second-probe");
   assert.notEqual(second.status, 0, "the clobbering land must refuse");
-  assert.match(second.stderr, /apply would overwrite uncommitted target edits at: app\.txt/);
-  assert.match(second.stderr, /commit or reconcile the landed work first/);
+  assert.match(second.stderr, /landed, uncommitted work of first-probe at: app\.txt/);
+  assert.match(second.stdout, /"kind": "landed-change-sync"/);
+  assert.match(second.stdout, /"automaticRecovery": "sync"/);
+  assert.doesNotMatch(second.stdout + second.stderr, /\bcommit\b/i, "Land never asks for a commit");
   assert.equal(readFileSync(join(fixture.root, "app.txt"), "utf8"), firstContent,
     "the refused land must leave the first land's work untouched");
+});
+
+// Keep-target: once the sandbox copy carries the target's uncommitted edit,
+// applying it loses nothing, so Land applies it without anyone committing.
+test("a sandbox copy that carries the target edit lands over it", () => {
+  const fixture = project();
+  const firstContent = editedLine(fixture, "app.txt", 2, "first edit");
+  const secondContent = editedLine(fixture, "app.txt", 18, "second edit");
+  provenEdit(fixture, "First probe", "first-probe", "app.txt", firstContent);
+  const second = provenEdit(fixture, "Second probe", "second-probe", "app.txt", secondContent);
+  assert.equal(cli(fixture, "archive", "first-probe").status, 0);
+  assert.notEqual(cli(fixture, "sandbox", "apply", "second-probe").status, 0);
+  const lines = firstContent.split("\n");
+  lines[17] = "second edit";
+  const merged = lines.join("\n");
+  writeFileSync(join(second.workspace.path, "app.txt"), merged);
+  const applied = cli(fixture, "sandbox", "apply", "second-probe");
+  assert.equal(applied.status, 0, applied.stderr);
+  assert.equal(readFileSync(join(fixture.root, "app.txt"), "utf8"), merged);
 });
 
 test("a land over a different file still passes beside uncommitted work", () => {
@@ -199,7 +322,7 @@ test("a mode-only executable change is applied", () => {
 
 // R1: a test run in the main checkout rewrote a tracked `__pycache__/*.pyc`,
 // Land's patch no longer applied, and the only offered fix was a Git command
-// the Land guard blocks. Land now names the paths and restores them itself.
+// the Land guard blocks. Land now restores regenerable artifacts itself.
 function trackedArtifactProject() {
   const fixture = project();
   mkdirSync(join(fixture.root, "__pycache__"), { recursive: true });
@@ -209,38 +332,30 @@ function trackedArtifactProject() {
   return fixture;
 }
 
-test("a regenerated tracked artifact on the target is restored by Land on request", () => {
+test("a regenerated tracked artifact on the target is restored by Land itself", () => {
   const fixture = trackedArtifactProject();
   const pyc = "__pycache__/app.cpython-312.pyc";
   const proven = Buffer.from([0, 9, 9, 9]);
   provenEdit(fixture, "Artifact probe", "artifact-probe", pyc, proven);
   // A test run in the main checkout after isolation.
   writeFileSync(join(fixture.root, pyc), Buffer.from([0, 7, 7, 7]));
-  const refused = cli(fixture, "sandbox", "apply", "artifact-probe");
-  assert.notEqual(refused.status, 0);
-  assert.match(refused.stderr, /generated artifact\(s\) changed in the main checkout after isolation: __pycache__\/app\.cpython-312\.pyc/);
-  assert.match(refused.stderr,
-    /'claude-foundation advance artifact-probe --through archived --restore-target __pycache__\/app\.cpython-312\.pyc'/);
-  assert.doesNotMatch(refused.stderr, /git checkout/);
-  const recorded = cli(fixture, "advance", "artifact-probe", "--restore-target", pyc);
-  assert.equal(recorded.status, 0, recorded.stderr);
-  assert.match(recorded.stdout, /TARGET RESTORE RECORDED artifact-probe/);
   const applied = cli(fixture, "sandbox", "apply", "artifact-probe");
   assert.equal(applied.status, 0, applied.stderr);
+  assert.doesNotMatch(applied.stderr, /--restore-target|git checkout/);
   assert.deepEqual(readFileSync(join(fixture.root, pyc)), proven);
 });
 
-test("a restore recorded against other bytes never overwrites a later target edit", () => {
+test("a generated artifact already dirty at isolation is never restored without the user", () => {
   const fixture = trackedArtifactProject();
   const pyc = "__pycache__/app.cpython-312.pyc";
+  const dirty = Buffer.from([0, 5, 5, 5]);
+  writeFileSync(join(fixture.root, pyc), dirty);
   provenEdit(fixture, "Artifact probe", "artifact-probe", pyc, Buffer.from([0, 9, 9, 9]));
   writeFileSync(join(fixture.root, pyc), Buffer.from([0, 7, 7, 7]));
-  assert.equal(cli(fixture, "advance", "artifact-probe", "--restore-target", pyc).status, 0);
-  const later = Buffer.from([0, 5, 5, 5]);
-  writeFileSync(join(fixture.root, pyc), later);
   const refused = cli(fixture, "sandbox", "apply", "artifact-probe");
   assert.notEqual(refused.status, 0);
-  assert.deepEqual(readFileSync(join(fixture.root, pyc)), later);
+  assert.match(refused.stdout, /"kind": "target-edit-conflict"/);
+  assert.deepEqual(readFileSync(join(fixture.root, pyc)), Buffer.from([0, 7, 7, 7]));
 });
 
 test("restoring a non-generated target edit requires the user's decision", () => {

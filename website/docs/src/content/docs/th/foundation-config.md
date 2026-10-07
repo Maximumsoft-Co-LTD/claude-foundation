@@ -235,7 +235,7 @@ reviewer definition อยู่ใต้ `review.reviewers` โดย reviewer 
 
 - ใช้ adapter `claude-cli` หรือ `codex-cli` คู่กับ provider family ที่ถูกต้อง;
 - ระบุ executable ที่ติดตั้งแล้วและ model ID;
-- ใช้ `reasoningEffort: "high"`;
+- ใช้ `reasoningEffort: "high"` (fast tier ของงานความเสี่ยงต่ำรันที่ medium);
 - ใช้ `sandbox: "read-only"` และ `ephemeral: true`
 
 อย่าใส่ credential, token หรือ login command ใน `foundation.json` ให้ติดตั้งและ
@@ -243,8 +243,10 @@ login CLI ตามปกติ แล้วใช้ `doctor --stage prove` ต
 
 ## `sandbox`: เตรียม Build workspace ใหม่
 
-Git worktree มี tracked file แต่ไม่มี `node_modules` ถ้า evidence ต้องใช้
-dependency ให้เพิ่ม setup command ที่ deterministic:
+Git worktree มี tracked file แต่ไม่มี `node_modules` ถ้าไม่มี setup command
+Harness จะติดตั้ง dependency เองจาก lockfile ของ workspace (`npm ci` หรือคำสั่ง
+frozen-lockfile ของ pnpm, yarn, bun) ตั้ง `"installDependencies": false` เพื่อปิด
+ถ้า setup ต้องทำอย่างอื่น ให้เพิ่ม setup command ที่ deterministic:
 
 ```json
 {
@@ -256,8 +258,9 @@ dependency ให้เพิ่ม setup command ที่ deterministic:
 ```
 
 `setupCommand` ต้องเป็น string ที่ไม่ว่าง `setupTimeoutMs` ต้องเป็นจำนวนเต็ม
-ตั้งแต่ `1000` ถึง `3600000` คำสั่งรันหนึ่งครั้งในทุก workspace ใหม่ ถ้าล้มเหลว
-Change Loop จะเก็บ workspace และรายงานวิธีกู้ แทนที่จะทำต่อใน sandbox ที่เตรียม
+ตั้งแต่ `1000` ถึง `3600000` และ `installDependencies` ต้องเป็น boolean คำสั่งรัน
+หนึ่งครั้งในทุก workspace ใหม่ ถ้าล้มเหลว Change Loop จะเก็บ workspace ไว้ retry ให้
+แล้วส่งต่อให้ agent พร้อมคำสั่ง directory และ log แทนที่จะทำต่อใน sandbox ที่เตรียม
 ไม่ครบ
 
 โปรเจกต์หลาย repository ให้เก็บ root setup ไว้ที่นี่ และใส่ setup เฉพาะ repo

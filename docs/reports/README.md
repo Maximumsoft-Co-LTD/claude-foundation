@@ -30,6 +30,10 @@ those contracts into a report; link to them instead.
   `63f2ce1c4b73034bed2cbdb70b924928529e3fde`. Proposed fixes only; includes the
   full-suite timeout and verification limits.
 
+- [Maintainer task log](maintainer-task-log-2026-09-17.md) —
+  2026-09-16 to 2026-09-17 root-level implementation ledger for the project
+  review fixes and Deliver release review; all items complete at v3.5.19.
+
 - [Weekly Review feedback remediation plan](weekly-review-feedback-remediation-plan-2026-09-11.md) —
   2026-09-11 full artifact review and current-source comparison covering intent
   continuity, guards, leases, toolchains, evidence coverage, and telemetry.

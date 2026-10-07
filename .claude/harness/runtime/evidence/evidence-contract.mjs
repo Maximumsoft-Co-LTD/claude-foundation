@@ -3,7 +3,12 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { measuredNumber } from "../core/measured-number.mjs";
 import { isExcludedPath } from "../core/workspace-surface.mjs";
-import { classifyReviewRisk, reviewSemanticText } from "./review-routing.mjs";
+import { memoizeByGitIndex } from "../core/tool-identity.mjs";
+import { classifyReviewRisk, reviewSemanticText, thaiRiskPattern } from "./review-routing.mjs";
+
+const THAI_REQUIRED_SEMANTICS =
+  thaiRiskPattern("concurrency", "money", "migration", "irreversible");
+const THAI_CRITICAL_SEMANTICS = thaiRiskPattern("money", "migration", "irreversible");
 
 // Named once and read by both `reviewPolicy` and the change-time forecast. The
 // forecast has to answer "will this need a reviewer?" from the same lists, but
@@ -91,10 +96,6 @@ export function executionFingerprintValue(stableHash, adapterProtocolVersion, co
     providers: contract.providers || {},
     services: contract.execution?.services || {}
   });
-}
-
-export function providerConfigOperation({ evidence }, id, provider) {
-  return configuredProviderValue(evidence(id).providers || {}, provider);
 }
 
 export function providerClaimsOperation({
@@ -193,12 +194,14 @@ export function collectReviewSignals(state, contract, configuredCapabilities = [
     requiredTriggers.push("risk-capability");
   if (riskClaims.some((claim) => (claim.repositories || []).length > 1))
     requiredTriggers.push("multi-repository-claim");
-  if (/\b(concurren|race|deadlock|money|payment|billing|financial|migration|irreversible)\w*\b/.test(semantic))
+  if (/\b(concurren|race|deadlock|money|payment|billing|financial|migration|irreversible)\w*\b/.test(semantic) ||
+      THAI_REQUIRED_SEMANTICS.test(semantic))
     requiredTriggers.push("risk-semantics");
   if ((state.securityTriggers || []).length ||
       REVIEW_DIVERSITY_CAPABILITIES.some((value) => capabilities.has(value)))
     diversityTriggers.push("critical-capability");
-  if (/\b(money|payment|billing|financial|migration|irreversible)\b/.test(semantic))
+  if (/\b(money|payment|billing|financial|migration|irreversible)\b/.test(semantic) ||
+      THAI_CRITICAL_SEMANTICS.test(semantic))
     diversityTriggers.push("critical-semantics");
   return { capabilities, requiredTriggers, diversityTriggers };
 }
@@ -298,8 +301,9 @@ export function uncoveredCommandWorkspaceFiles({
   config, workspace, repositoryId = "root", tracked = () => false,
   declared = () => false
 }) {
+  // Pure checks first: `tracked` may have to consult Git.
   return commandWorkspaceFiles(config, workspace).filter((rel) =>
-    !tracked(rel) && !declared(rel) && !providerInputCovers(config, repositoryId, rel));
+    !declared(rel) && !providerInputCovers(config, repositoryId, rel) && !tracked(rel));
 }
 
 export function providerEvidencePolicy(config = {}) {
@@ -753,7 +757,10 @@ export function createEvidenceContract({
     const declared = declaredSurfaceMatcher(id, loadRuntime(id), repositoryId);
     const uncovered = uncoveredCommandWorkspaceFiles({
       config, workspace, repositoryId, declared,
-      tracked: (rel) => git(["ls-files", "--error-unmatch", "--", rel], workspace).status === 0
+      // Index membership only: reused while the repository index is
+      // unchanged, so repeated contract reads do not respawn Git per file.
+      tracked: (rel) => memoizeByGitIndex(workspace, `tracked:${rel}`, () =>
+        git(["ls-files", "--error-unmatch", "--", rel], workspace).status === 0)
     });
     if (uncovered.length)
       die(`provider '${provider}' command names untracked workspace file(s) outside its inputs and declared surface: ${

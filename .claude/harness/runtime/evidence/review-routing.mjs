@@ -4,6 +4,22 @@ const HIGH_CAPABILITIES = new Set([
 ]);
 const HIGH_SEMANTICS =
   /\b(money|payment|billing|financial|authori[sz]|permission|secret|credential|destructive|migration|irreversible|concurren|race|deadlock|replay|idempoten|queue|broker|rabbit|kafka|wire|contract|legacy|activat|cutover)\w*\b/;
+// Thai intents carry the same semantics. Thai has no spaces between words, so
+// these families match as substrings; `\b` never fires between Thai letters.
+export const THAI_RISK_SEMANTICS = Object.freeze({
+  money: ["ชำระเงิน", "จ่ายเงิน", "คืนเงิน", "โอนเงิน", "เรียกเก็บเงิน", "การเงิน",
+    "ใบแจ้งหนี้", "เพย์เมนต์", "บิลลิ่ง"],
+  migration: ["ย้ายข้อมูล", "ไมเกรชัน", "ไมเกรต", "มิเกรต"],
+  irreversible: ["ลบข้อมูล", "ลบถาวร", "ย้อนกลับไม่ได้", "กู้คืนไม่ได้"],
+  concurrency: ["ทำงานพร้อมกัน", "เข้าถึงพร้อมกัน", "เขียนพร้อมกัน", "ภาวะแข่งขัน",
+    "เรซคอนดิชัน", "เดดล็อก"],
+  authority: ["สิทธิ์", "สิทธิการเข้าถึง", "ออโธไรเซชัน", "ความลับ", "รหัสลับ",
+    "รหัสผ่าน", "ข้อมูลรับรอง"],
+  delivery: ["ส่งซ้ำ", "เรียกซ้ำ", "คิวงาน", "คิวข้อความ", "โบรกเกอร์"]
+});
+export const thaiRiskPattern = (...families) => new RegExp(families
+  .flatMap((family) => THAI_RISK_SEMANTICS[family]).join("|"), "u");
+const THAI_HIGH_SEMANTICS = thaiRiskPattern(...Object.keys(THAI_RISK_SEMANTICS));
 const HIGH_CLASSES =
   /money|authori[sz]|secret|destructive|concurren|replay|idempoten|queue|wire|legacy|activation|cutover/;
 
@@ -44,7 +60,8 @@ export function highReviewRiskTriggers({ state, claims, capabilities, grounding 
     triggers.push("destructive-data-or-external-contract");
     break;
   }
-  if (HIGH_SEMANTICS.test(semantic)) triggers.push("critical-semantics");
+  if (HIGH_SEMANTICS.test(semantic) || THAI_HIGH_SEMANTICS.test(semantic))
+    triggers.push("critical-semantics");
   return triggers;
 }
 

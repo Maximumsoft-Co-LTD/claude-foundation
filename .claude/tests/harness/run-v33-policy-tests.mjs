@@ -318,7 +318,7 @@ process.stdout.write(JSON.stringify({ type: "thread.started", thread_id: "thread
   assert(capture.args.includes("--ephemeral"));
   assert(capture.args.includes('model_reasoning_effort="high"'));
   assert.deepEqual(capture.schemaRequired,
-    ["status", "summary", "findings", "verifiedFindingIds", "scenarioCoverage"]);
+    ["status", "summary", "findings", "verifiedFindingIds", "scenarioCoverage", "specGaps"]);
   assert.equal(result.reviewer.sessionId, "thread-fresh");
   assert.equal(result.status, "pass");
   assert(existsSync(join(fixture, result.reportReference)));

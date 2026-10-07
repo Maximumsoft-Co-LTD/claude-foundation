@@ -1,4 +1,5 @@
 import { lifecycleOutcome } from "../../core/lifecycle-outcome.mjs";
+import { deriveDiscoveryCoverage, isDerivedCoverage } from "./derived-coverage.mjs";
 
 const STATUSES = new Set([
   "covered", "not-applicable", "needs-investigation", "needs-user-decision"
@@ -43,7 +44,11 @@ const RISK_SIGNAL_DIMENSIONS = Object.freeze({
   "performance-slo": ["performance-capacity-availability"],
   "user-interface": ["accessibility"],
   "high-operational-risk": ["operability", "recoverability"],
-  "external-side-effect": ["external-authority"]
+  "external-side-effect": ["external-authority"],
+  // Behavior computed from caller-supplied values: the agreement must name the
+  // adjacent partitions (type/representation, zero, negative, fractional,
+  // empty, limits), not only the reported reproduction.
+  "input-domain": ["input-boundary"]
 });
 
 function text(value) {
@@ -162,8 +167,37 @@ function decisionIssues(decisions = []) {
   return issues;
 }
 
-export function semanticIntakeIssues(source = {}) {
-  if (source.version !== 4) return [];
+// A coverage row waiting on user decisions is settled the moment every
+// decision it links is resolved: the harness projects it to `covered`, sourced
+// from those decisions, instead of handing the agent another draft edit.
+export function projectResolvedDecisions(source = {}) {
+  const discovery = source?.discovery;
+  if (source?.version !== 4 || !discovery || !Array.isArray(discovery.coverage) ||
+      !Array.isArray(discovery.decisions)) return source;
+  const resolved = new Set(discovery.decisions
+    .filter((row) => decisionStatus(row) === "resolved").map((row) => text(row?.key)));
+  let changed = false;
+  const coverage = discovery.coverage.map((row) => {
+    const links = strings(row?.decisionKeys);
+    if (text(row?.status).toLowerCase() !== "needs-user-decision" || !links.length ||
+        !links.every((key) => resolved.has(key))) return row;
+    changed = true;
+    return { ...row, status: "covered",
+      sources: unique([...strings(row?.sources), ...links.map((key) => `decision:${key}`)]) };
+  });
+  return changed ? { ...source, discovery: { ...discovery, coverage } } : source;
+}
+
+// The coverage the harness evaluates: authored rows, rows settled by resolved
+// decisions, and required rows the draft content already covers.
+export function projectDiscovery(input = {}) {
+  const source = projectResolvedDecisions(input);
+  return deriveDiscoveryCoverage(source, requiredDiscoveryDimensions(source));
+}
+
+export function semanticIntakeIssues(input = {}) {
+  if (input.version !== 4) return [];
+  const source = projectDiscovery(input);
   const issues = [];
   // Omitted discovery or coverage is an empty record; required dimensions
   // below still name what a declared-risk change must cover.
@@ -199,7 +233,8 @@ export function semanticIntakeIssues(source = {}) {
     const unknown = covers.filter((key) => !requirementKeys.has(key));
     if (unknown.length)
       issues.push(`${label}.covers references unknown requirement(s): ${unknown.join(", ")}`);
-    if (status === "covered" && !covers.length && !strings(row?.sources).length)
+    if (status === "covered" && !covers.length && !strings(row?.sources).length &&
+        !isDerivedCoverage(row))
       issues.push(`${label} covered status requires covers or sources`);
     if (status === "not-applicable" && !text(row?.rationale))
       issues.push(`${label} not-applicable status requires rationale`);
@@ -231,9 +266,10 @@ export function semanticIntakeIssues(source = {}) {
   return issues;
 }
 
-export function semanticIntakeAction(source = {}, {
+export function semanticIntakeAction(input = {}, {
   resume = null, additionalIssues = [], sourceFreshnessFindings = [], frontierLimit = 3
 } = {}) {
+  const source = projectDiscovery(input);
   if (source.version !== 4) return lifecycleOutcome({
     action: "DONE", owner: "harness", boundary: "semantic-intake",
     reached: "intake-ready", reason: "The compatible semantic draft can be compiled.",
@@ -315,8 +351,9 @@ export function semanticIntakeAction(source = {}, {
   });
 }
 
-export function normalizeDiscovery(source = {}) {
-  if (source.version !== 4) return undefined;
+export function normalizeDiscovery(input = {}) {
+  if (input.version !== 4) return undefined;
+  const source = projectDiscovery(input);
   return {
     coverage: (source.discovery?.coverage || []).map((row) => ({
       dimension: text(row?.dimension).toLowerCase(),
@@ -324,7 +361,8 @@ export function normalizeDiscovery(source = {}) {
       covers: unique(strings(row?.covers)),
       sources: unique(strings(row?.sources)),
       decisionKeys: unique(strings(row?.decisionKeys)),
-      rationale: text(row?.rationale) || undefined
+      rationale: text(row?.rationale) || undefined,
+      ...(isDerivedCoverage(row) ? { derived: true, derivedFrom: [...row.derivedFrom] } : {})
     })),
     decisions: (source.discovery?.decisions || []).map((row) => ({
       key: text(row?.key),

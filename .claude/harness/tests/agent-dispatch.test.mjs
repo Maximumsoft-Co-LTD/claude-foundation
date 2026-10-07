@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync
+  existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -230,6 +231,103 @@ test("boundary: once the lease expires, a restarted host stops waiting and dispa
   const value = restartedDispatch.dispatchValue(changeId);
   assert.equal(value.action, "run-leased-in-session");
   assert.equal(value.task.taskId, "T001");
+});
+
+function staleAuthorityFixture() {
+  const root = mkdtempSync(join(tmpdir(), "agent-dispatch-stale-"));
+  const planValue = plan({
+    maxParallelAgents: 2, groups: [["T001", "T002"]],
+    tasks: [task("T001", "api"), task("T002", "app")]
+  });
+  planValue.tasks.forEach((entry) => {
+    entry.dependsOn = []; entry.leaseKeys = [`path:root:${entry.id}`];
+    entry.paths = [`src/${entry.id.toLowerCase()}/**`];
+  });
+  Object.assign(planValue, { graphRevision: 1, graphIdentity: "graph-1", contractRevision: 1 });
+  const surface = new Map([["src/t001/a.js", "v1"], ["src/t002/b.js", "v1"]]);
+  const runtime = createLeaseRuntime({
+    leases: root, stableHash: hash, agentPlanValue: () => planValue,
+    policy: () => ({ execution: { leaseMinutes: 45 } }),
+    readJson, writeJson, now: () => new Date().toISOString(),
+    observedTaskSurface: () => [...surface].map(([path, identity]) => ({ path, identity })),
+    fail: (message) => { throw new Error(message); }
+  });
+  return { root, planValue, surface, runtime };
+}
+
+test("release renews authority a moved graph made stale and still judges writes from the original baseline", () => {
+  const { root, planValue, surface, runtime } = staleAuthorityFixture();
+  runtime.acquire("stale-change", "T001", { owner: "dispatch-t001" }, { quiet: true });
+  const leaseId = readJson(join(root, "tasks", "stale-change", "T001.json")).leaseId;
+  surface.set("src/t001/a.js", "v2");
+  Object.assign(planValue, { graphRevision: 2, graphIdentity: "graph-2", contractRevision: 2 });
+  const released = runtime.release("stale-change", "T001",
+    { owner: "dispatch-t001", "lease-id": leaseId }, { quiet: true });
+  assert.deepEqual(released.observedWrites, ["src/t001/a.js"],
+    "a write before the renewal is still observed against the original baseline");
+  const result = readJson(join(root, "results", "stale-change", "T001.json"));
+  assert.equal(result.graphRevision, 2, "the accepted result binds the current graph");
+  assert.equal(existsSync(join(root, "tasks", "stale-change", "T001.json")), false);
+});
+
+test("a renewed release still refuses a write inside another live task's scope", () => {
+  const { root, planValue, surface, runtime } = staleAuthorityFixture();
+  runtime.acquire("stale-change", "T001", { owner: "dispatch-t001" }, { quiet: true });
+  runtime.acquire("stale-change", "T002", { owner: "dispatch-t002" }, { quiet: true });
+  const leaseId = readJson(join(root, "tasks", "stale-change", "T001.json")).leaseId;
+  surface.set("src/t002/b.js", "v2");
+  Object.assign(planValue, { graphRevision: 2, graphIdentity: "graph-2", contractRevision: 2 });
+  assert.throws(() => runtime.release("stale-change", "T001",
+    { owner: "dispatch-t001", "lease-id": leaseId }, { quiet: true }),
+  /changed outside granted scope: src\/t002\/b\.js/);
+});
+
+test("a task an amendment removed is refused with its cause, not an acquire route", () => {
+  const { root, planValue, runtime } = staleAuthorityFixture();
+  runtime.acquire("stale-change", "T001", { owner: "dispatch-t001" }, { quiet: true });
+  const leaseId = readJson(join(root, "tasks", "stale-change", "T001.json")).leaseId;
+  Object.assign(planValue, { graphRevision: 2, graphIdentity: "graph-2", contractRevision: 2 });
+  planValue.tasks = planValue.tasks.filter((entry) => entry.id !== "T001");
+  assert.throws(() => runtime.release("stale-change", "T001",
+    { owner: "dispatch-t001", "lease-id": leaseId }, { quiet: true }), (error) => {
+    assert.match(error.message, /no longer in the change's plan/);
+    assert.doesNotMatch(error.message, /agents acquire/);
+    return true;
+  });
+});
+
+test("a busy lease lock waits for a parallel worker instead of asking for a retry", async () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-dispatch-lock-"));
+  const lockPath = join(root, "acquire.lock");
+  const processLock = new URL("../runtime/core/process-lock.mjs", import.meta.url).href;
+  const holder = spawn(process.execPath, ["--input-type=module", "-e", `
+    const { acquireProcessLock } = await import(${JSON.stringify(processLock)});
+    const lock = acquireProcessLock(${JSON.stringify(lockPath)});
+    if (!lock.acquired) process.exit(2);
+    process.stdout.write("held\\n");
+    setTimeout(() => { lock.release(); process.exit(0); }, 300);
+  `], { stdio: ["ignore", "pipe", "inherit"] });
+  await new Promise((resolve, reject) => {
+    holder.stdout.on("data", (chunk) => { if (String(chunk).includes("held")) resolve(); });
+    holder.on("exit", (code) => reject(new Error(`lock holder exited early (${code})`)));
+  });
+  const planValue = plan({ maxParallelAgents: 1, groups: [["T001"]], tasks: [task("T001", "api")] });
+  planValue.tasks.forEach((entry) => { entry.dependsOn = []; entry.leaseKeys = ["path:root:T001"]; });
+  const make = (lockWaitMs) => createLeaseRuntime({
+    leases: root, stableHash: hash, agentPlanValue: () => planValue,
+    policy: () => ({ execution: { leaseMinutes: 45 } }),
+    readJson, writeJson, now: () => new Date().toISOString(), lockWaitMs,
+    fail: (message) => { throw new Error(message); }
+  });
+  assert.throws(() => make(20).acquire("lock-change", "T001", { owner: "worker-a" }, { quiet: true }),
+    (error) => {
+      assert.match(error.message, /stayed busy/);
+      assert.doesNotMatch(error.message, /retry the same command/);
+      return true;
+    });
+  const acquired = make(5_000).acquire("lock-change", "T001", { owner: "worker-a" }, { quiet: true });
+  assert.ok(acquired.leaseId, "the second contender acquires once the holder releases");
+  await new Promise((resolve) => holder.exitCode === null ? holder.on("exit", resolve) : resolve());
 });
 
 test("single-agent and completed plans preserve the cheap path", () => {

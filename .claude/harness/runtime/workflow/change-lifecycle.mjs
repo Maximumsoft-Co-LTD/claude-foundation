@@ -1,4 +1,7 @@
-import { agreementDriftError, agreementIdentity, REVIEW_WINDOW_MS } from "../core/user-decisions.mjs";
+import {
+  agreementDriftError, agreementIdentity, agreementRestoredNotice, repairWhitespaceDrift,
+  restoreDriftedAgreement, userDecisionError
+} from "../core/user-decisions.mjs";
 import { createHash } from "node:crypto";
 import {
   cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync,
@@ -8,7 +11,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { acquireProcessLock } from "../core/process-lock.mjs";
 import { nextCommand } from "../core/next-step.mjs";
 import { taskBlocks, taskMetadata } from "../contracts/change-artifacts.mjs";
-import { materialSecurityTriggers } from "./security-policy.mjs";
+import { matchesSecurityTerm, materialSecurityTriggers } from "./security-policy.mjs";
 import {
   agentDecision, authoredDecisionReason, expandMinimalSemanticDraft,
   minimalSemanticDraftTemplate, normalizeSemanticDraft, renderRequirementMarkdown,
@@ -31,28 +34,54 @@ import {
 } from "./validation/semantic-intake-intelligence.mjs";
 import { planAmendmentInvalidation } from "./validation/amendment-invalidation.mjs";
 import {
-  planSelectiveProofRecovery, rebindSelectiveProofReceipt
+  planSelectiveProofRecovery, rebindSelectiveProofReceipt, demoteSelectivePreservation
 } from "./validation/selective-proof-plan.mjs";
 import {
   reduceSemanticIntakeState, semanticDraftDigest, semanticIntakeResumeProjection
 } from "./semantic-intake-state.mjs";
 import {
-  compileSemanticAmendment, semanticAmendmentTemplate, taskContractOnlyAmendment,
-  writeSemanticAmendment
+  amendmentVerifyPathIssues, compileSemanticAmendment, semanticAmendmentTemplate,
+  taskContractOnlyAmendment, verifyPathIssues, writeSemanticAmendment
 } from "./semantic-amendment.mjs";
 import { validateInvestigationBinding } from "./investigation-runtime.mjs";
 import {
-  designBlueprintWarnings, draftHasBlueprints, renderDesignBlueprints
+  designBlueprintWarnings, draftHasBlueprints, draftWorkTypes, renderDesignBlueprints, renderWorkType
 } from "./validation/design-blueprints.mjs";
+import {
+  derivedFailureMatrix, derivedFileMap, derivedTestMap, inferWorkTypes, renderComponentMap,
+  renderFolderTree, renderPlan, renderUserFlow, withNewPaths
+} from "./validation/dev-document.mjs";
 import { targetEditDigest, targetEditPaths } from "./target-edits.mjs";
 import {
   fileMapWithTasks, intakeDecisions, openQuestionItems, readerGuideWarnings,
   renderDesignOverview, renderDiscoveryAppendix, renderInvestigationAppendix,
-  renderInvestigationSummary, renderProposalLead, renderProposalReader, renderTaskOverview
+  renderInvestigationSummary, renderProposalLead, renderProposalReader
 } from "./validation/reader-guide.mjs";
 
 // Marks a start whose re-inspected intake is not DONE (see completedDraftIntake).
 const INCOMPLETE_INTAKE = Symbol("incomplete-intake");
+
+// Each API error a contract lists needs the status or code a client matches
+// on; without one the design renders `?` and Build guesses the wire shape.
+// An agent repair at inspect, never a user question.
+export function apiContractErrorIssues(draft) {
+  const contracts = Array.isArray(draft?.apiContracts) ? draft.apiContracts : [];
+  const issues = [];
+  contracts.forEach((contract, index) => {
+    if (!Array.isArray(contract?.errors)) return;
+    contract.errors.forEach((error, position) => {
+      const identified = error && typeof error === "object"
+        ? [error.status, error.code].some((value) =>
+          (typeof value === "number" && Number.isFinite(value)) ||
+          (typeof value === "string" && value.trim()))
+        : /\b[1-5]\d\d\b|\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b/.test(String(error ?? ""));
+      if (!identified)
+        issues.push(`apiContracts[${index}].errors[${position}] needs a status or code ` +
+          "(for example { status: 404, code: \"NOT_FOUND\", when: \"...\" })");
+    });
+  });
+  return issues;
+}
 
 export function atomicStartPreflight(draft, { groundingRequired = false } = {}) {
   const issues = [];
@@ -360,11 +389,22 @@ export function renderDraftProposal(draft, state) {
   const nonGoals = (draft.nonGoals || []).length
     ? `\n\n## Non-goals\n\n${draftBullets(draft.nonGoals)}` : "";
   const why = String(draft.why || "").trim();
-  const decisions = state?.schema === "foundation-rapid"
-    ? section(renderRapidDecisions(draft.decisions)) : "";
+  const rapid = state?.schema === "foundation-rapid";
+  const decisions = rapid ? section(renderRapidDecisions(draft.decisions)) : "";
+  // A rapid change has no design.md, so its compact dev document (flow,
+  // components, descriptive sections the agent wrote, failures, plan for
+  // Build) lives here. Authoring them never moves the change off rapid.
+  const compact = rapid && [3, 4].includes(draft._semanticVersion);
+  const flow = compact ? section(renderUserFlow(draft)) : "";
+  const plan = compact ? section(renderComponentMap(draft)) + section(renderDesignBlueprints({
+    refactor: draft.refactor, configContract: draft.configContract,
+    failureMatrix: derivedFailureMatrix(draft),
+    fileMap: fileMapWithTasks(draft.fileMap, draft.tasks), testMap: draft.testMap
+  })) + section(renderPlan(draft)) : "";
   return `# Change: ${title}` + section(renderProposalLead(draft)) +
     (why ? `\n\n## Why\n\n${why}` : "") + section(renderProposalReader(draft)) +
-    `\n\n## What changes\n\n${draftBullets(draft.changes)}\n\n## Impact\n\n` +
+    `\n\n## What changes\n\n${draftBullets(draft.changes)}` + flow + section(renderFolderTree(draft)) +
+    plan + `\n\n## Impact\n\n` +
     `- **Impact:** ${draft.impact || state.impact || "medium"}\n` +
     `- **Coupling:** ${draft.coupling || state.coupling || "coupled"}\n` +
     `- **Affected surfaces:** ${(draft.surfaces || ["code"]).join(", ")}\n` +
@@ -421,14 +461,23 @@ export function renderDraftDesign(draft) {
     `| ${integration.key} | ${integration.kind} | ${integration.documentation?.source} | ` +
     `${integration.documentation?.version} | ${(integration.concerns || []).join(", ") || "none"} |`
   );
+  // File and test maps fall back to what the tasks already say, and the
+  // failure matrix to the failure scenarios, so each fact is written once.
+  // Reading order: user flow, components, contracts and states, failures,
+  // file map, test map, then the plan Build executes.
   const blueprints = renderDesignBlueprints({
-    ...draft, fileMap: fileMapWithTasks(draft.fileMap, draft.tasks)
+    ...draft, workType: [], fileMap: fileMapWithTasks(derivedFileMap(draft), draft.tasks),
+    testMap: derivedTestMap(draft), failureMatrix: derivedFailureMatrix(draft)
   });
+  const declared = draftWorkTypes(draft);
   const sections = [
+    renderWorkType(declared, declared.length ? [] : inferWorkTypes(draft)),
     meaningful(draft.currentState) ? `## Current state\n\n${draft.currentState}` : "",
     renderDesignOverview(draft),
+    renderUserFlow(draft),
+    renderComponentMap(draft),
     blueprints,
-    renderTaskOverview(draft),
+    renderPlan(draft),
     (draft.domainLanguage || []).length
       ? `## Domain language\n\n| Canonical term | Meaning | Avoid |\n|---|---|---|\n` +
         draftDomainRows(draft.domainLanguage) : "",
@@ -475,13 +524,21 @@ export function reviewRouteLabel({
 // semantic draft that authored design content must not lose it to rapid.
 export function semanticDraftKeepsDesign(draft, rapid) {
   // Authored content only: a declared work type alone is not design content,
-  // and neither is a default the agent recorded without asking.
+  // and neither is a default the agent recorded without asking. Purely
+  // descriptive dev-document sections render compactly in a rapid proposal,
+  // so they never move a low-risk change to standard; risk still does.
   return Boolean(rapid) && [3, 4].includes(draft?._semanticVersion) &&
     draftNeedsDesign({
       ...draft, workType: [],
+      ...Object.fromEntries(RAPID_DESCRIPTIVE_SECTIONS.map((key) => [key, undefined])),
       decisions: (draft.decisions || []).filter((decision) => !agentDecision(decision))
     });
 }
+
+// Dev-document sections that describe the change rather than decide it.
+const RAPID_DESCRIPTIVE_SECTIONS = Object.freeze([
+  "fileMap", "failureMatrix", "testMap", "componentMap", "userFlow", "configContract", "refactor"
+]);
 
 export function draftNeedsDesign(draft) {
   return Boolean(
@@ -1034,10 +1091,15 @@ export function createChangeLifecycle({
   function materializeDraft(id, draft) {
     const state = loadRuntime(id);
     const basePath = changePath(id);
-    writeFileSync(join(basePath, "proposal.md"), renderDraftProposal(draft, state));
+    // Task paths the main checkout does not have yet read as additions.
+    const documented = withNewPaths(draft, (path) => existsSync(join(root, path)));
+    writeFileSync(join(basePath, "proposal.md"), renderDraftProposal(documented, state));
+    // A standard v4 change is built from its dev document, so design.md is
+    // always written; v3 keeps writing it only for authored design content.
     if (state.schema === "foundation-standard" &&
-        (![3, 4].includes(draft._semanticVersion) || draftNeedsDesign(draft)))
-      writeFileSync(join(basePath, "design.md"), renderDraftDesign(draft));
+        (![3, 4].includes(draft._semanticVersion) || draft._semanticVersion === 4 ||
+          draftNeedsDesign(draft)))
+      writeFileSync(join(basePath, "design.md"), renderDraftDesign(documented));
     if (state.groundingRequired && draft.grounding)
       writeJson(join(basePath, "grounding.yaml"), draft.grounding);
     writeFileSync(join(basePath, "tasks.md"), renderDraftTasks(draft.tasks));
@@ -1183,7 +1245,7 @@ export function createChangeLifecycle({
 
   function inspectSemanticIntakeSource(source, {
     statePath, resume, quiet = false, validateCompiledDraft = true,
-    excludedSourcePath = null, standardLane = false
+    excludedSourcePath = null, standardLane = false, extraIssues = []
   }) {
     let previous = null;
     if (existsSync(statePath)) {
@@ -1214,6 +1276,7 @@ export function createChangeLifecycle({
         ? startDraftChecks(normalized.draft, { structural: !normalized.issues.length }).issues
         : []),
       ...semanticReferenceIssues(normalized.draft),
+      ...extraIssues,
       ...(source.version === 4 && source.investigation !== undefined
         ? validateInvestigationBinding({ projectRoot: root, binding: source.investigation, git })
           .map((issue) => `investigation ${issue}`)
@@ -1323,13 +1386,21 @@ export function createChangeLifecycle({
     if (!pathInside(root, path) || !existsSync(path))
       fail("change amend requires a JSON file inside the project");
     const amendment = options.preparedSource || readJson(path);
+    // Build creates files in the workspace, so a verify path is checked there.
+    const workspaceRoot = active.workspace?.path && existsSync(active.workspace.path)
+      ? active.workspace.path : root;
+    const tasksPath = join(activeChangePath(id, active), "tasks.md");
     return inspectSemanticIntakeSource(amendmentIntakeSource(amendment), {
       statePath: semanticIntakeStatePath(amendmentPath, `amend:${id}`),
       resume: `claude-foundation change amend ${id} ${amendmentPath} --inspect`,
       quiet: options.quiet,
       validateCompiledDraft: false,
       excludedSourcePath: relative(root, path).replaceAll("\\", "/"),
-      standardLane: active.schema === "foundation-standard"
+      standardLane: active.schema === "foundation-standard",
+      extraIssues: amendmentVerifyPathIssues(amendment,
+        existsSync(tasksPath) ? readFileSync(tasksPath, "utf8") : "",
+        { exists: (candidate) => existsSync(join(workspaceRoot, candidate)) ||
+          existsSync(join(root, candidate)) })
     });
   }
 
@@ -1417,13 +1488,9 @@ export function createChangeLifecycle({
     // "accessibility" and `includes("migration")` on "migration guide", so
     // routine work acquired external review it did not need — while the
     // trigger the docs promise ("semantic, not syntax") went unmet either way.
-    const termsIn = (value) => {
-      const semanticText = String(value || "").toLowerCase();
-      return securityTerms.filter((term) => {
-        const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "[\\s-]+");
-        return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`).test(semanticText);
-      });
-    };
+    // Thai terms, written without word spaces, match as substrings.
+    const termsIn = (value) =>
+      securityTerms.filter((term) => matchesSecurityTerm(value, term));
     const explicitSecurity = String(flags.security || "").split(",")
       .map((value) => value.trim()).filter((value) => value && value.toLowerCase() !== "none");
     // Declared triggers (the draft, `--security`, or a prior resolve) keep
@@ -1545,6 +1612,30 @@ export function createChangeLifecycle({
     ].join(", ") || "none"}${surfaceLine}${ciLine}\n  schema: ${state.schema}${upgraded ? " (upgraded from foundation-rapid; design.md and specs/ added)" : ""}${atomicStepOutput ? "" : `\n  next: ${nextCommand(state.status, id)}`}`);
   }
 
+  function approvalPacketRoot(id) {
+    return approvalPacketRootFor(loadRuntime(id), id);
+  }
+
+  function designOpenQuestions(id, packetRoot = approvalPacketRoot(id)) {
+    const designPath = join(packetRoot, "openspec", "changes", id, "design.md");
+    return existsSync(designPath) ? openQuestionItems(readFileSync(designPath, "utf8")) : [];
+  }
+
+  // The questions an approval would be refused over, as the user decision the
+  // agent asks in one batch. Null when nothing is open.
+  function openQuestionsDecision(id) {
+    const questions = designOpenQuestions(id);
+    if (!questions.length) return null;
+    const error = userDecisionError("OPEN_QUESTIONS",
+      `Ask the user the design's open questions before approving the spec: ${questions.join(" | ")}`, [
+        { id: "answer", outcome: "Answer each open question; the agent records the answers in the " +
+          "draft and revises the change, then asks for spec approval again" },
+        { id: "pause", outcome: "Leave the change unapproved for now" }
+      ], "answer");
+    error.decision.questions = questions;
+    return error;
+  }
+
   function resolveChange(id, flags) {
     const decisionFlags = ["approve-spec", "continue-review", "accept-target-edits"];
     if (decisionFlags.some((key) => flags[key])) {
@@ -1567,15 +1658,18 @@ export function createChangeLifecycle({
         const amended = (current.amendments || []).some((entry) =>
           Number(entry?.revision) === Number(current.contractRevision || 0));
         if (approvalRoot !== root && !amended &&
-            agreementIdentity(approvalRoot, id) !== agreementIdentity(root, id)) {
-          const drift = agreementDriftError(id, approvalRoot);
-          fail(drift.message, 1, { owner: drift.owner, boundary: drift.boundary, code: drift.code });
+            agreementIdentity(approvalRoot, id) !== agreementIdentity(root, id) &&
+            !repairWhitespaceDrift(root, approvalRoot, id)) {
+          const saved = restoreDriftedAgreement(root, approvalRoot, id);
+          if (saved) console.error(agreementRestoredNotice(id, saved));
+          else {
+            const drift = agreementDriftError(id, approvalRoot);
+            fail(drift.message, 1, { owner: drift.owner, boundary: drift.boundary, code: drift.code });
+          }
         }
         // Consent covers a settled agreement: an open question is answered and
         // revised into the change first, never approved around.
-        const designPath = join(approvalRoot, "openspec", "changes", id, "design.md");
-        const openQuestions = existsSync(designPath)
-          ? openQuestionItems(readFileSync(designPath, "utf8")) : [];
+        const openQuestions = designOpenQuestions(id, approvalRoot);
         if (openQuestions.length)
           fail("resolve the design's open questions before approving the spec:\n  - " +
             `${openQuestions.join("\n  - ")}\nAsk the user, record the answers, and revise the change.`);
@@ -1594,11 +1688,9 @@ export function createChangeLifecycle({
           decisionRef, acceptedAt: now() };
         saveRuntime(state);
       } else {
-        if (!state.reviewWindow) fail("No review window has started for this change");
-        const startedAt = now();
-        state.reviewWindowHistory = [...(state.reviewWindowHistory || []), state.reviewWindow];
-        state.reviewWindow = { startedAt, deadline: new Date(Date.parse(startedAt) + REVIEW_WINDOW_MS).toISOString(), decisionRef };
-        saveRuntime(state);
+        // Compatibility: review is bounded by its rounds, not elapsed time,
+        // so there is no window to extend. The flag stays accepted.
+        console.log(`NOTE: review has no time window; '--continue-review' changes nothing`);
       }
       console.log(`DECISION RECORDED ${id}\n` +
         (approvedDelta ? `  approved requirement delta:\n${formatApprovalDelta(approvedDelta)}\n` : "") +
@@ -1694,7 +1786,10 @@ export function createChangeLifecycle({
     // the preflight gates still apply the rapid lane's requirements.
     const keepsDesign = semanticDraftKeepsDesign(draft, preflight.rapid);
     const rapid = preflight.rapid && !keepsDesign;
-    const issues = [...(structural ? preflight.issues : []), ...domainLanguageIssues(draft)];
+    const issues = [...(structural ? preflight.issues : []), ...domainLanguageIssues(draft),
+      // Caught here, in the same EDIT batch, instead of when Build runs the check.
+      ...verifyPathIssues(draft.tasks, { exists: (path) => existsSync(join(root, path)) }),
+      ...apiContractErrorIssues(draft)];
     // Only the rapid lane may leave evidence capabilities to the compiler.
     if (!rapid && draft._defaultedEvidence?.length)
       issues.push("the draft carries design content, so it uses " +
@@ -1763,11 +1858,14 @@ export function createChangeLifecycle({
         if (completedIntakeEffectiveness)
           pending.semanticIntakeEffectiveness = completedIntakeEffectiveness;
         saveRuntime(pending);
+        const openQuestions = designOpenQuestions(id, root);
         console.log(`AGREED ${id}\n  inspect: openspec/changes/${id}/\n` + packetFileLines(id) +
           "  awaiting user approval before Build\n" +
+          openQuestionLines(openQuestions) +
           designWarningLines(draft, loadRuntime(id).schema) +
-          `  next: claude-foundation advance ${id} --approve-spec --decision-ref <user-decision>\n` +
-          `  then: claude-foundation advance ${id} --through build`);
+          `  next: ${openQuestions.length
+            ? `ask these with the approval, record the answers in the draft, then claude-foundation change revise ${id} ${draftPath} --approve-spec --decision-ref <user-decision> --through build`
+            : `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision> --through build`}`);
       });
     } catch (error) {
       let rollbackIssues;
@@ -1794,6 +1892,16 @@ export function createChangeLifecycle({
       console.error(`WARNING: atomic start succeeded but could not remove semantic intake state: ${
         error.message}`);
     }
+    return id;
+  }
+
+  // Open questions travel with the approval packet, so the user answers them
+  // in the same exchange instead of after an approval is refused.
+  function openQuestionLines(questions) {
+    return questions.length
+      ? `  open questions (ask with the approval):\n${questions.map((question) =>
+        `    - ${question}`).join("\n")}\n`
+      : "";
   }
 
   function packetFingerprints(dir) {
@@ -1817,7 +1925,7 @@ export function createChangeLifecycle({
     return state.pendingApprovalDelta;
   }
 
-  function approvalPacketRoot(state, id) {
+  function approvalPacketRootFor(state, id) {
     return state.workspace?.path &&
       existsSync(join(state.workspace.path, "openspec", "changes", id))
       ? state.workspace.path : root;
@@ -1838,7 +1946,7 @@ export function createChangeLifecycle({
     const toRevision = Number(next.contractRevision || 0);
     const { carriedFrom: _prior, ...consent } = approval;
     next.specApproval = { ...consent,
-      identity: agreementIdentity(approvalPacketRoot(next, id), id),
+      identity: agreementIdentity(approvalPacketRootFor(next, id), id),
       revision: toRevision, carriedFrom: { revision: fromRevision, reason, carriedAt } };
     next.approvalCarries = [...(prior.approvalCarries || []), {
       fromRevision, toRevision, reason,
@@ -1937,7 +2045,15 @@ export function createChangeLifecycle({
     setOperationChangeId(id);
     const source = revisionSource(id, draftPath);
     const intake = revisionIntakeOptions(id, draftPath, source);
-    const completedIntakeEffectiveness = completedDraftIntake(source, draftPath, intake);
+    // One call: a missing or stale intake is inspected in place. DONE revises;
+    // any other action is printed as `--inspect` would and nothing changes.
+    const completedIntakeEffectiveness = completedDraftIntake(source, draftPath,
+      { ...intake, reinspect: true });
+    const incomplete = completedIntakeEffectiveness?.[INCOMPLETE_INTAKE];
+    if (incomplete) {
+      console.log(JSON.stringify(incomplete, null, 2));
+      return incomplete;
+    }
     const { draft, rapid, resolutionFlags } = preflightDraft(draftPath, source);
 
     // Build does not take this lock, so recheck that no workspace, receipt, or
@@ -2023,15 +2139,19 @@ export function createChangeLifecycle({
     }
     const state = loadRuntime(id);
     const pending = state.pendingApprovalDelta;
+    const openQuestions = designOpenQuestions(id, root);
     console.log(`REVISED ${id}\n  revision: ${state.contractRevision}\n` +
       (pending
         ? `  requirement delta awaiting approval:\n${formatApprovalDelta(pending)}\n`
         : `  requirement delta (covered by the current approval):\n${formatApprovalDelta(delta)}\n`) +
       `  inspect: openspec/changes/${id}/\n` + packetFileLines(id) +
+      openQuestionLines(openQuestions) +
       designWarningLines(draft, state.schema) +
-      `  next: ${pending || !state.specApproval?.identity
-        ? `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision>`
-        : `claude-foundation advance ${id} --through build`}`);
+      `  next: ${openQuestions.length
+        ? `ask these with the approval, record the answers in the draft, then claude-foundation change revise ${id} ${draftPath} --approve-spec --decision-ref <user-decision> --through build`
+        : pending || !state.specApproval?.identity
+          ? `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision> --through build`
+          : `claude-foundation advance ${id} --through build`}`);
     return delta;
   }
 
@@ -2082,10 +2202,17 @@ export function createChangeLifecycle({
         resumeRoute: resume, sourceInventory: sourceInspection.inventory
       });
       if (!intelligenceUsable(intelligence) || sourceInspection.findings.length ||
-          projection.status !== "current" || projection.action?.action !== "DONE")
-        fail(`version-4 amendments require a current completed semantic intake; ` +
-          `resume with '${resume}'`);
-      completedAmendmentIntakeEffectiveness = intakeState?.effectiveness || null;
+          projection.status !== "current" || projection.action?.action !== "DONE") {
+        // One call: inspect in place. DONE amends; any other action is printed
+        // as `--inspect` would and the agreement is left untouched.
+        const inspected = inspectAmendment(id, amendmentPath,
+          { quiet: true, preparedSource: amendment });
+        if (inspected.action !== "DONE") {
+          console.log(JSON.stringify(inspected, null, 2));
+          return inspected;
+        }
+        completedAmendmentIntakeEffectiveness = inspected.effectiveness || null;
+      } else completedAmendmentIntakeEffectiveness = intakeState?.effectiveness || null;
     }
     const basePath = activeChangePath(id, state);
     const contract = readJson(join(basePath, "evidence.yaml"));
@@ -2186,7 +2313,7 @@ export function createChangeLifecycle({
       const currentBindings = invalidation.proof.preserveReceipts
         .map((provider) => selectiveBinding(id, provider, currentContractRevision))
         .filter(Boolean);
-      const proofRecovery = planSelectiveProofRecovery({
+      let proofRecovery = planSelectiveProofRecovery({
         changeId: id,
         invalidation,
         requiredProviders: currentRequiredProviders,
@@ -2201,6 +2328,14 @@ export function createChangeLifecycle({
         for (const provider of proofRecovery.providers.preserved) {
           const priorReceipt = receiptBackups.get(provider);
           if (!priorReceipt) throw new Error(`selective proof receipt '${provider}' disappeared`);
+          // A task-only amendment leaves the contract as it was: a receipt
+          // already bound to it needs no rebind, and one that is not is rerun.
+          if (nextFingerprint === priorContractFingerprint) {
+            if (priorReceipt.contractFingerprint !== nextFingerprint)
+              compiled.invalidation.proofRecovery = proofRecovery = demoteSelectivePreservation(
+                proofRecovery, provider, "RECEIPT_STALE_FOR_UNCHANGED_CONTRACT");
+            continue;
+          }
           const rebound = rebindSelectiveProofReceipt({
             receipt: priorReceipt,
             provider,
@@ -2361,6 +2496,7 @@ export function createChangeLifecycle({
     inspectRevision,
     reviseChange,
     amendChange,
-    resolveChange
+    resolveChange,
+    openQuestionsDecision
   };
 }

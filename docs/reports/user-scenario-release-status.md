@@ -2,12 +2,16 @@
 
 Release evidence last verified: 2026-09-04 for v3.5.6.
 
-Current source note (2026-09-15): the repository version remains v3.5.17 while
-the unreleased source adds repository-grounded semantic intake, a deterministic
-Investigate runtime, amendment-aware selective proof, and their release-safety
-remediations. This working tree is not yet an immutable release cohort. The
-verified state table below belongs to v3.5.6 and does not certify v3.5.17 or the
-current unreleased source. No paid, rollout, or production evidence transfers
+Current source note (2026-10-06): the latest release is v3.5.30. The
+pre-release benchmark of 2026-10-01
+([harness-benchmark-3.5.28-2026-10-01.md](harness-benchmark-3.5.28-2026-10-01.md))
+is single-run (n=1) development evidence for v3.5.28 and archived 6/6 lanes with
+5/6 fully correct; its two named defects shipped in v3.5.29. Unreleased source
+after v3.5.30 adds required strict OpenSpec lint from Prove on, install-time
+OpenSpec preparation, the `input-domain` risk signal, and advisory review
+`specGaps`. None of v3.5.7–v3.5.30 or the unreleased source has a
+source-cohorted paid result. The verified state table below belongs to v3.5.6
+and certifies none of them. No paid, rollout, or production evidence transfers
 between source cohorts.
 
 Local deterministic checks for the unreleased source are development evidence

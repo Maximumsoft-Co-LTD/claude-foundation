@@ -6,6 +6,18 @@ ROOT="$(cd "$HERE/../../.." && pwd)"
 . "$ROOT/.claude/tests/lib/assert.sh"
 . "$ROOT/.claude/tests/lib/harness-fixture.sh"
 
+# The fixtures below archive real release tags. A shallow or tagless clone
+# lacks them, so name the setup gap instead of failing inside tar.
+for tag in v3.2.19 v3.5.13; do
+  if ! git -C "$ROOT" rev-parse --verify --quiet "refs/tags/$tag^{commit}" >/dev/null; then
+    fetch="git fetch --tags"
+    [ "$(git -C "$ROOT" rev-parse --is-shallow-repository 2>/dev/null)" = true ] &&
+      fetch="git fetch --unshallow --tags"
+    echo "test setup incomplete: release tag $tag is missing; run $fetch in this checkout before retrying" >&2
+    exit 1
+  fi
+done
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 
@@ -208,20 +220,12 @@ assert_cmd_zero "missing graph-v2 authority enters automatic verification" \
   bash "$ROOT/cli.sh" --project "$graph_target" agents plan graph-reverify
 assert_eq "both completed tasks are queued for current verification" "2" \
   "$(jq -r '.tasks | length' "$graph_target/.foundation/plans/graph-reverify.json")"
-for expected_task in T001 T002; do
-  dispatch="$(bash "$ROOT/cli.sh" --project "$graph_target" \
-    agents dispatch graph-reverify)"
-  task_id="$(printf '%s' "$dispatch" | jq -r '.task.taskId')"
-  owner="$(printf '%s' "$dispatch" | jq -r '.task.owner')"
-  assert_eq "verification dispatch selects the next completed task" \
-    "$expected_task" "$task_id"
-  bash "$ROOT/cli.sh" --project "$graph_target" agents acquire \
-    graph-reverify "$task_id" --owner "$owner" >/dev/null
-  lease_id="$(jq -r '.leaseId' \
-    "$graph_target/.foundation/leases/tasks/graph-reverify/$task_id.json")"
-  bash "$ROOT/cli.sh" --project "$graph_target" agents release \
-    graph-reverify "$task_id" --owner "$owner" --lease-id "$lease_id" >/dev/null
-done
+# The harness re-verifies the ticked tasks itself on the next advance: no
+# dispatch, acquire, or release reaches the agent.
+reverify_advance="$(bash "$ROOT/cli.sh" --project "$graph_target" \
+  advance graph-reverify --through build 2>&1 || true)"
+assert_not_contains "re-verification hands no lease command to the agent" \
+  "$reverify_advance" "agents acquire"
 reverified_dispatch="$(bash "$ROOT/cli.sh" --project "$graph_target" \
   agents dispatch graph-reverify)"
 assert_contains "accepted current results finish automatic verification" \

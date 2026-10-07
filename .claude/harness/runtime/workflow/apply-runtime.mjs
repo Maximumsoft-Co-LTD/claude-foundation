@@ -9,7 +9,7 @@ import {
   projectionCounts, targetHeadMovedDecision, undeclaredDeletions
 } from "./apply-recovery.mjs";
 import {
-  nestedRepositoryPathMatcher, sandboxCodePathspec
+  isInvestigationPath, nestedRepositoryPathMatcher, sandboxCodePathspec
 } from "../core/workspace-surface.mjs";
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 import { compositeRepositorySelection } from "../core/repository-binding.mjs";
@@ -19,7 +19,8 @@ import { approvalMatches } from "../core/user-decisions.mjs";
 import { legacyRepositoryLandTransaction } from "./land-runtime.mjs";
 import { rejectedPaths } from "./sandbox-runtime.mjs";
 import {
-  parseRestoreTargetPaths, restorableTargetPaths, targetConflictStop
+  landedChangeSyncStop, landedTargetPaths, otherLandedOutput, parseRestoreTargetPaths,
+  restorableTargetPaths, targetConflictStop, targetEditCarried
 } from "./target-edits.mjs";
 
 // Whether an empty root diff is an acceptable apply outcome rather than an
@@ -38,13 +39,6 @@ export function telemetryUsageSatisfied(telemetry) {
     ["measured", "no-usage"].includes(telemetry.classification) ||
     Object.values(telemetry.measuredDimensions || {}).some(Boolean)
   ));
-}
-
-export function telemetryLandIssue(policy, telemetry) {
-  // Usage measurement is operational evidence, not product correctness or
-  // delivery authority. Missing host telemetry stays explicit and recoverable
-  // but can never strand a proven local delivery.
-  return null;
 }
 
 export function assertLocalApply(initialState, options, fail) {
@@ -175,13 +169,17 @@ export function executeApplyJournal({
   }
 }
 
-export function applySandboxOperation(context, id, options = {}) {
+// `checkedReadiness` is archive's own landCheck from the same Land pass. That
+// check already refused any pending apply, and only the evidence breadcrumb
+// was written since, so it is reused instead of recomputed. It is a separate
+// positional argument so no CLI flag can ever supply it.
+export function applySandboxOperation(context, id, options = {}, checkedReadiness = null) {
   const initialState = context.loadRuntime(id);
   assertLocalApply(initialState, options, context.fail);
   if (initialState.workspace?.applied && options.refresh)
     context.refreshAppliedProjection(initialState);
   context.recoverPendingApply(id, initialState);
-  if (context.landCheck(id).archived) return;
+  if ((checkedReadiness || context.landCheck(id)).archived) return;
   const state = context.loadRuntime(id);
   const reapply = reapplyProjection({ ...context, id, state });
   if (reapply.resumed) return;
@@ -230,16 +228,59 @@ export function restoreAuthorizedTargetPaths(context, state, names) {
   return restored;
 }
 
+function targetSnapshot(state) {
+  return state.workspace?.targetDirty || state.workspace?.preexisting || {};
+}
+
+// A conflict made only of regenerable artifacts that were clean at isolation
+// is a test run in the main checkout, not user work. Land returns them to the
+// sandbox base itself, once, instead of handing a restore command back.
+function restoreRegenerableConflicts(context, state, paths) {
+  if (!paths.length || !context.writeFile || !context.removePath ||
+      restorableTargetPaths(paths, targetSnapshot(state)).length !== paths.length ||
+      Object.keys(context.landedBy?.(state.id, paths) || {}).length) return false;
+  const base = context.sandboxBase(state);
+  for (const path of paths) {
+    const shown = context.gitBuffer(["show", `${base}:${path}`], context.root);
+    if (shown.status === 0) context.writeFile(join(context.root, path), shown.stdout);
+    else context.removePath(join(context.root, path));
+  }
+  return true;
+}
+
+function baseBlob(context, state, path) {
+  const shown = context.gitBuffer(["show", `${context.sandboxBase(state)}:${path}`], context.root);
+  return shown.status === 0 ? shown.stdout : null;
+}
+
+// Whether the sandbox replay already wrote the current sandbox bytes for every
+// landed path and Land still finds them not carried: another automatic sync
+// would change nothing, so the agent reconciles instead of the harness looping.
+function landedReplayExhausted(context, state, landedPaths) {
+  const replayed = state.workspace?.landedReplay || {};
+  return landedPaths.every((path) => Object.hasOwn(replayed, path) &&
+    replayed[path] === context.pathIdentity(join(state.workspace.path, path)));
+}
+
 function stopForTargetConflict(context, id, state, paths, cause) {
-  const snapshot = state.workspace?.targetDirty || state.workspace?.preexisting || {};
-  const stop = targetConflictStop({ changeId: id, paths, snapshot, cause });
+  const snapshot = targetSnapshot(state);
+  // Bytes an earlier change landed are part of the target: the harness first
+  // replays the sandbox onto them through its own sync, then proves again.
+  const landedBy = context.landedBy?.(id, paths) || {};
+  const landed = Object.keys(landedBy);
+  if (landed.length && context.blockWithDecision && state.workspace?.mode === "worktree" &&
+      !landedReplayExhausted(context, state, landed)) {
+    const stop = landedChangeSyncStop({ changeId: id, landedBy });
+    return context.blockWithDecision(id, stop.code, stop.decision);
+  }
+  const stop = targetConflictStop({ changeId: id, paths, snapshot, cause, landedBy });
   if (stop.decision && context.blockWithDecision)
     return context.blockWithDecision(id, stop.code, stop.decision);
   if (stop.decision) return context.fail(stop.decision.summary);
   return context.fail(stop.message, 1, stop.details);
 }
 
-export function gitApplyInputsOperation(context, id, sandboxPath) {
+export function gitApplyInputsOperation(context, id, sandboxPath, { regenerated = false } = {}) {
   const state = context.loadRuntime(id);
   const names = context.sandboxDiffNames(id, sandboxPath, state);
   restoreAuthorizedTargetPaths(context, state, names);
@@ -258,6 +299,16 @@ export function gitApplyInputsOperation(context, id, sandboxPath) {
     "diff", "--binary", context.sandboxBase(state), "--", ...pending
   ], sandboxPath);
   if (diff.status !== 0) context.fail("cannot inspect sandbox diff");
+  // A target edit the sandbox copy already carries is not overwritten work,
+  // nor is landed work the agent merged by hand into these exact bytes after
+  // the sandbox replay reported a same-line conflict.
+  const resolvedLanded = (path) => {
+    const row = state.workspace?.landedResolved?.[path];
+    return Boolean(row) && row.target === context.pathIdentity(join(context.root, path)) &&
+      row.sandbox === context.pathIdentity(join(sandboxPath, path));
+  };
+  const carried = (path) => resolvedLanded(path) || targetEditCarried({
+    root: context.root, sandboxPath, path, baseBytes: baseBlob(context, state, path) });
   // An untracked-only or mode-only projection has no Git patch, but the
   // transaction below still copies it and binds its bytes/mode. Patch-check
   // only the tracked part; target-clobber checks still cover every path.
@@ -266,10 +317,14 @@ export function gitApplyInputsOperation(context, id, sandboxPath) {
       cwd: context.root, input: diff.stdout, encoding: "utf8"
     });
     if (check.status !== 0) {
-      const conflicts = rejectedPaths(check.stderr);
-      if (!conflicts.length)
+      const rejected = rejectedPaths(check.stderr);
+      if (!rejected.length)
         context.fail(`sandbox diff conflicts with target: ${check.stderr.trim()}`);
-      stopForTargetConflict(context, id, state, conflicts, "sandbox diff conflicts with target");
+      const conflicts = rejected.filter((path) => !carried(path));
+      if (conflicts.length && !regenerated && restoreRegenerableConflicts(context, state, conflicts))
+        return gitApplyInputsOperation(context, id, sandboxPath, { regenerated: true });
+      if (conflicts.length)
+        stopForTargetConflict(context, id, state, conflicts, "sandbox diff conflicts with target");
     }
   }
   const base = context.sandboxBase(state);
@@ -285,8 +340,10 @@ export function gitApplyInputsOperation(context, id, sandboxPath) {
     const sandboxContent = workingBlob(join(sandboxPath, path));
     if (sandboxContent !== null && target.equals(sandboxContent)) return false;
     const shown = context.gitBuffer(["show", `${base}:${path}`], context.root);
-    return shown.status !== 0 || !target.equals(shown.stdout);
+    return (shown.status !== 0 || !target.equals(shown.stdout)) && !carried(path);
   });
+  if (clobbered.length && !regenerated && restoreRegenerableConflicts(context, state, clobbered))
+    return gitApplyInputsOperation(context, id, sandboxPath, { regenerated: true });
   if (clobbered.length)
     stopForTargetConflict(context, id, state, clobbered,
       "apply would overwrite uncommitted target edits");
@@ -523,6 +580,7 @@ export function createApplyRuntime({
   cleanupChangeLeases,
   now,
   archiveCheckpoint = () => {},
+  measure = (_stage, operation) => operation(),
   assertLandGrant = () => {},
   consumeLandGrant = () => {},
   blockWithDecision,
@@ -548,7 +606,8 @@ export function createApplyRuntime({
     const sandbox = workspaceManifest(state.workspace.path, id, true);
     const nested = nestedRepositoryPathMatcher(nestedRepositoryPaths(id, state));
     return [...new Set([...Object.keys(baseline), ...Object.keys(sandbox)])]
-      .filter((path) => baseline[path] !== sandbox[path] && !nested(path)).sort();
+      .filter((path) => baseline[path] !== sandbox[path] && !nested(path) &&
+        !isInvestigationPath(path)).sort();
   }
 
   // Against the base the sandbox branched from, not its HEAD: an agent that
@@ -557,6 +616,14 @@ export function createApplyRuntime({
   // sandbox index — still counts it. That lands a partial change as a success.
   function sandboxBase(state) {
     return state.workspace?.baseHead || "HEAD";
+  }
+
+  // Paths whose target bytes are still another change's landed, uncommitted
+  // projection: path -> landing change id.
+  function landedBy(id, paths) {
+    if (!paths.length || !transactions) return {};
+    return landedTargetPaths({ root, paths, identity: pathIdentity,
+      landed: otherLandedOutput({ transactions, changeId: id, readJson }) });
   }
 
   const sandboxDiffNames = sandboxDiffNamesOperation.bind(null, {
@@ -581,6 +648,7 @@ export function createApplyRuntime({
     readFile: readFileSync,
     writeFile: writeFileSync,
     removePath: (path) => rmSync(path, { force: true }),
+    landedBy,
     blockWithDecision,
     fail
   });
@@ -598,6 +666,12 @@ export function createApplyRuntime({
     for (const path of paths) {
       try { safeRootPath(path); } catch (error) { fail(error.message); }
     }
+    const landed = landedBy(id, paths);
+    if (Object.keys(landed).length)
+      fail(`--restore-target would discard the landed, uncommitted work of ${
+        [...new Set(Object.values(landed))].sort().join(", ")} at: ${Object.keys(landed).sort()
+        .join(", ")}; Land never overwrites an earlier landed change. Resume with ` +
+        `'claude-foundation advance ${id} --through archived' and it merges that work instead.`);
     const snapshot = state.workspace.targetDirty || state.workspace.preexisting || {};
     const needsDecision = paths.filter((path) =>
       !restorableTargetPaths([path], snapshot).length);
@@ -809,10 +883,15 @@ export function createApplyRuntime({
     };
   }
 
+  // Not a dead end: the inputs are retained, so after the agent repairs the
+  // listed openspec/specs files, `advance --through archived` re-verifies the
+  // merge from them and finishes the archive.
   function failSpecSync(violations) {
     fail(`archived specs do not match the change delta:\n${violations
       .map((violation) => `  ${violation.capability}/${violation.requirement || "-"}: ${
-        violation.detail}`).join("\n")}`);
+        violation.detail}`).join("\n")}\nRepair each listed openspec/specs/<capability>/spec.md so ` +
+      "it carries the change delta; Land re-verifies the merge from the retained inputs.",
+    1, { owner: "agent", boundary: "spec-sync", code: "SPEC_SYNC_VIOLATION" });
   }
 
   // The gate can only fire once the change is already recorded archived, so a
@@ -831,6 +910,29 @@ export function createApplyRuntime({
     verifyAppliedProjection,
     fail
   });
+
+  // OpenSpec already moved the packet and merged the specs, but the merge was
+  // not yet verified (a crash, or a violation the user is repairing).
+  function specSyncPending(id, state = loadRuntime(id)) {
+    return state.status !== "archived" && state.land?.status === "specs-archived" &&
+      !existsSync(changePath(id));
+  }
+
+  // The change becomes `archived` only here, once the merged specs verify;
+  // cleanup then resumes exactly as for any archived change.
+  function completeSpecSync(id, state) {
+    const outstanding = outstandingSpecSync(state);
+    if (outstanding.length) {
+      state.specSyncViolations = outstanding;
+      saveRuntime(state);
+      failSpecSync(outstanding);
+    }
+    transitionLifecycleState(state, "archived", "openspec-archive-complete");
+    state.archivedAt ||= now();
+    state.archivedChangePath ||= archivedChangeRelativePath(id);
+    saveRuntime(state);
+    resumeArchivedChange(id, state);
+  }
 
   function resumeArchivedChange(id, state) {
     const outstanding = outstandingSpecSync(state);
@@ -935,6 +1037,8 @@ export function createApplyRuntime({
 
   function archiveRecoveryReady(id) {
     const state = loadRuntime(id);
+    // Only verification remains; completeSpecSync re-checks it before archiving.
+    if (specSyncPending(id, state)) return true;
     if (state.status === "archived" || state.land?.status !== "archive-prepared" ||
         existsSync(changePath(id))) return false;
     const archivedPath = archivedChangeRelativePath(id);
@@ -947,7 +1051,7 @@ export function createApplyRuntime({
   }
 
   function recoverArchive(id, authorizeLand) {
-    if (loadRuntime(id).status === "archived") {
+    if (loadRuntime(id).status === "archived" || specSyncPending(id)) {
       archive(id);
       return true;
     }
@@ -973,18 +1077,22 @@ export function createApplyRuntime({
   function applyArchiveWorkspace(id, readiness) {
     if (!["worktree", "copy"].includes(readiness.state.workspace?.mode))
       return readiness;
-    if (compositeRepositorySelection(selectedRepositories(id, readiness.state))) {
-      // Legacy repository Land records already name commits applied by the
-      // user. Their root gitlinks are staged by resumeLand; replaying the
-      // workspace-uncommitted delivery saga would misclassify those expected
-      // child HEADs as target drift.
-      if (!legacyRepositoryLandTransaction(readiness.state)) repositoryDelivery().apply(id);
-    }
-    else applySandbox(id, { controlPlane: true });
+    measure("land.apply", () => {
+      if (compositeRepositorySelection(selectedRepositories(id, readiness.state))) {
+        // Legacy repository Land records already name commits applied by the
+        // user. Their root gitlinks are staged by resumeLand; replaying the
+        // workspace-uncommitted delivery saga would misclassify those expected
+        // child HEADs as target drift.
+        if (!legacyRepositoryLandTransaction(readiness.state)) repositoryDelivery().apply(id);
+      }
+      else applySandbox(id, { controlPlane: true }, readiness);
+    });
     const journal = loadRuntime(id);
     journal.land = { ...journal.land, status: "code-applied", updatedAt: now() };
     saveRuntime(journal);
-    return landCheck(id);
+    // Post-apply readiness binds the hash recorded before the destructive
+    // OpenSpec archive; it is never reused.
+    return measure("land.check", () => landCheck(id));
   }
 
   function recordArchiveTelemetry(id, state) {
@@ -1001,15 +1109,11 @@ export function createApplyRuntime({
     };
     saveRuntime(state);
     if (telemetry && !["measured", "no-usage"].includes(telemetry.classification)) {
-      const telemetryIssue = telemetryLandIssue(foundationPolicy(), telemetry);
       console.error(telemetry.classification === "not-ingested"
         ? "WARNING: no model usage was imported for this change; cost and token columns stay empty — telemetry not-ingested"
         : telemetryUsageSatisfied(telemetry)
           ? `WARNING: telemetry ${telemetry.classification}; unavailable dimensions remain empty`
           : `WARNING: telemetry ${telemetry.classification}; cost and token columns may stay empty`);
-      if (telemetryIssue) for (const action of telemetry.recoveryActions || [])
-        console.error(`  recovery: ${action.command}`);
-      if (telemetryIssue) fail(telemetryIssue);
     }
     return telemetry;
   }
@@ -1036,8 +1140,6 @@ export function createApplyRuntime({
     const cli = spawnSync("openspec", ["archive", id, "--yes"], { cwd: root, encoding: "utf8" });
     if (cli.status !== 0) fail(`OpenSpec archive failed: ${(cli.stderr || cli.stdout).trim()}`);
     archiveCheckpoint("after-archive-command", state);
-    transitionLifecycleState(state, "archived", "openspec-archive-complete");
-    state.archivedAt = now();
     state.preArchiveWorkspaceHash = preArchiveWorkspaceHash;
     state.archivedChangePath = archivedChangeRelativePath(id);
     // `land.status` is a breadcrumb, not the saga's position. Resume branches on
@@ -1058,6 +1160,11 @@ export function createApplyRuntime({
       saveRuntime(state);
       failSpecSync(specViolations);
     }
+    // `archived` is reported only once the merged specs verify; a crash or a
+    // violation before this resumes through interrupted-archive recovery,
+    // which re-verifies from the retained inputs.
+    transitionLifecycleState(state, "archived", "openspec-archive-complete");
+    state.archivedAt = now();
     recordDeliveryIntegrity(state, state.archivedChangePath, specSyncInputs);
     delete state.specSyncInputs;
     delete state.specSyncViolations;
@@ -1104,6 +1211,10 @@ export function createApplyRuntime({
       resumeArchivedChange(id, initial);
       return;
     }
+    if (specSyncPending(id, initial)) {
+      completeSpecSync(id, initial);
+      return;
+    }
     assertLandGrant(id);
     const recoveredArchive = !existsSync(changePath(id)) &&
       archivedChangeRelativePath(id);
@@ -1122,7 +1233,7 @@ export function createApplyRuntime({
     // Prepared/applying journals are rolled back safely; only a divergent
     // manual-recovery journal becomes a user work decision.
     recoverPendingApply(id, initial);
-    let readiness = landCheck(id);
+    let readiness = measure("land.check", () => landCheck(id));
     if (readiness.archived) return;
     archiveCheckpoint("before-evidence-snapshot", readiness.state);
     snapshotArchiveEvidence(id, readiness);
@@ -1140,8 +1251,8 @@ export function createApplyRuntime({
     // silently erase land.proofRunId from the record.
     const state = loadRuntime(id);
     const telemetry = recordArchiveTelemetry(id, state);
-    const cli = runOpenSpecArchive(id, state, readiness);
-    finalizeArchivedChange(id, state, telemetry, cli);
+    const cli = measure("land.archive", () => runOpenSpecArchive(id, state, readiness));
+    measure("land.cleanup", () => finalizeArchivedChange(id, state, telemetry, cli));
   }
 
   return {

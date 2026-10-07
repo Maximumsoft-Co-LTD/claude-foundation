@@ -26,7 +26,8 @@ Land. Rigor scales with risk and evidence needs, not a task-size phase matrix.
 ## Ownership and user states
 
 The user owns intent, consequential product decisions, explicit Land authority,
-final diff review, and any later Git or external side effect. The coding agent
+final diff review, and the authority for any later Git or external side effect
+(such as an explicit `/deliver`). The coding agent
 owns implementation and product repair. The harness owns compilation, tool
 preparation, isolation, routing, evidence, permissions integration, recovery,
 Apply, and archive. An external owner owns credentials, remote systems, and
@@ -41,6 +42,34 @@ projects `DELIVERED`. Internal worker and proof-lock waits remain harness-owned
 `WORKING`; `WAITING_EXTERNAL` requires a real external owner. Internal commands,
 request IDs, journals, repair graphs, and resume tokens remain machine-facing.
 
+### Authority from the user's words
+
+One rule decides what the user's chat words authorize; `AGENT.md` carries it
+for every host, and the phase guard enforces its Git and Deliver parts.
+
+- **Approval.** A reply to the spec-approval or amendment question in the
+  user's own words—"ลุยเลย", "ทำเลย", "ทำไปเลย", "go ahead", "approve"—is the
+  approval. The agent records it through the existing
+  `advance <change> --approve-spec --decision-ref <ref>` path and does not ask
+  again. Approval stated in the original request counts the same way.
+- **Land.** Any explicit instruction to land grants Land. A user who said up
+  front "ทำจนจบ", "ทำให้เสร็จ", or "finish it" also authorized Land for that
+  change.
+- **Not authority.** Silence, and urgency alone ("ด่วน", "รีบ demo"), never
+  approve or grant Land. A negated request ("don't push yet") is never
+  authority. Authority for an external side effect is never inferred beyond
+  what was said.
+- **Commit and push.** Only `/deliver` or the user's direct instruction
+  ("commit this", "push it") commits or pushes; a push instruction covers the
+  commit it publishes. Land never commits. During Build or Prove, a
+  `git commit` or `git push` from the main checkout that the user's latest
+  prompt did not ask for does not run: the phase guard replaces it with the
+  question for the user, and a yes reply lets the same command run. Inside the
+  isolated workspace it is ordinary Build work.
+- **Pull requests.** A direct request to open a PR or deliver ("เปิด PR ให้เลย",
+  "open a PR") is `/deliver` for that one composite command, as is a yes to the
+  delivery question the guard asked.
+
 ## Lifecycle commands
 
 ### `/investigate <problem>`
@@ -50,8 +79,15 @@ and read-only with respect to product code. `investigate --template` defines a
 versioned fact, hypothesis, option, decision, and conclusion record. Running
 `investigate <record.json>` discovers and hashes repository sources, persists a
 machine-owned resumable state with compact metrics, and returns one typed
-agent, user, or harness action. Three unchanged attempts expose a no-progress
-boundary without discarding the exact resume route.
+agent, user, or harness action. Discovered sources are acknowledged
+automatically and stay hashed for freshness; facts and options must cite an
+inventoried source, and discoveries no fact cites are listed in the report.
+Open decisions derive `conclusion.status: needs-user-decision`; a settled
+record with `changeIntent` concludes as `ready-for-change` in the same run, and
+explicit legacy statuses stay accepted. Three unchanged attempts expose a
+no-progress boundary without discarding the exact resume route: it reaches the
+user only when the repeated action was a user question, a sandbox or discovery
+failure goes to the harness, and any other stall returns to the agent.
 
 Each inspection also generates `openspec/investigations/<id>.report.md` from the
 validated state: conclusion, recommendation/reasons, facts and source links,
@@ -113,10 +149,25 @@ capability is a top-level `capability` or the intent's noun phrase (such as
 `kanban-board`), a requirement key is at most five whole words, and its
 heading is the readable SHALL clause. A rapid proposal omits Why when the draft states no
 reason, and lists recorded `decisions` (defaults the agent chose without
-asking, `decidedBy: agent`) under Decisions. Standard
-changes add `design.md` only for a load-bearing decision,
-migration, compatibility boundary, architecture, diagram, integration, or
-prototype selection. `execution.yaml`, `repositories.yaml`, `handoffs.yaml`,
+asking, `decidedBy: agent`) under Decisions. Every packet is a dev document:
+the proposal shows a folder tree of touched paths (`+` add, including paths
+absent at the base; `~` change; `-` remove), and a rapid proposal also carries
+the compact form (summary, what changes, user flow, failure matrix, the Plan
+Build executes, and any authored descriptive section: file map, test map,
+component map, config contract, refactor). Descriptive sections never move a
+low-risk draft to standard. A standard v4 change
+always has `design.md`, and its draft must author the sections its work type
+needs (`why` or `summary`, and failures; user flow, UI states, component map,
+API contracts, data model, config or job contract by type); the harness infers
+the work type from task paths (stated in `design.md`; declare `workType` to
+override; test-, docs-, or manifest-only paths are light work) and derives the
+file map, test map (scenario and check command), and plan. Flowchart node
+labels holding `(`, `)`, or `"` must be quoted (`A["mean(values)"]`).
+Each fact is written once: without an authored `failureMatrix`, scenarios with
+`kind: "failure"` become its rows (an optional scenario `recovery` fills the
+recovery column), and `why` gives the reader the lead a separate summary would
+repeat. A
+missing section is an agent draft repair, never a user question. `execution.yaml`, `repositories.yaml`, `handoffs.yaml`,
 and `grounding.yaml` appear only when execution differs from detected defaults,
 multiple repositories participate, external authority is required, or a
 non-derived material decision must be recorded. Absence has versioned
@@ -128,9 +179,12 @@ criteria, and a capability index (capability, requirements, tasks); discovery
 coverage and investigation provenance close it as appendices. `design.md`
 records every settled intake answer as a durable decision (context, choice,
 rejected options, decided by), adds an optional overview diagram, assumptions,
-open questions, and a task overview with its dependency graph, fills the file
-map's task column from task `[paths:]`, and omits sections the change leaves
-empty. Spec approval is refused while any open question remains.
+open questions, the user flow, a component map, and the Plan (task, outcome,
+files, verify, dependencies, requirements) with its dependency graph, fills the
+file map's task column from task `[paths:]`, and omits sections the change
+leaves empty. While any open question remains, an approval request returns those
+questions as one `ASK_USER` decision instead of recording consent; the agent
+asks them, records the answers, and asks for approval again.
 
 Before compilation, the harness requires every risk-derived discovery dimension
 to be covered, marked not applicable with a rationale, investigated, or resolved
@@ -141,14 +195,21 @@ source of truth. The semantic draft is temporary and `.foundation/` is derived
 coordination state. Draft v1 remains compatible, draft v2 retains its
 unambiguous bookkeeping behavior, and draft v3 remains readable.
 
-Run `change start <draft.json> --inspect` before compilation. It returns one
-typed `EDIT`, `ASK_USER`, or `DONE` action with an exact resume route. An
+`change start <draft.json>` inspects before compilation (`--inspect` only
+inspects). Inspection returns one typed `EDIT`, `ASK_USER`, or `DONE` action
+with an exact resume route. Its `EDIT` batch also names, as agent repairs, a
+task `verify` that references a test file which neither exists nor falls inside
+any task's `paths`, and an `apiContracts` error listed without a status or code. An
 unresolved user-owned coverage row must link to its decisions through
-`decisionKeys`; repository-owned investigation is returned before user
-questions. After `DONE`, rerun with `--consume-draft` to compile atomically.
+`decisionKeys`; once every linked decision is resolved, the harness treats the
+row as covered by those decisions, so recording an answer needs no further
+coverage edit. Repository-owned investigation is returned before user
+questions. At `DONE` the same call compiles atomically; `--consume-draft` also
+removes the draft.
 Typed `riskSignals` provide language-neutral triggers for access control,
 persisted data, integrations, performance SLOs, UI accessibility, operational
-risk, and external side effects.
+risk, external side effects, and input domains (`input-domain` requires
+`input-boundary` coverage of the adjacent input partitions).
 Inspection persists one machine-owned snapshot bound to the draft and its
 grounded-source digests. Before each v4 inspection the harness performs bounded,
 read-only repository discovery and ranks relevant specs, tests, callers,
@@ -164,7 +225,19 @@ graph coverage. The harness records the source digest itself;
 its first inspect. Source facts and recommendation evidence must match the
 selected inventory. Discovery coverage is optional for an ordinary change;
 `impact: high`, `riskSignals`, security triggers, integrations, and external
-operations require their mapped dimensions. Prose is never scanned for risk
+operations require their mapped dimensions. A required dimension the draft
+already states is derived as a `covered` row marked derived in the proposal
+appendix: current behavior from `currentState`, affected actor from
+`userStories`, desired behavior from requirements, success, failure, and input
+boundary from scenario `kind` (`success`, `failure`, `boundary`; failures also
+from `failureMatrix`, boundaries also from `apiContracts` with request and
+errors), compatibility and non-goals from their fields, verification when every
+requirement has a verifying task and evidence, data migration and rollback from
+every `dataModel` entry, integration contract from documented `integrations`,
+timeout/retry/idempotency from integration concerns or a complete
+`jobContract`, and accessibility from `uiStates`. Without backing content the
+dimension stays missing; an authored row always wins, so a
+`needs-user-decision` row is still asked. Draft v3 is unchanged. Prose is never scanned for risk
 keywords, a modified requirement does not imply migration or rollback coverage,
 and a risk-derived `not-applicable` row needs only a rationale. Design and
 reader-guide warnings are advisory, and small rapid-lane drafts get no
@@ -175,9 +248,16 @@ changed selected source invalidates readiness and returns agent-owned coverage r
 For newly started changes, present the compiled spec, scope, and acceptance
 criteria and wait for explicit user approval before Build, including `/dev`.
 When the request itself already approves the spec, in any wording (for example
-"I approve the spec" in a `/dev` request), that is the approval; silence never is.
+"I approve the spec" in a `/dev` request), that is the approval, as is a reply
+such as "ลุยเลย" to the approval question; silence and urgency never are
+([authority from the user's words](#authority-from-the-users-words)).
 Record it with `advance <change> --approve-spec --decision-ref <ref>` (alias of
-`change resolve <change> --approve-spec`). The normal agent path uses only
+`change resolve <change> --approve-spec`); add `--through <target>` to continue
+in the same call. The same `--approve-spec --decision-ref <ref> [--through
+<target>]` flags on `change start`, `change revise`, or `change amend` record the
+approval in the call that applies the approving answer; a call that stops at an
+intake action approves nothing. Design open questions print with the approval
+packet so the user answers them with the approval. The normal agent path uses only
 `change start <draft>`, which inspects and starts a complete draft in one call,
 `advance`, and `changes`: `advance` wires detected evidence, synchronizes the
 sandbox, runs agent-runnable configured reviewers, and ticks a handed-off task
@@ -208,12 +288,14 @@ To change an agreement that has not started Build, revise it in place instead
 of abandoning it and writing a new draft:
 
 ```bash
-claude-foundation change revise <change> <draft.json> --inspect
+claude-foundation change revise <change> <draft.json>
 ```
 
 The revised semantic draft keeps the change id (a different `id` is refused)
-and passes the same intake gate as `change start`, under its own snapshot;
-replace `--inspect` with `--consume-draft` after `DONE`. The transaction
+and passes the same intake gate as `change start`, under its own snapshot: the
+call inspects first, revises only at `DONE`, and otherwise prints the intake
+action and changes nothing. `--inspect` only inspects; `--consume-draft` also
+removes the draft. The transaction
 recompiles the whole packet, increments the contract revision, and restores the
 prior packet and runtime state byte-for-byte on any failure. It is refused once
 the change has a Build workspace, a receipt, or a completed task, and in
@@ -239,14 +321,20 @@ An unfinished task (unchecked, with no valid passing command receipt for its
 claims) may change its verify command, and optionally `paths`, through an
 amendment with only `updateTasks: [{key, verify, paths?}]` rows. It needs no
 requirement, evidence, or version-4 intake; `change amend --template` prints
-it. Derived provider commands follow the new verify, the task's claims are
-invalidated so Prove reruns their evidence, and the revision, validation, and
-rollback match any amendment.
+it. The agent may make that correction directly, without amendment JSON or a
+new approval: `change amend <change> --task <task-key|task-id> --verify
+<command> [--reason <text>]`. Derived provider commands follow the new verify,
+the task's claims are invalidated so Prove reruns their evidence, and the
+revision, validation, and rollback match any amendment. Claims, capabilities,
+and the spec approval do not change; a command that always passes (`true`,
+`echo`, `|| true`, `; true`) is refused by a best-effort text screen; the prior command is kept in the amendment
+record; and the harness accepts the task only after the corrected command
+passes in the workspace.
 
 When Build discovers new behavior, amend the same agreement before continuing:
 
 ```bash
-claude-foundation change amend <change> <amendment.json> --inspect
+claude-foundation change amend <change> <amendment.json>
 ```
 
 An amendment may add (`addRequirements`), revise (`reviseRequirements`, the
@@ -263,8 +351,9 @@ claims and providers bound to added, revised, or removed claims are
 invalidated; removals are planned from the pre-amendment claims.
 
 A version-4 amendment includes discovery coverage for every added or revised
-requirement; follow its typed intake actions and source digest, then replace
-`--inspect` with `--consume-amendment` after `DONE`. The returned proof command
+requirement. The call inspects first and amends only at `DONE`; otherwise it
+prints the typed intake action and changes nothing. `--inspect` only inspects;
+`--consume-amendment` also removes the amendment file. The returned proof command
 is the exact post-amendment recovery route. The transaction validates and
 appends that delta to the compiled proposal.
 During Build, the amended packet stays in the isolated workspace until Land.
@@ -307,14 +396,17 @@ keep or revert already-applied files before acting.
 The normal entrypoint is:
 
 ```bash
-claude-foundation advance <change> --through build
+claude-foundation advance <change> --through proven
 ```
 
 The coordinator validates the agreement, prepares or synchronizes isolation,
 compiles the task graph, and returns one bounded protocol-v6 action:
-`EDIT`, `REPAIR`, `RUN_EXTERNAL`, `WAIT`, `ASK_USER`, or `DONE`. At Build
-`DONE`, `/build` continues with `advance <change> --through proven`, because
-Prove has no external side effects; it stops at `proven` and never Lands.
+`EDIT`, `REPAIR`, `RUN_EXTERNAL`, `WAIT`, `ASK_USER`, or `DONE`. `/build`
+targets `proven` from its first call, because Prove has no external side
+effects: proof runs only once Build is complete, in the same coordinator
+call, without a separate Build `DONE` round trip. It stops at `proven` and
+never Lands. `advance <change> --through build` remains available to stop at
+Build.
 `tasks.md` is the only implementation ledger. `handoffs.yaml` separately owns
 AWS, cluster, secret, Terraform, deploy, restart, or other operations that need
 external authority.
@@ -322,22 +414,49 @@ external authority.
 Build writes only inside the declared isolated workspace. Git projects normally
 use detached worktrees; a dirty target or non-Git project uses an isolated copy.
 This is workspace integrity, not OS process, network, or secret containment.
-Mutating shell commands must start with `cd` to the workspace root or a literal
-directory inside it, joined by `&&`; on Claude Code the phase guard pins the
-shell's reported directory as that anchor when it is already inside the
-workspace, and audits the pin. The phase guard and
-`claude-foundation exec` reject direct path escapes and symlink traversal, but
-the host still owns process isolation for indirect or dynamically computed
-effects. Copying or linking files from outside the workspace is refused as
-well: a workspace never borrows the checkout's dependencies. Sandbox creation
-prints a NOTE with the exact `sandbox.setupCommand` snippet when the project
-has a lockfile but declares no setup command.
+The agent runs `cd <workspace>` once as its own shell call and then plain
+commands, so no compound command asks the user for approval.
+
+The live guards never refuse the agent by default; they automate or route. A
+product edit aimed at the main checkout while a workspace exists is redirected
+to the same path in the workspace. Internal Land commands run as `advance
+<change> --through archived`, and a delivery outside `/deliver` becomes the
+question for the user. Everything else runs with guidance naming the rule and
+the route: shell findings (path escapes, copies from outside the workspace),
+edits before a change exists, and edits outside the phase's surface. Land
+reports target edits made outside the sandbox, and the host still owns process
+isolation for indirect or dynamically computed effects. A secret read shows a
+redacted copy, and a detached `authority run` runs attached. Hosts that want
+refusals set `FOUNDATION_GUARDRAIL_MODE=block` (or `FOUNDATION_SHELL_GUARD=block`,
+`FOUNDATION_SECRETS_GUARD=block`).
+
+The harness also absorbs what used to cost a turn: the agent's scratchpad
+(`<tmp>/claude-*`) and `~/.claude` are writable in every phase unless they hold
+the project or a repository the change writes; after Prove, edits inside the
+isolated workspace only make the proof stale; during Land, read-only test
+commands may run but script runners still need the runtime transaction; and an
+isolated packet edited outside a semantic amendment is
+restored to the approved text by the harness (whitespace in place; any other
+edit saved under `.foundation/agreement-drift/<change>/` for an amendment), not
+reported as drift for the agent to undo. A
+workspace never borrows the checkout's dependencies. When no setup command is
+declared, the harness runs the workspace lockfile's pinned install itself
+(`npm ci`, `pnpm install --frozen-lockfile`, `yarn install --frozen-lockfile`,
+or `bun install --frozen-lockfile`) and records it like a configured setup;
+`sandbox.installDependencies: false` opts out. If that install fails or its
+tool is missing, Build is not blocked: `advance` returns a `REPAIR` handoff with
+the command, workspace directory, and log tail for the agent to finish.
 
 Before Build, the harness compiles and persists an execution-preparation plan
 from selected repositories, setup commands, provider wiring, and tool identity.
 It reuses ready records, prepares only missing project-local dependencies, and
-retries only failed repository setup records. The pinned OpenSpec CLI may be
-installed under `.foundation/tools`; it is never installed globally. A setup or
+retries only failed repository setup records. OpenSpec is required only from
+Prove onward: Build neither installs nor stops for a missing CLI and records the
+tool as `deferred`; the first Prove installs the pinned CLI under
+`.foundation/tools` (never globally) and keeps the existing `HANDOFF` when that
+fails. Prove and Land re-check the same plan. Before Build, an unavailable
+OpenSpec CLI only defers the strict spec lint; from Prove on, the lint is required and an absent
+CLI fails closed rather than letting an unlinted agreement reach archive. A setup or
 host-integration failure remains Harness-owned repair and is not emitted as a
 command for the user.
 
@@ -384,13 +503,33 @@ A force-released lease grants no result authority. If its task was already
 checked complete, the planner returns it for leased verification without
 rewriting the checkbox; only an accepted release clears that recovery.
 
+An accepted task result binds that task's own authority: its node (text,
+repository, paths, dependencies, schemas) and the claims it proves. An
+amendment that leaves a task unchanged keeps its result; a rewritten task and
+its dependants need verification. Results recorded before this binding keep
+the whole-graph comparison they were written under. `advance` re-verifies a
+checked task with a stale record itself, under a harness lease: its `verify`
+check must pass, and work finished outside a lease is never split per task.
+Only a task a live worker holds, a failing check, or one behind an unverified
+dependency returns as an EDIT, listed under `reverification` with its cause as
+implemented work to repair, not to redo.
+
 When every pending Build task must run one at a time (a dependency chain or
 overlapping paths) in one repository with no cross-repository claim or
 external resource, `advance` hands all of them in one session EDIT, in
 dependency order, with no lease. The next `advance` runs each handed task's
-`verify`, ticks every passing task, and returns an EDIT only for failed tasks
-(with `verificationFailures`) and their dependents. Plans with a parallel wave,
-several repositories, or shared external resources keep leased dispatch.
+`verify`, ticks every passing task, records its result under a harness lease,
+and returns an EDIT only for failed tasks (with `verificationFailures`) and
+their dependents. Plans with a parallel wave, several repositories, or shared
+external resources use native workers, but the harness still holds every
+lease: `advance` acquires the group's leases, the parent only spawns one worker
+per `execution.workers` entry and waits, and the next `advance` verifies, ticks,
+releases, and scope-checks each task. No agent acquires, releases, or ticks.
+
+Every completed task carries one kind of authority: a result the harness
+recorded after the task's `verify` passed, bound to that task's own authority.
+Planning records none. Older `single-agent-observed` and graph-v2 records stay
+readable for in-flight changes only.
 
 An upgrade from execution graph v2 preserves a completed multi-task
 single-session Build only when the persisted plan still binds the same task
@@ -504,6 +643,11 @@ A provider that executed and failed has three honest exits:
 - rewire the provider in `execution.yaml`;
 - withdraw the capability under a recorded decision with `change waive`.
 
+Resuming unchanged is not one of them. A harness-executed provider that failed
+and then passes on byte-identical inputs is recorded as a flake: the receipt
+stays `fail` with `flake` evidence (the first failure and the observed pass), so
+the claim needs a repair, and only a pass on changed content is proof again.
+
 A waiver removes the capability from the required set while the claim continues
 to declare it. It remains visible as `user-waived`, preserves receipts already
 earned, and can be revoked. There is no route that turns failed evidence into a
@@ -525,11 +669,17 @@ explicitly with `[claims:<claim-id>]`.
 Every phase gate follows the same convergence rule: collect independent
 findings, repair one dependency-ordered in-contract batch, and selectively
 rerun invalidated checks. Product repair has no fixed cycle ceiling while its
-semantic progress identity changes. Two unchanged automated transitions produce
-the typed no-progress boundary.
+semantic progress identity changes. Two unchanged automated transitions hand
+the stuck step to the agent as a no-progress repair carrying what the step
+returned.
 
-Thrown Build, Prove, or Land dependencies are captured in the same action
-envelope with their original reason and exact recovery route. Decisions,
+Harness automation that cannot finish is handed to the agent rather than
+stopping the flow: a failed sandbox setup or OpenSpec preparation returns an
+agent `REPAIR` with `recovery.type: HANDOFF` and a `handoff` naming the step,
+its exact command, working directory, and output. The agent finishes the step
+(or fixes its declared setup) and resumes. Thrown Build, Prove, or Land
+dependencies are captured in the same action envelope with their original
+reason and exact recovery route. Decisions,
 authority, resources, conflicts, and repeated no-progress preserve state.
 `proof readiness`, `proof advance`, `proof run`, and direct authority commands
 remain diagnostic or integration primitives behind `advance`.
@@ -549,11 +699,11 @@ internal compatibility route that the agent does not call.
 Tests and checks run only inside the returned workspace, never in the main
 checkout. If Land's apply conflicts with target files that are regenerable
 artifacts (for example `__pycache__/*.pyc`) and were clean at isolation,
-`advance` returns a REPAIR whose command,
-`advance <change> --through archived --restore-target <paths>`, restores them to
-the sandbox base inside Land. Any other conflicting target edit is a user
-decision listing the files; `--restore-target` then requires `--decision-ref`,
-and a file changed after the restore was recorded is never overwritten.
+Land restores them to the sandbox base itself and continues. Any other
+conflicting target edit is a user decision listing the files; its restore
+option, `advance <change> --through archived --restore-target <paths>`, requires
+`--decision-ref`, and a file changed after the restore was recorded is never
+overwritten.
 Land has one user-visible
 goal: place the exact current workspace projection in the declared main
 workspace. The Harness binds a resumable grant to the exact change, workspace
@@ -565,8 +715,35 @@ finishes only at `archived`; `proven` is not completion.
 Apply is a journaled transaction over the target. An interruption is recovered
 and resumed by the Harness through the same `/land` invocation. Restore,
 keep-current, journal, check, resume, and archive mechanics are not separate
-user operations. The user is asked only when divergent target content requires
-a semantic choice that the Harness cannot safely infer.
+user operations. The Harness settles an interrupted apply itself when doing so
+cannot lose bytes: it finishes or reverses only content Land wrote, and when the
+target holds other content it keeps the current target, synchronizes the sandbox
+onto it, and proves again. The agent receives the divergent paths as a notice;
+if automatic recovery cannot finish, the agent gets a repair with the transaction
+location, not the user. Restoring the recorded backup over divergent content is
+never automatic; a user who wants it records it through the same route,
+`advance <change> --through archived --recover-apply restore-backup
+--decision-ref <user-decision>`, which settles the journal and continues Land.
+
+Uncommitted target edits that Land would overwrite are kept, never committed or
+discarded automatically: the agent merges each into the sandbox copy of the same
+path, and Land applies the merged file once merging the target edit into it
+changes nothing. Edits made outside the sandbox stop Land only on paths in this
+change's Land projection; others are reported.
+
+Land is always allowed for stacked changes. Because Land leaves its diff
+uncommitted, a change that branched before another change landed meets that
+landed diff in the target; nobody has to commit the first change before the
+second one lands. The harness treats the earlier landed bytes as part of the
+target: paths the later change left alone land beside it untouched, and for a
+path both changed it replays the landed edit into the later change's sandbox
+copy (a 3-way merge), proves again only what that invalidated, and applies.
+When both rewrote the same lines, the later change's agent merges them in its
+sandbox copy, keeping the landed content; that edit is the resolution. Earlier
+landed bytes are never restored over or offered for discard, and the user is
+asked only when the two changes' intents genuinely contradict. Each change
+archives in Land order, so OpenSpec merges each change's spec delta onto the
+specs the earlier Land already synchronized.
 
 The projection is confined to Git-tracked files plus paths declared in
 `tasks.md`. An untracked path no task names is neither evidence surface nor a
@@ -581,30 +758,65 @@ repositories remain unchanged. Re-entering `/land` resumes the same grant and
 skips already verified nodes; it never requires the user to assemble a journal,
 grant, commit, recovery command, or archive command.
 
-Land never implies permission to commit, push, publish, deploy, or open a pull
-request. Those effects require separate explicit authority.
+Land never commits, and never implies permission to commit, push, publish,
+deploy, or open a pull request. Commit and push happen only through `/deliver`
+or the user's direct instruction
+([authority from the user's words](#authority-from-the-users-words)).
 
 ### `/deliver <change>` (optional)
 
 Deliver is an optional post-Land transaction. The normal change lifecycle is
 still complete at `archived`; no delivery state, provider work, presentation
 evidence, prompt, or gate exists unless the user explicitly invokes
-`/deliver <change>`.
+`/deliver <change>` or directly asks to open a PR or deliver ("เปิด PR ให้เลย"),
+which is the same invocation.
 
 The agent runs one composition command, `claude-foundation deliver advance
 <change>`, and executes its automatic recovery internally. The user never
 assembles readiness, preparation, commit, push, provider, or resume commands.
-The invocation grants only the authority to create an isolated feature branch,
-commit the proven Land projection, push that branch, and open or reuse a pull
-request. It does not authorize force-push, default-branch push, merge, deploy,
-publish, evidence disclosure to a new store, or product edits.
+Invoking `/deliver` on a proven change that is not yet archived is also the
+user's Land authority: Deliver runs the normal `advance <change> --through
+archived` route, which issues the Land grant under this invocation, and continues
+delivery in the same call once the change is archived. A Land boundary on the
+way (a real decision or an agent repair) is returned with the Deliver resume
+route. A change that is not proven yet is not landed; Deliver recommends
+finishing Build and Prove first. The invocation grants only the authority to
+Land, create an isolated feature branch, commit the proven Land projection,
+push that branch, and open or reuse a pull request. It does not authorize
+force-push, default-branch push, merge, deploy, publish, evidence disclosure to
+a new store, or product edits. Deliver questions use the blocked-decision shape
+(options with outcomes, a recommendation, and `pause`); only typed provider
+failures (remote, credentials, push, or pull-request service) wait on the
+repository operator.
 
 Deliver reconstructs the projection in a separate Git worktree, leaving the
 user's checkout, HEAD, index, and unrelated edits unchanged. It binds durable
-checkpoints to the archived change, proof run, target head, and Land projection;
-after interruption it reconciles the local commit, remote branch, and provider
+checkpoints to the archived change, proof run, target head, and Land projection.
+Commits added on top of the Land base after Land do not stop delivery: the
+branch is built from that base and the proven content is verified separately.
+Only a history that no longer contains the base (reset or rebase) asks the user.
+After interruption it reconciles the local commit, remote branch, and provider
 state before taking the next missing action. A repeated invocation verifies and
 returns the existing pull request rather than creating another.
+
+A review follow-up updates the pull request it answers instead of opening a
+second one. The follow-up change records the original delivery by citing that
+pull request's URL in its proposal or design (for example "Address the
+requested changes on <PR URL>"). Deliver binds only a URL that a verified
+delivery receipt of another change in this project produced; an ordinary
+related link never redirects publication. When exactly one such pull request is
+cited and the provider reports it still open on its delivered branch and base,
+Deliver builds the follow-up commit on that branch's current head, pushes it as
+a fast-forward (never forced) to the same branch, and returns
+`reached: pr-updated` with the updated URL. A closed or merged pull request, a
+moved branch or base, or more than one cited delivery opens a new pull request
+instead, and the result's `followUp.notice` says why. The binding is
+checkpointed, so a resumed delivery never re-decides it. Re-running Deliver for
+the original change afterwards still returns its pull request as reused: a head
+at a commit that a recorded follow-up delivery built on the original commit
+counts, and the result's `followedUpBy` names those changes. Any other head,
+even one descending from the delivered commit, still fails verification.
+Multi-repository deliveries do not bind follow-ups yet.
 
 Before committing, Deliver verifies staged Git blobs against the retained Land
 projection. Before publishing, it verifies the actual commit tree again, including
@@ -760,14 +972,11 @@ preselected passing receipt.
 
 ## Review, acceptance, and external authority
 
-Review has one persisted 30-minute window beginning at the first dispatch.
-Retries, fallbacks, and delta review share its deadline; resume never resets it.
-The first expiry opens one more 30-minute window automatically, recorded as a
-harness decision (`harness://auto-extend/review-window/1`). At the next expiry,
-report completed findings and unreviewed scope and ask whether to continue,
-Land with explicit acceptance of remaining risks, or pause. Only a user decision
-may open a further window, recorded through
-`change resolve <change> --continue-review --decision-ref <ref>`.
+Review is bounded by its rounds (one full review, then one changed delta), not
+by elapsed time: the agent's repair between rounds and reviewer retries never
+spend a user-facing budget. Each dispatch has its own 30-minute timeout, and an
+expired dispatch is a reviewer infrastructure failure, not a user question.
+`change resolve --continue-review` is still accepted and changes nothing.
 Timeout is not a pass. Try repair first; if it cannot progress, explain the
 attempted remedies and offer further work or explicit waivers for the current
 diff before Land. Conflicts, incomplete Apply, and missing side-effect authority
@@ -779,13 +988,13 @@ the correction circuit bounded by risk; `RESOLVED` prints the route, such as
 Under legacy policy it prints `required` or
 `not required (legacy review policy: no AI review runs)`. The review reads the change's diff and
 the agreement's requirements, not whole files. Low risk runs one diff-only
-review on the fast model tier (`review.lowRiskModel: "configured"` or a
-reviewer `fastModelId` overrides it); medium and high keep the configured
-model. Every full round receives the agreement's scenario checklist and must
+review on the fast model tier at medium effort (`review.lowRiskModel:
+"configured"` or a reviewer `fastModelId` overrides it); medium and high keep
+the configured model at high effort. Every full round receives the agreement's scenario checklist and must
 report each scenario as covered, missing, or unsure; a missing scenario becomes
-a blocking finding. If a fast first round cannot confirm every scenario, the
-harness re-runs that review once on the configured model without consuming a
-review round. Security triggers are declared (draft `securityTriggers` or
+a blocking finding that goes straight to repair. If a fast first round is
+only unsure of a scenario or its coverage is unreadable, the harness re-runs
+that review once on the configured model without consuming a review round. Security triggers are declared (draft `securityTriggers` or
 `resolve --security`) or inferred from intent keywords: declared triggers
 select the standard lane and security evidence, while an intent keyword alone
 only makes review required at the low tier and the change keeps its lane.
@@ -880,14 +1089,42 @@ only where the work itself cannot continue.
 
 Advance protocol 6 retains the existing actions and command routes. Recovery
 observations and answers live in `advanceRecovery` on the existing runtime
-record. The third unchanged repair handoff across invocations first returns one
-agent-owned `REPAIR` (`TRY_ALTERNATE_APPROACH`) asking for a materially different
-approach inside the approved agreement; only a further unchanged handoff
-requests a decision. Two unchanged internal automated transitions request a
-decision directly. New process sessions,
-proof run IDs, diagnostic wording, retry counters and bookkeeping revisions do not reset progress.
-Relevant content, agreement, execution policy or actual delivery changes do.
-Read-only inspection never counts as a repair attempt or records an answer.
+record. The ladder has three rungs: the first unchanged repair handoff is the
+agent's repair, the second returns one agent-owned `REPAIR`
+(`TRY_ALTERNATE_APPROACH`) asking for a materially different approach inside the
+approved agreement, and the third requests a decision (`NO_PROGRESS_BOUNDARY`)
+whose `decision.repetition` carries the evidence: rounds, first and last
+observation, and the output that kept repeating. Two unchanged internal
+automated transitions, a sandbox sync conflict, and a Build task verify that
+keeps failing with identical output (durations and timestamps ignored) follow
+the same ladder. New process sessions, proof run IDs, diagnostic wording, retry
+counters and bookkeeping revisions do not reset progress. Relevant content,
+agreement, execution policy, a different verify output, or actual delivery
+changes do. Read-only inspection never counts as a repair attempt or records an
+answer.
+
+Causes only the user can clear skip the ladder and return `ASK_USER`
+(`USER_ENVIRONMENT_REQUIRED`, boundary `user-environment`) on the first
+observation: a missing or expired credential or token, VPN, proxy or network
+denial, a reviewer CLI that is not logged in, a full disk (`ENOSPC`), or private
+registry authentication. They are classified from typed error codes and known
+signatures on harness, setup, and reviewer routes; a full disk is recognized on
+every route, while credential or network words inside failing product output
+remain a product repair. The question names the fix (for example "run `claude
+/login`" or "free disk space") and the resume command; nothing is counted, and
+an uncleared cause is reported again the same way.
+
+No agent-facing route names a lifecycle primitive. Any `command`, `next`,
+instruction, reason, or decision option that would point at `proof run|advance`,
+`land check|advance`, `sandbox sync|create`, or `evidence init` is rewritten to
+`advance <change>` with the route's target: proof primitives resume `--through
+proven`, Land primitives `--through archived`, and sandbox primitives keep the
+current target, so a rewrite never widens a route to Land. Two primitives that
+needed a user answer are now advance decisions: an indeterminate provider run
+(`DECIDE_INDETERMINATE_EXECUTION`, options `retry|pause`) whose `retry` answer
+reaches the next proof run once, and an amended-agreement conflict
+(`RESOLVE_AGREEMENT_CONFLICT`, options `merge|retain|pause`) whose answer
+performs the resolving synchronization.
 
 Every question offers concrete alternatives, a recommendation and pause, with
 the cause and retained repair observations. External waiting is the default,
@@ -907,11 +1144,13 @@ The agent records an explicit recovery answer using the fingerprint returned
 with the decision:
 
 ```bash
-claude-foundation advance <change> --decision retry|wait|pause \
+claude-foundation advance <change> --decision <offered-option> \
   --decision-fingerprint <hash> --decision-ref <user-answer> --reason <approach>
 ```
 
-The answer retains the prior `--through` target. Retry records the chosen
+The offered options are `retry|wait|pause` for recovery decisions, and the
+options listed by an advance decision such as `merge|retain|pause`. The answer
+retains the prior `--through` target. Retry records the chosen
 approach; wait is available only for an external dependency; pause preserves
 the work without running setup or providers again. A recorded pause projects
 `WAIT` with user state `PAUSED`, not another question or a claim of active work.
@@ -1022,7 +1261,10 @@ Budget actions are:
 - 100%: every exhaustion opens one more window of the same size
   automatically, recorded as a harness decision
   (`harness://auto-extend/budget/1`) that does not use an operator-approved
-  continuation. Budget is advisory and never asks the user.
+  continuation. Budget is advisory and never asks the user while delivery
+  progresses; three windows reopened without delivery progress (unchanged
+  content and lifecycle state) return the `budget-no-progress` decision with
+  the window evidence, and an answer starts a new count.
 
 `budget continue` remains an optional, audited explicit widening; it never
 deletes usage or lowers assurance.
@@ -1063,6 +1305,7 @@ this workflow names them only where their lifecycle meaning matters.
 - Missing, failed, inconclusive, invalid, or stale proof is preserved as Land
   assurance and cannot be misreported as passing.
 - A sandbox diff cannot overwrite a conflicting target.
-- OpenSpec performs semantic spec sync before archive.
+- OpenSpec performs semantic spec sync before archive; the change is recorded
+  `archived` only after the harness verifies the merged specs.
 - Required assurance is never dropped because of size or budget.
 - A delivery flow is complete only at `archived`.

@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { automaticRecoveryAction } from "../runtime/workflow/advance-recovery.mjs";
 import {
   advanceLandOperation, createLandRuntime, landTransactionStarted
 } from "../runtime/workflow/land-runtime.mjs";
@@ -220,8 +221,13 @@ test("land check phases preserve every refusal and ready route", () => {
     });
     assert.equal(archivedBad.runtime.landCheck(archivedBad.id).archived, true);
 
+    // A target kept during manual recovery is synchronized by the harness, not
+    // handed to the agent as a command.
     const recovery = make({ state: { workspace: { recovery: { requiresSync: true } } } });
-    assert.throws(() => recovery.runtime.landCheck(recovery.id), /sandbox sync/);
+    assert.throws(() => recovery.runtime.landCheck(recovery.id), /decision:recovery-sync-required/);
+    assert.equal(recovery.decisions[0].decision.automaticRecovery, "sync");
+    assert.equal(automaticRecoveryAction(recovery.id, recovery.decisions[0].decision).kind,
+      "sandbox-sync");
     const pending = make({ pending: [{
       transactionId: "tx-1", status: "applying", appliedPaths: ["a"],
       counts: { update: 1, create: 2, delete: 3 }

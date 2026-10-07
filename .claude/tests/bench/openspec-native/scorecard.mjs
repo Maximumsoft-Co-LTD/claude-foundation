@@ -217,6 +217,21 @@ function hostToolCallSummary(hostTelemetry = {}) {
   };
 }
 
+// Friction is measured only from a host stream; without one every count is
+// unknown, never a reassuring zero.
+function frictionSummary(hostTelemetry = {}) {
+  const friction = object(hostTelemetry.friction);
+  const measuredStream = count(friction.toolErrors) !== null;
+  return {
+    measurement: measuredStream ? "measured" : "unavailable",
+    hookBlocks: measuredStream ? count(friction.hookBlocks) : null,
+    permissionPrompts: measuredStream ? count(friction.permissionPrompts) : null,
+    toolErrors: measuredStream ? count(friction.toolErrors) : null,
+    advanceActions: measuredStream ? countMap(friction.advanceActions) : null,
+    guardrail: countMap(hostTelemetry.guardrail)
+  };
+}
+
 function operationSummary(rows, metrics, hostTelemetry = {}) {
   const operations = Array.isArray(rows) ? rows : [];
   const profile = object(metrics.commandProfile);
@@ -363,6 +378,7 @@ export function buildScorecard(input) {
       })
     },
     operations: operationSummary(input.operationRows, metrics, input.hostTelemetry),
+    friction: frictionSummary(input.hostTelemetry),
     quality: qualitySummary(input.quality),
     oracle,
     evidenceReuse: {

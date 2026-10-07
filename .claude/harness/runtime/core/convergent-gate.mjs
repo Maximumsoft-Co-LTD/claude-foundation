@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { sortedJson, sortedValue as stableValue } from "./trust.mjs";
 
 function text(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -9,15 +10,8 @@ function sortedStrings(values) {
     .map((value) => text(String(value || ""))).filter(Boolean))].sort();
 }
 
-function stableValue(value) {
-  if (Array.isArray(value)) return value.map(stableValue);
-  if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(Object.keys(value).sort()
-    .map((key) => [key, stableValue(value[key])]));
-}
-
 export function gateDigest(value) {
-  return createHash("sha256").update(JSON.stringify(stableValue(value))).digest("hex");
+  return createHash("sha256").update(sortedJson(value)).digest("hex");
 }
 
 export function normalizeGateFinding(finding = {}, defaults = {}) {

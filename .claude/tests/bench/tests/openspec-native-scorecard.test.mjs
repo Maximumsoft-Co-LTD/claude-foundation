@@ -231,3 +231,24 @@ test("config digests are key-order stable and identities are required", () => {
   assert.throws(() => buildScorecard(fixture({ repeat: 0 })), /repeat must be/);
   assert.throws(() => buildScorecard(fixture({ runId: null })), /runId is required/);
 });
+
+// Friction is what the harness cost the agent; a missing host stream is
+// unknown, never a reassuring zero.
+test("scorecard reports harness friction from the host stream and guard audit", () => {
+  const measured = buildScorecard(fixture({ hostTelemetry: {
+    total: 3, byTool: { Bash: 3 }, byCategory: {},
+    friction: { toolErrors: 2, hookBlocks: 1, permissionPrompts: 1,
+      advanceActions: { EDIT: 1, REPAIR: 0, ASK_USER: 0, DONE: 1 } },
+    guardrail: { redirected: 2, guided: 1 }
+  } }));
+  assert.deepEqual(measured.friction, {
+    measurement: "measured", hookBlocks: 1, permissionPrompts: 1, toolErrors: 2,
+    advanceActions: { EDIT: 1, REPAIR: 0, ASK_USER: 0, DONE: 1 },
+    guardrail: { redirected: 2, guided: 1 }
+  });
+  assert.equal(validate(measured), true, JSON.stringify(validate.errors));
+  const unknown = buildScorecard(fixture({ hostTelemetry: {} }));
+  assert.equal(unknown.friction.measurement, "unavailable");
+  assert.equal(unknown.friction.hookBlocks, null);
+  assert.equal(validate(unknown), true, JSON.stringify(validate.errors));
+});

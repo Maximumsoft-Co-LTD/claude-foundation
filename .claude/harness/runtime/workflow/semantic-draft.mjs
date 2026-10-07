@@ -4,6 +4,7 @@ import {
 } from "./validation/semantic-intake.mjs";
 import { designBlueprintIssues } from "./validation/design-blueprints.mjs";
 import { readerGuideIssues } from "./validation/reader-guide.mjs";
+import { devDocumentIssues, devDocumentShapeIssues } from "./validation/dev-document.mjs";
 
 const OPERATIONS = new Set(["added", "modified", "removed"]);
 const AUTHORITY_CAPABILITIES = new Set(["review", "acceptance", "semantic-acceptance"]);
@@ -196,7 +197,8 @@ function requiredIntegrationCapabilities(integration) {
   const concerns = new Set(stringList(integration.concerns).map((value) => value.toLowerCase()));
   const capabilities = ["integration"];
   if ([...concerns].some((value) =>
-    /auth|credential|signature|webhook|secret|permission/.test(value)))
+    /auth|credential|signature|webhook|secret|permission|ยืนยันตัวตน|ข้อมูลรับรอง|ลายเซ็น|เว็บฮุก|ความลับ|รหัสลับ|สิทธิ์/u
+      .test(value)))
     capabilities.push("security-static");
   if ([...concerns].some((value) =>
     /retry|timeout|rate.limit|partial|degrad|recover/.test(value)))
@@ -300,6 +302,8 @@ function semanticDraftIssues(source, { defaultTestEvidence = false } = {}) {
     choices.set(key, choice);
   }
   issues.push(...designBlueprintIssues(source));
+  issues.push(...devDocumentShapeIssues(source));
+  issues.push(...devDocumentIssues(source, { standard: !semanticRapidCandidate(source) }));
   issues.push(...semanticIntakeIssues(source));
   return issues;
 }
@@ -556,10 +560,19 @@ function wholeWordTitle(value, max = SCENARIO_NAME_MAX) {
   return title.replace(/^\p{Ll}/u, (letter) => letter.toUpperCase());
 }
 
-function minimalScenarioName(scenario, index) {
+// A trigger written as code (`sum([1, 2, 3]) is called`) cut at a word
+// boundary reads as a broken fragment, so it never becomes a title.
+function codeLikeTitle(title) {
+  const count = (pattern) => (title.match(pattern) || []).length;
+  return /^[^\s]*[([{=<>`]/.test(title) || count(/\(/g) !== count(/\)/g) ||
+    count(/\[/g) !== count(/\]/g) || count(/\{/g) !== count(/\}/g);
+}
+
+function minimalScenarioName(scenario, index, requirementTitle = "") {
   const when = text(scenario.when);
   const repeatsWhen = (value) => comparableLabel(value) === comparableLabel(when);
   let name = wholeWordTitle(when);
+  if (name && codeLikeTitle(name) && requirementTitle) return requirementTitle;
   // A short trigger with no leading article would repeat WHEN; the outcome
   // names the case instead.
   if (!name || repeatsWhen(name)) {
@@ -589,12 +602,13 @@ function distinctScenarioName(name, scenario, taken) {
   }
 }
 
-function minimalScenarioNames(scenarios) {
+function minimalScenarioNames(scenarios, requirementTitle = "") {
   const taken = new Set(scenarios.filter((scenario) => plainObject(scenario) && text(scenario.name))
     .map((scenario) => comparableLabel(scenario.name)));
   return scenarios.map((scenario, index) => {
     if (!plainObject(scenario) || text(scenario.name) || !text(scenario.when)) return scenario;
-    const name = distinctScenarioName(minimalScenarioName(scenario, index), scenario, taken);
+    const name = distinctScenarioName(minimalScenarioName(scenario, index, requirementTitle),
+      scenario, taken);
     taken.add(comparableLabel(name));
     return { ...scenario, name };
   });
@@ -835,7 +849,9 @@ export function expandMinimalSemanticDraft(input, {
       }
     }
     if (!text(row.capability) && capability) row.capability = capability;
-    if (Array.isArray(row.scenarios)) row.scenarios = minimalScenarioNames(row.scenarios);
+    if (Array.isArray(row.scenarios))
+      row.scenarios = minimalScenarioNames(row.scenarios, text(row.requirement || row.title) ||
+        wholeWordTitle(requirementClause(row.description), REQUIREMENT_TITLE_MAX));
     if (!text(row.outcome)) {
       const first = rawScenarioEntries(row).find((scenario) => text(scenario?.then));
       if (first) row.outcome = text(first.then);
@@ -1102,7 +1118,7 @@ export function normalizeSemanticDraft(input, slugify, options = {}) {
     compatibility: text(source.compatibility) || "none",
     changes: stringList(source.changes).length
       ? stringList(source.changes)
-      : unique(requirements.map((row) => row.spec.scenarios[0]?.then).filter(Boolean)),
+      : unique((source.requirements || []).map(whatChanges).filter(Boolean)),
     nonGoals: stringList(source.nonGoals),
     decisions: Array.isArray(source.decisions)
       ? source.decisions.map((decision) =>
@@ -1132,6 +1148,21 @@ export function normalizeSemanticDraft(input, slugify, options = {}) {
   };
   if (source.version === 4) draft.discovery = normalizeDiscovery(source);
   return { draft, issues };
+}
+
+// "What changes" names the behavior a requirement adds, not one example of
+// it: an authored outcome, else the requirement heading, else its statement.
+// An outcome copied from the first scenario ("it returns 6") is an example.
+function whatChanges(row) {
+  const outcome = text(row?.outcome);
+  const first = rawScenarioEntries(row || {}).find((scenario) =>
+    text(scenario?.then) || text(scenario?.outcome));
+  if (outcome && outcome !== (text(first?.then) || text(first?.outcome))) return outcome;
+  const heading = text(row?.requirement || row?.title);
+  if (heading && heading !== text(row?.key)) return heading;
+  const statement = text(row?.description).replace(/^.*?\b(?:SHALL|MUST)\b\s*/, "")
+    .replace(/[\s.]+$/u, "");
+  return statement ? statement.replace(/^\p{Ll}/u, (letter) => letter.toUpperCase()) : outcome;
 }
 
 // One renderer for start, revise, and amendments. Structural keywords stay
@@ -1187,8 +1218,7 @@ export function semanticDraftTemplate() {
   return {
     version: 4,
     intent: "Describe one observable outcome",
-    summary: "Say in 1-3 plain sentences what changes and who benefits",
-    why: "Explain the concrete user or system value",
+    why: "Say in 1-3 plain sentences what changes, who benefits, and why",
     userStories: [{
       priority: "P1", asA: "a named user", iWant: "the observable outcome",
       soThat: "the benefit", covers: ["observable-outcome"]
@@ -1197,6 +1227,12 @@ export function semanticDraftTemplate() {
     impact: "low",
     coupling: "isolated",
     workType: ["feature"],
+    userFlow: {
+      purpose: "The user's path through the change, including the error path",
+      // Quote a label that holds ( ) or ", e.g. A["mean(values)"].
+      source: "flowchart LR\n  A[\"User acts\"] --> B{\"Valid?\"}\n  B -->|yes| C[\"Result shown\"]\n" +
+        "  B -->|no| D[\"Error shown\"]"
+    },
     requirements: [{
       key: "observable-outcome",
       capability: "change",
@@ -1205,10 +1241,17 @@ export function semanticDraftTemplate() {
       outcome: "Describe the observable result",
       scenarios: [{
         name: "Short scenario title",
+        kind: "success",
         given: "The precondition or state before the trigger",
         when: "One triggering input or event",
         then: "One observable result",
         and: ["Another result of the same case, if any"]
+      }, {
+        name: "One way it fails",
+        kind: "failure",
+        when: "The failing input or event",
+        then: "What the user sees",
+        recovery: "How the user or system recovers"
       }]
     }],
     tasks: [{
@@ -1222,18 +1265,46 @@ export function semanticDraftTemplate() {
       "observable-outcome": { capabilities: ["test"] }
     },
     discovery: {
+      // Rows only for what the draft cannot state: affected actor, desired,
+      // success, failure, and verification coverage derive from userStories,
+      // requirements, scenario kinds, and tasks with evidence.
       coverage: [
         { dimension: "current-behavior", status: "needs-investigation" },
-        { dimension: "affected-actor", status: "needs-user-decision" },
-        { dimension: "desired-behavior", status: "covered", covers: ["observable-outcome"] },
-        { dimension: "success-path", status: "covered", covers: ["observable-outcome"] },
-        { dimension: "failure-path", status: "needs-user-decision" },
         { dimension: "input-boundary", status: "needs-user-decision" },
         { dimension: "compatibility", status: "needs-investigation" },
-        { dimension: "non-goals", status: "needs-user-decision" },
-        { dimension: "verification", status: "covered", covers: ["observable-outcome"] }
+        { dimension: "non-goals", status: "needs-user-decision" }
       ],
       decisions: []
+    },
+    // Shapes only: copy the block for the work type you have into the draft
+    // top level. The compiler ignores this key, and the rows hold no
+    // placeholder text, so a copied row compiles once its facts are true.
+    workTypeExamples: {
+      use: "Examples of section shapes; copy the block for your work type to the draft top level",
+      ui: {
+        uiStates: [{
+          screen: "Board",
+          states: [{ state: "loading", shows: "Skeleton cards" },
+            { state: "empty", shows: "Add your first card" },
+            { state: "error", shows: "Could not load cards, with Retry" },
+            { state: "success", shows: "Cards by column" }],
+          accessibility: "Columns are lists; cards are reachable by keyboard"
+        }],
+        componentMap: [{
+          component: "Board", responsibility: "Lays out columns and cards",
+          files: ["src/components/Board.tsx"]
+        }]
+      },
+      api: {
+        apiContracts: [{
+          method: "POST", path: "/api/cards", auth: "Signed-in user",
+          request: { title: "string" }, response: { id: "string", title: "string" },
+          errors: [{ status: 400, when: "Title is empty" }]
+        }]
+      },
+      config: {
+        configContract: [{ key: "CARD_LIMIT", default: "100", validation: "Integer from 1 to 1000" }]
+      }
     }
   };
 }

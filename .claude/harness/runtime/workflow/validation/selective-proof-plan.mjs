@@ -251,12 +251,33 @@ export function planSelectiveProofRecovery({
       mode: structuralFindingCount > 0 ? "fail-closed-rerun" : "selective-rerun",
       command,
       resume: command,
-      instruction: structuralFindingCount > 0
-        ? "Do not trust ambiguous preservation. Re-enter Prove so the harness recomputes every invalid binding and preserves only receipts it can validate."
-        : rerunProviders.length
-          ? `Re-enter Prove; the harness may retain ${preservedProviders.length} bound receipt(s) and rerun ${rerunProviders.length}.`
-          : "All required receipts remain bound; re-enter Prove to finalize against the current packet."
+      instruction: recoveryInstruction(structuralFindingCount > 0,
+        preservedProviders.length, rerunProviders.length)
     }
+  };
+}
+
+function recoveryInstruction(blocked, preservedCount, rerunCount) {
+  if (blocked)
+    return "Do not trust ambiguous preservation. Re-enter Prove so the harness recomputes every invalid binding and preserves only receipts it can validate.";
+  return rerunCount
+    ? `Re-enter Prove; the harness may retain ${preservedCount} bound receipt(s) and rerun ${rerunCount}.`
+    : "All required receipts remain bound; re-enter Prove to finalize against the current packet.";
+}
+
+/** Move one preserved provider to rerun, keeping lists, decisions, and the instruction consistent. */
+export function demoteSelectivePreservation(plan, provider, code) {
+  if (!plan.providers.preserved.includes(provider))
+    throw new Error(`provider '${provider}' is not preserved in this plan`);
+  const preserved = plan.providers.preserved.filter((row) => row !== provider);
+  const rerun = sortedUnique([...plan.providers.rerun, provider]);
+  return {
+    ...plan,
+    providers: { preserved, rerun },
+    decisions: plan.decisions.map((row) => row.provider === provider
+      ? { provider, action: "rerun", reason: code } : row),
+    recovery: { ...plan.recovery,
+      instruction: recoveryInstruction(plan.status !== "READY", preserved.length, rerun.length) }
   };
 }
 

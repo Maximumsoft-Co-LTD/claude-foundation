@@ -8,6 +8,7 @@ TARGET_PATH=""
 SOURCE_PATH="$SCRIPT_DIR"
 ASSUME_YES=no
 DRY_RUN=no
+PERMISSION_ALLOWLIST=yes
 
 fail() { printf '✗ %s\n' "$*" >&2; exit 1; }
 info() { printf '▸ %s\n' "$*"; }
@@ -22,6 +23,9 @@ Options:
   --yes, -y        Do not ask for confirmation
   --dry-run        Show files without writing
   --force, -f      Accepted for backward compatibility; managed files refresh
+  --no-permission-allowlist
+                   Do not add Change Loop rules to .claude/settings.json
+                   permissions.allow (pass on every run, upgrades included)
   --help, -h       Show this help
 
 Installs the OpenSpec-native change loop:
@@ -38,12 +42,16 @@ while [ "$#" -gt 0 ]; do
     --yes|-y) ASSUME_YES=yes ;;
     --dry-run) DRY_RUN=yes ;;
     --force|-f) : ;;
+    --no-permission-allowlist) PERMISSION_ALLOWLIST=no ;;
     --help|-h) usage; exit 0 ;;
     -*) fail "unknown option: $1" ;;
     *) [ -z "$TARGET_PATH" ] || fail "unexpected argument: $1"; TARGET_PATH="$1" ;;
   esac
   shift
 done
+
+[ "$PERMISSION_ALLOWLIST" = yes ] || command -v jq >/dev/null 2>&1 ||
+  fail "--no-permission-allowlist needs jq to edit .claude/settings.json"
 
 TARGET_PATH="${TARGET_PATH:-$PWD}"
 [ "$DRY_RUN" = yes ] || mkdir -p "$TARGET_PATH"
@@ -109,7 +117,11 @@ LEGACY=(
 info "Install plan"
 for rel in "${MANAGED[@]}"; do printf '  ~ %s\n' "$rel"; done
 [ -e "$TARGET_PATH/openspec/config.yaml" ] || printf '  + openspec/config.yaml\n'
-printf '  ~ .claude/settings.json (merge hooks, preserve user settings)\n'
+if [ "$PERMISSION_ALLOWLIST" = yes ]; then
+  printf '  ~ .claude/settings.json (merge hooks and permission allowlist, preserve user settings)\n'
+else
+  printf '  ~ .claude/settings.json (merge hooks, preserve user settings; permission allowlist skipped)\n'
+fi
 printf '  ~ CLAUDE.md (managed pointer only)\n'
 printf '  ~ AGENTS.md (portable managed pointer only)\n'
 for rel in "${LEGACY[@]}"; do
@@ -327,6 +339,17 @@ done
 
 SETTINGS_SRC="$SOURCE_PATH/.claude/settings.json"
 SETTINGS_DST="$TARGET_PATH/.claude/settings.json"
+# The shipped permissions.allow rules cover only the harness CLI and edits under
+# the isolated Build workspaces; PreToolUse guards still run before them. With
+# the opt-out, merge from a copy of the template that carries no allow rules, so
+# the user's own permissions stay exactly as they were.
+if [ "$PERMISSION_ALLOWLIST" = no ]; then
+  settings_template="$BACKUP_DIR/.settings-without-allowlist.json"
+  jq 'del(.permissions.allow) |
+    if (.permissions // {}) == {} then del(.permissions) else . end' \
+    "$SETTINGS_SRC" > "$settings_template"
+  SETTINGS_SRC="$settings_template"
+fi
 if [ ! -e "$SETTINGS_DST" ]; then
   mkdir -p "$(dirname "$SETTINGS_DST")"
   cp "$SETTINGS_SRC" "$SETTINGS_DST"
@@ -379,9 +402,14 @@ elif command -v jq >/dev/null 2>&1; then
       else .hooks[$event] += [{matcher:$matcher,hooks:[$hook]}] end;
     remove_legacy |
     quote_foundation_hooks |
-    .permissions //= {} |
-    .permissions.allow = (((.permissions.allow // []) +
-      ($src[0].permissions.allow // [])) | unique) |
+    # Append only the shipped rules the project lacks: user entries keep
+    # their order, and a rerun adds nothing.
+    if ($src[0].permissions.allow // []) == [] then . else
+      .permissions //= {} |
+      .permissions.allow = ((.permissions.allow // []) as $have |
+        $have + [($src[0].permissions.allow[]) |
+          select(. as $rule | $have | any(. == $rule) | not)])
+    end |
     reduce ($src[0].hooks | to_entries[]) as $event (.;
       reduce ($event.value[]) as $entry (.;
         reduce ($entry.hooks[]) as $hook (.;
@@ -456,10 +484,26 @@ else
   printf '\n%s\n' "$AGENTS_BLOCK" >> "$AGENTS_DST"
 fi
 
+# Prepare the pinned OpenSpec CLI now, through the same harness routine Build,
+# Prove, and Land use, so a machine without npm access learns it at install
+# time rather than when Land needs spec sync. It is a no-op when a compatible
+# CLI already resolves, and never fails the install.
 if ! command -v node >/dev/null 2>&1; then
   printf '⚠ Node.js >=20.19 is required by OpenSpec and the Change Loop harness\n' >&2
-elif ! command -v openspec >/dev/null 2>&1; then
-  printf '▸ The harness prepares pinned OpenSpec project-locally under .foundation/tools when needed.\n'
+elif ! openspec_source="$(cd "$TARGET_PATH" && node --input-type=module -e '
+  const { pathToFileURL } = await import("node:url");
+  const { spawnSync } = await import("node:child_process");
+  const harness = (path) => import(pathToFileURL(`${process.cwd()}/.claude/harness/runtime/${path}`).href);
+  const { ensureProjectOpenSpec } = await harness("core/tool-preparation.mjs");
+  const { openSpecCliStatus } = await harness("workflow/land-runtime.mjs");
+  const prepared = ensureProjectOpenSpec({ root: process.cwd(), status: openSpecCliStatus, spawn: spawnSync });
+  console.log(prepared.source);
+' 2>/dev/null)"; then
+  printf '⚠ OpenSpec could not be prepared now; Land needs it for spec sync and archive.\n' >&2
+  printf '  Give this machine npm registry access, or install @fission-ai/openspec@1.7 in the\n' >&2
+  printf '  project (node_modules/.bin) or on PATH; the harness retries before Build, Prove, and Land.\n' >&2
+elif [ "$openspec_source" = ".foundation/tools" ]; then
+  printf '▸ Prepared pinned OpenSpec project-locally under .foundation/tools.\n'
 fi
 
 if command -v node >/dev/null 2>&1; then
@@ -469,6 +513,22 @@ if command -v node >/dev/null 2>&1; then
 fi
 
 INSTALL_COMMITTED=yes
+# Every next step the harness prints names `claude-foundation`, which a source
+# checkout does not put on PATH. This ignored, project-local shim points at the
+# CLI that ran this install; the SessionStart hook adds it to PATH only when no
+# other `claude-foundation` resolves.
+cli_shim="$TARGET_PATH/.foundation/bin/claude-foundation"
+cli_quoted="'$(printf '%s' "$SOURCE_PATH/cli.sh" | sed "s/'/'\\\\''/g")'"
+mkdir -p "$(dirname "$cli_shim")"
+{
+  printf '#!/usr/bin/env sh\n'
+  printf '# Written by claude-foundation init; rerun init if the CLI source moves.\n'
+  printf 'cli=%s\n' "$cli_quoted"
+  printf '[ -f "$cli" ] || { printf %s "$cli" >&2; exit 127; }\n' \
+    "'claude-foundation: CLI source %s is gone; rerun claude-foundation init\\n'"
+  printf 'exec bash "$cli" "$@"\n'
+} > "$cli_shim"
+chmod +x "$cli_shim"
 ok "Change Loop installed at $TARGET_PATH"
 printf '  Your product source was not changed; managed workflow files were installed or updated.\n'
 

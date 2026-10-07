@@ -78,6 +78,13 @@ done
 mkdir -p "$TMP/bin"
 printf '%s\n' '#!/bin/sh' 'if [ "$1" = "--version" ]; then echo 1.7.0; exit 0; fi' 'if [ "$1" = "archive" ]; then mkdir -p openspec/changes/archive; mv "openspec/changes/$2" "openspec/changes/archive/$2"; fi' 'exit 0' > "$TMP/bin/openspec"
 chmod +x "$TMP/bin/openspec"
+# The installer may have prepared the real pinned OpenSpec under
+# .foundation/tools, which the harness puts ahead of PATH. This fixture needs
+# the stub's deliberately incomplete merge, so it replaces that copy too.
+if [ -e .foundation/tools/node_modules/.bin/openspec ]; then
+  rm -f .foundation/tools/node_modules/.bin/openspec
+  cp "$TMP/bin/openspec" .foundation/tools/node_modules/.bin/openspec
+fi
 interrupted="$(PATH="$TMP/bin:$PATH" FIXTURE_INTERRUPT_REPOSITORY=api node .claude/harness/foundation.mjs advance installed-repository-recovery --through archived)"
 assert_not_contains "interrupted wave does not claim completion" "$interrupted" '"action":"DONE"'
 assert_contains "Harness recovers the interrupted wave before surfacing the next real boundary" \

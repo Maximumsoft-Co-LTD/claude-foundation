@@ -107,8 +107,8 @@ assert_eq "Build permits an anchored package script for the isolated workspace" 
 
 out="$(invoke build block "$TMP/workspace" "$(bash_event 'npx tsc --noEmit 2>&1 | tail -20')")"
 assert_contains "Build refusal names the refused operation" "$out" '(refused: npx)'
-assert_contains "Build refusal names the workspace prefix to use" "$out" \
-  "start the command with \`cd $TMP/workspace && \`"
+assert_contains "Build refusal names the workspace directory to enter" "$out" \
+  "run \`cd $TMP/workspace\` as its own call first"
 
 mkdir -p "$TMP/workspace/packages/app"
 out="$(invoke build block "$TMP/workspace" \
@@ -191,23 +191,19 @@ ln -s "$TMP/outside" "$TMP/workspace/escape"
 out="$(invoke build block "$TMP/workspace" "$(write_event "$TMP/workspace/escape/app.js")")"
 assert_contains "Build resolves symlink escape before allowing" "$out" '"decision":"block"'
 
-# The host reports the shell's directory. Inside the workspace it is pinned
-# into the command as the literal anchor the policy already demands, so the
-# write runs where the agent meant it instead of costing a refused turn.
+# The host reports the shell's directory. Inside the workspace the policy
+# proves the command from it, and the command is accepted unchanged: a
+# rewritten `cd … && …` is a compound command the host asks the user to
+# approve on every test run.
 out="$(invoke build block "$TMP/workspace" "$(bash_event_at "$TMP/workspace" 'echo x > out.txt')")"
-assert_contains "Build pins a reported workspace cwd as the shell anchor" "$out" \
-  "\"updatedInput\":{\"command\":\"cd $TMP/workspace && echo x > out.txt\""
-assert_contains "Build keeps the rest of the tool input when pinning" "$out" '"description":"d"'
-assert_not_contains "a pinned command is not a refusal" "$out" '"decision":"block"'
-assert_file_contains "anchor audit distinguishes rewrite from block" \
+assert_eq "Build accepts a write from a reported workspace cwd unchanged" "" "$out"
+assert_file_not_contains "an accepted in-workspace command is never rewritten" \
   "$TMP/project/.foundation/logs/guardrail-audit.jsonl" '"outcome":"rewritten"'
 out="$(invoke build block "$TMP/workspace" "$(bash_event_at "$TMP/workspace/src" 'echo x > out.txt')")"
-assert_contains "Build pins the reported subdirectory, not the workspace root" "$out" \
-  "cd $TMP/workspace/src && echo x > out.txt"
+assert_eq "Build accepts a reported workspace subdirectory" "" "$out"
 ln -s "$TMP/workspace" "$TMP/wslink"
 out="$(invoke build block "$TMP/workspace" "$(bash_event_at "$TMP/wslink/src" 'echo x > out.txt')")"
-assert_contains "Build pins a cwd reported through a symlink to the workspace" "$out" \
-  "cd $TMP/workspace/src && echo x > out.txt"
+assert_eq "Build accepts a cwd reported through a symlink to the workspace" "" "$out"
 out="$(invoke build block "$TMP/workspace" "$(bash_event_at "$TMP/outside" 'echo x > out.txt')")"
 assert_contains "Build refuses a reported cwd outside the workspace" "$out" '"decision":"block"'
 out="$(invoke build block "$TMP/workspace" "$(bash_event_at "$TMP/workspace/escape" 'echo x > out.txt')")"
@@ -274,7 +270,9 @@ assert_eq "explicit compare Investigate permits its prototype" "" "$out"
 compare_event="{\"transcript_path\":\"$TMP/investigate-transcript.jsonl\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$TMP/project/.foundation/prototypes/other/a.html\"}}"
 out="$(printf '%s' "$compare_event" | CLAUDE_PROJECT_DIR="$TMP/project" \
   FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
-assert_contains "compare Investigate blocks an undeclared prototype" "$out" '"decision":"block"'
+# The default guard never refuses: it lets the call run and names the route.
+assert_not_contains "compare Investigate never refuses an undeclared prototype" "$out" '"decision":"block"'
+assert_contains "compare Investigate names the undeclared prototype" "$out" 'approved prototype directory'
 
 out="$(invoke investigate block "" "$(bash_event 'touch src/app.js')")"
 assert_contains "Investigate blocks mutating shell commands" "$out" '"decision":"block"'
@@ -361,9 +359,16 @@ out="$(printf '%s' "$(write_event "$TMP/scratch/notes.md")" |
   CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
 assert_eq "pre-phase scratch outside the project is writable" "" "$out"
 
-out="$(printf '%s' "$(bash_event 'echo x > .foundation/change-start-fix.json')" |
+# Every paid lane wrote its draft with `mkdir -p .foundation/drafts && cat >`
+# and lost a turn to this refusal. Before a change exists the shell is
+# recorded, not refused; FOUNDATION_SHELL_GUARD=block restores the refusal.
+out="$(printf '%s' "$(bash_event 'mkdir -p .foundation/drafts && echo x > .foundation/drafts/fix.json')" |
   CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
-assert_contains "pre-phase draft capability never permits shell mutation" \
+assert_eq "pre-phase shell draft write is recorded, not refused" "" "$out"
+out="$(printf '%s' "$(bash_event 'echo x > .foundation/change-start-fix.json')" |
+  CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_GUARDRAIL_MODE=block \
+  FOUNDATION_SHELL_GUARD=block node "$HOOK")"
+assert_contains "strict shell guard still refuses pre-phase shell mutation" \
   "$out" 'active phase is unavailable'
 
 out="$(printf '%s' "$(bash_event 'git status')" | CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
@@ -371,8 +376,10 @@ assert_eq "read-only shell commands do not require phase context" "" "$out"
 
 out="$(printf '%s' "$(write_event "$TMP/project/src/app.js")" |
   CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_ACTIVE_PHASE=prove node "$HOOK")"
-assert_contains "default auto mode blocks an active lifecycle phase" \
+assert_not_contains "default auto mode never refuses in an active lifecycle phase" \
   "$out" '"decision":"block"'
+assert_contains "default auto mode explains the active phase rule" \
+  "$out" 'Prove keeps product and instruction files read-only'
 
 out="$(printf '%s' "$(write_event "$TMP/outside/adoption.js")" |
   CLAUDE_PROJECT_DIR="$TMP/outside" node "$HOOK")"
@@ -389,12 +396,14 @@ for cli in "npx claude-foundation" "npx --no-install claude-foundation" \
   assert_eq "pre-phase '$cli change start' is allowed like the bare CLI" "" "$out"
   out="$(printf '%s' "$(bash_event "$cli land advance delivery-change")" |
     CLAUDE_PROJECT_DIR="$TMP/project" node "$HOOK")"
-  assert_contains "'$cli land advance' still requires the current /land invocation" \
-    "$out" 'requires the current /land invocation'
+  assert_contains "'$cli land advance' is routed to the public Land route" \
+    "$out" '"command":"claude-foundation advance delivery-change --through archived"'
   out="$(printf '%s' "$(bash_event "$cli deliver advance delivery-change")" |
     CLAUDE_PROJECT_DIR="$TMP/project" node "$HOOK")"
-  assert_contains "'$cli deliver advance' still requires the current /deliver invocation" \
-    "$out" 'requires the current /deliver invocation'
+  assert_contains "'$cli deliver advance' becomes the question for the user" \
+    "$out" 'ASK_USER: delivering delivery-change'
+  assert_not_contains "'$cli deliver advance' never runs delivery without /deliver" \
+    "$out" '"command":"'"$cli"' deliver advance'
 done
 
 # --- The prefilter: what it may skip, and what it must never skip. ----------
@@ -424,24 +433,27 @@ assert_cmd_zero "guardrail mode off resolves without starting Node" \
 out="$(pre audit "" "$(write_event "$TMP/pre/src/app.js")")"
 assert_eq "audit mode delegates event-local transcript detection to the guard" "" "$out"
 
-# /dev opts into the lifecycle. Its transcript makes even an explicit audit
-# rollout enforce from the first mutation, before a phase packet has been read.
+# /dev opts into the lifecycle. Before its first phase packet the default guard
+# lets the edit run and names the route into a tracked change.
 printf '%s\n' '{"type":"last-prompt","lastPrompt":"/dev --yes build it"}' \
   > "$TMP/dev-transcript.jsonl"
 out="$(printf '%s' "$(write_event "$TMP/pre/src/app.js")" |
-  CLAUDE_PROJECT_DIR="$TMP/pre" FOUNDATION_GUARDRAIL_MODE=audit \
+  CLAUDE_PROJECT_DIR="$TMP/pre" FOUNDATION_GUARDRAIL_MODE=auto \
   FOUNDATION_CLAUDE_TRANSCRIPT_PATH="$TMP/dev-transcript.jsonl" sh "$PREFILTER")"
-assert_contains "a dev session fails closed before its first phase packet" \
-  "$out" 'active phase is unavailable'
+assert_not_contains "a dev session never refuses before its first phase packet" "$out" '"decision":"block"'
+assert_contains "a dev session names the route into a change" "$out" 'change start'
 
 # The real Claude PreToolUse schema carries transcript_path on the event. A
 # claude -p hook process may not inherit SessionStart's CLAUDE_ENV_FILE export,
 # so event-local identity must enforce /dev on its own.
 event_with_transcript="{\"transcript_path\":\"$TMP/dev-transcript.jsonl\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$TMP/pre/src/app.js\"}}"
 out="$(printf '%s' "$event_with_transcript" |
-  CLAUDE_PROJECT_DIR="$TMP/pre" FOUNDATION_GUARDRAIL_MODE=audit sh "$PREFILTER")"
-assert_contains "a dev PreToolUse event enforces without exported transcript env" \
+  CLAUDE_PROJECT_DIR="$TMP/pre" FOUNDATION_GUARDRAIL_MODE=auto sh "$PREFILTER")"
+assert_contains "a dev PreToolUse event is guided without exported transcript env" \
   "$out" 'active phase is unavailable'
+out="$(printf '%s' "$event_with_transcript" |
+  CLAUDE_PROJECT_DIR="$TMP/pre" FOUNDATION_GUARDRAIL_MODE=audit sh "$PREFILTER")"
+assert_eq "explicit audit mode records without speaking" "" "$out"
 
 # /land is the one authority bootstrap. The stable wrapper itself is allowed
 # only when the current event transcript starts with /land; its child file
@@ -460,8 +472,8 @@ assert_eq "current /land may invoke the wrapper through npx" "" "$out"
 dev_land_event="{\"transcript_path\":\"$TMP/dev-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation land advance delivery-change\"}}"
 out="$(printf '%s' "$dev_land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
   FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
-assert_contains "/dev cannot infer Land through the trusted wrapper" "$out" \
-  'requires the current /land invocation'
+assert_contains "/dev Land through the internal wrapper is routed to advance" "$out" \
+  '"command":"claude-foundation advance delivery-change --through archived"'
 
 # Claude Code writes the `last-prompt` row late. A /land typed after /dev is
 # already in the transcript as its own user row before that row lands.
@@ -480,8 +492,8 @@ assert_eq "a typed /land counts before its last-prompt row is written" "" "$out"
 stale_land_event="{\"transcript_path\":\"$TMP/stale-land-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation land advance delivery-change\"}}"
 out="$(printf '%s' "$stale_land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
   FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
-assert_contains "an earlier /land does not authorize a later /dev turn" "$out" \
-  'requires the current /land invocation'
+assert_contains "an earlier /land does not let a later /dev turn use the internal wrapper" "$out" \
+  '"command":"claude-foundation advance delivery-change --through archived"'
 
 chained_land_event="{\"transcript_path\":\"$TMP/land-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation land advance delivery-change && git commit -am bad\"}}"
 out="$(printf '%s' "$chained_land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
@@ -513,14 +525,91 @@ assert_eq "event transcript remains authoritative for /deliver" "" "$out"
 forged_deliver_event="{\"transcript_path\":\"$TMP/dev-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation deliver advance delivery-change\"}}"
 out="$(printf '%s' "$forged_deliver_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
   FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
-assert_contains "/dev cannot infer Deliver through the trusted wrapper" "$out" \
-  'requires the current /deliver invocation'
+assert_contains "/dev Deliver becomes the question for the user" "$out" \
+  'ASK_USER: delivering delivery-change'
+assert_not_contains "/dev never runs delivery through the trusted wrapper" "$out" \
+  '"command":"claude-foundation deliver advance'
 
 chained_deliver_event="{\"transcript_path\":\"$TMP/deliver-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation deliver advance delivery-change && git push --force\"}}"
 out="$(printf '%s' "$chained_deliver_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
   FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
 assert_contains "Deliver wrapper authority cannot cover a chained force push" "$out" \
   'decision":"block'
+
+# A natural request to open a PR is the user's /deliver for the one composite
+# command; a negated request, or none, stays the question.
+prompt_transcript() {
+  printf '{"type":"last-prompt","lastPrompt":"%s"}\n' "$2" > "$TMP/$1.jsonl"
+}
+deliver_with() {
+  printf '{"transcript_path":"%s","tool_name":"Bash","tool_input":{"command":"claude-foundation deliver advance delivery-change"}}' \
+    "$TMP/$1.jsonl" | CLAUDE_PROJECT_DIR="$TMP/pre" FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK"
+}
+prompt_transcript natural-deliver "เปิด PR ให้เลย"
+assert_eq "'เปิด PR ให้เลย' counts as /deliver" "" "$(deliver_with natural-deliver)"
+prompt_transcript english-deliver "looks good, open a PR for it"
+assert_eq "'open a PR' counts as /deliver" "" "$(deliver_with english-deliver)"
+prompt_transcript negated-deliver "don't open a PR yet"
+assert_contains "a negated PR request stays the question" "$(deliver_with negated-deliver)" \
+  'ASK_USER: delivering delivery-change'
+prompt_transcript urgent-deliver "ด่วน รีบ demo"
+assert_contains "urgency alone is not delivery authority" "$(deliver_with urgent-deliver)" \
+  'ASK_USER: delivering delivery-change'
+{
+  printf '%s\n' '{"type":"user","message":{"role":"user","content":"finish the change"}}'
+  printf '%s\n' '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ASK_USER: delivering delivery-change commits, pushes, and opens a pull request."}]}}'
+  printf '%s\n' '{"type":"last-prompt","lastPrompt":"ลุยเลย"}'
+} > "$TMP/answered-deliver.jsonl"
+assert_eq "a yes to the delivery question counts as /deliver" "" "$(deliver_with answered-deliver)"
+
+# git commit/push from the main checkout during Build or Prove does not run
+# unless the user's latest prompt asked for it; otherwise it becomes the
+# question. Inside the isolated workspace it is ordinary Build work.
+git_with() {
+  printf '{"transcript_path":"%s","cwd":"%s","tool_name":"Bash","tool_input":{"command":"%s"}}' \
+    "$TMP/$1.jsonl" "$2" "$3" | CLAUDE_PROJECT_DIR="$TMP/project" FOUNDATION_ACTIVE_PHASE="$4" \
+    FOUNDATION_WORKSPACE_ROOT="$TMP/workspace" FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK"
+}
+prompt_transcript no-git-request "fix the booking bug"
+out="$(git_with no-git-request "$TMP/project" "git commit -am wip" build)"
+assert_contains "Build main-checkout commit becomes the question" "$out" \
+  'ASK_USER: git commit from the main checkout during build was not run'
+assert_not_contains "Build main-checkout commit does not run" "$out" '"command":"git commit'
+out="$(git_with no-git-request "$TMP/project" "git push origin feature" prove)"
+assert_contains "Prove main-checkout push becomes the question" "$out" \
+  'ASK_USER: git push from the main checkout during prove was not run'
+out="$(printf '%s' "$(bash_event 'git commit -am wip')" | CLAUDE_PROJECT_DIR="$TMP/project" \
+  FOUNDATION_ACTIVE_PHASE=build FOUNDATION_WORKSPACE_ROOT="$TMP/workspace" \
+  FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
+assert_contains "strict mode refuses an uninstructed main-checkout commit" "$out" '"decision":"block'
+prompt_transcript commit-request "commit this please"
+assert_eq "a direct commit instruction lets the commit run" "" \
+  "$(git_with commit-request "$TMP/project" "git commit -am wip" build)"
+prompt_transcript thai-push-request "ช่วย push ขึ้นไปด้วย"
+assert_eq "a direct push instruction covers commit and push" "" \
+  "$(git_with thai-push-request "$TMP/project" "git commit -am wip && git push" build)"
+assert_contains "a commit instruction never covers a push" \
+  "$(git_with commit-request "$TMP/project" "git commit -am wip && git push" build)" \
+  'ASK_USER: git commit and git push from the main checkout'
+prompt_transcript negated-push "commit locally but don't push"
+assert_contains "a negated push instruction stays the question" \
+  "$(git_with negated-push "$TMP/project" "git push" build)" 'ASK_USER: git push'
+{
+  printf '%s\n' '{"type":"user","message":{"role":"user","content":"fix the booking bug"}}'
+  printf '%s\n' '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ASK_USER: git commit from the main checkout during build was not run."}]}}'
+  printf '%s\n' '{"type":"last-prompt","lastPrompt":"ok ทำเลย"}'
+} > "$TMP/answered-git.jsonl"
+assert_eq "a yes to the commit question lets the commit run" "" \
+  "$(git_with answered-git "$TMP/project" "git commit -am wip" build)"
+assert_contains "a yes to the commit question never covers a push" \
+  "$(git_with answered-git "$TMP/project" "git commit -am wip && git push" build)" \
+  'ASK_USER: git commit and git push from the main checkout'
+assert_contains "a yes to a Build question does not carry into Prove" \
+  "$(git_with answered-git "$TMP/project" "git commit -am wip" prove)" \
+  'ASK_USER: git commit from the main checkout during prove'
+out="$(git_with no-git-request "$TMP/workspace" "git commit -am wip" build)"
+assert_not_contains "a commit inside the isolated workspace is not a main-checkout question" \
+  "$out" 'ASK_USER'
 
 out="$(pre block "" "$(write_event "$TMP/pre/src/app.js")")"
 assert_contains "block mode delegates even when no phase is recorded" \
@@ -612,5 +701,48 @@ assert_eq "the rotated log is the only generation kept" "1" \
   "$(ls "$TMP/rot/.foundation/logs" | grep -c 'guardrail-audit.jsonl.1')"
 assert_cmd_zero "the new audit log starts under the cap" \
   node -e 'process.exit(require("fs").statSync(process.argv[1]).size < 1024*1024 ? 0 : 1)' "$audit"
+
+# Proof is content-bound: a repair inside the isolated workspace after Prove
+# only makes the proof stale, so it is allowed; the main checkout is not.
+out="$(invoke prove block "$TMP/workspace" "$(write_event "$TMP/workspace/src/fix.js")")"
+assert_eq "Prove permits a repair inside the isolated workspace" "" "$out"
+out="$(invoke prove block "$TMP/workspace" "$(write_event "$TMP/project/src/app.js")")"
+assert_contains "Prove still keeps the main checkout read-only" "$out" '"decision":"block"'
+
+# The agent's scratchpad and memory are not product code in any phase, but a
+# scratch-shaped path that holds the project is never scratch.
+SCRATCH_ROOT="$(node -p 'require("fs").realpathSync(require("os").tmpdir())')/claude-guard-test-$$"
+mkdir -p "$SCRATCH_ROOT"
+for phase in investigate change build prove; do
+  out="$(invoke "$phase" block "$TMP/workspace" "$(write_event "$SCRATCH_ROOT/notes.md")")"
+  assert_eq "$phase permits a write to the agent scratchpad" "" "$out"
+done
+out="$(invoke build block "$TMP/workspace" "$(write_event "$TMP/outside/notes.md")")"
+assert_contains "a plain temp path outside the workspace is still not scratch" "$out" '"decision":"block"'
+mkdir -p "$SCRATCH_ROOT/project/openspec/changes/demo"
+out="$(printf '%s' "$(write_event "$SCRATCH_ROOT/project/src/app.js")" |
+  CLAUDE_PROJECT_DIR="$SCRATCH_ROOT/project" FOUNDATION_ACTIVE_PHASE=build \
+  FOUNDATION_GUARDRAIL_MODE=block FOUNDATION_WORKSPACE_ROOT="$TMP/workspace" node "$HOOK")"
+assert_contains "a project inside a scratch-shaped directory is never scratch" "$out" '"decision":"block"'
+rm -rf "$SCRATCH_ROOT"
+
+# The default guard redirects a Build edit aimed at the main checkout into the
+# same path in the isolated workspace, instead of refusing it.
+RD="$TMP/redirect"
+mkdir -p "$RD/project/openspec/changes/demo" "$RD/project/.foundation/runtime" \
+  "$RD/project/.foundation/logs/demo" "$RD/ws/src"
+printf '{"status":"building","workspace":{"path":"%s"}}' "$RD/ws" \
+  > "$RD/project/.foundation/runtime/demo.json"
+printf '{"timestamp":"%s","phase":"build","changeId":"demo"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  > "$RD/project/.foundation/logs/demo/phase-context.jsonl"
+out="$(printf '%s' "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$RD/project/src/app.js\",\"content\":\"x\"}}" |
+  CLAUDE_PROJECT_DIR="$RD/project" FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
+assert_not_contains "a main-checkout Build edit is never refused" "$out" '"decision":"block"'
+assert_contains "a main-checkout Build edit is redirected into the workspace" "$out" \
+  "\"file_path\":\"$(node -p 'require("fs").realpathSync(process.argv[1])' "$RD/ws")/src/app.js\""
+assert_contains "the redirect keeps the rest of the tool input" "$out" '"content":"x"'
+out="$(printf '%s' "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$RD/ws/src/app.js\",\"content\":\"x\"}}" |
+  CLAUDE_PROJECT_DIR="$RD/project" FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
+assert_eq "an edit already inside the workspace runs untouched" "" "$out"
 
 finish "phase mutation guard"

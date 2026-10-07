@@ -405,6 +405,18 @@ assert_cmd_fails_with "Land record stops for explicit user authority" \
   "requires --decision-ref" \
   node .claude/harness/foundation.mjs land-record cross-repository-profile \
   --repo api --commit "$api_commit" --ci pass
+# A current change never enters the commit-based saga; this fixture exercises
+# that retired flow, so it marks the transaction the way the old flow did.
+assert_contains "a current change refuses the legacy commit-based saga" \
+  "$(node .claude/harness/foundation.mjs land-record cross-repository-profile \
+    --repo api --commit "$api_commit" --ci pass \
+    --decision-ref fixture://user/land-api 2>&1 || true)" \
+  "advance cross-repository-profile --through archived"
+node -e "
+  const fs=require('fs'); const p='.foundation/runtime/cross-repository-profile.json';
+  const s=JSON.parse(fs.readFileSync(p,'utf8'));
+  s.land={...(s.land||{}), strategy:'ordered-resumable-saga'};
+  fs.writeFileSync(p, JSON.stringify(s,null,2)+'\\n');"
 # Branch state is set explicitly so the default-branch warning is
 # deterministic regardless of the machine's init.defaultBranch.
 git -C api checkout -q -B main

@@ -1,8 +1,13 @@
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const REVIEW_WINDOW_MS = 30 * 60 * 1000;
+// Review is bounded by its rounds (full, then one delta), not by elapsed
+// time: a shared wall-clock window also counted the agent's repair between
+// rounds and reviewer retries, and asked the user about neither. Each
+// dispatch still has its own timeout, which counts as an infrastructure
+// failure when it expires.
+export const REVIEW_DISPATCH_TIMEOUT_MS = 30 * 60 * 1000;
 
 // Task write scope is agent-owned bookkeeping, like completion: readiness and
 // apply repairs direct the agent to widen `[paths:]`, and Land still shows the
@@ -91,15 +96,24 @@ export function assertSpecApproval(root, id, state, { workspace = true } = {}) {
   if (revisionMatches && currentAmendment && workspaceApproved) return;
   // Without an amendment the target packet is canonical, so an isolated packet
   // that differs from it can never be approved: recording consent binds one
-  // identity that cannot equal both. That is agent-owned repair, never a user
-  // decision or a user-run copy between checkouts.
+  // identity that cannot equal both. The harness restores it (whitespace in
+  // place, any other edit saved aside for an amendment); only a restore that
+  // cannot reproduce consent is agent repair, never a user decision.
   if (workspaceAgreement && !currentAmendment &&
-      agreementIdentity(root, id) !== agreementIdentity(state.workspace.path, id))
+      agreementIdentity(root, id) !== agreementIdentity(state.workspace.path, id)) {
+    if (repairWhitespaceDrift(root, state.workspace.path, id))
+      return assertSpecApproval(root, id, state, { workspace });
+    const saved = restoreDriftedAgreement(root, state.workspace.path, id);
+    if (saved) {
+      console.error(agreementRestoredNotice(id, saved));
+      return assertSpecApproval(root, id, state, { workspace });
+    }
     throw agreementDriftError(id, state.workspace.path);
+  }
   throw userDecisionError("SPEC_APPROVAL_REQUIRED",
     "Inspect the compiled spec with the user and obtain approval before Build.", [
       { id: "approve", outcome: "Approve this exact spec, then begin Build",
-        command: `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision>` },
+        command: `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision> --through build` },
       { id: "revise", outcome: "Revise the spec before implementation" }
     ], "approve");
 }
@@ -142,6 +156,103 @@ export function preserveSpecApprovalAcross(root, id, {
   return result;
 }
 
+function packetFiles(base, prefix = "") {
+  const files = [];
+  for (const entry of readdirSync(join(base, prefix), { withFileTypes: true })) {
+    const name = `${prefix}${entry.name}`;
+    if (entry.isDirectory()) files.push(...packetFiles(base, `${name}/`));
+    else if (entry.isFile()) files.push(name);
+  }
+  return files.sort();
+}
+
+const CHECKBOX = /^(\s*-\s*)\[([ xX])\]/;
+const squeeze = (text) => text.replace(/\s+/g, "");
+const taskKey = (line) => squeeze(stripPathAnnotations(line.replace(CHECKBOX, "$1[ ]")));
+
+// A formatter or editor pass over the isolated packet (trailing spaces, wrap,
+// blank lines) changes bytes but no agreement text. The harness puts the
+// target's bytes back itself, keeping checkbox and `[paths:]` bookkeeping, so
+// whitespace never becomes agreement drift the agent must repair. Any other
+// difference is left untouched and still reported.
+export function repairWhitespaceDrift(root, workspacePath, id) {
+  const target = join(root, "openspec", "changes", id);
+  const isolated = join(workspacePath, "openspec", "changes", id);
+  if (!existsSync(target) || !existsSync(isolated)) return false;
+  const names = packetFiles(target);
+  if (names.join("\0") !== packetFiles(isolated).join("\0")) return false;
+  const writes = [];
+  for (const name of names) {
+    const want = readFileSync(join(target, name), "utf8");
+    const have = readFileSync(join(isolated, name), "utf8");
+    if (want === have) continue;
+    if (name !== "tasks.md") {
+      if (squeeze(want) !== squeeze(have)) return false;
+      writes.push([name, want, have]);
+      continue;
+    }
+    const wantLines = want.split("\n").filter((line) => line.trim());
+    const haveLines = have.split("\n").filter((line) => line.trim());
+    if (wantLines.length !== haveLines.length ||
+        wantLines.some((line, index) => taskKey(line) !== taskKey(haveLines[index]))) return false;
+    let index = 0;
+    const merged = want.split("\n").map((line) => {
+      if (!line.trim()) return line;
+      const mine = haveLines[index++];
+      if (stripPathAnnotations(mine) !== mine || stripPathAnnotations(line) !== line) return mine;
+      const mark = CHECKBOX.exec(mine)?.[2];
+      return mark ? line.replace(CHECKBOX, `$1[${mark}]`) : line;
+    }).join("\n");
+    writes.push([name, merged, have]);
+  }
+  if (!writes.length) return false;
+  for (const [name, content] of writes) writeFileSync(join(isolated, name), content);
+  if (agreementIdentity(root, id) === agreementIdentity(workspacePath, id)) return true;
+  for (const [name, , original] of writes) writeFileSync(join(isolated, name), original);
+  return false;
+}
+
+// An isolated packet edited outside a semantic amendment cannot be approved,
+// and asking the agent to undo it cost a turn. The harness saves the edited
+// packet, puts the approved text back (keeping checkbox and `[paths:]`
+// bookkeeping), and returns where the edit was saved so the agent can turn a
+// real change of intent into one amendment. Null when restoring could not
+// reproduce the approved identity; nothing is changed then.
+export function restoreDriftedAgreement(root, workspacePath, id, stamp = Date.now()) {
+  const target = join(root, "openspec", "changes", id);
+  const isolated = join(workspacePath, "openspec", "changes", id);
+  if (!existsSync(target) || !existsSync(isolated)) return null;
+  const saved = join(root, ".foundation", "agreement-drift", id, String(stamp));
+  mkdirSync(saved, { recursive: true });
+  cpSync(isolated, saved, { recursive: true });
+  const wanted = new Set(packetFiles(target));
+  for (const name of packetFiles(isolated)) if (!wanted.has(name)) rmSync(join(isolated, name), { force: true });
+  for (const name of wanted) {
+    let content = readFileSync(join(target, name), "utf8");
+    const mine = join(isolated, name);
+    if (name === "tasks.md" && existsSync(mine)) {
+      const bookkeeping = new Map(readFileSync(mine, "utf8").split("\n")
+        .filter((line) => CHECKBOX.test(line)).map((line) => [taskKey(line), line]));
+      content = content.split("\n").map((line) =>
+        CHECKBOX.test(line) && bookkeeping.has(taskKey(line)) ? bookkeeping.get(taskKey(line)) : line)
+        .join("\n");
+    }
+    mkdirSync(join(mine, ".."), { recursive: true });
+    writeFileSync(mine, content);
+  }
+  if (agreementIdentity(root, id) === agreementIdentity(workspacePath, id)) return saved;
+  rmSync(isolated, { recursive: true, force: true });
+  cpSync(saved, isolated, { recursive: true });
+  rmSync(saved, { recursive: true, force: true });
+  return null;
+}
+
+export function agreementRestoredNotice(id, saved) {
+  return `NOTICE: the isolated agreement for '${id}' was edited outside a semantic amendment; ` +
+    `the harness restored the approved text and saved the edit at ${saved}. If that edit ` +
+    `changes intent, express it with 'claude-foundation change amend ${id} <amendment.json>'.`;
+}
+
 export function agreementDriftError(id, workspacePath) {
   const error = new Error(
     `isolated agreement for '${id}' at ${workspacePath}/openspec/changes/${id} was edited outside a ` +
@@ -153,43 +264,6 @@ export function agreementDriftError(id, workspacePath) {
   error.owner = "agent";
   error.boundary = "agreement-drift";
   return error;
-}
-
-export function reviewWindowRemaining(state, timestamp = Date.now()) {
-  const window = state.reviewWindow;
-  if (!window) return REVIEW_WINDOW_MS;
-  const deadline = Date.parse(window.deadline);
-  if (!Number.isFinite(deadline)) return 0;
-  return Math.max(0, Math.min(REVIEW_WINDOW_MS, deadline - timestamp));
-}
-
-export const AUTO_REVIEW_EXTENSION_REF = "harness://auto-extend/review-window/1";
-
-// The first exhausted review window extends itself once, recorded as a harness
-// decision, so a slow reviewer does not stop the user. Only a later exhaustion
-// asks. Mutates `state`; the caller persists it when this returns true.
-export function autoExtendReviewWindow(state, timestamp = Date.now()) {
-  const window = state.reviewWindow;
-  if (!window || reviewWindowRemaining(state, timestamp)) return false;
-  if ([...(state.reviewWindowHistory || []), window]
-    .some((row) => row?.decisionRef === AUTO_REVIEW_EXTENSION_REF)) return false;
-  const startedAt = new Date(timestamp).toISOString();
-  state.reviewWindowHistory = [...(state.reviewWindowHistory || []), window];
-  state.reviewWindow = { startedAt,
-    deadline: new Date(timestamp + REVIEW_WINDOW_MS).toISOString(),
-    decisionRef: AUTO_REVIEW_EXTENSION_REF, owner: "harness" };
-  return true;
-}
-
-export function reviewWindowError(id) {
-  return userDecisionError("REVIEW_TIME_EXHAUSTED",
-    "The shared 30-minute review window has ended. Report completed findings and unreviewed scope; no passing verdict is implied.", [
-      { id: "continue", outcome: "Authorize another 30-minute review window",
-        command: `claude-foundation change resolve ${id} --continue-review --decision-ref <user-decision>` },
-      { id: "land", outcome: "Accept the remaining review risk explicitly and Land the current diff",
-        command: `claude-foundation change waive ${id} --capability review --reason <remaining-risk> --decision-ref <user-decision>` },
-      { id: "pause", outcome: "Preserve the work and pause" }
-    ], "continue");
 }
 
 export function currentWaivers(state, workspaceHash) {

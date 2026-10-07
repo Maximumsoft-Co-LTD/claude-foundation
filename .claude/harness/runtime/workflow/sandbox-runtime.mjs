@@ -8,14 +8,14 @@ import {
 import { constants as fsConstants } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
-  ROOT_ONLY_EXCLUDED_DIRS, isExcludedPath, sandboxCodePathspec, trackedPathSet
+  ROOT_ONLY_EXCLUDED_DIRS, isExcludedPath, isInvestigationPath, sandboxCodePathspec,
+  trackedPathSet
 } from "../core/workspace-surface.mjs";
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 import {
   compositeRepositorySelection, isolatedRepositoryState, worktreeOwnedByTarget
 } from "../core/repository-binding.mjs";
-import { shellDisplayArgument } from "../core/shell-mutation-policy.mjs";
-import { isOwnedInvestigationReport } from "./investigation-report.mjs";
+import { landedTargetPaths, otherLandedOutput, replayLandedEdit } from "./target-edits.mjs";
 
 // A commit read, not executed. Inspection must not resolve a program through
 // PATH, so ref files are the authority for both ordinary and linked worktrees.
@@ -218,8 +218,13 @@ export function runSandboxSetupCommand(context, record, command, timeoutMs, cwd,
     const cause = result.error
       ? String(result.error.code || result.error.message)
       : `exit ${result.status}`;
-    const tail = `${result.stdout || ""}\n${result.stderr || ""}`
-      .trim().split("\n").filter(Boolean).slice(-5).join("\n    ");
+    const lines = `${result.stdout || ""}\n${result.stderr || ""}`
+      .trim().split("\n").filter(Boolean);
+    // Kept with the record so a failed setup the harness cannot finish is
+    // handed to the agent with its command, directory, and output.
+    record.setup.cwd = cwd;
+    record.setup.logTail = [cause, ...lines.slice(-40)].join("\n").slice(-4000);
+    const tail = lines.slice(-5).join("\n    ");
     context.output.error(`WARNING: sandbox setup command failed${
       label ? ` for '${label}'` : ""} (${cause}) in the isolated workspace. ` +
       `Harness preparation will repair or route this failure before Build.${
@@ -306,9 +311,9 @@ export function runMeasuredSandboxSetupBatch(context, records) {
 // dependencies, so a project that installs them at its root starts every Build
 // without them. Three consumer Builds rediscovered that by linking the
 // checkout's node_modules — which the phase guard refuses — before falling back
-// to an install. Name the sanctioned route when the sandbox is created, so the
-// first Build turn already knows it. Lockfile first: the advice must match the
-// package manager the project actually pins.
+// to an install. The harness therefore runs the pinned lockfile install itself
+// when no setup command is configured. Lockfile first: the install must match
+// the package manager the project actually pins.
 const DEPENDENCY_LOCKFILES = [
   ["package-lock.json", "npm ci"],
   ["npm-shrinkwrap.json", "npm ci"],
@@ -318,18 +323,40 @@ const DEPENDENCY_LOCKFILES = [
   ["bun.lockb", "bun install --frozen-lockfile"]
 ];
 
-export function missingDependencySetupAdvisory({ root, workspace, setupCommand, pathExists }) {
-  if (setupCommand) return null;
-  const lockfile = DEPENDENCY_LOCKFILES.find(([file]) => pathExists(join(root, file)));
-  if (!lockfile) return null;
-  const [file, install] = lockfile;
-  const installed = pathExists(join(root, "node_modules"));
-  return `NOTE: the workspace has no installed dependencies: ${file} is at ${root}` +
-    `${installed ? " and node_modules is installed there" : ""}, but foundation.json ` +
-    `declares no sandbox.setupCommand. Declare {"sandbox":{"setupCommand":"${install}"}} ` +
-    "so the harness prepares every workspace, or run " +
-    `\`cd ${shellDisplayArgument(workspace)} && ${install}\` once; linking or copying the ` +
-    "checkout's node_modules into the workspace is refused.";
+// The root workspace's setup: the configured command, otherwise the install
+// the workspace's own lockfile pins. `sandbox.installDependencies: false` opts
+// out of the detected install; a configured command always runs. Never links or
+// copies the checkout's node_modules — the install happens in the workspace.
+export function workspaceSetupPlan({ sandbox = {}, workspace, pathExists }) {
+  if (sandbox.setupCommand)
+    return { command: sandbox.setupCommand, source: "configured" };
+  // A lockfile without its manifest is not an installable project.
+  if (sandbox.installDependencies === false || !workspace ||
+      !pathExists(join(workspace, "package.json"))) return null;
+  const lockfile = DEPENDENCY_LOCKFILES.find(([file]) =>
+    pathExists(join(workspace, file)));
+  return lockfile
+    ? { command: lockfile[1], source: "lockfile", lockfile: lockfile[0] }
+    : null;
+}
+
+export function sandboxSetupLine(setup) {
+  if (!setup) return "";
+  return `\n  setup: ${setup.status}${setup.source === "lockfile"
+    ? ` (${setup.command}, detected from ${setup.lockfile})` : ""}`;
+}
+
+// A failed or retried run replaces record.setup; keep where the command came
+// from so retries and the preparation plan still treat a detected install
+// exactly like a configured one.
+export function runWorkspaceSetupPlan(runSetupCommand, record, plan, timeoutMs, cwd, label) {
+  runSetupCommand(record, plan.command, timeoutMs, cwd, label);
+  const setup = record.setup;
+  if (setup && plan.source === "lockfile") {
+    setup.source = "lockfile";
+    setup.lockfile = plan.lockfile;
+  }
+  return setup;
 }
 
 export function carrySandboxIgnoredArtifacts(context, sourcePath, stagingPath) {
@@ -445,6 +472,7 @@ export function unrelatedSandboxTargetChanges(context, id, state, statusOutput) 
     if (path === `openspec/changes/${id}` || path.startsWith(allowedPrefix)) continue;
     if (path === ".foundation" || path.startsWith(".foundation/")) continue;
     if (path === "openspec/changes" || path.startsWith("openspec/changes/")) continue;
+    if (isInvestigationPath(path)) continue;
     if (Object.prototype.hasOwnProperty.call(preexisting, path)) {
       const absolute = join(context.root, path);
       try {
@@ -481,13 +509,18 @@ export function assertSandboxGroundingPortable(context, id, state) {
       if (!matchesDigest) return "working-tree-digest-mismatch";
       if (repository.id === "root" &&
           isPacketLocalSource(context.changePath(id), absolute)) return null;
+      // A cited investigation record is digest-pinned control-plane
+      // evidence: it is read from the target checkout, never replayed into
+      // the sandbox, so an untracked one is portable as it stands.
+      if (repository.id === "root" && isInvestigationPath(String(source.path || "")
+        .replace(/^\.\//, ""))) return null;
       return gitBaseCheckoutStatus(repository, source.path, context.gitBuffer);
     }
   );
   if (portability.length)
     context.fail(`grounding readSet is not sandbox-portable: ${
       portability.map((entry) => `${entry.repository}:${entry.path} (${entry.reason})`).join(", ")
-    } — commit the source or move the required decision/evidence into the change packet before creating a sandbox`);
+    } — move the cited decision or evidence into openspec/changes/${id}/ or refresh its readSet digest through one semantic amendment, then resume with 'claude-foundation advance ${id} --through build'`);
 }
 
 export function plannedGroundingPortabilityStatus(source, pathExists) {
@@ -676,20 +709,28 @@ export function sandboxCopyPlan({
   return { listed, listedPaths, excludes, filter };
 }
 
+// A live checkout can lose a path mid-copy (git's background auto-gc prunes
+// loose object directories), so a vanished source restarts the copy.
+const SANDBOX_COPY_ATTEMPTS = 3;
+
 export function copySandboxEntries({ root, requestedPath, plan, fail }) {
-  try {
-    for (const entry of readdirSync(root, { withFileTypes: true })) {
-      if (plan.excludes(entry.name)) continue;
-      cpSync(join(root, entry.name), join(requestedPath, entry.name), {
-        recursive: true,
-        mode: fsConstants.COPYFILE_FICLONE,
-        ...VERBATIM_COPY,
-        filter: plan.filter
-      });
+  for (let attempt = 1; ; attempt++) {
+    try {
+      for (const entry of readdirSync(root, { withFileTypes: true })) {
+        if (plan.excludes(entry.name)) continue;
+        cpSync(join(root, entry.name), join(requestedPath, entry.name), {
+          recursive: true,
+          mode: fsConstants.COPYFILE_FICLONE,
+          ...VERBATIM_COPY,
+          filter: plan.filter
+        });
+      }
+      return;
+    } catch (error) {
+      rmSync(requestedPath, { recursive: true, force: true });
+      if (error?.code === "ENOENT" && attempt < SANDBOX_COPY_ATTEMPTS) continue;
+      fail(`cannot create sandbox copy: ${error.message}; partial copy removed`);
     }
-  } catch (error) {
-    rmSync(requestedPath, { recursive: true, force: true });
-    fail(`cannot create sandbox copy: ${error.message}; partial copy removed`);
   }
 }
 
@@ -843,8 +884,7 @@ export function reportSandboxSync({ id, state, movement, forwarded, conflicts,
 
 export function sandboxCreatePreflight(context, id, flags = {}) {
   const {
-    hostAttestation, loadRuntime, repositoryCatalog, git, root,
-    porcelainStatusRecords, selectedRepositories, fail
+    hostAttestation, loadRuntime, repositoryCatalog, root, selectedRepositories, fail
   } = context;
   if (flags.unattended) {
     const preflight = hostAttestation.preflight(id, flags, true);
@@ -857,17 +897,10 @@ export function sandboxCreatePreflight(context, id, flags = {}) {
   if (topology.drift.length)
     fail(`sandbox preflight found unregistered submodule(s): ${
       topology.drift.map((repository) => repository.path).join(", ")}\n  register the complete set in openspec/repositories.yaml, select the repositories for '${id}', validate once, then create the sandbox`);
-  const targetStatus = git([
-    "status", "--porcelain=v1", "-z", "--untracked-files=all"
-  ], root);
-  const unownedInvestigations = targetStatus.status === 0
-    ? porcelainStatusRecords(targetStatus.stdout).filter((row) =>
-      row.status === "??" && row.path.startsWith("openspec/investigations/") &&
-      !isOwnedInvestigationReport(root, row.path))
-    : [];
-  if (unownedInvestigations.length)
-    fail(`sandbox preflight found untracked investigation note(s): ${
-      unownedInvestigations.map((row) => row.path).join(", ")}\n  commit the investigation record in the control repository before Build so sandbox apply cannot race another writer at archive`);
+  // Uncommitted investigation records and notes do not gate Build. They are
+  // control-plane documents, never Land targets: the worktree decision ignores
+  // them, and the shared apply/replay pathspec plus copy apply exclude
+  // openspec/investigations/, so Land can neither project nor overwrite them.
   return {
     initial,
     // Creation and repair resolve the agreement against live targets. Runtime
@@ -1066,11 +1099,21 @@ export function retryFailedSandboxSetups(context, id,
   const attempted = [];
   const configured = context.policy().sandbox || {};
   const rootSelection = selected.find((repository) => repository.id === "root");
+  const prior = state.workspace?.setup;
+  // A detected lockfile install retries like a configured command unless the
+  // project has since configured one or opted out.
+  const detected = prior?.source === "lockfile" &&
+    configured.installDependencies !== false
+    ? { command: prior.command, source: "lockfile", lockfile: prior.lockfile } : null;
   const rootCommand = rootSelection?.setupCommand || configured.setupCommand;
-  if (state.workspace?.setup?.status === "failed" && rootCommand &&
-      state.workspace?.path) {
-    context.runSetupCommand(state.workspace, rootCommand,
+  const rootPlan = rootCommand ? { command: rootCommand, source: "configured" } : detected;
+  if (prior?.status === "failed" && rootPlan && state.workspace?.path) {
+    runWorkspaceSetupPlan(context.runSetupCommand, state.workspace, rootPlan,
       configured.setupTimeoutMs, state.workspace.path, "root");
+    attempted.push("root");
+  } else if (prior?.status === "failed" && prior.source === "lockfile" && !rootPlan) {
+    // Opting out after a failed detected install withdraws that install.
+    delete state.workspace.setup;
     attempted.push("root");
   }
   const jobs = [];
@@ -1360,19 +1403,16 @@ export function createSandboxRuntime({
   // Single-repository setup comes from foundation.json; a repository row in a
   // multi-repository change carries its own `setupCommand` because each
   // repository installs its own toolchain.
+  // Without a configured command the harness runs the workspace's pinned
+  // lockfile install itself, recorded exactly like a configured setup.
   function runWorkspaceSetup(state) {
     const configured = policy().sandbox || {};
-    if (!configured.setupCommand) return null;
-    return runSetupCommand(state.workspace, configured.setupCommand,
-      configured.setupTimeoutMs, state.workspace.path, null);
-  }
-
-  function noteMissingDependencySetup(workspacePath) {
-    const advisory = missingDependencySetupAdvisory({
-      root, workspace: workspacePath, setupCommand: policy().sandbox?.setupCommand,
-      pathExists: existsSync
+    const plan = workspaceSetupPlan({
+      sandbox: configured, workspace: state.workspace.path, pathExists: existsSync
     });
-    if (advisory) console.log(advisory);
+    if (!plan) return null;
+    return runWorkspaceSetupPlan(runSetupCommand, state.workspace, plan,
+      configured.setupTimeoutMs, state.workspace.path, null);
   }
 
   // Per-file digests of a packet directory. `sync` copies the target's packet
@@ -1454,8 +1494,7 @@ export function createSandboxRuntime({
     if (setup) saveRuntime(state);
     console.log(`SANDBOX ${id}\n  mode: isolated-copy\n  reason: ${reason}\n  git: ${
       carriesGit ? "carried" : "absent (target has no usable .git directory)"
-    }\n  path: ${path}${setup ? `\n  setup: ${setup.status}` : ""}`);
-    noteMissingDependencySetup(path);
+    }\n  path: ${path}${sandboxSetupLine(setup)}`);
   }
 
   function createChallenge(id) {
@@ -1613,8 +1652,7 @@ export function createSandboxRuntime({
     saveRuntime(state);
     const setup = runWorkspaceSetup(state);
     if (setup) saveRuntime(state);
-    console.log(`SANDBOX ${id}\n  path: ${path}${setup ? `\n  setup: ${setup.status}` : ""}`);
-    noteMissingDependencySetup(path);
+    console.log(`SANDBOX ${id}\n  path: ${path}${sandboxSetupLine(setup)}`);
   }
 
   function mergeTaskProgress(source, sandbox) {
@@ -1920,6 +1958,84 @@ export function createSandboxRuntime({
     return { forwarded, conflicts };
   }
 
+  // Land leaves each projection uncommitted, so a worktree that branched
+  // before another change landed meets that landed diff in the target without
+  // HEAD moving. For every path this sandbox also changed while the target
+  // still holds the landed bytes, the landed edit is replayed into the sandbox
+  // copy (3-way against the recorded base). A clean merge invalidates proof
+  // like any sync; a conflict goes to the agent. The target is never written,
+  // and paths this change left alone land beside it untouched.
+  function replayLandedChanges(id, state) {
+    const workspace = state.workspace;
+    const result = { merged: [], conflicts: [] };
+    if (workspace.mode !== "worktree" || workspace.applied) return result;
+    const landed = otherLandedOutput({
+      transactions: join(root, ".foundation", "transactions"), changeId: id,
+      readJson: (path, fallback) => {
+        try { return JSON.parse(readFileSync(path, "utf8")); } catch { return fallback; }
+      }
+    });
+    const identity = (path) =>
+      lstatSync(path, { throwIfNoEntry: false })?.isFile() ? fileDigest(path) : null;
+    const landedBy = landedTargetPaths({ root, paths: Object.keys(landed), landed, identity });
+    const base = workspace.baseHead || "HEAD";
+    const priorConflicts = workspace.landedConflicts || {};
+    const priorResolved = workspace.landedResolved || {};
+    const pending = {};
+    const resolved = {};
+    for (const path of Object.keys(landedBy).sort()) {
+      const shown = gitBuffer(["show", `${base}:${path}`], root);
+      const baseBytes = shown.status === 0 ? shown.stdout : null;
+      const sandboxFile = join(workspace.path, path);
+      const sandboxBytes = identity(sandboxFile) === null ? null : readFileSync(sandboxFile);
+      const untouched = baseBytes && sandboxBytes ? baseBytes.equals(sandboxBytes)
+        : !baseBytes && !lstatSync(sandboxFile, { throwIfNoEntry: false });
+      if (untouched) continue;
+      const replay = replayLandedEdit({ root, sandboxPath: workspace.path, path, baseBytes });
+      if (replay.status === "merged") {
+        writeFileSync(sandboxFile, replay.bytes);
+        result.merged.push({ path, landedBy: landedBy[path] });
+      } else if (replay.status === "conflict") {
+        // Both changes rewrote the same lines. The agent's edit of the sandbox
+        // copy after the conflict was reported is its merge of the two; it is
+        // bound to the exact target and sandbox bytes it was made against.
+        const row = { target: identity(join(root, path)), sandbox: identity(sandboxFile),
+          landedBy: landedBy[path] };
+        const answered = priorConflicts[path]?.target === row.target &&
+          priorConflicts[path].sandbox !== row.sandbox;
+        const kept = priorResolved[path]?.target === row.target &&
+          priorResolved[path].sandbox === row.sandbox;
+        if (answered || kept) resolved[path] = row;
+        else {
+          pending[path] = row;
+          result.conflicts.push({ repository: "root", path, landedBy: landedBy[path] });
+        }
+      }
+    }
+    // What the replay wrote, so Land can tell a replay that already ran and
+    // still does not carry the landed bytes from one that has not run yet.
+    const record = (field, value) => {
+      if (Object.keys(value).length) workspace[field] = value;
+      else delete workspace[field];
+    };
+    record("landedReplay", Object.fromEntries(result.merged.map(({ path }) =>
+      [path, identity(join(workspace.path, path))])));
+    record("landedConflicts", pending);
+    record("landedResolved", resolved);
+    return result;
+  }
+
+  function reportLandedReplay({ merged, conflicts }, log = console.log) {
+    for (const row of merged)
+      log(`REPLAYED ${row.path}: merged the landed, uncommitted work of ${row.landedBy} into the ` +
+        "sandbox copy; evidence covering it runs again before Land.");
+    for (const row of conflicts)
+      log(`CONFLICT ${row.path}: this change and the landed, uncommitted work of ${row.landedBy} ` +
+        "both changed the same lines. Edit the sandbox copy into the merge of both, keeping the " +
+        "landed content, then resume; that edit is taken as the merge. Ask the user only if the " +
+        "two changes' intents contradict.");
+  }
+
   function updateSandboxSyncState(id, state, source, fingerprints, invalidated,
     sourceHash = directoryHash(source)) {
     const approvedSource = state.specApproval?.identity &&
@@ -2015,12 +2131,15 @@ export function createSandboxRuntime({
     if (preserveAmendment) resolves.delete(`openspec/changes/${id}`);
     const { forwarded, conflicts } = reconcileCopyWorkspace(id, state,
       { ...flags, resolve: [...resolves].join(",") });
+    const landedReplay = movement?.conflicts?.length
+      ? { merged: [], conflicts: [] } : replayLandedChanges(id, state);
     clearSnapshotCache(id);
     const invalidated = !priorHash || priorHash !== relevantHash(id) ||
       fingerprints.priorContract !== fingerprints.nextContract ||
       fingerprints.priorExecution !== fingerprints.nextExecution ||
       conflicts.length > 0 || (movement && !movement.rebased) ||
-      Boolean(movement?.conflicts?.length);
+      Boolean(movement?.conflicts?.length) ||
+      landedReplay.merged.length > 0 || landedReplay.conflicts.length > 0;
     if (preserveAmendment && directoryHash(source) !== acceptedSourceHash)
       fail(`target agreement changed during sandbox sync for '${id}'; both packets are preserved, retry sync to resolve the current target`);
     updateSandboxSyncState(id, state, source, fingerprints, invalidated,
@@ -2043,10 +2162,13 @@ export function createSandboxRuntime({
     reportSandboxSync({
       id, state, movement, forwarded, conflicts, relevantHash
     });
+    reportLandedReplay(landedReplay);
     return {
-      status: conflicts.length || movement?.conflicts?.length ? "CONFLICT" : "SYNCED",
-      conflicts: [...conflicts, ...(movement?.conflicts || [])],
-      movement
+      status: conflicts.length || movement?.conflicts?.length || landedReplay.conflicts.length
+        ? "CONFLICT" : "SYNCED",
+      conflicts: [...conflicts, ...(movement?.conflicts || []), ...landedReplay.conflicts],
+      movement,
+      ...(landedReplay.merged.length ? { landedReplayed: landedReplay.merged } : {})
     };
   }
 
@@ -2078,12 +2200,17 @@ export function createSandboxRuntime({
 
   // Brings an intentionally revised target agreement into Build. Returns
   // whether a sync ran; an unchanged source is a no-op.
-  function synchronizeAgreement(id) {
+  function synchronizeAgreement(id, flags = {}) {
     const state = loadRuntime(id);
     // Semantic amendments live in the sandbox until Land. A changed target
     // packet must not make automatic preparation import the older agreement
-    // or deadlock on the explicit sync overwrite guard.
+    // or deadlock on the explicit sync overwrite guard. A recorded user
+    // answer (`advance --decision`) is the explicit resolution.
     if (activeSandboxAmendment(id, state)) {
+      if (flags.resolve) {
+        sync(id, { resolve: flags.resolve });
+        return true;
+      }
       assertAmendedSource(id, state);
       return false;
     }

@@ -3,15 +3,13 @@
 // had already been projected, so both halves are pinned here: the version
 // policy itself, and the fact that landCheck refuses before any projection.
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   assertOpenSpecCli, createLandRuntime, openSpecCliStatus, openSpecVersionStatus,
   riskRequiresCi, signedCiProvider
 } from "../../harness/runtime/workflow/land-runtime.mjs";
-import { telemetryLandIssue } from
-  "../../harness/runtime/workflow/apply-runtime.mjs";
 
 let assertions = 0;
 function check(actual, expected, message) {
@@ -59,25 +57,6 @@ check(signedCiProvider(["test", "deployment"], (provider) => provider,
 check(signedCiProvider(["test"], (provider) => provider,
   () => ({ provenance: { source: "self-reported" } })), null,
 "self-reported evidence cannot satisfy risk CI");
-check(telemetryLandIssue({ telemetry: { requireUsage: true } }, {
-  classification: "not-ingested",
-  recoveryActions: [{ command: "telemetry import change events.jsonl" }]
-}), null,
-"missing usage remains advisory and cannot strand proven delivery");
-check(telemetryLandIssue({ telemetry: { requireUsage: true } }, {
-  classification: "measured", recoveryActions: []
-}), null, "measured telemetry satisfies the Land policy");
-check(telemetryLandIssue({ telemetry: { requireUsage: true } }, {
-  classification: "partial-measurement",
-  measuredDimensions: { tokens: true, cost: false },
-  recoveryActions: [{ command: "telemetry host-import change result.json" }]
-}), null, "measured tokens satisfy usage policy even when host cost is unavailable");
-check(telemetryLandIssue({ telemetry: { requireUsage: true } }, {
-  classification: "partial-measurement",
-  measuredDimensions: { tokens: false, cost: false },
-  recoveryActions: [{ command: "telemetry sync change" }]
-}), null,
-"partial rows with no measured usage dimension remain advisory at Land");
 
 // The loose-match regression: a warning line mentioning the pinned version must
 // not vouch for a CLI that reports a different one.
@@ -183,6 +162,34 @@ try {
     "a usable CLI lets Land report missing assurance without refusing");
   check(calls, ["scenarios", "scenarios", "proof"],
     "Land reads assurance only after the OpenSpec gate passes");
+
+  // The version probe is memoized per process by the CLI's content identity:
+  // an unchanged CLI is spawned once, any byte change re-probes, and a
+  // failing probe is never retained.
+  const probes = join(workspace, "probes.log");
+  const countingCli = (version, status = 0) => {
+    writeFileSync(join(bin, "openspec"), [
+      "#!/bin/sh", `printf 'probe\\n' >> ${JSON.stringify(probes)}`,
+      `printf '%s\\n' ${JSON.stringify(version)}`, `exit ${status}`
+    ].join("\n"));
+    chmodSync(join(bin, "openspec"), 0o755);
+    process.env.PATH = bin;
+  };
+  const probeCount = () => {
+    try { return readFileSync(probes, "utf8").split("\n").filter(Boolean).length; }
+    catch { return 0; }
+  };
+  countingCli("1.7.1");
+  check(openSpecCliStatus(workspace).version, "1.7.1", "the first probe reads the CLI");
+  check(openSpecCliStatus(workspace).version, "1.7.1", "an unchanged CLI reuses the probe");
+  check(probeCount(), 1, "an unchanged CLI is spawned once per process");
+  countingCli("1.7.2");
+  check(openSpecCliStatus(workspace).version, "1.7.2", "a changed CLI is re-probed");
+  check(probeCount(), 2, "a byte change to the CLI invalidates the memo");
+  countingCli("", 1);
+  check(openSpecCliStatus(workspace).level, "error", "a failing CLI is reported");
+  check(openSpecCliStatus(workspace).level, "error", "a failing CLI is reported again");
+  check(probeCount(), 4, "a failing probe is never memoized");
 } finally {
   process.env.PATH = originalPath;
   rmSync(workspace, { recursive: true, force: true });

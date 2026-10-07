@@ -12,8 +12,7 @@ requirements, relevant code/tests, architecture decisions, prototype selection,
 and versioned integration documentation. Reuse settled answers without asking them again.
 Read [semantic-intake.md](semantic-intake.md) when the draft declares
 `impact: high`, `riskSignals`, integrations, or external operations, or inspect
-returns discovery rows or `ASK_USER`; follow its ownership, frontier, and
-coverage rules.
+returns discovery rows or `ASK_USER`.
 
 ## Agreement detail and language
 
@@ -42,27 +41,26 @@ canonical sources and the user's settled intent:
   `name`, state or configuration in `given`, one trigger in `when`, one checkable
   result in `then`, extra results in `and`. Cover the main path and relevant
   failure, boundary, permission, or compatibility cases, never "works correctly"
-  or an implementation step.
+  or an implementation step; mark `kind` `success`, `failure`, or `boundary`.
 - Tasks name outcomes and affected paths, link requirement coverage, and name
   verification that can detect a violation; a command run alone is not acceptance.
-- Optional `summary`, `userStories` (P1-P3, `covers`), `successCriteria`, and
+- Optional `userStories` (P1-P3, `covers`), `successCriteria`, and
   `assumptions` help reviewers; `openQuestions` block approval until answered.
   Record each settled answer as a resolved `discovery.decisions` row with
   `decidedBy`. Resolve discoverable facts yourself; never invent facts.
 
-Scale detail to behavior and risk, not word count or scenario count.
+Scale detail to behavior and risk, not length.
 Cross-component changes need a boundary/dependency diagram; changed state,
 async, or workflow behavior needs transitions or sequence, including
 failure/recovery paths.
-Declare `workType` (a list: feature, bugfix, refactor, api, ui, data, config,
-async, integration, chore, docs). `designWarnings` suggest blueprints
-(`fileMap`, `failureMatrix`, `testMap`;
-`api` `apiContracts`, `data` `dataModel`, `ui` `uiStates`, `config`
-`configContract`, `async` `jobContract` plus a sequence/state diagram,
-`integration` `integrations`, `bugfix` and `refactor` their own objects;
-`coupling: coupled` `diagrams`). They are advisory (none for small rapid
-drafts): author blueprints only for real content, never to silence a warning.
-Keep `fileMap` paths and task tests inside task `paths`.
+The packet is the dev document Build executes. The harness infers `workType`
+from task `paths` and derives folder tree, plan, file and test maps, and the
+failure matrix from `failure` scenarios (optional `recovery`). A standard draft
+authors `why` (or `summary`) and, except docs/chore, failures plus per type:
+feature `userFlow` (Mermaid); ui `userFlow`, `uiStates`, `componentMap`; api
+`apiContracts`; data `dataModel`; config `configContract`; async `jobContract`
+and a sequence diagram; bugfix/refactor their objects. Keep `fileMap` paths
+and task tests inside task `paths`.
 
 ## Compile and inspect
 
@@ -97,7 +95,7 @@ upstream API behavior when documentation or version is missing—return a resear
 or user-decision boundary.
 
 For defect behavior, include adjacent input partitions and source-language representation/coercion boundaries,
-not only the reported reproduction.
+not only the reported reproduction; declare `input-domain` when behavior uses caller-supplied values.
 
 `claude-foundation change start .foundation/drafts/<id>.json` inspects and
 starts in one call when clean; otherwise follow the returned intake action.
@@ -110,8 +108,8 @@ Repair only the draft fields it reports, as one batch, then retry. Never create
 parallel IDs by hand.
 
 If Build discovers new observable behavior, create a semantic amendment v1 and
-run `change amend <change> <amendment.json> --inspect`; after `DONE`, rerun with
-`--consume-amendment`. It preserves completed tasks and custom prose/assets,
+run `change amend <change> <amendment.json>`: it inspects, then amends only
+at `DONE`. It preserves completed tasks and custom prose/assets,
 increments the revision, invalidates the affected contract, and rolls back on
 failure. Never rewrite a legacy change only to migrate it. An amendment to a v4 agreement must include discovery coverage
 for added and revised requirements. `updateTasks` may extend claim coverage but
@@ -121,8 +119,8 @@ an amendment of only `updateTasks: [{key, verify, paths?}]` (no intake;
 `change amend --template`). `reviseRequirements` replaces a requirement row in
 its same capability and operation and needs an open task; `removeRequirements`
 needs a `migration` and must not orphan a task. Before Build starts, revise the
-whole agreement with `change revise <change> <draft.json> --inspect`, then
-`--consume-draft` after `DONE`.
+whole agreement with `change revise <change> <draft.json>`, which likewise
+inspects first.
 
 After a successful start, read the compiled proposal, tasks, evidence, and any
 specs/design: detail and document language must survive compilation. Reconcile each confirmed

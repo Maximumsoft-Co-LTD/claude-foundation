@@ -100,13 +100,22 @@ function activeArchiveFixture(id, options = {}) {
       ? { valid: false, reason: "audit failed" } : { valid: true },
     cleanupAppliedSandbox: () => options.cleanup || { status: "removed" },
     archiveCheckpoint: options.archiveCheckpoint,
+    ...(options.measure ? { measure: options.measure } : {}),
     ...(options.missingArchivePath ? {
       archivedChangeRelativePath: () => null
     } : {}),
     landCheck: () => {
       landChecks += 1;
-      if (options.mode === "worktree" && landChecks === 2)
-        return { archived: true, state, hash: "workspace-hash" };
+      // Apply now reuses archive's own readiness instead of re-checking. The
+      // double stands in for an apply that finds nothing left to project:
+      // the first consult (archive) is not archived, the second (apply) is.
+      let consults = 0;
+      if (options.mode === "worktree" && landChecks === 1) return {
+        get archived() { consults += 1; return consults > 1; },
+        state, hash: "workspace-hash",
+        assurance: { status: "passed", workspaceHash: "workspace-hash",
+          acceptedBy: "explicit-land-authority" }
+      };
       return { archived: false, state, hash: "workspace-hash",
         assurance: options.assurance || {
           status: options.proofMissing ? "missing" : "passed",
@@ -117,6 +126,7 @@ function activeArchiveFixture(id, options = {}) {
   return {
     root,
     state,
+    landChecks: () => landChecks,
     run() {
       const priorPath = process.env.PATH;
       process.env.PATH = `${bin}:${priorPath}`;
@@ -178,10 +188,11 @@ test("a crash after archive cannot bypass deferred spec-sync verification", () =
     write(join(fixture.root, "openspec", "specs", "sample", "spec.md"),
       `# Sample\n\n## Requirements\n\n### Requirement: Stable output\nThe system SHALL return the old output.\n\n#### Scenario: Old output\n- **WHEN** it runs\n- **THEN** the old output is returned\n`);
     assert.throws(() => fixture.run(), /injected before spec verification/);
-    assert.equal(fixture.state.status, "archived");
+    assert.notEqual(fixture.state.status, "archived", "archived waits for verified specs");
     assert.ok(Array.isArray(fixture.state.specSyncInputs));
     assert.throws(() => fixture.run(), /archived specs do not match the change delta/);
     assert.ok(fixture.state.specSyncViolations.length > 0);
+    assert.notEqual(fixture.state.status, "archived");
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });
   }
@@ -426,6 +437,24 @@ test("a worktree archive reapplies before recording advisory telemetry", () => {
 
   assert.equal(fixture.state.status, "archived");
   assert.equal(fixture.state.land.telemetry.classification, "not-ingested");
+  // One readiness before apply (reused by apply itself) and one after apply,
+  // immediately before the destructive OpenSpec archive.
+  assert.equal(fixture.landChecks(), 2);
+  rmSync(fixture.root, { recursive: true, force: true });
+});
+
+test("archive records Land stage timings around the real work", () => {
+  const stages = [];
+  const fixture = activeArchiveFixture("land-stages", {
+    mode: "worktree",
+    measure: (stage, operation) => { stages.push(stage); return operation(); }
+  });
+
+  fixture.run();
+
+  assert.equal(fixture.state.status, "archived");
+  assert.deepEqual(stages,
+    ["land.check", "land.apply", "land.check", "land.archive", "land.cleanup"]);
   rmSync(fixture.root, { recursive: true, force: true });
 });
 

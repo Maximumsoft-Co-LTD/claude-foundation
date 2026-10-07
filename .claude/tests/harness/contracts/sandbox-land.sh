@@ -519,4 +519,40 @@ printf '%s\n' '{"version":1,"sandbox":{"setupTimeoutMs":"soon"}}' > foundation.j
 assert_cmd_fails_with "invalid setup timeout is rejected by policy" \
   "sandbox.setupTimeoutMs must be 1000..3600000" \
   node .claude/harness/foundation.mjs doctor
+printf '%s\n' '{"version":1,"sandbox":{"installDependencies":"no"}}' > foundation.json
+assert_cmd_fails_with "invalid dependency opt-out is rejected by policy" \
+  "sandbox.installDependencies must be boolean" \
+  node .claude/harness/foundation.mjs doctor
 rm foundation.json
+
+# With no setup command the harness runs the workspace lockfile's pinned
+# install itself and records it like a configured setup; the checkout's
+# installed tree is never borrowed. A stub package manager keeps it offline.
+mkdir -p "$TMP/install-bin"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" > yarn-ran.txt\n' > "$TMP/install-bin/yarn"
+chmod +x "$TMP/install-bin/yarn"
+printf '# yarn lockfile v1\n' > yarn.lock
+printf '{"name":"fixture","private":true}\n' > package.json
+git add yarn.lock package.json
+git commit -qm "pin yarn lockfile"
+node .claude/harness/foundation.mjs new 'Setup detected' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve setup-detected --impact low --coupling isolated >/dev/null
+setup_detected_output="$(PATH="$TMP/install-bin:$PATH" \
+  node .claude/harness/foundation.mjs sandbox create setup-detected)"
+assert_contains "detected install is reported with its lockfile" "$setup_detected_output" \
+  "setup: ok (yarn install --frozen-lockfile, detected from yarn.lock)"
+setup_detected_path="$(jq -r '.workspace.path' .foundation/runtime/setup-detected.json)"
+assert_eq "detected install ran inside the workspace" "install --frozen-lockfile" \
+  "$(cat "$setup_detected_path/yarn-ran.txt")"
+assert_eq "detected install is recorded as setup" "lockfile:ok" \
+  "$(jq -r '"\(.workspace.setup.source):\(.workspace.setup.status)"' \
+    .foundation/runtime/setup-detected.json)"
+printf '%s\n' '{"version":1,"sandbox":{"installDependencies":false}}' > foundation.json
+node .claude/harness/foundation.mjs new 'Setup opted out' --rapid >/dev/null
+node .claude/harness/foundation.mjs resolve setup-opted-out --impact low --coupling isolated >/dev/null
+setup_opted_output="$(PATH="$TMP/install-bin:$PATH" \
+  node .claude/harness/foundation.mjs sandbox create setup-opted-out)"
+assert_not_contains "an explicit opt-out runs no detected install" "$setup_opted_output" "setup:"
+rm foundation.json
+git rm -q yarn.lock package.json
+git commit -qm "drop yarn lockfile fixture"

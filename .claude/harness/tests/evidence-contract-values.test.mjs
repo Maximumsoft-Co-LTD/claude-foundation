@@ -9,7 +9,6 @@ import {
   normalizedAcceptanceValue,
   providerClaimIdsValue,
   providerClaimsOperation,
-  providerConfigOperation,
   providerRepositoryOperation,
   providerRepositoryValue,
   providerWorkspaceOperation,
@@ -153,13 +152,6 @@ test("execution fingerprint binds protocol, providers, and services with empty f
 
 test("contract operations bind factory dependencies and default arguments", () => {
   const testConfig = { adapter: "test-discovery", repository: "api" };
-  assert.equal(providerConfigOperation({
-    evidence: () => ({ providers: { test: testConfig } })
-  }, "change", "discovery"), testConfig);
-  assert.equal(providerConfigOperation({
-    evidence: () => ({})
-  }, "change", "missing"), null);
-
   const configLookup = () => ({ claims: ["claim-b"] });
   assert.deepEqual(providerClaimsOperation({
     claimsForProvider: () => [{ id: "claim-a" }, { id: "claim-b" }],

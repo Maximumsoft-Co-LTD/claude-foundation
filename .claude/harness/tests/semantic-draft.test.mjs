@@ -19,9 +19,13 @@ import {
   createChangeLifecycle, draftNeedsDesign, renderDraftProposal, semanticDraftKeepsDesign
 } from "../runtime/workflow/change-lifecycle.mjs";
 import {
-  appendRequirementToSpec, compileSemanticAmendment, semanticAmendmentTemplate,
-  taskContractOnlyAmendment, updateTaskClaimAnnotation, writeSemanticAmendment
+  amendTaskVerifyOperation, appendRequirementToSpec, compileSemanticAmendment,
+  semanticAmendmentTemplate, taskContractOnlyAmendment, taskVerifyAmendment,
+  updateTaskClaimAnnotation, verifyCannotFail, writeSemanticAmendment
 } from "../runtime/workflow/semantic-amendment.mjs";
+import { taskCheck } from "../runtime/workflow/session-lease.mjs";
+import { designBlueprintWarnings } from "../runtime/workflow/validation/design-blueprints.mjs";
+import { devDocumentShapeIssues } from "../runtime/workflow/validation/dev-document.mjs";
 
 const slugify = (value) => String(value).toLowerCase()
   .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -92,8 +96,14 @@ function namedScenarios(requirement) {
     then: requirement.outcome || "the result is observable" }] };
 }
 
+// A standard v4 change carries the dev document sections its work needs.
+const DEV_DOCUMENT = {
+  summary: "Payment retries record one payment and an audit result.",
+  failureMatrix: [{ failure: "Retry times out", userSees: "A retryable error", recovery: "Retry later" }]
+};
+
 function semanticDraftV4(overrides = {}) {
-  const value = semanticDraft({ version: 4, ...overrides });
+  const value = semanticDraft({ version: 4, ...DEV_DOCUMENT, ...overrides });
   value.requirements = value.requirements.map(namedScenarios);
   value.discovery = {
     coverage: [
@@ -126,6 +136,16 @@ test("semantic compiler creates stable cross-ledger links from semantic keys", (
   assert.equal(result.draft._derivedExecution, true);
   assert.ok(result.draft.execution.providers.test);
   assert.ok(result.draft.execution.providers.integration);
+});
+
+test("Thai integration concerns derive the same security capability", () => {
+  const base = semanticDraft();
+  const thai = normalizeSemanticDraft(semanticDraft({
+    integrations: [{ ...base.integrations[0], concerns: ["ยืนยันตัวตนของผู้ให้บริการ"] }]
+  }), slugify);
+  assert.deepEqual(thai.issues, []);
+  assert.ok(thai.draft.claims[0].capabilities.includes("security-static"));
+  assert.ok(thai.draft.securityTriggers.includes("external-integration-authentication"));
 });
 
 test("semantic compiler accepts discovery-complete v4 and retains v3 compatibility", () => {
@@ -374,6 +394,14 @@ test("semantic template is compact and delegates bookkeeping", () => {
   assert.equal(template.grounding, undefined);
   assert.ok(template.discovery.coverage.length);
   assert.ok(template.discovery.coverage.some((row) => row.status === "needs-investigation"));
+  // The template asks only for coverage its own content cannot imply, and
+  // writes failures once, as scenarios, instead of a parallel matrix.
+  const dimensions = template.discovery.coverage.map((row) => row.dimension);
+  for (const derived of ["affected-actor", "desired-behavior", "success-path", "failure-path",
+    "verification"]) assert.ok(!dimensions.includes(derived), derived);
+  assert.equal(template.failureMatrix, undefined);
+  assert.equal(template.summary, undefined);
+  assert.deepEqual(template.requirements[0].scenarios.map((row) => row.kind), ["success", "failure"]);
 });
 
 test("semantic materialization omits virtual-default files and writes typed extensions", (t) => {
@@ -662,7 +690,8 @@ test("a verify-only amendment corrects an unfinished task without requirement in
   assert.deepEqual(compiled.providers.test.command, ["sh", "-c", "(npm test) && (npm run lint)"]);
   assert.deepEqual(compiled.providers.lint.command, ["sh", "-c", "npm run lint"]);
   assert.deepEqual(compiled.taskContractChanges, [{
-    key: "impl", id: "T001", claims: ["a"], verify: "npm test", paths: ["src/a.js"]
+    key: "impl", id: "T001", claims: ["a"], verify: "npm test", priorVerify: "npm tset",
+    paths: ["src/a.js"]
   }]);
   assert.deepEqual(compiled.invalidatedClaims, ["a"]);
   assert.deepEqual(compiled.claims, verifyFixture([]).contract.claims);
@@ -697,6 +726,76 @@ test("a verify-only amendment cannot rewrite completed or proven work", () => {
     assert.match(compileSemanticAmendment({ ...open, amendment: { version: 1, updateTasks: [row] } })
       .issues.join("\n"), /requires a non-empty addRequirements/);
   }
+});
+
+// The agent corrects a wrong verify command directly: `change amend <change>
+// --task <key|id> --verify <command>`. Only the task's check changes; claims,
+// capabilities, and the approval stay, and the harness accepts the task only
+// when the new command passes in the workspace.
+test("a direct verify correction names a task by id and never weakens evidence", () => {
+  const fixture = verifyFixture([
+    "- [ ] **T001** Build A [key:impl] [claims:a] — verify: `npm tset`",
+    "- [x] **T002** Build B [key:lint] [claims:b] — verify: `npm run lint`"
+  ]);
+  const amendment = taskVerifyAmendment({ task: "t001", verify: " node --test a.test.js " });
+  assert.deepEqual(amendment, { version: 1,
+    reason: "Correct the verify command of task 't001'",
+    updateTasks: [{ key: "t001", verify: "node --test a.test.js" }] });
+  assert.equal(taskContractOnlyAmendment(amendment), true);
+  const compiled = compileSemanticAmendment({ ...fixture, amendment });
+  assert.deepEqual(compiled.issues, []);
+  assert.deepEqual(compiled.taskContractChanges, [{ key: "impl", id: "T001", claims: ["a"],
+    verify: "node --test a.test.js", priorVerify: "npm tset" }]);
+  // tasks.md stays the sole ledger, and the harness re-verification reads the
+  // corrected command from it before ticking the task.
+  assert.deepEqual(taskCheck(compiled.tasksContent, "T001"),
+    { taskId: "T001", command: "node --test a.test.js", repository: "root" });
+  assert.deepEqual(compiled.claims, fixture.contract.claims);
+  assert.deepEqual(Object.fromEntries(Object.entries(compiled.providers).map(([name, row]) =>
+    [name, [row.adapter, row.capability, row.claims]])),
+  Object.fromEntries(Object.entries(fixture.contract.providers).map(([name, row]) =>
+    [name, [row.adapter, row.capability, row.claims]])));
+  for (const noop of ["true", ":", "exit 0", "echo ok", "npm test || true", "(npm test || :)",
+    "npm test; true", "npm test; echo done", "npm test | true", "npm test || true # ignore",
+    "(npm test; :)", "npm test & exit 0"]) {
+    assert.equal(verifyCannotFail(noop), true, noop);
+    assert.match(compileSemanticAmendment({ ...fixture,
+      amendment: taskVerifyAmendment({ task: "impl", verify: noop }) }).issues.join("\n"),
+    /cannot be a command that always passes/, noop);
+  }
+  for (const check of ["npm test", "node --test", "true-check", "pytest -k echo",
+    "npm test && echo ok", "npm test && true", "npm test # true", "grep -q '#x' f; npm test"])
+    assert.equal(verifyCannotFail(check), false, check);
+  assert.match(compileSemanticAmendment({ ...fixture,
+    amendment: taskVerifyAmendment({ task: "T002", verify: "npm test" }) }).issues.join("\n"),
+  /cannot replace verify/);
+});
+
+test("a direct verify correction runs through change amend and leaves no staged file", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "verify-direct-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const calls = [];
+  let exitCleanup = null;
+  const result = amendTaskVerifyOperation({
+    root, pid: 7, now: () => 42, onExit: (cleanup) => { exitCleanup = cleanup; },
+    amendChange: (id, path, options) => {
+      calls.push({ id, path, options, amendment: JSON.parse(readFileSync(path, "utf8")) });
+      return "amended";
+    }
+  }, "demo", { task: "impl", verify: "npm test", reason: "Typo in the test script" });
+  assert.equal(result, "amended");
+  assert.deepEqual(calls, [{
+    id: "demo", path: join(root, ".foundation", "amendments", "demo-verify-42-7.json"),
+    options: { consumeAmendment: true },
+    amendment: { version: 1, reason: "Typo in the test script",
+      updateTasks: [{ key: "impl", verify: "npm test" }] }
+  }]);
+  assert.equal(existsSync(calls[0].path), false);
+  assert.equal(typeof exitCleanup, "function");
+  assert.throws(() => amendTaskVerifyOperation({
+    root, onExit: () => {}, amendChange: () => { throw new Error("refused"); }
+  }, "demo", { task: "impl", verify: "npm test" }), /refused/);
+  assert.deepEqual(readdirSync(join(root, ".foundation", "amendments")), []);
 });
 
 test("the amendment template leads with the verify-only form", () => {
@@ -849,10 +948,11 @@ test("change amend installs atomically and restores files and state on validatio
     const firstAmendment = JSON.parse(readFileSync(amendmentPath, "utf8"));
     const specPath = join(change, "specs", "payment-control", "spec.md");
     writeFileSync(join(root, "README.md"), "Changed amendment source.\n");
-    assert.throws(() => lifecycle.amendChange(id, "amendment.json"),
-      /current completed semantic intake/);
-    const refreshed = lifecycle.inspectAmendment(id, "amendment.json");
+    // A stale intake is inspected in the same call: the action is returned
+    // and nothing is amended until the author repairs the amendment.
+    const refreshed = lifecycle.amendChange(id, "amendment.json");
     assert.equal(refreshed.action, "EDIT");
+    assert.equal(state.contractRevision || 0, 0);
     // Changed sources still require the author to re-read and touch the draft.
     firstAmendment.discovery.sourceDigest = refreshed.intakeState.sourceDigest;
     writeFileSync(amendmentPath, `${JSON.stringify(firstAmendment, null, 2)}\n`);
@@ -942,6 +1042,111 @@ test("change amend installs atomically and restores files and state on validatio
   }
 });
 
+function amendVerifyOnlySameContract(t, lintFingerprint) {
+  // The real contract fingerprint covers claims and policy, not task verify
+  // commands, so a verify-only amendment leaves it unchanged.
+  const root = mkdtempSync(join(tmpdir(), "verify-amend-same-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const id = "verify-change";
+  const change = join(root, ".foundation", "sandboxes", id, "openspec", "changes", id);
+  mkdirSync(change, { recursive: true });
+  writeFileSync(join(change, "tasks.md"), [
+    "# Tasks", "",
+    "- [ ] **T001** Build A [key:impl] [claims:a] — verify: `npm tset`",
+    "- [x] **T002** Build B [key:style] [claims:b] — verify: `npm run lint`", ""
+  ].join("\n"));
+  writeFileSync(join(change, "evidence.yaml"), `${JSON.stringify({
+    version: 1,
+    claims: [
+      { id: "a", requirementKey: "a", scenario: "A runs", capabilities: ["test"] },
+      { id: "b", requirementKey: "b", scenario: "B runs", capabilities: ["lint"] }
+    ],
+    providers: {
+      test: { adapter: "test-discovery", capability: "test", claims: ["a"],
+        command: ["sh", "-c", "(npm tset) && (npm run lint)"] },
+      lint: { adapter: "command", capability: "lint", claims: ["b"],
+        command: ["sh", "-c", "npm run lint"] }
+    }
+  }, null, 2)}\n`);
+  let state = { id, status: "building", semanticDraftVersion: 4,
+    revision: 0, contractRevision: 0, executionRevision: 0 };
+  const stableHash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+  const contract = () => JSON.parse(readFileSync(join(change, "evidence.yaml"), "utf8"));
+  const contractFingerprint = () => stableHash(contract().claims);
+  const receipts = join(root, ".foundation", "receipts", id);
+  mkdirSync(receipts, { recursive: true });
+  const lintReceipt = `${JSON.stringify({ provider: "lint", status: "pass",
+    contractFingerprint: lintFingerprint || contractFingerprint() })}\n`;
+  writeFileSync(join(receipts, "lint.json"), lintReceipt);
+  writeFileSync(join(receipts, "test.json"), `${JSON.stringify({ provider: "test",
+    status: "fail", contractFingerprint: contractFingerprint() })}\n`);
+  const lifecycle = createChangeLifecycle({
+    root,
+    policy: () => ({ workflow: { grounding: "optional" } }),
+    securityTerms: [],
+    fail: (message) => { throw new Error(message); },
+    pathInside: (parent, candidate) => {
+      const rel = relative(parent, candidate);
+      return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+    },
+    readJson: (path) => JSON.parse(readFileSync(path, "utf8")),
+    writeJson: (path, value) => writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`),
+    slugify,
+    changePath: () => change,
+    activeChangePath: () => change,
+    loadRuntime: () => state,
+    saveRuntime: (value) => { state = structuredClone(value); },
+    validate: () => {},
+    now: () => "2026-10-01T00:00:00.000Z",
+    receiptPath: (_changeId, provider) => join(receipts, `${provider}.json`),
+    receiptValidity: (_changeId, provider) => {
+      const receipt = JSON.parse(readFileSync(join(receipts, `${provider}.json`), "utf8"));
+      return { provider, status: receipt.status,
+        validity: receipt.contractFingerprint === contractFingerprint() ? "valid" : "contract-stale" };
+    },
+    contractFingerprint,
+    requiredProviders: () => Object.keys(contract().providers),
+    providerConfig: (_changeId, provider) => contract().providers[provider],
+    claimsForProvider: (_changeId, provider) => contract().claims.filter((claim) =>
+      contract().providers[provider].claims.includes(claim.id)),
+    relevantHash: () => "workspace",
+    providerWorkspaceHash: () => "workspace",
+    providerInputIdentity: () => ({ mode: "declared", fingerprint: "inputs" }),
+    stableHash
+  });
+  writeFileSync(join(root, "amendment.json"), JSON.stringify({
+    version: 1, reason: "Correct the verify command",
+    updateTasks: [{ key: "impl", verify: "npm test" }]
+  }));
+  const priorLog = console.log;
+  console.log = () => {};
+  try {
+    lifecycle.amendChange(id, "amendment.json");
+  } finally {
+    console.log = priorLog;
+  }
+  assert.equal(state.contractRevision, 1);
+  assert.match(readFileSync(join(change, "tasks.md"), "utf8"), /verify: `npm test`$/m);
+  assert.equal(readFileSync(join(receipts, "lint.json"), "utf8"), lintReceipt,
+    "the receipt is left as it was");
+  return state.amendments.at(-1).invalidation.proofRecovery;
+}
+
+test("a verify-only amend keeps a passing receipt whose contract did not change", (t) => {
+  const { providers } = amendVerifyOnlySameContract(t);
+  assert.ok(providers.preserved.includes("lint"));
+});
+
+test("a verify-only amend reruns a receipt already stale for the unchanged contract", (t) => {
+  const plan = amendVerifyOnlySameContract(t, "an-older-contract");
+  assert.ok(!plan.providers.preserved.includes("lint"), "a stale receipt is not reported preserved");
+  assert.ok(plan.providers.rerun.includes("lint"));
+  assert.deepEqual(plan.decisions.find((row) => row.provider === "lint"),
+    { provider: "lint", action: "rerun", reason: "RECEIPT_STALE_FOR_UNCHANGED_CONTRACT" });
+  assert.match(plan.recovery.instruction,
+    new RegExp(`retain ${plan.providers.preserved.length} bound receipt\\(s\\) and rerun ${plan.providers.rerun.length}`));
+});
+
 test("a verify-only change amend reruns that task's evidence and keeps the rest", (t) => {
   const root = mkdtempSync(join(tmpdir(), "verify-amend-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -1029,7 +1234,8 @@ test("a verify-only change amend reruns that task's evidence and keeps the rest"
     assert.equal(state.pendingApprovalDelta, undefined);
     const [row] = state.amendments;
     assert.deepEqual(row.taskContractChanges,
-      [{ key: "impl", id: "T001", claims: ["a"], verify: "npm test" }]);
+      [{ key: "impl", id: "T001", claims: ["a"], verify: "npm test",
+        priorVerify: "npm tset" }]);
     assert.deepEqual(row.invalidation.affectedTasks, ["T001"]);
     assert.deepEqual(row.invalidation.proofRecovery.providers.rerun, ["test"]);
     assert.deepEqual(row.invalidation.proofRecovery.providers.preserved, ["lint"]);
@@ -1681,6 +1887,40 @@ test("a minimal draft infers version, keys, capability, names, and operation", (
   assert.deepEqual(draft.claims.map((claim) => claim.capabilities), [["test"], ["test"]]);
   // Expansion is deterministic, so recompiling yields the same IDs.
   assert.deepEqual(expandMinimalSemanticDraft(explicitCovers()), expanded);
+});
+
+// Dogfooding: "What changes" read "it returns 6" and a scenario was titled
+// "Sum([1" from a code-shaped trigger.
+test("a minimal draft names what changes and code-shaped scenarios after the requirement", () => {
+  const expanded = expandMinimalSemanticDraft({
+    intent: "Add a sum helper",
+    requirements: [{ description: "The library SHALL return the sum of a list of numbers",
+      scenarios: [{ when: "sum([1, 2, 3]) is called", then: "it returns 6" },
+        { when: "sum([]) is called", then: "it returns 0" }] }],
+    tasks: [{ outcome: "Add sum", verify: "npm test", paths: ["src/sum.js"] }]
+  });
+  assert.deepEqual(expanded.requirements[0].scenarios.map((row) => row.name), [
+    "Return the sum of a list of numbers", "Return the sum of a list of numbers (it returns 0)"
+  ]);
+  const { draft, issues } = normalizeSemanticDraft(expanded, slugify, { defaultRapidEvidence: true });
+  assert.deepEqual(issues, []);
+  assert.deepEqual(draft.changes, ["Return the sum of a list of numbers"]);
+  // An authored outcome that is not just the first example is used as written.
+  const outcome = structuredClone(expanded);
+  outcome.requirements[0].outcome = "Lists of numbers can be summed";
+  assert.deepEqual(normalizeSemanticDraft(outcome, slugify, { defaultRapidEvidence: true }).draft.changes,
+    ["Lists of numbers can be summed"]);
+});
+
+test("the template shows per-work-type section shapes that compile cleanly", () => {
+  const template = semanticDraftTemplate();
+  const examples = template.workTypeExamples;
+  assert.ok(examples.ui.uiStates.length && examples.ui.componentMap.length && examples.api.apiContracts.length);
+  const copied = { ...template, ...examples.ui, ...examples.api, ...examples.config,
+    tasks: [{ ...template.tasks[0], paths: ["src/**"] }] };
+  assert.deepEqual(designBlueprintWarnings(copied).filter((row) => /placeholder|missing/.test(row)), []);
+  assert.deepEqual(devDocumentShapeIssues(copied), []);
+  assert.match(template.userFlow.source, /A\["User acts"\]/);
 });
 
 test("minimal draft keys stay collision-safe and one task covers every requirement", () => {

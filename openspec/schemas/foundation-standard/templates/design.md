@@ -8,11 +8,12 @@
 
 <Only load-bearing brownfield facts, verified against code.>
 
-<!-- Draft `workType` selects typed blueprint sections rendered here: Work type,
+<!-- The draft's work type (declared or inferred from task paths) selects the
+dev document sections rendered here: User flow, Component map, Work type,
 Bugfix analysis, Refactor invariants, File map, API contracts, Data model,
 UI states, Config contract, Job contract, Failure matrix, and Test map. The
-compiler also adds Overview, Assumptions and open questions, and Task overview,
-and omits any section this change leaves empty. -->
+compiler also adds Overview, Assumptions and open questions, and the Plan,
+derives the file and test maps from tasks, and omits empty sections. -->
 
 ## Domain language
 

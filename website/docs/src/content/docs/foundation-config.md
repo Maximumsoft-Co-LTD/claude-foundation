@@ -240,7 +240,7 @@ Reviewer definitions live under `review.reviewers`. A configured reviewer must:
 
 - use adapter `claude-cli` or `codex-cli` with the matching provider family;
 - name an installed executable and model ID;
-- use `reasoningEffort: "high"`;
+- use `reasoningEffort: "high"` (the low-risk fast tier runs at medium);
 - use `sandbox: "read-only"` and `ephemeral: true`.
 
 Do not put credentials, tokens, or login commands in `foundation.json`. Install
@@ -249,8 +249,11 @@ and authenticate the selected CLI through its normal user-level setup, then use
 
 ## `sandbox`: prepare every new Build workspace
 
-A Git worktree contains tracked files but not `node_modules`. If evidence needs
-dependencies, add a deterministic setup command:
+A Git worktree contains tracked files but not `node_modules`. Without a setup
+command the harness installs dependencies itself from the workspace lockfile
+(`npm ci`, or the pnpm, yarn, or bun frozen-lockfile install); set
+`"installDependencies": false` to opt out. If setup needs anything else, add a
+deterministic setup command:
 
 ```json
 {
@@ -262,9 +265,10 @@ dependencies, add a deterministic setup command:
 ```
 
 `setupCommand` must be a non-empty string. `setupTimeoutMs` must be an integer
-from `1000` to `3600000`. The command runs once in every new workspace; a
-failure keeps the workspace and reports recovery instead of continuing with a
-half-prepared sandbox.
+from `1000` to `3600000`; `installDependencies` must be boolean. The command
+runs once in every new workspace; a failure keeps the workspace, is retried by
+the harness, and is then handed to the agent with its command, directory, and
+log instead of continuing with a half-prepared sandbox.
 
 For a multi-repository project, keep the root setup here and place repository-
 specific setup commands in `openspec/repositories.yaml`. Repository topology,

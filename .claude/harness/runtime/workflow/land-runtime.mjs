@@ -1,9 +1,8 @@
 import { existsSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
-import { spawnSync } from "node:child_process";
 import { validateSignedCiEnvelope } from "../evidence/signed-ci.mjs";
 import { validityRecovery } from "../evidence/receipt-validity.mjs";
-import { targetHeadMovedDecision } from "./apply-recovery.mjs";
+import { MANUAL_APPLY_STATUS, targetHeadMovedDecision } from "./apply-recovery.mjs";
 import {
   compileLandPreparation, landPreparationMatches
 } from "../core/graph-execution.mjs";
@@ -12,6 +11,7 @@ import {
 } from "../core/authority-policy.mjs";
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 import { compositeRepositorySelection } from "../core/repository-binding.mjs";
+import { probeOpenSpecVersion } from "../core/tool-identity.mjs";
 
 export { riskRequiresCi } from "../core/authority-policy.mjs";
 
@@ -137,6 +137,15 @@ export function legacyRepositoryLandTransaction(state) {
         "awaiting-root-pointer"].includes(runtime?.land?.status)));
 }
 
+// Only a change the retired commit-based flow already took into its saga may
+// keep recording child commits. A current change delivers uncommitted
+// workspaces; letting `land record` bind a commit would switch it into the
+// legacy saga, and Land never commits.
+export function legacyLandSagaStarted(state) {
+  return legacyRepositoryLandTransaction(state) ||
+    state?.land?.strategy === "ordered-resumable-saga";
+}
+
 // Layered policy rather than a pinned string: a wrong major cannot sync specs,
 // a lower minor predates behavior the archive step depends on, a higher minor
 // is untested but not known-broken, and patch releases inside the tested minor
@@ -169,7 +178,8 @@ export function openSpecVersionStatus(stdout) {
 }
 
 export function openSpecCliStatus(root) {
-  const probe = spawnSync("openspec", ["--version"], { cwd: root, encoding: "utf8" });
+  // Reused per process while the resolved CLI is byte-identical.
+  const probe = probeOpenSpecVersion({ cwd: root });
   if (probe.error?.code === "ENOENT")
     return {
       level: "error", version: null,
@@ -488,11 +498,29 @@ export function createLandRuntime({
   fail
 }) {
   function assertLandTargetReady(id, state) {
+    // Kept target content must reach the sandbox and be proven again. That is
+    // the harness's own sync, never a command handed to the agent.
     if (state.workspace?.recovery?.requiresSync)
-      fail(`the target was preserved during manual recovery; run 'claude-foundation sandbox sync ${
-        id}' before proving and landing again`);
+      blockWithDecision(id, "recovery-sync-required", {
+        kind: "recovery-sync-required",
+        summary: "The target was preserved during manual recovery; the sandbox is synchronized " +
+          "onto it and proved again before Land continues.",
+        automaticRecovery: "sync",
+        options: [
+          { id: "sync", outcome: "Synchronize the sandbox onto the preserved target and prove it again." },
+          { id: "pause", outcome: "Leave both workspaces as they are." }
+        ],
+        recommended: "sync"
+      });
     const pending = pendingApplyTransactions(id);
-    if (pending.length)
+    if (pending.length) {
+      // Both automatic resolutions are non-destructive: settle only finishes
+      // or reverses bytes Land itself wrote (divergent content turns the
+      // journal into a manual recovery instead), and keep-current overwrites
+      // nothing. `advance --through archived` applies them itself; restoring
+      // a backup over divergent content stays the user's explicit choice.
+      const manual = pending.some((transaction) => MANUAL_APPLY_STATUS.includes(transaction.status));
+      const resolution = manual ? "keep-current" : "settle";
       blockWithDecision(id, "apply-pending-recovery", {
         kind: "apply-pending-recovery",
         summary: `An earlier apply for '${id}' is unresolved. Land check changes nothing while it is pending.`,
@@ -504,13 +532,24 @@ export function createLandRuntime({
           create: transaction.counts.create,
           delete: transaction.counts.delete
         })),
-        options: [
-          { id: "inspect", outcome: "Inspect the transaction journal and the working tree before recovering." },
-          { id: "recover", outcome: `Settle it with 'claude-foundation land recover ${id} --decision-ref <ref>'.` },
+        divergentPaths: [...new Set(pending.flatMap((transaction) =>
+          transaction.divergentPaths || []))].slice(0, 50),
+        options: manual ? [
+          { id: "keep-current", outcome: "Keep the current target files (nothing is overwritten), " +
+            "then synchronize the sandbox onto them and prove again before Land continues." },
+          { id: "restore-backup", outcome: "Replace the divergent target files with the recorded " +
+            `pre-apply backup: 'claude-foundation advance ${id} --through archived --recover-apply ` +
+            "restore-backup --decision-ref <user-decision>'." },
+          { id: "pause", outcome: "Leave the transaction pending and make no change." }
+        ] : [
+          { id: "settle", outcome: "Finish or reverse the interrupted apply from its journal, touching " +
+            "only bytes Land itself wrote, then continue Land." },
           { id: "pause", outcome: "Leave the transaction pending and make no change." }
         ],
-        recommended: "inspect"
+        recommended: resolution,
+        automaticRecovery: resolution
       });
+    }
     assertNoDroppedScenarios(id);
     assertOpenSpecCli(root, fail);
     if (state.workspace?.mode === "worktree" && !state.workspace.applied &&
@@ -721,7 +760,8 @@ export function createLandRuntime({
   function recoverLand(id, flags = {}) {
     const decisionRef = String(flags["decision-ref"] || "").trim();
     if (!decisionRef)
-      fail("land recover requires --decision-ref <host-user-decision>; ask the user to authorize settling the interrupted apply before running it");
+      fail("settling an interrupted apply requires --decision-ref <user-decision>; ask the user, then run " +
+        `'claude-foundation advance ${id} --through archived --recover-apply settle --decision-ref <user-decision>'`);
     const pending = pendingApplyTransactions(id);
     if (!pending.length) {
       console.log(`NOTHING TO RECOVER ${id}\n  no unresolved apply transaction`);
@@ -732,7 +772,9 @@ export function createLandRuntime({
         .includes(transaction.status));
     const resolution = String(flags.resolution || "").trim();
     if (manual && !["keep-current", "restore-backup"].includes(resolution))
-      fail("land recover requires --resolution keep-current|restore-backup for a manual recovery");
+      fail("this interrupted apply needs a manual resolution: ask the user, then run " +
+        `'claude-foundation advance ${id} --through archived --recover-apply keep-current|restore-backup ` +
+        "--decision-ref <user-decision>'");
     for (const transaction of pending)
       console.log(`RECOVERING ${transaction.transactionId}\n  status: ${
         transaction.status}\n  update: ${transaction.counts.update}; create: ${
@@ -740,7 +782,7 @@ export function createLandRuntime({
     recoverPendingApply(id, loadRuntime(id), { resolution, decisionRef });
     const remaining = pendingApplyTransactions(id);
     console.log(`RECOVERED ${id}\n  settled: ${
-      pending.length - remaining.length}/${pending.length}\n  next: /land ${id}`);
+      pending.length - remaining.length}/${pending.length}\n  next: claude-foundation advance ${id} --through archived`);
   }
 
   function orderedRepositories(id, state = loadRuntime(id)) {
@@ -966,6 +1008,10 @@ export function createLandRuntime({
       fail("land record requires --decision-ref <host-user-decision>; ask the user to authorize binding this child commit before recording it");
     landCheck(id);
     const state = loadRuntime(id);
+    if (!legacyLandSagaStarted(state))
+      fail(`land record applies only to a change already in the legacy commit-based Land saga; ` +
+        `'${id}' delivers uncommitted workspaces and Land never commits. ` +
+        `Resume with 'claude-foundation advance ${id} --through archived'.`);
     const repository = repositoryById(id, repositoryId, state);
     if (repository.id === "root" || repository.mode !== "write")
       fail(`repository '${repositoryId}' is not a writable child repository`);

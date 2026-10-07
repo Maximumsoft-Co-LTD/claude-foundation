@@ -1,9 +1,29 @@
 # Phase mutation guard
 
 `phase-mutation-guard.mjs` is a `PreToolUse` policy layer for file mutations and
-obviously mutating shell commands. Its default `auto` mode blocks whenever a
-fresh Foundation phase is active and stays out of adoption-only sessions where
-no lifecycle context exists.
+obviously mutating shell commands. Its default `auto` mode never refuses: when a
+fresh Foundation phase is active it redirects, routes, or explains, and it stays
+out of adoption-only sessions where no lifecycle context exists.
+
+What the default does with a call that leaves the active phase's rules:
+
+- A product edit aimed at the main checkout while an isolated workspace exists
+  is redirected to the same path in that workspace (`updatedInput`).
+- `land advance`, `archive`, or `sandbox apply` outside `/land` runs as
+  `claude-foundation advance <change> --through archived`, which owns the grant,
+  readiness, and recovery.
+- `deliver advance` outside `/deliver` is replaced by the question the agent
+  must ask the user, because delivery commits, pushes, and opens a pull request.
+  When the user's latest prompt directly asks to open a PR or deliver ("เปิด PR
+  ให้เลย", "open a PR"), or answers yes to that question, it runs as `/deliver`.
+- `git commit` or `git push` during Build or Prove from outside the isolated
+  workspace is replaced by the question the agent must ask, unless the user's
+  latest prompt asked for it (a push request covers its commit) or answers yes
+  to that question. `prompt-authority.mjs` holds these word rules.
+- Anything else runs, with `additionalContext` naming the rule and the route.
+
+`FOUNDATION_GUARDRAIL_MODE=block` restores the refusals described below for a
+host that wants them; `audit` records without speaking.
 
 What `.claude/settings.json` wires is `phase-mutation-guard.sh`, a prefilter that
 answers the "no phase to guard" case with shell builtins alone and `exec`s the
@@ -36,7 +56,8 @@ The host may also supply:
 - `FOUNDATION_WORKSPACE_ROOT=/absolute/build/workspace` during Build
 - `FOUNDATION_ALLOWED_PATHS_JSON='["/absolute/extra/path"]'` for explicitly
   declared Build paths
-- `FOUNDATION_GUARDRAIL_MODE=auto|audit|block|off` (`auto` is the default)
+- `FOUNDATION_GUARDRAIL_MODE=auto|audit|block|off` (`auto` is the default and
+  never refuses; `block` is the explicit strict mode)
 - `FOUNDATION_SHELL_GUARD=block` to block refused shell mutations during
   Investigate, Change, Build, and Prove
 
@@ -69,9 +90,12 @@ When no phase can be established, `audit` mode records nothing — there is no
 policy to check against, and a row per mutation is noise. `block` mode still
 refuses, so a host that asked for enforcement gets it.
 
-Audit records contain policy metadata, not command text or file paths, and are
-appended to `.foundation/logs/guardrail-audit.jsonl`. Select explicit `audit`
-only for a controlled rollout; `auto` is the normal fail-closed lifecycle mode.
+Audit records contain policy metadata and are appended to
+`.foundation/logs/guardrail-audit.jsonl`, with outcomes `guided`, `redirected`,
+`routed`, `shell-audit`, `audit-only`, or (strict mode) `blocked`. Select explicit
+`audit` only for a controlled rollout; `auto` is the normal guiding mode. The
+rest of this page describes the policy itself, which strict mode enforces and
+`auto` explains.
 
 The Bash inspection is a conservative command-word screen, not a shell sandbox.
 During Build, an obviously mutating Bash command must begin with `cd`/`pushd`

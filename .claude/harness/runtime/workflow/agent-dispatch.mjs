@@ -37,9 +37,11 @@ export function createAgentDispatchRuntime({
   serializedJson = (value, pretty) => JSON.stringify(value, null, pretty ? 2 : 0),
   fail
 }) {
-  function dispatchValue(id, options = {}) {
+  // `plannedValue` lets one coordinator read reuse the plan it compiled for
+  // this exact read instead of planning the same graph twice.
+  function dispatchValue(id, options = {}, plannedValue = null) {
     if (!id) fail("agents dispatch requires <change>");
-    const plan = agentPlanValue(id, options);
+    const plan = plannedValue || agentPlanValue(id, options);
     const active = activeChangeLeases(id)
       .sort((left, right) => String(left.taskId).localeCompare(String(right.taskId)));
     const base = {

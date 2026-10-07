@@ -107,3 +107,20 @@ test("recorded phase never borrows a sibling session's active change", () => {
     readText: (path) => rows[path]
   })), "");
 });
+
+// When the host's session never reached the CLI the row carries no session.
+// That row belongs to no other session, so it governs; without the fallback a
+// /dev session never saw its own phase and every edit was refused.
+test("recorded phase falls back to a row recorded without a session identity", () => {
+  const rows = {
+    "/repo/.foundation/logs/old/phase-context.jsonl":
+      '{"timestamp":"2026-08-27T01:30:00Z","phase":"prove","sessionId":"sibling"}\n',
+    "/repo/.foundation/logs/new/phase-context.jsonl":
+      '{"timestamp":"2026-08-27T01:00:00Z","phase":"build","sessionId":null}\n'
+  };
+  const selected = recordedPhaseContext(context({
+    sessionId: "current", readText: (path) => rows[path]
+  }));
+  assert.equal(selected.changeId, "new");
+  assert.equal(selected.phase, "build");
+});

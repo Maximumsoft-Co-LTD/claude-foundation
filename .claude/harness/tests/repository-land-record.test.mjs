@@ -113,6 +113,17 @@ try {
   assert.throws(() => runtime.recordRepositoryLand(id, { repo: "child", commit: "candidate" }),
     /requires --decision-ref/);
 
+  // A current multi-repository change delivers uncommitted workspaces. Binding
+  // a child commit would switch it into the legacy commit-based saga, so the
+  // record is refused before anything is written and routes to `advance`.
+  const savesBefore = saves.length;
+  assert.throws(() => runtime.recordRepositoryLand(id, flags()),
+    /legacy commit-based Land saga.*advance land-child --through archived/s);
+  assert.equal(state.repositories.child.land, undefined);
+  assert.equal(saves.length, savesBefore);
+  // A transaction the retired flow already started keeps its saga.
+  state.land = { strategy: "ordered-resumable-saga", status: "children-inspected" };
+
   repository = { ...repository, id: "root" };
   assert.throws(() => runtime.recordRepositoryLand(id, flags()), /not a writable child/);
   repository = { ...repository, id: "child", mode: "read" };

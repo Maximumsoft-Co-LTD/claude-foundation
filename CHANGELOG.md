@@ -7,6 +7,187 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Thai intents now trigger the same review, security, and migration routing as
+  English. Thai terms such as ล็อกอิน, เข้าสู่ระบบ, รหัสผ่าน, สิทธิ์,
+  โทเคนเข้าถึง, ชำระเงิน, จ่ายเงิน, ย้ายข้อมูล, ลบข้อมูล, ข้อมูลส่วนตัว, and
+  ความปลอดภัย, plus common transliterations, match as substrings because Thai
+  has no word spaces. Bare โทเคน stays out, like bare "token", because it also
+  names model token budgets.
+
+- `install.sh` appends a narrow `permissions.allow` list to the project's
+  `.claude/settings.json` so the harness CLI and Build-workspace edits no
+  longer prompt on every change: `Bash(claude-foundation *)`,
+  `Bash(.foundation/bin/claude-foundation *)`,
+  `Bash(node .claude/harness/foundation.mjs *)`,
+  `Edit(/.foundation/sandboxes/**)`, and
+  `Edit(/.foundation/repository-sandboxes/**)`. The merge adds only missing
+  rules after the user's own, keeps their order (it no longer sorts the list),
+  and is idempotent. `--no-permission-allowlist` skips it; the Cursor,
+  OpenCode, and Codex adapters pass the flag through.
+- `change start`, `change revise`, and `change amend` accept
+  `--approve-spec --decision-ref <ref> [--through build|proven|archived]`, so
+  the call that applies the user's approving answer also records the approval
+  (and may continue); a call that stops at an intake action approves nothing.
+- Change inspection reports, in the first `EDIT` batch, a task `verify` that
+  names a test file which neither exists nor falls inside any task's `paths`
+  (also for an amendment's added or updated tasks), and an `apiContracts`
+  error listed without a status or code. `AGREED` and `REVISED` list the
+  design's open questions with the approval packet.
+
+### Changed
+
+- Pull requests run only `workflow-tests` (`minimum-runtime` and
+  `deterministic`). The `code-quality` and `mutation-nightly` workflows are
+  removed: their coverage, CRAP, and mutation reports ran out of memory on
+  every run and nothing consumed them. The `npm run quality:*` commands still
+  produce the full report on demand, and `release.yml` still requires fresh
+  suite and mutation evidence before publishing.
+- Removed unused repository files: the v2 HTML release notes, the
+  unreferenced `examples/solar-system`, and this repository's own legacy
+  `.workflow/` index. Consumer `.workflow/` migration is unchanged. Unrun test
+  wrappers (`run-host-adapter`, `run-review-assurance`, `run-root-source-validation`,
+  `run-feedback-diagnostics`), the ledger test for the removed `ledger-prune.sh`,
+  and the retired `.workflow` e2e runner with its judge and prompts are removed.
+- Investigate acknowledges discovered sources automatically and still hashes
+  them for freshness; the `inspect-sources` round is gone. Facts and options
+  must cite an inventoried source, and the report lists discoveries no fact
+  cites. Open decisions derive `conclusion.status: needs-user-decision`, and a
+  settled record with `changeIntent` concludes in one run; explicit statuses
+  stay accepted. Repeated no-progress asks the user only when the repeated
+  action was a user question; sandbox or discovery failures go to the harness
+  and other stalls to the agent.
+- Bare `change revise <change> <draft.json>` and `change amend <change>
+  <amendment.json>` inspect in the same call: a missing or stale intake is
+  re-inspected, `DONE` applies the edit, and any other action is printed and
+  changes nothing. A separate `--inspect` call is no longer needed; every
+  existing form keeps working.
+- Land is always allowed for stacked changes. A change whose worktree
+  branched before another change landed no longer needs that landed,
+  uncommitted diff committed first. Land treats the earlier landed bytes, read
+  from that change's verified apply journal, as part of the target. When this
+  change touched the same file, Land stops with `landed-change-sync`, an
+  automatic sync. The sync replays the landed edit into the sandbox copy with
+  a 3-way `git merge-file`, proves again what that invalidated, and applies.
+  Same-line edits go to the agent as a sync conflict. The agent merges them in
+  the sandbox copy, and that edit, bound to the exact target and sandbox
+  bytes, is the resolution. Earlier landed bytes are never offered for
+  `--restore-target` or restored by it. They no longer appear as "changed
+  outside the sandbox" notices or stops. Each change archives in Land order.
+- Review follow-up delivery updates the existing pull request. A follow-up
+  change that cites a PR another change delivered (its URL in the proposal or
+  design) makes `deliver advance` build on that PR's current head, push a
+  fast-forward to the same branch, and return `reached: pr-updated`. A closed
+  or merged PR, a moved branch or base, or more than one cited delivery opens
+  a new PR with a `followUp.notice` saying why.
+- A natural request to open a PR ("เปิด PR ให้เลย", "open a PR"), or a yes to
+  the guard's delivery question, now runs `deliver advance` as `/deliver`
+  instead of turning it into a question.
+
+- One authority rule for the user's chat words (`AGENT.md`, WORKFLOW.md
+  "Authority from the user's words"). A reply such as "ลุยเลย", "ทำเลย",
+  "ทำไปเลย", or "go ahead" to the spec or amendment question is approval and is
+  recorded without asking again; "ทำจนจบ" up front also authorizes Land.
+  Urgency alone ("ด่วน", "รีบ demo") and negated requests never authorize.
+  Commit and push happen only through `/deliver` or the user's direct
+  instruction, which removes the contradiction between `AGENT.md` and the
+  git-workflow skill; Land never commits.
+- During Build or Prove, `git commit` or `git push` from the main checkout no
+  longer runs as an audited shell mutation. Unless the user's latest prompt
+  asked for it, the phase guard replaces it with a question for the user
+  (block mode refuses it); a yes reply lets the same command run. Commits
+  inside the isolated workspace are unchanged.
+- `advance` asks the user on the first observation of a cause only the user can
+  clear (missing or expired credential or token, VPN/proxy/network denial, a
+  reviewer CLI that is not logged in, a full disk, private registry
+  authentication) with the fix and the resume command, instead of letting the
+  agent resume unchanged three or four times.
+- A harness-executed provider that failed and then passes on unchanged content
+  is recorded as a flake (`status: fail`, `flake` evidence) and needs a repair;
+  resuming unchanged no longer turns it into proof.
+
+- The recovery ladder asks after three unchanged rounds (agent repair,
+  `TRY_ALTERNATE_APPROACH`, then a decision with `repetition` evidence). A
+  Build verify that keeps failing with identical output now counts, and budget
+  windows that reopen three times without delivery progress return a
+  `budget-no-progress` decision; changed output or content resets the count.
+- No `advance` route hands the agent a lifecycle primitive: `proof run`,
+  `proof advance`, `land check`, `land advance`, `sandbox sync|create`, and
+  `evidence init` routes are rewritten to `advance <change> --through <target>`.
+  An indeterminate provider run and an amended-agreement conflict are answered
+  through `advance --decision` instead of `proof advance --retry-indeterminate`
+  and `sandbox sync --resolve`.
+- OpenSpec is required only from Prove onward: a missing CLI no longer stops or
+  installs during Build; Prove prepares it with the existing handoff.
+- A grounding readSet that cites an untracked `openspec/investigations/` record
+  no longer blocks sandbox creation, and no portability refusal asks for a
+  commit.
+
+- Change produces a dev document that Build executes and a reviewer reads.
+  Every proposal shows a folder tree of touched paths. A rapid proposal adds
+  the compact form: summary, user flow, failure matrix, and a Plan table with
+  files, verify command, dependencies, and requirements. A standard v4 change
+  always writes `design.md`, adds a user flow and component map, derives the
+  file map and test map from tasks, and replaces the task overview with the
+  Plan. The harness infers `workType` from task paths. A standard v4 draft
+  missing a section its work type needs (`summary`, `failureMatrix`,
+  `userFlow`, `uiStates`, `componentMap`, `apiContracts`, `dataModel`, and so
+  on) gets a draft issue the agent repairs.
+- Dev document fixes from dogfooding. Task paths absent from the main checkout
+  show `+` in the folder tree (now rooted at `.`) and `add` in the derived
+  file map. Descriptive sections (`fileMap`, `failureMatrix`, `testMap`,
+  `componentMap`, `userFlow`, `configContract`, `refactor`) no longer move a
+  small low-risk draft to standard; the rapid proposal renders them, with
+  User flow after What changes. What changes comes from the requirement
+  outcome or statement, not the first scenario's `then`, and a code-shaped
+  trigger names its scenario after the requirement. The derived test map
+  lists scenario names and a Check column. Optional columns and API lines
+  (Covers, Idempotency, Compatibility) render only when supplied. `design.md`
+  states an inferred work type and reads flow, components, contracts,
+  failures, file map, test map, then plan; repair messages say to declare
+  `workType` to override. Inference treats `.tsx`/`.jsx` under routes as UI,
+  matches `config.*` files, and treats test-, docs-, or manifest-only
+  changes as light work. The template adds `workTypeExamples` and quoted
+  flowchart labels.
+- Mermaid flowchart node labels with an unquoted `(`, `)`, or `"` are a draft
+  shape issue that names the quoted fix (`A["mean(values)"]`).
+- A consumer's source inventory skips install-managed paths
+  (`.claude/harness`, skills, rules, hooks, `WORKFLOW.md`, ...) unless a
+  draft names one as a source.
+- Low-risk fast-tier review runs at medium reasoning effort; the configured
+  model and any escalation keep high effort.
+- Change derives discovery coverage from the draft. A required dimension with
+  no authored row becomes `covered` when draft content states it:
+  `currentState`, `userStories`, requirements, scenario `kind`
+  (`success`, `failure`, and the new `boundary`), `compatibility`, `nonGoals`,
+  tasks with `verify` and evidence, `failureMatrix`, `apiContracts`,
+  `dataModel`, `uiStates`, `jobContract`, and documented `integrations`. The
+  proposal appendix marks these rows `covered (derived)` and names the source
+  fields. Without backing content the dimension stays missing, an authored row
+  always wins, and `needs-user-decision` rows are still asked. The template no
+  longer asks for derivable rows. Draft v3 is unchanged.
+- Each fact is written once. Without an authored `failureMatrix`, scenarios of
+  `kind: "failure"` become its rows (an optional scenario `recovery` fills the
+  recovery column), so the draft no longer has to repeat them. `why` now
+  satisfies the dev document's lead; `summary` stays optional, and the template
+  asks only for `why`.
+
+### Fixed
+
+- Prove no longer passes Build tasks without verification under the legacy
+  review circuit. The circuit is the default for a `foundation.json` without a
+  `workflow` block, and it used to mark every task node `legacy-policy`. Runtime
+  state written before graph execution also used to pass as `legacy-upgrade`.
+  Every task node now needs current task execution authority. A ticked task
+  without that authority stops Prove and routes to `advance`, which re-verifies
+  it by running its check. Review circuit defaults are unchanged.
+- `land record` no longer switches a current multi-repository change into the
+  legacy commit-based Land saga. It now accepts a child commit only for a
+  transaction that the retired flow already started. For any other change it
+  refuses and routes to `advance <change> --through archived`, because Land
+  never commits.
+
 ## [3.5.30] - 2026-10-01
 
 ### Changed
