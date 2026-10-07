@@ -496,6 +496,7 @@ for index in $alone; do sh "$0" --suite "$index" "$WORK"; done
 
 # Replayed in table order: a parallel run has to read like a serial one.
 failed=0
+failed_labels=""
 for index in $selected; do
   label="$(label_of "$(nth "$index")")"
   duration="$(cat "$WORK/$index.duration" 2>/dev/null || echo '?')"
@@ -504,6 +505,8 @@ for index in $selected; do
   if [ "$(cat "$WORK/$index.status" 2>/dev/null || echo 1)" -eq 0 ]
   then printf '✓ %s\n\n' "$label"
   else printf '✗ %s\n\n' "$label" >&2; failed=1
+    failed_labels="${failed_labels}  ✗ ${label}
+"
   fi
 done
 
@@ -517,5 +520,7 @@ if [ "$failed" -eq 0 ]; then
   echo "foundation tests: ALL SUITES PASS ($SELECTED_TOTAL suites, ${JOBS}-way${selection_mode:+, $selection_mode})"
   exit 0
 fi
+# Repeat the failures last: CI log viewers often show only the tail.
+[ -z "$failed_labels" ] || printf 'failed suites:\n%s' "$failed_labels" >&2
 echo "foundation tests: SOME SUITES FAILED" >&2
 exit 1
