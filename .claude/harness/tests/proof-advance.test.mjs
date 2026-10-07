@@ -140,6 +140,9 @@ function fixture(options = {}) {
       return request;
     },
     markBlocked: () => { blocked += 1; },
+    ...(options.testDiscrimination ? {
+      testDiscrimination: (_id, hash) => options.testDiscrimination(hash)
+    } : {}),
     die: (message) => { throw new Error(message); }
   });
   return {
@@ -1193,6 +1196,49 @@ function realClosure(criticalCases) {
   assert.equal(threeWaves.status, "NEEDS_USER_DECISION", JSON.stringify(threeWaves));
   assert.equal(threeWaves.decision.kind, "review-route-exhausted");
   assert.match(threeWaves.decision.summary, /All 3 AI review wave\(s\).*R3/);
+  process.exitCode = priorExitCode;
+}
+
+{
+  // Behavior-changing work whose tests pass on the base source is an agent
+  // repair before the proof is finalized; changed tests are progress, an
+  // unchanged rerun reaches the existing no-progress boundary, and tests that
+  // fail on base let the same gate finalize.
+  const priorExitCode = process.exitCode;
+  let verdict = "fail";
+  const calls = [];
+  const flow = fixture({
+    phase: "ready", executionNeeded: false,
+    testDiscrimination: (hash) => {
+      calls.push(hash);
+      return verdict === "fail" ? {
+        status: "fail",
+        findings: [{
+          id: "test-discrimination:root", provider: "test", repositoryId: "root",
+          classification: "product", severity: "error", rootCause: "tests-pass-on-base",
+          message: "test file(s) test/new.test.js in repository 'root' pass on the original code",
+          paths: ["test/new.test.js"]
+        }]
+      } : { status: "pass", findings: [] };
+    }
+  });
+  const repair = await quiet(() => flow.runtime.proofAdvance("change-a"));
+  assert.equal(repair.status, "ACTION_REQUIRED", JSON.stringify(repair));
+  assert.equal(repair.route, "AUTO_REPAIR");
+  assert.equal(repair.stage, "tests-not-discriminating");
+  assert.match(repair.next[0].reason, /pass on the original code/);
+  assert.deepEqual(repair.repairPlan.tasks[0].paths, ["test/new.test.js"]);
+  assert.equal(flow.counters().finalizations, 0);
+  const unchanged = await quiet(() => flow.runtime.proofAdvance("change-a"));
+  assert.equal(unchanged.status, "NEEDS_USER_DECISION");
+  assert.equal(unchanged.route, "NO_PROGRESS_DECISION");
+  flow.moveWorkspace("workspace-b");
+  flow.setPhase("ready");
+  verdict = "pass";
+  const proven = await quiet(() => flow.runtime.proofAdvance("change-a"));
+  assert.equal(proven.status, "PASS", JSON.stringify(proven));
+  assert.deepEqual(calls, ["workspace-a", "workspace-a", "workspace-b"]);
+  assert.equal(flow.counters().finalizations, 1);
   process.exitCode = priorExitCode;
 }
 

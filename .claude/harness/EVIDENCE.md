@@ -740,3 +740,54 @@ proof again. Only a prior `fail` counts; an `error` never produced a product
 verdict, and manual receipts are unaffected. An unchanged flake that keeps
 recurring reaches the user through the no-progress ladder in
 [WORKFLOW.md § Recovery and user decisions](../../WORKFLOW.md#recovery-and-user-decisions).
+
+## Tests that fail without the change
+
+A passing suite proves a behavior change only when some test can tell the
+change from the original code. For behavior-changing work — any work type other
+than `refactor`, `docs`, `chore`, `config`, or `test`, as stated in the
+`## Work type` section of `design.md` or the rapid `proposal.md`, otherwise
+inferred from the tasks' `[paths:]` — `advance --through proven|archived`
+checks this after executable evidence passes and before the proof is
+finalized. Refactor, docs, chore, and config work keeps tests that pass both
+before and after the change, so the rule never applies to it.
+
+For each writable repository whose changed surface includes product code
+(paths that are not tests, docs, or package manifests), the harness takes the
+repository's required `test` provider (`command` or `test-discovery`, no
+service or readiness probe) and runs its command once against the base source:
+
+- the base is `git archive <baseHead>` extracted into a private temporary
+  directory, never the sandbox or the user's target, and no Git worktree is
+  added;
+- every sandbox path that differs from base is laid over it **except** the
+  change's product code, so the change's new or modified tests, fixtures,
+  manifests, and carried-in files are present while the code under test is
+  the original; `node_modules`, `.venv`, and `venv` are linked from the sandbox;
+- when the runner takes file arguments (`node --test`, `pytest`,
+  `python -m pytest`, `go test` by package), only the change's test files run;
+  any other command (for example `npm test`) runs once as configured;
+- a test that imports a module the change adds fails on base and therefore
+  counts as failing on base.
+
+A non-zero exit on base passes the rule. A clean exit 0 means the change's
+tests pass on the original code: Prove returns the same convergent evidence
+REPAIR as a failed provider (`stage: "tests-not-discriminating"`, route
+`AUTO_REPAIR`) naming each repository and test file, and the agent adds or
+strengthens a test that fails without the change. A behavior change with no
+changed test file needs an existing test that fails on base. Changed tests are
+progress; an unchanged rerun reaches the existing no-progress boundary. A spawn
+failure, timeout, missing `baseHead`, or unresolvable surface is no verdict and
+never blocks. Each verdict is cached under
+`.foundation/logs/<change>/test-discrimination/` by the digest of the base
+commit, the command, its environment, and every overlaid file, so an unchanged
+rerun runs nothing; cost is at most one extra test command per affected
+repository per distinct test content. Low-level `proof run` and `proof
+finalize` remain operator primitives and do not run this check.
+
+The same rule applies in Build. When a behavior task's `verify` passes but
+nothing changed in its declared `[paths:]` — the check passed on the original
+code — the task is not ticked: it returns with the task's verification failure
+`task <id> completed with no change`, counted like any repeated verify failure.
+Tasks scoped only to docs or manifests, observation task kinds, and refactor,
+docs, chore, or config changes keep verify-only completion.

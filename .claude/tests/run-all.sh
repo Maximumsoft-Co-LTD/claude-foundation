@@ -107,6 +107,7 @@ repository head|node --test "$ROOT/.claude/harness/tests/repository-head.test.mj
 proof readiness value|node --test "$ROOT/.claude/harness/tests/proof-readiness-value.test.mjs"
 provider claim scope|node --test "$ROOT/.claude/harness/tests/provider-claim-scope.test.mjs"
 task check evidence|node --test "$ROOT/.claude/harness/tests/task-check-evidence.test.mjs"
+test discrimination|node --test "$ROOT/.claude/harness/tests/test-discrimination.test.mjs"
 harness reliability gaps|sh "$HERE/harness/run-reliability-gap-tests.sh"
 branch warning|node --test "$HERE/harness/run-branch-warning-tests.mjs"
 packet scaling|sh "$HERE/harness/run-packet-scaling-tests.sh"

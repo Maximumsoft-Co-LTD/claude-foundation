@@ -453,8 +453,10 @@ export function renderDraftProposal(draft, state) {
   // Build) lives here. Authoring them never moves the change off rapid.
   const compact = rapid && [3, 4].includes(draft._semanticVersion);
   const flow = compact ? section(renderUserFlow(draft)) : "";
+  // A declared work type is stated here as design.md states it, so Prove can
+  // tell behavior-changing work from a refactor, docs, or chore change.
   const plan = compact ? section(renderComponentMap(draft)) + section(renderDesignBlueprints({
-    bugfix: draft.bugfix, refactor: draft.refactor, configContract: draft.configContract,
+    workType: draft.workType, bugfix: draft.bugfix, refactor: draft.refactor, configContract: draft.configContract,
     failureMatrix: derivedFailureMatrix(draft),
     fileMap: fileMapWithTasks(draft.fileMap, draft.tasks), testMap: draft.testMap
   })) + section(renderPlan(draft)) : "";
