@@ -585,14 +585,18 @@ export function createApplyRuntime({
   assertLandGrant = () => {},
   consumeLandGrant = () => {},
   blockWithDecision,
-  fail
+  fail,
+  // Every repository the topology declares under root, selected or not: its
+  // gitlink is its own pointer, never root projection content.
+  declaredRepositoryPaths = () => []
 }) {
   function nestedRepositoryPaths(id, state) {
-    return selectedRepositories(id, state)
+    return [...new Set([...selectedRepositories(id, state)
       .filter((repository) => repository.id !== "root" &&
         repository.relativePath && repository.relativePath !== "." &&
         !repository.relativePath.startsWith("../"))
-      .map((repository) => repository.relativePath);
+      .map((repository) => repository.relativePath),
+    ...declaredRepositoryPaths()])];
   }
 
   function applyPathspec(id, state) {

@@ -275,7 +275,11 @@ Build references load only on their triggers. A minimal draft (`intent`,
 `requirements[{description, scenarios[{when, then}]}]`,
 `tasks[{outcome, verify, paths}]`, no `version`) is expanded by the compiler.
 Every EDIT or REPAIR lists `contextFiles` (absolute paths to open), `newFiles`
-(declared paths to create), and `contextScope`. Unauthorized external work enters
+(declared paths to create), and `contextScope`. Each EDIT task carries its own
+`workspace`: a non-root repository's task names
+`.foundation/repository-sandboxes/<change>/<repository>`, never the shared
+sandbox's empty submodule directory, and the top-level `workspace` (plus a
+`workspaces` map by repository) is that sandbox whenever every task shares it. Unauthorized external work enters
 `handoffs.yaml` only through a semantic amendment, and grounding reads belong in
 the draft's `grounding` field.
 Runtime approval binds agreement content and revision; task checkboxes and
@@ -563,7 +567,13 @@ multi-repository even when `root` has no product writes. After isolation, every
 selected non-root repository must retain a worktree record whose path, target,
 access mode, and base head match the catalog. Changed-surface hashing, review
 packets, provider manifests, Apply, and Land all use that binding and never
-fall back to the live target.
+fall back to the live target. Each repository has one location: Build envelopes,
+the phase guard, review finding binding (a finding named
+`root/<submodule path>/<file>` binds to that repository), and Land all use its
+repository sandbox. A declared repository's directory or gitlink in the root
+workspace (missing, empty, or pointing at another commit) is that repository's
+pointer, never a root change, so it is excluded from root review, proof
+readiness, Apply, and replay.
 
 `sandbox inspect <change>` reports missing, unexpected, missing-path, and
 invalid-worktree records without executing a PATH-resolved Git command.

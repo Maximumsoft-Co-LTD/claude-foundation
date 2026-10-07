@@ -53,7 +53,10 @@ to enforce.
 
 The host may also supply:
 
-- `FOUNDATION_WORKSPACE_ROOT=/absolute/build/workspace` during Build
+- `FOUNDATION_WORKSPACE_ROOT=/absolute/build/workspace` during Build (the
+  recorded change's writable repository sandboxes are added from runtime state;
+  a write into the shared sandbox's copy of such a repository is redirected to,
+  or refused in favor of, that repository's sandbox)
 - `FOUNDATION_ALLOWED_PATHS_JSON='["/absolute/extra/path"]'` for explicitly
   declared Build paths
 - `FOUNDATION_GUARDRAIL_MODE=auto|audit|block|off` (`auto` is the default and

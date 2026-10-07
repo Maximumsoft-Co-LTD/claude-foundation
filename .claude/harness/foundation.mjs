@@ -67,6 +67,7 @@ import {
   createProofRuntime, taskPacketWasPrecompletedOperation
 } from "./runtime/evidence/proof-runtime.mjs";
 import { createRepositoryTopology } from "./runtime/workflow/repository-topology.mjs";
+import { nestedRepositoryRelativePaths } from "./runtime/core/repository-binding.mjs";
 import { createRepositorySnapshot } from "./runtime/workflow/repository-snapshot.mjs";
 import { createPacketRuntime } from "./runtime/workflow/packet-runtime.mjs";
 import { createChangePolicy } from "./runtime/workflow/change-policy.mjs";
@@ -533,6 +534,9 @@ const {
   byId: repositoryById,
   show: showRepositories
 } = repositoryTopology;
+// Every declared nested repository's root-relative path; its gitlink in the
+// root workspace is that repository's pointer, never root task content.
+const declaredRepositoryPaths = () => nestedRepositoryRelativePaths(repositoryCatalog());
 const { relevantSnapshot, relevantHash } = createRepositorySnapshot({
   root: ROOT,
   runtimePath,
@@ -568,7 +572,8 @@ const {
   isCurrentChangePath,
   readJson,
   fileDigest,
-  fail: die
+  fail: die,
+  declaredRepositoryPaths
 });
 // clearSnapshotCache is what every surface mutation already calls; the policy
 // cache invalidates with it or not at all.
@@ -1886,7 +1891,8 @@ const applyRuntime = createApplyRuntime({
   assertLandGrant: landGrantRuntime.assert,
   consumeLandGrant: landGrantRuntime.consume,
   blockWithDecision,
-  fail: die
+  fail: die,
+  declaredRepositoryPaths
 });
 const {
   gitApplyInputs,

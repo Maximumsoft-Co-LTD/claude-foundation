@@ -177,6 +177,17 @@ function findingScopeBinding(finding, scopePaths, inspections, manifest) {
           aliases.add(`contract/${value.slice(prefix.length + 1)}`);
     }
   }
+  // A reviewer reading the superproject names submodule files through root
+  // (`root/services/x/file.go`); bind them to the repository declared there.
+  for (const [repositoryId, entry] of inspections) {
+    const prefix = typeof entry?.relativePath === "string"
+      ? entry.relativePath.replace(/\\/g, "/").replace(/\/+$/, "") : "";
+    if (repositoryId === "root" || !prefix || prefix === "." || prefix.startsWith("../"))
+      continue;
+    for (const value of [raw, raw.replace(/^root\//, "")])
+      if (value.startsWith(`${prefix}/`))
+        aliases.add(`${repositoryId}/${value.slice(prefix.length + 1)}`);
+  }
   // Canonical packet identities are authoritative; suffix matching is only
   // for shorthand findings and must not make an exact identity ambiguous.
   const matches = scopePaths.includes(raw) ? [raw] : [...new Set(scopePaths.flatMap((candidate) => {

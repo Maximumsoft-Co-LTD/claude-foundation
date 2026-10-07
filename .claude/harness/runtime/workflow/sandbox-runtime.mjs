@@ -13,7 +13,8 @@ import {
 } from "../core/workspace-surface.mjs";
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 import {
-  compositeRepositorySelection, isolatedRepositoryState, worktreeOwnedByTarget
+  compositeRepositorySelection, isolatedRepositoryState, nestedRepositoryRelativePaths,
+  worktreeOwnedByTarget
 } from "../core/repository-binding.mjs";
 import { landedTargetPaths, otherLandedOutput, replayLandedEdit } from "./target-edits.mjs";
 
@@ -569,16 +570,18 @@ export function assertReadOnlyReplayClean(repository, record, git, fail) {
 }
 
 export function replayContext({
-  id, state, candidate, gitHead, selectedRepositories
+  id, state, candidate, gitHead, selectedRepositories, declaredRepositoryPaths = () => []
 }) {
   const { repository, record, targetPath } = candidate;
   const currentHead = targetPath ? gitHead(targetPath) : null;
   if (!targetPath || !currentHead || !record.baseHead || currentHead === record.baseHead)
     return null;
+  // Apply and replay share one pathspec: every declared nested repository is
+  // excluded from the root projection, selected or not.
   const nested = repository === "root"
-    ? selectedRepositories(id, state)
+    ? [...new Set([...selectedRepositories(id, state)
       .filter((entry) => entry.type === "submodule")
-      .map((entry) => entry.relativePath)
+      .map((entry) => entry.relativePath), ...declaredRepositoryPaths()])]
     : [];
   return {
     id, state, repository, record, targetPath, currentHead,
@@ -660,9 +663,11 @@ export function prepareWritableReplay(context, dependencies) {
 export function prepareWorktreeReplay(
   options, id = options.id, state = options.state, candidate = options.candidate
 ) {
-  const { git, gitHead, selectedRepositories, fail } = options;
+  const { git, gitHead, selectedRepositories, declaredRepositoryPaths, fail } = options;
   assertReadOnlyReplayClean(candidate.repository, candidate.record, git, fail);
-  const context = replayContext({ id, state, candidate, gitHead, selectedRepositories });
+  const context = replayContext({
+    id, state, candidate, gitHead, selectedRepositories, declaredRepositoryPaths
+  });
   if (!context) return null;
   return candidate.record.access === "read"
     ? prepareReadOnlyReplay(context, options)
@@ -1732,7 +1737,9 @@ export function createSandboxRuntime({
   }
 
   const prepareReplay = prepareWorktreeReplay.bind(null, {
-    git, gitBuffer, gitHead, selectedRepositories, fail
+    git, gitBuffer, gitHead, selectedRepositories, fail,
+    declaredRepositoryPaths: () => typeof repositoryCatalog === "function"
+      ? nestedRepositoryRelativePaths(repositoryCatalog()) : []
   });
 
   // `worktree remove --force` destroys everything the checkout accumulated

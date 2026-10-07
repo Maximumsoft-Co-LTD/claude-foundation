@@ -86,10 +86,15 @@ export function reviewChangedSurface(context, id, state, surfaceRows) {
     return groups;
   }, new Map())].map(([repositoryId, repositoryPaths]) => {
     const repository = context.repositoryById(id, repositoryId, state);
+    // A submodule's location under root lets a finding named through root
+    // (`root/<submodule>/file`) bind to the repository that owns the file.
+    const nested = repositoryId !== "root" && typeof repository?.relativePath === "string" &&
+      repository.relativePath !== "." && !repository.relativePath.startsWith("../");
     return {
       repositoryId,
       workspacePath: reviewSurfaceWorkspace(context, id, state, repositoryId),
       baseHead: repositoryBaseHead(repository, state),
+      ...(nested ? { relativePath: repository.relativePath } : {}),
       paths: repositoryPaths
     };
   });

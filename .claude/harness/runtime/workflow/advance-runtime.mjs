@@ -67,16 +67,27 @@ function packetSpecFiles(dir) {
 // exist in the workspace (`contextFiles`) and the ones the task creates
 // (`newFiles`). Globs are scope, not files, and are left to `allowedPaths`.
 // A path outside every workspace/repository base (absolute or `../`) is never
-// handed to the agent as a file to open.
-export function envelopeContextFiles({ packetDir, state = {}, tasks = [], paths = [] }) {
+// handed to the agent as a file to open. `scopedPaths` are review identities
+// (`<repository>/<path>`, as repair-graph nodes carry them) and resolve in
+// that repository's own sandbox, never in the shared sandbox's submodule mirror.
+export function envelopeContextFiles({
+  packetDir, state = {}, tasks = [], paths = [], scopedPaths = []
+}) {
   const specs = packetSpecFiles(join(packetDir, "specs"));
   const packet = ["proposal.md", "design.md", "tasks.md"]
     .map((name) => join(packetDir, name)).filter((file) => existsSync(file));
-  const root = (repository) =>
-    state.repositories?.[repository]?.path || state.workspace?.path || null;
+  const root = (repository) => repositoryWorkspace(state, repository);
+  const scoped = (path) => {
+    const value = String(path || "");
+    const separator = value.indexOf("/");
+    const repository = separator > 0 ? value.slice(0, separator) : null;
+    return repository && (repository === "root" || state.repositories?.[repository]?.path)
+      ? [repository, value.slice(separator + 1)] : [null, value];
+  };
   const declared = [
     ...tasks.flatMap((task) => (task.allowedPaths || []).map((path) => [task.repository, path])),
-    ...paths.map((path) => [null, path])
+    ...paths.map((path) => [null, path]),
+    ...scopedPaths.map(scoped)
   ];
   const bases = [state.workspace?.path,
     ...Object.values(state.repositories || {}).map((entry) => entry?.path)]
@@ -96,6 +107,13 @@ export function envelopeContextFiles({ packetDir, state = {}, tasks = [], paths 
     newFiles: [...new Set(created)].filter((file) => !existing.includes(file)),
     contextScope: { paths: "absolute", specs: specs.length ? "included" : "none" }
   };
+}
+
+// Where a task's repository is edited: its own repository sandbox when the
+// change isolated one, otherwise the shared control workspace.
+function repositoryWorkspace(state, repository) {
+  return (repository && state.repositories?.[repository]?.path) ||
+    state.workspace?.path || null;
 }
 
 function taskVerification(text) {
@@ -552,13 +570,24 @@ function buildAction(id, dispatch, state, plan = null) {
         "Do not re-implement it or split the diff per task: make its focused check pass, " +
         "then resume and the harness re-verifies it.")
     ];
+    // One location per task repository: each task names its own sandbox, and
+    // the top-level workspace is that sandbox whenever every task shares it.
+    const located = tasks.map((task) => ({
+      ...task, workspace: repositoryWorkspace(state, task.repository)
+    }));
+    const workspaces = Object.fromEntries(located
+      .filter((task) => task.repository && task.workspace)
+      .map((task) => [task.repository, task.workspace]));
+    const locations = [...new Set(located.map((task) => task.workspace))];
     return envelope(id, "EDIT", {
       legacyAction: dispatch.action === "spawn-group" ? "EXECUTE_TASK_GROUP" : "EXECUTE_TASK",
       actor: "agent",
       boundary: "host-execution",
       reason: dispatch.reason,
-      workspace: state.workspace?.path || null,
-      tasks,
+      workspace: locations.length === 1 && locations[0]
+        ? locations[0] : state.workspace?.path || null,
+      ...(Object.keys(workspaces).length ? { workspaces } : {}),
+      tasks: located,
       allowedPaths: [...new Set(tasks.flatMap((task) => task.allowedPaths))],
       verification: [...new Set(tasks.flatMap((task) => task.verification))],
       execution: {
@@ -829,12 +858,10 @@ export function createAdvanceRuntime({
     try {
       return capture(() => {
         const tasks = value.tasks || [];
-        const paths = [
-          ...(tasks.length ? [] : value.allowedPaths || []),
-          ...(value.repairGraph?.nodes || []).flatMap((node) => node.paths || [])
-        ];
+        const paths = tasks.length ? [] : value.allowedPaths || [];
+        const scopedPaths = (value.repairGraph?.nodes || []).flatMap((node) => node.paths || []);
         return { ...value, ...envelopeContextFiles({
-          packetDir: changePath(id), state: loadRuntime(id), tasks, paths
+          packetDir: changePath(id), state: loadRuntime(id), tasks, paths, scopedPaths
         }) };
       });
     } catch { return value; }

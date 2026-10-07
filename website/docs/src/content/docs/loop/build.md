@@ -25,7 +25,7 @@ Lands. `--through build` still stops at Build when that is all you want.
 
 | Action | Meaning |
 |---|---|
-| `EDIT` | Implement only the returned task(s), workspace, and allowed paths; open the listed `contextFiles`, create `newFiles`; run the focused checks once |
+| `EDIT` | Implement only the returned task(s), workspace, and allowed paths (each task's own `workspace`; a submodule task names its repository sandbox); open the listed `contextFiles`, create `newFiles`; run the focused checks once |
 | `REPAIR` | Apply one complete dependency-ordered repair batch, then resume |
 | `RUN_EXTERNAL` | Run the one configured boundary operation |
 | `WAIT` | A live resource/external owner must finish; state is preserved |

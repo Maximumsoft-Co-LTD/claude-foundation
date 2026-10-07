@@ -204,6 +204,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Submodule repositories use one location end to end. `advance` EDIT
+  envelopes name each task's own `workspace` (a submodule task gets
+  `.foundation/repository-sandboxes/<change>/<repo>`), add a `workspaces` map,
+  and resolve `contextFiles` in the owning repository's sandbox. The phase
+  guard treats writable repository sandboxes as in-workspace and redirects or
+  refuses writes into the shared sandbox's empty copy of a selected
+  repository; read-only repository sandboxes are not writable.
+- Review findings named through root (`root/<submodule path>/<file>`) bind to
+  the owning repository instead of exhausting the review request.
+- A declared repository's directory or gitlink in the root workspace (missing,
+  empty, or bumped) is no longer a root change, so there are no false "root
+  changed outside task paths" repairs and no gitlink noise in root review.
 - Prove no longer passes Build tasks without verification under the legacy
   review circuit. The circuit is the default for a `foundation.json` without a
   `workflow` block, and it used to mark every task node `legacy-policy`. Runtime

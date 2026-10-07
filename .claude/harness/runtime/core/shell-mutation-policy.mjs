@@ -250,24 +250,59 @@ function copySourceOperands(command) {
   return sources;
 }
 
-function targetEscapes(target, workspace, inspection) {
+// A relative target resolves from the workspace the command is anchored in;
+// any target may land in any of the change's writable workspace roots.
+function targetEscapes(target, workspace, inspection, roots = [workspace]) {
   const absolute = isAbsolute(target) ? resolve(target) : resolve(workspace, target);
-  if (!within(workspace, absolute)) return true;
+  if (!roots.some((root) => within(root, absolute))) return true;
   if (!inspection?.canonicalTarget || !inspection?.contains) return false;
   const canonical = inspection.canonicalTarget(absolute);
-  return !canonical || !inspection.contains(canonical, workspace);
+  return !canonical || !roots.some((root) => inspection.contains(canonical, root));
 }
 
 // Returns the first fragment that leaves the workspace, or null. Naming it is
 // what lets an agent repair the command instead of retrying it unchanged.
-function obviousWorkspaceEscape(command, workspace, inspection = null) {
+function obviousWorkspaceEscape(command, workspace, inspection = null, roots = [workspace]) {
   const parent = /(?:^|[\s'"=])(\.\.(?:\/[^\s'";&|]*|$))/.exec(operandText(command));
   if (parent) return parent[1];
   // A second popd can return to the checkout that preceded the required
   // workspace anchor. Its resulting cwd cannot be proven from the command.
   if (/\bpopd\b/.test(command)) return "popd";
   return filesystemMutationTargets(command)
-    .find((target) => targetEscapes(target, workspace, inspection)) ?? null;
+    .find((target) => targetEscapes(target, workspace, inspection, roots)) ?? null;
+}
+
+// A multi-repository change edits each selected writable repository in its own
+// sandbox (`.foundation/repository-sandboxes/<change>/<repository>`). Those
+// sandboxes are workspace roots with the same strictness as the shared one;
+// the shared sandbox's mirror of such a repository (an empty or missing
+// submodule directory) is not where its work lives. Malformed input grants
+// nothing.
+export function repositoryWorkspaces(environment) {
+  let rows;
+  try { rows = JSON.parse(environment?.FOUNDATION_REPOSITORY_WORKSPACES_JSON || "[]"); }
+  catch { return []; }
+  return (Array.isArray(rows) ? rows : [])
+    .filter((row) => row && typeof row.path === "string" && isAbsolute(row.path))
+    .map((row) => ({
+      repository: String(row.repository || "repository"),
+      path: resolve(row.path),
+      mirror: typeof row.mirror === "string" && isAbsolute(row.mirror) ? resolve(row.mirror) : null
+    }));
+}
+
+function mirroredRepository(paths, repositories) {
+  for (const path of paths)
+    for (const repository of repositories)
+      if (repository.mirror && isAbsolute(path) && within(repository.mirror, path))
+        return repository;
+  return null;
+}
+
+function mirrorRefusal(repository) {
+  return `repository '${repository.repository}' is edited in its repository sandbox, not in ` +
+    `the shared sandbox's copy of it; start the command with \`cd ${
+      shellDisplayArgument(repository.path)} && \``;
 }
 
 // A `$name` after `/` is a path segment (`/workspace/$X`), not a quoted argument
@@ -379,15 +414,29 @@ export function shellMutationViolation(phase, environment, command = null, inspe
     // exact workspace, and the shape the command must take. A bare rule name
     // sent agents into unchanged retries.
     const text = String(command);
-    const root = shellDisplayArgument(workspace);
+    const repositories = repositoryWorkspaces(environment);
+    const roots = [workspace, ...repositories.map((repository) => repository.path)];
     const anchor = shellAnchor(text);
     const dynamic = anchor ? dynamicPathToken(anchor.target) : null;
-    if (dynamic === null && (!anchor || !isAbsolute(anchor.target) ||
-        !within(workspace, anchor.target)))
+    // The workspace the command is anchored in: the shared sandbox or one of
+    // the change's repository sandboxes, whichever holds the anchor.
+    const home = anchor && dynamic === null && isAbsolute(anchor.target)
+      ? roots.filter((candidate) => within(candidate, anchor.target))
+        .sort((left, right) => resolve(right).length - resolve(left).length)[0] || null
+      : workspace;
+    const root = shellDisplayArgument(home || workspace);
+    const mirrored = dynamic === null && mirroredRepository([
+      ...(anchor && isAbsolute(anchor.target) ? [anchor.target] : []),
+      ...filesystemMutationTargets(text).filter((target) => isAbsolute(target))
+        .map((target) => resolve(target))
+    ], repositories);
+    if (mirrored) return `Build shell mutation targets the wrong copy (refused: ${
+      operations.join(", ")}); ${mirrorRefusal(mirrored)}`;
+    if (dynamic === null && (!anchor || !isAbsolute(anchor.target) || !home))
       return "Build shell mutations must start inside the isolated workspace " +
         `(refused: ${operations.join(", ")}); ` +
         `run \`cd ${root}\` as its own call first (the shell keeps it), or start the command with \`cd ${hintPath(workspace, "/<subdir>")} && \``;
-    if (dynamic === null && anchor.separator === ";" && !sameDirectory(workspace, anchor.target))
+    if (dynamic === null && anchor.separator === ";" && !sameDirectory(home, anchor.target))
       return "Build shell mutations must start inside the isolated workspace " +
         `(\`${anchor.word};\` continues even when the directory change fails); ` +
         `start the command with \`cd ${shellDisplayArgument(anchor.target)} && \``;
@@ -399,7 +448,7 @@ export function shellMutationViolation(phase, environment, command = null, inspe
     if (dynamicToken !== null)
       return "Build shell mutation contains a dynamic path that cannot be proven isolated " +
         `(\`${dynamicToken}\`); use literal paths inside ${root}`;
-    const escape = obviousWorkspaceEscape(text, workspace, inspection);
+    const escape = obviousWorkspaceEscape(text, home || workspace, inspection, roots);
     if (escape !== null && copySourceOperands(text).includes(escape))
       return "Build shell mutation copies or links from outside the isolated workspace " +
         `(\`${escape}\`); a workspace never borrows the checkout's files or dependencies. ` +

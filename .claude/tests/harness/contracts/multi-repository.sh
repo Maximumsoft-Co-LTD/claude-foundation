@@ -119,6 +119,13 @@ assert_cmd_zero "advance repairs a partial binding before returning Build work" 
     .tasks[0].repository == "api" and
     .resume == "claude-foundation advance cross-repository-profile --through proven"'\'' \
     >/dev/null' sh "$partial_action"
+api_sandbox="$(cd .foundation/repository-sandboxes/cross-repository-profile/api && pwd -P)"
+assert_cmd_zero "advance names the task repository's sandbox as the one place to write" \
+  sh -c 'printf "%s" "$1" | jq -e --arg api "$2" '\''
+    .workspace == $api and .tasks[0].workspace == $api and .workspaces.api == $api and
+    (.contextFiles | index($api + "/api.txt")) != null and
+    ([.contextFiles[] | select(contains("/.foundation/sandboxes/"))] | length) == 0'\'' \
+    >/dev/null' sh "$partial_action" "$api_sandbox"
 assert_file_exists "automatic partial binding repair preserves existing repository work" \
   .foundation/repository-sandboxes/cross-repository-profile/api/.binding-recovery-marker
 assert_eq "automatic partial binding repair restores the selected target" \

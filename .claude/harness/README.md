@@ -380,7 +380,11 @@ rather than pretending packages are independently landable remotes.
 Per-change `repositories.yaml` selects access
 and dependency scope. The runtime creates child worktrees under
 `.foundation/repository-sandboxes/`, hashes them into one composite snapshot,
-and scopes provider commands and receipts with `repository`. Read-selected Git
+and scopes provider commands and receipts with `repository`. That sandbox is
+the repository's one location: `advance` EDIT tasks name it as `workspace`, the
+phase guard treats it as in-workspace, and review findings named through root
+bind to it. A declared repository's directory or gitlink in the root workspace
+is never a root change. Read-selected Git
 repositories also receive detached worktrees: they participate in proof but
 cannot contribute a Land commit. A provider that executes from one repository
 but needs several declares `repository` as its cwd and `repositories` as its

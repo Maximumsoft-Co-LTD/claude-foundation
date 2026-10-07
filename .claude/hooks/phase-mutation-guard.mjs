@@ -108,6 +108,25 @@ const mode = devSession || landAuthorityCommand || deliverAuthorityCommand ||
 const recordedRuntime = recorded?.changeId ? runtimeState(recorded.changeId) : null;
 const recordedWorkspace = recordedRuntime?.workspace?.path
   ? canonicalTarget(recordedRuntime.workspace.path, projectRoot) || "" : "";
+// Each writable non-root repository of the change is edited in its own
+// sandbox. The shared sandbox's copy of that repository (an empty or missing
+// submodule directory) is its mirror: never the place its work lives.
+const repositoryWorkspaces = Object.entries(recordedRuntime?.repositories || {})
+  .filter(([id, record]) => id !== "root" && record?.access !== "read" && record?.mode !== "read" &&
+    typeof (record?.path || record?.workspacePath) === "string")
+  .map(([id, record]) => {
+    const path = canonicalTarget(record.path || record.workspacePath, projectRoot);
+    const target = record.targetPath ? canonicalTarget(record.targetPath, projectRoot) : null;
+    const rel = target && isWithin(target, projectRoot) ? relative(projectRoot, target) : "";
+    return { repository: id, path,
+      mirror: recordedWorkspace && rel ? join(recordedWorkspace, rel) : null };
+  })
+  .filter((row) => row.path && (!recordedWorkspace || row.path !== recordedWorkspace));
+const readOnlyRepositoryWorkspaces = Object.entries(recordedRuntime?.repositories || {})
+  .filter(([id, record]) => id !== "root" && (record?.access === "read" || record?.mode === "read"))
+  .map(([id, record]) => ({ repository: id,
+    path: canonicalTarget(record?.path || record?.workspacePath || "", projectRoot) }))
+  .filter((row) => row.path && (!recordedWorkspace || row.path !== recordedWorkspace));
 const violations = [];
 // Shell containment is inferred from command text, so it misreads program
 // text (sed scripts, `$(…)` captures, scratch copies) as escapes and cost
@@ -286,11 +305,16 @@ function redirectToWorkspace(value) {
   const from = [];
   const to = [];
   const next = { ...value };
+  // The shared sandbox's copy of a repository moves to that repository's own
+  // sandbox; nothing else under machine state is redirected.
+  const mirrors = repositoryWorkspaces.filter((row) => row.mirror && existsSync(row.path))
+    .map((row) => [row.mirror, row.path]);
   for (const key of ["file_path", "notebook_path"]) {
     if (typeof value[key] !== "string") continue;
     const target = canonicalTarget(value[key], projectRoot);
-    if (!target || isWithin(target, machine)) return null;
-    const pair = pairs.filter(([source, workspace]) => isWithin(target, source) && !isWithin(target, workspace))
+    if (!target) return null;
+    const candidates = isWithin(target, machine) ? mirrors : pairs;
+    const pair = candidates.filter(([source, workspace]) => isWithin(target, source) && !isWithin(target, workspace))
       .sort((left, right) => right[0].length - left[0].length)[0];
     if (!pair) return null;
     next[key] = join(pair[1], relative(pair[0], target));
@@ -326,6 +350,23 @@ function inspectPath(rawPath) {
     return;
   }
   const workspace = process.env.FOUNDATION_WORKSPACE_ROOT || recordedWorkspace;
+  // `.foundation` is machine state and otherwise writable, but a write into the
+  // shared sandbox's copy of a selected repository would be work no Review,
+  // Prove, or Land ever reads.
+  const mirror = ["build", "prove"].includes(phase)
+    ? repositoryWorkspaces.find((row) => row.mirror && isWithin(target, row.mirror)) : null;
+  if (mirror) {
+    violations.push(`repository '${mirror.repository}' is edited in its repository sandbox ` +
+      `(${mirror.path}), not in the shared sandbox's copy of it`);
+    return;
+  }
+  // A read-selected repository's sandbox is proof input, never a write root.
+  const readOnly = ["build", "prove"].includes(phase)
+    ? readOnlyRepositoryWorkspaces.find((row) => isWithin(target, row.path)) : null;
+  if (readOnly) {
+    violations.push(`repository '${readOnly.repository}' is read-only for this change`);
+    return;
+  }
   // Proof is bound to workspace content, so a repair inside the isolated
   // workspace after Prove only makes the proof stale; the next advance proves
   // it again. The main checkout stays read-only.
@@ -358,6 +399,10 @@ function inspectPath(rawPath) {
   // carry a trustworthy change ID on every host. The runtime still validates
   // the selected change before state transitions.
   if (phase === "change") capability.roots = [join(projectRoot, "openspec", "changes")];
+  // Targets are canonical; compare them with canonical roots so a repository
+  // sandbox spelled through a symlink is still in-workspace.
+  if (phase === "build")
+    capability.roots = capability.roots.map((root) => canonicalTarget(root, projectRoot) || root);
   const decision = workspaceMutationDecision({
     capability,
     target,
@@ -399,7 +444,10 @@ function inspectBash(command) {
   const environment = {
     ...process.env,
     ...(recordedWorkspace && !process.env.FOUNDATION_WORKSPACE_ROOT
-      ? { FOUNDATION_WORKSPACE_ROOT: recordedWorkspace } : {})
+      ? { FOUNDATION_WORKSPACE_ROOT: recordedWorkspace } : {}),
+    // Only the recorded runtime names repository roots; an inherited value
+    // never widens what the shell may mutate.
+    FOUNDATION_REPOSITORY_WORKSPACES_JSON: JSON.stringify(repositoryWorkspaces)
   };
   const inspection = workspace ? {
     canonicalTarget: (target) => canonicalTarget(target, workspace),
@@ -460,12 +508,16 @@ function pinnedWorkspaceCommand(command, workspace, environment, inspection, pol
   const reported = typeof event.cwd === "string" ? event.cwd : "";
   if (!reported || !isAbsolute(reported)) return null;
   const canonicalCwd = canonicalTarget(reported, projectRoot);
-  if (!canonicalCwd || !isWithin(canonicalCwd, canonical(workspace))) return null;
+  // The report may sit in the shared sandbox or in one of the change's
+  // repository sandboxes; either is pinned and proven by the same policy.
+  const home = canonicalCwd ? [workspace, ...repositoryWorkspaces.map((row) => row.path)]
+    .find((root) => isWithin(canonicalCwd, canonical(root))) : null;
+  if (!home) return null;
   // The workspace may be spelled through a symlink (macOS /var → /private/var,
   // a linked sandbox path) while the report is canonical, or the reverse; the
   // policy compares text, so also try the report re-spelled under the
   // workspace the policy was given.
-  const respelled = resolve(workspace, relative(canonical(workspace), canonicalCwd));
+  const respelled = resolve(home, relative(canonical(home), canonicalCwd));
   for (const directory of [...new Set([resolve(reported), canonicalCwd, respelled])]) {
     const pinned = pinShellAnchor(command, directory);
     if (pinned === null) continue;
