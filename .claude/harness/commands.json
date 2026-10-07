@@ -43,7 +43,7 @@
     },
     {
       "name": "advance",
-      "usage": "advance <change> [--through build|proven|archived] [--host-result <result.json>] [--decision retry|wait|pause --decision-fingerprint <hash> --decision-ref <ref> --reason <approach>] [--approve-spec --decision-ref <ref>] [--restore-target <path,path> [--decision-ref <ref>]] [--recover-apply settle|keep-current|restore-backup --decision-ref <ref>] [--inspect] [--pretty]",
+      "usage": "advance <change> [--through build|proven|archived] [--host-result <result.json>] [--decision retry|wait|pause|merge|retain --decision-fingerprint <hash> --decision-ref <ref> --reason <approach>] [--approve-spec --decision-ref <ref>] [--restore-target <path,path> [--decision-ref <ref>]] [--recover-apply settle|keep-current|restore-backup --decision-ref <ref>] [--inspect] [--pretty]",
       "audience": "agent",
       "kind": "write",
       "idempotent": true,
