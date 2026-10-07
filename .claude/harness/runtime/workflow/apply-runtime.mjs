@@ -16,6 +16,7 @@ import { compositeRepositorySelection } from "../core/repository-binding.mjs";
 import { createRepositoryDeliverySaga } from "./repository-delivery-saga.mjs";
 import { deliveryTreeEntries, assertDeliveryEntries } from "./delivery-integrity.mjs";
 import { approvalMatches } from "../core/user-decisions.mjs";
+import { emitSignal } from "../core/signals.mjs";
 import { legacyRepositoryLandTransaction } from "./land-runtime.mjs";
 import { rejectedPaths } from "./sandbox-runtime.mjs";
 import {
@@ -980,7 +981,9 @@ export function createApplyRuntime({
     if (resumed) saveRuntime(state);
     cleanupChangeLeases(id);
     consumeLandGrant(id);
-    console.log(`ALREADY ARCHIVED ${id}\n  archived: ${state.archivedAt || "unknown"}`);
+    // Quiet under `advance`, so the envelope carries it as a signal too.
+    emitSignal("already-archived", `ALREADY ARCHIVED ${id}\n  archived: ${state.archivedAt || "unknown"}`,
+      (line) => console.log(line));
   }
 
   function recoverInterruptedArchive(id, state, archivedPath) {

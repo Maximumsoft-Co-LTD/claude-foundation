@@ -3,12 +3,14 @@ import { repairActionForWorkspace } from "../evidence/repair-runtime.mjs";
 import { isProcessAlive } from "../core/process-lock.mjs";
 import { shellDisplayArgument } from "../core/shell-mutation-policy.mjs";
 import { pathInside } from "../core/process-runtime.mjs";
+import { drainSignals, recordSignal } from "../core/signals.mjs";
 import {
   lifecycleOutcome, lifecycleUserProjection, lifecycleUserState
 } from "../core/lifecycle-outcome.mjs";
 import {
   actionableGuidance, automaticEvidenceWiring, automaticRecoveryAction,
-  automaticReviewRun, createAdvanceRecovery
+  automaticReviewRun, createAdvanceRecovery, errorCodes, userEnvironmentAction,
+  userEnvironmentCause
 } from "./advance-recovery.mjs";
 
 import { existsSync, readdirSync, statSync } from "node:fs";
@@ -163,7 +165,31 @@ export function repairTargetFromError(error) {
   return null;
 }
 
-export function advanceFailureAction(id, error, { stage = "build", through = null } = {}) {
+// Signals raised while this command ran (see core/signals.mjs) ride on the
+// envelope as `signals[]` ({code, message}); absent when there are none.
+export function withSignals(value) {
+  const raised = drainSignals();
+  if (!raised.length || !value || typeof value !== "object") return value;
+  const known = Array.isArray(value.signals) ? value.signals : [];
+  return { ...value, signals: [...known, ...raised.filter((row) =>
+    !known.some((seen) => seen.code === row.code && seen.message === row.message))] };
+}
+
+// A failure whose cause only the user can clear (a full disk, a missing or
+// rejected credential, a denied network) is typed where it is raised, so every
+// route — inspection included — asks the user with the exact cause instead of
+// handing the agent a repair it cannot perform. Decisions, harness-owned
+// automatic recovery, and product output keep their own routes.
+export function advanceFailureAction(id, error, options = {}) {
+  const value = failureEnvelope(id, error, options);
+  if (value.action === "ASK_USER" || value.automaticRecovery) return value;
+  const found = userEnvironmentCause(value, errorCodes(error));
+  if (!found) return value;
+  const asked = lifecycleOutcome(actionableGuidance(userEnvironmentAction(id, value, found)));
+  return { ...asked, userState: lifecycleUserState(asked), user: lifecycleUserProjection(asked) };
+}
+
+function failureEnvelope(id, error, { stage = "build", through = null } = {}) {
   const reason = error?.message || String(error);
   const automatic = automaticRecoveryAction(id, error?.decision);
   if (automatic?.kind === "reconcile-target-edits") return envelope(id, "REPAIR", {
@@ -1025,6 +1051,7 @@ export function createAdvanceRuntime({
     const { resolution, divergentPaths = [] } = value.automaticRecovery;
     const notice = `Land kept an interrupted apply recoverable (${resolution})` +
       (divergentPaths.length ? `; the target held other content at: ${divergentPaths.join(", ")}` : "");
+    recordSignal("apply-recovered", notice);
     const handoff = (reason) => projected(recovery.observe(id, withContext(id, envelope(id, "REPAIR", {
       actor: "agent", owner: "agent", legacyAction: "REPAIR_APPLY_RECOVERY",
       boundary: "internal-recovery", reason,
@@ -1265,8 +1292,8 @@ export function createAdvanceRuntime({
       answer = recovery.resolve(id, flags);
       through ||= answer.through;
     }
-    const value = flags.inspect ? advanceValue(id, { inspect: true })
-      : await advanceThrough(id, through, { applyRecovered: [], notices: [], answer });
+    const value = withSignals(flags.inspect ? advanceValue(id, { inspect: true })
+      : await advanceThrough(id, through, { applyRecovered: [], notices: [], answer }));
     if (!flags.through && !flags.inspect &&
         process.env.FOUNDATION_READ_ONLY_INSPECTION !== "1") {
       const phase = phaseForAction(value);

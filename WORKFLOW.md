@@ -1106,13 +1106,30 @@ answer.
 Causes only the user can clear skip the ladder and return `ASK_USER`
 (`USER_ENVIRONMENT_REQUIRED`, boundary `user-environment`) on the first
 observation: a missing or expired credential or token, VPN, proxy or network
-denial, a reviewer CLI that is not logged in, a full disk (`ENOSPC`), or private
-registry authentication. They are classified from typed error codes and known
-signatures on harness, setup, and reviewer routes; a full disk is recognized on
+denial, a reviewer CLI that is not logged in, a full disk (`ENOSPC`), private
+registry authentication, or a Git remote that rejects the credential (for
+example a push `403`). `decision.category` types the boundary as `resource`,
+`credential`, or `network`, and `decision.cause` names it. Causes are
+classified where the failure is raised, so inspection and every route agree:
+typed error codes first, then known signatures in child-process output, on
+harness, setup, delivery, and reviewer routes. A full disk is recognized on
 every route, while credential or network words inside failing product output
-remain a product repair. The question names the fix (for example "run `claude
-/login`" or "free disk space") and the resume command; nothing is counted, and
-an uncleared cause is reported again the same way.
+remain a product repair, and a bare local process timeout (`ETIMEDOUT` from a
+spawn) is not a network cause. The question names the fix (for example "run
+`claude /login`" or "free disk space") and the resume command, and carries no
+agent repair instruction; nothing is counted, and an uncleared cause is
+reported again the same way. `deliver advance` uses the same classifier and
+decision shape; a remaining provider failure is the repository operator's
+`WAIT` with an explicit `wait.condition` and `wait.checkCommand`.
+
+Signals the agent must act on that do not change the action ride on the same
+envelope as optional `signals[]` entries (`{code, message}`), in addition to
+their unchanged stderr or stdout line: `agreement-restored` (an isolated
+agreement edit was restored and saved aside for an amendment),
+`budget-warning` (spend reached 70% with `execution.budgetWatchdog` on),
+`already-archived` (archive recovery found the change already archived), and
+`apply-recovered` (an interrupted apply was settled). The field is absent when
+nothing was signalled.
 
 No agent-facing route names a lifecycle primitive. Any `command`, `next`,
 instruction, reason, or decision option that would point at `proof run|advance`,

@@ -204,7 +204,7 @@ export function validateReviewDispatchBudget(context, id, reviewerType,
   if (completedAi.length >= maxAiAttempts)
     context.blockAiExhausted(id, history, maxAiAttempts);
   if (infrastructureAi.length > maxInfrastructureRetries)
-    context.fail(`REVIEW_INFRASTRUCTURE_ERROR: ${maxInfrastructureRetries} automatic reviewer infrastructure retry has already been used. Repair or switch the configured reviewer (its owner, not the user) and resume: the harness resets this itself whenever the reviewer diagnosis passes under a changed reviewer configuration, and once per review wave for the same one. This is not a product decision and must not open a user interview.`);
+    context.fail(`REVIEW_INFRASTRUCTURE_ERROR: ${maxInfrastructureRetries} automatic reviewer infrastructure retry has already been used. Repair or switch the configured reviewer and resume: the harness resets this itself whenever the reviewer diagnosis passes under a changed reviewer configuration, and once per review wave for the same one. A reviewer configuration fault is the agent's repair; a reviewer that is not logged in or whose credential was rejected is a cause only the user can clear, which advance asks with the exact fix. It is never a product decision.`, 1, { code: "REVIEW_INFRASTRUCTURE_ERROR" });
 }
 
 export function reviewDispatchScope(details, reviewerType, aiAttempts,
@@ -648,7 +648,7 @@ export function createReviewAttemptStore({
       if (deliveredAiAttempts(id, history).length >= Number(maxAiAttempts))
         blockAiExhausted(id, history, Number(maxAiAttempts));
       if (infrastructureAiAttempts(id, history).length > Number(maxInfrastructureRetries))
-        fail(`REVIEW_INFRASTRUCTURE_ERROR: ${maxInfrastructureRetries} automatic reviewer infrastructure retry has already been used. Repair or switch the configured reviewer (its owner, not the user) and resume: the harness resets this itself whenever the reviewer diagnosis passes under a changed reviewer configuration, and once per review wave for the same one. This is not a product decision and must not open a user interview.`);
+        fail(`REVIEW_INFRASTRUCTURE_ERROR: ${maxInfrastructureRetries} automatic reviewer infrastructure retry has already been used. Repair or switch the configured reviewer and resume: the harness resets this itself whenever the reviewer diagnosis passes under a changed reviewer configuration, and once per review wave for the same one. A reviewer configuration fault is the agent's repair; a reviewer that is not logged in or whose credential was rejected is a cause only the user can clear, which advance asks with the exact fix. It is never a product decision.`, 1, { code: "REVIEW_INFRASTRUCTURE_ERROR" });
     }
     return history;
   }

@@ -4,12 +4,13 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAdvanceRuntime, advanceFailureAction } from "../runtime/workflow/advance-runtime.mjs";
+import { createAdvanceRuntime, advanceFailureAction, withSignals } from "../runtime/workflow/advance-runtime.mjs";
+import { drainSignals, emitSignal, recordSignal } from "../runtime/core/signals.mjs";
 import { manualRecoveryDecision, targetHeadMovedDecision } from "../runtime/workflow/apply-recovery.mjs";
 import { gateDigest } from "../runtime/core/convergent-gate.mjs";
 import {
   actionableGuidance, agentSafeRoutes, automaticRecoveryAction, createAdvanceRecovery,
-  currentDeliveryProof, userEnvironmentCause
+  currentDeliveryProof, environmentCause, userEnvironmentCause
 } from "../runtime/workflow/advance-recovery.mjs";
 import { userDecisionError } from "../runtime/core/user-decisions.mjs";
 import { lifecycleOutcome } from "../runtime/core/lifecycle-outcome.mjs";
@@ -844,4 +845,91 @@ test("an amended-agreement conflict is answered through advance and resolves the
   await f.runtime().showAdvance("demo", { decision: "retain",
     "decision-fingerprint": asked.decision.fingerprint, "decision-ref": "user:retain", reason: "keep isolated" });
   assert.deepEqual(synchronized[0], ["demo", { resolve: "openspec/changes/demo" }]);
+});
+
+// --- Typed user-only boundaries at the failure source, and envelope signals ---
+
+test("a full disk in a harness handoff asks the user at the source, even on inspection", () => {
+  const value = advanceFailureAction("demo", Object.assign(new Error("setup failed"), {
+    code: "EXECUTION_PREPARATION_FAILED",
+    details: { handoff: { step: "sandbox setup", command: "npm ci", cwd: "/w",
+      log: "npm ERR! code ENOSPC\nnpm ERR! nospc ENOSPC: no space left on device, write" } }
+  }), { stage: "build", through: "build" });
+  assert.equal(value.action, "ASK_USER");
+  assert.equal(value.boundary, "user-environment");
+  assert.equal(value.decision.cause, "disk-full");
+  assert.equal(value.decision.category, "resource");
+  assert.doesNotMatch(value.instruction || "", /foundation\.json/,
+    "no repair of workspace or foundation.json is handed out for a full disk");
+  assert.equal(value.decision.options[0].command, "claude-foundation advance demo --through build");
+  assert.equal(value.userState, "NEEDS_DECISION");
+
+  const typed = advanceFailureAction("demo", Object.assign(new Error("write failed"), {
+    cause: { code: "EDQUOT" } }), { stage: "prove", through: "proven" });
+  assert.equal(typed.decision?.cause, "disk-full", "a typed code wins without any message text");
+
+  const agentOwned = advanceFailureAction("demo", Object.assign(new Error("setup failed"), {
+    details: { handoff: { step: "sandbox setup", command: "npm ci", log: "ERESOLVE could not resolve" } }
+  }));
+  assert.equal(agentOwned.action, "REPAIR", "an agent-fixable setup failure stays the agent's handoff");
+  assert.equal(agentOwned.recovery.type, "HANDOFF");
+});
+
+test("a rejected credential is the user's, not an open external wait", () => {
+  const forbidden = advanceFailureAction("demo", Object.assign(new Error(
+    "git push: remote: Permission to acme/app.git denied to bot. The requested URL returned error: 403"),
+  { owner: "external" }), { stage: "land", through: "archived" });
+  assert.equal(forbidden.action, "ASK_USER");
+  assert.equal(forbidden.decision.category, "credential");
+  assert.equal(forbidden.decision.cause, "remote-permission");
+  assert.match(forbidden.reason, /returned error: 403/);
+
+  const pending = advanceFailureAction("demo", Object.assign(new Error("the deploy approver has not answered"), {
+    owner: "external" }));
+  assert.equal(pending.action, "WAIT", "ordinary external waiting keeps its owner and condition");
+  assert.ok(pending.wait.condition);
+});
+
+test("a local process timeout is not a network cause; a socket timeout is", () => {
+  const repair = (reason) => ({ action: "REPAIR", legacyAction: "REPAIR_REVIEW_INFRASTRUCTURE", reason });
+  assert.equal(userEnvironmentCause(repair("spawn ETIMEDOUT")), null);
+  assert.equal(userEnvironmentCause({ action: "REPAIR", legacyAction: "REPAIR_BUILD_RUNTIME",
+    reason: "setup failed", errorCode: "ETIMEDOUT" }), null);
+  assert.equal(userEnvironmentCause(repair("connect ETIMEDOUT 10.0.0.1:443"))?.cause, "network");
+  assert.equal(environmentCause({ codes: ["ENOTFOUND"] })?.category, "network");
+});
+
+test("signals raised during a command ride on the advance envelope and keep their stream line", async () => {
+  drainSignals();
+  const lines = [];
+  emitSignal("budget-warning", "WARNING: BUDGET demo: 72.0% warn continue (tokens)", (line) => lines.push(line));
+  assert.deepEqual(lines, ["WARNING: BUDGET demo: 72.0% warn continue (tokens)"]);
+  recordSignal("budget-warning", "WARNING: BUDGET demo: 72.0% warn continue (tokens)");
+  let printed = null;
+  const f = fixture({ output: (text) => { printed = JSON.parse(text); } });
+  await f.runtime().showAdvance("demo", { through: "proven" });
+  assert.deepEqual(printed.signals, [
+    { code: "budget-warning", message: "BUDGET demo: 72.0% warn continue (tokens)" }]);
+  await f.runtime().showAdvance("demo", { through: "proven" });
+  assert.equal(printed.signals, undefined, "a signal is reported once and absent when there is none");
+  assert.deepEqual(withSignals({ action: "DONE" }), { action: "DONE" });
+});
+
+test("an archive recovery that finds the change already archived signals it in the envelope", async () => {
+  drainSignals();
+  let printed = null;
+  const f = fixture({
+    output: (text) => { printed = JSON.parse(text); },
+    hasLandGrant: () => true,
+    recoverArchive: async (id) => {
+      // apply-runtime's recovery line is quiet under advance; the signal is not.
+      emitSignal("already-archived", `ALREADY ARCHIVED ${id}\n  archived: 2026-10-06`, () => {});
+      return true;
+    }
+  });
+  f.setState({ status: "archived" });
+  await f.runtime().showAdvance("demo", { through: "archived" });
+  assert.equal(printed.action, "DONE");
+  assert.equal(printed.signals[0].code, "already-archived");
+  assert.match(printed.signals[0].message, /^ALREADY ARCHIVED demo/);
 });

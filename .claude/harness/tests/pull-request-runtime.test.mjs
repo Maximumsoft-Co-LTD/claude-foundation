@@ -261,7 +261,7 @@ for (const scenario of ["normal", "mixed-files", "resume-edit", "resume-mode", "
   "default-branch", "dangling-link", "post-land-mode", "archive-mode", "legacy-mode",
   "crlf", "autocrlf", "conversion-resume", "custom-filter", "reserved-filter",
   "encoding", "legacy-archive-mode", "post-land-mode-remove", "non-main-default",
-  "unknown-default", "stale-default", "modified-links", "head-advanced"])
+  "unknown-default", "stale-default", "modified-links", "head-advanced", "push-forbidden"])
 test(`delivery verifies publication boundaries: ${scenario}`, async (t) => {
   const root = mkdtempSync(join(tmpdir(), "foundation-delivery-e2e-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -376,6 +376,9 @@ test(`delivery verifies publication boundaries: ${scenario}`, async (t) => {
     if (executable === "git" && args[0] === "push") {
       assert.equal(args.at(-1), `${commit}:refs/heads/change/${id}`);
       pushes += 1;
+      if (scenario === "push-forbidden") return { status: 128, stdout: "",
+        stderr: "remote: Permission to acme/booking.git denied to bot.\n" +
+          "fatal: unable to access 'https://github.com/acme/booking.git/': The requested URL returned error: 403" };
       if (failPushOnce) {
         failPushOnce = false;
         return { status: 1, stdout: "", stderr: "authentication temporarily unavailable" };
@@ -544,7 +547,23 @@ test(`delivery verifies publication boundaries: ${scenario}`, async (t) => {
     assert.equal(checkedGit(["diff", "--cached"], root), originalIndex);
     return;
   }
+  if (scenario === "push-forbidden") {
+    // A rejected credential is the user's to clear: asked once with the exact
+    // cause, never an open-ended operator wait.
+    assert.equal(interrupted.action, "ASK_USER");
+    assert.equal(interrupted.boundary, "user-environment");
+    assert.equal(interrupted.decision.category, "credential");
+    assert.equal(interrupted.decision.cause, "remote-permission");
+    assert.match(interrupted.reason, /returned error: 403/);
+    assert.equal(interrupted.decision.options[0].command, `claude-foundation deliver advance ${id}`);
+    assert.equal(pushes, 1);
+    assert.equal(creates, 0);
+    return;
+  }
   assert.equal(interrupted.action, "WAIT");
+  assert.equal(interrupted.wait.owner, "repository-operator");
+  assert.match(interrupted.wait.condition, /authentication temporarily unavailable/);
+  assert.equal(interrupted.wait.checkCommand, `claude-foundation deliver advance ${id}`);
   assert.equal(readJson(runtime.statePath(id)).status, "commit-created");
   if (scenario === "conversion-resume") {
     checkedGit(["config", "core.autocrlf", "input"], root);

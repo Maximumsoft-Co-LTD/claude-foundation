@@ -75,6 +75,7 @@ read-only argument.
 | Core | `runtime/core/tool-identity.mjs` | Per-process, content-keyed reuse of successful OpenSpec probes, strict lint, and Git index queries |
 | Core | `runtime/core/lifecycle-reducer.mjs` | Typed lifecycle transitions and compatibility-preserving state mutation |
 | Core | `runtime/core/process-runtime.mjs` | Provider process execution, readiness checks, and managed services |
+| Core | `runtime/core/signals.mjs` | Process-scoped signals (drift restored, budget warning, already archived) that keep their stream line and ride on the advance envelope |
 | Core | `runtime/core/shell-mutation-policy.mjs` | Shared phase-aware shell mutation and canonical Build containment policy |
 | Core | `runtime/core/state-runtime.mjs` | Runtime state, paths, hashing, snapshots, workspace manifests, and Git helpers |
 | Core | `runtime/core/trust.mjs` | Canonical JSON and Ed25519 verification shared by trust protocols |
@@ -232,7 +233,8 @@ instruction, or decision option that would name an operator primitive below
 `advance` route, and the recovery ladder (agent repair, `TRY_ALTERNATE_APPROACH`,
 then a decision with repetition evidence on the third unchanged round), the
 first-observation `user-environment` question for causes only the user can
-clear, and the budget no-progress cap are specified in
+clear (typed `resource`, `credential`, or `network`), the optional `signals[]`
+the envelope carries, and the budget no-progress cap are specified in
 [WORKFLOW.md § Recovery and user decisions](../../WORKFLOW.md#recovery-and-user-decisions).
 
 ## Advanced operator and compatibility commands

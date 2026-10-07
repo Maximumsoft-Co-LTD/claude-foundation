@@ -38,6 +38,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `advance` envelopes carry optional `signals[]` (`{code, message}`) for
+  restored agreement drift, budget warnings, archive recovery that found the
+  change already archived, and settled interrupted applies; the stderr and
+  stdout lines are unchanged.
+- Causes only the user can clear are typed as `resource`, `credential`, or
+  `network` (`decision.category`) and classified where the failure is raised:
+  a full disk asks the user to free space instead of telling the agent to edit
+  foundation.json, and a push rejected for credentials (403) is a new
+  `remote-permission` cause. `deliver advance` asks the user for these; other
+  provider failures stay a `WAIT` that names its condition and check command.
+  A local `spawn ETIMEDOUT` is no longer reported as a network problem, and a
+  reviewer login failure goes to the user.
 - Repository-internal quality tooling that no workflow runs anymore is
   removed: coverage, CRAP, trend, debt, and refactoring-plan scripts; the
   runtime, examples, and website mutation configs and baselines; the
