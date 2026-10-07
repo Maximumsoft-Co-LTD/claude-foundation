@@ -133,7 +133,7 @@ test("stageRootPointersOperation handles no-op, decisions and successful staging
   assert.deepEqual(stage.options.map((option) => option.id), ["sync", "inspect", "pause"]);
   assert.equal(stage.recommended, "sync");
   assert.equal(stage.automaticRecovery, "sync");
-  assert.match(stage.options[0].outcome, /advance c --through build/);
+  assert.match(stage.options[0].outcome, /sandbox sync c/);
 
   const none = operationContext(stateFor(), { orderedRepositories: () => [] });
   stageRootPointersOperation(none.context, "c");

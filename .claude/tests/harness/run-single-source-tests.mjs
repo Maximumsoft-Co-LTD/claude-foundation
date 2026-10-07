@@ -26,17 +26,29 @@ const read = (...parts) => readFileSync(join(ROOT, ...parts), "utf8");
 let assertions = 0;
 const check = (fn) => { fn(); assertions += 1; };
 
-// --- lifecycle phase: one runtime table ---------------------------------------
+// --- lifecycle phase: cli.sh grammar vs the runtime table --------------------
 
-// `cli.sh` no longer restates the table: cli-dispatch.mjs exports the phase
-// from this module for every route it derives from commands.json.
+// The `phase=` case block in cli.sh, parsed back into a map. Shape:
+//   new|start|resolve) phase="change" ;;
 const cli = read("cli.sh");
-check(() => assert.doesNotMatch(cli, /phase="[a-z]+"/,
-  "cli.sh must not restate the lifecycle phase table"));
+const phaseBlock = cli.slice(cli.indexOf('local phase=""'), cli.indexOf("telemetry=1"));
+const cliPhases = {};
+for (const line of phaseBlock.split("\n")) {
+  const match = line.match(/^\s*([a-z0-9|-]+)\)\s*phase="([a-z]+)"\s*;;/);
+  if (!match) continue;
+  for (const command of match[1].split("|")) cliPhases[command] = match[2];
+}
+
+check(() => assert.ok(Object.keys(cliPhases).length > 20,
+  "the cli.sh phase grammar failed to parse — this test is reading the wrong block"));
+check(() => assert.equal(cliPhases.investigate, "investigate",
+  "the public Investigate route must export its canonical lifecycle phase"));
 check(() => assert.equal(PHASE_BY_COMMAND.investigate, "investigate",
   "direct runtime Investigate must use the same canonical lifecycle phase"));
 check(() => assert.equal(telemetryPhaseForCommand("investigate"), "investigate",
   "Investigate telemetry must retain its lifecycle phase"));
+check(() => assert.equal(cliPhases["handoff-list"], "land",
+  "the aggregate handoff reader must retain its Land lifecycle phase"));
 check(() => assert.equal(PHASE_BY_COMMAND["handoff-list"], "land",
   "direct runtime handoff listing must use the Land lifecycle phase"));
 
@@ -51,6 +63,10 @@ check(() => assert.match(foundation,
   /createHandoffRuntime\(\{[\s\S]*?capture:\s*trapFailures[\s\S]*?\}\);/,
   "the shipped handoff runtime must trap fail-fast errors during aggregate listing"));
 
+for (const [command, phase] of Object.entries(cliPhases))
+  check(() => assert.equal(PHASE_BY_COMMAND[command], phase,
+    `cli.sh maps '${command}' to '${phase}'; the runtime table must say the same`));
+
 // The runtime table may cover more than the CLI exposes (`meta` commands are
 // reachable only through the runtime), but every lifecycle answer it gives for
 // a command the CLI also routes has to match, and the phase vocabulary is
@@ -58,23 +74,31 @@ check(() => assert.match(foundation,
 for (const [command, phase] of Object.entries(PHASE_BY_COMMAND)) {
   check(() => assert.ok([...LIFECYCLE_PHASES, ...OPTIONAL_OPERATION_PHASES, "meta"].includes(phase),
     `'${command}' is mapped to unknown phase '${phase}'`));
+  if (cliPhases[command])
+    check(() => assert.equal(cliPhases[command], phase,
+      `the runtime maps '${command}' to '${phase}'; cli.sh must say the same`));
 }
 
 // --- public command registry vs cli.sh grammar -------------------------------
 
-// `commands.json` generates `help` and, through its `runtime` routes, the CLI
-// grammar itself. An entry without a runtime route must be one of the few
-// non-runtime commands cli.sh owns (installer, help, host, dashboard, ...);
-// otherwise it is a documented dead end — `exec` and `hash` once shipped so.
+// `commands.json` generates `help`, but cli.sh owns the actual routes. An entry
+// the runtime implements but cli.sh never routes is a documented dead end —
+// `exec` and `hash` both shipped exactly that way. Every token of a public
+// command's name must appear in cli.sh, either as a case label or as a quoted
+// literal (the `dashboard snapshot` form).
 const registry = JSON.parse(read(".claude", "harness", "commands.json"));
 const publicCommands = registry.commands.filter(
   (command) => command.audience !== "internal");
 check(() => assert.ok(publicCommands.length > 20,
   "the command registry failed to parse — this test is reading the wrong file"));
 for (const command of publicCommands)
-  check(() => assert.ok(command.runtime ||
-      new RegExp(`^\\s*(?:[\\w.-]+\\|)*${command.name.split(" ")[0]}(?:\\|[\\w.-]+)*\\)`, "m").test(cli),
-    `commands.json advertises '${command.name}' but neither a runtime route nor cli.sh routes it`));
+  for (const token of command.name.split(" "))
+    check(() => assert.ok(
+      new RegExp(`(?:^|\\s)(?:[\\w.-]+\\|)*${token}(?:\\|[\\w.-]+)*\\)`, "m").test(cli) ||
+        cli.includes(`"${token}"`),
+      `commands.json advertises '${command.name}' but cli.sh has no route for '${token}'`));
+check(() => assert.match(cli, /^\s*dispatch\)/m,
+  "commands.json advertises host command 'agents dispatch' but cli.sh has no dispatch route"));
 
 // --- the four runtime-API pins ----------------------------------------------
 

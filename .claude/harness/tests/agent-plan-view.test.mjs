@@ -441,7 +441,7 @@ test("next command covers blocked, proof, single, and planned routes", () => {
   assert.equal(agentPlanNext(plan({ dispatchable: false }), "change"),
     "resolve blockingReasons before dispatch");
   assert.equal(agentPlanNext(plan({ recommendedExecution: "proof-ready" }), "change"),
-    "claude-foundation advance change --through proven");
+    "claude-foundation proof readiness change");
   assert.equal(agentPlanNext(plan({ recommendedExecution: "single-agent" }), "change"),
     "claude-foundation packet change --task T1");
   assert.equal(agentPlanNext(plan(), "change"),

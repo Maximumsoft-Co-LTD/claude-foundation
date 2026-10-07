@@ -113,7 +113,7 @@ test("readiness recovery routes every typed status", () => {
   }), [{
     kind: "repair-repository-binding",
     reason: "api missing",
-    command: "claude-foundation advance c --through build",
+    command: "claude-foundation sandbox create c --all",
     inspectCommand: "claude-foundation sandbox inspect c"
   }, "x1", "x2"]);
   assert.deepEqual(readinessNext(context, { ...input, status: "READY" }), []);
@@ -209,7 +209,7 @@ test("repository health is read before hashing and returns typed recovery", () =
   assert.deepEqual(value.repositoryIssues,
     ["selected repository 'api' isolated workspace is missing"]);
   assert.equal(value.next[0].command,
-    "claude-foundation advance change --through build");
+    "claude-foundation sandbox create change --all");
   assert.equal(value.issues[0], "workspace missing before hash");
 });
 
@@ -220,7 +220,7 @@ test("repository recovery exposes repair and inspection commands", () => {
     unavailable: [], repositoryIssues: ["api binding missing"]
   });
   assert.equal(next[0].command,
-    "claude-foundation advance change --through build");
+    "claude-foundation sandbox create change --all");
   assert.equal(next[0].inspectCommand,
     "claude-foundation sandbox inspect change");
 });

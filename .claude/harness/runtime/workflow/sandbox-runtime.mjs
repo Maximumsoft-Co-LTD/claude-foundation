@@ -186,7 +186,7 @@ export function showSandboxInspection(context, id, flags = {}) {
     if (result.workspaceIsolation.drift === "target-moved")
       context.output.log(`  target drift: base ${
         String(result.workspaceIsolation.baseHead).slice(0, 8)} -> target ${
-        String(result.workspaceIsolation.targetHead).slice(0, 8)}; run 'claude-foundation advance ${id} --through build' to replay onto it`);
+        String(result.workspaceIsolation.targetHead).slice(0, 8)}; run 'claude-foundation sandbox sync ${id}' to replay onto it`);
     if (result.workspaceIsolation.selectionError)
       context.output.log(`  repository selection: invalid (${result.workspaceIsolation.selectionError})`);
     for (const repository of result.workspaceIsolation.repositories || [])
@@ -871,7 +871,7 @@ export function reportSandboxSync({ id, state, movement, forwarded, conflicts,
   for (const conflict of movement?.conflicts || [])
     log(`CONFLICT ${movement.multiRepository ? `${conflict.repository}:` : ""}${conflict.path}: the sandbox diff no longer applies to the moved target; merge the target's version into the named repository sandbox worktree, then rerun sandbox sync. Land stays blocked until every repository sandbox replays onto its current commit.`);
   if (movement && !movement.rebased && !movement.conflicts.length)
-    log(`TARGET MOVED ${id}: rerun 'claude-foundation advance ${id} --through build' after repairing the named repository replay.`);
+    log(`TARGET MOVED ${id}: rerun 'claude-foundation sandbox sync ${id}' after repairing the named repository replay.`);
 }
 
 export function sandboxCreatePreflight(context, id, flags = {}) {
@@ -1024,7 +1024,7 @@ export function repairSelectedRepositories(context, id, state, repositories) {
       delete records[record.id];
     }
     context.saveRuntime(state);
-    context.fail(`${error.message}; existing work was preserved — inspect it with 'claude-foundation sandbox inspect ${id}', retry repair with 'claude-foundation advance ${id} --through build', or retire the change with 'claude-foundation change abandon ${id} --reason <reason> --decision-ref <ref>'`);
+    context.fail(`${error.message}; existing work was preserved — inspect it with 'claude-foundation sandbox inspect ${id}', retry repair with 'claude-foundation sandbox create ${id} --all', or retire the change with 'claude-foundation change abandon ${id} --reason <reason> --decision-ref <ref>'`);
   }
 }
 

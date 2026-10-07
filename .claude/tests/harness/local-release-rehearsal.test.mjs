@@ -27,7 +27,7 @@ test("archive intake permits examples but rejects environment payloads", () => {
 
 test("rehearsal checks compact intent help and full compatibility help separately", () => {
   const compact = { status: 0, stdout: "change start <draft>\nadvance <change>\n" };
-  const full = { status: 0, stdout: "handoff status <change>\nauthority request <change>\n" };
+  const full = { status: 0, stdout: "proof readiness <change>\nland check <change>\n" };
   assert.equal(cliHelpStatus(compact, full), "pass");
   assert.equal(cliHelpStatus({ status: 0, stdout: full.stdout }, full), "fail");
   assert.equal(cliHelpStatus(compact, { status: 1, stdout: full.stdout }), "fail");
@@ -39,6 +39,6 @@ test("Homebrew test checks compact and full CLI help at their owning surfaces", 
   assert.match(formula, /assert_match "change start", help/);
   assert.match(formula, /assert_match "advance", help/);
   assert.match(formula, /full_help = shell_output\("#\{bin\}\/claude-foundation help --all"\)/);
-  assert.match(formula, /assert_match "handoff status", full_help/);
-  assert.match(formula, /assert_match "authority request", full_help/);
+  assert.match(formula, /assert_match "proof readiness", full_help/);
+  assert.match(formula, /assert_match "land check", full_help/);
 });

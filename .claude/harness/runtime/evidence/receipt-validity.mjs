@@ -11,29 +11,29 @@ import {
 // apart. Anything unlisted falls back to re-running proof, which is correct for
 // every staleness class.
 const VALIDITY_RECOVERY = {
-  missing: (id) => `no evidence has been executed for this workspace; run: claude-foundation advance ${id} --through proven`,
+  missing: (id) => `no evidence has been executed for this workspace; run: claude-foundation proof run ${id}`,
   // The one gate class that had no named exit: a provider that ran and failed.
   // "Re-run" is correct when the gate caught a real defect and useless when
   // the gate itself is wrong, so all three honest exits are stated. There is
   // deliberately no route that lands a failing proof.
-  fail: (id, provider) => `provider '${provider}' executed and failed. Fix the cause and re-run: claude-foundation advance ${id} --through proven. If an unfinished task's verify command is wrong, correct it directly (claude-foundation change amend ${id} --task <task> --verify <command>); a wrong evidence gate needs a semantic amendment (claude-foundation change amend ${id} <amendment.json>). If the user decides to land without it, withdraw it on record: claude-foundation change waive ${id} --capability <capability> --reason <why> --decision-ref <ref>`,
-  stale: (id) => `the workspace moved after this receipt was earned; re-run: claude-foundation advance ${id} --through proven. A provider that declares "inputs" in its config keeps its receipt when the edit falls outside them, and a review or acceptance verdict rebinds automatically when the change's diff and packet are unchanged on the moved base`,
-  "reusable-diff": (id) => `the change's diff and packet are unchanged on the moved base, so the verdict rebinds without a new review; run: claude-foundation advance ${id} --through proven`,
-  "provider-inputs-stale": (id) => `the provider's declared inputs changed; re-run: claude-foundation advance ${id} --through proven`,
-  "contract-stale": (id) => `evidence.yaml changed after this receipt; re-run: claude-foundation advance ${id} --through proven`,
-  "provider-fingerprint-stale": (id) => `the provider's execution.yaml wiring changed; re-run: claude-foundation advance ${id} --through proven`,
-  "incomplete-claims": (id, provider) => `provider '${provider}' did not cover every claim declared for it; check its claim list in execution.yaml, then re-run: claude-foundation advance ${id} --through proven`,
+  fail: (id, provider) => `provider '${provider}' executed and failed. Fix the cause and re-run: claude-foundation proof run ${id}. If an unfinished task's verify command is wrong, correct it directly (claude-foundation change amend ${id} --task <task> --verify <command>); a wrong evidence gate needs a semantic amendment (claude-foundation change amend ${id} <amendment.json>). If the user decides to land without it, withdraw it on record: claude-foundation change waive ${id} --capability <capability> --reason <why> --decision-ref <ref>`,
+  stale: (id) => `the workspace moved after this receipt was earned; re-run: claude-foundation proof run ${id}. A provider that declares "inputs" in its config keeps its receipt when the edit falls outside them, and a review or acceptance verdict rebinds automatically when the change's diff and packet are unchanged on the moved base`,
+  "reusable-diff": (id) => `the change's diff and packet are unchanged on the moved base, so the verdict rebinds without a new review; run: claude-foundation proof run ${id}`,
+  "provider-inputs-stale": (id) => `the provider's declared inputs changed; re-run: claude-foundation proof run ${id}`,
+  "contract-stale": (id) => `evidence.yaml changed after this receipt; re-run: claude-foundation proof run ${id}`,
+  "provider-fingerprint-stale": (id) => `the provider's execution.yaml wiring changed; re-run: claude-foundation proof run ${id}`,
+  "incomplete-claims": (id, provider) => `provider '${provider}' did not cover every claim declared for it; check its claim list in execution.yaml, then re-run: claude-foundation proof run ${id}`,
   "review-not-independent": () => "the reviewer shares an identity or session with the implementation. Use a fresh configured reviewer; same-family Codex-only or Claude-Code-only review needs only review.diversity='single-model'. Set review.independence='self' only for a deliberate same-identity/session waiver, which is recorded on the receipt",
   "review-not-diverse": () => "the reviewer shares a provider and model family with the implementation. Use a human or a different model family, or set \"review\": {\"diversity\": \"single-model\"} in foundation.json",
   "review-blockers": (id) => `the review recorded unresolved blockers; resolve them, then request a new review: claude-foundation authority request ${id} --type review`,
-  "review-repair-evidence-stale": (id) => `the deterministic final-review closure no longer matches its current critical-case evidence; run: claude-foundation advance ${id} --through proven`,
+  "review-repair-evidence-stale": (id) => `the deterministic final-review closure no longer matches its current critical-case evidence; run: claude-foundation proof advance ${id}`,
   "acceptance-invalid": (id) => `acceptance needs a named human, an "accept" decision, and criteria matching the current scope. Either record a real acceptance, or withdraw the requirement: claude-foundation change resolve ${id} --acceptance-not-required (a claim that declares capability 'acceptance' must drop it in evidence.yaml instead)`,
   "semantic-acceptance-invalid": (id) => `the signed semantic acceptance verdict is missing, stale, altered, or does not cover its declared cases; obtain a current oracle envelope and record it with: claude-foundation evidence record ${id} <provider> <status> --envelope <signed-json>`,
   "external-observation-missing": () => "a passing external receipt must state what was observed (--observed)",
   "external-provenance-missing": () => "a passing external receipt must state its source (--source or --reviewer)",
   "external-evidence-missing": () => "a passing external receipt must carry an artifact or reference (--artifact or --reference)",
-  "execution-log-missing": (id) => `a harness-executed receipt must carry its command log; re-run: claude-foundation advance ${id} --through proven`,
-  "invalid-artifacts": (id) => `a required artifact is missing or altered since it was recorded; re-run: claude-foundation advance ${id} --through proven`,
+  "execution-log-missing": (id) => `a harness-executed receipt must carry its command log; re-run: claude-foundation proof run ${id}`,
+  "invalid-artifacts": (id) => `a required artifact is missing or altered since it was recorded; re-run: claude-foundation proof run ${id}`,
   "prototype-evidence": () => "prototype output cannot serve as evidence; prove the real implementation"
 };
 
@@ -41,8 +41,8 @@ export function validityRecovery(validity, id, provider) {
   const route = VALIDITY_RECOVERY[validity];
   if (route) return route(id, provider);
   if (String(validity).endsWith("-version-stale"))
-    return `this receipt predates the current protocol; re-run: claude-foundation advance ${id} --through proven`;
-  return `re-run: claude-foundation advance ${id} --through proven`;
+    return `this receipt predates the current protocol; re-run: claude-foundation proof run ${id}`;
+  return `re-run: claude-foundation proof run ${id}`;
 }
 
 export function reviewProvenanceValidityReason(context) {

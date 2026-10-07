@@ -57,7 +57,7 @@ try {
   assert.match(changeListingRow("untracked", dependencies), /^untracked\tuntracked\tunknown\t/);
   assert.match(changeListingRow("invalid", dependencies), /invalid-runtime-json.*change abandon invalid/);
   assert.match(changeListingRow("missing", dependencies),
-    /workspace-missing\t2.*advance missing --through build/);
+    /workspace-missing\t2.*sandbox create missing --all/);
   assert.match(changeListingRow("ready", dependencies), /ready-to-land\t2/);
   assert.match(changeListingRow("stale", dependencies), /stale-proof\tunknown/);
   assert.match(changeListingRow("change", dependencies), /change\t2/);

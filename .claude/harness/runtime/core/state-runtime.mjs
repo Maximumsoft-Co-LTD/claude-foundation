@@ -364,7 +364,7 @@ export function createStateRuntime({
     const workspace = canonicalPath(workspaceOverride || state.workspace?.path || root);
     if (!existsSync(workspace)) {
       const error = new Error(`workspace '${workspace}' for change '${id}' no longer exists; ` +
-        `recreate or repair it with 'claude-foundation advance ${id} --through build' or run ` +
+        `recreate or repair it with 'claude-foundation sandbox create ${id} --all' or run ` +
         `'claude-foundation change abandon ${id} --reason <reason> --decision-ref <ref>'`);
       error.code = "FOUNDATION_WORKSPACE_MISSING";
       throw error;

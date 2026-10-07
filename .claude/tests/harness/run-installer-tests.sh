@@ -11,19 +11,24 @@ assert_file_contains "Homebrew source package includes required model policy" \
   "$ROOT/Formula/claude-foundation.rb" '"foundation.json"'
 cli_help="$(bash "$ROOT/cli.sh" help)"
 cli_help_all="$(bash "$ROOT/cli.sh" help --all)"
+assert_contains "CLI help documents proof readiness" \
+  "$cli_help_all" 'proof readiness <change>'
+assert_contains "CLI help documents pre-review evidence collection" \
+  "$cli_help_all" 'proof collect <change>'
+assert_contains "CLI help documents canonical proof run" \
+  "$cli_help_all" 'proof run <change>'
 assert_contains "CLI help documents budget recovery" \
   "$cli_help_all" 'budget continue <change>'
 assert_contains "CLI help documents resumable budget checkpoints" \
   "$cli_help_all" 'budget checkpoint <change>'
 assert_contains "CLI help documents traceability audit" \
   "$cli_help_all" 'change audit <change> [--json]'
-assert_contains "CLI help documents external authority" \
-  "$cli_help_all" 'authority request <change>'
-if printf '%s' "$cli_help_all" | grep -Eq 'claude-foundation (proof (readiness|run|execute)|sandbox (create|sync)|land (check|advance)|evidence (init|detect|doctor)|change validate|validate|runtime) '; then
-  fail "full CLI help hides commands that advance supersedes"
-else
-  pass "full CLI help hides commands that advance supersedes"
-fi
+assert_contains "CLI help documents evidence detection" \
+  "$cli_help_all" 'evidence detect <change>'
+assert_contains "CLI help documents explicit evidence initialization" \
+  "$cli_help_all" 'evidence init <change> [--write]'
+assert_contains "CLI help documents evidence diagnosis" \
+  "$cli_help_all" 'evidence doctor <change>'
 if printf '%s' "$cli_help" | grep -qF 'proof execute'; then
   fail "default CLI help hides internal proof commands"
 else
@@ -34,6 +39,8 @@ if printf '%s' "$cli_help" | grep -Eq 'telemetry (sync|import)|dashboard|runtime
 else
   pass "default CLI help hides host and administration commands"
 fi
+assert_contains "full CLI help retains compatibility diagnostics" \
+  "$cli_help_all" 'proof execute <change>'
 assert_contains "full CLI help publishes the host instruction endpoint" \
   "$cli_help_all" 'host instruction <command>'
 assert_contains "full CLI help publishes the host agent-contract endpoint" \

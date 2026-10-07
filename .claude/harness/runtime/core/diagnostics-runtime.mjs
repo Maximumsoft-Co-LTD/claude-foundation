@@ -38,7 +38,7 @@ export function changeListingRow(id, {
       current = relevantHash(id);
     } catch (error) {
       if (error.code !== "FOUNDATION_WORKSPACE_MISSING") throw error;
-      return `${id}\tworkspace-missing\t${state.schema || "unknown"}\tclaude-foundation advance ${id} --through build`;
+      return `${id}\tworkspace-missing\t${state.schema || "unknown"}\tclaude-foundation sandbox create ${id} --all`;
     }
   }
 
@@ -352,8 +352,8 @@ export function createDiagnosticsRuntime({
           level: "warn",
           name: "out-of-band-delivery",
           detail: `change bytes or a recorded delivery reference are present while lifecycle=${
-            state.status}; this is not Proof or archive completion; recover with 'claude-foundation advance ${
-              requestedChange} --through build', then re-prove and Land until archived`,
+            state.status}; this is not Proof or archive completion; recover with 'claude-foundation sandbox sync ${
+              requestedChange}', then re-prove and Land until archived`,
           delivery: { authoritative: false, proofStatus: "unchanged", ...delivery }
         });
       }
@@ -605,5 +605,71 @@ export function createDiagnosticsRuntime({
     }
   }
 
-  return { doctor, migrate, showChanges, showProviders };
+  function usage() {
+    console.log(`Change Loop ${version}
+
+Commands:
+  doctor [--stage change|build|prove] [--require-archive] [--change <id>] [--unattended --attestation <file>] [--json]
+  repos [change]
+  models
+  agent-plan <change> [--group <n>] [--full] [--pretty]
+  agent-dispatch <change> [--pretty]
+  agent-task <change> <task> [--pretty]
+  agent-acquire <change> <task> --owner <agent-id>
+  agent-release <change> <task> --owner <agent-id> [--force] [--decision-ref <ref>]
+  new <intent> [--id <id>] [--rapid] [--draft <project-file.json>]
+  resolve <change> --impact <low|medium|high> --coupling <isolated|coupled>
+  abandon <change> --reason <reason> --decision-ref <ref> [--applied keep|revert]
+  changes
+  providers
+  packet <change> [--phase change|build|prove|review|land] [--repo <id>] [--task <id>] [--pretty]
+  metrics <change>
+  budget-checkpoint <change>
+  budget-continue <change> --reason <reason> --decision-ref <ref> [--run <id>]
+  validate <change>
+  audit-change <change> [--json]
+  hash <change>
+  proof-plan <change>
+  proof-readiness <change>
+  proof-advance <change> [--retry-indeterminate --decision-ref <ref>]
+  proof-run <change>
+  proof-collect <change>
+  proof-preflight <change>
+  proof-execute <change>
+  proof-audit <change>
+  receipt <change> <provider> <pass|fail|inconclusive|error> [--claims=a,b]
+  evidence-detect <change>
+  evidence-init <change> [--write]
+  evidence-doctor <change>
+  evidence-verify-ci <change> <provider> <signed.json>
+  evidence-upgrade <change>
+  authority-request <change> --type review|acceptance
+  authority-status <change> [--request <id>]
+  authority-dispatch <change> --request <id> --scope full|delta --reviewer-type ai|human --reviewer-identity <id>
+  authority-run <change> --request <id> [--reviewer <configured-id>] [subject provenance options] [main-session provenance options]
+  authority-abort <change> --request <id> --reason <reason>
+  authority-record <change> --request <id> --response <file>
+  handoff-status <change>
+  handoff-list [--open] [--owner <team>] [--environment <env>] [--json]
+  handoff-packet <change> [--id <operation-id>]
+  handoff-record <change> --id <operation-id> --status accepted|completed|rejected|cancelled|superseded --actor <name> --reference <ref> [--evidence <refs> --reason <why>]
+  run-provider <change> <provider> -- <command> [args...]
+  prove <change>
+  land-check <change>
+  land-plan <change>
+  land-record <change> --repo <id> --commit <sha> --decision-ref <ref> [--ci pass|fail|pending]
+  land-pointers <change>
+  land-resume <change>
+  sandbox challenge <change>
+  sandbox inspect <change> [--json] [--unattended --attestation <file>]
+  sandbox create <change> [--all] [--unattended --attestation <file>]
+  sandbox sync|apply <change>
+  archive <change>
+  event <change> --request <id> [metrics...]
+  telemetry-sync <change> [transcript.jsonl]
+  telemetry-import <change> <file> [--format generic|codex|cursor|otel|claude]
+  migrate [legacy-id] [--apply]`);
+  }
+
+  return { doctor, migrate, showChanges, showProviders, usage };
 }

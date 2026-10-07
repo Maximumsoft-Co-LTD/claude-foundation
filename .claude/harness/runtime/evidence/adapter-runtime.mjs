@@ -217,7 +217,7 @@ export function runProviderRequest(context, id, provider, values) {
     context.die(`unknown provider '${provider}'`);
   if (configured && configured.adapter !== "external")
     context.die(`provider '${provider}' declares adapter '${configured.adapter}' and its own command; ` +
-      "run 'claude-foundation advance <change> --through proven' so the declared command is what executes");
+      "run 'proof run <change>' so the declared command is what executes");
   const split = values.indexOf("--");
   if (split < 0 || split === values.length - 1)
     context.die("run-provider requires '-- <command> [args...]'");

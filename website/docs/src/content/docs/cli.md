@@ -26,7 +26,7 @@ surface is:
 | `doctor …` | Diagnose a route only when the coordinator asks for it |
 
 `claude-foundation help` shows this small surface. `help --all` exposes the
-operator and host-integration commands below.
+compatible primitives below for operators and host integrations.
 
 ## Read-only
 
@@ -40,6 +40,8 @@ Safe to run at any time. These mutate nothing.
 | `metrics <change>` | Inspect measured usage, semantic-intake effectiveness, active budget, cost, and execution timing |
 | `feedback <change>` | Explain reviewer, evidenced repair, human-wait, and unattributed timing; show reuse and the next action |
 | `change audit <change>` | Audit scenario, claim, task, and provider traceability |
+| `proof readiness <change>` | Typed blockers and canonical next commands |
+| `land check <change>` | Validate mechanical Land safety and report current assurance |
 | `handoff status <change>` | Inspect permission-bound operations and their Land disposition |
 | `handoff list [--open] [--owner <team>] [--environment <env>] [--json]` | List operational obligations across active and archived changes |
 | `handoff packet <change> [--id <H00n>]` | Read the credential-free packet for a named DevOps/SRE owner |
@@ -74,13 +76,22 @@ language profiles, baselines, and rollout policy.
 | `change amend <change> --task <task> --verify <command> [--reason <text>]` | Correct one unfinished task's verify command without amendment JSON; claims, capabilities, and approval stay, and an always-passing command is refused |
 | `change revise <change> <draft.json> [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | Before Build, inspect and, when complete, recompile a revised semantic draft over the same change id in one call, with rollback and a requirement delta (approval carries unless a requirement is removed) |
 | `change resolve <change> …` | Persist impact, coupling, security, and review decisions |
+| `change validate <change>` | Validate the change and its executable evidence contract |
+| `sandbox create <change> [--all]` | Create the isolated Build workspace |
+| `sandbox sync <change>` | Synchronize an intentional contract revision into Build |
 | `advance <change> [--through build\|proven\|archived] [--host-result <result.json>]` | Normal model-facing coordinator; run safe deterministic steps and return one bounded action |
+| `proof advance <change>` | Compatible Prove primitive used internally and by explicit integrations |
+| `proof collect <change>` | Low-level collection for diagnosis or an explicit integration |
+| `proof run <change>` | Low-level atomic run when no resumable external handoff is needed |
 | `handoff record <change> --id <H00n> …` | Record accepted/completed/rejected/cancelled/superseded operational outcomes and durable references |
 
 ## Evidence wiring
 
 | Command | Purpose |
 |---|---|
+| `evidence detect <change>` | Detect safe project-owned provider candidates without executing them |
+| `evidence init <change> [--write]` | Preview, or explicitly write, high-confidence provider wiring |
+| `evidence doctor <change>` | Explain configured, detectable, and unresolved wiring |
 | `evidence verify-ci <change> <provider> <signed.json>` | Verify signed CI provenance bound to the provider workspace |
 
 ## External authority
@@ -102,12 +113,13 @@ these directly for diagnosis or an explicit integration.
 `evidence record` is a low-level integration path, **not** the normal interactive recovery flow. It refuses a passing receipt for any provider the harness executes.
 :::
 
-## Hidden compatibility commands
+## Landing
 
-`advance` performs these steps, so they are hidden from `help --all` and this
-reference. They still run, and `describe <command>` still answers, until the
-next major release removes them: `proof readiness|advance|run|collect|preflight|execute|finalize|audit`, `sandbox create|sync|inspect|apply`, `land check|advance|recover|archive|record|resume|plan|pointers`, `evidence detect|init|doctor|upgrade|run`, `change validate`, and the deprecated `runtime`, `validate`, `agents task`, `proof plan`, and `proof finish`. Land runs only
-through `/land` (`advance --through archived`).
+| Command | Purpose |
+|---|---|
+| `land archive <change>` | Low-level apply, synchronize, audit, archive, and cleanup primitive; normal agents use `advance --through archived` |
+| `land record <change> --repo <id> --commit <sha> --decision-ref <ref>` | Legacy compatibility for an active commit-oriented transaction |
+| `land resume <change>` | Diagnostic resume primitive; normal recovery repeats `/land` |
 
 ## Optional pull-request delivery
 
@@ -127,6 +139,7 @@ delivery receipt.
 
 | Command | Purpose |
 |---|---|
+| `sandbox create <change> --all` | Repair missing multi-repository bindings in place; valid existing worktrees are preserved |
 | `change abandon <change> --reason <r> --decision-ref <ref>` | Quarantine a change that cannot be proven |
 | `change waive <change> --capability <c> --reason <r> --decision-ref <ref>` | Withdraw one capability's enforcement after its provider ran and failed; `--revoke` restores it |
 | `budget continue <change> --reason <r> --decision-ref <ref>` | Optional explicit widening; exhausted windows auto-continue |
@@ -139,7 +152,7 @@ Commands marked as needing a `--decision-ref` require an **explicit host-recorde
 | Command | Purpose |
 |---|---|
 | `init [target-path] [--yes]` | Install or upgrade Change Loop in a project |
-| `help [--all]` | Canonical commands; `--all` adds operator and host routes |
+| `help [--all]` | Canonical commands; `--all` includes compatibility routes |
 | `dashboard [-up\|-status\|-down]` | Manage the optional team-presence client |
 | `migrate [legacy-id] [--apply]` | Migrate corroborated legacy workflow records |
 

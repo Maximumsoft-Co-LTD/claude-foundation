@@ -87,8 +87,8 @@ assert.deepEqual(wiringChoiceOperation({
   ] })
 }, "c", "security"), {
   kind: "configure-provider",
-  command: "claude-foundation advance c --through proven",
+  command: "claude-foundation evidence init c --write",
   source: "package.json",
   instruction: "Wire provider 'security' from the project-owned command detected at package.json, then re-run proof.",
-  verify: "claude-foundation advance c --inspect"
+  verify: "claude-foundation proof readiness c"
 });

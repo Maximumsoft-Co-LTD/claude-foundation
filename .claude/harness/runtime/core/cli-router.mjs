@@ -92,6 +92,7 @@ export async function routeRuntimeCommand(command, values, api) {
     importTelemetry,
     importHostExecution,
     migrate,
+    usage,
     describeCommand,
     runtimeApiVersion,
     version,
@@ -893,7 +894,7 @@ export async function routeRuntimeCommand(command, values, api) {
   };
   const handler = handlers[command];
   if (!handler) {
-    describeCommand(null);
+    usage();
     if (command) process.exit(1);
     return;
   }

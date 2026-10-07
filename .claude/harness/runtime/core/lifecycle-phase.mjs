@@ -11,8 +11,9 @@
 // two disjoint halves of a phase rollup: operations with no tokens, tokens with
 // no operations.
 //
-// The CLI wrapper now takes its phase from this table through
-// `cli-dispatch.mjs`, so there is one copy.
+// The CLI wrapper is shell and cannot import this module, so the two are kept
+// in lockstep by the repository's single-source table checks. Keep them in
+// step, or those checks fail.
 //
 // `meta` covers commands that act on a change without belonging to a phase of
 // its construction — budget extension, telemetry ingestion, event recording.

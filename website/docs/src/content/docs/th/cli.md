@@ -25,7 +25,7 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | `doctor …` | วิเคราะห์เฉพาะเมื่อ coordinator ขอ |
 
 `claude-foundation help` แสดง surface ขนาดเล็กนี้ ส่วน `help --all` แสดง
-คำสั่งด้านล่างสำหรับ operator และ host integration
+compatible primitive ด้านล่างสำหรับ operator และ host integration
 
 ## อ่านอย่างเดียว
 
@@ -39,6 +39,8 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | `metrics <change>` | ดูการใช้งาน ประสิทธิผล semantic intake งบ ต้นทุน และเวลาการรันที่วัดได้ |
 | `feedback <change>` | อธิบายเวลา reviewer, repair ที่มีหลักฐาน, human wait และเวลาที่ยังระบุไม่ได้ พร้อม reuse และ action ถัดไป |
 | `change audit <change>` | ตรวจความเชื่อมโยงของ scenario claim task และ provider |
+| `proof readiness <change>` | blocker แบบมีชนิด พร้อมคำสั่งถัดไปที่ถูกต้อง |
+| `land check <change>` | ตรวจว่า projection ที่พิสูจน์แล้วยัง land ได้ |
 | `handoff status <change>` | ดู operation ที่ต้องสิทธิ์ภายนอกและผลต่อ Land |
 | `handoff list [--open] [--owner <team>] [--environment <env>] [--json]` | ดู operational obligation ข้าม active และ archived change |
 | `handoff packet <change> [--id <H00n>]` | อ่าน packet ที่ไม่มี credential สำหรับ DevOps/SRE owner |
@@ -73,13 +75,22 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | `change amend <change> --task <task> --verify <command> [--reason <text>]` | แก้ verify command ของ task ที่ยังไม่เสร็จหนึ่งตัวโดยไม่ต้องเขียน amendment JSON claim, capability และ approval คงเดิม และคำสั่งที่ผ่านเสมอจะถูกปฏิเสธ |
 | `change revise <change> <draft.json> [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | ก่อน Build ตรวจและถ้าครบจะคอมไพล์ semantic draft ฉบับแก้ทับ change id เดิมในคำสั่งเดียว พร้อม rollback และแสดง requirement delta (ใช้ approval เดิมต่อ เว้นแต่มีการลบ requirement) |
 | `change resolve <change> …` | บันทึกการตัดสินใจเรื่อง impact coupling security และ review |
+| `change validate <change>` | ตรวจ change และ evidence contract ที่รันได้ |
+| `sandbox create <change> [--all]` | สร้างพื้นที่ Build ที่แยกออกมา |
+| `sandbox sync <change>` | ซิงก์การแก้ข้อตกลงที่ตั้งใจเข้าไปใน Build |
 | `advance <change> [--through build\|proven\|archived] [--host-result <result.json>]` | Coordinator ปกติของ model รัน deterministic step ที่ปลอดภัยแล้วคืน bounded action หนึ่งตัว |
+| `proof advance <change>` | Compatible Prove primitive ที่ coordinator และ integration ใช้ภายใน |
+| `proof collect <change>` | การเก็บระดับล่างสำหรับวิเคราะห์หรือ integration ที่ตั้งใจไว้ |
+| `proof run <change>` | atomic run ระดับล่างเมื่อไม่ต้องมี external handoff ที่ทำต่อได้ |
 | `handoff record <change> --id <H00n> …` | บันทึก accepted/completed/rejected/cancelled/superseded พร้อม durable reference |
 
 ## การต่อสายหลักฐาน
 
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
+| `evidence detect <change>` | ตรวจหา provider ของโปรเจกต์ที่ปลอดภัย โดยไม่รันมัน |
+| `evidence init <change> [--write]` | ดูตัวอย่าง หรือเขียนการต่อสายที่มั่นใจสูงลงไปจริง |
+| `evidence doctor <change>` | อธิบายการต่อสายที่ตั้งไว้ ที่ตรวจพบได้ และที่ยังไม่ลงตัว |
 | `evidence verify-ci <change> <provider> <signed.json>` | ตรวจ provenance ของ CI ที่เซ็นและผูกกับ workspace ของ provider |
 
 ## อำนาจจากภายนอก
@@ -101,11 +112,13 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 `evidence record` เป็นทางเชื่อมระดับล่าง **ไม่ใช่** ขั้นตอนกู้คืนแบบโต้ตอบตามปกติ มันปฏิเสธ receipt ที่ผ่านของ provider ทุกตัวที่ harness เป็นคนรัน
 :::
 
-## คำสั่ง compatibility ที่ซ่อนไว้
+## การ land
 
-`advance` ทำขั้นตอนเหล่านี้ให้แล้ว จึงซ่อนจาก `help --all` และเอกสารนี้ แต่ยังรันได้
-และ `describe <command>` ยังตอบได้ จนกว่าจะถูกลบใน major release ถัดไป: `proof readiness|advance|run|collect|preflight|execute|finalize|audit`, `sandbox create|sync|inspect|apply`, `land check|advance|recover|archive|record|resume|plan|pointers`, `evidence detect|init|doctor|upgrade|run`, `change validate` และ alias ที่ deprecated `runtime`, `validate`, `agents task`, `proof plan` และ `proof finish` ส่วน Land รันผ่าน `/land`
-(`advance --through archived`) เท่านั้น
+| คำสั่ง | ใช้ทำอะไร |
+|---|---|
+| `land archive <change>` | Primitive ระดับล่างสำหรับ apply, ซิงก์, ตรวจ, archive และเก็บกวาด; agent ปกติใช้ `advance --through archived` |
+| `land record <change> --repo <id> --commit <sha> --decision-ref <ref>` | Compatibility สำหรับ transaction แบบ commit-oriented ที่ active อยู่ก่อนแล้ว |
+| `land resume <change>` | Primitive สำหรับวินิจฉัย; recovery ปกติเรียก `/land` ซ้ำ |
 
 ## การส่ง pull request แบบ optional
 
@@ -123,6 +136,7 @@ publish หรือแก้ product และสำเร็จได้เม
 
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
+| `sandbox create <change> --all` | ซ่อม binding แบบหลาย repository ที่หายในจุดเดิม โดยรักษา worktree เดิมที่ยังใช้ได้ |
 | `change abandon <change> --reason <r> --decision-ref <ref>` | กัก change ที่พิสูจน์ไม่ได้ |
 | `change waive <change> --capability <c> --reason <r> --decision-ref <ref>` | ถอนการบังคับใช้ capability หนึ่งตัวหลัง provider ของมันรันแล้วล้มเหลว `--revoke` คืนข้อบังคับ |
 | `budget continue <change> --reason <r> --decision-ref <ref>` | ขยายหน้าต่างแบบ explicit (optional) เพราะ budget ที่หมดจะต่อให้อัตโนมัติ |
@@ -135,7 +149,7 @@ publish หรือแก้ product และสำเร็จได้เม
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
 | `init [target-path] [--yes]` | ติดตั้งหรืออัปเกรด Change Loop ในโปรเจกต์ |
-| `help [--all]` | คำสั่งหลัก `--all` เพิ่ม route สำหรับ operator และ host |
+| `help [--all]` | คำสั่งหลัก `--all` รวม route ที่เก็บไว้เพื่อความเข้ากันได้ |
 | `dashboard [-up\|-status\|-down]` | จัดการ client แสดงสถานะทีม (ตัวเลือกเสริม) |
 | `migrate [legacy-id] [--apply]` | ย้ายบันทึก workflow เก่าที่ยืนยันได้ |
 

@@ -237,20 +237,57 @@ clear, and the budget no-progress cap are specified in
 
 ## Advanced operator and compatibility commands
 
-`commands.json` is the single command registry. `claude-foundation help --all`
-prints every operator, recovery, host, and administration command from it,
-and `claude-foundation describe <command> [--json]` prints one command's usage,
-audience, and authority kind. This guide does not restate that table.
+| Command | What it does | When to use it |
+|---|---|---|
+| `providers` | Lists supported evidence contracts | Choosing evidence for a change |
+| `repos [change]` | Shows discovered topology, drift, and change selection | Setting up or diagnosing multi-repo work |
+| `models` | Shows portable model-tier mappings | Reviewing cost/quality routing |
+| `quality discover\|init\|doctor` | Discovers profiles, drafts config, and diagnoses project-owned tools | Onboarding a consumer repository |
+| `quality run\|report` | Runs report-only or enforced per-repository quality lanes | PR/Prove quality checks |
+| `quality baseline\|debt` | Explicitly versions reviewed baselines and renders debt inventory | Pilot graduation and nightly inventory |
+| `agents plan <change> [--group <n>] [--pretty]` | Persists the full plan and prints a ≤4 KiB summary or one dispatch group | Before spawning independent workers |
+| `agents dispatch <change> [--pretty]` | Returns one graph- and lease-bound native-host action | Advanced host integration behind `advance` |
+| `advance <change> [--through build\|proven\|archived] [--host-result <result.json>] [--pretty]` | Runs deterministic lifecycle work and returns one minimal action at a real boundary | Normal post-Change agent path |
+| `advance <change> --decision retry\|wait\|pause --decision-fingerprint <hash> --decision-ref <ref> --reason <approach>` | Records the user's current recovery choice and resumes its retained target; grants no unrelated authority | Agent records an explicit answer |
+| `doctor` | Checks runtime and project readiness | After install or when diagnosing setup |
+| `changes` | Lists active changes and readiness | Finding work to resume or land |
+| `packet <change> --phase <phase>` | Prints a compact diagnostic handoff; review packets are ≤8 KiB | Operator/debug inspection |
+| `packet <change> --repo <id> [--task <id>] [--pretty]` | Prints a bounded repository or task packet | Starting a native subagent |
+| `metrics <change>` | Reports measured phase/provider cost, emitted context bytes, and blocked operations by code, phase, and operation with the latest local reason | Finding latency, orchestration overhead, or where a change keeps stopping |
+| `feedback <change> [--pretty] [--diagnostics]` | Reports current readiness, source-aware timing, repair intervals, blocker coverage, evidence reuse, and the next action; diagnostics exports allowlisted metadata | Explaining why Prove took time without labeling repair as wait |
+| `budget checkpoint <change>` | Reports measured remaining allowance, unfinished work, and the exact resume route | Checking remaining allowance and the resume route |
+| `exec <change> [--phase <phase>] -- <command…>` | Derives the phase, runs Build commands in the canonical workspace under the shared mutation policy, passes the exit code through, and records duration | Long build-phase commands (container builds, installs, full test runs) |
+| `telemetry host-import <change> <result.json>` | Imports a validated host execution result without prompt or tool payloads | Recording actual model attempts, fallback, usage, and instruction provenance |
+| `budget continue <change> --reason <reason>` | Opens one policy-gated audited window without deleting usage | Optional explicit widening; exhaustion auto-continues |
+| `change validate <change>` | Validates change artifacts | After creating or revising an agreement |
+| `change audit <change> [--json]` | Audits scenario → claim → task → provider traceability | Before Build or after contract edits |
+| `proof readiness <change>` | Returns READY or a typed blocker with exact next commands | At the end of Build and start of Prove |
+| `proof advance <change>` | Converges missing/invalidated evidence through aggregate repair batches | Advanced primitive used by `advance --through proven` |
+| `proof run <change>` | Executes, finalizes, and audits proof as one operation | Low-level diagnostic/integration path |
+| `proof collect <change>` | Runs available project-owned evidence without finalizing proof | Low-level preparation for an explicit integration |
+| `evidence detect <change>` | Finds safe project-owned provider candidates without executing them | When derived or custom wiring is incomplete |
+| `evidence init <change> [--write]` | Previews or explicitly writes high-confidence provider wiring | Before manually wiring detected test/static/browser tools |
+| `evidence doctor <change>` | Explains configured, detectable, and unresolved capabilities | Diagnosing why Prove lacks a provider |
+| `evidence verify-ci <change> <provider> <signed.json>` | Verifies a signed, workspace-bound CI envelope | Importing trusted remote CI evidence |
+| `evidence record ...` | Records evidence produced by an external system | CI, human review, or remote systems |
+| `authority request\|status\|dispatch\|run\|abort\|record ...` | Routes configured AI review and bound human review/acceptance responses | Crossing a human or remote authority boundary |
+| `evidence upgrade <change>` | Upgrades evidence v1 to v2 without guessing commands | Migrating an older active change |
+| `sandbox create <change>` | Creates an isolated Git worktree | Advanced primitive behind `advance --through build` |
+| `sandbox challenge <change>` | Creates a short-lived nonce and permission contract | Before a host signs unattended authority |
+| `sandbox create <change> --unattended --attestation <file>` | Verifies and consumes one trusted host attestation | Unattended Build only |
+| `sandbox create <change> --all` | Creates selected repository sandboxes or repairs missing bindings while preserving valid worktrees | Advanced multi-repo primitive and recovery behind `advance` |
+| `sandbox sync <change> [--resolve <path,path>]` | Synchronizes a revised agreement and reconciles a moved target: a worktree replays onto the new commit, a copy fast-forwards what it left alone; `--resolve` accepts a merged double-edit | When requirements change during Build, or the target moved (another change landed) |
+| `handoff status <change>` | Shows external operations and Land disposition | Checking work owned by DevOps/SRE/security |
+| `handoff list [--open] [--owner <team>] [--environment <env>] [--json]` | Lists operational obligations across active and archived changes | Finding post-Land work without knowing a change ID |
+| `handoff packet <change> [--id H00n]` | Emits one credential-free operator packet | Sending the exact operation to its named owner |
+| `handoff record <change> ...` | Records accepted/completed/rejected/cancelled/superseded outcomes with durable references | Updating operational state without reopening developer tasks |
+| `migrate [legacy-id] [--apply]` | Reads legacy `.workflow/` state and optionally creates migration candidates | Recovering an older installation without promoting unverified prose |
 
-`/land <change>` is the only user-facing Land operation.
-
-Hidden compatibility commands still route but are absent from `help --all` and
-this table; `advance` performs their step and `describe <command>` still
-answers for each. They are flagged `hidden` in `commands.json` and leave in the
-next major release: `proof readiness|advance|run|collect|preflight|execute|finalize|audit`,
-`sandbox create|sync|inspect|apply`, every `land` primitive, `evidence
-detect|init|doctor|upgrade|run`, `change validate`, and the deprecated aliases
-`runtime`, `validate`, `agents task`, `proof plan`, and `proof finish`.
+`/land <change>` is the only user-facing Land operation. The registered
+`land check`, `land advance`, `land recover`, `land archive`, `land record`,
+`land resume`, `land plan`, and `land pointers` routes are internal compatibility
+or diagnostic primitives. The Harness invokes them through the convergent Land
+transaction; agents must not ask users to compose or run them.
 | `host instruction <command> --protocol 1 --format json --arguments <text>` | Resolves the package-owned command instruction | Host integration without reading consumer command files |
 | `host agent-contract --protocol 1 --format json` | Resolves the portable package-owned agent contract | Installing or refreshing a host adapter |
 
@@ -259,7 +296,7 @@ project explicitly enables enforcement. The complete installed command,
 protocol, adapter, baseline, exception, CI, and fail-closed reference is
 [`CONSUMER-QUALITY.md`](CONSUMER-QUALITY.md).
 
-If the whole project directory moves, `advance <change> --through build` can
+If the whole project directory moves, rerunning `sandbox create <change>` can
 rebind a recorded sandbox to the canonical `.foundation/sandboxes/<change>` in
 the new project location. Recovery requires the old path to be absent, the
 change marker and harness layout to match, and any recorded Git metadata to
@@ -288,6 +325,8 @@ identity, criteria, observation, provenance, durable evidence, contract reason,
 and workspace hash.
 
 Run `claude-foundation help` for command syntax and installer options.
+Low-level `runtime` commands are reserved for installed slash commands and
+diagnostics.
 
 ## Host integration protocols
 
@@ -426,7 +465,7 @@ still uses the saga. After isolation, a child record must bind its worktree,
 catalog target, access mode, and base head; a missing or invalid record fails
 closed instead of falling back to the live checkout. `sandbox inspect` exposes
 the incomplete record using filesystem and Git-metadata reads only, without a
-PATH-resolved Git process. `advance <change> --through build` repairs a
+PATH-resolved Git process. Repeating `sandbox create <change> --all` repairs a
 partial binding in place and preserves every valid existing child worktree.
 
 ## Normal flow
@@ -474,11 +513,10 @@ Keep the setup command to dependency installation. Anything it writes outside
 ignored directories counts toward the change's surface, exactly as if the
 change had written it.
 
-If Build reveals a new requirement, revise the same change and resume; advance
-synchronizes the isolated workspace:
+If Build reveals a new requirement, revise the same change and synchronize it:
 
 ```bash
-claude-foundation advance <change> --through build
+claude-foundation sandbox sync <change>
 ```
 
 Synchronization increments the change revision and invalidates receipts or
@@ -825,4 +863,4 @@ Change Loop-owned files, preserves project files and managed blocks in
   `.foundation/sandboxes/<change>` or use `/build <change>`; Land applies the
   proven diff to the main worktree.
 - **Requirements changed during Build** — revise the same OpenSpec change and
-  resume with `advance --through build`; do not preserve a proof for the old agreement.
+  run `sandbox sync`; do not preserve a proof for the old agreement.

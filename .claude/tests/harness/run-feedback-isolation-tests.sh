@@ -78,13 +78,11 @@ else
   pass "ordinary doctor does not activate the unattended guard"
 fi
 
-# Hidden from help (advance supersedes them) but still routed and described.
-assert_contains "hidden isolation diagnostics still describe themselves" \
-  "$(bash "$ROOT/cli.sh" --project "$TARGET" describe "sandbox inspect")" \
-  "sandbox inspect <change> [--unattended --attestation <file>] [--json]"
-assert_contains "hidden guarded sandbox creation still describes itself" \
-  "$(bash "$ROOT/cli.sh" --project "$TARGET" describe "sandbox create")" \
-  "sandbox create <change> [--all] [--unattended --attestation <file>]"
+help_all_text="$(bash "$ROOT/cli.sh" help --all)"
+assert_contains "full CLI help retains isolation diagnostics" \
+  "$help_all_text" "sandbox inspect <change> [--unattended --attestation <file>] [--json]"
+assert_contains "CLI help advertises guarded sandbox creation" \
+  "$help_all_text" "sandbox create <change> [--all] [--unattended --attestation <file>]"
 
 # Exercise the fail-closed branch deterministically even when this suite itself
 # runs in a container. Only the installed fixture runtime is modified: strong

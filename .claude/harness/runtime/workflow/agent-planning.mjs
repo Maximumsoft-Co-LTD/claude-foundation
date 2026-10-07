@@ -131,7 +131,7 @@ export function agentPlanGroupSummaries(groups, stableHash) {
 export function agentPlanNext(output, id) {
   if (!output.dispatchable) return "resolve blockingReasons before dispatch";
   if (output.recommendedExecution === "proof-ready")
-    return `claude-foundation advance ${id} --through proven`;
+    return `claude-foundation proof readiness ${id}`;
   if (output.recommendedExecution === "single-agent")
     return `claude-foundation packet ${id} --task ${output.groups?.[0]?.[0] || output.tasks[0].id}`;
   return `claude-foundation agents plan ${id} --group 1`;

@@ -32,15 +32,15 @@ function providerReuse(packet) {
 function phasePlan(changeId, phase, pendingTaskCount) {
   if (phase === "change") return {
     boundary: "change-complete",
-    command: `claude-foundation advance ${changeId}`,
+    command: `claude-foundation change validate ${changeId}`,
     includes: ["contract", "traceability", "provider-wiring", "risk-policy"],
     avoidBefore: []
   };
   if (phase === "build") return {
     boundary: "build-complete",
-    command: pendingTaskCount > 0 ? null : `claude-foundation advance ${changeId} --through proven`,
+    command: pendingTaskCount > 0 ? null : `claude-foundation proof readiness ${changeId}`,
     deferredCommand: pendingTaskCount > 0
-      ? `claude-foundation advance ${changeId} --through proven` : null,
+      ? `claude-foundation proof readiness ${changeId}` : null,
     includes: [
       "change-validation", "topology", "changed-surface", "critical-cases",
       "leases", "provider-availability"
@@ -52,7 +52,7 @@ function phasePlan(changeId, phase, pendingTaskCount) {
   };
   if (phase === "prove") return {
     boundary: "prove",
-    command: `claude-foundation advance ${changeId} --through proven`,
+    command: `claude-foundation proof advance ${changeId}`,
     includes: [
       "change-validation", "readiness", "provider-dag", "receipt-reuse",
       "review-routing", "acceptance-routing", "proof-finalization"
@@ -66,7 +66,7 @@ function phasePlan(changeId, phase, pendingTaskCount) {
   };
   if (phase === "land") return {
     boundary: "land",
-    command: `claude-foundation advance ${changeId} --through archived`,
+    command: `claude-foundation land advance ${changeId}`,
     includes: ["proof-freshness", "handoffs", "apply-recovery", "archive"],
     avoidBefore: [
       `claude-foundation land check ${changeId}`,

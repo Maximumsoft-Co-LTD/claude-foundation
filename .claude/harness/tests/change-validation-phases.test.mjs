@@ -358,9 +358,9 @@ test("declared surface forecast reports wiring actions and review consequence", 
   reportDeclaredSurfaceForecast("change-a", { declaredSurface: ["src/**"] }, false,
     new Set(), () => ({ capabilities: ["test", "review"] }),
     (message) => warnings.push(message));
-  assert.equal(warnings.length, 4);
-  assert.match(warnings[1], /advance change-a --through proven/);
-  assert.match(warnings[2], /fresh reviewer/);
+  assert.equal(warnings.length, 5);
+  assert.match(warnings[1], /evidence init change-a --write/);
+  assert.match(warnings[3], /fresh reviewer/);
 });
 
 test("review assurance report is quiet when unavailable and explains active gates", () => {
@@ -463,7 +463,7 @@ test("evidence initialization previews and mirrors durable provider wiring", () 
   assert.ok(messages.some((message) => message.includes("CANDIDATE test")));
   assert.ok(messages.some((message) => message.includes("BLOCKED  review")));
   assert.ok(messages.some((message) => message.includes("BLOCKED  broken")));
-  assert.ok(messages.some((message) => message.includes("advance change-a --through proven")));
+  assert.ok(messages.some((message) => message.includes("evidence init change-a --write")));
 });
 
 test("traceability audit renders text and JSON and marks invalid links", () => {

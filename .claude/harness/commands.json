@@ -7,7 +7,6 @@
       "audience": "agent",
       "kind": "write",
       "idempotent": true,
-      "runtime": "investigate",
       "description": "Validate and persist source-grounded investigation state and emit a Change-bound handoff."
     },
     {
@@ -16,8 +15,6 @@
       "audience": "agent",
       "kind": "read",
       "idempotent": true,
-      "runtime": "changes",
-      "args": { "max": 0 },
       "description": "List active changes, lifecycle status, and their next useful action."
     },
     {
@@ -26,7 +23,6 @@
       "audience": "agent",
       "kind": "read",
       "idempotent": true,
-      "runtime": "doctor",
       "description": "Diagnose project, provider, and lifecycle readiness."
     },
     {
@@ -35,7 +31,6 @@
       "audience": "agent",
       "kind": "read",
       "idempotent": true,
-      "runtime": "packet",
       "description": "Read the bounded machine handoff for the current operation."
     },
     {
@@ -44,7 +39,6 @@
       "audience": "agent",
       "kind": "read",
       "idempotent": true,
-      "runtime": "metrics",
       "description": "Inspect measured usage, active budget, cost, and execution timing."
     },
     {
@@ -53,7 +47,6 @@
       "audience": "agent",
       "kind": "write",
       "idempotent": true,
-      "runtime": "advance",
       "description": "Run deterministic lifecycle work through a requested target, including detected evidence wiring, safe sandbox sync, configured review, and task check completion, and return one bounded action at the next real model, user, resource, or authority boundary. --approve-spec records the user's spec approval (alias of change resolve --approve-spec); with --through it continues in the same call. --restore-target records the target files Land restores to the sandbox base when its apply conflicts; paths other than generated artifacts clean at isolation require --decision-ref. --recover-apply settles an interrupted Land apply under the user's decision, then continues."
     },
     {
@@ -62,7 +55,6 @@
       "audience": "agent",
       "kind": "read",
       "idempotent": true,
-      "runtime": "feedback",
       "description": "Project repair-aware timing, guard provenance, evidence reuse, usage availability, and the next safe action without mutating state."
     },
     {
@@ -71,7 +63,6 @@
       "audience": "agent",
       "kind": "write",
       "idempotent": false,
-      "runtime": "exec",
       "description": "Run and time an external command (build, container, tests), recording its duration for metrics."
     },
     {
@@ -88,8 +79,6 @@
       "audience": "agent",
       "kind": "write",
       "idempotent": false,
-      "runtime": "new",
-      "args": { "error": "requires an intent" },
       "description": "Create a change agreement when atomic draft start does not apply."
     },
     {
@@ -98,8 +87,6 @@
       "audience": "agent",
       "kind": "write",
       "idempotent": false,
-      "runtime": "start",
-      "args": { "error": "requires --template or <draft.json>" },
       "description": "Inspect semantic intake or create and start an isolated change from one validated draft. The bare form inspects in place and starts only when intake is DONE; otherwise it prints the intake action and changes nothing. --approve-spec records the user's spec approval in the same call; with --through it continues."
     },
     {
@@ -108,8 +95,6 @@
       "audience": "agent",
       "kind": "write",
       "idempotent": true,
-      "runtime": "resolve",
-      "args": { "error": "requires <change>" },
       "description": "Persist agreement decisions or open one audited batched grounding revision."
     },
     {
@@ -118,8 +103,6 @@
       "audience": "agent",
       "kind": "write",
       "idempotent": false,
-      "runtime": "amend",
-      "args": { "min": 2, "template": true, "error": "requires --template or <change> <amendment.json>" },
       "description": "Transactionally add, revise, or remove semantic requirements during Build, or correct an unfinished task's verify command, while preserving the canonical agreement. --task/--verify corrects one verify command directly and keeps the spec approval. The bare form inspects in place and amends only when intake is DONE; otherwise it prints the intake action and changes nothing. --approve-spec records the user's spec approval in the same call. --template prints an amendment template."
     },
     {
@@ -128,8 +111,6 @@
       "audience": "agent",
       "kind": "write",
       "idempotent": false,
-      "runtime": "revise",
-      "args": { "min": 2, "error": "requires <change> <draft.json>" },
       "description": "Recompile a revised semantic draft over a change that has not started Build, keeping its id and reporting the requirement delta for approval. The bare form inspects in place and revises only when intake is DONE; otherwise it prints the intake action and changes nothing. --approve-spec records the user's spec approval in the same call; with --through it continues."
     },
     {
@@ -138,8 +119,6 @@
       "audience": "agent",
       "kind": "write",
       "idempotent": true,
-      "runtime": "validate",
-      "hidden": true,
       "description": "Validate the change and executable evidence contract."
     },
     {
@@ -148,7 +127,6 @@
       "audience": "agent",
       "kind": "read",
       "idempotent": true,
-      "runtime": "audit-change",
       "description": "Audit scenario, claim, task, and provider traceability."
     },
     {
@@ -157,8 +135,6 @@
       "audience": "agent",
       "kind": "write",
       "idempotent": true,
-      "runtime": "sandbox create",
-      "hidden": true,
       "description": "Create the isolated Build workspace."
     },
     {
@@ -167,8 +143,6 @@
       "audience": "agent",
       "kind": "write",
       "idempotent": true,
-      "runtime": "sandbox sync",
-      "hidden": true,
       "description": "Synchronize an intentional contract revision into Build and reconcile a moved target: a worktree replays onto the new commit, an isolated copy fast-forwards the files it left alone."
     },
     {
@@ -177,8 +151,6 @@
       "audience": "agent",
       "kind": "read",
       "idempotent": true,
-      "runtime": "proof-readiness",
-      "hidden": true,
       "description": "Return typed blockers and canonical next commands."
     },
     {
@@ -187,8 +159,6 @@
       "audience": "conditional",
       "kind": "write",
       "idempotent": false,
-      "runtime": "proof-collect",
-      "hidden": true,
       "description": "Collect executable evidence before an external boundary."
     },
     {
@@ -197,8 +167,6 @@
       "audience": "agent",
       "kind": "write",
       "idempotent": true,
-      "runtime": "proof-advance",
-      "hidden": true,
       "description": "Advance executable evidence, review, acceptance, and proof once; unchanged external waits resume without rerunning work."
     },
     {
@@ -207,8 +175,6 @@
       "audience": "conditional",
       "kind": "write",
       "idempotent": false,
-      "runtime": "proof-run",
-      "hidden": true,
       "description": "Run readiness, providers, finalization, and audit atomically."
     },
     {
@@ -217,8 +183,6 @@
       "audience": "internal",
       "kind": "read",
       "idempotent": true,
-      "runtime": "land-check",
-      "hidden": true,
       "description": "Validate that the proven projection remains landable."
     },
     {
@@ -227,8 +191,6 @@
       "audience": "internal",
       "kind": "write",
       "idempotent": true,
-      "runtime": "land-advance",
-      "hidden": true,
       "description": "Advance the resumable Land saga and archive when every repository is ready."
     },
     {
@@ -237,7 +199,6 @@
       "audience": "agent",
       "kind": "read",
       "idempotent": true,
-      "runtime": "handoff-status",
       "description": "Show permission-bound external operations without treating them as developer tasks."
     },
     {
@@ -246,7 +207,6 @@
       "audience": "agent",
       "kind": "read",
       "idempotent": true,
-      "runtime": "handoff-list",
       "description": "List operational obligations across active and archived changes."
     },
     {
@@ -255,7 +215,6 @@
       "audience": "agent",
       "kind": "read",
       "idempotent": true,
-      "runtime": "handoff-packet",
       "description": "Emit the bounded DevOps/SRE operation packet, required evidence, rollback, and next command."
     },
     {
@@ -264,7 +223,6 @@
       "audience": "conditional",
       "kind": "authority",
       "idempotent": false,
-      "runtime": "handoff-record",
       "description": "Record a named operator's tracked acceptance, completion, rejection, cancellation, or supersession without storing credentials."
     },
     {
@@ -273,8 +231,6 @@
       "audience": "internal",
       "kind": "authority",
       "idempotent": true,
-      "runtime": "land-recover",
-      "hidden": true,
       "description": "Settle an interrupted apply transaction after an explicit host-recorded user decision; manual recovery requires an explicit resolution."
     },
     {
@@ -283,8 +239,6 @@
       "audience": "internal",
       "kind": "authority",
       "idempotent": true,
-      "runtime": "archive",
-      "hidden": true,
       "description": "Apply, synchronize, audit, archive, and clean up explicitly."
     },
     {
@@ -293,8 +247,6 @@
       "audience": "host",
       "kind": "authority",
       "idempotent": true,
-      "runtime": "delivery-advance",
-      "args": { "max": 1, "error": "requires exactly one change id" },
       "description": "Optionally create an isolated commit and feature branch from an archived proven projection, open or reuse its pull request, and return the verified URL."
     },
     {
@@ -303,7 +255,6 @@
       "audience": "conditional",
       "kind": "write",
       "idempotent": true,
-      "runtime": "agent-plan",
       "description": "Plan dispatch only for independently verifiable parallel work."
     },
     {
@@ -312,7 +263,6 @@
       "audience": "host",
       "kind": "write",
       "idempotent": true,
-      "runtime": "agent-dispatch",
       "description": "Return the next graph- and lease-bound native-host Build action without invoking a model."
     },
     {
@@ -321,8 +271,6 @@
       "audience": "conditional",
       "kind": "read",
       "idempotent": true,
-      "runtime": "evidence-detect",
-      "hidden": true,
       "description": "Detect safe project-owned provider candidates without executing them."
     },
     {
@@ -331,8 +279,6 @@
       "audience": "conditional",
       "kind": "write",
       "idempotent": true,
-      "runtime": "evidence-init",
-      "hidden": true,
       "description": "Preview or explicitly write high-confidence provider wiring."
     },
     {
@@ -341,8 +287,6 @@
       "audience": "conditional",
       "kind": "read",
       "idempotent": true,
-      "runtime": "evidence-doctor",
-      "hidden": true,
       "description": "Explain configured, detectable, and unresolved evidence wiring."
     },
     {
@@ -351,8 +295,6 @@
       "audience": "conditional",
       "kind": "authority",
       "idempotent": true,
-      "runtime": "evidence-verify-ci",
-      "args": { "min": 3, "max": 3, "error": "requires <change> <provider> <signed.json>" },
       "description": "Verify signed CI provenance bound to the provider workspace."
     },
     {
@@ -361,8 +303,6 @@
       "audience": "conditional",
       "kind": "read",
       "idempotent": true,
-      "runtime": "hash",
-      "args": { "max": 2, "error": "accepts <change> [provider]" },
       "description": "Print the workspace hash a signed CI envelope must bind: the provider's receipt hash, or without a provider the change's workspace hash."
     },
     {
@@ -371,7 +311,6 @@
       "audience": "conditional",
       "kind": "write",
       "idempotent": true,
-      "runtime": "authority-request",
       "description": "Create a resumable external review or acceptance request."
     },
     {
@@ -380,7 +319,6 @@
       "audience": "conditional",
       "kind": "read",
       "idempotent": true,
-      "runtime": "authority-status",
       "description": "Inspect external authority; --template emits the response file to fill in."
     },
     {
@@ -389,7 +327,6 @@
       "audience": "conditional",
       "kind": "authority",
       "idempotent": true,
-      "runtime": "authority-dispatch",
       "description": "Reserve a policy-routed review attempt when work is handed to a reviewer."
     },
     {
@@ -398,7 +335,6 @@
       "audience": "conditional",
       "kind": "authority",
       "idempotent": false,
-      "runtime": "authority-abort",
       "description": "Close a review request; an already dispatched attempt remains consumed."
     },
     {
@@ -407,7 +343,6 @@
       "audience": "conditional",
       "kind": "authority",
       "idempotent": false,
-      "runtime": "authority-run",
       "description": "Run a configured read-only ephemeral reviewer, preserve its structured report, and record the bound response."
     },
     {
@@ -416,7 +351,6 @@
       "audience": "conditional",
       "kind": "authority",
       "idempotent": false,
-      "runtime": "authority-reset-infra",
       "description": "Acknowledge consumed reviewer infrastructure retries after the provider diagnosis passes, restoring AI review dispatch under an explicit host-recorded user decision."
     },
     {
@@ -425,7 +359,6 @@
       "audience": "conditional",
       "kind": "authority",
       "idempotent": false,
-      "runtime": "authority-reset-base-move",
       "description": "Release the one delivered passing AI review attempt a sandbox-sync base move expired from the wave budget, under an explicit host-recorded user decision, so the forced fresh review does not exhaust the cap."
     },
     {
@@ -434,7 +367,6 @@
       "audience": "conditional",
       "kind": "authority",
       "idempotent": false,
-      "runtime": "authority-record",
       "description": "Validate a bound host response and record its evidence."
     },
     {
@@ -443,8 +375,6 @@
       "audience": "conditional",
       "kind": "authority",
       "idempotent": false,
-      "runtime": "receipt",
-      "args": { "min": 3, "error": "requires <change> <provider> <status>" },
       "description": "Record externally observed evidence requested by readiness."
     },
     {
@@ -453,8 +383,6 @@
       "audience": "internal",
       "kind": "authority",
       "idempotent": true,
-      "runtime": "land-record",
-      "hidden": true,
       "description": "Bind a child repository commit after an explicit host-recorded user decision, only for a Land transaction the legacy commit-based saga already started; current changes use advance --through archived."
     },
     {
@@ -463,8 +391,6 @@
       "audience": "internal",
       "kind": "write",
       "idempotent": true,
-      "runtime": "land-resume",
-      "hidden": true,
       "description": "Resume an interrupted or multi-repository Land saga."
     },
     {
@@ -473,7 +399,6 @@
       "audience": "agent",
       "kind": "read",
       "idempotent": true,
-      "runtime": "budget-checkpoint",
       "description": "Show measured remaining allowance, unfinished work, the user decision boundary, and the exact resume route."
     },
     {
@@ -482,7 +407,6 @@
       "audience": "conditional",
       "kind": "authority",
       "idempotent": false,
-      "runtime": "budget-continue",
       "description": "Open one policy-gated completion window after an explicit host-recorded user decision."
     },
     {
@@ -491,7 +415,6 @@
       "audience": "conditional",
       "kind": "authority",
       "idempotent": false,
-      "runtime": "abandon",
       "description": "Retire a change that cannot be proven, quarantining its record after an explicit host-recorded user decision."
     },
     {
@@ -500,7 +423,6 @@
       "audience": "conditional",
       "kind": "authority",
       "idempotent": false,
-      "runtime": "waive",
       "description": "Withdraw one failing capability gate after an explicit host-recorded user decision; recorded in proof advisories and at Land, never a force-land. Review and acceptance keep their own routes."
     },
     {
@@ -517,8 +439,6 @@
       "audience": "conditional",
       "kind": "read",
       "idempotent": true,
-      "runtime": "providers",
-      "args": { "max": 0 },
       "description": "Inspect evidence wiring only while defining a change contract."
     },
     {
@@ -527,8 +447,6 @@
       "audience": "admin",
       "kind": "read",
       "idempotent": true,
-      "runtime": "repos",
-      "args": { "max": 1, "error": "accepts at most one change" },
       "description": "Inspect repository topology and selection."
     },
     {
@@ -537,8 +455,6 @@
       "audience": "admin",
       "kind": "read",
       "idempotent": true,
-      "runtime": "models",
-      "args": { "max": 0 },
       "description": "Inspect model-tier policy."
     },
     {
@@ -547,7 +463,6 @@
       "audience": "admin",
       "kind": "read",
       "idempotent": true,
-      "runtime": "quality-discover",
       "description": "Detect repository languages, profiles, and quality capabilities without executing project commands."
     },
     {
@@ -556,7 +471,6 @@
       "audience": "admin",
       "kind": "write",
       "idempotent": true,
-      "runtime": "quality-init",
       "description": "Preview or explicitly write the committed consumer quality configuration."
     },
     {
@@ -565,7 +479,6 @@
       "audience": "admin",
       "kind": "read",
       "idempotent": true,
-      "runtime": "quality-doctor",
       "description": "Validate quality profiles, adapters, tools, isolation, and fallback readiness."
     },
     {
@@ -574,7 +487,6 @@
       "audience": "conditional",
       "kind": "write",
       "idempotent": false,
-      "runtime": "quality-run",
       "description": "Run configured quality lanes and apply changed-code and affected-mutant ratchets."
     },
     {
@@ -583,7 +495,6 @@
       "audience": "conditional",
       "kind": "read",
       "idempotent": true,
-      "runtime": "quality-report",
       "description": "Show the latest per-repository consumer quality result."
     },
     {
@@ -592,7 +503,6 @@
       "audience": "admin",
       "kind": "authority",
       "idempotent": true,
-      "runtime": "quality-baseline",
       "description": "Preview or explicitly update versioned repository quality baselines."
     },
     {
@@ -601,7 +511,6 @@
       "audience": "conditional",
       "kind": "write",
       "idempotent": true,
-      "runtime": "quality-debt",
       "description": "Render the latest non-silent quality debt inventory without widening change scope."
     },
     {
@@ -658,8 +567,6 @@
       "audience": "admin",
       "kind": "write",
       "idempotent": true,
-      "runtime": "evidence-upgrade",
-      "hidden": true,
       "description": "Upgrade legacy evidence wiring explicitly."
     },
     {
@@ -669,7 +576,6 @@
       "kind": "write",
       "idempotent": false,
       "deprecated": true,
-      "hidden": true,
       "description": "Compatibility pass-through for installed workflow internals."
     },
     {
@@ -679,9 +585,6 @@
       "kind": "write",
       "idempotent": true,
       "deprecated": true,
-      "runtime": "validate",
-      "replacement": "change validate",
-      "hidden": true,
       "description": "Compatibility alias for change validate."
     },
     {
@@ -691,10 +594,6 @@
       "kind": "read",
       "idempotent": true,
       "deprecated": true,
-      "runtime": "packet",
-      "args": { "min": 2, "error": "requires <change> <task>" },
-      "replacement": "packet <change> --task <task>",
-      "hidden": true,
       "description": "Compatibility alias for packet --task."
     },
     {
@@ -719,8 +618,6 @@
       "audience": "host",
       "kind": "write",
       "idempotent": true,
-      "runtime": "agent-acquire",
-      "args": { "min": 3, "error": "requires <change> <task> --owner <agent-id>" },
       "description": "Acquire a host-managed resource lease."
     },
     {
@@ -729,8 +626,6 @@
       "audience": "host",
       "kind": "write",
       "idempotent": true,
-      "runtime": "agent-release",
-      "args": { "min": 3, "error": "requires <change> <task> --owner <agent-id>" },
       "description": "Release a host-managed resource lease; after takeover, --lease-id must identify the acquired generation. --force takes over another owner's lease, and one that has not expired also needs --decision-ref because a worker may still be running it."
     },
     {
@@ -739,8 +634,6 @@
       "audience": "host",
       "kind": "write",
       "idempotent": true,
-      "runtime": "telemetry-sync",
-      "args": { "error": "requires <change> [transcript.jsonl]" },
       "description": "Synchronize native host request usage."
     },
     {
@@ -749,8 +642,6 @@
       "audience": "host",
       "kind": "write",
       "idempotent": true,
-      "runtime": "telemetry-import",
-      "args": { "min": 2, "error": "requires <change> <file>" },
       "description": "Import authoritative host usage."
     },
     {
@@ -759,8 +650,6 @@
       "audience": "host",
       "kind": "write",
       "idempotent": true,
-      "runtime": "host-execution-import",
-      "args": { "min": 2, "max": 2, "error": "requires <change> <result.json>" },
       "description": "Import a validated host execution result with attempts, actual model, fallback, and instruction provenance."
     },
     {
@@ -769,7 +658,6 @@
       "audience": "host",
       "kind": "write",
       "idempotent": false,
-      "runtime": "sandbox challenge",
       "description": "Create a short-lived challenge for signed unattended authority."
     },
     {
@@ -778,9 +666,6 @@
       "audience": "internal",
       "kind": "write",
       "idempotent": false,
-      "runtime": "run-provider",
-      "args": { "min": 4, "error": "requires <change> <provider> -- <command>" },
-      "hidden": true,
       "description": "Execute one low-level evidence adapter."
     },
     {
@@ -789,9 +674,6 @@
       "audience": "internal",
       "kind": "read",
       "idempotent": true,
-      "runtime": "sandbox inspect",
-      "access": "inspect",
-      "hidden": true,
       "description": "Inspect isolation diagnostics; with --unattended it also gates, failing when the security boundary is unsafe."
     },
     {
@@ -800,8 +682,6 @@
       "audience": "internal",
       "kind": "authority",
       "idempotent": true,
-      "runtime": "sandbox apply",
-      "hidden": true,
       "description": "Apply a proven projection through the Land journal."
     },
     {
@@ -811,9 +691,6 @@
       "kind": "read",
       "idempotent": true,
       "deprecated": true,
-      "runtime": "proof-readiness",
-      "replacement": "proof readiness",
-      "hidden": true,
       "description": "Compatibility alias for proof readiness."
     },
     {
@@ -823,9 +700,6 @@
       "kind": "write",
       "idempotent": true,
       "deprecated": true,
-      "runtime": "proof-run",
-      "replacement": "proof run",
-      "hidden": true,
       "description": "Compatibility alias for proof run."
     },
     {
@@ -834,9 +708,6 @@
       "audience": "internal",
       "kind": "read",
       "idempotent": true,
-      "runtime": "proof-preflight",
-      "access": "write",
-      "hidden": true,
       "description": "Low-level proof topology check."
     },
     {
@@ -845,8 +716,6 @@
       "audience": "internal",
       "kind": "write",
       "idempotent": true,
-      "runtime": "proof-execute",
-      "hidden": true,
       "description": "Low-level provider execution and finalization."
     },
     {
@@ -855,8 +724,6 @@
       "audience": "internal",
       "kind": "write",
       "idempotent": true,
-      "runtime": "prove",
-      "hidden": true,
       "description": "Low-level finalization from valid receipts."
     },
     {
@@ -865,8 +732,6 @@
       "audience": "internal",
       "kind": "read",
       "idempotent": true,
-      "runtime": "proof-audit",
-      "hidden": true,
       "description": "Low-level proof artifact audit."
     },
     {
@@ -875,8 +740,6 @@
       "audience": "internal",
       "kind": "write",
       "idempotent": true,
-      "runtime": "land-plan",
-      "hidden": true,
       "description": "Persist the multi-repository Land saga plan."
     },
     {
@@ -885,7 +748,6 @@
       "audience": "internal",
       "kind": "read",
       "idempotent": true,
-      "hidden": true,
       "description": "Print the change's current relevant workspace hash."
     },
     {
@@ -894,7 +756,6 @@
       "audience": "internal",
       "kind": "write",
       "idempotent": false,
-      "hidden": true,
       "description": "Record one host request event against the change's budget window."
     },
     {
@@ -903,7 +764,6 @@
       "audience": "internal",
       "kind": "read",
       "idempotent": true,
-      "hidden": true,
       "description": "Print the installed runtime API version the CLI checks compatibility against."
     },
     {
@@ -912,8 +772,6 @@
       "audience": "internal",
       "kind": "authority",
       "idempotent": true,
-      "runtime": "land-pointers",
-      "hidden": true,
       "description": "Stage proven submodule pointers."
     }
   ],

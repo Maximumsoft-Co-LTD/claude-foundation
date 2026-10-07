@@ -50,7 +50,7 @@ test("risk routing preserves high assurance across security and multi-repo shape
 
 test("prove uses one boundary command and names the probes it replaces", () => {
   const plan = verificationPlanValue(packet(), "prove", (value) => `digest:${value.phase}`);
-  assert.equal(plan.execution.command, "claude-foundation advance change --through proven");
+  assert.equal(plan.execution.command, "claude-foundation proof advance change");
   assert.ok(plan.execution.includes.includes("receipt-reuse"));
   assert.ok(plan.execution.avoidBefore.includes(
     "claude-foundation proof readiness change"));
@@ -84,10 +84,10 @@ test("build defers its single readiness check until tasks are complete", () => {
   const pending = verificationPlanValue(packet({ pendingTaskCount: 2 }), "build");
   assert.equal(pending.execution.command, null);
   assert.equal(pending.execution.deferredCommand,
-    "claude-foundation advance change --through proven");
+    "claude-foundation proof readiness change");
   const complete = verificationPlanValue(packet({ pendingTaskCount: 0 }), "build");
   assert.equal(complete.execution.command,
-    "claude-foundation advance change --through proven");
+    "claude-foundation proof readiness change");
   assert.equal(complete.execution.deferredCommand, null);
 });
 
@@ -98,7 +98,7 @@ test("compacted provider displays never invent reuse decisions", () => {
   assert.equal(plan.risk, "standard");
   assert.equal(plan.evidence.measurement, "compacted-unavailable");
   assert.deepEqual(plan.evidence.reusable, []);
-  assert.equal(plan.execution.command, "claude-foundation advance change --through archived");
+  assert.equal(plan.execution.command, "claude-foundation land advance change");
 });
 
 test("task packets keep phase verification with the parent boundary", () => {

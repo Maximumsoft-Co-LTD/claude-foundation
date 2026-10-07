@@ -113,7 +113,7 @@ export function proofPreflightBlockers(value) {
 export function proofPreflightFailure(id, value, blockers, recovery) {
   return `proof preflight failed: ${blockers.join("; ")}${
     recovery.length ? `\n\nhow to clear this (${value.status}):\n${recovery.join("\n")}` : ""
-  }\n\nfull detail: claude-foundation advance ${id} --inspect`;
+  }\n\nfull detail: claude-foundation proof readiness ${id}`;
 }
 
 export function proofPreflightAdvisory(advisory) {
@@ -136,8 +136,8 @@ export function workspaceIsolationIssuesValue(state, surface = []) {
   if (!productPaths.length) return [];
   return [`ISOLATION_REQUIRED: product files changed while workspace mode is '${
     state?.workspace?.mode || "current"}': ${productPaths.map((row) =>
-    `${row.repositoryId}/${row.path}`).join(", ")}; run claude-foundation advance ${
-    state?.id || "<change>"} --through build and rebuild inside the isolated workspace`];
+    `${row.repositoryId}/${row.path}`).join(", ")}; run claude-foundation sandbox create ${
+    state?.id || "<change>"} and rebuild inside the isolated workspace`];
 }
 
 export function proofPreflightOperation({
@@ -185,7 +185,7 @@ export function acceptanceEvidenceRecovery(id, provider, acceptance = {}) {
   const claimIds = acceptance.claimIds || [];
   const origin = acceptance.scopeOrigin || "explicit";
   const withdrawal = origin === "claim-capability"
-    ? `Drop capability 'acceptance' from claim(s) ${claimIds.join(", ") || "in evidence.yaml"}, then re-run 'claude-foundation advance ${id}'. Clearing the resolve flag alone will not lift this gate while the claim declares it.`
+    ? `Drop capability 'acceptance' from claim(s) ${claimIds.join(", ") || "in evidence.yaml"}, then re-run 'claude-foundation change validate ${id}'. Clearing the resolve flag alone will not lift this gate while the claim declares it.`
     : `Withdraw the requirement: claude-foundation change resolve ${id} --acceptance-not-required`;
   return {
     provider,
@@ -517,7 +517,7 @@ export function readinessNext(context, input) {
       ...(repositoryIssues.length ? [{
         kind: "repair-repository-binding",
         reason: repositoryIssues.join("; "),
-        command: `claude-foundation advance ${id} --through build`,
+        command: `claude-foundation sandbox create ${id} --all`,
         inspectCommand: `claude-foundation sandbox inspect ${id}`
       }] : []),
       ...unavailable.map((provider) => context.unavailableProviderRecovery(id, provider))
@@ -659,11 +659,11 @@ export function wiringChoiceOperation({ evidenceDetectionValue }, id, provider) 
   if (!candidate) return null;
   return {
     kind: "configure-provider",
-    command: `claude-foundation advance ${id} --through proven`,
+    command: `claude-foundation evidence init ${id} --write`,
     source: candidate.source,
     instruction: `Wire provider '${provider}' from the project-owned command detected at ${
       candidate.source}, then re-run proof.`,
-    verify: `claude-foundation advance ${id} --inspect`
+    verify: `claude-foundation proof readiness ${id}`
   };
 }
 
@@ -911,7 +911,7 @@ export function createProofReadinessRuntime({
         },
         {
           kind: "retry",
-          command: `claude-foundation advance ${id} --through proven`
+          command: `claude-foundation proof run ${id}`
         },
         {
           kind: "external-evidence",
@@ -921,7 +921,7 @@ export function createProofReadinessRuntime({
           kind: "reconfigure",
           file: `openspec/changes/${id}/execution.yaml`,
           instruction: `Configure provider '${provider}' with an available project-owned command that proves the same declared claims.`,
-          verify: `claude-foundation advance ${id} --inspect`
+          verify: `claude-foundation proof readiness ${id}`
         }
       ]
     };
@@ -961,7 +961,7 @@ export function createProofReadinessRuntime({
           `openspec/changes/${id}/repositories.yaml`
         ],
         issues,
-        verify: `claude-foundation advance ${id} --inspect`
+        verify: `claude-foundation change validate ${id}`
       }
     ];
   }
@@ -992,7 +992,7 @@ export function createProofReadinessRuntime({
         command: `claude-foundation agents release ${id} ${lease.taskId} --owner ${lease.owner} --force`,
         note: "A lease that has not expired also requires --decision-ref, because the worker holding it may still be running."
       })),
-      verify: `claude-foundation advance ${id} --inspect`
+      verify: `claude-foundation proof readiness ${id}`
     }];
   }
 

@@ -58,7 +58,7 @@ const BLOCKER_KINDS = Object.freeze([
     code: "contract-invalid", classification: "contract",
     pattern: /protocol|provider|adapter|criticalcase|critical case|evidence|claim|contract/i,
     summary: "The executable change or evidence contract is incomplete",
-    recovery: (id) => `claude-foundation advance ${id}`
+    recovery: (id) => `claude-foundation change validate ${id}`
   }
 ]);
 
