@@ -10,7 +10,10 @@ ROOT="$(cd "$HERE/../../.." && pwd)"
 # lacks them, so name the setup gap instead of failing inside tar.
 for tag in v3.2.19 v3.5.13; do
   if ! git -C "$ROOT" rev-parse --verify --quiet "refs/tags/$tag^{commit}" >/dev/null; then
-    echo "test setup incomplete: release tag $tag is missing; run git fetch --unshallow --tags in this checkout before retrying" >&2
+    fetch="git fetch --tags"
+    [ "$(git -C "$ROOT" rev-parse --is-shallow-repository 2>/dev/null)" = true ] &&
+      fetch="git fetch --unshallow --tags"
+    echo "test setup incomplete: release tag $tag is missing; run $fetch in this checkout before retrying" >&2
     exit 1
   fi
 done

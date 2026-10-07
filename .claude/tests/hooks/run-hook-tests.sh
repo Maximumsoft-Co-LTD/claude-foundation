@@ -43,6 +43,25 @@ if command -v jq >/dev/null 2>&1; then
   # or limited to file names, instead of refused.
   unscoped="$(printf '%s' '{"tool_name":"Grep","tool_input":{"pattern":"password","output_mode":"content"}}' | bash "$SECRETS")"
   assert_contains "an unscoped credential search skips secret files" "$unscoped" '"glob":"!{**/.env'
+  # The exclusion must cover every file name is_secret_path treats as secret,
+  # or a content search still prints those values.
+  if command -v rg >/dev/null 2>&1; then
+    GLOB_DIR="$(mktemp -d)"
+    mkdir -p "$GLOB_DIR/.ssh" "$GLOB_DIR/.gnupg"
+    for name in .env .pypirc _netrc .htpasswd .dockercfg auth.json id_rsa id_ed25519 \
+      app.ppk vault.kdbx release.jks svc-key.json my-service-account.json \
+      .ssh/deploy .gnupg/private.txt; do
+      printf 'password=leaked\n' > "$GLOB_DIR/$name"
+      is_secret="$(printf '{"tool_name":"Read","tool_input":{"file_path":"%s"}}' "$GLOB_DIR/$name" | bash "$SECRETS")"
+      assert_contains "is_secret_path treats $name as secret" "$is_secret" 'redacted'
+    done
+    printf 'const password = input;\n' > "$GLOB_DIR/app.ts"
+    exclusion="$(printf '%s' "$unscoped" | jq -r '.hookSpecificOutput.updatedInput.glob')"
+    found="$(rg --hidden --no-ignore -n -g "$exclusion" password "$GLOB_DIR" || true)"
+    assert_not_contains "the rewritten search prints no secret-file line" "$found" 'leaked'
+    assert_contains "the rewritten search still reads ordinary code" "$found" 'app.ts'
+    rm -rf "$GLOB_DIR"
+  fi
   broad="$(printf '%s' '{"tool_name":"Grep","tool_input":{"pattern":"password","glob":"**/*","output_mode":"content"}}' | bash "$SECRETS")"
   assert_contains "a broad-glob credential search lists file names only" "$broad" '"output_mode":"files_with_matches"'
   targeted="$(printf '%s' '{"tool_name":"Grep","tool_input":{"pattern":"x","glob":"**/.env*","output_mode":"content"}}' | bash "$SECRETS")"
@@ -118,8 +137,10 @@ assert_file_not_contains "session hook adds no PATH entry without an installed C
 # the installer's project-local shim on PATH, and only when nothing resolves.
 SHIM_PROJECT="$(mktemp -d)"
 trap 'rm -f "$ENV_FILE"; rm -rf "$SHIM_PROJECT"' EXIT HUP INT TERM
-mkdir -p "$SHIM_PROJECT/.foundation/bin" "$SHIM_PROJECT/global"
-touch "$SHIM_PROJECT/.foundation/bin/claude-foundation" "$SHIM_PROJECT/global/claude-foundation"
+mkdir -p "$SHIM_PROJECT/.foundation/bin" "$SHIM_PROJECT/global" "$SHIM_PROJECT/stale"
+touch "$SHIM_PROJECT/.foundation/bin/claude-foundation" "$SHIM_PROJECT/global/claude-foundation" \
+  "$SHIM_PROJECT/stale/claude-foundation"
+chmod +x "$SHIM_PROJECT/global/claude-foundation"
 NODE_DIR="$(dirname "$(command -v node)")"
 : > "$ENV_FILE"
 printf '%s' "$session" | CLAUDE_PROJECT_DIR="$SHIM_PROJECT" CLAUDE_ENV_FILE="$ENV_FILE" \
@@ -131,5 +152,10 @@ printf '%s' "$session" | CLAUDE_PROJECT_DIR="$SHIM_PROJECT" CLAUDE_ENV_FILE="$EN
   PATH="$SHIM_PROJECT/global:$NODE_DIR:/usr/bin:/bin" node "$ROOT/.claude/hooks/session-context.mjs" >/dev/null
 assert_file_not_contains "session hook keeps a CLI already on PATH first" \
   "$ENV_FILE" "export PATH="
+: > "$ENV_FILE"
+printf '%s' "$session" | CLAUDE_PROJECT_DIR="$SHIM_PROJECT" CLAUDE_ENV_FILE="$ENV_FILE" \
+  PATH="$SHIM_PROJECT/stale:$NODE_DIR:/usr/bin:/bin" node "$ROOT/.claude/hooks/session-context.mjs" >/dev/null
+assert_file_contains "session hook ignores a non-executable CLI on PATH" \
+  "$ENV_FILE" "export PATH='$SHIM_PROJECT/.foundation/bin':\"\$PATH\""
 
 finish "current hooks"

@@ -336,9 +336,6 @@ export function mutatingShellOperations(command) {
   return [...new Set(operations)];
 }
 
-const SCRIPT_RUNNERS = new Set(["npm run", "npm exec", "npx", "pnpm run", "pnpm exec",
-  "pnpm dlx", "yarn run", "yarn dlx", "bun run", "bunx", "sh", "bash", "zsh"]);
-
 export function looksMutatingShellCommand(command) {
   return mutatingShellOperations(command).length > 0;
 }
@@ -368,13 +365,12 @@ export function shellMutationViolation(phase, environment, command = null, inspe
   if (operations !== null && operations.length === 0) return null;
   if (phase === "prove" || phase === "change" || phase === "investigate")
     return `${phase === "prove" ? "Prove" : phase === "change" ? "Change" : "Investigate"} cannot run mutating shell commands`;
-  // Test and script runners only read the target; Land restores what they
-  // regenerate. Direct writes still need the runtime transaction.
-  if (phase === "land" && environment.FOUNDATION_LAND_TRANSACTION !== "1" &&
-      !(operations?.length && !SHELL_CODE_CARRIER.test(String(command ?? "")) &&
-        operations.every((operation) => SCRIPT_RUNNERS.has(operation))))
+  // An opaque script runner can write anywhere in the target, and Land only
+  // restores paths in its own projection, so it needs the transaction too.
+  // Read-only test commands (`node --test`) are not mutations and still run.
+  if (phase === "land" && environment.FOUNDATION_LAND_TRANSACTION !== "1")
     return "Land shell mutations require the runtime transaction marker; Land writes the " +
-      "target itself, and test or script runs need no write";
+      "target itself, and Prove already ran the checks in the isolated workspace";
   if (phase === "build") {
     const workspace = environment.FOUNDATION_WORKSPACE_ROOT;
     if (!workspace) return "Build shell mutations require an isolated workspace";

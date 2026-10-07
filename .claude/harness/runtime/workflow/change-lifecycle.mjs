@@ -1613,10 +1613,7 @@ export function createChangeLifecycle({
   }
 
   function approvalPacketRoot(id) {
-    const current = loadRuntime(id);
-    return current.workspace?.path &&
-      existsSync(join(current.workspace.path, "openspec", "changes", id))
-      ? current.workspace.path : root;
+    return approvalPacketRootFor(loadRuntime(id), id);
   }
 
   function designOpenQuestions(id, packetRoot = approvalPacketRoot(id)) {
@@ -1928,7 +1925,7 @@ export function createChangeLifecycle({
     return state.pendingApprovalDelta;
   }
 
-  function approvalPacketRoot(state, id) {
+  function approvalPacketRootFor(state, id) {
     return state.workspace?.path &&
       existsSync(join(state.workspace.path, "openspec", "changes", id))
       ? state.workspace.path : root;
@@ -1949,7 +1946,7 @@ export function createChangeLifecycle({
     const toRevision = Number(next.contractRevision || 0);
     const { carriedFrom: _prior, ...consent } = approval;
     next.specApproval = { ...consent,
-      identity: agreementIdentity(approvalPacketRoot(next, id), id),
+      identity: agreementIdentity(approvalPacketRootFor(next, id), id),
       revision: toRevision, carriedFrom: { revision: fromRevision, reason, carriedAt } };
     next.approvalCarries = [...(prior.approvalCarries || []), {
       fromRevision, toRevision, reason,

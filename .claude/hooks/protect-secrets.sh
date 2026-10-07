@@ -248,7 +248,8 @@ case "$tool_name" in
        printf '%s' "$g_pattern" | grep -Eqi \
          '(api[_-]?key|secret|passwd|password|private[_-]?key|access[_-]?token|auth[_-]?token|bearer|credential|client[_-]?secret|aws_[a-z_]*key)'; then
       if [ "$strict" != block ]; then
-        [ -n "$g_glob" ] || rewrite glob '!{**/.env,**/.env.*,**/*.env,**/*.pem,**/*.key,**/*.p12,**/*.pfx,**/*secret*,**/*credential*,**/.npmrc,**/.netrc}' \
+        # Keep this exclusion in step with is_secret_path's deny-lists.
+        [ -n "$g_glob" ] || rewrite glob '!{**/.env,**/.env.*,**/*.env,**/*.pem,**/*.key,**/*.pfx,**/*.p12,**/*.jks,**/*.keystore,**/*.kdbx,**/*.ppk,**/*.gpg,**/id_rsa,**/id_dsa,**/id_ecdsa,**/id_ed25519,**/.ssh/**,**/.gnupg/**,**/.npmrc,**/.pypirc,**/.netrc,**/_netrc,**/.htpasswd,**/.dockercfg,**/auth.json,**/*service*account*.json,**/*-key.json,**/*_key.json,**/*secret*,**/*credential*}' \
           "secrets guard: this credential-shaped search skips secret files (.env, keys, credentials) so their values are never printed."
         rewrite output_mode files_with_matches "secrets guard: this credential-shaped search lists matching file names without printing lines, because its glob could reach secret files."
       fi

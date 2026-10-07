@@ -191,10 +191,13 @@ function amendmentList(amendment, field) {
 // A corrected verify command replaces a failing check, so it must still be a
 // check: a command that cannot fail would turn the task's acceptance (and any
 // provider command derived from it) into a pass with no evidence behind it.
+// A text screen, so best-effort: it catches a no-op as the whole command or as
+// the last command after `;`, `||`, `|`, `&`, or a newline (`&&` still fails).
 export function verifyCannotFail(command) {
-  const text = String(command || "").trim();
-  return /^(?:true|:|exit(?:\s+0)?|echo(?:\s.*)?|printf(?:\s.*)?)$/i.test(text) ||
-    /\|\|\s*(?:true|:|exit(?:\s+0)?)\s*\)?\s*$/i.test(text);
+  const text = String(command || "").trim().replace(/\s+#[^'"\n]*$/, "").trim();
+  return /^\(?\s*(?:true|:|exit(?:\s+0)?|echo(?:\s.*)?|printf(?:\s.*)?)\s*\)?$/i.test(text) ||
+    /(?:;|\n|\|\|?|(?<!&)&(?!&))\s*\(?\s*(?:true|:|exit(?:\s+0)?|echo(?:\s[^;&|\n]*)?|printf(?:\s[^;&|\n]*)?)\s*\)?\s*$/i
+      .test(text);
 }
 
 // A test source file named in a verify command. Build used to discover a

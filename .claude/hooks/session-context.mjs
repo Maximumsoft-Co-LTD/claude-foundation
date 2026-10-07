@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { appendFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { accessSync, appendFileSync, constants, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nextCommand } from "../harness/runtime/core/next-step.mjs";
@@ -27,13 +27,19 @@ function exportSessionIdentity(input) {
 // A source-checkout install leaves no `claude-foundation` on PATH, yet every
 // next step the harness prints names it. The installer writes a project-local
 // shim; this puts it on the session's PATH only when nothing already resolves,
-// so a Homebrew or other global CLI keeps precedence.
+// so a Homebrew or other global CLI keeps precedence. A non-executable file
+// or directory of that name does not resolve for the shell, so it does not count.
+function executableFile(path) {
+  try { accessSync(path, constants.X_OK); return statSync(path).isFile(); }
+  catch { return false; }
+}
+
 function exportCliPath() {
   const envFile = process.env.CLAUDE_ENV_FILE;
   const bin = join(ROOT, ".foundation", "bin");
   if (!envFile || !existsSync(join(bin, "claude-foundation"))) return;
   const resolves = (process.env.PATH || "").split(delimiter)
-    .some((dir) => dir && existsSync(join(dir, "claude-foundation")));
+    .some((dir) => dir && executableFile(join(dir, "claude-foundation")));
   if (!resolves) appendFileSync(envFile, `export PATH=${shellQuote(bin)}:"$PATH"\n`);
 }
 

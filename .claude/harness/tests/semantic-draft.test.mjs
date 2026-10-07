@@ -755,13 +755,16 @@ test("a direct verify correction names a task by id and never weakens evidence",
     [name, [row.adapter, row.capability, row.claims]])),
   Object.fromEntries(Object.entries(fixture.contract.providers).map(([name, row]) =>
     [name, [row.adapter, row.capability, row.claims]])));
-  for (const noop of ["true", ":", "exit 0", "echo ok", "npm test || true", "(npm test || :)"]) {
+  for (const noop of ["true", ":", "exit 0", "echo ok", "npm test || true", "(npm test || :)",
+    "npm test; true", "npm test; echo done", "npm test | true", "npm test || true # ignore",
+    "(npm test; :)", "npm test & exit 0"]) {
     assert.equal(verifyCannotFail(noop), true, noop);
     assert.match(compileSemanticAmendment({ ...fixture,
       amendment: taskVerifyAmendment({ task: "impl", verify: noop }) }).issues.join("\n"),
     /cannot be a command that always passes/, noop);
   }
-  for (const check of ["npm test", "node --test", "true-check", "pytest -k echo"])
+  for (const check of ["npm test", "node --test", "true-check", "pytest -k echo",
+    "npm test && echo ok", "npm test && true", "npm test # true", "grep -q '#x' f; npm test"])
     assert.equal(verifyCannotFail(check), false, check);
   assert.match(compileSemanticAmendment({ ...fixture,
     amendment: taskVerifyAmendment({ task: "T002", verify: "npm test" }) }).issues.join("\n"),
