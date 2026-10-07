@@ -113,6 +113,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   satisfies the dev document's lead; `summary` stays optional, and the template
   asks only for `why`.
 
+### Fixed
+
+- Prove no longer passes Build tasks without verification under the legacy
+  review circuit. The circuit is the default for a `foundation.json` without a
+  `workflow` block, and it used to mark every task node `legacy-policy`. Runtime
+  state written before graph execution also used to pass as `legacy-upgrade`.
+  Every task node now needs current task execution authority. A ticked task
+  without that authority stops Prove and routes to `advance`, which re-verifies
+  it by running its check. Review circuit defaults are unchanged.
+- `land record` no longer switches a current multi-repository change into the
+  legacy commit-based Land saga. It now accepts a child commit only for a
+  transaction that the retired flow already started. For any other change it
+  refuses and routes to `advance <change> --through archived`, because Land
+  never commits.
+
 ## [3.5.30] - 2026-10-01
 
 ### Changed

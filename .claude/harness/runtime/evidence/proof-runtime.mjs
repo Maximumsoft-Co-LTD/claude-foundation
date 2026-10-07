@@ -35,12 +35,14 @@ function acceptedTaskResultProof(root, fileDigest, resultRecord, result, node, t
     sha256: fileDigest(destination), size: statSync(destination).size
   });
 }
-export function taskNodeProof({ root, fileDigest, legacyExecutionPolicy, taskPacketWasPrecompleted,
+// Every task node passes only through task execution authority. The review
+// circuit governs review dispatch, never Build verification, and a change
+// created before graph execution existed is re-verified by `advance` (its
+// ticked tasks lack execution authority) rather than trusted unchecked.
+export function taskNodeProof({ root, fileDigest, taskPacketWasPrecompleted,
   taskResult, savedAgentPlan, contractFingerprint, taskLease, fail
 }, id, node, graph, state, runRoot) {
   const taskId = node.id.replace(/^task:/, "");
-  if (!state.graphExecutionVersion) return passingTaskNode(node, "legacy-upgrade");
-  if (legacyExecutionPolicy?.()) return passingTaskNode(node, "legacy-policy");
   if (taskPacketWasPrecompleted?.(id))
     return passingTaskNode(node, "precompleted-at-isolation");
   const resultRecord = taskResult?.(id, taskId) || null;
@@ -58,7 +60,8 @@ export function taskNodeProof({ root, fileDigest, legacyExecutionPolicy, taskPac
     ...passingTaskNode(node, "single-agent-observed"),
     compatibility: authority.compatibility
   };
-  fail(`task node '${node.id}' requires current Build verification: ${authority.reason}`);
+  fail(`task node '${node.id}' requires current Build verification: ${authority.reason}; ` +
+    `next: claude-foundation advance ${id} --through proven`);
 }
 
 export function createProofRuntime({
@@ -68,7 +71,7 @@ export function createProofRuntime({
   protocolDescriptor, contractFingerprint, executionFingerprint, proofPath,
   writeJson, readJson, pathInside, validateArtifact, instructionProvenance,
   agentPlanValue = null, savedAgentPlan = null, taskResult = null,
-  taskLease = null, taskPacketWasPrecompleted = null, legacyExecutionPolicy = null,
+  taskLease = null, taskPacketWasPrecompleted = null,
   selectedRepositories = () => [], git = null, now, fail
 }) {
   function assertReadRepositoriesUnchanged(id, state) {
@@ -83,7 +86,7 @@ export function createProofRuntime({
     }
   }
 
-  const taskNodeDependencies = { root, fileDigest, legacyExecutionPolicy, taskPacketWasPrecompleted,
+  const taskNodeDependencies = { root, fileDigest, taskPacketWasPrecompleted,
     taskResult, savedAgentPlan, contractFingerprint, taskLease, fail };
 
   function assertProviderChecks(id, state, hash, checks) {

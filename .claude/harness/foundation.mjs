@@ -1685,8 +1685,6 @@ const { finalize: prove, audit: proofAudit } = createProofRuntime({
     return existsSync(path) ? readJson(path, null) : null;
   },
   taskPacketWasPrecompleted,
-  legacyExecutionPolicy: () =>
-    foundationPolicy().workflow?.reviewCircuit === "legacy",
   selectedRepositories,
   git,
   now,

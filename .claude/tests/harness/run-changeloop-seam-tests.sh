@@ -416,6 +416,18 @@ JSON
   # Committing in the child moved the composite identity, which is the saga's
   # own re-prove step rather than a failure.
   $F proof-run "$C" > /dev/null 2>&1
+  # A current change delivers uncommitted workspaces, so binding a child
+  # commit must not switch it into the legacy saga. The pointer mechanics below
+  # remain reachable only for a transaction the retired flow already started,
+  # which this fixture reproduces with that flow's saga marker.
+  refused="$($F land-record "$C" --repo api --commit "$bound" --decision-ref pointer-test 2>&1 || true)"
+  assert_contains "a current change refuses the legacy commit-based saga" "$refused" \
+    "advance $C --through archived"
+  node -e "
+    const fs=require('fs'); const p='.foundation/runtime/$C.json';
+    const s=JSON.parse(fs.readFileSync(p,'utf8'));
+    s.land={...(s.land||{}),strategy:'ordered-resumable-saga',status:'children-inspected'};
+    fs.writeFileSync(p, JSON.stringify(s,null,2)+'\n');"
   $F land-record "$C" --repo api --commit "$bound" --decision-ref pointer-test > /dev/null 2>&1
 
   # The saga requires the child commit to reach its own branch before a pointer
@@ -436,6 +448,7 @@ JSON
   # racing the stale-proof check, which moving the control head also trips.
   # A test that sometimes asserts the other refusal would pin nothing.
 else
+  pass "submodule pointer staging skipped: git unavailable"
   pass "submodule pointer staging skipped: git unavailable"
   pass "submodule pointer staging skipped: git unavailable"
   pass "submodule pointer staging skipped: git unavailable"

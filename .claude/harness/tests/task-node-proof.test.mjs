@@ -41,7 +41,7 @@ const pathCovered = (path, scopes) => scopes.some((scope) => {
 });
 const fail = (message) => { throw new Error(message); };
 const dependencies = (overrides = {}) => ({
-  root, fileDigest, legacyExecutionPolicy: null, taskPacketWasPrecompleted: null,
+  root, fileDigest, taskPacketWasPrecompleted: null,
   taskResult: null, savedAgentPlan: null, pathCovered, fail, ...overrides
 });
 
@@ -63,12 +63,20 @@ try {
     ...packetDependencies, loadRuntime: () => ({ workspace: {} })
   }, id), false);
 
+  // Neither the review circuit nor a pre-graph-execution state is execution
+  // authority. A consumer whose foundation.json has no workflow block runs the
+  // legacy review circuit by default; a ticked task without a verified result
+  // must still fail proof (and `advance` re-verifies it) instead of passing.
+  const unverifiedNode = { ...node, resources: ["shared-database"] };
+  const unverifiedGraph = { ...graph, nodes: [unverifiedNode] };
+  for (const legacyState of [{}, state])
+    assert.throws(() => taskNodeProof(dependencies({
+      legacyExecutionPolicy: () => true
+    }), id, unverifiedNode, unverifiedGraph, legacyState, runRoot),
+    /requires current Build verification.*advance task-proof --through proven/s);
   assert.equal(taskNodeProof(dependencies(), id, node, graph, {}, runRoot).source,
-    "legacy-upgrade");
-  assert.equal(taskNodeProof(dependencies({ legacyExecutionPolicy: () => true }),
-    id, node, graph, state, runRoot).source, "legacy-policy");
+    "single-agent-observed");
   assert.equal(taskNodeProof(dependencies({
-    legacyExecutionPolicy: () => false,
     taskPacketWasPrecompleted: (changeId) => changeId === id
   }), id, node, graph, state, runRoot).source, "precompleted-at-isolation");
 
@@ -178,7 +186,6 @@ try {
     observedWrites: ["outside/file.js", "outside/file.js"]
   };
   assert.throws(() => taskNodeProof(dependencies({
-    legacyExecutionPolicy: () => false,
     taskPacketWasPrecompleted: () => false,
     taskResult: () => ({ path: resultPath, value: invalidResult })
   }), id, node, graph, state, runRoot), (error) => {
