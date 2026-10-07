@@ -255,7 +255,7 @@ the envelope carries, and the budget no-progress cap are specified in
 | `advance <change> --decision retry\|wait\|pause --decision-fingerprint <hash> --decision-ref <ref> --reason <approach>` | Records the user's current recovery choice and resumes its retained target; grants no unrelated authority | Agent records an explicit answer |
 | `doctor` | Checks runtime and project readiness | After install or when diagnosing setup |
 | `changes` | Lists active changes and readiness | Finding work to resume or land |
-| `packet <change> --phase <phase>` | Prints a compact diagnostic handoff; review packets are ≤8 KiB | Operator/debug inspection |
+| `packet <change> --phase <phase>` | Prints a compact diagnostic handoff; review packets are ≤20 KiB; `--task` for a completed task prints its read-only packet (`executionAuthority.status: "completed"`) | Operator/debug inspection |
 | `packet <change> --repo <id> [--task <id>] [--pretty]` | Prints a bounded repository or task packet | Starting a native subagent |
 | `metrics <change>` | Reports measured phase/provider cost, emitted context bytes, and blocked operations by code, phase, and operation with the latest local reason | Finding latency, orchestration overhead, or where a change keeps stopping |
 | `feedback <change> [--pretty] [--diagnostics]` | Reports current readiness, source-aware timing, repair intervals, blocker coverage, evidence reuse, and the next action; diagnostics exports allowlisted metadata | Explaining why Prove took time without labeling repair as wait |
@@ -690,7 +690,11 @@ waves with ready/executed/reused node counts, measured queueing where execution 
 harness-owned, and peak concurrency. Unknown queueing remains `null`, never zero.
 
 Context is budgeted at the control surface: plan summaries are at most 4 KiB,
-task and review packets 8 KiB, repository packets 12 KiB, and global packets 16 KiB.
+task and review packets 20 KiB, repository packets 24 KiB, and global packets 32 KiB.
+These defaults give a measured three-repository, three-task change (20 claims on
+one task) about 1.5x headroom; `foundation.json execution.packetBytes` overrides
+them within the hard `2048..65536` ceiling, and an over-budget packet blocks with
+its largest fields.
 Oversized artifacts are referenced by path and digest. The budget covers the
 exact compact bytes written to stdout. Every emitted plan and packet records
 its byte count as an atomic event below

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Packet budgets (user decision: raise the defaults so large work fits): task
+  and review packets 8 KiB -> 20 KiB, repository 12 KiB -> 24 KiB, global
+  16 KiB -> 32 KiB. A paid three-repository API-keys run (3 tasks, 10/4/20
+  claims, ~22 changed paths) was blocked at `packet --task` (9,951 bytes) and
+  `packet --phase build` (19,623 bytes); a deterministic replay measured task
+  packets up to 11.7 KB, repository 14.3 KB, review 12.2 KB, and global
+  18.0 KB, so the new defaults give about 1.5x headroom. The `2048..65536`
+  hard ceiling, `foundation.json` overrides, and the largest-fields BLOCKED
+  diagnostic are unchanged. The installer replaces only the exact former
+  seeded defaults (`8192/8192/12288/16384`) and keeps tuned budgets.
 - Rapid fast path: under `workflow.reviewPolicy: "risk-tiered"`, a low-tier
   `foundation-rapid` change that nothing asks to review (no declared or keyword
   security trigger, `--review`, `riskSignals`, review capability, or
@@ -301,6 +311,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   asks only for `why`.
 
 ### Fixed
+
+- `packet <change> --task <id>` for an already-completed task prints that
+  task's read-only packet (`executionAuthority.status: "completed"`,
+  `readOnly: true`) instead of `BLOCKED: unknown pending task`; `agents task`
+  still dispatches only pending tasks and unknown ids still block.
 
 - A writable sibling repository declared outside the root (`../sdk` with
   `allowOutsideRoot: true`) can own draft tasks again. `change start` no longer

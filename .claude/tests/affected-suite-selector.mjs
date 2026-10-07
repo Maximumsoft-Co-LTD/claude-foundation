@@ -53,8 +53,8 @@ const RULES = [
   [/handoff-runtime|handoff-policy/, ["external operation handoff", ...LAND]],
   [/authority-runtime|proof-advance|review-repair-closure/,
     [...REVIEW, "proof loop end to end"]],
-  [/packet-runtime|packet-scaling/, [
-    "packet scaling", "bounded review repair closure",
+  [/packet-runtime|packet-scaling|large-change-packet|agent-planning|runtime-environment/, [
+    "packet scaling", "large change packets", "bounded review repair closure",
     "harness contracts (evidence review)"
   ]],
   [/repository-snapshot|state-runtime|workspace-surface|core\/git-ignore/, [

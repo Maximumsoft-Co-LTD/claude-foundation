@@ -443,14 +443,25 @@ else
     "$combined_bytes" 32768 bytes "representative auth build context"
 fi
 
-assert_cmd_zero "task packet budget is 8 KiB" \
-  jq -e '.execution.packetBytes.task == 8192' "$ROOT/foundation.json"
-assert_cmd_zero "review packet budget is 8 KiB" \
-  jq -e '.execution.packetBytes.review == 8192' "$ROOT/foundation.json"
-assert_cmd_zero "repository packet budget is 12 KiB" \
-  jq -e '.execution.packetBytes.repository == 12288' "$ROOT/foundation.json"
-assert_cmd_zero "global packet budget is 16 KiB" \
-  jq -e '.execution.packetBytes.global == 16384' "$ROOT/foundation.json"
+# User decision (2026-10): packet budgets were raised so a measured
+# three-repository, three-task change fits with ~1.5x headroom.
+assert_cmd_zero "task packet budget is 20 KiB" \
+  jq -e '.execution.packetBytes.task == 20480' "$ROOT/foundation.json"
+assert_cmd_zero "review packet budget is 20 KiB" \
+  jq -e '.execution.packetBytes.review == 20480' "$ROOT/foundation.json"
+assert_cmd_zero "repository packet budget is 24 KiB" \
+  jq -e '.execution.packetBytes.repository == 24576' "$ROOT/foundation.json"
+assert_cmd_zero "global packet budget is 32 KiB" \
+  jq -e '.execution.packetBytes.global == 32768' "$ROOT/foundation.json"
+assert_cmd_zero "runtime default packet budgets match the seeded foundation.json" \
+  node --input-type=module -e '
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync(process.argv[1], "utf8");
+    const seeded = JSON.parse(readFileSync(process.argv[2], "utf8")).execution.packetBytes;
+    const match = source.match(/packetBytes: \{ task: (\d+), review: (\d+), repository: (\d+), global: (\d+) \}/);
+    const runtime = match && { task: +match[1], review: +match[2], repository: +match[3], global: +match[4] };
+    if (JSON.stringify(runtime) !== JSON.stringify(seeded)) process.exit(1);
+  ' "$ROOT/.claude/harness/runtime/core/runtime-environment.mjs" "$ROOT/foundation.json"
 assert_cmd_zero "plan summary budget is 4 KiB" \
   jq -e '.execution.planSummaryBytes == 4096' "$ROOT/foundation.json"
 assert_cmd_zero "rapid token budget is explicit" \

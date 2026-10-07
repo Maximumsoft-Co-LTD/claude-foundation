@@ -31,13 +31,13 @@ assert_contains "installer diagnoses historical risk-based CI default" \
   "$legacy_upgrade" "historical-default-land-risk-based-ci"
 assert_eq "historical risk-based CI value is preserved" "true" \
   "$(jq -r '.land.riskBasedCi' "$legacy/foundation.json")"
-assert_eq "legacy task budget migrates" "8192" \
+assert_eq "legacy task budget migrates" "20480" \
   "$(jq -r '.execution.packetBytes.task' "$legacy/foundation.json")"
-assert_eq "legacy review budget migrates" "8192" \
+assert_eq "legacy review budget migrates" "20480" \
   "$(jq -r '.execution.packetBytes.review' "$legacy/foundation.json")"
-assert_eq "legacy repository budget migrates" "12288" \
+assert_eq "legacy repository budget migrates" "24576" \
   "$(jq -r '.execution.packetBytes.repository' "$legacy/foundation.json")"
-assert_eq "legacy global budget migrates" "16384" \
+assert_eq "legacy global budget migrates" "32768" \
   "$(jq -r '.execution.packetBytes.global' "$legacy/foundation.json")"
 assert_eq "upgrade adds budget watchdog default off" "false" \
   "$(jq -r '.execution.budgetWatchdog' "$legacy/foundation.json")"
@@ -59,6 +59,29 @@ assert_eq "consumer model routing opt-in survives upgrade" "true" \
   "$(jq -r '.models.routing' "$optin/foundation.json")"
 assert_eq "consumer quality gate survives upgrade" "warn" \
   "$(jq -r '.quality.changeGate' "$optin/foundation.json")"
+
+seeded="$TMP/seeded"
+mkdir -p "$seeded"
+printf '%s\n' \
+  '{"version":1,"execution":{"packetBytes":{"task":8192,"review":8192,"repository":12288,"global":16384}}}' \
+  > "$seeded/foundation.json"
+seeded_upgrade="$(bash "$ROOT/install.sh" "$seeded" --source "$ROOT" --yes)"
+assert_contains "installer raises the former seeded packet budgets" \
+  "$seeded_upgrade" "raised former default packet budgets"
+assert_eq "former seeded budgets become the current defaults" \
+  '{"task":20480,"review":20480,"repository":24576,"global":32768}' \
+  "$(jq -c '.execution.packetBytes' "$seeded/foundation.json")"
+
+tuned="$TMP/tuned"
+mkdir -p "$tuned"
+printf '%s\n' \
+  '{"version":1,"execution":{"packetBytes":{"task":8192,"review":8192,"repository":12288,"global":20000}}}' \
+  > "$tuned/foundation.json"
+assert_cmd_zero "installer upgrades a tuned scoped policy" \
+  bash "$ROOT/install.sh" "$tuned" --source "$ROOT" --yes
+assert_eq "tuned scoped budgets survive upgrade" \
+  '{"task":8192,"review":8192,"repository":12288,"global":20000}' \
+  "$(jq -c '.execution.packetBytes' "$tuned/foundation.json")"
 
 custom="$TMP/custom"
 mkdir -p "$custom"
@@ -93,8 +116,8 @@ assert_contains "partial scoped policy deep-merges defaults" "$models" '"fast"'
 doctor="$(cd "$partial" && node .claude/harness/foundation.mjs doctor --stage build)"
 assert_contains "partial policy retains custom task budget" "$doctor" "task=4096"
 assert_contains "partial policy receives repository default" "$doctor" \
-  "repository=12288"
-assert_contains "partial policy receives review default" "$doctor" "review=8192"
+  "repository=24576"
+assert_contains "partial policy receives review default" "$doctor" "review=20480"
 
 # Exercise the real previous release rather than a hand-built policy fragment.
 # An in-flight v3.2.19 change is a grandfathered migration exception: it stays

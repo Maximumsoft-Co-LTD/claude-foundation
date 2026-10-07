@@ -290,13 +290,23 @@ elif command -v jq >/dev/null 2>&1; then
   if jq -e '.version == 1 and .execution.packetBytes == 65536' \
       "$TARGET_PATH/foundation.json" >/dev/null 2>&1; then
     tmp="$(mktemp)"
-    jq '.execution.packetBytes = {
-          task: 8192, review: 8192, repository: 12288, global: 16384
-        } |
+    jq --slurpfile src "$SOURCE_PATH/foundation.json" \
+        '.execution.packetBytes = $src[0].execution.packetBytes |
         .execution.planSummaryBytes //= 4096' \
       "$TARGET_PATH/foundation.json" > "$tmp"
     mv "$tmp" "$TARGET_PATH/foundation.json"
     printf '✓ migrated former default packet budget to scoped task/review/repository/global limits\n'
+  elif jq -e '.execution.packetBytes == {
+        task: 8192, review: 8192, repository: 12288, global: 16384
+      }' "$TARGET_PATH/foundation.json" >/dev/null 2>&1; then
+    # The exact former scoped defaults were seeded, not chosen; customized
+    # budgets never match this object and are preserved.
+    tmp="$(mktemp)"
+    jq --slurpfile src "$SOURCE_PATH/foundation.json" \
+        '.execution.packetBytes = $src[0].execution.packetBytes' \
+      "$TARGET_PATH/foundation.json" > "$tmp"
+    mv "$tmp" "$TARGET_PATH/foundation.json"
+    printf '✓ raised former default packet budgets to the current task/review/repository/global limits\n'
   elif jq -e '.execution.packetBytes | type == "number"' \
       "$TARGET_PATH/foundation.json" >/dev/null 2>&1; then
     printf '⚠ preserving custom numeric execution.packetBytes; use scoped task/review/repository/global limits when ready\n' >&2
