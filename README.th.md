@@ -792,6 +792,11 @@ product requirement หรือซ่อม state ด้วยมือถ้�
   การค้นที่อาจโดนไฟล์ลับจะข้ามไฟล์เหล่านั้นหรือแสดงแค่ชื่อไฟล์ และไฟล์ Go จะถูก
   format ให้ทันที secrets hook จะปฏิเสธการอ่านก็ต่อเมื่อสร้างสำเนาที่ปิดค่าไม่ได้
   หรือตั้ง `FOUNDATION_SECRETS_GUARD=block`
+- `shell-route-guard.sh` ปฏิเสธเฉพาะรูปแบบ shell ที่ host จะหยุดถาม approval
+  อยู่แล้ว ได้แก่ `cd <dir> && git …` หรือการรัน test ตรง ๆ ระหว่าง Build
+  โดยบอกคำสั่งที่ให้รันแทน (`git -C <dir> …` หรือ
+  `claude-foundation exec <change> -- <command>`) ถ้ามี allow rule ที่ตรงกัน
+  คำสั่งจะผ่านไปตามปกติ
 - `no-direct-main-commit.sh` เป็น opt-in เพราะบาง project อนุญาต controlled
   commit บน default branch โดย `doctor` จะรายงานว่าเปิดอยู่หรือไม่
 

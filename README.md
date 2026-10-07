@@ -843,6 +843,11 @@ you to.
   a search that could reach secret files skips them or lists only file names,
   and Go files are formatted in place. The secrets hook refuses the read only
   when no redacted copy can be made or `FOUNDATION_SECRETS_GUARD=block` is set.
+- `shell-route-guard.sh` refuses only shell shapes the host would stop on an
+  approval prompt anyway: `cd <dir> && git …` or a direct test run during
+  Build. The refusal names the command to run instead (`git -C <dir> …` or
+  `claude-foundation exec <change> -- <command>`). A matching allow rule lets
+  the call through.
 - `no-direct-main-commit.sh` is opt-in because some projects allow controlled
   commits on their default branch; `doctor` reports whether it is enabled.
 

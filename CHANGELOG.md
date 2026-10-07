@@ -29,6 +29,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- New shipped Bash PreToolUse hook `shell-route-guard.sh` refuses shell shapes
+  the host would stop on a permission prompt anyway, and the reason gives the
+  exact command to run instead, so an unattended agent can correct in one step:
+  `cd <dir> && git …` becomes `git -C <dir> …`. A direct test run (`npm test`,
+  `node --test`, `pytest`, `go test`, …, optionally piped to `tail`/`head`)
+  while a change is in Build becomes `claude-foundation exec <change> [--repo
+  <id>] -- <command>`. A matching Bash allow rule, `bypassPermissions`, or a
+  command the hook cannot parse passes through. `FOUNDATION_GUARDRAIL_MODE=audit`
+  turns the refusal into advice, and `off` disables it. The installer adds the
+  hook to existing settings.
+
 - A draft-validation `EDIT` from `change start`, `change revise`, or `change
   amend` now carries an `instruction`: apply every fix with the Edit tool on the
   pre-allowed `.foundation/drafts/**` file, never a python, `node -e`, `sed -i`,

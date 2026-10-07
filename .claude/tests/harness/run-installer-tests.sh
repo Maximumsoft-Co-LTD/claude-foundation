@@ -340,6 +340,10 @@ assert_file_absent "retired authoring surface guard is not installed" \
   "$TARGET/.claude/hooks/authoring-surface-guard.mjs"
 assert_file_contains "request telemetry binds once at session lifecycle" \
   "$TARGET/.claude/settings.json" "session-context.sh"
+assert_eq "upgrade seeds the shell route guard once beside the detached-authority guard" "1" \
+  "$(jq '[.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[] |
+    select(.command | endswith("/.claude/hooks/shell-route-guard.sh"))] | length' "$TARGET/.claude/settings.json")"
+assert_file_exists "shell route guard is installed" "$TARGET/.claude/hooks/shell-route-guard.mjs"
 assert_file_contains "user CLAUDE content preserved" "$TARGET/CLAUDE.md" "# User project"
 assert_file_contains "managed change-loop pointer added" "$TARGET/CLAUDE.md" "claude-foundation:change-loop:start"
 assert_file_contains "portable AGENTS pointer added" "$TARGET/AGENTS.md" "claude-foundation:portable-agent:start"
@@ -371,6 +375,8 @@ assert_cmd_zero "installer update removes only stale managed files" \
   bash "$ROOT/install.sh" "$TARGET" --source "$ROOT" --yes
 assert_eq "rerunning the installer leaves the allowlist unchanged" \
   "$allow_before_rerun" "$(jq -c '.permissions.allow' "$TARGET/.claude/settings.json")"
+assert_eq "rerunning the installer does not duplicate the shell route guard" "1" \
+  "$(grep -c 'shell-route-guard\.sh' "$TARGET/.claude/settings.json")"
 assert_file_absent "stale managed file removed from prior manifest" \
   "$TARGET/.claude/harness/stale-owned.md"
 assert_file_absent "retired prototype command removed on upgrade" \
