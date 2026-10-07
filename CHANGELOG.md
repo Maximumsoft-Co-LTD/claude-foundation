@@ -44,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every run and nothing consumed them. The `npm run quality:*` commands still
   produce the full report on demand, and `release.yml` still requires fresh
   suite and mutation evidence before publishing.
+- Removed unused repository files: the v2 HTML release notes, the
+  unreferenced `examples/solar-system`, and this repository's own legacy
+  `.workflow/` index. Consumer `.workflow/` migration is unchanged.
 - Investigate acknowledges discovered sources automatically and still hashes
   them for freshness; the `inspect-sources` round is gone. Facts and options
   must cite an inventoried source, and the report lists discoveries no fact

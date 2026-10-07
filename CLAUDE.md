@@ -91,7 +91,8 @@ Repository-only development surfaces:
   authorized; there is no scheduled paid workflow.
 - `dashboard/`, `website/`, and `examples/` — observability UI, public docs, and
   sample consumers.
-- `.workflow/` — read-only legacy migration input; do not extend it.
+- Consumer `.workflow/` directories are read-only legacy migration input; do
+  not extend that format.
 
 ## Shipping boundary
 
