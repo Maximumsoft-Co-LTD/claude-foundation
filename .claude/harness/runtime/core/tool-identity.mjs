@@ -179,9 +179,3 @@ export function memoizeByGitIndex(workspace, key, compute) {
   if (gitIndexIdentity(workspace) === identity) indexQueries.set(memoKey, value);
   return value;
 }
-
-export function clearToolIdentityMemo() {
-  versionProbes.clear();
-  strictLints.clear();
-  indexQueries.clear();
-}

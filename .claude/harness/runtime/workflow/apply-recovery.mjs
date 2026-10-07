@@ -110,10 +110,6 @@ export function manualRecoveryDecision(transactionRoot, {
   };
 }
 
-export function defaultManualRecoveryDecision(transactionRoot, details = {}) {
-  return manualRecoveryDecision(transactionRoot, details);
-}
-
 export function settleCurrentApplyRecovery({
   id,
   state,

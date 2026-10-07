@@ -98,10 +98,6 @@ export function executionFingerprintValue(stableHash, adapterProtocolVersion, co
   });
 }
 
-export function providerConfigOperation({ evidence }, id, provider) {
-  return configuredProviderValue(evidence(id).providers || {}, provider);
-}
-
 export function providerClaimsOperation({
   claimsForProvider,
   providerConfig,
