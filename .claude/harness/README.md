@@ -552,8 +552,18 @@ repository and advances the complete set together.
 For an **isolated copy**, files another change landed that this sandbox never
 touched fast-forward into the sandbox (baseline included), and a file both sides
 edited is named as a `CONFLICT` at sync rather than discovered at Land. Merge
-the target's version into the sandbox copy, then declare it with
-`--resolve <path>` (comma-separate several paths).
+the target's version into the sandbox copy and resume with `advance`: the next
+sync settles the path only when a 3-way check against the copy's stored base
+bytes proves the target's edit is in the copy and no conflict markers remain.
+`--resolve <path>` (comma-separate several paths) declares a merge explicitly.
+
+A copy keeps its base bytes in `.foundation/copy-base/`, a content-addressed
+store keyed by the baseline's sha256 and shared across changes. The declared
+surface is stored when the copy is made; any other path is stored the first
+time sync or Land sees it diverge while the target, the sandbox copy, or the
+base commit still holds the baseline bytes. Files over 8 MiB, binary files,
+and bases already gone are never stored, so their merges and restores stay
+unprovable and Land keeps the `target-edit-conflict` decision.
 
 A target that moved and could not be reconciled is always reported, never
 silent: `sandbox inspect <change>` shows the recorded base against the target's

@@ -260,6 +260,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Isolated-copy sandboxes no longer lose a user's uncommitted target edit.
+  Re-applying after an earlier Land holds every newly touched path to the
+  copy's recorded baseline, including its executable bit, the same overwrite
+  rule as worktrees and root re-delivery. A path the baseline does not record
+  is treated as edited. A copy now keeps its base bytes in a content-addressed
+  store under `.foundation/copy-base/`. With them, a clean target edit merges
+  through the harness (`target-edit-sync`), `keep-target` and `--restore-target`
+  work, and regenerated artifacts are restored. A copy sync conflict settles
+  through `advance` only when a 3-way check proves the target's edit is in the
+  merged copy; a changed copy alone, or a base that was never stored (large,
+  binary, or already gone), stays a conflict.
+
 - A corrupt review attempt chain no longer stops with a
   `review-history-corrupt` user decision. The harness moves the chain aside as
   `review-attempts.corrupt-<stamp>`, rebuilds it, and reports a

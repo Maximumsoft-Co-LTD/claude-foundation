@@ -17,6 +17,9 @@ import {
   worktreeOwnedByTarget
 } from "../core/repository-binding.mjs";
 import { landedTargetPaths, otherLandedOutput, replayLandedEdit } from "./target-edits.mjs";
+import {
+  captureCopyBase, captureCopyBaseSurface, copyBaseBytes, copyEditCarried, fileSource
+} from "./copy-base.mjs";
 
 // A commit read, not executed. Inspection must not resolve a program through
 // PATH, so ref files are the authority for both ordinary and linked worktrees.
@@ -883,7 +886,7 @@ export function reportSandboxSync({ id, state, movement, forwarded, conflicts,
     forwarded ? `\n  fast-forwarded: ${forwarded} file(s) the target moved and the sandbox left alone` : ""
   }`);
   for (const rel of conflicts)
-    log(`CONFLICT ${rel}: the target and the sandbox both changed this file since the baseline; merge the target's version into the sandbox copy, then rerun sandbox sync with --resolve ${rel} (comma-separate several paths). Land stays blocked until every conflict is resolved.`);
+    log(`CONFLICT ${rel}: the target and the sandbox both changed this file since the baseline; merge the target's version into the sandbox copy (no conflict markers), then resume with 'claude-foundation advance ${id} --through <stage>'; the copy settles once it provably contains the target's edit. Land stays blocked until every conflict is resolved.`);
   for (const conflict of movement?.conflicts || [])
     log(`CONFLICT ${movement.multiRepository ? `${conflict.repository}:` : ""}${conflict.path}: the sandbox diff no longer applies to the moved target; merge the target's version into the named repository sandbox worktree, then rerun sandbox sync. Land stays blocked until every repository sandbox replays onto its current commit.`);
   if (movement && !movement.rebased && !movement.conflicts.length)
@@ -1397,7 +1400,8 @@ export function createSandboxRuntime({
   clearSnapshotCache, validate, repositorySelectionIdsAt, contractFingerprint,
   executionFingerprint, taskBlocks, proofPath, relevantHash, now, fail,
   markBlocked,
-  recordScheduler
+  recordScheduler,
+  declaredSurfaceMatcher = null
 }) {
   function sandboxRoot(id) {
     return join(root, ".foundation", "sandboxes", id);
@@ -1446,6 +1450,16 @@ export function createSandboxRuntime({
     }
     if (existsSync(dir)) collect(dir);
     return result;
+  }
+
+  // Keep the base bytes of the change's declared surface while the target
+  // still holds them. An undeclared or whole-tree surface is left to lazy
+  // capture rather than duplicating the repository.
+  function captureDeclaredCopyBase(id, state) {
+    if (!declaredSurfaceMatcher) return;
+    const matches = declaredSurfaceMatcher(id, state, "root");
+    if (matches(".foundation/\0unconfined")) return;
+    captureCopyBaseSurface({ root, baseline: state.workspace.baseline, matches });
   }
 
   function createCopy(id, state, reason) {
@@ -1504,6 +1518,7 @@ export function createSandboxRuntime({
       }),
       targetDirty: targetDirtySnapshot()
     };
+    captureDeclaredCopyBase(id, state);
     transitionLifecycleState(state, "building", "copy-sandbox-created");
     saveRuntime(state);
     const setup = runWorkspaceSetup(state);
@@ -1929,6 +1944,11 @@ export function createSandboxRuntime({
     const base = baseline[rel] ?? null;
     const target = targetManifest[rel] ?? null;
     const sandboxEntry = sandboxManifest[rel] ?? null;
+    // The first divergence while a side still holds the baseline bytes is the
+    // last chance to keep them; without them no later merge can be proven.
+    if (target !== base || sandboxEntry !== base)
+      captureCopyBase({ root, baseline, path: rel, sources: [
+        fileSource(join(root, rel)), fileSource(join(workspace.path, rel))] });
     if (target === base) return "unchanged";
     if (sandboxEntry === target) {
       advanceCopyBaseline(baseline, rel, target);
@@ -1941,6 +1961,13 @@ export function createSandboxRuntime({
     }
     if (resolves.has(rel)) {
       usedResolves.add(rel);
+      advanceCopyBaseline(baseline, rel, target);
+      return "settled";
+    }
+    // A plain sync is how `advance` resumes a conflict: the agent's merge
+    // settles it only when a 3-way check against the captured base proves the
+    // target's edit is in the sandbox copy. A changed copy proves nothing.
+    if (copyEditCarried({ root, sandboxPath: workspace.path, path: rel, baseline })) {
       advanceCopyBaseline(baseline, rel, target);
       return "settled";
     }
@@ -2054,19 +2081,25 @@ export function createSandboxRuntime({
     const workspace = state.workspace;
     const carry = workspace.targetCarry;
     const merged = [];
-    if (!carry || workspace.mode !== "worktree") {
+    if (!carry || !["worktree", "copy"].includes(workspace.mode)) {
       delete workspace.targetCarry;
       return merged;
     }
     const identity = (path) =>
       lstatSync(path, { throwIfNoEntry: false })?.isFile() ? fileDigest(path) : null;
     const base = workspace.baseHead || "HEAD";
+    // A copy merges against its captured base bytes; none means no merge.
+    const baseBytes = (path) => {
+      if (workspace.mode === "copy")
+        return copyBaseBytes({ root, baseline: workspace.baseline, path });
+      const shown = gitBuffer(["show", `${base}:${path}`], root);
+      return shown.status === 0 ? shown.stdout : null;
+    };
     const recorded = {};
     for (const path of Object.keys(carry).sort()) {
       if (identity(join(root, path)) !== carry[path]) continue;
-      const shown = gitBuffer(["show", `${base}:${path}`], root);
       const replay = replayLandedEdit({ root, sandboxPath: workspace.path, path,
-        baseBytes: shown.status === 0 ? shown.stdout : null });
+        baseBytes: baseBytes(path) });
       if (replay.status !== "merged") continue;
       writeFileSync(join(workspace.path, path), replay.bytes);
       recorded[path] = { target: carry[path], sandbox: identity(join(workspace.path, path)) };

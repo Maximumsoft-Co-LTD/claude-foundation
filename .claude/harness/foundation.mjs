@@ -1366,6 +1366,7 @@ const {
 const sandboxRuntime = createSandboxRuntime({
   markBlocked,
   recordScheduler: commandPhaseRecorder.scheduler,
+  declaredSurfaceMatcher,
   root: ROOT,
   policy: foundationPolicy,
   excludedWorkspaceDirs: EXCLUDED_WORKSPACE_DIRS,

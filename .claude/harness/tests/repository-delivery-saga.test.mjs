@@ -10,7 +10,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import {
-  createRepositoryDeliverySaga, repositoryDeliveryOrder
+  copyBaselineState, createRepositoryDeliverySaga, repositoryDeliveryOrder, targetOverwrites
 } from "../runtime/workflow/repository-delivery-saga.mjs";
 
 const digest = (value) => createHash("sha256").update(value).digest("hex");
@@ -110,6 +110,36 @@ function fixture(repositoryCount = 1, options = {}) {
     }
   };
 }
+
+// An isolated copy's base is its baseline manifest: identity binds content and
+// the executable bit, and a path the baseline does not record fails closed.
+test("copy-baseline overwrite guard keeps target edits and lets baseline paths land", () => {
+  const target = {
+    "at-base.txt": ["aaa", 0o644], "edited.txt": ["user", 0o644],
+    "chmod.txt": ["ccc", 0o755], "untracked.txt": ["user", 0o644], "own.txt": ["v1", 0o644]
+  };
+  const files = {
+    safeRootPath: (path) => path,
+    pathIdentity: (path) => target[path]?.[0] ?? null,
+    pathMode: (path) => target[path]?.[1] ?? null
+  };
+  const baseline = { "at-base.txt": "file:regular:aaa", "edited.txt": "file:regular:eee",
+    "chmod.txt": "file:regular:ccc", "own.txt": "file:regular:v0" };
+  const entries = Object.keys(target).map((path) =>
+    ({ path, role: "code", before: target[path][0], beforeMode: 0o644, after: "new",
+      afterMode: 0o644 }));
+  const prior = new Map([["own.txt", { path: "own.txt", after: "v1", afterMode: 0o644 }]]);
+  const git = () => { throw new Error("a copy baseline never asks Git"); };
+  assert.deepEqual(targetOverwrites({ git, files, baseState: copyBaselineState(files, baseline) },
+    "/target", null, entries, prior), [
+    { path: "edited.txt", untracked: false },
+    { path: "chmod.txt", untracked: false },
+    { path: "untracked.txt", untracked: true }
+  ]);
+  assert.deepEqual(targetOverwrites({ git, files, baseState: copyBaselineState(files, undefined) },
+    "/target", null, entries.slice(0, 1)), [{ path: "at-base.txt", untracked: true }],
+  "no recorded baseline fails closed");
+});
 
 test("repository delivery order honors dependencies", () => {
   assert.deepEqual(repositoryDeliveryOrder([

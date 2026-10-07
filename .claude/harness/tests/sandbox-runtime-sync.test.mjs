@@ -11,6 +11,13 @@ import {
   sandboxMovementLine, unusedCopyResolveMessage
 } from "../runtime/workflow/sandbox-runtime.mjs";
 import { agreementIdentity } from "../runtime/core/user-decisions.mjs";
+import { createAdvanceRuntime } from "../runtime/workflow/advance-runtime.mjs";
+import { targetHeadMovedDecision } from "../runtime/workflow/apply-recovery.mjs";
+import { gateDigest } from "../runtime/core/convergent-gate.mjs";
+import {
+  COPY_BASE_MAX_BYTES, captureCopyBase, captureCopyBaseSurface, copyBaseBytes, copyBaseStore,
+  fileSource
+} from "../runtime/workflow/copy-base.mjs";
 
 const digest = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
 const fail = (message) => { throw new Error(message); };
@@ -107,7 +114,8 @@ function syncFixture(id = "sync-copy", { unchanged = false, hashChanged = false 
     fail
   });
   return {
-    root, sandbox, source, destination, state, runtime, manifestReads,
+    root, sandbox, source, destination, state, runtime, manifestReads, targetManifest,
+    sandboxManifest,
     setRepositoryScope(value) { repositoryScope = value; },
     setSourceHash(value) { sourceHash = value; },
     onHash(callback) { onHash = callback; },
@@ -141,6 +149,163 @@ test("copy sync reconciles target movement and preserves task progress", () => {
   assert.deepEqual(fixture.manifestReads, [fixture.root, fixture.sandbox],
     "copy-only sync must not walk a third manifest for an unused base-move identity");
   rmSync(fixture.root, { recursive: true, force: true });
+});
+
+// `advance` resumes a copy conflict with a plain sync (no --resolve). The
+// sandbox copy settles only when a 3-way check against the captured base bytes
+// proves the target's edit is in it: a changed copy alone proves nothing.
+const MERGE_BASE = "a\nb\nc\nd\ne\n";
+const USER_EDIT = MERGE_BASE.replace("a\n", "A (user)\n");
+const CHANGE_EDIT = MERGE_BASE.replace("e\n", "E (change)\n");
+const BOTH_EDITS = USER_EDIT.replace("e\n", "E (change)\n");
+const identityOf = (path) => `file:regular:${digest(path)}`;
+
+function mergeCopy(id) {
+  const fixture = syncFixture(id);
+  for (const manifest of [fixture.targetManifest, fixture.sandboxManifest,
+    fixture.state.workspace.baseline])
+    for (const path of Object.keys(manifest)) delete manifest[path];
+  write(join(fixture.root, "merge.txt"), MERGE_BASE);
+  write(join(fixture.sandbox, "merge.txt"), CHANGE_EDIT);
+  const base = identityOf(join(fixture.root, "merge.txt"));
+  fixture.state.workspace.baseline["merge.txt"] = base;
+  fixture.base = base;
+  fixture.sync = (flags = {}) => {
+    fixture.targetManifest["merge.txt"] = identityOf(join(fixture.root, "merge.txt"));
+    fixture.sandboxManifest["merge.txt"] = identityOf(join(fixture.sandbox, "merge.txt"));
+    return capture(() => fixture.runtime.sync(id, flags)).value;
+  };
+  return fixture;
+}
+
+test("copy sync settles only a provable merge on a plain resync, as advance runs it", () => {
+  for (const [label, copy, settles] of [
+    ["merged", BOTH_EDITS, true],
+    ["edited without merging", CHANGE_EDIT.replace("E (change)", "E (change, again)"), false],
+    ["marked", `<<<<<<< sandbox\n${CHANGE_EDIT}=======\n${USER_EDIT}>>>>>>> target\n`, false]
+  ]) {
+    const fixture = mergeCopy(`copy-${label.replaceAll(" ", "-")}`);
+    try {
+      // The first sync sees the sandbox diverge while the target is still the
+      // base, and stores the base bytes.
+      assert.equal(fixture.sync().status, "SYNCED", label);
+      write(join(fixture.root, "merge.txt"), USER_EDIT);
+      assert.deepEqual(fixture.sync().conflicts, ["merge.txt"], label);
+      write(join(fixture.sandbox, "merge.txt"), copy);
+      const again = fixture.sync();
+      assert.equal(again.status, settles ? "SYNCED" : "CONFLICT", label);
+      assert.equal(fixture.state.workspace.baseline["merge.txt"],
+        settles ? identityOf(join(fixture.root, "merge.txt")) : fixture.base, label);
+      assert.equal(readFileSync(join(fixture.sandbox, "merge.txt"), "utf8"), copy, label);
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  }
+});
+
+// The route the agent is actually given: `advance` runs the plain sync itself.
+test("advance settles a copy conflict once the agent's merge is provable, never before", async () => {
+  const fixture = mergeCopy("copy-advance");
+  try {
+    assert.equal(fixture.sync().status, "SYNCED");
+    write(join(fixture.root, "merge.txt"), USER_EDIT);
+    let stored = { id: "demo", status: "proven", contractRevision: 1 };
+    let lands = 0;
+    const settled = () => fixture.state.workspace.baseline["merge.txt"] ===
+      identityOf(join(fixture.root, "merge.txt"));
+    // The agent's edit is progress: it changes the sandbox workspace hash.
+    const workspaceHash = () => digest(join(fixture.sandbox, "merge.txt"));
+    const runtime = () => createAdvanceRuntime({
+      loadRuntime: () => structuredClone(stored),
+      saveRuntime: (value) => { stored = structuredClone(value); },
+      agentDispatchValue: () => ({ action: "build-complete" }), relevantHash: workspaceHash,
+      stableHash: gateDigest, deliveredAiAttempts: () => [],
+      authorityStatusValue: () => ({ requests: [] }),
+      readJson: () => ({ status: "PASS", workspaceHash: workspaceHash() }),
+      proofAdvancePath: () => "unused", output: () => {}, hasLandGrant: () => true,
+      proofIsCurrent: () => false,
+      runProof: async () => { throw new Error("explicit Land must not rerun proof"); },
+      recoverSandbox: async () => fixture.sync(),
+      runLand: async () => {
+        lands += 1;
+        if (!settled()) return { status: "BLOCKED", decision: targetHeadMovedDecision({ changeId: "demo" }) };
+        stored = { ...stored, status: "archived" };
+        return { archived: true };
+      }
+    });
+    const conflicted = await runtime().advanceThrough("demo", "archived");
+    assert.equal(conflicted.legacyAction, "REPAIR_SYNC_CONFLICT");
+    // An edit that drops the target's change never settles.
+    write(join(fixture.sandbox, "merge.txt"), CHANGE_EDIT.replace("E (change)", "E (again)"));
+    assert.equal((await runtime().advanceThrough("demo", "archived")).legacyAction,
+      "REPAIR_SYNC_CONFLICT");
+    assert.equal(settled(), false);
+    write(join(fixture.sandbox, "merge.txt"), BOTH_EDITS);
+    assert.equal((await runtime().advanceThrough("demo", "archived")).reached, "archived");
+    assert.equal(settled(), true);
+    assert.equal(readFileSync(join(fixture.sandbox, "merge.txt"), "utf8"), BOTH_EDITS);
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("copy sync never settles a merge whose base bytes were never captured", () => {
+  const fixture = mergeCopy("copy-uncaptured");
+  try {
+    write(join(fixture.root, "merge.txt"), USER_EDIT);
+    assert.deepEqual(fixture.sync().conflicts, ["merge.txt"]);
+    write(join(fixture.sandbox, "merge.txt"), BOTH_EDITS);
+    assert.deepEqual(fixture.sync().conflicts, ["merge.txt"], "unprovable stays a conflict");
+    assert.equal(fixture.sync({ resolve: "merge.txt" }).status, "SYNCED",
+      "the explicit operator resolution still settles it");
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("copy base store keeps verified text bytes and leaves large, binary, or tampered bases unprovable", () => {
+  const root = mkdtempSync(join(tmpdir(), "copy-base-"));
+  try {
+    const files = { "text.txt": "text\n", "binary.bin": "bi\0nary", "big.txt":
+      "x".repeat(COPY_BASE_MAX_BYTES + 1), "outside.txt": "outside\n" };
+    for (const [path, value] of Object.entries(files)) write(join(root, path), value);
+    const baseline = Object.fromEntries(Object.keys(files)
+      .map((path) => [path, identityOf(join(root, path))]));
+    // Eager capture covers the confined declared surface only.
+    assert.equal(captureCopyBaseSurface({ root, baseline,
+      matches: (path) => path !== "outside.txt" }), 1);
+    assert.equal(copyBaseBytes({ root, baseline, path: "text.txt" }).toString(), "text\n");
+    for (const path of ["binary.bin", "big.txt", "outside.txt"])
+      assert.equal(copyBaseBytes({ root, baseline, path }), undefined, path);
+    assert.equal(copyBaseBytes({ root, baseline, path: "created.txt" }), null);
+    assert.equal(copyBaseBytes({ root, baseline: undefined, path: "text.txt" }), undefined);
+    // A source that no longer hashes to the row is never stored.
+    write(join(root, "outside.txt"), "changed\n");
+    assert.equal(captureCopyBase({ root, baseline, path: "outside.txt",
+      sources: [fileSource(join(root, "outside.txt"))] }), false);
+    writeFileSync(join(copyBaseStore(root), baseline["text.txt"].split(":")[2]), "tampered\n");
+    assert.equal(copyBaseBytes({ root, baseline, path: "text.txt" }), undefined);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("applied copy sync carries a recorded target edit into the sandbox copy", () => {
+  const fixture = mergeCopy("copy-carry");
+  try {
+    assert.equal(fixture.sync().status, "SYNCED");
+    write(join(fixture.root, "merge.txt"), USER_EDIT);
+    fixture.state.workspace.applied = true;
+    fixture.state.workspace.targetCarry = { "merge.txt": digest(join(fixture.root, "merge.txt")) };
+    const synced = fixture.sync();
+    assert.deepEqual(synced.targetCarried, ["merge.txt"]);
+    assert.equal(readFileSync(join(fixture.sandbox, "merge.txt"), "utf8"), BOTH_EDITS);
+    assert.equal(readFileSync(join(fixture.root, "merge.txt"), "utf8"), USER_EDIT,
+      "the target is never written");
+    assert.equal(fixture.state.workspace.targetCarry, undefined);
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
 });
 
 test("Build preparation imports amended tasks and preserves completed work", () => {
@@ -426,6 +591,9 @@ test("sync reporting renders copy and moved-target conflicts", () => {
   });
   assert.match(rows.join("\n"), /fast-forwarded: 1 file/);
   assert.match(rows.join("\n"), /CONFLICT copy\.txt/);
+  const copyRow = rows.find((row) => row.startsWith("CONFLICT copy.txt"));
+  assert.match(copyRow, /advance report --through/, "the copy conflict resumes through advance");
+  assert.doesNotMatch(copyRow, /--resolve|sandbox sync/);
   assert.match(rows.join("\n"), /CONFLICT api:api\.txt/);
   reportSandboxSync({
     id: "retry", state: { revision: 1 }, forwarded: 0, conflicts: [],

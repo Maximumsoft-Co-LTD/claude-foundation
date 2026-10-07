@@ -653,8 +653,11 @@ describes it. A worktree replay is prepared against the current target before
 replacement; a multi-repository replay prepares every writable repository
 before replacing any; a copy fast-forwards files only the target changed.
 Double-edited files stop as named `CONFLICT` entries and leave the existing
-sandbox intact. Merge the target version in the sandbox and sync again, using
-`--resolve` for a copy.
+sandbox intact. Merge the target version in the sandbox and sync again. For a
+copy, `advance` settles a merged file itself once a 3-way check against the
+copy's stored base bytes proves the target's edit is in the merged copy and no
+conflict markers remain; a changed copy alone never settles. `--resolve`
+remains the explicit operator form.
 
 ### Follow-up requests during an active Change
 
@@ -814,7 +817,11 @@ merging the target edit into it changes nothing. The same holds when sandbox
 work proven after an earlier apply re-applies: a path that apply never wrote
 must still be at the sandbox base or already hold the sandbox bytes, otherwise
 its target edit takes this merge or decision route instead of being
-overwritten. Edits made outside the sandbox
+overwritten. For an isolated copy the base is the copy's recorded baseline
+(content and executable bit) and the base bytes it stored for that path; the
+merge, the carried check, and `--restore-target` use those bytes. A path the
+baseline does not record counts as edited, and a path whose base bytes were
+never stored stays a `target-edit-conflict` that cannot be restored. Edits made outside the sandbox
 stop Land only on paths in this change's Land projection; others are reported.
 Git-ignored files are no change's content: under each selected repository's own
 ignore rules they are never compared, projected, or reported as target edits or
