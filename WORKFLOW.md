@@ -872,6 +872,27 @@ a new store, or product edits. Deliver questions use the blocked-decision shape
 failures (remote, credentials, push, or pull-request service) wait on the
 repository operator.
 
+The delivery commit subject and branch follow the project-owned `deliver`
+settings in `foundation.json`. `commitSubject` (default `{commitType}: {title}`,
+which yields `feat: <title>` or `fix: <title>`) and `branchPattern` (default
+`change/{changeId}`) accept the placeholders `{changeId}`, `{title}`,
+`{commitType}` (`feat` or `fix`), `{prType}` (the pull-request type, such as
+`bug-fix`), and `{ticket}`. `{ticket}` is the first match of the optional
+`ticketPattern` regular expression (its first capture group when it has one) in
+the change id, then the archived title, why, and summary. For example,
+`"commitSubject": "{commitType}({ticket}): {title}"`, `"branchPattern":
+"feature/{ticket}-{title}"`, and `"ticketPattern": "[A-Z]+-\\d+"`. A pattern that
+uses only `{changeId}` keeps its historical lowercase normalization; with any
+other placeholder the literal text is kept as written, placeholder values are
+slugged (except `{ticket}`, kept as matched), and the branch must pass `git
+check-ref-format`. The subject must be one non-empty line of at most 180
+characters. An unknown placeholder, an invalid pattern, a missing ticket, or an
+invalid result is refused before any workspace, commit, or push exists, as a
+`delivery-policy` wait that names the setting to correct. A review follow-up's
+commit uses the same subject template; it still pushes to the branch of the
+pull request it updates, and a delivery already under way keeps its checkpointed
+branch. Pull-request titles are unchanged.
+
 Deliver reconstructs the projection in a separate Git worktree, leaving the
 user's checkout, HEAD, index, and unrelated edits unchanged. It binds durable
 checkpoints to the archived change, proof run, target head, and Land projection.

@@ -424,6 +424,13 @@ product code
 branch ของ PR นั้น (fast-forward ไม่ force) และอัปเดต PR เดิม ถ้า PR นั้นถูกปิดหรือ merge
 ไปแล้ว Deliver จะเปิด PR ใหม่และบอกเหตุผล
 
+ถ้าต้องการให้ commit และชื่อ branch ตรงกับ convention ของโปรเจกต์ ให้ตั้ง
+`commitSubject`, `branchPattern` และ `ticketPattern` (ไม่บังคับ) ใต้ `deliver` ใน
+`foundation.json` เช่น `"{commitType}({ticket}): {title}"` และ
+`"feature/{ticket}-{title}"` ค่า default ยังเป็น `feat: <title>` และ
+`change/<change-id>` เหมือนเดิม ถ้าตั้งค่าไม่ถูกต้อง Deliver จะหยุดก่อน commit
+ดู placeholder ทั้งหมดใน [ข้อกำหนด Deliver](WORKFLOW.md#deliver-change-optional)
+
 Deliver เป็น cold path: ถ้าไม่เรียก Change, Build, Prove และ Land จะไม่มี prompt,
 การเก็บ evidence หรือ validation เฉพาะ PR เพิ่ม หลักฐาน presentation ที่ไม่บังคับ
 ซึ่งขาดได้อาจทำให้เปิดเป็น Draft ตาม policy ส่วน proof ที่บังคับแต่หายหรือ stale
