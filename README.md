@@ -639,6 +639,9 @@ and coupling from the draft (tasks across services, packages, or repositories;
 persistence paths; API, event, or migration work) and never lowers them, so an
 omitted or understated declaration still selects standard; the proposal names
 why. If stronger requirements appear, `/change` upgrades the same change to standard.
+A low-tier rapid change with no security keyword, risk signal, or `--review` is
+proven by the project's own tests and lands without an AI review; with Land
+authority one `advance --through archived` carries it from Build to `archived`.
 
 ## Understanding change states
 

@@ -68,7 +68,8 @@ Review ถามว่าการ implement นี้ดีพอไหม ผ�
 สิ่งที่สำคัญคือความเป็นอิสระ ไม่ใช่ว่าเป็นคนหรือเครื่อง
 
 เมื่อใช้ `workflow.reviewPolicy: "risk-tiered"` ทุก change ได้รับ review และระดับ
-ความเสี่ยงกำหนดเส้นทางที่มีขอบเขต:
+ความเสี่ยงกำหนดเส้นทางที่มีขอบเขต ยกเว้น rapid change ระดับ low ที่ไม่มี security
+keyword, risk signal หรือ `--review` ซึ่งพิสูจน์ด้วย test ของโปรเจกต์เองและไม่มี AI review
 
 - **low:** AI full review หนึ่งรอบ ถ้าต้องแก้สาระสำคัญจะเลื่อนเป็น medium
 - **medium:** full review หนึ่งรอบ แก้รวมหนึ่ง batch แล้วใช้ fresh-session delta

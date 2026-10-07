@@ -1178,7 +1178,14 @@ still require their actual resolution, never a claim of successful delivery.
 
 Under `workflow.reviewPolicy: "risk-tiered"` every change receives review, with
 the correction circuit bounded by risk; `RESOLVED` prints the route, such as
-`review: risk-tiered AI review (low tier, fast model)`, never "not required".
+`review: risk-tiered AI review (low tier, fast model)`. The one exception is a
+`foundation-rapid` change at the low tier that nothing asks to review (no
+declared or keyword security trigger, `--review`, `riskSignals`, review
+capability, or required/diversity trigger): it is proven by the project's
+deterministic evidence alone, no reviewer runs, and `RESOLVED` prints
+`review: not required (rapid lane, low tier: deterministic evidence only)`. The
+tier is recomputed from the built diff at every Prove, so an inferred security
+or contract capability restores review.
 Under legacy policy it prints `required` or
 `not required (legacy review policy: no AI review runs)`. The review reads the change's diff and
 the agreement's requirements, not whole files. Low risk runs one diff-only

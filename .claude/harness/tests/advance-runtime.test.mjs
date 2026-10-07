@@ -116,7 +116,10 @@ test("a verify that starts with an environment assignment runs through sh -c", (
     { encoding: "utf8" }).stdout.split("\n").slice(0, -1);
   assert.deepEqual(argv, ["sh", "-c", "CI=1 npm test"]);
   // Only tasks with a verify carry a checkCommand, and the instruction says so.
-  assert.match(value.instructions.join(" "), /checkCommand where present/);
+  // Advance itself runs every check, so the agent resumes instead of
+  // spending a round trip on each check first.
+  assert.match(value.instructions.join(" "), /present only where it has a verify/);
+  assert.match(value.instructions.join(" "), /resume command once: advance runs every/);
 });
 
 test("a task with a stale execution record is handed back as re-verification, not new work", () => {

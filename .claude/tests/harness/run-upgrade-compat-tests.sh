@@ -214,8 +214,12 @@ assert_not_contains "upgraded proof readiness does not demand synthetic lease re
 # added after isolation returns to current leased verification without packet
 # edits or a user decision, and accepted current results converge back to
 # build-complete.
-bash "$ROOT/cli.sh" --project "$graph_target" change waive graph-reverify \
-  --capability review --reason fixture --decision-ref fixture-review >/dev/null
+# A quiet low-tier rapid change is proven by its own tests under risk-tiered
+# review, so the upgraded runtime has no review left to waive.
+assert_contains "an upgraded quiet rapid change needs no review waiver" \
+  "$(bash "$ROOT/cli.sh" --project "$graph_target" change waive graph-reverify \
+    --capability review --reason fixture --decision-ref fixture-review 2>&1 || true)" \
+  "is not required"
 assert_cmd_zero "missing graph-v2 authority enters automatic verification" \
   bash "$ROOT/cli.sh" --project "$graph_target" agents plan graph-reverify
 assert_eq "both completed tasks are queued for current verification" "2" \
@@ -232,8 +236,6 @@ assert_contains "accepted current results finish automatic verification" \
   "$reverified_dispatch" '"action":"build-complete"'
 head_before="$(git -C "$graph_target" rev-parse HEAD)"
 index_before="$(git -C "$graph_target" diff --cached --binary | shasum -a 256)"
-bash "$ROOT/cli.sh" --project "$graph_target" change waive graph-upgrade \
-  --capability review --reason fixture --decision-ref fixture-review >/dev/null
 (
   cd "$graph_target"
   node .claude/harness/foundation.mjs receipt graph-upgrade test pass \

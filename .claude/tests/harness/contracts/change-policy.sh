@@ -508,8 +508,9 @@ printf '%s\n' \
   > openspec/changes/land-surface-paths-validate/tasks.md
 preferred_validate="$({ node .claude/harness/foundation.mjs validate \
   land-surface-paths-validate; } 2>&1)"
-assert_contains "required-no-waiver: low-risk change reports preferred diversity" \
-  "$preferred_validate" "cross-family model diversity preferred"
+# A quiet low-tier rapid change runs no review, so it announces no posture.
+assert_not_contains "required-no-waiver: a quiet rapid change announces no review posture" \
+  "$preferred_validate" "review assurance posture"
 assert_not_contains "required-no-waiver: preferred diversity is not reported as a waiver" \
   "$preferred_validate" "model-diversity"
 node .claude/harness/foundation.mjs resolve land-surface-paths-validate \

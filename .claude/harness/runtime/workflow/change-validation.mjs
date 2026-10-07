@@ -425,7 +425,8 @@ export function reportDeclaredSurfaceForecast(id, state, quiet, covered,
 export function reportValidationReviewAssurance(quiet, resolvable, policy,
   assurance, note = console.error) {
   if (quiet || !resolvable) return null;
-  if (assurance)
+  // A change no review runs on has no reviewer posture worth announcing.
+  if (assurance && policy.required)
     note(`NOTE: review assurance posture: ${assurance.summary}`);
   if (policy.required && !policy.independenceWaived) {
     note("NOTE: this change requires review evidence; an independent reviewer must exist by Prove");

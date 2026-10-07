@@ -19,8 +19,8 @@ Harness checks Change Loop 3.5.30/runtime API `41`, repairs setup.
 - `ASK_USER` requests a decision, not CLI execution: use AskUserQuestion,
   recommendation first, plain text otherwise;
   never offer only a passing option. `WAIT` reports owner and condition, not a user command.
-- In Build, `cd <workspace>` once as its own call, then plain commands (no
-  `$VAR`/braces); run each `checkCommand`.
+- In Build, a plain command needs `cd <workspace>` once as its own call
+  first (no `$VAR`/braces).
 - Never hand-edit generated packet files, `tasks.md` checkboxes, or task IDs;
   change the agreement only by draft or semantic amendment.
 - Spec approval given in the request, in any wording, or "ลุยเลย"/"go ahead"

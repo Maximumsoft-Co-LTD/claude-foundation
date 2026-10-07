@@ -282,12 +282,18 @@ try {
   assert.equal(existsSync(join(changeDir, "specs", "change", "spec.md")), false);
   rmSync(join(changeDir, "specs"), { recursive: true, force: true });
 
-  // Under risk-tiered policy every change gets an AI review: "not required"
-  // was false (benchmark v3.5.29), so the route is named instead.
+  // Under risk-tiered policy every reviewed change names its route ("not
+  // required" was false there, benchmark v3.5.29). A quiet low-tier rapid
+  // change is proven by deterministic evidence alone and says so.
   reviewPolicy = "risk-tiered";
   run({}, { intent: "Create kanban board", schema: "foundation-rapid", securityTriggers: [] });
+  assert.match(output, /review: not required \(rapid lane, low tier: deterministic evidence only\)\n/);
+  run({}, { intent: "Create kanban board", schema: "foundation-standard", securityTriggers: [] });
   assert.match(output, /review: risk-tiered AI review \(low tier, fast model\)\n/);
   assert.doesNotMatch(output, /not required/);
+  run({ review: true }, { intent: "Create kanban board", schema: "foundation-rapid", securityTriggers: [] });
+  assert.match(output, /review: risk-tiered AI review \(low tier, fast model\)\n/,
+    "a requested review keeps review on the rapid lane");
   run({ impact: "high" }, { intent: "Create kanban board", securityTriggers: [] });
   assert.match(output, /review: risk-tiered AI review \(high tier, configured model\)\n/);
   reviewPolicy = "legacy";

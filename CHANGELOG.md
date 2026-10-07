@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Rapid fast path: under `workflow.reviewPolicy: "risk-tiered"`, a low-tier
+  `foundation-rapid` change that nothing asks to review (no declared or keyword
+  security trigger, `--review`, `riskSignals`, review capability, or
+  required/diversity trigger) no longer runs an AI review; the project's
+  deterministic evidence proves it. `RESOLVED` prints
+  `review: not required (rapid lane, low tier: deterministic evidence only)`
+  and the review-assurance note is omitted. Standard changes, any higher tier,
+  and capabilities inferred from the built diff keep review. Paid w4 runs spent
+  18-24 s of each rapid Prove in review. The contract fingerprint keeps its
+  pre-exemption review shape, so upgrading never re-verifies an in-flight
+  change.
+- `/dev` with Land authority passes `--through archived` to every `advance`,
+  so a resume route never stops at `build` or `proven` first. Build no longer
+  asks the agent to run each `checkCommand` before resuming (`advance` already
+  runs every task check and returns failures with output), and `cd
+  <workspace>` is needed only before a plain shell command. The `/dev`
+  instruction bundle shrinks by three words.
+
 ### Added
 
 - A draft-validation `EDIT` from `change start`, `change revise`, or `change

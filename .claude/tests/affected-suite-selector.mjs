@@ -81,6 +81,8 @@ const RULES = [
   ]],
   [/^\.claude\/settings\.json$|^\.claude\/commands\/|^\.claude\/harness\/AGENT\.md$|advance-runtime/,
     ["permission allowlist"]],
+  [/evidence-contract|review-routing|change-lifecycle|install\.sh$|^foundation\.json$/,
+    ["rapid fast path seam"]],
   [/run-feedback-review-tests/, ["feedback review"]],
   [/run-land-surface-tests/, ["land surface"]],
   [/run-target-drift-tests/, ["target drift"]],

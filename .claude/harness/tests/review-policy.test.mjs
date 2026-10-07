@@ -314,3 +314,40 @@ test("an access-control risk signal requires review under both policies", () => 
     state: input, signals: inputSignals, riskRoute: lowRoute, policy: {}, riskTiered: false
   }).required, false);
 });
+
+test("risk-tiered review skips only a quiet low-tier rapid change", () => {
+  const contract = { claims: [{ id: "c", impact: "low", capabilities: ["test"] }] };
+  const policyFor = (state, extra = {}) => {
+    const shaped = { ...contract, ...extra };
+    const signals = collectReviewSignals(state, shaped);
+    const riskRoute = classifyReviewRisk({
+      state, claims: shaped.claims, capabilities: signals.capabilities,
+      grounding: null, requiredTriggers: signals.requiredTriggers
+    });
+    return assembleReviewPolicy({ state, signals, riskRoute, policy: {}, riskTiered: true });
+  };
+  const rapid = { intent: "show the order total", schema: "foundation-rapid",
+    impact: "low", coupling: "isolated", securityTriggers: [] };
+  const quiet = policyFor(rapid);
+  assert.equal(quiet.required, false, "deterministic evidence alone proves it");
+  assert.equal(quiet.tier, "low");
+  assert.equal(policyFor({ ...rapid, schema: "foundation-standard" }).required, true,
+    "the standard lane keeps its review");
+  assert.equal(policyFor({ ...rapid, reviewRequired: true, reviewKeywordOnly: true }).required,
+    true, "an intent keyword or requested review keeps review");
+  assert.equal(policyFor({ ...rapid, riskSignals: ["access-control"] }).required, true,
+    "an access-control boundary keeps review");
+  assert.equal(policyFor({ ...rapid, riskSignals: ["input-domain"] }).required, true,
+    "the medium tier keeps review");
+  assert.equal(policyFor({ ...rapid, securityTriggers: ["auth"] }).required, true,
+    "a declared security trigger keeps review");
+  assert.equal(policyFor(rapid, { claims: [{ id: "c", impact: "low",
+    capabilities: ["test", "review"] }] }).required, true, "a declared review capability keeps it");
+  assert.equal(policyFor(rapid, { claims: [{ id: "c", impact: "low",
+    capabilities: ["test", "security-static"] }] }).required, true,
+  "a security capability (declared or inferred from the diff) keeps it");
+  // Legacy policy is unchanged by the lane.
+  const signals = collectReviewSignals(rapid, contract);
+  assert.equal(assembleReviewPolicy({ state: rapid, signals, riskRoute: lowRoute,
+    policy: {}, riskTiered: false }).required, false);
+});

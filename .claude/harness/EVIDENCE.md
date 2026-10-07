@@ -466,7 +466,10 @@ tier and `input-domain` at least the medium tier (configured model); review requ
 intent keywords follows its tier. Medium, high, promoted, and legacy routes
 are `diff-first` on the configured model. Intent keywords alone make review
 required at the low tier; they raise the tier or require diversity only
-alongside declared risk.
+alongside declared risk. A low-tier `foundation-rapid` change with no such
+signal (and no required or diversity trigger, review capability, or capability
+inferred from its diff that raises the tier) requires no review: its receipts
+are the project's providers only, and no reviewer is dispatched.
 A configured `defaultReviewer` runs first, followed by `fallbackReviewers` in
 order only after infrastructure errors. `fail` and `inconclusive` are delivered
 verdicts and never trigger fallback. Uninspectable packets and finding/closure

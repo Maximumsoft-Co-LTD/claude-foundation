@@ -607,6 +607,9 @@ service, package หรือ repository, path ของ persistence, งาน 
 และไม่ลดระดับลง draft ที่ไม่ระบุหรือระบุต่ำกว่าจริงจึงยังได้ standard โดย proposal
 บอกเหตุผล หากพบ requirement ที่เข้มขึ้น `/change` จะ upgrade change เดิม
 เป็น standard
+rapid change ระดับ low ที่ไม่มี security keyword, risk signal หรือ `--review`
+พิสูจน์ด้วย test ของโปรเจกต์เองและ Land โดยไม่มี AI review เมื่อได้รับ Land
+authority แล้ว `advance --through archived` ครั้งเดียวพาจาก Build ไปถึง `archived`
 
 ## ทำความเข้าใจ State
 

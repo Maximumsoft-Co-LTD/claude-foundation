@@ -137,6 +137,7 @@ evidence contract values|node --test "$ROOT/.claude/harness/tests/evidence-contr
 environment descriptor|node --test "$ROOT/.claude/harness/tests/environment-descriptor.test.mjs"
 execution preparation|node --test "$ROOT/.claude/harness/tests/tool-preparation.test.mjs"
 review policy|node --test "$ROOT/.claude/harness/tests/review-policy.test.mjs"
+rapid fast path seam|node --test "$ROOT/.claude/harness/tests/rapid-fast-path-seam.test.mjs"
 traceability|node --test "$ROOT/.claude/harness/tests/traceability.test.mjs"
 telemetry record event|node --test "$ROOT/.claude/harness/tests/telemetry-record-event.test.mjs"
 host execution contract|node --test "$ROOT/.claude/harness/tests/host-execution-contract.test.mjs"
