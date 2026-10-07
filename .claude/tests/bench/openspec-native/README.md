@@ -199,6 +199,13 @@ request id, summed), flagged `usage.tokenSource: "stream-derived"` and
 `partial`; an unmeasured count stays `null`, and cost stays `unavailable`
 because no dollars are derived from tokens.
 
+`usage.modelRequests` counts distinct streamed assistant request ids up to the
+terminal-state moment; requests the host makes for its closing narration inside
+the grace are reported apart as `usage.postTerminalModelRequests`. The
+envelope's `num_turns` counts conversation turns (about tool calls plus one),
+not model requests, so it is kept as `hostReportedModelRequests` and used only
+when no request was observed.
+
 ## Time gate (advisory, 1.3x)
 
 The product target is Change Loop wall time of at most 1.3x the same task

@@ -698,7 +698,9 @@ export function createAdapterRuntime({
       ["tap", "spec", "auto"].includes(config.reportFormat || "auto")
       ? parseNodeTestSpecOutput(content) : null;
     const assertions = auto ? parseAssertionSummaryOutput(content) : null;
-    const runner = auto && !assertions ? parseRunnerSummaryOutput(content) : null;
+    // Some runners (Python unittest) print their summary on stderr.
+    const runner = auto && !assertions ? parseRunnerSummaryOutput(
+      configuredReport.fresh ? content : `${content}\n${result.stderr || ""}`) : null;
     return json || tap || spec || assertions || runner;
   }
 

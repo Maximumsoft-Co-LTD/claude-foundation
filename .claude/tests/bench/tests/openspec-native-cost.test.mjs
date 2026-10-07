@@ -44,8 +44,11 @@ test("a final-envelope grace captures the host result without inflating wall tim
   write(host, [
     "#!/bin/sh",
     "sleep 1",
+    `printf '%s\\n' '{"type":"assistant","message":{"id":"before","content":[]}}'`,
     `printf '%s\\n' '{"id":"todo","status":"archived"}' > ${JSON.stringify(runtime)}`,
-    "sleep 2",
+    "sleep 1",
+    `printf '%s\\n' '{"type":"assistant","message":{"id":"closing","content":[]}}'`,
+    "sleep 1",
     `printf '%s\\n' '${envelope}'`,
     "sleep 30"
   ].join("\n"));
@@ -59,6 +62,8 @@ test("a final-envelope grace captures the host result without inflating wall tim
     assert.equal(parseHostOutput(graced.stdout).envelope.total_cost_usd, 1.5);
     assert.ok(graced.stopwatch.wallMs < 2500, `wall ${graced.stopwatch.wallMs} includes narration`);
     assert.ok(graced.stopwatch.finalEnvelopeWaitMs >= 1000);
+    assert.equal(graced.observedModelRequests, 1, "requests count up to the terminal state");
+    assert.equal(graced.postTerminalModelRequests, 1, "closing narration is reported apart");
     write(runtime, { id: "todo", status: "proven" });
     const immediate = await runClaude({
       project, prompt: "finish", claudeBin: host, claudeArgs: [],
@@ -106,4 +111,16 @@ test("a host stopped before its envelope reports stream-derived tokens, never do
   const none = buildScorecard(scorecardInput({ envelope: {}, hostUsage: {} }));
   assert.equal(none.usage.inputTokens, null);
   assert.equal(none.usage.tokenSource, null);
+});
+
+test("envelope turns are conversation turns: observed requests win, turns are only a floor", () => {
+  const input = (hostUsage) => scorecardInput({
+    envelope: { total_cost_usd: 0.3, num_turns: 15, usage: { input_tokens: 1, output_tokens: 1 } },
+    hostUsage
+  });
+  const observed = buildScorecard(input({ observedModelRequests: 9, postTerminalModelRequests: 2 }));
+  assert.equal(observed.usage.modelRequests, 9);
+  assert.equal(observed.usage.postTerminalModelRequests, 2);
+  assert.equal(observed.usage.hostReportedModelRequests, 15);
+  assert.equal(buildScorecard(input({})).usage.modelRequests, 15);
 });

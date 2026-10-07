@@ -27,7 +27,7 @@ function world(t, config = TEST, { exit = 0 } = {}) {
   const configs = { test: config, discovery: { capability: "discovery", adapter: "test-discovery" } };
   const receipts = [];
   const spawns = [];
-  const live = { hash: "code-1", proveRuns: 0, editDuringCheck: false };
+  const live = { hash: "code-1", proveRuns: 0, editDuringCheck: false, stdout: OUTPUT, stderr: "" };
   const runtime = createAdapterRuntime({
     ROOT: root, LOGS: logs, PROVIDERS: new Set(["test", "discovery"]),
     providerCapability: (provider, configured) => configured?.capability || provider,
@@ -48,14 +48,14 @@ function world(t, config = TEST, { exit = 0 } = {}) {
     runCommand: () => {
       live.proveRuns += 1;
       return Promise.resolve({ status: 0, signal: null, timedOut: false, error: null,
-        durationMs: 5, startedAt: "2026-10-06T00:00:01.000Z", stdout: OUTPUT, stderr: "",
+        durationMs: 5, startedAt: "2026-10-06T00:00:01.000Z", stdout: live.stdout, stderr: live.stderr,
         readinessObserved: true });
     },
     providerWorkspaceHash: () => live.hash,
     providerClaims: () => ["claim-test"],
     parseJsonOutput: (value) => { try { return JSON.parse(value); } catch { return null; } },
     parseTapOutput: () => null, parseNodeTestSpecOutput: () => null,
-    numericReportValue: (report) => report?.numTotalTests ?? null,
+    numericReportValue: (report) => report?.numTotalTests ?? report?.totalTests ?? null,
     playwrightReportSummary: () => null, requiredProviders: () => ["test"],
     mutationProtocolResult: () => null, now: () => "2026-10-06T00:00:00.000Z",
     serviceResourcesConflict: () => false, maxParallelServices: () => 1,
@@ -64,7 +64,7 @@ function world(t, config = TEST, { exit = 0 } = {}) {
     spawnCommandSync: (command, args, options) => {
       spawns.push({ command, args, options });
       if (live.editDuringCheck) live.hash = "code-edited-by-check";
-      return { status: exit, signal: null, stdout: OUTPUT, stderr: "" };
+      return { status: exit, signal: null, stdout: live.stdout, stderr: live.stderr };
     }
   });
   const check = (command = "node test.js") =>
@@ -101,6 +101,21 @@ test("a task check that is the provider's command becomes Prove's execution", as
   assert.equal(discovery.flags.discovered, 3);
   assert.match(readFileSync(join(w.root, test.flags.log), "utf8"), /numTotalTests/,
     "the command log is captured the same way");
+});
+
+test("a python unittest summary on stderr is counted for fresh and reused runs", async (t) => {
+  const summary = "......\n" + "-".repeat(70) + "\nRan 6 tests in 0.001s\n\nOK\n";
+  for (const reuse of [true, false]) {
+    const w = world(t, { ...TEST, command: ["python3", "-m", "unittest"] });
+    w.live.stdout = "";
+    w.live.stderr = summary;
+    if (reuse) assert.equal(w.check("python3 -m unittest").status, "pass");
+    await w.prove();
+    assert.equal(w.live.proveRuns, reuse ? 0 : 1);
+    const discovery = w.receipts.find((row) => row.provider === "discovery");
+    assert.equal(discovery.status, "pass", `reuse=${reuse}`);
+    assert.equal(discovery.flags.discovered, 6);
+  }
 });
 
 test("any later edit invalidates the prepared execution", async (t) => {

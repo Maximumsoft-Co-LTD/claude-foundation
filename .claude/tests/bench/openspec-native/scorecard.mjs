@@ -307,8 +307,12 @@ export function buildScorecard(input) {
   const hostUsage = envelopeUsage(envelope);
   const observedRequests = count(observedUsage.observedModelRequests);
   const capConsumedRequests = count(observedUsage.capConsumedModelRequests);
-  const requestCandidates = [observedRequests, capConsumedRequests, hostUsage.requests]
+  // The envelope's num_turns counts conversation turns (tool results plus the
+  // closing message), not model requests: only a floor when nothing was observed.
+  const requestCandidates = [observedRequests, capConsumedRequests]
     .filter((value) => value !== null);
+  if (!requestCandidates.length && hostUsage.requests !== null)
+    requestCandidates.push(hostUsage.requests);
   const requestCount = requestCandidates.length ? Math.max(...requestCandidates)
     : count(metrics.requests);
   const forcedTermination = observedUsage.forcedTermination === true;
@@ -378,6 +382,7 @@ export function buildScorecard(input) {
       observedModelRequests: observedRequests,
       hostReportedModelRequests: hostUsage.requests,
       capConsumedModelRequests: capConsumedRequests,
+      postTerminalModelRequests: count(observedUsage.postTerminalModelRequests),
       inputTokens: tokenValue("inputTokens", metrics.inputTokens),
       outputTokens: tokenValue("outputTokens", metrics.outputTokens),
       cacheCreationTokens: tokenValue("cacheCreationTokens", metrics.cacheCreationTokens),

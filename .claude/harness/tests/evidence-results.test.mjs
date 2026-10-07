@@ -316,4 +316,9 @@ test("vitest and jest counted footers provide a test count", () => {
     totalTests: 41, passed: 40, failed: 1, format: "jest-summary", criticalCases: [] });
   assert.equal(parseRunnerSummaryOutput(" Test Files  4 passed (4)"), null);
   assert.equal(parseRunnerSummaryOutput("all tests passed"), null);
+  const ok = "..\n" + "-".repeat(70) + "\nRan 6 tests in 0.001s\n\nOK\n";
+  assert.deepEqual(parseRunnerSummaryOutput(ok), {
+    totalTests: 6, passed: 6, failed: 0, format: "unittest-summary", criticalCases: [] });
+  assert.equal(parseRunnerSummaryOutput("Ran 3 tests in 0.1s\n\nFAILED (failures=1, errors=1)").failed, 2);
+  assert.equal(parseRunnerSummaryOutput("Ran 0 tests in 0.000s\n\nNO TESTS RAN"), null);
 });

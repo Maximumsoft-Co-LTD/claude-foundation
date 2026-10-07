@@ -483,6 +483,13 @@ export async function settleProjectProcesses(project, { timeoutMs = 60000, pollM
   return { observed, killed: ids.length };
 }
 
+// Model requests made up to the moment the backend reached the terminal state,
+// reported apart from the host's closing narration after it.
+export function requestsUntilTerminal(total, atTerminal) {
+  const upTo = Number.isInteger(atTerminal) ? Math.min(atTerminal, total) : total;
+  return { observedModelRequests: upTo || null, postTerminalModelRequests: total - upTo };
+}
+
 export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
   maxModelRequests = null, maxToolCalls = null, selfReviewAuthorized = false,
   stopOnArchived = false, stopOnProven = false, terminalGraceMs = 120000,
@@ -507,6 +514,7 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
     const pendingToolUseIds = new Set();
     let terminalSeenAt = null;
     let terminalWallMs = null;
+    let requestsAtTerminal = null;
     let sawResult = false;
     let partialLine = "";
     let budgetExhausted = null;
@@ -545,7 +553,10 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
       // The host's final result envelope carries the run's cost. Give it a short
       // grace to finish its closing message, but the measured wall time is the
       // moment the backend reached the terminal state, not the narration after.
-      terminalWallMs ??= performance.now() - started;
+      if (terminalWallMs === null) {
+        terminalWallMs = performance.now() - started;
+        requestsAtTerminal = requestIds.size;
+      }
       if (finalEnvelopeGraceMs > 0 && !sawResult &&
           Date.now() - terminalSeenAt < finalEnvelopeGraceMs) return;
       terminalReached = { changeId, status: state.status, observedAt: new Date().toISOString() };
@@ -639,7 +650,7 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
         terminalReached,
         stdout: Buffer.concat(stdout).toString("utf8"),
         stderr: Buffer.concat(stderr).toString("utf8"),
-        observedModelRequests: requestIds.size || null,
+        ...requestsUntilTerminal(requestIds.size, terminalReached ? requestsAtTerminal : null),
         observedToolCalls: toolUseIds.size || null,
         stopwatch: {
           wallMs: terminalReached && terminalWallMs !== null && finalEnvelopeGraceMs > 0
@@ -819,6 +830,8 @@ export function mergeHostExecutions(base, next) {
     stderr: `${base.stderr || ""}${next.stderr || ""}`,
     observedModelRequests: Number(base.observedModelRequests || 0) +
       Number(next.observedModelRequests || 0),
+    postTerminalModelRequests: Number(base.postTerminalModelRequests || 0) +
+      Number(next.postTerminalModelRequests || 0),
     observedToolCalls: Number(base.observedToolCalls || 0) +
       Number(next.observedToolCalls || 0),
     stopwatch: {
@@ -1092,6 +1105,7 @@ async function main() {
     hostUsage: {
       observedModelRequests: execution.observedModelRequests ??
         parsedHost.observedUsage.observedModelRequests,
+      postTerminalModelRequests: execution.postTerminalModelRequests ?? null,
       streamUsage: parsedHost.observedUsage.streamUsage ?? null,
       capConsumedModelRequests: execution.budgetExhausted?.kind === "model-requests"
         ? execution.budgetExhausted.used : null,

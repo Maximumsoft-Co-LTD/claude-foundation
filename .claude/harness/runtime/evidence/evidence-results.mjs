@@ -95,6 +95,16 @@ export function parseRunnerSummaryOutput(value) {
   const text = String(value || "").replace(/\x1b\[[0-9;]*m/g, "");
   const vitest = [...text.matchAll(/^\s*Tests\s{2,}(.+?)\s+\((\d+)\)\s*$/gm)].at(-1);
   const jest = [...text.matchAll(/^\s*Tests:\s+(.+?),?\s+(\d+) total\s*$/gm)].at(-1);
+  const unittest = [...text.matchAll(/^Ran (\d+) tests? in [\d.]+s\s*\n+(OK|FAILED)\b(.*)$/gm)].at(-1);
+  if (!vitest && !jest && unittest) {
+    const totalTests = Number(unittest[1]);
+    if (!Number.isSafeInteger(totalTests)) return null;
+    const failed = unittest[2] === "OK" ? 0 :
+      (unittest[3].match(/(?:failures|errors)=(\d+)/g) || [])
+        .reduce((sum, part) => sum + Number(part.split("=")[1]), 0) || 1;
+    return { totalTests, passed: Math.max(0, totalTests - failed), failed,
+      format: "unittest-summary", criticalCases: [] };
+  }
   const match = vitest || jest;
   if (!match) return null;
   const count = (label) => {

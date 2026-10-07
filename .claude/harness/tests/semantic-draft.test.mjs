@@ -2760,6 +2760,12 @@ test("risk derivation reads data and published-contract work as medium impact", 
   // A model file alone is not persistence; ordinary words are not contracts.
   assert.equal(deriveDraftRisk(riskDraft({ tasks: tasksAt("src/models/note.js") })).impact, "low");
   assert.equal(deriveDraftRisk(riskDraft({ intent: "Show the event list" })).impact, "low");
+  // A bare "payloads" is function input (a validator's argument), not a contract;
+  // a request/response payload is.
+  assert.equal(deriveDraftRisk(riskDraft({
+    intent: "Reject invalid seat counts; create_workspace returns 422 for such payloads" })).impact, "low");
+  assert.match(deriveDraftRisk(riskDraft({
+    intent: "Change the response payload shape" })).reasons.impact.join(), /published contract/);
   // A declared work type replaces text inference; persistence paths still count.
   assert.equal(deriveDraftRisk(riskDraft({ workType: ["bugfix"],
     intent: "Fix the API rounding" })).impact, "low");

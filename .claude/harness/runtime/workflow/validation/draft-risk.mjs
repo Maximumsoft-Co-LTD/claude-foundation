@@ -15,7 +15,7 @@ const UNIT_ROOT = /^(services|packages|apps|libs|modules)\/([^/*?{[]+)/;
 const PERSISTENCE_PATH = /\.(?:sql|prisma)$|(?:^|\/)(?:migrations?|db|database|schema|schemas)\/|(?:^|\/)[^/]*migrat[^/]*$/i;
 const CONTRACT_TYPES = ["api", "data", "async"];
 const DATA_TEXT = /\b(?:migrations?|rollbacks?|roll back|databases?|sql)\b/i;
-const CONTRACT_TEXT = new RegExp("\\b(?:apis?|endpoints?|webhooks?|payloads?|graphql|grpc|openapi|" +
+const CONTRACT_TEXT = new RegExp("\\b(?:apis?|endpoints?|webhooks?|(?:request|response|wire)\\s+payloads?|graphql|grpc|openapi|" +
   "(?:events?|messages?|public|published|wire|service)\\s+(?:contracts?|schemas?))\\b", "i");
 
 function text(value) {
