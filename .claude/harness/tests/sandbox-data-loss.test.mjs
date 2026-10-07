@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync,
+  chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync,
   statSync, writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -620,6 +620,19 @@ test("(f) single-repository re-apply stops on a same-line or new-file target edi
   assert.equal(readFileSync(join(fixture.root, "guide.md"), "utf8"),
     GUIDE.replace("three", "THREE (user)"));
   assert.equal(readFileSync(join(fixture.root, "notes.md"), "utf8"), "user notes\n");
+});
+
+test("(f) single-repository re-apply never drops a target mode edit on a newly touched path", (t) => {
+  const { fixture, land } = landedOnce(t);
+  // The user only marks the file executable; the sandbox changes its bytes.
+  // The bytes are carried, the mode is not, so re-apply must not overwrite it.
+  chmodSync(join(fixture.root, "guide.md"), 0o755);
+  write(join(fixture.shared, "guide.md"), GUIDE.replace("two", "TWO (change)"));
+  const stopped = landUntilArchive(land);
+  assert.notEqual(stopped?.message, STOP_AFTER_APPLY, "re-apply stops instead of overwriting");
+  assert.equal(statSync(join(fixture.root, "guide.md")).mode & 0o777, 0o755,
+    "the user's mode edit survives");
+  assert.equal(readFileSync(join(fixture.root, "guide.md"), "utf8"), GUIDE);
 });
 
 test("(f) single-repository re-apply lands a newly touched path still at base", (t) => {

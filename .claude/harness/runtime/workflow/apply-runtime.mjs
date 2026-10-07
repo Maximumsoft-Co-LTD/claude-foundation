@@ -330,6 +330,18 @@ function stopForTargetConflict(context, id, state, paths, cause, options = {}) {
   return context.fail(stop.message, 1, stop.details);
 }
 
+// A target mode is carried when the sandbox already has it or the target
+// still has the sandbox base's executable bit; a user `chmod` is not.
+function targetModeCarried(context, state, sandboxPath, path) {
+  const target = context.pathMode(join(context.root, path));
+  if (target === context.pathMode(join(sandboxPath, path))) return true;
+  const listed = context.gitBuffer(["ls-tree", context.sandboxBase(state), "--", path],
+    context.root);
+  const base = listed.status === 0 ? String(listed.stdout).split(" ")[0] : "";
+  if (!["100644", "100755"].includes(base) || target === null) return false;
+  return Boolean(target & 0o111) === (base === "100755");
+}
+
 // Re-apply after an earlier apply: a code path that apply never wrote must
 // still be at the sandbox base or already hold the sandbox bytes, the same
 // rule as root re-delivery of a composite change. A target edit the sandbox
@@ -342,8 +354,9 @@ export function guardReapplyTargetEdits(context, id, state, entries, priorJourna
   const edits = targetOverwrites({ git: context.git, files: context }, context.root,
     workspace.baseHead, entries.filter((entry) => entry.role === "code"), prior)
     .map(({ path }) => path)
-    .filter((path) => !targetEditCarried({ root: context.root, sandboxPath: workspace.path,
-      path, baseBytes: baseBlob(context, state, path) }));
+    .filter((path) => !(targetModeCarried(context, state, workspace.path, path) &&
+      targetEditCarried({ root: context.root, sandboxPath: workspace.path,
+        path, baseBytes: baseBlob(context, state, path) })));
   if (!edits.length) return;
   stopForTargetConflict(context, id, state, edits,
     "re-apply would overwrite uncommitted target edits");

@@ -952,6 +952,21 @@ test("host friction ignores bench-stopped tool calls and counts host safety deni
   });
 });
 
+// A host stream always ends with a `result` row, but the agent saw a failed
+// tool result only if an assistant turn followed it; a result row alone means
+// the turn ended (stop, max turns) before the agent read it.
+test("host friction counts a failed tool result only when an assistant turn follows it", () => {
+  const assistant = { type: "assistant", message: { content: [{ type: "text", text: "next" }] } };
+  const failed = (id) => ({ type: "user", message: { content: [
+    { type: "tool_result", tool_use_id: id, is_error: true, content: "Exit code 1" } ] } });
+  const end = { type: "result", subtype: "success" };
+  const none = { EDIT: 0, REPAIR: 0, RUN_EXTERNAL: 0, WAIT: 0, ASK_USER: 0, DONE: 0 };
+  assert.deepEqual(hostFriction([{ type: "system", subtype: "init" }, failed("seen"),
+    assistant, end]), { toolErrors: 1, hookBlocks: 0, permissionPrompts: 0, advanceActions: none });
+  assert.deepEqual(hostFriction([{ type: "system", subtype: "init" }, failed("unseen"), end,
+    assistant]), { toolErrors: 0, hookBlocks: 0, permissionPrompts: 0, advanceActions: none });
+});
+
 test("guard outcomes are counted inside the run window", () => {
   const project = mkdtempSync(join(tmpdir(), "bench-guardrail-"));
   try {

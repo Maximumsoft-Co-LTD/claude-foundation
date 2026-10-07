@@ -164,3 +164,34 @@ test("an intact chain is never quarantined", (t) => {
   assert.deepEqual(w.quarantines(), []);
   assert.equal(w.state().reviewHistory.recoveries, undefined);
 });
+
+test("a verified sibling never recorded as head is not restored as determinate", (t) => {
+  // The recorded head is unverifiable and one or more self-consistent
+  // siblings share its attempt number. None was ever the recorded head, so
+  // restoring one would reuse a verdict the runtime never accepted.
+  for (const siblings of [1, 2]) {
+    drainSignals();
+    const id = `change-unrecorded-sibling-${siblings}`;
+    const w = world(t, id);
+    w.reserve("fail");
+    const headName = w.file(1);
+    const head = readJson(join(w.attemptsDir, headName));
+    for (let index = 0; index < siblings; index += 1) {
+      const sibling = { ...head, status: "pass", workspaceHash: `workspace-sibling-${index}` };
+      delete sibling.digest;
+      sibling.digest = stableHash(sibling);
+      writeJson(join(w.attemptsDir, `0001-${sibling.digest.slice(0, 12)}.json`), sibling);
+    }
+    // Rewrite the recorded head's verdict without rehashing.
+    writeJson(join(w.attemptsDir, headName), { ...head, status: "pass" });
+
+    const history = w.store.assertReviewDispatchAllowed(id, "human");
+    const [recovery] = w.state().reviewHistory.recoveries;
+    assert.equal(recovery.determinate, false,
+      `${siblings} unrecorded sibling(s) take the placeholder rebuild`);
+    assert.equal(w.store.deliveredAiAttempts(id, history).some((attempt) =>
+      attempt.status === "pass" || attempt.resultStatus === "pass"), false,
+    "an unrecorded sibling's verdict is never reused");
+    assert.throws(() => w.store.assertReviewDispatchAllowed(id, "ai"), /REVIEW_ROUTE_COMPLETE/);
+  }
+});

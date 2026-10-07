@@ -180,11 +180,14 @@ Claude Code จะไม่ใช้ `permissions.allow` ของ project จ�
 permissions.allow entry ... this workspace has not been trusted` ทำให้ rule
 `Bash(claude-foundation *)` ที่ installer ใส่ไว้ไม่มีผล และทุกคำสั่ง harness ถูกปฏิเสธ
 ให้รัน `claude` แบบ interactive ใน project หนึ่งครั้งแล้วยอมรับ trust prompt หรือให้สิทธิ์
-tool ทุกครั้งที่รัน headless:
+ตาม allowlist ที่ installer ใส่ไว้เท่านั้นทุกครั้งที่รัน headless (rule `Edit` ครอบคลุม `Write`
+ด้วย และการแก้ไฟล์อื่นในโปรเจกต์ยังถูกปฏิเสธ):
 
 ```bash
-claude -p "/change <intent>" --permission-mode acceptEdits \
-  --allowedTools "Bash(claude-foundation *)" "Bash(.foundation/bin/claude-foundation *)"
+claude -p "/change <intent>" --allowedTools \
+  "Bash(claude-foundation *)" "Bash(.foundation/bin/claude-foundation *)" \
+  "Bash(node .claude/harness/foundation.mjs *)" "Edit(/.foundation/drafts/**)" \
+  "Edit(/.foundation/sandboxes/**)" "Edit(/.foundation/repository-sandboxes/**)"
 ```
 
 check ของ Build รันผ่าน `claude-foundation exec` จึงไม่ต้องให้สิทธิ์ test runner

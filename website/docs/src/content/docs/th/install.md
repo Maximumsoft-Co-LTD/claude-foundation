@@ -81,11 +81,13 @@ claude-foundation doctor --stage change
 
 ## Headless / CI (`claude -p`)
 
-Claude Code จะไม่ใช้ `permissions.allow` ของโปรเจกต์จนกว่า workspace จะถูก trust ใน checkout ใหม่ การรัน `claude -p` แบบ headless จะแสดง `Ignoring ... permissions.allow entry ... this workspace has not been trusted` ทำให้ rule `Bash(claude-foundation *)` ที่ installer ใส่ไว้ไม่มีผล และทุกคำสั่ง harness ถูกปฏิเสธ ให้รัน `claude` แบบ interactive ในโปรเจกต์หนึ่งครั้งแล้วยอมรับ trust prompt หรือให้สิทธิ์ tool ทุกครั้งที่รัน headless:
+Claude Code จะไม่ใช้ `permissions.allow` ของโปรเจกต์จนกว่า workspace จะถูก trust ใน checkout ใหม่ การรัน `claude -p` แบบ headless จะแสดง `Ignoring ... permissions.allow entry ... this workspace has not been trusted` ทำให้ rule `Bash(claude-foundation *)` ที่ installer ใส่ไว้ไม่มีผล และทุกคำสั่ง harness ถูกปฏิเสธ ให้รัน `claude` แบบ interactive ในโปรเจกต์หนึ่งครั้งแล้วยอมรับ trust prompt หรือให้สิทธิ์ตาม allowlist ที่ installer ใส่ไว้เท่านั้นทุกครั้งที่รัน headless (rule `Edit` ครอบคลุม `Write` ด้วย และการแก้ไฟล์อื่นในโปรเจกต์ยังถูกปฏิเสธ):
 
 ```bash
-claude -p "/change <intent>" --permission-mode acceptEdits \
-  --allowedTools "Bash(claude-foundation *)" "Bash(.foundation/bin/claude-foundation *)"
+claude -p "/change <intent>" --allowedTools \
+  "Bash(claude-foundation *)" "Bash(.foundation/bin/claude-foundation *)" \
+  "Bash(node .claude/harness/foundation.mjs *)" "Edit(/.foundation/drafts/**)" \
+  "Edit(/.foundation/sandboxes/**)" "Edit(/.foundation/repository-sandboxes/**)"
 ```
 
 check ของ Build รันผ่าน `claude-foundation exec` จึงไม่ต้องให้สิทธิ์ test runner เพิ่ม tool อื่นของโปรเจกต์เฉพาะเมื่อการรันต้องใช้ Claude Code ถือว่า path ใต้ `~/.claude/` เป็น sensitive path จึงควรวาง consumer project ไว้นอก directory นั้นเมื่อรันแบบไม่มีคนเฝ้า

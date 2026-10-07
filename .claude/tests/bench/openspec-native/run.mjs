@@ -608,8 +608,9 @@ function toolResultText(item) {
 // What the run cost the agent in friction, read from the host stream: hook
 // refusals, host permission prompts, failed tool calls, and the harness actions
 // it was handed. The harness goal is zero hook refusals in a normal run.
-// A failed result that no later assistant turn of its session follows is the
-// bench stopping the host mid-tool (exit 137/143), which the agent never saw.
+// A failed result that no later assistant turn of its session follows, before
+// the turn's `result` row, is the bench stopping the host mid-tool (exit
+// 137/143) or the turn ending, which the agent never saw.
 // Host safety denials ("Contains brace…") are approval prompts too.
 export function hostFriction(rows) {
   const results = rows.flatMap((row) => row?.type === "user" &&
@@ -620,8 +621,9 @@ export function hostFriction(rows) {
   const seen = [];
   let pending = [];
   for (const row of rows) {
-    if (row?.type === "assistant" || row?.type === "result") { seen.push(...pending); pending = []; }
-    else if (row?.type === "system" && row.subtype === "init") pending = [];
+    if (row?.type === "assistant") { seen.push(...pending); pending = []; }
+    else if (row?.type === "result" ||
+      (row?.type === "system" && row.subtype === "init")) pending = [];
     else if (row?.type === "user" && Array.isArray(row.message?.content))
       pending.push(...row.message.content.filter((item) =>
         item?.type === "tool_result" && item.is_error === true));

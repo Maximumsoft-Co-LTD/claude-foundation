@@ -191,11 +191,14 @@ trusted. In a fresh checkout, a headless `claude -p` run prints `Ignoring ...
 permissions.allow entry ... this workspace has not been trusted`, so the
 installed `Bash(claude-foundation *)` rule does nothing and every harness call
 is denied. Either run `claude` once interactively in the project and accept the
-trust prompt, or grant the tools on each headless run:
+trust prompt, or grant exactly the installed allowlist on each headless run (an `Edit` rule
+also covers `Write`; edits elsewhere in the project stay denied):
 
 ```bash
-claude -p "/change <intent>" --permission-mode acceptEdits \
-  --allowedTools "Bash(claude-foundation *)" "Bash(.foundation/bin/claude-foundation *)"
+claude -p "/change <intent>" --allowedTools \
+  "Bash(claude-foundation *)" "Bash(.foundation/bin/claude-foundation *)" \
+  "Bash(node .claude/harness/foundation.mjs *)" "Edit(/.foundation/drafts/**)" \
+  "Edit(/.foundation/sandboxes/**)" "Edit(/.foundation/repository-sandboxes/**)"
 ```
 
 Build checks run through `claude-foundation exec`, so test runners need no

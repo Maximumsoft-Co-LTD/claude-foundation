@@ -95,6 +95,30 @@ test("each Build task carries its focused check in the pre-allowed harness exec 
   assert.match(value.instructions.join(" "), /checkCommand/);
 });
 
+test("a verify that starts with an environment assignment runs through sh -c", () => {
+  const value = coordinatorAction({
+    ...base,
+    dispatch: { action: "run-in-session", reason: "one repository" },
+    plan: {
+      groups: [["T001"], ["T002"]],
+      tasks: [
+        { id: "T001", text: "Env — verify: `CI=1 npm test`", repository: "root", paths: ["a.js"] },
+        { id: "T002", text: "No verify", repository: "root", paths: ["b.js"] }
+      ]
+    }
+  });
+  const [assigned] = value.tasks;
+  const prefix = "claude-foundation exec change-a --task T001 -- ";
+  assert.ok(assigned.checkCommand.startsWith(prefix));
+  // The host shell splits the tail into exec's argv: a leading `NAME=value`
+  // word must not become the program exec spawns.
+  const argv = spawnSync("sh", ["-c", `printf '%s\\n' ${assigned.checkCommand.slice(prefix.length)}`],
+    { encoding: "utf8" }).stdout.split("\n").slice(0, -1);
+  assert.deepEqual(argv, ["sh", "-c", "CI=1 npm test"]);
+  // Only tasks with a verify carry a checkCommand, and the instruction says so.
+  assert.match(value.instructions.join(" "), /checkCommand where present/);
+});
+
 test("a task with a stale execution record is handed back as re-verification, not new work", () => {
   const value = coordinatorAction({
     ...base,

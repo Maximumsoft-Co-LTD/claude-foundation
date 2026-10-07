@@ -10,7 +10,7 @@ after Build. Execute each protocol-v6 action, then follow its
 exact `resume` route until `DONE` or a real boundary.
 
 - `EDIT`: implement the returned work inside its workspace and allowed
-  `paths`; run each task's `checkCommand` (its verify via
+  `paths`; run each task's `checkCommand` where present (its verify via
   `claude-foundation exec`, already allowed), never the bare test runner.
   One `EDIT` may carry several tasks: implement all, resume once; `advance`
   ticks each passing task.

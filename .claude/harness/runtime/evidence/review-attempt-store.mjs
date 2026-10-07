@@ -578,13 +578,17 @@ export function createReviewAttemptStore({
     const verified = [...new Map(files
       .filter((file) => attemptRecordVerifies(id, file.value))
       .map((file) => [file.value.digest, file.value])).values()];
-    const chain = verifiedReviewChain(verified, current.chainHead || history.chainHead);
+    const preferredHead = current.chainHead || history.chainHead;
+    const chain = verifiedReviewChain(verified, preferredHead);
     const verifiedTop = chain.length ? Number(chain.at(-1).attempt) : 0;
     const evidenced = Math.max(
       evidencedReviewAttemptCount({ history: current, files, verifiedTop,
         receiptRounds: legacyReviewReceipts(id).map((receipt) => receipt.review?.round) }),
       evidencedReviewAttemptCount({ history }));
-    const determinate = chain.length > 0 && evidenced === verifiedTop;
+    // Only the recorded head's chain is restorable: a verified sibling that
+    // was never recorded as head carries a verdict the runtime never accepted.
+    const determinate = chain.length > 0 && evidenced === verifiedTop &&
+      chain.at(-1).digest === preferredHead;
     const quarantine = quarantinePath(dir);
     if (existsSync(dir)) renameSync(dir, quarantine);
     const recoveredFrom = basename(quarantine);

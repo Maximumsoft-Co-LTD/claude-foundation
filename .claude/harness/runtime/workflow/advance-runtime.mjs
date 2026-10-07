@@ -124,11 +124,13 @@ function taskVerification(text) {
 // already grants (`Bash(claude-foundation *)`). Run bare, the project's test
 // runner costs a host approval prompt on every Build; `exec --task` runs the
 // same command in that task's sandbox, the way advance's own verify does
-// (`sh -c` whenever the text needs a shell), and records its duration.
+// (`sh -c` whenever the text needs a shell), and records its duration. A
+// leading `NAME=value` is a shell assignment, never a program to spawn.
 export function taskCheckCommand(id, taskId, verify) {
   if (!id || !taskId || !String(verify || "").trim()) return null;
   const words = String(verify).trim().split(/\s+/);
-  const argv = words.every((word) => shellDisplayArgument(word) === word)
+  const argv = !/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0]) &&
+    words.every((word) => shellDisplayArgument(word) === word)
     ? words.join(" ") : `sh -c ${shellDisplayArgument(String(verify).trim())}`;
   return command(`exec ${shellDisplayArgument(id)} --task ${shellDisplayArgument(taskId)} -- ${argv}`);
 }
@@ -580,7 +582,7 @@ function buildAction(id, dispatch, state, plan = null) {
     const instructions = [
       ...(dispatch.action === "run-in-session" && tasks.length > 1 ? [
         `Implement ${tasks.map((task) => task.id).join(", ")} in this order inside the workspace.`,
-        "Run each task's checkCommand, then the resume command once: advance reruns every " +
+        "Run each task's checkCommand where present, then the resume command once: advance reruns every " +
         "task's verify check, marks each passing task [x], and hands back only failures."
       ] : []),
       ...reverification.map((row) =>

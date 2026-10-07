@@ -20,7 +20,7 @@ Harness checks Change Loop 3.5.30/runtime API `41`, repairs setup.
   recommendation first, plain text otherwise;
   never offer only a passing option. `WAIT` reports owner and condition, not a user command.
 - In Build, `cd <workspace>` once as its own call, then plain commands; run
-  each task's `checkCommand`.
+  each listed `checkCommand`.
 - Never hand-edit generated packet files, `tasks.md` checkboxes, or task IDs;
   change the agreement only by draft or semantic amendment.
 - Spec approval given in the request, in any wording, or "ลุยเลย"/"go ahead"
