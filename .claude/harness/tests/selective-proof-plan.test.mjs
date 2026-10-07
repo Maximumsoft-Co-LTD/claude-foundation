@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { planSelectiveProofRecovery, rebindSelectiveProofReceipt } from
+import { demoteSelectivePreservation, planSelectiveProofRecovery, rebindSelectiveProofReceipt } from
   "../runtime/workflow/validation/selective-proof-plan.mjs";
 
 function binding(provider, revision, overrides = {}) {
@@ -168,4 +168,23 @@ test("receipt rebind is authorized only by a ready preserved-provider plan", () 
     receipt, provider: "review", plan,
     fromContractFingerprint: "old", toContractFingerprint: "new", reboundAt: "now"
   }), /not authorized/);
+});
+
+test("demotion moves only a preserved provider and keeps the plan consistent", () => {
+  const plan = {
+    status: "READY",
+    providers: { preserved: ["lint", "types"], rerun: ["test"] },
+    decisions: [
+      { provider: "lint", action: "preserve", reason: "unchanged-declared-binding" },
+      { provider: "test", action: "rerun", reason: "semantic-amendment-affected" },
+      { provider: "types", action: "preserve", reason: "unchanged-declared-binding" }
+    ],
+    recovery: { mode: "selective-rerun", instruction: "old" }
+  };
+  const demoted = demoteSelectivePreservation(plan, "lint", "STALE");
+  assert.deepEqual(demoted.providers, { preserved: ["types"], rerun: ["lint", "test"] });
+  assert.deepEqual(demoted.decisions[0], { provider: "lint", action: "rerun", reason: "STALE" });
+  assert.match(demoted.recovery.instruction, /retain 1 bound receipt\(s\) and rerun 2/);
+  assert.throws(() => demoteSelectivePreservation(plan, "test", "STALE"), /not preserved/);
+  assert.throws(() => demoteSelectivePreservation(plan, "unknown", "STALE"), /not preserved/);
 });
