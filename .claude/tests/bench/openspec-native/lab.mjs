@@ -319,8 +319,10 @@ export function runScenarioLab({ matrixPath, scenarioId, outputRoot = DEFAULT_RE
       project: keepProject ? prepared.project : null,
       runDir, manifest: join(runDir, "manifest.json") };
   } finally {
+    // The runner settles host-orphaned project processes first; the retries
+    // only absorb a late filesystem flush (ENOTEMPTY/EBUSY).
     if (!keepProject && !resumeProject)
-      rmSync(prepared.project, { recursive: true, force: true });
+      rmSync(prepared.project, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     else chmodSync(prepared.project, 0o700);
   }
 }

@@ -12,7 +12,8 @@ import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 
 import {
-  assertDisposableProject, BENCHMARK_VERIFY_AUTHORITY, backendLandArgs, collectNativeScorecard, discoverChangeId,
+  assertDisposableProject, BENCHMARK_VERIFY_AUTHORITY, backendLandArgs, benchmarkLandAuthority,
+  collectNativeScorecard, discoverChangeId, projectProcessIds, watchedStatusReached,
   externalAuthorityBoundary, guardrailOutcomes, hostFriction, observedOutcome, operationRowsInWindow,
   mergeHostExecutions, oracleRepairPrompt, parseHostOutput, pendingTaskCount,
   provenLandReady, remainingTimeoutMs, runBenchmarkOracle, runClaude, terminalChangeId
@@ -122,6 +123,87 @@ test("oracle-backed runner stops at proven before allowing Land", async () => {
     assert.equal(result.exitCode, 0);
     assert.equal(result.timedOut, false);
   } finally { rmSync(project, { recursive: true, force: true }); }
+});
+
+// A fake host shaped like Claude Code: the lifecycle command runs as a Bash
+// tool call in its own process group (so stopping the host group does not stop
+// it) and its tool_result is printed only after it exits.
+function hostWithDetachedLifecycle(project, runtime, statuses, { reportResult = true } = {}) {
+  const host = join(project, "fake-lifecycle-host.mjs");
+  const lifecycle = statuses.map((status) =>
+    `await new Promise((done) => setTimeout(done, 700));` +
+    `writeFileSync(${JSON.stringify(runtime)}, JSON.stringify({ id: "todo", status: ${JSON.stringify(status)} }));`
+  ).join("\n");
+  write(host, [
+    "#!/usr/bin/env node",
+    'import { spawn } from "node:child_process";',
+    "const say = (row) => process.stdout.write(`${JSON.stringify(row)}\\n`);",
+    'say({ type: "assistant", message: { id: "msg-1", content: [{ type: "tool_use", id: "tool-advance", name: "Bash", input: { command: "claude-foundation advance todo --through archived" } }] } });',
+    `const child = spawn(process.execPath, ["--input-type=module", "-e", ${JSON.stringify(
+      'import { writeFileSync } from "node:fs";\n' + lifecycle)}], { cwd: ${JSON.stringify(project)}, detached: true, stdio: "ignore" });`,
+    reportResult
+      ? 'child.on("exit", () => { say({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tool-advance", content: "DONE" }] } }); setTimeout(() => {}, 30000); });'
+      : "process.exit(0);"
+  ].join("\n"));
+  chmodSync(host, 0o755);
+  return host;
+}
+
+// typescript-react-state, paid wave 5: the host's single `advance --through
+// archived` passed `proven`, the runner stopped the host there, the orphaned
+// Land kept running, and the backend Land raced it (land-grant-session-mismatch)
+// until cleanup removed the project mid-archive, leaving `applied`.
+test("oracle-backed runner lets an in-flight lifecycle command finish Land before stopping", async () => {
+  const project = projectFixture();
+  const runtime = join(project, ".foundation/runtime/todo.json");
+  write(runtime, { id: "todo", status: "building" });
+  const host = hostWithDetachedLifecycle(project, runtime, ["proven", "applied", "archived"]);
+  try {
+    const result = await runClaude({
+      project, prompt: "prove", claudeBin: host, claudeArgs: [],
+      timeoutMs: 20000, stopOnProven: true, settleTimeoutMs: 5000
+    });
+    assert.equal(result.terminalReached?.status, "archived");
+    assert.equal(JSON.parse(readFileSync(runtime, "utf8")).status, "archived",
+      "the host was stopped while its Land was still running");
+    assert.deepEqual(projectProcessIds(project), []);
+  } finally { rmSync(project, { recursive: true, force: true }); }
+});
+
+test("runner waits for a host-orphaned project process before scoring", async () => {
+  const project = projectFixture();
+  const runtime = join(project, ".foundation/runtime/todo.json");
+  write(runtime, { id: "todo", status: "proven" });
+  const host = hostWithDetachedLifecycle(project, runtime, ["applied", "archived"],
+    { reportResult: false });
+  try {
+    const result = await runClaude({
+      project, prompt: "land", claudeBin: host, claudeArgs: [],
+      timeoutMs: 20000, settleTimeoutMs: 10000
+    });
+    assert.equal(JSON.parse(readFileSync(runtime, "utf8")).status, "archived");
+    if (process.platform === "linux")
+      assert.match(result.stderr, /waited for 1 host-orphaned project process/);
+    assert.deepEqual(projectProcessIds(project), []);
+  } finally { rmSync(project, { recursive: true, force: true }); }
+});
+
+test("a proven watcher accepts the Land states one advance moves through", () => {
+  assert.equal(watchedStatusReached("proven", "proven"), true);
+  assert.equal(watchedStatusReached("proven", "applied"), true);
+  assert.equal(watchedStatusReached("proven", "archived"), true);
+  assert.equal(watchedStatusReached("proven", "building"), false);
+  assert.equal(watchedStatusReached("archived", "applied"), false);
+});
+
+test("an oracle-backed benchmark keeps Land with the backend", () => {
+  assert.equal(benchmarkLandAuthority({ landAuthorized: false }), "");
+  const backendOwned = benchmarkLandAuthority({ landAuthorized: true, oracleConfigured: true });
+  assert.match(backendOwned, /does not grant Land authority/);
+  assert.match(backendOwned, /--through proven/);
+  assert.doesNotMatch(backendOwned, /continue until the change is landed/);
+  assert.match(benchmarkLandAuthority({ landAuthorized: true, oracleConfigured: false }),
+    /authorizes Land; continue until the change is landed and archived/);
 });
 
 test("repair continuation must leave the initial proven state before it can finish", async () => {
@@ -234,6 +316,12 @@ test("outcome requires checked tasks and passing proof", () => {
     assert.equal(notLanded.status, "incomplete");
     assert.equal(notLanded.failureClass, "land-not-archived");
     assert.equal(notLanded.landStatus, "awaiting-user");
+    write(join(project, ".foundation/runtime/todo.json"), { id: "todo", status: "applied" });
+    const interrupted = observedOutcome({
+      project, changeId: "todo", envelope: {}, exitCode: 0, timedOut: false
+    });
+    assert.equal(interrupted.failureClass, "land-not-archived");
+    assert.equal(interrupted.landStatus, "interrupted-resumable");
     write(join(project, "openspec/changes/todo/tasks.md"), "- [ ] unfinished\n");
     const incomplete = observedOutcome({
       project, changeId: "todo", envelope: {}, exitCode: 0, timedOut: false

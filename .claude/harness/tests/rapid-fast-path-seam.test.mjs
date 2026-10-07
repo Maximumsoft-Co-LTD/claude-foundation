@@ -100,6 +100,39 @@ test("a quiet low-tier rapid change lands on deterministic evidence without a re
   }
 });
 
+// Land interrupted between code apply and archive leaves the change at
+// `applied`. Recovery is the same advance route, even from another session
+// (a backend or a fresh host), never a user-run repair command.
+test("a quiet rapid change left at applied resumes to archived through advance", () => {
+  const fixture = consumer("Calc exports subtract that returns a minus b");
+  try {
+    const bin = join(fixture.temp, "failing-openspec");
+    mkdirSync(bin);
+    writeFileSync(join(bin, "openspec"), "#!/bin/sh\n" +
+      'if [ "$1" = "archive" ]; then echo "injected archive interruption" >&2; exit 1; fi\n' +
+      // Every other call reaches the real CLI behind this wrapper.
+      'PATH="${PATH#*:}" exec openspec "$@"\n');
+    chmodSync(join(bin, "openspec"), 0o755);
+    const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`,
+      FOUNDATION_CLAUDE_SESSION_ID: "interrupted-host-session" };
+    delete env.NODE_TEST_CONTEXT;
+    const interrupted = spawnSync("node", [".claude/harness/foundation.mjs", "advance",
+      fixture.id, "--through", "archived"], { cwd: fixture.project, encoding: "utf8", env });
+    assert.doesNotMatch(interrupted.stdout, /"reached":"archived"/);
+    const runtime = join(fixture.project, ".foundation/runtime", `${fixture.id}.json`);
+    assert.equal(JSON.parse(readFileSync(runtime, "utf8")).status, "applied",
+      interrupted.stderr || interrupted.stdout);
+    assert.match(readFileSync(join(fixture.project, "src/calc.js"), "utf8"), /subtract/);
+    const resumed = fixture.cli("advance", fixture.id, "--through", "archived");
+    assert.equal(resumed.status, 0, resumed.stderr || resumed.stdout);
+    assert.match(resumed.stdout, /"reached":"archived"/);
+    assert.equal(JSON.parse(readFileSync(runtime, "utf8")).status, "archived");
+    assert.equal(fixture.reviewerCalls(), 0, "recovery invokes no reviewer");
+  } finally {
+    rmSync(fixture.temp, { recursive: true, force: true });
+  }
+});
+
 test("a rapid change with a security keyword still runs the configured reviewer", () => {
   const fixture = consumer("Calc exports subtract for billing totals");
   try {
