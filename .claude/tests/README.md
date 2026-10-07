@@ -83,6 +83,7 @@ topology/planning fixture and the real-Git pull request delivery suite.
 | `.claude/harness/tests/sandbox-runtime-sync.test.mjs` + `sandbox-replay-preparation.test.mjs` | Current/repeated amendment preservation, historical snapshot guards, explicit approved target-packet resolution, copy conflicts, concurrent edits, verified replay staging and interrupted replacement recovery |
 | `.claude/harness/tests/change-revise.test.mjs` | Pre-Build `change revise` recompiles under the same id through the revise intake gate, restores packet and runtime bytes on failure, refuses Build/proof state, and folds unapproved requirement deltas |
 | `.claude/harness/tests/convergent-gate.test.mjs` | Shared phase-gate finding normalization, progress fingerprints, root-cause repair batches, and durable no-progress decision guidance |
+| `.claude/harness/tests/canonical-json-digests.test.mjs` | Shared canonical JSON serializers keep representative bytes and every domain digest byte-identical |
 | `.claude/harness/tests/authority-preflight.test.mjs` | Shared risk-based signed-CI feasibility and typed pre-Build authority decisions without fabricated evidence |
 | `.claude/harness/tests/execution-contract.test.mjs` | One versioned compiler binds risk, evidence, authority, workspace capability, budgets, repository topology, and Land requirements without changing public commands |
 | `.claude/harness/tests/lifecycle-reducer.test.mjs` | All internal lifecycle status mutations pass through one typed transition reducer, including recovery and legacy direct-workspace edges |
