@@ -15,7 +15,9 @@ import {
   containsSecretMaterial,
   createPullRequestRuntime,
   deliveryBranchName,
+  deliveryCommitSubject,
   deliveryEvidenceAssessment,
+  deliveryNamingValues,
   deliveryPolicy,
   deliveryProjection,
   followUpDeliveryCandidates,
@@ -97,6 +99,48 @@ test("PR policy, remote parsing, branch naming, and secret guards are fail-close
   assert.equal(containsSecretMaterial("API key: abcdefghijklmnop"), true);
   assert.equal(containsSecretMaterial("API key: redacted"), false);
   assert.equal(containsSecretMaterial("Authorization: Bearer abcdefghijklmnop"), true);
+});
+
+test("delivery naming templates keep the default and refuse invalid output", () => {
+  const narrative = { title: "Add booking flow", type: "feature-frontend", why: "Requested in BOOK-42." };
+  const plain = deliveryNamingValues({ changeId: "booking-flow", narrative });
+  const policy = deliveryPolicy({});
+  assert.equal(policy.commitSubject, "{commitType}: {title}");
+  assert.equal(policy.branchPattern, "change/{changeId}");
+  assert.equal(deliveryCommitSubject(policy.commitSubject, plain), "feat: Add booking flow");
+  assert.equal(deliveryCommitSubject(policy.commitSubject,
+    deliveryNamingValues({ changeId: "x", narrative: { title: "Fix count" } })), "fix: Fix count");
+  assert.equal(deliveryBranchName(policy.branchPattern, "booking-flow", plain), "change/booking-flow");
+  assert.equal(deliveryBranchName("Change/{changeId}", "Booking UI!!!"), "change/booking-ui",
+    "a {changeId}-only pattern keeps its historical normalization");
+
+  const ticketed = deliveryNamingValues({ changeId: "booking-flow", narrative, ticketPattern: "[A-Z]+-\\d+" });
+  assert.equal(ticketed.ticket, "BOOK-42");
+  assert.equal(deliveryNamingValues({ changeId: "proj-7-booking", narrative,
+    ticketPattern: "^(proj-\\d+)" }).ticket, "proj-7", "capture group 1 wins; the change id is searched first");
+  assert.equal(deliveryCommitSubject("{commitType}({prType}): {ticket} {title} [{changeId}]", ticketed),
+    "feat(feature-frontend): BOOK-42 Add booking flow [booking-flow]");
+  assert.equal(deliveryBranchName("feature/{ticket}-{title}", "booking-flow", ticketed),
+    "feature/BOOK-42-add-booking-flow");
+  const longId = `booking-${"x".repeat(70)}-v2`;
+  assert.equal(deliveryBranchName("feature/{ticket}-{changeId}", longId, ticketed),
+    `feature/BOOK-42-${longId}`, "a mixed pattern keeps the whole change id, never truncated");
+
+  const refused = (fn, pattern) => assert.throws(fn, (error) =>
+    error.code === "DELIVERY_NAMING_INVALID" && pattern.test(error.message) &&
+      /foundation\.json/.test(error.message));
+  refused(() => deliveryCommitSubject("{type}: {title}", plain), /unknown placeholder \{type\}/);
+  refused(() => deliveryCommitSubject("{title", plain), /unbalanced brace/);
+  refused(() => deliveryCommitSubject("{title}\nBody", plain), /single-line/);
+  refused(() => deliveryCommitSubject(`${"x".repeat(170)} {title}`, plain), /limit 180/);
+  refused(() => deliveryCommitSubject("{ticket}: {title}", plain), /ticketPattern is not configured/);
+  refused(() => deliveryCommitSubject("{ticket}: {title}",
+    deliveryNamingValues({ changeId: "booking-flow", narrative, ticketPattern: "JIRA-\\d+" })), /no match/);
+  refused(() => deliveryNamingValues({ changeId: "x", narrative, ticketPattern: "(" }), /not a valid regular expression/);
+  refused(() => deliveryBranchName("feature {title}", "booking-flow", plain), /invalid branch/);
+  refused(() => deliveryBranchName("{title}.lock", "booking-flow", plain), /invalid branch/);
+  refused(() => deliveryBranchName("feature/{title}/", "booking-flow", plain), /invalid branch/);
+  refused(() => deliveryBranchName("feature/{changeID}", "booking-flow", plain), /unknown placeholder/);
 });
 
 test("classifier covers the eight company PR types with risk-first precedence", () => {
@@ -261,7 +305,8 @@ for (const scenario of ["normal", "mixed-files", "resume-edit", "resume-mode", "
   "default-branch", "dangling-link", "post-land-mode", "archive-mode", "legacy-mode",
   "crlf", "autocrlf", "conversion-resume", "custom-filter", "reserved-filter",
   "encoding", "legacy-archive-mode", "post-land-mode-remove", "non-main-default",
-  "unknown-default", "stale-default", "modified-links", "head-advanced", "push-forbidden"])
+  "unknown-default", "stale-default", "modified-links", "head-advanced", "push-forbidden",
+  "naming-template", "naming-invalid"])
 test(`delivery verifies publication boundaries: ${scenario}`, async (t) => {
   const root = mkdtempSync(join(tmpdir(), "foundation-delivery-e2e-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -288,12 +333,14 @@ test(`delivery verifies publication boundaries: ${scenario}`, async (t) => {
   checkedGit(["remote", "add", "origin", "https://github.com/acme/booking.git"], root);
 
   const id = "booking-flow";
+  const expectedBranch = scenario === "naming-template" ? "feature/BOOK-42-add-booking-flow" : `change/${id}`;
   const archive = `openspec/changes/archive/2026-09-16-${id}`;
   write(join(root, "src", "booking.js"), ["crlf", "autocrlf", "conversion-resume"].includes(scenario)
     ? "export const booking = true;\r\n" : "export const booking = true;\n");
   if (scenario === "post-land-mode-remove") chmodSync(join(root, "src/booking.js"), 0o755);
   write(join(root, archive, "proposal.md"), [
-    "# Change: booking", "", "## Why", "", "Let users book directly.", "",
+    "# Change: booking", "", "## Why", "", scenario === "naming-template"
+      ? "Let users book directly (BOOK-42)." : "Let users book directly.", "",
     "## What changes", "", "- Add booking flow", "", "## Non-goals", "", "- Payment"
   ].join("\n"));
   write(join(root, archive, "design.md"), "# Design\n\n## Monitoring\n\nWatch booking errors after deploy.\n");
@@ -374,7 +421,7 @@ test(`delivery verifies publication boundaries: ${scenario}`, async (t) => {
       return spawnSync("git", ["fetch", "--no-tags", root, fetchedBase], options);
     }
     if (executable === "git" && args[0] === "push") {
-      assert.equal(args.at(-1), `${commit}:refs/heads/change/${id}`);
+      assert.equal(args.at(-1), `${commit}:refs/heads/${expectedBranch}`);
       pushes += 1;
       if (scenario === "push-forbidden") return { status: 128, stdout: "",
         stderr: "remote: Permission to acme/booking.git denied to bot.\n" +
@@ -402,7 +449,7 @@ test(`delivery verifies publication boundaries: ${scenario}`, async (t) => {
       creates += 1;
       pullRequest = {
         number: 42, url: "https://github.com/acme/booking/pull/42", state: "OPEN",
-        isDraft: false, headRefOid: commit, headRefName: `change/${id}`, baseRefName: "main"
+        isDraft: false, headRefOid: commit, headRefName: expectedBranch, baseRefName: "main"
       };
       return { status: 0, stdout: `${pullRequest.url}\n`, stderr: "" };
     }
@@ -422,7 +469,12 @@ test(`delivery verifies publication boundaries: ${scenario}`, async (t) => {
     foundationPolicy: () => ({ deliver: {
       defaultBaseBranch: scenario === "default-branch" ? "release" : "main",
       branchPattern: scenario === "default-branch" ? "main"
-        : scenario === "non-main-default" ? "trunk" : "change/{changeId}"
+        : scenario === "non-main-default" ? "trunk"
+          : scenario === "naming-template" ? "feature/{ticket}-{title}" : "change/{changeId}",
+      ...(scenario === "naming-template" ? {
+        ticketPattern: "[A-Z]+-\\d+", commitSubject: "{commitType}({ticket}): {title} [{changeId}]"
+      } : {}),
+      ...(scenario === "naming-invalid" ? { commitSubject: "{commitType}: {summary}" } : {})
     } }),
     now: () => "2026-09-16T01:00:00.000Z",
     run,
@@ -482,6 +534,20 @@ test(`delivery verifies publication boundaries: ${scenario}`, async (t) => {
     }
   }
   let interrupted = await runtime.advance(id);
+  if (scenario === "naming-invalid") {
+    // A project naming setting that cannot produce a valid subject is refused
+    // before any workspace, commit, push, or pull request exists.
+    assert.equal(interrupted.action, "WAIT");
+    assert.equal(interrupted.boundary, "delivery-policy");
+    assert.match(interrupted.reason, /unknown placeholder \{summary\}.*foundation\.json/);
+    assert.equal(interrupted.resumeCommand, `claude-foundation deliver advance ${id}`);
+    assert.equal(existsSync(runtime.workspacePath(id)), false);
+    assert.equal(commit, null);
+    assert.equal(pushes, 0);
+    assert.equal(creates, 0);
+    assert.equal(checkedGit(["rev-parse", "HEAD"], root), originalHead);
+    return;
+  }
   if (["custom-filter", "reserved-filter", "encoding"].includes(scenario)) {
     assert.equal(interrupted.action, "ASK_USER");
     assert.equal(interrupted.boundary, "git-conversion");
@@ -599,6 +665,14 @@ test(`delivery verifies publication boundaries: ${scenario}`, async (t) => {
   assert.equal(checkedGit(["rev-parse", "HEAD"], root), originalHead);
   assert.equal(checkedGit(["diff", "--cached"], root), originalIndex);
   assert.equal(existsSync(runtime.receiptPath(id)), true);
+  if (scenario === "normal")
+    assert.equal(checkedGit(["log", "-1", "--format=%s", commit], root), "feat: Add booking flow",
+      "the default commit subject is unchanged");
+  if (scenario === "naming-template") {
+    assert.equal(checkedGit(["log", "-1", "--format=%s", commit], root),
+      "feat(BOOK-42): Add booking flow [booking-flow]");
+    assert.equal(readJson(runtime.receiptPath(id)).branch, expectedBranch);
+  }
   if (["crlf", "autocrlf", "conversion-resume"].includes(scenario))
     assert.equal(spawnSync("git", ["show", `${commit}:src/booking.js`], { cwd: root, encoding: "utf8" }).stdout,
       "export const booking = true;\n");
@@ -934,11 +1008,14 @@ test(`review follow-up delivery ${scenario === "open" ? "updates the open pull r
     pathIdentity, readJson, writeJson,
     stableHash: (value) => hash(JSON.stringify(value)),
     git,
-    foundationPolicy: () => ({ deliver: { defaultBaseBranch: "main", branchPattern: "change/{changeId}" } }),
+    foundationPolicy: () => ({ deliver: { defaultBaseBranch: "main", branchPattern: "change/{changeId}",
+      // The follow-up update path names its commit with the same template.
+      ...(scenario === "open" ? { commitSubject: "{commitType}({changeId}): {title}" } : {}) } }),
     now: () => "2026-09-16T01:00:00.000Z",
     run,
     fail: (message) => { throw new Error(message); }
   });
+  const subject = (sha) => checkedGit(["log", "-1", "--format=%s", sha], root);
 
   archiveChange("booking-flow", { "src/booking.js": "export const booking = true;\n" },
     "Let users book directly.");
@@ -965,6 +1042,8 @@ test(`review follow-up delivery ${scenario === "open" ? "updates the open pull r
     assert.equal(receipt.branch, "change/booking-flow");
     const head = remote["change/booking-flow"];
     assert.equal(checkedGit(["rev-parse", `${head}^`], root), originalCommit);
+    assert.equal(subject(originalCommit), "feat(booking-flow): booking-flow");
+    assert.equal(subject(head), "feat(booking-review-fix): booking-review-fix");
     assert.equal(checkedGit(["show", `${head}:src/review.js`], root), "export const reviewed = true;");
     assert.equal(checkedGit(["show", `${head}:src/booking.js`], root), "export const booking = 'reviewed';");
     assert.notEqual(checkedGit(["ls-tree", "--name-only", head,
@@ -977,6 +1056,8 @@ test(`review follow-up delivery ${scenario === "open" ? "updates the open pull r
     assert.equal(followUp.pullRequests[0].url, "https://github.com/acme/booking/pull/43");
     assert.deepEqual(pushes, ["change/booking-flow", "change/booking-review-fix"]);
     assert.equal(checkedGit(["rev-parse", `${remote["change/booking-review-fix"]}^`], root), baseHead);
+    assert.equal(subject(remote["change/booking-review-fix"]), "feat: booking-review-fix",
+      "the default subject is unchanged");
   }
   assert.equal(checkedGit(["rev-parse", "HEAD"], root), baseHead, "the target checkout never moves");
   const again = await runtime.advance("booking-review-fix");

@@ -453,6 +453,13 @@ PR's URL: Deliver then pushes onto that PR's branch (fast-forward, never forced)
 and updates the same PR. If that PR was closed or merged meanwhile, Deliver
 opens a new PR and says why.
 
+To match your commit and branch conventions, set `commitSubject`,
+`branchPattern`, and optionally `ticketPattern` under `deliver` in
+`foundation.json`, for example `"{commitType}({ticket}): {title}"` and
+`"feature/{ticket}-{title}"`. The defaults keep `feat: <title>` and
+`change/<change-id>`; an invalid setting stops Deliver before it commits. See
+the [Deliver contract](WORKFLOW.md#deliver-change-optional) for the placeholders.
+
 Deliver is a cold path: if it is not invoked, Change, Build, Prove, and Land do
 no PR-specific prompting, evidence collection, or validation. Missing optional
 presentation evidence can make the PR a draft according to project policy;

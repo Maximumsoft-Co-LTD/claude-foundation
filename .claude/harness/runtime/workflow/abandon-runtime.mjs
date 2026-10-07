@@ -13,8 +13,9 @@ import { dirname, join } from "node:path";
 // a separate authority the user grants separately.
 //
 // Abandon removes only what the change owns: its sandboxes (after a backup of
-// any commit or byte the target does not hold), its own .foundation records and
-// packet (quarantined, never deleted), and, only with --applied revert, the
+// any commit or byte the target does not hold), its own .foundation records,
+// review requests, reviewer reports, and packet (quarantined, never deleted),
+// and, only with --applied revert, the
 // target paths its own apply journal recorded. It never deletes a target file
 // the change did not declare and apply.
 export function createAbandonRuntime({
@@ -232,6 +233,12 @@ export function createAbandonRuntime({
       ["transactions", join(paths.transactions, id)],
       ["plans", join(paths.plans, id)],
       ["handoffs", join(paths.handoffs, id)],
+      // Review/authority requests and reviewer reports are keyed by change id
+      // and matched by workspace hash. Left in place, a later change reusing
+      // the id (with the same content) reopened an exhausted review request
+      // instead of starting with a fresh review budget.
+      ["authority", paths.authority ? join(paths.authority, id) : null],
+      ["reviews", paths.reviews ? join(paths.reviews, id) : null],
       ["logs", join(paths.logs, id)],
       ["snapshot.json", join(paths.snapshots, `${id}.json`)]
     ]);

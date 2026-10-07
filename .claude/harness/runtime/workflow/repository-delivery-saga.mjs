@@ -122,7 +122,7 @@ export function createRepositoryDeliverySaga({
   root, transactions, loadRuntime, saveRuntime, selectedRepositories,
   git, gitHead, fileDigest, directoryHash, pathInside, readJson, writeJson,
   stableHash, proofPath, now, prepareRoot, executeRoot, verifyRoot,
-  cleanupRoot, fail, checkpoint = () => {}
+  reapplyRoot = () => null, cleanupRoot, fail, checkpoint = () => {}, planRoot = null
 }) {
   const sagaPath = (id) => join(transactions, id, "repository-delivery.json");
   // repositoryId -> path -> entry of a delivery the sandbox has since outgrown.
@@ -158,20 +158,29 @@ export function createRepositoryDeliverySaga({
     return journalFor(repository).journalPath(id, transactionId);
   }
 
-  function recoverInterruptedChild(id, repository, node) {
-    if (!node?.transactionId || node.status === "verified") return;
+  // Read-only: the interrupted child journal Land settles before it plans,
+  // or null. A journal that needs the user's decision refuses here.
+  function interruptedChild(id, repository, node) {
+    if (!node?.transactionId || node.status === "verified") return null;
     const runtime = journalFor(repository);
     const path = runtime.journalPath(id, node.transactionId);
-    if (!existsSync(path)) return;
+    if (!existsSync(path)) return null;
     const journal = readJson(path, {});
     if (!["prepared", "applying", "rolling-back", "manual-recovery"]
-      .includes(journal.status)) return;
+      .includes(journal.status)) return null;
     if (journal.status === "manual-recovery")
       throw new RepositoryDeliveryError(
         `repository '${repository.id}' requires a semantic recovery decision`, {
           repository: repository.id,
           decision: journal.decision
         });
+    return { runtime, path, journal };
+  }
+
+  function recoverInterruptedChild(id, repository, node) {
+    const interrupted = interruptedChild(id, repository, node);
+    if (!interrupted) return;
+    const { runtime, path, journal } = interrupted;
     try { runtime.rollback(journal, "interrupted repository apply recovered before resume"); }
     catch (error) {
       const refreshed = readJson(path, {});
@@ -198,7 +207,9 @@ export function createRepositoryDeliverySaga({
     }));
   }
 
-  function prepareChild(id, state, repository, prior = new Map()) {
+  // Every refusal a child delivery raises before its first write; shared by
+  // Land and the read-only Land preflight.
+  function planChild(id, state, repository, prior = new Map()) {
     const record = repositoryRuntime(state, repository);
     if (!record?.path || !record?.targetPath || !record?.baseHead)
       throw new RepositoryDeliveryError(
@@ -217,6 +228,11 @@ export function createRepositoryDeliverySaga({
         `repository '${repository.id}' sandbox no longer changes path(s) an earlier Land ` +
         `attempt wrote into its target (${dropped.join(", ")}); restore them in the sandbox ` +
         "or the target, then resume Land", { repository: repository.id, paths: dropped });
+    return { record, runtime, entries };
+  }
+
+  function prepareChild(id, state, repository, prior = new Map()) {
+    const { record, runtime, entries } = planChild(id, state, repository, prior);
     const transactionId = `repo-${safeRepositoryId(repository.id)}-${Date.now()}-${process.pid}`;
     const transactionRoot = runtime.transactionRoot(id, transactionId);
     for (const [index, entry] of entries.entries()) {
@@ -324,11 +340,70 @@ export function createRepositoryDeliverySaga({
     return false;
   }
 
+  // The root target still holds its earlier delivery, but root sandbox work
+  // proven after it (a repair, a follow-up, a resumed Land) would otherwise
+  // never land. `reapplyRoot` returns the full root projection when it differs
+  // from the delivered one. A path that delivery never wrote must still be the
+  // base or already hold the sandbox bytes: Land never overwrites a target edit.
+  function rootGrowth(id, state, repository, verification) {
+    const entries = reapplyRoot(id, state, verification);
+    if (!entries) return null;
+    if (state.workspace?.mode === "worktree" && state.workspace.baseHead) {
+      const prior = new Map((verification.journal?.entries || [])
+        .map((entry) => [entry.path, entry]));
+      assertChildTargetCompatible({ git, journalRuntime: journalFor(repository) },
+        repository, { baseHead: state.workspace.baseHead }, entries, prior);
+    }
+    return entries;
+  }
+
+  // Prepare order: children first, the control repository last.
+  function preparationOrder(writable) {
+    return [
+      ...writable.filter((repository) => repository.id !== "root"),
+      ...writable.filter((repository) => repository.id === "root")
+    ];
+  }
+
+  function writableRepositories(id, state) {
+    return repositoryDeliveryOrder(selectedRepositories(id, state))
+      .filter((repository) => repository.mode === "write");
+  }
+
+  // The pre-mutation half of `apply`: every refusal it raises before the
+  // first repository is written, in the same order, without journaling,
+  // backing up, or rolling back. Only the control repository's planning may
+  // record a target-edit carry, and only when Land runs it (`inspect: false`).
+  // A child whose interrupted journal Land rolls back first is checked by Land
+  // after that rollback.
+  function preflight(id, { inspect = true } = {}) {
+    const state = loadRuntime(id);
+    const writable = writableRepositories(id, state);
+    const saga = loadSaga(id);
+    const interrupted = new Set(writable.filter((repository) => repository.id !== "root" &&
+      interruptedChild(id, repository, saga.repositories[repository.id]))
+      .map((repository) => repository.id));
+    for (const repository of writable) gitInvariant(git, stableHash, repository.path);
+    for (const repository of preparationOrder(writable)) {
+      if (repository.id === "root") {
+        if (state.workspace?.applied) {
+          const verification = verifyRoot(state);
+          if (!verification.valid)
+            throw new RepositoryDeliveryError(
+              `root delivered projection drifted: ${verification.reason}`);
+          rootGrowth(id, state, repository, verification);
+          continue;
+        }
+        planRoot?.(id, state, { inspect });
+      } else if (!interrupted.has(repository.id) && !verifiedChild(id, state, repository)) {
+        planChild(id, state, repository, staleDeliveries.get(repository.id));
+      }
+    }
+  }
+
   function apply(id) {
     let state = loadRuntime(id);
-    const selected = selectedRepositories(id, state);
-    const writable = repositoryDeliveryOrder(selected)
-      .filter((repository) => repository.mode === "write");
+    const writable = writableRepositories(id, state);
     const saga = loadSaga(id);
     for (const repository of writable.filter((row) => row.id !== "root"))
       recoverInterruptedChild(id, repository, saga.repositories[repository.id]);
@@ -338,11 +413,7 @@ export function createRepositoryDeliverySaga({
     ]));
     const prepared = new Map();
     // Prepare every remaining target before mutating the first one.
-    const preparationOrder = [
-      ...writable.filter((repository) => repository.id !== "root"),
-      ...writable.filter((repository) => repository.id === "root")
-    ];
-    for (const repository of preparationOrder) {
+    for (const repository of preparationOrder(writable)) {
       state = loadRuntime(id);
       if (repository.id === "root") {
         if (state.workspace?.applied) {
@@ -350,6 +421,9 @@ export function createRepositoryDeliverySaga({
           if (!verification.valid)
             throw new RepositoryDeliveryError(
               `root delivered projection drifted: ${verification.reason}`);
+          const grown = rootGrowth(id, state, repository, verification);
+          if (grown)
+            prepared.set(repository.id, { journal: prepareRoot(id, state, grown), root: true });
           continue;
         }
         prepared.set(repository.id, { journal: prepareRoot(id, state), root: true });
@@ -434,5 +508,5 @@ export function createRepositoryDeliverySaga({
     saveSaga(saga);
   }
 
-  return { apply, cleanup, sagaPath, childJournalPath };
+  return { apply, preflight, cleanup, sagaPath, childJournalPath };
 }

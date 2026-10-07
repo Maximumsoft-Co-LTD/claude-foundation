@@ -35,6 +35,7 @@ import {
   shouldReportOutOfBandDelivery
 } from "../../harness/runtime/core/diagnostics-runtime.mjs";
 import { createApplyRuntime } from "../../harness/runtime/workflow/apply-runtime.mjs";
+import { targetEditPaths } from "../../harness/runtime/workflow/target-edits.mjs";
 import { automaticRecoveryAction } from "../../harness/runtime/workflow/advance-recovery.mjs";
 
 const EXCLUDED = new Set([".git", ".foundation", ".workflow", "node_modules"]);
@@ -52,13 +53,19 @@ const git = (root, ...args) =>
 // A workspace that looks like a real project: a git repository with tracked
 // content, an active change packet, and the runtime state that names its
 // declared surface.
-function workspace({ declaredSurface = [], taskPaths = [], surfaceAdditions, repositories } = {}) {
+function workspace({
+  declaredSurface = [], taskPaths = [], surfaceAdditions, repositories, workspaceState,
+  gitFile = false, ignore = "/.foundation/\n"
+} = {}) {
   const root = mkdtempSync(join(tmpdir(), "foundation-land-surface-"));
-  git(root, "init", "-q");
+  // `gitFile`: the checkout's `.git` is a file (a linked worktree or submodule
+  // checkout), so a copy sandbox cannot carry it.
+  if (gitFile) git(root, "init", "-q", "--separate-git-dir", `${root}.gitdir`);
+  else git(root, "init", "-q");
   git(root, "config", "user.email", "test@example.com");
   git(root, "config", "user.name", "Test");
   write(root, "src/app.mjs", "export const app = 1;\n");
-  write(root, ".gitignore", "/.foundation/\n");
+  write(root, ".gitignore", ignore);
   git(root, "add", "-A");
   git(root, "-c", "commit.gpgsign=false", "commit", "-qm", "base");
 
@@ -74,7 +81,8 @@ function workspace({ declaredSurface = [], taskPaths = [], surfaceAdditions, rep
   writeFileSync(join(runtime, `${id}.json`), JSON.stringify({
     version: 2, id, status: "building", schema: "foundation-standard",
     declaredSurface, ...(surfaceAdditions ? { surfaceAdditions } : {}),
-    ...(repositories ? { repositories } : {})
+    ...(repositories ? { repositories } : {}),
+    ...(workspaceState ? { workspace: workspaceState(root, id) } : {})
   }));
 
   const state = createStateRuntime({
@@ -168,6 +176,105 @@ test("a surface addition widens only the repository it was recorded for", () => 
   assert.equal(state.singleRelevantSnapshot(id, app, true).workspaceHash, appHash,
     "a root addition must not bind the child repository's hash");
   rmSync(app, { recursive: true, force: true });
+});
+
+// A tool rewrote a git-ignored counter on every run. In a copy sandbox that
+// could not carry the target's `.git` (a file there), Git inside the sandbox
+// answered for the enclosing target, under which the whole sandbox is ignored,
+// so the counter entered the sandbox manifest and the copy-mode Land
+// projection as a create. The target's own rules decide instead.
+test("a git-ignored file never enters a copy sandbox manifest without its own .git", () => {
+  const sandboxOf = (root, id) => join(root, ".foundation", "sandboxes", id);
+  const { root, id, state } = workspace({
+    gitFile: true, ignore: "/.foundation/\n.autoharness-counter\n*.counter\n",
+    workspaceState: (root, id) => ({ mode: "copy", git: "absent", path: sandboxOf(root, id) })
+  });
+  // Tracked before it was ignored: content, whatever its name matches.
+  write(root, "legacy.counter", "0\n");
+  git(root, "add", "-f", "legacy.counter");
+  git(root, "-c", "commit.gpgsign=false", "commit", "-qm", "legacy");
+  const sandbox = sandboxOf(root, id);
+  for (const rel of ["src/app.mjs", ".gitignore", "legacy.counter"])
+    write(sandbox, rel, readFileSync(join(root, rel)));
+  write(root, ".autoharness-counter", "1\n");
+  write(sandbox, ".autoharness-counter", "2\n");
+  write(sandbox, "cache/run.counter", "2\n");
+
+  const target = state.workspaceManifest(root, id, true);
+  const copy = state.workspaceManifest(sandbox, id, true);
+  assert.ok(!Object.hasOwn(target, ".autoharness-counter"));
+  assert.ok(!Object.hasOwn(copy, ".autoharness-counter"),
+    "an ignored file the sandbox rewrote must not be projected by Land");
+  assert.ok(!Object.hasOwn(copy, "cache/run.counter"));
+  assert.ok(Object.hasOwn(copy, "src/app.mjs"));
+  assert.ok(Object.hasOwn(copy, "legacy.counter"),
+    "a tracked file that matches an ignore pattern is still compared");
+  rmSync(root, { recursive: true, force: true });
+  rmSync(`${root}.gitdir`, { recursive: true, force: true });
+});
+
+// The same sandbox hashed through the enclosing target's Git view: every path
+// in it read as ignored, so a code edit left the proof and review hash
+// unchanged and stale evidence passed. The hash reads the sandbox's own files
+// under the target's tracked set, declared surface, and ignore rules.
+test("a copy sandbox without its own .git binds its proof hash to its own files", () => {
+  const sandboxOf = (root, id) => join(root, ".foundation", "sandboxes", id);
+  const { root, id, state } = workspace({
+    gitFile: true, taskPaths: ["src/**"], ignore: "/.foundation/\n*.counter\n",
+    workspaceState: (root, id) => ({ mode: "copy", git: "absent", path: sandboxOf(root, id) })
+  });
+  write(root, "docs/guide.md", "# Guide\n");
+  git(root, "add", "docs/guide.md");
+  git(root, "-c", "commit.gpgsign=false", "commit", "-qm", "docs");
+  const sandbox = sandboxOf(root, id);
+  for (const rel of ["src/app.mjs", ".gitignore", "docs/guide.md",
+    `openspec/changes/${id}/proposal.md`, `openspec/changes/${id}/tasks.md`])
+    write(sandbox, rel, readFileSync(join(root, rel)));
+  write(sandbox, "scratch/undeclared.txt", "nobody declared this\n");
+  const hash = () => state.singleRelevantSnapshot(id, sandbox, true);
+
+  const base = hash();
+  write(sandbox, "src/app.mjs", "export const app = 2;\n");
+  const code = hash();
+  assert.notEqual(code.workspaceHash, base.workspaceHash, "a code edit must expire evidence");
+  assert.notEqual(code.codeHash, base.codeHash);
+  assert.notEqual(code.reviewHash, base.reviewHash);
+  write(sandbox, "docs/guide.md", "# Edited tracked file outside the task paths\n");
+  assert.notEqual(hash().codeHash, code.codeHash, "tracked content is bound wherever it lives");
+  const tracked = hash();
+  write(sandbox, "run.counter", "1\n");
+  write(sandbox, "scratch/undeclared.txt", "still nobody's\n");
+  assert.equal(hash().workspaceHash, tracked.workspaceHash,
+    "ignored output and undeclared untracked files do not expire evidence");
+  write(sandbox, "src/new.mjs", "export const added = 1;\n");
+  assert.notEqual(hash().workspaceHash, tracked.workspaceHash, "a declared new file is bound");
+
+  const manifest = state.workspaceManifest(sandbox, id, true);
+  assert.ok(Object.hasOwn(manifest, "docs/guide.md"),
+    "a tracked edit outside the task paths still reaches the copy projection");
+  assert.ok(Object.hasOwn(manifest, "src/new.mjs"));
+  assert.ok(!Object.hasOwn(manifest, "scratch/undeclared.txt"));
+  assert.ok(!Object.hasOwn(manifest, "run.counter"));
+  rmSync(root, { recursive: true, force: true });
+  rmSync(`${root}.gitdir`, { recursive: true, force: true });
+});
+
+// Target drift and target-edit-sync judge the target's dirty files. A tool
+// rewriting an ignored counter in the target is not an edit outside the
+// sandbox; a tracked file matching an ignore pattern still is.
+test("target edits never include git-ignored files, but tracked ones still count", () => {
+  const { root, state } = workspace({ ignore: "/.foundation/\n*.counter\n" });
+  write(root, "legacy.counter", "0\n");
+  git(root, "add", "-f", "legacy.counter");
+  git(root, "-c", "commit.gpgsign=false", "commit", "-qm", "legacy");
+  write(root, ".autoharness.counter", "1\n");
+  const snapshot = state.preexistingDirty(root);
+  write(root, ".autoharness.counter", "2\n");
+  write(root, "legacy.counter", "1\n");
+  const dirtyNow = state.preexistingDirty(root);
+  assert.ok(!Object.hasOwn(dirtyNow, ".autoharness.counter"));
+  assert.deepEqual(targetEditPaths(snapshot, dirtyNow), ["legacy.counter"]);
+  rmSync(root, { recursive: true, force: true });
 });
 
 test("review identity ignores progress and handoff tracking but binds semantics", () => {

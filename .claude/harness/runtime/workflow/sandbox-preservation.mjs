@@ -7,6 +7,7 @@ import {
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import { EXCLUDED_WORKSPACE_DIRS } from "../core/workspace-policy.mjs";
+import { withoutGitIgnored } from "../core/git-ignore.mjs";
 import { sandboxCodePathspec } from "../core/workspace-surface.mjs";
 
 // A sandbox is the only copy of work that has not landed: commits made inside
@@ -120,14 +121,19 @@ function walkFiles(base, relativeRoot, output) {
 
 // The shared sandbox holds each nested repository only as an empty gitlink
 // placeholder. Anything written there belongs to no repository sandbox, is
-// excluded from the root projection, and so would never land.
+// excluded from the root projection, and so would never land. A file the
+// nested repository's own ignore rules exclude is no repository's work either:
+// a tool run from the root that rewrites it is not unlanded content.
 export function placeholderFiles({ sandboxPath, targetPath, nestedPaths = [] }) {
   const found = [];
   for (const nested of nestedPaths) {
-    for (const path of walkFiles(sandboxPath, nested, [])) {
-      if (contentIdentity(join(sandboxPath, path)) !== contentIdentity(join(targetPath, path)))
-        found.push(path);
-    }
+    const differing = walkFiles(sandboxPath, nested, []).filter((path) =>
+      contentIdentity(join(sandboxPath, path)) !== contentIdentity(join(targetPath, path)));
+    if (!differing.length) continue;
+    const local = differing.map((path) => path.slice(nested.length + 1));
+    const kept = new Set(targetPath ? withoutGitIgnored(join(targetPath, nested), local,
+      { ownRepository: true }) : local);
+    found.push(...differing.filter((_, index) => kept.has(local[index])));
   }
   return found.sort();
 }
@@ -182,12 +188,15 @@ export function sandboxDescriptors(root, id, state) {
 }
 
 // A copy of a project that is not a Git checkout has no base to diff against:
-// every file it holds is compared with the target directly.
+// every file it holds is compared with the target directly — except what the
+// target repository's ignore rules exclude, which is no change's work.
 function assessPlainCopy(descriptor) {
   const { sandboxPath, targetPath, changeId } = descriptor;
   const owned = (path) => path === ".foundation" || path.startsWith(".foundation/") ||
     path.startsWith(`openspec/changes/${changeId}/`);
-  const changed = walkFiles(sandboxPath, "", []).filter((path) => !owned(path)).sort();
+  const walked = walkFiles(sandboxPath, "", []).filter((path) => !owned(path)).sort();
+  const changed = targetPath && existsSync(targetPath)
+    ? withoutGitIgnored(targetPath, walked) : walked;
   return {
     inspected: true,
     absent: false,

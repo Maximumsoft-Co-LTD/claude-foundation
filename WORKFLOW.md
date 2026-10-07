@@ -289,7 +289,10 @@ Every EDIT or REPAIR lists `contextFiles` (absolute paths to open), `newFiles`
 `workspace`: a non-root repository's task names
 `.foundation/repository-sandboxes/<change>/<repository>`, never the shared
 sandbox's empty submodule directory, and the top-level `workspace` (plus a
-`workspaces` map by repository) is that sandbox whenever every task shares it. Unauthorized external work enters
+`workspaces` map by repository) is that sandbox whenever every task shares it.
+`claude-foundation exec <change> --repo <id>` (or `--task <id>`) runs a check in
+that same sandbox; without either, the caller's directory or a single pending
+task repository selects it, and nothing runs in the main checkout. Unauthorized external work enters
 `handoffs.yaml` only through a semantic amendment, and grounding reads belong in
 the draft's `grounding` field.
 Runtime approval binds agreement content and revision; task checkboxes and
@@ -426,8 +429,9 @@ claude-foundation change abandon <change> --reason <reason> --decision-ref <ref>
 ```
 
 Abandon releases leases, cleans up isolation, and moves the packet, runtime
-state, receipts, evidence, and transactions to
-`.foundation/recovery/abandoned/<id>/` with an audit record. It requires a real
+state, receipts, evidence, transactions, review requests, and reviewer reports
+to `.foundation/recovery/abandoned/<id>/` with an audit record, so a later
+change reusing the id starts with a fresh review budget. It requires a real
 user decision, never touches Git, refuses archived changes, and asks whether to
 keep or revert already-applied files before acting.
 
@@ -791,6 +795,10 @@ bytes until then. Only an edit of the same lines is a `target-edit-conflict`:
 the agent merges it into the sandbox copy, and Land applies the merged file once
 merging the target edit into it changes nothing. Edits made outside the sandbox
 stop Land only on paths in this change's Land projection; others are reported.
+Git-ignored files are no change's content: under each selected repository's own
+ignore rules they are never compared, projected, or reported as target edits or
+unlanded sandbox work. A tracked file stays content even when it matches an
+ignore pattern.
 
 An archived Land whose diff is still uncommitted is undone, on the user's
 decision, with `advance <change> --undo-land --decision-ref <user-decision>`.
@@ -827,7 +835,20 @@ repositories remain unchanged. Re-entering `/land` resumes the same grant and
 skips already verified nodes; it never requires the user to assemble a journal,
 grant, commit, recovery command, or archive command. A node counts as verified
 only while its sandbox projection is unchanged: work committed or edited in a
-repository sandbox after an earlier delivery is delivered again on resume.
+repository sandbox or in the root sandbox after an earlier delivery is delivered
+again on resume. A path that earlier delivery did not write is applied only
+while the target still holds its base content (or already the sandbox's bytes),
+so a target edit made since is never overwritten.
+
+A declared nested repository's pointer (its gitlink) is never root content.
+When the root sandbox moves one (committed or staged), Land stops before any
+target write; the move is never dropped silently. For a repository the change
+selects, this is an agent repair (`ROOT_POINTER_MOVED`): the agent brings the
+commit into that repository's sandbox, restores the root pointer to its base,
+and resumes; `/deliver` then sets the root pointer to the delivered commit. For
+a repository the change does not select, selecting it widens scope, so the user
+gets the `repository-pointer-change` decision: land the pointer through that
+repository, restore the pointer and land the rest, or pause.
 
 Before a multi-repository change is archived, Land reads each writable selected
 repository's target checkout, not its own records: every path the repository
@@ -836,9 +857,18 @@ the sandbox's bytes in the target, the target must be a Git repository of its ow
 (an uninitialized submodule is not), and nothing may sit in the shared sandbox's
 placeholder for a nested repository. Otherwise Land stops with
 `LAND_PROJECTION_MISSING`, naming each repository and path; nothing is archived
-and no sandbox is removed. Archive cleanup likewise keeps any sandbox whose bytes
+and no sandbox is removed. A wrong target binding or placeholder work already
+stops Land before Apply. Archive cleanup likewise keeps any sandbox whose bytes
 the target does not hold, and backs up commits the target cannot reach, as for
 abandon, before it removes a sandbox.
+
+Before its first write, Land runs one preflight: readiness, then every refusal
+Apply and repository delivery can already decide (moved target, target edits
+to sync or reconcile, undeclared deletions, a broken repository binding), and
+the spec-sync violations the current specs and the change delta already decide
+(`SPEC_SYNC_VIOLATION`). The internal `land check` diagnostic runs that same
+preflight without writing or recording anything, so it reports the code and
+route Land would stop on instead of a readiness that Land then refuses.
 
 Land never commits, and never implies permission to commit, push, publish,
 deploy, or open a pull request. Commit and push happen only through `/deliver`
@@ -870,6 +900,27 @@ a new store, or product edits. Deliver questions use the blocked-decision shape
 (options with outcomes, a recommendation, and `pause`); only typed provider
 failures (remote, credentials, push, or pull-request service) wait on the
 repository operator.
+
+The delivery commit subject and branch follow the project-owned `deliver`
+settings in `foundation.json`. `commitSubject` (default `{commitType}: {title}`,
+which yields `feat: <title>` or `fix: <title>`) and `branchPattern` (default
+`change/{changeId}`) accept the placeholders `{changeId}`, `{title}`,
+`{commitType}` (`feat` or `fix`), `{prType}` (the pull-request type, such as
+`bug-fix`), and `{ticket}`. `{ticket}` is the first match of the optional
+`ticketPattern` regular expression (its first capture group when it has one) in
+the change id, then the archived title, why, and summary. For example,
+`"commitSubject": "{commitType}({ticket}): {title}"`, `"branchPattern":
+"feature/{ticket}-{title}"`, and `"ticketPattern": "[A-Z]+-\\d+"`. A pattern that
+uses only `{changeId}` keeps its historical lowercase normalization; with any
+other placeholder the literal text is kept as written, placeholder values are
+slugged (except `{ticket}`, kept as matched), and the branch must pass `git
+check-ref-format`. The subject must be one non-empty line of at most 180
+characters. An unknown placeholder, an invalid pattern, a missing ticket, or an
+invalid result is refused before any workspace, commit, or push exists, as a
+`delivery-policy` wait that names the setting to correct. A review follow-up's
+commit uses the same subject template; it still pushes to the branch of the
+pull request it updates, and a delivery already under way keeps its checkpointed
+branch. Pull-request titles are unchanged.
 
 Deliver reconstructs the projection in a separate Git worktree, leaving the
 user's checkout, HEAD, index, and unrelated edits unchanged. It binds durable

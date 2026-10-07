@@ -4,7 +4,7 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { verifySpecSync } from "./spec-sync-verify.mjs";
+import { predictSpecSync, verifySpecSync } from "./spec-sync-verify.mjs";
 import {
   projectionCounts, targetHeadMovedDecision, undeclaredDeletions
 } from "./apply-recovery.mjs";
@@ -13,13 +13,18 @@ import {
 } from "../core/workspace-surface.mjs";
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 import { compositeRepositorySelection } from "../core/repository-binding.mjs";
-import { createRepositoryDeliverySaga } from "./repository-delivery-saga.mjs";
+import {
+  createRepositoryDeliverySaga, RepositoryDeliveryError
+} from "./repository-delivery-saga.mjs";
 import { deliveryTreeEntries, assertDeliveryEntries } from "./delivery-integrity.mjs";
 import { approvalMatches } from "../core/user-decisions.mjs";
 import { emitSignal } from "../core/signals.mjs";
 import { legacyRepositoryLandTransaction } from "./land-runtime.mjs";
 import { rejectedPaths } from "./sandbox-runtime.mjs";
 import { writeSpecBefore } from "./land-undo.mjs";
+import {
+  ROOT_POINTER_MOVED, repositoryPointerStop, rootPointerMoves, rootPointerRepairMessage
+} from "./land-verification.mjs";
 import {
   landedChangeSyncStop, landedTargetPaths, otherLandedOutput, parseRestoreTargetPaths,
   replayLandedEdit, restorableTargetPaths, targetConflictStop, targetEditCarried,
@@ -213,8 +218,10 @@ export function sandboxDiffNamesOperation(context, id, sandboxPath, state,
 
 // A recorded `--restore-target` returns those target files to the sandbox
 // base inside Land, only while each still holds the exact bytes the
-// restore was recorded against; a later edit is a new question.
-export function restoreAuthorizedTargetPaths(context, state, names) {
+// restore was recorded against; a later edit is a new question. `inspect`
+// (the read-only Land preflight) names the paths Land would restore and
+// writes nothing.
+export function restoreAuthorizedTargetPaths(context, state, names, { inspect = false } = {}) {
   const restore = state.targetRestore;
   if (!restore?.identities) return [];
   const base = context.sandboxBase(state);
@@ -223,6 +230,10 @@ export function restoreAuthorizedTargetPaths(context, state, names) {
     if (!Object.hasOwn(restore.identities, path)) continue;
     const target = join(context.root, path);
     if (context.pathIdentity(target) !== restore.identities[path]) continue;
+    if (inspect) {
+      restored.push(path);
+      continue;
+    }
     const shown = context.gitBuffer(["show", `${base}:${path}`], context.root);
     if (shown.status === 0) context.writeFile(target, shown.stdout);
     else context.removePath(target);
@@ -238,10 +249,11 @@ function targetSnapshot(state) {
 // A conflict made only of regenerable artifacts that were clean at isolation
 // is a test run in the main checkout, not user work. Land returns them to the
 // sandbox base itself, once, instead of handing a restore command back.
-function restoreRegenerableConflicts(context, state, paths) {
+function restoreRegenerableConflicts(context, state, paths, { inspect = false } = {}) {
   if (!paths.length || !context.writeFile || !context.removePath ||
       restorableTargetPaths(paths, targetSnapshot(state)).length !== paths.length ||
       Object.keys(context.landedBy?.(state.id, paths) || {}).length) return false;
+  if (inspect) return true;
   const base = context.sandboxBase(state);
   for (const path of paths) {
     const shown = context.gitBuffer(["show", `${base}:${path}`], context.root);
@@ -272,7 +284,9 @@ function landedReplayExhausted(context, state, landedPaths) {
 // applies. The target is never written here. A path whose recorded merge Land
 // still does not find carried, or whose edit rewrote the same lines, falls
 // through to the target-edit conflict decision.
-function carryTargetEdits(context, id, state, paths, landedBy) {
+// `inspect` reports the same stop without recording the carry; Land itself
+// records it when it reaches the same point.
+function carryTargetEdits(context, id, state, paths, landedBy, { inspect = false } = {}) {
   if (state.workspace?.mode !== "worktree" || !context.blockWithDecision ||
       !context.saveRuntime || state.workspace.applied) return;
   const sandboxPath = state.workspace.path;
@@ -291,13 +305,15 @@ function carryTargetEdits(context, id, state, paths, landedBy) {
   }
   const carried = Object.keys(carry);
   if (!carried.length) return;
-  state.workspace.targetCarry = carry;
-  context.saveRuntime(state);
+  if (!inspect) {
+    state.workspace.targetCarry = carry;
+    context.saveRuntime(state);
+  }
   const stop = targetEditSyncStop({ changeId: id, paths: carried, conflicts });
   context.blockWithDecision(id, stop.code, stop.decision);
 }
 
-function stopForTargetConflict(context, id, state, paths, cause) {
+function stopForTargetConflict(context, id, state, paths, cause, options = {}) {
   const snapshot = targetSnapshot(state);
   // Bytes an earlier change landed are part of the target: the harness first
   // replays the sandbox onto them through its own sync, then proves again.
@@ -308,7 +324,7 @@ function stopForTargetConflict(context, id, state, paths, cause) {
     const stop = landedChangeSyncStop({ changeId: id, landedBy });
     return context.blockWithDecision(id, stop.code, stop.decision);
   }
-  carryTargetEdits(context, id, state, paths, landedBy);
+  carryTargetEdits(context, id, state, paths, landedBy, options);
   const stop = targetConflictStop({ changeId: id, paths, snapshot, cause, landedBy });
   if (stop.decision && context.blockWithDecision)
     return context.blockWithDecision(id, stop.code, stop.decision);
@@ -316,11 +332,15 @@ function stopForTargetConflict(context, id, state, paths, cause) {
   return context.fail(stop.message, 1, stop.details);
 }
 
-export function gitApplyInputsOperation(context, id, sandboxPath, { regenerated = false } = {}) {
+// `inspect` is the read-only Land preflight: every refusal and decision is
+// the one Land raises at this point, but no target path is restored and no
+// carry is recorded. A path Land would restore first counts as restored.
+export function gitApplyInputsOperation(context, id, sandboxPath,
+  { regenerated = false, inspect = false } = {}) {
   const state = context.loadRuntime(id);
   const names = context.sandboxDiffNames(id, sandboxPath, state);
-  restoreAuthorizedTargetPaths(context, state, names);
-  const pending = names.filter((path) =>
+  const restored = new Set(restoreAuthorizedTargetPaths(context, state, names, { inspect }));
+  const pending = names.filter((path) => !(inspect && restored.has(path))).filter((path) =>
     context.pathIdentity(join(context.root, path)) !==
       context.pathIdentity(join(sandboxPath, path)) ||
     context.pathMode(join(context.root, path)) !== context.pathMode(join(sandboxPath, path)));
@@ -356,11 +376,19 @@ export function gitApplyInputsOperation(context, id, sandboxPath, { regenerated 
       const rejected = rejectedPaths(check.stderr);
       if (!rejected.length)
         context.fail(`sandbox diff conflicts with target: ${check.stderr.trim()}`);
-      const conflicts = rejected.filter((path) => !carried(path));
-      if (conflicts.length && !regenerated && restoreRegenerableConflicts(context, state, conflicts))
-        return gitApplyInputsOperation(context, id, sandboxPath, { regenerated: true });
-      if (conflicts.length)
-        stopForTargetConflict(context, id, state, conflicts, "sandbox diff conflicts with target");
+      const conflicts = rejected.filter((path) => !carried(path) &&
+        !(inspect && restored.has(path)));
+      if (conflicts.length && !regenerated &&
+          restoreRegenerableConflicts(context, state, conflicts, { inspect })) {
+        if (!inspect)
+          return gitApplyInputsOperation(context, id, sandboxPath, { regenerated: true });
+        // Land restores these and checks again, once; the rest is checked below.
+        for (const path of conflicts) restored.add(path);
+        regenerated = true;
+      } else if (conflicts.length) {
+        stopForTargetConflict(context, id, state, conflicts,
+          "sandbox diff conflicts with target", { inspect });
+      }
     }
   }
   const base = context.sandboxBase(state);
@@ -370,7 +398,7 @@ export function gitApplyInputsOperation(context, id, sandboxPath, { regenerated 
     return stats.isSymbolicLink()
       ? Buffer.from(context.readlink(path)) : context.readFile(path);
   };
-  const clobbered = pending.filter((path) => {
+  const clobbered = pending.filter((path) => !(inspect && restored.has(path))).filter((path) => {
     const target = workingBlob(join(context.root, path));
     if (target === null) return false;
     const sandboxContent = workingBlob(join(sandboxPath, path));
@@ -378,11 +406,13 @@ export function gitApplyInputsOperation(context, id, sandboxPath, { regenerated 
     const shown = context.gitBuffer(["show", `${base}:${path}`], context.root);
     return (shown.status !== 0 || !target.equals(shown.stdout)) && !carried(path);
   });
-  if (clobbered.length && !regenerated && restoreRegenerableConflicts(context, state, clobbered))
-    return gitApplyInputsOperation(context, id, sandboxPath, { regenerated: true });
+  if (clobbered.length && !regenerated &&
+      restoreRegenerableConflicts(context, state, clobbered, { inspect }))
+    return inspect ? names
+      : gitApplyInputsOperation(context, id, sandboxPath, { regenerated: true });
   if (clobbered.length)
     stopForTargetConflict(context, id, state, clobbered,
-      "apply would overwrite uncommitted target edits");
+      "apply would overwrite uncommitted target edits", { inspect });
   return names;
 }
 
@@ -401,12 +431,12 @@ export function copyApplyCodePaths(context, id, state, sandboxPath) {
   return codePaths;
 }
 
-export function applyCodePaths(context, id, state, sandboxPath) {
+export function applyCodePaths(context, id, state, sandboxPath, options = {}) {
   if (state.workspace.mode === "copy")
     return copyApplyCodePaths(context, id, state, sandboxPath);
   if (state.workspace.mode === "worktree") {
     context.assertTargetHeadUnmoved(id, state);
-    return context.gitApplyInputs(id, sandboxPath);
+    return context.gitApplyInputs(id, sandboxPath, options);
   }
   context.fail("change has no isolated sandbox");
 }
@@ -439,10 +469,10 @@ export function changeArtifactApplyEntry(context, id, sandboxPath) {
   };
 }
 
-export function buildApplyEntriesOperation(context, id, state) {
+export function buildApplyEntriesOperation(context, id, state, options = {}) {
   const sandboxPath = state.workspace.path;
   const entries = [];
-  for (const rel of applyCodePaths(context, id, state, sandboxPath))
+  for (const rel of applyCodePaths(context, id, state, sandboxPath, options))
     entries.push(applyCodeEntry(context, sandboxPath, rel));
   entries.push(changeArtifactApplyEntry(context, id, sandboxPath));
   return entries;
@@ -493,11 +523,19 @@ export function backupApplyEntries(context, transactionRoot, entries) {
   }
 }
 
-export function prepareApplyTransactionOperation(context, id, state, prepared = null) {
+// Every refusal Apply raises before its first write. Land runs it inside the
+// transaction below; the read-only Land preflight (`land check`) runs the same
+// function with `inspect`, so both report the same stop.
+export function planApplyEntriesOperation(context, id, state, prepared = null, options = {}) {
   assertApplySourceUnchanged(context, id, state, prepared);
-  const entries = prepared || context.buildApplyEntries(id, state);
+  const entries = prepared || context.buildApplyEntries(id, state, options);
   assertNoChildApplyEntries(context, id, state, entries);
   context.assertDeletionsAreDeclared(id, state, entries);
+  return entries;
+}
+
+export function prepareApplyTransactionOperation(context, id, state, prepared = null) {
+  const entries = planApplyEntriesOperation(context, id, state, prepared);
   const transactionId = `apply-${context.dateNow()}-${context.pid}`;
   const transactionRoot = context.applyTransactionRoot(id, transactionId);
   context.makeDirectory(transactionRoot, { recursive: true });
@@ -795,7 +833,7 @@ export function createApplyRuntime({
       "`[paths:]` if the change really owns it.");
   }
 
-  const prepareApplyTransaction = prepareApplyTransactionOperation.bind(null, {
+  const prepareContext = {
     root,
     directoryHash,
     changePath,
@@ -815,7 +853,9 @@ export function createApplyRuntime({
     now,
     saveApplyJournal,
     fail
-  });
+  };
+  const prepareApplyTransaction = prepareApplyTransactionOperation.bind(null, prepareContext);
+  const planApplyEntries = planApplyEntriesOperation.bind(null, prepareContext);
 
   const refreshAppliedProjection = refreshAppliedProjectionOperation.bind(null, {
     transactionJournalPath,
@@ -873,6 +913,7 @@ export function createApplyRuntime({
     proofPath,
     now,
     prepareRoot: prepareApplyTransaction,
+    planRoot: (id, state, options) => planApplyEntries(id, state, null, options),
     executeRoot: (id, journal) => {
       beginApplyJournal({
         id, journal, safeRootPath, pathIdentity, pathMode,
@@ -885,6 +926,13 @@ export function createApplyRuntime({
       });
     },
     verifyRoot: verifyAppliedProjection,
+    // The single-repository reapply rule, for the root of a composite change:
+    // the whole projection again, or null when the delivered one is current.
+    reapplyRoot: (id, state, verification) => {
+      const entries = buildReapplyEntries(id, state, verification.journal);
+      return projectionHash(stableHash, entries) === state.workspace.apply.projectionHash
+        ? null : entries;
+    },
     cleanupRoot: cleanupApplyTransaction,
     fail
   });
@@ -894,8 +942,8 @@ export function createApplyRuntime({
     return existsSync(path) ? readFileSync(path, "utf8") : null;
   }
 
-  function captureSpecSyncInputs(id) {
-    const dir = join(changePath(id), "specs");
+  function captureSpecSyncInputs(id, packet = changePath(id)) {
+    const dir = join(packet, "specs");
     if (!existsSync(dir)) return [];
     return readdirSync(dir, { withFileTypes: true })
       .filter((entry) => entry.isDirectory() &&
@@ -933,6 +981,50 @@ export function createApplyRuntime({
         violation.detail}`).join("\n")}\nRepair each listed openspec/specs/<capability>/spec.md so ` +
       "it carries the change delta; Land re-verifies the merge from the retained inputs.",
     1, { owner: "agent", boundary: "spec-sync", code: "SPEC_SYNC_VIOLATION" });
+  }
+
+  // The part of the spec-sync gate the pre-archive spec and the delta already
+  // decide. The delta is read where archive will read it: the sandbox packet
+  // Apply is about to project, or the active packet once it is applied.
+  function assertSpecSyncPreflight(id, state) {
+    const workspace = state.workspace;
+    const packet = ["worktree", "copy"].includes(workspace?.mode) && workspace.path &&
+      !workspace.applied ? join(workspace.path, currentChangeRelativePath(id)) : changePath(id);
+    const violations = captureSpecSyncInputs(id, packet).flatMap(({ capability, delta, before }) =>
+      predictSpecSync({ before, delta }).violations.map((violation) => ({ capability, ...violation })));
+    if (!violations.length) return;
+    fail(`archive would not carry the change delta into openspec/specs:\n${violations
+      .map((violation) => `  ${violation.capability}/${violation.requirement || "-"}: ${
+        violation.detail}`).join("\n")}\nRepair each listed delta in openspec/changes/${id}/specs ` +
+      "against the current openspec/specs/<capability>/spec.md, prove again, and resume with " +
+      `'claude-foundation advance ${id} --through archived'.`,
+    1, { owner: "agent", boundary: "spec-sync", code: "SPEC_SYNC_VIOLATION" });
+  }
+
+  // Land's shared pre-mutation preflight: every refusal Apply, the repository
+  // delivery saga, and the spec-sync gate can already decide before Land
+  // writes anything. `land check` runs it with `inspect` (nothing restored,
+  // recorded, or journaled); Land runs it with recording allowed, so a carry
+  // the automatic sync needs is recorded exactly as Apply would record it.
+  function landPreflight(id, state = loadRuntime(id), { inspect = true } = {}) {
+    if (state.status === "archived" || specSyncPending(id, state)) return;
+    if (["worktree", "copy"].includes(state.workspace?.mode)) {
+      if (compositeRepositorySelection(selectedRepositories(id, state))) {
+        if (!legacyRepositoryLandTransaction(state)) {
+          // The saga's typed error, reported through the command boundary so
+          // `land check` prints a refusal instead of an uncaught exception.
+          try { repositoryDelivery().preflight(id, { inspect }); }
+          catch (error) {
+            if (!(error instanceof RepositoryDeliveryError)) throw error;
+            fail(error.message, 1, { code: error.code, owner: error.owner,
+              boundary: error.boundary, ...(error.decision ? { decision: error.decision } : {}) });
+          }
+        }
+      } else if (!state.workspace.applied) {
+        planApplyEntries(id, state, null, { inspect });
+      }
+    }
+    assertSpecSyncPreflight(id, state);
   }
 
   // The gate can only fire once the change is already recorded archived, so a
@@ -1117,9 +1209,44 @@ export function createApplyRuntime({
     saveRuntime(journal);
   }
 
+  // A declared repository's pointer moved in the root sandbox is excluded from
+  // the root projection; it becomes a decision before any target write instead
+  // of a silent drop.
+  function assertRootPointersUnmoved(id, state) {
+    if (state.workspace?.mode !== "worktree" || !state.workspace.path ||
+        legacyRepositoryLandTransaction(state)) return;
+    const paths = nestedRepositoryPaths(id, state);
+    if (!paths.length) return;
+    const raw = git(["diff", "--cached", "--raw", "-z", "--no-abbrev", "--no-renames",
+      sandboxBase(state), "--", ...paths], state.workspace.path);
+    if (raw.status !== 0)
+      fail(`cannot inspect repository pointers in the root sandbox: ${
+        String(raw.stderr || "").trim()}`);
+    const moves = rootPointerMoves(raw.stdout);
+    if (!moves.length) return;
+    const owners = new Map(selectedRepositories(id, state)
+      .filter((repository) => repository.id !== "root" && repository.relativePath)
+      .map((repository) => [repository.relativePath.replace(/\/+$/, ""), repository]));
+    // Selecting another repository widens scope: only that is the user's call.
+    const unselected = moves.filter((move) => !owners.has(move.path));
+    if (unselected.length) {
+      const stop = repositoryPointerStop({ changeId: id, moves: unselected });
+      blockWithDecision(id, stop.code, stop.decision);
+    }
+    fail(rootPointerRepairMessage({
+      changeId: id, rootSandbox: state.workspace.path,
+      moves: moves.map((move) => {
+        const repository = owners.get(move.path);
+        return { ...move, repositoryId: repository.id,
+          sandboxPath: state.repositories?.[repository.id]?.path || repository.workspacePath };
+      })
+    }), 1, { owner: "agent", boundary: "land-verification", code: ROOT_POINTER_MOVED });
+  }
+
   function applyArchiveWorkspace(id, readiness) {
     if (!["worktree", "copy"].includes(readiness.state.workspace?.mode))
       return readiness;
+    assertRootPointersUnmoved(id, readiness.state);
     measure("land.apply", () => {
       if (compositeRepositorySelection(selectedRepositories(id, readiness.state))) {
         // Legacy repository Land records already name commits applied by the
@@ -1281,7 +1408,7 @@ export function createApplyRuntime({
     // Prepared/applying journals are rolled back safely; only a divergent
     // manual-recovery journal becomes a user work decision.
     recoverPendingApply(id, initial);
-    let readiness = measure("land.check", () => landCheck(id));
+    let readiness = measure("land.check", () => landCheck(id, { preflight: "apply" }));
     if (readiness.archived) return;
     archiveCheckpoint("before-evidence-snapshot", readiness.state);
     snapshotArchiveEvidence(id, readiness);
@@ -1312,6 +1439,7 @@ export function createApplyRuntime({
     applySandbox,
     archiveRecoveryReady,
     recoverArchive,
-    archive
+    archive,
+    landPreflight
   };
 }

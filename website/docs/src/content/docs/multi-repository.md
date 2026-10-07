@@ -235,7 +235,9 @@ child runtime record cannot make Land take the single-repository shortcut.
 | A selected child binding is missing | Harness repairs the binding while preserving valid worktrees; use `sandbox inspect` only for requested diagnosis |
 | A canonical child path belongs to another repository | Keep it untouched, inspect the reported path, then correct the target/path conflict or explicitly abandon the change |
 | Provider cannot see a repository | Add it to provider `repositories`; do not hard-code a local path |
-| Land is interrupted | Invoke `/land <change>` again; it resumes the journal |
+| Land is interrupted | Invoke `/land <change>` again; it resumes the journal and re-applies root or repository sandbox work added after an earlier delivery |
+| Land stops with `ROOT_POINTER_MOVED` | The root sandbox moved the pointer of a selected submodule: the agent brings the commit into that repository's sandbox, restores the root pointer, and resumes |
+| Land stops with `repository-pointer-change` | The root sandbox moved the pointer of an unselected submodule: the user chooses to land it through that repository, restore the pointer and land the rest, or pause |
 
 ## What the user and agent each need to do
 

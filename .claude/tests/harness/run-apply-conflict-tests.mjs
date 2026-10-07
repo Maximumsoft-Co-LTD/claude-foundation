@@ -378,3 +378,57 @@ test("restoring a non-generated target edit requires the user's decision", () =>
   assert.equal(applied.status, 0, applied.stderr);
   assert.equal(readFileSync(join(fixture.root, "lib.txt"), "utf8"), "lib proven\n");
 });
+
+// `land check` used to answer LAND READY from readiness alone while Land then
+// stopped in its own Apply planning. It now runs Land's pre-mutation preflight
+// read-only: the same stop, nothing recorded, nothing written.
+test("land check stops where Land stops and writes nothing", () => {
+  const fixture = project();
+  provenEdit(fixture, "Edit probe", "edit-probe", "app.txt",
+    editedLine(fixture, "app.txt", 18, "proven edit"));
+  const userEdit = editedLine(fixture, "app.txt", 2, "user edit");
+  writeFileSync(join(fixture.root, "app.txt"), userEdit);
+  const runtimePath = join(fixture.root, ".foundation", "runtime", "edit-probe.json");
+  // Every command stamps `updatedAt`; the recorded lifecycle must not change.
+  const recorded = () => {
+    const { updatedAt: _stamp, ...value } = JSON.parse(readFileSync(runtimePath, "utf8"));
+    return value;
+  };
+  const runtimeBefore = recorded();
+
+  const checked = cli(fixture, "land-check", "edit-probe");
+  assert.notEqual(checked.status, 0, "a change Land would stop is not LAND READY");
+  assert.doesNotMatch(checked.stdout, /LAND READY/);
+  assert.match(checked.stdout, /"code": "target-edit-sync"/);
+  assert.match(checked.stdout, /"automaticRecovery": "sync"/);
+  assert.deepEqual(recorded(), runtimeBefore, "land check records nothing");
+  assert.equal(recorded().workspace.targetCarry, undefined);
+  assert.equal(readFileSync(join(fixture.root, "app.txt"), "utf8"), userEdit);
+
+  // Land meets the same stop and takes its automatic route: the carry is
+  // recorded, the edit merged into the sandbox copy, and proof requested again.
+  const sandboxPath = runtimeBefore.workspace.path;
+  const land = cli(fixture, "land-advance", "edit-probe");
+  const envelope = JSON.parse(land.stdout);
+  assert.equal(envelope.changeId, "edit-probe");
+  assert.notEqual(envelope.reached, "archived");
+  const merged = editedLine(fixture, "app.txt", 18, "proven edit");
+  assert.equal(readFileSync(join(sandboxPath, "app.txt"), "utf8"), merged,
+    "Land carried the target edit into the sandbox copy");
+  assert.equal(readFileSync(join(fixture.root, "app.txt"), "utf8"), userEdit,
+    "the user's target edit is kept");
+});
+
+// The first `land advance` run used to print the human LAND READY report from
+// its authority grant ahead of the JSON envelope; later runs printed JSON only.
+test("land advance prints only its JSON envelope on the first run", () => {
+  const fixture = project();
+  provenEdit(fixture, "Edit probe", "edit-probe", "app.txt", "proven\n");
+  const first = cli(fixture, "land-advance", "edit-probe");
+  assert.equal(first.status, 0, first.stderr);
+  assert.doesNotMatch(first.stdout, /LAND READY/);
+  const value = JSON.parse(first.stdout);
+  assert.equal(value.reached, "archived");
+  const again = JSON.parse(cli(fixture, "land-advance", "edit-probe").stdout);
+  assert.equal(again.reached, "archived");
+});

@@ -53,7 +53,9 @@ export function deliveryPolicy(policy = {}) {
     provider: clean(configured.provider) || "auto",
     remote: clean(configured.remote) || "origin",
     defaultBaseBranch: clean(configured.defaultBaseBranch) || null,
-    branchPattern: clean(configured.branchPattern) || "change/{changeId}",
+    branchPattern: clean(configured.branchPattern) || DEFAULT_BRANCH_PATTERN,
+    commitSubject: clean(configured.commitSubject) || DEFAULT_COMMIT_SUBJECT,
+    ticketPattern: clean(configured.ticketPattern) || null,
     missingPresentationEvidence: clean(configured.missingPresentationEvidence) || "draft",
     missingRequiredEvidence: clean(configured.missingRequiredEvidence) || "block",
     updateOwnedPullRequest: configured.updateOwnedPullRequest !== false,
@@ -74,10 +76,112 @@ export function safeBranchComponent(value) {
     .slice(0, 120) || "change";
 }
 
-export function deliveryBranchName(pattern, changeId) {
-  const substituted = clean(pattern || "change/{changeId}")
-    .replaceAll("{changeId}", safeBranchComponent(changeId));
-  return safeBranchComponent(substituted);
+export const DEFAULT_BRANCH_PATTERN = "change/{changeId}";
+export const DEFAULT_COMMIT_SUBJECT = "{commitType}: {title}";
+export const COMMIT_SUBJECT_MAX_LENGTH = 180;
+export const BRANCH_NAME_MAX_LENGTH = 200;
+const NAMING_PLACEHOLDERS = ["changeId", "title", "commitType", "prType", "ticket"];
+const PLACEHOLDER = /\{([^{}]*)\}/g;
+
+// A project naming setting that cannot produce a valid commit subject or
+// branch. Deliver refuses it before any workspace, commit, or push exists.
+function namingInvalid(message) {
+  const error = new Error(`${message}; correct the 'deliver' naming settings in foundation.json and retry Deliver`);
+  error.code = "DELIVERY_NAMING_INVALID";
+  return error;
+}
+
+function templatePlaceholders(template, setting) {
+  const names = [...template.matchAll(PLACEHOLDER)].map((match) => match[1]);
+  const unknown = unique(names.filter((name) => !NAMING_PLACEHOLDERS.includes(name)));
+  if (unknown.length)
+    throw namingInvalid(`deliver.${setting} uses unknown placeholder ${unknown.map((name) => `{${name}}`).join(", ")} ` +
+      `(supported: ${NAMING_PLACEHOLDERS.map((name) => `{${name}}`).join(", ")})`);
+  if (/[{}]/.test(template.replace(PLACEHOLDER, "")))
+    throw namingInvalid(`deliver.${setting} has an unbalanced brace`);
+  return names;
+}
+
+// `{ticket}` is the first match of the project's `deliver.ticketPattern` in
+// the change id, then the archived title, why, and summary (capture group 1
+// when the pattern has one). A template that needs a ticket the change does
+// not carry is refused, never filled with a guess.
+export function deliveryTicket(ticketPattern, sources = []) {
+  if (!ticketPattern) return null;
+  let pattern;
+  try { pattern = new RegExp(ticketPattern); }
+  catch (error) { throw namingInvalid(`deliver.ticketPattern is not a valid regular expression (${error.message})`); }
+  for (const source of sources) {
+    const match = String(source ?? "").match(pattern);
+    const value = clean(match?.[1] ?? match?.[0]);
+    if (value) return value;
+  }
+  return null;
+}
+
+// The values naming templates may reference, all derived from the
+// checkpointed narrative so a resumed or follow-up delivery names its commit
+// and branch the same way.
+export function deliveryNamingValues({ changeId, narrative = {}, ticketPattern = null }) {
+  const title = clean(narrative.title) || clean(changeId);
+  return {
+    changeId: clean(changeId),
+    title,
+    commitType: title.toLowerCase().startsWith("fix") ? "fix" : "feat",
+    prType: clean(narrative.type) || "feature-backend",
+    ticket: deliveryTicket(ticketPattern, [changeId, narrative.title, narrative.why, narrative.summary]),
+    ticketConfigured: Boolean(ticketPattern)
+  };
+}
+
+function fillTemplate(template, setting, values, transform = (value) => value) {
+  const names = templatePlaceholders(template, setting);
+  if (names.includes("ticket") && !values.ticket)
+    throw namingInvalid(values.ticketConfigured
+      ? `deliver.${setting} uses {ticket} but no match for deliver.ticketPattern was found in the change id, title, or proposal`
+      : `deliver.${setting} uses {ticket} but deliver.ticketPattern is not configured`);
+  return template.replace(PLACEHOLDER, (_, name) => transform(clean(values[name]), name));
+}
+
+// The delivery commit subject. The default template reproduces the
+// historical `feat: <title>` / `fix: <title>` subject byte for byte.
+export function deliveryCommitSubject(template, values) {
+  if (!clean(template) || clean(template) === DEFAULT_COMMIT_SUBJECT)
+    return `${values.commitType}: ${values.title}`.slice(0, COMMIT_SUBJECT_MAX_LENGTH);
+  const subject = clean(fillTemplate(clean(template), "commitSubject", values));
+  if (!subject) throw namingInvalid("deliver.commitSubject produces an empty commit subject");
+  if (/[\r\n]/.test(subject)) throw namingInvalid("deliver.commitSubject must produce a single-line subject");
+  if (/[\u0000-\u001f\u007f]/.test(subject))
+    throw namingInvalid("deliver.commitSubject produces a control character");
+  if (subject.length > COMMIT_SUBJECT_MAX_LENGTH)
+    throw namingInvalid(`deliver.commitSubject produces a ${subject.length}-character subject (limit ${COMMIT_SUBJECT_MAX_LENGTH})`);
+  return subject;
+}
+
+// The delivery branch. A pattern using only `{changeId}` keeps its historical
+// normalization unchanged. With any other placeholder, values are slugged
+// (`{ticket}` is kept as matched) and the project's literal text is kept as
+// written; the result is checked here and with `git check-ref-format`.
+export function deliveryBranchName(pattern, changeId, values = {}) {
+  const template = clean(pattern) || DEFAULT_BRANCH_PATTERN;
+  if (templatePlaceholders(template, "branchPattern").every((name) => name === "changeId"))
+    return safeBranchComponent(template.replaceAll("{changeId}", safeBranchComponent(changeId)));
+  const slug = (value) => safeBranchComponent(value).replaceAll("/", "-").slice(0, 60).replace(/[-.]+$/, "");
+  const branch = fillTemplate(template, "branchPattern", { ...values, changeId },
+    (value, name) => name === "ticket" ? value
+      : name === "changeId" ? safeBranchComponent(value).replaceAll("/", "-") : slug(value));
+  const problem = branchNameProblem(branch);
+  if (problem) throw namingInvalid(`deliver.branchPattern produces an invalid branch '${branch}': ${problem}`);
+  return branch;
+}
+
+export function branchNameProblem(branch) {
+  if (!branch) return "it is empty";
+  if (branch.length > BRANCH_NAME_MAX_LENGTH) return `it is longer than ${BRANCH_NAME_MAX_LENGTH} characters`;
+  if (/[\s~^:?*[\\\u0000-\u001f\u007f]/.test(branch) || branch.includes("@{") || branch === "@" ||
+      branch.includes("..") || branch.includes("//") || /^[-/.]|[/.]$|\.lock(?:\/|$)|\/\./.test(branch))
+    return "it is not a valid Git branch name";
+  return null;
 }
 
 export function parseGitHubRemote(value) {
@@ -725,8 +829,25 @@ export function createPullRequestRuntime({
     return staged;
   }
 
-  function createCommit(workspace, title) {
-    const message = `${title.toLowerCase().startsWith("fix") ? "fix" : "feat"}: ${title}`.slice(0, 180);
+  // Commit subject and branch from the project's `deliver` naming templates.
+  // Both are settled before any workspace exists, so an invalid setting is
+  // refused without a commit, push, or pull request.
+  function namingValues(policy, id, narrative) {
+    return deliveryNamingValues({ changeId: id, narrative, ticketPattern: policy.ticketPattern });
+  }
+
+  function commitSubject(policy, id, narrative) {
+    return deliveryCommitSubject(policy.commitSubject, namingValues(policy, id, narrative));
+  }
+
+  function deliveryBranch(policy, id, narrative, repositoryRoot = root) {
+    const branch = deliveryBranchName(policy.branchPattern, id, namingValues(policy, id, narrative));
+    if (git(["check-ref-format", `refs/heads/${branch}`], repositoryRoot).status !== 0)
+      throw namingInvalid(`deliver.branchPattern produces '${branch}', which git check-ref-format rejects`);
+    return branch;
+  }
+
+  function createCommit(workspace, message) {
     runChecked(run, "git", ["commit", "-m", message],
       { cwd: workspace, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }, "cannot create delivery commit");
     return gitOutput(git, ["rev-parse", "HEAD"], workspace, "cannot resolve delivery commit");
@@ -927,7 +1048,7 @@ export function createPullRequestRuntime({
   }
 
   // Verifies a checkpointed commit (returning null) or recovers or creates it.
-  function ensureCommit(workspace, projection, title, existing, gitlinks, drift) {
+  function ensureCommit(workspace, projection, subject, existing, gitlinks, drift) {
     if (existing) {
       if (gitOutput(git, ["rev-parse", "HEAD"], workspace,
         "cannot verify delivery commit") !== existing) throw drift();
@@ -936,7 +1057,7 @@ export function createPullRequestRuntime({
     const recovered = recoverCommit(workspace, projection, gitlinks);
     if (recovered) return recovered;
     const stagedPaths = stageProjection(workspace, projection, gitlinks);
-    return { commit: createCommit(workspace, title), stagedPaths };
+    return { commit: createCommit(workspace, subject), stagedPaths };
   }
 
   // Never forced: a branch that moved after its head was fetched is refused
@@ -1011,22 +1132,30 @@ export function createPullRequestRuntime({
     // Validate every selected projection and destination before any repository
     // publishes. A later invalid root must not leave earlier child PRs behind.
     const prepared = new Map();
+    const repositoryPaths = (repository, projection) => projection.entries.map((entry) =>
+      repository.id === "root" ? entry.path : `${repository.id}:${entry.path}`);
     for (const repository of execution) {
       const node = delivery.repositories[repository.id] || { status: "new" };
       const projection = boundProjection(repository, lifecycle, node.projection);
       const noChange = repository.id !== "root" && projection.roots.length === 0;
       const provider = noChange ? null : providerContext(policy, repository.path);
-      const branch = node.branch || deliveryBranchName(policy.branchPattern, id);
+      // The same narrative presentation() settles below, so naming is
+      // validated for every repository before any of them publishes.
+      const naming = noChange ? null : node.narrative || pullRequestNarrative({
+        changeId: id, state: lifecycle, ...sources, proof, paths: repositoryPaths(repository, projection)
+      });
+      const branch = node.branch || (noChange ? null : deliveryBranch(policy, id, naming, repository.path));
+      const subject = noChange || node.commit ? null : commitSubject(policy, id, naming);
       if (provider) {
         assertProviderBinding(node.provider, provider);
         assertDeliveryBranch(branch, provider);
       }
-      prepared.set(repository.id, { projection, provider, branch });
+      prepared.set(repository.id, { projection, provider, branch, subject });
     }
 
     for (const repository of execution) {
       let node = delivery.repositories[repository.id] || { status: "new" };
-      const { projection, provider, branch } = prepared.get(repository.id);
+      const { projection, provider, branch, subject } = prepared.get(repository.id);
       if (repository.id !== "root" && projection.roots.length === 0) {
         delivery.repositories[repository.id] = {
           ...node, status: "no-change", projection,
@@ -1037,8 +1166,7 @@ export function createPullRequestRuntime({
       }
       const { narrative, draft, body } = presentation({
         id, lifecycle, sources, proof, policy, narrative: node.narrative,
-        paths: projection.entries.map((entry) => repository.id === "root"
-          ? entry.path : `${repository.id}:${entry.path}`)
+        paths: repositoryPaths(repository, projection)
       });
       const workspace = node.workspace || repositoryWorkspacePath(id, repository.id);
       const gitlinks = repository.id === "root" ? repositories
@@ -1055,7 +1183,7 @@ export function createPullRequestRuntime({
       delivery.repositories[repository.id] = node;
       checkpoint(delivery, "repositories-delivering");
 
-      const made = ensureCommit(workspace, projection, narrative.title, node.commit, gitlinks,
+      const made = ensureCommit(workspace, projection, subject, node.commit, gitlinks,
         () => new Error(`delivery workspace commit changed for repository '${repository.id}'`));
       if (made) {
         if (!made.recovered) node.stagedPaths = made.stagedPaths;
@@ -1179,7 +1307,9 @@ export function createPullRequestRuntime({
         id, lifecycle, sources, proof, policy, narrative: delivery.narrative,
         paths: projection.entries.map((entry) => entry.path)
       });
-      const branch = delivery.branch || deliveryBranchName(policy.branchPattern, id);
+      const branch = delivery.branch || deliveryBranch(policy, id, narrative);
+      // A follow-up's commit uses the same subject template as any delivery.
+      const subject = delivery.commit ? null : commitSubject(policy, id, narrative);
       assertDeliveryBranch(branch, provider);
       if (!delivery.provider) delivery = checkpoint(delivery, delivery.status, { provider });
       if (delivery.followUp === undefined)
@@ -1205,7 +1335,7 @@ export function createPullRequestRuntime({
       // Tree and history checks compare against the commit the delivery
       // builds on: the Land base, or the followed pull request's head.
       const parentProjection = followUp ? { ...projection, baseHead: followUp.parent } : projection;
-      const made = ensureCommit(workspace, parentProjection, narrative.title, delivery.commit, [],
+      const made = ensureCommit(workspace, parentProjection, subject, delivery.commit, [],
         () => workspaceDrift("delivery workspace commit changed after checkpoint"));
       if (made) delivery = checkpoint(delivery, "commit-created", made);
       const { commit } = delivery;
@@ -1307,6 +1437,11 @@ export function createPullRequestRuntime({
       if (error.code === "DELIVERY_CONVERSION_CHANGED")
         return deliveryEnvelope(id, "WAIT", {
           completed: false, boundary: "git-conversion", owner: "repository-operator",
+          reason: error.message, resumeCommand
+        });
+      if (error.code === "DELIVERY_NAMING_INVALID")
+        return deliveryEnvelope(id, "WAIT", {
+          completed: false, boundary: "delivery-policy", owner: "repository-operator",
           reason: error.message, resumeCommand
         });
       if (error.code === "DELIVERY_DEFAULT_BRANCH_FORBIDDEN")

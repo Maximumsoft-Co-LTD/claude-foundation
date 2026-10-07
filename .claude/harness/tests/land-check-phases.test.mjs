@@ -202,6 +202,7 @@ test("land check phases preserve every refusal and ready route", () => {
       deliveryObservation: () => options.deliveryObservation || {
         observed: false, paths: [], reason: "target-does-not-match-change-projection"
       },
+      landPreflight: options.landPreflight || null,
       fail: (message) => { throw new Error(message); }
     });
     return { id, runtime, state, proof, written, decisions };
@@ -256,6 +257,34 @@ test("land check phases preserve every refusal and ready route", () => {
       rootHead: "base"
     });
     assert.equal(stableWorktree.runtime.landCheck(stableWorktree.id).archived, false);
+
+    // `land check` and Land run the one shared pre-mutation preflight: read-only
+    // for the check, recording for Land, and only after readiness passed. A
+    // preflight stop is reported instead of LAND READY.
+    const preflightCalls = [];
+    const preflighted = make({
+      landPreflight: (id, _state, options) => preflightCalls.push([id, options])
+    });
+    preflighted.runtime.landCheck(preflighted.id);
+    assert.deepEqual(preflightCalls, [], "internal readiness callers keep the readiness-only check");
+    preflighted.runtime.landCheck(preflighted.id, { preflight: "inspect" });
+    preflighted.runtime.landCheck(preflighted.id, { preflight: "apply" });
+    assert.deepEqual(preflightCalls, [
+      [preflighted.id, { inspect: true }], [preflighted.id, { inspect: false }]
+    ]);
+    const readyBefore = output.length;
+    const refused = make({
+      landPreflight: () => { throw new Error("decision:target-edit-sync"); }
+    });
+    assert.throws(() => refused.runtime.landCheck(refused.id, { preflight: "inspect" }),
+      /decision:target-edit-sync/);
+    assert.equal(output.slice(readyBefore).some((line) => line.startsWith("LAND READY")), false);
+    const notReached = make({
+      state: { workspace: { recovery: { requiresSync: true } } },
+      landPreflight: assert.fail
+    });
+    assert.throws(() => notReached.runtime.landCheck(notReached.id, { preflight: "inspect" }),
+      /decision:recovery-sync-required/);
 
     const writeDependency = make({ selected: [{ id: "write", mode: "write" }] });
     assert.equal(writeDependency.runtime.landCheck(writeDependency.id).archived, false);

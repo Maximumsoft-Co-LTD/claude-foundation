@@ -249,8 +249,41 @@ export function priorChangeResidue(root, id) {
     join(root, ".foundation", "runtime", `${id}.json`),
     join(root, ".foundation", "receipts", id),
     join(root, ".foundation", "evidence", id),
-    join(root, ".foundation", "handoffs", id)
+    join(root, ".foundation", "handoffs", id),
+    // Review requests carry an exhausted budget across a reused id. Without an
+    // abandon record they may belong to a live change, so they block reuse.
+    join(root, ".foundation", "authority", id),
+    join(root, ".foundation", "reviews", id)
   ].filter((path) => existsSync(path));
+}
+
+// An abandon before review requests were quarantined left `authority/<id>` and
+// `reviews/<id>` behind. That is harness bookkeeping, not a live change, when
+// the id's abandon record exists: finish the quarantine into that record so the
+// id is reusable with a fresh review budget. Any other residue is left alone.
+export function settleAbandonedReviewResidue(root, id, now) {
+  const leaked = {
+    authority: join(root, ".foundation", "authority", id),
+    reviews: join(root, ".foundation", "reviews", id)
+  };
+  const residue = priorChangeResidue(root, id);
+  const leakedPaths = Object.values(leaked);
+  if (!residue.length || residue.some((path) => !leakedPaths.includes(path))) return [];
+  const record = join(root, ".foundation", "recovery", "abandoned", id);
+  const recorded = existsSync(record) && readdirSync(record).some((name) =>
+    name === "abandon.json" || name.startsWith("abandon.json.previous-"));
+  if (!recorded) return [];
+  const moved = [];
+  for (const [name, source] of Object.entries(leaked)) {
+    if (!existsSync(source)) continue;
+    const destination = join(record, name);
+    if (existsSync(destination))
+      renameSync(destination, `${destination}.previous-${
+        String(now()).replace(/[^0-9A-Za-z]/g, "-")}`);
+    renameSync(source, destination);
+    moved.push(name);
+  }
+  return moved;
 }
 
 export function materializeChangeTemplates({
@@ -819,6 +852,7 @@ export function createChangeLifecycle({
 
   function assertChangeAvailable(id) {
     if (existsSync(changePath(id))) fail(`change already exists: ${id}`);
+    settleAbandonedReviewResidue(root, id, now);
     const residue = priorChangeResidue(root, id);
     if (residue.length)
       fail(`change id '${id}' was used before and its recorded history remains ` +

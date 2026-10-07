@@ -4,12 +4,16 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
 import { createAbandonRuntime } from "../runtime/workflow/abandon-runtime.mjs";
+import { createReviewAttemptStore } from "../runtime/evidence/review-attempt-store.mjs";
+import { createAuthorityStore } from "../runtime/workflow/authority.mjs";
+import { pendingAuthorityRequest } from "../runtime/workflow/authority-runtime.mjs";
 
 const root = mkdtempSync(join(tmpdir(), "foundation-abandon-runtime-"));
 const paths = Object.fromEntries([
   "recovery", "logs", "changes", "runtime", "receipts", "evidenceVault",
-  "transactions", "plans", "handoffs", "snapshots"
+  "transactions", "plans", "handoffs", "snapshots", "authority", "reviews"
 ].map((name) => [name, join(root, name)]));
 let states = {};
 let journals = {};
@@ -186,6 +190,74 @@ try {
   const failedRecord = JSON.parse(readFileSync(
     join(runtime.recoveryRoot(failedRollbackId), "abandon.json"), "utf8"));
   assert.deepEqual(failedRecord.reverted, []);
+
+  // Regression: review state an abandoned change exhausted must not leak into
+  // a later change that reuses the id (or the same content, since authority
+  // requests are matched by workspace hash).
+  const reusedId = "reused";
+  const readDisk = (path, fallback = null) => {
+    try { return JSON.parse(readFileSync(path, "utf8")); }
+    catch { return fallback; }
+  };
+  const stableHash = (value) =>
+    `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
+  const reviewStore = createReviewAttemptStore({
+    receiptsRoot: paths.receipts, evidenceVault: paths.evidenceVault,
+    readJson: readDisk, writeJson,
+    loadRuntime: (id) => ({ id, ...readDisk(join(paths.runtime, `${id}.json`), {}) }),
+    saveRuntime: (state) => writeJson(join(paths.runtime, `${state.id}.json`), state),
+    stableHash, reviewReceiptBinding: () => null,
+    now: () => "2026-08-26T00:00:00.000Z",
+    blockWithDecision: (id, code) => { throw new Error(code); },
+    fail: (message) => { throw new Error(message); }
+  });
+  const authorityStore = createAuthorityStore({
+    root: paths.authority, protocolVersion: "1", readJson: readDisk, writeJson,
+    now: () => "2026-08-26T00:00:00.000Z"
+  });
+  const reviewSelection = {
+    type: "review", provider: "ai-review", workspaceHash: "sha256:same-content"
+  };
+  const exhaustReview = (id) => {
+    for (let round = 0; round < 2; round += 1)
+      reviewStore.reserveReviewAttempt(id, "ai", {
+        workspaceHash: reviewSelection.workspaceHash, status: "fail", reviewBinding: null
+      });
+    authorityStore.writeRequest(id, {
+      version: 1, requestId: "review-exhausted", changeId: id, ...reviewSelection,
+      status: "infrastructure-exhausted", requestedAt: "2026-08-25T00:00:00.000Z",
+      fallbackAttempts: [{ reviewer: "codex", reportReference: `.foundation/reviews/${id}/r.json` }]
+    });
+    mkdirSync(join(paths.reviews, id), { recursive: true });
+    writeFileSync(join(paths.reviews, id, "r.json"), "{\"status\":\"error\"}\n");
+  };
+  seed(reusedId, {});
+  exhaustReview(reusedId);
+  assert.throws(() => reviewStore.assertReviewDispatchAllowed(reusedId, "ai"),
+    /REVIEW_ROUTE_COMPLETE/);
+  assert.ok(pendingAuthorityRequest(authorityStore.list(reusedId), reviewSelection));
+  runtime.abandonChange(reusedId, { reason: "retire", "decision-ref": "host://reused" });
+  // The abandoned record keeps the review requests and reviewer reports.
+  const reusedRecovery = runtime.recoveryRoot(reusedId);
+  assert.equal(existsSync(join(reusedRecovery, "authority", "review-exhausted.json")), true);
+  assert.equal(existsSync(join(reusedRecovery, "reviews", "r.json")), true);
+  assert.equal(existsSync(join(paths.authority, reusedId)), false);
+  assert.equal(existsSync(join(paths.reviews, reusedId)), false);
+  const recordedQuarantine = JSON.parse(readFileSync(
+    join(reusedRecovery, "abandon.json"), "utf8")).quarantined;
+  assert.ok(recordedQuarantine.includes("authority") && recordedQuarantine.includes("reviews"));
+  // A new change with the same id and the same content starts fresh.
+  seed(reusedId, {});
+  assert.equal(reviewStore.deliveredAiAttempts(reusedId).length, 0);
+  assert.doesNotThrow(() => reviewStore.assertReviewDispatchAllowed(reusedId, "ai"));
+  assert.deepEqual(authorityStore.list(reusedId), []);
+  assert.equal(pendingAuthorityRequest(authorityStore.list(reusedId), reviewSelection), null);
+  // Abandoning the reused id again sets the first record aside, never deletes it.
+  exhaustReview(reusedId);
+  runtime.abandonChange(reusedId, { reason: "retire again", "decision-ref": "host://reused-2" });
+  assert.equal(existsSync(join(reusedRecovery, "authority", "review-exhausted.json")), true);
+  assert.equal(existsSync(join(reusedRecovery,
+    "authority.previous-2026-08-26T00-00-00-000Z", "review-exhausted.json")), true);
 
   assert.equal(leaseCleanups.includes(simpleId), true);
   assert.equal(writes.some(([path]) => path.endsWith("abandon.json")), true);

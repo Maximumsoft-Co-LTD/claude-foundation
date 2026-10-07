@@ -64,7 +64,7 @@ handed-off failed install inside the workspace, never linking or copying the
 checkout's `node_modules`. Fix an unfinished task's wrong verify with `change
 amend <change> --task <task> --verify <command>`. Run returned long commands
 through `claude-foundation exec`, which starts Build children in the canonical
-workspace; time one only when its action requests observed execution. Prefer
+workspace (`--repo <id>` for a repository task's sandbox); time one only when its action requests observed execution. Prefer
 structured Edit/Write tools for product changes.
 
 ## Test and evidence

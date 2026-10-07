@@ -54,7 +54,9 @@ frozen-lockfile ของ pnpm, yarn, bun) ตั้ง `sandbox.installDependen
 Phase hook และ `claude-foundation exec` ใช้ containment policy เดียวกัน ทั้งคู่
 ปฏิเสธ absolute operand ที่อยู่นอก workspace, การเปลี่ยน directory ออกภายหลัง และ
 การเขียนผ่าน symlink ออกนอก workspace ส่วน `exec` derive phase จาก runtime state
-และเริ่ม child process ของ Build ใน canonical workspace นี่ยังเป็น cooperative
+และเริ่ม child process ของ Build ใน canonical workspace สำหรับ change แบบหลาย
+repository ให้ใช้ `exec <change> --repo <id>` (หรือ `--task <id>`) เพื่อเริ่มใน
+sandbox ของ repository นั้น นี่ยังเป็น cooperative
 containment ดังนั้น host ต้องรับผิดชอบ process isolation สำหรับผลทางอ้อม
 
 Parallel mode คืนเฉพาะ task อิสระพร้อม lease instruction Host ต้องเริ่ม worker ที่
