@@ -1197,7 +1197,15 @@ allowed delivered AI waves, another open review is refused. A final in-contract
 blocker must name affected claims and declared critical cases; current passing
 provider evidence may then close those IDs deterministically without a third
 AI. A hash chain binds attempts, scope, findings, closure, and receipts.
-Deleting or renaming state cannot reset the limit; corrupt history fails closed.
+Deleting or renaming state cannot reset the limit. A corrupt attempt chain is
+harness bookkeeping, not a user decision: the harness moves it aside as
+`review-attempts.corrupt-<stamp>` (never deleted, with a recovery manifest),
+rebuilds it, and reports a `review-history-recovered` signal. The rebuild is
+fail-closed: the attempt count never falls below what the runtime history, any
+record or file name, or a legacy receipt evidences; a verdict is reused only
+when its whole chain verifies and covers every evidenced attempt; otherwise
+the unverifiable attempts count as delivered inconclusive AI waves, which
+consumes the budget through the ordinary review-exhausted route.
 
 Human acceptance is separate from review. Every new standard change explicitly
 records whether subjective acceptance is required; `undecided` blocks
@@ -1219,7 +1227,7 @@ was delivered, not that deployment, activation, or production verification ran.
 ## Recovery and user decisions
 
 Some guards end a run rather than returning another repair action: exhausted AI
-review waves, corrupt review history, a moved control repository during
+review waves, a moved control repository during
 multi-repository Land, reset staged submodule pointers, or an apply rollback
 that could not complete.
 

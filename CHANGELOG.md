@@ -241,6 +241,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A corrupt review attempt chain no longer stops with a
+  `review-history-corrupt` user decision. The harness moves the chain aside as
+  `review-attempts.corrupt-<stamp>`, rebuilds it, and reports a
+  `review-history-recovered` signal. The rebuild never lowers the evidenced
+  attempt count, reuses a verdict only when its whole chain verifies, and
+  otherwise counts unverifiable attempts as spent AI waves, so the change
+  continues through the ordinary review-exhausted route.
+
 - Land reads each selected repository's target checkout before archiving. A
   repository whose target lacks the proven sandbox bytes, has work stranded in
   a shared-sandbox submodule placeholder, or is an uninitialized submodule

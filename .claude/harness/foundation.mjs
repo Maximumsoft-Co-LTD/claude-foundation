@@ -452,7 +452,6 @@ const {
   stableHash,
   reviewReceiptBinding,
   now,
-  blockWithDecision,
   fail: die
 });
 const hostAttestation = createHostAttestationRuntime({

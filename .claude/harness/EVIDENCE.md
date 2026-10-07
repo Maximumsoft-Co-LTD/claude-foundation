@@ -506,7 +506,12 @@ unsatisfiable repair. A review that `advance` runs beside the providers binds
 its receipt to that pass's explicit proof run and snapshot, and its failure
 leaves an open request without marking the operation blocked. A change-level hash chain binds
 dispatch, completion, scope, findings, closure evidence, and receipt payload.
-Corrupt history fails closed. Legacy review receipts remain readable but cannot
+Corrupt history is quarantined (`review-attempts.corrupt-<stamp>`, never
+deleted) and rebuilt by the harness without a user decision, fail-closed: the
+rebuilt count is never below the evidenced attempts, only a chain that
+verifies end to end and covers every evidenced attempt keeps its verdicts, and
+unverifiable attempts become inconclusive delivered AI waves that consume the
+review budget. Legacy review receipts remain readable but cannot
 satisfy protocol v3.
 
 External operations use `handoffs.yaml`, not evidence receipts or unchecked

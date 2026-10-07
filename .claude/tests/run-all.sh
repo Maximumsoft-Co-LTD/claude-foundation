@@ -95,6 +95,7 @@ reviewer config|node --test "$ROOT/.claude/harness/tests/reviewer-config.test.mj
 claude review operation|node --test "$ROOT/.claude/harness/tests/claude-review-operation.test.mjs"
 review closure helpers|node --test "$ROOT/.claude/harness/tests/review-closure-helpers.test.mjs" "$ROOT/.claude/harness/tests/review-scenario-checklist.test.mjs" "$ROOT/.claude/harness/tests/review-scenario-escalation.test.mjs"
 review dispatch helpers|node --test "$ROOT/.claude/harness/tests/review-dispatch-helpers.test.mjs"
+review history recovery|node --test "$ROOT/.claude/harness/tests/review-history-recovery.test.mjs"
 agent repository conflicts|node --test "$ROOT/.claude/harness/tests/agent-repository-conflicts.test.mjs"
 lease acquisition helpers|node --test "$ROOT/.claude/harness/tests/lease-acquisition-helpers.test.mjs"
 required providers|node --test "$ROOT/.claude/harness/tests/required-providers.test.mjs"

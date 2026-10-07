@@ -30,6 +30,7 @@ const REVIEW = [
   "risk-tiered review contract",
   "configured reviewer adapters",
   "review guard reconciliation",
+  "review history recovery",
   "bounded review repair closure"
 ];
 const LAND = [
