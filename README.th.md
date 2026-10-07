@@ -792,8 +792,8 @@ Agent รัน setup และ recovery ที่ทำได้เอง ผ�
 โดยไม่ต้องประกอบคำสั่ง harness
 
 สำหรับ operator ใช้ `claude-foundation help` ดูคำสั่งหลัก,
-`help --all` ดู compatibility primitive และ `describe <command>`
-ดูคำสั่งหนึ่งรายการ CLI หาโปรเจกต์จาก current directory หรือ `--project <path>`
+`help --all` ดูคำสั่งสำหรับ operator และ host และ `describe <command>`
+ดูคำสั่งหนึ่งรายการ รวมถึงคำสั่ง compatibility ที่ซ่อนไว้เพราะ `advance` ทำแทนแล้ว CLI หาโปรเจกต์จาก current directory หรือ `--project <path>`
 
 | อาการ | ขั้นถัดไป |
 |---|---|

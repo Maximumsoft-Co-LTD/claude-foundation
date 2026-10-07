@@ -304,7 +304,7 @@ export function controlHeadMovedStageDecision(state, currentHead, id = state.id)
     kind: "control-head-moved",
     summary: "The control repository moved to a different commit after this change's sandbox was created, so staging submodule pointers now could bind them to a base nobody proved.",
     options: [
-      { id: "sync", outcome: `Replay every moved repository sandbox onto the current control commit and re-prove it: 'claude-foundation sandbox sync ${id}'.` },
+      { id: "sync", outcome: `Replay every moved repository sandbox onto the current control commit and re-prove it: 'claude-foundation advance ${id} --through build'.` },
       { id: "inspect", outcome: "Compare the recorded base with the current control repository history before choosing." },
       { id: "pause", outcome: "Stage nothing and leave both repositories as they are." }
     ],
@@ -589,7 +589,7 @@ export function createLandRuntime({
       const targetHead = gitHead(repository.path);
       if (targetHead !== runtime.baseHead)
         fail(`read-only dependency '${repository.id}' moved after sandbox creation (${
-          String(runtime.baseHead || "").slice(0, 8)} -> ${String(targetHead || "").slice(0, 8)}); run sandbox sync and prove again`);
+          String(runtime.baseHead || "").slice(0, 8)} -> ${String(targetHead || "").slice(0, 8)}); resume with 'claude-foundation advance ${id} --through archived'`);
     }
   }
 
@@ -921,7 +921,7 @@ export function createLandRuntime({
     const path = join(transactions, id, "land-preparation.json");
     const prepared = existsSync(path) ? readJson(path, {}) : null;
     if (!landPreparationMatches(prepared, current))
-      fail(`Land preparation changed before mutation (${current.incomplete.join(", ") || "identity drift"}); re-run land check after resolving it`);
+      fail(`Land preparation changed before mutation (${current.incomplete.join(", ") || "identity drift"}); resolve it, then resume with 'claude-foundation advance ${id} --through archived'`);
     return current;
   }
 

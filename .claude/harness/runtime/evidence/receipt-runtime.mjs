@@ -550,10 +550,10 @@ export function createReceiptRuntime({
     if (harnessExecuted) return;
     if (typeof flags.adapter === "string" && EXECUTING_ADAPTERS.has(flags.adapter))
       die(`--adapter ${flags.adapter} names an adapter the harness executes; ` +
-        "a hand-recorded receipt cannot claim it. Run 'proof run <change>' instead");
+        "a hand-recorded receipt cannot claim it. Run 'claude-foundation advance <change> --through proven' instead");
     if (status === "pass" && EXECUTING_ADAPTERS.has(String(configured?.adapter || "")))
       die(`provider '${provider}' is configured for adapter '${configured.adapter}'; ` +
-        "a passing receipt for it must come from an execution — run 'proof run <change>'");
+        "a passing receipt for it must come from an execution — run 'claude-foundation advance <change> --through proven'");
   }
 
   function receiptTarget(id, provider, status) {

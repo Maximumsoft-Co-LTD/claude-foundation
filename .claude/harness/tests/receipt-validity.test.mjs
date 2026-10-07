@@ -365,7 +365,7 @@ try {
   assert.match(validityRecovery("fail", id, "test"), /executed and failed/);
   assert.match(validityRecovery("review-version-stale", id, "review"), /current protocol/);
   assert.equal(validityRecovery("unknown", id, "test"),
-    `re-run: claude-foundation proof run ${id}`);
+    `re-run: claude-foundation advance ${id} --through proven`);
   console.log("receipt validity tests: PASS");
 } finally {
   rmSync(root, { recursive: true, force: true });

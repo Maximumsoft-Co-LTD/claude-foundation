@@ -645,7 +645,7 @@ export function createPacketRuntime({
     if (flags.phase === "build") {
       const state = loadRuntime(id);
       if (!["worktree", "copy"].includes(state.workspace?.mode))
-        die(`build packet requires an isolated workspace; run claude-foundation sandbox create ${id}`);
+        die(`build packet requires an isolated workspace; run claude-foundation advance ${id} --through build`);
     }
   }
 

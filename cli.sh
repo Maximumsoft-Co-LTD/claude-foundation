@@ -71,7 +71,7 @@ find_project_root() {
 }
 
 run_runtime() {
-  local access="$1"; shift
+  local access="$1" phase="$2"; shift 2
   local root runtime actual_api telemetry
   root="$(find_project_root)"
   runtime="$root/.claude/harness/foundation.mjs"
@@ -85,23 +85,10 @@ run_runtime() {
     printf "claude-foundation: warning: project runtime API '%s' differs from CLI API '%s'\n" \
       "${actual_api:-unknown}" "$EXPECTED_RUNTIME_API" >&2
   fi
-  local phase=""
-  case "${1:-}" in
-    investigate) phase="investigate" ;;
-    new|start|resolve|amend|revise|validate|audit-change|abandon|waive|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade|quality-discover|quality-init|quality-doctor) phase="change" ;;
-    sandbox|agent-plan|agent-dispatch|agent-acquire|agent-release) phase="build" ;;
-    proof-plan|proof-readiness|proof-advance|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-dispatch|authority-run|authority-abort|authority-status|authority-record|authority-reset-infra|authority-reset-base-move|quality-run|quality-report|quality-baseline|quality-debt) phase="prove" ;;
-    handoff-list|handoff-status|handoff-packet|handoff-record|land-check|land-advance|land-recover|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
-    delivery-advance) phase="deliver" ;;
-  esac
   telemetry=1
   [ "$access" != "inspect" ] || telemetry=0
   FOUNDATION_TELEMETRY="$telemetry" FOUNDATION_PUBLIC_OPERATION="$phase" \
     FOUNDATION_INSTALLED_CLI_VERSION="$(installed_version)" exec node "$runtime" "$@"
-}
-
-need_arg() {
-  [ -n "${2:-}" ] || fail "$1 requires an argument"
 }
 
 deprecated_install() {
@@ -133,40 +120,22 @@ print_version() {
   printf 'claude-foundation %s\n' "${v:-unknown}"
 }
 
-usage() {
-  local registry="$SCRIPT_DIR/.claude/harness/commands.json"
-  [ -f "$registry" ] || fail "command registry not found: $registry"
-  node - "$registry" "${1:-}" <<'NODE'
-const fs = require("fs");
-const registry = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-const showAll = process.argv[3] === "--all";
-const groups = [["Workflow", "agent"], ["Conditional recovery", "conditional"],
-  ["Administration", "admin"], ["Host integration", "host"],
-  ["Internal compatibility", "internal"]];
-// The agent's normal path: start a change, then advance it. Everything else
-// is recovery or operator surface behind `help --all`.
-const primaryOrder = ["change start", "advance", "changes"];
-const primary = new Set(primaryOrder);
-console.log("claude-foundation — OpenSpec-native software-change harness\n");
-for (const [title, audience] of groups) {
-  const rows = registry.commands.filter((command) => command.audience === audience &&
-    (showAll || primary.has(command.name)));
-  if (!showAll) rows.sort((left, right) =>
-    primaryOrder.indexOf(left.name) - primaryOrder.indexOf(right.name));
-  if (!rows.length) continue;
-  console.log(`${title}:`);
-  for (const command of rows) {
-    const deprecated = command.deprecated ? " [deprecated]" : "";
-    console.log(`  claude-foundation ${command.usage}${deprecated}`);
-    console.log(`    ${command.description}`);
-  }
-  console.log("");
-}
-console.log("Global options: --project <path>, -C <path>");
-console.log("Workflow: /investigate → /change → /build → /prove → /land; optional: /deliver");
-console.log("Normal use: describe the outcome to your coding agent; it runs recovery and CLI details for you.");
-if (!showAll) console.log("Run `claude-foundation help --all` for primitive, recovery, host, and compatibility commands.");
-NODE
+DISPATCH="$SCRIPT_DIR/.claude/harness/runtime/core/cli-dispatch.mjs"
+
+# Every runtime route — its runtime name, access class, argument check, and
+# phase — is derived from commands.json by cli-dispatch.mjs.
+route_runtime() {
+  local route status=0
+  command -v node >/dev/null 2>&1 || fail "Node.js is required to run the project harness"
+  route="$(node "$DISPATCH" route "$@")" || status=$?
+  if [ "$status" -eq 3 ]; then
+    if [ -d "$1" ]; then deprecated_install "$@"
+    else fail "unknown command '$1'; run 'claude-foundation help'"
+    fi
+  fi
+  [ "$status" -eq 0 ] || exit "$status"
+  eval "set -- $route"
+  run_runtime "$@"
 }
 
 case "${1:-}" in
@@ -186,7 +155,7 @@ case "${1:-}" in
       [ "$arg" = "--help" ] || continue
       help_target="$1"
       case "${2:-}" in ""|--*) ;; *) help_target="$1 $2" ;; esac
-      run_runtime inspect describe "$help_target"
+      run_runtime inspect "" describe "$help_target"
     done ;;
 esac
 
@@ -196,12 +165,13 @@ case "${1:-}" in
   describe)
     shift
     [ "$#" -le 2 ] || fail "describe accepts [command] [--json]"
-    run_runtime inspect describe "$@" ;;
+    run_runtime inspect "" describe "$@" ;;
   help|--help|-h)
     [ "$#" -le 2 ] || fail "help accepts only --all"
     [ "${2:-}" != "" ] && [ "${2:-}" != "--all" ] && \
       [ "${2:-}" != "--help" ] && fail "help accepts only --all"
-    usage "${2:-}"; exit 0 ;;
+    command -v node >/dev/null 2>&1 || fail "Node.js is required to print help"
+    exec node "$DISPATCH" help "${2:-}" ;;
   host)
     shift
     sub="${1:-}"; [ "$#" -gt 0 ] && shift
@@ -262,270 +232,17 @@ case "${1:-}" in
     fi
     command -v node >/dev/null 2>&1 || fail "Node.js is required to check for updates"
     exec node "$SCRIPT_DIR/.claude/harness/runtime/core/update-advisory.mjs" "$@" ;;
-  providers)
-    shift; [ "$#" -eq 0 ] || fail "providers takes no arguments"
-    run_runtime read providers ;;
-  repos)
-    shift
-    [ "$#" -le 1 ] || fail "repos accepts at most one change"
-    run_runtime read repos "$@" ;;
-  models)
-    shift; [ "$#" -eq 0 ] || fail "models takes no arguments"
-    run_runtime read models ;;
-  agents)
-    shift
-    sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    case "$sub" in
-      plan)
-        need_arg "agents plan" "${1:-}"
-        run_runtime write agent-plan "$@" ;;
-      dispatch)
-        need_arg "agents dispatch" "${1:-}"
-        run_runtime write agent-dispatch "$@" ;;
-      task)
-        [ "$#" -ge 2 ] || fail "agents task requires <change> <task>"
-        warn "'agents task' is deprecated; use 'packet <change> --task <task>'"
-        task_change="$1"; task_id="$2"; shift 2
-        run_runtime read packet "$task_change" --task "$task_id" "$@" ;;
-      acquire)
-        [ "$#" -ge 3 ] || fail "agents acquire requires <change> <task> --owner <agent-id>"
-        run_runtime write agent-acquire "$@" ;;
-      release)
-        [ "$#" -ge 3 ] || fail "agents release requires <change> <task> --owner <agent-id>"
-        run_runtime write agent-release "$@" ;;
-      *) fail "agents requires 'plan', 'dispatch', 'task', 'acquire', or 'release'" ;;
-    esac ;;
-  doctor)
-    shift
-    run_runtime read doctor "$@" ;;
-  changes)
-    shift; [ "$#" -eq 0 ] || fail "changes takes no arguments"
-    run_runtime read changes ;;
-  packet)
-    shift; need_arg "packet" "${1:-}"
-    run_runtime read packet "$@" ;;
-  metrics)
-    shift; need_arg "metrics" "${1:-}"
-    run_runtime read metrics "$@" ;;
-  feedback)
-    shift; need_arg "feedback" "${1:-}"
-    run_runtime read feedback "$@" ;;
-  investigate)
-    shift; need_arg "investigate" "${1:-}"
-    run_runtime write investigate "$@" ;;
-  advance)
-    shift; need_arg "advance" "${1:-}"
-    run_runtime write advance "$@" ;;
-  exec)
-    shift; need_arg "exec" "${1:-}"
-    run_runtime write exec "$@" ;;
-  hash)
-    shift; need_arg "hash" "${1:-}"
-    [ "$#" -le 2 ] || fail "hash accepts <change> [provider]"
-    run_runtime read hash "$@" ;;
-  budget)
-    shift
-    sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    need_arg "budget ${sub:-continue}" "${1:-}"
-    case "$sub" in
-      checkpoint) run_runtime read budget-checkpoint "$@" ;;
-      continue) run_runtime write budget-continue "$@" ;;
-      *) fail "budget requires 'checkpoint' or 'continue'" ;;
-    esac ;;
-  telemetry)
-    shift
-    sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    case "$sub" in
-      sync)
-        [ "$#" -ge 1 ] || fail "telemetry sync requires <change> [transcript.jsonl]"
-        run_runtime write telemetry-sync "$@" ;;
-      import)
-        [ "$#" -ge 2 ] || fail "telemetry import requires <change> <file>"
-        run_runtime write telemetry-import "$@" ;;
-      host-import)
-        [ "$#" -eq 2 ] || fail "telemetry host-import requires <change> <result.json>"
-        run_runtime write host-execution-import "$@" ;;
-      *) fail "telemetry requires 'sync', 'import', or 'host-import'" ;;
-    esac ;;
-  change)
-    shift
-    sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    case "$sub" in
-      new)
-        [ "$#" -ge 1 ] || fail "change new requires an intent"
-        run_runtime write new "$@" ;;
-      start)
-        [ "$#" -ge 1 ] || fail "change start requires --template or <draft.json>"
-        run_runtime write start "$@" ;;
-      resolve)
-        [ "$#" -ge 1 ] || fail "change resolve requires <change>"
-        run_runtime write resolve "$@" ;;
-      amend)
-        [ "$#" -ge 2 ] || [ "${1:-}" = "--template" ] ||
-          fail "change amend requires --template or <change> <amendment.json>"
-        run_runtime write amend "$@" ;;
-      revise)
-        [ "$#" -ge 2 ] || fail "change revise requires <change> <draft.json>"
-        run_runtime write revise "$@" ;;
-      validate)
-        need_arg "change validate" "${1:-}"
-        run_runtime write validate "$@" ;;
-      audit)
-        need_arg "change audit" "${1:-}"
-        run_runtime read audit-change "$@" ;;
-      abandon)
-        need_arg "change abandon" "${1:-}"
-        run_runtime write abandon "$@" ;;
-      waive)
-        need_arg "change waive" "${1:-}"
-        run_runtime write waive "$@" ;;
-      *) fail "change requires 'new', 'start', 'resolve', 'amend', 'revise', 'validate', 'audit', 'abandon', or 'waive'" ;;
-    esac ;;
-  validate)
-    warn "'validate' is deprecated; use 'change validate'"
-    shift; need_arg "validate" "${1:-}"
-    run_runtime write validate "$@" ;;
-  proof)
-    shift
-    sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    need_arg "proof ${sub:-<plan|readiness|advance|run|finish|collect|preflight|execute|finalize|audit>}" "${1:-}"
-    case "$sub" in
-      plan)
-        warn "'proof plan' is deprecated; use 'proof readiness'"
-        run_runtime read proof-readiness "$@" ;;
-      readiness) run_runtime read proof-readiness "$@" ;;
-      advance) run_runtime write proof-advance "$@" ;;
-      run) run_runtime write proof-run "$@" ;;
-      finish)
-        warn "'proof finish' is deprecated; use 'proof run'"
-        run_runtime write proof-run "$@" ;;
-      collect) run_runtime write proof-collect "$@" ;;
-      # Deliberately `write` despite the read registry kind: preflight is a
-      # gate, and the read path only warns on a mixed-revision runtime — a
-      # "ready" from an incompatible runtime is worse than an unavailable one.
-      preflight) run_runtime write proof-preflight "$@" ;;
-      execute) run_runtime write proof-execute "$@" ;;
-      finalize) run_runtime write prove "$@" ;;
-      audit) run_runtime read proof-audit "$@" ;;
-      *) fail "proof requires 'plan', 'readiness', 'advance', 'run', 'finish', 'collect', 'preflight', 'execute', 'finalize', or 'audit'" ;;
-    esac ;;
-  evidence)
-    shift
-    sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    case "$sub" in
-      detect)
-        need_arg "evidence detect" "${1:-}"
-        run_runtime read evidence-detect "$@" ;;
-      init)
-        need_arg "evidence init" "${1:-}"
-        run_runtime write evidence-init "$@" ;;
-      doctor)
-        need_arg "evidence doctor" "${1:-}"
-        run_runtime read evidence-doctor "$@" ;;
-      verify-ci)
-        [ "$#" -eq 3 ] || fail "evidence verify-ci requires <change> <provider> <signed.json>"
-        run_runtime write evidence-verify-ci "$@" ;;
-      run)
-        [ "$#" -ge 4 ] || fail "evidence run requires <change> <provider> -- <command>"
-        run_runtime write run-provider "$@" ;;
-      record)
-        [ "$#" -ge 3 ] || fail "evidence record requires <change> <provider> <status>"
-        run_runtime write receipt "$@" ;;
-      upgrade)
-        need_arg "evidence upgrade" "${1:-}"
-        run_runtime write evidence-upgrade "$@" ;;
-      *) fail "evidence requires 'detect', 'init', 'doctor', 'verify-ci', 'run', 'record', or 'upgrade'" ;;
-    esac ;;
-  quality)
-    shift
-    sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    case "$sub" in
-      discover) run_runtime read quality-discover "$@" ;;
-      init) run_runtime write quality-init "$@" ;;
-      doctor) run_runtime read quality-doctor "$@" ;;
-      run) run_runtime write quality-run "$@" ;;
-      report) run_runtime read quality-report "$@" ;;
-      baseline) run_runtime write quality-baseline "$@" ;;
-      debt) run_runtime write quality-debt "$@" ;;
-      *) fail "quality requires 'discover', 'init', 'doctor', 'run', 'report', 'baseline', or 'debt'" ;;
-    esac ;;
-  authority)
-    shift
-    sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    need_arg "authority ${sub:-<request|dispatch|run|abort|status|record>}" "${1:-}"
-    case "$sub" in
-      request) run_runtime write authority-request "$@" ;;
-      dispatch) run_runtime write authority-dispatch "$@" ;;
-      run) run_runtime write authority-run "$@" ;;
-      abort) run_runtime write authority-abort "$@" ;;
-      status) run_runtime read authority-status "$@" ;;
-      record) run_runtime write authority-record "$@" ;;
-      reset-infra) run_runtime write authority-reset-infra "$@" ;;
-      reset-base-move) run_runtime write authority-reset-base-move "$@" ;;
-      *) fail "authority requires 'request', 'dispatch', 'run', 'abort', 'status', 'record', 'reset-infra', or 'reset-base-move'" ;;
-    esac ;;
-  handoff)
-    shift
-    sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    case "$sub" in
-      list) run_runtime read handoff-list "$@" ;;
-      status|packet|record)
-        need_arg "handoff $sub" "${1:-}"
-        case "$sub" in
-          status) run_runtime read handoff-status "$@" ;;
-          packet) run_runtime read handoff-packet "$@" ;;
-          record) run_runtime write handoff-record "$@" ;;
-        esac ;;
-      *) fail "handoff requires 'list', 'status', 'packet', or 'record'" ;;
-    esac ;;
-  sandbox)
-    shift
-    sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    case "$sub" in challenge|create|sync|apply|inspect) : ;; *) fail "sandbox requires challenge, inspect, create, sync, or apply" ;; esac
-    need_arg "sandbox $sub" "${1:-}"
-    if [ "$sub" = "inspect" ]; then
-      run_runtime inspect sandbox "$sub" "$@"
-    else
-      run_runtime write sandbox "$sub" "$@"
-    fi ;;
-  land)
-    shift
-    sub="${1:-}"; [ "$#" -gt 0 ] && shift
-    need_arg "land ${sub:-<advance|check|recover|plan|record|pointers|resume|archive>}" "${1:-}"
-    case "$sub" in
-      advance) run_runtime write land-advance "$@" ;;
-      check) run_runtime read land-check "$@" ;;
-      recover) run_runtime write land-recover "$@" ;;
-      plan) run_runtime write land-plan "$@" ;;
-      record) run_runtime write land-record "$@" ;;
-      pointers) run_runtime write land-pointers "$@" ;;
-      resume) run_runtime write land-resume "$@" ;;
-      archive) run_runtime write archive "$@" ;;
-      *) fail "land requires 'advance', 'check', 'recover', 'plan', 'record', 'pointers', 'resume', or 'archive'" ;;
-    esac ;;
-  deliver)
-    shift
-    sub="${1:-}"
-    if [ "$sub" = "advance" ]; then
-      shift
-    elif [ -n "$sub" ]; then
-      # Public convenience form: `claude-foundation deliver <change>`.
-      :
-    fi
-    need_arg "deliver" "${1:-}"
-    [ "$#" -eq 1 ] || fail "deliver requires exactly one change id"
-    run_runtime write delivery-advance "$@" ;;
   migrate)
     shift
     access=read
     for arg in "$@"; do [ "$arg" != "--apply" ] || access=write; done
-    run_runtime "$access" migrate "$@" ;;
+    run_runtime "$access" "" migrate "$@" ;;
   runtime)
     shift
     [ "$#" -gt 0 ] || fail "runtime requires an internal harness command"
     warn "'runtime' is an internal compatibility namespace; use canonical public commands"
     case "$1" in version|api-version|hash|doctor|packet|metrics|feedback) access=read ;; *) access=write ;; esac
-    run_runtime "$access" "$@" ;;
+    run_runtime "$access" "" "$@" ;;
   dashboard|dashboard-up|dashboard-down|dashboard-status)
     sub="$1"; shift
     client="$SCRIPT_DIR/dashboard/client.sh"
@@ -549,7 +266,5 @@ case "${1:-}" in
   .|..|/*|./*|../*|~/*|--yes|-y|--dry-run|--force|-f)
     deprecated_install "$@" ;;
   *)
-    if [ -d "$1" ]; then deprecated_install "$@"
-    else fail "unknown command '$1'; run 'claude-foundation help'"
-    fi ;;
+    route_runtime "$@" ;;
 esac

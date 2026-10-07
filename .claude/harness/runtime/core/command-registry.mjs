@@ -13,23 +13,6 @@ const LOOP_COMMAND_ORDER = [
   "investigate", "change", "build", "prove", "land", "deliver", "changes", "dev"
 ];
 
-const RUNTIME_COMMAND_ALIASES = {
-  "audit-change": "change audit",
-  "agent-plan": "agents plan",
-  "agent-dispatch": "agents dispatch",
-  "agent-task": "agents task",
-  "agent-acquire": "agents acquire",
-  "agent-release": "agents release",
-  advance: "advance",
-  feedback: "feedback",
-  receipt: "evidence record",
-  "run-provider": "evidence run",
-  prove: "proof finalize",
-  "host-execution-import": "telemetry host-import",
-  "delivery-advance": "deliver advance",
-  validate: "change validate"
-};
-
 export function loopCommandFromSource(file, source) {
   const front = source.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!front) return null;
@@ -80,6 +63,9 @@ export function validateCommandRegistry(registry, fail) {
       fail(`duplicate runtime command registry entry '${runtimeCommand}'`);
     runtimeCommands.add(runtimeCommand);
   }
+  for (const entry of registry.commands)
+    if (entry.runtime !== undefined && !runtimeCommands.has(String(entry.runtime).split(" ")[0]))
+      fail(`command '${entry.name}' routes to unregistered runtime command '${entry.runtime}'`);
   return registry;
 }
 
@@ -96,7 +82,13 @@ export function resolveCliCommand(entries, target, aliased) {
 
 export function commandDescriptionSelection(entries, loop, name) {
   const target = normalizeCommandName(name.replace(/^\/+/, ""));
-  const aliased = RUNTIME_COMMAND_ALIASES[target];
+  // A runtime spelling resolves through the registry's own `runtime` routes
+  // (`receipt` -> `evidence record`); the `agent-*` runtime names keep the
+  // plural public family word.
+  const aliased = (entries.find((candidate) => !candidate.deprecated &&
+      normalizeCommandName(candidate.runtime || "") === target) ||
+    entries.find((candidate) =>
+      normalizeCommandName(candidate.name) === target.replace(/^agent-/, "agents-")))?.name;
   const exact = entries.find((candidate) => normalizeCommandName(candidate.name) === target);
   const family = entries.filter((candidate) =>
     normalizeCommandName(candidate.name).startsWith(`${target}-`));

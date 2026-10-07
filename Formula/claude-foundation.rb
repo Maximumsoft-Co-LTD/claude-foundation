@@ -55,8 +55,8 @@ class ClaudeFoundation < Formula
     assert_match "advance", help
 
     full_help = shell_output("#{bin}/claude-foundation help --all")
-    assert_match "proof readiness", full_help
-    assert_match "land check", full_help
+    assert_match "handoff status", full_help
+    assert_match "authority request", full_help
     assert_match version.to_s, shell_output("#{bin}/claude-foundation version")
 
     instruction = JSON.parse(shell_output("#{bin}/claude-foundation host instruction changes"))

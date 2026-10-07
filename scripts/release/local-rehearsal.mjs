@@ -31,7 +31,7 @@ export function unsafeEnvironmentPaths(paths) {
 export function cliHelpStatus(compact, full) {
   return compact.status === 0 && full.status === 0 &&
     compact.stdout.includes("change start") && compact.stdout.includes("advance <change>") &&
-    full.stdout.includes("proof readiness") && full.stdout.includes("land check")
+    full.stdout.includes("handoff status") && full.stdout.includes("authority request")
     ? "pass" : "fail";
 }
 

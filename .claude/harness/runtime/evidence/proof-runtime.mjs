@@ -99,7 +99,7 @@ export function createProofRuntime({
       fail(`${summary} — the workspace hash changed while providers ran (${
         executedHash.slice(0, 12)} to ${hash.slice(0, 12)}), so a provider wrote inside the hashed surface. Reports and artifacts must be written to a directory excluded from the surface, such as test-results/`);
     if (blockers.every((row) => row.validity === "missing"))
-      fail(`${summary} — no evidence has been executed for this workspace; next: claude-foundation proof run ${id}`);
+      fail(`${summary} — no evidence has been executed for this workspace; next: claude-foundation advance ${id} --through proven`);
     fail(`${summary}\n${blockers.map((row) =>
       `  ${row.provider}: ${validityRecovery(row.validity, id, row.provider)}`).join("\n")}`);
   }
