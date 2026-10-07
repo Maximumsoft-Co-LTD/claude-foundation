@@ -1,6 +1,10 @@
 #!/usr/bin/env sh
 
 set -eu
+# Word counts depend on the locale (UTF-8 punctuation counts as words in
+# C.UTF-8); pin CI's locale so local and CI budgets agree.
+LC_ALL=C.UTF-8
+export LC_ALL
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 . "$ROOT/.claude/tests/lib/assert.sh"

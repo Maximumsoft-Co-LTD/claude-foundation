@@ -31,13 +31,10 @@ authority take precedence over convenience or customary workflow.
 ## Authority and handoff
 
 - Read-only Git inspection needs no workflow mutation authority.
-- Commit and push only via `/deliver` or a direct user instruction (a push
-  covers its commit); no phase grants them, and Land never commits. "เปิด PR
-  ให้เลย" is `/deliver` (WORKFLOW.md "Authority from the user's words").
-- Branching and staging need the user's request. Force update, merge, and
-  Land each need their own explicit authority.
-- Never bypass hooks or checks unless the user explicitly approves the specific
-  bypass and its risk.
+- Commit/push only via `/deliver` or a direct user instruction; Land never
+  commits (WORKFLOW.md "Authority from the user's words").
+- Branching, staging, force update, merge, and Land each need explicit authority.
+- Bypass hooks or checks only with explicit approval of that bypass and risk.
 
 References: read `commit-messages.md`, `branching-and-rebasing.md`,
 `pull-requests.md`, or `recovery.md` only for the active operation.
