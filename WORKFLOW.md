@@ -205,8 +205,9 @@ with an exact resume route. Its `EDIT` batch also names, as agent repairs, a
 task `verify` that references a test file which neither exists nor falls inside
 any task's `paths`, and an `apiContracts` error listed without a status or code.
 When `openspec/repositories.yaml` (or `.gitmodules`) declares repositories
-besides root, `change start --template` shows the `repositories` selection and
-per-task `repository`, and the batch names a root task whose paths or verify
+besides root, nested or trusted `../` siblings, `change start --template` lists
+them with the `repositories` selection and per-task `repository`, and the batch
+names a task that edits files in a read repository, a root task whose paths or verify
 reach into a declared repository (the harness does not rebind it: moving a task
 changes where its paths resolve and where verify runs, so the agent rewrites
 them), a repository task whose paths are written from the control root, a task
@@ -1456,6 +1457,8 @@ untracked; a committed fixture remains content regardless of its directory
 name.
 
 Multi-repository changes use one OpenSpec agreement and one declared topology.
+A path outside the root needs `allowOutsideRoot: true`; its `type` may be `git`
+(default) or `external`, which behave the same.
 Cross-repository contract evidence must be checked before repositories Land in
 dependency order. Writable sibling repositories and submodules receive their
 proven bytes in their existing target working trees without staging, committing,

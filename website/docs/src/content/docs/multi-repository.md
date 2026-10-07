@@ -47,10 +47,12 @@ Add every repository Change Loop may isolate to `openspec/repositories.yaml`:
 What matters:
 
 - `id` is the stable name used by tasks, providers, receipts, and Land.
-- `path` is relative to the control repository unless the row is external.
+- `path` is relative to the control repository.
 - `setupCommand` prepares that repository's newly created worktree.
-- an outside path must declare `type: "external"` and
-  `allowOutsideRoot: true`;
+- a path outside the control repository, such as a sibling `../sdk`, must
+  declare `allowOutsideRoot: true`. Its `type` may stay `git` (the default) or
+  be `external`; both behave the same. A writable sibling owns tasks and Lands
+  like a submodule;
 - every selected repository must already be an initialized Git repository.
 
 Change Loop refuses a non-Git dependency because it cannot pin or isolate a

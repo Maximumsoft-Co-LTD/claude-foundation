@@ -260,6 +260,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A writable sibling repository declared outside the root (`../sdk` with
+  `allowOutsideRoot: true`) can own draft tasks again. `change start` no longer
+  reports it as undeclared, and `change start --template` lists it, with
+  `mode: "read"` on a read repository. A task that edits files in a read
+  repository is now an agent repair at start. Build, Prove, and Land already
+  handled siblings. An outside path needs only `allowOutsideRoot: true`; its
+  `type` may stay `git` (the default) or be `external`, which behave the same.
+
 - Isolated-copy sandboxes no longer lose a user's uncommitted target edit.
   Re-applying after an earlier Land holds every newly touched path to the
   copy's recorded baseline, including its executable bit, the same overwrite

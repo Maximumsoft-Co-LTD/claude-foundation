@@ -48,9 +48,12 @@ repository หนึ่งแต่ต้องใช้โค้ดหรือ
 สิ่งที่ต้องรู้:
 
 - `id` คือชื่อคงที่ที่ task, provider, receipt และ Land ใช้ร่วมกัน
-- `path` ปกติอิงจาก control repository
+- `path` อิงจาก control repository
 - `setupCommand` เตรียม worktree ใหม่ของ repository นั้น
-- path ภายนอกต้องมี `type: "external"` และ `allowOutsideRoot: true`
+- path นอก control repository เช่น sibling `../sdk` ต้องมี
+  `allowOutsideRoot: true` ส่วน `type` จะคงเป็น `git` (ค่าเริ่มต้น) หรือใช้
+  `external` ก็ได้ ทำงานเหมือนกัน sibling ที่เขียนได้เป็นเจ้าของ task และ Land
+  เหมือน submodule
 - repository ที่ถูกเลือกทุกตัวต้อง initialize Git แล้ว
 
 Change Loop ปฏิเสธ dependency ที่ไม่ใช่ Git เพราะมันล็อก commit และแยก directory

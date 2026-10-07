@@ -1035,6 +1035,75 @@ test("the start template shows repository binding only when the project declares
   assert.equal(multi.minimalDraft.repositories, undefined);
 });
 
+// A trusted sibling checkout (`../sdk`, allowOutsideRoot) is a declared
+// repository like a submodule: writable siblings own tasks and Land their
+// proven bytes; read siblings are proof inputs only.
+function siblingCatalog(root) {
+  return { version: 1, repositories: [
+    { id: "root", type: "root", path: root, relativePath: ".", mode: "write" },
+    { id: "users", type: "submodule", path: join(root, "services/users"),
+      relativePath: "services/users", mode: "write" },
+    { id: "sdk", type: "git", path: join(root, "../sdk"), relativePath: "../sdk", mode: "write" },
+    { id: "partner", type: "external", path: join(root, "../partner"),
+      relativePath: "../partner", mode: "read" }
+  ] };
+}
+
+test("a writable sibling repository outside the root owns tasks", (t) => {
+  const repositories = siblingCatalog("/project/gateway").repositories;
+  const selection = [{ id: "root", mode: "write" }, { id: "sdk", mode: "write" }];
+  assert.deepEqual(taskRepositoryIssues([
+    { semanticKey: "sdk", repository: "sdk", paths: ["src/**"], verify: "npm test" },
+    { semanticKey: "gw", repository: "root", paths: ["src/**"], verify: "npm test" }
+  ], { repositories, selection }), []);
+  // Root work still cannot reach the sibling through the parent directory.
+  assert.match(taskRepositoryIssues([{ semanticKey: "gw", repository: "root",
+    paths: ["src/**"], verify: "cd ../sdk && npm test" }], { repositories, selection }).join("\n"),
+  /verify changes into '\.\.\/sdk', outside repository 'root'/);
+  // A read-only repository is a proof input: it cannot own a task that edits files.
+  assert.match(taskRepositoryIssues([{ semanticKey: "p", repository: "partner",
+    paths: ["src/**"], verify: "npm test" }],
+  { repositories, selection: [{ id: "partner" }] }).join("\n"),
+  /task 'p' edits files in repository 'partner', which is read-only/);
+  assert.match(taskRepositoryIssues([{ semanticKey: "s", repository: "sdk",
+    paths: ["src/**"], verify: "npm test" }],
+  { repositories, selection: [{ id: "sdk", mode: "read" }] }).join("\n"),
+  /task 's' edits files in repository 'sdk', which is read-only/);
+  t.diagnostic("sibling binding checks are pure");
+});
+
+test("change start compiles tasks in root, a submodule, and a writable sibling", (t) => {
+  const value = fixture(t, { catalog: siblingCatalog });
+  const template = value.lifecycle.rapidStartTemplate();
+  assert.deepEqual(template.declaredRepositories, [
+    { id: "users", path: "services/users" }, { id: "sdk", path: "../sdk" },
+    { id: "partner", path: "../partner", mode: "read" }]);
+  assert.equal(template.repositoryExample.tasks[0].repository, "users");
+  writeJson(value.draftPath, minimalRapidV4({
+    repositories: [{ id: "root", mode: "write" }, { id: "users", mode: "write" },
+      { id: "sdk", mode: "write" }],
+    // Several repositories derive the standard lane, which needs these.
+    why: "The gateway, users service, and SDK all return the bounded result.",
+    failureMatrix: [{ failure: "A repository returns no result",
+      userSees: "The gateway reports the result is unavailable", recovery: "Retry the request" }],
+    tasks: [
+      { key: "users-result", repository: "users", outcome: "Implement the users result",
+        covers: ["bounded-result"], paths: ["src/**"], verify: "npm test" },
+      { key: "sdk-result", repository: "sdk", outcome: "Implement the sdk result",
+        covers: ["bounded-result"], paths: ["src/**"], verify: "npm test" },
+      { key: "gateway-result", repository: "root", outcome: "Implement the gateway result",
+        covers: ["bounded-result"], paths: ["src/**"], verify: "npm test" }
+    ]
+  }));
+  const { output, result } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.match(output, /^AGREED single-shot-change/m, JSON.stringify(result?.intake?.issues));
+  const ledger = readFileSync(join(value.changes, "single-shot-change", "tasks.md"), "utf8");
+  assert.match(ledger, /\*\*T002\*\*[^\n]*\[repo:sdk\][^\n]*\[paths:src\/\*\*\]/);
+  // Root contains its submodule but never its sibling.
+  assert.match(ledger, /\*\*T003\*\*[^\n]*\[repo:root\][^\n]*\[depends:T001\]/);
+  assert.doesNotMatch(ledger.match(/^.*\*\*T003\*\*.*$/m)[0], /T002/);
+});
+
 test("api contract errors without a status or code are an EDIT at start", (t) => {
   const value = fixture(t);
   writeJson(value.draftPath, minimalRapidV4({

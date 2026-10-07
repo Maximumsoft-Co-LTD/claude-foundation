@@ -212,6 +212,13 @@ test("repository task dependencies come from containment and declared dependsOn"
   ], { repositories: siblings,
     selection: [{ id: "api" }, { id: "web", dependsOn: ["api"] }] });
   assert.deepEqual(authored.tasks[2].dependsOn, ["T002"]);
+  // The root never contains a sibling; only its declared dependsOn orders it.
+  const rootTasks = [...tasks, { id: "T003", repository: "root", dependsOn: [] }];
+  assert.deepEqual(deriveRepositoryTaskDependencies(rootTasks, { repositories: siblings })
+    .tasks[2].dependsOn, []);
+  assert.deepEqual(deriveRepositoryTaskDependencies(rootTasks, { repositories: siblings,
+    selection: [{ id: "root", dependsOn: ["web"] }, { id: "api" }, { id: "web" }] })
+    .tasks[2].dependsOn, ["T002"]);
   // Root-only and unbound drafts are unchanged.
   assert.deepEqual(deriveRepositoryTaskDependencies([{ id: "T001", dependsOn: [] }],
     { repositories: SUPERPROJECT_CATALOG }).derived, []);

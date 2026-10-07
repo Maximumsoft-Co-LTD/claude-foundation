@@ -385,16 +385,24 @@ export function verifyDirectoryTargets(command) {
   return targets;
 }
 
+// Declared repositories other than root: nested ones and trusted siblings
+// (`../sdk`, admitted by the catalog only with allowOutsideRoot).
 function catalogRepositories(repositories) {
   return (Array.isArray(repositories) ? repositories : [])
     .filter((row) => row && row.id && row.id !== "root")
     .map((row) => ({
       id: String(row.id),
       path: String(row.relativePath || "").replace(/^\.\//, "").replace(/\/+$/, ""),
-      absolutePath: row.path || null
+      absolutePath: row.path || null,
+      mode: row.mode === "read" ? "read" : "write"
     }))
-    .filter((row) => row.path && row.path !== "." && !row.path.startsWith("../") &&
-      row.path !== "..");
+    .filter((row) => row.path && row.path !== "." && row.path !== "..");
+}
+
+function selectionEntries(selection) {
+  return new Map((Array.isArray(selection) ? selection : [])
+    .map((entry) => typeof entry === "string" ? { id: entry } : entry)
+    .filter((entry) => entry?.id).map((entry) => [String(entry.id).trim(), entry]));
 }
 
 function selectionIds(selection) {
@@ -419,6 +427,7 @@ export function taskRepositoryIssues(tasks, {
   const byId = new Map(declared.map((row) => [row.id, row]));
   const selected = selectionIds(selection);
   const selectedSet = new Set(selected);
+  const selectedEntries = selectionEntries(selection);
   const selectsOtherRepository = selected.some((id) => id !== "root");
   const declaredList = declared.map((row) => `${row.id} (${row.path})`).join(", ");
   const owner = (path) => declared.find((row) => atOrUnder(path, row.path)) || null;
@@ -437,6 +446,10 @@ export function taskRepositoryIssues(tasks, {
           "bind it to a selected repository (a new repository needs 'change revise' before Build)"
         : `${subject} runs in repository '${repository}', which the draft's 'repositories' ` +
           `does not list; add { "id": "${repository}", "mode": "write" } to 'repositories'`);
+    const mode = selectedEntries.get(repository)?.mode || repositoryRow?.mode;
+    if (repositoryRow && mode === "read" && stringList(task.paths).length)
+      issues.push(`${subject} edits files in repository '${repository}', which is read-only ` +
+        "in this change; bind the task to a writable repository");
     if (!String(task.repository || "").trim() && selectsOtherRepository)
       issues.push(`${subject} names no 'repository' while the draft selects ` +
         `${selected.join(", ")}; set 'repository' to the one that owns its files`);

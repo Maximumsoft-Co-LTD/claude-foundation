@@ -634,22 +634,23 @@ export function renderDraftTask(task, index) {
 }
 
 // Shown by `change start --template` only when the project declares
-// repositories besides the control root: a draft that omits the binding
-// compiles every task into root, where submodule code is not built.
+// repositories besides the control root (nested or trusted siblings): a draft
+// that omits the binding compiles every task into root, where their code is
+// not built. A read repository is listed with its mode; it owns no edits.
 export function repositoryDraftGuidance(repositories = []) {
   const declared = (Array.isArray(repositories) ? repositories : [])
     .filter((row) => row?.id && row.id !== "root" && row.relativePath &&
-      !String(row.relativePath).startsWith(".."))
-    .map((row) => ({ id: row.id, path: row.relativePath }));
+      row.relativePath !== "." && row.relativePath !== "..");
   if (!declared.length) return {};
-  const [first] = declared;
+  const first = declared.find((row) => row.mode !== "read") || declared[0];
   return {
     minimalDraftRepositories: "This project declares repositories besides root. A task " +
       "whose files live in one names it in 'repository', writes 'paths' and 'verify' " +
       "relative to that repository's root (verify runs there; no cd into it), and the " +
       "draft lists every repository its tasks use in 'repositories' (add root when a task " +
       "edits root files). Omit both for root-only work.",
-    declaredRepositories: declared,
+    declaredRepositories: declared.map((row) => ({ id: row.id, path: row.relativePath,
+      ...(row.mode === "read" ? { mode: "read" } : {}) })),
     repositoryExample: {
       repositories: [{ id: first.id, mode: "write" }],
       tasks: [{
