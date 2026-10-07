@@ -515,6 +515,24 @@ test("a single-agent handoff is recorded, then completed by its passing check", 
     /^- \[x\] \*\*T001\*\*/m);
 });
 
+test("a no-lease handoff surfaces an out-of-scope write and keeps the handoff pending", (t) => {
+  const root = checkedWorkspace(t);
+  let state = { workspace: { path: root }, sessionHandoff: { version: 1, taskIds: ["T001"] } };
+  const runtime = createSessionLeaseRuntime({
+    stableHash, loadRuntime: () => structuredClone(state),
+    saveRuntime: (value) => { state = structuredClone(value); },
+    activeChangeLeases: () => [], acquire: () => ({ leaseId: "l1" }), discard: () => {},
+    release: () => { throw new Error("task 'T001' changed outside granted scope: src/other.js; result and proof were not accepted."); },
+    runCheck: (id, check) => runTaskCheck({ loadRuntime: () => state }, id, check)
+  });
+  assert.throws(() => runtime.settle("demo"), (error) => {
+    assert.equal(error.boundary, "task-scope");
+    assert.match(error.message, /outside granted scope: src\/other\.js\. Revert/);
+    return true;
+  });
+  assert.deepEqual(state.sessionHandoff.taskIds, ["T001"]);
+});
+
 test("the task check runs in the task repository and reports an unavailable workspace", () => {
   const seen = [];
   const spawn = (shell, args, options) => { seen.push([shell, args, options.cwd]); return { status: 3, stdout: "o", stderr: "e" }; };

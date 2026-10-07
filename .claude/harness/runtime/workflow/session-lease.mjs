@@ -117,15 +117,7 @@ export function createSessionLeaseRuntime({
     const settled = [];
     for (const lease of activeChangeLeases(id, { includeExpired: true })) {
       if (!isSessionOwner(lease.owner) || !completeByCheck(id, lease.taskId)) continue;
-      const flags = { owner: lease.owner, "lease-id": lease.leaseId };
-      try {
-        release(id, lease.taskId, flags, { quiet: true });
-      } catch (error) {
-        const message = String(error?.message || error);
-        const scope = message.match(/^(task '[^']+' changed outside granted scope: [^;]+)/);
-        if (scope) throw sessionScopeError(id, scope[1]);
-        throw error;
-      }
+      releaseOwned(id, lease.taskId, { owner: lease.owner, "lease-id": lease.leaseId });
       settled.push(lease.taskId);
     }
     // A single-agent plan takes no lease; the handed-off tasks are recorded
@@ -168,10 +160,27 @@ export function createSessionLeaseRuntime({
   // yet, the next advance re-verifies the ticked task.
   function recordVerified(id, taskId) {
     const owner = sessionLeaseOwner(id, taskId, stableHash);
+    let granted;
     try {
-      const granted = acquire(id, taskId, { owner }, { quiet: true });
-      release(id, taskId, { owner, "lease-id": granted.leaseId }, { quiet: true });
-    } catch { /* reverify settles it on the next advance */ }
+      granted = acquire(id, taskId, { owner }, { quiet: true });
+    } catch { return; /* reverify settles it on the next advance */ }
+    try {
+      releaseOwned(id, taskId, { owner, "lease-id": granted.leaseId });
+    } catch (error) {
+      if (error?.boundary === "task-scope") throw error;
+    }
+  }
+
+  // An out-of-scope write is the agent's to revert; the handoff stays pending.
+  function releaseOwned(id, taskId, flags) {
+    try {
+      release(id, taskId, flags, { quiet: true });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const scope = message.match(/^(task '[^']+' changed outside granted scope: [^;]+)/);
+      if (scope) throw sessionScopeError(id, scope[1]);
+      throw error;
+    }
   }
 
   function withCheckFailures(id, value) {
