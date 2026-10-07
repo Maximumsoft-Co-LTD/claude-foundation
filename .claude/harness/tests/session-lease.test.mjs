@@ -512,6 +512,26 @@ test("settle ticks a leased task whose focused check passes and keeps a failing 
   assert.match(issued.instructions.join(" "), /do not edit tasks\.md/);
 });
 
+// A repository task is ticked exactly like a root task: its check runs in its
+// own repository sandbox and the checkbox lands in the control ledger.
+test("an accepted repository task is ticked in the control ledger after its check passes", (t) => {
+  const root = checkedWorkspace(t);
+  const api = mkdtempSync(join(tmpdir(), "session-check-api-"));
+  t.after(() => rmSync(api, { recursive: true, force: true }));
+  const state = { workspace: { path: root }, repositories: { api: { path: api } } };
+  const seen = [];
+  const runtime = createSessionLeaseRuntime({
+    stableHash, loadRuntime: () => state, activeChangeLeases: () => [],
+    acquire: () => ({ leaseId: "l1" }), discard: () => {}, release: () => {},
+    runCheck: (id, check) => runTaskCheck({ loadRuntime: () => state,
+      spawn: (shell, args, options) => { seen.push(options.cwd); return { status: 0 }; } }, id, check)
+  });
+  assert.deepEqual(runtime.tickAccepted("demo", ["T002"]), ["T002"]);
+  assert.deepEqual(seen, [api]);
+  assert.match(readFileSync(join(root, "openspec", "changes", "demo", "tasks.md"), "utf8"),
+    /^- \[x\] \*\*T002\*\* Second \[repo:api\]/m);
+});
+
 test("a single-agent handoff is recorded, then completed by its passing check", (t) => {
   const root = checkedWorkspace(t);
   let state = { workspace: { path: root } };

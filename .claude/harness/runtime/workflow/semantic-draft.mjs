@@ -1143,6 +1143,92 @@ function normalizeTasks(source, requirements, requirementKeys, issues) {
   return tasks;
 }
 
+function repositoryPath(row) {
+  return String(row?.relativePath ?? row?.path ?? "").replaceAll("\\", "/")
+    .replace(/^\.\//, "").replace(/\/+$/, "") || ".";
+}
+
+// Whether `inner` lies strictly inside `outer` (a superproject contains its
+// submodules). Sibling repositories (`../x`) are never contained.
+function repositoryContains(outer, inner) {
+  if (inner === "." || inner === ".." || inner.startsWith("../") || inner === outer) return false;
+  return outer === "." || inner.startsWith(`${outer}/`);
+}
+
+/**
+ * Cross-repository task order the compiler derives so the author need not.
+ * A task consumes another selected repository when its own repository
+ * contains that repository's path (the root superproject builds and tests its
+ * submodules), or, for a task without authored edges, when its repository
+ * declares `dependsOn` on it (the edge the runtime already infers, made
+ * explicit so an added edge never hides it). The consuming task depends on
+ * every same-change task in the consumed repository. An edge that would close
+ * a cycle is not added and is reported instead. `repositories` are catalog
+ * rows ({id, relativePath, dependsOn}); `selection` is the draft's
+ * `repositories`, whose `dependsOn` overrides the catalog's. `consumers`, when
+ * given, limits which task ids may receive edges (an amendment's added tasks).
+ */
+export function deriveRepositoryTaskDependencies(tasks, {
+  repositories = [], selection, consumers = null
+} = {}) {
+  const rows = (Array.isArray(tasks) ? tasks : []).map((task) => ({
+    ...task, dependsOn: [...(task?.dependsOn || [])]
+  }));
+  const repositoryOf = (task) => text(task.repository) || "root";
+  const catalog = new Map((Array.isArray(repositories) ? repositories : [])
+    .filter((row) => row?.id).map((row) => [String(row.id), row]));
+  const selected = new Map((Array.isArray(selection) ? selection : [])
+    .map((entry) => typeof entry === "string" ? { id: entry } : entry)
+    .filter((entry) => entry?.id).map((entry) => [String(entry.id), entry]));
+  const pathOf = (id) => id === "root" ? "." : catalog.has(id) ? repositoryPath(catalog.get(id)) : null;
+  const declaredDependencies = (id) => stringList(
+    selected.get(id)?.dependsOn ?? catalog.get(id)?.dependsOn);
+  const taskRepositories = unique(rows.map(repositoryOf));
+  const label = (task) => task.semanticKey || task.id;
+  const graph = new Map(rows.map((task) => [task.id, task.dependsOn]));
+  const reaches = (from, to) => {
+    const seen = new Set();
+    const pending = [from];
+    while (pending.length) {
+      const current = pending.pop();
+      if (current === to) return true;
+      if (seen.has(current)) continue;
+      seen.add(current);
+      pending.push(...(graph.get(current) || []));
+    }
+    return false;
+  };
+  const derived = [];
+  const issues = [];
+  for (const task of rows) {
+    if (consumers && !consumers.has(task.id)) continue;
+    const own = repositoryOf(task);
+    const ownPath = pathOf(own);
+    const consumed = [
+      ...(task.dependsOn.length ? [] : declaredDependencies(own).map((id) =>
+        [id, `repository '${own}' dependsOn '${id}'`])),
+      ...taskRepositories.filter((id) => id !== own && ownPath !== null && pathOf(id) !== null &&
+        repositoryContains(ownPath, pathOf(id)))
+        .map((id) => [id, `repository '${own}' contains repository '${id}' at ${pathOf(id)}`])
+    ];
+    for (const [id, reason] of consumed) {
+      for (const provider of rows.filter((candidate) =>
+        candidate.id !== task.id && repositoryOf(candidate) === id)) {
+        if (task.dependsOn.includes(provider.id)) continue;
+        if (reaches(provider.id, task.id)) {
+          issues.push(`task '${label(task)}' (repository '${own}') must follow ` +
+            `'${label(provider)}' because ${reason}, but '${label(provider)}' already depends ` +
+            `on '${label(task)}'; remove that dependency or move the shared work into one repository`);
+          continue;
+        }
+        task.dependsOn.push(provider.id);
+        derived.push({ taskId: task.id, dependsOn: provider.id, reason });
+      }
+    }
+  }
+  return { tasks: rows, derived, issues: unique(issues) };
+}
+
 function derivedExecution(source, claims, tasks) {
   if (source.execution) return source.execution;
   const commands = unique(tasks.map((task) => task.verify).filter(Boolean));
@@ -1179,7 +1265,15 @@ export function normalizeSemanticDraft(input, slugify, options = {}) {
   applyIntegrationRequirements(source, requirements, requirementKeys, issues);
   applyCapabilityOverviews(source, requirements, slugify, issues);
   applyCapabilityPurposes(source, requirements, slugify);
-  const tasks = normalizeTasks(source, requirements, requirementKeys, issues);
+  let tasks = normalizeTasks(source, requirements, requirementKeys, issues);
+  // Cross-repository order is derived only when a repository binding exists.
+  if (Array.isArray(options.repositories) || Array.isArray(source.repositories)) {
+    const ordered = deriveRepositoryTaskDependencies(tasks, {
+      repositories: options.repositories, selection: source.repositories
+    });
+    tasks = ordered.tasks;
+    issues.push(...ordered.issues.map((issue) => `semantic draft ${issue}`));
+  }
   issues.push(...readerGuideIssues(source, requirementKeys));
   const claims = requirements.flatMap((row) => row.claims);
   const acceptance = source.acceptance || { required: false, reason: null, claimIds: [] };

@@ -9,21 +9,25 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import {
-  derivedCapabilityPurpose, expandMinimalSemanticDraft, mergeSemanticDraft,
+  deriveRepositoryTaskDependencies, derivedCapabilityPurpose, expandMinimalSemanticDraft,
+  mergeSemanticDraft,
   minimalSemanticDraftTemplate, normalizeSemanticDraft,
   renderRequirementMarkdown, renderSpecHeading, semanticDraftTemplate
 } from "../runtime/workflow/semantic-draft.mjs";
 import { requiredProvidersOperation } from "../runtime/workflow/change-validation.mjs";
 import { classifyReviewRisk } from "../runtime/evidence/review-routing.mjs";
 import {
-  createChangeLifecycle, draftNeedsDesign, renderDraftProposal, semanticDraftKeepsDesign
+  createChangeLifecycle, draftNeedsDesign, renderDraftProposal, renderDraftTask,
+  semanticDraftKeepsDesign
 } from "../runtime/workflow/change-lifecycle.mjs";
 import {
-  amendTaskVerifyOperation, appendRequirementToSpec, compileSemanticAmendment,
+  amendTaskVerifyOperation, amendmentRepositoryOrderIssues, appendRequirementToSpec,
+  compileSemanticAmendment,
   semanticAmendmentTemplate, taskContractOnlyAmendment, taskVerifyAmendment,
   updateTaskClaimAnnotation, verifyCannotFail, writeSemanticAmendment
 } from "../runtime/workflow/semantic-amendment.mjs";
 import { taskCheck } from "../runtime/workflow/session-lease.mjs";
+import { groupAgentTasks } from "../runtime/workflow/agent-planning.mjs";
 import { designBlueprintWarnings } from "../runtime/workflow/validation/design-blueprints.mjs";
 import { devDocumentShapeIssues } from "../runtime/workflow/validation/dev-document.mjs";
 
@@ -136,6 +140,88 @@ test("semantic compiler creates stable cross-ledger links from semantic keys", (
   assert.equal(result.draft._derivedExecution, true);
   assert.ok(result.draft.execution.providers.test);
   assert.ok(result.draft.execution.providers.integration);
+});
+
+// A superproject declares `lib` at packages/lib (a submodule). The catalog
+// row shape is what repository-topology's catalog() returns.
+const SUPERPROJECT_CATALOG = [
+  { id: "root", type: "root", relativePath: "." },
+  { id: "lib", type: "submodule", relativePath: "packages/lib", dependsOn: [] }
+];
+
+function superprojectDraft(overrides = {}) {
+  return semanticDraft({
+    repositories: [{ id: "root", mode: "write" }, { id: "lib", mode: "write" }],
+    tasks: [
+      { key: "lib-clamp", repository: "lib", outcome: "Add clamp to lib",
+        covers: ["payment-retry"], paths: ["index.js"], verify: "npm test" },
+      { key: "app-clamped-total", repository: "root", outcome: "Use clamp from the app",
+        covers: ["audit-result"], paths: ["main.js"], verify: "npm test" }
+    ],
+    ...overrides
+  });
+}
+
+test("a root task follows same-change tasks in a repository nested inside it", () => {
+  const result = normalizeSemanticDraft(superprojectDraft(), slugify,
+    { repositories: SUPERPROJECT_CATALOG });
+  assert.deepEqual(result.issues, []);
+  assert.deepEqual(result.draft.tasks.map((task) => [task.id, task.dependsOn]),
+    [["T001", []], ["T002", ["T001"]]]);
+  // The derived edge serializes Build: lib first, then the consuming root task.
+  const tasks = result.draft.tasks.map((task) => ({
+    ...task, repository: task.repository || "root", resources: []
+  }));
+  assert.deepEqual(groupAgentTasks(tasks, new Set(), 4, () => false,
+    (message) => { throw new Error(message); }), [["T001"], ["T002"]]);
+});
+
+test("repository task dependencies come from containment and declared dependsOn", () => {
+  const nested = deriveRepositoryTaskDependencies([
+    { id: "T001", repository: "lib", dependsOn: [] },
+    { id: "T002", repository: "root", dependsOn: [] },
+    { id: "T003", repository: "lib", dependsOn: ["T001"] }
+  ], { repositories: SUPERPROJECT_CATALOG });
+  assert.deepEqual(nested.issues, []);
+  assert.deepEqual(nested.tasks.map((task) => task.dependsOn), [[], ["T001", "T003"], ["T001"]]);
+  assert.deepEqual(nested.derived.map((row) => [row.taskId, row.dependsOn]),
+    [["T002", "T001"], ["T002", "T003"]]);
+  assert.match(nested.derived[0].reason, /contains repository 'lib' at packages\/lib/);
+  // Sibling repositories are ordered only by a declared repository dependency;
+  // an authored task edge stays the precise order, as at runtime.
+  const siblings = [
+    { id: "root", relativePath: "." },
+    { id: "api", relativePath: "../api", dependsOn: [] },
+    { id: "web", relativePath: "../web", dependsOn: [] }
+  ];
+  const tasks = [
+    { id: "T001", repository: "api", dependsOn: [] },
+    { id: "T002", repository: "web", dependsOn: [] }
+  ];
+  assert.deepEqual(deriveRepositoryTaskDependencies(tasks, { repositories: siblings })
+    .tasks.map((task) => task.dependsOn), [[], []]);
+  const declared = deriveRepositoryTaskDependencies(tasks, { repositories: siblings,
+    selection: [{ id: "api", mode: "write" }, { id: "web", mode: "write", dependsOn: ["api"] }] });
+  assert.deepEqual(declared.tasks.map((task) => task.dependsOn), [[], ["T001"]]);
+  assert.match(declared.derived[0].reason, /repository 'web' dependsOn 'api'/);
+  const authored = deriveRepositoryTaskDependencies([
+    ...tasks, { id: "T003", repository: "web", dependsOn: ["T002"] }
+  ], { repositories: siblings,
+    selection: [{ id: "api" }, { id: "web", dependsOn: ["api"] }] });
+  assert.deepEqual(authored.tasks[2].dependsOn, ["T002"]);
+  // Root-only and unbound drafts are unchanged.
+  assert.deepEqual(deriveRepositoryTaskDependencies([{ id: "T001", dependsOn: [] }],
+    { repositories: SUPERPROJECT_CATALOG }).derived, []);
+});
+
+test("a derived repository edge that would close a cycle is a compile issue", () => {
+  const draft = superprojectDraft();
+  draft.tasks[0].dependsOn = ["app-clamped-total"];
+  const result = normalizeSemanticDraft(draft, slugify, { repositories: SUPERPROJECT_CATALOG });
+  assert.match(result.issues.join("\n"),
+    /task 'app-clamped-total' \(repository 'root'\) must follow 'lib-clamp' .*already depends on 'app-clamped-total'/);
+  assert.ok(!result.issues.some((issue) => /dependencies contain a cycle/.test(issue)));
+  assert.deepEqual(result.draft.tasks[1].dependsOn, []);
 });
 
 test("Thai integration concerns derive the same security capability", () => {
@@ -466,6 +552,48 @@ test("derived evidence commands preserve the prepared PATH and explicit executio
   } };
   assert.deepEqual(normalizeSemanticDraft({ ...draft, execution: explicit }, slugify)
     .draft.execution, explicit);
+});
+
+// An amendment adding a root task to a change whose lib task already exists
+// gets the same containment edge start derives; a cycle is an issue.
+test("an amendment's added root task follows the submodule's tasks", () => {
+  const tasksContent = [
+    "# Tasks", "",
+    "- [x] **T001** Add clamp [key:lib-clamp] [repo:lib] [paths:index.js] " +
+      "[claims:existing-claim] — verify: `npm test`",
+    ""
+  ].join("\n");
+  const amendment = (addTasks) => ({
+    version: 1,
+    reason: "The app must use clamp",
+    addRequirements: [{ key: "app-total", capability: "app-total", operation: "added",
+      scenario: "The app totals clamped values", outcome: "The total is clamped" }],
+    addTasks,
+    evidence: { "app-total": { capabilities: ["test"] } }
+  });
+  const compile = (addTasks) => compileSemanticAmendment({
+    amendment: amendment(addTasks),
+    contract: { version: 1, claims: [{ id: "existing-claim", requirementKey: "lib-clamp",
+      scenario: "Clamp works", capabilities: ["test"] }], providers: {} },
+    tasksContent, slugify, renderTask: renderDraftTask,
+    repositories: SUPERPROJECT_CATALOG,
+    repositorySelection: [{ id: "root", mode: "write" }, { id: "lib", mode: "write" }]
+  });
+  const rootTask = { key: "app-total", repository: "root", outcome: "Use clamp",
+    covers: ["app-total"], paths: ["main.js"], verify: "npm test" };
+  const compiled = compile([rootTask]);
+  assert.deepEqual(compiled.issues, []);
+  assert.match(compiled.tasksContent, /\*\*T002\*\*[^\n]*\[repo:root\][^\n]*\[depends:T001\]/);
+  const cyclic = compile([rootTask, { key: "lib-extra", repository: "lib",
+    outcome: "Extend lib", covers: ["app-total"], paths: ["extra.js"], verify: "npm test",
+    dependsOn: ["app-total"] }]);
+  assert.match(cyclic.issues.join("\n"),
+    /amendment task 'app-total' \(repository 'root'\) must follow 'lib-extra'/);
+  assert.deepEqual(amendmentRepositoryOrderIssues(amendment([rootTask, { key: "lib-extra",
+    repository: "lib", dependsOn: ["app-total"] }]), tasksContent, {
+    repositories: SUPERPROJECT_CATALOG }), cyclic.issues);
+  assert.deepEqual(amendmentRepositoryOrderIssues(amendment([rootTask]), tasksContent, {
+    repositories: SUPERPROJECT_CATALOG }), []);
 });
 
 test("semantic amendment preserves completed tasks and custom spec sections", () => {

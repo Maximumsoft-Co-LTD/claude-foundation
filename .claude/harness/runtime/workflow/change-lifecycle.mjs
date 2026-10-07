@@ -41,7 +41,8 @@ import {
   reduceSemanticIntakeState, semanticDraftDigest, semanticIntakeResumeProjection
 } from "./semantic-intake-state.mjs";
 import {
-  amendmentTaskRepositoryIssues, amendmentVerifyPathIssues, compileSemanticAmendment,
+  amendmentRepositoryOrderIssues, amendmentTaskRepositoryIssues, amendmentVerifyPathIssues,
+  compileSemanticAmendment,
   semanticAmendmentTemplate, taskContractOnlyAmendment, taskRepositoryIssues, verifyPathIssues,
   writeSemanticAmendment
 } from "./semantic-amendment.mjs";
@@ -801,6 +802,16 @@ export function createChangeLifecycle({
     } catch { return ["root"]; }
   }
 
+  // The selection rows themselves, so a repository `dependsOn` is visible.
+  function changeRepositoryRows(changeDir) {
+    const path = join(changeDir, "repositories.yaml");
+    if (!existsSync(path)) return null;
+    try {
+      const rows = readJson(path).repositories;
+      return Array.isArray(rows) ? rows : null;
+    } catch { return null; }
+  }
+
   const workflowPolicy = () => typeof policy === "function" ? policy() : policy;
 
   function amendmentRevision(state) {
@@ -1065,6 +1076,7 @@ export function createChangeLifecycle({
     if ([3, 4].includes(source.version)) {
       const normalized = normalizeSemanticDraft(source, slugify, {
         defaultRapidEvidence: true,
+        repositories: declaredRepositories(),
         loadCanonicalSpec: (capability) => {
           const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
           return existsSync(path) ? readFileSync(path, "utf8") : null;
@@ -1380,6 +1392,7 @@ export function createChangeLifecycle({
     const normalized = validateCompiledDraft
       ? normalizeSemanticDraft(source, slugify, {
         defaultRapidEvidence: true,
+        repositories: declaredRepositories(),
         loadCanonicalSpec: (capability) => {
           const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
           return existsSync(path) ? readFileSync(path, "utf8") : null;
@@ -1498,12 +1511,19 @@ export function createChangeLifecycle({
   function amendmentRepositoryIssues(id, state, amendment) {
     const changeDir = activeChangePath(id, state);
     const tasksPath = join(changeDir, "tasks.md");
-    return amendmentTaskRepositoryIssues(amendment,
-      existsSync(tasksPath) ? readFileSync(tasksPath, "utf8") : "", {
+    const tasksContent = existsSync(tasksPath) ? readFileSync(tasksPath, "utf8") : "";
+    return [
+      ...amendmentTaskRepositoryIssues(amendment, tasksContent, {
         repositories: declaredRepositories(),
         selection: changeRepositorySelection(changeDir),
         exists: existsSync
-      });
+      }),
+      // An added task's derived repository order must not close a cycle.
+      ...amendmentRepositoryOrderIssues(amendment, tasksContent, {
+        repositories: declaredRepositories(),
+        selection: changeRepositoryRows(changeDir) || undefined
+      })
+    ];
   }
 
   function inspectAmendment(id, amendmentPath, options = {}) {
@@ -2425,6 +2445,8 @@ export function createChangeLifecycle({
         ? provenCommandClaimIds(id) : [],
       retiredTaskIds: (state.amendments || []).flatMap((row) =>
         (row?.removedTasks || []).map((task) => task?.id).filter(Boolean)),
+      repositories: declaredRepositories(),
+      repositorySelection: changeRepositoryRows(basePath),
       loadCanonicalSpec: (capability) => {
         const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
         return existsSync(path) ? readFileSync(path, "utf8") : null;

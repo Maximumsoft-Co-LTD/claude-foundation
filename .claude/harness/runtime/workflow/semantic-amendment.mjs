@@ -3,7 +3,8 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import {
-  normalizeSemanticDraft, renderRequirementMarkdown, renderSpecHeading
+  deriveRepositoryTaskDependencies, normalizeSemanticDraft, renderRequirementMarkdown,
+  renderSpecHeading
 } from "./semantic-draft.mjs";
 import { coverageRationale, coverageStatus } from "./validation/reader-guide.mjs";
 import { scopeAllowsPath } from "../core/graph-execution.mjs";
@@ -473,6 +474,46 @@ export function taskRepositoryIssues(tasks, {
   return unique(issues);
 }
 
+/**
+ * Repository-derived order for an amendment's added tasks, exactly as start
+ * derives it: an added task follows the ledger's and the amendment's tasks in
+ * repositories nested inside its own (or that its repository `dependsOn`).
+ * Existing ledger lines keep their edges. `newTasks` are {id, semanticKey,
+ * repository, dependsOn} rows whose dependsOn already holds task ids.
+ */
+export function deriveAmendmentTaskDependencies(newTasks, tasksContent, options = {}) {
+  const existing = String(tasksContent || "").split("\n").filter((line) => taskId(line))
+    .map((line) => ({
+      id: taskId(line), semanticKey: semanticTaskKey(line),
+      repository: String(line).match(/\[repo:([^\]\s]+)\]/i)?.[1] || "root",
+      dependsOn: taskDepends(line)
+    }));
+  const derived = deriveRepositoryTaskDependencies([...existing, ...newTasks], {
+    ...options, consumers: new Set(newTasks.map((task) => task.id))
+  });
+  return {
+    tasks: derived.tasks.slice(existing.length),
+    issues: derived.issues.map((issue) => `amendment ${issue}`)
+  };
+}
+
+/** The repository-order issues `change amend --inspect` reports in one EDIT. */
+export function amendmentRepositoryOrderIssues(amendment, tasksContent, options = {}) {
+  const added = amendmentList(amendment, "addTasks").filter((task) => keyOf(task));
+  if (!added.length) return [];
+  const existingIds = new Map(String(tasksContent || "").split("\n")
+    .filter((line) => taskId(line))
+    .flatMap((line) => [[semanticTaskKey(line), taskId(line)], [taskId(line), taskId(line)]]));
+  const addedKeys = new Set(added.map(keyOf));
+  const resolve = (value) => addedKeys.has(value) ? value
+    : existingIds.get(value) || existingIds.get(String(value).toUpperCase()) || value;
+  return deriveAmendmentTaskDependencies(added.map((task) => ({
+    id: keyOf(task), semanticKey: keyOf(task),
+    repository: String(task.repository || "").trim() || "root",
+    dependsOn: stringList(task.dependsOn).map(resolve)
+  })), tasksContent, options).issues;
+}
+
 /** The same repository checks for an amendment's added and updated tasks. */
 export function amendmentTaskRepositoryIssues(amendment, tasksContent, options = {}) {
   const lines = String(tasksContent || "").split("\n").filter((line) => taskId(line));
@@ -577,7 +618,8 @@ function amendmentIssues(amendment) {
 
 export function compileSemanticAmendment({
   amendment, contract, tasksContent, slugify, renderTask, semanticDraftVersion = 3,
-  loadCanonicalSpec = null, provenClaimIds = [], retiredTaskIds = []
+  loadCanonicalSpec = null, provenClaimIds = [], retiredTaskIds = [],
+  repositories = null, repositorySelection = null
 }) {
   const issues = amendmentIssues(amendment);
   if (![3, 4].includes(semanticDraftVersion))
@@ -893,6 +935,14 @@ export function compileSemanticAmendment({
   }
   for (const task of newTasks)
     task.dependsOn = stringList(task.dependsOn).map((key) => allocated.get(key)?.id);
+  if (newTasks.length && (Array.isArray(repositories) || Array.isArray(repositorySelection))) {
+    const ordered = deriveAmendmentTaskDependencies(newTasks.map((task) => ({
+      id: task.id, semanticKey: task.semanticKey,
+      repository: String(task.repository || "").trim() || "root", dependsOn: task.dependsOn
+    })), tasksContent, { repositories: repositories || [], selection: repositorySelection });
+    if (ordered.issues.length) return { issues: ordered.issues };
+    ordered.tasks.forEach((row, index) => { newTasks[index].dependsOn = row.dependsOn; });
+  }
   const renderedNewTasks = newTasks.map((task, index) => renderTask(task, maxTask + index));
   let nextTasks = taskLines.filter((line) => line !== null).join("\n").replace(/\s+$/, "");
   if (renderedNewTasks.length) nextTasks += `\n${renderedNewTasks.join("\n")}`;

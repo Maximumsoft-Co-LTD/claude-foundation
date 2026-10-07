@@ -124,7 +124,9 @@ assert_cmd_zero "advance names the task repository's sandbox as the one place to
   sh -c 'printf "%s" "$1" | jq -e --arg api "$2" '\''
     .workspace == $api and .tasks[0].workspace == $api and .workspaces.api == $api and
     (.contextFiles | index($api + "/api.txt")) != null and
-    ([.contextFiles[] | select(contains("/.foundation/sandboxes/"))] | length) == 0'\'' \
+    ([.contextFiles[] | select(contains("/.foundation/sandboxes/") and
+      (endswith("/openspec/changes/cross-repository-profile/tasks.md") | not))] | length) == 0 and
+    ([.contextFiles[] | select(endswith("/tasks.md"))] | length) == 1'\'' \
     >/dev/null' sh "$partial_action" "$api_sandbox"
 assert_file_exists "automatic partial binding repair preserves existing repository work" \
   .foundation/repository-sandboxes/cross-repository-profile/api/.binding-recovery-marker

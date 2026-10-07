@@ -906,6 +906,71 @@ test("change start returns an EDIT for a submodule task bound to root", (t) => {
     "repositories.yaml"), "utf8")).repositories, [{ id: "hook-api", mode: "write" }]);
 });
 
+// The superproject consumes its submodule: a root task that runs after the
+// submodule changes in the same change must see them, so the compiler writes
+// the edge into the ledger instead of leaving both tasks in one parallel wave.
+test("change start orders a root task after tasks in a nested repository", (t) => {
+  const value = fixture(t, { catalog: submoduleCatalog });
+  const twoRepositories = (overrides = {}) => minimalRapidV4({
+    repositories: [{ id: "root", mode: "write" }, { id: "hook-api", mode: "write" }],
+    requirements: [
+      ...minimalRapidV4().requirements,
+      { key: "consumer-result", capability: "single-shot-change", operation: "added",
+        scenarios: [{ name: "Consumer input", when: "The app asks for the result",
+          then: "The app returns the bounded result" }],
+        outcome: "The app returns the bounded result" }
+    ],
+    evidence: { "bounded-result": { capabilities: ["test"] },
+      "consumer-result": { capabilities: ["test"] } },
+    tasks: [
+      { key: "implement-bounded-result", repository: "hook-api",
+        outcome: "Implement the bounded result", covers: ["bounded-result"],
+        paths: ["internal/**"], verify: "go test -v ./..." },
+      { key: "use-bounded-result", repository: "root", outcome: "Use the bounded result",
+        covers: ["consumer-result"], paths: ["src/**"], verify: "npm test" }
+    ],
+    ...overrides
+  });
+  const cyclic = twoRepositories();
+  cyclic.tasks[0].dependsOn = ["use-bounded-result"];
+  writeJson(value.draftPath, cyclic);
+  const { result } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.equal(result.action, "EDIT");
+  assert.match(result.intake.issues.join("\n"),
+    /task 'use-bounded-result' \(repository 'root'\) must follow 'implement-bounded-result'/);
+  assert.equal(existsSync(value.changes), false);
+  writeJson(value.draftPath, twoRepositories());
+  assert.match(captureLog(() => value.lifecycle.startAtomic(value.draftPath)).output,
+    /^AGREED single-shot-change/m);
+  const ledger = readFileSync(join(value.changes, "single-shot-change", "tasks.md"), "utf8");
+  assert.match(ledger, /\*\*T001\*\*[^\n]*\[repo:hook-api\]/);
+  assert.doesNotMatch(ledger.match(/^.*\*\*T001\*\*.*$/m)[0], /\[depends:/);
+  assert.match(ledger, /\*\*T002\*\*[^\n]*\[repo:root\][^\n]*\[depends:T001\]/);
+  // An amendment whose added root task would follow an added submodule task
+  // that depends on it is returned as one EDIT, before anything is rewritten.
+  const amendmentPath = join(value.root, "amendment.json");
+  writeJson(amendmentPath, {
+    version: 1, reason: "Extend the result",
+    addRequirements: [{ key: "extended-result", capability: "single-shot-change",
+      operation: "added", scenarios: [{ name: "Extended input", when: "An extended input arrives",
+        then: "The extended result is returned" }], outcome: "The extended result is returned" }],
+    addTasks: [
+      { key: "use-extended-result", repository: "root", outcome: "Use the extended result",
+        covers: ["extended-result"], paths: ["src/**"], verify: "npm test" },
+      { key: "implement-extended-result", repository: "hook-api",
+        outcome: "Implement the extended result", covers: ["extended-result"],
+        paths: ["internal/**"], verify: "go test -v ./...", dependsOn: ["use-extended-result"] }
+    ],
+    evidence: { "extended-result": { capabilities: ["test"] } }
+  });
+  const amended = captureLog(() => value.lifecycle.inspectAmendment("single-shot-change",
+    "amendment.json", { quiet: true })).result;
+  assert.equal(amended.action, "EDIT");
+  assert.match(amended.intake.issues.join("\n"),
+    /amendment task 'use-extended-result' \(repository 'root'\) must follow 'implement-extended-result'/);
+  assert.equal(readFileSync(join(value.changes, "single-shot-change", "tasks.md"), "utf8"), ledger);
+});
+
 // `go test` prints `ok <package>` or `(cached)`: no test result Prove can read.
 test("a verify whose known runner prints no countable result gets an advisory, not a block", (t) => {
   assert.deepEqual(verifyCountAdvisories([

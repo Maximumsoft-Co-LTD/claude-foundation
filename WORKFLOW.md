@@ -292,6 +292,9 @@ also carries `checkCommand`, that verify run through `claude-foundation exec
 `.foundation/repository-sandboxes/<change>/<repository>`, never the shared
 sandbox's empty submodule directory, and the top-level `workspace` (plus a
 `workspaces` map by repository) is that sandbox whenever every task shares it.
+The `tasks.md` in `contextFiles` is the isolated ledger the harness ticks. When
+the handed work depends on finished tasks, or other repositories hold finished
+tasks, the EDIT lists them in `completed` (`id`, `repository`, `workspace`).
 `claude-foundation exec <change> --repo <id>` (or `--task <id>`) runs a check in
 that same sandbox; without either, the caller's directory or a single pending
 task repository selects it, and nothing runs in the main checkout. Unauthorized external work enters
@@ -542,7 +545,11 @@ One-task changes without shared external authority stay in the current agent.
 Independent tasks in separate repository workspaces may use native workers.
 Tasks sharing a workspace stay serialized because lease release observes the
 whole repository diff; disjoint paths alone cannot identify their writer.
-The harness plans dependency and resource scopes,
+The compiler writes cross-repository order into `tasks.md`. A task follows
+every same-change task in a repository nested inside its own, as root contains
+a submodule. A task without authored edges also follows the tasks of each
+repository its selection `dependsOn`. A task a semantic amendment adds gets
+the same edges. An edge that would close a cycle is a compile issue. The harness plans dependency and resource scopes,
 leases them all-or-none with fencing generations, and accepts only observed
 writes inside the granted authority. Load one primary construction skill per
 task and only the cross-cutting security or observability skills whose triggers

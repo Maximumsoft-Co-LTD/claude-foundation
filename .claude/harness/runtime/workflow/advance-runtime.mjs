@@ -14,7 +14,7 @@ import {
 } from "./advance-recovery.mjs";
 
 import { existsSync, readdirSync, statSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 
 export const ADVANCE_PROTOCOL_VERSION = 6;
 
@@ -74,8 +74,16 @@ export function envelopeContextFiles({
   packetDir, state = {}, tasks = [], paths = [], scopedPaths = []
 }) {
   const specs = packetSpecFiles(join(packetDir, "specs"));
+  // The harness ticks the isolated workspace's ledger; the main checkout's
+  // copy stays unticked until Land, so it would report finished work pending.
+  const isolatedLedger = ["worktree", "copy"].includes(state.workspace?.mode) &&
+    state.workspace?.path
+    ? join(state.workspace.path, "openspec", "changes", basename(packetDir), "tasks.md")
+    : null;
   const packet = ["proposal.md", "design.md", "tasks.md"]
-    .map((name) => join(packetDir, name)).filter((file) => existsSync(file));
+    .map((name) => name === "tasks.md" && isolatedLedger && existsSync(isolatedLedger)
+      ? isolatedLedger : join(packetDir, name))
+    .filter((file) => existsSync(file));
   const root = (repository) => repositoryWorkspace(state, repository);
   const scoped = (path) => {
     const value = String(path || "");
@@ -560,6 +568,38 @@ function selectedBuildTasks(id, dispatch, plan) {
     });
 }
 
+// Finished tasks the handed work builds on: every completed task it depends
+// on, transitively, and any completed task in another repository. Each names
+// the workspace that holds its output, so a task in one repository never reads
+// another repository's finished work as missing.
+function completedTaskContext(state, plan, tasks) {
+  const nodes = (plan?.graph?.nodes || []).filter((node) => node.kind === "task" &&
+    String(node.id).startsWith("task:"));
+  if (!nodes.length) return [];
+  const taskId = (node) => String(node.id).slice("task:".length);
+  const byId = new Map(nodes.map((node) => [taskId(node), node]));
+  const pending = new Set((plan.tasks || []).map((task) => task.id));
+  const repositories = new Set(tasks.map((task) => task.repository));
+  const needed = new Set();
+  const visit = (id) => {
+    for (const dependency of (byId.get(id)?.dependsOn || [])
+      .filter((value) => String(value).startsWith("task:")).map((value) => value.slice(5))) {
+      if (needed.has(dependency)) continue;
+      needed.add(dependency);
+      visit(dependency);
+    }
+  };
+  tasks.forEach((task) => visit(task.id));
+  return nodes.map((node) => [taskId(node), node])
+    .filter(([id, node]) => !pending.has(id) &&
+      (needed.has(id) || !repositories.has(node.repository || "root")))
+    .slice(0, 20)
+    .map(([id, node]) => ({
+      id, repository: node.repository || "root",
+      workspace: repositoryWorkspace(state, node.repository || "root")
+    }));
+}
+
 function buildAction(id, dispatch, state, plan = null) {
   if (dispatch.action === "build-complete") return null;
   if (["run-in-session", "run-leased-in-session", "spawn-group"].includes(dispatch.action)) {
@@ -599,6 +639,11 @@ function buildAction(id, dispatch, state, plan = null) {
       .filter((task) => task.repository && task.workspace)
       .map((task) => [task.repository, task.workspace]));
     const locations = [...new Set(located.map((task) => task.workspace))];
+    const completed = completedTaskContext(state, plan, tasks);
+    if (completed.length) instructions.push(
+      `Already complete and verified: ${completed.map((task) =>
+        `${task.id} (${task.repository})`).join(", ")}. Build on that work where its ` +
+      "workspace holds it; do not re-implement it.");
     return envelope(id, "EDIT", {
       legacyAction: dispatch.action === "spawn-group" ? "EXECUTE_TASK_GROUP" : "EXECUTE_TASK",
       actor: "agent",
@@ -616,6 +661,7 @@ function buildAction(id, dispatch, state, plan = null) {
           dispatch.task ? [dispatch.task] : []
       },
       ...(reverification.length ? { reverification } : {}),
+      ...(completed.length ? { completed } : {}),
       ...(instructions.length ? { instructions } : {}),
       recoveryType: "EDIT",
       alternatives: ["amend the agreement if Build discovers new behavior"]
