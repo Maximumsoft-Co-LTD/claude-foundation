@@ -1042,6 +1042,95 @@ test("change amend installs atomically and restores files and state on validatio
   }
 });
 
+test("a verify-only amend keeps a passing receipt whose contract did not change", (t) => {
+  // The real contract fingerprint covers claims and policy, not task verify
+  // commands, so a verify-only amendment leaves it unchanged.
+  const root = mkdtempSync(join(tmpdir(), "verify-amend-same-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const id = "verify-change";
+  const change = join(root, ".foundation", "sandboxes", id, "openspec", "changes", id);
+  mkdirSync(change, { recursive: true });
+  writeFileSync(join(change, "tasks.md"), [
+    "# Tasks", "",
+    "- [ ] **T001** Build A [key:impl] [claims:a] — verify: `npm tset`",
+    "- [x] **T002** Build B [key:style] [claims:b] — verify: `npm run lint`", ""
+  ].join("\n"));
+  writeFileSync(join(change, "evidence.yaml"), `${JSON.stringify({
+    version: 1,
+    claims: [
+      { id: "a", requirementKey: "a", scenario: "A runs", capabilities: ["test"] },
+      { id: "b", requirementKey: "b", scenario: "B runs", capabilities: ["lint"] }
+    ],
+    providers: {
+      test: { adapter: "test-discovery", capability: "test", claims: ["a"],
+        command: ["sh", "-c", "(npm tset) && (npm run lint)"] },
+      lint: { adapter: "command", capability: "lint", claims: ["b"],
+        command: ["sh", "-c", "npm run lint"] }
+    }
+  }, null, 2)}\n`);
+  let state = { id, status: "building", semanticDraftVersion: 4,
+    revision: 0, contractRevision: 0, executionRevision: 0 };
+  const stableHash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+  const contract = () => JSON.parse(readFileSync(join(change, "evidence.yaml"), "utf8"));
+  const contractFingerprint = () => stableHash(contract().claims);
+  const receipts = join(root, ".foundation", "receipts", id);
+  mkdirSync(receipts, { recursive: true });
+  const lintReceipt = `${JSON.stringify({ provider: "lint", status: "pass",
+    contractFingerprint: contractFingerprint() })}\n`;
+  writeFileSync(join(receipts, "lint.json"), lintReceipt);
+  writeFileSync(join(receipts, "test.json"), `${JSON.stringify({ provider: "test",
+    status: "fail", contractFingerprint: contractFingerprint() })}\n`);
+  const lifecycle = createChangeLifecycle({
+    root,
+    policy: () => ({ workflow: { grounding: "optional" } }),
+    securityTerms: [],
+    fail: (message) => { throw new Error(message); },
+    pathInside: (parent, candidate) => {
+      const rel = relative(parent, candidate);
+      return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+    },
+    readJson: (path) => JSON.parse(readFileSync(path, "utf8")),
+    writeJson: (path, value) => writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`),
+    slugify,
+    changePath: () => change,
+    activeChangePath: () => change,
+    loadRuntime: () => state,
+    saveRuntime: (value) => { state = structuredClone(value); },
+    validate: () => {},
+    now: () => "2026-10-01T00:00:00.000Z",
+    receiptPath: (_changeId, provider) => join(receipts, `${provider}.json`),
+    receiptValidity: (_changeId, provider) => {
+      const receipt = JSON.parse(readFileSync(join(receipts, `${provider}.json`), "utf8"));
+      return { provider, status: receipt.status,
+        validity: receipt.contractFingerprint === contractFingerprint() ? "valid" : "contract-stale" };
+    },
+    contractFingerprint,
+    requiredProviders: () => Object.keys(contract().providers),
+    providerConfig: (_changeId, provider) => contract().providers[provider],
+    claimsForProvider: (_changeId, provider) => contract().claims.filter((claim) =>
+      contract().providers[provider].claims.includes(claim.id)),
+    relevantHash: () => "workspace",
+    providerWorkspaceHash: () => "workspace",
+    providerInputIdentity: () => ({ mode: "declared", fingerprint: "inputs" }),
+    stableHash
+  });
+  writeFileSync(join(root, "amendment.json"), JSON.stringify({
+    version: 1, reason: "Correct the verify command",
+    updateTasks: [{ key: "impl", verify: "npm test" }]
+  }));
+  const priorLog = console.log;
+  console.log = () => {};
+  try {
+    lifecycle.amendChange(id, "amendment.json");
+  } finally {
+    console.log = priorLog;
+  }
+  assert.equal(state.contractRevision, 1);
+  assert.match(readFileSync(join(change, "tasks.md"), "utf8"), /verify: `npm test`$/m);
+  assert.equal(readFileSync(join(receipts, "lint.json"), "utf8"), lintReceipt,
+    "the passing receipt is kept as it was");
+});
+
 test("a verify-only change amend reruns that task's evidence and keeps the rest", (t) => {
   const root = mkdtempSync(join(tmpdir(), "verify-amend-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));

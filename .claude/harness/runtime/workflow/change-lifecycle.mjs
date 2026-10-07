@@ -2328,6 +2328,9 @@ export function createChangeLifecycle({
         for (const provider of proofRecovery.providers.preserved) {
           const priorReceipt = receiptBackups.get(provider);
           if (!priorReceipt) throw new Error(`selective proof receipt '${provider}' disappeared`);
+          // A task-only amendment leaves the contract as it was: the receipt
+          // is already bound to it and needs no rebind.
+          if (nextFingerprint === priorContractFingerprint) continue;
           const rebound = rebindSelectiveProofReceipt({
             receipt: priorReceipt,
             provider,
