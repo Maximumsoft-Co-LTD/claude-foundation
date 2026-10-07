@@ -765,12 +765,17 @@ export function createPullRequestRuntime({
     return clean(result.stdout).split(/\s+/).find((value) => /^https:\/\//.test(value)) || null;
   }
 
-  function verifyPullRequest(provider, url, commit) {
+  // `successors` are later commits this project's own follow-up deliveries
+  // pushed onto the same pull request; a head at one of them still counts as
+  // this delivery when the delivered commit remains in its history.
+  function verifyPullRequest(provider, url, commit, successors = []) {
     if (!url) throw providerUnavailable("GitHub did not return a pull-request URL");
     const value = githubJson(["pr", "view", url, "--repo", provider.remote.slug,
       "--json", "number,url,state,isDraft,headRefName,baseRefName,headRefOid"],
     "cannot verify pull request", "GitHub returned invalid pull-request verification JSON", "{}");
-    if (value.state !== "OPEN" || value.headRefOid !== commit ||
+    const followedUp = value.headRefOid !== commit && successors.includes(value.headRefOid) &&
+      git(["merge-base", "--is-ancestor", commit, value.headRefOid], root).status === 0;
+    if (value.state !== "OPEN" || (value.headRefOid !== commit && !followedUp) ||
         value.baseRefName !== provider.baseBranch)
       throw new Error("pull-request read-back does not match the delivered commit and base branch");
     if (!clean(value.url).startsWith(`https://${provider.remote.host}/`))
@@ -918,12 +923,33 @@ export function createPullRequestRuntime({
       found ? found.url || previousUrl || null : open(), commit);
   }
 
+  // The chain of verified follow-up deliveries that updated this delivery's
+  // pull request, each built directly on the commit before it.
+  function followUpSuccessors(receipt) {
+    const key = pullRequestUrlKey(receipt.pullRequest?.url);
+    const updates = priorReceipts(receipt.changeId).filter((row) =>
+      row.followUp?.mode === "update-existing" && !row.multiRepository && row.commit &&
+      row.branch === receipt.branch && pullRequestUrlKey(row.pullRequest?.url) === key);
+    const chain = [];
+    for (let current = receipt; ;) {
+      const next = updates.find((row) => row.followUp.of === current.changeId &&
+        row.followUp.parent === current.commit && !chain.includes(row));
+      if (!next) return chain;
+      chain.push(next);
+      current = next;
+    }
+  }
+
   function reusedPullRequests(policy, priorReceipt, repositories, delivery) {
     if (!priorReceipt.multiRepository) {
       const provider = providerContext(policy);
       assertProviderBinding(delivery.provider, provider);
-      return [{ ...priorReceipt.pullRequest,
-        ...verifyPullRequest(provider, priorReceipt.pullRequest.url, priorReceipt.commit) }];
+      const successors = followUpSuccessors(priorReceipt);
+      const verified = verifyPullRequest(provider, priorReceipt.pullRequest.url,
+        priorReceipt.commit, successors.map((row) => row.commit));
+      const index = successors.findIndex((row) => row.commit === verified.headRefOid);
+      return [{ ...priorReceipt.pullRequest, ...verified,
+        ...(index >= 0 ? { followedUpBy: successors.slice(0, index + 1).map((row) => row.changeId) } : {}) }];
     }
     const byId = new Map(repositories.map((repository) => [repository.id, repository]));
     return Object.entries(priorReceipt.repositories || {}).map(([repositoryId, record]) => {

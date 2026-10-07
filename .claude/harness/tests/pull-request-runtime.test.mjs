@@ -962,4 +962,25 @@ test(`review follow-up delivery ${scenario === "open" ? "updates the open pull r
   assert.equal(checkedGit(["rev-parse", "HEAD"], root), baseHead, "the target checkout never moves");
   const again = await runtime.advance("booking-review-fix");
   assert.equal(again.reused, true);
+  if (scenario !== "open") return;
+  // The follow-up moved the original pull request's head forward. Re-running
+  // the original delivery recognizes the recorded follow-up as the reason and
+  // stays idempotent instead of reporting a mismatched head.
+  const head = remote["change/booking-flow"];
+  const rerun = await runtime.advance("booking-flow");
+  assert.equal(rerun.action, "DONE", JSON.stringify(rerun));
+  assert.equal(rerun.reused, true);
+  assert.equal(rerun.pullRequests[0].url, "https://github.com/acme/booking/pull/42");
+  assert.equal(rerun.pullRequests[0].headRefOid, head);
+  assert.deepEqual(rerun.pullRequests[0].followedUpBy, ["booking-review-fix"]);
+  assert.equal(pullRequests.length, 1, "no second pull request");
+  assert.equal(pushes.length, 2, "an idempotent re-run never pushes");
+  // History no recorded delivery accounts for still fails closed, even when
+  // it descends from the delivered commit.
+  remote["change/booking-flow"] = checkedGit(["commit-tree", `${head}^{tree}`, "-p", head,
+    "-m", "foreign"], root);
+  await assert.rejects(runtime.advance("booking-flow"),
+    /pull-request read-back does not match the delivered commit/);
+  await assert.rejects(runtime.advance("booking-review-fix"),
+    /pull-request read-back does not match the delivered commit/);
 });

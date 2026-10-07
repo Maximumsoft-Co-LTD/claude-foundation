@@ -811,8 +811,12 @@ a fast-forward (never forced) to the same branch, and returns
 `reached: pr-updated` with the updated URL. A closed or merged pull request, a
 moved branch or base, or more than one cited delivery opens a new pull request
 instead, and the result's `followUp.notice` says why. The binding is
-checkpointed, so a resumed delivery never re-decides it. Multi-repository
-deliveries do not bind follow-ups yet.
+checkpointed, so a resumed delivery never re-decides it. Re-running Deliver for
+the original change afterwards still returns its pull request as reused: a head
+at a commit that a recorded follow-up delivery built on the original commit
+counts, and the result's `followedUpBy` names those changes. Any other head,
+even one descending from the delivered commit, still fails verification.
+Multi-repository deliveries do not bind follow-ups yet.
 
 Before committing, Deliver verifies staged Git blobs against the retained Land
 projection. Before publishing, it verifies the actual commit tree again, including
