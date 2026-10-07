@@ -56,9 +56,10 @@ const RULES = [
     "packet scaling", "bounded review repair closure",
     "harness contracts (evidence review)"
   ]],
-  [/repository-snapshot|state-runtime|workspace-surface/, [
+  [/repository-snapshot|state-runtime|workspace-surface|core\/git-ignore/, [
     ...EVIDENCE, ...LAND, "land surface mutation", "target drift mutation",
-    "evidence binding mutation", "workspace surface"
+    "evidence binding mutation", "workspace surface", "git-ignored surface",
+    "sandbox data-loss guards"
   ]],
   [/runtime\/evidence\/(?!configured-reviewer|codex-reviewer|review-protocol|review-attempt-store)/, [
     ...EVIDENCE, ...REVIEW, "land surface", "evidence binding mutation"

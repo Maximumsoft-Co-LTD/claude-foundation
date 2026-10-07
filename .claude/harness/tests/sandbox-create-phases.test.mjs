@@ -886,14 +886,11 @@ test("copy planning recognizes carryable Git metadata and ignored paths", (t) =>
   mkdirSync(join(root, ".git"));
   assert.equal(carryableGitMetadata(root), true);
 
-  let calls = 0;
-  assert.deepEqual([...ignoredSandboxPaths(false, root, () => { calls += 1; })], []);
-  assert.equal(calls, 0);
-  const ignored = ignoredSandboxPaths(true, root, () => ({
+  const ignored = ignoredSandboxPaths(root, () => ({
     status: 0, stdout: "coverage/\0dist/file.js\0\0"
   }));
   assert.deepEqual([...ignored], ["coverage", "dist/file.js"]);
-  assert.deepEqual([...ignoredSandboxPaths(true, root, () => ({ status: 1 }))], []);
+  assert.deepEqual([...ignoredSandboxPaths(root, () => ({ status: 1 }))], []);
 
   const git = (args) => args.includes("--others")
     ? { status: 0, stdout: "ignored/\0" }
@@ -909,8 +906,13 @@ test("copy planning recognizes carryable Git metadata and ignored paths", (t) =>
   assert.equal(plan.excludes("node_modules/untracked.txt"), true);
   assert.equal(plan.excludes("src/app.mjs"), false);
 
+  // No carried `.git` still asks the target for its ignore rules; a target
+  // that is no repository answers nothing and nothing is treated as ignored.
   const noGit = sandboxCopyPlan({
-    root, carriesGit: false, git: () => { throw new Error("not called"); },
+    root, carriesGit: false, git: (args) => {
+      if (args.includes("--others")) return { status: 128, stdout: "" };
+      throw new Error("tracked listing is not read without a carried .git");
+    },
     sandboxCopyExcludedDirs: new Set(),
     excludedWorkspaceDirs: new Set([".git", "node_modules"])
   });

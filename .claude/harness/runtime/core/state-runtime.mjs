@@ -8,6 +8,7 @@ import {
   declaredPathMatcher, isChangePacketPath, isExcludedPath, mergeSurfaceAdditions,
   surfaceAdditionPaths, trackedPathSet
 } from "./workspace-surface.mjs";
+import { withoutGitIgnored } from "./git-ignore.mjs";
 import { taskBlocks, taskMetadata } from "../contracts/change-artifacts.mjs";
 
 export function createStateRuntime({
@@ -296,6 +297,38 @@ export function createStateRuntime({
     return "root";
   }
 
+  // The target whose Git view governs a sandbox that has no checkout of its
+  // own: a copy sandbox of a target whose `.git` is a file cannot carry it.
+  // Such a sandbox sits inside the target's tree, so Git run there answers for
+  // the enclosing repository, under which the whole sandbox is ignored: the
+  // proof hash then ignored code edits and stale evidence passed, and a
+  // rewritten ignored file entered the copy-mode Land projection. Null for the
+  // target itself and for any workspace with its own `.git`.
+  function borrowedGitTarget(state, workspace) {
+    const current = canonicalPath(workspace);
+    if (current === canonicalPath(root) || existsSync(join(workspace, ".git"))) return null;
+    if (state.workspace?.path && canonicalPath(state.workspace.path) === current) return root;
+    for (const [repositoryId, record] of Object.entries(state.repositories || {}))
+      if (repositoryId !== "root" && record?.path && record.targetPath &&
+          canonicalPath(record.path) === current) return record.targetPath;
+    return null;
+  }
+
+  // The sandbox's own files, judged by its target: what the target tracks is
+  // content, and what the target's rules ignore is no change's work. Null when
+  // the workspace answers for itself or the target is no repository.
+  function borrowedGitView(state, workspace) {
+    const target = borrowedGitTarget(state, workspace);
+    if (!target || !existsSync(target)) return null;
+    const listed = git(["ls-files", "-z"], target);
+    if (listed.status !== 0) return null;
+    return {
+      target,
+      tracked: trackedPathSet(listed.stdout.split("\0").filter(Boolean)),
+      withoutIgnored: (paths) => withoutGitIgnored(target, paths)
+    };
+  }
+
   function declaredSurfaceMatcher(id, state = {}, repositoryId = "root") {
     // `surfaceAdditions` are exact sandbox paths Prove found outside every
     // task's `[paths:]` and recorded instead of refusing; the hash and the Land
@@ -424,13 +457,18 @@ export function createStateRuntime({
     };
   }
 
-  function collectFilesystemSnapshot(workspace, allowed) {
+  // `view`: the target's Git view of a sandbox without its own checkout. A
+  // file is then judged as Git would judge it (tracked, declared, or the
+  // packet); a directory only by name, so a declared file below is reached.
+  function collectFilesystemSnapshot(workspace, allowed, view = null) {
     const files = [];
     function collect(dir) {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         const path = join(dir, entry.name);
         const rel = relative(workspace, path).replaceAll("\\", "/");
-        if (!allowed(rel)) continue;
+        if (!allowed(rel, view ? {
+          gitAware: !entry.isDirectory(), tracked: view.tracked.has(rel)
+        } : {})) continue;
         if (entry.isDirectory()) collect(path);
         else if (entry.isFile() || entry.isSymbolicLink()) files.push([rel, path]);
       }
@@ -521,9 +559,15 @@ export function createStateRuntime({
     const declared = declaredSurfaceMatcher(id, state,
       workspaceRepositoryId(state, workspace));
     const allowed = snapshotPathPolicy(id, ignored, declared);
-    let files = collectGitSnapshot(workspace, allowed);
-    if (files === null) files = collectFilesystemSnapshot(workspace, allowed)
-      .map(([rel, path]) => [rel, path, filesystemEntryIdentity(path)]);
+    const view = borrowedGitView(state, workspace);
+    let files = view ? null : collectGitSnapshot(workspace, allowed);
+    if (files === null) {
+      const walked = collectFilesystemSnapshot(workspace, allowed, view);
+      const kept = new Set(view ? view.withoutIgnored(walked.map(([rel]) => rel))
+        : walked.map(([rel]) => rel));
+      files = walked.filter(([rel]) => kept.has(rel))
+        .map(([rel, path]) => [rel, path, filesystemEntryIdentity(path)]);
+    }
     for (const [rel, , identity] of files)
       foldSnapshotEntry(digests, id, workspace, rel, identity);
     const value = snapshotValue(id, workspace, contractRevision, files, digests);
@@ -583,22 +627,25 @@ export function createStateRuntime({
 
   function workspaceManifest(workspace, id, excludeChange = false) {
     const result = {};
-    const ignored = ignoredPathSet(workspace);
+    const manifestState = existsSync(runtimePath(id)) ? readJson(runtimePath(id)) : {};
+    // A sandbox without its own checkout reads its files through its target's
+    // Git view, exactly as its proof hash does.
+    const view = borrowedGitView(manifestState, workspace);
+    const ignored = view ? new Set() : ignoredPathSet(workspace);
     // Tracked-aware, like the snapshot and the copy filter: both admit a
     // committed file under an excluded-named directory, so the manifests whose
     // diff decides what apply projects must admit it too — a name-only
     // exclusion here dropped exactly those edits at Land, silently, while
     // proof (whose hash includes them) reported pass.
-    const listed = git(["ls-files", "-z"], workspace);
+    const listed = view ? { status: 0 } : git(["ls-files", "-z"], workspace);
     const gitAware = listed.status === 0;
-    const tracked = gitAware
+    const tracked = view ? view.tracked : gitAware
       ? trackedPathSet(listed.stdout.split("\0").filter(Boolean))
       : new Set();
     // The same predicate the proof hash uses. Two manifests are diffed to decide
     // what apply projects, so a path either manifest admits and the other does
     // not becomes a create or a delete; confining both to one surface is what
     // keeps an unrelated tree out of that diff.
-    const manifestState = existsSync(runtimePath(id)) ? readJson(runtimePath(id)) : {};
     const declared = declaredSurfaceMatcher(id, manifestState,
       workspaceRepositoryId(manifestState, workspace));
     function collect(dir) {
@@ -620,7 +667,9 @@ export function createStateRuntime({
       }
     }
     collect(workspace);
-    return result;
+    if (!view) return result;
+    const kept = new Set(view.withoutIgnored(Object.keys(result)));
+    return Object.fromEntries(Object.entries(result).filter(([rel]) => kept.has(rel)));
   }
 
   return {

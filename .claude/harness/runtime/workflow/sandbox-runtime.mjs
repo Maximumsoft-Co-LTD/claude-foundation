@@ -689,8 +689,11 @@ export function carryableGitMetadata(root) {
   catch { return false; }
 }
 
-export function ignoredSandboxPaths(carriesGit, root, git) {
-  if (!carriesGit) return new Set();
+// Asked of the target even when the copy cannot carry its `.git` (a linked
+// worktree or a submodule checkout has a `.git` file): that target is still a
+// repository whose ignore rules decide what is no change's content. Without a
+// repository the listing fails and nothing is treated as ignored.
+export function ignoredSandboxPaths(root, git) {
   const listed = git(
     ["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"],
     root);
@@ -706,7 +709,7 @@ export function sandboxCopyPlan({
   const listed = carriesGit ? git(["ls-files", "-z"], root) : { status: 1, stdout: "" };
   const listedPaths = listed.status === 0 ? listed.stdout.split("\0").filter(Boolean) : [];
   const tracked = trackedPathSet(listedPaths);
-  const ignored = ignoredSandboxPaths(carriesGit, root, git);
+  const ignored = ignoredSandboxPaths(root, git);
   const excludes = (rel) => ignored.has(rel) ||
     isExcludedPath(rel, { excluded: copyExcluded, tracked: tracked.has(rel) });
   const filter = (source) =>

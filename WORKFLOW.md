@@ -795,6 +795,10 @@ bytes until then. Only an edit of the same lines is a `target-edit-conflict`:
 the agent merges it into the sandbox copy, and Land applies the merged file once
 merging the target edit into it changes nothing. Edits made outside the sandbox
 stop Land only on paths in this change's Land projection; others are reported.
+Git-ignored files are no change's content: under each selected repository's own
+ignore rules they are never compared, projected, or reported as target edits or
+unlanded sandbox work. A tracked file stays content even when it matches an
+ignore pattern.
 
 An archived Land whose diff is still uncommitted is undone, on the user's
 decision, with `advance <change> --undo-land --decision-ref <user-decision>`.

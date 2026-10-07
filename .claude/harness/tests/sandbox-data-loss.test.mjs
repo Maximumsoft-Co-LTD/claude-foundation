@@ -28,6 +28,7 @@ import {
   landedProjectionFindings, repositoryPointerStop, rootPointerMoves
 } from "../runtime/workflow/land-verification.mjs";
 import { createSandboxCleanup } from "../runtime/workflow/sandbox-cleanup.mjs";
+import { assessSandbox, guardSandboxRemoval } from "../runtime/workflow/sandbox-preservation.mjs";
 
 const ID = "hook-change";
 const SUBMODULE = "services/hook/sub";
@@ -63,14 +64,18 @@ function superproject(t) {
   mkdirSync(upstream);
   git(["init", "-q"], upstream);
   write(join(upstream, "handler.go"), "package hook\n");
-  git(["add", "."], upstream);
+  // The submodule's own ignore rules. `tracked.counter` was committed before
+  // `*.counter` was ignored, so it is tracked content all the same.
+  write(join(upstream, "tracked.counter"), "0\n");
+  write(join(upstream, ".gitignore"), "*.counter\n.autoharness-counter\n");
+  git(["add", "-f", "."], upstream);
   git(["commit", "-qm", "sub base"], upstream);
 
   const root = join(base, "parent");
   mkdirSync(root);
   git(["init", "-q"], root);
   write(join(root, "README.md"), "parent\n");
-  write(join(root, ".gitignore"), ".foundation/\n");
+  write(join(root, ".gitignore"), ".foundation/\n.root-counter\n");
   git(["submodule", "add", "-q", upstream, SUBMODULE], root);
   git(["add", "."], root);
   git(["commit", "-qm", "parent base"], root);
@@ -171,6 +176,65 @@ test("(a) work written into the shared sandbox's empty submodule placeholder nev
   const result = cleanup.cleanupAppliedSandbox(ID, { ...fixture.state, status: "archived" });
   assert.equal(result.status, "refused");
   assert.equal(existsSync(join(fixture.shared, SUBMODULE, "dispatch.go")), true);
+});
+
+// A tool that rewrites a git-ignored counter on every run, in the target and in
+// every sandbox, left Land reporting it as unlanded work and refusing cleanup.
+// Each repository's own ignore rules decide; tracked content stays compared.
+test("(a) git-ignored files are never unlanded work, under each repository's own rules", (t) => {
+  const fixture = superproject(t);
+  buildInRepositorySandbox(fixture);
+  for (const path of ["dispatch.go", "handler.go", "notes/retry.md"])
+    write(join(fixture.target, path), readFileSync(join(fixture.repository, path)));
+  let run = 0;
+  const tool = () => {
+    run += 1;
+    write(join(fixture.target, ".autoharness-counter"), `${run}\n`);
+    write(join(fixture.repository, ".autoharness-counter"), `${run + 100}\n`);
+    write(join(fixture.repository, "cache/run.counter"), `${run}\n`);
+    write(join(fixture.shared, SUBMODULE, ".autoharness-counter"), `${run + 200}\n`);
+    write(join(fixture.root, ".root-counter"), `${run}\n`);
+    write(join(fixture.shared, ".root-counter"), `${run + 300}\n`);
+  };
+  tool();
+  tool();
+  assert.deepEqual(landedProjectionFindings({ root: fixture.root, id: ID, state: fixture.state }),
+    []);
+  const cleanup = createSandboxCleanup({ root: fixture.root, canonicalPath: realpathSync,
+    git: (args, cwd) => tryGit(args, cwd), now: () => "2026-10-07T00:00:00.000Z" });
+  assert.equal(cleanup.cleanupRepositorySandboxes(ID,
+    { ...fixture.state, status: "archived" }).sub.status, "removed");
+
+  // A tracked file that also matches `*.counter` is content: still compared.
+  const again = superproject(t);
+  write(join(again.repository, "tracked.counter"), "1\n");
+  write(join(again.shared, SUBMODULE, "tracked.counter"), "2\n");
+  const findings = landedProjectionFindings({ root: again.root, id: ID, state: again.state });
+  assert.deepEqual(findings.map(({ repositoryId, reason, paths }) => [repositoryId, reason, paths]),
+    [["root", "placeholder", [`${SUBMODULE}/tracked.counter`]],
+      ["sub", "not-landed", ["tracked.counter"]]]);
+});
+
+test("(a) a plain-copy sandbox compares only what its target repository does not ignore", (t) => {
+  const fixture = superproject(t);
+  const copy = join(fixture.base, "copy-sandbox");
+  for (const path of ["handler.go", "tracked.counter", ".gitignore"])
+    write(join(copy, path), readFileSync(join(fixture.target, path)));
+  write(join(copy, ".autoharness-counter"), "sandbox run\n");
+  write(join(copy, "logs/tool.counter"), "sandbox run\n");
+  write(join(fixture.target, ".autoharness-counter"), "target run\n");
+  const descriptor = { repositoryId: "sub", label: "repository-sub", changeId: ID,
+    kind: "repository", mode: "copy", access: "write", sandboxPath: copy,
+    targetPath: fixture.target, baseHead: fixture.subBase, pathspec: ["."], nestedPaths: [] };
+  const clean = assessSandbox(descriptor);
+  assert.equal(clean.plain, true);
+  assert.deepEqual(clean.unlanded, []);
+  assert.equal(guardSandboxRemoval({ root: fixture.root, id: ID, descriptor,
+    purpose: "archive", now: () => "2026-10-07T00:00:00.000Z" }).proceed, true);
+
+  write(join(copy, "tracked.counter"), "edited\n");
+  write(join(copy, "dispatch.go"), "package hook\n");
+  assert.deepEqual(assessSandbox(descriptor).unlanded, ["dispatch.go", "tracked.counter"]);
 });
 
 test("(a) an uninitialized submodule target is a binding failure, not a landed repository", (t) => {
