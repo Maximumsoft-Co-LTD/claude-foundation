@@ -55,7 +55,7 @@ export function assertOpenSpecStrictValid(id, dir, fail, options = {}) {
   // A pass is reused only for byte-identical lint inputs under the same CLI;
   // failures are never memoized, so a repaired packet always re-lints.
   const memoKey = strictLintMemoKey(projectRoot, id, probe.identity);
-  if (strictLintPassed(memoKey)) return;
+  if (strictLintPassed(memoKey, projectRoot)) return;
   const lint = spawnSync("openspec",
     ["validate", id, "--type", "change", "--strict", "--json", "--no-interactive"],
     { cwd: projectRoot, encoding: "utf8", timeout: 60_000 });
@@ -74,7 +74,7 @@ export function assertOpenSpecStrictValid(id, dir, fail, options = {}) {
       "## REMOVED Requirements.");
   }
   if (memoKey && strictLintMemoKey(projectRoot, id, probe.identity) === memoKey)
-    recordStrictLintPass(memoKey);
+    recordStrictLintPass(memoKey, projectRoot);
 }
 
 function normalizedScope(path) {

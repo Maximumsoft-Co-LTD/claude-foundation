@@ -39,6 +39,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `proven` once the spec is approved) instead of repeating `--through build`.
   Printed approval commands now say `--through proven`.
 
+- Harness own time: a rapid change in a non-Git directory spent ~12 s of its
+  ~27 s harness-active time in 1,626 `git rev-parse HEAD` processes (plus ~90
+  failing `git ls-files`/`status` ones), ~7 s re-reading and re-parsing the
+  runtime state, and ~4 s in five OpenSpec lints and three version probes. HEAD and "not a repository" are now read from the
+  repository files (any layout the reader does not model still asks Git),
+  settled state and file digests are reused while their identity is unchanged,
+  OpenSpec version and strict-lint passes persist by content in
+  `.foundation/cache/` (checkbox ticks and the checkout location are not
+  lint inputs; every other byte is), and a Build task check whose `verify` is the
+  provider's `sh -c` line is now reused by Prove, so the project suite runs once
+  between Build and Prove. Measured on one tiny change: 249 -> 81 spawns and
+  9.8 -> 5.2 s in a repository, 1,752 -> 5 spawns and 26.9 -> 6.4 s in a plain
+  directory. No evidence, isolation, freshness, or Land guard changed.
 - Packet budgets (user decision: raise the defaults so large work fits): task
   and review packets 8 KiB -> 20 KiB, repository 12 KiB -> 24 KiB, global
   16 KiB -> 32 KiB. A paid three-repository API-keys run (3 tasks, 10/4/20

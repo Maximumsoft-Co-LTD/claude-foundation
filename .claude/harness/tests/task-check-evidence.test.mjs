@@ -8,7 +8,7 @@ import test from "node:test";
 import { createAdapterRuntime } from "../runtime/evidence/adapter-runtime.mjs";
 import { configuredCommand } from "../runtime/evidence/evidence-results.mjs";
 import {
-  sameArgv, taskCheckArgv, taskCheckReuseRefusal
+  sameArgv, sameShellLine, taskCheckArgv, taskCheckReuseRefusal
 } from "../runtime/evidence/task-check-evidence.mjs";
 
 const stableHash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -173,6 +173,15 @@ test("argv matching and reuse refusals", () => {
     assert.equal(taskCheckArgv(line), null, line);
   assert.equal(sameArgv(["npm", "test"], { command: "npm", args: ["test"] }), true);
   assert.equal(sameArgv(["npm", "test"], { command: "npm", args: ["test", "x"] }), false);
+  // A compiled draft's provider is `sh -c <verify>`: the identical line is the
+  // identical execution, shell syntax included; anything else is not.
+  const compiled = { command: "sh", args: ["-c", "node --test && node check.js"] };
+  assert.equal(sameShellLine("node --test && node check.js", compiled), true);
+  assert.equal(sameShellLine("node --test", compiled), false);
+  assert.equal(sameShellLine("node --test && node check.js ", compiled), false);
+  assert.equal(sameShellLine("node --test", { command: "bash", args: ["-c", "node --test"] }), false);
+  assert.equal(sameShellLine("node --test", { command: "sh", args: ["-c", "node --test", "x"] }), false);
+  assert.equal(sameShellLine("", { command: "sh", args: ["-c", ""] }), false);
   assert.equal(taskCheckReuseRefusal(TEST, "test"), null);
   assert.equal(taskCheckReuseRefusal({ ...TEST, adapter: "playwright" }, "browser"), "adapter");
   assert.equal(taskCheckReuseRefusal({ ...TEST, readiness: { url: "http://x" } }, "test"), "service");

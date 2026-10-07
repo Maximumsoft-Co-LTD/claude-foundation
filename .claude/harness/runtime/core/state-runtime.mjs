@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
-  copyFileSync, existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, renameSync
+  copyFileSync, existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, renameSync,
+  statSync
 } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -8,8 +9,36 @@ import {
   declaredPathMatcher, isChangePacketPath, isExcludedPath, mergeSurfaceAdditions,
   surfaceAdditionPaths, trackedPathSet
 } from "./workspace-surface.mjs";
+import { gitRepositoryAbsent, resolveGitHead } from "./git-head.mjs";
 import { withoutGitIgnored } from "./git-ignore.mjs";
 import { taskBlocks, taskMetadata } from "../contracts/change-artifacts.mjs";
+
+// Read-only git subcommands that need a repository to answer at all.
+const NO_REPOSITORY_QUERIES = new Set([
+  "ls-files", "status", "rev-parse", "ls-tree", "check-ignore", "show"
+]);
+
+// A file untouched for longer than this when read is safe to identify by
+// metadata; anything younger is re-read until it settles.
+const RACY_WINDOW_MS = 2000;
+// The state file is replaced atomically (new inode) on every save, so it needs
+// only to outlast a few filesystem timestamp ticks (4-10 ms on Linux).
+const RUNTIME_RACY_WINDOW_MS = 30;
+
+function statIdentity(path) {
+  try {
+    const stat = statSync(path, { bigint: true });
+    if (!stat.isFile()) return null;
+    return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+  } catch { return null; }
+}
+
+function statSettled(path, windowMs = RACY_WINDOW_MS) {
+  try {
+    const stat = statSync(path);
+    return Date.now() - Math.max(stat.mtimeMs, stat.ctimeMs) > windowMs;
+  } catch { return false; }
+}
 
 export function createStateRuntime({
   root,
@@ -40,7 +69,9 @@ export function createStateRuntime({
     return isChangePacketPath(rel, id);
   }
 
-  function activeChangePath(id, state = loadRuntime(id)) {
+  // Only reads the status and workspace location, so it may borrow the shared
+  // parse instead of paying for a private copy on every one of its many calls.
+  function activeChangePath(id, state = loadRuntime(id, { shared: true })) {
     if (state.status === "archived" && state.archivedChangePath) {
       const archived = join(root, state.archivedChangePath);
       if (existsSync(archived)) return archived;
@@ -77,12 +108,30 @@ export function createStateRuntime({
       .replace(/-+$/, "") || "change";
   }
 
+  // A lifecycle command reads the same state file thousands of times and the
+  // file carries the whole sandbox baseline, so each read-and-parse is real
+  // time. A parse is reused only while the file's identity (inode, size, and
+  // nanosecond mtime/ctime) is unchanged AND the file was already older than
+  // RUNTIME_RACY_WINDOW_MS when it was read: a rewrite inside one timestamp tick could
+  // otherwise keep the identity. Every caller still gets its own copy to mutate.
+  const runtimeParses = new Map();
+  function readRuntimeValue(path, shared = false) {
+    const identity = statIdentity(path);
+    const hit = identity ? runtimeParses.get(path) : null;
+    if (hit && hit.identity === identity) return shared ? hit.value : structuredClone(hit.value);
+    const value = JSON.parse(readFileSync(path, "utf8"));
+    if (identity && identity === statIdentity(path) && statSettled(path, RUNTIME_RACY_WINDOW_MS))
+      runtimeParses.set(path, { identity, value: structuredClone(value) });
+    else runtimeParses.delete(path);
+    return value;
+  }
+
   // `recoverable` is for the one caller that must work precisely when the
   // state file is gone or unreadable: `change abandon` is the designed exit
   // from a broken change, and gating it on loadRuntime made it the dead end it
   // exists to resolve. A minimal placeholder is enough for abandon to
   // quarantine what is on disk.
-  function loadRuntime(id, { recoverable = false } = {}) {
+  function loadRuntime(id, { recoverable = false, shared = false } = {}) {
     const path = runtimePath(id);
     const present = existsSync(path);
     if (!present && !recoverable) fail(`unknown change '${id}'`);
@@ -91,7 +140,7 @@ export function createStateRuntime({
     if (!present)
       return { version: 2, id, status: "unknown", schema: null, recoveredState: "missing" };
     try {
-      return JSON.parse(readFileSync(path, "utf8"));
+      return readRuntimeValue(path, shared);
     } catch (error) {
       const restored = restorePreviousRuntime(id, error);
       if (restored) return restored;
@@ -176,8 +225,18 @@ export function createStateRuntime({
     }
   }
 
+  // Content digest, reused while the file's identity is unchanged and settled
+  // (see readRuntimeValue); a file rewritten since is always re-read.
+  const fileDigests = new Map();
   function fileDigest(path) {
-    return createHash("sha256").update(readFileSync(path)).digest("hex");
+    const identity = statIdentity(path);
+    const hit = identity ? fileDigests.get(path) : null;
+    if (hit && hit.identity === identity) return hit.digest;
+    const digest = createHash("sha256").update(readFileSync(path)).digest("hex");
+    if (identity && identity === statIdentity(path) && statSettled(path))
+      fileDigests.set(path, { identity, digest });
+    else fileDigests.delete(path);
+    return digest;
   }
 
   function filesystemEntryIdentity(path) {
@@ -358,6 +417,12 @@ export function createStateRuntime({
     // The default 1MB maxBuffer silently truncates `ls-files`/`status` on
     // large repositories, and a failed listing here degrades into a wrong
     // surface rather than an error.
+    // Outside any repository these read-only queries can only fail with
+    // exit 128; answering that here spares a process per query, and a copy
+    // sandbox of a plain directory asks a few hundred of them.
+    if (NO_REPOSITORY_QUERIES.has(args[0]) && gitRepositoryAbsent(cwd))
+      return { status: 128, signal: null, stdout: "", stderr: "fatal: not a git repository\n",
+        output: [null, "", "fatal: not a git repository\n"], pid: 0 };
     return spawnSync("git", args, {
       cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024
     });
@@ -388,6 +453,8 @@ export function createStateRuntime({
   }
 
   function gitHead(cwd) {
+    const direct = resolveGitHead(cwd);
+    if (direct !== undefined) return direct;
     const result = git(["rev-parse", "HEAD"], cwd);
     return result.status === 0 ? result.stdout.trim() : null;
   }

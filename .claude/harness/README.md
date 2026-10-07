@@ -72,7 +72,8 @@ read-only argument.
 | Core | `runtime/core/lifecycle-outcome.mjs` | Owner-validated lifecycle outcomes and target-versus-delivery user projection |
 | Core | `runtime/core/land-grant.mjs` | Session/change/proof/target-bound explicit Land authority |
 | Core | `runtime/core/tool-preparation.mjs` | Project-local tool readiness, preparation identity, and setup boundaries |
-| Core | `runtime/core/tool-identity.mjs` | Per-process, content-keyed reuse of successful OpenSpec probes, strict lint, and Git index queries |
+| Core | `runtime/core/tool-identity.mjs` | Content-keyed reuse of successful OpenSpec probes and strict lint (persisted in `.foundation/cache/`), and per-process Git index queries |
+| Core | `runtime/core/git-head.mjs` | HEAD and "not a repository" answered from repository files, falling back to Git for any layout it does not model |
 | Core | `runtime/core/lifecycle-reducer.mjs` | Typed lifecycle transitions and compatibility-preserving state mutation |
 | Core | `runtime/core/process-runtime.mjs` | Provider process execution, readiness checks, and managed services |
 | Core | `runtime/core/signals.mjs` | Process-scoped signals (drift restored, budget warning, already archived) that keep their stream line and ride on the advance envelope |
@@ -608,6 +609,7 @@ listings elsewhere name this file as their source rather than restating it.
 | `.foundation/receipts/` | Live content-bound provider receipts and `proof.json` |
 | `.foundation/evidence/` | Immutable proof bundles: manifests, receipt copies, durable artifacts, and the hash-chained review-attempt ledger |
 | `.foundation/snapshots/` | One content snapshot descriptor per proof |
+| `.foundation/cache/` | Digest-keyed reuse of successful OpenSpec version probes and strict-lint passes across commands; safe to delete |
 | `.foundation/logs/` | Provider logs, telemetry events, receipt-reuse and budget audits |
 | `.foundation/locks/` | Recoverable per-change proof and authority mutation leases |
 | `.foundation/reviews/` | Structured reports returned by configured AI reviewers |
