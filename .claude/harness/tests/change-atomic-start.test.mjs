@@ -10,9 +10,11 @@ import {
   apiContractErrorIssues, createChangeLifecycle
 } from "../runtime/workflow/change-lifecycle.mjs";
 import {
-  amendmentVerifyPathIssues, verifyPathIssues, verifyTestFileReferences
+  amendmentTaskRepositoryIssues, amendmentVerifyPathIssues, taskRepositoryIssues,
+  verifyDirectoryTargets, verifyPathIssues, verifyTestFileReferences
 } from "../runtime/workflow/semantic-amendment.mjs";
 import { verifySpecSync } from "../runtime/workflow/spec-sync-verify.mjs";
+import { verifyCountAdvisories } from "../runtime/workflow/validation/design-blueprints.mjs";
 import { CORE_DISCOVERY_DIMENSIONS } from
   "../runtime/workflow/validation/semantic-intake.mjs";
 import { assertSpecApproval } from "../runtime/core/user-decisions.mjs";
@@ -57,7 +59,7 @@ function draft(overrides = {}) {
   };
 }
 
-function fixture(t, { validationFailure = null, sandboxFailure = null } = {}) {
+function fixture(t, { validationFailure = null, sandboxFailure = null, catalog = null } = {}) {
   const root = mkdtempSync(join(tmpdir(), "foundation-atomic-start-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const changes = join(root, "openspec", "changes");
@@ -125,7 +127,8 @@ function fixture(t, { validationFailure = null, sandboxFailure = null } = {}) {
       rmSync(join(changes, id), { recursive: true, force: true });
       rmSync(join(runtime, `${id}.json`), { force: true });
       return [];
-    }
+    },
+    ...(catalog ? { repositoryCatalog: () => catalog(root) } : {})
   });
   return { root, changes, runtime, draftPath, lifecycle, calls, dirtyTarget };
 }
@@ -243,6 +246,32 @@ test("bare start inspects and starts a correct v4 draft in one command", (t) => 
   assert.equal(existsSync(value.draftPath), true, "bare start keeps the draft unless --consume-draft");
   const intakeDir = join(value.root, ".foundation", "intake");
   assert.deepEqual(existsSync(intakeDir) ? readdirSync(intakeDir) : [], []);
+});
+
+test("start persists typed risk signals for review routing, and only when declared", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4({
+    riskSignals: ["input-domain", "Input-Domain"],
+    requirements: [{
+      key: "bounded-result", capability: "single-shot-change", operation: "added",
+      scenarios: [
+        { name: "Bounded input", when: "A bounded input arrives",
+          then: "The bounded result is returned" },
+        { name: "Negative input", kind: "boundary", when: "A negative input arrives",
+          then: "The input is rejected" }
+      ],
+      outcome: "The bounded result is returned"
+    }]
+  }));
+  captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  const runtime = JSON.parse(readFileSync(join(value.runtime, "single-shot-change.json"), "utf8"));
+  assert.deepEqual(runtime.riskSignals, ["input-domain"]);
+
+  const plain = fixture(t);
+  writeJson(plain.draftPath, minimalRapidV4());
+  captureLog(() => plain.lifecycle.startAtomic(plain.draftPath));
+  assert.equal(Object.hasOwn(JSON.parse(readFileSync(
+    join(plain.runtime, "single-shot-change.json"), "utf8")), "riskSignals"), false);
 });
 
 test("bare start returns the inspect action for an incomplete draft and creates nothing", (t) => {
@@ -566,6 +595,83 @@ test("a rapid minimal draft compiles a delta spec that archive merges into opens
   assert.deepEqual(verifySpecSync({ before: "", after: living, delta }).violations, []);
 });
 
+// Scenario finding: a rapid change carrying the typed section its work type
+// recommends moved to the standard lane and then owed a failure matrix.
+test("typed sections keep a low-risk draft rapid; risk still selects standard", (t) => {
+  const typed = {
+    workType: ["refactor", "config", "bugfix"],
+    refactor: { invariants: ["Same result for every input"], characterization: "npm test" },
+    configContract: [{ key: "RESULT_LIMIT", default: "10", validation: "Integer from 1 to 100" }],
+    bugfix: { reproduction: "An unbounded input hangs", rootCause: "No limit",
+      regression: "npm test covers the limit" }
+  };
+  const rapid = fixture(t);
+  writeJson(rapid.draftPath, minimalRapidV4(typed));
+  const { output } = captureLog(() => rapid.lifecycle.startAtomic(rapid.draftPath));
+  assert.match(output, /^AGREED single-shot-change/m);
+  assert.doesNotMatch(output, /carries design content/);
+  const state = JSON.parse(readFileSync(join(rapid.runtime, "single-shot-change.json"), "utf8"));
+  assert.equal(state.schema, "foundation-rapid");
+  const proposal = readFileSync(join(rapid.changes, "single-shot-change", "proposal.md"), "utf8");
+  for (const heading of ["## Refactor invariants", "## Config contract", "## Bugfix analysis"])
+    assert.ok(proposal.includes(heading), heading);
+
+  // A declared risk signal still selects standard, whose dev document asks
+  // a refactor/config change for its own sections but no failure matrix.
+  const standard = fixture(t);
+  writeJson(standard.draftPath, minimalRapidV4({
+    impact: "medium", decisions: [], why: "Bound the result without changing it",
+    workType: ["refactor", "config"], refactor: typed.refactor, configContract: typed.configContract,
+    componentMap: [{ component: "Result", responsibility: "Bounds the result", files: ["src/result.js"] }]
+  }));
+  captureLog(() => standard.lifecycle.startAtomic(standard.draftPath));
+  const upgraded = JSON.parse(readFileSync(join(standard.runtime, "single-shot-change.json"), "utf8"));
+  assert.equal(upgraded.schema, "foundation-standard");
+});
+
+test("a rapid docs-only draft writes no delta spec and archives without touching openspec/specs", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4({
+    id: "reword-readme", intent: "Reword the README quick start", workType: ["docs"],
+    requirements: [{
+      key: "quick-start-wording", capability: "readme", operation: "added",
+      description: "The README SHALL describe the quick start in three steps",
+      outcome: "The quick start lists three steps",
+      scenarios: [{ name: "Reader follows the quick start", when: "A reader opens the README",
+        then: "The quick start lists three steps" }]
+    }],
+    tasks: [{ key: "reword", outcome: "Reword the quick start", covers: ["quick-start-wording"],
+      paths: ["README.md"], verify: "npm test" }],
+    evidence: { "quick-start-wording": { capabilities: ["test"] } }
+  }));
+  const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.match(output, /^AGREED reword-readme/m);
+  assert.match(output, /\n  specs: none \(docs-only change; it modifies no living spec\)\n/);
+  const change = join(value.changes, "reword-readme");
+  assert.equal(existsSync(join(change, "specs")), false);
+  assert.equal(readFileSync(join(change, ".openspec.yaml"), "utf8"),
+    "schema: foundation-rapid\nskip_specs: true\n");
+  assert.match(readFileSync(join(change, "proposal.md"), "utf8"),
+    /- \*\*Specs:\*\* none; docs-only work modifies no living spec/);
+  // The requirement still binds evidence: Prove checks the wording.
+  assert.deepEqual(JSON.parse(readFileSync(join(change, "evidence.yaml"), "utf8")).claims
+    .map((claim) => claim.requirementKey), ["quick-start-wording"]);
+
+  if (!existsSync(OPENSPEC_CLI)) return t.skip("repository OpenSpec CLI is not installed");
+  rmSync(join(value.root, "openspec", "schemas"), { recursive: true, force: true });
+  cpSync(join(REPOSITORY, "openspec", "schemas"), join(value.root, "openspec", "schemas"),
+    { recursive: true });
+  cpSync(join(REPOSITORY, "openspec", "config.yaml"), join(value.root, "openspec", "config.yaml"));
+  writeFileSync(join(change, "tasks.md"),
+    readFileSync(join(change, "tasks.md"), "utf8").replace(/- \[ \]/g, "- [x]"));
+  const run = (...args) => spawnSync(OPENSPEC_CLI, args, {
+    cwd: value.root, encoding: "utf8", env: { ...process.env, NO_COLOR: "1" }
+  });
+  const archive = run("archive", "reword-readme", "--yes");
+  assert.equal(archive.status, 0, archive.stdout + archive.stderr);
+  assert.equal(existsSync(join(value.root, "openspec", "specs", "readme")), false);
+});
+
 test("a minimal draft with ambiguous covers returns one EDIT naming covers", (t) => {
   const value = fixture(t);
   writeJson(value.draftPath, {
@@ -679,6 +785,164 @@ test("verify path references skip commands that change directory", () => {
     "amendment task 'added' verify references 'tests/new.test.mjs', which does not exist and " +
       "no task's paths create it; correct the path in verify or add it to that task's paths"
   ]);
+});
+
+// A consumer keeps services in submodules declared in openspec/repositories.yaml.
+// The catalog row shape is what repository-topology's catalog() returns.
+function submoduleCatalog(root) {
+  return { version: 1, repositories: [
+    { id: "root", type: "root", path: root, relativePath: "." },
+    { id: "hook-api", type: "submodule", path: join(root, "services/hook/hook-api"),
+      relativePath: "services/hook/hook-api" },
+    { id: "hook-worker", type: "submodule", path: join(root, "services/hook/hook-worker"),
+      relativePath: "services/hook/hook-worker" }
+  ] };
+}
+
+test("verify directory targets resolve cd chains and per-tool directory flags", () => {
+  assert.deepEqual(verifyDirectoryTargets("cd services/hook/hook-api && go test ./..."),
+    [{ raw: "services/hook/hook-api", outside: false, path: "services/hook/hook-api" }]);
+  assert.deepEqual(verifyDirectoryTargets("cd web && cd ../api && npm test").map((row) => row.path),
+    ["web", "api"]);
+  assert.deepEqual(verifyDirectoryTargets("cd .. && npm test")[0].outside, true);
+  assert.deepEqual(verifyDirectoryTargets("cd /tmp/x && npm test")[0].outside, true);
+  assert.deepEqual(verifyDirectoryTargets("git -C 'services/hook/hook-worker' status")
+    .map((row) => row.path), ["services/hook/hook-worker"]);
+  assert.deepEqual(verifyDirectoryTargets("npm --prefix=web test").map((row) => row.path), ["web"]);
+  // Dynamic targets are unknown, and commands that only contain "cd" are not directory changes.
+  assert.deepEqual(verifyDirectoryTargets("cd \"$ROOT\" && cdk synth && npm test"), []);
+});
+
+test("a task whose files live in a declared repository must name it", (t) => {
+  const repositories = submoduleCatalog("/project").repositories;
+  const exists = () => false;
+  // Bound to root (no repository): paths and a cd into the submodule are both repairs.
+  const unbound = taskRepositoryIssues([{
+    semanticKey: "api-handler", paths: ["services/hook/hook-api/internal/**"],
+    verify: "cd services/hook/hook-api && go test ./..."
+  }], { repositories, exists });
+  assert.match(unbound.join("\n"),
+    /task 'api-handler' path 'services\/hook\/hook-api\/internal\/\*\*' is inside repository 'hook-api' \(services\/hook\/hook-api\) but the task runs in root; set "repository": "hook-api"/);
+  assert.match(unbound.join("\n"),
+    /task 'api-handler' verify changes into 'services\/hook\/hook-api', which is repository 'hook-api'/);
+  // Bound to the repository but still written from the control root.
+  const rooted = taskRepositoryIssues([{
+    semanticKey: "api-handler", repository: "hook-api",
+    paths: ["services/hook/hook-api/internal/**"],
+    verify: "cd services/hook/hook-api && go test ./..."
+  }], { repositories, selection: [{ id: "hook-api", mode: "write" }], exists });
+  assert.match(rooted.join("\n"),
+    /path 'services\/hook\/hook-api\/internal\/\*\*' is written from the control root; task paths are relative to repository 'hook-api', so write 'internal\/\*\*'/);
+  assert.match(rooted.join("\n"),
+    /verify changes into 'services\/hook\/hook-api', but verify already runs from repository 'hook-api'/);
+  // Another repository, or a directory outside the task repository, cannot run.
+  assert.match(taskRepositoryIssues([{ semanticKey: "x", repository: "hook-api", paths: ["a/**"],
+    verify: "cd ../hook-worker && go test ./..." }],
+  { repositories, selection: ["hook-api"], exists }).join("\n"),
+  /verify changes into '\.\.\/hook-worker', outside repository 'hook-api'/);
+  assert.match(taskRepositoryIssues([{ semanticKey: "x", repository: "hook-api", paths: ["a/**"],
+    verify: "cd services/hook/hook-worker && go test ./..." }],
+  { repositories, selection: ["hook-api"], exists }).join("\n"),
+  /which is repository 'hook-worker'; verify runs from repository 'hook-api'/);
+  // A real subdirectory of the task repository with the same name is allowed.
+  assert.deepEqual(taskRepositoryIssues([{ semanticKey: "x", repository: "hook-api",
+    paths: ["a/**"], verify: "cd services/hook/hook-api && go test ./..." }],
+  { repositories, selection: ["hook-api"],
+    exists: (path) => path === "/project/services/hook/hook-api/services/hook/hook-api" }), []);
+  // Selection: a named repository must be selected, and a multi-repository
+  // draft binds every task.
+  assert.match(taskRepositoryIssues([{ semanticKey: "x", repository: "hook-api", paths: ["a/**"],
+    verify: "go test -v ./..." }], { repositories, exists }).join("\n"),
+  /runs in repository 'hook-api', which the draft's 'repositories' does not list/);
+  assert.match(taskRepositoryIssues([{ semanticKey: "x", repository: "hook-db", paths: ["a/**"],
+    verify: "go test -v ./..." }], { repositories, selection: ["hook-db"], exists }).join("\n"),
+  /names repository 'hook-db', which openspec\/repositories\.yaml does not declare/);
+  assert.match(taskRepositoryIssues([{ semanticKey: "x", paths: ["docs/**"], verify: "npm test" }],
+    { repositories, selection: ["hook-api"], exists }).join("\n"),
+  /task 'x' names no 'repository' while the draft selects hook-api/);
+  // Correct bindings, root-only work, and a project without repositories pass.
+  assert.deepEqual(taskRepositoryIssues([
+    { semanticKey: "a", repository: "hook-api", paths: ["internal/**"], verify: "go test -v ./..." },
+    { semanticKey: "b", repository: "root", paths: ["docs/**"], verify: "cd docs && npm test" }
+  ], { repositories, selection: ["root", { id: "hook-api" }], exists }), []);
+  assert.deepEqual(taskRepositoryIssues([{ semanticKey: "a", paths: ["services/**"],
+    verify: "npm test" }], { repositories, exists }), []);
+  assert.deepEqual(taskRepositoryIssues([{ semanticKey: "a", paths: ["src/**"],
+    verify: "cd web && npm test" }], { exists }), []);
+  // Amendment tasks use the change's selection.
+  assert.match(amendmentTaskRepositoryIssues({
+    addTasks: [{ key: "n", repository: "hook-api", paths: ["a/**"], verify: "cd ../x && make" }],
+    updateTasks: [{ key: "old", verify: "cd services/hook/hook-api && go test ./..." }]
+  }, "- [ ] **T001** Old [key:old] [repo:hook-api] [paths:a/**] — verify: `go test -v ./...`\n",
+  { repositories, selection: ["hook-api"], exists }).join("\n"),
+  /amendment task 'n' verify changes into '\.\.\/x'[\s\S]*amendment task 'old' verify changes into 'services\/hook\/hook-api', but verify already runs/);
+  t.diagnostic("repository binding checks are pure and need no filesystem");
+});
+
+test("change start returns an EDIT for a submodule task bound to root", (t) => {
+  const value = fixture(t, { catalog: submoduleCatalog });
+  const wrong = minimalRapidV4({ tasks: [{
+    key: "implement-bounded-result", outcome: "Implement the bounded result",
+    covers: ["bounded-result"], paths: ["services/hook/hook-api/internal/**"],
+    verify: "cd services/hook/hook-api && go test -v ./..."
+  }] });
+  writeJson(value.draftPath, wrong);
+  const { result } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.equal(result.action, "EDIT");
+  assert.equal(result.owner, "agent");
+  assert.match(result.intake.issues.join("\n"), /is inside repository 'hook-api'/);
+  assert.equal(existsSync(value.changes), false);
+  // Bound and written relative to the repository, it compiles with a selection.
+  writeJson(value.draftPath, minimalRapidV4({
+    repositories: [{ id: "hook-api", mode: "write" }],
+    tasks: [{ ...wrong.tasks[0], repository: "hook-api", paths: ["internal/**"],
+      verify: "go test -v ./..." }]
+  }));
+  assert.match(captureLog(() => value.lifecycle.startAtomic(value.draftPath)).output,
+    /^AGREED single-shot-change/m);
+  assert.match(readFileSync(join(value.changes, "single-shot-change", "tasks.md"), "utf8"),
+    /\[repo:hook-api\][^\n]*\[paths:internal\/\*\*\]/);
+  assert.deepEqual(JSON.parse(readFileSync(join(value.changes, "single-shot-change",
+    "repositories.yaml"), "utf8")).repositories, [{ id: "hook-api", mode: "write" }]);
+});
+
+// `go test` prints `ok <package>` or `(cached)`: no test result Prove can read.
+test("a verify whose known runner prints no countable result gets an advisory, not a block", (t) => {
+  assert.deepEqual(verifyCountAdvisories([
+    { semanticKey: "bare", verify: "go test ./..." },
+    { semanticKey: "json", verify: "go test -json ./..." },
+    { semanticKey: "verbose", verify: "go test -v ./..." },
+    { semanticKey: "verbose-flag", verify: "go test -count=1 -test.v=true ./pkg" },
+    { semanticKey: "unknown", verify: "make check" },
+    { semanticKey: "node", verify: "node --test" }
+  ]).map((row) => row.match(/^task '([^']+)'/)[1]), ["bare", "json"]);
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4({ tasks: [{
+    key: "implement-bounded-result", outcome: "Implement the bounded result",
+    covers: ["bounded-result"], paths: ["src/**"], verify: "go test ./..."
+  }] }));
+  const inspected = captureLog(() => value.lifecycle.inspectDraft(value.draftPath)).result;
+  assert.equal(inspected.action, "DONE");
+  assert.match(inspected.designWarnings.join("\n"),
+    /task 'implement-bounded-result' verify runs 'go test' without a countable report: .*'go test -v \.\/\.\.\.'/);
+  const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.match(output, /^AGREED single-shot-change/m);
+  assert.match(output, /^ {2}verify advisory: task 'implement-bounded-result' verify runs 'go test'/m);
+});
+
+test("the start template shows repository binding only when the project declares repositories", (t) => {
+  const plain = fixture(t).lifecycle.rapidStartTemplate();
+  assert.equal(plain.minimalDraftRepositories, undefined);
+  assert.equal(plain.repositoryExample, undefined);
+  const multi = fixture(t, { catalog: submoduleCatalog }).lifecycle.rapidStartTemplate();
+  assert.match(multi.minimalDraftRepositories, /names it in 'repository'/);
+  assert.deepEqual(multi.declaredRepositories, [
+    { id: "hook-api", path: "services/hook/hook-api" },
+    { id: "hook-worker", path: "services/hook/hook-worker" }]);
+  assert.deepEqual(multi.repositoryExample.repositories, [{ id: "hook-api", mode: "write" }]);
+  assert.equal(multi.repositoryExample.tasks[0].repository, "hook-api");
+  // The minimal draft the agent copies stays root-only.
+  assert.equal(multi.minimalDraft.repositories, undefined);
 });
 
 test("api contract errors without a status or code are an EDIT at start", (t) => {

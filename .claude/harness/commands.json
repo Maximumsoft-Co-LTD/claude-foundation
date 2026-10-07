@@ -43,11 +43,11 @@
     },
     {
       "name": "advance",
-      "usage": "advance <change> [--through build|proven|archived] [--host-result <result.json>] [--decision retry|wait|pause|merge|retain --decision-fingerprint <hash> --decision-ref <ref> --reason <approach>] [--approve-spec --decision-ref <ref>] [--restore-target <path,path> [--decision-ref <ref>]] [--recover-apply settle|keep-current|restore-backup --decision-ref <ref>] [--inspect] [--pretty]",
+      "usage": "advance <change> [--through build|proven|archived] [--host-result <result.json>] [--decision retry|wait|pause|merge|retain --decision-fingerprint <hash> --decision-ref <ref> --reason <approach>] [--approve-spec --decision-ref <ref>] [--restore-target <path,path> [--decision-ref <ref>]] [--recover-apply settle|keep-current|restore-backup --decision-ref <ref>] [--undo-land --decision-ref <ref>] [--inspect] [--pretty]",
       "audience": "agent",
       "kind": "write",
       "idempotent": true,
-      "description": "Run deterministic lifecycle work through a requested target, including detected evidence wiring, safe sandbox sync, configured review, and task check completion, and return one bounded action at the next real model, user, resource, or authority boundary. --approve-spec records the user's spec approval (alias of change resolve --approve-spec); with --through it continues in the same call. --restore-target records the target files Land restores to the sandbox base when its apply conflicts; paths other than generated artifacts clean at isolation require --decision-ref. --recover-apply settles an interrupted Land apply under the user's decision, then continues."
+      "description": "Run deterministic lifecycle work through a requested target, including detected evidence wiring, safe sandbox sync, configured review, and task check completion, and return one bounded action at the next real model, user, resource, or authority boundary. --approve-spec records the user's spec approval (alias of change resolve --approve-spec); with --through it continues in the same call. --restore-target records the target files Land restores to the sandbox base when its apply conflicts; paths other than generated artifacts clean at isolation require --decision-ref. --recover-apply settles an interrupted Land apply under the user's decision, then continues. --undo-land, under the user's decision, restores the pre-Land bytes of an archived change whose Land diff is still uncommitted and retires the change, preserving what it landed; it refuses without writing when the target was committed, staged, or edited after Land in those paths."
     },
     {
       "name": "feedback",
@@ -99,19 +99,19 @@
     },
     {
       "name": "change amend",
-      "usage": "change amend --template | <change> <amendment.json> [--inspect | --consume-amendment] [--approve-spec --decision-ref <ref> [--through build|proven|archived]] | <change> --task <task-key|task-id> --verify <command> [--reason <text>]",
+      "usage": "change amend --template | <change> <amendment.json> [--inspect | --consume-amendment] [--approve-spec --decision-ref <ref> [--through build|proven|archived]] | <change> --task <task-key|task-id> --verify <command> [--reopen] [--reason <text>]",
       "audience": "agent",
       "kind": "write",
       "idempotent": false,
-      "description": "Transactionally add, revise, or remove semantic requirements during Build, or correct an unfinished task's verify command, while preserving the canonical agreement. --task/--verify corrects one verify command directly and keeps the spec approval. The bare form inspects in place and amends only when intake is DONE; otherwise it prints the intake action and changes nothing. --approve-spec records the user's spec approval in the same call. --template prints an amendment template."
+      "description": "Transactionally add, revise, or remove semantic requirements during Build, withdraw unfinished tasks (removeTasks), or correct a task's verify command, while preserving the canonical agreement. --task/--verify corrects one verify command directly and keeps the spec approval; a completed task's verify changes only with --reopen (reopen: true in an amendment), which unticks the task so its verify must pass again. The bare form inspects in place and amends only when intake is DONE; otherwise it prints the intake action and changes nothing. --approve-spec records the user's spec approval in the same call. --template prints an amendment template."
     },
     {
       "name": "change revise",
-      "usage": "change revise <change> <draft.json> [--inspect | --consume-draft] [--approve-spec --decision-ref <ref> [--through build|proven|archived]]",
+      "usage": "change revise <change> <draft.json> [--merge] [--inspect | --consume-draft] [--approve-spec --decision-ref <ref> [--through build|proven|archived]]",
       "audience": "agent",
       "kind": "write",
       "idempotent": false,
-      "description": "Recompile a revised semantic draft over a change that has not started Build, keeping its id and reporting the requirement delta for approval. The bare form inspects in place and revises only when intake is DONE; otherwise it prints the intake action and changes nothing. --approve-spec records the user's spec approval in the same call; with --through it continues."
+      "description": "Recompile a revised semantic draft over a change that has not started Build, keeping its id and reporting the requirement delta for approval. --merge reads the file as a partial draft: only its keys and keyed entries merge into the draft the change was compiled from. The bare form inspects in place and revises only when intake is DONE; otherwise it prints the intake action and changes nothing. --approve-spec records the user's spec approval in the same call; with --through it continues."
     },
     {
       "name": "change validate",

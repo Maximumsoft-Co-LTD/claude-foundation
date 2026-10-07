@@ -1,3 +1,5 @@
+import { canonicalJson } from "../core/trust.mjs";
+
 export const ADAPTERS = new Set([
   "command", "test-discovery", "playwright", "contract-digest", "external"
 ]);
@@ -34,4 +36,79 @@ export const PROVIDERS = new Set(Object.keys(PROVIDER_CONTRACTS));
 
 export function providerCapability(provider, config = null) {
   return config?.capability || (PROVIDERS.has(provider) ? provider : null);
+}
+
+// Capabilities whose contract a behavioral test run cannot establish by
+// itself: static security analysis, failure injection, version compatibility,
+// migration safety, and producer/consumer agreement.
+export const SPECIALIST_CAPABILITIES = new Set([
+  "security-static", "resilience", "compatibility", "data-migration", "cross-repo-contract"
+]);
+
+// Key order never distinguishes two values: `{ A: 1, B: 2 }` equals `{ B: 2, A: 1 }`.
+const sameValue = (left, right) => canonicalJson(left ?? null) === canonicalJson(right ?? null);
+const sameSet = (left, right) => sameValue(
+  Array.isArray(left) ? [...left].sort() : left, Array.isArray(right) ? [...right].sort() : right);
+
+// Everything that shapes how and where a command runs besides its argv. A
+// specialist provider that differs in any of these (its own service, readiness
+// probe, declared environment, timeout, resources, or ordering) runs in a
+// context of its own, so it is not a repeat of the test run.
+function sameExecutionContext(left, right) {
+  return sameValue(left.repository, right.repository) &&
+    sameValue(left.repositories, right.repositories) &&
+    sameValue(left.env, right.env) && sameSet(left.envFrom, right.envFrom) &&
+    sameValue(left.environment, right.environment) &&
+    sameValue(left.service, right.service) && sameValue(left.readiness, right.readiness) &&
+    Number(left.timeoutMs || 120000) === Number(right.timeoutMs || 120000) &&
+    sameSet(left.resources, right.resources) && sameSet(left.dependsOn, right.dependsOn);
+}
+
+// The test provider whose execution a specialist provider merely repeats, or
+// null. A command provider that runs exactly a test provider's argv, in the
+// same repository and execution context, with no critical cases of its own,
+// observes only those tests: its exit code says nothing about its own
+// capability, so it must never be credited as that capability.
+export function aliasedTestProvider(providers = {}, provider, config = providers?.[provider]) {
+  if (!config || config.adapter !== "command" || !Array.isArray(config.command) ||
+      !SPECIALIST_CAPABILITIES.has(providerCapability(provider, config)) ||
+      (config.criticalCases || []).length) return null;
+  for (const [name, other] of Object.entries(providers || {}).sort(([a], [b]) =>
+    (a < b ? -1 : a > b ? 1 : 0))) {
+    if (name === provider || providerCapability(name, other) !== "test" ||
+        !["command", "test-discovery"].includes(other?.adapter)) continue;
+    if (sameValue(other.command, config.command) && sameExecutionContext(other, config))
+      return name;
+  }
+  return null;
+}
+
+// The configuration a provider that would only repeat a test run resolves
+// to: never executed, naming what it repeated. While review is required the
+// required set drops it and records it as `covered-by-review`; when review is
+// waived it stays required and needs a project-owned command, verifiable
+// external evidence, or its own waiver. Every other configuration is returned
+// as is.
+export function unobservedAliasConfig(providers, provider, config) {
+  const aliasOf = aliasedTestProvider(providers, provider, config);
+  if (!aliasOf) return config;
+  return {
+    adapter: "external",
+    capability: providerCapability(provider, config),
+    ...(config.claims !== undefined ? { claims: config.claims } : {}),
+    ...(config.repository !== undefined ? { repository: config.repository } : {}),
+    ...(config.repositories !== undefined ? { repositories: config.repositories } : {}),
+    aliasOf
+  };
+}
+
+// Every configured provider that only repeats a test run, sorted by name:
+// `{ provider, capability, aliasOf }`. Review covers these capabilities.
+export function reviewCoveredProviders(providers = {}) {
+  return Object.keys(providers || {}).sort().flatMap((provider) => {
+    const aliasOf = aliasedTestProvider(providers, provider);
+    return aliasOf
+      ? [{ provider, capability: providerCapability(provider, providers[provider]), aliasOf }]
+      : [];
+  });
 }

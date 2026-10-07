@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { agreementDriftError, agreementIdentity, assertSpecApproval, currentWaivers,
   repairWhitespaceDrift, REVIEW_DISPATCH_TIMEOUT_MS } from "../runtime/core/user-decisions.mjs";
 import { advanceFailureAction, createAdvanceRuntime } from "../runtime/workflow/advance-runtime.mjs";
+import { drainSignals } from "../runtime/core/signals.mjs";
 import { workspaceCapabilityValue } from "../runtime/core/execution-contract.mjs";
 
 test("spec approval binds semantics and revision, not task completion", (t) => {
@@ -75,8 +76,13 @@ test("task write scope is bookkeeping and packet drift is agent repair", (t) => 
   const notices = [];
   const original = console.error;
   console.error = (line) => notices.push(String(line));
+  drainSignals();
   try { assert.doesNotThrow(() => assertSpecApproval(root, "demo", state)); }
   finally { console.error = original; }
+  const signals = drainSignals();
+  assert.deepEqual(signals.map((row) => row.code), ["agreement-restored"],
+    "the restored-drift notice also reaches the advance envelope");
+  assert.match(signals[0].message, /^the isolated agreement for 'demo' was edited outside/);
   assert.equal(readFileSync(join(workspace, "openspec/changes/demo/tasks.md"), "utf8"), tasks("src/a.ts"));
   const saved = notices.join("\n").match(/saved the edit at (\S+)\. /)?.[1];
   assert.ok(saved, notices.join("\n"));

@@ -80,8 +80,11 @@ export function proofPlanOperation(context, id) {
   // project has no supply-chain provider" is a fact the plan's reader needs,
   // and the alternative was inventing an unsatisfiable row for it.
   for (const advisory of context.advisoryCapabilities(id))
-    context.log(`  advisory ${advisory.capability}: not blocking (inferred from ${
-      advisory.trigger || "the changed surface"}; no provider wired)`);
+    context.log(advisory.reason === "covered-by-review"
+      ? `  ${advisory.capability}: covered-by-review (only repeats test provider '${
+        advisory.aliasOf}'; ${advisory.next})`
+      : `  advisory ${advisory.capability}: not blocking (inferred from ${
+        advisory.trigger || "the changed surface"}; no provider wired)`);
 }
 
 export function rebindReusableReceiptOperation(context, id, row, snapshot, proofRunId) {

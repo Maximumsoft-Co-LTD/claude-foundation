@@ -14,8 +14,8 @@ Harness checks Change Loop 3.5.30/runtime API `41`, repairs setup.
 - Every `REPAIR` or `BLOCKED` result carries its fix: apply it, then `resume`.
   Run authorized `automaticRecovery`. Recover from the envelope first; never
   edit receipts, proof, or journals.
-- `EDIT`/`REPAIR` `contextFiles` are the files to open, `newFiles`
-  to create; `contextScope.specs: none` means no specs.
+- `contextFiles` are files to open, `newFiles` to create;
+  `contextScope.specs: none` means no specs. Act on `signals[]`.
 - `ASK_USER` requests a decision, not CLI execution: use AskUserQuestion,
   recommendation first, plain text otherwise;
   never offer only a passing option. `WAIT` reports owner and condition, not a user command.

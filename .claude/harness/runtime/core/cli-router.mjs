@@ -19,6 +19,7 @@ export async function routeRuntimeCommand(command, values, api) {
     resolveChange,
     approvalQuestionAction = null,
     recordTargetRestore,
+    undoLand = null,
     abandonChange,
     waiveGate,
     showChanges,
@@ -197,13 +198,15 @@ export async function routeRuntimeCommand(command, values, api) {
     },
     "amend": async () => {
       const { flags, rest } = parseStrictCommandFlags(values, "change amend", {
-        boolean: ["template", "inspect", "consume-amendment", "approve-spec"],
+        boolean: ["template", "inspect", "consume-amendment", "approve-spec", "reopen"],
         value: ["task", "verify", "reason", "decision-ref", "through"]
       });
       const approval = sameCallApproval("change amend", flags);
       // The verify-only correction an agent makes directly: no amendment JSON,
-      // same transaction, the spec approval carried.
-      if (flags.task !== undefined || flags.verify !== undefined || flags.reason !== undefined) {
+      // same transaction, the spec approval carried. --reopen unticks a
+      // completed task so the corrected command must pass again.
+      if (flags.task !== undefined || flags.verify !== undefined || flags.reason !== undefined ||
+          flags.reopen) {
         if (flags.template || flags.inspect || flags["consume-amendment"] || approval)
           die("change amend --task/--verify cannot be combined with --template, --inspect, --consume-amendment, or --approve-spec");
         if (rest.length !== 1 || !String(flags.task || "").trim() ||
@@ -211,7 +214,8 @@ export async function routeRuntimeCommand(command, values, api) {
           die("change amend requires <change> --task <task-key|task-id> --verify <command>");
         if (!amendTaskVerify) die("change amend --task/--verify is unavailable in this runtime");
         amendTaskVerify(rest[0], {
-          task: flags.task, verify: flags.verify, reason: flags.reason
+          task: flags.task, verify: flags.verify, reason: flags.reason,
+          ...(flags.reopen ? { reopen: true } : {})
         });
         return;
       }
@@ -237,20 +241,22 @@ export async function routeRuntimeCommand(command, values, api) {
     },
     "revise": async () => {
       const { flags, rest } = parseStrictCommandFlags(values, "change revise", {
-        boolean: ["inspect", "consume-draft", "approve-spec"],
+        boolean: ["inspect", "consume-draft", "approve-spec", "merge"],
         value: ["decision-ref", "through"]
       });
       const approval = sameCallApproval("change revise", flags);
       if (rest.length !== 2)
         die("change revise requires <change> <draft.json>");
+      // --merge reads the file as a partial draft over the compiled one.
+      const merge = flags.merge ? { merge: true } : {};
       if (flags.inspect) {
         if (flags["consume-draft"] || approval)
           die("change revise --inspect cannot be combined with --consume-draft or --approve-spec");
-        inspectRevision(rest[0], rest[1]);
+        inspectRevision(rest[0], rest[1], ...(flags.merge ? [merge] : []));
         return;
       }
       const revised = reviseChange(rest[0], rest[1], {
-        consumeDraft: flags["consume-draft"]
+        consumeDraft: flags["consume-draft"], ...merge
       });
       if (approval && !intakeStopped(revised)) await recordSameCallApproval(rest[0], approval);
     },
@@ -421,7 +427,7 @@ export async function routeRuntimeCommand(command, values, api) {
     },
     "advance": async () => {
       const { flags, rest } = parseStrictCommandFlags(values, "advance", {
-        boolean: ["pretty", "inspect", "approve-spec"],
+        boolean: ["pretty", "inspect", "approve-spec", "undo-land"],
         value: ["host-result", "through", "decision", "decision-fingerprint", "decision-ref", "reason",
           "restore-target", "recover-apply"]
       });
@@ -444,6 +450,18 @@ export async function routeRuntimeCommand(command, values, api) {
         if (!flags.through) return;
         delete flags["recover-apply"];
         delete flags["decision-ref"];
+      }
+      // Undo of an archived Land whose target diff is still uncommitted: the
+      // harness restores the pre-Land bytes from the Land journal and retires
+      // the change, or refuses without writing when the target moved on.
+      if (flags["undo-land"]) {
+        const extra = Object.keys(flags).filter((flag) =>
+          !["undo-land", "decision-ref", "pretty"].includes(flag));
+        if (extra.length)
+          die(`advance --undo-land combines only with --decision-ref; drop --${extra.join(", --")}`);
+        if (!undoLand) die("advance --undo-land is unavailable in this runtime");
+        undoLand(rest[0], flags["decision-ref"]);
+        return;
       }
       // Land's target-conflict route: record which target files Land restores
       // to the sandbox base, then resume the same lifecycle route.

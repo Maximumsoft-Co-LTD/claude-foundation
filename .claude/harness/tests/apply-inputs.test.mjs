@@ -212,6 +212,41 @@ test("git apply inputs asks the user before touching conflicting non-generated t
   assert.deepEqual(blocked[0].decision.paths, ["file.js"]);
 });
 
+// Only same-line user edits become a decision: Land records the cleanly
+// mergeable ones with their exact target bytes for the automatic sandbox sync.
+test("git apply inputs carries cleanly mergeable user target edits through sandbox sync", () => {
+  const blocked = [];
+  const saved = [];
+  const fixture = applyContext({
+    sandboxDiffNames: () => ["a.js", "b.js"],
+    spawn: () => ({ status: 1, stderr: "error: a.js: patch does not apply\nerror: b.js: patch does not apply" }),
+    replayTargetEdit: ({ path }) => ({ status: path === "a.js" ? "merged" : "conflict" }),
+    saveRuntime: (state) => saved.push(structuredClone(state.workspace.targetCarry)),
+    blockWithDecision: (id, code, decision) => {
+      blocked.push({ code, decision });
+      throw new Error(code);
+    },
+    writeFile: assert.fail, removePath: assert.fail
+  });
+  fixture.state.workspace.mode = "worktree";
+  fixture.state.workspace.path = "/sandbox";
+  fixture.identities.set("/target/a.js", "user-a");
+  assert.throws(() => gitApplyInputsOperation(fixture.context, "change", "/sandbox"),
+    /target-edit-sync/);
+  assert.deepEqual(saved, [{ "a.js": "user-a" }]);
+  assert.deepEqual(blocked[0].decision.paths, ["a.js"]);
+  assert.deepEqual(blocked[0].decision.conflicts, ["b.js"]);
+
+  // A merge the sync already wrote that Land still does not find carried is
+  // not merged again: it becomes the target-edit conflict decision.
+  blocked.length = 0;
+  fixture.state.workspace.targetCarried = { "a.js": { target: "user-a", sandbox: "sandbox" } };
+  assert.throws(() => gitApplyInputsOperation(fixture.context, "change", "/sandbox"),
+    /target-edit-conflict/);
+  assert.deepEqual(blocked[0].decision.paths, ["a.js", "b.js"]);
+  assert.equal(saved.length, 1, "nothing new is recorded for the sync");
+});
+
 test("git apply inputs restores only authorized target paths still at the recorded bytes", () => {
   const writes = [];
   const fixture = applyContext({

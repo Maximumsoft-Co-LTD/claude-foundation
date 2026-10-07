@@ -13,7 +13,8 @@ import {
 } from "../core/workspace-surface.mjs";
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 import {
-  compositeRepositorySelection, isolatedRepositoryState, worktreeOwnedByTarget
+  compositeRepositorySelection, isolatedRepositoryState, nestedRepositoryRelativePaths,
+  worktreeOwnedByTarget
 } from "../core/repository-binding.mjs";
 import { landedTargetPaths, otherLandedOutput, replayLandedEdit } from "./target-edits.mjs";
 
@@ -569,16 +570,18 @@ export function assertReadOnlyReplayClean(repository, record, git, fail) {
 }
 
 export function replayContext({
-  id, state, candidate, gitHead, selectedRepositories
+  id, state, candidate, gitHead, selectedRepositories, declaredRepositoryPaths = () => []
 }) {
   const { repository, record, targetPath } = candidate;
   const currentHead = targetPath ? gitHead(targetPath) : null;
   if (!targetPath || !currentHead || !record.baseHead || currentHead === record.baseHead)
     return null;
+  // Apply and replay share one pathspec: every declared nested repository is
+  // excluded from the root projection, selected or not.
   const nested = repository === "root"
-    ? selectedRepositories(id, state)
+    ? [...new Set([...selectedRepositories(id, state)
       .filter((entry) => entry.type === "submodule")
-      .map((entry) => entry.relativePath)
+      .map((entry) => entry.relativePath), ...declaredRepositoryPaths()])]
     : [];
   return {
     id, state, repository, record, targetPath, currentHead,
@@ -660,9 +663,11 @@ export function prepareWritableReplay(context, dependencies) {
 export function prepareWorktreeReplay(
   options, id = options.id, state = options.state, candidate = options.candidate
 ) {
-  const { git, gitHead, selectedRepositories, fail } = options;
+  const { git, gitHead, selectedRepositories, declaredRepositoryPaths, fail } = options;
   assertReadOnlyReplayClean(candidate.repository, candidate.record, git, fail);
-  const context = replayContext({ id, state, candidate, gitHead, selectedRepositories });
+  const context = replayContext({
+    id, state, candidate, gitHead, selectedRepositories, declaredRepositoryPaths
+  });
   if (!context) return null;
   return candidate.record.access === "read"
     ? prepareReadOnlyReplay(context, options)
@@ -926,6 +931,14 @@ export function isolateSelectedRepositories(context, id, state, repositories) {
       const baseHead = gitHead(repository.path);
       if (!baseHead)
         throw new Error(`repository '${repository.id}' cannot be isolated because it is not an initialized Git repository`);
+      // An uninitialized submodule is an empty directory whose Git commands
+      // answer for the superproject; isolating it would fork the wrong repository.
+      const top = git(["rev-parse", "--show-toplevel"], repository.path);
+      if (top.status !== 0 ||
+          canonicalPath(String(top.stdout || "").trim()) !== canonicalPath(repository.path))
+        throw new Error(`repository '${repository.id}' cannot be isolated because '${
+          repository.path}' is not an initialized Git repository of its own (run 'git submodule update --init ${
+          repository.relativePath || repository.path}' first)`);
       const requestedPath = join(root, ".foundation", "repository-sandboxes", id, repository.id);
       if (existsSync(requestedPath))
         throw new Error(`repository sandbox already exists: ${requestedPath}`);
@@ -1732,7 +1745,9 @@ export function createSandboxRuntime({
   }
 
   const prepareReplay = prepareWorktreeReplay.bind(null, {
-    git, gitBuffer, gitHead, selectedRepositories, fail
+    git, gitBuffer, gitHead, selectedRepositories, fail,
+    declaredRepositoryPaths: () => typeof repositoryCatalog === "function"
+      ? nestedRepositoryRelativePaths(repositoryCatalog()) : []
   });
 
   // `worktree remove --force` destroys everything the checkout accumulated
@@ -2025,6 +2040,38 @@ export function createSandboxRuntime({
     return result;
   }
 
+  // Land recorded the user's uncommitted target edits that touch other lines
+  // than this change (`targetCarry`: path -> target bytes). Each one still at
+  // those exact bytes is merged 3-way into the sandbox copy; a later edit is
+  // left for Land to examine again. The target is never written here, and a
+  // merge that no longer applies cleanly is left to Land's conflict decision.
+  function carryTargetEdits(state) {
+    const workspace = state.workspace;
+    const carry = workspace.targetCarry;
+    const merged = [];
+    if (!carry || workspace.mode !== "worktree" || workspace.applied) {
+      delete workspace.targetCarry;
+      return merged;
+    }
+    const identity = (path) =>
+      lstatSync(path, { throwIfNoEntry: false })?.isFile() ? fileDigest(path) : null;
+    const base = workspace.baseHead || "HEAD";
+    const recorded = {};
+    for (const path of Object.keys(carry).sort()) {
+      if (identity(join(root, path)) !== carry[path]) continue;
+      const shown = gitBuffer(["show", `${base}:${path}`], root);
+      const replay = replayLandedEdit({ root, sandboxPath: workspace.path, path,
+        baseBytes: shown.status === 0 ? shown.stdout : null });
+      if (replay.status !== "merged") continue;
+      writeFileSync(join(workspace.path, path), replay.bytes);
+      recorded[path] = { target: carry[path], sandbox: identity(join(workspace.path, path)) };
+      merged.push(path);
+    }
+    delete workspace.targetCarry;
+    if (merged.length) workspace.targetCarried = { ...(workspace.targetCarried || {}), ...recorded };
+    return merged;
+  }
+
   function reportLandedReplay({ merged, conflicts }, log = console.log) {
     for (const row of merged)
       log(`REPLAYED ${row.path}: merged the landed, uncommitted work of ${row.landedBy} into the ` +
@@ -2133,13 +2180,15 @@ export function createSandboxRuntime({
       { ...flags, resolve: [...resolves].join(",") });
     const landedReplay = movement?.conflicts?.length
       ? { merged: [], conflicts: [] } : replayLandedChanges(id, state);
+    const targetCarried = movement?.conflicts?.length ? [] : carryTargetEdits(state);
     clearSnapshotCache(id);
     const invalidated = !priorHash || priorHash !== relevantHash(id) ||
       fingerprints.priorContract !== fingerprints.nextContract ||
       fingerprints.priorExecution !== fingerprints.nextExecution ||
       conflicts.length > 0 || (movement && !movement.rebased) ||
       Boolean(movement?.conflicts?.length) ||
-      landedReplay.merged.length > 0 || landedReplay.conflicts.length > 0;
+      landedReplay.merged.length > 0 || landedReplay.conflicts.length > 0 ||
+      targetCarried.length > 0;
     if (preserveAmendment && directoryHash(source) !== acceptedSourceHash)
       fail(`target agreement changed during sandbox sync for '${id}'; both packets are preserved, retry sync to resolve the current target`);
     updateSandboxSyncState(id, state, source, fingerprints, invalidated,
@@ -2163,12 +2212,16 @@ export function createSandboxRuntime({
       id, state, movement, forwarded, conflicts, relevantHash
     });
     reportLandedReplay(landedReplay);
+    for (const path of targetCarried)
+      console.log(`CARRIED ${path}: merged the target checkout's uncommitted edit into the ` +
+        "sandbox copy; the target edit is kept and evidence covering it runs again before Land.");
     return {
       status: conflicts.length || movement?.conflicts?.length || landedReplay.conflicts.length
         ? "CONFLICT" : "SYNCED",
       conflicts: [...conflicts, ...(movement?.conflicts || []), ...landedReplay.conflicts],
       movement,
-      ...(landedReplay.merged.length ? { landedReplayed: landedReplay.merged } : {})
+      ...(landedReplay.merged.length ? { landedReplayed: landedReplay.merged } : {}),
+      ...(targetCarried.length ? { targetCarried } : {})
     };
   }
 

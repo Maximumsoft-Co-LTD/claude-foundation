@@ -13,6 +13,7 @@ import {
   nextBudgetContinuationWindow,
   persistBudgetContinuation
 } from "../runtime/workflow/budget-commands.mjs";
+import { drainSignals } from "../runtime/core/signals.mjs";
 
 const fail = (message) => { throw new Error(message); };
 const stop = (_id, code, decision) => {
@@ -29,6 +30,7 @@ test("budget reporter formats measured state and limits quiet output to warnings
     { measured: true, ratio: 0.1, action: "CONTINUE", recommendation: "BUILD", limiter: "tokens", mode: "operator-required", userActionRequired: true }
   ];
   const reporter = createBudgetReporter({ applyBudgetDecision: () => decisions.shift() });
+  drainSignals();
   const logs = [];
   const warnings = [];
   const originalLog = console.log;
@@ -48,6 +50,8 @@ test("budget reporter formats measured state and limits quiet output to warnings
   assert.deepEqual(warnings, [
     "WARNING: BUDGET change: 70.0% STOP RESCOPE (requests)"
   ], "advisory budget never asks: a legacy stop below 70% neither warns nor needs the user");
+  assert.deepEqual(drainSignals(), [{ code: "budget-warning",
+    message: "BUDGET change: 70.0% STOP RESCOPE (requests)" }], "the warning also reaches the advance envelope");
 });
 
 test("budget reporter suppresses quiet spend warnings when the watchdog is off", () => {
@@ -61,9 +65,11 @@ test("budget reporter suppresses quiet spend warnings when the watchdog is off",
   const warnings = [];
   const originalError = console.error;
   console.error = (value) => warnings.push(String(value));
+  drainSignals();
   try { assert.equal(reporter.reportBudget("change", {}, true).ratio, 0.9); }
   finally { console.error = originalError; }
   assert.deepEqual(warnings, []);
+  assert.deepEqual(drainSignals(), []);
 });
 
 test("continuation inputs require trimmed reason and decision identity", () => {

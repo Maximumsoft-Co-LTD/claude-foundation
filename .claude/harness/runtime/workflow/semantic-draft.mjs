@@ -4,7 +4,9 @@ import {
 } from "./validation/semantic-intake.mjs";
 import { designBlueprintIssues } from "./validation/design-blueprints.mjs";
 import { readerGuideIssues } from "./validation/reader-guide.mjs";
-import { devDocumentIssues, devDocumentShapeIssues } from "./validation/dev-document.mjs";
+import {
+  devDocumentIssues, devDocumentShapeIssues, inferWorkTypes
+} from "./validation/dev-document.mjs";
 
 const OPERATIONS = new Set(["added", "modified", "removed"]);
 const AUTHORITY_CAPABILITIES = new Set(["review", "acceptance", "semantic-acceptance"]);
@@ -308,11 +310,22 @@ function semanticDraftIssues(source, { defaultTestEvidence = false } = {}) {
   return issues;
 }
 
+// Docs or chore work has no behavior for a test runner to count: its verify
+// command (a grep, a link check) is proven by its exit code, so an omitted
+// capability list means "static-analysis", never test discovery.
+const STATIC_EVIDENCE_WORK = new Set(["docs", "chore"]);
+export function defaultEvidenceCapability(source) {
+  const types = inferWorkTypes(source || {});
+  return types.length && types.every((type) => STATIC_EVIDENCE_WORK.has(type))
+    ? "static-analysis" : "test";
+}
+
 function normalizeRequirements(source, slugify, issues, {
   loadCanonicalSpec = null, defaultTestEvidence = false, defaultedEvidence = [],
   reservedClaimIds = []
 } = {}) {
   const evidence = evidenceEntries(source.evidence);
+  const defaultCapability = defaultTestEvidence ? defaultEvidenceCapability(source) : "test";
   const requirements = [];
   const requirementKeys = new Set();
   const pendingClaims = [];
@@ -368,15 +381,16 @@ function normalizeRequirements(source, slugify, issues, {
       ...stringList(requirement?.capabilities)
     ]);
     // A rapid draft proves every requirement with its covering tasks' verify
-    // commands, so an omitted capability list means exactly that: "test".
+    // commands, so an omitted capability list means exactly that: "test", or
+    // "static-analysis" for docs/chore work.
     if (defaultTestEvidence && !capabilities.length &&
         evidenceValue?.capabilities === undefined && requirement?.capabilities === undefined) {
-      capabilities.push("test");
+      capabilities.push(defaultCapability);
       defaultedEvidence.push(key);
     } else if (!evidenceValue && !requirement?.capabilities)
       issues.push(`${label} requires evidence['${key}'].capabilities ` +
         "(only a low-impact, isolated draft without security triggers, review, or acceptance " +
-        "may omit it and default to [\"test\"])");
+        "may omit it and default to [\"test\"], or [\"static-analysis\"] for docs/chore work)");
     if (!capabilities.length)
       issues.push(`${label} requires at least one evidence capability`);
 
@@ -885,6 +899,81 @@ export function expandMinimalSemanticDraft(input, {
       missing[index] && covers[index].length ? { ...task, covers: covers[index] } : task);
   }
   return source;
+}
+
+// ---- Partial revision ---------------------------------------------------------
+// `change revise --merge` applies a patch to the draft the change was compiled
+// from instead of requiring the whole draft again. Objects merge recursively
+// and `null` deletes a key (JSON Merge Patch). An array whose base entries all
+// carry an identity field (key, dimension, or name) merges by identity: a patch
+// entry names its item by any of those fields every base entry has (the first
+// it provides, in that order), merges into the matching entry, `"$remove":
+// true` drops it, and any other entry is appended. A `$remove` that matches no
+// entry is an error, never a silent no-op. Every other array is replaced.
+const MERGE_IDENTITIES = ["key", "dimension", "name"];
+
+function mergeIdentities(base) {
+  if (!Array.isArray(base) || !base.length || !base.every(plainObject)) return [];
+  return MERGE_IDENTITIES.filter((field) => base.every((row) => text(row[field])));
+}
+
+function mergeArray(base, patch) {
+  const fields = mergeIdentities(base);
+  if (!fields.length || !patch.every(plainObject)) return structuredClone(patch);
+  const result = base.map((row) => structuredClone(row));
+  for (const entry of patch) {
+    const field = fields.find((name) => text(entry[name]));
+    const identity = field ? text(entry[field]) : "";
+    const index = identity ? result.findIndex((row) => text(row[field]) === identity) : -1;
+    if (entry.$remove === true) {
+      if (index < 0)
+        throw new Error(identity
+          ? `"$remove" names ${field} '${identity}', which matches no existing entry`
+          : `"$remove" entry names no ${fields.join(" or ")} to identify what it removes`);
+      result.splice(index, 1);
+      continue;
+    }
+    const { $remove: _flag, ...value } = entry;
+    if (index >= 0) result[index] = mergeValue(result[index], value);
+    else result.push(structuredClone(value));
+  }
+  return result;
+}
+
+function mergeValue(base, patch) {
+  if (Array.isArray(patch))
+    return Array.isArray(base) ? mergeArray(base, patch) : structuredClone(patch);
+  if (!plainObject(patch)) return patch;
+  const result = plainObject(base) ? structuredClone(base) : {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) delete result[key];
+    else result[key] = mergeValue(result[key], value);
+  }
+  return result;
+}
+
+function requirementKeySet(draft) {
+  return new Set((Array.isArray(draft?.requirements) ? draft.requirements : [])
+    .map((row) => text(row?.key)).filter(Boolean));
+}
+
+export function mergeSemanticDraft(base, patch) {
+  if (!plainObject(base)) throw new Error("partial revision requires the change's prior draft");
+  if (!plainObject(patch)) throw new Error("partial revision patch must be a JSON object");
+  const merged = mergeValue(base, patch);
+  // A removed requirement takes its evidence entry and task coverage with it;
+  // the compiler owns those links. A task left covering nothing is reported.
+  const kept = requirementKeySet(merged);
+  const removed = [...requirementKeySet(base)].filter((key) => !kept.has(key));
+  if (removed.length) {
+    if (plainObject(merged.evidence))
+      for (const key of removed) delete merged.evidence[key];
+    if (Array.isArray(merged.tasks))
+      merged.tasks = merged.tasks.map((task) => plainObject(task) && Array.isArray(task.covers)
+        ? { ...task, covers: task.covers.filter((key) => !removed.includes(text(key))) }
+        : task);
+  }
+  return merged;
 }
 
 // Authors naturally key overviews by capability:

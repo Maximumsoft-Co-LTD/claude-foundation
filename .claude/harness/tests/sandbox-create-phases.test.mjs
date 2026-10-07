@@ -73,6 +73,8 @@ function fixture(t, overrides = {}) {
     saveRuntime: (value) => calls.saved.push(structuredClone(value)),
     repositoryCatalog: () => ({ drift: [] }),
     git: (args, path) => {
+      if (args[1] === "--show-toplevel")
+        return { status: 0, stdout: `${overrides.toplevel?.(path) ?? path}\n`, stderr: "" };
       calls.git.push({ args, path });
       return { status: 0, stdout: "", stderr: "" };
     },
@@ -494,6 +496,17 @@ test("repository isolation records root and child worktrees", (t) => {
   assert.equal(f.calls.git.at(-1).args[1], "add");
 });
 
+test("an uninitialized submodule is never isolated as its superproject", (t) => {
+  // An empty submodule directory answers Git commands for the superproject;
+  // a worktree made from it would fork the wrong repository.
+  const f = fixture(t, { toplevel: (path) => path === undefined ? path : "/superproject" });
+  assert.throws(
+    () => isolateSelectedRepositories(f.context, "change", f.state, f.repositories()),
+    /'child' cannot be isolated because .* is not an initialized Git repository of its own.*rolled back/s
+  );
+  assert.equal(f.calls.git.some(({ args }) => args[1] === "add"), false);
+});
+
 test("repository repair recovers a partial binding without recreating work", (t) => {
   const f = fixture(t);
   const expected = join(f.root, ".foundation", "repository-sandboxes",
@@ -575,9 +588,9 @@ test("repository isolation rolls back existing paths and failed worktree adds", 
   );
 
   const failed = fixture(t);
-  failed.context.git = (args) => args[1] === "add"
+  failed.context.git = (args, path) => args[1] === "add"
     ? { status: 1, stdout: "", stderr: "permission denied" }
-    : { status: 0, stdout: "", stderr: "" };
+    : { status: 0, stdout: args[1] === "--show-toplevel" ? `${path}\n` : "", stderr: "" };
   assert.throws(
     () => isolateSelectedRepositories(failed.context, "other", failed.state, failed.repositories()),
     /cannot create sandbox for 'child': permission denied.*rolled back/

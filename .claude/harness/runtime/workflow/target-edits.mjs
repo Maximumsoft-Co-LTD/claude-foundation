@@ -156,6 +156,34 @@ export function landedChangeSyncStop({ changeId, landedBy }) {
   };
 }
 
+// A user's uncommitted target edit that touches other lines of a file this
+// change also rewrote is merged by the harness, never handed back as a
+// question: the 3-way merge goes into the sandbox copy, evidence that covers
+// it runs again, and Land applies the merged file. The target is not written
+// until that apply. Only same-line edits reach `targetConflictStop`.
+export function targetEditSyncStop({ changeId, paths, conflicts = [] }) {
+  const pending = conflicts.length ? ` Same-line edits at ${listPaths(conflicts)} are settled ` +
+    "after the merge." : "";
+  return {
+    decision: {
+      kind: "target-edit-sync",
+      summary: `the target checkout holds uncommitted edits at: ${listPaths(paths)}; they touch ` +
+        `other lines than '${changeId}', so the harness merges them into the sandbox copies, ` +
+        "proves the merged files again, and lands them. The target edits are kept." + pending,
+      paths,
+      ...(conflicts.length ? { conflicts } : {}),
+      options: [
+        { id: "sync", outcome: "Merge the target edits into the sandbox copies, prove " +
+          `what changed, and continue Land: 'claude-foundation advance ${changeId} --through archived'.` },
+        { id: "pause", outcome: "Change nothing and leave both workspaces as they are." }
+      ],
+      recommended: "sync",
+      automaticRecovery: "sync"
+    },
+    code: "target-edit-sync"
+  };
+}
+
 export function targetConflictStop({ changeId, paths, snapshot = {}, cause, landedBy = {} }) {
   const listed = listPaths(paths);
   const restorable = restorableTargetPaths(paths, snapshot);

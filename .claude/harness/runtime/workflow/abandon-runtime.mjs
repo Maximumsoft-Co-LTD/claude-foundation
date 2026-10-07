@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 // Every other exit from the change loop requires the change to succeed. A
@@ -11,6 +11,12 @@ import { dirname, join } from "node:path";
 // the reason a change was abandoned is exactly the evidence someone will want
 // when the same wall appears again. It never touches Git: reverting a commit is
 // a separate authority the user grants separately.
+//
+// Abandon removes only what the change owns: its sandboxes (after a backup of
+// any commit or byte the target does not hold), its own .foundation records and
+// packet (quarantined, never deleted), and, only with --applied revert, the
+// target paths its own apply journal recorded. It never deletes a target file
+// the change did not declare and apply.
 export function createAbandonRuntime({
   root,
   paths,
@@ -99,7 +105,11 @@ export function createAbandonRuntime({
       if (!source || !existsSync(source)) continue;
       const destination = join(target, name);
       mkdirSync(dirname(destination), { recursive: true });
-      if (existsSync(destination)) rmSync(destination, { recursive: true });
+      // An earlier abandonment of the same id is evidence too; set it aside
+      // instead of deleting it.
+      if (existsSync(destination))
+        renameSync(destination, `${destination}.previous-${
+          String(now()).replace(/[^0-9A-Za-z]/g, "-")}`);
       renameSync(source, destination);
       moved.push(name);
     }
@@ -174,12 +184,22 @@ export function createAbandonRuntime({
 
   function cleanupAbandonedWork(id, state) {
     cleanupChangeLeases(id);
+    const repositoryCleanup = state.repositories
+      ? cleanupRepositorySandboxes(id, state, { purpose: "abandon" }) : null;
     return {
       workspaceCleanup: state.workspace
-        ? cleanupAppliedSandbox(id, state) : { status: "not-needed" },
-      repositoryCleanup: state.repositories
-        ? cleanupRepositorySandboxes(id, state) : null
+        ? cleanupAppliedSandbox(id, state, { purpose: "abandon" }) : { status: "not-needed" },
+      repositoryCleanup
     };
+  }
+
+  function sandboxBackups(cleanup) {
+    const repositoryResults = cleanup.repositoryCleanup &&
+      typeof cleanup.repositoryCleanup === "object" &&
+      !("status" in cleanup.repositoryCleanup)
+      ? Object.values(cleanup.repositoryCleanup) : [];
+    return [cleanup.workspaceCleanup?.backup, ...repositoryResults.map((result) => result?.backup)]
+      .filter((path) => typeof path === "string");
   }
 
   function abandonRecord(id, reason, decisionRef, state, appliedState, reverted, cleanup) {
@@ -195,6 +215,7 @@ export function createAbandonRuntime({
       unresolvedTransactions: divergent.map((journal) => journal.transactionId),
       workspaceCleanup: cleanup.workspaceCleanup,
       repositoryCleanup: cleanup.repositoryCleanup,
+      sandboxBackups: sandboxBackups(cleanup),
       schema: state.schema || null,
       status: state.status || null,
       actor: process.env.USER || process.env.LOGNAME || "operator",
@@ -216,12 +237,20 @@ export function createAbandonRuntime({
     ]);
   }
 
-  function reportAbandoned(id, reason, appliedMode, workspaceCleanup) {
+  function reportAbandoned(id, reason, appliedMode, cleanup) {
     const relative = recoveryRoot(id).slice(root.length + 1);
     console.log(`ABANDONED ${id}\n  reason: ${reason}\n  applied: ${
-      appliedMode || "none"}\n  quarantined: ${relative}`);
+      appliedMode || "none"}\n  quarantined: ${relative}${sandboxBackups(cleanup)
+      .map((path) => `\n  sandbox backup: ${path}`).join("")}`);
+    const { workspaceCleanup } = cleanup;
     if (["failed", "refused"].includes(workspaceCleanup.status))
       console.error(`WARNING: sandbox cleanup ${workspaceCleanup.status}: ${workspaceCleanup.reason}`);
+    const repositoryCleanup = cleanup.repositoryCleanup || {};
+    if (!("status" in repositoryCleanup))
+      for (const [repositoryId, result] of Object.entries(repositoryCleanup))
+        if (["failed", "refused"].includes(result?.status))
+          console.error(`WARNING: repository '${repositoryId}' sandbox cleanup ${
+            result.status}: ${result.reason}`);
   }
 
   function abandonChange(id, suppliedFlags) {
@@ -235,7 +264,7 @@ export function createAbandonRuntime({
     appendFileSync(auditPath, `${JSON.stringify({ ...record, event: "abandoned" })}\n`);
     record.quarantined = quarantineChange(id);
     writeJson(join(recoveryRoot(id), "abandon.json"), record);
-    reportAbandoned(id, reason, appliedState.appliedMode, cleanup.workspaceCleanup);
+    reportAbandoned(id, reason, appliedState.appliedMode, cleanup);
   }
 
   return { abandonChange, recoveryRoot };

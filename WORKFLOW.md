@@ -140,8 +140,10 @@ agreement, installs it, and prepares isolation. The draft records:
 Rapid changes contain `proposal.md`, `tasks.md`, `evidence.yaml`, and a concise
 delta `specs/<capability>/spec.md` (one SHALL statement and its scenarios per
 requirement, rendered exactly as in standard), which Land merges into
-`openspec/specs` like any other delta; only a legacy rapid packet declaring
-`skip_specs` has none. A delta for a capability with no living spec states a
+`openspec/specs` like any other delta; only a legacy rapid packet or declared
+docs-only work (`workType: ["docs"]` adding requirements, such as README
+wording) declares `skip_specs` and has none, so prose never becomes a living
+system requirement; its claims still bind evidence. A delta for a capability with no living spec states a
 `## Purpose` (the capability overview, else the intent) that archive carries
 into the new spec instead of OpenSpec's TBD placeholder; an existing spec's
 Purpose is never replaced. A minimal draft's derived names stay short: the
@@ -154,10 +156,12 @@ the proposal shows a folder tree of touched paths (`+` add, including paths
 absent at the base; `~` change; `-` remove), and a rapid proposal also carries
 the compact form (summary, what changes, user flow, failure matrix, the Plan
 Build executes, and any authored descriptive section: file map, test map,
-component map, config contract, refactor). Descriptive sections never move a
-low-risk draft to standard. A standard v4 change
+component map, config contract, refactor, bugfix). Descriptive sections never move a
+low-risk draft to standard; impact, coupling, security triggers, review, and
+acceptance still do. A standard v4 change
 always has `design.md`, and its draft must author the sections its work type
-needs (`why` or `summary`, and failures; user flow, UI states, component map,
+needs (`why` or `summary`, and failures unless the work is only refactor,
+config, or light work; user flow, UI states, component map,
 API contracts, data model, config or job contract by type); the harness infers
 the work type from task paths (stated in `design.md`; declare `workType` to
 override; test-, docs-, or manifest-only paths are light work) and derives the
@@ -199,7 +203,17 @@ unambiguous bookkeeping behavior, and draft v3 remains readable.
 inspects). Inspection returns one typed `EDIT`, `ASK_USER`, or `DONE` action
 with an exact resume route. Its `EDIT` batch also names, as agent repairs, a
 task `verify` that references a test file which neither exists nor falls inside
-any task's `paths`, and an `apiContracts` error listed without a status or code. An
+any task's `paths`, and an `apiContracts` error listed without a status or code.
+When `openspec/repositories.yaml` (or `.gitmodules`) declares repositories
+besides root, `change start --template` shows the `repositories` selection and
+per-task `repository`, and the batch names a root task whose paths or verify
+reach into a declared repository (the harness does not rebind it: moving a task
+changes where its paths resolve and where verify runs, so the agent rewrites
+them), a repository task whose paths are written from the control root, a task
+repository the draft does not select, and a verify that `cd`s (or `-C`,
+`--prefix`, `--cwd`) into another repository or outside its own; verify runs
+from the task repository root. An advisory, never a block, names a known runner
+whose default output Prove cannot count (bare `go test`). An
 unresolved user-owned coverage row must link to its decisions through
 `decisionKeys`; once every linked decision is resolved, the harness treats the
 row as covered by those decisions, so recording an answer needs no further
@@ -271,7 +285,11 @@ Build references load only on their triggers. A minimal draft (`intent`,
 `requirements[{description, scenarios[{when, then}]}]`,
 `tasks[{outcome, verify, paths}]`, no `version`) is expanded by the compiler.
 Every EDIT or REPAIR lists `contextFiles` (absolute paths to open), `newFiles`
-(declared paths to create), and `contextScope`. Unauthorized external work enters
+(declared paths to create), and `contextScope`. Each EDIT task carries its own
+`workspace`: a non-root repository's task names
+`.foundation/repository-sandboxes/<change>/<repository>`, never the shared
+sandbox's empty submodule directory, and the top-level `workspace` (plus a
+`workspaces` map by repository) is that sandbox whenever every task shares it. Unauthorized external work enters
 `handoffs.yaml` only through a semantic amendment, and grounding reads belong in
 the draft's `grounding` field.
 Runtime approval binds agreement content and revision; task checkboxes and
@@ -295,7 +313,14 @@ The revised semantic draft keeps the change id (a different `id` is refused)
 and passes the same intake gate as `change start`, under its own snapshot: the
 call inspects first, revises only at `DONE`, and otherwise prints the intake
 action and changes nothing. `--inspect` only inspects; `--consume-draft` also
-removes the draft. The transaction
+removes the draft. With `--merge` the file is a partial draft applied to the
+draft the change was compiled from: objects merge, `null` deletes a key, and an
+entry in a list keyed by `key` (or `dimension`, or `name`) merges into the
+entry with the identity it names (any of those fields every listed entry
+has), `"$remove": true` drops it (an unmatched `$remove` is an error), and
+other entries are appended; any other list is replaced. Removing a requirement drops its evidence
+entry and task coverage. A change started before partial revision, or one an
+amendment changed after its draft was recorded, needs the whole draft instead. The transaction
 recompiles the whole packet, increments the contract revision, and restores the
 prior packet and runtime state byte-for-byte on any failure. It is refused once
 the change has a Build workspace, a receipt, or a completed task, and in
@@ -314,8 +339,22 @@ Referenced diagrams, prototype selections, and local integration documentation
 must resolve to regular files inside the project. Remote integration sources
 must use HTTPS and a fixed version rather than `latest`, a branch, or another
 floating alias. An amendment may extend a task's claim coverage, but changing
-its outcome, or the verify command of a completed task, requires a new task so
-completed work cannot silently change meaning.
+its outcome requires a new task so completed work cannot silently change
+meaning. A completed task's verify command (or paths, or `dependsOn`) changes
+only with `reopen: true` on its `updateTasks` row (`--reopen` on the direct
+form below): the task is unticked, its claims are invalidated, and it counts as
+done again only after the new command passes; a changed check never keeps a
+completed status.
+
+An amendment withdraws unfinished tasks with `removeTasks: ["<key-or-id>"]`
+(needing no requirement, evidence, or intake on its own). A completed or proven
+task is refused, as is a task another remaining task depends on unless that
+dependent is removed too or its `updateTasks` row sets `dependsOn`, and a
+removal that would leave a claim with no task unless `updateTasks` `covers`
+moves it or `removeRequirements` retires it. The removed lines leave
+`tasks.md`, their claims are invalidated, derived provider commands follow the
+remaining verify commands, the amendment record keeps what each removed task
+promised, and a removed id is never reused.
 
 An unfinished task (unchecked, with no valid passing command receipt for its
 claims) may change its verify command, and optionally `paths`, through an
@@ -323,7 +362,8 @@ amendment with only `updateTasks: [{key, verify, paths?}]` rows. It needs no
 requirement, evidence, or version-4 intake; `change amend --template` prints
 it. The agent may make that correction directly, without amendment JSON or a
 new approval: `change amend <change> --task <task-key|task-id> --verify
-<command> [--reason <text>]`. Derived provider commands follow the new verify,
+<command> [--reopen] [--reason <text>]` (`--reopen` for a completed task).
+Derived provider commands follow the new verify,
 the task's claims are invalidated so Prove reruns their evidence, and the
 revision, validation, and rollback match any amendment. Claims, capabilities,
 and the spec approval do not change; a command that always passes (`true`,
@@ -390,6 +430,18 @@ state, receipts, evidence, and transactions to
 `.foundation/recovery/abandoned/<id>/` with an audit record. It requires a real
 user decision, never touches Git, refuses archived changes, and asks whether to
 keep or revert already-applied files before acting.
+
+Abandon removes only what the change owns: its sandboxes, its own `.foundation`
+records and packet (quarantined, never deleted; an earlier quarantine of the same
+id is set aside, not replaced), and, only with `--applied revert`, the target
+paths its own apply journal recorded writing. It never deletes a target file the
+change did not declare and apply. Before a sandbox is removed, any commit the
+target repository cannot reach and any sandbox byte the target does not hold are
+written to `.foundation/backups/<id>/<timestamp>/<sandbox>/` (`commits.bundle`,
+`changes.patch` against the sandbox base, verbatim `files/`, and a
+`manifest.json` naming the restore commands); abandon prints each backup path. A
+sandbox whose content cannot be inspected, or whose backup cannot be written, is
+kept.
 
 ### `/build <change>`
 
@@ -553,7 +605,13 @@ multi-repository even when `root` has no product writes. After isolation, every
 selected non-root repository must retain a worktree record whose path, target,
 access mode, and base head match the catalog. Changed-surface hashing, review
 packets, provider manifests, Apply, and Land all use that binding and never
-fall back to the live target.
+fall back to the live target. Each repository has one location: Build envelopes,
+the phase guard, review finding binding (a finding named
+`root/<submodule path>/<file>` binds to that repository), and Land all use its
+repository sandbox. A declared repository's directory or gitlink in the root
+workspace (missing, empty, or pointing at another commit) is that repository's
+pointer, never a root change, so it is excluded from root review, proof
+readiness, Apply, and replay.
 
 `sandbox inspect <change>` reports missing, unexpected, missing-path, and
 invalid-worktree records without executing a PATH-resolved Git command.
@@ -700,10 +758,10 @@ Tests and checks run only inside the returned workspace, never in the main
 checkout. If Land's apply conflicts with target files that are regenerable
 artifacts (for example `__pycache__/*.pyc`) and were clean at isolation,
 Land restores them to the sandbox base itself and continues. Any other
-conflicting target edit is a user decision listing the files; its restore
-option, `advance <change> --through archived --restore-target <paths>`, requires
-`--decision-ref`, and a file changed after the restore was recorded is never
-overwritten.
+conflicting target edit is kept and carried into the change (below); discarding
+it instead is the user's decision, recorded with `advance <change> --through
+archived --restore-target <paths> --decision-ref <user-decision>`, and a file
+changed after the restore was recorded is never overwritten.
 Land has one user-visible
 goal: place the exact current workspace projection in the declared main
 workspace. The Harness binds a resumable grant to the exact change, workspace
@@ -726,10 +784,21 @@ never automatic; a user who wants it records it through the same route,
 --decision-ref <user-decision>`, which settles the journal and continues Land.
 
 Uncommitted target edits that Land would overwrite are kept, never committed or
-discarded automatically: the agent merges each into the sandbox copy of the same
-path, and Land applies the merged file once merging the target edit into it
-changes nothing. Edits made outside the sandbox stop Land only on paths in this
-change's Land projection; others are reported.
+discarded automatically. An edit on other lines than the change is merged by the
+harness (`target-edit-sync`, automatic): a 3-way merge into the sandbox copy,
+Prove again for what it invalidated, then Apply; the target keeps the user's
+bytes until then. Only an edit of the same lines is a `target-edit-conflict`:
+the agent merges it into the sandbox copy, and Land applies the merged file once
+merging the target edit into it changes nothing. Edits made outside the sandbox
+stop Land only on paths in this change's Land projection; others are reported.
+
+An archived Land whose diff is still uncommitted is undone, on the user's
+decision, with `advance <change> --undo-land --decision-ref <user-decision>`.
+The harness returns every path Land wrote (code, synchronized specs, archived
+packet) to its pre-Land bytes from the Land journal, retires the change, and
+keeps the landed bytes and records under `.foundation/recovery/land-undone/`.
+It refuses without writing when HEAD moved since Land, a path Land wrote is
+staged, or any such path changed after Land.
 
 Land is always allowed for stacked changes. Because Land leaves its diff
 uncommitted, a change that branched before another change landed meets that
@@ -756,7 +825,20 @@ Each target finishes `applied-uncommitted`: its intended diff is visible for
 the user to inspect, while Git HEAD and index remain unchanged. Read-only
 repositories remain unchanged. Re-entering `/land` resumes the same grant and
 skips already verified nodes; it never requires the user to assemble a journal,
-grant, commit, recovery command, or archive command.
+grant, commit, recovery command, or archive command. A node counts as verified
+only while its sandbox projection is unchanged: work committed or edited in a
+repository sandbox after an earlier delivery is delivered again on resume.
+
+Before a multi-repository change is archived, Land reads each writable selected
+repository's target checkout, not its own records: every path the repository
+sandbox changed since its base (committed, uncommitted, or untracked) must hold
+the sandbox's bytes in the target, the target must be a Git repository of its own
+(an uninitialized submodule is not), and nothing may sit in the shared sandbox's
+placeholder for a nested repository. Otherwise Land stops with
+`LAND_PROJECTION_MISSING`, naming each repository and path; nothing is archived
+and no sandbox is removed. Archive cleanup likewise keeps any sandbox whose bytes
+the target does not hold, and backs up commits the target cannot reach, as for
+abandon, before it removes a sandbox.
 
 Land never commits, and never implies permission to commit, push, publish,
 deploy, or open a pull request. Commit and push happen only through `/deliver`
@@ -997,7 +1079,9 @@ only unsure of a scenario or its coverage is unreadable, the harness re-runs
 that review once on the configured model without consuming a review round. Security triggers are declared (draft `securityTriggers` or
 `resolve --security`) or inferred from intent keywords: declared triggers
 select the standard lane and security evidence, while an intent keyword alone
-only makes review required at the low tier and the change keeps its lane.
+only makes review required at the low tier and the change keeps its lane. A
+draft's `riskSignals` raise the tier too: `access-control` to high,
+`input-domain` to at least medium.
 
 - **low** — one full AI review; a material correction promotes the route to
   medium;
@@ -1106,13 +1190,30 @@ answer.
 Causes only the user can clear skip the ladder and return `ASK_USER`
 (`USER_ENVIRONMENT_REQUIRED`, boundary `user-environment`) on the first
 observation: a missing or expired credential or token, VPN, proxy or network
-denial, a reviewer CLI that is not logged in, a full disk (`ENOSPC`), or private
-registry authentication. They are classified from typed error codes and known
-signatures on harness, setup, and reviewer routes; a full disk is recognized on
+denial, a reviewer CLI that is not logged in, a full disk (`ENOSPC`), private
+registry authentication, or a Git remote that rejects the credential (for
+example a push `403`). `decision.category` types the boundary as `resource`,
+`credential`, or `network`, and `decision.cause` names it. Causes are
+classified where the failure is raised, so inspection and every route agree:
+typed error codes first, then known signatures in child-process output, on
+harness, setup, delivery, and reviewer routes. A full disk is recognized on
 every route, while credential or network words inside failing product output
-remain a product repair. The question names the fix (for example "run `claude
-/login`" or "free disk space") and the resume command; nothing is counted, and
-an uncleared cause is reported again the same way.
+remain a product repair, and a bare local process timeout (`ETIMEDOUT` from a
+spawn) is not a network cause. The question names the fix (for example "run
+`claude /login`" or "free disk space") and the resume command, and carries no
+agent repair instruction; nothing is counted, and an uncleared cause is
+reported again the same way. `deliver advance` uses the same classifier and
+decision shape; a remaining provider failure is the repository operator's
+`WAIT` with an explicit `wait.condition` and `wait.checkCommand`.
+
+Signals the agent must act on that do not change the action ride on the same
+envelope as optional `signals[]` entries (`{code, message}`), in addition to
+their unchanged stderr or stdout line: `agreement-restored` (an isolated
+agreement edit was restored and saved aside for an amendment),
+`budget-warning` (spend reached 70% with `execution.budgetWatchdog` on),
+`already-archived` (archive recovery found the change already archived), and
+`apply-recovered` (an interrupted apply was settled). The field is absent when
+nothing was signalled.
 
 No agent-facing route names a lifecycle primitive. Any `command`, `next`,
 instruction, reason, or decision option that would point at `proof run|advance`,

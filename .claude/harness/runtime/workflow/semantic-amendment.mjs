@@ -57,22 +57,56 @@ function replaceTaskPaths(line, paths) {
     : `${line.slice(0, marker).trimEnd()} ${annotation}${line.slice(marker)}`;
 }
 
-const TASK_CONTRACT_FIELDS = ["verify", "paths"];
+function taskDepends(line) {
+  return stringList(String(line).match(/\[depends:([^\]]*)\]/i)?.[1]?.split(","))
+    .map((id) => id.toUpperCase());
+}
+
+function replaceTaskDepends(line, ids) {
+  const annotation = ids.length ? `[depends:${ids.join(",")}]` : "";
+  if (/\[depends:[^\]]*\]/i.test(line))
+    return line.replace(/ ?\[depends:[^\]]*\]/i, annotation ? ` ${annotation}` : "");
+  if (!annotation) return line;
+  const marker = line.indexOf(" — verify:");
+  return marker < 0
+    ? `${line.trimEnd()} ${annotation}`
+    : `${line.slice(0, marker).trimEnd()} ${annotation}${line.slice(marker)}`;
+}
+
+// Re-opening unticks a completed task, so the harness must verify it again.
+function reopenTask(line) {
+  return String(line).replace(/^(\s*-\s*\[)[xX](\])/, "$1 $2");
+}
+
+// The fields an update may change in place. On a completed task they change
+// only with `reopen: true`, which unticks it so its claims are proven again.
+const TASK_CONTRACT_FIELDS = ["verify", "paths", "dependsOn"];
+const TASK_ROW_FIELDS = ["key", ...TASK_CONTRACT_FIELDS, "reopen"];
 const hasField = (row, field) => Object.prototype.hasOwnProperty.call(row || {}, field);
+const removalRef = (row) => String(typeof row === "string" ? row : row?.key || "").trim();
 
 /**
- * A task-contract amendment only corrects the verify command (and optionally
- * the paths) of existing tasks. It carries no requirement change, so it needs
- * no requirement, evidence, or semantic-intake input.
+ * A task-contract amendment corrects the verify command (and optionally the
+ * paths or dependencies) of existing tasks, or withdraws unfinished tasks
+ * (`removeTasks`, which may move their coverage with `updateTasks` covers).
+ * It carries no requirement change, so it needs no requirement, evidence, or
+ * semantic-intake input.
  */
 export function taskContractOnlyAmendment(amendment) {
   const updates = amendment?.updateTasks;
-  return ["addRequirements", "reviseRequirements", "removeRequirements", "addTasks"]
-    .every((field) => !amendmentList(amendment, field).length) &&
-    Array.isArray(updates) && updates.length > 0 &&
-    updates.every((row) => row && typeof row === "object" && !Array.isArray(row) &&
-      hasField(row, "verify") &&
-      Object.keys(row).every((field) => ["key", ...TASK_CONTRACT_FIELDS].includes(field)));
+  const removals = amendment?.removeTasks;
+  if (!["addRequirements", "reviseRequirements", "removeRequirements", "addTasks"]
+    .every((field) => !amendmentList(amendment, field).length)) return false;
+  if ((updates !== undefined && !Array.isArray(updates)) ||
+      (removals !== undefined && !Array.isArray(removals))) return false;
+  const rows = updates || [];
+  const removing = (removals || []).length > 0;
+  const fields = removing ? [...TASK_ROW_FIELDS, "covers"] : TASK_ROW_FIELDS;
+  return (rows.length > 0 || removing) &&
+    rows.every((row) => row && typeof row === "object" && !Array.isArray(row) &&
+      (hasField(row, "verify") || hasField(row, "dependsOn") ||
+        (removing && hasField(row, "covers"))) &&
+      Object.keys(row).every((field) => fields.includes(field)));
 }
 
 /** The shape `change amend --template` prints; the verify-only form leads. */
@@ -82,6 +116,18 @@ export function semanticAmendmentTemplate() {
       version: 1,
       reason: "Correct the verify command of an unfinished task",
       updateTasks: [{ key: "<existing-task-key>", verify: "<command>" }]
+    },
+    // A completed task's verify changes only by re-opening it, and only an
+    // unfinished task can be withdrawn; neither changes a requirement.
+    reopenCompleted: {
+      version: 1,
+      reason: "Correct the verify command of a completed task and verify it again",
+      updateTasks: [{ key: "<completed-task-key>", verify: "<command>", reopen: true }]
+    },
+    removeUnfinished: {
+      version: 1,
+      reason: "<why the task is no longer needed>",
+      removeTasks: ["<unfinished-task-key-or-id>"]
     },
     requirementChange: {
       version: 1,
@@ -263,17 +309,201 @@ export function amendmentVerifyPathIssues(amendment, tasksContent, { exists }) {
   });
 }
 
+// ---- Task repository binding --------------------------------------------------
+// A task runs, and its verify command runs, from the root of its repository.
+// A project that keeps code in declared repositories (submodules, siblings)
+// must bind each task to the repository that owns its files; otherwise Build
+// dispatches the work to the control root, where the code is not.
+
+const GLOB = /[*?{}[\]]/;
+const DYNAMIC_PATH = /[$`]/;
+
+function literalPrefix(path) {
+  const text = String(path || "").trim().replace(/^\.\//, "").replace(/\/+$/, "");
+  const parts = text.split("/");
+  const index = parts.findIndex((part) => GLOB.test(part));
+  return (index < 0 ? parts : parts.slice(0, index)).join("/");
+}
+
+const atOrUnder = (path, directory) =>
+  Boolean(directory) && (path === directory || path.startsWith(`${directory}/`));
+
+function normalizedRelative(base, target) {
+  const parts = [];
+  for (const part of `${base ? `${base}/` : ""}${target}`.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      if (!parts.length || parts.at(-1) === "..") parts.push("..");
+      else parts.pop();
+    } else parts.push(part);
+  }
+  return parts.join("/");
+}
+
+const unquote = (value) => String(value || "").replace(/^(['"])(.*)\1$/, "$2");
+
+/**
+ * Working-directory changes a verify command makes, resolved against the
+ * directory it starts in: `cd`/`pushd` targets (which accumulate), and
+ * `-C`, `--prefix`, `--cwd`, `--dir`, or `--directory` arguments (which apply
+ * to one tool). Dynamic targets (`$VAR`, command substitution) are unknown and
+ * omitted. A text screen, so best-effort like `verifyCannotFail`.
+ */
+export function verifyDirectoryTargets(command) {
+  const text = String(command || "");
+  const targets = [];
+  let current = "";
+  const pattern = new RegExp(String.raw`(?:^|[;&|(]|&&|\|\|)\s*(cd|pushd)(?=$|[\s;&|)])(?:[ \t]+("[^"]*"|'[^']*'|[^\s;&|)]+))?` +
+    String.raw`|(?:^|\s)(?:-C|--prefix|--cwd|--dir|--directory)(?:=|\s+)("[^"]*"|'[^']*'|[^\s;&|)]+)`, "g");
+  for (const match of text.matchAll(pattern)) {
+    const raw = unquote(match[2] ?? match[3] ?? "");
+    const shell = Boolean(match[1]);
+    if (shell && (!raw || raw === "-")) {
+      if (!raw) targets.push({ raw: "~", outside: true, path: null });
+      continue;
+    }
+    if (DYNAMIC_PATH.test(raw)) continue;
+    if (raw.startsWith("/") || raw.startsWith("~")) {
+      targets.push({ raw, outside: true, path: null });
+      continue;
+    }
+    const path = normalizedRelative(current, raw);
+    const outside = path === ".." || path.startsWith("../");
+    targets.push({ raw, outside, path: outside ? null : path });
+    if (shell && !outside) current = path;
+  }
+  return targets;
+}
+
+function catalogRepositories(repositories) {
+  return (Array.isArray(repositories) ? repositories : [])
+    .filter((row) => row && row.id && row.id !== "root")
+    .map((row) => ({
+      id: String(row.id),
+      path: String(row.relativePath || "").replace(/^\.\//, "").replace(/\/+$/, ""),
+      absolutePath: row.path || null
+    }))
+    .filter((row) => row.path && row.path !== "." && !row.path.startsWith("../") &&
+      row.path !== "..");
+}
+
+function selectionIds(selection) {
+  return (Array.isArray(selection) ? selection : [])
+    .map((entry) => String(typeof entry === "string" ? entry : entry?.id || "").trim())
+    .filter(Boolean);
+}
+
+/**
+ * Agent repairs for tasks bound to the wrong repository: a root task whose
+ * paths or verify reach into a declared repository, a repository task whose
+ * paths are written from the control root, a task naming a repository the
+ * draft does not select, and a verify command that changes into a directory
+ * outside its task repository. `repositories` are catalog rows
+ * ({id, relativePath, path}); `selection` is the draft's `repositories`.
+ */
+export function taskRepositoryIssues(tasks, {
+  repositories = [], selection, exists = () => false, label = "task", selectionSource = "draft"
+} = {}) {
+  const rows = Array.isArray(tasks) ? tasks.filter((task) => task && typeof task === "object") : [];
+  const declared = catalogRepositories(repositories);
+  const byId = new Map(declared.map((row) => [row.id, row]));
+  const selected = selectionIds(selection);
+  const selectedSet = new Set(selected);
+  const selectsOtherRepository = selected.some((id) => id !== "root");
+  const declaredList = declared.map((row) => `${row.id} (${row.path})`).join(", ");
+  const owner = (path) => declared.find((row) => atOrUnder(path, row.path)) || null;
+  const issues = [];
+  rows.forEach((task, index) => {
+    const name = String(task.semanticKey || task.key || task.id || "").trim() || `#${index + 1}`;
+    const repository = String(task.repository || "").trim() || "root";
+    const repositoryRow = byId.get(repository) || null;
+    const subject = `${label} '${name}'`;
+    if (repository !== "root" && declared.length && !repositoryRow)
+      issues.push(`${subject} names repository '${repository}', which ` +
+        `openspec/repositories.yaml does not declare; use one of: ${declaredList}`);
+    if (repository !== "root" && !selectedSet.has(repository))
+      issues.push(selectionSource === "change"
+        ? `${subject} runs in repository '${repository}', which this change does not select; ` +
+          "bind it to a selected repository (a new repository needs 'change revise' before Build)"
+        : `${subject} runs in repository '${repository}', which the draft's 'repositories' ` +
+          `does not list; add { "id": "${repository}", "mode": "write" } to 'repositories'`);
+    if (!String(task.repository || "").trim() && selectsOtherRepository)
+      issues.push(`${subject} names no 'repository' while the draft selects ` +
+        `${selected.join(", ")}; set 'repository' to the one that owns its files`);
+    for (const path of stringList(task.paths)) {
+      const prefix = literalPrefix(path);
+      if (repository === "root") {
+        const inside = prefix && owner(prefix);
+        if (inside)
+          issues.push(`${subject} path '${path}' is inside repository '${inside.id}' ` +
+            `(${inside.path}) but the task runs in root; set "repository": "${inside.id}", write ` +
+            `its paths and verify relative to ${inside.path}, and list ${inside.id} in 'repositories'`);
+      } else if (repositoryRow && atOrUnder(prefix, repositoryRow.path)) {
+        const relativePath = path.replace(/^\.\//, "").slice(repositoryRow.path.length + 1) || "**";
+        issues.push(`${subject} path '${path}' is written from the control root; task ` +
+          `paths are relative to repository '${repository}', so write '${relativePath}'`);
+      }
+    }
+    for (const target of verifyDirectoryTargets(task.verify)) {
+      if (target.outside) {
+        issues.push(`${subject} verify changes into '${target.raw}', outside repository ` +
+          `'${repository}'; verify runs from that repository's root, so name a path inside it`);
+        continue;
+      }
+      if (repository === "root") {
+        const inside = owner(target.path);
+        if (inside)
+          issues.push(`${subject} verify changes into '${target.raw}', which is repository ` +
+            `'${inside.id}'; set "repository": "${inside.id}" and write verify to run from its root`);
+        continue;
+      }
+      const reached = owner(target.path);
+      if (!reached) continue;
+      const local = repositoryRow?.absolutePath &&
+        exists(`${repositoryRow.absolutePath}/${target.path}`);
+      if (local) continue;
+      issues.push(reached.id === repository
+        ? `${subject} verify changes into '${target.raw}', but verify already runs from ` +
+          `repository '${repository}' (${reached.path}); remove that directory change`
+        : `${subject} verify changes into '${target.raw}', which is repository ` +
+          `'${reached.id}'; verify runs from repository '${repository}', so split the check ` +
+          `into a task bound to '${reached.id}'`);
+    }
+  });
+  return unique(issues);
+}
+
+/** The same repository checks for an amendment's added and updated tasks. */
+export function amendmentTaskRepositoryIssues(amendment, tasksContent, options = {}) {
+  const lines = String(tasksContent || "").split("\n").filter((line) => taskId(line));
+  const existing = new Map(lines.flatMap((line) => [
+    [semanticTaskKey(line) || taskId(line), line], [taskId(line), line]]));
+  const repositoryOf = (line) => String(line).match(/\[repo:([^\]\s]+)\]/)?.[1] || "";
+  const updated = amendmentList(amendment, "updateTasks").filter((task) =>
+    task && (hasField(task, "verify") || hasField(task, "paths"))).map((task) => {
+    const line = existing.get(keyOf(task)) || existing.get(keyOf(task).toUpperCase()) || "";
+    return { key: keyOf(task), repository: repositoryOf(line),
+      verify: hasField(task, "verify") ? task.verify : "",
+      paths: hasField(task, "paths") ? task.paths : [] };
+  });
+  return taskRepositoryIssues([...amendmentList(amendment, "addTasks"), ...updated], {
+    ...options, selection: options.selection ?? ["root"], label: "amendment task",
+    selectionSource: "change"
+  });
+}
+
 /**
  * The verify-only amendment `change amend <change> --task <key> --verify
  * <command>` submits: an unfinished task's check corrected in place, with the
  * spec approval, requirements, claims, and capabilities untouched.
  */
-export function taskVerifyAmendment({ task, verify, reason = "" }) {
+export function taskVerifyAmendment({ task, verify, reason = "", reopen = false }) {
   return {
     version: 1,
     reason: String(reason || "").trim() ||
       `Correct the verify command of task '${String(task || "").trim()}'`,
-    updateTasks: [{ key: String(task || "").trim(), verify: String(verify || "").trim() }]
+    updateTasks: [{ key: String(task || "").trim(), verify: String(verify || "").trim(),
+      ...(reopen === true ? { reopen: true } : {}) }]
   };
 }
 
@@ -305,7 +535,7 @@ function amendmentIssues(amendment) {
   if (!added.length && !revised.length && !removed.length && !taskContractOnlyAmendment(amendment))
     issues.push("semantic amendment requires a non-empty addRequirements, " +
       "reviseRequirements, or removeRequirements array, or only updateTasks " +
-      "{key, verify, paths?} rows");
+      "{key, verify, paths?, dependsOn?, reopen?} rows and removeTasks");
   if ((added.length || revised.length) && (!amendment?.evidence ||
       typeof amendment.evidence !== "object" || Array.isArray(amendment.evidence)))
     issues.push("semantic amendment requires evidence keyed by each added or revised requirement");
@@ -329,15 +559,25 @@ function amendmentIssues(amendment) {
         task.paths.some((path) => typeof path !== "string" || !path.trim() || /[,\]\s]/.test(path))))
       issues.push(`semantic amendment updateTasks[${index}].paths must be an array of ` +
         "path globs without commas, brackets, or spaces");
+    if (hasField(task, "dependsOn") && (!Array.isArray(task.dependsOn) ||
+        task.dependsOn.some((value) => typeof value !== "string" || !value.trim())))
+      issues.push(`semantic amendment updateTasks[${index}].dependsOn must be an array of task keys or ids`);
+    if (hasField(task, "reopen") && typeof task.reopen !== "boolean")
+      issues.push(`semantic amendment updateTasks[${index}].reopen must be true or false`);
   }
   if (amendment?.addTasks !== undefined && !Array.isArray(amendment.addTasks))
     issues.push("semantic amendment addTasks must be an array");
+  if (amendment?.removeTasks !== undefined && !Array.isArray(amendment.removeTasks))
+    issues.push("semantic amendment removeTasks must be an array");
+  for (const [index, row] of amendmentList(amendment, "removeTasks").entries())
+    if (!removalRef(row))
+      issues.push(`semantic amendment removeTasks[${index}] must name a task key or id`);
   return issues;
 }
 
 export function compileSemanticAmendment({
   amendment, contract, tasksContent, slugify, renderTask, semanticDraftVersion = 3,
-  loadCanonicalSpec = null, provenClaimIds = []
+  loadCanonicalSpec = null, provenClaimIds = [], retiredTaskIds = []
 }) {
   const issues = amendmentIssues(amendment);
   if (![3, 4].includes(semanticDraftVersion))
@@ -353,13 +593,22 @@ export function compileSemanticAmendment({
   }
   const taskLines = String(tasksContent).split("\n");
   const tasksByKey = new Map();
-  let maxTask = 0;
+  const tasksById = new Map();
+  // A withdrawn task's id is never reused, so its old leases, receipts, and
+  // audit rows cannot be mistaken for a new task's.
+  let maxTask = Math.max(0, ...stringList(retiredTaskIds)
+    .map((id) => Number(id.replace(/^T/i, "")) || 0));
   for (const [index, line] of taskLines.entries()) {
     const id = taskId(line);
     if (id) maxTask = Math.max(maxTask, Number(id.slice(1)) || 0);
+    if (id) tasksById.set(id, { index, line, id, key: semanticTaskKey(line) });
     const key = semanticTaskKey(line);
     if (key) tasksByKey.set(key, { index, line, id });
   }
+  const resolveTaskId = (reference) => {
+    const value = String(reference || "").trim();
+    return tasksByKey.get(value)?.id || tasksById.get(value.toUpperCase())?.id || null;
+  };
   // The agent sees task ids in every Build action; a task-contract row may
   // name one (`T002`) in place of the semantic key it resolves to.
   if (Array.isArray(amendment?.updateTasks)) {
@@ -372,15 +621,18 @@ export function compileSemanticAmendment({
     }) };
   }
 
-  // Outcome never changes in place. Verify and paths change in place only on
-  // an unfinished task: unchecked and without a passing command receipt.
+  // Outcome never changes in place. Verify, paths, and dependencies change in
+  // place only on an unfinished task (unchecked and without a passing command
+  // receipt), or on a completed one that `reopen: true` unticks so the
+  // harness verifies it again: a changed check never keeps a completed status.
   const proven = new Set(stringList(provenClaimIds));
+  const completedTask = (line) => taskCompleted(line) ||
+    taskClaims(line).some((id) => proven.has(id));
   const taskContractChanges = [];
   for (const [index, update] of (Array.isArray(amendment?.updateTasks)
     ? amendment.updateTasks : []).entries()) {
     const row = tasksByKey.get(keyOf(update));
-    const completed = row && (taskCompleted(row.line) ||
-      taskClaims(row.line).some((id) => proven.has(id)));
+    const completed = row && completedTask(row.line);
     const changes = {};
     if (row && typeof update?.verify === "string" && update.verify.trim() !== taskVerify(row.line)) {
       changes.verify = update.verify.trim();
@@ -389,26 +641,93 @@ export function compileSemanticAmendment({
     if (row && Array.isArray(update?.paths) &&
         JSON.stringify(stringList(update.paths)) !== JSON.stringify(taskPaths(row.line)))
       changes.paths = stringList(update.paths);
+    if (row && Array.isArray(update?.dependsOn)) {
+      const references = stringList(update.dependsOn);
+      const unknown = references.filter((reference) => !resolveTaskId(reference));
+      const dependsOn = unique(references.map(resolveTaskId).filter(Boolean));
+      if (unknown.length)
+        issues.push(`semantic amendment updateTasks[${index}].dependsOn references unknown ` +
+          `task(s): ${unknown.join(", ")}`);
+      else if (dependsOn.includes(row.id))
+        issues.push(`semantic amendment updateTasks[${index}].dependsOn cannot name the task itself`);
+      else if (JSON.stringify(dependsOn) !== JSON.stringify(taskDepends(row.line)))
+        changes.dependsOn = dependsOn;
+    }
+    const reopening = Boolean(completed && update?.reopen === true &&
+      TASK_CONTRACT_FIELDS.some((field) => hasField(changes, field)));
     const unsupported = [
       ...(hasField(update, "outcome") ? ["outcome"] : []),
-      ...(completed ? TASK_CONTRACT_FIELDS.filter((field) => hasField(changes, field)) : [])
+      ...(completed && !reopening
+        ? TASK_CONTRACT_FIELDS.filter((field) => hasField(changes, field)) : [])
     ];
     if (unsupported.length)
       issues.push(`semantic amendment updateTasks[${index}] cannot replace ${
-        unsupported.join(" or ")}; add a new task so completed work keeps its meaning`);
+        unsupported.join(" or ")}; add a new task so completed work keeps its meaning` +
+        (unsupported.includes("outcome") ? "" : ", or set \"reopen\": true to re-open the " +
+          "task so the harness verifies it again"));
     else if (row && Object.keys(changes).length)
-      taskContractChanges.push({ key: keyOf(update), index: row.index, ...changes });
+      taskContractChanges.push({ key: keyOf(update), index: row.index, ...changes,
+        ...(reopening ? { reopened: true } : {}) });
   }
+
+  // Only unfinished work can be withdrawn. A task another task depends on
+  // stays unless that dependent is withdrawn too or its dependsOn is updated.
+  const removalRefs = amendmentList(amendment, "removeTasks").map(removalRef).filter(Boolean);
+  const removedTaskRows = [];
+  for (const reference of unique(removalRefs)) {
+    const id = resolveTaskId(reference);
+    const row = id ? tasksById.get(id) : null;
+    if (!row) {
+      issues.push(`amendment removeTasks references unknown task '${reference}'`);
+      continue;
+    }
+    if (removedTaskRows.some((removed) => removed.id === row.id)) continue;
+    if (completedTask(row.line)) {
+      issues.push(`amendment cannot remove completed task '${row.key || row.id}' (${row.id}); ` +
+        "completed work keeps its meaning, so remove its requirement or start a successor change");
+      continue;
+    }
+    if ((amendment.updateTasks || []).some((update) => resolveTaskId(keyOf(update)) === row.id))
+      issues.push(`amendment cannot both update and remove task '${row.key || row.id}'`);
+    removedTaskRows.push({ ...row, claims: taskClaims(row.line), verify: taskVerify(row.line) });
+  }
+  const removedTaskIds = new Set(removedTaskRows.map((row) => row.id));
   if (taskContractOnlyAmendment(amendment) && !taskContractChanges.length &&
-      amendment.updateTasks.every((update) => tasksByKey.has(keyOf(update))) &&
+      !removalRefs.length &&
+      (amendment.updateTasks || []).every((update) => tasksByKey.has(keyOf(update))) &&
       !issues.some((issue) => issue.startsWith("semantic amendment updateTasks[")))
-    issues.push("semantic amendment updateTasks changes no verify command or paths");
+    issues.push("semantic amendment updateTasks changes no verify command or paths (or dependencies)");
   for (const change of taskContractChanges) {
     let line = taskLines[change.index];
     if (change.verify !== undefined) line = replaceTaskVerify(line, change.verify);
     if (change.paths !== undefined) line = replaceTaskPaths(line, change.paths);
+    if (change.dependsOn !== undefined) line = replaceTaskDepends(line, change.dependsOn);
+    if (change.reopened) line = reopenTask(line);
     taskLines[change.index] = line;
     tasksByKey.set(change.key, { ...tasksByKey.get(change.key), line });
+  }
+  for (const line of taskLines) {
+    const id = taskId(line);
+    if (!id || removedTaskIds.has(id)) continue;
+    const blocked = taskDepends(line).filter((dependency) => removedTaskIds.has(dependency));
+    if (blocked.length)
+      issues.push(`amendment cannot remove ${blocked.join(", ")}: task ${id} depends on it; ` +
+        `remove ${id} too or update its dependsOn`);
+  }
+  for (const task of amendmentList(amendment, "addTasks"))
+    for (const dependency of stringList(task?.dependsOn))
+      if (removedTaskIds.has(resolveTaskId(dependency)))
+        issues.push(`amendment task '${keyOf(task)}' depends on removed task '${dependency}'`);
+  // Removed lines (and their indented detail lines) leave the ledger last, so
+  // every index above stays valid while the amendment is checked.
+  for (const row of removedTaskRows) {
+    taskLines[row.index] = null;
+    for (let next = row.index + 1; next < taskLines.length; next += 1) {
+      const line = taskLines[next];
+      if (line === null || taskId(line) || !/^\s+\S/.test(line)) break;
+      taskLines[next] = null;
+    }
+    if (row.key) tasksByKey.delete(row.key);
   }
 
   const addRequirements = amendmentList(amendment, "addRequirements");
@@ -548,6 +867,20 @@ export function compileSemanticAmendment({
   if (orphaned.length)
     issues.push(`amendment would leave task(s) ${orphaned.join(", ")} without requirement ` +
       "coverage; move their coverage with updateTasks");
+  // A withdrawn task must not take the last implementation of a claim with it.
+  if (removedTaskRows.length) {
+    const remaining = new Set([
+      ...taskLines.filter((line) => line !== null && taskId(line)).flatMap(taskClaims),
+      ...amendmentList(amendment, "addTasks").flatMap((task) => allClaimsFor(task?.covers))
+    ]);
+    for (const row of removedTaskRows) {
+      const uncovered = replaceClaimIds(row.claims).filter((id) => !remaining.has(id));
+      if (uncovered.length)
+        issues.push(`amendment cannot remove task '${row.key || row.id}' (${row.id}): claim(s) ` +
+          `${uncovered.join(", ")} would have no task; move them with updateTasks covers, ` +
+          "add a task, or remove the requirement with removeRequirements");
+    }
+  }
   if (issues.length) return { issues };
 
   const newTasks = [];
@@ -561,7 +894,7 @@ export function compileSemanticAmendment({
   for (const task of newTasks)
     task.dependsOn = stringList(task.dependsOn).map((key) => allocated.get(key)?.id);
   const renderedNewTasks = newTasks.map((task, index) => renderTask(task, maxTask + index));
-  let nextTasks = taskLines.join("\n").replace(/\s+$/, "");
+  let nextTasks = taskLines.filter((line) => line !== null).join("\n").replace(/\s+$/, "");
   if (renderedNewTasks.length) nextTasks += `\n${renderedNewTasks.join("\n")}`;
   nextTasks += "\n";
 
@@ -577,7 +910,8 @@ export function compileSemanticAmendment({
   }
   // A provider command derived from the task verify commands follows them;
   // an explicitly configured command stays as the author wrote it.
-  if (taskContractChanges.some((change) => change.verify !== undefined)) {
+  if (taskContractChanges.some((change) => change.verify !== undefined) ||
+      removedTaskRows.length) {
     const priorCommand = JSON.stringify(combinedCommand(tasksContent));
     for (const [name, config] of Object.entries(providers))
       if (["command", "test-discovery"].includes(config?.adapter) &&
@@ -592,10 +926,18 @@ export function compileSemanticAmendment({
       // is reviewable against the one it replaced.
       ...(change.verify !== undefined
         ? { verify: change.verify, priorVerify: change.priorVerify } : {}),
-      ...(change.paths !== undefined ? { paths: change.paths } : {})
+      ...(change.paths !== undefined ? { paths: change.paths } : {}),
+      ...(change.dependsOn !== undefined ? { dependsOn: change.dependsOn } : {}),
+      ...(change.reopened ? { reopened: true } : {})
     };
   });
   const taskContractClaimIds = unique(taskContractTasks.flatMap((task) => task.claims));
+  // The audit keeps what a withdrawn task promised; its claims are proven
+  // again by the tasks that now carry them.
+  const removedTasks = removedTaskRows.map((row) => ({
+    key: row.key || null, id: row.id, claims: row.claims, verify: row.verify || null
+  }));
+  const removedTaskClaimIds = unique(removedTaskRows.flatMap((row) => replaceClaimIds(row.claims)));
   const priorScenarios = (key) => (claimsByRequirement.get(key) || [])
     .map((id) => priorClaimById.get(id)?.scenario).filter(Boolean);
   const specs = normalized.draft.specs;
@@ -626,11 +968,14 @@ export function compileSemanticAmendment({
     })),
     discovery: normalized.draft.discovery,
     amendmentReason: amendment.reason || "Agreement expanded during Build",
-    invalidatedClaims: unique([...addedClaimIds, ...changedClaimIds, ...taskContractClaimIds]),
+    invalidatedClaims: unique([...addedClaimIds, ...changedClaimIds, ...taskContractClaimIds,
+      ...removedTaskClaimIds]),
     addedClaimIds,
     changedClaimIds,
     taskContractChanges: taskContractTasks,
     taskContractClaimIds,
+    removedTasks,
+    removedTaskClaimIds,
     removedClaimIds: [...retiredClaimIds].filter((id) => !nextClaimIds.has(id)),
     priorClaims: existingClaims,
     addedRequirementKeys: [...addedKeys],

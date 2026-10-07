@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { emitSignal } from "./signals.mjs";
 
 // Review is bounded by its rounds (full, then one delta), not by elapsed
 // time: a shared wall-clock window also counted the agent's repair between
@@ -105,7 +106,7 @@ export function assertSpecApproval(root, id, state, { workspace = true } = {}) {
       return assertSpecApproval(root, id, state, { workspace });
     const saved = restoreDriftedAgreement(root, state.workspace.path, id);
     if (saved) {
-      console.error(agreementRestoredNotice(id, saved));
+      emitSignal("agreement-restored", agreementRestoredNotice(id, saved));
       return assertSpecApproval(root, id, state, { workspace });
     }
     throw agreementDriftError(id, state.workspace.path);

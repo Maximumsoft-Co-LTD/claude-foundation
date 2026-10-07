@@ -9,8 +9,8 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import {
-  derivedCapabilityPurpose, expandMinimalSemanticDraft, minimalSemanticDraftTemplate,
-  normalizeSemanticDraft,
+  derivedCapabilityPurpose, expandMinimalSemanticDraft, mergeSemanticDraft,
+  minimalSemanticDraftTemplate, normalizeSemanticDraft,
   renderRequirementMarkdown, renderSpecHeading, semanticDraftTemplate
 } from "../runtime/workflow/semantic-draft.mjs";
 import { requiredProvidersOperation } from "../runtime/workflow/change-validation.mjs";
@@ -800,9 +800,104 @@ test("a direct verify correction runs through change amend and leaves no staged 
 
 test("the amendment template leads with the verify-only form", () => {
   const template = semanticAmendmentTemplate();
-  assert.deepEqual(Object.keys(template), ["verifyOnly", "requirementChange"]);
+  assert.deepEqual(Object.keys(template),
+    ["verifyOnly", "reopenCompleted", "removeUnfinished", "requirementChange"]);
   assert.equal(taskContractOnlyAmendment(template.verifyOnly), true);
+  assert.equal(taskContractOnlyAmendment(template.reopenCompleted), true);
+  assert.equal(taskContractOnlyAmendment(template.removeUnfinished), true);
   assert.equal(taskContractOnlyAmendment(template.requirementChange), false);
+});
+
+// Tasks can be withdrawn while unfinished, and a completed task's check can
+// change only by re-opening it, so a changed verify never keeps a completed
+// status and finished work never silently disappears.
+test("an amendment withdraws unfinished tasks and never completed or depended-on ones", () => {
+  const ledger = [
+    "- [x] **T001** Build A [key:a-task] [claims:a] — verify: `npm test`",
+    "- [ ] **T002** Build B [key:b-task] [claims:b] — verify: `npm run lint`",
+    "- [ ] **T003** Extra B [key:b-extra] [claims:b] — verify: `npm run lint:extra`",
+    "  - detail line kept with its task",
+    "- [ ] **T004** Docs [key:docs] [depends:T003] [claims:a] — verify: `npm run docs`"
+  ];
+  const removal = (refs, extra = {}) => ({ version: 1, reason: "No longer needed",
+    removeTasks: refs, ...extra });
+  assert.equal(taskContractOnlyAmendment(removal(["T003"])), true);
+  // A depended-on task stays unless the dependent goes too or is updated.
+  assert.match(compileSemanticAmendment({ ...verifyFixture(ledger), amendment: removal(["b-extra"]) })
+    .issues.join("\n"), /cannot remove T003: task T004 depends on it; remove T004 too or update its dependsOn/);
+  const withDependent = compileSemanticAmendment({ ...verifyFixture(ledger),
+    amendment: removal(["b-extra", { key: "T004" }]) });
+  assert.deepEqual(withDependent.issues, []);
+  assert.doesNotMatch(withDependent.tasksContent, /T003|T004|detail line/);
+  assert.match(withDependent.tasksContent, /^- \[ \] \*\*T002\*\*/m);
+  assert.deepEqual(withDependent.removedTasks.map((task) => task.id), ["T003", "T004"]);
+  assert.deepEqual(withDependent.invalidatedClaims, ["b", "a"]);
+  // The derived provider command follows the remaining verify commands.
+  const derived = compileSemanticAmendment({ ...verifyFixture(ledger, { adapter: "test-discovery",
+    command: ["sh", "-c", "(npm test) && (npm run lint) && (npm run lint:extra) && (npm run docs)"] }),
+  amendment: removal(["T003"], { updateTasks: [{ key: "docs", dependsOn: [] }] }) });
+  assert.deepEqual(derived.issues, []);
+  assert.deepEqual(derived.providers.test.command,
+    ["sh", "-c", "(npm test) && (npm run lint) && (npm run docs)"]);
+  assert.doesNotMatch(derived.tasksContent, /\[depends:/);
+  // Completed work and the last task carrying a claim cannot be withdrawn.
+  assert.match(compileSemanticAmendment({ ...verifyFixture(ledger), amendment: removal(["T001"]) })
+    .issues.join("\n"), /cannot remove completed task 'a-task' \(T001\)/);
+  assert.match(compileSemanticAmendment({ ...verifyFixture(ledger), amendment: removal(["T002"]),
+    provenClaimIds: ["b"] }).issues.join("\n"), /cannot remove completed task 'b-task'/);
+  const lastB = compileSemanticAmendment({ ...verifyFixture(ledger),
+    amendment: removal(["T002", "T003", "T004"]) });
+  assert.match(lastB.issues.join("\n"),
+    /cannot remove task 'b-task' \(T002\): claim\(s\) b would have no task/);
+  // Coverage can move to a remaining task in the same amendment.
+  const moved = compileSemanticAmendment({ ...verifyFixture(ledger),
+    amendment: removal(["T002", "T003", "T004"], { updateTasks: [{ key: "a-task", covers: ["b"] }] }) });
+  assert.deepEqual(moved.issues, []);
+  assert.match(moved.tasksContent, /^- \[x\] \*\*T001\*\* Build A \[key:a-task\] \[claims:a,b\]/m);
+  assert.match(compileSemanticAmendment({ ...verifyFixture(ledger), amendment: removal(["T009"]) })
+    .issues.join("\n"), /removeTasks references unknown task 'T009'/);
+  // A withdrawn id is never reused by a later amendment.
+  const added = compileSemanticAmendment({
+    amendment: { version: 1, addRequirements: [{ key: "c", capability: "change",
+      scenario: "C runs", outcome: "C" }],
+    addTasks: [{ key: "c-task", outcome: "Build C", covers: ["c"], verify: "npm test" }],
+    evidence: { c: { capabilities: ["test"] } } },
+    ...verifyFixture(ledger.slice(0, 2)), renderTask: (task) => `- [ ] **${task.id}** ${task.outcome}`,
+    retiredTaskIds: ["T003", "T004"]
+  });
+  assert.deepEqual(added.issues, []);
+  assert.match(added.tasksContent, /^- \[ \] \*\*T005\*\* Build C$/m);
+});
+
+test("a completed task's verify changes only by re-opening it", () => {
+  const ledger = ["- [x] **T001** Build A [key:impl] [claims:a] — verify: `go test ./...`"];
+  const refused = compileSemanticAmendment({ ...verifyFixture(ledger), amendment: { version: 1,
+    updateTasks: [{ key: "impl", verify: "go test -v ./..." }] } });
+  assert.match(refused.issues.join("\n"),
+    /cannot replace verify; add a new task so completed work keeps its meaning, or set "reopen": true/);
+  const amendment = taskVerifyAmendment({ task: "T001", verify: "go test -v ./...", reopen: true });
+  assert.deepEqual(amendment.updateTasks, [{ key: "T001", verify: "go test -v ./...", reopen: true }]);
+  assert.equal(taskContractOnlyAmendment(amendment), true);
+  const reopened = compileSemanticAmendment({ ...verifyFixture(ledger), amendment,
+    provenClaimIds: ["a"] });
+  assert.deepEqual(reopened.issues, []);
+  assert.match(reopened.tasksContent,
+    /^- \[ \] \*\*T001\*\* Build A \[key:impl\] \[claims:a\] — verify: `go test -v \.\/\.\.\.`$/m);
+  assert.deepEqual(reopened.taskContractChanges, [{ key: "impl", id: "T001", claims: ["a"],
+    verify: "go test -v ./...", priorVerify: "go test ./...", reopened: true }]);
+  assert.deepEqual(reopened.invalidatedClaims, ["a"]);
+  // Re-opening never changes an outcome, and reopen with no change is a no-op.
+  assert.match(compileSemanticAmendment({ ...verifyFixture(ledger), amendment: { version: 1,
+    addRequirements: [{ key: "n", capability: "change", scenario: "N", outcome: "N" }],
+    evidence: { n: { capabilities: ["test"] } },
+    updateTasks: [{ key: "impl", outcome: "Other", verify: "make", reopen: true, covers: ["n"] }] } })
+    .issues.join("\n"), /cannot replace outcome; add a new task/);
+  assert.match(compileSemanticAmendment({ ...verifyFixture(ledger), amendment: { version: 1,
+    updateTasks: [{ key: "impl", verify: "go test ./...", reopen: true }] } }).issues.join("\n"),
+  /changes no verify command or paths/);
+  assert.match(compileSemanticAmendment({ ...verifyFixture(ledger), amendment: { version: 1,
+    updateTasks: [{ key: "impl", verify: "make", reopen: "yes" }] } }).issues.join("\n"),
+  /reopen must be true or false/);
 });
 
 test("change amend installs atomically and restores files and state on validation failure", (t) => {
@@ -1264,6 +1359,42 @@ test("a verify-only change amend reruns that task's evidence and keeps the rest"
     writeReceipt("test", "pass");
     assert.throws(() => amend("npm run test:unit"), /updateTasks\[0\] cannot replace verify/);
     assert.deepEqual(state, before.state);
+
+    // Re-opening is the only way to change it: the task must pass again.
+    writeFileSync(join(root, "amendment.json"), JSON.stringify(
+      taskVerifyAmendment({ task: "T001", verify: "npm run test:unit", reopen: true })));
+    lifecycle.amendChange(id, "amendment.json");
+    assert.deepEqual(state.amendments.at(-1).taskContractChanges, [{ key: "impl", id: "T001",
+      claims: ["a"], verify: "npm run test:unit", priorVerify: "npm test", reopened: true }]);
+    assert.deepEqual(state.amendments.at(-1).invalidation.proofRecovery.providers.rerun, ["test"]);
+    assert.match(readFileSync(join(change, "tasks.md"), "utf8"),
+      /^- \[ \] \*\*T001\*\* Build A \[key:impl\] \[claims:a\] — verify: `npm run test:unit`$/m);
+
+    // Withdrawing an unfinished task: refused while it carries the last claim,
+    // accepted once another open task carries it, and its id stays retired.
+    const remove = (refs) => {
+      writeFileSync(join(root, "amendment.json"), JSON.stringify({
+        version: 1, reason: "Withdraw duplicated work", removeTasks: refs }));
+      return lifecycle.amendChange(id, "amendment.json");
+    };
+    assert.throws(() => remove(["impl"]), /claim\(s\) a would have no task/);
+    writeFileSync(join(change, "tasks.md"), `${readFileSync(join(change, "tasks.md"), "utf8")
+      .replace(/\s+$/, "")}\n- [ ] **T003** Build A again [key:impl-2] [claims:a] — verify: \`npm test\`\n`);
+    // As an addTasks amendment would have left it: the derived command covers T003.
+    const withThird = contract();
+    withThird.providers.test.command =
+      ["sh", "-c", "(npm run test:unit) && (npm run lint) && (npm test)"];
+    writeFileSync(join(change, "evidence.yaml"), `${JSON.stringify(withThird, null, 2)}\n`);
+    writeReceipt("lint", "pass");
+    const revision = state.contractRevision;
+    remove(["impl"]);
+    assert.equal(state.contractRevision, revision + 1);
+    assert.deepEqual(state.amendments.at(-1).removedTasks, [{ key: "impl", id: "T001",
+      claims: ["a"], verify: "npm run test:unit" }]);
+    assert.equal(state.pendingApprovalDelta, undefined);
+    assert.doesNotMatch(readFileSync(join(change, "tasks.md"), "utf8"), /T001/);
+    assert.deepEqual(contract().providers.test.command,
+      ["sh", "-c", "(npm run lint) && (npm test)"]);
   } finally {
     console.log = priorLog;
   }
@@ -1751,6 +1882,33 @@ test("a rapid draft may omit evidence capabilities and proves with test, discove
     foundationPolicy: () => ({ quality: { changeGate: "warn" } })
   }, "rapid");
   assert.deepEqual(required, ["discovery", "review", "test"]);
+});
+
+test("docs or chore work defaults omitted capabilities to static-analysis by exit code", () => {
+  for (const workType of [["docs"], ["chore"], ["docs", "chore"]]) {
+    const result = normalizeSemanticDraft(rapidDraftWithoutEvidence({ workType }), slugify,
+      { defaultRapidEvidence: true });
+    assert.deepEqual(result.issues, [], workType.join());
+    assert.ok(result.draft.claims.every((claim) =>
+      claim.capabilities.join() === "static-analysis"), workType.join());
+    const providers = result.draft.execution.providers;
+    assert.deepEqual(Object.keys(providers), ["static-analysis"]);
+    assert.equal(providers["static-analysis"].adapter, "command");
+  }
+  // Inferred from paths: a task touching only Markdown is docs work.
+  const inferred = rapidDraftWithoutEvidence();
+  inferred.tasks = inferred.tasks.map((task) => ({ ...task, paths: ["README.md"] }));
+  assert.ok(normalizeSemanticDraft(inferred, slugify, { defaultRapidEvidence: true })
+    .draft.claims.every((claim) => claim.capabilities.join() === "static-analysis"));
+  // Mixed work, product work, and authored capabilities keep their evidence.
+  assert.ok(normalizeSemanticDraft(rapidDraftWithoutEvidence({ workType: ["docs", "feature"] }),
+    slugify, { defaultRapidEvidence: true }).draft.claims.every((claim) =>
+    claim.capabilities.join() === "test"));
+  assert.ok(normalizeSemanticDraft(rapidDraftWithoutEvidence({ workType: ["docs"],
+    evidence: { "payment-retry": { capabilities: ["test"] },
+      "audit-result": { capabilities: ["test"] } } }), slugify,
+  { defaultRapidEvidence: true }).draft.claims.every((claim) =>
+    claim.capabilities.join() === "test"));
 });
 
 test("evidence defaults stay off for standard drafts, explicit opt-out, and v3 callers", () => {
@@ -2320,4 +2478,72 @@ test("a proposal without a stated why does not repeat the intent", () => {
   const stated = renderDraftProposal({ ...draft, why: "Accountants reconcile invoices in spreadsheets" },
     { intent: "Export invoices as CSV", schema: "foundation-rapid" });
   assert.match(stated, /## Why\n\nAccountants reconcile invoices in spreadsheets/);
+});
+
+test("a partial draft merges by identity, deletes with null, and drops removed links", () => {
+  const prior = {
+    version: 4, intent: "Bound intake", why: "Keep intake fast", nonGoals: ["No queue"],
+    requirements: [
+      { key: "throughput", outcome: "20 per second",
+        scenarios: [{ name: "Fast", when: "messages arrive", then: "20 accepted" },
+          { name: "Burst", when: "a burst arrives", then: "it is queued" }] },
+      { key: "ack", outcome: "Acknowledge after commit", scenarios: [] }
+    ],
+    tasks: [{ key: "implement", outcome: "Implement", covers: ["throughput", "ack"], verify: "npm test" }],
+    evidence: { throughput: { capabilities: ["test"] }, ack: { capabilities: ["test"] } },
+    discovery: { coverage: [{ dimension: "compatibility", status: "needs-investigation" }] }
+  };
+  const frozen = structuredClone(prior);
+  const merged = mergeSemanticDraft(prior, {
+    why: null,
+    nonGoals: ["No queue", "No retry"],
+    requirements: [
+      { key: "throughput", outcome: "50 per second",
+        scenarios: [{ name: "Fast", then: "50 accepted" }, { name: "Burst", $remove: true }] },
+      { key: "ack", $remove: true },
+      { key: "trim", outcome: "Titles are trimmed" }
+    ],
+    discovery: { coverage: [{ dimension: "compatibility", status: "not-applicable" }] }
+  });
+  assert.deepEqual(prior, frozen, "the prior draft is not mutated");
+  assert.equal("why" in merged, false);
+  assert.deepEqual(merged.nonGoals, ["No queue", "No retry"]);
+  assert.deepEqual(merged.requirements.map((row) => row.key), ["throughput", "trim"]);
+  assert.deepEqual(merged.requirements[0].scenarios,
+    [{ name: "Fast", when: "messages arrive", then: "50 accepted" }]);
+  assert.equal(merged.requirements[0].outcome, "50 per second");
+  // The removed requirement's evidence and coverage go with it.
+  assert.deepEqual(merged.evidence, { throughput: { capabilities: ["test"] } });
+  assert.deepEqual(merged.tasks[0].covers, ["throughput"]);
+  assert.equal(merged.tasks[0].outcome, "Implement");
+  assert.deepEqual(merged.discovery.coverage, [{ dimension: "compatibility", status: "not-applicable" }]);
+  // An entry without the identity is appended; an array without one is replaced.
+  assert.equal(mergeSemanticDraft(prior, { requirements: [{ outcome: "New" }] }).requirements.length, 3);
+  assert.deepEqual(mergeSemanticDraft({ risks: [{ risk: "a" }] }, { risks: [{ risk: "b" }] }).risks,
+    [{ risk: "b" }]);
+  assert.throws(() => mergeSemanticDraft(prior, []), /patch must be a JSON object/);
+  assert.throws(() => mergeSemanticDraft(null, {}), /requires the change's prior draft/);
+});
+
+test("a partial draft entry merges by any identity it names, and an unmatched $remove fails", () => {
+  const prior = {
+    requirements: [
+      { key: "throughput", name: "Throughput", outcome: "20 per second" },
+      { key: "ack", name: "Acknowledge", outcome: "Acknowledge after commit" }
+    ]
+  };
+  const byName = mergeSemanticDraft(prior, {
+    requirements: [{ name: "Throughput", outcome: "50 per second" },
+      { name: "Acknowledge", $remove: true }]
+  });
+  assert.deepEqual(byName.requirements,
+    [{ key: "throughput", name: "Throughput", outcome: "50 per second" }],
+    "an entry named by name merges instead of appending a duplicate");
+  assert.throws(() => mergeSemanticDraft(prior, {
+    requirements: [{ key: "missing", $remove: true }]
+  }), /"\$remove" names key 'missing', which matches no existing entry/);
+  assert.throws(() => mergeSemanticDraft(prior, {
+    requirements: [{ outcome: "unnamed", $remove: true }]
+  }), /"\$remove" entry names no key or name/);
+  assert.deepEqual(prior.requirements.map((row) => row.key), ["throughput", "ack"]);
 });

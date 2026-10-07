@@ -8,7 +8,8 @@ import {
   draftNeedsDesign, renderDraftDesign, renderDraftProposal, semanticDraftKeepsDesign
 } from "../runtime/workflow/change-lifecycle.mjs";
 import {
-  derivedFailureMatrix, derivedFileMap, derivedTestMap, devDocumentIssues, devDocumentShapeIssues, inferWorkTypes,
+  derivedFailureMatrix, derivedFileMap, derivedTestMap, devDocumentIssues, devDocumentShapeIssues,
+  docsOnlyDraft, inferWorkTypes,
   mermaidLabelIssues, renderComponentMap, renderFolderTree, renderPlan, renderUserFlow,
   requiredDevSections, withNewPaths
 } from "../runtime/workflow/validation/dev-document.mjs";
@@ -300,6 +301,50 @@ test("descriptive dev-document sections keep a small low-risk draft rapid", () =
   const proposal = renderDraftProposal({ ...base, ...descriptive }, { schema: "foundation-rapid" });
   for (const heading of ["## Component map", "## Refactor invariants", "## Config contract",
     "## File map", "## Test map"]) assert.ok(proposal.includes(heading), heading);
+});
+
+test("refactor, config, and docs work owe no failure matrix; behavior work still does", () => {
+  const typed = (...workType) => ({ version: 4, workType, tasks: [{ key: "t", paths: ["src/a.ts"] }] });
+  assert.deepEqual(requiredDevSections(typed("refactor")), ["summary", "refactor", "componentMap"]);
+  assert.deepEqual(requiredDevSections(typed("config")), ["summary", "configContract"]);
+  assert.deepEqual(requiredDevSections(typed("refactor", "config")),
+    ["summary", "refactor", "componentMap", "configContract"]);
+  assert.deepEqual(requiredDevSections(typed("docs")), ["summary"]);
+  // Inferred config paths behave like a declared config change.
+  assert.deepEqual(requiredDevSections({ version: 4, tasks: [{ key: "t", paths: ["src/config.ts"] }] }),
+    ["summary", "configContract"]);
+  for (const types of [["bugfix"], ["refactor", "api"], ["config", "feature"]])
+    assert.ok(requiredDevSections(typed(...types)).includes("failureMatrix"), types.join(","));
+  assert.deepEqual(devDocumentIssues({ ...typed("refactor"), why: "Split the parser",
+    refactor: { invariants: ["Same output"], characterization: "npm test" },
+    componentMap: [{ component: "Parser", responsibility: "Parses" }] }), []);
+});
+
+test("a bugfix section keeps a small low-risk draft rapid and renders in its proposal", () => {
+  const base = { _semanticVersion: 4, title: "Fix", changes: ["Fix"], claims: [],
+    tasks: [{ id: "T001", outcome: "Fix", paths: ["src/sum.js"], verify: "npm test" }] };
+  const bugfix = { reproduction: "sum([]) throws", rootCause: "No empty guard",
+    regression: "test/sum.test.js covers []" };
+  assert.equal(semanticDraftKeepsDesign({ ...base, workType: ["bugfix"], bugfix }, true), false);
+  assert.match(renderDraftProposal({ ...base, bugfix }, { schema: "foundation-rapid" }),
+    /## Bugfix analysis\n\n- \*\*Reproduction:\*\* sum\(\[\]\) throws/);
+  // Risk, not the section, still decides the lane.
+  assert.equal(semanticDraftKeepsDesign({ ...base, bugfix, dataModel: [{ entity: "Sum" }] }, true), true);
+});
+
+test("only declared docs-only work that adds requirements skips the delta spec", () => {
+  const added = [{ name: "readme", operation: "added" }];
+  assert.equal(docsOnlyDraft({ workType: ["docs"], specs: added }), true);
+  assert.equal(docsOnlyDraft({ workType: ["docs"], specs: [{ name: "readme" }] }), true);
+  assert.equal(docsOnlyDraft({ workType: ["docs", "feature"], specs: added }), false);
+  assert.equal(docsOnlyDraft({ workType: ["docs"], specs: [{ name: "readme", operation: "modified" }] }),
+    false);
+  // A markdown path alone may be product behavior (a prompt or a skill).
+  assert.equal(docsOnlyDraft({ tasks: [{ paths: ["README.md"] }], specs: added }), false);
+  assert.match(renderDraftProposal({ _semanticVersion: 4, workType: ["docs"], specs: added, changes: ["Reword"],
+    tasks: [] }, { schema: "foundation-rapid" }), /- \*\*Specs:\*\* none; docs-only work modifies no living spec/);
+  assert.doesNotMatch(renderDraftProposal({ _semanticVersion: 4, workType: ["docs"], specs: added,
+    changes: ["Reword"], tasks: [] }, { schema: "foundation-standard" }), /\*\*Specs:\*\*/);
 });
 
 test("an unquoted parenthesis or quote in a flowchart node label is a draft shape issue", () => {

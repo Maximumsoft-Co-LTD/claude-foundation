@@ -581,7 +581,9 @@ authentication, data หรือ migration, behavior
 unit/static
 
 `foundation-rapid` compile delta spec แบบกระชับ (merge เข้า `openspec/specs` ตอน
-Land) และปกติไม่มี design ค่า default ที่ agent เลือกเองจะแสดงใน proposal ใช้ได้เฉพาะงาน impact ต่ำ
+Land ส่วนงานที่ประกาศเป็น docs อย่างเดียวจะไม่มี delta spec) และปกติไม่มี design ค่า default
+ที่ agent เลือกเองและ typed section เช่น `refactor` หรือ `configContract` จะแสดงใน proposal
+โดยไม่เปลี่ยน lane ใช้ได้เฉพาะงาน impact ต่ำ
 แยกขาด ไม่มี public contract, persistent migration, security trigger หรือ
 irreversible effect หากพบ requirement ที่เข้มขึ้น `/change` จะ upgrade change เดิม
 เป็น standard
@@ -673,8 +675,12 @@ amendment ที่ไม่ผ่าน และ invalidate เฉพาะ cl
 task ที่ยังไม่เสร็จ) หรือลบได้ (`removeRequirements` ต้องมี migration) โดยไม่ต้อง
 abandon change Amendment ของ version 4 ต้องมี discovery coverage ของ requirement
 ที่เพิ่มและที่แก้ และ delta ที่ผ่าน validation จะอยู่ใน compiled proposal
+`removeTasks` ถอน task ที่ยังไม่เสร็จและไม่มี task อื่นพึ่งพาได้ ส่วน verify ของ
+task ที่เสร็จแล้วเปลี่ยนได้เฉพาะด้วย `reopen: true` ซึ่งเอาเครื่องหมายเสร็จออกเพื่อให้
+harness verify ใหม่
 ก่อนเริ่ม Build ใช้ `change revise <change-id> <draft.json>` ซึ่ง inspect และเมื่อได้
-`DONE` จะคอมไพล์ agreement ทั้งฉบับใหม่ใน id เดิมในคำสั่งเดียว เพิ่ม
+`DONE` จะคอมไพล์ agreement ทั้งฉบับใหม่ใน id เดิมในคำสั่งเดียว ถ้าใส่ `--merge`
+ไฟล์มีเฉพาะ key และ entry ที่มี key ซึ่งเปลี่ยน เพิ่ม หรือลบ ใส่
 `--approve-spec --decision-ref <ref>` ให้ `change start`, `change revise` หรือ
 `change amend` เพื่อบันทึก approval ของผู้ใช้ในคำสั่งเดียวกับที่ apply คำตอบนั้น ทั้งสองทางจะแสดง
 delta ของ requirement (added/revised/removed) change ที่ approve แล้วใช้ approval เดิมต่อสำหรับ delta ที่เพิ่มหรือแก้ requirement และขอ approve ใหม่เฉพาะ delta ที่ลบ requirement receipt ที่ผ่านแล้วจะถูกเก็บ

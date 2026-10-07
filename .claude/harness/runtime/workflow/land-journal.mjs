@@ -240,7 +240,9 @@ export function cleanupLandJournalOperation(context, state) {
   if (!transactionId) return { status: "not-needed" };
   const transactionPath = context.transactionRoot(state.id, transactionId);
   try {
-    for (const name of ["backup", "stage"]) {
+    // The backup of the pre-Land bytes is retained: while the target diff is
+    // uncommitted, `advance --undo-land` restores it.
+    for (const name of ["stage"]) {
       const path = join(transactionPath, name);
       if (context.exists(path)) context.remove(path, { recursive: true });
     }

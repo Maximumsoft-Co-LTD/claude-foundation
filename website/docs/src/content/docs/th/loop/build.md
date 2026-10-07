@@ -24,7 +24,7 @@ task ตรวจ lease ที่ยังทำงาน แล้วคืน 
 
 | Action | ความหมาย |
 |---|---|
-| `EDIT` | ทำเฉพาะ task, workspace และ path ที่คืนมา เปิดเฉพาะไฟล์ใน `contextFiles` สร้างไฟล์ใน `newFiles` แล้วรัน focused check หนึ่งครั้ง |
+| `EDIT` | ทำเฉพาะ task, workspace และ path ที่คืนมา (ใช้ `workspace` ของแต่ละ task; task ของ submodule ชี้ไปที่ repository sandbox ของมัน) เปิดเฉพาะไฟล์ใน `contextFiles` สร้างไฟล์ใน `newFiles` แล้วรัน focused check หนึ่งครั้ง |
 | `REPAIR` | แก้ repair batch ที่เรียงตาม dependency ให้ครบแล้ว resume |
 | `RUN_EXTERNAL` | รัน boundary operation ที่ตั้งค่าไว้หนึ่งตัว |
 | `WAIT` | รอ resource หรือเจ้าของภายนอก โดย state ถูกเก็บไว้ |
@@ -72,7 +72,9 @@ claude-foundation change amend <change> <amendment.json> --consume-amendment
 
 Compiler รักษา task ที่เสร็จและ manual section ตรวจ agreement ใหม่แบบ transaction
 แล้วกลับมา `advance` โดย `updateTasks` เพิ่ม claim coverage ได้ แต่เปลี่ยน outcome
-หรือ verify command ของ task ที่เสร็จแล้วไม่ได้ ถ้าสัญญาของ task เปลี่ยนต้องเพิ่ม task ใหม่
+ไม่ได้ ถ้าสัญญาของ task เปลี่ยนต้องเพิ่ม task ใหม่ verify ของ task ที่เสร็จแล้วเปลี่ยนได้เฉพาะด้วย
+`reopen: true` (`--reopen`) ซึ่งเอาเครื่องหมายเสร็จออกให้ต้องผ่านใหม่ และ `removeTasks`
+ถอน task ที่ยังไม่เสร็จซึ่งไม่มี task อื่นพึ่งพาได้
 verify command ที่ผิดของ task ที่ยังไม่เสร็จแก้ได้ตรง ๆ โดยคง approval ไว้:
 `claude-foundation change amend <change> --task <task> --verify <command>` task จะถูก
 รับเมื่อคำสั่งใหม่ผ่านใน workspace เท่านั้น และคำสั่งที่ผ่านเสมอจะถูกปฏิเสธ

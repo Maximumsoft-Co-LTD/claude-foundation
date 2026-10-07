@@ -48,7 +48,10 @@ above 1, and non-zero exits still require a counted result.
 
 `evidence` is optional for a rapid draft (low impact, isolated, no security
 triggers, review or acceptance not required, no design content); omitted
-capabilities default to `["test"]` proven by the tasks' verify commands. When a
+capabilities default to `["test"]` proven by the tasks' verify commands, or to
+`["static-analysis"]` (a `command` provider passed by exit code, no test
+discovery) when the declared or path-inferred work types are all `docs` or
+`chore`. When a
 test run prints no countable result, discovery stays inconclusive and its repair
 names the exact fix (for example `--test-reporter=tap` on the `package.json`
 script that wraps `node --test`).
@@ -77,6 +80,25 @@ declared.
 
 `execution.yaml` may change as Build discovers the actual commands, ports, and
 reports. Wiring changes invalidate only affected provider fingerprints.
+
+A `security-static`, `resilience`, `compatibility`, `data-migration`, or
+`cross-repo-contract` provider whose `command` adapter runs exactly a test
+provider's argv (same repository, `env`, and `envFrom`, no `criticalCases`)
+observes only that test run, so it is never run or credited as its
+capability. This covers the providers a semantic draft without `execution`
+derives from the tasks' `verify` commands. Review covers it instead: the review
+policy gains a `covered-by-review:<capability>` trigger (review becomes required
+under either policy; `security-static`, `data-migration`, `compatibility`, and
+`cross-repo-contract` select the high tier, `resilience` at least medium), the
+provider leaves the required set, and readiness, `proof plan`, and the proof
+record it as an advisory with `status: "covered-by-review"` and `aliasOf`
+naming the repeated test provider. Prove continues without a user decision and
+completes only when that review passes. When review is waived or not required,
+nothing covers the capability: the provider stays required as unwired external
+evidence. `evidence doctor` reports it as covered by review only while review
+covers it, and otherwise as blocked; both `evidence detect` and `doctor` name
+the next step to wire a project-owned command for that capability in
+`execution.yaml`, which replaces the alias.
 
 ```json
 {
@@ -438,7 +460,9 @@ attempt, and reported as `reviewAdvisories.specGaps` on a reached `proven` or
 `archived` target; they never become findings, change the verdict, or block.
 Closing one is a semantic amendment the user decides. An explicit
 `--review` (or impact, coupling, or declared security triggers) raises
-verification risk to high even at the low review tier; review required only by
+verification risk to high even at the low review tier. A draft's typed
+`riskSignals` are kept on the change: `access-control` selects the high review
+tier and `input-domain` at least the medium tier (configured model); review required only by
 intent keywords follows its tier. Medium, high, promoted, and legacy routes
 are `diff-first` on the configured model. Intent keywords alone make review
 required at the low tier; they raise the tier or require diversity only

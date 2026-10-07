@@ -57,7 +57,9 @@ out of adoption-only sessions with no phase context: a call that leaves the
 phase's rules still runs, redirected into the workspace when it can be, and the
 agent is told the route. A recorded Build phase recovers every selected
 repository workspace root from runtime state when the host does not export
-`FOUNDATION_WORKSPACE_ROOT`. Shell analysis reads command text, so its findings
+`FOUNDATION_WORKSPACE_ROOT`; each writable repository sandbox is in-workspace
+with the shared sandbox's strictness, while the shared sandbox's copy of that
+repository and read-selected sandboxes are not. Shell analysis reads command text, so its findings
 are recorded and explained, never refused, unless a host opts into strict mode.
 
 Hooks guide mutations; they do not own lifecycle completion. Guidance (and a

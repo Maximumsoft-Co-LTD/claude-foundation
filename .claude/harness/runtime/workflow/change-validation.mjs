@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { auditTraceability } from "../evidence/traceability.mjs";
 import { detectEvidenceWiring } from "../evidence/evidence-bootstrap.mjs";
+import { reviewCoveredProviders } from "../evidence/provider-catalog.mjs";
 import { nextAfterValidate } from "../core/next-step.mjs";
 import { gateRepairPlan } from "../core/convergent-gate.mjs";
 import { compiledExecutionSurfaceValue } from "../core/authority-policy.mjs";
@@ -758,8 +759,9 @@ export function requiredProvidersOperation(context, id) {
           capabilityContext, "discovery", claim.repositories || []);
     }
   }
-  if (context.reviewPolicy(id, state, contract).required)
-    addRequiredCapability(capabilityContext, "review");
+  const reviewRequired = context.reviewPolicy(id, state, contract).required &&
+    !capabilityContext.waived.has("review");
+  if (reviewRequired) addRequiredCapability(capabilityContext, "review");
   if (context.resolvedAcceptance(id, state, contract).required)
     addRequiredCapability(capabilityContext, "acceptance");
   for (const capability of context.policyCapabilitySplit(id, contract).enforced)
@@ -770,7 +772,29 @@ export function requiredProvidersOperation(context, id) {
   if (qualityMode === "enforce-high-risk" && highRisk)
     for (const capability of ["changed-quality", "mutation"])
       addRequiredCapability(capabilityContext, capability);
+  // A specialist provider that only repeats the test command is never run:
+  // while review is required, review covers its capability (reported as a
+  // `covered-by-review` advisory). Without review it stays required, so it is
+  // never covered by nothing.
+  if (reviewRequired)
+    for (const row of reviewCoveredProviders(contract.providers))
+      capabilityContext.required.delete(row.provider);
   return [...capabilityContext.required].sort();
+}
+
+// The capabilities review covers in place of a provider that only repeats the
+// test command; empty when review is not required (waived or not selected),
+// because then nothing covers them and the provider stays required.
+export function reviewCoveredAdvisories(contract, reviewRequired) {
+  if (!reviewRequired) return [];
+  return reviewCoveredProviders(contract.providers)
+    .map((row) => ({
+      capability: row.capability, provider: row.provider,
+      reason: "covered-by-review", status: "covered-by-review", aliasOf: row.aliasOf,
+      detail: `its provider only repeats test provider '${row.aliasOf}', so the required ` +
+        "review covers it; no receipt claims it passed",
+      next: `wire a project-owned ${row.capability} command in execution.yaml to observe it`
+    }));
 }
 
 export function missingHighRiskQualityCapabilities(state, claims, policy) {
@@ -1944,6 +1968,16 @@ export function createChangeValidationRuntime({
   // precondition is checked instead of caught. `requiredProviders` deliberately
   // does not get this treatment: dropping an inferred capability there would
   // under-require evidence, so it must still stop.
+  // The providers review covers right now, decided exactly as
+  // requiredProviders does: only while review is required and not waived.
+  function reviewCoveredRows(id, active = null) {
+    const state = loadRuntime(id);
+    const waivers = active || currentWaivers(state,
+      state.waivers?.some((row) => row.binding) ? relevantHash(id) : undefined);
+    const reviewWaived = waivers.some((row) => row.capability === "review");
+    return reviewCoveredAdvisories(evidence(id), !reviewWaived && reviewPolicy(id).required);
+  }
+
   function advisoryCapabilities(id) {
     const state = loadRuntime(id);
     const active = currentWaivers(state, state.waivers?.some((row) => row.binding) ? relevantHash(id) : undefined);
@@ -1958,6 +1992,7 @@ export function createChangeValidationRuntime({
     }));
     if (!changedSurfaceResolvable(id)) return waived;
     return [
+      ...reviewCoveredRows(id, active),
       ...policyCapabilitySplit(id).advisory.map((capability) => ({
         capability,
         trigger: policyCapabilityTrigger(id, capability),
@@ -2062,8 +2097,13 @@ export function createChangeValidationRuntime({
       console.log(`  OK       ${row.provider}: ${row.adapter} (${row.repository})`);
     for (const row of detection.candidates)
       console.log(`  ${row.recommended ? "CANDIDATE" : "REVIEW   "} ${row.provider}: ${row.source}${row.detail ? `; ${row.detail}` : ""}`);
+    // A provider that only repeats a test run is covered only while review
+    // covers it; otherwise it stays required and unwired, so it blocks.
+    const covered = new Set(reviewCoveredRows(id).map((row) => row.provider));
     for (const row of detection.unresolved)
-      console.log(`  BLOCKED  ${row.provider}: ${row.reason}; next: ${row.next}`);
+      console.log(row.aliasOf && covered.has(row.provider)
+        ? `  COVERED  ${row.provider}: covered by review; ${row.detail}`
+        : `  BLOCKED  ${row.provider}: ${row.reason}; next: ${row.next}`);
     for (const row of detection.unavailable)
       console.log(`  BLOCKED  ${row.provider}: ${row.reason}; next: ${row.next}`);
     for (const row of detection.warnings)

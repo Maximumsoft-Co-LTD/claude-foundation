@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { dirname, join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
 import { repositoryDeliveryOrder } from "./repository-delivery-saga.mjs";
+import { environmentCause, errorCodes } from "./advance-recovery.mjs";
 import {
   createDeliveryIntegrity, deliveryProjectionEntry, assertLandEntryMode, assertDeliveryEntries
 } from "./delivery-integrity.mjs";
@@ -488,6 +489,27 @@ function deliveryDecision(changeId, { boundary, reason, options, recommended, ..
       recommended: recommended || options[0][0]
     }
   });
+}
+
+// A remote or local delivery command that failed for a cause only the user
+// can clear (a rejected credential such as a push 403, a full disk, a denied
+// network) asks the user with that exact cause, through the same classifier
+// and decision shape as `advance`. Anything else stays the operator's wait.
+function userEnvironmentDecision(changeId, error, resumeCommand) {
+  if (!["DELIVERY_PROVIDER_UNAVAILABLE", "DELIVERY_EXTERNAL_COMMAND_FAILED"].includes(error?.code))
+    return null;
+  const found = environmentCause({ codes: [...errorCodes(error), error.result?.error?.code],
+    text: `${error.message}\n${resultText(error.result)}` });
+  if (!found) return null;
+  const summary = `${found.fix}. Only the user can clear this (${found.cause}): ${error.message}`;
+  const value = deliveryDecision(changeId, {
+    boundary: "user-environment", owner: "user", reason: summary, resumeCommand,
+    options: [["fixed", `${found.fix}; then the agent runs '${resumeCommand}'.`]],
+    recommended: "fixed"
+  });
+  return { ...value, decision: { ...value.decision, cause: found.cause, category: found.category,
+    fix: found.fix, options: value.decision.options.map((option) =>
+      option.id === "fixed" ? { ...option, command: resumeCommand } : option) } };
 }
 
 const LANDABLE_STATUSES = new Set(["proven", "applied", "landing"]);
@@ -1292,10 +1314,14 @@ export function createPullRequestRuntime({
           completed: false, boundary: "delivery-policy", owner: "repository-operator",
           reason: error.message
         });
+      const userEnvironment = userEnvironmentDecision(id, error, resumeCommand);
+      if (userEnvironment) return userEnvironment;
       if (error.code === "DELIVERY_PROVIDER_UNAVAILABLE")
         return deliveryEnvelope(id, "WAIT", {
           completed: false, boundary: "external-owner", owner: "repository-operator",
-          reason: error.message, resumeCommand
+          reason: error.message, resumeCommand,
+          wait: { owner: "repository-operator", checkCommand: resumeCommand,
+            condition: `The repository operator makes the remote or provider available: ${error.message}` }
         });
       fail(error.message);
     }

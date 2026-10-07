@@ -51,7 +51,11 @@ export function carriedInUnchanged(
 export function createChangePolicy({
   root, excludedWorkspaceDirs, providers, gitHead, git, porcelainStatusRecords,
   workspaceManifest, loadRuntime, selectedRepositories, isCurrentChangePath,
-  readJson, fileDigest, fail
+  readJson, fileDigest, fail,
+  // Root-relative paths of repositories declared in the topology. Their
+  // gitlink (or a missing/empty mirror of it) in the root workspace is that
+  // repository's own pointer, never root task content.
+  declaredRepositoryPaths = () => []
 }) {
   const policyCache = new Map();
   const carriedInUnchangedFor = carriedInUnchanged.bind(null, fileDigest);
@@ -106,15 +110,22 @@ export function createChangePolicy({
   function canonicalChangedSurface(id, state = loadRuntime(id)) {
     const repositories = selectedRepositories(id, state);
     const rows = [];
+    const repositoryPointers = new Set((declaredRepositoryPaths() || [])
+      .map((path) => String(path || "").replaceAll("\\", "/").replace(/\/+$/, ""))
+      .filter((path) => path && path !== "." && !path.startsWith("../")));
     for (const repository of repositories) {
       const workspace = repository.workspacePath;
       const preexisting = repository.id === "root"
         ? state.workspace?.preexisting || null : null;
       const sources = new Map();
-      const add = (path, source) => addChangedSurfaceSource({
-        sources, path, source, repositoryId: repository.id, changeId: id,
-        excludedWorkspaceDirs, isCurrentChangePath
-      });
+      const add = (path, source) => {
+        if (repository.id === "root" && path &&
+            repositoryPointers.has(path.replaceAll("\\", "/").replace(/\/+$/, ""))) return;
+        addChangedSurfaceSource({
+          sources, path, source, repositoryId: repository.id, changeId: id,
+          excludedWorkspaceDirs, isCurrentChangePath
+        });
+      };
       const head = gitHead(workspace);
       if (head) {
         const baseHead = repositoryBaseHead(repository, state);

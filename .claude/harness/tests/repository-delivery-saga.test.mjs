@@ -208,3 +208,40 @@ test("a crash between repositories resumes without reapplying the completed node
       "applied-uncommitted");
   } finally { value.cleanup(); }
 });
+
+test("work committed in a repository sandbox after a first delivery is delivered on resume", () => {
+  const value = fixture();
+  try {
+    const repository = value.repositories[0];
+    value.saga.apply("change-a");
+    // The sandbox keeps growing after the first Land attempt stopped later on:
+    // a commit and a further edit. The earlier delivery record must not count
+    // as delivering this newer, proven work.
+    writeFileSync(join(repository.sandbox, "later.txt"), "committed later\n");
+    git(["add", "later.txt"], repository.sandbox);
+    git(["-c", "user.email=test@example.test", "-c", "user.name=Test",
+      "commit", "-q", "-m", "later"], repository.sandbox);
+    writeFileSync(join(repository.sandbox, "app.txt"), `${repository.id}:revised\n`);
+    assert.equal(value.saga.apply("change-a").status, "PASS");
+    assert.equal(readFileSync(join(repository.target, "later.txt"), "utf8"),
+      "committed later\n");
+    assert.equal(readFileSync(join(repository.target, "app.txt"), "utf8"),
+      `${repository.id}:revised\n`);
+    assert.equal(git(["rev-parse", "HEAD"], repository.target).stdout.trim(), repository.head);
+    assert.deepEqual(value.state().repositories[repository.id].delivery.touchedPaths,
+      ["app.txt", "later.txt", "new.txt"]);
+  } finally { value.cleanup(); }
+});
+
+test("a path an earlier delivery wrote that the sandbox dropped stops instead of guessing", () => {
+  const value = fixture();
+  try {
+    const repository = value.repositories[0];
+    value.saga.apply("change-a");
+    rmSync(join(repository.sandbox, "new.txt"));
+    assert.throws(() => value.saga.apply("change-a"),
+      /no longer changes path\(s\) an earlier Land attempt wrote into its target \(new\.txt\)/);
+    assert.equal(readFileSync(join(repository.target, "new.txt"), "utf8"),
+      `${repository.id}:new\n`);
+  } finally { value.cleanup(); }
+});

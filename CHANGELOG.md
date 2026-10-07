@@ -38,6 +38,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A security-static, resilience, compatibility, data-migration, or
+  cross-repo-contract provider that only re-runs a test provider's command is
+  never run or credited as passed. The required review covers it
+  (`covered-by-review`, with `aliasOf`, in readiness, proof plan, and the
+  proof): review is required and raised (high for security-static and the
+  contract and data capabilities, at least medium for resilience), and Prove
+  continues without a user decision. A waived review leaves it uncovered, and
+  a real command in execution.yaml replaces the alias.
+- Docs- or chore-only drafts default omitted evidence to `static-analysis`
+  (exit-code command) instead of test discovery.
+- Draft `riskSignals` are kept on the change: `access-control` selects the
+  high review tier and `input-domain` at least the medium tier.
+- `change start --template` shows the `repositories` selection and per-task
+  `repository` when the project declares repositories besides root.
+  Compilation rejects a root task whose paths reach into a declared
+  repository, repository-task paths written from the control root, unselected
+  or undeclared task repositories, and verify commands that `cd` (or
+  `-C`/`--prefix`/`--cwd`) outside the task repository or into another one.
+- Amendments can withdraw unfinished tasks with `removeTasks`; completed or
+  depended-on tasks and removals that would orphan a claim are refused unless
+  dependencies and coverage move in the same amendment, and removed task IDs
+  are never reused. A completed task's verify, paths, or `dependsOn` change
+  only with `reopen: true` (`change amend … --verify <cmd> --reopen`), which
+  unticks it so the harness verifies it again.
+- Change inspection and start print an advisory when a verify runs `go test`
+  without `-v`, whose default output Prove cannot count.
+- Land merges a user's uncommitted target edit on lines the change did not
+  touch into the sandbox copy itself (`target-edit-sync`, automatic) and
+  proves again before Apply; only same-line edits remain a
+  `target-edit-conflict` decision.
+- `advance <change> --undo-land --decision-ref <ref>` undoes an archived Land
+  whose diff is still uncommitted: it restores the pre-Land bytes of code,
+  synced specs, and the archived packet, retires the change, and keeps the
+  landed bytes under `.foundation/recovery/land-undone/`. It refuses without
+  writing if HEAD moved, a landed path is staged, or a landed path changed
+  after Land. The Land journal now keeps its pre-Land backup and the
+  pre-archive spec text so undo can restore them.
+- `change revise <change> <patch.json> --merge` applies a partial draft over
+  the draft the change was compiled from (keyed list merge, `null` deletes,
+  `"$remove": true` drops); it refuses after an amendment and for changes
+  started before this release.
+- Refactor-, config-, docs-, chore-, and test-only changes no longer require a
+  failure matrix, and a `bugfix` section no longer moves a low-risk draft to
+  standard.
+- Declared docs-only rapid changes (`workType: ["docs"]`, added requirements
+  only) write no delta spec, so README wording never becomes a living
+  requirement.
+- `advance` envelopes carry optional `signals[]` (`{code, message}`) for
+  restored agreement drift, budget warnings, archive recovery that found the
+  change already archived, and settled interrupted applies; the stderr and
+  stdout lines are unchanged.
+- Causes only the user can clear are typed as `resource`, `credential`, or
+  `network` (`decision.category`) and classified where the failure is raised:
+  a full disk asks the user to free space instead of telling the agent to edit
+  foundation.json, and a push rejected for credentials (403) is a new
+  `remote-permission` cause. `deliver advance` asks the user for these; other
+  provider failures stay a `WAIT` that names its condition and check command.
+  A local `spawn ETIMEDOUT` is no longer reported as a network problem, and a
+  reviewer login failure goes to the user.
+- Repository-internal quality tooling that no workflow runs anymore is
+  removed: coverage, CRAP, trend, debt, and refactoring-plan scripts; the
+  runtime, examples, and website mutation configs and baselines; the
+  semantic-mutant catalog; 32 `quality:*` / `test:mutation:*` npm scripts; and
+  the root `vitest` devDependencies. The release gate keeps only the dashboard
+  mutation run with coverage normalization and baseline delta. The
+  `claude-foundation quality …` consumer feature is unchanged.
 - Pull requests run only `workflow-tests` (`minimum-runtime` and
   `deterministic`). The `code-quality` and `mutation-nightly` workflows are
   removed: their coverage, CRAP, and mutation reports ran out of memory on
@@ -175,6 +241,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Land reads each selected repository's target checkout before archiving. A
+  repository whose target lacks the proven sandbox bytes, has work stranded in
+  a shared-sandbox submodule placeholder, or is an uninitialized submodule
+  stops with `LAND_PROJECTION_MISSING`; nothing is archived or deleted.
+  Multi-repository Land re-delivers work committed or edited in a repository
+  sandbox after an earlier delivery, and isolation refuses an uninitialized
+  submodule instead of forking its superproject.
+- Abandon and archive back up every unreachable sandbox commit
+  (`commits.bundle`), the sandbox delta (`changes.patch`), and unlanded files
+  to `.foundation/backups/<id>/<timestamp>/` before removing a sandbox.
+  Archive keeps unlanded sandboxes, a sandbox that cannot be verified is never
+  removed, and abandon prints each backup path. Re-abandoning a change id
+  sets the earlier quarantine aside instead of deleting it.
+- Submodule repositories use one location end to end. `advance` EDIT
+  envelopes name each task's own `workspace` (a submodule task gets
+  `.foundation/repository-sandboxes/<change>/<repo>`), add a `workspaces` map,
+  and resolve `contextFiles` in the owning repository's sandbox. The phase
+  guard treats writable repository sandboxes as in-workspace and redirects or
+  refuses writes into the shared sandbox's empty copy of a selected
+  repository; read-only repository sandboxes are not writable.
+- Review findings named through root (`root/<submodule path>/<file>`) bind to
+  the owning repository instead of exhausting the review request.
+- A declared repository's directory or gitlink in the root workspace (missing,
+  empty, or bumped) is no longer a root change, so there are no false "root
+  changed outside task paths" repairs and no gitlink noise in root review.
 - Prove no longer passes Build tasks without verification under the legacy
   review circuit. The circuit is the default for a `foundation.json` without a
   `workflow` block, and it used to mark every task node `legacy-policy`. Runtime

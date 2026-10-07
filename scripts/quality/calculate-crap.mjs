@@ -1,7 +1,4 @@
-import { existsSync } from "node:fs";
-import { execFileSync } from "node:child_process";
-import { resolve } from "node:path";
-import { ROOT, isMain, matchesAny, parseArgs, readJson, repoPath, writeJson } from "./lib.mjs";
+import { ROOT, matchesAny, repoPath } from "./lib.mjs";
 
 export function crapScore(cyclomatic, coveragePercent) {
   if (!Number.isFinite(cyclomatic) || cyclomatic < 1) throw new Error("cyclomatic must be >= 1");
@@ -170,71 +167,3 @@ export function buildCrapReport({ complexity, coverageReports, policy, coverageL
     functions
   };
 }
-
-function coveragePaths(args) {
-  const paths = [];
-  if (args.coverage) paths.push(...String(args.coverage).split(","));
-  if (args._.length) paths.push(...args._);
-  return [...new Set(paths)];
-}
-
-export function resolveCoverageInputs({ requested = [], laneConfig, root = ROOT }) {
-  const lanes = laneConfig?.lanes || [];
-  if (requested.length) {
-    const absolute = requested.map((path) => resolve(root, path));
-    return {
-      inputs: absolute.filter(existsSync),
-      lanes: lanes.map((lane) => ({
-        ...lane,
-        active: absolute.some((path) => resolve(root, lane.report) === path) && existsSync(resolve(root, lane.report))
-      }))
-    };
-  }
-  return {
-    inputs: lanes.map((lane) => resolve(root, lane.report)).filter(existsSync),
-    lanes: lanes.map((lane) => ({ ...lane, active: existsSync(resolve(root, lane.report)) }))
-  };
-}
-
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  const root = resolve(args.root || ROOT);
-  const policy = readJson(resolve(root, args.policy || "quality/policy.json"));
-  const complexity = readJson(resolve(ROOT,
-    args.complexity || ".foundation/test-results/quality/complexity.json"));
-  const requested = coveragePaths(args);
-  const laneConfig = readJson(resolve(root, args.lanes || "quality/coverage-lanes.json"));
-  const { inputs, lanes } = resolveCoverageInputs({ requested, laneConfig, root });
-  const present = inputs;
-  if (!present.length) throw new Error(`no coverage reports found: ${inputs.map(repoPath).join(", ")}`);
-  const report = buildCrapReport({
-    complexity,
-    coverageReports: present.map(readJson),
-    coverageLanes: lanes,
-    policy,
-    root,
-    metadata: {
-      repositoryCommit: (() => {
-        if (args["repository-commit"]) return args["repository-commit"];
-        try { return process.env.GITHUB_SHA || execFileSync("git", ["rev-parse", "HEAD"], {
-          cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"]
-        }).trim(); }
-        catch { return null; }
-      })(),
-      tools: {
-        node: process.version,
-        c8: readJson(resolve(ROOT, "package.json")).devDependencies.c8,
-        eslint: readJson(resolve(ROOT, "package.json")).devDependencies.eslint
-      },
-      coverageLanes: lanes.filter((lane) => lane.active).map((lane) => lane.id),
-      includedPaths: policy.javascript.include,
-      excludedPaths: policy.javascript.exclude
-    }
-  });
-  const output = resolve(ROOT, args.output || ".foundation/test-results/quality/crap.json");
-  writeJson(output, report);
-  process.stdout.write(`CRAP: ${report.summary.functions} function(s), ${report.summary.fail} fail, ` +
-    `${report.summary.warn} warn, ${report.summary.unmapped} unmapped -> ${repoPath(output)}\n`);
-}
-
-if (isMain(import.meta.url)) await main();

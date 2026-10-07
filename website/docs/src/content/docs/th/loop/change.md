@@ -107,7 +107,8 @@ claude-foundation change start .foundation/drafts/<id>.json
 - `integrations` พร้อมแหล่ง/เวอร์ชันเอกสาร requirement ที่เกี่ยวข้อง และ concern
   ด้าน security, resilience, compatibility โดย scenario ที่เกี่ยวข้องต้องระบุ
   `"kind": "success"` และ `"kind": "failure"`
-- repository เมื่อแตะหลาย repo
+- `repositories` เมื่อแตะหลาย repo พร้อม `repository` ของแต่ละ task โดย paths และ
+  verify อ้างอิงจาก root ของ repository นั้น ซึ่งเป็นที่ที่ verify รัน
 - external operation เมื่อต้องใช้อำนาจภายนอก
 - Grounding v3 สำหรับมติสำคัญที่ derive ไม่ได้
 

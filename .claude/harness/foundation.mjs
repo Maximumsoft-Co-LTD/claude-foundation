@@ -60,6 +60,7 @@ import {
 import { automaticReviewRun, currentDeliveryProof } from "./runtime/workflow/advance-recovery.mjs";
 import { createSandboxRuntime } from "./runtime/workflow/sandbox-runtime.mjs";
 import { createSandboxCleanup } from "./runtime/workflow/sandbox-cleanup.mjs";
+import { assertLandedProjection } from "./runtime/workflow/land-verification.mjs";
 import {
   createLandJournal, transactionJournals as readTransactionJournals
 } from "./runtime/workflow/land-journal.mjs";
@@ -67,6 +68,7 @@ import {
   createProofRuntime, taskPacketWasPrecompletedOperation
 } from "./runtime/evidence/proof-runtime.mjs";
 import { createRepositoryTopology } from "./runtime/workflow/repository-topology.mjs";
+import { nestedRepositoryRelativePaths } from "./runtime/core/repository-binding.mjs";
 import { createRepositorySnapshot } from "./runtime/workflow/repository-snapshot.mjs";
 import { createPacketRuntime } from "./runtime/workflow/packet-runtime.mjs";
 import { createChangePolicy } from "./runtime/workflow/change-policy.mjs";
@@ -113,6 +115,7 @@ import {
   executionPreparationValue, prependFoundationToolPath
 } from "./runtime/core/tool-preparation.mjs";
 import { createAbandonRuntime } from "./runtime/workflow/abandon-runtime.mjs";
+import { createLandUndo } from "./runtime/workflow/land-undo.mjs";
 import { RUNTIME_MODULE_API } from "./runtime/version.mjs";
 import { createBootstrap } from "./runtime/composition/bootstrap.mjs";
 import {
@@ -533,6 +536,9 @@ const {
   byId: repositoryById,
   show: showRepositories
 } = repositoryTopology;
+// Every declared nested repository's root-relative path; its gitlink in the
+// root workspace is that repository's pointer, never root task content.
+const declaredRepositoryPaths = () => nestedRepositoryRelativePaths(repositoryCatalog());
 const { relevantSnapshot, relevantHash } = createRepositorySnapshot({
   root: ROOT,
   runtimePath,
@@ -568,7 +574,8 @@ const {
   isCurrentChangePath,
   readJson,
   fileDigest,
-  fail: die
+  fail: die,
+  declaredRepositoryPaths
 });
 // clearSnapshotCache is what every surface mutation already calls; the policy
 // cache invalidates with it or not at all.
@@ -1348,7 +1355,7 @@ const { continueBudget, checkpointBudget } = createBudgetContinuation({
 const {
   cleanupAppliedSandbox,
   cleanupRepositorySandboxes
-} = createSandboxCleanup({ root: ROOT, canonicalPath, git });
+} = createSandboxCleanup({ root: ROOT, canonicalPath, git, now });
 const sandboxRuntime = createSandboxRuntime({
   markBlocked,
   recordScheduler: commandPhaseRecorder.scheduler,
@@ -1514,7 +1521,8 @@ const {
   relevantHash,
   stableHash,
   trapFailures,
-  rollbackStart: rollbackAtomicStart
+  rollbackStart: rollbackAtomicStart,
+  repositoryCatalog
 });
 const amendTaskVerify = amendTaskVerifyOperation.bind(null, { root: ROOT, amendChange });
 const { inspectInvestigation, investigationRecordTemplate } = createInvestigationRuntime({
@@ -1875,7 +1883,11 @@ const applyRuntime = createApplyRuntime({
   cleanupRepositorySandboxes,
   recoverPendingApply,
   landCheck,
-  assertMultiRepositoryArchiveReady,
+  // Records say what Land applied; the target says what landed. Both must agree.
+  assertMultiRepositoryArchiveReady: (id, state) => {
+    assertMultiRepositoryArchiveReady(id, state);
+    assertLandedProjection({ root: ROOT, id, state, fail: die });
+  },
   archivedChangeRelativePath,
   pendingTasks,
   assertOpenSpecCli,
@@ -1886,7 +1898,8 @@ const applyRuntime = createApplyRuntime({
   assertLandGrant: landGrantRuntime.assert,
   consumeLandGrant: landGrantRuntime.consume,
   blockWithDecision,
-  fail: die
+  fail: die,
+  declaredRepositoryPaths
 });
 const {
   gitApplyInputs,
@@ -2122,6 +2135,18 @@ const abandonRuntime = createAbandonRuntime({
   fail: die
 });
 const { abandonChange } = abandonRuntime;
+const { undoLand } = createLandUndo({
+  root: ROOT,
+  paths: {
+    recovery: RECOVERY, runtime: RUNTIME, receipts: RECEIPTS, evidenceVault: EVIDENCE_VAULT,
+    transactions: TRANSACTIONS, snapshots: SNAPSHOTS, plans: PLANS, handoffs: HANDOFFS,
+    logs: LOGS
+  },
+  loadRuntime, saveRuntime, readJson, writeJson, now, gitHead, git, gitBuffer,
+  pathIdentity, pathMode, safeRootPath, copyPath,
+  transactionRoot: applyTransactionRoot, journalPath: transactionJournalPath,
+  cleanupChangeLeases, fail: die
+});
 const [command, ...values] = process.argv.slice(2);
 // Help is answered before anything else. It must never be parsed as a change
 // id, and it must never depend on the command's arguments being valid.
@@ -2244,6 +2269,7 @@ await routeRuntimeCommand(command, values, {
   showMetrics,
   showAdvance,
   recordTargetRestore,
+  undoLand,
   showFeedback,
   execObserved,
   checkpointBudget,

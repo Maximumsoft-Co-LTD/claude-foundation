@@ -82,6 +82,18 @@ export function inferWorkTypes(draft) {
   return inferred.length ? inferred : ["code"];
 }
 
+// Declared docs-only work that adds no behavior to an existing requirement.
+// README wording is not system behavior, so a rapid docs change writes no
+// delta spec and Land merges nothing into openspec/specs. Only a declared
+// workType counts: a markdown path may itself be product behavior (a prompt
+// or a skill), so inference never drops a spec.
+export function docsOnlyDraft(draft) {
+  const types = draftWorkTypes(draft);
+  return types.length > 0 && types.every((type) => type === "docs") &&
+    (draft?.specs || []).every((spec) =>
+      String(spec?.operation || "added").toLowerCase() === "added");
+}
+
 export function workTypesInferred(draft) {
   return !draftWorkTypes(draft).length && inferWorkTypes(draft).length > 0;
 }
@@ -100,6 +112,11 @@ const REQUIRED_BY_TYPE = {
   refactor: ["refactor", "componentMap"]
 };
 const LIGHT_WORK = new Set(["docs", "chore", "test"]);
+// Work whose failure story its own section already tells: a refactor proves
+// unchanged behavior through its invariants and characterization, and a
+// config change states each value's validation. A separate failure matrix
+// would restate them.
+const NO_FAILURE_MATRIX = new Set([...LIGHT_WORK, "refactor", "config"]);
 
 const SECTION_HELP = {
   summary: "'why' (or 'summary'): 1-3 plain sentences on what the user gets and what changes",
@@ -121,7 +138,8 @@ const SECTION_HELP = {
 export function requiredDevSections(draft) {
   const types = inferWorkTypes(draft);
   if (!types.length || types.every((type) => LIGHT_WORK.has(type))) return ["summary"];
-  return [...new Set(["summary", "failureMatrix",
+  const failures = types.some((type) => !NO_FAILURE_MATRIX.has(type)) ? ["failureMatrix"] : [];
+  return [...new Set(["summary", ...failures,
     ...types.flatMap((type) => REQUIRED_BY_TYPE[type] || [])])];
 }
 

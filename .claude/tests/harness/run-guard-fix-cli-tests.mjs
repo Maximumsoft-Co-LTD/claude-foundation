@@ -285,6 +285,15 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
   });
   assert.deepEqual(correctedVerify, ["change",
     { task: "T001", verify: "npm test -- --runInBand", reason: "typo" }]);
+  // --reopen unticks a completed task so the corrected check must pass again.
+  await route("amend", ["change", "--task", "T001", "--verify", "go test -v ./...", "--reopen"], {
+    amendTaskVerify: (...args) => { correctedVerify = args; }
+  });
+  assert.deepEqual(correctedVerify, ["change",
+    { task: "T001", verify: "go test -v ./...", reason: undefined, reopen: true }]);
+  await assert.rejects(route("amend", ["change", "--reopen"], {
+    amendTaskVerify: () => {}
+  }), /requires <change> --task <task-key\|task-id> --verify <command>/);
   await assert.rejects(route("amend", ["change", "--task", "T001"], {
     amendTaskVerify: () => {}
   }), /requires <change> --task <task-key\|task-id> --verify <command>/);
@@ -302,6 +311,15 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
     inspectRevision: (...args) => { inspectedRevision = args; }
   });
   assert.deepEqual(inspectedRevision, ["change", "draft.json"]);
+  // --merge reads the file as a partial draft, in both the inspect and revise forms.
+  await route("revise", ["change", "patch.json", "--merge"], {
+    reviseChange: (...args) => { consumedRevision = args; }
+  });
+  assert.deepEqual(consumedRevision, ["change", "patch.json", { consumeDraft: undefined, merge: true }]);
+  await route("revise", ["change", "patch.json", "--merge", "--inspect"], {
+    inspectRevision: (...args) => { inspectedRevision = args; }
+  });
+  assert.deepEqual(inspectedRevision, ["change", "patch.json", { merge: true }]);
   await assert.rejects(route("revise", [
     "change", "draft.json", "--inspect", "--consume-draft"
   ], {}), /cannot be combined/);

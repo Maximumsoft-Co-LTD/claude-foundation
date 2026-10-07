@@ -44,8 +44,8 @@ const CASES = [
     sourcePath: ".claude/harness/runtime/core/shell-mutation-policy.mjs",
     expectedKiller: "CASE-BUILD-SHELL-CONTAINMENT",
     detector: HOOK_DETECTOR,
-    before: "if (!within(workspace, absolute)) return true;",
-    after: "if (!within(workspace, absolute)) return false;"
+    before: "if (!roots.some((root) => within(root, absolute))) return true;",
+    after: "if (!roots.some((root) => within(root, absolute))) return false;"
   },
   {
     id: "MUT-EXEC-WORKSPACE-CWD-REMOVED",

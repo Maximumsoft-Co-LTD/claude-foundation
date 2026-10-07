@@ -129,6 +129,33 @@ test("evidence validates the complete provider contract matrix", () => {
   assert.equal(value.execution.version, 1);
 });
 
+test("a specialist provider repeating the test command resolves as unwired external evidence", () => {
+  const command = ["sh", "-c", "npm test"];
+  const evidenceValue = {
+    version: 2,
+    claims: [{ id: "auth-claim", scenario: "auth", capabilities: ["test", "cross-repo-contract"] }],
+    providers: {
+      test: { adapter: "test-discovery", command, minimum: 1, claims: "declared" },
+      "cross-repo-contract": {
+        adapter: "command", capability: "cross-repo-contract", command, claims: "declared"
+      }
+    }
+  };
+  const contract = fixture(evidenceValue);
+  assert.deepEqual(contract.providerConfig("change", "cross-repo-contract"), {
+    adapter: "external", capability: "cross-repo-contract", claims: "declared", aliasOf: "test"
+  });
+  assert.equal(contract.providerConfig("change", "test").adapter, "test-discovery");
+  // A project-owned command in execution.yaml replaces the alias.
+  const wired = fixture(evidenceValue, { version: 1, services: {}, providers: {
+    "cross-repo-contract": {
+      adapter: "command", capability: "cross-repo-contract", command: ["tracked-command.js"]
+    }
+  } });
+  assert.deepEqual(wired.providerConfig("change", "cross-repo-contract").command,
+    ["tracked-command.js"]);
+});
+
 test("execution providers override evidence providers", () => {
   const evidenceValue = completeEvidence();
   const execution = {

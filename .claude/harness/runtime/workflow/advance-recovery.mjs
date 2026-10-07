@@ -65,22 +65,31 @@ export function agentSafeRoutes(value) {
 // Causes only the user can clear. They go to the user on the first
 // observation with the exact fix, instead of the agent resuming unchanged.
 // `product: true` causes are recognized on every route; the others only on
-// harness, setup, and reviewer infrastructure routes, never in product output.
+// harness, setup, delivery, and reviewer infrastructure routes, never in
+// product output. `category` is the typed boundary the cause belongs to:
+// `resource` (disk), `credential` (login, token, registry or remote
+// permission), or `network`. Typed error codes win; the patterns recognize the
+// same causes in child-process output, which carries no code.
 const USER_ENVIRONMENT_CAUSES = [
-  { cause: "disk-full", codes: ["ENOSPC", "EDQUOT"], product: true,
+  { cause: "disk-full", category: "resource", codes: ["ENOSPC", "EDQUOT"], product: true,
     pattern: /\bENOSPC\b|no space left on device|disk quota exceeded/i,
     fix: "Free disk space on the volume that holds the repository and its .foundation sandboxes" },
-  { cause: "reviewer-login", codes: [],
+  { cause: "reviewer-login", category: "credential", codes: [],
     pattern: /please run \/login|run `?claude \/login|\bnot logged in\b|oauth token (?:has )?expired|invalid api key/i,
     fix: "Run `claude /login` (or log the configured reviewer CLI in) on this machine" },
-  { cause: "registry-auth", codes: ["E401"],
+  { cause: "registry-auth", category: "credential", codes: ["E401"],
     pattern: /\bE401\b|ERR_PNPM_FETCH_40[13]|\bE403\b[^\n]*registry|registry[^\n]*\b(?:401|403)\b|unable to authenticate[^\n]*registry/i,
     fix: "Log in to the private package registry (for example `npm login --registry <url>`) or export its token in the environment" },
-  { cause: "credential", codes: [],
+  { cause: "remote-permission", category: "credential", codes: [],
+    pattern: /remote: Permission to \S+ denied|The requested URL returned error: 40[13]\b|Permission denied \(publickey\)|could not read Username for|fatal: Authentication failed for|\bHTTP 40[13]\b|Resource not accessible by (?:integration|personal access token)|\bgh auth login\b/i,
+    fix: "Give this machine's Git or GitHub credential access to the named remote (for example `gh auth login` or a token with push rights)" },
+  { cause: "credential", category: "credential", codes: [],
     pattern: /\b\w*(?:token|credentials?|api[ _-]?key|access[ _-]?key)\b[^.\n]{0,40}\b(?:expired|missing|invalid|revoked|not set)\b|\b(?:expired|revoked)\s+(?:token|credentials?)\b|\b401 Unauthorized\b|bad credentials|authentication failed/i,
     fix: "Renew or supply the named credential or token (log in again or export it in the environment)" },
-  { cause: "network", codes: ["ENOTFOUND", "EAI_AGAIN", "ENETUNREACH", "EHOSTUNREACH", "ECONNREFUSED", "ETIMEDOUT"],
-    pattern: /\b(?:ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ECONNREFUSED|ETIMEDOUT)\b|proxy authentication required|\b407 Proxy\b|tunneling socket could not be established|network is unreachable|could not resolve host|\bVPN\b/i,
+  // A bare ETIMEDOUT is also how a local process timeout (spawn, setup,
+  // reviewer) reports itself; only a socket timeout is a network cause.
+  { cause: "network", category: "network", codes: ["ENOTFOUND", "EAI_AGAIN", "ENETUNREACH", "EHOSTUNREACH", "ECONNREFUSED"],
+    pattern: /\b(?:ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ECONNREFUSED)\b|\b(?:connect|read|write) ETIMEDOUT\b|\bETIMEDOUT \S+:\d+|proxy authentication required|\b407 Proxy\b|tunneling socket could not be established|network is unreachable|could not resolve host|\bVPN\b/i,
     fix: "Connect the VPN or allow the network and proxy access the named host needs" }
 ];
 
@@ -100,17 +109,55 @@ function observedText(value) {
   return parts.filter((part) => typeof part === "string").join("\n");
 }
 
-export function userEnvironmentCause(value) {
-  if (!value || !["REPAIR", "WAIT"].includes(value.action)) return null;
-  const product = PRODUCT_ROUTES.has(value.legacyAction);
-  const codes = [value.errorCode, value.details?.code].filter(Boolean).map(String);
-  const observed = observedText(value);
-  for (const row of USER_ENVIRONMENT_CAUSES) {
-    if (product && !row.product) continue;
-    if (codes.some((code) => row.codes.includes(code)) || row.pattern.test(observed))
-      return { cause: row.cause, fix: row.fix };
-  }
+// The one classifier: typed codes first, then the known output signatures.
+// `product` output only yields causes that can never be a product finding.
+export function environmentCause({ codes = [], text = "", product = false } = {}) {
+  const typed = codes.filter(Boolean).map(String);
+  for (const row of USER_ENVIRONMENT_CAUSES)
+    if ((!product || row.product) && typed.some((code) => row.codes.includes(code)))
+      return { cause: row.cause, category: row.category, fix: row.fix };
+  for (const row of USER_ENVIRONMENT_CAUSES)
+    if ((!product || row.product) && row.pattern.test(String(text || "")))
+      return { cause: row.cause, category: row.category, fix: row.fix };
   return null;
+}
+
+// Codes a thrown error carries itself or through its cause and details.
+export function errorCodes(error) {
+  return [error?.code, error?.cause?.code, error?.details?.code]
+    .filter(Boolean).map(String);
+}
+
+export function userEnvironmentCause(value, codes = []) {
+  if (!value || !["REPAIR", "WAIT"].includes(value.action)) return null;
+  return environmentCause({
+    codes: [...codes, value.errorCode, value.details?.code],
+    text: observedText(value),
+    product: PRODUCT_ROUTES.has(value.legacyAction)
+  });
+}
+
+// A cause only the user can clear goes to the user now, with the fix and
+// the resume route. Nothing is recorded: resuming after the fix re-runs the
+// same route, and an uncleared cause is reported again the same way.
+export function userEnvironmentAction(id, input, found) {
+  // The agent repair the route carried (edit the workspace or foundation.json,
+  // set a field) is not the fix and must not survive into the question.
+  const { instruction, instructions, repairTarget, ...value } = input;
+  const resumeCommand = value.resume || `claude-foundation advance ${id}`;
+  const summary = `${found.fix}. Only the user can clear this (${found.cause}): ${value.reason}`;
+  return { ...value, action: "ASK_USER", actor: "user", owner: "user",
+    legacyAction: "USER_ENVIRONMENT_REQUIRED", boundary: "user-environment",
+    reason: summary, command: resumeCommand,
+    decision: { kind: "user-environment", cause: found.cause,
+      ...(found.category ? { category: found.category } : {}), fix: found.fix, summary,
+      options: [
+        { id: "fixed", outcome: `${found.fix}; then the agent runs '${resumeCommand}'.`, command: resumeCommand },
+        { id: "pause", outcome: "Keep all work and evidence and pause until the environment is fixed." }
+      ], recommended: "fixed" },
+    recovery: { type: "ASK_USER", statePreserved: true,
+      alternatives: [found.fix, "pause with all work preserved"] }
+  };
 }
 
 // Verify output carries durations and timestamps; identical failures must
@@ -213,9 +260,10 @@ export function automaticRecoveryAction(id, decision) {
   // Out-of-band delivery drift is the same moved target with an observation
   // attached, and a target kept during manual recovery is the same moved
   // content, as is another change's landed but uncommitted diff: the contract
-  // is still sync, re-prove if invalidated, continue.
+  // is still sync, re-prove if invalidated, continue. So is a user's target
+  // edit on other lines than the change, which the sync merges into the sandbox.
   if (!["control-head-moved", "out-of-band-delivery-drift", "recovery-sync-required",
-    "landed-change-sync"].includes(decision?.kind) ||
+    "landed-change-sync", "target-edit-sync"].includes(decision?.kind) ||
       decision.automaticRecovery !== "sync") return null;
   return {
     kind: "sandbox-sync",
@@ -342,25 +390,6 @@ export function createAdvanceRecovery({ loadRuntime, saveRuntime, subject, now =
       recommended: options.some((row) => row.id === supplied.recommended)
         ? supplied.recommended : options[0].id
     } };
-  }
-
-  // A cause only the user can clear goes to the user now, with the fix and
-  // the resume route. Nothing is recorded: resuming after the fix re-runs the
-  // same route, and an uncleared cause is reported again the same way.
-  function userEnvironmentAction(id, value, found) {
-    const resumeCommand = value.resume || `claude-foundation advance ${id}`;
-    const summary = `${found.fix}. Only the user can clear this (${found.cause}): ${value.reason}`;
-    return { ...value, action: "ASK_USER", actor: "user", owner: "user",
-      legacyAction: "USER_ENVIRONMENT_REQUIRED", boundary: "user-environment",
-      reason: summary, command: resumeCommand,
-      decision: { kind: "user-environment", cause: found.cause, fix: found.fix, summary,
-        options: [
-          { id: "fixed", outcome: `${found.fix}; then the agent runs '${resumeCommand}'.`, command: resumeCommand },
-          { id: "pause", outcome: "Keep all work and evidence and pause until the environment is fixed." }
-        ], recommended: "fixed" },
-      recovery: { type: "ASK_USER", statePreserved: true,
-        alternatives: [found.fix, "pause with all work preserved"] }
-    };
   }
 
   function ask(value, pending) {

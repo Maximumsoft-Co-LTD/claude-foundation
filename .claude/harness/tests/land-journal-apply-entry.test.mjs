@@ -19,6 +19,7 @@ import {
   rollbackLandJournalOperation,
   verifyLandJournalOperation
 } from "../runtime/workflow/land-journal.mjs";
+import { landUndoPlan } from "../runtime/workflow/land-undo.mjs";
 
 function write(path, content) {
   mkdirSync(dirname(path), { recursive: true });
@@ -300,7 +301,7 @@ test("archive verification relocates only the agreement and keeps its original i
     { archivedChangePath }).reason, "projection-mismatch:openspec/changes/change");
 });
 
-test("journal cleanup removes temporary data, commits journals, and reports failures", () => {
+test("journal cleanup removes staged data, keeps the pre-Land backup, commits journals, and reports failures", () => {
   const noApply = cleanupLandJournalOperation({}, { workspace: {} });
   assert.deepEqual(noApply, { status: "not-needed" });
 
@@ -310,13 +311,14 @@ test("journal cleanup removes temporary data, commits journals, and reports fail
   const state = { id: "change", workspace: { apply: { transactionId: "tx" } } };
   const result = cleanupLandJournalOperation({
     transactionRoot: () => "/transaction",
-    exists: (path) => path !== "/transaction/stage",
+    exists: (path) => path !== "/transaction/backup",
     remove: (...args) => removed.push(args),
     journalPath: () => "/journal", readJson: () => journal,
     now: () => "now", save: (value) => saved.push(value)
   }, state);
   assert.deepEqual(result, { status: "committed", transactionId: "tx" });
-  assert.deepEqual(removed, [["/transaction/backup", { recursive: true }]]);
+  assert.deepEqual(removed, [["/transaction/stage", { recursive: true }]],
+    "the pre-Land backup is retained for an undo of the uncommitted Land");
   assert.equal(journal.status, "committed");
   assert.equal(journal.committedAt, "now");
   assert.equal("inFlightPaths" in journal, false);
@@ -326,4 +328,68 @@ test("journal cleanup removes temporary data, commits journals, and reports fail
     transactionRoot: () => "/transaction", exists: () => true,
     remove: () => { throw new Error("busy"); }, journalPath: () => "/journal"
   }, state), { status: "failed", transactionId: "tx", reason: "busy" });
+});
+
+// Undo of an archived, uncommitted Land: every path Land wrote must still hold
+// exactly what Land wrote, or the undo refuses before any write.
+function undoInputs(overrides = {}) {
+  const state = {
+    id: "change", status: "archived", archivedChangePath: "openspec/changes/archive/d-change",
+    workspace: { mode: "worktree", baseHead: "base", apply: { transactionId: "tx" } },
+    deliveryIntegrity: { entries: [
+      { path: "openspec/changes/archive/d-change", identity: "directory:pkt" },
+      { path: "openspec/specs/cap/spec.md", identity: "spec-after", mode: "100644" }
+    ] }
+  };
+  const journal = { transactionId: "tx", entries: [
+    { path: "a.txt", role: "code", before: "a0", after: "a1", beforeMode: 420, afterMode: 420 },
+    { path: "new.txt", role: "code", before: null, after: "n1" },
+    { path: "same.txt", role: "code", before: "s0", after: "s1" },
+    { path: "openspec/changes/change", role: "change-artifacts", before: "p0", after: "p1" }
+  ] };
+  const target = { "a.txt": ["a1", 420], "new.txt": ["n1", 420], "same.txt": ["s0", 420] };
+  const delivered = { "openspec/changes/archive/d-change": { identity: "directory:pkt" },
+    "openspec/specs/cap/spec.md": { identity: "spec-after", mode: "100644" } };
+  return {
+    state, journal, specBefore: { cap: "spec before\n" }, headNow: "base", staged: [],
+    observe: (path) => ({ identity: target[path]?.[0] ?? null, mode: target[path]?.[1] ?? null }),
+    delivered: (path) => delivered[path] || { identity: null },
+    sources: () => "staged",
+    target, delivered_: delivered,
+    ...overrides
+  };
+}
+
+test("land undo plans a restore of every path still at Land's bytes", () => {
+  const plan = landUndoPlan(undoInputs());
+  assert.deepEqual(plan.refusals, []);
+  assert.deepEqual(plan.code.map(({ entry, source }) => [entry.path, source]),
+    [["a.txt", "staged"], ["new.txt", "remove"]], "already-reverted paths are skipped");
+  assert.deepEqual(plan.specs, [{ path: "openspec/specs/cap/spec.md", before: "spec before\n" }]);
+  assert.equal(plan.packet, "openspec/changes/archive/d-change");
+});
+
+test("land undo refuses a later edit, a moved HEAD, staged paths, and missing pre-Land bytes", () => {
+  const edited = undoInputs();
+  edited.target["a.txt"] = ["user", 420];
+  edited.delivered_["openspec/specs/cap/spec.md"] = { identity: "spec-edited", mode: "100644" };
+  assert.match(landUndoPlan(edited).refusals.join(" "),
+    /changed after Land at: a\.txt, openspec\/specs\/cap\/spec\.md/);
+  const modeOnly = undoInputs();
+  modeOnly.target["a.txt"] = ["a1", 493];
+  assert.match(landUndoPlan(modeOnly).refusals.join(" "), /changed after Land at: a\.txt/);
+  assert.match(landUndoPlan(undoInputs({ headNow: "moved" })).refusals.join(" "),
+    /HEAD moved since Land/);
+  assert.match(landUndoPlan(undoInputs({ staged: ["a.txt"] })).refusals.join(" "),
+    /staged in the Git index: a\.txt/);
+  assert.match(landUndoPlan(undoInputs({ sources: () => null })).refusals.join(" "),
+    /pre-Land bytes are not recorded for: a\.txt/);
+  assert.match(landUndoPlan(undoInputs({ specBefore: null })).refusals.join(" "),
+    /not recorded for: openspec\/specs\/cap\/spec\.md/);
+  const unarchived = undoInputs();
+  unarchived.state.status = "applied";
+  assert.match(landUndoPlan(unarchived).refusals.join(" "), /is not archived/);
+  const multi = undoInputs();
+  multi.state.repositories = { root: {}, api: {} };
+  assert.match(landUndoPlan(multi).refusals.join(" "), /single-repository/);
 });

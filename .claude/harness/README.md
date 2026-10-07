@@ -75,6 +75,7 @@ read-only argument.
 | Core | `runtime/core/tool-identity.mjs` | Per-process, content-keyed reuse of successful OpenSpec probes, strict lint, and Git index queries |
 | Core | `runtime/core/lifecycle-reducer.mjs` | Typed lifecycle transitions and compatibility-preserving state mutation |
 | Core | `runtime/core/process-runtime.mjs` | Provider process execution, readiness checks, and managed services |
+| Core | `runtime/core/signals.mjs` | Process-scoped signals (drift restored, budget warning, already archived) that keep their stream line and ride on the advance envelope |
 | Core | `runtime/core/shell-mutation-policy.mjs` | Shared phase-aware shell mutation and canonical Build containment policy |
 | Core | `runtime/core/state-runtime.mjs` | Runtime state, paths, hashing, snapshots, workspace manifests, and Git helpers |
 | Core | `runtime/core/trust.mjs` | Canonical JSON and Ed25519 verification shared by trust protocols |
@@ -124,6 +125,8 @@ read-only argument.
 | Workflow | `runtime/workflow/land-journal.mjs` | Atomic apply identity, journal, rollback, verification, and cleanup |
 | Workflow | `runtime/workflow/land-runtime.mjs` | Multi-repository Land readiness, planning, pointers, and resume saga |
 | Workflow | `runtime/workflow/repository-delivery-saga.mjs` | Prepare-all, dependency-ordered, uncommitted multi-repository Apply and resume |
+| Workflow | `runtime/workflow/land-verification.mjs` | Target-read verification that every writable repository holds its proven sandbox bytes before archive |
+| Workflow | `runtime/workflow/sandbox-preservation.mjs` | Sandbox-versus-target comparison and recoverable backups before any sandbox removal |
 | Workflow | `runtime/workflow/lease-runtime.mjs` | Agent resource lease acquisition, renewal, release, and cleanup |
 | Workflow | `runtime/workflow/packet-runtime.mjs` | Changed-surface calculation and bounded task/review packet generation |
 | Workflow | `runtime/workflow/repository-topology.mjs` | Repository discovery, selection, dependency validation, and workspace views |
@@ -221,7 +224,7 @@ claude-foundation doctor --stage prove --change <change>
 | `change start --template` | Prints the semantic draft v4 contract with machine-checkable discovery coverage | Beginning a fresh Change |
 | `change start <draft.json> --inspect` | Returns the next typed intake action and exact resume route without creating a change | Iterating on a semantic draft |
 | `change start <draft.json>` | Compiles, validates, installs, and prepares one isolated change transactionally | Completing Change |
-| `change revise <change> <draft.json>` | Recompiles a revised semantic draft over the same change id through the start intake gate in the same call (an incomplete intake prints its action and changes nothing), with rollback and a requirement delta for approval; `--approve-spec --decision-ref <ref> [--through <target>]` records the user's approval in that call | An agreed semantic change must change before Build starts |
+| `change revise <change> <draft.json>` | Recompiles a revised semantic draft over the same change id through the start intake gate in the same call (an incomplete intake prints its action and changes nothing), with rollback and a requirement delta for approval; `--merge` applies the file as a partial draft over the recorded compiled-from draft; `--approve-spec --decision-ref <ref> [--through <target>]` records the user's approval in that call | An agreed semantic change must change before Build starts |
 | `change amend <change> <amendment.json>` | Adds, revises, or removes requirements, requiring and retaining a discovery delta for v4; a verify-only `updateTasks` amendment fixes an unfinished task's verify command (`--template` prints both); inspects in the same call and amends only at `DONE`, and accepts the same approval flags as `change revise` | A semantic v3/v4 Build discovers new or changed behavior |
 | `change amend <change> --task <key\|id> --verify <command>` | Corrects one unfinished task's verify command directly through the same transaction; keeps the spec approval, claims, and capabilities, refuses an always-passing command, and accepts the task only when the new command passes | A task's verify command is wrong |
 | `advance <change> --through build\|proven\|archived` | Runs deterministic steps and returns one `EDIT`, `RUN_EXTERNAL`, `REPAIR`, `WAIT`, `ASK_USER`, or `DONE` action | Every normal step after Change |
@@ -232,7 +235,8 @@ instruction, or decision option that would name an operator primitive below
 `advance` route, and the recovery ladder (agent repair, `TRY_ALTERNATE_APPROACH`,
 then a decision with repetition evidence on the third unchanged round), the
 first-observation `user-environment` question for causes only the user can
-clear, and the budget no-progress cap are specified in
+clear (typed `resource`, `credential`, or `network`), the optional `signals[]`
+the envelope carries, and the budget no-progress cap are specified in
 [WORKFLOW.md § Recovery and user decisions](../../WORKFLOW.md#recovery-and-user-decisions).
 
 ## Advanced operator and compatibility commands
@@ -378,7 +382,11 @@ rather than pretending packages are independently landable remotes.
 Per-change `repositories.yaml` selects access
 and dependency scope. The runtime creates child worktrees under
 `.foundation/repository-sandboxes/`, hashes them into one composite snapshot,
-and scopes provider commands and receipts with `repository`. Read-selected Git
+and scopes provider commands and receipts with `repository`. That sandbox is
+the repository's one location: `advance` EDIT tasks name it as `workspace`, the
+phase guard treats it as in-workspace, and review findings named through root
+bind to it. A declared repository's directory or gitlink in the root workspace
+is never a root change. Read-selected Git
 repositories also receive detached worktrees: they participate in proof but
 cannot contribute a Land commit. A provider that executes from one repository
 but needs several declares `repository` as its cwd and `repositories` as its
@@ -598,7 +606,8 @@ listings elsewhere name this file as their source rather than restating it.
 | `.foundation/authority/` | Review and acceptance requests and their completion records |
 | `.foundation/attestations/` | Unattended-execution challenges and consumed nonces |
 | `.foundation/instruction-manifests/` | Instruction provenance per command |
-| `.foundation/recovery/` | Quarantined abandoned changes and orphaned runtime state |
+| `.foundation/recovery/` | Quarantined abandoned changes, undone Lands (`land-undone/`), and orphaned runtime state |
+| `.foundation/backups/` | Commit bundles, patches, and file copies of unlanded sandbox work, written before a sandbox is removed |
 | `.foundation/agreement-drift/` | Isolated-packet edits made outside an amendment, saved when the harness restores the approved text |
 | `.foundation/prototypes/` | Disposable comparison prototypes, never admissible as evidence |
 | `.foundation/policy.json` | Optional project rules mapping paths to required capabilities |

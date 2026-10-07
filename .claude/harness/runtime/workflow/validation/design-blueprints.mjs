@@ -165,6 +165,34 @@ export function designBlueprintWarnings(draft) {
   return warnings;
 }
 
+// Known runners whose default output carries no test result Prove can read.
+// Advisory only: an unknown runner is never flagged, and a runner configured
+// for a readable report is left alone. `go test` prints `ok <package>` or
+// `ok <package> (cached)`; with -v each test prints `--- PASS`. Its -json
+// stream is one JSON object per line, which no Prove parser counts either.
+const UNCOUNTED_RUNNERS = Object.freeze([{
+  runner: "go test",
+  detect: /(?:^|[\s;&|(])go\s+test\b/,
+  countable: /(?:^|\s)-(?:v|test\.v)(?:=true)?(?=\s|$)/,
+  advice: "it prints only 'ok <package>' (or '(cached)'), which carries no test result, so " +
+    "Prove's test discovery is inconclusive; use 'go test -v ./...' so each test prints " +
+    "'--- PASS' (the rapid lane accepts that), and for a counted result print TAP ('1..N') " +
+    "or a JSON totalTests summary"
+}]);
+
+export function verifyCountAdvisories(tasks) {
+  const advisories = [];
+  (Array.isArray(tasks) ? tasks : []).forEach((task, index) => {
+    const verify = String(task?.verify || "");
+    const name = String(task?.semanticKey || task?.key || task?.id || "").trim() || `#${index + 1}`;
+    for (const row of UNCOUNTED_RUNNERS)
+      if (row.detect.test(verify) && !row.countable.test(verify))
+        advisories.push(`task '${name}' verify runs '${row.runner}' without a countable ` +
+          `report: ${row.advice}`);
+  });
+  return advisories;
+}
+
 // A test path named in a task's verify command, e.g. `npx vitest
 // tests/unit/card.spec.js`. Only file-shaped tokens with a test marker count.
 const TEST_FILE = /(?:^|\s|["'=])((?:[\w.@-]+\/)*[\w.@-]+\.(?:spec|test)\.[a-z]+)(?=$|[\s"';:)])/gi;

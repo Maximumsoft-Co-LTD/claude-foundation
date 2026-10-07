@@ -24,6 +24,7 @@ import {
   createSpecDeltaValidator,
   existingCapabilityRequirementFindings
 } from "../runtime/workflow/validation/spec-delta.mjs";
+import { unobservedAliasConfig } from "../runtime/evidence/provider-catalog.mjs";
 
 const fail = (message) => { throw new Error(message); };
 
@@ -162,6 +163,7 @@ function validationRuntimeFixture() {
   const saved = [];
   const handoffs = [];
   const writes = [];
+  const review = { required: true };
   mkdirSync(packet, { recursive: true });
   writeFileSync(join(packet, "proposal.md"), "# Proposal\nBounded change.\n");
   writeFileSync(join(packet, "tasks.md"),
@@ -179,9 +181,10 @@ function validationRuntimeFixture() {
       id: "root", mode: "write", workspacePath: root, relativePath: "."
     }],
     providerCapability: (provider, config) => config?.capability || provider,
-    providerConfig: (_id, provider) => contract.providers[provider],
+    providerConfig: (_id, provider) => contract.providers[provider] &&
+      unobservedAliasConfig(contract.providers, provider, contract.providers[provider]),
     resolvedAcceptance: () => ({ required: false, version: 2, claimIds: [] }),
-    reviewPolicy: () => ({ required: true, independenceWaived: false }),
+    reviewPolicy: () => ({ required: review.required, independenceWaived: false }),
     reviewAssurancePosture: () => ({ summary: "fresh independent review" }),
     policyCapabilities: () => [],
     policyCapabilityTrigger: () => null,
@@ -200,7 +203,7 @@ function validationRuntimeFixture() {
     fail
   });
   return {
-    runtime, state, contract, saved, handoffs, packet, writes,
+    runtime, state, contract, saved, handoffs, packet, writes, review,
     setPacketPaths(active, durable) {
       activePacket = active;
       durablePacket = durable;
@@ -464,6 +467,33 @@ test("evidence initialization previews and mirrors durable provider wiring", () 
   assert.ok(messages.some((message) => message.includes("BLOCKED  review")));
   assert.ok(messages.some((message) => message.includes("BLOCKED  broken")));
   assert.ok(messages.some((message) => message.includes("evidence init change-a --write")));
+});
+
+test("evidence doctor reports a test alias covered only while review covers it", () => {
+  const command = ["sh", "-c", "node --test"];
+  const doctor = ({ required = true, waived = false } = {}) => {
+    const fixture = validationRuntimeFixture();
+    fixture.review.required = required;
+    if (waived) fixture.state.waivers = [{ capability: "review", reason: "user" }];
+    fixture.contract.claims[0].capabilities = ["test", "security-static"];
+    fixture.contract.providers = {
+      test: { adapter: "test-discovery", command },
+      discovery: { adapter: "external" },
+      "security-static": { adapter: "command", capability: "security-static", command }
+    };
+    const messages = [];
+    const originalLog = console.log;
+    console.log = (message) => messages.push(String(message));
+    try { fixture.runtime.showEvidenceDoctor("change-a"); }
+    finally { console.log = originalLog; }
+    return messages.find((message) => message.includes(" security-static:"));
+  };
+  assert.match(doctor(), /^ {2}COVERED {2}security-static: covered by review; .*test provider 'test'/);
+  for (const options of [{ required: false }, { waived: true }]) {
+    const line = doctor(options);
+    assert.match(line, /^ {2}BLOCKED {2}security-static: no-safe-project-command; next: configure a project-owned security-static command in execution\.yaml$/,
+      JSON.stringify(options));
+  }
 });
 
 test("traceability audit renders text and JSON and marks invalid links", () => {
