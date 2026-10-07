@@ -23,8 +23,18 @@ means runtime status `archived`; `proven` is not completion.
 If Apply conflicts only with regenerable artifacts in the target (for example
 `__pycache__/*.pyc`) that were clean at isolation, the returned REPAIR restores
 them with `advance <change> --through archived --restore-target <paths>` inside
-the transaction. Any other conflicting file is a user decision, and a file
-changed after the restore was recorded is never overwritten.
+the transaction. Any other conflicting edit in the target is kept. When it
+touches other lines than the change, the harness merges it into the sandbox
+copy, proves again, and applies; only an edit of the same lines is merged by
+the agent. Discarding a target edit is the user's decision, and a file changed
+after the restore was recorded is never overwritten.
+
+While the landed diff is still uncommitted, the user can undo an archived Land
+with `advance <change> --undo-land --decision-ref <user-decision>`: the harness
+returns every path Land wrote to its pre-Land bytes, retires the change, and
+keeps what it landed under `.foundation/recovery/land-undone/`. It refuses
+without writing if HEAD moved, a landed path is staged, or one was edited after
+Land.
 
 Land is always allowed for stacked changes; nobody commits the first landed
 change before the next one lands. When an earlier change's landed, uncommitted

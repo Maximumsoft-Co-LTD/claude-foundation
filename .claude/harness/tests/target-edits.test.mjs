@@ -7,7 +7,7 @@ import {
   isGeneratedArtifactPath, landAppliedOutput, landedChangeSyncStop, landedTargetPaths,
   otherLandedOutput, parseRestoreTargetPaths, replayLandedEdit, restorableTargetPaths,
   shellAuditCount, targetConflictStop, targetEditCarried, targetEditDigest, targetEditIssues,
-  targetEditPaths
+  targetEditPaths, targetEditSyncStop
 } from "../runtime/workflow/target-edits.mjs";
 import { advanceFailureAction } from "../runtime/workflow/advance-runtime.mjs";
 
@@ -256,4 +256,23 @@ test("landed paths sync automatically and are never offered for discard", () => 
   const landedOnly = targetConflictStop({ changeId: "later", paths: ["a.pyc"], snapshot: {},
     cause: "sandbox diff conflicts with target", landedBy: { "a.pyc": "first" } });
   assert.deepEqual(landedOnly.decision.options.map((option) => option.id), ["keep-target", "pause"]);
+});
+
+// A user's target edit on other lines than the change is the harness's merge,
+// not a question: the decision is an automatic sandbox sync, recommended, and
+// offers no discard of the user's bytes.
+test("non-overlapping target edits sync automatically and are never offered for discard", () => {
+  const stop = targetEditSyncStop({ changeId: "demo", paths: ["a.txt"], conflicts: ["b.txt"] });
+  assert.equal(stop.code, "target-edit-sync");
+  assert.equal(stop.decision.recommended, "sync");
+  assert.equal(stop.decision.automaticRecovery, "sync");
+  assert.deepEqual(stop.decision.options.map((option) => option.id), ["sync", "pause"]);
+  assert.deepEqual(stop.decision.conflicts, ["b.txt"]);
+  assert.doesNotMatch(JSON.stringify(stop), /\bcommit\b|restore-target/i);
+  const action = advanceFailureAction("demo",
+    Object.assign(new Error(stop.decision.summary), { decision: stop.decision }),
+    { stage: "land", through: "archived" });
+  assert.equal(action.action, "REPAIR");
+  assert.equal(action.actor, "harness");
+  assert.equal(action.automaticRecovery.kind, "sandbox-sync");
 });

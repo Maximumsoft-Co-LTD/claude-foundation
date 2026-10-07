@@ -2032,6 +2032,38 @@ export function createSandboxRuntime({
     return result;
   }
 
+  // Land recorded the user's uncommitted target edits that touch other lines
+  // than this change (`targetCarry`: path -> target bytes). Each one still at
+  // those exact bytes is merged 3-way into the sandbox copy; a later edit is
+  // left for Land to examine again. The target is never written here, and a
+  // merge that no longer applies cleanly is left to Land's conflict decision.
+  function carryTargetEdits(state) {
+    const workspace = state.workspace;
+    const carry = workspace.targetCarry;
+    const merged = [];
+    if (!carry || workspace.mode !== "worktree" || workspace.applied) {
+      delete workspace.targetCarry;
+      return merged;
+    }
+    const identity = (path) =>
+      lstatSync(path, { throwIfNoEntry: false })?.isFile() ? fileDigest(path) : null;
+    const base = workspace.baseHead || "HEAD";
+    const recorded = {};
+    for (const path of Object.keys(carry).sort()) {
+      if (identity(join(root, path)) !== carry[path]) continue;
+      const shown = gitBuffer(["show", `${base}:${path}`], root);
+      const replay = replayLandedEdit({ root, sandboxPath: workspace.path, path,
+        baseBytes: shown.status === 0 ? shown.stdout : null });
+      if (replay.status !== "merged") continue;
+      writeFileSync(join(workspace.path, path), replay.bytes);
+      recorded[path] = { target: carry[path], sandbox: identity(join(workspace.path, path)) };
+      merged.push(path);
+    }
+    delete workspace.targetCarry;
+    if (merged.length) workspace.targetCarried = { ...(workspace.targetCarried || {}), ...recorded };
+    return merged;
+  }
+
   function reportLandedReplay({ merged, conflicts }, log = console.log) {
     for (const row of merged)
       log(`REPLAYED ${row.path}: merged the landed, uncommitted work of ${row.landedBy} into the ` +
@@ -2140,13 +2172,15 @@ export function createSandboxRuntime({
       { ...flags, resolve: [...resolves].join(",") });
     const landedReplay = movement?.conflicts?.length
       ? { merged: [], conflicts: [] } : replayLandedChanges(id, state);
+    const targetCarried = movement?.conflicts?.length ? [] : carryTargetEdits(state);
     clearSnapshotCache(id);
     const invalidated = !priorHash || priorHash !== relevantHash(id) ||
       fingerprints.priorContract !== fingerprints.nextContract ||
       fingerprints.priorExecution !== fingerprints.nextExecution ||
       conflicts.length > 0 || (movement && !movement.rebased) ||
       Boolean(movement?.conflicts?.length) ||
-      landedReplay.merged.length > 0 || landedReplay.conflicts.length > 0;
+      landedReplay.merged.length > 0 || landedReplay.conflicts.length > 0 ||
+      targetCarried.length > 0;
     if (preserveAmendment && directoryHash(source) !== acceptedSourceHash)
       fail(`target agreement changed during sandbox sync for '${id}'; both packets are preserved, retry sync to resolve the current target`);
     updateSandboxSyncState(id, state, source, fingerprints, invalidated,
@@ -2170,12 +2204,16 @@ export function createSandboxRuntime({
       id, state, movement, forwarded, conflicts, relevantHash
     });
     reportLandedReplay(landedReplay);
+    for (const path of targetCarried)
+      console.log(`CARRIED ${path}: merged the target checkout's uncommitted edit into the ` +
+        "sandbox copy; the target edit is kept and evidence covering it runs again before Land.");
     return {
       status: conflicts.length || movement?.conflicts?.length || landedReplay.conflicts.length
         ? "CONFLICT" : "SYNCED",
       conflicts: [...conflicts, ...(movement?.conflicts || []), ...landedReplay.conflicts],
       movement,
-      ...(landedReplay.merged.length ? { landedReplayed: landedReplay.merged } : {})
+      ...(landedReplay.merged.length ? { landedReplayed: landedReplay.merged } : {}),
+      ...(targetCarried.length ? { targetCarried } : {})
     };
   }
 

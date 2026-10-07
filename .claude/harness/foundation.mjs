@@ -114,6 +114,7 @@ import {
   executionPreparationValue, prependFoundationToolPath
 } from "./runtime/core/tool-preparation.mjs";
 import { createAbandonRuntime } from "./runtime/workflow/abandon-runtime.mjs";
+import { createLandUndo } from "./runtime/workflow/land-undo.mjs";
 import { RUNTIME_MODULE_API } from "./runtime/version.mjs";
 import { createBootstrap } from "./runtime/composition/bootstrap.mjs";
 import {
@@ -2128,6 +2129,18 @@ const abandonRuntime = createAbandonRuntime({
   fail: die
 });
 const { abandonChange } = abandonRuntime;
+const { undoLand } = createLandUndo({
+  root: ROOT,
+  paths: {
+    recovery: RECOVERY, runtime: RUNTIME, receipts: RECEIPTS, evidenceVault: EVIDENCE_VAULT,
+    transactions: TRANSACTIONS, snapshots: SNAPSHOTS, plans: PLANS, handoffs: HANDOFFS,
+    logs: LOGS
+  },
+  loadRuntime, saveRuntime, readJson, writeJson, now, gitHead, git, gitBuffer,
+  pathIdentity, pathMode, safeRootPath, copyPath,
+  transactionRoot: applyTransactionRoot, journalPath: transactionJournalPath,
+  cleanupChangeLeases, fail: die
+});
 const [command, ...values] = process.argv.slice(2);
 // Help is answered before anything else. It must never be parsed as a change
 // id, and it must never depend on the command's arguments being valid.
@@ -2250,6 +2263,7 @@ await routeRuntimeCommand(command, values, {
   showMetrics,
   showAdvance,
   recordTargetRestore,
+  undoLand,
   showFeedback,
   execObserved,
   checkpointBudget,

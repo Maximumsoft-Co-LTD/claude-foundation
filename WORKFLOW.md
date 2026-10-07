@@ -720,10 +720,10 @@ Tests and checks run only inside the returned workspace, never in the main
 checkout. If Land's apply conflicts with target files that are regenerable
 artifacts (for example `__pycache__/*.pyc`) and were clean at isolation,
 Land restores them to the sandbox base itself and continues. Any other
-conflicting target edit is a user decision listing the files; its restore
-option, `advance <change> --through archived --restore-target <paths>`, requires
-`--decision-ref`, and a file changed after the restore was recorded is never
-overwritten.
+conflicting target edit is kept and carried into the change (below); discarding
+it instead is the user's decision, recorded with `advance <change> --through
+archived --restore-target <paths> --decision-ref <user-decision>`, and a file
+changed after the restore was recorded is never overwritten.
 Land has one user-visible
 goal: place the exact current workspace projection in the declared main
 workspace. The Harness binds a resumable grant to the exact change, workspace
@@ -746,10 +746,21 @@ never automatic; a user who wants it records it through the same route,
 --decision-ref <user-decision>`, which settles the journal and continues Land.
 
 Uncommitted target edits that Land would overwrite are kept, never committed or
-discarded automatically: the agent merges each into the sandbox copy of the same
-path, and Land applies the merged file once merging the target edit into it
-changes nothing. Edits made outside the sandbox stop Land only on paths in this
-change's Land projection; others are reported.
+discarded automatically. An edit on other lines than the change is merged by the
+harness (`target-edit-sync`, automatic): a 3-way merge into the sandbox copy,
+Prove again for what it invalidated, then Apply; the target keeps the user's
+bytes until then. Only an edit of the same lines is a `target-edit-conflict`:
+the agent merges it into the sandbox copy, and Land applies the merged file once
+merging the target edit into it changes nothing. Edits made outside the sandbox
+stop Land only on paths in this change's Land projection; others are reported.
+
+An archived Land whose diff is still uncommitted is undone, on the user's
+decision, with `advance <change> --undo-land --decision-ref <user-decision>`.
+The harness returns every path Land wrote (code, synchronized specs, archived
+packet) to its pre-Land bytes from the Land journal, retires the change, and
+keeps the landed bytes and records under `.foundation/recovery/land-undone/`.
+It refuses without writing when HEAD moved since Land, a path Land wrote is
+staged, or any such path changed after Land.
 
 Land is always allowed for stacked changes. Because Land leaves its diff
 uncommitted, a change that branched before another change landed meets that

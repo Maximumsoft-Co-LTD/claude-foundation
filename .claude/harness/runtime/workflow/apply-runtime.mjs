@@ -19,9 +19,11 @@ import { approvalMatches } from "../core/user-decisions.mjs";
 import { emitSignal } from "../core/signals.mjs";
 import { legacyRepositoryLandTransaction } from "./land-runtime.mjs";
 import { rejectedPaths } from "./sandbox-runtime.mjs";
+import { writeSpecBefore } from "./land-undo.mjs";
 import {
   landedChangeSyncStop, landedTargetPaths, otherLandedOutput, parseRestoreTargetPaths,
-  restorableTargetPaths, targetConflictStop, targetEditCarried
+  replayLandedEdit, restorableTargetPaths, targetConflictStop, targetEditCarried,
+  targetEditSyncStop
 } from "./target-edits.mjs";
 
 // Whether an empty root diff is an acceptable apply outcome rather than an
@@ -263,6 +265,38 @@ function landedReplayExhausted(context, state, landedPaths) {
     replayed[path] === context.pathIdentity(join(state.workspace.path, path)));
 }
 
+// The user's uncommitted target edits that touch other lines than the change
+// (a clean 3-way merge into the sandbox copy) are carried by the harness: the
+// paths and the exact target bytes are recorded here, the automatic sandbox
+// sync merges them into the sandbox copies, and Prove runs again before Land
+// applies. The target is never written here. A path whose recorded merge Land
+// still does not find carried, or whose edit rewrote the same lines, falls
+// through to the target-edit conflict decision.
+function carryTargetEdits(context, id, state, paths, landedBy) {
+  if (state.workspace?.mode !== "worktree" || !context.blockWithDecision ||
+      !context.saveRuntime || state.workspace.applied) return;
+  const sandboxPath = state.workspace.path;
+  const replay = context.replayTargetEdit || replayLandedEdit;
+  const previous = state.workspace.targetCarried || {};
+  const carry = {};
+  const conflicts = [];
+  for (const path of paths.filter((candidate) => !Object.hasOwn(landedBy, candidate))) {
+    const target = context.pathIdentity(join(context.root, path));
+    const sandbox = context.pathIdentity(join(sandboxPath, path));
+    const exhausted = previous[path]?.target === target && previous[path]?.sandbox === sandbox;
+    const result = exhausted ? { status: "conflict" } : replay({
+      root: context.root, sandboxPath, path, baseBytes: baseBlob(context, state, path) });
+    if (result.status === "merged") carry[path] = target;
+    else conflicts.push(path);
+  }
+  const carried = Object.keys(carry);
+  if (!carried.length) return;
+  state.workspace.targetCarry = carry;
+  context.saveRuntime(state);
+  const stop = targetEditSyncStop({ changeId: id, paths: carried, conflicts });
+  context.blockWithDecision(id, stop.code, stop.decision);
+}
+
 function stopForTargetConflict(context, id, state, paths, cause) {
   const snapshot = targetSnapshot(state);
   // Bytes an earlier change landed are part of the target: the harness first
@@ -274,6 +308,7 @@ function stopForTargetConflict(context, id, state, paths, cause) {
     const stop = landedChangeSyncStop({ changeId: id, landedBy });
     return context.blockWithDecision(id, stop.code, stop.decision);
   }
+  carryTargetEdits(context, id, state, paths, landedBy);
   const stop = targetConflictStop({ changeId: id, paths, snapshot, cause, landedBy });
   if (stop.decision && context.blockWithDecision)
     return context.blockWithDecision(id, stop.code, stop.decision);
@@ -654,6 +689,7 @@ export function createApplyRuntime({
     writeFile: writeFileSync,
     removePath: (path) => rmSync(path, { force: true }),
     landedBy,
+    saveRuntime,
     blockWithDecision,
     fail
   });
@@ -1135,6 +1171,11 @@ export function createApplyRuntime({
     // before the command so a crash after the move can still verify the merge.
     state.specSyncInputs = specSyncInputs;
     state.preArchiveWorkspaceHash = preArchiveWorkspaceHash;
+    // The spec text OpenSpec rewrites is kept beside the Land journal, not in
+    // the runtime record, so `advance --undo-land` can restore it later.
+    if (state.workspace?.apply?.transactionId && applyTransactionRoot && writeJson)
+      writeSpecBefore(applyTransactionRoot(id, state.workspace.apply.transactionId),
+        specSyncInputs, writeJson);
     state.land = { ...state.land, status: "archive-prepared", updatedAt: now(),
       ...(typeof pathIdentity === "function" ? {
         archivePacketEntries: deliveryTreeEntries(root, [`openspec/changes/${id}`], pathIdentity)

@@ -604,7 +604,7 @@ listings elsewhere name this file as their source rather than restating it.
 | `.foundation/authority/` | Review and acceptance requests and their completion records |
 | `.foundation/attestations/` | Unattended-execution challenges and consumed nonces |
 | `.foundation/instruction-manifests/` | Instruction provenance per command |
-| `.foundation/recovery/` | Quarantined abandoned changes and orphaned runtime state |
+| `.foundation/recovery/` | Quarantined abandoned changes, undone Lands (`land-undone/`), and orphaned runtime state |
 | `.foundation/agreement-drift/` | Isolated-packet edits made outside an amendment, saved when the harness restores the approved text |
 | `.foundation/prototypes/` | Disposable comparison prototypes, never admissible as evidence |
 | `.foundation/policy.json` | Optional project rules mapping paths to required capabilities |

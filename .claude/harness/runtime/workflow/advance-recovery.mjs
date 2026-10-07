@@ -260,9 +260,10 @@ export function automaticRecoveryAction(id, decision) {
   // Out-of-band delivery drift is the same moved target with an observation
   // attached, and a target kept during manual recovery is the same moved
   // content, as is another change's landed but uncommitted diff: the contract
-  // is still sync, re-prove if invalidated, continue.
+  // is still sync, re-prove if invalidated, continue. So is a user's target
+  // edit on other lines than the change, which the sync merges into the sandbox.
   if (!["control-head-moved", "out-of-band-delivery-drift", "recovery-sync-required",
-    "landed-change-sync"].includes(decision?.kind) ||
+    "landed-change-sync", "target-edit-sync"].includes(decision?.kind) ||
       decision.automaticRecovery !== "sync") return null;
   return {
     kind: "sandbox-sync",

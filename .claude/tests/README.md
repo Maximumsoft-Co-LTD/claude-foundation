@@ -65,6 +65,7 @@ topology/planning fixture and the real-Git pull request delivery suite.
 | `harness/run-critical-case-readiness-tests.mjs` | A declared critical case no file carries blocks at Prove instead of reporting the change ready, without inventing a blocker across repositories or when the search cannot answer |
 | `harness/run-service-session-tests.mjs` | Proof services stop in reverse order, stop idempotently, and are reclaimed on termination signals |
 | `harness/run-apply-conflict-tests.mjs` | Worktree apply refuses to overwrite uncommitted target edits, while accepting files already at the exact proven bytes |
+| `harness/run-land-carry-undo-tests.mjs` | Land merges a user's target edit on other lines into the sandbox and re-proves (same-line edits stay a decision), and `advance --undo-land` reverts an uncommitted archived Land only while the target still holds Land's bytes |
 | `harness/run-land-surface-mutation.sh` | Removing either land-surface guard is detected by the suite above |
 | `harness/run-target-drift-tests.sh` | A worktree sandbox whose target moved: replay onto the new commit, a rejected replay that leaves the sandbox untouched, and the `land check` and `sandbox inspect` reports of the drift |
 | `harness/run-base-move-rebind-tests.sh` | Verdict evidence across a moved base: clean worktree replay rebinds review/acceptance, copy sync reuses review after uncommitted target movement without changing HEAD/index or the attempt, contribution edits expire verdicts, base-move wave release stays gated, and snapshots isolate packet review hashes |

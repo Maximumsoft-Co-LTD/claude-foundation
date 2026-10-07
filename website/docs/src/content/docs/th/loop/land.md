@@ -21,7 +21,15 @@ HEAD และ index ไม่เปลี่ยน งานจบเมื่�
 ถ้า Apply ชนเฉพาะไฟล์ใน target ที่สร้างซ้ำได้ (เช่น `__pycache__/*.pyc`) และสะอาดตอน
 isolate REPAIR ที่คืนมาจะคืนไฟล์เหล่านั้นเป็นค่าจาก base ด้วย
 `advance <change> --through archived --restore-target <paths>` ภายใน transaction
-ไฟล์อื่นที่ชนต้องให้ผู้ใช้ตัดสินใจ และไฟล์ที่ถูกแก้หลังบันทึกจะไม่ถูกเขียนทับ
+edit อื่นใน target ที่ชนจะถูกเก็บไว้ ถ้าแก้คนละบรรทัดกับ change harness จะ merge
+เข้า sandbox copy, Prove ใหม่ แล้วจึง apply ถ้าแก้บรรทัดเดียวกัน agent เป็นผู้ merge
+การทิ้ง edit ใน target ต้องให้ผู้ใช้ตัดสินใจ และไฟล์ที่ถูกแก้หลังบันทึกจะไม่ถูกเขียนทับ
+
+ขณะที่ diff ที่ Land แล้วยังไม่ commit ผู้ใช้ undo Land ที่ archive แล้วได้ด้วย
+`advance <change> --undo-land --decision-ref <user-decision>` harness จะคืนทุก path
+ที่ Land เขียนเป็น bytes ก่อน Land, retire change และเก็บสิ่งที่ Land ไว้ใต้
+`.foundation/recovery/land-undone/` ระบบจะปฏิเสธโดยไม่เขียนอะไรถ้า HEAD ขยับ
+path ที่ Land ถูก stage หรือถูกแก้หลัง Land
 
 Land ทำได้เสมอแม้ change ซ้อนกัน ไม่มีใครต้อง commit change แรกที่ Land แล้วก่อน
 change ถัดไปจะ Land เมื่อ diff ที่ change ก่อนหน้า Land ไว้และยังไม่ commit แตะไฟล์

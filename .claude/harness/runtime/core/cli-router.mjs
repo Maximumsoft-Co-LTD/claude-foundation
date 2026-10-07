@@ -19,6 +19,7 @@ export async function routeRuntimeCommand(command, values, api) {
     resolveChange,
     approvalQuestionAction = null,
     recordTargetRestore,
+    undoLand = null,
     abandonChange,
     waiveGate,
     showChanges,
@@ -423,7 +424,7 @@ export async function routeRuntimeCommand(command, values, api) {
     },
     "advance": async () => {
       const { flags, rest } = parseStrictCommandFlags(values, "advance", {
-        boolean: ["pretty", "inspect", "approve-spec"],
+        boolean: ["pretty", "inspect", "approve-spec", "undo-land"],
         value: ["host-result", "through", "decision", "decision-fingerprint", "decision-ref", "reason",
           "restore-target", "recover-apply"]
       });
@@ -446,6 +447,18 @@ export async function routeRuntimeCommand(command, values, api) {
         if (!flags.through) return;
         delete flags["recover-apply"];
         delete flags["decision-ref"];
+      }
+      // Undo of an archived Land whose target diff is still uncommitted: the
+      // harness restores the pre-Land bytes from the Land journal and retires
+      // the change, or refuses without writing when the target moved on.
+      if (flags["undo-land"]) {
+        const extra = Object.keys(flags).filter((flag) =>
+          !["undo-land", "decision-ref", "pretty"].includes(flag));
+        if (extra.length)
+          die(`advance --undo-land combines only with --decision-ref; drop --${extra.join(", --")}`);
+        if (!undoLand) die("advance --undo-land is unavailable in this runtime");
+        undoLand(rest[0], flags["decision-ref"]);
+        return;
       }
       // Land's target-conflict route: record which target files Land restores
       // to the sandbox base, then resume the same lifecycle route.

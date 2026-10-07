@@ -38,6 +38,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Land merges a user's uncommitted target edit on lines the change did not
+  touch into the sandbox copy itself (`target-edit-sync`, automatic) and
+  proves again before Apply; only same-line edits remain a
+  `target-edit-conflict` decision.
+- `advance <change> --undo-land --decision-ref <ref>` undoes an archived Land
+  whose diff is still uncommitted: it restores the pre-Land bytes of code,
+  synced specs, and the archived packet, retires the change, and keeps the
+  landed bytes under `.foundation/recovery/land-undone/`. It refuses without
+  writing if HEAD moved, a landed path is staged, or a landed path changed
+  after Land. The Land journal now keeps its pre-Land backup and the
+  pre-archive spec text so undo can restore them.
 - `change revise <change> <patch.json> --merge` applies a partial draft over
   the draft the change was compiled from (keyed list merge, `null` deletes,
   `"$remove": true` drops); it refuses after an amendment and for changes

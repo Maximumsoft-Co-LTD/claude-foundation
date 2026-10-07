@@ -75,6 +75,7 @@ harness contracts (topology planning)|sh "$HERE/harness/run-harness-tests.sh" mu
 feedback isolation|sh "$HERE/harness/run-feedback-isolation-tests.sh"
 spec sync land gate|sh "$HERE/harness/run-specsync-gate-tests.sh"
 apply conflict|node --test "$HERE/harness/run-apply-conflict-tests.mjs"
+land carry and undo|node --test "$HERE/harness/run-land-carry-undo-tests.mjs"
 archive telemetry|node --test "$HERE/harness/run-archive-telemetry-tests.mjs"
 proof loop end to end|sh "$HERE/harness/run-proof-loop-tests.sh"
 installed repository recovery|sh "$HERE/harness/run-installed-recovery-tests.sh"
