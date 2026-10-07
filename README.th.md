@@ -396,12 +396,13 @@ Land มีเป้าหมายที่ผู้ใช้เห็นเพ
 ที่ประกาศไว้ Proof ที่ pass, fail, stale, inconclusive หรือ missing จะถูกบันทึกเป็น
 assurance ไม่ใช่ authority Harness ตรวจ conflict ใน target และ apply เฉพาะ diff
 จาก sandbox ที่ผู้ใช้อนุญาต จากนั้นจัดการ spec sync, archive, recovery
-และ cleanup เป็น automation ภายใน ถ้า code, test, config, agreement หรือ target
-path ที่เกี่ยวข้องเปลี่ยน ระบบจะหยุดแทนการเขียนทับ
+และ cleanup เป็น automation ภายใน Land ไม่เขียนทับ code, test, config, agreement
+หรือ target path ที่เกี่ยวข้องที่เปลี่ยนไป: การแก้ที่ยังไม่ commit ของคุณบนบรรทัดอื่น
+จะถูก merge เข้า sandbox แล้ว prove ใหม่ ส่วนการแก้บรรทัดเดียวกัน agent จะ merge ให้
 ถ้า target branch แค่มี commit ใหม่ Agent จะ sync sandbox เดิม, Prove ใหม่ และ
-Land ต่อให้เอง งานไม่หายและไม่ต้องเปิด Change ใหม่ แต่ถ้า replay conflict จริง
-ระบบจะหยุดเพื่อให้คุณตัดสินใจ เปิดหลาย change พร้อมกันได้แม้แตะไฟล์เดียวกัน ไม่มี
-change ไหนต้องรออีก change ระหว่าง Build, Prove หรือ Land ใครที่ land ทีหลังก็ sync
+Land ต่อให้เอง งานไม่หายและไม่ต้องเปิด Change ใหม่ ถ้า replay conflict agent
+จะจัดการ และถามคุณเฉพาะเมื่อผลลัพธ์ที่ต้องการเป็นทางเลือกจริง
+เปิดหลาย change พร้อมกันได้แม้แตะไฟล์เดียวกัน ไม่มี change ไหนต้องรออีก change ระหว่าง Build, Prove หรือ Land ใครที่ land ทีหลังก็ sync
 แล้ว prove ใหม่ มีแค่ resource ที่ประกาศด้วย `[resources:]` เท่านั้นที่ต้องต่อคิว
 
 ทำไมต้องมีขั้นนี้: การนำ code เข้า project กับการอัปเดต requirement ถาวรถูกผูก
@@ -776,9 +777,9 @@ product requirement หรือซ่อม state ด้วยมือถ้�
   เดียวผ่าน `--attestation`; ถ้ายังเปิด host-control socket หรือ credential ระบบ
   จะ block ต่อไป
 - Land บันทึก proof ที่ missing, failed, inconclusive, invalid หรือ stale เป็น
-  assurance โดยไม่ล้ม explicit decision ของผู้ใช้ ส่วน apply ยังปฏิเสธ conflict
-  และ edit ใน target path ที่ยังไม่ commit — มันระบุ path ที่จะถูกทับแทนที่จะ
-  ปล่อยให้คนเขียนทีหลังชนะ
+  assurance โดยไม่ล้ม explicit decision ของผู้ใช้ ส่วน apply ปฏิเสธเฉพาะ edit
+  ใน target path ที่ยังไม่ถูกรวมเข้า sandbox หรือยังมี conflict — มันระบุ path
+  ที่จะถูกทับแทนที่จะปล่อยให้คนเขียนทีหลังชนะ
 - Land เตือน — โดยไม่บล็อก — เมื่อ target checkout อยู่บน `main`/`master`
   โดย guard ของ land ทุกตัวยังอิง commit
 - Land เป็น apply แบบมี journal ที่ resume ได้ รองรับ change ซ้อนกัน และไม่ commit,

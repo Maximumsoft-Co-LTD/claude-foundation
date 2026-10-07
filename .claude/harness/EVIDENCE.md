@@ -461,9 +461,10 @@ attempt, and reported as `reviewAdvisories.specGaps` on a reached `proven` or
 Closing one is a semantic amendment the user decides. An explicit
 `--review` (or impact, coupling, or declared security triggers) raises
 verification risk to high even at the low review tier. A draft's typed
-`riskSignals` are kept on the change: `access-control` selects the high review
-tier and `input-domain` at least the medium tier (configured model); review required only by
-intent keywords follows its tier. Medium, high, promoted, and legacy routes
+`riskSignals` are kept on the change: `access-control` makes review required
+under either policy and selects the high tier, and `input-domain` at least
+the medium tier (configured model); review required only by intent keywords
+follows its tier. Medium, high, promoted, and legacy routes
 are `diff-first` on the configured model. Intent keywords alone make review
 required at the low tier; they raise the tier or require diversity only
 alongside declared risk. A low-tier `foundation-rapid` change with no such

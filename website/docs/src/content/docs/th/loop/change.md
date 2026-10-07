@@ -126,7 +126,9 @@ local ต้อง resolve เป็นไฟล์ปกติภายใน p
 
 Rapid มี `proposal.md`, `tasks.md`, `evidence.yaml` และ delta
 `specs/<capability>/spec.md` แบบกระชับที่ render แบบเดียวกับ standard ซึ่ง Land จะ merge
-เข้า `openspec/specs` มีเพียง rapid packet แบบเดิมที่ประกาศ `skip_specs` ที่ไม่มี delta
+เข้า `openspec/specs` มีเพียง rapid packet แบบเดิม หรืองานที่ประกาศว่าเป็นเอกสารล้วน
+(`workType: ["docs"]` ที่เพิ่ม requirement) ซึ่งประกาศ `skip_specs` ที่ไม่มี delta
+ถ้อยคำใน README จึงไม่กลายเป็น requirement ที่มีชีวิต
 Proposal ของ rapid คือ dev document แบบกระชับ: summary, what changes, user flow,
 folder tree (path ที่ยังไม่มีใน base ถูกทำเครื่องหมาย `+`), failure matrix และ plan
 ที่ Build ใช้ทำงาน section เชิงบรรยาย (`fileMap`, `testMap`, `componentMap`,
@@ -172,7 +174,8 @@ claude-foundation change revise <change> <draft.json>
 ```
 
 Draft ฉบับแก้ใช้ id เดิมและผ่าน intake gate เดียวกับ `change start` ในคำสั่งเดียว
-ถ้า intake ยังไม่ครบจะแสดง action และไม่เปลี่ยนอะไร Packet ทั้งชุด
+ถ้า intake ยังไม่ครบจะแสดง action และไม่เปลี่ยนอะไร ถ้าใส่ `--merge` ไฟล์จะมีเฉพาะ key
+และ entry แบบมี key ที่เปลี่ยน เพิ่ม หรือลบ (`"$remove": true`) Packet ทั้งชุด
 ถูกคอมไพล์ใหม่แบบ transaction, contract revision เพิ่มขึ้น และถ้าล้มเหลวจะคืน
 packet กับ runtime state เดิม เมื่อ Build มี workspace, receipt หรือ task ที่เสร็จแล้ว
 คำสั่งจะชี้ไปที่ `change amend` ผลลัพธ์แสดง requirement ที่ added, revised และ
@@ -192,7 +195,8 @@ claude-foundation change amend <change> <amendment.json> --consume-amendment
 มันรักษา task ที่เสร็จแล้ว prose/diagram/section ที่ไม่เกี่ยวข้อง เพิ่ม link แบบ
 stable เพิ่ม revision แล้ว validate ทั้งชุด หากล้มเหลวจะ rollback Change เก่ายังใช้
 manual path เดิมได้ Existing task เพิ่ม claim coverage ได้ แต่ถ้าจะเปลี่ยน outcome
-หรือ verify command ของ task ที่เสร็จแล้วต้องเพิ่ม task ใหม่ ถ้าจะแก้ verify command
+ต้องเพิ่ม task ใหม่ ส่วน verify command ของ task ที่เสร็จแล้วเปลี่ยนได้เฉพาะด้วย
+`reopen: true` ซึ่งเอาเครื่องหมายเสร็จออกให้ต้องผ่านใหม่ ถ้าจะแก้ verify command
 ของ task ที่ยังไม่เสร็จ ให้ส่งเฉพาะ `updateTasks: [{"key", "verify", "paths"?}]`
 โดยไม่ต้องมี requirement, evidence หรือ intake และ Prove จะ rerun evidence ของ task
 นั้น `change amend --template` แสดงทั้งสองรูปแบบ Amendment ของ agreement v4 ต้องมี

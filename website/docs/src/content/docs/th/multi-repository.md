@@ -182,24 +182,18 @@ checkout เป็น sibling อยู่ในทุกเครื่อง
 claude-foundation agents plan <change>
 ```
 
-ถ้า change อื่นทำให้ repository ที่เลือกขยับ ให้ sync ก่อน Prove:
-
-```bash
-claude-foundation sandbox sync <change>
-```
-
-sync refresh child read worktree ได้แม้ control sandbox ใช้ copy mode และรัน
+ถ้า change อื่นทำให้ repository ที่เลือกขยับ `advance` จะ sync sandbox เองก่อน Prove
+ส่วน `sandbox sync <change>` เป็น primitive สำหรับวินิจฉัยที่อยู่เบื้องหลัง sync refresh child read worktree ได้แม้ control sandbox ใช้ copy mode และรัน
 `setupCommand` ของ repository ใหม่หลัง refresh ถ้า setup หรือ provider ทิ้ง tracked
 change ไว้ใน read workspace readiness จะ fail closed
 
 ## 7. Prove Graph ทั้งชุด
 
 ```bash
-claude-foundation proof readiness <change>
-claude-foundation proof run <change>
+claude-foundation advance <change> --through proven
 ```
 
-Prove รัน branch อิสระขนานกันได้และรักษา branch ที่เสร็จแล้วเมื่ออีก branch ล้ม
+`proof readiness` และ `proof run` ยังเป็น primitive สำหรับวินิจฉัย Prove รัน branch อิสระขนานกันได้และรักษา branch ที่เสร็จแล้วเมื่ออีก branch ล้ม
 แต่ aggregate proof ยังต้องตรงกับ repository และ provider scope ปัจจุบันทั้งหมด
 read dependency ที่ขยับต้อง sync และ prove ใหม่ Change Loop จะไม่รับรอง commit เก่า
 ใต้ repository manifest ใหม่
@@ -235,8 +229,8 @@ saga นี้ใช้ด้วยเมื่อเลือก non-root child
 
 | เหตุการณ์ | Action ที่ถูกต้อง |
 |---|---|
-| target ที่เลือกขยับ | `sandbox sync <change>` แล้ว Prove ใหม่ |
-| sync เจอ replay conflict | แก้ path ที่ระบุ ไม่ต้องสร้าง change ใหม่ |
+| target ที่เลือกขยับ | `advance` sync sandbox และ Prove ใหม่เอง |
+| sync เจอ replay conflict | agent แก้ path ที่ระบุใน sandbox ไม่ต้องสร้าง change ใหม่ |
 | read repository สกปรก | เอา mutation ออกหรือแก้ setup/provider |
 | setup ของ repository ล้ม | Harness retry เฉพาะ repository นั้นและเก็บ sibling ที่พร้อมแล้ว; แก้ policy เฉพาะเมื่อ command ที่ประกาศผิดจริง |
 | binding ของ child ที่เลือกหาย | Harness ซ่อม binding โดยรักษา worktree ที่ยังใช้ได้; ใช้ `sandbox inspect` เมื่อต้องวินิจฉัยเท่านั้น |

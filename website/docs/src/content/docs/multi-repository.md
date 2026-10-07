@@ -184,24 +184,19 @@ Plan parallel workers only after scope and dependencies are stable:
 claude-foundation agents plan <change>
 ```
 
-If another change advances a selected repository, synchronize before Prove:
-
-```bash
-claude-foundation sandbox sync <change>
-```
-
-Sync refreshes child read worktrees even when the control sandbox uses copy
+If another change advances a selected repository, `advance` synchronizes the
+sandbox itself before Prove; `sandbox sync <change>` is the diagnostic
+primitive behind it. Sync refreshes child read worktrees even when the control sandbox uses copy
 mode. A repository `setupCommand` runs again after refresh. If setup or a
 provider leaves a tracked change in a read workspace, readiness fails closed.
 
 ## 7. Prove the complete graph
 
 ```bash
-claude-foundation proof readiness <change>
-claude-foundation proof run <change>
+claude-foundation advance <change> --through proven
 ```
 
-Prove may run independent branches concurrently and preserve completed branches
+`proof readiness` and `proof run` remain diagnostic primitives. Prove may run independent branches concurrently and preserve completed branches
 after a failure. Aggregate proof still requires every selected repository and
 provider scope to match the current graph. A moved read dependency requires
 sync and fresh proof; Change Loop never certifies the old commit under the new
@@ -240,8 +235,8 @@ child runtime record cannot make Land take the single-repository shortcut.
 
 | What happened | Correct next action |
 |---|---|
-| A selected target moved | `sandbox sync <change>`, then Prove again |
-| Sync reports a replay conflict | Resolve the named paths; do not recreate the change |
+| A selected target moved | `advance` synchronizes the sandbox and proves again |
+| Sync reports a replay conflict | The agent resolves the named paths in the sandbox; do not recreate the change |
 | A read repository is dirty | Remove the mutation or fix setup/provider behavior |
 | Repository setup failed | Harness retries only that repository and preserves ready siblings; change policy only if the declared command itself is wrong |
 | A selected child binding is missing | Harness repairs the binding while preserving valid worktrees; use `sandbox inspect` only for requested diagnosis |

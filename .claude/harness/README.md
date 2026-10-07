@@ -228,7 +228,7 @@ claude-foundation doctor --stage prove --change <change>
 | `change start <draft.json>` | Compiles, validates, installs, and prepares one isolated change transactionally | Completing Change |
 | `change revise <change> <draft.json>` | Recompiles a revised semantic draft over the same change id through the start intake gate in the same call (an incomplete intake prints its action and changes nothing), with rollback and a requirement delta for approval; `--merge` applies the file as a partial draft over the recorded compiled-from draft; `--approve-spec --decision-ref <ref> [--through <target>]` records the user's approval in that call | An agreed semantic change must change before Build starts |
 | `change amend <change> <amendment.json>` | Adds, revises, or removes requirements, requiring and retaining a discovery delta for v4; a verify-only `updateTasks` amendment fixes an unfinished task's verify command (`--template` prints both); inspects in the same call and amends only at `DONE`, and accepts the same approval flags as `change revise` | A semantic v3/v4 Build discovers new or changed behavior |
-| `change amend <change> --task <key\|id> --verify <command>` | Corrects one unfinished task's verify command directly through the same transaction; keeps the spec approval, claims, and capabilities, refuses an always-passing command, and accepts the task only when the new command passes | A task's verify command is wrong |
+| `change amend <change> --task <key\|id> --verify <command> [--reopen]` | Corrects one task's verify command directly through the same transaction (`--reopen` unticks a completed task); keeps the spec approval, claims, and capabilities, refuses an always-passing command, and accepts the task only when the new command passes | A task's verify command is wrong |
 | `advance <change> --through build\|proven\|archived` | Runs deterministic steps and returns one `EDIT`, `RUN_EXTERNAL`, `REPAIR`, `WAIT`, `ASK_USER`, or `DONE` action | Every normal step after Change |
 
 Every route `advance` returns stays on this surface: a `command`, `next`,
@@ -254,7 +254,8 @@ the envelope carries, and the budget no-progress cap are specified in
 | `agents plan <change> [--group <n>] [--pretty]` | Persists the full plan and prints a ≤4 KiB summary or one dispatch group | Before spawning independent workers |
 | `agents dispatch <change> [--pretty]` | Returns one graph- and lease-bound native-host action | Advanced host integration behind `advance` |
 | `advance <change> [--through build\|proven\|archived] [--host-result <result.json>] [--pretty]` | Runs deterministic lifecycle work and returns one minimal action at a real boundary | Normal post-Change agent path |
-| `advance <change> --decision retry\|wait\|pause --decision-fingerprint <hash> --decision-ref <ref> --reason <approach>` | Records the user's current recovery choice and resumes its retained target; grants no unrelated authority | Agent records an explicit answer |
+| `advance <change> --decision retry\|wait\|pause\|merge\|retain --decision-fingerprint <hash> --decision-ref <ref> --reason <approach>` | Records the user's answer to the offered recovery or advance decision and resumes its retained target; grants no unrelated authority | Agent records an explicit answer |
+| `advance <change> --through archived --restore-target <path,path>` / `--recover-apply settle\|keep-current\|restore-backup` / `advance <change> --undo-land`, each with `--decision-ref <ref>` where the user decides | Restores conflicting target paths inside Land, settles an interrupted apply, or undoes an archived Land whose diff is still uncommitted; see [WORKFLOW.md § `/land`](../../WORKFLOW.md#land-change) | Land conflict, interrupted apply, or the user's undo |
 | `doctor` | Checks runtime and project readiness | After install or when diagnosing setup |
 | `changes` | Lists active changes and readiness | Finding work to resume or land |
 | `packet <change> --phase <phase>` | Prints a compact diagnostic handoff; review packets are ≤20 KiB; `--task` for a completed task prints its read-only packet (`executionAuthority.status: "completed"`) | Operator/debug inspection |
@@ -288,6 +289,8 @@ the envelope carries, and the budget no-progress cap are specified in
 | `handoff packet <change> [--id H00n]` | Emits one credential-free operator packet | Sending the exact operation to its named owner |
 | `handoff record <change> ...` | Records accepted/completed/rejected/cancelled/superseded outcomes with durable references | Updating operational state without reopening developer tasks |
 | `migrate [legacy-id] [--apply]` | Reads legacy `.workflow/` state and optionally creates migration candidates | Recovering an older installation without promoting unverified prose |
+| `host instruction <command> --protocol 1 --format json --arguments <text>` | Resolves the package-owned command instruction | Host integration without reading consumer command files |
+| `host agent-contract --protocol 1 --format json` | Resolves the portable package-owned agent contract | Installing or refreshing a host adapter |
 
 `/land <change>` is the only user-facing Land operation. The registered
 `land check`, `land advance`, `land recover`, `land archive`, `land record`,
@@ -297,8 +300,6 @@ transaction; agents must not ask users to compose or run them. `land check` runs
 Land's own pre-mutation preflight read-only, so it stops on the same code Land
 would; `land advance` prints only the `advance --through archived` JSON
 envelope, on its first run as on every later one.
-| `host instruction <command> --protocol 1 --format json --arguments <text>` | Resolves the package-owned command instruction | Host integration without reading consumer command files |
-| `host agent-contract --protocol 1 --format json` | Resolves the portable package-owned agent contract | Installing or refreshing a host adapter |
 
 Consumer-quality configuration is opt-in and remains report-only until the
 project explicitly enables enforcement. The complete installed command,
@@ -578,8 +579,10 @@ the sandbox blocks the sync until the edit is ported there — only `tasks.md`
 ticks merge back automatically.
 Harness-owned semantic amendments stay in the sandbox until Land. Build
 preparation and base-move sync preserve them. Competing target packet edits
-require an approved resolution via `--resolve openspec/changes/<change>`;
-see the [Build-time amendment contract](../../WORKFLOW.md#build-change).
+stop `advance` with the `amended-agreement-conflict` decision; the user's
+answer is recorded with `advance --decision` (the primitive equivalent is
+`--resolve openspec/changes/<change>`); see the
+[Build-time amendment contract](../../WORKFLOW.md#change-intent).
 
 ## Evidence model
 
@@ -603,6 +606,7 @@ listings elsewhere name this file as their source rather than restating it.
 | Path | Contents |
 |---|---|
 | `.foundation/runtime/` | Runtime operation and handoff state, one file per change |
+| `.foundation/drafts/` | Agent-written semantic drafts awaiting `change start` (the seeded allowlist permits edits here) |
 | `.foundation/intake/` | One draft/source-bound semantic intake snapshot per inspected draft path |
 | `.foundation/amendments/` | Transient verify-only amendment staged by `change amend --task/--verify`; removed when the command ends |
 | `.foundation/investigations/` | Source-bound Investigate state, metrics, no-progress checkpoint, and Change handoff digest |

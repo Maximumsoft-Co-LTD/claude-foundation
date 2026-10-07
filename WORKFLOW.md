@@ -419,12 +419,13 @@ checkpoint records the base already incorporated in staging, including when the
 target has moved again. The aggregate proof is invalidated separately; retained
 provider receipts and exact spec approval are rechecked, not silently renewed.
 
-If the target packet changed, Build and sync return an agreement conflict.
-The agent compares both packets and asks for the intended merge or retained
-agreement. After the isolated result is approved, record that resolution with
-`sandbox sync <change> --resolve openspec/changes/<change>`. This explicitly
-accepts the current target packet as the baseline that Land may replace; it does
-not copy the target over the amendment. Unknown or stale baselines are never
+If the target packet changed, Build and sync return an agreement conflict
+(`amended-agreement-conflict`). The agent compares both packets and asks for
+the intended merge or retained agreement, then records the answer with the
+`advance <change> --decision merge|retain|pause` command the chosen option
+carries, which performs the resolving sync. This explicitly accepts the
+current target packet as the baseline that Land may replace; it does not copy
+the target over the amendment. Unknown or stale baselines are never
 silently refreshed, and later target edits still block Apply. Code conflicts
 continue to use their existing replay or copy-path resolution routes.
 Version-3 amendments keep their compatibility shape. The amendment transaction
@@ -674,7 +675,8 @@ before resume; never prove a subset.
 
 An in-contract defect is repaired without asking again. Only evidence that
 changes locked behavior, compatibility, security, data, or rollout opens one
-audited batched amendment. Synchronize any amended agreement or moved target:
+audited batched amendment. `advance` synchronizes any amended agreement or
+moved target itself; the operator primitive behind it is:
 
 ```bash
 claude-foundation sandbox sync <change>
@@ -685,11 +687,11 @@ describes it. A worktree replay is prepared against the current target before
 replacement; a multi-repository replay prepares every writable repository
 before replacing any; a copy fast-forwards files only the target changed.
 Double-edited files stop as named `CONFLICT` entries and leave the existing
-sandbox intact. Merge the target version in the sandbox and sync again. For a
-copy, `advance` settles a merged file itself once a 3-way check against the
-copy's stored base bytes proves the target's edit is in the merged copy and no
-conflict markers remain; a changed copy alone never settles. `--resolve`
-remains the explicit operator form.
+sandbox intact and return to the agent as a repair: merge the target version
+in the sandbox and resume. For a copy, `advance` settles a merged file itself
+once a 3-way check against the copy's stored base bytes proves the target's edit
+is in the merged copy and no conflict markers remain; a changed copy alone never
+settles. `--resolve` remains the explicit operator form.
 
 ### Follow-up requests during an active Change
 
@@ -847,7 +849,8 @@ bytes until then. Only an edit of the same lines is a `target-edit-conflict`:
 the agent merges it into the sandbox copy, and Land applies the merged file once
 merging the target edit into it changes nothing. The same holds when sandbox
 work proven after an earlier apply re-applies: a path that apply never wrote
-must still be at the sandbox base or already hold the sandbox bytes, otherwise
+must still be at the sandbox base or already hold the sandbox bytes, and its
+executable mode must match too (a user `chmod` is an edit), otherwise
 its target edit takes this merge or decision route instead of being
 overwritten. For an isolated copy the base is the copy's recorded baseline
 (content and executable bit) and the base bytes it stored for that path; the
@@ -1213,8 +1216,8 @@ that review once on the configured model without consuming a review round. Secur
 `resolve --security`) or inferred from intent keywords: declared triggers
 select the standard lane and security evidence, while an intent keyword alone
 only makes review required at the low tier and the change keeps its lane. A
-draft's `riskSignals` raise the tier too: `access-control` to high,
-`input-domain` to at least medium.
+draft's `riskSignals` raise the tier too: `access-control` to high (and it makes
+review required under either policy), `input-domain` to at least medium.
 
 - **low** — one full AI review; a material correction promotes the route to
   medium;
@@ -1310,8 +1313,9 @@ code, at least two honest options, a recommendation, and an exact resume route.
 When `automaticRecovery` is marked, the known typed recovery is performed by
 the harness and explained by the agent without opening a user interview. The
 coordinator executes sandbox sync and resumes the original target; a conflicting
-sync preserves the work and asks for the intended resolution. Other options are
-translated into the user's language; the agent never treats a stop as a dead
+sync preserves the work and returns the conflicting paths to the agent as a
+repair, and the user is asked only when the intended result is unclear. Other
+options are translated into the user's language; the agent never treats a stop as a dead
 end or infers authority. A moved target base is replayed, never answered with a
 recreated sandbox or a retired change. Retiring with `change abandon` is offered
 only where the work itself cannot continue.
@@ -1356,9 +1360,10 @@ envelope as optional `signals[]` entries (`{code, message}`), in addition to
 their unchanged stderr or stdout line: `agreement-restored` (an isolated
 agreement edit was restored and saved aside for an amendment),
 `budget-warning` (spend reached 70% with `execution.budgetWatchdog` on),
-`already-archived` (archive recovery found the change already archived), and
-`apply-recovered` (an interrupted apply was settled). The field is absent when
-nothing was signalled.
+`already-archived` (archive recovery found the change already archived),
+`apply-recovered` (an interrupted apply was settled), and
+`review-history-recovered` (a corrupt review attempt chain was rebuilt). The
+field is absent when nothing was signalled.
 
 No agent-facing route names a lifecycle primitive. Any `command`, `next`,
 instruction, reason, or decision option that would point at `proof run|advance`,

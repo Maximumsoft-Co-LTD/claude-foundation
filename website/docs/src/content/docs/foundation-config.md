@@ -298,6 +298,28 @@ material non-derived decision exists. Set `required` when project policy truly
 requires a decision ledger for every change; it does not make empty grounding
 content useful.
 
+## `deliver`: name the optional pull-request commit and branch
+
+Used only by `/deliver`. Defaults keep `feat: <title>` (or `fix: <title>`) and
+`change/<change-id>`:
+
+```json
+{
+  "deliver": {
+    "commitSubject": "{commitType}({ticket}): {title}",
+    "branchPattern": "feature/{ticket}-{title}",
+    "ticketPattern": "[A-Z]+-\\d+"
+  }
+}
+```
+
+Placeholders are `{changeId}`, `{title}`, `{commitType}`, `{prType}`, and
+`{ticket}`, the first `ticketPattern` match in the change id, title, or
+proposal. An unknown placeholder, an invalid pattern, a missing ticket, or an
+invalid subject or branch stops Deliver as a `delivery-policy` wait before
+anything is committed; correct the setting and run `/deliver` again.
+`WORKFLOW.md` (`/deliver <change>`) owns the full naming rules.
+
 ## Common mistakes
 
 - **Replacing the whole file with a partial example.** Edit the existing object

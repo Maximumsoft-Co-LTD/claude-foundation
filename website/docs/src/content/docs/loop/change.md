@@ -197,8 +197,9 @@ and a fixed version rather than `latest` or a branch.
 
 Rapid changes contain `proposal.md`, `tasks.md`, `evidence.yaml`, and a concise
 delta `specs/<capability>/spec.md` rendered exactly as in standard; Land merges
-it into `openspec/specs`. Only a legacy rapid packet declaring `skip_specs` has
-no delta. The rapid proposal is the compact dev document: summary, what
+it into `openspec/specs`. Only a legacy rapid packet or declared docs-only work
+(`workType: ["docs"]` adding requirements) declares `skip_specs` and has no
+delta, so README wording never becomes a living requirement. The rapid proposal is the compact dev document: summary, what
 changes, user flow, folder tree (paths new at the base marked `+`), failure
 matrix, and the plan Build executes. Descriptive sections (`fileMap`,
 `testMap`, `componentMap`, `userFlow`, `configContract`, `refactor`) render
@@ -222,7 +223,8 @@ claude-foundation change revise <change> <draft.json>
 
 The revised draft keeps the change id and passes the same intake gate as
 `change start` in the same call: an incomplete intake prints its action and
-changes nothing. The whole packet is recompiled transactionally, the contract
+changes nothing. With `--merge` the file holds only the keys and keyed entries
+it changes, adds, or removes (`"$remove": true`). The whole packet is recompiled transactionally, the contract
 revision increments, and any failure restores the prior packet and runtime
 state. Once Build has a workspace, a receipt, or a completed task, the command
 routes to `change amend`. The result lists the added, revised, and removed
@@ -241,8 +243,9 @@ claude-foundation change amend <change> <amendment.json> --consume-amendment
 
 It preserves completed tasks, custom prose, diagrams, and unrelated sections;
 adds stable links, increments the revision, validates, and rolls back on
-failure. An existing task may gain claim coverage, but replacing its outcome,
-or a completed task's verify command, requires a new task. To fix the verify
+failure. An existing task may gain claim coverage, but replacing its outcome
+requires a new task; a completed task's verify command changes only with
+`reopen: true`, which unticks it so it must pass again. To fix the verify
 command of an unfinished task, send only `updateTasks: [{"key", "verify",
 "paths"?}]`: no requirement, evidence, or intake is needed, and Prove reruns
 that task's evidence. `change amend --template` prints both forms. Legacy changes retain their

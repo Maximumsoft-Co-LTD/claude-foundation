@@ -152,7 +152,8 @@ state cannot drift into a commit by accident.
 | `authority/` | Review and acceptance requests and their completion records |
 | `attestations/` | Unattended-execution challenges and consumed nonces |
 | `instruction-manifests/` | Instruction provenance per command |
-| `recovery/` | Quarantined abandoned changes and orphaned state |
+| `recovery/` | Quarantined abandoned changes, undone Lands (`land-undone/`), and orphaned state |
+| `backups/` | Commit bundles, patches, and file copies of unlanded sandbox work, written before a sandbox is removed |
 | `prototypes/` | Disposable comparison prototypes |
 | `policy.json` | Optional project rules mapping paths to required capabilities |
 | `quality/results/` | Latest consumer-quality lane reports, aggregate summary, and rendered debt |

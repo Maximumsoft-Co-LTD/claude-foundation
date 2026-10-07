@@ -58,10 +58,11 @@ from `paths` and derives folder tree, plan, file and test maps, the failure
 matrix (from `failure` scenarios, else scenarios stating a rejection or error),
 `why` from `intent`, and `test` evidence unless security triggers apply, noting
 each under "Derived by harness". A standard draft authors failure scenarios
-(except docs/chore) plus per type: feature `userFlow` (Mermaid); ui `userFlow`,
-`uiStates`, `componentMap`; api `apiContracts`; data `dataModel`; config
-`configContract`; async `jobContract` and a sequence diagram; bugfix/refactor
-their objects. Keep `fileMap` paths and task tests inside task `paths`.
+(except docs/chore/test/refactor/config) plus per-type fields (test has none):
+feature `userFlow` (Mermaid); ui `userFlow`, `uiStates`, `componentMap`; api
+`apiContracts`; data `dataModel`; config `configContract`; async `jobContract`
+and a sequence diagram; bugfix/refactor their objects. Keep `fileMap` paths and
+task tests inside task `paths`.
 
 ## Compile and inspect
 

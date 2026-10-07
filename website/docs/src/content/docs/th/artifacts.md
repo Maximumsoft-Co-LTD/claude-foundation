@@ -144,10 +144,12 @@ machine state จึงหลุดเข้า commit โดยบังเอ�
 | `plans/` | แผนการทำงานของ agent |
 | `leases/` | lease ของ task และ resource |
 | `transactions/` | journal ของการ apply ตอน Land และไฟล์สำรอง |
+| `tools/` | CLI dependency ระดับโปรเจกต์ที่ harness เป็นเจ้าของ ผูกกับ runtime contract ที่ pin ไว้ |
 | `authority/` | คำขอ review และ acceptance พร้อมบันทึกผล |
 | `attestations/` | challenge สำหรับการรันแบบไม่มีคนดู และ nonce ที่ใช้ไปแล้ว |
 | `instruction-manifests/` | ที่มาของคำสั่งแต่ละคำสั่ง |
-| `recovery/` | change ที่ถูกยกเลิกและ state ที่กำพร้า |
+| `recovery/` | change ที่ถูกยกเลิก, Land ที่ถูกย้อน (`land-undone/`) และ state ที่กำพร้า |
+| `backups/` | commit bundle, patch และสำเนาไฟล์ของงานใน sandbox ที่ยังไม่ได้ land ซึ่งเขียนไว้ก่อนลบ sandbox |
 | `prototypes/` | prototype สำหรับเปรียบเทียบ ใช้แล้วทิ้ง |
 | `policy.json` | กฎของโปรเจกต์ที่แม็ป path ไปยัง capability ที่ต้องมี (ไม่บังคับ) |
 | `quality/results/` | lane report, aggregate summary และ rendered debt ของ consumer quality รอบล่าสุด |

@@ -17,9 +17,10 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | `investigate --template \| <record.json>` | ตรวจ fact และ hypothesis ที่ผูก source เก็บ resume state และสร้าง Change handoff |
 | `change start --template \| <draft.json> [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | ตรวจ draft และถ้าครบจะ compile และเริ่ม agreement แบบ atomic ในคำสั่งเดียว; `--inspect` ตรวจอย่างเดียว; `--approve-spec` บันทึก approval ของผู้ใช้ในคำสั่งเดียวกัน |
 | `change amend --template \| <change> <amendment.json> [--inspect] [--consume-amendment] [--approve-spec --decision-ref <ref> [--through <target>]]` | Inspect intake และถ้าครบจะเพิ่ม แก้ หรือลบ requirement หรือแก้ verify command ของ task ที่ยังไม่เสร็จ ระหว่าง Build แบบ transaction ในคำสั่งเดียว |
-| `change amend <change> --task <task> --verify <command> [--reopen] [--reason <text>]` | แก้ verify command ที่ผิดของ task ที่ยังไม่เสร็จได้ตรง ๆ โดยคง approval ไว้ task จะถูกรับเมื่อคำสั่งใหม่ผ่านเท่านั้น |
+| `change amend <change> --task <task> --verify <command> [--reopen] [--reason <text>]` | แก้ verify command ที่ผิดของ task ได้ตรง ๆ โดยคง approval ไว้ (ใช้ `--reopen` กับ task ที่เสร็จแล้ว) task จะถูกรับเมื่อคำสั่งใหม่ผ่านเท่านั้น |
 | `advance <change> --through build\|proven\|archived` | รัน deterministic lifecycle (evidence wiring, sandbox sync, review ที่ agent รันได้, ติ๊ก task) แล้วคืนหนึ่งในหก action ที่ boundary จริง |
 | `advance <change> --approve-spec --decision-ref <ref>` | บันทึกการอนุมัติ spec ของผู้ใช้ (alias ของ `change resolve --approve-spec`) |
+| `exec <change> [--repo <id>] [--task <id>] -- <command…>` | รันและจับเวลาคำสั่ง (`checkCommand` ของ task, build หรือการรันเทสทั้งชุด) ใน sandbox ของ change: repository หรือ task ที่ระบุ ไม่เช่นนั้นใช้ directory ของผู้เรียก แล้วจึงใช้ repository ของ task ที่ค้าง ไม่รันใน checkout หลัก |
 | `deliver advance <change>` | หลังสั่ง `/deliver` อย่างชัดเจน ให้ harness ทำ isolated commit, push feature branch, เปิด/ใช้ PR เดิม, ตรวจผ่าน provider และคืน URL |
 | `changes` | อ่าน active state และ route ถัดไป |
 | `doctor …` | วิเคราะห์เฉพาะเมื่อ coordinator ขอ |
@@ -35,8 +36,9 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 |---|---|
 | `changes` | แสดง change ที่ active สถานะ lifecycle และ action ถัดไปของแต่ละตัว |
 | `doctor [--stage change\|build\|prove] [--change <id>]` | วินิจฉัยความพร้อมของโปรเจกต์ provider และ lifecycle |
-| `packet <change> [--phase <phase>] [--task <id>]` | อ่าน handoff ของ operation ปัจจุบัน |
+| `packet <change> [--phase <phase>] [--repo <id>] [--task <id>]` | อ่าน handoff ของ operation ปัจจุบัน |
 | `metrics <change>` | ดูการใช้งาน ประสิทธิผล semantic intake งบ ต้นทุน และเวลาการรันที่วัดได้ |
+| `budget checkpoint <change>` | แสดงงบที่เหลือที่วัดได้ งานที่ยังไม่เสร็จ และ resume route ที่แน่นอน |
 | `feedback <change>` | อธิบายเวลา reviewer, repair ที่มีหลักฐาน, human wait และเวลาที่ยังระบุไม่ได้ พร้อม reuse และ action ถัดไป |
 | `change audit <change>` | ตรวจความเชื่อมโยงของ scenario claim task และ provider |
 | `proof readiness <change>` | blocker แบบมีชนิด พร้อมคำสั่งถัดไปที่ถูกต้อง |
@@ -137,6 +139,10 @@ publish หรือแก้ product และสำเร็จได้เม
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
 | `sandbox create <change> --all` | ซ่อม binding แบบหลาย repository ที่หายในจุดเดิม โดยรักษา worktree เดิมที่ยังใช้ได้ |
+| `advance <change> --decision <option> --decision-fingerprint <hash> --decision-ref <ref> --reason <approach>` | บันทึกคำตอบของผู้ใช้ต่อ decision ของ `advance` (`retry`, `wait`, `pause`, `merge` หรือ `retain` ตามที่เสนอ) แล้วทำต่อจาก target เดิม |
+| `advance <change> --through archived --restore-target <paths> [--decision-ref <ref>]` | คืน path ของ target ที่ชนกันกลับเป็น base ของ sandbox ภายใน Land ถ้าไม่ใช่ artifact ที่สร้างใหม่ได้ต้องมีการตัดสินใจของผู้ใช้ |
+| `advance <change> --through archived --recover-apply settle\|keep-current\|restore-backup --decision-ref <ref>` | ปิด apply ของ Land ที่ถูกขัดจังหวะตามการตัดสินใจของผู้ใช้ แล้วทำต่อ |
+| `advance <change> --undo-land --decision-ref <ref>` | ย้อน Land ที่ archive แล้วซึ่ง diff ยังไม่ commit โดยปฏิเสธและไม่เขียนอะไรถ้า HEAD ขยับ หรือ path ที่ Land เขียนถูก stage หรือแก้ไขหลัง Land |
 | `change abandon <change> --reason <r> --decision-ref <ref>` | กัก change ที่พิสูจน์ไม่ได้ |
 | `change waive <change> --capability <c> --reason <r> --decision-ref <ref>` | ถอนการบังคับใช้ capability หนึ่งตัวหลัง provider ของมันรันแล้วล้มเหลว `--revoke` คืนข้อบังคับ |
 | `budget continue <change> --reason <r> --decision-ref <ref>` | ขยายหน้าต่างแบบ explicit (optional) เพราะ budget ที่หมดจะต่อให้อัตโนมัติ |
@@ -148,7 +154,7 @@ publish หรือแก้ product และสำเร็จได้เม
 
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
-| `init [target-path] [--yes]` | ติดตั้งหรืออัปเกรด Change Loop ในโปรเจกต์ |
+| `init [target-path] [--host claude\|cursor\|opencode\|codex] [--yes]` | ติดตั้งหรืออัปเกรด Change Loop ในโปรเจกต์ `--host` เพิ่ม adapter ของ host นั้น |
 | `help [--all]` | คำสั่งหลัก `--all` รวม route ที่เก็บไว้เพื่อความเข้ากันได้ |
 | `dashboard [-up\|-status\|-down]` | จัดการ client แสดงสถานะทีม (ตัวเลือกเสริม) |
 | `migrate [legacy-id] [--apply]` | ย้ายบันทึก workflow เก่าที่ยืนยันได้ |

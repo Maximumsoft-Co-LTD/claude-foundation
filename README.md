@@ -420,12 +420,14 @@ Land has one visible goal: move the exact current work into its declared main
 workspace. Passing, failed, stale, inconclusive, or missing proof is recorded as
 assurance rather than used as authority. The Harness checks for conflicting
 target edits, applies only the authorized sandbox diff, then performs spec sync,
-archive, recovery, and cleanup as internal automation. If the code, tests,
-configuration, agreement, or
-relevant target paths moved, Land stops instead of overwriting them.
+archive, recovery, and cleanup as internal automation. Land never overwrites
+code, tests, configuration, the agreement, or relevant target paths that moved:
+your uncommitted edit on other lines is merged into the sandbox copy and
+proved again, and the agent merges an edit of the same lines.
 If the target branch simply advanced, the agent synchronizes the existing
 sandbox, re-proves it, and continues Land. Your work is preserved and you do
-not create a new change. A real replay conflict still stops for your judgment.
+not create a new change. A replay conflict goes to the agent; you are asked
+only when the intended result is a real choice.
 Several changes can be active at once, even on the same files: none waits for
 another during Build, Prove, or Land, and whichever lands later synchronizes
 and re-proves. Only a shared resource declared with `[resources:]` serializes.
@@ -828,8 +830,9 @@ you to.
   credentials still block execution.
 - Land records missing, failed, inconclusive, invalid, or stale proof as
   assurance; those outcomes do not override an explicit user decision. Apply
-  still refuses conflicts and uncommitted edits on touched target paths — it
-  names the clobbered paths instead of letting the last writer win.
+  refuses only target-path edits not yet merged into the sandbox or still in
+  conflict — it names the clobbered paths instead of letting the last writer
+  win.
 - Land warns — without blocking — when the target is checked out on
   `main`/`master`; every land guard stays commit-based.
 - Land is a journaled, resumable apply that allows stacked changes and never
