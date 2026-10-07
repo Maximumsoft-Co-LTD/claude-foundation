@@ -5,15 +5,15 @@ argument-hint: <change>
 
 Build **$ARGUMENTS**. Shared rules: `.claude/harness/AGENT.md`.
 
-Run `claude-foundation advance <change> --through proven`; Prove starts only
-after Build. Execute each protocol-v6 action, then follow its
-exact `resume` route until `DONE` or a real boundary.
+Run `claude-foundation advance <change> --through proven`. Execute each
+protocol-v6 action, then follow its exact `resume` route until `DONE` or a
+real boundary.
 
 - `EDIT`: implement the returned work inside its workspace and allowed
-  `paths`; run each task's `checkCommand` where present (its verify via
-  `claude-foundation exec`, already allowed), never the bare test runner.
-  One `EDIT` may carry several tasks: implement all, resume once; `advance`
-  ticks each passing task.
+  `paths`, then resume: `advance` runs every task check, ticks passing tasks,
+  and returns failures. One `EDIT` may carry several tasks:
+  implement all, resume once. Run a `checkCommand`, never the bare test
+  runner, only to diagnose.
 - `REPAIR`: apply the whole ordered batch; amend new behavior.
 - `RUN_EXTERNAL`: run the named operation; long commands go through
   `claude-foundation exec`.

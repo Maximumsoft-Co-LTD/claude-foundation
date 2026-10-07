@@ -107,6 +107,10 @@ import { createReceiptRuntime } from "./runtime/evidence/receipt-runtime.mjs";
 import { createReceiptValidity } from "./runtime/evidence/receipt-validity.mjs";
 import { createAdapterRuntime } from "./runtime/evidence/adapter-runtime.mjs";
 import { createProofExecutionRuntime } from "./runtime/evidence/proof-execution-runtime.mjs";
+import { createTestDiscriminationRuntime } from "./runtime/evidence/test-discrimination.mjs";
+import { changeWorkTypes, taskChangeIssue } from "./runtime/workflow/task-change.mjs";
+import { lightKind } from "./runtime/workflow/validation/dev-document.mjs";
+import { repositoryBaseHead } from "./runtime/core/repository-binding.mjs";
 import { createConfiguredReviewerRuntime } from "./runtime/evidence/codex-reviewer.mjs";
 import { createBlockedDecision, createDetachedBlockScope } from "./runtime/core/blocked-decision.mjs";
 import { createLandGrantRuntime } from "./runtime/core/land-grant.mjs";
@@ -1712,6 +1716,14 @@ const { finalize: prove, audit: proofAudit } = createProofRuntime({
   now,
   fail: die
 });
+const testDiscrimination = createTestDiscriminationRuntime({
+  LOGS, requiredProviders, providerConfig, providerCapability, providerRepository,
+  selectedRepositories, repositoryBaseHead,
+  changedSurface: (id, state) => canonicalChangedSurface(id, state),
+  pathKind: lightKind,
+  changeWorkTypes: (id) => changeWorkTypes(activeChangePath(id)),
+  receiptValidity, configuredCommand, fileDigest, stableHash, loadRuntime
+});
 const {
   authorityNext,
   guardProofMutation,
@@ -1763,6 +1775,13 @@ const {
   },
   stableHash,
   prepareWorkspace: projectRootRepositories,
+  // An unresolvable surface or repository is no verdict: it never blocks.
+  testDiscrimination: (id, workspaceHash) => {
+    try {
+      if (!changedSurfaceResolvable(id)) return null;
+      return trapFailures(() => testDiscrimination.evaluate(id, workspaceHash));
+    } catch { return null; }
+  },
   die
 });
 const guardPublicProofMutation = (command, operation) =>
@@ -2042,6 +2061,20 @@ const sessionLeases = createSessionLeaseRuntime({
     return adapterRuntime.runTaskCheckAsEvidence(id, check) ||
       runTaskCheck({ loadRuntime }, id, check);
   }),
+  taskChangeIssue: (id, taskId) => {
+    try {
+      const state = loadRuntime(id);
+      const task = (agentPlanValue(id)?.tasks || []).find((row) => row.id === taskId);
+      if (!task || !changedSurfaceResolvable(id, state)) return null;
+      const repositoryId = trapFailures(() =>
+        repositoryById(id, task.repository || "root", state).id);
+      return taskChangeIssue({
+        workTypes: changeWorkTypes(activeChangePath(id)), task,
+        changedPaths: trapFailures(() => canonicalChangedSurface(id, state))
+          .filter((row) => row.repositoryId === repositoryId).map((row) => row.path)
+      });
+    } catch { return null; }
+  },
   acquire: acquireAgentLease, release: releaseAgentLease, discard: discardAgentLease
 });
 const { advanceValue, advanceThrough, showAdvance } = createAdvanceRuntime({

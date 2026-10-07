@@ -75,6 +75,29 @@ try {
   check(() => assert.match(empty, /no active change/));
   check(() => assert.match(empty, /\/investigate/,
     "the phase before `change` has no runtime status, so the entry points are named instead"));
+  // Paid runs lost turns to shell shapes the host refuses before Build: a
+  // python/sed rewrite of the draft, `$(find …)` loops, and `cd` chains.
+  check(() => assert.match(empty, /Agent shell: one plain command per call \(no `cd` chains, `\$VAR`\/`\$\(…\)`, braces, or heredocs\); view and change files with Read\/Grep\/Edit\/Write, not `sed -i`, python, or scripts\./));
+  check(() => assert.doesNotMatch(empty, /Outside the working directory/));
+
+  // A declared sibling outside the root is named before the first read aimed
+  // there (each was a permission prompt during Change); an in-root submodule
+  // or a sibling without allowOutsideRoot is not, and a broken file is silent.
+  writeFileSync(join(fixture, "openspec", "repositories.yaml"), JSON.stringify({
+    version: 1, repositories: [
+      { id: "users", type: "submodule", path: "services/users", mode: "write" },
+      { id: "sdk", type: "git", path: "../sdk", mode: "write", allowOutsideRoot: true },
+      { id: "inside", type: "git", path: "vendor/x", mode: "read", allowOutsideRoot: true }
+    ]
+  }));
+  const sibling = digest(fixture);
+  check(() => assert.match(sibling,
+    /Outside the working directory: sdk \(\.\.\/sdk\); the host may refuse reads there, so ground them from in-root sources and read their files in their Build repository sandbox\./));
+  check(() => assert.doesNotMatch(sibling, /users \(|inside \(/));
+  writeFileSync(join(fixture, "openspec", "repositories.yaml"), "{ not json");
+  check(() => assert.match(digest(fixture), /no active change/));
+  check(() => assert.doesNotMatch(digest(fixture), /Outside the working directory/));
+  rmSync(join(fixture, "openspec", "repositories.yaml"));
 
   mkdirSync(join(fixture, "openspec", "changes", "demo-change"), { recursive: true });
   writeFileSync(join(fixture, ".foundation", "runtime", "demo-change.json"),

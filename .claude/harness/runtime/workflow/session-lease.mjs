@@ -72,9 +72,22 @@ function sessionScopeError(id, detail) {
 
 export function createSessionLeaseRuntime({
   loadRuntime, activeChangeLeases, acquire, release, discard, stableHash,
-  runCheck = null, saveRuntime = null
+  runCheck = null, saveRuntime = null,
+  // (id, taskId) => reason | null. A behavior-changing task whose declared
+  // paths have no diff did nothing: its verify passing proves nothing.
+  taskChangeIssue = null
 }) {
   const failedChecks = new Map();
+
+  // Completion needs a change: a verify that already passed on unchanged code
+  // hands the task back (counted like any repeated verify failure) instead of
+  // ticking it. Refactor, docs, and chore work is never refused here.
+  function completedWithoutChange(id, taskId, command) {
+    const reason = taskChangeIssue?.(id, taskId) || null;
+    if (!reason) return false;
+    failedChecks.set(`${id}\0${taskId}`, { taskId, command, exitCode: null, output: reason });
+    return true;
+  }
   function ledgerPath(id) {
     const state = loadRuntime(id);
     const base = state.workspace?.path || null;
@@ -91,7 +104,13 @@ export function createSessionLeaseRuntime({
   // a pass. The check is the approved task's own command in its workspace;
   // the harness never invents one and never ticks on a failure.
   function completeByCheck(id, taskId) {
-    if (!runCheck || checked(id, taskId)) return checked(id, taskId);
+    if (!runCheck || checked(id, taskId)) {
+      if (!checked(id, taskId)) return false;
+      const path = ledgerPath(id);
+      if (!completedWithoutChange(id, taskId, null)) return true;
+      writeFileSync(path, untickTaskLine(readFileSync(path, "utf8"), taskId));
+      return false;
+    }
     const path = ledgerPath(id);
     if (!path || !existsSync(path)) return false;
     const check = taskCheck(readFileSync(path, "utf8"), taskId);
@@ -104,6 +123,7 @@ export function createSessionLeaseRuntime({
       });
       return false;
     }
+    if (completedWithoutChange(id, taskId, check.command)) return false;
     failedChecks.delete(`${id}\0${taskId}`);
     writeFileSync(path, tickTaskLine(readFileSync(path, "utf8"), taskId));
     return true;
@@ -254,6 +274,7 @@ export function createSessionLeaseRuntime({
           continue;
         }
       }
+      if (completedWithoutChange(id, taskId, check?.command || null)) continue;
       failedChecks.delete(`${id}\0${taskId}`);
       writeFileSync(path, tickTaskLine(readFileSync(path, "utf8"), taskId));
       ticked.push(taskId);

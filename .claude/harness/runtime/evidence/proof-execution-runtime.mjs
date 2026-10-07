@@ -257,7 +257,10 @@ export function createProofExecutionRuntime({
   stableHash = (value) => JSON.stringify(value), die, markBlocked = () => {},
   // Brings the change's sandboxes current (the root sandbox's nested
   // repository paths) before any provider runs in them.
-  prepareWorkspace = () => {}
+  prepareWorkspace = () => {},
+  // (id, workspaceHash) => { status: pass|fail|not-applicable, findings }.
+  // Whether the change's tests fail on the base source (test-discrimination.mjs).
+  testDiscrimination = null
 }) {
   const memoryAdvance = new Map();
   const activeAdvance = new Set();
@@ -656,6 +659,28 @@ export function createProofExecutionRuntime({
         failure.validity || "invalid"}`,
       claimIds: failure.claimIds || [],
       criticalCaseIds: failure.criticalCaseIds || []
+    }));
+  }
+
+  // Executable evidence passed, but for behavior-changing work no new or
+  // modified test fails on the base source: the suite cannot tell the change
+  // from the original code. The agent strengthens the tests; this is the same
+  // convergent evidence gate, so changed tests are progress and an unchanged
+  // rerun reaches the existing no-progress boundary.
+  function discriminationRepairStop(id, readiness, advanceStart, executedProviders) {
+    if (!testDiscrimination || !["READY", "NEEDS_USER_DECISION"].includes(readiness.status))
+      return null;
+    const result = testDiscrimination(id, readiness.workspaceHash);
+    if (result?.status !== "fail" || !result.findings?.length) return null;
+    return stopProofAdvance(writeConvergentRepairStop(id, readiness, advanceStart, {
+      gate: "evidence", stage: "tests-not-discriminating", findings: result.findings,
+      failures: result.findings.map((finding) => ({
+        provider: finding.provider, repositoryId: finding.repositoryId,
+        validity: "passes-on-base", reason: finding.message
+      })),
+      executedProviders,
+      strategy: "strengthen-discriminating-tests",
+      nextReason: "The change's tests pass on the original code, so they do not verify the change. Add or strengthen a test that fails without the change and passes with it, then resume this same gate"
     }));
   }
 
@@ -1307,6 +1332,9 @@ export function createProofExecutionRuntime({
     if (executionResult.outcome) return executionResult.outcome;
     ({ readiness, authorityRequests } = executionResult);
     const { executedProviders } = executionResult;
+    const discrimination = discriminationRepairStop(
+      id, readiness, advanceStart, executedProviders);
+    if (discrimination) return discrimination;
 
     // Two delivered AI waves are the end of the open-review route, not the
     // beginning of a human/third-AI loop. If the final delta found an

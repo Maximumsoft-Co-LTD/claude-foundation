@@ -380,6 +380,13 @@ export function createPacketRuntime({
 
   function taskExecutionContext(id, selectedTask) {
     if (!selectedTask) return {};
+    if (selectedTask.done) return {
+      executionAuthority: {
+        status: "completed",
+        readOnly: true,
+        instruction: "Task is complete in tasks.md; use this packet as read-only context and do not re-execute it."
+      }
+    };
     const leasePath = leasesRoot
       ? join(leasesRoot, "tasks", id, `${selectedTask.id}.json`) : null;
     const leaseValue = leasePath && existsSync(leasePath) ? readJson(leasePath, {}) : null;
@@ -767,6 +774,8 @@ export function createPacketRuntime({
     }
     validatePacketRequest(id, flags);
     const value = packetForRequest(id, flags);
+    if (flags.completedTask && value.executionAuthority?.status !== "completed")
+      die(`unknown pending task '${flags.task}'`);
     const manifest = addPacketInstruction(id, flags, value);
     addPacketGraphIdentity(flags, value);
     refreshPacketDigest(value, manifest);

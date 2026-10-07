@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { accessSync, appendFileSync, constants, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nextCommand } from "../harness/runtime/core/next-step.mjs";
 import { shellDisplayArgument } from "../harness/runtime/core/shell-mutation-policy.mjs";
@@ -50,6 +50,24 @@ function readState(runtimeDir, id) {
   catch { return { status: "invalid-runtime-json" }; }
 }
 
+// A declared sibling repository (`allowOutsideRoot`) lies outside the host's
+// working directory, so every `ls`, `cat`, or Read aimed there during Change is
+// a permission prompt. Name it before the first read; its Build repository
+// sandbox lives under `.foundation/` and is readable without one.
+function outsideRootRepositories() {
+  const path = join(ROOT, "openspec", "repositories.yaml");
+  if (!existsSync(path)) return [];
+  let value;
+  try { value = JSON.parse(readFileSync(path, "utf8")); } catch { return []; }
+  return (Array.isArray(value?.repositories) ? value.repositories : [])
+    .filter((row) => row?.allowOutsideRoot === true && typeof row.id === "string" &&
+      typeof row.path === "string" && row.path)
+    .filter((row) => {
+      const rel = relative(ROOT, resolve(ROOT, row.path));
+      return rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+    });
+}
+
 // Where the loop stands, stated without being asked.
 //
 // Deliberately hash-free: `relevantHash` walks the entire workspace, and this
@@ -88,6 +106,18 @@ function workflowDigest() {
     }
     lines.push("  Proof freshness is not checked here; run `claude-foundation changes` for readiness.");
   }
+
+  // Shapes the host refuses as permission prompts in every phase, named once
+  // here because the refusal otherwise arrives one wasted turn later.
+  lines.push("  Agent shell: one plain command per call (no `cd` chains, `$VAR`/`$(…)`, " +
+    "braces, or heredocs); view and change files with Read/Grep/Edit/Write, not " +
+    "`sed -i`, python, or scripts.");
+  const outside = outsideRootRepositories();
+  if (outside.length)
+    lines.push(`  Outside the working directory: ${
+      outside.map((row) => `${row.id} (${row.path})`).join(", ")}; the host may refuse ` +
+      "reads there, so ground them from in-root sources and read their files in their " +
+      "Build repository sandbox.");
 
   const orphans = existsSync(runtimeDir)
     ? readdirSync(runtimeDir, { withFileTypes: true })

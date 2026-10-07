@@ -2,7 +2,8 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import {
-  appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync
+  appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync,
+  realpathSync, statSync, writeFileSync
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -183,7 +184,8 @@ export function observedOutcome({
     requiredEvidencePassed,
     proofStatus: proof?.status || null,
     landStatus: state.status === "archived" ? "archived"
-      : state.status === "proven" ? "awaiting-user" : null
+      : state.status === "proven" ? "awaiting-user"
+        : state.status === "applied" ? "interrupted-resumable" : null
   };
 }
 
@@ -431,9 +433,60 @@ export function collectNativeScorecard({
   });
 }
 
+// Land continues past `proven` inside one `advance --through archived`, so a
+// runner watching for `proven` must also accept the states Land moves through.
+export function watchedStatusReached(watched, status) {
+  if (!watched || !status) return false;
+  return status === watched ||
+    (watched === "proven" && ["applied", "archived"].includes(status));
+}
+
+function parentPid(pid) {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    return Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1]) || null;
+  } catch { return null; }
+}
+
+// Processes still working inside the disposable project. Claude Code runs each
+// Bash tool command in its own process group, so stopping the host group can
+// leave a harness command (for example a Land) running on. Linux-only; other
+// platforms report none rather than guess.
+export function projectProcessIds(project) {
+  if (process.platform !== "linux" || !existsSync("/proc")) return [];
+  let root;
+  try { root = realpathSync(project); } catch { return []; }
+  const excluded = new Set();
+  for (let pid = process.pid; pid && !excluded.has(pid); pid = parentPid(pid))
+    excluded.add(pid);
+  const ids = [];
+  for (const entry of readdirSync("/proc")) {
+    if (!/^\d+$/.test(entry) || excluded.has(Number(entry))) continue;
+    let cwd;
+    try { cwd = readlinkSync(`/proc/${entry}/cwd`); } catch { continue; }
+    if (cwd === root || cwd.startsWith(`${root}/`)) ids.push(Number(entry));
+  }
+  return ids;
+}
+
+// Wait for host-orphaned project processes before anything reads, lands in, or
+// removes the project; force-stop only what outlives the bound.
+export async function settleProjectProcesses(project, { timeoutMs = 60000, pollMs = 200 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let ids = projectProcessIds(project);
+  const observed = ids.length;
+  while (ids.length && Date.now() < deadline) {
+    await new Promise((done) => setTimeout(done, pollMs));
+    ids = projectProcessIds(project);
+  }
+  for (const pid of ids) { try { process.kill(pid, "SIGKILL"); } catch {} }
+  return { observed, killed: ids.length };
+}
+
 export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
   maxModelRequests = null, maxToolCalls = null, selfReviewAuthorized = false,
-  stopOnArchived = false, stopOnProven = false }) {
+  stopOnArchived = false, stopOnProven = false, terminalGraceMs = 120000,
+  settleTimeoutMs = 60000 }) {
   return new Promise((resolveRun) => {
     const initialChangeId = discoverChangeId(project);
     const initialStatus = initialChangeId
@@ -451,6 +504,8 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
     const stderr = [];
     const requestIds = new Set();
     const toolUseIds = new Set();
+    const pendingToolUseIds = new Set();
+    let terminalSeenAt = null;
     let partialLine = "";
     let budgetExhausted = null;
     let decisionBoundary = null;
@@ -474,12 +529,18 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
       const changeId = discoverChangeId(project, null, startedEpochMs);
       if (!changeId) return;
       const state = readJson(join(project, ".foundation/runtime", `${changeId}.json`), {});
-      if (state.status !== watchedStatus) {
+      if (!watchedStatusReached(watchedStatus, state.status)) {
         sawNonWatchedStatus = true;
+        terminalSeenAt = null;
         return;
       }
-      if (!sawNonWatchedStatus) return;
-      terminalReached = { changeId, status: watchedStatus, observedAt: new Date().toISOString() };
+      if (!sawNonWatchedStatus && state.status === initialStatus) return;
+      // A tool call still in flight may be the lifecycle command carrying the
+      // change through Land. Stopping the host now would orphan that command
+      // mid-Land and race the backend Land, so let it return first.
+      terminalSeenAt ??= Date.now();
+      if (pendingToolUseIds.size && Date.now() - terminalSeenAt < terminalGraceMs) return;
+      terminalReached = { changeId, status: state.status, observedAt: new Date().toISOString() };
       clearInterval(terminalTimer);
       terminate();
     }, 250) : null;
@@ -493,7 +554,11 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
         const requestId = row?.type === "assistant"
           ? row.message?.id || row.request_id || null : null;
         if (requestId) requestIds.add(requestId);
-        for (const toolUseId of streamToolUseIds(row)) toolUseIds.add(toolUseId);
+        for (const toolUseId of streamToolUseIds(row)) {
+          toolUseIds.add(toolUseId);
+          pendingToolUseIds.add(toolUseId);
+        }
+        for (const toolUseId of streamToolResultIds(row)) pendingToolUseIds.delete(toolUseId);
         const detected = externalAuthorityBoundary(row);
         const benchmarkSelfReview = selfReviewAuthorized &&
           detected?.kind === "independent-review" &&
@@ -546,10 +611,14 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
         }
       });
     });
-    child.on("close", (code) => {
+    child.on("close", async (code) => {
       clearTimeout(timer);
       if (terminalTimer) clearInterval(terminalTimer);
       if (forceTimer) clearTimeout(forceTimer);
+      const settled = await settleProjectProcesses(project, { timeoutMs: settleTimeoutMs });
+      if (settled.observed) stderr.push(Buffer.from(
+        `bench: waited for ${settled.observed} host-orphaned project process(es); ` +
+        `force-stopped ${settled.killed}\n`));
       if (decisionBoundary)
         decisionBoundary.requestsAfterDecision = Math.max(0,
           requestIds.size - decisionBoundary.requestsAtDecision);
@@ -659,6 +728,13 @@ export function streamToolUseIds(row) {
   return (messageToolCalls(row.message) || []).map((call) => call.id).filter(Boolean);
 }
 
+export function streamToolResultIds(row) {
+  if (row?.type !== "user" || !Array.isArray(row.message?.content)) return [];
+  return row.message.content
+    .filter((item) => item?.type === "tool_result" && item.tool_use_id)
+    .map((item) => item.tool_use_id);
+}
+
 export function parseHostOutput(stdout) {
   const rows = streamRows(stdout);
   const observedRequestIds = new Set(rows.flatMap((row) => row?.type === "assistant"
@@ -731,6 +807,25 @@ export const BENCHMARK_VERIFY_AUTHORITY = "Use .foundation-benchmark.json projec
   "reporters. Run verification only through each Build task's returned checkCommand " +
   "(claude-foundation exec ...) and claude-foundation advance, never a raw test runner " +
   "(npm test, node --test, pytest), which is not pre-allowed.";
+
+// With a task oracle the backend owns the pre-Land oracle and Land, so the
+// host gets no Land authority and stops at `proven`. Granting it Land made the
+// host run one `advance --through archived` straight past the oracle while the
+// runner stopped it at `proven` and landed concurrently.
+export function benchmarkLandAuthority({ landAuthorized = false, oracleConfigured = false } = {}) {
+  if (!landAuthorized) return "";
+  return oracleConfigured
+    ? "This disposable benchmark does not grant Land authority to this session: the " +
+      "backend runs a pre-Land oracle and then lands. Carry the change to proven with " +
+      "claude-foundation advance <change> --through proven and stop there; do not Land."
+    : "This disposable benchmark explicitly authorizes Land; continue until the change is landed and archived.";
+}
+
+function runtimeStatus(project, changeId) {
+  return changeId
+    ? readJson(join(project, ".foundation/runtime", `${changeId}.json`), {}).status || null
+    : null;
+}
 
 export function oracleRepairPrompt(changeId, failedCases) {
   return `Resume existing change ${changeId}. The deterministic pre-Land oracle failed: ` +
@@ -825,8 +920,7 @@ async function main() {
         "Before Prove, cover zero, negative, fractional, finite oversized, non-finite, non-numeric/coercible, production-entry, no-collateral, and return-shape partitions when they apply to this recent-window defect.",
         selfReviewAuthorized
           ? "This disposable benchmark explicitly authorizes main-session self-review; record the waiver and continue without asking." : "",
-        landAuthorized
-          ? "This disposable benchmark explicitly authorizes Land; continue until the change is landed and archived." : ""
+        benchmarkLandAuthority({ landAuthorized, oracleConfigured: Boolean(args.oracle) })
       ].filter(Boolean).join(" ");
       execution = await runClaude({
         project,
@@ -848,7 +942,24 @@ async function main() {
   const discoveredChangeId = terminalChangeId(execution, discoverChangeId(
     project, args["change-id"] || null, execution.stopwatch.startedEpochMs ?? null));
   let oracle = null;
-  if (execution.terminalReached?.status === "proven" && args.oracle) {
+  let backendLandRan = false;
+  const runBackendLand = () => {
+    const harness = join(project, ".claude/harness/foundation.mjs");
+    const remainingMs = remainingTimeoutMs(
+      Number(args["timeout-ms"] || 1800000), execution.stopwatch.wallMs);
+    const landed = spawnSync(process.execPath,
+      [harness, ...backendLandArgs(discoveredChangeId)], {
+        cwd: project, encoding: "utf8", env: process.env, timeout: remainingMs
+      });
+    execution.stdout += landed.stdout || "";
+    execution.stderr += landed.stderr || "";
+    execution.exitCode = landed.status ?? 1;
+    backendLandRan = true;
+  };
+  // `applied` means Land already started (the host's lifecycle command passed
+  // `proven`); the sandbox is still present until archive, so the pre-Land
+  // oracle still applies and the backend Land resumes it.
+  if (["proven", "applied"].includes(execution.terminalReached?.status) && args.oracle) {
     const totalTimeoutMs = Number(args["timeout-ms"] || 1800000);
     const totalRequestCap = args["max-model-requests"]
       ? Number(args["max-model-requests"]) : null;
@@ -858,6 +969,7 @@ async function main() {
         timeoutMs: Number(args["oracle-timeout-ms"] || 120000)
       });
       if (oracle.verdict === "pass") break;
+      if (runtimeStatus(project, discoveredChangeId) !== "proven") break;
       const remainingMs = totalTimeoutMs - execution.stopwatch.wallMs;
       const remainingRequests = Number.isInteger(totalRequestCap)
         ? totalRequestCap - Number(execution.observedModelRequests || 0) : null;
@@ -888,20 +1000,15 @@ async function main() {
         stopOnProven: true
       });
       execution = mergeHostExecutions(execution, repair);
-    } while (execution.terminalReached?.status === "proven");
-    if (oracle.verdict === "pass") {
-      const harness = join(project, ".claude/harness/foundation.mjs");
-      const remainingMs = remainingTimeoutMs(
-        Number(args["timeout-ms"] || 1800000), execution.stopwatch.wallMs);
-      const landed = spawnSync(process.execPath,
-        [harness, ...backendLandArgs(discoveredChangeId)], {
-          cwd: project, encoding: "utf8", env: process.env, timeout: remainingMs
-        });
-      execution.stdout += landed.stdout || "";
-      execution.stderr += landed.stderr || "";
-      execution.exitCode = landed.status ?? 1;
-    }
+    } while (["proven", "applied"].includes(execution.terminalReached?.status));
+    if (oracle.verdict === "pass") runBackendLand();
   }
+  // A Land interrupted between code apply and archive resumes through the same
+  // advance route (the documented crash recovery), never a user command. The
+  // benchmark already authorized Land, so it carries that route once itself.
+  if (!args["collect-only"] && args["test-land"] === "true" && !backendLandRan &&
+      (!oracle || oracle.verdict === "pass") &&
+      runtimeStatus(project, discoveredChangeId) === "applied") runBackendLand();
   const parsedHost = parseHostOutput(execution.stdout);
   const envelope = parsedHost.envelope;
   const preliminaryOutcome = observedOutcome({

@@ -44,8 +44,8 @@ workspace ของ Build ที่สร้างใหม่
 
 นโยบายเริ่มต้นอนุญาต agent สูงสุดสามตัว, evidence provider หรือ service สี่ตัว
 และ repository setup command สามตัวทำงานขนานกัน โดยใช้ lease 45 นาที
-task packet กับ review packet มีเพดาน 8 KiB, repository packet 12 KiB และ
-global packet 16 KiB ส่วน rapid run มีเพดาน 800,000 token กับ 100 request
+task packet กับ review packet มีเพดาน 20 KiB, repository packet 24 KiB และ
+global packet 32 KiB ส่วน rapid run มีเพดาน 800,000 token กับ 100 request
 และ standard run มีเพดาน 1,600,000 token กับ 200 request ตัวเลขเหล่านี้เป็น
 ขอบเขตสูงสุดของการรัน ไม่ใช่โควตาที่ต้องใช้ให้หมด
 

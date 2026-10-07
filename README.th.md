@@ -607,6 +607,9 @@ service, package หรือ repository, path ของ persistence, งาน 
 และไม่ลดระดับลง draft ที่ไม่ระบุหรือระบุต่ำกว่าจริงจึงยังได้ standard โดย proposal
 บอกเหตุผล หากพบ requirement ที่เข้มขึ้น `/change` จะ upgrade change เดิม
 เป็น standard
+rapid change ระดับ low ที่ไม่มี security keyword, risk signal หรือ `--review`
+พิสูจน์ด้วย test ของโปรเจกต์เองและ Land โดยไม่มี AI review เมื่อได้รับ Land
+authority แล้ว `advance --through archived` ครั้งเดียวพาจาก Build ไปถึง `archived`
 
 ## ทำความเข้าใจ State
 
@@ -789,6 +792,11 @@ product requirement หรือซ่อม state ด้วยมือถ้�
   การค้นที่อาจโดนไฟล์ลับจะข้ามไฟล์เหล่านั้นหรือแสดงแค่ชื่อไฟล์ และไฟล์ Go จะถูก
   format ให้ทันที secrets hook จะปฏิเสธการอ่านก็ต่อเมื่อสร้างสำเนาที่ปิดค่าไม่ได้
   หรือตั้ง `FOUNDATION_SECRETS_GUARD=block`
+- `shell-route-guard.sh` ปฏิเสธเฉพาะรูปแบบ shell ที่ host จะหยุดถาม approval
+  อยู่แล้ว ได้แก่ `cd <dir> && git …` หรือการรัน test ตรง ๆ ระหว่าง Build
+  โดยบอกคำสั่งที่ให้รันแทน (`git -C <dir> …` หรือ
+  `claude-foundation exec <change> -- <command>`) ถ้ามี allow rule ที่ตรงกัน
+  คำสั่งจะผ่านไปตามปกติ
 - `no-direct-main-commit.sh` เป็น opt-in เพราะบาง project อนุญาต controlled
   commit บน default branch โดย `doctor` จะรายงานว่าเปิดอยู่หรือไม่
 

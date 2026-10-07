@@ -45,8 +45,8 @@ It is seeded when missing and yours afterwards.
 
 The shipped policy permits at most three parallel agents, four evidence
 providers or services, and three repository setup commands. It uses 45-minute
-leases. Task and review packets are capped at 8 KiB, repository packets at
-12 KiB, and the global packet at 16 KiB. Rapid runs receive ceilings of 800,000
+leases. Task and review packets are capped at 20 KiB, repository packets at
+24 KiB, and the global packet at 32 KiB. Rapid runs receive ceilings of 800,000
 tokens and 100 requests; standard runs receive 1,600,000 tokens and 200
 requests. These values bound a run—they are not work quotas.
 

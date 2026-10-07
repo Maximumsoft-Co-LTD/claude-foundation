@@ -7,7 +7,7 @@ const DEFAULT_POLICY = {
     maxParallelAgents: 3,
     maxParallelProviders: 4,
     maxParallelSetups: 3,
-    packetBytes: { task: 8192, review: 8192, repository: 12288, global: 16384 },
+    packetBytes: { task: 20480, review: 20480, repository: 24576, global: 32768 },
     tokenBudgets: { rapid: 800000, standard: 1600000 },
     requestBudgets: { rapid: 100, standard: 200 },
     maxContinuationWindows: 3,

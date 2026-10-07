@@ -52,11 +52,13 @@ const PATH_TYPES = [
 // and package manifests. A change made only of these is light work.
 const LIGHT_PATHS = [
   ["docs", /\.(?:md|mdx|rst|txt)$|(?:^|\/)docs?\//i],
-  ["test", /(?:^|\/)(?:tests?|__tests__|spec)\/|\.(?:test|spec)\.[\w]+$/i],
+  ["test", /(?:^|\/)(?:tests?|__tests__|spec)\/|\.(?:test|spec)\.[\w]+$|(?:^|\/)test_[^/]+\.py$|_test\.(?:go|py)$/i],
   ["chore", /(?:^|\/)(?:package(?:-lock)?\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?)$/i]
 ];
 
-function lightKind(path) {
+// "docs", "test", "chore", or "" for product code. Prove's test
+// discrimination classifies changed paths the same way work-type inference does.
+export function lightKind(path) {
   return LIGHT_PATHS.find(([, pattern]) => pattern.test(path))?.[0] || "";
 }
 
@@ -92,6 +94,24 @@ export function docsOnlyDraft(draft) {
   return types.length > 0 && types.every((type) => type === "docs") &&
     (draft?.specs || []).every((spec) =>
       String(spec?.operation || "added").toLowerCase() === "added");
+}
+
+// The work types a compiled change states: the "## Work type" section of
+// design.md (standard) or proposal.md (rapid), else a refactor section, else
+// what its tasks' [paths:] infer — so a change compiled before work types were
+// rendered still classifies the same way its draft did.
+export function packetWorkTypes({ design = "", proposal = "", tasks = "" } = {}) {
+  for (const document of [design, proposal]) {
+    const line = String(document || "").match(/^## Work type[ \t]*\n+([^\n]+)/m)?.[1];
+    if (line) return [...new Set(line.replace(/\(.*$/, "").split(",")
+      .map((type) => type.trim().toLowerCase()).filter(Boolean))];
+  }
+  const documents = `${design || ""}\n${proposal || ""}`;
+  if (/^## Refactor invariants/m.test(documents) && !/^## Bugfix analysis/m.test(documents))
+    return ["refactor"];
+  const paths = [...String(tasks || "").matchAll(/\[paths:([^\]]*)\]/g)]
+    .flatMap((match) => match[1].split(",")).map(text).filter(Boolean);
+  return inferWorkTypes({ tasks: [{ paths }] });
 }
 
 export function workTypesInferred(draft) {

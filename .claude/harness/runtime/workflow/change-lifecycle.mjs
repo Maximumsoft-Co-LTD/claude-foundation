@@ -18,7 +18,7 @@ import {
   minimalSemanticDraftTemplate, normalizeSemanticDraft, renderRequirementMarkdown,
   renderSpecHeading, semanticDraftTemplate
 } from "./semantic-draft.mjs";
-import { collectReviewSignals } from "../evidence/evidence-contract.mjs";
+import { assembleReviewPolicy, collectReviewSignals } from "../evidence/evidence-contract.mjs";
 import { classifyReviewRisk } from "../evidence/review-routing.mjs";
 import { reviewDepthForTier, reviewModelTierForDepth } from "../evidence/review-diff.mjs";
 import {
@@ -453,8 +453,10 @@ export function renderDraftProposal(draft, state) {
   // Build) lives here. Authoring them never moves the change off rapid.
   const compact = rapid && [3, 4].includes(draft._semanticVersion);
   const flow = compact ? section(renderUserFlow(draft)) : "";
+  // A declared work type is stated here as design.md states it, so Prove can
+  // tell behavior-changing work from a refactor, docs, or chore change.
   const plan = compact ? section(renderComponentMap(draft)) + section(renderDesignBlueprints({
-    bugfix: draft.bugfix, refactor: draft.refactor, configContract: draft.configContract,
+    workType: draft.workType, bugfix: draft.bugfix, refactor: draft.refactor, configContract: draft.configContract,
     failureMatrix: derivedFailureMatrix(draft),
     fileMap: fileMapWithTasks(draft.fileMap, draft.tasks), testMap: draft.testMap
   })) + section(renderPlan(draft)) : "";
@@ -555,8 +557,8 @@ export function renderDraftDesign(draft) {
 }
 
 // The review route a change will take, in words that cannot be misread.
-// Under risk-tiered policy every change gets an AI review, so "not required"
-// would be false; the tier and the model class of its first pass are named
+// Under risk-tiered policy every change but a quiet low-tier rapid change gets
+// an AI review, so the tier and the model class of its first pass are named
 // instead. Legacy policy keeps its required/not-required meaning.
 export function reviewRouteLabel({
   reviewPolicy = "legacy", lowRiskModel = "fast", state = {}, claims = [], grounding = null
@@ -568,10 +570,13 @@ export function reviewRouteLabel({
   catch { signals = null; }
   if (reviewPolicy === "risk-tiered") {
     if (!signals) return "risk-tiered AI review (tier set at validation)";
-    const { tier } = classifyReviewRisk({
+    const riskRoute = classifyReviewRisk({
       state, claims: rows, capabilities: signals.capabilities, grounding,
       requiredTriggers: signals.requiredTriggers
     });
+    const { tier } = riskRoute;
+    if (!assembleReviewPolicy({ state, signals, riskRoute, policy: {}, riskTiered: true }).required)
+      return "not required (rapid lane, low tier: deterministic evidence only)";
     const model = lowRiskModel === "configured"
       ? "configured" : reviewModelTierForDepth(reviewDepthForTier(tier));
     return `risk-tiered AI review (${tier} tier, ${model} model)`;

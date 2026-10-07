@@ -117,7 +117,11 @@ test("runtime environment projects assurance from its normalized policy", () => 
 
 test("policy defaults and legacy execution values normalize deterministically", () => {
   const defaults = policy({}, join(root, "missing-foundation.json"));
-  assert.equal(defaults.execution.packetBytes.task, 8192);
+  assert.deepEqual(defaults.execution.packetBytes, {
+    task: 20480, review: 20480, repository: 24576, global: 32768
+  });
+  assert.equal(policy({ execution: { packetBytes: { task: 8192 } } })
+    .execution.packetBytes.task, 8192, "a configured budget overrides the default");
   assert.equal(defaults.execution.maxContinuationWindows, 3);
   assert.equal(defaults.quality.changeGate, "off");
   assert.equal(defaults.execution.budgetWatchdog, false);

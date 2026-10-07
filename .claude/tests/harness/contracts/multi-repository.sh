@@ -689,6 +689,10 @@ assert_eq "exec --repo sdk runs in the sibling sandbox" \
 for workspace in .foundation/repository-sandboxes/sibling-marker/lib "$sibling_sandbox" \
     .foundation/sandboxes/sibling-marker; do
   printf 'export const marker = "landed";\n' > "$workspace/src/marker.js"
+  # Behavior-changing work needs a test that fails on the base source.
+  printf '%s\n' 'import { test } from "node:test";' 'import assert from "node:assert";' \
+    'import { marker } from "../src/marker.js";' \
+    'test("marker", () => assert.equal(marker, "landed"));' > "$workspace/test/marker.test.js"
 done
 sibling_build=""
 for _ in 1 2 3 4 5; do

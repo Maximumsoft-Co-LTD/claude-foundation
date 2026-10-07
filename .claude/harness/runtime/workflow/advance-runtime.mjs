@@ -622,8 +622,9 @@ function buildAction(id, dispatch, state, plan = null) {
     const instructions = [
       ...(dispatch.action === "run-in-session" && tasks.length > 1 ? [
         `Implement ${tasks.map((task) => task.id).join(", ")} in this order inside the workspace.`,
-        "Run each task's checkCommand where present, then the resume command once: advance reruns every " +
-        "task's verify check, marks each passing task [x], and hands back only failures."
+        "Then run the resume command once: advance runs every task's verify check, marks each " +
+        "passing task [x], and hands back only failures with their output; run a task's " +
+        "checkCommand (present only where it has a verify) just to diagnose one."
       ] : []),
       ...reverification.map((row) =>
         `${row.taskId} is already implemented; its execution record is stale (${row.reason}). ` +

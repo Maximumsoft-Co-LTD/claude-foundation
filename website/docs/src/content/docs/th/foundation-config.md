@@ -73,10 +73,10 @@ independent หรือ diverse receipt จะบันทึก `independence-
     "maxParallelProviders": 4,
     "maxParallelSetups": 3,
     "packetBytes": {
-      "task": 8192,
-      "review": 8192,
-      "repository": 12288,
-      "global": 16384
+      "task": 20480,
+      "review": 20480,
+      "repository": 24576,
+      "global": 32768
     },
     "tokenBudgets": { "rapid": 800000, "standard": 1600000 },
     "requestBudgets": { "rapid": 100, "standard": 200 },
@@ -92,7 +92,7 @@ independent หรือ diverse receipt จะบันทึก `independence-
 | `maxParallelAgents` | จำนวนเต็ม `1..16` | ลดเมื่อเครื่องจำกัดหรืองานผูกกันแน่น เพิ่มเฉพาะเมื่อแยก task ได้ปลอดภัย |
 | `maxParallelProviders` | จำนวนเต็ม `1..16` | จำกัด provider หลักฐานและ service startup ที่เป็นอิสระต่อกัน |
 | `maxParallelSetups` | จำนวนเต็ม `1..16` | จำกัด setup command ของ repository ที่รันพร้อมกันระหว่างเตรียม Build |
-| `packetBytes.*` | จำนวนเต็ม `2048..65536` byte | เพิ่มเมื่อ task, review, repository description หรือ packet ทั้งก้อนถูกตัดจริง ๆ |
+| `packetBytes.*` | จำนวนเต็ม `2048..65536` byte | เพิ่มเมื่อ task, review, repository description หรือ packet ทั้งก้อนถูกตัดจริง ๆ การอัปเกรดจะแทนค่าเริ่มต้นเดิมแบบตรงตัว (`8192/8192/12288/16384`) ด้วยค่าปัจจุบัน และคงค่าที่ปรับเองไว้ |
 | `tokenBudgets.rapid/standard` | จำนวนเต็ม `10000..100000000` | จำกัด token ของ autonomous run หนึ่งรอบ เป็นเพดาน ไม่ใช่เป้าหมาย |
 | `requestBudgets.rapid/standard` | จำนวนเต็ม `10..100000` | จำกัดจำนวน model request ต่อ run |
 | `maxContinuationWindows` | จำนวนเต็ม `1..20` | จำกัดจำนวน continuation window ที่ operator อนุมัติแยกกัน โดยไม่บังคับงานเดิมที่ยังค้างให้แตกเป็น Change ใหม่ |

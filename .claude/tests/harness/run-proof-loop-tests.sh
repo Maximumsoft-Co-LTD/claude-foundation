@@ -106,6 +106,9 @@ draft() {
     cat start.log >&2
     exit 1
   fi
+  if [ -n "${REVIEW_FLAG:-}" ]; then
+    node .claude/harness/foundation.mjs resolve "$change_id" "$REVIEW_FLAG" >> start.log 2>&1
+  fi
   node .claude/harness/foundation.mjs resolve "$change_id" --approve-spec --decision-ref fixture://user/spec >> start.log 2>&1
   if [ "${5:-}" = worktree ]; then
     # Fixture-only intake outputs must be in the base before isolation; an
@@ -197,20 +200,23 @@ assert_cmd_zero "discovery counted the node --test result" node -e \
 setup_project review-waiver
 export FOUNDATION_FIXTURE_PREREQUISITE="$TMP/dependency-ready"
 printf '%s\n' '{"workflow":{"grounding":"optional","reviewPolicy":"risk-tiered"},"land":{"riskBasedCi":false},"sandbox":{"setupCommand":"test -f \"$FOUNDATION_FIXTURE_PREREQUISITE\""}}' > foundation.json
-draft "Review waiver" "test-results/report.json"
+# A quiet low-tier rapid change runs no review; `--review` (which selects the
+# standard lane) keeps a review to waive.
+REVIEW_FLAG=--review draft "Review waiver" "test-results/report.json"
 assert_eq "installed consumer retains failed setup for retry" failed \
   "$(node -p 'require("./.foundation/runtime/review-waiver.json").workspace.setup.status')"
 printf 'available\n' > "$FOUNDATION_FIXTURE_PREREQUISITE"
 node .claude/harness/foundation.mjs advance review-waiver --through build >/dev/null
 assert_eq "fresh installed runtime retries restored setup" ok \
   "$(node -p 'require("./.foundation/runtime/review-waiver.json").workspace.setup.status')"
-# Synthetic fixture telemetry exercises an explicitly authorized continuation.
+# Synthetic fixture telemetry exercises an explicitly authorized continuation;
+# each event spends the whole standard-lane token budget (`--review` above).
 unset FOUNDATION_CLAUDE_SESSION_ID FOUNDATION_CLAUDE_TRANSCRIPT_PATH CODEX_THREAD_ID FOUNDATION_SESSION_ID
 export FOUNDATION_RUN_ID=fixture-budget-recovery
-node .claude/harness/foundation.mjs event review-waiver --request fixture-exhaustion --input 800000 --output 0 >/dev/null
+node .claude/harness/foundation.mjs event review-waiver --request fixture-exhaustion --input 1600000 --output 0 >/dev/null
 assert_eq "installed consumer continues its first exhausted budget" harness-auto-continue \
   "$(node -p 'require("./.foundation/runtime/review-waiver.json").budget.window.reason')"
-node .claude/harness/foundation.mjs event review-waiver --request fixture-exhaustion-2 --input 800000 --output 0 >/dev/null
+node .claude/harness/foundation.mjs event review-waiver --request fixture-exhaustion-2 --input 1600000 --output 0 >/dev/null
 assert_eq "installed consumer continues a second exhausted budget" harness-auto-continue \
   "$(node -p 'require("./.foundation/runtime/review-waiver.json").budget.window.reason')"
 node .claude/harness/foundation.mjs budget-continue review-waiver --reason "Fixture user authorizes completion" --decision-ref fixture://user/budget >/dev/null

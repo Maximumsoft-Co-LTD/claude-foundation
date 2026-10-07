@@ -7,7 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Packet budgets (user decision: raise the defaults so large work fits): task
+  and review packets 8 KiB -> 20 KiB, repository 12 KiB -> 24 KiB, global
+  16 KiB -> 32 KiB. A paid three-repository API-keys run (3 tasks, 10/4/20
+  claims, ~22 changed paths) was blocked at `packet --task` (9,951 bytes) and
+  `packet --phase build` (19,623 bytes); a deterministic replay measured task
+  packets up to 11.7 KB, repository 14.3 KB, review 12.2 KB, and global
+  18.0 KB, so the new defaults give about 1.5x headroom. The `2048..65536`
+  hard ceiling, `foundation.json` overrides, and the largest-fields BLOCKED
+  diagnostic are unchanged. The installer replaces only the exact former
+  seeded defaults (`8192/8192/12288/16384`) and keeps tuned budgets.
+- Rapid fast path: under `workflow.reviewPolicy: "risk-tiered"`, a low-tier
+  `foundation-rapid` change that nothing asks to review (no declared or keyword
+  security trigger, `--review`, `riskSignals`, review capability, or
+  required/diversity trigger) no longer runs an AI review; the project's
+  deterministic evidence proves it. `RESOLVED` prints
+  `review: not required (rapid lane, low tier: deterministic evidence only)`
+  and the review-assurance note is omitted. Standard changes, any higher tier,
+  and capabilities inferred from the built diff keep review. Paid w4 runs spent
+  18-24 s of each rapid Prove in review. The contract fingerprint keeps its
+  pre-exemption review shape, so upgrading never re-verifies an in-flight
+  change.
+- `/dev` with Land authority passes `--through archived` to every `advance`,
+  so a resume route never stops at `build` or `proven` first. Build no longer
+  asks the agent to run each `checkCommand` before resuming (`advance` already
+  runs every task check and returns failures with output), and `cd
+  <workspace>` is needed only before a plain shell command. The `/dev`
+  instruction bundle shrinks by three words.
+
 ### Added
+
+- New shipped Bash PreToolUse hook `shell-route-guard.sh` refuses shell shapes
+  the host would stop on a permission prompt anyway, and the reason gives the
+  exact command to run instead, so an unattended agent can correct in one step:
+  `cd <dir> && git …` becomes `git -C <dir> …`. A direct test run (`npm test`,
+  `node --test`, `pytest`, `go test`, …, optionally piped to `tail`/`head`)
+  while a change is in Build becomes `claude-foundation exec <change> [--repo
+  <id>] -- <command>`. A matching Bash allow rule, `bypassPermissions`, or a
+  command the hook cannot parse passes through. `FOUNDATION_GUARDRAIL_MODE=audit`
+  turns the refusal into advice, and `off` disables it. The installer adds the
+  hook to existing settings.
+
+- A draft-validation `EDIT` from `change start`, `change revise`, or `change
+  amend` now carries an `instruction`: apply every fix with the Edit tool on the
+  pre-allowed `.foundation/drafts/**` file, never a python, `node -e`, `sed -i`,
+  `jq`, or heredoc rewrite, which the host refuses as permission prompts.
+  `/change` names the same route. The session digest adds one `Agent shell:`
+  line naming the refused shell shapes (`cd` chains, `$VAR`/`$(…)`, braces,
+  heredocs, `sed -i`, scripts) and, when `openspec/repositories.yaml` declares
+  an `allowOutsideRoot` sibling, names it as outside the working directory so
+  Change grounds it from in-root sources and reads it in its Build repository
+  sandbox. No permission rule is widened.
 
 - Build `EDIT` tasks carry a `checkCommand`: the task's verify wrapped as
   `claude-foundation exec <change> --task <id> -- <verify>` (`sh -c` when the
@@ -259,6 +311,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   asks only for `why`.
 
 ### Fixed
+
+- `packet <change> --task <id>` for an already-completed task prints that
+  task's read-only packet (`executionAuthority.status: "completed"`,
+  `readOnly: true`) instead of `BLOCKED: unknown pending task`; `agents task`
+  still dispatches only pending tasks and unknown ids still block.
 
 - A writable sibling repository declared outside the root (`../sdk` with
   `allowOutsideRoot: true`) can own draft tasks again. `change start` no longer

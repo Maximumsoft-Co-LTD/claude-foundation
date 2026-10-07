@@ -85,6 +85,9 @@ if command -v jq >/dev/null 2>&1; then
   assert_cmd_zero "detached authority run is rewritten to run attached" \
     node --test "$ROOT/.claude/tests/hooks/no-detached-authority.test.mjs"
 
+  assert_cmd_zero "host-refused shell shapes are denied with their runnable route" \
+    node --test "$ROOT/.claude/tests/hooks/shell-route-guard.test.mjs"
+
   assert_cmd_zero "opt-in direct-main hook self-test" \
     bash "$ROOT/.claude/hooks/no-direct-main-commit.sh" --self-test
 else
