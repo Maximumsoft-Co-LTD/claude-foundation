@@ -20,7 +20,7 @@ import {
 } from "./semantic-draft.mjs";
 import { assembleReviewPolicy, collectReviewSignals } from "../evidence/evidence-contract.mjs";
 import { classifyReviewRisk } from "../evidence/review-routing.mjs";
-import { reviewDepthForTier, reviewModelTierForDepth } from "../evidence/review-diff.mjs";
+import { reviewModelClass } from "../evidence/review-diff.mjs";
 import {
   semanticIntakeAction, semanticIntakeIssues
 } from "./validation/semantic-intake.mjs";
@@ -593,7 +593,8 @@ export function renderDraftDesign(draft) {
 // an AI review, so the tier and the model class of its first pass are named
 // instead. Legacy policy keeps its required/not-required meaning.
 export function reviewRouteLabel({
-  reviewPolicy = "legacy", lowRiskModel = "fast", state = {}, claims = [], grounding = null
+  reviewPolicy = "legacy", lowRiskModel = "fast", modelByTier = undefined,
+  state = {}, claims = [], grounding = null
 } = {}) {
   const rows = (Array.isArray(claims) ? claims : []).filter((claim) =>
     claim && typeof claim === "object" && Array.isArray(claim.capabilities));
@@ -607,10 +608,16 @@ export function reviewRouteLabel({
       requiredTriggers: signals.requiredTriggers
     });
     const { tier } = riskRoute;
-    if (!assembleReviewPolicy({ state, signals, riskRoute, policy: {}, riskTiered: true }).required)
+    const assembled = assembleReviewPolicy({
+      state, signals, riskRoute, policy: {}, riskTiered: true
+    });
+    if (!assembled.required)
       return "not required (rapid lane, low tier: deterministic evidence only)";
-    const model = lowRiskModel === "configured"
-      ? "configured" : reviewModelTierForDepth(reviewDepthForTier(tier));
+    const model = reviewModelClass({
+      tier, triggers: assembled.triggers,
+      declaredReview: Boolean(state.reviewRequired) && !state.reviewKeywordOnly,
+      settings: { lowRiskModel, modelByTier }
+    });
     return `risk-tiered AI review (${tier} tier, ${model} model)`;
   }
   const required = Boolean(state.reviewRequired) ||
@@ -1809,6 +1816,7 @@ export function createChangeLifecycle({
     return reviewRouteLabel({
       reviewPolicy: workflowPolicy().workflow?.reviewPolicy,
       lowRiskModel: workflowPolicy().review?.lowRiskModel,
+      modelByTier: workflowPolicy().review?.modelByTier,
       state,
       claims: Array.isArray(claims) ? claims : [],
       grounding: parse("grounding.yaml")

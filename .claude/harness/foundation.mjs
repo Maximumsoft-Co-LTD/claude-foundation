@@ -1128,6 +1128,7 @@ const {
   acknowledgeInfrastructureAttempts,
   acknowledgeBaseMoveAttempts,
   autoReleaseReviewBudget,
+  clearSnapshotCache,
   writeJson,
   receiptPath,
   recordReceipt,

@@ -63,7 +63,7 @@ const SPEC = `# Export
 - **THEN** export is disabled
 `;
 
-function harness(t, { tier = "low" } = {}) {
+function harness(t, { tier = "low", triggers = [], review = {}, runtimeState = {} } = {}) {
   const fixture = mkdtempSync(join(tmpdir(), "foundation-scenario-escalation-"));
   t.after(() => rmSync(fixture, { recursive: true, force: true }));
   const contract = join(fixture, "contract");
@@ -72,7 +72,7 @@ function harness(t, { tier = "low" } = {}) {
   writeFileSync(join(contract, "evidence.yaml"), JSON.stringify({ version: 2, claims: [
     { id: "claim-export", requirementKey: "csv-export", scenario: "Export all rows" }] }));
   writeFileSync(join(fixture, "app.txt"), "one\ntwo\n");
-  let state = { version: 2, changeId: "change-a", reviewHistory: null };
+  let state = { version: 2, changeId: "change-a", reviewHistory: null, ...runtimeState };
   const calls = [];
   const results = [];
   const attemptStore = createReviewAttemptStore({
@@ -86,8 +86,8 @@ function harness(t, { tier = "low" } = {}) {
   });
   const reviewerConfig = (name, modelTier = null) => ({
     identity: name || "claude-opus", providerFamily: "anthropic", modelFamily: "Claude",
-    modelId: modelTier === "fast" ? "haiku" : "opus",
-    ...(modelTier === "fast" ? { modelTier } : {})
+    modelId: modelTier === "fast" ? "haiku" : modelTier === "standard" ? "sonnet" : "opus",
+    ...(["fast", "standard"].includes(modelTier) ? { modelTier } : {})
   });
   const runConfiguredReview = (args) => {
     calls.push(args);
@@ -141,7 +141,7 @@ function harness(t, { tier = "low" } = {}) {
     validate: () => {}, pendingTasks: () => [], claimsForProvider: () => [{ id: "claim-export" }],
     stableHash, now,
     reviewPolicy: () => ({ independence: "required", diversity: "single-model", tier,
-      maxAiAttempts: tier === "low" ? 1 : 2 }),
+      triggers, maxAiAttempts: tier === "low" ? 1 : 2 }),
     readJson, expandList: (value) => value, listCount: (value) => value.length,
     dispatchReviewAttempt: attemptStore.dispatchReviewAttempt,
     completeReviewAttempt: attemptStore.completeReviewAttempt,
@@ -152,7 +152,7 @@ function harness(t, { tier = "low" } = {}) {
     assertReviewDispatchAllowed: attemptStore.assertReviewDispatchAllowed,
     foundationPolicy: () => ({ workflow: { reviewCircuit: "full-delta" },
       review: { defaultReviewer: "claude-opus", diversity: "single-model",
-        independence: "required" } }),
+        independence: "required", ...review } }),
     reviewerConfig, runConfiguredReview,
     runConfiguredReviewAsync: async (args) => runConfiguredReview(args),
     reviewerStatus: () => ({ ok: true }), writeJson,
@@ -279,13 +279,73 @@ test("unparseable coverage escalates; configured unsure alone does not escalate 
   assert.equal(h.delivered()[0].modelEscalation.reason, "scenario-coverage-unparseable");
 });
 
-test("configured-tier (medium) rounds never escalate", (t) => {
-  const h = harness(t, { tier: "medium" });
+test("configured-model (high) rounds never escalate", (t) => {
+  const h = harness(t, { tier: "high" });
   const { requestId } = h.request();
   h.results.push({ status: "pass", findings: [], scenarioCoverage: covered("unsure") });
   quiet(() => h.authority.runAuthorityReviewer("change-a", h.flags(requestId)));
   assert.equal(h.calls.length, 1);
-  assert.equal(h.calls[0].modelTier, null);
+  assert.equal(h.calls[0].modelTier, null, "the configured model runs untiered");
+});
+
+// The medium tier's first round runs on the standard model class and
+// escalates exactly like the fast class; pinned triggers and overrides keep
+// the configured model.
+test("medium tier runs the standard model and escalates an unsure scenario once", (t) => {
+  const h = harness(t, { tier: "medium", triggers: ["medium-impact-or-coupling", "review-risk"] });
+  const { requestId } = h.request();
+  h.results.push({ status: "pass", findings: [], scenarioCoverage: covered("unsure") },
+    { status: "pass", findings: [], scenarioCoverage: covered() });
+  const report = quiet(() => h.authority.runAuthorityReviewer("change-a", h.flags(requestId)));
+  assert.deepEqual(h.calls.map((call) => call.modelTier), ["standard", "configured"]);
+  assert.equal(h.calls[1].escalatedFrom, "standard");
+  assert.equal(report.status, "pass");
+  assert.equal(h.history().aiAttempts, 1, "escalation is not a second wave");
+  const attempt = h.delivered()[0];
+  assert.equal(attempt.reviewerModelId, "opus");
+  assert.equal(attempt.modelEscalation.escalatedFrom, "standard");
+  assert.equal(attempt.modelEscalation.fastModelId, "sonnet",
+    "the cheaper model that was escalated from is recorded");
+});
+
+test("medium tier records the standard model when fully covered", (t) => {
+  const h = harness(t, { tier: "medium", triggers: ["review-risk"] });
+  const { requestId } = h.request();
+  h.results.push({ status: "pass", findings: [], scenarioCoverage: covered() });
+  quiet(() => h.authority.runAuthorityReviewer("change-a", h.flags(requestId)));
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.calls[0].modelTier, "standard");
+  assert.equal(h.entry(requestId).dispatch.reviewer.modelId, "sonnet");
+});
+
+for (const [name, options] of [
+  ["a security or required-review trigger", { tier: "medium", triggers: ["review-risk", "risk-semantics"] }],
+  ["a declared review", { tier: "medium", triggers: ["review-risk"],
+    runtimeState: { reviewRequired: true } }],
+  ["an unknown trigger", { tier: "medium", triggers: ["review-risk", "added-later"] }],
+  ["review.modelByTier.medium pinned to configured", { tier: "medium", triggers: ["review-risk"],
+    review: { modelByTier: { medium: "configured" } } }],
+  ["an unrecognized configured class", { tier: "medium", triggers: ["review-risk"],
+    review: { modelByTier: { medium: "turbo" } } }]
+]) {
+  test(`medium tier keeps the configured model for ${name}`, (t) => {
+    const h = harness(t, options);
+    const { requestId } = h.request();
+    h.results.push({ status: "pass", findings: [], scenarioCoverage: covered("unsure") });
+    quiet(() => h.authority.runAuthorityReviewer("change-a", h.flags(requestId)));
+    assert.equal(h.calls.length, 1, "no escalation: the strong model already ran");
+    assert.equal(h.calls[0].modelTier, null, "the configured model runs untiered");
+    assert.equal(h.entry(requestId).dispatch.reviewer.modelId, "opus");
+  });
+}
+
+test("a keyword-only review at the medium tier still uses the standard model", (t) => {
+  const h = harness(t, { tier: "medium", triggers: ["review-risk"],
+    runtimeState: { reviewRequired: true, reviewKeywordOnly: true } });
+  const { requestId } = h.request();
+  h.results.push({ status: "pass", findings: [], scenarioCoverage: covered() });
+  quiet(() => h.authority.runAuthorityReviewer("change-a", h.flags(requestId)));
+  assert.equal(h.calls[0].modelTier, "standard");
 });
 
 test("async concurrent review path escalates too", async (t) => {

@@ -20,7 +20,8 @@ import { checkpointReviewResult, recoverReviewResult } from
 import { spawnSync } from "node:child_process";
 import { lstatSync, readdirSync } from "node:fs";
 import {
-  reviewAgreementValue, reviewDepthForTier, reviewDiffValue, reviewModelTierForDepth
+  reviewAgreementValue, reviewDepthForTier, reviewDiffValue, reviewModelClass,
+  reviewModelTierForDepth
 } from "../runtime/evidence/review-diff.mjs";
 import { reviewPromptPayload, reviewerConfigValue } from
   "../runtime/evidence/configured-reviewer.mjs";
@@ -602,6 +603,25 @@ try {
   }));
   assert.throws(() => environment.foundationPolicy(),
     /providerFamily must be anthropic/);
+  // review.modelByTier: low|medium only, known classes only; high is never weakened.
+  const modelByTierPolicy = (modelByTier) => writeFileSync(policyPath, JSON.stringify({
+    version: 1, review: {
+      defaultReviewer: "claude-opus", reviewers: { "claude-opus": reviewer }, modelByTier
+    }
+  }));
+  modelByTierPolicy({ low: "fast", medium: "configured" });
+  assert.deepEqual(environment.foundationPolicy().review.modelByTier,
+    { low: "fast", medium: "configured" });
+  modelByTierPolicy({ medium: "turbo" });
+  assert.throws(() => environment.foundationPolicy(),
+    /modelByTier.medium must be fast\|standard\|configured/);
+  modelByTierPolicy({ high: "fast" });
+  assert.throws(() => environment.foundationPolicy(),
+    /modelByTier.high is not configurable/);
+  modelByTierPolicy({ extreme: "fast" });
+  assert.throws(() => environment.foundationPolicy(), /not a risk tier/);
+  modelByTierPolicy(["medium"]);
+  assert.throws(() => environment.foundationPolicy(), /modelByTier must be an object/);
 
   const recoveryReference = ".foundation/reviews/recovery/saved.json";
   const recoveryPath = join(root, recoveryReference);
@@ -673,6 +693,68 @@ try {
     null, "fast").modelId, "opus", "lowRiskModel: configured opts out");
   assert.equal(reviewerConfigValue(tierPolicy(), "codex", "fast").modelId, "gpt-5",
     "a Codex reviewer without fastModelId keeps its configured model");
+
+  // Medium tier: the standard class uses the existing alias mechanism.
+  const standardPolicy = (review = {}, extra = {}) => ({
+    foundationPolicy: () => ({ models: { fast: { family: "haiku" }, standard: { family: "sonnet" } },
+      review: { defaultReviewer: "claude-opus", reviewers: {
+        "claude-opus": { ...reviewer, ...extra }, codex: codexReviewer }, ...review } }),
+    fail: (message) => { throw new Error(message); }
+  });
+  const standardClaude = reviewerConfigValue(standardPolicy(), null, "standard");
+  assert.equal(standardClaude.modelId, "sonnet");
+  assert.equal(standardClaude.modelTier, "standard");
+  assert.equal(standardClaude.modelFamily, "sonnet",
+    "the standard alias records the family of the model actually run");
+  assert.equal(standardClaude.reasoningEffort, "high",
+    "the standard class keeps the configured reasoning effort");
+  assert.equal(standardClaude.providerFamily, "anthropic");
+  assert.equal(reviewerConfigValue(standardPolicy({}, {
+    standardModelId: "claude-sonnet-9", standardModelFamily: "Sonnet"
+  }), null, "standard").modelId, "claude-sonnet-9", "explicit standardModelId wins");
+  assert.equal(reviewerConfigValue(tierPolicy(), null, "standard").modelId, "opus",
+    "no models.standard alias fails closed to the configured model");
+  assert.equal(reviewerConfigValue(standardPolicy(), "codex", "standard").modelId, "gpt-5",
+    "a Codex reviewer without standardModelId keeps its configured model");
+  assert.deepEqual(reviewerConfigValue(standardPolicy(), null, "configured"),
+    { identity: "claude-opus", ...reviewer });
+
+  // Tier -> model class. Tier assignment is untouched; only the class changes.
+  const safeMedium = ["medium-impact-or-coupling", "review-risk"];
+  assert.equal(reviewModelClass({ tier: "low" }), "fast", "low first round: fast");
+  assert.equal(reviewModelClass({ tier: "low", deliveredAiCount: 1 }), "configured",
+    "a promoted low second round keeps the configured model");
+  assert.equal(reviewModelClass({ tier: "medium", triggers: safeMedium }), "standard",
+    "medium first round: the faster standard class by default");
+  assert.equal(reviewModelClass({ tier: "medium", triggers: safeMedium, deliveredAiCount: 1 }),
+    "configured", "a delta/closure round keeps the configured model");
+  assert.equal(reviewModelClass({ tier: "high", triggers: ["authorization-or-secrets"] }),
+    "configured", "high: the strong model");
+  assert.equal(reviewModelClass({ tier: "high", settings: { modelByTier: { high: "fast" } } }),
+    "configured", "high is never configurable");
+  assert.equal(reviewModelClass({ tier: undefined }), "configured", "legacy routing");
+  for (const trigger of ["access-control", "authorization-or-secrets", "risk-capability",
+    "risk-semantics", "multi-repository-claim", "covered-by-review:resilience",
+    "critical-capability", "diversity-waived-single-model", "added-later"])
+    assert.equal(reviewModelClass({ tier: "medium", triggers: [...safeMedium, trigger] }),
+      "configured", `${trigger} pins the configured model at medium`);
+  assert.equal(reviewModelClass({ tier: "medium", triggers: safeMedium, declaredReview: true }),
+    "configured", "a declared review pins the configured model");
+  assert.equal(reviewModelClass({ tier: "medium", triggers: undefined }), "configured",
+    "unknown triggers fail closed");
+  assert.equal(reviewModelClass({ tier: "medium", triggers: safeMedium,
+    settings: { modelByTier: { medium: "configured" } } }), "configured",
+  "a team can pin the strong model for medium");
+  assert.equal(reviewModelClass({ tier: "medium", triggers: safeMedium,
+    settings: { modelByTier: { medium: "fast" } } }), "fast");
+  assert.equal(reviewModelClass({ tier: "medium", triggers: safeMedium,
+    settings: { modelByTier: { medium: "turbo" } } }), "configured",
+  "an unrecognized class fails closed to the configured model");
+  assert.equal(reviewModelClass({ tier: "low", settings: { lowRiskModel: "configured" } }),
+    "configured", "the older low-tier opt-out still works");
+  assert.equal(reviewModelClass({ tier: "low", settings: {
+    lowRiskModel: "configured", modelByTier: { low: "standard" } } }), "standard",
+  "an explicit per-tier class wins over the older opt-out");
 
   const diffRepo = join(root, "diff-repo");
   mkdirSync(join(diffRepo, "src"), { recursive: true });

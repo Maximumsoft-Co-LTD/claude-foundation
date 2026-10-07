@@ -139,6 +139,7 @@ environment descriptor|node --test "$ROOT/.claude/harness/tests/environment-desc
 execution preparation|node --test "$ROOT/.claude/harness/tests/tool-preparation.test.mjs"
 review policy|node --test "$ROOT/.claude/harness/tests/review-policy.test.mjs"
 rapid fast path seam|node --test "$ROOT/.claude/harness/tests/rapid-fast-path-seam.test.mjs"
+review overlap seam|node --test "$ROOT/.claude/harness/tests/review-overlap-seam.test.mjs"
 concurrent changes seam|node --test "$ROOT/.claude/harness/tests/concurrent-different-files.test.mjs" "$ROOT/.claude/harness/tests/concurrent-same-file.test.mjs" "$ROOT/.claude/harness/tests/concurrent-same-lines.test.mjs" "$ROOT/.claude/harness/tests/concurrent-user-edit.test.mjs"
 harness time primitives|node --test "$ROOT/.claude/harness/tests/harness-time-primitives.test.mjs"
 harness time seam|node --test "$ROOT/.claude/harness/tests/harness-time-seam.test.mjs"

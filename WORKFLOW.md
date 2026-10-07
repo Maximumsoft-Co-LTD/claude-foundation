@@ -1224,10 +1224,17 @@ Under legacy policy it prints `required` or
 `not required (legacy review policy: no AI review runs)`. The review reads the change's diff and
 the agreement's requirements, not whole files. Low risk runs one diff-only
 review on the fast model tier at medium effort (`review.lowRiskModel:
-"configured"` or a reviewer `fastModelId` overrides it); medium and high keep
-the configured model at high effort. Every full round receives the agreement's scenario checklist and must
+"configured"` or a reviewer `fastModelId` overrides it). The first medium round
+deliberately runs on a faster standard model (a speed/depth trade-off:
+the reviewer's `standardModelId`, else the `models.standard.family` alias) at the
+configured effort, unless the change carries a security or required-review
+trigger or a declared review, which keep the configured model. High and every
+later round keep the configured model at high effort. A team pins the strong model
+for medium or picks another class with `review.modelByTier` (`low` and `medium`
+to `fast|standard|configured`; `high` is not configurable; unknown values fall
+back to the configured model). Every full round receives the agreement's scenario checklist and must
 report each scenario as covered, missing, or unsure; a missing scenario becomes
-a blocking finding that goes straight to repair. If a fast first round is
+a blocking finding that goes straight to repair. If a fast or standard first round is
 only unsure of a scenario or its coverage is unreadable, the harness re-runs
 that review once on the configured model without consuming a review round. Security triggers are declared (draft `securityTriggers` or
 `resolve --security`) or inferred from intent keywords: declared triggers

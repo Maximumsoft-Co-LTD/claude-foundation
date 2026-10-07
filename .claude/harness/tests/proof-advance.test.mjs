@@ -840,6 +840,12 @@ function concurrentFixture(options = {}) {
   let testOutcome = options.testOutcome || "pass";
   let reviewOutcome = options.reviewOutcome || "pass";
   let testStarted = null;
+  // A readiness read before the forced snapshot carries the hash of a snapshot
+  // cached before the latest edits; forcing the snapshot refreshes the cache.
+  let cachedHash = options.staleCache ? "workspace-stale" : null;
+  const discriminationStarted = Promise.withResolvers();
+  const discriminationCalls = [];
+  const readHash = () => cachedHash || workspaceHash;
   const receipts = {};
   const requests = [];
   const delivered = [...(options.deliveredAiAttempts || [])];
@@ -855,7 +861,7 @@ function concurrentFixture(options = {}) {
   const readiness = () => {
     const pending = ["test", "review"].filter((provider) => validity(provider) !== "valid");
     return {
-      version: 1, changeId: "change-a", workspaceHash, issues: [],
+      version: 1, changeId: "change-a", workspaceHash: readHash(), issues: [],
       status: pending.length ? "NEEDS_USER_DECISION" : "READY",
       externalProviders: pending.filter((provider) => provider === "review"),
       unavailableProviders: [], pendingTasks: [], next: []
@@ -863,7 +869,10 @@ function concurrentFixture(options = {}) {
   };
   const runtime = createProofExecutionRuntime({
     proofReadinessValue: readiness,
-    relevantSnapshot: () => ({ id: `snapshot-${workspaceHash}`, workspaceHash }),
+    relevantSnapshot: (_id, _workspace, force) => {
+      if (force && cachedHash) cachedHash = null;
+      return { id: `snapshot-${workspaceHash}`, workspaceHash };
+    },
     loadRuntime: () => state,
     saveRuntime: (next) => { state = next; },
     now: () => "2026-10-01T00:00:00.000Z",
@@ -924,6 +933,10 @@ function concurrentFixture(options = {}) {
           // never resolves this and the bounded wait below fails the test.
           await testStarted.promise;
           testStarted = null;
+          // With `overlapDiscrimination` the review can only finish after the
+          // base-source discrimination run began: a controller that joins the
+          // review first never lets it finish and the bounded wait fails.
+          if (options.overlapDiscrimination) await discriminationStarted.promise;
           events.push("review:end");
           const stored = requests.find((row) => row.requestId === request.requestId);
           stored.status = reviewOutcome === "pass" ? "completed" : "rejected";
@@ -940,6 +953,12 @@ function concurrentFixture(options = {}) {
           });
         })();
       },
+    testDiscrimination: (_id, hash) => {
+      discriminationCalls.push(hash);
+      events.push("discrimination");
+      discriminationStarted.resolve();
+      return options.discrimination || { status: "pass", findings: [] };
+    },
     recordDeterministicReviewClosure: options.closure
       ? (...args) => options.closure({ delivered, receipts, validity }, ...args)
       : undefined,
@@ -947,7 +966,7 @@ function concurrentFixture(options = {}) {
     die: (message) => { throw new Error(message); }
   });
   return {
-    runtime, events, reviewCommands, receipts, testRunIds,
+    runtime, events, reviewCommands, receipts, testRunIds, discriminationCalls,
     advance: () => quiet(() => within(
       runtime.proofAdvance("change-a", { concurrentReview: true }), 2000,
       "concurrent review and providers must overlap, not run serially")),
@@ -968,6 +987,45 @@ function concurrentFixture(options = {}) {
     /^claude-foundation authority run change-a --request review-1 --subject-actor implementation-agent$/);
   assert.equal(run.reviewCommands[0].workspaceHash, "workspace-a",
     "the review binds to the same workspace hash as the providers");
+}
+
+{
+  // A readiness hash read from a snapshot cached before the latest edits must
+  // not disable the overlap: the pass re-derives it from the forced snapshot.
+  const run = concurrentFixture({ staleCache: true });
+  const passed = await run.advance();
+  assert.equal(passed.status, "PASS");
+  assert.deepEqual(run.events.slice(0, 2), ["review:start", "test:start"]);
+  assert.equal(run.reviewCommands[0].workspaceHash, "workspace-a",
+    "the review binds to the fresh hash, never the cached one");
+}
+
+{
+  // The base-source discrimination run starts while the review is in flight
+  // and is evaluated once, for the workspace hash the review is bound to.
+  const run = concurrentFixture({ overlapDiscrimination: true });
+  const passed = await run.advance();
+  assert.equal(passed.status, "PASS");
+  assert.deepEqual(run.events.filter((event) => event !== "test:end"),
+    ["review:start", "test:start", "discrimination", "review:end"]);
+  assert.deepEqual(run.discriminationCalls, ["workspace-a"]);
+}
+
+{
+  // Non-discriminating tests found beside the review stop with the repair
+  // route only after the reviewer finished: no dangling reviewer, and the
+  // delivered verdict stays bound to its workspace hash.
+  const priorExitCode = process.exitCode;
+  const run = concurrentFixture({ overlapDiscrimination: true, discrimination: {
+    status: "fail",
+    findings: [{ id: "test-discrimination:root", provider: "test", repositoryId: "root",
+      message: "tests pass on the base source" }]
+  } });
+  const stop = await run.advance();
+  process.exitCode = priorExitCode;
+  assert.equal(stop.stage, "tests-not-discriminating");
+  assert.ok(run.events.includes("review:end"), "the reviewer finished before the stop returned");
+  assert.notEqual(stop.status, "PASS");
 }
 
 {

@@ -667,10 +667,14 @@ export function createProofExecutionRuntime({
   // from the original code. The agent strengthens the tests; this is the same
   // convergent evidence gate, so changed tests are progress and an unchanged
   // rerun reaches the existing no-progress boundary.
-  function discriminationRepairStop(id, readiness, advanceStart, executedProviders) {
+  function discriminationRepairStop(id, readiness, advanceStart, executedProviders,
+    early = null) {
     if (!testDiscrimination || !["READY", "NEEDS_USER_DECISION"].includes(readiness.status))
       return null;
-    const result = testDiscrimination(id, readiness.workspaceHash);
+    // A result computed beside the concurrent review binds to the hash it ran
+    // on; any other hash is evaluated again.
+    const result = early?.workspaceHash === readiness.workspaceHash
+      ? early.result : testDiscrimination(id, readiness.workspaceHash);
     if (result?.status !== "fail" || !result.findings?.length) return null;
     return stopProofAdvance(writeConvergentRepairStop(id, readiness, advanceStart, {
       gate: "evidence", stage: "tests-not-discriminating", findings: result.findings,
@@ -923,6 +927,17 @@ export function createProofExecutionRuntime({
     }
     executedProviders = collection.executedProviders || [];
     readiness = collection.readiness;
+    // The base-source discrimination run is read-only on the workspace (it
+    // builds its own scratch tree), so it runs while the reviewer child is
+    // still alive: the child keeps running while this synchronous call blocks.
+    let discrimination = null;
+    if (review && ["READY", "NEEDS_USER_DECISION"].includes(readiness.status) &&
+        testDiscrimination) {
+      discrimination = {
+        workspaceHash: readiness.workspaceHash,
+        result: testDiscrimination(id, readiness.workspaceHash)
+      };
+    }
     // Join before classifying: the review verdict is bound to this same
     // workspace hash and belongs to this pass's readiness.
     if (review) {
@@ -942,7 +957,7 @@ export function createProofExecutionRuntime({
       });
       return { outcome: stopProofAdvance(outcome) };
     }
-    return { readiness, authorityRequests, executedProviders };
+    return { readiness, authorityRequests, executedProviders, discrimination };
   }
 
   async function finishProofAdvance(id, advanceStart, readiness,
@@ -1184,7 +1199,11 @@ export function createProofExecutionRuntime({
     let readiness = proofReadinessValue(id, "prove");
     const audit = proofAudit(id, true);
     let forcedSnapshot = null;
-    if (readiness.status === "READY" && audit.valid) {
+    // A pass that will run providers (or a concurrent review) binds to the
+    // forced snapshot, so a readiness hash read from a snapshot cached before
+    // the latest edits is re-derived here, not discovered mid-pass.
+    if ((readiness.status === "READY" && audit.valid) ||
+        readiness.status === "NEEDS_USER_DECISION") {
       // Audit authenticates the copied evidence, while this forced snapshot
       // establishes that it still belongs to the current workspace.
       forcedSnapshot = relevantSnapshot(id, null, true);
@@ -1333,7 +1352,7 @@ export function createProofExecutionRuntime({
     ({ readiness, authorityRequests } = executionResult);
     const { executedProviders } = executionResult;
     const discrimination = discriminationRepairStop(
-      id, readiness, advanceStart, executedProviders);
+      id, readiness, advanceStart, executedProviders, executionResult.discrimination);
     if (discrimination) return discrimination;
 
     // Two delivered AI waves are the end of the open-review route, not the

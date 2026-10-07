@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**v3.6.0 at a glance.** Behavior changes you will notice:
+
+- Wall time: rapid changes target at most 1.5x, standard changes at most 1.8x
+  the same task without the harness (advisory time gate, lane-aware).
+- Medium-risk Prove review now runs its first round on the faster `standard`
+  model class by default; pin the old behavior with
+  `review.modelByTier.medium: "configured"`. High risk is unchanged.
+- Every change opens with a rendered header, scope, acceptance traceability
+  table, and definition of done; tasks live only in `tasks.md`. Existing
+  changes keep their older layout and still read.
+- Multi-repository and submodule work, copy-mode isolation, and the rapid
+  fast path are fixed or faster; Prove now requires new tests to fail on the
+  original code.
+- Data-loss fix: resolving a Land conflict can no longer silently discard work
+  that already landed (`resolutionKeepsLanded`).
+- A shipped `shell-route-guard` hook redirects shell shapes that would stop on
+  a host permission prompt; packet byte budgets are raised
+  (20/20/24/32 KiB) and migrated on install.
+
 ### Added
 
 - Every change's `proposal.md` now opens with a harness-rendered header (change
@@ -19,90 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prints one advisory coverage NOTE and never adds an EDIT. Authors write
   nothing extra and no command changes.
 
-### Changed
-
-- Document layout changed, existing changes still read. Each fact now has one
-  home: the proposal no longer renders Plan, What changes, or Folder tree
-  (tasks live in `tasks.md`; `design.md` renders the derived folder tree inside
-  its File map and no Plan), a one-capability proposal omits the Capabilities
-  table (Scope names the capability), and a rapid proposal omits default
-  Impact lines (code surface, no security trigger). Six small rapid fixtures
-  render in 14% fewer lines (203 vs 237) but 23% more bytes (6250 vs 5076)
-  because the new blocks carry ids and policy text. Changes agreed earlier keep their old
-  sections; pull-request narratives read either layout.
-
-- Change reaches AGREED in one `change start` call. Paid w5 lab runs needed a
-  second call in 5 of 10 scenarios (api-keys: four) for fields the harness
-  can derive: standard-lane drafts were sent back for `why` (4/4), evidence
-  capabilities for every requirement (5/5), and `failureMatrix` (3/4).
-  Now the intent stands in for an absent `why`, omitted evidence capabilities
-  default to `test` (`static-analysis` for docs/chore) in either lane unless
-  the draft declares security triggers, and unclassified scenarios that state
-  a rejection or error fill the failure matrix when no scenario is marked
-  `kind: "failure"`. Authored values are never replaced; the proposal lists
-  each filled value under "Derived by harness" and `change start` prints one
-  NOTE. When an EDIT is unavoidable it now carries every issue: preflight
-  checks such as an invalid `coupling` were hidden until the compiler issues
-  were fixed, and the `riskSignals` and coverage messages name the valid
-  values. Public commands and draft shapes are unchanged.
-- Agent read surface and request count (W7-3): `/dev` reads only `change.md`
-  up front (Build, Prove, and Land commands load for a failure, a non-`EDIT`
-  action, or a Land boundary), and the draft template is no longer a required
-  step. `change.md` tells the agent to put `--approve-spec --decision-ref
-  <ref>` (plus `/dev`'s `--through`) on `change start` when the request approved
-  the spec, so one call starts, approves, and reaches Build's first action.
-  A single-task session `EDIT` now carries the same `instructions` recipe as a
-  multi-task one. Rapid-lane instructions (AGENT + dev + change) shrink to 669
-  words and the full `/dev` bundle from 1143 to 1122; a structural test guards
-  the rapid read surface. `advance` records the furthest `--through` target
-  requested (`requestedThrough`), and the `next:` routes of `changes`, the
-  session digest, `validate`, `change resolve`, `change revise`, and the scope,
-  grounding, and `exec` workspace errors continue toward it (never below
-  `proven` once the spec is approved) instead of repeating `--through build`.
-  Printed approval commands now say `--through proven`.
-
-- Harness own time: a rapid change in a non-Git directory spent ~12 s of its
-  ~27 s harness-active time in 1,626 `git rev-parse HEAD` processes (plus ~90
-  failing `git ls-files`/`status` ones), ~7 s re-reading and re-parsing the
-  runtime state, and ~4 s in five OpenSpec lints and three version probes. HEAD and "not a repository" are now read from the
-  repository files (any layout the reader does not model still asks Git),
-  settled state and file digests are reused while their identity is unchanged,
-  OpenSpec version and strict-lint passes persist by content in
-  `.foundation/cache/` (checkbox ticks and the checkout location are not
-  lint inputs; every other byte is), and a Build task check whose `verify` is the
-  provider's `sh -c` line is now reused by Prove, so the project suite runs once
-  between Build and Prove. Measured on one tiny change: 249 -> 81 spawns and
-  9.8 -> 5.2 s in a repository, 1,752 -> 5 spawns and 26.9 -> 6.4 s in a plain
-  directory. No evidence, isolation, freshness, or Land guard changed.
-- Packet budgets (user decision: raise the defaults so large work fits): task
-  and review packets 8 KiB -> 20 KiB, repository 12 KiB -> 24 KiB, global
-  16 KiB -> 32 KiB. A paid three-repository API-keys run (3 tasks, 10/4/20
-  claims, ~22 changed paths) was blocked at `packet --task` (9,951 bytes) and
-  `packet --phase build` (19,623 bytes); a deterministic replay measured task
-  packets up to 11.7 KB, repository 14.3 KB, review 12.2 KB, and global
-  18.0 KB, so the new defaults give about 1.5x headroom. The `2048..65536`
-  hard ceiling, `foundation.json` overrides, and the largest-fields BLOCKED
-  diagnostic are unchanged. The installer replaces only the exact former
-  seeded defaults (`8192/8192/12288/16384`) and keeps tuned budgets.
-- Rapid fast path: under `workflow.reviewPolicy: "risk-tiered"`, a low-tier
-  `foundation-rapid` change that nothing asks to review (no declared or keyword
-  security trigger, `--review`, `riskSignals`, review capability, or
-  required/diversity trigger) no longer runs an AI review; the project's
-  deterministic evidence proves it. `RESOLVED` prints
-  `review: not required (rapid lane, low tier: deterministic evidence only)`
-  and the review-assurance note is omitted. Standard changes, any higher tier,
-  and capabilities inferred from the built diff keep review. Paid w4 runs spent
-  18-24 s of each rapid Prove in review. The contract fingerprint keeps its
-  pre-exemption review shape, so upgrading never re-verifies an in-flight
-  change.
-- `/dev` with Land authority passes `--through archived` to every `advance`,
-  so a resume route never stops at `build` or `proven` first. Build no longer
-  asks the agent to run each `checkCommand` before resuming (`advance` already
-  runs every task check and returns failures with output), and `cd
-  <workspace>` is needed only before a plain shell command. The `/dev`
-  instruction bundle shrinks by three words.
-
-### Added
 
 - New shipped Bash PreToolUse hook `shell-route-guard.sh` refuses shell shapes
   the host would stop on a permission prompt anyway, and the reason gives the
@@ -188,6 +123,104 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   design's open questions with the approval packet.
 
 ### Changed
+
+- Document layout changed, existing changes still read. Each fact now has one
+  home: the proposal no longer renders Plan, What changes, or Folder tree
+  (tasks live in `tasks.md`; `design.md` renders the derived folder tree inside
+  its File map and no Plan), a one-capability proposal omits the Capabilities
+  table (Scope names the capability), and a rapid proposal omits default
+  Impact lines (code surface, no security trigger). Six small rapid fixtures
+  render in 14% fewer lines (203 vs 237) but 23% more bytes (6250 vs 5076)
+  because the new blocks carry ids and policy text. Changes agreed earlier keep their old
+  sections; pull-request narratives read either layout.
+- Prove model review speed (W9-1, user decision). Paid w7 standard runs spent
+  28-91 s of 65-100 s harness-active time in one `claude-opus` review. Medium-tier
+  review now runs its first round on the faster `standard` model class by
+  default (`standardModelId`, else `models.standard.family`, at the configured
+  effort), a deliberate speed/depth trade-off. High tier, every delta/closure
+  round, a medium change with a security or required-review trigger
+  (`access-control`, `authorization-or-secrets`, `risk-semantics`,
+  `risk-capability`, `covered-by-review:*`, `multi-repository-claim`, ...), and a
+  declared review keep the configured model; a `standard` round escalates once
+  to it on an unsure scenario like a `fast` one. `review.modelByTier` (`low` and
+  `medium` to `fast|standard|configured`) overrides the defaults; `high` is
+  rejected and an unknown class fails closed to the configured model. Tier
+  assignment is unchanged, public commands are unchanged, and the receipt now
+  records `review.reviewer.modelTier`.
+- The review that `advance` runs beside the providers now overlaps the base-source
+  test discrimination run too, and joins before any stop returns. In w7, three of
+  four standard scenarios ran the review after Prove instead of beside it.
+- Change reaches AGREED in one `change start` call. Paid w5 lab runs needed a
+  second call in 5 of 10 scenarios (api-keys: four) for fields the harness
+  can derive: standard-lane drafts were sent back for `why` (4/4), evidence
+  capabilities for every requirement (5/5), and `failureMatrix` (3/4).
+  Now the intent stands in for an absent `why`, omitted evidence capabilities
+  default to `test` (`static-analysis` for docs/chore) in either lane unless
+  the draft declares security triggers, and unclassified scenarios that state
+  a rejection or error fill the failure matrix when no scenario is marked
+  `kind: "failure"`. Authored values are never replaced; the proposal lists
+  each filled value under "Derived by harness" and `change start` prints one
+  NOTE. When an EDIT is unavoidable it now carries every issue: preflight
+  checks such as an invalid `coupling` were hidden until the compiler issues
+  were fixed, and the `riskSignals` and coverage messages name the valid
+  values. Public commands and draft shapes are unchanged.
+- Agent read surface and request count (W7-3): `/dev` reads only `change.md`
+  up front (Build, Prove, and Land commands load for a failure, a non-`EDIT`
+  action, or a Land boundary), and the draft template is no longer a required
+  step. `change.md` tells the agent to put `--approve-spec --decision-ref
+  <ref>` (plus `/dev`'s `--through`) on `change start` when the request approved
+  the spec, so one call starts, approves, and reaches Build's first action.
+  A single-task session `EDIT` now carries the same `instructions` recipe as a
+  multi-task one. Rapid-lane instructions (AGENT + dev + change) shrink to 669
+  words and the full `/dev` bundle from 1143 to 1122; a structural test guards
+  the rapid read surface. `advance` records the furthest `--through` target
+  requested (`requestedThrough`), and the `next:` routes of `changes`, the
+  session digest, `validate`, `change resolve`, `change revise`, and the scope,
+  grounding, and `exec` workspace errors continue toward it (never below
+  `proven` once the spec is approved) instead of repeating `--through build`.
+  Printed approval commands now say `--through proven`.
+
+- Harness own time: a rapid change in a non-Git directory spent ~12 s of its
+  ~27 s harness-active time in 1,626 `git rev-parse HEAD` processes (plus ~90
+  failing `git ls-files`/`status` ones), ~7 s re-reading and re-parsing the
+  runtime state, and ~4 s in five OpenSpec lints and three version probes. HEAD and "not a repository" are now read from the
+  repository files (any layout the reader does not model still asks Git),
+  settled state and file digests are reused while their identity is unchanged,
+  OpenSpec version and strict-lint passes persist by content in
+  `.foundation/cache/` (checkbox ticks and the checkout location are not
+  lint inputs; every other byte is), and a Build task check whose `verify` is the
+  provider's `sh -c` line is now reused by Prove, so the project suite runs once
+  between Build and Prove. Measured on one tiny change: 249 -> 81 spawns and
+  9.8 -> 5.2 s in a repository, 1,752 -> 5 spawns and 26.9 -> 6.4 s in a plain
+  directory. No evidence, isolation, freshness, or Land guard changed.
+- Packet budgets (user decision: raise the defaults so large work fits): task
+  and review packets 8 KiB -> 20 KiB, repository 12 KiB -> 24 KiB, global
+  16 KiB -> 32 KiB. A paid three-repository API-keys run (3 tasks, 10/4/20
+  claims, ~22 changed paths) was blocked at `packet --task` (9,951 bytes) and
+  `packet --phase build` (19,623 bytes); a deterministic replay measured task
+  packets up to 11.7 KB, repository 14.3 KB, review 12.2 KB, and global
+  18.0 KB, so the new defaults give about 1.5x headroom. The `2048..65536`
+  hard ceiling, `foundation.json` overrides, and the largest-fields BLOCKED
+  diagnostic are unchanged. The installer replaces only the exact former
+  seeded defaults (`8192/8192/12288/16384`) and keeps tuned budgets.
+- Rapid fast path: under `workflow.reviewPolicy: "risk-tiered"`, a low-tier
+  `foundation-rapid` change that nothing asks to review (no declared or keyword
+  security trigger, `--review`, `riskSignals`, review capability, or
+  required/diversity trigger) no longer runs an AI review; the project's
+  deterministic evidence proves it. `RESOLVED` prints
+  `review: not required (rapid lane, low tier: deterministic evidence only)`
+  and the review-assurance note is omitted. Standard changes, any higher tier,
+  and capabilities inferred from the built diff keep review. Paid w4 runs spent
+  18-24 s of each rapid Prove in review. The contract fingerprint keeps its
+  pre-exemption review shape, so upgrading never re-verifies an in-flight
+  change.
+- `/dev` with Land authority passes `--through archived` to every `advance`,
+  so a resume route never stops at `build` or `proven` first. Build no longer
+  asks the agent to run each `checkCommand` before resuming (`advance` already
+  runs every task check and returns failures with output), and `cd
+  <workspace>` is needed only before a plain shell command. The `/dev`
+  instruction bundle shrinks by three words.
+
 
 - A security-static, resilience, compatibility, data-migration, or
   cross-repo-contract provider that only re-runs a test provider's command is
@@ -391,6 +424,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A configured review whose reviewer finished after the content it judged had
+  changed (a provider writing tracked files beside the concurrent review, or an
+  edit) could be recorded and rebound to the new bytes, because the post-review
+  hash came from the process-local snapshot cache. The hash is now re-read from
+  disk before recording; a superseded verdict is dropped (attempt closed as an
+  error, request `aborted`, no receipt) and the current content is reviewed
+  again. A readiness hash read from a stale cached snapshot also disabled the
+  concurrent review for the single-process Build-to-Prove route; `advance`
+  now re-derives it from the forced snapshot.
 - `packet <change> --task <id>` for an already-completed task prints that
   task's read-only packet (`executionAuthority.status: "completed"`,
   `readOnly: true`) instead of `BLOCKED: unknown pending task`; `agents task`

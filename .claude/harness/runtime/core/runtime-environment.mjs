@@ -331,7 +331,7 @@ export function createRuntimeEnvironment({
       fail(`foundation.json review.reviewers.${name}.reasoningEffort must be high`);
     if (reviewer.sandbox !== "read-only" || reviewer.ephemeral !== true)
       fail(`foundation.json review.reviewers.${name} must use read-only sandbox and ephemeral true`);
-    for (const field of ["fastModelId", "fastModelFamily"])
+    for (const field of ["fastModelId", "fastModelFamily", "standardModelId", "standardModelFamily"])
       if (reviewer[field] !== undefined &&
           (typeof reviewer[field] !== "string" || !reviewer[field].trim()))
         fail(`foundation.json review.reviewers.${name}.${field} must be a non-empty string`);
@@ -341,6 +341,19 @@ export function createRuntimeEnvironment({
     if (policy.review.lowRiskModel !== undefined &&
         !["fast", "configured"].includes(policy.review.lowRiskModel))
       fail("foundation.json review.lowRiskModel must be fast|configured");
+    const byTier = policy.review.modelByTier;
+    if (byTier !== undefined) {
+      if (!byTier || typeof byTier !== "object" || Array.isArray(byTier))
+        fail("foundation.json review.modelByTier must be an object mapping low|medium to fast|standard|configured");
+      for (const [tier, value] of Object.entries(byTier)) {
+        if (tier === "high")
+          fail("foundation.json review.modelByTier.high is not configurable: high-tier review always runs the configured model");
+        if (!["low", "medium"].includes(tier))
+          fail(`foundation.json review.modelByTier.${tier} is not a risk tier; use low|medium`);
+        if (!["fast", "standard", "configured"].includes(value))
+          fail(`foundation.json review.modelByTier.${tier} must be fast|standard|configured`);
+      }
+    }
     normalizeReviewFallbacks(policy, configured);
     for (const [name, reviewer] of Object.entries(policy.review.reviewers))
       validateReviewer(name, reviewer);

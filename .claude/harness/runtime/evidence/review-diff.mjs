@@ -109,6 +109,48 @@ export function reviewModelTierForDepth(depth) {
   return depth === "diff-only" ? "fast" : "configured";
 }
 
+// Which model class a review round runs on. Classes: `fast` (the reviewer's
+// `fastModelId`, else the `models.fast.family` alias, at medium effort),
+// `standard` (`standardModelId`, else `models.standard.family`, at the
+// configured effort), and `configured` (the strongest configured model).
+// Defaults by risk tier: low first round `fast`, medium first round
+// `standard`, high and every later round `configured`. `review.modelByTier`
+// maps `low` and `medium` to a class (`high` is never weakened);
+// `review.lowRiskModel: "configured"` is the older low-tier opt-out. A medium
+// change that carries a security or required-review trigger, or a declared
+// review, keeps `configured`; an unrecognized class or trigger fails closed
+// to `configured`. Tier assignment itself never changes here.
+export const REVIEW_MODEL_CLASSES = Object.freeze(["fast", "standard", "configured"]);
+export const DEFAULT_REVIEW_MODEL_BY_TIER = Object.freeze({
+  low: "fast", medium: "standard", high: "configured"
+});
+// Medium-tier triggers that only describe how much changed or how it couples;
+// any other trigger (access-control, authorization-or-secrets, risk-capability,
+// risk-semantics, covered-by-review:*, multi-repository-claim, critical-*, a
+// diversity waiver, or one added later) pins the configured model.
+export const MEDIUM_TIER_SPEED_SAFE_TRIGGERS = Object.freeze([
+  "medium-impact-or-coupling", "review-risk", "declared-medium-risk", "input-domain",
+  "independence-waived-self-review"
+]);
+
+export function reviewModelClass({
+  tier, deliveredAiCount = 0, triggers = [], declaredReview = false, settings = {}
+} = {}) {
+  if (!["low", "medium"].includes(tier) || Number(deliveredAiCount) > 0)
+    return "configured";
+  let chosen = DEFAULT_REVIEW_MODEL_BY_TIER[tier];
+  if (tier === "low" && settings?.lowRiskModel === "configured") chosen = "configured";
+  const mapped = settings?.modelByTier;
+  if (mapped && typeof mapped === "object" && Object.hasOwn(mapped, tier))
+    chosen = mapped[tier];
+  if (!REVIEW_MODEL_CLASSES.includes(chosen)) return "configured";
+  if (tier === "medium" && chosen !== "configured" && (declaredReview ||
+      !Array.isArray(triggers) || triggers.length === 0 ||
+      triggers.some((trigger) => !MEDIUM_TIER_SPEED_SAFE_TRIGGERS.includes(trigger))))
+    return "configured";
+  return chosen;
+}
+
 // Scenario coverage checklist (N8). One item per agreement scenario so the
 // reviewer states, per scenario, whether the diff backs it with a test or code.
 // Pure and deterministic: callers inject file access (the same shape as the

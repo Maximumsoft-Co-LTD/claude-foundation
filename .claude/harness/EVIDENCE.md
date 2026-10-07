@@ -442,7 +442,21 @@ model tier at medium reasoning effort: the reviewer's `fastModelId` (optional `f
 `models.fast.family` alias for `claude-cli`; `review.lowRiskModel:
 "configured"` opts out. Provider family never changes; model family records
 the fast model actually run (`fastModelFamily`, else the `models.fast.family`
-alias), so diversity and separation checks judge that model. Review packet
+alias), so diversity and separation checks judge that model. The first round of
+a medium-tier review runs the faster `standard` class by default (the reviewer's
+`standardModelId`/`standardModelFamily`, else `models.standard.family` for
+`claude-cli`, at the configured effort), a deliberate speed/depth trade-off. The
+configured model keeps high, every later (delta/closure) round, a medium change
+with any trigger other than `medium-impact-or-coupling`, `review-risk`,
+`declared-medium-risk`, `input-domain`, or `independence-waived-self-review`
+(for example `access-control`, `authorization-or-secrets`, `risk-semantics`,
+`risk-capability`, `covered-by-review:*`, `multi-repository-claim`), and a declared
+(not keyword-only) review. `review.modelByTier` maps `low` and `medium` to
+`fast|standard|configured` (`high` is rejected, never weakened); an unrecognized
+class, a missing alias, or a standard model that would share the implementation's
+family under a diversity requirement runs the configured model. The receipt
+records the reviewer's model ID, family, and class (`review.reviewer.modelTier`),
+and a `standard` round escalates exactly like a `fast` one. Review packet
 schema 6 adds `reviewDepth`, `reviewDiff`, `agreement`, and, on a full round
 with agreement scenarios, `scenarioChecklist` (one digest-bound item per
 scenario; ids are claim ids when a claim names the scenario). The reviewer
@@ -508,7 +522,18 @@ does Prove stop at the review-exhausted user decision (accept the review risk wi
 --capability review`, revise the agreement, or pause) instead of returning an
 unsatisfiable repair. A review that `advance` runs beside the providers binds
 its receipt to that pass's explicit proof run and snapshot, and its failure
-leaves an open request without marking the operation blocked. A change-level hash chain binds
+leaves an open request without marking the operation blocked. The pass binds to
+the forced workspace snapshot (a readiness hash read from a stale cached snapshot
+is re-derived first, so the overlap is not silently lost), the base-source test
+discrimination run executes while the reviewer child is still running, and the
+reviewer is always joined before any stop returns: a failed provider or a
+non-discriminating test never leaves a reviewer running, and a verdict that
+finishes after the tests is recorded against its own request and hash like any
+other. Before a verdict is recorded the reviewed hash is re-read from disk: when
+a provider or an edit changed the bytes while the reviewer ran, the attempt
+closes as an error (like `authority abort`, counted as reviewer infrastructure,
+not as a delivered wave), the request ends `aborted`, no receipt is written, and
+the next pass requests a review of the current content. A change-level hash chain binds
 dispatch, completion, scope, findings, closure evidence, and receipt payload.
 Corrupt history, including a lowered chain whose recorded head and count were
 moved back together while attempt records above that head remain (one

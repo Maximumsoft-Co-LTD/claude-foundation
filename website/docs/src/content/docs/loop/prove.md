@@ -22,7 +22,9 @@ Failed evidence returns one `REPAIR` or `EDIT` batch with the invalidated claim
 closure. After a fix, only invalidated/downstream checks rerun. A configured
 review that the harness can run starts in parallel with the tests for the same
 workspace hash, reads only the diff and the agreement's requirements, and uses
-the fast model tier for low risk; its findings and failed tests return as one
+the fast model tier for low risk and a faster standard tier for medium risk
+(high risk and security triggers keep the configured model; `review.modelByTier`
+overrides it); its findings and failed tests return as one
 `REPAIR`. Other configured reviews are `RUN_EXTERNAL`; a named external owner
 is `WAIT` without a question; a material
 contract or acceptance decision is `ASK_USER`. Each boundary preserves state

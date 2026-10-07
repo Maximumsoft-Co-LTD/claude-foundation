@@ -305,10 +305,29 @@ try {
     reviewPolicy: "legacy", state: { reviewRequired: false },
     claims: [{ id: "c", impact: "low", capabilities: ["test", "review"] }]
   }), "required");
+  // Medium tier runs the faster standard model class by default; a security or
+  // required-review trigger, a declared review, or a team pin keeps configured.
+  const mediumState = { impact: "medium", securityTriggers: [] };
+  const mediumClaims = [{ id: "c", impact: "low", capabilities: ["test"] }];
   assert.equal(reviewRouteLabel({
-    reviewPolicy: "risk-tiered", state: { impact: "medium", securityTriggers: [] },
-    claims: [{ id: "c", impact: "low", capabilities: ["test"] }]
+    reviewPolicy: "risk-tiered", state: mediumState, claims: mediumClaims
+  }), "risk-tiered AI review (medium tier, standard model)");
+  assert.equal(reviewRouteLabel({
+    reviewPolicy: "risk-tiered", modelByTier: { medium: "configured" },
+    state: mediumState, claims: mediumClaims
   }), "risk-tiered AI review (medium tier, configured model)");
+  assert.equal(reviewRouteLabel({
+    reviewPolicy: "risk-tiered", state: { ...mediumState, reviewRequired: true },
+    claims: mediumClaims
+  }), "risk-tiered AI review (medium tier, configured model)");
+  assert.equal(reviewRouteLabel({
+    reviewPolicy: "risk-tiered", state: { ...mediumState, reviewRequired: true, reviewKeywordOnly: true },
+    claims: mediumClaims
+  }), "risk-tiered AI review (medium tier, standard model)");
+  assert.equal(reviewRouteLabel({
+    reviewPolicy: "risk-tiered", state: mediumState,
+    claims: [{ id: "c", impact: "medium", capabilities: ["test", "security-static"] }]
+  }), "risk-tiered AI review (high tier, configured model)");
   assert.equal(reviewRouteLabel({ reviewPolicy: "risk-tiered", lowRiskModel: "configured",
     state: { impact: "low", securityTriggers: [] } }), "risk-tiered AI review (low tier, configured model)");
 
