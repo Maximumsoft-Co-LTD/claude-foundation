@@ -252,3 +252,23 @@ test("scorecard reports harness friction from the host stream and guard audit", 
   assert.equal(unknown.friction.hookBlocks, null);
   assert.equal(validate(unknown), true, JSON.stringify(validate.errors));
 });
+
+test("scorecards carry their bench arm; a baseline completes without a task ledger", () => {
+  const changeLoop = buildScorecard(fixture());
+  assert.equal(changeLoop.arm, "change-loop", "rows without an arm stay Change Loop rows");
+  assert.equal(validate(changeLoop), true, JSON.stringify(validate.errors));
+  const baselineOutcome = {
+    status: "completed", changeId: null, workflowStatus: null, pendingTasks: null,
+    requiredEvidencePassed: true, proofStatus: null, landStatus: null
+  };
+  const baseline = buildScorecard(fixture({ arm: "baseline", outcome: baselineOutcome }));
+  assert.equal(baseline.arm, "baseline");
+  assert.equal(baseline.outcome.complete, true);
+  assert.equal(validate(baseline), true, JSON.stringify(validate.errors));
+  assert.equal(buildScorecard(fixture({ outcome: baselineOutcome })).outcome.complete, false,
+    "a Change Loop row still needs a checked task ledger");
+  assert.equal(buildScorecard(fixture({ arm: "baseline",
+    outcome: { ...baselineOutcome, requiredEvidencePassed: false } })).outcome.complete, false,
+  "a baseline whose own project command fails is not complete");
+  assert.throws(() => buildScorecard(fixture({ arm: "vibe" })), /arm must be one of/);
+});

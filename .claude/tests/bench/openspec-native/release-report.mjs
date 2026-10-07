@@ -6,14 +6,22 @@ import { fileURLToPath } from "node:url";
 
 import { aggregateLabRuns } from "./aggregate.mjs";
 import { loadMatrix, matrixIssues } from "./matrix.mjs";
+import { DEFAULT_ARM } from "./scorecard.mjs";
 import { runDeterministicSentinel } from "./sentinel.mjs";
 import { timeGateReport } from "./time-gate.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_RESULTS = resolve(HERE, "../results/openspec-native-lab");
 
+// Only Change Loop rows are release evidence. A no-harness baseline row is a
+// comparison measurement and can never promote, or block, a matrix row.
+export function changeLoopAggregates(aggregates = []) {
+  return aggregates.filter((row) => (row.arm || DEFAULT_ARM) === "change-loop");
+}
+
 export function buildReleaseReport({ matrix, sentinel, aggregates = [], timeGate = null }) {
-  const byScenario = new Map(aggregates.map((row) => [row.scenario, row]));
+  const evidence = changeLoopAggregates(aggregates);
+  const byScenario = new Map(evidence.map((row) => [row.scenario, row]));
   const scenarios = matrix.scenarios.map((scenario) => {
     const deterministic = sentinel.scenarios.find((row) => row.id === scenario.id);
     const aggregate = byScenario.get(scenario.id) || null;
@@ -68,6 +76,8 @@ export function buildReleaseReport({ matrix, sentinel, aggregates = [], timeGate
     // baseline): visible in the report, never part of `releaseReady`.
     advisories: timeGate ? [{ id: "time-gate", status: timeGate.status,
       reason: timeGate.reason, targetRatio: timeGate.targetRatio, tiers: timeGate.tiers }] : [],
+    excludedComparisonRuns: aggregates.filter((row) => !evidence.includes(row))
+      .reduce((total, row) => total + Number(row.runs || 0), 0),
     releaseReady: ready,
     status: ready ? "ready" : "blocked",
     blockedCount: scenarios.filter((row) => row.blocker).length

@@ -40,3 +40,25 @@ test("release report promotes only three strict, measured repeats", () => {
   assert.equal(report.scenarios[0].stage, "repeated-green");
   assert.equal(report.scenarios[0].paid.p95Resumptions, 1);
 });
+
+test("release report never counts baseline rows as Change Loop evidence", () => {
+  const measurement = { measured: 3, unavailable: 0 };
+  const green = {
+    scenario: "paid", runs: 3, strictPasses: 3, strictPass: true,
+    paidModelRuns: 3, paidModelStrictPasses: 3, paidModelStrictPass: true,
+    reliabilityRate: 1, measurements: { wallMs: measurement }, runDirs: ["a", "b", "c"]
+  };
+  const baselineOnly = buildReleaseReport({ matrix, sentinel,
+    aggregates: [{ ...green, arm: "baseline" }] });
+  assert.equal(baselineOnly.scenarios[0].blocker, "authorized-paid-smoke-missing",
+    "a green baseline cannot promote a matrix row");
+  assert.equal(baselineOnly.scenarios[0].paid, null);
+  assert.equal(baselineOnly.excludedComparisonRuns, 3);
+  const failedBaseline = { ...green, arm: "baseline", strictPass: false,
+    paidModelStrictPass: false, paidModelStrictPasses: 0, strictPasses: 0 };
+  const mixed = buildReleaseReport({ matrix, sentinel,
+    aggregates: [failedBaseline, { ...green, arm: "change-loop" }] });
+  assert.equal(mixed.scenarios[0].stage, "repeated-green",
+    "a failing baseline cannot block Change Loop promotion");
+  assert.equal(mixed.releaseReady, true);
+});
