@@ -140,8 +140,10 @@ agreement, installs it, and prepares isolation. The draft records:
 Rapid changes contain `proposal.md`, `tasks.md`, `evidence.yaml`, and a concise
 delta `specs/<capability>/spec.md` (one SHALL statement and its scenarios per
 requirement, rendered exactly as in standard), which Land merges into
-`openspec/specs` like any other delta; only a legacy rapid packet declaring
-`skip_specs` has none. A delta for a capability with no living spec states a
+`openspec/specs` like any other delta; only a legacy rapid packet or declared
+docs-only work (`workType: ["docs"]` adding requirements, such as README
+wording) declares `skip_specs` and has none, so prose never becomes a living
+system requirement; its claims still bind evidence. A delta for a capability with no living spec states a
 `## Purpose` (the capability overview, else the intent) that archive carries
 into the new spec instead of OpenSpec's TBD placeholder; an existing spec's
 Purpose is never replaced. A minimal draft's derived names stay short: the
@@ -154,10 +156,12 @@ the proposal shows a folder tree of touched paths (`+` add, including paths
 absent at the base; `~` change; `-` remove), and a rapid proposal also carries
 the compact form (summary, what changes, user flow, failure matrix, the Plan
 Build executes, and any authored descriptive section: file map, test map,
-component map, config contract, refactor). Descriptive sections never move a
-low-risk draft to standard. A standard v4 change
+component map, config contract, refactor, bugfix). Descriptive sections never move a
+low-risk draft to standard; impact, coupling, security triggers, review, and
+acceptance still do. A standard v4 change
 always has `design.md`, and its draft must author the sections its work type
-needs (`why` or `summary`, and failures; user flow, UI states, component map,
+needs (`why` or `summary`, and failures unless the work is only refactor,
+config, or light work; user flow, UI states, component map,
 API contracts, data model, config or job contract by type); the harness infers
 the work type from task paths (stated in `design.md`; declare `workType` to
 override; test-, docs-, or manifest-only paths are light work) and derives the
@@ -295,7 +299,13 @@ The revised semantic draft keeps the change id (a different `id` is refused)
 and passes the same intake gate as `change start`, under its own snapshot: the
 call inspects first, revises only at `DONE`, and otherwise prints the intake
 action and changes nothing. `--inspect` only inspects; `--consume-draft` also
-removes the draft. The transaction
+removes the draft. With `--merge` the file is a partial draft applied to the
+draft the change was compiled from: objects merge, `null` deletes a key, and an
+entry in a list keyed by `key` (or `dimension`, or `name`) merges into the
+entry with that identity, `"$remove": true` drops it, and other entries are
+appended; any other list is replaced. Removing a requirement drops its evidence
+entry and task coverage. A change started before partial revision, or one an
+amendment changed after its draft was recorded, needs the whole draft instead. The transaction
 recompiles the whole packet, increments the contract revision, and restores the
 prior packet and runtime state byte-for-byte on any failure. It is refused once
 the change has a Build workspace, a receipt, or a completed task, and in

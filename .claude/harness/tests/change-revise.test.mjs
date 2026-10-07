@@ -186,6 +186,73 @@ test("revise recompiles an agreed change in place and reports its delta", (t) =>
   assert.deepEqual(readdirSync(value.changes).filter((name) => name.startsWith(".")), []);
 });
 
+// Scenario finding: changing one requirement meant rewriting the whole draft.
+test("revise --merge applies a partial draft over the one the change was compiled from", (t) => {
+  const value = fixture(t);
+  value.start();
+  assert.equal(value.state().draftSource.draft.requirements.length, 2);
+  const delta = value.revise({
+    requirements: [
+      { key: "throughput", outcome: "The service accepts 50 messages per second" },
+      { key: "ack-path", $remove: true },
+      requirement("outbox", "The webhook acknowledges after the Mongo outbox commit")
+    ],
+    tasks: [{ key: "implement", covers: ["throughput", "outbox"] }],
+    evidence: { outbox: { capabilities: ["test"] } }
+  }, { merge: true });
+  // The same delta a whole revised draft produces.
+  assert.deepEqual(delta, { added: ["outbox"], revised: ["throughput"], removed: ["ack-path"] });
+  const source = value.state().draftSource.draft;
+  assert.equal(value.state().draftSource.contractRevision, value.state().contractRevision);
+  assert.deepEqual(source.requirements.map((row) => row.key), ["throughput", "outbox"]);
+  assert.equal(source.why, "Exercise pre-Build revision", "untouched keys are kept");
+  assert.deepEqual(Object.keys(source.evidence), ["throughput", "outbox"]);
+  const spec = readFileSync(join(value.changes, "revisable-change", "specs", "change", "spec.md"), "utf8");
+  assert.match(spec, /50 messages per second/);
+  assert.doesNotMatch(spec, /Temporal accepts/);
+  assert.match(value.control.output.join("\n"), /^REVISED revisable-change/m);
+
+  // Patches compose: the next merge starts from the revised draft.
+  value.control.output.length = 0;
+  assert.deepEqual(value.revise({ why: "Bound intake throughput" }, { merge: true }),
+    { added: [], revised: [], removed: [] });
+  assert.equal(value.state().draftSource.draft.why, "Bound intake throughput");
+  assert.equal(value.state().draftSource.draft.requirements.length, 2);
+});
+
+test("revise --merge on a minimal draft derives keys for added rows and needs a recorded draft", (t) => {
+  const value = fixture(t);
+  value.start({
+    id: "revisable-change", intent: "Reject empty note titles",
+    requirements: [{ description: "The system SHALL reject a note whose title is empty",
+      scenarios: [{ when: "a user submits an empty title", then: "the note is not created" }] }],
+    tasks: [{ outcome: "Validate note titles", verify: "npm test", paths: ["src/note.js"] }]
+  });
+  const [prior] = value.state().draftSource.draft.requirements;
+  const [task] = value.state().draftSource.draft.tasks;
+  const delta = value.revise({
+    requirements: [{ description: "The system SHALL trim whitespace from a note title",
+      scenarios: [{ when: "a user submits a padded title", then: "the title is stored trimmed" }] }],
+    tasks: [{ key: task.key, covers: [prior.key, "trim-whitespace-from-note-title"] }]
+  }, { merge: true });
+  assert.deepEqual(delta, { added: ["trim-whitespace-from-note-title"], revised: [], removed: [] });
+  assert.equal(value.state().draftSource.draft.requirements[1].key, "trim-whitespace-from-note-title");
+
+  // An amendment after the recorded draft changed the agreement without it.
+  const runtimeFile = join(value.runtime, "revisable-change.json");
+  writeJson(runtimeFile, { ...value.state(), contractRevision: value.state().contractRevision + 1 });
+  assert.throws(() => value.revise({ why: "x" }, { merge: true }),
+    /its agreement changed after the recorded draft.*without --merge/);
+
+  // A change compiled before partial revision recorded no draft: say so.
+  const { draftSource: _dropped, ...legacy } = value.state();
+  writeJson(runtimeFile, legacy);
+  const before = snapshot(value.root);
+  assert.throws(() => value.revise({ why: "x" }, { merge: true }),
+    /--merge needs the draft 'revisable-change' was compiled from.*without --merge/);
+  assert.deepEqual(snapshot(value.root), before);
+});
+
 test("a failed revision restores the prior packet and runtime byte-for-byte", (t) => {
   const value = fixture(t);
   value.start();

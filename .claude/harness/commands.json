@@ -107,11 +107,11 @@
     },
     {
       "name": "change revise",
-      "usage": "change revise <change> <draft.json> [--inspect | --consume-draft] [--approve-spec --decision-ref <ref> [--through build|proven|archived]]",
+      "usage": "change revise <change> <draft.json> [--merge] [--inspect | --consume-draft] [--approve-spec --decision-ref <ref> [--through build|proven|archived]]",
       "audience": "agent",
       "kind": "write",
       "idempotent": false,
-      "description": "Recompile a revised semantic draft over a change that has not started Build, keeping its id and reporting the requirement delta for approval. The bare form inspects in place and revises only when intake is DONE; otherwise it prints the intake action and changes nothing. --approve-spec records the user's spec approval in the same call; with --through it continues."
+      "description": "Recompile a revised semantic draft over a change that has not started Build, keeping its id and reporting the requirement delta for approval. --merge reads the file as a partial draft: only its keys and keyed entries merge into the draft the change was compiled from. The bare form inspects in place and revises only when intake is DONE; otherwise it prints the intake action and changes nothing. --approve-spec records the user's spec approval in the same call; with --through it continues."
     },
     {
       "name": "change validate",

@@ -13,7 +13,7 @@ import { nextCommand } from "../core/next-step.mjs";
 import { taskBlocks, taskMetadata } from "../contracts/change-artifacts.mjs";
 import { matchesSecurityTerm, materialSecurityTriggers } from "./security-policy.mjs";
 import {
-  agentDecision, authoredDecisionReason, expandMinimalSemanticDraft,
+  agentDecision, authoredDecisionReason, expandMinimalSemanticDraft, mergeSemanticDraft,
   minimalSemanticDraftTemplate, normalizeSemanticDraft, renderRequirementMarkdown,
   renderSpecHeading, semanticDraftTemplate
 } from "./semantic-draft.mjs";
@@ -48,8 +48,8 @@ import {
   designBlueprintWarnings, draftHasBlueprints, draftWorkTypes, renderDesignBlueprints, renderWorkType
 } from "./validation/design-blueprints.mjs";
 import {
-  derivedFailureMatrix, derivedFileMap, derivedTestMap, inferWorkTypes, renderComponentMap,
-  renderFolderTree, renderPlan, renderUserFlow, withNewPaths
+  derivedFailureMatrix, derivedFileMap, derivedTestMap, docsOnlyDraft, inferWorkTypes,
+  renderComponentMap, renderFolderTree, renderPlan, renderUserFlow, withNewPaths
 } from "./validation/dev-document.mjs";
 import { targetEditDigest, targetEditPaths } from "./target-edits.mjs";
 import {
@@ -397,7 +397,7 @@ export function renderDraftProposal(draft, state) {
   const compact = rapid && [3, 4].includes(draft._semanticVersion);
   const flow = compact ? section(renderUserFlow(draft)) : "";
   const plan = compact ? section(renderComponentMap(draft)) + section(renderDesignBlueprints({
-    refactor: draft.refactor, configContract: draft.configContract,
+    bugfix: draft.bugfix, refactor: draft.refactor, configContract: draft.configContract,
     failureMatrix: derivedFailureMatrix(draft),
     fileMap: fileMapWithTasks(draft.fileMap, draft.tasks), testMap: draft.testMap
   })) + section(renderPlan(draft)) : "";
@@ -409,6 +409,8 @@ export function renderDraftProposal(draft, state) {
     `- **Coupling:** ${draft.coupling || state.coupling || "coupled"}\n` +
     `- **Affected surfaces:** ${(draft.surfaces || ["code"]).join(", ")}\n` +
     `- **Security triggers:** ${triggers.length ? triggers.join(", ") : "none detected"}` +
+    (rapid && docsOnlyDraft(draft)
+      ? "\n- **Specs:** none; docs-only work modifies no living spec" : "") +
     decisions + nonGoals + section(renderInvestigationSummary(draft.investigation)) +
     section(renderDiscoveryAppendix(draft)) +
     section(renderInvestigationAppendix(draft.investigation)) + "\n";
@@ -537,7 +539,8 @@ export function semanticDraftKeepsDesign(draft, rapid) {
 
 // Dev-document sections that describe the change rather than decide it.
 const RAPID_DESCRIPTIVE_SECTIONS = Object.freeze([
-  "fileMap", "failureMatrix", "testMap", "componentMap", "userFlow", "configContract", "refactor"
+  "fileMap", "failureMatrix", "testMap", "componentMap", "userFlow", "configContract", "refactor",
+  "bugfix"
 ]);
 
 export function draftNeedsDesign(draft) {
@@ -1067,8 +1070,12 @@ export function createChangeLifecycle({
     };
     try { walk(base); } catch { return ""; }
     const lines = files.sort().map((file) => `  file: ${file}\n`);
+    let semantic = false;
+    try { semantic = [3, 4].includes(loadRuntime(id)?.semanticDraftVersion); } catch {}
     if (!files.some((file) => file.includes("/specs/")))
-      lines.push("  specs: none (legacy rapid packet without delta specs)\n");
+      lines.push(semantic
+        ? "  specs: none (docs-only change; it modifies no living spec)\n"
+        : "  specs: none (legacy rapid packet without delta specs)\n");
     // The task list, so the agent can start Build without opening tasks.md.
     try {
       for (const line of readFileSync(join(base, "tasks.md"), "utf8").split("\n")) {
@@ -1122,9 +1129,11 @@ export function createChangeLifecycle({
     // A semantic rapid draft compiles the same concise delta specs as the
     // standard lane, so Land merges its behavior into openspec/specs. The
     // template's skip_specs marker would contradict them; only a legacy rapid
-    // packet without deltas keeps it.
+    // packet without deltas, or declared docs-only work (no system behavior),
+    // keeps it.
     const rapidSpecs = state.schema === "foundation-rapid" &&
-      [3, 4].includes(draft._semanticVersion) && (draft.specs || []).length > 0;
+      [3, 4].includes(draft._semanticVersion) && (draft.specs || []).length > 0 &&
+      !docsOnlyDraft(draft);
     if (state.schema === "foundation-standard" || rapidSpecs)
       materializeDraftSpecs({
         basePath, specs: draft.specs, slugify,
@@ -1853,8 +1862,11 @@ export function createChangeLifecycle({
         bindClaudeSession(id, "change");
         const pending = loadRuntime(id);
         pending.specApproval = { required: true };
-        if ([3, 4].includes(draft._semanticVersion))
+        if ([3, 4].includes(draft._semanticVersion)) {
           pending.requirementFingerprints = draftRequirementFingerprints(draft);
+          // The compiled-from draft, so `change revise --merge` takes a patch.
+          pending.draftSource = compiledDraftSource(pending, source);
+        }
         if (completedIntakeEffectiveness)
           pending.semanticIntakeEffectiveness = completedIntakeEffectiveness;
         saveRuntime(pending);
@@ -2006,28 +2018,66 @@ export function createChangeLifecycle({
     };
   }
 
-  function revisionSource(id, draftPath) {
-    const source = draftSource(draftPath, priorDraftIdentity(id));
+  // The draft a packet was compiled from, bound to the contract revision it
+  // produced: an amendment or grounding reopen afterwards changes the
+  // agreement without it, so a partial revision would silently drop that.
+  function compiledDraftSource(state, draft) {
+    return { contractRevision: Number(state.contractRevision || 0), draft };
+  }
+
+  // `merge` applies the file as a patch to the draft the change was compiled
+  // from (see mergeSemanticDraft); without it the file is the whole draft.
+  function revisionSource(id, draftPath, { merge = false } = {}) {
+    const source = merge ? mergedRevisionSource(id, draftPath)
+      : draftSource(draftPath, priorDraftIdentity(id));
     if (source.id !== undefined && source.id !== id && slugify(source.id) !== id)
       fail(`change revise draft id '${source.id}' does not match change '${id}'`);
     return { ...source, id };
   }
 
-  function revisionIntakeOptions(id, draftPath, source) {
-    const resume = `claude-foundation change revise ${id} ${draftPath} --inspect`;
+  function mergedRevisionSource(id, draftPath) {
+    const path = resolve(root, draftPath);
+    if (!pathInside(root, path) || !existsSync(path))
+      fail("change revise --merge requires a JSON patch file inside the project");
+    const state = loadRuntime(id);
+    const base = state.draftSource?.draft;
+    if (!base || typeof base !== "object")
+      fail(`change revise --merge needs the draft '${id}' was compiled from, which changes ` +
+        "started before partial revision do not record; pass the whole revised draft without --merge");
+    if (state.draftSource.contractRevision !== Number(state.contractRevision || 0))
+      fail(`change revise --merge cannot patch '${id}': its agreement changed after the recorded ` +
+        "draft (an amendment or grounding reopen); pass the whole revised draft without --merge");
+    const patch = readJson(path);
+    let merged;
+    try { merged = mergeSemanticDraft(base, patch); }
+    catch (error) { fail(`change revise --merge: ${error.message || error}`); }
+    // A minimal draft stays minimal, so rows the patch adds without a key get
+    // derived keys, titles, and scenario names exactly as at start.
+    if (merged._minimalDraft && patch.version === undefined) delete merged.version;
+    delete merged._minimalDraft;
+    return expandMinimalSemanticDraft(merged, { ...minimalDraftContext, ...priorDraftIdentity(id) });
+  }
+
+  function reviseRoute(id, draftPath, merge) {
+    return `claude-foundation change revise ${id} ${draftPath}${merge ? " --merge" : ""}`;
+  }
+
+  function revisionIntakeOptions(id, draftPath, source, { merge = false } = {}) {
+    const resume = `${reviseRoute(id, draftPath, merge)} --inspect`;
     return {
       statePath: semanticIntakeStatePath(draftPath, `revise:${id}`),
       resume,
-      inspect: () => inspectRevision(id, draftPath, { quiet: true, preparedSource: source })
+      inspect: () => inspectRevision(id, draftPath, { quiet: true, preparedSource: source, merge })
     };
   }
 
   function inspectRevision(id, draftPath, options = {}) {
     assertRevisable(id);
-    const source = options.preparedSource || revisionSource(id, draftPath);
+    const merge = Boolean(options.merge);
+    const source = options.preparedSource || revisionSource(id, draftPath, { merge });
     if (source.version !== 4)
       fail(`change revise --inspect requires a semantic-draft v4 draft; got version ${source.version}`);
-    const { statePath, resume } = revisionIntakeOptions(id, draftPath, source);
+    const { statePath, resume } = revisionIntakeOptions(id, draftPath, source, { merge });
     return inspectSemanticIntakeSource(source, {
       statePath, resume, quiet: options.quiet,
       excludedSourcePath: relative(root, resolve(root, draftPath)).replaceAll("\\", "/")
@@ -2043,8 +2093,9 @@ export function createChangeLifecycle({
   function reviseChangeUnlocked(id, draftPath, options, expectedRevision) {
     const prior = assertRevisable(id);
     setOperationChangeId(id);
-    const source = revisionSource(id, draftPath);
-    const intake = revisionIntakeOptions(id, draftPath, source);
+    const merge = Boolean(options.merge);
+    const source = revisionSource(id, draftPath, { merge });
+    const intake = revisionIntakeOptions(id, draftPath, source, { merge });
     // One call: a missing or stale intake is inspected in place. DONE revises;
     // any other action is printed as `--inspect` would and nothing changes.
     const completedIntakeEffectiveness = completedDraftIntake(source, draftPath,
@@ -2098,6 +2149,7 @@ export function createChangeLifecycle({
         delta = requirementDelta(before,
           storedBefore ? draftFingerprints : packetFingerprints(basePath));
         next.requirementFingerprints = draftFingerprints;
+        next.draftSource = compiledDraftSource(next, source);
         if (!carrySpecApproval(prior, next, id, delta, "pre-build-revision")) {
           if (prior.pendingApprovalDelta) next.pendingApprovalDelta = prior.pendingApprovalDelta;
           recordApprovalDelta(next, delta);
@@ -2148,7 +2200,7 @@ export function createChangeLifecycle({
       openQuestionLines(openQuestions) +
       designWarningLines(draft, state.schema) +
       `  next: ${openQuestions.length
-        ? `ask these with the approval, record the answers in the draft, then claude-foundation change revise ${id} ${draftPath} --approve-spec --decision-ref <user-decision> --through build`
+        ? `ask these with the approval, record the answers in the draft, then ${reviseRoute(id, draftPath, merge)} --approve-spec --decision-ref <user-decision> --through build`
         : pending || !state.specApproval?.identity
           ? `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision> --through build`
           : `claude-foundation advance ${id} --through build`}`);

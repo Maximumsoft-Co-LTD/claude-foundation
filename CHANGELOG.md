@@ -38,6 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `change revise <change> <patch.json> --merge` applies a partial draft over
+  the draft the change was compiled from (keyed list merge, `null` deletes,
+  `"$remove": true` drops); it refuses after an amendment and for changes
+  started before this release.
+- Refactor-, config-, docs-, chore-, and test-only changes no longer require a
+  failure matrix, and a `bugfix` section no longer moves a low-risk draft to
+  standard.
+- Declared docs-only rapid changes (`workType: ["docs"]`, added requirements
+  only) write no delta spec, so README wording never becomes a living
+  requirement.
 - `advance` envelopes carry optional `signals[]` (`{code, message}`) for
   restored agreement drift, budget warnings, archive recovery that found the
   change already archived, and settled interrupted applies; the stderr and

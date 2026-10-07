@@ -9,8 +9,8 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import {
-  derivedCapabilityPurpose, expandMinimalSemanticDraft, minimalSemanticDraftTemplate,
-  normalizeSemanticDraft,
+  derivedCapabilityPurpose, expandMinimalSemanticDraft, mergeSemanticDraft,
+  minimalSemanticDraftTemplate, normalizeSemanticDraft,
   renderRequirementMarkdown, renderSpecHeading, semanticDraftTemplate
 } from "../runtime/workflow/semantic-draft.mjs";
 import { requiredProvidersOperation } from "../runtime/workflow/change-validation.mjs";
@@ -2316,4 +2316,49 @@ test("a proposal without a stated why does not repeat the intent", () => {
   const stated = renderDraftProposal({ ...draft, why: "Accountants reconcile invoices in spreadsheets" },
     { intent: "Export invoices as CSV", schema: "foundation-rapid" });
   assert.match(stated, /## Why\n\nAccountants reconcile invoices in spreadsheets/);
+});
+
+test("a partial draft merges by identity, deletes with null, and drops removed links", () => {
+  const prior = {
+    version: 4, intent: "Bound intake", why: "Keep intake fast", nonGoals: ["No queue"],
+    requirements: [
+      { key: "throughput", outcome: "20 per second",
+        scenarios: [{ name: "Fast", when: "messages arrive", then: "20 accepted" },
+          { name: "Burst", when: "a burst arrives", then: "it is queued" }] },
+      { key: "ack", outcome: "Acknowledge after commit", scenarios: [] }
+    ],
+    tasks: [{ key: "implement", outcome: "Implement", covers: ["throughput", "ack"], verify: "npm test" }],
+    evidence: { throughput: { capabilities: ["test"] }, ack: { capabilities: ["test"] } },
+    discovery: { coverage: [{ dimension: "compatibility", status: "needs-investigation" }] }
+  };
+  const frozen = structuredClone(prior);
+  const merged = mergeSemanticDraft(prior, {
+    why: null,
+    nonGoals: ["No queue", "No retry"],
+    requirements: [
+      { key: "throughput", outcome: "50 per second",
+        scenarios: [{ name: "Fast", then: "50 accepted" }, { name: "Burst", $remove: true }] },
+      { key: "ack", $remove: true },
+      { key: "trim", outcome: "Titles are trimmed" }
+    ],
+    discovery: { coverage: [{ dimension: "compatibility", status: "not-applicable" }] }
+  });
+  assert.deepEqual(prior, frozen, "the prior draft is not mutated");
+  assert.equal("why" in merged, false);
+  assert.deepEqual(merged.nonGoals, ["No queue", "No retry"]);
+  assert.deepEqual(merged.requirements.map((row) => row.key), ["throughput", "trim"]);
+  assert.deepEqual(merged.requirements[0].scenarios,
+    [{ name: "Fast", when: "messages arrive", then: "50 accepted" }]);
+  assert.equal(merged.requirements[0].outcome, "50 per second");
+  // The removed requirement's evidence and coverage go with it.
+  assert.deepEqual(merged.evidence, { throughput: { capabilities: ["test"] } });
+  assert.deepEqual(merged.tasks[0].covers, ["throughput"]);
+  assert.equal(merged.tasks[0].outcome, "Implement");
+  assert.deepEqual(merged.discovery.coverage, [{ dimension: "compatibility", status: "not-applicable" }]);
+  // An entry without the identity is appended; an array without one is replaced.
+  assert.equal(mergeSemanticDraft(prior, { requirements: [{ outcome: "New" }] }).requirements.length, 3);
+  assert.deepEqual(mergeSemanticDraft({ risks: [{ risk: "a" }] }, { risks: [{ risk: "b" }] }).risks,
+    [{ risk: "b" }]);
+  assert.throws(() => mergeSemanticDraft(prior, []), /patch must be a JSON object/);
+  assert.throws(() => mergeSemanticDraft(null, {}), /requires the change's prior draft/);
 });

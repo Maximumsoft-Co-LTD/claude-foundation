@@ -613,7 +613,9 @@ coupled behavior, high impact, irreversible effects, or any change needing more
 than unit/static evidence.
 
 `foundation-rapid` compiles a concise delta spec (merged into `openspec/specs` at
-Land) and normally omits design; agent defaults are listed in its proposal. It is eligible
+Land; declared docs-only work writes none) and normally omits design; agent
+defaults and typed sections such as `refactor` or `configContract` render in
+its proposal without changing the lane. It is eligible
 only for low-impact, isolated work with no public contract, persistent
 migration, security trigger, or irreversible effect. If stronger requirements
 appear, `/change` upgrades the same change to standard.
@@ -711,7 +713,8 @@ remove one (`removeRequirements`, with a migration) instead of abandoning the
 change. Version-4 amendments must include discovery coverage for the added and
 revised requirements; the validated delta remains in the compiled proposal.
 Before Build starts, `change revise <change-id> <draft.json>` inspects and, at
-`DONE`, recompiles the whole agreement under the same id in one call. Add
+`DONE`, recompiles the whole agreement under the same id in one call; with
+`--merge` the file holds only the changed keys and keyed entries. Add
 `--approve-spec --decision-ref <ref>` to `change start`, `change revise`, or
 `change amend` to record the user's approval in the call that applies it. Either
 route reports the added/revised/removed requirement delta. An approved change

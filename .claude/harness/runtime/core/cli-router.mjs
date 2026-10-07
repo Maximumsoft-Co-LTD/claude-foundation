@@ -237,20 +237,22 @@ export async function routeRuntimeCommand(command, values, api) {
     },
     "revise": async () => {
       const { flags, rest } = parseStrictCommandFlags(values, "change revise", {
-        boolean: ["inspect", "consume-draft", "approve-spec"],
+        boolean: ["inspect", "consume-draft", "approve-spec", "merge"],
         value: ["decision-ref", "through"]
       });
       const approval = sameCallApproval("change revise", flags);
       if (rest.length !== 2)
         die("change revise requires <change> <draft.json>");
+      // --merge reads the file as a partial draft over the compiled one.
+      const merge = flags.merge ? { merge: true } : {};
       if (flags.inspect) {
         if (flags["consume-draft"] || approval)
           die("change revise --inspect cannot be combined with --consume-draft or --approve-spec");
-        inspectRevision(rest[0], rest[1]);
+        inspectRevision(rest[0], rest[1], ...(flags.merge ? [merge] : []));
         return;
       }
       const revised = reviseChange(rest[0], rest[1], {
-        consumeDraft: flags["consume-draft"]
+        consumeDraft: flags["consume-draft"], ...merge
       });
       if (approval && !intakeStopped(revised)) await recordSameCallApproval(rest[0], approval);
     },

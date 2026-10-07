@@ -566,6 +566,83 @@ test("a rapid minimal draft compiles a delta spec that archive merges into opens
   assert.deepEqual(verifySpecSync({ before: "", after: living, delta }).violations, []);
 });
 
+// Scenario finding: a rapid change carrying the typed section its work type
+// recommends moved to the standard lane and then owed a failure matrix.
+test("typed sections keep a low-risk draft rapid; risk still selects standard", (t) => {
+  const typed = {
+    workType: ["refactor", "config", "bugfix"],
+    refactor: { invariants: ["Same result for every input"], characterization: "npm test" },
+    configContract: [{ key: "RESULT_LIMIT", default: "10", validation: "Integer from 1 to 100" }],
+    bugfix: { reproduction: "An unbounded input hangs", rootCause: "No limit",
+      regression: "npm test covers the limit" }
+  };
+  const rapid = fixture(t);
+  writeJson(rapid.draftPath, minimalRapidV4(typed));
+  const { output } = captureLog(() => rapid.lifecycle.startAtomic(rapid.draftPath));
+  assert.match(output, /^AGREED single-shot-change/m);
+  assert.doesNotMatch(output, /carries design content/);
+  const state = JSON.parse(readFileSync(join(rapid.runtime, "single-shot-change.json"), "utf8"));
+  assert.equal(state.schema, "foundation-rapid");
+  const proposal = readFileSync(join(rapid.changes, "single-shot-change", "proposal.md"), "utf8");
+  for (const heading of ["## Refactor invariants", "## Config contract", "## Bugfix analysis"])
+    assert.ok(proposal.includes(heading), heading);
+
+  // A declared risk signal still selects standard, whose dev document asks
+  // a refactor/config change for its own sections but no failure matrix.
+  const standard = fixture(t);
+  writeJson(standard.draftPath, minimalRapidV4({
+    impact: "medium", decisions: [], why: "Bound the result without changing it",
+    workType: ["refactor", "config"], refactor: typed.refactor, configContract: typed.configContract,
+    componentMap: [{ component: "Result", responsibility: "Bounds the result", files: ["src/result.js"] }]
+  }));
+  captureLog(() => standard.lifecycle.startAtomic(standard.draftPath));
+  const upgraded = JSON.parse(readFileSync(join(standard.runtime, "single-shot-change.json"), "utf8"));
+  assert.equal(upgraded.schema, "foundation-standard");
+});
+
+test("a rapid docs-only draft writes no delta spec and archives without touching openspec/specs", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4({
+    id: "reword-readme", intent: "Reword the README quick start", workType: ["docs"],
+    requirements: [{
+      key: "quick-start-wording", capability: "readme", operation: "added",
+      description: "The README SHALL describe the quick start in three steps",
+      outcome: "The quick start lists three steps",
+      scenarios: [{ name: "Reader follows the quick start", when: "A reader opens the README",
+        then: "The quick start lists three steps" }]
+    }],
+    tasks: [{ key: "reword", outcome: "Reword the quick start", covers: ["quick-start-wording"],
+      paths: ["README.md"], verify: "npm test" }],
+    evidence: { "quick-start-wording": { capabilities: ["test"] } }
+  }));
+  const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.match(output, /^AGREED reword-readme/m);
+  assert.match(output, /\n  specs: none \(docs-only change; it modifies no living spec\)\n/);
+  const change = join(value.changes, "reword-readme");
+  assert.equal(existsSync(join(change, "specs")), false);
+  assert.equal(readFileSync(join(change, ".openspec.yaml"), "utf8"),
+    "schema: foundation-rapid\nskip_specs: true\n");
+  assert.match(readFileSync(join(change, "proposal.md"), "utf8"),
+    /- \*\*Specs:\*\* none; docs-only work modifies no living spec/);
+  // The requirement still binds evidence: Prove checks the wording.
+  assert.deepEqual(JSON.parse(readFileSync(join(change, "evidence.yaml"), "utf8")).claims
+    .map((claim) => claim.requirementKey), ["quick-start-wording"]);
+
+  if (!existsSync(OPENSPEC_CLI)) return t.skip("repository OpenSpec CLI is not installed");
+  rmSync(join(value.root, "openspec", "schemas"), { recursive: true, force: true });
+  cpSync(join(REPOSITORY, "openspec", "schemas"), join(value.root, "openspec", "schemas"),
+    { recursive: true });
+  cpSync(join(REPOSITORY, "openspec", "config.yaml"), join(value.root, "openspec", "config.yaml"));
+  writeFileSync(join(change, "tasks.md"),
+    readFileSync(join(change, "tasks.md"), "utf8").replace(/- \[ \]/g, "- [x]"));
+  const run = (...args) => spawnSync(OPENSPEC_CLI, args, {
+    cwd: value.root, encoding: "utf8", env: { ...process.env, NO_COLOR: "1" }
+  });
+  const archive = run("archive", "reword-readme", "--yes");
+  assert.equal(archive.status, 0, archive.stdout + archive.stderr);
+  assert.equal(existsSync(join(value.root, "openspec", "specs", "readme")), false);
+});
+
 test("a minimal draft with ambiguous covers returns one EDIT naming covers", (t) => {
   const value = fixture(t);
   writeJson(value.draftPath, {

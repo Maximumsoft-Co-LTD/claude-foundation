@@ -302,6 +302,15 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
     inspectRevision: (...args) => { inspectedRevision = args; }
   });
   assert.deepEqual(inspectedRevision, ["change", "draft.json"]);
+  // --merge reads the file as a partial draft, in both the inspect and revise forms.
+  await route("revise", ["change", "patch.json", "--merge"], {
+    reviseChange: (...args) => { consumedRevision = args; }
+  });
+  assert.deepEqual(consumedRevision, ["change", "patch.json", { consumeDraft: undefined, merge: true }]);
+  await route("revise", ["change", "patch.json", "--merge", "--inspect"], {
+    inspectRevision: (...args) => { inspectedRevision = args; }
+  });
+  assert.deepEqual(inspectedRevision, ["change", "patch.json", { merge: true }]);
   await assert.rejects(route("revise", [
     "change", "draft.json", "--inspect", "--consume-draft"
   ], {}), /cannot be combined/);
