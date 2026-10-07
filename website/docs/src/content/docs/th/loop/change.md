@@ -96,7 +96,7 @@ claude-foundation change start .foundation/drafts/<id>.json
 - section ของ dev document: `summary`, `userFlow` (Mermaid), `failureMatrix`,
   `componentMap`, `apiContracts`, `dataModel`, `uiStates`, `configContract`,
   `jobContract`, `bugfix` หรือ `refactor` โดย harness อนุมาน `workType` จาก
-  `paths` ของ task (ประกาศเองเพื่อ override ได้) และสร้าง folder tree, plan,
+  `paths` ของ task (ประกาศเองเพื่อ override ได้) และสร้าง folder tree,
   file map และ test map ให้เอง Standard change ต้องมี section ที่ชนิดงานต้องการ
   ถ้าขาดจะเป็นงานแก้ draft ของ agent ไม่ใช่คำถามถึงผู้ใช้ ข้อเท็จจริงแต่ละข้อเขียนครั้งเดียว:
   `why` ใช้แทน summary ได้ (เพิ่ม `summary` เมื่อมีอะไรมากกว่านั้น) และถ้าไม่ได้เขียน
@@ -129,9 +129,14 @@ Rapid มี `proposal.md`, `tasks.md`, `evidence.yaml` และ delta
 เข้า `openspec/specs` มีเพียง rapid packet แบบเดิม หรืองานที่ประกาศว่าเป็นเอกสารล้วน
 (`workType: ["docs"]` ที่เพิ่ม requirement) ซึ่งประกาศ `skip_specs` ที่ไม่มี delta
 ถ้อยคำใน README จึงไม่กลายเป็น requirement ที่มีชีวิต
-Proposal ของ rapid คือ dev document แบบกระชับ: summary, what changes, user flow,
-folder tree (path ที่ยังไม่มีใน base ถูกทำเครื่องหมาย `+`), failure matrix และ plan
-ที่ Build ใช้ทำงาน section เชิงบรรยาย (`fileMap`, `testMap`, `componentMap`,
+ทุก proposal เริ่มด้วย header ที่ harness สร้างให้ (id, lane พร้อมเหตุผล, owner,
+วันที่สร้าง, status) และระบุ scope, ตาราง acceptance traceability (requirement,
+scenario, task, evidence, ไฟล์ทดสอบ) กับ definition of done ที่สร้างจาก policy ที่บังคับใช้จริง
+พร้อม `successMeasure` หนึ่งบรรทัดแบบไม่บังคับ task อยู่ใน `tasks.md` เท่านั้น
+ส่วน folder tree ที่สร้างให้ (path ที่ยังไม่มีใน base ถูกทำเครื่องหมาย `+`)
+อยู่ใน file map ของ `design.md` Proposal ของ rapid คือ dev document แบบกระชับ:
+summary, user flow, failure matrix และ decisions ของมัน change เดิมคง layout เก่าไว้และยังอ่านได้
+section เชิงบรรยาย (`fileMap`, `testMap`, `componentMap`,
 `userFlow`, `configContract`, `refactor`) ก็ render ที่นี่ และไม่ทำให้ change
 ความเสี่ยงต่ำย้ายไป standard ส่วน standard v4 มี `design.md` ที่เป็น dev document
 เต็มเสมอ และระบุชนิดงานพร้อมบอกเมื่อเป็นค่าที่อนุมาน label ของ node ใน flowchart

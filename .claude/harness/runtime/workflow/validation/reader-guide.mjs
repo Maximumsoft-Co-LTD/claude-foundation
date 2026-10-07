@@ -164,6 +164,9 @@ function capabilityIndex(draft) {
     for (const task of tasksByRequirement.get(key) || []) row.tasks.add(task);
     rows.set(capability, row);
   });
+  // One capability's requirements and tasks are already listed by Scope and
+  // the acceptance table; the index earns its place across several specs.
+  if (rows.size < 2) return "";
   return "## Capabilities\n\n| Capability | Requirements | Tasks |\n|---|---|---|\n" +
     [...rows.entries()].map(([capability, row]) =>
       `| ${cell(capability)} | ${cell(previewList(row.requirements))} | ` +

@@ -278,6 +278,11 @@ function semanticDraftIssues(source, { defaultTestEvidence = false } = {}) {
   if (source?.language !== undefined &&
       !/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(text(source.language)))
     issues.push("semantic draft language must be a BCP 47 tag such as 'en' or 'th'");
+  if (source?.successMeasure !== undefined &&
+      (typeof source.successMeasure !== "string" || !text(source.successMeasure) ||
+        text(source.successMeasure).length > 240 || /\r?\n/.test(text(source.successMeasure))))
+    issues.push("semantic draft successMeasure must be one line of at most 240 characters " +
+      "(how you will know it worked, with a number or observable); omit it when unknown");
   if (source?.diagrams !== undefined && !Array.isArray(source.diagrams))
     issues.push("semantic draft diagrams must be an array");
   if (source?.decisions !== undefined && !Array.isArray(source.decisions))
@@ -1422,6 +1427,7 @@ export function semanticDraftTemplate() {
       soThat: "the benefit", covers: ["observable-outcome"]
     }],
     successCriteria: ["State how the result is judged, with a measurable threshold"],
+    successMeasure: "Optional one line: the number or observable that shows it worked",
     impact: "low",
     coupling: "isolated",
     workType: ["feature"],

@@ -7,7 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Every change's `proposal.md` now opens with a harness-rendered header (change
+  id, lane and why, owner or `unassigned`, created date, status pointer), a
+  Scope (in scope, and out of scope derived from the task `paths` allow-list,
+  unselected repositories, or authored `nonGoals`), an acceptance traceability
+  table (requirement, scenario claim and kind, task, evidence, test files; ids
+  and paths only), and a definition of done generated from the enforced
+  policy. New optional draft key `successMeasure` (one line); `change start`
+  prints one advisory coverage NOTE and never adds an EDIT. Authors write
+  nothing extra and no command changes.
+
 ### Changed
+
+- Document layout changed, existing changes still read. Each fact now has one
+  home: the proposal no longer renders Plan, What changes, or Folder tree
+  (tasks live in `tasks.md`; `design.md` renders the derived folder tree inside
+  its File map and no Plan), a one-capability proposal omits the Capabilities
+  table (Scope names the capability), and a rapid proposal omits default
+  Impact lines (code surface, no security trigger). Six small rapid fixtures
+  render in 14% fewer lines (203 vs 237) but 23% more bytes (6250 vs 5076)
+  because the new blocks carry ids and policy text. Changes agreed earlier keep their old
+  sections; pull-request narratives read either layout.
 
 - Change reaches AGREED in one `change start` call. Paid w5 lab runs needed a
   second call in 5 of 10 scenarios (api-keys: four) for fields the harness

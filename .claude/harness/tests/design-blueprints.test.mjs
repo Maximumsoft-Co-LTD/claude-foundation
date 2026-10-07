@@ -10,7 +10,7 @@ import {
 import {
   derivedByHarness, derivedFailureMatrix, derivedFileMap, derivedTestMap, devDocumentIssues, devDocumentShapeIssues,
   docsOnlyDraft, inferWorkTypes,
-  mermaidLabelIssues, renderComponentMap, renderFolderTree, renderPlan, renderUserFlow,
+  mermaidLabelIssues, renderComponentMap, renderFileTree, renderUserFlow,
   requiredDevSections, withNewPaths
 } from "../runtime/workflow/validation/dev-document.mjs";
 
@@ -194,15 +194,12 @@ test("the dev document derives its folder tree, plan, and maps from the tasks", 
     componentMap: [{ component: "Board", responsibility: "Shows cards", files: ["src/board/Board.tsx"] }],
     userFlow: { purpose: "Add a card", source: "flowchart LR\n  A --> B" }
   };
-  const tree = renderFolderTree(value);
-  assert.match(tree, /^## Folder tree/);
+  const tree = renderFileTree(value);
+  // The tree has no heading of its own: it renders inside design.md's file map.
+  assert.doesNotMatch(tree, /^## /);
   assert.match(tree, /└── src\/\n {4}├── ~ board\/\n {4}│ {3}└── \+ Board\.tsx/);
   assert.match(tree, /- legacy\.js/);
   assert.match(tree, /~ store\.ts/);
-
-  const plan = renderPlan(value);
-  assert.match(plan, /\| T001 \| Board UI \| src\/board\/\*\* \| `npm test -- board` \| — \| add-card \|/);
-  assert.match(plan, /```mermaid\ngraph TD\n {2}T001 --> T002\n```/);
 
   assert.deepEqual(derivedFileMap({ tasks: value.tasks }).map((row) => [row.path, row.tasks]),
     [["src/board/", ["T001"]], ["src/store.ts", ["T002"]]]);
@@ -210,8 +207,7 @@ test("the dev document derives its folder tree, plan, and maps from the tasks", 
     [["add-card", "T001"], ["Store", "T002"]]);
   assert.match(renderUserFlow(value), /## User flow\n\nAdd a card\n\n```mermaid\nflowchart LR/);
   assert.match(renderComponentMap(value), /\| Board \| Shows cards \| src\/board\/Board\.tsx \| T001 \|/);
-  assert.equal(renderFolderTree({}), "");
-  assert.equal(renderPlan({}), "");
+  assert.equal(renderFileTree({}), "");
 });
 
 // A rapid change has no design.md: its compact dev document is the proposal.
@@ -223,13 +219,16 @@ test("a rapid proposal carries the compact dev document and keeps the rapid lane
     claims: [], tasks: [{ id: "T001", outcome: "Sum helper", paths: ["src/sum.js"], verify: "npm test" }]
   };
   const proposal = renderDraftProposal(value, { schema: "foundation-rapid" });
-  const order = ["## Summary", "## What changes", "## User flow", "## Folder tree",
-    "## Failure matrix", "## Plan", "## Impact"].map((heading) => proposal.indexOf(heading));
+  const order = ["## Summary", "## Scope", "## User flow", "## Failure matrix",
+    "## Definition of done", "## Impact"].map((heading) => proposal.indexOf(heading));
   assert.ok(order.every((index, position) => index > (order[position - 1] ?? -1)), proposal);
+  // Plan, What changes, and Folder tree have one home each elsewhere.
+  for (const heading of ["## Plan", "## What changes", "## Folder tree"])
+    assert.ok(!proposal.includes(heading), heading);
   assert.equal(semanticDraftKeepsDesign(value, true), false);
   const standard = renderDraftProposal(value, { schema: "foundation-standard" });
-  assert.ok(standard.includes("## Folder tree"));
-  assert.ok(!standard.includes("## Plan") && !standard.includes("## User flow"));
+  assert.ok(!standard.includes("## Plan") && !standard.includes("## User flow") &&
+    !standard.includes("## Folder tree"));
 });
 
 // Each fact is written once: failure scenarios fill the failure matrix, and
@@ -306,12 +305,12 @@ test("task paths missing at the base read as additions in the tree and file map"
   const value = { tasks: [{ id: "T001", outcome: "Sum", paths: ["src/sum.js", "src/index.js", "lib/**"] }] };
   const documented = withNewPaths(value, (path) => path === "src/index.js");
   assert.deepEqual([...documented._newPaths].sort(), ["lib/", "src/sum.js"]);
-  assert.match(renderFolderTree(documented),
+  assert.match(renderFileTree(documented),
     /```text\n\.\n├── \+ lib\/\n└── src\/\n {4}├── ~ index\.js\n {4}└── \+ sum\.js/);
   assert.deepEqual(derivedFileMap(documented).map((row) => [row.path, row.change]),
     [["src/sum.js", "add"], ["src/index.js", "change"], ["lib/", "add"]]);
   // An authored delete keeps `-`; another repository's path stays a change.
-  assert.match(renderFolderTree({ ...documented, fileMap: [{ path: "src/sum.js", change: "delete" }] }),
+  assert.match(renderFileTree({ ...documented, fileMap: [{ path: "src/sum.js", change: "delete" }] }),
     /- sum\.js/);
   assert.equal(withNewPaths({ tasks: [{ repository: "api", paths: ["x.js"] }] }, () => false)._newPaths,
     undefined);
@@ -427,11 +426,15 @@ test("inferred work types are stated and overridable; light paths owe no failure
     /^# Design\n\n## Work type\n\nui \(inferred from paths; declare workType to override\)/);
 });
 
-test("design.md reads flow, components, contracts, failures, file map, tests, then plan", () => {
+test("design.md reads flow, components, contracts, failures, file map (with its tree), then tests", () => {
   const design = renderDraftDesign({ ...draft(COMPLETE), userFlow: "flowchart LR\n  A --> B",
     componentMap: [{ component: "Import", responsibility: "Dialog" }],
     tasks: [{ id: "T001", outcome: "Import", paths: ["apps/editor/src/app/api/**"], verify: "npm test" }] });
   const order = ["## Work type", "## User flow", "## Component map", "## API contracts", "## UI states",
-    "## Failure matrix", "## File map", "## Test map", "## Plan"].map((heading) => design.indexOf(heading));
+    "## Failure matrix", "## File map", "## Test map"].map((heading) => design.indexOf(heading));
   assert.ok(order.every((index, position) => index > (order[position - 1] ?? -1)), design);
+  assert.ok(!design.includes("## Plan") && !design.includes("## Folder tree"));
+  // The derived tree sits inside the file map, before the next section.
+  assert.ok(design.indexOf("```text") > design.indexOf("## File map") &&
+    design.indexOf("```text") < design.indexOf("## Test map"), design);
 });

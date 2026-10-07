@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeSemanticDraft } from "../runtime/workflow/semantic-draft.mjs";
+import { expandMinimalSemanticDraft, normalizeSemanticDraft } from "../runtime/workflow/semantic-draft.mjs";
 import {
-  draftNeedsDesign, renderDraftDesign, renderDraftProposal
+  draftNeedsDesign, renderDraftDesign, renderDraftProposal, reviewRouteLabel,
+  synchronizeProposalClassification
 } from "../runtime/workflow/change-lifecycle.mjs";
+import { coverageNoteLine } from "../runtime/workflow/validation/packet-overview.mjs";
 import {
   durableDecisionMetadataIssues
 } from "../runtime/workflow/change-validation.mjs";
@@ -94,8 +96,9 @@ test("design omits placeholder sections and fills the file map task column", () 
     assert.ok(!design.includes(placeholder), `unexpected ${placeholder}`);
   assert.match(design, /\| src\/board\/reducer\.ts \| added \| State \| T001 \|/);
   assert.match(design, /\| tsconfig\.json \| added \| Config \| T002 \|/);
-  assert.match(design, /## Plan[\s\S]*\| T002 \| Local storage \| src\/storage\.ts, tsconfig\*\.json \| `npm test` \| T001 \| persist \|/);
-  assert.match(design, /```mermaid\ngraph TD\n {2}T001 --> T002\n```/);
+  // Tasks live in tasks.md only; the derived tree sits inside the file map.
+  assert.doesNotMatch(design, /## Plan/);
+  assert.match(design, /## File map[\s\S]*`\+` add[\s\S]*```text[\s\S]*reducer\.ts/);
   // A design with no decisions at all is valid, not a missing section.
   assert.deepEqual(durableDecisionMetadataIssues("# Design\n\n## Risks\n"), []);
 });
@@ -113,7 +116,8 @@ test("proposal leads with summary, stories, criteria, and a capability index", (
   });
   const proposal = renderDraftProposal(compiled, { intent: compiled.intent });
   const order = ["## Summary", "## Why", "## User stories", "## Success criteria",
-    "## Capabilities", "## What changes", "## Appendix: discovery coverage"].map((heading) =>
+    "## Capabilities", "## Scope", "## Acceptance traceability", "## Definition of done",
+    "## Appendix: discovery coverage"].map((heading) =>
     proposal.indexOf(heading));
   assert.ok(order.every((index, position) => index > (order[position - 1] ?? -1)), proposal);
   assert.ok(proposal.indexOf("**P1**") < proposal.indexOf("**P2**"));
@@ -205,4 +209,165 @@ test("file map keeps an explicit task column", () => {
     [{ path: "src/x", tasks: ["T001"] }]);
   assert.deepEqual(fileMapWithTasks([{ path: "lib/**" }], [{ id: "T001", paths: ["lib/a.ts"] }]),
     [{ path: "lib/**", tasks: ["T001"] }]);
+});
+
+// ---- Packet overview: header, scope, acceptance table, definition of done ----
+
+const scenario = (when, then, kind) => ({ when, then, ...(kind ? { kind } : {}) });
+
+function rapidCompiled({ requirements, tasks, ...rest } = {}) {
+  const value = {
+    intent: "Format money",
+    requirements: requirements || [
+      { description: "The system SHALL round half up", scenarios: [scenario("a total ends in 5", "it rounds up", "success"),
+        scenario("a total is invalid", "an error is returned", "failure")] },
+      { description: "The system SHALL keep two decimals", scenarios: [scenario("a total is whole", "two zeros are shown")] }],
+    tasks: tasks || [
+      { outcome: "Round totals", paths: ["src/money.js", "test/money.test.js"], verify: "npm test", covers: ["round-half-up"] },
+      { outcome: "Pad decimals", paths: ["src/pad.js"], verify: "npm test", covers: ["keep-two-decimals"] }],
+    ...rest
+  };
+  const result = normalizeSemanticDraft(expandMinimalSemanticDraft(value), slugify, { defaultRapidEvidence: true });
+  assert.deepEqual(result.issues, []);
+  return result.draft;
+}
+
+const RAPID = { schema: "foundation-rapid", id: "format-money", createdAt: "2026-10-07T01:00:00.000Z", intent: "Format money" };
+
+test("every proposal states id, lane and its reason, owner, created date, and status", () => {
+  const compiled = rapidCompiled();
+  const rapid = renderDraftProposal(compiled, RAPID);
+  assert.match(rapid, /^- \*\*Change:\*\* `format-money` · \*\*Lane:\*\* rapid \(low risk; see Impact\)$/m);
+  assert.match(rapid, /^- \*\*Owner:\*\* unassigned · \*\*Created:\*\* 2026-10-07 · \*\*Status:\*\* `claude-foundation changes`$/m);
+  const standard = renderDraftProposal({ ...compiled, impact: "medium", securityTriggers: ["authentication"] },
+    { ...RAPID, schema: "foundation-standard" });
+  assert.match(standard, /\*\*Lane:\*\* standard \(impact or coupling above the rapid limit \(see Impact\); security triggers: authentication\)/);
+  // A fact the harness does not hold is left out, never invented.
+  const bare = renderDraftProposal(compiled, { intent: "x" });
+  assert.doesNotMatch(bare, /\*\*Created:\*\*|\*\*Lane:\*\*|\*\*Change:\*\*/);
+  assert.match(bare, /\*\*Owner:\*\* unassigned/);
+});
+
+test("the acceptance table has one row per claim linking requirement, kind, task, and test files", () => {
+  const compiled = rapidCompiled();
+  const proposal = renderDraftProposal(compiled, RAPID);
+  const table = proposal.split("## Acceptance traceability")[1].split("\n## ")[0];
+  const rows = table.split("\n").filter((line) => line.startsWith("| ") && !line.startsWith("| Requirement"));
+  assert.equal(rows.length, compiled.claims.length);
+  for (const claim of compiled.claims) {
+    const taskIds = compiled.tasks.filter((task) => task.claims.includes(claim.id)).map((task) => task.id);
+    const row = rows.find((line) => line.startsWith(`| ${claim.requirementKey}`) &&
+      (claim.id === claim.requirementKey || line.includes(`› ${claim.id.slice(claim.requirementKey.length + 1)} |`)));
+    assert.ok(row, claim.id);
+    assert.ok(row.includes(` | ${taskIds.join(", ")} | `), row);
+  }
+  assert.match(proposal, /\| round-half-up › a-total-ends-in-5 \| happy \| T001 \| test\/money\.test\.js \|/);
+  assert.match(proposal, /\| round-half-up › a-total-is-invalid \| failure \| T001 \| test\/money\.test\.js \|/);
+  // Unclassified stays unclassified; no test path is invented for a task without one.
+  assert.match(proposal, /\| keep-two-decimals \| unclassified \| T002 \| — \|/);
+  // Scenario text is referenced by id, never copied into the table.
+  assert.doesNotMatch(table, /rounds up|two zeros/);
+});
+
+test("out of scope is derived from enforced boundaries and is never empty or invented", () => {
+  const compiled = rapidCompiled();
+  const proposal = renderDraftProposal(compiled, RAPID, { unselectedRepositories: ["billing"] });
+  assert.match(proposal, /^- \*\*Out of scope:\*\* edits outside `src\/money\.js`, `test\/money\.test\.js`, `src\/pad\.js`; repositories not selected: billing$/m);
+  // Authored non-goals keep their own section and Scope points at it once.
+  const goals = renderDraftProposal({ ...compiled, nonGoals: ["No rounding modes"] }, RAPID);
+  assert.match(goals, /the authored Non-goals below/);
+  assert.equal(goals.split("No rounding modes").length - 1, 1);
+  // No task paths, no non-goals, no repositories: no Out of scope line at all.
+  const none = renderDraftProposal({ ...compiled, tasks: compiled.tasks.map((task) => ({ ...task, paths: [] })) }, RAPID);
+  assert.doesNotMatch(none, /Out of scope/);
+  assert.match(none, /^## Scope\n\n- \*\*In scope/m);
+  const empty = renderDraftProposal({ ...compiled, changes: [], specs: [], tasks: [] }, RAPID);
+  assert.doesNotMatch(empty, /## Scope/);
+});
+
+test("the definition of done states only what the policy enforces, per lane", () => {
+  const compiled = rapidCompiled();
+  const label = (state) => reviewRouteLabel({
+    reviewPolicy: "risk-tiered", lowRiskModel: "fast",
+    state: { ...RAPID, impact: "low", coupling: "isolated", ...state }, claims: compiled.claims
+  });
+  const quiet = label({});
+  const dod = (draft, reviewLabel) => renderDraftProposal(draft, RAPID, { reviewLabel })
+    .split("## Definition of done\n\n")[1].split("\n\n")[0];
+  const quietDone = dod(compiled, quiet);
+  assert.match(quietDone, /Review: not required \(rapid lane, low tier: deterministic evidence only\)\./);
+  assert.doesNotMatch(quietDone, /risk-tiered AI review/);
+  assert.match(quietDone, /Changed tests fail on the original code\./);
+  assert.match(quietDone, /Land archives it; Land never commits\./);
+  assert.ok(quietDone.split("\n").length <= 6);
+  // Standard or security work is reviewed, and the line is the policy's own label.
+  const secure = label({ schema: "foundation-standard", securityTriggers: ["authentication"], impact: "medium" });
+  assert.match(secure, /^risk-tiered AI review \(high tier/);
+  const secureDone = dod({ ...compiled, securityTriggers: ["authentication"] }, secure);
+  assert.ok(secureDone.includes(`Review: ${secure}.`));
+  // Behavior-neutral work owes no failing-on-original test; a missing label owes no review line.
+  const docs = rapidCompiled({ workType: ["docs"], requirements: [
+    { description: "The system SHALL explain rounding", scenarios: [scenario("a reader opens the page", "rounding is explained")] }],
+  tasks: [{ outcome: "Words", paths: ["docs/a.md"], verify: "node check.mjs", covers: ["explain-rounding"] }] });
+  assert.doesNotMatch(dod(docs, quiet), /Changed tests fail/);
+  assert.doesNotMatch(renderDraftProposal(compiled, RAPID), /Review:/);
+  // Acceptance is listed only when the draft requires it.
+  assert.doesNotMatch(quietDone, /User acceptance/);
+  assert.match(dod({ ...compiled, acceptance: { required: true, claimIds: [] } }, secure), /User acceptance is recorded\./);
+});
+
+test("the success line is the authored measure, a pointer to authored criteria, or the plain default", () => {
+  const compiled = rapidCompiled();
+  assert.match(renderDraftProposal({ ...compiled, successMeasure: "Totals match the ledger to the cent" }, RAPID),
+    /^- Success: Totals match the ledger to the cent\.$/m);
+  assert.match(renderDraftProposal({ ...compiled, successCriteria: ["Under 3 clicks"] }, RAPID),
+    /^- Success: the Success criteria above hold\.$/m);
+  assert.match(renderDraftProposal(compiled, RAPID), /^- Success: acceptance scenarios above pass\.$/m);
+  const bad = normalizeSemanticDraft({ version: 4, intent: "x", successMeasure: 5 }, slugify);
+  assert.equal(bad.issues.filter((issue) => /successMeasure/.test(issue)).length, 1);
+});
+
+test("coverage notes are advisory and read only what the scenarios say", () => {
+  const compiled = rapidCompiled({ requirements: [
+    { description: "The system SHALL round half up", scenarios: [scenario("a total ends in 5", "it rounds up", "success")] }],
+  tasks: [{ outcome: "Round", paths: ["src/money.js"], verify: "npm test", covers: ["round-half-up"] }] });
+  assert.equal(coverageNoteLine(compiled), "coverage (advisory, no repair needed): no failure scenario; " +
+    "no edge/boundary scenario; no success measure stated (optional 'successMeasure')");
+  assert.equal(coverageNoteLine({ ...compiled, successMeasure: "ok" }).includes("success measure"), false);
+  // Failure inferred from a scenario's own words, and a boundary read from its text, silence the notes.
+  const signalled = rapidCompiled({ successMeasure: "ok", requirements: [
+    { description: "The system SHALL round half up", scenarios: [scenario("a total ends in 5", "it rounds up"),
+      scenario("the total is invalid", "an error is returned"), scenario("the total is empty", "zero is shown")] }],
+  tasks: [{ outcome: "Round", paths: ["src/money.js"], verify: "npm test", covers: ["round-half-up"] }] });
+  assert.equal(coverageNoteLine(signalled), "");
+  // Docs work owes no failure or boundary scenario.
+  const docs = rapidCompiled({ workType: ["docs"], successMeasure: "ok", requirements: [
+    { description: "The system SHALL explain rounding", scenarios: [scenario("a reader opens the page", "rounding is explained")] }],
+  tasks: [{ outcome: "Words", paths: ["docs/a.md"], verify: "node check.mjs", covers: ["explain-rounding"] }] });
+  assert.equal(coverageNoteLine(docs), "");
+});
+
+test("resolve keeps the lane and review line current and leaves an older layout untouched", () => {
+  const proposal = renderDraftProposal(rapidCompiled(), RAPID, { reviewLabel: "not required (x)" });
+  const upgraded = synchronizeProposalClassification(proposal,
+    { impact: "medium", coupling: "isolated", upgradedFrom: "foundation-rapid" },
+    { reviewLabel: "risk-tiered AI review (medium tier, fast model)" });
+  assert.match(upgraded, /\*\*Lane:\*\* standard \(upgraded from rapid at resolve; see Impact\)/);
+  assert.match(upgraded, /^- Review: risk-tiered AI review \(medium tier, fast model\)\.$/m);
+  assert.match(upgraded, /^- \*\*Impact:\*\* medium$/m);
+  assert.equal(upgraded.split("- Review:").length, 2);
+  const older = "# Change: x\n\n## What changes\n\n- a\n\n## Plan\n\n| T |\n\n## Impact\n\n- **Impact:** low\n- **Coupling:** isolated\n";
+  assert.equal(synchronizeProposalClassification(older, { impact: "low", coupling: "isolated" },
+    { reviewLabel: "required" }), older);
+});
+
+test("a typical rapid proposal stays compact and design.md has no plan, impact, or duplicate tree", () => {
+  const proposal = renderDraftProposal(rapidCompiled(), RAPID, { reviewLabel: "not required (x)" });
+  assert.ok(proposal.split("\n").length <= 40, `${proposal.split("\n").length} lines`);
+  for (const heading of ["## Plan", "## What changes", "## Folder tree", "## Non-goals"])
+    assert.ok(!proposal.includes(heading), heading);
+  const design = renderDraftDesign(compile());
+  for (const absent of ["## Plan", "## Folder tree", "## Impact", "**Coupling:**", "**Security triggers:**"])
+    assert.ok(!design.includes(absent), absent);
+  assert.equal(design.split("```text").length - 1, 1);
 });

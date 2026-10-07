@@ -735,7 +735,7 @@ test("a minimal draft joins an existing capability or asks which one", (t) => {
   const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
   assert.match(output, /^AGREED reject-empty-note-titles/m);
   assert.match(readFileSync(join(value.changes, "reject-empty-note-titles", "proposal.md"), "utf8"),
-    /^\| notes \| Reject a note whose title is empty \|/m);
+    /^- \*\*In scope \(`notes`\):\*\* Reject a note whose title is empty$/m);
 });
 
 // Problems Build used to discover are agent repairs on the first inspect.
@@ -1411,4 +1411,92 @@ test("small bugfix, feature, refactor, and docs drafts stay rapid without design
     assert.match(proposal, /^- \*\*Impact:\*\* low$/m);
     assert.match(proposal, /^- \*\*Coupling:\*\* isolated$/m);
   }
+});
+
+// Every change's proposal states who and which lane, scope, acceptance links,
+// and what done means, rendered by the harness from data it already holds.
+test("a rapid proposal carries header, scope, acceptance table, definition of done, and one advisory NOTE", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4({
+    requirements: [{
+      key: "bounded-result", capability: "single-shot-change", operation: "added",
+      scenarios: [{ name: "Bounded input", kind: "success", when: "A bounded input arrives",
+        then: "The bounded result is returned" }],
+      outcome: "The bounded result is returned"
+    }],
+    tasks: [{ key: "implement-bounded-result", outcome: "Implement the bounded result",
+      covers: ["bounded-result"], paths: ["src/result.js", "test/result.test.js"], verify: "npm test" }]
+  }));
+  const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  // Advisory only: one compact NOTE, never an EDIT or a refusal.
+  assert.match(output, /^AGREED single-shot-change/m);
+  const notes = output.split("\n").filter((line) => line.startsWith("NOTE: coverage"));
+  assert.deepEqual(notes, [
+    "NOTE: coverage (advisory, no repair needed): no failure scenario; no edge/boundary scenario; " +
+    "no success measure stated (optional 'successMeasure')"]);
+  const proposal = readFileSync(join(value.changes, "single-shot-change", "proposal.md"), "utf8");
+  assert.match(proposal, /^- \*\*Change:\*\* `single-shot-change` · \*\*Lane:\*\* rapid \(low risk; see Impact\)$/m);
+  assert.match(proposal, /^- \*\*Owner:\*\* unassigned · \*\*Created:\*\* 2026-09-02 · \*\*Status:\*\* `claude-foundation changes`$/m);
+  assert.match(proposal, /^- \*\*In scope \(`single-shot-change`\):\*\* The bounded result is returned$/m);
+  assert.match(proposal, /^- \*\*Out of scope:\*\* edits outside `src\/result\.js`, `test\/result\.test\.js`$/m);
+  assert.match(proposal, /\| bounded-result \| happy \| T001 \| test\/result\.test\.js \|/);
+  assert.match(proposal, /^- Review: not required \(legacy review policy: no AI review runs\)\.$/m);
+  assert.match(proposal, /^- Changed tests fail on the original code\.$/m);
+  assert.match(proposal, /^- Success: acceptance scenarios above pass\.$/m);
+  // Each fact has one home: no plan table, change list, or folder tree here.
+  for (const heading of ["## Plan", "## What changes", "## Folder tree", "## Non-goals"])
+    assert.ok(!proposal.includes(heading), heading);
+});
+
+test("a classified, measured rapid draft raises no coverage NOTE and states its success measure", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4({
+    successMeasure: "p95 under 200 ms on the 10k-row fixture",
+    requirements: [{
+      key: "bounded-result", capability: "single-shot-change", operation: "added",
+      scenarios: [
+        { name: "Bounded input", kind: "success", when: "A bounded input arrives", then: "The result is returned" },
+        { name: "Invalid input", kind: "failure", when: "The input is invalid", then: "An error names the field" },
+        { name: "Empty input", kind: "boundary", when: "The input is empty", then: "An empty result is returned" }],
+      outcome: "The bounded result is returned"
+    }]
+  }));
+  const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.match(output, /^AGREED single-shot-change/m);
+  assert.doesNotMatch(output, /NOTE: coverage/);
+  const proposal = readFileSync(join(value.changes, "single-shot-change", "proposal.md"), "utf8");
+  assert.match(proposal, /^- Success: p95 under 200 ms on the 10k-row fixture\.$/m);
+  assert.match(proposal, /\| bounded-result › the-input-is-invalid \| failure \|/);
+  assert.match(proposal, /\| bounded-result › the-input-is-empty \| edge \|/);
+  // A malformed measure is a draft edit; an absent one never is.
+  writeJson(value.draftPath, minimalRapidV4({ successMeasure: "line one\nline two" }));
+  const { result } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.equal(result.action, "EDIT");
+  assert.match(result.intake.issues.join("\n"), /successMeasure must be one line/);
+});
+
+// A change agreed before the layout moved keeps its Plan, What changes, and
+// Folder tree; resolve edits only harness-owned lines and nothing reads them.
+test("an older-layout proposal still resolves and is re-rendered consistently by revise", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4());
+  captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  const path = join(value.changes, "single-shot-change", "proposal.md");
+  const legacy = [
+    "# Change: Return the bounded result", "", "## What changes", "", "- Bounded result", "",
+    "## Folder tree", "", "```text", ".", "└── src/", "```", "", "## Plan", "",
+    "| Task | Outcome | Files | Verify | Depends on | Requirements |", "|---|---|---|---|---|---|",
+    "| T001 | Implement | src/** | `npm test` | — | bounded-result |", "", "## Impact", "",
+    "- **Impact:** low", "- **Coupling:** isolated", "- **Affected surfaces:** code",
+    "- **Security triggers:** none detected", ""].join("\n");
+  writeFileSync(path, legacy);
+  captureLog(() => value.lifecycle.resolveChange("single-shot-change", {}));
+  assert.equal(readFileSync(path, "utf8"), legacy);
+  // The original text is also what a pull-request narrative reads.
+  writeJson(value.draftPath, minimalRapidV4({ why: "Callers need the bounded result" }));
+  captureLog(() => value.lifecycle.reviseChange("single-shot-change", value.draftPath));
+  const revised = readFileSync(path, "utf8");
+  assert.match(revised, /^## Scope$/m);
+  assert.match(revised, /^## Why\n\nCallers need the bounded result$/m);
+  assert.doesNotMatch(revised, /## Plan|## What changes|## Folder tree/);
 });

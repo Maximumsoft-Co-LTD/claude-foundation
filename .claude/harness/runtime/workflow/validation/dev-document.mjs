@@ -191,6 +191,15 @@ function scenarioFailureKind(row) {
     FAILURE_WORDS.test([row.name, row.when, row.then].map(text).join(" ")) ? "inferred" : "";
 }
 
+// A scenario's kind for the acceptance table: the authored kind (success is
+// "happy", boundary is "edge"), else failure when its own words say so, else
+// "unclassified". Nothing else is inferred.
+export function scenarioKindLabel(row) {
+  const kind = text(row?.kind).toLowerCase();
+  if (kind) return kind === "success" ? "happy" : kind === "boundary" ? "edge" : kind;
+  return scenarioFailureKind(row) ? "failure" : "unclassified";
+}
+
 function failureScenarios(draft) {
   const found = (Array.isArray(draft?.requirements) ? draft.requirements : [])
     .flatMap((requirement) => scenarioList(requirement).map((scenario) => ({
@@ -369,7 +378,8 @@ export function withNewPaths(draft, exists) {
 
 // A tree of every path the change touches, marked + add, ~ change, - remove.
 // Directory scopes end in `/`; the reader sees the shape of the change at once.
-export function renderFolderTree(draft) {
+// Rendered inside design.md's file map, which already lists the paths.
+export function renderFileTree(draft) {
   const marks = new Map();
   const fresh = newPaths(draft);
   for (const row of Array.isArray(draft?.fileMap) ? draft.fileMap : []) {
@@ -404,29 +414,13 @@ export function renderFolderTree(draft) {
     });
   };
   walk(root, "");
-  return "## Folder tree\n\n`+` add · `~` change · `-` remove\n\n```text\n" + lines.join("\n") + "\n```";
+  return "`+` add · `~` change · `-` remove\n\n```text\n" + lines.join("\n") + "\n```";
 }
 
 function requirementsByTask(draft) {
   const claimToKey = new Map((draft?.claims || []).map((claim) => [claim.id, claim.requirementKey]));
   return new Map((draft?.tasks || []).map((task) => [task.id,
     [...new Set((task.claims || []).map((claim) => claimToKey.get(claim)).filter(Boolean))]]));
-}
-
-// The plan Build executes, in dependency order with the check for each step.
-export function renderPlan(draft) {
-  const tasks = draft?.tasks || [];
-  if (!tasks.length) return "";
-  const requirements = requirementsByTask(draft);
-  const rows = tasks.map((task) =>
-    `| ${task.id} | ${cell(task.outcome)} | ${cell(strings(task.paths))} | ` +
-    `${task.verify ? `\`${cell(task.verify)}\`` : "—"} | ${cell((task.dependsOn || []).join(", "))} | ` +
-    `${cell((requirements.get(task.id) || []).join(", "))} |`);
-  const edges = tasks.flatMap((task) => (task.dependsOn || []).map((dependency) =>
-    `  ${dependency} --> ${task.id}`));
-  return "## Plan\n\n| Task | Outcome | Files | Verify | Depends on | Requirements |\n" +
-    "|---|---|---|---|---|---|\n" + rows.join("\n") +
-    (edges.length ? `\n\n\`\`\`mermaid\ngraph TD\n${edges.join("\n")}\n\`\`\`` : "");
 }
 
 // Without an authored file map, each task scope is one row owned by its tasks.

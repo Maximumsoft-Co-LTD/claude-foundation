@@ -151,12 +151,29 @@ capability is a top-level `capability` or the intent's noun phrase (such as
 `kanban-board`), a requirement key is at most five whole words, and its
 heading is the readable SHALL clause. A rapid proposal omits Why when the draft states no
 reason, and lists recorded `decisions` (defaults the agent chose without
-asking, `decidedBy: agent`) under Decisions. Every packet is a dev document:
-the proposal shows a folder tree of touched paths (`+` add, including paths
-absent at the base; `~` change; `-` remove), and a rapid proposal also carries
-the compact form (summary, what changes, user flow, failure matrix, the Plan
-Build executes, and any authored descriptive section: file map, test map,
-component map, config contract, refactor, bugfix). Descriptive sections never move a
+asking, `decidedBy: agent`) under Decisions. Every packet is a dev document
+and each fact has one home. Every proposal, rapid or standard, opens with a
+harness-rendered header (change id, lane and why, owner, created date, status
+via `claude-foundation changes`; an unknown owner reads `unassigned`) and
+states Scope (in scope: the behavior each requirement adds; out of scope:
+the task `paths` allow-list, unselected repositories, or the authored
+`nonGoals`, and never an empty section), an acceptance traceability table
+(requirement, scenario claim and kind, task, evidence, test files; ids and
+paths only, scenario text stays in `specs/`), and a definition of done
+generated from the policy that is enforced: fresh evidence for every claim,
+changed tests that fail on the original code (behavior-changing work only),
+the review route, user acceptance when required, Land to `archived` (never a
+commit), and the optional one-line `successMeasure` (else the scenarios
+passing). `change start` prints one advisory coverage NOTE (no failure scenario,
+no edge scenario, no success measure) that never asks the agent for anything.
+Tasks and their checks live only in `tasks.md`; the proposal no longer carries
+a Plan, What changes, or Folder tree, and `design.md` renders the derived
+folder tree inside its File map. A rapid proposal, which has no `design.md`,
+also carries the compact form (summary, user flow, failure matrix, and any
+authored descriptive section: file map, test map,
+component map, config contract, refactor, bugfix) and its Decisions. Changes
+agreed before this layout keep their Plan, What changes, and Folder tree
+and read, resume, and archive unchanged. Descriptive sections never move a
 low-risk draft to standard; impact, coupling, security triggers, review, and
 acceptance still do. A standard v4 change
 always has `design.md`, and its draft must author the sections its work type

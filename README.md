@@ -610,7 +610,7 @@ openspec/changes/<change-id>/
 | File | What it answers | Why the harness needs it |
 |---|---|---|
 | `.openspec.yaml` | Is this `foundation-standard` or `foundation-rapid`? | Selects the artifact workflow for this change |
-| `proposal.md` | Why change, what changes (with a folder tree), and what is excluded? | Prevents scope and impact from being implicit; a rapid proposal also carries the user flow, failure matrix, and Plan |
+| `proposal.md` | Who and which lane, why change, what is in and out of scope, how each requirement is accepted, and what done means? | Prevents scope and impact from being implicit; a rapid proposal also carries the user flow and failure matrix |
 | `specs/<area>/spec.md` | What observable behavior is added, modified, or removed? | Gives Prove stable requirements and `WHEN`/`THEN` scenarios; Land merges the deltas into current specs |
 | `design.md` | How is it built: user flow, components, contracts, data, UI states, failures, decisions, and the Plan? | The dev document Build executes; sections follow the work type and empty ones are omitted |
 | `tasks.md` | What implementation work remains? | The sole implementation ledger; stable IDs and checkboxes make Build resumable |

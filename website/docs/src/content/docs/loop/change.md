@@ -165,7 +165,7 @@ Add complexity only when the work needs it:
 - dev document sections: `summary`, `userFlow` (Mermaid), `failureMatrix`,
   `componentMap`, `apiContracts`, `dataModel`, `uiStates`, `configContract`,
   `jobContract`, `bugfix`, or `refactor`. The harness infers `workType` from
-  task paths (declare it to override) and derives the folder tree, plan, file
+  task paths (declare it to override) and derives the folder tree, file
   map, and test map. A standard change must carry the sections its work type
   needs; a missing one is a draft repair for the agent, never a user question.
   Each fact is written once: `why` satisfies the summary (add `summary` only
@@ -199,9 +199,14 @@ Rapid changes contain `proposal.md`, `tasks.md`, `evidence.yaml`, and a concise
 delta `specs/<capability>/spec.md` rendered exactly as in standard; Land merges
 it into `openspec/specs`. Only a legacy rapid packet or declared docs-only work
 (`workType: ["docs"]` adding requirements) declares `skip_specs` and has no
-delta, so README wording never becomes a living requirement. The rapid proposal is the compact dev document: summary, what
-changes, user flow, folder tree (paths new at the base marked `+`), failure
-matrix, and the plan Build executes. Descriptive sections (`fileMap`,
+delta, so README wording never becomes a living requirement. Every proposal opens with a rendered header (id, lane and why,
+owner, created, status) and states scope, an acceptance traceability table
+(requirement, scenario, task, evidence, test files), and a definition of done
+generated from the enforced policy, with an optional one-line `successMeasure`.
+Tasks live only in `tasks.md`; the derived folder tree (paths new at the base
+marked `+`) sits in `design.md`'s file map. The rapid proposal is the compact
+dev document: summary, user flow, failure matrix, and its decisions.
+Existing changes keep their older layout and still read. Descriptive sections (`fileMap`,
 `testMap`, `componentMap`, `userFlow`, `configContract`, `refactor`) render
 there too and never move a low-risk change to standard. A standard v4 change
 always adds `design.md` with the full dev document and states its work type,
