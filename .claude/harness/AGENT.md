@@ -5,7 +5,7 @@ Harness checks Change Loop 3.5.30/runtime API `41`, repairs setup.
 
 ## Every phase
 
-- No preflight (`doctor`, `--version`, config/state reads) unless named.
+- No preflight (`doctor`, `--version`, `which`, `changes`, config/state reads) unless named.
 - CLI surface: `change start <draft>` and `advance <change> --through
   build|proven|archived` (plus `--approve-spec`). Run no other lifecycle
   primitive unless named.
@@ -34,7 +34,7 @@ Harness checks Change Loop 3.5.30/runtime API `41`, repairs setup.
 
 Harness output is a machine handoff: translate in the user's language.
 
-For `notification.surface: true`, load `.claude/harness/README.md#agent-update-policy`; false suppresses it.
+For `notification.surface: true`, load `.claude/harness/README.md#agent-update-policy`.
 
 User decides; agent codes/documents; Harness automates. Reask only material
 semantics. Build/Prove repair product defects; follow-up routing lives in Build policy.
