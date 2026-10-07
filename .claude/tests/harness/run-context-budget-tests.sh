@@ -156,12 +156,33 @@ dev_bundle_words="$(cat "$ROOT/.claude/harness/AGENT.md" \
   "$ROOT/.claude/commands/dev.md" "$ROOT/.claude/commands/change.md" \
   "$ROOT/.claude/commands/build.md" "$ROOT/.claude/commands/prove.md" \
   "$ROOT/.claude/commands/land.md" | wc -w | tr -d ' ')"
-if [ "$dev_bundle_words" -le 1150 ]; then
-  pass "/dev context bundle (AGENT + dev + four phases) ($dev_bundle_words <= 1150 words)"
+if [ "$dev_bundle_words" -le 1125 ]; then
+  pass "/dev context bundle (AGENT + dev + four phases) ($dev_bundle_words <= 1125 words)"
 else
-  fail_context_budget "/dev context bundle" "$dev_bundle_words" 1150 words \
+  fail_context_budget "/dev context bundle" "$dev_bundle_words" 1125 words \
     "AGENT.md + dev.md + change/build/prove/land.md"
 fi
+# Rapid read surface: the lane a low-risk change takes must need only these
+# files up front. `advance` returns every Build/Prove/Land action with its
+# recipe and `resume`, so those phase commands load on demand (a failure or a
+# non-EDIT action), not before the first command. Each avoided read is a
+# model request.
+rapid_read_words="$(cat "$ROOT/.claude/harness/AGENT.md" \
+  "$ROOT/.claude/commands/dev.md" "$ROOT/.claude/commands/change.md" | wc -w | tr -d ' ')"
+if [ "$rapid_read_words" -le 675 ]; then
+  pass "rapid-lane read surface (AGENT + dev + change) ($rapid_read_words <= 675 words)"
+else
+  fail_context_budget "rapid-lane read surface" "$rapid_read_words" 675 words \
+    "AGENT.md + dev.md + change.md"
+fi
+assert_file_contains "dev reads only change.md up front" \
+  "$ROOT/.claude/commands/dev.md" '`.claude/commands/change.md`: read it once, now.'
+assert_file_contains "dev loads build and prove only for a non-EDIT action or failure" \
+  "$ROOT/.claude/commands/dev.md" 'read each only'
+assert_file_contains "dev loads land only at a Land boundary" \
+  "$ROOT/.claude/commands/dev.md" '`.claude/commands/land.md`, only with Land authority, at a Land boundary.'
+assert_file_contains "change starts, approves, and continues in one call when the request approves" \
+  "$ROOT/.claude/commands/change.md" '`--approve-spec --decision-ref <ref>'
 # Shared rules have one home. Spot-check distinctive phrases.
 for phrase in 'No preflight' 'agent-only control data' 'cd <workspace>` once' \
   'hand-edit' 'Recover from the envelope first' 'in any wording' \

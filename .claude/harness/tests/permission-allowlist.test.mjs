@@ -45,7 +45,7 @@ test("every harness command the phase instructions teach is pre-allowed", () => 
   const commands = INSTRUCTIONS.flatMap((path) =>
     [...read(path).replace(/\s*\n\s*/g, " ").matchAll(/`(claude-foundation [^`]+)`/g)]
       .map((match) => ({ path, command: match[1] })));
-  assert.ok(commands.length >= 8, "the instructions still name the harness CLI");
+  assert.ok(commands.length >= 7, "the instructions still name the harness CLI");
   for (const { path, command } of commands)
     assert.ok(bashAllowed(command), `${path}: \`${command}\` needs a host approval prompt`);
   for (const form of [".foundation/bin/claude-foundation advance c --through build",
@@ -82,7 +82,7 @@ test("each EDIT task check is a pre-allowed command while the bare runner is not
 // the command and the template the agent copies from name that route.
 test("the taught draft save route is a pre-allowed file-tool write, not shell", () => {
   const change = read(".claude/commands/change.md").replace(/\s*\n\s*/g, " ");
-  assert.match(change, /`minimalDraft` with the Write tool, not shell, to `\.foundation\/drafts\/<id>\.json`/);
+  assert.match(change, /Write the draft with the Write tool, not shell, to `\.foundation\/drafts\/<id>\.json`/);
   const template = JSON.parse(execFileSync(process.execPath,
     [join(ROOT, ".claude/harness/foundation.mjs"), "start", "--template"],
     { cwd: ROOT, encoding: "utf8" }));

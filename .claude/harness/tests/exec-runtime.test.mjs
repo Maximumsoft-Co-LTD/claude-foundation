@@ -316,6 +316,12 @@ test("exec refuses unknown repositories and tasks and never runs in the main che
   fixture.state.status = "change";
   assert.throws(() => fixture.runtime.execObserved("change", command, { repository: "api" }),
     /needs the change's isolated Build workspace.*advance change --through build/);
+  // A caller that already asked for more is never sent back to a shorter route.
+  fixture.state.requestedThrough = "archived";
+  assert.throws(() => fixture.runtime.execObserved("change", command, { repository: "api" }),
+    /needs the change's isolated Build workspace.*advance change --through archived/);
+  delete fixture.state.requestedThrough;
+  fixture.failures.pop();
   assert.deepEqual(fixture.failures, [
     "EXEC_REPOSITORY_UNKNOWN", "EXEC_TASK_UNKNOWN", "EXEC_REPOSITORY_CONFLICT",
     "EXEC_WORKSPACE_NOT_ISOLATED", "EXEC_WORKSPACE_MISSING"

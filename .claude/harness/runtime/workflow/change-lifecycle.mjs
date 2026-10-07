@@ -10,7 +10,7 @@ import {
 import { dirname, join, relative, resolve } from "node:path";
 import { acquireProcessLock } from "../core/process-lock.mjs";
 import { foundationChangeStores, retiredChangeStores } from "./retired-change-stores.mjs";
-import { nextCommand } from "../core/next-step.mjs";
+import { nextCommand, resumeThrough } from "../core/next-step.mjs";
 import { taskBlocks, taskMetadata } from "../contracts/change-artifacts.mjs";
 import { matchesSecurityTerm, materialSecurityTriggers } from "./security-policy.mjs";
 import {
@@ -1784,7 +1784,7 @@ export function createChangeLifecycle({
       ? `\n  signed CI: waived (${state.ciWaiver.decisionRef})` : "";
     console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${resolutionReviewLabel(id, state)}\n  acceptance: ${state.acceptance?.decision || (state.acceptance?.required ? "required" : "legacy-not-required")}\n  security: ${[...state.securityTriggers,
       ...(state.keywordSecurityTriggers || []).map((value) => `${value} (intent keyword: review only)`)
-    ].join(", ") || "none"}${surfaceLine}${ciLine}\n  schema: ${state.schema}${upgraded ? " (upgraded from foundation-rapid; design.md and specs/ added)" : ""}${atomicStepOutput ? "" : `\n  next: ${nextCommand(state.status, id)}`}`);
+    ].join(", ") || "none"}${surfaceLine}${ciLine}\n  schema: ${state.schema}${upgraded ? " (upgraded from foundation-rapid; design.md and specs/ added)" : ""}${atomicStepOutput ? "" : `\n  next: ${nextCommand(state.status, id, state)}`}`);
   }
 
   function approvalPacketRoot(id) {
@@ -1869,7 +1869,8 @@ export function createChangeLifecycle({
       }
       console.log(`DECISION RECORDED ${id}\n` +
         (approvedDelta ? `  approved requirement delta:\n${formatApprovalDelta(approvedDelta)}\n` : "") +
-        `  next: claude-foundation advance ${id} --through ${flags["approve-spec"] ? "build"
+        `  next: claude-foundation advance ${id} --through ${flags["approve-spec"]
+          ? resumeThrough(loadRuntime(id))
           : flags["accept-target-edits"] ? "archived" : "proven"}`);
       return;
     }
@@ -2062,8 +2063,8 @@ export function createChangeLifecycle({
           openQuestionLines(openQuestions) +
           designWarningLines(draft, loadRuntime(id).schema) +
           `  next: ${openQuestions.length
-            ? `ask these with the approval, record the answers in the draft, then claude-foundation change revise ${id} ${draftPath} --approve-spec --decision-ref <user-decision> --through build`
-            : `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision> --through build`}`);
+            ? `ask these with the approval, record the answers in the draft, then claude-foundation change revise ${id} ${draftPath} --approve-spec --decision-ref <user-decision> --through proven`
+            : `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision> --through proven`}`);
       });
     } catch (error) {
       let rollbackIssues;
@@ -2388,10 +2389,10 @@ export function createChangeLifecycle({
       openQuestionLines(openQuestions) +
       designWarningLines(draft, state.schema) +
       `  next: ${openQuestions.length
-        ? `ask these with the approval, record the answers in the draft, then ${reviseRoute(id, draftPath, merge)} --approve-spec --decision-ref <user-decision> --through build`
+        ? `ask these with the approval, record the answers in the draft, then ${reviseRoute(id, draftPath, merge)} --approve-spec --decision-ref <user-decision> --through proven`
         : pending || !state.specApproval?.identity
-          ? `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision> --through build`
-          : `claude-foundation advance ${id} --through build`}`);
+          ? `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision> --through proven`
+          : `claude-foundation advance ${id} --through ${resumeThrough(state)}`}`);
     return delta;
   }
 

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
+import { resumeThrough } from "../core/next-step.mjs";
 
 // A session-mode Build task runs in the coordinating session itself, one task
 // at a time. The agent used to acquire the lease, implement, release it, and
@@ -62,9 +63,9 @@ export function untickTaskLine(content, taskId) {
 
 // The primitive's refusal names `agents acquire`; a harness-owned lease is
 // renewed by resuming, so the repair names that route instead.
-function sessionScopeError(id, detail) {
+function sessionScopeError(id, detail, through = "build") {
   const error = new Error(`${detail}. Revert edits that belong to another active task, ` +
-    `then resume with 'claude-foundation advance ${id} --through build'`);
+    `then resume with 'claude-foundation advance ${id} --through ${through}'`);
   error.owner = "agent";
   error.boundary = "task-scope";
   return error;
@@ -198,7 +199,11 @@ export function createSessionLeaseRuntime({
     } catch (error) {
       const message = String(error?.message || error);
       const scope = message.match(/^(task '[^']+' changed outside granted scope: [^;]+)/);
-      if (scope) throw sessionScopeError(id, scope[1]);
+      if (scope) {
+        let through = "build";
+        try { through = resumeThrough(loadRuntime(id)); } catch { /* keep the bounded route */ }
+        throw sessionScopeError(id, scope[1], through);
+      }
       throw error;
     }
   }

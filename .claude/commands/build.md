@@ -9,14 +9,12 @@ Run `claude-foundation advance <change> --through proven`. Execute each
 protocol-v6 action, then follow its exact `resume` route until `DONE` or a
 real boundary.
 
-- `EDIT`: implement the returned work inside its workspace and allowed
-  `paths`, then resume: `advance` runs every task check, ticks passing tasks,
-  and returns failures. One `EDIT` may carry several tasks:
-  implement all, resume once. Run a `checkCommand`, never the bare test
-  runner, only to diagnose.
+- `EDIT`: implement the returned tasks inside `workspace` and allowed `paths`,
+  then resume: `advance` runs every check and ticks passing tasks.
+  One `EDIT` may carry several tasks: implement all, resume once. Run a
+  `checkCommand` only to diagnose.
 - `REPAIR`: apply the whole ordered batch; amend new behavior.
-- `RUN_EXTERNAL`: run the named operation; long commands go through
-  `claude-foundation exec`.
+- `RUN_EXTERNAL`: run the named operation; long ones via `claude-foundation exec`.
 - `WAIT`/`ASK_USER`: report the wait; ask only for the decision; resume.
 - `DONE`: `proven` reached.
 

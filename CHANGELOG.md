@@ -23,6 +23,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checks such as an invalid `coupling` were hidden until the compiler issues
   were fixed, and the `riskSignals` and coverage messages name the valid
   values. Public commands and draft shapes are unchanged.
+- Agent read surface and request count (W7-3): `/dev` reads only `change.md`
+  up front (Build, Prove, and Land commands load for a failure, a non-`EDIT`
+  action, or a Land boundary), and the draft template is no longer a required
+  step. `change.md` tells the agent to put `--approve-spec --decision-ref
+  <ref>` (plus `/dev`'s `--through`) on `change start` when the request approved
+  the spec, so one call starts, approves, and reaches Build's first action.
+  A single-task session `EDIT` now carries the same `instructions` recipe as a
+  multi-task one. Rapid-lane instructions (AGENT + dev + change) shrink to 669
+  words and the full `/dev` bundle from 1143 to 1122; a structural test guards
+  the rapid read surface. `advance` records the furthest `--through` target
+  requested (`requestedThrough`), and the `next:` routes of `changes`, the
+  session digest, `validate`, `change resolve`, `change revise`, and the scope,
+  grounding, and `exec` workspace errors continue toward it (never below
+  `proven` once the spec is approved) instead of repeating `--through build`.
+  Printed approval commands now say `--through proven`.
 
 - Packet budgets (user decision: raise the defaults so large work fits): task
   and review packets 8 KiB -> 20 KiB, repository 12 KiB -> 24 KiB, global

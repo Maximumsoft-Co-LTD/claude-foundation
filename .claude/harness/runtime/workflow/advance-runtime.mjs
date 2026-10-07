@@ -20,6 +20,7 @@ export const ADVANCE_PROTOCOL_VERSION = 6;
 
 const command = (value) => `claude-foundation ${value}`;
 
+const THROUGH_ORDER = ["build", "proven", "archived"];
 const resume = (id, through = null) => command(
   `advance ${id}${through ? ` --through ${through}` : ""}`);
 
@@ -620,8 +621,10 @@ function buildAction(id, dispatch, state, plan = null) {
     const reverification = (plan.verification || [])
       .filter((row) => tasks.some((task) => task.id === row.taskId));
     const instructions = [
-      ...(dispatch.action === "run-in-session" && tasks.length > 1 ? [
-        `Implement ${tasks.map((task) => task.id).join(", ")} in this order inside the workspace.`,
+      ...(dispatch.action === "run-in-session" ? [
+        tasks.length > 1
+          ? `Implement ${tasks.map((task) => task.id).join(", ")} in this order inside the workspace.`
+          : `Implement ${tasks[0].id} inside the workspace.`,
         "Then run the resume command once: advance runs every task's verify check, marks each " +
         "passing task [x], and hands back only failures with their output; run a task's " +
         "checkCommand (present only where it has a verify) just to diagnose one."
@@ -1223,6 +1226,14 @@ export function createAdvanceRuntime({
         if (through && !["build", "proven", "archived"].includes(through))
           throw new Error("advance --through must be build|proven|archived");
         let initial = loadRuntime(id);
+        // Remember the furthest target asked for, so a route printed later
+        // (next:, resume hints) continues toward it instead of repeating a
+        // shorter one. Monotonic; Land authority is still its own grant.
+        if (through && initial.status !== "archived" &&
+            (THROUGH_ORDER.indexOf(through) > THROUGH_ORDER.indexOf(initial.requestedThrough))) {
+          initial.requestedThrough = through;
+          saveRuntime(initial);
+        }
         if (through === "archived" && recoverArchive) {
           if (["proven", "applied", "landing", "archived"].includes(initial.status)) stage = "land";
           if (initial.advanceRecovery?.pending?.paused)

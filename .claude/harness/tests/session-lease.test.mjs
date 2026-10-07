@@ -26,13 +26,13 @@ function workspace(t, ticked = "") {
   return root;
 }
 
-function fakeLeases(root, leases, { releaseError = [] } = {}) {
+function fakeLeases(root, leases, { releaseError = [], state = {} } = {}) {
   const calls = [];
   return {
     calls,
     runtime: createSessionLeaseRuntime({
       stableHash,
-      loadRuntime: () => ({ workspace: { path: root } }),
+      loadRuntime: () => ({ workspace: { path: root }, ...state }),
       activeChangeLeases: () => leases,
       acquire: (id, taskId, flags) => {
         calls.push(["acquire", taskId, flags.owner]);
@@ -89,6 +89,19 @@ test("a scope refusal routes back to advance; release owns stale-authority renew
     assert.match(error.message, /outside granted scope: tests\/b\.spec\.js\. Revert/);
     assert.match(error.message, /'claude-foundation advance demo --through build'$/);
     assert.doesNotMatch(error.message, /agents acquire/);
+    return true;
+  });
+});
+
+test("a scope refusal resumes toward the target already requested, never a shorter one", (t) => {
+  const root = workspace(t, "T001 T002");
+  const owner = sessionLeaseOwner("demo", "T001", stableHash);
+  const scoped = fakeLeases(root, [{ taskId: "T002", owner, leaseId: "l1" }], {
+    releaseError: ["task 'T002' changed outside granted scope: tests/b.spec.js; x"],
+    state: { requestedThrough: "archived" }
+  });
+  assert.throws(() => scoped.runtime.settle("demo"), (error) => {
+    assert.match(error.message, /'claude-foundation advance demo --through archived'$/);
     return true;
   });
 });

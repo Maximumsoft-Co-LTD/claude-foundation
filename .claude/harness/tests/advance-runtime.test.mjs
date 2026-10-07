@@ -65,6 +65,19 @@ test("advance returns bounded Build work without invoking a model", () => {
   assert.equal(value.resumeCommand, "claude-foundation advance change-a");
 });
 
+test("a single-task EDIT carries the whole recipe so the agent reads no Build doc", () => {
+  const value = coordinatorAction({
+    ...base,
+    dispatch: { action: "run-in-session", reason: "one repository" },
+    plan: { groups: [["T001"]], tasks: [
+      { id: "T001", text: "Add it — verify: `node --test`", repository: "root", paths: ["a.js"] }] }
+  });
+  const notes = value.instructions.join(" ");
+  assert.match(notes, /^Implement T001 inside the workspace\./);
+  assert.match(notes, /resume command once: advance runs every task's verify check/);
+  assert.match(notes, /checkCommand .* just to diagnose/);
+});
+
 test("each Build task carries its focused check in the pre-allowed harness exec form", () => {
   const value = coordinatorAction({
     ...base,
@@ -451,6 +464,29 @@ test("advance --through build stops before proof and preserves one resume route"
   assert.equal(value.reached, "build");
   assert.equal(value.resume, null);
   assert.equal(value.next, "claude-foundation advance change-a --through proven");
+});
+
+test("advance records the furthest requested target once, never lowering it", async () => {
+  const state = { status: "building", workspace: { path: "/tmp/change" } };
+  let saves = 0;
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => state,
+    saveRuntime: (value) => { saves += 1; Object.assign(state, value); },
+    agentDispatchValue: () => ({ action: "build-complete" }),
+    relevantHash: () => "workspace-a",
+    deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => ({}), proofAdvancePath: () => "/proof.json", stableHash,
+    output: () => {}
+  });
+  await runtime.advanceThrough("change-a", "build");
+  assert.equal(state.requestedThrough, "build");
+  await runtime.advanceThrough("change-a", "proven");
+  assert.equal(state.requestedThrough, "proven");
+  const before = saves;
+  await runtime.advanceThrough("change-a", "build");
+  assert.equal(state.requestedThrough, "proven", "a later shorter request never lowers the target");
+  assert.equal(saves, before, "an unchanged target is not rewritten");
 });
 
 test("advance --through records each phase once", async () => {

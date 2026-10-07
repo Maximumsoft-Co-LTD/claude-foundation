@@ -480,7 +480,16 @@ targets `proven` from its first call, because Prove has no external side
 effects: proof runs only once Build is complete, in the same coordinator
 call, without a separate Build `DONE` round trip. It stops at `proven` and
 never Lands. `advance <change> --through build` remains available to stop at
-Build.
+Build. The coordinator records the furthest `--through` target requested
+(`requestedThrough`, monotonic; Land stays behind its own grant). Every route
+the harness prints afterwards (`changes`, the session digest, `validate`,
+approval, scope and workspace errors) continues toward that target, and never
+below `proven` once the spec is approved, so a resume cannot walk back to a
+Build-only stop. A session `EDIT` carries the whole recipe in `instructions`
+(implement inside the workspace, resume once, `checkCommand` only to diagnose),
+so a plain `EDIT` needs no Build document read; `/dev` reads only
+`commands/change.md` up front and loads Build, Prove, and Land guidance on a
+failure or a non-`EDIT` action.
 `tasks.md` is the only implementation ledger. `handoffs.yaml` separately owns
 AWS, cluster, secret, Terraform, deploy, restart, or other operations that need
 external authority.

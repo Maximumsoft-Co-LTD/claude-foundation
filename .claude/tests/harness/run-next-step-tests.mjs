@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  LIFECYCLE_STATUSES, nextAfterValidate, nextCommand
+  LIFECYCLE_STATUSES, nextAfterValidate, nextCommand, resumeThrough
 } from "../../harness/runtime/core/next-step.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -44,6 +44,41 @@ check(() => assert.equal(nextCommand("landing", "demo"),
   "an authorized in-flight Land resumes to archived"));
 check(() => assert.match(nextCommand("no-such-status", "demo"), /doctor --change demo/,
   "an unknown status falls back to diagnosis rather than a dead entry"));
+
+// Authority-aware routes: a printed next step never walks back to a shorter
+// target than the one already requested or approved. An approved spec covers
+// Prove; a recorded `--through archived` request keeps every later route
+// pointed at archived (Land itself stays behind its own grant).
+const approved = { specApproval: { identity: "id", decisionRef: "request" } };
+check(() => assert.equal(nextCommand("building", "demo", {}),
+  "claude-foundation advance demo --through build",
+  "no approval and no request keeps the bounded Build route"));
+check(() => assert.equal(nextCommand("building", "demo", approved),
+  "claude-foundation advance demo --through proven",
+  "an approved spec makes Build-only a bounce"));
+check(() => assert.equal(nextCommand("change", "demo", { ...approved, requestedThrough: "archived" }),
+  "claude-foundation advance demo --through archived"));
+check(() => assert.equal(nextCommand("building", "demo", { requestedThrough: "proven" }),
+  "claude-foundation advance demo --through proven"));
+check(() => assert.equal(nextCommand("building", "demo", { requestedThrough: "build" }),
+  "claude-foundation advance demo --through build",
+  "a recorded Build request never raises authority by itself"));
+check(() => assert.equal(nextCommand("stale-proof", "demo", { requestedThrough: "archived" }),
+  "claude-foundation advance demo --through archived",
+  "re-proving continues to the requested Land target"));
+check(() => assert.equal(nextCommand("stale-proof", "demo", { requestedThrough: "build" }),
+  "claude-foundation advance demo --through proven"));
+check(() => assert.equal(nextCommand("proven", "demo", { requestedThrough: "archived" }),
+  "claude-foundation advance demo --through archived"));
+check(() => assert.equal(nextCommand("proven", "demo", { requestedThrough: "proven" }),
+  "claude-foundation advance demo",
+  "a proven change keeps the freshness-checking plain route"));
+check(() => assert.equal(nextCommand("building", "demo", { requestedThrough: "bogus" }),
+  "claude-foundation advance demo --through build",
+  "an unknown recorded target is ignored"));
+check(() => assert.equal(resumeThrough({ requestedThrough: "archived" }), "archived"));
+check(() => assert.equal(nextAfterValidate("building", "demo", approved),
+  "claude-foundation advance demo --through proven"));
 
 // The circular-advice regression: validate recommending validate.
 check(() => assert.equal(nextAfterValidate("change", "demo"), "/build demo"));
@@ -107,6 +142,15 @@ try {
 
   const active = digest(fixture);
   check(() => assert.match(active, /demo-change \[building\]/));
+  check(() => assert.match(active, /next: claude-foundation advance demo-change --through build\n/));
+  writeFileSync(join(fixture, ".foundation", "runtime", "demo-change.json"),
+    JSON.stringify({ id: "demo-change", status: "building", schema: "foundation-rapid",
+      requestedThrough: "archived" }));
+  check(() => assert.match(digest(fixture),
+    /demo-change \[building\] next: claude-foundation advance demo-change --through archived/,
+    "a resumed session continues toward the target already requested"));
+  writeFileSync(join(fixture, ".foundation", "runtime", "demo-change.json"),
+    JSON.stringify({ id: "demo-change", status: "building", schema: "foundation-rapid" }));
   check(() => assert.match(active, /next: claude-foundation advance demo-change/));
   check(() => assert.match(active, /orphan runtime state/,
     "state with no active change is how a stuck project stays stuck unnoticed"));

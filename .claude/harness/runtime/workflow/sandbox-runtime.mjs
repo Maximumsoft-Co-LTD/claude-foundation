@@ -1,5 +1,6 @@
 import { assertSpecApproval, agreementIdentity, approvalMatches, userDecisionError } from "../core/user-decisions.mjs";
 import { spawnSync } from "node:child_process";
+import { resumeThrough } from "../core/next-step.mjs";
 import { createHash } from "node:crypto";
 import {
   cpSync, existsSync, lstatSync, mkdirSync, readlinkSync, readdirSync,
@@ -527,7 +528,7 @@ export function assertSandboxGroundingPortable(context, id, state) {
   if (portability.length)
     context.fail(`grounding readSet is not sandbox-portable: ${
       portability.map((entry) => `${entry.repository}:${entry.path} (${entry.reason})`).join(", ")
-    } — move the cited decision or evidence into openspec/changes/${id}/ or refresh its readSet digest through one semantic amendment, then resume with 'claude-foundation advance ${id} --through build'`);
+    } — move the cited decision or evidence into openspec/changes/${id}/ or refresh its readSet digest through one semantic amendment, then resume with 'claude-foundation advance ${id} --through ${resumeThrough(state)}'`);
 }
 
 export function plannedGroundingPortabilityStatus(source, pathExists) {

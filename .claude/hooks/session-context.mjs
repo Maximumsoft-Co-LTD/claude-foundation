@@ -95,7 +95,7 @@ function workflowDigest() {
     for (const id of active) {
       const state = readState(runtimeDir, id);
       const status = state.status || "unknown";
-      lines.push(`  ${id} [${status}] next: ${nextCommand(status, id)}`);
+      lines.push(`  ${id} [${status}] next: ${nextCommand(status, id, state)}`);
       // The rule a Build session breaks most often is a shell write without
       // its workspace anchor, and the refusal arrives one wasted turn later.
       // Name the exact prefix where the session begins, so it is in context

@@ -500,7 +500,7 @@ assert_in "first Build advance creates isolation" \
   "worktree copy"
 active_changes="$(bash "$ROOT/cli.sh" --project "$TARGET" changes)"
 assert_contains "changes returns a canonical next action" "$active_changes" \
-  "claude-foundation advance atomic-start --through build"
+  "claude-foundation advance atomic-start --through proven"
 sed -i.bak 's/- \[ \]/- [x]/' \
   "$atomic_workspace/openspec/changes/atomic-start/tasks.md"
 rm "$atomic_workspace/openspec/changes/atomic-start/tasks.md.bak"

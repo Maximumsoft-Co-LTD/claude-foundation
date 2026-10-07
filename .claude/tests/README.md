@@ -45,7 +45,7 @@ topology/planning fixture and the real-Git pull request delivery suite.
 | `.claude/harness/tests/npm-lockfile-{check,auto-seam}.test.mjs` | Offline npm install-plan validation, missing dependency graphs, non-mutating checks, and automatic consumer proof wiring |
 | `bench/tests/openspec-native-{matrix,runner,scorecard,lab,workloads}.test.mjs` | Versioned scenario manifests, clean disposable consumer installation, lifecycle/oracle/quality scorecards, four cross-domain mutation-killing oracles, durable evidence preservation, and cleanup |
 | `harness/run-host-instruction-tests.mjs` | Protocol-1 package-owned host instructions and agent contract, opaque arguments, stable failures, project independence, and packaged layout |
-| `harness/run-context-budget-tests.sh` | Always-on, orchestrator, command, agent-contract, plan-summary, and packet-size ceilings |
+| `harness/run-context-budget-tests.sh` | Always-on, orchestrator, command, agent-contract, plan-summary, and packet-size ceilings, plus the rapid-lane read surface (AGENT + dev + change) and the on-demand Build/Prove/Land reads |
 | `harness/run-agent-contract-tests.sh` | JSON-only plans/packets, completed dependencies, claim authority, corrupt-lease fallback, model ceiling, and dispatch conflicts |
 | `harness/run-user-guidance-tests.sh` | Cross-surface human guidance: user-language summaries, agent-owned routine commands, decision-only user requests, automatic recovery, installer/hook recovery, and dashboard accessibility feedback |
 | `harness/run-packet-scaling-tests.sh` | 1,000-task and 500-claim progressive compaction under exact output limits |

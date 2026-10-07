@@ -43,7 +43,7 @@ export function changeListingRow(id, {
   }
 
   const view = deriveChangeProjection({ state, proof, currentHash: current });
-  return `${id}\t${view.readiness}\t${view.schema}\t${nextCommand(view.readiness, id)}`;
+  return `${id}\t${view.readiness}\t${view.schema}\t${nextCommand(view.readiness, id, state)}`;
 }
 
 export function createDiagnosticsRuntime({

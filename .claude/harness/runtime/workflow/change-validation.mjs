@@ -1908,7 +1908,7 @@ export function createChangeValidationRuntime({
     const compiled = executionContract?.(id) || null;
     const preflight = compiled?.authority || authorityPreflight(id);
     if (!options.quiet) {
-      console.log(`VALID ${id} (${state.schema}, ${claims.length} claims)\n  next: ${nextAfterValidate(state.status, id)}`);
+      console.log(`VALID ${id} (${state.schema}, ${claims.length} claims)\n  next: ${nextAfterValidate(state.status, id, state)}`);
       if (preflight.status !== "READY")
         console.log(`  authority: ${preflight.status}; ${preflight.blockers
           .map((blocker) => `${blocker.code}: ${blocker.next}`).join("; ")}`);
