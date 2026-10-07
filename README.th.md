@@ -749,19 +749,13 @@ product requirement หรือซ่อม state ด้วยมือถ้�
   assurance โดยไม่ล้ม explicit decision ของผู้ใช้ ส่วน apply ยังปฏิเสธ conflict
   และ edit ใน target path ที่ยังไม่ commit — มันระบุ path ที่จะถูกทับแทนที่จะ
   ปล่อยให้คนเขียนทีหลังชนะ
-- Land ทำได้เสมอแม้ change ซ้อนกัน: คุณไม่ต้อง commit change ที่ Land แล้วก่อน
-  change ถัดไปจะ Land change ที่ Land ทีหลังจะ merge diff ที่ Land ไปก่อนและยังไม่
-  commit เข้า sandbox ของตัวเอง (harness ทำเองเมื่อ merge ได้สะอาด, agent ทำเมื่อ
-  ทั้งสองแก้บรรทัดเดียวกัน) แล้ว Prove ใหม่เฉพาะส่วนที่เปลี่ยน และ Land โดยไม่ทับ
-  งานที่ Land ไปก่อน
-- Apply มี backup และ journal ทำให้ Land ที่ถูกขัดจังหวะ retry ได้
 - Land เตือน — โดยไม่บล็อก — เมื่อ target checkout อยู่บน `main`/`master`
   โดย guard ของ land ทุกตัวยังอิง commit
-- Land ไม่ commit, push หรือเปิด pull request มีเพียง `/deliver` แบบ explicit และ
-  optional ที่ให้อำนาจแคบ ๆ เพื่อ commit proven projection บน isolated feature
-  branch, push และเปิดหรือใช้ PR เดิมที่ตรวจยืนยันแล้ว โดย worker ห้ามอนุมาน authority
-  นอกจากนั้น commit และ push ต้องมาจากคำสั่งตรงของคุณ ระหว่าง Build หรือ Prove
-  `git commit`/`git push` จาก main checkout ที่ไม่ได้สั่งจะไม่รัน และกลายเป็นคำถามถึงคุณ
+- Land เป็น apply แบบมี journal ที่ resume ได้ รองรับ change ซ้อนกัน และไม่ commit,
+  push หรือเปิด pull request เอง มีเพียง `/deliver` แบบ explicit หรือคำสั่งตรงของคุณ
+  ดู [สัญญาของ Land](WORKFLOW.md#land-change),
+  [`/deliver`](WORKFLOW.md#deliver-change-optional) และ
+  [authority จากคำพูดของผู้ใช้](WORKFLOW.md#authority-from-the-users-words)
 - `protect-secrets.sh` และ `lint.sh` เปิดเป็นค่าเริ่มต้น และไม่หยุด agent ทั้งคู่:
   การอ่านไฟล์ลับจะเห็นสำเนาที่ปิดค่า (เห็น key และโครงสร้าง แต่ทุกค่าเป็น
   `<redacted>`) การค้นที่อาจโดนไฟล์ลับจะข้ามไฟล์เหล่านั้นหรือแสดงแค่ชื่อไฟล์
