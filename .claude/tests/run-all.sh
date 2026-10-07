@@ -507,6 +507,7 @@ for index in $selected; do
   else printf '✗ %s\n\n' "$label" >&2; failed=1
     failed_labels="${failed_labels}  ✗ ${label}
 "
+    failed_indexes="${failed_indexes:-} $index"
   fi
 done
 
@@ -521,6 +522,11 @@ if [ "$failed" -eq 0 ]; then
   exit 0
 fi
 # Repeat the failures last: CI log viewers often show only the tail.
+for index in ${failed_indexes:-}; do
+  printf '── tail of %s (%ss) ──\n' "$(label_of "$(nth "$index")")" \
+    "$(cat "$WORK/$index.duration" 2>/dev/null || echo '?')" >&2
+  [ -f "$WORK/$index.out" ] && tail -n 40 "$WORK/$index.out" >&2
+done
 [ -z "$failed_labels" ] || printf 'failed suites:\n%s' "$failed_labels" >&2
 echo "foundation tests: SOME SUITES FAILED" >&2
 exit 1
