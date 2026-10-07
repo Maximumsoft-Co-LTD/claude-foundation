@@ -4,6 +4,18 @@ import { TOOL_CALL_CATEGORIES } from "../../../harness/runtime/observability/tel
 
 export const SCORECARD_PROTOCOL = "foundation-openspec-native-scorecard-v1";
 export const MEASUREMENT_STATES = new Set(["measured", "partial", "unavailable"]);
+// The bench arm that produced a row. `change-loop` is the installed harness;
+// `baseline` is the same seed and task with no harness installed.
+export const BENCH_ARMS = Object.freeze(["change-loop", "baseline"]);
+export const DEFAULT_ARM = "change-loop";
+
+export function benchArm(value) {
+  if (value === undefined || value === null || value === "") return DEFAULT_ARM;
+  if (!BENCH_ARMS.includes(value))
+    throw new Error(`arm must be one of ${BENCH_ARMS.join(", ")}`);
+  return value;
+}
+
 export const OUTCOME_STATES = new Set([
   "completed", "blocked", "needs-user-decision", "incomplete", "failed",
   "timeout", "cancelled", "error"
@@ -260,7 +272,7 @@ function operationSummary(rows, metrics, hostTelemetry = {}) {
   };
 }
 
-function normalizeOutcome(input = {}, oracle = {}) {
+function normalizeOutcome(input = {}, oracle = {}, arm = DEFAULT_ARM) {
   const pendingTasks = count(input.pendingTasks);
   const requiredEvidencePassed = typeof input.requiredEvidencePassed === "boolean"
     ? input.requiredEvidencePassed : null;
@@ -273,7 +285,10 @@ function normalizeOutcome(input = {}, oracle = {}) {
     failureClass = oracle.measurement === "measured"
       ? "task-oracle-failed" : "task-oracle-unavailable";
   }
-  const complete = outcomeStatus === "completed" && pendingTasks === 0 &&
+  // The baseline has no task ledger: its evidence is its own green project
+  // command, so completion cannot wait on a pending-task count.
+  const ledgerDone = arm === "baseline" || pendingTasks === 0;
+  const complete = outcomeStatus === "completed" && ledgerDone &&
     requiredEvidencePassed === true && !oracleFailed;
   return {
     status: outcomeStatus,
@@ -324,9 +339,11 @@ export function buildScorecard(input) {
   const startedAt = timestamp(stopwatch.startedAt);
   const finishedAt = timestamp(stopwatch.finishedAt);
   const oracle = oracleSummary(input.oracle);
+  const arm = benchArm(input.arm);
   return {
     protocol: SCORECARD_PROTOCOL,
     scenario: requiredText(input.scenario, "scenario"),
+    arm,
     repeat: positiveCount(input.repeat, "repeat"),
     runId: requiredText(input.runId, "runId"),
     provenance: {
@@ -339,7 +356,7 @@ export function buildScorecard(input) {
       startedAt,
       finishedAt
     },
-    outcome: normalizeOutcome(input.outcome, oracle),
+    outcome: normalizeOutcome(input.outcome, oracle, arm),
     timing: {
       wallMs,
       wallMeasurement: wallMs === null ? "unavailable" : "measured",

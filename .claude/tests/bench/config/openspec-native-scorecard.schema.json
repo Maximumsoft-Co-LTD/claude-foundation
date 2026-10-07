@@ -8,6 +8,7 @@
   "properties": {
     "protocol": { "const": "foundation-openspec-native-scorecard-v1" },
     "scenario": { "$ref": "#/$defs/nonEmptyString" },
+    "arm": { "enum": ["change-loop", "baseline"] },
     "repeat": { "type": "integer", "minimum": 1 },
     "runId": { "$ref": "#/$defs/nonEmptyString" },
     "provenance": {

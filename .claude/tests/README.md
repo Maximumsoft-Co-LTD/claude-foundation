@@ -43,7 +43,8 @@ topology/planning fixture and the real-Git pull request delivery suite.
 |---|---|
 | `harness/installer-transaction.test.mjs` | Failed upgrade restores legacy and retired managed files; all installer dry-runs preserve absent targets |
 | `.claude/harness/tests/npm-lockfile-{check,auto-seam}.test.mjs` | Offline npm install-plan validation, missing dependency graphs, non-mutating checks, and automatic consumer proof wiring |
-| `bench/tests/openspec-native-{matrix,runner,scorecard,lab,workloads}.test.mjs` | Versioned scenario manifests, clean disposable consumer installation, lifecycle/oracle/quality scorecards, four cross-domain mutation-killing oracles, durable evidence preservation, and cleanup |
+| `bench/tests/openspec-native-{matrix,runner,scorecard,lab,workloads}.test.mjs` | Versioned scenario manifests, clean disposable consumer installation, lifecycle/oracle/quality scorecards, four cross-domain mutation-killing oracles, durable evidence preservation, cleanup, and the harness-free baseline arm (guard, prompt, argument parity, zero-cost dry-run plan) |
+| `bench/tests/openspec-native-{aggregate,release-report}.test.mjs` | Arm-keyed aggregation, pairwise Change Loop/baseline comparison, and release promotion from Change Loop rows only |
 | `harness/run-host-instruction-tests.mjs` | Protocol-1 package-owned host instructions and agent contract, opaque arguments, stable failures, project independence, and packaged layout |
 | `harness/run-context-budget-tests.sh` | Always-on, orchestrator, command, agent-contract, plan-summary, and packet-size ceilings |
 | `harness/run-agent-contract-tests.sh` | JSON-only plans/packets, completed dependencies, claim authority, corrupt-lease fallback, model ceiling, and dispatch conflicts |
