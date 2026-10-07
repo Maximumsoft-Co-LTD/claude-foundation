@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A draft-validation `EDIT` from `change start`, `change revise`, or `change
+  amend` now carries an `instruction`: apply every fix with the Edit tool on the
+  pre-allowed `.foundation/drafts/**` file, never a python, `node -e`, `sed -i`,
+  `jq`, or heredoc rewrite, which the host refuses as permission prompts.
+  `/change` names the same route. The session digest adds one `Agent shell:`
+  line naming the refused shell shapes (`cd` chains, `$VAR`/`$(…)`, braces,
+  heredocs, `sed -i`, scripts) and, when `openspec/repositories.yaml` declares
+  an `allowOutsideRoot` sibling, names it as outside the working directory so
+  Change grounds it from in-root sources and reads it in its Build repository
+  sandbox. No permission rule is widened.
+
 - Build `EDIT` tasks carry a `checkCommand`: the task's verify wrapped as
   `claude-foundation exec <change> --task <id> -- <verify>` (`sh -c` when the
   text needs a shell). The already-allowed CLI rule covers it, so running a

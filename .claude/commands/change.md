@@ -15,7 +15,7 @@ Create or update **$ARGUMENTS**. Shared rules: `.claude/harness/AGENT.md`.
    failing on wrong behavior. Compiler infers the rest. Write
    prose in the requested document language, else the request's.
 3. Run `claude-foundation change start .foundation/drafts/<id>.json`:
-   - `EDIT`: fix every named field in one batch, rerun.
+   - `EDIT`: fix every named field via Edit, rerun.
    - `ASK_USER`: ask, record answers in the draft, rerun.
    - `DONE`: packet files and tasks print; do not reopen them.
 

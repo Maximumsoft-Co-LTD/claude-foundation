@@ -217,6 +217,11 @@ test("semantic intake ready action is blocked by non-discovery draft issues", ()
   assert.equal(action.action, "EDIT");
   assert.equal(action.intake.kind, "repair-draft");
   assert.deepEqual(action.intake.issues, ["semantic draft tasks[0].verify is required"]);
+  // Without a named route agents batch the repair through python, `sed -i`, or
+  // a heredoc, and the host refuses each one as a permission prompt.
+  assert.match(action.instruction, /Edit tool/);
+  assert.match(action.instruction, /\.foundation\/drafts\/\*\* is pre-allowed/);
+  assert.match(action.instruction, /python.*sed -i.*heredoc/);
 });
 
 test("semantic intake routes changed grounded sources back to the agent", () => {

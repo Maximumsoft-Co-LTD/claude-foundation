@@ -204,6 +204,8 @@ assert_cmd_zero "start template leads with the pre-allowed save route" \
     (keys_unsorted[0] == "save") and (.save | test("Write tool")) and
     (.save | test("heredoc"))'\'' >/dev/null' \
   sh "$ROOT/.claude/harness/foundation.mjs"
+assert_file_contains "change repairs the draft with the file tool, not a shell script" \
+  "$ROOT/.claude/commands/change.md" 'fix every named field via Edit, rerun'
 assert_file_contains "change trusts the printed packet" \
   "$ROOT/.claude/commands/change.md" 'do not reopen them'
 assert_file_contains "change records spec approval through advance" \
