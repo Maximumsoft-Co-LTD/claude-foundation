@@ -56,7 +56,8 @@ failure/recovery paths.
 The packet is the dev document Build executes. The harness infers `workType`
 from task `paths` and derives folder tree, plan, file and test maps, and the
 failure matrix from `failure` scenarios (optional `recovery`). A standard draft
-authors `why` (or `summary`) and, except docs/chore, failures plus per type:
+authors `why` (or `summary`) and, except docs/chore/test/refactor/config,
+failures plus per type:
 feature `userFlow` (Mermaid); ui `userFlow`, `uiStates`, `componentMap`; api
 `apiContracts`; data `dataModel`; config `configContract`; async `jobContract`
 and a sequence diagram; bugfix/refactor their objects. Keep `fileMap` paths

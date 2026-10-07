@@ -18,9 +18,10 @@ surface is:
 | `investigate --template \| <record.json>` | Validate source-bound facts and hypotheses, persist resume state, and emit a Change handoff |
 | `change start --template \| <draft.json> [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | Inspect a draft and, when complete, compile and atomically start it in one call; `--inspect` inspects only; `--approve-spec` records the user's approval in the same call |
 | `change amend --template \| <change> <amendment.json> [--inspect] [--consume-amendment] [--approve-spec --decision-ref <ref> [--through <target>]]` | Inspect intake and, when complete, transactionally add, revise, or remove requirements, or fix an unfinished task's verify command, during Build in one call |
-| `change amend <change> --task <task> --verify <command> [--reopen] [--reason <text>]` | Correct an unfinished task's wrong verify command directly, keeping the approval; the task is accepted only when the new command passes |
+| `change amend <change> --task <task> --verify <command> [--reopen] [--reason <text>]` | Correct a task's wrong verify command directly, keeping the approval (`--reopen` for a completed task); the task is accepted only when the new command passes |
 | `advance <change> --through build\|proven\|archived` | Run deterministic lifecycle work (evidence wiring, sandbox sync, agent-runnable review, task ticking) and return one of six bounded actions at the next real boundary |
 | `advance <change> --approve-spec --decision-ref <ref>` | Record the user's spec approval (alias of `change resolve --approve-spec`) |
+| `exec <change> [--repo <id>] [--task <id>] -- <command…>` | Run and time a command (a task's `checkCommand`, a build, a full test run) in the change's sandbox: the named repository or task, else the caller's directory, else the pending tasks' repository; never the main checkout |
 | `deliver advance <change>` | After explicit `/deliver`, automate isolated commit, feature-branch push, PR creation/reuse, provider verification, and return the URL |
 | `changes` | Read active state and the next useful route |
 | `doctor …` | Diagnose a route only when the coordinator asks for it |
@@ -36,8 +37,9 @@ Safe to run at any time. These mutate nothing.
 |---|---|
 | `changes` | List active changes, lifecycle status, and each one's next useful action |
 | `doctor [--stage change\|build\|prove] [--change <id>]` | Diagnose project, provider, and lifecycle readiness |
-| `packet <change> [--phase <phase>] [--task <id>]` | Read the bounded machine handoff for the current operation |
+| `packet <change> [--phase <phase>] [--repo <id>] [--task <id>]` | Read the bounded machine handoff for the current operation |
 | `metrics <change>` | Inspect measured usage, semantic-intake effectiveness, active budget, cost, and execution timing |
+| `budget checkpoint <change>` | Show measured remaining allowance, unfinished work, and the exact resume route |
 | `feedback <change>` | Explain reviewer, evidenced repair, human-wait, and unattributed timing; show reuse and the next action |
 | `change audit <change>` | Audit scenario, claim, task, and provider traceability |
 | `proof readiness <change>` | Typed blockers and canonical next commands |
@@ -140,6 +142,10 @@ delivery receipt.
 | Command | Purpose |
 |---|---|
 | `sandbox create <change> --all` | Repair missing multi-repository bindings in place; valid existing worktrees are preserved |
+| `advance <change> --decision <option> --decision-fingerprint <hash> --decision-ref <ref> --reason <approach>` | Record the user's answer to an `advance` decision (`retry`, `wait`, `pause`, `merge`, or `retain`, as offered) and resume its target |
+| `advance <change> --through archived --restore-target <paths> [--decision-ref <ref>]` | Restore conflicting target paths to the sandbox base inside Land; anything other than regenerable artifacts needs the user's decision |
+| `advance <change> --through archived --recover-apply settle\|keep-current\|restore-backup --decision-ref <ref>` | Settle an interrupted Land apply under the user's decision, then continue |
+| `advance <change> --undo-land --decision-ref <ref>` | Undo an archived Land whose diff is still uncommitted; refuses without writing if HEAD moved or a landed path was staged or edited |
 | `change abandon <change> --reason <r> --decision-ref <ref>` | Quarantine a change that cannot be proven |
 | `change waive <change> --capability <c> --reason <r> --decision-ref <ref>` | Withdraw one capability's enforcement after its provider ran and failed; `--revoke` restores it |
 | `budget continue <change> --reason <r> --decision-ref <ref>` | Optional explicit widening; exhausted windows auto-continue |
@@ -151,7 +157,7 @@ Commands marked as needing a `--decision-ref` require an **explicit host-recorde
 
 | Command | Purpose |
 |---|---|
-| `init [target-path] [--yes]` | Install or upgrade Change Loop in a project |
+| `init [target-path] [--host claude\|cursor\|opencode\|codex] [--yes]` | Install or upgrade Change Loop in a project; `--host` adds that host's adapter |
 | `help [--all]` | Canonical commands; `--all` includes compatibility routes |
 | `dashboard [-up\|-status\|-down]` | Manage the optional team-presence client |
 | `migrate [legacy-id] [--apply]` | Migrate corroborated legacy workflow records |

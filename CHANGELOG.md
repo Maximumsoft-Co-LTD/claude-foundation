@@ -13,25 +13,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `claude-foundation exec <change> --task <id> -- <verify>` (`sh -c` when the
   text needs a shell). The already-allowed CLI rule covers it, so running a
   focused check no longer stops on a host approval prompt for `node --test`,
-  `python3 -m unittest`, or a piped form. The installer also seeds
-  `Edit(/.foundation/drafts/**)` for the Change draft; upgrades append it after
-  existing rules.
-
+  `python3 -m unittest`, or a piped form.
+- `exec <change> --repo <id>` or `--task <id>` runs a command in that
+  repository's sandbox. Without either, `exec` uses the caller's directory
+  (mapped into the matching sandbox), then the repository all pending tasks
+  share, then the shared sandbox, never the main checkout; an unknown or blank
+  repository or task is refused with the known names.
+- `foundation.json` `deliver.commitSubject` and `deliver.branchPattern` set the
+  Deliver commit subject and branch from `{changeId}`, `{title}`,
+  `{commitType}`, `{prType}`, and `{ticket}` (the first `deliver.ticketPattern`
+  match). Defaults keep `feat: <title>` and `change/<change-id>`. An invalid
+  setting stops Deliver as a `delivery-policy` wait (`DELIVERY_NAMING_INVALID`)
+  before any workspace, commit, or push exists.
+- The configured reviewer may return advisory `specGaps`, reported as
+  `reviewAdvisories.specGaps` on a reached `proven` or `archived` target; they
+  never become findings or block.
+- The installer prepares the pinned OpenSpec CLI project-locally when no
+  compatible CLI resolves; without npm access it warns and still succeeds.
 - Thai intents now trigger the same review, security, and migration routing as
   English. Thai terms such as ล็อกอิน, เข้าสู่ระบบ, รหัสผ่าน, สิทธิ์,
   โทเคนเข้าถึง, ชำระเงิน, จ่ายเงิน, ย้ายข้อมูล, ลบข้อมูล, ข้อมูลส่วนตัว, and
   ความปลอดภัย, plus common transliterations, match as substrings because Thai
   has no word spaces. Bare โทเคน stays out, like bare "token", because it also
   names model token budgets.
-
 - `install.sh` appends a narrow `permissions.allow` list to the project's
   `.claude/settings.json` so the harness CLI and Build-workspace edits no
   longer prompt on every change: `Bash(claude-foundation *)`,
   `Bash(.foundation/bin/claude-foundation *)`,
   `Bash(node .claude/harness/foundation.mjs *)`,
-  `Edit(/.foundation/sandboxes/**)`, and
-  `Edit(/.foundation/repository-sandboxes/**)`. The merge adds only missing
-  rules after the user's own, keeps their order (it no longer sorts the list),
+  `Edit(/.foundation/sandboxes/**)`,
+  `Edit(/.foundation/repository-sandboxes/**)`, and
+  `Edit(/.foundation/drafts/**)` for the Change draft. The merge adds only
+  missing rules after the user's own, keeps their order (it no longer sorts the list),
   and is idempotent. `--no-permission-allowlist` skips it; the Cursor,
   OpenCode, and Codex adapters pass the flag through.
 - `change start`, `change revise`, and `change amend` accept
@@ -56,8 +69,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a real command in execution.yaml replaces the alias.
 - Docs- or chore-only drafts default omitted evidence to `static-analysis`
   (exit-code command) instead of test discovery.
-- Draft `riskSignals` are kept on the change: `access-control` selects the
-  high review tier and `input-domain` at least the medium tier.
+- Draft `riskSignals` are kept on the change: `access-control` makes review
+  required and selects the high tier, and `input-domain` at least the medium
+  tier.
 - `change start --template` shows the `repositories` selection and per-task
   `repository` when the project declares repositories besides root.
   Compilation rejects a root task whose paths reach into a declared
@@ -75,7 +89,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Land merges a user's uncommitted target edit on lines the change did not
   touch into the sandbox copy itself (`target-edit-sync`, automatic) and
   proves again before Apply; only same-line edits remain a
-  `target-edit-conflict` decision.
+  `target-edit-conflict`, which the agent merges into the sandbox copy.
 - `advance <change> --undo-land --decision-ref <ref>` undoes an archived Land
   whose diff is still uncommitted: it restores the pre-Land bytes of code,
   synced specs, and the archived packet, retires the change, and keeps the
@@ -115,9 +129,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pull requests run only `workflow-tests` (`minimum-runtime` and
   `deterministic`). The `code-quality` and `mutation-nightly` workflows are
   removed: their coverage, CRAP, and mutation reports ran out of memory on
-  every run and nothing consumed them. The `npm run quality:*` commands still
-  produce the full report on demand, and `release.yml` still requires fresh
-  suite and mutation evidence before publishing.
+  every run and nothing consumed them. `release.yml` still requires fresh
+  suite and dashboard mutation evidence before publishing.
 - Removed unused repository files: the v2 HTML release notes, the
   unreferenced `examples/solar-system`, and this repository's own legacy
   `.workflow/` index. Consumer `.workflow/` migration is unchanged. Unrun test
@@ -158,7 +171,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A natural request to open a PR ("เปิด PR ให้เลย", "open a PR"), or a yes to
   the guard's delivery question, now runs `deliver advance` as `/deliver`
   instead of turning it into a question.
-
 - One authority rule for the user's chat words (`AGENT.md`, WORKFLOW.md
   "Authority from the user's words"). A reply such as "ลุยเลย", "ทำเลย",
   "ทำไปเลย", or "go ahead" to the spec or amendment question is approval and is
@@ -180,7 +192,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A harness-executed provider that failed and then passes on unchanged content
   is recorded as a flake (`status: fail`, `flake` evidence) and needs a repair;
   resuming unchanged no longer turns it into proof.
-
 - The recovery ladder asks after three unchanged rounds (agent repair,
   `TRY_ALTERNATE_APPROACH`, then a decision with `repetition` evidence). A
   Build verify that keeps failing with identical output now counts, and budget
@@ -193,11 +204,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through `advance --decision` instead of `proof advance --retry-indeterminate`
   and `sandbox sync --resolve`.
 - OpenSpec is required only from Prove onward: a missing CLI no longer stops or
-  installs during Build; Prove prepares it with the existing handoff.
+  installs during Build; Prove prepares it with the existing handoff. From
+  Prove on, the strict OpenSpec lint is required and an absent CLI fails
+  closed instead of letting an unlinted agreement reach archive.
 - A grounding readSet that cites an untracked `openspec/investigations/` record
   no longer blocks sandbox creation, and no portability refusal asks for a
   commit.
-
 - Change produces a dev document that Build executes and a reviewer reads.
   Every proposal shows a folder tree of touched paths. A rapid proposal adds
   the compact form: summary, user flow, failure matrix, and a Plan table with
@@ -256,7 +268,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   attempt count, reuses a verdict only when its whole chain verifies, and
   otherwise counts unverifiable attempts as spent AI waves, so the change
   continues through the ordinary review-exhausted route.
-
 - Land reads each selected repository's target checkout before archiving. A
   repository whose target lacks the proven sandbox bytes, has work stranded in
   a shared-sandbox submodule placeholder, or is an uninitialized submodule
@@ -302,6 +313,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transaction that the retired flow already started. For any other change it
   refuses and routes to `advance <change> --through archived`, because Land
   never commits.
+- Git-ignored files are no change's content: under each selected repository's
+  own ignore rules Land never compares, projects, or reports them as target
+  edits or unlanded sandbox work. A tracked file stays content.
+- `land check` runs Land's own pre-mutation preflight read-only, so it stops on
+  the code Land would; `land advance` prints only the `advance --through
+  archived` JSON envelope, on its first run as on every later one.
+- A single-repository re-apply never overwrites a target edit: a path the
+  earlier apply never wrote must still hold its base bytes and executable mode
+  (or already the sandbox's), otherwise it takes the target-edit route.
+- Abandon also quarantines the change's review requests and reports,
+  instruction manifests, open attestation challenge, and delivery record, so a
+  reused id starts with a fresh review budget and no inherited state. When an
+  older abandon or a Land undo left such bookkeeping behind, creating a change
+  with that id moves it into the newest retirement record.
 
 ## [3.5.30] - 2026-10-01
 

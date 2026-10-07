@@ -290,6 +290,28 @@ frozen-lockfile ของ pnpm, yarn, bun) ตั้ง `"installDependencies": 
 non-derived decision จริง ตั้งเป็น `required` เมื่อ policy ของ project ต้องมี
 decision ledger ทุก change เท่านั้น เพราะ grounding ว่างไม่ได้เพิ่มคุณภาพ
 
+## `deliver`: ตั้งชื่อ commit และ branch ของ pull request (ไม่บังคับ)
+
+ใช้เฉพาะกับ `/deliver` ค่าเริ่มต้นคือ `feat: <title>` (หรือ `fix: <title>`) และ
+`change/<change-id>`:
+
+```json
+{
+  "deliver": {
+    "commitSubject": "{commitType}({ticket}): {title}",
+    "branchPattern": "feature/{ticket}-{title}",
+    "ticketPattern": "[A-Z]+-\\d+"
+  }
+}
+```
+
+placeholder ที่ใช้ได้คือ `{changeId}`, `{title}`, `{commitType}`, `{prType}` และ
+`{ticket}` ซึ่งคือ match แรกของ `ticketPattern` ใน change id, title หรือ proposal
+ถ้ามี placeholder ที่ไม่รู้จัก pattern ไม่ถูกต้อง หา ticket ไม่เจอ หรือได้ subject
+หรือ branch ที่ใช้ไม่ได้ Deliver จะหยุดเป็น wait แบบ `delivery-policy` ก่อน commit
+ใด ๆ ให้แก้การตั้งค่าแล้วสั่ง `/deliver` อีกครั้ง กฎการตั้งชื่อฉบับเต็มอยู่ใน
+`WORKFLOW.md` (`/deliver <change>`)
+
 ## จุดที่พลาดบ่อย
 
 - **แทนทั้งไฟล์ด้วยตัวอย่างย่อ** ให้แก้ object เดิมเพื่อรักษา reviewer definition
