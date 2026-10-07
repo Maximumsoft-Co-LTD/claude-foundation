@@ -495,6 +495,10 @@ export function createLandRuntime({
   now,
   blockWithDecision,
   deliveryObservation = null,
+  // Land's pre-mutation projection checks (apply planning, repository
+  // delivery, landed-projection binding, spec sync). `inspect` keeps it
+  // read-only for `land check`; Land runs it with recording allowed.
+  landPreflight = null,
   fail
 }) {
   function assertLandTargetReady(id, state) {
@@ -729,7 +733,12 @@ export function createLandRuntime({
     return telemetry;
   }
 
-  function landCheck(id) {
+  // `preflight` selects Land's full pre-mutation check: "inspect" for the
+  // read-only `land check` command, "apply" for Land itself. Both run the one
+  // shared preflight, so `land check` stops on every code Land stops on before
+  // it writes. Internal readiness callers (Land authority, root pointers,
+  // the legacy saga) keep the readiness-only check.
+  function landCheck(id, { preflight = null } = {}) {
     const state = loadRuntime(id);
     if (state.status === "archived") {
       console.log(`ALREADY ARCHIVED ${id}\n  archived: ${state.archivedAt || "unknown"}`);
@@ -749,6 +758,8 @@ export function createLandRuntime({
       assurance.reason = "external-operation-pending";
     }
     assertLandOperationalSafety(id, state);
+    if (preflight && landPreflight)
+      landPreflight(id, state, { inspect: preflight !== "apply" });
     if (multiRepository) persistLandPreparation(id, state, proof, graph, hash);
     const telemetry = reportLandReady(id, state, hash, assurance, externalOperations);
     return { archived: false, state, hash, assurance, externalOperations, telemetry };

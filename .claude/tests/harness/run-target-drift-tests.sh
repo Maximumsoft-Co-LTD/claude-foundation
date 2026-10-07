@@ -194,6 +194,10 @@ landable="$($F land-check "$C" 2>&1 || true)"
 assert_contains "land check weighs the target, not only the change" \
   "$landable" "control-head-moved"
 assert_contains "and the stop names replaying as the way out" "$landable" "sandbox sync $C"
+# Land readiness owns this stop; the Apply planning in the shared preflight
+# would only repeat it later, as the narrower "Applying" refusal.
+assert_contains "the stop is Land readiness's own, ahead of Apply planning" \
+  "$landable" "Landing now would project"
 assert_not_contains "the base is judged before the evidence is" \
   "$landable" "has no passing proof"
 

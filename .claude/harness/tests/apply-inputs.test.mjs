@@ -266,6 +266,54 @@ test("git apply inputs restores only authorized target paths still at the record
   assert.deepEqual(writes, [["/target/a.pyc", "base"], ["/target/c.pyc", null]]);
 });
 
+// `land check` runs this same planning read-only: it must stop where Land
+// stops, with the same code, and never write the target or record a carry.
+test("git apply inputs in inspect mode raises Land's stops without writing anything", () => {
+  const blocked = [];
+  const carry = applyContext({
+    sandboxDiffNames: () => ["a.js", "b.js"],
+    spawn: () => ({ status: 1, stderr: "error: a.js: patch does not apply\nerror: b.js: patch does not apply" }),
+    replayTargetEdit: ({ path }) => ({ status: path === "a.js" ? "merged" : "conflict" }),
+    saveRuntime: assert.fail,
+    blockWithDecision: (id, code, decision) => {
+      blocked.push({ code, decision });
+      throw new Error(code);
+    },
+    writeFile: assert.fail, removePath: assert.fail
+  });
+  carry.state.workspace.mode = "worktree";
+  carry.state.workspace.path = "/sandbox";
+  carry.identities.set("/target/a.js", "user-a");
+  assert.throws(() => gitApplyInputsOperation(carry.context, "change", "/sandbox",
+    { inspect: true }), /target-edit-sync/);
+  assert.deepEqual(blocked[0].decision.paths, ["a.js"]);
+  assert.equal(carry.state.workspace.targetCarry, undefined, "no carry is recorded");
+
+  // A regenerable conflict Land would restore itself is not a stop, and is
+  // not restored by the check.
+  let checks = 0;
+  const regenerable = applyContext({
+    sandboxDiffNames: () => ["__pycache__/a.pyc"],
+    spawn: () => { checks += 1; return { status: 1, stderr: "error: __pycache__/a.pyc: patch does not apply" }; },
+    writeFile: assert.fail, removePath: assert.fail
+  });
+  assert.deepEqual(gitApplyInputsOperation(regenerable.context, "change", "/sandbox",
+    { inspect: true }), ["__pycache__/a.pyc"]);
+  assert.equal(checks, 1);
+
+  // A recorded --restore-target path counts as restored without being written.
+  const restore = applyContext({
+    sandboxDiffNames: () => ["a.js"],
+    spawn: () => ({ status: 1, stderr: "error: a.js: patch does not apply" }),
+    blockWithDecision: (id, code) => { throw new Error(code); },
+    writeFile: assert.fail, removePath: assert.fail
+  });
+  restore.state.targetRestore = { identities: { "a.js": "dirty" } };
+  restore.identities.set("/target/a.js", "dirty");
+  assert.deepEqual(gitApplyInputsOperation(restore.context, "change", "/sandbox",
+    { inspect: true }), ["a.js"]);
+});
+
 test("git apply inputs preserves missing, equal, base-matching, and symlink paths", () => {
   const fixture = applyContext({
     sandboxDiffNames: () => ["missing.js", "equal.js", "base.js", "link.js"]

@@ -32,7 +32,10 @@ export function targetBindingProblem(targetPath) {
   return null;
 }
 
-export function landedProjectionFindings({ root, id, state }) {
+// `preflight` is the same check before Apply: a target binding, an
+// uninspectable sandbox, or work in a placeholder already decides the outcome;
+// only "not landed yet" waits for Apply.
+export function landedProjectionFindings({ root, id, state, preflight = false }) {
   const findings = [];
   for (const descriptor of sandboxDescriptors(root, id, state)) {
     if (descriptor.access === "read") continue;
@@ -58,7 +61,7 @@ export function landedProjectionFindings({ root, id, state }) {
     // A copy sandbox also carries the target's own pre-existing dirty files;
     // its root projection is bound by the apply journal instead.
     if (descriptor.kind === "shared" && descriptor.mode === "copy") continue;
-    if (assessment.unlanded.length)
+    if (!preflight && assessment.unlanded.length)
       findings.push({ repositoryId: descriptor.repositoryId, reason: "not-landed",
         detail: "the proven sandbox content is not in the target checkout",
         paths: assessment.unlanded });
@@ -66,14 +69,15 @@ export function landedProjectionFindings({ root, id, state }) {
   return findings;
 }
 
-export function landVerificationMessage(id, findings) {
+export function landVerificationMessage(id, findings, { preflight = false } = {}) {
   const lines = findings.map((finding) => {
     const paths = finding.paths.slice(0, 10).join(", ");
     return `  ${finding.repositoryId}: ${finding.detail}${paths ? `: ${paths}${
       finding.paths.length > 10 ? ", ..." : ""}` : ""}`;
   });
-  return `Land did not deliver every selected repository; the change was not archived ` +
-    `and no sandbox was removed:\n${lines.join("\n")}\n` +
+  return (preflight ? "Land cannot deliver every selected repository; nothing was applied " +
+    "or archived" : "Land did not deliver every selected repository; the change was not archived") +
+    ` and no sandbox was removed:\n${lines.join("\n")}\n` +
     "Move work written into a shared-sandbox placeholder into that repository's sandbox " +
     "(.foundation/repository-sandboxes/<change>/<repository>), make the target checkout a " +
     "real repository where its binding is wrong, then resume with " +
@@ -156,12 +160,12 @@ export function repositoryPointerStop({ changeId, moves }) {
 // its apply journal's verified projection. The isolated runtime bindings are
 // what this check reads, so they also decide whether it applies: an
 // interrupted archive has already moved the packet the selection is read from.
-export function assertLandedProjection({ root, id, state, fail }) {
+export function assertLandedProjection({ root, id, state, fail, preflight = false }) {
   const bound = Object.keys(state?.repositories || {}).map((repositoryId) => ({ id: repositoryId }));
   if (!compositeRepositorySelection(bound)) return;
-  const findings = landedProjectionFindings({ root, id, state });
+  const findings = landedProjectionFindings({ root, id, state, preflight });
   if (!findings.length) return;
-  fail(landVerificationMessage(id, findings), 1, {
+  fail(landVerificationMessage(id, findings, { preflight }), 1, {
     owner: "agent", boundary: "land-verification", code: LAND_PROJECTION_MISSING
   });
 }

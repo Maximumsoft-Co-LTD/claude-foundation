@@ -40,7 +40,7 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 | `feedback <change>` | อธิบายเวลา reviewer, repair ที่มีหลักฐาน, human wait และเวลาที่ยังระบุไม่ได้ พร้อม reuse และ action ถัดไป |
 | `change audit <change>` | ตรวจความเชื่อมโยงของ scenario claim task และ provider |
 | `proof readiness <change>` | blocker แบบมีชนิด พร้อมคำสั่งถัดไปที่ถูกต้อง |
-| `land check <change>` | ตรวจว่า projection ที่พิสูจน์แล้วยัง land ได้ |
+| `land check <change>` | รันการตรวจชุดเดียวกับที่ Land ทำก่อนเขียนไฟล์ แบบไม่แก้ไขอะไร และรายงาน assurance ปัจจุบัน |
 | `handoff status <change>` | ดู operation ที่ต้องสิทธิ์ภายนอกและผลต่อ Land |
 | `handoff list [--open] [--owner <team>] [--environment <env>] [--json]` | ดู operational obligation ข้าม active และ archived change |
 | `handoff packet <change> [--id <H00n>]` | อ่าน packet ที่ไม่มี credential สำหรับ DevOps/SRE owner |

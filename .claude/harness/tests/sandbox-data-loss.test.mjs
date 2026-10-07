@@ -247,6 +247,31 @@ test("(a) an uninitialized submodule target is a binding failure, not a landed r
   assert.match(findings[0].detail, /uninitialized submodule resolves to its superproject/);
 });
 
+// `land check` and Land's own preflight run this check before Apply: a broken
+// binding or placeholder work stops with LAND_PROJECTION_MISSING before
+// anything is written, while "not landed yet" is only meaningful after Apply.
+test("(a) Land's preflight reports the binding and placeholder stops before Apply", (t) => {
+  const fixture = superproject(t);
+  buildInRepositorySandbox(fixture);
+  assert.deepEqual(landedProjectionFindings({
+    root: fixture.root, id: ID, state: fixture.state, preflight: true
+  }), [], "unapplied work is not a preflight finding");
+  assert.doesNotThrow(() => assertLandedProjection({
+    root: fixture.root, id: ID, state: fixture.state, fail: failCapture, preflight: true
+  }));
+
+  write(join(fixture.shared, SUBMODULE, "dispatch.go"), "package hook\n// lost\n");
+  git(["submodule", "deinit", "-q", "-f", SUBMODULE], fixture.root);
+  assert.throws(() => assertLandedProjection({
+    root: fixture.root, id: ID, state: fixture.state, fail: failCapture, preflight: true
+  }), (error) => error.code === LAND_PROJECTION_MISSING &&
+    error.boundary === "land-verification" &&
+    /Land cannot deliver every selected repository; nothing was applied/.test(error.message) &&
+    /sub: target .* uninitialized submodule/.test(error.message) &&
+    new RegExp(`root: .*placeholder.*${SUBMODULE}/dispatch\\.go`).test(error.message) &&
+    new RegExp(`advance ${ID} --through archived`).test(error.message));
+});
+
 test("(a) a landed projection verifies, and archive cleanup backs up unreachable commits before removal", (t) => {
   const fixture = superproject(t);
   const head = buildInRepositorySandbox(fixture);

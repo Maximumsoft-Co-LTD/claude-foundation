@@ -857,9 +857,18 @@ the sandbox's bytes in the target, the target must be a Git repository of its ow
 (an uninitialized submodule is not), and nothing may sit in the shared sandbox's
 placeholder for a nested repository. Otherwise Land stops with
 `LAND_PROJECTION_MISSING`, naming each repository and path; nothing is archived
-and no sandbox is removed. Archive cleanup likewise keeps any sandbox whose bytes
+and no sandbox is removed. A wrong target binding or placeholder work already
+stops Land before Apply. Archive cleanup likewise keeps any sandbox whose bytes
 the target does not hold, and backs up commits the target cannot reach, as for
 abandon, before it removes a sandbox.
+
+Before its first write, Land runs one preflight: readiness, then every refusal
+Apply and repository delivery can already decide (moved target, target edits
+to sync or reconcile, undeclared deletions, a broken repository binding), and
+the spec-sync violations the current specs and the change delta already decide
+(`SPEC_SYNC_VIOLATION`). The internal `land check` diagnostic runs that same
+preflight without writing or recording anything, so it reports the code and
+route Land would stop on instead of a readiness that Land then refuses.
 
 Land never commits, and never implies permission to commit, push, publish,
 deploy, or open a pull request. Commit and push happen only through `/deliver`

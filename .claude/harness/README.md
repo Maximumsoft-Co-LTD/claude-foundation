@@ -291,7 +291,10 @@ the envelope carries, and the budget no-progress cap are specified in
 `land check`, `land advance`, `land recover`, `land archive`, `land record`,
 `land resume`, `land plan`, and `land pointers` routes are internal compatibility
 or diagnostic primitives. The Harness invokes them through the convergent Land
-transaction; agents must not ask users to compose or run them.
+transaction; agents must not ask users to compose or run them. `land check` runs
+Land's own pre-mutation preflight read-only, so it stops on the same code Land
+would; `land advance` prints only the `advance --through archived` JSON
+envelope, on its first run as on every later one.
 | `host instruction <command> --protocol 1 --format json --arguments <text>` | Resolves the package-owned command instruction | Host integration without reading consumer command files |
 | `host agent-contract --protocol 1 --format json` | Resolves the portable package-owned agent contract | Installing or refreshing a host adapter |
 

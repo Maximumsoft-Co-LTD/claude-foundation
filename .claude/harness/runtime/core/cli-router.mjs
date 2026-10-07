@@ -72,6 +72,7 @@ export async function routeRuntimeCommand(command, values, api) {
     prove,
     landCheck,
     grantLand,
+    grantLandQuietly = null,
     advanceLand,
     recoverLand,
     showLandPlan,
@@ -106,6 +107,16 @@ export async function routeRuntimeCommand(command, values, api) {
     showQualityDebt
   } = api;
   const die = fail;
+  // A step that runs before an `advance --through` envelope keeps its human
+  // report off stdout, so that call's stdout is the JSON envelope alone on the
+  // first run as on every later one. Refusals still exit through `fail`.
+  const beforeEnvelope = (through, operation) => {
+    if (!through) return operation();
+    const priorLog = console.log;
+    console.log = () => {};
+    try { return operation(); }
+    finally { console.log = priorLog; }
+  };
   // The user's approval answer can be recorded in the same call that applies
   // the agreement it approves: start, revise, or amend, then approve, then
   // optionally continue with --through. Nothing is approved when the agreement
@@ -445,8 +456,9 @@ export async function routeRuntimeCommand(command, values, api) {
         const resolution = String(flags["recover-apply"]);
         if (!["settle", "keep-current", "restore-backup"].includes(resolution))
           die("advance --recover-apply takes settle|keep-current|restore-backup");
-        recoverLand(rest[0], { "decision-ref": flags["decision-ref"],
-          ...(resolution === "settle" ? {} : { resolution }) });
+        beforeEnvelope(flags.through, () => recoverLand(rest[0], {
+          "decision-ref": flags["decision-ref"],
+          ...(resolution === "settle" ? {} : { resolution }) }));
         if (!flags.through) return;
         delete flags["recover-apply"];
         delete flags["decision-ref"];
@@ -499,7 +511,8 @@ export async function routeRuntimeCommand(command, values, api) {
           console.log(JSON.stringify(ask, null, flags.pretty ? 2 : 0));
           return;
         }
-        resolveChange(rest[0], { "approve-spec": true, "decision-ref": flags["decision-ref"] });
+        beforeEnvelope(flags.through, () => resolveChange(rest[0], {
+          "approve-spec": true, "decision-ref": flags["decision-ref"] }));
         if (!flags.through) return;
         delete flags["approve-spec"];
         delete flags["decision-ref"];
@@ -784,12 +797,19 @@ export async function routeRuntimeCommand(command, values, api) {
       recordHandoff(rest[0], flags);
     },
     "land-check": async () => {
-      landCheck(values[0]);
+      // The same pre-mutation preflight Land runs, read-only.
+      landCheck(values[0], { preflight: "inspect" });
     },
     "land-advance": async () => {
+      if (showAdvance) {
+        // The envelope is this route's whole stdout, first run included.
+        if (grantLandQuietly) grantLandQuietly(values[0]);
+        else if (grantLand) grantLand(values[0]);
+        await showAdvance(values[0], { through: "archived" });
+        return;
+      }
       if (grantLand) grantLand(values[0]);
-      if (showAdvance) await showAdvance(values[0], { through: "archived" });
-      else await advanceLand(values[0]);
+      await advanceLand(values[0]);
     },
     "land-recover": async () => {
       const {

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { parseSpecDocument, verifySpecSync } from "../../harness/runtime/workflow/spec-sync-verify.mjs";
+import {
+  parseSpecDocument, predictSpecSync, verifySpecSync
+} from "../../harness/runtime/workflow/spec-sync-verify.mjs";
 
 const lines = (...rows) => `${rows.join("\n")}\n`;
 
@@ -274,4 +276,24 @@ for (const violation of everyKind.violations) {
   assert.ok(violation.detail.length > 20, `terse detail for ${violation.kind}`);
 }
 
-console.log("spec sync verify: ALL PASS (35/35 assertions)");
+// Land's pre-archive preflight: the violations the current spec and the
+// delta already decide are reported before anything is written; violations
+// that depend on how OpenSpec merges are left to the post-archive check.
+assert.deepEqual(kinds(predictSpecSync({ before: spec(...contrast), delta: addedDelta })),
+  ["added-requirement-preexisting"]);
+assert.deepEqual(kinds(predictSpecSync({
+  before: spec(...contrast),
+  delta: lines("## REMOVED Requirements", "", "### Requirement: The choice is remembered", "")
+})), ["removed-requirement-absent"]);
+assert.deepEqual(kinds(predictSpecSync({
+  before: spec(...remembered),
+  delta: lines("## MODIFIED Requirements", "", ...modifiedBlock.slice(0, 6))
+})), ["modified-scenario-deleted"]);
+assert.deepEqual(kinds(predictSpecSync({ before: null, delta: lines(...contrast) })),
+  ["delta-section-unrecognized"]);
+assert.deepEqual(predictSpecSync({ before: spec(...remembered), delta: modifiedDelta }),
+  { valid: true, violations: [] });
+assert.deepEqual(predictSpecSync({ before: null, delta: addedDelta }),
+  { valid: true, violations: [] });
+
+console.log("spec sync verify: ALL PASS (41/41 assertions)");

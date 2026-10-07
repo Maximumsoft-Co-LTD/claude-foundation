@@ -153,6 +153,34 @@ test("overlapping target work is preserved as a typed conflict", () => {
   } finally { value.cleanup(); }
 });
 
+// `land check` runs the saga's pre-mutation half: it refuses what apply would
+// refuse, with the same typed error, and journals, backs up, or writes nothing.
+test("delivery preflight raises apply's refusals without writing anything", () => {
+  const value = fixture(2);
+  try {
+    const [first, second] = value.repositories;
+    assert.doesNotThrow(() => value.saga.preflight("change-a"));
+    writeFileSync(join(second.target, "app.txt"), "user edit\n");
+    assert.throws(() => value.saga.preflight("change-a"), (error) =>
+      error.code === "REPOSITORY_DELIVERY_FAILED" &&
+      /overwrite an uncommitted target edit in 'repo-2'/.test(error.message));
+    assert.throws(() => value.saga.apply("change-a"), (error) =>
+      error.code === "REPOSITORY_DELIVERY_FAILED" &&
+      /overwrite an uncommitted target edit in 'repo-2'/.test(error.message));
+    writeFileSync(join(second.target, "app.txt"), `${second.id}:base\n`);
+    writeFileSync(join(first.target, "moved.txt"), "moved\n");
+    git(["add", "moved.txt"], first.target);
+    git(["commit", "-q", "-m", "moved"], first.target);
+    const transactions = join(value.base, "transactions");
+    const before = spawnSync("find", [transactions], { encoding: "utf8" }).stdout;
+    assert.throws(() => value.saga.preflight("change-a"),
+      /repository 'repo-1' target HEAD moved after proof/);
+    assert.equal(spawnSync("find", [transactions], { encoding: "utf8" }).stdout, before);
+    assert.equal(readFileSync(join(second.target, "app.txt"), "utf8"), `${second.id}:base\n`);
+    assert.equal(value.state().repositories[second.id].delivery, undefined);
+  } finally { value.cleanup(); }
+});
+
 test("read-only dependencies have no mutation node", () => {
   const value = fixture(2);
   try {
