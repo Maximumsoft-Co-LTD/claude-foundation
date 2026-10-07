@@ -606,8 +606,9 @@ commands, not implementation tasks.
 
 ### Standard and rapid lanes
 
-`foundation-standard` includes proposal, delta specs, tasks, and evidence;
-design and other extensions appear only when their concern exists. Use it for public contracts, authentication, data or migrations,
+`foundation-standard` includes proposal, delta specs, tasks, evidence, and
+`design.md`, whose sections follow the inferred work type; other extensions
+appear only when their concern exists. Use it for public contracts, authentication, data or migrations,
 coupled behavior, high impact, irreversible effects, or any change needing more
 than unit/static evidence.
 

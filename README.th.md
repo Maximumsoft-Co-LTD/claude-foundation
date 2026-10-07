@@ -573,8 +573,9 @@ lifecycle command ไม่ใช่ implementation task
 
 ### Standard กับ Rapid Lane
 
-`foundation-standard` มี proposal, delta specs, tasks และ evidence ส่วน design
-กับ extension อื่นสร้างเมื่อมี concern จริง ใช้กับ public contract,
+`foundation-standard` มี proposal, delta specs, tasks, evidence และ `design.md`
+ซึ่ง section ข้างในเลือกตามประเภทงานที่อนุมานได้ ส่วน extension อื่นสร้างเมื่อมี
+concern จริง ใช้กับ public contract,
 authentication, data หรือ migration, behavior
 ที่ coupled, impact สูง, irreversible effect หรืองานที่ต้องใช้ evidence มากกว่า
 unit/static
