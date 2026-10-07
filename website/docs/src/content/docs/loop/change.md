@@ -177,7 +177,8 @@ Add complexity only when the work needs it:
 - `integrations` with documentation source/version, linked requirements, and
   security/resilience/compatibility concerns; related scenarios explicitly use
   `"kind": "success"` and `"kind": "failure"`
-- repositories for multi-repository scope
+- `repositories` for multi-repository scope, with each task's `repository`; its
+  paths and verify are relative to that repository's root, where verify runs
 - external operations for permission-bound work
 - Grounding v3 for non-derived material decisions
 

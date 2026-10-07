@@ -79,8 +79,10 @@ claude-foundation change amend <change> <amendment.json> --consume-amendment
 
 The compiler preserves completed tasks and manual sections, validates the new
 agreement transactionally, and returns to `advance`. `updateTasks` may extend
-claim coverage but cannot replace an existing outcome or a completed task's
-verification command; add a new task when that contract changes. A wrong verify
+claim coverage but cannot replace an existing outcome; add a new task when that
+contract changes. A completed task's verify changes only with `reopen: true`
+(`--reopen`), which unticks it so it must pass again, and `removeTasks`
+withdraws an unfinished task no remaining task depends on. A wrong verify
 command on an unfinished task is corrected directly, keeping the approval:
 `claude-foundation change amend <change> --task <task> --verify <command>`. The
 task is accepted only when the new command passes in the workspace, and a

@@ -198,13 +198,15 @@ export async function routeRuntimeCommand(command, values, api) {
     },
     "amend": async () => {
       const { flags, rest } = parseStrictCommandFlags(values, "change amend", {
-        boolean: ["template", "inspect", "consume-amendment", "approve-spec"],
+        boolean: ["template", "inspect", "consume-amendment", "approve-spec", "reopen"],
         value: ["task", "verify", "reason", "decision-ref", "through"]
       });
       const approval = sameCallApproval("change amend", flags);
       // The verify-only correction an agent makes directly: no amendment JSON,
-      // same transaction, the spec approval carried.
-      if (flags.task !== undefined || flags.verify !== undefined || flags.reason !== undefined) {
+      // same transaction, the spec approval carried. --reopen unticks a
+      // completed task so the corrected command must pass again.
+      if (flags.task !== undefined || flags.verify !== undefined || flags.reason !== undefined ||
+          flags.reopen) {
         if (flags.template || flags.inspect || flags["consume-amendment"] || approval)
           die("change amend --task/--verify cannot be combined with --template, --inspect, --consume-amendment, or --approve-spec");
         if (rest.length !== 1 || !String(flags.task || "").trim() ||
@@ -212,7 +214,8 @@ export async function routeRuntimeCommand(command, values, api) {
           die("change amend requires <change> --task <task-key|task-id> --verify <command>");
         if (!amendTaskVerify) die("change amend --task/--verify is unavailable in this runtime");
         amendTaskVerify(rest[0], {
-          task: flags.task, verify: flags.verify, reason: flags.reason
+          task: flags.task, verify: flags.verify, reason: flags.reason,
+          ...(flags.reopen ? { reopen: true } : {})
         });
         return;
       }

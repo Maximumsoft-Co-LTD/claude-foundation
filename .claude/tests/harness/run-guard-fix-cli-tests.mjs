@@ -285,6 +285,15 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
   });
   assert.deepEqual(correctedVerify, ["change",
     { task: "T001", verify: "npm test -- --runInBand", reason: "typo" }]);
+  // --reopen unticks a completed task so the corrected check must pass again.
+  await route("amend", ["change", "--task", "T001", "--verify", "go test -v ./...", "--reopen"], {
+    amendTaskVerify: (...args) => { correctedVerify = args; }
+  });
+  assert.deepEqual(correctedVerify, ["change",
+    { task: "T001", verify: "go test -v ./...", reason: undefined, reopen: true }]);
+  await assert.rejects(route("amend", ["change", "--reopen"], {
+    amendTaskVerify: () => {}
+  }), /requires <change> --task <task-key\|task-id> --verify <command>/);
   await assert.rejects(route("amend", ["change", "--task", "T001"], {
     amendTaskVerify: () => {}
   }), /requires <change> --task <task-key\|task-id> --verify <command>/);

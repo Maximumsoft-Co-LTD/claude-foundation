@@ -72,7 +72,9 @@ claude-foundation change amend <change> <amendment.json> --consume-amendment
 
 Compiler รักษา task ที่เสร็จและ manual section ตรวจ agreement ใหม่แบบ transaction
 แล้วกลับมา `advance` โดย `updateTasks` เพิ่ม claim coverage ได้ แต่เปลี่ยน outcome
-หรือ verify command ของ task ที่เสร็จแล้วไม่ได้ ถ้าสัญญาของ task เปลี่ยนต้องเพิ่ม task ใหม่
+ไม่ได้ ถ้าสัญญาของ task เปลี่ยนต้องเพิ่ม task ใหม่ verify ของ task ที่เสร็จแล้วเปลี่ยนได้เฉพาะด้วย
+`reopen: true` (`--reopen`) ซึ่งเอาเครื่องหมายเสร็จออกให้ต้องผ่านใหม่ และ `removeTasks`
+ถอน task ที่ยังไม่เสร็จซึ่งไม่มี task อื่นพึ่งพาได้
 verify command ที่ผิดของ task ที่ยังไม่เสร็จแก้ได้ตรง ๆ โดยคง approval ไว้:
 `claude-foundation change amend <change> --task <task> --verify <command>` task จะถูก
 รับเมื่อคำสั่งใหม่ผ่านใน workspace เท่านั้น และคำสั่งที่ผ่านเสมอจะถูกปฏิเสธ

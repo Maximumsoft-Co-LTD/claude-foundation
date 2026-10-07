@@ -712,6 +712,9 @@ existing requirement in place (`reviseRequirements`, with an open task) or
 remove one (`removeRequirements`, with a migration) instead of abandoning the
 change. Version-4 amendments must include discovery coverage for the added and
 revised requirements; the validated delta remains in the compiled proposal.
+`removeTasks` withdraws an unfinished task that no remaining task depends on,
+and a completed task's verify changes only with `reopen: true`, which unticks it
+so the harness verifies it again.
 Before Build starts, `change revise <change-id> <draft.json>` inspects and, at
 `DONE`, recompiles the whole agreement under the same id in one call; with
 `--merge` the file holds only the changed keys and keyed entries. Add

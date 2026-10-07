@@ -38,6 +38,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `change start --template` shows the `repositories` selection and per-task
+  `repository` when the project declares repositories besides root.
+  Compilation rejects a root task whose paths reach into a declared
+  repository, repository-task paths written from the control root, unselected
+  or undeclared task repositories, and verify commands that `cd` (or
+  `-C`/`--prefix`/`--cwd`) outside the task repository or into another one.
+- Amendments can withdraw unfinished tasks with `removeTasks`; completed or
+  depended-on tasks and removals that would orphan a claim are refused unless
+  dependencies and coverage move in the same amendment, and removed task IDs
+  are never reused. A completed task's verify, paths, or `dependsOn` change
+  only with `reopen: true` (`change amend … --verify <cmd> --reopen`), which
+  unticks it so the harness verifies it again.
+- Change inspection and start print an advisory when a verify runs `go test`
+  without `-v`, whose default output Prove cannot count.
 - Land merges a user's uncommitted target edit on lines the change did not
   touch into the sandbox copy itself (`target-edit-sync`, automatic) and
   proves again before Apply; only same-line edits remain a

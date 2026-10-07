@@ -40,12 +40,14 @@ import {
   reduceSemanticIntakeState, semanticDraftDigest, semanticIntakeResumeProjection
 } from "./semantic-intake-state.mjs";
 import {
-  amendmentVerifyPathIssues, compileSemanticAmendment, semanticAmendmentTemplate,
-  taskContractOnlyAmendment, verifyPathIssues, writeSemanticAmendment
+  amendmentTaskRepositoryIssues, amendmentVerifyPathIssues, compileSemanticAmendment,
+  semanticAmendmentTemplate, taskContractOnlyAmendment, taskRepositoryIssues, verifyPathIssues,
+  writeSemanticAmendment
 } from "./semantic-amendment.mjs";
 import { validateInvestigationBinding } from "./investigation-runtime.mjs";
 import {
-  designBlueprintWarnings, draftHasBlueprints, draftWorkTypes, renderDesignBlueprints, renderWorkType
+  designBlueprintWarnings, draftHasBlueprints, draftWorkTypes, renderDesignBlueprints, renderWorkType,
+  verifyCountAdvisories
 } from "./validation/design-blueprints.mjs";
 import {
   derivedFailureMatrix, derivedFileMap, derivedTestMap, docsOnlyDraft, inferWorkTypes,
@@ -574,6 +576,33 @@ export function renderDraftTask(task, index) {
   return `- [ ] **${taskId}** ${task.outcome} ${metadata} — verify: \`${task.verify}\``;
 }
 
+// Shown by `change start --template` only when the project declares
+// repositories besides the control root: a draft that omits the binding
+// compiles every task into root, where submodule code is not built.
+export function repositoryDraftGuidance(repositories = []) {
+  const declared = (Array.isArray(repositories) ? repositories : [])
+    .filter((row) => row?.id && row.id !== "root" && row.relativePath &&
+      !String(row.relativePath).startsWith(".."))
+    .map((row) => ({ id: row.id, path: row.relativePath }));
+  if (!declared.length) return {};
+  const [first] = declared;
+  return {
+    minimalDraftRepositories: "This project declares repositories besides root. A task " +
+      "whose files live in one names it in 'repository', writes 'paths' and 'verify' " +
+      "relative to that repository's root (verify runs there; no cd into it), and the " +
+      "draft lists every repository its tasks use in 'repositories' (add root when a task " +
+      "edits root files). Omit both for root-only work.",
+    declaredRepositories: declared,
+    repositoryExample: {
+      repositories: [{ id: first.id, mode: "write" }],
+      tasks: [{
+        outcome: "Implement and verify the bounded outcome",
+        repository: first.id, paths: ["src/**"], verify: "npm test"
+      }]
+    }
+  };
+}
+
 export function renderDraftTasks(tasks) {
   return `# Tasks\n\n> This is the sole implementation ledger.\n\n` +
     tasks.map(renderDraftTask).join("\n") + "\n";
@@ -696,8 +725,31 @@ export function createChangeLifecycle({
   relevantHash = null,
   stableHash = null,
   trapFailures = (operation) => operation(),
-  rollbackStart = () => []
+  rollbackStart = () => [],
+  repositoryCatalog = null
 }) {
+  // Declared repositories other than the control root (submodules and
+  // registered siblings). An unreadable catalog is reported by the commands
+  // that use it; here it only means no repository-binding checks apply.
+  function declaredRepositories() {
+    if (!repositoryCatalog) return [];
+    try {
+      const rows = trapFailures(() => repositoryCatalog())?.repositories;
+      return Array.isArray(rows) ? rows.filter((row) => row?.id && row.id !== "root") : [];
+    } catch { return []; }
+  }
+
+  function changeRepositorySelection(changeDir) {
+    const path = join(changeDir, "repositories.yaml");
+    if (!existsSync(path)) return ["root"];
+    try {
+      const rows = readJson(path).repositories;
+      return Array.isArray(rows)
+        ? rows.map((entry) => typeof entry === "string" ? entry : entry?.id).filter(Boolean)
+        : ["root"];
+    } catch { return ["root"]; }
+  }
+
   const workflowPolicy = () => typeof policy === "function" ? policy() : policy;
 
   function amendmentRevision(state) {
@@ -1090,9 +1142,12 @@ export function createChangeLifecycle({
   }
 
   function designWarningLines(draft, schema) {
-    if (schema !== "foundation-standard" || ![3, 4].includes(draft._semanticVersion)) return "";
+    if (![3, 4].includes(draft._semanticVersion)) return "";
+    const verify = verifyCountAdvisories(draft.tasks)
+      .map((warning) => `  verify advisory: ${warning}\n`).join("");
+    if (schema !== "foundation-standard") return verify;
     return [...designBlueprintWarnings(draft), ...readerGuideWarnings(draft)]
-      .map((warning) => `  design warning: ${warning}\n`).join("");
+      .map((warning) => `  design warning: ${warning}\n`).join("") + verify;
   }
 
   function materializeDraft(id, draft) {
@@ -1248,6 +1303,7 @@ export function createChangeLifecycle({
       minimalDraftDecisions: "Add decisions: [{ key, choice, reason? }] to the minimal draft " +
         "for every default you chose without asking the user (for example stack, storage, " +
         "framework); they are listed in the proposal as decided by the agent.",
+      ...repositoryDraftGuidance(declaredRepositories()),
       ...semanticDraftTemplate()
     };
   }
@@ -1334,7 +1390,8 @@ export function createChangeLifecycle({
     writeJson(statePath, state);
     const result = {
       ...action,
-      designWarnings: designBlueprintWarnings(source),
+      // Advisory: a known runner whose default output Prove cannot count.
+      designWarnings: [...designBlueprintWarnings(source), ...verifyCountAdvisories(source.tasks)],
       intakeState: {
         path: relative(root, statePath),
         revision: state.revision,
@@ -1386,6 +1443,17 @@ export function createChangeLifecycle({
     };
   }
 
+  function amendmentRepositoryIssues(id, state, amendment) {
+    const changeDir = activeChangePath(id, state);
+    const tasksPath = join(changeDir, "tasks.md");
+    return amendmentTaskRepositoryIssues(amendment,
+      existsSync(tasksPath) ? readFileSync(tasksPath, "utf8") : "", {
+        repositories: declaredRepositories(),
+        selection: changeRepositorySelection(changeDir),
+        exists: existsSync
+      });
+  }
+
   function inspectAmendment(id, amendmentPath, options = {}) {
     const active = loadRuntime(id);
     if (active.semanticDraftVersion !== 4)
@@ -1406,10 +1474,11 @@ export function createChangeLifecycle({
       validateCompiledDraft: false,
       excludedSourcePath: relative(root, path).replaceAll("\\", "/"),
       standardLane: active.schema === "foundation-standard",
-      extraIssues: amendmentVerifyPathIssues(amendment,
+      extraIssues: [...amendmentVerifyPathIssues(amendment,
         existsSync(tasksPath) ? readFileSync(tasksPath, "utf8") : "",
         { exists: (candidate) => existsSync(join(workspaceRoot, candidate)) ||
-          existsSync(join(root, candidate)) })
+          existsSync(join(root, candidate)) }),
+      ...amendmentRepositoryIssues(id, active, amendment)]
     });
   }
 
@@ -1798,6 +1867,11 @@ export function createChangeLifecycle({
     const issues = [...(structural ? preflight.issues : []), ...domainLanguageIssues(draft),
       // Caught here, in the same EDIT batch, instead of when Build runs the check.
       ...verifyPathIssues(draft.tasks, { exists: (path) => existsSync(join(root, path)) }),
+      // Build dispatches each task to its repository; a task whose files live
+      // in a declared repository but is bound to root would build elsewhere.
+      ...taskRepositoryIssues(draft.tasks, {
+        repositories: declaredRepositories(), selection: draft.repositories, exists: existsSync
+      }),
       ...apiContractErrorIssues(draft)];
     // Only the rapid lane may leave evidence capabilities to the compiler.
     if (!rapid && draft._defaultedEvidence?.length)
@@ -2267,14 +2341,24 @@ export function createChangeLifecycle({
       } else completedAmendmentIntakeEffectiveness = intakeState?.effectiveness || null;
     }
     const basePath = activeChangePath(id, state);
+    // A task-contract amendment skips intake, so its repository binding is
+    // checked here; an intake amendment was checked by its inspection.
+    if (taskContractOnlyAmendment(amendment)) {
+      const repositoryIssues = amendmentRepositoryIssues(id, state, amendment);
+      if (repositoryIssues.length)
+        fail(`semantic amendment validation failed:\n  - ${repositoryIssues.join("\n  - ")}`);
+    }
     const contract = readJson(join(basePath, "evidence.yaml"));
     const tasksContent = readFileSync(join(basePath, "tasks.md"), "utf8");
     const compiled = compileSemanticAmendment({
       amendment, contract, tasksContent, slugify, renderTask: renderDraftTask,
       semanticDraftVersion: state.semanticDraftVersion,
       provenClaimIds: (amendment?.updateTasks || []).some((task) =>
-        task && (Object.hasOwn(task, "verify") || Object.hasOwn(task, "paths")))
+        task && ["verify", "paths", "dependsOn"].some((field) => Object.hasOwn(task, field))) ||
+        (Array.isArray(amendment?.removeTasks) && amendment.removeTasks.length)
         ? provenCommandClaimIds(id) : [],
+      retiredTaskIds: (state.amendments || []).flatMap((row) =>
+        (row?.removedTasks || []).map((task) => task?.id).filter(Boolean)),
       loadCanonicalSpec: (capability) => {
         const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
         return existsSync(path) ? readFileSync(path, "utf8") : null;
@@ -2290,7 +2374,10 @@ export function createChangeLifecycle({
     // A changed task verify command invalidates the evidence for that task's
     // claims (every claim when the task binds none), so Prove reruns it.
     ...(compiled.taskContractChanges.length
-      ? [{ dimension: "task-verify", claimIds: compiled.taskContractClaimIds }] : [])];
+      ? [{ dimension: "task-verify", claimIds: compiled.taskContractClaimIds }] : []),
+    // A withdrawn task's claims are now proven by the tasks that keep them.
+    ...(compiled.removedTasks?.length
+      ? [{ dimension: "task-removal", claimIds: compiled.removedTaskClaimIds }] : [])];
     const configuredProviderNames = requiredProviders ? requiredProviders(id) : [];
     const providerEntries = new Map(Object.entries(compiled.providers || {}));
     for (const name of configuredProviderNames) {
@@ -2444,6 +2531,7 @@ export function createChangeLifecycle({
         invalidatedClaims: compiled.invalidatedClaims,
         ...(compiled.taskContractChanges.length
           ? { taskContractChanges: compiled.taskContractChanges } : {}),
+        ...(compiled.removedTasks?.length ? { removedTasks: compiled.removedTasks } : {}),
         invalidation: {
           affectedTasks: invalidation.affectedTasks,
           affectedProviders: invalidation.affectedProviders,
@@ -2517,6 +2605,11 @@ export function createChangeLifecycle({
     console.log(`AMENDED ${id}\n  revision: ${amended.contractRevision}\n` +
       `  invalidated claims: ${[...compiled.invalidatedClaims, ...compiled.removedClaimIds.map((claim) =>
         `${claim} (removed)`)].join(", ") || "none"}\n` +
+      (compiled.removedTasks?.length ? `  removed tasks: ${compiled.removedTasks.map((task) =>
+        task.key ? `${task.id} (${task.key})` : task.id).join(", ")}\n` : "") +
+      (compiled.taskContractChanges.some((task) => task.reopened)
+        ? `  reopened tasks: ${compiled.taskContractChanges.filter((task) => task.reopened)
+          .map((task) => task.id).join(", ")} (verified again before they count as done)\n` : "") +
       `  proof: ${compiled.invalidation.proofRecovery?.recovery?.instruction ||
         "re-enter Prove so receipt bindings are recomputed"}\n` +
       (amended.pendingApprovalDelta

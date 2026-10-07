@@ -203,7 +203,17 @@ unambiguous bookkeeping behavior, and draft v3 remains readable.
 inspects). Inspection returns one typed `EDIT`, `ASK_USER`, or `DONE` action
 with an exact resume route. Its `EDIT` batch also names, as agent repairs, a
 task `verify` that references a test file which neither exists nor falls inside
-any task's `paths`, and an `apiContracts` error listed without a status or code. An
+any task's `paths`, and an `apiContracts` error listed without a status or code.
+When `openspec/repositories.yaml` (or `.gitmodules`) declares repositories
+besides root, `change start --template` shows the `repositories` selection and
+per-task `repository`, and the batch names a root task whose paths or verify
+reach into a declared repository (the harness does not rebind it: moving a task
+changes where its paths resolve and where verify runs, so the agent rewrites
+them), a repository task whose paths are written from the control root, a task
+repository the draft does not select, and a verify that `cd`s (or `-C`,
+`--prefix`, `--cwd`) into another repository or outside its own; verify runs
+from the task repository root. An advisory, never a block, names a known runner
+whose default output Prove cannot count (bare `go test`). An
 unresolved user-owned coverage row must link to its decisions through
 `decisionKeys`; once every linked decision is resolved, the harness treats the
 row as covered by those decisions, so recording an answer needs no further
@@ -328,8 +338,22 @@ Referenced diagrams, prototype selections, and local integration documentation
 must resolve to regular files inside the project. Remote integration sources
 must use HTTPS and a fixed version rather than `latest`, a branch, or another
 floating alias. An amendment may extend a task's claim coverage, but changing
-its outcome, or the verify command of a completed task, requires a new task so
-completed work cannot silently change meaning.
+its outcome requires a new task so completed work cannot silently change
+meaning. A completed task's verify command (or paths, or `dependsOn`) changes
+only with `reopen: true` on its `updateTasks` row (`--reopen` on the direct
+form below): the task is unticked, its claims are invalidated, and it counts as
+done again only after the new command passes; a changed check never keeps a
+completed status.
+
+An amendment withdraws unfinished tasks with `removeTasks: ["<key-or-id>"]`
+(needing no requirement, evidence, or intake on its own). A completed or proven
+task is refused, as is a task another remaining task depends on unless that
+dependent is removed too or its `updateTasks` row sets `dependsOn`, and a
+removal that would leave a claim with no task unless `updateTasks` `covers`
+moves it or `removeRequirements` retires it. The removed lines leave
+`tasks.md`, their claims are invalidated, derived provider commands follow the
+remaining verify commands, the amendment record keeps what each removed task
+promised, and a removed id is never reused.
 
 An unfinished task (unchecked, with no valid passing command receipt for its
 claims) may change its verify command, and optionally `paths`, through an
@@ -337,7 +361,8 @@ amendment with only `updateTasks: [{key, verify, paths?}]` rows. It needs no
 requirement, evidence, or version-4 intake; `change amend --template` prints
 it. The agent may make that correction directly, without amendment JSON or a
 new approval: `change amend <change> --task <task-key|task-id> --verify
-<command> [--reason <text>]`. Derived provider commands follow the new verify,
+<command> [--reopen] [--reason <text>]` (`--reopen` for a completed task).
+Derived provider commands follow the new verify,
 the task's claims are invalidated so Prove reruns their evidence, and the
 revision, validation, and rollback match any amendment. Claims, capabilities,
 and the spec approval do not change; a command that always passes (`true`,

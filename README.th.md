@@ -675,6 +675,9 @@ amendment ที่ไม่ผ่าน และ invalidate เฉพาะ cl
 task ที่ยังไม่เสร็จ) หรือลบได้ (`removeRequirements` ต้องมี migration) โดยไม่ต้อง
 abandon change Amendment ของ version 4 ต้องมี discovery coverage ของ requirement
 ที่เพิ่มและที่แก้ และ delta ที่ผ่าน validation จะอยู่ใน compiled proposal
+`removeTasks` ถอน task ที่ยังไม่เสร็จและไม่มี task อื่นพึ่งพาได้ ส่วน verify ของ
+task ที่เสร็จแล้วเปลี่ยนได้เฉพาะด้วย `reopen: true` ซึ่งเอาเครื่องหมายเสร็จออกเพื่อให้
+harness verify ใหม่
 ก่อนเริ่ม Build ใช้ `change revise <change-id> <draft.json>` ซึ่ง inspect และเมื่อได้
 `DONE` จะคอมไพล์ agreement ทั้งฉบับใหม่ใน id เดิมในคำสั่งเดียว ถ้าใส่ `--merge`
 ไฟล์มีเฉพาะ key และ entry ที่มี key ซึ่งเปลี่ยน เพิ่ม

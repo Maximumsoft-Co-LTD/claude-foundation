@@ -77,8 +77,10 @@ path for existing callers. Put only real complexity in typed extensions:
   output as proof);
 - `integrations` with documentation source/version, linked requirements, and
   security/resilience/compatibility concerns;
-- repositories only for multi-repository work; external operations only for
-  permission-bound work; Grounding v3 only for non-derived material decisions.
+- `repositories` only for multi-repository work, plus each task's
+  `repository`, whose root its paths and verify are relative to;
+  external operations only for permission-bound work; Grounding v3 only for
+  non-derived material decisions.
 
 Local references must be project files; remote integration sources need HTTPS
 and a fixed version, not `latest` or a branch.
@@ -112,11 +114,10 @@ run `change amend <change> <amendment.json>`: it inspects, then amends only
 at `DONE`. It preserves completed tasks and custom prose/assets,
 increments the revision, invalidates the affected contract, and rolls back on
 failure. Never rewrite a legacy change only to migrate it. An amendment to a v4 agreement must include discovery coverage
-for added and revised requirements. `updateTasks` may extend claim coverage but
-must not replace an outcome or a completed task's verify command; add a new task
-when that contract changes. An unfinished task's wrong verify command is fixed by
-an amendment of only `updateTasks: [{key, verify, paths?}]` (no intake;
-`change amend --template`). `reviseRequirements` replaces a requirement row in
+for added and revised requirements. `updateTasks` may extend claim coverage,
+never replace an outcome; a completed task's verify changes only with
+`reopen: true`. Task-only amendments (`updateTasks` verify, `removeTasks` for
+unfinished tasks) need no intake (`change amend --template`). `reviseRequirements` replaces a requirement row in
 its same capability and operation and needs an open task; `removeRequirements`
 needs a `migration` and must not orphan a task. Before Build starts, revise the
 whole agreement with `change revise <change> <draft.json>`, which likewise

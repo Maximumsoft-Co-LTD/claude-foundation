@@ -1520,7 +1520,8 @@ const {
   relevantHash,
   stableHash,
   trapFailures,
-  rollbackStart: rollbackAtomicStart
+  rollbackStart: rollbackAtomicStart,
+  repositoryCatalog
 });
 const amendTaskVerify = amendTaskVerifyOperation.bind(null, { root: ROOT, amendChange });
 const { inspectInvestigation, investigationRecordTemplate } = createInvestigationRuntime({

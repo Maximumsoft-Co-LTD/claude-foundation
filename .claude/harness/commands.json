@@ -99,7 +99,7 @@
     },
     {
       "name": "change amend",
-      "usage": "change amend --template | <change> <amendment.json> [--inspect | --consume-amendment] [--approve-spec --decision-ref <ref> [--through build|proven|archived]] | <change> --task <task-key|task-id> --verify <command> [--reason <text>]",
+      "usage": "change amend --template | <change> <amendment.json> [--inspect | --consume-amendment] [--approve-spec --decision-ref <ref> [--through build|proven|archived]] | <change> --task <task-key|task-id> --verify <command> [--reopen] [--reason <text>]",
       "audience": "agent",
       "kind": "write",
       "idempotent": false,
