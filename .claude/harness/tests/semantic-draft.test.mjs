@@ -1224,18 +1224,22 @@ function amendVerifyOnlySameContract(t, lintFingerprint) {
   assert.match(readFileSync(join(change, "tasks.md"), "utf8"), /verify: `npm test`$/m);
   assert.equal(readFileSync(join(receipts, "lint.json"), "utf8"), lintReceipt,
     "the receipt is left as it was");
-  return state.amendments.at(-1).invalidation.proofRecovery.providers;
+  return state.amendments.at(-1).invalidation.proofRecovery;
 }
 
 test("a verify-only amend keeps a passing receipt whose contract did not change", (t) => {
-  const providers = amendVerifyOnlySameContract(t);
+  const { providers } = amendVerifyOnlySameContract(t);
   assert.ok(providers.preserved.includes("lint"));
 });
 
 test("a verify-only amend reruns a receipt already stale for the unchanged contract", (t) => {
-  const providers = amendVerifyOnlySameContract(t, "an-older-contract");
-  assert.ok(!providers.preserved.includes("lint"), "a stale receipt is not reported preserved");
-  assert.ok(providers.rerun.includes("lint"));
+  const plan = amendVerifyOnlySameContract(t, "an-older-contract");
+  assert.ok(!plan.providers.preserved.includes("lint"), "a stale receipt is not reported preserved");
+  assert.ok(plan.providers.rerun.includes("lint"));
+  assert.deepEqual(plan.decisions.find((row) => row.provider === "lint"),
+    { provider: "lint", action: "rerun", reason: "RECEIPT_STALE_FOR_UNCHANGED_CONTRACT" });
+  assert.match(plan.recovery.instruction,
+    new RegExp(`retain ${plan.providers.preserved.length} bound receipt\\(s\\) and rerun ${plan.providers.rerun.length}`));
 });
 
 test("a verify-only change amend reruns that task's evidence and keeps the rest", (t) => {
