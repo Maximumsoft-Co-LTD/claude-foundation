@@ -267,6 +267,8 @@ function recoveryInstruction(blocked, preservedCount, rerunCount) {
 
 /** Move one preserved provider to rerun, keeping lists, decisions, and the instruction consistent. */
 export function demoteSelectivePreservation(plan, provider, code) {
+  if (!plan.providers.preserved.includes(provider))
+    throw new Error(`provider '${provider}' is not preserved in this plan`);
   const preserved = plan.providers.preserved.filter((row) => row !== provider);
   const rerun = sortedUnique([...plan.providers.rerun, provider]);
   return {
