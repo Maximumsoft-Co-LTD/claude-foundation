@@ -60,6 +60,7 @@ import {
 import { automaticReviewRun, currentDeliveryProof } from "./runtime/workflow/advance-recovery.mjs";
 import { createSandboxRuntime } from "./runtime/workflow/sandbox-runtime.mjs";
 import { createSandboxCleanup } from "./runtime/workflow/sandbox-cleanup.mjs";
+import { assertLandedProjection } from "./runtime/workflow/land-verification.mjs";
 import {
   createLandJournal, transactionJournals as readTransactionJournals
 } from "./runtime/workflow/land-journal.mjs";
@@ -1354,7 +1355,7 @@ const { continueBudget, checkpointBudget } = createBudgetContinuation({
 const {
   cleanupAppliedSandbox,
   cleanupRepositorySandboxes
-} = createSandboxCleanup({ root: ROOT, canonicalPath, git });
+} = createSandboxCleanup({ root: ROOT, canonicalPath, git, now });
 const sandboxRuntime = createSandboxRuntime({
   markBlocked,
   recordScheduler: commandPhaseRecorder.scheduler,
@@ -1882,7 +1883,11 @@ const applyRuntime = createApplyRuntime({
   cleanupRepositorySandboxes,
   recoverPendingApply,
   landCheck,
-  assertMultiRepositoryArchiveReady,
+  // Records say what Land applied; the target says what landed. Both must agree.
+  assertMultiRepositoryArchiveReady: (id, state) => {
+    assertMultiRepositoryArchiveReady(id, state);
+    assertLandedProjection({ root: ROOT, id, state, fail: die });
+  },
   archivedChangeRelativePath,
   pendingTasks,
   assertOpenSpecCli,

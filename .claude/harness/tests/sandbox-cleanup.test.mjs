@@ -3,8 +3,10 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
-  rmSync
+  rmSync,
+  writeFileSync
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -92,7 +94,28 @@ try {
   );
 
   mkdirSync(expected, { recursive: true });
-  const cleanup = createSandboxCleanup({ root, canonicalPath, git });
+  // The real guard backs up a plain (non-Git) copy's unlanded files before
+  // removing it, and never removes a worktree it cannot inspect.
+  const guarded = createSandboxCleanup({ root, canonicalPath, git, now: () => "t1" });
+  writeFileSync(join(expected, "work.txt"), "unlanded\n");
+  const backedUp = guarded.cleanupAppliedSandbox("c", state("copy", expected));
+  assert.equal(backedUp.status, "removed");
+  assert.equal(readFileSync(join(root, backedUp.backup, "files", "work.txt"), "utf8"),
+    "unlanded\n");
+  const unverifiable = join(root, ".foundation", "repository-sandboxes", "c", "plain");
+  mkdirSync(unverifiable, { recursive: true });
+  const kept = guarded.cleanupRepositorySandboxes("c", { repositories: {
+    plain: { mode: "worktree", path: unverifiable, targetPath: root, baseHead: "a".repeat(40) }
+  } }).plain;
+  assert.equal(kept.status, "refused");
+  assert.match(kept.reason, /cannot verify sandbox content before removal/);
+  assert.equal(existsSync(unverifiable), true);
+  rmSync(unverifiable, { recursive: true });
+  mkdirSync(expected, { recursive: true });
+  // The removal mechanics below are exercised with an inspected, clean guard.
+  const cleanup = createSandboxCleanup({
+    root, canonicalPath, git, guard: () => ({ proceed: true, backup: null })
+  });
   assert.deepEqual(cleanup.cleanupAppliedSandbox("c", state("copy", expected)), {
     status: "removed",
     path: expected
@@ -131,7 +154,8 @@ try {
   ]);
   const failingCleanup = createSandboxCleanup({
     root, canonicalPath,
-    git: () => ({ status: 1, stderr: "repository locked\n" })
+    git: () => ({ status: 1, stderr: "repository locked\n" }),
+    guard: () => ({ proceed: true, backup: null })
   });
   assert.deepEqual(failingCleanup.cleanupRepositorySandboxes("c", {
     repositories: {

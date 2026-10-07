@@ -214,6 +214,7 @@ apply sandbox operation|node --test "$ROOT/.claude/harness/tests/apply-sandbox-o
 recover pending apply|node --test "$ROOT/.claude/harness/tests/recover-pending-apply.test.mjs"
 sandbox sync runtime|node --test "$ROOT/.claude/harness/tests/sandbox-runtime-sync.test.mjs"
 sandbox cleanup|node --test "$ROOT/.claude/harness/tests/sandbox-cleanup.test.mjs"
+sandbox data-loss guards|node --test "$ROOT/.claude/harness/tests/sandbox-data-loss.test.mjs"
 workspace inspection|node --test "$ROOT/.claude/harness/tests/workspace-inspection.test.mjs"
 sandbox create phases|node --test "$ROOT/.claude/harness/tests/sandbox-create-phases.test.mjs"
 change validation phases|node --test "$ROOT/.claude/harness/tests/change-validation-phases.test.mjs"

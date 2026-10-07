@@ -430,6 +430,18 @@ state, receipts, evidence, and transactions to
 user decision, never touches Git, refuses archived changes, and asks whether to
 keep or revert already-applied files before acting.
 
+Abandon removes only what the change owns: its sandboxes, its own `.foundation`
+records and packet (quarantined, never deleted; an earlier quarantine of the same
+id is set aside, not replaced), and, only with `--applied revert`, the target
+paths its own apply journal recorded writing. It never deletes a target file the
+change did not declare and apply. Before a sandbox is removed, any commit the
+target repository cannot reach and any sandbox byte the target does not hold are
+written to `.foundation/backups/<id>/<timestamp>/<sandbox>/` (`commits.bundle`,
+`changes.patch` against the sandbox base, verbatim `files/`, and a
+`manifest.json` naming the restore commands); abandon prints each backup path. A
+sandbox whose content cannot be inspected, or whose backup cannot be written, is
+kept.
+
 ### `/build <change>`
 
 The normal entrypoint is:
@@ -812,7 +824,20 @@ Each target finishes `applied-uncommitted`: its intended diff is visible for
 the user to inspect, while Git HEAD and index remain unchanged. Read-only
 repositories remain unchanged. Re-entering `/land` resumes the same grant and
 skips already verified nodes; it never requires the user to assemble a journal,
-grant, commit, recovery command, or archive command.
+grant, commit, recovery command, or archive command. A node counts as verified
+only while its sandbox projection is unchanged: work committed or edited in a
+repository sandbox after an earlier delivery is delivered again on resume.
+
+Before a multi-repository change is archived, Land reads each writable selected
+repository's target checkout, not its own records: every path the repository
+sandbox changed since its base (committed, uncommitted, or untracked) must hold
+the sandbox's bytes in the target, the target must be a Git repository of its own
+(an uninitialized submodule is not), and nothing may sit in the shared sandbox's
+placeholder for a nested repository. Otherwise Land stops with
+`LAND_PROJECTION_MISSING`, naming each repository and path; nothing is archived
+and no sandbox is removed. Archive cleanup likewise keeps any sandbox whose bytes
+the target does not hold, and backs up commits the target cannot reach, as for
+abandon, before it removes a sandbox.
 
 Land never commits, and never implies permission to commit, push, publish,
 deploy, or open a pull request. Commit and push happen only through `/deliver`

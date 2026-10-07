@@ -125,6 +125,8 @@ read-only argument.
 | Workflow | `runtime/workflow/land-journal.mjs` | Atomic apply identity, journal, rollback, verification, and cleanup |
 | Workflow | `runtime/workflow/land-runtime.mjs` | Multi-repository Land readiness, planning, pointers, and resume saga |
 | Workflow | `runtime/workflow/repository-delivery-saga.mjs` | Prepare-all, dependency-ordered, uncommitted multi-repository Apply and resume |
+| Workflow | `runtime/workflow/land-verification.mjs` | Target-read verification that every writable repository holds its proven sandbox bytes before archive |
+| Workflow | `runtime/workflow/sandbox-preservation.mjs` | Sandbox-versus-target comparison and recoverable backups before any sandbox removal |
 | Workflow | `runtime/workflow/lease-runtime.mjs` | Agent resource lease acquisition, renewal, release, and cleanup |
 | Workflow | `runtime/workflow/packet-runtime.mjs` | Changed-surface calculation and bounded task/review packet generation |
 | Workflow | `runtime/workflow/repository-topology.mjs` | Repository discovery, selection, dependency validation, and workspace views |
@@ -605,6 +607,7 @@ listings elsewhere name this file as their source rather than restating it.
 | `.foundation/attestations/` | Unattended-execution challenges and consumed nonces |
 | `.foundation/instruction-manifests/` | Instruction provenance per command |
 | `.foundation/recovery/` | Quarantined abandoned changes, undone Lands (`land-undone/`), and orphaned runtime state |
+| `.foundation/backups/` | Commit bundles, patches, and file copies of unlanded sandbox work, written before a sandbox is removed |
 | `.foundation/agreement-drift/` | Isolated-packet edits made outside an amendment, saved when the harness restores the approved text |
 | `.foundation/prototypes/` | Disposable comparison prototypes, never admissible as evidence |
 | `.foundation/policy.json` | Optional project rules mapping paths to required capabilities |

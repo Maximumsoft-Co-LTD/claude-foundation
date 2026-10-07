@@ -931,6 +931,14 @@ export function isolateSelectedRepositories(context, id, state, repositories) {
       const baseHead = gitHead(repository.path);
       if (!baseHead)
         throw new Error(`repository '${repository.id}' cannot be isolated because it is not an initialized Git repository`);
+      // An uninitialized submodule is an empty directory whose Git commands
+      // answer for the superproject; isolating it would fork the wrong repository.
+      const top = git(["rev-parse", "--show-toplevel"], repository.path);
+      if (top.status !== 0 ||
+          canonicalPath(String(top.stdout || "").trim()) !== canonicalPath(repository.path))
+        throw new Error(`repository '${repository.id}' cannot be isolated because '${
+          repository.path}' is not an initialized Git repository of its own (run 'git submodule update --init ${
+          repository.relativePath || repository.path}' first)`);
       const requestedPath = join(root, ".foundation", "repository-sandboxes", id, repository.id);
       if (existsSync(requestedPath))
         throw new Error(`repository sandbox already exists: ${requestedPath}`);

@@ -80,7 +80,10 @@ function childDiffNames(git, repository, runtime, fail) {
     .split("\0").filter(Boolean))].sort();
 }
 
-function assertChildTargetCompatible({ git, journalRuntime }, repository, runtime, entries) {
+// `prior` maps a path to this change's own earlier delivered projection: bytes
+// Land itself wrote are not a user's uncommitted edit.
+function assertChildTargetCompatible({ git, journalRuntime }, repository, runtime, entries,
+  prior = new Map()) {
   const targetHead = git(["rev-parse", "HEAD"], repository.path);
   if (targetHead.status !== 0 || String(targetHead.stdout || "").trim() !== runtime.baseHead)
     throw new RepositoryDeliveryError(
@@ -94,6 +97,9 @@ function assertChildTargetCompatible({ git, journalRuntime }, repository, runtim
     const target = journalRuntime.safeRootPath(entry.path);
     const current = journalRuntime.pathIdentity(target);
     if (current === entry.after && journalRuntime.pathMode(target) === entry.afterMode)
+      continue;
+    const own = prior.get(entry.path);
+    if (own && current === own.after && journalRuntime.pathMode(target) === own.afterMode)
       continue;
     const base = git(["cat-file", "-e", `${runtime.baseHead}:${entry.path}`], repository.path);
     if (base.status !== 0) {
@@ -119,6 +125,8 @@ export function createRepositoryDeliverySaga({
   cleanupRoot, fail, checkpoint = () => {}
 }) {
   const sagaPath = (id) => join(transactions, id, "repository-delivery.json");
+  // repositoryId -> path -> entry of a delivery the sandbox has since outgrown.
+  const staleDeliveries = new Map();
   const childTransactions = (repositoryId) => join(
     transactions, "repository-delivery", safeRepositoryId(repositoryId));
   const journalFor = (repository) => createLandJournal({
@@ -176,13 +184,8 @@ export function createRepositoryDeliverySaga({
     node.status = "rolled-back";
   }
 
-  function prepareChild(id, state, repository) {
-    const record = repositoryRuntime(state, repository);
-    if (!record?.path || !record?.targetPath || !record?.baseHead)
-      throw new RepositoryDeliveryError(
-        `repository '${repository.id}' has no complete isolated delivery binding`);
-    const runtime = journalFor(repository);
-    const entries = childDiffNames(git, repository, record, fail).map((path) => ({
+  function childProjection(repository, record, runtime) {
+    return childDiffNames(git, repository, record, fail).map((path) => ({
       path,
       role: "code",
       before: runtime.pathIdentity(runtime.safeRootPath(path)),
@@ -193,7 +196,27 @@ export function createRepositoryDeliverySaga({
         afterEntries: deliveryTreeEntries(record.path, [path], runtime.pathIdentity)
       } : {})
     }));
-    assertChildTargetCompatible({ git, journalRuntime: runtime }, repository, record, entries);
+  }
+
+  function prepareChild(id, state, repository, prior = new Map()) {
+    const record = repositoryRuntime(state, repository);
+    if (!record?.path || !record?.targetPath || !record?.baseHead)
+      throw new RepositoryDeliveryError(
+        `repository '${repository.id}' has no complete isolated delivery binding`);
+    const runtime = journalFor(repository);
+    const entries = childProjection(repository, record, runtime);
+    assertChildTargetCompatible({ git, journalRuntime: runtime }, repository, record, entries,
+      prior);
+    // A path an earlier delivery wrote that the sandbox no longer changes has
+    // no owner in a fresh projection; Land never guesses whether to keep it.
+    const current = new Set(entries.map((entry) => entry.path));
+    const dropped = [...prior.values()].filter((entry) => !current.has(entry.path) &&
+      !landEntryNoOp(entry)).map((entry) => entry.path);
+    if (dropped.length)
+      throw new RepositoryDeliveryError(
+        `repository '${repository.id}' sandbox no longer changes path(s) an earlier Land ` +
+        `attempt wrote into its target (${dropped.join(", ")}); restore them in the sandbox ` +
+        "or the target, then resume Land", { repository: repository.id, paths: dropped });
     const transactionId = `repo-${safeRepositoryId(repository.id)}-${Date.now()}-${process.pid}`;
     const transactionRoot = runtime.transactionRoot(id, transactionId);
     for (const [index, entry] of entries.entries()) {
@@ -287,7 +310,18 @@ export function createRepositoryDeliverySaga({
       throw new RepositoryDeliveryError(
         `repository '${repository.id}' delivered projection drifted: ${verification.reason}`,
         { repository: repository.id });
-    return true;
+    // The target still holds the earlier delivery, but work proven after it
+    // (a commit or edit in the sandbox since) would otherwise never land.
+    const record = repositoryRuntime(state, repository);
+    const projected = childProjection(repository, record, runtime);
+    const delivered = new Map((verification.journal?.entries || [])
+      .map((entry) => [entry.path, entry]));
+    const fresh = projected.length === delivered.size && projected.every((entry) =>
+      delivered.get(entry.path)?.after === entry.after &&
+      delivered.get(entry.path)?.afterMode === entry.afterMode);
+    if (fresh) return true;
+    staleDeliveries.set(repository.id, delivered);
+    return false;
   }
 
   function apply(id) {
@@ -320,7 +354,8 @@ export function createRepositoryDeliverySaga({
         }
         prepared.set(repository.id, { journal: prepareRoot(id, state), root: true });
       } else if (!verifiedChild(id, state, repository)) {
-        prepared.set(repository.id, prepareChild(id, state, repository));
+        prepared.set(repository.id, prepareChild(id, state, repository,
+          staleDeliveries.get(repository.id)));
       }
     }
     saga.status = "prepared";

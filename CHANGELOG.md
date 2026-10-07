@@ -229,6 +229,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Land reads each selected repository's target checkout before archiving. A
+  repository whose target lacks the proven sandbox bytes, has work stranded in
+  a shared-sandbox submodule placeholder, or is an uninitialized submodule
+  stops with `LAND_PROJECTION_MISSING`; nothing is archived or deleted.
+  Multi-repository Land re-delivers work committed or edited in a repository
+  sandbox after an earlier delivery, and isolation refuses an uninitialized
+  submodule instead of forking its superproject.
+- Abandon and archive back up every unreachable sandbox commit
+  (`commits.bundle`), the sandbox delta (`changes.patch`), and unlanded files
+  to `.foundation/backups/<id>/<timestamp>/` before removing a sandbox.
+  Archive keeps unlanded sandboxes, a sandbox that cannot be verified is never
+  removed, and abandon prints each backup path. Re-abandoning a change id
+  sets the earlier quarantine aside instead of deleting it.
 - Submodule repositories use one location end to end. `advance` EDIT
   envelopes name each task's own `workspace` (a submodule task gets
   `.foundation/repository-sandboxes/<change>/<repo>`), add a `workspaces` map,
