@@ -285,7 +285,7 @@ try {
   assert.equal(authorityBlocked.authorityPreflight.blockers[0].code,
     "SIGNED_CI_CONFIGURATION_REQUIRED");
   assert.match(authorityBlocked.authorityPreflight.blockers[0].next,
-    /change validate packet-test/);
+    /advance packet-test/);
   state.riskBasedCiRequired = false;
   state.impact = "medium";
 

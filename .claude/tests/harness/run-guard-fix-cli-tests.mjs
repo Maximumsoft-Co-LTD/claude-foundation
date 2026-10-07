@@ -440,13 +440,13 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
   const originalExit = process.exit;
   try {
     process.exit = (code) => { throw new Error(`exit:${code}`); };
-    await assert.rejects(route("not-a-command", [], { usage: () => {} }), /exit:1/);
+    await assert.rejects(route("not-a-command", [], { describeCommand: () => {} }), /exit:1/);
   } finally {
     process.exit = originalExit;
   }
-  const usageCalls = [];
-  await route(undefined, [], { usage: () => usageCalls.push(true) });
-  assert.equal(usageCalls.length, 1);
+  const describeCalls = [];
+  await route(undefined, [], { describeCommand: (name) => describeCalls.push(name) });
+  assert.deepEqual(describeCalls, [null]);
 }
 
 // --- sandbox apply routing ---

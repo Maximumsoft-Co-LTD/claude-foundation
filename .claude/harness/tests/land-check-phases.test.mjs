@@ -250,7 +250,7 @@ test("land check phases preserve every refusal and ready route", () => {
     assert.equal(delivered.decisions[0].decision.lifecycleStatus, "proven");
     assert.equal(delivered.decisions[0].decision.proofStatus, "unchanged");
     assert.match(delivered.decisions[0].decision.recoveryCommand,
-      /sandbox sync land-/);
+      /advance land-\S+ --through build/);
     const stableWorktree = make({
       state: { workspace: { mode: "worktree", applied: false, baseHead: "base" } },
       rootHead: "base"

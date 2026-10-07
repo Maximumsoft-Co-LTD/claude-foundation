@@ -61,7 +61,7 @@ export function selectedRepositoryRow({
     repository, entry, state, options, canonicalPath, root, changeId
   });
   if (issue)
-    reportFailure(`${issue}; repair it with 'claude-foundation sandbox create ${changeId} --all', inspect preserved state with 'claude-foundation sandbox inspect ${changeId}', or retire the change with 'claude-foundation change abandon ${changeId} --reason <reason> --decision-ref <ref>'`);
+    reportFailure(`${issue}; repair it with 'claude-foundation advance ${changeId} --through build', inspect preserved state with 'claude-foundation sandbox inspect ${changeId}', or retire the change with 'claude-foundation change abandon ${changeId} --reason <reason> --decision-ref <ref>'`);
   const runtimeState = state.repositories?.[repository.id] ||
     (repository.id === "root" ? state.workspace : null) || {};
   return {

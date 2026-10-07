@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -17,6 +17,7 @@ import {
   resolveCliCommand,
   validateCommandRegistry
 } from "../runtime/core/command-registry.mjs";
+import { CliRouteError, renderHelp, resolveCliRoute } from "../runtime/core/cli-dispatch.mjs";
 
 const fail = (message) => { throw new Error(message); };
 
@@ -93,8 +94,8 @@ test("registry validation rejects every malformed shape and duplicate", () => {
 
 test("command matching honors aliases, exact names, suffixes, and token matches", () => {
   const entries = [
-    entry("change validate"), entry("proof finalize"), entry("agents plan"),
-    entry("change audit"), entry("proof collect")
+    entry("change validate", { runtime: "validate" }), entry("proof finalize", { runtime: "prove" }),
+    entry("agents plan", { runtime: "agent-plan" }), entry("change audit"), entry("proof collect")
   ];
   assert.equal(normalizeCommandName("proof  finalize"), "proof-finalize");
   assert.equal(resolveCliCommand(entries, "validate", "change validate").name,
@@ -116,7 +117,7 @@ test("command matching honors aliases, exact names, suffixes, and token matches"
 });
 
 test("description renderers preserve text and JSON contracts", () => {
-  const entries = [entry("proof collect"), entry("proof finalize", { idempotent: false })];
+  const entries = [entry("proof collect"), entry("proof finalize", { idempotent: false, runtime: "prove" })];
   const loop = [{
     name: "/prove", usage: "/prove <id>", surface: "host-command",
     description: "Prove safely", file: ".claude/commands/prove.md"
@@ -184,8 +185,9 @@ function registryFixture(t, { commands = true } = {}) {
   const value = {
     version: 1,
     commands: [
-      entry("proof finalize"), entry("proof collect"), entry("change validate"),
-      entry("agents plan"), entry("evidence record", { idempotent: false })
+      entry("proof finalize", { runtime: "prove" }), entry("proof collect"),
+      entry("change validate", { runtime: "validate" }),
+      entry("agents plan", { runtime: "agent-plan" }), entry("evidence record", { idempotent: false })
     ],
     runtimeCommands: ["prove", "validate", "agent-plan"]
   };
@@ -240,4 +242,45 @@ test("registry facade degrades without host commands and validates runtime dispa
     /'change validate' is the CLI form.*validate/s);
   assert.throws(() => f.registry.assertRegisteredRuntimeCommand("agents", ["--json"]),
     /runtime command 'agents' is not registered/);
+});
+
+test("the CLI grammar is derived from the registry and hidden commands keep routing", () => {
+  const registry = JSON.parse(readFileSync(new URL("../commands.json", import.meta.url), "utf8"));
+  const refusal = (argv) => {
+    try { resolveCliRoute(registry, argv); } catch (error) {
+      assert.ok(error instanceof CliRouteError); return error;
+    }
+    return assert.fail(`${argv.join(" ")} routed`);
+  };
+  assert.deepEqual(resolveCliRoute(registry, ["proof", "run", "c"]),
+    { access: "write", phase: "prove", argv: ["proof-run", "c"], warning: null });
+  assert.equal(resolveCliRoute(registry, ["proof", "preflight", "c"]).access, "write");
+  assert.equal(resolveCliRoute(registry, ["sandbox", "inspect", "c"]).access, "inspect");
+  assert.deepEqual(resolveCliRoute(registry, ["sandbox", "create", "c", "--all"]).argv,
+    ["sandbox", "create", "c", "--all"]);
+  assert.deepEqual(resolveCliRoute(registry, ["deliver", "c"]).argv, ["delivery-advance", "c"]);
+  assert.equal(resolveCliRoute(registry, ["advance", "c"]).phase, "");
+  const task = resolveCliRoute(registry, ["agents", "task", "c", "t", "--pretty"]);
+  assert.deepEqual(task.argv, ["packet", "c", "--task", "t", "--pretty"]);
+  assert.equal(task.warning, "'agents task' is deprecated; use 'packet <change> --task <task>'");
+  assert.equal(resolveCliRoute(registry, ["change", "amend", "--template"]).argv[0], "amend");
+  assert.equal(refusal(["change", "amend", "demo"]).message,
+    "change amend requires --template or <change> <amendment.json>");
+  assert.equal(refusal(["changes", "x"]).message, "changes takes no arguments");
+  assert.equal(refusal(["packet"]).message, "packet requires an argument");
+  assert.equal(refusal(["deliver", "a", "b"]).message, "deliver requires exactly one change id");
+  assert.equal(refusal(["budget", "x"]).message, "budget requires 'checkpoint' or 'continue'");
+  assert.equal(refusal(["nonsense"]).code, 3);
+  assert.match(refusal(["validate"]).warning, /use 'change validate'/);
+
+  const full = renderHelp(registry, true);
+  for (const row of registry.commands) {
+    const count = Math.min(row.args?.max ?? 4, row.args?.min ?? 1);
+    if (row.runtime) assert.doesNotThrow(() => resolveCliRoute(registry,
+      [...row.name.split(" "), ...["c", "t", "--owner", "a"].slice(0, count)]), row.name);
+    if (row.hidden) assert.ok(!full.includes(`claude-foundation ${row.usage}\n`),
+      `${row.name} is hidden from help --all`);
+  }
+  assert.match(full, /claude-foundation handoff status <change>/);
+  assert.doesNotMatch(renderHelp(registry, false), /handoff status/);
 });

@@ -84,7 +84,7 @@ function checkpointNextCommand(id, readiness) {
   if (readiness.status === "NEEDS_CODE_CHANGE")
     return `claude-foundation packet ${id} --phase build`;
   if (readiness.status === "CONFIGURATION_ERROR")
-    return `claude-foundation change validate ${id}`;
+    return `claude-foundation advance ${id}`;
   return `claude-foundation advance ${id} --through proven`;
 }
 

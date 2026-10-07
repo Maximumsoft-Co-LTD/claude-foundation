@@ -1536,8 +1536,7 @@ const {
   doctor,
   migrate,
   showChanges,
-  showProviders,
-  usage
+  showProviders
 } = createDiagnosticsRuntime({
   root: ROOT,
   unresolvedApplyTransactions,
@@ -2303,7 +2302,6 @@ await routeRuntimeCommand(command, values, {
   importTelemetry,
   importHostExecution,
   migrate,
-  usage,
   describeCommand,
   runtimeApiVersion: RUNTIME_API_VERSION,
   version: VERSION,

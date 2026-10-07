@@ -849,8 +849,9 @@ The agent executes routine setup and recovery. Users supply decisions and
 authority; they do not need to assemble harness commands.
 
 For operator inspection, `claude-foundation help` lists primary commands,
-`help --all` includes compatibility primitives, and `describe <command>`
-explains one command. The CLI finds the project from the current directory or
+`help --all` adds operator and host commands, and `describe <command>`
+explains one command, including the hidden compatibility commands that
+`advance` supersedes. The CLI finds the project from the current directory or
 `--project <path>`.
 
 | Symptom | Next step |

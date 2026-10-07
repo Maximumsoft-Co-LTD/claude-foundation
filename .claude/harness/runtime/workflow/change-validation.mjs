@@ -414,8 +414,7 @@ export function reportDeclaredSurfaceForecast(id, state, quiet, covered,
     .filter((capability) => !covered.has(capability));
   if (!missing.length) return;
   warn(`WARNING: declared surface forecasts ${missing.join(", ")} with no provider`);
-  warn("  wire them now: claude-foundation evidence init " + id + " --write");
-  warn("  inspect first: claude-foundation evidence doctor " + id);
+  warn("  advance wires detected providers: claude-foundation advance " + id + " --through proven");
   if (missing.includes("review"))
     warn("  review needs a configured fresh reviewer at Prove; a one-family project selects codex-sol or claude-opus and commits review.diversity='single-model' while keeping independence required");
   warn("  anything left unwired is carried as a non-blocking advisory, not a gate");
@@ -448,7 +447,7 @@ export function revokeGateWaiver(context, id, state, waivers, request) {
     context.fail(`capability '${request.capability}' has no recorded waiver to revoke`);
   state.waivers = waivers.filter((row) => row.capability !== request.capability);
   context.saveRuntime(state);
-  context.log(`WAIVER REVOKED ${id}/${request.capability}\n  the capability is required again\n  next: claude-foundation proof run ${id}`);
+  context.log(`WAIVER REVOKED ${id}/${request.capability}\n  the capability is required again\n  next: claude-foundation advance ${id} --through proven`);
 }
 
 export function assertWaivableCapability(context, id, request, waivers) {
@@ -481,7 +480,7 @@ export function waiveGateOperation(context, id, flags = {}) {
       contractRevision: Number(state.contractRevision || 0) } } : {})
   }];
   context.saveRuntime(state);
-  context.log(`GATE WAIVED ${id}/${request.capability}\n  reason: ${request.reason}\n  decision: ${request.decisionRef}\n  recorded in proof advisories; the claim keeps declaring it\n  next: claude-foundation proof run ${id}`);
+  context.log(`GATE WAIVED ${id}/${request.capability}\n  reason: ${request.reason}\n  decision: ${request.decisionRef}\n  recorded in proof advisories; the claim keeps declaring it\n  next: claude-foundation advance ${id} --through proven`);
 }
 
 function failValidationLayer(fail, name, issues) {
@@ -2069,7 +2068,7 @@ export function createChangeValidationRuntime({
     for (const row of detection.warnings)
       console.log(`  WARNING  ${row.source}: ${row.reason}; ${row.detail}`);
     if (detection.candidates.some((row) => row.recommended))
-      console.log(`  next: claude-foundation evidence init ${id} --write`);
+      console.log(`  next: claude-foundation advance ${id} --through proven`);
   }
 
   return {

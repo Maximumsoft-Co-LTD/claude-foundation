@@ -72,6 +72,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A natural request to open a PR ("เปิด PR ให้เลย", "open a PR"), or a yes to
   the guard's delivery question, now runs `deliver advance` as `/deliver`
   instead of turning it into a question.
+- The CLI grammar comes from `commands.json` alone. Each row's `runtime`,
+  `access`, and `args` fields drive `cli.sh` routing, argument checks, and
+  phase telemetry through `runtime/core/cli-dispatch.mjs`, replacing the
+  hand-written dispatch, phase map, alias table, and stale runtime `usage()`.
+  Command names, arguments, exit codes, and default `help` output are unchanged; a few
+  family-level error messages now list subcommands in registry order.
+- Next steps, recovery text, and `verify` routes that named a lifecycle
+  primitive (`proof run`, `proof readiness`, `sandbox sync`, `sandbox create`,
+  `change validate`, `evidence init`, `land advance`) now name
+  `advance <change> --through build|proven|archived`, or `advance <change>
+  --inspect` for a read-only check.
+
+### Deprecated
+
+- Commands that `advance` supersedes are hidden from `help --all` and the CLI
+  reference but keep working, and `describe` still answers for them. They are
+  flagged `hidden` in `commands.json` and will be removed in the next major
+  release: `proof readiness|advance|run|collect|preflight|execute|finalize|audit`,
+  `sandbox create|sync|inspect|apply`, every `land` primitive, `evidence
+  detect|init|doctor|upgrade|run`, `change validate`, `runtime hash|event|api-version`,
+  and the already-deprecated aliases `runtime`, `validate`, `agents task`,
+  `proof plan`, and `proof finish`.
 
 ### Changed
 
