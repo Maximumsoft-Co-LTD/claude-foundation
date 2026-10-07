@@ -7,11 +7,11 @@ Create or update **$ARGUMENTS**. Shared rules: `.claude/harness/AGENT.md`.
 
 1. Read only behavior-settling sources (code, tests, `openspec/specs`); reuse
    settled answers, resolve facts yourself.
-2. Run `claude-foundation change start --template` and save its
-   `minimalDraft` (no `version`) at `.foundation/drafts/<id>.json`: `intent`,
+2. Run `claude-foundation change start --template`; save its `minimalDraft`
+   (no `version`, no heredoc) at `.foundation/drafts/<id>.json`: `intent`,
    `requirements[{description with SHALL, scenarios[{when, then}]}]`,
    `tasks[{outcome, verify, paths}]`; `verify` is an existing test command
-   failing on wrong behavior. The compiler infers the rest. Write
+   failing on wrong behavior. Compiler infers the rest. Write
    prose in the requested document language, else the request's.
 3. Run `claude-foundation change start .foundation/drafts/<id>.json`:
    - `EDIT`: fix every named field in one batch, rerun.

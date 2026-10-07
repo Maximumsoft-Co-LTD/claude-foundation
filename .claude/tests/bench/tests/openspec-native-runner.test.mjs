@@ -920,11 +920,35 @@ test("host friction counts hook refusals, approval prompts, and harness actions"
     result("This Bash command contains multiple operations. The following part requires approval: node --test"),
     result("Exit code 2"),
     result('{"protocol":6,"action":"EDIT"}', false),
-    result([{ type: "text", text: '{"action":"REPAIR"} {"action":"DONE"}' }], false)
+    result([{ type: "text", text: '{"action":"REPAIR"} {"action":"DONE"}' }], false),
+    { type: "assistant", message: { content: [{ type: "text", text: "done" }] } }
   ];
   assert.deepEqual(hostFriction(rows), {
     toolErrors: 3, hookBlocks: 1, permissionPrompts: 1,
     advanceActions: { EDIT: 1, REPAIR: 1, RUN_EXTERNAL: 0, WAIT: 0, ASK_USER: 0, DONE: 1 }
+  });
+});
+
+// The 2026-10-07 paid run counted the bench's own stop-on-proven kill of the
+// in-flight advance (exit 137) as a tool error in every lane, and missed the
+// host's heredoc safety denial as an approval prompt.
+test("host friction ignores bench-stopped tool calls and counts host safety denials", () => {
+  const assistant = { type: "assistant", message: { content: [{ type: "text", text: "next" }] } };
+  const result = (id, content) => ({ type: "user", message: { content: [
+    { type: "tool_result", tool_use_id: id, is_error: true, content } ] } });
+  const rows = [
+    { type: "system", subtype: "init" },
+    { type: "system", subtype: "permission_denied", tool_use_id: "heredoc" },
+    result("heredoc", "Contains brace with quote character (expansion obfuscation)"),
+    assistant,
+    result("advance-1", "Exit code 137"),
+    { type: "system", subtype: "init" },
+    assistant,
+    result("advance-2", "Exit code 143")
+  ];
+  assert.deepEqual(hostFriction(rows), {
+    toolErrors: 1, hookBlocks: 0, permissionPrompts: 1,
+    advanceActions: { EDIT: 0, REPAIR: 0, RUN_EXTERNAL: 0, WAIT: 0, ASK_USER: 0, DONE: 0 }
   });
 });
 

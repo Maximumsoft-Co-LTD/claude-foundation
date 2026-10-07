@@ -197,6 +197,8 @@ assert_file_contains "change keeps keyword-only security on the rapid lane" \
   "$ROOT/.claude/commands/change.md" 'a keyword like billing only adds review'
 assert_file_contains "change describes the minimal draft" \
   "$ROOT/.claude/commands/change.md" '`tasks[{outcome, verify, paths}]`'
+assert_file_contains "change saves the draft without a shell heredoc" \
+  "$ROOT/.claude/commands/change.md" '(no `version`, no heredoc)'
 assert_file_contains "change trusts the printed packet" \
   "$ROOT/.claude/commands/change.md" 'do not reopen them'
 assert_file_contains "change records spec approval through advance" \
