@@ -521,6 +521,7 @@ const { execObserved } = createExecRuntime({
   logs: LOGS,
   loadRuntime,
   now,
+  prepareWorkspace: (id) => projectRootRepositories(id),
   fail: die
 });
 const repositoryTopology = createRepositoryTopology({
@@ -1410,6 +1411,11 @@ const {
   mergeTaskProgress,
   sync: syncSandbox
 } = sandboxRuntime;
+// Root checks consume declared nested repositories through their root path.
+// Every exec, task check, and proof run first brings those paths current.
+function projectRootRepositories(id) {
+  return sandboxRuntime.projectRepositories(id);
+}
 function rollbackAtomicStart(id) {
   const issues = [];
   const state = readJson(runtimePath(id), {
@@ -1756,6 +1762,7 @@ const {
       : null;
   },
   stableHash,
+  prepareWorkspace: projectRootRepositories,
   die
 });
 const guardPublicProofMutation = (command, operation) =>
@@ -1969,6 +1976,7 @@ function preparationProviders(id) {
 }
 
 function prepareExecution(id, { stage = "build" } = {}) {
+  if (stage !== "land") projectRootRepositories(id);
   const state = loadRuntime(id);
   const repositories = selectedRepositories(id, state);
   const openSpec = ensureProjectOpenSpec({
@@ -2029,9 +2037,11 @@ async function runAdvanceQuietly(operation) {
 const sessionLeases = createSessionLeaseRuntime({
   loadRuntime, activeChangeLeases, stableHash, saveRuntime,
   // D5: advance runs the handed-off task's own verify check and ticks it.
-  runCheck: (id, check) => commandPhaseRecorder.measure("build.task-check",
-    () => adapterRuntime.runTaskCheckAsEvidence(id, check) ||
-      runTaskCheck({ loadRuntime }, id, check)),
+  runCheck: (id, check) => commandPhaseRecorder.measure("build.task-check", () => {
+    projectRootRepositories(id);
+    return adapterRuntime.runTaskCheckAsEvidence(id, check) ||
+      runTaskCheck({ loadRuntime }, id, check);
+  }),
   acquire: acquireAgentLease, release: releaseAgentLease, discard: discardAgentLease
 });
 const { advanceValue, advanceThrough, showAdvance } = createAdvanceRuntime({

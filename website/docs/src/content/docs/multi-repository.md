@@ -128,6 +128,16 @@ external repositories receive pinned detached worktrees. The command does not
 make an external service or arbitrary folder safe; this is Git workspace
 isolation, not an OS security boundary.
 
+Root code and tests can still use a nested repository through its root path,
+for example `require('./packages/lib')`. In the root sandbox the harness links
+a selected repository's path to that repository's sandbox, so root checks see
+its uncommitted work and an edit through either path lands in the same place.
+An unselected nested repository holds the commit the root gitlink records,
+checked out from local objects even when the target never initialized it, and
+is read-only. These paths are never root changes: they stay out of root proof,
+review, the changed surface, and Land. Nobody needs to create a link or
+initialize a submodule by hand.
+
 ## 5. Wire repository-scoped evidence
 
 For custom wiring in conditional `execution.yaml`, `repository` is the provider's working directory.
@@ -235,6 +245,7 @@ child runtime record cannot make Land take the single-repository shortcut.
 | A selected child binding is missing | Harness repairs the binding while preserving valid worktrees; use `sandbox inspect` only for requested diagnosis |
 | A canonical child path belongs to another repository | Keep it untouched, inspect the reported path, then correct the target/path conflict or explicitly abandon the change |
 | Provider cannot see a repository | Add it to provider `repositories`; do not hard-code a local path |
+| A check refuses because an unselected repository's root copy changed | Revert that copy (the refusal names the command), or select the repository through a semantic amendment |
 | Land is interrupted | Invoke `/land <change>` again; it resumes the journal and re-applies root or repository sandbox work added after an earlier delivery |
 | Land stops with `ROOT_POINTER_MOVED` | The root sandbox moved the pointer of a selected submodule: the agent brings the commit into that repository's sandbox, restores the root pointer, and resumes |
 | Land stops with `repository-pointer-change` | The root sandbox moved the pointer of an unselected submodule: the user chooses to land it through that repository, restore the pointer and land the rest, or pause |

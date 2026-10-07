@@ -217,6 +217,7 @@ recover pending apply|node --test "$ROOT/.claude/harness/tests/recover-pending-a
 sandbox sync runtime|node --test "$ROOT/.claude/harness/tests/sandbox-runtime-sync.test.mjs"
 sandbox cleanup|node --test "$ROOT/.claude/harness/tests/sandbox-cleanup.test.mjs"
 sandbox data-loss guards|node --test "$ROOT/.claude/harness/tests/sandbox-data-loss.test.mjs"
+root sandbox repository projection|node --test "$ROOT/.claude/harness/tests/submodule-root-projection.test.mjs"
 git-ignored surface|node --test "$ROOT/.claude/harness/tests/git-ignore.test.mjs"
 workspace inspection|node --test "$ROOT/.claude/harness/tests/workspace-inspection.test.mjs"
 sandbox create phases|node --test "$ROOT/.claude/harness/tests/sandbox-create-phases.test.mjs"

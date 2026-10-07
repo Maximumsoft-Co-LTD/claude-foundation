@@ -127,6 +127,9 @@ function walkFiles(base, relativeRoot, output) {
 export function placeholderFiles({ sandboxPath, targetPath, nestedPaths = [] }) {
   const found = [];
   for (const nested of nestedPaths) {
+    // The harness links a selected repository's sandbox here; its work is
+    // assessed in that sandbox, never twice through the link.
+    if (lstatSync(join(sandboxPath, nested), { throwIfNoEntry: false })?.isSymbolicLink()) continue;
     const differing = walkFiles(sandboxPath, nested, []).filter((path) =>
       contentIdentity(join(sandboxPath, path)) !== contentIdentity(join(targetPath, path)));
     if (!differing.length) continue;

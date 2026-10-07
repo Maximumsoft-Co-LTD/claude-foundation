@@ -105,6 +105,20 @@ assert_file_exists "read-only contracts setup ran in its isolated worktree" \
   .foundation/repository-sandboxes/cross-repository-profile/contracts/.deps/ready
 assert_file_exists "Git-backed external repository receives an isolated worktree" \
   .foundation/repository-sandboxes/cross-repository-profile/external/external.txt
+# Root code and tests consume a selected submodule through its root path: the
+# root sandbox links it to the repository sandbox, never an empty gitlink.
+projection_sandbox=.foundation/sandboxes/cross-repository-profile
+assert_eq "root sandbox links the selected API submodule to its repository sandbox" \
+  "$(cd .foundation/repository-sandboxes/cross-repository-profile/api && pwd -P)" \
+  "$(cd "$projection_sandbox/api" && pwd -P)"
+printf 'uncommitted\n' > \
+  .foundation/repository-sandboxes/cross-repository-profile/api/projection-probe.txt
+assert_eq "a root exec sees the repository sandbox's uncommitted work" "uncommitted" \
+  "$(node .claude/harness/foundation.mjs exec cross-repository-profile --repo root -- \
+    cat api/projection-probe.txt 2>/dev/null)"
+rm .foundation/repository-sandboxes/cross-repository-profile/api/projection-probe.txt
+assert_eq "projected submodules are not root changes" "" \
+  "$(git -C "$projection_sandbox" status --porcelain -- api app contracts)"
 printf 'preserve me\n' > \
   .foundation/repository-sandboxes/cross-repository-profile/api/.binding-recovery-marker
 jq 'del(.repositories.api)' \

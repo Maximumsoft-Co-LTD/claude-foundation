@@ -290,7 +290,7 @@ also carries `checkCommand`, that verify run through `claude-foundation exec
 <change> --task <id>`, which the installed allowlist already permits. Each EDIT task carries its own
 `workspace`: a non-root repository's task names
 `.foundation/repository-sandboxes/<change>/<repository>`, never the shared
-sandbox's empty submodule directory, and the top-level `workspace` (plus a
+sandbox's path for that submodule, and the top-level `workspace` (plus a
 `workspaces` map by repository) is that sandbox whenever every task shares it.
 The `tasks.md` in `contextFiles` is the isolated ledger the harness ticks. When
 the handed work depends on finished tasks, or other repositories hold finished
@@ -633,6 +633,24 @@ repository sandbox. A declared repository's directory or gitlink in the root
 workspace (missing, empty, or pointing at another commit) is that repository's
 pointer, never a root change, so it is excluded from root review, proof
 readiness, Apply, and replay.
+
+Root code and tests still consume each declared nested repository through its
+path under root, so the harness projects it into the root sandbox during Build
+and Prove. A selected repository's path is a link to its repository sandbox,
+which stays the single source of truth: root checks see its uncommitted work,
+and an edit through either path lands in the repository sandbox. Any other
+declared nested repository holds a detached checkout of the commit the root
+gitlink records (a nested repository Git does not track: its target HEAD),
+cloned from local objects only, even when the target never initialized that
+submodule. That checkout is read-only: an edit or commit there would let a root
+check pass on bytes no Land delivers, so the next check refuses until it is
+reverted or the repository is selected through an amendment. The root index
+keeps each gitlink at its recorded commit (`skip-worktree`), so projections never
+enter root status, proof or review hashes, the changed surface, or Land. Sandbox
+creation and repair, resume, sync, `exec`, task checks, and proof runs bring the
+projections current; content found where a projection belongs is moved to
+`.foundation/backups/<change>/`, never deleted. A copy-mode root sandbox that
+carries Git is projected the same way.
 
 `sandbox inspect <change>` reports missing, unexpected, missing-path, and
 invalid-worktree records without executing a PATH-resolved Git command.

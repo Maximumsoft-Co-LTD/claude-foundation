@@ -254,7 +254,10 @@ export function createProofExecutionRuntime({
   // (id, request, command) => Promise | null. Starts the harness-runnable
   // configured review in the foreground; null means the route is a handoff.
   startConcurrentReview = null,
-  stableHash = (value) => JSON.stringify(value), die, markBlocked = () => {}
+  stableHash = (value) => JSON.stringify(value), die, markBlocked = () => {},
+  // Brings the change's sandboxes current (the root sandbox's nested
+  // repository paths) before any provider runs in them.
+  prepareWorkspace = () => {}
 }) {
   const memoryAdvance = new Map();
   const activeAdvance = new Set();
@@ -415,6 +418,7 @@ export function createProofExecutionRuntime({
     if (!["READY", "NEEDS_USER_DECISION"].includes(readiness.status))
       return stopProofCollection(
         { printOutcome, markBlocked, runtimeProcess: process }, readiness, options);
+    prepareWorkspace(id);
     const snapshot = options.snapshot || relevantSnapshot(id, null, true);
     const execution = options.execution || executionNodes(id, snapshot.workspaceHash);
     const { nodes, unavailable } = execution;
@@ -463,6 +467,7 @@ export function createProofExecutionRuntime({
   }
   
   async function proofExecuteUnlocked(id, options = {}) {
+    prepareWorkspace(id);
     const { snapshot, proofRunId } = prepareProofExecutionFor(id, options);
     let sessions = [];
     try {

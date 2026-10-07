@@ -20,6 +20,9 @@ import { landedTargetPaths, otherLandedOutput, replayLandedEdit } from "./target
 import {
   captureCopyBase, captureCopyBaseSurface, copyBaseBytes, copyEditCarried, fileSource
 } from "./copy-base.mjs";
+import {
+  projectNestedRepositories, projectableRepositories, projectionWorkspace
+} from "./repository-projection.mjs";
 
 // A commit read, not executed. Inspection must not resolve a program through
 // PATH, so ref files are the authority for both ordinary and linked worktrees.
@@ -705,15 +708,19 @@ export function ignoredSandboxPaths(root, git) {
     .map((path) => path.endsWith("/") ? path.slice(0, -1) : path));
 }
 
+// A copy that carries Git leaves each declared nested repository directory
+// empty, as a worktree does: the root sandbox projects it afterwards.
 export function sandboxCopyPlan({
-  root, carriesGit, git, sandboxCopyExcludedDirs, excludedWorkspaceDirs
+  root, carriesGit, git, sandboxCopyExcludedDirs, excludedWorkspaceDirs, nestedPaths = []
 }) {
   const copyExcluded = carriesGit ? sandboxCopyExcludedDirs : excludedWorkspaceDirs;
   const listed = carriesGit ? git(["ls-files", "-z"], root) : { status: 1, stdout: "" };
   const listedPaths = listed.status === 0 ? listed.stdout.split("\0").filter(Boolean) : [];
   const tracked = trackedPathSet(listedPaths);
   const ignored = ignoredSandboxPaths(root, git);
+  const nested = carriesGit ? nestedPaths : [];
   const excludes = (rel) => ignored.has(rel) ||
+    nested.some((path) => rel.startsWith(`${path}/`)) ||
     isExcludedPath(rel, { excluded: copyExcluded, tracked: tracked.has(rel) });
   const filter = (source) =>
     !excludes(relative(root, source).replaceAll("\\", "/"));
@@ -1184,6 +1191,8 @@ export function createSandbox(context, id, flags = {}) {
   setupSelectedRepositories(context, state, setupRepositories);
   transitionLifecycleState(state, "building", "repository-sandboxes-created");
   context.saveRuntime(state);
+  // Repository sandboxes exist only now; link them into the root sandbox.
+  context.projectRepositories?.(id, state);
   context.clearSnapshotCache(id);
   reportMultiRepositorySandbox(context, id, state);
 }
@@ -1203,6 +1212,8 @@ export function prepareBuildSandbox(context, id) {
   if (incomplete) context.create(id, { quiet: true });
   context.synchronizeAgreement?.(id);
   context.retryFailedSetups(id);
+  // Resume, re-creation, and a sync can each leave a root path empty.
+  context.projectRepositories?.(id);
   return { repaired: incomplete };
 }
 
@@ -1287,10 +1298,13 @@ export function changeDiffCandidatePlan(context, id, state, candidate) {
   if (!record || !["worktree", "copy"].includes(record.mode) ||
       !record.path || !context.pathExists(record.path))
     return { status: "invalid" };
+  // The same nested set replay and Apply exclude: a root sandbox projects
+  // every declared nested repository, and none of them is root's diff.
   const nested = repository === "root"
-    ? context.selectedRepositories(id, state)
+    ? [...new Set([...context.selectedRepositories(id, state)
       .filter((entry) => entry.type === "submodule")
-      .map((entry) => entry.relativePath)
+      .map((entry) => entry.relativePath),
+    ...(context.declaredRepositoryPaths?.() || [])])]
     : [];
   if (record.mode === "copy") {
     if (!record.baseline || typeof record.baseline !== "object" ||
@@ -1407,6 +1421,28 @@ export function createSandboxRuntime({
     return join(root, ".foundation", "sandboxes", id);
   }
 
+  function declaredRepositoryPaths() {
+    return typeof repositoryCatalog === "function"
+      ? nestedRepositoryRelativePaths(repositoryCatalog()) : [];
+  }
+
+  // Every declared nested repository path of the root sandbox holds that
+  // repository's sandbox (selected) or its recorded commit (not selected);
+  // see repository-projection.mjs. Selection is read from the packet, never
+  // from runtime bindings that may be exactly what is still being created.
+  function projectRepositories(id, state = loadRuntime(id)) {
+    if (typeof repositoryCatalog !== "function" || !projectionWorkspace(state)) return null;
+    const repositories = repositoryCatalog().repositories || [];
+    if (!projectableRepositories(repositories).length) return null;
+    return projectNestedRepositories({
+      root, git, gitHead, now, fail,
+      repositories,
+      selectedIds: typeof repositorySelectionIdsAt === "function"
+        ? repositorySelectionIdsAt(changePath(id)) : Object.keys(state.repositories || {}),
+      log: (line) => console.error(line)
+    }, id, state);
+  }
+
   // A freshly created sandbox has no installed dependencies: the copy path
   // excludes them by name and by gitignore, and a worktree is a bare checkout.
   // The setup command exists so the first proof run does not have to discover
@@ -1485,7 +1521,8 @@ export function createSandboxRuntime({
     // silently omitted committed fixtures whose directory name collided with a
     // build-output name, and git inside the sandbox then reported them deleted.
     const plan = sandboxCopyPlan({
-      root, carriesGit, git, sandboxCopyExcludedDirs, excludedWorkspaceDirs
+      root, carriesGit, git, sandboxCopyExcludedDirs, excludedWorkspaceDirs,
+      nestedPaths: declaredRepositoryPaths()
     });
     // A copy that dies partway leaves a directory the runtime never recorded:
     // `state.workspace` is still whatever it was, so nothing knows the tree
@@ -1521,6 +1558,7 @@ export function createSandboxRuntime({
     captureDeclaredCopyBase(id, state);
     transitionLifecycleState(state, "building", "copy-sandbox-created");
     saveRuntime(state);
+    projectRepositories(id, state);
     const setup = runWorkspaceSetup(state);
     if (setup) saveRuntime(state);
     console.log(`SANDBOX ${id}\n  mode: isolated-copy\n  reason: ${reason}\n  git: ${
@@ -1681,6 +1719,7 @@ export function createSandboxRuntime({
     };
     transitionLifecycleState(state, "building", "worktree-sandbox-created");
     saveRuntime(state);
+    projectRepositories(id, state);
     const setup = runWorkspaceSetup(state);
     if (setup) saveRuntime(state);
     console.log(`SANDBOX ${id}\n  path: ${path}${sandboxSetupLine(setup)}`);
@@ -1738,6 +1777,7 @@ export function createSandboxRuntime({
   const changeDiffIdentityPlan = changeDiffCandidatePlan.bind(null, {
     pathExists: existsSync,
     selectedRepositories,
+    declaredRepositoryPaths,
     codePathspec: sandboxCodePathspec,
     pid: process.pid,
     environment: process.env
@@ -2243,6 +2283,9 @@ export function createSandboxRuntime({
     });
     clearSnapshotCache(id);
     saveRuntime(state);
+    // A replay rebuilds the root worktree, and a moved gitlink names a new
+    // commit for an unselected repository.
+    projectRepositories(id, state);
     // Stated whether or not it could be resolved. A target that moved and a
     // sandbox that silently kept building against the old base is the failure
     // this line exists to make impossible.
@@ -2279,6 +2322,7 @@ export function createSandboxRuntime({
     repositoryCatalog,
     clearSnapshotCache,
     createSingle,
+    projectRepositories,
     runSetupCommand, runSetupBatch,
     output: console,
     fail
@@ -2317,12 +2361,13 @@ export function createSandboxRuntime({
 
   const prepareBuild = prepareBuildSandbox.bind(null, {
     root, loadRuntime, validate, workspaceInspection, create, retryFailedSetups, recoverReplay,
-    synchronizeAgreement
+    synchronizeAgreement, projectRepositories
   });
 
   return {
     createChallenge, workspaceInspection, inspect, showInspection,
     createSingle, create, retryFailedSetups, prepareBuild, mergeTaskProgress, sync,
+    projectRepositories,
     synchronizeAgreement, agreementStale,
     recoverReplay: (id) => recoverReplay(id, loadRuntime(id)),
     changeDiffIdentity

@@ -127,6 +127,15 @@ repository แบบ write ได้ Build worktree แยก ส่วน read 
 detached worktree ที่ล็อก commit คำสั่งนี้ไม่ได้ทำให้ service ภายนอกหรือ directory
 ทั่วไปปลอดภัย sandbox เป็น Git workspace isolation ไม่ใช่ OS security boundary
 
+โค้ดและ test ของ root ยังใช้ nested repository ผ่าน path ใต้ root ได้ เช่น
+`require('./packages/lib')` ใน root sandbox Harness จะ link path ของ repository
+ที่เลือกไปยัง sandbox ของ repository นั้น check ของ root จึงเห็นงานที่ยังไม่ commit
+และการแก้ผ่าน path ใดก็ไปลงที่เดียวกัน ส่วน nested repository ที่ไม่ได้เลือกจะเป็น
+commit ที่ gitlink ของ root บันทึกไว้ checkout จาก object ในเครื่องแม้ target ไม่เคย
+initialize submodule นั้น และเป็นแบบอ่านอย่างเดียว path เหล่านี้ไม่ใช่ change ของ
+root จึงไม่อยู่ใน proof, review, changed surface หรือ Land ของ root และไม่มีใคร
+ต้องสร้าง link หรือ initialize submodule เอง
+
 ## 5. ต่อ Evidence ให้ครบ Scope
 
 สำหรับ custom wiring ใน conditional `execution.yaml`, `repository` คือ working directory ของ provider ส่วน
@@ -230,6 +239,7 @@ saga นี้ใช้ด้วยเมื่อเลือก non-root child
 | binding ของ child ที่เลือกหาย | Harness ซ่อม binding โดยรักษา worktree ที่ยังใช้ได้; ใช้ `sandbox inspect` เมื่อต้องวินิจฉัยเท่านั้น |
 | path มาตรฐานของ child เป็น worktree ของ repository อื่น | อย่าแก้หรือลบทิ้ง ตรวจ path ที่รายงาน แล้วแก้ conflict ของ target/path หรือ abandon change อย่างชัดเจน |
 | provider มองไม่เห็น repository | เพิ่มใน `repositories` ของ provider ห้าม hard-code local path |
+| check ปฏิเสธเพราะสำเนาใน root ของ repository ที่ไม่ได้เลือกถูกแก้ | คืนสำเนานั้น (ข้อความปฏิเสธระบุคำสั่งไว้) หรือเลือก repository ผ่าน semantic amendment |
 | Land ถูกขัดจังหวะ | เรียก `/land <change>` ซ้ำเพื่อ resume journal; งานใน root หรือ repository sandbox ที่เพิ่มหลัง delivery ก่อนหน้าจะถูก apply ใหม่ |
 | Land หยุดด้วย `ROOT_POINTER_MOVED` | root sandbox ขยับ pointer ของ submodule ที่ change เลือกไว้: agent นำ commit เข้า sandbox ของ repository นั้น คืน root pointer เป็น base แล้ว resume |
 | Land หยุดด้วย `repository-pointer-change` | root sandbox ขยับ pointer ของ submodule ที่ไม่ได้เลือก: ให้ user เลือกว่าจะส่ง pointer ผ่าน repository นั้น, คืน pointer เป็น base แล้ว land ส่วนที่เหลือ หรือ pause |
