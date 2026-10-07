@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { sortedJson } from "../core/trust.mjs";
 
 export const SEMANTIC_INTAKE_STATE_VERSION = 2;
 const SUPPORTED_STATE_VERSIONS = new Set([1, SEMANTIC_INTAKE_STATE_VERSION]);
@@ -22,19 +23,9 @@ function jsonValue(value, label) {
   }
 }
 
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") return Object.fromEntries(
-    Object.keys(value).sort().filter((key) => value[key] !== undefined)
-      .map((key) => [key, canonical(value[key])])
-  );
-  if (typeof value === "number" && !Number.isFinite(value)) return null;
-  return value;
-}
-
 function digest(value, domain) {
   return createHash("sha256").update(`${domain}\0`)
-    .update(JSON.stringify(canonical(jsonValue(value, domain)))).digest("hex");
+    .update(sortedJson(jsonValue(value, domain))).digest("hex");
 }
 
 export function semanticDraftDigest(draft) {
