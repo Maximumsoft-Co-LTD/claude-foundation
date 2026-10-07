@@ -182,13 +182,14 @@ function sectionValue(draft, key) {
 // A standard change is approved and built from its dev document, so each
 // section its kind of work needs is an agent repair before compilation —
 // never a user question and never a refusal of the edit itself.
-export function devDocumentIssues(draft, { standard = true } = {}) {
+// `lane` names why the draft is standard when the harness derived it.
+export function devDocumentIssues(draft, { standard = true, lane = "" } = {}) {
   if (draft?.version !== 4 || !standard) return [];
   const issues = [];
   const types = inferWorkTypes(draft);
-  const label = workTypesInferred(draft)
+  const label = (workTypesInferred(draft)
     ? `${types.join(", ")}, inferred from paths; or declare workType to override`
-    : types.join(", ") || "change";
+    : types.join(", ") || "change") + (lane ? `; standard lane: ${lane}` : "");
   for (const key of requiredDevSections(draft)) {
     const value = sectionValue(draft, key);
     if (!present(value)) issues.push(`dev document (${label}) needs ${SECTION_HELP[key]}`);

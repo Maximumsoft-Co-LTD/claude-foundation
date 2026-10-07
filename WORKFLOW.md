@@ -1076,6 +1076,14 @@ Rapid is allowed only when all are true:
 
 - impact is low and coupling is isolated;
 - no public contract or persistent migration changes;
+- the harness derives impact and coupling from the draft and never lowers
+  them: tasks spanning two `services/`, `packages/`, `apps/`, `libs/`, or
+  `modules/` roots, several repositories, integrations, or external operations
+  are coupled; persistence paths (`*.sql`, `migrations/`, `db/`, `schema/`),
+  API/async work types, and (without a declared `workType`) requirement text
+  naming migrations, rollbacks, databases, APIs, endpoints, payloads, or
+  event/message contracts are at least medium. An omitted or lower declaration
+  is raised, and the proposal Impact section names the reason;
 - no semantic security or irreversible-effect trigger applies;
 - unit or static evidence is sufficient;
 - a semantic draft authors no design content (file map, UI states, failure

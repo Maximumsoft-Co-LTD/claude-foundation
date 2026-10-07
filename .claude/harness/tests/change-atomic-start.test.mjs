@@ -913,6 +913,10 @@ test("change start orders a root task after tasks in a nested repository", (t) =
   const value = fixture(t, { catalog: submoduleCatalog });
   const twoRepositories = (overrides = {}) => minimalRapidV4({
     repositories: [{ id: "root", mode: "write" }, { id: "hook-api", mode: "write" }],
+    // Two repositories derive the standard lane, which needs these.
+    why: "The app shows the bounded result computed by the hook-api submodule.",
+    failureMatrix: [{ failure: "The submodule result is unavailable",
+      userSees: "The app reports that the result is unavailable", recovery: "Retry the request" }],
     requirements: [
       ...minimalRapidV4().requirements,
       { key: "consumer-result", capability: "single-shot-change", operation: "added",
@@ -1076,4 +1080,181 @@ test("open questions are listed with the approval packet", (t) => {
   assert.match(output, /open questions \(ask with the approval\):\n {4}- How long are results retained\?/);
   assert.match(output, /next: ask these with the approval, record the answers in the draft, then claude-foundation change revise single-shot-change .*draft\.json --approve-spec --decision-ref <user-decision> --through build/);
   assert.equal((output.match(/\n  next: /g) || []).length, 1);
+});
+
+// Benchmark finding: every paid change compiled as foundation-rapid because an
+// omitted impact/coupling defaulted to low/isolated, so a cross-service event
+// change or a migration got no design.md. Risk is derived from the draft.
+function derivedRiskV4(overrides = {}) {
+  const { impact: _impact, coupling: _coupling, ...base } = minimalRapidV4();
+  return {
+    ...base,
+    id: "share-order-total",
+    intent: "Share the order total with billing",
+    why: "Billing needs the order total to issue an invoice",
+    decisions: [],
+    requirements: [{
+      key: "order-total", capability: "order-total", operation: "added",
+      description: "The system SHALL share each order total with billing",
+      outcome: "Billing records each order total",
+      scenarios: [
+        { name: "Order placed", when: "An order is placed", then: "Billing records its total" },
+        { name: "Billing unavailable", kind: "failure", when: "Billing is down",
+          then: "The order total is retried later", recovery: "Retried on the next run" }
+      ]
+    }],
+    tasks: [
+      { key: "send-total", outcome: "Send the order total", covers: ["order-total"],
+        paths: ["services/orders/**"], verify: "npm test" },
+      { key: "record-total", outcome: "Record the order total", covers: ["order-total"],
+        paths: ["services/billing/**"], verify: "npm test" }
+    ],
+    evidence: { "order-total": { capabilities: ["test"] } },
+    ...overrides
+  };
+}
+
+function startedChange(value, id) {
+  const change = join(value.changes, id);
+  return {
+    state: JSON.parse(readFileSync(join(value.runtime, `${id}.json`), "utf8")),
+    proposal: readFileSync(join(change, "proposal.md"), "utf8"),
+    design: existsSync(join(change, "design.md"))
+  };
+}
+
+test("a draft whose tasks span two services derives coupled and compiles the standard design", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, derivedRiskV4());
+  const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.match(output, /^AGREED share-order-total/m);
+  assert.match(output, /NOTE: the harness derived coupling coupled \(derived: tasks span services\/billing, services\/orders\)/);
+  const { state, proposal, design } = startedChange(value, "share-order-total");
+  assert.equal(state.schema, "foundation-standard");
+  assert.equal(state.coupling, "coupled");
+  assert.equal(design, true, "a standard v4 change carries its dev document");
+  assert.match(proposal, /^- \*\*Coupling:\*\* coupled \(derived: tasks span services\/billing, services\/orders\)$/m);
+  assert.match(proposal, /^- \*\*Impact:\*\* low$/m);
+});
+
+test("an explicit low/isolated declaration never lowers the derived coupling", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, derivedRiskV4({ impact: "low", coupling: "isolated" }));
+  captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  const { state, proposal, design } = startedChange(value, "share-order-total");
+  assert.equal(state.schema, "foundation-standard");
+  assert.equal(state.coupling, "coupled");
+  assert.equal(design, true);
+  assert.match(proposal, /^- \*\*Coupling:\*\* coupled \(derived: tasks span services\/billing, services\/orders; declared isolated\)$/m);
+});
+
+test("a migration with rollback derives medium impact and the standard lane", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, derivedRiskV4({
+    id: "account-status-rollback",
+    intent: "Preserve account status on rollback",
+    why: "A rollback must not enable disabled accounts",
+    requirements: [{
+      key: "status-round-trip", capability: "account-status", operation: "added",
+      description: "The migration SHALL keep each account status through a rollback",
+      outcome: "Account status survives a rollback",
+      scenarios: [
+        { name: "Round trip", when: "The migration is applied and rolled back",
+          then: "Disabled accounts stay disabled" },
+        { name: "Rerun", kind: "failure", when: "The migration runs twice",
+          then: "No row changes on the second run" }
+      ]
+    }],
+    tasks: [{ key: "fix-rollback", outcome: "Fix the rollback", covers: ["status-round-trip"],
+      paths: ["db/migrations/002_account_status.sql"], verify: "npm test" }],
+    dataModel: [{ entity: "Account", fields: ["status"], migration: "002", rollback: "002 down" }],
+    evidence: { "status-round-trip": { capabilities: ["test"] } }
+  }));
+  const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.match(output, /^AGREED account-status-rollback/m);
+  const { state, proposal, design } = startedChange(value, "account-status-rollback");
+  assert.equal(state.schema, "foundation-standard");
+  assert.equal(state.impact, "medium");
+  assert.equal(design, true);
+  assert.match(proposal, /^- \*\*Impact:\*\* medium \(derived: data work: tasks touch db\/migrations\/002_account_status\.sql; requirements name data work \('rollback'\)\)$/m);
+  assert.match(proposal, /^- \*\*Coupling:\*\* isolated$/m);
+});
+
+test("a published API contract derives the standard lane and one actionable EDIT", (t) => {
+  const value = fixture(t);
+  // The minimal template shape with an API contract: one EDIT names every
+  // standard repair and why the lane is standard.
+  writeJson(value.draftPath, {
+    intent: "List notes through the JSON API",
+    requirements: [{
+      description: "The API SHALL return every note as JSON",
+      scenarios: [{ when: "A client requests GET /notes", then: "Every note is returned" }]
+    }],
+    tasks: [{ outcome: "Serve the notes list", verify: "npm test", paths: ["src/server.js"] }]
+  });
+  const { result } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.equal(result.action, "EDIT");
+  assert.equal(result.owner, "agent");
+  const issues = result.intake.issues.join("\n");
+  assert.match(issues, /requires evidence\['[a-z-]+'\]\.capabilities .*the harness derived impact medium \(derived: requirements name a published contract \('API'\)\)/);
+  assert.match(issues, /dev document \(code, inferred from paths[^\n]*standard lane: the harness derived impact medium[^\n]*\) needs 'why'/);
+  assert.match(issues, /needs 'failureMatrix'/);
+  assert.equal(existsSync(value.changes), false);
+
+  writeJson(value.draftPath, derivedRiskV4({
+    id: "list-notes", intent: "List notes through the JSON API",
+    why: "Clients need every note in one request",
+    requirements: [{
+      key: "list-notes", capability: "notes-api", operation: "added",
+      description: "The API SHALL return every note as JSON", outcome: "Every note is returned",
+      scenarios: [
+        { name: "List", when: "A client requests GET /notes", then: "Every note is returned" },
+        { name: "Store down", kind: "failure", when: "The store is unreadable",
+          then: "The API answers 503" }
+      ]
+    }],
+    tasks: [{ key: "serve", outcome: "Serve the notes list", covers: ["list-notes"],
+      paths: ["src/server.js"], verify: "npm test" }],
+    evidence: { "list-notes": { capabilities: ["test"] } }
+  }));
+  captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  const { state, design } = startedChange(value, "list-notes");
+  assert.equal(state.schema, "foundation-standard");
+  assert.equal(design, true);
+});
+
+test("small bugfix, feature, refactor, and docs drafts stay rapid without design.md", (t) => {
+  const cases = [
+    ["fix-rounding", { intent: "Round half values up",
+      requirements: [{ description: "The system SHALL round 2.5 to 3",
+        scenarios: [{ when: "2.5 is rounded", then: "3 is returned" }] }],
+      tasks: [{ outcome: "Fix rounding", verify: "npm test", paths: ["src/round.js"] }] }],
+    ["add-greeting", { intent: "Add a greeting",
+      requirements: [{ description: "The system SHALL greet a named user",
+        scenarios: [{ when: "Ada opens the page", then: "Hello, Ada is shown" }] }],
+      tasks: [{ outcome: "Greet the user", verify: "npm test", paths: ["src/greet.js"] }] }],
+    ["split-parser", { version: 4, intent: "Split the parser", workType: ["refactor"],
+      refactor: { invariants: ["Same output"], characterization: "npm test" },
+      requirements: [{ key: "same-output", capability: "parser", operation: "added",
+        description: "The parser SHALL keep its output", outcome: "The output is unchanged",
+        scenarios: [{ name: "Same", when: "Any input is parsed", then: "The output is unchanged" }] }],
+      tasks: [{ key: "split", outcome: "Split the parser", covers: ["same-output"],
+        paths: ["src/routes/parse.js"], verify: "npm test" }] }],
+    ["reword-guide", { intent: "Reword the guide",
+      requirements: [{ description: "The guide SHALL describe setup in three steps",
+        scenarios: [{ when: "A reader opens the guide", then: "Setup has three steps" }] }],
+      tasks: [{ outcome: "Reword the guide", verify: "npm test", paths: ["docs/guide.md"] }] }]
+  ];
+  for (const [id, draft] of cases) {
+    const value = fixture(t);
+    writeJson(value.draftPath, { id, ...draft });
+    const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+    assert.match(output, new RegExp(`^AGREED ${id}`, "m"), output);
+    assert.doesNotMatch(output, /the harness derived/);
+    const { state, proposal, design } = startedChange(value, id);
+    assert.equal(state.schema, "foundation-rapid", id);
+    assert.equal(design, false, id);
+    assert.match(proposal, /^- \*\*Impact:\*\* low$/m);
+    assert.match(proposal, /^- \*\*Coupling:\*\* isolated$/m);
+  }
 });

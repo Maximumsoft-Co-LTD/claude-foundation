@@ -7,6 +7,7 @@ import { readerGuideIssues } from "./validation/reader-guide.mjs";
 import {
   devDocumentIssues, devDocumentShapeIssues, inferWorkTypes
 } from "./validation/dev-document.mjs";
+import { riskDerivationSummary } from "./validation/draft-risk.mjs";
 
 const OPERATIONS = new Set(["added", "modified", "removed"]);
 const AUTHORITY_CAPABILITIES = new Set(["review", "acceptance", "semantic-acceptance"]);
@@ -305,7 +306,9 @@ function semanticDraftIssues(source, { defaultTestEvidence = false } = {}) {
   }
   issues.push(...designBlueprintIssues(source));
   issues.push(...devDocumentShapeIssues(source));
-  issues.push(...devDocumentIssues(source, { standard: !semanticRapidCandidate(source) }));
+  issues.push(...devDocumentIssues(source, {
+    standard: !semanticRapidCandidate(source), lane: riskDerivationSummary(source)
+  }));
   issues.push(...semanticIntakeIssues(source));
   return issues;
 }
@@ -387,10 +390,13 @@ function normalizeRequirements(source, slugify, issues, {
         evidenceValue?.capabilities === undefined && requirement?.capabilities === undefined) {
       capabilities.push(defaultCapability);
       defaultedEvidence.push(key);
-    } else if (!evidenceValue && !requirement?.capabilities)
+    } else if (!evidenceValue && !requirement?.capabilities) {
+      const derived = riskDerivationSummary(source);
       issues.push(`${label} requires evidence['${key}'].capabilities ` +
         "(only a low-impact, isolated draft without security triggers, review, or acceptance " +
-        "may omit it and default to [\"test\"], or [\"static-analysis\"] for docs/chore work)");
+        "may omit it and default to [\"test\"], or [\"static-analysis\"] for docs/chore work" +
+        (derived ? `; ${derived}` : "") + ")");
+    }
     if (!capabilities.length)
       issues.push(`${label} requires at least one evidence capability`);
 

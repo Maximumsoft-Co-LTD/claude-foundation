@@ -271,6 +271,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through `advance` only when a 3-way check proves the target's edit is in the
   merged copy; a changed copy alone, or a base that was never stored (large,
   binary, or already gone), stays a conflict.
+- A semantic draft that omits or understates `impact`/`coupling` no longer
+  defaults to the rapid lane. The harness derives them from the draft: tasks
+  spanning two `services/`, `packages/`, `apps/`, `libs/`, or `modules/` roots,
+  several repositories, integrations, or external operations are coupled;
+  persistence paths (`*.sql`, `migrations/`, `db/`, `schema/`), API/async work
+  types, and (without a declared `workType`) requirement text naming
+  migrations, rollbacks, databases, APIs, endpoints, payloads, or event/message
+  contracts are at least medium. A declaration never lowers the derived value;
+  the proposal Impact section and the start `NOTE` name the reason, and the
+  standard-lane `EDIT` says why the lane is standard. Small single-root
+  features, bugfixes, refactors, and docs stay rapid. In the paid benchmark,
+  a cross-service event contract, a migration rollback, and two JSON APIs
+  compiled as rapid without `design.md`.
 
 - A corrupt review attempt chain no longer stops with a
   `review-history-corrupt` user decision. The harness moves the chain aside as

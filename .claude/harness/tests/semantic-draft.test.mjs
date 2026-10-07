@@ -18,8 +18,11 @@ import { requiredProvidersOperation } from "../runtime/workflow/change-validatio
 import { classifyReviewRisk } from "../runtime/evidence/review-routing.mjs";
 import {
   createChangeLifecycle, draftNeedsDesign, renderDraftProposal, renderDraftTask,
-  semanticDraftKeepsDesign
+  semanticDraftKeepsDesign, synchronizeProposalClassification
 } from "../runtime/workflow/change-lifecycle.mjs";
+import {
+  declaredDraftRisk, deriveDraftRisk, riskLabel, withDerivedRisk
+} from "../runtime/workflow/validation/draft-risk.mjs";
 import {
   amendTaskVerifyOperation, amendmentRepositoryOrderIssues, appendRequirementToSpec,
   compileSemanticAmendment,
@@ -2679,4 +2682,104 @@ test("a partial draft entry merges by any identity it names, and an unmatched $r
     requirements: [{ outcome: "unnamed", $remove: true }]
   }), /"\$remove" entry names no key or name/);
   assert.deepEqual(prior.requirements.map((row) => row.key), ["throughput", "ack"]);
+});
+
+function riskDraft(overrides = {}) {
+  return {
+    version: 4,
+    intent: "Change one bounded outcome",
+    requirements: [{ key: "outcome", description: "The system SHALL return the result",
+      scenarios: [{ name: "Result", when: "Input arrives", then: "The result is returned" }] }],
+    tasks: [{ key: "do", outcome: "Implement", covers: ["outcome"], paths: ["src/result.js"],
+      verify: "npm test" }],
+    ...overrides
+  };
+}
+
+const tasksAt = (...paths) => paths.map((path, index) => ({
+  key: `t${index}`, outcome: "Implement", covers: ["outcome"], paths: [path], verify: "npm test"
+}));
+
+test("risk derivation reads coupling from service, package, and repository spans", () => {
+  assert.deepEqual(deriveDraftRisk(riskDraft()),
+    { impact: "low", coupling: "isolated", reasons: { impact: [], coupling: [] } });
+  assert.deepEqual(deriveDraftRisk(riskDraft({
+    tasks: tasksAt("services/orders/**", "services/billing/src/a.js") })).reasons.coupling,
+  ["tasks span services/billing, services/orders"]);
+  assert.equal(deriveDraftRisk(riskDraft({
+    tasks: tasksAt("packages/ui/**", "packages/core/**") })).coupling, "coupled");
+  // Two folders of one service are not two services.
+  assert.equal(deriveDraftRisk(riskDraft({
+    tasks: tasksAt("services/orders/src/**", "services/orders/test/**") })).coupling, "isolated");
+  assert.equal(deriveDraftRisk(riskDraft({
+    tasks: tasksAt("src/a.js", "src/b.js") })).coupling, "isolated");
+  assert.deepEqual(deriveDraftRisk(riskDraft({
+    repositories: [{ id: "root" }, { id: "web", mode: "write" }] })).reasons.coupling,
+  ["repositories root, web"]);
+  assert.deepEqual(deriveDraftRisk(riskDraft({ integrations: [{ name: "Stripe" }] }))
+    .reasons.coupling, ["declares integrations"]);
+});
+
+test("risk derivation reads data and published-contract work as medium impact", () => {
+  assert.equal(deriveDraftRisk(riskDraft({ tasks: tasksAt("schema.sql") })).impact, "medium");
+  assert.equal(deriveDraftRisk(riskDraft({ tasks: tasksAt("migration.mjs") })).impact, "medium");
+  assert.equal(deriveDraftRisk(riskDraft({ tasks: tasksAt("src/api/notes.js") })).impact, "medium");
+  assert.equal(deriveDraftRisk(riskDraft({ tasks: tasksAt("src/workers/sync.js") })).impact, "medium");
+  assert.match(deriveDraftRisk(riskDraft({
+    intent: "Version the order event schema" })).reasons.impact.join(), /published contract/);
+  assert.match(deriveDraftRisk(riskDraft({
+    requirements: [{ key: "outcome", description: "The system SHALL restore rows on rollback",
+      scenarios: [{ name: "Undo", when: "Rolled back", then: "Rows return" }] }]
+  })).reasons.impact.join(), /data work \('rollback'\)/);
+  // A model file alone is not persistence; ordinary words are not contracts.
+  assert.equal(deriveDraftRisk(riskDraft({ tasks: tasksAt("src/models/note.js") })).impact, "low");
+  assert.equal(deriveDraftRisk(riskDraft({ intent: "Show the event list" })).impact, "low");
+  // A declared work type replaces text inference; persistence paths still count.
+  assert.equal(deriveDraftRisk(riskDraft({ workType: ["bugfix"],
+    intent: "Fix the API rounding" })).impact, "low");
+  assert.equal(deriveDraftRisk(riskDraft({ workType: ["bugfix"],
+    tasks: tasksAt("db/schema.sql") })).impact, "medium");
+  assert.equal(deriveDraftRisk(riskDraft({ workType: ["api"] })).impact, "medium");
+});
+
+test("derived risk only raises, records why, and is removed from the stored draft", () => {
+  const spanning = riskDraft({ tasks: tasksAt("services/a/**", "services/b/**") });
+  const raised = withDerivedRisk({ ...spanning, impact: "low", coupling: "isolated" });
+  assert.equal(raised.coupling, "coupled");
+  assert.equal(raised.impact, "low");
+  assert.equal(riskLabel(raised, "coupling"),
+    "coupled (derived: tasks span services/a, services/b; declared isolated)");
+  assert.equal(riskLabel(raised, "impact"), "low");
+  assert.deepEqual(declaredDraftRisk(raised), { ...spanning, impact: "low", coupling: "isolated" });
+  assert.deepEqual(declaredDraftRisk(withDerivedRisk(spanning)), spanning);
+  // Re-deriving a derived draft is stable, and a narrowed draft derives again.
+  assert.deepEqual(withDerivedRisk(raised), raised);
+  assert.equal(withDerivedRisk({ ...raised, tasks: tasksAt("services/a/**") }).coupling, "isolated");
+  // Declared high stays high; legacy drafts and unknown values are untouched.
+  const high = withDerivedRisk(riskDraft({ impact: "high", tasks: tasksAt("db/a.sql") }));
+  assert.equal(high.impact, "high");
+  assert.equal(high._riskDerivation, undefined);
+  const legacy = { version: 1, tasks: tasksAt("services/a/**", "services/b/**") };
+  assert.equal(withDerivedRisk(legacy), legacy);
+  assert.equal(withDerivedRisk(riskDraft({ coupling: "loose",
+    tasks: tasksAt("services/a/**", "services/b/**") })).coupling, "loose");
+});
+
+test("a derived standard draft says why in its proposal and its evidence repair", () => {
+  const source = withDerivedRisk(riskDraft({
+    capability: undefined,
+    requirements: [{ key: "outcome", capability: "orders", description: "The system SHALL return the result",
+      scenarios: [{ name: "Result", when: "Input arrives", then: "The result is returned" }] }],
+    tasks: tasksAt("services/orders/**", "services/billing/**")
+  }));
+  const { draft, issues } = normalizeSemanticDraft(source, slugify, { defaultRapidEvidence: true });
+  assert.match(issues.join("\n"), /requires evidence\['outcome'\]\.capabilities .*the harness derived coupling coupled \(derived: tasks span services\/billing, services\/orders\)/);
+  assert.equal(draft.coupling, "coupled");
+  const proposal = renderDraftProposal(draft, { intent: draft.intent, schema: "foundation-standard" });
+  assert.match(proposal, /^- \*\*Coupling:\*\* coupled \(derived: tasks span services\/billing, services\/orders\)$/m);
+  // Resolve keeps the reason while the value holds and replaces it otherwise.
+  assert.equal(synchronizeProposalClassification(proposal, { impact: "low", coupling: "coupled" }),
+    proposal);
+  assert.match(synchronizeProposalClassification(proposal, { coupling: "isolated" }),
+    /^- \*\*Coupling:\*\* isolated$/m);
 });

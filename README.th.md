@@ -602,7 +602,10 @@ Land ส่วนงานที่ประกาศเป็น docs อย่
 ที่ agent เลือกเองและ typed section เช่น `refactor` หรือ `configContract` จะแสดงใน proposal
 โดยไม่เปลี่ยน lane ใช้ได้เฉพาะงาน impact ต่ำ
 แยกขาด ไม่มี public contract, persistent migration, security trigger หรือ
-irreversible effect หากพบ requirement ที่เข้มขึ้น `/change` จะ upgrade change เดิม
+irreversible effect harness อนุมาน impact และ coupling จาก draft เอง (task ที่ข้าม
+service, package หรือ repository, path ของ persistence, งาน API, event หรือ migration)
+และไม่ลดระดับลง draft ที่ไม่ระบุหรือระบุต่ำกว่าจริงจึงยังได้ standard โดย proposal
+บอกเหตุผล หากพบ requirement ที่เข้มขึ้น `/change` จะ upgrade change เดิม
 เป็น standard
 
 ## ทำความเข้าใจ State

@@ -57,6 +57,9 @@ import {
 } from "./validation/dev-document.mjs";
 import { targetEditDigest, targetEditPaths } from "./target-edits.mjs";
 import {
+  declaredDraftRisk, riskDerivationSummary, riskLabel, withDerivedRisk
+} from "./validation/draft-risk.mjs";
+import {
   fileMapWithTasks, intakeDecisions, openQuestionItems, readerGuideWarnings,
   renderDesignOverview, renderDiscoveryAppendix, renderInvestigationAppendix,
   renderInvestigationSummary, renderProposalLead, renderProposalReader
@@ -459,8 +462,8 @@ export function renderDraftProposal(draft, state) {
     (why ? `\n\n## Why\n\n${why}` : "") + section(renderProposalReader(draft)) +
     `\n\n## What changes\n\n${draftBullets(draft.changes)}` + flow + section(renderFolderTree(draft)) +
     plan + `\n\n## Impact\n\n` +
-    `- **Impact:** ${draft.impact || state.impact || "medium"}\n` +
-    `- **Coupling:** ${draft.coupling || state.coupling || "coupled"}\n` +
+    `- **Impact:** ${riskLabel(draft, "impact") || state.impact || "medium"}\n` +
+    `- **Coupling:** ${riskLabel(draft, "coupling") || state.coupling || "coupled"}\n` +
     `- **Affected surfaces:** ${(draft.surfaces || ["code"]).join(", ")}\n` +
     `- **Security triggers:** ${triggers.length ? triggers.join(", ") : "none detected"}` +
     (rapid && docsOnlyDraft(draft)
@@ -477,8 +480,10 @@ export function synchronizeProposalClassification(proposal, state) {
   ]) {
     if (!value) continue;
     const pattern = new RegExp(
-      `^(\\s*-\\s*\\*\\*${label}:\\*\\*\\s*).*$`, "im");
-    if (pattern.test(next)) next = next.replace(pattern, `$1${value}`);
+      `^(\\s*-\\s*\\*\\*${label}:\\*\\*\\s*)(.*)$`, "im");
+    // A derived value keeps its "(derived: ...)" reason while it still holds.
+    next = next.replace(pattern, (line, prefix, current) =>
+      current === value || current.startsWith(`${value} (derived: `) ? line : `${prefix}${value}`);
   }
   return next;
 }
@@ -890,10 +895,11 @@ export function createChangeLifecycle({
     // draft without `version` in the minimal v4 shape compiles as v4.
     const raw = readJson(source);
     const context = { ...minimalDraftContext, ...prior };
+    // Impact and coupling are derived from the draft's content, never lowered.
     if (!raw || typeof raw !== "object" || Array.isArray(raw) || !("minimalDraft" in raw))
-      return expandMinimalSemanticDraft(raw, context);
+      return withDerivedRisk(expandMinimalSemanticDraft(raw, context));
     const { minimalDraft: _example, ...draft } = raw;
-    return expandMinimalSemanticDraft(draft, context);
+    return withDerivedRisk(expandMinimalSemanticDraft(draft, context));
   }
 
   // A minimal draft chooses among existing capabilities before inventing one.
@@ -1985,6 +1991,8 @@ export function createChangeLifecycle({
     if (keepsDesign)
       console.log("NOTE: the draft carries design content, so it uses foundation-standard " +
         "to keep design.md and specs/");
+    const derived = riskDerivationSummary(draft);
+    if (derived) console.log(`NOTE: ${derived}`);
     return { draft, rapid, resolutionFlags: startResolutionFlags(draft, classification, rapid) };
   }
 
@@ -2189,7 +2197,7 @@ export function createChangeLifecycle({
   // produced: an amendment or grounding reopen afterwards changes the
   // agreement without it, so a partial revision would silently drop that.
   function compiledDraftSource(state, draft) {
-    return { contractRevision: Number(state.contractRevision || 0), draft };
+    return { contractRevision: Number(state.contractRevision || 0), draft: declaredDraftRisk(draft) };
   }
 
   // `merge` applies the file as a patch to the draft the change was compiled
@@ -2222,7 +2230,8 @@ export function createChangeLifecycle({
     // derived keys, titles, and scenario names exactly as at start.
     if (merged._minimalDraft && patch.version === undefined) delete merged.version;
     delete merged._minimalDraft;
-    return expandMinimalSemanticDraft(merged, { ...minimalDraftContext, ...priorDraftIdentity(id) });
+    return withDerivedRisk(
+      expandMinimalSemanticDraft(merged, { ...minimalDraftContext, ...priorDraftIdentity(id) }));
   }
 
   function reviseRoute(id, draftPath, merge) {

@@ -634,8 +634,11 @@ Land; declared docs-only work writes none) and normally omits design; agent
 defaults and typed sections such as `refactor` or `configContract` render in
 its proposal without changing the lane. It is eligible
 only for low-impact, isolated work with no public contract, persistent
-migration, security trigger, or irreversible effect. If stronger requirements
-appear, `/change` upgrades the same change to standard.
+migration, security trigger, or irreversible effect. The harness derives impact
+and coupling from the draft (tasks across services, packages, or repositories;
+persistence paths; API, event, or migration work) and never lowers them, so an
+omitted or understated declaration still selects standard; the proposal names
+why. If stronger requirements appear, `/change` upgrades the same change to standard.
 
 ## Understanding change states
 
