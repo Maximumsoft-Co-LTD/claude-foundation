@@ -159,8 +159,11 @@ skill และ hook ที่ Change Loop เป็นเจ้าของต�
 harness ได้แก่ `Bash(claude-foundation *)`,
 `Bash(.foundation/bin/claude-foundation *)`,
 `Bash(node .claude/harness/foundation.mjs *)`,
-`Edit(/.foundation/sandboxes/**)` และ
-`Edit(/.foundation/repository-sandboxes/**)` โดยเพิ่มเฉพาะ rule ที่ยังไม่มีต่อจาก
+`Edit(/.foundation/sandboxes/**)`,
+`Edit(/.foundation/repository-sandboxes/**)` และ `Edit(/.foundation/drafts/**)`
+(draft ของ Change) test runner ของ project ไม่ได้รับ rule: Build task แต่ละงานคืน
+verify เป็น `checkCommand` (`claude-foundation exec <change> --task <id> --
+<verify>`) ซึ่ง rule ของ CLI ครอบคลุมอยู่แล้ว โดยเพิ่มเฉพาะ rule ที่ยังไม่มีต่อจาก
 rule ของผู้ใช้ ไม่ลบหรือสลับลำดับ entry เดิม และการรันซ้ำไม่เพิ่มอะไร guard ของ
 PreToolUse ยังทำงานก่อน rule เหล่านี้ ให้ใส่ `--no-permission-allowlist` ทุกครั้งที่
 install หรือ upgrade หากไม่ต้องการให้แตะ `permissions.allow`
@@ -180,11 +183,12 @@ permissions.allow entry ... this workspace has not been trusted` ทำให้
 tool ทุกครั้งที่รัน headless:
 
 ```bash
-claude -p "/change <intent>" --allowedTools "Bash(claude-foundation *)" \
-  "Bash(node *)" "Bash(npm *)" "Bash(git *)"
+claude -p "/change <intent>" --permission-mode acceptEdits \
+  --allowedTools "Bash(claude-foundation *)" "Bash(.foundation/bin/claude-foundation *)"
 ```
 
-เพิ่ม build และ test tool ของ project ตามที่ต้องใช้ Claude Code ถือว่า path ใต้
+check ของ Build รันผ่าน `claude-foundation exec` จึงไม่ต้องให้สิทธิ์ test runner
+เพิ่ม tool อื่นของ project เฉพาะเมื่อการรันต้องใช้ Claude Code ถือว่า path ใต้
 `~/.claude/` เป็น sensitive path จึงควรวาง consumer project ไว้นอก directory นั้น
 เมื่อรันแบบไม่มีคนเฝ้า
 

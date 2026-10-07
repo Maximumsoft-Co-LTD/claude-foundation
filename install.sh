@@ -339,8 +339,10 @@ done
 
 SETTINGS_SRC="$SOURCE_PATH/.claude/settings.json"
 SETTINGS_DST="$TARGET_PATH/.claude/settings.json"
-# The shipped permissions.allow rules cover only the harness CLI and edits under
-# the isolated Build workspaces; PreToolUse guards still run before them. With
+# The shipped permissions.allow rules cover only the harness CLI, edits under
+# the isolated Build workspaces, and the Change draft directory; PreToolUse
+# guards still run before them. Project checks need no rule: Build hands each
+# task's verify back as a `claude-foundation exec` command. With
 # the opt-out, merge from a copy of the template that carries no allow rules, so
 # the user's own permissions stay exactly as they were.
 if [ "$PERMISSION_ALLOWLIST" = no ]; then

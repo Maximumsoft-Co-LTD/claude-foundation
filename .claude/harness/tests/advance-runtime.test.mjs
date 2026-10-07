@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
 
 import {
   coordinatorAction, createAdvanceRuntime, envelopeContextFiles, hasValidLandGrant,
@@ -62,6 +63,36 @@ test("advance returns bounded Build work without invoking a model", () => {
   assert.equal(value.legacyAction, "EXECUTE_TASK");
   assert.equal(value.boundary, "host-execution");
   assert.equal(value.resumeCommand, "claude-foundation advance change-a");
+});
+
+test("each Build task carries its focused check in the pre-allowed harness exec form", () => {
+  const value = coordinatorAction({
+    ...base,
+    dispatch: { action: "run-in-session", reason: "one repository" },
+    plan: {
+      groups: [["T001"], ["T002"], ["T003"]],
+      tasks: [
+        { id: "T001", text: "Add it — verify: `node --test`", repository: "root", paths: ["a.js"] },
+        { id: "T002", text: "Pipe it — verify: `npm test -- --grep 'it isn''t' | tail -5`",
+          repository: "root", paths: ["b.js"] },
+        { id: "T003", text: "No verify", repository: "root", paths: ["c.js"] }
+      ]
+    }
+  });
+  const [plain, shell, none] = value.tasks;
+  // The installed allowlist grants `Bash(claude-foundation *)`; a bare
+  // `node --test` would cost a host approval prompt on every Build.
+  assert.equal(plain.checkCommand, "claude-foundation exec change-a --task T001 -- node --test");
+  // Shell text stays one quoted `sh -c` operand: the host shell hands exec
+  // exactly the verify string advance itself runs.
+  const prefix = "claude-foundation exec change-a --task T002 -- sh -c ";
+  assert.ok(shell.checkCommand.startsWith(prefix));
+  assert.equal(spawnSync("sh", ["-c", `printf %s ${shell.checkCommand.slice(prefix.length)}`],
+    { encoding: "utf8" }).stdout, "npm test -- --grep 'it isn''t' | tail -5");
+  assert.equal(none.checkCommand, undefined);
+  for (const task of [plain, shell]) assert.match(task.checkCommand, /^claude-foundation /);
+  assert.deepEqual(value.verification, ["node --test", "npm test -- --grep 'it isn''t' | tail -5"]);
+  assert.match(value.instructions.join(" "), /checkCommand/);
 });
 
 test("a task with a stale execution record is handed back as re-verification, not new work", () => {

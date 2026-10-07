@@ -169,8 +169,11 @@ hooks and appends a narrow `permissions.allow` list, so Claude Code does not ask
 for approval on every harness step: `Bash(claude-foundation *)`,
 `Bash(.foundation/bin/claude-foundation *)`,
 `Bash(node .claude/harness/foundation.mjs *)`,
-`Edit(/.foundation/sandboxes/**)`, and
-`Edit(/.foundation/repository-sandboxes/**)`. It adds only missing rules after
+`Edit(/.foundation/sandboxes/**)`,
+`Edit(/.foundation/repository-sandboxes/**)`, and `Edit(/.foundation/drafts/**)`
+(the Change draft). Project test runners get no rule: each Build task returns
+its verify as a `checkCommand` (`claude-foundation exec <change> --task <id> --
+<verify>`) that the CLI rule already covers. It adds only missing rules after
 your own, never removes or reorders entries, and a rerun adds nothing. The
 PreToolUse guards still run before these rules. Pass
 `--no-permission-allowlist` on every install or upgrade to leave
@@ -191,11 +194,12 @@ is denied. Either run `claude` once interactively in the project and accept the
 trust prompt, or grant the tools on each headless run:
 
 ```bash
-claude -p "/change <intent>" --allowedTools "Bash(claude-foundation *)" \
-  "Bash(node *)" "Bash(npm *)" "Bash(git *)"
+claude -p "/change <intent>" --permission-mode acceptEdits \
+  --allowedTools "Bash(claude-foundation *)" "Bash(.foundation/bin/claude-foundation *)"
 ```
 
-Add the project's own build and test tools as needed. Claude Code treats paths
+Build checks run through `claude-foundation exec`, so test runners need no
+grant; add other project tools only when a run needs them. Claude Code treats paths
 under `~/.claude/` as sensitive, so keep consumer projects outside that
 directory for unattended runs.
 

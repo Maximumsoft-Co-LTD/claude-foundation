@@ -285,7 +285,9 @@ Build references load only on their triggers. A minimal draft (`intent`,
 `requirements[{description, scenarios[{when, then}]}]`,
 `tasks[{outcome, verify, paths}]`, no `version`) is expanded by the compiler.
 Every EDIT or REPAIR lists `contextFiles` (absolute paths to open), `newFiles`
-(declared paths to create), and `contextScope`. Each EDIT task carries its own
+(declared paths to create), and `contextScope`. Each EDIT task with a verify
+also carries `checkCommand`, that verify run through `claude-foundation exec
+<change> --task <id>`, which the installed allowlist already permits. Each EDIT task carries its own
 `workspace`: a non-root repository's task names
 `.foundation/repository-sandboxes/<change>/<repository>`, never the shared
 sandbox's empty submodule directory, and the top-level `workspace` (plus a

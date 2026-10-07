@@ -77,18 +77,18 @@ claude-foundation doctor --stage change
 
 ## Permission allowlist
 
-`.claude/settings.json` ยังเป็นของ project Installer จะ merge hook ที่ ship มา และต่อท้าย `permissions.allow` แบบแคบ เพื่อไม่ให้ Claude Code ขออนุมัติทุกขั้นของ harness ได้แก่ `Bash(claude-foundation *)`, `Bash(.foundation/bin/claude-foundation *)`, `Bash(node .claude/harness/foundation.mjs *)`, `Edit(/.foundation/sandboxes/**)` และ `Edit(/.foundation/repository-sandboxes/**)` โดยเพิ่มเฉพาะ rule ที่ยังไม่มีต่อจาก rule ของผู้ใช้ ไม่ลบหรือสลับลำดับ entry เดิม และการรันซ้ำไม่เพิ่มอะไร guard ของ PreToolUse ยังทำงานก่อน rule เหล่านี้ ให้ใส่ `--no-permission-allowlist` ทุกครั้งที่ install หรือ upgrade หากไม่ต้องการให้แตะ `permissions.allow`
+`.claude/settings.json` ยังเป็นของ project Installer จะ merge hook ที่ ship มา และต่อท้าย `permissions.allow` แบบแคบ เพื่อไม่ให้ Claude Code ขออนุมัติทุกขั้นของ harness ได้แก่ `Bash(claude-foundation *)`, `Bash(.foundation/bin/claude-foundation *)`, `Bash(node .claude/harness/foundation.mjs *)`, `Edit(/.foundation/sandboxes/**)`, `Edit(/.foundation/repository-sandboxes/**)` และ `Edit(/.foundation/drafts/**)` (draft ของ Change) test runner ของโปรเจกต์ไม่ได้รับ rule: Build task แต่ละงานคืน verify เป็น `checkCommand` (`claude-foundation exec <change> --task <id> -- <verify>`) ซึ่ง rule ของ CLI ครอบคลุมอยู่แล้ว โดยเพิ่มเฉพาะ rule ที่ยังไม่มีต่อจาก rule ของผู้ใช้ ไม่ลบหรือสลับลำดับ entry เดิม และการรันซ้ำไม่เพิ่มอะไร guard ของ PreToolUse ยังทำงานก่อน rule เหล่านี้ ให้ใส่ `--no-permission-allowlist` ทุกครั้งที่ install หรือ upgrade หากไม่ต้องการให้แตะ `permissions.allow`
 
 ## Headless / CI (`claude -p`)
 
 Claude Code จะไม่ใช้ `permissions.allow` ของโปรเจกต์จนกว่า workspace จะถูก trust ใน checkout ใหม่ การรัน `claude -p` แบบ headless จะแสดง `Ignoring ... permissions.allow entry ... this workspace has not been trusted` ทำให้ rule `Bash(claude-foundation *)` ที่ installer ใส่ไว้ไม่มีผล และทุกคำสั่ง harness ถูกปฏิเสธ ให้รัน `claude` แบบ interactive ในโปรเจกต์หนึ่งครั้งแล้วยอมรับ trust prompt หรือให้สิทธิ์ tool ทุกครั้งที่รัน headless:
 
 ```bash
-claude -p "/change <intent>" --allowedTools "Bash(claude-foundation *)" \
-  "Bash(node *)" "Bash(npm *)" "Bash(git *)"
+claude -p "/change <intent>" --permission-mode acceptEdits \
+  --allowedTools "Bash(claude-foundation *)" "Bash(.foundation/bin/claude-foundation *)"
 ```
 
-เพิ่ม build และ test tool ของโปรเจกต์ตามที่ต้องใช้ Claude Code ถือว่า path ใต้ `~/.claude/` เป็น sensitive path จึงควรวาง consumer project ไว้นอก directory นั้นเมื่อรันแบบไม่มีคนเฝ้า
+check ของ Build รันผ่าน `claude-foundation exec` จึงไม่ต้องให้สิทธิ์ test runner เพิ่ม tool อื่นของโปรเจกต์เฉพาะเมื่อการรันต้องใช้ Claude Code ถือว่า path ใต้ `~/.claude/` เป็น sensitive path จึงควรวาง consumer project ไว้นอก directory นั้นเมื่อรันแบบไม่มีคนเฝ้า
 
 ## Commit การติดตั้ง
 

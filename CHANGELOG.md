@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Build `EDIT` tasks carry a `checkCommand`: the task's verify wrapped as
+  `claude-foundation exec <change> --task <id> -- <verify>` (`sh -c` when the
+  text needs a shell). The already-allowed CLI rule covers it, so running a
+  focused check no longer stops on a host approval prompt for `node --test`,
+  `python3 -m unittest`, or a piped form. The installer also seeds
+  `Edit(/.foundation/drafts/**)` for the Change draft; upgrades append it after
+  existing rules.
+
 - Thai intents now trigger the same review, security, and migration routing as
   English. Thai terms such as ล็อกอิน, เข้าสู่ระบบ, รหัสผ่าน, สิทธิ์,
   โทเคนเข้าถึง, ชำระเงิน, จ่ายเงิน, ย้ายข้อมูล, ลบข้อมูล, ข้อมูลส่วนตัว, and

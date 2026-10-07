@@ -319,12 +319,13 @@ assert_cmd_zero "stable lifecycle wrapper permission is installed" \
 assert_cmd_zero "user permission is preserved during permission merge" \
   jq -e '.permissions.allow | index("Bash(user-tool *)") != null' \
     "$TARGET/.claude/settings.json"
-# The allowlist exists so the harness CLI and Build-workspace edits do not
+# The allowlist exists so the harness CLI, Build-workspace edits, and Change
+# draft saves do not
 # prompt on every change. It must stay that narrow, append after the user's
 # own rules, and never grow on a rerun.
 SHIPPED_ALLOW="$(jq -c '.permissions.allow' "$ROOT/.claude/settings.json")"
-assert_eq "shipped allowlist is exactly the harness CLI and Build workspaces" \
-  '["Bash(claude-foundation *)","Bash(.foundation/bin/claude-foundation *)","Bash(node .claude/harness/foundation.mjs *)","Edit(/.foundation/sandboxes/**)","Edit(/.foundation/repository-sandboxes/**)"]' \
+assert_eq "shipped allowlist is exactly the harness CLI, Build workspaces, and drafts" \
+  '["Bash(claude-foundation *)","Bash(.foundation/bin/claude-foundation *)","Bash(node .claude/harness/foundation.mjs *)","Edit(/.foundation/sandboxes/**)","Edit(/.foundation/repository-sandboxes/**)","Edit(/.foundation/drafts/**)"]' \
   "$SHIPPED_ALLOW"
 assert_eq "upgrade appends the shipped allowlist after user rules in order" \
   "$(printf '%s' "$SHIPPED_ALLOW" | jq -c '["Bash(user-tool *)"] + .')" \
@@ -944,11 +945,23 @@ printf '%s\n' '{"permissions":{"allow":["Bash(user-tool *)","Bash(claude-foundat
 assert_cmd_zero "installer upgrades a pre-allowlist settings file" \
   bash "$ROOT/install.sh" "$ALLOW_UPGRADE" --source "$ROOT" --yes
 assert_eq "pre-allowlist upgrade adds missing rules without duplicates" \
-  '["Bash(user-tool *)","Bash(claude-foundation *)","Bash(.foundation/bin/claude-foundation *)","Bash(node .claude/harness/foundation.mjs *)","Edit(/.foundation/sandboxes/**)","Edit(/.foundation/repository-sandboxes/**)"]' \
+  '["Bash(user-tool *)","Bash(claude-foundation *)","Bash(.foundation/bin/claude-foundation *)","Bash(node .claude/harness/foundation.mjs *)","Edit(/.foundation/sandboxes/**)","Edit(/.foundation/repository-sandboxes/**)","Edit(/.foundation/drafts/**)"]' \
   "$(jq -c '.permissions.allow' "$ALLOW_UPGRADE/.claude/settings.json")"
 assert_cmd_zero "allowlist merge keeps unrelated user settings" \
   jq -e '.permissions.deny == ["Bash(rm *)"] and .model == "user-choice"' \
     "$ALLOW_UPGRADE/.claude/settings.json"
+
+# A project seeded by the previous release (five rules, user rule between them)
+# gains only the draft rule, appended last; nothing moves or duplicates.
+DRAFT_UPGRADE="$TMP/allowlist-draft-upgrade-project"
+mkdir -p "$DRAFT_UPGRADE/.claude"
+printf '%s\n' '{"permissions":{"allow":["Bash(claude-foundation *)","Bash(user-tool *)","Bash(.foundation/bin/claude-foundation *)","Bash(node .claude/harness/foundation.mjs *)","Edit(/.foundation/sandboxes/**)","Edit(/.foundation/repository-sandboxes/**)"]}}' \
+  > "$DRAFT_UPGRADE/.claude/settings.json"
+assert_cmd_zero "installer upgrades a previous-release allowlist" \
+  bash "$ROOT/install.sh" "$DRAFT_UPGRADE" --source "$ROOT" --yes
+assert_eq "previous-release upgrade appends only the draft rule" \
+  '["Bash(claude-foundation *)","Bash(user-tool *)","Bash(.foundation/bin/claude-foundation *)","Bash(node .claude/harness/foundation.mjs *)","Edit(/.foundation/sandboxes/**)","Edit(/.foundation/repository-sandboxes/**)","Edit(/.foundation/drafts/**)"]' \
+  "$(jq -c '.permissions.allow' "$DRAFT_UPGRADE/.claude/settings.json")"
 
 OPT_OUT="$TMP/allowlist-opt-out-project"
 mkdir -p "$OPT_OUT/.claude"

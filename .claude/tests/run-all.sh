@@ -153,6 +153,7 @@ evidence bootstrap|node --test "$ROOT/.claude/harness/tests/evidence-bootstrap.t
 command registry|node --test "$ROOT/.claude/harness/tests/command-registry.test.mjs" "$ROOT/.claude/harness/tests/public-command-golden.test.mjs"
 process runtime|node --test "$ROOT/.claude/harness/tests/process-runtime.test.mjs"
 observed exec runtime|node --test "$ROOT/.claude/harness/tests/exec-runtime.test.mjs"
+permission allowlist|node --test "$ROOT/.claude/harness/tests/permission-allowlist.test.mjs"
 change policy surface|node --test "$ROOT/.claude/harness/tests/change-policy-surface.test.mjs"
 sandbox replay preparation|node --test "$ROOT/.claude/harness/tests/sandbox-replay-preparation.test.mjs"
 evidence results|node --test "$ROOT/.claude/harness/tests/evidence-results.test.mjs"
