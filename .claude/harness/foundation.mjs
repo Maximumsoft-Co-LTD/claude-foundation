@@ -2155,6 +2155,9 @@ const abandonRuntime = createAbandonRuntime({
     handoffs: HANDOFFS,
     authority: AUTHORITY,
     reviews: REVIEWS,
+    instructionManifests: INSTRUCTION_MANIFESTS,
+    attestations: ATTESTATIONS,
+    deliveries: DELIVERIES,
     logs: LOGS,
     changes: CHANGES
   },

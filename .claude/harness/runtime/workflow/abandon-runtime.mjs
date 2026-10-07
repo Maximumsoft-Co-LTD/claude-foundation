@@ -1,5 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { retiredChangeStores } from "./retired-change-stores.mjs";
 
 // Every other exit from the change loop requires the change to succeed. A
 // change that cannot be proven — an evidence contract nobody can satisfy, a
@@ -14,7 +15,8 @@ import { dirname, join } from "node:path";
 //
 // Abandon removes only what the change owns: its sandboxes (after a backup of
 // any commit or byte the target does not hold), its own .foundation records,
-// review requests, reviewer reports, and packet (quarantined, never deleted),
+// review requests, reviewer reports, instruction manifests, open attestation
+// challenge, delivery record, and packet (quarantined, never deleted),
 // and, only with --applied revert, the
 // target paths its own apply journal recorded. It never deletes a target file
 // the change did not declare and apply.
@@ -233,22 +235,24 @@ export function createAbandonRuntime({
       ["transactions", join(paths.transactions, id)],
       ["plans", join(paths.plans, id)],
       ["handoffs", join(paths.handoffs, id)],
-      // Review/authority requests and reviewer reports are keyed by change id
-      // and matched by workspace hash. Left in place, a later change reusing
-      // the id (with the same content) reopened an exhausted review request
-      // instead of starting with a fresh review budget.
-      ["authority", paths.authority ? join(paths.authority, id) : null],
-      ["reviews", paths.reviews ? join(paths.reviews, id) : null],
+      // Per-change bookkeeping a later change reusing the id (or the same
+      // content) would otherwise inherit; see retired-change-stores.mjs.
+      ...retiredChangeStores(paths, id),
       ["logs", join(paths.logs, id)],
       ["snapshot.json", join(paths.snapshots, `${id}.json`)]
     ]);
   }
 
-  function reportAbandoned(id, reason, appliedMode, cleanup) {
+  function reportAbandoned(id, reason, appliedMode, cleanup, quarantined) {
     const relative = recoveryRoot(id).slice(root.length + 1);
     console.log(`ABANDONED ${id}\n  reason: ${reason}\n  applied: ${
       appliedMode || "none"}\n  quarantined: ${relative}${sandboxBackups(cleanup)
       .map((path) => `\n  sandbox backup: ${path}`).join("")}`);
+    // Abandon never touches Git or a provider, so a pull request this change
+    // delivered stays open; say where its record went.
+    if (quarantined.includes("deliveries"))
+      console.error(`WARNING: delivery record preserved at ${relative}/deliveries; ` +
+        "abandon does not close or update any pull request it opened");
     const { workspaceCleanup } = cleanup;
     if (["failed", "refused"].includes(workspaceCleanup.status))
       console.error(`WARNING: sandbox cleanup ${workspaceCleanup.status}: ${workspaceCleanup.reason}`);
@@ -271,7 +275,7 @@ export function createAbandonRuntime({
     appendFileSync(auditPath, `${JSON.stringify({ ...record, event: "abandoned" })}\n`);
     record.quarantined = quarantineChange(id);
     writeJson(join(recoveryRoot(id), "abandon.json"), record);
-    reportAbandoned(id, reason, appliedState.appliedMode, cleanup);
+    reportAbandoned(id, reason, appliedState.appliedMode, cleanup, record.quarantined);
   }
 
   return { abandonChange, recoveryRoot };

@@ -429,11 +429,19 @@ claude-foundation change abandon <change> --reason <reason> --decision-ref <ref>
 ```
 
 Abandon releases leases, cleans up isolation, and moves the packet, runtime
-state, receipts, evidence, transactions, review requests, and reviewer reports
-to `.foundation/recovery/abandoned/<id>/` with an audit record, so a later
-change reusing the id starts with a fresh review budget. It requires a real
-user decision, never touches Git, refuses archived changes, and asks whether to
-keep or revert already-applied files before acting.
+state, receipts, evidence, transactions, plans, handoffs, logs, review requests,
+reviewer reports, instruction manifests, the open attestation challenge, and any
+delivery record to `.foundation/recovery/abandoned/<id>/` with an audit record,
+so a later change reusing the id starts with a fresh review budget, its own
+task attribution, no inherited attestation, and no stale delivery state. A
+delivery record is kept there, never deleted; abandon does not close a pull
+request it opened. The global attestation nonce ledger, investigation
+prototypes, and content-addressed intake state are not per-change and stay. If
+an older abandon or a Land undo left such bookkeeping behind, creating a change
+with that id moves it into the newest retirement record; other leftover change
+state still refuses the id. Abandon requires a real user decision, never
+touches Git, refuses archived changes, and asks whether to keep or revert
+already-applied files before acting.
 
 Abandon removes only what the change owns: its sandboxes, its own `.foundation`
 records and packet (quarantined, never deleted; an earlier quarantine of the same
