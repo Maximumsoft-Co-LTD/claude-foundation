@@ -1,5 +1,5 @@
 import {
-  lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync
+  lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync
 } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname, join, relative, resolve } from "node:path";
@@ -9,15 +9,6 @@ const rows = (value) => Array.isArray(value) ? value : [];
 const escape = (value) => String(value ?? "").replace(/[\\`*_[\]<>]/g, "\\$&");
 export const isInvestigationReport = (path) =>
   /^openspec\/investigations\/[^/]+\.report\.md$/.test(path);
-
-export function isOwnedInvestigationReport(root, path) {
-  if (!isInvestigationReport(path)) return false;
-  try {
-    const absolute = join(realpathSync(root), path);
-    return realpathSync(absolute) === absolute && lstatSync(absolute).isFile() &&
-      readFileSync(absolute, "utf8").startsWith(MARKER);
-  } catch { return false; }
-}
 
 // Everything under openspec/investigations/ is investigation output, not a
 // discoverable project source: records, generated reports, and notes authored

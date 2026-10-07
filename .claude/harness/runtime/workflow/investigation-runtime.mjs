@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
+import { sortedJson } from "../core/trust.mjs";
 import { inspectRepositoryIntelligence } from "./validation/repository-intelligence.mjs";
 import {
   investigationDiscoveryExclusions, isInvestigationReport, writeInvestigationReport
@@ -39,18 +40,9 @@ export function investigationRecordTemplate() {
   };
 }
 
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") return Object.fromEntries(
-    Object.keys(value).sort().filter((key) => value[key] !== undefined)
-      .map((key) => [key, canonical(value[key])])
-  );
-  return value;
-}
-
 function digest(value, domain = "foundation-investigation:1") {
   return createHash("sha256").update(`${domain}\0`)
-    .update(JSON.stringify(canonical(value))).digest("hex");
+    .update(sortedJson(value)).digest("hex");
 }
 
 function within(root, candidate) {

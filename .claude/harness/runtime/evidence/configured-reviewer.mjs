@@ -562,13 +562,6 @@ export function spawnCapturedAsync(command, args, options = {}) {
   });
 }
 
-export function runClaudeReviewOperation(
-  context, config, changeId, workspace, packet, forbiddenSessionIds
-) {
-  return driveReviewSteps(runClaudeReviewSteps(
-    context, config, changeId, workspace, packet, forbiddenSessionIds), context.spawn);
-}
-
 export function* runClaudeReviewSteps(
   context, config, changeId, workspace, packet, forbiddenSessionIds
 ) {

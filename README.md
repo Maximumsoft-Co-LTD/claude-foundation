@@ -799,20 +799,13 @@ you to.
   assurance; those outcomes do not override an explicit user decision. Apply
   still refuses conflicts and uncommitted edits on touched target paths — it
   names the clobbered paths instead of letting the last writer win.
-- Land is always allowed for stacked changes: you never commit one landed
-  change before the next one lands. A later change merges an earlier change's
-  landed, uncommitted diff into its sandbox (the harness does it when the
-  merge is clean, the agent when both edited the same lines), proves again
-  what changed, and lands without overwriting the earlier landed work.
-- Apply uses backups and a journal; an interrupted Land can be retried.
 - Land warns — without blocking — when the target is checked out on
   `main`/`master`; every land guard stays commit-based.
-- Land never commits, pushes, or opens a pull request. Only an explicit optional
-  `/deliver` grants narrow authority to commit the proven projection in an
-  isolated feature branch, push it, and open or reuse a verified PR; workers
-  never infer that authority. Otherwise commit and push need your direct
-  instruction: during Build or Prove an uninstructed `git commit`/`git push`
-  from the main checkout does not run and becomes a question for you.
+- Land is a journaled, resumable apply that allows stacked changes and never
+  commits, pushes, or opens a pull request; only an explicit `/deliver` or your
+  direct instruction does. See [the Land contract](WORKFLOW.md#land-change),
+  [`/deliver`](WORKFLOW.md#deliver-change-optional), and
+  [authority from your words](WORKFLOW.md#authority-from-the-users-words).
 - `protect-secrets.sh` and `lint.sh` are enabled by default. Neither stops the
   agent: a secret read shows a redacted copy (keys and layout, every value
   `<redacted>`), a search that could reach secret files skips them or lists only

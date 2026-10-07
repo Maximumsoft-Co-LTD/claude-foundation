@@ -137,8 +137,6 @@ const RULES = {
     every(rows(source.uiStates), ["accessibility"]) ? result([], ["uiStates[].accessibility"]) : null
 };
 
-export const DERIVABLE_DIMENSIONS = Object.freeze(Object.keys(RULES));
-
 export function deriveDiscoveryCoverage(source, requiredDimensions = []) {
   if (source?.version !== 4) return source;
   const discovery = source.discovery === undefined ? {} : source.discovery;

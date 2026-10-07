@@ -223,23 +223,6 @@ export function renderDesignOverview(draft) {
   return parts.join("\n\n");
 }
 
-// A human view of tasks.md; the ledger's one-line format stays machine-owned.
-export function renderTaskOverview(draft) {
-  const tasks = draft.tasks || [];
-  if (tasks.length < 2) return "";
-  const claimToKey = new Map((draft.claims || []).map((claim) => [claim.id, claim.requirementKey]));
-  const rows = tasks.map((task) => {
-    const requirements = new Set((task.claims || []).map((claim) => claimToKey.get(claim)).filter(Boolean));
-    return `| ${task.id} | ${cell(task.outcome)} | ${cell((task.dependsOn || []).join(", ") || "—")} | ` +
-      `${requirements.size} |`;
-  });
-  const edges = tasks.flatMap((task) => (task.dependsOn || []).map((dependency) =>
-    `  ${dependency} --> ${task.id}`));
-  return "## Task overview\n\n| Task | Outcome | Depends on | Requirements |\n|---|---|---|---|\n" +
-    rows.join("\n") +
-    (edges.length ? `\n\n\`\`\`mermaid\ngraph TD\n${edges.join("\n")}\n\`\`\`` : "");
-}
-
 // Fill the file map's Tasks column from each task's [paths:] scope.
 export function fileMapWithTasks(fileMap, tasks = []) {
   if (!Array.isArray(fileMap)) return fileMap;

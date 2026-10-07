@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {
   MANUAL_APPLY_STATUS,
-  defaultManualRecoveryDecision,
+  manualRecoveryDecision,
   recoverApplyJournal,
   recoverPendingApplyOperation,
   settleCurrentApplyRecovery
@@ -31,7 +31,7 @@ function fixture() {
 assert.deepEqual(MANUAL_APPLY_STATUS, [
   "rolling-back", "manual-recovery", "recovering-backup", "settling-current"
 ]);
-const decision = defaultManualRecoveryDecision("/transactions/tx");
+const decision = manualRecoveryDecision("/transactions/tx");
 assert.equal(decision.kind, "manual-recovery");
 assert.equal(decision.recommended, "keep-current");
 assert.equal(decision.automaticRecovery, "keep-current");
