@@ -1042,7 +1042,7 @@ test("change amend installs atomically and restores files and state on validatio
   }
 });
 
-test("a verify-only amend keeps a passing receipt whose contract did not change", (t) => {
+function amendVerifyOnlySameContract(t, lintFingerprint) {
   // The real contract fingerprint covers claims and policy, not task verify
   // commands, so a verify-only amendment leaves it unchanged.
   const root = mkdtempSync(join(tmpdir(), "verify-amend-same-"));
@@ -1076,7 +1076,7 @@ test("a verify-only amend keeps a passing receipt whose contract did not change"
   const receipts = join(root, ".foundation", "receipts", id);
   mkdirSync(receipts, { recursive: true });
   const lintReceipt = `${JSON.stringify({ provider: "lint", status: "pass",
-    contractFingerprint: contractFingerprint() })}\n`;
+    contractFingerprint: lintFingerprint || contractFingerprint() })}\n`;
   writeFileSync(join(receipts, "lint.json"), lintReceipt);
   writeFileSync(join(receipts, "test.json"), `${JSON.stringify({ provider: "test",
     status: "fail", contractFingerprint: contractFingerprint() })}\n`);
@@ -1128,7 +1128,19 @@ test("a verify-only amend keeps a passing receipt whose contract did not change"
   assert.equal(state.contractRevision, 1);
   assert.match(readFileSync(join(change, "tasks.md"), "utf8"), /verify: `npm test`$/m);
   assert.equal(readFileSync(join(receipts, "lint.json"), "utf8"), lintReceipt,
-    "the passing receipt is kept as it was");
+    "the receipt is left as it was");
+  return state.amendments.at(-1).invalidation.proofRecovery.providers;
+}
+
+test("a verify-only amend keeps a passing receipt whose contract did not change", (t) => {
+  const providers = amendVerifyOnlySameContract(t);
+  assert.ok(providers.preserved.includes("lint"));
+});
+
+test("a verify-only amend reruns a receipt already stale for the unchanged contract", (t) => {
+  const providers = amendVerifyOnlySameContract(t, "an-older-contract");
+  assert.ok(!providers.preserved.includes("lint"), "a stale receipt is not reported preserved");
+  assert.ok(providers.rerun.includes("lint"));
 });
 
 test("a verify-only change amend reruns that task's evidence and keeps the rest", (t) => {
