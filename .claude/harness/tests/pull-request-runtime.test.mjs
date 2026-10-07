@@ -975,9 +975,24 @@ test(`review follow-up delivery ${scenario === "open" ? "updates the open pull r
   assert.deepEqual(rerun.pullRequests[0].followedUpBy, ["booking-review-fix"]);
   assert.equal(pullRequests.length, 1, "no second pull request");
   assert.equal(pushes.length, 2, "an idempotent re-run never pushes");
+  // A second review round citing the same pull request updates it again,
+  // building on the newest follow-up rather than opening another one.
+  archiveChange("booking-second-review", {
+    "src/booking.js": "export const booking = 'reviewed twice';\n"
+  }, "Address the second round on https://github.com/acme/booking/pull/42.");
+  const second = await runtime.advance("booking-second-review");
+  assert.equal(second.action, "DONE", JSON.stringify(second));
+  assert.equal(second.followUp.mode, "update-existing");
+  assert.equal(second.followUp.of, "booking-review-fix");
+  assert.equal(pullRequests.length, 1, "a second follow-up opens no new pull request");
+  const secondHead = remote["change/booking-flow"];
+  assert.equal(checkedGit(["rev-parse", `${secondHead}^`], root), head);
+  const chained = await runtime.advance("booking-flow");
+  assert.deepEqual(chained.pullRequests[0].followedUpBy,
+    ["booking-review-fix", "booking-second-review"]);
   // History no recorded delivery accounts for still fails closed, even when
   // it descends from the delivered commit.
-  remote["change/booking-flow"] = checkedGit(["commit-tree", `${head}^{tree}`, "-p", head,
+  remote["change/booking-flow"] = checkedGit(["commit-tree", `${secondHead}^{tree}`, "-p", secondHead,
     "-m", "foreign"], root);
   await assert.rejects(runtime.advance("booking-flow"),
     /pull-request read-back does not match the delivered commit/);

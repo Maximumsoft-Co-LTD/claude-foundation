@@ -601,6 +601,12 @@ assert_contains "a negated push instruction stays the question" \
 } > "$TMP/answered-git.jsonl"
 assert_eq "a yes to the commit question lets the commit run" "" \
   "$(git_with answered-git "$TMP/project" "git commit -am wip" build)"
+assert_contains "a yes to the commit question never covers a push" \
+  "$(git_with answered-git "$TMP/project" "git commit -am wip && git push" build)" \
+  'ASK_USER: git commit and git push from the main checkout'
+assert_contains "a yes to a Build question does not carry into Prove" \
+  "$(git_with answered-git "$TMP/project" "git commit -am wip" prove)" \
+  'ASK_USER: git commit from the main checkout during prove'
 out="$(git_with no-git-request "$TMP/workspace" "git commit -am wip" build)"
 assert_not_contains "a commit inside the isolated workspace is not a main-checkout question" \
   "$out" 'ASK_USER'

@@ -786,7 +786,8 @@ export function createPullRequestRuntime({
   function priorReceipts(id) {
     if (!existsSync(deliveriesRoot)) return [];
     return readdirSync(deliveriesRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && entry.name !== id)
+      .filter((entry) => entry.isDirectory() && entry.name !== id &&
+        existsSync(receiptPath(entry.name)))
       .map((entry) => readJson(receiptPath(entry.name), null))
       .filter((receipt) => receipt?.version === DELIVERY_RECEIPT_SCHEMA_VERSION);
   }
@@ -797,8 +798,18 @@ export function createPullRequestRuntime({
   // of opening a second one. Anything else opens a new pull request and says
   // why. The binding is checkpointed so a resumed delivery never re-decides.
   function bindFollowUp(id, provider, sources) {
-    const candidates = followUpDeliveryCandidates({
+    // A pull request carries its original delivery and every follow-up that
+    // updated it; bind to the newest receipt in that chain, once per PR.
+    const byPullRequest = new Map();
+    for (const row of followUpDeliveryCandidates({
       changeId: id, ...sources, receipts: priorReceipts(id)
+    })) {
+      const key = pullRequestUrlKey(row.pullRequest?.url);
+      byPullRequest.set(key, [...(byPullRequest.get(key) || []), row]);
+    }
+    const candidates = [...byPullRequest.values()].map((rows) => {
+      const origin = rows.find((row) => row.followUp?.mode !== "update-existing") || rows[0];
+      return followUpSuccessors(origin).at(-1) || origin;
     });
     if (candidates.length === 0) return null;
     if (candidates.length > 1) return {

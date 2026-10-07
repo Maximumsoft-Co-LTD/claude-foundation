@@ -429,8 +429,11 @@ function gitPublicationFromMainCheckout(command, workspace, environment, inspect
       pinnedWorkspaceCommand(command, workspace, environment, inspection, "build")?.violation === null))
     return false;
   const requested = requestedGitPublication(exchange.latest);
-  const answered = isApprovalReply(exchange.latest) &&
-    exchange.previousTurn.includes("from the main checkout during");
+  // A yes covers exactly the operations that question named.
+  const asked = /ASK_USER: (.+?) from the main checkout during (build|prove)\b/
+    .exec(exchange.previousTurn || "");
+  const answered = Boolean(asked) && asked[2] === phase && isApprovalReply(exchange.latest) &&
+    operations.every((operation) => asked[1].split(" and ").includes(operation));
   if (answered || operations.every((operation) => requested[operation.slice(4)])) {
     recordAudit({ phase, tool, mode, changeId: recorded?.changeId || null,
       outcome: "user-instructed", reason: `${operations.join(", ")} on the user's instruction`,

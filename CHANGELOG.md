@@ -85,8 +85,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the guard's delivery question, now runs `deliver advance` as `/deliver`
   instead of turning it into a question.
 
-### Changed
-
 - One authority rule for the user's chat words (`AGENT.md`, WORKFLOW.md
   "Authority from the user's words"). A reply such as "ลุยเลย", "ทำเลย",
   "ทำไปเลย", or "go ahead" to the spec or amendment question is approval and is
@@ -108,8 +106,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A harness-executed provider that failed and then passes on unchanged content
   is recorded as a flake (`status: fail`, `flake` evidence) and needs a repair;
   resuming unchanged no longer turns it into proof.
-
-### Changed
 
 - The recovery ladder asks after three unchanged rounds (agent repair,
   `TRY_ALTERNATE_APPROACH`, then a decision with `repetition` evidence). A
