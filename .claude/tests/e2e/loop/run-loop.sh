@@ -23,7 +23,7 @@
 #
 # Phase verdicts: FAIL only when a deterministic assert breaks (suite exits 1);
 # a claude process failure (timeout, budget, nonzero exit) is INCONCLUSIVE and
-# stops the chain without failing the suite, matching run-e2e.sh's stance.
+# stops the chain without failing the suite.
 
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"

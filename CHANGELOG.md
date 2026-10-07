@@ -46,7 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   suite and mutation evidence before publishing.
 - Removed unused repository files: the v2 HTML release notes, the
   unreferenced `examples/solar-system`, and this repository's own legacy
-  `.workflow/` index. Consumer `.workflow/` migration is unchanged.
+  `.workflow/` index. Consumer `.workflow/` migration is unchanged. Unrun test
+  wrappers (`run-host-adapter`, `run-review-assurance`, `run-root-source-validation`,
+  `run-feedback-diagnostics`), the ledger test for the removed `ledger-prune.sh`,
+  and the retired `.workflow` e2e runner with its judge and prompts are removed.
 - Investigate acknowledges discovered sources automatically and still hashes
   them for freshness; the `inspect-sources` round is gone. Facts and options
   must cite an inventoried source, and the report lists discoveries no fact
