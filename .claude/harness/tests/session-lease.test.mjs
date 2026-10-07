@@ -304,6 +304,25 @@ test("a parallel group runs on harness-held leases; the parent only spawns and w
   assert.match(issued.instructions.join(" "), /Nobody acquires or releases a lease or edits tasks\.md/);
 });
 
+test("a parallel group that cannot lease every worker returns the leases it took", () => {
+  const calls = [];
+  const runtime = createSessionLeaseRuntime({
+    stableHash, loadRuntime: () => ({}), activeChangeLeases: () => [], release: () => {},
+    acquire: (id, taskId) => {
+      if (taskId === "T002") throw new Error("T002 is held");
+      calls.push(["acquire", taskId]);
+      return { leaseId: `lease-${taskId}` };
+    },
+    discard: (id, taskId, owner) => { calls.push(["discard", taskId, owner]); }
+  });
+  const group = { action: "EDIT", tasks: [{ id: "T001" }, { id: "T002" }],
+    execution: { mode: "parallel", leases: [{ taskId: "T001" }, { taskId: "T002" }] } };
+  assert.throws(() => runtime.issue("demo", group), /T002 is held/);
+  assert.deepEqual(calls, [
+    ["acquire", "T001"], ["discard", "T001", sessionLeaseOwner("demo", "T001", stableHash)]
+  ]);
+});
+
 test("a no-lease session handoff records a harness-verified result for each passing task", (t) => {
   const root = workspace(t);
   writeFileSync(join(root, "openspec", "changes", "demo", "tasks.md"),

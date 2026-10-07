@@ -306,11 +306,20 @@ export function createSessionLeaseRuntime({
   // settles each on resume (verify, tick, release, scope check). The parent
   // only spawns workers and waits; nobody acquires, releases, or ticks.
   function issueGroup(id, value) {
-    const managedLeases = value.execution.leases.map((worker) => {
-      const owner = sessionLeaseOwner(id, worker.taskId, stableHash);
-      const granted = acquire(id, worker.taskId, { owner }, { quiet: true });
-      return { taskId: worker.taskId, owner, leaseId: granted.leaseId, managedBy: "harness" };
-    });
+    const managedLeases = [];
+    try {
+      for (const worker of value.execution.leases) {
+        const owner = sessionLeaseOwner(id, worker.taskId, stableHash);
+        const granted = acquire(id, worker.taskId, { owner }, { quiet: true });
+        managedLeases.push({ taskId: worker.taskId, owner, leaseId: granted.leaseId, managedBy: "harness" });
+      }
+    } catch (error) {
+      // A partial group never runs; return the leases it already took.
+      for (const lease of managedLeases) {
+        try { discard(id, lease.taskId, lease.owner); } catch { /* the next advance renews or reclaims it */ }
+      }
+      throw error;
+    }
     return {
       ...value,
       execution: {
