@@ -828,7 +828,20 @@ repositories remain unchanged. Re-entering `/land` resumes the same grant and
 skips already verified nodes; it never requires the user to assemble a journal,
 grant, commit, recovery command, or archive command. A node counts as verified
 only while its sandbox projection is unchanged: work committed or edited in a
-repository sandbox after an earlier delivery is delivered again on resume.
+repository sandbox or in the root sandbox after an earlier delivery is delivered
+again on resume. A path that earlier delivery did not write is applied only
+while the target still holds its base content (or already the sandbox's bytes),
+so a target edit made since is never overwritten.
+
+A declared nested repository's pointer (its gitlink) is never root content.
+When the root sandbox moves one (committed or staged), Land stops before any
+target write; the move is never dropped silently. For a repository the change
+selects, this is an agent repair (`ROOT_POINTER_MOVED`): the agent brings the
+commit into that repository's sandbox, restores the root pointer to its base,
+and resumes; `/deliver` then sets the root pointer to the delivered commit. For
+a repository the change does not select, selecting it widens scope, so the user
+gets the `repository-pointer-change` decision: land the pointer through that
+repository, restore the pointer and land the rest, or pause.
 
 Before a multi-repository change is archived, Land reads each writable selected
 repository's target checkout, not its own records: every path the repository

@@ -122,7 +122,7 @@ export function createRepositoryDeliverySaga({
   root, transactions, loadRuntime, saveRuntime, selectedRepositories,
   git, gitHead, fileDigest, directoryHash, pathInside, readJson, writeJson,
   stableHash, proofPath, now, prepareRoot, executeRoot, verifyRoot,
-  cleanupRoot, fail, checkpoint = () => {}
+  reapplyRoot = () => null, cleanupRoot, fail, checkpoint = () => {}
 }) {
   const sagaPath = (id) => join(transactions, id, "repository-delivery.json");
   // repositoryId -> path -> entry of a delivery the sandbox has since outgrown.
@@ -324,6 +324,23 @@ export function createRepositoryDeliverySaga({
     return false;
   }
 
+  // The root target still holds its earlier delivery, but root sandbox work
+  // proven after it (a repair, a follow-up, a resumed Land) would otherwise
+  // never land. `reapplyRoot` returns the full root projection when it differs
+  // from the delivered one. A path that delivery never wrote must still be the
+  // base or already hold the sandbox bytes: Land never overwrites a target edit.
+  function rootGrowth(id, state, repository, verification) {
+    const entries = reapplyRoot(id, state, verification);
+    if (!entries) return null;
+    if (state.workspace?.mode === "worktree" && state.workspace.baseHead) {
+      const prior = new Map((verification.journal?.entries || [])
+        .map((entry) => [entry.path, entry]));
+      assertChildTargetCompatible({ git, journalRuntime: journalFor(repository) },
+        repository, { baseHead: state.workspace.baseHead }, entries, prior);
+    }
+    return entries;
+  }
+
   function apply(id) {
     let state = loadRuntime(id);
     const selected = selectedRepositories(id, state);
@@ -350,6 +367,9 @@ export function createRepositoryDeliverySaga({
           if (!verification.valid)
             throw new RepositoryDeliveryError(
               `root delivered projection drifted: ${verification.reason}`);
+          const grown = rootGrowth(id, state, repository, verification);
+          if (grown)
+            prepared.set(repository.id, { journal: prepareRoot(id, state, grown), root: true });
           continue;
         }
         prepared.set(repository.id, { journal: prepareRoot(id, state), root: true });

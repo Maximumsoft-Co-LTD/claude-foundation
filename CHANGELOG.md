@@ -248,6 +248,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Multi-repository Land re-delivers work committed or edited in a repository
   sandbox after an earlier delivery, and isolation refuses an uninitialized
   submodule instead of forking its superproject.
+- Multi-repository Land also re-projects work the root sandbox gained after an
+  earlier delivery (a repair, a follow-up, a resumed Land or Deliver) instead
+  of stopping with `LAND_PROJECTION_MISSING`; a newly touched root path lands
+  only while the target still holds its base content. A submodule pointer the
+  root sandbox moved now stops Land before any write instead of being dropped
+  silently: an agent repair (`ROOT_POINTER_MOVED`) for a selected repository,
+  the user's `repository-pointer-change` decision for one the change does not
+  select.
 - Abandon and archive back up every unreachable sandbox commit
   (`commits.bundle`), the sandbox delta (`changes.patch`), and unlanded files
   to `.foundation/backups/<id>/<timestamp>/` before removing a sandbox.

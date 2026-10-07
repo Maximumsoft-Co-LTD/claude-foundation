@@ -21,6 +21,9 @@ import { legacyRepositoryLandTransaction } from "./land-runtime.mjs";
 import { rejectedPaths } from "./sandbox-runtime.mjs";
 import { writeSpecBefore } from "./land-undo.mjs";
 import {
+  ROOT_POINTER_MOVED, repositoryPointerStop, rootPointerMoves, rootPointerRepairMessage
+} from "./land-verification.mjs";
+import {
   landedChangeSyncStop, landedTargetPaths, otherLandedOutput, parseRestoreTargetPaths,
   replayLandedEdit, restorableTargetPaths, targetConflictStop, targetEditCarried,
   targetEditSyncStop
@@ -885,6 +888,13 @@ export function createApplyRuntime({
       });
     },
     verifyRoot: verifyAppliedProjection,
+    // The single-repository reapply rule, for the root of a composite change:
+    // the whole projection again, or null when the delivered one is current.
+    reapplyRoot: (id, state, verification) => {
+      const entries = buildReapplyEntries(id, state, verification.journal);
+      return projectionHash(stableHash, entries) === state.workspace.apply.projectionHash
+        ? null : entries;
+    },
     cleanupRoot: cleanupApplyTransaction,
     fail
   });
@@ -1117,9 +1127,44 @@ export function createApplyRuntime({
     saveRuntime(journal);
   }
 
+  // A declared repository's pointer moved in the root sandbox is excluded from
+  // the root projection; it becomes a decision before any target write instead
+  // of a silent drop.
+  function assertRootPointersUnmoved(id, state) {
+    if (state.workspace?.mode !== "worktree" || !state.workspace.path ||
+        legacyRepositoryLandTransaction(state)) return;
+    const paths = nestedRepositoryPaths(id, state);
+    if (!paths.length) return;
+    const raw = git(["diff", "--cached", "--raw", "-z", "--no-abbrev", "--no-renames",
+      sandboxBase(state), "--", ...paths], state.workspace.path);
+    if (raw.status !== 0)
+      fail(`cannot inspect repository pointers in the root sandbox: ${
+        String(raw.stderr || "").trim()}`);
+    const moves = rootPointerMoves(raw.stdout);
+    if (!moves.length) return;
+    const owners = new Map(selectedRepositories(id, state)
+      .filter((repository) => repository.id !== "root" && repository.relativePath)
+      .map((repository) => [repository.relativePath.replace(/\/+$/, ""), repository]));
+    // Selecting another repository widens scope: only that is the user's call.
+    const unselected = moves.filter((move) => !owners.has(move.path));
+    if (unselected.length) {
+      const stop = repositoryPointerStop({ changeId: id, moves: unselected });
+      blockWithDecision(id, stop.code, stop.decision);
+    }
+    fail(rootPointerRepairMessage({
+      changeId: id, rootSandbox: state.workspace.path,
+      moves: moves.map((move) => {
+        const repository = owners.get(move.path);
+        return { ...move, repositoryId: repository.id,
+          sandboxPath: state.repositories?.[repository.id]?.path || repository.workspacePath };
+      })
+    }), 1, { owner: "agent", boundary: "land-verification", code: ROOT_POINTER_MOVED });
+  }
+
   function applyArchiveWorkspace(id, readiness) {
     if (!["worktree", "copy"].includes(readiness.state.workspace?.mode))
       return readiness;
+    assertRootPointersUnmoved(id, readiness.state);
     measure("land.apply", () => {
       if (compositeRepositorySelection(selectedRepositories(id, readiness.state))) {
         // Legacy repository Land records already name commits applied by the

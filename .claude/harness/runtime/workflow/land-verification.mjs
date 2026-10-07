@@ -80,6 +80,78 @@ export function landVerificationMessage(id, findings) {
     `'claude-foundation advance ${id} --through archived'.`;
 }
 
+// A declared nested repository's gitlink is that repository's own pointer, so
+// the root projection never carries it. A pointer the root sandbox moved
+// (committed or staged) therefore cannot land as root content, and Land leaves
+// every target's HEAD and index unchanged, so it cannot land on its own either.
+// Rows come from `git diff --cached --raw -z --no-abbrev <base> -- <paths>`; a
+// removed or emptied gitlink is not a move (the shared sandbox keeps nested
+// repositories as empty placeholders).
+export function rootPointerMoves(raw) {
+  const tokens = String(raw || "").split("\0");
+  const moves = [];
+  for (let index = 0; index + 1 < tokens.length; index += 2) {
+    const [modes, path] = [tokens[index], tokens[index + 1]];
+    const [oldMode, newMode, from, to] = modes.replace(/^:/, "").split(" ");
+    if (newMode !== "160000" || !path || from === to) continue;
+    moves.push({ path, from: oldMode === "160000" ? from : null, to });
+  }
+  return moves;
+}
+
+export const REPOSITORY_POINTER_CHANGE = "repository-pointer-change";
+export const ROOT_POINTER_MOVED = "ROOT_POINTER_MOVED";
+
+// A moved pointer of a repository the change already selects is agent work:
+// the commit belongs in that repository's sandbox, where Land and Deliver carry
+// it, and the root pointer goes back to its base. No scope widens, so nobody is
+// asked. Each move carries `repositoryId` and `sandboxPath`.
+export function rootPointerRepairMessage({ changeId, rootSandbox, moves }) {
+  const steps = moves.map((move) => {
+    const restore = move.from
+      ? `git update-index --cacheinfo 160000,${move.from},${move.path}`
+      : `git rm --cached -q ${move.path}`;
+    return `  ${move.path} (repository '${move.repositoryId}'): in ${move.sandboxPath} run ` +
+      `'git merge --ff-only ${move.to}' (fetch ${move.to} into that repository first if it is ` +
+      `missing, or bring its changes in another way), then in ${rootSandbox} run '${restore}'`;
+  });
+  return `the root sandbox moves the pointer of selected repository path(s); a pointer is ` +
+    `never root content, and that repository's own sandbox carries its commits:\n${
+      steps.join("\n")}\nThen resume with 'claude-foundation advance ${changeId} --through ` +
+    "archived'; it proves what changed, lands the repository work, and '/deliver' sets the " +
+    "root pointer to the delivered commit.";
+}
+
+export function repositoryPointerStop({ changeId, moves }) {
+  const short = (commit) => commit ? commit.slice(0, 12) : "none";
+  const listed = moves.map((move) => `${move.path} (${short(move.from)} -> ${short(move.to)})`)
+    .join(", ");
+  return {
+    code: REPOSITORY_POINTER_CHANGE,
+    decision: {
+      kind: REPOSITORY_POINTER_CHANGE,
+      summary: `the root sandbox of '${changeId}' moves the pointer of declared repository ` +
+        `path(s) ${listed}. Land never commits or stages, so a pointer move cannot land as ` +
+        "root content; it is not dropped silently.",
+      paths: moves.map((move) => move.path),
+      moves,
+      options: [
+        { id: "deliver-through-repository", outcome: "Land the pointer through its " +
+          "repository: select that repository for this change (a semantic amendment that " +
+          "widens its scope), bring the target commit into its repository sandbox " +
+          "(.foundation/repository-sandboxes/<change>/<repository>), restore the root pointer " +
+          `to its base, then 'claude-foundation advance ${changeId} --through archived'. ` +
+          "'/deliver' sets the root pointer to the delivered repository commit." },
+        { id: "restore-pointer", outcome: "Drop the pointer move: restore each listed path " +
+          "to its base pointer in the root sandbox and land the remaining work with " +
+          `'claude-foundation advance ${changeId} --through archived'.` },
+        { id: "pause", outcome: "Change nothing and leave the sandbox and target as they are." }
+      ],
+      recommended: "deliver-through-repository"
+    }
+  };
+}
+
 // Composite selections only: a single-repository change is already bound by
 // its apply journal's verified projection. The isolated runtime bindings are
 // what this check reads, so they also decide whether it applies: an
