@@ -6,7 +6,8 @@
       "Bash(node .claude/harness/foundation.mjs *)",
       "Edit(/.foundation/sandboxes/**)",
       "Edit(/.foundation/repository-sandboxes/**)",
-      "Edit(/.foundation/drafts/**)"
+      "Edit(/.foundation/drafts/**)",
+      "Edit(/openspec/investigations/**)"
     ]
   },
   "hooks": {

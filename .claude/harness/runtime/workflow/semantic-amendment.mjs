@@ -110,9 +110,18 @@ export function taskContractOnlyAmendment(amendment) {
       Object.keys(row).every((field) => fields.includes(field)));
 }
 
-/** The shape `change amend --template` prints; the verify-only form leads. */
+/**
+ * The shape `change amend --template` prints; the verify-only form leads.
+ * `save` comes first: the host refuses a shell-written JSON file, while the
+ * file tool falls under the seeded `Edit(/.foundation/drafts/**)` rule.
+ */
 export function semanticAmendmentTemplate() {
   return {
+    save: "Write one form below (its value, without the form name) with the Write tool to " +
+      ".foundation/drafts/<change>-amendment.json; that path is pre-allowed and the tool " +
+      "creates the folder. Do not save it through the shell (heredoc, cat >, echo >): the " +
+      "host refuses those. Then run claude-foundation change amend <change> " +
+      ".foundation/drafts/<change>-amendment.json.",
     verifyOnly: {
       version: 1,
       reason: "Correct the verify command of an unfinished task",

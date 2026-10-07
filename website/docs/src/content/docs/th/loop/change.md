@@ -16,6 +16,8 @@ transaction
 
 งานทั่วไปเขียนแค่ intent, พฤติกรรมที่ต้องการ และ task โดยไม่ต้องใส่ `version`
 คำสั่ง `change start --template` แสดงรูปแบบนี้เป็นอันดับแรกในชื่อ `minimalDraft`
+โดยมี field `save` นำหน้า: agent เขียน draft ด้วย Write tool ไปที่
+`.foundation/drafts/<id>.json` (path ที่อนุญาตไว้ล่วงหน้า) เพราะ host ปฏิเสธ shell heredoc
 
 ```json
 {

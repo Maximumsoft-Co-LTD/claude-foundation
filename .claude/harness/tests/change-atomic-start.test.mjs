@@ -995,6 +995,27 @@ test("a verify whose known runner prints no countable result gets an advisory, n
   assert.match(output, /^ {2}verify advisory: task 'implement-bounded-result' verify runs 'go test'/m);
 });
 
+// Every paid scenario saved the draft with `cat > … <<'EOF'`, which the host
+// refuses; the save route has to sit in the output the agent copies from.
+test("the start template leads with the pre-allowed file-tool save route", (t) => {
+  const template = fixture(t).lifecycle.rapidStartTemplate();
+  assert.deepEqual(Object.keys(template).slice(0, 2), ["save", "minimalDraft"]);
+  assert.match(template.save, /Write tool/);
+  assert.match(template.save, /\.foundation\/drafts\/<id>\.json/);
+  assert.match(template.save, /not .*shell.*heredoc/);
+  assert.match(template.save, /claude-foundation change start \.foundation\/drafts\/<id>\.json/);
+});
+
+test("a saved whole template still starts without the save note becoming draft content", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, {
+    save: value.lifecycle.rapidStartTemplate().save,
+    ...minimalRapidV4()
+  });
+  assert.match(captureLog(() => value.lifecycle.startAtomic(value.draftPath)).output,
+    /^AGREED single-shot-change/m);
+});
+
 test("the start template shows repository binding only when the project declares repositories", (t) => {
   const plain = fixture(t).lifecycle.rapidStartTemplate();
   assert.equal(plain.minimalDraftRepositories, undefined);

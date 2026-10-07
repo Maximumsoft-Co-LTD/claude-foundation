@@ -16,7 +16,9 @@ the bookkeeping, and installs the result transactionally.
 
 For an ordinary change, write only the intent, the behavior, and the tasks, and
 leave `version` out. `change start --template` prints this form first as
-`minimalDraft`:
+`minimalDraft`, preceded by a `save` field: the agent writes the draft with its
+Write tool to `.foundation/drafts/<id>.json` (a pre-allowed path), because the
+host refuses a shell heredoc:
 
 ```json
 {

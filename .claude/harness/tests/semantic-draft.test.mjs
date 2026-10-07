@@ -929,7 +929,12 @@ test("a direct verify correction runs through change amend and leaves no staged 
 test("the amendment template leads with the verify-only form", () => {
   const template = semanticAmendmentTemplate();
   assert.deepEqual(Object.keys(template),
-    ["verifyOnly", "reopenCompleted", "removeUnfinished", "requirementChange"]);
+    ["save", "verifyOnly", "reopenCompleted", "removeUnfinished", "requirementChange"]);
+  // The host refuses a shell-written amendment; the file tool is pre-allowed.
+  assert.match(template.save, /Write tool to \.foundation\/drafts\/<change>-amendment\.json/);
+  assert.match(template.save, /not save it through the shell \(heredoc/);
+  assert.match(template.save,
+    /claude-foundation change amend <change> \.foundation\/drafts\/<change>-amendment\.json/);
   assert.equal(taskContractOnlyAmendment(template.verifyOnly), true);
   assert.equal(taskContractOnlyAmendment(template.reopenCompleted), true);
   assert.equal(taskContractOnlyAmendment(template.removeUnfinished), true);

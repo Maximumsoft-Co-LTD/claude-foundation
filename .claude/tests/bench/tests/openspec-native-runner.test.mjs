@@ -12,9 +12,9 @@ import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 
 import {
-  assertDisposableProject, backendLandArgs, collectNativeScorecard, discoverChangeId,
+  assertDisposableProject, BENCHMARK_VERIFY_AUTHORITY, backendLandArgs, collectNativeScorecard, discoverChangeId,
   externalAuthorityBoundary, guardrailOutcomes, hostFriction, observedOutcome, operationRowsInWindow,
-  mergeHostExecutions, parseHostOutput, pendingTaskCount,
+  mergeHostExecutions, oracleRepairPrompt, parseHostOutput, pendingTaskCount,
   provenLandReady, remainingTimeoutMs, runBenchmarkOracle, runClaude, terminalChangeId
 } from "../openspec-native/run.mjs";
 import { collectBenchmarkQuality } from "../openspec-native/quality.mjs";
@@ -178,6 +178,27 @@ test("a no-dispatch proven resume keeps its preflight change identity", () => {
 
 test("runner uses the registered internal Land operation", () => {
   assert.deepEqual(backendLandArgs("change"), ["land-advance", "change"]);
+});
+
+// "Run the canonical project test" sent the agent to raw `npm test` and
+// `node --test`, which consumers deliberately do not pre-allow.
+test("oracle repair verifies only through pre-allowed harness commands", () => {
+  const prompt = oracleRepairPrompt("change-a", ["boundary-zero", "no-collateral"]);
+  assert.match(prompt, /oracle failed: boundary-zero, no-collateral\./);
+  assert.match(prompt, /claude-foundation advance change-a --through build/);
+  assert.match(prompt, /checkCommand \(claude-foundation exec/);
+  assert.match(prompt, /claude-foundation advance change-a --through proven/);
+  assert.match(prompt, /Never run a test runner .* directly/);
+  assert.doesNotMatch(prompt, /canonical project test/);
+  assert.match(prompt, /Do not Land/);
+});
+
+test("initial benchmark authority keeps projectCommand as verify and runs checks via the harness", () => {
+  assert.match(BENCHMARK_VERIFY_AUTHORITY, /projectCommand as each draft task's verify value/);
+  assert.match(BENCHMARK_VERIFY_AUTHORITY, /only through each Build task's returned checkCommand/);
+  assert.match(BENCHMARK_VERIFY_AUTHORITY, /claude-foundation advance/);
+  assert.match(BENCHMARK_VERIFY_AUTHORITY, /never a raw test runner/);
+  assert.doesNotMatch(BENCHMARK_VERIFY_AUTHORITY, /canonical project test command/);
 });
 
 test("proven resume fast-path requires a passing backend Land check", () => {

@@ -1358,8 +1358,16 @@ export function createChangeLifecycle({
   // The minimal form leads; the full v4 template follows for richer drafts.
   // The decisions note travels with the template the agent already reads, so
   // recording unasked defaults costs no always-loaded instruction words.
+  // `save` leads because agents copy from this output: a shell-written JSON
+  // draft is refused by the host, while the file tool falls under the seeded
+  // `Edit(/.foundation/drafts/**)` rule.
   function rapidStartTemplate() {
     return {
+      save: "Write minimalDraft (filled in) with the Write tool to " +
+        ".foundation/drafts/<id>.json; that path is pre-allowed and the tool creates the " +
+        "folder. Do not save it through the shell (heredoc, cat >, echo >, mkdir chains): " +
+        "the host refuses those. Then run claude-foundation change start " +
+        ".foundation/drafts/<id>.json.",
       minimalDraft: minimalSemanticDraftTemplate(),
       minimalDraftCapability: "Optionally add a top-level capability to the minimal draft: a " +
         "short noun phrase naming the living spec, such as kanban-board. Omitted, the draft " +

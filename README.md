@@ -170,8 +170,10 @@ for approval on every harness step: `Bash(claude-foundation *)`,
 `Bash(.foundation/bin/claude-foundation *)`,
 `Bash(node .claude/harness/foundation.mjs *)`,
 `Edit(/.foundation/sandboxes/**)`,
-`Edit(/.foundation/repository-sandboxes/**)`, and `Edit(/.foundation/drafts/**)`
-(the Change draft). Project test runners get no rule: each Build task returns
+`Edit(/.foundation/repository-sandboxes/**)`, `Edit(/.foundation/drafts/**)`
+(the Change draft: `change start --template` leads with a `save` field telling
+the agent to write it with the Write tool, since the host refuses a shell heredoc),
+and `Edit(/openspec/investigations/**)` (the Investigate record). Project test runners get no rule: each Build task returns
 its verify as a `checkCommand` (`claude-foundation exec <change> --task <id> --
 <verify>`) that the CLI rule already covers. It adds only missing rules after
 your own, never removes or reorders entries, and a rerun adds nothing. The
@@ -198,7 +200,8 @@ also covers `Write`; edits elsewhere in the project stay denied):
 claude -p "/change <intent>" --allowedTools \
   "Bash(claude-foundation *)" "Bash(.foundation/bin/claude-foundation *)" \
   "Bash(node .claude/harness/foundation.mjs *)" "Edit(/.foundation/drafts/**)" \
-  "Edit(/.foundation/sandboxes/**)" "Edit(/.foundation/repository-sandboxes/**)"
+  "Edit(/.foundation/sandboxes/**)" "Edit(/.foundation/repository-sandboxes/**)" \
+  "Edit(/openspec/investigations/**)"
 ```
 
 Build checks run through `claude-foundation exec`, so test runners need no

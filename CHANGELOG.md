@@ -17,6 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Edit(/.foundation/drafts/**)` for the Change draft; upgrades append it after
   existing rules.
 
+- `change start --template` now leads with a `save` field: write the draft with
+  the Write tool to `.foundation/drafts/<id>.json` (pre-allowed), not a shell
+  heredoc, which the host refuses as expansion obfuscation. `change amend
+  --template` (`.foundation/drafts/<change>-amendment.json`) and `investigate
+  --template` (`openspec/investigations/<id>.json`) lead with the same field and
+  name the command that reads the file. The installer also seeds
+  `Edit(/openspec/investigations/**)`, appended after existing rules on upgrade,
+  so saving an investigation record never prompts. `/change` names the
+  same route, and the installer's headless hint grants the full seeded
+  allowlist instead of only the CLI rule.
+
 - Thai intents now trigger the same review, security, and migration routing as
   English. Thai terms such as ล็อกอิน, เข้าสู่ระบบ, รหัสผ่าน, สิทธิ์,
   โทเคนเข้าถึง, ชำระเงิน, จ่ายเงิน, ย้ายข้อมูล, ลบข้อมูล, ข้อมูลส่วนตัว, and

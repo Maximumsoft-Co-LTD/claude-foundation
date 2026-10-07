@@ -340,7 +340,8 @@ done
 SETTINGS_SRC="$SOURCE_PATH/.claude/settings.json"
 SETTINGS_DST="$TARGET_PATH/.claude/settings.json"
 # The shipped permissions.allow rules cover only the harness CLI, edits under
-# the isolated Build workspaces, and the Change draft directory; PreToolUse
+# the isolated Build workspaces, the Change draft directory, and Investigate's
+# record directory (openspec/investigations); PreToolUse
 # guards still run before them. Project checks need no rule: Build hands each
 # task's verify back as a `claude-foundation exec` command. With
 # the opt-out, merge from a copy of the template that carries no allow rules, so
@@ -554,4 +555,5 @@ if command -v git >/dev/null 2>&1 &&
   fi
 fi
 printf 'Next: describe the outcome with /change <intent>; the agent handles the workflow details.\n'
-printf 'Headless (claude -p): trust the workspace by running claude once interactively, or pass --allowedTools "Bash(claude-foundation *)".\n'
+printf 'Headless (claude -p): trust the workspace by running claude once interactively, or grant exactly the installed allowlist:\n'
+printf '  claude -p "/change <intent>" --allowedTools "Bash(claude-foundation *)" "Bash(.foundation/bin/claude-foundation *)" "Bash(node .claude/harness/foundation.mjs *)" "Edit(/.foundation/drafts/**)" "Edit(/.foundation/sandboxes/**)" "Edit(/.foundation/repository-sandboxes/**)" "Edit(/openspec/investigations/**)"\n'

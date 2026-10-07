@@ -723,6 +723,25 @@ export function backendLandArgs(changeId) {
   return ["land-advance", changeId];
 }
 
+// Raw test runners are deliberately not pre-allowed in consumers, so the
+// initial and repair routes verify only through harness commands the seeded
+// rules cover; projectCommand is the draft's `verify` value, not a shell step.
+export const BENCHMARK_VERIFY_AUTHORITY = "Use .foundation-benchmark.json projectCommand " +
+  "as each draft task's verify value; do not probe alternate runner paths, globs, or " +
+  "reporters. Run verification only through each Build task's returned checkCommand " +
+  "(claude-foundation exec ...) and claude-foundation advance, never a raw test runner " +
+  "(npm test, node --test, pytest), which is not pre-allowed.";
+
+export function oracleRepairPrompt(changeId, failedCases) {
+  return `Resume existing change ${changeId}. The deterministic pre-Land oracle failed: ` +
+    `${failedCases.join(", ")}. Run claude-foundation advance ${changeId} --through build, ` +
+    "repair the complete root cause and adjacent cases as one batch, verify each task only " +
+    "through its returned checkCommand (claude-foundation exec ...), then run " +
+    `claude-foundation advance ${changeId} --through proven. Never run a test runner ` +
+    "(npm test, node --test, pytest) directly; it is not pre-allowed. Do not Land; the " +
+    "backend owns the oracle and Land boundary.";
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const scenario = required(args.scenario, "--scenario");
@@ -801,7 +820,7 @@ async function main() {
       const selfReviewAuthorized = args["test-self-review"] === "true";
       const landAuthorized = args["test-land"] === "true";
       const benchmarkAuthority = [
-        "Use .foundation-benchmark.json projectCommand as the sole canonical project test command; do not probe alternate runner paths, globs, or reporters.",
+        BENCHMARK_VERIFY_AUTHORITY,
         "Use change start --template as the sole draft schema contract; do not inspect managed .claude/harness files or openspec schema/templates. Keep tasks, claims, and critical cases to the smallest set that proves this scenario, let the backend derive mechanical IDs and unambiguous bindings, and apply any returned repair plan as one batch.",
         "Before Prove, cover zero, negative, fractional, finite oversized, non-finite, non-numeric/coercible, production-entry, no-collateral, and return-shape partitions when they apply to this recent-window defect.",
         selfReviewAuthorized
@@ -857,7 +876,7 @@ async function main() {
       const repair = await runClaude({
         project,
         prompt: [
-          `Resume existing change ${discoveredChangeId}. The deterministic pre-Land oracle failed: ${failedCases.join(", ")}. Return to Build, repair the complete root cause and adjacent cases as one batch, run the canonical project test, then Prove again. Do not Land; the backend owns the oracle and Land boundary.`,
+          oracleRepairPrompt(discoveredChangeId, failedCases),
           "Use packets and returned repair plans only; do not inspect managed harness or schema files."
         ].join("\n\n"),
         claudeBin: args["claude-bin"] || "claude",
