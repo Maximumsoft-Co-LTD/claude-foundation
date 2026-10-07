@@ -36,8 +36,8 @@ const CASES = [
     sourcePath: ".claude/harness/runtime/core/shell-mutation-policy.mjs",
     expectedKiller: "CASE-LAND-DELIVERY-AUTHORITY",
     detector: HOOK_DETECTOR,
-    before: "if (phase === \"land\" && environment.FOUNDATION_LAND_TRANSACTION !== \"1\" &&\n",
-    after: "if (phase === \"land\" && environment.FOUNDATION_LAND_TRANSACTION !== \"1\" && command === null &&\n"
+    before: "if (phase === \"land\" && environment.FOUNDATION_LAND_TRANSACTION !== \"1\")\n",
+    after: "if (phase === \"land\" && environment.FOUNDATION_LAND_TRANSACTION !== \"1\" && command === null)\n"
   },
   {
     id: "MUT-BUILD-ABSOLUTE-OPERAND-ALLOWED",
