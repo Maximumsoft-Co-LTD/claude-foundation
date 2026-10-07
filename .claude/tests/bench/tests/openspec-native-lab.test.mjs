@@ -8,7 +8,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 
 import {
-  cleanRoomCommandContract, directoryDigest, runScenarioLab, shellCheck
+  cleanRoomCommandContract, directoryDigest, installedAllowedTools, runScenarioLab, shellCheck
 } from "../openspec-native/lab.mjs";
 
 function write(path, value) {
@@ -140,4 +140,23 @@ test("clean-room contract bounds execution and reports missing tools as unavaila
   });
   assert.equal(result.status, "unavailable");
   assert.equal(result.reason, "command-unavailable");
+});
+
+// The paid lab passed only `Bash(claude-foundation *)`, so the installed CLI
+// shim `.foundation/bin/claude-foundation` was scored as a product prompt even
+// though the shipped install pre-allows it in a trusted workspace.
+test("paid lab grants exactly the allowlist the installer seeded", () => {
+  const project = mkdtempSync(join(tmpdir(), "bench-lab-allow-"));
+  try {
+    assert.deepEqual(installedAllowedTools(project), ["Bash(claude-foundation *)"]);
+    const shipped = JSON.parse(readFileSync(new URL("../../../settings.json", import.meta.url),
+      "utf8")).permissions.allow;
+    write(join(project, ".claude/settings.json"), JSON.stringify({
+      permissions: { allow: [...shipped, "", 7] }
+    }));
+    assert.deepEqual(installedAllowedTools(project), shipped);
+    assert.ok(installedAllowedTools(project).includes("Bash(.foundation/bin/claude-foundation *)"));
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+  }
 });

@@ -212,6 +212,23 @@ export function preserveLabEvidence({
   return value;
 }
 
+// A trusted workspace applies the allowlist the installer seeded; a fresh
+// disposable consumer is untrusted, so headless Claude ignores it. Hand the
+// host exactly those installed rules so a measured permission prompt is one
+// the shipped install would raise, not one the lab caused by granting less
+// (for example `.foundation/bin/claude-foundation`, the installed CLI shim).
+export function installedAllowedTools(project) {
+  try {
+    const allow = JSON.parse(readFileSync(join(project, ".claude/settings.json"), "utf8"))
+      ?.permissions?.allow;
+    const rules = Array.isArray(allow)
+      ? allow.filter((rule) => typeof rule === "string" && rule.trim()) : [];
+    return rules.length ? rules : ["Bash(claude-foundation *)"];
+  } catch {
+    return ["Bash(claude-foundation *)"];
+  }
+}
+
 export function runScenarioLab({ matrixPath, scenarioId, outputRoot = DEFAULT_RESULTS,
   installer = join(ROOT, "install.sh"), runner = join(HERE, "run.mjs"),
   tempParent = tmpdir(), keepProject = false, runId = null, resumeProject = null }) {
@@ -248,10 +265,11 @@ export function runScenarioLab({ matrixPath, scenarioId, outputRoot = DEFAULT_RE
   if (scenario.execution === "paid")
     args.push("--test-self-review", "true", "--test-land", "true",
       // A fresh disposable consumer is never a trusted workspace, so headless
-      // Claude ignores its settings allow-list. Pass the installer's documented
-      // headless route (edits plus the harness CLI) instead of trusting it.
+      // Claude ignores its settings allow-list. Pass the documented headless
+      // route: edits plus exactly the installed allowlist.
       "--claude-arg", "--permission-mode", "--claude-arg", "acceptEdits",
-      "--claude-arg", "--allowedTools", "--claude-arg", "Bash(claude-foundation *)");
+      "--claude-arg", "--allowedTools",
+      ...installedAllowedTools(prepared.project).flatMap((rule) => ["--claude-arg", rule]));
   const startedAt = new Date().toISOString();
   const source = sourceRevision();
   let result;

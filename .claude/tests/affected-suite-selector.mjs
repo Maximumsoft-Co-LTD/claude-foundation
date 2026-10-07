@@ -30,6 +30,7 @@ const REVIEW = [
   "risk-tiered review contract",
   "configured reviewer adapters",
   "review guard reconciliation",
+  "review history recovery",
   "bounded review repair closure"
 ];
 const LAND = [
@@ -78,6 +79,8 @@ const RULES = [
   [/runtime\/composition\//, [
     "composition-root wiring", "harness reliability gaps", "change loop seams"
   ]],
+  [/^\.claude\/settings\.json$|^\.claude\/commands\/|^\.claude\/harness\/AGENT\.md$|advance-runtime/,
+    ["permission allowlist"]],
   [/run-feedback-review-tests/, ["feedback review"]],
   [/run-land-surface-tests/, ["land surface"]],
   [/run-target-drift-tests/, ["target drift"]],

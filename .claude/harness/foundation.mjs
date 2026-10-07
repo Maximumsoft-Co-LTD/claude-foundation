@@ -452,7 +452,6 @@ const {
   stableHash,
   reviewReceiptBinding,
   now,
-  blockWithDecision,
   fail: die
 });
 const hostAttestation = createHostAttestationRuntime({
@@ -2155,6 +2154,9 @@ const abandonRuntime = createAbandonRuntime({
     handoffs: HANDOFFS,
     authority: AUTHORITY,
     reviews: REVIEWS,
+    instructionManifests: INSTRUCTION_MANIFESTS,
+    attestations: ATTESTATIONS,
+    deliveries: DELIVERIES,
     logs: LOGS,
     changes: CHANGES
   },

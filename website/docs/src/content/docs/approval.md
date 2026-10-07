@@ -122,7 +122,8 @@ waves, Change Loop refuses another open review. A final in-contract blocker
 closes through the claims and current critical-case receipts named by that
 finding, or else through one closure review of the repaired delta; a real contract contradiction reopens one batched Decision Sheet, and
 missing authority becomes an external handoff. The attempt history is a
-SHA-256 hash chain; a broken chain fails closed.
+SHA-256 hash chain; a broken chain is quarantined and rebuilt by the harness,
+never lowering the attempt count or reusing a verdict that no longer verifies.
 
 The review-dispatch limit keeps the workflow fast; it does not cap repair
 attempts. The agent may keep fixing grouped findings and rechecking invalidated

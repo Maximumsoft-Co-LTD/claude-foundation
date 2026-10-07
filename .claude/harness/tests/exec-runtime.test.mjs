@@ -259,6 +259,19 @@ test("CASE-EXEC-REPOSITORY-SANDBOX: a repository task's command runs in that rep
   assert.equal(existsSync(join(fixture.api, "prove.txt")), true);
 });
 
+// Build hands each task's verify back as `exec <change> --task <id> -- sh -c
+// '<verify>'` so the agent's focused check is pre-allowed; it must run in that
+// task's sandbox with its shell text intact and pass the exit code through.
+test("a task checkCommand runs its shell verify in the task's sandbox", (t) => {
+  const fixture = multiRepositoryFixture(t);
+  const verify = "printf ok > check.txt && pwd | tail -1 > where.txt && exit 3";
+  assert.equal(fixture.runtime.execObserved("change", ["sh", "-c", verify],
+    { task: "T001" }), 3);
+  assert.equal(readFileSync(join(fixture.api, "check.txt"), "utf8"), "ok");
+  assert.equal(readFileSync(join(fixture.api, "where.txt"), "utf8").trim(), fixture.api);
+  assert.equal(existsSync(join(fixture.root, "check.txt")), false);
+});
+
 test("exec maps the caller's directory into the matching sandbox", (t) => {
   const fixture = multiRepositoryFixture(t);
   fixture.setTasks([]);

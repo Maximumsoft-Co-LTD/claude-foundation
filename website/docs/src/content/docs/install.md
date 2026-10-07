@@ -78,18 +78,20 @@ claude-foundation doctor --stage change
 
 ## Permission allowlist
 
-`.claude/settings.json` stays project-owned. The installer merges the shipped hooks and appends a narrow `permissions.allow` list, so Claude Code does not ask for approval on every harness step: `Bash(claude-foundation *)`, `Bash(.foundation/bin/claude-foundation *)`, `Bash(node .claude/harness/foundation.mjs *)`, `Edit(/.foundation/sandboxes/**)`, and `Edit(/.foundation/repository-sandboxes/**)`. It adds only missing rules after your own, never removes or reorders entries, and a rerun adds nothing. The PreToolUse guards still run before these rules. Pass `--no-permission-allowlist` on every install or upgrade to leave `permissions.allow` untouched.
+`.claude/settings.json` stays project-owned. The installer merges the shipped hooks and appends a narrow `permissions.allow` list, so Claude Code does not ask for approval on every harness step: `Bash(claude-foundation *)`, `Bash(.foundation/bin/claude-foundation *)`, `Bash(node .claude/harness/foundation.mjs *)`, `Edit(/.foundation/sandboxes/**)`, `Edit(/.foundation/repository-sandboxes/**)`, and `Edit(/.foundation/drafts/**)` (the Change draft). Project test runners get no rule: each Build task returns its verify as a `checkCommand` (`claude-foundation exec <change> --task <id> -- <verify>`) that the CLI rule already covers. It adds only missing rules after your own, never removes or reorders entries, and a rerun adds nothing. The PreToolUse guards still run before these rules. Pass `--no-permission-allowlist` on every install or upgrade to leave `permissions.allow` untouched.
 
 ## Headless / CI (`claude -p`)
 
-Claude Code ignores project `permissions.allow` entries until the workspace is trusted. In a fresh checkout, a headless `claude -p` run prints `Ignoring ... permissions.allow entry ... this workspace has not been trusted`, so the installed `Bash(claude-foundation *)` rule does nothing and every harness call is denied. Either run `claude` once interactively in the project and accept the trust prompt, or grant the tools on each headless run:
+Claude Code ignores project `permissions.allow` entries until the workspace is trusted. In a fresh checkout, a headless `claude -p` run prints `Ignoring ... permissions.allow entry ... this workspace has not been trusted`, so the installed `Bash(claude-foundation *)` rule does nothing and every harness call is denied. Either run `claude` once interactively in the project and accept the trust prompt, or grant exactly the installed allowlist on each headless run (an `Edit` rule also covers `Write`; edits elsewhere in the project stay denied):
 
 ```bash
-claude -p "/change <intent>" --allowedTools "Bash(claude-foundation *)" \
-  "Bash(node *)" "Bash(npm *)" "Bash(git *)"
+claude -p "/change <intent>" --allowedTools \
+  "Bash(claude-foundation *)" "Bash(.foundation/bin/claude-foundation *)" \
+  "Bash(node .claude/harness/foundation.mjs *)" "Edit(/.foundation/drafts/**)" \
+  "Edit(/.foundation/sandboxes/**)" "Edit(/.foundation/repository-sandboxes/**)"
 ```
 
-Add the project's own build and test tools as needed. Claude Code treats paths under `~/.claude/` as sensitive, so keep consumer projects outside that directory for unattended runs.
+Build checks run through `claude-foundation exec`, so test runners need no grant; add other project tools only when a run needs them. Claude Code treats paths under `~/.claude/` as sensitive, so keep consumer projects outside that directory for unattended runs.
 
 ## Commit the installation
 

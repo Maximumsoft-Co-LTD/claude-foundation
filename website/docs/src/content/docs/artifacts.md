@@ -183,8 +183,11 @@ Every copied receipt and artifact is bound by **SHA-256 and byte size**.
 lives outside the vault is not admissible, which is why a durable report is
 copied in rather than referenced where it was produced.
 
-The review-attempt ledger is a hash chain. A broken link fails closed rather
-than being treated as an empty history.
+The review-attempt ledger is a hash chain. A broken link is never treated as
+an empty history: the harness moves the ledger aside as
+`review-attempts.corrupt-<stamp>` and rebuilds it without asking you. The
+rebuilt count never drops below the attempts on record, and an attempt that
+no longer verifies counts as a spent review wave rather than a reusable verdict.
 
 ## The archive
 

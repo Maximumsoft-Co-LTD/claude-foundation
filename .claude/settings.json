@@ -5,7 +5,8 @@
       "Bash(.foundation/bin/claude-foundation *)",
       "Bash(node .claude/harness/foundation.mjs *)",
       "Edit(/.foundation/sandboxes/**)",
-      "Edit(/.foundation/repository-sandboxes/**)"
+      "Edit(/.foundation/repository-sandboxes/**)",
+      "Edit(/.foundation/drafts/**)"
     ]
   },
   "hooks": {

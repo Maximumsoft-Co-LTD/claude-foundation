@@ -9,11 +9,13 @@ import { createAbandonRuntime } from "../runtime/workflow/abandon-runtime.mjs";
 import { createReviewAttemptStore } from "../runtime/evidence/review-attempt-store.mjs";
 import { createAuthorityStore } from "../runtime/workflow/authority.mjs";
 import { pendingAuthorityRequest } from "../runtime/workflow/authority-runtime.mjs";
+import { createModelDriftInspector } from "../runtime/observability/host-execution-contract.mjs";
 
 const root = mkdtempSync(join(tmpdir(), "foundation-abandon-runtime-"));
 const paths = Object.fromEntries([
   "recovery", "logs", "changes", "runtime", "receipts", "evidenceVault",
-  "transactions", "plans", "handoffs", "snapshots", "authority", "reviews"
+  "transactions", "plans", "handoffs", "snapshots", "authority", "reviews",
+  "instructionManifests", "attestations", "deliveries"
 ].map((name) => [name, join(root, name)]));
 let states = {};
 let journals = {};
@@ -258,6 +260,55 @@ try {
   assert.equal(existsSync(join(reusedRecovery, "authority", "review-exhausted.json")), true);
   assert.equal(existsSync(join(reusedRecovery,
     "authority.previous-2026-08-26T00-00-00-000Z", "review-exhausted.json")), true);
+
+  // Regression: instruction manifests, the open attestation challenge, and the
+  // delivery state are keyed by change id and must not leak into a later
+  // change that reuses the id.
+  const storesId = "stores";
+  const drift = createModelDriftInspector({
+    logs: paths.logs, instructionManifests: paths.instructionManifests
+  });
+  const recordManifest = (id, scope) => writeJson(
+    join(paths.instructionManifests, id, `build-${scope}.json`),
+    { manifestDigest: "sha256:same-instructions", execution: { requestedModel: "deep" } });
+  const recordExecution = (id) => writeJson(
+    join(paths.logs, id, "host-executions", "d1.json"),
+    { dispatchId: "d1", instructionManifestDigest: "sha256:same-instructions",
+      actualModel: "fast-1" });
+  const challenge = join(paths.attestations, "challenges", `${storesId}.json`);
+  const usedNonce = join(paths.attestations, "used", "nonce-digest.json");
+  const deliveryState = join(paths.deliveries, storesId, "state.json");
+  seed(storesId, { status: "proven" });
+  recordManifest(storesId, "T9");
+  recordExecution(storesId);
+  writeJson(challenge, { changeId: storesId, nonce: "n", agreementHash: "sha256:same" });
+  writeJson(usedNonce, { changeId: "earlier", nonceDigest: "nonce-digest" });
+  writeJson(deliveryState, { changeId: storesId, status: "pr-opened",
+    bindingDigest: "sha256:old-binding", url: "https://git.example/pr/1" });
+  runtime.abandonChange(storesId, { reason: "retire", "decision-ref": "host://stores" });
+  const storesRecovery = runtime.recoveryRoot(storesId);
+  assert.equal(existsSync(join(paths.instructionManifests, storesId)), false);
+  assert.equal(existsSync(join(storesRecovery, "instruction-manifests", "build-T9.json")), true);
+  assert.equal(existsSync(challenge), false);
+  assert.equal(existsSync(join(storesRecovery, "attestation-challenge.json")), true);
+  // The nonce ledger is global replay protection and stays put.
+  assert.equal(existsSync(usedNonce), true);
+  // A delivered pull request is an external side effect: its record is kept.
+  assert.equal(existsSync(deliveryState), false);
+  assert.equal(JSON.parse(readFileSync(join(storesRecovery, "deliveries", "state.json"),
+    "utf8")).url, "https://git.example/pr/1");
+  assert.match(warnings, /delivery record.*preserved/);
+  const storesQuarantine = JSON.parse(readFileSync(
+    join(storesRecovery, "abandon.json"), "utf8")).quarantined;
+  for (const name of ["instruction-manifests", "attestation-challenge.json", "deliveries"])
+    assert.ok(storesQuarantine.includes(name), `${name} is quarantined: ${storesQuarantine}`);
+  // The reused id attributes its own execution only to its own task scope.
+  seed(storesId, { status: "building" });
+  recordManifest(storesId, "T1");
+  recordExecution(storesId);
+  const [row] = drift.driftRows(storesId);
+  assert.equal(row.ambiguousTasks, undefined, `stale scope leaked: ${row.ambiguousTasks}`);
+  assert.equal(row.taskId, "T1");
 
   assert.equal(leaseCleanups.includes(simpleId), true);
   assert.equal(writes.some(([path]) => path.endsWith("abandon.json")), true);

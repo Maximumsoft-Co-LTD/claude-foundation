@@ -2048,11 +2048,13 @@ export function createSandboxRuntime({
   // those exact bytes is merged 3-way into the sandbox copy; a later edit is
   // left for Land to examine again. The target is never written here, and a
   // merge that no longer applies cleanly is left to Land's conflict decision.
+  // Over an applied projection Land records only paths that apply never wrote,
+  // so the base-to-target merge is the user's edit there too.
   function carryTargetEdits(state) {
     const workspace = state.workspace;
     const carry = workspace.targetCarry;
     const merged = [];
-    if (!carry || workspace.mode !== "worktree" || workspace.applied) {
+    if (!carry || workspace.mode !== "worktree") {
       delete workspace.targetCarry;
       return merged;
     }

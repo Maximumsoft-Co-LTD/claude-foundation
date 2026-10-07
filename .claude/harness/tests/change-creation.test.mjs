@@ -144,6 +144,57 @@ try {
   assert.equal(readdirSync(abandoned).some((name) =>
     name.startsWith("authority.previous-")), true);
 
+  // Instruction manifests, an open attestation challenge, and delivery state
+  // are per-change bookkeeping too: without a retirement record they block
+  // reuse, and with one they are settled into it (the delivery record kept).
+  const strayManifest = join(root, ".foundation", "instruction-manifests", "stray", "build-T1.json");
+  const strayChallenge = join(root, ".foundation", "attestations", "challenges", "stray.json");
+  const strayDelivery = join(root, ".foundation", "deliveries", "stray", "state.json");
+  for (const path of [strayManifest, strayChallenge, strayDelivery]) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, "{}\n");
+  }
+  assert.deepEqual(priorChangeResidue(root, "stray"),
+    [dirname(strayManifest), strayChallenge, dirname(strayDelivery)]);
+  assert.throws(() => lifecycle.createChange("Stray", {}),
+    /recorded history remains.*instruction-manifests\/stray.*challenges\/stray\.json.*deliveries\/stray/);
+  assert.equal(existsSync(strayDelivery), true);
+  const usedNonce = join(root, ".foundation", "attestations", "used", "digest.json");
+  mkdirSync(dirname(usedNonce), { recursive: true });
+  writeFileSync(usedNonce, "{}\n");
+  const settled = join(root, ".foundation", "recovery", "abandoned", "stray");
+  mkdirSync(settled, { recursive: true });
+  writeFileSync(join(settled, "abandon.json"), "{}\n");
+  writeFileSync(strayDelivery, "{\"url\":\"https://git.example/pr/7\"}\n");
+  lifecycle.createChange("Stray", {});
+  assert.equal(existsSync(join(changesRoot, "stray")), true);
+  assert.deepEqual(priorChangeResidue(root, "stray"), []);
+  assert.equal(existsSync(join(settled, "instruction-manifests", "build-T1.json")), true);
+  assert.equal(existsSync(join(settled, "attestation-challenge.json")), true);
+  assert.match(readFileSync(join(settled, "deliveries", "state.json"), "utf8"), /pr\/7/);
+  assert.equal(existsSync(usedNonce), true, "the global nonce ledger is never settled");
+  // A Land undo retires the id too: its record settles the same residue.
+  const undone = join(root, ".foundation", "recovery", "land-undone", "redone");
+  mkdirSync(undone, { recursive: true });
+  writeFileSync(join(undone, "undo.json"), "{}\n");
+  const undoneManifest = join(root, ".foundation", "instruction-manifests", "redone", "land-global.json");
+  mkdirSync(dirname(undoneManifest), { recursive: true });
+  writeFileSync(undoneManifest, "{}\n");
+  lifecycle.createChange("Redone", {});
+  assert.equal(existsSync(dirname(undoneManifest)), false);
+  assert.equal(existsSync(join(undone, "instruction-manifests", "land-global.json")), true);
+  // Live change state beside the bookkeeping is never settled.
+  const liveManifest = join(root, ".foundation", "instruction-manifests", "live", "build-T1.json");
+  const liveRuntime = join(root, ".foundation", "runtime", "live.json");
+  for (const path of [liveManifest, liveRuntime]) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, "{}\n");
+  }
+  mkdirSync(join(root, ".foundation", "recovery", "abandoned", "live"), { recursive: true });
+  writeFileSync(join(root, ".foundation", "recovery", "abandoned", "live", "abandon.json"), "{}\n");
+  assert.throws(() => lifecycle.createChange("Live", {}), /recorded history remains/);
+  assert.equal(existsSync(liveManifest), true);
+
   const rapidState = initialChangeState({
     root, id: "direct", intent: "Direct", schema: "foundation-rapid",
     groundingRequired: false, riskBasedCi: true,

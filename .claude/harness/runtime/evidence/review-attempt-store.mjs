@@ -1,5 +1,7 @@
-import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, renameSync } from "node:fs";
+import { basename, join } from "node:path";
+
+import { emitSignal } from "../core/signals.mjs";
 
 export function matchingRepairClosure(current, details, stableHash) {
   if (current?.reviewerType !== "deterministic") return null;
@@ -65,10 +67,9 @@ export function createRepairClosureAttempt(context, id, history, source,
 }
 
 export function recordRepairClosureAttemptOperation(context, id, details) {
+  const history = assertReviewDispatchHistory(context, id,
+    context.reviewHistoryState(id, context.loadRuntime(id)));
   const state = context.loadRuntime(id);
-  const history = context.reviewHistoryState(id, state);
-  if (history.chainHead && !context.reviewHistoryChainValid(id, history))
-    context.fail("review repair closure requires a valid attempt history");
   const current = context.reviewAttempts(id, history).at(-1);
   const duplicate = matchingRepairClosure(current, details, context.stableHash);
   if (duplicate) return duplicate;
@@ -174,19 +175,77 @@ export function acknowledgeBaseMoveAttemptsOperation(context, id, decisionRef) {
   };
 }
 
+// A corrupt chain is harness bookkeeping, not a user decision: the harness
+// quarantines and rebuilds it (see recoverCorruptReviewHistory) and returns
+// the history the dispatch must continue from.
 export function assertReviewDispatchHistory(context, id, history) {
-  if (!history.chainHead || context.reviewHistoryChainValid(id, history)) return;
-  context.blockWithDecision(id, "review-history-corrupt", {
-    kind: "review-history-corrupt",
-    summary: "The review attempt chain is corrupt, so Foundation cannot safely reserve another dispatch.",
-    options: [
-      { id: "restore", outcome: "Restore the attempt records from backup." },
-      { id: "abandon", outcome: "Retire this change and start a fresh one." },
-      { id: "pause", outcome: "Leave the change unchanged." }
-    ],
-    recommended: "restore",
-    attemptsRecorded: Number(history.totalAttempts || 0)
+  if (!history.chainHead || context.reviewHistoryChainValid(id, history)) return history;
+  return context.recoverCorruptReviewHistory(id, history);
+}
+
+// Every AI route allows at most two delivered waves unless the latest one
+// failed (the closure wave). A rebuilt chain whose delivered count cannot be
+// determined ends in at least this many inconclusive AI placeholders, which
+// exhausts every route through the normal REVIEW_ROUTE_COMPLETE boundary.
+export const RECOVERED_DELIVERED_FLOOR = 2;
+
+export function attemptNumberFromName(name) {
+  const match = /^(\d+)-/.exec(String(name || ""));
+  return match ? Number(match[1]) : 0;
+}
+
+// The longest chain that verifies end to end among individually verified
+// records: consecutive attempt numbers down to attempt 1 or a migrated base.
+// Same-height candidates prefer the recorded head, then a completed verdict
+// (it consumes budget; a dispatched sibling does not), then the latest record.
+export function verifiedReviewChain(records, preferredHead = null) {
+  const byDigest = new Map(records.map((record) => [record.digest, record]));
+  const chains = [];
+  for (const top of records) {
+    const chain = [top];
+    const seen = new Set([top.digest]);
+    let cursor = top;
+    let valid = true;
+    while (cursor.priorChainHead) {
+      const prior = byDigest.get(cursor.priorChainHead);
+      if (!prior || seen.has(prior.digest) || chain.length > 1000 ||
+          Number(prior.attempt) !== Number(cursor.attempt) - 1) { valid = false; break; }
+      seen.add(prior.digest);
+      chain.unshift(prior);
+      cursor = prior;
+    }
+    if (valid && chain.length <= 1000 &&
+        (Number(cursor.attempt) === 1 || cursor.migrated === true)) chains.push(chain);
+  }
+  const rank = (chain) => {
+    const head = chain.at(-1);
+    return [Number(head.attempt), head.digest === preferredHead ? 1 : 0,
+      head.status === "completed" ? 1 : 0,
+      String(head.completedAt || head.timestamp || "")];
+  };
+  chains.sort((left, right) => {
+    const a = rank(left);
+    const b = rank(right);
+    for (let index = 0; index < a.length; index += 1)
+      if (a[index] !== b[index]) return a[index] < b[index] ? 1 : -1;
+    return 0;
   });
+  return chains[0] || [];
+}
+
+// The conservative lower bound on attempts ever reserved: the runtime count,
+// a recorded head, every attempt number any record or file name claims (even
+// an unverifiable one), and the highest legacy receipt round. Tampering can
+// only raise this bound, never lower it.
+export function evidencedReviewAttemptCount({ history = {}, files = [],
+  receiptRounds = [], verifiedTop = 0 }) {
+  const claimed = files.flatMap((file) => [
+    attemptNumberFromName(file.name),
+    Number.isInteger(file.value?.attempt) ? file.value.attempt : 0
+  ]);
+  return Math.max(0, Number(history.totalAttempts || 0) || 0,
+    history.chainHead ? 1 : 0, verifiedTop, ...claimed,
+    ...receiptRounds.map((round) => Number(round) || 0));
 }
 
 export function reviewDispatchType(details, fail) {
@@ -409,7 +468,6 @@ export function createReviewAttemptStore({
   stableHash,
   reviewReceiptBinding,
   now,
-  blockWithDecision,
   fail
 }) {
   function legacyReviewReceipts(id) {
@@ -474,6 +532,121 @@ export function createReviewAttemptStore({
   const reviewHistoryChainValid = reviewHistoryChainValidOperation.bind(null, {
     reviewAttemptByDigest
   });
+
+  function attemptRecordVerifies(id, value) {
+    if (!value || typeof value !== "object" || value.changeId !== id ||
+        !Number.isInteger(value.attempt) || value.attempt < 1 ||
+        typeof value.digest !== "string" || !value.digest) return false;
+    const canonical = { ...value };
+    delete canonical.digest;
+    return stableHash(canonical) === value.digest;
+  }
+
+  const attemptFileName = (record) =>
+    `${String(record.attempt).padStart(4, "0")}-${record.digest.slice(0, 12)}.json`;
+
+  function quarantinePath(dir) {
+    const stamp = String(now()).replace(/[^0-9A-Za-z]/g, "-");
+    let candidate = `${dir}.corrupt-${stamp}`;
+    for (let index = 2; existsSync(candidate); index += 1)
+      candidate = `${dir}.corrupt-${stamp}-${index}`;
+    return candidate;
+  }
+
+  // The attempt chain is harness bookkeeping, so a corrupt chain is repaired
+  // by the harness rather than handed to the user. The chain exists to stop a
+  // review budget reset and a stale or forged verdict from being replayed, so
+  // the repair is fail-closed on both:
+  // - the corrupt records move aside as `review-attempts.corrupt-<stamp>`
+  //   (never deleted) with a recovery manifest beside them;
+  // - the rebuilt count never falls below any attempt the runtime history,
+  //   a record, a file name, or a legacy receipt evidences;
+  // - only a chain that verifies end to end and covers every evidenced
+  //   attempt is restored, verdicts included; otherwise the unverifiable
+  //   attempts become inconclusive AI placeholders (at least
+  //   RECOVERED_DELIVERED_FLOOR), so no verdict is reused and the budget is
+  //   consumed through the normal REVIEW_ROUTE_COMPLETE boundary.
+  function recoverCorruptReviewHistory(id, history) {
+    const current = reviewHistoryState(id, loadRuntime(id));
+    if (!current.chainHead || reviewHistoryChainValid(id, current)) return current;
+    const dir = join(evidenceVault, id, "review-attempts");
+    const files = existsSync(dir)
+      ? readdirSync(dir, { withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+        .map((entry) => ({ name: entry.name, value: readJson(join(dir, entry.name), {}) }))
+      : [];
+    const verified = [...new Map(files
+      .filter((file) => attemptRecordVerifies(id, file.value))
+      .map((file) => [file.value.digest, file.value])).values()];
+    const preferredHead = current.chainHead || history.chainHead;
+    const chain = verifiedReviewChain(verified, preferredHead);
+    const verifiedTop = chain.length ? Number(chain.at(-1).attempt) : 0;
+    const evidenced = Math.max(
+      evidencedReviewAttemptCount({ history: current, files, verifiedTop,
+        receiptRounds: legacyReviewReceipts(id).map((receipt) => receipt.review?.round) }),
+      evidencedReviewAttemptCount({ history }));
+    // Only the recorded head's chain is restorable: a verified sibling that
+    // was never recorded as head carries a verdict the runtime never accepted.
+    const determinate = chain.length > 0 && evidenced === verifiedTop &&
+      chain.at(-1).digest === preferredHead;
+    const quarantine = quarantinePath(dir);
+    if (existsSync(dir)) renameSync(dir, quarantine);
+    const recoveredFrom = basename(quarantine);
+    const rebuilt = [];
+    if (determinate) {
+      for (const record of chain) {
+        writeJson(join(dir, attemptFileName(record)), record);
+        rebuilt.push(record);
+      }
+    } else {
+      const total = Math.max(evidenced, RECOVERED_DELIVERED_FLOOR);
+      for (const attempt of [total - 1, total]) {
+        const placeholder = {
+          version: 1, changeId: id, attempt,
+          reviewerType: "ai", status: "inconclusive",
+          workspaceHash: null, reviewBinding: null,
+          priorChainHead: rebuilt.at(-1)?.digest || null,
+          ...(rebuilt.length ? {} : { migrated: true }),
+          recovered: "unverifiable-review-attempt", recoveredFrom,
+          timestamp: now()
+        };
+        placeholder.digest = stableHash(placeholder);
+        writeJson(join(dir, attemptFileName(placeholder)), placeholder);
+        rebuilt.push(placeholder);
+      }
+    }
+    const head = rebuilt.at(-1);
+    const recovery = {
+      at: now(), quarantine: recoveredFrom, determinate,
+      evidencedAttempts: evidenced, verifiedAttempts: verifiedTop,
+      unverifiableRecords: files.filter((file) =>
+        !attemptRecordVerifies(id, file.value)).map((file) => file.name).sort(),
+      priorChainHead: current.chainHead || null,
+      priorTotalAttempts: Number(current.totalAttempts || 0),
+      chainHead: head.digest, totalAttempts: Number(head.attempt)
+    };
+    writeJson(join(quarantine, "recovery.json"), {
+      version: 1, changeId: id, ...recovery, priorReviewHistory: current
+    });
+    const state = loadRuntime(id);
+    state.reviewHistory = {
+      ...current,
+      version: 1,
+      aiAttempts: Math.max(Number(current.aiAttempts || 0), Number(history.aiAttempts || 0),
+        rebuilt.filter((record) => record.reviewerType === "ai").length),
+      totalAttempts: Number(head.attempt),
+      chainHead: head.digest,
+      recoveries: [...(current.recoveries || []), recovery]
+    };
+    saveRuntime(state);
+    emitSignal("review-history-recovered",
+      `NOTICE: the review attempt chain for ${id} was corrupt; the harness moved it aside as ` +
+      `${recoveredFrom} and rebuilt ${recovery.totalAttempts} attempt(s) ` +
+      (determinate
+        ? "from the records that still verify, verdicts included."
+        : "with unverifiable attempts counted as delivered inconclusive AI waves, so no prior verdict is reused and the review budget is consumed."));
+    return state.reviewHistory;
+  }
 
   function reviewAttempts(id, history = reviewHistoryState(id)) {
     const attempts = [];
@@ -583,8 +756,9 @@ export function createReviewAttemptStore({
     const released = [];
     const refuse = (message) => { throw new Error(message); };
     const state = loadRuntime(id);
-    const history = reviewHistoryState(id, state);
-    if (history.chainHead && !reviewHistoryChainValid(id, history)) return released;
+    const history = assertReviewDispatchHistory({
+      reviewHistoryChainValid, recoverCorruptReviewHistory
+    }, id, reviewHistoryState(id, state));
     const attempts = reviewAttempts(id, history);
     if (attempts.some((attempt) =>
       attempt.reviewerType === "ai" && attempt.status === "dispatched")) return released;
@@ -631,19 +805,9 @@ export function createReviewAttemptStore({
   function assertReviewDispatchAllowed(id, reviewerType, maxAiAttempts = 2,
       maxInfrastructureRetries = 1) {
     const state = loadRuntime(id);
-    const history = reviewHistoryState(id, state);
-    if (history.chainHead && !reviewHistoryChainValid(id, history))
-      blockWithDecision(id, "review-history-corrupt", {
-        kind: "review-history-corrupt",
-        summary: "The review attempt chain is corrupt, so Foundation cannot safely dispatch another reviewer.",
-        options: [
-          { id: "restore", outcome: "Restore the attempt records from backup." },
-          { id: "abandon", outcome: "Retire this change and start a fresh one." },
-          { id: "pause", outcome: "Leave the change unchanged." }
-        ],
-        recommended: "restore",
-        attemptsRecorded: Number(history.totalAttempts || 0)
-      });
+    const history = assertReviewDispatchHistory({
+      reviewHistoryChainValid, recoverCorruptReviewHistory
+    }, id, reviewHistoryState(id, state));
     if (reviewerType === "ai") {
       if (deliveredAiAttempts(id, history).length >= Number(maxAiAttempts))
         blockAiExhausted(id, history, Number(maxAiAttempts));
@@ -686,9 +850,9 @@ export function createReviewAttemptStore({
   // in the same chain and receive only the separately bounded recovery below.
   function dispatchReviewAttempt(id, details) {
     const state = loadRuntime(id);
-    const history = reviewHistoryState(id, state);
-    assertReviewDispatchHistory({ reviewHistoryChainValid, blockWithDecision },
-      id, history);
+    const history = assertReviewDispatchHistory({
+      reviewHistoryChainValid, recoverCorruptReviewHistory
+    }, id, reviewHistoryState(id, state));
     const reviewerType = reviewDispatchType(details, fail);
     const priorAttempts = reviewAttempts(id, history);
     const aiAttempts = priorAttempts.filter((attempt) => attempt.reviewerType === "ai");
@@ -715,7 +879,8 @@ export function createReviewAttemptStore({
 
   const recordRepairClosureAttempt = recordRepairClosureAttemptOperation.bind(null, {
     evidenceVault, loadRuntime, saveRuntime, stableHash, writeJson, now, fail,
-    reviewHistoryState, reviewHistoryChainValid, reviewAttempts, deliveredAiAttempts
+    reviewHistoryState, reviewHistoryChainValid, recoverCorruptReviewHistory,
+    reviewAttempts, deliveredAiAttempts
   });
 
   return {

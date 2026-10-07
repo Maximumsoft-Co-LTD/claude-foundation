@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync,
+  chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync,
   statSync, writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -57,7 +57,7 @@ function write(path, content) {
 // harness creates for a change selecting it: the shared control-plane worktree
 // (where the submodule is an empty gitlink placeholder) and the submodule's own
 // repository worktree.
-function superproject(t) {
+function superproject(t, { files = {} } = {}) {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "foundation-data-loss-")));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const upstream = join(base, "sub-upstream");
@@ -76,6 +76,7 @@ function superproject(t) {
   git(["init", "-q"], root);
   write(join(root, "README.md"), "parent\n");
   write(join(root, ".gitignore"), ".foundation/\n.root-counter\n");
+  for (const [path, content] of Object.entries(files)) write(join(root, path), content);
   git(["submodule", "add", "-q", upstream, SUBMODULE], root);
   git(["add", "."], root);
   git(["commit", "-qm", "parent base"], root);
@@ -571,6 +572,86 @@ test("(d) root growth never overwrites a target edit made after the first Land",
   assert.match(stopped?.message || "",
     /overwrite an uncommitted target (path|edit) in 'root': notes\.md/);
   assert.equal(readFileSync(join(fixture.root, "notes.md"), "utf8"), "user notes\n");
+});
+
+// Single-repository Land: a path the first apply never wrote is held to the
+// same overwrite guard as root re-delivery of a composite change, and a
+// conflicting target edit takes the target-edit route instead of being lost.
+const GUIDE = "one\ntwo\nthree\nfour\nfive\n";
+
+function landedOnce(t) {
+  const fixture = superproject(t, { files: { "guide.md": GUIDE } });
+  write(join(fixture.shared, "README.md"), "parent v1\n");
+  const land = landFixture(fixture, { selected: ["root"] });
+  assert.equal(landUntilArchive(land)?.message, STOP_AFTER_APPLY);
+  assert.equal(readFileSync(join(fixture.root, "README.md"), "utf8"), "parent v1\n");
+  return { fixture, land };
+}
+
+test("(f) single-repository re-apply merges a target edit on a newly touched path, never overwrites it", (t) => {
+  const { fixture, land } = landedOnce(t);
+  write(join(fixture.root, "guide.md"), GUIDE.replace("one", "ONE (user)"));
+  write(join(fixture.shared, "guide.md"), GUIDE.replace("five", "FIVE (change)"));
+  const stopped = landUntilArchive(land);
+  assert.equal(stopped?.code, "target-edit-sync", stopped?.message);
+  assert.deepEqual(stopped.decision.paths, ["guide.md"]);
+  assert.equal(readFileSync(join(fixture.root, "guide.md"), "utf8"),
+    GUIDE.replace("one", "ONE (user)"), "the target edit is not overwritten");
+  assert.ok(land.state().workspace.targetCarry?.["guide.md"], "the carry is recorded for sync");
+
+  // The sandbox sync merges the recorded edit into the sandbox copy; the
+  // merged, re-proven file then lands with both edits.
+  const merged = GUIDE.replace("one", "ONE (user)").replace("five", "FIVE (change)");
+  write(join(fixture.shared, "guide.md"), merged);
+  assert.equal(landUntilArchive(land)?.message, STOP_AFTER_APPLY);
+  assert.equal(readFileSync(join(fixture.root, "guide.md"), "utf8"), merged);
+  assert.equal(readFileSync(join(fixture.root, "README.md"), "utf8"), "parent v1\n");
+});
+
+test("(f) single-repository re-apply stops on a same-line or new-file target edit", (t) => {
+  const { fixture, land } = landedOnce(t);
+  write(join(fixture.root, "guide.md"), GUIDE.replace("three", "THREE (user)"));
+  write(join(fixture.shared, "guide.md"), GUIDE.replace("three", "THREE (change)"));
+  write(join(fixture.root, "notes.md"), "user notes\n");
+  write(join(fixture.shared, "notes.md"), "sandbox notes\n");
+  const stopped = landUntilArchive(land);
+  assert.equal(stopped?.code, "target-edit-conflict", stopped?.message);
+  assert.deepEqual(stopped.decision.paths, ["guide.md", "notes.md"]);
+  assert.equal(readFileSync(join(fixture.root, "guide.md"), "utf8"),
+    GUIDE.replace("three", "THREE (user)"));
+  assert.equal(readFileSync(join(fixture.root, "notes.md"), "utf8"), "user notes\n");
+});
+
+test("(f) single-repository re-apply never drops a target mode edit on a newly touched path", (t) => {
+  const { fixture, land } = landedOnce(t);
+  // The user only marks the file executable; the sandbox changes its bytes.
+  // The bytes are carried, the mode is not, so re-apply must not overwrite it.
+  chmodSync(join(fixture.root, "guide.md"), 0o755);
+  write(join(fixture.shared, "guide.md"), GUIDE.replace("two", "TWO (change)"));
+  const stopped = landUntilArchive(land);
+  assert.notEqual(stopped?.message, STOP_AFTER_APPLY, "re-apply stops instead of overwriting");
+  assert.equal(statSync(join(fixture.root, "guide.md")).mode & 0o777, 0o755,
+    "the user's mode edit survives");
+  assert.equal(readFileSync(join(fixture.root, "guide.md"), "utf8"), GUIDE);
+});
+
+test("(f) single-repository re-apply lands a newly touched path still at base", (t) => {
+  const { fixture, land } = landedOnce(t);
+  write(join(fixture.shared, "guide.md"), GUIDE.replace("two", "TWO (change)"));
+  write(join(fixture.shared, "docs/later.md"), "follow-up\n");
+  assert.equal(landUntilArchive(land)?.message, STOP_AFTER_APPLY);
+  assert.equal(readFileSync(join(fixture.root, "guide.md"), "utf8"),
+    GUIDE.replace("two", "TWO (change)"));
+  assert.equal(readFileSync(join(fixture.root, "docs/later.md"), "utf8"), "follow-up\n");
+});
+
+test("(f) single-repository re-apply keeps re-delivering a path the first apply wrote", (t) => {
+  const { fixture, land } = landedOnce(t);
+  write(join(fixture.shared, "README.md"), "parent v2\n");
+  assert.equal(landUntilArchive(land)?.message, STOP_AFTER_APPLY);
+  assert.equal(readFileSync(join(fixture.root, "README.md"), "utf8"), "parent v2\n");
+  // A further pass has nothing new to project and still verifies.
+  assert.equal(landUntilArchive(land)?.message, STOP_AFTER_APPLY);
 });
 
 test("(e) a submodule pointer moved in a root-only change is a decision, never a silent drop", (t) => {

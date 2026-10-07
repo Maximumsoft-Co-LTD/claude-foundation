@@ -120,6 +120,21 @@ function taskVerification(text) {
   return String(text || "").match(/—\s*verify:\s*`([^`]+)`/i)?.[1] || null;
 }
 
+// A task's focused check in the harness-owned form the installed allowlist
+// already grants (`Bash(claude-foundation *)`). Run bare, the project's test
+// runner costs a host approval prompt on every Build; `exec --task` runs the
+// same command in that task's sandbox, the way advance's own verify does
+// (`sh -c` whenever the text needs a shell), and records its duration. A
+// leading `NAME=value` is a shell assignment, never a program to spawn.
+export function taskCheckCommand(id, taskId, verify) {
+  if (!id || !taskId || !String(verify || "").trim()) return null;
+  const words = String(verify).trim().split(/\s+/);
+  const argv = !/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0]) &&
+    words.every((word) => shellDisplayArgument(word) === word)
+    ? words.join(" ") : `sh -c ${shellDisplayArgument(String(verify).trim())}`;
+  return command(`exec ${shellDisplayArgument(id)} --task ${shellDisplayArgument(taskId)} -- ${argv}`);
+}
+
 function compactRepairGraph(graph) {
   if (!graph || !Array.isArray(graph.nodes)) return null;
   return {
@@ -523,7 +538,7 @@ function landOperationAction(id, result) {
   return null;
 }
 
-function selectedBuildTasks(dispatch, plan) {
+function selectedBuildTasks(id, dispatch, plan) {
   const ids = dispatch.action === "spawn-group"
     ? (dispatch.workers || []).map((worker) => worker.taskId)
     : dispatch.task?.taskId ? [dispatch.task.taskId]
@@ -531,19 +546,24 @@ function selectedBuildTasks(dispatch, plan) {
       // the next advance verifies and ticks each one.
       : (plan?.groups?.flat() || plan?.tasks?.slice(0, 1).map((task) => task.id) || []);
   return ids.map((id) => plan?.tasks?.find((task) => task.id === id))
-    .filter(Boolean).map((task) => ({
-      id: task.id,
-      instruction: task.text,
-      repository: task.repository,
-      allowedPaths: task.paths || [],
-      verification: [taskVerification(task.text)].filter(Boolean)
-    }));
+    .filter(Boolean).map((task) => {
+      const verify = taskVerification(task.text);
+      const checkCommand = taskCheckCommand(id, task.id, verify);
+      return {
+        id: task.id,
+        instruction: task.text,
+        repository: task.repository,
+        allowedPaths: task.paths || [],
+        verification: [verify].filter(Boolean),
+        ...(checkCommand ? { checkCommand } : {})
+      };
+    });
 }
 
 function buildAction(id, dispatch, state, plan = null) {
   if (dispatch.action === "build-complete") return null;
   if (["run-in-session", "run-leased-in-session", "spawn-group"].includes(dispatch.action)) {
-    const tasks = selectedBuildTasks(dispatch, plan);
+    const tasks = selectedBuildTasks(id, dispatch, plan);
     if (!plan || tasks.length === 0 || tasks.some((task) =>
       !task.id || task.allowedPaths.length === 0)) return envelope(id, "REPAIR", {
       legacyAction: "REPAIR_BUILD_PLAN",
@@ -562,12 +582,12 @@ function buildAction(id, dispatch, state, plan = null) {
     const instructions = [
       ...(dispatch.action === "run-in-session" && tasks.length > 1 ? [
         `Implement ${tasks.map((task) => task.id).join(", ")} in this order inside the workspace.`,
-        "Run each task's focused check, then the resume command once: advance reruns every " +
+        "Run each task's checkCommand where present, then the resume command once: advance reruns every " +
         "task's verify check, marks each passing task [x], and hands back only failures."
       ] : []),
       ...reverification.map((row) =>
         `${row.taskId} is already implemented; its execution record is stale (${row.reason}). ` +
-        "Do not re-implement it or split the diff per task: make its focused check pass, " +
+        "Do not re-implement it or split the diff per task: make its checkCommand pass, " +
         "then resume and the harness re-verifies it.")
     ];
     // One location per task repository: each task names its own sandbox, and

@@ -80,8 +80,34 @@ function childDiffNames(git, repository, runtime, fail) {
     .split("\0").filter(Boolean))].sort();
 }
 
-// `prior` maps a path to this change's own earlier delivered projection: bytes
-// Land itself wrote are not a user's uncommitted edit.
+// The entries whose apply would overwrite target bytes Land did not write: a
+// path must already hold the projected bytes, still hold this change's own
+// earlier delivery (`prior`: path -> delivered entry), or still be at
+// `baseHead`. Anything else is a user's uncommitted edit (`untracked` when the
+// base has no such path). `files` supplies safeRootPath/pathIdentity/pathMode.
+export function targetOverwrites({ git, files }, targetPath, baseHead, entries,
+  prior = new Map()) {
+  const overwrites = [];
+  for (const entry of entries) {
+    if (landEntryNoOp(entry)) continue;
+    const target = files.safeRootPath(entry.path);
+    const current = files.pathIdentity(target);
+    if (current === entry.after && files.pathMode(target) === entry.afterMode)
+      continue;
+    const own = prior.get(entry.path);
+    if (own && current === own.after && files.pathMode(target) === own.afterMode)
+      continue;
+    const base = git(["cat-file", "-e", `${baseHead}:${entry.path}`], targetPath);
+    if (base.status !== 0) {
+      if (current !== null) overwrites.push({ path: entry.path, untracked: true });
+      continue;
+    }
+    const changed = git(["diff", "--quiet", baseHead, "--", entry.path], targetPath);
+    if (changed.status !== 0) overwrites.push({ path: entry.path, untracked: false });
+  }
+  return overwrites;
+}
+
 function assertChildTargetCompatible({ git, journalRuntime }, repository, runtime, entries,
   prior = new Map()) {
   const targetHead = git(["rev-parse", "HEAD"], repository.path);
@@ -92,30 +118,13 @@ function assertChildTargetCompatible({ git, journalRuntime }, repository, runtim
         expectedHead: runtime.baseHead,
         observedHead: String(targetHead.stdout || "").trim() || null
       });
-  for (const entry of entries) {
-    if (landEntryNoOp(entry)) continue;
-    const target = journalRuntime.safeRootPath(entry.path);
-    const current = journalRuntime.pathIdentity(target);
-    if (current === entry.after && journalRuntime.pathMode(target) === entry.afterMode)
-      continue;
-    const own = prior.get(entry.path);
-    if (own && current === own.after && journalRuntime.pathMode(target) === own.afterMode)
-      continue;
-    const base = git(["cat-file", "-e", `${runtime.baseHead}:${entry.path}`], repository.path);
-    if (base.status !== 0) {
-      if (current !== null)
-        throw new RepositoryDeliveryError(
-          `Land would overwrite an uncommitted target path in '${repository.id}': ${entry.path}`,
-          { repository: repository.id, path: entry.path });
-      continue;
-    }
-    const changed = git(["diff", "--quiet", runtime.baseHead, "--", entry.path],
-      repository.path);
-    if (changed.status !== 0)
-      throw new RepositoryDeliveryError(
-        `Land would overwrite an uncommitted target edit in '${repository.id}': ${entry.path}`,
-        { repository: repository.id, path: entry.path });
-  }
+  const [overwrite] = targetOverwrites({ git, files: journalRuntime }, repository.path,
+    runtime.baseHead, entries, prior);
+  if (overwrite)
+    throw new RepositoryDeliveryError(
+      `Land would overwrite an uncommitted target ${overwrite.untracked ? "path" : "edit"} in '${
+        repository.id}': ${overwrite.path}`,
+      { repository: repository.id, path: overwrite.path });
 }
 
 export function createRepositoryDeliverySaga({

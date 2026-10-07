@@ -437,25 +437,57 @@ cp "$TMP/original-review-execution.json" \
 
 attempt_dir=.foundation/evidence/irreversible-payment-migration/review-attempts
 attempt_file="$(ls "$attempt_dir" | sort | tail -1)"
-mv "$attempt_dir/$attempt_file" "$TMP/$attempt_file"
-assert_cmd_fails_with "missing monotonic history fails closed" \
-  "review-history-corrupt" \
-  node .claude/harness/foundation.mjs receipt irreversible-payment-migration review pass \
-    --reviewer-type human --reviewer-identity security-owner \
-    --subject-actor implementer-ai --unresolved-blockers 0 \
-    --observed 'History must be intact' --reference fixture://history-missing
-mv "$TMP/$attempt_file" "$attempt_dir/$attempt_file"
+review_runtime=.foundation/runtime/irreversible-payment-migration.json
+recorded_attempts="$(jq -r '.reviewHistory.totalAttempts' "$review_runtime")"
 
-cp "$attempt_dir/$attempt_file" "$TMP/intact-$attempt_file"
-jq '.status = "tampered"' "$TMP/intact-$attempt_file" \
-  > "$attempt_dir/$attempt_file"
-assert_cmd_fails_with "tampered monotonic history fails closed" \
-  "review-history-corrupt" \
-  node .claude/harness/foundation.mjs receipt irreversible-payment-migration review pass \
+# A corrupt attempt chain is harness bookkeeping: the harness quarantines it,
+# rebuilds without lowering the evidenced count or reusing an unverifiable
+# verdict, and continues. It is never a user decision. Each case runs on a
+# copy of the state so the cap assertions below see the intact chain.
+corrupt_chain_case() {
+  label="$1"
+  corrupt_output="$({ node .claude/harness/foundation.mjs receipt irreversible-payment-migration review pass \
     --reviewer-type human --reviewer-identity security-owner \
     --subject-actor implementer-ai --unresolved-blockers 0 \
-    --observed 'History must be authentic' --reference fixture://history-tampered
-cp "$TMP/intact-$attempt_file" "$attempt_dir/$attempt_file"
+    --observed 'History was rebuilt' --reference "fixture://history-$label"; } 2>&1 || true)"
+  assert_not_contains "$label history never asks the user" "$corrupt_output" "review-history-corrupt"
+  assert_contains "$label history recovery is visible" "$corrupt_output" "review attempt chain"
+  quarantined="$(ls -d .foundation/evidence/irreversible-payment-migration/review-attempts.corrupt-* 2>/dev/null | head -1)"
+  [ -n "$quarantined" ] && [ -f "$quarantined/recovery.json" ] &&
+    { [ "$label" = missing ] || [ -f "$quarantined/$attempt_file" ]; } &&
+    pass "$label history is quarantined, not deleted" ||
+    fail "$label history is quarantined, not deleted"
+  rebuilt_attempts="$(jq -r '.reviewHistory.totalAttempts' "$review_runtime")"
+  [ "$rebuilt_attempts" -ge "$recorded_attempts" ] &&
+    pass "$label history never lowers the attempt count" ||
+    fail "$label history never lowers the attempt count ($rebuilt_attempts < $recorded_attempts)"
+  assert_cmd_fails_with "$label history cannot reopen the AI review cap" \
+    "REVIEW_ROUTE_COMPLETE" \
+    node .claude/harness/foundation.mjs receipt irreversible-payment-migration review pass \
+      --reviewer-type ai --reviewer-identity reviewer-ai \
+      --reviewer-provider-family anthropic --reviewer-model-family claude \
+      --reviewer-model claude-opus --reviewer-session "recovered-$label-session" \
+      --subject-actor implementer-ai --subject-session implementation-session \
+      --subject-provider-family openai --subject-model-family gpt-5 \
+      --subject-model gpt-5.3 --scope-path app.txt --unresolved-blockers 0 \
+      --observed 'Recovered history pass' --reference "fixture://recovered-$label"
+}
+
+rm -rf "$TMP/intact-foundation"
+cp -a .foundation "$TMP/intact-foundation"
+mv "$attempt_dir/$attempt_file" "$TMP/$attempt_file"
+corrupt_chain_case missing
+rm -rf .foundation && cp -a "$TMP/intact-foundation" .foundation
+
+jq '.status = "tampered"' "$attempt_dir/$attempt_file" > "$TMP/tampered-$attempt_file"
+cp "$TMP/tampered-$attempt_file" "$attempt_dir/$attempt_file"
+corrupt_chain_case tampered
+rm -rf .foundation && cp -a "$TMP/intact-foundation" .foundation
+
+jq '.reviewHistory.totalAttempts = 1' "$review_runtime" > "$TMP/lowered-runtime.json"
+cp "$TMP/lowered-runtime.json" "$review_runtime"
+corrupt_chain_case lowered
+rm -rf .foundation && cp -a "$TMP/intact-foundation" .foundation
 
 cp .foundation/receipts/irreversible-payment-migration/review.json "$TMP/round-two-review.json"
 rm .foundation/receipts/irreversible-payment-migration/review.json

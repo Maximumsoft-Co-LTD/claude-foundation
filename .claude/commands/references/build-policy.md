@@ -63,7 +63,7 @@ harness installs dependencies (setup command or lockfile install); finish a
 handed-off failed install inside the workspace, never linking or copying the
 checkout's `node_modules`. Fix an unfinished task's wrong verify with `change
 amend <change> --task <task> --verify <command>`. Run returned long commands
-through `claude-foundation exec`, which starts Build children in the canonical
+and each task's `checkCommand` through `claude-foundation exec`, which starts Build children in the canonical
 workspace (`--repo <id>` for a repository task's sandbox); time one only when its action requests observed execution. Prefer
 structured Edit/Write tools for product changes.
 

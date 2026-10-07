@@ -38,6 +38,7 @@ function project(t) {
     "#!/usr/bin/env sh",
     'if [ "${1:-}" = "--version" ]; then echo "1.7.0"; exit 0; fi',
     'if [ "${1:-}" = "archive" ]; then',
+    '  if [ -n "${FIXTURE_ARCHIVE_FAILS:-}" ]; then echo "archive unavailable" >&2; exit 1; fi',
     '  mkdir -p "openspec/changes/archive"',
     '  mv "openspec/changes/$2" "openspec/changes/archive/$2"',
     '  echo "archived $2"',
@@ -66,7 +67,8 @@ function cli(projectValue, ...args) {
       FOUNDATION_RUN_ID: "",
       FOUNDATION_SESSION_ID: "",
       CODEX_THREAD_ID: "",
-      CLAUDE_FOUNDATION_PROJECT: projectValue.root
+      CLAUDE_FOUNDATION_PROJECT: projectValue.root,
+      FIXTURE_ARCHIVE_FAILS: projectValue.archiveFails ? "1" : ""
     }
   });
 }
@@ -168,6 +170,46 @@ test("a user's same-line target edit stays a decision and is never merged or dis
   assert.deepEqual(conflict.paths, ["app.txt"]);
   assert.equal(readFileSync(join(fixture.root, "app.txt"), "utf8"), userContent);
   assert.equal(readFileSync(join(change.workspace.path, "app.txt"), "utf8"), sandboxContent);
+});
+
+// A Land that applied but did not archive leaves its projection in the target.
+// Sandbox work proven after it re-applies; a path that first apply never wrote
+// and the user has since edited is merged into the sandbox, never overwritten.
+test("re-apply after an interrupted Land merges a user's edit on a newly touched path", (t) => {
+  const fixture = project(t);
+  const base = head(fixture);
+  const changed = editedLine(fixture, "app.txt", 18, "change edit");
+  const change = provenEdit(fixture, "Reapply probe", "reapply-probe", "app.txt", changed);
+  fixture.archiveFails = true;
+  const interrupted = landed(fixture, "reapply-probe");
+  fixture.archiveFails = false;
+  assert.notEqual(interrupted.action, "DONE", JSON.stringify(interrupted));
+  assert.equal(readFileSync(join(fixture.root, "app.txt"), "utf8"), changed,
+    "the first apply projected the change");
+  const runtime = JSON.parse(readFileSync(
+    join(fixture.root, ".foundation", "runtime", "reapply-probe.json"), "utf8"));
+  assert.equal(runtime.workspace.applied, true, JSON.stringify(interrupted));
+
+  // The user edits lib.txt in the target; a repair then touches it in the sandbox.
+  writeFileSync(join(fixture.root, "lib.txt"), "user top\nlib base\n");
+  writeFileSync(join(change.workspace.path, "lib.txt"), "lib base\nchange bottom\n");
+  reprove(fixture, "reapply-probe", "lib.txt");
+  const carried = landed(fixture, "reapply-probe");
+  assert.notEqual(carried.action, "DONE", JSON.stringify(carried));
+  assert.doesNotMatch(JSON.stringify(carried), /target-edit-conflict|restore-target/,
+    "a non-overlapping user edit is not a question");
+  assert.equal(readFileSync(join(fixture.root, "lib.txt"), "utf8"), "user top\nlib base\n",
+    "the user's edit is not overwritten");
+  assert.equal(readFileSync(join(change.workspace.path, "lib.txt"), "utf8"),
+    "user top\nlib base\nchange bottom\n", "the harness merged the user's edit into the sandbox");
+
+  reprove(fixture, "reapply-probe", "lib.txt");
+  const done = landed(fixture, "reapply-probe");
+  assert.equal(done.action, "DONE", JSON.stringify(done));
+  assert.equal(readFileSync(join(fixture.root, "lib.txt"), "utf8"),
+    "user top\nlib base\nchange bottom\n");
+  assert.equal(readFileSync(join(fixture.root, "app.txt"), "utf8"), changed);
+  assert.equal(head(fixture), base, "Land never commits");
 });
 
 // Undo of an archived Land whose diff is still uncommitted goes through

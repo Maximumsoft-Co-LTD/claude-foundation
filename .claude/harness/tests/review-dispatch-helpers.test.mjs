@@ -12,24 +12,28 @@ import {
 
 const fail = (message) => { throw new Error(message); };
 
-test("review dispatch history allows clean chains and blocks corrupt chains", () => {
+test("review dispatch history keeps clean chains and recovers corrupt chains", () => {
   let checks = 0;
   const context = {
     reviewHistoryChainValid: () => { checks += 1; return true; },
-    blockWithDecision: () => assert.fail("valid chain must not block")
+    recoverCorruptReviewHistory: () => assert.fail("valid chain must not be recovered")
   };
-  assertReviewDispatchHistory(context, "change-a", {});
+  const empty = {};
+  assert.equal(assertReviewDispatchHistory(context, "change-a", empty), empty);
   assert.equal(checks, 0);
-  assertReviewDispatchHistory(context, "change-a", { chainHead: "head" });
+  const clean = { chainHead: "head" };
+  assert.equal(assertReviewDispatchHistory(context, "change-a", clean), clean);
   assert.equal(checks, 1);
-  assert.throws(() => assertReviewDispatchHistory({
+  const recovered = { chainHead: "rebuilt", totalAttempts: 3 };
+  assert.equal(assertReviewDispatchHistory({
     reviewHistoryChainValid: () => false,
-    blockWithDecision: (_id, kind, details) => {
-      assert.equal(kind, "review-history-corrupt");
-      assert.equal(details.attemptsRecorded, 3);
-      throw new Error(kind);
+    recoverCorruptReviewHistory: (id, history) => {
+      assert.equal(id, "change-a");
+      assert.equal(history.totalAttempts, 3);
+      return recovered;
     }
-  }, "change-a", { chainHead: "bad", totalAttempts: 3 }), /review-history-corrupt/);
+  }, "change-a", { chainHead: "bad", totalAttempts: 3 }), recovered,
+  "a corrupt chain is harness bookkeeping: it is rebuilt, never a user decision");
 });
 
 test("review dispatch type normalizes AI and human and rejects other values", () => {

@@ -223,8 +223,10 @@ importer (`metrics <change>` → `hostToolProfile`). Without a host stream every
 count is `null`.
 
 `friction` records what the harness cost the agent: `hookBlocks` (tool calls a
-hook refused), `permissionPrompts` (host approvals the agent waited on),
-`toolErrors`, `advanceActions` (protocol-6 actions the agent was handed), and
+hook refused), `permissionPrompts` (host approvals the agent waited on,
+including host safety denials such as a JSON heredoc),
+`toolErrors` (failed results the agent saw; a call the bench's own stop killed
+mid-flight, with no later assistant turn, is not counted), `advanceActions` (protocol-6 actions the agent was handed), and
 `guardrail` (the guard's own audit outcomes in the run window: `redirected`,
 `routed`, `guided`, `shell-audit`, `blocked`). The target for a normal run is
 zero `hookBlocks`; the lab aggregate sums `hookBlocks`, `permissionPrompts`,

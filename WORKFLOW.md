@@ -285,7 +285,9 @@ Build references load only on their triggers. A minimal draft (`intent`,
 `requirements[{description, scenarios[{when, then}]}]`,
 `tasks[{outcome, verify, paths}]`, no `version`) is expanded by the compiler.
 Every EDIT or REPAIR lists `contextFiles` (absolute paths to open), `newFiles`
-(declared paths to create), and `contextScope`. Each EDIT task carries its own
+(declared paths to create), and `contextScope`. Each EDIT task with a verify
+also carries `checkCommand`, that verify run through `claude-foundation exec
+<change> --task <id>`, which the installed allowlist already permits. Each EDIT task carries its own
 `workspace`: a non-root repository's task names
 `.foundation/repository-sandboxes/<change>/<repository>`, never the shared
 sandbox's empty submodule directory, and the top-level `workspace` (plus a
@@ -429,11 +431,19 @@ claude-foundation change abandon <change> --reason <reason> --decision-ref <ref>
 ```
 
 Abandon releases leases, cleans up isolation, and moves the packet, runtime
-state, receipts, evidence, transactions, review requests, and reviewer reports
-to `.foundation/recovery/abandoned/<id>/` with an audit record, so a later
-change reusing the id starts with a fresh review budget. It requires a real
-user decision, never touches Git, refuses archived changes, and asks whether to
-keep or revert already-applied files before acting.
+state, receipts, evidence, transactions, plans, handoffs, logs, review requests,
+reviewer reports, instruction manifests, the open attestation challenge, and any
+delivery record to `.foundation/recovery/abandoned/<id>/` with an audit record,
+so a later change reusing the id starts with a fresh review budget, its own
+task attribution, no inherited attestation, and no stale delivery state. A
+delivery record is kept there, never deleted; abandon does not close a pull
+request it opened. The global attestation nonce ledger, investigation
+prototypes, and content-addressed intake state are not per-change and stay. If
+an older abandon or a Land undo left such bookkeeping behind, creating a change
+with that id moves it into the newest retirement record; other leftover change
+state still refuses the id. Abandon requires a real user decision, never
+touches Git, refuses archived changes, and asks whether to keep or revert
+already-applied files before acting.
 
 Abandon removes only what the change owns: its sandboxes, its own `.foundation`
 records and packet (quarantined, never deleted; an earlier quarantine of the same
@@ -793,7 +803,11 @@ harness (`target-edit-sync`, automatic): a 3-way merge into the sandbox copy,
 Prove again for what it invalidated, then Apply; the target keeps the user's
 bytes until then. Only an edit of the same lines is a `target-edit-conflict`:
 the agent merges it into the sandbox copy, and Land applies the merged file once
-merging the target edit into it changes nothing. Edits made outside the sandbox
+merging the target edit into it changes nothing. The same holds when sandbox
+work proven after an earlier apply re-applies: a path that apply never wrote
+must still be at the sandbox base or already hold the sandbox bytes, otherwise
+its target edit takes this merge or decision route instead of being
+overwritten. Edits made outside the sandbox
 stop Land only on paths in this change's Land projection; others are reported.
 Git-ignored files are no change's content: under each selected repository's own
 ignore rules they are never compared, projected, or reported as target edits or
@@ -1185,7 +1199,15 @@ allowed delivered AI waves, another open review is refused. A final in-contract
 blocker must name affected claims and declared critical cases; current passing
 provider evidence may then close those IDs deterministically without a third
 AI. A hash chain binds attempts, scope, findings, closure, and receipts.
-Deleting or renaming state cannot reset the limit; corrupt history fails closed.
+Deleting or renaming state cannot reset the limit. A corrupt attempt chain is
+harness bookkeeping, not a user decision: the harness moves it aside as
+`review-attempts.corrupt-<stamp>` (never deleted, with a recovery manifest),
+rebuilds it, and reports a `review-history-recovered` signal. The rebuild is
+fail-closed: the attempt count never falls below what the runtime history, any
+record or file name, or a legacy receipt evidences; a verdict is reused only
+when its whole chain verifies and covers every evidenced attempt; otherwise
+the unverifiable attempts count as delivered inconclusive AI waves, which
+consumes the budget through the ordinary review-exhausted route.
 
 Human acceptance is separate from review. Every new standard change explicitly
 records whether subjective acceptance is required; `undecided` blocks
@@ -1207,7 +1229,7 @@ was delivered, not that deployment, activation, or production verification ran.
 ## Recovery and user decisions
 
 Some guards end a run rather than returning another repair action: exhausted AI
-review waves, corrupt review history, a moved control repository during
+review waves, a moved control repository during
 multi-repository Land, reset staged submodule pointers, or an apply rollback
 that could not complete.
 

@@ -283,10 +283,22 @@ test("repair closure operation preserves idempotency and fails closed", () => {
     duplicate.context, "change", details), current);
   assert.equal(duplicate.writes.length, 0);
 
+  // A corrupt chain is rebuilt by the harness first; a rebuild whose latest
+  // delivered wave is no longer the failed final delta cannot close it.
   const corrupt = operationFixture();
+  let recovered = 0;
   corrupt.context.reviewHistoryChainValid = () => false;
+  corrupt.context.recoverCorruptReviewHistory = (_id, history) => {
+    recovered += 1;
+    return { ...history, chainHead: "rebuilt" };
+  };
+  corrupt.context.deliveredAiAttempts = () => [
+    { digest: "placeholder-1" }, { digest: "placeholder-2", resultStatus: undefined }
+  ];
   assert.throws(() => recordRepairClosureAttemptOperation(
-    corrupt.context, "change", details), /valid attempt history/);
+    corrupt.context, "change", details), /failed final AI delta/);
+  assert.equal(recovered, 1);
+  assert.equal(corrupt.writes.length, 0);
 
   const missing = operationFixture();
   assert.throws(() => recordRepairClosureAttemptOperation(

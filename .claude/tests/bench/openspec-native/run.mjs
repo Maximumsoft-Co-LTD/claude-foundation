@@ -608,20 +608,38 @@ function toolResultText(item) {
 // What the run cost the agent in friction, read from the host stream: hook
 // refusals, host permission prompts, failed tool calls, and the harness actions
 // it was handed. The harness goal is zero hook refusals in a normal run.
+// A failed result that no later assistant turn of its session follows, before
+// the turn's `result` row, is the bench stopping the host mid-tool (exit
+// 137/143) or the turn ending, which the agent never saw.
+// Host safety denials ("Contains brace…") are approval prompts too.
 export function hostFriction(rows) {
   const results = rows.flatMap((row) => row?.type === "user" &&
     Array.isArray(row.message?.content) ? row.message.content : [])
     .filter((item) => item?.type === "tool_result");
-  const errors = results.filter((item) => item.is_error === true).map(toolResultText);
+  const denied = new Set(rows.filter((row) => row?.type === "system" &&
+    row.subtype === "permission_denied").map((row) => row.tool_use_id).filter(Boolean));
+  const seen = [];
+  let pending = [];
+  for (const row of rows) {
+    if (row?.type === "assistant") { seen.push(...pending); pending = []; }
+    else if (row?.type === "result" ||
+      (row?.type === "system" && row.subtype === "init")) pending = [];
+    else if (row?.type === "user" && Array.isArray(row.message?.content))
+      pending.push(...row.message.content.filter((item) =>
+        item?.type === "tool_result" && item.is_error === true));
+  }
+  const errors = seen.map((item) => ({ body: toolResultText(item),
+    denied: denied.has(item.tool_use_id) }));
   const actions = Object.fromEntries(ADVANCE_ACTIONS.map((action) => [action, 0]));
   for (const body of results.map(toolResultText))
     for (const match of body.matchAll(/"action"\s*:\s*"([A-Z_]+)"/g))
       if (Object.hasOwn(actions, match[1])) actions[match[1]] += 1;
   return {
     toolErrors: errors.length,
-    hookBlocks: errors.filter((body) => /hook error: BLOCKED|BLOCKED by secrets guard|BLOCKED: phase guard/
+    hookBlocks: errors.filter(({ body }) => /hook error: BLOCKED|BLOCKED by secrets guard|BLOCKED: phase guard/
       .test(body)).length,
-    permissionPrompts: errors.filter((body) => /requires approval/i.test(body)).length,
+    permissionPrompts: errors.filter(({ body, denied }) =>
+      denied || /requires approval/i.test(body)).length,
     advanceActions: actions
   };
 }

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Build `EDIT` tasks carry a `checkCommand`: the task's verify wrapped as
+  `claude-foundation exec <change> --task <id> -- <verify>` (`sh -c` when the
+  text needs a shell). The already-allowed CLI rule covers it, so running a
+  focused check no longer stops on a host approval prompt for `node --test`,
+  `python3 -m unittest`, or a piped form. The installer also seeds
+  `Edit(/.foundation/drafts/**)` for the Change draft; upgrades append it after
+  existing rules.
+
 - Thai intents now trigger the same review, security, and migration routing as
   English. Thai terms such as ล็อกอิน, เข้าสู่ระบบ, รหัสผ่าน, สิทธิ์,
   โทเคนเข้าถึง, ชำระเงิน, จ่ายเงิน, ย้ายข้อมูล, ลบข้อมูล, ข้อมูลส่วนตัว, and
@@ -240,6 +248,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   asks only for `why`.
 
 ### Fixed
+
+- A corrupt review attempt chain no longer stops with a
+  `review-history-corrupt` user decision. The harness moves the chain aside as
+  `review-attempts.corrupt-<stamp>`, rebuilds it, and reports a
+  `review-history-recovered` signal. The rebuild never lowers the evidenced
+  attempt count, reuses a verdict only when its whole chain verifies, and
+  otherwise counts unverifiable attempts as spent AI waves, so the change
+  continues through the ordinary review-exhausted route.
 
 - Land reads each selected repository's target checkout before archiving. A
   repository whose target lacks the proven sandbox bytes, has work stranded in
