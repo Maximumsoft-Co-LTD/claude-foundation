@@ -383,7 +383,7 @@
       "audience": "internal",
       "kind": "authority",
       "idempotent": true,
-      "description": "Bind a child repository commit after an explicit host-recorded user decision."
+      "description": "Bind a child repository commit after an explicit host-recorded user decision, only for a Land transaction the legacy commit-based saga already started; current changes use advance --through archived."
     },
     {
       "name": "land resume",

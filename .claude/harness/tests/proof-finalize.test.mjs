@@ -72,7 +72,7 @@ const runtime = createProofRuntime({
   pathInside: (parent, candidate) => relative(parent, candidate).startsWith("..") === false,
   validateArtifact: () => true, instructionProvenance: () => provenance,
   agentPlanValue: () => ({ graph }), savedAgentPlan: null, taskResult: null,
-  taskPacketWasPrecompleted: null, legacyExecutionPolicy: () => true,
+  taskPacketWasPrecompleted: null,
   selectedRepositories: () => repositories,
   git: () => gitResult, now: () => "2026-08-26T00:00:00.000Z",
   fail: (message) => { throw new Error(message); }
@@ -166,7 +166,7 @@ try {
   assert.equal(graphProof.aggregateGraphProof.graphIdentity, "graph-5");
   assert.deepEqual(graphProof.aggregateGraphProof.requiredEdges, ["edge-task", "edge-provider"]);
   assert.deepEqual(graphProof.nodeProofs.map((row) => row.source), [
-    "legacy-policy", "provider-receipt", "provider-receipt"
+    "single-agent-observed", "provider-receipt", "provider-receipt"
   ]);
   assert.deepEqual(graphProof.artifacts, [{ path: "active.log", required: true }]);
   const testReceipt = graphProof.receipts.find((row) => row.provider === "test");
@@ -180,6 +180,28 @@ try {
   assert.match(output, /excluded receipts/);
   assert.equal(state.status, "proven");
   assert.equal(state.collectedServiceArtifacts, undefined);
+
+  // A consumer with no foundation.json workflow block runs the legacy review
+  // circuit. Ticked tasks whose verify never passed under a harness lease
+  // carry no execution authority, so Prove must refuse them, including for a
+  // runtime state written before graph execution existed.
+  for (const legacyState of [{}, { graphExecutionVersion: 2 }]) {
+    resetReady();
+    state = { status: "building", contractRevision: 4, ...legacyState };
+    const unverifiedTask = (taskId) => ({
+      id: `task:${taskId}`, kind: "task", required: true, lifecycle: "build",
+      repository: "root", paths: [`src/${taskId}/**`], claims: [], resources: []
+    });
+    graph = {
+      revision: 6, identity: "graph-6", claims: [],
+      nodes: [unverifiedTask("T1"), unverifiedTask("T2")], edges: []
+    };
+    const writesBefore = writes.length;
+    assert.throws(() => runtime.finalize(id),
+      /task node 'task:T1' requires current Build verification.*advance finalize-proof --through proven/s);
+    assert.equal(state.status, "building");
+    assert.equal(writes.length, writesBefore);
+  }
 
   resetReady();
   graph = null;

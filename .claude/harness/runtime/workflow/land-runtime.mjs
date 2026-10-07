@@ -137,6 +137,15 @@ export function legacyRepositoryLandTransaction(state) {
         "awaiting-root-pointer"].includes(runtime?.land?.status)));
 }
 
+// Only a change the retired commit-based flow already took into its saga may
+// keep recording child commits. A current change delivers uncommitted
+// workspaces; letting `land record` bind a commit would switch it into the
+// legacy saga, and Land never commits.
+export function legacyLandSagaStarted(state) {
+  return legacyRepositoryLandTransaction(state) ||
+    state?.land?.strategy === "ordered-resumable-saga";
+}
+
 // Layered policy rather than a pinned string: a wrong major cannot sync specs,
 // a lower minor predates behavior the archive step depends on, a higher minor
 // is untested but not known-broken, and patch releases inside the tested minor
@@ -999,6 +1008,10 @@ export function createLandRuntime({
       fail("land record requires --decision-ref <host-user-decision>; ask the user to authorize binding this child commit before recording it");
     landCheck(id);
     const state = loadRuntime(id);
+    if (!legacyLandSagaStarted(state))
+      fail(`land record applies only to a change already in the legacy commit-based Land saga; ` +
+        `'${id}' delivers uncommitted workspaces and Land never commits. ` +
+        `Resume with 'claude-foundation advance ${id} --through archived'.`);
     const repository = repositoryById(id, repositoryId, state);
     if (repository.id === "root" || repository.mode !== "write")
       fail(`repository '${repositoryId}' is not a writable child repository`);
