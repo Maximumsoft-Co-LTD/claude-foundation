@@ -3,6 +3,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { deliveryProjectionEntry } from "./delivery-integrity.mjs";
+import { retiredChangeStores } from "./retired-change-stores.mjs";
 
 // Undo of an archived Land whose target diff is still uncommitted. Land never
 // commits, so until the user commits, the projection it wrote is the only
@@ -12,6 +13,13 @@ import { deliveryProjectionEntry } from "./delivery-integrity.mjs";
 // `.foundation/recovery/land-undone/<change>`. It refuses before writing
 // anything when the target moved past Land: a commit (HEAD moved), a staged
 // path, or any later edit of a path Land wrote is never clobbered.
+//
+// Undo retires the change rather than reopening it: its runtime state and its
+// archived packet leave the live stores, so nothing can resume it. Its
+// per-change bookkeeping (review requests and reports, instruction manifests,
+// the open attestation challenge, delivery state) is therefore quarantined in
+// the same step, exactly as abandon does; a delivery record is moved, never
+// deleted.
 export const SPEC_BEFORE_FILE = "spec-before.json";
 
 const isCodeEntry = (entry) => Boolean(entry?.path) && entry.role !== "change-artifacts";
@@ -129,10 +137,13 @@ export function createLandUndo({
       ["transactions", join(paths.transactions, id)],
       ["plans", join(paths.plans, id)],
       ["handoffs", join(paths.handoffs, id)],
+      // The change is retired, so nothing it owned stays live for a later
+      // change reusing the id; see retired-change-stores.mjs.
+      ...retiredChangeStores(paths, id),
       ["logs", join(paths.logs, id)],
       ["snapshot.json", join(paths.snapshots, `${id}.json`)]
     ]) {
-      if (!existsSync(source)) continue;
+      if (!source || !existsSync(source)) continue;
       const destination = join(target, name);
       mkdirSync(dirname(destination), { recursive: true });
       setAside(destination);
@@ -222,6 +233,10 @@ export function createLandUndo({
     const relative = target.slice(root.length + 1);
     console.log(`LAND UNDONE ${id}\n  restored: ${record.restoredPaths.length} path(s) to their ` +
       `pre-Land bytes\n  preserved: ${relative}`);
+    // Undo never touches Git or a provider; say where a delivery record went.
+    if (record.quarantined.includes("deliveries"))
+      console.error(`WARNING: delivery record preserved at ${relative}/deliveries; ` +
+        "Land undo does not close or update any pull request it opened");
     return record;
   }
 

@@ -506,7 +506,10 @@ unsatisfiable repair. A review that `advance` runs beside the providers binds
 its receipt to that pass's explicit proof run and snapshot, and its failure
 leaves an open request without marking the operation blocked. A change-level hash chain binds
 dispatch, completion, scope, findings, closure evidence, and receipt payload.
-Corrupt history is quarantined (`review-attempts.corrupt-<stamp>`, never
+Corrupt history, including a lowered chain whose recorded head and count were
+moved back together while attempt records above that head remain (one
+in-flight head+1 record linking to the head excepted), is quarantined
+(`review-attempts.corrupt-<stamp>`, never
 deleted) and rebuilt by the harness without a user decision, fail-closed: the
 rebuilt count is never below the evidenced attempts, only a chain that
 verifies end to end and covers every evidenced attempt keeps its verdicts, and

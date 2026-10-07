@@ -2178,7 +2178,9 @@ const { undoLand } = createLandUndo({
   paths: {
     recovery: RECOVERY, runtime: RUNTIME, receipts: RECEIPTS, evidenceVault: EVIDENCE_VAULT,
     transactions: TRANSACTIONS, snapshots: SNAPSHOTS, plans: PLANS, handoffs: HANDOFFS,
-    logs: LOGS
+    logs: LOGS, authority: AUTHORITY, reviews: REVIEWS,
+    instructionManifests: INSTRUCTION_MANIFESTS, attestations: ATTESTATIONS,
+    deliveries: DELIVERIES
   },
   loadRuntime, saveRuntime, readJson, writeJson, now, gitHead, git, gitBuffer,
   pathIdentity, pathMode, safeRootPath, copyPath,

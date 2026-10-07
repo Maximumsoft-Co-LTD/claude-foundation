@@ -274,6 +274,66 @@ test("a repeated Land undo of the same id sets the earlier undo's evidence aside
     /fixture:\/\/first-undo/);
 });
 
+// Undo retires the change, so its per-change bookkeeping is quarantined at undo
+// time (not left for a later change with the id to settle). A delivery record
+// is moved, never deleted, and an earlier quarantine is set aside; the global
+// nonce-addressed replay ledger stays.
+test("Land undo quarantines the retired change's per-change stores", (t) => {
+  const fixture = project(t);
+  const id = "store-probe";
+  const foundation = join(fixture.root, ".foundation");
+  const stores = [
+    ["authority", join(foundation, "authority", id, "request.json")],
+    ["reviews", join(foundation, "reviews", id, "report.json")],
+    ["instruction-manifests", join(foundation, "instruction-manifests", id, "manifest.json")],
+    ["attestation-challenge.json", join(foundation, "attestations", "challenges", `${id}.json`)],
+    ["deliveries", join(foundation, "deliveries", id, "delivery.json")]
+  ];
+  const ledger = join(foundation, "attestations", "used", "nonce-fixture.json");
+  const seed = (round) => {
+    for (const [, path] of stores) {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, `{"round":"${round}"}\n`);
+    }
+  };
+  const recovery = join(foundation, "recovery", "land-undone", id);
+  const quarantinedPath = (name) => name.endsWith(".json")
+    ? join(recovery, name) : join(recovery, name, stores.find(([store]) => store === name)[1]
+      .split("/").pop());
+
+  provenEdit(fixture, "Store probe", id, "app.txt", editedLine(fixture, "app.txt", 18, "first"));
+  assert.equal(landed(fixture, id).action, "DONE");
+  seed("first");
+  mkdirSync(dirname(ledger), { recursive: true });
+  writeFileSync(ledger, "{}\n");
+  const once = undo(fixture, id, "--decision-ref", "fixture://first-undo");
+  assert.equal(once.status, 0, once.stderr);
+  assert.match(once.stderr, /delivery record preserved at .*land-undone\/store-probe\/deliveries/);
+  const record = JSON.parse(readFileSync(join(recovery, "undo.json"), "utf8"));
+  for (const [name, path] of stores) {
+    assert.equal(existsSync(path), false, `${name} left the live store at undo time`);
+    assert(record.quarantined.includes(name), `undo.json records ${name}: ${record.quarantined}`);
+    assert.equal(readFileSync(quarantinedPath(name), "utf8"), '{"round":"first"}\n');
+  }
+  assert(existsSync(ledger), "the global attestation replay ledger is never quarantined");
+
+  // The id is reusable at once; a second undo sets the first quarantine aside.
+  provenEdit(fixture, "Store probe", id, "app.txt", editedLine(fixture, "app.txt", 18, "second"));
+  assert.equal(landed(fixture, id).action, "DONE");
+  seed("second");
+  const twice = undo(fixture, id, "--decision-ref", "fixture://second-undo");
+  assert.equal(twice.status, 0, twice.stderr);
+  const entries = readdirSync(recovery);
+  for (const [name] of stores) {
+    assert.equal(readFileSync(quarantinedPath(name), "utf8"), '{"round":"second"}\n');
+    const previous = entries.filter((entry) => entry.startsWith(`${name}.previous-`));
+    assert.equal(previous.length, 1, `${name} of the first undo is set aside: ${entries}`);
+  }
+  const previousDelivery = entries.find((entry) => entry.startsWith("deliveries.previous-"));
+  assert.equal(readFileSync(join(recovery, previousDelivery, "delivery.json"), "utf8"),
+    '{"round":"first"}\n', "the first delivery record is kept, never deleted");
+});
+
 test("Land undo restores a user's edit that Land had carried, from the retained backup", (t) => {
   const fixture = project(t);
   provenEdit(fixture, "Undo carry probe", "undo-carry-probe", "app.txt",

@@ -175,11 +175,15 @@ export function acknowledgeBaseMoveAttemptsOperation(context, id, decisionRef) {
   };
 }
 
-// A corrupt chain is harness bookkeeping, not a user decision: the harness
-// quarantines and rebuilds it (see recoverCorruptReviewHistory) and returns
-// the history the dispatch must continue from.
+// A corrupt or lowered chain is harness bookkeeping, not a user decision: the
+// harness quarantines and rebuilds it (see recoverCorruptReviewHistory) and
+// returns the history the dispatch must continue from.
 export function assertReviewDispatchHistory(context, id, history) {
-  if (!history.chainHead || context.reviewHistoryChainValid(id, history)) return history;
+  // An empty head has no chain to verify; only records it never recorded
+  // (a history lowered to nothing) make it corrupt.
+  if (!history.chainHead
+    ? !context.reviewChainLowered(id, history)
+    : context.reviewHistoryChainValid(id, history)) return history;
   return context.recoverCorruptReviewHistory(id, history);
 }
 
@@ -237,6 +241,28 @@ export function verifiedReviewChain(records, preferredHead = null) {
 // a recorded head, every attempt number any record or file name claims (even
 // an unverifiable one), and the highest legacy receipt round. Tampering can
 // only raise this bound, never lower it.
+// Every writer (dispatch, reserve, repair closure) writes the attempt record
+// before it moves the runtime head, so a crash between the two leaves exactly
+// one in-flight record at head+1 that links to the recorded head. That record
+// is legitimate. Any other record above the recorded head means the head and
+// the count were moved back together to an earlier valid record: the chain
+// still verifies, but the review budget was reset. A completed v2 verdict is
+// never in flight (completion rewrites the head's own attempt number), so it
+// is lowering even at head+1. `files` are { name, value } attempt records.
+export function reviewChainLowered(files, history, verifies) {
+  const head = Number(history.totalAttempts || 0) || 0;
+  const above = files.filter((file) => Math.max(attemptNumberFromName(file.name),
+    Number.isInteger(file.value?.attempt) ? file.value.attempt : 0) > head);
+  if (!above.length) return false;
+  if (above.length > 1) return true;
+  const [{ name, value }] = above;
+  const inFlight = attemptNumberFromName(name) === head + 1 &&
+    value?.attempt === head + 1 && verifies(value) &&
+    (value.priorChainHead || null) === (history.chainHead || null) &&
+    !(value.version === 2 && value.status === "completed");
+  return !inFlight;
+}
+
 export function evidencedReviewAttemptCount({ history = {}, files = [],
   receiptRounds = [], verifiedTop = 0 }) {
   const claimed = files.flatMap((file) => [
@@ -440,6 +466,7 @@ export function reviewHistoryAttemptValid(attempt, id, expectedAttempt) {
 }
 
 export function reviewHistoryChainValidOperation(context, id, history) {
+  if (context.reviewChainLowered?.(id, history)) return false;
   let digest = history.chainHead || null;
   let expectedAttempt = Number(history.totalAttempts || 0);
   let base = null;
@@ -529,8 +556,20 @@ export function createReviewAttemptStore({
     return claimed === digest && stableHash(canonical) === claimed ? attempt : null;
   }
 
+  function reviewAttemptFiles(id) {
+    const dir = join(evidenceVault, id, "review-attempts");
+    return existsSync(dir)
+      ? readdirSync(dir, { withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+        .map((entry) => ({ name: entry.name, value: readJson(join(dir, entry.name), {}) }))
+      : [];
+  }
+
+  const isReviewChainLowered = (id, history) => reviewChainLowered(
+    reviewAttemptFiles(id), history, (value) => attemptRecordVerifies(id, value));
+
   const reviewHistoryChainValid = reviewHistoryChainValidOperation.bind(null, {
-    reviewAttemptByDigest
+    reviewAttemptByDigest, reviewChainLowered: isReviewChainLowered
   });
 
   function attemptRecordVerifies(id, value) {
@@ -566,15 +605,16 @@ export function createReviewAttemptStore({
   //   attempts become inconclusive AI placeholders (at least
   //   RECOVERED_DELIVERED_FLOOR), so no verdict is reused and the budget is
   //   consumed through the normal REVIEW_ROUTE_COMPLETE boundary.
+  // A lowered chain (records above the recorded head beyond one in-flight
+  // dispatch; see reviewChainLowered) takes the same route: its records
+  // evidence the higher count, and the lowered head is not the top of the
+  // longest verified chain, so its budget is consumed rather than reset.
   function recoverCorruptReviewHistory(id, history) {
     const current = reviewHistoryState(id, loadRuntime(id));
-    if (!current.chainHead || reviewHistoryChainValid(id, current)) return current;
+    if (reviewHistoryChainValid(id, current) ||
+        !current.chainHead && !isReviewChainLowered(id, current)) return current;
     const dir = join(evidenceVault, id, "review-attempts");
-    const files = existsSync(dir)
-      ? readdirSync(dir, { withFileTypes: true })
-        .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
-        .map((entry) => ({ name: entry.name, value: readJson(join(dir, entry.name), {}) }))
-      : [];
+    const files = reviewAttemptFiles(id);
     const verified = [...new Map(files
       .filter((file) => attemptRecordVerifies(id, file.value))
       .map((file) => [file.value.digest, file.value])).values()];
@@ -757,7 +797,8 @@ export function createReviewAttemptStore({
     const refuse = (message) => { throw new Error(message); };
     const state = loadRuntime(id);
     const history = assertReviewDispatchHistory({
-      reviewHistoryChainValid, recoverCorruptReviewHistory
+      reviewHistoryChainValid, recoverCorruptReviewHistory,
+      reviewChainLowered: isReviewChainLowered
     }, id, reviewHistoryState(id, state));
     const attempts = reviewAttempts(id, history);
     if (attempts.some((attempt) =>
@@ -806,7 +847,8 @@ export function createReviewAttemptStore({
       maxInfrastructureRetries = 1) {
     const state = loadRuntime(id);
     const history = assertReviewDispatchHistory({
-      reviewHistoryChainValid, recoverCorruptReviewHistory
+      reviewHistoryChainValid, recoverCorruptReviewHistory,
+      reviewChainLowered: isReviewChainLowered
     }, id, reviewHistoryState(id, state));
     if (reviewerType === "ai") {
       if (deliveredAiAttempts(id, history).length >= Number(maxAiAttempts))
@@ -851,7 +893,8 @@ export function createReviewAttemptStore({
   function dispatchReviewAttempt(id, details) {
     const state = loadRuntime(id);
     const history = assertReviewDispatchHistory({
-      reviewHistoryChainValid, recoverCorruptReviewHistory
+      reviewHistoryChainValid, recoverCorruptReviewHistory,
+      reviewChainLowered: isReviewChainLowered
     }, id, reviewHistoryState(id, state));
     const reviewerType = reviewDispatchType(details, fail);
     const priorAttempts = reviewAttempts(id, history);
@@ -880,7 +923,7 @@ export function createReviewAttemptStore({
   const recordRepairClosureAttempt = recordRepairClosureAttemptOperation.bind(null, {
     evidenceVault, loadRuntime, saveRuntime, stableHash, writeJson, now, fail,
     reviewHistoryState, reviewHistoryChainValid, recoverCorruptReviewHistory,
-    reviewAttempts, deliveredAiAttempts
+    reviewChainLowered: isReviewChainLowered, reviewAttempts, deliveredAiAttempts
   });
 
   return {

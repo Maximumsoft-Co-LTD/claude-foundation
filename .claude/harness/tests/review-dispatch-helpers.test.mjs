@@ -16,11 +16,19 @@ test("review dispatch history keeps clean chains and recovers corrupt chains", (
   let checks = 0;
   const context = {
     reviewHistoryChainValid: () => { checks += 1; return true; },
+    reviewChainLowered: () => false,
     recoverCorruptReviewHistory: () => assert.fail("valid chain must not be recovered")
   };
   const empty = {};
   assert.equal(assertReviewDispatchHistory(context, "change-a", empty), empty);
   assert.equal(checks, 0);
+  const emptied = { chainHead: null, totalAttempts: 0 };
+  const rebuilt = { chainHead: "rebuilt", totalAttempts: 2 };
+  assert.equal(assertReviewDispatchHistory({
+    reviewChainLowered: () => true,
+    recoverCorruptReviewHistory: (id, history) => history === emptied ? rebuilt : null
+  }, "change-a", emptied), rebuilt,
+  "an empty head with records above it is a lowered history and is rebuilt");
   const clean = { chainHead: "head" };
   assert.equal(assertReviewDispatchHistory(context, "change-a", clean), clean);
   assert.equal(checks, 1);

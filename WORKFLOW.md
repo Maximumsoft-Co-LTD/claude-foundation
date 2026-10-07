@@ -819,6 +819,12 @@ decision, with `advance <change> --undo-land --decision-ref <user-decision>`.
 The harness returns every path Land wrote (code, synchronized specs, archived
 packet) to its pre-Land bytes from the Land journal, retires the change, and
 keeps the landed bytes and records under `.foundation/recovery/land-undone/`.
+Undo retires rather than reopens the change (its runtime state and packet
+leave the live stores), so it quarantines the same per-change bookkeeping
+abandon does: review requests and reports, instruction manifests, the open
+attestation challenge, and any delivery record, which is moved, never deleted.
+`undo.json` lists what moved, an earlier undo's copy is set aside, and a later
+change can reuse the id fresh.
 It refuses without writing when HEAD moved since Land, a path Land wrote is
 staged, or any such path changed after Land.
 
@@ -1199,7 +1205,11 @@ allowed delivered AI waves, another open review is refused. A final in-contract
 blocker must name affected claims and declared critical cases; current passing
 provider evidence may then close those IDs deterministically without a third
 AI. A hash chain binds attempts, scope, findings, closure, and receipts.
-Deleting or renaming state cannot reset the limit. A corrupt attempt chain is
+Deleting or renaming state cannot reset the limit. Neither can moving the
+recorded head and count back together to an earlier valid record: an attempt
+record above the recorded head marks the chain lowered, except the one
+in-flight record at head+1 that links to the head (attempts are written before
+the head moves, so a crash can leave it). A corrupt or lowered attempt chain is
 harness bookkeeping, not a user decision: the harness moves it aside as
 `review-attempts.corrupt-<stamp>` (never deleted, with a recovery manifest),
 rebuilds it, and reports a `review-history-recovered` signal. The rebuild is
