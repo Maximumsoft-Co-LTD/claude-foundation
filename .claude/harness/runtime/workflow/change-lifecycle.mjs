@@ -34,7 +34,7 @@ import {
 } from "./validation/semantic-intake-intelligence.mjs";
 import { planAmendmentInvalidation } from "./validation/amendment-invalidation.mjs";
 import {
-  planSelectiveProofRecovery, rebindSelectiveProofReceipt
+  planSelectiveProofRecovery, rebindSelectiveProofReceipt, demoteSelectivePreservation
 } from "./validation/selective-proof-plan.mjs";
 import {
   reduceSemanticIntakeState, semanticDraftDigest, semanticIntakeResumeProjection
@@ -2313,7 +2313,7 @@ export function createChangeLifecycle({
       const currentBindings = invalidation.proof.preserveReceipts
         .map((provider) => selectiveBinding(id, provider, currentContractRevision))
         .filter(Boolean);
-      const proofRecovery = planSelectiveProofRecovery({
+      let proofRecovery = planSelectiveProofRecovery({
         changeId: id,
         invalidation,
         requiredProviders: currentRequiredProviders,
@@ -2331,12 +2331,9 @@ export function createChangeLifecycle({
           // A task-only amendment leaves the contract as it was: a receipt
           // already bound to it needs no rebind, and one that is not is rerun.
           if (nextFingerprint === priorContractFingerprint) {
-            if (priorReceipt.contractFingerprint !== nextFingerprint) {
-              proofRecovery.providers.preserved =
-                proofRecovery.providers.preserved.filter((row) => row !== provider);
-              proofRecovery.providers.rerun = [...new Set([
-                ...(proofRecovery.providers.rerun || []), provider])].sort();
-            }
+            if (priorReceipt.contractFingerprint !== nextFingerprint)
+              compiled.invalidation.proofRecovery = proofRecovery = demoteSelectivePreservation(
+                proofRecovery, provider, "RECEIPT_STALE_FOR_UNCHANGED_CONTRACT");
             continue;
           }
           const rebound = rebindSelectiveProofReceipt({
