@@ -43,7 +43,7 @@ test("a tier over 1.3x of baseline median fails even when another tier is fine",
     row("big", "baseline", 100000), row("big", "change-loop", 100000),
     row("big", "baseline", 100000), row("big", "change-loop", 140000),
     row("huge", "baseline", 100000), row("huge", "change-loop", 160000)
-  ], { riskByScenario: risk });
+  ], { riskByScenario: risk, targetRatio: 1.3 });
   assert.equal(report.status, "fail");
   assert.match(report.reason, /standard/);
   const standard = report.tiers.find((tier) => tier.tier === "standard");
@@ -134,4 +134,14 @@ test("the release report shows the time gate as an advisory that never blocks re
   assert.equal(report.advisories[0].status, "fail");
   assert.equal(report.releaseReady, true, "advisory evidence never changes readiness");
   assert.deepEqual(buildReleaseReport({ matrix, sentinel }).advisories, []);
+});
+
+test("default targets are 1.5x for rapid and 1.8x for standard", () => {
+  const report = evaluateTimeGate([
+    row("tiny", "baseline", 100000), row("tiny", "change-loop", 148000),
+    row("big", "baseline", 100000), row("big", "change-loop", 185000)
+  ], { riskByScenario: risk });
+  assert.equal(report.status, "fail");
+  assert.deepEqual(report.tiers.map((tier) => [tier.tier, tier.targetRatio, tier.pass]),
+    [["rapid", 1.5, true], ["standard", 1.8, false]]);
 });

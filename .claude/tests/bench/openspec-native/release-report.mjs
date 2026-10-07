@@ -72,7 +72,7 @@ export function buildReleaseReport({ matrix, sentinel, aggregates = [], timeGate
       zeroModelSpend: sentinel.zeroModelSpend
     },
     scenarios,
-    // Advisory paid evidence (1.3x wall-time target against the no-harness
+    // Advisory paid evidence (1.5x rapid / 1.8x standard wall-time target against the no-harness
     // baseline): visible in the report, never part of `releaseReady`.
     advisories: timeGate ? [{ id: "time-gate", status: timeGate.status,
       reason: timeGate.reason, targetRatio: timeGate.targetRatio, tiers: timeGate.tiers }] : [],

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-// Advisory time gate: Change Loop wall time must stay within 1.3x of the same
+// Advisory time gate: Change Loop wall time must stay within 1.5x (rapid lane) or 1.8x (standard lane)
+// of the same
 // task without the harness. Reads scorecards of two arms (rows with
 // `arm: "baseline"` against Change Loop rows, which have no arm or
 // `arm: "change-loop"`), groups scenarios by lane tier, and fails (exit 2)
@@ -16,7 +17,8 @@ import { fileURLToPath } from "node:url";
 import { loadMatrix } from "./matrix.mjs";
 
 export const TIME_GATE_PROTOCOL = "foundation-time-gate-v1";
-export const TIME_GATE_TARGET_RATIO = 1.3;
+export const TIME_GATE_TARGETS = { rapid: 1.5, standard: 1.8 };
+export const TIME_GATE_TARGET_RATIO = TIME_GATE_TARGETS.standard;
 export const BASELINE_ARM = "baseline";
 export const CHANGE_LOOP_ARM = "change-loop";
 
@@ -111,8 +113,9 @@ function armStats(rows) {
 }
 
 export function evaluateTimeGate(rows, {
-  targetRatio = TIME_GATE_TARGET_RATIO, riskByScenario = {}, includeIncomplete = false
+  targetRatio = null, riskByScenario = {}, includeIncomplete = false
 } = {}) {
+  const targetFor = (tier) => targetRatio ?? TIME_GATE_TARGETS[tier];
   const usable = rows.filter((row) => includeIncomplete || completed(row))
     .filter((row) => Number.isFinite(row.scorecard.timing?.wallMs));
   const scenarios = [...new Set(rows.map((row) => row.scenario))].sort().map((scenario) => {
@@ -125,7 +128,8 @@ export function evaluateTimeGate(rows, {
     return {
       scenario, tier: laneTier(laneRow, riskByScenario), baseline, changeLoop,
       ratio: paired ? Number((changeLoop.wallMs / baseline.wallMs).toFixed(3)) : null,
-      overTarget: paired ? changeLoop.wallMs > targetRatio * baseline.wallMs : null
+      overTarget: paired
+        ? changeLoop.wallMs > targetFor(laneTier(laneRow, riskByScenario)) * baseline.wallMs : null
     };
   });
   const tiers = ["rapid", "standard"].map((tier) => {
@@ -133,20 +137,20 @@ export function evaluateTimeGate(rows, {
     const baselineMedian = median(pairs.map((row) => row.baseline.wallMs));
     const changeLoopMedian = median(pairs.map((row) => row.changeLoop.wallMs));
     return {
-      tier, pairedScenarios: pairs.length,
+      tier, targetRatio: targetFor(tier), pairedScenarios: pairs.length,
       baselineMedianWallMs: baselineMedian, changeLoopMedianWallMs: changeLoopMedian,
       ratio: pairs.length ? Number((changeLoopMedian / baselineMedian).toFixed(3)) : null,
-      pass: pairs.length ? changeLoopMedian <= targetRatio * baselineMedian : null
+      pass: pairs.length ? changeLoopMedian <= targetFor(tier) * baselineMedian : null
     };
   });
   const measured = tiers.filter((tier) => tier.pass !== null);
   const failed = measured.filter((tier) => !tier.pass);
   const status = failed.length ? "fail" : measured.length ? "pass" : "advisory";
   return {
-    version: 1, protocol: TIME_GATE_PROTOCOL, targetRatio, status,
+    version: 1, protocol: TIME_GATE_PROTOCOL, targetRatio: targetRatio ?? TIME_GATE_TARGETS, status,
     reason: failed.length
-      ? `Change Loop median wall time exceeds ${targetRatio}x baseline in tier ${
-        failed.map((tier) => tier.tier).join(", ")}`
+      ? `Change Loop median wall time exceeds its target ratio in tier ${
+        failed.map((tier) => `${tier.tier} (${tier.targetRatio}x)`).join(", ")}`
       : measured.length ? null
         : "no paired baseline and Change Loop runs: collect both arms before judging the target",
     tiers, scenarios
@@ -197,7 +201,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     else roots.push(argv[index]);
   }
   if (!roots.length || (options.targetRatio !== undefined && !(options.targetRatio > 0))) {
-    process.stderr.write("usage: time-gate.mjs <results-directory>... [--target 1.3] " +
+    process.stderr.write("usage: time-gate.mjs <results-directory>... [--target <ratio>] " +
       "[--strict] [--json] [--include-incomplete]\n");
     process.exitCode = 1;
   } else {

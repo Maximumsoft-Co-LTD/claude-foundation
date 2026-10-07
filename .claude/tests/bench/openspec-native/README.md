@@ -206,17 +206,18 @@ envelope's `num_turns` counts conversation turns (about tool calls plus one),
 not model requests, so it is kept as `hostReportedModelRequests` and used only
 when no request was observed.
 
-## Time gate (advisory, 1.3x)
+## Time gate (advisory, 1.5x rapid / 1.8x standard)
 
-The product target is Change Loop wall time of at most 1.3x the same task
-without the harness. `time-gate.mjs` checks it from scorecards of both arms
+The product target is Change Loop wall time of at most 1.5x (rapid lane) or
+1.8x (standard lane) the same task without the harness; `--target` overrides
+both. `time-gate.mjs` checks it from scorecards of both arms
 (rows with `arm: "baseline"` against Change Loop rows, which carry no arm or
 `arm: "change-loop"`; a lab run directory, `scorecard.json` files, or scorecard
 JSONL are all read):
 
 ```bash
 node .claude/tests/bench/openspec-native/time-gate.mjs \
-  .claude/tests/bench/results/openspec-native-lab [more roots] [--target 1.3] [--strict] [--json]
+  .claude/tests/bench/results/openspec-native-lab [more roots] [--target <ratio>] [--strict] [--json]
 ```
 
 Scenarios group into a `rapid` or `standard` tier by the lane recorded on the
