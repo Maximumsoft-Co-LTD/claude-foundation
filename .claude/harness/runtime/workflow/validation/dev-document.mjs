@@ -140,8 +140,10 @@ const NO_FAILURE_MATRIX = new Set([...LIGHT_WORK, "refactor", "config"]);
 
 const SECTION_HELP = {
   summary: "'why' (or 'summary'): 1-3 plain sentences on what the user gets and what changes",
-  failureMatrix: "'failureMatrix': [{ failure, userSees, recovery }] for each way this can fail, " +
-    "or a requirement scenario with kind 'failure' (optional 'recovery') it is derived from",
+  failureMatrix: "'failureMatrix': [{ failure, userSees, recovery }] for each way this can fail " +
+    "(e.g. { \"failure\": \"invalid input\", \"userSees\": \"400 naming the field\", " +
+    "\"recovery\": \"resend valid input\" }), or add a requirement scenario with \"kind\": " +
+    "\"failure\" (optional \"recovery\"); the harness derives the matrix from it",
   userFlow: "'userFlow': { purpose, source } with a Mermaid flowchart of the user's path, including the error path",
   uiStates: "'uiStates': [{ screen, states: [loading, empty, error, success…], accessibility }]",
   componentMap: "'componentMap': [{ component, responsibility, files }] mapping each component to its files",
@@ -169,17 +171,39 @@ function userFlowSource(value) {
 
 const NO_SEPARATE_RECOVERY = "No separate step; the outcome is the handling";
 
+// Scenarios the author did not classify are read as failures only when their
+// own words say so: an error status first, or a rejection/error verb. An
+// explicit kind (success, boundary...) is never second-guessed.
+const FAILURE_STATUS = /^\s*[45]\d\d\b/;
+const FAILURE_WORDS = new RegExp("\\b(?:reject\\w*|invalid|malformed|errors?|fail(?:s|ed|ure|ures)?|" +
+  "den(?:y|ies|ied)|forbidden|unauthori[sz]ed|not found|throws?|refus\\w*)\\b", "i");
+
+function scenarioList(requirement) {
+  return Array.isArray(requirement?.scenarios) ? requirement.scenarios
+    : requirement?.scenario !== undefined ? [requirement.scenario] : [];
+}
+
+function scenarioFailureKind(row) {
+  if (!row || typeof row !== "object") return "";
+  const kind = text(row.kind).toLowerCase();
+  if (kind) return kind === "failure" ? "explicit" : "";
+  return FAILURE_STATUS.test(text(row.then)) ||
+    FAILURE_WORDS.test([row.name, row.when, row.then].map(text).join(" ")) ? "inferred" : "";
+}
+
 function failureScenarios(draft) {
-  return (Array.isArray(draft?.requirements) ? draft.requirements : []).flatMap((requirement) => {
-    const list = Array.isArray(requirement?.scenarios) ? requirement.scenarios
-      : requirement?.scenario !== undefined ? [requirement.scenario] : [];
-    return list.filter((row) => text(row?.kind).toLowerCase() === "failure")
-      .map((scenario) => ({ requirement: text(requirement?.key), scenario }));
-  });
+  const found = (Array.isArray(draft?.requirements) ? draft.requirements : [])
+    .flatMap((requirement) => scenarioList(requirement).map((scenario) => ({
+      requirement: text(requirement?.key), scenario, how: scenarioFailureKind(scenario)
+    })).filter((row) => row.how));
+  // Authored failure scenarios are authoritative; words are only a fallback.
+  return found.some((row) => row.how === "explicit")
+    ? found.filter((row) => row.how === "explicit") : found;
 }
 
 // Failures are written once. An authored matrix is authoritative; without one,
-// each requirement scenario of kind 'failure' becomes a row.
+// each requirement scenario of kind 'failure' (or, unclassified, one that
+// states a rejection or error) becomes a row.
 export function derivedFailureMatrix(draft) {
   if (present(draft?.failureMatrix)) return draft.failureMatrix;
   return failureScenarios(draft).map(({ requirement, scenario }) => ({
@@ -190,11 +214,33 @@ export function derivedFailureMatrix(draft) {
   })).filter((row) => row.failure && row.userSees);
 }
 
-// The title is the intent and 'why' states the value, so a separate summary
-// would say the same thing a third time; either one gives the reader the lead.
+// What the harness filled in, so a reader can tell it from authored text: the
+// reason (the intent states it), the failure matrix (read from scenarios), and
+// evidence capabilities defaulted to the lane's plain check.
+export function derivedByHarness(draft, { standard = true } = {}) {
+  const notes = [];
+  if (draft?.version !== 4 || !standard) return notes;
+  const required = requiredDevSections(draft);
+  if (!text(draft.summary) && !text(draft.why))
+    notes.push("**Why:** not authored separately; the intent above states it.");
+  if (required.includes("failureMatrix") && !present(draft.failureMatrix)) {
+    const rows = failureScenarios(draft);
+    if (rows.length)
+      notes.push(`**Failure matrix:** read from ${rows.some((row) => row.how === "inferred")
+        ? "scenarios that state a rejection or error" : "the failure scenarios"} ` +
+        `(${rows.length}); recovery is "${NO_SEPARATE_RECOVERY}" where unstated.`);
+  }
+  if (Array.isArray(draft._defaultedEvidence) && draft._defaultedEvidence.length)
+    notes.push("**Evidence capabilities:** defaulted to `test` (`static-analysis` for " +
+      `docs/chore) for ${draft._defaultedEvidence.join(", ")}.`);
+  return notes;
+}
+
 function sectionValue(draft, key) {
   if (key === "userFlow") return userFlowSource(draft?.userFlow);
-  if (key === "summary") return text(draft?.summary) || text(draft?.why);
+  // The intent already states the outcome; a draft with no separate reason is
+  // not sent back for one (derivedByHarness records it).
+  if (key === "summary") return text(draft?.summary) || text(draft?.why) || text(draft?.intent);
   if (key === "failureMatrix") return derivedFailureMatrix(draft);
   return draft?.[key];
 }

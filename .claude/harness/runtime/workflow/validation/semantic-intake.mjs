@@ -222,7 +222,7 @@ export function semanticIntakeIssues(input = {}) {
   const unknownSignals = strings(source.riskSignals)
     .filter((signal) => !RISK_SIGNAL_DIMENSIONS[signal.toLowerCase()]);
   if (unknownSignals.length)
-    issues.push(`semantic draft riskSignals contains unknown signal(s): ${unknownSignals.join(", ")}`);
+    issues.push(`semantic draft riskSignals contains unknown signal(s): ${unknownSignals.join(", ")} (known: ${Object.keys(RISK_SIGNAL_DIMENSIONS).join(", ")})`);
 
   const requirementKeys = new Set((source.requirements || []).map((row) => text(row?.key)));
   const requiredDimensions = requiredDiscoveryDimensions(source);
@@ -243,7 +243,7 @@ export function semanticIntakeIssues(input = {}) {
       issues.push(`${label}.covers references unknown requirement(s): ${unknown.join(", ")}`);
     if (status === "covered" && !covers.length && !strings(row?.sources).length &&
         !isDerivedCoverage(row))
-      issues.push(`${label} covered status requires covers or sources`);
+      issues.push(`${label} covered status requires covers or sources (covers: requirement keys; sources: paths read)`);
     if (status === "not-applicable" && !text(row?.rationale))
       issues.push(`${label} not-applicable status requires rationale`);
     if (["needs-investigation", "needs-user-decision"].includes(status))

@@ -452,14 +452,17 @@ test("a rapid draft without evidence capabilities starts with a derived test pro
   assert.deepEqual(contract.providers.test.command, ["sh", "-c", "npm test"]);
 });
 
-test("a draft that lands on the standard lane must declare evidence capabilities", (t) => {
+test("a draft that lands on the standard lane defaults evidence capabilities like rapid", (t) => {
   const value = fixture(t);
   writeJson(value.draftPath, rapidV3WithoutEvidence({
     decisions: [{ key: "shape", choice: "Keep one module", reason: "Smallest change" }]
   }));
-  assert.throws(() => value.lifecycle.startAtomic(value.draftPath),
-    /foundation-standard, which requires explicit evidence capabilities; add evidence\['derived-result'\]\.capabilities/);
-  assert.equal(existsSync(join(value.changes, "derived-evidence")), false);
+  value.lifecycle.startAtomic(value.draftPath);
+  const runtime = JSON.parse(readFileSync(join(value.runtime, "derived-evidence.json"), "utf8"));
+  assert.equal(runtime.schema, "foundation-standard");
+  const contract = JSON.parse(readFileSync(
+    join(value.changes, "derived-evidence", "evidence.yaml"), "utf8"));
+  assert.deepEqual(contract.claims.map((claim) => claim.capabilities), [["test"]]);
 });
 
 test("one start reports every detectable draft issue in a single EDIT", (t) => {
@@ -476,7 +479,8 @@ test("one start reports every detectable draft issue in a single EDIT", (t) => {
   const issues = result.intake.issues.join("\n");
   assert.match(issues, /alternatives must name at least two choices/);
   assert.match(issues, /domainLanguage\[0\]\.avoid is required/);
-  assert.match(issues, /requires explicit evidence capabilities; add evidence\['bounded-result'\]/);
+  // Omitted evidence capabilities are defaulted by the harness, never an issue.
+  assert.doesNotMatch(issues, /evidence/);
   assert.equal(existsSync(value.changes), false);
 });
 
@@ -1134,7 +1138,9 @@ test("dev document sections and draft checks arrive together on the first inspec
   assert.equal(first.action, "EDIT");
   assert.equal(first.owner, "agent");
   const issues = first.intake.issues.join("\n");
-  assert.match(issues, /dev document \(api[^)]*\) needs 'why'/);
+  // The intent states the reason; only content that takes judgment is asked.
+  assert.doesNotMatch(issues, /needs 'why'/);
+  assert.match(issues, /dev document \(api[^)]*\) needs 'failureMatrix'/);
   assert.match(issues, /dev document \(api[^)]*\) needs 'apiContracts'/);
   assert.match(issues, /verify references 'tests\/api\/results\.test\.mjs'/);
 });
@@ -1265,9 +1271,10 @@ test("a published API contract derives the standard lane and one actionable EDIT
   assert.equal(result.action, "EDIT");
   assert.equal(result.owner, "agent");
   const issues = result.intake.issues.join("\n");
-  assert.match(issues, /requires evidence\['[a-z-]+'\]\.capabilities .*the harness derived impact medium \(derived: requirements name a published contract \('API'\)\)/);
-  assert.match(issues, /dev document \(code, inferred from paths[^\n]*standard lane: the harness derived impact medium[^\n]*\) needs 'why'/);
-  assert.match(issues, /needs 'failureMatrix'/);
+  // Evidence capabilities and the reason are derived; the failure story is not.
+  assert.doesNotMatch(issues, /requires evidence|needs 'why'/);
+  assert.match(issues, /dev document \(code, inferred from paths[^\n]*standard lane: the harness derived impact medium[^\n]*\) needs 'failureMatrix'/);
+  assert.equal(result.intake.issues.length, 1);
   assert.equal(existsSync(value.changes), false);
 
   writeJson(value.draftPath, derivedRiskV4({
@@ -1290,6 +1297,84 @@ test("a published API contract derives the standard lane and one actionable EDIT
   const { state, design } = startedChange(value, "list-notes");
   assert.equal(state.schema, "foundation-standard");
   assert.equal(design, true);
+});
+
+// Change-phase round trips: a draft the harness can complete reaches AGREED in
+// one call; one it cannot returns exactly one EDIT carrying every issue.
+test("a standard-lane draft without why, failure matrix, or evidence agrees in one call", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, {
+    intent: "List and delete notes through the JSON API",
+    requirements: [{
+      description: "The API SHALL list notes and delete one by id",
+      scenarios: [
+        { when: "A client requests GET /notes", then: "Every note is returned" },
+        { when: "A client deletes an unknown note id", then: "404 not found is returned and nothing changes" }
+      ]
+    }],
+    tasks: [{ outcome: "Serve the notes API", verify: "npm test", paths: ["src/server.js"] }]
+  });
+  const { result, output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.notEqual(result?.action, "EDIT", output);
+  assert.match(output, /AGREED /);
+  assert.match(output, /NOTE: derived by harness \(listed in proposal\.md\): why, failure matrix, evidence capabilities/);
+  const id = readdirSync(value.changes).find((name) => name !== "archive");
+  const { state, proposal } = startedChange(value, id);
+  assert.equal(state.schema, "foundation-standard");
+  assert.match(proposal, /^## Derived by harness$/m);
+  assert.match(proposal, /\*\*Why:\*\* not authored separately; the intent above states it\./);
+  assert.match(proposal, /\*\*Failure matrix:\*\* read from scenarios that state a rejection or error \(1\)/);
+  assert.match(proposal, /\*\*Evidence capabilities:\*\* defaulted to `test`/);
+  // Only the unauthored fields were derived: the failing scenario is the row.
+  const design = readFileSync(join(value.changes, id, "design.md"), "utf8");
+  assert.match(design, /404 not found is returned and nothing changes/);
+  assert.doesNotMatch(design, /Every note is returned \|/);
+});
+
+test("authored why, failure matrix, and evidence are never replaced by derived values", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, derivedRiskV4({
+    id: "authored-wins", why: "Billing needs the order total to issue an invoice",
+    failureMatrix: [{ failure: "Billing is down", userSees: "Order accepted", recovery: "Retry nightly" }],
+    evidence: { "order-total": { capabilities: ["test", "compatibility"] } }
+  }));
+  captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  const { state, proposal } = startedChange(value, "authored-wins");
+  assert.equal(state.schema, "foundation-standard");
+  assert.match(proposal, /Billing needs the order total to issue an invoice/);
+  assert.match(readFileSync(join(value.changes, "authored-wins", "design.md"), "utf8"),
+    /Retry nightly/);
+  assert.doesNotMatch(proposal, /Derived by harness/);
+  const contract = JSON.parse(readFileSync(
+    join(value.changes, "authored-wins", "evidence.yaml"), "utf8"));
+  assert.deepEqual(contract.claims.map((claim) => claim.capabilities),
+    [["test", "compatibility"], ["test", "compatibility"]]);
+});
+
+test("a draft the harness cannot complete returns one EDIT with every issue", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, {
+    intent: "List notes through the JSON API",
+    coupling: "cross-repository",
+    securityTriggers: ["auth"],
+    requirements: [{
+      description: "The API SHALL return every note as JSON",
+      scenarios: [{ when: "A client requests GET /notes", then: "Every note is returned" }]
+    }],
+    tasks: [{ outcome: "Serve the notes list", paths: ["src/server.js"],
+      verify: "node --test tests/missing.test.mjs" }]
+  });
+  const { result } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.equal(result.action, "EDIT");
+  const issues = result.intake.issues.join("\n");
+  // Compiler, dev-document, preflight, and verify-path issues arrive together.
+  assert.match(issues, /needs 'failureMatrix'/);
+  assert.match(issues, /requires evidence\['[a-z-]+'\]\.capabilities/);
+  assert.match(issues, /start draft coupling must be isolated\|coupled/);
+  assert.match(issues, /verify references 'tests\/missing\.test\.mjs'/);
+  assert.doesNotMatch(issues, /needs 'why'/);
+  assert.doesNotMatch(issues, /executable evidence wiring/);
+  assert.equal(existsSync(value.changes), false);
 });
 
 test("small bugfix, feature, refactor, and docs drafts stay rapid without design.md", (t) => {

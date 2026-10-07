@@ -8,7 +8,7 @@ import {
   draftNeedsDesign, renderDraftDesign, renderDraftProposal, semanticDraftKeepsDesign
 } from "../runtime/workflow/change-lifecycle.mjs";
 import {
-  derivedFailureMatrix, derivedFileMap, derivedTestMap, devDocumentIssues, devDocumentShapeIssues,
+  derivedByHarness, derivedFailureMatrix, derivedFileMap, derivedTestMap, devDocumentIssues, devDocumentShapeIssues,
   docsOnlyDraft, inferWorkTypes,
   mermaidLabelIssues, renderComponentMap, renderFolderTree, renderPlan, renderUserFlow,
   requiredDevSections, withNewPaths
@@ -234,6 +234,40 @@ test("a rapid proposal carries the compact dev document and keeps the rapid lane
 
 // Each fact is written once: failure scenarios fill the failure matrix, and
 // 'why' gives the reader the lead a separate summary would only repeat.
+test("an unclassified scenario that states a rejection fills the matrix; a classified one is never reread", () => {
+  const base = { version: 4, intent: "Add notes", tasks: [{ key: "t", paths: ["src/notes.js"] }] };
+  const scenarios = [
+    { when: "a note is created", then: "201 returns the note" },
+    { when: "the title is blank", then: "400 names the field" },
+    { when: "the id is unknown", then: "the service refuses it with not found" },
+    { when: "a note is deleted", then: "204 and a later read returns 404" }
+  ];
+  const value = { ...base, requirements: [{ key: "notes", scenarios }] };
+  assert.deepEqual(derivedFailureMatrix(value).map((row) => row.failure),
+    ["the title is blank", "the id is unknown"]);
+  assert.deepEqual(devDocumentIssues(value), []);
+  assert.match(derivedByHarness(value).join("\n"),
+    /Why:.*intent[\s\S]*Failure matrix:.*rejection or error \(2\)/);
+  // An explicit kind wins: a success or boundary scenario is never second-guessed,
+  // and authored failure scenarios replace the word-based fallback.
+  const classified = { ...base, requirements: [{ key: "notes", scenarios: [
+    { kind: "success", when: "a note is created", then: "201 returns it, no error shown" },
+    { kind: "failure", name: "Blank", when: "the title is blank", then: "400 names the field" },
+    { when: "the id is unknown", then: "404 not found" }
+  ] }] };
+  assert.deepEqual(derivedFailureMatrix(classified).map((row) => row.failure), ["Blank"]);
+  assert.match(derivedByHarness(classified).join("\n"), /read from the failure scenarios/);
+  // Nothing to read from means the agent is still asked, never an invented row.
+  const none = { ...base, requirements: [{ key: "notes",
+    scenarios: [{ when: "a note is created", then: "201 returns the note" }] }] };
+  assert.deepEqual(derivedFailureMatrix(none), []);
+  assert.match(devDocumentIssues(none).join("\n"), /needs 'failureMatrix'.*"kind": "failure"/);
+  // Authored text is never noted as derived, and the rapid lane records nothing.
+  const authored = { ...value, why: "Notes persist", failureMatrix: [{ failure: "f", userSees: "u", recovery: "r" }] };
+  assert.deepEqual(derivedByHarness(authored), []);
+  assert.deepEqual(derivedByHarness(value, { standard: false }), []);
+});
+
 test("the dev document fills its failure matrix and lead from facts already written", () => {
   const value = {
     version: 4, why: "Users can add two numbers without a calculator.",

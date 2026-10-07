@@ -212,20 +212,29 @@ function requiredIntegrationCapabilities(integration) {
   return capabilities;
 }
 
-// Mirrors the rapid-lane test in change-lifecycle atomicStartPreflight. Only a
-// draft that can land on foundation-rapid may leave evidence capabilities to
-// the compiler; preflight rejects a defaulted draft that ends up standard.
-export function semanticRapidCandidate(source) {
-  const triggers = [
+function securityTriggerList(source) {
+  return [
     ...stringList(source?.securityTriggers),
     ...(Array.isArray(source?.integrations) ? source.integrations : [])
       .filter((integration) =>
         requiredIntegrationCapabilities(integration || {}).includes("security-static"))
       .map(() => "external-integration-authentication")
   ].filter((trigger) => trigger.toLowerCase() !== "none");
+}
+
+// Mirrors the rapid-lane test in change-lifecycle atomicStartPreflight.
+export function semanticRapidCandidate(source) {
   return (text(source?.impact) || "low") === "low" &&
     (text(source?.coupling) || "isolated") === "isolated" &&
-    !triggers.length && !source?.reviewRequired && !source?.acceptance?.required;
+    !securityTriggerList(source).length && !source?.reviewRequired &&
+    !source?.acceptance?.required;
+}
+
+// Omitted evidence capabilities default to the plain check in either lane. Only
+// a declared security trigger keeps the choice with the author: which security
+// capability proves the boundary is a judgment the compiler must not make.
+export function semanticEvidenceDefaultable(source) {
+  return !securityTriggerList(source).length;
 }
 
 // Alternatives the decision set aside. Only a decision that rejected one owes
@@ -383,9 +392,9 @@ function normalizeRequirements(source, slugify, issues, {
       ...stringList(evidenceValue?.capabilities),
       ...stringList(requirement?.capabilities)
     ]);
-    // A rapid draft proves every requirement with its covering tasks' verify
-    // commands, so an omitted capability list means exactly that: "test", or
-    // "static-analysis" for docs/chore work.
+    // A draft proves every requirement with its covering tasks' verify commands,
+    // so an omitted capability list means exactly that: "test", or
+    // "static-analysis" for docs/chore work. The proposal records the default.
     if (defaultTestEvidence && !capabilities.length &&
         evidenceValue?.capabilities === undefined && requirement?.capabilities === undefined) {
       capabilities.push(defaultCapability);
@@ -393,9 +402,9 @@ function normalizeRequirements(source, slugify, issues, {
     } else if (!evidenceValue && !requirement?.capabilities) {
       const derived = riskDerivationSummary(source);
       issues.push(`${label} requires evidence['${key}'].capabilities ` +
-        "(only a low-impact, isolated draft without security triggers, review, or acceptance " +
-        "may omit it and default to [\"test\"], or [\"static-analysis\"] for docs/chore work" +
-        (derived ? `; ${derived}` : "") + ")");
+        "(a draft with security triggers must name them, e.g. [\"test\", \"security-static\"]; " +
+        "without triggers an omitted list defaults to [\"test\"], or [\"static-analysis\"] " +
+        "for docs/chore work" + (derived ? `; ${derived}` : "") + ")");
     }
     if (!capabilities.length)
       issues.push(`${label} requires at least one evidence capability`);
@@ -1263,7 +1272,7 @@ export function normalizeSemanticDraft(input, slugify, options = {}) {
   const source = input?.capabilityOverviews === undefined ? input
     : { ...input, capabilityOverviews: capabilityOverviewList(input.capabilityOverviews) };
   const defaultTestEvidence = Boolean(options.defaultRapidEvidence) &&
-    semanticRapidCandidate(source);
+    semanticEvidenceDefaultable(source);
   const defaultedEvidence = [];
   const issues = semanticDraftIssues(source, { defaultTestEvidence });
   const { requirements, requirementKeys } = normalizeRequirements(

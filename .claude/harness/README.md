@@ -140,7 +140,8 @@ read-only argument.
 | Docs | `README.md` | Runtime overview and operator guide |
 
 Semantic draft version 4 is the default. Agents write intent, requirements,
-tasks, evidence capabilities, and explicit discovery dispositions once; the
+tasks, and explicit discovery dispositions once (evidence capabilities default
+to `test`); the
 harness derives required dimensions, refuses unresolved coverage, and validates
 the decision frontier before the compiler generates stable IDs, cross-ledger
 links, specs, and safe detected provider wiring. Multiple specs,

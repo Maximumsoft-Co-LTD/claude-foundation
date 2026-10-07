@@ -52,7 +52,7 @@ import {
   verifyCountAdvisories
 } from "./validation/design-blueprints.mjs";
 import {
-  derivedFailureMatrix, derivedFileMap, derivedTestMap, docsOnlyDraft, inferWorkTypes,
+  derivedByHarness, derivedFailureMatrix, derivedFileMap, derivedTestMap, docsOnlyDraft, inferWorkTypes,
   renderComponentMap, renderFolderTree, renderPlan, renderUserFlow, withNewPaths
 } from "./validation/dev-document.mjs";
 import { targetEditDigest, targetEditPaths } from "./target-edits.mjs";
@@ -435,6 +435,14 @@ export function renderRapidDecisions(decisions = []) {
   return rows.length ? `## Decisions\n\n${rows.join("\n")}` : "";
 }
 
+// A standard draft the agent left without a reason, failure matrix, or evidence
+// capabilities still compiles; this section tells the reader what the harness
+// filled in rather than what the author wrote.
+function renderDerivedNotes(draft, rapid) {
+  const notes = derivedByHarness(draft, { standard: !rapid });
+  return notes.length ? `## Derived by harness\n\n${draftBullets(notes)}` : "";
+}
+
 // Reading order: what and why first, then who benefits and how success is
 // judged, then scope; machine provenance and coverage close as appendices.
 // A draft without a stated reason gets no Why section rather than the intent
@@ -470,7 +478,8 @@ export function renderDraftProposal(draft, state) {
     `- **Security triggers:** ${triggers.length ? triggers.join(", ") : "none detected"}` +
     (rapid && docsOnlyDraft(draft)
       ? "\n- **Specs:** none; docs-only work modifies no living spec" : "") +
-    decisions + nonGoals + section(renderInvestigationSummary(draft.investigation)) +
+    decisions + nonGoals + section(renderDerivedNotes(draft, rapid)) +
+    section(renderInvestigationSummary(draft.investigation)) +
     section(renderDiscoveryAppendix(draft)) +
     section(renderInvestigationAppendix(draft.investigation)) + "\n";
 }
@@ -1320,10 +1329,6 @@ export function createChangeLifecycle({
     if (preparedDraft === undefined && flags.draft && draft?._semanticVersion === 4)
       fail("semantic draft v4 must use 'change start <draft.json>' so repository intake is enforced");
     const schema = flags.rapid ? "foundation-rapid" : "foundation-standard";
-    if (schema !== "foundation-rapid" && draft?._defaultedEvidence?.length)
-      fail("foundation-standard requires explicit evidence capabilities; add " +
-        draft._defaultedEvidence.map((key) => `evidence['${key}'].capabilities`).join(", ") +
-        " (for example [\"test\"]) or create the change with --rapid");
     const source = templateDir(schema);
     const target = changePath(id);
     const groundingRequired = workflowPolicy().workflow.grounding === "required" ||
@@ -1956,7 +1961,8 @@ export function createChangeLifecycle({
 
   // Every start-time draft check that does not need created state. Inspect
   // reports these with the compiler's issues, so one EDIT carries them all;
-  // `structural: false` skips preflight rows that restate compiler issues.
+  // `structural: false` (the compiler already refused the draft) skips only
+  // the evidence-wiring row, which a refused compile cannot produce.
   function startDraftChecks(draft, { structural = true } = {}) {
     const preflight = atomicStartPreflight(draft, {
       groundingRequired: workflowPolicy().workflow.grounding === "required" ||
@@ -1968,7 +1974,8 @@ export function createChangeLifecycle({
     // the preflight gates still apply the rapid lane's requirements.
     const keepsDesign = semanticDraftKeepsDesign(draft, preflight.rapid);
     const rapid = preflight.rapid && !keepsDesign;
-    const issues = [...(structural ? preflight.issues : []), ...domainLanguageIssues(draft),
+    const issues = [...preflight.issues.filter((issue) =>
+      structural || !issue.includes("executable evidence wiring")), ...domainLanguageIssues(draft),
       // Caught here, in the same EDIT batch, instead of when Build runs the check.
       ...verifyPathIssues(draft.tasks, { exists: (path) => existsSync(join(root, path)) }),
       // Build dispatches each task to its repository; a task whose files live
@@ -1977,12 +1984,6 @@ export function createChangeLifecycle({
         repositories: declaredRepositories(), selection: draft.repositories, exists: existsSync
       }),
       ...apiContractErrorIssues(draft)];
-    // Only the rapid lane may leave evidence capabilities to the compiler.
-    if (!rapid && draft._defaultedEvidence?.length)
-      issues.push("the draft carries design content, so it uses " +
-        "foundation-standard, which requires explicit evidence capabilities; add " +
-        draft._defaultedEvidence.map((key) => `evidence['${key}'].capabilities`).join(", ") +
-        " (for example [\"test\"]) or remove the design content to stay rapid");
     return { issues, preflight, keepsDesign, rapid };
   }
 
@@ -1999,6 +2000,10 @@ export function createChangeLifecycle({
         "to keep design.md and specs/");
     const derived = riskDerivationSummary(draft);
     if (derived) console.log(`NOTE: ${derived}`);
+    const filled = derivedByHarness(draft, { standard: !rapid });
+    if (filled.length)
+      console.log(`NOTE: derived by harness (listed in proposal.md): ${
+        filled.map((line) => line.replace(/\*\*([^*]+):\*\*.*$/, "$1").toLowerCase()).join(", ")}`);
     return { draft, rapid, resolutionFlags: startResolutionFlags(draft, classification, rapid) };
   }
 

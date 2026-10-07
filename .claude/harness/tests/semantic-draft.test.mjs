@@ -2054,21 +2054,34 @@ test("docs or chore work defaults omitted capabilities to static-analysis by exi
     claim.capabilities.join() === "test"));
 });
 
-test("evidence defaults stay off for standard drafts, explicit opt-out, and v3 callers", () => {
+test("evidence defaults apply in both lanes; only security triggers, opt-out, and v3 callers keep them explicit", () => {
   const missing = /requires evidence\['payment-retry'\]\.capabilities/;
-  // Standard lane: medium impact must still declare capabilities.
-  const standard = normalizeSemanticDraft(rapidDraftWithoutEvidence({ impact: "medium" }),
-    slugify, { defaultRapidEvidence: true });
-  assert.ok(standard.issues.some((issue) => /requires an 'evidence' object/.test(issue)));
-  const standardEmpty = normalizeSemanticDraft(
-    rapidDraftWithoutEvidence({ impact: "medium", evidence: {} }), slugify,
+  // Standard lane (impact, coupling, review, acceptance) defaults like rapid
+  // and records the keys, so the proposal can say the harness chose them.
+  for (const overrides of [{ impact: "medium" }, { impact: "high" }, { reviewRequired: true },
+    { acceptance: { required: true, reason: "UX" } }, { coupling: "coupled" }]) {
+    const result = normalizeSemanticDraft(rapidDraftWithoutEvidence(overrides), slugify,
+      { defaultRapidEvidence: true });
+    assert.deepEqual(result.issues, [], JSON.stringify(overrides));
+    assert.deepEqual(result.draft._defaultedEvidence, ["payment-retry", "audit-result"]);
+    assert.ok(result.draft.claims.every((claim) => claim.capabilities.join() === "test"));
+  }
+  // A declared security trigger keeps the capability choice with the author.
+  const triggered = normalizeSemanticDraft(
+    rapidDraftWithoutEvidence({ securityTriggers: ["auth"], evidence: {} }), slugify,
     { defaultRapidEvidence: true });
-  assert.ok(standardEmpty.issues.some((issue) => missing.test(issue)));
-  for (const overrides of [{ securityTriggers: ["auth"] }, { reviewRequired: true },
-    { acceptance: { required: true, reason: "UX" } }, { coupling: "coupled" }])
-    assert.ok(normalizeSemanticDraft(rapidDraftWithoutEvidence({ ...overrides, evidence: {} }),
-      slugify, { defaultRapidEvidence: true }).issues.some((issue) => missing.test(issue)),
-    JSON.stringify(overrides));
+  assert.ok(triggered.issues.some((issue) => missing.test(issue)));
+  assert.ok(normalizeSemanticDraft(rapidDraftWithoutEvidence({ securityTriggers: ["auth"] }),
+    slugify, { defaultRapidEvidence: true }).issues
+    .some((issue) => /requires an 'evidence' object/.test(issue)));
+  // Agent-provided capabilities are never replaced by the default.
+  const kept = normalizeSemanticDraft(rapidDraftWithoutEvidence({ impact: "medium", evidence: {
+    "payment-retry": { capabilities: ["test", "compatibility"] } } }), slugify,
+  { defaultRapidEvidence: true });
+  assert.deepEqual(kept.issues, []);
+  assert.deepEqual(kept.draft._defaultedEvidence, ["audit-result"]);
+  assert.deepEqual(kept.draft.claims.find((claim) =>
+    claim.requirementKey === "payment-retry").capabilities, ["test", "compatibility"]);
   // Callers that do not opt in (amendments) keep the explicit contract.
   assert.ok(normalizeSemanticDraft(rapidDraftWithoutEvidence({ evidence: {} }), slugify)
     .issues.some((issue) => missing.test(issue)));
@@ -2339,9 +2352,15 @@ test("explicit versions and non-minimal shapes are never expanded", () => {
   assert.equal(expandMinimalSemanticDraft(legacy), legacy);
 });
 
-test("a minimal draft that declares risk still owes explicit evidence", () => {
-  const expanded = expandMinimalSemanticDraft(minimalDraft({ impact: "high" }));
-  const { issues } = normalizeSemanticDraft(expanded, slugify, { defaultRapidEvidence: true });
+test("a minimal draft that declares risk defaults evidence unless it names security triggers", () => {
+  const defaulted = normalizeSemanticDraft(expandMinimalSemanticDraft(
+    minimalDraft({ impact: "high" })), slugify, { defaultRapidEvidence: true });
+  assert.ok(!defaulted.issues.some((issue) => /evidence/.test(issue)), defaulted.issues.join("\n"));
+  assert.deepEqual(defaulted.draft._defaultedEvidence,
+    ["export-invoice-row-as-csv", "escape-commas-inside-invoice-fields"]);
+  const { issues } = normalizeSemanticDraft(expandMinimalSemanticDraft(
+    minimalDraft({ impact: "high", securityTriggers: ["auth"] })), slugify,
+  { defaultRapidEvidence: true });
   assert.ok(issues.some((issue) => /requires evidence\['export-invoice-row-as-csv'\]/.test(issue)));
 });
 
@@ -2774,7 +2793,7 @@ test("derived risk only raises, records why, and is removed from the stored draf
 
 test("a derived standard draft says why in its proposal and its evidence repair", () => {
   const source = withDerivedRisk(riskDraft({
-    capability: undefined,
+    capability: undefined, securityTriggers: ["auth"],
     requirements: [{ key: "outcome", capability: "orders", description: "The system SHALL return the result",
       scenarios: [{ name: "Result", when: "Input arrives", then: "The result is returned" }] }],
     tasks: tasksAt("services/orders/**", "services/billing/**")

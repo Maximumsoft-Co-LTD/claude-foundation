@@ -160,8 +160,7 @@ component map, config contract, refactor, bugfix). Descriptive sections never mo
 low-risk draft to standard; impact, coupling, security triggers, review, and
 acceptance still do. A standard v4 change
 always has `design.md`, and its draft must author the sections its work type
-needs (`why` or `summary`, and failures unless the work is only refactor,
-config, or light work; user flow, UI states, component map,
+needs (failures unless the work is only refactor, config, or light work; user flow, UI states, component map,
 API contracts, data model, config or job contract by type); the harness infers
 the work type from task paths (stated in `design.md`; declare `workType` to
 override; test-, docs-, or manifest-only paths are light work) and derives the
@@ -169,9 +168,14 @@ file map, test map (scenario and check command), and plan. Flowchart node
 labels holding `(`, `)`, or `"` must be quoted (`A["mean(values)"]`).
 Each fact is written once: without an authored `failureMatrix`, scenarios with
 `kind: "failure"` become its rows (an optional scenario `recovery` fills the
-recovery column), and `why` gives the reader the lead a separate summary would
-repeat. A
-missing section is an agent draft repair, never a user question. `execution.yaml`, `repositories.yaml`, `handoffs.yaml`,
+recovery column; with no explicit kind anywhere, scenarios that state a
+rejection or error count), the intent stands in for an absent `why`, and omitted
+evidence capabilities default to `test` (`static-analysis` for docs/chore) in
+either lane unless the draft declares security triggers. The proposal lists
+each value the harness filled under "Derived by harness", and `change start`
+prints one NOTE; authored values are never replaced. One EDIT lists every
+remaining issue (compiler, dev document, start checks, repository and verify
+paths). A missing section is an agent draft repair, never a user question. `execution.yaml`, `repositories.yaml`, `handoffs.yaml`,
 and `grounding.yaml` appear only when execution differs from detected defaults,
 multiple repositories participate, external authority is required, or a
 non-derived material decision must be recorded. Absence has versioned

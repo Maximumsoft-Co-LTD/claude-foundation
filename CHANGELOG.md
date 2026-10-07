@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Change reaches AGREED in one `change start` call. Paid w5 lab runs needed a
+  second call in 5 of 10 scenarios (api-keys: four) for fields the harness
+  can derive: standard-lane drafts were sent back for `why` (4/4), evidence
+  capabilities for every requirement (5/5), and `failureMatrix` (3/4).
+  Now the intent stands in for an absent `why`, omitted evidence capabilities
+  default to `test` (`static-analysis` for docs/chore) in either lane unless
+  the draft declares security triggers, and unclassified scenarios that state
+  a rejection or error fill the failure matrix when no scenario is marked
+  `kind: "failure"`. Authored values are never replaced; the proposal lists
+  each filled value under "Derived by harness" and `change start` prints one
+  NOTE. When an EDIT is unavoidable it now carries every issue: preflight
+  checks such as an invalid `coupling` were hidden until the compiler issues
+  were fixed, and the `riskSignals` and coverage messages name the valid
+  values. Public commands and draft shapes are unchanged.
+
 - Packet budgets (user decision: raise the defaults so large work fits): task
   and review packets 8 KiB -> 20 KiB, repository 12 KiB -> 24 KiB, global
   16 KiB -> 32 KiB. A paid three-repository API-keys run (3 tasks, 10/4/20
