@@ -935,6 +935,29 @@ test("sandbox tree copy preserves links and removes partial output on failure", 
     }, fail
   }), /disk full; partial copy removed/);
   assert.equal(existsSync(failed), false);
+
+  // A path that vanishes mid-copy (git auto-gc pruning objects) restarts it.
+  const vanished = join(root, ".foundation", "sandboxes", "vanished");
+  let pruned = 0;
+  copySandboxEntries({
+    root, requestedPath: vanished,
+    plan: {
+      excludes: (rel) => rel === ".foundation" || rel === "skip",
+      filter: () => {
+        if (pruned++) return true;
+        throw Object.assign(new Error("ENOENT: no such file or directory, lstat 'objects/59'"),
+          { code: "ENOENT" });
+      }
+    }, fail
+  });
+  assert.equal(readFileSync(join(vanished, "source.txt"), "utf8"), "content\n");
+  assert.throws(() => copySandboxEntries({
+    root, requestedPath: join(root, ".foundation", "sandboxes", "gone"),
+    plan: {
+      excludes: (rel) => rel === ".foundation",
+      filter: () => { throw Object.assign(new Error("ENOENT: gone"), { code: "ENOENT" }); }
+    }, fail
+  }), /ENOENT: gone; partial copy removed/);
 });
 
 test("tracked root metadata and preexisting digests carry only existing allowed files", (t) => {

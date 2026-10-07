@@ -709,20 +709,28 @@ export function sandboxCopyPlan({
   return { listed, listedPaths, excludes, filter };
 }
 
+// A live checkout can lose a path mid-copy (git's background auto-gc prunes
+// loose object directories), so a vanished source restarts the copy.
+const SANDBOX_COPY_ATTEMPTS = 3;
+
 export function copySandboxEntries({ root, requestedPath, plan, fail }) {
-  try {
-    for (const entry of readdirSync(root, { withFileTypes: true })) {
-      if (plan.excludes(entry.name)) continue;
-      cpSync(join(root, entry.name), join(requestedPath, entry.name), {
-        recursive: true,
-        mode: fsConstants.COPYFILE_FICLONE,
-        ...VERBATIM_COPY,
-        filter: plan.filter
-      });
+  for (let attempt = 1; ; attempt++) {
+    try {
+      for (const entry of readdirSync(root, { withFileTypes: true })) {
+        if (plan.excludes(entry.name)) continue;
+        cpSync(join(root, entry.name), join(requestedPath, entry.name), {
+          recursive: true,
+          mode: fsConstants.COPYFILE_FICLONE,
+          ...VERBATIM_COPY,
+          filter: plan.filter
+        });
+      }
+      return;
+    } catch (error) {
+      rmSync(requestedPath, { recursive: true, force: true });
+      if (error?.code === "ENOENT" && attempt < SANDBOX_COPY_ATTEMPTS) continue;
+      fail(`cannot create sandbox copy: ${error.message}; partial copy removed`);
     }
-  } catch (error) {
-    rmSync(requestedPath, { recursive: true, force: true });
-    fail(`cannot create sandbox copy: ${error.message}; partial copy removed`);
   }
 }
 
