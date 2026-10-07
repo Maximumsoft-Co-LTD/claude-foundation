@@ -426,8 +426,9 @@ claude-foundation change abandon <change> --reason <reason> --decision-ref <ref>
 ```
 
 Abandon releases leases, cleans up isolation, and moves the packet, runtime
-state, receipts, evidence, and transactions to
-`.foundation/recovery/abandoned/<id>/` with an audit record. It requires a real
+state, receipts, evidence, transactions, review requests, and reviewer reports
+to `.foundation/recovery/abandoned/<id>/` with an audit record, so a later
+change reusing the id starts with a fresh review budget. It requires a real
 user decision, never touches Git, refuses archived changes, and asks whether to
 keep or revert already-applied files before acting.
 

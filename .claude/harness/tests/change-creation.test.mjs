@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync
 } from "node:fs";
@@ -114,6 +115,34 @@ try {
   writeFileSync(residuePath, "{}\n");
   assert.deepEqual(priorChangeResidue(root, "old"), [residuePath]);
   assert.throws(() => lifecycle.createChange("Old", {}), /recorded history remains.*runtime\/old.json/);
+  // Review requests with no abandon record may belong to a live change: refuse.
+  const leakedRequest = join(root, ".foundation", "authority", "leaked", "review-1.json");
+  mkdirSync(dirname(leakedRequest), { recursive: true });
+  writeFileSync(leakedRequest, "{}\n");
+  assert.deepEqual(priorChangeResidue(root, "leaked"), [dirname(leakedRequest)]);
+  assert.throws(() => lifecycle.createChange("Leaked", {}),
+    /recorded history remains.*authority\/leaked/);
+  assert.equal(existsSync(leakedRequest), true);
+  // Review requests and reports a pre-fix abandon leaked beside its abandon
+  // record are quarantined into that record, and the id is reused freshly.
+  const abandoned = join(root, ".foundation", "recovery", "abandoned", "reabandoned");
+  mkdirSync(abandoned, { recursive: true });
+  writeFileSync(join(abandoned, "abandon.json"), "{}\n");
+  mkdirSync(join(abandoned, "authority"), { recursive: true });
+  const staleRequest = join(root, ".foundation", "authority", "reabandoned", "review-1.json");
+  const staleReport = join(root, ".foundation", "reviews", "reabandoned", "r.json");
+  for (const path of [staleRequest, staleReport]) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, "{}\n");
+  }
+  lifecycle.createChange("Reabandoned", {});
+  assert.equal(existsSync(join(changesRoot, "reabandoned")), true);
+  assert.equal(existsSync(dirname(staleRequest)), false);
+  assert.equal(existsSync(dirname(staleReport)), false);
+  assert.equal(existsSync(join(abandoned, "authority", "review-1.json")), true);
+  assert.equal(existsSync(join(abandoned, "reviews", "r.json")), true);
+  assert.equal(readdirSync(abandoned).some((name) =>
+    name.startsWith("authority.previous-")), true);
 
   const rapidState = initialChangeState({
     root, id: "direct", intent: "Direct", schema: "foundation-rapid",

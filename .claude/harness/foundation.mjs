@@ -223,7 +223,7 @@ const {
     snapshots: SNAPSHOTS, transactions: TRANSACTIONS, plans: PLANS, leases: LEASES,
     prototypes: PROTOTYPES, attestations: ATTESTATIONS, authority: AUTHORITY,
     handoffs: HANDOFFS, instructionManifests: INSTRUCTION_MANIFESTS,
-    recovery: RECOVERY, deliveries: DELIVERIES, changes: CHANGES
+    recovery: RECOVERY, deliveries: DELIVERIES, changes: CHANGES, reviews: REVIEWS
   },
   readJson, readJsonOrNull, writeJson, canonicalPath, pathInside, now
 } = createBootstrap({
@@ -2119,6 +2119,8 @@ const abandonRuntime = createAbandonRuntime({
     snapshots: SNAPSHOTS,
     plans: PLANS,
     handoffs: HANDOFFS,
+    authority: AUTHORITY,
+    reviews: REVIEWS,
     logs: LOGS,
     changes: CHANGES
   },
