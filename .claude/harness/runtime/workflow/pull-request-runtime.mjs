@@ -168,7 +168,8 @@ export function deliveryBranchName(pattern, changeId, values = {}) {
     return safeBranchComponent(template.replaceAll("{changeId}", safeBranchComponent(changeId)));
   const slug = (value) => safeBranchComponent(value).replaceAll("/", "-").slice(0, 60).replace(/[-.]+$/, "");
   const branch = fillTemplate(template, "branchPattern", { ...values, changeId },
-    (value, name) => name === "ticket" ? value : slug(value));
+    (value, name) => name === "ticket" ? value
+      : name === "changeId" ? safeBranchComponent(value).replaceAll("/", "-") : slug(value));
   const problem = branchNameProblem(branch);
   if (problem) throw namingInvalid(`deliver.branchPattern produces an invalid branch '${branch}': ${problem}`);
   return branch;

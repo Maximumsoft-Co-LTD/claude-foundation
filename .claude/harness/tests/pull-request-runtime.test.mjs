@@ -122,6 +122,9 @@ test("delivery naming templates keep the default and refuse invalid output", () 
     "feat(feature-frontend): BOOK-42 Add booking flow [booking-flow]");
   assert.equal(deliveryBranchName("feature/{ticket}-{title}", "booking-flow", ticketed),
     "feature/BOOK-42-add-booking-flow");
+  const longId = `booking-${"x".repeat(70)}-v2`;
+  assert.equal(deliveryBranchName("feature/{ticket}-{changeId}", longId, ticketed),
+    `feature/BOOK-42-${longId}`, "a mixed pattern keeps the whole change id, never truncated");
 
   const refused = (fn, pattern) => assert.throws(fn, (error) =>
     error.code === "DELIVERY_NAMING_INVALID" && pattern.test(error.message) &&

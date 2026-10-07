@@ -235,6 +235,10 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
   assert.equal(execCalls[3][2].repository, "web");
   await assert.rejects(route("exec", ["change", "--repo", "a", "--repository", "b"], execApi),
     /one of --repo and --repository/);
+  await assert.rejects(route("exec", ["change", "--repo", " ", "--", "true"], execApi),
+    /--repo requires a repository id/);
+  await assert.rejects(route("exec", ["change", "--task", "  ", "--", "true"], execApi),
+    /--task requires a task id/);
   await assert.rejects(route("exec", ["change", "--phase", "unknown"], execApi),
     /exec --phase must be/);
   await assert.rejects(route("exec", [], execApi), /exec requires a change id/);
