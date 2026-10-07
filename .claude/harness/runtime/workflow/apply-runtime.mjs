@@ -14,7 +14,7 @@ import {
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 import { compositeRepositorySelection } from "../core/repository-binding.mjs";
 import {
-  createRepositoryDeliverySaga, RepositoryDeliveryError
+  createRepositoryDeliverySaga, RepositoryDeliveryError, targetOverwrites
 } from "./repository-delivery-saga.mjs";
 import { deliveryTreeEntries, assertDeliveryEntries } from "./delivery-integrity.mjs";
 import { approvalMatches } from "../core/user-decisions.mjs";
@@ -59,21 +59,17 @@ export function projectionHash(stableHash, entries) {
     ({ path, after, afterMode })));
 }
 
-export function reapplyProjection({
-  id,
-  state,
-  verifyAppliedProjection,
-  buildReapplyEntries,
-  stableHash,
-  fail
-}) {
+export function reapplyProjection(context) {
+  const { id, state, verifyAppliedProjection, buildReapplyEntries, stableHash, fail } = context;
   if (!state.workspace?.applied) return { prepared: null, resumed: false };
   const verification = verifyAppliedProjection(state);
   if (!verification.valid) fail(`applied projection is invalid: ${verification.reason}`);
   const prepared = buildReapplyEntries(id, state, verification.journal);
   const desired = projectionHash(stableHash, prepared);
-  if (desired !== state.workspace.apply.projectionHash)
+  if (desired !== state.workspace.apply.projectionHash) {
+    guardReapplyTargetEdits(context, id, state, prepared, verification.journal);
     return { prepared, resumed: false };
+  }
   console.log(`APPLIED ${id}\n  resumed: ${state.workspace.apply.transactionId}`);
   return { prepared, resumed: true };
 }
@@ -288,7 +284,7 @@ function landedReplayExhausted(context, state, landedPaths) {
 // records it when it reaches the same point.
 function carryTargetEdits(context, id, state, paths, landedBy, { inspect = false } = {}) {
   if (state.workspace?.mode !== "worktree" || !context.blockWithDecision ||
-      !context.saveRuntime || state.workspace.applied) return;
+      !context.saveRuntime) return;
   const sandboxPath = state.workspace.path;
   const replay = context.replayTargetEdit || replayLandedEdit;
   const previous = state.workspace.targetCarried || {};
@@ -317,10 +313,12 @@ function stopForTargetConflict(context, id, state, paths, cause, options = {}) {
   const snapshot = targetSnapshot(state);
   // Bytes an earlier change landed are part of the target: the harness first
   // replays the sandbox onto them through its own sync, then proves again.
+  // That replay never runs over an applied projection, so there the agent
+  // carries the landed bytes instead (target-edit-conflict, landed work kept).
   const landedBy = context.landedBy?.(id, paths) || {};
   const landed = Object.keys(landedBy);
   if (landed.length && context.blockWithDecision && state.workspace?.mode === "worktree" &&
-      !landedReplayExhausted(context, state, landed)) {
+      !state.workspace.applied && !landedReplayExhausted(context, state, landed)) {
     const stop = landedChangeSyncStop({ changeId: id, landedBy });
     return context.blockWithDecision(id, stop.code, stop.decision);
   }
@@ -330,6 +328,26 @@ function stopForTargetConflict(context, id, state, paths, cause, options = {}) {
     return context.blockWithDecision(id, stop.code, stop.decision);
   if (stop.decision) return context.fail(stop.decision.summary);
   return context.fail(stop.message, 1, stop.details);
+}
+
+// Re-apply after an earlier apply: a code path that apply never wrote must
+// still be at the sandbox base or already hold the sandbox bytes, the same
+// rule as root re-delivery of a composite change. A target edit the sandbox
+// copy already carries is not overwritten work; any other edit takes the
+// target-edit route (merged into the sandbox, or a decision), never the apply.
+export function guardReapplyTargetEdits(context, id, state, entries, priorJournal) {
+  const workspace = state.workspace;
+  if (workspace?.mode !== "worktree" || !workspace.baseHead || !context.git) return;
+  const prior = new Map((priorJournal?.entries || []).map((entry) => [entry.path, entry]));
+  const edits = targetOverwrites({ git: context.git, files: context }, context.root,
+    workspace.baseHead, entries.filter((entry) => entry.role === "code"), prior)
+    .map(({ path }) => path)
+    .filter((path) => !targetEditCarried({ root: context.root, sandboxPath: workspace.path,
+      path, baseBytes: baseBlob(context, state, path) }));
+  if (!edits.length) return;
+  stopForTargetConflict(context, id, state, edits,
+    "re-apply would overwrite uncommitted target edits");
+  context.fail(`re-apply would overwrite uncommitted target edits at: ${edits.join(", ")}`);
 }
 
 // `inspect` is the read-only Land preflight: every refusal and decision is
@@ -874,6 +892,11 @@ export function createApplyRuntime({
 
   const applySandbox = applySandboxOperation.bind(null, {
     root,
+    git,
+    gitBuffer,
+    sandboxBase,
+    landedBy,
+    blockWithDecision,
     loadRuntime,
     saveRuntime,
     refreshAppliedProjection,

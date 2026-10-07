@@ -801,7 +801,11 @@ harness (`target-edit-sync`, automatic): a 3-way merge into the sandbox copy,
 Prove again for what it invalidated, then Apply; the target keeps the user's
 bytes until then. Only an edit of the same lines is a `target-edit-conflict`:
 the agent merges it into the sandbox copy, and Land applies the merged file once
-merging the target edit into it changes nothing. Edits made outside the sandbox
+merging the target edit into it changes nothing. The same holds when sandbox
+work proven after an earlier apply re-applies: a path that apply never wrote
+must still be at the sandbox base or already hold the sandbox bytes, otherwise
+its target edit takes this merge or decision route instead of being
+overwritten. Edits made outside the sandbox
 stop Land only on paths in this change's Land projection; others are reported.
 Git-ignored files are no change's content: under each selected repository's own
 ignore rules they are never compared, projected, or reported as target edits or
