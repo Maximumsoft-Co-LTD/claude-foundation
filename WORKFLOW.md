@@ -327,7 +327,7 @@ new approval: `change amend <change> --task <task-key|task-id> --verify
 the task's claims are invalidated so Prove reruns their evidence, and the
 revision, validation, and rollback match any amendment. Claims, capabilities,
 and the spec approval do not change; a command that always passes (`true`,
-`echo`, `|| true`) is refused; the prior command is kept in the amendment
+`echo`, `|| true`, `; true`) is refused by a best-effort text screen; the prior command is kept in the amendment
 record; and the harness accepts the task only after the corrected command
 passes in the workspace.
 
@@ -433,8 +433,9 @@ refusals set `FOUNDATION_GUARDRAIL_MODE=block` (or `FOUNDATION_SHELL_GUARD=block
 The harness also absorbs what used to cost a turn: the agent's scratchpad
 (`<tmp>/claude-*`) and `~/.claude` are writable in every phase unless they hold
 the project or a repository the change writes; after Prove, edits inside the
-isolated workspace only make the proof stale; during Land, test and script
-runners may run; and an isolated packet edited outside a semantic amendment is
+isolated workspace only make the proof stale; during Land, read-only test
+commands may run but script runners still need the runtime transaction; and an
+isolated packet edited outside a semantic amendment is
 restored to the approved text by the harness (whitespace in place; any other
 edit saved under `.foundation/agreement-drift/<change>/` for an amendment), not
 reported as drift for the agent to undo. A

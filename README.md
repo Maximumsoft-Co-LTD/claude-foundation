@@ -813,10 +813,12 @@ you to.
   never infer that authority. Otherwise commit and push need your direct
   instruction: during Build or Prove an uninstructed `git commit`/`git push`
   from the main checkout does not run and becomes a question for you.
-- `protect-secrets.sh` and `lint.sh` are enabled by default. Neither stops the
-  agent: a secret read shows a redacted copy (keys and layout, every value
-  `<redacted>`), a search that could reach secret files skips them or lists only
-  file names, and Go files are formatted in place.
+- `protect-secrets.sh` and `lint.sh` are enabled by default. A secret read
+  shows a redacted copy (config keys and layout kept, values `<redacted>`
+  except JSON `null` and booleans; private-key material becomes a placeholder),
+  a search that could reach secret files skips them or lists only file names,
+  and Go files are formatted in place. The secrets hook refuses the read only
+  when no redacted copy can be made or `FOUNDATION_SECRETS_GUARD=block` is set.
 - `no-direct-main-commit.sh` is opt-in because some projects allow controlled
   commits on their default branch; `doctor` reports whether it is enabled.
 

@@ -762,10 +762,12 @@ product requirement หรือซ่อม state ด้วยมือถ้�
   branch, push และเปิดหรือใช้ PR เดิมที่ตรวจยืนยันแล้ว โดย worker ห้ามอนุมาน authority
   นอกจากนั้น commit และ push ต้องมาจากคำสั่งตรงของคุณ ระหว่าง Build หรือ Prove
   `git commit`/`git push` จาก main checkout ที่ไม่ได้สั่งจะไม่รัน และกลายเป็นคำถามถึงคุณ
-- `protect-secrets.sh` และ `lint.sh` เปิดเป็นค่าเริ่มต้น และไม่หยุด agent ทั้งคู่:
-  การอ่านไฟล์ลับจะเห็นสำเนาที่ปิดค่า (เห็น key และโครงสร้าง แต่ทุกค่าเป็น
-  `<redacted>`) การค้นที่อาจโดนไฟล์ลับจะข้ามไฟล์เหล่านั้นหรือแสดงแค่ชื่อไฟล์
-  และไฟล์ Go จะถูก format ให้ทันที
+- `protect-secrets.sh` และ `lint.sh` เปิดเป็นค่าเริ่มต้น: การอ่านไฟล์ลับจะเห็น
+  สำเนาที่ปิดค่า (ไฟล์ config คง key และโครงสร้างไว้ ทุกค่าเป็น `<redacted>`
+  ยกเว้น `null` และ boolean ใน JSON ส่วนเนื้อหา private key จะเป็น placeholder)
+  การค้นที่อาจโดนไฟล์ลับจะข้ามไฟล์เหล่านั้นหรือแสดงแค่ชื่อไฟล์ และไฟล์ Go จะถูก
+  format ให้ทันที secrets hook จะปฏิเสธการอ่านก็ต่อเมื่อสร้างสำเนาที่ปิดค่าไม่ได้
+  หรือตั้ง `FOUNDATION_SECRETS_GUARD=block`
 - `no-direct-main-commit.sh` เป็น opt-in เพราะบาง project อนุญาต controlled
   commit บน default branch โดย `doctor` จะรายงานว่าเปิดอยู่หรือไม่
 

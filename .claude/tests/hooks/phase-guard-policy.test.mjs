@@ -7,7 +7,7 @@ import {
 } from "../../hooks/phase-guard-policy.mjs";
 
 const LAND_REFUSAL = "Land shell mutations require the runtime transaction marker; " +
-  "Land writes the target itself, and test or script runs need no write";
+  "Land writes the target itself, and Prove already ran the checks in the isolated workspace";
 
 // Read-only commands and data inside a quoted heredoc are not mutations; each
 // of these was flagged and cost turns or blocked pre-phase and Land work.
@@ -26,12 +26,17 @@ test("shell mutation detection ignores read-only forms and quoted heredoc data",
   ]) assert.equal(looksMutatingShellCommand(command), true, command);
 });
 
-test("Land lets test and script runners through but still refuses direct writes", () => {
-  for (const command of ["npm run test", "npx vitest run", "bash scripts/check.sh", "node --test"])
+// An opaque script runner can create files outside Land's projection, which
+// Land never restores; only the runtime transaction may mutate the target.
+test("Land refuses script runners and direct writes without the runtime transaction", () => {
+  for (const command of ["node --test", "git status"])
     assert.equal(shellMutationViolation("land", {}, command), null, command);
-  for (const command of ["git stash", "echo x > app.js", "sed -i s/a/b/ app.js",
+  for (const command of ["npm run test", "npx vitest run", "bash scripts/check.sh",
+    "git stash", "echo x > app.js", "sed -i s/a/b/ app.js",
     "npm run test > app.log", "sh -c \"git commit -m y\"", "bash -c 'rm -rf src'"])
     assert.equal(shellMutationViolation("land", {}, command), LAND_REFUSAL, command);
+  assert.equal(shellMutationViolation("land", { FOUNDATION_LAND_TRANSACTION: "1" },
+    "bash scripts/check.sh"), null);
 });
 
 test("shell mutation detection covers formatters, package scripts, and script runners", () => {

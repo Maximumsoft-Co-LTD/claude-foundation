@@ -306,6 +306,23 @@ try {
   assert.equal(reviewRouteLabel({ reviewPolicy: "risk-tiered", lowRiskModel: "configured",
     state: { impact: "low", securityTriggers: [] } }), "risk-tiered AI review (low tier, configured model)");
 
+  // Open questions are read from the packet the approval covers: the
+  // workspace copy once Build isolated one, not the target checkout.
+  {
+    const workspace = join(root, "workspace");
+    const packet = join(workspace, "openspec", "changes", "change-1");
+    mkdirSync(packet, { recursive: true });
+    writeFileSync(join(packet, "design.md"),
+      "## Context\n\n### Open questions\n\n- Keep deleted cards? (owner: user)\n");
+    state = { ...baseState(), workspace: { path: workspace } };
+    const decision = lifecycle.openQuestionsDecision("change-1");
+    assert.ok(decision, "open questions in the workspace packet are asked");
+    assert.match(decision.message, /Keep deleted cards\?/);
+    state = baseState();
+    assert.equal(lifecycle.openQuestionsDecision("change-1"), null);
+    rmSync(workspace, { recursive: true, force: true });
+  }
+
   console.log = priorLog;
   priorLog("change resolution tests: PASS");
 } finally {
