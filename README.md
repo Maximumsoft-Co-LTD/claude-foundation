@@ -821,8 +821,9 @@ you to.
   credentials still block execution.
 - Land records missing, failed, inconclusive, invalid, or stale proof as
   assurance; those outcomes do not override an explicit user decision. Apply
-  still refuses conflicts and uncommitted edits on touched target paths — it
-  names the clobbered paths instead of letting the last writer win.
+  refuses only target-path edits not yet merged into the sandbox or still in
+  conflict — it names the clobbered paths instead of letting the last writer
+  win.
 - Land warns — without blocking — when the target is checked out on
   `main`/`master`; every land guard stays commit-based.
 - Land is a journaled, resumable apply that allows stacked changes and never

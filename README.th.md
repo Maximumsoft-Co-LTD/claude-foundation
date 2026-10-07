@@ -768,9 +768,9 @@ product requirement หรือซ่อม state ด้วยมือถ้�
   เดียวผ่าน `--attestation`; ถ้ายังเปิด host-control socket หรือ credential ระบบ
   จะ block ต่อไป
 - Land บันทึก proof ที่ missing, failed, inconclusive, invalid หรือ stale เป็น
-  assurance โดยไม่ล้ม explicit decision ของผู้ใช้ ส่วน apply ยังปฏิเสธ conflict
-  และ edit ใน target path ที่ยังไม่ commit — มันระบุ path ที่จะถูกทับแทนที่จะ
-  ปล่อยให้คนเขียนทีหลังชนะ
+  assurance โดยไม่ล้ม explicit decision ของผู้ใช้ ส่วน apply ปฏิเสธเฉพาะ edit
+  ใน target path ที่ยังไม่ถูกรวมเข้า sandbox หรือยังมี conflict — มันระบุ path
+  ที่จะถูกทับแทนที่จะปล่อยให้คนเขียนทีหลังชนะ
 - Land เตือน — โดยไม่บล็อก — เมื่อ target checkout อยู่บน `main`/`master`
   โดย guard ของ land ทุกตัวยังอิง commit
 - Land เป็น apply แบบมี journal ที่ resume ได้ รองรับ change ซ้อนกัน และไม่ commit,
