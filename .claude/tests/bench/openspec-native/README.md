@@ -9,6 +9,15 @@ short statement of what is green or still required, read
 `docs/reports/user-scenario-release-status.md`; for the scenario portfolio and
 acceptance rules, read `docs/reports/user-scenario-test-plan.md`.
 
+Every new version requires the maintainer scenario checkpoint in
+[RELEASING.md](../../../../RELEASING.md) before publication. Keep each curated
+dated comparison in `docs/reports/` and its checksummed raw bundles outside Git
+and disposable state. The
+[2026-10-08 cohort](../../../../docs/reports/scenario-benchmark-v3.6.0-v3.6.2-2026-10-08.md)
+is historical comparison evidence; its tracker failure and missing cost cannot
+satisfy a new candidate's checkpoint. Paid execution still requires explicit
+scope and budget authorization.
+
 ## End-to-end terminal contract
 
 A paid scenario is green only after the change reaches `archived`: Change,

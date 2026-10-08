@@ -15,9 +15,49 @@ The formula (`Formula/claude-foundation.rb`) ships **two** install paths:
 
 We follow [Semantic Versioning](https://semver.org/) and [Keep a Changelog](https://keepachangelog.com/). Tags are `vMAJOR.MINOR.PATCH` (e.g. `v1.3.0`).
 
+## Required scenario checkpoint before every new version
+
+Before dispatching a publishing release or manually creating a tag, run the
+candidate's deterministic gates and the zero-cost benchmark sentinel, then
+complete a budget-authorized smoke of **all paid scenarios** (currently ten) in the
+[scenario test plan](docs/reports/user-scenario-test-plan.md). The default smoke
+is one independent disposable consumer per scenario. Record the exact clean
+candidate commit, requested/actual model, toolchain, budgets, concurrency,
+fixture/oracle digests and runner instrumentation. A release-only version
+rewrite must retain the mapping from tested preparation commit to tagged
+source; behavior changes invalidate the affected candidate evidence.
+
+Compare against the previous stable release with matching workload and
+measurement conditions. Reuse its retained evidence only when those conditions
+match; disclose non-interleaved batches, missing measurements, and unmatched
+scenarios. A single repeat is a smoke check, not a stable speedup claim or the
+repeated assurance gate. The portfolio's existing repeat requirements still
+apply to assurance promotion.
+
+Required delivery checks must pass: pre-Land hidden oracle, `archived`, measured
+quality, ordinary project command, clean install and post-install tests. Preserve
+failed runs and unknown measurements. Missing/failed candidate evidence is a
+checkpoint blocker; do not publish by treating an old result, `proven`, a zero
+placeholder, or a smaller oracle as a pass. Record unresolved regression and
+measurement findings in the dated report before repair and selective reruns.
+
+Retain a curated dated report in `docs/reports/`, link it from the report index
+and current scenario status, and archive the raw run bundles with a SHA-256
+checksum outside Git and outside disposable `.foundation` state. Keep the
+source pins, denominators, budgets, measurement gaps, failures and resume route
+reviewable. The retained
+[v3.6.0–v3.6.2 cohort](docs/reports/scenario-benchmark-v3.6.0-v3.6.2-2026-10-08.md)
+is the historical starting reference; its tracker failure remains unresolved.
+
+This is a maintainer checkpoint before the publication workflow, not a scheduled
+paid CI job. Execute paid runs only within explicit user-authorized scope and
+budget; a release request alone does not supply an unlimited spending allowance.
+Operator commands and assurance semantics remain in the
+[benchmark protocol](.claude/tests/bench/openspec-native/README.md).
+
 ## One-action release (recommended)
 
-`.github/workflows/release.yml` does the whole mechanical release on a current-Xcode macOS runner. You do only the editorial part:
+After the required scenario checkpoint, `.github/workflows/release.yml` does the mechanical release on a current-Xcode macOS runner. Complete the release notes and dispatch it:
 
 1. **Write the changelog.** Add the release's entries under `## [Unreleased]` in `CHANGELOG.md` and push to `main`. (This is the only hand-written part; everything below is automated.)
 2. **Trigger the release.** Actions tab → **Release** → *Run workflow* → enter the new version (e.g. `2.5.11`). Or: `gh workflow run release.yml -f version=2.5.11`.
@@ -62,13 +102,14 @@ a bounded concurrent worker pool. The default is up to eight workers; use
 The report is source-bound and may be retained with `--output <path>`; a dirty
 source report is useful rehearsal evidence but cannot be assurance sign-off.
 
-Artifact publication and production assurance are separate contracts. A clean,
-structurally valid candidate that passes the deterministic release workflow may
-be tagged, published, and bottled without paid benchmark repeats, dogfood, or
-pilot evidence. Missing paid or rollout evidence must remain visible as an
-advisory and the release must not be described as `production-observed` until
-the corresponding reports pass. `npm run release:preflight` enforces the
-publication boundary; benchmark and rollout reports enforce assurance only.
+Artifact publication and production assurance are separate contracts. Complete
+the required scenario checkpoint above before invoking publication. The release
+workflow and `npm run release:preflight` still enforce the deterministic
+publication boundary; they do not execute or attest to that manual paid
+checkpoint. Repeated benchmark assurance, dogfood, and pilot evidence remain
+separate from a smoke check. Missing repeat or rollout evidence remains visible
+as an advisory, and the release must not be described as `production-observed`
+until the corresponding reports pass.
 
 Run `npm run release:local-rehearsal` to build a tracked/untracked-nonignored
 workspace archive, extract it, install a disposable consumer, verify CLI

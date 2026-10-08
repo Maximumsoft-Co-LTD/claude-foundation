@@ -161,6 +161,11 @@ must use disposable consumers, and must finish at `archived` with oracle and
 clean-install verification. A release-report exit code 2 is a truthful promotion
 blocker, not a deterministic test failure.
 
+Before every new version, complete the scenario checkpoint in
+[RELEASING.md](RELEASING.md). Retain a dated curated comparison in `docs/reports/`
+and the raw evidence outside Git. Historical results never satisfy a new
+candidate's checkpoint; paid execution remains explicitly budget-authorized.
+
 ## Change-specific gates
 
 | Change touches | Required focused checks in addition to the full suite |

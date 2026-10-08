@@ -1,15 +1,59 @@
 # User scenario release status
 
-Artifact publication last verified: 2026-10-08 for v3.6.0.
+Latest retained supplement: 2026-10-09, no-harness/v3.6.2; official ten-scenario
+comparison: 2026-10-08, no-harness/v3.6.0/v3.6.1/v3.6.2.
 
-Current release: [v3.6.0](https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/tag/v3.6.0),
+## Current scenario checkpoint
+
+The [remaining-workload supplement](remaining-scenarios-no-harness-v3.6.2-2026-10-09.md) /
+[ภาษาไทย](remaining-scenarios-no-harness-v3.6.2-2026-10-09.th.md) completes 14
+omitted legacy workloads plus reconstructed API keys across three repositories.
+Both arms fully satisfy acceptance in 12/15, but three shared acceptance failures,
+API-key CRAP failures in both arms, an observed baseline flaky test and a retained
+superseded `proven` Accumulate attempt prevent a green supplement. Nine eligible
+pairs show 1.505x lab time and 1.781x measured CLI cost with v3.6.2. This exploratory
+n=1 supplement retains corrections, continuations, missing-cost disclosure and a
+verified private archive; it does not replace the official matrix or fix tracker.
+
+The [no-harness extension](scenario-benchmark-no-harness-2026-10-08.md) /
+[ภาษาไทย](scenario-benchmark-no-harness-2026-10-08.th.md) adds ten baseline runs,
+bringing retained evidence to 40 runs. All four arms deliver 9/10 and share the
+same tracker failure. Across nine successful pairs, v3.6.2 uses +76.8% host time,
++78.2% main-host cost and 1.90x lab time versus direct implementation. Host timing
+has different endpoints; lab time includes delivery checks. Baseline ran later,
+n=1 has no spread, and none of these observations is a stable overhead claim.
+The complete private archive is checksummed and retained outside disposable state.
+
+The [dated comparison](scenario-benchmark-v3.6.0-v3.6.2-2026-10-08.md) /
+[ภาษาไทย](scenario-benchmark-v3.6.0-v3.6.2-2026-10-08.th.md) retains 30 paid runs,
+exact clean tag commits, real model identity and archive checksum. Every version
+delivered and archived 9/10, passed the same nine oracles and clean-install
+checks, and failed the tracker oracle `CASE_TESTS_EXIST` (32/33) at `proven`.
+Its tests and external-oracle repair remain unresolved; no tracker Land occurred.
+v3.6.0 Python API cost is unavailable, so cost comparisons exclude that pair.
+
+This n=1 cohort is historical smoke evidence, not repeated assurance or a green
+checkpoint for the next candidate. v3.6.2 versus v3.6.0 differs by only +0.7%
+host time and +5.3% measured cost; non-interleaved batches and absent variance
+prevent a stable improvement claim. Keep production assurance open.
+
+Before the next version, follow the required scenario checkpoint in
+[RELEASING.md](../../RELEASING.md), repair the unresolved tracker finding, and
+retain fresh source-cohorted results. Older reports never substitute for the
+new candidate's evidence.
+
+## Retained v3.6.0 publication record
+
+Artifact publication last verified in the record below: 2026-10-08 for v3.6.0.
+
+Previously verified release: [v3.6.0](https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/tag/v3.6.0),
 source tag commit `b404be47db136fb3fc97eb714dab286dd0859695`.
 The reviewed preparation commit is
 `3b4df8c0c0ea3c470792f592b817c0d2b38a3a5f`; the release workflow generated the
 versioned source and the subsequent formula/bottle commit
 `4a687e5443c94687e7fe559401f4e26bc38b660b`.
 See the [v3.6.0 changelog](../../CHANGELOG.md#360---2026-10-08) for scope.
-Production assurance and the matched reviewed-baseline comparison remain open.
+Production assurance remains open; the newer smoke comparison is recorded above.
 
 ## Published v3.6.0 verification
 

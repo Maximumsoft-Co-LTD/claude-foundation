@@ -42,22 +42,32 @@ digests are frozen by the deterministic sentinel.
 | `refactor-no-reproduction` | Behavior-preserving refactor without an initial defect | standard | Characterization and export compatibility, archived |
 | `multi-service-event-flow` | Producer/consumer event contract across services | high | Version, compatibility, idempotency, ordered proof, archived |
 | `budget-exhaustion-resume` | Deterministic budget stop and continuation | low | `needs-user-decision`, exact resume, eventual completion |
+| `tiny-feature` | Small feature and fixed harness overhead | low | Boundary tests, oracle, clean install, archived |
+| `notes-api` | CRUD, query/filter/sort/pagination API | medium | Oracle 13/13, meaningful tests, clean install, archived |
+| `cart-coupons` | Coupon validation and pricing partitions | medium | Oracle 11/11, meaningful tests, clean install, archived |
+| `project-tracker-api` | Auth, permissions, persisted projects/tasks and concurrency | medium | Oracle 33/33 including discriminating tests, clean install, archived |
 
-The first six lanes use paid model execution. The budget/resume lane is
+Ten lanes use paid model execution. The budget/resume lane is
 deterministic and must not spend model budget.
 
 ## Execution order
 
 1. Run the zero-cost sentinel. Stop if a fixture digest or deterministic oracle
    changes unexpectedly.
-2. Run one paid smoke for a lane. It must reach `archived` and pass oracle,
-   quality, project, clean-install, and post-install checks.
-3. Run independent clean consumers until the lane has three strict passes from
-   the same commit and patch digest.
-4. Generate the assurance report. Historical or zero-model runs remain visible
-   but cannot satisfy the paid repeat gate.
-5. For artifact publication, independently run release preflight from a clean
-   immutable candidate and complete the deterministic package rehearsal.
+2. Before every new version, run one budget-authorized paid smoke for every
+   paid matrix lane, following [RELEASING.md](../../RELEASING.md). Each must reach
+   `archived` and pass oracle, quality, project, clean-install and post-install
+   checks. Retain failed runs and unavailable measurements as checkpoint gaps.
+3. Compare with matching previous-release evidence and retain a dated curated
+   report, source pins, gaps and a checksummed raw archive outside Git. Unknown
+   cost is not zero; disclose exactly which pairs support each comparison.
+4. For repeated assurance, run independent clean consumers until each lane has
+   three strict passes from the same commit and patch digest, then generate the
+   assurance report. Historical or zero-model runs cannot satisfy that gate;
+   one smoke cannot establish a stable speedup.
+5. Complete release preflight on a clean immutable candidate and the
+   deterministic package rehearsal before publication. Do not discard a failed
+   smoke or substitute historical proof for this candidate's checkpoint.
 6. Continue dogfood, pilot, and production observation after publication; these
    gates control the `production-observed` claim, not artifact availability.
 
@@ -69,23 +79,23 @@ wall time, model requests, operations, resumptions, and available cost data.
 
 ```bash
 # Full deterministic repository suite
-bash .claude/tests/run-all.sh
+rtk test bash .claude/tests/run-all.sh
 
-# Frozen seven-scenario safety check
-npm run bench:openspec-native:sentinel
+# Frozen eleven-scenario safety check (zero model spend)
+rtk npm run bench:openspec-native:sentinel
 
 # One disposable paid lane
-node .claude/tests/bench/openspec-native/lab.mjs \
+rtk proxy node .claude/tests/bench/openspec-native/lab.mjs \
   --scenario <scenario-id>
 
 # Source-cohorted assurance report
-npm run bench:openspec-native:release-report -- \
+rtk npm run bench:openspec-native:release-report -- \
   .claude/tests/bench/results/openspec-native-lab
 
 # Candidate structure and compatibility
-npm run release:preflight
-npm run release:upgrade-matrix -- --output <durable-path>/upgrade-matrix.json
-npm run release:local-rehearsal
+rtk npm run release:preflight
+rtk npm run release:upgrade-matrix -- --output <durable-path>/upgrade-matrix.json
+rtk npm run release:local-rehearsal
 ```
 
 ## Result classification
@@ -103,9 +113,15 @@ and production acceptance are never synthesized by the harness.
 
 ## Current baseline
 
-As of 2026-09-03, all seven deterministic lanes pass. The clean candidate has
-no source-cohorted paid result, so all six paid lanes remain
-`deterministic-green`. An earlier strict `bare-node-boundary` smoke is retained
-as historical development evidence but does not satisfy this candidate. See
-`user-scenario-release-status.md` for the concise live status and remaining
-release work.
+The [2026-10-09 remaining-workload supplement](remaining-scenarios-no-harness-v3.6.2-2026-10-09.md)
+compares 14 omitted legacy workloads and reconstructed three-repository API keys
+against no harness, one repeat each. Its acceptance/quality/state gaps remain
+open. These exploratory fixtures are not promoted into this official matrix;
+freeze their corrected graders and seed before using them for a fresh checkpoint.
+
+The retained [2026-10-08 v3.6.0–v3.6.2 cohort](scenario-benchmark-v3.6.0-v3.6.2-2026-10-08.md)
+contains 30 paid runs, one per scenario and version, with 9/10 archived deliveries
+per version. All three tracker runs failed `CASE_TESTS_EXIST`; v3.6.0 Python API
+cost is unavailable. This is a historical comparison, not a passing checkpoint
+for a new candidate, a repeated-green portfolio, or a stable performance claim.
+See [current scenario status](user-scenario-release-status.md) for open findings.

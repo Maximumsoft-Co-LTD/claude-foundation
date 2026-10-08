@@ -8,7 +8,10 @@ time; they are not updated to describe the current release.
 
 | Need | Document | Status |
 |---|---|---|
-| Distinguish current source from recorded release evidence | [User scenario release status](user-scenario-release-status.md) | v3.6.0 published, CI/upgrade/artifact checks verified; production assurance remains open; older evidence retained as history |
+| Review omitted legacy and three-repository workloads | [2026-10-09 supplement](remaining-scenarios-no-harness-v3.6.2-2026-10-09.md) / [ภาษาไทย](remaining-scenarios-no-harness-v3.6.2-2026-10-09.th.md) | 15 workloads × two arms, n=1; acceptance, quality and retained-state gaps; exploratory, not release-green |
+| Distinguish current source from recorded release evidence | [User scenario release status](user-scenario-release-status.md) | v3.6.0–v3.6.2 smoke retained; all three deliver 9/10; tracker repair and production assurance remain open |
+| Compare the retained release scenario baseline | [2026-10-08 comparison](scenario-benchmark-v3.6.0-v3.6.2-2026-10-08.md) / [ภาษาไทย](scenario-benchmark-v3.6.0-v3.6.2-2026-10-08.th.md) | Historical 30-run cohort; source pins, incomplete cost, failure and private archive checksum retained |
+| Compare release delivery against direct implementation | [No-harness comparison](scenario-benchmark-no-harness-2026-10-08.md) / [ภาษาไทย](scenario-benchmark-no-harness-2026-10-08.th.md) | 40 retained runs; all four arms deliver 9/10; baseline faster/cheaper in n=1, terminal-time differences disclosed |
 | See the executable scenario and acceptance matrix | [User scenario test plan](user-scenario-test-plan.md) | Current contract |
 | Operate dogfood, pilot, rollback, and production observation | [Rollout operations](rollout-operations.md) | Current runbook |
 | Review delivery convergence, ownership, tool preparation, permission, and uncommitted multi-repository Land | [Delivery convergence master plan](delivery-convergence-master-plan-2026-09-05.md) | v3.5.7 implementation record |
