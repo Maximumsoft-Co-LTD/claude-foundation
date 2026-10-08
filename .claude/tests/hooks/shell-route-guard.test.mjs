@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -104,11 +104,18 @@ test("the wired hook denies with the route, advises in audit mode, and passes th
     writeFileSync(join(dir, ".foundation", "runtime", `${change}.json`), JSON.stringify({
       status: "building", repositories: { users: { path: sandbox, targetPath: join(dir, "services/users") } }
     }));
-    const run = (command, env = {}, extra = {}) => execFileSync("sh", [HOOK], {
-      input: JSON.stringify({ tool_name: "Bash", cwd: sandbox, tool_input: { command }, ...extra }),
-      env: { ...process.env, CLAUDE_PROJECT_DIR: dir, FOUNDATION_GUARDRAIL_MODE: "auto", ...env },
-      encoding: "utf8"
-    });
+    // The off switch exits before reading stdin, so writing the event can race
+    // the exit and fail with EPIPE; the hook's stdout is what is asserted.
+    const run = (command, env = {}, extra = {}) => {
+      const result = spawnSync("sh", [HOOK], {
+        input: JSON.stringify({ tool_name: "Bash", cwd: sandbox, tool_input: { command }, ...extra }),
+        env: { ...process.env, CLAUDE_PROJECT_DIR: dir, FOUNDATION_GUARDRAIL_MODE: "auto", ...env },
+        encoding: "utf8"
+      });
+      if (result.error && result.error.code !== "EPIPE") throw result.error;
+      assert.equal(result.status, 0, result.stderr);
+      return result.stdout;
+    };
     const denied = JSON.parse(run("npm test"));
     assert.equal(denied.decision, "block");
     assert.match(denied.reason, /claude-foundation exec api-keys --repo users -- npm test/);
