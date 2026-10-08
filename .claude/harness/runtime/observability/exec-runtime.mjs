@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { resumeThrough } from "../core/next-step.mjs";
 import {
   appendFileSync, existsSync, mkdirSync, realpathSync, statSync
 } from "node:fs";
@@ -98,7 +99,8 @@ function execRefusal(fail, message, code) {
 }
 
 // Where an exec child starts. A multi-repository change builds in a shared
-// sandbox whose submodule directories are empty mirrors, plus one sandbox per
+// sandbox whose submodule directories are mirrors (links to the repository
+// sandboxes, or recorded commits of unselected ones), plus one sandbox per
 // selected repository; a check for such a repository only works in its own
 // sandbox. Order: explicit `--repo`/`--task`; then the caller's
 // directory (inside a repository sandbox, the shared sandbox's mirror of a
@@ -116,14 +118,14 @@ export function resolveExecWorkspace({
     if (repository || task)
       execRefusal(fail, `exec --${repository ? "repo" : "task"} needs the change's ` +
         `isolated Build workspace, which does not exist in state '${state.status}'; ` +
-        `run 'claude-foundation advance ${id} --through build' first`,
+        `run 'claude-foundation advance ${id} --through ${resumeThrough(state)}' first`,
       "EXEC_WORKSPACE_MISSING");
     return null;
   }
   const checkout = canonicalDirectory(root);
   if (checkout && isWithin(checkout, shared))
     execRefusal(fail, "exec never runs in the main checkout, and the change's workspace " +
-      `resolves to it; run 'claude-foundation advance ${id} --through build' to ` +
+      `resolves to it; run 'claude-foundation advance ${id} --through ${resumeThrough(state)}' to ` +
       "create the isolated workspace", "EXEC_WORKSPACE_NOT_ISOLATED");
   const sandboxes = new Map([["root", { path: shared, target: checkout, mirror: null }]]);
   for (const [name, record] of Object.entries(state.repositories || {})) {
@@ -215,7 +217,10 @@ export function createExecRuntime({
   logs, loadRuntime, now, fail, assertApproval = null, root = null, changeTasks = null,
   // The CLI wrapper changes to the project root before starting the runtime,
   // so it hands over the directory the caller actually stood in.
-  callerCwd = () => process.env.FOUNDATION_CALLER_CWD || process.cwd()
+  callerCwd = () => process.env.FOUNDATION_CALLER_CWD || process.cwd(),
+  // Brings the change's sandboxes current (the root sandbox's nested
+  // repository paths) before a check runs in one of them.
+  prepareWorkspace = () => {}
 }) {
   function execObserved(id, commandArgs, { phase, repository = null, task = null } = {}) {
     const state = loadRuntime(id);
@@ -245,6 +250,7 @@ export function createExecRuntime({
         id, state, root, callerCwd: callerCwd(), repository, task, tasks, fail
       });
       if (resolved) ({ cwd, workspace } = resolved);
+      if (resolved) prepareWorkspace(id);
     }
     const violation = executionCommandViolation(runtimePhase, commandArgs, workspace, cwd);
     // The same text-inferred shell policy as the live hook, enforced the same

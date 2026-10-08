@@ -9,7 +9,7 @@ import {
 } from "./evidence-results.mjs";
 import { repositoryBaseHead } from "../core/repository-binding.mjs";
 import {
-  environmentIdentity, readTaskCheckExecution, sameArgv, taskCheckArgv,
+  environmentIdentity, readTaskCheckExecution, sameArgv, sameShellLine, taskCheckArgv,
   taskCheckExecutionPath, taskCheckReuseRefusal, writeTaskCheckExecution
 } from "./task-check-evidence.mjs";
 
@@ -597,13 +597,13 @@ export function createAdapterRuntime({
     const argv = taskCheckArgv(check.command);
     const taskCwd = state.repositories?.[check.repository]?.path ||
       (check.repository === "root" ? state.workspace?.path : null);
-    if (!argv || !taskCwd) return null;
+    if (!taskCwd) return null;
     for (const provider of requiredProviders(id)) {
       const config = providerConfig(id, provider);
       if (!Array.isArray(config?.command) ||
           taskCheckReuseRefusal(config, providerCapability(provider, config))) continue;
       const built = configuredCommand(provider, config);
-      if (!sameArgv(argv, built)) continue;
+      if (!sameArgv(argv, built) && !sameShellLine(check.command, built)) continue;
       const repository = providerRepository(id, provider, config);
       const cwd = repository?.workspacePath || state.workspace?.path || ROOT;
       if (resolve(cwd) === resolve(taskCwd)) return { provider, config, repository, cwd, built };
@@ -698,7 +698,9 @@ export function createAdapterRuntime({
       ["tap", "spec", "auto"].includes(config.reportFormat || "auto")
       ? parseNodeTestSpecOutput(content) : null;
     const assertions = auto ? parseAssertionSummaryOutput(content) : null;
-    const runner = auto && !assertions ? parseRunnerSummaryOutput(content) : null;
+    // Some runners (Python unittest) print their summary on stderr.
+    const runner = auto && !assertions ? parseRunnerSummaryOutput(
+      configuredReport.fresh ? content : `${content}\n${result.stderr || ""}`) : null;
     return json || tap || spec || assertions || runner;
   }
 

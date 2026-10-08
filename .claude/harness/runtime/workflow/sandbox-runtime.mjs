@@ -1,5 +1,6 @@
 import { assertSpecApproval, agreementIdentity, approvalMatches, userDecisionError } from "../core/user-decisions.mjs";
 import { spawnSync } from "node:child_process";
+import { resumeThrough } from "../core/next-step.mjs";
 import { createHash } from "node:crypto";
 import {
   cpSync, existsSync, lstatSync, mkdirSync, readlinkSync, readdirSync,
@@ -16,7 +17,15 @@ import {
   compositeRepositorySelection, isolatedRepositoryState, nestedRepositoryRelativePaths,
   worktreeOwnedByTarget
 } from "../core/repository-binding.mjs";
-import { landedTargetPaths, otherLandedOutput, replayLandedEdit } from "./target-edits.mjs";
+import {
+  landedTargetPaths, otherLandedOutput, replayLandedEdit, resolutionKeepsLanded
+} from "./target-edits.mjs";
+import {
+  captureCopyBase, captureCopyBaseSurface, copyBaseBytes, copyEditCarried, fileSource
+} from "./copy-base.mjs";
+import {
+  projectNestedRepositories, projectableRepositories, projectionWorkspace
+} from "./repository-projection.mjs";
 
 // A commit read, not executed. Inspection must not resolve a program through
 // PATH, so ref files are the authority for both ordinary and linked worktrees.
@@ -521,7 +530,7 @@ export function assertSandboxGroundingPortable(context, id, state) {
   if (portability.length)
     context.fail(`grounding readSet is not sandbox-portable: ${
       portability.map((entry) => `${entry.repository}:${entry.path} (${entry.reason})`).join(", ")
-    } — move the cited decision or evidence into openspec/changes/${id}/ or refresh its readSet digest through one semantic amendment, then resume with 'claude-foundation advance ${id} --through build'`);
+    } — move the cited decision or evidence into openspec/changes/${id}/ or refresh its readSet digest through one semantic amendment, then resume with 'claude-foundation advance ${id} --through ${resumeThrough(state)}'`);
 }
 
 export function plannedGroundingPortabilityStatus(source, pathExists) {
@@ -702,15 +711,19 @@ export function ignoredSandboxPaths(root, git) {
     .map((path) => path.endsWith("/") ? path.slice(0, -1) : path));
 }
 
+// A copy that carries Git leaves each declared nested repository directory
+// empty, as a worktree does: the root sandbox projects it afterwards.
 export function sandboxCopyPlan({
-  root, carriesGit, git, sandboxCopyExcludedDirs, excludedWorkspaceDirs
+  root, carriesGit, git, sandboxCopyExcludedDirs, excludedWorkspaceDirs, nestedPaths = []
 }) {
   const copyExcluded = carriesGit ? sandboxCopyExcludedDirs : excludedWorkspaceDirs;
   const listed = carriesGit ? git(["ls-files", "-z"], root) : { status: 1, stdout: "" };
   const listedPaths = listed.status === 0 ? listed.stdout.split("\0").filter(Boolean) : [];
   const tracked = trackedPathSet(listedPaths);
   const ignored = ignoredSandboxPaths(root, git);
+  const nested = carriesGit ? nestedPaths : [];
   const excludes = (rel) => ignored.has(rel) ||
+    nested.some((path) => rel.startsWith(`${path}/`)) ||
     isExcludedPath(rel, { excluded: copyExcluded, tracked: tracked.has(rel) });
   const filter = (source) =>
     !excludes(relative(root, source).replaceAll("\\", "/"));
@@ -883,7 +896,7 @@ export function reportSandboxSync({ id, state, movement, forwarded, conflicts,
     forwarded ? `\n  fast-forwarded: ${forwarded} file(s) the target moved and the sandbox left alone` : ""
   }`);
   for (const rel of conflicts)
-    log(`CONFLICT ${rel}: the target and the sandbox both changed this file since the baseline; merge the target's version into the sandbox copy, then rerun sandbox sync with --resolve ${rel} (comma-separate several paths). Land stays blocked until every conflict is resolved.`);
+    log(`CONFLICT ${rel}: the target and the sandbox both changed this file since the baseline; merge the target's version into the sandbox copy (no conflict markers), then resume with 'claude-foundation advance ${id} --through <stage>'; the copy settles once it provably contains the target's edit. Land stays blocked until every conflict is resolved.`);
   for (const conflict of movement?.conflicts || [])
     log(`CONFLICT ${movement.multiRepository ? `${conflict.repository}:` : ""}${conflict.path}: the sandbox diff no longer applies to the moved target; merge the target's version into the named repository sandbox worktree, then rerun sandbox sync. Land stays blocked until every repository sandbox replays onto its current commit.`);
   if (movement && !movement.rebased && !movement.conflicts.length)
@@ -1181,6 +1194,8 @@ export function createSandbox(context, id, flags = {}) {
   setupSelectedRepositories(context, state, setupRepositories);
   transitionLifecycleState(state, "building", "repository-sandboxes-created");
   context.saveRuntime(state);
+  // Repository sandboxes exist only now; link them into the root sandbox.
+  context.projectRepositories?.(id, state);
   context.clearSnapshotCache(id);
   reportMultiRepositorySandbox(context, id, state);
 }
@@ -1200,6 +1215,8 @@ export function prepareBuildSandbox(context, id) {
   if (incomplete) context.create(id, { quiet: true });
   context.synchronizeAgreement?.(id);
   context.retryFailedSetups(id);
+  // Resume, re-creation, and a sync can each leave a root path empty.
+  context.projectRepositories?.(id);
   return { repaired: incomplete };
 }
 
@@ -1284,10 +1301,13 @@ export function changeDiffCandidatePlan(context, id, state, candidate) {
   if (!record || !["worktree", "copy"].includes(record.mode) ||
       !record.path || !context.pathExists(record.path))
     return { status: "invalid" };
+  // The same nested set replay and Apply exclude: a root sandbox projects
+  // every declared nested repository, and none of them is root's diff.
   const nested = repository === "root"
-    ? context.selectedRepositories(id, state)
+    ? [...new Set([...context.selectedRepositories(id, state)
       .filter((entry) => entry.type === "submodule")
-      .map((entry) => entry.relativePath)
+      .map((entry) => entry.relativePath),
+    ...(context.declaredRepositoryPaths?.() || [])])]
     : [];
   if (record.mode === "copy") {
     if (!record.baseline || typeof record.baseline !== "object" ||
@@ -1397,10 +1417,33 @@ export function createSandboxRuntime({
   clearSnapshotCache, validate, repositorySelectionIdsAt, contractFingerprint,
   executionFingerprint, taskBlocks, proofPath, relevantHash, now, fail,
   markBlocked,
-  recordScheduler
+  recordScheduler,
+  declaredSurfaceMatcher = null
 }) {
   function sandboxRoot(id) {
     return join(root, ".foundation", "sandboxes", id);
+  }
+
+  function declaredRepositoryPaths() {
+    return typeof repositoryCatalog === "function"
+      ? nestedRepositoryRelativePaths(repositoryCatalog()) : [];
+  }
+
+  // Every declared nested repository path of the root sandbox holds that
+  // repository's sandbox (selected) or its recorded commit (not selected);
+  // see repository-projection.mjs. Selection is read from the packet, never
+  // from runtime bindings that may be exactly what is still being created.
+  function projectRepositories(id, state = loadRuntime(id)) {
+    if (typeof repositoryCatalog !== "function" || !projectionWorkspace(state)) return null;
+    const repositories = repositoryCatalog().repositories || [];
+    if (!projectableRepositories(repositories).length) return null;
+    return projectNestedRepositories({
+      root, git, gitHead, now, fail,
+      repositories,
+      selectedIds: typeof repositorySelectionIdsAt === "function"
+        ? repositorySelectionIdsAt(changePath(id)) : Object.keys(state.repositories || {}),
+      log: (line) => console.error(line)
+    }, id, state);
   }
 
   // A freshly created sandbox has no installed dependencies: the copy path
@@ -1448,6 +1491,16 @@ export function createSandboxRuntime({
     return result;
   }
 
+  // Keep the base bytes of the change's declared surface while the target
+  // still holds them. An undeclared or whole-tree surface is left to lazy
+  // capture rather than duplicating the repository.
+  function captureDeclaredCopyBase(id, state) {
+    if (!declaredSurfaceMatcher) return;
+    const matches = declaredSurfaceMatcher(id, state, "root");
+    if (matches(".foundation/\0unconfined")) return;
+    captureCopyBaseSurface({ root, baseline: state.workspace.baseline, matches });
+  }
+
   function createCopy(id, state, reason) {
     const requestedPath = sandboxRoot(id);
     if (existsSync(requestedPath))
@@ -1471,7 +1524,8 @@ export function createSandboxRuntime({
     // silently omitted committed fixtures whose directory name collided with a
     // build-output name, and git inside the sandbox then reported them deleted.
     const plan = sandboxCopyPlan({
-      root, carriesGit, git, sandboxCopyExcludedDirs, excludedWorkspaceDirs
+      root, carriesGit, git, sandboxCopyExcludedDirs, excludedWorkspaceDirs,
+      nestedPaths: declaredRepositoryPaths()
     });
     // A copy that dies partway leaves a directory the runtime never recorded:
     // `state.workspace` is still whatever it was, so nothing knows the tree
@@ -1504,8 +1558,10 @@ export function createSandboxRuntime({
       }),
       targetDirty: targetDirtySnapshot()
     };
+    captureDeclaredCopyBase(id, state);
     transitionLifecycleState(state, "building", "copy-sandbox-created");
     saveRuntime(state);
+    projectRepositories(id, state);
     const setup = runWorkspaceSetup(state);
     if (setup) saveRuntime(state);
     console.log(`SANDBOX ${id}\n  mode: isolated-copy\n  reason: ${reason}\n  git: ${
@@ -1666,6 +1722,7 @@ export function createSandboxRuntime({
     };
     transitionLifecycleState(state, "building", "worktree-sandbox-created");
     saveRuntime(state);
+    projectRepositories(id, state);
     const setup = runWorkspaceSetup(state);
     if (setup) saveRuntime(state);
     console.log(`SANDBOX ${id}\n  path: ${path}${sandboxSetupLine(setup)}`);
@@ -1723,6 +1780,7 @@ export function createSandboxRuntime({
   const changeDiffIdentityPlan = changeDiffCandidatePlan.bind(null, {
     pathExists: existsSync,
     selectedRepositories,
+    declaredRepositoryPaths,
     codePathspec: sandboxCodePathspec,
     pid: process.pid,
     environment: process.env
@@ -1929,6 +1987,11 @@ export function createSandboxRuntime({
     const base = baseline[rel] ?? null;
     const target = targetManifest[rel] ?? null;
     const sandboxEntry = sandboxManifest[rel] ?? null;
+    // The first divergence while a side still holds the baseline bytes is the
+    // last chance to keep them; without them no later merge can be proven.
+    if (target !== base || sandboxEntry !== base)
+      captureCopyBase({ root, baseline, path: rel, sources: [
+        fileSource(join(root, rel)), fileSource(join(workspace.path, rel))] });
     if (target === base) return "unchanged";
     if (sandboxEntry === target) {
       advanceCopyBaseline(baseline, rel, target);
@@ -1941,6 +2004,13 @@ export function createSandboxRuntime({
     }
     if (resolves.has(rel)) {
       usedResolves.add(rel);
+      advanceCopyBaseline(baseline, rel, target);
+      return "settled";
+    }
+    // A plain sync is how `advance` resumes a conflict: the agent's merge
+    // settles it only when a 3-way check against the captured base proves the
+    // target's edit is in the sandbox copy. A changed copy proves nothing.
+    if (copyEditCarried({ root, sandboxPath: workspace.path, path: rel, baseline })) {
       advanceCopyBaseline(baseline, rel, target);
       return "settled";
     }
@@ -2019,8 +2089,11 @@ export function createSandboxRuntime({
         // bound to the exact target and sandbox bytes it was made against.
         const row = { target: identity(join(root, path)), sandbox: identity(sandboxFile),
           landedBy: landedBy[path] };
+        // An edit that dropped other landed content is not a merge: Land would
+        // overwrite that content, so the conflict stays open for the agent.
         const answered = priorConflicts[path]?.target === row.target &&
-          priorConflicts[path].sandbox !== row.sandbox;
+          priorConflicts[path].sandbox !== row.sandbox &&
+          resolutionKeepsLanded({ root, sandboxPath: workspace.path, path, baseBytes });
         const kept = priorResolved[path]?.target === row.target &&
           priorResolved[path].sandbox === row.sandbox;
         if (answered || kept) resolved[path] = row;
@@ -2054,19 +2127,25 @@ export function createSandboxRuntime({
     const workspace = state.workspace;
     const carry = workspace.targetCarry;
     const merged = [];
-    if (!carry || workspace.mode !== "worktree") {
+    if (!carry || !["worktree", "copy"].includes(workspace.mode)) {
       delete workspace.targetCarry;
       return merged;
     }
     const identity = (path) =>
       lstatSync(path, { throwIfNoEntry: false })?.isFile() ? fileDigest(path) : null;
     const base = workspace.baseHead || "HEAD";
+    // A copy merges against its captured base bytes; none means no merge.
+    const baseBytes = (path) => {
+      if (workspace.mode === "copy")
+        return copyBaseBytes({ root, baseline: workspace.baseline, path });
+      const shown = gitBuffer(["show", `${base}:${path}`], root);
+      return shown.status === 0 ? shown.stdout : null;
+    };
     const recorded = {};
     for (const path of Object.keys(carry).sort()) {
       if (identity(join(root, path)) !== carry[path]) continue;
-      const shown = gitBuffer(["show", `${base}:${path}`], root);
       const replay = replayLandedEdit({ root, sandboxPath: workspace.path, path,
-        baseBytes: shown.status === 0 ? shown.stdout : null });
+        baseBytes: baseBytes(path) });
       if (replay.status !== "merged") continue;
       writeFileSync(join(workspace.path, path), replay.bytes);
       recorded[path] = { target: carry[path], sandbox: identity(join(workspace.path, path)) };
@@ -2083,8 +2162,9 @@ export function createSandboxRuntime({
         "sandbox copy; evidence covering it runs again before Land.");
     for (const row of conflicts)
       log(`CONFLICT ${row.path}: this change and the landed, uncommitted work of ${row.landedBy} ` +
-        "both changed the same lines. Edit the sandbox copy into the merge of both, keeping the " +
-        "landed content, then resume; that edit is taken as the merge. Ask the user only if the " +
+        "both changed the same lines. Edit the sandbox copy into the merge of both, keeping all the " +
+        "landed content (also its other edits in this file), then resume; a merge that drops landed " +
+        "content is not taken. Ask the user only if the " +
         "two changes' intents contradict.");
   }
 
@@ -2210,6 +2290,9 @@ export function createSandboxRuntime({
     });
     clearSnapshotCache(id);
     saveRuntime(state);
+    // A replay rebuilds the root worktree, and a moved gitlink names a new
+    // commit for an unselected repository.
+    projectRepositories(id, state);
     // Stated whether or not it could be resolved. A target that moved and a
     // sandbox that silently kept building against the old base is the failure
     // this line exists to make impossible.
@@ -2246,6 +2329,7 @@ export function createSandboxRuntime({
     repositoryCatalog,
     clearSnapshotCache,
     createSingle,
+    projectRepositories,
     runSetupCommand, runSetupBatch,
     output: console,
     fail
@@ -2284,12 +2368,13 @@ export function createSandboxRuntime({
 
   const prepareBuild = prepareBuildSandbox.bind(null, {
     root, loadRuntime, validate, workspaceInspection, create, retryFailedSetups, recoverReplay,
-    synchronizeAgreement
+    synchronizeAgreement, projectRepositories
   });
 
   return {
     createChallenge, workspaceInspection, inspect, showInspection,
     createSingle, create, retryFailedSetups, prepareBuild, mergeTaskProgress, sync,
+    projectRepositories,
     synchronizeAgreement, agreementStale,
     recoverReplay: (id) => recoverReplay(id, loadRuntime(id)),
     changeDiffIdentity

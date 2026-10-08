@@ -1,0 +1,647 @@
+{
+  "version": 4,
+  "language": "en",
+  "intent": "Add revocable, scoped, rate-limited API keys across the users service, the gateway and the SDK, as specified in docs/API-KEYS.md",
+  "why": "Integrators calling the gateway server-to-server only have short-lived bearer session tokens. They need long-lived, revocable, least-privilege credentials. The change adds API-key issuance and hashed storage in users, ApiKey authentication with scopes, per-key rate limit, key routes and log redaction in the gateway, and an apiKey credential and apiKeys resource in the SDK. Bearer sessions stay unchanged.",
+  "changes": [
+    "users service gains apiKeys issue/list/revoke/rotate/verify with salted hashed storage",
+    "gateway accepts Authorization: ApiKey, enforces scopes and per-key rate limit, exposes key routes, redacts keys in logs and reads three new config variables",
+    "SDK gains apiKey credential, client.apiKeys and AuthError/ForbiddenError/RateLimitError"
+  ],
+  "nonGoals": [
+    "Changing bearer-session authentication or users CRUD behavior",
+    "Rate limiting session principals or public routes"
+  ],
+  "capabilityOverviews": [
+    {
+      "capability": "api-keys",
+      "title": "API keys",
+      "overview": "Long-lived revocable scoped credentials for server-to-server calls across users, gateway and SDK."
+    }
+  ],
+  "impact": "high",
+  "coupling": "coupled",
+  "workType": [
+    "feature",
+    "api",
+    "config"
+  ],
+  "riskSignals": [
+    "access-control",
+    "persisted-data-change",
+    "input-domain"
+  ],
+  "repositories": [
+    {
+      "id": "root",
+      "mode": "write"
+    },
+    {
+      "id": "users",
+      "mode": "write"
+    },
+    {
+      "id": "sdk",
+      "mode": "write"
+    }
+  ],
+  "userFlow": {
+    "purpose": "An integrator creates a key with a session, then calls with ApiKey; failures are 401/403/429.",
+    "source": "flowchart LR\n  A[\"Session creates key\"] --> B[\"Call with ApiKey\"]\n  B --> C{\"verify\"}\n  C -->|invalid| D[\"401 unauthorized\"]\n  C -->|ok| E{\"rate limit\"}\n  E -->|over| F[\"429 rate_limited\"]\n  E -->|ok| G{\"scope\"}\n  G -->|missing| H[\"403 insufficient_scope\"]\n  G -->|ok| I[\"handler\"]"
+  },
+  "apiContracts": [
+    {
+      "method": "POST",
+      "path": "/users/:id/api-keys",
+      "auth": "Session or ApiKey with write, own user only",
+      "request": {
+        "label": "string?",
+        "scopes": "string[]?",
+        "expiresAt": "string?"
+      },
+      "response": {
+        "key": "string",
+        "prefix": "string",
+        "label": "string",
+        "scopes": "string[]",
+        "createdAt": "string",
+        "expiresAt": "string|null"
+      },
+      "errors": [
+        {
+          "status": 400,
+          "when": "validation_error"
+        },
+        {
+          "status": 403,
+          "when": "forbidden or insufficient_scope"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/users/:id/api-keys",
+      "auth": "Session or ApiKey with read, own user only",
+      "request": {
+        "none": "no body"
+      },
+      "response": {
+        "apiKeys": "listing[]"
+      },
+      "errors": [
+        {
+          "status": 403,
+          "when": "forbidden"
+        }
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/users/:id/api-keys/:prefix",
+      "auth": "Session or ApiKey with write, own user only",
+      "request": {
+        "none": "no body"
+      },
+      "response": {
+        "status": "204 no content"
+      },
+      "errors": [
+        {
+          "status": 404,
+          "when": "prefix not owned"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/users/:id/api-keys/:prefix/rotate",
+      "auth": "Session or ApiKey with write, own user only",
+      "request": {
+        "graceSeconds": "integer?"
+      },
+      "response": {
+        "key": "string",
+        "prefix": "string"
+      },
+      "errors": [
+        {
+          "status": 400,
+          "when": "invalid graceSeconds or key already revoked or expired"
+        },
+        {
+          "status": 404,
+          "when": "prefix not owned"
+        }
+      ]
+    }
+  ],
+  "configContract": [
+    {
+      "key": "API_KEY_RATE_LIMIT",
+      "default": "60",
+      "validation": "positive integer"
+    },
+    {
+      "key": "API_KEY_RATE_WINDOW_MS",
+      "default": "60000",
+      "validation": "positive integer"
+    },
+    {
+      "key": "API_KEY_ROTATION_GRACE_SECONDS",
+      "default": "0",
+      "validation": "non-negative integer"
+    }
+  ],
+  "requirements": [
+    {
+      "key": "users-key-lifecycle",
+      "capability": "api-keys",
+      "operation": "added",
+      "description": "The users service SHALL issue, list, revoke, rotate and verify API keys in format ak_<prefix>_<secret>",
+      "outcome": "service.apiKeys issue/list/revoke/rotate/verify behave per spec; parseApiKey and API_KEY_PATTERN are exported",
+      "details": [
+        "Scopes are read/write, deduplicated, ordered, independent",
+        "Unknown or foreign prefix is NotFoundError",
+        "Invalid label/scopes/expiresAt/graceSeconds is ValidationError"
+      ],
+      "scenarios": [
+        {
+          "name": "Issue and verify",
+          "kind": "success",
+          "given": "an existing user",
+          "when": "a key is issued then verified",
+          "then": "verify returns ok with userId, prefix and scopes and lastUsedAt is set",
+          "and": [
+            "issue returns the plaintext key only once"
+          ]
+        },
+        {
+          "name": "Rotate with grace",
+          "kind": "success",
+          "given": "an active key",
+          "when": "rotate is called with graceSeconds 30",
+          "then": "a new key with same label and scopes is returned and the old key is revoked at clock plus 30 seconds"
+        },
+        {
+          "name": "Verify rejections",
+          "kind": "failure",
+          "when": "verify is given a malformed, unknown, revoked or expired key",
+          "then": "it returns ok false with reason malformed, unknown, revoked or expired",
+          "recovery": "Issue or rotate a new key"
+        },
+        {
+          "name": "Invalid issue input",
+          "kind": "failure",
+          "when": "issue gets empty label, bad scopes or past expiresAt",
+          "then": "ValidationError is thrown",
+          "recovery": "Retry with valid input"
+        },
+        {
+          "name": "Foreign prefix",
+          "kind": "failure",
+          "when": "revoke or rotate targets another user's prefix",
+          "then": "NotFoundError is thrown",
+          "recovery": "Use own key prefix"
+        },
+        {
+          "name": "Rotate dead key",
+          "kind": "boundary",
+          "given": "a revoked or expired key",
+          "when": "rotate is called",
+          "then": "ValidationError is thrown"
+        }
+      ]
+    },
+    {
+      "key": "users-key-storage",
+      "capability": "api-keys",
+      "operation": "added",
+      "description": "The users service SHALL persist only salted hashes of key secrets and remove keys with their user",
+      "outcome": "Stored records hold no plaintext secret, legacy documents load, deleteUser removes keys",
+      "scenarios": [
+        {
+          "name": "No plaintext persisted",
+          "kind": "success",
+          "when": "a key is issued",
+          "then": "the stored document contains a per-key salt and hash but not the key or secret"
+        },
+        {
+          "name": "Legacy document",
+          "kind": "boundary",
+          "given": "a document without apiKeys",
+          "when": "the service loads it and issues a key",
+          "then": "it works"
+        },
+        {
+          "name": "Delete user",
+          "kind": "success",
+          "given": "a user with keys",
+          "when": "deleteUser runs",
+          "then": "their keys verify as unknown"
+        },
+        {
+          "name": "List hides secrets",
+          "kind": "failure",
+          "when": "list is called",
+          "then": "no key, secret, hash or salt field appears",
+          "recovery": "None needed"
+        }
+      ]
+    },
+    {
+      "key": "gateway-apikey-auth",
+      "capability": "api-keys",
+      "operation": "added",
+      "description": "The gateway SHALL authenticate ApiKey credentials and enforce scopes in the order authenticate, rate limit, scope, ownership",
+      "outcome": "ApiKey requests produce an apiKey principal; failures give identical 401 and scope failures 403",
+      "scenarios": [
+        {
+          "name": "Valid ApiKey",
+          "kind": "success",
+          "given": "a key with read scope",
+          "when": "GET a protected route with Authorization: apikey <key>",
+          "then": "the request succeeds with principal type apiKey"
+        },
+        {
+          "name": "Bearer unchanged",
+          "kind": "success",
+          "when": "a session bearer token is used",
+          "then": "behavior is unchanged and the principal has every scope"
+        },
+        {
+          "name": "Indistinguishable 401",
+          "kind": "failure",
+          "when": "credentials are missing, malformed, unknown, revoked or expired",
+          "then": "401 unauthorized with identical body",
+          "recovery": "Use a valid key"
+        },
+        {
+          "name": "Missing scope",
+          "kind": "failure",
+          "given": "a read-only key",
+          "when": "POST is sent",
+          "then": "403 insufficient_scope",
+          "recovery": "Issue a key with write"
+        },
+        {
+          "name": "Ownership",
+          "kind": "failure",
+          "when": "a key manages another user's resources",
+          "then": "403 forbidden",
+          "recovery": "Use own user id"
+        }
+      ]
+    },
+    {
+      "key": "gateway-rate-limit",
+      "capability": "api-keys",
+      "operation": "added",
+      "description": "The gateway SHALL rate limit API-key requests per key prefix in fixed epoch-aligned windows",
+      "outcome": "Over-limit requests get 429 rate_limited with Retry-After",
+      "scenarios": [
+        {
+          "name": "Within limit",
+          "kind": "success",
+          "when": "limit requests are made in one window",
+          "then": "all are allowed"
+        },
+        {
+          "name": "Over limit",
+          "kind": "failure",
+          "when": "limit plus one requests are made in one window",
+          "then": "429 rate_limited with Retry-After seconds to window end rounded up, minimum 1",
+          "recovery": "Wait for next window"
+        },
+        {
+          "name": "New window",
+          "kind": "boundary",
+          "when": "the clock crosses a multiple of windowMs",
+          "then": "the count resets"
+        },
+        {
+          "name": "Sessions exempt",
+          "kind": "boundary",
+          "when": "session bearer requests exceed the limit",
+          "then": "they are not limited"
+        }
+      ]
+    },
+    {
+      "key": "gateway-key-routes",
+      "capability": "api-keys",
+      "operation": "added",
+      "description": "The gateway SHALL expose key management routes restricted to the authenticated user",
+      "outcome": "POST/GET/DELETE/rotate routes behave per the table in the spec",
+      "scenarios": [
+        {
+          "name": "Create and list",
+          "kind": "success",
+          "given": "a session for user u",
+          "when": "POST then GET /users/u/api-keys",
+          "then": "201 with key, then 200 with apiKeys listing without secrets"
+        },
+        {
+          "name": "Revoke and rotate",
+          "kind": "success",
+          "when": "DELETE and rotate on own prefix",
+          "then": "204 and 201 with new key"
+        },
+        {
+          "name": "Other user",
+          "kind": "failure",
+          "when": "id is not the authenticated user",
+          "then": "403 forbidden",
+          "recovery": "Use own id"
+        },
+        {
+          "name": "Unknown prefix",
+          "kind": "failure",
+          "when": "prefix is not the user's",
+          "then": "404 not_found",
+          "recovery": "List keys"
+        },
+        {
+          "name": "Invalid body",
+          "kind": "failure",
+          "when": "scopes are invalid",
+          "then": "400 validation_error",
+          "recovery": "Fix body"
+        }
+      ]
+    },
+    {
+      "key": "gateway-log-redaction",
+      "capability": "api-keys",
+      "operation": "added",
+      "description": "The gateway SHALL never log a full API key or secret",
+      "outcome": "Logs carry only prefix-level information for ApiKey requests",
+      "scenarios": [
+        {
+          "name": "Redacted header",
+          "kind": "success",
+          "when": "a request uses a valid key",
+          "then": "authorization logs as ApiKey ak_<prefix>_[redacted] and auth is {type, userId, keyPrefix}"
+        },
+        {
+          "name": "Malformed header",
+          "kind": "failure",
+          "when": "a malformed key is sent",
+          "then": "authorization logs as ApiKey [redacted]",
+          "recovery": "None needed"
+        },
+        {
+          "name": "Rejected requests",
+          "kind": "failure",
+          "when": "revoked or rate-limited keys are used",
+          "then": "no log line contains the full key or secret",
+          "recovery": "None needed"
+        }
+      ]
+    },
+    {
+      "key": "gateway-config",
+      "capability": "api-keys",
+      "operation": "added",
+      "description": "The gateway SHALL load API key limits from environment and pass them to the services",
+      "outcome": "loadConfig returns apiKeyRateLimit, apiKeyRateWindowMs, apiKeyRotationGraceSeconds",
+      "scenarios": [
+        {
+          "name": "Defaults",
+          "kind": "success",
+          "when": "env is empty",
+          "then": "values are 60, 60000 and 0"
+        },
+        {
+          "name": "Invalid values",
+          "kind": "failure",
+          "when": "a variable is zero, negative or non-integer where positive is required",
+          "then": "loadConfig rejects it",
+          "recovery": "Fix the variable"
+        }
+      ]
+    },
+    {
+      "key": "sdk-api-keys",
+      "capability": "api-keys",
+      "operation": "added",
+      "description": "The SDK SHALL support apiKey credentials, an apiKeys resource and typed errors",
+      "outcome": "createClient accepts apiKey and exposes apiKeys create/list/rotate/revoke; 401/403/429 raise typed errors",
+      "scenarios": [
+        {
+          "name": "ApiKey header",
+          "kind": "success",
+          "when": "client is created with apiKey",
+          "then": "requests send Authorization: ApiKey <apiKey>"
+        },
+        {
+          "name": "Resource calls",
+          "kind": "success",
+          "when": "create, list, rotate, revoke are called",
+          "then": "correct URL-encoded paths are used and results are object, array, object, undefined"
+        },
+        {
+          "name": "Both credentials",
+          "kind": "failure",
+          "when": "token and apiKey are both passed",
+          "then": "TypeError is thrown",
+          "recovery": "Pass one credential"
+        },
+        {
+          "name": "Typed errors",
+          "kind": "failure",
+          "when": "server returns 401, 403, 429 or other non-2xx",
+          "then": "AuthError, ForbiddenError, RateLimitError with numeric or null retryAfter, or HttpError",
+          "recovery": "Handle by type"
+        }
+      ]
+    },
+    {
+      "key": "api-keys-docs",
+      "capability": "api-keys",
+      "operation": "added",
+      "description": "Each repository README SHALL describe API keys",
+      "outcome": "gateway, users and sdk READMEs cover architecture, API and configuration for API keys",
+      "scenarios": [
+        {
+          "name": "READMEs updated",
+          "kind": "success",
+          "when": "the change lands",
+          "then": "each README documents API keys"
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "key": "users-service",
+      "outcome": "Users service implements apiKeys with hashed storage and tests",
+      "repository": "users",
+      "covers": [
+        "users-key-lifecycle",
+        "users-key-storage"
+      ],
+      "paths": [
+        "src/**",
+        "test/**",
+        "README.md"
+      ],
+      "verify": "npm test"
+    },
+    {
+      "key": "sdk-client",
+      "outcome": "SDK supports apiKey, apiKeys resource and typed errors with tests",
+      "repository": "sdk",
+      "covers": [
+        "sdk-api-keys"
+      ],
+      "paths": [
+        "src/**",
+        "test/**",
+        "README.md"
+      ],
+      "verify": "npm test"
+    },
+    {
+      "key": "gateway-api-keys",
+      "repository": "root",
+      "outcome": "Gateway authenticates ApiKey, scopes, rate limits, routes, redaction, config with tests and README",
+      "covers": [
+        "gateway-apikey-auth",
+        "gateway-rate-limit",
+        "gateway-key-routes",
+        "gateway-log-redaction",
+        "gateway-config",
+        "api-keys-docs"
+      ],
+      "paths": [
+        "src/**",
+        "test/**",
+        "README.md"
+      ],
+      "verify": "npm test"
+    }
+  ],
+  "evidence": {
+    "users-key-lifecycle": {
+      "capabilities": [
+        "test"
+      ]
+    },
+    "users-key-storage": {
+      "capabilities": [
+        "test"
+      ]
+    },
+    "gateway-apikey-auth": {
+      "capabilities": [
+        "test"
+      ]
+    },
+    "gateway-rate-limit": {
+      "capabilities": [
+        "test"
+      ]
+    },
+    "gateway-key-routes": {
+      "capabilities": [
+        "test"
+      ]
+    },
+    "gateway-log-redaction": {
+      "capabilities": [
+        "test"
+      ]
+    },
+    "gateway-config": {
+      "capabilities": [
+        "test"
+      ]
+    },
+    "sdk-api-keys": {
+      "capabilities": [
+        "test"
+      ]
+    },
+    "api-keys-docs": {
+      "capabilities": [
+        "test"
+      ]
+    }
+  },
+  "discovery": {
+    "coverage": [
+      {
+        "dimension": "affected-actor",
+        "status": "covered",
+        "covers": [
+          "gateway-key-routes",
+          "sdk-api-keys"
+        ],
+        "sources": [
+          "docs/API-KEYS.md"
+        ]
+      },
+      {
+        "dimension": "security-privacy",
+        "status": "covered",
+        "covers": [
+          "users-key-storage",
+          "gateway-log-redaction"
+        ],
+        "sources": [
+          "docs/API-KEYS.md"
+        ]
+      },
+      {
+        "dimension": "permission-rejection",
+        "status": "covered",
+        "covers": [
+          "gateway-apikey-auth"
+        ],
+        "sources": [
+          "docs/API-KEYS.md"
+        ]
+      },
+      {
+        "dimension": "data-migration",
+        "status": "covered",
+        "covers": [
+          "users-key-storage"
+        ],
+        "sources": [
+          "docs/API-KEYS.md"
+        ]
+      },
+      {
+        "dimension": "rollout-rollback",
+        "status": "not-applicable",
+        "rationale": "Additive feature; new config variables have backward-compatible defaults and bearer auth is untouched."
+      },
+      {
+        "dimension": "recoverability",
+        "status": "covered",
+        "covers": [
+          "users-key-lifecycle"
+        ],
+        "sources": [
+          "docs/API-KEYS.md"
+        ]
+      },
+      {
+        "dimension": "operability",
+        "status": "covered",
+        "covers": [
+          "gateway-rate-limit",
+          "gateway-log-redaction",
+          "gateway-config"
+        ],
+        "sources": [
+          "docs/API-KEYS.md"
+        ]
+      }
+    ],
+    "decisions": []
+  },
+  "currentState": "The gateway authenticates only Bearer session tokens via src/auth.js; users has no API-key support; the SDK sends only a bearer token.",
+  "compatibility": "All existing exports, bearer-session authentication and users CRUD stay unchanged; old store documents without apiKeys still load."
+}

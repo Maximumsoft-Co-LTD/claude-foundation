@@ -76,10 +76,10 @@ Re-run readiness and Prove rather than editing receipts.
     "maxParallelProviders": 4,
     "maxParallelSetups": 3,
     "packetBytes": {
-      "task": 8192,
-      "review": 8192,
-      "repository": 12288,
-      "global": 16384
+      "task": 20480,
+      "review": 20480,
+      "repository": 24576,
+      "global": 32768
     },
     "tokenBudgets": { "rapid": 800000, "standard": 1600000 },
     "requestBudgets": { "rapid": 100, "standard": 200 },
@@ -95,7 +95,7 @@ Re-run readiness and Prove rather than editing receipts.
 | `maxParallelAgents` | Integer `1..16` | Lower it for constrained machines or tightly coupled work; raise it only when tasks can be separated safely |
 | `maxParallelProviders` | Integer `1..16` | Bound independent evidence providers and required service startups |
 | `maxParallelSetups` | Integer `1..16` | Bound independent repository setup commands during Build preparation |
-| `packetBytes.*` | Integer `2048..65536` bytes | Increase only when a bounded task, review, repository description, or whole packet is being truncated |
+| `packetBytes.*` | Integer `2048..65536` bytes | Increase only when a bounded task, review, repository description, or whole packet is being truncated. Upgrades replace the exact former defaults (`8192/8192/12288/16384`) with the current ones and keep tuned values |
 | `tokenBudgets.rapid/standard` | Integer `10000..100000000` | Cap model tokens for one autonomous run; this is a ceiling, not a target |
 | `requestBudgets.rapid/standard` | Integer `10..100000` | Cap model requests for one autonomous run |
 | `maxContinuationWindows` | Integer `1..20` | Bound separately approved continuation windows without forcing unfinished in-scope work into another Change |
@@ -297,6 +297,28 @@ projects; they are not the recommended way to weaken review.
 material non-derived decision exists. Set `required` when project policy truly
 requires a decision ledger for every change; it does not make empty grounding
 content useful.
+
+## `deliver`: name the optional pull-request commit and branch
+
+Used only by `/deliver`. Defaults keep `feat: <title>` (or `fix: <title>`) and
+`change/<change-id>`:
+
+```json
+{
+  "deliver": {
+    "commitSubject": "{commitType}({ticket}): {title}",
+    "branchPattern": "feature/{ticket}-{title}",
+    "ticketPattern": "[A-Z]+-\\d+"
+  }
+}
+```
+
+Placeholders are `{changeId}`, `{title}`, `{commitType}`, `{prType}`, and
+`{ticket}`, the first `ticketPattern` match in the change id, title, or
+proposal. An unknown placeholder, an invalid pattern, a missing ticket, or an
+invalid subject or branch stops Deliver as a `delivery-policy` wait before
+anything is committed; correct the setting and run `/deliver` again.
+`WORKFLOW.md` (`/deliver <change>`) owns the full naming rules.
 
 ## Common mistakes
 

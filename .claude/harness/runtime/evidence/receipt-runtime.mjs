@@ -783,7 +783,9 @@ export function createReceiptRuntime({
       providerFamily: String(flags["reviewer-provider-family"] || "").trim().toLowerCase() || null,
       modelFamily: String(flags["reviewer-model-family"] || "").trim().toLowerCase() || null,
       modelId: String(flags["reviewer-model"] || "").trim() || null,
-      sessionId: String(flags["reviewer-session"] || "").trim() || null
+      sessionId: String(flags["reviewer-session"] || "").trim() || null,
+      ...(String(flags["reviewer-model-tier"] || "").trim()
+        ? { modelTier: String(flags["reviewer-model-tier"]).trim() } : {})
     };
   }
 

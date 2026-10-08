@@ -5,7 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   isGeneratedArtifactPath, landAppliedOutput, landedChangeSyncStop, landedTargetPaths,
-  otherLandedOutput, parseRestoreTargetPaths, replayLandedEdit, restorableTargetPaths,
+  otherLandedOutput, parseRestoreTargetPaths, replayLandedEdit, resolutionKeepsLanded,
+  restorableTargetPaths,
   shellAuditCount, targetConflictStop, targetEditCarried, targetEditDigest, targetEditIssues,
   targetEditPaths, targetEditSyncStop
 } from "../runtime/workflow/target-edits.mjs";
@@ -233,6 +234,29 @@ test("a landed edit replays into the sandbox copy cleanly or reports a conflict"
   writeFileSync(join(sandbox, "a.txt"), "uno\ntwo\nthree\nfour\nfive\n");
   assert.equal(replay().status, "conflict");
   assert.equal(readFileSync(join(sandbox, "a.txt"), "utf8"), "uno\ntwo\nthree\nfour\nfive\n");
+});
+
+test("an agent's conflict merge must keep the landed edits that did not conflict", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "target-keeps-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const target = join(root, "target");
+  const sandbox = join(root, "sandbox");
+  mkdirSync(target);
+  mkdirSync(sandbox);
+  const base = Buffer.from("one\ntwo\nthree\nfour\nfive\nsix\nseven\n");
+  // The landed work changed the first line (a conflict) and the last (not).
+  writeFileSync(join(target, "a.txt"), "ONE\ntwo\nthree\nfour\nfive\nsix\nSEVEN\n");
+  const keeps = (content) => {
+    writeFileSync(join(sandbox, "a.txt"), content);
+    return resolutionKeepsLanded({ root: target, sandboxPath: sandbox, path: "a.txt",
+      baseBytes: base });
+  };
+  assert.equal(keeps("ONE uno\ntwo\nthree\nfour\nfive\nsix\nSEVEN\n"), true,
+    "a merge that keeps the landed last line is taken");
+  assert.equal(keeps("uno\ntwo\nthree\nfour\nfive\nsix\nseven\n"), false,
+    "an edit that drops the landed last line is not a merge");
+  assert.equal(keeps("ONE\ntwo\nthree\nfour\nfive\nsix\nSEVEN\n"), true,
+    "keeping the landed bytes exactly is a merge");
 });
 
 test("landed paths sync automatically and are never offered for discard", () => {

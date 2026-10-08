@@ -24,7 +24,7 @@ task ตรวจ lease ที่ยังทำงาน แล้วคืน 
 
 | Action | ความหมาย |
 |---|---|
-| `EDIT` | ทำเฉพาะ task, workspace และ path ที่คืนมา (ใช้ `workspace` ของแต่ละ task; task ของ submodule ชี้ไปที่ repository sandbox ของมัน) เปิดเฉพาะไฟล์ใน `contextFiles` สร้างไฟล์ใน `newFiles` แล้วรัน focused check หนึ่งครั้ง |
+| `EDIT` | ทำเฉพาะ task, workspace และ path ที่คืนมา (ใช้ `workspace` ของแต่ละ task; task ของ submodule ชี้ไปที่ repository sandbox ของมัน) เปิดเฉพาะไฟล์ใน `contextFiles` สร้างไฟล์ใน `newFiles` แล้วรัน `checkCommand` ของแต่ละ task (verify ที่รันผ่าน `claude-foundation exec`) |
 | `REPAIR` | แก้ repair batch ที่เรียงตาม dependency ให้ครบแล้ว resume |
 | `RUN_EXTERNAL` | รัน boundary operation ที่ตั้งค่าไว้หนึ่งตัว |
 | `WAIT` | รอ resource หรือเจ้าของภายนอก โดย state ถูกเก็บไว้ |

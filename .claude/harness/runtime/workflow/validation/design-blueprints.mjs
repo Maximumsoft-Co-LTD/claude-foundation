@@ -309,7 +309,7 @@ export function renderWorkType(declared, inferred = []) {
 
 // Sections render only when the draft supplies them, in reading order: what
 // it exposes, how it fails, where code lands, and how it is proven.
-export function renderDesignBlueprints(draft, { inferredWorkTypes = [] } = {}) {
+export function renderDesignBlueprints(draft, { inferredWorkTypes = [], fileTree = "" } = {}) {
   const sections = [];
   const types = renderWorkType(draftWorkTypes(draft), inferredWorkTypes);
   if (types) sections.push(types);
@@ -336,7 +336,7 @@ export function renderDesignBlueprints(draft, { inferredWorkTypes = [] } = {}) {
   ], draft.failureMatrix));
   if (present(draft.fileMap)) sections.push(`## File map\n\n` + table([
     ["Path", "path"], ["Change", "change"], ["Responsibility", "responsibility"], ["Tasks", "tasks", true]
-  ], draft.fileMap));
+  ], draft.fileMap) + (fileTree ? `\n\n${fileTree}` : ""));
   // A derived row names the check command that proves it; an authored row
   // may name a test file. Either column shows only when used.
   if (present(draft.testMap)) sections.push(`## Test map\n\n` + table([

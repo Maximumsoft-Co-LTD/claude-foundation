@@ -406,29 +406,38 @@ export function validReviewerConfig(config) {
     config.sandbox === "read-only" && config.ephemeral === true);
 }
 
-// Low-risk review runs on the fast model tier. An explicit per-reviewer
-// `fastModelId` wins; otherwise a Claude Code reviewer uses the policy's fast
-// family alias. `review.lowRiskModel: "configured"` opts out. Provider family
-// never changes. Model family records the model actually run — the declared
-// `fastModelFamily`, else the fast alias family when the alias substitutes —
-// so receipts and diversity/separation checks judge that model, not the
-// configured one. The fast tier reasons at medium effort: low-risk review is
-// already scoped, and an unsure result still escalates to the configured
-// model at high effort.
+// Cheaper model classes for lower-risk review. `fast` (low tier) uses a
+// per-reviewer `fastModelId`, else the policy's `models.fast.family` alias for
+// Claude Code, at medium reasoning effort. `standard` (medium tier) uses
+// `standardModelId`, else `models.standard.family`, at the configured effort.
+// `review.lowRiskModel: "configured"` opts the low tier out and
+// `review.modelByTier` picks a class per tier (see reviewModelClass). Provider
+// family never changes. Model family records the model actually run — the
+// declared `<class>ModelFamily`, else the alias family when the alias
+// substitutes — so receipts and diversity/separation checks judge that model,
+// not the configured one. A cheaper round whose scenario coverage is unsure
+// still escalates to the configured model at high effort.
+const CHEAPER_MODEL_CLASSES = Object.freeze({
+  fast: { idKey: "fastModelId", familyKey: "fastModelFamily", effort: "medium" },
+  standard: { idKey: "standardModelId", familyKey: "standardModelFamily", effort: null }
+});
+
 export function reviewerModelForTier(config, modelTier, policy = {}) {
-  if (modelTier !== "fast" || policy.review?.lowRiskModel === "configured") return config;
-  const explicitId = String(config.fastModelId || "").trim();
+  const spec = CHEAPER_MODEL_CLASSES[modelTier];
+  if (!spec || (modelTier === "fast" && policy.review?.lowRiskModel === "configured"))
+    return config;
+  const explicitId = String(config[spec.idKey] || "").trim();
   const aliasFamily = !explicitId && config.adapter === "claude-cli"
-    ? String(policy.models?.fast?.family || "").trim() : "";
-  const fastModelId = explicitId || aliasFamily;
-  if (!fastModelId || fastModelId === config.modelId) return config;
+    ? String(policy.models?.[modelTier]?.family || "").trim() : "";
+  const cheaperId = explicitId || aliasFamily;
+  if (!cheaperId || cheaperId === config.modelId) return config;
   return {
     ...config,
-    modelId: fastModelId,
-    modelFamily: String(config.fastModelFamily || "").trim() ||
+    modelId: cheaperId,
+    modelFamily: String(config[spec.familyKey] || "").trim() ||
       aliasFamily.toLowerCase() || config.modelFamily,
-    modelTier: "fast",
-    reasoningEffort: "medium"
+    modelTier,
+    ...(spec.effort ? { reasoningEffort: spec.effort } : {})
   };
 }
 

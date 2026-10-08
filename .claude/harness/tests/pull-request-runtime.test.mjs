@@ -183,6 +183,22 @@ test("renderer uses archived sources and labels plans without inventing observed
   assert.doesNotMatch(body, /production monitoring passed/i);
 });
 
+// The current layout states requirement titles once, in Scope; an archived
+// older proposal still lists them under "What changes".
+test("the narrative reads included work from Scope or from an older What changes", () => {
+  const base = { changeId: "booking", state: { intent: "booking" }, design: "",
+    tasks: "- [ ] **T001** Task title", paths: ["api/booking.js"], proof: { receipts: [] } };
+  const current = pullRequestNarrative({ ...base, proposal: [
+    "# Change: booking", "", "## Scope", "",
+    "- **In scope (`booking`):** Add booking API; Emit analytics",
+    "- **Out of scope:** edits outside `api/booking.js`", "", "## Impact"].join("\n") });
+  assert.deepEqual(current.included, ["Add booking API", "Emit analytics"]);
+  const older = pullRequestNarrative({ ...base, proposal:
+    "# Change\n\n## What changes\n\n- Legacy item\n\n## Scope\n\n- **In scope:** Ignored\n" });
+  assert.deepEqual(older.included, ["Legacy item"]);
+  assert.deepEqual(pullRequestNarrative({ ...base, proposal: "# Change\n" }).included, ["T001 — Task title"]);
+});
+
 test("delivery evidence separates required proof from type-specific presentation", (t) => {
   const root = mkdtempSync(join(tmpdir(), "foundation-delivery-evidence-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));

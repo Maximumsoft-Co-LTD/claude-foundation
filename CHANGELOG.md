@@ -7,7 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**v3.6.0 at a glance.** Behavior changes you will notice:
+
+- Wall time: rapid changes target at most 1.5x, standard changes at most 1.8x
+  the same task without the harness (advisory time gate, lane-aware).
+- Medium-risk Prove review now runs its first round on the faster `standard`
+  model class by default; pin the old behavior with
+  `review.modelByTier.medium: "configured"`. High risk is unchanged.
+- Every change opens with a rendered header, scope, acceptance traceability
+  table, and definition of done; tasks live only in `tasks.md`. Existing
+  changes keep their older layout and still read.
+- Multi-repository and submodule work, copy-mode isolation, and the rapid
+  fast path are fixed or faster; Prove now requires new tests to fail on the
+  original code.
+- Data-loss fix: resolving a Land conflict can no longer silently discard work
+  that already landed (`resolutionKeepsLanded`).
+- A shipped `shell-route-guard` hook redirects shell shapes that would stop on
+  a host permission prompt; packet byte budgets are raised
+  (20/20/24/32 KiB) and migrated on install.
+
 ### Added
+
+- Every change's `proposal.md` now opens with a harness-rendered header (change
+  id, lane and why, owner or `unassigned`, created date, status pointer), a
+  Scope (in scope, and out of scope derived from the task `paths` allow-list,
+  unselected repositories, or authored `nonGoals`), an acceptance traceability
+  table (requirement, scenario claim and kind, task, evidence, test files; ids
+  and paths only), and a definition of done generated from the enforced
+  policy. New optional draft key `successMeasure` (one line); `change start`
+  prints one advisory coverage NOTE and never adds an EDIT. Authors write
+  nothing extra and no command changes.
+
+
+- New shipped Bash PreToolUse hook `shell-route-guard.sh` refuses shell shapes
+  the host would stop on a permission prompt anyway, and the reason gives the
+  exact command to run instead, so an unattended agent can correct in one step:
+  `cd <dir> && git …` becomes `git -C <dir> …`. A direct test run (`npm test`,
+  `node --test`, `pytest`, `go test`, …, optionally piped to `tail`/`head`)
+  while a change is in Build becomes `claude-foundation exec <change> [--repo
+  <id>] -- <command>`. A matching Bash allow rule, `bypassPermissions`, or a
+  command the hook cannot parse passes through. `FOUNDATION_GUARDRAIL_MODE=audit`
+  turns the refusal into advice, and `off` disables it. The installer adds the
+  hook to existing settings.
+
+- A draft-validation `EDIT` from `change start`, `change revise`, or `change
+  amend` now carries an `instruction`: apply every fix with the Edit tool on the
+  pre-allowed `.foundation/drafts/**` file, never a python, `node -e`, `sed -i`,
+  `jq`, or heredoc rewrite, which the host refuses as permission prompts.
+  `/change` names the same route. The session digest adds one `Agent shell:`
+  line naming the refused shell shapes (`cd` chains, `$VAR`/`$(…)`, braces,
+  heredocs, `sed -i`, scripts) and, when `openspec/repositories.yaml` declares
+  an `allowOutsideRoot` sibling, names it as outside the working directory so
+  Change grounds it from in-root sources and reads it in its Build repository
+  sandbox. No permission rule is widened.
 
 - Build `EDIT` tasks carry a `checkCommand`: the task's verify wrapped as
   `claude-foundation exec <change> --task <id> -- <verify>` (`sh -c` when the
@@ -17,21 +69,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Edit(/.foundation/drafts/**)` for the Change draft; upgrades append it after
   existing rules.
 
+- `change start --template` now leads with a `save` field: write the draft with
+  the Write tool to `.foundation/drafts/<id>.json` (pre-allowed), not a shell
+  heredoc, which the host refuses as expansion obfuscation. `change amend
+  --template` (`.foundation/drafts/<change>-amendment.json`) and `investigate
+  --template` (`openspec/investigations/<id>.json`) lead with the same field and
+  name the command that reads the file. The installer also seeds
+  `Edit(/openspec/investigations/**)`, appended after existing rules on upgrade,
+  so saving an investigation record never prompts. `/change` names the
+  same route, and the installer's headless hint grants the full seeded
+  allowlist instead of only the CLI rule.
+- `exec <change> --repo <id>` or `--task <id>` runs a command in that
+  repository's sandbox. Without either, `exec` uses the caller's directory
+  (mapped into the matching sandbox), then the repository all pending tasks
+  share, then the shared sandbox, never the main checkout; an unknown or blank
+  repository or task is refused with the known names.
+- `foundation.json` `deliver.commitSubject` and `deliver.branchPattern` set the
+  Deliver commit subject and branch from `{changeId}`, `{title}`,
+  `{commitType}`, `{prType}`, and `{ticket}` (the first `deliver.ticketPattern`
+  match). Defaults keep `feat: <title>` and `change/<change-id>`. An invalid
+  setting stops Deliver as a `delivery-policy` wait (`DELIVERY_NAMING_INVALID`)
+  before any workspace, commit, or push exists.
+- The configured reviewer may return advisory `specGaps`, reported as
+  `reviewAdvisories.specGaps` on a reached `proven` or `archived` target; they
+  never become findings or block.
+- The installer prepares the pinned OpenSpec CLI project-locally when no
+  compatible CLI resolves; without npm access it warns and still succeeds.
 - Thai intents now trigger the same review, security, and migration routing as
   English. Thai terms such as ล็อกอิน, เข้าสู่ระบบ, รหัสผ่าน, สิทธิ์,
   โทเคนเข้าถึง, ชำระเงิน, จ่ายเงิน, ย้ายข้อมูล, ลบข้อมูล, ข้อมูลส่วนตัว, and
   ความปลอดภัย, plus common transliterations, match as substrings because Thai
   has no word spaces. Bare โทเคน stays out, like bare "token", because it also
   names model token budgets.
-
 - `install.sh` appends a narrow `permissions.allow` list to the project's
   `.claude/settings.json` so the harness CLI and Build-workspace edits no
   longer prompt on every change: `Bash(claude-foundation *)`,
   `Bash(.foundation/bin/claude-foundation *)`,
   `Bash(node .claude/harness/foundation.mjs *)`,
-  `Edit(/.foundation/sandboxes/**)`, and
-  `Edit(/.foundation/repository-sandboxes/**)`. The merge adds only missing
-  rules after the user's own, keeps their order (it no longer sorts the list),
+  `Edit(/.foundation/sandboxes/**)`,
+  `Edit(/.foundation/repository-sandboxes/**)`, and
+  `Edit(/.foundation/drafts/**)` for the Change draft. The merge adds only
+  missing rules after the user's own, keeps their order (it no longer sorts the list),
   and is idempotent. `--no-permission-allowlist` skips it; the Cursor,
   OpenCode, and Codex adapters pass the flag through.
 - `change start`, `change revise`, and `change amend` accept
@@ -46,6 +124,104 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Document layout changed, existing changes still read. Each fact now has one
+  home: the proposal no longer renders Plan, What changes, or Folder tree
+  (tasks live in `tasks.md`; `design.md` renders the derived folder tree inside
+  its File map and no Plan), a one-capability proposal omits the Capabilities
+  table (Scope names the capability), and a rapid proposal omits default
+  Impact lines (code surface, no security trigger). Six small rapid fixtures
+  render in 14% fewer lines (203 vs 237) but 23% more bytes (6250 vs 5076)
+  because the new blocks carry ids and policy text. Changes agreed earlier keep their old
+  sections; pull-request narratives read either layout.
+- Prove model review speed (W9-1, user decision). Paid w7 standard runs spent
+  28-91 s of 65-100 s harness-active time in one `claude-opus` review. Medium-tier
+  review now runs its first round on the faster `standard` model class by
+  default (`standardModelId`, else `models.standard.family`, at the configured
+  effort), a deliberate speed/depth trade-off. High tier, every delta/closure
+  round, a medium change with a security or required-review trigger
+  (`access-control`, `authorization-or-secrets`, `risk-semantics`,
+  `risk-capability`, `covered-by-review:*`, `multi-repository-claim`, ...), and a
+  declared review keep the configured model; a `standard` round escalates once
+  to it on an unsure scenario like a `fast` one. `review.modelByTier` (`low` and
+  `medium` to `fast|standard|configured`) overrides the defaults; `high` is
+  rejected and an unknown class fails closed to the configured model. Tier
+  assignment is unchanged, public commands are unchanged, and the receipt now
+  records `review.reviewer.modelTier`.
+- The review that `advance` runs beside the providers now overlaps the base-source
+  test discrimination run too, and joins before any stop returns. In w7, three of
+  four standard scenarios ran the review after Prove instead of beside it.
+- Change reaches AGREED in one `change start` call. Paid w5 lab runs needed a
+  second call in 5 of 10 scenarios (api-keys: four) for fields the harness
+  can derive: standard-lane drafts were sent back for `why` (4/4), evidence
+  capabilities for every requirement (5/5), and `failureMatrix` (3/4).
+  Now the intent stands in for an absent `why`, omitted evidence capabilities
+  default to `test` (`static-analysis` for docs/chore) in either lane unless
+  the draft declares security triggers, and unclassified scenarios that state
+  a rejection or error fill the failure matrix when no scenario is marked
+  `kind: "failure"`. Authored values are never replaced; the proposal lists
+  each filled value under "Derived by harness" and `change start` prints one
+  NOTE. When an EDIT is unavoidable it now carries every issue: preflight
+  checks such as an invalid `coupling` were hidden until the compiler issues
+  were fixed, and the `riskSignals` and coverage messages name the valid
+  values. Public commands and draft shapes are unchanged.
+- Agent read surface and request count (W7-3): `/dev` reads only `change.md`
+  up front (Build, Prove, and Land commands load for a failure, a non-`EDIT`
+  action, or a Land boundary), and the draft template is no longer a required
+  step. `change.md` tells the agent to put `--approve-spec --decision-ref
+  <ref>` (plus `/dev`'s `--through`) on `change start` when the request approved
+  the spec, so one call starts, approves, and reaches Build's first action.
+  A single-task session `EDIT` now carries the same `instructions` recipe as a
+  multi-task one. Rapid-lane instructions (AGENT + dev + change) shrink to 669
+  words and the full `/dev` bundle from 1143 to 1122; a structural test guards
+  the rapid read surface. `advance` records the furthest `--through` target
+  requested (`requestedThrough`), and the `next:` routes of `changes`, the
+  session digest, `validate`, `change resolve`, `change revise`, and the scope,
+  grounding, and `exec` workspace errors continue toward it (never below
+  `proven` once the spec is approved) instead of repeating `--through build`.
+  Printed approval commands now say `--through proven`.
+
+- Harness own time: a rapid change in a non-Git directory spent ~12 s of its
+  ~27 s harness-active time in 1,626 `git rev-parse HEAD` processes (plus ~90
+  failing `git ls-files`/`status` ones), ~7 s re-reading and re-parsing the
+  runtime state, and ~4 s in five OpenSpec lints and three version probes. HEAD and "not a repository" are now read from the
+  repository files (any layout the reader does not model still asks Git),
+  settled state and file digests are reused while their identity is unchanged,
+  OpenSpec version and strict-lint passes persist by content in
+  `.foundation/cache/` (checkbox ticks and the checkout location are not
+  lint inputs; every other byte is), and a Build task check whose `verify` is the
+  provider's `sh -c` line is now reused by Prove, so the project suite runs once
+  between Build and Prove. Measured on one tiny change: 249 -> 81 spawns and
+  9.8 -> 5.2 s in a repository, 1,752 -> 5 spawns and 26.9 -> 6.4 s in a plain
+  directory. No evidence, isolation, freshness, or Land guard changed.
+- Packet budgets (user decision: raise the defaults so large work fits): task
+  and review packets 8 KiB -> 20 KiB, repository 12 KiB -> 24 KiB, global
+  16 KiB -> 32 KiB. A paid three-repository API-keys run (3 tasks, 10/4/20
+  claims, ~22 changed paths) was blocked at `packet --task` (9,951 bytes) and
+  `packet --phase build` (19,623 bytes); a deterministic replay measured task
+  packets up to 11.7 KB, repository 14.3 KB, review 12.2 KB, and global
+  18.0 KB, so the new defaults give about 1.5x headroom. The `2048..65536`
+  hard ceiling, `foundation.json` overrides, and the largest-fields BLOCKED
+  diagnostic are unchanged. The installer replaces only the exact former
+  seeded defaults (`8192/8192/12288/16384`) and keeps tuned budgets.
+- Rapid fast path: under `workflow.reviewPolicy: "risk-tiered"`, a low-tier
+  `foundation-rapid` change that nothing asks to review (no declared or keyword
+  security trigger, `--review`, `riskSignals`, review capability, or
+  required/diversity trigger) no longer runs an AI review; the project's
+  deterministic evidence proves it. `RESOLVED` prints
+  `review: not required (rapid lane, low tier: deterministic evidence only)`
+  and the review-assurance note is omitted. Standard changes, any higher tier,
+  and capabilities inferred from the built diff keep review. Paid w4 runs spent
+  18-24 s of each rapid Prove in review. The contract fingerprint keeps its
+  pre-exemption review shape, so upgrading never re-verifies an in-flight
+  change.
+- `/dev` with Land authority passes `--through archived` to every `advance`,
+  so a resume route never stops at `build` or `proven` first. Build no longer
+  asks the agent to run each `checkCommand` before resuming (`advance` already
+  runs every task check and returns failures with output), and `cd
+  <workspace>` is needed only before a plain shell command. The `/dev`
+  instruction bundle shrinks by three words.
+
+
 - A security-static, resilience, compatibility, data-migration, or
   cross-repo-contract provider that only re-runs a test provider's command is
   never run or credited as passed. The required review covers it
@@ -56,8 +232,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a real command in execution.yaml replaces the alias.
 - Docs- or chore-only drafts default omitted evidence to `static-analysis`
   (exit-code command) instead of test discovery.
-- Draft `riskSignals` are kept on the change: `access-control` selects the
-  high review tier and `input-domain` at least the medium tier.
+- Draft `riskSignals` are kept on the change: `access-control` makes review
+  required and selects the high tier, and `input-domain` at least the medium
+  tier.
 - `change start --template` shows the `repositories` selection and per-task
   `repository` when the project declares repositories besides root.
   Compilation rejects a root task whose paths reach into a declared
@@ -75,7 +252,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Land merges a user's uncommitted target edit on lines the change did not
   touch into the sandbox copy itself (`target-edit-sync`, automatic) and
   proves again before Apply; only same-line edits remain a
-  `target-edit-conflict` decision.
+  `target-edit-conflict`, which the agent merges into the sandbox copy.
 - `advance <change> --undo-land --decision-ref <ref>` undoes an archived Land
   whose diff is still uncommitted: it restores the pre-Land bytes of code,
   synced specs, and the archived packet, retires the change, and keeps the
@@ -115,9 +292,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pull requests run only `workflow-tests` (`minimum-runtime` and
   `deterministic`). The `code-quality` and `mutation-nightly` workflows are
   removed: their coverage, CRAP, and mutation reports ran out of memory on
-  every run and nothing consumed them. The `npm run quality:*` commands still
-  produce the full report on demand, and `release.yml` still requires fresh
-  suite and mutation evidence before publishing.
+  every run and nothing consumed them. `release.yml` still requires fresh
+  suite and dashboard mutation evidence before publishing.
 - Removed unused repository files: the v2 HTML release notes, the
   unreferenced `examples/solar-system`, and this repository's own legacy
   `.workflow/` index. Consumer `.workflow/` migration is unchanged. Unrun test
@@ -158,7 +334,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A natural request to open a PR ("เปิด PR ให้เลย", "open a PR"), or a yes to
   the guard's delivery question, now runs `deliver advance` as `/deliver`
   instead of turning it into a question.
-
 - One authority rule for the user's chat words (`AGENT.md`, WORKFLOW.md
   "Authority from the user's words"). A reply such as "ลุยเลย", "ทำเลย",
   "ทำไปเลย", or "go ahead" to the spec or amendment question is approval and is
@@ -180,7 +355,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A harness-executed provider that failed and then passes on unchanged content
   is recorded as a flake (`status: fail`, `flake` evidence) and needs a repair;
   resuming unchanged no longer turns it into proof.
-
 - The recovery ladder asks after three unchanged rounds (agent repair,
   `TRY_ALTERNATE_APPROACH`, then a decision with `repetition` evidence). A
   Build verify that keeps failing with identical output now counts, and budget
@@ -193,11 +367,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through `advance --decision` instead of `proof advance --retry-indeterminate`
   and `sandbox sync --resolve`.
 - OpenSpec is required only from Prove onward: a missing CLI no longer stops or
-  installs during Build; Prove prepares it with the existing handoff.
+  installs during Build; Prove prepares it with the existing handoff. From
+  Prove on, the strict OpenSpec lint is required and an absent CLI fails
+  closed instead of letting an unlinted agreement reach archive.
 - A grounding readSet that cites an untracked `openspec/investigations/` record
   no longer blocks sandbox creation, and no portability refusal asks for a
   commit.
-
 - Change produces a dev document that Build executes and a reviewer reads.
   Every proposal shows a folder tree of touched paths. A rapid proposal adds
   the compact form: summary, user flow, failure matrix, and a Plan table with
@@ -249,6 +424,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A configured review whose reviewer finished after the content it judged had
+  changed (a provider writing tracked files beside the concurrent review, or an
+  edit) could be recorded and rebound to the new bytes, because the post-review
+  hash came from the process-local snapshot cache. The hash is now re-read from
+  disk before recording; a superseded verdict is dropped (attempt closed as an
+  error, request `aborted`, no receipt) and the current content is reviewed
+  again. A readiness hash read from a stale cached snapshot also disabled the
+  concurrent review for the single-process Build-to-Prove route; `advance`
+  now re-derives it from the forced snapshot.
+- `packet <change> --task <id>` for an already-completed task prints that
+  task's read-only packet (`executionAuthority.status: "completed"`,
+  `readOnly: true`) instead of `BLOCKED: unknown pending task`; `agents task`
+  still dispatches only pending tasks and unknown ids still block.
+
+- A writable sibling repository declared outside the root (`../sdk` with
+  `allowOutsideRoot: true`) can own draft tasks again. `change start` no longer
+  reports it as undeclared, and `change start --template` lists it, with
+  `mode: "read"` on a read repository. A task that edits files in a read
+  repository is now an agent repair at start. Build, Prove, and Land already
+  handled siblings. An outside path needs only `allowOutsideRoot: true`; its
+  `type` may stay `git` (the default) or be `external`, which behave the same.
+
+- Isolated-copy sandboxes no longer lose a user's uncommitted target edit.
+  Re-applying after an earlier Land holds every newly touched path to the
+  copy's recorded baseline, including its executable bit, the same overwrite
+  rule as worktrees and root re-delivery. A path the baseline does not record
+  is treated as edited. A copy now keeps its base bytes in a content-addressed
+  store under `.foundation/copy-base/`. With them, a clean target edit merges
+  through the harness (`target-edit-sync`), `keep-target` and `--restore-target`
+  work, and regenerated artifacts are restored. A copy sync conflict settles
+  through `advance` only when a 3-way check proves the target's edit is in the
+  merged copy; a changed copy alone, or a base that was never stored (large,
+  binary, or already gone), stays a conflict.
+- A semantic draft that omits or understates `impact`/`coupling` no longer
+  defaults to the rapid lane. The harness derives them from the draft: tasks
+  spanning two `services/`, `packages/`, `apps/`, `libs/`, or `modules/` roots,
+  several repositories, integrations, or external operations are coupled;
+  persistence paths (`*.sql`, `migrations/`, `db/`, `schema/`), API/async work
+  types, and (without a declared `workType`) requirement text naming
+  migrations, rollbacks, databases, APIs, endpoints, payloads, or event/message
+  contracts are at least medium. A declaration never lowers the derived value;
+  the proposal Impact section and the start `NOTE` name the reason, and the
+  standard-lane `EDIT` says why the lane is standard. Small single-root
+  features, bugfixes, refactors, and docs stay rapid. In the paid benchmark,
+  a cross-service event contract, a migration rollback, and two JSON APIs
+  compiled as rapid without `design.md`.
+
 - A corrupt review attempt chain no longer stops with a
   `review-history-corrupt` user decision. The harness moves the chain aside as
   `review-attempts.corrupt-<stamp>`, rebuilds it, and reports a
@@ -256,7 +478,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   attempt count, reuses a verdict only when its whole chain verifies, and
   otherwise counts unverifiable attempts as spent AI waves, so the change
   continues through the ordinary review-exhausted route.
-
 - Land reads each selected repository's target checkout before archiving. A
   repository whose target lacks the proven sandbox bytes, has work stranded in
   a shared-sandbox submodule placeholder, or is an uninitialized submodule
@@ -302,6 +523,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transaction that the retired flow already started. For any other change it
   refuses and routes to `advance <change> --through archived`, because Land
   never commits.
+- Git-ignored files are no change's content: under each selected repository's
+  own ignore rules Land never compares, projects, or reports them as target
+  edits or unlanded sandbox work. A tracked file stays content.
+- `land check` runs Land's own pre-mutation preflight read-only, so it stops on
+  the code Land would; `land advance` prints only the `advance --through
+  archived` JSON envelope, on its first run as on every later one.
+- A single-repository re-apply never overwrites a target edit: a path the
+  earlier apply never wrote must still hold its base bytes and executable mode
+  (or already the sandbox's), otherwise it takes the target-edit route.
+- Abandon also quarantines the change's review requests and reports,
+  instruction manifests, open attestation challenge, and delivery record, so a
+  reused id starts with a fresh review budget and no inherited state. When an
+  older abandon or a Land undo left such bookkeeping behind, creating a change
+  with that id moves it into the newest retirement record.
 
 ## [3.5.30] - 2026-10-01
 

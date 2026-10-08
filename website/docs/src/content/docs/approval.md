@@ -70,7 +70,9 @@ Review asks whether the implementation is sound. The reviewer may be a human
 **or** a different AI — what matters is independence, not species.
 
 With `workflow.reviewPolicy: "risk-tiered"`, every change is reviewed and risk
-controls the bounded route:
+controls the bounded route. The exception is a low-tier rapid change that no
+security keyword, risk signal, or `--review` flags: the project's own tests
+prove it and no AI review runs.
 
 - **low:** one full AI review; a material correction promotes to medium
 - **medium:** one full AI review, one correction batch, then at most one

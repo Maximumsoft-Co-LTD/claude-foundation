@@ -16,6 +16,8 @@ transaction
 
 งานทั่วไปเขียนแค่ intent, พฤติกรรมที่ต้องการ และ task โดยไม่ต้องใส่ `version`
 คำสั่ง `change start --template` แสดงรูปแบบนี้เป็นอันดับแรกในชื่อ `minimalDraft`
+โดยมี field `save` นำหน้า: agent เขียน draft ด้วย Write tool ไปที่
+`.foundation/drafts/<id>.json` (path ที่อนุญาตไว้ล่วงหน้า) เพราะ host ปฏิเสธ shell heredoc
 
 ```json
 {
@@ -94,7 +96,7 @@ claude-foundation change start .foundation/drafts/<id>.json
 - section ของ dev document: `summary`, `userFlow` (Mermaid), `failureMatrix`,
   `componentMap`, `apiContracts`, `dataModel`, `uiStates`, `configContract`,
   `jobContract`, `bugfix` หรือ `refactor` โดย harness อนุมาน `workType` จาก
-  `paths` ของ task (ประกาศเองเพื่อ override ได้) และสร้าง folder tree, plan,
+  `paths` ของ task (ประกาศเองเพื่อ override ได้) และสร้าง folder tree,
   file map และ test map ให้เอง Standard change ต้องมี section ที่ชนิดงานต้องการ
   ถ้าขาดจะเป็นงานแก้ draft ของ agent ไม่ใช่คำถามถึงผู้ใช้ ข้อเท็จจริงแต่ละข้อเขียนครั้งเดียว:
   `why` ใช้แทน summary ได้ (เพิ่ม `summary` เมื่อมีอะไรมากกว่านั้น) และถ้าไม่ได้เขียน
@@ -124,10 +126,17 @@ local ต้อง resolve เป็นไฟล์ปกติภายใน p
 
 Rapid มี `proposal.md`, `tasks.md`, `evidence.yaml` และ delta
 `specs/<capability>/spec.md` แบบกระชับที่ render แบบเดียวกับ standard ซึ่ง Land จะ merge
-เข้า `openspec/specs` มีเพียง rapid packet แบบเดิมที่ประกาศ `skip_specs` ที่ไม่มี delta
-Proposal ของ rapid คือ dev document แบบกระชับ: summary, what changes, user flow,
-folder tree (path ที่ยังไม่มีใน base ถูกทำเครื่องหมาย `+`), failure matrix และ plan
-ที่ Build ใช้ทำงาน section เชิงบรรยาย (`fileMap`, `testMap`, `componentMap`,
+เข้า `openspec/specs` มีเพียง rapid packet แบบเดิม หรืองานที่ประกาศว่าเป็นเอกสารล้วน
+(`workType: ["docs"]` ที่เพิ่ม requirement) ซึ่งประกาศ `skip_specs` ที่ไม่มี delta
+ถ้อยคำใน README จึงไม่กลายเป็น requirement ที่มีชีวิต
+ทุก proposal เริ่มด้วย header ที่ harness สร้างให้ (id, lane พร้อมเหตุผล, owner,
+วันที่สร้าง, status) และระบุ scope, ตาราง acceptance traceability (requirement,
+scenario, task, evidence, ไฟล์ทดสอบ) กับ definition of done ที่สร้างจาก policy ที่บังคับใช้จริง
+พร้อม `successMeasure` หนึ่งบรรทัดแบบไม่บังคับ task อยู่ใน `tasks.md` เท่านั้น
+ส่วน folder tree ที่สร้างให้ (path ที่ยังไม่มีใน base ถูกทำเครื่องหมาย `+`)
+อยู่ใน file map ของ `design.md` Proposal ของ rapid คือ dev document แบบกระชับ:
+summary, user flow, failure matrix และ decisions ของมัน change เดิมคง layout เก่าไว้และยังอ่านได้
+section เชิงบรรยาย (`fileMap`, `testMap`, `componentMap`,
 `userFlow`, `configContract`, `refactor`) ก็ render ที่นี่ และไม่ทำให้ change
 ความเสี่ยงต่ำย้ายไป standard ส่วน standard v4 มี `design.md` ที่เป็น dev document
 เต็มเสมอ และระบุชนิดงานพร้อมบอกเมื่อเป็นค่าที่อนุมาน label ของ node ใน flowchart
@@ -170,7 +179,8 @@ claude-foundation change revise <change> <draft.json>
 ```
 
 Draft ฉบับแก้ใช้ id เดิมและผ่าน intake gate เดียวกับ `change start` ในคำสั่งเดียว
-ถ้า intake ยังไม่ครบจะแสดง action และไม่เปลี่ยนอะไร Packet ทั้งชุด
+ถ้า intake ยังไม่ครบจะแสดง action และไม่เปลี่ยนอะไร ถ้าใส่ `--merge` ไฟล์จะมีเฉพาะ key
+และ entry แบบมี key ที่เปลี่ยน เพิ่ม หรือลบ (`"$remove": true`) Packet ทั้งชุด
 ถูกคอมไพล์ใหม่แบบ transaction, contract revision เพิ่มขึ้น และถ้าล้มเหลวจะคืน
 packet กับ runtime state เดิม เมื่อ Build มี workspace, receipt หรือ task ที่เสร็จแล้ว
 คำสั่งจะชี้ไปที่ `change amend` ผลลัพธ์แสดง requirement ที่ added, revised และ
@@ -190,7 +200,8 @@ claude-foundation change amend <change> <amendment.json> --consume-amendment
 มันรักษา task ที่เสร็จแล้ว prose/diagram/section ที่ไม่เกี่ยวข้อง เพิ่ม link แบบ
 stable เพิ่ม revision แล้ว validate ทั้งชุด หากล้มเหลวจะ rollback Change เก่ายังใช้
 manual path เดิมได้ Existing task เพิ่ม claim coverage ได้ แต่ถ้าจะเปลี่ยน outcome
-หรือ verify command ของ task ที่เสร็จแล้วต้องเพิ่ม task ใหม่ ถ้าจะแก้ verify command
+ต้องเพิ่ม task ใหม่ ส่วน verify command ของ task ที่เสร็จแล้วเปลี่ยนได้เฉพาะด้วย
+`reopen: true` ซึ่งเอาเครื่องหมายเสร็จออกให้ต้องผ่านใหม่ ถ้าจะแก้ verify command
 ของ task ที่ยังไม่เสร็จ ให้ส่งเฉพาะ `updateTasks: [{"key", "verify", "paths"?}]`
 โดยไม่ต้องมี requirement, evidence หรือ intake และ Prove จะ rerun evidence ของ task
 นั้น `change amend --template` แสดงทั้งสองรูปแบบ Amendment ของ agreement v4 ต้องมี

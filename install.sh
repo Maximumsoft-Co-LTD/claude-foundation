@@ -290,13 +290,23 @@ elif command -v jq >/dev/null 2>&1; then
   if jq -e '.version == 1 and .execution.packetBytes == 65536' \
       "$TARGET_PATH/foundation.json" >/dev/null 2>&1; then
     tmp="$(mktemp)"
-    jq '.execution.packetBytes = {
-          task: 8192, review: 8192, repository: 12288, global: 16384
-        } |
+    jq --slurpfile src "$SOURCE_PATH/foundation.json" \
+        '.execution.packetBytes = $src[0].execution.packetBytes |
         .execution.planSummaryBytes //= 4096' \
       "$TARGET_PATH/foundation.json" > "$tmp"
     mv "$tmp" "$TARGET_PATH/foundation.json"
     printf '✓ migrated former default packet budget to scoped task/review/repository/global limits\n'
+  elif jq -e '.execution.packetBytes == {
+        task: 8192, review: 8192, repository: 12288, global: 16384
+      }' "$TARGET_PATH/foundation.json" >/dev/null 2>&1; then
+    # The exact former scoped defaults were seeded, not chosen; customized
+    # budgets never match this object and are preserved.
+    tmp="$(mktemp)"
+    jq --slurpfile src "$SOURCE_PATH/foundation.json" \
+        '.execution.packetBytes = $src[0].execution.packetBytes' \
+      "$TARGET_PATH/foundation.json" > "$tmp"
+    mv "$tmp" "$TARGET_PATH/foundation.json"
+    printf '✓ raised former default packet budgets to the current task/review/repository/global limits\n'
   elif jq -e '.execution.packetBytes | type == "number"' \
       "$TARGET_PATH/foundation.json" >/dev/null 2>&1; then
     printf '⚠ preserving custom numeric execution.packetBytes; use scoped task/review/repository/global limits when ready\n' >&2
@@ -340,7 +350,8 @@ done
 SETTINGS_SRC="$SOURCE_PATH/.claude/settings.json"
 SETTINGS_DST="$TARGET_PATH/.claude/settings.json"
 # The shipped permissions.allow rules cover only the harness CLI, edits under
-# the isolated Build workspaces, and the Change draft directory; PreToolUse
+# the isolated Build workspaces, the Change draft directory, and Investigate's
+# record directory (openspec/investigations); PreToolUse
 # guards still run before them. Project checks need no rule: Build hands each
 # task's verify back as a `claude-foundation exec` command. With
 # the opt-out, merge from a copy of the template that carries no allow rules, so
@@ -554,4 +565,5 @@ if command -v git >/dev/null 2>&1 &&
   fi
 fi
 printf 'Next: describe the outcome with /change <intent>; the agent handles the workflow details.\n'
-printf 'Headless (claude -p): trust the workspace by running claude once interactively, or pass --allowedTools "Bash(claude-foundation *)".\n'
+printf 'Headless (claude -p): trust the workspace by running claude once interactively, or grant exactly the installed allowlist:\n'
+printf '  claude -p "/change <intent>" --allowedTools "Bash(claude-foundation *)" "Bash(.foundation/bin/claude-foundation *)" "Bash(node .claude/harness/foundation.mjs *)" "Edit(/.foundation/drafts/**)" "Edit(/.foundation/sandboxes/**)" "Edit(/.foundation/repository-sandboxes/**)" "Edit(/openspec/investigations/**)"\n'

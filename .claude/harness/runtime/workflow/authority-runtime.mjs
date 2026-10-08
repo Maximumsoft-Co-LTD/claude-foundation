@@ -8,7 +8,7 @@ import { reviewFindingIssues, reviewPacketIssues, validReview } from "../evidenc
 import { checkpointReviewResult, recoverReviewResult } from "../evidence/review-result-recovery.mjs";
 import { normalizeReviewCompletionFindings } from "../evidence/review-attempt-store.mjs";
 import {
-  reviewAgreementValue, reviewDepthForTier, reviewDiffValue, reviewModelTierForDepth,
+  reviewAgreementValue, reviewDepthForTier, reviewDiffValue, reviewModelClass,
   reviewScenarioChecklist
 } from "../evidence/review-diff.mjs";
 
@@ -564,6 +564,9 @@ export function createAuthorityRuntime({
   acknowledgeBaseMoveAttempts,
   // Absent in narrow compositions: dispatch then keeps the manual reset routes.
   autoReleaseReviewBudget = () => [],
+  // Drops the process-local snapshot cache so the post-review content check
+  // reads the bytes on disk, not the snapshot taken before the reviewer ran.
+  clearSnapshotCache = () => {},
   writeJson,
   fail,
   // { git, pathExists, readFile, readDirectory, isDirectory }; absent means
@@ -1182,12 +1185,13 @@ export function createAuthorityRuntime({
   // Returns the configured reviewer to escalate to, or null.
   function scenarioEscalationReviewer(reviewerName, configured, requestValue,
     reviewSettings, subject, packet, report) {
-    if (configured.modelTier !== "fast" || reviewerName === "main-session" ||
+    if (!["fast", "standard"].includes(configured.modelTier) || reviewerName === "main-session" ||
         report?.status === "error" || !packet?.scenarioChecklist?.items?.length) return null;
     const coverage = report.scenarioCoverage;
     if (coverage && (coverage.missing.length > 0 || coverage.unsure.length === 0)) return null;
     const escalated = authorityReviewerConfiguration(reviewerName, requestValue, "configured");
-    if (!escalated || escalated.modelTier === "fast" || escalated.modelId === configured.modelId)
+    if (!escalated || ["fast", "standard"].includes(escalated.modelTier) ||
+        escalated.modelId === configured.modelId)
       return null;
     if (authorityReviewerSeparationIssue(reviewerName, escalated, reviewSettings, subject))
       return null;
@@ -1213,12 +1217,26 @@ export function createAuthorityRuntime({
       fail("configured reviewer infrastructure retries are exhausted; configure a fallback reviewer or pause");
     if (reviewerName === "main-session" && !requestEntry.value.mainSessionFallback)
       fail("main-session fallback was selected without a recorded configured reviewer failure");
-    // Same derivation as dispatch: low risk with no delivered AI round uses the
-    // fast model tier; every other route keeps the configured model.
-    const modelTier = reviewModelTierForDepth(
-      reviewDepthForTier(reviewPolicy(id).tier, deliveredAiAttempts(id).length));
-    const configured = authorityReviewerConfiguration(
+    // The first low or medium round runs on its tier's cheaper model class
+    // (reviewModelClass); high, later rounds, and pinned triggers keep the
+    // configured model.
+    const routing = reviewPolicy(id);
+    const runtimeState = loadRuntime(id);
+    const modelTier = reviewModelClass({
+      tier: routing.tier, deliveredAiCount: deliveredAiAttempts(id).length,
+      triggers: routing.triggers,
+      declaredReview: Boolean(runtimeState.reviewRequired) && !runtimeState.reviewKeywordOnly,
+      settings: reviewSettings
+    });
+    let configured = authorityReviewerConfiguration(
       reviewerName, requestEntry.value, modelTier);
+    // A cheaper standard-class model that would share the implementation's
+    // provider/model family under a diversity requirement never blocks the
+    // review: the configured model runs instead.
+    if (configured.modelTier === "standard" && authorityReviewerSeparationIssue(
+      reviewerName, configured, reviewSettings, subject))
+      configured = authorityReviewerConfiguration(
+        reviewerName, requestEntry.value, "configured");
     assertAuthorityReviewerSeparation(reviewerName, configured, reviewSettings, subject);
     return { reviewSettings, requestEntry, reviewerName, configured };
   }
@@ -1417,7 +1435,7 @@ export function createAuthorityRuntime({
       // Same dispatch, packet, and digest; only the model changes. The fast
       // report stays on disk but is never checkpointed or recorded.
       modelEscalation = {
-        escalatedFrom: "fast",
+        escalatedFrom: configured.modelTier,
         reason: report.scenarioCoverage ? "scenario-coverage-gap" : "scenario-coverage-unparseable",
         fastModelId: configured.modelId,
         fastModelFamily: configured.modelFamily,
@@ -1430,8 +1448,39 @@ export function createAuthorityRuntime({
         ...reviewRequest,
         timeoutMs: REVIEW_DISPATCH_TIMEOUT_MS,
         modelTier: "configured",
-        escalatedFrom: "fast"
+        escalatedFrom: configured.modelTier
       };
+    }
+    // The verdict is about the bytes this dispatch carried. Anything that
+    // changed them while the reviewer ran (a provider writing tracked files
+    // beside a concurrent review, an edit) makes it a verdict on a superseded
+    // workspace: it is never recorded or checkpointed. The attempt closes as
+    // an error exactly like `authority abort`, the request ends aborted, and
+    // the next pass requests a review bound to the current bytes. A recovered
+    // checkpoint was already bound to its workspace hash on recovery.
+    if (!recoveredReport && report.status !== "error") {
+      clearSnapshotCache(id);
+      const currentHash = authorityWorkspaceHash(id, requestEntry.value.provider);
+      if (currentHash !== dispatched.workspaceHash) {
+        completeReviewAttempt(id, dispatched.dispatch.attemptDigest, {
+          reviewerSessionId: String(report.reviewer?.sessionId || "").trim(),
+          resultStatus: "error", findings: [], verifiedFindingIds: []
+        });
+        const supersededEntry = authorityStore.list(id)
+          .find((row) => row.value.requestId === requestId);
+        const aborted = {
+          ...supersededEntry.value, status: "aborted", abortedAt: now(),
+          abortReason: "workspace changed while the reviewer ran; the verdict judged superseded content"
+        };
+        authorityStore.replace(supersededEntry, aborted);
+        const superseded = {
+          status: "review-superseded", changeId: id, requestId,
+          reviewedWorkspaceHash: dispatched.workspaceHash, currentWorkspaceHash: currentHash,
+          action: "The verdict was not recorded; advance requests a review of the current content."
+        };
+        console.log(JSON.stringify(superseded, null, 2));
+        return superseded;
+      }
     }
     const checkpoint = checkpointReviewResult(root, dispatched, subject, report);
     if (checkpoint) {
@@ -1677,6 +1726,9 @@ export function createAuthorityRuntime({
         "reviewer-model-family": finalReviewer.modelFamily,
         "reviewer-model": finalReviewer.modelId,
         "reviewer-session": reviewerSession || null,
+        // The model class actually run (fast|standard|configured), so reports
+        // compare reviews by class as well as by model ID.
+        "reviewer-model-tier": finalReviewer.modelTier || "configured",
         "subject-actor": subjectActor,
         ...(aiSubject ? {
           "subject-session": subjectSession,

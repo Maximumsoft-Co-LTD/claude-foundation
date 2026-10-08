@@ -160,8 +160,10 @@ harness ได้แก่ `Bash(claude-foundation *)`,
 `Bash(.foundation/bin/claude-foundation *)`,
 `Bash(node .claude/harness/foundation.mjs *)`,
 `Edit(/.foundation/sandboxes/**)`,
-`Edit(/.foundation/repository-sandboxes/**)` และ `Edit(/.foundation/drafts/**)`
-(draft ของ Change) test runner ของ project ไม่ได้รับ rule: Build task แต่ละงานคืน
+`Edit(/.foundation/repository-sandboxes/**)`, `Edit(/.foundation/drafts/**)`
+(draft ของ Change: `change start --template` ขึ้นต้นด้วย field `save` ที่บอกให้ agent
+เขียน draft ด้วย Write tool เพราะ host ปฏิเสธ shell heredoc)
+และ `Edit(/openspec/investigations/**)` (record ของ Investigate) test runner ของ project ไม่ได้รับ rule: Build task แต่ละงานคืน
 verify เป็น `checkCommand` (`claude-foundation exec <change> --task <id> --
 <verify>`) ซึ่ง rule ของ CLI ครอบคลุมอยู่แล้ว โดยเพิ่มเฉพาะ rule ที่ยังไม่มีต่อจาก
 rule ของผู้ใช้ ไม่ลบหรือสลับลำดับ entry เดิม และการรันซ้ำไม่เพิ่มอะไร guard ของ
@@ -187,7 +189,8 @@ permissions.allow entry ... this workspace has not been trusted` ทำให้
 claude -p "/change <intent>" --allowedTools \
   "Bash(claude-foundation *)" "Bash(.foundation/bin/claude-foundation *)" \
   "Bash(node .claude/harness/foundation.mjs *)" "Edit(/.foundation/drafts/**)" \
-  "Edit(/.foundation/sandboxes/**)" "Edit(/.foundation/repository-sandboxes/**)"
+  "Edit(/.foundation/sandboxes/**)" "Edit(/.foundation/repository-sandboxes/**)" \
+  "Edit(/openspec/investigations/**)"
 ```
 
 check ของ Build รันผ่าน `claude-foundation exec` จึงไม่ต้องให้สิทธิ์ test runner
@@ -393,12 +396,13 @@ Land มีเป้าหมายที่ผู้ใช้เห็นเพ
 ที่ประกาศไว้ Proof ที่ pass, fail, stale, inconclusive หรือ missing จะถูกบันทึกเป็น
 assurance ไม่ใช่ authority Harness ตรวจ conflict ใน target และ apply เฉพาะ diff
 จาก sandbox ที่ผู้ใช้อนุญาต จากนั้นจัดการ spec sync, archive, recovery
-และ cleanup เป็น automation ภายใน ถ้า code, test, config, agreement หรือ target
-path ที่เกี่ยวข้องเปลี่ยน ระบบจะหยุดแทนการเขียนทับ
+และ cleanup เป็น automation ภายใน Land ไม่เขียนทับ code, test, config, agreement
+หรือ target path ที่เกี่ยวข้องที่เปลี่ยนไป: การแก้ที่ยังไม่ commit ของคุณบนบรรทัดอื่น
+จะถูก merge เข้า sandbox แล้ว prove ใหม่ ส่วนการแก้บรรทัดเดียวกัน agent จะ merge ให้
 ถ้า target branch แค่มี commit ใหม่ Agent จะ sync sandbox เดิม, Prove ใหม่ และ
-Land ต่อให้เอง งานไม่หายและไม่ต้องเปิด Change ใหม่ แต่ถ้า replay conflict จริง
-ระบบจะหยุดเพื่อให้คุณตัดสินใจ เปิดหลาย change พร้อมกันได้แม้แตะไฟล์เดียวกัน ไม่มี
-change ไหนต้องรออีก change ระหว่าง Build, Prove หรือ Land ใครที่ land ทีหลังก็ sync
+Land ต่อให้เอง งานไม่หายและไม่ต้องเปิด Change ใหม่ ถ้า replay conflict agent
+จะจัดการ และถามคุณเฉพาะเมื่อผลลัพธ์ที่ต้องการเป็นทางเลือกจริง
+เปิดหลาย change พร้อมกันได้แม้แตะไฟล์เดียวกัน ไม่มี change ไหนต้องรออีก change ระหว่าง Build, Prove หรือ Land ใครที่ land ทีหลังก็ sync
 แล้ว prove ใหม่ มีแค่ resource ที่ประกาศด้วย `[resources:]` เท่านั้นที่ต้องต่อคิว
 
 ทำไมต้องมีขั้นนี้: การนำ code เข้า project กับการอัปเดต requirement ถาวรถูกผูก
@@ -572,7 +576,7 @@ openspec/changes/<change-id>/
 | File | ตอบคำถามอะไร | Harness ต้องใช้ทำไม |
 |---|---|---|
 | `.openspec.yaml` | ใช้ `foundation-standard` หรือ `foundation-rapid` | เลือก artifact workflow ของ change |
-| `proposal.md` | เปลี่ยนทำไม เปลี่ยนอะไร (พร้อม folder tree) และไม่ทำอะไร | ทำให้ scope กับ impact ไม่ถูกซ่อนไว้เป็น assumption และ proposal ของ rapid มี user flow, failure matrix และ Plan ด้วย |
+| `proposal.md` | ใครและ lane ไหน เปลี่ยนทำไม อะไรอยู่ใน/นอก scope แต่ละ requirement ยอมรับอย่างไร และเสร็จหมายถึงอะไร | ทำให้ scope กับ impact ไม่ถูกซ่อนไว้เป็น assumption และ proposal ของ rapid มี user flow และ failure matrix ด้วย |
 | `specs/<area>/spec.md` | Observable behavior ใดถูกเพิ่ม แก้ หรือลบ | ให้ Prove มี requirement และ `WHEN`/`THEN` scenario ที่คงที่ และให้ Land merge delta เข้า current specs |
 | `design.md` | สร้างอย่างไร: user flow, component, contract, data, UI state, failure, decision และ Plan | dev document ที่ Build ใช้ทำงาน section ตามชนิดงานและตัดส่วนว่างออก |
 | `tasks.md` | Implementation ใดยังเหลือ | เป็น implementation ledger เพียงที่เดียว Stable ID และ checkbox ทำให้ Build resume ได้ |
@@ -599,8 +603,14 @@ Land ส่วนงานที่ประกาศเป็น docs อย่
 ที่ agent เลือกเองและ typed section เช่น `refactor` หรือ `configContract` จะแสดงใน proposal
 โดยไม่เปลี่ยน lane ใช้ได้เฉพาะงาน impact ต่ำ
 แยกขาด ไม่มี public contract, persistent migration, security trigger หรือ
-irreversible effect หากพบ requirement ที่เข้มขึ้น `/change` จะ upgrade change เดิม
+irreversible effect harness อนุมาน impact และ coupling จาก draft เอง (task ที่ข้าม
+service, package หรือ repository, path ของ persistence, งาน API, event หรือ migration)
+และไม่ลดระดับลง draft ที่ไม่ระบุหรือระบุต่ำกว่าจริงจึงยังได้ standard โดย proposal
+บอกเหตุผล หากพบ requirement ที่เข้มขึ้น `/change` จะ upgrade change เดิม
 เป็น standard
+rapid change ระดับ low ที่ไม่มี security keyword, risk signal หรือ `--review`
+พิสูจน์ด้วย test ของโปรเจกต์เองและ Land โดยไม่มี AI review เมื่อได้รับ Land
+authority แล้ว `advance --through archived` ครั้งเดียวพาจาก Build ไปถึง `archived`
 
 ## ทำความเข้าใจ State
 
@@ -767,9 +777,9 @@ product requirement หรือซ่อม state ด้วยมือถ้�
   เดียวผ่าน `--attestation`; ถ้ายังเปิด host-control socket หรือ credential ระบบ
   จะ block ต่อไป
 - Land บันทึก proof ที่ missing, failed, inconclusive, invalid หรือ stale เป็น
-  assurance โดยไม่ล้ม explicit decision ของผู้ใช้ ส่วน apply ยังปฏิเสธ conflict
-  และ edit ใน target path ที่ยังไม่ commit — มันระบุ path ที่จะถูกทับแทนที่จะ
-  ปล่อยให้คนเขียนทีหลังชนะ
+  assurance โดยไม่ล้ม explicit decision ของผู้ใช้ ส่วน apply ปฏิเสธเฉพาะ edit
+  ใน target path ที่ยังไม่ถูกรวมเข้า sandbox หรือยังมี conflict — มันระบุ path
+  ที่จะถูกทับแทนที่จะปล่อยให้คนเขียนทีหลังชนะ
 - Land เตือน — โดยไม่บล็อก — เมื่อ target checkout อยู่บน `main`/`master`
   โดย guard ของ land ทุกตัวยังอิง commit
 - Land เป็น apply แบบมี journal ที่ resume ได้ รองรับ change ซ้อนกัน และไม่ commit,
@@ -783,6 +793,11 @@ product requirement หรือซ่อม state ด้วยมือถ้�
   การค้นที่อาจโดนไฟล์ลับจะข้ามไฟล์เหล่านั้นหรือแสดงแค่ชื่อไฟล์ และไฟล์ Go จะถูก
   format ให้ทันที secrets hook จะปฏิเสธการอ่านก็ต่อเมื่อสร้างสำเนาที่ปิดค่าไม่ได้
   หรือตั้ง `FOUNDATION_SECRETS_GUARD=block`
+- `shell-route-guard.sh` ปฏิเสธเฉพาะรูปแบบ shell ที่ host จะหยุดถาม approval
+  อยู่แล้ว ได้แก่ `cd <dir> && git …` หรือการรัน test ตรง ๆ ระหว่าง Build
+  โดยบอกคำสั่งที่ให้รันแทน (`git -C <dir> …` หรือ
+  `claude-foundation exec <change> -- <command>`) ถ้ามี allow rule ที่ตรงกัน
+  คำสั่งจะผ่านไปตามปกติ
 - `no-direct-main-commit.sh` เป็น opt-in เพราะบาง project อนุญาต controlled
   commit บน default branch โดย `doctor` จะรายงานว่าเปิดอยู่หรือไม่
 

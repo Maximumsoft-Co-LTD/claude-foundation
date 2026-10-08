@@ -8,6 +8,7 @@
   "properties": {
     "protocol": { "const": "foundation-openspec-native-scorecard-v1" },
     "scenario": { "$ref": "#/$defs/nonEmptyString" },
+    "arm": { "enum": ["change-loop", "baseline"] },
     "repeat": { "type": "integer", "minimum": 1 },
     "runId": { "$ref": "#/$defs/nonEmptyString" },
     "provenance": {
@@ -87,10 +88,12 @@
         "observedModelRequests": { "$ref": "#/$defs/nullableCount" },
         "hostReportedModelRequests": { "$ref": "#/$defs/nullableCount" },
         "capConsumedModelRequests": { "$ref": "#/$defs/nullableCount" },
+        "postTerminalModelRequests": { "$ref": "#/$defs/nullableCount" },
         "inputTokens": { "$ref": "#/$defs/nullableNumber" },
         "outputTokens": { "$ref": "#/$defs/nullableNumber" },
         "cacheCreationTokens": { "$ref": "#/$defs/nullableNumber" },
-        "cacheReadTokens": { "$ref": "#/$defs/nullableNumber" }
+        "cacheReadTokens": { "$ref": "#/$defs/nullableNumber" },
+        "tokenSource": { "$ref": "#/$defs/nullableString" }
       }
     },
     "operations": {

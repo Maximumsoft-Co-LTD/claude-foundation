@@ -269,7 +269,12 @@ export function pullRequestNarrative({ changeId, state, proposal, design, tasks,
   const why = markdownSection(proposal, "Why") || clean(state.intent) || `Deliver ${changeId}`;
   const changes = markdownSection(proposal, "What changes") || markdownSection(proposal, "What Changes");
   const nonGoals = markdownSection(proposal, "Non-goals") || markdownSection(proposal, "Non-Goals");
-  const included = bullets(changes).length ? bullets(changes) : taskTitles(tasks);
+  // Older proposals list "What changes"; the current layout states the same
+  // requirement titles once, in Scope.
+  const scoped = String(proposal || "").match(/^\s*-\s*\*\*In scope(?: \([^)]*\))?:\*\*\s*(.+)$/m)?.[1]
+    ?.split(/;\s+/).map(clean).filter(Boolean) || [];
+  const included = bullets(changes).length ? bullets(changes)
+    : scoped.length ? scoped : taskTitles(tasks);
   const excluded = bullets(nonGoals);
   const titleSource = included[0] || clean(state.intent) || changeId;
   const title = titleSource.replace(/[`*_]/g, "").replace(/[.!]$/, "").slice(0, 120);

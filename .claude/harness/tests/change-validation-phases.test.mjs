@@ -374,6 +374,11 @@ test("review assurance report is quiet when unavailable and explains active gate
     { required: true }, null, (message) => notes.push(message)), null);
   assert.equal(reportValidationReviewAssurance(false, true,
     { required: false }, null, (message) => notes.push(message)), null);
+  // A quiet rapid change runs no review, so no reviewer posture is announced.
+  assert.deepEqual(reportValidationReviewAssurance(false, true,
+    { required: false }, { summary: "self review" }, (message) => notes.push(message)),
+  { summary: "self review" });
+  assert.equal(notes.length, 0);
   const assurance = { summary: "independent reviewer configured" };
   assert.equal(reportValidationReviewAssurance(false, true,
     { required: true, independenceWaived: false }, assurance,

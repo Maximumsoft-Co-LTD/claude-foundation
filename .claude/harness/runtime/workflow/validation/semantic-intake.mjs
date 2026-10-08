@@ -5,6 +5,14 @@ const STATUSES = new Set([
   "covered", "not-applicable", "needs-investigation", "needs-user-decision"
 ]);
 
+// Agents repairing a JSON draft reach for python, `sed -i`, or a heredoc to
+// apply every fix in one batch, and the host refuses each of those shapes. The
+// file tool is pre-allowed on `.foundation/drafts/**`, so the repair names it.
+export const DRAFT_REPAIR_INSTRUCTION = "Apply every fix with the Edit tool on the draft " +
+  "file (.foundation/drafts/** is pre-allowed), then rerun the same command. Do not " +
+  "rewrite the draft through the shell (python, node -e, sed -i, jq, heredoc): the host " +
+  "refuses those.";
+
 export const CORE_DISCOVERY_DIMENSIONS = Object.freeze([
   "current-behavior",
   "affected-actor",
@@ -214,7 +222,7 @@ export function semanticIntakeIssues(input = {}) {
   const unknownSignals = strings(source.riskSignals)
     .filter((signal) => !RISK_SIGNAL_DIMENSIONS[signal.toLowerCase()]);
   if (unknownSignals.length)
-    issues.push(`semantic draft riskSignals contains unknown signal(s): ${unknownSignals.join(", ")}`);
+    issues.push(`semantic draft riskSignals contains unknown signal(s): ${unknownSignals.join(", ")} (known: ${Object.keys(RISK_SIGNAL_DIMENSIONS).join(", ")})`);
 
   const requirementKeys = new Set((source.requirements || []).map((row) => text(row?.key)));
   const requiredDimensions = requiredDiscoveryDimensions(source);
@@ -235,7 +243,7 @@ export function semanticIntakeIssues(input = {}) {
       issues.push(`${label}.covers references unknown requirement(s): ${unknown.join(", ")}`);
     if (status === "covered" && !covers.length && !strings(row?.sources).length &&
         !isDerivedCoverage(row))
-      issues.push(`${label} covered status requires covers or sources`);
+      issues.push(`${label} covered status requires covers or sources (covers: requirement keys; sources: paths read)`);
     if (status === "not-applicable" && !text(row?.rationale))
       issues.push(`${label} not-applicable status requires rationale`);
     if (["needs-investigation", "needs-user-decision"].includes(status))
@@ -283,6 +291,7 @@ export function semanticIntakeAction(input = {}, {
   if (structural.length) return lifecycleOutcome({
     action: "EDIT", owner: "agent", boundary: "draft-validation",
     reason: "The semantic draft structure must be repaired before intake can continue.",
+    instruction: DRAFT_REPAIR_INSTRUCTION,
     intake: { kind: "repair-draft", issues: structural }, resume
   });
 
@@ -337,6 +346,7 @@ export function semanticIntakeAction(input = {}, {
   if (unresolvedCoverage.length) return lifecycleOutcome({
     action: "EDIT", owner: "agent", boundary: "draft-validation",
     reason: "Resolved decisions must be projected into coverage and agreement semantics.",
+    instruction: DRAFT_REPAIR_INSTRUCTION,
     intake: {
       kind: "project-decisions",
       dimensions: unresolvedCoverage.map((row) => text(row?.dimension).toLowerCase())

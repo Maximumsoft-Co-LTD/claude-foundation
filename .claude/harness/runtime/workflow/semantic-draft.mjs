@@ -7,6 +7,7 @@ import { readerGuideIssues } from "./validation/reader-guide.mjs";
 import {
   devDocumentIssues, devDocumentShapeIssues, inferWorkTypes
 } from "./validation/dev-document.mjs";
+import { riskDerivationSummary } from "./validation/draft-risk.mjs";
 
 const OPERATIONS = new Set(["added", "modified", "removed"]);
 const AUTHORITY_CAPABILITIES = new Set(["review", "acceptance", "semantic-acceptance"]);
@@ -211,20 +212,29 @@ function requiredIntegrationCapabilities(integration) {
   return capabilities;
 }
 
-// Mirrors the rapid-lane test in change-lifecycle atomicStartPreflight. Only a
-// draft that can land on foundation-rapid may leave evidence capabilities to
-// the compiler; preflight rejects a defaulted draft that ends up standard.
-export function semanticRapidCandidate(source) {
-  const triggers = [
+function securityTriggerList(source) {
+  return [
     ...stringList(source?.securityTriggers),
     ...(Array.isArray(source?.integrations) ? source.integrations : [])
       .filter((integration) =>
         requiredIntegrationCapabilities(integration || {}).includes("security-static"))
       .map(() => "external-integration-authentication")
   ].filter((trigger) => trigger.toLowerCase() !== "none");
+}
+
+// Mirrors the rapid-lane test in change-lifecycle atomicStartPreflight.
+export function semanticRapidCandidate(source) {
   return (text(source?.impact) || "low") === "low" &&
     (text(source?.coupling) || "isolated") === "isolated" &&
-    !triggers.length && !source?.reviewRequired && !source?.acceptance?.required;
+    !securityTriggerList(source).length && !source?.reviewRequired &&
+    !source?.acceptance?.required;
+}
+
+// Omitted evidence capabilities default to the plain check in either lane. Only
+// a declared security trigger keeps the choice with the author: which security
+// capability proves the boundary is a judgment the compiler must not make.
+export function semanticEvidenceDefaultable(source) {
+  return !securityTriggerList(source).length;
 }
 
 // Alternatives the decision set aside. Only a decision that rejected one owes
@@ -268,6 +278,11 @@ function semanticDraftIssues(source, { defaultTestEvidence = false } = {}) {
   if (source?.language !== undefined &&
       !/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(text(source.language)))
     issues.push("semantic draft language must be a BCP 47 tag such as 'en' or 'th'");
+  if (source?.successMeasure !== undefined &&
+      (typeof source.successMeasure !== "string" || !text(source.successMeasure) ||
+        text(source.successMeasure).length > 240 || /\r?\n/.test(text(source.successMeasure))))
+    issues.push("semantic draft successMeasure must be one line of at most 240 characters " +
+      "(how you will know it worked, with a number or observable); omit it when unknown");
   if (source?.diagrams !== undefined && !Array.isArray(source.diagrams))
     issues.push("semantic draft diagrams must be an array");
   if (source?.decisions !== undefined && !Array.isArray(source.decisions))
@@ -305,7 +320,9 @@ function semanticDraftIssues(source, { defaultTestEvidence = false } = {}) {
   }
   issues.push(...designBlueprintIssues(source));
   issues.push(...devDocumentShapeIssues(source));
-  issues.push(...devDocumentIssues(source, { standard: !semanticRapidCandidate(source) }));
+  issues.push(...devDocumentIssues(source, {
+    standard: !semanticRapidCandidate(source), lane: riskDerivationSummary(source)
+  }));
   issues.push(...semanticIntakeIssues(source));
   return issues;
 }
@@ -380,17 +397,20 @@ function normalizeRequirements(source, slugify, issues, {
       ...stringList(evidenceValue?.capabilities),
       ...stringList(requirement?.capabilities)
     ]);
-    // A rapid draft proves every requirement with its covering tasks' verify
-    // commands, so an omitted capability list means exactly that: "test", or
-    // "static-analysis" for docs/chore work.
+    // A draft proves every requirement with its covering tasks' verify commands,
+    // so an omitted capability list means exactly that: "test", or
+    // "static-analysis" for docs/chore work. The proposal records the default.
     if (defaultTestEvidence && !capabilities.length &&
         evidenceValue?.capabilities === undefined && requirement?.capabilities === undefined) {
       capabilities.push(defaultCapability);
       defaultedEvidence.push(key);
-    } else if (!evidenceValue && !requirement?.capabilities)
+    } else if (!evidenceValue && !requirement?.capabilities) {
+      const derived = riskDerivationSummary(source);
       issues.push(`${label} requires evidence['${key}'].capabilities ` +
-        "(only a low-impact, isolated draft without security triggers, review, or acceptance " +
-        "may omit it and default to [\"test\"], or [\"static-analysis\"] for docs/chore work)");
+        "(a draft with security triggers must name them, e.g. [\"test\", \"security-static\"]; " +
+        "without triggers an omitted list defaults to [\"test\"], or [\"static-analysis\"] " +
+        "for docs/chore work" + (derived ? `; ${derived}` : "") + ")");
+    }
     if (!capabilities.length)
       issues.push(`${label} requires at least one evidence capability`);
 
@@ -1143,6 +1163,92 @@ function normalizeTasks(source, requirements, requirementKeys, issues) {
   return tasks;
 }
 
+function repositoryPath(row) {
+  return String(row?.relativePath ?? row?.path ?? "").replaceAll("\\", "/")
+    .replace(/^\.\//, "").replace(/\/+$/, "") || ".";
+}
+
+// Whether `inner` lies strictly inside `outer` (a superproject contains its
+// submodules). Sibling repositories (`../x`) are never contained.
+function repositoryContains(outer, inner) {
+  if (inner === "." || inner === ".." || inner.startsWith("../") || inner === outer) return false;
+  return outer === "." || inner.startsWith(`${outer}/`);
+}
+
+/**
+ * Cross-repository task order the compiler derives so the author need not.
+ * A task consumes another selected repository when its own repository
+ * contains that repository's path (the root superproject builds and tests its
+ * submodules), or, for a task without authored edges, when its repository
+ * declares `dependsOn` on it (the edge the runtime already infers, made
+ * explicit so an added edge never hides it). The consuming task depends on
+ * every same-change task in the consumed repository. An edge that would close
+ * a cycle is not added and is reported instead. `repositories` are catalog
+ * rows ({id, relativePath, dependsOn}); `selection` is the draft's
+ * `repositories`, whose `dependsOn` overrides the catalog's. `consumers`, when
+ * given, limits which task ids may receive edges (an amendment's added tasks).
+ */
+export function deriveRepositoryTaskDependencies(tasks, {
+  repositories = [], selection, consumers = null
+} = {}) {
+  const rows = (Array.isArray(tasks) ? tasks : []).map((task) => ({
+    ...task, dependsOn: [...(task?.dependsOn || [])]
+  }));
+  const repositoryOf = (task) => text(task.repository) || "root";
+  const catalog = new Map((Array.isArray(repositories) ? repositories : [])
+    .filter((row) => row?.id).map((row) => [String(row.id), row]));
+  const selected = new Map((Array.isArray(selection) ? selection : [])
+    .map((entry) => typeof entry === "string" ? { id: entry } : entry)
+    .filter((entry) => entry?.id).map((entry) => [String(entry.id), entry]));
+  const pathOf = (id) => id === "root" ? "." : catalog.has(id) ? repositoryPath(catalog.get(id)) : null;
+  const declaredDependencies = (id) => stringList(
+    selected.get(id)?.dependsOn ?? catalog.get(id)?.dependsOn);
+  const taskRepositories = unique(rows.map(repositoryOf));
+  const label = (task) => task.semanticKey || task.id;
+  const graph = new Map(rows.map((task) => [task.id, task.dependsOn]));
+  const reaches = (from, to) => {
+    const seen = new Set();
+    const pending = [from];
+    while (pending.length) {
+      const current = pending.pop();
+      if (current === to) return true;
+      if (seen.has(current)) continue;
+      seen.add(current);
+      pending.push(...(graph.get(current) || []));
+    }
+    return false;
+  };
+  const derived = [];
+  const issues = [];
+  for (const task of rows) {
+    if (consumers && !consumers.has(task.id)) continue;
+    const own = repositoryOf(task);
+    const ownPath = pathOf(own);
+    const consumed = [
+      ...(task.dependsOn.length ? [] : declaredDependencies(own).map((id) =>
+        [id, `repository '${own}' dependsOn '${id}'`])),
+      ...taskRepositories.filter((id) => id !== own && ownPath !== null && pathOf(id) !== null &&
+        repositoryContains(ownPath, pathOf(id)))
+        .map((id) => [id, `repository '${own}' contains repository '${id}' at ${pathOf(id)}`])
+    ];
+    for (const [id, reason] of consumed) {
+      for (const provider of rows.filter((candidate) =>
+        candidate.id !== task.id && repositoryOf(candidate) === id)) {
+        if (task.dependsOn.includes(provider.id)) continue;
+        if (reaches(provider.id, task.id)) {
+          issues.push(`task '${label(task)}' (repository '${own}') must follow ` +
+            `'${label(provider)}' because ${reason}, but '${label(provider)}' already depends ` +
+            `on '${label(task)}'; remove that dependency or move the shared work into one repository`);
+          continue;
+        }
+        task.dependsOn.push(provider.id);
+        derived.push({ taskId: task.id, dependsOn: provider.id, reason });
+      }
+    }
+  }
+  return { tasks: rows, derived, issues: unique(issues) };
+}
+
 function derivedExecution(source, claims, tasks) {
   if (source.execution) return source.execution;
   const commands = unique(tasks.map((task) => task.verify).filter(Boolean));
@@ -1171,7 +1277,7 @@ export function normalizeSemanticDraft(input, slugify, options = {}) {
   const source = input?.capabilityOverviews === undefined ? input
     : { ...input, capabilityOverviews: capabilityOverviewList(input.capabilityOverviews) };
   const defaultTestEvidence = Boolean(options.defaultRapidEvidence) &&
-    semanticRapidCandidate(source);
+    semanticEvidenceDefaultable(source);
   const defaultedEvidence = [];
   const issues = semanticDraftIssues(source, { defaultTestEvidence });
   const { requirements, requirementKeys } = normalizeRequirements(
@@ -1179,7 +1285,15 @@ export function normalizeSemanticDraft(input, slugify, options = {}) {
   applyIntegrationRequirements(source, requirements, requirementKeys, issues);
   applyCapabilityOverviews(source, requirements, slugify, issues);
   applyCapabilityPurposes(source, requirements, slugify);
-  const tasks = normalizeTasks(source, requirements, requirementKeys, issues);
+  let tasks = normalizeTasks(source, requirements, requirementKeys, issues);
+  // Cross-repository order is derived only when a repository binding exists.
+  if (Array.isArray(options.repositories) || Array.isArray(source.repositories)) {
+    const ordered = deriveRepositoryTaskDependencies(tasks, {
+      repositories: options.repositories, selection: source.repositories
+    });
+    tasks = ordered.tasks;
+    issues.push(...ordered.issues.map((issue) => `semantic draft ${issue}`));
+  }
   issues.push(...readerGuideIssues(source, requirementKeys));
   const claims = requirements.flatMap((row) => row.claims);
   const acceptance = source.acceptance || { required: false, reason: null, claimIds: [] };
@@ -1313,6 +1427,7 @@ export function semanticDraftTemplate() {
       soThat: "the benefit", covers: ["observable-outcome"]
     }],
     successCriteria: ["State how the result is judged, with a measurable threshold"],
+    successMeasure: "Optional one line: the number or observable that shows it worked",
     impact: "low",
     coupling: "isolated",
     workType: ["feature"],

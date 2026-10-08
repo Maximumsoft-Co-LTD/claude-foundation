@@ -12,12 +12,15 @@ import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 
 import {
-  assertDisposableProject, backendLandArgs, collectNativeScorecard, discoverChangeId,
+  assertBaselineProject, assertDisposableProject, BENCHMARK_VERIFY_AUTHORITY, backendLandArgs,
+  baselineOutcome, baselinePrompt, benchmarkLandAuthority, collectNativeScorecard,
+  discoverChangeId, projectProcessIds, watchedStatusReached,
   externalAuthorityBoundary, guardrailOutcomes, hostFriction, observedOutcome, operationRowsInWindow,
-  mergeHostExecutions, parseHostOutput, pendingTaskCount,
+  mergeHostExecutions, oracleRepairPrompt, parseHostOutput, pendingTaskCount,
   provenLandReady, remainingTimeoutMs, runBenchmarkOracle, runClaude, terminalChangeId
 } from "../openspec-native/run.mjs";
 import { collectBenchmarkQuality } from "../openspec-native/quality.mjs";
+import { loadMatrix } from "../openspec-native/matrix.mjs";
 
 const schema = JSON.parse(readFileSync(new URL(
   "../config/openspec-native-scorecard.schema.json", import.meta.url), "utf8"));
@@ -124,6 +127,87 @@ test("oracle-backed runner stops at proven before allowing Land", async () => {
   } finally { rmSync(project, { recursive: true, force: true }); }
 });
 
+// A fake host shaped like Claude Code: the lifecycle command runs as a Bash
+// tool call in its own process group (so stopping the host group does not stop
+// it) and its tool_result is printed only after it exits.
+function hostWithDetachedLifecycle(project, runtime, statuses, { reportResult = true } = {}) {
+  const host = join(project, "fake-lifecycle-host.mjs");
+  const lifecycle = statuses.map((status) =>
+    `await new Promise((done) => setTimeout(done, 700));` +
+    `writeFileSync(${JSON.stringify(runtime)}, JSON.stringify({ id: "todo", status: ${JSON.stringify(status)} }));`
+  ).join("\n");
+  write(host, [
+    "#!/usr/bin/env node",
+    'import { spawn } from "node:child_process";',
+    "const say = (row) => process.stdout.write(`${JSON.stringify(row)}\\n`);",
+    'say({ type: "assistant", message: { id: "msg-1", content: [{ type: "tool_use", id: "tool-advance", name: "Bash", input: { command: "claude-foundation advance todo --through archived" } }] } });',
+    `const child = spawn(process.execPath, ["--input-type=module", "-e", ${JSON.stringify(
+      'import { writeFileSync } from "node:fs";\n' + lifecycle)}], { cwd: ${JSON.stringify(project)}, detached: true, stdio: "ignore" });`,
+    reportResult
+      ? 'child.on("exit", () => { say({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tool-advance", content: "DONE" }] } }); setTimeout(() => {}, 30000); });'
+      : "process.exit(0);"
+  ].join("\n"));
+  chmodSync(host, 0o755);
+  return host;
+}
+
+// typescript-react-state, paid wave 5: the host's single `advance --through
+// archived` passed `proven`, the runner stopped the host there, the orphaned
+// Land kept running, and the backend Land raced it (land-grant-session-mismatch)
+// until cleanup removed the project mid-archive, leaving `applied`.
+test("oracle-backed runner lets an in-flight lifecycle command finish Land before stopping", async () => {
+  const project = projectFixture();
+  const runtime = join(project, ".foundation/runtime/todo.json");
+  write(runtime, { id: "todo", status: "building" });
+  const host = hostWithDetachedLifecycle(project, runtime, ["proven", "applied", "archived"]);
+  try {
+    const result = await runClaude({
+      project, prompt: "prove", claudeBin: host, claudeArgs: [],
+      timeoutMs: 20000, stopOnProven: true, settleTimeoutMs: 5000
+    });
+    assert.equal(result.terminalReached?.status, "archived");
+    assert.equal(JSON.parse(readFileSync(runtime, "utf8")).status, "archived",
+      "the host was stopped while its Land was still running");
+    assert.deepEqual(projectProcessIds(project), []);
+  } finally { rmSync(project, { recursive: true, force: true }); }
+});
+
+test("runner waits for a host-orphaned project process before scoring", async () => {
+  const project = projectFixture();
+  const runtime = join(project, ".foundation/runtime/todo.json");
+  write(runtime, { id: "todo", status: "proven" });
+  const host = hostWithDetachedLifecycle(project, runtime, ["applied", "archived"],
+    { reportResult: false });
+  try {
+    const result = await runClaude({
+      project, prompt: "land", claudeBin: host, claudeArgs: [],
+      timeoutMs: 20000, settleTimeoutMs: 10000
+    });
+    assert.equal(JSON.parse(readFileSync(runtime, "utf8")).status, "archived");
+    if (process.platform === "linux")
+      assert.match(result.stderr, /waited for 1 host-orphaned project process/);
+    assert.deepEqual(projectProcessIds(project), []);
+  } finally { rmSync(project, { recursive: true, force: true }); }
+});
+
+test("a proven watcher accepts the Land states one advance moves through", () => {
+  assert.equal(watchedStatusReached("proven", "proven"), true);
+  assert.equal(watchedStatusReached("proven", "applied"), true);
+  assert.equal(watchedStatusReached("proven", "archived"), true);
+  assert.equal(watchedStatusReached("proven", "building"), false);
+  assert.equal(watchedStatusReached("archived", "applied"), false);
+});
+
+test("an oracle-backed benchmark keeps Land with the backend", () => {
+  assert.equal(benchmarkLandAuthority({ landAuthorized: false }), "");
+  const backendOwned = benchmarkLandAuthority({ landAuthorized: true, oracleConfigured: true });
+  assert.match(backendOwned, /does not grant Land authority/);
+  assert.match(backendOwned, /--through proven/);
+  assert.doesNotMatch(backendOwned, /continue until the change is landed/);
+  assert.match(benchmarkLandAuthority({ landAuthorized: true, oracleConfigured: false }),
+    /authorizes Land; continue until the change is landed and archived/);
+});
+
 test("repair continuation must leave the initial proven state before it can finish", async () => {
   const project = projectFixture();
   const runtime = join(project, ".foundation/runtime/todo.json");
@@ -180,6 +264,27 @@ test("runner uses the registered internal Land operation", () => {
   assert.deepEqual(backendLandArgs("change"), ["land-advance", "change"]);
 });
 
+// "Run the canonical project test" sent the agent to raw `npm test` and
+// `node --test`, which consumers deliberately do not pre-allow.
+test("oracle repair verifies only through pre-allowed harness commands", () => {
+  const prompt = oracleRepairPrompt("change-a", ["boundary-zero", "no-collateral"]);
+  assert.match(prompt, /oracle failed: boundary-zero, no-collateral\./);
+  assert.match(prompt, /claude-foundation advance change-a --through build/);
+  assert.match(prompt, /checkCommand \(claude-foundation exec/);
+  assert.match(prompt, /claude-foundation advance change-a --through proven/);
+  assert.match(prompt, /Never run a test runner .* directly/);
+  assert.doesNotMatch(prompt, /canonical project test/);
+  assert.match(prompt, /Do not Land/);
+});
+
+test("initial benchmark authority keeps projectCommand as verify and runs checks via the harness", () => {
+  assert.match(BENCHMARK_VERIFY_AUTHORITY, /projectCommand as each draft task's verify value/);
+  assert.match(BENCHMARK_VERIFY_AUTHORITY, /only through each Build task's returned checkCommand/);
+  assert.match(BENCHMARK_VERIFY_AUTHORITY, /claude-foundation advance/);
+  assert.match(BENCHMARK_VERIFY_AUTHORITY, /never a raw test runner/);
+  assert.doesNotMatch(BENCHMARK_VERIFY_AUTHORITY, /canonical project test command/);
+});
+
 test("proven resume fast-path requires a passing backend Land check", () => {
   const project = projectFixture();
   try {
@@ -213,6 +318,12 @@ test("outcome requires checked tasks and passing proof", () => {
     assert.equal(notLanded.status, "incomplete");
     assert.equal(notLanded.failureClass, "land-not-archived");
     assert.equal(notLanded.landStatus, "awaiting-user");
+    write(join(project, ".foundation/runtime/todo.json"), { id: "todo", status: "applied" });
+    const interrupted = observedOutcome({
+      project, changeId: "todo", envelope: {}, exitCode: 0, timedOut: false
+    });
+    assert.equal(interrupted.failureClass, "land-not-archived");
+    assert.equal(interrupted.landStatus, "interrupted-resumable");
     write(join(project, "openspec/changes/todo/tasks.md"), "- [ ] unfinished\n");
     const incomplete = observedOutcome({
       project, changeId: "todo", envelope: {}, exitCode: 0, timedOut: false
@@ -980,5 +1091,201 @@ test("guard outcomes are counted inside the run window", () => {
     assert.deepEqual(guardrailOutcomes(project, {
       startedAt: "2026-10-06T08:59:00.000Z", finishedAt: "2026-10-06T09:10:00.000Z"
     }), { redirected: 2, guided: 1 });
+  } finally { rmSync(project, { recursive: true, force: true }); }
+});
+
+function baselineFixture(projectCommand = "node --test") {
+  const project = mkdtempSync(join(tmpdir(), "foundation-native-baseline-"));
+  write(join(project, ".foundation-benchmark.json"), {
+    disposable: true, arm: "baseline", projectCommand
+  });
+  write(join(project, "src/app.js"), "module.exports = 1;\n");
+  return project;
+}
+
+test("baseline guard keeps the disposable marker and refuses every Change Loop file", () => {
+  const project = baselineFixture();
+  try {
+    assert.equal(assertBaselineProject(project).projectCommand, "node --test");
+    assert.throws(() => assertDisposableProject(project), /installed Change Loop harness/,
+      "a harness-free project can never be scored as a Change Loop run");
+    for (const path of [".claude/harness/foundation.mjs", "openspec/config.yaml",
+      ".foundation/runtime/x.json", "WORKFLOW.md"]) {
+      write(join(project, path), "x");
+      assert.throws(() => assertBaselineProject(project), /must not contain Change Loop files/);
+      rmSync(join(project, path.split("/")[0]), { recursive: true, force: true });
+    }
+    write(join(project, ".foundation-benchmark.json"), { disposable: false });
+    assert.throws(() => assertBaselineProject(project), /disposable=true/);
+  } finally { rmSync(project, { recursive: true, force: true }); }
+});
+
+test("baseline prompt carries every scenario task but no Change Loop instruction", () => {
+  const lifecycle = /\/dev|\badvance\b|archiv|\bLand\b|self-review|Before Prove|openspec|claude-foundation|change start|\.foundation|harness/;
+  const scenarios = loadMatrix().scenarios.filter((row) =>
+    row.status === "ready" && row.execution === "paid");
+  for (const id of ["bare-node-boundary", "typescript-react-state", "python-api-validation",
+    "database-migration-rollback", "refactor-no-reproduction", "multi-service-event-flow",
+    "tiny-feature", "notes-api", "cart-coupons", "project-tracker-api"])
+    assert.ok(scenarios.some((row) => row.id === id), `${id} is a baseline-capable scenario`);
+  for (const scenario of scenarios) {
+    const prompt = baselinePrompt({
+      prompt: scenario.prompt, projectCommand: scenario.project_command
+    });
+    assert.ok(prompt.startsWith(scenario.prompt.replace(/^\/dev\s+/, "")), scenario.id);
+    assert.ok(prompt.includes(`\`${scenario.project_command}\``), scenario.id);
+    assert.match(prompt, /run that command until it passes/);
+    assert.match(prompt, /uncommitted: do not commit, push, or open a pull request/);
+    assert.match(prompt, /return-shape partitions/, "the same acceptance hint as Change Loop");
+    assert.doesNotMatch(prompt, lifecycle, scenario.id);
+  }
+  assert.throws(() => baselinePrompt({ prompt: "fix it" }), /projectCommand is required/);
+});
+
+test("baseline outcome is host exit, own green project command, and the oracle", () => {
+  const pass = { configured: true, measurement: "measured", verdict: "pass" };
+  const green = { status: "pass" };
+  assert.deepEqual(baselineOutcome({ exitCode: 0, timedOut: false, oracle: pass,
+    projectCheck: green }), {
+    status: "completed", failureClass: null, changeId: null, workflowStatus: null,
+    pendingTasks: null, requiredEvidencePassed: true, proofStatus: null, landStatus: null
+  });
+  const classify = (input) => {
+    const row = baselineOutcome({ exitCode: 0, timedOut: false, oracle: pass,
+      projectCheck: green, ...input });
+    return `${row.status}:${row.failureClass}`;
+  };
+  assert.equal(classify({ oracle: { ...pass, verdict: "fail" } }), "failed:task-oracle-failed");
+  assert.equal(classify({ oracle: { configured: true, measurement: "unavailable" } }),
+    "failed:task-oracle-unavailable");
+  assert.equal(classify({ projectCheck: { status: "fail" } }), "failed:project-command-failed");
+  assert.equal(classify({ exitCode: 1 }), "failed:host-exit-1");
+  assert.equal(classify({ envelope: { is_error: true } }), "failed:host-result-error");
+  assert.equal(classify({ timedOut: true, exitCode: 143 }), "timeout:host-timeout");
+  assert.equal(classify({ budgetExhausted: { kind: "model-requests" }, exitCode: 143 }),
+    "needs-user-decision:budget-exhausted-model-requests");
+});
+
+function dryRun(project, extra) {
+  const runner = new URL("../openspec-native/run.mjs", import.meta.url);
+  const result = spawnSync(process.execPath, [
+    runner.pathname, "--scenario", "parity", "--project", project,
+    "--prompt", "/dev fix the defect", "--dry-run",
+    "--timeout-ms", "900000", "--max-cost-usd", "7", "--max-model-requests", "60",
+    "--max-tool-calls", "80", "--claude-arg", "--model", "--claude-arg", "parity-model",
+    ...extra
+  ], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout);
+}
+
+test("dry-run plans give both arms the same model, budget, and ceilings without a host", () => {
+  const changeLoop = projectFixture();
+  rmSync(join(changeLoop, ".foundation/runtime"), { recursive: true, force: true });
+  const baseline = baselineFixture();
+  const scratch = mkdtempSync(join(tmpdir(), "foundation-dry-run-host-"));
+  const sentinel = join(scratch, "host-ran");
+  const host = join(scratch, "claude-stub");
+  write(host, `#!/bin/sh\ntouch "${sentinel}"\n`);
+  chmodSync(host, 0o755);
+  try {
+    const cl = dryRun(changeLoop, ["--claude-bin", host, "--oracle", "/oracle.sh",
+      "--test-land", "true", "--test-self-review", "true"]);
+    const base = dryRun(baseline, ["--claude-bin", host, "--oracle", "/oracle.sh",
+      "--arm", "baseline"]);
+    assert.equal(existsSync(sentinel), false, "a dry run never launches the host");
+    assert.equal(cl.arm, "change-loop");
+    assert.equal(base.arm, "baseline");
+    for (const plan of [cl, base]) {
+      assert.equal(plan.dispatch, true);
+      assert.equal(plan.argv[0], "-p");
+      assert.equal(plan.argv[1], plan.prompt);
+      assert.equal(plan.argv[plan.argv.indexOf("--max-budget-usd") + 1], "7");
+      assert.equal(plan.argv[plan.argv.indexOf("--model") + 1], "parity-model");
+      assert.equal(plan.timeoutMs, 900000);
+      assert.equal(plan.maxModelRequests, 60);
+      assert.equal(plan.maxToolCalls, 80);
+    }
+    assert.deepEqual(cl.argv.slice(2), base.argv.slice(2),
+      "only the prompt differs when both arms receive the same extra arguments");
+    assert.equal(cl.stopOnProven, true);
+    assert.equal(base.stopOnProven, false);
+    assert.equal(base.stopOnArchived, false, "the baseline stops when its host exits");
+    // With a task oracle the backend owns the pre-Land oracle and Land, so the
+    // host is told to stop at proven (it is not granted Land authority).
+    assert.match(cl.prompt, /does not grant Land authority/);
+    assert.doesNotMatch(cl.prompt, /explicitly authorizes Land/);
+    assert.doesNotMatch(base.prompt, /Land|self-review|\/dev/);
+  } finally {
+    for (const path of [changeLoop, baseline, scratch])
+      rmSync(path, { recursive: true, force: true });
+  }
+});
+
+test("baseline live run scores the host's working tree with the oracle and project command", () => {
+  const project = baselineFixture("test -f src/feature.js");
+  const outputDir = mkdtempSync(join(tmpdir(), "foundation-native-baseline-live-"));
+  const output = join(outputDir, "rows.jsonl");
+  const host = join(outputDir, "claude-stub");
+  const argvLog = join(outputDir, "argv.txt");
+  const oracle = join(outputDir, "oracle.sh");
+  write(host, `#!/bin/sh
+printf '%s\\n' "$@" > "${argvLog}"
+printf 'module.exports = 2;\\n' > src/feature.js
+printf '%s\\n' '{"type":"assistant","message":{"id":"r1","content":[{"type":"tool_use","id":"t1","name":"Write","input":{"file_path":"src/feature.js"}}]}}'
+printf '%s\\n' '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"This command requires approval"}]}}'
+printf '%s\\n' '{"type":"assistant","message":{"id":"r2","content":[]}}'
+printf '%s\\n' '{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.42,"num_turns":2,"model":"stub-model"}'
+`);
+  write(oracle, `#!/bin/sh
+if [ -f "$1/src/feature.js" ] && [ ! -d "$1/.claude" ]; then
+  printf '%s\\n' '{"verdict":"pass","score":1,"max":1,"results":{"CASE-1":"pass"}}'
+else
+  printf '%s\\n' '{"verdict":"fail","score":0,"max":1,"results":{"CASE-1":"fail"}}'
+fi
+`);
+  chmodSync(host, 0o755);
+  try {
+    const runner = new URL("../openspec-native/run.mjs", import.meta.url);
+    const result = spawnSync(process.execPath, [
+      runner.pathname, "--scenario", "baseline-live", "--arm", "baseline",
+      "--project", project, "--prompt", "/dev add the feature",
+      "--run-id", "baseline-live", "--claude-bin", host, "--oracle", oracle,
+      "--max-cost-usd", "3", "--timeout-ms", "10000", "--output", output
+    ], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    const scorecard = JSON.parse(readFileSync(output, "utf8").trim());
+    assert.equal(scorecard.arm, "baseline");
+    assert.equal(scorecard.outcome.status, "completed");
+    assert.equal(scorecard.outcome.complete, true);
+    assert.equal(scorecard.outcome.changeId, null);
+    assert.equal(scorecard.outcome.requiredEvidencePassed, true);
+    assert.equal(scorecard.oracle.verdict, "pass");
+    assert.equal(scorecard.usage.costUsd, 0.42);
+    assert.equal(scorecard.usage.modelRequests, 2);
+    assert.equal(scorecard.operations.hostToolCalls.total, 1);
+    assert.equal(scorecard.friction.permissionPrompts, 1);
+    assert.equal(validate(scorecard), true, JSON.stringify(validate.errors));
+    const argv = readFileSync(argvLog, "utf8");
+    assert.match(argv, /add the feature/);
+    assert.match(argv, /--max-budget-usd\n3\n/);
+    assert.doesNotMatch(argv, /\/dev|authorizes Land/);
+    assert.ok(existsSync(join(outputDir, "openspec-native-runs/baseline-live/project-command.json")));
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(outputDir, { recursive: true, force: true });
+  }
+});
+
+test("baseline runner refuses a project that has the harness installed", () => {
+  const project = projectFixture();
+  try {
+    const runner = new URL("../openspec-native/run.mjs", import.meta.url);
+    const result = spawnSync(process.execPath, [
+      runner.pathname, "--scenario", "x", "--arm", "baseline", "--project", project,
+      "--prompt", "x", "--project-command", "true", "--dry-run"
+    ], { encoding: "utf8" });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /must not contain Change Loop files/);
   } finally { rmSync(project, { recursive: true, force: true }); }
 });

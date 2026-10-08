@@ -26,13 +26,13 @@ function workspace(t, ticked = "") {
   return root;
 }
 
-function fakeLeases(root, leases, { releaseError = [] } = {}) {
+function fakeLeases(root, leases, { releaseError = [], state = {} } = {}) {
   const calls = [];
   return {
     calls,
     runtime: createSessionLeaseRuntime({
       stableHash,
-      loadRuntime: () => ({ workspace: { path: root } }),
+      loadRuntime: () => ({ workspace: { path: root }, ...state }),
       activeChangeLeases: () => leases,
       acquire: (id, taskId, flags) => {
         calls.push(["acquire", taskId, flags.owner]);
@@ -89,6 +89,19 @@ test("a scope refusal routes back to advance; release owns stale-authority renew
     assert.match(error.message, /outside granted scope: tests\/b\.spec\.js\. Revert/);
     assert.match(error.message, /'claude-foundation advance demo --through build'$/);
     assert.doesNotMatch(error.message, /agents acquire/);
+    return true;
+  });
+});
+
+test("a scope refusal resumes toward the target already requested, never a shorter one", (t) => {
+  const root = workspace(t, "T001 T002");
+  const owner = sessionLeaseOwner("demo", "T001", stableHash);
+  const scoped = fakeLeases(root, [{ taskId: "T002", owner, leaseId: "l1" }], {
+    releaseError: ["task 'T002' changed outside granted scope: tests/b.spec.js; x"],
+    state: { requestedThrough: "archived" }
+  });
+  assert.throws(() => scoped.runtime.settle("demo"), (error) => {
+    assert.match(error.message, /'claude-foundation advance demo --through archived'$/);
     return true;
   });
 });
@@ -512,6 +525,26 @@ test("settle ticks a leased task whose focused check passes and keeps a failing 
   assert.match(issued.instructions.join(" "), /do not edit tasks\.md/);
 });
 
+// A repository task is ticked exactly like a root task: its check runs in its
+// own repository sandbox and the checkbox lands in the control ledger.
+test("an accepted repository task is ticked in the control ledger after its check passes", (t) => {
+  const root = checkedWorkspace(t);
+  const api = mkdtempSync(join(tmpdir(), "session-check-api-"));
+  t.after(() => rmSync(api, { recursive: true, force: true }));
+  const state = { workspace: { path: root }, repositories: { api: { path: api } } };
+  const seen = [];
+  const runtime = createSessionLeaseRuntime({
+    stableHash, loadRuntime: () => state, activeChangeLeases: () => [],
+    acquire: () => ({ leaseId: "l1" }), discard: () => {}, release: () => {},
+    runCheck: (id, check) => runTaskCheck({ loadRuntime: () => state,
+      spawn: (shell, args, options) => { seen.push(options.cwd); return { status: 0 }; } }, id, check)
+  });
+  assert.deepEqual(runtime.tickAccepted("demo", ["T002"]), ["T002"]);
+  assert.deepEqual(seen, [api]);
+  assert.match(readFileSync(join(root, "openspec", "changes", "demo", "tasks.md"), "utf8"),
+    /^- \[x\] \*\*T002\*\* Second \[repo:api\]/m);
+});
+
 test("a single-agent handoff is recorded, then completed by its passing check", (t) => {
   const root = checkedWorkspace(t);
   let state = { workspace: { path: root } };
@@ -658,4 +691,38 @@ test("a dependent is not ticked when its dependency fails verify in the same bat
   assert.deepEqual(state().sessionHandoff.taskIds, ["T001", "T002"]);
   writeFileSync(join(root, "a.done"), "");
   assert.equal((await runtime.advanceThrough("demo", "proven")).reached, "proven");
+});
+
+// Wave-4 probe: a task whose verify already passed on unchanged code was
+// marked complete with no edit. A behavior task with no diff in its declared
+// paths is handed back instead; one that changed its paths is ticked.
+test("a passing verify with no change in a behavior task's paths does not complete it", (t) => {
+  const root = workspace(t);
+  const ledger = join(root, "openspec", "changes", "demo", "tasks.md");
+  writeFileSync(ledger,
+    "- [ ] **T001** First — verify: `npm test -- a` [paths:src/a.js]\n" +
+    "- [ ] **T002** Second — verify: `npm test -- b` [paths:src/b.js]\n");
+  let state = { workspace: { path: root }, sessionHandoff: { version: 1, taskIds: ["T001", "T002"] } };
+  const runtime = createSessionLeaseRuntime({
+    stableHash, loadRuntime: () => state, saveRuntime: (next) => { state = next; },
+    activeChangeLeases: () => [], acquire: () => ({ leaseId: "l" }), release: () => {},
+    discard: () => {},
+    runCheck: () => ({ status: "pass", exitCode: 0, output: "ok" }),
+    taskChangeIssue: (_id, taskId) => taskId === "T001"
+      ? "task T001 completed with no change: its verify passed, but nothing changed in its declared paths (src/a.js)"
+      : null
+  });
+  assert.deepEqual(runtime.settle("demo"), ["T002"]);
+  const content = readFileSync(ledger, "utf8");
+  assert.equal(taskLineChecked(content, "T001"), false, "no change, no completion");
+  assert.equal(taskLineChecked(content, "T002"), true);
+  const handed = runtime.issue("demo", {
+    action: "EDIT", tasks: [{ id: "T001" }], execution: { mode: "session", leases: [] }
+  });
+  assert.match(handed.verificationFailures[0].output, /completed with no change/);
+  // A self-ticked task with no change is reopened the same way.
+  writeFileSync(ledger, tickTaskLine(readFileSync(ledger, "utf8"), "T001"));
+  state = { ...state, sessionHandoff: { version: 1, taskIds: ["T001"] } };
+  assert.deepEqual(runtime.settle("demo"), []);
+  assert.equal(taskLineChecked(readFileSync(ledger, "utf8"), "T001"), false);
 });

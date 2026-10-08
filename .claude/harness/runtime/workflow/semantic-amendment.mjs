@@ -3,7 +3,8 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import {
-  normalizeSemanticDraft, renderRequirementMarkdown, renderSpecHeading
+  deriveRepositoryTaskDependencies, normalizeSemanticDraft, renderRequirementMarkdown,
+  renderSpecHeading
 } from "./semantic-draft.mjs";
 import { coverageRationale, coverageStatus } from "./validation/reader-guide.mjs";
 import { scopeAllowsPath } from "../core/graph-execution.mjs";
@@ -109,9 +110,18 @@ export function taskContractOnlyAmendment(amendment) {
       Object.keys(row).every((field) => fields.includes(field)));
 }
 
-/** The shape `change amend --template` prints; the verify-only form leads. */
+/**
+ * The shape `change amend --template` prints; the verify-only form leads.
+ * `save` comes first: the host refuses a shell-written JSON file, while the
+ * file tool falls under the seeded `Edit(/.foundation/drafts/**)` rule.
+ */
 export function semanticAmendmentTemplate() {
   return {
+    save: "Write one form below (its value, without the form name) with the Write tool to " +
+      ".foundation/drafts/<change>-amendment.json; that path is pre-allowed and the tool " +
+      "creates the folder. Do not save it through the shell (heredoc, cat >, echo >): the " +
+      "host refuses those. Then run claude-foundation change amend <change> " +
+      ".foundation/drafts/<change>-amendment.json.",
     verifyOnly: {
       version: 1,
       reason: "Correct the verify command of an unfinished task",
@@ -375,16 +385,24 @@ export function verifyDirectoryTargets(command) {
   return targets;
 }
 
+// Declared repositories other than root: nested ones and trusted siblings
+// (`../sdk`, admitted by the catalog only with allowOutsideRoot).
 function catalogRepositories(repositories) {
   return (Array.isArray(repositories) ? repositories : [])
     .filter((row) => row && row.id && row.id !== "root")
     .map((row) => ({
       id: String(row.id),
       path: String(row.relativePath || "").replace(/^\.\//, "").replace(/\/+$/, ""),
-      absolutePath: row.path || null
+      absolutePath: row.path || null,
+      mode: row.mode === "read" ? "read" : "write"
     }))
-    .filter((row) => row.path && row.path !== "." && !row.path.startsWith("../") &&
-      row.path !== "..");
+    .filter((row) => row.path && row.path !== "." && row.path !== "..");
+}
+
+function selectionEntries(selection) {
+  return new Map((Array.isArray(selection) ? selection : [])
+    .map((entry) => typeof entry === "string" ? { id: entry } : entry)
+    .filter((entry) => entry?.id).map((entry) => [String(entry.id).trim(), entry]));
 }
 
 function selectionIds(selection) {
@@ -409,6 +427,7 @@ export function taskRepositoryIssues(tasks, {
   const byId = new Map(declared.map((row) => [row.id, row]));
   const selected = selectionIds(selection);
   const selectedSet = new Set(selected);
+  const selectedEntries = selectionEntries(selection);
   const selectsOtherRepository = selected.some((id) => id !== "root");
   const declaredList = declared.map((row) => `${row.id} (${row.path})`).join(", ");
   const owner = (path) => declared.find((row) => atOrUnder(path, row.path)) || null;
@@ -427,6 +446,10 @@ export function taskRepositoryIssues(tasks, {
           "bind it to a selected repository (a new repository needs 'change revise' before Build)"
         : `${subject} runs in repository '${repository}', which the draft's 'repositories' ` +
           `does not list; add { "id": "${repository}", "mode": "write" } to 'repositories'`);
+    const mode = selectedEntries.get(repository)?.mode || repositoryRow?.mode;
+    if (repositoryRow && mode === "read" && stringList(task.paths).length)
+      issues.push(`${subject} edits files in repository '${repository}', which is read-only ` +
+        "in this change; bind the task to a writable repository");
     if (!String(task.repository || "").trim() && selectsOtherRepository)
       issues.push(`${subject} names no 'repository' while the draft selects ` +
         `${selected.join(", ")}; set 'repository' to the one that owns its files`);
@@ -471,6 +494,46 @@ export function taskRepositoryIssues(tasks, {
     }
   });
   return unique(issues);
+}
+
+/**
+ * Repository-derived order for an amendment's added tasks, exactly as start
+ * derives it: an added task follows the ledger's and the amendment's tasks in
+ * repositories nested inside its own (or that its repository `dependsOn`).
+ * Existing ledger lines keep their edges. `newTasks` are {id, semanticKey,
+ * repository, dependsOn} rows whose dependsOn already holds task ids.
+ */
+export function deriveAmendmentTaskDependencies(newTasks, tasksContent, options = {}) {
+  const existing = String(tasksContent || "").split("\n").filter((line) => taskId(line))
+    .map((line) => ({
+      id: taskId(line), semanticKey: semanticTaskKey(line),
+      repository: String(line).match(/\[repo:([^\]\s]+)\]/i)?.[1] || "root",
+      dependsOn: taskDepends(line)
+    }));
+  const derived = deriveRepositoryTaskDependencies([...existing, ...newTasks], {
+    ...options, consumers: new Set(newTasks.map((task) => task.id))
+  });
+  return {
+    tasks: derived.tasks.slice(existing.length),
+    issues: derived.issues.map((issue) => `amendment ${issue}`)
+  };
+}
+
+/** The repository-order issues `change amend --inspect` reports in one EDIT. */
+export function amendmentRepositoryOrderIssues(amendment, tasksContent, options = {}) {
+  const added = amendmentList(amendment, "addTasks").filter((task) => keyOf(task));
+  if (!added.length) return [];
+  const existingIds = new Map(String(tasksContent || "").split("\n")
+    .filter((line) => taskId(line))
+    .flatMap((line) => [[semanticTaskKey(line), taskId(line)], [taskId(line), taskId(line)]]));
+  const addedKeys = new Set(added.map(keyOf));
+  const resolve = (value) => addedKeys.has(value) ? value
+    : existingIds.get(value) || existingIds.get(String(value).toUpperCase()) || value;
+  return deriveAmendmentTaskDependencies(added.map((task) => ({
+    id: keyOf(task), semanticKey: keyOf(task),
+    repository: String(task.repository || "").trim() || "root",
+    dependsOn: stringList(task.dependsOn).map(resolve)
+  })), tasksContent, options).issues;
 }
 
 /** The same repository checks for an amendment's added and updated tasks. */
@@ -577,7 +640,8 @@ function amendmentIssues(amendment) {
 
 export function compileSemanticAmendment({
   amendment, contract, tasksContent, slugify, renderTask, semanticDraftVersion = 3,
-  loadCanonicalSpec = null, provenClaimIds = [], retiredTaskIds = []
+  loadCanonicalSpec = null, provenClaimIds = [], retiredTaskIds = [],
+  repositories = null, repositorySelection = null
 }) {
   const issues = amendmentIssues(amendment);
   if (![3, 4].includes(semanticDraftVersion))
@@ -893,6 +957,14 @@ export function compileSemanticAmendment({
   }
   for (const task of newTasks)
     task.dependsOn = stringList(task.dependsOn).map((key) => allocated.get(key)?.id);
+  if (newTasks.length && (Array.isArray(repositories) || Array.isArray(repositorySelection))) {
+    const ordered = deriveAmendmentTaskDependencies(newTasks.map((task) => ({
+      id: task.id, semanticKey: task.semanticKey,
+      repository: String(task.repository || "").trim() || "root", dependsOn: task.dependsOn
+    })), tasksContent, { repositories: repositories || [], selection: repositorySelection });
+    if (ordered.issues.length) return { issues: ordered.issues };
+    ordered.tasks.forEach((row, index) => { newTasks[index].dependsOn = row.dependsOn; });
+  }
   const renderedNewTasks = newTasks.map((task, index) => renderTask(task, maxTask + index));
   let nextTasks = taskLines.filter((line) => line !== null).join("\n").replace(/\s+$/, "");
   if (renderedNewTasks.length) nextTasks += `\n${renderedNewTasks.join("\n")}`;

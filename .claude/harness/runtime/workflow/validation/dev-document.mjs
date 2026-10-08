@@ -52,11 +52,13 @@ const PATH_TYPES = [
 // and package manifests. A change made only of these is light work.
 const LIGHT_PATHS = [
   ["docs", /\.(?:md|mdx|rst|txt)$|(?:^|\/)docs?\//i],
-  ["test", /(?:^|\/)(?:tests?|__tests__|spec)\/|\.(?:test|spec)\.[\w]+$/i],
+  ["test", /(?:^|\/)(?:tests?|__tests__|spec)\/|\.(?:test|spec)\.[\w]+$|(?:^|\/)test_[^/]+\.py$|_test\.(?:go|py)$/i],
   ["chore", /(?:^|\/)(?:package(?:-lock)?\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?)$/i]
 ];
 
-function lightKind(path) {
+// "docs", "test", "chore", or "" for product code. Prove's test
+// discrimination classifies changed paths the same way work-type inference does.
+export function lightKind(path) {
   return LIGHT_PATHS.find(([, pattern]) => pattern.test(path))?.[0] || "";
 }
 
@@ -94,6 +96,24 @@ export function docsOnlyDraft(draft) {
       String(spec?.operation || "added").toLowerCase() === "added");
 }
 
+// The work types a compiled change states: the "## Work type" section of
+// design.md (standard) or proposal.md (rapid), else a refactor section, else
+// what its tasks' [paths:] infer — so a change compiled before work types were
+// rendered still classifies the same way its draft did.
+export function packetWorkTypes({ design = "", proposal = "", tasks = "" } = {}) {
+  for (const document of [design, proposal]) {
+    const line = String(document || "").match(/^## Work type[ \t]*\n+([^\n]+)/m)?.[1];
+    if (line) return [...new Set(line.replace(/\(.*$/, "").split(",")
+      .map((type) => type.trim().toLowerCase()).filter(Boolean))];
+  }
+  const documents = `${design || ""}\n${proposal || ""}`;
+  if (/^## Refactor invariants/m.test(documents) && !/^## Bugfix analysis/m.test(documents))
+    return ["refactor"];
+  const paths = [...String(tasks || "").matchAll(/\[paths:([^\]]*)\]/g)]
+    .flatMap((match) => match[1].split(",")).map(text).filter(Boolean);
+  return inferWorkTypes({ tasks: [{ paths }] });
+}
+
 export function workTypesInferred(draft) {
   return !draftWorkTypes(draft).length && inferWorkTypes(draft).length > 0;
 }
@@ -120,8 +140,10 @@ const NO_FAILURE_MATRIX = new Set([...LIGHT_WORK, "refactor", "config"]);
 
 const SECTION_HELP = {
   summary: "'why' (or 'summary'): 1-3 plain sentences on what the user gets and what changes",
-  failureMatrix: "'failureMatrix': [{ failure, userSees, recovery }] for each way this can fail, " +
-    "or a requirement scenario with kind 'failure' (optional 'recovery') it is derived from",
+  failureMatrix: "'failureMatrix': [{ failure, userSees, recovery }] for each way this can fail " +
+    "(e.g. { \"failure\": \"invalid input\", \"userSees\": \"400 naming the field\", " +
+    "\"recovery\": \"resend valid input\" }), or add a requirement scenario with \"kind\": " +
+    "\"failure\" (optional \"recovery\"); the harness derives the matrix from it",
   userFlow: "'userFlow': { purpose, source } with a Mermaid flowchart of the user's path, including the error path",
   uiStates: "'uiStates': [{ screen, states: [loading, empty, error, success…], accessibility }]",
   componentMap: "'componentMap': [{ component, responsibility, files }] mapping each component to its files",
@@ -149,17 +171,48 @@ function userFlowSource(value) {
 
 const NO_SEPARATE_RECOVERY = "No separate step; the outcome is the handling";
 
+// Scenarios the author did not classify are read as failures only when their
+// own words say so: an error status first, or a rejection/error verb. An
+// explicit kind (success, boundary...) is never second-guessed.
+const FAILURE_STATUS = /^\s*[45]\d\d\b/;
+const FAILURE_WORDS = new RegExp("\\b(?:reject\\w*|invalid|malformed|errors?|fail(?:s|ed|ure|ures)?|" +
+  "den(?:y|ies|ied)|forbidden|unauthori[sz]ed|not found|throws?|refus\\w*)\\b", "i");
+
+function scenarioList(requirement) {
+  return Array.isArray(requirement?.scenarios) ? requirement.scenarios
+    : requirement?.scenario !== undefined ? [requirement.scenario] : [];
+}
+
+function scenarioFailureKind(row) {
+  if (!row || typeof row !== "object") return "";
+  const kind = text(row.kind).toLowerCase();
+  if (kind) return kind === "failure" ? "explicit" : "";
+  return FAILURE_STATUS.test(text(row.then)) ||
+    FAILURE_WORDS.test([row.name, row.when, row.then].map(text).join(" ")) ? "inferred" : "";
+}
+
+// A scenario's kind for the acceptance table: the authored kind (success is
+// "happy", boundary is "edge"), else failure when its own words say so, else
+// "unclassified". Nothing else is inferred.
+export function scenarioKindLabel(row) {
+  const kind = text(row?.kind).toLowerCase();
+  if (kind) return kind === "success" ? "happy" : kind === "boundary" ? "edge" : kind;
+  return scenarioFailureKind(row) ? "failure" : "unclassified";
+}
+
 function failureScenarios(draft) {
-  return (Array.isArray(draft?.requirements) ? draft.requirements : []).flatMap((requirement) => {
-    const list = Array.isArray(requirement?.scenarios) ? requirement.scenarios
-      : requirement?.scenario !== undefined ? [requirement.scenario] : [];
-    return list.filter((row) => text(row?.kind).toLowerCase() === "failure")
-      .map((scenario) => ({ requirement: text(requirement?.key), scenario }));
-  });
+  const found = (Array.isArray(draft?.requirements) ? draft.requirements : [])
+    .flatMap((requirement) => scenarioList(requirement).map((scenario) => ({
+      requirement: text(requirement?.key), scenario, how: scenarioFailureKind(scenario)
+    })).filter((row) => row.how));
+  // Authored failure scenarios are authoritative; words are only a fallback.
+  return found.some((row) => row.how === "explicit")
+    ? found.filter((row) => row.how === "explicit") : found;
 }
 
 // Failures are written once. An authored matrix is authoritative; without one,
-// each requirement scenario of kind 'failure' becomes a row.
+// each requirement scenario of kind 'failure' (or, unclassified, one that
+// states a rejection or error) becomes a row.
 export function derivedFailureMatrix(draft) {
   if (present(draft?.failureMatrix)) return draft.failureMatrix;
   return failureScenarios(draft).map(({ requirement, scenario }) => ({
@@ -170,11 +223,33 @@ export function derivedFailureMatrix(draft) {
   })).filter((row) => row.failure && row.userSees);
 }
 
-// The title is the intent and 'why' states the value, so a separate summary
-// would say the same thing a third time; either one gives the reader the lead.
+// What the harness filled in, so a reader can tell it from authored text: the
+// reason (the intent states it), the failure matrix (read from scenarios), and
+// evidence capabilities defaulted to the lane's plain check.
+export function derivedByHarness(draft, { standard = true } = {}) {
+  const notes = [];
+  if (draft?.version !== 4 || !standard) return notes;
+  const required = requiredDevSections(draft);
+  if (!text(draft.summary) && !text(draft.why))
+    notes.push("**Why:** not authored separately; the intent above states it.");
+  if (required.includes("failureMatrix") && !present(draft.failureMatrix)) {
+    const rows = failureScenarios(draft);
+    if (rows.length)
+      notes.push(`**Failure matrix:** read from ${rows.some((row) => row.how === "inferred")
+        ? "scenarios that state a rejection or error" : "the failure scenarios"} ` +
+        `(${rows.length}); recovery is "${NO_SEPARATE_RECOVERY}" where unstated.`);
+  }
+  if (Array.isArray(draft._defaultedEvidence) && draft._defaultedEvidence.length)
+    notes.push("**Evidence capabilities:** defaulted to `test` (`static-analysis` for " +
+      `docs/chore) for ${draft._defaultedEvidence.join(", ")}.`);
+  return notes;
+}
+
 function sectionValue(draft, key) {
   if (key === "userFlow") return userFlowSource(draft?.userFlow);
-  if (key === "summary") return text(draft?.summary) || text(draft?.why);
+  // The intent already states the outcome; a draft with no separate reason is
+  // not sent back for one (derivedByHarness records it).
+  if (key === "summary") return text(draft?.summary) || text(draft?.why) || text(draft?.intent);
   if (key === "failureMatrix") return derivedFailureMatrix(draft);
   return draft?.[key];
 }
@@ -182,13 +257,14 @@ function sectionValue(draft, key) {
 // A standard change is approved and built from its dev document, so each
 // section its kind of work needs is an agent repair before compilation —
 // never a user question and never a refusal of the edit itself.
-export function devDocumentIssues(draft, { standard = true } = {}) {
+// `lane` names why the draft is standard when the harness derived it.
+export function devDocumentIssues(draft, { standard = true, lane = "" } = {}) {
   if (draft?.version !== 4 || !standard) return [];
   const issues = [];
   const types = inferWorkTypes(draft);
-  const label = workTypesInferred(draft)
+  const label = (workTypesInferred(draft)
     ? `${types.join(", ")}, inferred from paths; or declare workType to override`
-    : types.join(", ") || "change";
+    : types.join(", ") || "change") + (lane ? `; standard lane: ${lane}` : "");
   for (const key of requiredDevSections(draft)) {
     const value = sectionValue(draft, key);
     if (!present(value)) issues.push(`dev document (${label}) needs ${SECTION_HELP[key]}`);
@@ -302,7 +378,8 @@ export function withNewPaths(draft, exists) {
 
 // A tree of every path the change touches, marked + add, ~ change, - remove.
 // Directory scopes end in `/`; the reader sees the shape of the change at once.
-export function renderFolderTree(draft) {
+// Rendered inside design.md's file map, which already lists the paths.
+export function renderFileTree(draft) {
   const marks = new Map();
   const fresh = newPaths(draft);
   for (const row of Array.isArray(draft?.fileMap) ? draft.fileMap : []) {
@@ -337,29 +414,13 @@ export function renderFolderTree(draft) {
     });
   };
   walk(root, "");
-  return "## Folder tree\n\n`+` add · `~` change · `-` remove\n\n```text\n" + lines.join("\n") + "\n```";
+  return "`+` add · `~` change · `-` remove\n\n```text\n" + lines.join("\n") + "\n```";
 }
 
 function requirementsByTask(draft) {
   const claimToKey = new Map((draft?.claims || []).map((claim) => [claim.id, claim.requirementKey]));
   return new Map((draft?.tasks || []).map((task) => [task.id,
     [...new Set((task.claims || []).map((claim) => claimToKey.get(claim)).filter(Boolean))]]));
-}
-
-// The plan Build executes, in dependency order with the check for each step.
-export function renderPlan(draft) {
-  const tasks = draft?.tasks || [];
-  if (!tasks.length) return "";
-  const requirements = requirementsByTask(draft);
-  const rows = tasks.map((task) =>
-    `| ${task.id} | ${cell(task.outcome)} | ${cell(strings(task.paths))} | ` +
-    `${task.verify ? `\`${cell(task.verify)}\`` : "—"} | ${cell((task.dependsOn || []).join(", "))} | ` +
-    `${cell((requirements.get(task.id) || []).join(", "))} |`);
-  const edges = tasks.flatMap((task) => (task.dependsOn || []).map((dependency) =>
-    `  ${dependency} --> ${task.id}`));
-  return "## Plan\n\n| Task | Outcome | Files | Verify | Depends on | Requirements |\n" +
-    "|---|---|---|---|---|---|\n" + rows.join("\n") +
-    (edges.length ? `\n\n\`\`\`mermaid\ngraph TD\n${edges.join("\n")}\n\`\`\`` : "");
 }
 
 // Without an authored file map, each task scope is one row owned by its tasks.

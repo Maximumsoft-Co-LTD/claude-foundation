@@ -170,8 +170,10 @@ for approval on every harness step: `Bash(claude-foundation *)`,
 `Bash(.foundation/bin/claude-foundation *)`,
 `Bash(node .claude/harness/foundation.mjs *)`,
 `Edit(/.foundation/sandboxes/**)`,
-`Edit(/.foundation/repository-sandboxes/**)`, and `Edit(/.foundation/drafts/**)`
-(the Change draft). Project test runners get no rule: each Build task returns
+`Edit(/.foundation/repository-sandboxes/**)`, `Edit(/.foundation/drafts/**)`
+(the Change draft: `change start --template` leads with a `save` field telling
+the agent to write it with the Write tool, since the host refuses a shell heredoc),
+and `Edit(/openspec/investigations/**)` (the Investigate record). Project test runners get no rule: each Build task returns
 its verify as a `checkCommand` (`claude-foundation exec <change> --task <id> --
 <verify>`) that the CLI rule already covers. It adds only missing rules after
 your own, never removes or reorders entries, and a rerun adds nothing. The
@@ -198,7 +200,8 @@ also covers `Write`; edits elsewhere in the project stay denied):
 claude -p "/change <intent>" --allowedTools \
   "Bash(claude-foundation *)" "Bash(.foundation/bin/claude-foundation *)" \
   "Bash(node .claude/harness/foundation.mjs *)" "Edit(/.foundation/drafts/**)" \
-  "Edit(/.foundation/sandboxes/**)" "Edit(/.foundation/repository-sandboxes/**)"
+  "Edit(/.foundation/sandboxes/**)" "Edit(/.foundation/repository-sandboxes/**)" \
+  "Edit(/openspec/investigations/**)"
 ```
 
 Build checks run through `claude-foundation exec`, so test runners need no
@@ -417,12 +420,14 @@ Land has one visible goal: move the exact current work into its declared main
 workspace. Passing, failed, stale, inconclusive, or missing proof is recorded as
 assurance rather than used as authority. The Harness checks for conflicting
 target edits, applies only the authorized sandbox diff, then performs spec sync,
-archive, recovery, and cleanup as internal automation. If the code, tests,
-configuration, agreement, or
-relevant target paths moved, Land stops instead of overwriting them.
+archive, recovery, and cleanup as internal automation. Land never overwrites
+code, tests, configuration, the agreement, or relevant target paths that moved:
+your uncommitted edit on other lines is merged into the sandbox copy and
+proved again, and the agent merges an edit of the same lines.
 If the target branch simply advanced, the agent synchronizes the existing
 sandbox, re-proves it, and continues Land. Your work is preserved and you do
-not create a new change. A real replay conflict still stops for your judgment.
+not create a new change. A replay conflict goes to the agent; you are asked
+only when the intended result is a real choice.
 Several changes can be active at once, even on the same files: none waits for
 another during Build, Prove, or Land, and whichever lands later synchronizes
 and re-proves. Only a shared resource declared with `[resources:]` serializes.
@@ -605,7 +610,7 @@ openspec/changes/<change-id>/
 | File | What it answers | Why the harness needs it |
 |---|---|---|
 | `.openspec.yaml` | Is this `foundation-standard` or `foundation-rapid`? | Selects the artifact workflow for this change |
-| `proposal.md` | Why change, what changes (with a folder tree), and what is excluded? | Prevents scope and impact from being implicit; a rapid proposal also carries the user flow, failure matrix, and Plan |
+| `proposal.md` | Who and which lane, why change, what is in and out of scope, how each requirement is accepted, and what done means? | Prevents scope and impact from being implicit; a rapid proposal also carries the user flow and failure matrix |
 | `specs/<area>/spec.md` | What observable behavior is added, modified, or removed? | Gives Prove stable requirements and `WHEN`/`THEN` scenarios; Land merges the deltas into current specs |
 | `design.md` | How is it built: user flow, components, contracts, data, UI states, failures, decisions, and the Plan? | The dev document Build executes; sections follow the work type and empty ones are omitted |
 | `tasks.md` | What implementation work remains? | The sole implementation ledger; stable IDs and checkboxes make Build resumable |
@@ -631,8 +636,14 @@ Land; declared docs-only work writes none) and normally omits design; agent
 defaults and typed sections such as `refactor` or `configContract` render in
 its proposal without changing the lane. It is eligible
 only for low-impact, isolated work with no public contract, persistent
-migration, security trigger, or irreversible effect. If stronger requirements
-appear, `/change` upgrades the same change to standard.
+migration, security trigger, or irreversible effect. The harness derives impact
+and coupling from the draft (tasks across services, packages, or repositories;
+persistence paths; API, event, or migration work) and never lowers them, so an
+omitted or understated declaration still selects standard; the proposal names
+why. If stronger requirements appear, `/change` upgrades the same change to standard.
+A low-tier rapid change with no security keyword, risk signal, or `--review` is
+proven by the project's own tests and lands without an AI review; with Land
+authority one `advance --through archived` carries it from Build to `archived`.
 
 ## Understanding change states
 
@@ -819,8 +830,9 @@ you to.
   credentials still block execution.
 - Land records missing, failed, inconclusive, invalid, or stale proof as
   assurance; those outcomes do not override an explicit user decision. Apply
-  still refuses conflicts and uncommitted edits on touched target paths — it
-  names the clobbered paths instead of letting the last writer win.
+  refuses only target-path edits not yet merged into the sandbox or still in
+  conflict — it names the clobbered paths instead of letting the last writer
+  win.
 - Land warns — without blocking — when the target is checked out on
   `main`/`master`; every land guard stays commit-based.
 - Land is a journaled, resumable apply that allows stacked changes and never
@@ -834,6 +846,11 @@ you to.
   a search that could reach secret files skips them or lists only file names,
   and Go files are formatted in place. The secrets hook refuses the read only
   when no redacted copy can be made or `FOUNDATION_SECRETS_GUARD=block` is set.
+- `shell-route-guard.sh` refuses only shell shapes the host would stop on an
+  approval prompt anyway: `cd <dir> && git …` or a direct test run during
+  Build. The refusal names the command to run instead (`git -C <dir> …` or
+  `claude-foundation exec <change> -- <command>`). A matching allow rule lets
+  the call through.
 - `no-direct-main-commit.sh` is opt-in because some projects allow controlled
   commits on their default branch; `doctor` reports whether it is enabled.
 

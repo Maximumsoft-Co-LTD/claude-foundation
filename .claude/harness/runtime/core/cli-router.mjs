@@ -424,7 +424,7 @@ export async function routeRuntimeCommand(command, values, api) {
         prepareClaudeTelemetry(rest[0], flags.phase);
         recordPhaseContext(rest[0], flags.phase);
       }
-      if (flags.task && !flags.phase && !flags.repo) showAgentTask(rest[0], flags.task, flags);else showPacket(rest[0], flags);
+      if (flags.task && !flags.phase && !flags.repo) showAgentTask(rest[0], flags.task, { ...flags, allowCompleted: true });else showPacket(rest[0], flags);
     },
     "metrics": async () => {
       showMetrics(values[0]);

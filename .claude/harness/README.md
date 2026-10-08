@@ -72,7 +72,8 @@ read-only argument.
 | Core | `runtime/core/lifecycle-outcome.mjs` | Owner-validated lifecycle outcomes and target-versus-delivery user projection |
 | Core | `runtime/core/land-grant.mjs` | Session/change/proof/target-bound explicit Land authority |
 | Core | `runtime/core/tool-preparation.mjs` | Project-local tool readiness, preparation identity, and setup boundaries |
-| Core | `runtime/core/tool-identity.mjs` | Per-process, content-keyed reuse of successful OpenSpec probes, strict lint, and Git index queries |
+| Core | `runtime/core/tool-identity.mjs` | Content-keyed reuse of successful OpenSpec probes and strict lint (persisted in `.foundation/cache/`), and per-process Git index queries |
+| Core | `runtime/core/git-head.mjs` | HEAD and "not a repository" answered from repository files, falling back to Git for any layout it does not model |
 | Core | `runtime/core/lifecycle-reducer.mjs` | Typed lifecycle transitions and compatibility-preserving state mutation |
 | Core | `runtime/core/process-runtime.mjs` | Provider process execution, readiness checks, and managed services |
 | Core | `runtime/core/signals.mjs` | Process-scoped signals (drift restored, budget warning, already archived) that keep their stream line and ride on the advance envelope |
@@ -140,7 +141,8 @@ read-only argument.
 | Docs | `README.md` | Runtime overview and operator guide |
 
 Semantic draft version 4 is the default. Agents write intent, requirements,
-tasks, evidence capabilities, and explicit discovery dispositions once; the
+tasks, and explicit discovery dispositions once (evidence capabilities default
+to `test`); the
 harness derives required dimensions, refuses unresolved coverage, and validates
 the decision frontier before the compiler generates stable IDs, cross-ledger
 links, specs, and safe detected provider wiring. Multiple specs,
@@ -226,7 +228,7 @@ claude-foundation doctor --stage prove --change <change>
 | `change start <draft.json>` | Compiles, validates, installs, and prepares one isolated change transactionally | Completing Change |
 | `change revise <change> <draft.json>` | Recompiles a revised semantic draft over the same change id through the start intake gate in the same call (an incomplete intake prints its action and changes nothing), with rollback and a requirement delta for approval; `--merge` applies the file as a partial draft over the recorded compiled-from draft; `--approve-spec --decision-ref <ref> [--through <target>]` records the user's approval in that call | An agreed semantic change must change before Build starts |
 | `change amend <change> <amendment.json>` | Adds, revises, or removes requirements, requiring and retaining a discovery delta for v4; a verify-only `updateTasks` amendment fixes an unfinished task's verify command (`--template` prints both); inspects in the same call and amends only at `DONE`, and accepts the same approval flags as `change revise` | A semantic v3/v4 Build discovers new or changed behavior |
-| `change amend <change> --task <key\|id> --verify <command>` | Corrects one unfinished task's verify command directly through the same transaction; keeps the spec approval, claims, and capabilities, refuses an always-passing command, and accepts the task only when the new command passes | A task's verify command is wrong |
+| `change amend <change> --task <key\|id> --verify <command> [--reopen]` | Corrects one task's verify command directly through the same transaction (`--reopen` unticks a completed task); keeps the spec approval, claims, and capabilities, refuses an always-passing command, and accepts the task only when the new command passes | A task's verify command is wrong |
 | `advance <change> --through build\|proven\|archived` | Runs deterministic steps and returns one `EDIT`, `RUN_EXTERNAL`, `REPAIR`, `WAIT`, `ASK_USER`, or `DONE` action | Every normal step after Change |
 
 Every route `advance` returns stays on this surface: a `command`, `next`,
@@ -252,10 +254,11 @@ the envelope carries, and the budget no-progress cap are specified in
 | `agents plan <change> [--group <n>] [--pretty]` | Persists the full plan and prints a ≤4 KiB summary or one dispatch group | Before spawning independent workers |
 | `agents dispatch <change> [--pretty]` | Returns one graph- and lease-bound native-host action | Advanced host integration behind `advance` |
 | `advance <change> [--through build\|proven\|archived] [--host-result <result.json>] [--pretty]` | Runs deterministic lifecycle work and returns one minimal action at a real boundary | Normal post-Change agent path |
-| `advance <change> --decision retry\|wait\|pause --decision-fingerprint <hash> --decision-ref <ref> --reason <approach>` | Records the user's current recovery choice and resumes its retained target; grants no unrelated authority | Agent records an explicit answer |
+| `advance <change> --decision retry\|wait\|pause\|merge\|retain --decision-fingerprint <hash> --decision-ref <ref> --reason <approach>` | Records the user's answer to the offered recovery or advance decision and resumes its retained target; grants no unrelated authority | Agent records an explicit answer |
+| `advance <change> --through archived --restore-target <path,path>` / `--recover-apply settle\|keep-current\|restore-backup` / `advance <change> --undo-land`, each with `--decision-ref <ref>` where the user decides | Restores conflicting target paths inside Land, settles an interrupted apply, or undoes an archived Land whose diff is still uncommitted; see [WORKFLOW.md § `/land`](../../WORKFLOW.md#land-change) | Land conflict, interrupted apply, or the user's undo |
 | `doctor` | Checks runtime and project readiness | After install or when diagnosing setup |
 | `changes` | Lists active changes and readiness | Finding work to resume or land |
-| `packet <change> --phase <phase>` | Prints a compact diagnostic handoff; review packets are ≤8 KiB | Operator/debug inspection |
+| `packet <change> --phase <phase>` | Prints a compact diagnostic handoff; review packets are ≤20 KiB; `--task` for a completed task prints its read-only packet (`executionAuthority.status: "completed"`) | Operator/debug inspection |
 | `packet <change> --repo <id> [--task <id>] [--pretty]` | Prints a bounded repository or task packet | Starting a native subagent |
 | `metrics <change>` | Reports measured phase/provider cost, emitted context bytes, and blocked operations by code, phase, and operation with the latest local reason | Finding latency, orchestration overhead, or where a change keeps stopping |
 | `feedback <change> [--pretty] [--diagnostics]` | Reports current readiness, source-aware timing, repair intervals, blocker coverage, evidence reuse, and the next action; diagnostics exports allowlisted metadata | Explaining why Prove took time without labeling repair as wait |
@@ -286,6 +289,8 @@ the envelope carries, and the budget no-progress cap are specified in
 | `handoff packet <change> [--id H00n]` | Emits one credential-free operator packet | Sending the exact operation to its named owner |
 | `handoff record <change> ...` | Records accepted/completed/rejected/cancelled/superseded outcomes with durable references | Updating operational state without reopening developer tasks |
 | `migrate [legacy-id] [--apply]` | Reads legacy `.workflow/` state and optionally creates migration candidates | Recovering an older installation without promoting unverified prose |
+| `host instruction <command> --protocol 1 --format json --arguments <text>` | Resolves the package-owned command instruction | Host integration without reading consumer command files |
+| `host agent-contract --protocol 1 --format json` | Resolves the portable package-owned agent contract | Installing or refreshing a host adapter |
 
 `/land <change>` is the only user-facing Land operation. The registered
 `land check`, `land advance`, `land recover`, `land archive`, `land record`,
@@ -295,8 +300,6 @@ transaction; agents must not ask users to compose or run them. `land check` runs
 Land's own pre-mutation preflight read-only, so it stops on the same code Land
 would; `land advance` prints only the `advance --through archived` JSON
 envelope, on its first run as on every later one.
-| `host instruction <command> --protocol 1 --format json --arguments <text>` | Resolves the package-owned command instruction | Host integration without reading consumer command files |
-| `host agent-contract --protocol 1 --format json` | Resolves the portable package-owned agent contract | Installing or refreshing a host adapter |
 
 Consumer-quality configuration is opt-in and remains report-only until the
 project explicitly enables enforcement. The complete installed command,
@@ -552,8 +555,18 @@ repository and advances the complete set together.
 For an **isolated copy**, files another change landed that this sandbox never
 touched fast-forward into the sandbox (baseline included), and a file both sides
 edited is named as a `CONFLICT` at sync rather than discovered at Land. Merge
-the target's version into the sandbox copy, then declare it with
-`--resolve <path>` (comma-separate several paths).
+the target's version into the sandbox copy and resume with `advance`: the next
+sync settles the path only when a 3-way check against the copy's stored base
+bytes proves the target's edit is in the copy and no conflict markers remain.
+`--resolve <path>` (comma-separate several paths) declares a merge explicitly.
+
+A copy keeps its base bytes in `.foundation/copy-base/`, a content-addressed
+store keyed by the baseline's sha256 and shared across changes. The declared
+surface is stored when the copy is made; any other path is stored the first
+time sync or Land sees it diverge while the target, the sandbox copy, or the
+base commit still holds the baseline bytes. Files over 8 MiB, binary files,
+and bases already gone are never stored, so their merges and restores stay
+unprovable and Land keeps the `target-edit-conflict` decision.
 
 A target that moved and could not be reconciled is always reported, never
 silent: `sandbox inspect <change>` shows the recorded base against the target's
@@ -566,8 +579,10 @@ the sandbox blocks the sync until the edit is ported there — only `tasks.md`
 ticks merge back automatically.
 Harness-owned semantic amendments stay in the sandbox until Land. Build
 preparation and base-move sync preserve them. Competing target packet edits
-require an approved resolution via `--resolve openspec/changes/<change>`;
-see the [Build-time amendment contract](../../WORKFLOW.md#build-change).
+stop `advance` with the `amended-agreement-conflict` decision; the user's
+answer is recorded with `advance --decision` (the primitive equivalent is
+`--resolve openspec/changes/<change>`); see the
+[Build-time amendment contract](../../WORKFLOW.md#change-intent).
 
 ## Evidence model
 
@@ -591,12 +606,14 @@ listings elsewhere name this file as their source rather than restating it.
 | Path | Contents |
 |---|---|
 | `.foundation/runtime/` | Runtime operation and handoff state, one file per change |
+| `.foundation/drafts/` | Agent-written semantic drafts awaiting `change start` (the seeded allowlist permits edits here) |
 | `.foundation/intake/` | One draft/source-bound semantic intake snapshot per inspected draft path |
 | `.foundation/amendments/` | Transient verify-only amendment staged by `change amend --task/--verify`; removed when the command ends |
 | `.foundation/investigations/` | Source-bound Investigate state, metrics, no-progress checkpoint, and Change handoff digest |
 | `.foundation/receipts/` | Live content-bound provider receipts and `proof.json` |
 | `.foundation/evidence/` | Immutable proof bundles: manifests, receipt copies, durable artifacts, and the hash-chained review-attempt ledger |
 | `.foundation/snapshots/` | One content snapshot descriptor per proof |
+| `.foundation/cache/` | Digest-keyed reuse of successful OpenSpec version probes and strict-lint passes across commands; safe to delete |
 | `.foundation/logs/` | Provider logs, telemetry events, receipt-reuse and budget audits |
 | `.foundation/locks/` | Recoverable per-change proof and authority mutation leases |
 | `.foundation/reviews/` | Structured reports returned by configured AI reviewers |
@@ -680,7 +697,11 @@ waves with ready/executed/reused node counts, measured queueing where execution 
 harness-owned, and peak concurrency. Unknown queueing remains `null`, never zero.
 
 Context is budgeted at the control surface: plan summaries are at most 4 KiB,
-task and review packets 8 KiB, repository packets 12 KiB, and global packets 16 KiB.
+task and review packets 20 KiB, repository packets 24 KiB, and global packets 32 KiB.
+These defaults give a measured three-repository, three-task change (20 claims on
+one task) about 1.5x headroom; `foundation.json execution.packetBytes` overrides
+them within the hard `2048..65536` ceiling, and an over-budget packet blocks with
+its largest fields.
 Oversized artifacts are referenced by path and digest. The budget covers the
 exact compact bytes written to stdout. Every emitted plan and packet records
 its byte count as an atomic event below

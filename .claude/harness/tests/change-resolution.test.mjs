@@ -282,12 +282,18 @@ try {
   assert.equal(existsSync(join(changeDir, "specs", "change", "spec.md")), false);
   rmSync(join(changeDir, "specs"), { recursive: true, force: true });
 
-  // Under risk-tiered policy every change gets an AI review: "not required"
-  // was false (benchmark v3.5.29), so the route is named instead.
+  // Under risk-tiered policy every reviewed change names its route ("not
+  // required" was false there, benchmark v3.5.29). A quiet low-tier rapid
+  // change is proven by deterministic evidence alone and says so.
   reviewPolicy = "risk-tiered";
   run({}, { intent: "Create kanban board", schema: "foundation-rapid", securityTriggers: [] });
+  assert.match(output, /review: not required \(rapid lane, low tier: deterministic evidence only\)\n/);
+  run({}, { intent: "Create kanban board", schema: "foundation-standard", securityTriggers: [] });
   assert.match(output, /review: risk-tiered AI review \(low tier, fast model\)\n/);
   assert.doesNotMatch(output, /not required/);
+  run({ review: true }, { intent: "Create kanban board", schema: "foundation-rapid", securityTriggers: [] });
+  assert.match(output, /review: risk-tiered AI review \(low tier, fast model\)\n/,
+    "a requested review keeps review on the rapid lane");
   run({ impact: "high" }, { intent: "Create kanban board", securityTriggers: [] });
   assert.match(output, /review: risk-tiered AI review \(high tier, configured model\)\n/);
   reviewPolicy = "legacy";
@@ -299,10 +305,29 @@ try {
     reviewPolicy: "legacy", state: { reviewRequired: false },
     claims: [{ id: "c", impact: "low", capabilities: ["test", "review"] }]
   }), "required");
+  // Medium tier runs the faster standard model class by default; a security or
+  // required-review trigger, a declared review, or a team pin keeps configured.
+  const mediumState = { impact: "medium", securityTriggers: [] };
+  const mediumClaims = [{ id: "c", impact: "low", capabilities: ["test"] }];
   assert.equal(reviewRouteLabel({
-    reviewPolicy: "risk-tiered", state: { impact: "medium", securityTriggers: [] },
-    claims: [{ id: "c", impact: "low", capabilities: ["test"] }]
+    reviewPolicy: "risk-tiered", state: mediumState, claims: mediumClaims
+  }), "risk-tiered AI review (medium tier, standard model)");
+  assert.equal(reviewRouteLabel({
+    reviewPolicy: "risk-tiered", modelByTier: { medium: "configured" },
+    state: mediumState, claims: mediumClaims
   }), "risk-tiered AI review (medium tier, configured model)");
+  assert.equal(reviewRouteLabel({
+    reviewPolicy: "risk-tiered", state: { ...mediumState, reviewRequired: true },
+    claims: mediumClaims
+  }), "risk-tiered AI review (medium tier, configured model)");
+  assert.equal(reviewRouteLabel({
+    reviewPolicy: "risk-tiered", state: { ...mediumState, reviewRequired: true, reviewKeywordOnly: true },
+    claims: mediumClaims
+  }), "risk-tiered AI review (medium tier, standard model)");
+  assert.equal(reviewRouteLabel({
+    reviewPolicy: "risk-tiered", state: mediumState,
+    claims: [{ id: "c", impact: "medium", capabilities: ["test", "security-static"] }]
+  }), "risk-tiered AI review (high tier, configured model)");
   assert.equal(reviewRouteLabel({ reviewPolicy: "risk-tiered", lowRiskModel: "configured",
     state: { impact: "low", securityTriggers: [] } }), "risk-tiered AI review (low tier, configured model)");
 

@@ -16,7 +16,9 @@ the bookkeeping, and installs the result transactionally.
 
 For an ordinary change, write only the intent, the behavior, and the tasks, and
 leave `version` out. `change start --template` prints this form first as
-`minimalDraft`:
+`minimalDraft`, preceded by a `save` field: the agent writes the draft with its
+Write tool to `.foundation/drafts/<id>.json` (a pre-allowed path), because the
+host refuses a shell heredoc:
 
 ```json
 {
@@ -163,7 +165,7 @@ Add complexity only when the work needs it:
 - dev document sections: `summary`, `userFlow` (Mermaid), `failureMatrix`,
   `componentMap`, `apiContracts`, `dataModel`, `uiStates`, `configContract`,
   `jobContract`, `bugfix`, or `refactor`. The harness infers `workType` from
-  task paths (declare it to override) and derives the folder tree, plan, file
+  task paths (declare it to override) and derives the folder tree, file
   map, and test map. A standard change must carry the sections its work type
   needs; a missing one is a draft repair for the agent, never a user question.
   Each fact is written once: `why` satisfies the summary (add `summary` only
@@ -195,10 +197,16 @@ and a fixed version rather than `latest` or a branch.
 
 Rapid changes contain `proposal.md`, `tasks.md`, `evidence.yaml`, and a concise
 delta `specs/<capability>/spec.md` rendered exactly as in standard; Land merges
-it into `openspec/specs`. Only a legacy rapid packet declaring `skip_specs` has
-no delta. The rapid proposal is the compact dev document: summary, what
-changes, user flow, folder tree (paths new at the base marked `+`), failure
-matrix, and the plan Build executes. Descriptive sections (`fileMap`,
+it into `openspec/specs`. Only a legacy rapid packet or declared docs-only work
+(`workType: ["docs"]` adding requirements) declares `skip_specs` and has no
+delta, so README wording never becomes a living requirement. Every proposal opens with a rendered header (id, lane and why,
+owner, created, status) and states scope, an acceptance traceability table
+(requirement, scenario, task, evidence, test files), and a definition of done
+generated from the enforced policy, with an optional one-line `successMeasure`.
+Tasks live only in `tasks.md`; the derived folder tree (paths new at the base
+marked `+`) sits in `design.md`'s file map. The rapid proposal is the compact
+dev document: summary, user flow, failure matrix, and its decisions.
+Existing changes keep their older layout and still read. Descriptive sections (`fileMap`,
 `testMap`, `componentMap`, `userFlow`, `configContract`, `refactor`) render
 there too and never move a low-risk change to standard. A standard v4 change
 always adds `design.md` with the full dev document and states its work type,
@@ -220,7 +228,8 @@ claude-foundation change revise <change> <draft.json>
 
 The revised draft keeps the change id and passes the same intake gate as
 `change start` in the same call: an incomplete intake prints its action and
-changes nothing. The whole packet is recompiled transactionally, the contract
+changes nothing. With `--merge` the file holds only the keys and keyed entries
+it changes, adds, or removes (`"$remove": true`). The whole packet is recompiled transactionally, the contract
 revision increments, and any failure restores the prior packet and runtime
 state. Once Build has a workspace, a receipt, or a completed task, the command
 routes to `change amend`. The result lists the added, revised, and removed
@@ -239,8 +248,9 @@ claude-foundation change amend <change> <amendment.json> --consume-amendment
 
 It preserves completed tasks, custom prose, diagrams, and unrelated sections;
 adds stable links, increments the revision, validates, and rolls back on
-failure. An existing task may gain claim coverage, but replacing its outcome,
-or a completed task's verify command, requires a new task. To fix the verify
+failure. An existing task may gain claim coverage, but replacing its outcome
+requires a new task; a completed task's verify command changes only with
+`reopen: true`, which unticks it so it must pass again. To fix the verify
 command of an unfinished task, send only `updateTasks: [{"key", "verify",
 "paths"?}]`: no requirement, evidence, or intake is needed, and Prove reruns
 that task's evidence. `change amend --template` prints both forms. Legacy changes retain their

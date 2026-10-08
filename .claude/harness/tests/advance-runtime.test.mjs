@@ -65,6 +65,19 @@ test("advance returns bounded Build work without invoking a model", () => {
   assert.equal(value.resumeCommand, "claude-foundation advance change-a");
 });
 
+test("a single-task EDIT carries the whole recipe so the agent reads no Build doc", () => {
+  const value = coordinatorAction({
+    ...base,
+    dispatch: { action: "run-in-session", reason: "one repository" },
+    plan: { groups: [["T001"]], tasks: [
+      { id: "T001", text: "Add it — verify: `node --test`", repository: "root", paths: ["a.js"] }] }
+  });
+  const notes = value.instructions.join(" ");
+  assert.match(notes, /^Implement T001 inside the workspace\./);
+  assert.match(notes, /resume command once: advance runs every task's verify check/);
+  assert.match(notes, /checkCommand .* just to diagnose/);
+});
+
 test("each Build task carries its focused check in the pre-allowed harness exec form", () => {
   const value = coordinatorAction({
     ...base,
@@ -116,7 +129,10 @@ test("a verify that starts with an environment assignment runs through sh -c", (
     { encoding: "utf8" }).stdout.split("\n").slice(0, -1);
   assert.deepEqual(argv, ["sh", "-c", "CI=1 npm test"]);
   // Only tasks with a verify carry a checkCommand, and the instruction says so.
-  assert.match(value.instructions.join(" "), /checkCommand where present/);
+  // Advance itself runs every check, so the agent resumes instead of
+  // spending a round trip on each check first.
+  assert.match(value.instructions.join(" "), /present only where it has a verify/);
+  assert.match(value.instructions.join(" "), /resume command once: advance runs every/);
 });
 
 test("a task with a stale execution record is handed back as re-verification, not new work", () => {
@@ -448,6 +464,29 @@ test("advance --through build stops before proof and preserves one resume route"
   assert.equal(value.reached, "build");
   assert.equal(value.resume, null);
   assert.equal(value.next, "claude-foundation advance change-a --through proven");
+});
+
+test("advance records the furthest requested target once, never lowering it", async () => {
+  const state = { status: "building", workspace: { path: "/tmp/change" } };
+  let saves = 0;
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => state,
+    saveRuntime: (value) => { saves += 1; Object.assign(state, value); },
+    agentDispatchValue: () => ({ action: "build-complete" }),
+    relevantHash: () => "workspace-a",
+    deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => ({}), proofAdvancePath: () => "/proof.json", stableHash,
+    output: () => {}
+  });
+  await runtime.advanceThrough("change-a", "build");
+  assert.equal(state.requestedThrough, "build");
+  await runtime.advanceThrough("change-a", "proven");
+  assert.equal(state.requestedThrough, "proven");
+  const before = saves;
+  await runtime.advanceThrough("change-a", "build");
+  assert.equal(state.requestedThrough, "proven", "a later shorter request never lowers the target");
+  assert.equal(saves, before, "an unchanged target is not rewritten");
 });
 
 test("advance --through records each phase once", async () => {
@@ -943,6 +982,53 @@ test("a rapid two-task EDIT names the files to open: packet, existing task paths
   assert.deepEqual(value.contextScope, { paths: "absolute", specs: "none" });
   // Existing fields stay.
   assert.deepEqual(value.allowedPaths, ["src/a.js", "src/b.js", "src/**"]);
+});
+
+// Submodule smoke: lib's T001 passed and was ticked in the isolated ledger,
+// but the EDIT for root's T002 pointed at the main checkout's unticked
+// tasks.md and named only the root workspace, so the agent concluded lib was
+// never built. The envelope now reads the live ledger and names finished
+// dependency work and where it lives.
+test("an EDIT names the live ledger and the completed dependency's workspace", async (t) => {
+  const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const root = mkdtempSync(join(tmpdir(), "advance-completed-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const packet = join(root, "openspec", "changes", "change-a");
+  const box = join(root, "box");
+  const ledger = join(box, "openspec", "changes", "change-a");
+  const libBox = join(root, "lib-box");
+  for (const dir of [packet, ledger, libBox]) mkdirSync(dir, { recursive: true });
+  writeFileSync(join(packet, "proposal.md"), "# Proposal\n");
+  writeFileSync(join(packet, "tasks.md"), "- [ ] **T001** lib\n- [ ] **T002** app\n");
+  writeFileSync(join(ledger, "tasks.md"), "- [x] **T001** lib\n- [ ] **T002** app\n");
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => ({ status: "building", workspace: { mode: "copy", path: box },
+      repositories: { lib: { path: libBox } } }),
+    changePath: () => packet,
+    agentDispatchValue: () => ({ action: "run-in-session", reason: "one repository" }),
+    agentPlanValue: () => ({
+      groups: [["T002"]],
+      tasks: [{ id: "T002", text: "app — verify: `npm test`", repository: "root",
+        paths: ["main.js"], dependsOn: ["T001"] }],
+      graph: { nodes: [
+        { id: "task:T001", kind: "task", repository: "lib", dependsOn: [] },
+        { id: "task:T002", kind: "task", repository: "root", dependsOn: ["task:T001"] }
+      ] }
+    }),
+    relevantHash: () => "workspace-a", deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => ({}), proofAdvancePath: () => "/proof.json", stableHash,
+    output: () => {}
+  });
+  const value = await runtime.advanceThrough("change-a", "build");
+  assert.equal(value.action, "EDIT", JSON.stringify(value));
+  assert.deepEqual(value.workspaces, { root: box });
+  assert.deepEqual(value.completed, [{ id: "T001", repository: "lib", workspace: libBox }]);
+  assert.ok(value.contextFiles.includes(join(ledger, "tasks.md")));
+  assert.ok(!value.contextFiles.includes(join(packet, "tasks.md")));
+  assert.ok(value.contextFiles.includes(join(packet, "proposal.md")));
 });
 
 test("envelope context keeps only files inside the workspace or repository bases", async (t) => {

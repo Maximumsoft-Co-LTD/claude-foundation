@@ -23,7 +23,7 @@ the active transcript's prompt starts with `/dev`.
 - **Rewrite or guide before the tool runs** (the default): print
   `{"hookSpecificOutput":{"hookEventName":"PreToolUse","updatedInput":{...},"additionalContext":"..."}}`
   and exit 0. The host runs the call with `updatedInput` (when present) and
-  surfaces `additionalContext` to the model. The guards never refuse by
+  surfaces `additionalContext` to the model. These guards never refuse by
   default: `phase-mutation-guard` redirects main-checkout edits into the
   isolated workspace, routes internal Land commands to `advance`, and turns an
   unauthorized delivery into the question for the user; `protect-secrets.sh`
@@ -33,6 +33,14 @@ the active transcript's prompt starts with `/dev`.
   `{"decision":"block","reason":"..."}` to stdout and exit 0. Used only when a
   host sets `FOUNDATION_GUARDRAIL_MODE=block`, `FOUNDATION_SHELL_GUARD=block`,
   or `FOUNDATION_SECRETS_GUARD=block`.
+- **Route a host-refused shell shape** (default): `shell-route-guard.sh` denies
+  only a Bash call the host would stop on an approval prompt anyway. Its
+  reason is the command to run instead: `cd <dir> && git …` → `git -C <dir> …`;
+  a direct test run while a change is in Build → `claude-foundation exec
+  <change> [--repo <id>] -- <command>`. A matching Bash allow rule,
+  `bypassPermissions`, or a command it cannot parse lets the call through.
+  `FOUNDATION_GUARDRAIL_MODE=audit` turns the denial into advice, and `off`
+  disables it.
 - **Feed back after the tool ran**: exit 2 with diagnostics on stderr. The
   host must surface stderr to the model. Used by `lint.sh`.
 - Exit 0 with no output means allow. Hooks fail open when a toolchain is

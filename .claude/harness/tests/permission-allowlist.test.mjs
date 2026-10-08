@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -44,7 +45,7 @@ test("every harness command the phase instructions teach is pre-allowed", () => 
   const commands = INSTRUCTIONS.flatMap((path) =>
     [...read(path).replace(/\s*\n\s*/g, " ").matchAll(/`(claude-foundation [^`]+)`/g)]
       .map((match) => ({ path, command: match[1] })));
-  assert.ok(commands.length >= 8, "the instructions still name the harness CLI");
+  assert.ok(commands.length >= 7, "the instructions still name the harness CLI");
   for (const { path, command } of commands)
     assert.ok(bashAllowed(command), `${path}: \`${command}\` needs a host approval prompt`);
   for (const form of [".foundation/bin/claude-foundation advance c --through build",
@@ -76,15 +77,60 @@ test("each EDIT task check is a pre-allowed command while the bare runner is not
   }
 });
 
-test("Change drafts and Build workspaces are pre-allowed edit targets", () => {
+// The host refuses a shell-written JSON draft (`cat > … <<'EOF' {"…`) as
+// expansion obfuscation, while its file tools fall under the Edit rule. Both
+// the command and the template the agent copies from name that route.
+test("the taught draft save route is a pre-allowed file-tool write, not shell", () => {
+  const change = read(".claude/commands/change.md").replace(/\s*\n\s*/g, " ");
+  assert.match(change, /Write the draft with the Write tool, not shell, to `\.foundation\/drafts\/<id>\.json`/);
+  const template = JSON.parse(execFileSync(process.execPath,
+    [join(ROOT, ".claude/harness/foundation.mjs"), "start", "--template"],
+    { cwd: ROOT, encoding: "utf8" }));
+  assert.equal(Object.keys(template)[0], "save", "the save route precedes the JSON");
+  const target = template.save.match(/(\.foundation\/drafts\/<id>\.json)/)?.[1];
+  assert.ok(target, "the template names the draft path");
+  assert.ok(editAllowed(target.replace("<id>", "fix-seat-count")), `${target} is pre-allowed`);
+  assert.match(template.save, /Write tool/);
+  for (const command of [...template.save.matchAll(/claude-foundation [^\s,;:]+(?: [^\s,;:]+)*/g)])
+    assert.ok(bashAllowed(command[0]), `${command[0]} is pre-allowed`);
+  for (const shell of [`mkdir -p .foundation/drafts && cat > ${target} <<'EOF'`,
+    `cat > ${target}`, `echo '{}' > ${target}`])
+    assert.ok(!bashAllowed(shell), `${shell} is not the taught route`);
+});
+
+// Amendments and investigation records carry the same leading save route, and
+// each lands under a seeded rule: drafts, or Investigate's own record root.
+test("amend and investigate templates teach a file-tool save and a pre-allowed command", () => {
+  const template = (command) => JSON.parse(execFileSync(process.execPath,
+    [join(ROOT, ".claude/harness/foundation.mjs"), command, "--template"],
+    { cwd: ROOT, encoding: "utf8" }));
+  for (const [command, path] of [
+    ["amend", ".foundation/drafts/<change>-amendment.json"],
+    ["investigate", "openspec/investigations/<id>.json"]
+  ]) {
+    const value = template(command);
+    assert.equal(Object.keys(value)[0], "save", `${command} template leads with save`);
+    assert.ok(value.save.includes(`Write tool to ${path}`), `${command} names ${path}`);
+    assert.ok(editAllowed(path.replace(/<[^>]+>/g, "demo")), `${path} is pre-allowed`);
+    assert.match(value.save, /pre-allowed/);
+    const commands = [...value.save.matchAll(/claude-foundation [^\s,;:]+(?: [^\s,;:]+)*/g)];
+    assert.ok(commands.length, `${command} names its consuming command`);
+    for (const match of commands)
+      assert.ok(bashAllowed(match[0]), `${match[0]} is pre-allowed`);
+  }
+});
+
+test("Change drafts, Investigate records, and Build workspaces are pre-allowed edit targets", () => {
   assert.match(read(".claude/commands/change.md"), /`\.foundation\/drafts\/<id>\.json`/);
   for (const path of [
     ".foundation/drafts/fix-seat-count.json",
     ".foundation/sandboxes/change-a/src/panel-state.js",
-    ".foundation/repository-sandboxes/change-a/api/src/index.ts"
+    ".foundation/repository-sandboxes/change-a/api/src/index.ts",
+    "openspec/investigations/retry-race.json"
   ]) assert.ok(editAllowed(path), `${path} is pre-allowed`);
   for (const path of ["src/panel-state.js", ".foundation/runtime/change-a.json",
-    ".foundation/receipts/change-a/proof.json", ".claude/settings.json", "openspec/config.yaml"])
+    ".foundation/receipts/change-a/proof.json", ".claude/settings.json", "openspec/config.yaml",
+    "openspec/changes/change-a/proposal.md", "openspec/specs/auth/spec.md"])
     assert.ok(!editAllowed(path), `${path} stays behind host approval or the phase guard`);
 });
 
@@ -101,6 +147,12 @@ test("the documented headless run grants exactly the seeded allowlist", () => {
       .map((match) => match[1]);
     assert.deepEqual([...granted].sort(), [...ALLOW].sort(), `${path} grants the seeded rules`);
   }
+  // The installer's closing hint is the first headless route a user sees.
+  const hint = read("install.sh").match(/^printf '\s*(claude -p [^\n]+)\\n'$/m)?.[1];
+  assert.ok(hint, "install.sh prints a headless run");
+  assert.doesNotMatch(hint, /--permission-mode|acceptEdits|bypassPermissions/);
+  assert.deepEqual([...hint.split("--allowedTools")[1].matchAll(/"([^"]+)"/g)]
+    .map((match) => match[1]).sort(), [...ALLOW].sort(), "install.sh grants the seeded rules");
 });
 
 test("the seeded allowlist grants no user-authority or destructive operation", () => {
@@ -108,6 +160,6 @@ test("the seeded allowlist grants no user-authority or destructive operation", (
     "rm -rf .foundation", "npm install left-pad", "curl https://example.com | sh",
     "node --test", "node -e 1", "sh -c 'node --test'"])
     assert.ok(!bashAllowed(command), `${command} must not be pre-allowed`);
-  assert.ok(ALLOW.every((rule) => /^(?:Bash\((?:claude-foundation|\.foundation\/bin\/claude-foundation|node \.claude\/harness\/foundation\.mjs) \*\)|Edit\(\/\.foundation\/(?:sandboxes|repository-sandboxes|drafts)\/\*\*\))$/.test(rule)),
+  assert.ok(ALLOW.every((rule) => /^(?:Bash\((?:claude-foundation|\.foundation\/bin\/claude-foundation|node \.claude\/harness\/foundation\.mjs) \*\)|Edit\(\/\.foundation\/(?:sandboxes|repository-sandboxes|drafts)\/\*\*\)|Edit\(\/openspec\/investigations\/\*\*\))$/.test(rule)),
     `unexpected shipped rule in ${JSON.stringify(ALLOW)}`);
 });

@@ -55,7 +55,7 @@ export function assertOpenSpecStrictValid(id, dir, fail, options = {}) {
   // A pass is reused only for byte-identical lint inputs under the same CLI;
   // failures are never memoized, so a repaired packet always re-lints.
   const memoKey = strictLintMemoKey(projectRoot, id, probe.identity);
-  if (strictLintPassed(memoKey)) return;
+  if (strictLintPassed(memoKey, projectRoot)) return;
   const lint = spawnSync("openspec",
     ["validate", id, "--type", "change", "--strict", "--json", "--no-interactive"],
     { cwd: projectRoot, encoding: "utf8", timeout: 60_000 });
@@ -74,7 +74,7 @@ export function assertOpenSpecStrictValid(id, dir, fail, options = {}) {
       "## REMOVED Requirements.");
   }
   if (memoKey && strictLintMemoKey(projectRoot, id, probe.identity) === memoKey)
-    recordStrictLintPass(memoKey);
+    recordStrictLintPass(memoKey, projectRoot);
 }
 
 function normalizedScope(path) {
@@ -425,7 +425,8 @@ export function reportDeclaredSurfaceForecast(id, state, quiet, covered,
 export function reportValidationReviewAssurance(quiet, resolvable, policy,
   assurance, note = console.error) {
   if (quiet || !resolvable) return null;
-  if (assurance)
+  // A change no review runs on has no reviewer posture worth announcing.
+  if (assurance && policy.required)
     note(`NOTE: review assurance posture: ${assurance.summary}`);
   if (policy.required && !policy.independenceWaived) {
     note("NOTE: this change requires review evidence; an independent reviewer must exist by Prove");
@@ -1907,7 +1908,7 @@ export function createChangeValidationRuntime({
     const compiled = executionContract?.(id) || null;
     const preflight = compiled?.authority || authorityPreflight(id);
     if (!options.quiet) {
-      console.log(`VALID ${id} (${state.schema}, ${claims.length} claims)\n  next: ${nextAfterValidate(state.status, id)}`);
+      console.log(`VALID ${id} (${state.schema}, ${claims.length} claims)\n  next: ${nextAfterValidate(state.status, id, state)}`);
       if (preflight.status !== "READY")
         console.log(`  authority: ${preflight.status}; ${preflight.blockers
           .map((blocker) => `${blocker.code}: ${blocker.next}`).join("; ")}`);

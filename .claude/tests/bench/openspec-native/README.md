@@ -189,11 +189,117 @@ timeout can therefore keep observed browser and task-mirror counts even when
 the final result envelope never arrives. Cost remains unavailable in that case;
 the scorecard never guesses dollars from an external price table.
 
+The final result envelope is the only source of cost, and the runner used to
+stop the host at `proven`/`archived` before it was sent. A stopped host now gets
+`--final-envelope-grace-ms` (default 15000, `0` disables) to finish its closing
+message. The scorecard's wall time stays the moment the backend reached the
+terminal state; the wait is not counted. When no envelope arrives anyway, token
+counts fall back to the host's streamed per-request `usage` (largest value per
+request id, summed), flagged `usage.tokenSource: "stream-derived"` and
+`partial`; an unmeasured count stays `null`, and cost stays `unavailable`
+because no dollars are derived from tokens.
+
+`usage.modelRequests` counts distinct streamed assistant request ids up to the
+terminal-state moment; requests the host makes for its closing narration inside
+the grace are reported apart as `usage.postTerminalModelRequests`. The
+envelope's `num_turns` counts conversation turns (about tool calls plus one),
+not model requests, so it is kept as `hostReportedModelRequests` and used only
+when no request was observed.
+
+## Time gate (advisory, 1.5x rapid / 1.8x standard)
+
+The product target is Change Loop wall time of at most 1.5x (rapid lane) or
+1.8x (standard lane) the same task without the harness; `--target` overrides
+both. `time-gate.mjs` checks it from scorecards of both arms
+(rows with `arm: "baseline"` against Change Loop rows, which carry no arm or
+`arm: "change-loop"`; a lab run directory, `scorecard.json` files, or scorecard
+JSONL are all read):
+
+```bash
+node .claude/tests/bench/openspec-native/time-gate.mjs \
+  .claude/tests/bench/results/openspec-native-lab [more roots] [--target <ratio>] [--strict] [--json]
+```
+
+Scenarios group into a `rapid` or `standard` tier by the lane recorded on the
+row, else by matrix risk (`low` is rapid). Per scenario it prints baseline and
+Change Loop median wall time, the ratio, median model requests, median
+`harnessActiveMs`, and total permission prompts; only completed runs count. A
+tier's ratio is the median of its paired scenarios' Change Loop medians over the
+median of their baseline medians. Exit 2 when any tier exceeds the target.
+
+This is advisory paid evidence like the rest of this lab: with no paired
+baseline it reports `advisory` and exits 0 (`--strict` exits 2), and
+`release-report.mjs` lists it under `advisories` without affecting
+`releaseReady`. It is never a deterministic CI failure.
+
 Request accounting keeps the effective, stream-observed, host-reported, and
 cap-consumed counts separately. On forced termination, an observed request
 count wins over a synthetic zero result envelope. A zero-cost envelope paired
 with observed model work is treated as unavailable rather than as free usage;
 nonzero final-envelope cost from an interrupted run remains partial.
+
+## No-harness baseline arm
+
+Every paid scenario can also run without Change Loop, scored by the same
+hidden oracle, so correctness, cost, wall time, and interruptions compare
+directly. The default arm stays `change-loop`; existing commands, prompts, and
+scorecards are unchanged apart from the additive `arm` field.
+
+```bash
+node .claude/tests/bench/openspec-native/lab.mjs \
+  --scenario notes-api --arm baseline
+```
+
+The baseline arm:
+
+- copies the same frozen seed and writes the same disposable marker, but runs
+  no installer: no `.claude/`, `openspec/`, `.foundation/`, hooks, or
+  `claude-foundation` shim. `run.mjs --arm baseline` refuses a project that
+  contains any of them. The seed becomes one local Git commit so read-only Git
+  works and the lab can keep the delivered diff as `product.patch`;
+- sends the scenario task text without its leading slash command, the canonical
+  project test command, and the same partition hint, then asks for direct
+  implementation with tests, a green project command, and uncommitted changes.
+  It carries no `advance`, review, archive, or Land instruction;
+- pre-approves only what a plain user would for the task under
+  `--permission-mode acceptEdits`: `Edit(/**)`, the project command's runner,
+  `npm test` when the manifest declares it, and read-only `git status`,
+  `git diff`, `git log`, and `git show`;
+- uses the same matrix wall, cost (`--max-budget-usd`), request, and tool-call
+  ceilings and the same model as the Change Loop arm;
+- ends when the host exits. There is no lifecycle watch, preflight, oracle
+  repair continuation, or resume. The oracle then grades the working tree the
+  host left, the project command runs once more, and the usual quality, clean
+  install, and friction measurements follow. A baseline row is `completed`
+  only when the host exited cleanly, its project command passes, and the oracle
+  passes.
+
+Check any arm for free first. `--dry-run` prepares the project, prints the
+prepared tree, the exact host argv and prompt, and the ceilings, calls no model,
+writes no results, and removes the project unless `--keep-project` is given:
+
+```bash
+node .claude/tests/bench/openspec-native/lab.mjs \
+  --scenario notes-api --arm baseline --dry-run
+```
+
+Compare arms side by side, from one or several result roots:
+
+```bash
+npm run bench:openspec-native:aggregate -- \
+  <change-loop-results> <baseline-results> --compare        # Markdown table
+npm run bench:openspec-native:aggregate -- \
+  <change-loop-results> <baseline-results> --compare-json   # pairwise JSON
+```
+
+Aggregates are keyed by scenario and arm; rows written before arms existed are
+Change Loop rows. The pairwise table reports oracle passes and median score,
+median cost, wall time, model requests, host tool calls, and permission prompts
+per arm. A `*` marks a cost that at least one run reported only partially,
+because the host was stopped before its result envelope (the Change Loop arm
+stops its host at `proven` or `archived`); compare such costs as lower bounds.
+The release report reads Change Loop rows only: a baseline row can neither
+promote nor block a matrix row, and is counted in `excludedComparisonRuns`.
 
 ## Collection-only verification
 

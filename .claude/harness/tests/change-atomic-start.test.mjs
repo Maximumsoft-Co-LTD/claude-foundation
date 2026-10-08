@@ -237,7 +237,7 @@ test("bare start inspects and starts a correct v4 draft in one command", (t) => 
   // One authoritative next step: no per-step `next` from CREATED/RESOLVED.
   assert.doesNotMatch(output, /complete artifacts, validate, then \/build/);
   assert.equal((output.match(/\n  next: /g) || []).length, 1);
-  assert.match(output, /next: claude-foundation advance single-shot-change --approve-spec --decision-ref <user-decision> --through build/);
+  assert.match(output, /next: claude-foundation advance single-shot-change --approve-spec --decision-ref <user-decision> --through proven/);
   assert.equal(existsSync(join(value.changes, "single-shot-change")), true);
   const runtime = JSON.parse(readFileSync(join(value.runtime, "single-shot-change.json"), "utf8"));
   assert.equal(runtime.status, "change");
@@ -452,14 +452,17 @@ test("a rapid draft without evidence capabilities starts with a derived test pro
   assert.deepEqual(contract.providers.test.command, ["sh", "-c", "npm test"]);
 });
 
-test("a draft that lands on the standard lane must declare evidence capabilities", (t) => {
+test("a draft that lands on the standard lane defaults evidence capabilities like rapid", (t) => {
   const value = fixture(t);
   writeJson(value.draftPath, rapidV3WithoutEvidence({
     decisions: [{ key: "shape", choice: "Keep one module", reason: "Smallest change" }]
   }));
-  assert.throws(() => value.lifecycle.startAtomic(value.draftPath),
-    /foundation-standard, which requires explicit evidence capabilities; add evidence\['derived-result'\]\.capabilities/);
-  assert.equal(existsSync(join(value.changes, "derived-evidence")), false);
+  value.lifecycle.startAtomic(value.draftPath);
+  const runtime = JSON.parse(readFileSync(join(value.runtime, "derived-evidence.json"), "utf8"));
+  assert.equal(runtime.schema, "foundation-standard");
+  const contract = JSON.parse(readFileSync(
+    join(value.changes, "derived-evidence", "evidence.yaml"), "utf8"));
+  assert.deepEqual(contract.claims.map((claim) => claim.capabilities), [["test"]]);
 });
 
 test("one start reports every detectable draft issue in a single EDIT", (t) => {
@@ -476,7 +479,8 @@ test("one start reports every detectable draft issue in a single EDIT", (t) => {
   const issues = result.intake.issues.join("\n");
   assert.match(issues, /alternatives must name at least two choices/);
   assert.match(issues, /domainLanguage\[0\]\.avoid is required/);
-  assert.match(issues, /requires explicit evidence capabilities; add evidence\['bounded-result'\]/);
+  // Omitted evidence capabilities are defaulted by the harness, never an issue.
+  assert.doesNotMatch(issues, /evidence/);
   assert.equal(existsSync(value.changes), false);
 });
 
@@ -731,7 +735,7 @@ test("a minimal draft joins an existing capability or asks which one", (t) => {
   const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
   assert.match(output, /^AGREED reject-empty-note-titles/m);
   assert.match(readFileSync(join(value.changes, "reject-empty-note-titles", "proposal.md"), "utf8"),
-    /^\| notes \| Reject a note whose title is empty \|/m);
+    /^- \*\*In scope \(`notes`\):\*\* Reject a note whose title is empty$/m);
 });
 
 // Problems Build used to discover are agent repairs on the first inspect.
@@ -906,6 +910,75 @@ test("change start returns an EDIT for a submodule task bound to root", (t) => {
     "repositories.yaml"), "utf8")).repositories, [{ id: "hook-api", mode: "write" }]);
 });
 
+// The superproject consumes its submodule: a root task that runs after the
+// submodule changes in the same change must see them, so the compiler writes
+// the edge into the ledger instead of leaving both tasks in one parallel wave.
+test("change start orders a root task after tasks in a nested repository", (t) => {
+  const value = fixture(t, { catalog: submoduleCatalog });
+  const twoRepositories = (overrides = {}) => minimalRapidV4({
+    repositories: [{ id: "root", mode: "write" }, { id: "hook-api", mode: "write" }],
+    // Two repositories derive the standard lane, which needs these.
+    why: "The app shows the bounded result computed by the hook-api submodule.",
+    failureMatrix: [{ failure: "The submodule result is unavailable",
+      userSees: "The app reports that the result is unavailable", recovery: "Retry the request" }],
+    requirements: [
+      ...minimalRapidV4().requirements,
+      { key: "consumer-result", capability: "single-shot-change", operation: "added",
+        scenarios: [{ name: "Consumer input", when: "The app asks for the result",
+          then: "The app returns the bounded result" }],
+        outcome: "The app returns the bounded result" }
+    ],
+    evidence: { "bounded-result": { capabilities: ["test"] },
+      "consumer-result": { capabilities: ["test"] } },
+    tasks: [
+      { key: "implement-bounded-result", repository: "hook-api",
+        outcome: "Implement the bounded result", covers: ["bounded-result"],
+        paths: ["internal/**"], verify: "go test -v ./..." },
+      { key: "use-bounded-result", repository: "root", outcome: "Use the bounded result",
+        covers: ["consumer-result"], paths: ["src/**"], verify: "npm test" }
+    ],
+    ...overrides
+  });
+  const cyclic = twoRepositories();
+  cyclic.tasks[0].dependsOn = ["use-bounded-result"];
+  writeJson(value.draftPath, cyclic);
+  const { result } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.equal(result.action, "EDIT");
+  assert.match(result.intake.issues.join("\n"),
+    /task 'use-bounded-result' \(repository 'root'\) must follow 'implement-bounded-result'/);
+  assert.equal(existsSync(value.changes), false);
+  writeJson(value.draftPath, twoRepositories());
+  assert.match(captureLog(() => value.lifecycle.startAtomic(value.draftPath)).output,
+    /^AGREED single-shot-change/m);
+  const ledger = readFileSync(join(value.changes, "single-shot-change", "tasks.md"), "utf8");
+  assert.match(ledger, /\*\*T001\*\*[^\n]*\[repo:hook-api\]/);
+  assert.doesNotMatch(ledger.match(/^.*\*\*T001\*\*.*$/m)[0], /\[depends:/);
+  assert.match(ledger, /\*\*T002\*\*[^\n]*\[repo:root\][^\n]*\[depends:T001\]/);
+  // An amendment whose added root task would follow an added submodule task
+  // that depends on it is returned as one EDIT, before anything is rewritten.
+  const amendmentPath = join(value.root, "amendment.json");
+  writeJson(amendmentPath, {
+    version: 1, reason: "Extend the result",
+    addRequirements: [{ key: "extended-result", capability: "single-shot-change",
+      operation: "added", scenarios: [{ name: "Extended input", when: "An extended input arrives",
+        then: "The extended result is returned" }], outcome: "The extended result is returned" }],
+    addTasks: [
+      { key: "use-extended-result", repository: "root", outcome: "Use the extended result",
+        covers: ["extended-result"], paths: ["src/**"], verify: "npm test" },
+      { key: "implement-extended-result", repository: "hook-api",
+        outcome: "Implement the extended result", covers: ["extended-result"],
+        paths: ["internal/**"], verify: "go test -v ./...", dependsOn: ["use-extended-result"] }
+    ],
+    evidence: { "extended-result": { capabilities: ["test"] } }
+  });
+  const amended = captureLog(() => value.lifecycle.inspectAmendment("single-shot-change",
+    "amendment.json", { quiet: true })).result;
+  assert.equal(amended.action, "EDIT");
+  assert.match(amended.intake.issues.join("\n"),
+    /amendment task 'use-extended-result' \(repository 'root'\) must follow 'implement-extended-result'/);
+  assert.equal(readFileSync(join(value.changes, "single-shot-change", "tasks.md"), "utf8"), ledger);
+});
+
 // `go test` prints `ok <package>` or `(cached)`: no test result Prove can read.
 test("a verify whose known runner prints no countable result gets an advisory, not a block", (t) => {
   assert.deepEqual(verifyCountAdvisories([
@@ -930,6 +1003,27 @@ test("a verify whose known runner prints no countable result gets an advisory, n
   assert.match(output, /^ {2}verify advisory: task 'implement-bounded-result' verify runs 'go test'/m);
 });
 
+// Every paid scenario saved the draft with `cat > … <<'EOF'`, which the host
+// refuses; the save route has to sit in the output the agent copies from.
+test("the start template leads with the pre-allowed file-tool save route", (t) => {
+  const template = fixture(t).lifecycle.rapidStartTemplate();
+  assert.deepEqual(Object.keys(template).slice(0, 2), ["save", "minimalDraft"]);
+  assert.match(template.save, /Write tool/);
+  assert.match(template.save, /\.foundation\/drafts\/<id>\.json/);
+  assert.match(template.save, /not .*shell.*heredoc/);
+  assert.match(template.save, /claude-foundation change start \.foundation\/drafts\/<id>\.json/);
+});
+
+test("a saved whole template still starts without the save note becoming draft content", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, {
+    save: value.lifecycle.rapidStartTemplate().save,
+    ...minimalRapidV4()
+  });
+  assert.match(captureLog(() => value.lifecycle.startAtomic(value.draftPath)).output,
+    /^AGREED single-shot-change/m);
+});
+
 test("the start template shows repository binding only when the project declares repositories", (t) => {
   const plain = fixture(t).lifecycle.rapidStartTemplate();
   assert.equal(plain.minimalDraftRepositories, undefined);
@@ -943,6 +1037,75 @@ test("the start template shows repository binding only when the project declares
   assert.equal(multi.repositoryExample.tasks[0].repository, "hook-api");
   // The minimal draft the agent copies stays root-only.
   assert.equal(multi.minimalDraft.repositories, undefined);
+});
+
+// A trusted sibling checkout (`../sdk`, allowOutsideRoot) is a declared
+// repository like a submodule: writable siblings own tasks and Land their
+// proven bytes; read siblings are proof inputs only.
+function siblingCatalog(root) {
+  return { version: 1, repositories: [
+    { id: "root", type: "root", path: root, relativePath: ".", mode: "write" },
+    { id: "users", type: "submodule", path: join(root, "services/users"),
+      relativePath: "services/users", mode: "write" },
+    { id: "sdk", type: "git", path: join(root, "../sdk"), relativePath: "../sdk", mode: "write" },
+    { id: "partner", type: "external", path: join(root, "../partner"),
+      relativePath: "../partner", mode: "read" }
+  ] };
+}
+
+test("a writable sibling repository outside the root owns tasks", (t) => {
+  const repositories = siblingCatalog("/project/gateway").repositories;
+  const selection = [{ id: "root", mode: "write" }, { id: "sdk", mode: "write" }];
+  assert.deepEqual(taskRepositoryIssues([
+    { semanticKey: "sdk", repository: "sdk", paths: ["src/**"], verify: "npm test" },
+    { semanticKey: "gw", repository: "root", paths: ["src/**"], verify: "npm test" }
+  ], { repositories, selection }), []);
+  // Root work still cannot reach the sibling through the parent directory.
+  assert.match(taskRepositoryIssues([{ semanticKey: "gw", repository: "root",
+    paths: ["src/**"], verify: "cd ../sdk && npm test" }], { repositories, selection }).join("\n"),
+  /verify changes into '\.\.\/sdk', outside repository 'root'/);
+  // A read-only repository is a proof input: it cannot own a task that edits files.
+  assert.match(taskRepositoryIssues([{ semanticKey: "p", repository: "partner",
+    paths: ["src/**"], verify: "npm test" }],
+  { repositories, selection: [{ id: "partner" }] }).join("\n"),
+  /task 'p' edits files in repository 'partner', which is read-only/);
+  assert.match(taskRepositoryIssues([{ semanticKey: "s", repository: "sdk",
+    paths: ["src/**"], verify: "npm test" }],
+  { repositories, selection: [{ id: "sdk", mode: "read" }] }).join("\n"),
+  /task 's' edits files in repository 'sdk', which is read-only/);
+  t.diagnostic("sibling binding checks are pure");
+});
+
+test("change start compiles tasks in root, a submodule, and a writable sibling", (t) => {
+  const value = fixture(t, { catalog: siblingCatalog });
+  const template = value.lifecycle.rapidStartTemplate();
+  assert.deepEqual(template.declaredRepositories, [
+    { id: "users", path: "services/users" }, { id: "sdk", path: "../sdk" },
+    { id: "partner", path: "../partner", mode: "read" }]);
+  assert.equal(template.repositoryExample.tasks[0].repository, "users");
+  writeJson(value.draftPath, minimalRapidV4({
+    repositories: [{ id: "root", mode: "write" }, { id: "users", mode: "write" },
+      { id: "sdk", mode: "write" }],
+    // Several repositories derive the standard lane, which needs these.
+    why: "The gateway, users service, and SDK all return the bounded result.",
+    failureMatrix: [{ failure: "A repository returns no result",
+      userSees: "The gateway reports the result is unavailable", recovery: "Retry the request" }],
+    tasks: [
+      { key: "users-result", repository: "users", outcome: "Implement the users result",
+        covers: ["bounded-result"], paths: ["src/**"], verify: "npm test" },
+      { key: "sdk-result", repository: "sdk", outcome: "Implement the sdk result",
+        covers: ["bounded-result"], paths: ["src/**"], verify: "npm test" },
+      { key: "gateway-result", repository: "root", outcome: "Implement the gateway result",
+        covers: ["bounded-result"], paths: ["src/**"], verify: "npm test" }
+    ]
+  }));
+  const { output, result } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.match(output, /^AGREED single-shot-change/m, JSON.stringify(result?.intake?.issues));
+  const ledger = readFileSync(join(value.changes, "single-shot-change", "tasks.md"), "utf8");
+  assert.match(ledger, /\*\*T002\*\*[^\n]*\[repo:sdk\][^\n]*\[paths:src\/\*\*\]/);
+  // Root contains its submodule but never its sibling.
+  assert.match(ledger, /\*\*T003\*\*[^\n]*\[repo:root\][^\n]*\[depends:T001\]/);
+  assert.doesNotMatch(ledger.match(/^.*\*\*T003\*\*.*$/m)[0], /T002/);
 });
 
 test("api contract errors without a status or code are an EDIT at start", (t) => {
@@ -975,7 +1138,9 @@ test("dev document sections and draft checks arrive together on the first inspec
   assert.equal(first.action, "EDIT");
   assert.equal(first.owner, "agent");
   const issues = first.intake.issues.join("\n");
-  assert.match(issues, /dev document \(api[^)]*\) needs 'why'/);
+  // The intent states the reason; only content that takes judgment is asked.
+  assert.doesNotMatch(issues, /needs 'why'/);
+  assert.match(issues, /dev document \(api[^)]*\) needs 'failureMatrix'/);
   assert.match(issues, /dev document \(api[^)]*\) needs 'apiContracts'/);
   assert.match(issues, /verify references 'tests\/api\/results\.test\.mjs'/);
 });
@@ -988,6 +1153,350 @@ test("open questions are listed with the approval packet", (t) => {
   const { result, output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
   assert.equal(result, "single-shot-change");
   assert.match(output, /open questions \(ask with the approval\):\n {4}- How long are results retained\?/);
-  assert.match(output, /next: ask these with the approval, record the answers in the draft, then claude-foundation change revise single-shot-change .*draft\.json --approve-spec --decision-ref <user-decision> --through build/);
+  assert.match(output, /next: ask these with the approval, record the answers in the draft, then claude-foundation change revise single-shot-change .*draft\.json --approve-spec --decision-ref <user-decision> --through proven/);
   assert.equal((output.match(/\n  next: /g) || []).length, 1);
+});
+
+// Benchmark finding: every paid change compiled as foundation-rapid because an
+// omitted impact/coupling defaulted to low/isolated, so a cross-service event
+// change or a migration got no design.md. Risk is derived from the draft.
+function derivedRiskV4(overrides = {}) {
+  const { impact: _impact, coupling: _coupling, ...base } = minimalRapidV4();
+  return {
+    ...base,
+    id: "share-order-total",
+    intent: "Share the order total with billing",
+    why: "Billing needs the order total to issue an invoice",
+    decisions: [],
+    requirements: [{
+      key: "order-total", capability: "order-total", operation: "added",
+      description: "The system SHALL share each order total with billing",
+      outcome: "Billing records each order total",
+      scenarios: [
+        { name: "Order placed", when: "An order is placed", then: "Billing records its total" },
+        { name: "Billing unavailable", kind: "failure", when: "Billing is down",
+          then: "The order total is retried later", recovery: "Retried on the next run" }
+      ]
+    }],
+    tasks: [
+      { key: "send-total", outcome: "Send the order total", covers: ["order-total"],
+        paths: ["services/orders/**"], verify: "npm test" },
+      { key: "record-total", outcome: "Record the order total", covers: ["order-total"],
+        paths: ["services/billing/**"], verify: "npm test" }
+    ],
+    evidence: { "order-total": { capabilities: ["test"] } },
+    ...overrides
+  };
+}
+
+function startedChange(value, id) {
+  const change = join(value.changes, id);
+  return {
+    state: JSON.parse(readFileSync(join(value.runtime, `${id}.json`), "utf8")),
+    proposal: readFileSync(join(change, "proposal.md"), "utf8"),
+    design: existsSync(join(change, "design.md"))
+  };
+}
+
+test("a draft whose tasks span two services derives coupled and compiles the standard design", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, derivedRiskV4());
+  const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.match(output, /^AGREED share-order-total/m);
+  assert.match(output, /NOTE: the harness derived coupling coupled \(derived: tasks span services\/billing, services\/orders\)/);
+  const { state, proposal, design } = startedChange(value, "share-order-total");
+  assert.equal(state.schema, "foundation-standard");
+  assert.equal(state.coupling, "coupled");
+  assert.equal(design, true, "a standard v4 change carries its dev document");
+  assert.match(proposal, /^- \*\*Coupling:\*\* coupled \(derived: tasks span services\/billing, services\/orders\)$/m);
+  assert.match(proposal, /^- \*\*Impact:\*\* low$/m);
+});
+
+test("an explicit low/isolated declaration never lowers the derived coupling", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, derivedRiskV4({ impact: "low", coupling: "isolated" }));
+  captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  const { state, proposal, design } = startedChange(value, "share-order-total");
+  assert.equal(state.schema, "foundation-standard");
+  assert.equal(state.coupling, "coupled");
+  assert.equal(design, true);
+  assert.match(proposal, /^- \*\*Coupling:\*\* coupled \(derived: tasks span services\/billing, services\/orders; declared isolated\)$/m);
+});
+
+test("a migration with rollback derives medium impact and the standard lane", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, derivedRiskV4({
+    id: "account-status-rollback",
+    intent: "Preserve account status on rollback",
+    why: "A rollback must not enable disabled accounts",
+    requirements: [{
+      key: "status-round-trip", capability: "account-status", operation: "added",
+      description: "The migration SHALL keep each account status through a rollback",
+      outcome: "Account status survives a rollback",
+      scenarios: [
+        { name: "Round trip", when: "The migration is applied and rolled back",
+          then: "Disabled accounts stay disabled" },
+        { name: "Rerun", kind: "failure", when: "The migration runs twice",
+          then: "No row changes on the second run" }
+      ]
+    }],
+    tasks: [{ key: "fix-rollback", outcome: "Fix the rollback", covers: ["status-round-trip"],
+      paths: ["db/migrations/002_account_status.sql"], verify: "npm test" }],
+    dataModel: [{ entity: "Account", fields: ["status"], migration: "002", rollback: "002 down" }],
+    evidence: { "status-round-trip": { capabilities: ["test"] } }
+  }));
+  const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.match(output, /^AGREED account-status-rollback/m);
+  const { state, proposal, design } = startedChange(value, "account-status-rollback");
+  assert.equal(state.schema, "foundation-standard");
+  assert.equal(state.impact, "medium");
+  assert.equal(design, true);
+  assert.match(proposal, /^- \*\*Impact:\*\* medium \(derived: data work: tasks touch db\/migrations\/002_account_status\.sql; requirements name data work \('rollback'\)\)$/m);
+  assert.match(proposal, /^- \*\*Coupling:\*\* isolated$/m);
+});
+
+test("a published API contract derives the standard lane and one actionable EDIT", (t) => {
+  const value = fixture(t);
+  // The minimal template shape with an API contract: one EDIT names every
+  // standard repair and why the lane is standard.
+  writeJson(value.draftPath, {
+    intent: "List notes through the JSON API",
+    requirements: [{
+      description: "The API SHALL return every note as JSON",
+      scenarios: [{ when: "A client requests GET /notes", then: "Every note is returned" }]
+    }],
+    tasks: [{ outcome: "Serve the notes list", verify: "npm test", paths: ["src/server.js"] }]
+  });
+  const { result } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.equal(result.action, "EDIT");
+  assert.equal(result.owner, "agent");
+  const issues = result.intake.issues.join("\n");
+  // Evidence capabilities and the reason are derived; the failure story is not.
+  assert.doesNotMatch(issues, /requires evidence|needs 'why'/);
+  assert.match(issues, /dev document \(code, inferred from paths[^\n]*standard lane: the harness derived impact medium[^\n]*\) needs 'failureMatrix'/);
+  assert.equal(result.intake.issues.length, 1);
+  assert.equal(existsSync(value.changes), false);
+
+  writeJson(value.draftPath, derivedRiskV4({
+    id: "list-notes", intent: "List notes through the JSON API",
+    why: "Clients need every note in one request",
+    requirements: [{
+      key: "list-notes", capability: "notes-api", operation: "added",
+      description: "The API SHALL return every note as JSON", outcome: "Every note is returned",
+      scenarios: [
+        { name: "List", when: "A client requests GET /notes", then: "Every note is returned" },
+        { name: "Store down", kind: "failure", when: "The store is unreadable",
+          then: "The API answers 503" }
+      ]
+    }],
+    tasks: [{ key: "serve", outcome: "Serve the notes list", covers: ["list-notes"],
+      paths: ["src/server.js"], verify: "npm test" }],
+    evidence: { "list-notes": { capabilities: ["test"] } }
+  }));
+  captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  const { state, design } = startedChange(value, "list-notes");
+  assert.equal(state.schema, "foundation-standard");
+  assert.equal(design, true);
+});
+
+// Change-phase round trips: a draft the harness can complete reaches AGREED in
+// one call; one it cannot returns exactly one EDIT carrying every issue.
+test("a standard-lane draft without why, failure matrix, or evidence agrees in one call", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, {
+    intent: "List and delete notes through the JSON API",
+    requirements: [{
+      description: "The API SHALL list notes and delete one by id",
+      scenarios: [
+        { when: "A client requests GET /notes", then: "Every note is returned" },
+        { when: "A client deletes an unknown note id", then: "404 not found is returned and nothing changes" }
+      ]
+    }],
+    tasks: [{ outcome: "Serve the notes API", verify: "npm test", paths: ["src/server.js"] }]
+  });
+  const { result, output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.notEqual(result?.action, "EDIT", output);
+  assert.match(output, /AGREED /);
+  assert.match(output, /NOTE: derived by harness \(listed in proposal\.md\): why, failure matrix, evidence capabilities/);
+  const id = readdirSync(value.changes).find((name) => name !== "archive");
+  const { state, proposal } = startedChange(value, id);
+  assert.equal(state.schema, "foundation-standard");
+  assert.match(proposal, /^## Derived by harness$/m);
+  assert.match(proposal, /\*\*Why:\*\* not authored separately; the intent above states it\./);
+  assert.match(proposal, /\*\*Failure matrix:\*\* read from scenarios that state a rejection or error \(1\)/);
+  assert.match(proposal, /\*\*Evidence capabilities:\*\* defaulted to `test`/);
+  // Only the unauthored fields were derived: the failing scenario is the row.
+  const design = readFileSync(join(value.changes, id, "design.md"), "utf8");
+  assert.match(design, /404 not found is returned and nothing changes/);
+  assert.doesNotMatch(design, /Every note is returned \|/);
+});
+
+test("authored why, failure matrix, and evidence are never replaced by derived values", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, derivedRiskV4({
+    id: "authored-wins", why: "Billing needs the order total to issue an invoice",
+    failureMatrix: [{ failure: "Billing is down", userSees: "Order accepted", recovery: "Retry nightly" }],
+    evidence: { "order-total": { capabilities: ["test", "compatibility"] } }
+  }));
+  captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  const { state, proposal } = startedChange(value, "authored-wins");
+  assert.equal(state.schema, "foundation-standard");
+  assert.match(proposal, /Billing needs the order total to issue an invoice/);
+  assert.match(readFileSync(join(value.changes, "authored-wins", "design.md"), "utf8"),
+    /Retry nightly/);
+  assert.doesNotMatch(proposal, /Derived by harness/);
+  const contract = JSON.parse(readFileSync(
+    join(value.changes, "authored-wins", "evidence.yaml"), "utf8"));
+  assert.deepEqual(contract.claims.map((claim) => claim.capabilities),
+    [["test", "compatibility"], ["test", "compatibility"]]);
+});
+
+test("a draft the harness cannot complete returns one EDIT with every issue", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, {
+    intent: "List notes through the JSON API",
+    coupling: "cross-repository",
+    securityTriggers: ["auth"],
+    requirements: [{
+      description: "The API SHALL return every note as JSON",
+      scenarios: [{ when: "A client requests GET /notes", then: "Every note is returned" }]
+    }],
+    tasks: [{ outcome: "Serve the notes list", paths: ["src/server.js"],
+      verify: "node --test tests/missing.test.mjs" }]
+  });
+  const { result } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.equal(result.action, "EDIT");
+  const issues = result.intake.issues.join("\n");
+  // Compiler, dev-document, preflight, and verify-path issues arrive together.
+  assert.match(issues, /needs 'failureMatrix'/);
+  assert.match(issues, /requires evidence\['[a-z-]+'\]\.capabilities/);
+  assert.match(issues, /start draft coupling must be isolated\|coupled/);
+  assert.match(issues, /verify references 'tests\/missing\.test\.mjs'/);
+  assert.doesNotMatch(issues, /needs 'why'/);
+  assert.doesNotMatch(issues, /executable evidence wiring/);
+  assert.equal(existsSync(value.changes), false);
+});
+
+test("small bugfix, feature, refactor, and docs drafts stay rapid without design.md", (t) => {
+  const cases = [
+    ["fix-rounding", { intent: "Round half values up",
+      requirements: [{ description: "The system SHALL round 2.5 to 3",
+        scenarios: [{ when: "2.5 is rounded", then: "3 is returned" }] }],
+      tasks: [{ outcome: "Fix rounding", verify: "npm test", paths: ["src/round.js"] }] }],
+    ["add-greeting", { intent: "Add a greeting",
+      requirements: [{ description: "The system SHALL greet a named user",
+        scenarios: [{ when: "Ada opens the page", then: "Hello, Ada is shown" }] }],
+      tasks: [{ outcome: "Greet the user", verify: "npm test", paths: ["src/greet.js"] }] }],
+    ["split-parser", { version: 4, intent: "Split the parser", workType: ["refactor"],
+      refactor: { invariants: ["Same output"], characterization: "npm test" },
+      requirements: [{ key: "same-output", capability: "parser", operation: "added",
+        description: "The parser SHALL keep its output", outcome: "The output is unchanged",
+        scenarios: [{ name: "Same", when: "Any input is parsed", then: "The output is unchanged" }] }],
+      tasks: [{ key: "split", outcome: "Split the parser", covers: ["same-output"],
+        paths: ["src/routes/parse.js"], verify: "npm test" }] }],
+    ["reword-guide", { intent: "Reword the guide",
+      requirements: [{ description: "The guide SHALL describe setup in three steps",
+        scenarios: [{ when: "A reader opens the guide", then: "Setup has three steps" }] }],
+      tasks: [{ outcome: "Reword the guide", verify: "npm test", paths: ["docs/guide.md"] }] }]
+  ];
+  for (const [id, draft] of cases) {
+    const value = fixture(t);
+    writeJson(value.draftPath, { id, ...draft });
+    const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+    assert.match(output, new RegExp(`^AGREED ${id}`, "m"), output);
+    assert.doesNotMatch(output, /the harness derived/);
+    const { state, proposal, design } = startedChange(value, id);
+    assert.equal(state.schema, "foundation-rapid", id);
+    assert.equal(design, false, id);
+    assert.match(proposal, /^- \*\*Impact:\*\* low$/m);
+    assert.match(proposal, /^- \*\*Coupling:\*\* isolated$/m);
+  }
+});
+
+// Every change's proposal states who and which lane, scope, acceptance links,
+// and what done means, rendered by the harness from data it already holds.
+test("a rapid proposal carries header, scope, acceptance table, definition of done, and one advisory NOTE", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4({
+    requirements: [{
+      key: "bounded-result", capability: "single-shot-change", operation: "added",
+      scenarios: [{ name: "Bounded input", kind: "success", when: "A bounded input arrives",
+        then: "The bounded result is returned" }],
+      outcome: "The bounded result is returned"
+    }],
+    tasks: [{ key: "implement-bounded-result", outcome: "Implement the bounded result",
+      covers: ["bounded-result"], paths: ["src/result.js", "test/result.test.js"], verify: "npm test" }]
+  }));
+  const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  // Advisory only: one compact NOTE, never an EDIT or a refusal.
+  assert.match(output, /^AGREED single-shot-change/m);
+  const notes = output.split("\n").filter((line) => line.startsWith("NOTE: coverage"));
+  assert.deepEqual(notes, [
+    "NOTE: coverage (advisory, no repair needed): no failure scenario; no edge/boundary scenario; " +
+    "no success measure stated (optional 'successMeasure')"]);
+  const proposal = readFileSync(join(value.changes, "single-shot-change", "proposal.md"), "utf8");
+  assert.match(proposal, /^- \*\*Change:\*\* `single-shot-change` · \*\*Lane:\*\* rapid \(low risk; see Impact\)$/m);
+  assert.match(proposal, /^- \*\*Owner:\*\* unassigned · \*\*Created:\*\* 2026-09-02 · \*\*Status:\*\* `claude-foundation changes`$/m);
+  assert.match(proposal, /^- \*\*In scope \(`single-shot-change`\):\*\* The bounded result is returned$/m);
+  assert.match(proposal, /^- \*\*Out of scope:\*\* edits outside `src\/result\.js`, `test\/result\.test\.js`$/m);
+  assert.match(proposal, /\| bounded-result \| happy \| T001 \| test\/result\.test\.js \|/);
+  assert.match(proposal, /^- Review: not required \(legacy review policy: no AI review runs\)\.$/m);
+  assert.match(proposal, /^- Changed tests fail on the original code\.$/m);
+  assert.match(proposal, /^- Success: acceptance scenarios above pass\.$/m);
+  // Each fact has one home: no plan table, change list, or folder tree here.
+  for (const heading of ["## Plan", "## What changes", "## Folder tree", "## Non-goals"])
+    assert.ok(!proposal.includes(heading), heading);
+});
+
+test("a classified, measured rapid draft raises no coverage NOTE and states its success measure", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4({
+    successMeasure: "p95 under 200 ms on the 10k-row fixture",
+    requirements: [{
+      key: "bounded-result", capability: "single-shot-change", operation: "added",
+      scenarios: [
+        { name: "Bounded input", kind: "success", when: "A bounded input arrives", then: "The result is returned" },
+        { name: "Invalid input", kind: "failure", when: "The input is invalid", then: "An error names the field" },
+        { name: "Empty input", kind: "boundary", when: "The input is empty", then: "An empty result is returned" }],
+      outcome: "The bounded result is returned"
+    }]
+  }));
+  const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.match(output, /^AGREED single-shot-change/m);
+  assert.doesNotMatch(output, /NOTE: coverage/);
+  const proposal = readFileSync(join(value.changes, "single-shot-change", "proposal.md"), "utf8");
+  assert.match(proposal, /^- Success: p95 under 200 ms on the 10k-row fixture\.$/m);
+  assert.match(proposal, /\| bounded-result › the-input-is-invalid \| failure \|/);
+  assert.match(proposal, /\| bounded-result › the-input-is-empty \| edge \|/);
+  // A malformed measure is a draft edit; an absent one never is.
+  writeJson(value.draftPath, minimalRapidV4({ successMeasure: "line one\nline two" }));
+  const { result } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.equal(result.action, "EDIT");
+  assert.match(result.intake.issues.join("\n"), /successMeasure must be one line/);
+});
+
+// A change agreed before the layout moved keeps its Plan, What changes, and
+// Folder tree; resolve edits only harness-owned lines and nothing reads them.
+test("an older-layout proposal still resolves and is re-rendered consistently by revise", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4());
+  captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  const path = join(value.changes, "single-shot-change", "proposal.md");
+  const legacy = [
+    "# Change: Return the bounded result", "", "## What changes", "", "- Bounded result", "",
+    "## Folder tree", "", "```text", ".", "└── src/", "```", "", "## Plan", "",
+    "| Task | Outcome | Files | Verify | Depends on | Requirements |", "|---|---|---|---|---|---|",
+    "| T001 | Implement | src/** | `npm test` | — | bounded-result |", "", "## Impact", "",
+    "- **Impact:** low", "- **Coupling:** isolated", "- **Affected surfaces:** code",
+    "- **Security triggers:** none detected", ""].join("\n");
+  writeFileSync(path, legacy);
+  captureLog(() => value.lifecycle.resolveChange("single-shot-change", {}));
+  assert.equal(readFileSync(path, "utf8"), legacy);
+  // The original text is also what a pull-request narrative reads.
+  writeJson(value.draftPath, minimalRapidV4({ why: "Callers need the bounded result" }));
+  captureLog(() => value.lifecycle.reviseChange("single-shot-change", value.draftPath));
+  const revised = readFileSync(path, "utf8");
+  assert.match(revised, /^## Scope$/m);
+  assert.match(revised, /^## Why\n\nCallers need the bounded result$/m);
+  assert.doesNotMatch(revised, /## Plan|## What changes|## Folder tree/);
 });

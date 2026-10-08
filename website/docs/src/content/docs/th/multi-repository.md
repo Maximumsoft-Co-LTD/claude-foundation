@@ -48,9 +48,12 @@ repository หนึ่งแต่ต้องใช้โค้ดหรือ
 สิ่งที่ต้องรู้:
 
 - `id` คือชื่อคงที่ที่ task, provider, receipt และ Land ใช้ร่วมกัน
-- `path` ปกติอิงจาก control repository
+- `path` อิงจาก control repository
 - `setupCommand` เตรียม worktree ใหม่ของ repository นั้น
-- path ภายนอกต้องมี `type: "external"` และ `allowOutsideRoot: true`
+- path นอก control repository เช่น sibling `../sdk` ต้องมี
+  `allowOutsideRoot: true` ส่วน `type` จะคงเป็น `git` (ค่าเริ่มต้น) หรือใช้
+  `external` ก็ได้ ทำงานเหมือนกัน sibling ที่เขียนได้เป็นเจ้าของ task และ Land
+  เหมือน submodule
 - repository ที่ถูกเลือกทุกตัวต้อง initialize Git แล้ว
 
 Change Loop ปฏิเสธ dependency ที่ไม่ใช่ Git เพราะมันล็อก commit และแยก directory
@@ -127,6 +130,15 @@ repository แบบ write ได้ Build worktree แยก ส่วน read 
 detached worktree ที่ล็อก commit คำสั่งนี้ไม่ได้ทำให้ service ภายนอกหรือ directory
 ทั่วไปปลอดภัย sandbox เป็น Git workspace isolation ไม่ใช่ OS security boundary
 
+โค้ดและ test ของ root ยังใช้ nested repository ผ่าน path ใต้ root ได้ เช่น
+`require('./packages/lib')` ใน root sandbox Harness จะ link path ของ repository
+ที่เลือกไปยัง sandbox ของ repository นั้น check ของ root จึงเห็นงานที่ยังไม่ commit
+และการแก้ผ่าน path ใดก็ไปลงที่เดียวกัน ส่วน nested repository ที่ไม่ได้เลือกจะเป็น
+commit ที่ gitlink ของ root บันทึกไว้ checkout จาก object ในเครื่องแม้ target ไม่เคย
+initialize submodule นั้น และเป็นแบบอ่านอย่างเดียว path เหล่านี้ไม่ใช่ change ของ
+root จึงไม่อยู่ใน proof, review, changed surface หรือ Land ของ root และไม่มีใคร
+ต้องสร้าง link หรือ initialize submodule เอง
+
 ## 5. ต่อ Evidence ให้ครบ Scope
 
 สำหรับ custom wiring ใน conditional `execution.yaml`, `repository` คือ working directory ของ provider ส่วน
@@ -170,24 +182,18 @@ checkout เป็น sibling อยู่ในทุกเครื่อง
 claude-foundation agents plan <change>
 ```
 
-ถ้า change อื่นทำให้ repository ที่เลือกขยับ ให้ sync ก่อน Prove:
-
-```bash
-claude-foundation sandbox sync <change>
-```
-
-sync refresh child read worktree ได้แม้ control sandbox ใช้ copy mode และรัน
+ถ้า change อื่นทำให้ repository ที่เลือกขยับ `advance` จะ sync sandbox เองก่อน Prove
+ส่วน `sandbox sync <change>` เป็น primitive สำหรับวินิจฉัยที่อยู่เบื้องหลัง sync refresh child read worktree ได้แม้ control sandbox ใช้ copy mode และรัน
 `setupCommand` ของ repository ใหม่หลัง refresh ถ้า setup หรือ provider ทิ้ง tracked
 change ไว้ใน read workspace readiness จะ fail closed
 
 ## 7. Prove Graph ทั้งชุด
 
 ```bash
-claude-foundation proof readiness <change>
-claude-foundation proof run <change>
+claude-foundation advance <change> --through proven
 ```
 
-Prove รัน branch อิสระขนานกันได้และรักษา branch ที่เสร็จแล้วเมื่ออีก branch ล้ม
+`proof readiness` และ `proof run` ยังเป็น primitive สำหรับวินิจฉัย Prove รัน branch อิสระขนานกันได้และรักษา branch ที่เสร็จแล้วเมื่ออีก branch ล้ม
 แต่ aggregate proof ยังต้องตรงกับ repository และ provider scope ปัจจุบันทั้งหมด
 read dependency ที่ขยับต้อง sync และ prove ใหม่ Change Loop จะไม่รับรอง commit เก่า
 ใต้ repository manifest ใหม่
@@ -223,13 +229,14 @@ saga นี้ใช้ด้วยเมื่อเลือก non-root child
 
 | เหตุการณ์ | Action ที่ถูกต้อง |
 |---|---|
-| target ที่เลือกขยับ | `sandbox sync <change>` แล้ว Prove ใหม่ |
-| sync เจอ replay conflict | แก้ path ที่ระบุ ไม่ต้องสร้าง change ใหม่ |
+| target ที่เลือกขยับ | `advance` sync sandbox และ Prove ใหม่เอง |
+| sync เจอ replay conflict | agent แก้ path ที่ระบุใน sandbox ไม่ต้องสร้าง change ใหม่ |
 | read repository สกปรก | เอา mutation ออกหรือแก้ setup/provider |
 | setup ของ repository ล้ม | Harness retry เฉพาะ repository นั้นและเก็บ sibling ที่พร้อมแล้ว; แก้ policy เฉพาะเมื่อ command ที่ประกาศผิดจริง |
 | binding ของ child ที่เลือกหาย | Harness ซ่อม binding โดยรักษา worktree ที่ยังใช้ได้; ใช้ `sandbox inspect` เมื่อต้องวินิจฉัยเท่านั้น |
 | path มาตรฐานของ child เป็น worktree ของ repository อื่น | อย่าแก้หรือลบทิ้ง ตรวจ path ที่รายงาน แล้วแก้ conflict ของ target/path หรือ abandon change อย่างชัดเจน |
 | provider มองไม่เห็น repository | เพิ่มใน `repositories` ของ provider ห้าม hard-code local path |
+| check ปฏิเสธเพราะสำเนาใน root ของ repository ที่ไม่ได้เลือกถูกแก้ | คืนสำเนานั้น (ข้อความปฏิเสธระบุคำสั่งไว้) หรือเลือก repository ผ่าน semantic amendment |
 | Land ถูกขัดจังหวะ | เรียก `/land <change>` ซ้ำเพื่อ resume journal; งานใน root หรือ repository sandbox ที่เพิ่มหลัง delivery ก่อนหน้าจะถูก apply ใหม่ |
 | Land หยุดด้วย `ROOT_POINTER_MOVED` | root sandbox ขยับ pointer ของ submodule ที่ change เลือกไว้: agent นำ commit เข้า sandbox ของ repository นั้น คืน root pointer เป็น base แล้ว resume |
 | Land หยุดด้วย `repository-pointer-change` | root sandbox ขยับ pointer ของ submodule ที่ไม่ได้เลือก: ให้ user เลือกว่าจะส่ง pointer ผ่าน repository นั้น, คืน pointer เป็น base แล้ว land ส่วนที่เหลือ หรือ pause |

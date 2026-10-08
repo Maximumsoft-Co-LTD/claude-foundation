@@ -45,8 +45,8 @@ It is seeded when missing and yours afterwards.
 
 The shipped policy permits at most three parallel agents, four evidence
 providers or services, and three repository setup commands. It uses 45-minute
-leases. Task and review packets are capped at 8 KiB, repository packets at
-12 KiB, and the global packet at 16 KiB. Rapid runs receive ceilings of 800,000
+leases. Task and review packets are capped at 20 KiB, repository packets at
+24 KiB, and the global packet at 32 KiB. Rapid runs receive ceilings of 800,000
 tokens and 100 requests; standard runs receive 1,600,000 tokens and 200
 requests. These values bound a run—they are not work quotas.
 
@@ -152,7 +152,8 @@ state cannot drift into a commit by accident.
 | `authority/` | Review and acceptance requests and their completion records |
 | `attestations/` | Unattended-execution challenges and consumed nonces |
 | `instruction-manifests/` | Instruction provenance per command |
-| `recovery/` | Quarantined abandoned changes and orphaned state |
+| `recovery/` | Quarantined abandoned changes, undone Lands (`land-undone/`), and orphaned state |
+| `backups/` | Commit bundles, patches, and file copies of unlanded sandbox work, written before a sandbox is removed |
 | `prototypes/` | Disposable comparison prototypes |
 | `policy.json` | Optional project rules mapping paths to required capabilities |
 | `quality/results/` | Latest consumer-quality lane reports, aggregate summary, and rendered debt |

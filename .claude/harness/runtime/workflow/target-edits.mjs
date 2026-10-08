@@ -234,14 +234,14 @@ function workingBytes(path) {
 
 // Three-way merge of base→target into the sandbox bytes. `merged` is set only
 // for a clean merge; a conflict, binary input, or failure leaves it null.
-function mergeTargetInto({ sandbox, baseBytes, target, spawn }) {
+function mergeTargetInto({ sandbox, baseBytes, target, spawn, ours = false }) {
   const scratch = mkdtempSync(join(tmpdir(), "foundation-carried-"));
   try {
     const files = ["sandbox", "base", "target"].map((name) => join(scratch, name));
     writeFileSync(files[0], sandbox);
     writeFileSync(files[1], baseBytes || Buffer.alloc(0));
     writeFileSync(files[2], target);
-    const merged = spawn("git", ["merge-file", "-p", ...files], { maxBuffer: 64 * 1024 * 1024 });
+    const merged = spawn("git", ["merge-file", "-p", ...(ours ? ["--ours"] : []), ...files], { maxBuffer: 64 * 1024 * 1024 });
     return merged.status === 0 && Buffer.isBuffer(merged.stdout) ? merged.stdout : null;
   } catch {
     return null;
@@ -260,6 +260,19 @@ export function targetEditCarried({ root, sandboxPath, path, baseBytes, spawn = 
   if (!target || !sandbox || baseBytes === undefined) return false;
   if (target.equals(sandbox)) return true;
   return mergeTargetInto({ sandbox, baseBytes, target, spawn })?.equals(sandbox) || false;
+}
+
+// Whether an agent's merge of a replay conflict still carries every landed
+// edit that did not conflict. Merging base→target into the sandbox file with
+// the sandbox winning the conflicting lines must change nothing; otherwise the
+// merge dropped landed content and Land would overwrite it. A binary or
+// unmergeable file cannot be checked and keeps the agent's word.
+export function resolutionKeepsLanded({ root, sandboxPath, path, baseBytes, spawn = spawnSync }) {
+  const target = workingBytes(join(root, path));
+  const sandbox = workingBytes(join(sandboxPath, path));
+  if (!target || !sandbox || baseBytes === undefined) return true;
+  const merged = mergeTargetInto({ sandbox, baseBytes, target, spawn, ours: true });
+  return merged ? merged.equals(sandbox) : true;
 }
 
 // Land leaves its projection uncommitted, so a change that branched before

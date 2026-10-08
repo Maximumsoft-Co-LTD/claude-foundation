@@ -19,15 +19,15 @@ Harness checks Change Loop 3.5.30/runtime API `41`, repairs setup.
 - `ASK_USER` requests a decision, not CLI execution: use AskUserQuestion,
   recommendation first, plain text otherwise;
   never offer only a passing option. `WAIT` reports owner and condition, not a user command.
-- In Build, `cd <workspace>` once as its own call, then plain commands; run
-  each listed `checkCommand`.
+- In Build, a plain command needs `cd <workspace>` once as its own call
+  first (no `$VAR`/braces).
 - Never hand-edit generated packet files, `tasks.md` checkboxes, or task IDs;
   change the agreement only by draft or semantic amendment.
 - Spec approval given in the request, in any wording, or "ลุยเลย"/"go ahead"
   answering a spec/amendment question, is the approval: record it.
   Any explicit user instruction to land grants Land, as does "ทำจนจบ" up
   front. Silence grants neither; nor does urgency ("ด่วน").
-- Commit, push, or open PRs only via `/deliver` ("เปิด PR ให้เลย") or a
+- Commit, push, or open PRs only via `/deliver` ("เปิด PR ให้เลย") or
   direct user instruction.
 - Code/test success without the matching lifecycle state is incomplete.
   Build/Prove: `TARGET_REACHED`; archived: `DELIVERED`.

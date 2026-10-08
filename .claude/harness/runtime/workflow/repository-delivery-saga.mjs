@@ -82,11 +82,19 @@ function childDiffNames(git, repository, runtime, fail) {
 
 // The entries whose apply would overwrite target bytes Land did not write: a
 // path must already hold the projected bytes, still hold this change's own
-// earlier delivery (`prior`: path -> delivered entry), or still be at
-// `baseHead`. Anything else is a user's uncommitted edit (`untracked` when the
-// base has no such path). `files` supplies safeRootPath/pathIdentity/pathMode.
-export function targetOverwrites({ git, files }, targetPath, baseHead, entries,
+// earlier delivery (`prior`: path -> delivered entry), or still be at its
+// base. Anything else is a user's uncommitted edit (`untracked` when the base
+// has no such path). `files` supplies safeRootPath/pathIdentity/pathMode. The
+// base is `baseHead`, or `baseState(path)` ("absent", "unchanged" or
+// "changed") for a sandbox with another recorded base, such as an isolated
+// copy's baseline manifest.
+export function targetOverwrites({ git, files, baseState = null }, targetPath, baseHead, entries,
   prior = new Map()) {
+  const atBase = baseState || ((path) => {
+    if (git(["cat-file", "-e", `${baseHead}:${path}`], targetPath).status !== 0) return "absent";
+    return git(["diff", "--quiet", baseHead, "--", path], targetPath).status === 0
+      ? "unchanged" : "changed";
+  });
   const overwrites = [];
   for (const entry of entries) {
     if (landEntryNoOp(entry)) continue;
@@ -97,15 +105,38 @@ export function targetOverwrites({ git, files }, targetPath, baseHead, entries,
     const own = prior.get(entry.path);
     if (own && current === own.after && files.pathMode(target) === own.afterMode)
       continue;
-    const base = git(["cat-file", "-e", `${baseHead}:${entry.path}`], targetPath);
-    if (base.status !== 0) {
+    const base = atBase(entry.path);
+    if (base === "absent") {
       if (current !== null) overwrites.push({ path: entry.path, untracked: true });
       continue;
     }
-    const changed = git(["diff", "--quiet", baseHead, "--", entry.path], targetPath);
-    if (changed.status !== 0) overwrites.push({ path: entry.path, untracked: false });
+    if (base !== "unchanged") overwrites.push({ path: entry.path, untracked: false });
   }
   return overwrites;
+}
+
+// The base of an isolated copy: the target's manifest identities recorded when
+// the copy was made (and advanced by its sync). The identity binds content and
+// the executable bit, so a chmod-only target edit is a change too. A path the
+// baseline does not record is absent from the base, which fails closed: any
+// target bytes there are somebody's work.
+export function copyBaselineState(files, baseline = {}) {
+  return (path) => {
+    if (!Object.hasOwn(baseline || {}, path)) return "absent";
+    const target = files.safeRootPath(path);
+    const identity = files.pathIdentity(target);
+    const mode = files.pathMode(target);
+    const manifestIdentity = identity !== null && !identity.includes(":") && mode !== null
+      ? `file:${mode & 0o111 ? "executable" : "regular"}:${identity}` : identity;
+    return manifestIdentity === baseline[path] ? "unchanged" : "changed";
+  };
+}
+
+function overwriteError(repository, overwrite) {
+  return new RepositoryDeliveryError(
+    `Land would overwrite an uncommitted target ${overwrite.untracked ? "path" : "edit"} in '${
+      repository.id}': ${overwrite.path}`,
+    { repository: repository.id, path: overwrite.path });
 }
 
 function assertChildTargetCompatible({ git, journalRuntime }, repository, runtime, entries,
@@ -120,11 +151,7 @@ function assertChildTargetCompatible({ git, journalRuntime }, repository, runtim
       });
   const [overwrite] = targetOverwrites({ git, files: journalRuntime }, repository.path,
     runtime.baseHead, entries, prior);
-  if (overwrite)
-    throw new RepositoryDeliveryError(
-      `Land would overwrite an uncommitted target ${overwrite.untracked ? "path" : "edit"} in '${
-        repository.id}': ${overwrite.path}`,
-      { repository: repository.id, path: overwrite.path });
+  if (overwrite) throw overwriteError(repository, overwrite);
 }
 
 export function createRepositoryDeliverySaga({
@@ -357,11 +384,17 @@ export function createRepositoryDeliverySaga({
   function rootGrowth(id, state, repository, verification) {
     const entries = reapplyRoot(id, state, verification);
     if (!entries) return null;
+    const prior = new Map((verification.journal?.entries || [])
+      .map((entry) => [entry.path, entry]));
     if (state.workspace?.mode === "worktree" && state.workspace.baseHead) {
-      const prior = new Map((verification.journal?.entries || [])
-        .map((entry) => [entry.path, entry]));
       assertChildTargetCompatible({ git, journalRuntime: journalFor(repository) },
         repository, { baseHead: state.workspace.baseHead }, entries, prior);
+    } else if (state.workspace?.mode === "copy") {
+      const files = journalFor(repository);
+      const [overwrite] = targetOverwrites({ git, files,
+        baseState: copyBaselineState(files, state.workspace.baseline) },
+      repository.path, null, entries, prior);
+      if (overwrite) throw overwriteError(repository, overwrite);
     }
     return entries;
   }

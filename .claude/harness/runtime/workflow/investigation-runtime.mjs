@@ -22,8 +22,15 @@ const strings = (value) => Array.isArray(value)
   ? value.map(text).filter(Boolean) : [];
 const unique = (values) => [...new Set(values)].sort();
 
+// `save` leads because the host refuses a shell-written JSON record, while the
+// file tool falls under the seeded `Edit(/openspec/investigations/**)` rule;
+// the record tolerates the note when the whole template is saved.
 export function investigationRecordTemplate() {
   return {
+    save: "Write this record with the Write tool to openspec/investigations/<id>.json " +
+      "and keep it there; that path is pre-allowed and the tool creates the folder. Do not save it through the shell " +
+      "(heredoc, cat >, echo >): the host refuses those. After each evidence batch run " +
+      "claude-foundation investigate openspec/investigations/<id>.json.",
     version: 1,
     id: "replace-with-investigation-id",
     activeChange: null,

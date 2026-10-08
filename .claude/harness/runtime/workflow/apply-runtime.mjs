@@ -14,7 +14,7 @@ import {
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 import { compositeRepositorySelection } from "../core/repository-binding.mjs";
 import {
-  createRepositoryDeliverySaga, RepositoryDeliveryError, targetOverwrites
+  copyBaselineState, createRepositoryDeliverySaga, RepositoryDeliveryError, targetOverwrites
 } from "./repository-delivery-saga.mjs";
 import { deliveryTreeEntries, assertDeliveryEntries } from "./delivery-integrity.mjs";
 import { approvalMatches } from "../core/user-decisions.mjs";
@@ -22,6 +22,9 @@ import { emitSignal } from "../core/signals.mjs";
 import { legacyRepositoryLandTransaction } from "./land-runtime.mjs";
 import { rejectedPaths } from "./sandbox-runtime.mjs";
 import { writeSpecBefore } from "./land-undo.mjs";
+import {
+  captureCopyBase, copyBaseBytes, copyBaseExecutable, fileSource
+} from "./copy-base.mjs";
 import {
   ROOT_POINTER_MOVED, repositoryPointerStop, rootPointerMoves, rootPointerRepairMessage
 } from "./land-verification.mjs";
@@ -67,7 +70,8 @@ export function reapplyProjection(context) {
   const prepared = buildReapplyEntries(id, state, verification.journal);
   const desired = projectionHash(stableHash, prepared);
   if (desired !== state.workspace.apply.projectionHash) {
-    guardReapplyTargetEdits(context, id, state, prepared, verification.journal);
+    if (guardReapplyTargetEdits(context, id, state, prepared, verification.journal))
+      return { prepared: buildReapplyEntries(id, state, verification.journal), resumed: false };
     return { prepared, resumed: false };
   }
   console.log(`APPLIED ${id}\n  resumed: ${state.workspace.apply.transactionId}`);
@@ -220,7 +224,6 @@ export function sandboxDiffNamesOperation(context, id, sandboxPath, state,
 export function restoreAuthorizedTargetPaths(context, state, names, { inspect = false } = {}) {
   const restore = state.targetRestore;
   if (!restore?.identities) return [];
-  const base = context.sandboxBase(state);
   const restored = [];
   for (const path of names) {
     if (!Object.hasOwn(restore.identities, path)) continue;
@@ -230,12 +233,19 @@ export function restoreAuthorizedTargetPaths(context, state, names, { inspect = 
       restored.push(path);
       continue;
     }
-    const shown = context.gitBuffer(["show", `${base}:${path}`], context.root);
-    if (shown.status === 0) context.writeFile(target, shown.stdout);
-    else context.removePath(target);
-    restored.push(path);
+    if (restoreTargetBase(context, state, path)) restored.push(path);
   }
   return restored;
+}
+
+// Writes the base of `path` back into the target: its base bytes, or no file
+// when the base has none. A base that cannot be proven is never guessed.
+function restoreTargetBase(context, state, path) {
+  const bytes = targetBaseBytes(context, state, path);
+  if (bytes === undefined) return false;
+  if (bytes === null) context.removePath(join(context.root, path));
+  else context.writeFile(join(context.root, path), bytes);
+  return true;
 }
 
 function targetSnapshot(state) {
@@ -249,19 +259,22 @@ function restoreRegenerableConflicts(context, state, paths, { inspect = false } 
   if (!paths.length || !context.writeFile || !context.removePath ||
       restorableTargetPaths(paths, targetSnapshot(state)).length !== paths.length ||
       Object.keys(context.landedBy?.(state.id, paths) || {}).length) return false;
+  if (paths.some((path) => targetBaseBytes(context, state, path) === undefined)) return false;
   if (inspect) return true;
-  const base = context.sandboxBase(state);
-  for (const path of paths) {
-    const shown = context.gitBuffer(["show", `${base}:${path}`], context.root);
-    if (shown.status === 0) context.writeFile(join(context.root, path), shown.stdout);
-    else context.removePath(join(context.root, path));
-  }
+  for (const path of paths) restoreTargetBase(context, state, path);
   return true;
 }
 
 function baseBlob(context, state, path) {
   const shown = context.gitBuffer(["show", `${context.sandboxBase(state)}:${path}`], context.root);
   return shown.status === 0 ? shown.stdout : null;
+}
+
+// The sandbox base bytes of `path`: a worktree's base commit blob, or an
+// isolated copy's captured base (undefined when it cannot be proven).
+function targetBaseBytes(context, state, path) {
+  return state.workspace?.mode === "copy"
+    ? copyReapplyBase(context, state).bytes(path) : baseBlob(context, state, path);
 }
 
 // Whether the sandbox replay already wrote the current sandbox bytes for every
@@ -283,7 +296,7 @@ function landedReplayExhausted(context, state, landedPaths) {
 // `inspect` reports the same stop without recording the carry; Land itself
 // records it when it reaches the same point.
 function carryTargetEdits(context, id, state, paths, landedBy, { inspect = false } = {}) {
-  if (state.workspace?.mode !== "worktree" || !context.blockWithDecision ||
+  if (!["worktree", "copy"].includes(state.workspace?.mode) || !context.blockWithDecision ||
       !context.saveRuntime) return;
   const sandboxPath = state.workspace.path;
   const replay = context.replayTargetEdit || replayLandedEdit;
@@ -295,7 +308,7 @@ function carryTargetEdits(context, id, state, paths, landedBy, { inspect = false
     const sandbox = context.pathIdentity(join(sandboxPath, path));
     const exhausted = previous[path]?.target === target && previous[path]?.sandbox === sandbox;
     const result = exhausted ? { status: "conflict" } : replay({
-      root: context.root, sandboxPath, path, baseBytes: baseBlob(context, state, path) });
+      root: context.root, sandboxPath, path, baseBytes: targetBaseBytes(context, state, path) });
     if (result.status === "merged") carry[path] = target;
     else conflicts.push(path);
   }
@@ -331,15 +344,53 @@ function stopForTargetConflict(context, id, state, paths, cause, options = {}) {
 }
 
 // A target mode is carried when the sandbox already has it or the target
-// still has the sandbox base's executable bit; a user `chmod` is not.
-function targetModeCarried(context, state, sandboxPath, path) {
+// still has the base's executable bit (`baseExecutable`, null when unknown);
+// a user `chmod` is not.
+function targetModeCarried(context, sandboxPath, path, baseExecutable) {
   const target = context.pathMode(join(context.root, path));
   if (target === context.pathMode(join(sandboxPath, path))) return true;
+  if (baseExecutable === null || target === null) return false;
+  return Boolean(target & 0o111) === baseExecutable;
+}
+
+function gitBaseExecutable(context, state, path) {
   const listed = context.gitBuffer(["ls-tree", context.sandboxBase(state), "--", path],
     context.root);
   const base = listed.status === 0 ? String(listed.stdout).split(" ")[0] : "";
-  if (!["100644", "100755"].includes(base) || target === null) return false;
-  return Boolean(target & 0o111) === (base === "100755");
+  return ["100644", "100755"].includes(base) ? base === "100755" : null;
+}
+
+// The base an isolated copy re-applies against is its baseline manifest. Its
+// bytes come from the copy base store, captured now from any source that still
+// hashes to the baseline row (target, sandbox copy, or the base commit when the
+// copy carried Git). Without them no edit counts as carried (fail closed).
+function copyReapplyBase(context, state) {
+  const workspace = state.workspace;
+  const baseline = workspace.baseline || {};
+  return {
+    baseState: copyBaselineState(context, baseline),
+    executable: (path) => copyBaseExecutable(baseline, path),
+    bytes: (path) => {
+      captureCopyBase({ root: context.root, baseline, path, sources: [
+        fileSource(join(context.root, path)), fileSource(join(workspace.path, path)),
+        ...(workspace.baseHead && context.gitBuffer ? [() => baseBlob(context, state, path)] : [])
+      ] });
+      return copyBaseBytes({ root: context.root, baseline: workspace.baseline, path });
+    }
+  };
+}
+
+// The recorded base of the re-apply guard: a worktree's base commit, or an
+// isolated copy's baseline. Null when the sandbox has neither.
+function reapplyBase(context, state) {
+  const workspace = state.workspace;
+  if (workspace?.mode === "copy") return copyReapplyBase(context, state);
+  if (workspace?.mode !== "worktree" || !workspace.baseHead || !context.git) return null;
+  return {
+    baseState: null,
+    executable: (path) => gitBaseExecutable(context, state, path),
+    bytes: (path) => baseBlob(context, state, path)
+  };
 }
 
 // Re-apply after an earlier apply: a code path that apply never wrote must
@@ -349,15 +400,25 @@ function targetModeCarried(context, state, sandboxPath, path) {
 // target-edit route (merged into the sandbox, or a decision), never the apply.
 export function guardReapplyTargetEdits(context, id, state, entries, priorJournal) {
   const workspace = state.workspace;
-  if (workspace?.mode !== "worktree" || !workspace.baseHead || !context.git) return;
+  const base = reapplyBase(context, state);
+  if (!base) return;
   const prior = new Map((priorJournal?.entries || []).map((entry) => [entry.path, entry]));
-  const edits = targetOverwrites({ git: context.git, files: context }, context.root,
-    workspace.baseHead, entries.filter((entry) => entry.role === "code"), prior)
+  const targetEdits = () => targetOverwrites({ git: context.git, files: context,
+    baseState: base.baseState }, context.root, workspace.baseHead,
+  entries.filter((entry) => entry.role === "code"), prior)
     .map(({ path }) => path)
-    .filter((path) => !(targetModeCarried(context, state, workspace.path, path) &&
+    .filter((path) => !(targetModeCarried(context, workspace.path, path, base.executable(path)) &&
       targetEditCarried({ root: context.root, sandboxPath: workspace.path,
-        path, baseBytes: baseBlob(context, state, path) })));
-  if (!edits.length) return;
+        path, baseBytes: base.bytes(path) })));
+  let edits = targetEdits();
+  // The same restores Land performs before a first apply: a recorded
+  // `--restore-target`, or regenerable artifacts clean at isolation. True
+  // tells the caller the target moved, so its entries' `before` is stale.
+  const restored = Boolean(edits.length && context.writeFile && context.removePath &&
+      (restoreAuthorizedTargetPaths(context, state, edits).length ||
+        restoreRegenerableConflicts(context, state, edits)));
+  if (restored) edits = targetEdits();
+  if (!edits.length) return restored;
   stopForTargetConflict(context, id, state, edits,
     "re-apply would overwrite uncommitted target edits");
   context.fail(`re-apply would overwrite uncommitted target edits at: ${edits.join(", ")}`);
@@ -769,13 +830,19 @@ export function createApplyRuntime({
   function recordTargetRestore(id, value, decisionRef = null) {
     const state = loadRuntime(id);
     if (state.status === "archived") fail(`change '${id}' is already archived`);
-    if (state.workspace?.mode !== "worktree")
-      fail(`change '${id}' has no worktree sandbox whose target files Land could restore`);
+    if (!["worktree", "copy"].includes(state.workspace?.mode))
+      fail(`change '${id}' has no sandbox whose target files Land could restore`);
     const paths = parseRestoreTargetPaths(value);
     if (!paths.length) fail("--restore-target requires comma-separated target paths");
     for (const path of paths) {
       try { safeRootPath(path); } catch (error) { fail(error.message); }
     }
+    const unprovable = state.workspace.mode === "copy" ? paths.filter((path) =>
+      targetBaseBytes({ root, gitBuffer, sandboxBase }, state, path) === undefined) : [];
+    if (unprovable.length)
+      fail(`--restore-target has no recorded base bytes for the isolated copy at: ${
+        unprovable.join(", ")}; Land cannot restore them. Merge the target edits into the ` +
+        "sandbox copy instead (keep-target).");
     const landed = landedBy(id, paths);
     if (Object.keys(landed).length)
       fail(`--restore-target would discard the landed, uncommitted work of ${
@@ -907,6 +974,8 @@ export function createApplyRuntime({
     root,
     git,
     gitBuffer,
+    writeFile: writeFileSync,
+    removePath: (path) => rmSync(path, { force: true }),
     sandboxBase,
     landedBy,
     blockWithDecision,

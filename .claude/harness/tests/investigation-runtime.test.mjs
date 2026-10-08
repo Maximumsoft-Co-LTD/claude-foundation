@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
-  createInvestigationRuntime, validateInvestigationBinding
+  createInvestigationRuntime, investigationRecordTemplate, validateInvestigationBinding
 } from "../runtime/workflow/investigation-runtime.mjs";
 
 function fixture(t, options = {}) {
@@ -87,6 +87,22 @@ test("persists deterministic investigation evidence and emits a Change-bound han
   assert.match(validateInvestigationBinding({
     projectRoot: value.root, binding: result.handoff
   }).join("\n"), /digest is stale/);
+});
+
+// A shell-written JSON record is refused by the host; the route the agent
+// copies from names the file tool, the record path, and its consuming command.
+test("the record template leads with the file-tool save route and tolerates it saved", (t) => {
+  const template = investigationRecordTemplate();
+  assert.deepEqual(Object.keys(template).slice(0, 2), ["save", "version"]);
+  assert.match(template.save, /Write tool to openspec\/investigations\/<id>\.json/);
+  assert.match(template.save, /not save it through the shell \(heredoc/);
+  assert.match(template.save,
+    /claude-foundation investigate openspec\/investigations\/<id>\.json/);
+  const value = fixture(t);
+  writeFileSync(value.recordPath,
+    `${JSON.stringify({ save: template.save, ...value.record }, null, 2)}\n`);
+  assert.equal(quiet(() => value.runtime.inspectInvestigation(
+    "openspec/investigations/retry-race.json")).action, "DONE");
 });
 
 test("generated reports do not enter discovery or invalidate handoffs on repeated inspection", (t) => {

@@ -9,21 +9,28 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import {
-  derivedCapabilityPurpose, expandMinimalSemanticDraft, mergeSemanticDraft,
+  deriveRepositoryTaskDependencies, derivedCapabilityPurpose, expandMinimalSemanticDraft,
+  mergeSemanticDraft,
   minimalSemanticDraftTemplate, normalizeSemanticDraft,
   renderRequirementMarkdown, renderSpecHeading, semanticDraftTemplate
 } from "../runtime/workflow/semantic-draft.mjs";
 import { requiredProvidersOperation } from "../runtime/workflow/change-validation.mjs";
 import { classifyReviewRisk } from "../runtime/evidence/review-routing.mjs";
 import {
-  createChangeLifecycle, draftNeedsDesign, renderDraftProposal, semanticDraftKeepsDesign
+  createChangeLifecycle, draftNeedsDesign, renderDraftProposal, renderDraftTask,
+  semanticDraftKeepsDesign, synchronizeProposalClassification
 } from "../runtime/workflow/change-lifecycle.mjs";
 import {
-  amendTaskVerifyOperation, appendRequirementToSpec, compileSemanticAmendment,
+  declaredDraftRisk, deriveDraftRisk, riskLabel, withDerivedRisk
+} from "../runtime/workflow/validation/draft-risk.mjs";
+import {
+  amendTaskVerifyOperation, amendmentRepositoryOrderIssues, appendRequirementToSpec,
+  compileSemanticAmendment,
   semanticAmendmentTemplate, taskContractOnlyAmendment, taskVerifyAmendment,
   updateTaskClaimAnnotation, verifyCannotFail, writeSemanticAmendment
 } from "../runtime/workflow/semantic-amendment.mjs";
 import { taskCheck } from "../runtime/workflow/session-lease.mjs";
+import { groupAgentTasks } from "../runtime/workflow/agent-planning.mjs";
 import { designBlueprintWarnings } from "../runtime/workflow/validation/design-blueprints.mjs";
 import { devDocumentShapeIssues } from "../runtime/workflow/validation/dev-document.mjs";
 
@@ -136,6 +143,95 @@ test("semantic compiler creates stable cross-ledger links from semantic keys", (
   assert.equal(result.draft._derivedExecution, true);
   assert.ok(result.draft.execution.providers.test);
   assert.ok(result.draft.execution.providers.integration);
+});
+
+// A superproject declares `lib` at packages/lib (a submodule). The catalog
+// row shape is what repository-topology's catalog() returns.
+const SUPERPROJECT_CATALOG = [
+  { id: "root", type: "root", relativePath: "." },
+  { id: "lib", type: "submodule", relativePath: "packages/lib", dependsOn: [] }
+];
+
+function superprojectDraft(overrides = {}) {
+  return semanticDraft({
+    repositories: [{ id: "root", mode: "write" }, { id: "lib", mode: "write" }],
+    tasks: [
+      { key: "lib-clamp", repository: "lib", outcome: "Add clamp to lib",
+        covers: ["payment-retry"], paths: ["index.js"], verify: "npm test" },
+      { key: "app-clamped-total", repository: "root", outcome: "Use clamp from the app",
+        covers: ["audit-result"], paths: ["main.js"], verify: "npm test" }
+    ],
+    ...overrides
+  });
+}
+
+test("a root task follows same-change tasks in a repository nested inside it", () => {
+  const result = normalizeSemanticDraft(superprojectDraft(), slugify,
+    { repositories: SUPERPROJECT_CATALOG });
+  assert.deepEqual(result.issues, []);
+  assert.deepEqual(result.draft.tasks.map((task) => [task.id, task.dependsOn]),
+    [["T001", []], ["T002", ["T001"]]]);
+  // The derived edge serializes Build: lib first, then the consuming root task.
+  const tasks = result.draft.tasks.map((task) => ({
+    ...task, repository: task.repository || "root", resources: []
+  }));
+  assert.deepEqual(groupAgentTasks(tasks, new Set(), 4, () => false,
+    (message) => { throw new Error(message); }), [["T001"], ["T002"]]);
+});
+
+test("repository task dependencies come from containment and declared dependsOn", () => {
+  const nested = deriveRepositoryTaskDependencies([
+    { id: "T001", repository: "lib", dependsOn: [] },
+    { id: "T002", repository: "root", dependsOn: [] },
+    { id: "T003", repository: "lib", dependsOn: ["T001"] }
+  ], { repositories: SUPERPROJECT_CATALOG });
+  assert.deepEqual(nested.issues, []);
+  assert.deepEqual(nested.tasks.map((task) => task.dependsOn), [[], ["T001", "T003"], ["T001"]]);
+  assert.deepEqual(nested.derived.map((row) => [row.taskId, row.dependsOn]),
+    [["T002", "T001"], ["T002", "T003"]]);
+  assert.match(nested.derived[0].reason, /contains repository 'lib' at packages\/lib/);
+  // Sibling repositories are ordered only by a declared repository dependency;
+  // an authored task edge stays the precise order, as at runtime.
+  const siblings = [
+    { id: "root", relativePath: "." },
+    { id: "api", relativePath: "../api", dependsOn: [] },
+    { id: "web", relativePath: "../web", dependsOn: [] }
+  ];
+  const tasks = [
+    { id: "T001", repository: "api", dependsOn: [] },
+    { id: "T002", repository: "web", dependsOn: [] }
+  ];
+  assert.deepEqual(deriveRepositoryTaskDependencies(tasks, { repositories: siblings })
+    .tasks.map((task) => task.dependsOn), [[], []]);
+  const declared = deriveRepositoryTaskDependencies(tasks, { repositories: siblings,
+    selection: [{ id: "api", mode: "write" }, { id: "web", mode: "write", dependsOn: ["api"] }] });
+  assert.deepEqual(declared.tasks.map((task) => task.dependsOn), [[], ["T001"]]);
+  assert.match(declared.derived[0].reason, /repository 'web' dependsOn 'api'/);
+  const authored = deriveRepositoryTaskDependencies([
+    ...tasks, { id: "T003", repository: "web", dependsOn: ["T002"] }
+  ], { repositories: siblings,
+    selection: [{ id: "api" }, { id: "web", dependsOn: ["api"] }] });
+  assert.deepEqual(authored.tasks[2].dependsOn, ["T002"]);
+  // The root never contains a sibling; only its declared dependsOn orders it.
+  const rootTasks = [...tasks, { id: "T003", repository: "root", dependsOn: [] }];
+  assert.deepEqual(deriveRepositoryTaskDependencies(rootTasks, { repositories: siblings })
+    .tasks[2].dependsOn, []);
+  assert.deepEqual(deriveRepositoryTaskDependencies(rootTasks, { repositories: siblings,
+    selection: [{ id: "root", dependsOn: ["web"] }, { id: "api" }, { id: "web" }] })
+    .tasks[2].dependsOn, ["T002"]);
+  // Root-only and unbound drafts are unchanged.
+  assert.deepEqual(deriveRepositoryTaskDependencies([{ id: "T001", dependsOn: [] }],
+    { repositories: SUPERPROJECT_CATALOG }).derived, []);
+});
+
+test("a derived repository edge that would close a cycle is a compile issue", () => {
+  const draft = superprojectDraft();
+  draft.tasks[0].dependsOn = ["app-clamped-total"];
+  const result = normalizeSemanticDraft(draft, slugify, { repositories: SUPERPROJECT_CATALOG });
+  assert.match(result.issues.join("\n"),
+    /task 'app-clamped-total' \(repository 'root'\) must follow 'lib-clamp' .*already depends on 'app-clamped-total'/);
+  assert.ok(!result.issues.some((issue) => /dependencies contain a cycle/.test(issue)));
+  assert.deepEqual(result.draft.tasks[1].dependsOn, []);
 });
 
 test("Thai integration concerns derive the same security capability", () => {
@@ -466,6 +562,48 @@ test("derived evidence commands preserve the prepared PATH and explicit executio
   } };
   assert.deepEqual(normalizeSemanticDraft({ ...draft, execution: explicit }, slugify)
     .draft.execution, explicit);
+});
+
+// An amendment adding a root task to a change whose lib task already exists
+// gets the same containment edge start derives; a cycle is an issue.
+test("an amendment's added root task follows the submodule's tasks", () => {
+  const tasksContent = [
+    "# Tasks", "",
+    "- [x] **T001** Add clamp [key:lib-clamp] [repo:lib] [paths:index.js] " +
+      "[claims:existing-claim] — verify: `npm test`",
+    ""
+  ].join("\n");
+  const amendment = (addTasks) => ({
+    version: 1,
+    reason: "The app must use clamp",
+    addRequirements: [{ key: "app-total", capability: "app-total", operation: "added",
+      scenario: "The app totals clamped values", outcome: "The total is clamped" }],
+    addTasks,
+    evidence: { "app-total": { capabilities: ["test"] } }
+  });
+  const compile = (addTasks) => compileSemanticAmendment({
+    amendment: amendment(addTasks),
+    contract: { version: 1, claims: [{ id: "existing-claim", requirementKey: "lib-clamp",
+      scenario: "Clamp works", capabilities: ["test"] }], providers: {} },
+    tasksContent, slugify, renderTask: renderDraftTask,
+    repositories: SUPERPROJECT_CATALOG,
+    repositorySelection: [{ id: "root", mode: "write" }, { id: "lib", mode: "write" }]
+  });
+  const rootTask = { key: "app-total", repository: "root", outcome: "Use clamp",
+    covers: ["app-total"], paths: ["main.js"], verify: "npm test" };
+  const compiled = compile([rootTask]);
+  assert.deepEqual(compiled.issues, []);
+  assert.match(compiled.tasksContent, /\*\*T002\*\*[^\n]*\[repo:root\][^\n]*\[depends:T001\]/);
+  const cyclic = compile([rootTask, { key: "lib-extra", repository: "lib",
+    outcome: "Extend lib", covers: ["app-total"], paths: ["extra.js"], verify: "npm test",
+    dependsOn: ["app-total"] }]);
+  assert.match(cyclic.issues.join("\n"),
+    /amendment task 'app-total' \(repository 'root'\) must follow 'lib-extra'/);
+  assert.deepEqual(amendmentRepositoryOrderIssues(amendment([rootTask, { key: "lib-extra",
+    repository: "lib", dependsOn: ["app-total"] }]), tasksContent, {
+    repositories: SUPERPROJECT_CATALOG }), cyclic.issues);
+  assert.deepEqual(amendmentRepositoryOrderIssues(amendment([rootTask]), tasksContent, {
+    repositories: SUPERPROJECT_CATALOG }), []);
 });
 
 test("semantic amendment preserves completed tasks and custom spec sections", () => {
@@ -801,7 +939,12 @@ test("a direct verify correction runs through change amend and leaves no staged 
 test("the amendment template leads with the verify-only form", () => {
   const template = semanticAmendmentTemplate();
   assert.deepEqual(Object.keys(template),
-    ["verifyOnly", "reopenCompleted", "removeUnfinished", "requirementChange"]);
+    ["save", "verifyOnly", "reopenCompleted", "removeUnfinished", "requirementChange"]);
+  // The host refuses a shell-written amendment; the file tool is pre-allowed.
+  assert.match(template.save, /Write tool to \.foundation\/drafts\/<change>-amendment\.json/);
+  assert.match(template.save, /not save it through the shell \(heredoc/);
+  assert.match(template.save,
+    /claude-foundation change amend <change> \.foundation\/drafts\/<change>-amendment\.json/);
   assert.equal(taskContractOnlyAmendment(template.verifyOnly), true);
   assert.equal(taskContractOnlyAmendment(template.reopenCompleted), true);
   assert.equal(taskContractOnlyAmendment(template.removeUnfinished), true);
@@ -1911,21 +2054,34 @@ test("docs or chore work defaults omitted capabilities to static-analysis by exi
     claim.capabilities.join() === "test"));
 });
 
-test("evidence defaults stay off for standard drafts, explicit opt-out, and v3 callers", () => {
+test("evidence defaults apply in both lanes; only security triggers, opt-out, and v3 callers keep them explicit", () => {
   const missing = /requires evidence\['payment-retry'\]\.capabilities/;
-  // Standard lane: medium impact must still declare capabilities.
-  const standard = normalizeSemanticDraft(rapidDraftWithoutEvidence({ impact: "medium" }),
-    slugify, { defaultRapidEvidence: true });
-  assert.ok(standard.issues.some((issue) => /requires an 'evidence' object/.test(issue)));
-  const standardEmpty = normalizeSemanticDraft(
-    rapidDraftWithoutEvidence({ impact: "medium", evidence: {} }), slugify,
+  // Standard lane (impact, coupling, review, acceptance) defaults like rapid
+  // and records the keys, so the proposal can say the harness chose them.
+  for (const overrides of [{ impact: "medium" }, { impact: "high" }, { reviewRequired: true },
+    { acceptance: { required: true, reason: "UX" } }, { coupling: "coupled" }]) {
+    const result = normalizeSemanticDraft(rapidDraftWithoutEvidence(overrides), slugify,
+      { defaultRapidEvidence: true });
+    assert.deepEqual(result.issues, [], JSON.stringify(overrides));
+    assert.deepEqual(result.draft._defaultedEvidence, ["payment-retry", "audit-result"]);
+    assert.ok(result.draft.claims.every((claim) => claim.capabilities.join() === "test"));
+  }
+  // A declared security trigger keeps the capability choice with the author.
+  const triggered = normalizeSemanticDraft(
+    rapidDraftWithoutEvidence({ securityTriggers: ["auth"], evidence: {} }), slugify,
     { defaultRapidEvidence: true });
-  assert.ok(standardEmpty.issues.some((issue) => missing.test(issue)));
-  for (const overrides of [{ securityTriggers: ["auth"] }, { reviewRequired: true },
-    { acceptance: { required: true, reason: "UX" } }, { coupling: "coupled" }])
-    assert.ok(normalizeSemanticDraft(rapidDraftWithoutEvidence({ ...overrides, evidence: {} }),
-      slugify, { defaultRapidEvidence: true }).issues.some((issue) => missing.test(issue)),
-    JSON.stringify(overrides));
+  assert.ok(triggered.issues.some((issue) => missing.test(issue)));
+  assert.ok(normalizeSemanticDraft(rapidDraftWithoutEvidence({ securityTriggers: ["auth"] }),
+    slugify, { defaultRapidEvidence: true }).issues
+    .some((issue) => /requires an 'evidence' object/.test(issue)));
+  // Agent-provided capabilities are never replaced by the default.
+  const kept = normalizeSemanticDraft(rapidDraftWithoutEvidence({ impact: "medium", evidence: {
+    "payment-retry": { capabilities: ["test", "compatibility"] } } }), slugify,
+  { defaultRapidEvidence: true });
+  assert.deepEqual(kept.issues, []);
+  assert.deepEqual(kept.draft._defaultedEvidence, ["audit-result"]);
+  assert.deepEqual(kept.draft.claims.find((claim) =>
+    claim.requirementKey === "payment-retry").capabilities, ["test", "compatibility"]);
   // Callers that do not opt in (amendments) keep the explicit contract.
   assert.ok(normalizeSemanticDraft(rapidDraftWithoutEvidence({ evidence: {} }), slugify)
     .issues.some((issue) => missing.test(issue)));
@@ -2196,9 +2352,15 @@ test("explicit versions and non-minimal shapes are never expanded", () => {
   assert.equal(expandMinimalSemanticDraft(legacy), legacy);
 });
 
-test("a minimal draft that declares risk still owes explicit evidence", () => {
-  const expanded = expandMinimalSemanticDraft(minimalDraft({ impact: "high" }));
-  const { issues } = normalizeSemanticDraft(expanded, slugify, { defaultRapidEvidence: true });
+test("a minimal draft that declares risk defaults evidence unless it names security triggers", () => {
+  const defaulted = normalizeSemanticDraft(expandMinimalSemanticDraft(
+    minimalDraft({ impact: "high" })), slugify, { defaultRapidEvidence: true });
+  assert.ok(!defaulted.issues.some((issue) => /evidence/.test(issue)), defaulted.issues.join("\n"));
+  assert.deepEqual(defaulted.draft._defaultedEvidence,
+    ["export-invoice-row-as-csv", "escape-commas-inside-invoice-fields"]);
+  const { issues } = normalizeSemanticDraft(expandMinimalSemanticDraft(
+    minimalDraft({ impact: "high", securityTriggers: ["auth"] })), slugify,
+  { defaultRapidEvidence: true });
   assert.ok(issues.some((issue) => /requires evidence\['export-invoice-row-as-csv'\]/.test(issue)));
 });
 
@@ -2546,4 +2708,110 @@ test("a partial draft entry merges by any identity it names, and an unmatched $r
     requirements: [{ outcome: "unnamed", $remove: true }]
   }), /"\$remove" entry names no key or name/);
   assert.deepEqual(prior.requirements.map((row) => row.key), ["throughput", "ack"]);
+});
+
+function riskDraft(overrides = {}) {
+  return {
+    version: 4,
+    intent: "Change one bounded outcome",
+    requirements: [{ key: "outcome", description: "The system SHALL return the result",
+      scenarios: [{ name: "Result", when: "Input arrives", then: "The result is returned" }] }],
+    tasks: [{ key: "do", outcome: "Implement", covers: ["outcome"], paths: ["src/result.js"],
+      verify: "npm test" }],
+    ...overrides
+  };
+}
+
+const tasksAt = (...paths) => paths.map((path, index) => ({
+  key: `t${index}`, outcome: "Implement", covers: ["outcome"], paths: [path], verify: "npm test"
+}));
+
+test("risk derivation reads coupling from service, package, and repository spans", () => {
+  assert.deepEqual(deriveDraftRisk(riskDraft()),
+    { impact: "low", coupling: "isolated", reasons: { impact: [], coupling: [] } });
+  assert.deepEqual(deriveDraftRisk(riskDraft({
+    tasks: tasksAt("services/orders/**", "services/billing/src/a.js") })).reasons.coupling,
+  ["tasks span services/billing, services/orders"]);
+  assert.equal(deriveDraftRisk(riskDraft({
+    tasks: tasksAt("packages/ui/**", "packages/core/**") })).coupling, "coupled");
+  // Two folders of one service are not two services.
+  assert.equal(deriveDraftRisk(riskDraft({
+    tasks: tasksAt("services/orders/src/**", "services/orders/test/**") })).coupling, "isolated");
+  assert.equal(deriveDraftRisk(riskDraft({
+    tasks: tasksAt("src/a.js", "src/b.js") })).coupling, "isolated");
+  assert.deepEqual(deriveDraftRisk(riskDraft({
+    repositories: [{ id: "root" }, { id: "web", mode: "write" }] })).reasons.coupling,
+  ["repositories root, web"]);
+  assert.deepEqual(deriveDraftRisk(riskDraft({ integrations: [{ name: "Stripe" }] }))
+    .reasons.coupling, ["declares integrations"]);
+});
+
+test("risk derivation reads data and published-contract work as medium impact", () => {
+  assert.equal(deriveDraftRisk(riskDraft({ tasks: tasksAt("schema.sql") })).impact, "medium");
+  assert.equal(deriveDraftRisk(riskDraft({ tasks: tasksAt("migration.mjs") })).impact, "medium");
+  assert.equal(deriveDraftRisk(riskDraft({ tasks: tasksAt("src/api/notes.js") })).impact, "medium");
+  assert.equal(deriveDraftRisk(riskDraft({ tasks: tasksAt("src/workers/sync.js") })).impact, "medium");
+  assert.match(deriveDraftRisk(riskDraft({
+    intent: "Version the order event schema" })).reasons.impact.join(), /published contract/);
+  assert.match(deriveDraftRisk(riskDraft({
+    requirements: [{ key: "outcome", description: "The system SHALL restore rows on rollback",
+      scenarios: [{ name: "Undo", when: "Rolled back", then: "Rows return" }] }]
+  })).reasons.impact.join(), /data work \('rollback'\)/);
+  // A model file alone is not persistence; ordinary words are not contracts.
+  assert.equal(deriveDraftRisk(riskDraft({ tasks: tasksAt("src/models/note.js") })).impact, "low");
+  assert.equal(deriveDraftRisk(riskDraft({ intent: "Show the event list" })).impact, "low");
+  // A bare "payloads" is function input (a validator's argument), not a contract;
+  // a request/response payload is.
+  assert.equal(deriveDraftRisk(riskDraft({
+    intent: "Reject invalid seat counts; create_workspace returns 422 for such payloads" })).impact, "low");
+  assert.match(deriveDraftRisk(riskDraft({
+    intent: "Change the response payload shape" })).reasons.impact.join(), /published contract/);
+  // A declared work type replaces text inference; persistence paths still count.
+  assert.equal(deriveDraftRisk(riskDraft({ workType: ["bugfix"],
+    intent: "Fix the API rounding" })).impact, "low");
+  assert.equal(deriveDraftRisk(riskDraft({ workType: ["bugfix"],
+    tasks: tasksAt("db/schema.sql") })).impact, "medium");
+  assert.equal(deriveDraftRisk(riskDraft({ workType: ["api"] })).impact, "medium");
+});
+
+test("derived risk only raises, records why, and is removed from the stored draft", () => {
+  const spanning = riskDraft({ tasks: tasksAt("services/a/**", "services/b/**") });
+  const raised = withDerivedRisk({ ...spanning, impact: "low", coupling: "isolated" });
+  assert.equal(raised.coupling, "coupled");
+  assert.equal(raised.impact, "low");
+  assert.equal(riskLabel(raised, "coupling"),
+    "coupled (derived: tasks span services/a, services/b; declared isolated)");
+  assert.equal(riskLabel(raised, "impact"), "low");
+  assert.deepEqual(declaredDraftRisk(raised), { ...spanning, impact: "low", coupling: "isolated" });
+  assert.deepEqual(declaredDraftRisk(withDerivedRisk(spanning)), spanning);
+  // Re-deriving a derived draft is stable, and a narrowed draft derives again.
+  assert.deepEqual(withDerivedRisk(raised), raised);
+  assert.equal(withDerivedRisk({ ...raised, tasks: tasksAt("services/a/**") }).coupling, "isolated");
+  // Declared high stays high; legacy drafts and unknown values are untouched.
+  const high = withDerivedRisk(riskDraft({ impact: "high", tasks: tasksAt("db/a.sql") }));
+  assert.equal(high.impact, "high");
+  assert.equal(high._riskDerivation, undefined);
+  const legacy = { version: 1, tasks: tasksAt("services/a/**", "services/b/**") };
+  assert.equal(withDerivedRisk(legacy), legacy);
+  assert.equal(withDerivedRisk(riskDraft({ coupling: "loose",
+    tasks: tasksAt("services/a/**", "services/b/**") })).coupling, "loose");
+});
+
+test("a derived standard draft says why in its proposal and its evidence repair", () => {
+  const source = withDerivedRisk(riskDraft({
+    capability: undefined, securityTriggers: ["auth"],
+    requirements: [{ key: "outcome", capability: "orders", description: "The system SHALL return the result",
+      scenarios: [{ name: "Result", when: "Input arrives", then: "The result is returned" }] }],
+    tasks: tasksAt("services/orders/**", "services/billing/**")
+  }));
+  const { draft, issues } = normalizeSemanticDraft(source, slugify, { defaultRapidEvidence: true });
+  assert.match(issues.join("\n"), /requires evidence\['outcome'\]\.capabilities .*the harness derived coupling coupled \(derived: tasks span services\/billing, services\/orders\)/);
+  assert.equal(draft.coupling, "coupled");
+  const proposal = renderDraftProposal(draft, { intent: draft.intent, schema: "foundation-standard" });
+  assert.match(proposal, /^- \*\*Coupling:\*\* coupled \(derived: tasks span services\/billing, services\/orders\)$/m);
+  // Resolve keeps the reason while the value holds and replaces it otherwise.
+  assert.equal(synchronizeProposalClassification(proposal, { impact: "low", coupling: "coupled" }),
+    proposal);
+  assert.match(synchronizeProposalClassification(proposal, { coupling: "isolated" }),
+    /^- \*\*Coupling:\*\* isolated$/m);
 });

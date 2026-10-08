@@ -156,12 +156,33 @@ dev_bundle_words="$(cat "$ROOT/.claude/harness/AGENT.md" \
   "$ROOT/.claude/commands/dev.md" "$ROOT/.claude/commands/change.md" \
   "$ROOT/.claude/commands/build.md" "$ROOT/.claude/commands/prove.md" \
   "$ROOT/.claude/commands/land.md" | wc -w | tr -d ' ')"
-if [ "$dev_bundle_words" -le 1150 ]; then
-  pass "/dev context bundle (AGENT + dev + four phases) ($dev_bundle_words <= 1150 words)"
+if [ "$dev_bundle_words" -le 1125 ]; then
+  pass "/dev context bundle (AGENT + dev + four phases) ($dev_bundle_words <= 1125 words)"
 else
-  fail_context_budget "/dev context bundle" "$dev_bundle_words" 1150 words \
+  fail_context_budget "/dev context bundle" "$dev_bundle_words" 1125 words \
     "AGENT.md + dev.md + change/build/prove/land.md"
 fi
+# Rapid read surface: the lane a low-risk change takes must need only these
+# files up front. `advance` returns every Build/Prove/Land action with its
+# recipe and `resume`, so those phase commands load on demand (a failure or a
+# non-EDIT action), not before the first command. Each avoided read is a
+# model request.
+rapid_read_words="$(cat "$ROOT/.claude/harness/AGENT.md" \
+  "$ROOT/.claude/commands/dev.md" "$ROOT/.claude/commands/change.md" | wc -w | tr -d ' ')"
+if [ "$rapid_read_words" -le 675 ]; then
+  pass "rapid-lane read surface (AGENT + dev + change) ($rapid_read_words <= 675 words)"
+else
+  fail_context_budget "rapid-lane read surface" "$rapid_read_words" 675 words \
+    "AGENT.md + dev.md + change.md"
+fi
+assert_file_contains "dev reads only change.md up front" \
+  "$ROOT/.claude/commands/dev.md" '`.claude/commands/change.md`: read it once, now.'
+assert_file_contains "dev loads build and prove only for a non-EDIT action or failure" \
+  "$ROOT/.claude/commands/dev.md" 'read each only'
+assert_file_contains "dev loads land only at a Land boundary" \
+  "$ROOT/.claude/commands/dev.md" '`.claude/commands/land.md`, only with Land authority, at a Land boundary.'
+assert_file_contains "change starts, approves, and continues in one call when the request approves" \
+  "$ROOT/.claude/commands/change.md" '`--approve-spec --decision-ref <ref>'
 # Shared rules have one home. Spot-check distinctive phrases.
 for phrase in 'No preflight' 'agent-only control data' 'cd <workspace>` once' \
   'hand-edit' 'Recover from the envelope first' 'in any wording' \
@@ -197,8 +218,15 @@ assert_file_contains "change keeps keyword-only security on the rapid lane" \
   "$ROOT/.claude/commands/change.md" 'a keyword like billing only adds review'
 assert_file_contains "change describes the minimal draft" \
   "$ROOT/.claude/commands/change.md" '`tasks[{outcome, verify, paths}]`'
-assert_file_contains "change saves the draft without a shell heredoc" \
-  "$ROOT/.claude/commands/change.md" '(no `version`, no heredoc)'
+assert_file_contains "change saves the draft with the file tool, not a shell heredoc" \
+  "$ROOT/.claude/commands/change.md" 'with the Write tool, not shell, to `.foundation/drafts/<id>.json` (no'
+assert_cmd_zero "start template leads with the pre-allowed save route" \
+  sh -c 'node "$1" start --template | jq -e '\''
+    (keys_unsorted[0] == "save") and (.save | test("Write tool")) and
+    (.save | test("heredoc"))'\'' >/dev/null' \
+  sh "$ROOT/.claude/harness/foundation.mjs"
+assert_file_contains "change repairs the draft with the file tool, not a shell script" \
+  "$ROOT/.claude/commands/change.md" 'fix every named field via Edit, rerun'
 assert_file_contains "change trusts the printed packet" \
   "$ROOT/.claude/commands/change.md" 'do not reopen them'
 assert_file_contains "change records spec approval through advance" \
@@ -436,14 +464,25 @@ else
     "$combined_bytes" 32768 bytes "representative auth build context"
 fi
 
-assert_cmd_zero "task packet budget is 8 KiB" \
-  jq -e '.execution.packetBytes.task == 8192' "$ROOT/foundation.json"
-assert_cmd_zero "review packet budget is 8 KiB" \
-  jq -e '.execution.packetBytes.review == 8192' "$ROOT/foundation.json"
-assert_cmd_zero "repository packet budget is 12 KiB" \
-  jq -e '.execution.packetBytes.repository == 12288' "$ROOT/foundation.json"
-assert_cmd_zero "global packet budget is 16 KiB" \
-  jq -e '.execution.packetBytes.global == 16384' "$ROOT/foundation.json"
+# User decision (2026-10): packet budgets were raised so a measured
+# three-repository, three-task change fits with ~1.5x headroom.
+assert_cmd_zero "task packet budget is 20 KiB" \
+  jq -e '.execution.packetBytes.task == 20480' "$ROOT/foundation.json"
+assert_cmd_zero "review packet budget is 20 KiB" \
+  jq -e '.execution.packetBytes.review == 20480' "$ROOT/foundation.json"
+assert_cmd_zero "repository packet budget is 24 KiB" \
+  jq -e '.execution.packetBytes.repository == 24576' "$ROOT/foundation.json"
+assert_cmd_zero "global packet budget is 32 KiB" \
+  jq -e '.execution.packetBytes.global == 32768' "$ROOT/foundation.json"
+assert_cmd_zero "runtime default packet budgets match the seeded foundation.json" \
+  node --input-type=module -e '
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync(process.argv[1], "utf8");
+    const seeded = JSON.parse(readFileSync(process.argv[2], "utf8")).execution.packetBytes;
+    const match = source.match(/packetBytes: \{ task: (\d+), review: (\d+), repository: (\d+), global: (\d+) \}/);
+    const runtime = match && { task: +match[1], review: +match[2], repository: +match[3], global: +match[4] };
+    if (JSON.stringify(runtime) !== JSON.stringify(seeded)) process.exit(1);
+  ' "$ROOT/.claude/harness/runtime/core/runtime-environment.mjs" "$ROOT/foundation.json"
 assert_cmd_zero "plan summary budget is 4 KiB" \
   jq -e '.execution.planSummaryBytes == 4096' "$ROOT/foundation.json"
 assert_cmd_zero "rapid token budget is explicit" \

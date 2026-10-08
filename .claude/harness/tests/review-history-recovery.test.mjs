@@ -195,3 +195,73 @@ test("a verified sibling never recorded as head is not restored as determinate",
     assert.throws(() => w.store.assertReviewDispatchAllowed(id, "ai"), /REVIEW_ROUTE_COMPLETE/);
   }
 });
+
+// Moving the runtime head and count back together to an earlier valid record
+// leaves a chain that verifies; the attempt records above the recorded head
+// are what evidence the reset budget.
+test("a consistently lowered chain is detected and its count is never lowered", (t) => {
+  const lowerings = [
+    ["to an earlier record", (w, [first]) => ({ chainHead: first.digest, totalAttempts: 1 })],
+    ["to an empty history", () => ({ chainHead: null, totalAttempts: 0 })],
+    // A completed verdict at head+1 is never an in-flight dispatch.
+    ["by one, over a completed verdict", (w, [first, second]) => {
+      const name = w.file(2);
+      const completed = { ...readJson(join(w.attemptsDir, name)), version: 2,
+        status: "completed", resultStatus: "pass" };
+      delete completed.digest;
+      completed.digest = stableHash(completed);
+      rmSync(join(w.attemptsDir, name));
+      rmSync(join(w.attemptsDir, w.file(3)));
+      writeJson(join(w.attemptsDir, `0002-${completed.digest.slice(0, 12)}.json`), completed);
+      assert.equal(second.priorChainHead, first.digest);
+      return { chainHead: first.digest, totalAttempts: 1 };
+    }]
+  ];
+  for (const [index, [label, lower]] of lowerings.entries()) {
+    drainSignals();
+    const id = `change-consistently-lowered-${index}`;
+    const w = world(t, id);
+    const records = [w.reserve("fail"), w.reserve("error"), w.reserve("inconclusive")];
+    w.update({ reviewHistory: { ...w.state().reviewHistory, aiAttempts: 1,
+      ...lower(w, records) } });
+    const evidenced = readdirSync(w.attemptsDir).length;
+    assert.equal(w.store.reviewHistoryChainValid(id, w.state().reviewHistory), false,
+      `${label}: records above the recorded head invalidate the chain`);
+
+    const history = w.store.assertReviewDispatchAllowed(id, "human");
+    assert.ok(history.totalAttempts >= evidenced,
+      `${label}: the count is rebuilt no lower than the records evidence`);
+    assert.equal(drainSignals().some((row) => row.code === "review-history-recovered"), true,
+      `${label}: the recovery is visible as a signal`);
+    assert.equal(w.quarantines().length, 1, `${label}: the lowered chain is moved aside`);
+    assert.equal(w.store.reviewHistoryChainValid(id, history), true);
+    assert.throws(() => w.store.assertReviewDispatchAllowed(id, "ai"), /REVIEW_ROUTE_COMPLETE/,
+      `${label}: the reset budget is consumed, never reopened`);
+  }
+});
+
+test("a dispatched record left above the head by a crash is not treated as lowering", (t) => {
+  const id = "change-in-flight";
+  const w = world(t, id);
+  const head = w.reserve("fail");
+  const before = w.state().reviewHistory;
+  const dispatch = (requestId) => w.store.dispatchReviewAttempt(id, {
+    reviewerType: "human", reviewerIdentity: "security-owner",
+    requestId, workspaceHash: "workspace-now",
+    scope: { mode: "full", paths: [], digest: "scope" }
+  });
+  // Dispatch writes the record before it saves the runtime head; a crash
+  // between the two leaves the record at head+1 linking to the recorded head.
+  const inFlight = dispatch("request-crashed");
+  w.update({ reviewHistory: before });
+  assert.equal(inFlight.attempt, 2);
+  assert.equal(inFlight.priorChainHead, head.digest);
+  assert.equal(w.store.reviewHistoryChainValid(id, before), true);
+
+  w.store.assertReviewDispatchAllowed(id, "ai");
+  const resumed = dispatch("request-resumed");
+  assert.equal(resumed.attempt, 2, "the resumed dispatch takes the in-flight attempt number");
+  assert.deepEqual(w.quarantines(), [], "an in-flight record is never quarantined");
+  assert.equal(w.state().reviewHistory.recoveries, undefined);
+  assert.equal(w.store.reviewHistoryChainValid(id, w.state().reviewHistory), true);
+});

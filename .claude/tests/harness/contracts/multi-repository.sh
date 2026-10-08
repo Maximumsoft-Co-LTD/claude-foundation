@@ -105,6 +105,20 @@ assert_file_exists "read-only contracts setup ran in its isolated worktree" \
   .foundation/repository-sandboxes/cross-repository-profile/contracts/.deps/ready
 assert_file_exists "Git-backed external repository receives an isolated worktree" \
   .foundation/repository-sandboxes/cross-repository-profile/external/external.txt
+# Root code and tests consume a selected submodule through its root path: the
+# root sandbox links it to the repository sandbox, never an empty gitlink.
+projection_sandbox=.foundation/sandboxes/cross-repository-profile
+assert_eq "root sandbox links the selected API submodule to its repository sandbox" \
+  "$(cd .foundation/repository-sandboxes/cross-repository-profile/api && pwd -P)" \
+  "$(cd "$projection_sandbox/api" && pwd -P)"
+printf 'uncommitted\n' > \
+  .foundation/repository-sandboxes/cross-repository-profile/api/projection-probe.txt
+assert_eq "a root exec sees the repository sandbox's uncommitted work" "uncommitted" \
+  "$(node .claude/harness/foundation.mjs exec cross-repository-profile --repo root -- \
+    cat api/projection-probe.txt 2>/dev/null)"
+rm .foundation/repository-sandboxes/cross-repository-profile/api/projection-probe.txt
+assert_eq "projected submodules are not root changes" "" \
+  "$(git -C "$projection_sandbox" status --porcelain -- api app contracts)"
 printf 'preserve me\n' > \
   .foundation/repository-sandboxes/cross-repository-profile/api/.binding-recovery-marker
 jq 'del(.repositories.api)' \
@@ -124,7 +138,9 @@ assert_cmd_zero "advance names the task repository's sandbox as the one place to
   sh -c 'printf "%s" "$1" | jq -e --arg api "$2" '\''
     .workspace == $api and .tasks[0].workspace == $api and .workspaces.api == $api and
     (.contextFiles | index($api + "/api.txt")) != null and
-    ([.contextFiles[] | select(contains("/.foundation/sandboxes/"))] | length) == 0'\'' \
+    ([.contextFiles[] | select(contains("/.foundation/sandboxes/") and
+      (endswith("/openspec/changes/cross-repository-profile/tasks.md") | not))] | length) == 0 and
+    ([.contextFiles[] | select(endswith("/tasks.md"))] | length) == 1'\'' \
     >/dev/null' sh "$partial_action" "$api_sandbox"
 assert_file_exists "automatic partial binding repair preserves existing repository work" \
   .foundation/repository-sandboxes/cross-repository-profile/api/.binding-recovery-marker
@@ -577,4 +593,123 @@ fi
 assert_contains "copy-root child worktree reaches the new dependency commit" \
   "$(cat .foundation/repository-sandboxes/copy-root-read-refresh/dependency/dependency.txt)" \
   "dependency-after"
+
+# A writable sibling checkout (`../sdk`, allowOutsideRoot) is a declared
+# repository like a submodule: a draft binds tasks to it, Build isolates it,
+# and Land writes its proven bytes into the sibling target uncommitted. Both
+# outside-root types (`git`, `external`) are accepted; a read sibling owns no
+# edits. The walk uses the advance route a real agent uses, with no model.
+for child in sibling-sdk sibling-lib sibling-ref; do
+  mkdir -p "$TMP/$child/src" "$TMP/$child/test"
+  cd "$TMP/$child"
+  git init -q
+  git config user.name "Foundation Test"
+  git config user.email "foundation@example.invalid"
+  printf '{"name":"%s","private":true,"type":"module","scripts":{"test":"node --test"}}\n' \
+    "$child" > package.json
+  printf 'export const name = "%s";\n' "$child" > src/index.js
+  printf '%s\n' 'import { test } from "node:test";' 'import assert from "node:assert";' \
+    'import { name } from "../src/index.js";' 'test("name", () => assert.ok(name));' \
+    > test/index.test.js
+  git add .
+  git commit -qm "$child fixture"
+done
+mkdir -p "$TMP/sibling-project/.claude/harness" "$TMP/sibling-project/openspec" \
+  "$TMP/sibling-project/.foundation"
+install_harness_fixture "$ROOT" "$TMP/sibling-project"
+cp "$ROOT/.claude/harness/commands.json" "$TMP/sibling-project/.claude/harness/"
+cp -R "$ROOT/openspec/schemas" "$TMP/sibling-project/openspec/"
+cp "$ROOT/openspec/config.yaml" "$TMP/sibling-project/openspec/"
+cp "$ROOT/.foundation/.gitignore" "$TMP/sibling-project/.foundation/"
+jq '.workflow.grounding = "optional" | .workflow.reviewPolicy = "legacy" |
+    .workflow.reviewCircuit = "legacy" | .land.riskBasedCi = false |
+    .telemetry.requireUsage = false' \
+  "$ROOT/foundation.json" > "$TMP/sibling-project/foundation.json"
+cp -R "$TMP/sibling-sdk/src" "$TMP/sibling-sdk/test" "$TMP/sibling-sdk/package.json" \
+  "$TMP/sibling-project/"
+cd "$TMP/sibling-project"
+git init -q
+git config user.name "Foundation Test"
+git config user.email "foundation@example.invalid"
+git -c protocol.file.allow=always submodule add -q "$TMP/sibling-lib" services/lib
+printf '%s\n' '{"version":1,"repositories":[' \
+  '  {"id":"lib","type":"submodule","path":"services/lib"},' \
+  '  {"id":"sdk","type":"git","path":"../sibling-sdk","allowOutsideRoot":true},' \
+  '  {"id":"ref","type":"external","path":"../sibling-ref","mode":"read","allowOutsideRoot":true}' \
+  ']}' > openspec/repositories.yaml
+git add .
+git commit -qm "sibling fixture"
+assert_cmd_zero "start template lists writable and read sibling repositories" \
+  sh -c 'node .claude/harness/foundation.mjs start --template | jq -e '\''
+    .declaredRepositories == [{"id":"lib","path":"services/lib"},
+      {"id":"sdk","path":"../sibling-sdk"},
+      {"id":"ref","path":"../sibling-ref","mode":"read"}]'\'' >/dev/null'
+sibling_draft() { # <repository-of-the-sibling-task> <selection-json>
+  node -e '
+    const [repository, selection] = process.argv.slice(1);
+    const task = (key, repo) => ({ key, repository: repo, outcome: `Mark ${key}`,
+      covers: ["marker"], paths: ["src/**"], verify: "npm test" });
+    console.log(JSON.stringify({ version: 4, id: "sibling-marker",
+      intent: "Mark every repository", impact: "low", coupling: "isolated",
+      why: "Every repository exposes the marker.",
+      failureMatrix: [{ failure: "A repository lacks the marker",
+        userSees: "The marker test fails", recovery: "Add the marker" }],
+      repositories: JSON.parse(selection),
+      requirements: [{ key: "marker", capability: "sibling-marker", operation: "added",
+        scenarios: [{ name: "Marker", when: "A caller reads the marker",
+          then: "The marker is present" }], outcome: "The marker is present" }],
+      tasks: [task("lib-marker", "lib"), task("sibling-marker", repository),
+        task("root-marker", "root")],
+      evidence: { marker: { capabilities: ["test"] } } }));' "$@"
+}
+mkdir -p .foundation/drafts
+sibling_draft ref '[{"id":"root"},{"id":"lib"},{"id":"ref"}]' \
+  > .foundation/drafts/sibling-read.json
+assert_contains "a read sibling cannot own a task that edits files" \
+  "$(node .claude/harness/foundation.mjs start .foundation/drafts/sibling-read.json 2>&1 || true)" \
+  "edits files in repository 'ref', which is read-only"
+sibling_draft sdk '[{"id":"root","mode":"write"},{"id":"lib","mode":"write"},{"id":"sdk","mode":"write"},{"id":"ref","mode":"read"}]' \
+  > .foundation/drafts/sibling-marker.json
+assert_contains "change start accepts a task bound to a writable sibling" \
+  "$(node .claude/harness/foundation.mjs start .foundation/drafts/sibling-marker.json 2>&1)" \
+  "AGREED sibling-marker"
+sibling_ledger="$(cat openspec/changes/sibling-marker/tasks.md)"
+assert_contains "the sibling task compiles into the ledger" "$sibling_ledger" \
+  "[key:sibling-marker] [repo:sdk]"
+assert_contains "root follows the submodule it contains, never the sibling" "$sibling_ledger" \
+  "[repo:root] [kind:implementation] [paths:src/**] [depends:T001]"
+node .claude/harness/foundation.mjs advance sibling-marker --approve-spec \
+  --decision-ref fixture://user/approve-sibling --through build >/dev/null 2>&1 || true
+sibling_sandbox=.foundation/repository-sandboxes/sibling-marker/sdk
+assert_file_exists "Build isolates the writable sibling in a repository sandbox" \
+  "$sibling_sandbox/src/index.js"
+assert_eq "exec --repo sdk runs in the sibling sandbox" \
+  "$(pwd -P)/$sibling_sandbox" \
+  "$(node .claude/harness/foundation.mjs exec sibling-marker --repo sdk -- pwd -P 2>/dev/null)"
+for workspace in .foundation/repository-sandboxes/sibling-marker/lib "$sibling_sandbox" \
+    .foundation/sandboxes/sibling-marker; do
+  printf 'export const marker = "landed";\n' > "$workspace/src/marker.js"
+  # Behavior-changing work needs a test that fails on the base source.
+  printf '%s\n' 'import { test } from "node:test";' 'import assert from "node:assert";' \
+    'import { marker } from "../src/marker.js";' \
+    'test("marker", () => assert.equal(marker, "landed"));' > "$workspace/test/marker.test.js"
+done
+sibling_build=""
+for _ in 1 2 3 4 5; do
+  sibling_build="$(node .claude/harness/foundation.mjs advance sibling-marker --through build 2>&1)"
+  case "$sibling_build" in *'"reached":"build"'*) break ;; esac
+done
+assert_contains "Build completes tasks in root, submodule, and sibling" \
+  "$sibling_build" '"reached":"build"'
+sibling_head="$(git -C "$TMP/sibling-sdk" rev-parse HEAD)"
+sibling_archived="$(node .claude/harness/foundation.mjs advance sibling-marker --through archived 2>&1)"
+case "$sibling_archived" in *'"reached":"archived"'*) ;; *) printf '%s\n' "$sibling_archived" >&2 ;; esac
+assert_contains "the sibling change Lands through archive" "$sibling_archived" '"reached":"archived"'
+assert_file_contains "Land writes the proven bytes into the sibling target" \
+  "$TMP/sibling-sdk/src/marker.js" 'landed'
+assert_eq "the sibling target stays uncommitted" "$sibling_head" \
+  "$(git -C "$TMP/sibling-sdk" rev-parse HEAD)"
+assert_eq "the sibling target index is untouched" "" \
+  "$(git -C "$TMP/sibling-sdk" diff --cached --name-only)"
+assert_file_absent "the read sibling receives nothing" "$TMP/sibling-ref/src/marker.js"
 cd "$TMP/multi-project"

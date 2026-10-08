@@ -571,3 +571,21 @@ test("show agent task validates dispatch and projects the selected graph node", 
   assert.throws(() => showAgentTask(context, "change", "missing"), /unknown pending task/);
   assert.throws(() => showAgentTask(context, "change", null), /unknown pending task ''/);
 });
+
+test("packet reads of a non-pending task render the read-only completed packet", () => {
+  const calls = [];
+  const output = {
+    ...plan({ tasks: [task("T1")] }),
+    graph: { nodes: [], edges: [] },
+    dispatchable: false,
+    blockingReasons: ["scope is active"]
+  };
+  const context = { planValue: () => output, showPacket: (...args) => calls.push(args), fail };
+  showAgentTask(context, "change", "T3", { allowCompleted: true, pretty: true });
+  assert.deepEqual(calls[0], ["change", { task: "T3", pretty: true, completedTask: true }]);
+  assert.throws(() => showAgentTask(context, "change", "T3"), /scope is active/);
+  output.dispatchable = true;
+  assert.throws(() => showAgentTask(context, "change", "T3"), /unknown pending task 'T3'/);
+  assert.throws(() => showAgentTask(context, "change", null, { allowCompleted: true }),
+    /unknown pending task ''/);
+});

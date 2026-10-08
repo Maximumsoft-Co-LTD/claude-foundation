@@ -68,7 +68,10 @@ assert_not_contains() {
 # assert_cmd_zero <label> <cmd> [args...] — run cmd quietly, expect exit 0.
 assert_cmd_zero() {
   _label="$1"; shift
-  if "$@" >/dev/null 2>&1; then pass "$_label"; else fail "$_label — command failed: $*"; fi
+  _out="$("$@" 2>&1)" && pass "$_label" || {
+    fail "$_label — command failed: $*"
+    printf '%s\n' "$_out" | tail -n 40 | sed 's/^/    | /'
+  }
 }
 
 # json_get <file> <top-level-key> — prints the scalar value ("" if absent).

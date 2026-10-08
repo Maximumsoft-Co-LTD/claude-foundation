@@ -35,6 +35,15 @@ export function sameArgv(argv, built) {
     argv.every((token, index) => token === expected[index]);
 }
 
+// A compiled draft's provider command is `sh -c <verify>`, the very command line
+// the task check runs under `sh -c`. Identical lines are the identical
+// execution, with or without shell syntax in them.
+export function sameShellLine(line, built) {
+  const args = built?.args || [];
+  return built?.command === "sh" && args.length === 2 && args[0] === "-c" &&
+    typeof line === "string" && line.length > 0 && args[1] === line;
+}
+
 // Why a provider's result cannot come from a captured task check, or null.
 // Reuse needs everything the adapter reads to be in stdout/stderr and the exit.
 export function taskCheckReuseRefusal(config, capability) {

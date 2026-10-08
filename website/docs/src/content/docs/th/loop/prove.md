@@ -20,7 +20,9 @@ audit ระบบคืน `DONE` เฉพาะเมื่อถึงเป
 Evidence ที่ล้มเหลวคืน `REPAIR` หรือ `EDIT` batch พร้อม claim closure ที่ stale หลัง
 แก้จะรันซ้ำเฉพาะ check ที่ invalidated และ downstream Review ที่ harness รันเองได้จะ
 เริ่มพร้อมกับ test บน workspace hash เดียวกัน อ่านเฉพาะ diff และ requirement ของ
-ข้อตกลง และใช้ model ที่เร็วกว่าสำหรับความเสี่ยงต่ำ finding ของ review กับ test ที่ล้ม
+ข้อตกลง และใช้ model ที่เร็วกว่าสำหรับความเสี่ยงต่ำ กับ model ระดับ standard ที่เร็วกว่าสำหรับ
+ความเสี่ยงกลาง (ความเสี่ยงสูงและ security trigger ใช้ model ที่ตั้งค่าไว้ และ
+`review.modelByTier` override ได้) finding ของ review กับ test ที่ล้ม
 จะคืนมาใน `REPAIR` เดียว Review แบบอื่นที่ตั้งค่าไว้เป็น `RUN_EXTERNAL` การรอเจ้าของภายนอกที่ระบุชื่อเป็น `WAIT` โดยไม่ต้องถาม มติด้าน contract หรือ
 acceptance เป็น `ASK_USER` ทุก boundary เก็บ state และให้ resume route เดียว การ
 เรียกซ้ำบน wait เดิมไม่ poll ไม่รัน evidence ซ้ำ และไม่เสีย model request เพิ่ม

@@ -140,6 +140,9 @@ function fixture(options = {}) {
       return request;
     },
     markBlocked: () => { blocked += 1; },
+    ...(options.testDiscrimination ? {
+      testDiscrimination: (_id, hash) => options.testDiscrimination(hash)
+    } : {}),
     die: (message) => { throw new Error(message); }
   });
   return {
@@ -837,6 +840,12 @@ function concurrentFixture(options = {}) {
   let testOutcome = options.testOutcome || "pass";
   let reviewOutcome = options.reviewOutcome || "pass";
   let testStarted = null;
+  // A readiness read before the forced snapshot carries the hash of a snapshot
+  // cached before the latest edits; forcing the snapshot refreshes the cache.
+  let cachedHash = options.staleCache ? "workspace-stale" : null;
+  const discriminationStarted = Promise.withResolvers();
+  const discriminationCalls = [];
+  const readHash = () => cachedHash || workspaceHash;
   const receipts = {};
   const requests = [];
   const delivered = [...(options.deliveredAiAttempts || [])];
@@ -852,7 +861,7 @@ function concurrentFixture(options = {}) {
   const readiness = () => {
     const pending = ["test", "review"].filter((provider) => validity(provider) !== "valid");
     return {
-      version: 1, changeId: "change-a", workspaceHash, issues: [],
+      version: 1, changeId: "change-a", workspaceHash: readHash(), issues: [],
       status: pending.length ? "NEEDS_USER_DECISION" : "READY",
       externalProviders: pending.filter((provider) => provider === "review"),
       unavailableProviders: [], pendingTasks: [], next: []
@@ -860,7 +869,10 @@ function concurrentFixture(options = {}) {
   };
   const runtime = createProofExecutionRuntime({
     proofReadinessValue: readiness,
-    relevantSnapshot: () => ({ id: `snapshot-${workspaceHash}`, workspaceHash }),
+    relevantSnapshot: (_id, _workspace, force) => {
+      if (force && cachedHash) cachedHash = null;
+      return { id: `snapshot-${workspaceHash}`, workspaceHash };
+    },
     loadRuntime: () => state,
     saveRuntime: (next) => { state = next; },
     now: () => "2026-10-01T00:00:00.000Z",
@@ -921,6 +933,10 @@ function concurrentFixture(options = {}) {
           // never resolves this and the bounded wait below fails the test.
           await testStarted.promise;
           testStarted = null;
+          // With `overlapDiscrimination` the review can only finish after the
+          // base-source discrimination run began: a controller that joins the
+          // review first never lets it finish and the bounded wait fails.
+          if (options.overlapDiscrimination) await discriminationStarted.promise;
           events.push("review:end");
           const stored = requests.find((row) => row.requestId === request.requestId);
           stored.status = reviewOutcome === "pass" ? "completed" : "rejected";
@@ -937,6 +953,12 @@ function concurrentFixture(options = {}) {
           });
         })();
       },
+    testDiscrimination: (_id, hash) => {
+      discriminationCalls.push(hash);
+      events.push("discrimination");
+      discriminationStarted.resolve();
+      return options.discrimination || { status: "pass", findings: [] };
+    },
     recordDeterministicReviewClosure: options.closure
       ? (...args) => options.closure({ delivered, receipts, validity }, ...args)
       : undefined,
@@ -944,7 +966,7 @@ function concurrentFixture(options = {}) {
     die: (message) => { throw new Error(message); }
   });
   return {
-    runtime, events, reviewCommands, receipts, testRunIds,
+    runtime, events, reviewCommands, receipts, testRunIds, discriminationCalls,
     advance: () => quiet(() => within(
       runtime.proofAdvance("change-a", { concurrentReview: true }), 2000,
       "concurrent review and providers must overlap, not run serially")),
@@ -965,6 +987,45 @@ function concurrentFixture(options = {}) {
     /^claude-foundation authority run change-a --request review-1 --subject-actor implementation-agent$/);
   assert.equal(run.reviewCommands[0].workspaceHash, "workspace-a",
     "the review binds to the same workspace hash as the providers");
+}
+
+{
+  // A readiness hash read from a snapshot cached before the latest edits must
+  // not disable the overlap: the pass re-derives it from the forced snapshot.
+  const run = concurrentFixture({ staleCache: true });
+  const passed = await run.advance();
+  assert.equal(passed.status, "PASS");
+  assert.deepEqual(run.events.slice(0, 2), ["review:start", "test:start"]);
+  assert.equal(run.reviewCommands[0].workspaceHash, "workspace-a",
+    "the review binds to the fresh hash, never the cached one");
+}
+
+{
+  // The base-source discrimination run starts while the review is in flight
+  // and is evaluated once, for the workspace hash the review is bound to.
+  const run = concurrentFixture({ overlapDiscrimination: true });
+  const passed = await run.advance();
+  assert.equal(passed.status, "PASS");
+  assert.deepEqual(run.events.filter((event) => event !== "test:end"),
+    ["review:start", "test:start", "discrimination", "review:end"]);
+  assert.deepEqual(run.discriminationCalls, ["workspace-a"]);
+}
+
+{
+  // Non-discriminating tests found beside the review stop with the repair
+  // route only after the reviewer finished: no dangling reviewer, and the
+  // delivered verdict stays bound to its workspace hash.
+  const priorExitCode = process.exitCode;
+  const run = concurrentFixture({ overlapDiscrimination: true, discrimination: {
+    status: "fail",
+    findings: [{ id: "test-discrimination:root", provider: "test", repositoryId: "root",
+      message: "tests pass on the base source" }]
+  } });
+  const stop = await run.advance();
+  process.exitCode = priorExitCode;
+  assert.equal(stop.stage, "tests-not-discriminating");
+  assert.ok(run.events.includes("review:end"), "the reviewer finished before the stop returned");
+  assert.notEqual(stop.status, "PASS");
 }
 
 {
@@ -1193,6 +1254,49 @@ function realClosure(criticalCases) {
   assert.equal(threeWaves.status, "NEEDS_USER_DECISION", JSON.stringify(threeWaves));
   assert.equal(threeWaves.decision.kind, "review-route-exhausted");
   assert.match(threeWaves.decision.summary, /All 3 AI review wave\(s\).*R3/);
+  process.exitCode = priorExitCode;
+}
+
+{
+  // Behavior-changing work whose tests pass on the base source is an agent
+  // repair before the proof is finalized; changed tests are progress, an
+  // unchanged rerun reaches the existing no-progress boundary, and tests that
+  // fail on base let the same gate finalize.
+  const priorExitCode = process.exitCode;
+  let verdict = "fail";
+  const calls = [];
+  const flow = fixture({
+    phase: "ready", executionNeeded: false,
+    testDiscrimination: (hash) => {
+      calls.push(hash);
+      return verdict === "fail" ? {
+        status: "fail",
+        findings: [{
+          id: "test-discrimination:root", provider: "test", repositoryId: "root",
+          classification: "product", severity: "error", rootCause: "tests-pass-on-base",
+          message: "test file(s) test/new.test.js in repository 'root' pass on the original code",
+          paths: ["test/new.test.js"]
+        }]
+      } : { status: "pass", findings: [] };
+    }
+  });
+  const repair = await quiet(() => flow.runtime.proofAdvance("change-a"));
+  assert.equal(repair.status, "ACTION_REQUIRED", JSON.stringify(repair));
+  assert.equal(repair.route, "AUTO_REPAIR");
+  assert.equal(repair.stage, "tests-not-discriminating");
+  assert.match(repair.next[0].reason, /pass on the original code/);
+  assert.deepEqual(repair.repairPlan.tasks[0].paths, ["test/new.test.js"]);
+  assert.equal(flow.counters().finalizations, 0);
+  const unchanged = await quiet(() => flow.runtime.proofAdvance("change-a"));
+  assert.equal(unchanged.status, "NEEDS_USER_DECISION");
+  assert.equal(unchanged.route, "NO_PROGRESS_DECISION");
+  flow.moveWorkspace("workspace-b");
+  flow.setPhase("ready");
+  verdict = "pass";
+  const proven = await quiet(() => flow.runtime.proofAdvance("change-a"));
+  assert.equal(proven.status, "PASS", JSON.stringify(proven));
+  assert.deepEqual(calls, ["workspace-a", "workspace-a", "workspace-b"]);
+  assert.equal(flow.counters().finalizations, 1);
   process.exitCode = priorExitCode;
 }
 

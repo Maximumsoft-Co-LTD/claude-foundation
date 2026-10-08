@@ -10,7 +10,9 @@
 
 The current in-repository protocol and guarded runner live in
 [`openspec-native/`](openspec-native/). They produce a distinct versioned
-scorecard and do not treat the historical rows below as current evidence.
+scorecard and do not treat the historical rows below as current evidence. Its
+`--arm baseline` lane is the current form of the historical plain baseline arm:
+the same seed and oracle with no harness installed.
 
 Measures how the `/dev` workflow *performs* — not whether its artifacts are valid
 (that's `../scenarios/`), but what a run **costs**, how much **machinery** it

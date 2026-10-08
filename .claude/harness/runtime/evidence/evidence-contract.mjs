@@ -219,6 +219,25 @@ export function collectReviewSignals(state, contract, configuredCapabilities = [
   return { capabilities, requiredTriggers, diversityTriggers };
 }
 
+// Risk-tiered review reviews every change except a low-tier rapid-lane change
+// that nothing asks to review: no declared or keyword review, no required or
+// diversity trigger, no review capability. Its proof is the project's
+// deterministic evidence alone. Anything inferred from the built diff that
+// raises the tier (security-static, contract or data capabilities) restores
+// review, because the tier is recomputed at every Prove.
+export function rapidEvidenceOnly({ state = {}, signals, riskRoute, signalled }) {
+  return state.schema === "foundation-rapid" && riskRoute?.tier === "low" &&
+    !signalled && !(signals?.diversityTriggers || []).length;
+}
+
+// The contract fingerprint keeps the review-policy shape it had before the
+// rapid exemption existed (risk-tiered was always `required: true`), so
+// upgrading never re-fingerprints an in-flight change. The exemption is a pure
+// function of fingerprinted inputs and is enforced live by requiredProviders.
+export function fingerprintedReviewPolicy(policy) {
+  return policy?.tier && policy.required === false ? { ...policy, required: true } : policy;
+}
+
 export function assembleReviewPolicy({
   state, signals, riskRoute, policy, riskTiered
 }) {
@@ -250,11 +269,12 @@ export function assembleReviewPolicy({
   if (waived) triggers.push("diversity-waived-single-model");
   const selfReview = policy.independence === "self";
   if (selfReview) triggers.push("independence-waived-self-review");
+  const signalled = Boolean(state.reviewRequired || requiredTriggers.length ||
+    capabilities.has("review"));
   return {
     required: riskTiered
-      ? true
-      : Boolean(state.reviewRequired || requiredTriggers.length ||
-        capabilities.has("review")),
+      ? !rapidEvidenceOnly({ state, signals, riskRoute, signalled })
+      : signalled,
     ...(riskTiered ? {
       tier: riskRoute.tier,
       route: riskRoute.route,
@@ -1149,7 +1169,7 @@ export function createEvidenceContract({
       impact: state.impact,
       coupling: state.coupling,
       reviewRequired: Boolean(state.reviewRequired),
-      reviewPolicy: reviewPolicy(id, { ...state, waivers: [] }, contract),
+      reviewPolicy: fingerprintedReviewPolicy(reviewPolicy(id, { ...state, waivers: [] }, contract)),
       acceptance: resolvedAcceptance(id, state, contract),
       externalOperations: handoffContract(id).operations,
       claims: contract.claims,

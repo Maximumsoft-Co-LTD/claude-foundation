@@ -4,6 +4,18 @@ import { TOOL_CALL_CATEGORIES } from "../../../harness/runtime/observability/tel
 
 export const SCORECARD_PROTOCOL = "foundation-openspec-native-scorecard-v1";
 export const MEASUREMENT_STATES = new Set(["measured", "partial", "unavailable"]);
+// The bench arm that produced a row. `change-loop` is the installed harness;
+// `baseline` is the same seed and task with no harness installed.
+export const BENCH_ARMS = Object.freeze(["change-loop", "baseline"]);
+export const DEFAULT_ARM = "change-loop";
+
+export function benchArm(value) {
+  if (value === undefined || value === null || value === "") return DEFAULT_ARM;
+  if (!BENCH_ARMS.includes(value))
+    throw new Error(`arm must be one of ${BENCH_ARMS.join(", ")}`);
+  return value;
+}
+
 export const OUTCOME_STATES = new Set([
   "completed", "blocked", "needs-user-decision", "incomplete", "failed",
   "timeout", "cancelled", "error"
@@ -260,7 +272,7 @@ function operationSummary(rows, metrics, hostTelemetry = {}) {
   };
 }
 
-function normalizeOutcome(input = {}, oracle = {}) {
+function normalizeOutcome(input = {}, oracle = {}, arm = DEFAULT_ARM) {
   const pendingTasks = count(input.pendingTasks);
   const requiredEvidencePassed = typeof input.requiredEvidencePassed === "boolean"
     ? input.requiredEvidencePassed : null;
@@ -273,7 +285,10 @@ function normalizeOutcome(input = {}, oracle = {}) {
     failureClass = oracle.measurement === "measured"
       ? "task-oracle-failed" : "task-oracle-unavailable";
   }
-  const complete = outcomeStatus === "completed" && pendingTasks === 0 &&
+  // The baseline has no task ledger: its evidence is its own green project
+  // command, so completion cannot wait on a pending-task count.
+  const ledgerDone = arm === "baseline" || pendingTasks === 0;
+  const complete = outcomeStatus === "completed" && ledgerDone &&
     requiredEvidencePassed === true && !oracleFailed;
   return {
     status: outcomeStatus,
@@ -307,8 +322,12 @@ export function buildScorecard(input) {
   const hostUsage = envelopeUsage(envelope);
   const observedRequests = count(observedUsage.observedModelRequests);
   const capConsumedRequests = count(observedUsage.capConsumedModelRequests);
-  const requestCandidates = [observedRequests, capConsumedRequests, hostUsage.requests]
+  // The envelope's num_turns counts conversation turns (tool results plus the
+  // closing message), not model requests: only a floor when nothing was observed.
+  const requestCandidates = [observedRequests, capConsumedRequests]
     .filter((value) => value !== null);
+  if (!requestCandidates.length && hostUsage.requests !== null)
+    requestCandidates.push(hostUsage.requests);
   const requestCount = requestCandidates.length ? Math.max(...requestCandidates)
     : count(metrics.requests);
   const forcedTermination = observedUsage.forcedTermination === true;
@@ -321,12 +340,27 @@ export function buildScorecard(input) {
       observedRequests > 0) ? "partial" : modelRequestsMeasurement;
   const usageClassification = forcedTermination ? "partial-measurement"
     : observedRequests === 0 && hostUsage.requests === null ? "no-usage" : text(usageClass);
+  const streamUsage = object(observedUsage.streamUsage);
+  const streamTokens = { used: false };
+  // The envelope (or Foundation metrics) wins; the stream fills only a missing
+  // count, and a count nobody measured stays null, never zero.
+  const tokenValue = (field, metricValue) => {
+    const value = attemptUsageValue(hostUsage[field], metricValue, {
+      noModelDispatch, forcedTermination, observedRequests
+    });
+    if (value !== null) return value;
+    const streamed = noModelDispatch ? null : measured(streamUsage[field]);
+    if (streamed !== null) streamTokens.used = true;
+    return streamed;
+  };
   const startedAt = timestamp(stopwatch.startedAt);
   const finishedAt = timestamp(stopwatch.finishedAt);
   const oracle = oracleSummary(input.oracle);
+  const arm = benchArm(input.arm);
   return {
     protocol: SCORECARD_PROTOCOL,
     scenario: requiredText(input.scenario, "scenario"),
+    arm,
     repeat: positiveCount(input.repeat, "repeat"),
     runId: requiredText(input.runId, "runId"),
     provenance: {
@@ -339,7 +373,7 @@ export function buildScorecard(input) {
       startedAt,
       finishedAt
     },
-    outcome: normalizeOutcome(input.outcome, oracle),
+    outcome: normalizeOutcome(input.outcome, oracle, arm),
     timing: {
       wallMs,
       wallMeasurement: wallMs === null ? "unavailable" : "measured",
@@ -365,17 +399,15 @@ export function buildScorecard(input) {
       observedModelRequests: observedRequests,
       hostReportedModelRequests: hostUsage.requests,
       capConsumedModelRequests: capConsumedRequests,
-      inputTokens: attemptUsageValue(hostUsage.inputTokens, metrics.inputTokens, {
-        noModelDispatch, forcedTermination, observedRequests
-      }),
-      outputTokens: attemptUsageValue(hostUsage.outputTokens, metrics.outputTokens, {
-        noModelDispatch, forcedTermination, observedRequests
-      }),
-      cacheCreationTokens: attemptUsageValue(hostUsage.cacheCreationTokens,
-        metrics.cacheCreationTokens, { noModelDispatch, forcedTermination, observedRequests }),
-      cacheReadTokens: attemptUsageValue(hostUsage.cacheReadTokens, metrics.cacheReadTokens, {
-        noModelDispatch, forcedTermination, observedRequests
-      })
+      postTerminalModelRequests: count(observedUsage.postTerminalModelRequests),
+      inputTokens: tokenValue("inputTokens", metrics.inputTokens),
+      outputTokens: tokenValue("outputTokens", metrics.outputTokens),
+      cacheCreationTokens: tokenValue("cacheCreationTokens", metrics.cacheCreationTokens),
+      cacheReadTokens: tokenValue("cacheReadTokens", metrics.cacheReadTokens),
+      // Where the token counts came from. A host stopped before its result
+      // envelope still streamed per-request usage: a floor, so `partial`.
+      tokenSource: streamTokens.used ? "stream-derived"
+        : hostUsage.inputTokens !== null ? "host-result-envelope" : null
     },
     operations: operationSummary(input.operationRows, metrics, input.hostTelemetry),
     friction: frictionSummary(input.hostTelemetry),

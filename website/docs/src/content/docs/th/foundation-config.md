@@ -73,10 +73,10 @@ independent หรือ diverse receipt จะบันทึก `independence-
     "maxParallelProviders": 4,
     "maxParallelSetups": 3,
     "packetBytes": {
-      "task": 8192,
-      "review": 8192,
-      "repository": 12288,
-      "global": 16384
+      "task": 20480,
+      "review": 20480,
+      "repository": 24576,
+      "global": 32768
     },
     "tokenBudgets": { "rapid": 800000, "standard": 1600000 },
     "requestBudgets": { "rapid": 100, "standard": 200 },
@@ -92,7 +92,7 @@ independent หรือ diverse receipt จะบันทึก `independence-
 | `maxParallelAgents` | จำนวนเต็ม `1..16` | ลดเมื่อเครื่องจำกัดหรืองานผูกกันแน่น เพิ่มเฉพาะเมื่อแยก task ได้ปลอดภัย |
 | `maxParallelProviders` | จำนวนเต็ม `1..16` | จำกัด provider หลักฐานและ service startup ที่เป็นอิสระต่อกัน |
 | `maxParallelSetups` | จำนวนเต็ม `1..16` | จำกัด setup command ของ repository ที่รันพร้อมกันระหว่างเตรียม Build |
-| `packetBytes.*` | จำนวนเต็ม `2048..65536` byte | เพิ่มเมื่อ task, review, repository description หรือ packet ทั้งก้อนถูกตัดจริง ๆ |
+| `packetBytes.*` | จำนวนเต็ม `2048..65536` byte | เพิ่มเมื่อ task, review, repository description หรือ packet ทั้งก้อนถูกตัดจริง ๆ การอัปเกรดจะแทนค่าเริ่มต้นเดิมแบบตรงตัว (`8192/8192/12288/16384`) ด้วยค่าปัจจุบัน และคงค่าที่ปรับเองไว้ |
 | `tokenBudgets.rapid/standard` | จำนวนเต็ม `10000..100000000` | จำกัด token ของ autonomous run หนึ่งรอบ เป็นเพดาน ไม่ใช่เป้าหมาย |
 | `requestBudgets.rapid/standard` | จำนวนเต็ม `10..100000` | จำกัดจำนวน model request ต่อ run |
 | `maxContinuationWindows` | จำนวนเต็ม `1..20` | จำกัดจำนวน continuation window ที่ operator อนุมัติแยกกัน โดยไม่บังคับงานเดิมที่ยังค้างให้แตกเป็น Change ใหม่ |
@@ -289,6 +289,28 @@ frozen-lockfile ของ pnpm, yarn, bun) ตั้ง `"installDependencies": 
 `optional` แปลว่า semantic compiler สร้าง `grounding.yaml` เฉพาะเมื่อมี material
 non-derived decision จริง ตั้งเป็น `required` เมื่อ policy ของ project ต้องมี
 decision ledger ทุก change เท่านั้น เพราะ grounding ว่างไม่ได้เพิ่มคุณภาพ
+
+## `deliver`: ตั้งชื่อ commit และ branch ของ pull request (ไม่บังคับ)
+
+ใช้เฉพาะกับ `/deliver` ค่าเริ่มต้นคือ `feat: <title>` (หรือ `fix: <title>`) และ
+`change/<change-id>`:
+
+```json
+{
+  "deliver": {
+    "commitSubject": "{commitType}({ticket}): {title}",
+    "branchPattern": "feature/{ticket}-{title}",
+    "ticketPattern": "[A-Z]+-\\d+"
+  }
+}
+```
+
+placeholder ที่ใช้ได้คือ `{changeId}`, `{title}`, `{commitType}`, `{prType}` และ
+`{ticket}` ซึ่งคือ match แรกของ `ticketPattern` ใน change id, title หรือ proposal
+ถ้ามี placeholder ที่ไม่รู้จัก pattern ไม่ถูกต้อง หา ticket ไม่เจอ หรือได้ subject
+หรือ branch ที่ใช้ไม่ได้ Deliver จะหยุดเป็น wait แบบ `delivery-policy` ก่อน commit
+ใด ๆ ให้แก้การตั้งค่าแล้วสั่ง `/deliver` อีกครั้ง กฎการตั้งชื่อฉบับเต็มอยู่ใน
+`WORKFLOW.md` (`/deliver <change>`)
 
 ## จุดที่พลาดบ่อย
 

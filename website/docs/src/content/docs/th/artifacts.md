@@ -44,8 +44,8 @@ workspace ของ Build ที่สร้างใหม่
 
 นโยบายเริ่มต้นอนุญาต agent สูงสุดสามตัว, evidence provider หรือ service สี่ตัว
 และ repository setup command สามตัวทำงานขนานกัน โดยใช้ lease 45 นาที
-task packet กับ review packet มีเพดาน 8 KiB, repository packet 12 KiB และ
-global packet 16 KiB ส่วน rapid run มีเพดาน 800,000 token กับ 100 request
+task packet กับ review packet มีเพดาน 20 KiB, repository packet 24 KiB และ
+global packet 32 KiB ส่วน rapid run มีเพดาน 800,000 token กับ 100 request
 และ standard run มีเพดาน 1,600,000 token กับ 200 request ตัวเลขเหล่านี้เป็น
 ขอบเขตสูงสุดของการรัน ไม่ใช่โควตาที่ต้องใช้ให้หมด
 
@@ -144,10 +144,12 @@ machine state จึงหลุดเข้า commit โดยบังเอ�
 | `plans/` | แผนการทำงานของ agent |
 | `leases/` | lease ของ task และ resource |
 | `transactions/` | journal ของการ apply ตอน Land และไฟล์สำรอง |
+| `tools/` | CLI dependency ระดับโปรเจกต์ที่ harness เป็นเจ้าของ ผูกกับ runtime contract ที่ pin ไว้ |
 | `authority/` | คำขอ review และ acceptance พร้อมบันทึกผล |
 | `attestations/` | challenge สำหรับการรันแบบไม่มีคนดู และ nonce ที่ใช้ไปแล้ว |
 | `instruction-manifests/` | ที่มาของคำสั่งแต่ละคำสั่ง |
-| `recovery/` | change ที่ถูกยกเลิกและ state ที่กำพร้า |
+| `recovery/` | change ที่ถูกยกเลิก, Land ที่ถูกย้อน (`land-undone/`) และ state ที่กำพร้า |
+| `backups/` | commit bundle, patch และสำเนาไฟล์ของงานใน sandbox ที่ยังไม่ได้ land ซึ่งเขียนไว้ก่อนลบ sandbox |
 | `prototypes/` | prototype สำหรับเปรียบเทียบ ใช้แล้วทิ้ง |
 | `policy.json` | กฎของโปรเจกต์ที่แม็ป path ไปยัง capability ที่ต้องมี (ไม่บังคับ) |
 | `quality/results/` | lane report, aggregate summary และ rendered debt ของ consumer quality รอบล่าสุด |

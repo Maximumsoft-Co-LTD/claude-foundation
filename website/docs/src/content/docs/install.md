@@ -78,7 +78,7 @@ claude-foundation doctor --stage change
 
 ## Permission allowlist
 
-`.claude/settings.json` stays project-owned. The installer merges the shipped hooks and appends a narrow `permissions.allow` list, so Claude Code does not ask for approval on every harness step: `Bash(claude-foundation *)`, `Bash(.foundation/bin/claude-foundation *)`, `Bash(node .claude/harness/foundation.mjs *)`, `Edit(/.foundation/sandboxes/**)`, `Edit(/.foundation/repository-sandboxes/**)`, and `Edit(/.foundation/drafts/**)` (the Change draft). Project test runners get no rule: each Build task returns its verify as a `checkCommand` (`claude-foundation exec <change> --task <id> -- <verify>`) that the CLI rule already covers. It adds only missing rules after your own, never removes or reorders entries, and a rerun adds nothing. The PreToolUse guards still run before these rules. Pass `--no-permission-allowlist` on every install or upgrade to leave `permissions.allow` untouched.
+`.claude/settings.json` stays project-owned. The installer merges the shipped hooks and appends a narrow `permissions.allow` list, so Claude Code does not ask for approval on every harness step: `Bash(claude-foundation *)`, `Bash(.foundation/bin/claude-foundation *)`, `Bash(node .claude/harness/foundation.mjs *)`, `Edit(/.foundation/sandboxes/**)`, `Edit(/.foundation/repository-sandboxes/**)`, `Edit(/.foundation/drafts/**)` (the Change draft), and `Edit(/openspec/investigations/**)` (the Investigate record). Project test runners get no rule: each Build task returns its verify as a `checkCommand` (`claude-foundation exec <change> --task <id> -- <verify>`) that the CLI rule already covers. It adds only missing rules after your own, never removes or reorders entries, and a rerun adds nothing. The PreToolUse guards still run before these rules. Pass `--no-permission-allowlist` on every install or upgrade to leave `permissions.allow` untouched.
 
 ## Headless / CI (`claude -p`)
 
@@ -88,7 +88,8 @@ Claude Code ignores project `permissions.allow` entries until the workspace is t
 claude -p "/change <intent>" --allowedTools \
   "Bash(claude-foundation *)" "Bash(.foundation/bin/claude-foundation *)" \
   "Bash(node .claude/harness/foundation.mjs *)" "Edit(/.foundation/drafts/**)" \
-  "Edit(/.foundation/sandboxes/**)" "Edit(/.foundation/repository-sandboxes/**)"
+  "Edit(/.foundation/sandboxes/**)" "Edit(/.foundation/repository-sandboxes/**)" \
+  "Edit(/openspec/investigations/**)"
 ```
 
 Build checks run through `claude-foundation exec`, so test runners need no grant; add other project tools only when a run needs them. Claude Code treats paths under `~/.claude/` as sensitive, so keep consumer projects outside that directory for unattended runs.

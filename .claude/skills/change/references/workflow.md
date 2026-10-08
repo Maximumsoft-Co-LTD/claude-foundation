@@ -54,21 +54,21 @@ Cross-component changes need a boundary/dependency diagram; changed state,
 async, or workflow behavior needs transitions or sequence, including
 failure/recovery paths.
 The packet is the dev document Build executes. The harness infers `workType`
-from task `paths` and derives folder tree, plan, file and test maps, and the
-failure matrix from `failure` scenarios (optional `recovery`). A standard draft
-authors `why` (or `summary`) and, except docs/chore, failures plus per type:
+from `paths` and derives folder tree, plan, file and test maps, the failure
+matrix (from `failure` scenarios, else scenarios stating a rejection or error),
+`why` from `intent`, and `test` evidence unless security triggers apply, noting
+each under "Derived by harness". A standard draft authors failure scenarios
+(except docs/chore/test/refactor/config) plus per-type fields (test has none):
 feature `userFlow` (Mermaid); ui `userFlow`, `uiStates`, `componentMap`; api
 `apiContracts`; data `dataModel`; config `configContract`; async `jobContract`
-and a sequence diagram; bugfix/refactor their objects. Keep `fileMap` paths
-and task tests inside task `paths`.
+and a sequence diagram; bugfix/refactor their objects. Keep `fileMap` paths and
+task tests inside task `paths`.
 
 ## Compile and inspect
 
 Create one semantic draft v4 from `change start --template`: `intent`, semantic
-`requirements`, `tasks` with `covers`, and evidence capabilities keyed by
-requirement. Its discovery contract is defined once in
-[semantic-intake.md](semantic-intake.md). Draft v3 remains the compatibility
-path for existing callers. Put only real complexity in typed extensions:
+`requirements`, and `tasks` with `covers`. Its discovery contract is defined once in
+[semantic-intake.md](semantic-intake.md). Put only real complexity in typed extensions:
 
 - `decisions` only for choices hard to reverse, surprising without context,
   and selected among meaningful alternatives;

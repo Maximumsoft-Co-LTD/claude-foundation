@@ -442,7 +442,21 @@ model tier at medium reasoning effort: the reviewer's `fastModelId` (optional `f
 `models.fast.family` alias for `claude-cli`; `review.lowRiskModel:
 "configured"` opts out. Provider family never changes; model family records
 the fast model actually run (`fastModelFamily`, else the `models.fast.family`
-alias), so diversity and separation checks judge that model. Review packet
+alias), so diversity and separation checks judge that model. The first round of
+a medium-tier review runs the faster `standard` class by default (the reviewer's
+`standardModelId`/`standardModelFamily`, else `models.standard.family` for
+`claude-cli`, at the configured effort), a deliberate speed/depth trade-off. The
+configured model keeps high, every later (delta/closure) round, a medium change
+with any trigger other than `medium-impact-or-coupling`, `review-risk`,
+`declared-medium-risk`, `input-domain`, or `independence-waived-self-review`
+(for example `access-control`, `authorization-or-secrets`, `risk-semantics`,
+`risk-capability`, `covered-by-review:*`, `multi-repository-claim`), and a declared
+(not keyword-only) review. `review.modelByTier` maps `low` and `medium` to
+`fast|standard|configured` (`high` is rejected, never weakened); an unrecognized
+class, a missing alias, or a standard model that would share the implementation's
+family under a diversity requirement runs the configured model. The receipt
+records the reviewer's model ID, family, and class (`review.reviewer.modelTier`),
+and a `standard` round escalates exactly like a `fast` one. Review packet
 schema 6 adds `reviewDepth`, `reviewDiff`, `agreement`, and, on a full round
 with agreement scenarios, `scenarioChecklist` (one digest-bound item per
 scenario; ids are claim ids when a claim names the scenario). The reviewer
@@ -461,12 +475,16 @@ attempt, and reported as `reviewAdvisories.specGaps` on a reached `proven` or
 Closing one is a semantic amendment the user decides. An explicit
 `--review` (or impact, coupling, or declared security triggers) raises
 verification risk to high even at the low review tier. A draft's typed
-`riskSignals` are kept on the change: `access-control` selects the high review
-tier and `input-domain` at least the medium tier (configured model); review required only by
-intent keywords follows its tier. Medium, high, promoted, and legacy routes
+`riskSignals` are kept on the change: `access-control` makes review required
+under either policy and selects the high tier, and `input-domain` at least
+the medium tier (configured model); review required only by intent keywords
+follows its tier. Medium, high, promoted, and legacy routes
 are `diff-first` on the configured model. Intent keywords alone make review
 required at the low tier; they raise the tier or require diversity only
-alongside declared risk.
+alongside declared risk. A low-tier `foundation-rapid` change with no such
+signal (and no required or diversity trigger, review capability, or capability
+inferred from its diff that raises the tier) requires no review: its receipts
+are the project's providers only, and no reviewer is dispatched.
 A configured `defaultReviewer` runs first, followed by `fallbackReviewers` in
 order only after infrastructure errors. `fail` and `inconclusive` are delivered
 verdicts and never trigger fallback. Uninspectable packets and finding/closure
@@ -504,9 +522,23 @@ does Prove stop at the review-exhausted user decision (accept the review risk wi
 --capability review`, revise the agreement, or pause) instead of returning an
 unsatisfiable repair. A review that `advance` runs beside the providers binds
 its receipt to that pass's explicit proof run and snapshot, and its failure
-leaves an open request without marking the operation blocked. A change-level hash chain binds
+leaves an open request without marking the operation blocked. The pass binds to
+the forced workspace snapshot (a readiness hash read from a stale cached snapshot
+is re-derived first, so the overlap is not silently lost), the base-source test
+discrimination run executes while the reviewer child is still running, and the
+reviewer is always joined before any stop returns: a failed provider or a
+non-discriminating test never leaves a reviewer running, and a verdict that
+finishes after the tests is recorded against its own request and hash like any
+other. Before a verdict is recorded the reviewed hash is re-read from disk: when
+a provider or an edit changed the bytes while the reviewer ran, the attempt
+closes as an error (like `authority abort`, counted as reviewer infrastructure,
+not as a delivered wave), the request ends `aborted`, no receipt is written, and
+the next pass requests a review of the current content. A change-level hash chain binds
 dispatch, completion, scope, findings, closure evidence, and receipt payload.
-Corrupt history is quarantined (`review-attempts.corrupt-<stamp>`, never
+Corrupt history, including a lowered chain whose recorded head and count were
+moved back together while attempt records above that head remain (one
+in-flight head+1 record linking to the head excepted), is quarantined
+(`review-attempts.corrupt-<stamp>`, never
 deleted) and rebuilt by the harness without a user decision, fail-closed: the
 rebuilt count is never below the evidenced attempts, only a chain that
 verifies end to end and covers every evidenced attempt keeps its verdicts, and
@@ -737,3 +769,54 @@ proof again. Only a prior `fail` counts; an `error` never produced a product
 verdict, and manual receipts are unaffected. An unchanged flake that keeps
 recurring reaches the user through the no-progress ladder in
 [WORKFLOW.md § Recovery and user decisions](../../WORKFLOW.md#recovery-and-user-decisions).
+
+## Tests that fail without the change
+
+A passing suite proves a behavior change only when some test can tell the
+change from the original code. For behavior-changing work — any work type other
+than `refactor`, `docs`, `chore`, `config`, or `test`, as stated in the
+`## Work type` section of `design.md` or the rapid `proposal.md`, otherwise
+inferred from the tasks' `[paths:]` — `advance --through proven|archived`
+checks this after executable evidence passes and before the proof is
+finalized. Refactor, docs, chore, and config work keeps tests that pass both
+before and after the change, so the rule never applies to it.
+
+For each writable repository whose changed surface includes product code
+(paths that are not tests, docs, or package manifests), the harness takes the
+repository's required `test` provider (`command` or `test-discovery`, no
+service or readiness probe) and runs its command once against the base source:
+
+- the base is `git archive <baseHead>` extracted into a private temporary
+  directory, never the sandbox or the user's target, and no Git worktree is
+  added;
+- every sandbox path that differs from base is laid over it **except** the
+  change's product code, so the change's new or modified tests, fixtures,
+  manifests, and carried-in files are present while the code under test is
+  the original; `node_modules`, `.venv`, and `venv` are linked from the sandbox;
+- when the runner takes file arguments (`node --test`, `pytest`,
+  `python -m pytest`, `go test` by package), only the change's test files run;
+  any other command (for example `npm test`) runs once as configured;
+- a test that imports a module the change adds fails on base and therefore
+  counts as failing on base.
+
+A non-zero exit on base passes the rule. A clean exit 0 means the change's
+tests pass on the original code: Prove returns the same convergent evidence
+REPAIR as a failed provider (`stage: "tests-not-discriminating"`, route
+`AUTO_REPAIR`) naming each repository and test file, and the agent adds or
+strengthens a test that fails without the change. A behavior change with no
+changed test file needs an existing test that fails on base. Changed tests are
+progress; an unchanged rerun reaches the existing no-progress boundary. A spawn
+failure, timeout, missing `baseHead`, or unresolvable surface is no verdict and
+never blocks. Each verdict is cached under
+`.foundation/logs/<change>/test-discrimination/` by the digest of the base
+commit, the command, its environment, and every overlaid file, so an unchanged
+rerun runs nothing; cost is at most one extra test command per affected
+repository per distinct test content. Low-level `proof run` and `proof
+finalize` remain operator primitives and do not run this check.
+
+The same rule applies in Build. When a behavior task's `verify` passes but
+nothing changed in its declared `[paths:]` — the check passed on the original
+code — the task is not ticked: it returns with the task's verification failure
+`task <id> completed with no change`, counted like any repeated verify failure.
+Tasks scoped only to docs or manifests, observation task kinds, and refactor,
+docs, chore, or config changes keep verify-only completion.

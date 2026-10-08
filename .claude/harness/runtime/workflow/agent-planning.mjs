@@ -218,10 +218,14 @@ export function showAgentPlan(context, id, flags = {}) {
 
 export function showAgentTask(context, id, taskId, flags = {}) {
   const plan = context.planValue(id);
-  if (!plan.dispatchable)
-    context.fail(`change '${id}' is not dispatchable: ${plan.blockingReasons.join("; ")}`);
   const task = plan.tasks.find((candidate) =>
     candidate.id === String(taskId || "").toUpperCase());
+  // `packet --task` is a read: a task that is no longer pending renders its
+  // read-only completed packet; the packet runtime still rejects unknown ids.
+  if (!task && taskId && flags.allowCompleted)
+    return context.showPacket(id, { task: taskId, pretty: flags.pretty, completedTask: true });
+  if (!plan.dispatchable)
+    context.fail(`change '${id}' is not dispatchable: ${plan.blockingReasons.join("; ")}`);
   if (!task) context.fail(`unknown pending task '${taskId || ""}'`);
   context.showPacket(id, {
     repo: task.repository, task: task.id,

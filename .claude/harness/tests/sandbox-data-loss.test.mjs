@@ -19,6 +19,7 @@ import test from "node:test";
 
 import { createAbandonRuntime } from "../runtime/workflow/abandon-runtime.mjs";
 import { createApplyRuntime } from "../runtime/workflow/apply-runtime.mjs";
+import { captureCopyBase, fileSource } from "../runtime/workflow/copy-base.mjs";
 import { advanceFailureAction } from "../runtime/workflow/advance-runtime.mjs";
 import {
   createLandJournal, transactionJournals
@@ -454,7 +455,9 @@ function directoryDigest(path) {
 
 const STOP_AFTER_APPLY = "stop-after-code-apply";
 
-function landFixture(fixture, { selected = ["root", "sub"] } = {}) {
+function landFixture(fixture, {
+  selected = ["root", "sub"], workspace = null, workspaceManifest = undefined
+} = {}) {
   const transactions = join(fixture.root, ".foundation", "transactions");
   const readJson = (path, fallback) => existsSync(path)
     ? JSON.parse(readFileSync(path, "utf8")) : fallback;
@@ -475,6 +478,7 @@ function landFixture(fixture, { selected = ["root", "sub"] } = {}) {
       relativePath: SUBMODULE, dependsOn: [], workspacePath: fixture.repository }
   };
   let state = structuredClone(fixture.state);
+  if (workspace) state.workspace = structuredClone(workspace);
   state.workspace.changeSourceHash = directoryDigest(join(fixture.root, "openspec", "changes", ID));
   state.repositories = Object.fromEntries(selected.map((id) => [id, state.repositories[id]]));
   const loadRuntime = () => structuredClone(state);
@@ -482,6 +486,7 @@ function landFixture(fixture, { selected = ["root", "sub"] } = {}) {
     root: fixture.root, transactions, loadRuntime,
     saveRuntime: (value) => { state = structuredClone(value); },
     selectedRepositories: () => selected.map((id) => rows[id]),
+    workspaceManifest,
     declaredSurfaceMatcher: () => () => true,
     currentChangeRelativePath: (id) => `openspec/changes/${id}`,
     changePath: (id) => join(fixture.root, "openspec", "changes", id),
@@ -652,6 +657,159 @@ test("(f) single-repository re-apply keeps re-delivering a path the first apply 
   assert.equal(readFileSync(join(fixture.root, "README.md"), "utf8"), "parent v2\n");
   // A further pass has nothing new to project and still verifies.
   assert.equal(landUntilArchive(land)?.message, STOP_AFTER_APPLY);
+});
+
+// The same re-apply guard for an isolated copy: its baseline manifest, the
+// target identities recorded when the copy was made, is the base. A path the
+// baseline does not record is held to the strictest rule (fail closed).
+function copyManifest(directory) {
+  const manifest = {};
+  const walk = (path, prefix) => {
+    for (const name of readdirSync(path).sort()) {
+      if ([".git", ".foundation"].includes(name)) continue;
+      const rel = `${prefix}${name}`;
+      if (rel === "openspec/changes") continue;
+      const full = join(path, name);
+      const stats = statSync(full);
+      if (stats.isDirectory()) { walk(full, `${rel}/`); continue; }
+      manifest[rel] = `file:${stats.mode & 0o111 ? "executable" : "regular"}:${
+        createHash("sha256").update(readFileSync(full)).digest("hex")}`;
+    }
+  };
+  walk(directory, "");
+  return manifest;
+}
+
+const COVERAGE = "coverage/report.txt";
+
+function copyLandedOnce(t, { gitBase = true, captured = [] } = {}) {
+  const fixture = superproject(t, { files: { "guide.md": GUIDE, [COVERAGE]: "covered 1\n" } });
+  const copy = join(fixture.base, "copy-sandbox");
+  for (const path of ["README.md", "guide.md", ".gitignore", COVERAGE])
+    write(join(copy, path), readFileSync(join(fixture.root, path)));
+  const workspace = { mode: "copy", path: copy, applied: false,
+    baseHead: gitBase ? fixture.rootBase : null, git: gitBase ? "carried" : "absent",
+    baseline: copyManifest(fixture.root), targetDirty: {} };
+  // What the eager declared-surface capture stores when the copy is made.
+  for (const path of captured)
+    assert.equal(captureCopyBase({ root: fixture.root, baseline: workspace.baseline, path,
+      sources: [fileSource(join(fixture.root, path))] }), true);
+  write(join(copy, "README.md"), "parent v1\n");
+  const copied = { ...fixture, shared: copy };
+  const land = landFixture(copied, { selected: ["root"], workspace,
+    workspaceManifest: (directory) => copyManifest(directory) });
+  assert.equal(landUntilArchive(land)?.message, STOP_AFTER_APPLY);
+  assert.equal(readFileSync(join(fixture.root, "README.md"), "utf8"), "parent v1\n");
+  return { fixture: copied, land };
+}
+
+for (const [label, options] of [
+  ["the base commit", {}],
+  ["captured base bytes", { gitBase: false, captured: ["guide.md"] }]
+]) {
+  test(`(g) copy-sandbox re-apply merges a clean target edit through the harness from ${label}`, (t) => {
+    const { fixture, land } = copyLandedOnce(t, options);
+    write(join(fixture.root, "guide.md"), GUIDE.replace("one", "ONE (user)"));
+    write(join(fixture.shared, "guide.md"), GUIDE.replace("five", "FIVE (change)"));
+    const stopped = landUntilArchive(land);
+    assert.equal(stopped?.code, "target-edit-sync", stopped?.message);
+    assert.deepEqual(stopped.decision.paths, ["guide.md"]);
+    assert.ok(land.state().workspace.targetCarry?.["guide.md"], "the carry is recorded for sync");
+    assert.equal(readFileSync(join(fixture.root, "guide.md"), "utf8"),
+      GUIDE.replace("one", "ONE (user)"), "the target edit is not overwritten");
+
+    // The agent edits the copy without merging the target edit: never landed.
+    write(join(fixture.shared, "guide.md"), GUIDE.replace("five", "FIVE (change, again)"));
+    assert.notEqual(landUntilArchive(land)?.message, STOP_AFTER_APPLY);
+    assert.equal(readFileSync(join(fixture.root, "guide.md"), "utf8"),
+      GUIDE.replace("one", "ONE (user)"));
+
+    // keep-target is provable: the merged copy lands with both edits.
+    const merged = GUIDE.replace("one", "ONE (user)").replace("five", "FIVE (change)");
+    write(join(fixture.shared, "guide.md"), merged);
+    assert.equal(landUntilArchive(land)?.message, STOP_AFTER_APPLY);
+    assert.equal(readFileSync(join(fixture.root, "guide.md"), "utf8"), merged);
+  });
+}
+
+test("(g) copy-sandbox restore-target restores the captured base bytes, and refuses without them", (t) => {
+  const { fixture, land } = copyLandedOnce(t, { gitBase: false, captured: ["guide.md"] });
+  write(join(fixture.root, "guide.md"), GUIDE.replace("three", "THREE (user)"));
+  write(join(fixture.shared, "guide.md"), GUIDE.replace("three", "THREE (change)"));
+  const stopped = landUntilArchive(land);
+  assert.equal(stopped?.code, "target-edit-conflict", stopped?.message);
+  assert.ok(stopped.decision.options.some((option) => option.id === "restore-target"));
+  quietly(() => land.runtime.recordTargetRestore(ID, "guide.md", "user-decision-1"));
+  assert.equal(landUntilArchive(land)?.message, STOP_AFTER_APPLY);
+  assert.equal(readFileSync(join(fixture.root, "guide.md"), "utf8"),
+    GUIDE.replace("three", "THREE (change)"));
+
+  // Neither side holds the base any more and nothing captured it: unprovable.
+  const other = copyLandedOnce(t, { gitBase: false });
+  write(join(other.fixture.root, "guide.md"), GUIDE.replace("three", "THREE (user)"));
+  write(join(other.fixture.shared, "guide.md"), GUIDE.replace("three", "THREE (change)"));
+  assert.throws(() => other.land.runtime.recordTargetRestore(ID, "guide.md", "user-decision-1"),
+    /no recorded base bytes/);
+});
+
+test("(g) copy-sandbox re-apply restores a regenerated artifact from its captured base", (t) => {
+  const { fixture, land } = copyLandedOnce(t, { gitBase: false, captured: [COVERAGE] });
+  write(join(fixture.root, COVERAGE), "covered by a target test run\n");
+  write(join(fixture.shared, COVERAGE), "covered 2\n");
+  assert.equal(landUntilArchive(land)?.message, STOP_AFTER_APPLY);
+  assert.equal(readFileSync(join(fixture.root, COVERAGE), "utf8"), "covered 2\n");
+
+  const other = copyLandedOnce(t, { gitBase: false });
+  write(join(other.fixture.root, COVERAGE), "covered by a target test run\n");
+  write(join(other.fixture.shared, COVERAGE), "covered 2\n");
+  assert.notEqual(landUntilArchive(other.land)?.message, STOP_AFTER_APPLY,
+    "without base bytes nothing is restored");
+  assert.equal(readFileSync(join(other.fixture.root, COVERAGE), "utf8"),
+    "covered by a target test run\n");
+});
+
+test("(g) copy-sandbox re-apply without a base commit stops on any target edit the baseline does not hold", (t) => {
+  const { fixture, land } = copyLandedOnce(t, { gitBase: false });
+  write(join(fixture.root, "guide.md"), GUIDE.replace("one", "ONE (user)"));
+  write(join(fixture.shared, "guide.md"), GUIDE.replace("five", "FIVE (change)"));
+  write(join(fixture.root, "notes.md"), "user notes\n");
+  write(join(fixture.shared, "notes.md"), "sandbox notes\n");
+  const stopped = landUntilArchive(land);
+  assert.equal(stopped?.code, "target-edit-conflict", stopped?.message);
+  assert.deepEqual(stopped.decision.paths, ["guide.md", "notes.md"]);
+  assert.equal(readFileSync(join(fixture.root, "guide.md"), "utf8"),
+    GUIDE.replace("one", "ONE (user)"));
+  assert.equal(readFileSync(join(fixture.root, "notes.md"), "utf8"), "user notes\n");
+});
+
+test("(g) copy-sandbox re-apply lands a newly touched path still at the baseline", (t) => {
+  const { fixture, land } = copyLandedOnce(t);
+  write(join(fixture.shared, "guide.md"), GUIDE.replace("two", "TWO (change)"));
+  write(join(fixture.shared, "docs/later.md"), "follow-up\n");
+  assert.equal(landUntilArchive(land)?.message, STOP_AFTER_APPLY);
+  assert.equal(readFileSync(join(fixture.root, "guide.md"), "utf8"),
+    GUIDE.replace("two", "TWO (change)"));
+  assert.equal(readFileSync(join(fixture.root, "docs/later.md"), "utf8"), "follow-up\n");
+});
+
+test("(g) copy-sandbox re-apply keeps re-delivering a path the first apply wrote", (t) => {
+  const { fixture, land } = copyLandedOnce(t);
+  write(join(fixture.shared, "README.md"), "parent v2\n");
+  assert.equal(landUntilArchive(land)?.message, STOP_AFTER_APPLY);
+  assert.equal(readFileSync(join(fixture.root, "README.md"), "utf8"), "parent v2\n");
+  assert.equal(landUntilArchive(land)?.message, STOP_AFTER_APPLY);
+});
+
+test("(g) copy-sandbox re-apply never drops a target mode edit on a newly touched path", (t) => {
+  const { fixture, land } = copyLandedOnce(t);
+  chmodSync(join(fixture.root, "guide.md"), 0o755);
+  write(join(fixture.shared, "guide.md"), GUIDE.replace("two", "TWO (change)"));
+  const stopped = landUntilArchive(land);
+  assert.equal(stopped?.code, "target-edit-conflict", stopped?.message);
+  assert.deepEqual(stopped.decision.paths, ["guide.md"]);
+  assert.equal(statSync(join(fixture.root, "guide.md")).mode & 0o777, 0o755,
+    "the user's mode edit survives");
+  assert.equal(readFileSync(join(fixture.root, "guide.md"), "utf8"), GUIDE);
 });
 
 test("(e) a submodule pointer moved in a root-only change is a decision, never a silent drop", (t) => {

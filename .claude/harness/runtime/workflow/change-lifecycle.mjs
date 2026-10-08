@@ -10,7 +10,7 @@ import {
 import { dirname, join, relative, resolve } from "node:path";
 import { acquireProcessLock } from "../core/process-lock.mjs";
 import { foundationChangeStores, retiredChangeStores } from "./retired-change-stores.mjs";
-import { nextCommand } from "../core/next-step.mjs";
+import { nextCommand, resumeThrough } from "../core/next-step.mjs";
 import { taskBlocks, taskMetadata } from "../contracts/change-artifacts.mjs";
 import { matchesSecurityTerm, materialSecurityTriggers } from "./security-policy.mjs";
 import {
@@ -18,9 +18,9 @@ import {
   minimalSemanticDraftTemplate, normalizeSemanticDraft, renderRequirementMarkdown,
   renderSpecHeading, semanticDraftTemplate
 } from "./semantic-draft.mjs";
-import { collectReviewSignals } from "../evidence/evidence-contract.mjs";
+import { assembleReviewPolicy, collectReviewSignals } from "../evidence/evidence-contract.mjs";
 import { classifyReviewRisk } from "../evidence/review-routing.mjs";
-import { reviewDepthForTier, reviewModelTierForDepth } from "../evidence/review-diff.mjs";
+import { reviewModelClass } from "../evidence/review-diff.mjs";
 import {
   semanticIntakeAction, semanticIntakeIssues
 } from "./validation/semantic-intake.mjs";
@@ -41,7 +41,8 @@ import {
   reduceSemanticIntakeState, semanticDraftDigest, semanticIntakeResumeProjection
 } from "./semantic-intake-state.mjs";
 import {
-  amendmentTaskRepositoryIssues, amendmentVerifyPathIssues, compileSemanticAmendment,
+  amendmentRepositoryOrderIssues, amendmentTaskRepositoryIssues, amendmentVerifyPathIssues,
+  compileSemanticAmendment,
   semanticAmendmentTemplate, taskContractOnlyAmendment, taskRepositoryIssues, verifyPathIssues,
   writeSemanticAmendment
 } from "./semantic-amendment.mjs";
@@ -51,10 +52,16 @@ import {
   verifyCountAdvisories
 } from "./validation/design-blueprints.mjs";
 import {
-  derivedFailureMatrix, derivedFileMap, derivedTestMap, docsOnlyDraft, inferWorkTypes,
-  renderComponentMap, renderFolderTree, renderPlan, renderUserFlow, withNewPaths
+  derivedByHarness, derivedFailureMatrix, derivedFileMap, derivedTestMap, docsOnlyDraft, inferWorkTypes,
+  renderComponentMap, renderFileTree, renderUserFlow, withNewPaths
 } from "./validation/dev-document.mjs";
+import {
+  coverageNoteLine, renderDefinitionOfDone, renderPacketHeader, renderScope, renderTraceability
+} from "./validation/packet-overview.mjs";
 import { targetEditDigest, targetEditPaths } from "./target-edits.mjs";
+import {
+  declaredDraftRisk, riskDerivationSummary, riskLabel, withDerivedRisk
+} from "./validation/draft-risk.mjs";
 import {
   fileMapWithTasks, intakeDecisions, openQuestionItems, readerGuideWarnings,
   renderDesignOverview, renderDiscoveryAppendix, renderInvestigationAppendix,
@@ -431,11 +438,24 @@ export function renderRapidDecisions(decisions = []) {
   return rows.length ? `## Decisions\n\n${rows.join("\n")}` : "";
 }
 
-// Reading order: what and why first, then who benefits and how success is
-// judged, then scope; machine provenance and coverage close as appendices.
-// A draft without a stated reason gets no Why section rather than the intent
-// repeated under the title.
-export function renderDraftProposal(draft, state) {
+// A standard draft the agent left without a reason, failure matrix, or evidence
+// capabilities still compiles; this section tells the reader what the harness
+// filled in rather than what the author wrote.
+function renderDerivedNotes(draft, rapid) {
+  const notes = derivedByHarness(draft, { standard: !rapid });
+  return notes.length ? `## Derived by harness\n\n${draftBullets(notes)}` : "";
+}
+
+// Reading order: who and which lane, what and why, who benefits and how
+// success is judged, scope, how each requirement is accepted, and what done
+// means; machine provenance and coverage close as appendices. Each fact has
+// one home: tasks and their checks live in tasks.md (the acceptance table
+// links to them), the folder tree sits in design.md's file map, and a rapid
+// packet, which has no design.md, keeps its decisions here. A draft without a
+// stated reason gets no Why section rather than the intent repeated under the
+// title. `context` carries harness-derived facts the draft does not hold: the
+// review route label (policy) and repositories the change does not select.
+export function renderDraftProposal(draft, state, context = {}) {
   const title = draft.title || state.intent;
   const section = (value) => (value ? `\n\n${value}` : "");
   const triggers = (draft.securityTriggers || []).filter(Boolean);
@@ -445,39 +465,60 @@ export function renderDraftProposal(draft, state) {
   const rapid = state?.schema === "foundation-rapid";
   const decisions = rapid ? section(renderRapidDecisions(draft.decisions)) : "";
   // A rapid change has no design.md, so its compact dev document (flow,
-  // components, descriptive sections the agent wrote, failures, plan for
-  // Build) lives here. Authoring them never moves the change off rapid.
+  // components, descriptive sections the agent wrote, failures) lives here.
+  // Authoring them never moves the change off rapid.
   const compact = rapid && [3, 4].includes(draft._semanticVersion);
   const flow = compact ? section(renderUserFlow(draft)) : "";
+  // A declared work type is stated here as design.md states it, so Prove can
+  // tell behavior-changing work from a refactor, docs, or chore change.
   const plan = compact ? section(renderComponentMap(draft)) + section(renderDesignBlueprints({
-    bugfix: draft.bugfix, refactor: draft.refactor, configContract: draft.configContract,
+    workType: draft.workType, bugfix: draft.bugfix, refactor: draft.refactor, configContract: draft.configContract,
     failureMatrix: derivedFailureMatrix(draft),
     fileMap: fileMapWithTasks(draft.fileMap, draft.tasks), testMap: draft.testMap
-  })) + section(renderPlan(draft)) : "";
-  return `# Change: ${title}` + section(renderProposalLead(draft)) +
+  })) : "";
+  return `# Change: ${title}` + section(renderPacketHeader(draft, state)) +
+    section(renderProposalLead(draft)) +
     (why ? `\n\n## Why\n\n${why}` : "") + section(renderProposalReader(draft)) +
-    `\n\n## What changes\n\n${draftBullets(draft.changes)}` + flow + section(renderFolderTree(draft)) +
-    plan + `\n\n## Impact\n\n` +
-    `- **Impact:** ${draft.impact || state.impact || "medium"}\n` +
-    `- **Coupling:** ${draft.coupling || state.coupling || "coupled"}\n` +
-    `- **Affected surfaces:** ${(draft.surfaces || ["code"]).join(", ")}\n` +
-    `- **Security triggers:** ${triggers.length ? triggers.join(", ") : "none detected"}` +
-    (rapid && docsOnlyDraft(draft)
-      ? "\n- **Specs:** none; docs-only work modifies no living spec" : "") +
-    decisions + nonGoals + section(renderInvestigationSummary(draft.investigation)) +
+    section(renderScope(draft, context)) + flow + plan +
+    section(renderTraceability(draft)) + section(renderDefinitionOfDone(draft, context)) +
+    `\n\n## Impact\n\n` + [
+      `- **Impact:** ${riskLabel(draft, "impact") || state.impact || "medium"}`,
+      `- **Coupling:** ${riskLabel(draft, "coupling") || state.coupling || "coupled"}`,
+      // A rapid change states only what departs from its defaults (code
+      // surface, no security trigger); the standard lane keeps the statement.
+      ...(rapid && !(draft.surfaces || []).some((surface) => surface !== "code") ? [] :
+        [`- **Affected surfaces:** ${(draft.surfaces || ["code"]).join(", ")}`]),
+      ...(rapid && !triggers.length ? [] :
+        [`- **Security triggers:** ${triggers.length ? triggers.join(", ") : "none detected"}`]),
+      ...(rapid && docsOnlyDraft(draft)
+        ? ["- **Specs:** none; docs-only work modifies no living spec"] : [])
+    ].join("\n") +
+    decisions + nonGoals + section(renderDerivedNotes(draft, rapid)) +
+    section(renderInvestigationSummary(draft.investigation)) +
     section(renderDiscoveryAppendix(draft)) +
     section(renderInvestigationAppendix(draft.investigation)) + "\n";
 }
 
-export function synchronizeProposalClassification(proposal, state) {
+// Keeps the harness-owned facts of a proposal current when resolve changes
+// them: impact, coupling, the lane (a rapid change upgraded to standard), and
+// the review line of the definition of done. Authored text is never touched,
+// and a proposal in an older layout (no such lines) is returned unchanged.
+export function synchronizeProposalClassification(proposal, state, context = {}) {
   let next = String(proposal || "");
+  if (state.upgradedFrom === "foundation-rapid")
+    next = next.replace(/(\*\*Lane:\*\* )rapid \([^\n]*\)/,
+      "$1standard (upgraded from rapid at resolve; see Impact)");
+  if (context.reviewLabel)
+    next = next.replace(/^(- Review: ).*$/m, (line, prefix) => `${prefix}${context.reviewLabel}.`);
   for (const [label, value] of [
     ["Impact", state.impact], ["Coupling", state.coupling]
   ]) {
     if (!value) continue;
     const pattern = new RegExp(
-      `^(\\s*-\\s*\\*\\*${label}:\\*\\*\\s*).*$`, "im");
-    if (pattern.test(next)) next = next.replace(pattern, `$1${value}`);
+      `^(\\s*-\\s*\\*\\*${label}:\\*\\*\\s*)(.*)$`, "im");
+    // A derived value keeps its "(derived: ...)" reason while it still holds.
+    next = next.replace(pattern, (line, prefix, current) =>
+      current === value || current.startsWith(`${value} (derived: `) ? line : `${prefix}${value}`);
   }
   return next;
 }
@@ -523,7 +564,7 @@ export function renderDraftDesign(draft) {
   const blueprints = renderDesignBlueprints({
     ...draft, workType: [], fileMap: fileMapWithTasks(derivedFileMap(draft), draft.tasks),
     testMap: derivedTestMap(draft), failureMatrix: derivedFailureMatrix(draft)
-  });
+  }, { fileTree: renderFileTree(draft) });
   const declared = draftWorkTypes(draft);
   const sections = [
     renderWorkType(declared, declared.length ? [] : inferWorkTypes(draft)),
@@ -532,7 +573,6 @@ export function renderDraftDesign(draft) {
     renderUserFlow(draft),
     renderComponentMap(draft),
     blueprints,
-    renderPlan(draft),
     (draft.domainLanguage || []).length
       ? `## Domain language\n\n| Canonical term | Meaning | Avoid |\n|---|---|---|\n` +
         draftDomainRows(draft.domainLanguage) : "",
@@ -549,11 +589,12 @@ export function renderDraftDesign(draft) {
 }
 
 // The review route a change will take, in words that cannot be misread.
-// Under risk-tiered policy every change gets an AI review, so "not required"
-// would be false; the tier and the model class of its first pass are named
+// Under risk-tiered policy every change but a quiet low-tier rapid change gets
+// an AI review, so the tier and the model class of its first pass are named
 // instead. Legacy policy keeps its required/not-required meaning.
 export function reviewRouteLabel({
-  reviewPolicy = "legacy", lowRiskModel = "fast", state = {}, claims = [], grounding = null
+  reviewPolicy = "legacy", lowRiskModel = "fast", modelByTier = undefined,
+  state = {}, claims = [], grounding = null
 } = {}) {
   const rows = (Array.isArray(claims) ? claims : []).filter((claim) =>
     claim && typeof claim === "object" && Array.isArray(claim.capabilities));
@@ -562,12 +603,21 @@ export function reviewRouteLabel({
   catch { signals = null; }
   if (reviewPolicy === "risk-tiered") {
     if (!signals) return "risk-tiered AI review (tier set at validation)";
-    const { tier } = classifyReviewRisk({
+    const riskRoute = classifyReviewRisk({
       state, claims: rows, capabilities: signals.capabilities, grounding,
       requiredTriggers: signals.requiredTriggers
     });
-    const model = lowRiskModel === "configured"
-      ? "configured" : reviewModelTierForDepth(reviewDepthForTier(tier));
+    const { tier } = riskRoute;
+    const assembled = assembleReviewPolicy({
+      state, signals, riskRoute, policy: {}, riskTiered: true
+    });
+    if (!assembled.required)
+      return "not required (rapid lane, low tier: deterministic evidence only)";
+    const model = reviewModelClass({
+      tier, triggers: assembled.triggers,
+      declaredReview: Boolean(state.reviewRequired) && !state.reviewKeywordOnly,
+      settings: { lowRiskModel, modelByTier }
+    });
     return `risk-tiered AI review (${tier} tier, ${model} model)`;
   }
   const required = Boolean(state.reviewRequired) ||
@@ -628,22 +678,23 @@ export function renderDraftTask(task, index) {
 }
 
 // Shown by `change start --template` only when the project declares
-// repositories besides the control root: a draft that omits the binding
-// compiles every task into root, where submodule code is not built.
+// repositories besides the control root (nested or trusted siblings): a draft
+// that omits the binding compiles every task into root, where their code is
+// not built. A read repository is listed with its mode; it owns no edits.
 export function repositoryDraftGuidance(repositories = []) {
   const declared = (Array.isArray(repositories) ? repositories : [])
     .filter((row) => row?.id && row.id !== "root" && row.relativePath &&
-      !String(row.relativePath).startsWith(".."))
-    .map((row) => ({ id: row.id, path: row.relativePath }));
+      row.relativePath !== "." && row.relativePath !== "..");
   if (!declared.length) return {};
-  const [first] = declared;
+  const first = declared.find((row) => row.mode !== "read") || declared[0];
   return {
     minimalDraftRepositories: "This project declares repositories besides root. A task " +
       "whose files live in one names it in 'repository', writes 'paths' and 'verify' " +
       "relative to that repository's root (verify runs there; no cd into it), and the " +
       "draft lists every repository its tasks use in 'repositories' (add root when a task " +
       "edits root files). Omit both for root-only work.",
-    declaredRepositories: declared,
+    declaredRepositories: declared.map((row) => ({ id: row.id, path: row.relativePath,
+      ...(row.mode === "read" ? { mode: "read" } : {}) })),
     repositoryExample: {
       repositories: [{ id: first.id, mode: "write" }],
       tasks: [{
@@ -801,6 +852,16 @@ export function createChangeLifecycle({
     } catch { return ["root"]; }
   }
 
+  // The selection rows themselves, so a repository `dependsOn` is visible.
+  function changeRepositoryRows(changeDir) {
+    const path = join(changeDir, "repositories.yaml");
+    if (!existsSync(path)) return null;
+    try {
+      const rows = readJson(path).repositories;
+      return Array.isArray(rows) ? rows : null;
+    } catch { return null; }
+  }
+
   const workflowPolicy = () => typeof policy === "function" ? policy() : policy;
 
   function amendmentRevision(state) {
@@ -879,10 +940,11 @@ export function createChangeLifecycle({
     // draft without `version` in the minimal v4 shape compiles as v4.
     const raw = readJson(source);
     const context = { ...minimalDraftContext, ...prior };
+    // Impact and coupling are derived from the draft's content, never lowered.
     if (!raw || typeof raw !== "object" || Array.isArray(raw) || !("minimalDraft" in raw))
-      return expandMinimalSemanticDraft(raw, context);
+      return withDerivedRisk(expandMinimalSemanticDraft(raw, context));
     const { minimalDraft: _example, ...draft } = raw;
-    return expandMinimalSemanticDraft(draft, context);
+    return withDerivedRisk(expandMinimalSemanticDraft(draft, context));
   }
 
   // A minimal draft chooses among existing capabilities before inventing one.
@@ -1065,6 +1127,7 @@ export function createChangeLifecycle({
     if ([3, 4].includes(source.version)) {
       const normalized = normalizeSemanticDraft(source, slugify, {
         defaultRapidEvidence: true,
+        repositories: declaredRepositories(),
         loadCanonicalSpec: (capability) => {
           const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
           return existsSync(path) ? readFileSync(path, "utf8") : null;
@@ -1202,12 +1265,35 @@ export function createChangeLifecycle({
       .map((warning) => `  design warning: ${warning}\n`).join("") + verify;
   }
 
+  // Facts the proposal states from policy and topology rather than from the
+  // draft: the review route the change will take (the same label resolve
+  // prints) and declared repositories its tasks do not select.
+  function proposalContext(draft, state) {
+    const declared = declaredRepositories().map((row) => row.id);
+    const used = new Set([
+      ...(Array.isArray(draft.repositories) ? draft.repositories : [])
+        .map((entry) => (typeof entry === "string" ? entry : entry?.id)),
+      ...(draft.tasks || []).map((task) => task.repository || "root")
+    ].filter(Boolean));
+    const policy = workflowPolicy();
+    return {
+      unselectedRepositories: declared.filter((repository) => !used.has(repository)),
+      reviewLabel: reviewRouteLabel({
+        reviewPolicy: policy.workflow?.reviewPolicy, lowRiskModel: policy.review?.lowRiskModel,
+        state: { ...state, impact: draft.impact, coupling: draft.coupling,
+          securityTriggers: draft.securityTriggers || [], reviewRequired: Boolean(draft.reviewRequired) },
+        claims: draft.claims || []
+      })
+    };
+  }
+
   function materializeDraft(id, draft) {
     const state = loadRuntime(id);
     const basePath = changePath(id);
     // Task paths the main checkout does not have yet read as additions.
     const documented = withNewPaths(draft, (path) => existsSync(join(root, path)));
-    writeFileSync(join(basePath, "proposal.md"), renderDraftProposal(documented, state));
+    writeFileSync(join(basePath, "proposal.md"),
+      renderDraftProposal(documented, state, proposalContext(draft, state)));
     // A standard v4 change is built from its dev document, so design.md is
     // always written; v3 keeps writing it only for authored design content.
     if (state.schema === "foundation-standard" &&
@@ -1296,10 +1382,6 @@ export function createChangeLifecycle({
     if (preparedDraft === undefined && flags.draft && draft?._semanticVersion === 4)
       fail("semantic draft v4 must use 'change start <draft.json>' so repository intake is enforced");
     const schema = flags.rapid ? "foundation-rapid" : "foundation-standard";
-    if (schema !== "foundation-rapid" && draft?._defaultedEvidence?.length)
-      fail("foundation-standard requires explicit evidence capabilities; add " +
-        draft._defaultedEvidence.map((key) => `evidence['${key}'].capabilities`).join(", ") +
-        " (for example [\"test\"]) or create the change with --rapid");
     const source = templateDir(schema);
     const target = changePath(id);
     const groundingRequired = workflowPolicy().workflow.grounding === "required" ||
@@ -1346,8 +1428,16 @@ export function createChangeLifecycle({
   // The minimal form leads; the full v4 template follows for richer drafts.
   // The decisions note travels with the template the agent already reads, so
   // recording unasked defaults costs no always-loaded instruction words.
+  // `save` leads because agents copy from this output: a shell-written JSON
+  // draft is refused by the host, while the file tool falls under the seeded
+  // `Edit(/.foundation/drafts/**)` rule.
   function rapidStartTemplate() {
     return {
+      save: "Write minimalDraft (filled in) with the Write tool to " +
+        ".foundation/drafts/<id>.json; that path is pre-allowed and the tool creates the " +
+        "folder. Do not save it through the shell (heredoc, cat >, echo >, mkdir chains): " +
+        "the host refuses those. Then run claude-foundation change start " +
+        ".foundation/drafts/<id>.json.",
       minimalDraft: minimalSemanticDraftTemplate(),
       minimalDraftCapability: "Optionally add a top-level capability to the minimal draft: a " +
         "short noun phrase naming the living spec, such as kanban-board. Omitted, the draft " +
@@ -1380,6 +1470,7 @@ export function createChangeLifecycle({
     const normalized = validateCompiledDraft
       ? normalizeSemanticDraft(source, slugify, {
         defaultRapidEvidence: true,
+        repositories: declaredRepositories(),
         loadCanonicalSpec: (capability) => {
           const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
           return existsSync(path) ? readFileSync(path, "utf8") : null;
@@ -1498,12 +1589,19 @@ export function createChangeLifecycle({
   function amendmentRepositoryIssues(id, state, amendment) {
     const changeDir = activeChangePath(id, state);
     const tasksPath = join(changeDir, "tasks.md");
-    return amendmentTaskRepositoryIssues(amendment,
-      existsSync(tasksPath) ? readFileSync(tasksPath, "utf8") : "", {
+    const tasksContent = existsSync(tasksPath) ? readFileSync(tasksPath, "utf8") : "";
+    return [
+      ...amendmentTaskRepositoryIssues(amendment, tasksContent, {
         repositories: declaredRepositories(),
         selection: changeRepositorySelection(changeDir),
         exists: existsSync
-      });
+      }),
+      // An added task's derived repository order must not close a cycle.
+      ...amendmentRepositoryOrderIssues(amendment, tasksContent, {
+        repositories: declaredRepositories(),
+        selection: changeRepositoryRows(changeDir) || undefined
+      })
+    ];
   }
 
   function inspectAmendment(id, amendmentPath, options = {}) {
@@ -1718,6 +1816,7 @@ export function createChangeLifecycle({
     return reviewRouteLabel({
       reviewPolicy: workflowPolicy().workflow?.reviewPolicy,
       lowRiskModel: workflowPolicy().review?.lowRiskModel,
+      modelByTier: workflowPolicy().review?.modelByTier,
       state,
       claims: Array.isArray(claims) ? claims : [],
       grounding: parse("grounding.yaml")
@@ -1739,7 +1838,7 @@ export function createChangeLifecycle({
       ? `\n  signed CI: waived (${state.ciWaiver.decisionRef})` : "";
     console.log(`RESOLVED ${id}\n  impact: ${state.impact}\n  coupling: ${state.coupling}\n  review: ${resolutionReviewLabel(id, state)}\n  acceptance: ${state.acceptance?.decision || (state.acceptance?.required ? "required" : "legacy-not-required")}\n  security: ${[...state.securityTriggers,
       ...(state.keywordSecurityTriggers || []).map((value) => `${value} (intent keyword: review only)`)
-    ].join(", ") || "none"}${surfaceLine}${ciLine}\n  schema: ${state.schema}${upgraded ? " (upgraded from foundation-rapid; design.md and specs/ added)" : ""}${atomicStepOutput ? "" : `\n  next: ${nextCommand(state.status, id)}`}`);
+    ].join(", ") || "none"}${surfaceLine}${ciLine}\n  schema: ${state.schema}${upgraded ? " (upgraded from foundation-rapid; design.md and specs/ added)" : ""}${atomicStepOutput ? "" : `\n  next: ${nextCommand(state.status, id, state)}`}`);
   }
 
   function approvalPacketRoot(id) {
@@ -1824,7 +1923,8 @@ export function createChangeLifecycle({
       }
       console.log(`DECISION RECORDED ${id}\n` +
         (approvedDelta ? `  approved requirement delta:\n${formatApprovalDelta(approvedDelta)}\n` : "") +
-        `  next: claude-foundation advance ${id} --through ${flags["approve-spec"] ? "build"
+        `  next: claude-foundation advance ${id} --through ${flags["approve-spec"]
+          ? resumeThrough(loadRuntime(id))
           : flags["accept-target-edits"] ? "archived" : "proven"}`);
       return;
     }
@@ -1838,7 +1938,8 @@ export function createChangeLifecycle({
     const proposalPath = join(changePath(id), "proposal.md");
     if (existsSync(proposalPath)) {
       const proposal = readFileSync(proposalPath, "utf8");
-      const synchronized = synchronizeProposalClassification(proposal, state);
+      const synchronized = synchronizeProposalClassification(proposal, state,
+        { reviewLabel: proposal.includes("\n- Review: ") ? resolutionReviewLabel(id, state) : "" });
       if (synchronized !== proposal) writeFileSync(proposalPath, synchronized);
     }
     state.resolvedAt = now();
@@ -1916,7 +2017,8 @@ export function createChangeLifecycle({
 
   // Every start-time draft check that does not need created state. Inspect
   // reports these with the compiler's issues, so one EDIT carries them all;
-  // `structural: false` skips preflight rows that restate compiler issues.
+  // `structural: false` (the compiler already refused the draft) skips only
+  // the evidence-wiring row, which a refused compile cannot produce.
   function startDraftChecks(draft, { structural = true } = {}) {
     const preflight = atomicStartPreflight(draft, {
       groundingRequired: workflowPolicy().workflow.grounding === "required" ||
@@ -1928,7 +2030,8 @@ export function createChangeLifecycle({
     // the preflight gates still apply the rapid lane's requirements.
     const keepsDesign = semanticDraftKeepsDesign(draft, preflight.rapid);
     const rapid = preflight.rapid && !keepsDesign;
-    const issues = [...(structural ? preflight.issues : []), ...domainLanguageIssues(draft),
+    const issues = [...preflight.issues.filter((issue) =>
+      structural || !issue.includes("executable evidence wiring")), ...domainLanguageIssues(draft),
       // Caught here, in the same EDIT batch, instead of when Build runs the check.
       ...verifyPathIssues(draft.tasks, { exists: (path) => existsSync(join(root, path)) }),
       // Build dispatches each task to its repository; a task whose files live
@@ -1937,12 +2040,6 @@ export function createChangeLifecycle({
         repositories: declaredRepositories(), selection: draft.repositories, exists: existsSync
       }),
       ...apiContractErrorIssues(draft)];
-    // Only the rapid lane may leave evidence capabilities to the compiler.
-    if (!rapid && draft._defaultedEvidence?.length)
-      issues.push("the draft carries design content, so it uses " +
-        "foundation-standard, which requires explicit evidence capabilities; add " +
-        draft._defaultedEvidence.map((key) => `evidence['${key}'].capabilities`).join(", ") +
-        " (for example [\"test\"]) or remove the design content to stay rapid");
     return { issues, preflight, keepsDesign, rapid };
   }
 
@@ -1957,6 +2054,14 @@ export function createChangeLifecycle({
     if (keepsDesign)
       console.log("NOTE: the draft carries design content, so it uses foundation-standard " +
         "to keep design.md and specs/");
+    const derived = riskDerivationSummary(draft);
+    if (derived) console.log(`NOTE: ${derived}`);
+    const coverage = coverageNoteLine(draft);
+    if (coverage) console.log(`NOTE: ${coverage}`);
+    const filled = derivedByHarness(draft, { standard: !rapid });
+    if (filled.length)
+      console.log(`NOTE: derived by harness (listed in proposal.md): ${
+        filled.map((line) => line.replace(/\*\*([^*]+):\*\*.*$/, "$1").toLowerCase()).join(", ")}`);
     return { draft, rapid, resolutionFlags: startResolutionFlags(draft, classification, rapid) };
   }
 
@@ -2015,8 +2120,8 @@ export function createChangeLifecycle({
           openQuestionLines(openQuestions) +
           designWarningLines(draft, loadRuntime(id).schema) +
           `  next: ${openQuestions.length
-            ? `ask these with the approval, record the answers in the draft, then claude-foundation change revise ${id} ${draftPath} --approve-spec --decision-ref <user-decision> --through build`
-            : `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision> --through build`}`);
+            ? `ask these with the approval, record the answers in the draft, then claude-foundation change revise ${id} ${draftPath} --approve-spec --decision-ref <user-decision> --through proven`
+            : `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision> --through proven`}`);
       });
     } catch (error) {
       let rollbackIssues;
@@ -2161,7 +2266,7 @@ export function createChangeLifecycle({
   // produced: an amendment or grounding reopen afterwards changes the
   // agreement without it, so a partial revision would silently drop that.
   function compiledDraftSource(state, draft) {
-    return { contractRevision: Number(state.contractRevision || 0), draft };
+    return { contractRevision: Number(state.contractRevision || 0), draft: declaredDraftRisk(draft) };
   }
 
   // `merge` applies the file as a patch to the draft the change was compiled
@@ -2194,7 +2299,8 @@ export function createChangeLifecycle({
     // derived keys, titles, and scenario names exactly as at start.
     if (merged._minimalDraft && patch.version === undefined) delete merged.version;
     delete merged._minimalDraft;
-    return expandMinimalSemanticDraft(merged, { ...minimalDraftContext, ...priorDraftIdentity(id) });
+    return withDerivedRisk(
+      expandMinimalSemanticDraft(merged, { ...minimalDraftContext, ...priorDraftIdentity(id) }));
   }
 
   function reviseRoute(id, draftPath, merge) {
@@ -2340,10 +2446,10 @@ export function createChangeLifecycle({
       openQuestionLines(openQuestions) +
       designWarningLines(draft, state.schema) +
       `  next: ${openQuestions.length
-        ? `ask these with the approval, record the answers in the draft, then ${reviseRoute(id, draftPath, merge)} --approve-spec --decision-ref <user-decision> --through build`
+        ? `ask these with the approval, record the answers in the draft, then ${reviseRoute(id, draftPath, merge)} --approve-spec --decision-ref <user-decision> --through proven`
         : pending || !state.specApproval?.identity
-          ? `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision> --through build`
-          : `claude-foundation advance ${id} --through build`}`);
+          ? `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision> --through proven`
+          : `claude-foundation advance ${id} --through ${resumeThrough(state)}`}`);
     return delta;
   }
 
@@ -2425,6 +2531,8 @@ export function createChangeLifecycle({
         ? provenCommandClaimIds(id) : [],
       retiredTaskIds: (state.amendments || []).flatMap((row) =>
         (row?.removedTasks || []).map((task) => task?.id).filter(Boolean)),
+      repositories: declaredRepositories(),
+      repositorySelection: changeRepositoryRows(basePath),
       loadCanonicalSpec: (capability) => {
         const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
         return existsSync(path) ? readFileSync(path, "utf8") : null;
