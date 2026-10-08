@@ -1777,10 +1777,10 @@ const {
   stableHash,
   prepareWorkspace: projectRootRepositories,
   // An unresolvable surface or repository is no verdict: it never blocks.
-  testDiscrimination: (id, workspaceHash) => {
+  testDiscrimination: async (id, workspaceHash) => {
     try {
       if (!changedSurfaceResolvable(id)) return null;
-      return trapFailures(() => testDiscrimination.evaluate(id, workspaceHash));
+      return await trapFailuresAsync(() => testDiscrimination.evaluateAsync(id, workspaceHash));
     } catch { return null; }
   },
   die

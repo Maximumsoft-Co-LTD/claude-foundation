@@ -56,7 +56,8 @@ const GREET_CHANGE = {
   "src/greet.js": "export function greet(name) { return `Hello, ${name}!`; }\n"
 };
 
-function harness({ repositories, workTypes = ["feature"], spawns = [], logs }) {
+function harness({ repositories, workTypes = ["feature"], spawns = [], logs,
+  command = ["node", "--test"], environment = null }) {
   const byId = new Map(repositories.map((row) => [row.id, row]));
   const state = { repositories: Object.fromEntries(repositories.map((row) =>
     [row.id, { baseHead: row.baseHead }])) };
@@ -69,7 +70,7 @@ function harness({ repositories, workTypes = ["feature"], spawns = [], logs }) {
   return createTestDiscriminationRuntime({
     LOGS: logs,
     requiredProviders: () => repositories.map((row) => `test-${row.id}`),
-    providerConfig: () => ({ adapter: "command", command: ["node", "--test"] }),
+    providerConfig: () => ({ adapter: "command", command }),
     providerCapability: () => "test",
     providerRepository: (_id, provider) => byId.get(provider.slice(5)),
     selectedRepositories: () => repositories,
@@ -82,7 +83,7 @@ function harness({ repositories, workTypes = ["feature"], spawns = [], logs }) {
     loadRuntime: () => state,
     // A nested `node --test` under this runner would report to it instead of
     // exiting with its own status.
-    environment: Object.fromEntries(Object.entries(process.env)
+    environment: environment || Object.fromEntries(Object.entries(process.env)
       .filter(([name]) => name !== "NODE_TEST_CONTEXT")),
     spawnCommandSync: (command, args, options) => {
       spawns.push({ command, args, cwd: options.cwd });
@@ -161,6 +162,55 @@ test("refactor, docs, chore, and config work skip the rule without running anyth
   assert.equal(behaviorChangingWork(["code"]), true);
 });
 
+test("async base-source checks yield, clean scratch trees, and reuse the same verdict", async (t) => {
+  const root = fixtureRoot(t);
+  const repo = repository(root, "root", GREET_BASE, {
+    ...GREET_CHANGE,
+    "test/greet-format.test.js": "import test from 'node:test';\nimport assert from 'node:assert/strict';\n" +
+      "import { greet } from '../src/greet.js';\ntest('formats', () => assert.equal(greet('Ada'), 'Hello, Ada!'));\n"
+  });
+  const runtime = harness({ repositories: [repo], logs: join(root, "logs") });
+  let yielded = false;
+  setImmediate(() => { yielded = true; });
+  const result = await runtime.evaluateAsync("change-a", "hash-a");
+  assert.equal(yielded, true, "the child check does not block the event loop");
+  assert.equal(result.status, "pass");
+  assert.equal(result.repositories[0].outcome, "fails-on-base");
+  assert.equal(runtime.evaluate("change-a", "hash-a").repositories[0].cached, true,
+    "sync and async routes share content-bound evidence without another run");
+  assert.equal(git(repo.workspacePath, "worktree", "list").split("\n").length, 1);
+});
+
+test("compiled plain shell providers run only changed tests and keep environment-bound reuse", (t) => {
+  const root = fixtureRoot(t);
+  const repo = repository(root, "root", GREET_BASE, {
+    ...GREET_CHANGE,
+    "test/greet-format.test.js": "import test from 'node:test';\nimport assert from 'node:assert/strict';\n" +
+      "import { greet } from '../src/greet.js';\ntest('formats', () => assert.equal(greet('Ada'), 'Hello, Ada!'));\n"
+  });
+  const environment = Object.fromEntries(Object.entries(process.env)
+    .filter(([name]) => name !== "NODE_TEST_CONTEXT"));
+  environment.DISCRIMINATION_MODE = "first";
+  const spawns = [];
+  const logs = join(root, "logs");
+  const runtime = harness({ repositories: [repo], spawns, logs, environment,
+    command: ["sh", "-c", "node --test"] });
+  assert.equal(runtime.evaluate("change-a", "hash-a").status, "pass");
+  assert.deepEqual(spawns[0].args, ["--test", "test/greet-format.test.js"]);
+  assert.equal(spawns[0].command, "node");
+  assert.equal(runtime.evaluate("change-a", "hash-a").repositories[0].cached, true);
+  assert.equal(spawns.length, 1);
+  environment.DISCRIMINATION_MODE = "second";
+  assert.notEqual(runtime.evaluate("change-a", "hash-a").repositories[0].cached, true,
+    "changed execution environment invalidates a base-run verdict");
+  assert.equal(spawns.length, 2);
+  const cache = readdirSync(join(logs, "change-a", "test-discrimination"))
+    .filter((name) => name.endsWith(".json"))
+    .map((name) => readFileSync(join(logs, "change-a", "test-discrimination", name), "utf8"));
+  assert.ok(cache.every((text) => !text.includes("DISCRIMINATION_MODE")),
+    "cache records retain the environment digest, never its values");
+});
+
 test("a test importing a module the change adds counts as failing on base", (t) => {
   const root = fixtureRoot(t);
   const repo = repository(root, "root", GREET_BASE, {
@@ -223,6 +273,13 @@ test("test runners that take files are narrowed to the change's test files", () 
     ["pkg/store/store_test.go", "main_test.go"]),
   { command: "go", args: ["test", "-count=1", ".", "./pkg/store"] });
   assert.equal(scopedTestCommand({ command: "npm", args: ["test"] }, ["test/a.test.js"]), null);
+  assert.deepEqual(scopedTestCommand({ command: "sh", args: ["-c", "node --test test/"] },
+    ["test/a.test.js"]), { command: "node", args: ["--test", "test/a.test.js"] });
+  for (const line of ["node --test | tail -5", "MODE=x node --test", "node --test $TEST_FILES",
+    "node --test > results.txt", "node --test && echo done", "sh -c node --test"]) {
+    assert.equal(scopedTestCommand({ command: "sh", args: ["-c", line] }, ["test/a.test.js"]), null,
+      `shell semantics are preserved: ${line}`);
+  }
   assert.equal(lightKind("pkg/store/store_test.go"), "test");
   assert.equal(lightKind("tests/test_api.py"), "test");
 });

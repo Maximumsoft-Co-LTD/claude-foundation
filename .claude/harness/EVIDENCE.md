@@ -517,15 +517,19 @@ repair-closure receipt, not a third AI review. A delta review that no longer
 reports an earlier finding closes it. When the repaired final finding has no
 declared critical case to bind (for example a rapid change) and current
 non-review proof passes, Prove requests one closure review of the repaired
-workspace; only after that closure wave also fails and its repair cannot close
+workspace, comparing the review provider's current subject hash with the failed
+wave's subject rather than the global workspace hash; only after that closure wave also fails and its repair cannot close
 does Prove stop at the review-exhausted user decision (accept the review risk with `change waive
 --capability review`, revise the agreement, or pause) instead of returning an
 unsatisfiable repair. A review that `advance` runs beside the providers binds
 its receipt to that pass's explicit proof run and snapshot, and its failure
 leaves an open request without marking the operation blocked. The pass binds to
 the forced workspace snapshot (a readiness hash read from a stale cached snapshot
-is re-derived first, so the overlap is not silently lost), the base-source test
-discrimination run executes while the reviewer child is still running, and the
+is re-derived first, so the overlap is not silently lost). The base-source test
+discrimination child yields the event loop so reviewer preparation and execution
+can progress beside it.
+This overlap also applies when Prove reuses all executable checks from Build;
+it does not rerun those checks just to start review. The
 reviewer is always joined before any stop returns: a failed provider or a
 non-discriminating test never leaves a reviewer running, and a verdict that
 finishes after the tests is recorded against its own request and hash like any
@@ -795,6 +799,9 @@ service or readiness probe) and runs its command once against the base source:
   the original; `node_modules`, `.venv`, and `venv` are linked from the sandbox;
 - when the runner takes file arguments (`node --test`, `pytest`,
   `python -m pytest`, `go test` by package), only the change's test files run;
+  a plain `sh -c` wrapper is recognized with the same conservative command
+  parser used for task checks; shell expansion, pipes, assignments, and
+  redirects retain the configured command;
   any other command (for example `npm test`) runs once as configured;
 - a test that imports a module the change adds fails on base and therefore
   counts as failing on base.
@@ -809,7 +816,7 @@ progress; an unchanged rerun reaches the existing no-progress boundary. A spawn
 failure, timeout, missing `baseHead`, or unresolvable surface is no verdict and
 never blocks. Each verdict is cached under
 `.foundation/logs/<change>/test-discrimination/` by the digest of the base
-commit, the command, its environment, and every overlaid file, so an unchanged
+commit, the command, its effective environment digest, and every overlaid file, so an unchanged
 rerun runs nothing; cost is at most one extra test command per affected
 repository per distinct test content. Low-level `proof run` and `proof
 finalize` remain operator primitives and do not run this check.

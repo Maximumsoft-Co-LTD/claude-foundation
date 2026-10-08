@@ -181,7 +181,7 @@ needs (failures unless the work is only refactor, config, or light work; user fl
 API contracts, data model, config or job contract by type); the harness infers
 the work type from task paths (stated in `design.md`; declare `workType` to
 override; test-, docs-, or manifest-only paths are light work) and derives the
-file map, test map (scenario and check command), and plan. Flowchart node
+file map and test map (scenario and check command). Flowchart node
 labels holding `(`, `)`, or `"` must be quoted (`A["mean(values)"]`).
 Each fact is written once: without an authored `failureMatrix`, scenarios with
 `kind: "failure"` become its rows (an optional scenario `recovery` fills the
@@ -198,15 +198,16 @@ multiple repositories participate, external authority is required, or a
 non-derived material decision must be recorded. Absence has versioned
 virtual-default semantics.
 
-The packet is written for a human reviewer first. `proposal.md` opens with an
-optional plain-language summary, prioritized user stories, measurable success
-criteria, and a capability index (capability, requirements, tasks); discovery
-coverage and investigation provenance close it as appendices. `design.md`
+The packet is written for a human reviewer first. After the rendered header,
+`proposal.md` carries its summary, user stories, scope, acceptance traceability,
+and definition of done; a capability index is omitted for a single capability.
+Discovery coverage and investigation provenance close it as appendices. `design.md`
 records every settled intake answer as a durable decision (context, choice,
 rejected options, decided by), adds an optional overview diagram, assumptions,
-open questions, the user flow, a component map, and the Plan (task, outcome,
-files, verify, dependencies, requirements) with its dependency graph, fills the
-file map's task column from task `[paths:]`, and omits sections the change
+open questions, the user flow, a component map, and the derived file and test
+maps. The folder tree lives inside the File map; task outcomes, verify commands,
+and dependencies live only in `tasks.md`. It fills the
+file map's task column from task `[paths:]` and omits sections the change
 leaves empty. While any open question remains, an approval request returns those
 questions as one `ASK_USER` decision instead of recording consent; the agent
 asks them, records the answers, and asks for approval again.

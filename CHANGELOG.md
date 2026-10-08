@@ -374,27 +374,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no longer blocks sandbox creation, and no portability refusal asks for a
   commit.
 - Change produces a dev document that Build executes and a reviewer reads.
-  Every proposal shows a folder tree of touched paths. A rapid proposal adds
-  the compact form: summary, user flow, failure matrix, and a Plan table with
-  files, verify command, dependencies, and requirements. A standard v4 change
-  always writes `design.md`, adds a user flow and component map, derives the
-  file map and test map from tasks, and replaces the task overview with the
-  Plan. The harness infers `workType` from task paths. A standard v4 draft
-  missing a section its work type needs (`summary`, `failureMatrix`,
+  A rapid proposal carries the compact summary, user flow, failure matrix,
+  and authored descriptive sections. Tasks, dependencies, and verify commands
+  live in `tasks.md`. A standard v4 change always writes `design.md`, adds the
+  sections its work type needs, and derives the file map, folder tree, and
+  test map from tasks. The harness infers `workType` from task paths; `why`
+  supplies the lead and `summary` is optional. A standard v4 draft
+  missing a section its work type needs (`failureMatrix`,
   `userFlow`, `uiStates`, `componentMap`, `apiContracts`, `dataModel`, and so
   on) gets a draft issue the agent repairs.
 - Dev document fixes from dogfooding. Task paths absent from the main checkout
-  show `+` in the folder tree (now rooted at `.`) and `add` in the derived
+  show `+` in the design's folder tree (rooted at `.`) and `add` in the derived
   file map. Descriptive sections (`fileMap`, `failureMatrix`, `testMap`,
   `componentMap`, `userFlow`, `configContract`, `refactor`) no longer move a
-  small low-risk draft to standard; the rapid proposal renders them, with
-  User flow after What changes. What changes comes from the requirement
-  outcome or statement, not the first scenario's `then`, and a code-shaped
+  small low-risk draft to standard; the rapid proposal renders authored
+  sections. Scope comes from the requirement outcome or statement, not the
+  first scenario's `then`, and a code-shaped
   trigger names its scenario after the requirement. The derived test map
   lists scenario names and a Check column. Optional columns and API lines
   (Covers, Idempotency, Compatibility) render only when supplied. `design.md`
   states an inferred work type and reads flow, components, contracts,
-  failures, file map, test map, then plan; repair messages say to declare
+  failures, file map, and test map; tasks live only in `tasks.md`.
+  Repair messages say to declare
   `workType` to override. Inference treats `.tsx`/`.jsx` under routes as UI,
   matches `config.*` files, and treats test-, docs-, or manifest-only
   changes as light work. The template adds `workTypeExamples` and quoted
@@ -423,6 +424,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   asks only for `why`.
 
 ### Fixed
+
+- Closure review availability now compares the review provider's subject hash
+  with the failed delta's subject, so a repaired provider is not incorrectly
+  sent to the exhausted-review user gate by the global workspace hash.
+- Prove overlaps configured review with the asynchronous base-source test
+  check even when every executable provider reuses Build evidence. A failed
+  base-source check also joins the reviewer before returning recovery.
+- Base-source test discrimination recognizes plain `sh -c` runner commands
+  emitted by compiled drafts and narrows them to changed test files when
+  supported; shell expressions retain their full configured command. Its
+  verdict cache binds the effective execution environment by digest.
 
 - A configured review whose reviewer finished after the content it judged had
   changed (a provider writing tracked files beside the concurrent review, or an

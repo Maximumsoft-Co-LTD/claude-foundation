@@ -140,24 +140,26 @@ assert_file_not_contains "session hook adds no PATH entry without an installed C
 # the installer's project-local shim on PATH, and only when nothing resolves.
 SHIM_PROJECT="$(mktemp -d)"
 trap 'rm -f "$ENV_FILE"; rm -rf "$SHIM_PROJECT"' EXIT HUP INT TERM
-mkdir -p "$SHIM_PROJECT/.foundation/bin" "$SHIM_PROJECT/global" "$SHIM_PROJECT/stale"
+mkdir -p "$SHIM_PROJECT/.foundation/bin" "$SHIM_PROJECT/global" "$SHIM_PROJECT/stale" "$SHIM_PROJECT/empty"
 touch "$SHIM_PROJECT/.foundation/bin/claude-foundation" "$SHIM_PROJECT/global/claude-foundation" \
   "$SHIM_PROJECT/stale/claude-foundation"
 chmod +x "$SHIM_PROJECT/global/claude-foundation"
-NODE_DIR="$(dirname "$(command -v node)")"
+# Invoke Node by its absolute path: its directory may also contain a real
+# Homebrew claude-foundation, which would invalidate the no-global-CLI fixture.
+NODE_EXECUTABLE="$(command -v node)"
 : > "$ENV_FILE"
 printf '%s' "$session" | CLAUDE_PROJECT_DIR="$SHIM_PROJECT" CLAUDE_ENV_FILE="$ENV_FILE" \
-  PATH="$NODE_DIR:/usr/bin:/bin" node "$ROOT/.claude/hooks/session-context.mjs" >/dev/null
+  PATH="$SHIM_PROJECT/empty" "$NODE_EXECUTABLE" "$ROOT/.claude/hooks/session-context.mjs" >/dev/null
 assert_file_contains "session hook puts the installed CLI shim on PATH" \
   "$ENV_FILE" "export PATH='$SHIM_PROJECT/.foundation/bin':\"\$PATH\""
 : > "$ENV_FILE"
 printf '%s' "$session" | CLAUDE_PROJECT_DIR="$SHIM_PROJECT" CLAUDE_ENV_FILE="$ENV_FILE" \
-  PATH="$SHIM_PROJECT/global:$NODE_DIR:/usr/bin:/bin" node "$ROOT/.claude/hooks/session-context.mjs" >/dev/null
+  PATH="$SHIM_PROJECT/global" "$NODE_EXECUTABLE" "$ROOT/.claude/hooks/session-context.mjs" >/dev/null
 assert_file_not_contains "session hook keeps a CLI already on PATH first" \
   "$ENV_FILE" "export PATH="
 : > "$ENV_FILE"
 printf '%s' "$session" | CLAUDE_PROJECT_DIR="$SHIM_PROJECT" CLAUDE_ENV_FILE="$ENV_FILE" \
-  PATH="$SHIM_PROJECT/stale:$NODE_DIR:/usr/bin:/bin" node "$ROOT/.claude/hooks/session-context.mjs" >/dev/null
+  PATH="$SHIM_PROJECT/stale" "$NODE_EXECUTABLE" "$ROOT/.claude/hooks/session-context.mjs" >/dev/null
 assert_file_contains "session hook ignores a non-executable CLI on PATH" \
   "$ENV_FILE" "export PATH='$SHIM_PROJECT/.foundation/bin':\"\$PATH\""
 

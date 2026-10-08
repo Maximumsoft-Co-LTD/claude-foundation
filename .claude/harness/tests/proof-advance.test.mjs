@@ -709,6 +709,38 @@ assert.equal(finalDeltaClosure.requests.length, 0,
   "current critical-case evidence closes the final AI delta without a third review request");
 
 process.exitCode = 0;
+const repairedProviderClosure = fixture({
+  executionNeeded: false,
+  providerHashes: { review: "review-provider-repaired" },
+  deliveredAiAttempts: [
+    { resultStatus: "fail", workspaceHash: "review-provider-base" },
+    { resultStatus: "fail", workspaceHash: "workspace-a" }
+  ],
+  closureResult: { closed: false, route: "REVIEW_ROUTE_EXHAUSTED", findingIds: ["F-FINAL"] }
+});
+const repairedProviderResult = await quiet(() =>
+  repairedProviderClosure.runtime.proofAdvance("change-a"));
+assert.equal(repairedProviderResult.status, "WAITING_EXTERNAL",
+  "closure availability compares the repaired provider subject with the final review, not the global hash");
+assert.equal(repairedProviderClosure.requests.length, 1);
+
+process.exitCode = 0;
+const unchangedProviderClosure = fixture({
+  executionNeeded: false,
+  providerHashes: { review: "review-provider-unchanged" },
+  deliveredAiAttempts: [
+    { resultStatus: "fail", workspaceHash: "review-provider-base" },
+    { resultStatus: "fail", workspaceHash: "review-provider-unchanged" }
+  ],
+  closureResult: { closed: false, route: "REVIEW_ROUTE_EXHAUSTED", findingIds: ["F-FINAL"] }
+});
+const unchangedProviderResult = await quiet(() =>
+  unchangedProviderClosure.runtime.proofAdvance("change-a"));
+assert.equal(unchangedProviderResult.status, "NEEDS_USER_DECISION",
+  "a different global hash never grants another wave for an unchanged review subject");
+assert.equal(unchangedProviderClosure.requests.length, 0);
+
+process.exitCode = 0;
 const unmappedDelta = fixture({
   executionNeeded: false,
   deliveredAiAttempts: [
@@ -847,6 +879,7 @@ function concurrentFixture(options = {}) {
   const discriminationCalls = [];
   const readHash = () => cachedHash || workspaceHash;
   const receipts = {};
+  if (options.reusedTests) receipts.test = { status: "pass", hash: workspaceHash };
   const requests = [];
   const delivered = [...(options.deliveredAiAttempts || [])];
   const events = [];
@@ -931,7 +964,7 @@ function concurrentFixture(options = {}) {
         return (async () => {
           // Finishes only after the providers started: a serial controller
           // never resolves this and the bounded wait below fails the test.
-          await testStarted.promise;
+          if (!options.reusedTests) await testStarted.promise;
           testStarted = null;
           // With `overlapDiscrimination` the review can only finish after the
           // base-source discrimination run began: a controller that joins the
@@ -957,6 +990,7 @@ function concurrentFixture(options = {}) {
       discriminationCalls.push(hash);
       events.push("discrimination");
       discriminationStarted.resolve();
+      if (options.discriminationError) throw new Error("discrimination infrastructure error");
       return options.discrimination || { status: "pass", findings: [] };
     },
     recordDeterministicReviewClosure: options.closure
@@ -1009,6 +1043,24 @@ function concurrentFixture(options = {}) {
   assert.deepEqual(run.events.filter((event) => event !== "test:end"),
     ["review:start", "test:start", "discrimination", "review:end"]);
   assert.deepEqual(run.discriminationCalls, ["workspace-a"]);
+}
+
+{
+  const run = concurrentFixture({ reusedTests: true, overlapDiscrimination: true });
+  const passed = await run.advance();
+  assert.equal(passed.status, "PASS");
+  assert.deepEqual(run.events, ["review:start", "discrimination", "review:end"],
+    "reused Build checks still allow review to overlap the base-source check");
+  assert.equal(run.testRunIds.length, 0, "valid Build evidence is not executed again");
+  assert.equal(run.reviewCommands.length, 1);
+  assert.deepEqual(run.discriminationCalls, ["workspace-a"]);
+}
+
+{
+  const run = concurrentFixture({ overlapDiscrimination: true, discriminationError: true });
+  await assert.rejects(run.advance(), /discrimination infrastructure error/);
+  assert.ok(run.events.includes("review:end"),
+    "a discrimination exception joins the reviewer before returning recovery");
 }
 
 {

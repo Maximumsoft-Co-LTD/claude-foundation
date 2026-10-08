@@ -667,14 +667,14 @@ export function createProofExecutionRuntime({
   // from the original code. The agent strengthens the tests; this is the same
   // convergent evidence gate, so changed tests are progress and an unchanged
   // rerun reaches the existing no-progress boundary.
-  function discriminationRepairStop(id, readiness, advanceStart, executedProviders,
+  async function discriminationRepairStop(id, readiness, advanceStart, executedProviders,
     early = null) {
     if (!testDiscrimination || !["READY", "NEEDS_USER_DECISION"].includes(readiness.status))
       return null;
     // A result computed beside the concurrent review binds to the hash it ran
     // on; any other hash is evaluated again.
     const result = early?.workspaceHash === readiness.workspaceHash
-      ? early.result : testDiscrimination(id, readiness.workspaceHash);
+      ? early.result : await testDiscrimination(id, readiness.workspaceHash);
     if (result?.status !== "fail" || !result.findings?.length) return null;
     return stopProofAdvance(writeConvergentRepairStop(id, readiness, advanceStart, {
       gate: "evidence", stage: "tests-not-discriminating", findings: result.findings,
@@ -851,14 +851,40 @@ export function createProofExecutionRuntime({
       id, readiness, advanceStart, { failures: failed }));
   }
 
+  async function discriminationBesideReview(id, readiness, review) {
+    let discrimination = null;
+    try {
+      if (["READY", "NEEDS_USER_DECISION"].includes(readiness.status) &&
+          testDiscrimination) {
+        discrimination = {
+          workspaceHash: readiness.workspaceHash,
+          result: await testDiscrimination(id, readiness.workspaceHash)
+        };
+      }
+    } finally {
+      // Recovery must never return while this pass still owns a reviewer.
+      await review;
+    }
+    return discrimination;
+  }
+
   async function collectAdvanceExecution(id, flags, snapshot, readiness,
     authorityRequests, advanceStart = {}) {
     const execution = executionNodes(id, snapshot.workspaceHash);
     const collectable = collectableExecutionNodes(
       id, execution.nodes, snapshot.workspaceHash);
     let executedProviders = [];
-    if (!collectable.nodes.length)
-      return { readiness, authorityRequests, executedProviders };
+    if (!collectable.nodes.length) {
+      // Build may already have supplied every executable receipt. Review can
+      // still overlap the base-source check without rerunning those providers.
+      const review = startAdvanceReview(id, flags, snapshot, readiness,
+        authorityRequests, `review-${Date.now()}`);
+      if (!review) return { readiness, authorityRequests, executedProviders };
+      const discrimination = await discriminationBesideReview(id, readiness, review);
+      readiness = proofReadinessValue(id, "prove");
+      authorityRequests = readiness.status === "NEEDS_USER_DECISION" ? statusRequests(id) : [];
+      return { readiness, authorityRequests, executedProviders, discrimination };
+    }
 
     const priorAdvance = readAdvance(id);
     const retryIndeterminate = Boolean(flags["retry-indeterminate"]);
@@ -928,20 +954,13 @@ export function createProofExecutionRuntime({
     executedProviders = collection.executedProviders || [];
     readiness = collection.readiness;
     // The base-source discrimination run is read-only on the workspace (it
-    // builds its own scratch tree), so it runs while the reviewer child is
-    // still alive: the child keeps running while this synchronous call blocks.
-    let discrimination = null;
-    if (review && ["READY", "NEEDS_USER_DECISION"].includes(readiness.status) &&
-        testDiscrimination) {
-      discrimination = {
-        workspaceHash: readiness.workspaceHash,
-        result: testDiscrimination(id, readiness.workspaceHash)
-      };
-    }
+    // builds its own scratch tree), so its async child runs beside the review
+    // without blocking reviewer preparation or result collection.
+    const discrimination = review
+      ? await discriminationBesideReview(id, readiness, review) : null;
     // Join before classifying: the review verdict is bound to this same
     // workspace hash and belongs to this pass's readiness.
     if (review) {
-      await review;
       readiness = proofReadinessValue(id, "prove");
     }
     authorityRequests = readiness.status === "NEEDS_USER_DECISION"
@@ -1143,9 +1162,13 @@ export function createProofExecutionRuntime({
         boundedReviewProviders.length))
       return { readiness, authorityRequests };
 
-    const closures = boundedReviewProviders.map((provider) =>
-      recordDeterministicReviewClosure(id, provider,
-        currentProviderHash(id, provider, readiness.workspaceHash)))
+    const closureProviders = new Map();
+    const closures = boundedReviewProviders.map((provider) => {
+      const closure = recordDeterministicReviewClosure(id, provider,
+        currentProviderHash(id, provider, readiness.workspaceHash));
+      if (closure) closureProviders.set(closure, provider);
+      return closure;
+    })
       .filter(Boolean);
     const blockedClosures = closures.filter((row) => !row.closed);
     if (blockedClosures.length) {
@@ -1155,7 +1178,8 @@ export function createProofExecutionRuntime({
         row.route === "CONTRACT_DECISION_REQUIRED")) {
         // The repaired final delta gets one closure review before any person
         // is asked to accept it unreviewed.
-        if (reviewClosureWaveAvailable(delivered, readiness.workspaceHash))
+        if (exhausted.every((row) => reviewClosureWaveAvailable(delivered,
+          currentProviderHash(id, closureProviders.get(row), readiness.workspaceHash))))
           return { readiness, authorityRequests };
         return { outcome: stopProofAdvance(
           writeReviewExhaustedStop(id, readiness, exhausted, executedProviders)) };
@@ -1351,7 +1375,7 @@ export function createProofExecutionRuntime({
     if (executionResult.outcome) return executionResult.outcome;
     ({ readiness, authorityRequests } = executionResult);
     const { executedProviders } = executionResult;
-    const discrimination = discriminationRepairStop(
+    const discrimination = await discriminationRepairStop(
       id, readiness, advanceStart, executedProviders, executionResult.discrimination);
     if (discrimination) return discrimination;
 

@@ -6,6 +6,8 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { providerExecutionEnvironment } from "./adapter-runtime.mjs";
+import { environmentIdentity, taskCheckArgv } from "./task-check-evidence.mjs";
+import { spawnCapturedAsync } from "./configured-reviewer.mjs";
 
 // Test discrimination: a passing test suite proves a behavior change only when
 // at least one of the change's tests fails without it. For behavior-changing
@@ -64,6 +66,13 @@ export function scopedTestCommand(built, files) {
   if (!built?.command || !files?.length) return null;
   const program = basename(String(built.command)).replace(/\.exe$/i, "");
   const args = (built.args || []).map(String);
+  if (program === "sh" && args.length === 2 && args[0] === "-c") {
+    // Compiled task providers use sh -c even for a plain runner. Reuse the
+    // conservative parser: expansions, pipes, redirects and assignments keep
+    // their full command rather than silently changing its meaning.
+    const argv = taskCheckArgv(args[1]);
+    return argv ? scopedTestCommand({ command: argv[0], args: argv.slice(1) }, files) : null;
+  }
   if (program === "node" && args.includes("--test"))
     return { command: built.command, args: [...optionTokens(args, NODE_VALUE_FLAGS), ...files] };
   if (program === "pytest" || program === "py.test")
@@ -171,7 +180,7 @@ export function createTestDiscriminationRuntime({
   LOGS, requiredProviders, providerConfig, providerCapability, providerRepository,
   selectedRepositories, repositoryBaseHead, changedSurface, pathKind, changeWorkTypes,
   receiptValidity, configuredCommand, fileDigest, stableHash, loadRuntime,
-  spawnCommandSync = spawnSync, environment = process.env
+  spawnCommandSync = spawnSync, spawnCommandAsync = spawnCapturedAsync, environment = process.env
 }) {
   function testProvider(id, repositoryId, hash) {
     for (const provider of [...requiredProviders(id)].sort()) {
@@ -205,7 +214,7 @@ export function createTestDiscriminationRuntime({
     return value;
   }
 
-  function evaluateRepository(id, repository, rows, hash, state) {
+  function evaluateRepository(id, repository, rows, hash, state, asynchronous = false) {
     const base = { repositoryId: repository.id };
     const productPaths = rows.filter((row) => !pathKind(row.path)).map((row) => row.path);
     if (!productPaths.length) return { ...base, outcome: "no-product-change" };
@@ -224,10 +233,16 @@ export function createTestDiscriminationRuntime({
     const scoped = scopedTestCommand(built, testFiles);
     const command = scoped || { command: built.command, args: built.args };
     const overlay = overlayRows(workspace, dirty, productPaths, fileDigest);
+    const envFrom = Object.fromEntries((config.envFrom || [])
+      .filter((name) => environment[name] !== undefined).map((name) => [name, environment[name]]));
+    const additions = { ...envFrom, ...(config.env || {}), FOUNDATION_CHANGE_ID: id,
+      FOUNDATION_REPOSITORY_ID: repository.id };
     const key = stableHash({
       version: TEST_DISCRIMINATION_VERSION, repositoryId: repository.id, baseHead,
       command: [command.command, ...command.args], env: config.env || {},
-      envFrom: [...(config.envFrom || [])].sort(), overlay, productPaths
+      envFrom: [...(config.envFrom || [])].sort(), overlay, productPaths,
+      environment: environmentIdentity(
+        providerExecutionEnvironment(environment, additions, workspace), stableHash)
     });
     const row = { ...base, provider, baseHead, testFiles,
       command: [command.command, ...command.args].join(" "), scoped: Boolean(scoped) };
@@ -236,44 +251,47 @@ export function createTestDiscriminationRuntime({
     if (prior) return { ...row, outcome: prior.outcome, cached: true };
     const prepared = buildScratch(workspace, baseHead, overlay);
     if (!prepared) return { ...row, outcome: "unavailable" };
-    let result;
-    try {
-      const envFrom = Object.fromEntries((config.envFrom || [])
-        .filter((name) => environment[name] !== undefined).map((name) => [name, environment[name]]));
-      result = spawnCommandSync(command.command, command.args, {
-        cwd: prepared.tree, encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
-        timeout: Number(config.timeoutMs || 120000),
-        env: providerExecutionEnvironment(environment, {
-          ...envFrom, ...(config.env || {}), FOUNDATION_CHANGE_ID: id,
-          FOUNDATION_REPOSITORY_ID: repository.id
-        }, prepared.tree)
-      });
-    } finally {
-      rmSync(prepared.scratch, { recursive: true, force: true });
+    const options = {
+      cwd: prepared.tree, encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
+      timeout: Number(config.timeoutMs || 120000),
+      env: providerExecutionEnvironment(environment, additions, prepared.tree)
+    };
+    const finish = (result) => {
+      const outcome = baseRunOutcome(result);
+      const log = join(LOGS, id, "test-discrimination", `${key}.log`);
+      mkdirSync(dirname(log), { recursive: true });
+      writeFileSync(log, `exit=${result?.status ?? "error"}\n${result?.stdout || ""}${result?.stderr || ""}`);
+      // Only a verdict is cached; an unavailable or timed-out run is retried.
+      if (["passes-on-base", "fails-on-base"].includes(outcome))
+        record(path, { version: TEST_DISCRIMINATION_VERSION, key, changeId: id, ...row, outcome });
+      return { ...row, outcome };
+    };
+    const cleanup = () => rmSync(prepared.scratch, { recursive: true, force: true });
+    if (asynchronous) {
+      return Promise.resolve().then(() => spawnCommandAsync(command.command, command.args, options))
+        .then(finish).finally(cleanup);
     }
-    const outcome = baseRunOutcome(result);
-    const log = join(LOGS, id, "test-discrimination", `${key}.log`);
-    mkdirSync(dirname(log), { recursive: true });
-    writeFileSync(log, `exit=${result?.status ?? "error"}\n${result?.stdout || ""}${result?.stderr || ""}`);
-    // Only a verdict is cached; an unavailable or timed-out run is retried.
-    if (["passes-on-base", "fails-on-base"].includes(outcome))
-      record(path, { version: TEST_DISCRIMINATION_VERSION, key, changeId: id, ...row, outcome });
-    return { ...row, outcome };
+    try {
+      return finish(spawnCommandSync(command.command, command.args, options));
+    } finally {
+      cleanup();
+    }
   }
 
   // { status: pass|fail|not-applicable, repositories, findings }. Evaluated
   // per writable repository; a failure in any repository is a repair.
-  function evaluate(id, workspaceHash) {
+  function evaluationInput(id) {
     const workTypes = changeWorkTypes(id);
     if (!behaviorChangingWork(workTypes))
-      return { version: TEST_DISCRIMINATION_VERSION, status: "not-applicable",
-        reason: "behavior-neutral-work", workTypes, repositories: [], findings: [] };
+      return { skipped: { version: TEST_DISCRIMINATION_VERSION, status: "not-applicable",
+        reason: "behavior-neutral-work", workTypes, repositories: [], findings: [] } };
     const state = loadRuntime(id);
     const surface = changedSurface(id, state);
-    const repositories = selectedRepositories(id, state)
-      .filter((repository) => repository.mode !== "read")
-      .map((repository) => evaluateRepository(id, repository,
-        surface.filter((row) => row.repositoryId === repository.id), workspaceHash, state));
+    return { state, surface, workTypes, selected: selectedRepositories(id, state)
+      .filter((repository) => repository.mode !== "read") };
+  }
+
+  function evaluationResult(workTypes, repositories) {
     const status = discriminationStatus(repositories);
     return {
       version: TEST_DISCRIMINATION_VERSION, status, workTypes, repositories,
@@ -282,5 +300,24 @@ export function createTestDiscriminationRuntime({
     };
   }
 
-  return { evaluate };
+  function evaluate(id, workspaceHash) {
+    const input = evaluationInput(id);
+    if (input.skipped) return input.skipped;
+    return evaluationResult(input.workTypes, input.selected.map((repository) =>
+      evaluateRepository(id, repository,
+        input.surface.filter((row) => row.repositoryId === repository.id), workspaceHash, input.state)));
+  }
+
+  async function evaluateAsync(id, workspaceHash) {
+    const input = evaluationInput(id);
+    if (input.skipped) return input.skipped;
+    const repositories = [];
+    // Preserve repository order and resource use; only the child execution
+    // yields so a configured review can progress beside this check.
+    for (const repository of input.selected) repositories.push(await evaluateRepository(id, repository,
+      input.surface.filter((row) => row.repositoryId === repository.id), workspaceHash, input.state, true));
+    return evaluationResult(input.workTypes, repositories);
+  }
+
+  return { evaluate, evaluateAsync };
 }

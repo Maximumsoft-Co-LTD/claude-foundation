@@ -55,7 +55,8 @@ setTimeout(() => {
 }
 
 function consumer({ reviewer: mode = "pass", testExit = 0,
-  intent = "Calc exports subtract for billing totals", policyEdit = null } = {}) {
+  intent = "Calc exports subtract for billing totals", policyEdit = null,
+  reuseBuildChecks = false } = {}) {
   const temp = mkdtempSync(join(tmpdir(), "foundation-review-overlap-"));
   const project = join(temp, "consumer");
   mkdirSync(project, { recursive: true });
@@ -117,11 +118,11 @@ function consumer({ reviewer: mode = "pass", testExit = 0,
   // set it fails only once the post-Build touch is in place, i.e. in Prove.
   writeFileSync(join(workspace, "test/calc.test.js"), 'import test from "node:test";\n' +
     'import assert from "node:assert/strict";\nimport { appendFileSync, readFileSync } from "node:fs";\n' +
-    'import { add, subtract } from "../src/calc.js";\n' +
     `const log = (name) => appendFileSync(${JSON.stringify(events)}, ` +
     '`${name} ${BigInt(Date.now()) * 1000000n} ${process.pid}\\n`);\n' +
     'const touched = readFileSync(new URL("../src/calc.js", import.meta.url), "utf8").includes("post-build touch");\n' +
     'log("test-start");\n' +
+    'const { add, subtract } = await import("../src/calc.js");\n' +
     'test("add", () => assert.equal(add(1, 2), 3));\n' +
     `test("subtract", async () => { await new Promise((r) => setTimeout(r, 2500)); ` +
     `assert.equal(subtract(5, 3), touched && ${testExit !== 0} ? 99 : 2); });\n` +
@@ -130,7 +131,7 @@ function consumer({ reviewer: mode = "pass", testExit = 0,
   const built = cli("advance", id, "--through", "build");
   assert.equal(built.status, 0, built.stderr || built.stdout);
   // ...then the content moves, so Prove must run the test on the new bytes.
-  writeFileSync(join(workspace, "src/calc.js"),
+  if (!reuseBuildChecks) writeFileSync(join(workspace, "src/calc.js"),
     `${readFileSync(join(workspace, "src/calc.js"), "utf8")}// post-build touch\n`);
   const rows = () => (existsSync(events) ? readFileSync(events, "utf8") : "")
     .trim().split("\n").filter(Boolean).map((line) => {
@@ -184,6 +185,28 @@ test("failing project tests never pass and leave no reviewer running", () => {
       `every started reviewer finished before advance returned: ${show(rows)}`);
     assert.ok(!existsSync(join(fixture.project, ".foundation/receipts", fixture.id, "proof.json")),
       "no proof is written");
+  } finally {
+    fixture.clean();
+  }
+});
+
+test("reused Build evidence overlaps review with base-source tests in an installed consumer", () => {
+  const fixture = consumer({ reuseBuildChecks: true });
+  try {
+    writeFileSync(fixture.events, "");
+    const advanced = fixture.cli("advance", fixture.id, "--through", "proven");
+    const rows = fixture.rows();
+    const reviews = intervals(rows, "review-start", "review-end");
+    const tests = intervals(rows, "test-start", "test-end");
+    assert.equal(reviews.length, 1, `one review: ${show(rows)}`);
+    assert.equal(tests.length, 1,
+      `only the base-source check runs; the Build check is reused: ${show(rows)}`);
+    assert.ok(overlap(reviews[0], tests[0]), `base-source tests overlap review: ${show(rows)}`);
+    assert.ok(proven(advanced), `${advanced.stdout}\n${advanced.stderr}`);
+    const before = readFileSync(fixture.events, "utf8");
+    assert.ok(proven(fixture.cli("advance", fixture.id, "--through", "proven")));
+    assert.equal(readFileSync(fixture.events, "utf8"), before,
+      "an unchanged resume repeats neither tests nor review");
   } finally {
     fixture.clean();
   }

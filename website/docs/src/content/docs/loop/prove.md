@@ -24,16 +24,18 @@ review that the harness can run starts in parallel with the tests for the same
 workspace hash, reads only the diff and the agreement's requirements, and uses
 the fast model tier for low risk and a faster standard tier for medium risk
 (high risk and security triggers keep the configured model; `review.modelByTier`
-overrides it); its findings and failed tests return as one
+overrides it). When Build checks are reused, review still overlaps the
+asynchronous base-source test check without rerunning those Build checks;
+its findings and failed tests return as one
 `REPAIR`. Other configured reviews are `RUN_EXTERNAL`; a named external owner
 is `WAIT` without a question; a material
 contract or acceptance decision is `ASK_USER`. Each boundary preserves state
 and gives one exact resume route. Repeating an unchanged wait does not poll,
 rerun evidence, or spend another model request.
 
-Recovery observations survive process restarts. The third unchanged repair
-handoff first asks the agent for one materially different approach inside the
-agreement; only a further unchanged handoff asks how to proceed, with the cause,
+Recovery observations survive process restarts. The first unchanged repair
+handoff belongs to the agent; the second asks for one materially different
+approach inside the agreement; the third asks how to proceed, with the cause,
 attempted work, alternatives and a recommendation. The agent records an explicit
 retry/pause answer with
 `advance --decision`, the returned fingerprint, a decision reference and reason.

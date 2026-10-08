@@ -8,7 +8,7 @@ time; they are not updated to describe the current release.
 
 | Need | Document | Status |
 |---|---|---|
-| Distinguish current source from recorded release evidence | [User scenario release status](user-scenario-release-status.md) | Current source note; verification table is v3.5.6 history |
+| Distinguish current source from recorded release evidence | [User scenario release status](user-scenario-release-status.md) | v3.6.0 candidate scope and local verification limits; v3.5.6 release evidence retained as history |
 | See the executable scenario and acceptance matrix | [User scenario test plan](user-scenario-test-plan.md) | Current contract |
 | Operate dogfood, pilot, rollback, and production observation | [Rollout operations](rollout-operations.md) | Current runbook |
 | Review delivery convergence, ownership, tool preparation, permission, and uncommitted multi-repository Land | [Delivery convergence master plan](delivery-convergence-master-plan-2026-09-05.md) | v3.5.7 implementation record |
