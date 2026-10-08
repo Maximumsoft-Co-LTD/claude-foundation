@@ -24,7 +24,7 @@ class ClaudeFoundation < Formula
   end
 
   def install
-    libexec.install ".claude", ".foundation", ".workflow", "openspec",
+    libexec.install ".claude", ".foundation", "openspec",
                     "WORKFLOW.md", "CLAUDE.md", "package.json", "package-lock.json",
                     "foundation.json", "install.sh", "install-cursor.sh",
                     "install-opencode.sh", "install-codex.sh", "cli.sh", "dashboard"
