@@ -690,6 +690,10 @@ performance target, notification, integration, compatibility หรือ rollou
 ```
 
 สำหรับ agreement version 4 ให้รัน `change amend <change-id> <amendment.json>`
+เพิ่มหรือแก้ requirement ใน change เดิมได้แม้ถึง `proven` แล้ว ตราบใดที่ยังไม่เริ่ม Land
+เมื่อ amendment สำเร็จจะกลับเป็น `building` เพื่อทำงานที่เพิ่มและ Prove ใหม่ โดยเก็บงานที่เสร็จแล้ว
+และ receipt ที่ไม่กระทบและยังมี identity ถูกต้องไว้ หากเริ่ม Land แล้วต้อง recover การส่งมอบนั้น
+แล้วใช้ successor change
 คำสั่งเดียวจะ inspect ก่อน แสดง intake/source-digest action ถ้ามี และ apply
 amendment เฉพาะเมื่อได้ `DONE` (`--inspect` ใช้ inspect อย่างเดียว) runtime จะ apply amendment แบบ
 transaction โดยรักษา

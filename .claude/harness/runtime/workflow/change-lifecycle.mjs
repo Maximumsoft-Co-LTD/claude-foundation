@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { acquireProcessLock } from "../core/process-lock.mjs";
+import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 import { foundationChangeStores, retiredChangeStores } from "./retired-change-stores.mjs";
 import { nextCommand, resumeThrough } from "../core/next-step.mjs";
 import { taskBlocks, taskMetadata } from "../contracts/change-artifacts.mjs";
@@ -2472,8 +2473,10 @@ export function createChangeLifecycle({
   function amendChangeUnlocked(id, amendmentPath, options, state, expectedRevision) {
     if (![3, 4].includes(state.semanticDraftVersion))
       fail(`change amend requires a semantic-draft v3 or v4 change; '${id}' is a legacy agreement`);
-    if (["proven", "landing", "archived"].includes(state.status))
+    if (["landing", "applied", "archived"].includes(state.status))
       fail(`change amend cannot rewrite an agreement in '${state.status}' status; start a successor change`);
+    if (state.land?.status || state.workspace?.applied)
+      fail("change amend cannot rewrite an agreement after Land has started; recover Land before starting a successor change");
     const source = resolve(root, amendmentPath);
     if (!pathInside(root, source) || !existsSync(source))
       fail("change amend requires a JSON file inside the project");
@@ -2739,6 +2742,11 @@ export function createChangeLifecycle({
       const amendedSignals = riskSignalValues([
         ...(priorState.riskSignals || []), ...(amendment.riskSignals || [])]);
       if (amendedSignals.length) nextState.riskSignals = amendedSignals;
+      // A proven candidate is still amendable until Land begins. Re-enter
+      // Build so advance dispatches added tasks and re-finalizes this revision;
+      // the prior proof and Land grant cannot authorize the amended packet.
+      if (priorState.status === "proven")
+        transitionLifecycleState(nextState, "building", "proven-agreement-amended");
       saveRuntime(nextState);
       // A prior proof-advance checkpoint describes the old contract. Even when
       // every executable receipt is preserved, the coordinator must re-enter

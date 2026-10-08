@@ -33,9 +33,9 @@ product code during Change.
 
 ## Gate: spec approval
 
-Unless the request approved the spec, present packet links, scope, behavior,
-acceptance criteria, and open questions; validation is not approval. Record
+Unless approved, link the packet; explain scope, behavior, acceptance criteria,
+and open questions in ordinary words; validation is not approval. Record
 it with `claude-foundation advance <id> --approve-spec --decision-ref <ref>`
 or step 3's flags. Change stops here.
 
-Report outcome, decisions, next action in the user's language.
+Report product changes in the user's language; hide commands/jargon.

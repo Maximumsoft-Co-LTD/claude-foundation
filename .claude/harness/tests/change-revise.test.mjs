@@ -473,16 +473,24 @@ test("a revision that removes a requirement still asks for approval", (t) => {
     (error) => error.code === "SPEC_APPROVAL_REQUIRED");
 });
 
-test("an approved change keeps its approval across an additive amendment", (t) => {
+for (const initialStatus of ["change", "proven"]) {
+test(`an approved ${initialStatus} change keeps its approval across an additive amendment`, (t) => {
   const value = fixture(t);
   value.start();
   approve(value, "fixture://user/spec");
+  writeJson(join(value.runtime, "revisable-change.json"), {
+    ...value.state(), status: initialStatus
+  });
+  const tasksPath = join(value.changes, "revisable-change", "tasks.md");
+  if (initialStatus === "proven")
+    writeFileSync(tasksPath, readFileSync(tasksPath, "utf8").replace("- [ ]", "- [x]"));
   const amendmentPath = join(value.root, "amendment.json");
   writeJson(amendmentPath, {
     version: 1,
     reason: "User asked for retries",
     addRequirements: [requirement("retry", "The webhook retries a failed delivery")],
-    updateTasks: [{ key: "implement", covers: ["retry"] }],
+    addTasks: [{ key: "retry-task", outcome: "Implement retries", covers: ["retry"],
+      dependsOn: ["implement"], verify: "npm test -- retries" }],
     evidence: { retry: { capabilities: ["test"] } }
   });
   const log = console.log;
@@ -491,6 +499,10 @@ test("an approved change keeps its approval across an additive amendment", (t) =
   try { value.lifecycle.amendChange("revisable-change", amendmentPath); }
   finally { console.log = log; }
   const amended = value.state();
+  assert.equal(amended.status, initialStatus === "proven" ? "building" : initialStatus);
+  const tasks = readFileSync(tasksPath, "utf8");
+  assert.match(tasks, /- \[ \] \*\*T002\*\*.*\[key:retry-task\]/);
+  if (initialStatus === "proven") assert.match(tasks, /- \[x\] \*\*T001\*\*/);
   assert.equal(amended.pendingApprovalDelta, undefined);
   assert.equal(amended.specApproval.decisionRef, "fixture://user/spec");
   assert.equal(amended.specApproval.revision, amended.contractRevision);
@@ -499,6 +511,24 @@ test("an approved change keeps its approval across an additive amendment", (t) =
   assert.match(value.control.output.join("\n"),
     /AMENDED revisable-change[\s\S]*requirement delta \(covered by the current approval\):\n  added: retry/);
 });
+}
+
+for (const landedState of [
+  { status: "landing" }, { status: "applied" }, { status: "archived" },
+  { status: "proven", land: { status: "evidence-snapshotted" } },
+  { status: "building", land: { status: "code-applied" } },
+  { status: "proven", workspace: { applied: true } }
+]) {
+test(`amend refuses a Land state ${JSON.stringify(landedState)}`, (t) => {
+  const value = fixture(t);
+  value.start();
+  writeJson(join(value.runtime, "revisable-change.json"), { ...value.state(), ...landedState });
+  const before = snapshot(value.root);
+  assert.throws(() => value.lifecycle.amendChange("revisable-change", "absent.json"),
+    /cannot rewrite an agreement.*(successor change|after Land has started)/);
+  assert.deepEqual(snapshot(value.root), before);
+});
+}
 
 test("an amendment that removes a requirement from an approved change asks again", (t) => {
   const value = fixture(t);

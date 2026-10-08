@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A proven change can accept added or revised requirements until Land starts.
+  A successful amendment returns it to Build, retains completed work and
+  unaffected valid evidence, and requires a new proof for the amended agreement.
+  Rejected amendments restore the prior state; amendments remain blocked during
+  Land and applied or archive recovery.
+- User-facing summaries and approval requests now describe visible product
+  changes in the user's language. Agent guidance keeps approval commands,
+  internal identifiers, skill names, and design jargon out of routine replies,
+  includes a natural Thai approval example, and explains verification limits
+  and actionable warnings in ordinary words.
+
 ## [3.6.0] - 2026-10-08
 
 **v3.6.0 at a glance.** Behavior changes you will notice:

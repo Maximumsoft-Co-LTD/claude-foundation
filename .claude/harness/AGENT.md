@@ -32,7 +32,7 @@ Harness checks Change Loop 3.6.0/runtime API `41`, repairs setup.
 - Code/test success without the matching lifecycle state is incomplete.
   Build/Prove: `TARGET_REACHED`; archived: `DELIVERED`.
 
-Harness output is a machine handoff: translate in the user's language.
+Harness output is a machine handoff: use the user's language; hide commands/jargon.
 
 For `notification.surface: true`, load `.claude/harness/README.md#agent-update-policy`.
 

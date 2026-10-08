@@ -402,11 +402,20 @@ and the spec approval do not change; a command that always passes (`true`,
 record; and the harness accepts the task only after the corrected command
 passes in the workspace.
 
-When Build discovers new behavior, amend the same agreement before continuing:
+When Build discovers new behavior, or the user adds requirements to a `proven`
+candidate before Land starts, amend the same agreement before continuing:
 
 ```bash
 claude-foundation change amend <change> <amendment.json>
 ```
+
+A successful amendment of a `proven` candidate returns it to `building` and
+discards the old proof-advance checkpoint. Completed tasks and unaffected,
+identity-valid receipts remain reusable; added work and invalidated checks run
+before a new proof is finalized. A rejected amendment leaves the prior state
+and evidence intact. Revision-bound Land grants become stale. Amendments are
+refused once Land starts, including applied and archive recovery states; recover
+the delivery and use a successor change.
 
 An amendment may add (`addRequirements`), revise (`reviseRequirements`, the
 full replacement row for an existing key), or remove (`removeRequirements`,

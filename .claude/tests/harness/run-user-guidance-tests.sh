@@ -11,11 +11,27 @@ COMMANDS="$ROOT/.claude/commands"
 DASHBOARD="$ROOT/dashboard/public"
 
 assert_file_contains "agent matches the user's language" "$AGENT" "user's language"
+assert_file_contains "agent translates design language for users" "$AGENT" \
+  "hide commands/jargon"
 assert_file_contains "agent performs safe authorized actions" "$AGENT" "safe action you can"
 assert_file_contains "agent keeps runtime routes internal" "$AGENT" "agent-only control data"
 assert_file_contains "agent asks users for decisions rather than CLI execution" "$AGENT" \
   "requests a decision, not CLI execution"
 DECISIONS="$COMMANDS/references/decision-policy.md"
+assert_file_contains "decisions follow the current conversation language" "$DECISIONS" \
+  "language of the user's current request"
+assert_file_contains "routine replies hide approval implementation details" "$DECISIONS" \
+  "CLI invocations, flags, placeholders, change IDs, task IDs, skill names"
+assert_file_contains "decisions explain visible product effects" "$DECISIONS" \
+  'Translate design'
+assert_file_contains "approval example is a natural Thai question" "$DECISIONS" \
+  "คุณต้องการให้ผมเริ่มทำตามแนวทางนี้ไหมครับ?"
+assert_file_contains "approval commands stay internal" "$DECISIONS" \
+  "the approval command stays with the agent"
+assert_file_contains "warnings require a meaningful user choice" "$DECISIONS" \
+  'A "missing error state" warning is not itself a user decision'
+assert_file_contains "Change explains the agreement in ordinary words" "$COMMANDS/change.md" \
+  "open questions in ordinary words"
 assert_file_contains "human decisions do not require user CLI execution" "$DECISIONS" \
   "Human ownership of the decision does not require human CLI execution"
 assert_file_contains "command approval cannot fabricate a human verdict" "$DECISIONS" \
@@ -105,6 +121,9 @@ for installer in install.sh install-codex.sh install-cursor.sh install-opencode.
 done
 assert_file_contains "Cursor receives an always-on guidance contract" \
   "$ROOT/.claude/harness/adapters/cursor-human-guidance.mdc" "Foundation human guidance contract"
+assert_file_contains "Cursor inherits decision wording" \
+  "$ROOT/.claude/harness/adapters/cursor-human-guidance.mdc" \
+  ".claude/commands/references/decision-policy.md"
 assert_file_contains "CLI help explains the ordinary user path" "$ROOT/cli.sh" \
   "describe the outcome to your coding agent"
 

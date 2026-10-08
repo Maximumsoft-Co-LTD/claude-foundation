@@ -727,7 +727,11 @@ Change. See the complete [follow-up classification](WORKFLOW.md#follow-up-reques
 ```
 
 For a version-4 agreement, run `change amend <change-id> <amendment.json>`: the
-same call inspects first, prints any intake/source-digest action, and applies the
+same change can be amended after `proven` until Land starts. A successful
+amendment returns it to `building` for added work and a new Prove; completed
+work and unaffected, identity-valid receipts are retained. Once Land starts,
+recover that delivery and use a successor change.
+The same call inspects first, prints any intake/source-digest action, and applies the
 amendment only at `DONE` (`--inspect` only inspects). The runtime applies the amendment
 transactionally. It
 preserves completed tasks and manual Markdown sections, validates before keeping

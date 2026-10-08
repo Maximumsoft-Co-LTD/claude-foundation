@@ -1043,7 +1043,8 @@ test("a completed task's verify changes only by re-opening it", () => {
   /reopen must be true or false/);
 });
 
-test("change amend installs atomically and restores files and state on validation failure", (t) => {
+for (const initialStatus of ["building", "proven"]) {
+test(`change amend from ${initialStatus} installs atomically and restores files and state on validation failure`, (t) => {
   const root = mkdtempSync(join(tmpdir(), "semantic-amend-transaction-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const id = "payment-change";
@@ -1098,9 +1099,13 @@ test("change amend installs atomically and restores files and state on validatio
     }
   }, null, 2)}\n`);
   let state = {
-    id, status: "building", semanticDraftVersion: 4,
+    id, status: initialStatus, semanticDraftVersion: 4,
     revision: 0, contractRevision: 0, executionRevision: 0
   };
+  const proofAdvancePath = join(root, ".foundation", "evidence", id, "proof-advance.json");
+  mkdirSync(dirname(proofAdvancePath), { recursive: true });
+  const priorProofAdvance = JSON.stringify({ status: "READY", contractRevision: 0 });
+  writeFileSync(proofAdvancePath, priorProofAdvance);
   let rejectValidation = false;
   let rejectRebind = false;
   let rejectRebindChecks = 0;
@@ -1191,14 +1196,27 @@ test("change amend installs atomically and restores files and state on validatio
     const refreshed = lifecycle.amendChange(id, "amendment.json");
     assert.equal(refreshed.action, "EDIT");
     assert.equal(state.contractRevision || 0, 0);
+    assert.equal(state.status, initialStatus);
+    assert.equal(readFileSync(proofAdvancePath, "utf8"), priorProofAdvance);
     // Changed sources still require the author to re-read and touch the draft.
     firstAmendment.discovery.sourceDigest = refreshed.intakeState.sourceDigest;
     writeFileSync(amendmentPath, `${JSON.stringify(firstAmendment, null, 2)}\n`);
     assert.equal(lifecycle.inspectAmendment(id, "amendment.json").action, "DONE");
+    rejectValidation = true;
+    const stateBeforeRejectedAmendment = structuredClone(state);
+    assert.throws(() => lifecycle.amendChange(id, "amendment.json"),
+      /synthetic validator failure; semantic amendment rolled back/);
+    assert.deepEqual(state, stateBeforeRejectedAmendment);
+    assert.equal(readFileSync(proofAdvancePath, "utf8"), priorProofAdvance);
+    assert.equal(JSON.parse(readFileSync(join(receipts, "lint.json"), "utf8")).contractFingerprint,
+      initialLintReceipt.contractFingerprint);
+    rejectValidation = false;
     runContender = true;
     lifecycle.amendChange(id, "amendment.json");
     assert.match(contenderError?.message || "", /already in progress/);
     assert.equal(state.contractRevision, 1);
+    assert.equal(state.status, "building");
+    assert.equal(existsSync(proofAdvancePath), false);
     assert.equal(state.amendments.length, 1);
     assert.deepEqual(state.amendments[0].requirementKeys, ["malformed-row"]);
     assert.equal(state.amendments[0].semanticIntakeEffectiveness.history.inspections, 3);
@@ -1279,6 +1297,7 @@ test("change amend installs atomically and restores files and state on validatio
     console.log = priorLog;
   }
 });
+}
 
 function amendVerifyOnlySameContract(t, lintFingerprint) {
   // The real contract fingerprint covers claims and policy, not task verify
