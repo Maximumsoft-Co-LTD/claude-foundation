@@ -388,7 +388,7 @@ git commit --allow-empty -qm 'second unrelated move before automatic Land recove
 head_before="$(git rev-parse HEAD)"
 index_before="$(git ls-files --stage | shasum)"
 amendment_landed="$(PATH="$TMP/bin:$PATH" node .claude/harness/foundation.mjs advance selective-amendment --through archived 2>"$TMP/amended-land.err")"
-case "$amendment_landed" in *'"reached":"archived"'*) ;; *) fail "amended Land diagnostic stdout: $(printf '%s' "$amendment_landed" | tr '\n' ' ' | cut -c1-1800) STDERR: $(tr '\n' ' ' < "$TMP/amended-land.err" | cut -c1-1200)" ;; esac
+case "$amendment_landed" in *'"reached":"archived"'*) ;; *) amended_land_failed=1 ;; esac
 assert_contains "amended work reaches archived after base movement" "$amendment_landed" '"reached":"archived"'
 assert_eq "amended Land preserves target HEAD" "$head_before" "$(git rev-parse HEAD)"
 assert_eq "amended Land preserves target index" "$index_before" "$(git ls-files --stage | shasum)"
@@ -562,5 +562,14 @@ assert_file_contains "revised requirement keeps its claim" \
   "$revise_ws/openspec/changes/revise-before-build/evidence.yaml" "greeting-updated"
 assert_file_contains "removal records its migration in the proposal" \
   "$revise_ws/openspec/changes/revise-before-build/proposal.md" "Logging moves to a successor change"
+
+# The suite tail shows only the last 40 lines, so a failed amended Land is
+# reported here, last and in short lines, to keep the cause in the CI log.
+if [ "${amended_land_failed:-0}" = 1 ]; then
+  echo "DIAG amended Land stdout (first 12 lines):" >&2
+  printf '%s\n' "$amendment_landed" | head -n 12 | cut -c1-300 >&2
+  echo "DIAG amended Land stderr (last 12 lines):" >&2
+  tail -n 12 "$TMP/amended-land.err" | cut -c1-300 >&2
+fi
 
 finish "proof loop"
