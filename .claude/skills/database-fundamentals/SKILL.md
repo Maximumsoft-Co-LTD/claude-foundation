@@ -1,9 +1,12 @@
 ---
 name: database-fundamentals
-description: Design or change schemas, queries, indexes, transactions, migrations, ORM mappings, or other durable state. Covers constraints, query-shaped indexes, plans, N+1, isolation, concurrency, and compatible rollout. Skip throwaway storage and read-only ad-hoc queries with no shipped effect.
+description: "Design schemas, queries, indexes, transactions, migrations, and durable invariants. Use for persistence correctness or query plans; record compatibility and evidence in OpenSpec. Use performance-investigation for measured comparisons; skip read-only ad-hoc analysis."
 ---
 
 # Database fundamentals
+
+Use `change-impact-analysis` before deleting fields; local callers alone do
+not establish external compatibility.
 
 Use this as the primary skill when persistence is the main design constraint.
 

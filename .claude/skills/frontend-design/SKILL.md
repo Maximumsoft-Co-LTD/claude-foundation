@@ -1,10 +1,13 @@
 ---
 name: frontend-design
-description: Implement or restyle production web UI after product and UX direction is known. Use for pages, components, dashboards, posters, and HTML/CSS/React/Vue/Svelte work where visual composition, typography, motion, responsiveness, and polish are the main risk. Use ui-ux-pro-max first for UX direction or accessibility review; use tailwind-design-system for shared Tailwind v4 mechanics.
+description: "Implement or restyle web pages and components after product/UX direction is settled. Use for visual hierarchy, typography, motion, responsive states, and rendered polish. Work within Change Loop scope; use ui-ux-pro-max for unresolved interaction decisions."
 license: Complete terms in LICENSE.txt
 ---
 
 # Frontend design
+
+Check action, resulting state, and persisted effects. A final screenshot
+alone cannot prove the interaction worked.
 
 Build working, distinctive UI that fits the product instead of applying a
 default SaaS aesthetic.

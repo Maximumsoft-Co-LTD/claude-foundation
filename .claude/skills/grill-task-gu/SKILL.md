@@ -1,9 +1,12 @@
 ---
 name: grill-task-gu
-description: Ground approved PRDs in architecture/code, settle material choices in one Decision Sheet, and group dependency-ordered backlogs into changes. For grill-task-gu, PRD grooming, backlog creation, or /feature intake.
+description: "Ground approved PRDs in production code and architecture, settle material choices in one Decision Sheet, and produce dependency-ordered backlogs. Use for PRD grooming or feature intake. Preserve locked decisions; do not implement or infer compiled-spec approval."
 ---
 
 # Grill Task Gu
+
+Prove material consumer assumptions before treating them as settled choices;
+use `change-impact-analysis` for hidden activation risks.
 
 Produce `full discovery → one Decision Sheet → backlog + coverage → handoff`.
 Never implement or run a one-question interview.

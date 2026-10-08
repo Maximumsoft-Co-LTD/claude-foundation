@@ -1,9 +1,12 @@
 ---
 name: testing-fundamentals
-description: Design or review tests, coverage, and suite shape. Use when choosing what behavior to prove, selecting unit/integration/contract/e2e levels, introducing test doubles, preventing flakiness, or pinning a regression. Prefer the cheapest level that can prove the claim and test observable behavior. Skip docs, throwaway spikes, generated code, and trivial configuration with no behavior.
+description: "Design or review behavior tests, regressions, test levels, doubles, coverage, and real-surface verification drivers. Map OpenSpec claims to project providers and discriminating checks. Skip trivial/generated work; harness receipts, not checklists, establish proof."
 ---
 
 # Testing fundamentals
+
+A red test must fail for the predicted behavior, not setup errors. Exercise
+the real user path.
 
 Use this skill to translate a behavior or risk into trustworthy executable
 evidence. The OpenSpec claim defines what must be true; this skill selects the
@@ -43,3 +46,5 @@ References: read `test-design.md` for cases/assertions; `test-doubles-and-levels
 for level and seam choices; and `coverage.md` for coverage interpretation.
 Use `debug-fundamentals` for reproduction and `refactoring-fundamentals` for
 characterization-before-reshape.
+
+For executable surface checks, read [verification drivers](references/verification-drivers.md).

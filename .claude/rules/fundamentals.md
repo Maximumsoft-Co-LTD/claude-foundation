@@ -38,7 +38,9 @@ unclear after this digest.
 
 | Trigger | Load |
 |---|---|
-| Unknown-cause bug, crash, regression, flake, or performance cliff | `debug-fundamentals` first |
+| Unknown-cause bug, crash, regression, or flake | `debug-fundamentals` first |
+| Measured slowness, resource growth, benchmark, or speedup claim | `performance-investigation` |
+| Unverified consumer/compatibility assumptions or blast radius | `change-impact-analysis` |
 | Behavior-preserving restructure | `refactoring-fundamentals` first |
 | Test design, level, coverage, or review | `testing-fundamentals` |
 
@@ -78,3 +80,7 @@ cross-cutting skills.
 | CI/CD, build, container, deploy, environment, rollout/rollback, release | `delivery-engineering` |
 
 Non-lifecycle skills trigger from their descriptions or explicit commands.
+
+Catalog maintenance uses `skill-suite-auditor`; observed skill/description
+comparisons use `skill-evaluation`. Neither a static audit nor a worker summary
+creates proof. Author approved edits through `skill-creator`.

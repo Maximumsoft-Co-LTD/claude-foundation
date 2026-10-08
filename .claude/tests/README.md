@@ -125,7 +125,7 @@ topology/planning fixture and the real-Git pull request delivery suite.
 | `harness/run-provenance-contract-tests.sh` | Instruction provenance and host execution import |
 | `harness/run-specsync-gate-tests.sh` | Spec-sync Land gate |
 | `interview/run-interview-tests.sh` | Human-interaction contracts |
-| `docs/run-doc-consistency.sh` | Shipped documentation contracts, canonical lifecycle routes, PRD versus compiled-spec approval, post-Land handoffs, evidence reuse, skill routing, and shipped-path resolution |
+| `docs/run-doc-consistency.sh` | Shipped documentation contracts, canonical lifecycle routes, PRD versus compiled-spec approval, post-Land handoffs, evidence reuse, skill routing, and shipped-path resolution; `docs/skill-catalog.test.mjs` covers portable auditing, reference rejection, proposed routing cases, and harness ownership; `docs/skill-helper-tests.py` covers observed benchmark metrics and independent held-out confirmation without model calls |
 | `harness/*.mjs` node suites | Blocked decisions, OpenSpec version policy, model drift, drift gate, spec-sync verification |
 | `dashboard` (`npm test`) | Dashboard server, snapshot projection, usage scan, and client |
 

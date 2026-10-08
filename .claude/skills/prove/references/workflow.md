@@ -23,8 +23,10 @@ in-contract findings close from current claim/critical-case receipts, else
 one harness-requested closure review—never a generic redesign/split/pause question.
 Review is bounded by its rounds, not elapsed time; each dispatch has its own
 timeout, and an expired dispatch is reviewer infrastructure failure.
-Try in-contract repairs first; if repair cannot progress, explain what was
-tried and offer further investigation or Land with the remaining risks.
+Try in-contract repairs first. At no progress, explain remedies and offer
+further work or an explicitly authorized capability waiver. Unresolved required findings remain blockers.
+After a waiver, resume advance to recompute readiness; Land retains separate
+authority and all remaining required proof.
 Use `change waive <id> --capability <capability> --reason <remaining-risk>
 --decision-ref <ref>` only after the user's explicit decision, including review.
 The waiver binds the current workspace and agreement; it never creates a pass.

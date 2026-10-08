@@ -791,6 +791,13 @@ adds security or observability guidance only when the change crosses those
 boundaries. Domain-boundary work begins with `ddd-strategic`; ordinary UI,
 backend, data, or documentation work should not preload that entire skill chain.
 
+Use `change-impact-analysis` for unverified consumer or compatibility assumptions
+and `performance-investigation` for measured slowness or benchmark comparisons.
+Skill maintainers use `skill-suite-auditor` for static catalog checks and
+`skill-evaluation` for observed trigger/behavior comparisons. These skills keep
+decisions in OpenSpec and proof in harness receipts; static checks do not establish
+model behavior or grant Land, Git, or publication authority.
+
 ### Execution policy in `foundation.json`
 
 `foundation.json` is committed, project-owned policy for model routing,

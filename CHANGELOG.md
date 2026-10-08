@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Four shipped skills for change-impact analysis, performance investigation,
+  skill evaluation, and read-only skill-suite auditing. A pinned pstack concept
+  map records coverage of its 58 skills without importing its runtime or hooks.
+- Operational guides for tracing code and historical rationale, scoped recall,
+  comparing options, preserving intent during cleanup, repairing CI and review
+  findings, and creating and maintaining real-surface verification drivers.
+
+### Changed
+
+- Refined routing descriptions across the existing skill catalog and integrated
+  practical principles into their owning skills. Detailed guides load on demand
+  within the existing context budgets.
+- Aligned authoring, planning, refactoring, debugging, proof, reporting, and Git
+  instructions with Change Loop ownership: OpenSpec remains the agreement,
+  the harness owns proof and recovery, and Git/PR actions retain separate user
+  authority. Instructions no longer impose competing ledgers, mandatory agent
+  fanout, automatic commits, or proof bypasses.
+
+### Fixed
+
+- Evaluation helpers preserve unavailable measurements as unknown, retain real
+  zero values, use observed token usage instead of output characters, report
+  actual run counts, and compare matched candidate/baseline runs.
+- Description optimization selects on training results and evaluates held-out
+  cases once after selection. Missing execution results and runner failures
+  cannot produce passing negative cases or select a description.
+- Benchmark reports display unknown measurements faithfully. Portable catalog
+  auditing resolves linked skills' references correctly and rejects directory
+  references and symlinks into unshipped state.
+
 ## [3.6.1] - 2026-10-08
 
 ### Fixed

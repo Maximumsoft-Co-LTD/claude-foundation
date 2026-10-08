@@ -6,6 +6,11 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 . "$HERE/../lib/assert.sh"
 
+assert_cmd_zero "skill catalog metadata, references, and routing-case contracts" \
+  node --test "$HERE/skill-catalog.test.mjs"
+assert_cmd_zero "skill evaluation helpers preserve measurements and held-out independence" \
+  env PYTHONDONTWRITEBYTECODE=1 python3 "$HERE/skill-helper-tests.py"
+
 WF="$ROOT/WORKFLOW.md"
 README="$ROOT/README.md"
 README_TH="$ROOT/README.th.md"

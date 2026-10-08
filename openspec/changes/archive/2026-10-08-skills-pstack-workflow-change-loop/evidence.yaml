@@ -1,0 +1,44 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "agreement-isolation-task-ownership-proof-agent-refactoring-git-g",
+      "requirementKey": "agreement-isolation-task-ownership-proof",
+      "scenario": "Agent ซ่อมใน workspace ที่คืนมา ไม่ commit หรือเปิด PR",
+      "impact": "low",
+      "capabilities": [
+        "static-analysis"
+      ]
+    },
+    {
+      "id": "agreement-isolation-task-ownership-proof-agent-skill-authoring-e",
+      "requirementKey": "agreement-isolation-task-ownership-proof",
+      "scenario": "Evaluation ใช้พื้นที่และ runner ที่ได้รับอนุญาตภายใต้นโยบาย",
+      "impact": "low",
+      "capabilities": [
+        "static-analysis"
+      ]
+    },
+    {
+      "id": "agreement-isolation-task-ownership-proof-agent-requirement-proof",
+      "requirementKey": "agreement-isolation-task-ownership-proof",
+      "scenario": "Agent พบ requirement หรือ proof gap ระหว่าง planning หรือ",
+      "impact": "low",
+      "capabilities": [
+        "static-analysis"
+      ]
+    }
+  ],
+  "providers": {
+    "static-analysis": {
+      "adapter": "command",
+      "capability": "static-analysis",
+      "command": [
+        "sh",
+        "-c",
+        "bash .claude/tests/docs/run-doc-consistency.sh"
+      ],
+      "claims": "declared"
+    }
+  }
+}

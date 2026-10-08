@@ -1,0 +1,53 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "descriptions-harness-agent-skill",
+      "requirementKey": "descriptions-harness",
+      "scenario": "Description แยกงาน lifecycle, technical judgment และ",
+      "impact": "low",
+      "capabilities": [
+        "static-analysis"
+      ]
+    },
+    {
+      "id": "descriptions-harness-agent-skill-build-prove",
+      "requirementKey": "descriptions-harness",
+      "scenario": "Skill รักษา OpenSpec packet, workspace, task ownership",
+      "impact": "low",
+      "capabilities": [
+        "static-analysis"
+      ]
+    },
+    {
+      "id": "performance-skill-skills-lifecycle-proof-1",
+      "requirementKey": "performance-skill-skills-lifecycle-proof",
+      "scenario": "มี skill เฉพาะพร้อมขั้นตอน ผลลัพธ์ และขอบเขตที่ตรวจสอบได้",
+      "impact": "low",
+      "capabilities": [
+        "static-analysis"
+      ]
+    },
+    {
+      "id": "performance-skill-skills-lifecycle-proof-2",
+      "requirementKey": "performance-skill-skills-lifecycle-proof",
+      "scenario": "Skill รายงานช่องว่างและไม่อ้างว่ามี proof หรือ benchmark",
+      "impact": "low",
+      "capabilities": [
+        "static-analysis"
+      ]
+    }
+  ],
+  "providers": {
+    "static-analysis": {
+      "adapter": "command",
+      "capability": "static-analysis",
+      "command": [
+        "sh",
+        "-c",
+        "bash .claude/tests/docs/run-doc-consistency.sh"
+      ],
+      "claims": "declared"
+    }
+  }
+}

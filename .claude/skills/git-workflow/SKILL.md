@@ -1,9 +1,12 @@
 ---
 name: git-workflow
-description: "Safely perform Git or pull-request mutations: branch, stage, commit, amend, rebase, merge, force update, destructive cleanup, or PR creation/update. Covers fresh bases, atomic commits, intent-carrying messages, shared-history safety, reviewable PRs, and reflog-first recovery. Skip read-only status/log/diff/show. Never treat this skill as authority to commit, push, open a PR, or Land without the user's explicit authorization."
+description: "Perform authorized branch, stage, commit, rebase, merge, push, cleanup, or PR operations safely. Use for Git mutations and reviewability; skip read-only inspection. Change Loop Land preserves HEAD/index and grants no commit, push, or PR authority."
 ---
 
 # Git workflow
+
+For authorized history cleanup, compare original/resulting tree identity.
+Reviewer guidance can improve reviewability without rewriting history.
 
 Use this for Git mechanics after authorization. Foundation Land guards and user
 authority take precedence over convenience or customary workflow.

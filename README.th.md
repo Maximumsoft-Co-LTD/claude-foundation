@@ -743,6 +743,13 @@ Change Loop ส่ง packet ตามขอบเขต task ให้ native a
 dependency และ evidence แยกกันได้จริง agent โหลด skill หลักของชั้นที่แก้
 แล้วเพิ่ม security หรือ observability เฉพาะเมื่อเกี่ยวข้อง
 
+ใช้ `change-impact-analysis` เมื่อต้องตรวจสมมติฐานเรื่อง consumers หรือ compatibility
+และ `performance-investigation` เมื่อต้องวัดความช้าหรือเปรียบเทียบ benchmark
+ผู้ดูแล skills ใช้ `skill-suite-auditor` ตรวจ catalog แบบ static และ
+`skill-evaluation` เปรียบเทียบ trigger กับพฤติกรรมที่สังเกตจริง
+การตัดสินใจยังอยู่ใน OpenSpec และ proof อยู่ใน receipts ของ harness;
+static checks ไม่พิสูจน์พฤติกรรมโมเดลและไม่ให้สิทธิ์ Land, Git หรือ publish
+
 `foundation.json` เป็น policy ของโปรเจกต์ที่ commit ไว้ ใช้กำหนด model routing,
 concurrency, isolation, review และ execution budget ค่าจำกัดเป็นเพดาน ไม่ใช่เป้าหมาย
 

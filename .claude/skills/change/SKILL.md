@@ -1,6 +1,6 @@
 ---
 name: change
-description: Create or complete a grounded Foundation OpenSpec change and evidence contract. Use when the user invokes change or asks to turn a settled intent into an implementation agreement without starting direct product edits.
+description: "Compile or amend settled intent into a grounded OpenSpec agreement and evidence contract through Change Loop. Use for change intake or new observable behavior during Build. Preserve approval boundaries; do not implement product code during Change."
 ---
 
 Treat the text after `$change` as the command arguments. Follow
