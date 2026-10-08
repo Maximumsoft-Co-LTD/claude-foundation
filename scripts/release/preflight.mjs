@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -51,8 +51,14 @@ export function protocolPinIssues({ protocol, foundationSource }) {
     ? [] : [`${name}: runtime=${observed ?? "missing"} protocol=${protocol[name] ?? "missing"}`]);
 }
 
+// The quoted paths of the formula's first `libexec.install` list.
+export function formulaInstallPaths(formula) {
+  const list = formula.match(/libexec\.install\s+((?:"[^"]+",?\s*)+)/)?.[1] || "";
+  return [...list.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+}
+
 export function structuralReleaseChecks({ version, protocol, foundationSource,
-  changelog, formula, workflow, packageJson }) {
+  changelog, formula, workflow, packageJson, pathExists = () => true }) {
   const checks = [];
   const add = (id, pass, detail) => checks.push({ id, status: pass ? "pass" : "fail", detail });
   add("semantic-version", /^\d+\.\d+\.\d+$/.test(version), version);
@@ -68,6 +74,11 @@ export function structuralReleaseChecks({ version, protocol, foundationSource,
   add("formula-version", formula.includes(`/v${version}.tar.gz`), "stable URL matches VERSION");
   add("formula-sha256", /^  sha256 "[a-f0-9]{64}"$/m.test(formula), "stable SHA is pinned");
   add("formula-head", /head ".+\.git", branch: "main"/.test(formula), "HEAD remains available");
+  // brew install fails on a path the source tree no longer has.
+  const missing = formulaInstallPaths(formula).filter((path) => !pathExists(path));
+  add("formula-install-paths", missing.length === 0,
+    missing.length ? `missing from the source tree: ${missing.join(", ")}`
+      : "every installed path exists");
   add("workflow-dry-run", workflow.includes("dry_run") && workflow.includes("DRY"),
     "release workflow exposes a non-publishing rehearsal");
   add("workflow-main-bound", workflow.includes('"$GITHUB_REF" = "refs/heads/main"') &&
@@ -116,7 +127,8 @@ export function releasePreflight({ evidenceReady = false } = {}) {
     version, protocol, foundationSource: read(".claude/harness/foundation.mjs"),
     changelog: read("CHANGELOG.md"), formula: read("Formula/claude-foundation.rb"),
     workflow: read(".github/workflows/release.yml"),
-    packageJson: JSON.parse(read("package.json"))
+    packageJson: JSON.parse(read("package.json")),
+    pathExists: (path) => existsSync(resolve(ROOT, path))
   });
   const structuralReady = checks.every((row) => row.status === "pass");
   const clean = paths.length === 0;

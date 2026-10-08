@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
-  classifyReleasePath, protocolPinIssues, publicationReadiness, structuralReleaseChecks
+  classifyReleasePath, formulaInstallPaths, protocolPinIssues, publicationReadiness,
+  structuralReleaseChecks
 } from "../../../scripts/release/preflight.mjs";
 
 test("release lanes classify runtime, instruction, shipping, and repository work", () => {
@@ -122,4 +123,20 @@ test("release workflow binds publishing and reusable rehearsal evidence to curre
   assert.match(workflow, /\.path == "\.github\/workflows\/release\.yml"/);
   assert.match(workflow, /rehearsal-evidence\.mjs verify/);
   assert.match(workflow, /name: release-rehearsal-evidence/);
+});
+
+test("a formula that installs a path the source tree lacks is a structural failure", () => {
+  const formula = `  def install
+    libexec.install ".claude", ".workflow", "openspec",
+                    "cli.sh"
+  end`;
+  assert.deepEqual(formulaInstallPaths(formula), [".claude", ".workflow", "openspec", "cli.sh"]);
+  const checks = structuralReleaseChecks({
+    version: "1.2.3", protocol: { runtime: "1.2.3" }, foundationSource: "",
+    changelog: "", formula, workflow: "", packageJson: {},
+    pathExists: (path) => path !== ".workflow"
+  });
+  const row = checks.find((check) => check.id === "formula-install-paths");
+  assert.equal(row.status, "fail");
+  assert.match(row.detail, /\.workflow/);
 });
