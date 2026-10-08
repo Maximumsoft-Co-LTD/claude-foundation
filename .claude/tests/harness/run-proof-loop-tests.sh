@@ -387,8 +387,8 @@ cd "$TMP/amendment-selective"
 git commit --allow-empty -qm 'second unrelated move before automatic Land recovery'
 head_before="$(git rev-parse HEAD)"
 index_before="$(git ls-files --stage | shasum)"
-amendment_landed="$(PATH="$TMP/bin:$PATH" node .claude/harness/foundation.mjs advance selective-amendment --through archived)"
-case "$amendment_landed" in *'"reached":"archived"'*) ;; *) printf 'amended Land output:\n%s\n' "$amendment_landed" | tail -n 40 >&2 ;; esac
+amendment_landed="$(PATH="$TMP/bin:$PATH" node .claude/harness/foundation.mjs advance selective-amendment --through archived 2>"$TMP/amended-land.err")"
+case "$amendment_landed" in *'"reached":"archived"'*) ;; *) fail "amended Land diagnostic stdout: $(printf '%s' "$amendment_landed" | tr '\n' ' ' | cut -c1-1800) STDERR: $(tr '\n' ' ' < "$TMP/amended-land.err" | cut -c1-1200)" ;; esac
 assert_contains "amended work reaches archived after base movement" "$amendment_landed" '"reached":"archived"'
 assert_eq "amended Land preserves target HEAD" "$head_before" "$(git rev-parse HEAD)"
 assert_eq "amended Land preserves target index" "$index_before" "$(git ls-files --stage | shasum)"
