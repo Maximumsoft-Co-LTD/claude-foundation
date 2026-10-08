@@ -567,7 +567,7 @@ assert_file_contains "removal records its migration in the proposal" \
 # reported here, last and in short lines, to keep the cause in the CI log.
 if [ "${amended_land_failed:-0}" = 1 ]; then
   echo "DIAG amended Land stdout (first 12 lines):" >&2
-  printf '%s\n' "$amendment_landed" | head -n 12 | cut -c1-300 >&2
+  printf '%s\n' "$amendment_landed" | head -n 12 | fold -w 400 | head -n 24 >&2
   echo "DIAG amended Land stderr (last 12 lines):" >&2
   tail -n 12 "$TMP/amended-land.err" | cut -c1-300 >&2
 fi
