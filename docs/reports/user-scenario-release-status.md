@@ -1,22 +1,51 @@
 # User scenario release status
 
-Historical release evidence last verified: 2026-09-04 for v3.5.6.
+Artifact publication last verified: 2026-10-08 for v3.6.0.
 
-Current source note (2026-10-08): the version in `VERSION` remains v3.5.30;
-the unreleased changelog targets v3.6.0. The current work is based on
-commit `30047579a3e3a80cd4c8b2cd0705846ca401039a`; subsequent runtime and
-documentation edits are not an immutable release cohort. The pre-release benchmark of 2026-10-01
+Current release: [v3.6.0](https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/tag/v3.6.0),
+source tag commit `b404be47db136fb3fc97eb714dab286dd0859695`.
+The reviewed preparation commit is
+`3b4df8c0c0ea3c470792f592b817c0d2b38a3a5f`; the release workflow generated the
+versioned source and the subsequent formula/bottle commit
+`4a687e5443c94687e7fe559401f4e26bc38b660b`.
+See the [v3.6.0 changelog](../../CHANGELOG.md#360---2026-10-08) for scope.
+Production assurance and the matched reviewed-baseline comparison remain open.
+
+## Published v3.6.0 verification
+
+| Check | Result and source boundary |
+|---|---|
+| Linux CI | PASS — [run 37742140059](https://github.com/Maximumsoft-Co-LTD/claude-foundation/actions/runs/37742140059), minimum runtime and all 225 deterministic suites; docs consistency 137/137 |
+| macOS release rehearsal | PASS — [run 37742530125](https://github.com/Maximumsoft-Co-LTD/claude-foundation/actions/runs/37742530125), source-bound deterministic/semantic, automated mutation, rewritten candidate, and bottle checks |
+| Publication and docs deployment | PASS — [run 37744361813](https://github.com/Maximumsoft-Co-LTD/claude-foundation/actions/runs/37744361813), reused the same source-bound rehearsal; release and deploy jobs succeeded |
+| Supported upgrade matrix before publication | PASS — 60 tags × 4 adapters, 240/240 on clean preparation source; VERSION was still 3.5.30 before the workflow rewrite |
+| Upgrade from v3.5.30 to published runtime | PASS — all 4 adapters on clean formula commit `4a687e544`; active changes and the user-owned file preserved, installed runtime reports 3.6.0 |
+| Published source artifact | PASS — SHA256 matches formula; disposable fresh consumer install and CLI version/help pass |
+| Published bottle | PASS — arm64_sequoia asset checksum matches formula; packaged VERSION is 3.6.0 |
+| Live website and EN/TH docs | PASS — landing page, `/docs/`, and `/docs/th/` report v3.6.0 |
+| Paid repeats, benchmark quality/speed, and rollout | Advisory/open — previous dirty-source comparisons do not establish assurance for this tag |
+
+Retained local checks are under ignored `.foundation/test-results/release/`:
+`upgrade-v3.6.0-source.json`, `rehearsal-v3.6.0/manifest.json`,
+`upgrade-v3.6.0-published.json`, and `published-v3.6.0/report.json`.
+The published source SHA256 is
+`0ebba8485b014e43ca56c123c45056dcb7097e0214174768f9196455c1b3e4ab`;
+the bottle SHA256 is
+`28882743b208f6dd8d765d34b0f3ce67a0608813589a3cabe43aa7a7090924bf`.
+
+## Historical development evidence
+
+The pre-release benchmark of 2026-10-01
 ([harness-benchmark-3.5.28-2026-10-01.md](harness-benchmark-3.5.28-2026-10-01.md))
 is single-run (n=1) development evidence for v3.5.28 and archived 6/6 lanes with
 5/6 fully correct; its two named defects shipped in v3.5.29. See the
-[unreleased changelog](../../CHANGELOG.md#unreleased) for the complete v3.6.0
+[v3.6.0 changelog](../../CHANGELOG.md#360---2026-10-08) for the complete v3.6.0
 scope. The historical verification table below certifies only v3.5.6.
 No paid, rollout, or production evidence transfers between source cohorts;
-the current candidate's assurance has not been verified here.
+the published cohort's production assurance has not been verified here.
 
-Local deterministic checks for the unreleased source are development evidence
-only. Replace this note with the final clean commit identity plus CI, upgrade,
-and rehearsal evidence before calling the next release candidate verified.
+The following working-tree checks preceded the clean preparation commit and
+remain development evidence. Publication checks are recorded separately above.
 
 ## v3.6.0 candidate scope and verification
 
@@ -208,7 +237,8 @@ consumer unless `--keep-project` is explicitly supplied.
 
 ## Next assurance boundary
 
-The next candidate is v3.6.0. Before describing it as `production-observed`:
+The published v3.6.0 tag is the assurance boundary. Before describing it as
+`production-observed`:
 
 - freeze its final source identity and run the paid portfolio from that one
   immutable candidate cohort;
