@@ -183,9 +183,12 @@ test("runner waits for a host-orphaned project process before scoring", async ()
       project, prompt: "land", claudeBin: host, claudeArgs: [],
       timeoutMs: 20000, settleTimeoutMs: 10000
     });
-    assert.equal(JSON.parse(readFileSync(runtime, "utf8")).status, "archived");
-    if (process.platform === "linux")
+    // Only Linux can observe host-orphaned processes (/proc), so only Linux
+    // waits for the detached lifecycle to finish before scoring.
+    if (process.platform === "linux") {
+      assert.equal(JSON.parse(readFileSync(runtime, "utf8")).status, "archived");
       assert.match(result.stderr, /waited for 1 host-orphaned project process/);
+    }
     assert.deepEqual(projectProcessIds(project), []);
   } finally { rmSync(project, { recursive: true, force: true }); }
 });
