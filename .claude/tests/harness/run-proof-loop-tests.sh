@@ -202,7 +202,12 @@ export FOUNDATION_FIXTURE_PREREQUISITE="$TMP/dependency-ready"
 printf '%s\n' '{"workflow":{"grounding":"optional","reviewPolicy":"risk-tiered"},"land":{"riskBasedCi":false},"sandbox":{"setupCommand":"test -f \"$FOUNDATION_FIXTURE_PREREQUISITE\""}}' > foundation.json
 # A quiet low-tier rapid change runs no review; `--review` (which selects the
 # standard lane) keeps a review to waive.
-REVIEW_FLAG=--review draft "Review waiver" "test-results/report.json"
+# A prefix assignment before a shell function persists in POSIX-mode bash (the
+# macOS /bin/sh) but not in dash, so set and unset it explicitly: it must not
+# leak into later fixtures, whose rapid change would otherwise require a review.
+REVIEW_FLAG=--review
+draft "Review waiver" "test-results/report.json"
+unset REVIEW_FLAG
 assert_eq "installed consumer retains failed setup for retry" failed \
   "$(node -p 'require("./.foundation/runtime/review-waiver.json").workspace.setup.status')"
 printf 'available\n' > "$FOUNDATION_FIXTURE_PREREQUISITE"
