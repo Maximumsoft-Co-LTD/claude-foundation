@@ -12,6 +12,35 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const catalog = join(root, ".claude/skills");
 const helper = join(catalog, "skill-suite-auditor/scripts/audit.mjs");
 
+test("long skill references provide linked contents for selective reading", () => {
+  const files = readdirSync(catalog, { recursive: true }).filter(file =>
+    file.endsWith(".md") && file.split(/[\\/]/).includes("references"));
+  for (const file of files) {
+    const body = readFileSync(join(catalog, file), "utf8");
+    if (body.split(/\r?\n/).length <= 300) continue;
+    const contents = body.match(/^## (?:Contents|Table of contents)\r?\n([\s\S]*?)(?=^## |$(?![\s\S]))/m);
+    assert.ok(contents, `${file}: references over 300 lines need contents`);
+    assert.match(contents[1], /^- \[[^\]]+\]\(#[^)]+\)/m,
+      `${file}: contents must link to local headings`);
+    const anchors = new Set([...body.matchAll(/^#{1,6}\s+(.+)$/gm)].map(([, heading]) =>
+      heading.trim().toLocaleLowerCase("und").replace(/[^\p{L}\p{N}\s_-]/gu, "")
+        .replace(/\s+/g, "-")));
+    for (const [, anchor] of contents[1].matchAll(/\]\(#([^)]+)\)/g))
+      assert.ok(anchors.has(anchor), `${file}: unresolved contents anchor #${anchor}`);
+  }
+});
+
+test("hexagonal references preserve selective routing and current heading links", () => {
+  for (const file of ["go.md", "typescript.md", "patterns-and-pitfalls.md"]) {
+    const body = readFileSync(join(catalog, "hexagonal-backend/references", file), "utf8");
+    assert.doesNotMatch(body, /Always-on|When NOT to apply strictly|SKILL\.md >/, file);
+  }
+  const guidance = readFileSync(join(catalog,
+    "hexagonal-backend/references/patterns-and-pitfalls.md"), "utf8");
+  assert.match(guidance, /dependency direction or use-case ownership/);
+  assert.match(guidance, /simpler vertical slice for trivial CRUD/);
+});
+
 test("benchmark viewer distinguishes unavailable metrics from observed zero", () => {
   const html = readFileSync(join(catalog, "skill-creator/eval-viewer/viewer.html"), "utf8");
   const formatter = html.match(/function fmtStat\(stat, pct\) \{[\s\S]*?\n      \}/)[0];

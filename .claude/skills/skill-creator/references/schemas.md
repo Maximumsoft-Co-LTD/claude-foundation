@@ -1,5 +1,14 @@
 # JSON Schemas
 
+## Contents
+
+- [evals.json](#evalsjson)
+- [timing.json](#timingjson)
+- [benchmark.json](#benchmarkjson)
+- [comparison.json](#comparisonjson)
+- [analysis.json](#analysisjson)
+- [feedback.json](#feedbackjson)
+
 ## evals.json
 
 Located at `evals/evals.json` within the skill directory.

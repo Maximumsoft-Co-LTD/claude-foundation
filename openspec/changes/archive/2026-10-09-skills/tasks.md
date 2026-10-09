@@ -1,0 +1,5 @@
+# Tasks
+
+> This is the sole implementation ledger.
+
+- [x] **T001** เพิ่มสารบัญใน references 6 ไฟล์ ปรับ references hexagonal ที่ล้าสมัย และตรวจการนำทางกับขอบเขตการเรียกใช้ [key:references-6-references-hexagonal] [kind:implementation] [paths:.claude/skills/concurrency-fundamentals/references/shared-state-and-async.md,.claude/skills/ddd-strategic/references/aggregate-design.md,.claude/skills/delivery-engineering/references/pipeline-and-deploy.md,.claude/skills/hexagonal-backend/references/go.md,.claude/skills/hexagonal-backend/references/typescript.md,.claude/skills/hexagonal-backend/references/patterns-and-pitfalls.md,.claude/skills/observability-fundamentals/references/logs-metrics-traces.md,.claude/skills/skill-creator/references/schemas.md,.claude/tests/docs/skill-catalog.test.mjs] [claims:reference-navigation,hexagonal-reference-alignment] — verify: `node --test .claude/tests/docs/skill-catalog.test.mjs .claude/tests/harness/reference-governance.test.mjs && node .claude/tests/harness/reference-governance.mjs .claude/skills`

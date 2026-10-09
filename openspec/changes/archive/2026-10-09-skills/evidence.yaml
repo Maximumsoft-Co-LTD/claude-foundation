@@ -1,0 +1,35 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "reference-navigation",
+      "requirementKey": "reference-navigation",
+      "scenario": "พบสารบัญที่นำไปยังหัวข้อจริงในไฟล์ได้",
+      "impact": "low",
+      "capabilities": [
+        "static-analysis"
+      ]
+    },
+    {
+      "id": "hexagonal-reference-alignment",
+      "requirementKey": "hexagonal-reference-alignment",
+      "scenario": "ลิงก์นำไปยังหัวข้อที่มีอยู่จริง และ guidance ไม่บังคับใช้",
+      "impact": "low",
+      "capabilities": [
+        "static-analysis"
+      ]
+    }
+  ],
+  "providers": {
+    "static-analysis": {
+      "adapter": "command",
+      "capability": "static-analysis",
+      "command": [
+        "sh",
+        "-c",
+        "node --test .claude/tests/docs/skill-catalog.test.mjs .claude/tests/harness/reference-governance.test.mjs && node .claude/tests/harness/reference-governance.mjs .claude/skills"
+      ],
+      "claims": "declared"
+    }
+  }
+}

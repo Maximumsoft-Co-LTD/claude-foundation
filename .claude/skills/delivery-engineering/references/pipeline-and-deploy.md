@@ -1,5 +1,16 @@
 # Pipeline & Deploy
 
+## Contents
+
+- [The 7 principles](#the-7-principles-from-skillmd)
+- [CI stage design](#ci-stage-design)
+- [Caching & parallelism recipes](#caching-parallelism-recipes)
+- [Build once, promote the artifact](#build-once-promote-the-artifact)
+- [Environment config & secrets — do / don't](#environment-config-secrets-do-dont)
+- [Deploy strategies](#deploy-strategies)
+- [Decouple deploy from release (feature flags)](#decouple-deploy-from-release-feature-flags)
+- [DORA metrics — the vital signs of delivery](#dora-metrics-the-vital-signs-of-delivery)
+
 Concrete layer under `SKILL.md`: stage design, caching and parallelism, build-once-promote, config/secret handling, deploy strategies with rollback, deploy-vs-release decoupling, and the four DORA metrics. Examples lean on GitHub Actions / Kubernetes; shapes translate to CircleCI, Buildkite, ECS, Nomad, PaaS, or serverless.
 
 ## The 7 principles (from SKILL.md)
