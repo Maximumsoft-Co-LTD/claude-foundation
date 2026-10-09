@@ -144,7 +144,7 @@
       "positive": "Implement the approved responsive visual direction with keyboard states.",
       "negative": "Decide the information hierarchy and interaction model before implementation.",
       "expectedSkill": "frontend-design",
-      "expectedNegativeSkill": "ui-ux-pro-max",
+      "expectedNegativeSkill": "ux-ui-principles",
       "expectedBehavior": "Follow the selected skill's scope, actual tool capabilities, and canonical harness ownership. Do not infer additional authority.",
       "status": "not-run"
     },
@@ -158,10 +158,10 @@
       "status": "not-run"
     },
     {
-      "id": "gridgeist",
-      "positive": "Restyle this page in the requested Swiss editorial grid direction.",
-      "negative": "Preserve our existing playful brand and implement its approved design.",
-      "expectedSkill": "gridgeist",
+      "id": "ux-ui-principles",
+      "positive": "ตรวจ UX flow นี้ด้วยหลักการที่เกี่ยวข้อง ระบุ failure/recovery, hierarchy และวิธีตรวจ โดยยังไม่ทำ frontend",
+      "negative": "Implement the already approved typography and spacing using existing components.",
+      "expectedSkill": "ux-ui-principles",
       "expectedNegativeSkill": "frontend-design",
       "expectedBehavior": "Follow the selected skill's scope, actual tool capabilities, and canonical harness ownership. Do not infer additional authority.",
       "status": "not-run"
@@ -321,10 +321,10 @@
     },
     {
       "id": "ui-ux-pro-max",
-      "positive": "Compare navigation and error-recovery alternatives for this mobile flow.",
-      "negative": "Implement the already approved typography and spacing.",
+      "positive": "Search the bundled product, style, palette and typography catalog to compare dashboard design directions.",
+      "negative": "Review the user's checkout decisions and error recovery without searching for a visual style.",
       "expectedSkill": "ui-ux-pro-max",
-      "expectedNegativeSkill": "frontend-design",
+      "expectedNegativeSkill": "ux-ui-principles",
       "expectedBehavior": "Follow the selected skill's scope, actual tool capabilities, and canonical harness ownership. Do not infer additional authority.",
       "status": "not-run"
     },

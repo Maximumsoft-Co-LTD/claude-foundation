@@ -1,7 +1,13 @@
-# UI/UX decision and review
+# UI/UX design-intelligence workflow
 
-Use this to resolve experience decisions before visual implementation or to
-produce an evidence-based review.
+Use this when the task needs a searchable product/style/palette direction.
+Use `ux-ui-principles` for the underlying experience decision or usability review;
+do not load the catalog merely because a task touches a user interface.
+
+Catalog rules are design candidates and dated guidance, not universal standards.
+Preserve product constraints and recheck primary sources before consequential
+numeric or conformance claims. Use the reasoning and evidence limits of
+`ux-ui-principles` to assess suggestions that affect the task.
 
 ## Workflow
 

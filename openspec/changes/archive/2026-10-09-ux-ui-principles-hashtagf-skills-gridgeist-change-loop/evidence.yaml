@@ -1,0 +1,44 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "ux-ui-skill-bundle",
+      "requirementKey": "ux-ui-skill-bundle",
+      "scenario": "พบ skill และ resources ที่อ้างถึงครบ โดย entry point อยู่ใน",
+      "impact": "low",
+      "capabilities": [
+        "static-analysis"
+      ]
+    },
+    {
+      "id": "ux-ui-routing",
+      "requirementKey": "ux-ui-routing",
+      "scenario": "เลือก skill สำหรับหลักการ UX, ค้น style/palette หรือ",
+      "impact": "low",
+      "capabilities": [
+        "static-analysis"
+      ]
+    },
+    {
+      "id": "retired-grid-skill",
+      "requirementKey": "retired-grid-skill",
+      "scenario": "Upgrade consumer ที่มี gridgeist จากรุ่นก่อนและ custom skill",
+      "impact": "low",
+      "capabilities": [
+        "static-analysis"
+      ]
+    }
+  ],
+  "providers": {
+    "static-analysis": {
+      "adapter": "command",
+      "capability": "static-analysis",
+      "command": [
+        "sh",
+        "-c",
+        "node --test .claude/tests/docs/skill-catalog.test.mjs .claude/tests/harness/reference-governance.test.mjs && bash .claude/tests/harness/run-context-budget-tests.sh && bash .claude/tests/harness/run-installer-tests.sh"
+      ],
+      "claims": "declared"
+    }
+  }
+}

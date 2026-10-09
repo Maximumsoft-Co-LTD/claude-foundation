@@ -1,0 +1,5 @@
+# Tasks
+
+> This is the sole implementation ledger.
+
+- [x] **T001** ติดตั้ง bundle จาก source commit c2a7b6d ปรับ routing ถอน gridgeist และพิสูจน์ clean install กับ upgrade ownership [key:bundle-source-commit-c2a7b6d-routing-gridgeist] [kind:implementation] [paths:.claude/skills/ux-ui-principles/**,.claude/skills/gridgeist/**,.claude/skills/frontend-design/SKILL.md,.claude/skills/ui-ux-pro-max/SKILL.md,.claude/skills/ui-ux-pro-max/references/experience-workflow.md,.claude/skills/skill-evaluation/references/evaluation-cases.json,.claude/skills/skill-suite-auditor/references/pstack-adoption.md,.claude/rules/fundamentals.md,.claude/tests/docs/skill-catalog.test.mjs,.claude/tests/harness/run-installer-tests.sh] [claims:ux-ui-skill-bundle,ux-ui-routing,retired-grid-skill] — verify: `node --test .claude/tests/docs/skill-catalog.test.mjs .claude/tests/harness/reference-governance.test.mjs && bash .claude/tests/harness/run-context-budget-tests.sh && bash .claude/tests/harness/run-installer-tests.sh`

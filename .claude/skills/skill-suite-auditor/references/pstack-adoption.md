@@ -68,7 +68,7 @@ existing Change Loop command names and aliases.
 | `principle-prove-it-works` | `testing-fundamentals / prove` |
 | `principle-test-behavior-not-implementation` | `testing-fundamentals / prove` |
 | `principle-explain-the-number` | `performance-investigation / skill-evaluation` |
-| `principle-experience-first` | `frontend-design / ui-ux-pro-max` |
+| `principle-experience-first` | `ux-ui-principles / frontend-design` |
 | `principle-build-the-lever` | `skill-creator / coding-discipline` |
 | `principle-encode-lessons-in-structure` | `skill-creator / coding-discipline` |
 | `principle-guard-the-context-window` | `native host and harness packets` |

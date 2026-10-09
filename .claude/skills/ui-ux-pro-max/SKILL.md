@@ -1,13 +1,15 @@
 ---
 name: ui-ux-pro-max
-description: "Resolve or review web/mobile interaction, navigation, forms, hierarchy, accessibility, charts, and responsive states. Use for unsettled UX direction or rendered audits. Hand settled visuals to frontend-design; skip incidental frontend edits and harness orchestration."
+description: "Search and compare bundled product, style, palette, typography, chart, and stack guidance for UI directions. Use when design-intelligence lookup is needed. Use ux-ui-principles for experience reasoning and usability reviews, frontend-design for settled visuals; skip incidental styling and harness orchestration."
 ---
 
-# UI/UX decision and review
+# UI/UX design intelligence
 
-Resolve experience decisions before visual implementation or review an
-existing rendered flow. Read [experience workflow](references/experience-workflow.md)
-for priority rules, critical states, and searchable design references.
+Search or compare design directions using the bundled catalog when the task
+needs product/style/palette intelligence. Read
+[experience workflow](references/experience-workflow.md) for contextual checks
+and selectively loaded search references. For principle-led experience decisions
+and usability reviews, use `ux-ui-principles`.
 
 Separate observed behavior from assumptions. Compare concrete alternatives
 when a novel interaction has meaningful uncertainty; keep throwaway prototypes

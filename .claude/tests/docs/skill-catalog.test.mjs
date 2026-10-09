@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -11,6 +11,23 @@ import { auditCatalog } from "../../skills/skill-suite-auditor/scripts/audit.mjs
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const catalog = join(root, ".claude/skills");
 const helper = join(catalog, "skill-suite-auditor/scripts/audit.mjs");
+
+test("UX skill adoption ships portable resources and retires the grid style skill", () => {
+  assert.ok(existsSync(join(catalog, "ux-ui-principles/SKILL.md")));
+  assert.equal(existsSync(join(catalog, "gridgeist")), false);
+  const entry = readFileSync(join(catalog, "ux-ui-principles/SKILL.md"), "utf8");
+  assert.ok(entry.split(/\s+/).length <= 700, "entry must fit the lazy skill budget");
+  const upstream = readFileSync(join(catalog, "ux-ui-principles/references/upstream.md"), "utf8");
+  assert.match(upstream, /c2a7b6dffe6ac795886f81ce936a9c536aadd5b3/);
+  const layouts = JSON.parse(readFileSync(join(catalog,
+    "ux-ui-principles/assets/layouts/opendesign-catalog.json"), "utf8"));
+  assert.ok(layouts && typeof layouts === "object");
+  for (const file of ["frontend-design/SKILL.md", "ui-ux-pro-max/SKILL.md"]) {
+    const body = readFileSync(join(catalog, file), "utf8");
+    assert.doesNotMatch(body, /gridgeist/);
+    assert.match(body, /ux-ui-principles/);
+  }
+});
 
 test("long skill references provide linked contents for selective reading", () => {
   const files = readdirSync(catalog, { recursive: true }).filter(file =>

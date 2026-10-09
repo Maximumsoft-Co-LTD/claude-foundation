@@ -1,6 +1,6 @@
 ---
 name: frontend-design
-description: "Implement or restyle web pages and components after product/UX direction is settled. Use for visual hierarchy, typography, motion, responsive states, and rendered polish. Work within Change Loop scope; use ui-ux-pro-max for unresolved interaction decisions."
+description: "Implement or restyle web pages and components after product/UX direction is settled. Use for visual hierarchy, typography, motion, responsive states, and rendered polish. Work within Change Loop scope; use ux-ui-principles for unresolved interaction decisions."
 license: Complete terms in LICENSE.txt
 ---
 
@@ -44,6 +44,6 @@ Record consequential visual/system decisions in the active OpenSpec design and
 let browser/accessibility providers supply evidence. Do not claim quality from
 source inspection alone when rendered verification is available.
 
-Use `ui-ux-pro-max` for unresolved interaction/IA/a11y decisions, `gridgeist`
-when that explicit visual language is requested, and `tailwind-design-system`
-only when shared Tailwind v4 tokens or component APIs change.
+Use `ux-ui-principles` for unresolved interaction/IA/a11y decisions,
+`ui-ux-pro-max` for searchable product/style/palette intelligence, and
+`tailwind-design-system` when shared Tailwind v4 tokens or component APIs change.

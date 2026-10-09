@@ -55,6 +55,10 @@ reference only when its named decision is active.
 | Trigger | Load |
 |---|---|
 | Bounded contexts, subdomains, aggregates, semantic ownership | `ddd-strategic` |
+| UX/UI principles, user flows, interaction/IA/a11y decisions, usability review | `ux-ui-principles` |
+| Searchable product/style/palette/typography design intelligence | `ui-ux-pro-max` |
+| Settled web visual implementation and rendered polish | `frontend-design` |
+| Shared Tailwind tokens, themes, or component APIs | `tailwind-design-system` |
 | Non-trivial logic, model, module boundary, abstraction depth, implementation, or code review | `programming-fundamentals` |
 | Threads, async, shared mutable state, locks, races | `concurrency-fundamentals` |
 | Schema, query, index, migration, persistence model | `database-fundamentals` |

@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "layout-whitespace",
+      "requirementKey": "layout-whitespace",
+      "scenario": "ไม่มีบรรทัดว่างเกินท้ายไฟล์และการตรวจ skill catalog ยังผ่าน",
+      "impact": "low",
+      "capabilities": [
+        "static-analysis"
+      ]
+    }
+  ],
+  "providers": {
+    "static-analysis": {
+      "adapter": "command",
+      "capability": "static-analysis",
+      "command": [
+        "sh",
+        "-c",
+        "node --test .claude/tests/docs/skill-catalog.test.mjs && git diff --check"
+      ],
+      "claims": "declared"
+    }
+  }
+}

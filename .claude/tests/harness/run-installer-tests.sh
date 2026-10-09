@@ -72,6 +72,18 @@ printf 'legacy compatibility module\n' > \
   "$TARGET/.claude/harness/runtime/workflow/change-artifacts.mjs"
 printf '%s\n' ".claude/harness/runtime/workflow/change-artifacts.mjs" > \
   "$TARGET/.foundation/install-manifest.txt"
+mkdir -p "$TARGET/.claude/skills/gridgeist/assets" \
+  "$TARGET/.claude/skills/gridgeist/references" "$TARGET/.claude/skills/custom-ux"
+for retired_grid_file in SKILL.md assets/gridgeist.svg assets/gridgeist-small.svg \
+  assets/gridgeist.png references/visual-workflow.md references/design-language.md \
+  references/review-checklist.md
+do
+  printf 'previously shipped grid skill\n' > "$TARGET/.claude/skills/gridgeist/$retired_grid_file"
+  printf '%s\n' ".claude/skills/gridgeist/$retired_grid_file" >> \
+    "$TARGET/.foundation/install-manifest.txt"
+done
+printf 'consumer note\n' > "$TARGET/.claude/skills/gridgeist/custom-note.md"
+printf '# Custom consumer UX skill\n' > "$TARGET/.claude/skills/custom-ux/SKILL.md"
 printf '# User project\n' > "$TARGET/CLAUDE.md"
 mkdir -p "$TARGET/.claude"
 # The second matcher carries the phase guard as an earlier release wired it. The
@@ -82,6 +94,19 @@ printf '%s\n' '{"permissions":{"allow":["Bash(user-tool *)"]},"hooks":{"PreToolU
 
 assert_cmd_zero "installer applies non-interactively" \
   bash "$ROOT/install.sh" "$TARGET" --source "$ROOT" --yes
+assert_file_exists "UX principles skill installed" "$TARGET/.claude/skills/ux-ui-principles/SKILL.md"
+assert_file_exists "UX layout library installed" "$TARGET/.claude/skills/ux-ui-principles/assets/layouts/index.md"
+assert_file_exists "UX source provenance installed" "$TARGET/.claude/skills/ux-ui-principles/references/upstream.md"
+for retired_grid_file in SKILL.md assets/gridgeist.svg assets/gridgeist-small.svg \
+  assets/gridgeist.png references/visual-workflow.md references/design-language.md \
+  references/review-checklist.md
+do
+  assert_file_absent "retired managed grid file removed: $retired_grid_file" \
+    "$TARGET/.claude/skills/gridgeist/$retired_grid_file"
+done
+assert_file_contains "retiring a grid skill preserves a colocated consumer note" \
+  "$TARGET/.claude/skills/gridgeist/custom-note.md" "consumer note"
+assert_file_exists "consumer UX skill survives managed upgrade" "$TARGET/.claude/skills/custom-ux/SKILL.md"
 # Harness next steps name `claude-foundation`; a source-checkout install must
 # still give the session that command, from a path with a space.
 assert_contains "installer writes a working project-local CLI shim" \
