@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A pinned, portable `ux-ui-principles` skill from hashtagf/skills with
+  experience, accessibility, interaction, and visual guides, a 40-layout
+  blueprint library, and recorded upstream provenance.
+
+### Changed
+
+- Routed experience decisions and usability reviews to `ux-ui-principles`,
+  searchable design intelligence to `ui-ux-pro-max`, settled visual work to
+  `frontend-design`, and shared tokens/components to `tailwind-design-system`.
+  Detailed UX guidance loads selectively within the existing context budget.
+
+### Removed
+
+- The shipped `gridgeist` skill and its style assets. Upgrades remove its
+  previously managed files while preserving consumer-owned notes and skills.
+
+### Fixed
+
+- Linked contents for long skill references and corrected hexagonal architecture
+  guidance and stale references, with deterministic catalog regressions.
+- Normalized imported layout file endings for clean whitespace checks.
+
 ## [3.6.2] - 2026-10-08
 
 ### Added
