@@ -1,9 +1,24 @@
 # User scenario release status
 
-Latest retained supplement: 2026-10-09, no-harness/v3.6.2; official ten-scenario
+Latest candidate checkpoint: 2026-10-11, intended v3.6.3, publication blocked.
+Retained supplement: 2026-10-09, no-harness/v3.6.2; historical ten-scenario
 comparison: 2026-10-08, no-harness/v3.6.0/v3.6.1/v3.6.2.
 
 ## Current scenario checkpoint
+
+The [v3.6.3 candidate checkpoint](scenario-checkpoint-v3.6.3-2026-10-11.md) /
+[ภาษาไทย](scenario-checkpoint-v3.6.3-2026-10-11.th.md) tests clean preparation
+source `9f561b67ac5273e0712fd7537e5fcaf2146d441a`. Nine of ten scenarios archive
+and pass oracle, measured quality and clean installation. Tracker remains
+`proven`, failing `CASE_TESTS_EXIST` at 32/33 with eleven passing delivered tests;
+oracle-repair continuation made no edits. One tiny-feature approval stop and
+its successful selective retry are both retained. Summing all measured host
+session envelopes gives US$4.6064739 across eleven attempts under the approved
+US$105 allowance; the merged-session tracker scorecard omits its first session
+cost. The checksummed private archive, input/toolchain differences and exact
+source are retained in the report. This is not a green publication checkpoint
+or production assurance. Repair tracker continuation/test adequacy and merged
+session-cost accounting, then retain fresh candidate evidence before release.
 
 The [remaining-workload supplement](remaining-scenarios-no-harness-v3.6.2-2026-10-09.md) /
 [ภาษาไทย](remaining-scenarios-no-harness-v3.6.2-2026-10-09.th.md) completes 14
