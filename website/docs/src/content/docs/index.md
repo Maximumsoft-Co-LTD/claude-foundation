@@ -64,5 +64,5 @@ consumer-owned notes and custom skills are preserved.
 - [Consumer quality gates](/docs/consumer-quality/) — add CRAP, mutation, baselines, and debt without widening Change scope
 
 :::note[Version]
-These docs track Change Loop **v3.6.2** — runtime API 41, provider protocol 13. Receipts recorded by earlier versions read as `provider-version-stale` and must be re-proven.
+These docs track Change Loop **v3.6.3** — runtime API 41, provider protocol 13. Receipts recorded by earlier versions read as `provider-version-stale` and must be re-proven.
 :::
