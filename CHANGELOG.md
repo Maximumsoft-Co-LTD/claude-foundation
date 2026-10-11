@@ -31,6 +31,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   guidance and stale references, with deterministic catalog regressions.
 - Normalized imported layout file endings for clean whitespace checks.
 
+### Known limitations
+
+- The maintainer explicitly authorized artifact publication after reviewing the
+  candidate's 9/10 scenario checkpoint. Tracker remains at `proven`, failing
+  `CASE_TESTS_EXIST` at 32/33; its oracle-repair continuation made no edits.
+  This publication exception does not turn failed evidence into a pass or
+  establish production assurance. [Checkpoint report](docs/reports/scenario-checkpoint-v3.6.3-2026-10-11.md).
+- The benchmark's merged-session scorecard retains only the final session cost.
+  The retained audit sums all session envelopes, including repairs, to
+  US$4.6064739 across eleven attempts. A tiny-feature spec-approval stop and
+  its successful selective retry are both retained; no stable speedup is claimed.
+
 ## [3.6.2] - 2026-10-08
 
 ### Added

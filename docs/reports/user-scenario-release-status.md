@@ -1,10 +1,24 @@
 # User scenario release status
 
-Latest candidate checkpoint: 2026-10-11, intended v3.6.3, publication blocked.
+Latest candidate checkpoint: 2026-10-11, intended v3.6.3, 9/10 strict delivery;
+artifact publication explicitly authorized as an exception, assurance open.
 Retained supplement: 2026-10-09, no-harness/v3.6.2; historical ten-scenario
 comparison: 2026-10-08, no-harness/v3.6.0/v3.6.1/v3.6.2.
 
 ## Current scenario checkpoint
+
+### v3.6.3 publication decision — 2026-10-11
+
+After reviewing the 9/10 result and the retained tracker failure, the maintainer
+explicitly instructed: "release เลย อัพเดทเอกสาน ด้วย". This authorizes artifact
+publication of v3.6.3 despite the non-green manual scenario checkpoint. It is
+an exception for this release, not a change to the default checkpoint in
+[RELEASING.md](../../RELEASING.md). Deterministic, mutation, packaging and
+documentation gates remain required. Tracker is still unlanded, its quality
+and clean-install measurements remain unavailable, and production assurance
+is open. The publication workflow owns the version rewrite, source tag,
+formula/bottle and English/Thai docs deployment; publication verification will
+be recorded separately after it finishes.
 
 The [v3.6.3 candidate checkpoint](scenario-checkpoint-v3.6.3-2026-10-11.md) /
 [ภาษาไทย](scenario-checkpoint-v3.6.3-2026-10-11.th.md) tests clean preparation
@@ -16,9 +30,11 @@ its successful selective retry are both retained. Summing all measured host
 session envelopes gives US$4.6064739 across eleven attempts under the approved
 US$105 allowance; the merged-session tracker scorecard omits its first session
 cost. The checksummed private archive, input/toolchain differences and exact
-source are retained in the report. This is not a green publication checkpoint
-or production assurance. Repair tracker continuation/test adequacy and merged
-session-cost accounting, then retain fresh candidate evidence before release.
+source are retained in the report. This is not a green scenario checkpoint
+or production assurance; the explicit publication exception above preserves
+that distinction. Repair tracker continuation/test adequacy and merged
+session-cost accounting, then retain fresh candidate evidence before claiming
+a green scenario checkpoint or promoting assurance.
 
 The [remaining-workload supplement](remaining-scenarios-no-harness-v3.6.2-2026-10-09.md) /
 [ภาษาไทย](remaining-scenarios-no-harness-v3.6.2-2026-10-09.th.md) completes 14

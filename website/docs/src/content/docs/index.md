@@ -52,6 +52,12 @@ Change Loop deliberately splits responsibility so that no single party can both 
 
 ## Where to go next
 
+For UX work, `ux-ui-principles` owns experience and accessibility decisions,
+`ui-ux-pro-max` supplies searchable design intelligence, `frontend-design`
+implements settled visuals, and `tailwind-design-system` owns shared tokens
+and components. The retired `gridgeist` managed files are removed on upgrade;
+consumer-owned notes and custom skills are preserved.
+
 - [Install](/docs/install/) — requirements and the two supported install paths
 - [Quickstart](/docs/quickstart/) — take one change end to end
 - [The change loop](/docs/loop/) — what each of the five commands does and why

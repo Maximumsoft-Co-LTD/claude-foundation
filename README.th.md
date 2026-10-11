@@ -743,6 +743,13 @@ Change Loop ส่ง packet ตามขอบเขต task ให้ native a
 dependency และ evidence แยกกันได้จริง agent โหลด skill หลักของชั้นที่แก้
 แล้วเพิ่ม security หรือ observability เฉพาะเมื่อเกี่ยวข้อง
 
+งาน UX ใช้ `ux-ui-principles` ตัดสินใจเรื่อง user flow, interaction,
+accessibility และ usability ใช้ `ui-ux-pro-max` ค้น design intelligence,
+`frontend-design` ลงมือทำภาพที่ตกลงแล้ว และ `tailwind-design-system`
+จัดการ tokens กับ components ที่ใช้ร่วมกัน โหลดรายละเอียดเฉพาะเมื่อจำเป็น
+การ upgrade ถอน `gridgeist` เฉพาะไฟล์ที่เคยเป็น managed และรักษา
+notes กับ custom skills ที่ผู้ใช้เพิ่มเอง
+
 ใช้ `change-impact-analysis` เมื่อต้องตรวจสมมติฐานเรื่อง consumers หรือ compatibility
 และ `performance-investigation` เมื่อต้องวัดความช้าหรือเปรียบเทียบ benchmark
 ผู้ดูแล skills ใช้ `skill-suite-auditor` ตรวจ catalog แบบ static และ

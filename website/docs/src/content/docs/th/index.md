@@ -14,8 +14,8 @@ Change Loop ไม่ใช่ AI และไม่ได้เขียนโ�
 ชื่อ workflow คือ **Change Loop** ส่วน package และ CLI ที่ติดตั้งยังใช้
 `claude-foundation` เหมือนเดิม คำสั่งและ integration เดิมจึงยังทำงานต่อได้
 
-ผู้ใช้ยังใช้หกคำสั่งระดับ intent คือ `/investigate`, `/change`, `/build`, `/prove`,
-`/land` และ `/dev` Agent compile semantic draft หนึ่งชุดแล้วขับ coordinator
+ผู้ใช้มีเจ็ดคำสั่งระดับ intent คือ `/investigate`, `/change`, `/build`, `/prove`,
+`/land`, `/deliver` ซึ่งเป็นทางเลือก และ `/dev` Agent compile semantic draft หนึ่งชุดแล้วขับ coordinator
 `advance` ตัวเดียว ไม่ผลัก chain ของ CLI ภายในให้ผู้ใช้ และ OpenSpec packet ที่
 compile แล้วคือ source of truth
 
@@ -51,6 +51,12 @@ Change Loop จงใจแยกความรับผิดชอบ เพ�
 **ความเข้มมาจากความเสี่ยง ไม่ใช่ขนาด** ขนาดใช้คุมแค่งบและการแบ่งงาน change บรรทัดเดียวที่แตะ auth boundary จะไม่ถูกปฏิบัติเหมือนงานจิ๊บจ๊อย
 
 ## ไปต่อที่ไหน
+
+งาน UX ใช้ `ux-ui-principles` ตัดสินใจเรื่องประสบการณ์และ accessibility,
+`ui-ux-pro-max` ค้น design intelligence, `frontend-design` ลงมือทำภาพ
+ที่ตกลงแล้ว และ `tailwind-design-system` จัดการ tokens กับ components ที่ใช้ร่วมกัน
+การ upgrade ถอนไฟล์ managed ของ `gridgeist` ที่เลิกใช้แล้ว และรักษา notes
+กับ custom skills ที่ผู้ใช้เพิ่มเอง
 
 - [ติดตั้ง](/docs/th/install/) — requirement และวิธีติดตั้งสองแบบ
 - [เริ่มใช้งาน](/docs/th/quickstart/) — พา change หนึ่งตัวจนจบวงจร

@@ -791,6 +791,13 @@ adds security or observability guidance only when the change crosses those
 boundaries. Domain-boundary work begins with `ddd-strategic`; ordinary UI,
 backend, data, or documentation work should not preload that entire skill chain.
 
+For UX work, use `ux-ui-principles` for user flows, interaction, accessibility,
+and usability decisions; `ui-ux-pro-max` for searchable design intelligence;
+`frontend-design` for settled visual implementation; and `tailwind-design-system`
+for shared tokens and components. Detailed guides load only when needed. The
+retired `gridgeist` skill is removed on upgrade only for previously managed
+files; consumer-owned notes and custom skills are preserved.
+
 Use `change-impact-analysis` for unverified consumer or compatibility assumptions
 and `performance-investigation` for measured slowness or benchmark comparisons.
 Skill maintainers use `skill-suite-auditor` for static catalog checks and

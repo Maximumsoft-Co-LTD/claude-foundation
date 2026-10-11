@@ -8,9 +8,9 @@ time; they are not updated to describe the current release.
 
 | Need | Document | Status |
 |---|---|---|
-| Review the v3.6.3 candidate checkpoint | [2026-10-11 checkpoint](scenario-checkpoint-v3.6.3-2026-10-11.md) / [ภาษาไทย](scenario-checkpoint-v3.6.3-2026-10-11.th.md) | 9/10 strict delivery; tracker 32/33 at proven; publication blocked; all attempts and cumulative session costs retained |
+| Review the v3.6.3 candidate checkpoint | [2026-10-11 checkpoint](scenario-checkpoint-v3.6.3-2026-10-11.md) / [ภาษาไทย](scenario-checkpoint-v3.6.3-2026-10-11.th.md) | Historical checkpoint 9/10; tracker 32/33 at proven; publication later explicitly authorized as an exception in current status |
 | Review omitted legacy and three-repository workloads | [2026-10-09 supplement](remaining-scenarios-no-harness-v3.6.2-2026-10-09.md) / [ภาษาไทย](remaining-scenarios-no-harness-v3.6.2-2026-10-09.th.md) | 15 workloads × two arms, n=1; acceptance, quality and retained-state gaps; exploratory, not release-green |
-| Distinguish current source from recorded release evidence | [User scenario release status](user-scenario-release-status.md) | v3.6.3 candidate delivers 9/10; publication blocked on tracker; prior cohorts retained and production assurance open |
+| Distinguish current source from recorded release evidence | [User scenario release status](user-scenario-release-status.md) | v3.6.3 publication authorized as an explicit exception; tracker repair and production assurance remain open |
 | Compare the retained release scenario baseline | [2026-10-08 comparison](scenario-benchmark-v3.6.0-v3.6.2-2026-10-08.md) / [ภาษาไทย](scenario-benchmark-v3.6.0-v3.6.2-2026-10-08.th.md) | Historical 30-run cohort; source pins, incomplete cost, failure and private archive checksum retained |
 | Compare release delivery against direct implementation | [No-harness comparison](scenario-benchmark-no-harness-2026-10-08.md) / [ภาษาไทย](scenario-benchmark-no-harness-2026-10-08.th.md) | 40 retained runs; all four arms deliver 9/10; baseline faster/cheaper in n=1, terminal-time differences disclosed |
 | See the executable scenario and acceptance matrix | [User scenario test plan](user-scenario-test-plan.md) | Current contract |
