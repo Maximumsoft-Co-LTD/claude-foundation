@@ -1,7 +1,8 @@
 # User scenario release status
 
-Latest candidate checkpoint: 2026-10-11, intended v3.6.3, 9/10 strict delivery;
-artifact publication explicitly authorized as an exception, assurance open.
+Latest publication: v3.6.3 on 2026-10-11; candidate checkpoint 9/10 strict
+delivery. Artifact publication completed under an explicit exception;
+assurance remains open.
 Retained supplement: 2026-10-09, no-harness/v3.6.2; historical ten-scenario
 comparison: 2026-10-08, no-harness/v3.6.0/v3.6.1/v3.6.2.
 
@@ -17,8 +18,43 @@ an exception for this release, not a change to the default checkpoint in
 documentation gates remain required. Tracker is still unlanded, its quality
 and clean-install measurements remain unavailable, and production assurance
 is open. The publication workflow owns the version rewrite, source tag,
-formula/bottle and English/Thai docs deployment; publication verification will
-be recorded separately after it finishes.
+formula/bottle and English/Thai docs deployment.
+
+### Verified v3.6.3 publication
+
+The [release](https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/tag/v3.6.3)
+and [publication workflow](https://github.com/Maximumsoft-Co-LTD/claude-foundation/actions/runs/38156147405)
+completed successfully, including fresh deterministic and mutation gates,
+rewritten English/Thai documentation validation, bottle build/test and Pages
+deployment. Paid checkpoint source `9f561b67ac5273e0712fd7537e5fcaf2146d441a`
+maps through documentation-only preparation
+`413bbbccdd393757526aff64234a803fe6a82caf` to tagged release source
+`055770b23201d5c44b8ccb8bb421ad6dd660182c`. The release rewrite changes version
+mirrors and changelog metadata; the subsequent formula commit is
+`817c7549eccb1b569e2fec7402e172c66ec62931`. No product behavior changed after
+the paid checkpoint.
+
+| Published artifact | Verified SHA-256 |
+|---|---|
+| Tagged source archive | `07b288b9517a1b5a7f4118503fd354914910b7dbc525e3717a5be7fb2e464001` |
+| `claude-foundation-3.6.3.arm64_sequoia.bottle.tar.gz` | `0a09afbcf2e0f8420b5cdddd023dde8809530855b43a1cf363f50338ae741e13` |
+
+Post-publication verification passed 20/20 checks: both downloaded artifact
+checksums match the formula, source and bottle install into fresh disposable
+consumers, CLI version/help work, `ux-ui-principles` is present, and retired
+`gridgeist` is absent. The live [landing page](https://claude-foundation.dev/),
+[English docs](https://claude-foundation.dev/docs/) and
+[Thai docs](https://claude-foundation.dev/docs/th/) show v3.6.3; both docs include
+the UX skill guidance. Upgrade from v3.6.2 passes all four host adapters,
+preserving user-owned content and readable active changes.
+
+The private publication receipt archive is
+`~/.local/share/changeloop/releases/2026-10-11-v3.6.3-published.tar.gz`, SHA-256
+`81c4a4a4b17c80c9d0def4a4bcaf9ea63308554db99cc6e0dc19cadbf91c97a7`.
+It retains workflow logs/metadata, downloaded archives, verification code and
+results, upgrade evidence and fetched live HTML. These mechanical publication
+checks do not resolve the tracker scenario failure or promote production
+assurance.
 
 The [v3.6.3 candidate checkpoint](scenario-checkpoint-v3.6.3-2026-10-11.md) /
 [ภาษาไทย](scenario-checkpoint-v3.6.3-2026-10-11.th.md) tests clean preparation
