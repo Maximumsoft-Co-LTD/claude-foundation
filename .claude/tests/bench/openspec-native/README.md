@@ -41,7 +41,11 @@ When a lane has a deterministic task oracle, the runner stops first at
 the backend Land operation only on a passing verdict. Hidden task failure can
 therefore never be discovered for the first time after archive.
 Failed case IDs start a fresh Build/Prove continuation against the same
-disposable change while wall/request allowance remains. A retained lab can be
+disposable change while wall/request/cost allowance remains. Each paid
+continuation receives the run cap minus all measured prior session costs;
+missing or partial cost pauses rather than reopening the allowance. The
+runner retains each result envelope in `host-sessions.json` and sums measured
+session costs in the scorecard. A retained lab can be
 continued with `--resume-project <path>`; a `proven` fast path uses zero model
 requests only when backend `land-check` also confirms that proof is fresh.
 
@@ -359,6 +363,18 @@ Targets remain in
 [`../config/openspec-native-targets.json`](../config/openspec-native-targets.json).
 
 ## Workload matrix and repeat gate
+
+The larger `order-inventory` lane adds three writable directory repositories
+and a real SQLite cross-process workload. Its contract and verification scope are described in
+[the canonical scenario plan](../../../../docs/reports/user-scenario-test-plan.md#larger-workload-order-and-inventory-levels-12).
+The [2026-10-12 paid audit](../../../../docs/reports/scenario-order-inventory-2026-10-12.md)
+records oracle 19/19 and an incomplete strict outcome from the archived task ledger.
+The optional matrix `repository_catalog` is installed into
+`openspec/repositories.yaml` only for the Change Loop arm; the product seed and
+no-harness baseline remain free of harness configuration. The lab owns each
+child's initial Git seed commit, required by multi-repository isolation; the
+non-Git control root uses copy isolation. The baseline has a single control-root
+Git seed, and neither arm uses submodules.
 
 Do not tune only for the todolist sentinel. The release matrix must cover these
 distinct control paths:

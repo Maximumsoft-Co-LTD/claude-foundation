@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
-import { parseHostOutput, runClaude, streamUsage } from "../openspec-native/run.mjs";
+import { hostSessionCost, mergeHostExecutions, parseHostOutput, remainingHostCostBudget,
+  runClaude, streamUsage } from "../openspec-native/run.mjs";
 import { buildScorecard } from "../openspec-native/scorecard.mjs";
 
 // Cost measurement for hosts the runner stops at `proven`/`archived`: the host
@@ -34,6 +35,55 @@ function scorecardInput(overrides = {}) {
     ...overrides
   };
 }
+
+test('continuations retain every session cost and receive only remaining allowance', () => {
+  const session = cost => ({stdout:JSON.stringify({type:'result',total_cost_usd:cost}),
+    observedModelRequests:2,stopwatch:{wallMs:1}});
+  const merged = mergeHostExecutions(mergeHostExecutions(session(1.5), session(2.25)), session(0.25));
+  assert.equal(merged.hostSessions.length, 3);
+  assert.deepEqual(hostSessionCost(merged), {value:4,status:'measured',source:'host-session-envelopes'});
+  assert.equal(remainingHostCostBudget(merged, 25), 21);
+  assert.equal(remainingHostCostBudget(merged, 4), 0);
+  assert.equal(parseHostOutput(merged.stdout).rows.length, 3);
+  const scorecard = buildScorecard(scorecardInput({
+    envelope:parseHostOutput(merged.stdout).envelope,
+    hostUsage:{sessionCost:hostSessionCost(merged)}
+  }));
+  assert.equal(scorecard.usage.costUsd, 4);
+  assert.equal(scorecard.usage.costMeasurement, 'measured');
+});
+
+test('unavailable or partial session cost never reopens paid allowance', () => {
+  const missing = {stdout:'',observedModelRequests:2};
+  assert.equal(hostSessionCost(missing).value, null);
+  assert.equal(remainingHostCostBudget(missing, 25), null);
+  const partial = {stdout:JSON.stringify({type:'result',total_cost_usd:2}),
+    observedModelRequests:2,timedOut:true};
+  assert.equal(remainingHostCostBudget(partial, 25), null);
+  const merged = mergeHostExecutions(missing, partial);
+  assert.deepEqual(hostSessionCost(merged), {value:2,status:'partial',source:'host-session-envelopes'});
+});
+
+test('a no-model preflight followed by a paid repair is not reported as free', () => {
+  const merged = mergeHostExecutions({stdout:'',noModelDispatch:true},
+    {stdout:JSON.stringify({type:'result',total_cost_usd:2}),observedModelRequests:1});
+  assert.equal(merged.noModelDispatch, false);
+  assert.equal(hostSessionCost(merged).value, 2);
+  assert.equal(remainingHostCostBudget(merged, 25), 23);
+  assert.throws(()=>remainingHostCostBudget(merged, -1), /positive/);
+});
+
+test('the native CLI dollar-limit result is a resumable cost boundary', async () => {
+  const project=projectFixture();
+  const host=join(project,'budget-host.sh');
+  write(host, '#!/bin/sh\nprintf \'%s\\n\' \'{"type":"result","subtype":"error_max_budget_usd","total_cost_usd":25}\'\n');
+  chmodSync(host,0o755);
+  try {
+    const execution=await runClaude({project,prompt:'build',claudeBin:host,
+      claudeArgs:['--max-budget-usd','25'],timeoutMs:5000});
+    assert.deepEqual(execution.budgetExhausted,{kind:'cost-usd',used:25,target:25});
+  } finally {rmSync(project,{recursive:true,force:true});}
+});
 
 test("a final-envelope grace captures the host result without inflating wall time", async () => {
   const project = projectFixture();

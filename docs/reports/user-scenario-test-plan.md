@@ -46,9 +46,61 @@ digests are frozen by the deterministic sentinel.
 | `notes-api` | CRUD, query/filter/sort/pagination API | medium | Oracle 13/13, meaningful tests, clean install, archived |
 | `cart-coupons` | Coupon validation and pricing partitions | medium | Oracle 11/11, meaningful tests, clean install, archived |
 | `project-tracker-api` | Auth, permissions, persisted projects/tasks and concurrency | medium | Oracle 33/33 including discriminating tests, clean install, archived |
+| `order-inventory` | Brownfield backend/SDK/web state, multi-tenant SQLite transactions and cross-process concurrency | high | Oracle 19/19, per-surface discriminating tests, clean offline install, archived |
 
-Ten lanes use paid model execution. The budget/resume lane is
+Eleven lanes use paid model execution. The budget/resume lane is
 deterministic and must not spend model budget.
+
+### Larger workload: order and inventory (levels 1–2)
+
+The frozen product contract lives in the seed's `ORDER-INVENTORY.md`; the
+hidden oracle and its calibration answers stay outside the consumer. The lab
+adds an OpenSpec repository catalog only for the Change Loop arm: three
+writable repositories (`backend`, `sdk`, `web`) plus their control root. The
+lab initializes a separate Git seed commit in each child before Build; the
+control root uses copy isolation. The direct baseline retains its single
+control-root Git seed. Both arms receive identical product files, but their
+Git topology differs and these are not submodules.
+
+The workload preserves an existing catalogue while adding stock reservations,
+trusted-token tenant/role boundaries, SQLite migration, durable idempotency,
+expiry, cancellation, ordered events, SDK methods and immutable web state.
+The oracle sends fifty reservations to two independent HTTP processes sharing
+one real SQLite database; exactly ten must succeed against stock ten. It also
+checks concurrent identical keys, duplicate cancellation, restart persistence,
+expiry boundaries with injected clocks, and stale/terminal events. Delivered
+tests must pass and fail independently when each original backend, SDK or web
+implementation is restored. A timeout does not establish discrimination.
+Calibration also injects tenant-leakage, late-expiry and terminal-state
+resurrection mutants and requires the corresponding oracle cases to fail.
+
+No package downloads, Docker, credentials or external services are needed;
+Python 3 with standard-library SQLite must be available. Quality collection
+covers production JavaScript, including backend business rules; the Python
+SQLite transport is exercised behaviorally but has no measured Python coverage
+in this mixed-stack lane. UI acceptance covers state transitions, not rendered
+browser accessibility or appearance.
+
+The initial ceilings (90 minutes, US$25 per run, 400 model requests, 600 tool calls)
+are proposed bounds, not measured performance or spend authorization. The
+runner subtracts measured session cost before each oracle-repair continuation;
+missing or partial cost pauses before another paid session. Per-session
+envelopes are retained in `host-sessions.json` and summed in the scorecard.
+Historical merged-session accounting limitations in published reports remain
+historical; this change does not rewrite their measurements.
+The scenario is executable and deterministically calibrated. The
+[2026-10-12 paid audit](scenario-order-inventory-2026-10-12.md) reaches archived
+and passes product, measured quality and clean-install checks, but its archived
+task ledger remains incomplete. It is not smoke-green or repeated assurance.
+Levels 3–4 (amendment, stacked Land and interruption injection)
+remain future workloads and are not credited by this lane.
+
+Prepare either arm without model spend:
+
+```bash
+rtk proxy node .claude/tests/bench/openspec-native/lab.mjs --scenario order-inventory --dry-run
+rtk proxy node .claude/tests/bench/openspec-native/lab.mjs --scenario order-inventory --arm baseline --dry-run
+```
 
 ## Execution order
 
@@ -81,7 +133,7 @@ wall time, model requests, operations, resumptions, and available cost data.
 # Full deterministic repository suite
 rtk test bash .claude/tests/run-all.sh
 
-# Frozen eleven-scenario safety check (zero model spend)
+# Frozen twelve-scenario safety check (zero model spend)
 rtk npm run bench:openspec-native:sentinel
 
 # One disposable paid lane

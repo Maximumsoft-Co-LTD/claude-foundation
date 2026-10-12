@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
-  chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
+  chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -19,7 +19,7 @@ import {
   mergeHostExecutions, oracleRepairPrompt, parseHostOutput, pendingTaskCount,
   provenLandReady, remainingTimeoutMs, runBenchmarkOracle, runClaude, terminalChangeId
 } from "../openspec-native/run.mjs";
-import { collectBenchmarkQuality } from "../openspec-native/quality.mjs";
+import { benchmarkEvaluationWorkspace, collectBenchmarkQuality } from "../openspec-native/quality.mjs";
 import { loadMatrix } from "../openspec-native/matrix.mjs";
 
 const schema = JSON.parse(readFileSync(new URL(
@@ -252,6 +252,58 @@ test("host continuation accounting preserves total requests and wall time", () =
   assert.equal(merged.stdout, "first\nsecond\n");
 });
 
+test('composite oracle evaluates repository sandboxes without altering the shared seed or targets', () => {
+  const project=projectFixture();
+  const rootBox=join(project,'.foundation/sandboxes/todo');
+  const repoBox=join(project,'.foundation/repository-sandboxes/todo/backend');
+  write(join(project,'backend/value.txt'),'target seed');
+  write(join(rootBox,'backend/value.txt'),'shared seed');
+  write(join(rootBox,'backend/removed.txt'),'obsolete');
+  write(join(rootBox,'package.json'),'{}');
+  write(join(repoBox,'value.txt'),'proven repository bytes');
+  write(join(repoBox,'.git'),'gitdir: outside\n');
+  write(join(project,'.foundation/runtime/todo.json'),{id:'todo',status:'proven',
+    repositories:{backend:{path:repoBox,targetPath:join(project,'backend'),mode:'worktree'}}});
+  const oracle=join(project,'oracle.sh');
+  write(oracle, `#!/bin/sh
+if [ "$(cat "$1/backend/value.txt")" = "proven repository bytes" ] && [ ! -e "$1/backend/removed.txt" ] && [ ! -e "$1/backend/.git" ]; then
+  echo '{"verdict":"pass","score":1,"max":1,"results":{"CURRENT":"pass"}}'
+else
+  echo '{"verdict":"fail","score":0,"max":1,"results":{"CURRENT":"fail"}}'
+fi
+`);
+  try {
+    assert.equal(runBenchmarkOracle({project,changeId:'todo',oraclePath:oracle}).verdict,'pass');
+    assert.equal(readFileSync(join(rootBox,'backend/value.txt'),'utf8'),'shared seed');
+    assert.equal(readFileSync(join(project,'backend/value.txt'),'utf8'),'target seed');
+    assert.ok(existsSync(join(rootBox,'backend/removed.txt')));
+    const evaluation=benchmarkEvaluationWorkspace(project,'todo');
+    const workspace=evaluation.workspace;
+    evaluation.cleanup(); assert.equal(existsSync(workspace),false);
+    rmSync(repoBox,{recursive:true,force:true});
+    assert.equal(runBenchmarkOracle({project,changeId:'todo',oraclePath:oracle}).reason,'oracle-workspace-unavailable');
+    write(join(project,'.foundation/runtime/todo.json'),{id:'todo',status:'archived',repositories:{backend:{path:repoBox}}});
+    assert.equal(benchmarkEvaluationWorkspace(project,'todo').workspace,realpathSync(project));
+  } finally {rmSync(project,{recursive:true,force:true});}
+});
+
+test('archived delivery with an unchecked canonical task ledger is not benchmark completion', () => {
+  const project=projectFixture();
+  const archived='openspec/changes/archive/2026-10-12-todo';
+  write(join(project,'.foundation/runtime/todo.json'),{id:'todo',status:'archived',archivedChangePath:archived});
+  rmSync(join(project,'openspec/changes/todo'),{recursive:true,force:true});
+  write(join(project,archived,'tasks.md'),'- [ ] T001 backend\n- [ ] T002 SDK\n- [ ] T003 web\n');
+  try {
+    const outcome=observedOutcome({project,changeId:'todo',envelope:{},exitCode:0,timedOut:false,
+      oracle:{configured:true,measurement:'measured',verdict:'pass'}});
+    assert.equal(outcome.landStatus,'archived');
+    assert.equal(outcome.requiredEvidencePassed,true);
+    assert.equal(outcome.pendingTasks,3);
+    assert.equal(outcome.status,'incomplete');
+    assert.equal(outcome.failureClass,'required-work-or-proof-incomplete');
+  } finally {rmSync(project,{recursive:true,force:true});}
+});
+
 test("backend Land receives an integer remaining timeout", () => {
   assert.equal(remainingTimeoutMs(1800000, 712603.532083), 1087396);
   assert.equal(remainingTimeoutMs(100, 999.5), 1000);
@@ -474,6 +526,7 @@ test("resume scorecards isolate operations and prefer per-run host usage", () =>
 
 test("completed greenfield Node projects produce measured CRAP quality", async () => {
   const project = projectFixture();
+  write(join(project, '.foundation/runtime/todo.json'), {id:'todo',status:'proven'});
   try {
     rmSync(join(project, ".foundation/test-results/quality"),
       { recursive: true, force: true });
@@ -503,6 +556,7 @@ test("completed greenfield Node projects produce measured CRAP quality", async (
 
 test("bare CommonJS sandboxes produce measured CRAP without package.json", async () => {
   const project = projectFixture();
+  write(join(project, '.foundation/runtime/todo.json'), {id:'todo',status:'proven'});
   try {
     rmSync(join(project, ".foundation/test-results/quality"),
       { recursive: true, force: true });
@@ -530,6 +584,7 @@ test("bare CommonJS sandboxes produce measured CRAP without package.json", async
 
 test("dependency-free Python sandboxes produce measured CRAP quality", async () => {
   const project = projectFixture();
+  write(join(project, '.foundation/runtime/todo.json'), {id:'todo',status:'proven'});
   try {
     rmSync(join(project, ".foundation/test-results/quality"),
       { recursive: true, force: true });
@@ -716,7 +771,7 @@ printf '%s' '{"type":"result","subtype":"success","is_error":false,"total_cost_u
       "--timeout-ms", "5000",
       "--output", output
     ], { encoding: "utf8" });
-    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.status, 0, `${result.stderr}\n${result.stdout.slice(0,3500)}`);
     const scorecard = JSON.parse(readFileSync(output, "utf8").trim());
     assert.equal(scorecard.outcome.complete, true);
     assert.equal(scorecard.usage.costUsd, 2.75);
@@ -757,7 +812,7 @@ sleep 30
     ], { encoding: "utf8" });
     assert.equal(result.status, 1, "a user-decision boundary is not completion");
     const scorecard = JSON.parse(readFileSync(output, "utf8").trim());
-    assert.equal(scorecard.outcome.status, "needs-user-decision");
+    assert.equal(scorecard.outcome.status, "needs-user-decision", JSON.stringify(scorecard));
     assert.equal(scorecard.outcome.complete, false);
     assert.equal(scorecard.outcome.failureClass, "budget-exhausted-model-requests");
     // Process-group termination and child reaping can add a few seconds on a
@@ -1278,6 +1333,80 @@ fi
     rmSync(project, { recursive: true, force: true });
     rmSync(outputDir, { recursive: true, force: true });
   }
+});
+
+test('oracle repair receives a cumulative cost allowance and retains session envelopes', () => {
+  const project = projectFixture();
+  const scratch = mkdtempSync(join(tmpdir(), 'foundation-cumulative-cost-'));
+  const host = join(scratch, 'host');
+  const oracle = join(scratch, 'oracle.sh');
+  const output = join(scratch, 'rows.jsonl');
+  const runtime = join(project, '.foundation/runtime/todo.json');
+  write(runtime, {id:'todo',status:'building'});
+  write(join(project, '.claude/harness/foundation.mjs'), `
+import {writeFileSync} from 'node:fs';
+if (process.argv[2] === 'land-advance') writeFileSync(${JSON.stringify(runtime)},JSON.stringify({id:'todo',status:'archived'}));
+`);
+  write(host, `#!/usr/bin/env node
+const fs=require('node:fs');
+const args=process.argv.slice(2);
+const log=${JSON.stringify(join(scratch, 'budgets.jsonl'))};
+const budget=Number(args[args.lastIndexOf('--max-budget-usd')+1]);
+fs.appendFileSync(log,JSON.stringify(budget)+'\\n');
+fs.writeFileSync(${JSON.stringify(runtime)},JSON.stringify({id:'todo',status:'building'}));
+setTimeout(()=>fs.writeFileSync(${JSON.stringify(runtime)},JSON.stringify({id:'todo',status:'proven'})),400);
+setTimeout(()=>console.log(JSON.stringify({type:'result',subtype:'success',total_cost_usd:1.5,is_error:false})),500);
+setTimeout(()=>{},1500);
+`);
+  chmodSync(host, 0o755);
+  write(oracle, `#!/usr/bin/env node
+const fs=require('node:fs');
+const log=${JSON.stringify(join(scratch, 'budgets.jsonl'))};
+const pass=fs.readFileSync(log,'utf8').trim().split('\\n').length>1;
+console.log(JSON.stringify({verdict:pass?'pass':'fail',score:pass?1:0,max:1,results:{CASE:pass?'pass':'fail'}}));
+`);
+  // The oracle entrypoint is a shell script, matching the runner contract.
+  const oracleNode = join(scratch, 'oracle.cjs');
+  write(oracleNode, readFileSync(oracle, 'utf8'));
+  write(oracle, `exec "${process.execPath}" "${oracleNode}"\n`);
+  try {
+    const run = spawnSync(process.execPath, [
+      fileURLToPath(new URL('../openspec-native/run.mjs',import.meta.url)),
+      '--scenario','cost-repair','--project',project,'--prompt','/dev repair',
+      '--claude-bin',host,'--oracle',oracle,'--test-land','true',
+      '--max-cost-usd','25','--timeout-ms','10000','--output',output,'--run-id','cost-repair'
+    ], {encoding:'utf8',timeout:20000});
+    assert.equal(run.status,0,run.stderr);
+    assert.deepEqual(readFileSync(join(scratch,'budgets.jsonl'),'utf8').trim().split('\n').map(JSON.parse),[25,23.5]);
+    const row=JSON.parse(readFileSync(output,'utf8').trim());
+    assert.equal(row.usage.costUsd,3);
+    assert.equal(row.outcome.status,'completed');
+    const sessions=JSON.parse(readFileSync(join(scratch,'openspec-native-runs/cost-repair/host-sessions.json'),'utf8'));
+    assert.equal(sessions.length,2);
+    assert.equal(sessions[0].envelope.total_cost_usd,1.5);
+    assert.equal(validate(row),true,JSON.stringify(validate.errors));
+    const originalHost=readFileSync(host,'utf8');
+    for (const [name, replacement, failure] of [
+      ['unknown','', 'budget-exhausted-cost-measurement'],
+      ['spent','total_cost_usd:25,', 'budget-exhausted-cost-usd']
+    ]) {
+      write(runtime,{id:'todo',status:'building'});
+      write(join(scratch,'budgets.jsonl'),'');
+      write(host,originalHost.replace('total_cost_usd:1.5,',replacement));
+      const paused=spawnSync(process.execPath,[
+        fileURLToPath(new URL('../openspec-native/run.mjs',import.meta.url)),
+        '--scenario','cost-repair','--project',project,'--prompt','/dev repair',
+        '--claude-bin',host,'--oracle',oracle,'--test-land','true',
+        '--max-cost-usd','25','--timeout-ms','10000','--output',output,'--run-id',name
+      ],{encoding:'utf8',timeout:20000});
+      assert.equal(paused.status,1,paused.stderr);
+      assert.deepEqual(readFileSync(join(scratch,'budgets.jsonl'),'utf8').trim().split('\n').map(JSON.parse),[25]);
+      const latest=JSON.parse(readFileSync(output,'utf8').trim().split('\n').at(-1));
+      assert.equal(latest.outcome.status,'needs-user-decision');
+      assert.equal(latest.outcome.failureClass,failure);
+      assert.equal(latest.usage.costUsd,name==='unknown'?null:25);
+    }
+  } finally {rmSync(project,{recursive:true,force:true});rmSync(scratch,{recursive:true,force:true});}
 });
 
 test("baseline runner refuses a project that has the harness installed", () => {

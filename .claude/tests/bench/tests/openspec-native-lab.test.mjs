@@ -6,10 +6,11 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import {spawnSync} from 'node:child_process';
 
 import {
   baselineAllowedTools, cleanRoomCommandContract, directoryDigest, installedAllowedTools,
-  runScenarioLab, shellCheck
+  prepareLabProject, prepareBaselineProject, runScenarioLab, shellCheck
 } from "../openspec-native/lab.mjs";
 
 function write(path, value) {
@@ -53,6 +54,30 @@ function writeFixtureMatrix(matrix, fixture, oracle, projectCommand = "node --te
     }))]
   }, null, 2)}\n`);
 }
+
+test('multi-repository topology is installed only in the Change Loop arm', () => {
+  const root = mkdtempSync(join(tmpdir(), 'foundation-lab-topology-'));
+  const fixture = join(root, 'fixture');
+  const installer = join(root, 'install.sh');
+  write(join(fixture, 'backend/server.mjs'), 'export const seed = true;\n');
+  executable(installer, '#!/bin/sh\nmkdir -p "$1/.claude/harness"\n');
+  const repositoryCatalog = {version:1,repositories:[
+    {id:'backend',path:'backend',type:'external',mode:'write'}
+  ]};
+  try {
+    const harness = prepareLabProject({fixture,installer,tempParent:root,repositoryCatalog});
+    assert.deepEqual(JSON.parse(readFileSync(join(harness.project, 'openspec/repositories.yaml'), 'utf8')), repositoryCatalog);
+    const baseline = prepareBaselineProject({fixture,tempParent:root});
+    assert.equal(existsSync(join(baseline.project, 'openspec')), false);
+    assert.equal(existsSync(join(baseline.project, '.claude')), false);
+    assert.equal(harness.seedDigest, baseline.seedDigest);
+    assert.equal(existsSync(join(harness.project, 'backend/server.mjs')), true);
+    const head=spawnSync('git',['rev-parse','HEAD'],{cwd:join(harness.project,'backend'),encoding:'utf8'});
+    assert.equal(head.status,0,head.stderr);
+    assert.match(head.stdout.trim(),/^[a-f0-9]{40}$/);
+    assert.equal(existsSync(join(harness.project,'.git')),false);
+  } finally { rmSync(root, {recursive:true,force:true}); }
+});
 
 test("fixture digests ignore generated Python bytecode", () => {
   const root = mkdtempSync(join(tmpdir(), "foundation-lab-digest-"));

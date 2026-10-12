@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -31,6 +31,28 @@ export function matrixIssues(matrix, root = resolve(HERE, "../../../..")) {
       issues.push(`scenario id is missing or duplicate: ${scenario?.id}`);
     ids.add(scenario?.id);
     workloads.add(scenario?.workload);
+    if (scenario.repository_catalog !== undefined) {
+      const catalog = scenario.repository_catalog;
+      const repositories = catalog?.repositories;
+      const known = new Set(['root']);
+      if (catalog?.version !== 1 || !Array.isArray(repositories) || !repositories.length)
+        issues.push(`${scenario.id}: repository_catalog must be a nonempty version-1 catalog`);
+      for (const repository of Array.isArray(repositories) ? repositories : []) {
+        const path = repository.path;
+        if (!repository.id || known.has(repository.id) || typeof path !== 'string' ||
+            !path || isAbsolute(path) || path.split(/[\\/]/).includes('..') ||
+            !['git', 'external'].includes(repository.type) || !['read', 'write'].includes(repository.mode))
+          issues.push(`${scenario.id}: invalid repository_catalog entry`);
+        known.add(repository.id);
+        if (scenario.fixture && typeof path === 'string' &&
+            !existsSync(resolve(root, scenario.fixture, path)))
+          issues.push(`${scenario.id}: repository_catalog path does not exist: ${path}`);
+      }
+      for (const repository of Array.isArray(repositories) ? repositories : [])
+        if (!Array.isArray(repository.dependsOn || []) ||
+            (repository.dependsOn || []).some((id) => !known.has(id)))
+          issues.push(`${scenario.id}: repository_catalog dependency does not exist`);
+    }
     if (!["ready", "planned"].includes(scenario?.status))
       issues.push(`${scenario?.id}: status must be ready or planned`);
     if (!["paid", "deterministic"].includes(scenario?.execution))

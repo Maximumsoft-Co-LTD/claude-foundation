@@ -9,9 +9,9 @@ import { dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
-import { benchArm, buildScorecard, digest } from "./scorecard.mjs";
+import { benchArm, buildScorecard, costMeasurement, digest } from "./scorecard.mjs";
 import { shellCheck } from "./lab.mjs";
-import { benchmarkWorkspace, collectBenchmarkQuality } from "./quality.mjs";
+import { benchmarkEvaluationWorkspace, collectBenchmarkQuality } from "./quality.mjs";
 import {
   messageToolCalls, toolCallProfile
 } from "../../../harness/runtime/observability/telemetry.mjs";
@@ -97,7 +97,7 @@ export function assertBaselineProject(project) {
 
 // Shared task hint: both arms receive the same partition guidance; only the
 // lifecycle phrase in front of it differs.
-const PARTITION_HINT = "cover zero, negative, fractional, finite oversized, non-finite, non-numeric/coercible, production-entry, no-collateral, and return-shape partitions when they apply to this recent-window defect.";
+const PARTITION_HINT = "cover zero, negative, fractional, finite oversized, non-finite, non-numeric/coercible, production-entry, no-collateral, and return-shape partitions when they apply to this task.";
 
 export function changeLoopAuthority({ selfReviewAuthorized = false, landAuthorized = false,
   oracleConfigured = false } = {}) {
@@ -424,16 +424,23 @@ export function runBenchmarkOracle({ project, changeId, oraclePath, timeoutMs = 
     score: null, max: null, results: {}, reason: "not-configured", source: null
   };
   const source = resolve(oraclePath);
-  const workspace = benchmarkWorkspace(project, changeId);
   if (!existsSync(source)) return {
     configured: true, measurement: "unavailable", verdict: null,
     score: null, max: null, results: {}, reason: "oracle-not-found", source
   };
-  const execution = spawnSync("sh", [source, workspace], {
-    cwd: project, encoding: "utf8", timeout: timeoutMs,
-    env: { ...process.env, FOUNDATION_TELEMETRY: "0" },
-    maxBuffer: 10 * 1024 * 1024
-  });
+  let evaluation;
+  let execution;
+  try {
+    evaluation = benchmarkEvaluationWorkspace(project, changeId);
+    execution = spawnSync("sh", [source, evaluation.workspace], {
+      cwd: project, encoding: "utf8", timeout: timeoutMs,
+      env: { ...process.env, FOUNDATION_TELEMETRY: "0" },
+      maxBuffer: 10 * 1024 * 1024
+    });
+  } catch (error) {
+    return {configured:true,measurement:'unavailable',verdict:null,score:null,max:null,
+      results:{},reason:'oracle-workspace-unavailable',source};
+  } finally {evaluation?.cleanup();}
   if (execution.status !== 0) return {
     configured: true, measurement: "unavailable", verdict: null,
     score: null, max: null, results: {},
@@ -665,7 +672,15 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
       for (const line of lines) {
         let row;
         try { row = JSON.parse(line); } catch { continue; }
-        if (row?.type === "result") sawResult = true;
+        if (row?.type === "result") {
+          sawResult = true;
+          if (row.subtype === 'error_max_budget_usd') {
+            const capIndex = claudeArgs.lastIndexOf('--max-budget-usd');
+            budgetExhausted = {kind:'cost-usd',used:row.total_cost_usd ?? null,
+              target:capIndex >= 0 ? Number(claudeArgs[capIndex + 1]) : null};
+            terminate();
+          }
+        }
         const requestId = row?.type === "assistant"
           ? row.message?.id || row.request_id || null : null;
         if (requestId) requestIds.add(requestId);
@@ -921,7 +936,9 @@ export function mergeHostExecutions(base, next) {
     budgetExhausted: next.budgetExhausted,
     decisionBoundary: next.decisionBoundary,
     terminalReached: next.terminalReached,
-    stdout: `${base.stdout || ""}${next.stdout || ""}`,
+    noModelDispatch: base.noModelDispatch === true && next.noModelDispatch === true,
+    hostSessions: [...hostSessionRecords(base), ...hostSessionRecords(next)],
+    stdout: `${base.stdout || ""}${base.stdout && !base.stdout.endsWith("\n") ? "\n" : ""}${next.stdout || ""}`,
     stderr: `${base.stderr || ""}${next.stderr || ""}`,
     observedModelRequests: Number(base.observedModelRequests || 0) +
       Number(next.observedModelRequests || 0),
@@ -932,9 +949,42 @@ export function mergeHostExecutions(base, next) {
     stopwatch: {
       ...base.stopwatch,
       wallMs: Number(base.stopwatch?.wallMs || 0) + Number(next.stopwatch?.wallMs || 0),
+      finalEnvelopeWaitMs: Number(base.stopwatch?.finalEnvelopeWaitMs || 0) +
+        Number(next.stopwatch?.finalEnvelopeWaitMs || 0),
       finishedAt: next.stopwatch?.finishedAt || base.stopwatch?.finishedAt
     }
   };
+}
+
+export function hostSessionRecords(execution) {
+  if (Array.isArray(execution.hostSessions)) return execution.hostSessions;
+  const parsed = parseHostOutput(execution.stdout);
+  const cost = costMeasurement(parsed.envelope, {}, {
+    noModelDispatch: execution.noModelDispatch === true,
+    observedModelRequests: execution.observedModelRequests ?? parsed.observedUsage.observedModelRequests,
+    forcedTermination: Boolean(execution.budgetExhausted || execution.timedOut || execution.decisionBoundary)
+  });
+  return [{ envelope: parsed.envelope, cost,
+    noModelDispatch: execution.noModelDispatch === true }];
+}
+
+export function hostSessionCost(execution) {
+  const sessions = hostSessionRecords(execution);
+  const known = sessions.map(({cost}) => cost.value).filter(value => Number.isFinite(value));
+  const complete = sessions.every(({cost}) => cost.status === 'measured' && Number.isFinite(cost.value));
+  return { value: known.length ? known.reduce((sum, value) => sum + value, 0) : null,
+    status: complete ? 'measured' : known.length ? 'partial' : 'unavailable',
+    source: known.length ? 'host-session-envelopes' : null };
+}
+
+// A missing/partial envelope cannot replenish a paid allowance. The CLI owns
+// the per-session limit; each continuation receives only measured remaining
+// allowance from the run-wide cap.
+export function remainingHostCostBudget(execution, limit) {
+  const cap = Number(limit);
+  if (!Number.isFinite(cap) || cap <= 0) throw new Error('--max-cost-usd must be positive');
+  const cost = hostSessionCost(execution);
+  return cost.status === 'measured' ? Math.max(0, cap - cost.value) : null;
 }
 
 export function remainingTimeoutMs(total, used) {
@@ -1021,6 +1071,9 @@ async function main() {
   const output = resolve(args.output || DEFAULT_OUTPUT);
   const arm = benchArm(args.arm);
   const baseline = arm === "baseline";
+  if (args['max-cost-usd'] !== undefined &&
+      (!Number.isFinite(Number(args['max-cost-usd'])) || Number(args['max-cost-usd']) <= 0))
+    throw new Error('--max-cost-usd must be positive');
   const marker = baseline ? assertBaselineProject(project) : null;
   if (!baseline) assertDisposableProject(project);
   const projectCommand = baseline
@@ -1141,6 +1194,7 @@ async function main() {
     execution = await runClaude(request);
     decisionBoundary = execution.decisionBoundary || null;
   }
+  execution.hostSessions = hostSessionRecords(execution);
   const discoveredChangeId = baseline ? null : terminalChangeId(execution, discoverChangeId(
     project, args["change-id"] || null, execution.stopwatch.startedEpochMs ?? null));
   let oracle = null;
@@ -1184,8 +1238,15 @@ async function main() {
         break;
       const failedCases = Object.entries(oracle.results || {})
         .filter(([, status]) => status !== "pass").map(([id]) => id);
-      const repairArgs = args["max-cost-usd"]
-        ? [...args["claude-arg"], "--max-budget-usd", args["max-cost-usd"]]
+      const remainingCost = args['max-cost-usd']
+        ? remainingHostCostBudget(execution, args['max-cost-usd']) : undefined;
+      if (remainingCost === null || remainingCost === 0) {
+        execution.budgetExhausted = { kind: remainingCost === null ? 'cost-measurement' : 'cost-usd',
+          used: hostSessionCost(execution).value, target: Number(args['max-cost-usd']) };
+        break;
+      }
+      const repairArgs = remainingCost !== undefined
+        ? [...args["claude-arg"], "--max-budget-usd", String(remainingCost)]
         : args["claude-arg"];
       const repair = await runClaude({
         project,
@@ -1199,7 +1260,9 @@ async function main() {
         maxModelRequests: remainingRequests,
         maxToolCalls: remainingToolCalls,
         selfReviewAuthorized: args["test-self-review"] === "true",
-        stopOnProven: true
+        stopOnProven: true,
+        finalEnvelopeGraceMs: args['final-envelope-grace-ms'] !== undefined
+          ? Number(args['final-envelope-grace-ms']) : 15000
       });
       execution = mergeHostExecutions(execution, repair);
     } while (["proven", "applied"].includes(execution.terminalReached?.status));
@@ -1211,6 +1274,11 @@ async function main() {
   if (!args["collect-only"] && args["test-land"] === "true" && !backendLandRan &&
       (!oracle || oracle.verdict === "pass") &&
       runtimeStatus(project, discoveredChangeId) === "applied") runBackendLand();
+  const archived = !baseline && runtimeStatus(project, discoveredChangeId) === 'archived';
+  if (archived && args.oracle && !oracle) oracle=runBenchmarkOracle({
+    project,changeId:discoveredChangeId,oraclePath:args.oracle,
+    timeoutMs:Number(args['oracle-timeout-ms']||120000)
+  });
   const parsedHost = parseHostOutput(execution.stdout);
   const envelope = parsedHost.envelope;
   let projectCheck = null;
@@ -1243,7 +1311,7 @@ async function main() {
       project, changeId: discoveredChangeId, oraclePath: args.oracle || null,
       timeoutMs: Number(args["oracle-timeout-ms"] || 120000)
     }));
-  const quality = !args["collect-only"] && preliminaryOutcome.status === "completed"
+  const quality = !args["collect-only"] && (preliminaryOutcome.status === "completed" || archived)
     ? await collectBenchmarkQuality({ project, changeId: discoveredChangeId })
     : null;
   const scorecard = collectNativeScorecard({
@@ -1271,9 +1339,11 @@ async function main() {
       streamUsage: parsedHost.observedUsage.streamUsage ?? null,
       capConsumedModelRequests: execution.budgetExhausted?.kind === "model-requests"
         ? execution.budgetExhausted.used : null,
-      forcedTermination: Boolean(execution.budgetExhausted || execution.timedOut ||
+      forcedTermination: Boolean((execution.budgetExhausted &&
+        !['cost-measurement', 'cost-usd'].includes(execution.budgetExhausted.kind)) || execution.timedOut ||
         execution.decisionBoundary),
-      noModelDispatch: execution.noModelDispatch === true
+      noModelDispatch: execution.noModelDispatch === true,
+      sessionCost: hostSessionRecords(execution).length > 1 ? hostSessionCost(execution) : null
     },
     decisionBoundary, quality, oracle,
     syntheticOperationRows: decisionBoundary ? [{
@@ -1289,6 +1359,7 @@ async function main() {
   const artifactDir = join(dirname(output), "openspec-native-runs", runId);
   mkdirSync(artifactDir, { recursive: true });
   writeFileSync(join(artifactDir, "host-result.json"), `${JSON.stringify(envelope, null, 2)}\n`);
+  writeFileSync(join(artifactDir, 'host-sessions.json'), `${JSON.stringify(hostSessionRecords(execution), null, 2)}\n`);
   writeFileSync(join(artifactDir, "host.stream.jsonl"), execution.stdout);
   writeFileSync(join(artifactDir, "host.stderr.log"), execution.stderr);
   writeFileSync(join(artifactDir, "scorecard.json"), `${JSON.stringify(scorecard, null, 2)}\n`);

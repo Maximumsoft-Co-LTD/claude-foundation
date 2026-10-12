@@ -80,6 +80,7 @@ export function digest(value) {
 export function costMeasurement(envelope = {}, metrics = {}, hostUsage = {}) {
   if (hostUsage.noModelDispatch === true)
     return { value: 0, status: "measured", source: "runner-preflight" };
+  if (hostUsage.sessionCost) return hostUsage.sessionCost;
   const envelopeCost = measured(envelope.total_cost_usd ?? envelope.cost_usd);
   const observedRequests = count(hostUsage.observedModelRequests);
   const forcedTermination = hostUsage.forcedTermination === true;

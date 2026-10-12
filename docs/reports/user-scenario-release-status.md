@@ -3,6 +3,13 @@
 Latest publication: v3.6.3 on 2026-10-11; candidate checkpoint 9/10 strict
 delivery. Artifact publication completed under an explicit exception;
 assurance remains open.
+Current source adds the `order-inventory` workload to the executable matrix
+(twelve rows, eleven paid). Its [2026-10-12 paid audit](scenario-order-inventory-2026-10-12.md)
+reaches archived with oracle 19/19, measured quality and clean-install checks,
+but the canonical archived ledger retains three unchecked tasks. Strict outcome
+is incomplete, not smoke-green. Measured host and reviewer cost totals
+US$2.0839467. Lab setup/evaluation fixes and failed stages are retained; this
+exploratory run does not promote the published cohort's assurance.
 Retained supplement: 2026-10-09, no-harness/v3.6.2; historical ten-scenario
 comparison: 2026-10-08, no-harness/v3.6.0/v3.6.1/v3.6.2.
 

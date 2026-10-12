@@ -419,6 +419,42 @@
       },
       "expected_terminal": "completed",
       "baseline": null
+    },
+    {
+      "id": "order-inventory",
+      "status": "ready",
+      "execution": "paid",
+      "workload": "multi-tenant-transactional-brownfield",
+      "stack": "node-sqlite-multi-repository",
+      "size": "large",
+      "fixture": ".claude/tests/bench/tasks/24-order-inventory/seed",
+      "fixture_digest": "sha256:16d697f6b2fda062bdfc8a07bb6a8084cbb36d9f7276b3fee22c2f0d63a8f1a9",
+      "prompt": "/dev implement ORDER-INVENTORY.md across backend, sdk and web, preserving the existing catalogue and adding meaningful tests for SQLite transactions, tenant isolation, concurrency and event ordering",
+      "host": "claude-code",
+      "risk": "high",
+      "project_command": "npm test",
+      "clean_install_command": "npm install --ignore-scripts --offline",
+      "repository_catalog": {
+        "version": 1,
+        "repositories": [
+          { "id": "backend", "path": "backend", "type": "external", "mode": "write", "dependsOn": [] },
+          { "id": "sdk", "path": "sdk", "type": "external", "mode": "write", "dependsOn": ["backend"] },
+          { "id": "web", "path": "web", "type": "external", "mode": "write", "dependsOn": ["sdk"] }
+        ]
+      },
+      "critical_case_ids": [
+        "CASE_LEGACY_MIGRATION", "CASE_AUTH_ROLES", "CASE_TENANT_ISOLATION",
+        "CASE_VALIDATION_ATOMIC", "CASE_RESERVATION_CONTRACT", "CASE_IDEMPOTENCY_RESTART",
+        "CASE_CONCURRENT_STOCK", "CASE_CONCURRENT_KEY", "CASE_EXPIRY_BOUNDARY",
+        "CASE_EXPIRY_TENANT", "CASE_CANCEL_ONCE", "CASE_EVENT_DUPLICATE_RESTART",
+        "CASE_EVENT_ORDERING_TERMINAL", "CASE_SDK_ROUNDTRIP", "CASE_WEB_STATE",
+        "CASE_DELIVERED_TESTS", "CASE_TESTS_BACKEND", "CASE_TESTS_SDK", "CASE_TESTS_WEB"
+      ],
+      "oracle": { "required": true, "path": ".claude/tests/bench/tasks/24-order-inventory/oracle/run.sh" },
+      "quality_required": true,
+      "budget": { "wall_ms": 5400000, "cost_usd": 25, "model_requests": 400, "tool_calls": 600 },
+      "expected_terminal": "completed",
+      "baseline": null
     }
   ]
 }

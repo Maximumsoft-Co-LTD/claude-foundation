@@ -169,7 +169,7 @@ function parseArgs(argv) {
 }
 
 export function prepareLabProject({ fixture, installer = join(ROOT, "install.sh"),
-  tempParent = tmpdir(), projectCommand = null }) {
+  tempParent = tmpdir(), projectCommand = null, repositoryCatalog = null }) {
   const source = resolve(fixture);
   if (!existsSync(source) || !statSync(source).isDirectory())
     throw new Error(`fixture seed does not exist: ${source}`);
@@ -178,13 +178,47 @@ export function prepareLabProject({ fixture, installer = join(ROOT, "install.sh"
   const installed = commandResult(installer, [project, "--yes"], ROOT);
   try { requireSuccess(installed, "Foundation install"); }
   catch (error) { rmSync(project, { recursive: true, force: true }); throw error; }
+  // Keep topology out of the frozen product seed: the direct baseline must
+  // not acquire OpenSpec or harness configuration. JSON is valid YAML.
+  if (repositoryCatalog) {
+    mkdirSync(join(project, 'openspec'), { recursive: true });
+    writeFileSync(join(project, 'openspec/repositories.yaml'),
+      `${JSON.stringify(repositoryCatalog, null, 2)}\n`);
+  }
   writeFileSync(join(project, ".foundation-benchmark.json"),
     `${JSON.stringify({
       disposable: true,
       createdBy: "openspec-native-lab-v1",
       projectCommand
     })}\n`);
+  if (repositoryCatalog) initializeLabRepositories(project, repositoryCatalog);
   return { project, seedDigest: directoryDigest(source) };
+}
+
+// Selected repositories need real seed commits even when their topology type
+// is `external`. This is deterministic setup inside a lab-owned disposable
+// tree, before Build; it never commits product implementation or touches the
+// source checkout. The control root remains a non-Git copy workspace.
+export function initializeLabRepositories(project, catalog) {
+  if (JSON.parse(readFileSync(join(project, '.foundation-benchmark.json'), 'utf8')).disposable !== true)
+    throw new Error('repository initialization requires a disposable lab');
+  const gitEnv = { ...process.env, GIT_AUTHOR_NAME:'bench',GIT_AUTHOR_EMAIL:'bench@example.invalid',
+    GIT_COMMITTER_NAME:'bench',GIT_COMMITTER_EMAIL:'bench@example.invalid' };
+  for (const repository of catalog.repositories) {
+    const path=resolve(project,repository.path);
+    if (path === resolve(project) || !path.startsWith(`${resolve(project)}/`))
+      throw new Error('lab repository path must be inside the disposable project');
+    if (existsSync(join(path,'.git'))) {
+      requireSuccess(commandResult('git',['rev-parse','HEAD'],path,gitEnv),'existing lab seed');
+      continue;
+    }
+    requireSuccess(commandResult('git',['-c','init.defaultBranch=main','init','-q'],path,gitEnv),'lab repository init');
+    const ignore=join(project,'.gitignore');
+    if (existsSync(ignore)) writeFileSync(join(path,'.git/info/exclude'),readFileSync(ignore));
+    requireSuccess(commandResult('git',['add','-A'],path,gitEnv),'lab repository seed add');
+    requireSuccess(commandResult('git',['-c','commit.gpgsign=false','-c','core.hooksPath=/dev/null',
+      'commit','-q','--allow-empty','-m','benchmark seed'],path,gitEnv),'lab repository seed commit');
+  }
 }
 
 // The no-harness arm: the same frozen seed and the same disposable marker, but
@@ -315,7 +349,8 @@ export function runScenarioLab({ matrixPath, scenarioId, outputRoot = DEFAULT_RE
         })
       : prepareLabProject({
           fixture: resolve(ROOT, plan.fixture), installer, tempParent,
-          projectCommand: scenario.project_command
+          projectCommand: scenario.project_command,
+          repositoryCatalog: scenario.repository_catalog
         });
   if (resumeProject) {
     const marker = JSON.parse(readFileSync(join(prepared.project,
@@ -361,7 +396,16 @@ export function runScenarioLab({ matrixPath, scenarioId, outputRoot = DEFAULT_RE
     // is reachable from its PATH.
     result = commandResult(process.execPath, args, ROOT,
       baseline ? process.env : cliShimEnv(runDir));
-    const verification = result.status === 0
+    let archivedOutput=false;
+    if (existsSync(scorecards)) {
+      try {
+        const rows=readFileSync(scorecards,'utf8').trim().split('\n');
+        archivedOutput=JSON.parse(rows.at(-1)).outcome?.workflowStatus==='archived';
+      } catch { archivedOutput=false; }
+    }
+    // Collect delivery evidence even when an archived ledger/proof inconsistency
+    // keeps the outcome incomplete. strictPass still requires runner success.
+    const verification = result.status === 0 || archivedOutput
       ? deliveryChecks(scenario, prepared.project, tempParent)
       : {
           contract: cleanRoomCommandContract(scenario),
@@ -383,6 +427,7 @@ export function runScenarioLab({ matrixPath, scenarioId, outputRoot = DEFAULT_RE
         expectedSeedDigest: scenario.fixture_digest, projectCommand: scenario.project_command,
         cleanInstallCommand: scenario.clean_install_command,
         oracle: plan.oracle, criticalCaseIds: scenario.critical_case_ids,
+        repositoryCatalog: scenario.repository_catalog || null,
         budget: plan.budget, startedAt, finishedAt: new Date().toISOString(),
         runnerExitCode: result.status,
         strictPass: result.status === 0 && verificationPassed,

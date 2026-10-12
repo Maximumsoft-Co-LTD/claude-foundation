@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { resolve, relative } from 'node:path';
+import { buildRepositoryCatalog } from '../../../harness/runtime/workflow/repository-topology.mjs';
 
 import { executionPlan, loadMatrix, matrixIssues } from "../openspec-native/matrix.mjs";
 
@@ -7,8 +9,8 @@ test("the versioned cross-domain matrix is valid and every workload is executabl
   const matrix = loadMatrix();
   assert.equal(matrix.protocol, "foundation-openspec-native-matrix-v2");
   assert.deepEqual(matrixIssues(matrix), []);
-  assert.equal(matrix.scenarios.length, 11);
-  assert.equal(matrix.scenarios.filter((scenario) => scenario.status === "ready").length, 11);
+  assert.equal(matrix.scenarios.length, 12);
+  assert.equal(matrix.scenarios.filter((scenario) => scenario.status === "ready").length, 12);
   assert.equal(matrix.scenarios.filter((scenario) => scenario.baseline !== null).length, 1);
 });
 
@@ -98,6 +100,26 @@ test("budget exhaustion pauses for a resumable user decision", () => {
     may_report_complete: false,
     may_report_blocked: false
   });
+});
+
+test("order/inventory binds its three product repositories and transaction cases", () => {
+  const matrix = loadMatrix();
+  const plan = executionPlan(matrix, 'order-inventory');
+  assert.equal(plan.risk, 'high');
+  assert.match(plan.fixture, /24-order-inventory\/seed$/);
+  assert.equal(plan.criticalCaseIds.length, 19);
+  assert.ok(plan.criticalCaseIds.includes('CASE_CONCURRENT_STOCK'));
+  assert.equal(plan.cleanInstallCommand, 'npm install --ignore-scripts --offline');
+  const scenario = matrix.scenarios.find(({id}) => id === 'order-inventory');
+  assert.deepEqual(scenario.repository_catalog.repositories.map(({id}) => id),
+    ['backend', 'sdk', 'web']);
+  const root = resolve(plan.fixture);
+  const catalog = buildRepositoryCatalog({root, configured:scenario.repository_catalog, discovered:[],
+    canonicalPath:resolve, pathInside:(parent,child)=>!relative(parent,child).startsWith('..'),
+    fail:message=>{throw new Error(message);}});
+  assert.deepEqual(catalog.repositories.map(({id})=>id), ['root','backend','sdk','web']);
+  scenario.repository_catalog.repositories[0].path = '../outside';
+  assert.ok(matrixIssues(matrix).some(issue => issue.includes('invalid repository_catalog entry')));
 });
 
 test("a user-decision attempt cannot be promoted to a baseline", () => {

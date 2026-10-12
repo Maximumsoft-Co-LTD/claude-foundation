@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { runBenchmarkOracle } from "../openspec-native/run.mjs";
+import { repairOrderInventory } from "./fixtures/order-inventory-repair.mjs";
 
 const TASKS = fileURLToPath(new URL("../tasks", import.meta.url));
 const MATRIX = JSON.parse(readFileSync(
@@ -48,6 +49,41 @@ function verifyWorkload(name, repair) {
     rmSync(project, { recursive: true, force: true });
   }
 }
+
+test("order/inventory fixture proves SQLite races, tenancy and all three delivered surfaces", () => {
+  verifyWorkload("24-order-inventory", repairOrderInventory);
+});
+
+test('order/inventory oracle rejects tenant leakage, late expiry and stale UI mutants', () => {
+  const task = join(TASKS, '24-order-inventory');
+  const project = mkdtempSync(join(tmpdir(), 'order-mutants-'));
+  const mutants = [
+    ['CASE_TENANT_ISOLATION', 'backend/server.mjs',
+      "[id, tenant]))[0][0]", "[id, 'a']))[0][0]"],
+    ['CASE_EXPIRY_BOUNDARY', 'backend/server.mjs', 'expiresAt<=?', 'expiresAt<?'],
+    ['CASE_WEB_STATE', 'web/state.mjs',
+      "['cancelled','expired'].includes(before.status)", 'false']
+  ];
+  try {
+    cpSync(join(task, 'seed'), project, {recursive:true});
+    repairOrderInventory(project);
+    for (const [id, file, before, after] of mutants) {
+      const path = join(project, file);
+      const original = readFileSync(path, 'utf8');
+      assert.ok(original.includes(before), `mutation anchor missing: ${id}`);
+      write(path, original.replaceAll(before, after));
+      try {
+        const env = {...process.env}; delete env.NODE_TEST_CONTEXT;
+        const run = spawnSync(process.execPath, [join(task, 'oracle/check.mjs'), project, id],
+          {encoding:'utf8',env,timeout:30000});
+        assert.equal(run.status, 0, run.stderr);
+        const result = JSON.parse(run.stdout);
+        assert.equal(result.results[id], 'fail', `${id}: mutant escaped the oracle`);
+        assert.equal(result.max, 1);
+      } finally {write(path, original);}
+    }
+  } finally {rmSync(project, {recursive:true,force:true});}
+});
 
 test("TypeScript/React state fixture has a mutation-killing acceptance oracle", () => {
   verifyWorkload("16-typescript-react-state", (project) => {

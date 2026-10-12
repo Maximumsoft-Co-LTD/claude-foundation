@@ -1,8 +1,10 @@
 import { spawnSync } from "node:child_process";
 import {
-  existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync
+  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync,
+  realpathSync, rmSync, writeFileSync
 } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from "node:url";
 
 import { buildCrapReport } from "../../../../scripts/quality/calculate-crap.mjs";
@@ -83,9 +85,46 @@ export function benchmarkWorkspace(project, changeId) {
   return sandbox && existsSync(sandbox) ? sandbox : projectRoot;
 }
 
+// Composite Build writes belong to the per-repository sandboxes. The shared
+// root can still contain seed placeholders until Land. Evaluate a private
+// assembled copy, never grade those placeholders or mutate a proven workspace.
+export function benchmarkEvaluationWorkspace(project, changeId) {
+  const root = realpathSync(resolve(project));
+  const state = changeId ? readJson(join(root,'.foundation/runtime',`${changeId}.json`),{}) : {};
+  if (state.status === 'archived') return {workspace:root,cleanup:()=>{}};
+  const repositories = Object.entries(state.repositories || {}).filter(([id])=>id!=='root');
+  const base = benchmarkWorkspace(root,changeId);
+  if (!repositories.length) return {workspace:base,cleanup:()=>{}};
+  const scratch=mkdtempSync(join(tmpdir(),'foundation-benchmark-evaluation-'));
+  const workspace=join(scratch,'workspace');
+  const excluded=new Set(['.git','.foundation','.claude','openspec','__pycache__']);
+  const filter=path=>!excluded.has(path.split(/[\\/]/).at(-1));
+  try {
+    cpSync(base,workspace,{recursive:true,filter});
+    for (const [id,repository] of repositories) {
+      if (!repository.path || !repository.targetPath || !existsSync(repository.path))
+        throw new Error(`benchmark repository workspace unavailable: ${id}`);
+      const source=realpathSync(repository.path);
+      const target=realpathSync(repository.targetPath);
+      const location=relative(root,target);
+      if (!location || isAbsolute(location) || location==='..' || location.startsWith(`..${process.platform==='win32'?'\\':'/'}`))
+        throw new Error(`benchmark repository target is outside the product root: ${id}`);
+      const destination=join(workspace,location);
+      rmSync(destination,{recursive:true,force:true});
+      cpSync(source,destination,{recursive:true,filter});
+    }
+    return {workspace,cleanup:()=>rmSync(scratch,{recursive:true,force:true})};
+  } catch (error) {rmSync(scratch,{recursive:true,force:true});throw error;}
+}
+
 export async function collectBenchmarkQuality({ project, changeId }) {
-  const projectRoot = resolve(project);
-  const workspace = benchmarkWorkspace(project, changeId);
+  const evaluation=benchmarkEvaluationWorkspace(project,changeId);
+  try {return await collectQualityInWorkspace({project,changeId,workspace:evaluation.workspace});}
+  finally {evaluation.cleanup();}
+}
+
+async function collectQualityInWorkspace({ project, changeId, workspace }) {
+  const projectRoot = realpathSync(resolve(project));
   const manifest = readJson(join(workspace, "package.json"));
   const includes = javascriptIncludes(workspace);
   const pythonFiles = pythonProductionFiles(workspace);
@@ -187,7 +226,7 @@ export async function collectBenchmarkQuality({ project, changeId }) {
         include: includes, changedCodeFloor: 80, required: true, active: true }],
       policy, root: workspace,
       metadata: { collector: "openspec-native-node-quality-v1", changeId,
-        workspace: workspace === project ? "project" : "sandbox" }
+        workspace: workspace === projectRoot ? "project" : "sandbox" }
     });
     writeJson(reportPath, report);
     writeJson(diagnosticPath, { status: "measured", functions: report.summary.functions,

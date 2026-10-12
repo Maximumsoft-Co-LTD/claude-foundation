@@ -1,0 +1,7 @@
+{
+  "name": "order-inventory-benchmark",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test" },
+  "engines": { "node": ">=20.19.0" }
+}
