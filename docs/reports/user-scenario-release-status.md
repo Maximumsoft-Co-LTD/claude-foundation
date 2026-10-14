@@ -15,6 +15,18 @@ comparison: 2026-10-08, no-harness/v3.6.0/v3.6.1/v3.6.2.
 
 ## Current scenario checkpoint
 
+The [2026-10-15 full paid E2E and conversation comparison](continuity-paid-e2e-2026-10-15.md)
+([ภาษาไทย](continuity-paid-e2e-2026-10-15.th.md)) tests clean source
+`6211780127a69c2166d61a24cf8eed8a3ce3f20e`: delivery is 9/10, with the same
+Tracker `CASE_TESTS_EXIST` failure at 32/33. Real multi-session research preserves
+structured revisions and PoC history, but an independent unknown-timeout
+cross-key probe fails against the after-generated prototype (two simulated
+charges). Its valid compiled spec exposes the consequential uncertainty only at
+approval. Total measured checkpoint cost is US$16.7394936. Initial no-dispatch
+wrapper attempts and prototype permission recovery remain disclosed. This is
+development evidence; semantic handoff assurance and release assurance remain
+open.
+
 The [2026-10-15 investigation continuity smoke](investigation-continuity-smoke-2026-10-15.md)
 ([ภาษาไทย](investigation-continuity-smoke-2026-10-15.th.md)) verifies one
 dirty-source `notes-api` delivery at archived, oracle 13/13, zero pending tasks,
