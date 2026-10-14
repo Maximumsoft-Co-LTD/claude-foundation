@@ -54,6 +54,35 @@ of a payment prototype or production concurrency measurement.
 
 ## Reproduce and inspect
 
+### Verification and Git delivery record
+
+Runner and reports were committed as
+`ffa05397aa4161c8a103e0acaf53be2c8924477a` and pushed to `origin/main`; remote
+read-back matched that SHA. The tested files were byte-compared with the six
+files staged for that commit and all matched.
+
+| Executed check | Observed result |
+|---|---|
+| `rtk npm run bench:investigation-continuity` in the main checkout and isolated worktree | Exit 0 in both; before 5/19, after 19/19 |
+| `rtk test env FOUNDATION_TEST_JOBS=8 FOUNDATION_SUITE_TIMEOUT_SECONDS=900 bash .claude/tests/run-all.sh` in the main checkout | 225 passing suite rows, zero failing suite rows; final gate exit 1 because unrelated files appeared during execution |
+| Same authoritative full-suite command in the isolated worktree | Exit 0; all 225 suites passed |
+| `rtk proxy git diff --cached --check` | Exit 0 before commit |
+
+The first full run's repository-preservation guard detected newly created
+`openspec/investigations/issues-39-40.json` and its generated report. Neither
+file belongs to this scenario. Both were preserved and excluded from the commit.
+The full rerun used `/tmp/changeloop-continuity-verification-20261015-1791997227`
+with the exact six pending files, so concurrent work in the main checkout could
+not invalidate that gate. No failing assertion was waived or hidden.
+
+The authoritative suite includes installer/upgrade, documentation and context
+contracts, runtime/seam, review/proof, isolation and recoverable Land checks.
+The new differential runner is executed separately; it is not silently counted
+as an additional registered suite. These runs incurred zero model spend.
+The separate paid `notes-api` smoke and its US$0.5192617 measured cost remain
+recorded in the linked smoke report. No paid multi-session Investigate E2E was
+executed for this differential comparison.
+
 ```sh
 rtk npm run bench:investigation-continuity
 ```

@@ -51,6 +51,34 @@ ledger ใหม่และการป้องกันข้อมูลส�
 
 ## รันซ้ำและดูหลักฐาน
 
+### บันทึกการตรวจและส่งขึ้น Git
+
+Runner และรายงาน commit แล้วที่
+`ffa05397aa4161c8a103e0acaf53be2c8924477a` และ push ไป `origin/main`
+ตรวจ remote read-back แล้ว SHA ตรงกัน เปรียบเทียบ bytes ของไฟล์ที่ทดสอบกับ
+หกไฟล์ที่ stage สำหรับ commit นี้แล้วตรงกันครบ
+
+| การตรวจที่รัน | ผลที่พบ |
+|---|---|
+| `rtk npm run bench:investigation-continuity` ทั้ง checkout หลักและ worktree แยก | Exit 0 ทั้งสองรอบ ก่อนแก้ 5/19 หลังแก้ 19/19 |
+| `rtk test env FOUNDATION_TEST_JOBS=8 FOUNDATION_SUITE_TIMEOUT_SECONDS=900 bash .claude/tests/run-all.sh` ใน checkout หลัก | Suite rows ผ่าน 225 ไม่มี row ล้มเหลว แต่ final gate exit 1 เพราะมีไฟล์อีกงานเพิ่มระหว่างรัน |
+| Full-suite command เดียวกันใน worktree แยก | Exit 0 ผ่านครบ 225 suites |
+| `rtk proxy git diff --cached --check` | Exit 0 ก่อน commit |
+
+รอบแรก repository-preservation guard ตรวจพบไฟล์ใหม่
+`openspec/investigations/issues-39-40.json` และ generated report ของไฟล์นั้น
+ซึ่งเป็นอีกงาน เก็บทั้งสองไฟล์ไว้และไม่รวมใน commit รัน full suite ซ้ำที่
+`/tmp/changeloop-continuity-verification-20261015-1791997227` ด้วยหกไฟล์ชุดเดียว
+กับที่จะ commit เพื่อแยกจากงานที่เปลี่ยน checkout หลัก ไม่มีการ waive หรือซ่อน
+assertion ที่ล้มเหลว
+
+Authoritative suite ครอบคลุม installer/upgrade, เอกสารและ context contracts,
+runtime/seam, review/proof, isolation และ recoverable Land ส่วน differential
+runner ใหม่รันแยก ไม่นับเพิ่มเป็น registered suite โดยไม่มีการลงทะเบียน
+Tests เหล่านี้ไม่เสียค่าโมเดล paid `notes-api` smoke ก่อนหน้าและค่าใช้จ่าย
+US$0.5192617 มีบันทึกใน smoke report ที่ลิงก์ไว้แล้ว ยังไม่ได้รัน paid
+Investigate E2E หลาย session สำหรับการเปรียบเทียบนี้
+
 ```sh
 rtk npm run bench:investigation-continuity
 ```
