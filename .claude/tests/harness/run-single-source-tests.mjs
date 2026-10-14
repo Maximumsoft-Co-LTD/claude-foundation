@@ -120,6 +120,12 @@ const pins = {
     read(".claude/harness/DEVELOPER-SETUP.md").match(/runtime API\s+is `(\d+)`/)?.[1]
 };
 
+check(() => assert.equal(
+  JSON.parse(read(".claude/harness/protocol.json")).investigationStateSchema,
+  read(".claude/harness/runtime/workflow/investigation-runtime.mjs")
+    .match(/INVESTIGATION_STATE_VERSION\s*=\s*(\d+)/)?.[1],
+  "investigation schema pin must match the highest supported state version"));
+
 for (const [name, value] of Object.entries(pins))
   check(() => assert.match(String(value ?? ""), /^\d+$/,
     `${name} did not parse — the pin moved or changed shape`));

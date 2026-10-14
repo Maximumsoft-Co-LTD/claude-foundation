@@ -154,6 +154,16 @@ assert_contains "public investigate template exposes typed facts" \
   "$investigation_template" '"facts": []'
 assert_contains "public investigate template exposes optional active-change binding" \
   "$investigation_template" '"activeChange": null'
+assert_contains "installed investigate emits the v2 record" \
+  "$investigation_template" '"version": 2'
+assert_contains "installed investigate retains conversation context" \
+  "$investigation_template" '"conversation": []'
+assert_contains "installed investigate supports independent work" \
+  "$investigation_template" '"work": []'
+assert_file_exists "investigation intake validation installed" \
+  "$TARGET/.claude/harness/runtime/workflow/validation/investigation-intake.mjs"
+assert_file_exists "investigation coverage validation installed" \
+  "$TARGET/.claude/harness/runtime/workflow/validation/investigation-coverage.mjs"
 mkdir -p "$TARGET/openspec/investigations"
 printf '%s\n' 'Retry evidence establishes the current revision boundary.' \
   > "$TARGET/investigation-evidence.md"

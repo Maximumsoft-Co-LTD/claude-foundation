@@ -220,6 +220,13 @@ migration constraint ยังไม่ชัด หรือยังไม่�
 `openspec/investigations/<id>.report.md` ส่วน JSON ยังคงเป็น record สำหรับระบบ
 รายงานอธิบายผลและขั้นตอนถัดไปโดยไม่เริ่ม Change และรักษา note ที่ผู้ใช้เขียนไว้
 
+ก่อนและระหว่างสืบ Agent จะเก็บผลลัพธ์ที่คุณต้องการ requirement ตัวอย่าง
+ข้อจำกัด ข้อยกเว้น สิ่งที่ไม่รวม คำตอบ และคำแก้ไขไว้ใน investigation record
+ถามเฉพาะความหมายสำคัญที่ยังไม่ชัด และทำงานอิสระต่อระหว่างรอคำตอบ
+คำสั่งที่ชัดไม่ต้องยืนยันซ้ำ ข้อเสนอของ Agent หรือความเงียบไม่ใช่การตกลง
+ประวัติ revision และการตัดสินใจยังอยู่เมื่อ resume ส่วนประวัติที่เข้าถึงไม่ได้
+ต้องระบุอย่างตรงไปตรงมา ผล PoC ต้องบอกคำถาม เกณฑ์ตัดสิน และข้อจำกัด
+
 Agent จะอ่าน code ที่เกี่ยวข้องแล้วแยกผลลัพธ์เป็น:
 
 - Fact ที่ตรวจยืนยันจาก code แล้ว
@@ -240,7 +247,12 @@ Agent เริ่มจาก `claude-foundation investigate --template` แล
 ที่ปรับตามหลักฐานเข้า `claude-foundation investigate <record.json>` Harness จะ
 ค้นและ hash source, ตรวจ link ของ fact กับ hypothesis, เก็บ no-progress และ
 effectiveness metrics แล้วคืน typed action ถ้าพร้อมเข้า Change ผลลัพธ์จะมี
-handoff ที่ผูก digest และ Change ต้องตรวจอีกครั้ง
+handoff ที่ผูก digest และ Change ต้องตรวจอีกครั้ง V2 จะส่ง requirement
+และบริบทล่าสุดไปด้วย Change ต้องเชื่อม requirement สำคัญของผู้ใช้กับ
+scenario ใน spec, non-goal หรือ design decision ที่มีอยู่จริง และรักษา
+ตัวอย่าง ข้อยกเว้น คำตอบ และข้อจำกัดของผลทดลองในเอกสาร Agent ซ่อม coverage
+ที่ขาดและตรวจความหมายหลัง compile เอง โดยไม่เพิ่มขั้นอนุมัติใหม่
+record รุ่น V1 ยังใช้ต่อได้
 
 ถ้าได้ `ready for /change` ให้นำ finding ที่ยอมรับแล้วเข้า durable agreement:
 

@@ -1,4 +1,5 @@
 import { scopeAllowsPath } from "../../core/graph-execution.mjs";
+import { renderRetainedInvestigation } from "./investigation-coverage.mjs";
 import { lightweightDraft } from "./design-blueprints.mjs";
 
 // Reader guide: the parts of a compiled packet written for a human reviewer
@@ -202,12 +203,12 @@ export function renderInvestigationSummary(investigation) {
     `- **Summary:** ${cell(investigation.summary)}`;
 }
 
-export function renderInvestigationAppendix(investigation) {
+export function renderInvestigationAppendix(investigation, language = "en") {
   if (!investigation) return "";
   return "## Appendix: investigation provenance\n\n" +
     `- **Change intent:** ${cell(investigation.changeIntent)}\n` +
     `- **State:** ${cell(investigation.statePath)} @ ${cell(investigation.stateDigest)}\n` +
-    `- **Sources:** ${cell(investigation.sourceDigest)}`;
+    `- **Sources:** ${cell(investigation.sourceDigest)}` + renderRetainedInvestigation(investigation, language);
 }
 
 export function renderDesignOverview(draft) {

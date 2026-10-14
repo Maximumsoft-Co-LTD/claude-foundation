@@ -65,6 +65,56 @@ const labels = {
   }
 };
 
+
+function renderIntake(record, state, language) {
+  if (record.version !== 2) return "";
+  const th = language.toLowerCase().startsWith("th");
+  const l = th ? {
+    title: "ความต้องการและบริบทที่บันทึกไว้", goal: "เป้าหมาย", outcome: "ผลลัพธ์ที่ต้องการ",
+    requirements: "ข้อกำหนดล่าสุด", history: "ประวัติข้อกำหนด", conversation: "สาระจากบทสนทนา",
+    questions: "คำถามและคำตอบ", experiments: "ผลทดลองและข้อจำกัด (ไม่ใช่ proof)",
+    work: "งานอิสระที่ทำต่อได้", gaps: "ช่องว่างของประวัติที่เข้าถึงไม่ได้",
+    source: "ที่มา", reason: "เหตุผล", criteria: "เกณฑ์ตัดสิน", findings: "ผลที่พบ",
+    limitations: "ข้อจำกัด", review: "ต้องทบทวนตาม requirement รุ่นล่าสุด", scope: "ขอบเขต", actors: "ผู้เกี่ยวข้อง"
+  } : {
+    title: "Retained requirements and context", goal: "Goal", outcome: "Desired outcome",
+    requirements: "Current requirements", history: "Requirement history", conversation: "Conversation context",
+    questions: "Questions and answers", experiments: "Experiments and limitations (not proof)",
+    work: "Independent work that may continue", gaps: "Unavailable history gaps",
+    source: "Origin", reason: "Reason", criteria: "Criteria", findings: "Findings",
+    limitations: "Limitations", review: "Needs review against current requirements", scope: "Scope", actors: "Actors"
+  };
+  const section = (title, values) => values.length
+    ? `\n### ${title}\n\n${values.map((v) => `- ${v}`).join("\n")}\n` : "";
+  const intake = state.intake || record;
+  let result = `\n## ${l.title}\n\n`;
+  if (intake.intent?.goal) result += `**${l.goal}:** ${escape(intake.intent.goal)}\n\n`;
+  if (intake.intent?.outcome) result += `**${l.outcome}:** ${escape(intake.intent.outcome)}\n\n`;
+  result += section(l.actors, rows(intake.intent?.actors).map(escape));
+  result += section(l.scope, rows(intake.intent?.scope).map(escape));
+  const requirement = (r) => `**${escape(r.key)}@${escape(r.revision)}** [${escape(r.kind)} / ${escape(r.status)}] ${escape(r.statement)}; ${l.source}: ${escape(r.origin)} (${rows(r.conversationKeys).map(escape).join(", ")})` +
+    (r.reason ? `; ${l.reason}: ${escape(r.reason)}` : "") +
+    (r.supersededBy ? `; → ${escape(r.supersededBy.key)}@${escape(r.supersededBy.revision)}` : "") +
+    (rows(r.examples).length ? `; examples: ${rows(r.examples).map(escape).join(" / ")}` : "") +
+    (rows(r.criteria).length ? `; ${l.criteria}: ${rows(r.criteria).map(escape).join(" / ")}` : "");
+  const retained = rows(intake.requirements).filter((r) => r && typeof r === "object");
+  result += section(l.requirements, retained.filter((r) => !["superseded", "cancelled"].includes(r.status)).map(requirement));
+  result += section(l.history, retained.filter((r) => ["superseded", "cancelled"].includes(r.status)).map(requirement));
+  result += section(l.questions, rows(intake.questions).filter(Boolean).map((q) =>
+    `**${escape(q.key)}** [${escape(q.status)}]: ${escape(q.question)}` +
+    (q.answer ? ` → ${escape(q.answer)} (${rows(q.conversationKeys).map(escape).join(", ")})` : "") +
+    (q.reason ? `; ${l.reason}: ${escape(q.reason)}` : "")));
+  const stale = new Set(rows(state.action?.staleExperiments));
+  result += section(l.experiments, rows(intake.experiments).filter(Boolean).map((e) =>
+    `**${escape(e.key)}** [${stale.has(e.key) ? l.review : escape(e.status)}]: ${escape(e.question)}; ${l.criteria}: ${rows(e.criteria).map(escape).join(" / ")}; ${l.findings}: ${rows(e.findings).map(escape).join(" / ")}; ${l.limitations}: ${rows(e.limitations).map(escape).join(" / ")}; refs: ${rows(e.requirementRefs).map((r) => `${escape(r?.key)}@${escape(r?.revision)}`).join(", ")}` +
+    (e.supersededBy ? `; → ${escape(e.supersededBy)} (${escape(e.reason)})` : "")));
+  result += section(l.work, rows(state.action?.independentWork).map((w) => `${escape(w.key)}: ${escape(w.outcome)}`));
+  result += section(l.conversation, rows(intake.conversation).filter(Boolean).map((e) =>
+    `**${escape(e.key)}** [${escape(e.speaker)}]: ${escape(e.statement)} (${escape(e.source)})`));
+  result += section(l.gaps, rows(intake.historyGaps).map(escape));
+  return result;
+}
+
 export function renderInvestigationReport({ record, state, projectRoot, sourceRoot, path,
   validationIssues = [] }) {
   const language = String(record.language || (/\p{Script=Thai}/u.test(record.problem || "") ? "th" : "en"));
@@ -83,6 +133,7 @@ export function renderInvestigationReport({ record, state, projectRoot, sourceRo
     `**${l.status}:** ${complete ? l.current : l.incomplete}\n\n` +
     `${l.updated}: ${escape(state.updatedAt)} · ${escape(state.stateDigest)}\n`;
   output += section(l.problem, escape(record.problem));
+  output += renderIntake(record, state, language);
   output += section(l.current, escape(state.conclusion?.summary || l.none));
   output += section(l.recommendation, state.selection
     ? `${escape(state.selection.optionKey)} — ${escape(state.selection.reason)}\n\n` +

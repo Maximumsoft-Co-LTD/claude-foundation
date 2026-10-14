@@ -1,0 +1,333 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "durable-intake-requirement-session",
+      "requirementKey": "durable-intake",
+      "scenario": "เก็บความต้องการและบทสนทนา",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "durable-intake-2",
+      "requirementKey": "durable-intake",
+      "scenario": "ขอบเขตของเก็บความต้องการและบทสนทนา",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "durable-intake-missing-history",
+      "requirementKey": "durable-intake",
+      "scenario": "รายการสำคัญหาย",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "durable-intake-partial-correction",
+      "requirementKey": "durable-intake",
+      "scenario": "คำแก้ไขบางส่วน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "durable-intake-history-gap",
+      "requirementKey": "durable-intake",
+      "scenario": "ประวัติที่เข้าถึงไม่ได้",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "nonblocking-questions-1",
+      "requirementKey": "nonblocking-questions",
+      "scenario": "สอบถามโดยทำงานต่อได้",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "nonblocking-questions-2",
+      "requirementKey": "nonblocking-questions",
+      "scenario": "ขอบเขตของสอบถามโดยทำงานต่อได้",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "nonblocking-questions-open-question",
+      "requirementKey": "nonblocking-questions",
+      "scenario": "คำถามปลายเปิด",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "nonblocking-questions-independent-work",
+      "requirementKey": "nonblocking-questions",
+      "scenario": "งานอิสระระหว่างรอ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "nonblocking-questions-no-silent-consent",
+      "requirementKey": "nonblocking-questions",
+      "scenario": "ยังไม่ได้ยอมรับ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "nonblocking-questions-reuse-answer",
+      "requirementKey": "nonblocking-questions",
+      "scenario": "ไม่ถามซ้ำ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "experiment-coverage-requirement-prototype",
+      "requirementKey": "experiment-coverage",
+      "scenario": "ทดลองตาม requirement",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "experiment-coverage-2",
+      "requirementKey": "experiment-coverage",
+      "scenario": "ขอบเขตของทดลองตาม requirement",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "experiment-coverage-selective-staleness",
+      "requirementKey": "experiment-coverage",
+      "scenario": "ผลทดลองเฉพาะส่วน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "experiment-coverage-prototype-not-proof",
+      "requirementKey": "experiment-coverage",
+      "scenario": "ข้อจำกัดต้นแบบ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "fresh-handoff-requirement-handoff",
+      "requirementKey": "fresh-handoff",
+      "scenario": "ส่งต่อข้อมูลล่าสุด",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "fresh-handoff-2",
+      "requirementKey": "fresh-handoff",
+      "scenario": "ขอบเขตของส่งต่อข้อมูลล่าสุด",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "fresh-handoff-ready-not-confirmation",
+      "requirementKey": "fresh-handoff",
+      "scenario": "ไม่บังคับอนุมัติทุกข้อ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "fresh-handoff-stale-request",
+      "requirementKey": "fresh-handoff",
+      "scenario": "ข้อมูลล่าสุดเปลี่ยน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "readable-report-record",
+      "requirementKey": "readable-report",
+      "scenario": "รายงานบริบทครบ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "readable-report-2",
+      "requirementKey": "readable-report",
+      "scenario": "ขอบเขตของรายงานบริบทครบ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "readable-report-report-recovery",
+      "requirementKey": "readable-report",
+      "scenario": "กู้รายงาน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "detailed-change-compile-draft-requirement-design",
+      "requirementKey": "detailed-change",
+      "scenario": "เอกสาร Change ละเอียด",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "detailed-change-2",
+      "requirementKey": "detailed-change",
+      "scenario": "ขอบเขตของเอกสาร Change ละเอียด",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "detailed-change-preserve-details",
+      "requirementKey": "detailed-change",
+      "scenario": "รายละเอียดหลัง compile",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "detailed-change-no-empty-design",
+      "requirementKey": "detailed-change",
+      "scenario": "ไม่เพิ่มเอกสารว่าง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "compiled-coverage-change-target",
+      "requirementKey": "compiled-coverage",
+      "scenario": "ตรวจความครบใน packet",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "compiled-coverage-2",
+      "requirementKey": "compiled-coverage",
+      "scenario": "ขอบเขตของตรวจความครบใน packet",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "compiled-coverage-missing-target",
+      "requirementKey": "compiled-coverage",
+      "scenario": "ปลายทางไม่มีอยู่จริง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "compiled-coverage-many-to-many",
+      "requirementKey": "compiled-coverage",
+      "scenario": "coverage หลายต่อหลาย",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "compiled-coverage-amendment-coverage",
+      "requirementKey": "compiled-coverage",
+      "scenario": "coverage หลังแก้ agreement",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "compatibility-record-activechange",
+      "requirementKey": "compatibility",
+      "scenario": "รองรับรุ่นเก่าและ shipping",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "compatibility-2",
+      "requirementKey": "compatibility",
+      "scenario": "ขอบเขตของรองรับรุ่นเก่าและ shipping",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "compatibility-legacy-binding",
+      "requirementKey": "compatibility",
+      "scenario": "handoff รุ่นเดิม",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "compatibility-stale-sandbox",
+      "requirementKey": "compatibility",
+      "scenario": "workspace ไม่สด",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/investigation-runtime.test.mjs) && (node --test .claude/harness/tests/investigation-runtime.test.mjs .claude/harness/tests/semantic-draft.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh) && (env FOUNDATION_TEST_JOBS=8 FOUNDATION_SUITE_TIMEOUT_SECONDS=900 bash .claude/tests/run-all.sh && rtk git diff --check)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

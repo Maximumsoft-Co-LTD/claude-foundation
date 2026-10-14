@@ -8,6 +8,10 @@ import {
 } from "./semantic-draft.mjs";
 import { coverageRationale, coverageStatus } from "./validation/reader-guide.mjs";
 import { scopeAllowsPath } from "../core/graph-execution.mjs";
+import {
+  amendmentInvestigationSource, investigationCoverageIssues,
+  renderInvestigationCoverage, renderRetainedInvestigation
+} from "./validation/investigation-coverage.mjs";
 
 const stringList = (value) => Array.isArray(value)
   ? value.map((item) => String(item || "").trim()).filter(Boolean) : [];
@@ -641,9 +645,11 @@ function amendmentIssues(amendment) {
 export function compileSemanticAmendment({
   amendment, contract, tasksContent, slugify, renderTask, semanticDraftVersion = 3,
   loadCanonicalSpec = null, provenClaimIds = [], retiredTaskIds = [],
-  repositories = null, repositorySelection = null
+  repositories = null, repositorySelection = null, investigationSource = null
 }) {
   const issues = amendmentIssues(amendment);
+  const investigationAgreement = amendmentInvestigationSource(investigationSource, amendment);
+  if (investigationAgreement) issues.push(...investigationCoverageIssues(investigationAgreement));
   if (![3, 4].includes(semanticDraftVersion))
     issues.push("semantic amendment requires semanticDraftVersion 3 or 4");
   const existingClaims = contract.claims || [];
@@ -1039,6 +1045,7 @@ export function compileSemanticAmendment({
       priorScenarios: priorScenarios(keyOf(row))
     })),
     discovery: normalized.draft.discovery,
+    investigationAgreement,
     amendmentReason: amendment.reason || "Agreement expanded during Build",
     invalidatedClaims: unique([...addedClaimIds, ...changedClaimIds, ...taskContractClaimIds,
       ...removedTaskClaimIds]),
@@ -1102,6 +1109,13 @@ function rewriteRequirementBlock(dir, key, scenarios, replacement, target = null
 }
 
 export function writeSemanticAmendment(dir, compiled, slugify, { schema } = {}) {
+  if (compiled.investigationAgreement) {
+    const proposal = join(dir, "proposal.md");
+    const context = compiled.investigationAgreement;
+    const retained = `\n\n## Latest amended investigation agreement\n\n` +
+      renderInvestigationCoverage(context) + renderRetainedInvestigation(context.investigation, context.language);
+    writeFileSync(proposal, readFileSync(proposal, "utf8") + retained);
+  }
   writeFileSync(join(dir, "tasks.md"), compiled.tasksContent);
   const evidencePath = join(dir, "evidence.yaml");
   const contract = JSON.parse(readFileSync(evidencePath, "utf8"));

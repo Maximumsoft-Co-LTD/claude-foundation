@@ -219,6 +219,49 @@ claude-foundation doctor --stage prove --change <change>
 
 ## Primary agent commands
 
+### Investigation intake records
+
+`investigate --template` now emits record v2; v1 records, states, and handoffs
+remain readable. `purpose: research` permits a facts-only investigation;
+`purpose: change` retains the intent of a feature, improvement, or bug. Command
+names and arguments are unchanged. See [the lifecycle contract](../../WORKFLOW.md#investigate-problem)
+for boundaries and authority.
+
+| Field | Record shape |
+|---|---|
+| `intent` | `{goal, outcome, actors: [], scope: []}`; goal and outcome required when a change is ready |
+| `conversation` | `[{key, speaker: user\|agent, statement, source}]`; cite accessible messages/notes, retain events unchanged |
+| `requirements` | `[{key, revision, kind, statement, origin: user\|agent, status, material, conversationKeys: []}]`; optional `examples`, `criteria`, retirement `reason`, `supersededBy: {key, revision}` |
+| `questions` | `[{key, question, material, status: open\|answered\|deferred, dependsOn: [], workKeys: []}]`; answered rows need `answer` and user `conversationKeys`; deferral needs `reason`; alternatives/recommendation optional |
+| `work` | `[{key, outcome, questionKeys: []}]`; work is independent when all named questions are answered |
+| `experiments` | `[{key, question, criteria: [], material, status: planned\|complete, requirementRefs: [{key, revision}]}]`; complete rows need `findings` and `limitations`; optional bounded `prototypePaths`; retain results and supersede under a new key with `supersededBy` and `reason` |
+| `historyGaps` | Nonempty strings identifying unavailable conversation context; do not claim missing messages were read |
+
+Requirement kinds are `behavior`, `constraint`, `example`, `exception`,
+`non-goal`, and `success-criterion`. Statuses are `stated`, `confirmed`,
+`proposed`, `unresolved`, `superseded`, and `cancelled`. Explicit user intent
+can be `stated` without another confirmation; `confirmed` and user-origin
+rows must cite a user event. A material proposal or unresolved question cannot
+become an agreement by silence. Revision content and provenance are retained;
+invalid edits preserve the last validated intake for agent repair.
+
+V2 handoffs bind intake content as well as sources and workspace. Change
+authors `investigationCoverage: [{sourceKey, sourceRevision, targets: []}]`.
+Each target is `{kind: requirement, key: <requirement-key>}`, or
+`{kind: scenario, key: <requirement-key>, scenario: <scenario-key-or-name>}`,
+or `{kind: non-goal, key: <exact-non-goal-text>}`, or
+`{kind: design, key: <decision-key>}`. Every active material stated/confirmed
+requirement needs a real target. Several sources can share a target; a source
+can have several targets. Revised/amended agreements retain coverage. Links
+prove structural completeness, not semantic equivalence; the agent compares
+meaning in the compiled packet. Legacy changes need no retroactive mapping.
+
+When material questions remain, the typed action includes `pendingQuestions`
+and `independentWork`. Continue independent investigation while asking for
+the answer; do not perform dependent work or add blanket confirmation gates.
+
+### Command reference
+
 | Command | What it does | When to use it |
 |---|---|---|
 | `investigate --template` | Prints the versioned source/fact/hypothesis record | Starting a bounded investigation |

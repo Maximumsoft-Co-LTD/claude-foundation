@@ -15,6 +15,14 @@ comparison: 2026-10-08, no-harness/v3.6.0/v3.6.1/v3.6.2.
 
 ## Current scenario checkpoint
 
+The [2026-10-15 investigation continuity smoke](investigation-continuity-smoke-2026-10-15.md)
+([ภาษาไทย](investigation-continuity-smoke-2026-10-15.th.md)) verifies one
+dirty-source `notes-api` delivery at archived, oracle 13/13, zero pending tasks,
+and passing clean-install checks for US$0.5192617. It is development smoke;
+the paid multi-turn Investigate interaction and full candidate portfolio were
+not exercised. Published-release assurance and the existing tracker finding
+remain open.
+
 ### v3.6.3 publication decision — 2026-10-11
 
 After reviewing the 9/10 result and the retained tracker failure, the maintainer

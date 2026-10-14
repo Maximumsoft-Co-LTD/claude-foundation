@@ -521,3 +521,249 @@ test("report represents pending user choices and a no-change conclusion without 
   assert.equal(done.handoff, null);
   assert.match(readFileSync(join(value.root, done.report.path), "utf8"), /no Change recommended/);
 });
+
+function intakeFixture(t) {
+  const value = fixture(t);
+  Object.assign(value.record, {
+    ...investigationRecordTemplate(), id: "retry-race", purpose: "change",
+    problem: "Explore safe profile retries", sources: ["evidence.md"],
+    facts: [{ key: "revision", statement: "Retries need revision checks", sources: ["evidence.md"] }],
+    hypotheses: [], intent: { goal: "Preserve newer writes", outcome: "Reject stale revisions" },
+    conversation: [{ key: "request", speaker: "user", statement: "Reject stale writes", source: "session:message:1" }],
+    requirements: [{ key: "retry", revision: 1, kind: "behavior", statement: "Reject stale writes",
+      origin: "user", status: "stated", material: true, conversationKeys: ["request"] }],
+    conclusion: { summary: "Use revision checks" }, changeIntent: "Reject stale profile writes"
+  });
+  value.save = () => writeFileSync(value.recordPath, JSON.stringify(value.record));
+  value.inspect = () => { value.save(); return quiet(() => value.runtime.inspectInvestigation("openspec/investigations/retry-race.json")); };
+  value.state = (result) => value.readJson(join(value.root, result.state.path));
+  return value;
+}
+
+test("v2 explicit requirements are ready without a blanket confirmation and remain digest-bound", (t) => {
+  const v = intakeFixture(t), done = v.inspect();
+  assert.equal(done.action, "DONE");
+  assert.equal(done.handoff.version, 2);
+  assert.equal(done.handoff.intake.requirements[0].status, "stated");
+  assert.deepEqual(validateInvestigationBinding({ projectRoot: v.root, binding: done.handoff }), []);
+  const tampered = structuredClone(done.handoff);
+  tampered.intake.requirements[0].statement = "Accept stale writes";
+  assert.match(validateInvestigationBinding({ projectRoot: v.root, binding: tampered }).join("\n"), /intake digest/);
+  v.record.conversation.push({ key: "correction", speaker: "user", statement: "Only retry writes", source: "session:message:2" });
+  v.save();
+  assert.match(validateInvestigationBinding({ projectRoot: v.root, binding: done.handoff }).join("\n"), /request changed/);
+});
+
+test("downgrading a retained v2 record cannot erase history or bypass its material questions", (t) => {
+  const v = intakeFixture(t); v.inspect();
+  v.record.version = 1;
+  v.record.requirements = [];
+  const result = v.inspect();
+  assert.equal(result.action, "EDIT");
+  assert.match(result.investigation.issues.join("\n"), /cannot downgrade/);
+  assert.equal(v.state(result).validatedIntake.requirements[0].key, "retry");
+});
+
+test("missing requirement history preserves the validated baseline across repeated failed edits", (t) => {
+  const v = intakeFixture(t); v.inspect();
+  v.record.requirements = [];
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const failed = v.inspect();
+    assert.equal(failed.action, "EDIT");
+    assert.equal(failed.owner, "agent");
+    assert.equal(failed.handoff, null);
+    assert.equal(v.state(failed).validatedIntake.requirements[0].key, "retry");
+  }
+  v.record.requirements = v.state(v.inspect()).validatedIntake.requirements;
+  assert.equal(v.inspect().action, "DONE");
+});
+
+test("partial correction retains old revisions, unrelated constraints and conversation after resume", (t) => {
+  const v = intakeFixture(t);
+  v.record.requirements.push({ ...v.record.requirements[0], key: "no-delete", kind: "constraint",
+    statement: "Never delete profiles" });
+  v.inspect();
+  v.record.conversation.push({ key: "correct", speaker: "user", statement: "Reject only stale retries", source: "session:message:2" });
+  Object.assign(v.record.requirements[0], { status: "superseded", reason: "User narrowed scope",
+    supersededBy: { key: "retry", revision: 2 } });
+  v.record.requirements.push({ key: "retry", revision: 2, kind: "behavior", statement: "Reject stale retries",
+    origin: "user", status: "stated", material: true, conversationKeys: ["correct"] });
+  const result = v.inspect(), state = v.state(result);
+  assert.equal(result.action, "DONE");
+  assert.equal(state.intake.requirements.length, 3);
+  assert.equal(state.intake.requirements[1].statement, "Never delete profiles");
+  assert.equal(state.intake.conversation.length, 2);
+  assert.equal(v.inspect().action, "DONE");
+});
+
+test("editing a requirement in place or dropping conversation is agent-owned repair", (t) => {
+  const v = intakeFixture(t); v.inspect();
+  v.record.requirements[0].statement = "Allow stale writes";
+  assert.match(v.inspect().investigation.issues.join("\n"), /new revision/);
+  v.record.requirements[0].statement = "Reject stale writes";
+  v.record.conversation = [];
+  assert.match(v.inspect().investigation.issues.join("\n"), /conversation.*disappeared/);
+});
+
+test("open requirement questions need no forced alternatives and permit independent work", (t) => {
+  const v = intakeFixture(t);
+  v.record.questions = [{ key: "goal", question: "What should success mean?", material: true, status: "open" }];
+  v.record.work = [
+    { key: "read", outcome: "Inspect revision guard", questionKeys: [] },
+    { key: "choose", outcome: "Implement selected semantics", questionKeys: ["goal"] }
+  ];
+  const result = v.inspect();
+  assert.equal(result.action, "ASK_USER");
+  assert.equal(result.decision.items[0].question, "What should success mean?");
+  assert.deepEqual(result.decision.items[0].alternatives, []);
+  assert.deepEqual(result.independentWork.map((w) => w.key), ["read"]);
+  assert.equal(result.handoff, null);
+  v.record.conversation.push({ key: "answer", speaker: "user", statement: "Reject stale writes", source: "session:message:2" });
+  Object.assign(v.record.questions[0], { status: "answered", answer: "Reject stale writes", conversationKeys: ["answer"] });
+  assert.equal(v.inspect().action, "DONE");
+});
+
+test("an agent suggestion or silent user cannot become confirmed intent", (t) => {
+  const v = intakeFixture(t);
+  v.record.conversation.push({ key: "suggest", speaker: "agent", statement: "Maybe delete profiles", source: "session:message:2" });
+  v.record.requirements.push({ key: "delete", revision: 1, kind: "behavior", statement: "Delete profiles",
+    origin: "agent", status: "proposed", material: true, conversationKeys: ["suggest"] });
+  assert.equal(v.inspect().action, "ASK_USER");
+  v.record.requirements[1].status = "confirmed";
+  assert.equal(v.inspect().action, "EDIT");
+  v.record.requirements[1].status = "proposed";
+  v.record.requirements[1].material = false;
+  assert.equal(v.inspect().action, "EDIT"); // changing materiality also needs a new revision
+  const optional = intakeFixture(t);
+  optional.record.conversation.push(v.record.conversation[1]);
+  optional.record.requirements.push(v.record.requirements[1]);
+  assert.equal(optional.inspect().action, "DONE");
+});
+
+test("nonmaterial open questions do not block a clear change", (t) => {
+  const v = intakeFixture(t);
+  v.record.questions = [{ key: "future", question: "Should a future version support history?", material: false, status: "open" }];
+  const result = v.inspect();
+  assert.equal(result.action, "DONE");
+  assert.equal(result.pendingQuestions.length, 1);
+  assert.ok(result.handoff);
+});
+
+test("question dependency cycles and nonexistent work links are repaired by the agent", (t) => {
+  const v = intakeFixture(t);
+  v.record.questions = [
+    { key: "a", question: "A?", status: "open", material: true, dependsOn: ["b"] },
+    { key: "b", question: "B?", status: "open", material: true, dependsOn: ["a"], workKeys: ["missing"] }
+  ];
+  const result = v.inspect();
+  assert.equal(result.action, "EDIT");
+  assert.match(result.investigation.issues.join("\n"), /cycle/);
+  assert.match(result.investigation.issues.join("\n"), /unknown work/);
+});
+
+test("stale experiments selectively require review and retain their previous results", (t) => {
+  const v = intakeFixture(t);
+  v.record.requirements.push({ ...v.record.requirements[0], key: "other", statement: "Keep unrelated behavior" });
+  const experiment = { key: "poc", question: "Does the guard reject stale retries?", criteria: ["stale retries rejected"],
+    material: true, status: "complete", findings: ["guard rejects stale writes"], limitations: ["local fixture only"],
+    requirementRefs: [{ key: "retry", revision: 1 }], prototypePaths: [".foundation/prototypes/retry-race/poc.js"] };
+  v.record.experiments = [experiment, { ...experiment, key: "other-poc", requirementRefs: [{ key: "other", revision: 1 }] }];
+  v.inspect();
+  v.record.conversation.push({ key: "correct", speaker: "user", statement: "Reject only retries", source: "session:message:2" });
+  Object.assign(v.record.requirements[0], { status: "superseded", reason: "scope changed", supersededBy: { key: "retry", revision: 2 } });
+  v.record.requirements.push({ ...v.record.requirements[1], key: "retry", revision: 2, statement: "Reject stale retries", conversationKeys: ["correct"] });
+  const stale = v.inspect();
+  assert.equal(stale.action, "EDIT");
+  assert.equal(stale.boundary, "experiment-review");
+  assert.deepEqual(stale.staleExperiments, ["poc"]);
+  v.record.experiments.push({ ...experiment, key: "poc-v2", requirementRefs: [{ key: "retry", revision: 2 }] });
+  Object.assign(experiment, { supersededBy: "poc-v2", reason: "Rechecked narrowed requirement" });
+  assert.equal(v.inspect().action, "DONE");
+  assert.equal(v.record.experiments[0].findings[0], "guard rejects stale writes");
+});
+
+test("completed experiment output cannot be overwritten and prototype paths stay bounded", (t) => {
+  const v = intakeFixture(t);
+  v.record.experiments = [{ key: "poc", question: "Works?", criteria: ["reject"], status: "complete",
+    material: false, findings: ["rejects"], limitations: ["fixture"], requirementRefs: [{ key: "retry", revision: 1 }] }];
+  v.inspect();
+  v.record.experiments[0].findings = ["accepts"];
+  assert.match(v.inspect().investigation.issues.join("\n"), /completed result changed/);
+  v.record.experiments[0].findings = ["rejects"];
+  v.record.experiments[0].prototypePaths = [".foundation/prototypes/retry-race/../outside.js"];
+  assert.match(v.inspect().investigation.issues.join("\n"), /prototypePaths/);
+});
+
+test("a planned material feasibility experiment cannot be silently treated as completed", (t) => {
+  const v = intakeFixture(t);
+  v.record.conclusion.status = "ready-for-change";
+  v.record.experiments = [{ key: "poc", question: "Does retry duplicate writes?", criteria: ["one write"],
+    status: "planned", material: true, requirementRefs: [{ key: "retry", revision: 1 }] }];
+  const result = v.inspect();
+  assert.equal(result.action, "EDIT");
+  assert.equal(result.boundary, "experiment-execution");
+  assert.equal(result.handoff, null);
+});
+
+test("a grounded no-change conclusion need not resolve questions for a change that is not proposed", (t) => {
+  const v = intakeFixture(t);
+  v.record.questions = [{ key: "future", question: "Which implementation would be wanted?", status: "open", material: true }];
+  v.record.conclusion = { status: "not-worth-changing", summary: "The existing guard already meets the need" };
+  const result = v.inspect();
+  assert.equal(result.action, "DONE");
+  assert.equal(result.handoff, null);
+});
+
+test("malformed intake rows return repair findings rather than crashing or producing a handoff", (t) => {
+  for (const field of ["requirements", "conversation", "questions", "work", "experiments"]) {
+    for (const retained of [false, true]) {
+      const v = intakeFixture(t);
+      if (retained) assert.equal(v.inspect().action, "DONE");
+      const original = v.record[field];
+      v.record[field] = [null];
+      const result = v.inspect();
+      assert.equal(result.action, "EDIT", field);
+      assert.equal(result.handoff, null, field);
+      v.record[field] = original;
+      assert.equal(v.inspect().action, "DONE", `${field}: corrected record resumes`);
+    }
+  }
+});
+
+test("malformed dependency lists cannot advertise dependent work as independent", (t) => {
+  const v = intakeFixture(t);
+  v.record.questions = [{ key: "policy", question: "Which behavior?", material: true, status: "open" }];
+  v.record.work = [{ key: "dependent", outcome: "Research the selected behavior", questionKeys: "policy" }];
+  const result = v.inspect();
+  assert.equal(result.action, "EDIT");
+  assert.equal(result.handoff, null);
+  assert.ok(!result.independentWork?.some((row) => row.key === "dependent"));
+});
+
+test("malformed retained detail arrays require repair instead of silently dropping context", (t) => {
+  const cases = [
+    (record) => { record.intent.scope = "profile updates"; },
+    (record) => { record.requirements[0].examples = "retry after a timeout"; },
+    (record) => { record.requirements[0].criteria = "newer writes survive"; }
+  ];
+  for (const mutate of cases) {
+    const v = intakeFixture(t);
+    mutate(v.record);
+    const result = v.inspect();
+    assert.equal(result.action, "EDIT");
+    assert.equal(result.handoff, null);
+  }
+});
+
+test("v2 Thai report retains requirement context, answers, independent work and missing history", (t) => {
+  const v = intakeFixture(t);
+  v.record.language = "th";
+  v.record.historyGaps = ["ข้อความจาก session เก่าเข้าถึงไม่ได้"];
+  v.record.requirements[0].examples = ["retry หลัง timeout"];
+  v.record.questions = [{ key: "future", question: "รองรับประวัติในอนาคตไหม", status: "open", material: false }];
+  v.record.work = [{ key: "read", outcome: "อ่าน guard ต่อได้", questionKeys: [] }];
+  const result = v.inspect();
+  const report = readFileSync(join(v.root, result.report.path), "utf8");
+  for (const detail of ["ข้อกำหนดล่าสุด", "Reject stale writes", "retry หลัง timeout", "รองรับประวัติในอนาคตไหม", "อ่าน guard ต่อได้", "ข้อความจาก session เก่าเข้าถึงไม่ได้", "session:message:1"])
+    assert.ok(report.includes(detail), detail);
+});

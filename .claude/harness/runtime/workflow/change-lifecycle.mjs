@@ -47,6 +47,8 @@ import {
   semanticAmendmentTemplate, taskContractOnlyAmendment, taskRepositoryIssues, verifyPathIssues,
   writeSemanticAmendment
 } from "./semantic-amendment.mjs";
+import { amendmentInvestigationSource, investigationCoverageIssues,
+  renderInvestigationCoverage } from "./validation/investigation-coverage.mjs";
 import { validateInvestigationBinding } from "./investigation-runtime.mjs";
 import {
   designBlueprintWarnings, draftHasBlueprints, draftWorkTypes, renderDesignBlueprints, renderWorkType,
@@ -496,8 +498,9 @@ export function renderDraftProposal(draft, state, context = {}) {
     ].join("\n") +
     decisions + nonGoals + section(renderDerivedNotes(draft, rapid)) +
     section(renderInvestigationSummary(draft.investigation)) +
+    section(renderInvestigationCoverage(draft)) +
     section(renderDiscoveryAppendix(draft)) +
-    section(renderInvestigationAppendix(draft.investigation)) + "\n";
+    section(renderInvestigationAppendix(draft.investigation, draft.language)) + "\n";
 }
 
 // Keeps the harness-owned facts of a proposal current when resolve changes
@@ -1486,7 +1489,7 @@ export function createChangeLifecycle({
         : []),
       ...semanticReferenceIssues(normalized.draft),
       ...extraIssues,
-      ...(source.version === 4 && source.investigation !== undefined
+      ...(source.investigation !== undefined
         ? validateInvestigationBinding({ projectRoot: root, binding: source.investigation, git })
           .map((issue) => `investigation ${issue}`)
         : []),
@@ -1629,7 +1632,11 @@ export function createChangeLifecycle({
         existsSync(tasksPath) ? readFileSync(tasksPath, "utf8") : "",
         { exists: (candidate) => existsSync(join(workspaceRoot, candidate)) ||
           existsSync(join(root, candidate)) }),
-      ...amendmentRepositoryIssues(id, active, amendment)]
+      ...amendmentRepositoryIssues(id, active, amendment),
+      ...investigationCoverageIssues(amendmentInvestigationSource(
+        active.investigationAgreement || active.draftSource?.draft, amendment)),
+      ...(amendment.investigation ? validateInvestigationBinding({
+        projectRoot: root, binding: amendment.investigation, git }) : [])]
     });
   }
 
@@ -2481,6 +2488,10 @@ export function createChangeLifecycle({
     if (!pathInside(root, source) || !existsSync(source))
       fail("change amend requires a JSON file inside the project");
     const amendment = readJson(source);
+    if (amendment.investigation) {
+      const bindingIssues = validateInvestigationBinding({ projectRoot: root, binding: amendment.investigation, git });
+      if (bindingIssues.length) fail(`investigation amendment binding failed:\n  - ${bindingIssues.join("\n  - ")}`);
+    }
     const amendmentStatePath = semanticIntakeStatePath(amendmentPath, `amend:${id}`);
     let completedAmendmentIntakeEffectiveness = null;
     // A verify-only correction changes no requirement, so it has no semantic
@@ -2527,6 +2538,7 @@ export function createChangeLifecycle({
     const tasksContent = readFileSync(join(basePath, "tasks.md"), "utf8");
     const compiled = compileSemanticAmendment({
       amendment, contract, tasksContent, slugify, renderTask: renderDraftTask,
+      investigationSource: state.investigationAgreement || state.draftSource?.draft,
       semanticDraftVersion: state.semanticDraftVersion,
       provenClaimIds: (amendment?.updateTasks || []).some((task) =>
         task && ["verify", "paths", "dependsOn"].some((field) => Object.hasOwn(task, field))) ||
@@ -2691,6 +2703,7 @@ export function createChangeLifecycle({
         }
       }
       const nextState = loadRuntime(id);
+      if (compiled.investigationAgreement) nextState.investigationAgreement = compiled.investigationAgreement;
       nextState.revision = Number(nextState.revision || 0) + 1;
       nextState.contractRevision = Number(nextState.contractRevision || 0) + 1;
       nextState.executionRevision = Number(nextState.executionRevision || 0) + 1;

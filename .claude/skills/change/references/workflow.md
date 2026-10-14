@@ -7,6 +7,9 @@ decisions from proposals, rejected alternatives, and unresolved choices; an
 assistant suggestion or user silence is not agreement. Use retained project
 notes for unavailable sessions; never claim to have read missing history.
 
+For a v2 binding or detailed-document request, read [investigation-handoff.md](investigation-handoff.md)
+before compile or amend.
+
 Read the smallest canonical sources that settle the behavior: OpenSpec
 requirements, relevant code/tests, architecture decisions, prototype selection,
 and versioned integration documentation. Reuse settled answers without asking them again.
@@ -49,11 +52,10 @@ canonical sources and the user's settled intent:
   Record each settled answer as a resolved `discovery.decisions` row with
   `decidedBy`. Resolve discoverable facts yourself; never invent facts.
 
-Scale detail to behavior and risk, not length.
 Cross-component changes need a boundary/dependency diagram; changed state,
 async, or workflow behavior needs transitions or sequence, including
 failure/recovery paths.
-The packet is the dev document Build executes. The harness infers `workType`
+The harness infers `workType`
 from `paths` and derives folder tree, plan, file and test maps, the failure
 matrix (from `failure` scenarios, else scenarios stating a rejection or error),
 `why` from `intent`, and `test` evidence unless security triggers apply, noting

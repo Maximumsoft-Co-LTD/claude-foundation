@@ -233,6 +233,14 @@ You receive a short summary and a readable
 machine-readable record. The report explains the result and next step without
 starting Change; existing authored notes are preserved.
 
+Before and during research, the agent retains your desired outcome,
+requirements, examples, constraints, exceptions, non-goals, answers, and
+corrections in the investigation record. It asks only for missing material
+meaning and continues independent work while awaiting answers. Clear requests
+need no repeated confirmation; agent suggestions and silence are not agreement.
+Earlier revisions and decisions survive resume, and unavailable history is
+disclosed. PoC results name the question, criteria, and limitations.
+
 The agent reads the relevant code and separates its output into:
 
 - verified, code-grounded facts;
@@ -263,7 +271,12 @@ agreement:
 ```
 
 Investigation does not edit product code and does not silently rewrite the
-formal change. When the change already has a Build sandbox, it examines that
+formal change. V2 handoffs retain the latest requirements and context. Change
+maps material user requirements to real spec scenarios, non-goals, or design
+decisions and preserves examples, exceptions, answers, and experimental
+limitations in its documents. The agent repairs missing coverage and checks
+meaning after compilation; this adds no approval step. V1 records remain supported.
+When the change already has a Build sandbox, it examines that
 sandbox rather than an older main working tree: set the record's optional
 `activeChange` field to that change ID. The handoff binds the sandbox identity,
 base, and source root and fails closed if they are stale or missing. You may investigate again at

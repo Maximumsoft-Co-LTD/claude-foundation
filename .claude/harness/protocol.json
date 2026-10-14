@@ -4,7 +4,7 @@
   "semanticDraftSchema": "4",
   "semanticIntakeStateSchema": "2",
   "semanticSourceBindingSchema": "1",
-  "investigationStateSchema": "1",
+  "investigationStateSchema": "2",
   "semanticAmendmentSchema": "1",
   "artifactDefaultsSchema": "2",
   "groundingSchema": ["1", "2", "3"],

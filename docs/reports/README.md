@@ -8,6 +8,7 @@ time; they are not updated to describe the current release.
 
 | Need | Document | Status |
 |---|---|---|
+| Review Investigate → Change development smoke | [2026-10-15 smoke](investigation-continuity-smoke-2026-10-15.md) / [ภาษาไทย](investigation-continuity-smoke-2026-10-15.th.md) | `notes-api` archived, oracle 13/13, clean install pass; US$0.5192617; one dirty-source run |
 | Review the larger order/inventory paid workload | [2026-10-12 audit](scenario-order-inventory-2026-10-12.md) / [ภาษาไทย](scenario-order-inventory-2026-10-12.th.md) | Product oracle 19/19 and clean install pass; archived task ledger retains three unchecked tasks; strict outcome incomplete; US$2.0839467 including reviewer |
 | Review the v3.6.3 candidate checkpoint | [2026-10-11 checkpoint](scenario-checkpoint-v3.6.3-2026-10-11.md) / [ภาษาไทย](scenario-checkpoint-v3.6.3-2026-10-11.th.md) | Historical checkpoint 9/10; tracker 32/33 at proven; publication later explicitly authorized as an exception in current status |
 | Review omitted legacy and three-repository workloads | [2026-10-09 supplement](remaining-scenarios-no-harness-v3.6.2-2026-10-09.md) / [ภาษาไทย](remaining-scenarios-no-harness-v3.6.2-2026-10-09.th.md) | 15 workloads × two arms, n=1; acceptance, quality and retained-state gaps; exploratory, not release-green |

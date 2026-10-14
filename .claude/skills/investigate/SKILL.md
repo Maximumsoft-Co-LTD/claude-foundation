@@ -1,6 +1,6 @@
 ---
 name: investigate
-description: "Investigate how code works, why it is shaped that way, unknown causes, or competing options without implementing. Use for investigate or read-only research. Follow harness source binding and resume routes; separate facts, inference, and missing evidence."
+description: "Investigate feature feasibility, requirements, bugs, code mechanics, or competing options before Change. Retain user intent and corrections, ask only unresolved material questions, and continue independent research without product edits. Follow harness source binding and resume routes."
 ---
 
 Treat the text after `$investigate` as the command arguments. Read

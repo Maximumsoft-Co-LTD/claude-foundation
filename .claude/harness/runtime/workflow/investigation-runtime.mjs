@@ -10,7 +10,11 @@ import {
   inspectSemanticSources, semanticSourceInventoryFindings
 } from "./validation/semantic-source-inventory.mjs";
 
-export const INVESTIGATION_STATE_VERSION = 1;
+import {
+  intakeTemplate, intakeSnapshot, intakeIssues, intakeFrontier, intakeReadinessIssues
+} from "./validation/investigation-intake.mjs";
+
+export const INVESTIGATION_STATE_VERSION = 2;
 const OUTCOMES = new Set([
   "investigating", "needs-user-decision", "ready-for-change", "not-worth-changing"
 ]);
@@ -31,7 +35,8 @@ export function investigationRecordTemplate() {
       "and keep it there; that path is pre-allowed and the tool creates the folder. Do not save it through the shell " +
       "(heredoc, cat >, echo >): the host refuses those. After each evidence batch run " +
       "claude-foundation investigate openspec/investigations/<id>.json.",
-    version: 1,
+    version: 2,
+    ...intakeTemplate(),
     id: "replace-with-investigation-id",
     activeChange: null,
     problem: "Describe the uncertainty or decision to investigate",
@@ -93,6 +98,14 @@ const isOpen = (row) => text(row?.status).toLowerCase() === "open";
 // ready-for-change in the same run. Explicit legacy values remain accepted.
 export function derivedConclusionStatus(record) {
   const declared = text(record?.conclusion?.status).toLowerCase();
+  if (record?.version === 2) {
+    if (declared === "not-worth-changing") return declared;
+    const frontier = intakeFrontier(record);
+    if (frontier.open.some((q) => q.material) || frontier.unresolved.length)
+      return "needs-user-decision";
+    if (frontier.staleExperiments.some((e) => e.material) || frontier.pendingExperiments.length)
+      return "investigating";
+  }
   if ((Array.isArray(record?.decisions) ? record.decisions : []).some(isOpen))
     return "needs-user-decision";
   if (declared && declared !== "needs-user-decision") return declared;
@@ -103,7 +116,7 @@ function recordIssues(record) {
   const issues = [];
   if (!record || typeof record !== "object" || Array.isArray(record))
     return ["investigation record must be an object"];
-  if (record.version !== 1) issues.push("investigation record version must be 1");
+  if (![1, 2].includes(record.version)) issues.push("investigation record version must be 1|2");
   if (!ID_PATTERN.test(text(record.id)))
     issues.push("investigation record id must be a lowercase kebab-case identifier");
   if (!text(record.problem)) issues.push("investigation record problem is required");
@@ -231,7 +244,8 @@ function stateProjection(state) {
     decisions: state.decisions,
     conclusion: state.conclusion,
     changeIntent: state.changeIntent,
-    metrics: state.metrics
+    metrics: state.metrics,
+    ...(state.version === 2 ? { intake: state.intake, validatedIntake: state.validatedIntake } : {})
   };
 }
 
@@ -241,7 +255,7 @@ export function investigationStateDigest(state) {
 
 function bindingFor(state) {
   return {
-    version: 1,
+    version: state.version,
     id: state.id,
     statePath: state.path,
     stateDigest: state.stateDigest,
@@ -249,7 +263,11 @@ function bindingFor(state) {
     workspace: state.workspace || null,
     outcome: state.conclusion.status,
     summary: state.conclusion.summary,
-    changeIntent: state.changeIntent || null
+    changeIntent: state.changeIntent || null,
+    ...(state.version === 2 ? {
+      intake: state.intake,
+      intakeDigest: digest(state.intake, "foundation-investigation-intake:2")
+    } : {})
   };
 }
 
@@ -311,7 +329,7 @@ function activeWorkspace(projectRoot, changeId, git = null) {
 export function validateInvestigationBinding({ projectRoot, binding, git = null } = {}) {
   const issues = [];
   const root = realpathSync(resolve(projectRoot));
-  if (!binding || binding.version !== 1) return ["investigation binding version must be 1"];
+  if (!binding || ![1, 2].includes(binding.version)) return ["investigation binding version must be 1|2"];
   const bindingId = text(binding.id);
   if (!ID_PATTERN.test(bindingId)) return ["investigation binding id is invalid"];
   const expectedPath = `.foundation/investigations/${bindingId}.json`;
@@ -323,9 +341,13 @@ export function validateInvestigationBinding({ projectRoot, binding, git = null 
   let state;
   try { state = JSON.parse(readFileSync(path, "utf8")); }
   catch { return unique([...issues, "investigation binding state is unreadable"]); }
-  if (state.version !== INVESTIGATION_STATE_VERSION || state.status !== "DONE" ||
+  if (![1, 2].includes(state.version) || state.version !== binding.version || state.status !== "DONE" ||
       state.conclusion?.status !== "ready-for-change")
     issues.push("investigation binding must reference a ready-for-change DONE state");
+  if (state.version === 2 && (
+      digest(state.intake, "foundation-investigation-intake:2") !== binding.intakeDigest ||
+      sortedJson(state.intake) !== sortedJson(binding.intake)))
+    issues.push("investigation binding intake digest or content is stale or mismatched");
   let sourceRoot = root;
   let workspaceCurrent = true;
   if (state.workspace) {
@@ -442,6 +464,12 @@ export function createInvestigationRuntime({
     const record = readJson(absolute);
     const issues = recordIssues(record);
     const id = text(record?.id) || "invalid";
+    const path = statePath(id);
+    const previous = existsSync(path) ? readJson(path) : null;
+    const retainedIssues = intakeIssues(record, previous?.validatedIntake);
+    if (record?.version !== 2 && previous?.validatedIntake)
+      retainedIssues.push("intake version cannot downgrade retained v2 history; restore the v2 record");
+    issues.push(...retainedIssues, ...intakeReadinessIssues(record));
     const workspace = activeWorkspace(projectRoot, text(record?.activeChange), git);
     if (workspace.binding && typeof setOperationChangeId === "function")
       setOperationChangeId(workspace.binding.changeId);
@@ -499,10 +527,41 @@ export function createInvestigationRuntime({
     const openHypotheses = (record?.hypotheses || []).filter(isOpen);
     const openDecisions = (record?.decisions || []).filter(isOpen);
     const outcome = derivedConclusionStatus(record);
+    const frontier = intakeFrontier(record);
     let action;
     if (issues.length) action = { action: "EDIT", owner: "agent", boundary: "investigation-record",
       reason: "Repair the investigation record and evidence bindings.",
       investigation: { kind: "repair-record", issues: unique(issues) }, resume };
+    else if (outcome === "not-worth-changing" && !(record.facts || []).length) action = {
+      action: "EDIT", owner: "agent", boundary: "source-investigation",
+      reason: "Ground the no-change conclusion without asking irrelevant requirement questions.",
+      investigation: { kind: "record-facts" }, resume
+    };
+    else if (outcome === "not-worth-changing") action = {
+      action: "DONE", owner: "harness", boundary: "investigation",
+      reason: "Investigation is complete without proposing a change.", resume
+    };
+    else if (frontier.questions.length || frontier.unresolved.length) action = {
+      action: "ASK_USER", owner: "user", boundary: "consequential-semantics",
+      reason: "Clarify only the material meaning; independent work may continue.",
+      decision: { kind: "investigation-requirement", items: [
+        ...frontier.questions.map((q) => ({ key: q.key, question: q.question,
+          alternatives: q.alternatives || [], recommended: q.recommended || null })),
+        ...frontier.unresolved.map((r) => ({ key: r.key,
+          question: `Clarify the intended meaning of: ${r.statement}`, alternatives: [] }))
+      ].slice(0, 3) }, resume
+    };
+    else if (frontier.staleExperiments.some((e) => e.material)) action = {
+      action: "EDIT", owner: "agent", boundary: "experiment-review",
+      reason: "Reassess only experiments affected by changed requirements.",
+      investigation: { kind: "review-experiments",
+        keys: frontier.staleExperiments.filter((e) => e.material).map((e) => e.key) }, resume
+    };
+    else if (frontier.pendingExperiments.length) action = {
+      action: "EDIT", owner: "agent", boundary: "experiment-execution",
+      reason: "Complete the material feasibility experiments before proposing the agreement.",
+      investigation: { kind: "run-experiments", keys: frontier.pendingExperiments.map((e) => e.key) }, resume
+    };
     else if (!(record.facts || []).length) action = {
       action: "EDIT", owner: "agent", boundary: "source-investigation",
       reason: "Record at least one source-grounded verified fact.",
@@ -529,8 +588,6 @@ export function createInvestigationRuntime({
     else action = { action: "DONE", owner: "harness", boundary: "investigation",
       reason: "The investigation is source-grounded and has a terminal conclusion.", resume };
 
-    const path = statePath(id);
-    const previous = existsSync(path) ? readJson(path) : null;
     const requestDigest = digest(record, "foundation-investigation-record:1");
     const progressDigest = digest({ requestDigest, source: sourceInspection.inventory?.digest,
       action: action.action, kind: action.investigation?.kind || action.decision?.kind || null });
@@ -569,8 +626,18 @@ export function createInvestigationRuntime({
         investigation: { kind: "change-strategy", issues: unique(issues), repeated }, resume
       };
     }
+    if (record?.version === 2) {
+      action.independentWork = frontier.independentWork;
+      action.pendingQuestions = frontier.open;
+      action.staleExperiments = frontier.staleExperiments.map((e) => e.key);
+    }
     const state = {
-      version: INVESTIGATION_STATE_VERSION,
+      version: record?.version === 2 || previous?.validatedIntake ? INVESTIGATION_STATE_VERSION : 1,
+      ...(record?.version === 2 || previous?.validatedIntake ? {
+        intake: record?.version === 2 ? intakeSnapshot(record) : previous.intake,
+        validatedIntake: retainedIssues.length ? previous?.validatedIntake || null
+          : intakeSnapshot(record)
+      } : {}),
       kind: "investigation",
       id,
       path: relativeState,

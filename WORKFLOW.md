@@ -76,7 +76,31 @@ for every host, and the phase guard enforces its Git and Deliver parts.
 
 Use Investigate only when the problem or direction is unclear. It is bounded
 and read-only with respect to product code. `investigate --template` defines a
-versioned fact, hypothesis, option, decision, and conclusion record. Running
+v2 record retaining requirements and conversation context as well as facts.
+Use `purpose: change` for feature, improvement, or bug feasibility and
+`research` for facts-only exploration; v1 records and bindings remain supported.
+The agent summarizes the user's intended outcome, retains every material
+requirement, example, constraint, exception, non-goal, answer, and correction
+after each meaningful conversation update, and starts independent research
+without waiting for a blanket confirmation. Explicit instructions need no
+repeat approval. User intent cites retained conversation events; code facts
+cite repository sources. Missing history is disclosed, never fabricated.
+Requirement content changes use new revisions and explicit retirement;
+unrelated requirements, previous events, answers, and completed experimental
+results survive resume. Invalid history edits retain the last validated intake.
+The row shapes live in the [runtime record contract](.claude/harness/README.md#investigation-intake-records).
+
+Questions may be open-ended and name their dependent work. The typed action
+exposes pending questions and independent work, which the agent continues
+while asking for material meaning. Only work depending on an unanswered
+material choice waits; record/source/report repairs remain with their agent
+or harness owner. Nonmaterial open questions can travel as disclosed context.
+Material proposals are not user agreement, and silence confirms nothing.
+Experiments name their question, requirement revisions, criteria, findings,
+and limitations; only affected results need review after requirements change.
+
+The same template defines a versioned fact, hypothesis, option, decision,
+and conclusion record. Running
 `investigate <record.json>` discovers and hashes repository sources, persists a
 machine-owned resumable state with compact metrics, and returns one typed
 agent, user, or harness action. Discovered sources are acknowledged
@@ -111,7 +135,14 @@ under `.foundation/prototypes/`. It always records the selected conclusion in
 
 A `ready-for-change` result emits a digest-bound handoff. The agent copies it
 into semantic draft v4 as `investigation`; Change verifies the state and source
-digests before compiling and retains the conclusion in the agreement.
+digests before compiling and retains the conclusion in the agreement. V2 also
+binds retained intent and requires `investigationCoverage` linking each active
+material user requirement to an actual requirement/scenario, non-goal, or design
+decision. Revise and amend preserve that mapping. The compiled packet retains
+examples, answers, corrections, experimental limitations, and provenance.
+The agent checks meaning after compilation: reference validity alone is not
+semantic completeness. Missing coverage is agent-owned repair, not another
+approval request; existing spec approval before Build remains unchanged.
 
 ### `/change <intent>`
 
@@ -279,7 +310,9 @@ keywords, a modified requirement does not imply migration or rollback coverage,
 and a risk-derived `not-applicable` row needs only a rationale. Design and
 reader-guide warnings are advisory, and small rapid-lane drafts get no
 missing-section prompts; sections the agent writes are always checked.
-Compact effectiveness counts survive successful compilation in runtime, but no chat or interview history is kept. A
+Compact effectiveness counts survive successful compilation in runtime;
+conversation context is retained in a bound investigation record when present,
+without a separate Change interview ledger. A
 changed selected source invalidates readiness and returns agent-owned coverage refresh.
 
 For newly started changes, present the compiled spec, scope, and acceptance

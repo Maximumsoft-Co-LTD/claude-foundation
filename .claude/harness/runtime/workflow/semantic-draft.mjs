@@ -1,3 +1,4 @@
+import { investigationCoverageIssues } from "./validation/investigation-coverage.mjs";
 import { parseSpecDocument } from "../contracts/change-artifacts.mjs";
 import {
   normalizeDiscovery, semanticIntakeIssues
@@ -1279,7 +1280,7 @@ export function normalizeSemanticDraft(input, slugify, options = {}) {
   const defaultTestEvidence = Boolean(options.defaultRapidEvidence) &&
     semanticEvidenceDefaultable(source);
   const defaultedEvidence = [];
-  const issues = semanticDraftIssues(source, { defaultTestEvidence });
+  const issues = [...semanticDraftIssues(source, { defaultTestEvidence }), ...investigationCoverageIssues(source)];
   const { requirements, requirementKeys } = normalizeRequirements(
     source, slugify, issues, { ...options, defaultTestEvidence, defaultedEvidence });
   applyIntegrationRequirements(source, requirements, requirementKeys, issues);

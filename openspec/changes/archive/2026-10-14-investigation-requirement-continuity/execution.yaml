@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/investigation-runtime.test.mjs) && (node --test .claude/harness/tests/investigation-runtime.test.mjs .claude/harness/tests/semantic-draft.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh) && (env FOUNDATION_TEST_JOBS=8 FOUNDATION_SUITE_TIMEOUT_SECONDS=900 bash .claude/tests/run-all.sh && rtk git diff --check)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared",
+      "timeoutMs": 1200000,
+      "env": {
+        "FOUNDATION_TEST_JOBS": "8",
+        "FOUNDATION_SUITE_TIMEOUT_SECONDS": "900"
+      }
+    }
+  }
+}

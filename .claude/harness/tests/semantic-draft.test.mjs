@@ -2834,3 +2834,82 @@ test("a derived standard draft says why in its proposal and its evidence repair"
   assert.match(synchronizeProposalClassification(proposal, { coupling: "isolated" }),
     /^- \*\*Coupling:\*\* isolated$/m);
 });
+
+function investigationDraft() {
+  const source = semanticDraft({ integrations: [], nonGoals: ["Never delete payment history"],
+    decisions: [{ key: "storage", choice: "Keep existing storage", reason: "Avoid migration" }] });
+  source.investigation = { version: 2, id: "payment-research", outcome: "ready-for-change",
+    summary: "Keep retries safe", changeIntent: source.intent, statePath: ".foundation/investigations/payment-research.json",
+    stateDigest: "bound-at-runtime", sourceDigest: "bound-at-runtime",
+    intake: { purpose: "change", intent: { goal: "Safe retries", outcome: "One payment", scope: ["Payment retries"] },
+      conversation: [{ key: "request", speaker: "user", statement: "Keep history and avoid duplicate charges", source: "session:message:1" }],
+      requirements: [
+        { key: "retry", revision: 1, kind: "behavior", statement: "Avoid duplicate charges", status: "stated", material: true, origin: "user", examples: ["Timeout then retry"], criteria: ["Exactly one charge"], conversationKeys: ["request"] },
+        { key: "history", revision: 1, kind: "non-goal", statement: "Never delete payment history", status: "stated", material: true, origin: "user", conversationKeys: ["request"] },
+        { key: "storage", revision: 1, kind: "constraint", statement: "Keep existing storage", status: "stated", material: true, origin: "user", conversationKeys: ["request"] }
+      ], questions: [{ key: "result", question: "How many charges?", status: "answered", answer: "Exactly one", conversationKeys: ["request"] }],
+      experiments: [{ key: "local", question: "Does retry duplicate?", status: "complete", criteria: ["one charge"],
+        findings: ["No duplicates"], limitations: ["Local fixture only"], requirementRefs: [{ key: "retry", revision: 1 }] }],
+      historyGaps: ["An earlier session is unavailable"] }
+  };
+  source.investigationCoverage = [
+    { sourceKey: "retry", sourceRevision: 1, targets: [{ kind: "requirement", key: "payment-retry" }, { kind: "scenario", key: "payment-retry", scenario: "timeout" }] },
+    { sourceKey: "history", sourceRevision: 1, targets: [{ kind: "non-goal", key: "Never delete payment history" }] },
+    { sourceKey: "storage", sourceRevision: 1, targets: [{ kind: "design", key: "storage" }] }
+  ];
+  return source;
+}
+
+test("investigation coverage accepts real many-to-many targets and reports uncovered user requirements", () => {
+  const source = investigationDraft();
+  assert.deepEqual(normalizeSemanticDraft(source, slugify).issues, []);
+  source.investigationCoverage.pop();
+  assert.match(normalizeSemanticDraft(source, slugify).issues.join("\n"), /storage@1.*uncovered/);
+  source.investigationCoverage[0].targets[1].scenario = "missing-scenario";
+  assert.match(normalizeSemanticDraft(source, slugify).issues.join("\n"), /invalid scenario target/);
+});
+
+test("coverage rejects superseded intent, duplicate source rows and nonexistent targets", () => {
+  const source = investigationDraft();
+  source.investigationCoverage.push(source.investigationCoverage[0]);
+  source.investigation.intake.requirements[0].status = "superseded";
+  source.investigationCoverage[1].targets[0].key = "Drop all history";
+  const issues = normalizeSemanticDraft(source, slugify).issues.join("\n");
+  assert.match(issues, /repeats source/);
+  assert.match(issues, /not current user intent/);
+  assert.match(issues, /invalid non-goal target/);
+});
+
+test("compiled proposal retains examples, criteria, decisions, experiment limitations and conversation gaps", () => {
+  const source = investigationDraft(), { draft, issues } = normalizeSemanticDraft(source, slugify);
+  assert.deepEqual(issues, []);
+  const packet = renderDraftProposal(draft, { id: "payment", intent: source.intent, schema: "foundation-standard" });
+  for (const detail of ["Timeout then retry", "Exactly one charge", "Keep existing storage",
+    "Local fixture only", "An earlier session is unavailable", "session:message:1", "retry@1", "scenario: payment-retry / timeout"])
+    assert.ok(packet.includes(detail), detail);
+  assert.match(packet, /agent must compare meaning/);
+  const thai = renderDraftProposal({ ...draft, language: "th" }, { intent: source.intent, schema: "foundation-standard" });
+  assert.match(thai, /ความครบของ requirement/);
+  assert.match(thai, /ช่องว่างของประวัติ/);
+});
+
+test("legacy handoffs and changes without investigation require no retroactive coverage", () => {
+  const source = investigationDraft();
+  source.investigation.version = 1;
+  delete source.investigationCoverage;
+  assert.deepEqual(normalizeSemanticDraft(source, slugify).issues, []);
+  delete source.investigation;
+  assert.deepEqual(normalizeSemanticDraft(source, slugify).issues, []);
+});
+
+test("semantic amendments cannot orphan a retained investigation requirement", () => {
+  const source = investigationDraft();
+  const { draft } = normalizeSemanticDraft(source, slugify);
+  const tasksContent = draft.tasks.map((task, i) => renderDraftTask(task, i)).join("\n");
+  const result = compileSemanticAmendment({
+    amendment: { version: 1, reason: "Remove retry", removeRequirements: [{ key: "payment-retry", migration: "Retain records" }] },
+    contract: { version: 2, claims: draft.claims, providers: {} }, tasksContent, slugify,
+    renderTask: renderDraftTask, semanticDraftVersion: 3, investigationSource: source
+  });
+  assert.match(result.issues.join("\n"), /invalid requirement target|invalid scenario target/);
+});
