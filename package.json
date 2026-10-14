@@ -29,6 +29,7 @@
     "bench:openspec-native:lab": "node .claude/tests/bench/openspec-native/lab.mjs",
     "bench:openspec-native:aggregate": "node .claude/tests/bench/openspec-native/aggregate.mjs",
     "bench:openspec-native:sentinel": "node .claude/tests/bench/openspec-native/sentinel.mjs",
+    "bench:investigation-continuity": "node .claude/tests/bench/openspec-native/investigation-continuity.mjs",
     "bench:openspec-native:release-report": "node .claude/tests/bench/openspec-native/release-report.mjs",
     "release:preflight": "node scripts/release/preflight.mjs",
     "release:upgrade-matrix": "node scripts/release/upgrade-matrix.mjs",

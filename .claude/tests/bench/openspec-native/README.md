@@ -20,6 +20,26 @@ scope and budget authorization.
 
 ## End-to-end terminal contract
 
+### Requirement-continuity differential scenario
+
+`npm run bench:investigation-continuity -- <before-commit>` runs a repository-only,
+zero-model-spend payment-retry investigation timeline against that immutable
+source and the current runtime. The default baseline is the parent of the
+Investigate continuity implementation, `d157286b9b32c4374fcb94accf7c1a430c04228d`.
+Both arms receive the same rich request content in their supported record
+version; the old arm is not scored by simply submitting an unsupported v2 record.
+Each turn recreates the runtime over persisted state. It tests material and
+optional questions, independent work, partial corrections, selective PoC
+staleness, retained history, attempted data loss/silent consent, recovery, native
+proposal detail, coverage targets and stale handoff rejection.
+
+The comparison and both generated proposals are saved under
+`.foundation/test-results/investigation-continuity-comparison/`. The score is
+coverage of the new safety contract, not compatibility failure or a performance
+benchmark. This is a deterministic runtime/compiler seam, not a paid agent
+conversation, public-CLI E2E or a Build → Land application delivery. It remains
+separate from the frozen paid workload matrix and release checkpoint.
+
 A paid scenario is green only after the change reaches `archived`: Change,
 Build, Prove, review, Land, and post-Land delivery checks must all complete.
 A passing proof with `landStatus: awaiting-user` is scored `incomplete` with
