@@ -767,3 +767,62 @@ test("v2 Thai report retains requirement context, answers, independent work and 
   for (const detail of ["ข้อกำหนดล่าสุด", "Reject stale writes", "retry หลัง timeout", "รองรับประวัติในอนาคตไหม", "อ่าน guard ต่อได้", "ข้อความจาก session เก่าเข้าถึงไม่ได้", "session:message:1"])
     assert.ok(report.includes(detail), detail);
 });
+
+function nextCheckFixture(t, language) {
+  const v = intakeFixture(t);
+  if (language) v.record.language = language;
+  v.record.hypotheses = [
+    { key: "h1", statement: "Retry skips the revision guard", status: "open", experimentKeys: ["e1"] },
+    { key: "h2", statement: "Cache returns a stale revision", status: "open" }
+  ];
+  v.record.experiments = [{ key: "e1", question: "Does a stale retry reach the write?",
+    criteria: ["write rejected"], status: "planned", material: false,
+    requirementRefs: [{ key: "retry", revision: 1 }] }];
+  v.unknowns = (result) => {
+    const report = readFileSync(join(v.root, result.report.path), "utf8");
+    const heading = language === "th" ? "## สิ่งที่ยังไม่รู้และงานที่เหลือ" : "## Unknowns and remaining work";
+    return report.slice(report.indexOf(heading)).split("\n## ")[0];
+  };
+  return v;
+}
+
+test("report Unknowns name each open hypothesis's next check or its absence", (t) => {
+  const v = nextCheckFixture(t);
+  const result = v.inspect();
+  assert.notEqual(result.investigation?.kind, "repair-record");
+  const unknowns = v.unknowns(result);
+  const h1 = unknowns.split("\n").find((line) => line.includes("h1"));
+  assert.ok(h1.includes("Next check: **e1** [planned] Does a stale retry reach the write?"), h1);
+  const h2 = unknowns.split("\n").find((line) => line.includes("h2"));
+  assert.ok(h2.includes("No next check yet"), h2);
+});
+
+test("Thai report Unknowns label next checks and their absence", (t) => {
+  const v = nextCheckFixture(t, "th");
+  const unknowns = v.unknowns(v.inspect());
+  assert.ok(unknowns.includes("ตรวจต่อ: **e1** [planned] Does a stale retry reach the write?"), unknowns);
+  assert.ok(unknowns.split("\n").find((line) => line.includes("h2")).includes("ยังไม่มีการตรวจต่อ"));
+});
+
+test("hypothesis experimentKeys must name a retained, current experiment", (t) => {
+  const v = nextCheckFixture(t);
+  v.record.hypotheses[0].experimentKeys = ["nope"];
+  const unknown = v.inspect();
+  assert.equal(unknown.action, "EDIT");
+  assert.equal(unknown.investigation.kind, "repair-record");
+  assert.ok(unknown.investigation.issues.some((issue) =>
+    issue.includes("'h1'") && issue.includes("unknown experiment 'nope'")), unknown.investigation.issues.join("\n"));
+  v.record.hypotheses[0].experimentKeys = "e1";
+  assert.match(v.inspect().investigation.issues.join("\n"), /'h1' experimentKeys must be an array/);
+  v.record.hypotheses[0].experimentKeys = ["e1"];
+  v.record.experiments.push({ ...v.record.experiments[0], key: "e2" });
+  Object.assign(v.record.experiments[0], { supersededBy: "e2", reason: "Narrowed the retry question" });
+  const superseded = v.inspect();
+  assert.equal(superseded.action, "EDIT");
+  assert.equal(superseded.investigation.kind, "repair-record");
+  assert.ok(superseded.investigation.issues.some((issue) =>
+    issue.includes("'h1'") && issue.includes("superseded experiment 'e1'") && issue.includes("'e2'")),
+  superseded.investigation.issues.join("\n"));
+  v.record.hypotheses[0].experimentKeys = ["e2"];
+  assert.notEqual(v.inspect().investigation?.kind, "repair-record");
+});

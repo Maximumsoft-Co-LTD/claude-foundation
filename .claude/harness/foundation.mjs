@@ -11,6 +11,8 @@ import {
   createMetricsRuntime, createSourceCohortProvider
 } from "./runtime/observability/metrics-runtime.mjs";
 import { createExecRuntime } from "./runtime/observability/exec-runtime.mjs";
+import { createOutcomesRuntime } from "./runtime/observability/outcomes-runtime.mjs";
+import { createLessonsRuntime } from "./runtime/observability/lessons-runtime.mjs";
 import {
   createFeedbackRuntime, FEEDBACK_SCHEMA_VERSION
 } from "./runtime/observability/feedback-runtime.mjs";
@@ -107,7 +109,12 @@ import { createReceiptRuntime } from "./runtime/evidence/receipt-runtime.mjs";
 import { createReceiptValidity } from "./runtime/evidence/receipt-validity.mjs";
 import { createAdapterRuntime } from "./runtime/evidence/adapter-runtime.mjs";
 import { createProofExecutionRuntime } from "./runtime/evidence/proof-execution-runtime.mjs";
-import { createTestDiscriminationRuntime } from "./runtime/evidence/test-discrimination.mjs";
+import {
+  createTestDiscriminationRuntime, prepareBaseTree
+} from "./runtime/evidence/test-discrimination.mjs";
+import {
+  createBenchmarkRuntime, receiptRegressionFinding
+} from "./runtime/evidence/benchmark-runtime.mjs";
 import { changeWorkTypes, taskChangeIssue } from "./runtime/workflow/task-change.mjs";
 import { lightKind } from "./runtime/workflow/validation/dev-document.mjs";
 import { repositoryBaseHead } from "./runtime/core/repository-binding.mjs";
@@ -260,7 +267,7 @@ let operationFingerprint = null;
 // Lifecycle commands stay: metrics derives rework and typed-stop signals from
 // their rows, so proof-* and land-* are measurements, not inspections.
 const READ_ONLY_OPERATIONS = new Set([
-  "metrics", "feedback", "hash", "changes", "providers", "repos", "models", "describe",
+  "metrics", "feedback", "outcomes", "lessons", "hash", "changes", "providers", "repos", "models", "describe",
   "budget-checkpoint",
   "packet", "agent-task", "audit-change", "authority-status",
   "handoff-list", "handoff-status", "handoff-packet", "evidence-detect", "evidence-doctor",
@@ -945,6 +952,14 @@ const {
   recordReceipt,
   recordDeterministicReviewClosure
 } = receiptRuntime;
+const { measure: measureBenchmark } = createBenchmarkRuntime({
+  prepareBaseTree,
+  isProductPath: (path) => !lightKind(path),
+  fileDigest,
+  runCommand,
+  removeTree: (path) => rmSync(path, { recursive: true, force: true }),
+  stableHash
+});
 const adapterRuntime = createAdapterRuntime({
   ROOT,
   LOGS,
@@ -980,6 +995,7 @@ const adapterRuntime = createAdapterRuntime({
   maxParallelServices: maxParallelProviders,
   recordScheduler: commandPhaseRecorder.scheduler,
   timestamp: Date.now,
+  measureBenchmark,
   die,
   clearSnapshotCache
 });
@@ -1783,6 +1799,8 @@ const {
       return await trapFailuresAsync(() => testDiscrimination.evaluateAsync(id, workspaceHash));
     } catch { return null; }
   },
+  performanceRegression: (id, provider) =>
+    receiptRegressionFinding(provider, readJsonOrNull(receiptPath(id, provider))),
   die
 });
 const guardPublicProofMutation = (command, operation) =>
@@ -2186,6 +2204,29 @@ const { showFeedback } = createFeedbackRuntime({
   packetValue: packetRuntime.inspectionPacketValue,
   nextAction: (id) => advanceValue(id, { inspect: true })
 });
+// Cross-change rollups read the store directly and never write it: the
+// attempt reader below bypasses reviewHistoryState, which may migrate state.
+const reviewAttemptRecords = (id) => {
+  const dir = join(EVIDENCE_VAULT, id, "review-attempts");
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).filter((name) => name.endsWith(".json")).sort()
+    .map((name) => readJsonOrNull(join(dir, name)))
+    .filter((value) => value && typeof value === "object");
+};
+const { showOutcomes } = createOutcomesRuntime({
+  runtimeDir: RUNTIME,
+  evidenceDir: EVIDENCE_VAULT,
+  logsDir: LOGS,
+  changeWorkTypes: (id, state) => changeWorkTypes(activeChangePath(id, state)),
+  reviewAttemptRecords
+});
+const { showLessons } = createLessonsRuntime({
+  runtimeDir: RUNTIME,
+  evidenceDir: EVIDENCE_VAULT,
+  logsDir: LOGS,
+  reviewAttemptRecords,
+  fail: die
+});
 const abandonRuntime = createAbandonRuntime({
   root: ROOT,
   paths: {
@@ -2356,6 +2397,8 @@ await routeRuntimeCommand(command, values, {
   recordTargetRestore,
   undoLand,
   showFeedback,
+  showOutcomes,
+  showLessons,
   execObserved,
   checkpointBudget,
   continueBudget,

@@ -175,6 +175,58 @@ test("completion operation persists the completed immutable chain head", () => {
   assert.equal(fixture.saves.length, 1);
 });
 
+const codedFinding = (code) => ({
+  id: "F-1", severity: "minor", message: "note", ...(code === undefined ? {} : { code })
+});
+
+test("completion operation keeps a kebab-case finding code", () => {
+  const fixture = completionOperationFixture({ stableHash: hash });
+  const completed = completeReviewAttemptOperation(fixture.context,
+    "change", "dispatch", {
+      resultStatus: "pass", reviewerSessionId: "session",
+      findings: [codedFinding("missing-authz"), {
+        ...codedFinding("a".repeat(64)), id: "F-2"
+      }]
+    });
+  assert.deepEqual(completed.findings.map((finding) => finding.code),
+    ["missing-authz", "a".repeat(64)]);
+  assert.equal(fixture.state.reviewHistory.chainHead, completed.digest);
+});
+
+test("completion operation drops a malformed finding code without rejecting", () => {
+  for (const code of ["Missing Authz!", "missing_authz", "-lead", "trail-",
+    "double--dash", "", "a".repeat(65), 7, null]) {
+    const fixture = completionOperationFixture();
+    const completed = completeReviewAttemptOperation(fixture.context,
+      "change", "dispatch", {
+        resultStatus: "pass", reviewerSessionId: "session",
+        findings: [codedFinding(code), { ...codedFinding("valid-code"), id: "F-2" }]
+      });
+    assert.equal(fixture.writes.length, 1);
+    assert.equal(Object.hasOwn(completed.findings[0], "code"), false, String(code));
+    assert.equal(completed.findings[1].code, "valid-code");
+  }
+});
+
+test("uncoded findings keep the prior normalized shape, digest, and chain", () => {
+  const fixture = completionOperationFixture({ stableHash: hash });
+  const completed = completeReviewAttemptOperation(fixture.context,
+    "change", "dispatch", {
+      resultStatus: "pass", reviewerSessionId: "session",
+      findings: [codedFinding(), { ...codedFinding("bad code"), id: "F-2" },
+        { ...codedFinding("kept-code"), id: "F-3" }]
+    });
+  const prior = (id) => ({
+    id, severity: "minor", path: "", line: null, message: "note",
+    claimIds: [], verificationCaseIds: []
+  });
+  assert.deepEqual(completed.findings,
+    [prior("F-1"), prior("F-2"), { ...prior("F-3"), code: "kept-code" }]);
+  const { digest, ...withoutDigest } = completed;
+  assert.equal(digest, hash(withoutDigest));
+  assert.equal(fixture.state.reviewHistory.chainHead, digest);
+});
+
 test("matching repair closure requires the complete deterministic identity", () => {
   const current = {
     reviewerType: "deterministic", sourceAttemptDigest: "ai-final",

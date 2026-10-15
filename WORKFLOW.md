@@ -115,7 +115,10 @@ failure goes to the harness, and any other stall returns to the agent.
 
 Each inspection also generates `openspec/investigations/<id>.report.md` from the
 validated state: conclusion, recommendation/reasons, facts and source links,
-hypotheses, comparisons, unknowns, decisions, and next action. The agent writes
+hypotheses, comparisons, unknowns, decisions, and next action. A hypothesis may
+name `experimentKeys`; each must resolve to a current experiment (a superseded
+one returns an agent repair naming its replacement), and the unknowns list
+shows every open hypothesis's next check or that none is planned. The agent writes
 record content in the user's language and returns a short summary with the
 current report link. `language: "th"` selects Thai headings; English is the
 fallback. JSON stdout and handoff remain machine-readable. Generated reports
@@ -276,8 +279,18 @@ questions. At `DONE` the same call compiles atomically; `--consume-draft` also
 removes the draft.
 Typed `riskSignals` provide language-neutral triggers for access control,
 persisted data, integrations, performance SLOs, UI accessibility, operational
-risk, external side effects, and input domains (`input-domain` requires
-`input-boundary` coverage of the adjacent input partitions).
+risk, external side effects, financial effects, and input domains
+(`input-domain` requires `input-boundary` coverage of the adjacent input
+partitions; `financial` requires `timeout-retry-idempotency` and
+`recoverability`). A draft declaring `access-control` tags at least one
+scenario `access: allow` and one `access: deny`; a missing side or another
+value returns an agent `EDIT`, and a deny scenario derives
+`permission-rejection` coverage. Prose is never scanned for either decision.
+Optional `constraints` (non-empty strings) render as a proposal Constraints
+section and are `{kind: constraint}` investigation coverage targets; optional
+`fixes` names archived change ids (an `openspec/changes/archive/<date>-<id>`
+directory) that this change corrects, is kept on the change, and feeds the
+`outcomes` escaped-defect count.
 Inspection persists one machine-owned snapshot bound to the draft and its
 grounded-source digests. Before each v4 inspection the harness performs bounded,
 read-only repository discovery and ranks relevant specs, tests, callers,
@@ -1304,8 +1317,10 @@ that review once on the configured model without consuming a review round. Secur
 `resolve --security`) or inferred from intent keywords: declared triggers
 select the standard lane and security evidence, while an intent keyword alone
 only makes review required at the low tier and the change keeps its lane. A
-draft's `riskSignals` raise the tier too: `access-control` to high (and it makes
-review required under either policy), `input-domain` to at least medium.
+draft's `riskSignals` raise the tier too: `access-control` and `financial` to
+high (and they make review required under either policy), `input-domain` to at
+least medium. A review finding may carry a kebab-case `code` (at most 64
+characters); a malformed code is dropped and the attempt is still recorded.
 
 - **low** — one full AI review; a material correction promotes the route to
   medium;
@@ -1543,6 +1558,14 @@ quality output is drained even when enforcement returns a failing exit code.
 signals without counting several receipts from one process as independent
 executions. Packet sizes, host imports, transcript cursors, and telemetry schema
 belong to the harness operator guide.
+
+Across changes, `outcomes` and `lessons` are read-only, advisory projections:
+they write nothing, never gate a change, and keep unknown values `null`.
+`outcomes` reports first-proof pass, rework, recorded user decisions, cost, and
+escaped defects declared through later changes' `fixes`, grouped by work type,
+impact, and risk signals. `lessons` lists blocker and review finding codes that
+recur across distinct changes with a suggested permanent check; adopting one is
+an ordinary Change.
 
 ## Sandbox and repository safety
 

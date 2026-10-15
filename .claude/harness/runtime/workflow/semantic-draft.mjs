@@ -261,6 +261,29 @@ export function authoredDecisionReason(decision) {
   return reason === SETTLED_REASON ? "" : reason;
 }
 
+// A benchmark provider compares head with base over alternating runs; fewer
+// than three runs per side gives no usable median. Omitted values take the
+// runtime defaults (5 runs, 10% regression).
+const BENCHMARK_MIN_RUNS = 3;
+
+function benchmarkProviderIssues(execution) {
+  const providers = execution?.providers;
+  if (!providers || typeof providers !== "object" || Array.isArray(providers)) return [];
+  const issues = [];
+  for (const [name, provider] of Object.entries(providers)) {
+    if (text(provider?.adapter) !== "benchmark") continue;
+    const label = `semantic draft execution.providers.${name}`;
+    if (provider.runs !== undefined &&
+        (!Number.isInteger(provider.runs) || provider.runs < BENCHMARK_MIN_RUNS))
+      issues.push(`${label}.runs must be at least ${BENCHMARK_MIN_RUNS} (an integer; default 5)`);
+    if (provider.maxRegressionPercent !== undefined &&
+        (typeof provider.maxRegressionPercent !== "number" ||
+          !Number.isFinite(provider.maxRegressionPercent) || provider.maxRegressionPercent < 0))
+      issues.push(`${label}.maxRegressionPercent must be a number of at least 0 (default 10)`);
+  }
+  return issues;
+}
+
 function semanticDraftIssues(source, { defaultTestEvidence = false } = {}) {
   const issues = [];
   if (![3, 4].includes(source?.version)) issues.push("semantic draft requires version 3 or 4");
@@ -294,6 +317,13 @@ function semanticDraftIssues(source, { defaultTestEvidence = false } = {}) {
     issues.push("semantic draft repositories must be an array");
   if (source?.externalOperations !== undefined && !Array.isArray(source.externalOperations))
     issues.push("semantic draft externalOperations must be an array");
+  if (source?.constraints !== undefined && (!Array.isArray(source.constraints) ||
+      source.constraints.some((value) => !text(value))))
+    issues.push("semantic draft constraints must be an array of non-empty strings");
+  if (source?.fixes !== undefined && (!Array.isArray(source.fixes) ||
+      source.fixes.some((value) => !text(value))))
+    issues.push("semantic draft fixes must be an array of archived change ids");
+  issues.push(...benchmarkProviderIssues(source?.execution));
   if (source?.prototypeSelection !== undefined) {
     if (!text(source.prototypeSelection?.reference))
       issues.push("semantic draft prototypeSelection.reference is required");
@@ -1331,6 +1361,8 @@ export function normalizeSemanticDraft(input, slugify, options = {}) {
       ? stringList(source.changes)
       : unique((source.requirements || []).map(whatChanges).filter(Boolean)),
     nonGoals: stringList(source.nonGoals),
+    ...(Array.isArray(source.constraints) ? { constraints: stringList(source.constraints) } : {}),
+    ...(Array.isArray(source.fixes) ? { fixes: unique(stringList(source.fixes)) } : {}),
     decisions: Array.isArray(source.decisions)
       ? source.decisions.map((decision) =>
         text(decision?.reason || decision?.why) ? decision : { ...decision, why: SETTLED_REASON })

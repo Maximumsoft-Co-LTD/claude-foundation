@@ -290,6 +290,37 @@ test("typed trust-boundary risk signals escalate the review tier", () => {
     .includes("critical-semantics"));
 });
 
+test("a financial risk signal selects the high review tier without money words", () => {
+  const route = (state) => classifyReviewRisk({
+    state: { intent: "show the order total", impact: "low", coupling: "isolated",
+      securityTriggers: [], ...state },
+    claims: [{ id: "c", impact: "low", capabilities: ["test"] }],
+    capabilities: new Set(["test"]), grounding: null
+  });
+  const financial = route({ riskSignals: ["Financial"] });
+  assert.equal(financial.tier, "high");
+  assert.ok(financial.triggers.includes("financial"));
+  assert.ok(!financial.triggers.includes("authorization-or-secrets"),
+    "money movement is not an authorization boundary");
+  // The same signal under a Thai intent routes the same way.
+  assert.equal(route({ intent: "แสดงยอดรวมคำสั่งซื้อ", riskSignals: ["financial"] }).tier, "high");
+  // No signal keeps the route this change found.
+  const plain = route({});
+  assert.deepEqual([plain.tier, plain.triggers], ["low", []]);
+  assert.deepEqual(route({ riskSignals: [] }), plain);
+});
+
+test("high risk signals require review named by the declared signal", () => {
+  const triggers = (riskSignals) => collectReviewSignals({
+    intent: "show the order total", impact: "low", coupling: "isolated",
+    securityTriggers: [], riskSignals
+  }, { claims: [{ impact: "low", capabilities: ["test"] }] }).requiredTriggers;
+  assert.deepEqual(triggers(["financial"]), ["financial"]);
+  assert.deepEqual(triggers(["access-control"]), ["access-control"]);
+  assert.deepEqual(triggers(["financial", "access-control"]), ["access-control", "financial"]);
+  assert.deepEqual(triggers(["input-domain"]), []);
+});
+
 test("an access-control risk signal requires review under both policies", () => {
   const state = { intent: "show the order total", impact: "low", coupling: "isolated",
     securityTriggers: [], riskSignals: ["access-control"] };

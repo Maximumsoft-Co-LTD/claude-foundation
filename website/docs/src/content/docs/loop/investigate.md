@@ -37,7 +37,8 @@ For an existing change, include its ID and the new question:
 The agent reads the relevant code and separates its output into:
 
 - **verified, code-grounded facts**
-- **hypotheses** that are not yet proven
+- **hypotheses** that are not yet proven, each optionally naming the
+  experiments (`experimentKeys`) that will test it as its next check
 - **constraints** and affected boundaries
 - **options** with tradeoffs
 - **unknowns** that still require a decision from you

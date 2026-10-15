@@ -9,7 +9,7 @@ import {
 // when this process ran the command; naming one on the command line is a claim
 // about execution that the caller is not in a position to make.
 const EXECUTING_ADAPTERS = new Set([
-  "command", "test-discovery", "playwright", "contract-digest"
+  "command", "test-discovery", "playwright", "contract-digest", "benchmark"
 ]);
 
 // A reference stands in for evidence, so it has to be something a reader can
@@ -1048,7 +1048,15 @@ export function createReceiptRuntime({
     receipt.classification = flags.classification || null;
   }
 
+  // Only the harness-run benchmark adapter measured both sides; a manual
+  // receipt cannot assert a base/head comparison.
+  function applyBenchmarkReceipt(flags, receipt, context) {
+    if (context.adapter === "benchmark" && context.harnessExecuted && flags.benchmark)
+      receipt.benchmark = flags.benchmark;
+  }
+
   function applyCapabilityReceipt(id, provider, status, flags, options, receipt, context) {
+    applyBenchmarkReceipt(flags, receipt, context);
     if (context.capability === "review")
       applyReviewReceipt(id, provider, status, flags, options, receipt, receipt.references);
     if (context.capability === "acceptance")

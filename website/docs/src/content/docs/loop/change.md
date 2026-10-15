@@ -144,8 +144,11 @@ repairs, a task `verify` naming a test file that neither exists nor falls in any
 task's `paths`, and an `apiContracts` error without a status or code. Versions 1 through 3 remain
 supported for existing integrations.
 Use typed `riskSignals` for access control, persisted data, integrations,
-performance SLOs, UI, operational risk, and external side effects so required
-coverage does not depend on the language used in prose. The harness records
+performance SLOs, UI, operational risk, external side effects, and financial
+effects so required coverage does not depend on the language used in prose.
+With `access-control`, tag at least one scenario `access: allow` and one
+`access: deny`. Optional `constraints` render in the proposal, and optional
+`fixes` names the archived changes this change corrects. The harness records
 the source digest itself, so a correct draft reaches `DONE` on its first
 inspect; design and reader-guide warnings are advisory.
 Inspection stores one machine-owned snapshot bound to the draft and its local

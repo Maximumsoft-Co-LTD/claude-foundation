@@ -236,6 +236,7 @@ for boundaries and authority.
 | `work` | `[{key, outcome, questionKeys: []}]`; work is independent when all named questions are answered |
 | `experiments` | `[{key, question, criteria: [], material, status: planned\|complete, requirementRefs: [{key, revision}]}]`; complete rows need `findings` and `limitations`; optional bounded `prototypePaths`; retain results and supersede under a new key with `supersededBy` and `reason` |
 | `historyGaps` | Nonempty strings identifying unavailable conversation context; do not claim missing messages were read |
+| `hypotheses` | `[{key, statement, status: open\|supported\|falsified, factKeys: []}]`; settled rows need `factKeys`; optional `experimentKeys` name the current (not superseded) experiments that test the hypothesis, and the report shows them as each open hypothesis's next check |
 
 Requirement kinds are `behavior`, `constraint`, `example`, `exception`,
 `non-goal`, and `success-criterion`. Statuses are `stated`, `confirmed`,
@@ -250,6 +251,7 @@ authors `investigationCoverage: [{sourceKey, sourceRevision, targets: []}]`.
 Each target is `{kind: requirement, key: <requirement-key>}`, or
 `{kind: scenario, key: <requirement-key>, scenario: <scenario-key-or-name>}`,
 or `{kind: non-goal, key: <exact-non-goal-text>}`, or
+`{kind: constraint, key: <exact-constraint-text>}`, or
 `{kind: design, key: <decision-key>}`. Every active material stated/confirmed
 requirement needs a real target. Several sources can share a target; a source
 can have several targets. Revised/amended agreements retain coverage. Links
@@ -305,6 +307,8 @@ the envelope carries, and the budget no-progress cap are specified in
 | `packet <change> --repo <id> [--task <id>] [--pretty]` | Prints a bounded repository or task packet | Starting a native subagent |
 | `metrics <change>` | Reports measured phase/provider cost, emitted context bytes, and blocked operations by code, phase, and operation with the latest local reason | Finding latency, orchestration overhead, or where a change keeps stopping |
 | `feedback <change> [--pretty] [--diagnostics]` | Reports current readiness, source-aware timing, repair intervals, blocker coverage, evidence reuse, and the next action; diagnostics exports allowlisted metadata | Explaining why Prove took time without labeling repair as wait |
+| `outcomes [--pretty]` | Read-only rollup of archived changes: first-proof pass, proof runs, review attempts and repair rounds, amendments, reopened tasks, recorded user decisions, cost, and declared escaped defects (from later changes' `fixes`), grouped by workType × impact × riskSignals; unknown values stay `null` with a denominator and `unknownCount`; unreadable states are listed under `skipped` | Judging whether workflow changes improve accepted outcomes |
+| `lessons [--min-changes <n>] [--pretty]` | Read-only grouping of blocker codes and review finding codes that recur in at least `n` distinct changes (default 3, minimum 2), each with a suggested permanent check and the `/change` route; untyped blockers and uncoded findings are counted separately; never creates checks or exports free-text reasons | Turning recurring problems into checks |
 | `budget checkpoint <change>` | Reports measured remaining allowance, unfinished work, and the exact resume route | Checking remaining allowance and the resume route |
 | `exec <change> [--phase <phase>] [--repo <id>] [--task <id>] -- <command…>` | Derives the phase, runs Build and Prove commands in the change's sandbox under the shared mutation policy, passes the exit code through, and records duration. A multi-repository change picks the sandbox from `--repo`/`--task`, else the caller's directory (a repository sandbox, the shared mirror, or the checkout's copy maps to the same relative path in that repository's sandbox), else the pending tasks when they share one repository, else the shared sandbox; never the main checkout. An unknown repository or task refuses with the known names | Long build-phase commands (container builds, installs, full test runs) and a submodule task's checks |
 | `telemetry host-import <change> <result.json>` | Imports a validated host execution result without prompt or tool payloads | Recording actual model attempts, fallback, usage, and instruction provenance |

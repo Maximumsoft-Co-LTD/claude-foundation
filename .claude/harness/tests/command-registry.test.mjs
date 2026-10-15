@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -163,6 +163,20 @@ test("description renderers preserve text and JSON contracts", () => {
   const cliJson = [];
   describeCliCommand(entries[0], { json: true }, (value) => cliJson.push(value));
   assert.equal(JSON.parse(cliJson[0]).name, "proof collect");
+});
+
+test("shipped registry routes the read-only outcomes and lessons rollups", () => {
+  const shipped = validateCommandRegistry(JSON.parse(readFileSync(
+    new URL("../commands.json", import.meta.url), "utf8")), fail);
+  for (const name of ["outcomes", "lessons"]) {
+    const row = shipped.commands.find((command) => command.name === name);
+    assert.equal(row?.kind, "read", `${name} is a read command`);
+    assert.equal(row.idempotent, true);
+    assert.equal(row.audience, "agent");
+    assert.ok(shipped.runtimeCommands.includes(name), `${name} is a runtime command`);
+  }
+  assert.match(shipped.commands.find((row) => row.name === "lessons").usage,
+    /--min-changes <n>/);
 });
 
 function registryFixture(t, { commands = true } = {}) {

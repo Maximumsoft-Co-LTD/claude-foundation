@@ -40,7 +40,7 @@ Missing dimensions, unknown links, and decision cycles are rejected. Without
 `status`, only a `choice` settles a decision. Declare known concerns as `riskSignals`:
 `access-control`, `persisted-data-change`, `external-integration`,
 `performance-slo`, `user-interface`, `high-operational-risk`,
-`external-side-effect`, or `input-domain` (caller-supplied values).
+`external-side-effect`, `financial`, or `input-domain` (caller-supplied values).
 Prose is never scanned for risk keywords.
 
 Every settled answer must land in a requirement, scenario, non-goal, constraint,

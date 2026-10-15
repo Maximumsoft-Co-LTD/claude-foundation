@@ -16,6 +16,7 @@ export function amendmentInvestigationSource(prior, amendment) {
       ...rows(amendment.addRequirements)
     ],
     nonGoals: amendment.nonGoals ?? prior?.nonGoals ?? [],
+    constraints: amendment.constraints ?? prior?.constraints ?? [],
     decisions: amendment.decisions ?? prior?.decisions ?? [],
     discovery: { decisions: amendment.discovery?.decisions ?? prior?.discovery?.decisions ?? [] }
   };
@@ -54,6 +55,8 @@ export function investigationCoverageIssues(source) {
         valid = scenarios.some((r) => target.scenario === r?.key || target.scenario === r?.name);
       } else if (target?.kind === "non-goal")
         valid = rows(source.nonGoals).includes(target.key);
+      else if (target?.kind === "constraint")
+        valid = rows(source.constraints).includes(target.key);
       else if (target?.kind === "design")
         valid = decisions.has(target.key) && !!text(decisions.get(target.key)?.choice);
       if (!valid) issues.push(`investigation coverage '${id}' has missing or invalid ${target?.kind || "typed"} target '${target?.key || ""}'`);
@@ -63,7 +66,7 @@ export function investigationCoverageIssues(source) {
   }
   for (const requirement of required)
     if (!seen.has(sourceId(requirement)))
-      issues.push(`investigation requirement '${sourceId(requirement)}' is uncovered; map to requirement, scenario, non-goal or design`);
+      issues.push(`investigation requirement '${sourceId(requirement)}' is uncovered; map to requirement, scenario, non-goal, constraint or design`);
   return issues;
 }
 

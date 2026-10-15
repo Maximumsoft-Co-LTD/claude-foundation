@@ -379,6 +379,9 @@ export function createAdapterRuntime({
   maxParallelServices,
   recordScheduler,
   timestamp,
+  // (request) => Promise<{ status, benchmark, results, observed }>; the
+  // alternating base/head measurement of benchmark-runtime.mjs.
+  measureBenchmark,
   clearSnapshotCache = null,
   spawnCommandSync = spawnSync
 }) {
@@ -947,9 +950,52 @@ export function createAdapterRuntime({
     });
   }
 
+  // The same command on base and head, alternating, in one environment. It
+  // never shares the command cache: its runs are measurements, and another
+  // provider's single run of the same argv is not one.
+  async function executeBenchmark(id, provider, config, proofRunId) {
+    const state = loadRuntime(id);
+    const repository = providerRepository(id, provider, config);
+    const cwd = repository?.workspacePath || state.workspace?.path || ROOT;
+    const repositoryManifest = providerRepositoryManifest(id, provider, config, proofRunId);
+    const built = configuredCommand(provider, config);
+    const commandExecutionId = `benchmark-${Date.now()}`;
+    const env = adapterEnvironment(id, {
+      repository, repositoryManifest, cwd, envFrom: resolvedEnvironmentVariables(config)
+    }, config, proofRunId, commandExecutionId);
+    const started = now();
+    const startedMs = Date.now();
+    const measured = await measureBenchmark({
+      config, workspace: cwd, baseHead: repositoryBaseHead(repository || { id: "root" }, state),
+      command: built.command, args: built.args, env, timeoutMs: config.timeoutMs
+    });
+    assertReadRepositories(provider, repositoryManifest.rows);
+    const last = measured.results.at(-1) || {};
+    const durationMs = Date.now() - startedMs;
+    const log = executionLog(id, provider, commandExecutionId, {
+      status: last.status, signal: last.signal, timedOut: Boolean(last.timedOut), durationMs,
+      stdout: `${measured.observed}\n\n${last.stdout || ""}`, stderr: last.stderr || ""
+    });
+    recordReceipt(id, provider, measured.status, {
+      config, adapter: "benchmark", proofRunId, commandExecutionId,
+      workspaceHash: providerWorkspaceHash(id, provider, state.activeProofRun?.workspaceHash),
+      claims: providerClaims(id, provider, config).join(","),
+      command: built.display, started, observed: measured.observed, durationMs,
+      log: log.path, artifacts: [log],
+      environment: config.environment || null, project: config.project || null,
+      benchmark: measured.benchmark
+    }, { executed: true });
+    return evidenceResultValue({
+      provider, status: measured.status,
+      observations: [{ kind: "benchmark", ...measured.benchmark.comparison }]
+    });
+  }
+
   async function executeAdapter(id, provider, config, proofRunId, commandCache) {
     if (config.adapter === "contract-digest")
       return executeContractDigest(id, provider, config, proofRunId);
+    if (config.adapter === "benchmark")
+      return executeBenchmark(id, provider, config, proofRunId);
     const execution = adapterExecutionContext(
       id, provider, config, proofRunId, commandCache);
     execution.result = await execution.cached.result;

@@ -46,7 +46,8 @@ const labels = {
     open: "Open", supported: "Supported", falsified: "Falsified", resolved: "Resolved",
     research: "Continue investigating", user: "User decision required", findings: "Findings",
     tradeoffs: "Tradeoffs", prototype: "Prototype (not proof)",
-    unread: "Discovered sources not cited by a fact (hashed, not yet read)"
+    unread: "Discovered sources not cited by a fact (hashed, not yet read)",
+    nextCheck: "Next check", noNextCheck: "No next check yet"
   },
   th: {
     title: "รายงานการสำรวจปัญหา", status: "สถานะ", current: "ข้อสรุปปัจจุบัน",
@@ -61,7 +62,8 @@ const labels = {
     open: "ยังไม่สรุป", supported: "มีหลักฐานสนับสนุน", falsified: "มีหลักฐานหักล้าง", resolved: "ตัดสินใจแล้ว",
     research: "ต้องสำรวจต่อ", user: "ต้องการการตัดสินใจจากผู้ใช้", findings: "ข้อค้นพบ",
     tradeoffs: "ข้อแลกเปลี่ยน", prototype: "ต้นแบบ (ไม่ใช่หลักฐานพิสูจน์)",
-    unread: "แหล่งที่ค้นพบแต่ยังไม่มีข้อเท็จจริงอ้างอิง (hash แล้ว ยังไม่ได้อ่าน)"
+    unread: "แหล่งที่ค้นพบแต่ยังไม่มีข้อเท็จจริงอ้างอิง (hash แล้ว ยังไม่ได้อ่าน)",
+    nextCheck: "ตรวจต่อ", noNextCheck: "ยังไม่มีการตรวจต่อ"
   }
 };
 
@@ -156,8 +158,15 @@ export function renderInvestigationReport({ record, state, projectRoot, sourceRo
     `  ${l.choice}: ${rows(row.alternatives).map(escape).join(" / ") || escape(row.choice)}; ` +
     `${l.recommendation}: ${escape(row.recommended || row.reason)}; ` +
     `${l.evidence}: ${rows(row.recommendationFactKeys).map(escape).join(", ") || l.none}`)));
+  const experiments = new Map(rows((state.intake || record).experiments)
+    .filter(Boolean).map((row) => [row.key, row]));
+  const nextChecks = (row) => rows(row.experimentKeys).length
+    ? rows(row.experimentKeys).map((key) => `${l.nextCheck}: **${escape(key)}** ` +
+      `[${escape(experiments.get(key)?.status || l.none)}] ${escape(experiments.get(key)?.question || l.none)}`).join("; ")
+    : l.noNextCheck;
   output += section(l.unknowns, list([
-    ...rows(state.hypotheses).filter((row) => row.status === "open").map((row) => escape(row.statement)),
+    ...rows(state.hypotheses).filter((row) => row.status === "open").map((row) =>
+      `**${escape(row.key)}:** ${escape(row.statement)} — ${nextChecks(row)}`),
     ...rows(state.action.investigation?.issues).map(escape),
     ...rows(validationIssues).filter((issue) => !rows(state.action.investigation?.issues).includes(issue)).map(escape),
     ...rows(state.decisions).filter((row) => row.status === "open").map((row) => escape(row.question))

@@ -25,13 +25,15 @@ const HIGH_CLASSES =
 
 // Typed draft risk signals that name a trust boundary set the review tier the
 // same way a declared security trigger does. `access-control` is an
-// authorization boundary: the high tier. `input-domain` is caller-supplied
-// values reaching computation: at least the medium tier, so its first review
-// runs on the configured model instead of the fast low-risk one. Other typed
-// signals already reach review through the capabilities and coverage they
-// require; they do not move the tier here.
+// authorization boundary and `financial` is money movement: both the high
+// tier, whatever language the intent is written in. `input-domain` is
+// caller-supplied values reaching computation: at least the medium tier, so
+// its first review runs on the configured model instead of the fast low-risk
+// one. Other typed signals already reach review through the capabilities and
+// coverage they require; they do not move the tier here.
 export const SECURITY_RISK_SIGNAL_TIERS = Object.freeze({
   "access-control": "high",
+  "financial": "high",
   "input-domain": "medium"
 });
 
@@ -75,9 +77,11 @@ export function highReviewRiskTriggers({ state, claims, capabilities, grounding 
   }
   if (state.impact === "high" || claims.some((claim) => claim.impact === "high"))
     triggers.push("high-impact");
+  const highSignals = securityRiskSignals(state, "high");
   if ((state.securityTriggers || []).length || capabilities.has("security-static") ||
-      securityRiskSignals(state, "high").length)
+      highSignals.includes("access-control"))
     triggers.push("authorization-or-secrets");
+  if (highSignals.includes("financial")) triggers.push("financial");
   for (const capability of HIGH_CAPABILITIES) {
     if (!capabilities.has(capability)) continue;
     triggers.push("destructive-data-or-external-contract");

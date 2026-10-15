@@ -3043,3 +3043,193 @@ test("semantic amendments cannot orphan a retained investigation requirement", (
   });
   assert.match(result.issues.join("\n"), /invalid requirement target|invalid scenario target/);
 });
+
+const TWO_CONSTRAINTS = ["Keep the existing payment table", "Respond within 200 ms"];
+
+test("draft constraints render as a proposal section before Non-goals", () => {
+  const state = { intent: "Keep payment retries safe", schema: "foundation-standard" };
+  const plain = normalizeSemanticDraft(semanticDraftV4({ nonGoals: ["No refunds"] }), slugify);
+  const constrained = normalizeSemanticDraft(semanticDraftV4({
+    nonGoals: ["No refunds"], constraints: TWO_CONSTRAINTS
+  }), slugify);
+  assert.deepEqual(constrained.issues, []);
+  assert.deepEqual(constrained.draft.constraints, TWO_CONSTRAINTS);
+  const proposal = renderDraftProposal(constrained.draft, state);
+  const section = "\n\n## Constraints\n\n- Keep the existing payment table\n- Respond within 200 ms";
+  assert.ok(proposal.includes(section));
+  assert.ok(proposal.indexOf("## Constraints") < proposal.indexOf("## Non-goals"));
+  // Without constraints there is no section and every other line is unchanged.
+  assert.equal(Object.hasOwn(plain.draft, "constraints"), false);
+  const unconstrained = renderDraftProposal(plain.draft, state);
+  assert.doesNotMatch(unconstrained, /## Constraints/);
+  assert.equal(proposal.replace(section, ""), unconstrained);
+});
+
+test("constraints must be an array of non-empty strings", () => {
+  for (const constraints of ["Keep the existing payment table", ["Keep it", ""], ["ok", 3]]) {
+    const issues = normalizeSemanticDraft(semanticDraftV4({ constraints }), slugify).issues;
+    assert.ok(issues.includes("semantic draft constraints must be an array of non-empty strings"),
+      JSON.stringify(constraints));
+  }
+});
+
+test("investigation coverage maps a requirement to a constraint by its exact text", () => {
+  const source = investigationDraft();
+  source.constraints = ["Keep existing storage"];
+  source.investigationCoverage[2].targets = [{ kind: "constraint", key: "Keep existing storage" }];
+  assert.deepEqual(normalizeSemanticDraft(source, slugify).issues, []);
+  source.investigationCoverage[2].targets = [{ kind: "constraint", key: "Keep the storage" }];
+  assert.match(normalizeSemanticDraft(source, slugify).issues.join("\n"),
+    /storage@1' has missing or invalid constraint target 'Keep the storage'/);
+  source.investigationCoverage.pop();
+  assert.match(normalizeSemanticDraft(source, slugify).issues.join("\n"),
+    /storage@1' is uncovered; map to requirement, scenario, non-goal, constraint or design/);
+});
+
+test("an amendment keeps the change's constraints for investigation coverage", () => {
+  const source = investigationDraft();
+  source.constraints = ["Keep existing storage"];
+  source.investigationCoverage[2].targets = [{ kind: "constraint", key: "Keep existing storage" }];
+  const { draft } = normalizeSemanticDraft(source, slugify);
+  const tasksContent = draft.tasks.map((task, i) => renderDraftTask(task, i)).join("\n");
+  const compile = (amendment) => compileSemanticAmendment({
+    amendment: { version: 1, reason: "Name the audit sink", ...amendment },
+    contract: { version: 2, claims: draft.claims, providers: {} }, tasksContent, slugify,
+    renderTask: renderDraftTask, semanticDraftVersion: 3, investigationSource: source
+  });
+  assert.doesNotMatch(compile({}).issues.join("\n"), /constraint target/);
+  assert.match(compile({ constraints: ["Move to new storage"] }).issues.join("\n"),
+    /invalid constraint target 'Keep existing storage'/);
+});
+
+test("a benchmark provider needs at least three runs and a non-negative regression limit", () => {
+  const issuesFor = (provider) => normalizeSemanticDraft(semanticDraftV4({
+    execution: { version: 1, services: {}, providers: {
+      performance: { adapter: "benchmark", command: ["npm", "run", "bench"], ...provider }
+    } }
+  }), slugify).issues.filter((issue) => issue.includes("execution.providers"));
+  assert.deepEqual(issuesFor({}), [], "omitted values take the defaults");
+  assert.deepEqual(issuesFor({ runs: 3, maxRegressionPercent: 0 }), []);
+  assert.match(issuesFor({ runs: 1 }).join("\n"),
+    /execution\.providers\.performance\.runs must be at least 3/);
+  assert.match(issuesFor({ runs: 4.5 }).join("\n"), /runs must be at least 3/);
+  assert.match(issuesFor({ maxRegressionPercent: -1 }).join("\n"),
+    /maxRegressionPercent must be a number of at least 0/);
+  assert.match(issuesFor({ maxRegressionPercent: "10" }).join("\n"), /maxRegressionPercent/);
+  // Only the benchmark adapter carries these fields.
+  assert.deepEqual(normalizeSemanticDraft(semanticDraftV4({
+    execution: { version: 1, services: {}, providers: {
+      performance: { adapter: "command", command: ["npm", "run", "bench"], runs: 1 }
+    } }
+  }), slugify).issues.filter((issue) => issue.includes("execution.providers")), []);
+});
+
+function startFixture(t) {
+  const root = mkdtempSync(join(tmpdir(), "semantic-fixes-start-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const changes = join(root, "openspec", "changes");
+  const runtime = join(root, ".foundation", "runtime");
+  const writeJson = (path, value) => {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+  };
+  for (const schema of ["foundation-rapid", "foundation-standard"]) {
+    const templates = join(root, "openspec", "schemas", schema, "templates");
+    mkdirSync(templates, { recursive: true });
+    writeFileSync(join(templates, "proposal.md"), "# <title>\n");
+    writeFileSync(join(templates, "tasks.md"), "- [ ] **T001** replace-with-task\n");
+    writeJson(join(templates, "evidence.yaml"), { version: 2, claims: [{
+      id: "replace-with-stable-claim-id", scenario: "replace-with", impact: "low",
+      capabilities: ["test"] }] });
+    writeJson(join(templates, "execution.yaml"), { version: 1, providers: {}, services: {} });
+    writeJson(join(templates, "repositories.yaml"), {
+      version: 1, repositories: [{ id: "root", mode: "write", dependsOn: [] }] });
+    writeJson(join(templates, "handoffs.yaml"), { version: 1, operations: [] });
+    writeFileSync(join(templates, "design.md"), "# Design for <title>\n");
+    writeFileSync(join(templates, "spec.md"), "## ADDED Requirements\n");
+  }
+  mkdirSync(join(changes, "archive", "2026-09-01-fix-rounding"), { recursive: true });
+  const draftPath = join(root, "draft.json");
+  const lifecycle = createChangeLifecycle({
+    root, policy: () => ({ workflow: { grounding: "optional" }, land: {} }), securityTerms: [],
+    fail: (message) => { throw new Error(message); }, pathInside: () => true,
+    readJson: (path) => JSON.parse(readFileSync(path, "utf8")), writeJson, slugify,
+    changePath: (id) => join(changes, id),
+    loadRuntime: (id) => JSON.parse(readFileSync(join(runtime, `${id}.json`), "utf8")),
+    saveRuntime: (state) => writeJson(join(runtime, `${state.id}.json`), state),
+    setOperationChangeId: () => {}, initialBudget: () => ({}), gitHead: () => "head",
+    preexistingDirty: () => ({}), now: () => "2026-09-02T00:00:00.000Z",
+    bindClaudeSession: () => {}, validate: () => {}, createSandbox: () => {},
+    showPacket: () => {}, measureStage: (_stage, operation) => operation(),
+    trapFailures: (operation) => operation(),
+    rollbackStart: (id) => {
+      rmSync(join(changes, id), { recursive: true, force: true });
+      rmSync(join(runtime, `${id}.json`), { force: true });
+      return [];
+    }
+  });
+  const start = (overrides = {}) => {
+    writeJson(draftPath, {
+      version: 4, id: "fix-change", intent: "Return the bounded result",
+      impact: "low", coupling: "isolated",
+      requirements: [{
+        key: "bounded-result", capability: "fix-change", operation: "added",
+        scenarios: [{ name: "Bounded input", when: "A bounded input arrives",
+          then: "The bounded result is returned" }],
+        outcome: "The bounded result is returned"
+      }],
+      tasks: [{ key: "implement-bounded-result", outcome: "Implement the bounded result",
+        covers: ["bounded-result"], paths: ["src/**"], verify: "npm test" }],
+      evidence: { "bounded-result": { capabilities: ["test"] } },
+      ...overrides
+    });
+    const prior = console.log;
+    console.log = () => {};
+    try { return lifecycle.startAtomic(draftPath); }
+    finally { console.log = prior; }
+  };
+  const state = () => JSON.parse(readFileSync(join(runtime, "fix-change.json"), "utf8"));
+  const proposal = () => readFileSync(join(changes, "fix-change", "proposal.md"), "utf8");
+  return { root, changes, start, state, proposal };
+}
+
+test("a draft that fixes an archived change records it in state and proposal", (t) => {
+  const value = startFixture(t);
+  value.start({ fixes: ["fix-rounding"], constraints: TWO_CONSTRAINTS });
+  assert.deepEqual(value.state().fixes, ["fix-rounding"]);
+  assert.match(value.proposal(), /^- \*\*Fixes:\*\* fix-rounding$/m);
+  assert.match(value.proposal(), /## Constraints\n\n- Keep the existing payment table\n- Respond within 200 ms/);
+});
+
+test("fixes naming an unarchived change is an agent draft edit at inspect", (t) => {
+  const value = startFixture(t);
+  const action = value.start({ fixes: ["zzz"] });
+  assert.equal(action.action, "EDIT");
+  assert.equal(action.owner, "agent");
+  assert.equal(action.boundary, "draft-validation");
+  assert.ok(action.intake.issues.includes("semantic draft fixes zzz is not an archived change"));
+  assert.equal(existsSync(join(value.changes, "fix-change")), false);
+  // An active (unarchived) change of that name is not archived either.
+  mkdirSync(join(value.changes, "zzz"), { recursive: true });
+  assert.ok(value.start({ fixes: ["zzz"] }).intake.issues
+    .includes("semantic draft fixes zzz is not an archived change"));
+  assert.match(value.start({ fixes: "fix-rounding" }).intake.issues.join("\n"),
+    /fixes must be an array of archived change ids/);
+});
+
+test("a benchmark provider below three runs is an agent draft edit at inspect", (t) => {
+  const value = startFixture(t);
+  const action = value.start({ execution: { version: 1, services: {}, providers: {
+    test: { adapter: "benchmark", command: ["npm", "run", "bench"], runs: 1 } } } });
+  assert.equal(action.action, "EDIT");
+  assert.equal(action.boundary, "draft-validation");
+  assert.match(action.intake.issues.join("\n"), /runs must be at least 3/);
+});
+
+test("a draft without fixes leaves state and proposal without them", (t) => {
+  const value = startFixture(t);
+  value.start();
+  assert.equal(Object.hasOwn(value.state(), "fixes"), false);
+  assert.doesNotMatch(value.proposal(), /Fixes:/);
+  assert.doesNotMatch(value.proposal(), /## Constraints/);
+});

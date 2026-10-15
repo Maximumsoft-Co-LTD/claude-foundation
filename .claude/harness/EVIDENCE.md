@@ -250,6 +250,7 @@ not the normal interactive recovery flow.
 | `test-discovery` | Run a test command once and emit both test and discovery receipts |
 | `playwright` | Run project-owned Playwright tests and map structured claim annotations |
 | `contract-digest` | Hash one declared artifact in two or more repositories and pass only when the bytes agree |
+| `benchmark` | Run one command alternately on base and head and pass only when the head median stays within the regression threshold ([Performance against base](#performance-against-base)) |
 | `external` | Require a receipt from a system Change Loop does not execute |
 
 For a repository-scoped provider, `FOUNDATION_REPOSITORIES_FILE` binds every
@@ -475,8 +476,8 @@ attempt, and reported as `reviewAdvisories.specGaps` on a reached `proven` or
 Closing one is a semantic amendment the user decides. An explicit
 `--review` (or impact, coupling, or declared security triggers) raises
 verification risk to high even at the low review tier. A draft's typed
-`riskSignals` are kept on the change: `access-control` makes review required
-under either policy and selects the high tier, and `input-domain` at least
+`riskSignals` are kept on the change: `access-control` and `financial` make
+review required under either policy and select the high tier, and `input-domain` at least
 the medium tier (configured model); review required only by intent keywords
 follows its tier. Medium, high, promoted, and legacy routes
 are `diff-first` on the configured model. Intent keywords alone make review
@@ -833,3 +834,25 @@ code — the task is not ticked: it returns with the task's verification failure
 `task <id> completed with no change`, counted like any repeated verify failure.
 Tasks scoped only to docs or manifests, observation task kinds, and refactor,
 docs, chore, or config changes keep verify-only completion.
+
+## Performance against base
+
+A `benchmark` provider measures one project command on the original code and on
+the change under the same environment. It takes `command`, `runs` (integer, at
+least 3, default 5), and `maxRegressionPercent` (default 10); a draft with fewer
+runs returns an agent `EDIT`. The base tree is built exactly as for
+[tests that fail without the change](#tests-that-fail-without-the-change), and
+runs alternate base, head, base, head so machine drift affects both sides.
+
+The receipt keeps every duration sample per side, both medians,
+`regressionPercent` (`(head − base) / base × 100`, two decimals), the
+threshold, and one environment descriptor for both sides. The provider passes
+when every head run exits 0 and `regressionPercent` is at most the threshold;
+a value equal to the threshold passes. A larger regression returns the
+convergent evidence REPAIR `stage: "performance-regression"` with finding
+`<provider>:performance-regression` carrying both medians, the percentage, and
+the threshold, so the ordinary recovery ladder applies. A failing head command
+is the ordinary `evidence-failed` repair. A missing `baseHead`, a base tree that
+cannot be built, or a base run that cannot spawn or fails records
+`comparison: {status: "unavailable", reason}` and decides from the head exits
+alone; it never blocks.

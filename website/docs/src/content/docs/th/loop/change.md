@@ -158,8 +158,11 @@ approval packet การ inspect ครั้งแรกยังคืน tas
 และไม่อยู่ใน `paths` ของ task ใด และ error ใน `apiContracts` ที่ไม่มี status หรือ code
 เป็นงานซ่อมของ agent
 ใช้ `riskSignals` แบบ typed สำหรับ access control, persisted data, integration,
-performance SLO, UI, operational risk และ external side effect เพื่อให้ coverage
-ที่บังคับใช้ไม่ขึ้นกับภาษาของ prose Harness บันทึก source digest เอง draft ที่ถูกต้องจึงได้
+performance SLO, UI, operational risk, external side effect และผลทางการเงิน
+(`financial`) เพื่อให้ coverage ที่บังคับใช้ไม่ขึ้นกับภาษาของ prose เมื่อมี
+`access-control` ให้ติด `access: allow` และ `access: deny` ใน scenario อย่างน้อย
+อย่างละหนึ่ง `constraints` (ถ้ามี) แสดงใน proposal และ `fixes` (ถ้ามี) ระบุ change
+ที่ archive แล้วซึ่ง change นี้แก้ Harness บันทึก source digest เอง draft ที่ถูกต้องจึงได้
 `DONE` ตั้งแต่ inspect ครั้งแรก และ warning ของ design กับ reader guide เป็นเพียงคำแนะนำ
 การ inspect เก็บ snapshot ที่ harness เป็นเจ้าของเพียงชุดเดียว โดยผูก digest ของ
 draft และ local sources ก่อน inspect repository intelligence แบบ bounded จะ

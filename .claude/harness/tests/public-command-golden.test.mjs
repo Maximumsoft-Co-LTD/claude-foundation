@@ -37,6 +37,14 @@ test("golden fixture freezes every public host and CLI command contract", () => 
   assert.equal(digest(cliRows), fixture.cliCommands.sha256);
 });
 
+test("the frozen public surface includes the read-only cross-change rollups", () => {
+  const rows = publicCliRows();
+  assert.equal(rows.length, 75);
+  for (const name of ["outcomes", "lessons"])
+    assert.deepEqual(rows.filter((row) => row.name === name).map(({ kind, idempotent }) =>
+      ({ kind, idempotent })), [{ kind: "read", idempotent: true }], name);
+});
+
 test("every frozen public command retains a successful non-mutating help route", () => {
   for (const row of publicCliRows()) {
     const result = spawnSync("bash", ["./cli.sh", ...row.name.split(" "), "--help"], {

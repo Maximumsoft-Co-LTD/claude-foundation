@@ -114,6 +114,12 @@ const RULES = {
       ? result(live.map((requirement) => text(requirement.key)), ["tasks[].verify", "evidence"])
       : null;
   },
+  // A scenario tagged `access: deny` states the refusal itself.
+  "permission-rejection": (source) => {
+    const keys = liveRequirements(source).filter((requirement) => scenarios(requirement).some((row) =>
+      text(row.access).toLowerCase() === "deny")).map((requirement) => text(requirement.key));
+    return keys.length ? result(keys, ["requirements[].scenarios access:deny"]) : null;
+  },
   "data-migration": (source) =>
     every(rows(source.dataModel), ["migration"]) ? result([], ["dataModel[].migration"]) : null,
   "rollout-rollback": (source) =>

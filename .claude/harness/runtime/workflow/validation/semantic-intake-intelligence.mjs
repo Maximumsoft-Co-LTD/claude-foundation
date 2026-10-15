@@ -16,6 +16,7 @@ const RISK_WEIGHTS = Object.freeze({
   "user-interface": 1,
   "high-operational-risk": 3,
   "external-side-effect": 3,
+  "financial": 3,
   "input-domain": 1
 });
 

@@ -58,6 +58,22 @@
       "description": "Project repair-aware timing, guard provenance, evidence reuse, usage availability, and the next safe action without mutating state."
     },
     {
+      "name": "outcomes",
+      "usage": "outcomes [--pretty]",
+      "audience": "agent",
+      "kind": "read",
+      "idempotent": true,
+      "description": "Summarize every archived change (proof runs, first-proof pass, user decisions, known cost, declared escaped defects) and work type × impact × risk cohorts over known values, without writing state."
+    },
+    {
+      "name": "lessons",
+      "usage": "lessons [--min-changes <n>] [--pretty]",
+      "audience": "agent",
+      "kind": "read",
+      "idempotent": true,
+      "description": "Group blocker and review finding codes that recur across at least --min-changes distinct changes (default 3, minimum 2) into advisory permanent-check proposals for /change, reporting uncoded totals separately, without writing state."
+    },
+    {
       "name": "exec",
       "usage": "exec <change> [--phase change|build|prove|land] [--repo <id>] [--task <id>] -- <command...>",
       "audience": "agent",
@@ -806,6 +822,8 @@
     "metrics",
     "advance",
     "feedback",
+    "outcomes",
+    "lessons",
     "budget-checkpoint",
     "budget-continue",
     "doctor",

@@ -30,8 +30,11 @@ patches or source revisions.
 Build and Prove completion report `TARGET_REACHED`; only an archived change is
 `DELIVERED`. Read current readiness with `feedback <change-id>`, export
 allowlisted local metadata with `feedback <change-id> --diagnostics`, or recover
-bounded current context with `packet <change-id> --resume`. These inspection
-views do not execute lifecycle work; see the [harness guide](.claude/harness/README.md).
+bounded current context with `packet <change-id> --resume`. Across changes,
+`outcomes` summarizes first-proof pass, rework, decisions, cost, and declared
+escaped defects, and `lessons` lists recurring blocker and review codes with a
+suggested permanent check. These inspection views do not execute lifecycle
+work; see the [harness guide](.claude/harness/README.md).
 
 - To use Change Loop, follow [Your first change](#your-first-change).
 - To understand lifecycle behavior, read [The workflow in one picture](#the-workflow-in-one-picture); use [WORKFLOW.md](WORKFLOW.md) only as the detailed contract.

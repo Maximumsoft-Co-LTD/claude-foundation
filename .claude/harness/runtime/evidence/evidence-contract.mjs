@@ -203,10 +203,9 @@ export function collectReviewSignals(state, contract, configuredCapabilities = [
   // capabilities are high, resilience at least medium).
   for (const row of reviewCoveredProviders(contract.providers))
     requiredTriggers.push(`covered-by-review:${row.capability}`);
-  // An access-control risk signal declares an authorization boundary: review
-  // is required under every review policy, not only escalated in tier.
-  if (securityRiskSignals(state, "high").length)
-    requiredTriggers.push("access-control");
+  // An access-control or financial risk signal declares a high-risk boundary:
+  // review is required under every review policy, named by the signal itself.
+  requiredTriggers.push(...securityRiskSignals(state, "high"));
   if (/\b(concurren|race|deadlock|money|payment|billing|financial|migration|irreversible)\w*\b/.test(semantic) ||
       THAI_REQUIRED_SEMANTICS.test(semantic))
     requiredTriggers.push("risk-semantics");

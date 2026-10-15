@@ -314,6 +314,12 @@ case "${1:-}" in
   feedback)
     shift; need_arg "feedback" "${1:-}"
     run_runtime read feedback "$@" ;;
+  outcomes)
+    shift
+    run_runtime read outcomes "$@" ;;
+  lessons)
+    shift
+    run_runtime read lessons "$@" ;;
   investigate)
     shift; need_arg "investigate" "${1:-}"
     run_runtime write investigate "$@" ;;
@@ -528,7 +534,7 @@ case "${1:-}" in
     shift
     [ "$#" -gt 0 ] || fail "runtime requires an internal harness command"
     warn "'runtime' is an internal compatibility namespace; use canonical public commands"
-    case "$1" in version|api-version|hash|doctor|packet|metrics|feedback) access=read ;; *) access=write ;; esac
+    case "$1" in version|api-version|hash|doctor|packet|metrics|feedback|outcomes|lessons) access=read ;; *) access=write ;; esac
     run_runtime "$access" "$@" ;;
   dashboard|dashboard-up|dashboard-down|dashboard-status)
     sub="$1"; shift

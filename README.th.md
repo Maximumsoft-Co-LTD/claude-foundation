@@ -29,6 +29,9 @@ installation ให้ใช้ cohort ครบชุดแทนการด�
 archived แล้วจึงแสดง `DELIVERED` ใช้ `feedback <change-id>` ดู readiness ปัจจุบัน,
 `feedback <change-id> --diagnostics` ส่งออก metadata ที่ผ่าน allowlist ในเครื่อง
 และ `packet <change-id> --resume` อ่าน context ล่าสุดภายในขนาดที่กำหนด
+ส่วนภาพรวมข้าม change ใช้ `outcomes` สรุปอัตราผ่าน Prove ครั้งแรก, rework,
+การตัดสินใจของคน, ต้นทุน และบั๊กที่หลุดตามที่ประกาศไว้ และใช้ `lessons` ดู
+blocker/review code ที่เกิดซ้ำพร้อมข้อเสนอ check ถาวร
 คำสั่งตรวจเหล่านี้ไม่ทำงาน lifecycle ต่อ ดูรายละเอียดใน [คู่มือ harness](.claude/harness/README.md)
 
 - ถ้าจะใช้งาน ให้เริ่มที่ [สอนทำ Change แรก](#สอนทำ-change-แรก)

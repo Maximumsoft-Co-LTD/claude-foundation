@@ -1,0 +1,368 @@
+{
+  "version": 2,
+  "purpose": "change",
+  "language": "th",
+  "id": "pstack-workflow-gaps",
+  "activeChange": null,
+  "problem": "ข้อเสนอ 10 ข้อที่ได้จาก pstack (routing ตามประเภท×ความเสี่ยง, task contract, observed/hypothesis/unknown, design contract, role agents, handoff artifacts, evidence gates, stuck handling, lessons→checks, metrics) มีข้อใดที่ Change Loop ทำอยู่แล้ว ข้อใดขาดจริง และควรปรับอะไรก่อน",
+  "mode": "analyze",
+  "intent": {
+    "goal": "ปรับ Change Loop ตามแนวคิด pstack: เงื่อนไขเลือกขั้นตอน + เกณฑ์ผ่านแต่ละขั้น + หลักฐานส่งมอบ",
+    "outcome": "gap analysis ต่อข้อเสนอแต่ละข้อเทียบ source ปัจจุบัน พร้อมลำดับปรับที่แนะนำ เพื่อส่งต่อเป็น Change",
+    "actors": [
+      "maintainer",
+      "consumer agent",
+      "human owner"
+    ],
+    "scope": [
+      "routing",
+      "task contract",
+      "investigation output",
+      "design contract",
+      "agent roles",
+      "handoff artifacts",
+      "quality gates",
+      "stuck handling",
+      "lessons to checks",
+      "metrics"
+    ]
+  },
+  "conversation": [
+    {
+      "key": "u1",
+      "speaker": "user",
+      "statement": "imporce follow สิ่งที่ควรนำจาก pstack ไปปรับ Workflow คือ เงื่อนไขเลือกขั้นตอน + เกณฑ์ผ่านแต่ละขั้น + หลักฐานส่งมอบ ... (ข้อเสนอ 10 ข้อ และลำดับเริ่มปรับ 6 ข้อ)",
+      "source": "session message /investigate"
+    },
+    {
+      "key": "u2",
+      "speaker": "user",
+      "statement": "เลือกทั้งหมด: Evidence gates, Lessons → checks, Cross-change metrics, Small record/draft fixes. เพิ่มได้ทั้งนั้นแหละ แต่ต้องอยู่ในหลักคิด ห้าม block agent or user ทุกงานต้องมีทางออกจนถึงงานเสร็จ",
+      "source": "AskUserQuestion answer (scope)"
+    }
+  ],
+  "requirements": [
+    {
+      "key": "core-principle",
+      "revision": 1,
+      "kind": "constraint",
+      "statement": "การปรับต้องเน้นเงื่อนไขเลือกขั้นตอน เกณฑ์ผ่าน และหลักฐานส่งมอบ ไม่ใช่เพิ่มรายชื่อ agent หรือ prompt ยาว",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": [
+        "u1"
+      ]
+    },
+    {
+      "key": "risk-not-size",
+      "revision": 1,
+      "kind": "constraint",
+      "statement": "จำนวนไฟล์ที่เปลี่ยนไม่ใช่ตัวแทนความเสี่ยง",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": [
+        "u1"
+      ]
+    },
+    {
+      "key": "status-bound-evidence",
+      "revision": 1,
+      "kind": "constraint",
+      "statement": "สถานะผ่านต้องผูกกับ evidence ไม่ใช่คำบอกของ agent",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": [
+        "u1"
+      ]
+    },
+    {
+      "key": "lean-checks",
+      "revision": 1,
+      "kind": "constraint",
+      "statement": "เพิ่ม check จากปัญหาจริงเท่านั้น ไม่เพิ่มจน workflow ช้า; งานเล็กไม่ต้องสร้างหลาย artifact",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": [
+        "u1"
+      ]
+    },
+    {
+      "key": "priority-order",
+      "revision": 1,
+      "kind": "example",
+      "statement": "ลำดับที่เสนอ: 1 task contract+AC, 2 evidence+gate, 3 routing, 4 handoff artifact, 5 multi-agent เฉพาะจุด, 6 metrics",
+      "origin": "user",
+      "status": "stated",
+      "material": false,
+      "conversationKeys": [
+        "u1"
+      ]
+    },
+    {
+      "key": "gap-analysis",
+      "revision": 1,
+      "kind": "success-criterion",
+      "statement": "ระบุต่อข้อว่ามีแล้ว/บางส่วน/ขาด พร้อมอ้าง source และ gap ที่ชัด",
+      "origin": "agent",
+      "status": "superseded",
+      "material": true,
+      "conversationKeys": [
+        "u1"
+      ],
+      "reason": "เป็นงานวิเคราะห์ที่ agent ทำได้เอง ไม่ใช่ความหมายที่ต้องให้ผู้ใช้ยืนยัน",
+      "supersededBy": { "key": "gap-analysis", "revision": 2 }
+    },
+    {
+      "key": "gap-analysis",
+      "revision": 2,
+      "kind": "success-criterion",
+      "statement": "ระบุต่อข้อว่ามีแล้ว/บางส่วน/ขาด พร้อมอ้าง source และ gap ที่ชัด",
+      "origin": "agent",
+      "status": "proposed",
+      "material": false,
+      "conversationKeys": [
+        "u1"
+      ]
+    },
+    {
+      "key": "scope-all-gaps",
+      "revision": 1,
+      "kind": "behavior",
+      "statement": "นำเข้า Change ทั้ง 4 กลุ่ม: (1) evidence gates = performance receipt เทียบ base vs head ภายใต้เงื่อนไขเดียวกัน, access-control ต้องมี allow และ deny, riskSignal financial → idempotency/recoverability/review-high; (2) lessons → checks จาก finding/blocker ที่เกิดซ้ำข้าม archived changes เสนอเป็น check ถาวรผ่าน Change ปกติ; (3) cross-change metrics rollup แบบ read-only; (4) hypothesis→experiment link ใน investigate record และ field constraints ใน change draft",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": ["u2"]
+    },
+    {
+      "key": "never-block",
+      "revision": 1,
+      "kind": "constraint",
+      "statement": "ทุกส่วนที่เพิ่มต้องอยู่ในหลักคิดเดิมของ Change Loop และห้าม block agent หรือ user; ทุกงานต้องมีทางออกจนงานเสร็จ (gate ใหม่ต้องคืน REPAIR/route ที่ทำต่อได้ ไม่ใช่ทางตัน; lessons/metrics เป็น advisory ไม่ใช่ gate)",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": ["u2"]
+    }
+  ],
+  "questions": [
+    {
+      "key": "q-scope",
+      "question": "เลือก gap ที่จะนำเข้า Change (หนึ่งหรือหลายข้อ)",
+      "material": true,
+      "status": "answered",
+      "answer": "ทั้งหมด 4 กลุ่ม โดยต้องอยู่ในหลักคิดเดิมและห้าม block agent/user",
+      "conversationKeys": ["u2"],
+      "dependsOn": [],
+      "workKeys": [
+        "change-handoff"
+      ]
+    }
+  ],
+  "experiments": [],
+  "work": [
+    {
+      "key": "map-proposals",
+      "outcome": "ตาราง status/evidence/gap ของ 10 ข้อเสนอ",
+      "questionKeys": []
+    },
+    {
+      "key": "change-handoff",
+      "outcome": "handoff เข้า Change ตาม gap ที่เลือก",
+      "questionKeys": [
+        "q-scope"
+      ]
+    }
+  ],
+  "historyGaps": [
+    "ไม่มี source ของ pstack เอง; ข้อเสนอเป็นสรุปของผู้ใช้ ไม่ได้ตรวจกับ repo pstack ต้นฉบับ"
+  ],
+  "sources": [
+    "WORKFLOW.md",
+    ".claude/harness/EVIDENCE.md",
+    ".claude/harness/README.md",
+    ".claude/rules/fundamentals.md",
+    ".claude/harness/runtime/workflow/validation/semantic-intake.mjs",
+    ".claude/harness/runtime/evidence/review-routing.mjs",
+    ".claude/harness/runtime/workflow/validation/design-blueprints.mjs",
+    ".claude/harness/runtime/workflow/investigation-runtime.mjs",
+    ".claude/harness/runtime/workflow/investigation-report.mjs",
+    ".claude/harness/runtime/observability/metrics-runtime.mjs",
+    ".claude/harness/runtime/observability/feedback-runtime.mjs",
+    ".claude/skills/performance-investigation/SKILL.md"
+  ],
+  "facts": [
+    {
+      "key": "risk-not-size",
+      "statement": "Assurance เลือกตาม risk/evidence; size มีผลแค่ budget และ slicing ไม่ลด assurance (WORKFLOW.md:24,1175-1176) ตรงกับข้อเสนอ #1",
+      "sources": [
+        "WORKFLOW.md"
+      ]
+    },
+    {
+      "key": "risk-signal-map",
+      "statement": "riskSignals map เป็น discovery dimensions: access-control, persisted-data-change, external-integration, performance-slo, user-interface, high-operational-risk, external-side-effect, input-domain; ไม่มี signal ด้านการเงิน/payment",
+      "sources": [
+        ".claude/harness/runtime/workflow/validation/semantic-intake.mjs"
+      ]
+    },
+    {
+      "key": "payment-review-only",
+      "statement": "payment/money/billing ถูกจับแค่ regex ใน review-routing เพื่อยก review tier ไม่ได้บังคับ discovery coverage (idempotency/recoverability)",
+      "sources": [
+        ".claude/harness/runtime/evidence/review-routing.mjs"
+      ]
+    },
+    {
+      "key": "worktype-blueprints",
+      "statement": "workType (feature,bugfix,refactor,api,ui,data,config,async,integration,chore,docs) เพิ่ม section ตามประเภท เช่น bugfix ต้องมี reproduction/rootCause/regression; ไม่มี perf/migration/permission เป็น workType แต่ครอบด้วย riskSignals",
+      "sources": [
+        ".claude/harness/runtime/workflow/validation/design-blueprints.mjs"
+      ]
+    },
+    {
+      "key": "design-contract-exists",
+      "statement": "design blueprint มี apiContracts, jobContract{states,retry,timeout,idempotency}, failureMatrix, dataModel; section ที่ขาดได้แค่ warning และไม่มี owner ต่อ component",
+      "sources": [
+        ".claude/harness/runtime/workflow/validation/design-blueprints.mjs",
+        "WORKFLOW.md"
+      ]
+    },
+    {
+      "key": "investigation-separation",
+      "statement": "investigation record แยก facts (ต้องมี source), hypotheses (open/supported/falsified ต้องมี factKeys), questions, experiments; report สร้าง Unknowns และ Next action แล้ว แต่ hypothesis ไม่ลิงก์ไปยัง experiment ที่จะพิสูจน์",
+      "sources": [
+        ".claude/harness/runtime/workflow/investigation-runtime.mjs",
+        ".claude/harness/runtime/workflow/investigation-report.mjs",
+        ".claude/harness/README.md"
+      ]
+    },
+    {
+      "key": "evidence-gates",
+      "statement": "receipt ผูก content/environment; bug ต้อง fail บน base (tests-not-discriminating); access-control ต้องมี negative path (deny); review แยกจาก acceptance; skill checklist ไม่ใช่ proof",
+      "sources": [
+        ".claude/harness/EVIDENCE.md",
+        "WORKFLOW.md",
+        ".claude/rules/fundamentals.md"
+      ]
+    },
+    {
+      "key": "perf-evidence-gap",
+      "statement": "การเทียบ baseline กับผลใหม่ภายใต้เงื่อนไขเดียวกันเป็นแค่ข้อความใน skill (สลับรันอย่างน้อย 5 รอบ); EVIDENCE.md ไม่มี adapter/receipt สำหรับ performance comparison",
+      "sources": [
+        ".claude/skills/performance-investigation/SKILL.md",
+        ".claude/harness/EVIDENCE.md"
+      ]
+    },
+    {
+      "key": "stuck-handling",
+      "statement": "มี recovery ladder (repair → TRY_ALTERNATE_APPROACH → no-progress decision), USER_ENVIRONMENT_REQUIRED, amend เมื่อ contract เปลี่ยน, การปฏิเสธเขียนข้าม scope ของ task อื่น; budget auto-extend และคืน budget-no-progress หลัง 3 window ไม่มี progress",
+      "sources": [
+        "WORKFLOW.md"
+      ]
+    },
+    {
+      "key": "no-lessons-loop",
+      "statement": "ไม่มีกลไกตรวจ finding/blocker ที่เกิดซ้ำข้าม change แล้วเสนอ check ถาวร (มีแค่ quality ratchet แบบ opt-in)",
+      "sources": [
+        "WORKFLOW.md",
+        ".claude/harness/README.md"
+      ]
+    },
+    {
+      "key": "metrics-per-change",
+      "statement": "metrics/feedback วัดต่อ change (wall/active/humanWait/repair, blocked operations); ไม่มี rollup ข้าม change สำหรับ first-pass acceptance, rework, escaped defects, จำนวนครั้งที่คนต้องตัดสินใจ, cost per archived change",
+      "sources": [
+        ".claude/harness/runtime/observability/metrics-runtime.mjs",
+        ".claude/harness/runtime/observability/feedback-runtime.mjs",
+        ".claude/harness/README.md"
+      ]
+    },
+    {
+      "key": "principle-conflicts",
+      "statement": "ข้อเสนอบางส่วนขัดหลักเดิม: harness ไม่เรียก model เอง (ไม่มี role persona agents), tasks.md เป็น ledger เดียวและห้าม parallel state (ไม่ควรมี brief/plan/handoff แยก), evidence ผูก content ไม่ใช่ commit, budget ไม่ hard-stop",
+      "sources": [
+        ".claude/harness/README.md",
+        "WORKFLOW.md",
+        ".claude/rules/fundamentals.md"
+      ]
+    }
+  ],
+  "hypotheses": [
+    {
+      "key": "h-coverage",
+      "statement": "Change Loop ครอบข้อ 2,3,6,8 เกือบครบแล้ว; ข้อ 1,4,7,10 บางส่วน; ข้อ 9 ยังไม่มี; ข้อ 5 และส่วน artifact แยกใน 6 ขัดหลักเดิม",
+      "status": "supported",
+      "factKeys": [
+        "risk-not-size",
+        "risk-signal-map",
+        "worktype-blueprints",
+        "design-contract-exists",
+        "investigation-separation",
+        "evidence-gates",
+        "perf-evidence-gap",
+        "stuck-handling",
+        "no-lessons-loop",
+        "metrics-per-change",
+        "principle-conflicts"
+      ]
+    }
+  ],
+  "options": [
+    {
+      "key": "g-lessons",
+      "summary": "Lessons→checks: rollup finding/blocker codes ที่เกิดซ้ำจาก archived changes แล้วเสนอ provider/lint/required capability ผ่าน Change ปกติ"
+    },
+    {
+      "key": "g-metrics",
+      "summary": "Cross-change outcome metrics: first-proof pass rate, repair/amend count, decision count, cost per archived change, escaped defect ผ่าน spec history; read-only rollup + cohort key"
+    },
+    {
+      "key": "g-perf",
+      "summary": "Performance evidence contract: receipt เทียบ base vs head ภายใต้ environment digest เดียว, N รอบสลับ, spread"
+    },
+    {
+      "key": "g-financial",
+      "summary": "riskSignal financial → idempotency, recoverability, review-high แทนการพึ่ง regex"
+    },
+    {
+      "key": "g-access-pair",
+      "summary": "access-control ต้องมีทั้ง allow และ deny path; optional real-surface evidence สำหรับ UI feature"
+    },
+    {
+      "key": "g-small",
+      "summary": "hypothesis→experiment link ใน investigate record และ field constraints ใน draft"
+    }
+  ],
+  "selection": null,
+  "decisions": [
+    {
+      "key": "scope-selection",
+      "status": "resolved",
+      "choice": "all",
+      "reason": "ผู้ใช้เลือกทั้งหมด (u2) โดยมีเงื่อนไข never-block",
+      "question": "จะนำ gap ใดเข้า Change",
+      "alternatives": [
+        "g-lessons",
+        "g-metrics",
+        "g-perf",
+        "g-financial",
+        "g-access-pair",
+        "g-small"
+      ],
+      "recommended": "g-financial",
+      "recommendationFactKeys": [
+        "payment-review-only",
+        "risk-signal-map"
+      ]
+    }
+  ],
+  "conclusion": {
+    "summary": "Change Loop ครอบแนวคิด pstack ส่วนใหญ่แล้ว (risk-not-size, task contract, fact/hypothesis, evidence-bound gates, recovery ladder). Gap จริง: lessons→checks (ไม่มี), cross-change metrics, performance evidence contract, financial riskSignal, allow+deny pairing. ไม่ควรนำ role persona agents, artifact brief/plan/handoff แยก, evidence ผูก commit หรือ budget hard-stop เพราะขัดหลักเดิม. ผู้ใช้เลือกนำทั้ง 4 กลุ่มเข้า Change โดยห้าม block agent/user"
+  },
+  "changeIntent": "ปิด gap จากแนวคิด pstack ภายในหลักเดิมของ Change Loop โดยไม่สร้างทางตัน: (1) evidence gates: performance provider ที่ receipt เทียบ base vs head ภายใต้ environment เดียวกันหลายรอบ, access-control claim ต้องมีทั้ง allow และ deny path, riskSignal financial map ไป timeout-retry-idempotency/recoverability และ review high; gate ใหม่ต้องคืน REPAIR ที่ระบุ finding และทางทำต่อ; (2) lessons → checks: rollup finding/blocker codes ที่เกิดซ้ำข้าม archived changes เป็นข้อเสนอ check ถาวรแบบ advisory ที่ส่งผ่าน Change ปกติ ไม่สร้าง state คู่ขนาน; (3) cross-change metrics: read-only rollup first-proof pass rate, repair/amend count, decision count, cost per archived change, escaped defects; unknown ไม่รายงานเป็นศูนย์; (4) investigate record ให้ hypothesis อ้าง experiment ที่พิสูจน์ได้ และ change draft มี field constraints. ไม่รวม: role persona agents, artifact brief/plan/handoff แยก, evidence ผูก commit, budget hard-stop"
+}

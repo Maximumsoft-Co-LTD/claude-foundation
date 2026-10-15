@@ -37,6 +37,8 @@ export async function routeRuntimeCommand(command, values, api) {
     showMetrics,
     showAdvance,
     showFeedback,
+    showOutcomes,
+    showLessons,
     execObserved,
     checkpointBudget,
     continueBudget,
@@ -435,6 +437,20 @@ export async function routeRuntimeCommand(command, values, api) {
       });
       if (rest.length !== 1) die("feedback requires exactly one change id");
       showFeedback(rest[0], flags);
+    },
+    "outcomes": async () => {
+      const { flags, rest } = parseStrictCommandFlags(values, "outcomes", {
+        boolean: ["pretty"]
+      });
+      if (rest.length) die("outcomes takes no change id; it summarizes every archived change");
+      showOutcomes(flags);
+    },
+    "lessons": async () => {
+      const { flags, rest } = parseStrictCommandFlags(values, "lessons", {
+        boolean: ["pretty"], value: ["min-changes"]
+      });
+      if (rest.length) die("lessons takes no change id; it groups codes across changes");
+      showLessons(flags);
     },
     "advance": async () => {
       const { flags, rest } = parseStrictCommandFlags(values, "advance", {

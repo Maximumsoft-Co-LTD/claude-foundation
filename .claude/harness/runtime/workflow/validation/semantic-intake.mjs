@@ -53,6 +53,9 @@ const RISK_SIGNAL_DIMENSIONS = Object.freeze({
   "user-interface": ["accessibility"],
   "high-operational-risk": ["operability", "recoverability"],
   "external-side-effect": ["external-authority"],
+  // Money movement: a retried or partly applied charge must not duplicate or
+  // strand funds, so the agreement names retry/idempotency and recovery.
+  "financial": ["timeout-retry-idempotency", "recoverability"],
   // Behavior computed from caller-supplied values: the agreement must name the
   // adjacent partitions (type/representation, zero, negative, fractional,
   // empty, limits), not only the reported reproduction.
@@ -203,6 +206,36 @@ export function projectDiscovery(input = {}) {
   return deriveDiscoveryCoverage(source, requiredDiscoveryDimensions(source));
 }
 
+const ACCESS_VALUES = ["allow", "deny"];
+
+function scenarioEntries(requirement) {
+  const list = Array.isArray(requirement?.scenarios) ? requirement.scenarios
+    : requirement?.scenario !== undefined ? [requirement.scenario] : [];
+  return list.map((row, index) => [index, row]).filter(([, row]) => row && typeof row === "object");
+}
+
+// An access-control change states both sides of its boundary as typed
+// scenario tags: who is let through (allow) and who is refused (deny). Only
+// the `access` field decides; scenario prose is never read for it.
+function accessIssues(source) {
+  const issues = [];
+  const seen = new Set();
+  for (const [index, requirement] of (Array.isArray(source.requirements)
+    ? source.requirements : []).entries()) {
+    for (const [scenarioIndex, scenario] of scenarioEntries(requirement)) {
+      if (scenario.access === undefined) continue;
+      const access = text(scenario.access).toLowerCase();
+      if (ACCESS_VALUES.includes(access)) seen.add(access);
+      else issues.push(`semantic draft requirements[${index}].scenarios[${scenarioIndex}].access must be allow or deny`);
+    }
+  }
+  if (strings(source.riskSignals).some((signal) => signal.toLowerCase() === "access-control"))
+    for (const access of ACCESS_VALUES)
+      if (!seen.has(access))
+        issues.push(`semantic draft riskSignals access-control requires at least one scenario with access '${access}'`);
+  return issues;
+}
+
 export function semanticIntakeIssues(input = {}) {
   if (input.version !== 4) return [];
   const source = projectDiscovery(input);
@@ -223,6 +256,7 @@ export function semanticIntakeIssues(input = {}) {
     .filter((signal) => !RISK_SIGNAL_DIMENSIONS[signal.toLowerCase()]);
   if (unknownSignals.length)
     issues.push(`semantic draft riskSignals contains unknown signal(s): ${unknownSignals.join(", ")} (known: ${Object.keys(RISK_SIGNAL_DIMENSIONS).join(", ")})`);
+  issues.push(...accessIssues(source));
 
   const requirementKeys = new Set((source.requirements || []).map((row) => text(row?.key)));
   const requiredDimensions = requiredDiscoveryDimensions(source);

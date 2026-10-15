@@ -144,6 +144,8 @@ function recordIssues(record) {
     if (!strings(fact?.sources).length) issues.push(`${label}.sources must ground the fact`);
   }
   const hypothesisKeys = new Set();
+  const experiments = new Map((Array.isArray(record.experiments) ? record.experiments : [])
+    .filter((row) => text(row?.key)).map((row) => [text(row.key), row]));
   for (const [index, hypothesis] of (record.hypotheses || []).entries()) {
     const label = `hypotheses[${index}]`;
     const key = text(hypothesis?.key);
@@ -159,6 +161,22 @@ function recordIssues(record) {
       issues.push(`${label}.factKeys must support a settled hypothesis`);
     for (const key of evidence)
       if (!factKeys.has(key)) issues.push(`${label}.factKeys references unknown fact '${key}'`);
+    // experimentKeys is optional and v2-only; a v1 record keeps its prior validation.
+    if (record.version !== 2 || hypothesis?.experimentKeys === undefined) continue;
+    const name = key || label;
+    if (!Array.isArray(hypothesis.experimentKeys) ||
+        hypothesis.experimentKeys.some((value) => typeof value !== "string" || !text(value))) {
+      issues.push(`hypothesis '${name}' experimentKeys must be an array of experiment keys`);
+      continue;
+    }
+    for (const experimentKey of strings(hypothesis.experimentKeys)) {
+      const experiment = experiments.get(experimentKey);
+      if (!experiment)
+        issues.push(`hypothesis '${name}' experimentKeys references unknown experiment '${experimentKey}'`);
+      else if (text(experiment.supersededBy))
+        issues.push(`hypothesis '${name}' experimentKeys references superseded experiment ` +
+          `'${experimentKey}'; reference its replacement '${text(experiment.supersededBy)}'`);
+    }
   }
   const decisionKeys = new Set();
   for (const [index, decision] of (record.decisions || []).entries()) {

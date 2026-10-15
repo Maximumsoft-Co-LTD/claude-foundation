@@ -268,7 +268,10 @@ export function createProofExecutionRuntime({
   prepareWorkspace = () => {},
   // (id, workspaceHash) => { status: pass|fail|not-applicable, findings }.
   // Whether the change's tests fail on the base source (test-discrimination.mjs).
-  testDiscrimination = null
+  testDiscrimination = null,
+  // (id, provider) => finding | null. The performance-regression finding a
+  // failed benchmark receipt carries (benchmark-runtime.mjs).
+  performanceRegression = () => null
 }) {
   const memoryAdvance = new Map();
   const activeAdvance = new Set();
@@ -697,7 +700,19 @@ export function createProofExecutionRuntime({
   }
 
   function writeEvidenceRepairStop(id, readiness, advanceStart, failures) {
-    const findings = evidenceFailureFindings(failures);
+    // A benchmark whose head ran cleanly but slower than its threshold is a
+    // performance repair with its measured medians, not a generic failure.
+    const regressions = failures.filter((failure) => failure.validity === "fail")
+      .map((failure) => performanceRegression(id, failure.provider)).filter(Boolean);
+    const regressed = new Set(regressions.map((finding) => finding.provider));
+    const findings = [...regressions, ...evidenceFailureFindings(
+      failures.filter((failure) => !regressed.has(failure.provider)))];
+    if (regressions.length && regressions.length === failures.length)
+      return writeConvergentRepairStop(id, readiness, advanceStart, {
+        gate: "evidence", stage: "performance-regression", findings, failures,
+        strategy: "repair-performance-regression",
+        nextReason: "Head is slower than base beyond the benchmark threshold. Remove the slowdown in product code, then resume this same gate; base and head are measured again"
+      });
     return writeConvergentRepairStop(id, readiness, advanceStart, {
       gate: "evidence", stage: "evidence-failed", findings, failures,
       strategy: "repair-failed-evidence",

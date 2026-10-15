@@ -484,6 +484,9 @@ export function renderDraftProposal(draft, state, context = {}) {
   const triggers = (draft.securityTriggers || []).filter(Boolean);
   const nonGoals = (draft.nonGoals || []).length
     ? `\n\n## Non-goals\n\n${draftBullets(draft.nonGoals)}` : "";
+  const constraints = (draft.constraints || []).length
+    ? `\n\n## Constraints\n\n${draftBullets(draft.constraints)}` : "";
+  const fixes = (draft.fixes || []).length ? [`- **Fixes:** ${draft.fixes.join(", ")}`] : [];
   const why = String(draft.why || "").trim();
   const rapid = state?.schema === "foundation-rapid";
   const decisions = rapid ? section(renderRapidDecisions(draft.decisions)) : "";
@@ -514,9 +517,10 @@ export function renderDraftProposal(draft, state, context = {}) {
       ...(rapid && !triggers.length ? [] :
         [`- **Security triggers:** ${triggers.length ? triggers.join(", ") : "none detected"}`]),
       ...(rapid && docsOnlyDraft(draft)
-        ? ["- **Specs:** none; docs-only work modifies no living spec"] : [])
+        ? ["- **Specs:** none; docs-only work modifies no living spec"] : []),
+      ...fixes
     ].join("\n") +
-    decisions + nonGoals + section(renderDerivedNotes(draft, rapid)) +
+    decisions + constraints + nonGoals + section(renderDerivedNotes(draft, rapid)) +
     section(renderInvestigationSummary(draft.investigation)) +
     section(renderInvestigationCoverage(draft)) +
     section(renderDiscoveryAppendix(draft)) +
@@ -1988,6 +1992,30 @@ export function createChangeLifecycle({
     saveRuntime(state);
   }
 
+  // The archived changes a draft declares it fixes stay on the change so an
+  // escaped defect links back to its origin. Absent, the state is untouched.
+  function persistFixes(id, fixes) {
+    const values = Array.isArray(fixes) ? fixes : [];
+    const state = loadRuntime(id);
+    if (!values.length && state.fixes === undefined) return;
+    if (values.length) state.fixes = [...values];
+    else delete state.fixes;
+    saveRuntime(state);
+  }
+
+  // Each declared fix names a change archived under
+  // openspec/changes/archive/<YYYY-MM-DD>-<id>, which Git carries across machines.
+  function fixesIssues(draft) {
+    const archive = join(root, "openspec", "changes", "archive");
+    const archived = new Set(existsSync(archive)
+      ? readdirSync(archive, { withFileTypes: true }).filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name.match(/^\d{4}-\d{2}-\d{2}-(.+)$/)?.[1]).filter(Boolean)
+      : []);
+    return (Array.isArray(draft?.fixes) ? draft.fixes : [])
+      .filter((id) => typeof id === "string" && id.trim() && !archived.has(id.trim()))
+      .map((id) => `semantic draft fixes ${id.trim()} is not an archived change`);
+  }
+
   function startResolutionFlags(draft, classification, rapid) {
     const { impact, coupling, securityTriggers } = classification;
     return {
@@ -2067,7 +2095,7 @@ export function createChangeLifecycle({
       ...taskRepositoryIssues(draft.tasks, {
         repositories: declaredRepositories(), selection: draft.repositories, exists: existsSync
       }),
-      ...apiContractErrorIssues(draft)];
+      ...apiContractErrorIssues(draft), ...fixesIssues(draft)];
     return { issues, preflight, keepsDesign, rapid };
   }
 
@@ -2128,6 +2156,7 @@ export function createChangeLifecycle({
         // rewritten unconditionally after createChange had already materialized it.
         if (resolution.upgraded) materializeDraft(id, draft);
         persistRiskSignals(id, draft.riskSignals);
+        persistFixes(id, draft.fixes);
         // Atomic start is a public Change gate. Use the same explicit validation
         // as `change validate`, including OpenSpec strict lint when available.
         measureStage("change.validate", () => validate(id, "root"));
@@ -2408,6 +2437,7 @@ export function createChangeLifecycle({
         finally { atomicStepOutput = false; }
         if (resolution.upgraded) materializeDraft(id, draft);
         persistRiskSignals(id, draft.riskSignals);
+        persistFixes(id, draft.fixes);
         validate(id, "root");
         bindClaudeSession(id, "change");
         const next = loadRuntime(id);

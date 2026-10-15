@@ -149,7 +149,7 @@ function overlayRows(workspace, dirty, productPaths, fileDigest) {
   });
 }
 
-function buildScratch(workspace, baseHead, overlay) {
+export function buildScratch(workspace, baseHead, overlay) {
   const scratch = mkdtempSync(join(tmpdir(), "foundation-discrimination-"));
   const tree = join(scratch, "base");
   mkdirSync(tree);
@@ -174,6 +174,16 @@ function buildScratch(workspace, baseHead, overlay) {
     if (existsSync(source) && !existsSync(join(tree, name))) symlinkSync(source, join(tree, name));
   }
   return { scratch, tree };
+}
+
+// The base source with every non-product sandbox path laid over it (tests,
+// fixtures, manifests), in a private scratch directory; null when Git cannot
+// describe or archive the base. `isProduct(path)` classifies a changed path.
+export function prepareBaseTree(workspace, baseHead, isProduct, fileDigest) {
+  const dirty = baseHead && workspace ? dirtyPaths(workspace, baseHead) : null;
+  if (!dirty) return null;
+  return buildScratch(workspace, baseHead,
+    overlayRows(workspace, dirty, dirty.filter(isProduct), fileDigest));
 }
 
 export function createTestDiscriminationRuntime({

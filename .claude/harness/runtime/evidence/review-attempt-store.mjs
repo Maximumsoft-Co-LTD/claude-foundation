@@ -362,6 +362,15 @@ export function reviewCompletionIdentity(dispatched, details, fail) {
   return { resultStatus, sessionId };
 }
 
+const FINDING_CODE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+// A malformed code is dropped, never rejected; an absent code adds no key so
+// uncoded findings keep their prior digest.
+function findingCode(value) {
+  return typeof value === "string" && value.length <= 64 &&
+    FINDING_CODE_PATTERN.test(value) ? { code: value } : {};
+}
+
 export function normalizeReviewCompletionFindings(details) {
   return (details.findings || []).map((finding) => ({
     id: String(finding.id || "").trim(),
@@ -373,7 +382,8 @@ export function normalizeReviewCompletionFindings(details) {
     claimIds: [...new Set((finding.claimIds || []).map((value) =>
       String(value).trim()).filter(Boolean))].sort(),
     verificationCaseIds: [...new Set((finding.verificationCaseIds || [])
-      .map((value) => String(value).trim()).filter(Boolean))].sort()
+      .map((value) => String(value).trim()).filter(Boolean))].sort(),
+    ...findingCode(finding.code)
   }));
 }
 

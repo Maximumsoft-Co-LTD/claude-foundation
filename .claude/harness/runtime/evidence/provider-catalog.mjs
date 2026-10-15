@@ -1,7 +1,7 @@
 import { canonicalJson } from "../core/trust.mjs";
 
 export const ADAPTERS = new Set([
-  "command", "test-discovery", "playwright", "contract-digest", "external"
+  "command", "test-discovery", "playwright", "contract-digest", "benchmark", "external"
 ]);
 
 export const INPUT_MODES = new Set([

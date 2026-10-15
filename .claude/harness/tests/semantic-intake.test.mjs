@@ -9,6 +9,8 @@ import {
   semanticIntakeIssues
 } from "../runtime/workflow/validation/semantic-intake.mjs";
 import { intakeDecisions } from "../runtime/workflow/validation/reader-guide.mjs";
+import { planSemanticIntakeDepth } from
+  "../runtime/workflow/validation/semantic-intake-intelligence.mjs";
 
 function source(overrides = {}) {
   return {
@@ -453,4 +455,86 @@ test("risk dimensions derive from the typed dev document sections", () => {
     dataModel: [{ entity: "A", migration: "m", rollback: "r" }, { entity: "B", migration: "m" }] });
   partial.discovery.coverage = [];
   assert.match(semanticIntakeIssues(partial).join("\n"), /missing required dimension 'rollout-rollback'/);
+});
+
+function accessDraft(accessValues, overrides = {}) {
+  const value = source({
+    riskSignals: ["access-control"],
+    requirements: [{
+      key: "search", capability: "contacts", operation: "added",
+      scenarios: accessValues.map((access, index) => ({
+        name: `Case ${index + 1}`, when: `request ${index + 1}`, then: `result ${index + 1}`,
+        ...(access === undefined ? {} : { access })
+      }))
+    }],
+    ...overrides
+  });
+  value.discovery.coverage.push({ dimension: "security-privacy", status: "covered", covers: ["search"] });
+  return value;
+}
+
+test("an access-control draft with allow and deny scenarios derives permission-rejection", () => {
+  const value = accessDraft(["allow", "deny"]);
+  assert.deepEqual(semanticIntakeIssues(value), []);
+  assert.equal(semanticIntakeAction(value).action, "DONE");
+  const row = normalizeDiscovery(value).coverage
+    .find((entry) => entry.dimension === "permission-rejection");
+  assert.equal(row.status, "covered");
+  assert.equal(row.derived, true);
+  assert.deepEqual(row.covers, ["search"]);
+  assert.deepEqual(row.derivedFrom, ["requirements[].scenarios access:deny"]);
+});
+
+test("an access-control draft missing one side returns an agent draft edit naming it", () => {
+  for (const [present, missing] of [["deny", "allow"], ["allow", "deny"]]) {
+    const action = semanticIntakeAction(accessDraft([present]));
+    assert.equal(action.action, "EDIT", missing);
+    assert.equal(action.owner, "agent");
+    assert.equal(action.boundary, "draft-validation");
+    assert.ok(action.intake.issues.includes("semantic draft riskSignals access-control " +
+      `requires at least one scenario with access '${missing}'`), missing);
+    assert.ok(!action.intake.issues.some((issue) =>
+      issue.includes(`access '${present}'`)), present);
+  }
+  // Prose that reads as a refusal never stands in for the typed tag.
+  const prose = accessDraft(["allow", undefined]);
+  prose.requirements[0].scenarios[1].then = "the request is denied with 403 forbidden";
+  assert.match(semanticIntakeIssues(prose).join("\n"), /access 'deny'/);
+  assert.match(semanticIntakeIssues(prose).join("\n"),
+    /missing required dimension 'permission-rejection'/);
+});
+
+test("an unknown access value is a draft edit and tags stay optional without the signal", () => {
+  const unknown = semanticIntakeAction(accessDraft(["allow", "deny", "maybe"]));
+  assert.equal(unknown.action, "EDIT");
+  assert.equal(unknown.boundary, "draft-validation");
+  assert.ok(unknown.intake.issues.includes(
+    "semantic draft requirements[0].scenarios[2].access must be allow or deny"));
+  // The value is checked even when the draft declares no access-control signal.
+  assert.match(semanticIntakeIssues(accessDraft(["maybe"], { riskSignals: [] })).join("\n"),
+    /access must be allow or deny/);
+  const untagged = accessDraft([undefined], { riskSignals: [] });
+  assert.deepEqual(semanticIntakeIssues(untagged), []);
+  assert.equal(semanticIntakeAction(untagged).action, "DONE");
+});
+
+test("a financial risk signal requires retry and recovery coverage in any language", () => {
+  const english = source({ intent: "Charge the card once", riskSignals: ["financial"] });
+  const thai = source({ intent: "เรียกเก็บเงินจากบัตรเพียงครั้งเดียว", riskSignals: ["Financial"] });
+  assert.deepEqual(requiredDiscoveryDimensions(english),
+    ["timeout-retry-idempotency", "recoverability"]);
+  assert.deepEqual(requiredDiscoveryDimensions(thai), requiredDiscoveryDimensions(english));
+  const action = semanticIntakeAction(english);
+  assert.equal(action.action, "EDIT");
+  assert.equal(action.boundary, "draft-validation");
+  assert.match(action.intake.issues.join("\n"),
+    /missing required dimension 'timeout-retry-idempotency'/);
+  assert.doesNotMatch(action.intake.issues.join("\n"), /unknown signal/);
+  // An unknown signal is still rejected and the known list names financial.
+  const money = semanticIntakeIssues(source({ riskSignals: ["money"] })).join("\n");
+  assert.match(money, /unknown signal\(s\): money \(known: [^)]*\bfinancial\b/);
+  // Intake depth weighs financial like the other trust-boundary signals.
+  assert.ok(planSemanticIntakeDepth(english).reasons.includes("risk:financial"));
+  assert.equal(planSemanticIntakeDepth(english).score,
+    planSemanticIntakeDepth(source({ riskSignals: ["access-control"] })).score);
 });

@@ -1,0 +1,405 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "benchmark-base-head-comparison-prove-provider",
+      "requirementKey": "benchmark-base-head-comparison",
+      "scenario": "head ไม่ช้ากว่า threshold",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "benchmark-base-head-comparison-prove-provider-2",
+      "requirementKey": "benchmark-base-head-comparison",
+      "scenario": "head ช้าเกิน threshold",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "benchmark-base-head-comparison-prove-provider-3",
+      "requirementKey": "benchmark-base-head-comparison",
+      "scenario": "ช้าเท่า threshold พอดี",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "benchmark-base-head-comparison-prove-provider-4",
+      "requirementKey": "benchmark-base-head-comparison",
+      "scenario": "threshold ที่ผู้เขียนกำหนด",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "benchmark-base-head-comparison-prove-provider-5",
+      "requirementKey": "benchmark-base-head-comparison",
+      "scenario": "base ใช้ไม่ได้ไม่ block",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "benchmark-base-head-comparison-prove-provider-6",
+      "requirementKey": "benchmark-base-head-comparison",
+      "scenario": "head run ล้มเหลว",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "benchmark-base-head-comparison-change-start-inspect",
+      "requirementKey": "benchmark-base-head-comparison",
+      "scenario": "runs ต่ำกว่าขั้นต่ำ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "access-control-allow-deny-change-start-inspect",
+      "requirementKey": "access-control-allow-deny",
+      "scenario": "มีทั้ง allow และ deny",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "access-control-allow-deny-change-start-inspect-2",
+      "requirementKey": "access-control-allow-deny",
+      "scenario": "ขาด allow",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "access-control-allow-deny-change-start-inspect-3",
+      "requirementKey": "access-control-allow-deny",
+      "scenario": "ขาด deny",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "access-control-allow-deny-change-start-inspect-4",
+      "requirementKey": "access-control-allow-deny",
+      "scenario": "ค่า access ไม่รู้จัก",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "access-control-allow-deny-change-start-inspect-5",
+      "requirementKey": "access-control-allow-deny",
+      "scenario": "ไม่มี signal ไม่บังคับ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "financial-risk-signal-change-start-inspect",
+      "requirementKey": "financial-risk-signal",
+      "scenario": "financial ได้ dimensions",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "financial-risk-signal-change-start-inspect-2",
+      "requirementKey": "financial-risk-signal",
+      "scenario": "ภาษาไม่เปลี่ยนผล",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "financial-risk-signal-change-start-inspect-3",
+      "requirementKey": "financial-risk-signal",
+      "scenario": "signal ไม่รู้จักยังถูกปฏิเสธ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "financial-review-tier-harness-review-tier",
+      "requirementKey": "financial-review-tier",
+      "scenario": "financial ได้ high",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "financial-review-tier-harness-review-tier-2",
+      "requirementKey": "financial-review-tier",
+      "scenario": "ไม่มี signal คงพฤติกรรมเดิม",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "draft-constraints-change-start",
+      "requirementKey": "draft-constraints",
+      "scenario": "render constraints",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "draft-constraints-change-start-2",
+      "requirementKey": "draft-constraints",
+      "scenario": "ไม่มี constraints",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "draft-constraints-change-start-inspect",
+      "requirementKey": "draft-constraints",
+      "scenario": "ชนิดผิด",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "draft-constraints-change-start-inspect-2",
+      "requirementKey": "draft-constraints",
+      "scenario": "coverage ไปยัง constraint",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "draft-constraints-change-start-inspect-3",
+      "requirementKey": "draft-constraints",
+      "scenario": "coverage อ้าง constraint ที่ไม่มี",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "draft-fixes-link-change-start-draft-fixes-a",
+      "requirementKey": "draft-fixes-link",
+      "scenario": "อ้าง change ที่ archive แล้ว",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "draft-fixes-link-change-start-inspect-draft-fixes-zzz",
+      "requirementKey": "draft-fixes-link",
+      "scenario": "อ้าง change ที่ไม่มี",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "draft-fixes-link-change-start",
+      "requirementKey": "draft-fixes-link",
+      "scenario": "ไม่มี fixes",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "outcomes-rollup-outcomes",
+      "requirementKey": "outcomes-rollup",
+      "scenario": "สรุป change ที่ archive",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "outcomes-rollup-outcomes-2",
+      "requirementKey": "outcomes-rollup",
+      "scenario": "ค่าที่ไม่รู้เป็น null",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "outcomes-rollup-outcomes-3",
+      "requirementKey": "outcomes-rollup",
+      "scenario": "escaped defect จาก fixes",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "outcomes-rollup-outcomes-4",
+      "requirementKey": "outcomes-rollup",
+      "scenario": "ไม่เขียน state",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "outcomes-rollup-outcomes-5",
+      "requirementKey": "outcomes-rollup",
+      "scenario": "ไม่มีประวัติ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "outcomes-rollup-outcomes-6",
+      "requirementKey": "outcomes-rollup",
+      "scenario": "state เสียหนึ่งตัว",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "lessons-rollup-lessons",
+      "requirementKey": "lessons-rollup",
+      "scenario": "code เกิดซ้ำ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "lessons-rollup-lessons-2",
+      "requirementKey": "lessons-rollup",
+      "scenario": "ต่ำกว่าเกณฑ์",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "lessons-rollup-lessons-3",
+      "requirementKey": "lessons-rollup",
+      "scenario": "uncoded แยกรายงาน",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "lessons-rollup-lessons-4",
+      "requirementKey": "lessons-rollup",
+      "scenario": "ไม่เขียน state",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "lessons-rollup-lessons-5",
+      "requirementKey": "lessons-rollup",
+      "scenario": "min-changes ผิด",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-finding-code-harness-review-attempt",
+      "requirementKey": "review-finding-code",
+      "scenario": "code ถูกเก็บ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-finding-code-harness-review-attempt-2",
+      "requirementKey": "review-finding-code",
+      "scenario": "code ผิดรูปแบบไม่ block",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-finding-code-harness-review-attempt-3",
+      "requirementKey": "review-finding-code",
+      "scenario": "ไม่มี code",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "hypothesis-next-check-investigate",
+      "requirementKey": "hypothesis-next-check",
+      "scenario": "แสดง next check",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "hypothesis-next-check-investigate-2",
+      "requirementKey": "hypothesis-next-check",
+      "scenario": "ไม่มี next check",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "hypothesis-next-check-investigate-3",
+      "requirementKey": "hypothesis-next-check",
+      "scenario": "อ้าง experiment ที่ไม่มี",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "hypothesis-next-check-investigate-4",
+      "requirementKey": "hypothesis-next-check",
+      "scenario": "อ้าง experiment ที่ถูก supersede",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/benchmark-evidence.test.mjs) && (node --test .claude/harness/tests/semantic-intake.test.mjs) && (node --test .claude/harness/tests/semantic-intake.test.mjs .claude/harness/tests/review-policy.test.mjs) && (node --test .claude/harness/tests/semantic-draft.test.mjs) && (node --test .claude/harness/tests/review-repair-attempt.test.mjs) && (node --test .claude/harness/tests/outcomes-lessons.test.mjs .claude/harness/tests/command-registry.test.mjs .claude/harness/tests/public-command-golden.test.mjs) && (node --test .claude/harness/tests/investigation-runtime.test.mjs) && (sh .claude/tests/docs/run-doc-consistency.sh)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

@@ -76,6 +76,10 @@ const RULES = [
   [/runtime\/observability\//, [
     "telemetry concurrency", "telemetry truth", "archive telemetry"
   ]],
+  [/benchmark-runtime|test-discrimination|proof-execution-runtime|adapter-runtime|receipt-runtime|provider-catalog/,
+    ["benchmark evidence"]],
+  [/outcomes-runtime|lessons-runtime|^\.claude\/harness\/commands\.json$|^cli\.sh$/,
+    ["outcomes and lessons"]],
   [/runtime\/composition\//, [
     "composition-root wiring", "harness reliability gaps", "change loop seams"
   ]],
