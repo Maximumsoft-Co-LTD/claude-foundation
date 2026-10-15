@@ -979,7 +979,7 @@ export function createAdvanceRuntime({
       hasSkill: (name) => existsSync(join(projectRoot, ".claude", "skills", name, "SKILL.md"))
     });
     return skills.length ? {
-      ...value, skills, instructions: [...(value.instructions || []), skillLoadInstruction(skills)]
+      ...value, skills, instructions: [skillLoadInstruction(skills), ...(value.instructions || [])]
     } : value;
   }
 

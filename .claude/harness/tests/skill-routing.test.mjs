@@ -21,13 +21,26 @@ test("each risk signal routes to its skill without behavior work", () => {
     ["performance-slo", "performance-investigation"],
     ["persisted-data-change", "database-fundamentals"],
     ["access-control", "security-fundamentals"],
-    ["input-domain", "security-fundamentals"],
+    ["input-domain", "testing-fundamentals"],
     ["external-integration", "api-design-fundamentals"],
     ["financial", "queue-fundamentals"],
     ["user-interface", "ux-ui-principles"],
     ["high-operational-risk", "observability-fundamentals"]
   ]) assert.deepEqual(docs({ riskSignals: [signal] }), [skill], signal);
   assert.deepEqual(docs({ securityTriggers: ["auth"] }), ["security-fundamentals"]);
+});
+
+// Caller-supplied value partitions are a test-design concern, not a trust
+// boundary: input-domain alone never routes to the security skill.
+test("input-domain routes to testing, not security", () => {
+  assert.deepEqual(routedSkills({ workTypes: ["feature"], riskSignals: ["input-domain"] }),
+    ["testing-fundamentals"]);
+  assert.deepEqual(routedSkills({
+    workTypes: ["feature"], riskSignals: ["input-domain", "performance-slo"]
+  }), ["performance-investigation", "testing-fundamentals"]);
+  assert.deepEqual(routedSkills({
+    workTypes: ["feature"], riskSignals: ["input-domain", "access-control"]
+  }), ["security-fundamentals", "testing-fundamentals"]);
 });
 
 test("docs, chore, and config work names no skill", () => {
@@ -80,6 +93,6 @@ test("prose fields never select a skill", () => {
 
 test("the load instruction names skills only, never a host tool", () => {
   assert.equal(skillLoadInstruction(["debug-fundamentals", "testing-fundamentals"]),
-    "Before implementing, load these skills by name: `debug-fundamentals`, " +
+    "First, load these skills by name: `debug-fundamentals`, " +
     "`testing-fundamentals`. Read a skill reference only when its decision is active.");
 });

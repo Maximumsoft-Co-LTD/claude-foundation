@@ -6,14 +6,15 @@
 // the hardest decision and drops the general testing skill last:
 //   1 debug-fundamentals          workType bugfix
 //   2 refactoring-fundamentals    workType refactor
-//   3 security-fundamentals       risk access-control, input-domain; any security trigger
+//   3 security-fundamentals       risk access-control; any security trigger
 //   4 performance-investigation   risk performance-slo
 //   5 database-fundamentals       workType data; risk persisted-data-change
 //   6 queue-fundamentals          workType async; risk financial
 //   7 api-design-fundamentals     workType api; risk external-integration
 //   8 ux-ui-principles            workType ui; risk user-interface
 //   9 observability-fundamentals  risk high-operational-risk
-//  10 testing-fundamentals        any behavior work type (not docs, chore, config)
+//  10 testing-fundamentals        any behavior work type (not docs, chore, config);
+//                                 risk input-domain (caller-value partitions are test design)
 
 export const SKILL_CAP = 4;
 
@@ -22,14 +23,14 @@ const NON_BEHAVIOR_WORK = new Set(["docs", "chore", "config"]);
 const ROUTES = [
   ["debug-fundamentals", { work: ["bugfix"] }],
   ["refactoring-fundamentals", { work: ["refactor"] }],
-  ["security-fundamentals", { risk: ["access-control", "input-domain"], security: true }],
+  ["security-fundamentals", { risk: ["access-control"], security: true }],
   ["performance-investigation", { risk: ["performance-slo"] }],
   ["database-fundamentals", { work: ["data"], risk: ["persisted-data-change"] }],
   ["queue-fundamentals", { work: ["async"], risk: ["financial"] }],
   ["api-design-fundamentals", { work: ["api"], risk: ["external-integration"] }],
   ["ux-ui-principles", { work: ["ui"], risk: ["user-interface"] }],
   ["observability-fundamentals", { risk: ["high-operational-risk"] }],
-  ["testing-fundamentals", { behavior: true }]
+  ["testing-fundamentals", { risk: ["input-domain"], behavior: true }]
 ];
 
 const names = (values) => new Set((Array.isArray(values) ? values : [])
@@ -52,9 +53,11 @@ export function routedSkills({
     .slice(0, SKILL_CAP);
 }
 
-// Host-neutral: names skills, never a host's tool.
+// Host-neutral: names skills, never a host's tool. It is the first step of the
+// action; a trailing load line after "Then run the resume command" was skipped
+// in every observed paid run.
 export function skillLoadInstruction(skills) {
-  return `Before implementing, load these skills by name: ${
+  return `First, load these skills by name: ${
     skills.map((name) => `\`${name}\``).join(", ")}. ` +
     "Read a skill reference only when its decision is active.";
 }

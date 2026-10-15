@@ -8,17 +8,17 @@ Build action ระบุ skill จากข้อมูล typed และ benc
 ระบบ SHALL เพิ่ม field skills และคำสั่งโหลด skill ตามชื่อใน EDIT action ของ Build เมื่อข้อมูล typed ของ change ตรงกับ mapping
 
 - mapping: workType bugfix → debug-fundamentals; refactor → refactoring-fundamentals; api → api-design-fundamentals; async → queue-fundamentals; data → database-fundamentals; ui → ux-ui-principles
-- riskSignals: performance-slo → performance-investigation; persisted-data-change → database-fundamentals; access-control, input-domain หรือ securityTriggers ใด ๆ → security-fundamentals; external-integration → api-design-fundamentals; financial → queue-fundamentals; user-interface → ux-ui-principles; high-operational-risk → observability-fundamentals
+- riskSignals: performance-slo → performance-investigation; persisted-data-change → database-fundamentals; access-control หรือ securityTriggers ใด ๆ → security-fundamentals; input-domain → testing-fundamentals; external-integration → api-design-fundamentals; financial → queue-fundamentals; user-interface → ux-ui-principles; high-operational-risk → observability-fundamentals
 - งาน behavior (workType ที่ไม่ใช่ docs, chore, config) เพิ่ม testing-fundamentals
 - เรียงตามลำดับคงที่ของ mapping, ตัดซ้ำ, cap 4, กรองเฉพาะ skill ที่มี .claude/skills/<name>/SKILL.md
-- คำสั่ง: Before implementing, load these skills by name: <names>. Read a skill reference only when its decision is active.
+- คำสั่งเป็นบรรทัดแรกของ instructions: First, load these skills by name: <names>. Read a skill reference only when its decision is active.
 
 #### Scenario: bugfix ได้ debug และ testing
 
 - **GIVEN** change มี workType bugfix และไม่มี riskSignals
 - **WHEN** advance คืน EDIT
 - **THEN** skills เท่ากับ debug-fundamentals และ testing-fundamentals
-- **AND** instructions มีบรรทัด Before implementing, load these skills by name
+- **AND** บรรทัดแรกของ instructions คือ First, load these skills by name
 
 #### Scenario: performance-slo ได้ performance-investigation
 
@@ -55,6 +55,12 @@ Build action ระบุ skill จากข้อมูล typed และ benc
 - **GIVEN** โปรเจกต์ไม่มี .claude/skills/debug-fundamentals/SKILL.md
 - **WHEN** advance คืน EDIT ของ bugfix
 - **THEN** skills ไม่มี debug-fundamentals และ action ยังทำงานต่อได้
+
+#### Scenario: input-domain ได้ testing ไม่ใช่ security
+
+- **GIVEN** change มี riskSignals input-domain และไม่มี access-control หรือ securityTriggers
+- **WHEN** advance คืน EDIT
+- **THEN** skills มี testing-fundamentals และไม่มี security-fundamentals
 
 ### Requirement: Benchmark scorecards record skill loading
 

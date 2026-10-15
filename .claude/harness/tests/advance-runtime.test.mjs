@@ -1113,7 +1113,7 @@ async function skillEdit(t, {
 
 const ALL_SKILLS = ["debug-fundamentals", "performance-investigation", "queue-fundamentals",
   "security-fundamentals", "testing-fundamentals"];
-const LOAD = /^Before implementing, load these skills by name: /;
+const LOAD = /^First, load these skills by name: /;
 
 test("a bugfix Build EDIT with a performance risk names its skills and how to load them", async (t) => {
   const value = await skillEdit(t, {
@@ -1122,11 +1122,12 @@ test("a bugfix Build EDIT with a performance risk names its skills and how to lo
   assert.equal(value.action, "EDIT", JSON.stringify(value));
   assert.deepEqual(value.skills,
     ["debug-fundamentals", "performance-investigation", "testing-fundamentals"]);
-  assert.match(value.instructions[0], /^Implement T001, T002 in this order inside the workspace\./);
-  assert.equal(value.instructions.at(-1),
-    "Before implementing, load these skills by name: `debug-fundamentals`, " +
+  // The load step comes first: a trailing load line was skipped in paid runs.
+  assert.equal(value.instructions[0],
+    "First, load these skills by name: `debug-fundamentals`, " +
     "`performance-investigation`, `testing-fundamentals`. Read a skill reference only " +
     "when its decision is active.");
+  assert.match(value.instructions[1], /^Implement T001, T002 in this order inside the workspace\./);
   assert.ok(value.contextFiles.length > 0);
 });
 
