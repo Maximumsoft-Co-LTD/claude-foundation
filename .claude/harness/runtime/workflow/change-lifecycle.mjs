@@ -1473,6 +1473,21 @@ export function createChangeLifecycle({
       minimalDraftDecisions: "Add decisions: [{ key, choice, reason? }] to the minimal draft " +
         "for every default you chose without asking the user (for example stack, storage, " +
         "framework); they are listed in the proposal as decided by the agent.",
+      // Typed declarations are the only risk input; prose is never scanned, so
+      // the template the agent copies from has to say when each one applies.
+      minimalDraftRiskSignals: "Add riskSignals: [...] to the minimal draft for each that " +
+        "applies: 'access-control' when some callers may act and others must be refused " +
+        "(owner, role, admin, 401/403) and then tag at least one scenario access: \"allow\" " +
+        "and one access: \"deny\"; 'financial' when money is charged, captured, refunded or " +
+        "transferred, or a retry must not repeat it; 'performance-slo' when the request is to " +
+        "make something faster or meet a latency/throughput target (prove it with a provider " +
+        "using adapter 'benchmark'); 'persisted-data-change' for stored data or schema " +
+        "changes; 'external-integration' for third-party calls; 'input-domain' for behavior " +
+        "computed from caller-supplied values.",
+      minimalDraftFixes: "When the request reports a defect introduced by an earlier change " +
+        "that is already archived under openspec/changes/archive/<date>-<id>, add fixes: " +
+        "[\"<id>\"] to the minimal draft and cover the analogous boundaries, not only the " +
+        "reported one.",
       ...repositoryDraftGuidance(declaredRepositories()),
       ...semanticDraftTemplate()
     };

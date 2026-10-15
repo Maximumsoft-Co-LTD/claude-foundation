@@ -137,28 +137,47 @@ export function createBenchmarkRuntime({
     const options = (cwd) => ({ cwd, timeoutMs, env });
     const results = [];
     let headFailure = null;
-    try {
-      for (let run = 0; run < settings.runs && !headFailure; run += 1) {
+    // One alternating round of `runs` base/head pairs into `round`.
+    const measureRound = async (runs, round) => {
+      for (let run = 0; run < runs && !headFailure; run += 1) {
         if (!unavailable) {
           const base = await runCommand(command, args, options(prepared.tree));
           const failure = benchmarkRunFailure(base);
           if (failure) unavailable = `base-${failure}`;
-          else benchmark.baseSamples.push(base.durationMs);
+          else round.baseSamples.push(base.durationMs);
         }
         const head = await runCommand(command, args, options(workspace));
         results.push(head);
-        benchmark.headExitCodes.push(head?.status ?? null);
+        round.headExitCodes.push(head?.status ?? null);
         headFailure = benchmarkRunFailure(head);
-        if (!headFailure) benchmark.headSamples.push(head.durationMs);
+        if (!headFailure) round.headSamples.push(head.durationMs);
+      }
+    };
+    const evaluate = (round) => headFailure
+      ? { status: "not-evaluated", reason: `head-${headFailure}` }
+      : unavailable ? { status: "unavailable", reason: unavailable }
+        : benchmarkComparison(round.baseSamples, round.headSamples,
+          settings.maxRegressionPercent);
+    try {
+      await measureRound(settings.runs, benchmark);
+      benchmark.comparison = evaluate(benchmark);
+      // A single noisy round must not hand the agent an unfixable repair: a
+      // regression is confirmed by a fresh round with twice the runs, and the
+      // confirmation decides the verdict. Both rounds stay in the receipt.
+      if (benchmark.comparison.regressed) {
+        const confirmation = { runs: settings.runs * 2, baseSamples: [], headSamples: [],
+          headExitCodes: [], comparison: null };
+        await measureRound(confirmation.runs, confirmation);
+        confirmation.comparison = evaluate(confirmation);
+        benchmark.confirmation = confirmation;
       }
     } finally {
       if (prepared) removeTree(prepared.scratch);
     }
-    benchmark.comparison = headFailure
-      ? { status: "not-evaluated", reason: `head-${headFailure}` }
-      : unavailable ? { status: "unavailable", reason: unavailable }
-        : benchmarkComparison(benchmark.baseSamples, benchmark.headSamples,
-          settings.maxRegressionPercent);
+    if (benchmark.confirmation) {
+      benchmark.firstComparison = benchmark.comparison;
+      benchmark.comparison = benchmark.confirmation.comparison;
+    }
     const status = headFailure
       ? (headFailure.startsWith("exit-") ? "fail" : "error")
       : benchmark.comparison.regressed ? "fail" : "pass";

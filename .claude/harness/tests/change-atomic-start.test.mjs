@@ -1014,6 +1014,20 @@ test("the start template leads with the pre-allowed file-tool save route", (t) =
   assert.match(template.save, /claude-foundation change start \.foundation\/drafts\/<id>\.json/);
 });
 
+// Paid runs never declared a typed risk: the template the agent copies from
+// named none of them, so permission work compiled as low-risk rapid work.
+test("the start template says when to declare risk signals, access tags, and fixes", (t) => {
+  const template = fixture(t).lifecycle.rapidStartTemplate();
+  for (const signal of ["access-control", "financial", "performance-slo"])
+    assert.match(template.minimalDraftRiskSignals, new RegExp(`'${signal}'`));
+  assert.match(template.minimalDraftRiskSignals, /access: "allow".*access: "deny"/);
+  assert.match(template.minimalDraftRiskSignals, /adapter 'benchmark'/);
+  assert.match(template.minimalDraftFixes, /openspec\/changes\/archive/);
+  assert.match(template.minimalDraftFixes, /fixes: \[/);
+  assert.equal(template.minimalDraft.riskSignals, undefined,
+    "guidance never adds a default declaration");
+});
+
 test("a saved whole template still starts without the save note becoming draft content", (t) => {
   const value = fixture(t);
   writeJson(value.draftPath, {

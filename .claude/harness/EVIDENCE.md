@@ -848,7 +848,11 @@ The receipt keeps every duration sample per side, both medians,
 `regressionPercent` (`(head − base) / base × 100`, two decimals), the
 threshold, and one environment descriptor for both sides. The provider passes
 when every head run exits 0 and `regressionPercent` is at most the threshold;
-a value equal to the threshold passes. A larger regression returns the
+a value equal to the threshold passes. A regression is confirmed before it
+counts: the harness runs one fresh alternating round with twice the runs, and
+that confirmation decides the verdict. The receipt keeps the first round's
+samples and `firstComparison` beside `confirmation`, so a single noisy round
+never hands the agent an unfixable repair. A confirmed regression returns the
 convergent evidence REPAIR `stage: "performance-regression"` with finding
 `<provider>:performance-regression` carrying both medians, the percentage, and
 the threshold, so the ordinary recovery ladder applies. A failing head command

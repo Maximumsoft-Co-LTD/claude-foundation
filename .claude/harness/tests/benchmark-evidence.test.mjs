@@ -91,12 +91,17 @@ test("head within threshold passes with five samples per side, alternating, one 
 });
 
 test("head slower than the default threshold fails with a regression finding", async () => {
-  const runs = fakeRuns({ base: [100, 100, 100, 100, 100], head: [125, 125, 125, 125, 125] });
+  // Five first-round runs per side, then ten confirmation runs per side.
+  const runs = fakeRuns({ base: Array(15).fill(100), head: Array(15).fill(125) });
   const { runtime } = benchmarkRuntime(runs);
   const result = await runtime.measure(request());
   assert.equal(result.status, "fail");
   assert.equal(result.benchmark.maxRegressionPercent, 10);
   assert.equal(result.benchmark.comparison.regressed, true);
+  assert.equal(result.benchmark.confirmation.runs, 10);
+  assert.equal(result.benchmark.confirmation.headSamples.length, 10);
+  assert.equal(result.benchmark.firstComparison.regressed, true);
+  assert.equal(runs.calls.length, 30, "first round plus a twice-as-long confirmation");
   const finding = performanceRegressionFinding("perf", result.benchmark);
   assert.equal(finding.id, "perf:performance-regression");
   assert.equal(finding.provider, "perf");
@@ -120,13 +125,38 @@ test("a regression exactly at the threshold passes", async () => {
 });
 
 test("an authored threshold replaces the default", async () => {
-  const runs = fakeRuns({ base: [100, 100, 100], head: [103, 103, 103] });
+  const runs = fakeRuns({ base: Array(9).fill(100), head: Array(9).fill(103) });
   const result = await benchmarkRuntime(runs).runtime.measure(
     request({ runs: 3, maxRegressionPercent: 2 }));
   assert.equal(result.benchmark.runs, 3);
   assert.equal(result.benchmark.comparison.regressionPercent, 3);
   assert.equal(result.status, "fail");
   assert.equal(performanceRegressionFinding("perf", result.benchmark).threshold, 2);
+});
+
+test("a regression the confirmation round does not reproduce passes and keeps both rounds", async () => {
+  // A noisy first round (head 125) that a fresh ten-run round does not confirm.
+  const runs = fakeRuns({ base: Array(15).fill(100),
+    head: [...Array(5).fill(125), ...Array(10).fill(102)] });
+  const { runtime, removed } = benchmarkRuntime(runs);
+  const result = await runtime.measure(request());
+  assert.equal(result.status, "pass");
+  assert.equal(result.benchmark.firstComparison.regressed, true);
+  assert.equal(result.benchmark.firstComparison.regressionPercent, 25);
+  assert.equal(result.benchmark.comparison.regressed, false);
+  assert.equal(result.benchmark.comparison.regressionPercent, 2);
+  assert.deepEqual(result.benchmark.headSamples, Array(5).fill(125),
+    "the first round's samples stay in the receipt");
+  assert.equal(performanceRegressionFinding("perf", result.benchmark), null);
+  assert.deepEqual(removed, ["/scratch"], "one base tree serves both rounds");
+});
+
+test("a round that does not regress runs no confirmation", async () => {
+  const runs = fakeRuns({ base: Array(5).fill(100), head: Array(5).fill(101) });
+  const result = await benchmarkRuntime(runs).runtime.measure(request());
+  assert.equal(result.benchmark.confirmation, undefined);
+  assert.equal(result.benchmark.firstComparison, undefined);
+  assert.equal(runs.calls.length, 10);
 });
 
 test("an unavailable base never blocks: head exit codes decide", async () => {

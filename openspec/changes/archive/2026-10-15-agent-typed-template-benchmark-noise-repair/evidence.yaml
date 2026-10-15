@@ -1,0 +1,72 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "template-risk-guidance-change-start-template",
+      "requirementKey": "template-risk-guidance",
+      "scenario": "template มีคำแนะนำ riskSignals",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "template-risk-guidance-change-start-template-2",
+      "requirementKey": "template-risk-guidance",
+      "scenario": "template มีคำแนะนำ fixes",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "template-risk-guidance-change-start-template-3",
+      "requirementKey": "template-risk-guidance",
+      "scenario": "คำแนะนำไม่เปลี่ยน minimal draft",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "benchmark-confirms-regression-prove-provider",
+      "requirementKey": "benchmark-confirms-regression",
+      "scenario": "regression จริงได้ REPAIR",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "benchmark-confirms-regression-prove-provider-2",
+      "requirementKey": "benchmark-confirms-regression",
+      "scenario": "noise ครั้งเดียวผ่าน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "benchmark-confirms-regression-prove-provider-3",
+      "requirementKey": "benchmark-confirms-regression",
+      "scenario": "ไม่ regressed ไม่วัดซ้ำ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/change-atomic-start.test.mjs) && (node --test .claude/harness/tests/benchmark-evidence.test.mjs)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}
