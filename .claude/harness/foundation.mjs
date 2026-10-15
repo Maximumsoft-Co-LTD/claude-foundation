@@ -2127,6 +2127,7 @@ const { advanceValue, advanceThrough, showAdvance } = createAdvanceRuntime({
   },
   issueSessionLease: sessionLeases.issue,
   changePath,
+  projectRoot: ROOT,
   assertApproval: (id, state, options) => assertSpecApproval(ROOT, id, state, options),
   inspectSnapshots,
   capture: trapFailures,

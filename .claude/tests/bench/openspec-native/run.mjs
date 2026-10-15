@@ -797,7 +797,24 @@ function hostToolCalls(rows) {
   return { total: unique.length, browserCalls: browser.length,
     taskMirrorOperations: taskMirror.length,
     byTool: profile.byTool, byCategory: profile.byCategory,
-    friction: hostFriction(rows) };
+    friction: hostFriction(rows), skillUsage: hostSkillUsage(unique) };
+}
+
+// Which skills the agent loaded and which skill files it read, from unique
+// tool_use blocks. Paths keep only the part after `skills/`.
+function hostSkillUsage(calls) {
+  const sorted = (values) => [...new Set(values)].sort();
+  const skillCalls = calls.filter((call) => call.name === "Skill");
+  const skillFiles = calls.filter((call) => call.name === "Read")
+    .map((call) => String(call.input?.file_path || "")
+      .match(/(?:^|\/)\.(?:claude|agents)\/skills\/(.+)$/)?.[1])
+    .filter(Boolean);
+  return {
+    skillToolCalls: skillCalls.length,
+    skillsLoaded: sorted(skillCalls.map((call) => call.input?.skill).filter(
+      (skill) => typeof skill === "string" && skill)),
+    skillFilesRead: sorted(skillFiles)
+  };
 }
 
 const ADVANCE_ACTIONS = ["EDIT", "REPAIR", "RUN_EXTERNAL", "WAIT", "ASK_USER", "DONE"];
@@ -911,11 +928,13 @@ export function parseHostOutput(stdout) {
     try {
       const envelope = JSON.parse(stdout);
       return { envelope, hostTelemetry: { total: null, browserCalls: null,
-        taskMirrorOperations: null, byTool: null, byCategory: null },
+        taskMirrorOperations: null, byTool: null, byCategory: null,
+        skillUsage: null },
       observedUsage, rows: [envelope] };
     } catch {
       return { envelope: {}, hostTelemetry: { total: null, browserCalls: null,
-        taskMirrorOperations: null, byTool: null, byCategory: null },
+        taskMirrorOperations: null, byTool: null, byCategory: null,
+        skillUsage: null },
       observedUsage, rows: [] };
     }
   }

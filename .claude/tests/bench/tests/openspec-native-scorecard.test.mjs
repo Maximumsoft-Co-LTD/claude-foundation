@@ -91,6 +91,33 @@ test("scorecard validates and keeps runner walltime separate from host duration"
   delete beforeToolCalls.operations.hostToolCalls;
   assert.equal(validate(beforeToolCalls), true,
     "the additive hostToolCalls field keeps historical v1 scorecards schema-valid");
+  const beforeSkillUsage = structuredClone(scorecard);
+  delete beforeSkillUsage.skillUsage;
+  assert.equal(validate(beforeSkillUsage), true,
+    "the additive skillUsage field keeps historical v1 scorecards schema-valid");
+});
+
+test("scorecard persists measured skill usage from a host stream", () => {
+  const scorecard = buildScorecard(fixture({
+    hostTelemetry: { skillUsage: {
+      skillToolCalls: 2, skillsLoaded: ["debug-fundamentals"],
+      skillFilesRead: ["debug-fundamentals/references/root-cause.md"]
+    } }
+  }));
+  assert.deepEqual(scorecard.skillUsage, {
+    measurement: "measured", skillToolCalls: 2, skillsLoaded: ["debug-fundamentals"],
+    skillFilesRead: ["debug-fundamentals/references/root-cause.md"]
+  });
+  assert.equal(validate(scorecard), true, JSON.stringify(validate.errors));
+});
+
+test("scorecard reports skill usage as unavailable, not zero, without a host stream", () => {
+  const scorecard = buildScorecard(fixture({ hostTelemetry: { skillUsage: null } }));
+  assert.deepEqual(scorecard.skillUsage, {
+    measurement: "unavailable", reason: "host-stream-unavailable",
+    skillToolCalls: null, skillsLoaded: null, skillFilesRead: null
+  });
+  assert.equal(validate(scorecard), true, JSON.stringify(validate.errors));
 });
 
 test("scorecard persists host tool calls by tool and overhead category", () => {

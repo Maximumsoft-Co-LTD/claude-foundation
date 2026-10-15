@@ -149,6 +149,18 @@
         "guardrail": { "type": ["object", "null"], "additionalProperties": { "type": "integer", "minimum": 0 } }
       }
     },
+    "skillUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["measurement", "skillToolCalls", "skillsLoaded", "skillFilesRead"],
+      "properties": {
+        "measurement": { "enum": ["measured", "unavailable"] },
+        "reason": { "type": "string" },
+        "skillToolCalls": { "$ref": "#/$defs/nullableCount" },
+        "skillsLoaded": { "type": ["array", "null"], "items": { "type": "string" } },
+        "skillFilesRead": { "type": ["array", "null"], "items": { "type": "string" } }
+      }
+    },
     "quality": {
       "type": "object",
       "additionalProperties": false,

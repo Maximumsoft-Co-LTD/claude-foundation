@@ -13,6 +13,8 @@ import {
   automaticReviewRun, createAdvanceRecovery, errorCodes, userEnvironmentAction,
   userEnvironmentCause
 } from "./advance-recovery.mjs";
+import { routedSkills, skillLoadInstruction } from "./skill-routing.mjs";
+import { changeWorkTypes } from "./task-change.mjs";
 
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, resolve } from "node:path";
@@ -905,6 +907,9 @@ export function createAdvanceRuntime({
   settleSessionLeases = null, issueSessionLease = null, reverifyCompletedTasks = null,
   // Resolves a change's packet directory; enables `contextFiles` on EDIT/REPAIR.
   changePath = null,
+  // Project root whose `.claude/skills/<name>/SKILL.md` enables `skills` on a
+  // Build EDIT.
+  projectRoot = null,
   // Harness-owned operations advance performs itself instead of handing the
   // agent a primitive: detected provider wiring and a configured reviewer.
   wireEvidence = null, runReview = null, synchronizeAgreement = null,
@@ -955,11 +960,27 @@ export function createAdvanceRuntime({
         const tasks = value.tasks || [];
         const paths = tasks.length ? [] : value.allowedPaths || [];
         const scopedPaths = (value.repairGraph?.nodes || []).flatMap((node) => node.paths || []);
-        return { ...value, ...envelopeContextFiles({
-          packetDir: changePath(id), state: loadRuntime(id), tasks, paths, scopedPaths
-        }) };
+        const state = loadRuntime(id);
+        return withSkills(id, state, { ...value, ...envelopeContextFiles({
+          packetDir: changePath(id), state, tasks, paths, scopedPaths
+        }) });
       });
     } catch { return value; }
+  }
+
+  // Only a session Build EDIT that hands tasks names skills; parallel groups,
+  // proof-preflight EDITs, and REPAIRs do not.
+  function withSkills(id, state, value) {
+    if (!projectRoot || value.action !== "EDIT" || value.legacyAction !== "EXECUTE_TASK" ||
+      !(value.tasks || []).length) return value;
+    const skills = routedSkills({
+      workTypes: changeWorkTypes(changePath(id)),
+      riskSignals: state.riskSignals, securityTriggers: state.securityTriggers,
+      hasSkill: (name) => existsSync(join(projectRoot, ".claude", "skills", name, "SKILL.md"))
+    });
+    return skills.length ? {
+      ...value, skills, instructions: [...(value.instructions || []), skillLoadInstruction(skills)]
+    } : value;
   }
 
   function pendingAction(id, through, pending) {

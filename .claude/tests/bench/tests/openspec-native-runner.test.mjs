@@ -897,17 +897,46 @@ test("stream parser preserves partial tool telemetry before a final result", () 
       productWrites: 0, testRuns: 0, other: 2
     },
     friction: { toolErrors: 0, hookBlocks: 0, permissionPrompts: 0, advanceActions: {
-      EDIT: 0, REPAIR: 0, RUN_EXTERNAL: 0, WAIT: 0, ASK_USER: 0, DONE: 0 } }
+      EDIT: 0, REPAIR: 0, RUN_EXTERNAL: 0, WAIT: 0, ASK_USER: 0, DONE: 0 } },
+    skillUsage: { skillToolCalls: 0, skillsLoaded: [], skillFilesRead: [] }
   });
   assert.equal(parsed.observedUsage.observedModelRequests, null,
     "tool-use rows sharing no message id are not model-request identities");
+});
+
+test("stream parser records skill loads and skill file reads", () => {
+  const output = [
+    { type: "assistant", message: { content: [{
+      type: "tool_use", id: "s1", name: "Skill", input: { skill: "debug-fundamentals" }
+    }] } },
+    { type: "assistant", message: { content: [{
+      type: "tool_use", id: "s2", name: "Skill", input: { skill: "debug-fundamentals" }
+    }] } },
+    { type: "assistant", message: { content: [{
+      type: "tool_use", id: "s1", name: "Skill", input: { skill: "debug-fundamentals" }
+    }] } },
+    { type: "assistant", message: { content: [{
+      type: "tool_use", id: "r1", name: "Read", input: {
+        file_path: "/work/app/.claude/skills/debug-fundamentals/references/root-cause.md"
+      }
+    }] } },
+    { type: "assistant", message: { content: [{
+      type: "tool_use", id: "r2", name: "Read", input: { file_path: "/work/app/src/index.js" }
+    }] } }
+  ].map(JSON.stringify).join("\n");
+  const parsed = parseHostOutput(output);
+  assert.deepEqual(parsed.hostTelemetry.skillUsage, {
+    skillToolCalls: 2,
+    skillsLoaded: ["debug-fundamentals"],
+    skillFilesRead: ["debug-fundamentals/references/root-cause.md"]
+  });
 });
 
 test("missing collect-only host telemetry remains unknown rather than zero", () => {
   const parsed = parseHostOutput("{}");
   assert.deepEqual(parsed.hostTelemetry, {
     total: null, browserCalls: null, taskMirrorOperations: null,
-    byTool: null, byCategory: null
+    byTool: null, byCategory: null, skillUsage: null
   });
   assert.equal(parsed.observedUsage.observedModelRequests, null);
 });

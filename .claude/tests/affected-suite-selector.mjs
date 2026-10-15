@@ -80,6 +80,7 @@ const RULES = [
     ["benchmark evidence"]],
   [/outcomes-runtime|lessons-runtime|^\.claude\/harness\/commands\.json$|^cli\.sh$/,
     ["outcomes and lessons"]],
+  [/skill-routing|task-change/, ["skill routing", "advance lifecycle outcomes"]],
   [/runtime\/composition\//, [
     "composition-root wiring", "harness reliability gaps", "change loop seams"
   ]],

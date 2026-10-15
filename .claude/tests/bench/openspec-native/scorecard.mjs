@@ -245,6 +245,26 @@ function frictionSummary(hostTelemetry = {}) {
   };
 }
 
+// Skill loading is measured only from a host stream; without one the counts
+// are unknown, never zero.
+function skillUsageSummary(hostTelemetry = {}) {
+  const usage = hostTelemetry.skillUsage;
+  const measured = usage && count(usage.skillToolCalls) !== null &&
+    Array.isArray(usage.skillsLoaded) && Array.isArray(usage.skillFilesRead);
+  return measured ? {
+    measurement: "measured",
+    skillToolCalls: count(usage.skillToolCalls),
+    skillsLoaded: [...usage.skillsLoaded],
+    skillFilesRead: [...usage.skillFilesRead]
+  } : {
+    measurement: "unavailable",
+    reason: "host-stream-unavailable",
+    skillToolCalls: null,
+    skillsLoaded: null,
+    skillFilesRead: null
+  };
+}
+
 function operationSummary(rows, metrics, hostTelemetry = {}) {
   const operations = Array.isArray(rows) ? rows : [];
   const profile = object(metrics.commandProfile);
@@ -412,6 +432,7 @@ export function buildScorecard(input) {
     },
     operations: operationSummary(input.operationRows, metrics, input.hostTelemetry),
     friction: frictionSummary(input.hostTelemetry),
+    skillUsage: skillUsageSummary(input.hostTelemetry),
     quality: qualitySummary(input.quality),
     oracle,
     evidenceReuse: {

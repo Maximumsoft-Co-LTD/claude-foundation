@@ -110,6 +110,7 @@ task check evidence|node --test "$ROOT/.claude/harness/tests/task-check-evidence
 test discrimination|node --test "$ROOT/.claude/harness/tests/test-discrimination.test.mjs"
 benchmark evidence|node --test "$ROOT/.claude/harness/tests/benchmark-evidence.test.mjs"
 outcomes and lessons|node --test "$ROOT/.claude/harness/tests/outcomes-lessons.test.mjs"
+skill routing|node --test "$ROOT/.claude/harness/tests/skill-routing.test.mjs"
 harness reliability gaps|sh "$HERE/harness/run-reliability-gap-tests.sh"
 branch warning|node --test "$HERE/harness/run-branch-warning-tests.mjs"
 packet scaling|sh "$HERE/harness/run-packet-scaling-tests.sh"

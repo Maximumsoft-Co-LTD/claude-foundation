@@ -1,0 +1,108 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "edit-action-skills-advance-edit",
+      "requirementKey": "edit-action-skills",
+      "scenario": "bugfix ได้ debug และ testing",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "edit-action-skills-advance-edit-2",
+      "requirementKey": "edit-action-skills",
+      "scenario": "performance-slo ได้ performance-investigation",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "edit-action-skills-advance-edit-3",
+      "requirementKey": "edit-action-skills",
+      "scenario": "access-control ได้ security",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "edit-action-skills-advance-edit-4",
+      "requirementKey": "edit-action-skills",
+      "scenario": "งานเอกสารไม่มี skill",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "edit-action-skills-advance-edit-5",
+      "requirementKey": "edit-action-skills",
+      "scenario": "cap 4",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "edit-action-skills-advance-edit-6",
+      "requirementKey": "edit-action-skills",
+      "scenario": "prose ไม่มีผล",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "edit-action-skills-advance-edit-bugfix",
+      "requirementKey": "edit-action-skills",
+      "scenario": "skill ที่ไม่มีในโปรเจกต์ถูกกรอง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "bench-skill-usage-runner-scorecard",
+      "requirementKey": "bench-skill-usage",
+      "scenario": "นับจาก stream",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "bench-skill-usage-runner-scorecard-2",
+      "requirementKey": "bench-skill-usage",
+      "scenario": "ไม่มี stream",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "bench-skill-usage-validate-schema",
+      "requirementKey": "bench-skill-usage",
+      "scenario": "scorecard เก่ายัง valid",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/skill-routing.test.mjs .claude/harness/tests/advance-runtime.test.mjs) && (node --test .claude/tests/bench/tests/openspec-native-runner.test.mjs .claude/tests/bench/tests/openspec-native-scorecard.test.mjs)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

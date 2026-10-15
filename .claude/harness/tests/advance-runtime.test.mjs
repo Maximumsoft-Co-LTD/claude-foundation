@@ -1074,6 +1074,94 @@ test("envelope context keeps only files inside the workspace or repository bases
     file === outside || file === "/etc/passwd"));
 });
 
+// A Build EDIT names skills from typed change data and the project's
+// installed skills; prose and missing skills select nothing.
+async function skillEdit(t, {
+  workType, riskSignals = [], proposal = "# Proposal\n", skills = [],
+  dispatch = { action: "run-in-session", reason: "one repository" }, root: withRoot = true
+}) {
+  const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const root = mkdtempSync(join(tmpdir(), "advance-skills-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const packet = join(root, "openspec", "changes", "change-a");
+  mkdirSync(packet, { recursive: true });
+  writeFileSync(join(packet, "proposal.md"), proposal);
+  writeFileSync(join(packet, "design.md"), `# Design\n\n## Work type\n\n${workType}\n`);
+  writeFileSync(join(packet, "tasks.md"), "- [ ] **T001** a\n- [ ] **T002** b\n");
+  for (const name of skills) {
+    mkdirSync(join(root, ".claude", "skills", name), { recursive: true });
+    writeFileSync(join(root, ".claude", "skills", name, "SKILL.md"), `# ${name}\n`);
+  }
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => ({ status: "building", workspace: { path: join(root, "box") }, riskSignals }),
+    changePath: () => packet,
+    ...(withRoot ? { projectRoot: root } : {}),
+    agentDispatchValue: () => dispatch,
+    agentPlanValue: () => ({ groups: [["T001", "T002"]], tasks: [
+      { id: "T001", text: "a — verify: `true`", repository: "root", paths: ["src/a.js"] },
+      { id: "T002", text: "b — verify: `true`", repository: "root", paths: ["src/b.js"] }
+    ] }),
+    relevantHash: () => "workspace-a", deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => ({}), proofAdvancePath: () => "/proof.json", stableHash,
+    output: () => {}
+  });
+  return runtime.advanceThrough("change-a", "build");
+}
+
+const ALL_SKILLS = ["debug-fundamentals", "performance-investigation", "queue-fundamentals",
+  "security-fundamentals", "testing-fundamentals"];
+const LOAD = /^Before implementing, load these skills by name: /;
+
+test("a bugfix Build EDIT with a performance risk names its skills and how to load them", async (t) => {
+  const value = await skillEdit(t, {
+    workType: "bugfix", riskSignals: ["performance-slo"], skills: ALL_SKILLS
+  });
+  assert.equal(value.action, "EDIT", JSON.stringify(value));
+  assert.deepEqual(value.skills,
+    ["debug-fundamentals", "performance-investigation", "testing-fundamentals"]);
+  assert.match(value.instructions[0], /^Implement T001, T002 in this order inside the workspace\./);
+  assert.equal(value.instructions.at(-1),
+    "Before implementing, load these skills by name: `debug-fundamentals`, " +
+    "`performance-investigation`, `testing-fundamentals`. Read a skill reference only " +
+    "when its decision is active.");
+  assert.ok(value.contextFiles.length > 0);
+});
+
+test("a docs-only Build EDIT has no skills and unchanged instructions", async (t) => {
+  const value = await skillEdit(t, { workType: "docs", skills: ALL_SKILLS });
+  const plain = await skillEdit(t, { workType: "docs", skills: ALL_SKILLS, root: false });
+  assert.equal(value.action, "EDIT", JSON.stringify(value));
+  assert.equal("skills" in value, false);
+  assert.deepEqual(value.instructions, plain.instructions);
+  assert.ok(!value.instructions.some((line) => LOAD.test(line)));
+});
+
+test("Build EDIT skills ignore prose and skills the project lacks", async (t) => {
+  const prose = await skillEdit(t, {
+    workType: "feature", proposal: "# Proposal\n\nPayment checkout is slow.\n", skills: ALL_SKILLS
+  });
+  assert.deepEqual(prose.skills, ["testing-fundamentals"]);
+  const missing = await skillEdit(t, {
+    workType: "bugfix", skills: ALL_SKILLS.filter((name) => name !== "debug-fundamentals")
+  });
+  assert.equal(missing.action, "EDIT");
+  assert.deepEqual(missing.skills, ["testing-fundamentals"]);
+});
+
+test("a parallel spawn-group EDIT names no skills", async (t) => {
+  const value = await skillEdit(t, {
+    workType: "bugfix", skills: ALL_SKILLS,
+    dispatch: { action: "spawn-group", workers: [{ taskId: "T001" }, { taskId: "T002" }] }
+  });
+  assert.equal(value.action, "EDIT", JSON.stringify(value));
+  assert.equal(value.legacyAction, "EXECUTE_TASK_GROUP");
+  assert.equal("skills" in value, false);
+  assert.equal(value.instructions, undefined);
+});
+
 test("spec approval carries authority gates the change already needs", async () => {
   const state = { status: "change", workspace: { path: "/tmp/change" } };
   const approval = Object.assign(new Error("approve"), {

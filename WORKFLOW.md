@@ -354,7 +354,11 @@ Build references load only on their triggers. A minimal draft (`intent`,
 `requirements[{description, scenarios[{when, then}]}]`,
 `tasks[{outcome, verify, paths}]`, no `version`) is expanded by the compiler.
 Every EDIT or REPAIR lists `contextFiles` (absolute paths to open), `newFiles`
-(declared paths to create), and `contextScope`. Each EDIT task with a verify
+(declared paths to create), and `contextScope`. A session Build EDIT may also
+carry optional `skills`: at most four skill names chosen only from the change's
+work types, risk signals, and security triggers (never prose), limited to skills
+installed under `.claude/skills/`, with a matching load instruction; absent when
+none applies. Each EDIT task with a verify
 also carries `checkCommand`, that verify run through `claude-foundation exec
 <change> --task <id>`, which the installed allowlist already permits. Each EDIT task carries its own
 `workspace`: a non-root repository's task names
