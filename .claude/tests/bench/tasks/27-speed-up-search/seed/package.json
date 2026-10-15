@@ -1,0 +1,6 @@
+{
+  "name": "speed-up-search-fixture",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test", "bench": "node scripts/bench.js" }
+}

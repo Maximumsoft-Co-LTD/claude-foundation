@@ -1,0 +1,6 @@
+{
+  "name": "owner-only-delete-fixture",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test" }
+}

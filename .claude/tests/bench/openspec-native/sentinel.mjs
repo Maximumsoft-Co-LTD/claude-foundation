@@ -40,14 +40,16 @@ export function runDeterministicSentinel() {
   const output = `${result.stdout || ""}${result.stderr || ""}`;
   const scenarios = matrix.scenarios.map((scenario) => {
     const actualFixtureDigest = fixtureDigest(resolve(ROOT, scenario.fixture));
+    const historyFrozen = !scenario.openspec_history ||
+      fixtureDigest(resolve(ROOT, scenario.openspec_history)) === scenario.openspec_history_digest;
     return {
       id: scenario.id,
       execution: "deterministic-zero-cost",
       expectedFixtureDigest: scenario.fixture_digest,
       actualFixtureDigest,
-      fixtureFrozen: actualFixtureDigest === scenario.fixture_digest,
-      status: result.status === 0 && actualFixtureDigest === scenario.fixture_digest
-        ? "pass" : "fail"
+      fixtureFrozen: actualFixtureDigest === scenario.fixture_digest && historyFrozen,
+      status: result.status === 0 && actualFixtureDigest === scenario.fixture_digest &&
+        historyFrozen ? "pass" : "fail"
     };
   });
   const revision = git(["rev-parse", "HEAD"]);

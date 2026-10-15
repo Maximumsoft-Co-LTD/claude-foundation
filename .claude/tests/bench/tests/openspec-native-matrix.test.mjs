@@ -9,8 +9,8 @@ test("the versioned cross-domain matrix is valid and every workload is executabl
   const matrix = loadMatrix();
   assert.equal(matrix.protocol, "foundation-openspec-native-matrix-v2");
   assert.deepEqual(matrixIssues(matrix), []);
-  assert.equal(matrix.scenarios.length, 12);
-  assert.equal(matrix.scenarios.filter((scenario) => scenario.status === "ready").length, 12);
+  assert.equal(matrix.scenarios.length, 16);
+  assert.equal(matrix.scenarios.filter((scenario) => scenario.status === "ready").length, 16);
   assert.equal(matrix.scenarios.filter((scenario) => scenario.baseline !== null).length, 1);
 });
 
@@ -76,6 +76,27 @@ test("the ~10-minute feature scenarios bind their hidden oracles and budgets", (
     assert.match(plan.oracle, new RegExp(`${task}/oracle/run\\.sh$`));
     assert.match(plan.prompt, prompt);
     assert.ok(plan.criticalCaseIds.includes("CASE_TESTS_EXIST"));
+  }
+});
+
+test("the evidence-gate scenarios bind hidden oracles, small budgets, and plain prompts", () => {
+  const matrix = loadMatrix();
+  for (const [id, task, cases] of [
+    ["owner-only-delete", "25-owner-only-delete", ["CASE_OTHER_USER_403", "CASE_ADMIN_DELETE"]],
+    ["idempotent-refund", "26-idempotent-refund", ["CASE_RESTART_DEDUPES", "CASE_CONCURRENT_DUPLICATES"]],
+    ["speed-up-search", "27-speed-up-search", ["CASE_RESULTS_IDENTICAL", "CASE_SPEEDUP_3X"]],
+    ["regression-fix-with-fixes", "28-regression-fix-with-fixes", ["CASE_UPPER_BOUNDARY", "CASE_TESTS_DETECT_SEED"]]
+  ]) {
+    const plan = executionPlan(matrix, id);
+    assert.equal(plan.execution, "paid");
+    assert.deepEqual(plan.budget,
+      { wall_ms: 1800000, cost_usd: 3, model_requests: 150, tool_calls: 150 });
+    assert.match(plan.fixture, new RegExp(`${task}/seed$`));
+    assert.match(plan.oracle, new RegExp(`${task}/oracle/run\\.sh$`));
+    for (const value of cases) assert.ok(plan.criticalCaseIds.includes(value), `${id}: ${value}`);
+    // The agent must classify the risk itself: the task text names product
+    // behavior only, never Change Loop vocabulary.
+    assert.doesNotMatch(plan.prompt, /risk|signal|access|financial|fixes|openspec|archiv/i, id);
   }
 });
 

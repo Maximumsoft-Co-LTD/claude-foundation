@@ -8,6 +8,11 @@ import test from "node:test";
 
 import { runBenchmarkOracle } from "../openspec-native/run.mjs";
 import { repairOrderInventory } from "./fixtures/order-inventory-repair.mjs";
+import {
+  IDEMPOTENT_REFUND_MUTANTS, OWNER_ONLY_DELETE_MUTANTS, REGRESSION_FIX_MUTANTS,
+  SPEED_UP_SEARCH_MUTANTS, repairIdempotentRefund, repairOwnerOnlyDelete,
+  repairRegressionFix, repairSpeedUpSearch
+} from "./fixtures/evidence-gate-repairs.mjs";
 
 const TASKS = fileURLToPath(new URL("../tasks", import.meta.url));
 const MATRIX = JSON.parse(readFileSync(
@@ -1184,4 +1189,55 @@ test("budget decision workload has a zero-cost deterministic sentinel", () => {
     encoding: "utf8"
   });
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+});
+
+// Evidence-gate scenarios: the repair must pass every case, and each plausible
+// wrong delivery (allow-all, deny-all, lost idempotency, changed ordering, a
+// half-fixed boundary) must fail the named oracle case.
+function verifyMutants(name, file, repair, mutants) {
+  const task = join(TASKS, name);
+  const project = mkdtempSync(join(tmpdir(), `foundation-${name}-mutants-`));
+  try {
+    cpSync(join(task, "seed"), project, { recursive: true });
+    repair(project);
+    for (const [id, label, edits] of mutants) {
+      const originals = new Map();
+      for (const [before, after] of edits) {
+        const path = join(project, file);
+        const source = readFileSync(path, "utf8");
+        if (!originals.has(path)) originals.set(path, source);
+        assert.ok(source.includes(before), `${name}: mutation anchor missing: ${label}`);
+        write(path, source.replace(before, after));
+      }
+      try {
+        const result = runBenchmarkOracle({ project, oraclePath: join(task, "oracle/run.sh") });
+        assert.equal(result.verdict, "fail", `${name}: ${label} escaped the oracle`);
+        assert.equal(result.results[id], "fail", `${name}: ${label} must fail ${id}`);
+      } finally {
+        for (const [path, source] of originals) write(path, source);
+      }
+    }
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+  }
+}
+
+test("owner-only delete requires both allow paths and both deny paths", () => {
+  verifyWorkload("25-owner-only-delete", repairOwnerOnlyDelete);
+  verifyMutants("25-owner-only-delete", "src/server.js", repairOwnerOnlyDelete, OWNER_ONLY_DELETE_MUTANTS);
+});
+
+test("idempotent refund dedupes retries across restarts and concurrent duplicates", () => {
+  verifyWorkload("26-idempotent-refund", repairIdempotentRefund);
+  verifyMutants("26-idempotent-refund", "src/server.js", repairIdempotentRefund, IDEMPOTENT_REFUND_MUTANTS);
+});
+
+test("search speedup preserves every hidden result and is measurably faster", () => {
+  verifyWorkload("27-speed-up-search", repairSpeedUpSearch);
+  verifyMutants("27-speed-up-search", "src/search.js", repairSpeedUpSearch, SPEED_UP_SEARCH_MUTANTS);
+});
+
+test("regression fix closes both tier boundaries without collateral change", () => {
+  verifyWorkload("28-regression-fix-with-fixes", repairRegressionFix);
+  verifyMutants("28-regression-fix-with-fixes", "src/pricing.js", repairRegressionFix, REGRESSION_FIX_MUTANTS);
 });

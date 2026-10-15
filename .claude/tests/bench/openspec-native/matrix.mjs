@@ -75,6 +75,11 @@ export function matrixIssues(matrix, root = resolve(HERE, "../../../..")) {
         issues.push(`${scenario?.id}: ready critical_case_ids are required`);
       if (!scenario.fixture || !existsSync(resolve(root, scenario.fixture)))
         issues.push(`${scenario?.id}: ready fixture does not exist`);
+      if (scenario.openspec_history !== undefined &&
+          (typeof scenario.openspec_history !== "string" ||
+           !existsSync(resolve(root, scenario.openspec_history)) ||
+           !/^sha256:[a-f0-9]{64}$/.test(String(scenario.openspec_history_digest))))
+        issues.push(`${scenario?.id}: openspec_history needs an existing path and digest`);
       if (scenario.execution === "paid" && scenario.oracle?.required !== true)
         issues.push(`${scenario?.id}: paid scenarios require a hidden oracle`);
       if (scenario.oracle?.required &&
@@ -118,7 +123,9 @@ export function executionPlan(matrix, scenarioId) {
     fixtureDigest: scenario.fixture_digest,
     projectCommand: scenario.project_command,
     cleanInstallCommand: scenario.clean_install_command,
-    criticalCaseIds: scenario.critical_case_ids
+    criticalCaseIds: scenario.critical_case_ids,
+    openspecHistory: scenario.openspec_history || null,
+    openspecHistoryDigest: scenario.openspec_history_digest || null
   };
 }
 

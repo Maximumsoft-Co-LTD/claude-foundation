@@ -1184,7 +1184,8 @@ test("baseline prompt carries every scenario task but no Change Loop instruction
     row.status === "ready" && row.execution === "paid");
   for (const id of ["bare-node-boundary", "typescript-react-state", "python-api-validation",
     "database-migration-rollback", "refactor-no-reproduction", "multi-service-event-flow",
-    "tiny-feature", "notes-api", "cart-coupons", "project-tracker-api"])
+    "tiny-feature", "notes-api", "cart-coupons", "project-tracker-api", "owner-only-delete",
+    "idempotent-refund", "speed-up-search", "regression-fix-with-fixes"])
     assert.ok(scenarios.some((row) => row.id === id), `${id} is a baseline-capable scenario`);
   for (const scenario of scenarios) {
     const prompt = baselinePrompt({

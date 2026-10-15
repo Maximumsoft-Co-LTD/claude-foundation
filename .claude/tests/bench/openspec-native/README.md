@@ -413,6 +413,21 @@ node .claude/tests/bench/openspec-native/matrix.mjs \
   .claude/tests/bench/config/openspec-native-matrix.json bare-node-boundary
 ```
 
+Four small evidence-gate rows (tasks 25-28, `cost_usd: 3`) compare the
+no-harness arm with Change Loop versions on gates a plausible diff can miss:
+`owner-only-delete` (allow and deny paths of an authorization rule),
+`idempotent-refund` (same-key replay, key reuse, restart, concurrent
+duplicates), `speed-up-search` (hidden result equality against the seed plus a
+same-process 3x speedup), and `regression-fix-with-fixes` (both boundary
+partitions of a defect introduced by an archived prior change). The prior
+change's OpenSpec history is a frozen `openspec_history` overlay that the lab
+copies into the Change Loop arm only; the baseline seed carries the same
+history as `CHANGELOG.md`. Their prompts
+state product behavior only, so whether the agent declares risk signals or a
+`fixes` link is measured from scorecards, not the oracle. The zero-cost
+workload suite proves each oracle against a reference repair and named wrong
+deliveries (`tests/fixtures/evidence-gate-repairs.mjs`).
+
 Budget exhaustion is a resumable user-decision boundary in this manifest. It
 may not be converted into either completed work or a permanent blocked result.
 

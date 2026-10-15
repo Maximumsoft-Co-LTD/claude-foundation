@@ -7,11 +7,15 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import {spawnSync} from 'node:child_process';
+import { fileURLToPath } from "node:url";
 
 import {
   baselineAllowedTools, cleanRoomCommandContract, directoryDigest, installedAllowedTools,
   prepareLabProject, prepareBaselineProject, runScenarioLab, shellCheck
 } from "../openspec-native/lab.mjs";
+import { executionPlan, loadMatrix } from "../openspec-native/matrix.mjs";
+
+const ROOT_DIR = fileURLToPath(new URL("../../../../", import.meta.url));
 
 function write(path, value) {
   mkdirSync(dirname(path), { recursive: true });
@@ -54,6 +58,28 @@ function writeFixtureMatrix(matrix, fixture, oracle, projectCommand = "node --te
     }))]
   }, null, 2)}\n`);
 }
+
+test('prior OpenSpec history is installed only in the Change Loop arm', () => {
+  const root = mkdtempSync(join(tmpdir(), 'foundation-lab-history-'));
+  const fixture = join(root, 'fixture');
+  const history = join(root, 'history');
+  const installer = join(root, 'install.sh');
+  write(join(fixture, 'src/pricing.js'), 'module.exports = {};\n');
+  write(join(history, 'changes/archive/2026-10-01-prior/proposal.md'), '# Prior\n');
+  executable(installer, '#!/bin/sh\nmkdir -p "$1/.claude/harness"\n');
+  try {
+    const harness = prepareLabProject({fixture,installer,tempParent:root,openspecHistory:history});
+    assert.equal(readFileSync(join(harness.project,
+      'openspec/changes/archive/2026-10-01-prior/proposal.md'), 'utf8'), '# Prior\n');
+    const baseline = prepareBaselineProject({fixture,tempParent:root});
+    assert.equal(existsSync(join(baseline.project, 'openspec')), false);
+    assert.equal(harness.seedDigest, baseline.seedDigest);
+    const plan = executionPlan(loadMatrix(), 'regression-fix-with-fixes');
+    assert.match(plan.openspecHistory, /28-regression-fix-with-fixes\/openspec-history$/);
+    assert.equal(existsSync(join(ROOT_DIR, plan.fixture, 'openspec')), false,
+      'the frozen seed itself must stay baseline-safe');
+  } finally { rmSync(root, {recursive:true,force:true}); }
+});
 
 test('multi-repository topology is installed only in the Change Loop arm', () => {
   const root = mkdtempSync(join(tmpdir(), 'foundation-lab-topology-'));

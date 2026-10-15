@@ -169,12 +169,17 @@ function parseArgs(argv) {
 }
 
 export function prepareLabProject({ fixture, installer = join(ROOT, "install.sh"),
-  tempParent = tmpdir(), projectCommand = null, repositoryCatalog = null }) {
+  tempParent = tmpdir(), projectCommand = null, repositoryCatalog = null,
+  openspecHistory = null }) {
   const source = resolve(fixture);
   if (!existsSync(source) || !statSync(source).isDirectory())
     throw new Error(`fixture seed does not exist: ${source}`);
   const project = mkdtempSync(join(tempParent, "foundation-consumer-lab-"));
   cpSync(source, project, { recursive: true });
+  // Prior OpenSpec history (specs and archived changes) is Change Loop state,
+  // so like topology it stays out of the seed the baseline arm receives.
+  if (openspecHistory) cpSync(resolve(openspecHistory), join(project, "openspec"),
+    { recursive: true });
   const installed = commandResult(installer, [project, "--yes"], ROOT);
   try { requireSuccess(installed, "Foundation install"); }
   catch (error) { rmSync(project, { recursive: true, force: true }); throw error; }
@@ -350,7 +355,8 @@ export function runScenarioLab({ matrixPath, scenarioId, outputRoot = DEFAULT_RE
       : prepareLabProject({
           fixture: resolve(ROOT, plan.fixture), installer, tempParent,
           projectCommand: scenario.project_command,
-          repositoryCatalog: scenario.repository_catalog
+          repositoryCatalog: scenario.repository_catalog,
+          openspecHistory: plan.openspecHistory ? resolve(ROOT, plan.openspecHistory) : null
         });
   if (resumeProject) {
     const marker = JSON.parse(readFileSync(join(prepared.project,
@@ -428,6 +434,7 @@ export function runScenarioLab({ matrixPath, scenarioId, outputRoot = DEFAULT_RE
         cleanInstallCommand: scenario.clean_install_command,
         oracle: plan.oracle, criticalCaseIds: scenario.critical_case_ids,
         repositoryCatalog: scenario.repository_catalog || null,
+        openspecHistory: plan.openspecHistory,
         budget: plan.budget, startedAt, finishedAt: new Date().toISOString(),
         runnerExitCode: result.status,
         strictPass: result.status === 0 && verificationPassed,
