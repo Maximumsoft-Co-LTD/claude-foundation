@@ -1,0 +1,442 @@
+{
+  "version": 2,
+  "purpose": "change",
+  "language": "th",
+  "id": "hybrid-packets-impact",
+  "activeChange": null,
+  "problem": "ก่อนเปิด change เดียวของ hybrid change packets ต้องรู้ว่าโค้ด เอกสาร และ test ส่วนไหนกระทบ กลไก draft v5 ทำงานอย่างไร และ change เดียวผ่าน Change → Build → Prove → Land ได้หรือไม่",
+  "mode": "analyze",
+  "intent": {
+    "goal": "เตรียมข้อมูลให้เปิด change เดียวที่ส่งมอบ outline contract, hybrid authoring, field ใหม่, ประเภทงานครบตาม catalog, ADR แบบ (ก), แก้ renderer และ budget",
+    "outcome": "แผนที่โค้ดที่กระทบพร้อม path, กลไก draft v5 ที่ผู้ใช้เลือกแล้ว, ข้อสรุปว่าขนาด change เดียวรับได้ และ change intent ที่พร้อมส่งต่อ",
+    "actors": [
+      "maintainer",
+      "consumer agent",
+      "ผู้อนุมัติ spec"
+    ],
+    "scope": [
+      "draft compile pipeline",
+      "renderer",
+      "amendment",
+      "archive",
+      "work types",
+      "evidence capabilities",
+      "budgets",
+      "docs EN/TH",
+      "website",
+      "schemas",
+      "protocol pins",
+      "tests"
+    ]
+  },
+  "requirements": [
+    {
+      "key": "single-change",
+      "revision": 1,
+      "kind": "constraint",
+      "statement": "ส่งมอบทั้งหมดใน change เดียว",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": [
+        "u1"
+      ]
+    },
+    {
+      "key": "fold-reader-first",
+      "revision": 1,
+      "kind": "behavior",
+      "statement": "change ใหม่ต้องรวม requirement และ task ของ change reader-first ที่ปิดไป (amendment แทนที่, ลำดับ proposal, investigation appendix เดียว, ส่วนหัวสะอาด, traceability ชื่อ scenario, file map ครั้งเดียว, story ตามภาษา, ความครบ, budget ใหม่)",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": [
+        "u2"
+      ]
+    },
+    {
+      "key": "roadmap-intent",
+      "revision": 1,
+      "kind": "behavior",
+      "statement": "ขอบเขตตาม changeIntent ของ investigation roadmap-after-pstack และ openspec/investigations/change-doc-outline.md",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": [
+        "u2"
+      ]
+    }
+  ],
+  "conversation": [
+    {
+      "key": "u1",
+      "speaker": "user",
+      "statement": "เปิด change เลยได้ไหม ต้องการเปิด change เดียว ต้องปิด change อะไรก่อนไหม หรือ investigate ครบหรือยังและรู้หรือยังต้องปรับอะไรบ้าง",
+      "source": "session message"
+    },
+    {
+      "key": "u2",
+      "speaker": "user",
+      "statement": "ปิด change ตามทาง ก แล้ว investigate ต่อเลย",
+      "source": "session message"
+    },
+    {
+      "key": "u3",
+      "speaker": "user",
+      "statement": "v5 prose: ไฟล์ .md ในโฟลเดอร์ draft; typed: JSON; หลักฐานที่ยังไม่มี: เพิ่ม capability ใหม่; nfr/observability: ใน change.json แล้ว derive grounding",
+      "source": "AskUserQuestion answers"
+    }
+  ],
+  "questions": [
+    {
+      "key": "q-v5-layout",
+      "question": "draft v5 เก็บ prose ที่คนเขียนไว้ที่ไหน",
+      "material": true,
+      "status": "answered",
+      "recommendation": "o-prose-draft-files",
+      "dependsOn": [],
+      "workKeys": [
+        "v5-design"
+      ],
+      "conversationKeys": [
+        "u3"
+      ],
+      "answer": "ไฟล์ .md ในโฟลเดอร์ draft: change.json + proposal.md + design.md ตามหัวข้อ outline แล้ว harness ตรวจและรวมเป็น packet"
+    },
+    {
+      "key": "q-typed-format",
+      "question": "ส่วน typed ของ v5 เป็น JSON (ใช้ parser เดิม) หรือ YAML (ต้องเพิ่ม parser)",
+      "material": true,
+      "status": "answered",
+      "recommendation": "JSON",
+      "dependsOn": [],
+      "workKeys": [
+        "v5-design"
+      ],
+      "conversationKeys": [
+        "u3"
+      ],
+      "answer": "JSON"
+    },
+    {
+      "key": "q-new-capabilities",
+      "question": "หลักฐานที่ยังไม่มี capability (ml evaluation, crash-free, parity, plan check, experiment guardrail) จะทำอย่างไร",
+      "material": true,
+      "status": "answered",
+      "recommendation": "ใช้ capability เดิมผ่าน command adapter สำหรับสิ่งที่พิสูจน์ได้ก่อน Land (evaluation, parity, plan check) และให้สัญญาณหลังปล่อย (crash-free, ผล experiment) เป็น rollout gate ใน handoff ไม่ใช่ proof",
+      "dependsOn": [],
+      "workKeys": [
+        "evidence"
+      ],
+      "conversationKeys": [
+        "u3"
+      ],
+      "answer": "เพิ่ม capability ใหม่สำหรับ ml evaluation, crash-free rate, parity, plan check และ experiment guardrail"
+    },
+    {
+      "key": "q-nfr-home",
+      "question": "nfr และ observability ของ v5 อยู่ที่ไหน",
+      "material": true,
+      "status": "answered",
+      "recommendation": "อยู่ใน change.json ของ v5 แล้ว harness derive grounding ให้ ส่วน v4 ใช้ grounding v2 ตามเดิม",
+      "dependsOn": [],
+      "workKeys": [
+        "v5-design"
+      ],
+      "conversationKeys": [
+        "u3"
+      ],
+      "answer": "อยู่ใน change.json ของ v5 แล้ว harness derive grounding; v4 ใช้ grounding v2 ตามเดิม"
+    }
+  ],
+  "experiments": [],
+  "work": [
+    {
+      "key": "code-map",
+      "outcome": "แผนที่โค้ด เอกสาร และ test ที่กระทบ",
+      "questionKeys": []
+    },
+    {
+      "key": "v5-design",
+      "outcome": "กลไก draft v5",
+      "questionKeys": [
+        "q-v5-layout",
+        "q-typed-format",
+        "q-nfr-home"
+      ]
+    },
+    {
+      "key": "evidence",
+      "outcome": "การผูกประเภทงานกับหลักฐาน",
+      "questionKeys": [
+        "q-new-capabilities"
+      ]
+    },
+    {
+      "key": "change-ready",
+      "outcome": "change intent พร้อมส่งต่อ",
+      "questionKeys": []
+    }
+  ],
+  "historyGaps": [],
+  "sources": [
+    "openspec/investigations/change-doc-outline.md",
+    "openspec/investigations/roadmap-after-pstack.json",
+    ".claude/harness/runtime/workflow/change-lifecycle.mjs",
+    ".claude/harness/runtime/workflow/semantic-draft.mjs",
+    ".claude/harness/runtime/workflow/semantic-amendment.mjs",
+    ".claude/harness/runtime/workflow/change-validation.mjs",
+    ".claude/harness/runtime/workflow/validation/design-blueprints.mjs",
+    ".claude/harness/runtime/workflow/validation/dev-document.mjs",
+    ".claude/harness/runtime/workflow/validation/packet-overview.mjs",
+    ".claude/harness/runtime/workflow/validation/reader-guide.mjs",
+    ".claude/harness/runtime/workflow/skill-routing.mjs",
+    ".claude/harness/runtime/workflow/change-policy.mjs",
+    ".claude/harness/runtime/workflow/budget.mjs",
+    ".claude/harness/runtime/workflow/packet-runtime.mjs",
+    ".claude/harness/runtime/workflow/agent-planning.mjs",
+    ".claude/harness/runtime/workflow/apply-runtime.mjs",
+    ".claude/harness/runtime/core/user-decisions.mjs",
+    ".claude/harness/runtime/evidence/provider-catalog.mjs",
+    ".claude/harness/runtime/evidence/test-discrimination.mjs",
+    ".claude/harness/protocol.json",
+    "cli.sh",
+    ".claude/harness/runtime/workflow/investigation-report.mjs"
+  ],
+  "facts": [
+    {
+      "key": "reader-first-abandoned",
+      "statement": "change reader-first (id change) ถูกปิดด้วย change abandon --applied keep ระเบียนอยู่ที่ .foundation/recovery/abandoned/change มี 4 task ที่ยังไม่ Build",
+      "sources": [
+        "openspec/investigations/roadmap-after-pstack.json"
+      ]
+    },
+    {
+      "key": "draft-json-only",
+      "statement": "draft อ่านด้วย readJson เท่านั้น และ expandMinimalSemanticDraft ตั้ง version 4 เมื่อไม่ระบุ (change-lifecycle.mjs:963, semantic-draft.mjs:869)",
+      "sources": [
+        ".claude/harness/runtime/workflow/change-lifecycle.mjs",
+        ".claude/harness/runtime/workflow/semantic-draft.mjs"
+      ]
+    },
+    {
+      "key": "intake-v4-only",
+      "statement": "completedDraftIntake ตรวจ intake เฉพาะ version 4 และ new --draft บล็อกเฉพาะ v4 (change-lifecycle.mjs:2054, 1410); v5 จะข้าม intake gate ถ้าไม่แก้",
+      "sources": [
+        ".claude/harness/runtime/workflow/change-lifecycle.mjs"
+      ]
+    },
+    {
+      "key": "version-literals",
+      "statement": "มี check [3,4] และ === 4 ราว 40 จุด: change-lifecycle 28, semantic-draft 5, semantic-intake 4 และอีกหลายไฟล์; protocol.json semanticDraftSchema 4 และ proof receipt ฝังค่านี้",
+      "sources": [
+        ".claude/harness/runtime/workflow/change-lifecycle.mjs",
+        ".claude/harness/runtime/workflow/semantic-draft.mjs",
+        ".claude/harness/protocol.json"
+      ]
+    },
+    {
+      "key": "revise-rewrites",
+      "statement": "reviseChangeUnlocked สร้าง packet ใหม่ทั้งหมดจาก draft (change-lifecycle.mjs:2410) prose ที่แก้ใน packet จะถูกทับ",
+      "sources": [
+        ".claude/harness/runtime/workflow/change-lifecycle.mjs"
+      ]
+    },
+    {
+      "key": "approval-digest",
+      "statement": "agreementIdentity เป็น SHA-256 ของทุกไฟล์ใน packet; แก้หลังอนุมัติทำให้อนุมัติเป็นโมฆะ และ workspace drift ถูกคืนค่าอัตโนมัติ (user-decisions.mjs:39,77,222)",
+      "sources": [
+        ".claude/harness/runtime/core/user-decisions.mjs"
+      ]
+    },
+    {
+      "key": "amend-proposal-only",
+      "statement": "writeSemanticAmendment ต่อท้าย proposal.md 3 ส่วนและไม่แตะ design.md (semantic-amendment.mjs:1163)",
+      "sources": [
+        ".claude/harness/runtime/workflow/semantic-amendment.mjs"
+      ]
+    },
+    {
+      "key": "fixed-format-parsers",
+      "statement": "validator หลายตัว parse รูปแบบตายตัวใน markdown: Impact lines, Decision ID, ## Work type, Open questions, และ scaffold check ปฏิเสธ TODO/TBD (change-validation.mjs:287, change-lifecycle.mjs:534,593,1017)",
+      "sources": [
+        ".claude/harness/runtime/workflow/change-validation.mjs",
+        ".claude/harness/runtime/workflow/change-lifecycle.mjs"
+      ]
+    },
+    {
+      "key": "no-rationale-archive",
+      "statement": "archive ใช้ openspec archive และตรวจเฉพาะ requirement; ไม่มีโค้ดนำ decision ไป spec ถาวร (apply-runtime.mjs:1417); Rationale ใส่ใน requirement ของ spec delta แล้วจะตามไปเอง",
+      "sources": [
+        ".claude/harness/runtime/workflow/apply-runtime.mjs"
+      ]
+    },
+    {
+      "key": "renderer-map",
+      "statement": "renderDraftProposal 481, renderDraftDecisions 418-440 (rejected 433), renderDraftDesign 568, renderDesignBlueprints design-blueprints.mjs:312, packet-overview และ reader-guide เป็นจุดที่ outline renderer ต้องแก้",
+      "sources": [
+        ".claude/harness/runtime/workflow/change-lifecycle.mjs",
+        ".claude/harness/runtime/workflow/validation/design-blueprints.mjs",
+        ".claude/harness/runtime/workflow/validation/packet-overview.mjs",
+        ".claude/harness/runtime/workflow/validation/reader-guide.mjs"
+      ]
+    },
+    {
+      "key": "light-work-drift",
+      "statement": "LIGHT_WORK มี 3 ชุดไม่ตรงกัน (design-blueprints:17, dev-document:134, packet-overview:190) และ test ไม่อยู่ใน WORK_TYPES จึงถูกปฏิเสธเมื่อประกาศ",
+      "sources": [
+        ".claude/harness/runtime/workflow/validation/design-blueprints.mjs",
+        ".claude/harness/runtime/workflow/validation/dev-document.mjs",
+        ".claude/harness/runtime/workflow/validation/packet-overview.mjs"
+      ]
+    },
+    {
+      "key": "worktype-consumers",
+      "statement": "work type ถูกใช้ใน inferWorkTypes (path), skill-routing ROUTES, test-discrimination, draft-risk CONTRACT_TYPES, outcomes cohorts, renderWorkType และ template examples มีแค่ ui/api/config",
+      "sources": [
+        ".claude/harness/runtime/workflow/validation/dev-document.mjs",
+        ".claude/harness/runtime/workflow/skill-routing.mjs",
+        ".claude/harness/runtime/evidence/test-discrimination.mjs"
+      ]
+    },
+    {
+      "key": "capability-by-path",
+      "statement": "ไม่มีการผูก work type กับ evidence capability; capability มาจาก path (change-policy.mjs:153-200) และ NFR category; provider มี 21 capability แต่ไม่มี evaluation, crash-free, parity, plan-check, experiment guardrail",
+      "sources": [
+        ".claude/harness/runtime/workflow/change-policy.mjs",
+        ".claude/harness/runtime/evidence/provider-catalog.mjs"
+      ]
+    },
+    {
+      "key": "grounding-overlap",
+      "statement": "nfrAssessment 8 หมวดและ observability rows อยู่ใน grounding v2; grounding v3 มีแค่ decisions; field nfr/observability ใหม่จะซ้อนกับ v2",
+      "sources": [
+        ".claude/harness/runtime/workflow/change-validation.mjs"
+      ]
+    },
+    {
+      "key": "no-size-cap",
+      "statement": "ไม่มีเพดานจำนวน task หรือไฟล์; เพดานจริงคือ packet task 20 KB (packet-runtime.mjs:716), claim ต่อ task 50, plan summary 4 KB; budget เปิด window ใหม่อัตโนมัติ (budget.mjs:361); review inline diff รวม 40 KB",
+      "sources": [
+        ".claude/harness/runtime/workflow/packet-runtime.mjs",
+        ".claude/harness/runtime/workflow/budget.mjs",
+        ".claude/harness/runtime/workflow/agent-planning.mjs"
+      ]
+    },
+    {
+      "key": "root-runtime-bootstrap",
+      "statement": "cli.sh รัน runtime ที่ root ไม่ใช่ใน sandbox; provider test รันใน sandbox; change นี้จึงต้องเขียนด้วย draft v4 และฟีเจอร์ใหม่ไม่ใช้กับตัวเอง",
+      "sources": [
+        "cli.sh"
+      ]
+    },
+    {
+      "key": "authored-file-precedent",
+      "statement": "writeInvestigationReport เขียนทับเฉพาะไฟล์ที่ขึ้นต้นด้วย generated marker และรักษาไฟล์ที่คนเขียน (investigation-report.mjs:185-201) เป็นแบบอย่างของไฟล์ที่คนเป็นเจ้าของ",
+      "sources": [
+        ".claude/harness/runtime/workflow/investigation-report.mjs"
+      ]
+    }
+  ],
+  "hypotheses": [
+    {
+      "key": "h-single-change-feasible",
+      "statement": "change เดียวราว 35-45 task ผ่าน Build ได้ถ้าแต่ละ task แคบพอให้ packet ไม่เกิน 20 KB",
+      "status": "supported",
+      "factKeys": [
+        "no-size-cap",
+        "root-runtime-bootstrap"
+      ]
+    },
+    {
+      "key": "h-prose-in-packet-risky",
+      "statement": "ให้คนแก้ proposal.md/design.md ใน packet ตรง ๆ ชนกับ revise, approval digest, amendment และ parser รูปแบบตายตัว จึงเสี่ยงกว่าการเก็บ prose ไว้ฝั่ง draft",
+      "status": "supported",
+      "factKeys": [
+        "revise-rewrites",
+        "approval-digest",
+        "amend-proposal-only",
+        "fixed-format-parsers"
+      ]
+    }
+  ],
+  "options": [
+    {
+      "key": "o-prose-json-strings",
+      "summary": "v5: prose เป็น markdown string ใน draft JSON; harness จัดเรียงตาม outline"
+    },
+    {
+      "key": "o-prose-draft-files",
+      "summary": "v5: โฟลเดอร์ draft มี change.json (typed) + proposal.md และ design.md ที่คนเขียนตามหัวข้อ outline; harness ตรวจหัวข้อแล้วรวมกับส่วนที่ derive เป็น packet"
+    },
+    {
+      "key": "o-prose-in-packet",
+      "summary": "v5: คนแก้ proposal.md/design.md ใน packet ตรง ๆ โดย harness แทรกส่วน derive ด้วย marker"
+    }
+  ],
+  "selection": {
+    "option": "o-prose-draft-files",
+    "reason": "ผู้ใช้เลือก (u3); revise และ amend ไม่ทับ prose, approval digest ใช้ได้เดิม, มีแบบอย่างไฟล์ที่คนเป็นเจ้าของ",
+    "rejected": [
+      {
+        "option": "o-prose-json-strings",
+        "reason": "เขียนลำบาก"
+      },
+      {
+        "option": "o-prose-in-packet",
+        "reason": "ชนกับ revise, digest, amendment และ parser ตายตัว"
+      }
+    ]
+  },
+  "decisions": [
+    {
+      "key": "v5-layout",
+      "status": "resolved",
+      "question": "ที่เก็บ prose ของ v5",
+      "alternatives": [
+        "o-prose-draft-files",
+        "o-prose-json-strings",
+        "o-prose-in-packet"
+      ],
+      "choice": "o-prose-draft-files",
+      "reason": "ผู้ใช้เลือก (u3)"
+    },
+    {
+      "key": "typed-format",
+      "status": "resolved",
+      "question": "รูปแบบ typed",
+      "alternatives": [
+        "json",
+        "yaml"
+      ],
+      "choice": "json",
+      "reason": "ผู้ใช้เลือก (u3); ใช้ readJson เดิม"
+    },
+    {
+      "key": "new-capabilities",
+      "status": "resolved",
+      "question": "หลักฐานที่ยังไม่มี capability",
+      "alternatives": [
+        "existing-plus-rollout-gate",
+        "new-capabilities"
+      ],
+      "choice": "new-capabilities",
+      "reason": "ผู้ใช้เลือก (u3) แทนคำแนะนำ; สัญญาณหลังปล่อยต้องมีวิธีรับผลเข้ามา เช่น external adapter"
+    },
+    {
+      "key": "nfr-home",
+      "status": "resolved",
+      "question": "ที่อยู่ของ nfr และ observability",
+      "alternatives": [
+        "v5-typed-derive-grounding",
+        "keep-grounding-v2"
+      ],
+      "choice": "v5-typed-derive-grounding",
+      "reason": "ผู้ใช้เลือก (u3)"
+    }
+  ],
+  "conclusion": {
+    "summary": "พร้อมเปิด change เดียวที่เขียนด้วย draft v4 (เพราะ runtime ที่ root คอมไพล์ตัว change เอง) ขนาดราว 35-45 task ที่แต่ละ task แคบพอให้ packet ไม่เกิน 20 KB; กลไก v5: โฟลเดอร์ draft มี change.json + proposal.md + design.md ที่คนเขียน, harness ตรวจหัวข้อตาม outline แล้วรวมกับส่วน derive; ต้องแก้ intake gate, check version ราว 40 จุด, revise/amend ให้รักษา prose, pin protocol/runtime ทั้ง 4 จุด, capability ใหม่ 5 ตัว, รวม LIGHT_WORK 3 ชุด และให้ Rationale อยู่ใน requirement ของ spec delta"
+  },
+  "changeIntent": "ส่งมอบ hybrid change packets ใน change เดียว: (1) outline contract เดียวตาม openspec/investigations/change-doc-outline.md ที่กำหนดหัวข้อ ลำดับ เงื่อนไข และบ้านของทุก field; (2) draft v5 คู่กับ v4: โฟลเดอร์ draft มี change.json (typed) + proposal.md + design.md ที่คนเขียนตามหัวข้อ outline; harness ตรวจหัวข้อ ลำดับ ความครบ ความซ้ำ แล้วรวมกับส่วน derive เป็น packet; revise และ amend รักษา prose และ amend แก้ design ได้; intake gate และ check version ครอบคลุม v5; (3) field typed ใหม่ตาม outline รวม nfr และ observability ที่ derive grounding; (4) ประเภทงานครบตาม Work type catalog พร้อมการอนุมาน path, skill routing, หัวข้อบังคับ, การผูก evidence และรวม LIGHT_WORK ให้เป็นชุดเดียวที่รวม test; (5) capability ใหม่ evaluation, release-health (crash-free), parity, plan-check, experiment-guardrail; (6) ADR แบบ (ก): decision มีสถานะ และ decision ที่ durable เป็น Rationale ใน requirement ของ spec delta; (7) แก้ renderer จาก change reader-first ที่ปิดไป: amendment แทนที่, ลำดับ proposal, investigation appendix เดียว, ส่วนหัวสะอาด, traceability ชื่อ scenario, file map ครั้งเดียว, story และ id ภาษาไทย, rejected options, budget 1200/2000/1200 และ 2400/3600/2400 พร้อมคำเตือนใหม่; (8) pin protocol และ runtime API ทั้ง 4 จุด, template, เอกสาร EN/TH, website และ upgrade matrix; change นี้เขียนด้วย draft v4"
+}

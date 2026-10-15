@@ -1,0 +1,469 @@
+{
+  "version": 2,
+  "purpose": "change",
+  "language": "th",
+  "id": "roadmap-after-pstack",
+  "activeChange": null,
+  "problem": "หลังงาน pstack (evidence gates, skill procedures, skill routing) และการตรวจเอกสาร change ต้องปรับและทำอะไรต่อบ้าง เรียงลำดับอย่างไร และอะไรเข้า v3.6.4",
+  "mode": "analyze",
+  "intent": {
+    "goal": "รวบรวมสิ่งที่ต้องปรับทั้งหมดเป็นแผนเดียวที่เรียงลำดับและแยก release",
+    "outcome": "roadmap ที่ระบุงานแต่ละชิ้น, ลำดับ, release ที่อยู่, การตัดสินใจที่ได้แล้ว และคำถามที่ต้องให้ผู้ใช้ตอบ",
+    "actors": [
+      "maintainer",
+      "consumer agent",
+      "ผู้อนุมัติ spec"
+    ],
+    "scope": [
+      "skill triggering",
+      "change document readability",
+      "outline contract",
+      "hybrid authoring",
+      "work types",
+      "renderer defects",
+      "budgets",
+      "release v3.6.4",
+      "housekeeping"
+    ]
+  },
+  "conversation": [
+    {
+      "key": "u1",
+      "speaker": "user",
+      "statement": "ทำ 1 (แก้การ trigger ของ skill ก่อน release)",
+      "source": "session message"
+    },
+    {
+      "key": "u2",
+      "speaker": "user",
+      "statement": "เพิ่ม budget ได้นะ ฉันต้องการความครบถ้วนของเอกสารและอ่านง่ายเรียงลำดับถูกด้วย และ เขียนให้คนอ่าน",
+      "source": "session message"
+    },
+    {
+      "key": "u3",
+      "speaker": "user",
+      "statement": "เรามากำหนดไหม ว่าแต่ละไฟล์ change spec ทำหน้าที่อะไร มีหัวข้ออะไรบ้าง แบบสูงสุด และแต่ละงานค่อยเลือกไปว่าต้องใช้หัวข้ออะไรบ้าง",
+      "source": "session message"
+    },
+    {
+      "key": "u4",
+      "speaker": "user",
+      "statement": "Test strategy, NFR, ADR, Mapping, Diagram, API Contract ต่างๆ ครบหรือยัง; research เพิ่มว่าต้องมีหัวข้ออะไรแบบ full ที่สุด และค่อยให้แต่ละงานเลือกหัวข้อไปใช้",
+      "source": "session messages"
+    },
+    {
+      "key": "u5",
+      "speaker": "user",
+      "statement": "แบบ B ดีกว่า (hybrid: โครงสร้าง typed, prose เป็น markdown ที่ harness ตรวจ)",
+      "source": "session message"
+    },
+    {
+      "key": "u6",
+      "speaker": "user",
+      "statement": "ประเภทงานเราครบหรือยัง",
+      "source": "session message"
+    },
+    {
+      "key": "u7",
+      "speaker": "user",
+      "statement": "เดี๋ยวฉันรองานนี้เสร็จและทดสอบ และ ถึงจะ release ทีเดียวใน version +0.0.1; ต้องทดสอบ paid e2e ด้วย budget 100$",
+      "source": "session messages"
+    },
+    {
+      "key": "u8",
+      "speaker": "user",
+      "statement": "/investigate ทั้งหมดนี้ ว่าเราต้องปรับและทำอะไรบ้าง",
+      "source": "session message"
+    },
+    {
+      "key": "u9",
+      "speaker": "user",
+      "statement": "release: รอทาง B เสร็จก่อน; skill trigger: ยอมรับและ release; ADR: (ก) decision ใน packet + ตามไป spec; ประเภทงาน: เพิ่ม 6 ประเภท",
+      "source": "AskUserQuestion answers"
+    },
+    {
+      "key": "u10",
+      "speaker": "user",
+      "statement": "มีเรื่อง Data Model schema / uxui หรือยัง; review ขาดอะไรอีกไหมด้วย skill ux-ui, architecture, programming, api-design; แก้ทั้งหมดเลย",
+      "source": "session messages"
+    },
+    {
+      "key": "u11",
+      "speaker": "user",
+      "statement": "รองรับครบทุกงานทุกประเภทงานหรือยัง; ทำเพิ่มให้ครบ (เพิ่ม library, privacy, experiment, client-release และ security fix/hotfix เป็นรูปแบบย่อยของ bugfix)",
+      "source": "session messages"
+    },
+    {
+      "key": "u12",
+      "speaker": "user",
+      "statement": "research and review ว่ามีอะไรตกหล่นอีกไหม; ทำตามที่แนะนำทั้งหมด (must + should + Change Loop process items, nice เป็นช่องเสริม, ml เป็นประเภทงาน, compliance record เปิดผ่าน openspec/config.yaml)",
+      "source": "session messages"
+    }
+  ],
+  "requirements": [
+    {
+      "key": "complete-readable-docs",
+      "revision": 1,
+      "kind": "constraint",
+      "statement": "เอกสาร change ต้องครบ อ่านง่าย เรียงลำดับถูก และเขียนให้คนอ่าน โดยเพิ่ม budget ได้",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": [
+        "u2"
+      ]
+    },
+    {
+      "key": "outline-contract",
+      "revision": 1,
+      "kind": "behavior",
+      "statement": "กำหนดหน้าที่และหัวข้อสูงสุดของแต่ละไฟล์ change แล้วให้แต่ละงานเลือกหัวข้อตามเงื่อนไข เพื่อตรวจความครบได้ รวม test strategy, NFR, ADR, mapping, diagram และ API contract",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": [
+        "u3",
+        "u4"
+      ]
+    },
+    {
+      "key": "hybrid-authoring",
+      "revision": 1,
+      "kind": "behavior",
+      "statement": "ใช้ทาง B: ส่วนโครงสร้างเป็น typed, prose เป็น markdown ที่ผู้เขียนแก้ตรงและ harness ตรวจตาม outline",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": [
+        "u5"
+      ]
+    },
+    {
+      "key": "skill-trigger",
+      "revision": 1,
+      "kind": "behavior",
+      "statement": "ทำให้ skill ถูกใช้จริงใน flow ส่งมอบงานก่อน release",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": [
+        "u1"
+      ]
+    },
+    {
+      "key": "release-patch",
+      "revision": 1,
+      "kind": "constraint",
+      "statement": "release ครั้งเดียวเป็น v3.6.4 หลังงานเสร็จและทดสอบ paid e2e ภายในงบ 100$",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": [
+        "u7"
+      ]
+    },
+    {
+      "key": "work-type-coverage",
+      "revision": 1,
+      "kind": "behavior",
+      "statement": "ตรวจและเติมประเภทงานให้ครบ",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": [
+        "u6"
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "key": "q-skill-trigger-path",
+      "question": "ทางแก้การ trigger skill: (1) ฝังขั้นตอนสำคัญลง action, (2) ลองถ้อยคำแบบระบุไฟล์, (3) ยอมรับว่า skill ใช้เมื่อเรียกเองแล้ว release",
+      "material": true,
+      "status": "answered",
+      "answer": "(3) ยอมรับ: routing คงเป็นคำแนะนำ และ release note บอกตามจริงว่า skill ใช้เมื่อถูกเรียก",
+      "conversationKeys": [
+        "u9"
+      ],
+      "dependsOn": [],
+      "workKeys": [
+        "release-scope"
+      ]
+    },
+    {
+      "key": "q-adr-mode",
+      "question": "ADR: (ก) decision อยู่ใน packet และ decision ที่ยังมีผลตามไป spec ถาวร หรือ (ข) โฟลเดอร์ ADR แยก",
+      "material": true,
+      "status": "answered",
+      "answer": "(ก)",
+      "conversationKeys": [
+        "u9"
+      ],
+      "dependsOn": [],
+      "workKeys": [
+        "hybrid-design"
+      ]
+    },
+    {
+      "key": "q-work-types",
+      "question": "เพิ่ม 6 ประเภท performance, migration, dependency, deprecation, infra, observability และให้ security fix/hotfix ใช้ bugfix + riskSignal หรือไม่",
+      "material": true,
+      "status": "answered",
+      "answer": "เพิ่ม 6 ประเภท และ security fix/hotfix ใช้ bugfix + riskSignal",
+      "conversationKeys": [
+        "u9"
+      ],
+      "dependsOn": [],
+      "workKeys": [
+        "hybrid-design"
+      ]
+    },
+    {
+      "key": "q-work-types-catalog",
+      "question": "ขยายประเภทงานให้ครบทุกงานตาม Work type catalog แทน 6 ประเภทหรือไม่",
+      "material": true,
+      "status": "answered",
+      "answer": "ครบตาม catalog: performance, migration, dependency, deprecation, infra, observability, library, privacy, experiment, client-release, ml; security fix และ hotfix เป็นรูปแบบย่อยของ bugfix; ขยาย field ของประเภทเดิม",
+      "conversationKeys": [
+        "u11",
+        "u12"
+      ],
+      "dependsOn": [],
+      "workKeys": [
+        "hybrid-design"
+      ]
+    },
+    {
+      "key": "q-release-scope",
+      "question": "v3.6.4 รวมเฉพาะงานที่เสร็จแล้ว + แก้ renderer เล็ก (object Object, amendment ซ้ำ, traceability ชื่อ scenario) และให้ outline contract กับทาง B เป็นรุ่นถัดไป หรือไม่",
+      "material": true,
+      "status": "answered",
+      "answer": "ไม่: รอทาง B เสร็จก่อน แล้ว release ครั้งเดียว",
+      "conversationKeys": [
+        "u9"
+      ],
+      "dependsOn": [],
+      "workKeys": [
+        "release-scope"
+      ]
+    },
+    {
+      "key": "q-outline-gaps",
+      "question": "เพิ่มรายการที่ตกหล่นจาก gap review (KEP PRR, SaaS tenancy, SLSA/SBOM, ODCS, tracking plan, i18n, cost, communication, compliance, decision log, review record, demo) หรือไม่",
+      "material": true,
+      "status": "answered",
+      "answer": "เพิ่มทั้งหมดตามคำแนะนำ; รายการ nice เป็นช่องเสริมไม่บังคับ; compliance change record เปิดผ่าน openspec/config.yaml",
+      "conversationKeys": [
+        "u10",
+        "u12"
+      ],
+      "dependsOn": [],
+      "workKeys": [
+        "hybrid-design"
+      ]
+    }
+  ],
+  "experiments": [
+    {
+      "key": "paid-skill-trigger",
+      "question": "skill ถูกโหลดใน flow /dev เมื่อมีเนื้อหาใหม่, routing และ load-first หรือไม่",
+      "criteria": [
+        "skillToolCalls มากกว่า 0 ใน scenario ที่ mapping ตรง"
+      ],
+      "material": true,
+      "status": "complete",
+      "requirementRefs": [
+        {
+          "key": "skill-trigger",
+          "revision": 1
+        }
+      ],
+      "findings": [
+        "40 runs ใน 3 รอบ: skillToolCalls = 0 ทุก run",
+        "routing ส่งคำสั่งถึง agent ครบทุก run; agent ข้ามทั้งคำสั่งบรรทัดสุดท้ายและบรรทัดแรก",
+        "agent ข้าม contextFiles ทุก run ที่ตรวจ",
+        "ผลลัพธ์ระหว่างแขนอยู่ในช่วงความแปรปรวน"
+      ],
+      "limitations": [
+        "n = 2-3 ต่อแขน",
+        "วัดเฉพาะ Claude Code กับ claude-sonnet-5-5 ใน bench lab",
+        "ไม่ได้ทดสอบการฝังขั้นตอนลง action"
+      ]
+    }
+  ],
+  "work": [
+    {
+      "key": "housekeeping",
+      "outcome": "ยกเลิก change ว่าง id change และเพิ่มผลรอบ routing/load-first ลงรายงาน",
+      "questionKeys": []
+    },
+    {
+      "key": "release-scope",
+      "outcome": "ขอบเขตและลำดับของ v3.6.4",
+      "questionKeys": [
+        "q-release-scope",
+        "q-skill-trigger-path"
+      ]
+    },
+    {
+      "key": "hybrid-design",
+      "outcome": "investigation ทาง B: outline contract, field ใหม่, draft v5, ประเภทงาน",
+      "questionKeys": [
+        "q-adr-mode",
+        "q-work-types",
+        "q-work-types-catalog",
+        "q-outline-gaps"
+      ]
+    }
+  ],
+  "historyGaps": [],
+  "sources": [
+    ".claude/harness/runtime/workflow/semantic-amendment.mjs",
+    ".claude/harness/runtime/workflow/change-lifecycle.mjs",
+    ".claude/harness/runtime/workflow/change-validation.mjs",
+    ".claude/harness/runtime/workflow/validation/reader-guide.mjs",
+    ".claude/harness/runtime/workflow/validation/design-blueprints.mjs",
+    ".claude/harness/runtime/workflow/skill-routing.mjs",
+    ".claude/skills/change/references/workflow.md",
+    "openspec/investigations/change-doc-outline.md",
+    "docs/reports/scenario-pstack-gates-2026-10-15.md",
+    "openspec/schemas/foundation-standard/schema.yaml"
+  ],
+  "facts": [
+    {
+      "key": "amend-duplicates",
+      "statement": "writeSemanticAmendment ต่อส่วน Latest amended investigation agreement ทุกครั้งที่ amend (semantic-amendment.mjs:1167); change-pstack-agent มี 3 ชุด = 1791 คำ (44% ของ proposal)",
+      "sources": [
+        ".claude/harness/runtime/workflow/semantic-amendment.mjs"
+      ]
+    },
+    {
+      "key": "rejected-object-bug",
+      "statement": "renderer ของ decision แสดง rejected ที่เป็น object เป็น [object Object] (change-lifecycle.mjs:433) พบใน 5 จุดของ packet ที่ archive",
+      "sources": [
+        ".claude/harness/runtime/workflow/change-lifecycle.mjs"
+      ]
+    },
+    {
+      "key": "thai-id-slug",
+      "statement": "change id มาจาก slugify(draft.id || draft.intent) (change-lifecycle.mjs:2156) intent ภาษาไทยจึงได้ id ว่า change",
+      "sources": [
+        ".claude/harness/runtime/workflow/change-lifecycle.mjs"
+      ]
+    },
+    {
+      "key": "story-frame",
+      "statement": "storyText ใช้กรอบภาษาอังกฤษตายตัวแม้ language เป็น th (reader-guide.mjs:25)",
+      "sources": [
+        ".claude/harness/runtime/workflow/validation/reader-guide.mjs"
+      ]
+    },
+    {
+      "key": "budgets",
+      "statement": "validationDocumentBudgets ใช้ 900/1400/900 หรือ 1600/2600/1600 และคำเตือนบอกให้ตัดเหลือแต่สาระ",
+      "sources": [
+        ".claude/harness/runtime/workflow/change-validation.mjs"
+      ]
+    },
+    {
+      "key": "work-types",
+      "statement": "WORK_TYPES มี feature, bugfix, refactor, api, ui, data, config, async, integration, chore, docs; ไม่มี performance, migration, dependency, deprecation, infra, observability",
+      "sources": [
+        ".claude/harness/runtime/workflow/validation/design-blueprints.mjs"
+      ]
+    },
+    {
+      "key": "no-adr-store",
+      "statement": "change workflow ห้ามสร้าง ADR store; decision อยู่ใน packet และหายจากมุมมองปัจจุบันหลัง archive",
+      "sources": [
+        ".claude/skills/change/references/workflow.md"
+      ]
+    },
+    {
+      "key": "outline-research",
+      "statement": "research ได้โครงสูงสุดของ proposal/design/spec/tasks พร้อมเงื่อนไข, ตาราง field → บ้าน, การเลือกตามชนิดงาน และ field ที่ต้องเพิ่ม (rollout, threatModel, nfr, eventContracts, observability, testStrategy, dependencies, alternatives, subfield ของ apiContracts)",
+      "sources": [
+        "openspec/investigations/change-doc-outline.md"
+      ]
+    },
+    {
+      "key": "skill-not-loaded",
+      "statement": "paid e2e 40 runs: skill ไม่ถูกโหลดเลย แม้ routing ส่งคำสั่งเป็นบรรทัดแรก",
+      "sources": [
+        "docs/reports/scenario-pstack-gates-2026-10-15.md",
+        ".claude/harness/runtime/workflow/skill-routing.mjs"
+      ]
+    },
+    {
+      "key": "file-level-only",
+      "statement": "schema.yaml กำหนดหน้าที่และเงื่อนไขการสร้างระดับไฟล์ แต่ไม่มีโครงหัวข้อระดับ section ยกเว้น design ที่เลือกตาม workType",
+      "sources": [
+        "openspec/schemas/foundation-standard/schema.yaml",
+        ".claude/harness/runtime/workflow/validation/design-blueprints.mjs"
+      ]
+    }
+  ],
+  "hypotheses": [
+    {
+      "key": "h-renderer-root",
+      "statement": "ปัญหาความอ่านง่ายส่วนใหญ่มาจาก renderer จึงแก้ได้โดยไม่เปลี่ยน draft schema สำหรับบั๊กเฉพาะจุด แต่ความครบถ้วนแบบตรวจได้ต้องมี outline contract",
+      "status": "supported",
+      "factKeys": [
+        "amend-duplicates",
+        "rejected-object-bug",
+        "story-frame",
+        "file-level-only"
+      ]
+    }
+  ],
+  "options": [
+    {
+      "key": "o-v364-small",
+      "summary": "v3.6.4: งานที่ commit แล้ว + แก้ renderer เล็ก (object Object, amendment ซ้ำ, traceability ชื่อ scenario, Thai id/story, budget) + checkpoint"
+    },
+    {
+      "key": "o-next-hybrid",
+      "summary": "รุ่นถัดไป: outline contract + hybrid authoring (draft v5) + field ใหม่ + 6 ประเภทงาน + ADR แบบ (ก)"
+    },
+    {
+      "key": "o-skill-inline",
+      "summary": "ทดลองฝังขั้นตอนสั้นของ skill ลง action เฉพาะ riskSignal ที่ผูกขั้นตอนชัด (performance-slo, financial, access-control) และวัดด้วย oracle"
+    }
+  ],
+  "selection": null,
+  "decisions": [
+    {
+      "key": "authoring-direction",
+      "status": "resolved",
+      "question": "วิธีเขียนเอกสาร change",
+      "alternatives": [
+        "A-json-render",
+        "B-hybrid",
+        "C-markdown-only"
+      ],
+      "choice": "B-hybrid",
+      "reason": "ผู้ใช้เลือก (u5)"
+    },
+    {
+      "key": "release-scope",
+      "status": "resolved",
+      "choice": "o-next-hybrid",
+      "reason": "ผู้ใช้เลือกรอทาง B เสร็จก่อนแล้ว release v3.6.4 ครั้งเดียว (u9)",
+      "question": "ขอบเขต v3.6.4",
+      "alternatives": [
+        "o-v364-small",
+        "o-next-hybrid"
+      ],
+      "recommended": "o-v364-small",
+      "recommendationFactKeys": [
+        "amend-duplicates",
+        "rejected-object-bug",
+        "skill-not-loaded"
+      ]
+    }
+  ],
+  "conclusion": {
+    "summary": "v3.6.4 จะรวมทั้งหมด: งานที่ commit แล้ว + outline contract + hybrid authoring (ทาง B) + ประเภทงานครบตาม catalog (11 ประเภทใหม่ + รูปแบบย่อยของ bugfix) และหัวข้อจาก gap review + ADR แบบ (ก) + แก้ renderer (object Object, amendment ซ้ำ, traceability, id/story ภาษาไทย, budget) แล้วจึง checkpoint paid ภายในงบ 100$ และ release ครั้งเดียว; skill routing คงเป็นคำแนะนำและ release note บอกตามจริงว่า skill ใช้เมื่อถูกเรียก"
+  },
+  "changeIntent": "ส่งมอบ v3.6.4 ด้วยเอกสาร change แบบ hybrid ที่ครบ อ่านง่าย และเรียงลำดับสำหรับคน: (1) outline contract เดียวที่กำหนดหน้าที่ หัวข้อสูงสุด เงื่อนไข และบ้านของทุก field สำหรับ proposal, design, spec, tasks และไฟล์สำหรับเครื่อง ตาม openspec/investigations/change-doc-outline.md; (2) hybrid authoring (draft v5 อยู่ร่วมกับ v4): โครงสร้าง typed และ prose เป็น markdown ที่ผู้เขียนแก้ตรงได้และ harness ตรวจตาม outline (ลำดับ, หัวข้อที่เงื่อนไขเป็นจริง, ความครบ, ไม่ซ้ำ); (3) field ใหม่ตาม outline: boundaries, domain, ui, config, consumers, rollout (enablement, rollbackProof, versionSkew, upgradeSteps), threatModel, nfr, eventContracts, observability, trackingPlan, tenancy, capacity, recovery, testStrategy, dependencies, alternatives, decisionLog, communication, releaseNote, demo, compliance (opt-in) และ subfield ของ apiContracts และ dataModel; (4) workType ครบตาม Work type catalog: performance, migration, dependency, deprecation, infra, observability, library, privacy, experiment, client-release, ml และรูปแบบย่อย security/hotfix ของ bugfix รวมถึงแก้ test ที่ขาดใน WORK_TYPES; (5) ADR แบบ (ก): decision มีสถานะและ decision ที่ยังมีผลตามไปเป็น rationale ใน spec ถาวรตอน archive; (6) แก้ renderer: rejected options, amendment แทนที่, traceability ชื่อ scenario, id และ story ภาษาไทย, budget ใหม่และคำเตือนไม่ให้ตัดเนื้อหา; ทำเป็นหลาย change ตามลำดับ dependency แล้ว checkpoint paid e2e ภายใน 100$ ก่อน release; skill routing คงเป็นคำแนะนำ"
+}
