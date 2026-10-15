@@ -137,6 +137,21 @@ order/inventory หลังแก้การจัด batch lab ตั้ง�
 owner-only-delete และ idempotent-refund ที่เริ่มในมิลลิวินาทีเดียวกันจึงใช้ run directory เดียวกัน
 scorecard เก็บครบทั้งสองแถว แต่ stream และ evidence ที่เก็บไว้เป็นของเพียงหนึ่งรอบในแต่ละคู่
 
+## change ขั้นตอนใน skill: ก่อนและหลัง
+
+change `skill-pstack-reference-owner-skill-change-loop-context-budget` ที่ land แล้ว (ยังไม่ commit)
+เพิ่มขั้นตอนจาก pstack ลงใน reference ของ skill และถูกเทียบกับ commit `3a1c6b7` (worktree แยก)
+บนสี่ scenario แขนละสามรอบ pin Sonnet รันพร้อมกันไม่เกินหก และทุก run มี run id ไม่ซ้ำ
+ค่าใช้จ่ายที่วัดได้: **US$11.8480** สำหรับ 24 runs
+
+ผลลัพธ์ใกล้เคียงกันทั้งสองแขน (รายละเอียดอยู่ใน[ฉบับภาษาอังกฤษ](scenario-pstack-gates-2026-10-15.md#skill-procedure-change-before-and-after))
+แขนหลังมี refund ล้มหนึ่งรอบที่ค้างใน Build โดยไม่ถึง proof
+
+**skill ไม่ถูก trigger เลย** ทุก session มองเห็น skill ของโปรเจกต์และมี Skill tool แต่ไม่มี run ใด
+ในทั้งสองแขนเรียก Skill หรือเปิด reference ใหม่ ไฟล์ skill ที่ถูกอ่านมีเพียง `change/references/*.md`
+ของ Change Loop เอง flow ส่งมอบงานทำตามคำสั่งของ command และ harness จนจบโดยไม่โหลด skill ด้านเทคนิค
+ที่ router ระบุ run เหล่านี้จึงวัดผลของเนื้อหาใหม่ไม่ได้ และส่วนต่างระหว่างแขนเป็นความแปรปรวน
+
 ## ข้อค้นพบ
 
 1. **Tracker ผ่าน `CASE_TESTS_EXIST` หนึ่งครั้ง** v3.6.0–v3.6.3, baseline วันเดียวกัน

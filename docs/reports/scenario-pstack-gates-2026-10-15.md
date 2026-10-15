@@ -168,6 +168,31 @@ owner-only-delete and two idempotent-refund repeats that started in the same
 millisecond share one run directory: both scorecard rows are retained, but the
 retained stream and evidence tree belong to only one of each pair.
 
+## Skill-procedure change: before and after
+
+The landed (uncommitted) change
+`skill-pstack-reference-owner-skill-change-loop-context-budget` adds
+pstack-derived procedures to skill references. It was compared with commit
+`3a1c6b7` (a detached worktree) on four scenarios, three repeats per arm,
+Sonnet pinned, at most six concurrent runs, each with a unique run id.
+Measured cost: **US$11.8480** for 24 runs.
+
+| Scenario | Before (pass / mean s / mean $) | After |
+|---|---|---|
+| speed-up-search | 3/3 / 123.5 / $0.452 | 3/3 / 112.2 / $0.462 |
+| regression-fix-with-fixes | 3/3 / 91.9 / $0.444 | 3/3 / 107.7 / $0.442 |
+| idempotent-refund | 3/3 / 274.5 / $0.672 | 2/3 / 298.4 / $0.628 |
+| multi-service-event-flow | 3/3 / 128.7 / $0.436 | 3/3 / 116.6 / $0.413 |
+
+**The skills were never triggered.** Every session listed the project skills
+and the `Skill` tool, yet no run in either arm called `Skill` or opened any of
+the new references; the only skill files read were Change Loop's own
+`change/references/*.md`. The delivery flow follows the command and harness
+instructions end to end without loading the construction skills the router
+names, so these runs cannot measure the new content, and differences between
+arms are variance. The failed after-arm refund run stopped in Build without
+reaching proof (32 requests, 411 s) and did not load any skill.
+
 ## Findings
 
 1. **Tracker passed `CASE_TESTS_EXIST` once.** v3.6.0–v3.6.3, the same-day
