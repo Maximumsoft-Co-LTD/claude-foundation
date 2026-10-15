@@ -126,6 +126,48 @@ therefore not attributed to the gates. Both harness arms twice fixed only the
 reported 1000-point boundary and missed the analogous 5000 boundary, while the
 no-harness arm fixed both; this is a scoping observation, n=2.
 
+## Clean-commit checkpoint after the template guidance change
+
+Commit `ef8ac0e2e` adds start-template guidance for `riskSignals`, access
+tags and `fixes`, and confirms benchmark regressions with a second round. The
+full suite passed 227/227. All runs below use `source.dirty: false`, Sonnet
+pinned, and the zero-cost sentinel passed first. Measured cost: **US$9.8322**
+for 19 runs (cumulative for this report US$35.3707).
+
+| Scenario | Result | Oracle | Cost |
+|---|---|---|---|
+| owner-only-delete ×2 | archived ×2 | 9/9, 9/9 | $0.4190, $0.4188 |
+| idempotent-refund ×2 | archived ×2 | 12/12, 12/12 | $0.5314, $0.5882 |
+| speed-up-search ×2 | archived ×2 | 11/11, 11/11 | $0.2667, $0.4687 |
+| regression-fix-with-fixes ×2 | archived ×2 | 10/10, 10/10 | $0.4040, $0.4367 |
+| tiny-feature | archived | 8/8 | $0.3625 |
+| bare-node-boundary | archived | 6/6 | $0.4290 |
+| typescript-react-state | archived | 6/6 | $0.3151 |
+| python-api-validation | archived | 5/5 | $0.3626 |
+| database-migration-rollback | archived | 6/6 | $0.3419 |
+| refactor-no-reproduction | archived | 6/6 | $0.3653 |
+| multi-service-event-flow | archived | 6/6 | $0.4009 |
+| notes-api | archived | 13/13 | $0.6103 |
+| cart-coupons | archived | 11/11 | $0.5954 |
+| project-tracker-api | archived | 33/33 | $0.9936 |
+| order-inventory | archived, incomplete (3 unchecked tasks) | 19/19 | $1.5222 |
+
+With the guidance, agents now declare the typed risks unprompted:
+`access-control` with allow/deny scenarios for owner-only-delete, `financial`
+for the refund, `performance-slo` for search, and `fixes` for both regression
+runs, whose fix now also covers the unreported 5000-point boundary (2/2,
+versus 0/2 before the change and 1/2 after the first change). Search runs
+declared `performance-slo` but did not configure the `benchmark` adapter.
+18/19 strict deliveries; order/inventory retains the known archived-ledger
+defect. Tracker passed 33/33 again.
+
+Limits: n=1–2 per row. Wall times are not comparable with earlier batches —
+the remaining seven maintained runs started together beside order/inventory
+after a batching fix. The lab names runs `<scenario>-<Date.now()>`, so the two
+owner-only-delete and two idempotent-refund repeats that started in the same
+millisecond share one run directory: both scorecard rows are retained, but the
+retained stream and evidence tree belong to only one of each pair.
+
 ## Findings
 
 1. **Tracker passed `CASE_TESTS_EXIST` once.** v3.6.0–v3.6.3, the same-day

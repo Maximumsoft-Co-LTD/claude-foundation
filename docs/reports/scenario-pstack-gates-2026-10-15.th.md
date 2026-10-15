@@ -115,6 +115,28 @@ version นี้จึงทำงานเหมือน source ก่อน 
 ทั้งสองแขนที่ใช้ harness แก้เฉพาะขอบเขต 1000 แต้มที่ถูกรายงาน และพลาดขอบเขต 5000 แต้มที่คล้ายกัน
 สองครั้ง ส่วนแขน no harness แก้ทั้งสองขอบเขต นี่เป็นข้อสังเกตเรื่องการกำหนดขอบเขตงาน n=2
 
+## Checkpoint บน commit ที่สะอาดหลัง change คำแนะนำใน template
+
+commit `ef8ac0e2e` เพิ่มคำแนะนำใน start template สำหรับ `riskSignals`, access tag และ
+`fixes` และให้ benchmark ยืนยัน regression ด้วยรอบที่สอง full suite ผ่าน 227/227 ทุก run ด้านล่าง
+ใช้ `source.dirty: false` pin Sonnet และ sentinel แบบไม่เสียเงินผ่านก่อนเริ่ม ค่าใช้จ่ายที่วัดได้:
+**US$9.8322** สำหรับ 19 runs (รวมทั้งรายงานนี้ US$35.3707)
+
+ทุก scenario ส่งมอบสำเร็จ (archived และ oracle เต็ม) ยกเว้น order-inventory ที่ oracle ผ่าน 19/19
+แต่ยังติดปัญหา task ใน ledger ที่ archive ไม่ถูกติ๊ก 3 ตัว รวม 18/19 และ Tracker ผ่าน 33/33 อีกครั้ง
+ตารางรายตัวอยู่ใน[ฉบับภาษาอังกฤษ](scenario-pstack-gates-2026-10-15.md#clean-commit-checkpoint-after-the-template-guidance-change)
+
+เมื่อมีคำแนะนำใน template agent ประกาศความเสี่ยงแบบ typed เองแล้ว: `access-control` พร้อม scenario
+allow/deny สำหรับ owner-only-delete, `financial` สำหรับ refund, `performance-slo` สำหรับ search และ
+`fixes` ทั้งสองรอบของงานแก้ regression ซึ่งตอนนี้แก้ครอบขอบเขต 5000 แต้มที่ไม่ได้ถูกรายงานด้วย
+(2/2 เทียบกับ 0/2 ก่อน change และ 1/2 หลัง change แรก) run ของ search ประกาศ `performance-slo`
+แต่ยังไม่ได้ตั้ง adapter `benchmark`
+
+ข้อจำกัด: n=1–2 ต่อแถว เวลาเทียบกับ batch ก่อนหน้าไม่ได้ เพราะเจ็ด run สุดท้ายเริ่มพร้อมกันข้าง
+order/inventory หลังแก้การจัด batch lab ตั้งชื่อ run เป็น `<scenario>-<Date.now()>` รอบซ้ำของ
+owner-only-delete และ idempotent-refund ที่เริ่มในมิลลิวินาทีเดียวกันจึงใช้ run directory เดียวกัน
+scorecard เก็บครบทั้งสองแถว แต่ stream และ evidence ที่เก็บไว้เป็นของเพียงหนึ่งรอบในแต่ละคู่
+
 ## ข้อค้นพบ
 
 1. **Tracker ผ่าน `CASE_TESTS_EXIST` หนึ่งครั้ง** v3.6.0–v3.6.3, baseline วันเดียวกัน
