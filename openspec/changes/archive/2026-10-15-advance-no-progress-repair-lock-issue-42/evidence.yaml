@@ -1,0 +1,72 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "stale-gate-baseline-b-gate",
+      "requirementKey": "stale-gate-baseline",
+      "scenario": "cursor เปลี่ยนหลังตัดสินใจ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "stale-gate-baseline-gate-fail-findings-fingerprint",
+      "requirementKey": "stale-gate-baseline",
+      "scenario": "ไม่มี pass อื่นแทรก",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "stale-gate-baseline-advance-proof-run-proof",
+      "requirementKey": "stale-gate-baseline",
+      "scenario": "advance ส่ง token",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "transient-proof-lock-owner-advance",
+      "requirementKey": "transient-proof-lock-owner",
+      "scenario": "owner เป็น null",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "transient-proof-lock-owner-advance-2",
+      "requirementKey": "transient-proof-lock-owner",
+      "scenario": "owner กำลัง initialize",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "transient-proof-lock-owner-advance-3",
+      "requirementKey": "transient-proof-lock-owner",
+      "scenario": "owner ตายแล้ว",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/proof-advance.test.mjs .claude/harness/tests/advance-recovery.test.mjs) && (node --test .claude/harness/tests/advance-recovery.test.mjs)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

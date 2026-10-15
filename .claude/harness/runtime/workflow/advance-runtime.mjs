@@ -1,5 +1,6 @@
 import { currentWaivers } from "../core/user-decisions.mjs";
 import { repairActionForWorkspace } from "../evidence/repair-runtime.mjs";
+import { proofCursorToken } from "../evidence/proof-execution-runtime.mjs";
 import { isProcessAlive } from "../core/process-lock.mjs";
 import { shellDisplayArgument } from "../core/shell-mutation-policy.mjs";
 import { pathInside } from "../core/process-runtime.mjs";
@@ -410,8 +411,11 @@ function proofOperationAction(id, result) {
   if (result.decision && (result.status === "BLOCKED" || result.decision.automaticRecovery))
     return advanceFailureAction(id, { message: result.decision.summary, decision: result.decision }, { stage: "prove" });
   if (["PASS", "READY"].includes(result.status) || result.completed === true) return null;
-  if (result.status === "IN_PROGRESS" && !isProcessAlive(Number(result.owner?.pid)) &&
-      !(result.owner?.state === "initializing" && Date.parse(result.owner.recoverableAfter) > Date.now()))
+  // A lock whose owner cannot be read yet (released between the failed
+  // acquire and the read, or still initializing) is a hand-over, not a dead
+  // worker: report it as working instead of a repair that counts as no progress.
+  if (result.status === "IN_PROGRESS" && result.owner && !isProcessAlive(Number(result.owner.pid)) &&
+      !(result.owner.state === "initializing" && Date.parse(result.owner.recoverableAfter) > Date.now()))
     return envelope(id, "REPAIR", {
       actor: "harness", legacyAction: "REPAIR_PROOF_LOCK", boundary: "internal-lock",
       reason: "The reported proof worker is no longer live; inspect and recover its lock before resuming.",
@@ -1007,6 +1011,10 @@ export function createAdvanceRuntime({
         }
         const workspaceHash = dispatch.action === "build-complete" && proofPreflight
           ? proofPreflight.workspaceHash : relevantHash(id);
+        const proofCursor = readJson(proofAdvancePath(id), {});
+        // The cursor this decision was read from; a proof run started from it
+        // can tell a gate pass another process recorded in the meantime.
+        if (automation) automation.proofCursorToken = proofCursorToken(proofCursor);
         return coordinatorAction({
           id,
           state,
@@ -1014,7 +1022,7 @@ export function createAdvanceRuntime({
           workspaceHash,
           latestReview: currentWaivers(state, workspaceHash).some((row) => row.capability === "review")
             ? null : deliveredAiAttempts(id).at(-1) || null,
-          proofCursor: readJson(proofAdvancePath(id), {}),
+          proofCursor,
           authorityRequests: openRequests,
           proofPreflight,
           plan,
@@ -1358,9 +1366,12 @@ export function createAdvanceRuntime({
               ["proven", "archived"].includes(through)) {
             if (!runProof) return finish(targetResume(value));
             stage = "prove";
-            const flags = proofFlags && !automation.proofFlagsUsed ? proofFlags : null;
-            if (flags) automation.proofFlagsUsed = true;
-            operation = flags ? (change) => runProof(change, flags) : runProof;
+            const answered = proofFlags && !automation.proofFlagsUsed ? proofFlags : null;
+            if (answered) automation.proofFlagsUsed = true;
+            const flags = { ...(answered || {}),
+              ...(typeof automation.proofCursorToken === "string"
+                ? { "cursor-token": automation.proofCursorToken } : {}) };
+            operation = Object.keys(flags).length ? (change) => runProof(change, flags) : runProof;
           } else if (value.legacyAction === "LAND_READY" && through === "archived") {
             // The explicit archived target authorizes Land only once the exact
             // proof is ready. Earlier phases and inspection grant nothing.

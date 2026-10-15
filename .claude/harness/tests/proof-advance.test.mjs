@@ -9,6 +9,7 @@ import {
   createProofExecutionRuntime,
   persistProofCollectionArtifacts,
   proofCollectionOutcome,
+  proofCursorToken,
   rebindProofCollectionReceipts,
   settleProofCollection,
   stopProofCollection
@@ -478,6 +479,28 @@ assert.deepEqual(rejectedAgain.cursor.next, rejectedAgain.next,
 assert.equal(rejectedAgain.next[0].command,
   "claude-foundation packet change-a --phase build",
   "an unchanged rejected review pauses with supported choices and a resume route");
+
+// Two overlapping advances (issue #42): B decided to run proof from the cursor
+// before A's failing pass; A's pass is not B's "no progress".
+const overlapping = fixture({
+  requests: [{
+    requestId: "review-rejected", type: "review", provider: "review",
+    status: "rejected", workspaceHash: "workspace-a"
+  }]
+});
+const readByB = proofCursorToken({});
+const passA = await quiet(() => overlapping.runtime.proofAdvance("change-a",
+  { "cursor-token": proofCursorToken({}) }));
+assert.equal(passA.status, "ACTION_REQUIRED");
+const passB = await quiet(() => overlapping.runtime.proofAdvance("change-a",
+  { "cursor-token": readByB }));
+assert.equal(passB.status, "ACTION_REQUIRED",
+  "a pass another process recorded after this decision is not a no-progress round");
+assert.notEqual(passB.route, "NO_PROGRESS_DECISION");
+const passC = await quiet(() => overlapping.runtime.proofAdvance("change-a",
+  { "cursor-token": proofCursorToken(passB.cursor) }));
+assert.equal(passC.route, "NO_PROGRESS_DECISION",
+  "an unchanged rerun decided from the current cursor still reaches the boundary");
 
 const failedReceipt = fixture({
   receiptOverrides: { review: "fail" },

@@ -211,7 +211,8 @@ test("a proof gate's no-progress question is answered through advance and resume
 
   const resumed = await f.runtime().showAdvance("demo", answer(asked, "change-strategy"));
   assert.equal(resumed.action, "REPAIR");
-  assert.deepEqual(flagsSeen.at(-1), { "reset-progress": true, "decision-ref": "user:answer-1" });
+  const { "cursor-token": _token, ...answered } = flagsSeen.at(-1);
+  assert.deepEqual(answered, { "reset-progress": true, "decision-ref": "user:answer-1" });
   assert.equal(f.state().advanceRecovery.answers.at(-1).kind, "repair-no-progress");
 });
 
@@ -337,6 +338,29 @@ test("malformed legacy decisions retain honest choices and advance v6 rejects em
     kind: "human-acceptance", options: [{ id: "pass", outcome: "Accept" }, { id: "reject", outcome: "Reject" }]
   } });
   assert.equal(normalized.decision.recommended, "pause", "missing recommendation never defaults to a passing verdict");
+});
+
+// A proof lock changing hands is not a dead worker (issue #42).
+test("a proof lock whose owner is unreadable or initializing reports working", async () => {
+  const future = new Date(Date.now() + 60_000).toISOString();
+  for (const owner of [null, { pid: null, state: "initializing", recoverableAfter: future }]) {
+    const f = fixture({ runProof: async () => ({ status: "IN_PROGRESS", owner }) });
+    const value = await f.runtime().advanceThrough("demo", "proven");
+    assert.equal(value.action, "WORKING", JSON.stringify(owner));
+    assert.equal(f.state().advanceRecovery?.attempts?.length || 0, 0,
+      "a lock hand-over is never counted toward no progress");
+  }
+});
+
+test("advance passes proof the cursor token it decided from (issue #42)", async () => {
+  const seen = [];
+  const f = fixture({ runProof: async (_id, flags = null) => {
+    seen.push(flags);
+    return { status: "ACTION_REQUIRED", next: [{ reason: "test failed" }] };
+  } });
+  f.setCursor({ repairCycle: 2, progressFingerprint: "fp-2", updatedAt: "2026-10-15T00:00:00.000Z" });
+  await f.runtime().advanceThrough("demo", "proven");
+  assert.equal(seen.at(-1)["cursor-token"], "2:fp-2:2026-10-15T00:00:00.000Z");
 });
 
 test("a dead proof worker cannot leave delivery looking active indefinitely", async () => {
@@ -883,7 +907,9 @@ test("an indeterminate provider run is a recorded advance decision whose retry r
     "decision-fingerprint": asked.decision.fingerprint, "decision-ref": "user:inspected",
     reason: "side effects inspected" });
   assert.equal(done.reached, "proven");
-  assert.deepEqual(flags.at(-1), { "retry-indeterminate": true, "decision-ref": "user:inspected" });
+  const { "cursor-token": token, ...answer } = flags.at(-1);
+  assert.deepEqual(answer, { "retry-indeterminate": true, "decision-ref": "user:inspected" });
+  assert.equal(typeof token, "string", "the proof run carries the cursor it was decided from");
 });
 
 test("an amended-agreement conflict is answered through advance and resolves the sync, never sandbox sync", async () => {

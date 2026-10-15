@@ -106,6 +106,14 @@ export function writeProofExecutionAdvance(
   if (advance) context.writeAdvance(id, advance);
 }
 
+// Identifies one gate pass's cursor. Every pass bumps `repairCycle` or writes a
+// new fingerprint, so a caller that read a different token decided to run
+// before another pass recorded this one.
+export function proofCursorToken(cursor) {
+  return `${Number(cursor?.repairCycle || 0)}:${cursor?.progressFingerprint || ""}:${
+    cursor?.updatedAt || ""}`;
+}
+
 export function proofExecutionResult(audit, proofRunId) {
   return { status: audit.valid ? "PASS" : "ACTION_REQUIRED", proofRunId };
 }
@@ -1320,6 +1328,11 @@ export function createProofExecutionRuntime({
     const refreshed = refreshedAdvanceReadiness(id);
     const { advanceStart, audit, forcedSnapshot } = refreshed;
     let { readiness } = refreshed;
+    // Another process recorded a gate pass after this caller chose to run:
+    // the same findings are not "no progress", since nobody has repaired yet.
+    if (Object.hasOwn(flags, "cursor-token") &&
+        flags["cursor-token"] !== proofCursorToken(advanceStart))
+      advanceStart.progressFingerprint = null;
     // A user who answered the no-progress decision chose to repair again:
     // compare this pass with nothing, once, instead of asking again.
     if (flags["reset-progress"]) {
@@ -1415,7 +1428,13 @@ export function createProofExecutionRuntime({
       stage: "controller",
       completed: false,
       progressed: false,
-      owner: locked.owner?.pid ? { pid: locked.owner.pid } : null,
+      // Keep the lock's state and grace period so a caller can tell an
+      // initializing owner from a dead one.
+      owner: locked.owner ? {
+        pid: locked.owner.pid ?? null,
+        ...(locked.owner.state ? { state: locked.owner.state } : {}),
+        ...(locked.owner.recoverableAfter ? { recoverableAfter: locked.owner.recoverableAfter } : {})
+      } : null,
       next: recovery
     });
   }
