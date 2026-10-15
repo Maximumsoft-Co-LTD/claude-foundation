@@ -8,6 +8,7 @@ time; they are not updated to describe the current release.
 
 | Need | Document | Status |
 |---|---|---|
+| Review paid E2E after the evidence-gate and cross-change rollup change | [2026-10-15 pstack gates](scenario-pstack-gates-2026-10-15.md) / [ภาษาไทย](scenario-pstack-gates-2026-10-15.th.md) | Dirty source, n=1, two rounds; Sonnet delivery 10/11 (Tracker 33/33 once); order/inventory ledger still incomplete; US$16.9995 |
 | Review the full paid portfolio and real multi-session Investigate | [2026-10-15 paid E2E](continuity-paid-e2e-2026-10-15.md) / [ภาษาไทย](continuity-paid-e2e-2026-10-15.th.md) | Delivery 9/10; Tracker still fails 32/33; history retained but independent timeout/cross-key probe fails after-generated design; US$16.7394936 |
 | Compare requirement continuity before and after | [2026-10-15 differential scenario](investigation-continuity-differential-2026-10-15.md) / [ภาษาไทย](investigation-continuity-differential-2026-10-15.th.md) | New-contract guards 5/19 before, 19/19 after; deterministic runtime/compiler seam, not paid E2E |
 | Review Investigate → Change development smoke | [2026-10-15 smoke](investigation-continuity-smoke-2026-10-15.md) / [ภาษาไทย](investigation-continuity-smoke-2026-10-15.th.md) | `notes-api` archived, oracle 13/13, clean install pass; US$0.5192617; one dirty-source run |
