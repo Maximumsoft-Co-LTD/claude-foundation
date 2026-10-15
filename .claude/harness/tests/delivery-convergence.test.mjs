@@ -568,8 +568,20 @@ test("advance preserves a proof decision returned by a quiet operation", async (
   const value = await runtime.advanceThrough("change-a", "proven");
   assert.equal(value.action, "ASK_USER");
   assert.equal(value.owner, "user");
-  assert.deepEqual(value.decision, { ...decision, recommended: "pause" });
-  assert.deepEqual(value.user.decision.options, decision.options);
+  // The gate's meaning is preserved, and each option is now answerable
+  // through `advance --decision` with the decision's fingerprint.
+  assert.equal(value.decision.kind, decision.kind);
+  assert.equal(value.decision.summary, decision.summary);
+  assert.equal(value.decision.recommended, "pause");
+  assert.ok(value.decision.fingerprint);
+  assert.deepEqual(value.decision.options.map(({ id, outcome }) => ({ id, outcome })),
+    decision.options);
+  for (const option of value.decision.options)
+    assert.equal(option.command, "claude-foundation advance change-a --decision " +
+      `${option.id} --decision-fingerprint ${value.decision.fingerprint} ` +
+      "--decision-ref <user-answer> --reason <chosen-approach>");
+  assert.deepEqual(value.user.decision.options.map(({ id, outcome }) => ({ id, outcome })),
+    decision.options);
 });
 
 test("an active proof lock becomes harness-owned working state", async () => {

@@ -123,6 +123,15 @@ try {
   resetReady();
   validity = { test: "missing" };
   assert.throws(() => runtime.finalize(id), /no evidence has been executed/);
+  // A waiver that withdrew every required capability leaves nothing to prove;
+  // finalize must not report PROVEN for a proof the audit rejects (issue #40).
+  resetReady();
+  providers = [];
+  const writesBefore = writes.length;
+  assert.throws(() => runtime.finalize(id),
+    /missing-receipt-manifest: .*no required evidence left.*--revoke/s);
+  assert.equal(writes.length, writesBefore);
+  assert.notEqual(state.status, "proven");
   resetReady();
   providers = ["test", "lint"];
   validity = { test: "expired", lint: "missing" };
@@ -208,15 +217,16 @@ try {
   advisory = [];
   provenance = null;
   snapshot = { id: "snapshot-2", workspaceHash: "workspace-two" };
-  receiptDirectory = join(root, "empty-receipts");
-  providers = [];
+  receiptDirectory = join(root, "single-receipt");
+  seedReceipt("test");
+  providers = ["test"];
   output = "";
   runtime.finalize(id, "requested-run", { quiet: false });
   const simpleProof = readJson(proofFile, {});
   assert.equal(simpleProof.proofRunId, "requested-run");
   assert.equal(simpleProof.aggregateGraphProof, null);
   assert.equal(simpleProof.repositories, null);
-  assert.deepEqual(simpleProof.receipts, []);
+  assert.deepEqual(simpleProof.receipts.map((row) => row.provider), ["test"]);
   assert.deepEqual(simpleProof.excludedReceipts, []);
   assert.deepEqual(simpleProof.artifacts, [{ path: "collected.log", required: true }]);
   assert.equal(simpleProof.instructionProvenance, null);

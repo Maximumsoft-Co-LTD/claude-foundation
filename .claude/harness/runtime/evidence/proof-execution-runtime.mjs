@@ -1320,6 +1320,12 @@ export function createProofExecutionRuntime({
     const refreshed = refreshedAdvanceReadiness(id);
     const { advanceStart, audit, forcedSnapshot } = refreshed;
     let { readiness } = refreshed;
+    // A user who answered the no-progress decision chose to repair again:
+    // compare this pass with nothing, once, instead of asking again.
+    if (flags["reset-progress"]) {
+      if (!flags["decision-ref"]) die("proof advance --reset-progress requires --decision-ref");
+      advanceStart.progressFingerprint = null;
+    }
     if (readiness.status === "READY" && audit.valid && forcedSnapshot &&
         audit.proof.workspaceHash === forcedSnapshot.workspaceHash &&
         readiness.workspaceHash === forcedSnapshot.workspaceHash) {

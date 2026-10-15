@@ -8,6 +8,7 @@ import {
 } from "./semantic-draft.mjs";
 import { coverageRationale, coverageStatus } from "./validation/reader-guide.mjs";
 import { scopeAllowsPath } from "../core/graph-execution.mjs";
+import { providerCapability } from "../evidence/provider-catalog.mjs";
 import {
   amendmentInvestigationSource, investigationCoverageIssues,
   renderInvestigationCoverage, renderRetainedInvestigation
@@ -982,10 +983,38 @@ export function compileSemanticAmendment({
       ? { ...config, claims: replaceClaimIds(config.claims) } : config;
   const allCommand = combinedCommand(nextTasks);
   for (const [name, config] of Object.entries(normalized.draft.execution.providers || {})) {
-    if (!providers[name]) providers[name] = { ...config, command: config.command ? allCommand : undefined };
-    else if (providers[name].command && ["command", "test-discovery"].includes(providers[name].adapter))
-      providers[name] = { ...providers[name], command: allCommand };
+    if (providers[name]) {
+      if (providers[name].command && ["command", "test-discovery"].includes(providers[name].adapter))
+        providers[name] = { ...providers[name], command: allCommand };
+      continue;
+    }
+    // The agreement already names who proves this capability, and where; a
+    // second provider derived here would run the same verifies somewhere else.
+    const capability = providerCapability(name, config);
+    const serving = Object.keys(providers).filter((other) =>
+      providerCapability(other, providers[other]) === capability);
+    const sameRepository = serving.filter((other) =>
+      (providers[other].repository || null) === (config.repository || null));
+    const reused = serving.length === 1 ? serving[0]
+      : sameRepository.length === 1 ? sameRepository[0] : null;
+    if (reused) {
+      if (Array.isArray(providers[reused].claims))
+        providers[reused] = { ...providers[reused], claims: unique([
+          ...providers[reused].claims,
+          ...normalized.draft.claims.filter((claim) => (claim.capabilities || []).includes(capability))
+            .map((claim) => claim.id)
+        ]) };
+      continue;
+    }
+    if (serving.length) {
+      issues.push(`amendment cannot choose which provider proves capability '${capability}': ` +
+        `${serving.join(", ")} all serve it; declare the provider for these claims in the ` +
+        "change's execution providers, then amend again");
+      continue;
+    }
+    providers[name] = { ...config, command: config.command ? allCommand : undefined };
   }
+  if (issues.length) return { issues };
   // A provider command derived from the task verify commands follows them;
   // an explicitly configured command stays as the author wrote it.
   if (taskContractChanges.some((change) => change.verify !== undefined) ||

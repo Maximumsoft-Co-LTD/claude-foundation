@@ -1257,6 +1257,13 @@ function derivedExecution(source, claims, tasks) {
     ? ["sh", "-c", commands[0]]
     : ["sh", "-c", commands.map((value) => `(${value})`).join(" && ")];
   const capabilities = unique(claims.flatMap((claim) => claim.capabilities));
+  // Build runs each task's verify in its repository's sandbox, so a command
+  // derived from those verifies runs there too. Only a single non-root
+  // repository is unambiguous; tasks spread across repositories keep the
+  // root-workspace provider they had.
+  const repositories = unique(tasks.map((task) => text(task.repository) || "root"));
+  const repository = repositories.length === 1 && repositories[0] !== "root"
+    ? { repository: repositories[0] } : {};
   const providers = {};
   for (const capability of capabilities) {
     if (capability === "discovery") continue;
@@ -1267,9 +1274,9 @@ function derivedExecution(source, claims, tasks) {
     providers[capability] = capability === "test"
       ? {
           adapter: "test-discovery", command, minimum: 1,
-          reportFormat: "auto", claims: "declared"
+          reportFormat: "auto", claims: "declared", ...repository
         }
-      : { adapter: "command", capability, command, claims: "declared" };
+      : { adapter: "command", capability, command, claims: "declared", ...repository };
   }
   return { version: 1, providers, services: {} };
 }

@@ -657,7 +657,9 @@ Evidence เชื่อมพฤติกรรมที่ตกลงกั�
 Requirement → Claim → Provider → Receipt → Proof
 ```
 
-Compiler สร้าง provider wiring ทั่วไปจากคำสั่งตรวจของ task ส่วนเครื่องมือ
+Compiler สร้าง provider wiring ทั่วไปจากคำสั่งตรวจของ task เมื่อทุก task
+อยู่ใน repository เดียวที่ไม่ใช่ root provider ที่ derive จะรันใน sandbox ของ
+repository นั้น ซึ่งเป็นที่เดียวกับที่ Build รันคำสั่งเดียวกัน ส่วนเครื่องมือ
 report, service หรือ readiness แบบเฉพาะกำหนดใน `execution.yaml`
 Change Loop รันเครื่องมือที่ประกาศไว้ ไม่ได้แทน test framework ของโปรเจกต์
 หรือเปลี่ยนค่าที่วัดไม่ได้ให้กลายเป็นผ่าน

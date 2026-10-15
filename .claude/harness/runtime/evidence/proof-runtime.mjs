@@ -237,6 +237,13 @@ export function createProofRuntime({
     const options = Object.assign({}, suppliedOptions);
     const state = loadRuntime(id);
     const { snapshot, hash, checks } = finalizeReadiness(id, state);
+    // The audit rejects a proof without receipts (`missing-receipt-manifest`),
+    // so writing one would report PROVEN for a change Land cannot accept.
+    if (!checks.length)
+      fail(`missing-receipt-manifest: change '${id}' has no required evidence left, so its proof ` +
+        "would carry no receipts and Land would refuse it. A recorded waiver may have withdrawn " +
+        `every required capability: revoke it with claude-foundation change waive ${id} ` +
+        "--capability <capability> --revoke --decision-ref <ref>, or amend the agreement");
     const proofRunId = requestedProofRunId || state.activeProofRun?.id || `proof-${Date.now()}`;
     const runRoot = proofRunRoot(id, proofRunId);
     const receiptEntries = copyProofReceipts(id, runRoot, checks);

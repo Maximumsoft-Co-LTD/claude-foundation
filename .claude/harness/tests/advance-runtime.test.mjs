@@ -299,6 +299,22 @@ test("advance rejects stale proof and stops when bounded review needs an externa
   assert.equal(capped.actor, "external-authority");
   assert.match(capped.reason, /external verdict is pending/);
   assert.match(capped.command, /authority status/);
+  // A request nobody can start says so and names the request (issue #39).
+  assert.match(capped.reason, /no configured reviewer can start review request review-3/);
+  assert.match(capped.reason, /authority status change-a --request review-3/);
+});
+
+test("exhausted review infrastructure names the supported reset (issue #39)", () => {
+  const exhausted = coordinatorAction({
+    ...base,
+    authorityRequests: [{ requestId: "review-4", type: "review", status: "infrastructure-exhausted",
+      infrastructureError: "reviewer process exited 127" }]
+  });
+  assert.equal(exhausted.action, "REPAIR");
+  assert.equal(exhausted.legacyAction, "REPAIR_REVIEW_INFRASTRUCTURE");
+  const guidance = JSON.stringify(exhausted);
+  assert.match(guidance, /claude-foundation authority reset-infra change-a --decision-ref <user-decision>/);
+  assert.match(guidance, /reviewer process exited 127/);
 });
 
 test("advance stops on proof preflight before starting expensive evidence", () => {

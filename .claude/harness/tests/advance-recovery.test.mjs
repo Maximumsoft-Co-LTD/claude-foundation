@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { createAdvanceRuntime, advanceFailureAction, withSignals } from "../runtime/workflow/advance-runtime.mjs";
 import { drainSignals, emitSignal, recordSignal } from "../runtime/core/signals.mjs";
 import { manualRecoveryDecision, targetHeadMovedDecision } from "../runtime/workflow/apply-recovery.mjs";
-import { gateDigest } from "../runtime/core/convergent-gate.mjs";
+import { gateDigest, noProgressDecision } from "../runtime/core/convergent-gate.mjs";
 import {
   actionableGuidance, agentSafeRoutes, automaticRecoveryAction, createAdvanceRecovery,
   currentDeliveryProof, environmentCause, userEnvironmentCause
@@ -174,6 +174,67 @@ test("repair handoffs persist across process-shaped runtime recreation and requi
   assert.equal(resumed.action, "REPAIR");
   assert.equal(resumed.resume, "claude-foundation advance demo --through archived");
   assert.equal(f.state().advanceRecovery.answers.length, 1);
+});
+
+// The proof gate's own no-progress question used to point at `packet`, which
+// records nothing, so the same question returned forever (issue #39).
+test("a proof gate's no-progress question is answered through advance and resumes repair", async () => {
+  const gate = noProgressDecision({
+    changeId: "demo", phase: "prove", gate: "test",
+    findings: [{ id: "f1", message: "test failed" }],
+    resumeCommand: "claude-foundation packet demo --phase build"
+  });
+  const flagsSeen = [];
+  const f = fixture({ runProof: async (_id, flags = null) => {
+    flagsSeen.push(flags);
+    return flags?.["reset-progress"]
+      ? { status: "ACTION_REQUIRED", next: [{ reason: "test failed" }] }
+      : { status: "NEEDS_USER_DECISION", route: "NO_PROGRESS_DECISION",
+        decision: gate.decision, next: gate.next };
+  } });
+  const asked = await f.runtime().advanceThrough("demo", "proven");
+  assert.equal(asked.action, "ASK_USER");
+  assert.equal(asked.decision.kind, "repair-no-progress");
+  assert.ok(asked.decision.fingerprint);
+  assert.deepEqual(asked.decision.options.map((row) => row.id),
+    gate.decision.options.map((row) => row.id), "every option the gate offered stays answerable");
+  for (const row of asked.decision.options)
+    assert.match(row.command, new RegExp(`^claude-foundation advance demo --decision ${row.id} `));
+  assert.doesNotMatch(JSON.stringify(asked.next || []), /packet/);
+
+  const calls = flagsSeen.length;
+  assert.equal((await f.runtime().advanceThrough("demo", "proven")).decision.fingerprint,
+    asked.decision.fingerprint, "an unanswered question is asked again without rerunning proof");
+  assert.equal(flagsSeen.length, calls);
+  await assert.rejects(f.runtime().showAdvance("demo", {
+    ...answer(asked, "change-strategy"), "decision-fingerprint": "stale" }), /stale/);
+
+  const resumed = await f.runtime().showAdvance("demo", answer(asked, "change-strategy"));
+  assert.equal(resumed.action, "REPAIR");
+  assert.deepEqual(flagsSeen.at(-1), { "reset-progress": true, "decision-ref": "user:answer-1" });
+  assert.equal(f.state().advanceRecovery.answers.at(-1).kind, "repair-no-progress");
+});
+
+test("a pause answer keeps a proof gate question paused, and gate options with commands stay as written", () => {
+  const h = recoveryHarness();
+  const gate = noProgressDecision({ changeId: "demo", phase: "prove", gate: "test",
+    findings: [{ id: "f1" }], resumeCommand: "claude-foundation packet demo --phase build" });
+  const asked = h.recovery.observe("demo", { action: "ASK_USER", changeId: "demo",
+    reason: gate.decision.summary, decision: gate.decision, next: gate.next });
+  h.recovery.resolve("demo", { decision: "pause", "decision-fingerprint": asked.decision.fingerprint,
+    "decision-ref": "user:pause", reason: "inspect first" });
+  assert.equal(h.recovery.pending("demo").paused, true);
+
+  const exhausted = recoveryHarness();
+  const review = noProgressDecision({ changeId: "demo", phase: "prove", gate: "review",
+    options: [{ id: "accept-review-risk", outcome: "Accept",
+      command: "claude-foundation change waive demo --capability review" },
+    { id: "pause", outcome: "Keep" }] });
+  const value = { action: "ASK_USER", changeId: "demo", decision: review.decision };
+  const observed = exhausted.recovery.observe("demo", value);
+  assert.equal(observed.decision.fingerprint, undefined);
+  assert.equal(observed.decision.options[0].command, "claude-foundation change waive demo --capability review");
+  assert.equal(exhausted.recovery.pending("demo"), null);
 });
 
 test("changed content expires a pending recovery decision and stale answers cannot authorize work", async () => {

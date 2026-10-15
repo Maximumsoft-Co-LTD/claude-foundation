@@ -343,6 +343,26 @@ function failureEnvelope(id, error, { stage = "build", through = null } = {}) {
   });
 }
 
+// An exhausted request keeps replaying until its consumed attempts are
+// acknowledged; name the supported command so nobody moves request files.
+export function reviewInfrastructureAlternatives(id) {
+  return [
+    "repair or switch the configured reviewer named in requests[] (see its infrastructureError)",
+    `then acknowledge the consumed attempts with the user's decision: ${command(
+      `authority reset-infra ${id} --decision-ref <user-decision>`)}`,
+    `then resume: ${resume(id, "proven")}`
+  ];
+}
+
+// A requested review no configured reviewer can start waits on a person; say
+// so, rather than look like a reviewer that is still working.
+export function unstartableReviewReason(id, requestId) {
+  return `no configured reviewer can start review request ${requestId}: bounded AI review is ` +
+    "unavailable or exhausted, so an external verdict is pending. Configure a reviewer, or " +
+    `record an authorized external verdict; inspect: ${command(
+      `authority status ${id} --request ${requestId}`)}`;
+}
+
 // A configured reviewer the harness can start with no host-supplied input runs
 // inside `advance --through`, in the foreground and bounded by the review
 // window. A route with placeholders stays a handoff.
@@ -418,7 +438,7 @@ function proofOperationAction(id, result) {
       requests: result.requests || [],
       next: result.next || [],
       recoveryType: "RECONFIGURE",
-      alternatives: ["repair or switch the configured reviewer, then resume"]
+      alternatives: reviewInfrastructureAlternatives(id)
     });
   if (result.status === "WAITING_EXTERNAL") {
     const running = (result.requests || []).map((row) => configuredReviewWait(id, row)).find(Boolean);
@@ -443,7 +463,8 @@ function proofOperationAction(id, result) {
       legacyAction: "WAIT_EXTERNAL",
       actor: "external-authority",
       boundary: "external-authority",
-      reason: result.next?.[0]?.reason || "required external evidence is pending",
+      reason: review ? unstartableReviewReason(id, review.requestId)
+        : result.next?.[0]?.reason || "required external evidence is pending",
       requests: result.requests || [],
       providers: result.providers || [],
       wait: result.wait || null,
@@ -749,7 +770,7 @@ export function coordinatorAction({
         "configured review infrastructure is exhausted",
       requestId: open.requestId,
       recoveryType: "RECONFIGURE",
-      alternatives: ["repair or switch the configured reviewer, then resume"]
+      alternatives: reviewInfrastructureAlternatives(id)
     });
     const configuredReview = open.type === "review" && open.status === "requested" &&
       /^claude-foundation authority run\s/.test(authorityCommand || "");
@@ -759,7 +780,7 @@ export function coordinatorAction({
       boundary: "external-authority",
       reason: configuredReview ? "configured review is ready" :
         open.type === "review" && open.status === "requested"
-          ? "bounded AI review is unavailable; an external verdict is pending"
+          ? unstartableReviewReason(id, open.requestId)
           : "external authority is pending",
       requestId: open.requestId,
       command: authorityCommand || command(`authority status ${id} --request ${open.requestId}`),
@@ -1262,8 +1283,13 @@ export function createAdvanceRuntime({
         if (answer?.kind === "amended-agreement-conflict" && answer.choice !== "pause" &&
             synchronizeAgreement)
           await synchronizeAgreement(id, { resolve: `openspec/changes/${id}` });
+        // An answer to a no-progress decision other than pause resumes the
+        // gate as a first observation, so it returns repair work, not the
+        // same question.
         const proofFlags = answer?.kind === "indeterminate-execution" && answer.choice === "retry"
-          ? { "retry-indeterminate": true, "decision-ref": answer.reference } : null;
+          ? { "retry-indeterminate": true, "decision-ref": answer.reference }
+          : answer?.kind === "repair-no-progress" && answer.choice !== "pause"
+            ? { "reset-progress": true, "decision-ref": answer.reference } : null;
         // Preparation is identity-reused and also owns recovery of failed
         // sandbox setup. Re-enter it while Build is active so a prior setup
         // failure cannot be bypassed by the next coordinator invocation.

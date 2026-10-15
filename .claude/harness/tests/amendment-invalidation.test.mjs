@@ -2,6 +2,26 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { planAmendmentInvalidation } from
   "../runtime/workflow/validation/amendment-invalidation.mjs";
+import { formatInvalidatedWaivers, invalidatedWaivers } from
+  "../runtime/workflow/change-lifecycle.mjs";
+
+// Waivers bind to the contract revision; an amendment that moves it must say
+// which gates came back instead of letting them reappear silently (issue #40).
+test("an amendment names the waivers its new contract revision invalidates", () => {
+  const waivers = [
+    { capability: "test", binding: { workspaceHash: "h", contractRevision: 2 } },
+    { capability: "review", binding: { workspaceHash: "h", contractRevision: 2 } },
+    { capability: "legacy" },
+    { capability: "current", binding: { workspaceHash: "h", contractRevision: 3 } }
+  ];
+  assert.deepEqual(invalidatedWaivers(waivers, 3), ["review", "test"]);
+  const line = formatInvalidatedWaivers("demo", waivers, 3);
+  assert.match(line, /^ {2}waivers no longer apply: review, test \(.*now 3\)/);
+  assert.match(line, /claude-foundation change waive demo --capability <capability>/);
+  assert.equal(formatInvalidatedWaivers("demo", [], 3), "");
+  assert.equal(formatInvalidatedWaivers("demo", undefined, 3), "");
+  assert.equal(formatInvalidatedWaivers("demo", waivers.slice(2), 3), "");
+});
 
 function fixture(overrides = {}) {
   return {

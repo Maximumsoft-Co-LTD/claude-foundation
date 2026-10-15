@@ -746,7 +746,10 @@ readiness, the proof record, the archive, and on the `LAND READY` line. The
 receipts already earned stay valid — a waiver is subtractive and cannot change
 what any other provider attested — so the next `proof run` executes nothing.
 `--revoke` restores the requirement. New waivers bind the current workspace and
-contract revision and expire when either changes. `review` can be waived with
+contract revision and expire when either changes; `change amend` lists the ones
+its new revision expires. A waiver that would leave no required provider is
+refused: its proof would carry no receipts (`missing-receipt-manifest`), which
+Land refuses, and Prove never finalizes such a proof. `review` can be waived with
 an explicit user decision naming the remaining risks; original failed receipts
 and incomplete review remain visible, never converted into passing evidence.
 The final proof covers the remaining required set and records the exceptions.

@@ -460,10 +460,18 @@ export function assertWaivableCapability(context, id, request, waivers) {
   if (waivers.some((row) => row.capability === request.capability))
     context.fail(`capability '${request.capability}' is already waived`);
   const required = context.requiredProviders(id);
+  const capabilityOf = (provider) => required.includes(provider) &&
+    context.providerCapability(provider, context.providerConfig(id, provider)) || provider;
   if (!required.includes(request.capability) && !required.some((provider) =>
-    context.providerCapability(provider,
-      context.providerConfig(id, provider)) === request.capability))
+    capabilityOf(provider) === request.capability))
     context.fail(`capability '${request.capability}' is not required by change '${id}'; nothing to waive`);
+  // Waiving test also withdraws the discovery check that counts its tests.
+  const withdrawn = new Set([request.capability,
+    ...(request.capability === "test" ? ["discovery"] : [])]);
+  if (required.every((provider) => withdrawn.has(capabilityOf(provider))))
+    context.fail(`waiving '${request.capability}' would leave change '${id}' with no required ` +
+      "evidence: its proof would have no receipt manifest and Land refuses that proof. " +
+      `Repair the failing provider, or amend the agreement: claude-foundation change amend ${id} <amendment.json>`);
 }
 
 export function waiveGateOperation(context, id, flags = {}) {

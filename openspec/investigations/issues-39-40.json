@@ -1,0 +1,131 @@
+{
+  "version": 2,
+  "purpose": "change",
+  "language": "th",
+  "id": "issues-39-40",
+  "activeChange": null,
+  "problem": "Issues #39 และ #40: amend/Prove/waive ทำให้ change ในโปรเจกต์ที่ code อยู่ใน submodule พังหรือ land ไม่ได้ จริงไหม แก้แล้วหรือยัง ถ้าแก้ได้ดีขึ้นอย่างไรและ trade-off คืออะไร",
+  "mode": "analyze",
+  "intent": {
+    "goal": "ตรวจว่า #39 และ #40 เป็นจริงกับ source ปัจจุบัน และว่าแก้ไปแล้วหรือไม่",
+    "outcome": "ได้ solution พร้อม PoC และ trade-off เพื่อส่งต่อเป็น Change",
+    "actors": ["maintainer", "consumer agent"],
+    "scope": ["amend provider derivation", "Prove cwd", "waive vs proof manifest", "review/ASK_USER recovery text"]
+  },
+  "conversation": [
+    { "key": "u1", "speaker": "user", "statement": "39 40 ดูทีว่า เป็นจริงไหม แก้ไขยังเพราะอะไร แก้แล้วดีขึ้นยังไง tradeoff คืออะไร", "source": "session message /investigate 39 40" },
+    { "key": "u2", "speaker": "user", "statement": "ได้ solution และ poc ครบหรือยัง", "source": "session message" },
+    { "key": "u3", "speaker": "user", "statement": "ทำตามที่เสนอเลย", "source": "session message" },
+    { "key": "u4", "speaker": "user", "statement": "ตามนี้ (D3 = reject-empty-receipts, A = fail-with-guidance)", "source": "session message" }
+  ],
+  "requirements": [
+    { "key": "verify-claims", "revision": 1, "kind": "success-criterion", "statement": "ตรวจแต่ละ claim ของ #39/#40 กับ source ว่าจริงหรือไม่", "origin": "user", "status": "stated", "material": true, "conversationKeys": ["u1"] },
+    { "key": "state-fixed", "revision": 1, "kind": "success-criterion", "statement": "ระบุว่าแก้แล้วหรือยัง พร้อมเหตุผล", "origin": "user", "status": "stated", "material": true, "conversationKeys": ["u1"] },
+    { "key": "benefit-tradeoff", "revision": 1, "kind": "success-criterion", "statement": "อธิบายว่าแก้แล้วดีขึ้นอย่างไรและ trade-off คืออะไร", "origin": "user", "status": "stated", "material": true, "conversationKeys": ["u1"] },
+    { "key": "solution-poc", "revision": 1, "kind": "success-criterion", "statement": "มี solution และ PoC ที่ใช้ยืนยันก่อนส่งเข้า Change", "origin": "user", "status": "stated", "material": true, "conversationKeys": ["u2", "u3"] }
+  ],
+  "questions": [],
+  "experiments": [
+    {
+      "key": "poc-d1-amend-provider",
+      "question": "amend ใน change ที่มี provider test ผูก repository สร้าง provider test ที่ไม่มี repository จริงหรือไม่ และการ reuse provider เดิมตาม capability แก้ได้หรือไม่",
+      "criteria": ["compileSemanticAmendment คืน providers ที่มี key test โดยไม่มี repository", "prototype merge ที่ reuse capability เดิมเหลือเฉพาะ test-svc"],
+      "material": true,
+      "status": "complete",
+      "requirementRefs": [{ "key": "solution-poc", "revision": 1 }],
+      "prototypePaths": [".foundation/prototypes/issues-39-40/poc-d1.test.mjs"],
+      "findings": [
+        "รัน node --test: 3 pass. Repro ยืนยันบั๊ก (providers = test-svc + test ที่ไม่มี repository)",
+        "Prototype A เหลือ test-svc เท่านั้น",
+        "provider ที่ derive ไม่มี field capability จึงต้องใช้ name-as-capability fallback แบบ providerCapability"
+      ],
+      "limitations": [
+        "ทดสอบที่ระดับ compileSemanticAmendment ไม่ใช่ end-to-end Prove ใน sandbox submodule",
+        "D3 (waive -> missing-receipt-manifest) และ #39-1 ที่ start-time derive ยังไม่ได้ repro อ่านจากโค้ดเท่านั้น",
+        "prototype ไม่ใช่ proof"
+      ]
+    },
+    {
+      "key": "poc-round2",
+      "question": "#39-4 ตอบ decision ของ proof gate ได้ไหม, #39-1 provider ที่ derive ตอน start มี repository ไหม, #40 D3 waive test ทำให้ required providers ว่างไหม",
+      "criteria": ["observe ไม่บันทึก pending และ resolve throw", "derived provider ไม่มี repository", "requiredProviders ว่างหลัง waive test"],
+      "material": true,
+      "status": "complete",
+      "requirementRefs": [{ "key": "solution-poc", "revision": 1 }],
+      "prototypePaths": [".foundation/prototypes/issues-39-40/poc-round2.test.mjs"],
+      "findings": [
+        "รัน node --test: 3 pass",
+        "#39-4: decision repair-no-progress จาก proof gate ไม่มี fingerprint และไม่มีคำสั่งต่อตัวเลือก, pending เป็น null, advance --decision ล้มด้วย stale or absent; next ชี้ packet --phase build",
+        "#39-1: normalizeSemanticDraft ที่ task ผูก repository svc ได้ provider test ที่ไม่มี repository",
+        "#40 D3: ก่อน waive required = discovery, test, test-svc; หลัง waive test เหลือ [] รวม test-svc ที่ปกติดีและ discovery"
+      ],
+      "limitations": [
+        "ทดสอบที่ระดับฟังก์ชันด้วย context จำลอง ไม่ใช่ advance/Prove end-to-end",
+        "#39-4 จำลอง envelope ตาม advance-runtime.mjs:455-469 ไม่ได้รันผ่าน advance จริง"
+      ]
+    }
+  ],
+  "work": [],
+  "historyGaps": [
+    "เนื้อหา run artifacts ใต้ .foundation/ ของโปรเจกต์ผู้รายงานไม่มีให้ตรวจ",
+    "ความเชื่อมโยงเชิงสาเหตุของ #39-5 (REPAIR จากหลักฐานเก่าถูกนับเป็น no-progress) ยังไม่ได้ repro"
+  ],
+  "sources": [
+    ".claude/harness/runtime/workflow/semantic-amendment.mjs",
+    ".claude/harness/runtime/workflow/semantic-draft.mjs",
+    ".claude/harness/runtime/evidence/adapter-runtime.mjs",
+    ".claude/harness/runtime/evidence/proof-runtime.mjs",
+    ".claude/harness/runtime/evidence/evidence-results.mjs",
+    ".claude/harness/runtime/evidence/proof-execution-runtime.mjs",
+    ".claude/harness/runtime/core/user-decisions.mjs",
+    ".claude/harness/runtime/core/convergent-gate.mjs",
+    ".claude/harness/runtime/workflow/advance-recovery.mjs",
+    ".claude/harness/runtime/workflow/advance-runtime.mjs",
+    ".claude/harness/runtime/core/authority-policy.mjs",
+    ".claude/harness/runtime/evidence/provider-scheduler.mjs",
+    ".claude/harness/runtime/evidence/proof-readiness.mjs",
+    ".claude/harness/runtime/evidence/evidence-contract.mjs",
+    ".claude/harness/runtime/workflow/change-lifecycle.mjs",
+    ".claude/harness/runtime/workflow/change-validation.mjs"
+  ],
+  "facts": [
+    { "key": "amend-derives-provider", "statement": "compileSemanticAmendment เรียก normalizeSemanticDraft โดยไม่ส่ง execution จึง derivedExecution สร้าง provider ชื่อตาม capability (test) ไม่มี repository และบรรทัด 985 เพิ่มทุก provider ที่ชื่อยังว่างโดยไม่ดูว่า capability ถูก provider อื่นให้บริการแล้ว", "sources": [".claude/harness/runtime/workflow/semantic-amendment.mjs", ".claude/harness/runtime/workflow/semantic-draft.mjs"] },
+    { "key": "repoless-runs-at-control-root", "statement": "provider ที่ไม่มี repository รันที่ state.workspace.path (control sandbox) ทั้งใน adapter และ task-check", "sources": [".claude/harness/runtime/evidence/adapter-runtime.mjs"] },
+    { "key": "poc-repro", "statement": "รัน PoC กับ compileSemanticAmendment จริง: providers ที่ได้มี test-svc (repository svc) และ test (ไม่มี repository)", "sources": [".claude/harness/runtime/workflow/semantic-amendment.mjs"] },
+    { "key": "empty-receipts-inconsistent", "statement": "finalize เขียน proof status pass ได้แม้ checks ว่าง แต่ proofEnvelopeIssue ปฏิเสธ receipts ว่างเป็น missing-receipt-manifest", "sources": [".claude/harness/runtime/evidence/proof-runtime.mjs"] },
+    { "key": "waiver-binding", "statement": "waiver ที่มี binding ใช้ได้เฉพาะเมื่อ workspaceHash และ contractRevision ตรงกัน", "sources": [".claude/harness/runtime/core/user-decisions.mjs"] },
+    { "key": "go-json-unparsed", "statement": "ตัวแยกผลเทสต์รู้จักแค่ --- PASS และ ok <pkg> เป็น marker การรัน ไม่มี parser ของ go test -json และไม่ให้จำนวนเทสต์", "sources": [".claude/harness/runtime/evidence/evidence-results.mjs"] },
+    { "key": "reset-infra-not-named", "statement": "REPAIR_REVIEW_INFRASTRUCTURE บอกให้แก้หรือสลับ reviewer แต่ไม่ระบุ authority reset-infra ซึ่งมีอยู่ใน CLI", "sources": [".claude/harness/runtime/workflow/advance-recovery.mjs", ".claude/harness/runtime/workflow/advance-runtime.mjs"] },
+    { "key": "decision-route-exists", "statement": "advance มี --decision/--decision-fingerprint/--decision-ref/--reason สำหรับ decision ที่ลงทะเบียนใน ADVANCE_DECISIONS (2 kind); repair-no-progress ไม่อยู่ในตารางนั้น", "sources": [".claude/harness/runtime/workflow/advance-recovery.mjs"] },
+    { "key": "no-advance-lock", "statement": "advance-runtime ไม่ใช้ acquireProcessLock; lock มีเฉพาะ proof execution, authority และ lifecycle บางจุด", "sources": [".claude/harness/runtime/workflow/advance-runtime.mjs", ".claude/harness/runtime/evidence/proof-execution-runtime.mjs"] },
+    { "key": "progress-fingerprint-inputs", "statement": "fingerprint ของ no-progress ประกอบด้วย workspaceHash, findings, evidence validity และ strategy ไม่รวม digest ของ receipt/ความสดของหลักฐาน", "sources": [".claude/harness/runtime/core/convergent-gate.mjs", ".claude/harness/runtime/evidence/proof-execution-runtime.mjs"] },
+    { "key": "gate-decision-unanswerable", "statement": "proof gate สร้าง ASK_USER kind repair-no-progress โดย resumeCommand เป็น packet --phase build (proof-execution-runtime.mjs:582) และ kind นี้ไม่อยู่ใน ADVANCE_DECISIONS จึงไม่ถูกบันทึกเป็น pending; advance --decision ส่งไป recovery.resolve ที่ต้องมี pending", "sources": [".claude/harness/runtime/evidence/proof-execution-runtime.mjs", ".claude/harness/runtime/workflow/advance-recovery.mjs", ".claude/harness/runtime/workflow/advance-runtime.mjs", ".claude/harness/runtime/core/convergent-gate.mjs"] },
+    { "key": "start-derived-no-repository", "statement": "ตอน change start provider ที่ derive ถูกเขียนลง evidence.yaml ตรงๆ และ providerRepositoryValue ใช้แค่ config.repository ไม่อนุมานจาก task", "sources": [".claude/harness/runtime/workflow/change-lifecycle.mjs", ".claude/harness/runtime/evidence/evidence-contract.mjs", ".claude/harness/runtime/workflow/semantic-draft.mjs"] },
+    { "key": "repoless-scope-by-design", "statement": "provider ที่ไม่มี repository ถูกออกแบบให้ครอบทุก repository ที่เลือก แต่ cwd เป็น control workspace ขณะที่ Build รัน task verify ใน repository sandbox", "sources": [".claude/harness/runtime/evidence/proof-readiness.mjs", ".claude/harness/runtime/evidence/adapter-runtime.mjs"] },
+    { "key": "waive-drops-all", "statement": "requiredProvidersOperation ข้าม capability ที่ waived ทั้งหมด และ waive test ตัด discovery ไปด้วย", "sources": [".claude/harness/runtime/workflow/change-validation.mjs"] },
+    { "key": "provider-line-stderr", "statement": "บรรทัด PROVIDER <name>: <status> ออกทาง console.error (stderr) ไม่ใช่ stdout", "sources": [".claude/harness/runtime/evidence/provider-scheduler.mjs"] },
+    { "key": "closure-wave", "statement": "review มี closure wave ที่อนุญาตครั้งที่ 3 เมื่อครั้งที่ 2 fail และ workspace เปลี่ยน ขณะที่ฐาน maxAiAttempts ยังเป็น 2; เมื่อหมด ตัวเลือกคือ accept-review-risk (waive), revise-agreement หรือ pause", "sources": [".claude/harness/runtime/core/authority-policy.mjs", ".claude/harness/runtime/evidence/proof-execution-runtime.mjs"] },
+    { "key": "inspect-through-exclusive", "statement": "advance --inspect ถูกห้ามใช้ร่วมกับ --through และ flag ของ decision โดยตั้งใจ", "sources": [".claude/harness/runtime/workflow/advance-runtime.mjs"] },
+    { "key": "requested-review-generic-wait", "statement": "review สถานะ requested ที่ไม่มีคำสั่ง authority run ถูกรายงานเป็น WAIT_EXTERNAL ทั่วไป ไม่มี timeout หรือเหตุผลที่ reviewer ไม่เริ่ม", "sources": [".claude/harness/runtime/workflow/advance-runtime.mjs"] }
+  ],
+  "hypotheses": [
+    { "key": "h-d1", "statement": "root cause ของ #40 D1 และส่วนหลักของ #39-1 คือ amend/derive สร้าง provider ไม่มี repository", "status": "supported", "factKeys": ["amend-derives-provider", "repoless-runs-at-control-root", "poc-repro"] },
+    { "key": "h-d3", "statement": "#40 D3 เกิดจาก waive ทำให้ required providers ว่างแล้ว finalize/audit ไม่สอดคล้อง", "status": "supported", "factKeys": ["empty-receipts-inconsistent"] },
+    { "key": "h-fixed", "statement": "issues เหล่านี้ถูกแก้แล้วใน source ปัจจุบัน", "status": "falsified", "factKeys": ["amend-derives-provider", "empty-receipts-inconsistent", "go-json-unparsed", "reset-infra-not-named"] },
+    { "key": "h-race", "statement": "#39-5: advance ซ้อนกันไม่ถูก serialize และ no-progress fingerprint ไม่รวม digest ของ receipt (ส่วนที่ว่า REPAIR เก่าถูกนับเป็นไม่คืบหน้าจริงในทางปฏิบัติ ยังไม่ได้ repro)", "status": "supported", "factKeys": ["no-advance-lock", "progress-fingerprint-inputs"] },
+    { "key": "h-gate-decision", "statement": "#39-4: ASK_USER repair-no-progress จาก proof gate ไม่มีทางบันทึกคำตอบที่รองรับ ทางออกเดียวคือเปลี่ยนเนื้อหาให้ fingerprint เปลี่ยน", "status": "supported", "factKeys": ["gate-decision-unanswerable", "progress-fingerprint-inputs"] },
+    { "key": "h-start-derive", "statement": "#39-1 เกิดตั้งแต่ change start สำหรับทุก change ที่ใช้ provider ที่ derive และมี task ผูก repository ไม่ใช่เฉพาะหลัง amend", "status": "supported", "factKeys": ["start-derived-no-repository", "repoless-runs-at-control-root", "repoless-scope-by-design"] },
+    { "key": "h-stdout-pollution", "statement": "#39 minor: advance พิมพ์บรรทัดที่ไม่ใช่ JSON ลง stdout ก่อน JSON", "status": "falsified", "factKeys": ["provider-line-stderr"] },
+    { "key": "h-review-wait", "statement": "#39-7: review requested ที่ reviewer ไม่เริ่มไม่มี diagnostic หรือ timeout", "status": "supported", "factKeys": ["requested-review-generic-wait"] }
+  ],
+  "options": [],
+  "selection": null,
+  "decisions": [
+    { "key": "d3-waive-semantics", "status": "resolved", "question": "waive ควรตัดแค่ provider ที่ fail หรือคงถอนทั้ง capability แล้วให้ finalize/waive ปฏิเสธเมื่อไม่เหลือ receipt", "alternatives": ["narrow-waive", "reject-empty-receipts"], "recommended": "reject-empty-receipts", "recommendationFactKeys": ["empty-receipts-inconsistent", "waiver-binding", "waive-drops-all"], "choice": "reject-empty-receipts", "reason": "ผู้ใช้ยืนยัน (u4): คงความหมาย waive = ถอนทั้ง capability; finalize/waive ต้องปฏิเสธพร้อมบอกสาเหตุเมื่อไม่เหลือ receipt ที่รันจริง และ REPAIR ต้องระบุ finding" },
+    { "key": "amend-multi-provider", "status": "resolved", "question": "เมื่อหลาย provider ให้บริการ capability เดียวกันตอน amend ควรถามผู้ใช้หรือ fail พร้อมชี้ให้แก้ contract", "alternatives": ["ask-user", "fail-with-guidance"], "recommended": "fail-with-guidance", "recommendationFactKeys": ["amend-derives-provider"], "choice": "fail-with-guidance", "reason": "ผู้ใช้ยืนยัน (u4): contract กำกวมต้องหยุดพร้อมคำแนะนำ ไม่เดา provider" }
+  ],
+  "conclusion": {
+    "summary": "ทั้ง #39 และ #40 ส่วนใหญ่เป็นจริงและยังไม่ถูกแก้ (PoC 6/6 ยืนยัน). Root cause หลักคือ provider ที่ derive (ทั้งตอน start และ amend) ไม่มี repository จึงรัน task verify ที่ control root. ทางตันมีสองจุด: (1) D1+D3 amend แล้ว Prove fail และ waive ทำให้ receipts ว่าง, (2) #39-4 ASK_USER repair-no-progress จาก proof gate บันทึกคำตอบไม่ได้. #39-3/#39-7 มีทางออกแต่ข้อความไม่บอก. ข้อ minor เรื่อง stdout ไม่จริง (ไป stderr). #39-5 ยังไม่ได้ repro. ผู้ใช้ตัดสินแล้ว: waive คงถอนทั้ง capability แต่ finalize/waive ปฏิเสธเมื่อไม่เหลือ receipt; amend ที่มีหลาย provider ต่อ capability ให้ fail พร้อมคำแนะนำ"
+  },
+  "changeIntent": "ปลดทางตันของ repository-scoped change (#39/#40): (1) provider ที่ derive ตอน start/amend ต้องรัน task verify ใน repository ของ task; amend ต้อง reuse provider เดิมที่ให้บริการ capability เดียวกัน และ fail พร้อมคำแนะนำเมื่อมีหลาย provider ที่กำกวม; (2) finalize/waive ต้องปฏิเสธพร้อมบอกสาเหตุเมื่อไม่เหลือ receipt ที่รันจริง (คงความหมาย waive = ถอนทั้ง capability) และ REPAIR ต้องระบุ finding เช่น missing-receipt-manifest; (3) ASK_USER repair-no-progress จาก proof gate ต้องตอบผ่าน advance --decision ได้; (4) ข้อความ recovery ชี้ authority reset-infra สำหรับ review infra ที่หมด, review requested ที่ไม่เริ่มต้องมี diagnostic, และ change amend ต้องรายงาน waiver ที่หลุด. ไม่รวม: parser go test -json, lock ของ advance (#39-5 ยังไม่ repro), addTasks ที่ไม่มี requirement"
+}

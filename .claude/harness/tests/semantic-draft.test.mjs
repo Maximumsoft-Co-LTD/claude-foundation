@@ -564,6 +564,29 @@ test("derived evidence commands preserve the prepared PATH and explicit executio
     .draft.execution, explicit);
 });
 
+// Build runs a repository task's verify in that repository's sandbox; the
+// provider derived from it must run there too (issues #39/#40).
+test("a derived provider runs in the single repository its tasks belong to", () => {
+  const derived = (repositories) => {
+    const draft = semanticDraft();
+    draft.tasks = draft.tasks.map((task, index) => ({
+      ...task, ...(repositories[index] ? { repository: repositories[index] } : {})
+    }));
+    return normalizeSemanticDraft(draft, slugify).draft.execution.providers;
+  };
+  const tasks = semanticDraft().tasks.length;
+  assert.equal(derived(Array(tasks).fill("svc")).test.repository, "svc");
+  assert.equal(derived([]).test.repository, undefined);
+  assert.equal(derived(Array(tasks).fill("root")).test.repository, undefined);
+  if (tasks > 1)
+    assert.equal(derived(["svc", ...Array(tasks - 1).fill("lib")]).test.repository, undefined);
+  const mixed = semanticDraft();
+  mixed.tasks = [...mixed.tasks, { ...mixed.tasks[0], key: "lib-task", repository: "lib" }]
+    .map((task, index) => index === 0 ? { ...task, repository: "svc" } : task);
+  assert.equal(normalizeSemanticDraft(mixed, slugify).draft.execution.providers.test?.repository,
+    undefined);
+});
+
 // An amendment adding a root task to a change whose lib task already exists
 // gets the same containment edge start derives; a cycle is an issue.
 test("an amendment's added root task follows the submodule's tasks", () => {
@@ -604,6 +627,54 @@ test("an amendment's added root task follows the submodule's tasks", () => {
     repositories: SUPERPROJECT_CATALOG }), cyclic.issues);
   assert.deepEqual(amendmentRepositoryOrderIssues(amendment([rootTask]), tasksContent, {
     repositories: SUPERPROJECT_CATALOG }), []);
+});
+
+// An amendment must not derive a second, repository-less provider for a
+// capability the agreement already proves (issue #40).
+test("an amendment reuses the provider that already serves a capability", () => {
+  const tasksContent = [
+    "# Tasks", "",
+    "- [x] **T001** Existing [key:t1] [repo:svc] [paths:a.go] [claims:c1] — verify: `go test ./...`",
+    ""
+  ].join("\n");
+  const declared = (claims = "declared") => ({ adapter: "test-discovery", capability: "test",
+    repository: "svc", command: ["sh", "-c", "go test ./..."], claims });
+  const compile = (providers) => compileSemanticAmendment({
+    amendment: {
+      version: 1, reason: "Reject a reused key",
+      addRequirements: [{ key: "guard", capability: "guard", operation: "added",
+        scenario: "A reused key is rejected", outcome: "Rejected" }],
+      addTasks: [{ key: "t2", repository: "svc", outcome: "Guard", covers: ["guard"],
+        paths: ["b.go"], verify: "go test ./..." }],
+      evidence: { guard: { capabilities: ["test"] } }
+    },
+    contract: { version: 1, providers,
+      claims: [{ id: "c1", requirementKey: "r1", scenario: "S", capabilities: ["test"] }] },
+    tasksContent, slugify, renderTask: renderDraftTask
+  });
+
+  const reused = compile({ "test-svc": declared() });
+  assert.deepEqual(reused.issues, []);
+  assert.deepEqual(Object.keys(reused.providers), ["test-svc"]);
+  assert.deepEqual(reused.providers["test-svc"], declared());
+
+  const listed = compile({ "test-svc": declared(["c1"]) });
+  assert.deepEqual(listed.issues, []);
+  assert.deepEqual(listed.providers["test-svc"].claims, ["c1", listed.claims.at(-1).id]);
+
+  const byRepository = compile({ "test-svc": declared(),
+    "test-lib": { ...declared(), repository: "lib" } });
+  assert.deepEqual(byRepository.issues, []);
+  assert.deepEqual(Object.keys(byRepository.providers).sort(), ["test-lib", "test-svc"]);
+
+  const ambiguous = compile({ "test-a": { ...declared(), repository: "a" },
+    "test-b": { ...declared(), repository: "b" } });
+  assert.match(ambiguous.issues.join("\n"),
+    /cannot choose which provider proves capability 'test': test-a, test-b/);
+
+  const none = compile({});
+  assert.deepEqual(none.issues, []);
+  assert.equal(none.providers.test.repository, "svc");
 });
 
 test("semantic amendment preserves completed tasks and custom spec sections", () => {

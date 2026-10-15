@@ -1,0 +1,207 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "derived-provider-repository-compile-draft",
+      "requirementKey": "derived-provider-repository",
+      "scenario": "repository เดียวได้ provider ที่ผูก repository",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "derived-provider-repository-compile-draft-2",
+      "requirementKey": "derived-provider-repository",
+      "scenario": "root หรือไม่ระบุ repository คงเดิม",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "derived-provider-repository-compile-draft-3",
+      "requirementKey": "derived-provider-repository",
+      "scenario": "หลาย repository คงพฤติกรรมเดิม",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "derived-provider-repository-compile-draft-4",
+      "requirementKey": "derived-provider-repository",
+      "scenario": "execution ที่ผู้เขียนกำหนดไม่ถูกแตะ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amend-reuses-capability-provider-amend-requirement-evidence-test",
+      "requirementKey": "amend-reuses-capability-provider",
+      "scenario": "reuse provider ที่ประกาศไว้",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amend-reuses-capability-provider-amend-claim-test-repository-svc",
+      "requirementKey": "amend-reuses-capability-provider",
+      "scenario": "ไม่มี provider ของ capability จึงเพิ่มตัวที่ derive",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amend-reuses-capability-provider-amend-task",
+      "requirementKey": "amend-reuses-capability-provider",
+      "scenario": "provider ชื่อเดียวกับ capability ยังตามคำสั่ง verify",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amend-ambiguous-provider-fails",
+      "requirementKey": "amend-ambiguous-provider-fails",
+      "scenario": "สอง provider ให้บริการ test",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "waive-keeps-executed-evidence-change-waive-capability-test",
+      "requirementKey": "waive-keeps-executed-evidence",
+      "scenario": "waive test ที่เป็นหลักฐานเดียว",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "waive-keeps-executed-evidence-change-waive-capability-review",
+      "requirementKey": "waive-keeps-executed-evidence",
+      "scenario": "waive ที่ยังเหลือหลักฐาน",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "finalize-refuses-empty-proof-proof-finalize",
+      "requirementKey": "finalize-refuses-empty-proof",
+      "scenario": "finalize โดยไม่มี required provider",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "finalize-refuses-empty-proof-proof-finalize-2",
+      "requirementKey": "finalize-refuses-empty-proof",
+      "scenario": "proof ปกติ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "proof-gate-decision-answerable-advance-decision",
+      "requirementKey": "proof-gate-decision-answerable",
+      "scenario": "ตัวเลือกมีคำสั่งตอบ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "proof-gate-decision-answerable-advance-decision-change-strategy",
+      "requirementKey": "proof-gate-decision-answerable",
+      "scenario": "ตอบ change-strategy",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "proof-gate-decision-answerable-advance-decision-pause",
+      "requirementKey": "proof-gate-decision-answerable",
+      "scenario": "ตอบ pause",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "proof-gate-decision-answerable-advance-decision-2",
+      "requirementKey": "proof-gate-decision-answerable",
+      "scenario": "decision ที่ตัวเลือกมีคำสั่งเองคงเดิม",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "proof-gate-decision-answerable-advance-decision-fingerprint",
+      "requirementKey": "proof-gate-decision-answerable",
+      "scenario": "fingerprint ไม่ตรง",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-infra-recovery-names-reset",
+      "requirementKey": "review-infra-recovery-names-reset",
+      "scenario": "request หมด fallback",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "requested-review-wait-diagnostic",
+      "requirementKey": "requested-review-wait-diagnostic",
+      "scenario": "ไม่มี authority run",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amend-reports-invalidated-waivers-amend-revision-3",
+      "requirementKey": "amend-reports-invalidated-waivers",
+      "scenario": "waiver ผูก revision เดิม",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amend-reports-invalidated-waivers-amend",
+      "requirementKey": "amend-reports-invalidated-waivers",
+      "scenario": "ไม่มี waiver",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/semantic-draft.test.mjs) && (node --test .claude/harness/tests/waive-gate.test.mjs .claude/harness/tests/proof-finalize.test.mjs) && (node --test .claude/harness/tests/advance-recovery.test.mjs .claude/harness/tests/delivery-convergence.test.mjs) && (node --test .claude/harness/tests/advance-runtime.test.mjs .claude/harness/tests/amendment-invalidation.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

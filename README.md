@@ -691,7 +691,9 @@ Evidence connects the agreed behavior to results from the project's real tools:
 Requirement → Claim → Provider → Receipt → Proof
 ```
 
-The compiler derives ordinary provider wiring from task verification commands.
+The compiler derives ordinary provider wiring from task verification commands;
+when every task belongs to one non-root repository, the derived provider runs
+in that repository's sandbox, where Build ran the same commands.
 Custom tools, reports, services, or readiness rules use `execution.yaml`.
 Change Loop runs the declared tools; it does not replace the project's test
 framework or turn an unavailable measurement into a pass.

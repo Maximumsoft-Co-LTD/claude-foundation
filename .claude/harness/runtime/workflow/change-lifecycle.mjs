@@ -249,6 +249,26 @@ export function mergeApprovalDelta(prior, next) {
   return { added: sorted(added), revised: sorted(revised), removed: sorted(removed) };
 }
 
+// A waiver bound to an earlier contract revision stops applying when an
+// amendment moves the revision; the amendment says which ones, so the gate
+// does not silently reappear.
+export function invalidatedWaivers(waivers, contractRevision) {
+  return (Array.isArray(waivers) ? waivers : [])
+    .filter((row) => row?.binding &&
+      Number(row.binding.contractRevision) !== Number(contractRevision || 0))
+    .map((row) => row.capability).filter(Boolean).sort();
+}
+
+export function formatInvalidatedWaivers(id, waivers, contractRevision) {
+  const capabilities = invalidatedWaivers(waivers, contractRevision);
+  return capabilities.length
+    ? `  waivers no longer apply: ${capabilities.join(", ")} (bound to an earlier contract ` +
+      `revision; now ${Number(contractRevision || 0)}); if still intended, ask the user and ` +
+      `record each again: claude-foundation change waive ${id} --capability <capability> ` +
+      "--reason <why> --decision-ref <user-decision>\n"
+    : "";
+}
+
 export function formatApprovalDelta(delta) {
   const list = (values) => values?.length ? values.join(", ") : "none";
   return `  added: ${list(delta.added)}\n  revised: ${list(delta.revised)}\n` +
@@ -2807,6 +2827,7 @@ export function createChangeLifecycle({
           .map((task) => task.id).join(", ")} (verified again before they count as done)\n` : "") +
       `  proof: ${compiled.invalidation.proofRecovery?.recovery?.instruction ||
         "re-enter Prove so receipt bindings are recomputed"}\n` +
+      formatInvalidatedWaivers(id, amended.waivers, amended.contractRevision) +
       (amended.pendingApprovalDelta
         ? `  requirement delta awaiting approval:\n${formatApprovalDelta(amended.pendingApprovalDelta)}\n`
         : `  requirement delta (covered by the current approval):\n${formatApprovalDelta({

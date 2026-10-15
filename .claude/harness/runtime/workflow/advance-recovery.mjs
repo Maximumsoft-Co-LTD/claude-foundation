@@ -216,7 +216,7 @@ const REPAIR_INSTRUCTIONS = {
   REPAIR_PROOF_RESULT: "Fix the findings listed in next[] (and repairGraph when present) inside the Build workspace",
   EXECUTE_REPAIR_BATCH: "Apply the dependency-ordered repairGraph.nodes batch inside the Build workspace, touching only each node's paths",
   REPAIR_BUILD_PLAN: "Give every task in openspec/changes/<change>/tasks.md a stable ID (T001) and a [paths: ...] scope through a semantic amendment",
-  REPAIR_REVIEW_INFRASTRUCTURE: "Repair or switch the configured reviewer named in requests[] (see its infrastructureError)",
+  REPAIR_REVIEW_INFRASTRUCTURE: "Repair or switch the configured reviewer named in requests[] (see its infrastructureError), then acknowledge its consumed attempts with `claude-foundation authority reset-infra <change> --decision-ref <user-decision>`",
   TRY_ALTERNATE_APPROACH: "Apply a materially different repair than attemptedStrategies[] inside the approved agreement",
   REPAIR_SYNC_CONFLICT: "Resolve the conflicting paths in details.conflicts inside the Build workspace to the intended result",
   NO_PROGRESS_BOUNDARY: "Change the input that keeps the operation idempotent (code, agreement, or evidence wiring)"
@@ -322,6 +322,17 @@ export const ADVANCE_DECISIONS = {
     legacyAction: "RESOLVE_AGREEMENT_CONFLICT", boundary: "amended-agreement-conflict"
   }
 };
+
+// A proof gate's no-progress decision whose options carry no command of their
+// own is answered through `advance` too, with every option the gate offered.
+// A gate option with its own command (accept-review-risk's waiver) stays as
+// the gate wrote it.
+export function proofGateDecision(decision) {
+  if (decision?.kind !== "repair-no-progress" || decision.fingerprint ||
+      !Array.isArray(decision.options) || !decision.options.length ||
+      decision.options.some((row) => row?.command)) return null;
+  return { legacyAction: "NO_PROGRESS_BOUNDARY", boundary: "repeated-no-progress" };
+}
 
 const decisionCommand = (id, option, fingerprint) =>
   `claude-foundation advance ${id} --decision ${option} --decision-fingerprint ${fingerprint} ` +
@@ -434,7 +445,8 @@ export function createAdvanceRecovery({ loadRuntime, saveRuntime, subject, now =
       if (state.advanceRecovery) save(state, { ...record, attempts: [], pending: null });
       return value;
     }
-    const typed = value.action === "ASK_USER" && ADVANCE_DECISIONS[value.decision?.kind];
+    const typed = value.action === "ASK_USER" &&
+      (ADVANCE_DECISIONS[value.decision?.kind] || proofGateDecision(value.decision));
     if (typed) {
       const built = typedDecision(id, value, record, value.decision.kind);
       const pending = record.pending?.key === built.key ? record.pending : {
@@ -442,7 +454,9 @@ export function createAdvanceRecovery({ loadRuntime, saveRuntime, subject, now =
       };
       record.pending = pending;
       save(state, record);
-      return ask(value, pending);
+      const asked = ask(value, pending);
+      // The gate's own resume route (`packet`) records nothing; the answer does.
+      return proofGateDecision(value.decision) ? { ...asked, next: [] } : asked;
     }
     const environment = userEnvironmentCause(value);
     if (environment) return userEnvironmentAction(id, value, environment);

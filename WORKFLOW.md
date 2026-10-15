@@ -420,6 +420,15 @@ moves it or `removeRequirements` retires it. The removed lines leave
 remaining verify commands, the amendment record keeps what each removed task
 promised, and a removed id is never reused.
 
+An amendment never adds a second provider for a capability the agreement
+already proves: added claims join the one provider serving that capability (or
+the one in the same repository), and an author-written command stays as
+written. When several providers serve the capability and none matches, the
+amendment is refused and names them; declare which provider proves the new
+claims in the change's execution providers, then amend again. The `AMENDED`
+output lists waivers bound to the earlier contract revision, which no longer
+apply; record each again only with a new user decision.
+
 An unfinished task (unchecked, with no valid passing command receipt for its
 claims) may change its verify command, and optionally `paths`, through an
 amendment with only `updateTasks: [{key, verify, paths?}]` rows. It needs no
@@ -818,6 +827,11 @@ A provider that executed and failed has three honest exits:
 - fix the cause and rerun;
 - rewire the provider in `execution.yaml`;
 - withdraw the capability under a recorded decision with `change waive`.
+
+A waiver withdraws the whole capability. `change waive` refuses a waiver that
+would leave no required provider, since a proof without receipts reports
+`missing-receipt-manifest` and Land refuses it; Prove likewise never finalizes
+such a proof and names that cause instead of reporting `PROVEN`.
 
 Resuming unchanged is not one of them. A harness-executed provider that failed
 and then passes on byte-identical inputs is recorded as a flake: the receipt
@@ -1467,7 +1481,11 @@ claude-foundation advance <change> --decision <offered-option> \
 ```
 
 The offered options are `retry|wait|pause` for recovery decisions, and the
-options listed by an advance decision such as `merge|retain|pause`. The answer
+options listed by an advance decision such as `merge|retain|pause`. A Prove
+gate's no-progress decision is answered the same way with any option it
+offers; any answer but pause resumes that gate as a first observation, so it
+returns the repair batch instead of the same question. A gate option that carries its own command
+(such as accepting review risk with `change waive`) keeps that command. The answer
 retains the prior `--through` target. Retry records the chosen
 approach; wait is available only for an external dependency; pause preserves
 the work without running setup or providers again. A recorded pause projects

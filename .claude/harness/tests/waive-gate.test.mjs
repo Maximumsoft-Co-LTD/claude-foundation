@@ -52,11 +52,11 @@ test("waivable capability validates reason, protected routes, duplicates, and re
   assert.throws(() => assertWaivableCapability(world.context, "change", {
     capability: "missing", reason: "why"
   }, []), /nothing to waive/);
-  assert.doesNotThrow(() => assertWaivableCapability(world.context, "change", {
-    capability: "test", reason: "why"
-  }, []));
-  const aliased = fixture({ required: ["provider-id"] });
-  aliased.context.providerConfig = () => ({ capability: "security-static" });
+  assert.doesNotThrow(() => assertWaivableCapability(fixture({ required: ["test", "lint"] }).context,
+    "change", { capability: "test", reason: "why" }, []));
+  const aliased = fixture({ required: ["provider-id", "test"] });
+  aliased.context.providerConfig = (_id, provider) =>
+    ({ capability: provider === "provider-id" ? "security-static" : provider });
   assert.doesNotThrow(() => assertWaivableCapability(
     aliased.context, "change", { capability: "security-static", reason: "why" }, []));
 });
@@ -75,8 +75,33 @@ test("waiver revocation removes the gate and writes the recovery message", () =>
     { capability: "missing" }), /no recorded waiver/);
 });
 
+// A waiver that withdraws every required provider leaves a proof without
+// receipts, which Land refuses; refuse it here with the cause (issue #40).
+test("a waiver that would leave no required evidence is refused before it is recorded", () => {
+  const only = fixture({ required: ["test", "discovery"] });
+  assert.throws(() => waiveGateOperation(only.context, "change", {
+    capability: "test", "decision-ref": "decision:1", reason: "flaky"
+  }), /waiving 'test' would leave change 'change' with no required evidence.*change amend change/s);
+  assert.equal(only.saves.length, 0);
+  assert.equal(only.state.waivers, undefined);
+
+  const repositoryBound = fixture({ required: ["test-svc", "discovery"] });
+  repositoryBound.context.providerConfig = (_id, provider) =>
+    ({ capability: provider === "test-svc" ? "test" : provider });
+  assert.throws(() => assertWaivableCapability(repositoryBound.context, "change", {
+    capability: "test", reason: "why" }, []), /no required evidence/);
+
+  const reviewOnly = fixture({ required: ["review"] });
+  assert.throws(() => assertWaivableCapability(reviewOnly.context, "change", {
+    capability: "review", reason: "why" }, []), /no required evidence/);
+
+  const remaining = fixture({ required: ["test", "discovery", "review"] });
+  assert.doesNotThrow(() => assertWaivableCapability(remaining.context, "change", {
+    capability: "review", reason: "why" }, []));
+});
+
 test("waive operation records durable authority and supports legacy empty state", () => {
-  const world = fixture();
+  const world = fixture({ required: ["test", "review"] });
   waiveGateOperation(world.context, "change", {
     capability: "test", "decision-ref": "decision:1", reason: "risk accepted"
   });
@@ -106,7 +131,7 @@ test("waive operation handles revocation and refuses archived changes", () => {
 });
 
 test("review waiver binds the current diff and a stale waiver can be revoked", () => {
-  const world = fixture({ required: ["review"], state: { contractRevision: 4 } });
+  const world = fixture({ required: ["review", "test"], state: { contractRevision: 4 } });
   world.context.relevantHash = () => "reviewed-diff";
   waiveGateOperation(world.context, "change", {
     capability: "review", reason: "User accepts unfinished review", "decision-ref": "decision:land"
