@@ -908,6 +908,47 @@ test("a verify-only amendment corrects an unfinished task without requirement in
     compiled.removedRequirementKeys], [[], [], []]);
 });
 
+// A task added for a requirement the agreement already has needs no
+// requirement change (issue #43, decided by the user).
+test("an amendment adds a task for an existing requirement without requirement input", () => {
+  const args = { ...verifyFixture([
+    "- [x] **T001** Build A [key:impl] [claims:a] — verify: `npm test`"
+  ]), renderTask: renderDraftTask };
+  const amendment = { version: 1, reason: "Add a dedicated check script",
+    addTasks: [{ key: "check-script", outcome: "Check A with its script", covers: ["a"],
+      paths: ["scripts/check-a.sh"], verify: "sh scripts/check-a.sh" }] };
+  assert.equal(taskContractOnlyAmendment(amendment), true);
+  const compiled = compileSemanticAmendment({ ...args, amendment });
+  assert.deepEqual(compiled.issues, []);
+  assert.match(compiled.tasksContent, /^- \[x\] \*\*T001\*\*/m, "completed work keeps its status");
+  assert.match(compiled.tasksContent, /^- \[ \] \*\*T002\*\*.*\[claims:a\].*sh scripts\/check-a\.sh/m);
+  assert.deepEqual(compiled.invalidatedClaims, ["a"]);
+  assert.deepEqual([compiled.addedRequirementKeys, compiled.revisedRequirementKeys,
+    compiled.removedRequirementKeys], [[], [], []]);
+  assert.deepEqual(compiled.claims, args.contract.claims);
+
+  const unknown = compileSemanticAmendment({ ...args, amendment: { ...amendment,
+    addTasks: [{ ...amendment.addTasks[0], covers: ["missing"] }] } });
+  assert.match(unknown.issues.join("\n"), /task 'check-script' covers unknown requirement 'missing'/);
+  const uncovered = compileSemanticAmendment({ ...args, amendment: { ...amendment,
+    addTasks: [{ ...amendment.addTasks[0], covers: [] }] } });
+  assert.match(uncovered.issues.join("\n"), /task 'check-script' must cover at least one requirement/);
+});
+
+test("a completed-task refusal names the state that completed it", () => {
+  const amendment = { version: 1, updateTasks: [{ key: "impl", verify: "npm test" }] };
+  const ticked = compileSemanticAmendment({ ...verifyFixture([
+    "- [x] **T001** Build A [key:impl] [claims:a] — verify: `npm tset`"
+  ]), amendment });
+  assert.match(ticked.issues.join("\n"),
+    /task 'impl' \(T001\) counts as completed because it is ticked in the agreement's tasks\.md/);
+  const receipted = compileSemanticAmendment({ ...verifyFixture([
+    "- [ ] **T001** Build A [key:impl] [claims:a] — verify: `npm tset`"
+  ]), amendment, provenClaimIds: ["a"] });
+  assert.match(receipted.issues.join("\n"),
+    /task 'impl' \(T001\) counts as completed because its claims already have a passing command receipt/);
+});
+
 test("a verify-only amendment cannot rewrite completed or proven work", () => {
   const amendment = { version: 1, updateTasks: [{ key: "impl", verify: "npm test" }] };
   const checked = compileSemanticAmendment({ ...verifyFixture([
@@ -1364,6 +1405,24 @@ test(`change amend from ${initialStatus} installs atomically and restores files 
     assert.equal(readdirSync(join(root, ".foundation", "evidence", id,
       "receipt-rebinds")).length, auditCountBefore);
     assert.deepEqual(state, before.state);
+
+    // A task added for an existing requirement amends without intake, and the
+    // claims it covers are invalidated so Prove runs them again (issue #43).
+    rejectRebind = false;
+    writeFileSync(amendmentPath, `${JSON.stringify({
+      version: 1, reason: "Add a dedicated check for the existing behavior",
+      addTasks: [{ key: "check-existing", outcome: "Check the existing behavior",
+        covers: ["existing-behavior"], paths: ["src/check.js"], verify: "npm test" }]
+    }, null, 2)}\n`);
+    const revisionBefore = state.contractRevision;
+    lifecycle.amendChange(id, "amendment.json");
+    assert.equal(state.contractRevision, revisionBefore + 1);
+    const added = state.amendments.at(-1);
+    assert.ok(added.invalidation.affectedTasks.some((task) => task !== "T001"),
+      JSON.stringify(added.invalidation.affectedTasks));
+    assert.ok(added.invalidation.affectedProviders.includes("lint"));
+    assert.match(readFileSync(join(change, "tasks.md"), "utf8"),
+      /^- \[ \] \*\*T00\d\*\* Check the existing behavior \[key:check-existing\].*\[claims:existing-claim\]/m);
   } finally {
     console.log = priorLog;
   }

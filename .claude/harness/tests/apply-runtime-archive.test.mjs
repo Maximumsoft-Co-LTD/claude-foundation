@@ -542,6 +542,69 @@ test("finalization records repository and apply cleanup warnings", () => {
   rmSync(fixture.root, { recursive: true, force: true });
 });
 
+// OpenSpec 1.7 writes merged specs ending in a blank line, which
+// `git diff --check` reports after Land (issue #44).
+test("Land trims the trailing blank line OpenSpec leaves on the specs it merged", () => {
+  const requirement = [
+    "### Requirement: Archive contract",
+    "The archive MUST preserve the contract.",
+    "",
+    "#### Scenario: Archive runs",
+    "- **WHEN** archive runs",
+    "- **THEN** the contract remains"
+  ];
+  const fixture = activeArchiveFixture("trailing-blank", {
+    delta: ["## ADDED Requirements", "", ...requirement, ""].join("\n")
+  });
+  const untouched = "# other\n\nUnrelated spec.\n\n";
+  write(join(fixture.root, "openspec", "specs", "other", "spec.md"), untouched);
+  const merged = ["# sample Specification", "", "## Purpose", "Sample.", "",
+    "## Requirements", ...requirement, "", ""].join("\n");
+  const script = [
+    "#!/bin/sh",
+    "mkdir -p openspec/changes/archive openspec/specs/sample",
+    `printf '%s' '${merged}' > openspec/specs/sample/spec.md`,
+    "mv \"openspec/changes/$2\" \"openspec/changes/archive/2026-08-26-$2\"",
+    "echo \"archived $2\""
+  ].join("\n");
+  write(join(fixture.root, "bin", "openspec"), script);
+
+  fixture.run();
+  assert.equal(fixture.state.status, "archived");
+  const landed = readFileSync(join(fixture.root, "openspec", "specs", "sample", "spec.md"), "utf8");
+  assert.ok(landed.endsWith("- **THEN** the contract remains\n"), JSON.stringify(landed.slice(-40)));
+  assert.equal(readFileSync(join(fixture.root, "openspec", "specs", "other", "spec.md"), "utf8"),
+    untouched, "a spec this change did not write is left alone");
+  rmSync(fixture.root, { recursive: true, force: true });
+
+  // A Land interrupted after the archive command settles the spec on resume,
+  // whether it stopped before or after recording `specs-archived`.
+  for (const checkpoint of ["after-archive-command", "before-spec-sync-verification"]) {
+    let injected = false;
+    const resumed = activeArchiveFixture(`trailing-blank-${checkpoint}`, {
+      delta: ["## ADDED Requirements", "", ...requirement, ""].join("\n"),
+      archiveCheckpoint: (observed) => {
+        if (!injected && observed === checkpoint) {
+          injected = true;
+          throw new Error("injected after archive");
+        }
+      }
+    });
+    write(join(resumed.root, "bin", "openspec"), script);
+    try {
+      assert.throws(() => resumed.run(), /injected after archive/);
+      const interrupted = join(resumed.root, "openspec", "specs", "sample", "spec.md");
+      assert.ok(readFileSync(interrupted, "utf8").endsWith("\n\n"),
+        `${checkpoint}: the crash left OpenSpec's output`);
+      resumed.run();
+      assert.equal(resumed.state.status, "archived", checkpoint);
+      assert.ok(readFileSync(interrupted, "utf8").endsWith("the contract remains\n"), checkpoint);
+    } finally {
+      rmSync(resumed.root, { recursive: true, force: true });
+    }
+  }
+});
+
 test("a spec delta that OpenSpec failed to merge is retained for retry", () => {
   const fixture = activeArchiveFixture("spec-failure", { delta: [
     "## ADDED Requirements",

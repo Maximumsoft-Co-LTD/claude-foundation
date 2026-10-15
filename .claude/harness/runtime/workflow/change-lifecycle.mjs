@@ -2586,7 +2586,11 @@ export function createChangeLifecycle({
       ? [{ dimension: "task-verify", claimIds: compiled.taskContractClaimIds }] : []),
     // A withdrawn task's claims are now proven by the tasks that keep them.
     ...(compiled.removedTasks?.length
-      ? [{ dimension: "task-removal", claimIds: compiled.removedTaskClaimIds }] : [])];
+      ? [{ dimension: "task-removal", claimIds: compiled.removedTaskClaimIds }] : []),
+    // An added task's claims are proven again with it, even for a requirement
+    // the agreement already had.
+    ...(compiled.addedTaskClaimIds?.length
+      ? [{ dimension: "task-addition", claimIds: compiled.addedTaskClaimIds }] : [])];
     const configuredProviderNames = requiredProviders ? requiredProviders(id) : [];
     const providerEntries = new Map(Object.entries(compiled.providers || {}));
     for (const name of configuredProviderNames) {

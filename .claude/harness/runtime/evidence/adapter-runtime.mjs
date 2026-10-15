@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
   aggregateEvidenceStatus, evidenceResultValue, parseAssertionSummaryOutput,
-  parseExecutedTestEvidence, parseRunnerSummaryOutput
+  parseExecutedTestEvidence, parseGoTestJsonOutput, parseRunnerSummaryOutput
 } from "./evidence-results.mjs";
 import { repositoryBaseHead } from "../core/repository-binding.mjs";
 import {
@@ -701,7 +701,9 @@ export function createAdapterRuntime({
     // Some runners (Python unittest) print their summary on stderr.
     const runner = auto && !assertions ? parseRunnerSummaryOutput(
       configuredReport.fresh ? content : `${content}\n${result.stderr || ""}`) : null;
-    return json || tap || spec || assertions || runner;
+    // `go test -json` is one event per line, so the whole-text JSON parse fails.
+    const goTest = auto && !json ? parseGoTestJsonOutput(content) : null;
+    return json || goTest || tap || spec || assertions || runner;
   }
 
   function adapterEvidence(id, provider, config, execution) {

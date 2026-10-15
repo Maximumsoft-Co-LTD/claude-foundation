@@ -572,7 +572,10 @@ must be unique and counts consistent; bare `PASS` and malformed summaries do
 not establish a count. The colored Vitest (`Tests  39 passed | 2 failed (41)`)
 and Jest (`Tests: 1 failed, 40 passed, 41 total`) footers are also counted, so
 a default `npm test` needs no extra reporter. These summaries do not establish
-critical-case IDs.
+critical-case IDs. `go test -json` output is counted from its event stream:
+each test's and subtest's last `pass`, `fail`, or `skip` counts once, test names
+are critical-case IDs, and a package that fails without a failing test (a build
+error) counts as a failure.
 
 The configured structured JSON report must expose a non-negative integer such as
 `numTotalTests`, `totalTests`, `testCount`, or `expected`. If the command passes

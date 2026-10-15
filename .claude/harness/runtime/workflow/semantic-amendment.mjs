@@ -101,14 +101,17 @@ const removalRef = (row) => String(typeof row === "string" ? row : row?.key || "
 export function taskContractOnlyAmendment(amendment) {
   const updates = amendment?.updateTasks;
   const removals = amendment?.removeTasks;
-  if (!["addRequirements", "reviseRequirements", "removeRequirements", "addTasks"]
+  if (!["addRequirements", "reviseRequirements", "removeRequirements"]
     .every((field) => !amendmentList(amendment, field).length)) return false;
   if ((updates !== undefined && !Array.isArray(updates)) ||
       (removals !== undefined && !Array.isArray(removals))) return false;
+  // A task added for a requirement the agreement already has changes no
+  // requirement either; its covers are checked against the agreement later.
+  const adding = amendmentList(amendment, "addTasks").length > 0;
   const rows = updates || [];
   const removing = (removals || []).length > 0;
   const fields = removing ? [...TASK_ROW_FIELDS, "covers"] : TASK_ROW_FIELDS;
-  return (rows.length > 0 || removing) &&
+  return (rows.length > 0 || removing || adding) &&
     rows.every((row) => row && typeof row === "object" && !Array.isArray(row) &&
       (hasField(row, "verify") || hasField(row, "dependsOn") ||
         (removing && hasField(row, "covers"))) &&
@@ -603,7 +606,8 @@ function amendmentIssues(amendment) {
   if (!added.length && !revised.length && !removed.length && !taskContractOnlyAmendment(amendment))
     issues.push("semantic amendment requires a non-empty addRequirements, " +
       "reviseRequirements, or removeRequirements array, or only updateTasks " +
-      "{key, verify, paths?, dependsOn?, reopen?} rows and removeTasks");
+      "{key, verify, paths?, dependsOn?, reopen?} rows, removeTasks, and addTasks " +
+      "that cover existing requirements");
   if ((added.length || revised.length) && (!amendment?.evidence ||
       typeof amendment.evidence !== "object" || Array.isArray(amendment.evidence)))
     issues.push("semantic amendment requires evidence keyed by each added or revised requirement");
@@ -731,11 +735,18 @@ export function compileSemanticAmendment({
       ...(completed && !reopening
         ? TASK_CONTRACT_FIELDS.filter((field) => hasField(changes, field)) : [])
     ];
+    // Name the state that made the task complete: a sandbox copy can be ticked
+    // while the main tree is not, and a receipt can complete an unticked task.
+    const completedBecause = !completed ? "" : taskCompleted(row.line)
+      ? ` (task '${keyOf(update)}' (${row.id}) counts as completed because it is ticked in ` +
+        "the agreement's tasks.md)"
+      : ` (task '${keyOf(update)}' (${row.id}) counts as completed because its claims ` +
+        "already have a passing command receipt)";
     if (unsupported.length)
       issues.push(`semantic amendment updateTasks[${index}] cannot replace ${
         unsupported.join(" or ")}; add a new task so completed work keeps its meaning` +
         (unsupported.includes("outcome") ? "" : ", or set \"reopen\": true to re-open the " +
-          "task so the harness verifies it again"));
+          `task so the harness verifies it again${completedBecause}`));
     else if (row && Object.keys(changes).length)
       taskContractChanges.push({ key: keyOf(update), index: row.index, ...changes,
         ...(reopening ? { reopened: true } : {}) });
@@ -764,7 +775,7 @@ export function compileSemanticAmendment({
   }
   const removedTaskIds = new Set(removedTaskRows.map((row) => row.id));
   if (taskContractOnlyAmendment(amendment) && !taskContractChanges.length &&
-      !removalRefs.length &&
+      !removalRefs.length && !amendmentList(amendment, "addTasks").length &&
       (amendment.updateTasks || []).every((update) => tasksByKey.has(keyOf(update))) &&
       !issues.some((issue) => issue.startsWith("semantic amendment updateTasks[")))
     issues.push("semantic amendment updateTasks changes no verify command or paths (or dependencies)");
@@ -884,6 +895,14 @@ export function compileSemanticAmendment({
   for (const task of amendment.addTasks || []) {
     const key = String(task?.key || "").trim();
     if (tasksByKey.has(key)) issues.push(`amendment addTasks key '${key}' already exists`);
+    if (!stringList(task?.covers).length)
+      issues.push(`amendment task '${key}' must cover at least one requirement`);
+    for (const covered of stringList(task?.covers)) {
+      if (removedKeys.has(covered))
+        issues.push(`amendment task '${key}' covers removed requirement '${covered}'`);
+      else if (!changedKeys.has(covered) && !claimsByRequirement.has(covered))
+        issues.push(`amendment task '${key}' covers unknown requirement '${covered}'`);
+    }
     for (const dependency of stringList(task?.dependsOn))
       if (!tasksByKey.has(dependency) &&
           !(amendment.addTasks || []).some((candidate) => candidate.key === dependency))
@@ -1055,6 +1074,7 @@ export function compileSemanticAmendment({
   const nextClaimIds = new Set(nextClaims.map((claim) => claim.id));
   const addedClaimIds = [...addedKeys].flatMap((key) => addedClaimsByRequirement.get(key) || []);
   const changedClaimIds = [...revisedKeys].flatMap((key) => addedClaimsByRequirement.get(key) || []);
+  const addedTaskClaimIds = unique(newTasks.flatMap((task) => task.claims));
   return {
     issues: [],
     tasksContent: nextTasks,
@@ -1076,8 +1096,11 @@ export function compileSemanticAmendment({
     discovery: normalized.draft.discovery,
     investigationAgreement,
     amendmentReason: amendment.reason || "Agreement expanded during Build",
+    // A new task's claims are proven again with it, even for a requirement the
+    // agreement already had.
     invalidatedClaims: unique([...addedClaimIds, ...changedClaimIds, ...taskContractClaimIds,
-      ...removedTaskClaimIds]),
+      ...removedTaskClaimIds, ...addedTaskClaimIds]),
+    addedTaskClaimIds,
     addedClaimIds,
     changedClaimIds,
     taskContractChanges: taskContractTasks,

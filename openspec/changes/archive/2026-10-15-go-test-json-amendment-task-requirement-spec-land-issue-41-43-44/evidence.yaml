@@ -1,0 +1,135 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "go-test-json-count-parse-auto",
+      "requirementKey": "go-test-json-count",
+      "scenario": "เทสต์ผ่านทั้งหมด",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "go-test-json-count-parse",
+      "requirementKey": "go-test-json-count",
+      "scenario": "subtest นับแยก",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "go-test-json-count-parse-2",
+      "requirementKey": "go-test-json-count",
+      "scenario": "เทสต์ล้มและข้าม",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "go-test-json-count-parse-3",
+      "requirementKey": "go-test-json-count",
+      "scenario": "package build fail ไม่มี test event",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "go-test-json-count-parse-4",
+      "requirementKey": "go-test-json-count",
+      "scenario": "รูปแบบอื่นคงเดิม",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amend-add-task-existing-requirement-amend-addtasks-key-covers-r1",
+      "requirementKey": "amend-add-task-existing-requirement",
+      "scenario": "เพิ่ม task ให้ requirement เดิม",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amend-add-task-existing-requirement-addtasks-covers-r-missing",
+      "requirementKey": "amend-add-task-existing-requirement",
+      "scenario": "covers requirement ที่ไม่มี",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amend-add-task-existing-requirement-addtasks-covers",
+      "requirementKey": "amend-add-task-existing-requirement",
+      "scenario": "ไม่มี covers",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amend-refusal-names-task-state-updatetasks-verify-t001-reopen",
+      "requirementKey": "amend-refusal-names-task-state",
+      "scenario": "task ไม่ติ๊กแต่มี receipt ผ่าน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amend-refusal-names-task-state-updatetasks-verify-reopen",
+      "requirementKey": "amend-refusal-names-task-state",
+      "scenario": "task ติ๊กแล้ว",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "land-spec-single-trailing-newline-land-archive",
+      "requirementKey": "land-spec-single-trailing-newline",
+      "scenario": "openspec archive ทิ้งบรรทัดว่าง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "land-spec-single-trailing-newline-land",
+      "requirementKey": "land-spec-single-trailing-newline",
+      "scenario": "spec ที่ไม่ได้อยู่ใน change",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "land-spec-single-trailing-newline-resume-land",
+      "requirementKey": "land-spec-single-trailing-newline",
+      "scenario": "recovery หลัง archive ค้าง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/evidence-results.test.mjs) && (node --test .claude/harness/tests/semantic-draft.test.mjs) && (node --test .claude/harness/tests/apply-runtime-archive.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

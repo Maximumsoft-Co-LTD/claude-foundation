@@ -10,6 +10,7 @@ import {
   numericReportValue,
   parseJsonOutput,
   parseAssertionSummaryOutput,
+  parseGoTestJsonOutput,
   parseRunnerSummaryOutput,
   parseNodeTestSpecOutput,
   parseTapOutput,
@@ -121,6 +122,46 @@ test("Node spec output exposes totals and critical-case observations", () => {
     ]
   });
   assert.equal(parseNodeTestSpecOutput("ordinary output"), null);
+});
+
+// `go test -json` is a stream of one event per line (issue #41).
+test("go test -json events count tests, subtests, failures and broken builds", () => {
+  const event = (Action, Test, Package = "example.com/pkg") =>
+    JSON.stringify({ Time: "2026-10-15T00:00:00Z", Action, Package, ...(Test ? { Test } : {}) });
+  assert.deepEqual(parseGoTestJsonOutput([
+    event("start"), event("run", "TestA"), event("output", "TestA"), event("pass", "TestA"),
+    event("run", "TestB"), event("pass", "TestB"), event("run", "TestC"), event("pass", "TestC"),
+    event("pass")
+  ].join("\n")), {
+    totalTests: 3, passed: 3, failed: 0, format: "go-test-json",
+    criticalCases: [
+      { id: "TestA", status: "pass" }, { id: "TestB", status: "pass" },
+      { id: "TestC", status: "pass" }
+    ]
+  });
+  const subtests = parseGoTestJsonOutput([
+    event("run", "TestA"), event("run", "TestA/case1"), event("pass", "TestA/case1"),
+    event("pass", "TestA"), event("pass")
+  ].join("\n"));
+  assert.equal(subtests.totalTests, 2);
+  assert.deepEqual(subtests.criticalCases.map((row) => row.id), ["TestA/case1", "TestA"]);
+  const mixed = parseGoTestJsonOutput([
+    event("pass", "TestOk"), event("fail", "TestBad"), event("skip", "TestLater"), event("fail")
+  ].join("\n"));
+  assert.deepEqual([mixed.totalTests, mixed.passed, mixed.failed], [3, 1, 1]);
+  // A package that fails to build reports no test; it must not read as passing.
+  const broken = parseGoTestJsonOutput([
+    "# example.com/pkg", event("start"), event("output"), event("fail")
+  ].join("\n"));
+  assert.deepEqual([broken.totalTests, broken.failed], [0, 1]);
+  // The same test in two packages counts twice.
+  assert.equal(parseGoTestJsonOutput([
+    event("pass", "TestA", "a"), event("pass", "TestA", "b")
+  ].join("\n")).totalTests, 2);
+  assert.equal(parseGoTestJsonOutput("ok  example.com/pkg 0.01s"), null);
+  assert.equal(parseGoTestJsonOutput(JSON.stringify({ numTotalTests: 3 })), null);
+  assert.equal(parseGoTestJsonOutput([event("start"), event("pass")].join("\n")), null,
+    "a package with no tests is not a counted pass");
 });
 
 test("mutation protocol parser accepts markers and supported JSON fields only", () => {

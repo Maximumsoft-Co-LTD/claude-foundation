@@ -66,6 +66,40 @@ export function parseTapOutput(value) {
   };
 }
 
+// `go test -json` prints one event object per line. Each test's (and
+// subtest's) last terminal action counts once, as `go test -v` prints one
+// `--- PASS` per subtest. A package that fails with no failing test (a build
+// error) still counts as a failure, so a broken build never reads as passing.
+const GO_TERMINAL_ACTIONS = new Set(["pass", "fail", "skip"]);
+export function parseGoTestJsonOutput(value) {
+  const tests = new Map();
+  const failedPackages = new Set();
+  let events = 0;
+  for (const line of String(value || "").split(/\r?\n/)) {
+    const text = line.trim();
+    if (!text.startsWith("{")) continue;
+    let event;
+    try { event = JSON.parse(text); } catch { continue; }
+    if (!event || typeof event.Action !== "string" || typeof event.Package !== "string") continue;
+    events += 1;
+    if (!GO_TERMINAL_ACTIONS.has(event.Action)) continue;
+    if (typeof event.Test === "string" && event.Test)
+      tests.set(`${event.Package}\0${event.Test}`, { id: event.Test, status: event.Action });
+    else if (event.Action === "fail") failedPackages.add(event.Package);
+  }
+  if (!events || (!tests.size && !failedPackages.size)) return null;
+  const rows = [...tests.values()];
+  const count = (status) => rows.filter((row) => row.status === status).length;
+  const failed = Math.max(count("fail"), failedPackages.size ? 1 : 0);
+  return {
+    totalTests: rows.length,
+    passed: count("pass"),
+    failed,
+    format: "go-test-json",
+    criticalCases: rows.map(({ id, status }) => ({ id, status }))
+  };
+}
+
 export function parseNodeTestSpecOutput(value) {
   const text = String(value || "").replace(/\x1b\[[0-9;]*m/g, "");
   const testsFooter = [...text.matchAll(/^ℹ tests\s+(\d+)\s*$/gm)].at(-1);

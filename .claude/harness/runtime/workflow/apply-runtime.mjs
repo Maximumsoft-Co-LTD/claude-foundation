@@ -1060,6 +1060,19 @@ export function createApplyRuntime({
       }));
   }
 
+  // `openspec archive` leaves the merged spec ending in a blank line, which
+  // `git diff --check` reports after Land. Trim only the specs this change
+  // wrote, before verification and the delivery-integrity record.
+  function settleArchivedSpecEndings(captured) {
+    for (const { capability } of captured) {
+      const path = join(root, "openspec", "specs", capability, "spec.md");
+      if (!existsSync(path)) continue;
+      const text = readFileSync(path, "utf8");
+      const settled = text.replace(/\n+$/, "\n");
+      if (settled !== text && settled.trim()) writeFileSync(path, settled);
+    }
+  }
+
   function verifyArchivedSpecs(captured) {
     return captured.flatMap(({ capability, delta, before }) =>
       verifySpecSync({ before, after: currentSpecText(capability), delta })
@@ -1173,6 +1186,10 @@ export function createApplyRuntime({
   }
 
   function resumeArchivedChange(id, state) {
+    // A Land interrupted after the archive command settles the merged specs
+    // here; once delivery integrity is recorded the specs are never rewritten.
+    if (!state.deliveryIntegrity && Array.isArray(state.specSyncInputs))
+      settleArchivedSpecEndings(state.specSyncInputs);
     const outstanding = outstandingSpecSync(state);
     if (outstanding.length) {
       state.specSyncViolations = outstanding;
@@ -1230,6 +1247,10 @@ export function createApplyRuntime({
     // any state is written: a refusal has to leave the change recoverable.
     assertRecoveredArchiveReady(id, state, archivedPath);
     assertRetainedArchiveIntegrity(id, state, archivedPath);
+    // The move may have finished before the specs were settled; settle them
+    // before verification and the integrity record, as an uninterrupted Land does.
+    if (!state.deliveryIntegrity && Array.isArray(state.specSyncInputs))
+      settleArchivedSpecEndings(state.specSyncInputs);
     const outstanding = outstandingSpecSync(state);
     if (outstanding.length) {
       state.specSyncViolations = outstanding;
@@ -1431,6 +1452,7 @@ export function createApplyRuntime({
     // A merge that silently drops or rewrites a requirement still exits 0, and
     // openspec/specs is durable, so the exit code is not evidence.
     archiveCheckpoint("before-spec-sync-verification", state);
+    settleArchivedSpecEndings(specSyncInputs);
     const specViolations = verifyArchivedSpecs(specSyncInputs);
     if (specViolations.length) {
       state.specSyncViolations = specViolations;

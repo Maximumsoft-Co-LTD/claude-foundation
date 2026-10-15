@@ -472,6 +472,13 @@ task would be left without coverage unless `updateTasks` moves it. Only the
 claims and providers bound to added, revised, or removed claims are
 invalidated; removals are planned from the pre-amendment claims.
 
+`addTasks` may also stand alone when each new task covers a requirement the
+agreement already has, such as a dedicated check script; it needs no
+requirement, evidence, or version-4 intake, and the covered claims are proven
+again with the new task. A refused `updateTasks` row names why its task counts
+as completed: ticked in the agreement's `tasks.md`, or its claims already have
+a passing command receipt.
+
 A version-4 amendment includes discovery coverage for every added or revised
 requirement. The call inspects first and amends only at `DONE`; otherwise it
 prints the typed intake action and changes nothing. `--inspect` only inspects;
