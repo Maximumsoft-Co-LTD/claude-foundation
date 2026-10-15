@@ -271,3 +271,142 @@ test("planning, Prove, and Git references cannot override compiled agreement or 
   assert.match(report, /Land preserves HEAD\/index and creates no commit/);
   assert.match(report, /does not grant\s+upload\/publication authority/);
 });
+
+// Procedures adapted from pstack (cursor/plugins@e5136d8). Each is pinned in its
+// single owner reference so a later edit cannot silently drop it.
+const ref = (path) => readFileSync(join(catalog, path), "utf8");
+// The text a heading opens, up to the next heading of the same level.
+function section(text, heading) {
+  const start = text.indexOf(heading);
+  assert.notEqual(start, -1, `missing section ${heading}`);
+  const level = heading.match(/^#+/)[0];
+  const rest = text.slice(start + heading.length);
+  const next = rest.search(new RegExp(`\\n${level} `));
+  return heading + (next === -1 ? rest : rest.slice(0, next));
+}
+
+test("performance references bound a hillclimb and explain every number", () => {
+  const hillclimb = ref("performance-investigation/references/hillclimb.md");
+  assert.match(hillclimb, /## Stop predicate/);
+  assert.match(hillclimb, /paired with a minimum attempt count, or a confirmed plateau/);
+  assert.match(hillclimb, /## Freeze the harness/);
+  assert.match(hillclimb, /## Order hypotheses by cost/);
+  assert.match(hillclimb, /## Pivot on a plateau/);
+  assert.match(hillclimb, /as raw-run evidence outside managed\s+skills/);
+  assert.match(hillclimb, /not version-control history and not lifecycle\s+state; the harness owns task status/);
+  assert.match(readFileSync(join(catalog, "performance-investigation/SKILL.md"), "utf8"),
+    /Keep raw runs as evidence, not a status ledger\./);
+  assert.match(hillclimb, /## Prove the final claim/);
+  assert.match(hillclimb, /Paid or production workloads require\s+explicit authority/);
+  const measurement = ref("performance-investigation/references/measurement.md");
+  assert.match(measurement, /Write the claim sentence before measuring/);
+  assert.match(measurement, /Ask "why not double\?" of every result/);
+  assert.match(measurement, /The verdict is inconclusive when\s+the run count, spread, or limiter is missing/);
+  assert.match(measurement, /\[hillclimb\]\(hillclimb\.md\)/);
+  assert.match(measurement, /Raw files remain outside managed skills/);
+});
+
+test("debugging stops after repeated failed fixes and keeps fixes in scope", () => {
+  const rootCause = ref("debug-fundamentals/references/root-cause.md");
+  assert.match(rootCause, /After two failed fixes on the same gate, stop editing\./);
+  assert.match(rootCause, /Write a falsifying experiment/);
+  assert.match(rootCause, /\*\*Guard legitimacy\.\*\*/);
+  assert.match(rootCause, /\[cleanup\]\(\.\.\/\.\.\/coding-discipline\/references\/cleanup\.md\)/);
+  assert.match(rootCause, /report instances outside it as follow-up/);
+  assert.match(rootCause, /Do not bundle cleanup\./);
+  assert.match(rootCause, /suspect persisted state first/);
+  assert.match(ref("debug-fundamentals/references/reproduction.md"), /\[root cause\]\(root-cause\.md\)/);
+  assert.match(ref("debug-fundamentals/references/bisection.md"), /never the active target or\s+Build workspace/);
+});
+
+test("tests are judged by a behavior break and an internal change", () => {
+  const design = ref("testing-fundamentals/references/test-design.md");
+  assert.match(design, /## Judge a test by two edits/);
+  assert.match(design, /\*\*Break the behavior\*\*/);
+  assert.match(design, /\*\*Change the internals while keeping behavior\*\*/);
+  assert.match(design, /\*\*Expected value computed by the code under test\*\*/);
+  assert.match(design, /\*\*Restated constant\*\*/);
+  assert.match(design, /For idempotent behavior, do the effect twice/);
+});
+
+test("impact claims say where proof stopped and operations answer rerun questions", () => {
+  const ladder = ref("change-impact-analysis/references/proof-ladder.md");
+  assert.match(ladder, /load-bearing safety fact/);
+  assert.match(ladder, /Say where it stopped/);
+  assert.match(ladder, /Never call a risk\s+cleared from a lower level than the risk requires/);
+  assert.match(ladder, /only through a harness provider/);
+  const skill = readFileSync(join(catalog, "change-impact-analysis/SKILL.md"), "utf8");
+  assert.match(skill, /references\/proof-ladder\.md/);
+  assert.match(skill, /never hand-edit/);
+  const principle = section(ref("concurrency-fundamentals/references/shared-state-and-async.md"),
+    "## Principle 5");
+  assert.match(principle,
+    /What if it runs twice\? What if the previous run crashed halfway\? What if two runs overlap\?/);
+  assert.match(principle, /Write to a temp file, then rename\./);
+  assert.match(principle, /Judge staleness by evidence valid at every crash point\./);
+  assert.match(ref("queue-fundamentals/references/idempotency.md"), /answer the three rerun questions/);
+});
+
+test("recurring corrections become the strongest check and repeated work builds a lever", () => {
+  const details = ref("coding-discipline/references/details.md");
+  assert.match(details, /## Encode a recurring correction/);
+  assert.match(details, /A lint whose message names the fix/);
+  assert.match(details, /A new check must fail on a real past occurrence\./);
+  assert.match(details, /Adopt it through an ordinary `\/change`/);
+  assert.match(details, /## Build the lever/);
+  assert.match(details, /Do the first unit by hand/);
+  const module = ref("programming-fundamentals/references/module-design.md");
+  assert.match(module, /one more branch/);
+  assert.match(module, /A second boolean must stay in sync with another/);
+  assert.match(module, /under 30 seconds/);
+});
+
+test("prose deliverables share one writing reference that protects parser text", () => {
+  const writing = ref("init-project-docs/references/writing.md");
+  assert.match(writing, /Choose the document mode first/);
+  assert.match(writing, /Do not mix modes\./);
+  assert.match(writing, /## Remove AI-sounding patterns/);
+  assert.match(writing, /## Protected text/);
+  assert.match(writing, /`Requirement:` and `Scenario:`/);
+  assert.match(writing, /The document language the user chose\./);
+  assert.match(writing, /Writing a message grants no\s+authority to create it\./);
+  assert.match(ref("init-project-docs/references/documentation-workflow.md"), /`writing\.md`/);
+  for (const path of ["git-workflow/references/commit-messages.md",
+    "git-workflow/references/pull-requests.md", "harness-html-report/references/report.md",
+    "claude-md/references/guide-workflow.md"])
+    assert.match(ref(path), /\[writing\]\(\.\.\/\.\.\/init-project-docs\/references\/writing\.md\)/, path);
+});
+
+test("pstack adoption records both reviewed sources without growing the disposition table", () => {
+  const adoption = ref("skill-suite-auditor/references/pstack-adoption.md");
+  assert.match(adoption, /5062f28d9d0cedaed2622a9be82961a7d1df051a/);
+  assert.match(adoption, /e5136d82418d2db3165ea1050d17577cd618cc05/);
+  assert.match(adoption, /Not adopted from e5136d8: never-block-on-the-human,/);
+  assert.match(adoption, /"Fix every instance" is\s+limited to the change's scope/);
+});
+
+// The adopted procedures must not reintroduce authority or orchestration that
+// Change Loop reserves for the user or the harness.
+test("adopted pstack guidance never grants Git, dispatch, or approval authority", () => {
+  const forbidden = /\bspawn|fan[- ]out|\bmerge\b|without asking|without approval|\bpush\b|open a PR|commit per|one commit each|separate commit|per-attempt commit|create a worktree|delete the old API/i;
+  const adopted = [
+    ref("performance-investigation/references/hillclimb.md"),
+    ref("debug-fundamentals/references/root-cause.md"),
+    ref("change-impact-analysis/references/proof-ladder.md"),
+    ref("init-project-docs/references/writing.md"),
+    section(ref("performance-investigation/references/measurement.md"), "## Explain the number"),
+    section(ref("testing-fundamentals/references/test-design.md"), "## Judge a test by two edits"),
+    section(ref("concurrency-fundamentals/references/shared-state-and-async.md"), "## Principle 5"),
+    section(ref("coding-discipline/references/details.md"), "## Encode a recurring correction"),
+    section(ref("coding-discipline/references/details.md"), "## Build the lever"),
+    section(ref("programming-fundamentals/references/module-design.md"),
+      "## Skip signals: the domain model is missing")
+  ];
+  for (const text of adopted) {
+    const hit = text.match(forbidden);
+    assert.equal(hit, null, `forbidden instruction "${hit?.[0]}" in: ${text.split("\n")[0]}`);
+  }
+  // The new hillclimb log is raw evidence, never a commit trail or a ledger.
+  assert.doesNotMatch(adopted[0], /\bcommit/i);
+  assert.doesNotMatch(adopted[0], /\bledger\b|status log|progress tracker/i);
+});

@@ -1,0 +1,79 @@
+{
+  "version": 2,
+  "purpose": "change",
+  "language": "th",
+  "id": "pstack-skills",
+  "activeChange": null,
+  "problem": "pstack เก่งเพราะเนื้อหา skill แต่ Change Loop ยังไม่ได้นำ skill ของ pstack มาพัฒนา: skill ใดของ pstack (54 ตัว, cursor/plugins@e5136d8, MIT) ดีกว่าหรือไม่มีใน Change Loop และควรนำอะไรมาปรับภายใน context budget และหลักเดิม",
+  "mode": "analyze",
+  "intent": {
+    "goal": "นำจุดแข็งด้าน skill ของ pstack มาปรับ skill suite ของ Change Loop",
+    "outcome": "ตารางเทียบ skill/หลักการรายตัว พร้อม skill ที่ควรสร้างหรือแก้ เพื่อส่งเข้า Change และวัดผลก่อน/หลังด้วย paid e2e งบ 100$ แล้ว release v3.6.4",
+    "actors": ["maintainer", "consumer agent"],
+    "scope": ["pstack principle skills", "pstack workflow skills", "Change Loop .claude/skills", "context budgets", "license"]
+  },
+  "conversation": [
+    { "key": "u1", "speaker": "user", "statement": "แต่ pstack เก่งเพราะ skill นะเราไม่ได้เอา skill มาพัฒนาเลยหรอ", "source": "session message" },
+    { "key": "u2", "speaker": "user", "statement": "ลุยเลย investigate skill ของ pstack", "source": "session message" },
+    { "key": "u3", "speaker": "user", "statement": "เดี๋ยวฉันรองานนี้เสร็จและทดสอบ และ ถึงจะ release ทีเดียวใน version +0.0.1", "source": "session message" },
+    { "key": "u4", "speaker": "user", "statement": "ต้องทดสอบ paid e2e ด้วย budget 100$", "source": "session message" },
+    { "key": "u5", "speaker": "user", "statement": "เลือกทั้ง 4 กลุ่ม: การพิสูจน์ผล, ความปลอดภัยของ change, เรียนรู้จากความผิดพลาด, การเขียนเอกสาร", "source": "AskUserQuestion answer (skill scope)" },
+    { "key": "u6", "speaker": "user", "statement": "ระวังเรื่องตอนเพิ่มต้องไม่ขัดกันเองนะ เดี๋ยว skill พัง", "source": "session message" }
+  ],
+  "requirements": [
+    { "key": "skill-gap", "revision": 1, "kind": "behavior", "statement": "เทียบ skill ของ pstack กับ skill suite ของ Change Loop แล้วระบุสิ่งที่ควรนำมาพัฒนา", "origin": "user", "status": "stated", "material": true, "conversationKeys": ["u1", "u2"] },
+    { "key": "release-patch", "revision": 1, "kind": "constraint", "statement": "release ครั้งเดียวเป็น version +0.0.1 (v3.6.4) หลังงาน skill เสร็จและทดสอบแล้ว", "origin": "user", "status": "stated", "material": true, "conversationKeys": ["u3"] },
+    { "key": "paid-e2e-100", "revision": 1, "kind": "success-criterion", "statement": "ทดสอบผลของ skill ที่ปรับด้วย paid e2e ภายในงบ 100$", "origin": "user", "status": "stated", "material": true, "conversationKeys": ["u4"] },
+    { "key": "scope-four-groups", "revision": 1, "kind": "behavior", "statement": "นำเข้าทั้ง 4 กลุ่มลง reference ของ owner skill: (1) การพิสูจน์ผล = Hillclimb + perf mantra/explain-the-number, test-behavior, fix-root-causes + attack-the-premise; (2) ความปลอดภัยของ change = blast-radius proof ladder, make-operations-idempotent; (3) เรียนรู้จากความผิดพลาด = correct enforcement ladder ต่อยอด lessons, build-the-lever + model-the-domain; (4) การเขียนเอกสาร = unslop + technical-writing", "origin": "user", "status": "stated", "material": true, "conversationKeys": ["u5"] },
+    { "key": "no-contradiction", "revision": 1, "kind": "constraint", "statement": "คำแนะนำที่เพิ่มต้องไม่ขัดกันเองและไม่ขัดกับ skill, rule, command หรือ harness contract เดิม (เช่น no bundled cleanup, spec approval, guards need proof before removal, expand-migrate-contract, harness-owned lifecycle); ต้องตรวจความขัดแย้งก่อนเขียนและพิสูจน์ด้วย test/audit หลังเขียน", "origin": "user", "status": "stated", "material": true, "conversationKeys": ["u6"] }
+  ],
+  "questions": [
+    { "key": "q-skill-scope", "question": "เลือก skill จาก pstack ที่จะนำเข้า Change", "material": true, "status": "answered", "answer": "ทั้ง 4 กลุ่ม", "conversationKeys": ["u5"], "dependsOn": [], "workKeys": ["change-handoff"] }
+  ],
+  "experiments": [],
+  "work": [
+    { "key": "compare-principles", "outcome": "เทียบหลักการ 24 ข้อของ pstack กับ fundamentals และ skill ของเรา", "questionKeys": [] },
+    { "key": "compare-workflows", "outcome": "เทียบ workflow skill 30 ตัวของ pstack กับ skill และคำสั่งของเรา", "questionKeys": [] },
+    { "key": "change-handoff", "outcome": "handoff เข้า Change ตาม skill ที่เลือก", "questionKeys": ["q-skill-scope"] }
+  ],
+  "historyGaps": ["เนื้อหา pstack มาจาก clone ภายนอก cursor/plugins@e5136d82418d2db3165ea1050d17577cd618cc05 ซึ่งไม่ได้อยู่ใน repo จึงอ้างเป็น source ที่ hash ไม่ได้; สรุปภายนอกบันทึกใน openspec/investigations/pstack-skills.md"],
+  "sources": [
+    "openspec/investigations/pstack-skills.md",
+    ".claude/skills/skill-suite-auditor/references/pstack-adoption.md",
+    ".claude/tests/harness/run-context-budget-tests.sh",
+    ".claude/rules/fundamentals.md",
+    ".claude/skills/performance-investigation/SKILL.md",
+    ".claude/skills/performance-investigation/references/measurement.md",
+    ".claude/skills/change-impact-analysis/SKILL.md",
+    ".claude/skills/debug-fundamentals/SKILL.md",
+    ".claude/skills/testing-fundamentals/SKILL.md",
+    ".claude/harness/EVIDENCE.md",
+    ".claude/harness/runtime/observability/lessons-runtime.mjs"
+  ],
+  "facts": [
+    { "key": "prior-adoption", "statement": "repo เคยนำหลักการ pstack มาแล้วผ่าน pstack-adoption.md ที่ map 58 skill จาก port ของ Michael Denyer (5062f28) ไปยัง owner skill แต่หลายข้อไม่มีข้อความตรงใน skill ปลายทาง", "sources": [".claude/skills/skill-suite-auditor/references/pstack-adoption.md", "openspec/investigations/pstack-skills.md"] },
+    { "key": "budget-tight", "statement": "SKILL.md ทั้งหมดรวม 9463/9500 คำ, fundamentals.md 665/700, AGENT.md 300/300; การเกินต้องให้ผู้ใช้ตัดสิน จึงควรเพิ่มใน reference ที่โหลดเมื่อจำเป็น", "sources": [".claude/tests/harness/run-context-budget-tests.sh", ".claude/rules/fundamentals.md"] },
+    { "key": "principle-gaps", "statement": "หลักการ 24 ข้อ: ครอบ 10, บางส่วน 9, ขาด build-the-lever, ขัดหลักเดิม never-block-on-the-human / outcome-oriented-execution / subtract-before-you-add; Change Loop ไม่มีกฎระบุชื่อหลักการที่ใช้", "sources": ["openspec/investigations/pstack-skills.md", ".claude/rules/fundamentals.md"] },
+    { "key": "workflow-gaps", "statement": "ขาด technical-writing และ unslop; บางส่วน: Hillclimb (benchmark provider ตรวจแค่ regression), perf mantra, blast-radius proof ladder, correct enforcement ladder, verification-driver maintenance; ส่วน architect/arena/swarm/interrogate/setup/commit-PR ขัดหลักเดิม", "sources": ["openspec/investigations/pstack-skills.md", ".claude/harness/EVIDENCE.md", ".claude/harness/runtime/observability/lessons-runtime.mjs", ".claude/skills/performance-investigation/SKILL.md", ".claude/skills/change-impact-analysis/SKILL.md"] },
+    { "key": "agent-contract", "statement": "poteto-agent ต้องอ่าน poteto-mode ทั้งไฟล์ (~3.1k คำ) ก่อนทำงาน ส่วน task packet ของเราเล็กกว่าและมี lease/fencing จึงไม่ควรนำมา", "sources": ["openspec/investigations/pstack-skills.md"] }
+  ],
+  "hypotheses": [
+    { "key": "h-reference-adoption", "statement": "นำขั้นตอนที่ตรวจได้ของ pstack เข้า reference ของ owner skill (ไม่เพิ่ม SKILL.md) จะเพิ่มคุณภาพโดยไม่เกิน context budget และไม่ขัดหลักเดิม", "status": "supported", "factKeys": ["budget-tight", "principle-gaps", "workflow-gaps"] }
+  ],
+  "options": [
+    { "key": "o-hillclimb", "summary": "Hillclimb + perf mantra/forensics + explain-the-number → performance-investigation/references (และ benchmark improvement threshold ถ้าจำเป็น)" },
+    { "key": "o-root-cause", "summary": "fix-root-causes + attack-the-premise → debug-fundamentals/references" },
+    { "key": "o-tests", "summary": "test-behavior (สองการแก้ในใจ, hollow assertion) → testing-fundamentals/references" },
+    { "key": "o-idempotent", "summary": "make-operations-idempotent (สามคำถาม, temp+rename) → concurrency-fundamentals/references" },
+    { "key": "o-lessons-ladder", "summary": "correct enforcement ladder + check ต้อง fail บนกรณีจริงในอดีต → lessons และ change reference" },
+    { "key": "o-blast-radius", "summary": "proof ladder + load-bearing safety fact → change-impact-analysis/references" },
+    { "key": "o-writing", "summary": "unslop + technical-writing → reference ร่วมสำหรับเอกสาร" },
+    { "key": "o-lever", "summary": "build-the-lever + model-the-domain/reader-load → coding-discipline / programming-fundamentals references" }
+  ],
+  "selection": null,
+  "decisions": [
+    { "key": "skill-scope", "status": "resolved", "choice": "all", "reason": "ผู้ใช้เลือกทั้ง 4 กลุ่ม (u5)", "question": "จะนำ skill ใดเข้า Change", "alternatives": ["o-hillclimb", "o-root-cause", "o-tests", "o-idempotent", "o-lessons-ladder", "o-blast-radius", "o-writing", "o-lever"], "recommended": "o-hillclimb", "recommendationFactKeys": ["workflow-gaps"] }
+  ],
+  "conclusion": { "summary": "repo เคยนำหลักการ pstack มาแล้วบางส่วน แต่หลายข้อขาดขั้นตอนที่ตรวจได้ และยังขาด technical-writing, unslop, hillclimb, build-the-lever; ด้วย budget ที่ตึง ควรเพิ่มใน reference ของ owner skill ผู้ใช้เลือกนำทั้ง 4 กลุ่มเข้า Change" },
+  "changeIntent": "นำขั้นตอนที่ตรวจได้จาก pstack (cursor/plugins@e5136d8, MIT) เข้า reference ของ owner skill โดยไม่เพิ่ม SKILL.md เกิน budget และไม่ขัดหลักเดิม (ไม่มี commit/PR, ไม่เรียก model เอง, ไม่ข้าม spec approval): (1) performance-investigation: hillclimb (stop predicate, harness sensitivity+freeze, attempt log, plateau pivot), perf mantra order, explain-the-number; (2) testing-fundamentals: สองการแก้ในใจและ hollow assertion; debug-fundamentals: attack-the-premise stop rule และ fix-root-causes checks; (3) change-impact-analysis: proof ladder และ load-bearing safety fact; concurrency-fundamentals: idempotency สามคำถาม; (4) lessons: enforcement ladder และ check ต้อง fail บนกรณีในอดีต; coding-discipline/programming-fundamentals: build-the-lever, model-the-domain skip signals; (5) reference การเขียนเอกสาร: unslop catalog + Diátaxis; อัปเดต pstack-adoption.md ให้ชี้ commit ใหม่ วัดผลด้วย skill-evaluation และ paid e2e งบ 100$ ก่อน release v3.6.4"
+}

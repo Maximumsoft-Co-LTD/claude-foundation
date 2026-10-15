@@ -21,6 +21,16 @@ plan and rows; for memory include allocation, retained objects, GC, and restart.
 Watch the load generator as well as the service. Profiles inform the hypothesis
 but must not contaminate reported timing.
 
+## Explain the number
+
+Write the claim sentence before measuring: metric, workload, expected direction,
+and the limiter it should move. Ask "why not double?" of every result: name the
+resource or dependency that capped the gain. The verdict is inconclusive when
+the run count, spread, or limiter is missing.
+
+For repeated attempts toward a metric target, follow the
+[hillclimb](hillclimb.md) procedure.
+
 ## Comparable work
 
 Pin source revisions, lockfiles, toolchain, configuration, input sizes,

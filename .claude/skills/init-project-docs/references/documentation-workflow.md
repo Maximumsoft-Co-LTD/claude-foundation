@@ -47,4 +47,5 @@ the suite. Use `claude-md` afterward for the lean per-session index.
 
 References: read `doc-templates.md` when writing files and
 `workflow-and-quality.md` for file-level quality, Mermaid rules, and review.
+Read `writing.md` for document mode, plain prose, and protected text.
 

@@ -161,3 +161,5 @@ convention; do not invent a spec Type field or a legacy workflow directory.
 Reference the archived OpenSpec change and actual evidence when useful.
 Never create plan/review/retro artifacts just to fill a commit message.
 See installed WORKFLOW.md for Deliver authority and retained provenance.
+
+Prose style: [writing](../../init-project-docs/references/writing.md).

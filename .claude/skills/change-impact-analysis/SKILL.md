@@ -13,6 +13,7 @@ description: "Trace consumers, compatibility, persisted data, and failure paths 
 3. For each material safety fact, cite the source and choose the cheapest
    executable check that could falsify it. Run only within permitted scope.
    Record observed, inferred, unproven, and cleared findings separately.
+   Rank each fact by [references/proof-ladder.md](references/proof-ladder.md).
 4. Map confirmed risks to consumer, failure, compatibility, migration/rollback,
    and evidence owner. Preserve public contracts unless explicitly changed.
 5. Submit agreement findings through Change intake, revision, or amendment.

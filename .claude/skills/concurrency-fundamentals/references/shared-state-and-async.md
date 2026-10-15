@@ -156,6 +156,10 @@ const out = await Promise.all(ids.map(fetchUser))   // concurrent — but bound 
 - **Make the in-flight state single.** Collapse concurrent identical requests into one shared promise (request coalescing / single-flight) so ten callers asking for the same thing trigger one operation, not ten.
 - **Cancellation must clean up.** Plumb an `AbortSignal` / cancellation token through. On cancel, release locks, close handles, roll back partial writes — in a `finally`, so it runs whether the task completed, threw, or was cancelled.
 - **Timeouts are cancellation.** A timeout that abandons a task without cancelling its underlying work leaks the work (and any resources it holds). Wire the timeout to the same cancellation path.
+- **Answer the three rerun questions** for every state-mutating step: *What if it runs twice? What if the previous run crashed halfway? What if two runs overlap?* "It depends on what was left behind" means the step needs reconciliation.
+- **Derive each step from current state.** Read what exists, compare it with the goal, and apply only the difference; a repeat then finds nothing to do. Do not replay what the previous run intended.
+- **Write to a temp file, then rename.** Build output at a temporary path in the same directory and rename it into place, so a reader sees the old file or the complete new one, never a torn write.
+- **Judge staleness by evidence valid at every crash point.** A leftover lock, temp file, partial record, or claimed job must be recognizable as stale wherever the prior run stopped (owner liveness, content digest, completed marker), not by timestamp order or the common-case path.
 
 **Example:**
 ```ts

@@ -33,3 +33,5 @@ ephemeral context into this always-loaded file.
 Use `init-project-docs` when the user needs the detailed `docs/` suite; this
 skill should link that suite rather than duplicate it.
 
+Prose style: [writing](../../init-project-docs/references/writing.md).
+

@@ -11,7 +11,8 @@ Read the compiled OpenSpec agreement, actual delivered diff, and current
 evidence. Explain the concrete problem and resulting behavior, why the change
 is needed, and what was actually checked. Scale detail to the change and use
 the repository template. UI/API examples help when they show the decisive
-behavior. Screenshots do not substitute for executable proof.
+behavior. Screenshots do not substitute for executable proof. Prose style:
+[writing](../../init-project-docs/references/writing.md).
 
 A test plan may list reproducible checks, but distinguish executed, failed,
 unavailable, and proposed checks. Do not copy stale results or mark checkboxes

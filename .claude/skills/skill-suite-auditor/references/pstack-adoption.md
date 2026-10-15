@@ -7,6 +7,11 @@ and notices remain at that pinned source. This map records ideas reviewed,
 not an imported plugin or a promise to retain every upstream instruction.
 The Change Loop guidance is independently written for its existing contracts.
 
+Second reviewed source, 2026-10-15: Cursor's upstream `cursor/plugins` at commit
+[e5136d82418d2db3165ea1050d17577cd618cc05](https://github.com/cursor/plugins/tree/e5136d82418d2db3165ea1050d17577cd618cc05/pstack),
+directory `pstack/` (MIT, credits Lauren Tan). Its ideas map to the same owners
+below; the table rows are unchanged.
+
 ## Disposition
 
 All 58 source skills have a destination below. Destinations select the owner of
@@ -99,6 +104,11 @@ existing Change Loop command names and aliases.
 - Git, PR, tracker messages, deployment, paid execution, and publication keep
   separate authority. Land applies uncommitted diffs and archives through the
   canonical advance route; it preserves repository HEAD and index.
+- Not adopted from e5136d8: never-block-on-the-human,
+  outcome-oriented-execution, subtract-before-you-add, autonomy for external
+  actions, and playbook Git/PR steps. User decision gates, approved scope,
+  and separate external authority stay in force. "Fix every instance" is
+  limited to the change's scope; report other instances as follow-up.
 
 ## Verification boundary
 
@@ -112,6 +122,14 @@ Operational procedures supplement the concept map:
   [CI and review repair](../../delivery-engineering/references/ci-and-review-repair.md).
 - Real-surface driver creation, failure discrimination, and maintenance:
   [verification drivers](../../testing-fundamentals/references/verification-drivers.md).
+- Bounded optimization attempts with a frozen harness and plateau stop:
+  [hillclimb](../../performance-investigation/references/hillclimb.md).
+- Stopping repeated failed fixes until a falsifiable premise is tested:
+  [root cause](../../debug-fundamentals/references/root-cause.md).
+- Stating how far an impact claim was proven:
+  [proof ladder](../../change-impact-analysis/references/proof-ladder.md).
+- Document mode, plain prose, and protected text:
+  [writing](../../init-project-docs/references/writing.md).
 
 These procedures are written instructions. Offline helper regressions establish
 measurement handling and held-out independence; they do not execute the proposed

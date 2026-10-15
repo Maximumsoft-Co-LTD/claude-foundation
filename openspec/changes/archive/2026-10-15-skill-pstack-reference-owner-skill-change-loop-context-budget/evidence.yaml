@@ -1,0 +1,252 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "perf-hillclimb-performance-investigation-references-hillclimb-md",
+      "requirementKey": "perf-hillclimb",
+      "scenario": "reference มีขั้นตอนครบ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "perf-hillclimb-reference-governance-bundle-performance-investiga",
+      "requirementKey": "perf-hillclimb",
+      "scenario": "เข้าถึงได้จาก reference เดิม",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "perf-hillclimb-skill-catalog-test-mjs",
+      "requirementKey": "perf-hillclimb",
+      "scenario": "ไม่สั่ง commit ต่อ attempt",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "perf-claim-discipline-measurement-md",
+      "requirementKey": "perf-claim-discipline",
+      "scenario": "มีกฎ claim",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "perf-claim-discipline-skill-catalog-test-mjs",
+      "requirementKey": "perf-claim-discipline",
+      "scenario": "pin เดิมคงอยู่",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "debug-premise-root-cause-debug-fundamentals-references-root-caus",
+      "requirementKey": "debug-premise-root-cause",
+      "scenario": "มี stop rule",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "debug-premise-root-cause-skill-catalog-test-mjs",
+      "requirementKey": "debug-premise-root-cause",
+      "scenario": "ไม่ขัด no bundled cleanup",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "debug-premise-root-cause-skill-catalog-test-mjs-2",
+      "requirementKey": "debug-premise-root-cause",
+      "scenario": "pin bisection คงอยู่",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "test-behavior-checks-test-design-md",
+      "requirementKey": "test-behavior-checks",
+      "scenario": "มีสองการแก้และ hollow assertion",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "test-behavior-checks-reference-governance-duplicate",
+      "requirementKey": "test-behavior-checks",
+      "scenario": "ไม่ซ้ำกับ programming-fundamentals testing",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "change-proof-ladder-change-impact-analysis-references-proof-ladd",
+      "requirementKey": "change-proof-ladder",
+      "scenario": "มี ladder",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "change-proof-ladder-skill-catalog-test-mjs",
+      "requirementKey": "change-proof-ladder",
+      "scenario": "pin เดิมคงอยู่",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "idempotency-three-questions-shared-state-and-async-md-principle",
+      "requirementKey": "idempotency-three-questions",
+      "scenario": "มีสามคำถาม",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "idempotency-three-questions-skill-catalog-test-mjs",
+      "requirementKey": "idempotency-three-questions",
+      "scenario": "Contents ยังลิงก์ได้",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "lessons-enforcement-ladder-coding-discipline-references-details",
+      "requirementKey": "lessons-enforcement-ladder",
+      "scenario": "มี ladder",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "lessons-enforcement-ladder-skill-catalog-test-mjs",
+      "requirementKey": "lessons-enforcement-ladder",
+      "scenario": "ไม่สั่ง commit แยก",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "lever-and-domain-signals-details-md-module-design-md",
+      "requirementKey": "lever-and-domain-signals",
+      "scenario": "มี lever และ skip signals",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "lever-and-domain-signals-skill-catalog-test-mjs",
+      "requirementKey": "lever-and-domain-signals",
+      "scenario": "pin programming-fundamentals คงอยู่",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "writing-guidance-writing-md",
+      "requirementKey": "writing-guidance",
+      "scenario": "มี Diátaxis และ catalog",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "writing-guidance-reference-governance",
+      "requirementKey": "writing-guidance",
+      "scenario": "เข้าถึงได้ทุก bundle ที่เขียน prose",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "writing-guidance-skill-catalog-test-mjs",
+      "requirementKey": "writing-guidance",
+      "scenario": "ไม่ทำลาย marker ของ parser",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "no-contradiction-guard-skill-catalog-test-mjs",
+      "requirementKey": "no-contradiction-guard",
+      "scenario": "เนื้อหาสะอาด",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "no-contradiction-guard-test",
+      "requirementKey": "no-contradiction-guard",
+      "scenario": "คำต้องห้ามถูกจับ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "no-contradiction-guard-skill-catalog-test-mjs-2",
+      "requirementKey": "no-contradiction-guard",
+      "scenario": "ตาราง adoption ไม่เปลี่ยน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "budget-neutral-run-context-budget-tests-sh",
+      "requirementKey": "budget-neutral",
+      "scenario": "budget ผ่าน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "budget-neutral-budget-test",
+      "requirementKey": "budget-neutral",
+      "scenario": "เกิน budget",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "node --test .claude/tests/docs/skill-catalog.test.mjs"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

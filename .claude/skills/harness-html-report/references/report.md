@@ -151,4 +151,5 @@ HTML constraints either way: fully self-contained (inline CSS, no external
 requests), theme-aware light/dark, wide tables scroll in their own container,
 under 16 MB. This is a scanned dashboard-document: status reads from tags and
 tone (pass/warn/stop), numbers are tabular, KPI cards and chips carry the
-summary before any table.
+summary before any table. Prose style:
+[writing](../../init-project-docs/references/writing.md).
