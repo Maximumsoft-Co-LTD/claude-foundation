@@ -3,6 +3,9 @@ title: คำสั่ง CLI
 description: คำสั่งที่ agent ของคุณรัน จัดกลุ่มตามหน้าที่และระดับอำนาจที่ต้องใช้
 ---
 
+<!-- docs-audience: agents-integrators -->
+**ผู้อ่าน:** Coding agent และผู้ดูแล integration คำสั่ง CLI และ schema ด้านล่างเป็นเอกสารระบบ ไม่ใช่รายการที่ผู้ใช้ต้องทำเอง ผู้ใช้เริ่มที่ [เริ่มใช้งาน](/docs/th/quickstart/)
+
 agent ของคุณเป็นคนรันคำสั่งเหล่านี้ คุณแทบไม่ต้องรันเอง เอกสารนี้มีไว้ให้คุณอ่านออกว่า agent กำลังทำอะไร และรันเองได้เมื่ออยากรัน
 
 ทุกคำสั่งตอบ `--help` และ `claude-foundation describe [command] [--json]` อธิบายทั้ง surface — รวม `/deliver` แบบ optional พร้อม `/changes` และ alias `/feature` เรียกได้ทั้งชื่อเปล่าและแบบ `/slash` โดยอ่านจากไฟล์คำสั่งที่ ship มาโดยตรง จึงไม่มีสำเนาที่สองให้ drift

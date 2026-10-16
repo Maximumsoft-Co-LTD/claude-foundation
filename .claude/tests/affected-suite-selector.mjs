@@ -42,6 +42,9 @@ const LAND = [
 ];
 
 const RULES = [
+  [/^README(?:\.th)?\.md$/, ["user guidance contracts"]],
+  [/^(?:(?:README(?:\.th)?|AGENTS|CLAUDE|CONTRIBUTING|WORKFLOW|RELEASING)\.md$|docs\/.*\.md$|website\/docs\/|\.claude\/harness\/(?:README|EVIDENCE|CONSUMER-QUALITY)\.md$|\.claude\/tests\/README\.md$)/,
+    ["workflow documentation contracts"]],
   [/^dashboard\//, ["dashboard contracts"]],
   [/^\.claude\/tests\/docs\//, ["workflow documentation contracts"]],
   [/^\.claude\/tests\/interview\//, ["human interaction contracts"]],

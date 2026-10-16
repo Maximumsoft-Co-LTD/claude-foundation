@@ -3,6 +3,9 @@ title: Multi-repository workflow
 description: Configure, build, prove, and land a change that needs more than one Git repository, in the order Change Loop evaluates it.
 ---
 
+<!-- docs-audience: project-maintainers -->
+**Audience:** project maintainers and authorized agents configuring an installation. For the everyday workflow, start with [Quickstart](/docs/quickstart/).
+
 Use this guide when one change writes code in several repositories, or when a
 test runs in one repository but needs code or contracts from others.
 

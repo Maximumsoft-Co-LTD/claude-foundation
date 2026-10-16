@@ -3,6 +3,9 @@ title: /build
 description: Implement the compiled agreement in isolation through one coordinator.
 ---
 
+<!-- docs-audience: agents-integrators -->
+**Audience:** coding agents and integration operators. CLI commands and schemas below are system reference, not a user checklist. Users can follow [Quickstart](/docs/quickstart/).
+
 ```text
 /build <change>
 ```

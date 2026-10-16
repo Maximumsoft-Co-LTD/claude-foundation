@@ -51,7 +51,7 @@ agreement source of truth.
 
 Use the smallest relevant canonical source:
 
-- `README.md` / `README.th.md` — user behavior.
+- `README.md` / `README.th.md` — user entrypoints and first-change summaries.
 - `WORKFLOW.md` — detailed lifecycle contract.
 - `.claude/harness/README.md` — runtime structure and operator surface.
 - `.claude/harness/EVIDENCE.md` — provider and receipt semantics.
@@ -62,6 +62,11 @@ Use the smallest relevant canonical source:
 
 Do not duplicate a canonical contract into another guide. Link to it and keep
 summaries short. Keep English and Thai public documentation aligned.
+
+For documentation changes, follow [Documentation ownership](CLAUDE.md#documentation-ownership):
+use the file's purpose and update trigger, keep first-run guides within their
+reading budgets, and run the documentation checks. These repository maintenance
+rules must not become dependencies of installed consumer files.
 
 ## Working method
 

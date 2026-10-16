@@ -1,5 +1,9 @@
 # Contributing to Change Loop
 
+**Audience:** contributors to Change Loop itself. These development checks are
+not required in projects that merely install it; those projects use their own
+tests and the [user workflow](README.md#your-first-change).
+
 Thank you for your interest in improving Change Loop. This repository is the
 upstream source of the Change Loop harness itself — every shipped change
 lands in the repositories of everyone who installs it, so we hold contributions
@@ -31,25 +35,39 @@ cd claude-foundation
 npm install
 ```
 
-Run the full deterministic test suite before and after your change. The
-harness resolves the pinned OpenSpec CLI from `PATH`, and the
-upgrade-compatibility suite archives real release tags, so put
-`node_modules/.bin` on `PATH` and fetch tags first (CI does the same):
+Install dependencies before running tests. The harness resolves the pinned
+OpenSpec CLI from `PATH`; upgrade-compatibility tests also need historical
+release tags. Fetch missing tags when preparing that suite (CI does the same).
+
+## Choose checks for your change
+
+During editing, run the nearest regression first. When a related batch of edits
+is complete, inspect and run the affected suites:
 
 ```sh
-git fetch origin --tags
-PATH="$PWD/node_modules/.bin:$PATH" sh .claude/tests/run-all.sh
+rtk test bash .claude/tests/run-all.sh --affected --list
+rtk test bash .claude/tests/run-all.sh --affected
 ```
 
-The suite installs the harness from `git archive HEAD` into temporary fixture
-projects, so commit (or stash) your work-in-progress locally if a suite needs
-to see it.
+The full suite remains the authoritative final gate before commit. You do not
+need to run it before and after every edit:
+
+```sh
+rtk proxy env PATH="$PWD/node_modules/.bin:$PATH" bash .claude/tests/run-all.sh
+rtk git diff --check
+```
+
+Current-source tests and historical upgrade fixtures exercise different inputs;
+do not commit or stash unfinished work just to run a test. See the
+[test guide](.claude/tests/README.md) for suite ownership, branch-base selection,
+parallelism, and timeouts. Website documentation changes also require
+`rtk npm run build` from `website/docs`.
 
 ## What lives where
 
 The product is the installable harness; much of the repository is
 repository-only tooling. Read [`CLAUDE.md`](CLAUDE.md) — particularly the
-**Map** and **Shipping Boundary** sections — before touching anything under
+**Repository map** and **Shipping boundary** sections — before touching anything under
 `.claude/`, `openspec/schemas/`, or `install.sh`. In short:
 
 | Area | Nature |
@@ -59,6 +77,9 @@ repository-only tooling. Read [`CLAUDE.md`](CLAUDE.md) — particularly the
 | `.claude/tests/`, `dashboard/`, `website/`, `examples/`, `docs/` | Repository-only |
 
 ## Making a change
+
+For documentation, use the [file responsibilities and editing rules](CLAUDE.md#documentation-ownership).
+Update the canonical source and affected English/Thai summaries together.
 
 1. **Open an issue first** for anything beyond a small fix, so we can agree on
    the direction before you invest time.
@@ -71,7 +92,7 @@ repository-only tooling. Read [`CLAUDE.md`](CLAUDE.md) — particularly the
    commands need an entry in `.claude/harness/commands.json`. Wire-visible
    contract changes bump the affected pin in `.claude/harness/protocol.json`.
 5. Run the full test suite exactly as shown in
-   [Getting set up](#getting-set-up) (with `node_modules/.bin` on `PATH`) and
+   [Choose checks for your change](#choose-checks-for-your-change) and
    make sure it is green.
 6. Open a pull request describing **what** changed and **why**, with the test
    evidence.

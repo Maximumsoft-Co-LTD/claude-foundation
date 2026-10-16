@@ -3,6 +3,9 @@ title: Quality gate ของโปรเจกต์
 description: เพิ่ม changed-code CRAP, mutation testing, language profile, baseline และ quality debt ให้ repository เดียวหรือหลายตัว
 ---
 
+<!-- docs-audience: project-maintainers -->
+**ผู้อ่าน:** ผู้ดูแลโปรเจกต์และ agent ที่ได้รับอนุญาตให้ตั้งค่า หากต้องการใช้งานตามปกติ เริ่มที่ [เริ่มใช้งาน](/docs/th/quickstart/)
+
 Change Loop orchestrate quality tool ที่โปรเจกต์เป็นเจ้าของ โดยไม่สมมติว่า metric เดียวเหมาะกับทุกภาษา Feature นี้เป็น opt-in และเริ่มต้นแบบ **report-only**
 
 ```text

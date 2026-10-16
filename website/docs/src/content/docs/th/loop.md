@@ -3,6 +3,9 @@ title: วงจรการเปลี่ยนแปลง
 description: ห้าคำสั่ง เหตุผลที่มันแยกกัน และการย้อนกลับเมื่อความจริงเปลี่ยน
 ---
 
+<!-- docs-audience: users -->
+**ผู้อ่าน:** ผู้ใช้โปรเจกต์ หน้านี้อธิบายสิ่งที่ต้องตรวจและตัดสินใจ ส่วน agent ดูแลขั้นตอนระบบตามปกติ
+
 workflow ของ Change Loop คือห้าคำสั่ง โดยมีหนึ่งตัวเป็นตัวเลือก
 
 ```text
@@ -112,6 +115,9 @@ openspec/changes/add-profile-auth/
 └── sandboxes/        # worktree ที่แยกออกมา
 ```
 
-`.foundation/` เป็นของเครื่องและถูก gitignore ส่วน `openspec/` เป็นของคุณไว้อ่านและรีวิว
+Runtime record ใต้ `.foundation/` ให้ระบบดูแลและถูก Git ignore ส่วน draft และ
+โค้ดใน sandbox ที่ประกาศไว้มีขั้นตอนให้ agent เขียนได้ ข้อตกลงใน `openspec/`
+เป็นของโปรเจกต์ให้คุณอ่านตรวจ แต่ `openspec/schemas/` เป็นไฟล์ผลิตภัณฑ์ที่ติดตั้ง
+ดู [ไฟล์และเจ้าของข้อมูล](/docs/th/artifacts/) ก่อนแก้หรือล้างไฟล์
 OpenSpec packet ที่ compile แล้วคือ source of truth ส่วน semantic input draft กับ
 coordinator action เป็น input ของ compiler/runtime ไม่ใช่ requirement ledger คู่ขนาน

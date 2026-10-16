@@ -3,6 +3,9 @@ title: Adapters and wiring
 description: The five executable adapters, derived and custom wiring, and how resources keep providers from colliding.
 ---
 
+<!-- docs-audience: agents-integrators -->
+**Audience:** coding agents and integration operators. CLI commands and schemas below are system reference, not a user checklist. Users can follow [Quickstart](/docs/quickstart/).
+
 Change Loop separates the stable behavioral contract from replaceable execution wiring. It does not install test frameworks, browsers, or project dependencies — **your project owns and locks every executable an adapter names.**
 
 ## Derived wiring and execution.yaml

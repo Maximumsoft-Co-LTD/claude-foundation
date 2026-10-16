@@ -3,6 +3,9 @@ title: ตั้งค่า foundation.json
 description: ทำความเข้าใจและปรับ policy ของ Change Loop สำหรับ execution, model tier, escalation, review, sandbox และ workflow อย่างปลอดภัย
 ---
 
+<!-- docs-audience: project-maintainers -->
+**ผู้อ่าน:** ผู้ดูแลโปรเจกต์และ agent ที่ได้รับอนุญาตให้ตั้งค่า หากต้องการใช้งานตามปกติ เริ่มที่ [เริ่มใช้งาน](/docs/th/quickstart/)
+
 `foundation.json` คือ **policy ที่ commit ไว้สำหรับหนึ่งโปรเจกต์** มันบอก
 Change Loop ว่า agent ทำงานอัตโนมัติได้มากแค่ไหน, งานแต่ละแบบควรใช้ model tier
 ใด, เมื่อไรต้อง escalate, ใครรีวิวได้ และต้องเตรียม Build workspace ใหม่อย่างไร

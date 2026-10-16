@@ -3,6 +3,9 @@ title: What is Change Loop?
 description: An OpenSpec-native change harness that makes an AI coding agent agree on a change, build it in isolation, prove it with real evidence, and only then land it.
 ---
 
+<!-- docs-audience: users -->
+**Audience:** project users. This guide explains what to review and decide; the agent handles routine system operations.
+
 Change Loop is a **software-change harness for AI coding agents**. It gives the agent a repeatable way to agree on a change, implement it away from your working tree, prove it with real evidence, and only then bring it into the project.
 
 ```text
@@ -27,7 +30,9 @@ Change Loop refuses to take the agent's word for it. Every observable behaviour 
 
 ## Who does what
 
-Change Loop deliberately splits responsibility so that no single party can both do the work and certify it.
+The agreement, implementation, and tool-produced evidence have different
+owners. Reviewer independence is a separate policy choice; see
+[human approval](/docs/approval/).
 
 | Part | Responsibility |
 |---|---|
@@ -52,11 +57,8 @@ Change Loop deliberately splits responsibility so that no single party can both 
 
 ## Where to go next
 
-For UX work, `ux-ui-principles` owns experience and accessibility decisions,
-`ui-ux-pro-max` supplies searchable design intelligence, `frontend-design`
-implements settled visuals, and `tailwind-design-system` owns shared tokens
-and components. The retired `gridgeist` managed files are removed on upgrade;
-consumer-owned notes and custom skills are preserved.
+Start with installation and one change. Configuration and evidence references
+are available when you need them; you do not need to read the whole site first.
 
 - [Install](/docs/install/) — requirements and the two supported install paths
 - [Quickstart](/docs/quickstart/) — take one change end to end

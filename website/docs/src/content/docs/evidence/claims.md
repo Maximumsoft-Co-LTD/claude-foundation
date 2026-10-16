@@ -3,6 +3,9 @@ title: Claims and capabilities
 description: How an observable scenario becomes a stable claim, and which of the 19 capabilities can actually demonstrate it.
 ---
 
+<!-- docs-audience: agents-integrators -->
+**Audience:** coding agents and integration operators. CLI commands and schemas below are system reference, not a user checklist. Users can follow [Quickstart](/docs/quickstart/).
+
 Change Loop's central rule: **a passing command is not automatically proof.**
 
 Every observable acceptance scenario gets a stable claim ID. Each claim declares the capabilities that could actually demonstrate it. Missing, stale, failed, erroneous, or inconclusive evidence blocks landing.

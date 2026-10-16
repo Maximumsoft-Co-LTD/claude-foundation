@@ -3,6 +3,9 @@ title: CLI reference
 description: The commands your agent runs, grouped by what they do and what authority they need.
 ---
 
+<!-- docs-audience: agents-integrators -->
+**Audience:** coding agents and integration operators. CLI commands and schemas below are system reference, not a user checklist. Users can follow [Quickstart](/docs/quickstart/).
+
 Your agent runs these; you rarely need to. They are documented so you can read what the agent is doing, and drive it yourself when you want to.
 
 Every command answers `--help`, and `claude-foundation describe [command] [--json]` describes the surface — including the optional `/deliver` command, `/changes`, and the `/feature` compatibility alias, resolvable by bare word or `/slash` spelling, read from the shipped command files so there is no second copy to drift.

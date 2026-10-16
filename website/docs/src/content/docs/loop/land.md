@@ -3,6 +3,9 @@ title: /land
 description: Explicitly apply, verify, archive, and clean up the current change.
 ---
 
+<!-- docs-audience: agents-integrators -->
+**Audience:** coding agents and integration operators. CLI commands and schemas below are system reference, not a user checklist. Users can follow [Quickstart](/docs/quickstart/).
+
 ```text
 /land <change>
 ```

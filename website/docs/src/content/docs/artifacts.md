@@ -1,16 +1,40 @@
 ---
-title: What Change Loop writes
-description: Every artifact the harness produces — the change packet, machine state, the evidence vault, and the archive — and which of them you are meant to read.
+title: Files, readers, and ownership
+description: What users review, what the project owns, and what the agent or harness maintains.
 ---
 
-Change Loop writes in two places, and the split is the whole point.
+<!-- docs-audience: users -->
+**Audience:** project users. This guide explains what to review and decide; the agent handles routine system operations.
 
-**`openspec/` is yours.** Durable intent, reviewed by humans, committed to Git.
-**`.foundation/` is the machine's.** Lifecycle state, receipts, logs, and proof
-bundles, ignored by Git and safe to delete between changes.
+File ownership and intended reader are different things. A project-owned
+agreement can be compiled by the harness, and an agent can write project-owned
+code. You review the intent and result; you do not have to maintain internal state.
 
-Nothing durable is ever stored only in chat, and nothing machine-generated is
-ever committed as if a human wrote it.
+## What belongs to whom?
+
+| Category | Examples | Your role | Writer and upgrade behavior |
+|---|---|---|---|
+| Project agreement | `openspec/specs/`, `openspec/changes/`, `openspec/investigations/` | Review behavior, scope, decisions, and outcomes | Agent authors inputs; harness compiles and updates the packet. Installer preserves it |
+| Project configuration | `foundation.json`, `openspec/config.yaml`, `openspec/repositories.yaml`, `quality/` | Choose project policy; ask the agent to configure it | Project maintainer or authorized agent; installer seeds/merges supported configuration |
+| Project instructions | `CLAUDE.md`, `AGENTS.md`, `.claude/settings.json` | Keep your project's instructions and preferences | Installer updates marked pointer blocks and merges supported host settings, not whole project instructions |
+| Installed Change Loop files | `WORKFLOW.md`, `.claude/harness/`, managed commands/skills/hooks, `openspec/schemas/` | Read as reference; customize project configuration instead | Change Loop maintains these; upgrades refresh managed files |
+| Runtime records | `.foundation/runtime/`, `receipts/`, `evidence/`, `transactions/` | Read diagnostics if needed; do not edit records to change a verdict | Harness and configured tools write these through supported operations |
+| Temporary inputs and working code | `.foundation/drafts/`, declared sandbox code/test paths | Review the compiled agreement and final diff | Agent writes inputs and implementation; sandbox work may not yet be delivered |
+
+**Do not delete `.foundation/` to reset work.** It may hold unlanded code,
+evidence history, recovery journals, backups, and optional local policy.
+Ignored by Git does not mean safe to delete. Ask the agent to use the supported
+recovery or cleanup flow.
+
+In the Change Loop source repository, root `CLAUDE.md` and `AGENTS.md` guide
+maintainers. In your installed project, files with those names remain your
+project instructions. Repository tests, reports, and the documentation website
+are upstream maintenance material, not prerequisites for using Change Loop.
+
+The [system ownership reference](https://github.com/Maximumsoft-Co-LTD/claude-foundation/blob/main/.claude/harness/README.md#file-ownership-and-writers)
+defines the full categories and writer rules; your installed copy is at
+`.claude/harness/README.md`. The installer's `MANAGED` list and your
+`.foundation/install-manifest.txt` determine installed-file ownership.
 
 ## The `openspec/` tree
 
@@ -41,28 +65,12 @@ because it holds project *policy* rather than intent: execution budgets, packet
 size caps, model tiers, escalation triggers, the review diversity and
 independence settings, and the sandbox setup command (`sandbox.setupCommand`)
 that runs once inside every new Build workspace.
-It is seeded when missing and yours afterwards.
+It is seeded when missing and remains project-owned. Upgrades can add missing
+fields and migrate recognized legacy defaults while preserving custom policy.
 
-The shipped policy permits at most three parallel agents, four evidence
-providers or services, and three repository setup commands. It uses 45-minute
-leases. Task and review packets are capped at 20 KiB, repository packets at
-24 KiB, and the global packet at 32 KiB. Rapid runs receive ceilings of 800,000
-tokens and 100 requests; standard runs receive 1,600,000 tokens and 200
-requests. These values bound a run—they are not work quotas.
-
-Model tiers are purpose-based: `fast`/Haiku handles inventory, logs, and
-mechanical docs; `standard`/Sonnet handles implementation, tests, and focused
-investigation; `deep`/Opus handles architecture, security, migration, and
-review. The default reviewer is Claude Code Opus in a read-only ephemeral run,
-with Codex GPT-5.6 Sol configured as an alternate. The shipped
-`independence: "self"` and `diversity: "single-model"` policy works without a
-second identity or provider and records both waivers in its receipts. Projects
-that need separation of duties can strengthen independence, diversity, or both
-to `required`. The risk-tiered review circuit allows one full review and at
-most one required delta.
-
-See [Configure foundation.json](/docs/foundation-config/) for every field,
-valid ranges, and ready-to-use policy recipes.
+See [Configure foundation.json](/docs/foundation-config/) for policy fields,
+current defaults, and review settings. This page describes ownership rather
+than duplicating those defaults.
 
 Consumer quality adds another committed, project-owned tree:
 
@@ -119,11 +127,16 @@ becomes required, the change **upgrades itself to standard** and its delta
 artifacts are created for you. Optional extensions still appear only when their
 concern exists.
 
-The agent does not author cross-ledger IDs by hand. Semantic draft v3 compiles
+The agent does not author cross-ledger IDs by hand. The current semantic draft compiles
 requirements, scenarios, tasks, claims, and provider bindings into this packet.
 That compiled OpenSpec packet remains the source of truth. A selected prototype
 or diagram may be referenced from design, but prototype output is still
 non-authoritative and is rejected as evidence.
+
+Project-owned does not mean hand-edited during an active change. Ask the agent
+to revise or amend the agreement through the supported workflow. The harness
+maintains generated links, task IDs, and completion checkboxes. Review these
+files; do not tick tasks or rewrite generated packet fields to bypass checks.
 
 :::tip
 `tasks.md` is the sole ledger by design. A second checklist kept in chat or in
@@ -132,36 +145,17 @@ a scratch file is not tracked, not validated, and not evidence.
 
 ## Machine state
 
-Everything under `.foundation/` is generated. Its `.gitignore` is an allow-list
-— it ignores `*` and re-admits only `.gitignore` and `README.md` — so machine
-state cannot drift into a commit by accident.
+Generated records are ignored by Git. The installed `.gitignore` and README
+are product files. Agent-written drafts and sandbox code are working inputs;
+optional `.foundation/policy.json` is project-authored capability policy.
+These exceptions do not permit manual edits to receipts or lifecycle state.
 
-| Path | Contents |
-|---|---|
-| `runtime/` | Lifecycle state, one file per change |
-| `receipts/` | Live provider receipts and `proof.json` |
-| `evidence/` | Immutable proof bundles and the review-attempt ledger |
-| `snapshots/` | One workspace snapshot descriptor per proof |
-| `logs/` | Provider logs, telemetry, receipt-reuse and budget audits |
-| `sandboxes/` | The control sandbox — a Git worktree or a copy |
-| `repository-sandboxes/` | Per-repository sandboxes for multi-repository work |
-| `plans/` | Agent execution plans |
-| `leases/` | Task and resource leases |
-| `transactions/` | Land apply journals and staged backups |
-| `tools/` | Harness-owned project-local CLI dependencies keyed by the pinned runtime contract |
-| `authority/` | Review and acceptance requests and their completion records |
-| `attestations/` | Unattended-execution challenges and consumed nonces |
-| `instruction-manifests/` | Instruction provenance per command |
-| `recovery/` | Quarantined abandoned changes, undone Lands (`land-undone/`), and orphaned state |
-| `backups/` | Commit bundles, patches, and file copies of unlanded sandbox work, written before a sandbox is removed |
-| `prototypes/` | Disposable comparison prototypes |
-| `policy.json` | Optional project rules mapping paths to required capabilities |
-| `quality/results/` | Latest consumer-quality lane reports, aggregate summary, and rendered debt |
-| `install-manifest.txt` | Installer record of which files it owns |
+For the complete state inventory, use the installed
+[Runtime state reference](https://github.com/Maximumsoft-Co-LTD/claude-foundation/blob/main/.claude/harness/README.md#runtime-state).
+It lists generated records, caches, working inputs, and their purposes.
 
-Several of these appear only once something creates them —
-`repository-sandboxes/` needs multi-repository work, `recovery/` needs an
-abandoned change, and `policy.json` is yours to write or leave absent.
+The sections below explain the evidence and archive records you may need to
+review; they are not instructions to edit runtime files.
 
 ## The evidence vault
 

@@ -37,6 +37,27 @@ test("no changed files select no suites", () => {
   assert.equal(reasons.size, 0);
 });
 
+test("documentation edits select the documentation gate without unrelated suites", () => {
+  const known = [...labels, "workflow documentation contracts", "user guidance contracts"];
+  for (const file of [
+    "README.md", "README.th.md", "AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md",
+    "WORKFLOW.md", "RELEASING.md", ".claude/tests/README.md",
+    ".claude/harness/README.md", ".claude/harness/EVIDENCE.md",
+    ".claude/harness/CONSUMER-QUALITY.md", "docs/reports/README.md",
+    "website/docs/astro.config.mjs", "website/docs/src/content/docs/th/quickstart.md"
+  ]) {
+    const { selected } = selectAffectedSuites([file], known);
+    assert.ok(selected.includes("workflow documentation contracts"), file);
+    if (/^README(?:\.th)?\.md$/.test(file)) {
+      assert.ok(selected.includes("user guidance contracts"), file);
+    }
+    assert.equal(selected.includes("dashboard contracts"), false, file);
+    assert.equal(selected.includes("proof loop end to end"), false, file);
+  }
+  assert.equal(selectAffectedSuites(["dashboard/server.mjs"], known).selected
+    .includes("workflow documentation contracts"), false);
+});
+
 test("deleted tracked files remain part of affected selection", () => {
   const root = mkdtempSync(join(tmpdir(), "foundation-affected-deletion-"));
   try {

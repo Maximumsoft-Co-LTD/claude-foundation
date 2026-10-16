@@ -53,14 +53,8 @@ export default defineConfig({
       // the default locale for a missing translation, which silently strands a
       // Thai reader on an English page — the fallback is a safety net, not a
       // licence to ship half a locale.
-      // Ordered by what a page depends on, not by how deep it is. "What
-      // Foundation writes" sits in Get started because it names the files that
-      // appear the moment you run the quickstart, and the loop and evidence
-      // pages then use that vocabulary — packet, receipt, vault — without
-      // reintroducing it. "Human approval" sits last in Evidence for the
-      // mirror-image reason: acceptance and review ARE evidence capabilities,
-      // and the page leans on receipts and the change loop, so it cannot be
-      // read before them.
+      // Keep the first-run path short. Configuration and tool integration are
+      // separate destinations, reached after the reader has tried one change.
       sidebar: [
         {
           label: "Get started",
@@ -69,16 +63,15 @@ export default defineConfig({
             { slug: "index", label: "What is Change Loop?", translations: { th: "Change Loop คืออะไร" } },
             { slug: "install", label: "Install", translations: { th: "ติดตั้ง" } },
             { slug: "quickstart", label: "Quickstart", translations: { th: "เริ่มใช้งาน" } },
-            { slug: "artifacts", label: "What Change Loop writes", translations: { th: "Change Loop เขียนอะไรบ้าง" } },
-            { slug: "foundation-config", label: "Configure foundation.json", translations: { th: "ตั้งค่า foundation.json" } },
-            { slug: "multi-repository", label: "Multi-repository workflow", translations: { th: "Workflow หลาย Repository" } },
+            { slug: "loop", label: "Workflow overview", translations: { th: "ภาพรวม workflow" } },
+            { slug: "artifacts", label: "Files and ownership", translations: { th: "ไฟล์และเจ้าของข้อมูล" } },
           ],
         },
         {
-          label: "The change loop",
-          translations: { th: "วงจรการเปลี่ยนแปลง" },
+          label: "Lifecycle reference for agents",
+          translations: { th: "Lifecycle อ้างอิงสำหรับ agent" },
+          collapsed: true,
           items: [
-            { slug: "loop", label: "Overview", translations: { th: "ภาพรวม" } },
             { slug: "loop/investigate", label: "/investigate" },
             { slug: "loop/change", label: "/change" },
             { slug: "loop/build", label: "/build" },
@@ -87,19 +80,29 @@ export default defineConfig({
           ],
         },
         {
-          label: "Evidence",
-          translations: { th: "หลักฐาน" },
+          label: "Configure your project",
+          translations: { th: "ตั้งค่าโปรเจกต์" },
+          collapsed: true,
+          items: [
+            { slug: "foundation-config", label: "Configure foundation.json", translations: { th: "ตั้งค่า foundation.json" } },
+            { slug: "multi-repository", label: "Multi-repository workflow", translations: { th: "Workflow หลาย Repository" } },
+            { slug: "approval", label: "Human approval", translations: { th: "การอนุมัติโดยคน" } },
+          ],
+        },
+        {
+          label: "Evidence integration",
+          translations: { th: "การเชื่อมต่อเครื่องมือสร้างหลักฐาน" },
+          collapsed: true,
           items: [
             { slug: "evidence/claims", label: "Claims and capabilities", translations: { th: "Claim และ capability" } },
             { slug: "evidence/adapters", label: "Adapters and wiring", translations: { th: "Adapter และการต่อสาย" } },
             { slug: "consumer-quality", label: "Consumer quality gates", translations: { th: "Quality gate ของโปรเจกต์" } },
             { slug: "evidence/receipts", label: "Receipts and staleness", translations: { th: "Receipt และความ stale" } },
-            { slug: "approval", label: "Human approval", translations: { th: "การอนุมัติโดยคน" } },
           ],
         },
         {
-          label: "Reference",
-          translations: { th: "อ้างอิง" },
+          label: "Operator reference",
+          translations: { th: "อ้างอิงสำหรับ operator" },
           items: [
             { slug: "cli", label: "CLI reference", translations: { th: "คำสั่ง CLI" } },
           ],

@@ -1,118 +1,97 @@
 ---
 title: Quickstart
-description: Take one change from intent to landed, using the five commands in order.
+description: Agree on one change, build and check it, then deliver it back to your project.
 ---
 
-This walks one small change end to end. You talk to your coding agent in ordinary language; the agent runs the commands. Nothing here requires you to memorise CLI syntax.
+<!-- docs-audience: users -->
+**Audience:** project users. This guide explains what to review and decide; the agent handles routine system operations.
 
-The agent matches your language, leads with the outcome, performs safe recovery
-within the authority you already gave, and reports what it changed and checked.
-It asks only for a consequential decision. Protocol JSON, hashes, receipts, and
-provider codes stay out of the conversation unless you request diagnostics.
+This example lets an account owner edit their display name. Start with an
+[installed project](/docs/install/) and open your coding agent there.
+Enter the slash commands in the agent session, not in a terminal.
 
-:::note[Single or multiple repositories?]
-Follow this page as written for one repository. If implementation or evidence
-needs several Git repositories, read the
-[multi-repository workflow](/docs/multi-repository/) before step 1. The five
-commands stay the same; repository scope and sandbox creation gain one setup
-layer.
-:::
+You decide the intended behavior, approve the agreement, review the result,
+and authorize Land. The agent runs routine setup, checks, and recovery.
 
 ## 0. Check the project is ready
 
-```bash
-claude-foundation doctor --stage change
-```
+Ask the agent to check that Change Loop is ready. It can run
+`claude-foundation doctor --stage change` and resolve setup problems.
+You do not need to configure optional quality gates for this first example.
 
-Consumer quality is optional. To add changed-code CRAP and mutation gates,
-onboard the repository once with `quality discover`, `quality init`, and
-`quality doctor` before starting enforcement. Keep the initial policy
-report-only until its mappings and baselines have been reviewed. See
-[Consumer quality gates](/docs/consumer-quality/).
+If the cause or desired behavior is unclear, start with
+`/investigate <question>` before creating a change.
 
 ## 1. Agree on the change
 
 ```text
-/change add profile authentication
+/change allow an account owner to edit their display name
 ```
 
-The agent creates `openspec/changes/add-profile-auth/` and resolves how much rigor the change needs — impact, coupling, security triggers, and whether a human has to accept the result. It will **ask you** about anything consequential rather than guessing.
+The agent investigates the existing behavior and writes an agreement under
+`openspec/changes/<change-id>/`. Use the ID it returns in the remaining steps.
 
-The agent writes one semantic draft: intent, requirements and scenarios, task
-outcomes, and evidence needs. The harness derives stable IDs and links and
-compiles the OpenSpec packet transactionally. Both lanes need only proposal,
-tasks, and evidence at their core; standard adds delta specs. Design, grounding,
-custom execution, repository scope, and handoffs appear only when their concern
-exists. A rapid change upgrades itself in place if risk emerges.
+Read the proposal and relevant scenarios. Check:
 
-What you should read and push back on is `proposal.md` and the delta specs. That is the agreement.
+- Who may change the name, and what inputs are allowed?
+- What happens on invalid input or a failed save?
+- What is in scope, and how will the result be checked?
+
+Approve the compiled agreement before Build. Tell the agent about corrections
+here; you do not have to write the internal draft or evidence configuration.
 
 ## 2. Build it in isolation
 
 ```text
-/build add-profile-auth
+/build <change-id>
 ```
 
-The agent calls `advance add-profile-auth --through proven`. The coordinator
-creates an isolated workspace, returns one bounded action, and resumes through
-the same route; proof starts only after Build is complete. **Your working tree is not touched.** `tasks.md` is the only
-ledger; the user never assembles sandbox, packet, plan, or dispatch commands.
+The agent implements code and tests in an isolated workspace. It handles
+routine commands and repair, and asks when a consequential decision is needed.
+Implementation stays in isolation until Land.
+
+Build can continue into proof automatically. If it already reached `proven`,
+read the result rather than requesting a fresh run of the same checks.
 
 ## 3. Prove it
 
 ```text
-/prove add-profile-auth
+/prove <change-id>
 ```
 
-This is the step that makes the difference. Change Loop reuses any receipt that is still valid, schedules only what is missing or stale, runs your project's tools, and validates the results.
+Use this to resume proof if work remains. The harness runs your project's tools,
+reuses valid evidence, and reports what passed, failed, or could not be checked.
+The agent fixes repairable findings and reruns checks affected by its edits.
 
-The agent drives it with `advance add-profile-auth --through proven`; low-level
-`proof` commands remain available for operator diagnosis and integrations.
-
-Evidence can come back `pass`, `fail`, `inconclusive`, or `error`. Anything other than a pass keeps the change blocked, and the agent goes back to Build to fix it. An `inconclusive` result is *not* a soft pass — a browser suite that exits 0 without the required claim annotations is inconclusive, because nothing demonstrated the claim.
-
-The harness checks the gate once, groups all known repairable findings into one
-plan, and lets the agent fix the batch. It then rechecks only evidence made
-missing or stale by those edits. The loop has no arbitrary retry limit: it
-continues while progress is possible and asks you only when a decision,
-permission, unavailable external system, or unresolved conflict is required.
+Review the summary and diff. An inconclusive or unavailable check is not a pass.
+If subjective acceptance was requested, inspect the result and give that
+decision separately from approval of the original spec.
 
 ## 4. Land it
 
+When you want the current change applied to your project, explicitly say so:
+
 ```text
-/land add-profile-auth
+/land <change-id>
 ```
 
-Land is an explicit boundary, and it is the only step that touches your real working tree. It re-checks proof freshness, applies only the proven sandbox while preserving unrelated edits, syncs specs, audits the evidence, archives the change, and cleans up isolation.
+The harness applies the current isolated work, synchronizes specs, and archives
+the change. It preserves unrelated edits and leaves the delivered diff
+**uncommitted**, with Git HEAD and index unchanged.
 
-The agent drives the resumable transaction with `advance add-profile-auth
---through archived`. Only `archived` means the lifecycle is complete.
+Only `archived` means code delivery is complete. It does not mean deployment
+or production verification. Land alone never commits, pushes, or opens a PR.
 
-If the target branch advanced after Prove, the agent replays the same sandbox
-onto the new base, re-proves it, and resumes Land. You do not restart Change or
-run recovery commands by hand. A replay conflict remains visible and requires
-judgment rather than being merged silently.
-
-:::caution
-Land never commits, pushes, or opens a PR on its own. If you want that archived
-change sent for review, invoke `/deliver add-profile-auth` once. The harness
-then owns the isolated commit, feature-branch push, PR creation/reuse, recovery,
-and provider verification, and returns the PR URL. It never merges or deploys.
-:::
+If proof has gaps, they remain visible. An explicit decision to accept remaining
+risk does not turn those checks into passes. Conflicting target edits must be
+resolved before apply. See [Land](/docs/loop/land/) for the detailed rules.
 
 ## Moving backward
 
-The loop is not a waterfall. If requirements change halfway through, you revise the same change rather than starting a new one:
-
-```text
-Change ⇄ Build ⇄ Prove
-```
-
-The agent submits one semantic amendment to the same change. The harness
-preserves completed tasks and manual sections, validates the staged packet,
-rolls back on failure, and invalidates affected claims before resuming. That
-invalidation prevents evidence from an older agreement being credited to a
-newer one.
+If the requirement changes, tell the agent while keeping the same change ID.
+It amends the agreement and rechecks affected work. If a session or Land is
+interrupted, ask the agent to resume the existing change; do not recreate it
+or edit runtime records by hand.
 
 ## Checking on things
 
@@ -120,16 +99,26 @@ newer one.
 /changes
 ```
 
-Lists active changes, their status, blockers, and the next useful action for each. It mutates nothing, so it is always safe to run.
+This lists active changes, blockers, and the next action without changing state.
 
 ## When a change cannot be proven
 
-Sometimes a change turns out to be unprovable — an evidence contract that cannot be satisfied, a provider that will never exist. Retire it explicitly instead of deleting files by hand:
+The agent reports what is missing and the available choices. You may request
+further work, pause, or make an explicit decision about remaining risk.
+Retiring a change is also an explicit decision; let the agent perform the
+supported recovery rather than deleting files.
 
-```bash
-claude-foundation change abandon <change> --reason <reason> --decision-ref <ref>
-```
+See [human approval](/docs/approval/) and the
+[lifecycle reference](https://github.com/Maximumsoft-Co-LTD/claude-foundation/blob/main/WORKFLOW.md)
+for the exact authority and recovery contract.
 
-This quarantines the change's records under `.foundation/recovery/abandoned/<id>/` rather than deleting them, never touches Git, and refuses to run on an already-archived change. Your agent will offer this when it applies, but it will never retire a change without asking.
+## Next steps
 
-A smaller escape exists for a single gate that ran and failed when the gate itself is wrong: `change waive --capability <c>` withdraws that one capability's enforcement on a recorded decision, and `--revoke` restores it. There is deliberately no route that lands a failing proof.
+- [Deliver a PR](/docs/cli/) — `/deliver <change-id>` separately authorizes
+  isolated commit, branch push, and PR delivery; it does not merge or deploy.
+- [Files created by Change Loop](/docs/artifacts/) — what belongs to you and
+  what the harness manages.
+- [Multiple repositories](/docs/multi-repository/) — declare scope before
+  starting work across repositories.
+- [Consumer quality gates](/docs/consumer-quality/) — optional checks to
+  configure after the basic workflow is working.

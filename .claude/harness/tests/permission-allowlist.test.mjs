@@ -139,7 +139,16 @@ test("Change drafts, Investigate records, and Build workspaces are pre-allowed e
 test("the documented headless run grants exactly the seeded allowlist", () => {
   for (const path of ["README.md", "README.th.md", "website/docs/src/content/docs/install.md",
     "website/docs/src/content/docs/th/install.md"]) {
-    const example = read(path).match(/```bash\n(claude -p [^`]+)```/)?.[1];
+    const body = read(path);
+    const example = body.match(/```bash\n(claude -p [^`]+)```/)?.[1];
+    // Entry guides may link to the canonical installation example. If an
+    // example is reintroduced there, it must still obey the exact allowlist.
+    if (!example && /^README(?:\.th)?\.md$/.test(path)) {
+      const locale = path === "README.th.md" ? "th/" : "";
+      assert.ok(body.includes(`https://claude-foundation.dev/docs/${locale}install/`),
+        `${path} must lead to the checked installation example`);
+      continue;
+    }
     assert.ok(example, `${path} documents a headless run`);
     assert.doesNotMatch(example, /--permission-mode|acceptEdits|bypassPermissions/,
       `${path}: the headless run must not widen edit approval`);

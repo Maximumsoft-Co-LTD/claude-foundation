@@ -3,6 +3,9 @@ title: /change
 description: Compile semantic draft หนึ่งชุดเป็นข้อตกลง OpenSpec ที่ validate แล้ว
 ---
 
+<!-- docs-audience: agents-integrators -->
+**ผู้อ่าน:** Coding agent และผู้ดูแล integration คำสั่ง CLI และ schema ด้านล่างเป็นเอกสารระบบ ไม่ใช่รายการที่ผู้ใช้ต้องทำเอง ผู้ใช้เริ่มที่ [เริ่มใช้งาน](/docs/th/quickstart/)
+
 ```text
 /change <intent | existing-change> [--prototype-selection <path>]
 ```
@@ -14,7 +17,7 @@ transaction
 
 ## Draft แบบขั้นต่ำ
 
-งานทั่วไปเขียนแค่ intent, พฤติกรรมที่ต้องการ และ task โดยไม่ต้องใส่ `version`
+งานทั่วไป agent เขียนแค่ intent, พฤติกรรมที่ต้องการ และ task โดยไม่ต้องใส่ `version`
 คำสั่ง `change start --template` แสดงรูปแบบนี้เป็นอันดับแรกในชื่อ `minimalDraft`
 โดยมี field `save` นำหน้า: agent เขียน draft ด้วย Write tool ไปที่
 `.foundation/drafts/<id>.json` (path ที่อนุญาตไว้ล่วงหน้า) เพราะ host ปฏิเสธ shell heredoc

@@ -3,6 +3,9 @@ title: The change loop
 description: The five commands, why they are separate, and how work moves backward when reality changes.
 ---
 
+<!-- docs-audience: users -->
+**Audience:** project users. This guide explains what to review and decide; the agent handles routine system operations.
+
 Change Loop's workflow is five commands, one of them optional:
 
 ```text
@@ -115,7 +118,10 @@ openspec/changes/add-profile-auth/
 └── sandboxes/        # isolated worktrees
 ```
 
-`.foundation/` is machine-owned and gitignored. `openspec/` is yours to read and review.
+Runtime records under `.foundation/` are machine-maintained and ignored by Git;
+drafts and declared sandbox code have agent write routes. Project agreements in
+`openspec/` are yours to review, while `openspec/schemas/` is installed product.
+See [files and ownership](/docs/artifacts/) before editing or cleaning up files.
 The compiled OpenSpec packet is the source of truth. The semantic input draft
 and coordinator actions are compiler/runtime inputs, not parallel requirement
 ledgers.

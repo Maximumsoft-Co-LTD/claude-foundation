@@ -1,5 +1,10 @@
 # Change Loop harness runtime
 
+**Audience:** coding agents, host integrators, evidence authors, and maintainers.
+This installed reference is maintained by Change Loop; consumers should not
+customize it in place. For everyday use, follow the
+[user quickstart](https://claude-foundation.dev/docs/quickstart/).
+
 This directory contains the deterministic runtime installed with Change Loop.
 It turns an OpenSpec change into a bounded implementation and
 evidence workflow:
@@ -19,7 +24,8 @@ The product and workflow are called **Change Loop**. The package and CLI remain
 ## Using Change Loop
 
 Users describe the goal to their coding agent and use `/change`, `/build`,
-`/prove`, and `/land`; `/dev` can drive Change through Prove in one request.
+`/prove`, and `/land`; `/dev` drives the same lifecycle, reaching Land only
+within the user's explicit authority.
 The agent runs the underlying CLI, so users do not need to construct JSON,
 receipt, recovery, or bookkeeping commands.
 
@@ -32,8 +38,9 @@ host permission recovery stay internal. A change is
 finished only after the user explicitly authorizes Land and its state is
 `archived`.
 
-Installed users should start with `WORKFLOW.md`. The rest of this page maps the
-runtime for maintainers and evidence authors; `EVIDENCE.md` is the canonical
+Users can follow the quickstart linked above; the installed `WORKFLOW.md` is
+the detailed lifecycle contract. The rest of this page maps the runtime for
+agents, maintainers, and evidence authors; `EVIDENCE.md` is the canonical
 provider and receipt contract.
 
 Runtime API 39 adds bounded repository intelligence, adaptive intake metrics,
@@ -56,6 +63,41 @@ readiness, and the mutation guard consume that result instead of independently
 reinterpreting policy. Lifecycle writes go through the typed reducer. Existing
 command names remain compatible; `change start --inspect` is an additive
 read-only argument.
+
+## File ownership and writers
+
+Ownership determines what installation and upgrades may replace. It does not
+say who must type the content or who may approve a decision. An agent can write
+project-owned code; the harness can compile a project-owned agreement.
+
+| Category | Paths in an installed project | Who writes or updates it | Reader and authority |
+|---|---|---|---|
+| Project agreement | `openspec/specs/`, `openspec/changes/`, `openspec/investigations/` | Agent authors intent and investigation records; harness compiles/amends packets, updates task completion, and archives through OpenSpec | Users review intent, scenarios, and outcomes; consequential decisions remain theirs |
+| Project configuration | `foundation.json`, `openspec/config.yaml`, `openspec/repositories.yaml`, `quality/` | Project maintainer or authorized agent; installer seeds missing configuration and may perform documented additive/default migrations | Project chooses policy; upgrades preserve custom settings |
+| Project instructions and host settings | `CLAUDE.md`, `AGENTS.md`, `.claude/settings.json` | Project authors local instructions; installer updates only its marked pointer blocks and merges supported settings | These are not replaced by the upstream repository's maintainer manuals |
+| Installed product | `.claude/orchestrator.md`, `.claude/commands`, `.claude/harness`, `.claude/skills`, `.claude/rules`, `.claude/hooks`, `openspec/schemas`, `WORKFLOW.md`, `.foundation/.gitignore`, `.foundation/README.md` | Change Loop maintainers change source; installer refreshes managed files | Agent/host instructions and system references, not consumer customization points |
+| Runtime records | `.foundation/runtime/`, `receipts/`, `evidence/`, `transactions/`, and other state listed below | Harness and configured tools through supported operations | Read for diagnosis; never hand-edit proof, receipts, lifecycle state, or recovery journals |
+| Working inputs and implementation | `.foundation/drafts/`, declared code/test paths inside `.foundation/sandboxes/` or `.foundation/repository-sandboxes/` | Agent writes drafts and implements within the declared Build workspace | Drafts are temporary inputs, not the agreement; sandbox content may be unlanded project work |
+| Optional local policy | `.foundation/policy.json` | Project maintainer or authorized agent supplies capability rules | Project-controlled input despite its location; not an evidence receipt |
+
+The installer's `MANAGED` list defines product ownership; the per-install
+`.foundation/install-manifest.txt` records the managed files. A managed directory
+does not make every custom file beneath it disposable: custom agents, hooks,
+and other project additions must survive upgrades. `foundation.json` may gain
+missing fields or recognized legacy-default migrations; it is not replaced
+wholesale with upstream policy.
+
+Generated does not mean disposable, and project-owned does not mean manually
+editable during an active lifecycle. Change agreements go through draft/revision
+or amendment routes; task checkboxes and IDs are maintained by the harness.
+Use supported recovery and cleanup rather than deleting `.foundation/`: it can
+hold unlanded code, proof history, transaction backups, and local policy.
+
+The upstream source repository also contains contributor instructions, internal
+tests, research reports, and website sources. These are for developing and
+documenting Change Loop itself; they are not installed consumer requirements.
+Consumer `CLAUDE.md` and `AGENTS.md` stay project-owned even though
+the upstream repository uses those names for its own maintainer guidance.
 
 ## Files in this directory
 
@@ -647,7 +689,8 @@ coordinator's recovery protocol.
 Generated state lives under `.foundation/` and must not be treated as product
 source:
 
-This table is the canonical listing of what the runtime writes. Shorter
+This table is the canonical inventory of runtime records and working inputs.
+The ownership exceptions are described above. Shorter
 listings elsewhere name this file as their source rather than restating it.
 
 | Path | Contents |
@@ -677,7 +720,7 @@ listings elsewhere name this file as their source rather than restating it.
 | `.foundation/backups/` | Commit bundles, patches, and file copies of unlanded sandbox work, written before a sandbox is removed |
 | `.foundation/agreement-drift/` | Isolated-packet edits made outside an amendment, saved when the harness restores the approved text |
 | `.foundation/prototypes/` | Disposable comparison prototypes, never admissible as evidence |
-| `.foundation/policy.json` | Optional project rules mapping paths to required capabilities |
+| `.foundation/policy.json` | Optional project-authored rules mapping paths to required capabilities; not generated proof |
 | `.foundation/install-manifest.txt` | Installer-owned record of managed files |
 
 `intake/`, `repository-sandboxes/`, `prototypes/`, `recovery/`, `agreement-drift/`, and `policy.json` appear

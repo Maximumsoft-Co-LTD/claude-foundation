@@ -1,22 +1,28 @@
 ---
 title: การอนุมัติโดยคน
-description: สี่จุดที่คนเข้ามาในวงจร — acceptance, review อิสระ, authority bridge และ host attestation — และตัวไหนที่บล็อกจริง
+description: การตัดสินใจของผู้ใช้ นโยบาย review และกลไกของ agent/host ที่บันทึกและบังคับใช้
 ---
 
-Change Loop มีสี่จุดที่คนเข้ามาในวงจรได้ ทั้งสี่มักถูกสับสนกัน ทั้งที่ทำหน้าที่ต่างกัน
+<!-- docs-audience: users -->
+**ผู้อ่าน:** ผู้ใช้โปรเจกต์ หน้านี้อธิบายสิ่งที่ต้องตรวจและตัดสินใจ ส่วน agent ดูแลขั้นตอนระบบตามปกติ
 
-| จุด | ตอบคำถามอะไร | บล็อกไหม |
+การตัดสินใจของผู้ใช้กับกลไกระบบมีเจ้าของต่างกัน คุณอนุมัติเจตนา ตัดสินใจเรื่องสำคัญ
+ยอมรับผลเมื่อกำหนดไว้ และให้อำนาจ Land หรือการกระทำภายนอก Agent และ harness
+บันทึกการตัดสินใจ ส่วน reviewer ที่ตั้งค่าไว้และ trusted host สร้างหลักฐานของตนเอง
+
+| ส่วน | เจ้าของ | ตอบคำถามอะไร |
 |---|---|---|
-| **Acceptance** | นี่คือผลลัพธ์ที่เราต้องการหรือเปล่า | บล็อก — standard change ที่ยังไม่ตัดสินจะ validate ไม่ผ่าน |
-| **Review** | การ implement นี้ดีพอไหม ตัดสินโดยคนนอก | บล็อก เมื่อเงื่อนไขนโยบายเข้าเงื่อนไข |
-| **Authority bridge** | คำตัดสินกลายเป็น receipt ได้อย่างไร | เป็นกลไก ไม่ใช่ประตู |
-| **Host attestation** | ปลอดภัยพอจะรันแบบไม่มีคนดูไหม | เฉพาะการรันแบบไม่มีคนดู |
+| **Acceptance** | ผู้ใช้ตัดสินใจ; agent บันทึก | ได้ผลลัพธ์ที่ต้องการหรือไม่ และต้องให้คนยอมรับผลหรือไม่? |
+| **Review** | Reviewer ที่ตั้งค่าไว้; โปรเจกต์กำหนดนโยบาย | Implementation ผ่านเกณฑ์ review หรือไม่? ความเป็นอิสระตั้งค่าแยก |
+| **Authority bridge** | Agent/harness integration | คำตัดสินหรือ verdict กลายเป็น receipt ที่ตรวจสอบแล้วอย่างไร? |
+| **Host attestation** | ผู้ดูแลหรือ integration ของ trusted host | Environment ตรงข้อกำหนด sandbox สำหรับงานที่ไม่มีคนเฝ้าหรือไม่? |
 
 :::caution[Land บังคับอะไรจริง ๆ]
-คำสั่ง `/land <change>` ที่ตรง change จะสร้าง grant ภายในซึ่งผูก session สำหรับ
-recoverable transaction นี้หนึ่งครั้ง ส่วน readiness ตรวจ **หลักฐาน** โดยไม่ขอ
-consent receipt รอบที่สอง หลักฐานที่ขาด, stale, fail หรือ inconclusive ยังหยุดก่อน
-Apply และ digest ทุกตัวถูกตรวจเทียบ proof manifest อีกครั้ง
+คำสั่ง `/land <change>` ที่ตรง change ให้อำนาจสำหรับ transaction ที่กู้คืนได้
+และสร้าง grant ภายในที่ผูกกับ session หลักฐานที่ขาด, stale, fail, inconclusive
+หรือ invalid ยังถูกบันทึกตามจริง แต่ไม่ลบล้างอำนาจ Land ที่ให้ชัดเจน
+Land ยังปฏิเสธเมื่อมี target conflict, path ไม่ปลอดภัย, repository identity
+กำกวม หรือ transaction เสียหาย
 
 User ไม่ต้องสร้าง grant หรือ decision-reference command เอง `land record` ต้องมี
 `--decision-ref` เฉพาะ compatibility ของ commit-oriented transaction แบบ legacy
@@ -118,6 +124,9 @@ Agent แก้ finding ที่รวมเป็นชุดและตร�
 
 ## Authority bridge
 
+**สำหรับผู้พัฒนา agent และ host integration** ผู้ใช้เป็นผู้ตัดสินใจ
+ส่วน integration บันทึกและตรวจการตัดสินใจผ่านกลไกนี้
+
 ทางปกติเริ่มด้วยคำสั่งที่ทำต่อได้คำสั่งเดียว
 
 ```bash
@@ -141,15 +150,18 @@ request/status/record โดยไม่ต้อง review dispatch
 และคำสั่งล้มเหลว คำขอที่เสร็จแล้วเล่นซ้ำไม่ได้
 
 :::tip
-`authority status --template` คือ flag ที่ทำให้ทำมือได้จริง
-มันพิมพ์รูปแบบคำตอบที่ระบบคาดหวังออกมาตรง ๆ คุณจึงแค่เติมคำตัดสิน
-ไม่ต้องประกอบ JSON schema ขึ้นมาเองจากเอกสาร
+`authority status --template` แสดงรูปแบบคำตอบให้ agent หรือผู้ดูแล integration
+ผู้ใช้ตอบคำถามด้วยภาษาปกติ ไม่ต้องสร้าง receipt JSON
+หรือแต่ง verdict ของ reviewer เอง
 :::
 
 ถ้า workspace เปลี่ยนหลังจากเปิดคำขอไปแล้ว คำขอจะ stale และต้องเปิดใหม่
 คำตัดสินผูกกับ code ที่มันได้เห็น ไม่ใช่ผูกกับ change แบบลอย ๆ
 
 ## Host attestation
+
+**สำหรับผู้ดูแล trusted host** นี่คือหลักฐาน environment จาก host
+ไม่ใช่เอกสารที่ผู้ใช้เซ็นเพื่ออนุมัติฟีเจอร์
 
 ตัวนี้ **ไม่ใช่** การอนุมัติโดยคน แม้จะอยู่ใกล้กัน
 

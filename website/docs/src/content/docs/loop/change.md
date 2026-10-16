@@ -3,6 +3,9 @@ title: /change
 description: Compile one semantic draft into a validated OpenSpec agreement.
 ---
 
+<!-- docs-audience: agents-integrators -->
+**Audience:** coding agents and integration operators. CLI commands and schemas below are system reference, not a user checklist. Users can follow [Quickstart](/docs/quickstart/).
+
 ```text
 /change <intent | existing-change> [--prototype-selection <path>]
 ```
@@ -14,8 +17,8 @@ the bookkeeping, and installs the result transactionally.
 
 ## Minimal draft
 
-For an ordinary change, write only the intent, the behavior, and the tasks, and
-leave `version` out. `change start --template` prints this form first as
+For an ordinary change, the agent writes only the intent, the behavior, and the tasks, and
+leaves `version` out. `change start --template` prints this form first as
 `minimalDraft`, preceded by a `save` field: the agent writes the draft with its
 Write tool to `.foundation/drafts/<id>.json` (a pre-allowed path), because the
 host refuses a shell heredoc:

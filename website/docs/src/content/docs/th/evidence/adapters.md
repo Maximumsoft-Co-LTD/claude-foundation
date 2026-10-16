@@ -3,6 +3,9 @@ title: Adapter และการต่อสาย
 description: adapter ที่รันได้จริงห้าตัว derived/custom wiring และ resource กันไม่ให้ provider ชนกันอย่างไร
 ---
 
+<!-- docs-audience: agents-integrators -->
+**ผู้อ่าน:** Coding agent และผู้ดูแล integration คำสั่ง CLI และ schema ด้านล่างเป็นเอกสารระบบ ไม่ใช่รายการที่ผู้ใช้ต้องทำเอง ผู้ใช้เริ่มที่ [เริ่มใช้งาน](/docs/th/quickstart/)
+
 Change Loop แยกสัญญาเชิงพฤติกรรมที่คงที่ ออกจากการต่อสายที่เปลี่ยนได้ มันไม่ติดตั้ง test framework เบราว์เซอร์ หรือ dependency ของโปรเจกต์ — **โปรเจกต์ของคุณเป็นเจ้าของและล็อกเวอร์ชัน executable ทุกตัวที่ adapter เรียก**
 
 ## Derived wiring และ execution.yaml

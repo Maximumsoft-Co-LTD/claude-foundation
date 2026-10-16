@@ -3,6 +3,9 @@ title: Receipts, statuses, and staleness
 description: What a receipt binds itself to, the four statuses a provider can return, why a hand-written pass is refused, and what makes proof go stale.
 ---
 
+<!-- docs-audience: agents-integrators -->
+**Audience:** coding agents and integration operators. CLI commands and schemas below are system reference, not a user checklist. Users can follow [Quickstart](/docs/quickstart/).
+
 A receipt is Change Loop's record that a specific provider observed a specific
 result against specific content. Everything about it is designed so that a
 receipt cannot outlive the thing it described.

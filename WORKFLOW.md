@@ -9,10 +9,17 @@ changes in brownfield repositories:
 Investigate? → Change → Build → Prove → Land
 ```
 
+**Audience:** coding agents, integrators, maintainers, and users checking exact
+behavior. This is an installed system reference, not a file consumers customize.
+For everyday use, follow the [quickstart](https://claude-foundation.dev/docs/quickstart/).
+The [ownership reference](.claude/harness/README.md#file-ownership-and-writers)
+separates project agreements, installed instructions, and runtime records.
+
 This document owns the detailed lifecycle contract: what each phase means,
 which state transitions are allowed, what blocks progress, and what authority
-the harness never infers. Start with `README.md` or `README.th.md` for the user
-journey. Runtime structure and operator commands belong to
+the harness never infers. In the upstream source repository, `README.md` and
+`README.th.md` introduce the product; a consumer project's root README describes
+that project, not necessarily Change Loop. Runtime structure and operator commands belong to
 `.claude/harness/README.md`; provider, receipt, and proof details belong to
 `.claude/harness/EVIDENCE.md`.
 
@@ -1665,8 +1672,10 @@ integration, host-instruction, and recovery protocols are documented in
 `.claude/harness/README.md`. Do not call `foundation.mjs` directly.
 
 The harness guide also owns requirements and the canonical table of
-`.foundation/` runtime state. Those files are machine-owned and ignored by Git;
-this workflow names them only where their lifecycle meaning matters.
+`.foundation/` runtime records and working inputs. Generated records are
+machine-maintained and ignored by Git; drafts, declared sandbox code, and the
+optional local policy have explicit writer rules in that guide. This workflow
+names them only where their lifecycle meaning matters.
 
 ## Quality invariants
 
