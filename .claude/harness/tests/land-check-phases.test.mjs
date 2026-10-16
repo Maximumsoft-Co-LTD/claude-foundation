@@ -293,6 +293,17 @@ test("land check phases preserve every refusal and ready route", () => {
       selected: [{ id: "dep", mode: "read", path: "/target" }]
     });
     assert.throws(() => unisolated.runtime.landCheck(unisolated.id), /not isolated/);
+    // The stop names commands that exist, never a "recreate the sandbox" route.
+    // The doctor stage it names must be one the registered usage accepts.
+  const doctorUsage = JSON.parse(readFileSync(new URL("../commands.json", import.meta.url), "utf8"))
+    .commands.find((row) => row.name === "doctor").usage;
+  const doctorStages = doctorUsage.match(/--stage ([a-z|]+)/)[1].split("|");
+  assert.throws(() => unisolated.runtime.landCheck(unisolated.id), (error) => {
+    const stage = error.message.match(/claude-foundation doctor --stage (\S+) --change /)?.[1];
+    return doctorStages.includes(stage) &&
+      /claude-foundation advance .* --through archived/.test(error.message) &&
+      !/recreate the sandbox/.test(error.message);
+  });
     const dirty = make({
       state: { repositories: { dep: { mode: "worktree", path: "/sandbox", baseHead: "dependency-head" } } },
       selected: [{ id: "dep", mode: "read", path: "/target" }],

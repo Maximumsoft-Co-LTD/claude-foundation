@@ -325,7 +325,7 @@ export const ADVANCE_DECISIONS = {
 
 // A proof gate's no-progress decision whose options carry no command of their
 // own is answered through `advance` too, with every option the gate offered.
-// A gate option with its own command (accept-review-risk's waiver) stays as
+// A gate option with its own command (one-more-ai-attempt's grant) stays as
 // the gate wrote it.
 export function proofGateDecision(decision) {
   if (decision?.kind !== "repair-no-progress" || decision.fingerprint ||

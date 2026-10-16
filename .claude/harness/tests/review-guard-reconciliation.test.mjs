@@ -293,6 +293,42 @@ function fixture(id) {
     "a delivered response with no receipt must still block");
 }
 
+// Case 4b — extra AI wave: the cap refuses a third wave, a user grant allows
+// exactly one, a reused decision-ref refuses, and an unexhausted cap refuses.
+{
+  const id = "case-extra-wave";
+  const world = fixture(id);
+  assert.throws(() => world.store.grantExtraAiWave(id, "early", 2), /not exhausted/);
+  let prior = null;
+  for (const n of [1, 2]) {
+    const attempt = world.dispatchAi(n, prior
+      ? { mode: "delta", baseAttemptDigest: prior.digest, paths: ["root/a.mjs"], digest: `scope-${n}` }
+      : { mode: "full", paths: ["root/a.mjs"], digest: `scope-${n}` });
+    prior = world.store.completeReviewAttempt(id, attempt.digest, {
+      reviewerSessionId: `session-${n}`, resultStatus: "fail",
+      findings: [], verifiedFindingIds: []
+    });
+    world.recordReceipt(prior);
+  }
+  assert.throws(() => world.dispatchAi(3, {
+    mode: "delta", baseAttemptDigest: prior.digest, paths: ["root/a.mjs"], digest: "scope-3"
+  }), /REVIEW_ROUTE_COMPLETE[^]*authority extend-review/);
+  const grant = world.store.grantExtraAiWave(id, "decision-x", 2);
+  assert.equal(grant.maxAiAttempts, 3);
+  assert.deepEqual(world.history().extraAiWaves.map((row) => row.delivered), [2]);
+  assert.throws(() => world.store.grantExtraAiWave(id, "decision-x", 2), /already used/);
+  const extra = world.store.dispatchReviewAttempt(id, {
+    reviewerType: "ai", reviewerIdentity: "reviewer-3",
+    reviewerProviderFamily: "openai", reviewerModelFamily: "gpt",
+    reviewerModelId: "gpt-x", reviewerSessionId: "session-3",
+    requestId: "request-3", workspaceHash: "workspace-3",
+    scope: { mode: "delta", baseAttemptDigest: prior.digest, paths: ["root/a.mjs"], digest: "scope-3" },
+    packetDigest: "packet-3", maxAiAttempts: grant.maxAiAttempts,
+    maxInfrastructureRetries: 1
+  });
+  assert.equal(extra.status, "dispatched", "the granted wave dispatches");
+}
+
 // Case 5 — infrastructure reset: consumed retries block dispatch, an
 // acknowledged reset restores it, a reused decision-ref refuses, and later
 // dispatches keep the acknowledgment.

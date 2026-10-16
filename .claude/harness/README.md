@@ -764,8 +764,10 @@ Review and acceptance receipts additionally carry the change's diff identity
 and the packet review hash. When a sandbox sync replays the change onto a
 moved base without altering either — the common shape of "another change
 landed first" — `proof run` / `proof advance` rebind the verdict to the new
-workspace hash instead of expiring it, and no review wave is consumed. A
-replay that does alter the diff expires the verdict as before; if that
+workspace hash instead of expiring it, and no review wave is consumed. This
+holds for a human verdict exactly as for an AI one, so no new request opens.
+A replay that does alter the diff expires the verdict and opens a new review
+request; if that
 expiry would exhaust the AI review wave cap, the next review dispatch
 releases exactly the expired passing attempt from the count under a
 harness-owned reference; `authority reset-base-move <change> --decision-ref

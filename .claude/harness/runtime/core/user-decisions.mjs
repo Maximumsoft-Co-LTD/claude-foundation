@@ -33,10 +33,29 @@ function stripPathAnnotations(content) {
   }
 }
 
+// Provider wiring (commands, timeouts, env, services) is evidence
+// configuration: its change invalidates that provider's receipts, not consent.
+// Which providers exist and every claim stay part of the agreement. Content
+// that is not JSON keeps its full bytes, so an unreadable file never loosens
+// consent.
+function wiringBlindContent(name, content) {
+  if (name !== "execution.yaml" && name !== "evidence.yaml") return content;
+  let value;
+  try { value = JSON.parse(content); } catch { return content; }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return content;
+  const names = (section) => section && typeof section === "object" && !Array.isArray(section)
+    ? Object.keys(section).sort() : section;
+  const reduced = { ...value };
+  if ("providers" in reduced) reduced.providers = names(reduced.providers);
+  if (name === "execution.yaml" && "services" in reduced) reduced.services = names(reduced.services);
+  return JSON.stringify(reduced);
+}
+
 // Task completion and write scope are bookkeeping; editing task semantics
 // still changes consent. `legacy` reproduces identities recorded before write
-// scope became bookkeeping so in-flight approvals survive an upgrade.
-export function agreementIdentity(root, id, { legacy = false } = {}) {
+// scope became bookkeeping, and `wiring` those recorded before provider wiring
+// became evidence configuration, so in-flight approvals survive an upgrade.
+export function agreementIdentity(root, id, { legacy = false, wiring = legacy } = {}) {
   const base = join(root, "openspec", "changes", id);
   const hash = createHash("sha256");
   function visit(directory, prefix = "") {
@@ -51,6 +70,7 @@ export function agreementIdentity(root, id, { legacy = false } = {}) {
           content = content.replace(/^(\s*-\s*)\[[ xX]\]/gm, "$1[ ]");
           if (!legacy) content = stripPathAnnotations(content);
         }
+        if (!wiring) content = wiringBlindContent(name, content);
         hash.update(name).update("\0").update(content).update("\0");
       }
     }
@@ -62,6 +82,7 @@ export function agreementIdentity(root, id, { legacy = false } = {}) {
 
 export function approvalMatches(identity, root, id) {
   return Boolean(identity) && (identity === agreementIdentity(root, id) ||
+    identity === agreementIdentity(root, id, { wiring: true }) ||
     identity === agreementIdentity(root, id, { legacy: true }));
 }
 

@@ -585,7 +585,9 @@ export function createLandRuntime({
       if (repository.mode !== "read") continue;
       const runtime = state.repositories?.[repository.id] || {};
       if (runtime.mode !== "worktree")
-        fail(`read-only dependency '${repository.id}' is not isolated; recreate the sandbox before Land`);
+        fail(`read-only dependency '${repository.id}' is not isolated in a Git worktree, so Land cannot ` +
+          `prove it unchanged; run claude-foundation doctor --stage build --change ${id} to see why, ` +
+          `then resume with claude-foundation advance ${id} --through archived`);
       const dirty = git(["status", "--porcelain"], runtime.path);
       if (dirty.status !== 0 || dirty.stdout.trim())
         fail(`read-only dependency '${repository.id}' changed inside its sandbox: ${
@@ -932,7 +934,8 @@ export function createLandRuntime({
     const path = join(transactions, id, "land-preparation.json");
     const prepared = existsSync(path) ? readJson(path, {}) : null;
     if (!landPreparationMatches(prepared, current))
-      fail(`Land preparation changed before mutation (${current.incomplete.join(", ") || "identity drift"}); re-run land check after resolving it`);
+      fail(`Land preparation changed before mutation (${current.incomplete.join(", ") || "identity drift"}); ` +
+        `resolve it, then resume with claude-foundation advance ${id} --through archived`);
     return current;
   }
 

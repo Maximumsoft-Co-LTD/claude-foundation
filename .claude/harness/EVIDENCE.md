@@ -302,8 +302,10 @@ dispatch another reviewer. Configured AI review uses
 `authority record`; acceptance uses request/status/record without a review
 dispatch. Requests contain bounded packets and expire or become stale with the
 workspace. Responses must match the request identity and workspace, then pass
-the ordinary review or acceptance receipt validator. Completed requests cannot
-be replayed.
+the ordinary review or acceptance receipt validator. `authority record` reports
+every response problem in one refusal, including an undispatched review
+request; the response template states that dispatch comes first, and a delta
+template counts its verified findings. Completed requests cannot be replayed.
 Readiness exposes this boundary as a structured user decision with pass, fail,
 inconclusive, error, and pause paths. It never emits a pre-filled passing receipt.
 The agent translates the packet and owns the response artifact; users answer in

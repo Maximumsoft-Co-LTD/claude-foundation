@@ -1,0 +1,171 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "carry-landed-work-agent-build-change-b",
+      "requirementKey": "carry-landed-work",
+      "scenario": "change ที่ต่อกัน",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "carry-landed-work-agent-build-change",
+      "requirementKey": "carry-landed-work",
+      "scenario": "ไฟล์ที่ผู้ใช้แก้เองไม่ถูกนำเข้า",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "carry-landed-work-b-land",
+      "requirementKey": "carry-landed-work",
+      "scenario": "Land ของ B ไม่ทับงาน A",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "human-verdict-rebind-sandbox-sync-base-commit-change",
+      "requirementKey": "human-verdict-rebind",
+      "scenario": "upstream แก้ไฟล์อื่น",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "human-verdict-rebind-sync-base-commit-change",
+      "requirementKey": "human-verdict-rebind",
+      "scenario": "upstream แก้ไฟล์ของ change",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-exhausted-decision-agent-advance",
+      "requirementKey": "review-exhausted-decision",
+      "scenario": "AI review ครบ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-exhausted-decision-agent",
+      "requirementKey": "review-exhausted-decision",
+      "scenario": "AI เพิ่มหนึ่งครั้ง",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-exhausted-decision-agent-advance-2",
+      "requirementKey": "review-exhausted-decision",
+      "scenario": "ไม่มี reviewer",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "authority-record-issues-agent-authority-record",
+      "requirementKey": "authority-record-issues",
+      "scenario": "หลายปัญหาพร้อมกัน",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "authority-record-issues-agent-template",
+      "requirementKey": "authority-record-issues",
+      "scenario": "template ของ delta ใช้ได้",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "authority-record-issues-agent-template-2",
+      "requirementKey": "authority-record-issues",
+      "scenario": "request ยังไม่ dispatch",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amended-task-tick",
+      "requirementKey": "amended-task-tick",
+      "scenario": "task ที่โค้ดอยู่นอก path",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "provider-config-approval-agent-timeoutms-provider-test",
+      "requirementKey": "provider-config-approval",
+      "scenario": "แก้ timeoutMs",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "provider-config-approval-agent-provider-test",
+      "requirementKey": "provider-config-approval",
+      "scenario": "ถอด provider",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "provider-config-approval-agent-capability-claim-evidence-yaml",
+      "requirementKey": "provider-config-approval",
+      "scenario": "แก้ claim",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "land-dead-end-route",
+      "requirementKey": "land-dead-end-route",
+      "scenario": "dependency ไม่แยก",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/sandbox-create-phases.test.mjs .claude/harness/tests/sandbox-runtime-sync.test.mjs) && (node --test .claude/harness/tests/receipt-validity.test.mjs) && (node --test .claude/harness/tests/advance-runtime.test.mjs .claude/harness/tests/authority-request-operation.test.mjs) && (node --test .claude/harness/tests/authority-response-validation.test.mjs .claude/harness/tests/authority-request-operation.test.mjs) && (node --test .claude/harness/tests/task-change.test.mjs) && (node --test .claude/harness/tests/user-decisions.test.mjs) && (node --test .claude/harness/tests/land-check-phases.test.mjs)"
+      ],
+      "segments": [
+        "node --test .claude/harness/tests/sandbox-create-phases.test.mjs .claude/harness/tests/sandbox-runtime-sync.test.mjs",
+        "node --test .claude/harness/tests/receipt-validity.test.mjs",
+        "node --test .claude/harness/tests/advance-runtime.test.mjs .claude/harness/tests/authority-request-operation.test.mjs",
+        "node --test .claude/harness/tests/authority-response-validation.test.mjs .claude/harness/tests/authority-request-operation.test.mjs",
+        "node --test .claude/harness/tests/task-change.test.mjs",
+        "node --test .claude/harness/tests/user-decisions.test.mjs",
+        "node --test .claude/harness/tests/land-check-phases.test.mjs"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

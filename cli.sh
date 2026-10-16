@@ -91,7 +91,7 @@ run_runtime() {
     investigate) phase="investigate" ;;
     new|start|resolve|amend|revise|validate|audit-change|abandon|waive|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade|quality-discover|quality-init|quality-doctor) phase="change" ;;
     sandbox|agent-plan|agent-dispatch|agent-acquire|agent-release) phase="build" ;;
-    proof-plan|proof-readiness|proof-advance|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-dispatch|authority-run|authority-abort|authority-status|authority-record|authority-reset-infra|authority-reset-base-move|quality-run|quality-report|quality-baseline|quality-debt) phase="prove" ;;
+    proof-plan|proof-readiness|proof-advance|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-dispatch|authority-run|authority-abort|authority-status|authority-record|authority-reset-infra|authority-reset-base-move|authority-extend-review|quality-run|quality-report|quality-baseline|quality-debt) phase="prove" ;;
     handoff-list|handoff-status|handoff-packet|handoff-record|land-check|land-advance|land-recover|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
     delivery-advance) phase="deliver" ;;
   esac
@@ -472,7 +472,8 @@ case "${1:-}" in
       record) run_runtime write authority-record "$@" ;;
       reset-infra) run_runtime write authority-reset-infra "$@" ;;
       reset-base-move) run_runtime write authority-reset-base-move "$@" ;;
-      *) fail "authority requires 'request', 'dispatch', 'run', 'abort', 'status', 'record', 'reset-infra', or 'reset-base-move'" ;;
+      extend-review) run_runtime write authority-extend-review "$@" ;;
+      *) fail "authority requires 'request', 'dispatch', 'run', 'abort', 'status', 'record', 'reset-infra', 'reset-base-move', or 'extend-review'" ;;
     esac ;;
   handoff)
     shift

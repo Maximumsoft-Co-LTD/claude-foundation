@@ -196,8 +196,10 @@ be packaged as live hook self-tests.
 `user-decisions.test.mjs` runs with advance lifecycle outcomes and covers spec
 approval, shared review deadlines, explicit decision routes, and waiver expiry;
 `target-edits.test.mjs` beside it covers target-checkout edits made outside
-the sandbox while shell mutations are audited, and `session-lease.test.mjs`
-covers the harness-held lease for a session Build task.
+the sandbox while shell mutations are audited, `session-lease.test.mjs`
+covers the harness-held lease for a session Build task, and
+`task-change.test.mjs` covers why a task with no change in its paths is handed
+back and the routes it names.
 
 Put a regression at the lowest deterministic boundary that caught the defect:
 

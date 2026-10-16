@@ -453,6 +453,7 @@ const {
   deliveredAiAttempts,
   infrastructureAiAttempts,
   acknowledgeInfrastructureAttempts,
+  grantExtraAiWave,
   acknowledgeBaseMoveAttempts,
   autoReleaseReviewBudget
 } = createReviewAttemptStore({
@@ -1104,6 +1105,7 @@ const {
   runAuthorityReviewerAsync,
   abortAuthority,
   resetInfrastructureAuthority,
+  extendReviewAuthority,
   recoverReviewBindings,
   resetBaseMoveAuthority,
   authorityStatusValue,
@@ -1147,6 +1149,7 @@ const {
   runConfiguredReview,
   runConfiguredReviewAsync,
   acknowledgeInfrastructureAttempts,
+  grantExtraAiWave,
   acknowledgeBaseMoveAttempts,
   autoReleaseReviewBudget,
   clearSnapshotCache,
@@ -1828,6 +1831,8 @@ const guardedAbortAuthority = guardPublicProofMutation(
   "authority abort", abortAuthority);
 const guardedResetInfrastructureAuthority = guardPublicProofMutation(
   "authority reset-infra", resetInfrastructureAuthority);
+const guardedExtendReviewAuthority = guardPublicProofMutation(
+  "authority extend-review", extendReviewAuthority);
 const guardedResetBaseMoveAuthority = guardPublicProofMutation(
   "authority reset-base-move", resetBaseMoveAuthority);
 const guardedRecordAuthority = guardPublicProofMutation(
@@ -2102,7 +2107,7 @@ const sessionLeases = createSessionLeaseRuntime({
       const repositoryId = trapFailures(() =>
         repositoryById(id, task.repository || "root", state).id);
       return taskChangeIssue({
-        workTypes: changeWorkTypes(activeChangePath(id)), task,
+        workTypes: changeWorkTypes(activeChangePath(id)), task, changeId: id,
         changedPaths: trapFailures(() => canonicalChangedSurface(id, state))
           .filter((row) => row.repositoryId === repositoryId).map((row) => row.path)
       });
@@ -2320,7 +2325,7 @@ const qualityChange = () => {
   return namedChange(index >= 0 ? values[index + 1] : process.env.FOUNDATION_CHANGE_ID);
 };
 operationChangeId = command === "sandbox" ? namedChange(values[1]) :
-  ["resolve", "validate", "audit-change", "hash", "packet", "agent-plan", "agent-dispatch", "agent-task", "agent-acquire", "agent-release", "metrics", "feedback", "advance", "budget-checkpoint", "budget-continue", "proof-plan", "proof-readiness", "proof-advance", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "evidence-verify-ci", "authority-request", "authority-dispatch", "authority-run", "authority-abort", "authority-status", "authority-record", "authority-reset-infra", "authority-reset-base-move", "receipt", "run-provider", "prove",
+  ["resolve", "validate", "audit-change", "hash", "packet", "agent-plan", "agent-dispatch", "agent-task", "agent-acquire", "agent-release", "metrics", "feedback", "advance", "budget-checkpoint", "budget-continue", "proof-plan", "proof-readiness", "proof-advance", "proof-run", "proof-collect", "proof-preflight", "proof-execute", "proof-audit", "evidence-upgrade", "evidence-verify-ci", "authority-request", "authority-dispatch", "authority-run", "authority-abort", "authority-status", "authority-record", "authority-reset-infra", "authority-extend-review", "authority-reset-base-move", "receipt", "run-provider", "prove",
     "evidence-detect", "evidence-init", "evidence-doctor", "handoff-status", "handoff-packet", "handoff-record", "land-check", "land-advance", "land-plan", "land-record", "land-pointers", "land-resume", "archive", "delivery-advance", "event", "telemetry-sync", "telemetry-import"].includes(command) ? namedChange(values[0]) :
     command?.startsWith("quality-")
       ? qualityChange()
@@ -2440,6 +2445,7 @@ await routeRuntimeCommand(command, values, {
   runAuthorityReviewer: guardedRunAuthorityReviewer,
   abortAuthority: guardedAbortAuthority,
   resetInfrastructureAuthority: guardedResetInfrastructureAuthority,
+  extendReviewAuthority: guardedExtendReviewAuthority,
   resetBaseMoveAuthority: guardedResetBaseMoveAuthority,
   showAuthorityStatus,
   recordAuthority: guardedRecordAuthority,

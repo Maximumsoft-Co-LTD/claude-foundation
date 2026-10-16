@@ -65,6 +65,7 @@ export async function routeRuntimeCommand(command, values, api) {
     runAuthorityReviewer,
     abortAuthority,
     resetInfrastructureAuthority,
+    extendReviewAuthority,
     resetBaseMoveAuthority,
     showAuthorityStatus,
     recordAuthority,
@@ -741,6 +742,16 @@ export async function routeRuntimeCommand(command, values, api) {
       });
       if (rest.length !== 1) die("authority reset-infra requires exactly one change id");
       await resetInfrastructureAuthority(rest[0], flags);
+    },
+    "authority-extend-review": async () => {
+      const {
+        flags,
+        rest
+      } = parseStrictCommandFlags(values, "authority extend-review", {
+        value: ["decision-ref"]
+      });
+      if (rest.length !== 1) die("authority extend-review requires exactly one change id");
+      await extendReviewAuthority(rest[0], flags);
     },
     "authority-reset-base-move": async () => {
       const {

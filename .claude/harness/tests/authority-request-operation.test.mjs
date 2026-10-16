@@ -21,8 +21,10 @@ import {
   telemetryProvenanceValue,
   telemetryRowHasModel,
   telemetryRowsForSession,
-  resetInfrastructureAuthorityOperation
+  resetInfrastructureAuthorityOperation,
+  extendReviewAuthorityOperation
 } from "../runtime/workflow/authority-runtime.mjs";
+import { effectiveReviewAttemptLimit } from "../runtime/core/authority-policy.mjs";
 
 const fail = (message) => { throw new Error(message); };
 
@@ -354,6 +356,42 @@ test("infrastructure reset acknowledges attempts and renders the recovery route"
   assert.match(context.outputRows[0], /default-reviewer \(doctor\)/);
   assert.match(context.outputRows[0], /acknowledged: 2 attempt/);
   assert.match(context.outputRows[0], /decision: decision-a/);
+});
+
+test("extend-review grants one AI wave on a recorded decision and raises the cap by one", () => {
+  const grants = [];
+  const output = [];
+  const delivered = [{ workspaceHash: "w1", resultStatus: "fail" },
+    { workspaceHash: "w2", resultStatus: "fail" }];
+  const context = {
+    validate: () => {},
+    authorityStore: { list: () => [{ value: {
+      type: "review", status: "requested", workspaceHash: "w2" } }] },
+    reviewPolicy: () => ({ maxAiAttempts: 2 }),
+    deliveredAiAttempts: () => delivered,
+    effectiveReviewAttemptLimit,
+    grantExtraAiWave: (...args) => {
+      grants.push(args);
+      return { delivered: 2, maxAiAttempts: 3 };
+    },
+    fail,
+    output: { log: (row) => output.push(row) }
+  };
+  assert.throws(() => extendReviewAuthorityOperation(context, "c"), /requires --decision-ref/);
+  assert.equal(grants.length, 0);
+  extendReviewAuthorityOperation(context, "c", { "decision-ref": " user-a " });
+  assert.deepEqual(grants, [["c", "user-a", 2]],
+    "the grant is checked against the routed cap for the open request");
+  assert.match(output[0], /waves: 2\/3/);
+  assert.match(output[0], /advance c --through proven/);
+
+  // The cap allows exactly one wave past those delivered at the grant, even
+  // after a closure wave already raised the routed cap.
+  assert.equal(effectiveReviewAttemptLimit({ maxAiAttempts: 2 }, delivered, "w2").maxAiAttempts, 2);
+  assert.equal(effectiveReviewAttemptLimit({ maxAiAttempts: 2, grantedAiWaveCap: 3 },
+    delivered, "w2").maxAiAttempts, 3);
+  assert.equal(effectiveReviewAttemptLimit({ maxAiAttempts: 2, grantedAiWaveCap: 4 },
+    [...delivered, { workspaceHash: "w3" }], "w3").maxAiAttempts, 4);
 });
 
 test("locked authority adapter preserves identity, flags, and lock ownership", () => {

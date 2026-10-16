@@ -1187,7 +1187,10 @@ export function createEvidenceContract({
     });
     const policy = foundationPolicy().review || {};
     const riskTiered = foundationPolicy().workflow.reviewPolicy === "risk-tiered";
-    const result = assembleReviewPolicy({ state, signals, riskRoute, policy, riskTiered });
+    const assembled = assembleReviewPolicy({ state, signals, riskRoute, policy, riskTiered });
+    const grants = state.reviewHistory?.extraAiWaves || [];
+    const result = grants.length ? { ...assembled, grantedAiWaveCap:
+      Math.max(...grants.map((row) => Number(row.delivered || 0) + 1)) } : assembled;
     const waived = currentWaivers(state, state.waivers?.some((row) => row.binding) ? relevantHash(id) : undefined)
       .find((row) => row.capability === "review");
     return waived ? { ...result, required: false, userWaiver: waived } : result;

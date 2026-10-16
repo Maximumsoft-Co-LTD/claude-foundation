@@ -449,7 +449,11 @@ Record it with `advance <change> --approve-spec --decision-ref <ref>` (alias of
 in the same call. The same `--approve-spec --decision-ref <ref> [--through
 <target>]` flags on `change start`, `change revise`, or `change amend` record the
 approval in the call that applies the approving answer; a call that stops at an
-intake action approves nothing. Design open questions print with the approval
+intake action approves nothing. The approval binds the agreement, not provider
+wiring: editing a provider's command, timeout, env, or a service in
+`execution.yaml` or `evidence.yaml` reruns that provider's evidence but keeps
+the approval, while adding or removing a provider or changing any claim needs
+approval again. Design open questions print with the approval
 packet so the user answers them with the approval. The normal agent path uses only
 `change start <draft>`, which inspects and starts a complete draft in one call,
 `advance`, and `changes`: `advance` wires detected evidence, synchronizes the
@@ -812,7 +816,10 @@ external resource, `advance` hands all of them in one session EDIT, in
 dependency order, with no lease. The next `advance` runs each handed task's
 `verify`, ticks every passing task, records its result under a harness lease,
 and returns an EDIT only for failed tasks (with `verificationFailures`) and
-their dependents. Plans with a parallel wave, several repositories, or shared
+their dependents. A behavior task whose verify passed while nothing changed in
+its declared `paths` is not ticked: its failure names the paths and the routes
+forward (implement the change there, correct the paths with an `updateTasks`
+amendment, or withdraw the task with `removeTasks`). Plans with a parallel wave, several repositories, or shared
 external resources use native workers, but the harness still holds every
 lease: `advance` acquires the group's leases, the parent only spawns one worker
 per `execution.workers` entry and waits, and the next `advance` verifies, ticks,
@@ -948,6 +955,10 @@ claude-foundation advance <change> --through proven
 Proof validates the agreement, hashes relevant inputs, resolves claims to
 providers, reuses valid receipts, runs missing or stale project-owned evidence,
 routes review before acceptance, and writes a proof bound to the workspace.
+A derived `test` provider runs the tasks' own `verify` commands, not the
+project's whole suite; a project that wants its full suite as release evidence
+runs it as a separate gate before release (this repository: `run-all.sh`), or
+declares it as a provider in the change's `execution`.
 Failed, missing, stale, erroneous, or inconclusive evidence remains visible as
 assurance status. It blocks a `PROVEN` result, but an explicit `/land` may still
 authorize the current workspace projection.
@@ -1101,7 +1112,13 @@ staged, or any such path changed after Land.
 Land is always allowed for stacked changes. Because Land leaves its diff
 uncommitted, a change that branched before another change landed meets that
 landed diff in the target; nobody has to commit the first change before the
-second one lands. The harness treats the earlier landed bytes as part of the
+second one lands. A worktree sandbox, which starts from HEAD, carries every
+file another change landed and left uncommitted when it is created and after
+each sync, so Build and Prove run with that work; `sandbox create` and
+`sandbox sync` name each carried path. Only bytes a Land journal still vouches
+for are carried; a target file the user edited is not. While unchanged, carried
+files are not the later change's contribution: they stay out of its task
+paths, review, diff identity, replay, and Apply. The harness treats the earlier landed bytes as part of the
 target: paths the later change left alone land beside it untouched, and for a
 path both changed it replays the landed edit into the later change's sandbox
 copy (a 3-way merge), proves again only what that invalidated, and applies.
@@ -1419,8 +1436,7 @@ spend a user-facing budget. Each dispatch has its own 30-minute timeout, and an
 expired dispatch is a reviewer infrastructure failure, not a user question.
 `change resolve --continue-review` is still accepted and changes nothing.
 Timeout is not a pass. Try repair first; if it cannot progress, explain the
-attempted remedies and offer further work or explicit waivers for the current
-diff before Land. Conflicts, incomplete Apply, and missing side-effect authority
+attempted remedies and offer further work before Land. Conflicts, incomplete Apply, and missing side-effect authority
 still require their actual resolution, never a claim of successful delivery.
 
 Under `workflow.reviewPolicy: "risk-tiered"` every change receives review, with
@@ -1467,9 +1483,20 @@ characters); a malformed code is dropped and the attempt is still recorded.
 
 A delta review that no longer reports an earlier finding closes it. When a
 repaired final finding has no declared critical case to bind and current checks
-pass, Prove stops at the review-exhausted user decision (accept the review risk
-with `change waive --capability review`, revise the agreement, or pause); it
-never returns an unsatisfiable repair.
+pass, Prove stops at the review-exhausted user decision (a human verdict, one
+more AI wave, a revised agreement, or pause); it never returns an unsatisfiable
+repair.
+
+When every routed AI wave is delivered and a review request still needs a
+verdict, `advance` returns `ASK_USER` with kind `review-exhausted` instead of a
+wait. Its options are `human-verdict` (dispatch the request to a named person
+with `authority dispatch --reviewer-type human`, then `authority record` the
+verdict that person gave), `one-more-ai-attempt`
+(`authority extend-review <change> --decision-ref <user-decision>` allows
+exactly one wave beyond those delivered; each decision reference grants one,
+and `advance` then runs it), and `pause`. Exhausted review is never waived.
+A request that no configured reviewer can start keeps the `WAIT` for an
+external verdict.
 
 High risk includes authorization or secrets, public or cross-repository
 contracts, migration or destructive state, money, concurrency,
@@ -1643,7 +1670,7 @@ options listed by an advance decision such as `merge|retain|pause`. A Prove
 gate's no-progress decision is answered the same way with any option it
 offers; any answer but pause resumes that gate as a first observation, so it
 returns the repair batch instead of the same question. A gate option that carries its own command
-(such as accepting review risk with `change waive`) keeps that command. The answer
+(such as one more AI wave with `authority extend-review`) keeps that command. The answer
 retains the prior `--through` target. Retry records the chosen
 approach; wait is available only for an external dependency; pause preserves
 the work without running setup or providers again. A recorded pause projects

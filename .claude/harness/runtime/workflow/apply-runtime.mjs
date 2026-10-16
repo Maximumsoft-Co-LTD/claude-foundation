@@ -29,7 +29,7 @@ import {
   ROOT_POINTER_MOVED, repositoryPointerStop, rootPointerMoves, rootPointerRepairMessage
 } from "./land-verification.mjs";
 import {
-  landedChangeSyncStop, landedTargetPaths, otherLandedOutput, parseRestoreTargetPaths,
+  carriedLandedExcludes, landedChangeSyncStop, landedTargetPaths, otherLandedOutput, parseRestoreTargetPaths,
   replayLandedEdit, restorableTargetPaths, targetConflictStop, targetEditCarried,
   targetEditSyncStop
 } from "./target-edits.mjs";
@@ -804,8 +804,12 @@ export function createApplyRuntime({
     ...declaredRepositoryPaths()])];
   }
 
+  // Another change's landed bytes the sandbox carries unchanged are that
+  // change's Land, not this one's: projecting them could overwrite a target
+  // edit made after it.
   function applyPathspec(id, state) {
-    return sandboxCodePathspec(id, nestedRepositoryPaths(id, state));
+    return [...sandboxCodePathspec(id, nestedRepositoryPaths(id, state)),
+      ...carriedLandedExcludes(state.workspace, pathIdentity)];
   }
 
   function copyCodePaths(id, state) {
