@@ -3,6 +3,9 @@ set -eu
 # The session-context hook exports these into any Claude Code shell; a recorded
 # phase row would then be judged against this session instead of the fixture.
 unset FOUNDATION_CLAUDE_SESSION_ID FOUNDATION_CLAUDE_TRANSCRIPT_PATH
+# The harness exports the workspace root into Build and Prove runs (the test
+# provider included); fixtures that derive a workspace must not inherit it.
+unset FOUNDATION_WORKSPACE_ROOT
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 . "$ROOT/.claude/tests/lib/assert.sh"

@@ -19,8 +19,10 @@ transaction
 
 งานทั่วไป agent เขียนแค่ intent, พฤติกรรมที่ต้องการ และ task โดยไม่ต้องใส่ `version`
 คำสั่ง `change start --template` แสดงรูปแบบนี้เป็นอันดับแรกในชื่อ `minimalDraft`
-โดยมี field `save` นำหน้า: agent เขียน draft ด้วย Write tool ไปที่
-`.foundation/drafts/<id>.json` (path ที่อนุญาตไว้ล่วงหน้า) เพราะ host ปฏิเสธ shell heredoc
+โดยมี field `save` นำหน้า: agent เขียน draft ด้วย Write tool ไว้ใต้
+`.foundation/drafts/` (path ที่อนุญาตไว้ล่วงหน้า) เพราะ host ปฏิเสธ shell heredoc
+Draft เป็นได้ทั้งไฟล์ JSON ไฟล์เดียว `.foundation/drafts/<id>.json` หรือ folder ของ
+draft v5 `.foundation/drafts/<id>/` (ดูด้านล่าง)
 
 ```json
 {
@@ -52,12 +54,12 @@ capability overview ไม่เช่นนั้นจาก intent และ�
 สำหรับค่า default ทุกข้อที่เลือกเองโดยไม่ได้ถามผู้ใช้ (stack, storage) ระบบบันทึกเป็น
 `decidedBy: agent` แสดงใต้หัวข้อ Decisions ใน proposal และยังอยู่ใน rapid lane ถ้าไม่มี
 `why` proposal จะไม่มีหัวข้อ Why แทนการซ้ำ intent สั่ง `change start <draft>` ครั้งเดียวก็ตรวจและเริ่ม
-change พร้อมแสดงรายชื่อไฟล์ใน packet และ task ถ้าใส่ `version: 4` หรือประกาศ
+change พร้อมแสดงรายชื่อไฟล์ใน packet และ task ถ้าใส่ `version: 4` หรือ `version: 5` หรือประกาศ
 ความเสี่ยงไว้ จะใช้รูปแบบเต็มด้านล่าง
 
 ## Semantic draft แบบเต็ม
 
-แกนใช้ `version: 4`, `intent`, `requirements`, `tasks` ที่ระบุ `covers`,
+แกนใช้ `version: 4` (หรือ 5), `intent`, `requirements`, `tasks` ที่ระบุ `covers`,
 `evidence` ที่ใช้ requirement key เดียวกัน ส่วน `discovery.coverage` เป็น optional
 สำหรับ change ทั่วไป และบังคับเฉพาะเมื่อ `impact: high` หรือประกาศ typed risk
 (`riskSignals`, security trigger, integration, external operation) แต่ละมิติระบุว่า
@@ -89,7 +91,62 @@ Spec เขียนให้คนอ่าน แต่ละ scenario คื�
 
 ```bash
 claude-foundation change start .foundation/drafts/<id>.json
+claude-foundation change start .foundation/drafts/<id>   # folder ของ draft v5
 ```
+
+## Folder ของ draft v5
+
+งานใหม่ใช้ draft v5 ส่วน draft v4 และ v3 ยังใช้ได้ Draft v5 เป็น folder ที่
+`change start <folder>` รับได้เหมือน draft แบบ JSON:
+
+```text
+.foundation/drafts/<id>/
+├── change.json   # "version": 5 และ field แบบ typed ทั้งหมด
+├── proposal.md   # เนื้อความที่เขียนเองใต้หัวข้อของ outline
+└── design.md     # เนื้อความที่เขียนเองใต้หัวข้อของ outline
+```
+
+`proposal.md` และ `design.md` ใช้เฉพาะหัวข้อ `## ` จาก outline ที่มีเวอร์ชันชุดเดียว
+เรียงตามลำดับ outline เป็นภาษาอังกฤษหรือไทยก็ได้ Harness เขียน section ที่ derive
+เอง (Change header, Capabilities, Acceptance traceability, Definition of done,
+Work type, File map, Test map) แล้วรวมกับเนื้อความของคุณซึ่งคงไว้ทุก byte ตามลำดับ
+outline Proposal เรียงจาก why, user story, success criteria และ scope ไปจนถึง
+impact และ risk, decision ที่รอ ratify และวิธี verify แล้วตามด้วย appendix ส่วน design
+เรียงจาก current state และ architecture ผ่าน contract, section ตามชนิดงาน, decision,
+quality, rollout ไปจนถึง test `EDIT` เดียวระบุ section ที่ outline ไม่รู้จัก, ที่ harness
+derive เอง, ที่ผิดลำดับ, ที่ว่าง หรือที่มี `TODO`/`TBD` คำสั่ง `change start --template`
+แสดงหัวข้อที่รับได้ใน `draftFolderV5` ส่วน status, approver, ความสดของ evidence และ
+review record ไม่แสดงก่อน Land ให้อ่านด้วย `claude-foundation changes` ลำดับและกฎ
+ฉบับเต็มอยู่ใน `WORKFLOW.md` หัวข้อ "Draft v5 folder and outline"
+
+## ชนิดงาน
+
+`workType` (ประกาศเอง หรืออนุมานจาก path ของ task) เลือก section ของ design ที่
+standard change ต้องมี ถ้าขาดจะเป็น `EDIT` ของ agent ที่ระบุรูปแบบ field พร้อมตัวอย่าง
+ไม่ใช่คำถามถึงผู้ใช้ ตัวอย่างบางส่วน:
+
+| ชนิดงาน | Section ที่บังคับ |
+|---|---|
+| feature | `userFlow` |
+| bugfix | `bugfix` |
+| api | `apiContracts`, `boundaries` |
+| data | `dataModel` |
+| migration | `migrationPlan`, `rollout` |
+| ui | `userFlow`, `uiStates`, `componentMap` |
+
+งาน docs, test และ chore ต้องมีแค่ summary งานที่ผู้ใช้มองเห็นต้องมี `releaseNote` ด้วย
+ชนิดงานยังเลือก skill ของ Build และ evidence capability รายการครบทั้ง 23 ชนิดอยู่ใน
+`WORKFLOW.md` หัวข้อ "Work types and required sections" ส่วน capability อยู่ใน
+`.claude/harness/EVIDENCE.md` หัวข้อ "Work-type capabilities"
+
+## Decision
+
+Decision มี `status` ได้ (`proposed`, `accepted`, `superseded` ถ้าไม่ระบุถือว่า accepted)
+พร้อม driver, ตัวเลือก และ requirement ที่มันอธิบาย Decision ที่ proposed แสดงเฉพาะใต้
+Decisions to ratify ของ proposal เพื่อให้คุณ ratify หรือแก้พร้อมการอนุมัติ ส่วน
+`design.md` บันทึก decision ที่ accepted และ superseded Decision ที่ accepted และ
+`durable: true` จะเพิ่มบรรทัด `Rationale` ใต้ requirement แต่ละข้อที่ระบุ เหตุผลจึงอยู่รอด
+ผ่าน archive เข้า living spec ดู `WORKFLOW.md` หัวข้อ "Decisions"
 
 ## Extension แบบมีชนิด
 
@@ -141,10 +198,14 @@ scenario, task, evidence, ไฟล์ทดสอบ) กับ definition of d
 summary, user flow, failure matrix และ decisions ของมัน change เดิมคง layout เก่าไว้และยังอ่านได้
 section เชิงบรรยาย (`fileMap`, `testMap`, `componentMap`,
 `userFlow`, `configContract`, `refactor`) ก็ render ที่นี่ และไม่ทำให้ change
-ความเสี่ยงต่ำย้ายไป standard ส่วน standard v4 มี `design.md` ที่เป็น dev document
+ความเสี่ยงต่ำย้ายไป standard ส่วน standard v4 หรือ v5 มี `design.md` ที่เป็น dev document
 เต็มเสมอ และระบุชนิดงานพร้อมบอกเมื่อเป็นค่าที่อนุมาน label ของ node ใน flowchart
 ที่มี `(`, `)` หรือ `"` ต้องใส่เครื่องหมายคำพูด เช่น `A["mean(values)"]` ไฟล์
 execution, repository, handoff และ grounding จะเกิดเมื่อมี override จริงเท่านั้น
+
+ตอน archive Land ต่อท้าย record ที่เปลี่ยนแปลงได้ไว้ใน `proposal.md` ที่ archive แล้วเท่านั้น:
+Appendix: Review record, Appendix: Compliance change record (เฉพาะเมื่อ
+`openspec/config.yaml` ตั้ง `compliance: change-record`) และ Appendix: Rollout gates
 
 หลัง compile แล้ว `openspec/changes/<id>/` คือ source of truth Draft เป็นข้อมูล
 ชั่วคราว และ `.foundation/` เป็น runtime state ที่ derive ได้

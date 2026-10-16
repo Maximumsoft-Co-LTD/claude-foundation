@@ -189,7 +189,202 @@ export function formatTimeGate(report) {
   return `${lines.join("\n")}\n`;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// ---------------------------------------------------------------------------
+// Paid acceptance: an old Change Loop candidate against a new one on the same
+// scenarios. The new arm passes when its oracle pass rate is at least the old
+// arm's, its packets miss no required section and repeat none, and its median
+// wall time and tokens per scenario are at most `threshold` (20%) above the old
+// arm's. A metric nobody measured is `inconclusive`, never a pass.
+
+export const ARM_COMPARISON_PROTOCOL = "foundation-arm-comparison-v1";
+export const ARM_COMPARISON_THRESHOLD = 0.2;
+
+function runTokens(scorecard) {
+  const usage = scorecard.usage || {};
+  const values = [usage.inputTokens, usage.outputTokens, usage.cacheCreationTokens, usage.cacheReadTokens];
+  return values.every(Number.isFinite) ? values.reduce((total, value) => total + value, 0) : null;
+}
+
+const round = (value, digits = 1) => value === null ? null : Number(value.toFixed(digits));
+
+function oracleRate(rows) {
+  const configured = rows.filter((row) => row.scorecard.oracle?.configured === true);
+  if (!configured.length) return null;
+  const passed = configured.filter((row) => row.scorecard.oracle?.measurement === "measured" &&
+    row.scorecard.oracle?.verdict === "pass").length;
+  return round(passed / configured.length, 4);
+}
+
+// Packet counts of one arm: unknown when any run has no measured count.
+function packetTotal(rows, field) {
+  const counts = rows.map((row) => row.scorecard.packet?.[field]?.count);
+  return rows.length && counts.every(Number.isInteger)
+    ? counts.reduce((total, value) => total + value, 0) : null;
+}
+
+function scenarioMedians(rows, read) {
+  const byScenario = {};
+  for (const row of rows) (byScenario[row.scenario] ||= []).push(read(row.scorecard));
+  return Object.fromEntries(Object.entries(byScenario).map(([scenario, values]) =>
+    [scenario, median(values)]));
+}
+
+function speedMetric(name, unit, oldRows, newRows, read, threshold) {
+  const oldScenarios = scenarioMedians(oldRows, read);
+  const newScenarios = scenarioMedians(newRows, read);
+  const paired = Object.keys(newScenarios).filter((scenario) =>
+    Number.isFinite(oldScenarios[scenario]) && Number.isFinite(newScenarios[scenario]) &&
+    oldScenarios[scenario] > 0).sort();
+  const oldMedian = median(paired.map((scenario) => oldScenarios[scenario]));
+  const newMedian = median(paired.map((scenario) => newScenarios[scenario]));
+  const deltaPercent = oldMedian === null || newMedian === null ? null
+    : round(((newMedian - oldMedian) / oldMedian) * 100);
+  const status = deltaPercent === null ? "inconclusive"
+    : newMedian <= oldMedian * (1 + threshold) ? "pass" : "fail";
+  const limit = `+${round(threshold * 100)}%`;
+  const reason = status === "inconclusive"
+    ? `${name}: no scenario has a measured ${unit} median in both arms`
+    : `${name}: new median ${newMedian} ${unit} vs old ${oldMedian} ${unit} (${
+      deltaPercent < 0 ? `${Math.abs(deltaPercent)}% faster` : `${deltaPercent >= 0 ? "+" : ""}${deltaPercent}%`
+    }; limit ${limit})${status === "fail" ? " exceeds the limit" : ""}`;
+  return {
+    status, oldMedian, newMedian, deltaPercent, pairedScenarios: paired.length,
+    scenarios: Object.fromEntries(paired.map((scenario) => [scenario, {
+      old: oldScenarios[scenario], new: newScenarios[scenario],
+      deltaPercent: round(((newScenarios[scenario] - oldScenarios[scenario]) /
+        oldScenarios[scenario]) * 100)
+    }])),
+    reason
+  };
+}
+
+function packetMetric(name, oldRows, newRows, field) {
+  const oldTotal = packetTotal(oldRows, field);
+  const newTotal = packetTotal(newRows, field);
+  const status = newTotal === null ? "inconclusive" : newTotal === 0 ? "pass" : "fail";
+  return {
+    status, old: oldTotal, new: newTotal,
+    reason: status === "inconclusive"
+      ? `${name}: not measured on every new-arm run`
+      : `${name}: new arm ${newTotal} (old ${oldTotal === null ? "unknown" : oldTotal}); required 0`
+  };
+}
+
+// Medians of the informational packet measurements of one arm.
+function packetMedians(rows) {
+  const packet = (row) => row.scorecard.packet || {};
+  return {
+    wordsProposal: median(rows.map((row) => packet(row).words?.proposal)),
+    wordsDesign: median(rows.map((row) => packet(row).words?.design)),
+    wordsTasks: median(rows.map((row) => packet(row).words?.tasks)),
+    editRounds: median(rows.map((row) => packet(row).editRoundsMeasurement === "measured"
+      ? packet(row).editRounds : null)),
+    compileMs: median(rows.map((row) => packet(row).compileMs))
+  };
+}
+
+export function compareArms(oldRows, newRows, {
+  threshold = ARM_COMPARISON_THRESHOLD, includeIncomplete = false
+} = {}) {
+  // The baseline arm (no harness) is not a candidate in this comparison.
+  const candidate = (rows) => rows.filter((row) => row.arm !== BASELINE_ARM);
+  const oldAll = candidate(oldRows);
+  const newAll = candidate(newRows);
+  const timed = (rows) => rows.filter((row) => includeIncomplete || completed(row));
+  const oldRate = oracleRate(oldAll);
+  const newRate = oracleRate(newAll);
+  const oracleStatus = oldRate === null || newRate === null ? "inconclusive"
+    : newRate >= oldRate ? "pass" : "fail";
+  const oraclePassRate = {
+    status: oracleStatus, old: oldRate, new: newRate,
+    reason: oracleStatus === "inconclusive"
+      ? "oracle pass rate: an arm has no oracle-configured run"
+      : `oracle pass rate: new ${newRate} vs old ${oldRate}${oracleStatus === "fail" ? " is lower" : ""}`
+  };
+  const missingSections = packetMetric("missing required sections", oldAll, newAll, "missingSections");
+  const duplicateSections = packetMetric("duplicate sections", oldAll, newAll, "duplicateSections");
+  const wallTime = speedMetric("wall time", "ms", timed(oldAll), timed(newAll),
+    (card) => card.timing?.wallMs, threshold);
+  const tokens = speedMetric("tokens", "tokens", timed(oldAll), timed(newAll), runTokens, threshold);
+  const metrics = { oraclePassRate, missingSections, duplicateSections, wallTime, tokens };
+  const statuses = Object.values(metrics).map((metric) => metric.status);
+  const status = statuses.includes("fail") ? "fail"
+    : statuses.includes("inconclusive") ? "inconclusive" : "pass";
+  return {
+    version: 1, protocol: ARM_COMPARISON_PROTOCOL, threshold, status,
+    pass: status === "pass" ? true : status === "fail" ? false : null,
+    runs: { old: oldAll.length, new: newAll.length },
+    ...metrics,
+    packet: { old: packetMedians(oldAll), new: packetMedians(newAll) },
+    reasons: Object.values(metrics).filter((metric) => metric.status !== "pass")
+      .map((metric) => `${metric.status.toUpperCase()} ${metric.reason}`)
+      .concat(Object.values(metrics).filter((metric) => metric.status === "pass")
+        .map((metric) => `pass ${metric.reason}`))
+  };
+}
+
+export function armComparisonReport(oldRoots, newRoots, options = {}) {
+  return compareArms(loadScorecardRows(oldRoots), loadScorecardRows(newRoots), options);
+}
+
+const signed = (value) => value === null ? "n/a" : `${value > 0 ? "+" : ""}${value}%`;
+
+export function formatArmComparison(report) {
+  const row = (label, metric, oldValue, newValue, delta = "") =>
+    `| ${label} | ${cell(oldValue, 4)} | ${cell(newValue, 4)} | ${delta} | ${metric.status} |`;
+  const lines = [
+    `# Arm comparison: ${report.status.toUpperCase()}`, "",
+    `Runs: old ${report.runs.old}, new ${report.runs.new}. Limit: +${
+      Number((report.threshold * 100).toFixed(1))}% median wall time and tokens per scenario.`, "",
+    "| Metric | Old | New | Delta | Status |", "|---|---|---|---|---|",
+    row("Oracle pass rate", report.oraclePassRate, report.oraclePassRate.old, report.oraclePassRate.new),
+    row("Missing required sections", report.missingSections, report.missingSections.old,
+      report.missingSections.new),
+    row("Duplicate sections", report.duplicateSections, report.duplicateSections.old,
+      report.duplicateSections.new),
+    row("Median wall time ms", report.wallTime, report.wallTime.oldMedian, report.wallTime.newMedian,
+      signed(report.wallTime.deltaPercent)),
+    row("Median tokens", report.tokens, report.tokens.oldMedian, report.tokens.newMedian,
+      signed(report.tokens.deltaPercent)),
+    "", "| Packet median | Old | New |", "|---|---|---|",
+    ...[["Words proposal", "wordsProposal"], ["Words design", "wordsDesign"], ["Words tasks", "wordsTasks"],
+      ["EDIT rounds before AGREED", "editRounds"], ["Change start compile ms", "compileMs"]]
+      .map(([label, key]) => `| ${label} | ${cell(report.packet.old[key])} | ${cell(report.packet.new[key])} |`),
+    "", ...report.reasons.map((reason) => `- ${reason}`)
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
+function compareCli(argv) {
+  const roots = { old: [], new: [] };
+  const options = {};
+  let json = false;
+  let strict = false;
+  for (let index = 0; index < argv.length; index += 1) {
+    if (argv[index] === "--old") roots.old.push(argv[++index]);
+    else if (argv[index] === "--new") roots.new.push(argv[++index]);
+    else if (argv[index] === "--threshold") options.threshold = Number(argv[++index]);
+    else if (argv[index] === "--json") json = true;
+    else if (argv[index] === "--strict") strict = true;
+    else if (argv[index] === "--include-incomplete") options.includeIncomplete = true;
+    else roots.invalid = true;
+  }
+  if (roots.invalid || !roots.old.length || !roots.new.length || roots.old.concat(roots.new).some((root) => !root) ||
+    (options.threshold !== undefined && !(options.threshold >= 0))) {
+    process.stderr.write("usage: time-gate.mjs compare --old <results-directory>... " +
+      "--new <results-directory>... [--threshold <fraction>] [--strict] [--json] [--include-incomplete]\n");
+    process.exitCode = 1;
+    return;
+  }
+  const report = armComparisonReport(roots.old, roots.new, options);
+  process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : formatArmComparison(report));
+  if (report.status === "fail" || (strict && report.status === "inconclusive")) process.exitCode = 2;
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url) &&
+  process.argv[2] === "compare") {
+  compareCli(process.argv.slice(3));
+} else if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const roots = [];
   const options = {};
   let json = false;

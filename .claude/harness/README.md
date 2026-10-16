@@ -52,7 +52,7 @@ Each requires a real `--decision-ref`. Review is bounded by its rounds; each
 dispatch has its own timeout. See [WORKFLOW.md](../../WORKFLOW.md) for the user contract.
 
 Every phase view is derived from one versioned execution contract. Semantic
-draft v4 validates typed-risk discovery coverage (optional for ordinary changes) and decision prerequisites,
+draft v5 (and v4) validates typed-risk discovery coverage (optional for ordinary changes) and decision prerequisites,
 then compiles meaningful keys into stable cross-ledger IDs and writes only
 the OpenSpec artifacts the change needs. After Change, protocol-v6 `advance`
 is the normal model-facing entrypoint; primitive commands remain compatible
@@ -154,7 +154,18 @@ the upstream repository uses those names for its own maintainer guidance.
 | Workflow | `runtime/workflow/authority.mjs` | External authority request persistence and response validation |
 | Workflow | `runtime/workflow/budget.mjs` | Run/lifetime usage windows and budget policy transitions |
 | Workflow | `runtime/workflow/change-lifecycle.mjs` | Change creation, draft materialization, resolution, and atomic start |
-| Workflow | `runtime/workflow/semantic-draft.mjs` | Semantic draft v3 compatibility plus v4 discovery coverage, stable links, typed extensions, and provider defaults |
+| Workflow | `runtime/workflow/semantic-draft.mjs` | Semantic draft v3 compatibility plus v4/v5 discovery coverage, stable links, typed extensions, decision status and durable rationale, unknown task field warnings, and provider defaults |
+| Workflow | `runtime/workflow/draft-folder.mjs` | Draft v5 folder loader: splits authored `proposal.md`/`design.md` prose by outline heading, checks order, placeholders, and derived headings, and derives grounding NFR/observability from `change.json` |
+| Workflow | `runtime/workflow/validation/outline-contract.mjs` | The versioned outline: each packet section's document, order, heading (en/th), owner, feeding fields, and condition |
+| Workflow | `runtime/workflow/validation/architecture-fields.mjs` | Typed fields `boundaries`, `tenancy`, `domain` |
+| Workflow | `runtime/workflow/validation/contract-fields.mjs` | Typed fields `apiContracts`, `eventContracts`, `dataModel`, `ui`, `configContract` |
+| Workflow | `runtime/workflow/validation/quality-fields.mjs` | Typed fields `nfr`, `threatModel`, `observability`, `trackingPlan`, `capacity` |
+| Workflow | `runtime/workflow/validation/delivery-fields.mjs` | Typed fields `rollout`, `testStrategy`, `dependencies`, `recovery` |
+| Workflow | `runtime/workflow/validation/work-type-fields.mjs` | Work-type fields: `bugfix` variants, `refactor`, `libraryContract`, `migrationPlan`, `integrations`, `performanceAnalysis`, `dependencyChange`, `deprecationPlan`, `infraPlan`, `privacyAssessment`, `experimentDesign`, `releasePlan`, `modelCard` |
+| Workflow | `runtime/workflow/validation/process-fields.mjs` | Proposal fields `decisionLog`, `communication`, `releaseNote`, `demo`, `compliance`, and the archive-only review, compliance, and rollout-gate appendices |
+| Workflow | `runtime/workflow/validation/design-blueprints.mjs` | `WORK_TYPES`, `LIGHT_WORK`, `BEHAVIOR_NEUTRAL_WORK`, and design field validation/rendering in outline order |
+| Workflow | `runtime/workflow/validation/dev-document.mjs` | Work-type inference and the sections each work type requires |
+| Workflow | `runtime/workflow/skill-routing.mjs` | Build EDIT skills from work types, risk signals, and security triggers |
 | Workflow | `runtime/workflow/validation/semantic-intake.mjs` | Risk-derived discovery dimensions, decision-DAG validation, and bounded frontier selection |
 | Workflow | `runtime/workflow/validation/semantic-source-inventory.mjs` | Deterministic grounded-source inventory and freshness findings |
 | Workflow | `runtime/workflow/validation/repository-intelligence.mjs` | Bounded repository discovery, relevance ranking, and dependency/caller/test maps |
@@ -182,7 +193,19 @@ the upstream repository uses those names for its own maintainer guidance.
 | Docs | `CONSUMER-QUALITY.md` | Installed quality protocols, onboarding, adapters, baselines, and fail-closed rules |
 | Docs | `README.md` | Runtime overview and operator guide |
 
-Semantic draft version 4 is the default. Agents write intent, requirements,
+Semantic draft version 5 is the default; versions 4 and 3 compile unchanged.
+A v5 draft is a folder: `change.json` (`version: 5`, every typed field) plus
+authored `proposal.md` and `design.md` whose `## ` headings come from the
+outline contract. The compiler keeps authored prose byte-for-byte, merges it
+with derived sections in outline order, and rejects unknown, derived,
+out-of-order, empty, or `TODO`/`TBD` sections in one EDIT. Every field module
+exports `validate<Field>(value, path)` (issues prefixed by the exact path, such
+as `boundaries[0].timeout is required`) and `render<Field>(value, {language})`
+(markdown without the heading, Thai labels for `th`); older field shapes stay
+valid. New fields are optional in v4 and v3 as well. The section order, work
+types, and required sections are specified in [WORKFLOW.md](../../WORKFLOW.md#draft-v5-folder-and-outline).
+
+Agents write intent, requirements,
 tasks, and explicit discovery dispositions once (evidence capabilities default
 to `test`); the
 harness derives required dimensions, refuses unresolved coverage, and validates
@@ -310,9 +333,9 @@ the answer; do not perform dependent work or add blanket confirmation gates.
 |---|---|---|
 | `investigate --template` | Prints the versioned source/fact/hypothesis record | Starting a bounded investigation |
 | `investigate <record.json>` | Persists source-bound investigation state and emits a Change handoff when ready | Resuming Investigate or crossing into Change |
-| `change start --template` | Prints the semantic draft v4 contract with machine-checkable discovery coverage | Beginning a fresh Change |
-| `change start <draft.json> --inspect` | Returns the next typed intake action and exact resume route without creating a change | Iterating on a semantic draft |
-| `change start <draft.json>` | Compiles, validates, installs, and prepares one isolated change transactionally | Completing Change |
+| `change start --template` | Prints the semantic draft v4 contract with machine-checkable discovery coverage, `minimalDraftWriting`, one example block per work type (`workTypeExamples`), and the v5 folder layout (`draftFolderV5`) | Beginning a fresh Change |
+| `change start <draft.json \| draft-folder> --inspect` | Returns the next typed intake action and exact resume route without creating a change | Iterating on a semantic draft |
+| `change start <draft.json \| draft-folder>` | Compiles, validates, installs, and prepares one isolated change transactionally | Completing Change |
 | `change revise <change> <draft.json>` | Recompiles a revised semantic draft over the same change id through the start intake gate in the same call (an incomplete intake prints its action and changes nothing), with rollback and a requirement delta for approval; `--merge` applies the file as a partial draft over the recorded compiled-from draft; `--approve-spec --decision-ref <ref> [--through <target>]` records the user's approval in that call | An agreed semantic change must change before Build starts |
 | `change amend <change> <amendment.json>` | Adds, revises, or removes requirements before Land starts, including a `proven` candidate (returns to `building`); requires and retains a discovery delta for v4; a verify-only `updateTasks` amendment fixes an unfinished task's verify command (`--template` prints both); inspects in the same call and amends only at `DONE`, and accepts the same approval flags as `change revise` | A semantic v3/v4 change discovers new or changed behavior |
 | `change amend <change> --task <key\|id> --verify <command> [--reopen]` | Corrects one task's verify command directly through the same transaction (`--reopen` unticks a completed task); keeps the spec approval, claims, and capabilities, refuses an always-passing command, and accepts the task only when the new command passes | A task's verify command is wrong |

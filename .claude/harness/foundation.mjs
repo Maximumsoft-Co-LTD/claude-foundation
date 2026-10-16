@@ -96,7 +96,9 @@ import {
   REVIEW_FORCING_CAPABILITIES,
   REVIEW_DIVERSITY_CAPABILITIES
 } from "./runtime/evidence/evidence-contract.mjs";
-import { createChangeValidationRuntime } from "./runtime/workflow/change-validation.mjs";
+import {
+  createChangeValidationRuntime, postReleaseRolloutGates
+} from "./runtime/workflow/change-validation.mjs";
 import { routeRuntimeCommand } from "./runtime/core/cli-router.mjs";
 import { createProviderScheduler } from "./runtime/evidence/provider-scheduler.mjs";
 import { createReviewProtocol } from "./runtime/evidence/review-protocol.mjs";
@@ -576,9 +578,11 @@ const {
   canonicalChangedSurface,
   changedSurfaceResolvable,
   policyCapabilities,
+  policyRolloutCapabilities,
   policyCapabilityTrigger,
   capabilitiesForPaths,
   forecastCapabilities,
+  policyProviderSetupActions,
   clearPolicyCache
 } = createChangePolicy({
   root: ROOT,
@@ -783,6 +787,7 @@ const { receiptValidity } = createReceiptValidity({
   changeDiffIdentity: (id, state) => sandboxRuntime.changeDiffIdentity(id, state)
 });
 const changeValidationRuntime = createChangeValidationRuntime({
+  policyProviderSetupActions,
   relevantHash,
   markBlocked,
   root: ROOT,
@@ -1684,7 +1689,13 @@ const { recoverPendingApply, pendingApplyTransactions } = createApplyRecovery({
 const taskPacketWasPrecompleted = taskPacketWasPrecompletedOperation.bind(null, {
   loadRuntime, activeChangePath, exists: existsSync, fileDigest
 });
+// One set of deferred post-release gates for Prove and the archive appendix.
+function changeRolloutGates(id) {
+  return postReleaseRolloutGates(
+    { evidence, providerCapability, policyRolloutCapabilities }, id);
+}
 const { finalize: prove, audit: proofAudit } = createProofRuntime({
+  rolloutGates: changeRolloutGates,
   root: ROOT,
   protocolVersion: PROOF_PROTOCOL_VERSION,
   loadRuntime,
@@ -1905,6 +1916,9 @@ const landGrantRuntime = createLandGrantRuntime({
   archiveRecoveryReady: (id) => applyRuntime.archiveRecoveryReady(id)
 });
 const applyRuntime = createApplyRuntime({
+  // Archive appendices: review rounds and post-release rollout gates.
+  reviewAttemptRecords: (id) => reviewAttemptRecords(id),
+  rolloutGates: changeRolloutGates,
   root: ROOT,
   transactions: TRANSACTIONS,
   loadRuntime,

@@ -1,0 +1,9 @@
+{
+  "name": "wordstat",
+  "version": "1.4.0",
+  "private": true,
+  "main": "src/index.js",
+  "bin": { "wordstat": "bin/wordstat.js" },
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test" }
+}

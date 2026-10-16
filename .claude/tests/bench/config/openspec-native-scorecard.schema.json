@@ -195,6 +195,34 @@
         "source": { "$ref": "#/$defs/nullableString" }
       }
     },
+    "packet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["measurement", "reason", "path", "outlineSource", "missingSections", "duplicateSections", "words", "editRounds", "editRoundsMeasurement", "compileMs", "compileMeasurement", "compileSource"],
+      "properties": {
+        "measurement": { "$ref": "#/$defs/measurement" },
+        "reason": { "$ref": "#/$defs/nullableString" },
+        "path": { "$ref": "#/$defs/nullableString" },
+        "outlineSource": { "$ref": "#/$defs/nullableString" },
+        "missingSections": { "$ref": "#/$defs/packetSections" },
+        "duplicateSections": { "$ref": "#/$defs/packetSections" },
+        "words": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["proposal", "design", "tasks"],
+          "properties": {
+            "proposal": { "$ref": "#/$defs/nullableCount" },
+            "design": { "$ref": "#/$defs/nullableCount" },
+            "tasks": { "$ref": "#/$defs/nullableCount" }
+          }
+        },
+        "editRounds": { "$ref": "#/$defs/nullableCount" },
+        "editRoundsMeasurement": { "$ref": "#/$defs/measurement" },
+        "compileMs": { "$ref": "#/$defs/nullableNumber" },
+        "compileMeasurement": { "$ref": "#/$defs/measurement" },
+        "compileSource": { "$ref": "#/$defs/nullableString" }
+      }
+    },
     "evidenceReuse": {
       "type": "object",
       "additionalProperties": false,
@@ -213,6 +241,20 @@
     "nullableNumber": { "type": ["number", "null"], "minimum": 0 },
     "nullableCount": { "type": ["integer", "null"], "minimum": 0 },
     "measurement": { "enum": ["measured", "partial", "unavailable"] },
+    "packetSections": {
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["count", "sections"],
+          "properties": {
+            "count": { "type": "integer", "minimum": 0 },
+            "sections": { "type": "array", "items": { "type": "object" } }
+          }
+        }
+      ]
+    },
     "qualitySummary": {
       "type": "object",
       "additionalProperties": false,

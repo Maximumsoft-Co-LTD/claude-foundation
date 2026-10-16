@@ -14,6 +14,40 @@ scorecard and do not treat the historical rows below as current evidence. Its
 `--arm baseline` lane is the current form of the historical plain baseline arm:
 the same seed and oracle with no harness installed.
 
+### Packet metrics and the paid acceptance comparison
+
+An OpenSpec-native scorecard built with packet input carries a `packet`
+section (`openspec-native/quality.mjs` `collectPacketMetrics`, summarized by
+`scorecard.mjs`; `formatScorecardMarkdown` renders the same fields):
+
+| Field | Meaning |
+|---|---|
+| `missingSections` | Outline rows required for every draft (their condition holds without draft fields) that have no heading in `proposal.md` / `design.md`. Judged by the consumer's installed `outline-contract.mjs`; else the candidate's; `outlineSource` says which. No outline: `null`. A missing `design.md` is not checked. |
+| `duplicateSections` | Extra occurrences of the same `## ` heading in one document, outside code fences. |
+| `words` | Word-like segments (Thai included) of proposal, design, and tasks. |
+| `editRounds` | Rejected `start`/`revise` change-phase command rows before the first completed one (AGREED). `partial` when the run never agreed: a floor. |
+| `compileMs` | The AGREED start's `change.*` stage spans, else its command duration. |
+
+The packet is the archived one, else the control-root change, else the Build
+sandbox copy. A run without a packet or command rows reports `unavailable` and
+`null` counts, never 0.
+
+The paid acceptance decision compares an old candidate's runs with a new one's:
+
+```bash
+node .claude/tests/bench/openspec-native/time-gate.mjs compare \
+  --old <old-results>... --new <new-results>... [--threshold 0.2] [--json] [--strict]
+```
+
+The new arm passes when its oracle pass rate is at least the old arm's, its
+packets miss and repeat no section, and the median over paired scenarios of the
+per-scenario median wall time and tokens (input + output + cache creation +
+cache read) is at most `threshold` (default 20%) above the old arm's.
+`deltaPercent` is negative when faster. Any unmeasured metric is
+`inconclusive`, never a pass; the verdict is `fail` (exit 2) if a metric fails,
+else `inconclusive` (exit 0; 2 with `--strict`), else `pass`. Baseline-arm rows
+are ignored; speed uses completed runs unless `--include-incomplete`.
+
 Measures how the `/dev` workflow *performs* — not whether its artifacts are valid
 (that's `../scenarios/`), but what a run **costs**, how much **machinery** it
 uses, and how **good** the delivered code is. Answers three questions:

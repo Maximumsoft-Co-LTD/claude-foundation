@@ -1,20 +1,26 @@
 import { leasePathIsAllowed } from "../lease-runtime.mjs";
+import { ARCHITECTURE_FIELDS } from "./architecture-fields.mjs";
+import { CONTRACT_FIELDS } from "./contract-fields.mjs";
+import { QUALITY_FIELDS } from "./quality-fields.mjs";
+import { DELIVERY_FIELDS } from "./delivery-fields.mjs";
+import { WORK_TYPE_FIELDS } from "./work-type-fields.mjs";
+import { PROCESS_FIELDS } from "./process-fields.mjs";
+import { isSemanticV4Plus } from "./draft-version.mjs";
+import { BEHAVIOR_NEUTRAL_WORK, LIGHT_WORK, WORK_TYPES } from "../../contracts/work-types.mjs";
 
 // Design blueprints: the typed design sections a declared work type needs
 // before implementation. A thin design.md let Builds guess endpoint shapes,
 // UI states, and failure behavior. Shape errors block compilation; missing or
 // thin sections only warn, so the agent completes them without a user gate.
-export const WORK_TYPES = Object.freeze([
-  "feature", "bugfix", "refactor", "api", "ui", "data", "config", "async",
-  "integration", "chore", "docs"
-]);
+// The single work-type list and light-work/behavior-neutral sets live in
+// contracts so evidence modules share them; re-exported for existing importers.
+export { WORK_TYPES, LIGHT_WORK, BEHAVIOR_NEUTRAL_WORK };
 
 export const BLUEPRINT_KEYS = Object.freeze([
   "fileMap", "failureMatrix", "testMap", "apiContracts", "dataModel", "uiStates",
   "configContract", "jobContract", "bugfix", "refactor"
 ]);
 
-const LIGHT_WORK = new Set(["chore", "docs"]);
 const PLACEHOLDER = /(?:replace-with|needs clarification|\btodo\b|\btbd\b|<[^>]+>)/i;
 
 const BY_WORK_TYPE = {
@@ -39,6 +45,26 @@ const ENTRY_FIELDS = {
   configContract: ["key", "default", "validation"],
   jobContract: ["key", "states", "retry", "timeout", "idempotency"]
 };
+// Typed rows may name a required fact by its newer field (a data entity's
+// columns are its fields; a model-level migration covers every entity).
+const ENTRY_ALTERNATES = {
+  dataModel: { entity: ["name"], fields: ["columns"] }
+};
+
+// The list a section's entries live in: the array itself, or the entities of
+// the dataModel object form. Null when there is no list to check.
+function entryRows(key, value) {
+  if (Array.isArray(value)) return { rows: value, path: key };
+  if (key === "dataModel" && value && typeof value === "object" && Array.isArray(value.entities)) {
+    const modelMigration = present(value.migration);
+    return {
+      rows: modelMigration ? value.entities.map((row) => ({ migration: value.migration, ...row })) : value.entities,
+      path: "dataModel.entities"
+    };
+  }
+  return null;
+}
+
 const OBJECT_FIELDS = {
   bugfix: ["reproduction", "rootCause", "regression"],
   refactor: ["invariants", "characterization"]
@@ -64,7 +90,30 @@ export function draftWorkTypes(draft) {
     : [];
 }
 
+// Every typed field a draft may carry, keyed by field: { validate, render }.
+// Design rows render through these; process fields render in the proposal.
+export const DESIGN_FIELDS = Object.freeze({
+  ...ARCHITECTURE_FIELDS, ...CONTRACT_FIELDS, ...QUALITY_FIELDS, ...DELIVERY_FIELDS, ...WORK_TYPE_FIELDS
+});
+const TYPED_FIELDS = Object.freeze({ ...DESIGN_FIELDS, ...PROCESS_FIELDS });
+
+// The older list shape check; dataModel also accepts its object form.
+function entryShapeIssue(key, value) {
+  if (value === undefined || Array.isArray(value)) return "";
+  if (key === "dataModel" && value && typeof value === "object") return "";
+  return `semantic draft ${key} must be an array`;
+}
+
+function objectShapeIssue(key, value) {
+  return value !== undefined && (!value || typeof value !== "object" || Array.isArray(value))
+    ? `semantic draft ${key} must be an object` : "";
+}
+
 // Blocking shape issues: a typo in workType would silently select nothing.
+// A field that fails the coarse shape check reports that one message; one
+// with the right shape is checked by its field module (path-prefixed issues).
+// Rollout is checked against the draft's impact, so a high-impact change
+// must say how its rollback was proven.
 export function designBlueprintIssues(source) {
   const issues = [];
   if (source?.workType !== undefined) {
@@ -74,13 +123,21 @@ export function designBlueprintIssues(source) {
       if (!WORK_TYPES.includes(value))
         issues.push(`semantic draft workType '${value}' is unknown; use ${WORK_TYPES.join("|")}`);
   }
-  for (const key of Object.keys(ENTRY_FIELDS))
-    if (source?.[key] !== undefined && !Array.isArray(source[key]))
-      issues.push(`semantic draft ${key} must be an array`);
-  for (const key of Object.keys(OBJECT_FIELDS))
-    if (source?.[key] !== undefined &&
-        (!source[key] || typeof source[key] !== "object" || Array.isArray(source[key])))
-      issues.push(`semantic draft ${key} must be an object`);
+  const shaped = new Set();
+  for (const key of Object.keys(ENTRY_FIELDS)) {
+    const issue = entryShapeIssue(key, source?.[key]);
+    if (issue) { issues.push(issue); shaped.add(key); }
+  }
+  for (const key of Object.keys(OBJECT_FIELDS)) {
+    const issue = objectShapeIssue(key, source?.[key]);
+    if (issue) { issues.push(issue); shaped.add(key); }
+  }
+  for (const [key, field] of Object.entries(TYPED_FIELDS)) {
+    if (shaped.has(key) || source?.[key] === undefined || source?.[key] === null) continue;
+    const options = key === "rollout" ? { impact: source?.impact } : undefined;
+    for (const issue of field.validate(source[key], key, options))
+      if (!issues.includes(issue)) issues.push(issue);
+  }
   return issues;
 }
 
@@ -119,7 +176,7 @@ export function designBlueprintWarnings(draft) {
   const warnings = [];
   // A v4 draft's work type is inferred and its missing sections are dev
   // document repairs (dev-document.mjs); only v3 is prompted here.
-  const light = draft?.version === 4 || lightweightDraft(draft);
+  const light = isSemanticV4Plus(draft?.version) || lightweightDraft(draft);
   if (!light) for (const key of requiredBlueprints(draft))
     if (!present(draft[key]))
       warnings.push(`workType ${draftWorkTypes(draft).join(",")} expects '${key}'; add it or state why it does not apply`);
@@ -128,11 +185,14 @@ export function designBlueprintWarnings(draft) {
         /sequenceDiagram|stateDiagram/.test(String(row?.source || ""))))
     warnings.push("workType async expects a sequence or state diagram that includes the failure path");
   for (const [key, fields] of Object.entries(ENTRY_FIELDS)) {
-    if (!Array.isArray(draft?.[key])) continue;
-    draft[key].forEach((row, index) => {
-      const missing = fields.filter((field) => !present(row?.[field]));
-      if (missing.length) warnings.push(`${key}[${index}] is missing ${missing.join(", ")}`);
-      if (PLACEHOLDER.test(flatText(row))) warnings.push(`${key}[${index}] contains placeholder text`);
+    const entries = entryRows(key, draft?.[key]);
+    if (!entries) continue;
+    const { rows, path } = entries;
+    rows.forEach((row, index) => {
+      const missing = fields.filter((field) => !present(row?.[field]) &&
+        !(ENTRY_ALTERNATES[key]?.[field] || []).some((alternate) => present(row?.[alternate])));
+      if (missing.length) warnings.push(`${path}[${index}] is missing ${missing.join(", ")}`);
+      if (PLACEHOLDER.test(flatText(row))) warnings.push(`${path}[${index}] contains placeholder text`);
     });
   }
   for (const [key, fields] of Object.entries(OBJECT_FIELDS)) {
@@ -321,8 +381,8 @@ export function renderDesignBlueprints(draft, { inferredWorkTypes = [], fileTree
     `- **Characterization:** ${cell(draft.refactor.characterization)}`);
   if (present(draft.apiContracts))
     sections.push(`## API contracts\n\n${draft.apiContracts.map(apiContract).join("\n\n")}`);
-  if (present(draft.dataModel))
-    sections.push(`## Data model\n\n${draft.dataModel.map(dataEntity).join("\n\n")}`);
+  if (present(draft.dataModel)) sections.push(`## Data model\n\n${Array.isArray(draft.dataModel)
+    ? draft.dataModel.map(dataEntity).join("\n\n") : DESIGN_FIELDS.dataModel.render(draft.dataModel)}`);
   if (present(draft.uiStates))
     sections.push(`## UI states\n\n${draft.uiStates.map(uiScreen).join("\n\n")}`);
   if (present(draft.configContract)) sections.push(`## Config contract\n\n` + table([
@@ -346,7 +406,59 @@ export function renderDesignBlueprints(draft, { inferredWorkTypes = [], fileTree
   return sections.join("\n\n");
 }
 
-// Light work alone (chore, docs) never forces an otherwise empty design.md.
+// Section bodies (no "## " heading) for design rows whose field has no typed
+// module: the older uiStates and jobContract lists and the derived tables.
+export function renderUiStatesBody(rows) {
+  return present(rows) && Array.isArray(rows) ? rows.map(uiScreen).join("\n\n") : "";
+}
+
+export function renderJobContractBody(rows) {
+  return present(rows) && Array.isArray(rows) ? rows.map(jobContract).join("\n\n") : "";
+}
+
+export function renderFailureMatrixBody(rows) {
+  return present(rows) && Array.isArray(rows) ? table([
+    ["Failure", "failure"], ["User sees", "userSees"], ["Recovery", "recovery"], ["Covers", "covers", true]
+  ], rows) : "";
+}
+
+export function renderTestMapBody(rows) {
+  return present(rows) && Array.isArray(rows) ? table([
+    ["Scenario", "scenario"], ["Level", "level"], ["File", "file", true], ["Check", "check", true],
+    ["Task", "task"]
+  ], rows) : "";
+}
+
+function taskList(value) {
+  return (Array.isArray(value) ? value : [value]).map((item) => String(item ?? "").trim()).filter(Boolean);
+}
+
+// An authored file map renders as given, one row per path. A derived one
+// groups the paths that share a task responsibility, so each task's outcome
+// is stated once with every path it owns; the tree below marks additions.
+export function renderFileMapBody(rows, { derived = false, fileTree = "" } = {}) {
+  if (!present(rows) || !Array.isArray(rows)) return "";
+  let body;
+  if (!derived) {
+    body = table([
+      ["Path", "path"], ["Change", "change"], ["Responsibility", "responsibility"], ["Tasks", "tasks", true]
+    ], rows);
+  } else {
+    const groups = new Map();
+    for (const row of rows) {
+      const tasks = taskList(row?.tasks);
+      const key = tasks.join(",");
+      const group = groups.get(key) || { tasks, paths: [] };
+      group.paths.push(String(row?.change || "").toLowerCase() === "add" ? `\`${row.path}\` (add)` : `\`${row.path}\``);
+      groups.set(key, group);
+    }
+    body = table([["Tasks", "tasks", true], ["Paths", "paths"]],
+      [...groups.values()].map((group) => ({ ...group, paths: group.paths.join(", ") })));
+  }
+  return body + (fileTree ? `\n\n${fileTree}` : "");
+}
+
+// Light work alone (docs, test, chore) never forces an otherwise empty design.md.
 export function draftHasBlueprints(draft) {
   return draftWorkTypes(draft).some((type) => !LIGHT_WORK.has(type)) ||
     BLUEPRINT_KEYS.some((key) => present(draft?.[key]));

@@ -156,7 +156,8 @@ approval request; existing spec approval before Build remains unchanged.
 
 ### `/change <intent>`
 
-Change authors one semantic draft v4 with compact bookkeeping and enough
+Change authors one semantic draft (draft v5 for new work; v4 and v3 remain
+compatible) with compact bookkeeping and enough
 behavioral detail to understand scope and acceptance without chat history.
 Reconcile the relevant available conversation, latest corrections, and retained
 decisions before drafting, then check their coverage in the compiled packet.
@@ -177,6 +178,103 @@ agreement, installs it, and prepares isolation. The draft records:
 - claim-to-task coverage and required evidence capabilities;
 - semantic security and review triggers;
 - typed extensions only when the change needs them.
+
+#### Draft v5 folder and outline
+
+A draft v5 is a folder, started with `claude-foundation change start <folder>`
+(`new --draft` accepts it too). `change.json` declares `version: 5` and holds every typed field;
+`proposal.md` and `design.md` hold the author's prose under `## ` headings from
+the outline, in English or Thai. One versioned outline contract
+(`validation/outline-contract.mjs`) fixes every section's document, order,
+owner, feeding fields, and condition, so a section renders once in one place.
+The compiler keeps authored prose byte-for-byte and merges it with the derived
+sections in outline order. One EDIT names, per file, a missing `change.json`, a
+heading the outline does not have (with the accepted headings), a heading the
+harness derives (such as Change, Capabilities, Acceptance traceability,
+Definition of done, Work type, File map, Test map), a heading out of outline order
+(with the right order), an empty section, and a section containing `TODO` or
+`TBD`. v5 passes the same semantic intake gate and discovery coverage as v4.
+`nfr` and `observability` live only in `change.json`; the harness derives
+grounding's NFR and observability rows from them. `revise` and `amend` of a v5
+change keep the folder's prose; an amendment may replace one authored outline
+section of `proposal.md` or `design.md` in place (`sections: [{document, key,
+body | value}]`), and a section key the outline does not have is refused with
+the packet unchanged. Volatile data (status, approvers, evidence freshness,
+review record) never renders in the packet before Land, because the approval
+identity covers every packet file; read it with `claude-foundation changes`.
+
+Proposal order: header, Summary, Why, User stories, Success criteria, Scope,
+Capabilities (derived, more than one capability), Impact and risk, Decisions to
+ratify and open questions, Decision log, Communication/support/release note, How
+to verify, Acceptance traceability and Definition of done (derived), then the
+appendices (Investigation, Discovery coverage, Derived by the harness,
+Provenance, Amendment history; Review record and Compliance change record only
+at archive). Design order: Overview, Current state, Domain language,
+Assumptions, Work type (derived), Architecture, Tenancy, User flow, Runtime
+behavior, Domain model and modules, the contract sections (API, event and job,
+data model and migration, UI, config, integration), the work-type sections
+(public interface, migration plan, performance analysis, dependency change,
+deprecation plan, infrastructure plan, privacy assessment, experiment design,
+client release plan, model card, bugfix analysis, refactor invariants),
+Decisions, Quality attributes, Threat model, Failure matrix, Observability and
+usage, Compatibility and rollout, Capacity and cost, Backup and recovery, Test
+strategy, Dependencies, Risks, then the derived File map and Test map. Only
+sections whose fields are present render. Every new typed field is also
+optional in draft v4 and v3 drafts. Field shapes and one example block per
+work type are in `change start --template` (`workTypeExamples`,
+`draftFolderV5`); the harness guide lists the field modules.
+
+#### Work types and required sections
+
+`workType` takes any of: feature, bugfix, refactor, api, library, ui, data,
+migration, async, integration, config, performance, dependency, deprecation,
+infra, observability, privacy, experiment, client-release, ml, docs, test,
+chore. Undeclared, it is inferred from task paths. Light work (docs, test,
+chore) owes only a summary. Every other type owes a failure matrix, except
+behavior-neutral work (refactor, config, dependency, docs, test, chore), which
+tells its failure story in its own section. Each type adds:
+
+| Work type | Required sections |
+|---|---|
+| feature | userFlow |
+| bugfix | bugfix (`variant: security` adds `bugfix.disclosure`; `hotfix` adds `bugfix.incident`, `bugfix.backport`) |
+| refactor | refactor, componentMap |
+| api | apiContracts, boundaries |
+| library | libraryContract |
+| ui | userFlow, uiStates (or `ui`), componentMap |
+| data | dataModel |
+| migration | migrationPlan, rollout |
+| async | jobContract (or `eventContracts`), diagrams |
+| integration | integrations |
+| config | configContract |
+| performance | nfr, performanceAnalysis |
+| dependency | dependencyChange |
+| deprecation | deprecationPlan |
+| infra | infraPlan, rollout |
+| observability | observability |
+| privacy | privacyAssessment, threatModel |
+| experiment | experimentDesign, rollout |
+| client-release | releasePlan |
+| ml | modelCard |
+
+User-visible work (feature, api, library, ui, deprecation, client-release) also
+owes a `releaseNote`. A missing section is one agent EDIT naming the field's
+shape and an example, never a user question. Work types also select Build
+skills and evidence capabilities (below and in
+[EVIDENCE.md](.claude/harness/EVIDENCE.md)).
+
+#### Decisions
+
+A decision may carry `status` (`proposed`, `accepted`, `superseded`; absent
+means accepted), `drivers`, `options` with pros and cons, `confirmation`,
+`supersedes`, `durable`, and `requirements`. A proposed decision renders only in
+the proposal's Decisions to ratify section, so the user ratifies or changes it
+with approval; `design.md` records accepted and superseded decisions. An
+accepted `durable: true` decision adds a `Rationale` line under each
+requirement it names, so the reason survives archive into the living spec; an
+unknown requirement key is an agent EDIT. An unknown task field (for example
+`depends`) is an advisory warning naming the likely field (`dependsOn`); it
+never blocks.
 
 Rapid changes contain `proposal.md`, `tasks.md`, `evidence.yaml`, and a concise
 delta `specs/<capability>/spec.md` (one SHALL statement and its scenarios per
@@ -216,10 +314,9 @@ component map, config contract, refactor, bugfix) and its Decisions. Changes
 agreed before this layout keep their Plan, What changes, and Folder tree
 and read, resume, and archive unchanged. Descriptive sections never move a
 low-risk draft to standard; impact, coupling, security triggers, review, and
-acceptance still do. A standard v4 change
+acceptance still do. A standard v4 or v5 change
 always has `design.md`, and its draft must author the sections its work type
-needs (failures unless the work is only refactor, config, or light work; user flow, UI states, component map,
-API contracts, data model, config or job contract by type); the harness infers
+needs ([work types and required sections](#work-types-and-required-sections)); the harness infers
 the work type from task paths (stated in `design.md`; declare `workType` to
 override; test-, docs-, or manifest-only paths are light work) and derives the
 file map and test map (scenario and check command). Flowchart node
@@ -260,7 +357,9 @@ frontier; the agent interprets sources and authors requirements, while the user
 owns consequential choices. After compilation, the OpenSpec packet is the
 source of truth. The semantic draft is temporary and `.foundation/` is derived
 coordination state. Draft v1 remains compatible, draft v2 retains its
-unambiguous bookkeeping behavior, and draft v3 remains readable.
+unambiguous bookkeeping behavior, draft v3 remains readable, and draft v4
+compiles unchanged (new optional fields only add sections). A draft declaring
+any other version returns an EDIT naming the accepted versions 3, 4, and 5.
 
 `change start <draft.json>` inspects before compilation (`--inspect` only
 inspects). Inspection returns one typed `EDIT`, `ASK_USER`, or `DONE` action
@@ -299,7 +398,7 @@ section and are `{kind: constraint}` investigation coverage targets; optional
 directory) that this change corrects, is kept on the change, and feeds the
 `outcomes` escaped-defect count.
 Inspection persists one machine-owned snapshot bound to the draft and its
-grounded-source digests. Before each v4 inspection the harness performs bounded,
+grounded-source digests. Before each v4 or v5 inspection the harness performs bounded,
 read-only repository discovery and ranks relevant specs, tests, callers,
 integrations, persistence, and permission boundaries. Typed size, impact,
 coupling, risk, and repository signals choose the intake depth without dropping
@@ -933,6 +1032,18 @@ checking, Apply, verification, semantic spec
 synchronization, archival, recovery, and cleanup as internal checkpoints. It
 finishes only at `archived`; `proven` is not completion.
 
+After the merged specs verify, archive appends the volatile records to the
+archived `proposal.md` only: Appendix: Review record (review rounds and
+findings), Appendix: Compliance change record (the draft's `compliance`
+requester, approver, implementer, approval before Build or emergency with
+retrospective approval, plus the spec-approval decision; only when
+`openspec/config.yaml` sets `compliance: change-record`), and Appendix: Rollout
+gates (deferred post-release capabilities). A draft's `compliance` block is
+validated at Change (approver differs from implementer; `approvedBefore:
+"build"` unless `emergency: true` with a `retrospectiveApproval`). A
+resumed Land restores the archived proposal to its pre-append bytes and appends
+the same text, so the record is written once.
+
 Apply is a journaled transaction over the target. An interruption is recovered
 and resumed by the Harness through the same `/land` invocation. Restore,
 keep-current, journal, check, resume, and archive mechanics are not separate
@@ -1246,6 +1357,15 @@ but never gate or reduce the requirements derived from actual changed files.
 An inferred capability is binding only when a claim declares it or the project
 has wired a provider; otherwise it remains a visible advisory. Review stays a
 gate and has its own policy.
+
+The change's work types add capabilities that paths cannot reveal (for example
+`ml` → `evaluation`, `migration` → `parity`, `infra` → `plan-check` and
+`deployment`). Wiring a missing provider for one is agent work (a project-owned
+command in `execution.yaml`; `evidence init <change> --write` detects one), never
+a user question. Post-release capabilities (`release-health`,
+`experiment-guardrail`) are deferred rollout gates listed in the archived
+proposal; they never block proof or Land. The mapping and adapters are in
+[EVIDENCE.md](.claude/harness/EVIDENCE.md#work-type-capabilities).
 
 Consumer quality is opt-in (`quality.changeGate` defaults to `off`) through
 `quality/foundation-quality.json`. It is report-only until explicitly enforced,
@@ -1670,6 +1790,9 @@ runtime so schemas and behavior stay aligned. Use `change start|amend` and
 `advance --through build|proven|archived` for normal work. Operator,
 integration, host-instruction, and recovery protocols are documented in
 `.claude/harness/README.md`. Do not call `foundation.mjs` directly.
+
+Version pins: protocol `semanticDraftSchema` is 5 and the compiler accepts
+draft v3, v4, and v5. The runtime API is unchanged, so an installed CLI keeps working with this runtime.
 
 The harness guide also owns requirements and the canonical table of
 `.foundation/` runtime records and working inputs. Generated records are

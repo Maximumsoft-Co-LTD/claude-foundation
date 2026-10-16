@@ -72,7 +72,7 @@ export function createProofRuntime({
   writeJson, readJson, pathInside, validateArtifact, instructionProvenance,
   agentPlanValue = null, savedAgentPlan = null, taskResult = null,
   taskLease = null, taskPacketWasPrecompleted = null,
-  selectedRepositories = () => [], git = null, now, fail
+  selectedRepositories = () => [], git = null, rolloutGates = () => [], now, fail
 }) {
   function assertReadRepositoriesUnchanged(id, state) {
     if (!git) return;
@@ -208,6 +208,7 @@ export function createProofRuntime({
       aggregateGraphProof: graphProof.aggregate,
       providers: checks.map((row) => row.provider),
       advisories: advisoryCapabilities?.(id) || [],
+      rolloutGates: rolloutGates(id),
       receipts: receiptEntries,
       excludedReceipts,
       artifacts: state.activeProofRun?.serviceArtifacts ||
@@ -230,7 +231,9 @@ export function createProofRuntime({
     if (!options.quiet)
       console.log(`PROVEN ${id}\n  workspace: ${hash}\n  providers: ${proof.providers.join(", ")}` +
         `${excludedReceipts.length ? `\n  excluded receipts: ${excludedReceipts.map((row) =>
-          `${row.provider}:${row.validity}`).join(", ")}` : ""}\n  next: /land ${id}`);
+          `${row.provider}:${row.validity}`).join(", ")}` : ""}${proof.rolloutGates?.length
+          ? `\n  rollout gates (deferred): ${proof.rolloutGates.map((row) =>
+            row.capability).join(", ")}` : ""}\n  next: /land ${id}`);
   }
 
   function finalize(id, requestedProofRunId, suppliedOptions) {

@@ -1,5 +1,6 @@
 import { leasePathIsAllowed } from "../lease-runtime.mjs";
-import { draftWorkTypes } from "./design-blueprints.mjs";
+import { BEHAVIOR_NEUTRAL_WORK, LIGHT_WORK, draftWorkTypes } from "./design-blueprints.mjs";
+import { isSemanticV4Plus } from "./draft-version.mjs";
 
 // The dev document: what a Change hands to Build and to the person approving
 // it. Readers need to see what they get, what changes, and how it will be
@@ -41,22 +42,29 @@ function draftPaths(draft) {
 }
 
 const UI_FILE = /\.(?:tsx|jsx|vue|svelte|css|scss|sass|less|html)$/i;
+// Prompts and evals are model behavior even when written as markdown or tests.
+const ML_PATH = /(?:^|\/)(?:prompts|evals)\//i;
 const PATH_TYPES = [
   ["ui", /(?:^|\/)(?:components?|pages|views|screens|ui|layouts?)\//i],
   ["api", /\.(?:proto|graphql|gql)$|openapi|swagger|(?:^|\/)(?:api|routes?|controllers?|handlers?|endpoints?|resolvers?)\//i],
   ["data", /\.(?:sql|prisma)$|(?:^|\/)(?:migrations?|db|database|models?|schema|schemas|entities|repositories)\//i],
   ["async", /(?:^|\/)(?:jobs?|workers?|queues?|consumers?|producers?|schedulers?|cron)\//i],
-  ["config", /(?:^|\/)config\/|(?:^|\/|\.)config\.[\w.]+$|\.env\.example$/i]
+  ["config", /(?:^|\/)config\/|(?:^|\/|\.)config\.[\w.]+$|\.env\.example$/i],
+  ["infra", /\.tf(?:vars)?$|(?:^|\/)(?:terraform|helm|k8s|kubernetes)\/|^charts\/|(?:^|\/)Chart\.ya?ml$|(?:^|\/)Dockerfile(?:\.[\w.-]+)?$/],
+  ["observability", /(?:^|\/)(?:dashboards|alerts)\/|(?:^|\/)monitoring\/(?:[^/]+\/)*[^/]+\.rules\.ya?ml$/i],
+  ["ml", ML_PATH]
 ];
-// Paths that carry no product behavior of their own: documentation, tests,
-// and package manifests. A change made only of these is light work.
+// Paths that carry no product code of their own: package manifests and
+// lockfiles (dependency work), documentation, tests, and repository
+// housekeeping. A change made only of these infers its kind from them.
 const LIGHT_PATHS = [
+  ["dependency", /(?:^|\/)(?:package(?:-lock)?\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|go\.(?:mod|sum)|Cargo\.(?:toml|lock)|requirements(?:[-.][\w-]+)?\.txt|Pipfile(?:\.lock)?|poetry\.lock|uv\.lock|Gemfile(?:\.lock)?|composer\.(?:json|lock))$/],
   ["docs", /\.(?:md|mdx|rst|txt)$|(?:^|\/)docs?\//i],
   ["test", /(?:^|\/)(?:tests?|__tests__|spec)\/|\.(?:test|spec)\.[\w]+$|(?:^|\/)test_[^/]+\.py$|_test\.(?:go|py)$/i],
-  ["chore", /(?:^|\/)(?:package(?:-lock)?\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?)$/i]
+  ["chore", /(?:^|\/)(?:\.gitignore|\.gitattributes|\.editorconfig|CODEOWNERS|LICENSE(?:\.\w+)?)$/]
 ];
 
-// "docs", "test", "chore", or "" for product code. Prove's test
+// "dependency", "docs", "test", "chore", or "" for product code. Prove's test
 // discrimination classifies changed paths the same way work-type inference does.
 export function lightKind(path) {
   return LIGHT_PATHS.find(([, pattern]) => pattern.test(path))?.[0] || "";
@@ -75,7 +83,7 @@ export function inferWorkTypes(draft) {
   if (declared.length) return declared;
   const paths = draftPaths(draft);
   if (!paths.length) return [];
-  const product = paths.filter((path) => !lightKind(path));
+  const product = paths.filter((path) => !lightKind(path) || ML_PATH.test(path));
   if (!product.length) return [...new Set(paths.map(lightKind))];
   const found = new Set(product.flatMap(pathTypes));
   const inferred = PATH_TYPES.map(([type]) => type).filter((type) => found.has(type));
@@ -118,26 +126,53 @@ export function workTypesInferred(draft) {
   return !draftWorkTypes(draft).length && inferWorkTypes(draft).length > 0;
 }
 
-// Sections the reader and Build need per kind of work. File map, test map,
-// folder tree, and plan are derived by the harness, so they are never asked for.
+// Sections the reader and Build need per kind of work (the work type catalog
+// in change-doc-outline.md). File map, test map, folder tree, and plan are
+// derived by the harness, so they are never asked for. Docs, test, and chore
+// owe only a summary. Kept minimal: a type asks only for what its catalog row
+// names, so an author is never slowed by sections the work does not need.
 const REQUIRED_BY_TYPE = {
   feature: ["userFlow"],
+  bugfix: ["bugfix"],
+  refactor: ["refactor", "componentMap"],
+  api: ["apiContracts", "boundaries"],
+  library: ["libraryContract"],
   ui: ["userFlow", "uiStates", "componentMap"],
-  api: ["apiContracts"],
   data: ["dataModel"],
-  config: ["configContract"],
+  migration: ["migrationPlan", "rollout"],
   async: ["jobContract", "diagrams"],
   integration: ["integrations"],
-  bugfix: ["bugfix"],
-  refactor: ["refactor", "componentMap"]
+  config: ["configContract"],
+  performance: ["nfr", "performanceAnalysis"],
+  dependency: ["dependencyChange"],
+  deprecation: ["deprecationPlan"],
+  infra: ["infraPlan", "rollout"],
+  observability: ["observability"],
+  privacy: ["privacyAssessment", "threatModel"],
+  experiment: ["experimentDesign", "rollout"],
+  "client-release": ["releasePlan"],
+  ml: ["modelCard"]
 };
-const LIGHT_WORK = new Set(["docs", "chore", "test"]);
-// Work whose failure story its own section already tells: a refactor proves
-// unchanged behavior through its invariants and characterization, and a
+// A bugfix variant adds the detail its kind of fix owes.
+const BUGFIX_VARIANT_SECTIONS = {
+  security: ["bugfix.disclosure"],
+  hotfix: ["bugfix.incident", "bugfix.backport"]
+};
+// Work a user or consumer sees announces itself in a release note.
+const USER_VISIBLE_WORK = new Set(["feature", "api", "library", "ui", "deprecation", "client-release"]);
+// A required section any of whose fields satisfies it ("A or B").
+const SECTION_ALTERNATIVES = {
+  uiStates: ["uiStates", "ui"],
+  jobContract: ["jobContract", "eventContracts"]
+};
+// Behavior-neutral work tells its failure story in its own section: a refactor
+// proves unchanged behavior through its invariants and characterization, and a
 // config change states each value's validation. A separate failure matrix
 // would restate them.
-const NO_FAILURE_MATRIX = new Set([...LIGHT_WORK, "refactor", "config"]);
+const NO_FAILURE_MATRIX = BEHAVIOR_NEUTRAL_WORK;
 
+// Each entry names the field, its exact shape, and a short example, so a
+// missing-section repair is fixed in one pass.
 const SECTION_HELP = {
   summary: "'why' (or 'summary'): 1-3 plain sentences on what the user gets and what changes",
   failureMatrix: "'failureMatrix': [{ failure, userSees, recovery }] for each way this can fail " +
@@ -145,15 +180,87 @@ const SECTION_HELP = {
     "\"recovery\": \"resend valid input\" }), or add a requirement scenario with \"kind\": " +
     "\"failure\" (optional \"recovery\"); the harness derives the matrix from it",
   userFlow: "'userFlow': { purpose, source } with a Mermaid flowchart of the user's path, including the error path",
-  uiStates: "'uiStates': [{ screen, states: [loading, empty, error, success…], accessibility }]",
+  uiStates: "'uiStates' (or 'ui'): [{ screen, states: [loading, empty, error, success…], accessibility }] " +
+    "(e.g. { \"screen\": \"Board\", \"states\": [\"loading\", \"empty\", \"error\", \"success\"], " +
+    "\"accessibility\": \"keyboard reachable\" }); 'ui': { entryInfo, states, i18n, accessibility, validation } also satisfies it",
   componentMap: "'componentMap': [{ component, responsibility, files }] mapping each component to its files",
   apiContracts: "'apiContracts': [{ method, path, auth, request, response, errors }]",
+  boundaries: "'boundaries': [{ from, to, mode: sync|async, why, timeout (sync), retry, consistency, " +
+    "staleness (eventual), owner }] (e.g. { \"from\": \"api\", \"to\": \"billing\", \"mode\": \"sync\", " +
+    "\"why\": \"price at checkout\", \"timeout\": \"2s\", \"retry\": \"none\", \"consistency\": \"strong\", " +
+    "\"owner\": \"payments\" })",
+  libraryContract: "'libraryContract': { exports: [{ symbol, signature }], errors, semver: major|minor|patch, " +
+    "runtimes, deprecation, changelog } (e.g. { \"exports\": [{ \"symbol\": \"parse\", " +
+    "\"signature\": \"parse(text: string): Ast\" }], \"semver\": \"minor\", \"changelog\": \"Adds parse\" }); " +
+    "a CLI lists commands, flags, exit codes, and its stdout/stderr contract",
   dataModel: "'dataModel': [{ entity, fields, migration, rollback }]",
+  migrationPlan: "'migrationPlan': { from, to, seam, dualRun, parity: { check, tolerance }, cutover, " +
+    "rollbackWindow, decommission } (e.g. { \"from\": \"v1 jobs\", \"to\": \"queue service\", " +
+    "\"seam\": \"JobPort\", \"parity\": { \"check\": \"same results\", \"tolerance\": \"0\" }, " +
+    "\"cutover\": \"7 days parity\", \"rollbackWindow\": \"14 days\", \"decommission\": \"T009\" })",
+  rollout: "'rollout': { strategy, rollback, deployOrder?, gates?, enablement? { mechanism, " +
+    "defaultChanges, canDisable, reenable, downtime, test }, rollbackProof (required when impact is " +
+    "high), versionSkew?, upgradeSteps? } (e.g. { \"strategy\": \"flag new-search at 10% then 100%\", " +
+    "\"rollback\": \"disable the flag\", \"deployOrder\": [\"db\", \"api\"], " +
+    "\"rollbackProof\": \"enable, disable, enable test passes\" })",
   configContract: "'configContract': [{ key, default, validation }]",
-  jobContract: "'jobContract': [{ key, states, retry, timeout, idempotency }]",
+  jobContract: "'jobContract' (or 'eventContracts'): [{ key, states, retry, timeout, idempotency }] " +
+    "(e.g. { \"key\": \"sync-invoices\", \"states\": [\"queued\", \"done\", \"failed\"], " +
+    "\"retry\": \"3x backoff\", \"timeout\": \"30s\", \"idempotency\": \"invoice id\" }); " +
+    "'eventContracts': [{ name, producer, consumers, payload, ordering, delivery }] also satisfies it",
   diagrams: "'diagrams': a Mermaid sequence or state diagram that includes the failure path",
   integrations: "'integrations': each external system with its documentation and concerns",
+  nfr: "'nfr': [{ key, characteristic (ISO 25010), stimulus, response, measure }] " +
+    "(e.g. { \"key\": \"search-latency\", \"characteristic\": \"time behaviour\", " +
+    "\"stimulus\": \"100 rps search\", \"response\": \"results returned\", \"measure\": \"p95 < 200ms\" })",
+  performanceAnalysis: "'performanceAnalysis': { baseline: { value, method }, profile, hypothesis, target, " +
+    "benchmark: { runs, variance, environment }, tradeoffs, regressionBudget } (e.g. { \"baseline\": " +
+    "{ \"value\": \"p95 480ms\", \"method\": \"k6 5 runs\" }, \"hypothesis\": \"N+1 query\", " +
+    "\"target\": \"p95 < 200ms\" })",
+  dependencyChange: "'dependencyChange': [{ package, from, to, breaking, cves, license, transitive, " +
+    "rollbackPin, provenance, sbom }] (e.g. { \"package\": \"express\", \"from\": \"4.19.2\", " +
+    "\"to\": \"4.21.0\", \"breaking\": \"none in changelog\", \"cves\": \"fixes CVE-2024-43796\", " +
+    "\"rollbackPin\": \"4.19.2\", \"provenance\": \"npm provenance attested\", " +
+    "\"sbom\": \"sbom.cdx.json regenerated\" })",
+  deprecationPlan: "'deprecationPlan': { what, replacement, consumers, announce, warning, usageMetric, " +
+    "removalCondition } (e.g. { \"what\": \"GET /v1/items\", \"replacement\": \"GET /v2/items\", " +
+    "\"warning\": \"Deprecation header\", \"removalCondition\": \"usage zero for 30 days\" })",
+  infraPlan: "'infraPlan': { planDiff, environments, capacity, costDelta, blastRadius, secrets, " +
+    "provisioningOrder, drift } (e.g. { \"planDiff\": \"+1 aws_sqs_queue\", \"environments\": " +
+    "[\"staging\", \"prod\"], \"costDelta\": \"+$4/month\", \"blastRadius\": \"jobs only\" })",
+  observability: "'observability': { rows: [{ failure, signal, sli, slo, alert, runbook, owner }], usage, " +
+    "correlation } (e.g. rows: [{ \"failure\": \"queue backlog\", \"signal\": \"queue_depth\", " +
+    "\"sli\": \"age < 60s\", \"slo\": \"99%\", \"alert\": \"age > 300s 10m\", " +
+    "\"runbook\": \"docs/runbooks/queue.md\", \"owner\": \"platform\" }])",
+  privacyAssessment: "'privacyAssessment': { data: [{ field, class }], purpose, lawfulBasis, minimization, " +
+    "retention, deletion, subjectRequests, transfers } (e.g. { \"data\": [{ \"field\": \"email\", " +
+    "\"class\": \"personal\" }], \"purpose\": \"login\", \"retention\": \"account life + 30 days\" })",
+  threatModel: "'threatModel': { assets, trustBoundaries, threats: [{ key, stride, threat, likelihood, " +
+    "impact, control, residual }] } (e.g. \"assets\": [\"customer exports\"], \"trustBoundaries\": " +
+    "[\"browser to api\"], \"threats\": [{ \"key\": \"t1\", \"stride\": \"information disclosure\", " +
+    "\"threat\": \"export leaks another tenant\", \"likelihood\": \"low\", \"impact\": \"high\", " +
+    "\"control\": \"tenant filter\", \"residual\": \"low\" }])",
+  experimentDesign: "'experimentDesign': { hypothesis, primaryMetric, guardrails, unit, allocation, " +
+    "sampleSize, stopRules, exposureLogging, decisionRule, cleanup } (e.g. { \"hypothesis\": " +
+    "\"one-step checkout lifts conversion\", \"primaryMetric\": \"checkout conversion\", " +
+    "\"allocation\": \"50/50 by user\", \"decisionRule\": \"ship if +1% at 95%\" })",
+  releasePlan: "'releasePlan': { minimumVersion, coexistence, serverWindow, storeReview, stagedRollout, " +
+    "forcedUpgrade, crashGate } (e.g. { \"minimumVersion\": \"5.2\", \"stagedRollout\": " +
+    "[\"1%\", \"10%\", \"100%\"], \"crashGate\": \"crash-free >= 99.5%\" })",
+  modelCard: "'modelCard': { intendedUse, outOfScope, model: { provider, version }, dataSource, " +
+    "evaluation: { set, thresholds }, limitations, oversight, cost, monitoring, fallback } " +
+    "(e.g. { \"intendedUse\": \"summarize tickets\", \"model\": { \"provider\": \"anthropic\", " +
+    "\"version\": \"pinned id\" }, \"fallback\": \"show the raw ticket\" })",
+  releaseNote: "'releaseNote': 1-3 sentences a user or consumer reads in the changelog " +
+    "(e.g. \"Search now filters by tag.\")",
   bugfix: "'bugfix': { reproduction, rootCause, regression }",
+  "bugfix.disclosure": "'bugfix.disclosure' (security fix): { class, affectedVersions, exploitability, " +
+    "owner, embargo, advisory, backports } (e.g. { \"class\": \"IDOR\", \"affectedVersions\": \"<2.4.1\", " +
+    "\"owner\": \"security\", \"advisory\": \"GHSA pending\" })",
+  "bugfix.incident": "'bugfix.incident' (hotfix): { link, mitigation, minimumScope, followUp } " +
+    "(e.g. { \"link\": \"INC-212\", \"mitigation\": \"flag off\", \"followUp\": \"full fix change\" })",
+  "bugfix.backport": "'bugfix.backport' (hotfix): the branches that receive the fix " +
+    "(e.g. [\"release/2.3\", \"release/2.4\"])",
   refactor: "'refactor': { invariants, characterization }"
 };
 
@@ -161,8 +268,11 @@ export function requiredDevSections(draft) {
   const types = inferWorkTypes(draft);
   if (!types.length || types.every((type) => LIGHT_WORK.has(type))) return ["summary"];
   const failures = types.some((type) => !NO_FAILURE_MATRIX.has(type)) ? ["failureMatrix"] : [];
+  const variant = text(draft?.bugfix?.variant).toLowerCase();
+  const variants = types.includes("bugfix") ? BUGFIX_VARIANT_SECTIONS[variant] || [] : [];
+  const releaseNote = types.some((type) => USER_VISIBLE_WORK.has(type)) ? ["releaseNote"] : [];
   return [...new Set(["summary", ...failures,
-    ...types.flatMap((type) => REQUIRED_BY_TYPE[type] || [])])];
+    ...types.flatMap((type) => REQUIRED_BY_TYPE[type] || []), ...variants, ...releaseNote])];
 }
 
 function userFlowSource(value) {
@@ -228,7 +338,7 @@ export function derivedFailureMatrix(draft) {
 // evidence capabilities defaulted to the lane's plain check.
 export function derivedByHarness(draft, { standard = true } = {}) {
   const notes = [];
-  if (draft?.version !== 4 || !standard) return notes;
+  if (!isSemanticV4Plus(draft?.version) || !standard) return notes;
   const required = requiredDevSections(draft);
   if (!text(draft.summary) && !text(draft.why))
     notes.push("**Why:** not authored separately; the intent above states it.");
@@ -251,7 +361,9 @@ function sectionValue(draft, key) {
   // not sent back for one (derivedByHarness records it).
   if (key === "summary") return text(draft?.summary) || text(draft?.why) || text(draft?.intent);
   if (key === "failureMatrix") return derivedFailureMatrix(draft);
-  return draft?.[key];
+  if (SECTION_ALTERNATIVES[key])
+    return SECTION_ALTERNATIVES[key].map((field) => draft?.[field]).find(present);
+  return key.split(".").reduce((value, part) => value?.[part], draft);
 }
 
 // A standard change is approved and built from its dev document, so each
@@ -259,7 +371,7 @@ function sectionValue(draft, key) {
 // never a user question and never a refusal of the edit itself.
 // `lane` names why the draft is standard when the harness derived it.
 export function devDocumentIssues(draft, { standard = true, lane = "" } = {}) {
-  if (draft?.version !== 4 || !standard) return [];
+  if (!isSemanticV4Plus(draft?.version) || !standard) return [];
   const issues = [];
   const types = inferWorkTypes(draft);
   const label = (workTypesInferred(draft)
@@ -424,6 +536,8 @@ function requirementsByTask(draft) {
 }
 
 // Without an authored file map, each task scope is one row owned by its tasks.
+// A task's outcome lives only in tasks.md, so a derived row refers to it by task
+// id and never copies the text.
 export function derivedFileMap(draft) {
   if (present(draft?.fileMap)) return draft.fileMap;
   const fresh = newPaths(draft);
@@ -435,7 +549,6 @@ export function derivedFileMap(draft) {
       const row = rows.get(path) ||
         { path, change: fresh.has(path) ? "add" : "change", responsibility: "", tasks: [] };
       row.tasks = [...new Set([...row.tasks, task.id].filter(Boolean))];
-      if (!row.responsibility) row.responsibility = text(task.outcome);
       rows.set(path, row);
     }
   return [...rows.values()];
@@ -458,7 +571,8 @@ export function derivedTestMap(draft) {
     const names = [...new Set((requirements.get(task.id) || []).flatMap((key) =>
       scenarios.get(key)?.length ? scenarios.get(key) : [key]))];
     return {
-      scenario: names.join("; ") || text(task.outcome),
+      // The task's outcome lives in tasks.md; with no linked scenario, point at it.
+      scenario: names.join("; ") || `see ${task.id} in tasks.md`,
       level: "task check",
       check: `\`${text(task.verify)}\``,
       task: task.id

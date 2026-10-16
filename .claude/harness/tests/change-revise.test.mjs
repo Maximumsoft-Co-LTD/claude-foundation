@@ -589,3 +589,138 @@ test("requirement fingerprints change only with a requirement's claims or spec t
   assert.deepEqual(requirementDelta(before, after), { added: [], revised: ["a"], removed: [] });
   assert.deepEqual(requirementDelta(before, before), { added: [], revised: [], removed: [] });
 });
+
+// Draft v5: typed fields in change.json, authored prose in proposal.md and
+// design.md. A revise reads the folder through the same draft source as start.
+function folderDraft(outcome = "The service accepts 20 messages per second") {
+  const rows = [
+    { key: "throughput", capability: "change", operation: "added", outcome,
+      scenarios: [{ name: "Fast intake", when: "messages arrive", then: outcome }] },
+    { key: "ack-path", capability: "change", operation: "added",
+      outcome: "Each order is stored once",
+      scenarios: [{ name: "Stored once", when: "an order is saved twice",
+        then: "one order row exists" },
+      { name: "Store down", kind: "failure", when: "storage is unavailable",
+        then: "the order is rejected naming storage", recovery: "resend the order" }] }
+  ];
+  return {
+    version: 5, id: "revisable-change", intent: "Revisable change",
+    why: "Exercise pre-Build revision", impact: "medium", coupling: "isolated",
+    requirements: rows,
+    tasks: [{ key: "implement", outcome: "Implement the requirements",
+      covers: rows.map((row) => row.key), paths: ["src/**"], verify: "npm test" }],
+    evidence: Object.fromEntries(rows.map((row) => [row.key, { capabilities: ["test"] }]))
+  };
+}
+
+const FOLDER_SUMMARY = "Intake accepts orders at a bounded rate.\n\n  Kept *exactly*  ";
+const FOLDER_OVERVIEW = "One intake path feeds storage.\n\n```md\n## not a heading\n```\n";
+const FOLDER_RISKS = "- Duplicate orders are stored once";
+
+function writeFolder(root, name, draft, { design = null } = {}) {
+  const dir = join(root, ".foundation", "drafts", name);
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+  writeJson(join(dir, "change.json"), draft);
+  writeFileSync(join(dir, "proposal.md"), `# Revisable change\n\n## Summary\n\n${FOLDER_SUMMARY}\n\n`);
+  writeFileSync(join(dir, "design.md"), design ??
+    `## Overview\n\n${FOLDER_OVERVIEW}\n## Risks\n\n${FOLDER_RISKS}\n`);
+  return relative(root, dir);
+}
+
+function startFolder(value, path) {
+  const output = [];
+  quietly(() => value.lifecycle.startAtomic(path), output);
+  assert.ok(existsSync(join(value.changes, "revisable-change")), output.join("\n"));
+}
+
+function quietly(operation, output = []) {
+  const log = console.log;
+  console.log = (line) => output.push(String(line));
+  try { return operation(); } finally { console.log = log; }
+}
+
+function section(text, heading) {
+  const start = text.indexOf(`## ${heading}\n`);
+  assert.ok(start >= 0, `missing ## ${heading}\n${text}`);
+  const end = text.indexOf("\n## ", start + 1);
+  return end < 0 ? text.slice(start) : text.slice(start, end + 1);
+}
+
+test("a v5 folder revise keeps unchanged prose byte-identical and reports the requirement delta", (t) => {
+  const value = fixture(t);
+  const first = writeFolder(value.root, "revisable-change", folderDraft());
+  startFolder(value, first);
+  const packet = join(value.changes, "revisable-change");
+  const proposalBefore = readFileSync(join(packet, "proposal.md"), "utf8");
+  const designBefore = readFileSync(join(packet, "design.md"), "utf8");
+  assert.ok(proposalBefore.includes(`## Summary\n\n${FOLDER_SUMMARY}\n\n`), proposalBefore);
+
+  const second = writeFolder(value.root, "revisable-change-2",
+    folderDraft("The service accepts 50 messages per second"));
+  const output = [];
+  const delta = quietly(() => value.lifecycle.reviseChange("revisable-change", second), output);
+  assert.deepEqual(delta, { added: [], revised: ["throughput"], removed: [] });
+  assert.match(output.join("\n"), /^REVISED revisable-change/m);
+  assert.match(output.join("\n"), /revised: throughput/);
+  const proposal = readFileSync(join(packet, "proposal.md"), "utf8");
+  const design = readFileSync(join(packet, "design.md"), "utf8");
+  assert.equal(section(proposal, "Summary"), section(proposalBefore, "Summary"));
+  assert.equal(section(design, "Overview"), section(designBefore, "Overview"));
+  assert.equal(section(design, "Risks"), section(designBefore, "Risks"));
+  assert.ok(design.includes(`## Overview\n\n${FOLDER_OVERVIEW}`), design);
+  const spec = readFileSync(join(packet, "specs", "change", "spec.md"), "utf8");
+  assert.match(spec, /50 messages per second/);
+  const state = value.state();
+  assert.equal(state.draftSource.draft.prose.design.overview, `\n${FOLDER_OVERVIEW}\n`);
+  assert.equal(state.pendingApprovalDelta.revised[0], "throughput");
+});
+
+test("revise --inspect reads a v5 folder", (t) => {
+  const value = fixture(t);
+  const first = writeFolder(value.root, "revisable-change", folderDraft());
+  startFolder(value, first);
+  const before = snapshot(value.root);
+  const second = writeFolder(value.root, "revisable-change-2",
+    folderDraft("The service accepts 50 messages per second"));
+  const result = quietly(() => value.lifecycle.inspectRevision("revisable-change", second));
+  assert.equal(result.action, "DONE");
+  assert.deepEqual(snapshot(value.root), before);
+});
+
+test("a v5 change revises from a v4 JSON draft and back to a folder", (t) => {
+  const value = fixture(t);
+  const first = writeFolder(value.root, "revisable-change", folderDraft());
+  startFolder(value, first);
+  const { version: _v, ...typed } = folderDraft("The service accepts 30 messages per second");
+  writeJson(value.draftPath, { ...typed, version: 4 });
+  assert.deepEqual(quietly(() => value.lifecycle.reviseChange("revisable-change", value.draftPath)),
+    { added: [], revised: ["throughput"], removed: [] });
+  const packet = join(value.changes, "revisable-change");
+  assert.doesNotMatch(readFileSync(join(packet, "design.md"), "utf8"), /One intake path feeds storage/);
+  assert.equal(value.state().draftSource.draft.prose, undefined);
+  const again = writeFolder(value.root, "revisable-change-3", folderDraft());
+  quietly(() => value.lifecycle.reviseChange("revisable-change", again));
+  assert.ok(readFileSync(join(packet, "design.md"), "utf8").includes(`## Overview\n\n${FOLDER_OVERVIEW}`));
+  assert.equal(value.state().draftSource.draft.prose.proposal.summary, `\n${FOLDER_SUMMARY}\n\n`);
+});
+
+test("a v5 folder with an unknown heading returns EDIT and leaves the packet unchanged", (t) => {
+  const value = fixture(t);
+  const first = writeFolder(value.root, "revisable-change", folderDraft());
+  startFolder(value, first);
+  const before = snapshot(value.root);
+  const bad = writeFolder(value.root, "revisable-change-bad",
+    folderDraft("The service accepts 50 messages per second"),
+    { design: "## Overview\n\nText\n\n## Wishlist\n\nMore\n" });
+  for (const run of [
+    () => value.lifecycle.reviseChange("revisable-change", bad),
+    () => value.lifecycle.inspectRevision("revisable-change", bad)
+  ]) {
+    const result = quietly(run);
+    assert.equal(result.action, "EDIT");
+    assert.match(JSON.stringify(result), /Wishlist/);
+    assert.match(result.resume, /change revise revisable-change .*revisable-change-bad --inspect/);
+  }
+  assert.deepEqual(snapshot(value.root), before);
+});

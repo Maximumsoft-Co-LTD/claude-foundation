@@ -20,8 +20,10 @@ the bookkeeping, and installs the result transactionally.
 For an ordinary change, the agent writes only the intent, the behavior, and the tasks, and
 leaves `version` out. `change start --template` prints this form first as
 `minimalDraft`, preceded by a `save` field: the agent writes the draft with its
-Write tool to `.foundation/drafts/<id>.json` (a pre-allowed path), because the
-host refuses a shell heredoc:
+Write tool under `.foundation/drafts/` (a pre-allowed path), because the host
+refuses a shell heredoc. A draft is either one JSON file,
+`.foundation/drafts/<id>.json`, or a draft v5 folder,
+`.foundation/drafts/<id>/` (see below):
 
 ```json
 {
@@ -59,7 +61,7 @@ each default you chose without asking (stack, storage): they are recorded as
 lane. With no `why`, the proposal omits Why rather than repeat the intent.
 One `change start <draft>`
 inspects and starts it, and prints the packet files and tasks. A draft that
-states `version: 4` or declares risk uses the full form below.
+states `version: 4` or `version: 5`, or declares risk, uses the full form below.
 
 ## The full semantic draft
 
@@ -133,7 +135,7 @@ prose follows it while `SHALL`, `GIVEN`, `WHEN`, `THEN`, and `AND` stay English
 for the OpenSpec parser.
 
 Print the current schema with `change start --template`, then run
-`change start <draft.json>`. A complete draft is inspected, compiled, and
+`change start <draft.json>` (or `change start <folder>` for a draft v5 folder). A complete draft is inspected, compiled, and
 started in one call, and the output lists the packet files and tasks.
 Otherwise the harness returns agent-owned source investigation or repair, or at
 most three linked user decisions, plus an exact resume route, and creates
@@ -162,6 +164,64 @@ dimensions. Source-answerable questions, duplicate alternatives, and
 unsupported recommendations are rejected. A changed source returns
 `refresh-source-coverage`; the snapshot records compact effectiveness metrics,
 not a transcript.
+
+## Draft v5 folder
+
+New work uses draft v5; v4 and v3 drafts remain compatible. A v5 draft is a
+folder that `change start <folder>` accepts like a JSON draft:
+
+```text
+.foundation/drafts/<id>/
+├── change.json   # "version": 5 and every typed field
+├── proposal.md   # authored prose under outline headings
+└── design.md     # authored prose under outline headings
+```
+
+`proposal.md` and `design.md` use only `## ` headings from one versioned
+outline, in outline order, in English or Thai. The harness writes the derived
+sections itself (Change header, Capabilities, Acceptance traceability,
+Definition of done, Work type, File map, Test map) and merges them with your
+prose, kept byte for byte, in outline order. The proposal reads from why,
+user stories, success criteria, and scope through impact and risk, decisions to
+ratify, and how to verify, then appendices; the design reads from current state
+and architecture through contracts, work-type sections, decisions, quality,
+rollout, and tests. One `EDIT` names any unknown, derived, out-of-order, empty,
+or `TODO`/`TBD` section. `change start --template` prints the accepted headings
+as `draftFolderV5`. Status, approvers, evidence freshness, and the review
+record never render before Land; read them with `claude-foundation changes`.
+The full order and rules live in `WORKFLOW.md` under "Draft v5 folder and
+outline".
+
+## Work types
+
+`workType` (declared, or inferred from task paths) selects the design sections a
+standard change must carry. A missing one is an agent `EDIT` naming the field's
+shape and an example, never a user question. Some examples:
+
+| Work type | Required sections |
+|---|---|
+| feature | `userFlow` |
+| bugfix | `bugfix` |
+| api | `apiContracts`, `boundaries` |
+| data | `dataModel` |
+| migration | `migrationPlan`, `rollout` |
+| ui | `userFlow`, `uiStates`, `componentMap` |
+
+Docs, test, and chore work owes only a summary; user-visible work also owes a
+`releaseNote`. Work types also select Build skills and evidence capabilities.
+The full catalog of 23 types is in `WORKFLOW.md` under "Work types and required
+sections"; capabilities are in `.claude/harness/EVIDENCE.md` under "Work-type
+capabilities".
+
+## Decisions
+
+A decision may carry `status` (`proposed`, `accepted`, `superseded`; absent
+means accepted), drivers, options, and the requirements it explains. A proposed
+decision appears only under the proposal's Decisions to ratify, so you ratify
+or change it with approval; `design.md` records accepted and superseded ones.
+An accepted `durable: true` decision adds a `Rationale` line under each named
+requirement, so the reason survives archive into the living spec. See
+`WORKFLOW.md` under "Decisions".
 
 ## Typed extensions
 
@@ -214,11 +274,16 @@ marked `+`) sits in `design.md`'s file map. The rapid proposal is the compact
 dev document: summary, user flow, failure matrix, and its decisions.
 Existing changes keep their older layout and still read. Descriptive sections (`fileMap`,
 `testMap`, `componentMap`, `userFlow`, `configContract`, `refactor`) render
-there too and never move a low-risk change to standard. A standard v4 change
+there too and never move a low-risk change to standard. A standard v4 or v5 change
 always adds `design.md` with the full dev document and states its work type,
 noting when it was inferred. Flowchart node labels holding `(`, `)`, or `"`
 must be quoted, as in `A["mean(values)"]`. Execution, repository,
 handoff, and grounding files appear only for real overrides.
+
+At archive, Land appends the volatile records to the archived `proposal.md`
+only: Appendix: Review record, Appendix: Compliance change record (only when
+`openspec/config.yaml` sets `compliance: change-record`), and Appendix: Rollout
+gates.
 
 After compilation, `openspec/changes/<id>/` is the source of truth. The draft is
 temporary and `.foundation/` is derived runtime state.

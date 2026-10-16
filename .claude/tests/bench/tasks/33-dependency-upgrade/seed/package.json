@@ -1,0 +1,10 @@
+{
+  "name": "invoice-archive",
+  "version": "3.2.0",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test" },
+  "dependencies": {
+    "slugkit": "file:vendor/slugkit-1.0.0"
+  }
+}

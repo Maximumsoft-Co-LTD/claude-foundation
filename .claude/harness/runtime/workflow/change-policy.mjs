@@ -1,6 +1,8 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { repositoryBaseHead } from "../core/repository-binding.mjs";
+import { isPostReleaseCapability } from "../evidence/provider-catalog.mjs";
+import { changeWorkTypes as packetChangeWorkTypes } from "./task-change.mjs";
 
 export { repositoryBaseHead } from "../core/repository-binding.mjs";
 
@@ -48,6 +50,79 @@ export function carriedInUnchanged(
   return unchangedManifestEntry(fileDigest, workspace, preexisting, rel);
 }
 
+// Evidence each work type needs beyond what its changed paths reveal.
+export const WORK_TYPE_CAPABILITIES = Object.freeze({
+  api: Object.freeze(["compatibility"]),
+  library: Object.freeze(["compatibility"]),
+  ui: Object.freeze(["accessibility"]),
+  dependency: Object.freeze(["dependency-supply-chain"]),
+  infra: Object.freeze(["plan-check", "deployment"]),
+  migration: Object.freeze(["parity"]),
+  ml: Object.freeze(["evaluation"]),
+  "client-release": Object.freeze(["release-health"]),
+  experiment: Object.freeze(["experiment-guardrail"]),
+  observability: Object.freeze(["observability"]),
+  data: Object.freeze(["data-migration"]),
+  privacy: Object.freeze(["security-static"])
+});
+
+function normalizedWorkTypes(workTypes) {
+  return [...new Set((workTypes || [])
+    .map((type) => String(type || "").trim().toLowerCase()).filter(Boolean))].sort();
+}
+
+// Work-type evidence split by phase. `capabilities` gate proof and Land;
+// `postRelease` capabilities (release health, experiment guardrails) only
+// gate the rollout and are never blocking. Triggers name the work type.
+export function capabilitiesForWorkTypes(workTypes) {
+  const capabilities = new Set();
+  const postRelease = new Set();
+  const triggers = {};
+  for (const type of normalizedWorkTypes(workTypes))
+    for (const capability of WORK_TYPE_CAPABILITIES[type] || []) {
+      (isPostReleaseCapability(capability) ? postRelease : capabilities).add(capability);
+      (triggers[capability] ||= []).push(`work-type:${type}`);
+    }
+  return {
+    capabilities: [...capabilities].sort(), postRelease: [...postRelease].sort(), triggers
+  };
+}
+
+// Agent-owned setup actions for blocking work-type capabilities the project
+// has no configured provider for. Wiring a provider is agent work, never a
+// user question, and each action carries the route that resumes proof.
+export function workTypeProviderSetupActions(id, workTypes, configuredCapabilities = []) {
+  const configured = new Set(configuredCapabilities);
+  const { capabilities, triggers } = capabilitiesForWorkTypes(workTypes);
+  return capabilities.filter((capability) => !configured.has(capability))
+    .map((capability) => ({
+      kind: "configure-provider",
+      action: "EDIT",
+      owner: "agent",
+      capability,
+      trigger: triggers[capability][0],
+      instruction: `Configure a project-owned ${capability} provider in openspec/changes/${
+        id}/execution.yaml (detect one with claude-foundation evidence init ${id} --write).`,
+      command: `claude-foundation evidence init ${id} --write`,
+      resume: `claude-foundation advance ${id} --through proven`
+    }));
+}
+
+// The compiled packet's work types; the active sandbox copy wins over root.
+function defaultChangeWorkTypes(root) {
+  return (id, state) => {
+    const candidates = [
+      state?.status === "archived" && state.archivedChangePath
+        ? join(root, state.archivedChangePath) : null,
+      state?.workspace?.path ? join(state.workspace.path, "openspec", "changes", id) : null,
+      join(root, "openspec", "changes", id)
+    ];
+    const path = candidates.find((candidate) => candidate && existsSync(candidate));
+    if (!path) return [];
+    try { return packetChangeWorkTypes(path) || []; } catch { return []; }
+  };
+}
+
 export function createChangePolicy({
   root, excludedWorkspaceDirs, providers, gitHead, git, porcelainStatusRecords,
   workspaceManifest, loadRuntime, selectedRepositories, isCurrentChangePath,
@@ -55,7 +130,9 @@ export function createChangePolicy({
   // Root-relative paths of repositories declared in the topology. Their
   // gitlink (or a missing/empty mirror of it) in the root workspace is that
   // repository's own pointer, never root task content.
-  declaredRepositoryPaths = () => []
+  declaredRepositoryPaths = () => [],
+  // (id, state) -> declared or inferred work types of the change.
+  changeWorkTypes = defaultChangeWorkTypes(root)
 }) {
   const policyCache = new Map();
   const carriedInUnchangedFor = carriedInUnchanged.bind(null, fileDigest);
@@ -150,7 +227,7 @@ export function createChangePolicy({
     return sortChangedSurface(rows);
   }
 
-  function capabilitiesForPaths(paths) {
+  function capabilitiesForPaths(paths, workTypes = []) {
     const relevantFiles = paths
       .filter((path) => !path.startsWith("openspec/changes/") &&
         !path.startsWith("root/openspec/changes/"));
@@ -210,7 +287,14 @@ export function createChangePolicy({
         for (const capability of rule.capabilities)
           if (providers.has(capability)) require(capability, trigger);
     }
-    return { capabilities: [...required].sort(), triggers };
+    const byWork = capabilitiesForWorkTypes(workTypes);
+    for (const capability of byWork.capabilities)
+      byWork.triggers[capability].forEach((trigger) => require(capability, trigger));
+    for (const capability of byWork.postRelease)
+      (triggers[capability] ||= []).push(...byWork.triggers[capability]);
+    return {
+      capabilities: [...required].sort(), postRelease: byWork.postRelease, triggers
+    };
   }
 
   function globToRegExp(glob) {
@@ -262,20 +346,39 @@ export function createChangePolicy({
     return [...paths];
   }
 
-  function forecastCapabilities(globs) {
-    return capabilitiesForPaths(expandDeclaredSurface(globs || []));
+  function forecastCapabilities(globs, workTypes = []) {
+    return capabilitiesForPaths(expandDeclaredSurface(globs || []), workTypes);
+  }
+
+  function workTypesFor(id, state) {
+    try { return normalizedWorkTypes(changeWorkTypes(id, state)); } catch { return []; }
   }
 
   function policyAnalysis(id) {
     if (policyCache.has(id)) return policyCache.get(id);
     const state = loadRuntime(id);
-    const result = capabilitiesForPaths(canonicalChangedSurface(id, state)
-      .map((row) => `${row.repositoryId}/${row.path}`));
+    const workTypes = workTypesFor(id, state);
+    const result = {
+      ...capabilitiesForPaths(canonicalChangedSurface(id, state)
+        .map((row) => `${row.repositoryId}/${row.path}`), workTypes),
+      workTypes
+    };
     policyCache.set(id, result);
     return result;
   }
 
   function policyCapabilities(id) { return policyAnalysis(id).capabilities; }
+
+  // Post-release capabilities the work types owe: rollout gates, never blocking.
+  function policyRolloutCapabilities(id) { return policyAnalysis(id).postRelease; }
+
+  // Agent-owned provider setup for work-type capabilities with no configured
+  // provider. `configuredCapabilities` are the capabilities of the change's
+  // configured providers.
+  function policyProviderSetupActions(id, configuredCapabilities = []) {
+    return workTypeProviderSetupActions(id, policyAnalysis(id).workTypes,
+      configuredCapabilities);
+  }
 
   function policyCapabilityTrigger(id, capability) {
     const paths = policyAnalysis(id).triggers[capability];
@@ -290,6 +393,8 @@ export function createChangePolicy({
     capabilitiesForPaths,
     forecastCapabilities,
     policyCapabilities,
+    policyRolloutCapabilities,
+    policyProviderSetupActions,
     policyCapabilityTrigger,
     clearPolicyCache
   };

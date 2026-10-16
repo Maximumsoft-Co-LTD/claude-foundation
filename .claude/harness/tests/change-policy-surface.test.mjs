@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   addChangedSurfaceSource,
+  capabilitiesForWorkTypes,
   changedSurfaceRows,
   createChangePolicy,
   repositoryBaseHead,
@@ -328,4 +329,82 @@ test("changed file discovery handles git failures, renames, copies, and headless
   assert.deepEqual(policy.changedFiles("c", {
     workspace: { path: "/copy", mode: "reference", baseline: {} }
   }), []);
+});
+
+function workTypePolicy(workTypes, changed = []) {
+  return createChangePolicy({
+    root: "/root", excludedWorkspaceDirs: new Set(), providers: new Set(),
+    gitHead: () => "head",
+    git: (args) => args[0] === "diff"
+      ? { status: 0, stdout: changed.map((path) => `${path}\0`).join("") }
+      : { status: 0, stdout: "" },
+    porcelainStatusRecords: () => [], workspaceManifest: () => ({}),
+    loadRuntime: () => ({ workspace: { baseHead: "base" }, repositories: {} }),
+    selectedRepositories: () => [{ id: "root", workspacePath: "/root" }],
+    isCurrentChangePath: () => false, readJson: () => ({}),
+    fileDigest: () => "digest", fail: (message) => { throw new Error(message); },
+    changeWorkTypes: () => workTypes
+  });
+}
+
+test("an ml change requires evaluation evidence even when no path reveals it", () => {
+  const policy = workTypePolicy(["ML"], ["src/model.py"]);
+  assert.ok(policy.policyCapabilities("c").includes("evaluation"));
+  assert.equal(policy.policyCapabilityTrigger("c", "evaluation"), "work-type:ml");
+  assert.deepEqual(capabilityPolicy().capabilitiesForPaths(["src/model.py"]).capabilities, []);
+});
+
+test("work types add their catalog capabilities to path-derived ones", () => {
+  const result = capabilityPolicy().capabilitiesForPaths(["ui/Button.tsx"], [
+    "api", "library", "ui", "dependency", "infra", "migration", "ml",
+    "observability", "data", "privacy", "docs"
+  ]);
+  assert.deepEqual(result.capabilities, [
+    "accessibility", "compatibility", "data-migration", "dependency-supply-chain",
+    "deployment", "evaluation", "observability", "parity", "plan-check", "security-static"
+  ]);
+  assert.deepEqual(result.triggers.accessibility, ["ui/Button.tsx", "work-type:ui"]);
+  assert.deepEqual(result.triggers.compatibility, ["work-type:api", "work-type:library"]);
+  assert.deepEqual(result.postRelease, []);
+});
+
+test("client-release requires release-health as a rollout gate that never blocks", () => {
+  const policy = workTypePolicy(["client-release", "experiment"], ["app/main.swift"]);
+  assert.deepEqual(policy.policyRolloutCapabilities("c"),
+    ["experiment-guardrail", "release-health"]);
+  assert.ok(!policy.policyCapabilities("c").includes("release-health"));
+  assert.ok(!policy.policyCapabilities("c").includes("experiment-guardrail"));
+  assert.equal(policy.policyCapabilityTrigger("c", "release-health"), "work-type:client-release");
+  assert.deepEqual(policy.policyProviderSetupActions("c", []), []);
+  assert.deepEqual(capabilitiesForWorkTypes(["client-release"]).capabilities, []);
+});
+
+test("infra without a plan-check provider yields an agent-owned setup action with resume", () => {
+  const policy = workTypePolicy(["infra"]);
+  assert.ok(policy.policyCapabilities("c").includes("plan-check"));
+  const actions = policy.policyProviderSetupActions("c", ["deployment"]);
+  assert.equal(actions.length, 1);
+  const [action] = actions;
+  assert.equal(action.capability, "plan-check");
+  assert.equal(action.owner, "agent");
+  assert.notEqual(action.action, "ASK_USER");
+  assert.equal(action.kind, "configure-provider");
+  assert.equal(action.trigger, "work-type:infra");
+  assert.match(action.resume, /^claude-foundation advance c --through proven$/);
+  assert.match(action.instruction, /plan-check provider/);
+  assert.deepEqual(policy.policyProviderSetupActions("c", ["deployment", "plan-check"]), []);
+});
+
+test("work type lookup failures fall back to path-only capabilities", () => {
+  const policy = createChangePolicy({
+    root: "/root", excludedWorkspaceDirs: new Set(), providers: new Set(),
+    gitHead: () => null, git: () => ({ status: 0, stdout: "" }),
+    porcelainStatusRecords: () => [], workspaceManifest: () => ({}),
+    loadRuntime: () => ({ workspace: {} }), selectedRepositories: () => [],
+    isCurrentChangePath: () => false, readJson: () => ({}),
+    fileDigest: () => "digest", fail: (message) => { throw new Error(message); },
+    changeWorkTypes: () => { throw new Error("unreadable packet"); }
+  });
+  assert.deepEqual(policy.policyCapabilities("c"), []);
+  assert.deepEqual(policy.policyRolloutCapabilities("c"), []);
 });

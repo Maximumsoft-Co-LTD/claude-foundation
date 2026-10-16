@@ -75,7 +75,7 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 |---|---|
 | `investigate --template \| <record.json>` | พิมพ์หรือตรวจ investigation record แล้วคืน typed action หนึ่งรายการ |
 | `change new <intent> [--rapid]` | Compatible primitive สำหรับเขียน agreement ด้วยมือ |
-| `change start --template \| <draft.json> [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | ตรวจและถ้าครบจะ compile และเริ่ม agreement จาก semantic draft ในคำสั่งเดียว โดยพื้นที่แยกจะสร้างภายหลังใน Build; `--approve-spec` บันทึก approval ของผู้ใช้ในคำสั่งเดียวกัน |
+| `change start --template \| <draft.json> [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | ตรวจและถ้าครบจะ compile และเริ่ม agreement จาก semantic draft (ไฟล์ JSON หรือ folder ของ draft v5) ในคำสั่งเดียว โดยพื้นที่แยกจะสร้างภายหลังใน Build; `--approve-spec` บันทึก approval ของผู้ใช้ในคำสั่งเดียวกัน |
 | `change amend --template \| <change> <amendment.json> [--inspect] [--consume-amendment] [--approve-spec --decision-ref <ref> [--through <target>]]` | Inspect intake และถ้าครบจะเพิ่ม แก้ หรือลบ semantic requirement หรือแก้ verify command ของ task ที่ยังไม่เสร็จ แบบ transaction และรักษางานที่เสร็จแล้ว ในคำสั่งเดียว |
 | `change amend <change> --task <task> --verify <command> [--reopen] [--reason <text>]` | แก้ verify command ของ task ที่ยังไม่เสร็จหนึ่งตัวโดยไม่ต้องเขียน amendment JSON claim, capability และ approval คงเดิม คำสั่งที่ผ่านเสมอจะถูกปฏิเสธ และ `--reopen` เอาเครื่องหมายเสร็จของ task ที่เสร็จแล้วออกเพื่อให้ต้องผ่านใหม่ |
 | `change revise <change> <draft.json> [--merge] [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | ก่อน Build ตรวจและถ้าครบจะคอมไพล์ semantic draft ฉบับแก้ทับ change id เดิมในคำสั่งเดียว พร้อม rollback และแสดง requirement delta (ใช้ approval เดิมต่อ เว้นแต่มีการลบ requirement) `--merge` รับเฉพาะ key และ entry ที่มี key ซึ่งเปลี่ยน |
@@ -180,7 +180,7 @@ Feedback ตรวจ validity จาก runtime ปัจจุบัน ส่
 |---|---|
 | runtime | 3.6.3 |
 | runtime API | 41 |
-| semantic draft schema | 4 |
+| semantic draft schema | 5 |
 | semantic intake state schema | 2 |
 | semantic amendment schema | 1 |
 | artifact defaults schema | 2 |

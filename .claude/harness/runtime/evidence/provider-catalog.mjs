@@ -29,8 +29,78 @@ export const PROVIDER_CONTRACTS = {
   "resilience": "Timeout, retry, partial-failure, recovery, and degraded-dependency behavior is proven.",
   "observability": "Required logs, metrics, traces, and alerts expose success and failure safely.",
   "deployment": "Packaging, configuration, rollout health checks, and rollback behavior are proven.",
-  "dependency-supply-chain": "Dependency vulnerability, license, lockfile, and provenance policy passes."
+  "dependency-supply-chain": "Dependency vulnerability, license, lockfile, and provenance policy passes.",
+  "evaluation": "A model or ranking evaluation reports a score at or above its declared threshold.",
+  "release-health": "Post-release crash, error, and adoption signals stay healthy during rollout.",
+  "parity": "The new implementation matches the reference behavior on the declared comparison set.",
+  "plan-check": "An infrastructure or migration plan contains only the declared changes.",
+  "experiment-guardrail": "Experiment guardrail metrics stay within their declared bounds after release."
 };
+
+// The adapter each capability defaults to. Pre-Land capabilities run as a
+// project command; post-release capabilities are signals observed after
+// release, so they are recorded from external evidence.
+export const CAPABILITY_ADAPTERS = Object.freeze({
+  evaluation: "command",
+  parity: "command",
+  "plan-check": "command",
+  "release-health": "external",
+  "experiment-guardrail": "external"
+});
+
+// When a capability's evidence exists. Absent means "pre-land": it gates
+// proof and Land. "post-release" capabilities exist only after the change
+// ships, so they are rollout gates recorded in the handoff and never block
+// proof or Land.
+export const CAPABILITY_PHASES = Object.freeze({
+  "release-health": "post-release",
+  "experiment-guardrail": "post-release"
+});
+
+export function capabilityPhase(capability) {
+  return CAPABILITY_PHASES[capability] || "pre-land";
+}
+
+export function isPostReleaseCapability(capability) {
+  return capabilityPhase(capability) === "post-release";
+}
+
+// Splits required provider names into the ones that gate proof and Land and
+// the post-release rollout gates, which are deferred (neither failed nor
+// pending). `providerCapability(name, config)` resolves each name.
+export function splitPostReleaseProviders(required, providers = {}, capabilityOf = providerCapability) {
+  const blocking = [];
+  const rolloutGates = [];
+  for (const provider of required || []) {
+    const config = providers?.[provider];
+    const capability = (config ? capabilityOf(provider, config) : null) || provider;
+    if (isPostReleaseCapability(capability))
+      rolloutGates.push({ provider, capability, phase: "post-release", status: "deferred",
+        gate: "rollout" });
+    else blocking.push(provider);
+  }
+  return { blocking, rolloutGates };
+}
+
+// Machine-readable evaluation result: a command prints this JSON on stdout or
+// writes it to its configured report. The claim passes only when
+// score >= threshold; a provider-level `threshold` applies when the result
+// omits one. Anything else (missing or non-numeric values) fails closed.
+export const EVALUATION_PROTOCOL = "foundation-evaluation-v1";
+
+export function evaluationResult(report, config = {}) {
+  const number = (value) => (typeof value === "number" && Number.isFinite(value)) ||
+    (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)))
+    ? Number(value) : null;
+  const score = number(report?.score);
+  const threshold = number(report?.threshold ?? config?.threshold);
+  if (score === null || threshold === null)
+    return { status: "fail", score, threshold,
+      observed: `evaluation result missing ${score === null ? "score" : "threshold"}` };
+  const status = score >= threshold ? "pass" : "fail";
+  return { status, score, threshold,
+    observed: `evaluation score ${score} ${status === "pass" ? ">=" : "<"} threshold ${threshold}` };
+}
 
 export const PROVIDERS = new Set(Object.keys(PROVIDER_CONTRACTS));
 

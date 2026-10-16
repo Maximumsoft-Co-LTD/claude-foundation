@@ -1,0 +1,6 @@
+{
+  "name": "deploygen",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test", "render": "node bin/render.js" }
+}

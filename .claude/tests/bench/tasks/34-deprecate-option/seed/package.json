@@ -1,0 +1,9 @@
+{
+  "name": "rows2csv",
+  "version": "2.3.0",
+  "private": true,
+  "main": "src/csv.js",
+  "bin": { "rows2csv": "bin/rows2csv.js" },
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test" }
+}

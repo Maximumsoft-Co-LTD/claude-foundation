@@ -12,6 +12,7 @@ import {
   environmentIdentity, readTaskCheckExecution, sameArgv, sameShellLine, taskCheckArgv,
   taskCheckExecutionPath, taskCheckReuseRefusal, writeTaskCheckExecution
 } from "./task-check-evidence.mjs";
+import { evaluationResult } from "./provider-catalog.mjs";
 
 export function serviceStartBatch(entries, maxParallel, conflicts,
   completed = new Set()) {
@@ -98,6 +99,17 @@ export function criticalCaseResult(report, required) {
     status: observations.every((row) => passWords.has(row.status)) ? "pass" : "fail",
     observations
   };
+}
+
+// An evaluation provider passes only when its command exits 0 and its
+// machine-readable result (foundation-evaluation-v1, stdout or report file)
+// reports score >= threshold. The returned value names both numbers.
+export function evaluationAdapterResult(result, report, config = {}) {
+  const evaluation = evaluationResult(report || {}, config);
+  if (result?.status !== 0 && evaluation.status === "pass")
+    return { ...evaluation, status: "fail",
+      observed: `${evaluation.observed}; command exited ${result?.status ?? "error"}` };
+  return evaluation;
 }
 
 export function enforceCriticalCases(baseStatus, critical) {
@@ -895,11 +907,14 @@ export function createAdapterRuntime({
     const legacy = capability === "mutation" &&
         config.resultProtocol === "foundation-mutation-v1"
       ? mutationProtocolResult(result.stdout) : null;
-    return { capability, v2, legacy };
+    const evaluation = capability === "evaluation"
+      ? evaluationAdapterResult(result, report || parseJsonOutput(result.stdout), config) : null;
+    return { capability, v2, legacy, evaluation };
   }
 
   function genericAdapterStatus(config, result, mutation, readinessMissed) {
     if (adapterInfrastructureFailed(result, readinessMissed)) return "error";
+    if (mutation.evaluation) return mutation.evaluation.status;
     if (mutation.capability !== "mutation") return result.status === 0 ? "pass" : "fail";
     if (config.resultProtocol === "foundation-mutation-v2") return mutation.v2.status;
     if (config.resultProtocol !== "foundation-mutation-v1")
@@ -917,6 +932,8 @@ export function createAdapterRuntime({
       return `mutation v2 ${mutation.v2.observations.map((row) =>
         `${row.id}=${row.result}/applied:${row.applied}/compiled:${row.compiled}/killedBy:${
           row.killedBy || "none"}`).join(", ")}; ${baseFlags.observed}`;
+    if (mutation.evaluation)
+      return `${mutation.evaluation.observed}; ${baseFlags.observed}`;
     if (mutation.legacy)
       return `mutation result ${mutation.legacy}; ${baseFlags.observed}`;
     return `${baseFlags.observed}; critical cases ${critical.observations.length
@@ -944,9 +961,13 @@ export function createAdapterRuntime({
     }, { executed: true });
     return evidenceResultValue({
       provider, status,
-      observations: evidenceRow.critical.observations.map((row) => ({
-        kind: "critical-case", ...row
-      }))
+      observations: [
+        ...(mutation.evaluation ? [{ kind: "evaluation", status: mutation.evaluation.status,
+          score: mutation.evaluation.score, threshold: mutation.evaluation.threshold }] : []),
+        ...evidenceRow.critical.observations.map((row) => ({
+          kind: "critical-case", ...row
+        }))
+      ]
     });
   }
 

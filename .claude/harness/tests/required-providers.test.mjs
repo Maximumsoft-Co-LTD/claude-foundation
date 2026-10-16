@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   addRequiredCapability,
   missingHighRiskQualityCapabilities,
+  postReleaseRolloutGates,
   providersForCapability,
   requiredProvidersOperation,
   reviewCoveredAdvisories
@@ -30,6 +31,8 @@ test("provider catalog resolves configured, built-in, and unknown capabilities",
   assert.equal(catalogCapability("changed-quality"), "changed-quality");
   assert.equal(catalogCapability("unknown"), null);
   assert.equal(catalogCapability("test", null), "test");
+  for (const name of ["evaluation", "release-health", "parity", "plan-check",
+    "experiment-guardrail"]) assert.equal(catalogCapability(name), name);
 });
 
 test("enforced high-risk policy requires changed quality and mutation providers", () => {
@@ -153,4 +156,27 @@ test("review covers a specialist provider that only repeats the test command", (
     next: "wire a project-owned security-static command in execution.yaml to observe it"
   }]);
   assert.deepEqual(reviewCoveredAdvisories(contract, false), []);
+});
+
+test("rollout gates cover configured, work-type, and claim post-release capabilities", () => {
+  const gates = (contract, owed = []) => postReleaseRolloutGates({
+    evidence: () => contract,
+    providerCapability: catalogCapability,
+    policyRolloutCapabilities: () => owed
+  }, "change-a").map((gate) => gate.capability);
+  const claim = (capabilities) => ({ id: "c", capabilities });
+  // A client-release change with no release-health provider still owes the gate.
+  assert.deepEqual(gates({ providers: {}, claims: [claim(["test"])] },
+    ["release-health"]), ["release-health"]);
+  // A claim that declares release-health with no provider instance owes it too.
+  assert.deepEqual(gates({ providers: {}, claims: [claim(["release-health"])] }),
+    ["release-health"]);
+  // A configured provider is listed once, never duplicated by policy or claims.
+  assert.deepEqual(gates({
+    providers: { health: { capability: "release-health" } },
+    claims: [claim(["release-health"])]
+  }, ["release-health", "experiment-guardrail"]),
+  ["release-health", "experiment-guardrail"]);
+  // Pre-land capabilities are never rollout gates.
+  assert.deepEqual(gates({ providers: {}, claims: [claim(["test"])] }), []);
 });

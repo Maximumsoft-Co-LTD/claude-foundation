@@ -1,0 +1,6 @@
+{
+  "name": "docs-static",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test", "start": "node bin/serve.js" }
+}

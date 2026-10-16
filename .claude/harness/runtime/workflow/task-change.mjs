@@ -27,7 +27,7 @@ export function taskChangeIssue({ workTypes, task, changedPaths }) {
   if (!behaviorChangingWork(workTypes) || !task) return null;
   const allowed = (task.paths || []).map(String).filter(Boolean);
   if (!allowed.length || NON_BEHAVIOR_TASK_KINDS.has(task.kind)) return null;
-  if (allowed.every((scope) => ["docs", "chore"].includes(lightKind(scope)))) return null;
+  if (allowed.every((scope) => ["docs", "chore", "dependency"].includes(lightKind(scope)))) return null;
   if ((changedPaths || []).some((path) => leasePathIsAllowed(path, allowed))) return null;
   return `task ${task.id} completed with no change: its verify passed, but nothing changed in ` +
     `its declared paths (${allowed.join(", ")}), so the check passed on the original code. ` +

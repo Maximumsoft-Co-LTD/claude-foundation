@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 
 import {
-  SCORECARD_PROTOCOL, buildScorecard, costMeasurement, digest
+  SCORECARD_PROTOCOL, buildScorecard, costMeasurement, digest, formatScorecardMarkdown
 } from "../openspec-native/scorecard.mjs";
+import {
+  collectPacketMetrics, findChangePacket, packetDocumentMetrics, wordCount
+} from "../openspec-native/quality.mjs";
 
 const schema = JSON.parse(readFileSync(new URL(
   "../config/openspec-native-scorecard.schema.json", import.meta.url), "utf8"));
@@ -298,4 +303,107 @@ test("scorecards carry their bench arm; a baseline completes without a task ledg
     outcome: { ...baselineOutcome, requiredEvidencePassed: false } })).outcome.complete, false,
   "a baseline whose own project command fails is not complete");
   assert.throws(() => buildScorecard(fixture({ arm: "vibe" })), /arm must be one of/);
+});
+
+// A two-row outline keeps the expectations independent of the shipped outline.
+const OUTLINE = {
+  outlineSections(document) {
+    return {
+      proposal: [{ key: "header", heading: { en: "Change", th: "ข้อมูล change" } },
+        { key: "summary", heading: { en: "Summary", th: "สรุป" } },
+        { key: "why", heading: { en: "Why", th: "เหตุผล" } }],
+      design: [{ key: "overview", heading: { en: "Overview", th: "ภาพรวม" } }]
+    }[document] || [];
+  }
+};
+
+function packetProject(t, files, changeId = "add-tags") {
+  const project = mkdtempSync(join(tmpdir(), "packet-metrics-"));
+  t.after(() => rmSync(project, { recursive: true, force: true }));
+  const dir = join(project, "openspec/changes/archive", `2026-10-15-${changeId}`);
+  mkdirSync(dir, { recursive: true });
+  for (const [name, content] of Object.entries(files)) writeFileSync(join(dir, name), content);
+  return project;
+}
+
+const changeRows = [
+  { operation: "start", phase: "change", kind: "lifecycle", status: "failed",
+    startedAt: "2026-10-15T10:00:00.000Z", durationMs: 900 },
+  { operation: "status", phase: "change", kind: "inspection", status: "completed",
+    startedAt: "2026-10-15T10:00:30.000Z", durationMs: 10 },
+  { operation: "revise", phase: "change", kind: "lifecycle", status: "blocked",
+    startedAt: "2026-10-15T10:01:00.000Z", durationMs: 800 },
+  { operation: "start", phase: "change", kind: "lifecycle", status: "completed",
+    startedAt: "2026-10-15T10:02:00.000Z", durationMs: 2291,
+    stageSpans: [{ stage: "change.materialize", durationMs: 44 },
+      { stage: "change.validate", durationMs: 1380 }, { stage: "build.prepare", durationMs: 99 }] },
+  { operation: "advance", phase: "build", kind: "lifecycle", status: "completed",
+    startedAt: "2026-10-15T10:03:00.000Z", durationMs: 5000 }
+];
+
+test("packet metrics report missing and duplicate sections, words, EDIT rounds, and compile time", async (t) => {
+  const project = packetProject(t, {
+    "proposal.md": "# Change: Add tags\n\n## Summary\nTag items fast.\n\n## Summary\nAgain.\n\n" +
+      "```md\n## Why\n```\n",
+    "design.md": "# Design\n\n## ภาพรวม\nภาพรวมของงาน\n",
+    "tasks.md": "- [x] 1.1 Add tags\n"
+  });
+  assert.match(findChangePacket(project, "add-tags"), /archive\/2026-10-15-add-tags$/);
+  const packet = await collectPacketMetrics({ project, changeId: "add-tags", outline: OUTLINE });
+  assert.equal(packet.measurement, "measured");
+  assert.equal(packet.path, "openspec/changes/archive/2026-10-15-add-tags");
+  // A heading inside a code fence is not a section.
+  assert.deepEqual(packet.missingSections, { count: 1,
+    sections: [{ document: "proposal", key: "why", heading: "Why" }] });
+  assert.deepEqual(packet.duplicateSections, { count: 1,
+    sections: [{ document: "proposal", heading: "Summary", occurrences: 2 }] });
+  assert.equal(packet.words.tasks, wordCount("- [x] 1.1 Add tags\n"));
+  assert.ok(packet.words.design > 1, "Thai text without spaces still counts words");
+
+  const scorecard = buildScorecard(fixture({ packet, operationRows: changeRows }));
+  assert.equal(scorecard.packet.missingSections.count, 1);
+  assert.equal(scorecard.packet.duplicateSections.count, 1);
+  assert.equal(scorecard.packet.editRounds, 2, "the rejected start and revise before AGREED");
+  assert.equal(scorecard.packet.editRoundsMeasurement, "measured");
+  assert.equal(scorecard.packet.compileMs, 1424, "the change.* stage spans of the AGREED start");
+  assert.equal(scorecard.packet.compileSource, "change-stage-spans");
+  const markdown = formatScorecardMarkdown(scorecard);
+  assert.match(markdown, /\| Missing required sections \| 1 \(proposal: Why\) \|/);
+  assert.match(markdown, /\| Duplicate sections \| 1 \(proposal: Summary\) \|/);
+  assert.match(markdown, /\| EDIT rounds before AGREED \| 2 \|/);
+  assert.match(markdown, /\| Change start compile ms \| 1424 \|/);
+});
+
+test("a run without a packet or intake rows reports unavailable, never zero", async (t) => {
+  const project = packetProject(t, {});
+  const packet = await collectPacketMetrics({ project, changeId: "absent", outline: OUTLINE });
+  assert.equal(packet.measurement, "unavailable");
+  const scorecard = buildScorecard(fixture({ packet, operationRows: [] }));
+  assert.equal(scorecard.packet.measurement, "unavailable");
+  assert.equal(scorecard.packet.missingSections, null);
+  assert.equal(scorecard.packet.duplicateSections, null);
+  assert.deepEqual(scorecard.packet.words, { proposal: null, design: null, tasks: null });
+  assert.equal(scorecard.packet.editRounds, null);
+  assert.equal(scorecard.packet.compileMs, null);
+  assert.match(formatScorecardMarkdown(scorecard), /Missing required sections \| unknown/);
+  // Never AGREED: the rejected rounds are only a floor and there is no compile time.
+  const floor = buildScorecard(fixture({ packet, operationRows: changeRows.slice(0, 3) }));
+  assert.equal(floor.packet.editRounds, 2);
+  assert.equal(floor.packet.editRoundsMeasurement, "partial");
+  assert.equal(floor.packet.compileMs, null);
+  // A scorecard built without packet input keeps its earlier shape.
+  assert.equal("packet" in buildScorecard(fixture()), false);
+});
+
+test("without an outline missing sections are unknown; the installed outline is reported", async (t) => {
+  const partial = packetDocumentMetrics({ proposal: "## Summary\n## Summary\n" });
+  assert.equal(partial.measurement, "partial");
+  assert.equal(partial.missingSections, null);
+  assert.equal(partial.duplicateSections.count, 1);
+  const project = packetProject(t, { "proposal.md": "# Change: x\n\n## Summary\nx\n" });
+  const packet = await collectPacketMetrics({ project, changeId: "add-tags" });
+  assert.equal(packet.outlineSource, "candidate", "no consumer harness: the candidate outline judges");
+  assert.equal(packet.measurement, "measured");
+  assert.ok(packet.missingSections.sections.some((row) => row.key === "why"));
+  assert.ok(!packet.missingSections.sections.some((row) => ["header", "summary"].includes(row.key)));
 });

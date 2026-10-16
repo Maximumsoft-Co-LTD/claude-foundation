@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { acquireProcessLock } from "../core/process-lock.mjs";
+import { loadDraftFolder } from "./draft-folder.mjs";
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 import { foundationChangeStores, retiredChangeStores } from "./retired-change-stores.mjs";
 import { nextCommand, resumeThrough } from "../core/next-step.mjs";
@@ -16,9 +17,10 @@ import { taskBlocks, taskMetadata } from "../contracts/change-artifacts.mjs";
 import { matchesSecurityTerm, materialSecurityTriggers } from "./security-policy.mjs";
 import {
   agentDecision, authoredDecisionReason, expandMinimalSemanticDraft, mergeSemanticDraft,
-  minimalSemanticDraftTemplate, normalizeSemanticDraft, renderRequirementMarkdown,
-  renderSpecHeading, semanticDraftTemplate
+  MINIMAL_DRAFT_WRITING, minimalSemanticDraftTemplate, normalizeSemanticDraft, renderRequirementMarkdown,
+  renderSpecHeading, semanticDraftTemplate, unknownTaskFieldWarnings
 } from "./semantic-draft.mjs";
+import { isSemanticV4Plus, isSemanticVersion } from "./validation/draft-version.mjs";
 import { assembleReviewPolicy, collectReviewSignals } from "../evidence/evidence-contract.mjs";
 import { classifyReviewRisk } from "../evidence/review-routing.mjs";
 import { reviewModelClass } from "../evidence/review-diff.mjs";
@@ -51,28 +53,102 @@ import { amendmentInvestigationSource, investigationCoverageIssues,
   renderInvestigationCoverage } from "./validation/investigation-coverage.mjs";
 import { validateInvestigationBinding } from "./investigation-runtime.mjs";
 import {
-  designBlueprintWarnings, draftHasBlueprints, draftWorkTypes, renderDesignBlueprints, renderWorkType,
-  verifyCountAdvisories
+  DESIGN_FIELDS, designBlueprintWarnings, draftHasBlueprints, draftWorkTypes, renderDesignBlueprints,
+  renderFailureMatrixBody, renderFileMapBody, renderJobContractBody, renderTestMapBody, renderUiStatesBody,
+  renderWorkType, verifyCountAdvisories
 } from "./validation/design-blueprints.mjs";
 import {
   derivedByHarness, derivedFailureMatrix, derivedFileMap, derivedTestMap, docsOnlyDraft, inferWorkTypes,
   renderComponentMap, renderFileTree, renderUserFlow, withNewPaths
 } from "./validation/dev-document.mjs";
 import {
-  coverageNoteLine, renderDefinitionOfDone, renderPacketHeader, renderScope, renderTraceability
+  coverageNoteLine, renderDefinitionOfDone, renderPacketHeader, renderScope, renderTraceability, reviewTier
 } from "./validation/packet-overview.mjs";
+import { OUTLINE, outlineRow, outlineSections, sectionHeading } from "./validation/outline-contract.mjs";
+import {
+  PROCESS_FIELDS, complianceAction, complianceEnabledFromConfig
+} from "./validation/process-fields.mjs";
+import { groundingFromQuality } from "./validation/quality-fields.mjs";
 import { targetEditDigest, targetEditPaths } from "./target-edits.mjs";
 import {
   declaredDraftRisk, riskDerivationSummary, riskLabel, withDerivedRisk
 } from "./validation/draft-risk.mjs";
 import {
   fileMapWithTasks, intakeDecisions, openQuestionItems, readerGuideWarnings,
-  renderDesignOverview, renderDiscoveryAppendix, renderInvestigationAppendix,
-  renderInvestigationSummary, renderProposalLead, renderProposalReader
+  capabilityTable, discoveryAppendixBody, investigationAppendixBody,
+  renderOpenQuestions, renderSuccessCriteria, renderUserStories
 } from "./validation/reader-guide.mjs";
 
 // Marks a start whose re-inspected intake is not DONE (see completedDraftIntake).
 const INCOMPLETE_INTAKE = Symbol("incomplete-intake");
+
+// A v5 draft keeps nfr and observability in change.json. A draft with grounding
+// v2 already carries them (withQualityGrounding); one without a grounding v2
+// ledger (none, or the decisions-only v3) still gets them in grounding.yaml:
+// added to its v3 ledger, or as a derived ledger that no gate validates when
+// grounding is not required. v3 and v4 drafts and v2 ledgers are unchanged.
+export function v5QualityGrounding(draft, { groundingRequired = false } = {}) {
+  if (Number(draft?._semanticVersion ?? draft?.version) !== 5) return null;
+  const grounding = draft.grounding;
+  if (grounding?.version === 2) return null;
+  if (!grounding && groundingRequired) return null;
+  if (grounding && grounding.version !== 3) return null;
+  const nfr = Array.isArray(draft.nfr) && draft.nfr.length > 0;
+  const observability = draft.observability !== undefined && draft.observability !== null;
+  if (!nfr && !observability) return null;
+  const derived = groundingFromQuality(draft);
+  return {
+    ...(grounding || { version: 2, derivedFrom: "change.json" }),
+    ...(nfr ? { nfrAssessment: derived.nfrAssessment } : {}),
+    ...(observability ? { observability: derived.observability } : {})
+  };
+}
+
+// An amendment that only replaces outline sections changes no requirement,
+// claim, or task.
+export function sectionsOnlyAmendment(amendment) {
+  const list = (field) => Array.isArray(amendment?.[field]) ? amendment[field] : [];
+  return list("sections").length > 0 && [
+    "addRequirements", "reviseRequirements", "removeRequirements",
+    "updateTasks", "addTasks", "removeTasks"
+  ].every((field) => !list(field).length);
+}
+
+const DOCUMENT_REVIEW_CAPABILITIES = new Set(["review", "acceptance", "semantic-acceptance"]);
+
+// A sections-only amendment rewrites prose the reviewer reads but no claim, so
+// it invalidates only whole-packet review providers (and their dependents)
+// and preserves every claim-bound receipt. Approval is not reopened.
+export function documentSectionInvalidation(providers = {}) {
+  const rows = Object.entries(providers || {}).map(([id, config]) => ({ id, ...config }));
+  const affected = new Set(rows.filter((row) =>
+    DOCUMENT_REVIEW_CAPABILITIES.has(String(row.capability || ""))).map((row) => row.id));
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const row of rows) {
+      if (affected.has(row.id)) continue;
+      if ((Array.isArray(row.dependsOn) ? row.dependsOn : []).some((id) => affected.has(id))) {
+        affected.add(row.id);
+        changed = true;
+      }
+    }
+  }
+  const affectedProviders = [...affected].sort();
+  const preservedProviders = rows.map((row) => row.id).filter((id) => !affected.has(id)).sort();
+  const invalidate = affectedProviders.length > 0;
+  return {
+    version: 1, status: "READY", findings: [],
+    affectedClaims: [], affectedTasks: [], affectedProviders, preservedProviders,
+    approval: { invalidate: false, reasons: [] },
+    proof: {
+      invalidate,
+      reasons: invalidate ? ["document-sections-changed"] : [],
+      invalidateReceipts: affectedProviders,
+      preserveReceipts: preservedProviders
+    },
+    coverage: { global: false, dimensions: ["document-sections"] }
+  };
+}
 
 // Typed draft risk signals as persisted on the change: lowercased, unique, sorted.
 export function riskSignalValues(signals) {
@@ -104,8 +180,8 @@ export function apiContractErrorIssues(draft) {
 
 export function atomicStartPreflight(draft, { groundingRequired = false } = {}) {
   const issues = [];
-  if (![1, 2, 3, 4].includes(draft?.version))
-    issues.push("start draft requires version 1, 2, 3, or 4");
+  if (![1, 2].includes(draft?.version) && !isSemanticVersion(draft?.version))
+    issues.push("start draft requires version 1, 2, 3, 4, or 5");
   if (!String(draft?.intent || "").trim())
     issues.push("start draft requires non-empty 'intent'");
   const acceptance = draft?.acceptance;
@@ -384,7 +460,7 @@ export function initialChangeState({
     groundingRequired,
     groundingVersion: groundingRequired ? (groundingVersion || 2) : null,
     semanticDraftVersion,
-    artifactDefaultsVersion: [3, 4].includes(semanticDraftVersion) ? 2 : null,
+    artifactDefaultsVersion: isSemanticVersion(semanticDraftVersion) ? 2 : null,
     nfrAssessmentRequired: standard && groundingRequired && groundingVersion !== 3,
     decisionMetadataRequired: standard && designRequired,
     semanticInvariantsRequired: standard,
@@ -415,6 +491,42 @@ export function initialChangeState({
   };
 }
 
+const decisionTextList = (value) => (Array.isArray(value) ? value : [value])
+  .map((item) => String(item ?? "").trim()).filter(Boolean);
+const decisionText = (value) => decisionTextList(value ?? []).join("; ");
+
+// An option is a plain string or { option, reason?, pros?, cons? }; either
+// way it reads as one line of text, never "[object Object]".
+export function renderDecisionOption(option) {
+  if (option === null || option === undefined) return "";
+  if (typeof option !== "object") return String(option).trim();
+  const name = String(option.option ?? option.name ?? "").trim();
+  const pros = decisionTextList(option.pros);
+  const cons = decisionTextList(option.cons);
+  const detail = [
+    String(option.reason ?? option.why ?? "").trim(),
+    pros.length ? `pros: ${pros.join(", ")}` : "",
+    cons.length ? `cons: ${cons.join(", ")}` : ""
+  ].filter(Boolean).join("; ");
+  return name && detail ? `${name}: ${detail}` : name || detail;
+}
+
+function renderRejectedOptions(decision) {
+  const listed = decision.rejected ?? decision.alternatives;
+  const options = (Array.isArray(decision.options) ? decision.options : [])
+    .filter((option) => option && typeof option === "object" ? option.chosen !== true : true);
+  if (!Array.isArray(listed) && !options.length)
+    return listed && typeof listed === "object" ? renderDecisionOption(listed) : listed;
+  const rows = [...(Array.isArray(listed) ? listed : listed ? [listed] : []), ...options];
+  const texts = rows.map(renderDecisionOption)
+    .filter((value) => value && value !== decision.choice && !/^none$/i.test(value));
+  return [...new Set(texts)].join(rows.some((row) => row && typeof row === "object") ? "; " : ", ");
+}
+
+export function proposedDecision(decision) {
+  return String(decision?.status || "").trim().toLowerCase() === "proposed";
+}
+
 export function renderDraftDecisions(decisions) {
   if (!Array.isArray(decisions))
     throw new Error("standard start draft requires decisions to be an array; use [] when no durable decision qualifies");
@@ -423,15 +535,22 @@ export function renderDraftDecisions(decisions) {
     ? `\n  - **${label}:** ${value}` : "";
   return decisions.map((decision, index) => {
     const decisionId = decision.id || `DEC-${String(index + 1).padStart(3, "0")}`;
-    const rejected = Array.isArray(decision.rejected ?? decision.alternatives)
-      ? (decision.rejected ?? decision.alternatives).filter((option) => option !== decision.choice)
-        .join(", ") : decision.rejected;
+    const rejected = renderRejectedOptions(decision);
+    const drivers = decisionTextList(decision.drivers ?? []);
+    const context = [
+      decision.context || decision.question || "",
+      drivers.length ? `Drivers: ${drivers.join(", ")}.` : ""
+    ].filter(Boolean).join(" ");
+    const consequences = [
+      decision.consequences || "Not stated in the draft",
+      decision.confirmation ? `Confirmation: ${decision.confirmation}` : ""
+    ].filter(Boolean).join(" ");
     return `- **Decision ID:** ${decisionId}\n` +
       `  - **Status:** ${decision.status || "accepted"}` +
-      optional("Context", decision.context || decision.question) +
+      optional("Context", context) +
       `\n  - **Decision:** ${decision.choice}\n  - **Why:** ${decision.why || decision.reason}\n` +
       `  - **Rejected:** ${rejected || "none"}\n` +
-      `  - **Consequences:** ${decision.consequences || "Not stated in the draft"}` +
+      `  - **Consequences:** ${consequences}` +
       optional("Decided by", decision.decidedBy) +
       optional("Decision ref", decision.decisionRef) +
       optional("Supersedes", decision.supersedes) +
@@ -451,6 +570,7 @@ function tableCell(value) {
 // defaults the agent chose without asking) are listed in the proposal.
 export function renderRapidDecisions(decisions = []) {
   const rows = (Array.isArray(decisions) ? decisions : [])
+    .filter((decision) => !proposedDecision(decision))
     .filter((decision) => String(decision?.key || "").trim() && String(decision?.choice || "").trim())
     .map((decision) => {
       const reason = authoredDecisionReason(decision);
@@ -461,70 +581,167 @@ export function renderRapidDecisions(decisions = []) {
   return rows.length ? `## Decisions\n\n${rows.join("\n")}` : "";
 }
 
-// A standard draft the agent left without a reason, failure matrix, or evidence
-// capabilities still compiles; this section tells the reader what the harness
-// filled in rather than what the author wrote.
-function renderDerivedNotes(draft, rapid) {
-  const notes = derivedByHarness(draft, { standard: !rapid });
-  return notes.length ? `## Derived by harness\n\n${draftBullets(notes)}` : "";
+// A proposed decision is not yet agreed: the proposal lists it with the
+// options on the table so the user ratifies or changes it before approval.
+export function renderProposedDecisions(decisions = [], language = "") {
+  const thai = /^th\b/i.test(String(language || ""));
+  const rows = (Array.isArray(decisions) ? decisions : [])
+    .filter((decision) => proposedDecision(decision) && String(decision?.choice || "").trim())
+    .map((decision) => {
+      const reason = authoredDecisionReason(decision);
+      const options = (Array.isArray(decision.options) ? decision.options : [])
+        .map(renderDecisionOption).filter(Boolean);
+      // Every authored part of a proposed decision is shown: it has no other
+      // home until it is accepted and moves to design.md.
+      const drivers = decisionTextList(decision.drivers ?? []);
+      const details = [
+        drivers.length ? `${thai ? "ปัจจัย" : "Drivers"}: ${drivers.join(", ")}` : "",
+        meaningful(decisionText(decision.consequences))
+          ? `${thai ? "ผลที่ตามมา" : "Consequences"}: ${decisionText(decision.consequences)}` : "",
+        meaningful(decisionText(decision.confirmation))
+          ? `${thai ? "ยืนยันโดย" : "Confirmation"}: ${decisionText(decision.confirmation)}` : ""
+      ].filter(Boolean);
+      return `- **${decision.key || decision.id}:** ${decision.choice}` + (reason ? ` — ${reason}` : "") +
+        (options.length ? ` (options: ${options.join("; ")})` : "") +
+        (details.length ? `. ${details.join(". ")}` : "");
+    });
+  if (!rows.length) return "";
+  const heading = /^th\b/i.test(String(language || "")) ? "เรื่องที่ต้องให้ผู้ใช้ตัดสิน" : "Decisions to ratify";
+  return `## ${heading}\n\n${rows.join("\n")}`;
 }
 
-// Reading order: who and which lane, what and why, who benefits and how
-// success is judged, scope, how each requirement is accepted, and what done
-// means; machine provenance and coverage close as appendices. Each fact has
-// one home: tasks and their checks live in tasks.md (the acceptance table
-// links to them), the folder tree sits in design.md's file map, and a rapid
-// packet, which has no design.md, keeps its decisions here. A draft without a
-// stated reason gets no Why section rather than the intent repeated under the
-// title. `context` carries harness-derived facts the draft does not hold: the
-// review route label (policy) and repositories the change does not select.
+// A standard draft the agent left without a reason, failure matrix, or evidence
+// capabilities still compiles; this appendix tells the reader what the harness
+// filled in rather than what the author wrote.
+function derivedNotesBody(draft, rapid) {
+  const notes = derivedByHarness(draft, { standard: !rapid });
+  return notes.length ? draftBullets(notes) : "";
+}
+
+// A renderer that returns its own "## " heading supplies only the body; the
+// outline row supplies the localized heading.
+function sectionBody(markdown) {
+  return String(markdown || "").replace(/^## [^\n]*\n+/, "").trim();
+}
+
+function proposalImpact(draft, state, rapid) {
+  const triggers = (draft.securityTriggers || []).filter(Boolean);
+  const fixes = (draft.fixes || []).length ? [`- **Fixes:** ${draft.fixes.join(", ")}`] : [];
+  return [
+    `- **Impact:** ${riskLabel(draft, "impact") || state.impact || "medium"}`,
+    `- **Coupling:** ${riskLabel(draft, "coupling") || state.coupling || "coupled"}`,
+    // A rapid change states only what departs from its defaults (code
+    // surface, no security trigger); the standard lane keeps the statement.
+    ...(rapid && !(draft.surfaces || []).some((surface) => surface !== "code") ? [] :
+      [`- **Affected surfaces:** ${(draft.surfaces || ["code"]).join(", ")}`]),
+    ...(rapid && !triggers.length ? [] :
+      [`- **Security triggers:** ${triggers.length ? triggers.join(", ") : "none detected"}`]),
+    ...(rapid && docsOnlyDraft(draft)
+      ? ["- **Specs:** none; docs-only work modifies no living spec"] : []),
+    ...fixes
+  ].join("\n");
+}
+
+function provenanceBody(value) {
+  if (!value || typeof value !== "object") return String(value ?? "").trim();
+  return Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== null && entry !== "")
+    .map(([key, entry]) => `- **${key}:** ${typeof entry === "object" ? JSON.stringify(entry) : entry}`).join("\n");
+}
+
+function amendmentsBody(value) {
+  return (Array.isArray(value) ? value : []).map((row) => typeof row === "string" ? `- ${row}` :
+    `- ${[row?.at || row?.date, row?.reason || row?.summary].filter(Boolean).join(": ")}`)
+    .filter((line) => line !== "- ").join("\n");
+}
+
+// A v5 draft's authored prose for one author-owned outline row, exactly as
+// written: only the blank lines separating it from its heading and from the
+// next section are dropped. Derived and machine rows never take prose.
+function authoredProse(draft, document, row) {
+  if (row.owner !== "author") return "";
+  const body = draft?.prose?.[document]?.[row.key];
+  if (typeof body !== "string") return "";
+  return body.replace(/^(?:[ \t]*\r?\n)+/, "").replace(/(?:\r?\n[ \t]*)+$/, "");
+}
+
+// The outline rows a document renders, in outline order: those whose
+// condition holds plus any author row the v5 prose fills.
+function outlineRowsWithProse(document, draft, context) {
+  const included = new Set(outlineSections(document, draft, context).map((row) => row.key));
+  return OUTLINE[document].filter((row) => included.has(row.key) || authoredProse(draft, document, row));
+}
+
+// Reading order comes from the outline contract: decisions a reader makes
+// (summary, why, stories, success, scope, impact, open decisions, process
+// records) come first, then acceptance and Definition of done, and only then
+// the appendices. Each fact has one home: tasks and their checks live in
+// tasks.md (the acceptance table links to them), the folder tree sits in
+// design.md's file map, and a rapid packet, which has no design.md, keeps its
+// decisions and compact dev document here. A row with nothing to say is
+// omitted, and archive-only rows never render before Land. `context` carries
+// harness-derived facts the draft does not hold: the review route label
+// (policy) and repositories the change does not select.
 export function renderDraftProposal(draft, state, context = {}) {
   const title = draft.title || state.intent;
-  const section = (value) => (value ? `\n\n${value}` : "");
-  const triggers = (draft.securityTriggers || []).filter(Boolean);
-  const nonGoals = (draft.nonGoals || []).length
-    ? `\n\n## Non-goals\n\n${draftBullets(draft.nonGoals)}` : "";
-  const constraints = (draft.constraints || []).length
-    ? `\n\n## Constraints\n\n${draftBullets(draft.constraints)}` : "";
-  const fixes = (draft.fixes || []).length ? [`- **Fixes:** ${draft.fixes.join(", ")}`] : [];
-  const why = String(draft.why || "").trim();
+  const language = draft.language;
   const rapid = state?.schema === "foundation-rapid";
-  const decisions = rapid ? section(renderRapidDecisions(draft.decisions)) : "";
   // A rapid change has no design.md, so its compact dev document (flow,
   // components, descriptive sections the agent wrote, failures) lives here.
   // Authoring them never moves the change off rapid.
-  const compact = rapid && [3, 4].includes(draft._semanticVersion);
-  const flow = compact ? section(renderUserFlow(draft)) : "";
-  // A declared work type is stated here as design.md states it, so Prove can
-  // tell behavior-changing work from a refactor, docs, or chore change.
-  const plan = compact ? section(renderComponentMap(draft)) + section(renderDesignBlueprints({
-    workType: draft.workType, bugfix: draft.bugfix, refactor: draft.refactor, configContract: draft.configContract,
-    failureMatrix: derivedFailureMatrix(draft),
-    fileMap: fileMapWithTasks(draft.fileMap, draft.tasks), testMap: draft.testMap
-  })) : "";
-  return `# Change: ${title}` + section(renderPacketHeader(draft, state)) +
-    section(renderProposalLead(draft)) +
-    (why ? `\n\n## Why\n\n${why}` : "") + section(renderProposalReader(draft)) +
-    section(renderScope(draft, context)) + flow + plan +
-    section(renderTraceability(draft)) + section(renderDefinitionOfDone(draft, context)) +
-    `\n\n## Impact\n\n` + [
-      `- **Impact:** ${riskLabel(draft, "impact") || state.impact || "medium"}`,
-      `- **Coupling:** ${riskLabel(draft, "coupling") || state.coupling || "coupled"}`,
-      // A rapid change states only what departs from its defaults (code
-      // surface, no security trigger); the standard lane keeps the statement.
-      ...(rapid && !(draft.surfaces || []).some((surface) => surface !== "code") ? [] :
-        [`- **Affected surfaces:** ${(draft.surfaces || ["code"]).join(", ")}`]),
-      ...(rapid && !triggers.length ? [] :
-        [`- **Security triggers:** ${triggers.length ? triggers.join(", ") : "none detected"}`]),
-      ...(rapid && docsOnlyDraft(draft)
-        ? ["- **Specs:** none; docs-only work modifies no living spec"] : []),
-      ...fixes
-    ].join("\n") +
-    decisions + constraints + nonGoals + section(renderDerivedNotes(draft, rapid)) +
-    section(renderInvestigationSummary(draft.investigation)) +
-    section(renderInvestigationCoverage(draft)) +
-    section(renderDiscoveryAppendix(draft)) +
-    section(renderInvestigationAppendix(draft.investigation, draft.language)) + "\n";
+  const compact = rapid && isSemanticVersion(draft._semanticVersion);
+  const compactPlan = () => [
+    renderUserFlow(draft), renderComponentMap(draft), renderDesignBlueprints({
+      workType: draft.workType, bugfix: draft.bugfix, refactor: draft.refactor, configContract: draft.configContract,
+      failureMatrix: derivedFailureMatrix(draft),
+      fileMap: fileMapWithTasks(draft.fileMap, draft.tasks), testMap: draft.testMap
+    })].filter(Boolean);
+  const fieldRender = (key) => PROCESS_FIELDS[key].render(draft[key], { language });
+  const bodies = {
+    summary: () => String(draft.summary || "").trim(),
+    why: () => String(draft.why || "").trim(),
+    userStories: () => renderUserStories(draft, language),
+    successCriteria: () => renderSuccessCriteria(draft),
+    scope: () => sectionBody(renderScope(draft, context)),
+    capabilities: () => capabilityTable(draft),
+    impact: () => proposalImpact(draft, state, rapid),
+    decisionsToRatify: () => [sectionBody(renderProposedDecisions(draft.decisions, language)),
+      renderOpenQuestions(draft)].filter(Boolean).join("\n"),
+    decisionLog: () => fieldRender("decisionLog"),
+    communication: () => [fieldRender("communication"),
+      (() => {
+        const note = fieldRender("releaseNote");
+        return note ? `### Release note\n\n${note}` : "";
+      })()].filter(Boolean).join("\n\n"),
+    demo: () => fieldRender("demo"),
+    acceptance: () => sectionBody(renderTraceability(draft)),
+    definitionOfDone: () => sectionBody(renderDefinitionOfDone(draft, context)),
+    investigation: () => investigationAppendixBody(draft, title),
+    discovery: () => discoveryAppendixBody(draft, language),
+    derived: () => derivedNotesBody(draft, rapid),
+    provenance: () => provenanceBody(draft.provenance),
+    amendments: () => amendmentsBody(draft.amendments ?? context.amendments)
+  };
+  // Content the outline places right after a row: authored Constraints and
+  // Non-goals close Scope (their headings are what Land and PR readers find),
+  // the rapid compact dev document follows them, and a rapid packet's
+  // decisions follow Impact.
+  const after = {
+    scope: () => [
+      (draft.constraints || []).length ? `## Constraints\n\n${draftBullets(draft.constraints)}` : "",
+      (draft.nonGoals || []).length ? `## Non-goals\n\n${draftBullets(draft.nonGoals)}` : "",
+      ...(compact ? compactPlan() : [])],
+    impact: () => [rapid ? renderRapidDecisions(draft.decisions) : ""]
+  };
+  const sections = [];
+  for (const row of outlineRowsWithProse("proposal", draft, { language, archived: false })) {
+    if (row.archiveOnly || row.key === "header") continue;
+    const body = [authoredProse(draft, "proposal", row), bodies[row.key]?.() || ""]
+      .filter(Boolean).join("\n\n");
+    if (body) sections.push(`## ${sectionHeading(row, language)}\n\n${body}`);
+    sections.push(...(after[row.key]?.() || []).filter(Boolean));
+  }
+  const header = renderPacketHeader(draft, state, context);
+  return [`# Change: ${title}`, header, ...sections].filter(Boolean).join("\n\n") + "\n";
 }
 
 // Keeps the harness-owned facts of a proposal current when resolve changes
@@ -536,8 +753,12 @@ export function synchronizeProposalClassification(proposal, state, context = {})
   if (state.upgradedFrom === "foundation-rapid")
     next = next.replace(/(\*\*Lane:\*\* )rapid \([^\n]*\)/,
       "$1standard (upgraded from rapid at resolve; see Impact)");
-  if (context.reviewLabel)
+  if (context.reviewLabel) {
     next = next.replace(/^(- Review: ).*$/m, (line, prefix) => `${prefix}${context.reviewLabel}.`);
+    // The header names the tier of the same route.
+    next = next.replace(/^(- \*\*Review:\*\* )[^·\n]*?(?=( · |$))/m,
+      (line, prefix) => `${prefix}${reviewTier(context.reviewLabel)}`);
+  }
   for (const [label, value] of [
     ["Impact", state.impact], ["Coupling", state.coupling]
   ]) {
@@ -563,57 +784,128 @@ function meaningful(value) {
   return normalized && !/^`?none`?[.]?$/i.test(normalized) ? normalized : "";
 }
 
-// Empty sections are omitted rather than rendered as `none` placeholders, so a
-// reviewer reads only what this change actually decides.
-export function renderDraftDesign(draft) {
-  const risks = (draft.risks || []).filter((risk) => meaningful(risk?.risk))
-    .map((risk) => `| ${risk.risk} | ${risk.mitigation} | ${risk.owner} |`).join("\n");
-  const decisions = [...(draft.decisions || []), ...intakeDecisions(draft)];
-  const diagrams = (draft.diagrams || []).map((diagram) => {
+// The open questions of a compiled proposal: the plain bullets of its
+// "Decisions to ratify and open questions" section (proposed decisions are
+// the bold-keyed bullets beside them).
+export function proposalOpenQuestions(proposal) {
+  const row = outlineRow("proposal", "decisionsToRatify");
+  const headings = [row.heading.en, row.heading.th].map((heading) =>
+    heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const section = String(proposal || "")
+    .match(new RegExp(`^## (?:${headings})\\s*$([\\s\\S]*?)(?=^## |(?![\\s\\S]))`, "m"))?.[1] || "";
+  return [...section.matchAll(/^- (?!\*\*)(.+?)\s*$/gm)].map((match) => match[1]);
+}
+
+// Rows whose English heading is a parser marker: packetWorkTypes reads
+// "## Work type" (and the refactor/bugfix headings), durableDecisionSection
+// reads "## Decisions". They keep that heading in every packet language.
+const DESIGN_MARKER_ROWS = new Set(["workType", "decisions", "bugfix", "refactor"]);
+
+function designLanguage(draft) {
+  return /^th\b/i.test(String(draft?.language || "")) ? "th" : "en";
+}
+
+function designText(value) {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "object") return renderDecisionOption(value) ||
+    Object.values(value).map((item) => String(item ?? "").trim()).filter(Boolean).join(" — ");
+  return String(value).trim();
+}
+
+function mermaidBlock(value) {
+  const source = typeof value === "string" ? value : value?.source;
+  if (!String(source || "").trim()) return "";
+  const purpose = typeof value === "object" ? designText(value?.purpose) : "";
+  return `${purpose ? `${purpose}\n\n` : ""}\`\`\`mermaid\n${String(source).trim()}\n\`\`\``;
+}
+
+function designDiagrams(diagrams) {
+  return (Array.isArray(diagrams) ? diagrams : []).map((diagram) => {
     const title = diagram.title || diagram.key;
     if (diagram.type === "mermaid" && diagram.source)
       return `### ${title}\n\n${diagram.purpose || ""}\n\n\`\`\`mermaid\n${diagram.source}\n\`\`\``;
     const target = diagram.path || diagram.source;
     return `### ${title}\n\n${diagram.purpose || ""}\n\n[Diagram source](${target})`;
-  });
-  const prototype = draft.prototypeSelection
-    ? `\n\n## Prototype selection\n\n- **Selected:** ${draft.prototypeSelection.selected}\n` +
-      `- **Reference:** ${draft.prototypeSelection.reference}\n` +
-      `- **Reason:** ${draft.prototypeSelection.reason || "Recorded in the selection reference"}`
-    : "";
-  const integrations = (draft.integrations || []).map((integration) =>
-    `| ${integration.key} | ${integration.kind} | ${integration.documentation?.source} | ` +
-    `${integration.documentation?.version} | ${(integration.concerns || []).join(", ") || "none"} |`
-  );
-  // File and test maps fall back to what the tasks already say, and the
-  // failure matrix to the failure scenarios, so each fact is written once.
-  // Reading order: user flow, components, contracts and states, failures,
-  // file map, test map, then the plan Build executes.
-  const blueprints = renderDesignBlueprints({
-    ...draft, workType: [], fileMap: fileMapWithTasks(derivedFileMap(draft), draft.tasks),
-    testMap: derivedTestMap(draft), failureMatrix: derivedFailureMatrix(draft)
-  }, { fileTree: renderFileTree(draft) });
+  }).join("\n\n");
+}
+
+function joinParts(...parts) {
+  return parts.map((part) => String(part || "").trim()).filter(Boolean).join("\n\n");
+}
+
+// design.md follows the outline contract: each row renders once, under its
+// localized heading, from its typed field module or the derived renderer, so
+// no fact is written twice. Empty rows are omitted rather than rendered as
+// `none` placeholders. Open questions live only in the proposal; proposed
+// decisions wait for the user there too, so design.md records only accepted
+// or superseded decisions.
+export function renderDraftDesign(draft) {
+  const language = designLanguage(draft);
+  const field = (key) => {
+    const value = draft[key];
+    if (value === undefined || value === null) return "";
+    try { return DESIGN_FIELDS[key].render(value, { language }); }
+    catch { return ""; }
+  };
   const declared = draftWorkTypes(draft);
-  const sections = [
-    renderWorkType(declared, declared.length ? [] : inferWorkTypes(draft)),
-    meaningful(draft.currentState) ? `## Current state\n\n${draft.currentState}` : "",
-    renderDesignOverview(draft),
-    renderUserFlow(draft),
-    renderComponentMap(draft),
-    blueprints,
-    (draft.domainLanguage || []).length
-      ? `## Domain language\n\n| Canonical term | Meaning | Avoid |\n|---|---|---|\n` +
-        draftDomainRows(draft.domainLanguage) : "",
-    decisions.length ? `## Decisions\n\n${renderDraftDecisions(decisions)}` : "",
-    meaningful(draft.compatibility)
-      ? `## Compatibility and migration\n\n${draft.compatibility}` : "",
-    risks ? `## Risks\n\n| Risk | Mitigation | Evidence owner |\n|---|---|---|\n${risks}` : ""
-  ].filter(Boolean);
-  return `# Design\n\n${sections.join("\n\n")}` +
-    (diagrams.length ? `\n\n## Diagrams\n\n${diagrams.join("\n\n")}` : "") +
-    (integrations.length
-      ? `\n\n## Integrations\n\n| Integration | Kind | Documentation | Version | Concerns |\n` +
-        `|---|---|---|---|---|\n${integrations.join("\n")}` : "") + prototype + "\n";
+  const inferred = declared.length ? [] : inferWorkTypes(draft);
+  const decisions = [...(draft.decisions || []), ...intakeDecisions(draft)]
+    .filter((decision) => !proposedDecision(decision));
+  const risks = (draft.risks || []).filter((risk) => meaningful(risk?.risk))
+    .map((risk) => `| ${risk.risk} | ${risk.mitigation} | ${risk.owner} |`).join("\n");
+  const assumptions = (Array.isArray(draft.assumptions) ? draft.assumptions : [draft.assumptions])
+    .map(designText).filter(Boolean);
+  const authoredFileMap = Array.isArray(draft.fileMap) && draft.fileMap.length > 0;
+  const componentMap = sectionBody(renderComponentMap(draft));
+  const domain = field("domain");
+  const prototype = draft.prototypeSelection;
+  const bodies = {
+    overview: () => meaningful(designText(draft.overview)),
+    currentState: () => meaningful(draft.currentState),
+    domainLanguage: () => (draft.domainLanguage || []).length
+      ? `| Canonical term | Meaning | Avoid |\n|---|---|---|\n${draftDomainRows(draft.domainLanguage)}` : "",
+    assumptions: () => assumptions.map((row) => `- ${row}`).join("\n"),
+    workType: () => sectionBody(renderWorkType(declared, inferred)),
+    architecture: () => joinParts(mermaidBlock(draft.diagram), field("boundaries")),
+    tenancy: () => field("tenancy"),
+    userFlow: () => sectionBody(renderUserFlow(draft)),
+    runtime: () => designDiagrams(draft.diagrams),
+    domainModel: () => joinParts(domain,
+      componentMap && domain ? `### ${language === "th" ? "แผนที่ component" : "Component map"}\n\n${componentMap}`
+        : componentMap),
+    apiContracts: () => Array.isArray(draft.apiContracts) ? field("apiContracts") : "",
+    eventContracts: () => joinParts(field("eventContracts"), renderJobContractBody(draft.jobContract)),
+    dataModel: () => field("dataModel"),
+    uiContract: () => joinParts(field("ui"), renderUiStatesBody(draft.uiStates)),
+    configContract: () => field("configContract"),
+    integrations: () => field("integrations"),
+    decisions: () => decisions.length ? renderDraftDecisions(decisions) : "",
+    observability: () => joinParts(field("observability"), field("trackingPlan")),
+    rollout: () => joinParts(meaningful(draft.compatibility), field("rollout")),
+    risks: () => risks ? `| Risk | Mitigation | Evidence owner |\n|---|---|---|\n${risks}` : "",
+    fileMap: () => renderFileMapBody(authoredFileMap ? fileMapWithTasks(draft.fileMap, draft.tasks)
+      : derivedFileMap(draft), { derived: !authoredFileMap, fileTree: renderFileTree(draft) }),
+    prototype: () => prototype
+      ? `- **Selected:** ${prototype.selected}\n- **Reference:** ${prototype.reference}\n` +
+        `- **Reason:** ${prototype.reason || "Recorded in the selection reference"}` : ""
+  };
+  const context = { workTypes: declared.length ? declared : inferred, language };
+  const sections = [];
+  // Derived rows count as supplied: settled intake answers are decisions, and
+  // failure and test maps read from scenarios and task checks.
+  const failureMatrix = derivedFailureMatrix(draft);
+  const testMap = derivedTestMap(draft);
+  bodies.failureMatrix = () => renderFailureMatrixBody(failureMatrix);
+  bodies.testMap = () => renderTestMapBody(testMap);
+  for (const row of outlineRowsWithProse("design", { ...draft, decisions, failureMatrix, testMap }, context)) {
+    const render = bodies[row.key] || (DESIGN_FIELDS[row.key] ? () => field(row.key) : null);
+    const body = [authoredProse(draft, "design", row), render ? String(render() || "").trim() : ""]
+      .filter(Boolean).join("\n\n");
+    if (!body) continue;
+    const heading = DESIGN_MARKER_ROWS.has(row.key) ? row.heading.en : sectionHeading(row, language);
+    sections.push(`## ${heading}\n\n${body}`);
+  }
+  return `# Design\n\n${sections.join("\n\n")}\n`;
 }
 
 // The review route a change will take, in words that cannot be misread.
@@ -660,7 +952,7 @@ export function semanticDraftKeepsDesign(draft, rapid) {
   // and neither is a default the agent recorded without asking. Purely
   // descriptive dev-document sections render compactly in a rapid proposal,
   // so they never move a low-risk change to standard; risk still does.
-  return Boolean(rapid) && [3, 4].includes(draft?._semanticVersion) &&
+  return Boolean(rapid) && isSemanticVersion(draft?._semanticVersion) &&
     draftNeedsDesign({
       ...draft, workType: [],
       ...Object.fromEntries(RAPID_DESCRIPTIVE_SECTIONS.map((key) => [key, undefined])),
@@ -736,6 +1028,20 @@ export function repositoryDraftGuidance(repositories = []) {
 export function renderDraftTasks(tasks) {
   return `# Tasks\n\n> This is the sole implementation ledger.\n\n` +
     tasks.map(renderDraftTask).join("\n") + "\n";
+}
+
+// A draft without an id is named from its intent; an intent that slugs to
+// fewer than three words (a Thai intent slugs to "change") is named from its
+// first capability and requirement key so the id stays meaningful.
+export function draftChangeId(draft, slugify) {
+  if (draft?.id) return slugify(String(draft.id));
+  const fromIntent = slugify(String(draft?.intent || ""));
+  if (fromIntent.split("-").filter(Boolean).length >= 3) return fromIntent;
+  const spec = Array.isArray(draft?.specs) ? draft.specs[0] : null;
+  const key = draft?._requirementKeys?.[0] || draft?.claims?.[0]?.requirementKey ||
+    spec?.requirement;
+  if (!spec?.name || !key) return fromIntent;
+  return slugify(`${spec.name}-${key}`);
 }
 
 export function groupDraftSpecs(specs, slugify) {
@@ -960,19 +1266,33 @@ export function createChangeLifecycle({
         `(${residue.map((path) => path.slice(root.length + 1)).join(", ")}); pick a new id`);
   }
 
-  function draftSource(draftPath, prior = {}) {
+  // `folderIssues` (revise) collects a v5 folder's prose issues instead of
+  // failing, so they reach the same EDIT batch as the draft's other issues.
+  // `allowMissing` (start) also collects an unreadable change.json and returns
+  // null, so the folder's issues still come back as one EDIT.
+  function draftSource(draftPath, prior = {}, { folderIssues = null, allowMissing = false } = {}) {
     const source = resolve(root, draftPath);
     if (!pathInside(root, source) || !existsSync(source))
-      fail("new --draft requires a JSON file inside the project");
+      fail("new --draft requires a JSON file inside the project (or a v5 draft folder)");
     // `minimalDraft` is the template's example key, never draft content. A
     // draft without `version` in the minimal v4 shape compiles as v4.
-    const raw = readJson(source);
+    const raw = statSync(source).isDirectory()
+      ? draftFolderSource(source, folderIssues, { allowMissing }) : readJson(source);
+    if (raw === null && allowMissing && folderIssues?.length) return null;
     const context = { ...minimalDraftContext, ...prior };
     // Impact and coupling are derived from the draft's content, never lowered.
     if (!raw || typeof raw !== "object" || Array.isArray(raw) || !("minimalDraft" in raw))
       return withDerivedRisk(expandMinimalSemanticDraft(raw, context));
     const { minimalDraft: _example, ...draft } = raw;
     return withDerivedRisk(expandMinimalSemanticDraft(draft, context));
+  }
+
+  // A v5 draft folder: change.json plus authored proposal.md and design.md.
+  function draftFolderSource(source, collect = null, { allowMissing = false } = {}) {
+    const { draft, issues } = loadDraftFolder(source, { name: relative(root, source).replaceAll("\\", "/") || "." });
+    if (issues.length && collect && (draft || allowMissing)) { collect.push(...issues); return draft; }
+    if (issues.length) fail(`semantic draft validation failed:\n  - ${issues.join("\n  - ")}`);
+    return draft;
   }
 
   // A minimal draft chooses among existing capabilities before inventing one.
@@ -1079,12 +1399,12 @@ export function createChangeLifecycle({
   function validateDraftFields(draft) {
     // A semantic draft may leave 'why' out; its proposal then has no Why
     // section instead of repeating the intent.
-    const requiredStrings = [3, 4].includes(draft._semanticVersion)
+    const requiredStrings = isSemanticVersion(draft._semanticVersion)
       ? ["currentState", "compatibility"] : ["why", "currentState", "compatibility"];
     for (const field of requiredStrings)
       if (!String(draft[field] || "").trim())
         fail(`draft requires non-empty '${field}'`);
-    const requiredArrays = [3, 4].includes(draft._semanticVersion)
+    const requiredArrays = isSemanticVersion(draft._semanticVersion)
       ? ["changes", "tasks", "claims", "specs"]
       : ["changes", "nonGoals", "decisions", "risks", "tasks", "claims", "specs"];
     for (const field of requiredArrays)
@@ -1152,7 +1472,10 @@ export function createChangeLifecycle({
     // mechanical IDs and unambiguous cross-ledger bindings to the harness.
     let draft = source;
     if (source.version === 2) draft = deriveDraftBookkeeping(source, slugify);
-    if ([3, 4].includes(source.version)) {
+    // Versions above the current semantic schema are unknown, not legacy.
+    if (Number.isInteger(source.version) && source.version > 5)
+      fail("semantic draft validation failed:\n  - semantic draft version must be 3, 4, or 5");
+    if (isSemanticVersion(source.version)) {
       const normalized = normalizeSemanticDraft(source, slugify, {
         defaultRapidEvidence: true,
         repositories: declaredRepositories(),
@@ -1266,7 +1589,7 @@ export function createChangeLifecycle({
     try { walk(base); } catch { return ""; }
     const lines = files.sort().map((file) => `  file: ${file}\n`);
     let semantic = false;
-    try { semantic = [3, 4].includes(loadRuntime(id)?.semanticDraftVersion); } catch {}
+    try { semantic = isSemanticVersion(loadRuntime(id)?.semanticDraftVersion); } catch {}
     if (!files.some((file) => file.includes("/specs/")))
       lines.push(semantic
         ? "  specs: none (docs-only change; it modifies no living spec)\n"
@@ -1284,10 +1607,13 @@ export function createChangeLifecycle({
     return lines.join("");
   }
 
-  function designWarningLines(draft, schema) {
-    if (![3, 4].includes(draft._semanticVersion)) return "";
+  // `source` is the authored draft: unknown task fields are gone after
+  // normalization. Every schema prints them; they never block.
+  function designWarningLines(draft, schema, source = draft) {
+    if (!isSemanticVersion(draft._semanticVersion)) return "";
     const verify = verifyCountAdvisories(draft.tasks)
-      .map((warning) => `  verify advisory: ${warning}\n`).join("");
+      .map((warning) => `  verify advisory: ${warning}\n`).join("") +
+      unknownTaskFieldWarnings(source).map((warning) => `  task warning: ${warning}\n`).join("");
     if (schema !== "foundation-standard") return verify;
     return [...designBlueprintWarnings(draft), ...readerGuideWarnings(draft)]
       .map((warning) => `  design warning: ${warning}\n`).join("") + verify;
@@ -1325,20 +1651,22 @@ export function createChangeLifecycle({
     // A standard v4 change is built from its dev document, so design.md is
     // always written; v3 keeps writing it only for authored design content.
     if (state.schema === "foundation-standard" &&
-        (![3, 4].includes(draft._semanticVersion) || draft._semanticVersion === 4 ||
+        (!isSemanticVersion(draft._semanticVersion) || isSemanticV4Plus(draft._semanticVersion) ||
           draftNeedsDesign(draft)))
       writeFileSync(join(basePath, "design.md"), renderDraftDesign(documented));
-    if (state.groundingRequired && draft.grounding)
+    const qualityGrounding = v5QualityGrounding(draft, { groundingRequired: state.groundingRequired });
+    if (qualityGrounding) writeJson(join(basePath, "grounding.yaml"), qualityGrounding);
+    else if (state.groundingRequired && draft.grounding)
       writeJson(join(basePath, "grounding.yaml"), draft.grounding);
     writeFileSync(join(basePath, "tasks.md"), renderDraftTasks(draft.tasks));
     const contract = readJson(join(basePath, "evidence.yaml"));
     contract.claims = draft.claims;
-    if ([3, 4].includes(draft._semanticVersion) && draft._derivedExecution)
+    if (isSemanticVersion(draft._semanticVersion) && draft._derivedExecution)
       contract.providers = draft.execution.providers;
     writeJson(join(basePath, "evidence.yaml"), contract);
-    if (draft.execution && !([3, 4].includes(draft._semanticVersion) && draft._derivedExecution))
+    if (draft.execution && !(isSemanticVersion(draft._semanticVersion) && draft._derivedExecution))
       writeJson(join(basePath, "execution.yaml"), draft.execution);
-    if (![3, 4].includes(draft._semanticVersion) || draft.externalOperations?.length)
+    if (!isSemanticVersion(draft._semanticVersion) || draft.externalOperations?.length)
       writeJson(join(basePath, "handoffs.yaml"), {
         version: 1,
         operations: draft.externalOperations || []
@@ -1353,7 +1681,7 @@ export function createChangeLifecycle({
     // packet without deltas, or declared docs-only work (no system behavior),
     // keeps it.
     const rapidSpecs = state.schema === "foundation-rapid" &&
-      [3, 4].includes(draft._semanticVersion) && (draft.specs || []).length > 0 &&
+      isSemanticVersion(draft._semanticVersion) && (draft.specs || []).length > 0 &&
       !docsOnlyDraft(draft);
     if (state.schema === "foundation-standard" || rapidSpecs)
       materializeDraftSpecs({
@@ -1407,14 +1735,14 @@ export function createChangeLifecycle({
     const draft = preparedDraft !== undefined
       ? preparedDraft
       : flags.draft ? loadDraft(flags.draft) : null;
-    if (preparedDraft === undefined && flags.draft && draft?._semanticVersion === 4)
+    if (preparedDraft === undefined && flags.draft && isSemanticV4Plus(draft?._semanticVersion))
       fail("semantic draft v4 must use 'change start <draft.json>' so repository intake is enforced");
     const schema = flags.rapid ? "foundation-rapid" : "foundation-standard";
     const source = templateDir(schema);
     const target = changePath(id);
     const groundingRequired = workflowPolicy().workflow.grounding === "required" ||
       Boolean(draft?.grounding);
-    const semantic = [3, 4].includes(draft?._semanticVersion);
+    const semantic = isSemanticVersion(draft?._semanticVersion);
     // The rapid schema declares no spec artifact, so a rapid change never has
     // deltas to find. OpenSpec reads that absence as an error — every rapid
     // change was invalid to `openspec validate`, and Land printed five lines of
@@ -1467,6 +1795,7 @@ export function createChangeLifecycle({
         "the host refuses those. Then run claude-foundation change start " +
         ".foundation/drafts/<id>.json.",
       minimalDraft: minimalSemanticDraftTemplate(),
+      minimalDraftWriting: MINIMAL_DRAFT_WRITING,
       minimalDraftCapability: "Optionally add a top-level capability to the minimal draft: a " +
         "short noun phrase naming the living spec, such as kanban-board. Omitted, the draft " +
         "joins the matching existing capability or derives a short name from the intent.",
@@ -1491,6 +1820,18 @@ export function createChangeLifecycle({
       ...repositoryDraftGuidance(declaredRepositories()),
       ...semanticDraftTemplate()
     };
+  }
+
+  function complianceEnabled() {
+    const path = join(root, "openspec", "config.yaml");
+    return existsSync(path) && complianceEnabledFromConfig(readFileSync(path, "utf8"));
+  }
+
+  // The compliance change record is off unless openspec/config.yaml enables
+  // it; then the draft's compliance block routes one owned action (or none).
+  function complianceGate(source) {
+    if (!source || !isSemanticV4Plus(source.version) || !complianceEnabled()) return null;
+    return complianceAction(source.compliance, { enabled: true });
   }
 
   function inspectSemanticIntakeSource(source, {
@@ -1546,10 +1887,17 @@ export function createChangeLifecycle({
     // The harness records the inventory digest itself. `discovery.sourceDigest`
     // is optional; freshness comes from comparing the selected sources against
     // the previous snapshot, so a correct first draft can reach DONE at once.
+    // Compliance (opt-in per repository): agent repairs join this EDIT batch;
+    // a missing approver is one user question asked after them.
+    const compliance = complianceGate(source);
+    if (compliance?.owner === "agent") additionalIssues.push(...compliance.issues);
     const action = semanticIntakeAction(source, {
       resume, additionalIssues,
       sourceFreshnessFindings: sourceInspection.staleFindings,
-      frontierLimit: intelligence.depth.limits.frontierLimit
+      frontierLimit: intelligence.depth.limits.frontierLimit,
+      userQuestion: compliance?.owner === "user"
+        ? { key: compliance.field, question: compliance.question, kind: "compliance-approver" }
+        : null
     });
     // Stale sources return one EDIT; the snapshot then adopts the current
     // inventory so the re-inspect after the agent re-reads can reach DONE.
@@ -1577,7 +1925,8 @@ export function createChangeLifecycle({
     const result = {
       ...action,
       // Advisory: a known runner whose default output Prove cannot count.
-      designWarnings: [...designBlueprintWarnings(source), ...verifyCountAdvisories(source.tasks)],
+      designWarnings: [...designBlueprintWarnings(source), ...verifyCountAdvisories(source.tasks),
+        ...unknownTaskFieldWarnings(source)],
       intakeState: {
         path: relative(root, statePath),
         revision: state.revision,
@@ -1601,13 +1950,41 @@ export function createChangeLifecycle({
     return result;
   }
 
+  // A v5 folder's heading, order, placeholder, and change.json issues come
+  // back as one agent-owned draft-repair EDIT with the resume route; nothing
+  // is created. With a readable v4+ change.json they join intake's own issues.
+  function startDraftSource(draftPath) {
+    const folderIssues = [];
+    const source = draftSource(draftPath, {}, { folderIssues, allowMissing: true });
+    return { source, folderIssues };
+  }
+
+  function startResume(draftPath) {
+    return `claude-foundation change start ${draftPath} --inspect`;
+  }
+
+  function folderRepairAction(draftPath, folderIssues) {
+    return semanticIntakeAction({ version: 5 }, {
+      resume: startResume(draftPath), additionalIssues: folderIssues
+    });
+  }
+
   function inspectDraft(draftPath, options = {}) {
-    const source = options.preparedSource || draftSource(draftPath);
+    const prepared = options.preparedSource
+      ? { source: options.preparedSource, folderIssues: options.folderIssues || [] }
+      : startDraftSource(draftPath);
+    const { source, folderIssues } = prepared;
+    if (folderIssues.length && !isSemanticV4Plus(source?.version)) {
+      const action = folderRepairAction(draftPath, folderIssues);
+      if (!options.quiet) console.log(JSON.stringify(action, null, 2));
+      return action;
+    }
     return inspectSemanticIntakeSource(source, {
       statePath: semanticIntakeStatePath(draftPath),
-      resume: `claude-foundation change start ${draftPath} --inspect`,
+      resume: startResume(draftPath),
       quiet: options.quiet,
-      excludedSourcePath: relative(root, resolve(root, draftPath)).replaceAll("\\", "/")
+      excludedSourcePath: relative(root, resolve(root, draftPath)).replaceAll("\\", "/"),
+      extraIssues: folderIssues
     });
   }
 
@@ -1649,8 +2026,8 @@ export function createChangeLifecycle({
 
   function inspectAmendment(id, amendmentPath, options = {}) {
     const active = loadRuntime(id);
-    if (active.semanticDraftVersion !== 4)
-      fail(`change amend --inspect requires a semantic-draft v4 change; '${id}' is version ${
+    if (!isSemanticV4Plus(active.semanticDraftVersion))
+      fail(`change amend --inspect requires a semantic-draft v4 or v5 change; '${id}' is version ${
         active.semanticDraftVersion || "legacy"}`);
     const path = resolve(root, amendmentPath);
     if (!pathInside(root, path) || !existsSync(path))
@@ -1892,9 +2269,17 @@ export function createChangeLifecycle({
     return approvalPacketRootFor(loadRuntime(id), id);
   }
 
+  // Open questions live in the proposal's "Decisions to ratify and open
+  // questions" section (design.md no longer repeats them); a packet compiled
+  // earlier keeps them under design.md's "### Open questions".
   function designOpenQuestions(id, packetRoot = approvalPacketRoot(id)) {
-    const designPath = join(packetRoot, "openspec", "changes", id, "design.md");
-    return existsSync(designPath) ? openQuestionItems(readFileSync(designPath, "utf8")) : [];
+    const dir = join(packetRoot, "openspec", "changes", id);
+    const designPath = join(dir, "design.md");
+    const proposalPath = join(dir, "proposal.md");
+    return [...new Set([
+      ...(existsSync(designPath) ? openQuestionItems(readFileSync(designPath, "utf8")) : []),
+      ...(existsSync(proposalPath) ? proposalOpenQuestions(readFileSync(proposalPath, "utf8")) : [])
+    ])];
   }
 
   // The questions an approval would be refused over, as the user decision the
@@ -2052,7 +2437,7 @@ export function createChangeLifecycle({
   // missing or stale snapshot is re-inspected in place: DONE continues, and any
   // other action is returned under INCOMPLETE_INTAKE instead of failing.
   function completedDraftIntake(source, draftPath, { statePath, resume, inspect, reinspect = false }) {
-    if (source.version !== 4) return null;
+    if (!isSemanticV4Plus(source.version)) return null;
     const inspectedIntake = () => {
       const inspected = inspect();
       if (inspected.action === "DONE") return inspected.effectiveness || null;
@@ -2140,24 +2525,29 @@ export function createChangeLifecycle({
   // intake continues to the atomic start, while any other inspect action is
   // printed exactly as `--inspect` would and returned without creating state.
   function startAtomic(draftPath, options = {}) {
-    const source = draftSource(draftPath);
-    const completedIntakeEffectiveness = completedDraftIntake(source, draftPath, {
-      statePath: semanticIntakeStatePath(draftPath),
-      resume: `claude-foundation change start ${draftPath} --inspect`,
-      inspect: () => inspectDraft(draftPath, { quiet: true, preparedSource: source }),
-      reinspect: true
-    });
+    const { source, folderIssues } = startDraftSource(draftPath);
+    const inspect = () => inspectDraft(draftPath, { quiet: true, preparedSource: source, folderIssues });
+    // Folder issues and a pending compliance action never pass a recorded
+    // intake: they always reinspect, so the EDIT or ASK_USER is returned.
+    const completedIntakeEffectiveness = folderIssues.length || complianceGate(source)
+      ? { [INCOMPLETE_INTAKE]: inspect() }
+      : completedDraftIntake(source, draftPath, {
+        statePath: semanticIntakeStatePath(draftPath),
+        resume: startResume(draftPath),
+        inspect,
+        reinspect: true
+      });
     const incomplete = completedIntakeEffectiveness?.[INCOMPLETE_INTAKE];
     if (incomplete) {
       console.log(JSON.stringify(incomplete, null, 2));
       return incomplete;
     }
     const { draft, rapid, resolutionFlags } = preflightDraft(draftPath, source);
-    const id = slugify(draft.id || draft.intent);
+    const id = draftChangeId(draft, slugify);
     assertChangeAvailable(id);
     try {
       trapFailures(() => {
-        measureStage("change.materialize", () => createChange(draft.intent, { rapid, id: draft.id }, draft, {
+        measureStage("change.materialize", () => createChange(draft.intent, { rapid, id: draft.id || id }, draft, {
           availabilityChecked: true,
           deferSessionBinding: true
         }));
@@ -2178,7 +2568,7 @@ export function createChangeLifecycle({
         bindClaudeSession(id, "change");
         const pending = loadRuntime(id);
         pending.specApproval = { required: true };
-        if ([3, 4].includes(draft._semanticVersion)) {
+        if (isSemanticVersion(draft._semanticVersion)) {
           pending.requirementFingerprints = draftRequirementFingerprints(draft);
           // The compiled-from draft, so `change revise --merge` takes a patch.
           pending.draftSource = compiledDraftSource(pending, source);
@@ -2190,7 +2580,7 @@ export function createChangeLifecycle({
         console.log(`AGREED ${id}\n  inspect: openspec/changes/${id}/\n` + packetFileLines(id) +
           "  awaiting user approval before Build\n" +
           openQuestionLines(openQuestions) +
-          designWarningLines(draft, loadRuntime(id).schema) +
+          designWarningLines(draft, loadRuntime(id).schema, source) +
           `  next: ${openQuestions.length
             ? `ask these with the approval, record the answers in the draft, then claude-foundation change revise ${id} ${draftPath} --approve-spec --decision-ref <user-decision> --through proven`
             : `claude-foundation advance ${id} --approve-spec --decision-ref <user-decision> --through proven`}`);
@@ -2209,7 +2599,8 @@ export function createChangeLifecycle({
     }
     if (options.consumeDraft) {
       const draftFile = resolve(root, draftPath);
-      try { rmSync(draftFile); }
+      // A v5 draft is a folder; a file draft stays a single unlink.
+      try { rmSync(draftFile, { recursive: true }); }
       catch (error) {
         console.error(`WARNING: atomic start succeeded but could not remove draft '${
           relative(root, draftFile)}': ${error.message}`);
@@ -2302,7 +2693,7 @@ export function createChangeLifecycle({
         "start a successor change");
     if (!existsSync(changePath(id)))
       fail(`change revise requires an existing active change; '${id}' was not found`);
-    if (![3, 4].includes(state.semanticDraftVersion))
+    if (!isSemanticVersion(state.semanticDraftVersion))
       fail(`change revise requires a semantic-draft v3 or v4 change; '${id}' is a legacy agreement`);
     const amend = `claude-foundation change amend ${id} <amendment.json> --inspect`;
     const receipts = join(root, ".foundation", "receipts", id);
@@ -2344,17 +2735,26 @@ export function createChangeLifecycle({
   // `merge` applies the file as a patch to the draft the change was compiled
   // from (see mergeSemanticDraft); without it the file is the whole draft.
   function revisionSource(id, draftPath, { merge = false } = {}) {
+    const folderIssues = [];
     const source = merge ? mergedRevisionSource(id, draftPath)
-      : draftSource(draftPath, priorDraftIdentity(id));
+      : draftSource(draftPath, priorDraftIdentity(id), { folderIssues });
     if (source.id !== undefined && source.id !== id && slugify(source.id) !== id)
       fail(`change revise draft id '${source.id}' does not match change '${id}'`);
-    return { ...source, id };
+    const revision = { ...source, id };
+    if (folderIssues.length) revisionFolderIssues.set(revision, folderIssues);
+    return revision;
   }
+
+  // A v5 folder's heading/prose issues, keyed by the revision source they
+  // belong to; kept off the draft so its digest and recorded copy stay clean.
+  const revisionFolderIssues = new WeakMap();
 
   function mergedRevisionSource(id, draftPath) {
     const path = resolve(root, draftPath);
     if (!pathInside(root, path) || !existsSync(path))
       fail("change revise --merge requires a JSON patch file inside the project");
+    if (statSync(path).isDirectory())
+      fail("change revise --merge takes a JSON patch file; pass a v5 draft folder without --merge");
     const state = loadRuntime(id);
     const base = state.draftSource?.draft;
     if (!base || typeof base !== "object")
@@ -2392,12 +2792,13 @@ export function createChangeLifecycle({
     assertRevisable(id);
     const merge = Boolean(options.merge);
     const source = options.preparedSource || revisionSource(id, draftPath, { merge });
-    if (source.version !== 4)
-      fail(`change revise --inspect requires a semantic-draft v4 draft; got version ${source.version}`);
+    if (!isSemanticV4Plus(source.version))
+      fail(`change revise --inspect requires a semantic-draft v4 or v5 draft; got version ${source.version}`);
     const { statePath, resume } = revisionIntakeOptions(id, draftPath, source, { merge });
     return inspectSemanticIntakeSource(source, {
       statePath, resume, quiet: options.quiet,
-      excludedSourcePath: relative(root, resolve(root, draftPath)).replaceAll("\\", "/")
+      excludedSourcePath: relative(root, resolve(root, draftPath)).replaceAll("\\", "/"),
+      extraIssues: revisionFolderIssues.get(source) || []
     });
   }
 
@@ -2415,8 +2816,10 @@ export function createChangeLifecycle({
     const intake = revisionIntakeOptions(id, draftPath, source, { merge });
     // One call: a missing or stale intake is inspected in place. DONE revises;
     // any other action is printed as `--inspect` would and nothing changes.
-    const completedIntakeEffectiveness = completedDraftIntake(source, draftPath,
-      { ...intake, reinspect: true });
+    // Folder prose issues never pass a recorded intake: they always reinspect.
+    const completedIntakeEffectiveness = revisionFolderIssues.has(source)
+      ? { [INCOMPLETE_INTAKE]: intake.inspect() }
+      : completedDraftIntake(source, draftPath, { ...intake, reinspect: true });
     const incomplete = completedIntakeEffectiveness?.[INCOMPLETE_INTAKE];
     if (incomplete) {
       console.log(JSON.stringify(incomplete, null, 2));
@@ -2497,7 +2900,8 @@ export function createChangeLifecycle({
     }
     rmSync(transactionRoot, { recursive: true, force: true });
     if (options.consumeDraft) {
-      try { rmSync(resolve(root, draftPath)); }
+      // A v5 draft is a folder; a file draft stays a single unlink.
+      try { rmSync(resolve(root, draftPath), { recursive: true }); }
       catch (error) {
         console.error(`WARNING: revision succeeded but could not remove draft '${
           draftPath}': ${error.message}`);
@@ -2517,7 +2921,7 @@ export function createChangeLifecycle({
         : `  requirement delta (covered by the current approval):\n${formatApprovalDelta(delta)}\n`) +
       `  inspect: openspec/changes/${id}/\n` + packetFileLines(id) +
       openQuestionLines(openQuestions) +
-      designWarningLines(draft, state.schema) +
+      designWarningLines(draft, state.schema, source) +
       `  next: ${openQuestions.length
         ? `ask these with the approval, record the answers in the draft, then ${reviseRoute(id, draftPath, merge)} --approve-spec --decision-ref <user-decision> --through proven`
         : pending || !state.specApproval?.identity
@@ -2543,7 +2947,7 @@ export function createChangeLifecycle({
   }
 
   function amendChangeUnlocked(id, amendmentPath, options, state, expectedRevision) {
-    if (![3, 4].includes(state.semanticDraftVersion))
+    if (!isSemanticVersion(state.semanticDraftVersion))
       fail(`change amend requires a semantic-draft v3 or v4 change; '${id}' is a legacy agreement`);
     if (["landing", "applied", "archived"].includes(state.status))
       fail(`change amend cannot rewrite an agreement in '${state.status}' status; start a successor change`);
@@ -2561,7 +2965,10 @@ export function createChangeLifecycle({
     let completedAmendmentIntakeEffectiveness = null;
     // A verify-only correction changes no requirement, so it has no semantic
     // intake to complete.
-    if (state.semanticDraftVersion === 4 && !taskContractOnlyAmendment(amendment)) {
+    // A sections-only amendment rewrites prose and no requirement either.
+    const sectionsOnly = sectionsOnlyAmendment(amendment);
+    if (isSemanticV4Plus(state.semanticDraftVersion) && !taskContractOnlyAmendment(amendment) &&
+        !sectionsOnly) {
       const resume = `claude-foundation change amend ${id} ${amendmentPath} --inspect`;
       let intakeState = null;
       if (existsSync(amendmentStatePath)) {
@@ -2650,7 +3057,7 @@ export function createChangeLifecycle({
         ...(Array.isArray(config.dependsOn) ? { dependsOn: config.dependsOn } : {})
       }]
     ));
-    const invalidation = planAmendmentInvalidation({
+    const invalidation = sectionsOnly ? documentSectionInvalidation(providers) : planAmendmentInvalidation({
       claims: compiled.claims,
       tasks: taskBlocks(compiled.tasksContent).map(taskMetadata),
       providers,
@@ -2689,7 +3096,11 @@ export function createChangeLifecycle({
     const stagedPath = join(transactionRoot, "next");
     const priorPath = join(transactionRoot, "prior");
     cpSync(basePath, stagedPath, { recursive: true, errorOnExist: true });
-    try { writeSemanticAmendment(stagedPath, compiled, slugify, { schema: state.schema }); }
+    // The amendment history line carries the contract revision it produces.
+    try {
+      writeSemanticAmendment(stagedPath, compiled, slugify,
+        { schema: state.schema, revision: priorContractRevision + 1 });
+    }
     catch (error) {
       rmSync(transactionRoot, { recursive: true, force: true });
       fail(`${error?.message || error}; semantic amendment rolled back`);

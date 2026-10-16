@@ -293,6 +293,67 @@ function operationSummary(rows, metrics, hostTelemetry = {}) {
   };
 }
 
+// Change intake rounds from the harness's own command rows: every start or
+// revise the harness rejected (an EDIT) before the one that reached AGREED.
+const CHANGE_INTAKE_OPERATIONS = new Set(["start", "revise", "change-start", "change-revise"]);
+
+function changeIntakeSummary(rows) {
+  const intake = (Array.isArray(rows) ? rows : []).filter((row) =>
+    row?.phase === "change" && row.kind !== "inspection" &&
+    CHANGE_INTAKE_OPERATIONS.has(String(row.operation || "")))
+    .sort((left, right) => String(left.startedAt || "").localeCompare(String(right.startedAt || "")));
+  if (!intake.length) return {
+    editRounds: null, editRoundsMeasurement: "unavailable",
+    compileMs: null, compileMeasurement: "unavailable", compileSource: null
+  };
+  const agreed = intake.findIndex((row) => row.status === "completed");
+  const row = agreed >= 0 ? intake[agreed] : null;
+  const stages = Array.isArray(row?.stageSpans) ? row.stageSpans
+    .filter((span) => String(span?.stage || "").startsWith("change."))
+    .map((span) => measured(span.durationMs)).filter((value) => value !== null) : [];
+  const compileMs = stages.length ? stages.reduce((sum, value) => sum + value, 0)
+    : measured(row?.durationMs);
+  return {
+    // Without an AGREED row the count is only a floor.
+    editRounds: agreed >= 0 ? agreed : intake.length,
+    editRoundsMeasurement: agreed >= 0 ? "measured" : "partial",
+    compileMs,
+    compileMeasurement: compileMs === null ? "unavailable" : "measured",
+    compileSource: compileMs === null ? null
+      : stages.length ? "change-stage-spans" : "change-start-duration"
+  };
+}
+
+function packetCount(value) {
+  const input = object(value);
+  const total = count(input.count);
+  return total === null ? null : {
+    count: total, sections: Array.isArray(input.sections) ? input.sections.map(object) : []
+  };
+}
+
+// Packet quality: the collector's document metrics plus the intake rounds and
+// compile time from the run's operation rows. Unknown stays null.
+export function packetSummary(packet, operationRows) {
+  const input = object(packet);
+  const words = object(input.words);
+  const known = ["measured", "partial"].includes(input.measurement);
+  return {
+    measurement: known ? input.measurement : "unavailable",
+    reason: text(input.reason) || (known ? null : "packet-unavailable"),
+    path: text(input.path),
+    outlineSource: text(input.outlineSource),
+    missingSections: known ? packetCount(input.missingSections) : null,
+    duplicateSections: known ? packetCount(input.duplicateSections) : null,
+    words: {
+      proposal: known ? count(words.proposal) : null,
+      design: known ? count(words.design) : null,
+      tasks: known ? count(words.tasks) : null
+    },
+    ...changeIntakeSummary(operationRows)
+  };
+}
+
 function normalizeOutcome(input = {}, oracle = {}, arm = DEFAULT_ARM) {
   const pendingTasks = count(input.pendingTasks);
   const requiredEvidencePassed = typeof input.requiredEvidencePassed === "boolean"
@@ -435,10 +496,49 @@ export function buildScorecard(input) {
     skillUsage: skillUsageSummary(input.hostTelemetry),
     quality: qualitySummary(input.quality),
     oracle,
+    // Present when the runner collected the packet (see quality.mjs
+    // collectPacketMetrics); a run without a packet reports `unavailable`.
+    ...(input.packet === undefined ? {} : { packet: packetSummary(input.packet, input.operationRows) }),
     evidenceReuse: {
       count: count(metrics.evidenceReuse?.count),
       byReason: object(metrics.evidenceReuse?.byReason),
       resumptions: count(metrics.budget?.window?.extensionNumber)
     }
   };
+}
+
+const mdCell = (value) => value === null || value === undefined ? "unknown" : String(value);
+
+// One run as markdown: outcome, speed, usage, oracle, and packet quality.
+export function formatScorecardMarkdown(scorecard) {
+  const card = object(scorecard);
+  const usage = object(card.usage);
+  const tokens = [usage.inputTokens, usage.outputTokens, usage.cacheCreationTokens, usage.cacheReadTokens];
+  const lines = [
+    `## ${card.scenario} (${card.arm}, repeat ${card.repeat})`, "",
+    "| Metric | Value |", "|---|---|",
+    `| Outcome | ${mdCell(card.outcome?.status)}${card.outcome?.complete ? " (complete)" : ""} |`,
+    `| Oracle | ${card.oracle?.measurement === "measured"
+      ? `${card.oracle.verdict} ${card.oracle.score}/${card.oracle.max}` : "unknown"} |`,
+    `| Wall time ms | ${mdCell(card.timing?.wallMs)} |`,
+    `| Tokens | ${tokens.every((value) => Number.isFinite(value))
+      ? tokens.reduce((sum, value) => sum + value, 0) : "unknown"} |`,
+    `| Cost USD | ${mdCell(usage.costUsd)} |`
+  ];
+  const packet = card.packet;
+  if (packet) {
+    const sections = (entry) => entry ? `${entry.count}${entry.sections?.length ? ` (${entry.sections
+      .map((row) => `${row.document}: ${row.heading}`).join(", ")})` : ""}` : "unknown";
+    lines.push(
+      `| Packet | ${packet.measurement}${packet.outlineSource ? `, outline from ${packet.outlineSource}` : ""}${
+        packet.reason ? ` (${packet.reason})` : ""} |`,
+      `| Missing required sections | ${sections(packet.missingSections)} |`,
+      `| Duplicate sections | ${sections(packet.duplicateSections)} |`,
+      `| Words proposal / design / tasks | ${mdCell(packet.words?.proposal)} / ${
+        mdCell(packet.words?.design)} / ${mdCell(packet.words?.tasks)} |`,
+      `| EDIT rounds before AGREED | ${mdCell(packet.editRounds)}${
+        packet.editRoundsMeasurement === "partial" ? " (floor: never AGREED)" : ""} |`,
+      `| Change start compile ms | ${mdCell(packet.compileMs)} |`);
+  }
+  return `${lines.join("\n")}\n`;
 }

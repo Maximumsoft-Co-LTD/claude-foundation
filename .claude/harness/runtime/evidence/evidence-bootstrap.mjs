@@ -14,7 +14,10 @@ const PROVIDER_SCRIPT_ALIASES = {
   resilience: ["test:resilience", "resilience"],
   observability: ["test:observability", "observability"],
   deployment: ["test:deployment", "deployment:check"],
-  "dependency-supply-chain": ["supply-chain", "dependencies:audit", "audit:dependencies"]
+  "dependency-supply-chain": ["supply-chain", "dependencies:audit", "audit:dependencies"],
+  evaluation: ["test:eval", "eval", "evaluate"],
+  parity: ["test:parity", "parity"],
+  "plan-check": ["plan:check", "plan"]
 };
 
 export function readJsonCandidate(path, warnings, source) {
@@ -303,7 +306,7 @@ export function discoverMissingEvidence({
     if (!found && capability !== "discovery") unresolved.push({
       provider: requiredProvider, capability,
       repository: targets.length === 1 ? targets[0].id : null,
-      reason: "no-safe-project-command",
+      reason: "no-safe-project-command", owner: "agent",
       next: `configure a project-owned ${capability} command in execution.yaml`
     });
   }

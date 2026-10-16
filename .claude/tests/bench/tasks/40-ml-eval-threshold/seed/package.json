@@ -1,0 +1,6 @@
+{
+  "name": "ticket-router",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test", "eval": "node eval/evaluate.js" }
+}

@@ -16,6 +16,30 @@ test("each work type routes to its skill, plus testing for behavior work", () =>
   assert.deepEqual(routedSkills({ workTypes: ["feature"] }), ["testing-fundamentals"]);
 });
 
+test("an infra change routes delivery and architecture skills", () => {
+  const skills = routedSkills({ workTypes: ["infra"] });
+  assert.ok(skills.includes("delivery-engineering"));
+  assert.ok(skills.includes("architecture-fundamentals"));
+});
+
+test("each new work type routes its catalog skills", () => {
+  for (const [type, skills] of [
+    ["performance", ["performance-investigation"]],
+    ["migration", ["refactoring-fundamentals", "architecture-fundamentals"]],
+    ["dependency", ["security-fundamentals", "delivery-engineering"]],
+    ["deprecation", ["api-design-fundamentals"]],
+    ["library", ["api-design-fundamentals"]],
+    ["infra", ["architecture-fundamentals", "delivery-engineering"]],
+    ["observability", ["observability-fundamentals"]],
+    ["privacy", ["security-fundamentals"]],
+    ["experiment", ["ux-ui-principles", "observability-fundamentals"]],
+    ["client-release", ["delivery-engineering"]],
+    ["ml", ["observability-fundamentals"]],
+    ["integration", ["security-fundamentals", "architecture-fundamentals"]]
+  ]) assert.deepEqual(routedSkills({ workTypes: [type] }),
+    [...skills, "testing-fundamentals"], type);
+});
+
 test("each risk signal routes to its skill without behavior work", () => {
   for (const [signal, skill] of [
     ["performance-slo", "performance-investigation"],
@@ -43,10 +67,10 @@ test("input-domain routes to testing, not security", () => {
   }), ["security-fundamentals", "testing-fundamentals"]);
 });
 
-test("docs, chore, and config work names no skill", () => {
-  for (const type of ["docs", "chore", "config"])
+test("light work (docs, test, chore) and config work names no skill", () => {
+  for (const type of ["docs", "test", "chore", "config"])
     assert.deepEqual(routedSkills({ workTypes: [type] }), [], type);
-  assert.deepEqual(routedSkills({ workTypes: ["docs", "chore", "config"] }), []);
+  assert.deepEqual(routedSkills({ workTypes: ["docs", "test", "chore", "config"] }), []);
   assert.deepEqual(routedSkills(), []);
 });
 

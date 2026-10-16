@@ -1,0 +1,7 @@
+{
+  "name": "slugkit",
+  "version": "1.0.0",
+  "description": "Tiny URL slug helper",
+  "main": "index.js",
+  "license": "MIT"
+}

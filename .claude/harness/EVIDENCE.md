@@ -169,6 +169,54 @@ external-authority, missing structured-test-count, and operator-review cases
 remain unresolved with an explicit next action. Bootstrap never installs a
 dependency, creates a receipt, weakens a claim, or treats detection as proof.
 
+## Work-type capabilities
+
+A change's declared or inferred work types add capabilities that its changed
+paths cannot reveal. They join the path-derived obligations with a
+`work-type:<type>` trigger:
+
+| Work type | Capabilities |
+|---|---|
+| api, library | `compatibility` |
+| ui | `accessibility` |
+| data | `data-migration` |
+| migration | `parity` |
+| dependency | `dependency-supply-chain` |
+| infra | `plan-check`, `deployment` |
+| observability | `observability` |
+| privacy | `security-static` |
+| ml | `evaluation` |
+| client-release | `release-health` (post-release) |
+| experiment | `experiment-guardrail` (post-release) |
+
+Five capabilities exist for these work types:
+
+| Capability | Proves | Default adapter | Phase | Bootstrap scripts |
+|---|---|---|---|---|
+| `evaluation` | A model or ranking evaluation scores at or above its threshold | `command` | pre-land | `test:eval`, `eval`, `evaluate` |
+| `parity` | The new implementation matches the reference on the declared comparison set | `command` | pre-land | `test:parity`, `parity` |
+| `plan-check` | An infrastructure or migration plan contains only the declared changes | `command` | pre-land | `plan:check`, `plan` |
+| `release-health` | Crash, error, and adoption signals stay healthy during rollout | `external` | post-release | none |
+| `experiment-guardrail` | Guardrail metrics stay within bounds after release | `external` | post-release | none |
+
+An `evaluation` command prints a `foundation-evaluation-v1` result on stdout
+(or writes it to its configured report):
+
+```json
+{ "protocol": "foundation-evaluation-v1", "score": 0.91, "threshold": 0.85 }
+```
+
+It passes only when the command exits 0 and `score >= threshold`; a
+provider-level `threshold` in `execution.yaml` applies when the result omits
+one. A missing or non-numeric score or threshold fails closed. The receipt
+observation records `{kind: "evaluation", status, score, threshold}`.
+
+Post-release capabilities exist only after the change ships. They are rollout
+gates: deferred (neither failed nor pending), excluded from the providers that
+gate proof, never blocking proof or Land, and listed as Appendix: Rollout gates
+in the archived proposal. Wiring a missing pre-land provider is agent work in
+`execution.yaml`, never a user question.
+
 ## Signed CI and external authority
 
 An external provider may declare `ci.issuer` and an Ed25519 `ci.publicKey` in

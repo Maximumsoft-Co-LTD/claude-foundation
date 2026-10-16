@@ -11,6 +11,8 @@ import {
 } from "../runtime/evidence/test-discrimination.mjs";
 import { configuredCommand } from "../runtime/evidence/evidence-results.mjs";
 import { lightKind, packetWorkTypes } from "../runtime/workflow/validation/dev-document.mjs";
+import { BEHAVIOR_NEUTRAL_WORK } from "../runtime/workflow/validation/design-blueprints.mjs";
+import { coverageNotes } from "../runtime/workflow/validation/packet-overview.mjs";
 import { taskChangeIssue } from "../runtime/workflow/task-change.mjs";
 
 const stableHash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -307,4 +309,26 @@ test("verify-only completion of a behavior task with no diff in its paths is ref
     changedPaths: [] }), null);
   assert.equal(taskChangeIssue({ workTypes: ["feature"],
     task: { ...task, paths: ["docs/guide.md"] }, changedPaths: [] }), null);
+});
+
+test("test discrimination, coverage notes, and dev documents read the one shared work sets", () => {
+  for (const path of ["../runtime/evidence/test-discrimination.mjs",
+    "../runtime/workflow/validation/packet-overview.mjs",
+    "../runtime/workflow/validation/dev-document.mjs"]) {
+    const source = readFileSync(new URL(path, import.meta.url), "utf8");
+    // The sets live in contracts/work-types.mjs (evidence may not import
+    // workflow); design-blueprints.mjs re-exports them for workflow modules.
+    assert.match(source,
+      /import \{[^}]*BEHAVIOR_NEUTRAL_WORK[^}]*\} from "[^"]*(?:design-blueprints|contracts\/work-types)\.mjs"/, path);
+    assert.doesNotMatch(source, /new Set\(\[\s*"(?:refactor|docs|chore|config|test)"/, path);
+  }
+  for (const type of BEHAVIOR_NEUTRAL_WORK) assert.equal(behaviorChangingWork([type]), false, type);
+  for (const type of ["infra", "ml", "observability"])
+    assert.equal(behaviorChangingWork([type]), true, type);
+  const draft = (workType) => ({ version: 4, workType, requirements: [{ key: "r",
+    scenarios: [{ key: "s", given: "g", when: "w", then: "t" }] }] });
+  assert.deepEqual(coverageNotes(draft(["test"])), coverageNotes(draft(["refactor"])));
+  assert.equal(lightKind("package.json"), "dependency");
+  assert.equal(taskChangeIssue({ workTypes: ["feature"], task: { id: "T1", paths: ["package.json"] },
+    changedPaths: [] }), null);
 });

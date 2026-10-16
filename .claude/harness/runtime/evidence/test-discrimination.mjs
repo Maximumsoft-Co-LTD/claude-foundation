@@ -8,6 +8,8 @@ import { basename, dirname, join } from "node:path";
 import { providerExecutionEnvironment } from "./adapter-runtime.mjs";
 import { environmentIdentity, taskCheckArgv } from "./task-check-evidence.mjs";
 import { spawnCapturedAsync } from "./configured-reviewer.mjs";
+// Work whose tests should pass before and after the change.
+import { BEHAVIOR_NEUTRAL_WORK } from "../contracts/work-types.mjs";
 
 // Test discrimination: a passing test suite proves a behavior change only when
 // at least one of the change's tests fails without it. For behavior-changing
@@ -20,8 +22,6 @@ import { spawnCapturedAsync } from "./configured-reviewer.mjs";
 // digest of everything it read, so an unchanged rerun repeats nothing.
 export const TEST_DISCRIMINATION_VERSION = 1;
 
-// Work whose tests should pass before and after the change.
-const BEHAVIOR_NEUTRAL_WORK = new Set(["refactor", "docs", "chore", "config", "test"]);
 
 export function behaviorChangingWork(workTypes) {
   const types = (workTypes || []).map((type) => String(type || "").trim().toLowerCase())

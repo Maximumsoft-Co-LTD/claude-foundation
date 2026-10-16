@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  designBlueprintIssues, designBlueprintWarnings, lightweightDraft, renderDesignBlueprints,
-  requiredBlueprints
+  BEHAVIOR_NEUTRAL_WORK, LIGHT_WORK, WORK_TYPES, designBlueprintIssues, designBlueprintWarnings,
+  draftHasBlueprints, lightweightDraft, renderDesignBlueprints, requiredBlueprints
 } from "../runtime/workflow/validation/design-blueprints.mjs";
 import {
   draftNeedsDesign, renderDraftDesign, renderDraftProposal, semanticDraftKeepsDesign
@@ -122,7 +122,7 @@ test("a task must own the tests that verify the behavior it changes", () => {
 
 test("a typo in workType or a wrong section shape is a draft error", () => {
   assert.deepEqual(designBlueprintIssues(draft({ workType: ["apii"] })),
-    ["semantic draft workType 'apii' is unknown; use feature|bugfix|refactor|api|ui|data|config|async|integration|chore|docs"]);
+    [`semantic draft workType 'apii' is unknown; use ${WORK_TYPES.join("|")}`]);
   assert.deepEqual(designBlueprintIssues(draft({ workType: [], apiContracts: {}, bugfix: [] })), [
     "semantic draft workType must be a non-empty array",
     "semantic draft apiContracts must be an array",
@@ -135,11 +135,11 @@ test("blueprints render into design.md and force its creation", () => {
     decisions: [], risks: [], domainLanguage: [] };
   assert.equal(draftNeedsDesign(value), true);
   const design = renderDraftDesign(value);
-  for (const heading of ["## Work type", "## File map", "## API contracts", "## UI states",
+  for (const heading of ["## Work type", "## File map", "## API contract", "## UI contract",
     "## Failure matrix", "## Test map"])
     assert.ok(design.includes(heading), heading);
   assert.match(design, /### POST \/api\/import/);
-  assert.match(design, /- `400` URL rejected by guard/);
+  assert.match(design, /\| 400 \| — \| URL rejected by guard \|/);
   assert.match(design, /\| error \| message \|/);
   // Placeholder sections are omitted instead of rendering `none`.
   assert.ok(!design.includes("## Domain language") && !design.includes("## Risks"));
@@ -163,16 +163,17 @@ test("the dev document infers work type from paths and names missing sections", 
   assert.deepEqual(requiredDevSections(paths("docs/guide.md")), ["summary"]);
   assert.deepEqual(requiredDevSections(paths("src/sum.js")), ["summary", "failureMatrix"]);
   assert.deepEqual(requiredDevSections(paths("src/components/Board.tsx")),
-    ["summary", "failureMatrix", "userFlow", "uiStates", "componentMap"]);
+    ["summary", "failureMatrix", "userFlow", "uiStates", "componentMap", "releaseNote"]);
 
   const ui = paths("src/components/Board.tsx");
   assert.deepEqual(devDocumentIssues(ui, { standard: false }), []);
   assert.deepEqual(devDocumentIssues({ ...ui, version: 3 }), []);
   assert.deepEqual(devDocumentIssues(ui).map((issue) => issue.match(/needs '(\w+)'/)[1]),
-    ["why", "failureMatrix", "userFlow", "uiStates", "componentMap"]);
+    ["why", "failureMatrix", "userFlow", "uiStates", "componentMap", "releaseNote"]);
   assert.deepEqual(devDocumentIssues({ ...ui, summary: "s",
     failureMatrix: [{ failure: "f" }], userFlow: "flowchart LR\n  A --> B",
-    uiStates: [{ screen: "Board" }], componentMap: [{ component: "Board", responsibility: "r" }] }), []);
+    uiStates: [{ screen: "Board" }], componentMap: [{ component: "Board", responsibility: "r" }],
+    releaseNote: "The board shows its states." }), []);
 
   assert.deepEqual(devDocumentShapeIssues({ userFlow: { purpose: "p" }, componentMap: [{}] }), [
     "semantic draft userFlow needs Mermaid source (a string or { purpose, source })",
@@ -204,7 +205,7 @@ test("the dev document derives its folder tree, plan, and maps from the tasks", 
   assert.deepEqual(derivedFileMap({ tasks: value.tasks }).map((row) => [row.path, row.tasks]),
     [["src/board/", ["T001"]], ["src/store.ts", ["T002"]]]);
   assert.deepEqual(derivedTestMap(value).map((row) => [row.scenario, row.task]),
-    [["add-card", "T001"], ["Store", "T002"]]);
+    [["add-card", "T001"], ["see T002 in tasks.md", "T002"]]);
   assert.match(renderUserFlow(value), /## User flow\n\nAdd a card\n\n```mermaid\nflowchart LR/);
   assert.match(renderComponentMap(value), /\| Board \| Shows cards \| src\/board\/Board\.tsx \| T001 \|/);
   assert.equal(renderFileTree({}), "");
@@ -220,7 +221,7 @@ test("a rapid proposal carries the compact dev document and keeps the rapid lane
   };
   const proposal = renderDraftProposal(value, { schema: "foundation-rapid" });
   const order = ["## Summary", "## Scope", "## User flow", "## Failure matrix",
-    "## Definition of done", "## Impact"].map((heading) => proposal.indexOf(heading));
+    "## Impact and risk", "## Definition of done"].map((heading) => proposal.indexOf(heading));
   assert.ok(order.every((index, position) => index > (order[position - 1] ?? -1)), proposal);
   // Plan, What changes, and Folder tree have one home each elsewhere.
   for (const heading of ["## Plan", "## What changes", "## Folder tree"])
@@ -417,9 +418,15 @@ test("inferred work types are stated and overridable; light paths owe no failure
   assert.deepEqual(inferWorkTypes(paths("src/config.ts")), ["config"]);
   assert.deepEqual(inferWorkTypes(paths("config.yaml")), ["config"]);
   assert.deepEqual(inferWorkTypes(paths("test/sum.test.js")), ["test"]);
-  assert.deepEqual(inferWorkTypes(paths("package.json")), ["chore"]);
+  // Manifests and lockfiles are dependency work, no longer chore.
+  assert.deepEqual(inferWorkTypes(paths("package.json")), ["dependency"]);
+  assert.deepEqual(inferWorkTypes(paths("yarn.lock", "go.sum")), ["dependency"]);
+  assert.deepEqual(inferWorkTypes(paths(".gitignore")), ["chore"]);
   assert.deepEqual(inferWorkTypes(paths("src/sum.js", "tests/components/Sum.test.tsx")), ["code"]);
-  assert.deepEqual(requiredDevSections(paths("test/sum.test.js", "package.json")), ["summary"]);
+  assert.deepEqual(requiredDevSections(paths("test/sum.test.js", "README.md", ".gitignore")), ["summary"]);
+  // Dependency work is behavior-neutral: no failure matrix; its own detail
+  // section (dependencyChange) is required by the work-type sections.
+  assert.ok(!requiredDevSections(paths("package.json")).includes("failureMatrix"));
   assert.match(devDocumentIssues(paths("src/components/Board.tsx"))[0],
     /^dev document \(ui, inferred from paths; or declare workType to override\) needs/);
   assert.match(renderDraftDesign(paths("src/components/Board.tsx")),
@@ -430,11 +437,52 @@ test("design.md reads flow, components, contracts, failures, file map (with its 
   const design = renderDraftDesign({ ...draft(COMPLETE), userFlow: "flowchart LR\n  A --> B",
     componentMap: [{ component: "Import", responsibility: "Dialog" }],
     tasks: [{ id: "T001", outcome: "Import", paths: ["apps/editor/src/app/api/**"], verify: "npm test" }] });
-  const order = ["## Work type", "## User flow", "## Component map", "## API contracts", "## UI states",
-    "## Failure matrix", "## File map", "## Test map"].map((heading) => design.indexOf(heading));
+  const order = ["## Work type", "## User flow", "## Domain model and modules", "## API contract",
+    "## UI contract", "## Failure matrix", "## File map", "## Test map"].map((heading) => design.indexOf(heading));
   assert.ok(order.every((index, position) => index > (order[position - 1] ?? -1)), design);
   assert.ok(!design.includes("## Plan") && !design.includes("## Folder tree"));
   // The derived tree sits inside the file map, before the next section.
   assert.ok(design.indexOf("```text") > design.indexOf("## File map") &&
     design.indexOf("```text") < design.indexOf("## Test map"), design);
+});
+
+test("the work-type catalog accepts all 23 types and rejects unknown ones with the list", () => {
+  assert.deepEqual([...WORK_TYPES], [
+    "feature", "bugfix", "refactor", "api", "library", "ui", "data", "migration", "async",
+    "integration", "config", "performance", "dependency", "deprecation", "infra",
+    "observability", "privacy", "experiment", "client-release", "ml", "docs", "test", "chore"]);
+  for (const type of WORK_TYPES)
+    assert.deepEqual(designBlueprintIssues({ version: 4, workType: [type] }), [], type);
+  const [issue] = designBlueprintIssues({ version: 4, workType: ["infrastructure"] });
+  assert.match(issue, /workType 'infrastructure' is unknown/);
+  for (const type of WORK_TYPES) assert.ok(issue.includes(type), type);
+});
+
+test("declared test work is light: accepted and needs no design", () => {
+  const testOnly = { version: 4, workType: ["test"], tasks: [{ id: "T001", key: "t",
+    paths: ["test/sum.test.js"] }] };
+  assert.deepEqual(designBlueprintIssues(testOnly), []);
+  assert.deepEqual(requiredBlueprints(testOnly), []);
+  assert.equal(draftHasBlueprints(testOnly), false);
+  assert.equal(draftNeedsDesign(testOnly), false);
+  assert.deepEqual(requiredDevSections(testOnly), ["summary"]);
+});
+
+test("infra, observability, and ml paths infer their work types", () => {
+  const paths = (...list) => ({ version: 4, tasks: [{ id: "T001", key: "t", paths: list }] });
+  assert.deepEqual(inferWorkTypes(paths("terraform/main.tf")), ["infra"]);
+  for (const path of ["modules/net.tf", "helm/app/values.yaml", "charts/app/templates/svc.yaml",
+    "Dockerfile", "k8s/deploy.yaml", "kubernetes/ingress.yaml"])
+    assert.deepEqual(inferWorkTypes(paths(path)), ["infra"], path);
+  for (const path of ["dashboards/api.json", "alerts/latency.yaml", "monitoring/prometheus/api.rules.yml"])
+    assert.deepEqual(inferWorkTypes(paths(path)), ["observability"], path);
+  for (const path of ["prompts/summarize.md", "evals/summary.test.py"])
+    assert.deepEqual(inferWorkTypes(paths(path)), ["ml"], path);
+  assert.deepEqual(inferWorkTypes(paths("src/components/charts/Bar.tsx")), ["ui"]);
+});
+
+test("light and behavior-neutral work are one shared set each", () => {
+  assert.deepEqual([...LIGHT_WORK].sort(), ["chore", "docs", "test"]);
+  assert.deepEqual([...BEHAVIOR_NEUTRAL_WORK].sort(),
+    ["chore", "config", "dependency", "docs", "refactor", "test"]);
 });
