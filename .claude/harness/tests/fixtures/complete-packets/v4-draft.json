@@ -1,0 +1,350 @@
+{
+  "version": 4,
+  "id": "refund-complete",
+  "intent": "Add a refund API with a refund screen",
+  "language": "th",
+  "lane": "standard",
+  "impact": "medium",
+  "coupling": "coupled",
+  "workType": [
+    "feature",
+    "api",
+    "ui",
+    "data"
+  ],
+  "why": "ลูกค้ารอเงินคืนหลายวันเพราะทีมคืนเงินด้วยมือ",
+  "userStories": [
+    {
+      "priority": "P1",
+      "asA": "ลูกค้าที่จ่ายเงินแล้ว",
+      "iWant": "ขอคืนเงินได้เอง",
+      "soThat": "ได้เงินคืนภายในวันเดียว",
+      "covers": [
+        "refund-once"
+      ]
+    }
+  ],
+  "successCriteria": [
+    "คำขอคืนเงินเสร็จภายใน 1 วันทำการ"
+  ],
+  "successMeasure": "เวลาคืนเงินเฉลี่ยต่ำกว่า 24 ชั่วโมง",
+  "nonGoals": [
+    "ไม่รองรับคืนเงินบางส่วน",
+    "ไม่ย้ายข้อมูลคำขอเก่า"
+  ],
+  "constraints": [
+    "ใช้ payment gateway เดิมเท่านั้น"
+  ],
+  "currentState": "ทีมซัพพอร์ตคืนเงินด้วยมือผ่านหลังบ้าน",
+  "compatibility": "คำขอเก่ายังอ่านได้ตามเดิม",
+  "decisions": [
+    {
+      "key": "idempotency-store",
+      "choice": "เก็บ idempotency key ในตาราง refunds",
+      "reason": "กันคืนเงินซ้ำแม้ retry",
+      "durable": true,
+      "status": "accepted",
+      "requirements": [
+        "refund-once"
+      ],
+      "consequences": "ต้องดูแลตาราง refunds"
+    },
+    {
+      "key": "notify-channel",
+      "choice": "แจ้งผลคืนเงินทางอีเมล",
+      "reason": "ลูกค้าส่วนใหญ่ใช้อีเมล",
+      "status": "proposed",
+      "consequences": "ต้องมีแม่แบบอีเมล"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "คืนเงินซ้ำจาก retry",
+      "mitigation": "ตรวจ idempotency key",
+      "owner": "payments"
+    }
+  ],
+  "decisionLog": [
+    {
+      "date": "2026-10-01",
+      "question": "คืนเงินบางส่วนได้ไหม",
+      "options": [
+        "ได้",
+        "ไม่ได้"
+      ],
+      "recommendation": "ไม่ได้",
+      "answer": "ไม่ได้ในรอบนี้",
+      "by": "product owner"
+    }
+  ],
+  "communication": {
+    "rows": [
+      {
+        "audience": "ทีมซัพพอร์ต",
+        "channel": "Slack #support",
+        "when": "ก่อนเปิดใช้หนึ่งวัน"
+      }
+    ],
+    "owner": "support lead"
+  },
+  "releaseNote": {
+    "added": [
+      "ลูกค้าขอคืนเงินเองได้จากหน้าคำสั่งซื้อ"
+    ]
+  },
+  "demo": [
+    "เปิดหน้าคำสั่งซื้อที่จ่ายแล้ว",
+    "กดขอคืนเงินแล้วเห็นสถานะรอดำเนินการ"
+  ],
+  "userFlow": {
+    "purpose": "เส้นทางขอคืนเงินรวมกรณีผิดพลาด",
+    "source": "flowchart LR\n  A[\"ลูกค้ากดขอคืนเงิน\"] --> B{\"คำสั่งซื้อถูกต้อง?\"}\n  B -->|yes| C[\"รอดำเนินการ\"]\n  B -->|no| D[\"แสดงข้อผิดพลาด\"]"
+  },
+  "apiContracts": [
+    {
+      "method": "POST",
+      "path": "/api/refunds",
+      "auth": "ลูกค้าที่ล็อกอิน",
+      "request": {
+        "orderId": "string"
+      },
+      "response": {
+        "refundId": "string",
+        "status": "pending"
+      },
+      "errors": [
+        {
+          "status": 404,
+          "code": "ORDER_NOT_FOUND",
+          "when": "ไม่พบคำสั่งซื้อ",
+          "retryable": false
+        },
+        {
+          "status": 409,
+          "code": "REFUND_IN_PROGRESS",
+          "when": "มีคำขอที่กำลังทำอยู่",
+          "retryable": true
+        }
+      ],
+      "errorEnvelope": {
+        "code": "ORDER_NOT_FOUND",
+        "message": "order missing",
+        "errors": [
+          {
+            "field": "orderId",
+            "code": "ORDER_NOT_FOUND"
+          }
+        ],
+        "requestId": "req-1"
+      },
+      "idempotency": {
+        "header": "Idempotency-Key",
+        "required": true,
+        "scope": [
+          "customer",
+          "order"
+        ],
+        "retention": "24 ชั่วโมง"
+      },
+      "rateLimit": "10 ครั้งต่อนาทีต่อลูกค้า"
+    }
+  ],
+  "ui": {
+    "surface": "หน้าคำสั่งซื้อ",
+    "states": [
+      {
+        "key": "refund-pending",
+        "shows": "แถบสถานะรอคืนเงิน",
+        "next": "refund-done"
+      },
+      {
+        "key": "refund-error",
+        "shows": "ข้อความคำสั่งซื้อไม่ถูกต้อง",
+        "next": "retry"
+      }
+    ],
+    "accessibility": {
+      "standard": "WCAG 2.2 AA",
+      "rows": [
+        {
+          "criterion": "ปุ่มคืนเงินกดด้วยคีย์บอร์ดได้",
+          "kind": "standard",
+          "how": "ใช้ปุ่ม native",
+          "check": "ทดสอบ tab order"
+        }
+      ]
+    }
+  },
+  "dataModel": [
+    {
+      "entity": "Refund",
+      "fields": [
+        "id",
+        "orderId",
+        "idempotencyKey",
+        "status"
+      ],
+      "migration": "เพิ่มตาราง refunds",
+      "rollback": "ลบตาราง refunds"
+    }
+  ],
+  "rollout": {
+    "strategy": "เปิด flag refund-self-service ที่ 10% แล้ว 100%",
+    "rollback": "ปิด flag refund-self-service",
+    "deployOrder": [
+      "database",
+      "api",
+      "web"
+    ],
+    "rollbackProof": "test ปิด flag แล้วกลับไปใช้ขั้นตอนเดิม"
+  },
+  "nfr": [
+    {
+      "key": "refund-latency",
+      "characteristic": "time behaviour",
+      "stimulus": "คำขอ 50 ครั้งต่อวินาที",
+      "response": "ตอบรับคำขอคืนเงิน",
+      "measure": "p95 ต่ำกว่า 300 ms"
+    }
+  ],
+  "threatModel": {
+    "assets": [
+      "ข้อมูลการคืนเงิน"
+    ],
+    "trustBoundaries": [
+      "เบราว์เซอร์ถึง API"
+    ],
+    "threats": [
+      {
+        "key": "refund-idor",
+        "stride": "elevation of privilege",
+        "threat": "ขอคืนเงินคำสั่งซื้อของคนอื่น",
+        "likelihood": "medium",
+        "impact": "high",
+        "control": "ตรวจเจ้าของคำสั่งซื้อ",
+        "residual": "low"
+      }
+    ]
+  },
+  "observability": {
+    "correlation": "request id",
+    "rows": [
+      {
+        "failure": "คืนเงินค้าง",
+        "signal": "refund.stuck",
+        "sli": "สัดส่วนคำขอค้าง",
+        "slo": "< 0.1%",
+        "alert": "แจ้ง on-call เมื่อค้างเกิน 1 ชั่วโมง",
+        "runbook": "docs/runbooks/refund.md",
+        "owner": "payments"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "key": "refund-once",
+      "capability": "refund-api",
+      "operation": "added",
+      "description": "ระบบ SHALL คืนเงินแต่ละคำสั่งซื้อเพียงครั้งเดียว",
+      "outcome": "คำขอคืนเงินซ้ำถูกนับครั้งเดียว",
+      "scenarios": [
+        {
+          "name": "คำขอซ้ำ",
+          "kind": "success",
+          "given": "คำสั่งซื้อที่จ่ายแล้ว",
+          "when": "ส่งคำขอคืนเงินสองครั้ง",
+          "then": "คืนเงินครั้งเดียว"
+        },
+        {
+          "name": "ไม่พบคำสั่งซื้อ",
+          "kind": "failure",
+          "when": "ส่งคำขอด้วยคำสั่งซื้อที่ไม่มี",
+          "then": "ตอบ ORDER_NOT_FOUND",
+          "recovery": "ส่งใหม่ด้วยคำสั่งซื้อที่ถูกต้อง"
+        }
+      ]
+    },
+    {
+      "key": "refund-status",
+      "capability": "refund-api",
+      "operation": "modified",
+      "description": "ระบบ SHALL แสดงสถานะคืนเงินในหน้าคำสั่งซื้อ",
+      "outcome": "ลูกค้าเห็นสถานะคืนเงินล่าสุด",
+      "scenarios": [
+        {
+          "name": "เห็นสถานะรอ",
+          "kind": "success",
+          "when": "เปิดหน้าคำสั่งซื้อที่ขอคืนเงินแล้ว",
+          "then": "เห็นสถานะรอดำเนินการ"
+        }
+      ],
+      "requirement": "Refund status is shown"
+    },
+    {
+      "key": "manual-refund-form",
+      "capability": "refund-api",
+      "operation": "removed",
+      "description": "ระบบ SHALL เลิกใช้ฟอร์มคืนเงินด้วยมือ",
+      "migration": "ทีมซัพพอร์ตใช้หน้าใหม่แทนฟอร์มเดิม",
+      "requirement": "Manual refund form"
+    }
+  ],
+  "tasks": [
+    {
+      "key": "implement-refund",
+      "outcome": "สร้าง API คืนเงินพร้อม idempotency",
+      "covers": [
+        "refund-once",
+        "manual-refund-form"
+      ],
+      "paths": [
+        "src/refunds/**"
+      ],
+      "verify": "npm test"
+    },
+    {
+      "key": "show-refund-status",
+      "outcome": "แสดงสถานะคืนเงินในหน้าคำสั่งซื้อ",
+      "covers": [
+        "refund-status"
+      ],
+      "paths": [
+        "web/orders/**"
+      ],
+      "verify": "npm run test:web"
+    }
+  ],
+  "evidence": {
+    "refund-once": {
+      "capabilities": [
+        "test"
+      ]
+    },
+    "refund-status": {
+      "capabilities": [
+        "test"
+      ]
+    }
+  },
+  "boundaries": [
+    {
+      "from": "refund-api",
+      "to": "payment-gateway",
+      "mode": "sync",
+      "why": "สั่งคืนเงินกับ gateway",
+      "timeout": "3s",
+      "retry": "ไม่ retry อัตโนมัติ",
+      "consistency": "strong",
+      "owner": "payments"
+    }
+  ],
+  "componentMap": [
+    {
+      "component": "RefundService",
+      "responsibility": "ตรวจและสั่งคืนเงิน",
+      "files": [
+        "src/refunds/service.ts"
+      ]
+    }
+  ]
+}

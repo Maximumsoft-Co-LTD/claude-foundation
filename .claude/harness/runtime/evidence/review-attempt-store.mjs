@@ -784,6 +784,35 @@ export function createReviewAttemptStore({
     return { changeId: id, decisionRef: reference, digests };
   }
 
+  // After the routed waves are delivered the user may, on record, allow one
+  // more AI wave. Each decision reference grants exactly one, only while the
+  // cap is reached and no AI attempt is still dispatched.
+  function grantExtraAiWave(id, decisionRef, maxAiAttempts = 2) {
+    const reference = String(decisionRef || "").trim();
+    if (!reference) fail("authority extend-review requires --decision-ref");
+    const state = loadRuntime(id);
+    const history = reviewHistoryState(id, state);
+    if (history.chainHead && !reviewHistoryChainValid(id, history))
+      fail("authority extend-review requires a valid review attempt history");
+    if ((history.extraAiWaves || []).some((row) => row.decisionRef === reference))
+      fail("--decision-ref was already used for an extra AI review wave on this change");
+    const liveDispatch = reviewAttempts(id, history).find((attempt) =>
+      attempt.reviewerType === "ai" && attempt.status === "dispatched");
+    if (liveDispatch)
+      fail("an AI review attempt is still dispatched; complete or abort it before granting another wave: " +
+        liveReviewAbortCommand(id, liveDispatch));
+    const delivered = deliveredAiAttempts(id, history).length;
+    if (delivered < Number(maxAiAttempts))
+      fail(`AI review waves are not exhausted (${delivered}/${maxAiAttempts} delivered); resume advance instead`);
+    const grant = { decisionRef: reference, delivered, at: now() };
+    state.reviewHistory = {
+      ...history,
+      extraAiWaves: [...(history.extraAiWaves || []), grant]
+    };
+    saveRuntime(state);
+    return { changeId: id, ...grant, maxAiAttempts: delivered + 1 };
+  }
+
   // The wave cap bounds verdict-quality review rounds. A verdict expired by a
   // moved base whose replay altered the change's diff is not a quality round —
   // the author changed nothing — so the user may, on record, release exactly
@@ -849,7 +878,7 @@ export function createReviewAttemptStore({
       "Do not ask the user to choose redesign/split/pause and do not dispatch another open-ended AI review. " +
       "Continue when proof is satisfied; otherwise route a remaining item as AUTO_REPAIR inside the locked contract, " +
       "CONTRACT_DECISION_REQUIRED only for changed behavior/security/data/rollout, or EXTERNAL_WAIT for missing authority." +
-      ` If repair cannot progress, report attempted remedies and remaining risks; ask whether to keep working or accept those risks with change waive ${id} --capability review --reason <remaining-risk> --decision-ref <user-decision>, then Land.` +
+      ` If repair cannot progress, report attempted remedies and remaining risks; ask the user for a human verdict, one more AI wave (claude-foundation authority extend-review ${id} --decision-ref <user-decision>), or a pause.` +
       baseMoveRecovery);
   }
 
@@ -949,6 +978,7 @@ export function createReviewAttemptStore({
     deliveredAiAttempts,
     infrastructureAiAttempts,
     acknowledgeInfrastructureAttempts,
+    grantExtraAiWave,
     acknowledgeBaseMoveAttempts,
     autoReleaseReviewBudget
   };

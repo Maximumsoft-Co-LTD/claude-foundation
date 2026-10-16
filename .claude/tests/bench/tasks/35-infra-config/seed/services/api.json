@@ -1,0 +1,1 @@
+{ "name": "orders-api", "image": "registry.example/orders-api:1.8.2", "port": 8080, "replicas": 3, "env": { "LOG_LEVEL": "info" }, "team": "commerce" }

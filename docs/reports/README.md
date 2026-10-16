@@ -1,10 +1,29 @@
 # Reports and operational plans
 
+**Audience:** maintainers and reviewers of Change Loop's development and release
+evidence. These repository reports are not installed system instructions or
+the agreement for a consumer project's change.
+
 Use this index to distinguish current operating documents from historical
 investigation records. Historical reports preserve what was observed at that
 time; they are not updated to describe the current release.
 
-## Start here
+<a id="start-here"></a>
+
+## Choose a report
+
+This directory is an evidence archive, not the product manual. For everyday
+use, start with the [README](../../README.md); for development, use
+[CONTRIBUTING.md](../../CONTRIBUTING.md).
+
+| Question | Read |
+|---|---|
+| What is the current release status? | [User scenario release status](user-scenario-release-status.md) |
+| Which scenarios are required? | [User scenario test plan](user-scenario-test-plan.md) |
+| How do I release? | [RELEASING.md](../../RELEASING.md) |
+| What happened in a particular experiment? | The dated record below; its result applies to its recorded source and environment |
+
+## Recent evidence and operating documents
 
 | Need | Document | Status |
 |---|---|---|

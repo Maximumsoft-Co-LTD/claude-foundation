@@ -6,8 +6,11 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { providerExecutionEnvironment } from "./adapter-runtime.mjs";
+import { providerTimeoutMs } from "./provider-catalog.mjs";
 import { environmentIdentity, taskCheckArgv } from "./task-check-evidence.mjs";
 import { spawnCapturedAsync } from "./configured-reviewer.mjs";
+// Work whose tests should pass before and after the change.
+import { BEHAVIOR_NEUTRAL_WORK } from "../contracts/work-types.mjs";
 
 // Test discrimination: a passing test suite proves a behavior change only when
 // at least one of the change's tests fails without it. For behavior-changing
@@ -20,8 +23,6 @@ import { spawnCapturedAsync } from "./configured-reviewer.mjs";
 // digest of everything it read, so an unchanged rerun repeats nothing.
 export const TEST_DISCRIMINATION_VERSION = 1;
 
-// Work whose tests should pass before and after the change.
-const BEHAVIOR_NEUTRAL_WORK = new Set(["refactor", "docs", "chore", "config", "test"]);
 
 export function behaviorChangingWork(workTypes) {
   const types = (workTypes || []).map((type) => String(type || "").trim().toLowerCase())
@@ -58,6 +59,32 @@ function optionTokens(args, valueFlags) {
       kept.push(args[(index += 1)]);
   }
   return kept;
+}
+
+// A compiled provider's own task verifies (`segments`) from the first through
+// the last one that names a changed test file, as one command. Earlier
+// segments stay because one may be setup (a build or codegen) a later test
+// needs; only segments after the last named test are dropped. Every changed
+// test must be named within that prefix; otherwise (or with no segments) this
+// returns null and the whole provider command runs. A prefix of one segment
+// is narrowed only to the files it names itself.
+export function segmentTestCommand(config, files) {
+  const segments = Array.isArray(config?.segments) ? config.segments.map(String) : [];
+  if (!segments.length || !files?.length) return null;
+  const names = (segment, file) => segment.includes(file);
+  let last = -1;
+  segments.forEach((segment, index) => {
+    if (files.some((file) => names(segment, file))) last = index;
+  });
+  const chosen = segments.slice(0, last + 1);
+  if (!chosen.length || files.some((file) => !chosen.some((segment) => names(segment, file))))
+    return null;
+  if (chosen.length === 1) {
+    const own = files.filter((file) => names(chosen[0], file));
+    return scopedTestCommand({ command: "sh", args: ["-c", chosen[0]] }, own) ||
+      { command: "sh", args: ["-c", chosen[0]] };
+  }
+  return { command: "sh", args: ["-c", chosen.map((segment) => `(${segment})`).join(" && ")] };
 }
 
 // The provider command narrowed to the given test files, or null when its
@@ -240,7 +267,7 @@ export function createTestDiscriminationRuntime({
       lstatSync(join(workspace, row.path), { throwIfNoEntry: false })?.isFile())
       .map((row) => row.path);
     const built = configuredCommand(provider, config);
-    const scoped = scopedTestCommand(built, testFiles);
+    const scoped = segmentTestCommand(config, testFiles) || scopedTestCommand(built, testFiles);
     const command = scoped || { command: built.command, args: built.args };
     const overlay = overlayRows(workspace, dirty, productPaths, fileDigest);
     const envFrom = Object.fromEntries((config.envFrom || [])
@@ -263,7 +290,7 @@ export function createTestDiscriminationRuntime({
     if (!prepared) return { ...row, outcome: "unavailable" };
     const options = {
       cwd: prepared.tree, encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
-      timeout: Number(config.timeoutMs || 120000),
+      timeout: providerTimeoutMs(config),
       env: providerExecutionEnvironment(environment, additions, prepared.tree)
     };
     const finish = (result) => {

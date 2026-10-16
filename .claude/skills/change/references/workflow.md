@@ -10,9 +10,8 @@ notes for unavailable sessions; never claim to have read missing history.
 For a v2 binding or detailed-document request, read [investigation-handoff.md](investigation-handoff.md)
 before compile or amend.
 
-Read the smallest canonical sources that settle the behavior: OpenSpec
-requirements, relevant code/tests, architecture decisions, prototype selection,
-and versioned integration documentation. Reuse settled answers without asking them again.
+Read the smallest canonical sources that settle the behavior (specs,
+code/tests, decisions, prototypes, integration docs). Reuse settled answers without asking them again.
 Read [semantic-intake.md](semantic-intake.md) when the draft declares
 `impact: high`, `riskSignals`, integrations, or external operations, or inspect
 returns discovery rows or `ASK_USER`.
@@ -34,8 +33,7 @@ in `details` and split a statement that joins cases with `;`. `outcome` is the
 observable result; `requirement`/`title` names it. Set `language`; each
 capability gets a `capabilityOverviews` entry `{capability, title, overview}`.
 
-Make the agreement understandable without chat history, using facts from the
-canonical sources and the user's settled intent:
+Make the agreement readable without chat history:
 
 - In `why`, explain the current behavior, concrete problem, affected actor or
   system, and desired result. Use `changes` for observable before/after behavior
@@ -55,25 +53,26 @@ canonical sources and the user's settled intent:
 Cross-component changes need a boundary/dependency diagram; changed state,
 async, or workflow behavior needs transitions or sequence, including
 failure/recovery paths.
-The harness infers `workType`
-from `paths` and derives folder tree, plan, file and test maps, the failure
+Declare `workType`; the harness infers it
+from `paths` only when omitted, and derives folder tree, plan, file and test maps, the failure
 matrix (from `failure` scenarios, else scenarios stating a rejection or error),
 `why` from `intent`, and `test` evidence unless security triggers apply, noting
 each under "Derived by harness". A standard draft authors failure scenarios
-(except docs/chore/test/refactor/config) plus per-type fields (test has none):
-feature `userFlow` (Mermaid); ui `userFlow`, `uiStates`, `componentMap`; api
-`apiContracts`; data `dataModel`; config `configContract`; async `jobContract`
-and a sequence diagram; bugfix/refactor their objects. Keep `fileMap` paths and
-task tests inside task `paths`.
+(not for behavior-neutral or light work) plus each work type's block from the
+template's `workTypeExamples`, within `minimalDraftWriting`. Keep `fileMap` paths and task tests inside task `paths`.
 
 ## Compile and inspect
 
-Create one semantic draft v4 from `change start --template`: `intent`, semantic
-`requirements`, and `tasks` with `covers`. Its discovery contract is defined once in
+Create one semantic draft from `change start --template`: `intent`, semantic
+`requirements`, and `tasks` with `covers`. Write the v5 folder
+(`draftFolderV5`): typed fields in `change.json` (`version: 5`), prose under
+its listed `## ` headings in `proposal.md`/`design.md`, in order; no derived
+heading, empty section, `TODO`, or `TBD`. v4 JSON stays valid. Its discovery contract is defined once in
 [semantic-intake.md](semantic-intake.md). Put only real complexity in typed extensions:
 
 - `decisions` only for choices hard to reverse, surprising without context,
-  and selected among meaningful alternatives;
+  and selected among meaningful alternatives; `status: proposed` awaits user
+  ratification, and `durable: true` with `requirements` adds spec Rationale;
 - `diagrams` for Mermaid or referenced SVG/PNG contracts;
 - `prototypeSelection` for an existing selection note (never prototype code or
   output as proof);
@@ -84,8 +83,8 @@ Create one semantic draft v4 from `change start --template`: `intent`, semantic
   external operations only for permission-bound work; Grounding v3 only for
   non-derived material decisions.
 
-Local references must be project files; remote integration sources need HTTPS
-and a fixed version, not `latest` or a branch.
+Local references are project files; remote sources need HTTPS and a fixed
+version.
 
 Create no decision-tree or interview ledger. Never create `CONTEXT.md`, a glossary artifact, or an ADR store;
 durable terms and choices belong in the compiled packet. Always hash grounding reads in the draft `grounding` field
@@ -101,21 +100,21 @@ or user-decision boundary.
 For defect behavior, include adjacent input partitions and source-language representation/coercion boundaries,
 not only the reported reproduction; declare `input-domain` when behavior uses caller-supplied values.
 
-`claude-foundation change start .foundation/drafts/<id>.json` inspects and
-starts in one call when clean; otherwise follow the returned intake action.
+`claude-foundation change start .foundation/drafts/<id>` (folder or `.json`)
+inspects and starts in one call when clean; otherwise follow the returned intake action.
 Never inspect managed `.claude/harness/**` merely to reconstruct this schema.
 The compiler owns classification, the intake responsibilities in
 [semantic-intake.md](semantic-intake.md), stable requirement/claim/task IDs,
 cross-links, conditional artifacts, versioned defaults, structural validation,
 and rollback; the first Build `advance` owns sandbox creation and setup.
-Repair only the draft fields it reports, as one batch, then retry. Never create
+Repair only the draft fields it reports, as one batch, then retry; fix
+warned task fields (`depends` → `dependsOn`). Never create
 parallel IDs by hand.
 
 If Build discovers new observable behavior, create a semantic amendment v1 and
 run `change amend <change> <amendment.json>`: it inspects, then amends only
-at `DONE`. It preserves completed tasks and custom prose/assets,
-increments the revision, invalidates the affected contract, and rolls back on
-failure. Never rewrite a legacy change only to migrate it. An amendment to a v4 agreement must include discovery coverage
+at `DONE`. It preserves completed tasks and prose, invalidates only the
+affected contract, and rolls back on failure. An amendment to a v4+ agreement must include discovery coverage
 for added and revised requirements. `updateTasks` may extend claim coverage,
 never replace an outcome; a completed task's verify changes only with
 `reopen: true`. Task-only amendments (`updateTasks` verify, `removeTasks` for
@@ -127,9 +126,8 @@ inspects first.
 
 After a successful start, read the compiled proposal, tasks, evidence, and any
 specs/design: detail and document language must survive compilation. Reconcile each confirmed
-conversation requirement and constraint against its compiled
-requirement/scenario, proposal exclusion, or design decision; report any
-uncovered material point in the approval summary, not a separate ledger.
+conversation requirement and constraint against the compiled packet; report
+any uncovered material point in the approval summary.
 Structural validation alone does not establish semantic completeness; check
 that cited sources support the claimed meaning. Repair missing content through
 the draft/amendment workflow, never by silently proceeding to Build.

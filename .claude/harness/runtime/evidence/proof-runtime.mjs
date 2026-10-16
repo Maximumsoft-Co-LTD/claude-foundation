@@ -1,6 +1,7 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { validityRecovery } from "./receipt-validity.mjs";
+import { proofRolloutGates } from "./provider-catalog.mjs";
 import { resolveTaskExecutionAuthority } from "../core/task-execution-authority.mjs";
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 
@@ -72,7 +73,7 @@ export function createProofRuntime({
   writeJson, readJson, pathInside, validateArtifact, instructionProvenance,
   agentPlanValue = null, savedAgentPlan = null, taskResult = null,
   taskLease = null, taskPacketWasPrecompleted = null,
-  selectedRepositories = () => [], git = null, now, fail
+  selectedRepositories = () => [], git = null, rolloutGates = () => [], now, fail
 }) {
   function assertReadRepositoriesUnchanged(id, state) {
     if (!git) return;
@@ -208,6 +209,7 @@ export function createProofRuntime({
       aggregateGraphProof: graphProof.aggregate,
       providers: checks.map((row) => row.provider),
       advisories: advisoryCapabilities?.(id) || [],
+      rolloutGates: rolloutGates(id),
       receipts: receiptEntries,
       excludedReceipts,
       artifacts: state.activeProofRun?.serviceArtifacts ||
@@ -230,7 +232,9 @@ export function createProofRuntime({
     if (!options.quiet)
       console.log(`PROVEN ${id}\n  workspace: ${hash}\n  providers: ${proof.providers.join(", ")}` +
         `${excludedReceipts.length ? `\n  excluded receipts: ${excludedReceipts.map((row) =>
-          `${row.provider}:${row.validity}`).join(", ")}` : ""}\n  next: /land ${id}`);
+          `${row.provider}:${row.validity}`).join(", ")}` : ""}${proofRolloutGates(proof, { deferred: true }).length
+          ? `\n  rollout gates (deferred): ${proofRolloutGates(proof, { deferred: true }).map((row) =>
+            row.capability).join(", ")}` : ""}\n  next: /land ${id}`);
   }
 
   function finalize(id, requestedProofRunId, suppliedOptions) {

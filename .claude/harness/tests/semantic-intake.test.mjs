@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import {
+  createChangeLifecycle, documentSectionInvalidation, sectionsOnlyAmendment, v5QualityGrounding
+} from "../runtime/workflow/change-lifecycle.mjs";
+import { durableDecisionMetadataIssues } from "../runtime/workflow/change-validation.mjs";
+import { groundingFromQuality } from "../runtime/workflow/validation/quality-fields.mjs";
 import {
   CORE_DISCOVERY_DIMENSIONS,
   decisionFrontier,
@@ -537,4 +545,295 @@ test("a financial risk signal requires retry and recovery coverage in any langua
   assert.ok(planSemanticIntakeDepth(english).reasons.includes("risk:financial"));
   assert.equal(planSemanticIntakeDepth(english).score,
     planSemanticIntakeDepth(source({ riskSignals: ["access-control"] })).score);
+});
+
+// --- v5 lifecycle wiring: intake gate, compliance, warnings, grounding, amend ---
+
+test("a user question is asked once after agent repairs and keeps the resume route", () => {
+  const question = { key: "compliance.approver", question: "Who approves?", kind: "compliance-approver" };
+  const asked = semanticIntakeAction(source(), { resume: "resume-route", userQuestion: question });
+  assert.equal(asked.action, "ASK_USER");
+  assert.equal(asked.owner, "user");
+  assert.equal(asked.resume, "resume-route");
+  assert.equal(asked.decision.kind, "compliance-approver");
+  assert.deepEqual(asked.decision.items.map((item) => item.key), ["compliance.approver"]);
+  const repair = semanticIntakeAction(source(), {
+    resume: "resume-route", userQuestion: question, additionalIssues: ["tasks[0].outcome is required"]
+  });
+  assert.equal(repair.action, "EDIT");
+  assert.equal(repair.owner, "agent");
+  assert.equal(repair.resume, "resume-route");
+});
+
+function writeJsonFile(path, value) {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function project(t, { config = null } = {}) {
+  const root = mkdtempSync(join(tmpdir(), "foundation-intake-wiring-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const changes = join(root, "openspec", "changes");
+  const runtime = join(root, ".foundation", "runtime");
+  for (const schema of ["foundation-rapid", "foundation-standard"]) {
+    const templates = join(root, "openspec", "schemas", schema, "templates");
+    mkdirSync(templates, { recursive: true });
+    writeFileSync(join(templates, "proposal.md"), "# <title>\n");
+    writeFileSync(join(templates, "tasks.md"), "- [ ] **T001** replace-with-task\n");
+    writeJsonFile(join(templates, "evidence.yaml"), { version: 2, claims: [] });
+    writeJsonFile(join(templates, "execution.yaml"), { version: 1, providers: {}, services: {} });
+    writeJsonFile(join(templates, "repositories.yaml"), {
+      version: 1, repositories: [{ id: "root", mode: "write", dependsOn: [] }]
+    });
+    writeJsonFile(join(templates, "handoffs.yaml"), { version: 1, operations: [] });
+    writeFileSync(join(templates, "design.md"), "# Design for <title>\n");
+    writeFileSync(join(templates, "spec.md"), "## ADDED Requirements\n");
+  }
+  if (config !== null) writeFileSync(join(root, "openspec", "config.yaml"), config);
+  const lifecycle = createChangeLifecycle({
+    root,
+    policy: () => ({ workflow: { grounding: "optional" }, land: {} }),
+    securityTerms: [],
+    fail: (message) => { throw new Error(message); },
+    pathInside: () => true,
+    readJson: (path) => JSON.parse(readFileSync(path, "utf8")),
+    writeJson: writeJsonFile,
+    slugify: (value) => String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+    changePath: (id) => join(changes, id),
+    loadRuntime: (id) => JSON.parse(readFileSync(join(runtime, `${id}.json`), "utf8")),
+    saveRuntime: (state) => writeJsonFile(join(runtime, `${state.id}.json`), state),
+    setOperationChangeId: () => {}, initialBudget: () => ({}), gitHead: () => "head",
+    preexistingDirty: () => ({}), now: () => "2026-10-15T00:00:00.000Z",
+    bindClaudeSession: () => {}, validate: () => {}, createSandbox: () => {}, showPacket: () => {},
+    measureStage: (_stage, operation) => operation(), trapFailures: (operation) => operation(),
+    rollbackStart: (id) => {
+      rmSync(join(changes, id), { recursive: true, force: true });
+      rmSync(join(runtime, `${id}.json`), { force: true });
+      return [];
+    }
+  });
+  const packet = (name) => join(changes, "refund-api", name);
+  return { root, changes, runtime, lifecycle, packet };
+}
+
+function v5Draft(extra = {}) {
+  return {
+    version: 5, id: "refund-api", intent: "Add a refund API", language: "en",
+    why: "Customers wait days for refunds", impact: "low", coupling: "isolated",
+    requirements: [{
+      key: "refund-once", capability: "refund-api", operation: "added",
+      outcome: "A refund is applied once",
+      scenarios: [{ name: "Refund once", when: "a refund request arrives twice",
+        then: "the refund is applied once" },
+      { name: "Unknown order", kind: "failure", when: "the order does not exist",
+        then: "the refund is rejected naming the order", recovery: "resend with a known order" }]
+    }],
+    tasks: [{
+      key: "implement-refund", outcome: "Implement the refund API", covers: ["refund-once"],
+      paths: ["src/**"], verify: "npm test"
+    }],
+    evidence: { "refund-once": { capabilities: ["test"] } },
+    ...extra
+  };
+}
+
+function writeDraftFolder(root, draft, design = "## Overview\nOne refund path.\n") {
+  const dir = join(root, ".foundation", "drafts", "refund-api");
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+  writeJsonFile(join(dir, "change.json"), draft);
+  writeFileSync(join(dir, "design.md"), design);
+  return ".foundation/drafts/refund-api";
+}
+
+function captured(operation) {
+  const log = console.log;
+  const lines = [];
+  console.log = (line) => lines.push(String(line));
+  try { return { result: operation(), output: lines.join("\n") }; } finally { console.log = log; }
+}
+
+test("a v5 folder at high impact without operability coverage returns EDIT naming the dimension", (t) => {
+  const { root, changes, lifecycle } = project(t);
+  const coverage = [...CORE_DISCOVERY_DIMENSIONS, "recoverability"]
+    .map((dimension) => ({ dimension, status: "covered", covers: ["refund-once"] }));
+  const path = writeDraftFolder(root, v5Draft({ impact: "high", discovery: { coverage, decisions: [] } }));
+  for (const run of [() => lifecycle.inspectDraft(path), () => lifecycle.startAtomic(path)]) {
+    const { result } = captured(run);
+    assert.equal(result.action, "EDIT");
+    assert.equal(result.owner, "agent");
+    assert.match(result.intake.issues.join("\n"), /missing required dimension 'operability'/);
+    assert.doesNotMatch(result.intake.issues.join("\n"), /dimension 'recoverability'/);
+    assert.equal(result.resume, `claude-foundation change start ${path} --inspect`);
+  }
+  assert.equal(existsSync(join(changes, "refund-api")), false);
+});
+
+test("new --draft gates a v5 folder like v4 and sends it to change start", (t) => {
+  const { root, changes, lifecycle } = project(t);
+  const path = writeDraftFolder(root, v5Draft());
+  assert.throws(() => captured(() => lifecycle.createChange("Add a refund API", { draft: path })),
+    /must use 'change start <draft\.json>' so repository intake is enforced/);
+  assert.equal(existsSync(join(changes, "refund-api")), false);
+});
+
+const COMPLIANCE_ON = "schema: foundation-standard\ncompliance: change-record\n";
+
+test("compliance enabled without an approver asks the user one question with a resume route", (t) => {
+  const { root, changes, lifecycle } = project(t, { config: COMPLIANCE_ON });
+  const path = writeDraftFolder(root, v5Draft({ compliance: { requester: "ops", implementer: "agent" } }));
+  for (const run of [() => lifecycle.inspectDraft(path), () => lifecycle.startAtomic(path)]) {
+    const { result } = captured(run);
+    assert.equal(result.action, "ASK_USER");
+    assert.equal(result.owner, "user");
+    assert.deepEqual(result.decision.items.map((item) => item.key), ["compliance.approver"]);
+    assert.equal(result.resume, `claude-foundation change start ${path} --inspect`);
+  }
+  assert.equal(existsSync(join(changes, "refund-api")), false);
+});
+
+test("compliance enabled with approver equal to implementer is an agent EDIT naming compliance.approver", (t) => {
+  const { root, changes, lifecycle } = project(t, { config: COMPLIANCE_ON });
+  const path = writeDraftFolder(root, v5Draft({
+    compliance: { requester: "ops", approver: "Agent", implementer: "agent", approvedBefore: "build" }
+  }));
+  const { result } = captured(() => lifecycle.startAtomic(path));
+  assert.equal(result.action, "EDIT");
+  assert.equal(result.owner, "agent");
+  assert.match(result.intake.issues.join("\n"), /compliance\.approver must differ from compliance\.implementer/);
+  assert.equal(existsSync(join(changes, "refund-api")), false);
+});
+
+test("compliance disabled or satisfied adds no gate", (t) => {
+  for (const [config, compliance] of [
+    ["schema: foundation-standard\n", undefined],
+    [COMPLIANCE_ON, { requester: "ops", approver: "lead", implementer: "agent", approvedBefore: "build" }]
+  ]) {
+    const { root, changes, lifecycle } = project(t, { config });
+    const path = writeDraftFolder(root, v5Draft(compliance ? { compliance } : {}));
+    const { result } = captured(() => lifecycle.startAtomic(path));
+    assert.equal(result, "refund-api");
+    assert.ok(existsSync(join(changes, "refund-api")));
+  }
+});
+
+test("unknown task fields warn at start and in inspect without blocking", (t) => {
+  const { root, changes, lifecycle } = project(t);
+  const draft = v5Draft();
+  draft.tasks[0].depends = ["other"];
+  const path = writeDraftFolder(root, draft);
+  const inspected = captured(() => lifecycle.inspectDraft(path)).result;
+  assert.equal(inspected.action, "DONE");
+  assert.ok(inspected.designWarnings.includes(
+    "tasks[0].depends is not a known task field; did you mean dependsOn?"), inspected.designWarnings);
+  const started = captured(() => lifecycle.startAtomic(path));
+  assert.equal(started.result, "refund-api");
+  assert.match(started.output, /task warning: tasks\[0\]\.depends is not a known task field; did you mean dependsOn\?/);
+  assert.ok(existsSync(join(changes, "refund-api")));
+
+  const clean = project(t);
+  const cleanPath = writeDraftFolder(clean.root, v5Draft());
+  assert.equal(captured(() => clean.lifecycle.inspectDraft(cleanPath)).result.designWarnings
+    .some((warning) => /task field/.test(warning)), false);
+  assert.doesNotMatch(captured(() => clean.lifecycle.startAtomic(cleanPath)).output, /task warning/);
+});
+
+test("a proposed decision compiles: design.md keeps valid decision metadata and the proposal lists it", (t) => {
+  const { root, lifecycle, packet } = project(t);
+  const path = writeDraftFolder(root, v5Draft({
+    impact: "medium",
+    decisions: [
+      { key: "store", id: "DEC-STORE", choice: "Store refunds in Postgres", why: "Existing store", status: "accepted" },
+      { key: "queue", id: "DEC-QUEUE", choice: "Queue refunds for retry", why: "Not yet agreed", status: "proposed" }
+    ]
+  }));
+  const { result, output } = captured(() => lifecycle.startAtomic(path));
+  assert.equal(result, "refund-api", output);
+  const design = readFileSync(packet("design.md"), "utf8");
+  assert.deepEqual(durableDecisionMetadataIssues(design), []);
+  assert.doesNotMatch(design, /Queue refunds for retry/);
+  assert.match(readFileSync(packet("proposal.md"), "utf8"), /Queue refunds for retry/);
+});
+
+const nfrRows = [{
+  key: "refund-latency", characteristic: "time behaviour", stimulus: "100 refunds per second",
+  response: "each refund is accepted", measure: "p95 under 300 ms", claim: "refund-fast"
+}];
+const observabilityValue = {
+  correlation: "request id",
+  rows: [{ failure: "refund stuck", signal: "refund.stuck", sli: "stuck ratio", slo: "< 0.1%",
+    alert: "page on-call", runbook: "replay refund", owner: "payments" }]
+};
+
+test("a v5 draft with nfr and observability writes matching grounding.yaml without authored grounding", (t) => {
+  const { root, lifecycle, packet } = project(t);
+  const path = writeDraftFolder(root, v5Draft({
+    impact: "medium", nfr: nfrRows, observability: observabilityValue
+  }));
+  const { result, output } = captured(() => lifecycle.startAtomic(path));
+  assert.equal(result, "refund-api", output);
+  const grounding = JSON.parse(readFileSync(packet("grounding.yaml"), "utf8"));
+  const expected = groundingFromQuality({ nfr: nfrRows, observability: observabilityValue });
+  assert.deepEqual(grounding.nfrAssessment, expected.nfrAssessment);
+  assert.deepEqual(grounding.observability, expected.observability);
+  const state = JSON.parse(readFileSync(join(root, ".foundation", "runtime", "refund-api.json"), "utf8"));
+  assert.equal(state.groundingRequired, false);
+});
+
+test("quality grounding derivation leaves v4 drafts, v2 ledgers, and empty quality alone", () => {
+  assert.equal(v5QualityGrounding({ _semanticVersion: 4, nfr: nfrRows }), null);
+  assert.equal(v5QualityGrounding({ _semanticVersion: 5, nfr: nfrRows, grounding: { version: 2 } }), null);
+  assert.equal(v5QualityGrounding({ _semanticVersion: 5 }), null);
+  assert.equal(v5QualityGrounding({ _semanticVersion: 5, nfr: nfrRows }, { groundingRequired: true }), null);
+  const v3 = v5QualityGrounding({ _semanticVersion: 5, observability: observabilityValue,
+    grounding: { version: 3, decisions: [{ id: "D1", choice: "x", reason: "y" }] } });
+  assert.equal(v3.version, 3);
+  assert.deepEqual(v3.decisions, [{ id: "D1", choice: "x", reason: "y" }]);
+  assert.deepEqual(v3.observability, groundingFromQuality({ observability: observabilityValue }).observability);
+  assert.equal(v3.nfrAssessment, undefined);
+});
+
+test("document-section invalidation reruns only whole-packet review providers", () => {
+  const plan = documentSectionInvalidation({
+    test: { capability: "test", claims: ["c1"] },
+    review: { capability: "review" },
+    summary: { capability: "custom", dependsOn: ["review"] }
+  });
+  assert.equal(plan.status, "READY");
+  assert.deepEqual(plan.affectedClaims, []);
+  assert.deepEqual(plan.proof.invalidateReceipts, ["review", "summary"]);
+  assert.deepEqual(plan.proof.preserveReceipts, ["test"]);
+  assert.equal(plan.approval.invalidate, false);
+  assert.equal(sectionsOnlyAmendment({ sections: [{ document: "design", key: "rollout", body: "x" }] }), true);
+  assert.equal(sectionsOnlyAmendment({ sections: [{}], addTasks: [{}] }), false);
+  assert.equal(sectionsOnlyAmendment({ addRequirements: [{}] }), false);
+});
+
+test("a sections-only amendment replaces a design section and numbers history by contract revision", (t) => {
+  const { root, lifecycle, packet } = project(t);
+  const design = "## Overview\nOne refund path.\n## Compatibility and rollout\nShip to everyone.\n";
+  const path = writeDraftFolder(root, v5Draft({ impact: "medium" }), design);
+  assert.equal(captured(() => lifecycle.startAtomic(path)).result, "refund-api");
+  // A pre-Build revision moves the contract to revision 1, so the amendment is
+  // revision 2 although it is the first amendment history line.
+  writeDraftFolder(root, v5Draft({ impact: "medium", why: "Customers wait a week for refunds" }), design);
+  captured(() => lifecycle.reviseChange("refund-api", path));
+  const amendmentPath = join(root, ".foundation", "drafts", "amend.json");
+  writeJsonFile(amendmentPath, {
+    version: 1, reason: "Roll out behind a flag",
+    sections: [{ document: "design", key: "rollout", body: "Dark launch behind a flag first." }]
+  });
+  const { result, output } = captured(() => lifecycle.amendChange("refund-api", amendmentPath));
+  assert.match(output, /^AMENDED refund-api/m, JSON.stringify(result));
+  const amended = readFileSync(packet("design.md"), "utf8");
+  assert.equal(amended.match(/^## Compatibility and rollout$/gm)?.length, 1, amended);
+  assert.match(amended, /Dark launch behind a flag first\./);
+  assert.doesNotMatch(amended, /Ship to everyone/);
+  const state = JSON.parse(readFileSync(join(root, ".foundation", "runtime", "refund-api.json"), "utf8"));
+  assert.equal(state.contractRevision, 2);
+  const amendment = state.amendments.at(-1);
+  assert.equal(amendment.revision, 2);
+  assert.deepEqual(amendment.invalidation.approval, { invalidate: false, reasons: [] });
+  assert.deepEqual(amendment.invalidatedClaims ?? [], []);
+  assert.match(readFileSync(packet("proposal.md"), "utf8"), /^- Revision 2 \([^)]*\): Roll out behind a flag$/m);
 });

@@ -37,6 +37,20 @@ export function parseJsonOutput(value) {
   catch { return null; }
 }
 
+// A command that logs before its result: the whole output, else the last line
+// that is a JSON object. Earlier lines are logs, never a second result.
+export function parseLastJsonLine(value) {
+  const whole = parseJsonOutput(value);
+  if (whole !== null) return whole;
+  const lines = String(value || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    if (!lines[index].startsWith("{")) continue;
+    const parsed = parseJsonOutput(lines[index]);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+  }
+  return null;
+}
+
 export function parseTapOutput(value) {
   const text = String(value || "");
   if (!/^(TAP version|\s*(?:ok|not ok)\b)/m.test(text)) return null;

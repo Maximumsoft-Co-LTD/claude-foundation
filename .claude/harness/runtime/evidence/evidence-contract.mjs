@@ -7,7 +7,7 @@ import { memoizeByGitIndex } from "../core/tool-identity.mjs";
 import {
   classifyReviewRisk, reviewSemanticText, securityRiskSignals, thaiRiskPattern
 } from "./review-routing.mjs";
-import { reviewCoveredProviders, unobservedAliasConfig } from "./provider-catalog.mjs";
+import { providerTimeoutMs, reviewCoveredProviders, unobservedAliasConfig } from "./provider-catalog.mjs";
 
 const THAI_REQUIRED_SEMANTICS =
   thaiRiskPattern("concurrency", "money", "migration", "irreversible");
@@ -179,12 +179,12 @@ export function environmentDescriptorOperation({
 }
 
 export function collectReviewSignals(state, contract, configuredCapabilities = [],
-  grounding = null) {
+  grounding = null, workTypeOnly = new Set()) {
   const capabilities = new Set([
     ...(state.evidenceCapabilities || []),
     ...contract.claims.flatMap((claim) => claim.capabilities || []),
     ...configuredCapabilities
-  ]);
+  ].filter((capability) => !workTypeOnly.has(capability)));
   // Keyword-only intent never forces diversity or a higher tier; see
   // reviewSemanticText. Review itself stays required for such changes through
   // state.reviewRequired set by resolve.
@@ -193,7 +193,7 @@ export function collectReviewSignals(state, contract, configuredCapabilities = [
   const diversityTriggers = [];
   const riskClaims = contract.claims.filter((claim) => claim.impact !== "low");
   if (riskClaims.some((claim) => claim.capabilities.some((capability) =>
-    REVIEW_FORCING_CAPABILITIES.includes(capability))))
+    !workTypeOnly.has(capability) && REVIEW_FORCING_CAPABILITIES.includes(capability))))
     requiredTriggers.push("risk-capability");
   if (riskClaims.some((claim) => (claim.repositories || []).length > 1))
     requiredTriggers.push("multi-repository-claim");
@@ -340,7 +340,7 @@ export function uncoveredCommandWorkspaceFiles({
 
 export function providerEvidencePolicy(config = {}) {
   return {
-    timeoutMs: Number(config.timeoutMs || 120000),
+    timeoutMs: providerTimeoutMs(config),
     minimum: config.minimum ?? null,
     report: config.report || null,
     reportFormat: config.reportFormat || null,
@@ -573,7 +573,9 @@ export function createEvidenceContract({
   canonicalPath, loadRuntime, relevantHash,
   relevantSnapshot, singleRelevantSnapshot, fileDigest, stableHash,
   filesystemEntryIdentity,
-  policyCapabilities, foundationPolicy, handoffContract, git, declaredSurfaceMatcher, die
+  policyCapabilities, foundationPolicy, handoffContract, git, declaredSurfaceMatcher, die,
+  // Absent in narrow compositions: every capability may raise the review tier.
+  policyCapabilityTrigger = () => null
 }) {
   function executionServiceSource(id, name, service) {
     const commandValid = Array.isArray(service?.command) &&
@@ -1180,14 +1182,24 @@ export function createEvidenceContract({
   
   function reviewPolicy(id, state = loadRuntime(id), contract = evidence(id)) {
     const grounding = readJson(join(activeChangePath(id), "grounding.yaml"), {});
-    const signals = collectReviewSignals(state, contract, policyCapabilities(id), grounding);
+    // A capability only a declared work type requires still needs its
+    // evidence, but does not raise the review tier on its own. Path rules come
+    // first in the trigger list, so a leading work-type trigger means no path
+    // required it.
+    const workTypeOnly = new Set(policyCapabilities(id).filter((capability) =>
+      String(policyCapabilityTrigger(id, capability) || "").startsWith("work-type:")));
+    const signals = collectReviewSignals(state, contract, policyCapabilities(id), grounding,
+      workTypeOnly);
     const riskRoute = classifyReviewRisk({
       state, claims: contract.claims, capabilities: signals.capabilities, grounding,
       requiredTriggers: signals.requiredTriggers
     });
     const policy = foundationPolicy().review || {};
     const riskTiered = foundationPolicy().workflow.reviewPolicy === "risk-tiered";
-    const result = assembleReviewPolicy({ state, signals, riskRoute, policy, riskTiered });
+    const assembled = assembleReviewPolicy({ state, signals, riskRoute, policy, riskTiered });
+    const grants = state.reviewHistory?.extraAiWaves || [];
+    const result = grants.length ? { ...assembled, grantedAiWaveCap:
+      Math.max(...grants.map((row) => Number(row.delivered || 0) + 1)) } : assembled;
     const waived = currentWaivers(state, state.waivers?.some((row) => row.binding) ? relevantHash(id) : undefined)
       .find((row) => row.capability === "review");
     return waived ? { ...result, required: false, userWaiver: waived } : result;

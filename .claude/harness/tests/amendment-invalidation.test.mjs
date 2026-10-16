@@ -1,9 +1,28 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { planAmendmentInvalidation } from
   "../runtime/workflow/validation/amendment-invalidation.mjs";
 import { formatInvalidatedWaivers, invalidatedWaivers } from
   "../runtime/workflow/change-lifecycle.mjs";
+import { amendmentSectionIssues } from "../runtime/workflow/semantic-amendment.mjs";
+
+// The harness builds the file map, work type, and acceptance rows; an
+// amendment can replace only author sections, and the repair says so.
+test("amending a harness-built outline section returns an issue naming the harness", () => {
+  for (const [document, key] of [["design", "fileMap"], ["design", "workType"], ["proposal", "acceptance"]]) {
+    const issues = amendmentSectionIssues({ sections: [{ document, key, body: "rows" }] });
+    assert.equal(issues.length, 1, `${document}.${key}: ${issues.join("; ")}`);
+    assert.match(issues[0], new RegExp(`'${key}' is a \\w+ ${document} section the harness builds; ` +
+      "only author sections can be replaced"));
+  }
+  assert.deepEqual(amendmentSectionIssues({ sections: [{ document: "design", key: "risks", body: "- r" }] }), []);
+});
+
+import { compileSemanticAmendment, writeSemanticAmendment } from
+  "../runtime/workflow/semantic-amendment.mjs";
 
 // Waivers bind to the contract revision; an amendment that moves it must say
 // which gates came back instead of letting them reappear silently (issue #40).
@@ -180,4 +199,158 @@ test("empty or malformed deltas cannot produce a ready no-op plan", () => {
   const malformed = planAmendmentInvalidation(fixture({ coverageDelta: null }));
   assert.equal(malformed.status, "BLOCKED");
   assert.ok(malformed.findings.some((finding) => finding.code === "INVALID_COVERAGE_DELTA"));
+});
+
+// --- Amendments replace packet sections in place (amendment-replaces, v5-revise-amend)
+
+const slug = (value) => String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+const TASKS = "# Tasks\n\n- [x] **T001** Build A [key:impl] [claims:a] — verify: `npm test`\n";
+
+function packet(t, { proposal = "# Change: Pay safely\n\n## Summary\n\nPay once.\n", design = null } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "amend-sections-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, "proposal.md"), proposal);
+  if (design !== null) writeFileSync(join(dir, "design.md"), design);
+  writeFileSync(join(dir, "tasks.md"), TASKS);
+  writeFileSync(join(dir, "evidence.yaml"), JSON.stringify({ version: 1, claims: [] }));
+  return dir;
+}
+
+function agreement(goal) {
+  return {
+    language: "en",
+    investigation: {
+      version: 2, id: "inv-pay", outcome: "ready", summary: "Retry safely",
+      intake: {
+        intent: { goal },
+        requirements: [{ key: "retry", revision: 1, kind: "functional", status: "confirmed",
+          origin: "user", statement: "Retry once on timeout", material: true }]
+      }
+    },
+    investigationCoverage: [{ sourceKey: "retry", sourceRevision: 1,
+      targets: [{ kind: "requirement", key: "retry" }] }]
+  };
+}
+
+function compiledFor(overrides = {}) {
+  return {
+    tasksContent: TASKS, claims: [], providers: {}, specs: [], revisedSpecs: [],
+    removedRequirements: [], sections: [], amendmentReason: "Build found more", ...overrides
+  };
+}
+
+const amend = (dir, compiled, options = {}) =>
+  writeSemanticAmendment(dir, compiled, slug, { schema: "foundation-rapid", ...options });
+const count = (text, pattern) => (text.match(pattern) || []).length;
+const read = (dir, file) => readFileSync(join(dir, file), "utf8");
+
+test("three amendments keep one investigation appendix and three history lines", (t) => {
+  const dir = packet(t);
+  for (const [index, goal] of ["Goal one", "Goal two", "Goal three"].entries())
+    amend(dir, compiledFor({ investigationAgreement: agreement(goal), amendmentReason: `Reason ${index + 1}` }),
+      { date: `2026-10-0${index + 1}` });
+  const proposal = read(dir, "proposal.md");
+  assert.equal(count(proposal, /^## Appendix: Investigation$/gm), 1);
+  assert.doesNotMatch(proposal, /Latest amended investigation agreement/);
+  assert.match(proposal, /Goal three/);
+  assert.doesNotMatch(proposal, /Goal one|Goal two/);
+  assert.equal(count(proposal, /^## Appendix: Amendment history$/gm), 1);
+  assert.match(proposal, /- Revision 1 \(2026-10-01\): Reason 1\n- Revision 2 \(2026-10-02\): Reason 2\n- Revision 3 \(2026-10-03\): Reason 3\n/);
+  assert.ok(proposal.indexOf("## Appendix: Investigation") < proposal.indexOf("## Appendix: Amendment history"));
+  assert.match(proposal, /^## Summary\n\nPay once\.$/m);
+  assert.equal(read(dir, "tasks.md"), TASKS);
+});
+
+test("a proposal with duplicated legacy investigation sections collapses to one", (t) => {
+  const legacy = ["Old A", "Old B", "Old C"].map((goal) =>
+    "## Latest amended investigation agreement\n\n## Investigation requirement coverage\n\n" +
+    `| Source | Requirement | Targets |\n|---|---|---|\n| retry@1 | ${goal} | requirement: retry |\n\n` +
+    `## Retained investigation context\n\nGoal: ${goal}\n`).join("\n");
+  const dir = packet(t, { proposal: "# Change: Pay safely\n\n## Summary\n\nPay once.\n\n" +
+    "## Operator notes\n\nKeep `## not a heading` text.\n\n```md\n## Fenced heading stays\n```\n\n" + legacy });
+  amend(dir, compiledFor({ investigationAgreement: agreement("Current goal") }), { date: "2026-10-15" });
+  const proposal = read(dir, "proposal.md");
+  assert.equal(count(proposal, /^## Appendix: Investigation$/gm), 1);
+  for (const heading of ["Latest amended investigation agreement", "Investigation requirement coverage",
+    "Retained investigation context"])
+    assert.doesNotMatch(proposal, new RegExp(`^## ${heading}$`, "m"), heading);
+  assert.doesNotMatch(proposal, /Old [ABC]/);
+  assert.match(proposal, /Current goal/);
+  assert.match(proposal, /## Operator notes\n\nKeep `## not a heading` text\.\n\n```md\n## Fenced heading stays\n```/);
+});
+
+test("an amendment to a change without investigation adds no investigation section", (t) => {
+  const dir = packet(t);
+  amend(dir, compiledFor({ removedRequirements: [{ key: "b", migration: "Moves to a successor" }] }),
+    { date: "2026-10-15" });
+  amend(dir, compiledFor({ removedRequirements: [{ key: "c", migration: "Dropped" }],
+    discovery: { coverage: [{ dimension: "compatibility", status: "covered", covers: ["a"] }] } }),
+  { date: "2026-10-16" });
+  amend(dir, compiledFor({
+    discovery: { coverage: [{ dimension: "failure-path", status: "covered", covers: ["a"] }] } }),
+  { date: "2026-10-17" });
+  const proposal = read(dir, "proposal.md");
+  assert.doesNotMatch(proposal, /investigation/i);
+  assert.equal(count(proposal, /^## Amendment removed requirements$/gm), 1);
+  assert.match(proposal, /\| b \| Moves to a successor \|\n\| c \| Dropped \|/);
+  assert.equal(count(proposal, /^## Amendment discovery coverage$/gm), 1);
+  assert.match(proposal, /\| failure-path \| covered \|/);
+  assert.doesNotMatch(proposal, /\| compatibility \| covered \|/);
+  assert.equal(count(proposal, /^- Revision \d+ /gm), 3);
+});
+
+const DESIGN = "# Design\n\n## Overview\n\nAuthored overview prose.\n\n" +
+  "## Compatibility and rollout\n\nShip it all at once.\n\n## Risks\n\n| Risk | Mitigation | Evidence owner |\n" +
+  "|---|---|---|\n| Retry storm | Cap | ops |\n";
+
+test("an amendment replaces the design rollout section in place", (t) => {
+  const dir = packet(t, { design: DESIGN });
+  const compiled = compileSemanticAmendment({
+    amendment: { version: 1, reason: "Roll out behind a flag", sections: [{
+      document: "design", key: "rollout",
+      value: { strategy: "Feature flag at 10% then 100%", rollback: "Turn the flag off" }
+    }] },
+    contract: { version: 1, claims: [], providers: {} }, tasksContent: TASKS, slugify: slug,
+    renderTask: () => ""
+  });
+  assert.deepEqual(compiled.issues, []);
+  amend(dir, compiled, { date: "2026-10-15" });
+  const design = read(dir, "design.md");
+  assert.equal(count(design, /^## Compatibility and rollout$/gm), 1);
+  assert.match(design, /Feature flag at 10% then 100%/);
+  assert.match(design, /Turn the flag off/);
+  assert.doesNotMatch(design, /Ship it all at once/);
+  assert.ok(design.indexOf("## Compatibility and rollout") < design.indexOf("## Risks"));
+  assert.match(design, /## Overview\n\nAuthored overview prose\.\n\n## Compatibility/);
+  assert.match(design, /\| Retry storm \| Cap \| ops \|/);
+
+  amend(dir, compiledFor({ sections: [{ document: "design", key: "rollout", body: "Dark launch first." }] }));
+  const again = read(dir, "design.md");
+  assert.equal(count(again, /^## Compatibility and rollout$/gm), 1);
+  assert.match(again, /## Compatibility and rollout\n\nDark launch first\.\n\n## Risks/);
+  assert.equal(read(dir, "tasks.md"), TASKS);
+});
+
+test("an amendment naming an unknown outline section is rejected and the packet is unchanged", (t) => {
+  const dir = packet(t, { design: DESIGN });
+  const before = Object.fromEntries(["proposal.md", "design.md", "tasks.md", "evidence.yaml"]
+    .map((file) => [file, read(dir, file)]));
+  const compiled = compileSemanticAmendment({
+    amendment: { version: 1, reason: "Rename", sections: [{ document: "design", key: "launchPlan", body: "x" }] },
+    contract: { version: 1, claims: [], providers: {} }, tasksContent: TASKS, slugify: slug,
+    renderTask: () => ""
+  });
+  assert.match(compiled.issues.join("\n"), /sections\[0\]\.key 'launchPlan' is not a design outline section/);
+  assert.equal(compiled.tasksContent, undefined);
+  for (const sections of [[{ document: "design", key: "launchPlan", body: "x" }],
+    [{ document: "proposal", key: "acceptance", body: "x" }]])
+    assert.throws(() => amend(dir, compiledFor({ sections, investigationAgreement: agreement("New") })),
+      /not a design outline section|harness builds/);
+  for (const [file, content] of Object.entries(before)) assert.equal(read(dir, file), content, file);
+  const invalid = compileSemanticAmendment({
+    amendment: { version: 1, sections: [{ document: "design", key: "rollout", value: { strategy: "x" } }] },
+    contract: { version: 1, claims: [], providers: {} }, tasksContent: TASKS, slugify: slug,
+    renderTask: () => ""
+  });
+  assert.match(invalid.issues.join("\n"), /sections\[0\]\.value: rollout\.rollback/);
 });

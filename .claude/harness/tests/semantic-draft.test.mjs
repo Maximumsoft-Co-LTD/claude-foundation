@@ -11,8 +11,10 @@ import test from "node:test";
 import {
   deriveRepositoryTaskDependencies, derivedCapabilityPurpose, expandMinimalSemanticDraft,
   mergeSemanticDraft,
-  minimalSemanticDraftTemplate, normalizeSemanticDraft,
-  renderRequirementMarkdown, renderSpecHeading, semanticDraftTemplate
+  MINIMAL_DRAFT_WRITING, minimalSemanticDraftTemplate, normalizeSemanticDraft,
+  renderRequirementMarkdown, renderSpecHeading, semanticDraftTemplate,
+  SEMANTIC_DRAFT_VERSIONS, isSemanticV4Plus, isSemanticVersion,
+  TASK_FIELDS, unknownTaskFieldWarnings
 } from "../runtime/workflow/semantic-draft.mjs";
 import { requiredProvidersOperation } from "../runtime/workflow/change-validation.mjs";
 import { classifyReviewRisk } from "../runtime/evidence/review-routing.mjs";
@@ -31,8 +33,13 @@ import {
 } from "../runtime/workflow/semantic-amendment.mjs";
 import { taskCheck } from "../runtime/workflow/session-lease.mjs";
 import { groupAgentTasks } from "../runtime/workflow/agent-planning.mjs";
-import { designBlueprintWarnings } from "../runtime/workflow/validation/design-blueprints.mjs";
-import { devDocumentShapeIssues } from "../runtime/workflow/validation/dev-document.mjs";
+import {
+  LIGHT_WORK, WORK_TYPES, designBlueprintIssues, designBlueprintWarnings
+} from "../runtime/workflow/validation/design-blueprints.mjs";
+import {
+  devDocumentIssues, devDocumentShapeIssues, requiredDevSections
+} from "../runtime/workflow/validation/dev-document.mjs";
+import { splitProse } from "../runtime/workflow/draft-folder.mjs";
 
 const slugify = (value) => String(value).toLowerCase()
   .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -125,6 +132,31 @@ function semanticDraftV4(overrides = {}) {
   };
   return value;
 }
+
+test("an unknown task field warns with the field it likely means and still compiles", () => {
+  const draft = semanticDraft();
+  const { dependsOn, ...second } = draft.tasks[1];
+  draft.tasks = [draft.tasks[0], { ...second, depends: dependsOn }];
+  const result = normalizeSemanticDraft(draft, slugify);
+  assert.deepEqual(result.issues, []);
+  assert.deepEqual(result.warnings,
+    ["tasks[1].depends is not a known task field; did you mean dependsOn?"]);
+  assert.deepEqual(result.draft.tasks.map((task) => task.id), ["T001", "T002"]);
+  assert.deepEqual(unknownTaskFieldWarnings({ tasks: [{ path: "x", verfiy: "y", tset: "w", requirement: "z" }] }), [
+    "tasks[0].path is not a known task field; did you mean paths?",
+    "tasks[0].verfiy is not a known task field; did you mean verify?",
+    "tasks[0].tset is not a known task field",
+    "tasks[0].requirement is not a known task field; did you mean covers?"
+  ]);
+});
+
+test("known task fields raise no field warning; an unrelated field warns without a guess", () => {
+  assert.deepEqual(normalizeSemanticDraft(semanticDraft(), slugify).warnings, []);
+  const everyField = Object.fromEntries(TASK_FIELDS.map((field) => [field, "x"]));
+  assert.deepEqual(unknownTaskFieldWarnings({ tasks: [everyField] }), []);
+  assert.deepEqual(unknownTaskFieldWarnings({ tasks: [{ outcome: "o", estimateHours: 3 }] }),
+    ["tasks[0].estimateHours is not a known task field"]);
+});
 
 test("semantic compiler creates stable cross-ledger links from semantic keys", () => {
   const result = normalizeSemanticDraft(semanticDraft(), slugify);
@@ -365,14 +397,13 @@ test("semantic v4 renders discovery coverage into the compiled agreement", () =>
     "Preserve caller | exporter";
   const compiled = normalizeSemanticDraft(input, slugify).draft;
   const proposal = renderDraftProposal(compiled, { intent: compiled.intent });
-  assert.match(proposal, /## Appendix: discovery coverage/);
+  assert.match(proposal, /## Appendix: Discovery coverage/);
   assert.match(proposal, /\| compatibility \| covered \| payment-retry \|/);
   assert.match(proposal, /Preserve caller \\\| exporter/);
-  assert.match(proposal, /## Investigation handoff[\s\S]*payment-investigation/);
-  // Provenance hashes and the raw intent follow the human sections.
-  assert.ok(proposal.indexOf("## Appendix: investigation provenance") >
-    proposal.indexOf("## Appendix: discovery coverage"));
-  assert.match(proposal, /## Appendix: investigation provenance[\s\S]*Change retry behavior[\s\S]*state-digest/);
+  // One investigation appendix, after Definition of done, holds the handoff and its provenance.
+  assert.equal(proposal.split("## Appendix: Investigation").length - 1, 1);
+  assert.ok(proposal.indexOf("## Appendix: Investigation") > proposal.indexOf("## Definition of done"));
+  assert.match(proposal, /## Appendix: Investigation[\s\S]*payment-investigation[\s\S]*Change retry behavior[\s\S]*state-digest/);
   assert.doesNotMatch(proposal.slice(0, proposal.indexOf("## Appendix")), /state-digest|Change retry behavior/);
 });
 
@@ -2386,6 +2417,62 @@ test("the template shows per-work-type section shapes that compile cleanly", () 
   assert.match(template.userFlow.source, /A\["User acts"\]/);
 });
 
+// Each example is the whole repair for its type: copied onto the base template
+// (without its own workType and userFlow) it leaves no required section
+// missing and no field-shape issue, so an author never gets an EDIT round.
+test("every work-type example carries exactly its required sections and validates", () => {
+  const { workTypeExamples: examples, workType: _type, userFlow: _flow, ...base } = semanticDraftTemplate();
+  const typed = WORK_TYPES.filter((type) => !LIGHT_WORK.has(type));
+  assert.deepEqual(typed.filter((type) => !examples[type]), [], "every typed work type has an example");
+  for (const variant of ["bugfix-security", "bugfix-hotfix"]) assert.ok(examples[variant], variant);
+  for (const [name, block] of Object.entries(examples)) {
+    if (name === "use") continue;
+    const type = name.startsWith("bugfix") ? "bugfix" : name;
+    const draft = { ...base, workType: [type], ...structuredClone(block) };
+    assert.deepEqual(devDocumentIssues(draft), [], `${name}: required sections`);
+    assert.deepEqual(designBlueprintIssues(draft), [], `${name}: field shapes`);
+    assert.deepEqual(devDocumentShapeIssues(draft), [], `${name}: dev document shapes`);
+    const required = requiredDevSections(draft)
+      .filter((key) => !["summary", "failureMatrix"].includes(key))
+      .map((key) => key.split(".")[0]);
+    assert.deepEqual(Object.keys(block).sort(), [...new Set(required)].sort(),
+      `${name}: exactly the required sections`);
+    const compiled = normalizeSemanticDraft(structuredClone(draft), slugify).issues
+      .filter((issue) => !/discovery/.test(issue));
+    assert.deepEqual(compiled, [], `${name}: compiles`);
+  }
+});
+
+test("the start template states reader-sized writing limits", () => {
+  assert.equal(MINIMAL_DRAFT_WRITING.limits.intentMaxCharacters, 70);
+  assert.equal(MINIMAL_DRAFT_WRITING.limits.whyMaxSentences, 3);
+  assert.match(MINIMAL_DRAFT_WRITING.intent, /70 characters/);
+  assert.match(MINIMAL_DRAFT_WRITING.why, /3 plain sentences/);
+  assert.match(MINIMAL_DRAFT_WRITING.decisions, /One decision per entry/);
+  assert.match(MINIMAL_DRAFT_WRITING.scope, /short phrases/);
+  assert.match(MINIMAL_DRAFT_WRITING.language, /user's language/);
+  assert.match(MINIMAL_DRAFT_WRITING.sections, /only the sections your work type needs/);
+  assert.ok(semanticDraftTemplate().intent.length <= 70);
+});
+
+test("the template describes the v5 draft folder with an example that splits cleanly", () => {
+  const folder = semanticDraftTemplate().draftFolderV5;
+  assert.match(folder.layout, /change\.json/);
+  assert.match(folder.layout, /proposal\.md/);
+  assert.match(folder.layout, /design\.md/);
+  assert.match(folder.headings, /English or Thai/);
+  assert.match(folder.headings, /Never write a heading the harness derives/);
+  assert.ok(folder.proposalHeadings.some((row) => row.startsWith("Why |")));
+  assert.ok(folder.designHeadings.some((row) => row.startsWith("Decisions |")));
+  assert.ok(!folder.designHeadings.some((row) => /^(?:Work type|File map|Test map) \|/.test(row)));
+  assert.equal(folder.example["change.json"].version, 5);
+  for (const document of ["proposal", "design"]) {
+    const split = splitProse(document, folder.example[`${document}.md`]);
+    assert.deepEqual(split.issues, [], document);
+    assert.ok(Object.keys(split.prose).length, document);
+  }
+});
+
 test("minimal draft keys stay collision-safe and one task covers every requirement", () => {
   const same = { description: "The system SHALL keep invoices",
     scenarios: [{ when: "invoices are kept", then: "they persist" }] };
@@ -3232,4 +3319,64 @@ test("a draft without fixes leaves state and proposal without them", (t) => {
   assert.equal(Object.hasOwn(value.state(), "fixes"), false);
   assert.doesNotMatch(value.proposal(), /Fixes:/);
   assert.doesNotMatch(value.proposal(), /## Constraints/);
+});
+
+// T029 draft-versions: v5 is v4 semantics plus folder prose; 3, 4 and 5 are
+// the accepted versions and every version check goes through one helper.
+test("draft version helpers accept 3, 4 and 5 and treat 5 like 4", () => {
+  assert.deepEqual(SEMANTIC_DRAFT_VERSIONS, [3, 4, 5]);
+  assert.deepEqual([2, 3, 4, 5, 6, undefined].map(isSemanticVersion),
+    [false, true, true, true, false, false]);
+  assert.deepEqual([3, 4, 5, 6].map(isSemanticV4Plus), [false, true, true, false]);
+});
+
+test("a v5 folder draft normalizes like v4 and records version 5", () => {
+  const v4 = normalizeSemanticDraft(semanticDraftV4(), slugify);
+  // The shape loadDraftFolder returns: change.json fields plus split prose.
+  const v5 = normalizeSemanticDraft(semanticDraftV4({
+    version: 5,
+    prose: { proposal: { why: "Retries double-charge today." }, design: {} }
+  }), slugify);
+  assert.deepEqual(v5.issues, v4.issues);
+  assert.ok(!v5.issues.some((issue) => /version/.test(issue)));
+  assert.equal(v5.draft._semanticVersion, 5);
+  assert.deepEqual(v5.draft.discovery, v4.draft.discovery);
+  assert.ok(v5.draft.discovery, "v5 keeps v4 discovery normalization");
+  assert.deepEqual(v5.draft.claims, v4.draft.claims);
+  assert.equal(v5.draft.prose.proposal.why, "Retries double-charge today.");
+});
+
+test("v3 and v4 fixtures still normalize without version issues", () => {
+  for (const source of [semanticDraft(), semanticDraftV4()]) {
+    const result = normalizeSemanticDraft(source, slugify);
+    assert.ok(!result.issues.some((issue) => /version/.test(issue)), result.issues.join("\n"));
+    assert.equal(result.draft._semanticVersion, source.version);
+  }
+});
+
+test("an unknown draft version names the accepted versions", () => {
+  const result = normalizeSemanticDraft(semanticDraftV4({ version: 6 }), slugify);
+  assert.ok(result.issues.includes("semantic draft version must be 3, 4, or 5"),
+    result.issues.join("\n"));
+});
+
+test("a minimal draft without a version still defaults to v4", () => {
+  const expanded = expandMinimalSemanticDraft(minimalDraft());
+  assert.equal((expanded.draft || expanded).version, 4);
+});
+
+test("no literal semantic-version check remains outside the helper", () => {
+  const runtime = new URL("../runtime/", import.meta.url);
+  const files = [
+    "workflow/semantic-draft.mjs", "workflow/change-lifecycle.mjs",
+    ...readdirSync(new URL("workflow/validation/", runtime))
+      .filter((name) => name.endsWith(".mjs") && name !== "draft-version.mjs")
+      .map((name) => `workflow/validation/${name}`)
+  ];
+  const literal = /\[3, ?4\]|(?:_semanticVersion|semanticDraftVersion|\b(?:source|draft|input)\??\.version)\s*[!=]==\s*[345]\b/;
+  const offenders = files.flatMap((file) =>
+    readFileSync(new URL(file, runtime), "utf8").split("\n")
+      .map((line, index) => literal.test(line) ? `${file}:${index + 1}: ${line.trim()}` : null)
+      .filter(Boolean));
+  assert.deepEqual(offenders, []);
 });

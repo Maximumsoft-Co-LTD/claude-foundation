@@ -81,7 +81,7 @@ function fixture(options = {}) {
     }),
     collectableExecutionNodes: (_id, nodes) => ({ nodes, blocked: [] }),
     startRequiredServices: async () => [],
-    runExecutionDag: async (_id, nodes) => {
+    runExecutionDag: options.runExecutionDag || (async (_id, nodes) => {
       if (executionFailuresRemaining > 0) {
         executionFailuresRemaining -= 1;
         throw new Error("simulated provider interruption");
@@ -89,7 +89,7 @@ function fixture(options = {}) {
       if (nodes.length) executions += 1;
       if (nodes.length) executionNeeded = false;
       return nodes.map((node) => ({ provider: node.provider, status: "pass" }));
-    },
+    }),
     durableArtifact: () => { throw new Error("no service artifacts expected"); },
     pendingTasks: () => [],
     proofPreflight: () => {},
@@ -1373,6 +1373,39 @@ function realClosure(criticalCases) {
   assert.deepEqual(calls, ["workspace-a", "workspace-a", "workspace-b"]);
   assert.equal(flow.counters().finalizations, 1);
   process.exitCode = priorExitCode;
+}
+
+// A caller that finds the proof running sees where it is: the wave's running
+// providers, finished providers with status and duration, and elapsed time.
+{
+  let release;
+  let entered;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const enteredRun = new Promise((resolve) => { entered = resolve; });
+  const progressFlow = fixture({
+    phase: "ready",
+    runExecutionDag: async (_id, nodes, _proofRunId, options = {}) => {
+      options.onProgress?.({ event: "wave", wave: 1, providers: ["lint"], startedAt: "2026-08-14T00:00:00.000Z" });
+      options.onProgress?.({ event: "provider", provider: "lint", status: "pass", durationMs: 12 });
+      options.onProgress?.({ event: "wave", wave: 2, providers: ["test"], startedAt: "2026-08-14T00:00:01.000Z" });
+      entered();
+      await gate;
+      return nodes.map((node) => ({ provider: node.provider, status: "pass" }));
+    }
+  });
+  const running = quiet(() => progressFlow.runtime.proofAdvance("change-a"));
+  await within(enteredRun, 5_000, "proof advance never reached provider execution");
+  const contended = await captured(() =>
+    progressFlow.runtime.guardProofMutation("change-a", "evidence receipt", () => "must-not-run"));
+  assert.equal(contended.result.status, "IN_PROGRESS");
+  const progress = contended.result.progress;
+  assert.ok(progress, JSON.stringify(contended.result));
+  assert.equal(progress.wave, 2);
+  assert.deepEqual(progress.running, ["test"]);
+  assert.deepEqual(progress.finished, [{ provider: "lint", status: "pass", durationMs: 12 }]);
+  assert.equal(typeof progress.elapsedMs, "number");
+  release();
+  await running;
 }
 
 process.exitCode = 0;

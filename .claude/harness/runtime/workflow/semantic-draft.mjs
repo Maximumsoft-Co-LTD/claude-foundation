@@ -9,6 +9,14 @@ import {
   devDocumentIssues, devDocumentShapeIssues, inferWorkTypes
 } from "./validation/dev-document.mjs";
 import { riskDerivationSummary } from "./validation/draft-risk.mjs";
+import {
+  FOLDER_DRAFT_VERSION, isFolderDraftVersion, isSemanticV4Plus, isSemanticVersion
+} from "./validation/draft-version.mjs";
+import { OUTLINE } from "./validation/outline-contract.mjs";
+
+export {
+  SEMANTIC_DRAFT_VERSIONS, isSemanticV4Plus, isSemanticVersion
+} from "./validation/draft-version.mjs";
 
 const OPERATIONS = new Set(["added", "modified", "removed"]);
 const AUTHORITY_CAPABILITIES = new Set(["review", "acceptance", "semantic-acceptance"]);
@@ -61,7 +69,8 @@ function semanticScenarios(requirement) {
       when: text(object.when) || text(object.scenario),
       then: text(object.then) || text(object.outcome) || text(requirement.outcome),
       ...(and.length ? { and } : {}),
-      ...(text(object.kind) ? { kind: text(object.kind).toLowerCase() } : {})
+      ...(text(object.kind) ? { kind: text(object.kind).toLowerCase() } : {}),
+      ...(object.access !== undefined && object.access !== null ? { access: object.access } : {})
     };
   });
 }
@@ -113,7 +122,7 @@ function lowerFirst(value) {
 // SHALL", and any other language must supply the statement itself.
 function requirementStatement(requirement, outcome, version, operation, label, issues) {
   const description = text(requirement?.description);
-  if (version !== 4)
+  if (!isSemanticV4Plus(version))
     return description || (outcome ? `The system SHALL ${outcome.replace(/[.]$/, "")}.` : "");
   let statement = description;
   if (!statement && outcome) {
@@ -247,6 +256,62 @@ function rejectedAlternatives(decision) {
     .filter((option) => option !== choice && !/^none$/i.test(option));
 }
 
+export const DECISION_STATUSES = Object.freeze(["proposed", "accepted", "superseded"]);
+
+// A decision without a status keeps today's meaning: it is accepted.
+export function decisionStatus(decision) {
+  return text(decision?.status).toLowerCase() || "accepted";
+}
+
+// The optional ADR fields: drivers, options with pros and cons, how the
+// decision is confirmed, what it supersedes, and which requirements a durable
+// decision governs. Older decisions without them stay valid.
+function decisionMetadataIssues(decision, label) {
+  const issues = [];
+  if (decision?.status !== undefined && !DECISION_STATUSES.includes(decisionStatus(decision)))
+    issues.push(`${label}.status must be proposed, accepted, or superseded`);
+  const stringArray = (value) => Array.isArray(value) && value.every((item) => text(item));
+  if (decision?.drivers !== undefined && !stringArray(decision.drivers))
+    issues.push(`${label}.drivers must be an array of non-empty strings`);
+  if (decision?.requirements !== undefined && !stringArray(decision.requirements))
+    issues.push(`${label}.requirements must be an array of requirement keys`);
+  if (decision?.durable !== undefined && typeof decision.durable !== "boolean")
+    issues.push(`${label}.durable must be true or false`);
+  for (const field of ["confirmation", "supersedes"])
+    if (decision?.[field] !== undefined && typeof decision[field] !== "string")
+      issues.push(`${label}.${field} must be a string`);
+  if (decision?.options !== undefined) {
+    if (!Array.isArray(decision.options)) issues.push(`${label}.options must be an array`);
+    else for (const [index, option] of decision.options.entries()) {
+      if (typeof option === "string" ? !text(option) : !text(option?.option))
+        issues.push(`${label}.options[${index}].option is required`);
+      for (const list of ["pros", "cons"])
+        if (option && typeof option === "object" && option[list] !== undefined &&
+            !(typeof option[list] === "string" || stringArray(option[list])))
+          issues.push(`${label}.options[${index}].${list} must be a string or an array of strings`);
+    }
+  }
+  return issues;
+}
+
+// An accepted durable decision states its reason under each requirement it
+// governs, so the reason survives archive into the living spec.
+function applyDecisionRationale(source, requirements, issues) {
+  for (const [index, decision] of (Array.isArray(source?.decisions) ? source.decisions : []).entries()) {
+    const keys = Array.isArray(decision?.requirements) ? stringList(decision.requirements) : [];
+    for (const key of keys)
+      if (!requirements.some((row) => row.key === key))
+        issues.push(`semantic draft decisions[${index}].requirements references unknown requirement '${key}'`);
+    if (decision?.durable !== true || decisionStatus(decision) !== "accepted" || !text(decision?.choice))
+      continue;
+    const reason = authoredDecisionReason(decision);
+    const line = `- **Rationale (${text(decision.id) || text(decision.key)}):** ${text(decision.choice)}` +
+      (reason ? ` — ${reason}` : "");
+    for (const row of requirements.filter((requirement) => keys.includes(requirement.key)))
+      row.spec.rationale = [...(row.spec.rationale || []), line];
+  }
+}
+
 export const SETTLED_REASON = "No alternative was open; recorded as settled";
 
 // A default the agent chose without asking (stack, storage) is recorded, not
@@ -286,7 +351,8 @@ function benchmarkProviderIssues(execution) {
 
 function semanticDraftIssues(source, { defaultTestEvidence = false } = {}) {
   const issues = [];
-  if (![3, 4].includes(source?.version)) issues.push("semantic draft requires version 3 or 4");
+  if (!isSemanticVersion(source?.version))
+    issues.push("semantic draft version must be 3, 4, or 5");
   if (!text(source?.intent)) issues.push("semantic draft requires non-empty 'intent'");
   if (!Array.isArray(source?.requirements) || source.requirements.length === 0)
     issues.push("semantic draft requires a non-empty 'requirements' array");
@@ -338,6 +404,7 @@ function semanticDraftIssues(source, { defaultTestEvidence = false } = {}) {
       issues.push(`semantic draft decisions[${index}].reason is required`);
     if (text(decision?.decidedBy) && !["user", "agent"].includes(text(decision.decidedBy).toLowerCase()))
       issues.push(`semantic draft decisions[${index}].decidedBy must be user|agent`);
+    issues.push(...decisionMetadataIssues(decision, `semantic draft decisions[${index}]`));
   }
   const choices = new Map();
   for (const decision of source?.decisions || []) {
@@ -409,7 +476,7 @@ function normalizeRequirements(source, slugify, issues, {
       : semanticScenarios(requirement);
     if (!scenarios.length && operation !== "removed")
       issues.push(`${label}.scenario or .scenarios is required`);
-    if (source.version === 4) readableScenarioIssues(requirement, operation, label, issues);
+    if (isSemanticV4Plus(source.version)) readableScenarioIssues(requirement, operation, label, issues);
     const statement = requirementStatement(
       requirement, outcome, source.version, operation, label, issues);
     const details = textList(requirement?.details);
@@ -563,8 +630,19 @@ function plainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+// A v5 folder's change.json may use the same minimal shape (the template's:
+// no requirement or task keys); it keeps version 5. A keyed v5 draft is a full
+// draft and keeps v4's full-draft semantics, such as unmarked decisions. The
+// draft recorded from a minimal v5 start carries derived keys and the
+// `_minimalDraft` marker, so a merge revision still expands as minimal.
+const unkeyed = (rows) => rows.every((row) => !text(row?.key));
+
 export function isMinimalSemanticDraft(source) {
-  return plainObject(source) && source.version === undefined && Boolean(text(source.intent)) &&
+  const minimalVersion = source?.version === undefined ||
+    (isFolderDraftVersion(source?.version) && Array.isArray(source.requirements) &&
+      Array.isArray(source.tasks) &&
+      (source._minimalDraft === true || (unkeyed(source.requirements) && unkeyed(source.tasks))));
+  return plainObject(source) && minimalVersion && Boolean(text(source.intent)) &&
     source.claims === undefined && source.specs === undefined &&
     Array.isArray(source.requirements) && source.requirements.length > 0 &&
     source.requirements.every((row) => plainObject(row) &&
@@ -860,19 +938,12 @@ function existingCapability(source, names, canonicalRows) {
 // `priorRequirementKeys` and `priorCapabilities` describe the active change a
 // pre-Build revise replaces: a requirement or capability that change already
 // identified by the pre-3.5.30 derivation keeps that identity.
-export function expandMinimalSemanticDraft(input, {
-  loadCanonicalSpec = null, listCanonicalCapabilities = null,
-  priorRequirementKeys = [], priorCapabilities = []
+// The capability a requirement without its own joins: the named one, the
+// existing living spec the draft matches, or one derived from the intent.
+// No confident match among existing specs records the choices instead.
+function draftCapabilityChoice(source, named, {
+  loadCanonicalSpec = null, listCanonicalCapabilities = null, priorCapabilities = []
 } = {}) {
-  if (!isMinimalSemanticDraft(input)) return input;
-  const source = structuredClone(input);
-  source.version = 4;
-  source._minimalDraft = true;
-  // An optional top-level `capability` names the living spec for every
-  // requirement that does not name its own.
-  const named = text(source.capability);
-  delete source.capability;
-  const requirementKeys = new Set(source.requirements.map((row) => text(row.key)).filter(Boolean));
   const canonical = new Map();
   const canonicalRows = (name) => {
     if (!canonical.has(name))
@@ -880,14 +951,68 @@ export function expandMinimalSemanticDraft(input, {
     return canonical.get(name);
   };
   const existing = unique(stringList(listCanonicalCapabilities ? listCanonicalCapabilities() : []));
-  const priorKeys = new Set(stringList(priorRequirementKeys));
   const legacyCapability = shortSlug(source.intent, 40);
   let capability = named || (stringList(priorCapabilities).includes(legacyCapability)
     ? legacyCapability : minimalCapability(source));
+  let choices = null;
   if (!named && existing.length && source.requirements.some((row) => !text(row.capability))) {
     capability = existingCapability(source, existing, canonicalRows);
-    if (!capability) source._capabilityChoices = existing;
+    if (!capability) choices = existing;
   }
+  return { capability, choices, canonicalRows };
+}
+
+// A first scenario's result is a requirement's outcome when it states none.
+function derivedOutcome(row) {
+  return text(rawScenarioEntries(row).find((scenario) => text(scenario?.then))?.then);
+}
+
+// A keyed v5 draft keeps full-draft semantics (its keys, decisions, and
+// unmarked rows stay the agent's), yet still receives the capability and
+// outcome a minimal draft derives. Without them every keyed v5 draft cost an
+// extra repair round for fields the harness can fill.
+function keyedFolderDraftDefaults(input, context) {
+  if (!plainObject(input) || !isFolderDraftVersion(input.version) ||
+      input.claims !== undefined || input.specs !== undefined ||
+      !Array.isArray(input.requirements) || !input.requirements.length ||
+      !input.requirements.every(plainObject) ||
+      !input.requirements.some((row) => !text(row.capability) ||
+        (!text(row.outcome) && text(row.operation).toLowerCase() !== "removed")))
+    return input;
+  const source = structuredClone(input);
+  const { capability, choices } = draftCapabilityChoice(source, text(source.capability), context);
+  if (choices) source._capabilityChoices = choices;
+  source.requirements = source.requirements.map((input) => {
+    const row = { ...input };
+    if (!text(row.capability) && capability) row.capability = capability;
+    if (!text(row.outcome) && text(row.operation).toLowerCase() !== "removed") {
+      const outcome = derivedOutcome(row);
+      if (outcome) row.outcome = outcome;
+    }
+    return row;
+  });
+  return source;
+}
+
+export function expandMinimalSemanticDraft(input, {
+  loadCanonicalSpec = null, listCanonicalCapabilities = null,
+  priorRequirementKeys = [], priorCapabilities = []
+} = {}) {
+  if (!isMinimalSemanticDraft(input))
+    return keyedFolderDraftDefaults(input,
+      { loadCanonicalSpec, listCanonicalCapabilities, priorCapabilities });
+  const source = structuredClone(input);
+  source.version = isFolderDraftVersion(input.version) ? FOLDER_DRAFT_VERSION : 4;
+  source._minimalDraft = true;
+  // An optional top-level `capability` names the living spec for every
+  // requirement that does not name its own.
+  const named = text(source.capability);
+  delete source.capability;
+  const requirementKeys = new Set(source.requirements.map((row) => text(row.key)).filter(Boolean));
+  const priorKeys = new Set(stringList(priorRequirementKeys));
+  const { capability, choices, canonicalRows } = draftCapabilityChoice(source, named,
+    { loadCanonicalSpec, listCanonicalCapabilities, priorCapabilities });
+  if (choices) source._capabilityChoices = choices;
   const titles = new Map();
   const takenTitles = (name) => {
     if (!titles.has(name))
@@ -918,8 +1043,8 @@ export function expandMinimalSemanticDraft(input, {
       row.scenarios = minimalScenarioNames(row.scenarios, text(row.requirement || row.title) ||
         wholeWordTitle(requirementClause(row.description), REQUIREMENT_TITLE_MAX));
     if (!text(row.outcome)) {
-      const first = rawScenarioEntries(row).find((scenario) => text(scenario?.then));
-      if (first) row.outcome = text(first.then);
+      const outcome = derivedOutcome(row);
+      if (outcome) row.outcome = outcome;
     }
     if (!text(row.operation) && text(row.capability)) {
       const match = canonicalRequirementMatch(row, canonicalRows(row.capability));
@@ -1125,6 +1250,56 @@ function applyIntegrationRequirements(source, requirements, requirementKeys, iss
   }
 }
 
+// Every key a draft task may carry: what normalizeTasks and its readers use.
+// Anything else is ignored, so it is reported (a misspelled `depends` once
+// dropped a whole task order without a word).
+export const TASK_FIELDS = Object.freeze([
+  "key", "id", "title", "outcome", "covers", "claims", "paths", "verify", "dependsOn",
+  "kind", "repository", "resources", "requestedModel", "model", "inputSchema",
+  "outputSchema", "semanticKey"
+]);
+const TASK_FIELD_ALIASES = Object.freeze({
+  depends: "dependsOn", depends_on: "dependsOn", dependson: "dependsOn", after: "dependsOn",
+  path: "paths", test: "verify", check: "verify",
+  requirement: "covers", requirements: "covers"
+});
+
+function editDistance(left, right) {
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= left.length; i += 1) {
+    const current = [i];
+    for (let j = 1; j <= right.length; j += 1)
+      current[j] = Math.min(previous[j] + 1, current[j - 1] + 1,
+        previous[j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1));
+    previous = current;
+  }
+  return previous[right.length];
+}
+
+function suggestedTaskField(field) {
+  const alias = TASK_FIELD_ALIASES[field] || TASK_FIELD_ALIASES[field.toLowerCase()];
+  if (alias) return alias;
+  let best = null;
+  let bestDistance = Infinity;
+  for (const known of TASK_FIELDS) {
+    const distance = editDistance(field.toLowerCase(), known.toLowerCase());
+    if (distance < bestDistance) [best, bestDistance] = [known, distance];
+  }
+  // A short key is near everything; cap the distance at half its length.
+  return bestDistance <= Math.min(3, Math.floor(field.length / 2)) ? best : null;
+}
+
+// Advisory, never blocking: compilation proceeds and ignores the field.
+export function unknownTaskFieldWarnings(source) {
+  const known = new Set(TASK_FIELDS);
+  return (Array.isArray(source?.tasks) ? source.tasks : []).flatMap((task, index) =>
+    plainObject(task) ? Object.keys(task).filter((field) => !known.has(field)).map((field) => {
+      const suggestion = suggestedTaskField(field);
+      return `tasks[${index}].${field} is not a known task field` +
+        (suggestion ? `; did you mean ${suggestion}?` : "");
+    }) : []);
+}
+
 function normalizeTasks(source, requirements, requirementKeys, issues) {
   const claimsByRequirement = new Map(requirements.map((row) => [row.key, row.claimIds]));
   const taskIds = new Map();
@@ -1280,12 +1455,20 @@ export function deriveRepositoryTaskDependencies(tasks, {
   return { tasks: rows, derived, issues: unique(issues) };
 }
 
+// The provider command for a list of task verifies, and the verifies as
+// `segments` when there are several, so test discrimination can rerun only
+// the segment that names a changed test instead of the whole chain.
+export function verifyChain(commands) {
+  return commands.length === 1
+    ? { command: ["sh", "-c", commands[0]] }
+    : { command: ["sh", "-c", commands.map((value) => `(${value})`).join(" && ")],
+        segments: [...commands] };
+}
+
 function derivedExecution(source, claims, tasks) {
   if (source.execution) return source.execution;
   const commands = unique(tasks.map((task) => task.verify).filter(Boolean));
-  const command = commands.length === 1
-    ? ["sh", "-c", commands[0]]
-    : ["sh", "-c", commands.map((value) => `(${value})`).join(" && ")];
+  const { command, segments } = verifyChain(commands);
   const capabilities = unique(claims.flatMap((claim) => claim.capabilities));
   // Build runs each task's verify in its repository's sandbox, so a command
   // derived from those verifies runs there too. Only a single non-root
@@ -1303,7 +1486,7 @@ function derivedExecution(source, claims, tasks) {
     }
     providers[capability] = capability === "test"
       ? {
-          adapter: "test-discovery", command, minimum: 1,
+          adapter: "test-discovery", command, ...(segments ? { segments } : {}), minimum: 1,
           reportFormat: "auto", claims: "declared", ...repository
         }
       : { adapter: "command", capability, command, claims: "declared", ...repository };
@@ -1323,6 +1506,7 @@ export function normalizeSemanticDraft(input, slugify, options = {}) {
   applyIntegrationRequirements(source, requirements, requirementKeys, issues);
   applyCapabilityOverviews(source, requirements, slugify, issues);
   applyCapabilityPurposes(source, requirements, slugify);
+  applyDecisionRationale(source, requirements, issues);
   let tasks = normalizeTasks(source, requirements, requirementKeys, issues);
   // Cross-repository order is derived only when a repository binding exists.
   if (Array.isArray(options.repositories) || Array.isArray(source.repositories)) {
@@ -1389,8 +1573,8 @@ export function normalizeSemanticDraft(input, slugify, options = {}) {
       ? source.externalOperations : undefined,
     repositories: Array.isArray(source.repositories) ? source.repositories : undefined
   };
-  if (source.version === 4) draft.discovery = normalizeDiscovery(source);
-  return { draft, issues };
+  if (isSemanticV4Plus(source.version)) draft.discovery = normalizeDiscovery(source);
+  return { draft, issues, warnings: unknownTaskFieldWarnings(source) };
 }
 
 // "What changes" names the behavior a requirement adds, not one example of
@@ -1425,8 +1609,9 @@ export function renderRequirementMarkdown(spec, scenarios = spec.scenarios || []
   const migration = String(spec.operation || "added").toLowerCase() === "removed"
     ? `\n\n**Migration:** ${spec.migration}` : "";
   const rendered = scenarios.map(renderScenarioMarkdown).join("\n\n");
+  const rationale = textList(spec.rationale).join("\n");
   return `### Requirement: ${spec.requirement}\n\n${spec.description}` +
-    (details ? `\n\n${details}` : "") + migration + (rendered ? `\n\n${rendered}` : "");
+    (rationale ? `\n\n${rationale}` : "") + (details ? `\n\n${details}` : "") + migration + (rendered ? `\n\n${rendered}` : "");
 }
 
 // A delta for a capability with no living spec yet states its Purpose, which
@@ -1454,6 +1639,17 @@ export function minimalSemanticDraftTemplate() {
       verify: "npm test",
       paths: ["src/**"]
     }]
+  };
+}
+
+// The minimal v5 folder the template leads with: typed fields with a declared
+// work type in change.json, and the reason as proposal.md prose. The v4
+// minimal JSON above stays valid for existing drafts.
+export function minimalDraftFolderTemplate() {
+  const { intent, requirements, tasks } = minimalSemanticDraftTemplate();
+  return {
+    "change.json": { version: 5, language: "en", intent, workType: ["feature"], requirements, tasks },
+    "proposal.md": "## Why\n\nSay in 1-3 plain sentences what changes, who benefits, and why.\n"
   };
 }
 
@@ -1523,32 +1719,252 @@ export function semanticDraftTemplate() {
     // Shapes only: copy the block for the work type you have into the draft
     // top level. The compiler ignores this key, and the rows hold no
     // placeholder text, so a copied row compiles once its facts are true.
-    workTypeExamples: {
-      use: "Examples of section shapes; copy the block for your work type to the draft top level",
-      ui: {
-        uiStates: [{
-          screen: "Board",
-          states: [{ state: "loading", shows: "Skeleton cards" },
-            { state: "empty", shows: "Add your first card" },
-            { state: "error", shows: "Could not load cards, with Retry" },
-            { state: "success", shows: "Cards by column" }],
-          accessibility: "Columns are lists; cards are reachable by keyboard"
-        }],
-        componentMap: [{
-          component: "Board", responsibility: "Lays out columns and cards",
-          files: ["src/components/Board.tsx"]
-        }]
+    workTypeExamples: workTypeExamples(),
+    draftFolderV5: draftFolderV5()
+  };
+}
+
+// Writing limits for a reader-sized draft; `change start --template` shows
+// them beside the minimal draft so the first draft needs no length repair.
+export const MINIMAL_DRAFT_WRITING = Object.freeze({
+  intent: "One line of at most 70 characters naming the observable outcome",
+  why: "At most 3 plain sentences: what changes, who benefits, and why now",
+  decisions: "One decision per entry: one choice and its reason, never a list of choices",
+  scope: "Scope items (changes, nonGoals) are short phrases, not paragraphs",
+  language: "Write in the user's language; keep field names, keys, and SHALL/WHEN/THEN in English",
+  sections: "Fill only the sections your work type needs (workTypeExamples); leave the rest out",
+  limits: Object.freeze({ intentMaxCharacters: 70, whyMaxSentences: 3 })
+});
+
+const USER_FLOW_EXAMPLE = Object.freeze({
+  purpose: "The user's path through the change, including the error path",
+  source: "flowchart LR\n  A[\"User searches\"] --> B{\"Results?\"}\n  B -->|yes| C[\"List shown\"]\n" +
+    "  B -->|no| D[\"Empty state shown\"]"
+});
+
+// One block per work type with exactly the sections that type requires
+// (and releaseNote when users or consumers see the change). Bugfix variants
+// add the detail their kind of fix owes.
+function workTypeExamples() {
+  const userFlow = () => structuredClone(USER_FLOW_EXAMPLE);
+  return {
+    use: "Copy the block for each of your work types to the draft top level; every key " +
+      "in a block is required for that type and nothing else is",
+    feature: { userFlow: userFlow(), releaseNote: "Search now filters by tag." },
+    bugfix: {
+      bugfix: {
+        reproduction: "Open a board with 0 cards; the page crashes",
+        rootCause: "The empty list is read as undefined",
+        regression: "A test renders an empty board"
+      }
+    },
+    "bugfix-security": {
+      bugfix: {
+        variant: "security",
+        reproduction: "Request another user's invoice by id; it is returned",
+        rootCause: "The handler skips the owner check",
+        regression: "A test requests a foreign invoice and gets 404",
+        disclosure: {
+          class: "IDOR", affectedVersions: "<2.4.1", exploitability: "Signed-in user only",
+          owner: "security", embargo: "Until 2.4.1 ships", advisory: "GHSA pending",
+          backports: ["release/2.3"]
+        }
+      }
+    },
+    "bugfix-hotfix": {
+      bugfix: {
+        variant: "hotfix",
+        reproduction: "Checkout returns 500 for carts over 50 items",
+        rootCause: "The price batch exceeds the gateway limit",
+        regression: "A test checks out a 60-item cart",
+        incident: { link: "INC-212", mitigation: "Flag off", minimumScope: "Batch price calls",
+          followUp: "Full fix change" },
+        backport: ["release/2.3", "release/2.4"]
+      }
+    },
+    refactor: {
+      refactor: {
+        invariants: ["Every public export keeps its signature and result"],
+        characterization: "Snapshot tests of the current outputs pass before and after"
       },
-      api: {
-        apiContracts: [{
-          method: "POST", path: "/api/cards", auth: "Signed-in user",
-          request: { title: "string" }, response: { id: "string", title: "string" },
-          errors: [{ status: 400, when: "Title is empty" }]
-        }]
+      componentMap: [{ component: "Parser", responsibility: "Turns text into an AST",
+        files: ["src/parser.ts"] }]
+    },
+    api: {
+      apiContracts: [{
+        method: "POST", path: "/api/cards", auth: "Signed-in user",
+        request: { title: "string" }, response: { id: "string", title: "string" },
+        errors: [{ status: 400, when: "Title is empty" }]
+      }],
+      boundaries: [{
+        from: "api", to: "billing", mode: "sync", why: "Price at checkout", timeout: "2s",
+        retry: "none", consistency: "strong", owner: "payments"
+      }],
+      releaseNote: "POST /api/cards creates a card."
+    },
+    library: {
+      libraryContract: {
+        exports: [{ symbol: "parse", signature: "parse(text: string): Ast" }],
+        semver: "minor", changelog: "Adds parse"
       },
-      config: {
-        configContract: [{ key: "CARD_LIMIT", default: "100", validation: "Integer from 1 to 1000" }]
+      releaseNote: "The library exports parse()."
+    },
+    ui: {
+      userFlow: userFlow(),
+      uiStates: [{
+        screen: "Board",
+        states: [{ state: "loading", shows: "Skeleton cards" },
+          { state: "empty", shows: "Add your first card" },
+          { state: "error", shows: "Could not load cards, with Retry" },
+          { state: "success", shows: "Cards by column" }],
+        accessibility: "Columns are lists; cards are reachable by keyboard"
+      }],
+      componentMap: [{
+        component: "Board", responsibility: "Lays out columns and cards",
+        files: ["src/components/Board.tsx"]
+      }],
+      releaseNote: "The board shows cards by column."
+    },
+    data: {
+      dataModel: [{ entity: "Card", fields: ["id", "title", "createdAt"],
+        migration: "Add table cards", rollback: "Drop table cards" }]
+    },
+    migration: {
+      migrationPlan: {
+        from: "v1 jobs", to: "queue service", seam: "JobPort",
+        parity: { check: "Same results", tolerance: "0" },
+        cutover: "7 days parity", rollbackWindow: "14 days", decommission: "T009"
+      },
+      rollout: {
+        strategy: "Flag queue-jobs at 10%, then 100%", rollback: "Turn the flag off",
+        deployOrder: ["queue", "api"], rollbackProof: "Flag-off test runs the v1 path"
+      }
+    },
+    async: {
+      jobContract: [{ key: "sync-invoices", states: ["queued", "done", "failed"],
+        retry: "3x backoff", timeout: "30s", idempotency: "Invoice id" }],
+      diagrams: [{ key: "sync-flow", type: "mermaid", purpose: "Job states with the failure path",
+        source: "stateDiagram-v2\n  [*] --> queued\n  queued --> done\n  queued --> failed\n" +
+          "  failed --> queued: retry" }]
+    },
+    integration: {
+      // relatesTo names your requirement; it needs a success and a failure scenario.
+      integrations: [{
+        key: "stripe-charges", kind: "external-api",
+        documentation: { source: "https://docs.stripe.com/api", version: "2024-06-20" },
+        concerns: ["authentication", "timeout", "retry", "idempotency"],
+        relatesTo: ["observable-outcome"]
+      }]
+    },
+    config: {
+      configContract: [{ key: "CARD_LIMIT", default: "100", validation: "Integer from 1 to 1000" }]
+    },
+    performance: {
+      nfr: [{ key: "search-latency", characteristic: "time behaviour", stimulus: "100 rps search",
+        response: "Results returned", measure: "p95 < 200ms" }],
+      performanceAnalysis: {
+        baseline: { value: "p95 480ms", method: "k6 5 runs" }, hypothesis: "N+1 query",
+        target: "p95 < 200ms"
+      }
+    },
+    dependency: {
+      dependencyChange: [{
+        package: "express", from: "4.19.2", to: "4.21.0", breaking: "None in changelog",
+        cves: "Fixes CVE-2024-43796", rollbackPin: "4.19.2",
+        provenance: "npm provenance attested", sbom: "sbom.cdx.json regenerated"
+      }]
+    },
+    deprecation: {
+      deprecationPlan: {
+        what: "GET /v1/items", replacement: "GET /v2/items", warning: "Deprecation header",
+        removalCondition: "Usage zero for 30 days"
+      },
+      releaseNote: "GET /v1/items is deprecated; use GET /v2/items."
+    },
+    infra: {
+      infraPlan: {
+        planDiff: "+1 aws_sqs_queue", environments: ["staging", "prod"], costDelta: "+$4/month",
+        blastRadius: "Jobs only"
+      },
+      rollout: {
+        strategy: "Apply staging, then prod", rollback: "Apply the previous plan",
+        deployOrder: ["staging", "prod"], rollbackProof: "Previous plan re-applied in staging"
+      }
+    },
+    observability: {
+      observability: {
+        rows: [{ failure: "Queue backlog", signal: "queue_depth", sli: "age < 60s", slo: "99%",
+          alert: "age > 300s for 10m", runbook: "docs/runbooks/queue.md", owner: "platform" }]
+      }
+    },
+    privacy: {
+      privacyAssessment: {
+        data: [{ field: "email", class: "personal" }], purpose: "Login",
+        retention: "Account life + 30 days"
+      },
+      threatModel: {
+        assets: ["User emails"], trustBoundaries: ["Browser to API"],
+        threats: [{ key: "t1", stride: "information disclosure",
+          threat: "Export leaks another tenant", likelihood: "low", impact: "high",
+          control: "Tenant filter", residual: "low" }]
+      }
+    },
+    experiment: {
+      experimentDesign: {
+        hypothesis: "One-step checkout lifts conversion", primaryMetric: "Checkout conversion",
+        allocation: "50/50 by user", decisionRule: "Ship if +1% at 95%"
+      },
+      rollout: {
+        strategy: "Experiment flag at 50%", rollback: "Stop the experiment; control stays live",
+        rollbackProof: "Flag-off test runs the control path"
+      }
+    },
+    "client-release": {
+      releasePlan: {
+        minimumVersion: "5.2", stagedRollout: ["1%", "10%", "100%"],
+        crashGate: "crash-free >= 99.5%"
+      },
+      releaseNote: "Version 5.3 adds offline drafts."
+    },
+    ml: {
+      modelCard: {
+        intendedUse: "Summarize tickets", model: { provider: "anthropic", version: "pinned id" },
+        fallback: "Show the raw ticket"
       }
     }
   };
+}
+
+// The v5 draft layout: typed fields in change.json, prose under outline
+// headings in proposal.md and design.md. The harness writes derived sections.
+function draftFolderV5() {
+  return {
+    layout: "A folder .foundation/drafts/<id>/ with change.json (typed fields, version 5), " +
+      "proposal.md, and design.md; start it with claude-foundation change start " +
+      ".foundation/drafts/<id>",
+    headings: "Use only '## ' headings from the outline, in outline order, in English or Thai. " +
+      "Never write a heading the harness derives (Change, Capabilities, Acceptance traceability, " +
+      "Definition of done, Work type, File map, Test map); no TODO, TBD, or empty section",
+    proposalHeadings: outlineAuthorHeadings("proposal"),
+    designHeadings: outlineAuthorHeadings("design"),
+    example: {
+      "change.json": {
+        version: 5, language: "en", intent: "Filter search results by tag",
+        requirements: [{
+          description: "The system SHALL return only results with the chosen tag",
+          scenarios: [{ when: "A user filters by tag 'red'", then: "Only red results are listed" }]
+        }],
+        tasks: [{ outcome: "Filter search by tag", verify: "npm test", paths: ["src/search/**"] }]
+      },
+      "proposal.md": "## Why\n\nUsers with many results cannot find tagged items.\n\n" +
+        "## Scope\n\n- Tag filter on search\n",
+      "design.md": "## Current state\n\nSearch matches titles only.\n\n" +
+        "## Decisions\n\n- Filter in the query, not in the client.\n"
+    }
+  };
+}
+
+function outlineAuthorHeadings(document) {
+  return OUTLINE[document].filter((row) => row.owner === "author")
+    .map((row) => `${row.heading.en} | ${row.heading.th}`);
 }

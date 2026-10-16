@@ -1,117 +1,95 @@
 ---
 title: เริ่มใช้งาน
-description: พา change หนึ่งตัวจากเจตนาไปจนถึง landed ด้วยห้าคำสั่งตามลำดับ
+description: ตกลงงานหนึ่งอย่าง ลงมือและตรวจผล แล้วส่งมอบกลับเข้าโปรเจกต์
 ---
 
-หน้านี้พา change เล็ก ๆ หนึ่งตัวจนจบวงจร คุณคุยกับ coding agent ด้วยภาษาปกติ แล้ว agent เป็นคนรันคำสั่ง — ไม่มีอะไรในนี้ที่บังคับให้คุณต้องจำ syntax ของ CLI
+<!-- docs-audience: users -->
+**ผู้อ่าน:** ผู้ใช้โปรเจกต์ หน้านี้อธิบายสิ่งที่ต้องตรวจและตัดสินใจ ส่วน agent ดูแลขั้นตอนระบบตามปกติ
 
-Agent จะใช้ภาษาของคุณ เริ่มจากผลลัพธ์ ทำ recovery ที่ปลอดภัยภายใน authority
-ที่คุณให้ไว้ และรายงานว่าแก้อะไรกับตรวจอะไรแล้ว มันจะถามเฉพาะ decision ที่มีผลจริง
-ส่วน JSON, hash, receipt และ provider code จะไม่หลุดเข้าบทสนทนาจนกว่าคุณจะขอ
-ข้อมูลวิเคราะห์
+ตัวอย่างนี้เพิ่มความสามารถให้เจ้าของบัญชีแก้ชื่อที่แสดงได้
+เริ่มจากโปรเจกต์ที่ [ติดตั้งแล้ว](/docs/th/install/) และเปิด coding agent ในโปรเจกต์
+พิมพ์ slash command ใน session ของ agent ไม่ใช่ terminal
 
-:::note[Repository เดียวหรือหลายตัว?]
-ถ้าใช้ repository เดียวให้ทำตามหน้านี้ได้เลย ถ้า implementation หรือ evidence
-ต้องใช้หลาย Git repository ให้อ่าน
-[Workflow หลาย Repository](/docs/th/multi-repository/) ก่อนขั้น 1 คำสั่งห้าขั้น
-ยังเหมือนเดิม แต่เพิ่มชั้นตั้งค่า scope และ sandbox ของ repository
-:::
+คุณกำหนดพฤติกรรม อนุมัติข้อตกลง ตรวจผล และอนุญาต Land
+Agent ดูแล setup การตรวจ และการกู้คืนตามปกติ
 
 ## 0. เช็คก่อนว่าโปรเจกต์พร้อม
 
-```bash
-claude-foundation doctor --stage change
-```
+ให้ agent ตรวจว่า Change Loop พร้อมใช้งาน โดย agent เรียก
+`claude-foundation doctor --stage change` และแก้ setup ได้เอง
+ตัวอย่างแรกนี้ยังไม่ต้องตั้งค่า quality gate ที่เป็นตัวเลือก
 
-Consumer quality เป็นตัวเลือก ถ้าต้องการ changed-code CRAP และ mutation gate
-ให้ onboard repository หนึ่งครั้งด้วย `quality discover`, `quality init` และ
-`quality doctor` ก่อนเปิด enforcement โดยคง policy เริ่มต้นเป็น report-only
-จนตรวจ mapping กับ baseline แล้ว ดู
-[Quality gate ของโปรเจกต์](/docs/th/consumer-quality/)
+ถ้ายังไม่รู้สาเหตุหรือพฤติกรรมที่ต้องการ ให้เริ่มด้วย
+`/investigate <คำถาม>` ก่อนสร้าง change
 
 ## 1. ตกลงขอบเขต
 
 ```text
-/change add profile authentication
+/change ให้เจ้าของบัญชีแก้ชื่อที่แสดงได้
 ```
 
-agent จะสร้าง `openspec/changes/add-profile-auth/` แล้วประเมินว่า change นี้ต้องการความเข้มแค่ไหน — impact, coupling, security trigger และต้องให้คนอนุมัติผลลัพธ์หรือไม่ เรื่องไหนที่มีผลสำคัญ **มันจะถามคุณ** ไม่ใช่เดาเอง
+Agent ตรวจพฤติกรรมเดิมและเขียนข้อตกลงใน
+`openspec/changes/<change-id>/` ใช้ ID ที่ agent แจ้งกลับมาในขั้นต่อไป
 
-Agent เขียน semantic draft หนึ่งชุด: intent, requirement กับ scenario, task
-outcome และ evidence ที่ต้องใช้ Harness derive stable ID กับ link แล้ว compile
-OpenSpec packet แบบ transaction ทั้งสอง lane มี core แค่ proposal, tasks และ
-evidence ส่วน standard เพิ่ม delta spec ขณะที่ design, grounding, custom
-execution, repository scope และ handoff จะมีเมื่อ concern นั้นมีจริง Rapid จะ
-**อัปเกรดตัวเองในที่** ถ้าพบความเสี่ยง
+อ่าน proposal และ scenario ที่เกี่ยวข้อง แล้วตรวจว่า:
 
-สิ่งที่คุณควรอ่านและเถียงกลับคือ `proposal.md` กับ delta spec นั่นแหละคือตัวข้อตกลง
+- ใครแก้ชื่อได้ และรับค่าแบบไหนบ้าง?
+- ถ้าข้อมูลไม่ถูกต้องหรือบันทึกไม่ได้ จะเกิดอะไรขึ้น?
+- งานครอบคลุมอะไร และจะตรวจผลอย่างไร?
+
+อนุมัติข้อตกลงที่ compile แล้วก่อน Build หากต้องการแก้ความเข้าใจให้แจ้งตรงนี้
+คุณไม่ต้องเขียน draft ภายในหรือตั้งค่า evidence เอง
 
 ## 2. ลงมือแบบแยกพื้นที่
 
 ```text
-/build add-profile-auth
+/build <change-id>
 ```
 
-Agent เรียก `advance add-profile-auth --through proven` Coordinator จะสร้าง
-workspace แยก คืน action ที่มีขอบเขตหนึ่งตัว และ resume ด้วย route เดิม โดย proof
-เริ่มหลัง Build เสร็จแล้วเท่านั้น
-**working tree ของคุณไม่ถูกแตะ** และ `tasks.md` เป็น ledger เดียว ผู้ใช้ไม่ต้อง
-ประกอบ sandbox, packet, plan หรือ dispatch command
+Agent เขียนโค้ดและ test ในพื้นที่แยก ดูแลคำสั่งและการแก้ไขตามปกติ
+และถามเมื่อมีเรื่องสำคัญที่ต้องตัดสินใจ โค้ดที่พัฒนายังอยู่ในพื้นที่แยกจนถึง Land
+
+Build อาจทำต่อถึงขั้นพิสูจน์โดยอัตโนมัติ ถ้าสถานะถึง `proven` แล้ว
+อ่านผลได้เลย โดยไม่ต้องสั่งรัน checks ชุดเดิมใหม่
 
 ## 3. พิสูจน์
 
 ```text
-/prove add-profile-auth
+/prove <change-id>
 ```
 
-ขั้นนี้คือหัวใจ Change Loop จะใช้ receipt เดิมที่ยังใช้ได้ซ้ำ จัดคิวรันเฉพาะส่วนที่ขาดหรือ stale สั่งเครื่องมือของโปรเจกต์คุณ แล้วตรวจผลลัพธ์
+ใช้คำสั่งนี้เมื่อยังมีงานพิสูจน์ที่ต้องทำต่อ Harness รันเครื่องมือของโปรเจกต์
+ใช้หลักฐานเดิมที่ยังใช้ได้ และรายงานสิ่งที่ผ่าน ไม่ผ่าน หรือยังตรวจไม่ได้
+Agent แก้ปัญหาที่แก้ได้และรัน checks ที่ได้รับผลกระทบจากการแก้ไข
 
-Agent ขับขั้นนี้ด้วย `advance add-profile-auth --through proven`; low-level
-`proof` command ยังอยู่สำหรับ operator diagnostic และ integration
-
-หลักฐานกลับมาได้สี่แบบ: `pass`, `fail`, `inconclusive`, `error` อะไรที่ไม่ใช่ pass จะบล็อก change ไว้ และ agent จะย้อนกลับไป Build เพื่อแก้
-
-`inconclusive` **ไม่ใช่การผ่านแบบหย่อน ๆ** — browser suite ที่ exit 0 แต่ไม่มี claim annotation ครบถือว่า inconclusive เพราะไม่มีอะไรพิสูจน์ claim นั้นเลย
-
-Harness จะตรวจ gate หนึ่งรอบ รวบรวมปัญหาที่แก้ได้ทั้งหมดเป็นแผนเดียว แล้วให้ agent
-แก้ทั้งชุด จากนั้นตรวจซ้ำเฉพาะ evidence ที่ขาดหรือ stale เพราะการแก้ครั้งนั้น วงจรนี้
-ไม่มีการจำกัดจำนวนครั้งแบบตายตัว: ระบบจะทำต่อขณะที่ยังคืบหน้า และถามคุณเฉพาะเมื่อ
-ต้องมี decision, permission, external system ที่ยังใช้ไม่ได้ หรือ conflict ที่ต้องตัดสินใจ
+ตรวจสรุปและ diff ผลที่สรุปไม่ได้หรือยังไม่มีหลักฐานไม่ถือว่าผ่าน
+หากกำหนดให้คุณตรวจยอมรับผลลัพธ์ ให้ตัดสินใจส่วนนั้นแยกจากการอนุมัติ spec ตอนต้น
 
 ## 4. นำเข้าโปรเจกต์
 
+เมื่อคุณต้องการนำ change ปัจจุบันเข้าโปรเจกต์ ให้อนุญาตอย่างชัดเจน:
+
 ```text
-/land add-profile-auth
+/land <change-id>
 ```
 
-Land เป็นเส้นแบ่งที่ชัดเจน และเป็นขั้นเดียวที่แตะ working tree จริงของคุณ มันตรวจความสดของ proof ซ้ำ, apply เฉพาะ sandbox ที่พิสูจน์แล้วโดยรักษาการแก้ไขอื่นที่ไม่เกี่ยวไว้, sync spec, ตรวจหลักฐาน, archive change แล้วเก็บกวาด sandbox
+Harness นำงานปัจจุบันจากพื้นที่แยกเข้าโปรเจกต์ ปรับ spec และ archive change
+โดยรักษาการแก้ไขอื่นที่ไม่เกี่ยวข้อง ผลลัพธ์เป็น **diff ที่ยังไม่ commit**
+และ Git HEAD กับ index ไม่เปลี่ยน
 
-Agent ขับ transaction ที่ resume ได้ด้วย `advance add-profile-auth --through
-archived` มีเพียง state `archived` เท่านั้นที่แปลว่างาน lifecycle เสร็จ
+สถานะ `archived` หมายถึงส่งมอบโค้ดครบแล้ว ไม่ได้หมายถึง deploy
+หรือผ่านการตรวจใน production การอนุญาต Land อย่างเดียวไม่ commit, push หรือเปิด PR
 
-ถ้า target branch ขยับหลัง Prove Agent จะ replay sandbox เดิมบน base ใหม่,
-Prove ใหม่ และทำ Land ต่อ คุณไม่ต้องเริ่ม Change หรือรัน recovery เอง แต่ conflict
-ที่ replay ไม่ได้จะยังหยุดให้ตัดสินใจแทนการ merge เงียบ ๆ
-
-:::caution
-Land ไม่ commit ไม่ push และไม่เปิด PR ให้เอง ถ้าต้องการส่ง archived change ไป
-review ให้เรียก `/deliver add-profile-auth` หนึ่งครั้ง จากนั้น harness จะจัดการ
-isolated commit, push feature branch, เปิดหรือใช้ PR เดิม, recovery และตรวจกลับ
-ผ่าน provider แล้วคืน PR URL โดยไม่ merge หรือ deploy
-:::
+ถ้าหลักฐานยังมีช่องว่าง ระบบยังแสดงตามจริง การตัดสินใจยอมรับความเสี่ยงที่เหลือ
+ไม่ได้เปลี่ยน checks เหล่านั้นให้เป็นผ่าน ต้องแก้ conflict ของไฟล์ปลายทางก่อน apply
+ดูข้อกำหนดละเอียดใน [Land](/docs/th/loop/land/)
 
 ## ย้อนกลับได้
 
-วงจรนี้ไม่ใช่ waterfall ถ้า requirement เปลี่ยนกลางทาง คุณแก้ change ตัวเดิม ไม่ใช่เปิดตัวใหม่
-
-```text
-Change ⇄ Build ⇄ Prove
-```
-
-Agent ส่ง semantic amendment หนึ่งชุดเข้า change เดิม Harness รักษา completed
-task กับ manual section, validate packet ที่ stage ไว้, rollback ถ้าไม่ผ่าน และ
-invalidate claim ที่กระทบก่อน resume จึงไม่มีหลักฐานจากข้อตกลงเก่าถูกนับให้
-ข้อตกลงใหม่
+ถ้า requirement เปลี่ยน ให้แจ้ง agent โดยใช้ change ID เดิม
+Agent แก้ข้อตกลงและตรวจงานที่ได้รับผลกระทบ
+ถ้า session หรือ Land หยุดกลางทาง ให้ agent ทำ change เดิมต่อ
+ไม่ต้องสร้างใหม่หรือแก้ runtime record ด้วยมือ
 
 ## ดูสถานะ
 
@@ -119,16 +97,26 @@ invalidate claim ที่กระทบก่อน resume จึงไม่�
 /changes
 ```
 
-แสดง change ที่ active สถานะ อุปสรรค และ action ถัดไปของแต่ละตัว ไม่แก้อะไรเลย จึงรันได้เสมออย่างปลอดภัย
+แสดง change ที่กำลังทำ อุปสรรค และขั้นถัดไป โดยไม่เปลี่ยนสถานะ
 
 ## เมื่อ change พิสูจน์ไม่ได้
 
-บางที change กลายเป็นสิ่งที่พิสูจน์ไม่ได้จริง ๆ — evidence contract ที่ทำให้เป็นจริงไม่ได้ หรือ provider ที่จะไม่มีวันมี ให้ปลดระวางอย่างชัดเจนแทนที่จะไล่ลบไฟล์เอง
+Agent รายงานสิ่งที่ขาดและทางเลือก คุณขอให้ทำต่อ พักงาน
+หรือตัดสินใจอย่างชัดเจนเกี่ยวกับความเสี่ยงที่เหลือได้
+การยุติ change ก็ต้องมีการตัดสินใจชัดเจน ให้ agent ใช้ขั้นตอนกู้คืนที่ระบบรองรับ
+แทนการลบไฟล์
 
-```bash
-claude-foundation change abandon <change> --reason <reason> --decision-ref <ref>
-```
+อ่าน [การอนุมัติโดยคน](/docs/th/approval/) และ
+[สัญญา lifecycle](https://github.com/Maximumsoft-Co-LTD/claude-foundation/blob/main/WORKFLOW.md)
+สำหรับขอบเขตอำนาจและการกู้คืนแบบละเอียด
 
-คำสั่งนี้กักบันทึกของ change ไว้ใต้ `.foundation/recovery/abandoned/<id>/` แทนการลบทิ้ง ไม่แตะ Git และปฏิเสธ change ที่ archive ไปแล้ว agent จะเสนอทางนี้เมื่อเข้าเงื่อนไข แต่จะไม่ปลดระวาง change โดยไม่ถามคุณก่อน
+## ทำอะไรต่อ
 
-ยังมีทางออกที่เล็กกว่านั้นสำหรับ gate เดียวที่รันแล้ว fail ทั้งที่ตัว gate เองผิด: `change waive --capability <c>` ถอนการบังคับใช้ capability ตัวนั้นตัวเดียวตามการตัดสินใจที่ถูกบันทึกไว้ และ `--revoke` คืนข้อบังคับ ไม่มีเส้นทางที่พา proof ที่ fail ไป land โดยเจตนา
+- [ส่งงานเป็น PR](/docs/th/cli/) — `/deliver <change-id>` ให้อำนาจแยกสำหรับ
+  commit ในพื้นที่แยก, push branch และส่ง PR โดยไม่ merge หรือ deploy
+- [ไฟล์ที่ Change Loop สร้าง](/docs/th/artifacts/) — อะไรเป็นของคุณ
+  และอะไรที่ harness ดูแล
+- [หลาย repository](/docs/th/multi-repository/) — กำหนด scope ก่อนเริ่ม
+  งานที่ใช้หลาย repository
+- [Quality gate ของโปรเจกต์](/docs/th/consumer-quality/) — checks เสริม
+  ที่ตั้งค่าได้หลังจากใช้ workflow พื้นฐานได้แล้ว

@@ -61,6 +61,7 @@ export const PHASE_BY_COMMAND = {
   "authority-status": "prove",
   "authority-record": "prove",
   "authority-reset-infra": "prove",
+  "authority-extend-review": "prove",
   "authority-reset-base-move": "prove",
   "evidence-verify-ci": "prove",
   receipt: "prove",

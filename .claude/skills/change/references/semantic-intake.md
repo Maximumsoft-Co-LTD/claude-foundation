@@ -26,7 +26,7 @@ grounded-source digests. Changed sources invalidate `DONE` and return
 `refresh-source-coverage`; editing the draft acknowledges them. No answer
 history is retained.
 
-Draft v4 `discovery.coverage` is optional for an ordinary change. Only typed
+Draft v4 and v5 `discovery.coverage` is optional for an ordinary change. Only typed
 declarations require dimensions: `impact: high` (nine core plus operability and
 recoverability), `riskSignals`, security triggers, `integrations`, and
 `externalOperations`. The harness derives a marked `covered` row from content
@@ -47,5 +47,5 @@ Every settled answer must land in a requirement, scenario, non-goal, constraint,
 or qualifying typed decision before compilation. The compiled proposal retains
 the coverage table so no answer lives only in chat. Draft v3 stays readable;
 do not retrofit legacy changes merely to migrate.
-A v4 Build-time amendment supplies a discovery delta for its added
+A v4/v5 Build-time amendment supplies a discovery delta for its added
 requirements; the harness revalidates it and appends it to the proposal.

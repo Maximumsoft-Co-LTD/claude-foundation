@@ -31,6 +31,9 @@ import {
 import {
   aliasedTestProvider, unobservedAliasConfig
 } from "../runtime/evidence/provider-catalog.mjs";
+import {
+  PROVIDER_SESSION_ENV, providerExecutionEnvironment
+} from "../runtime/evidence/adapter-runtime.mjs";
 
 test("npm manifest and lockfile get a deterministic built-in consistency candidate", () => {
   const root = workspace();
@@ -408,15 +411,29 @@ test("a test alias ignores env key order but not a distinct execution context", 
   assert.equal(aliasedTestProvider(providers, "resilience"), "test",
     "the same env pairs in another key order are the same environment");
   assert.equal(aliasedTestProvider({ ...providers, resilience: {
-    ...providers.resilience, timeoutMs: 120000 } }, "resilience"), "test",
+    ...providers.resilience, timeoutMs: 600000 } }, "resilience"), "test",
   "the default timeout written out is the same timeout");
   for (const [field, value] of [
     ["service", "api"], ["readiness", { url: "http://127.0.0.1:3000/health" }],
-    ["environment", "staging"], ["timeoutMs", 600000], ["resources", ["port:3000"]],
+    ["environment", "staging"], ["timeoutMs", 900000], ["resources", ["port:3000"]],
     ["dependsOn", ["static-analysis"]]
   ]) {
     assert.equal(aliasedTestProvider({ ...providers, resilience: {
       ...providers.resilience, [field]: value } }, "resilience"), null,
     `a specialist with its own ${field} runs in its own context`);
   }
+});
+
+test("a provider environment drops the harness session state and keeps the provider contract", () => {
+  const session = Object.fromEntries(PROVIDER_SESSION_ENV.map((name) => [name, `/outer/${name}`]));
+  const env = providerExecutionEnvironment({ PATH: "/usr/bin", HOME: "/home/a", ...session }, {
+    FOUNDATION_CHANGE_ID: "change-a", FOUNDATION_REPOSITORIES_FILE: "/repo/repositories.json"
+  });
+  for (const name of PROVIDER_SESSION_ENV) assert.equal(name in env, false, name);
+  assert.equal(env.FOUNDATION_CHANGE_ID, "change-a");
+  assert.equal(env.FOUNDATION_REPOSITORIES_FILE, "/repo/repositories.json");
+  assert.equal(env.PATH, "/usr/bin");
+  // A value the provider config declares on purpose still reaches the command.
+  assert.equal(providerExecutionEnvironment({}, { FOUNDATION_WORKSPACE_ROOT: "/declared" })
+    .FOUNDATION_WORKSPACE_ROOT, "/declared");
 });

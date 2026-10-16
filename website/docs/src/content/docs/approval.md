@@ -1,17 +1,22 @@
 ---
 title: Human approval
-description: The four separate boundaries where a person enters the loop — acceptance, independent review, the authority bridge, and host attestation — and which of them actually blocks.
+description: User decisions, review policy, and the agent/host mechanisms that record and enforce them.
 ---
 
-Change Loop has four distinct places where a human can enter the loop. They are
-routinely confused with one another, and they do different jobs.
+<!-- docs-audience: users -->
+**Audience:** project users. This guide explains what to review and decide; the agent handles routine system operations.
 
-| Boundary | Question it answers | Blocks? |
+User decisions and system mechanisms have different owners. You approve intent,
+make consequential choices, accept outcomes when required, and grant Land or
+external-action authority. The agent and harness record those decisions;
+configured reviewers and trusted hosts produce their own evidence.
+
+| Boundary | Owner | Question it answers |
 |---|---|---|
-| **Acceptance** | Is this the outcome we wanted? | Yes — an undecided standard change fails validation |
-| **Review** | Is this implementation sound, judged independently? | Yes, when policy triggers fire |
-| **Authority bridge** | How does a verdict become a receipt? | It is the mechanism, not a gate |
-| **Host attestation** | Is it safe to run unattended? | Only for unattended execution |
+| **Acceptance** | User; agent records the decision | Is this the outcome we wanted, and is acceptance required? |
+| **Review** | Configured reviewer; project sets assurance policy | Does implementation meet the review criteria? Independence is separately configured |
+| **Authority bridge** | Agent/harness integration | How does a decision or verdict become a validated receipt? |
+| **Host attestation** | Trusted host operator/integration | Does the execution environment meet the unattended sandbox requirements? |
 
 :::caution[What Land actually enforces]
 An exact `/land <change>` supplies one internal, session-bound grant for that
@@ -134,6 +139,9 @@ evidence while the work is making progress.
 
 ## The authority bridge
 
+**For agent and host integrators.** Users supply decisions; the integration
+records and validates them through this mechanism.
+
 The normal entry point is one resumable command:
 
 ```bash
@@ -159,9 +167,9 @@ receipt would not be valid, the previous receipt is restored and the operation
 fails. A completed request cannot be replayed.
 
 :::tip
-`authority status --template` is the flag that makes this usable by hand. It
-prints exactly the response shape expected, so you fill in a verdict rather
-than reconstructing a JSON schema from documentation.
+`authority status --template` gives the agent or integration operator the
+response shape. Users answer the decision question in ordinary language;
+they do not construct receipt JSON or invent a reviewer verdict.
 :::
 
 If the workspace changes after a request is opened, the request goes stale and
@@ -169,6 +177,9 @@ must be reopened. A verdict is bound to the code it was given, not to the
 change in general.
 
 ## Host attestation
+
+**For trusted host operators.** This is environment evidence from the host,
+not a document the project user signs to approve a feature.
 
 This one is **not** human approval, despite living near it.
 

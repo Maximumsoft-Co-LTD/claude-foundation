@@ -205,6 +205,24 @@ try {
   reboundReview.rebind = { boundWorkspaceHash: world.workspaceHash };
   expect("review", reboundReview, "valid");
 
+  // A human verdict rebinds exactly like an AI one: a moved base that leaves
+  // the change's hunks and packet byte-identical keeps it; a moved base that
+  // rewrites the change's own hunks expires it, so a new request opens.
+  const humanReview = () => {
+    const value = reviewBase();
+    value.workspaceHash = "workspace-before-sync";
+    value.inputIdentity.fingerprint = "old-input";
+    value.review = { ...value.review, reviewerType: "human", reviewer: "a-person" };
+    value.rebind = { mode: "diff", diffIdentity: world.diffIdentity,
+      packetReviewHash: world.packetReviewHash };
+    return value;
+  };
+  expect("review", humanReview(), "reusable-diff");
+  const rewritten = humanReview();
+  rewritten.rebind.diffIdentity = "diff-before-upstream-edit";
+  expect("review", rewritten, "stale");
+  assert.equal(receiptValidity(id, "review").invalidation.reason, "review-contribution-changed");
+
   const bound = baseReceipt("test");
   put("test", bound);
   const binding = {

@@ -3,6 +3,9 @@ title: Receipt, สถานะ และความ stale
 description: receipt ผูกตัวเองกับอะไร สี่สถานะที่ provider คืนได้ ทำไม pass ที่เขียนด้วยมือถึงถูกปฏิเสธ และอะไรทำให้ proof stale
 ---
 
+<!-- docs-audience: agents-integrators -->
+**ผู้อ่าน:** Coding agent และผู้ดูแล integration คำสั่ง CLI และ schema ด้านล่างเป็นเอกสารระบบ ไม่ใช่รายการที่ผู้ใช้ต้องทำเอง ผู้ใช้เริ่มที่ [เริ่มใช้งาน](/docs/th/quickstart/)
+
 Receipt คือบันทึกของ Change Loop ว่า provider ตัวหนึ่งสังเกตเห็นผลอย่างหนึ่ง
 เทียบกับเนื้อหาชุดหนึ่ง ทุกอย่างในนั้นถูกออกแบบให้ receipt อยู่ได้ไม่นานกว่าสิ่งที่มันบรรยาย
 

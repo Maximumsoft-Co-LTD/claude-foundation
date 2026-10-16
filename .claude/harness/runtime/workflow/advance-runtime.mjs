@@ -366,6 +366,42 @@ export function unstartableReviewReason(id, requestId) {
       `authority status ${id} --request ${requestId}`)}`;
 }
 
+// Every routed AI wave is delivered and review is still required: only the
+// user can choose who reviews next. Review is never waived here.
+export function exhaustedReviewDecision(id, requestId, exhausted = {}) {
+  const waves = `${exhausted.delivered ?? "?"}/${exhausted.maxAiAttempts ?? "?"}`;
+  const summary = `All ${waves} AI review waves are delivered and review request ${requestId} ` +
+    "still needs a verdict. Choose a human verdict, one more AI wave, or a pause.";
+  return envelope(id, "ASK_USER", {
+    legacyAction: "DECIDE_EXHAUSTED_REVIEW",
+    actor: "user",
+    boundary: "user-authority",
+    reason: summary,
+    requestId,
+    decision: {
+      kind: "review-exhausted",
+      summary,
+      requestId,
+      aiWaves: exhausted,
+      options: [
+        { id: "human-verdict",
+          outcome: "A person reviews the change; dispatch a human review, then record the verdict they gave.",
+          command: command(`authority dispatch ${id} --request ${requestId} --scope full --reviewer-type human --reviewer-identity <person>`),
+          then: command(`authority record ${id} --request ${requestId} --response <file>`) },
+        { id: "one-more-ai-attempt",
+          outcome: "Allow one more AI review wave on the user's recorded decision; advance then runs it.",
+          command: command(`authority extend-review ${id} --decision-ref <user-decision>`) },
+        { id: "pause",
+          outcome: "Keep the change proven-pending with its state preserved; resume later.",
+          command: null }
+      ],
+      recommended: "human-verdict"
+    },
+    recoveryType: "ASK_USER",
+    alternatives: ["record a human verdict", "allow one more AI review wave", "pause"]
+  });
+}
+
 // A configured reviewer the harness can start with no host-supplied input runs
 // inside `advance --through`, in the foreground and bounded by the review
 // window. A route with placeholders stays a handoff.
@@ -407,7 +443,7 @@ function configuredReviewWait(id, request) {
   });
 }
 
-function proofOperationAction(id, result) {
+export function proofOperationAction(id, result) {
   if (!result || typeof result !== "object") return null;
   if (result.action) return result;
   if (result.decision && (result.status === "BLOCKED" || result.decision.automaticRecovery))
@@ -428,7 +464,8 @@ function proofOperationAction(id, result) {
     actor: "harness",
     boundary: "internal-lock",
     reason: "proof is already running for this change",
-    wait: { owner: result.owner || null, next: result.next || [] },
+    wait: { owner: result.owner || null, next: result.next || [],
+      ...(result.progress ? { progress: result.progress } : {}) },
     recoveryType: "AUTO_RECOVER",
     alternatives: ["reuse the active proof operation"]
   });
@@ -465,6 +502,10 @@ function proofOperationAction(id, result) {
       recoveryType: "HANDOFF",
       alternatives: ["run the configured reviewer", "record an authorized external verdict"]
     });
+    const exhausted = review && (result.next || []).find((row) =>
+      row.requestId === review.requestId && row.aiReviewExhausted);
+    if (exhausted)
+      return exhaustedReviewDecision(id, review.requestId, exhausted.aiReviewExhausted);
     return envelope(id, "WAIT", {
       legacyAction: "WAIT_EXTERNAL",
       actor: "external-authority",
@@ -780,6 +821,9 @@ export function coordinatorAction({
     });
     const configuredReview = open.type === "review" && open.status === "requested" &&
       /^claude-foundation authority run\s/.test(authorityCommand || "");
+    if (open.type === "review" && open.status === "requested" &&
+        authorityAction?.aiReviewExhausted)
+      return exhaustedReviewDecision(id, open.requestId, authorityAction.aiReviewExhausted);
     return envelope(id, configuredReview ? "RUN_EXTERNAL" : "WAIT", {
       legacyAction: configuredReview ? "RUN_CONFIGURED_REVIEW" : "WAIT_EXTERNAL",
       actor: configuredReview ? "configured-reviewer" : "external-authority",

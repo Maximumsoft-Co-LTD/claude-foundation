@@ -1,0 +1,77 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "v5-keyed-defaults-agent-change-start",
+      "requirementKey": "v5-keyed-defaults",
+      "scenario": "draft v5 ที่มี key",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "v5-keyed-defaults-agent-change-start-2",
+      "requirementKey": "v5-keyed-defaults",
+      "scenario": "draft v5 แบบเต็มคงเดิม",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "worktype-no-tier-harness-review",
+      "requirementKey": "worktype-no-tier",
+      "scenario": "api ที่ไม่มี risk อื่น",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "worktype-no-tier-harness-review-2",
+      "requirementKey": "worktype-no-tier",
+      "scenario": "path บังคับ compatibility",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "worktype-evidence-four-harness",
+      "requirementKey": "worktype-evidence-four",
+      "scenario": "ประกาศ async",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "worktype-evidence-four-harness-2",
+      "requirementKey": "worktype-evidence-four",
+      "scenario": "ประกาศ deprecation",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/draft-folder.test.mjs) && (node --test .claude/harness/tests/review-policy.test.mjs) && (node --test .claude/harness/tests/change-policy-surface.test.mjs)"
+      ],
+      "segments": [
+        "node --test .claude/harness/tests/draft-folder.test.mjs",
+        "node --test .claude/harness/tests/review-policy.test.mjs",
+        "node --test .claude/harness/tests/change-policy-surface.test.mjs"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

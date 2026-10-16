@@ -23,13 +23,18 @@ export function changeWorkTypes(changePath) {
 // nothing; its verify passed on the original code. Refactor, docs, and chore
 // work, task kinds that only observe, and tasks scoped only to docs or
 // manifests keep verify-only completion.
-export function taskChangeIssue({ workTypes, task, changedPaths }) {
+export function taskChangeIssue({ workTypes, task, changedPaths, changeId = "<change>" }) {
   if (!behaviorChangingWork(workTypes) || !task) return null;
   const allowed = (task.paths || []).map(String).filter(Boolean);
   if (!allowed.length || NON_BEHAVIOR_TASK_KINDS.has(task.kind)) return null;
-  if (allowed.every((scope) => ["docs", "chore"].includes(lightKind(scope)))) return null;
+  if (allowed.every((scope) => ["docs", "chore", "dependency"].includes(lightKind(scope)))) return null;
   if ((changedPaths || []).some((path) => leasePathIsAllowed(path, allowed))) return null;
+  // Name every way forward: the change may be missing, live outside the
+  // declared paths, or already be unnecessary.
   return `task ${task.id} completed with no change: its verify passed, but nothing changed in ` +
     `its declared paths (${allowed.join(", ")}), so the check passed on the original code. ` +
-    "Implement the task's change in those paths, then resume.";
+    "Implement the task's change in those paths, then resume; if the change lives in other " +
+    "paths, correct them with an updateTasks amendment ({ key, verify, paths }); if the task is " +
+    "no longer needed, withdraw it with a removeTasks amendment. Print both with " +
+    `claude-foundation change amend --template and apply with claude-foundation change amend ${changeId} <amendment.json>.`;
 }

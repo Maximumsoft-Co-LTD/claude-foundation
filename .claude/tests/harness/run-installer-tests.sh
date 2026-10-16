@@ -277,11 +277,12 @@ assert_cmd_zero "command registry has one unique entry per public name" \
 assert_eq "agent command surface is bounded" "26" \
   "$(jq '[.commands[] | select(.audience == "agent")] | length' \
     "$TARGET/.claude/harness/commands.json")"
-# 25 includes the bounded proof controller, its internal execution commands,
-# explicit authority dispatch/abort/configured-reviewer/reset routes,
-# consumer-quality reporting, and the operator-owned handoff record. Keep this
-# count intentional so a newly exposed recovery command cannot appear silently.
-assert_eq "conditional recovery surface is bounded" "25" \
+# 26 includes the bounded proof controller, its internal execution commands,
+# explicit authority dispatch/abort/configured-reviewer/reset routes, the
+# user-granted extra AI review wave, consumer-quality reporting, and the
+# operator-owned handoff record. Keep this count intentional so a newly exposed
+# recovery command cannot appear silently.
+assert_eq "conditional recovery surface is bounded" "26" \
   "$(jq '[.commands[] | select(.audience == "conditional")] | length' \
     "$TARGET/.claude/harness/commands.json")"
 assert_cmd_zero "provider-running proof commands are not marked retry-safe" \
@@ -453,7 +454,7 @@ jq '.workflow.grounding = "optional" |
 cp "$TMP/foundation-atomic.json" "$TARGET/foundation.json"
 start_template="$(bash "$ROOT/cli.sh" --project "$TARGET" change start --template)"
 assert_contains "atomic start exposes a versioned draft template" \
-  "$start_template" '"version": 4'
+  "$start_template" '"version": 5'
 assert_contains "atomic start exposes discovery coverage" \
   "$start_template" '"discovery"'
 assert_contains "atomic start template links tasks by requirement key" \

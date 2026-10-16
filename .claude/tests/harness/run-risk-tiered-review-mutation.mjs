@@ -22,9 +22,13 @@ try {
     join(scratch, "evidence", "evidence-results.mjs"));
   cpSync(resolve(".claude/harness/runtime/evidence/task-check-evidence.mjs"),
     join(scratch, "evidence", "task-check-evidence.mjs"));
+  cpSync(resolve(".claude/harness/runtime/evidence/provider-catalog.mjs"),
+    join(scratch, "evidence", "provider-catalog.mjs"));
   mkdirSync(join(scratch, "core"), { recursive: true });
   cpSync(resolve(".claude/harness/runtime/core/repository-binding.mjs"),
     join(scratch, "core", "repository-binding.mjs"));
+  cpSync(resolve(".claude/harness/runtime/core/trust.mjs"),
+    join(scratch, "core", "trust.mjs"));
   const runtime = await import(`${pathToFileURL(modulePath).href}?v=${Date.now()}`);
   compiled = true;
   const status = runtime.mutationV2Result({

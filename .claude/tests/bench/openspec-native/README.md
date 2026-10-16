@@ -18,6 +18,11 @@ is historical comparison evidence; its tracker failure and missing cost cannot
 satisfy a new candidate's checkpoint. Paid execution still requires explicit
 scope and budget authorization.
 
+A change-loop run's scorecard also carries a `packet` section (missing and
+duplicate sections, words, EDIT rounds, compile time); a baseline run has none.
+Field meanings and the paid acceptance comparison live in
+[Packet metrics and the paid acceptance comparison](../README.md#packet-metrics-and-the-paid-acceptance-comparison).
+
 ## End-to-end terminal contract
 
 ### Requirement-continuity differential scenario

@@ -152,6 +152,29 @@
       "validation": "non-negative integer"
     }
   ],
+  "boundaries": [
+    {
+      "from": "gateway",
+      "to": "users",
+      "mode": "sync",
+      "why": "resolve an ApiKey prefix to its hashed key, owner and scopes on every request",
+      "timeout": "2s",
+      "retry": "none; the request fails with 503",
+      "consistency": "strong",
+      "owner": "users service"
+    },
+    {
+      "from": "sdk",
+      "to": "gateway",
+      "mode": "sync",
+      "why": "integrators call key routes and resources with the apiKey credential",
+      "timeout": "10s",
+      "retry": "idempotent GETs once on 503",
+      "consistency": "strong",
+      "owner": "sdk"
+    }
+  ],
+  "releaseNote": "Integrators can now issue, list and revoke scoped, rate-limited API keys and authenticate with `Authorization: ApiKey <key>`; the SDK accepts an apiKey credential. Bearer sessions are unchanged.",
   "requirements": [
     {
       "key": "users-key-lifecycle",

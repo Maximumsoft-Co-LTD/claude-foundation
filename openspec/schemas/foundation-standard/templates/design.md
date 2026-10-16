@@ -8,12 +8,20 @@
 
 <Only load-bearing brownfield facts, verified against code.>
 
-<!-- The draft's work type (declared or inferred from task paths) selects the
-dev document sections rendered here: User flow, Component map, Work type,
-Bugfix analysis, Refactor invariants, File map, API contracts, Data model,
-UI states, Config contract, Job contract, Failure matrix, and Test map. The
-compiler also adds Overview, Assumptions and open questions, and the Plan,
-derives the file and test maps from tasks, and omits empty sections. -->
+<!-- Sections follow the outline in this order, rendered only when the draft's
+work type (declared or inferred from task paths) or fields need them:
+Overview, Current state, Domain language, Assumptions, Work type, Architecture,
+Tenancy, User flow, Runtime behavior, Domain model and modules, API contract,
+Event and job contract, Data model and migration, UI contract, Config contract,
+Integration contract, Public interface contract, Migration plan, Performance
+analysis, Dependency change, Deprecation plan, Infrastructure plan, Privacy
+assessment, Experiment design, Client release plan, Model card and evaluation
+plan, Bugfix analysis, Refactor invariants, Decisions, Quality attributes,
+Threat model, Failure matrix, Observability and usage, Compatibility and
+rollout, Capacity and cost, Backup and recovery, Test strategy, Dependencies,
+Risks, Selected prototype; appendices File map and Test map. The harness
+derives Work type, File map, and Test map; never author those headings. Thai
+headings from the outline are accepted. Empty sections are omitted. -->
 
 ## Domain language
 

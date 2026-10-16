@@ -345,7 +345,14 @@ try {
       if (interruptConfigured) { interruptConfigured = false; throw new Error("controller interrupted"); }
       lastConfiguredReviewArgs = args;
       const configuredResult = configuredReviewResults[args.reviewer];
-      if (configuredResult) return configuredResult;
+      // A real reviewer cites the report file it wrote under the root.
+      const cite = (result) => {
+        if (result?.reportReference && !existsSync(join(fixture, result.reportReference)))
+          writeJson(join(fixture, result.reportReference), { status: result.status || null });
+        return result;
+      };
+      if (configuredResult) return cite(configuredResult);
+      cite({ status: "pass", reportReference: "report.json" });
       const report = {
         status: "pass", summary: "configured review passed", findings: [],
         verifiedFindingIds: [], reportReference: "report.json",
@@ -1303,7 +1310,7 @@ try {
   recordRejected({}, /superseded workspace.*re-requested review/);
   workspaceHash = "workspace-record-validation";
   recordRejected({ status: "completed" }, /is completed/);
-  recordRejected({}, /must be dispatched/);
+  recordRejected({}, /dispatch the request first: claude-foundation authority dispatch/);
   recordRejected({ reviewCircuit: "legacy" }, /response not found/,
     join(fixture, "missing-record-response.json"));
 
@@ -1317,6 +1324,9 @@ try {
     "change-record-validation", {
       request: recordRequest.requestId, template: true
     })).rows[0]);
+  // `authority record` refuses a cited report that does not exist.
+  for (const name of ["record-error.json", "human-error.json", "legacy-inconclusive.json"])
+    writeJson(join(fixture, name), { status: "cited" });
   const validRecordResponse = {
     ...recordTemplate, status: "error", evidence: {
       ...recordTemplate.evidence,

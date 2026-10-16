@@ -1,15 +1,39 @@
 ---
-title: Change Loop เขียนอะไรบ้าง
-description: artifact ทุกตัวที่ harness สร้าง — change packet, machine state, evidence vault และ archive — และตัวไหนที่ตั้งใจให้คุณอ่าน
+title: ไฟล์ ผู้อ่าน และเจ้าของข้อมูล
+description: อะไรให้ผู้ใช้ตรวจ อะไรเป็นของโปรเจกต์ และอะไรที่ agent หรือ harness ดูแล
 ---
 
-Change Loop เขียนลงสองที่ และการแยกนี้คือหัวใจทั้งหมด
+<!-- docs-audience: users -->
+**ผู้อ่าน:** ผู้ใช้โปรเจกต์ หน้านี้อธิบายสิ่งที่ต้องตรวจและตัดสินใจ ส่วน agent ดูแลขั้นตอนระบบตามปกติ
 
-**`openspec/` เป็นของคุณ** เก็บเจตนาที่ต้องคงอยู่ ผ่านการรีวิวโดยคน และ commit ลง Git
-**`.foundation/` เป็นของเครื่อง** เก็บ lifecycle state, receipt, log และ proof bundle
-ถูก Git ignore และลบทิ้งระหว่าง change ได้อย่างปลอดภัย
+เจ้าของไฟล์กับผู้อ่านเป็นคนละเรื่อง ข้อตกลงของโปรเจกต์อาจถูก compile โดย harness
+และโค้ดของโปรเจกต์อาจเขียนโดย agent คุณตรวจเจตนาและผลลัพธ์
+โดยไม่ต้องดูแลสถานะภายในด้วยตัวเอง
 
-ไม่มีอะไรที่ต้องคงอยู่ถูกเก็บไว้แค่ในแชท และไม่มีอะไรที่เครื่องสร้างถูก commit ราวกับว่าคนเขียน
+## อะไรเป็นของใคร?
+
+| ประเภท | ตัวอย่าง | หน้าที่ของคุณ | ผู้เขียนและพฤติกรรมตอน upgrade |
+|---|---|---|---|
+| ข้อตกลงของโปรเจกต์ | `openspec/specs/`, `openspec/changes/`, `openspec/investigations/` | ตรวจพฤติกรรม ขอบเขต การตัดสินใจ และผลลัพธ์ | Agent เขียนข้อมูลต้นทาง; harness compile และปรับ packet; installer เก็บรักษาไว้ |
+| การตั้งค่าของโปรเจกต์ | `foundation.json`, `openspec/config.yaml`, `openspec/repositories.yaml`, `quality/` | เลือกนโยบายและให้ agent ช่วยตั้งค่า | Maintainer ของโปรเจกต์หรือ agent ที่ได้รับอนุญาต; installer สร้าง/รวม config ที่รองรับ |
+| คำแนะนำของโปรเจกต์ | `CLAUDE.md`, `AGENTS.md`, `.claude/settings.json` | เก็บกฎและความต้องการของโปรเจกต์คุณ | Installer ปรับเฉพาะ pointer block ที่มี marker และรวม host settings ที่รองรับ ไม่แทนที่คำแนะนำทั้งไฟล์ |
+| ไฟล์ Change Loop ที่ติดตั้ง | `WORKFLOW.md`, `.claude/harness/`, commands/skills/hooks ที่ managed, `openspec/schemas/` | อ่านอ้างอิง; ปรับผ่าน config ของโปรเจกต์ | Change Loop ดูแลและ upgrade ไฟล์ที่ managed |
+| บันทึกสถานะระบบ | `.foundation/runtime/`, `receipts/`, `evidence/`, `transactions/` | อ่านวิเคราะห์ได้ แต่อย่าแก้ record เพื่อเปลี่ยนผลตรวจ | Harness และเครื่องมือที่ตั้งค่าไว้เขียนผ่านขั้นตอนที่รองรับ |
+| ข้อมูลชั่วคราวและโค้ดที่กำลังทำ | `.foundation/drafts/`, path โค้ด/test ใน sandbox ที่ประกาศไว้ | ตรวจข้อตกลงที่ compile แล้วและ diff สุดท้าย | Agent เขียนข้อมูลต้นทางและ implementation; งานใน sandbox อาจยังไม่ส่งมอบ |
+
+**อย่าลบ `.foundation/` เพื่อเริ่มงานใหม่** ภายในอาจมีโค้ดที่ยังไม่ land
+ประวัติหลักฐาน journal สำหรับกู้คืน backup และ local policy
+การถูก Git ignore ไม่ได้แปลว่าลบได้ ให้ agent ใช้ขั้นตอนกู้คืนหรือ cleanup ที่รองรับ
+
+ใน source repository ของ Change Loop ไฟล์ `CLAUDE.md` และ `AGENTS.md` ที่ root
+ใช้แนะนำ maintainer แต่ในโปรเจกต์ที่คุณติดตั้ง ไฟล์ชื่อเดียวกันยังเป็นคำแนะนำของ
+โปรเจกต์คุณ ส่วน tests, reports และเว็บไซต์เอกสารของ upstream มีไว้พัฒนา
+Change Loop ไม่ใช่สิ่งที่ผู้ใช้ต้องทำก่อนใช้งาน
+
+[เอกสาร ownership ของระบบ](https://github.com/Maximumsoft-Co-LTD/claude-foundation/blob/main/.claude/harness/README.md#file-ownership-and-writers)
+กำหนดประเภทและผู้เขียนฉบับเต็ม สำเนาที่ติดตั้งอยู่ใน `.claude/harness/README.md`
+รายการ `MANAGED` ของ installer และ `.foundation/install-manifest.txt`
+เป็นตัวกำหนดความเป็นเจ้าของไฟล์ที่ติดตั้ง
 
 ## โครงสร้าง `openspec/`
 
@@ -40,28 +64,12 @@ openspec/
 ระดับของโมเดล เงื่อนไขการยกระดับ การตั้งค่า review diversity กับ independence
 และคำสั่ง setup ของ sandbox (`sandbox.setupCommand`) ที่รันหนึ่งครั้งในทุก
 workspace ของ Build ที่สร้างใหม่
-มันถูกสร้างให้ตอนยังไม่มี และหลังจากนั้นเป็นของคุณ
+มันถูกสร้างให้ตอนยังไม่มีและยังเป็นของโปรเจกต์ การ upgrade อาจเติม field ที่ขาด
+หรือย้ายค่า default เก่าที่รู้จัก โดยรักษานโยบายที่คุณปรับเอง
 
-นโยบายเริ่มต้นอนุญาต agent สูงสุดสามตัว, evidence provider หรือ service สี่ตัว
-และ repository setup command สามตัวทำงานขนานกัน โดยใช้ lease 45 นาที
-task packet กับ review packet มีเพดาน 20 KiB, repository packet 24 KiB และ
-global packet 32 KiB ส่วน rapid run มีเพดาน 800,000 token กับ 100 request
-และ standard run มีเพดาน 1,600,000 token กับ 200 request ตัวเลขเหล่านี้เป็น
-ขอบเขตสูงสุดของการรัน ไม่ใช่โควตาที่ต้องใช้ให้หมด
-
-model tier แบ่งตามจุดประสงค์: `fast`/Haiku ใช้กับ inventory, log และงานเอกสาร
-เชิงกล; `standard`/Sonnet ใช้กับ implementation, test และ investigation
-ที่เจาะจง; `deep`/Opus ใช้กับ architecture, security, migration และ review
-reviewer เริ่มต้นคือ Claude Code Opus ใน run แบบ read-only และ ephemeral
-โดยมี Codex GPT-5.6 Sol เป็นทางเลือก ค่าเริ่มต้น `independence: "self"` กับ
-`diversity: "single-model"` จึงทำงานได้โดยไม่ต้องมี identity หรือ provider
-ตัวที่สอง และ receipt จะบันทึก waiver ทั้งคู่ โปรเจกต์ที่ต้องการ separation of
-duties สามารถเพิ่ม independence, diversity หรือทั้งคู่เป็น `required` ได้
-วงจร review แบบ risk-tiered อนุญาต full review หนึ่งรอบและ delta เพิ่มได้
-ไม่เกินหนึ่งรอบเมื่อจำเป็นตามนโยบาย
-
-ดูรายละเอียดทุก field, ช่วงค่าที่ใช้ได้ และ policy recipe พร้อมใช้ได้ที่
+ดู field, ค่าเริ่มต้น และนโยบาย review ใน
 [ตั้งค่า foundation.json](/docs/th/foundation-config/)
+หน้านี้อธิบายความเป็นเจ้าของโดยไม่ทำสำเนาค่า default อีกชุด
 
 Consumer quality เพิ่ม tree ที่ commit และเป็นของโปรเจกต์อีกหนึ่งชุด:
 
@@ -116,10 +124,15 @@ packet แบบ `foundation-rapid` มี spec delta แบบกระชั�
 change จะ **อัปเกรดตัวเองเป็น standard** และสร้าง delta artifact ให้อัตโนมัติ
 ส่วน extension อื่นยังสร้างเฉพาะเมื่อมี concern จริง
 
-Agent ไม่ต้องเขียน ID ข้าม ledger ด้วยมือ Semantic draft v3 compile requirement,
+Agent ไม่ต้องเขียน ID ข้าม ledger ด้วยมือ Semantic draft รุ่นปัจจุบัน compile requirement,
 scenario, task, claim และ provider binding เป็น packet นี้ และ OpenSpec packet ที่
 compile แล้วคือ source of truth Prototype หรือ diagram ที่เลือกอ้างจาก design ได้
 แต่ output ของ prototype ยังไม่ authoritative และถูกปฏิเสธเป็น evidence
+
+ไฟล์เป็นของโปรเจกต์ไม่ได้หมายความว่าควรแก้ด้วยมือระหว่าง change ที่กำลังทำ
+ให้ agent ใช้ workflow revise หรือ amend ข้อตกลง ส่วน link, task ID และ checkbox
+ที่สร้างโดยระบบให้ harness ดูแล คุณอ่านตรวจได้ แต่ไม่ควรติ๊กงานหรือแก้ field
+ที่ระบบสร้างเพื่อข้าม checks
 
 :::tip
 `tasks.md` เป็น ledger เดียวโดยตั้งใจ checklist ที่สองที่เก็บไว้ในแชทหรือไฟล์ scratch
@@ -128,36 +141,17 @@ compile แล้วคือ source of truth Prototype หรือ diagram ท
 
 ## Machine state
 
-ทุกอย่างใต้ `.foundation/` ถูกสร้างขึ้นมา ไฟล์ `.gitignore` ของมันเป็นแบบ allow-list
-คือ ignore `*` แล้วเปิดรับกลับเฉพาะ `.gitignore` กับ `README.md` เท่านั้น
-machine state จึงหลุดเข้า commit โดยบังเอิญไม่ได้
+บันทึกที่ระบบสร้างถูก Git ignore ส่วน `.gitignore` และ README เป็นไฟล์ผลิตภัณฑ์ที่ติดตั้ง
+Draft และโค้ดใน sandbox เป็นข้อมูลที่ agent เขียนได้ตามขอบเขตงาน
+ส่วน `.foundation/policy.json` เป็นนโยบาย capability ที่โปรเจกต์กำหนด
+ข้อยกเว้นเหล่านี้ไม่ได้อนุญาตให้แก้ receipt หรือ lifecycle state ด้วยมือ
 
-| Path | เก็บอะไร |
-|---|---|
-| `runtime/` | lifecycle state หนึ่งไฟล์ต่อหนึ่ง change |
-| `receipts/` | receipt ที่ใช้งานอยู่ และ `proof.json` |
-| `evidence/` | proof bundle ที่แก้ไม่ได้ และ ledger ของรอบ review |
-| `snapshots/` | ตัวบอก snapshot ของ workspace หนึ่งตัวต่อหนึ่ง proof |
-| `logs/` | log ของ provider, telemetry, audit การใช้ receipt ซ้ำและ budget |
-| `sandboxes/` | control sandbox — เป็น Git worktree หรือสำเนา |
-| `repository-sandboxes/` | sandbox แยกต่อ repository สำหรับงานหลาย repository |
-| `plans/` | แผนการทำงานของ agent |
-| `leases/` | lease ของ task และ resource |
-| `transactions/` | journal ของการ apply ตอน Land และไฟล์สำรอง |
-| `tools/` | CLI dependency ระดับโปรเจกต์ที่ harness เป็นเจ้าของ ผูกกับ runtime contract ที่ pin ไว้ |
-| `authority/` | คำขอ review และ acceptance พร้อมบันทึกผล |
-| `attestations/` | challenge สำหรับการรันแบบไม่มีคนดู และ nonce ที่ใช้ไปแล้ว |
-| `instruction-manifests/` | ที่มาของคำสั่งแต่ละคำสั่ง |
-| `recovery/` | change ที่ถูกยกเลิก, Land ที่ถูกย้อน (`land-undone/`) และ state ที่กำพร้า |
-| `backups/` | commit bundle, patch และสำเนาไฟล์ของงานใน sandbox ที่ยังไม่ได้ land ซึ่งเขียนไว้ก่อนลบ sandbox |
-| `prototypes/` | prototype สำหรับเปรียบเทียบ ใช้แล้วทิ้ง |
-| `policy.json` | กฎของโปรเจกต์ที่แม็ป path ไปยัง capability ที่ต้องมี (ไม่บังคับ) |
-| `quality/results/` | lane report, aggregate summary และ rendered debt ของ consumer quality รอบล่าสุด |
-| `install-manifest.txt` | บันทึกของ installer ว่ามันเป็นเจ้าของไฟล์ไหนบ้าง |
+รายการ state ฉบับเต็มอยู่ใน
+[Runtime state reference](https://github.com/Maximumsoft-Co-LTD/claude-foundation/blob/main/.claude/harness/README.md#runtime-state)
+ซึ่งแยก generated record, cache และข้อมูลระหว่างทำงานพร้อมหน้าที่
 
-หลายตัวจะปรากฏก็ต่อเมื่อมีอะไรสร้างมันขึ้นมา — `repository-sandboxes/`
-ต้องมีงานหลาย repository, `recovery/` ต้องมี change ที่ถูกยกเลิก
-ส่วน `policy.json` เป็นของคุณจะเขียนหรือไม่มีก็ได้
+หัวข้อถัดไปอธิบายหลักฐานและ archive ที่คุณอาจต้องอ่านตรวจ
+ไม่ใช่คำแนะนำให้แก้ runtime file
 
 ## Evidence vault
 

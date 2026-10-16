@@ -3,6 +3,9 @@ title: Claims and capabilities
 description: How an observable scenario becomes a stable claim, and which of the 19 capabilities can actually demonstrate it.
 ---
 
+<!-- docs-audience: agents-integrators -->
+**Audience:** coding agents and integration operators. CLI commands and schemas below are system reference, not a user checklist. Users can follow [Quickstart](/docs/quickstart/).
+
 Change Loop's central rule: **a passing command is not automatically proof.**
 
 Every observable acceptance scenario gets a stable claim ID. Each claim declares the capabilities that could actually demonstrate it. Missing, stale, failed, erroneous, or inconclusive evidence blocks landing.
@@ -49,6 +52,7 @@ Select only what the claim needs — never the full catalog by default.
 | `integration` | Multiple components or external boundaries work together |
 | `compatibility` | Public or persisted contracts remain compatible across supported versions |
 | `performance` | Measured latency, throughput, resource, or size budgets are met |
+| `concurrency` | Concurrent and asynchronous paths keep their ordering, isolation, and completion guarantees under contention |
 | `security-static` | Static security checks cover the changed trust boundary and unsafe sinks |
 | `cross-repo-contract` | Producer and consumer repositories agree on the same versioned contract |
 | `review` | Independent risk review covers the declared claims and unresolved findings |

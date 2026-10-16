@@ -1,5 +1,10 @@
 # Change Loop harness runtime
 
+**Audience:** coding agents, host integrators, evidence authors, and maintainers.
+This installed reference is maintained by Change Loop; consumers should not
+customize it in place. For everyday use, follow the
+[user quickstart](https://claude-foundation.dev/docs/quickstart/).
+
 This directory contains the deterministic runtime installed with Change Loop.
 It turns an OpenSpec change into a bounded implementation and
 evidence workflow:
@@ -19,7 +24,8 @@ The product and workflow are called **Change Loop**. The package and CLI remain
 ## Using Change Loop
 
 Users describe the goal to their coding agent and use `/change`, `/build`,
-`/prove`, and `/land`; `/dev` can drive Change through Prove in one request.
+`/prove`, and `/land`; `/dev` drives the same lifecycle, reaching Land only
+within the user's explicit authority.
 The agent runs the underlying CLI, so users do not need to construct JSON,
 receipt, recovery, or bookkeeping commands.
 
@@ -32,8 +38,9 @@ host permission recovery stay internal. A change is
 finished only after the user explicitly authorizes Land and its state is
 `archived`.
 
-Installed users should start with `WORKFLOW.md`. The rest of this page maps the
-runtime for maintainers and evidence authors; `EVIDENCE.md` is the canonical
+Users can follow the quickstart linked above; the installed `WORKFLOW.md` is
+the detailed lifecycle contract. The rest of this page maps the runtime for
+agents, maintainers, and evidence authors; `EVIDENCE.md` is the canonical
 provider and receipt contract.
 
 Runtime API 39 adds bounded repository intelligence, adaptive intake metrics,
@@ -45,7 +52,7 @@ Each requires a real `--decision-ref`. Review is bounded by its rounds; each
 dispatch has its own timeout. See [WORKFLOW.md](../../WORKFLOW.md) for the user contract.
 
 Every phase view is derived from one versioned execution contract. Semantic
-draft v4 validates typed-risk discovery coverage (optional for ordinary changes) and decision prerequisites,
+draft v5 (and v4) validates typed-risk discovery coverage (optional for ordinary changes) and decision prerequisites,
 then compiles meaningful keys into stable cross-ledger IDs and writes only
 the OpenSpec artifacts the change needs. After Change, protocol-v6 `advance`
 is the normal model-facing entrypoint; primitive commands remain compatible
@@ -56,6 +63,41 @@ readiness, and the mutation guard consume that result instead of independently
 reinterpreting policy. Lifecycle writes go through the typed reducer. Existing
 command names remain compatible; `change start --inspect` is an additive
 read-only argument.
+
+## File ownership and writers
+
+Ownership determines what installation and upgrades may replace. It does not
+say who must type the content or who may approve a decision. An agent can write
+project-owned code; the harness can compile a project-owned agreement.
+
+| Category | Paths in an installed project | Who writes or updates it | Reader and authority |
+|---|---|---|---|
+| Project agreement | `openspec/specs/`, `openspec/changes/`, `openspec/investigations/` | Agent authors intent and investigation records; harness compiles/amends packets, updates task completion, and archives through OpenSpec | Users review intent, scenarios, and outcomes; consequential decisions remain theirs |
+| Project configuration | `foundation.json`, `openspec/config.yaml`, `openspec/repositories.yaml`, `quality/` | Project maintainer or authorized agent; installer seeds missing configuration and may perform documented additive/default migrations | Project chooses policy; upgrades preserve custom settings |
+| Project instructions and host settings | `CLAUDE.md`, `AGENTS.md`, `.claude/settings.json` | Project authors local instructions; installer updates only its marked pointer blocks and merges supported settings | These are not replaced by the upstream repository's maintainer manuals |
+| Installed product | `.claude/orchestrator.md`, `.claude/commands`, `.claude/harness`, `.claude/skills`, `.claude/rules`, `.claude/hooks`, `openspec/schemas`, `WORKFLOW.md`, `.foundation/.gitignore`, `.foundation/README.md` | Change Loop maintainers change source; installer refreshes managed files | Agent/host instructions and system references, not consumer customization points |
+| Runtime records | `.foundation/runtime/`, `receipts/`, `evidence/`, `transactions/`, and other state listed below | Harness and configured tools through supported operations | Read for diagnosis; never hand-edit proof, receipts, lifecycle state, or recovery journals |
+| Working inputs and implementation | `.foundation/drafts/`, declared code/test paths inside `.foundation/sandboxes/` or `.foundation/repository-sandboxes/` | Agent writes drafts and implements within the declared Build workspace | Drafts are temporary inputs, not the agreement; sandbox content may be unlanded project work |
+| Optional local policy | `.foundation/policy.json` | Project maintainer or authorized agent supplies capability rules | Project-controlled input despite its location; not an evidence receipt |
+
+The installer's `MANAGED` list defines product ownership; the per-install
+`.foundation/install-manifest.txt` records the managed files. A managed directory
+does not make every custom file beneath it disposable: custom agents, hooks,
+and other project additions must survive upgrades. `foundation.json` may gain
+missing fields or recognized legacy-default migrations; it is not replaced
+wholesale with upstream policy.
+
+Generated does not mean disposable, and project-owned does not mean manually
+editable during an active lifecycle. Change agreements go through draft/revision
+or amendment routes; task checkboxes and IDs are maintained by the harness.
+Use supported recovery and cleanup rather than deleting `.foundation/`: it can
+hold unlanded code, proof history, transaction backups, and local policy.
+
+The upstream source repository also contains contributor instructions, internal
+tests, research reports, and website sources. These are for developing and
+documenting Change Loop itself; they are not installed consumer requirements.
+Consumer `CLAUDE.md` and `AGENTS.md` stay project-owned even though
+the upstream repository uses those names for its own maintainer guidance.
 
 ## Files in this directory
 
@@ -112,7 +154,18 @@ read-only argument.
 | Workflow | `runtime/workflow/authority.mjs` | External authority request persistence and response validation |
 | Workflow | `runtime/workflow/budget.mjs` | Run/lifetime usage windows and budget policy transitions |
 | Workflow | `runtime/workflow/change-lifecycle.mjs` | Change creation, draft materialization, resolution, and atomic start |
-| Workflow | `runtime/workflow/semantic-draft.mjs` | Semantic draft v3 compatibility plus v4 discovery coverage, stable links, typed extensions, and provider defaults |
+| Workflow | `runtime/workflow/semantic-draft.mjs` | Semantic draft v3 compatibility plus v4/v5 discovery coverage, stable links, typed extensions, decision status and durable rationale, unknown task field warnings, and provider defaults |
+| Workflow | `runtime/workflow/draft-folder.mjs` | Draft v5 folder loader: splits authored `proposal.md`/`design.md` prose by outline heading, checks order, placeholders, and derived headings, and derives grounding NFR/observability from `change.json` |
+| Workflow | `runtime/workflow/validation/outline-contract.mjs` | The versioned outline: each packet section's document, order, heading (en/th), owner, feeding fields, and condition |
+| Workflow | `runtime/workflow/validation/architecture-fields.mjs` | Typed fields `boundaries`, `tenancy`, `domain` |
+| Workflow | `runtime/workflow/validation/contract-fields.mjs` | Typed fields `apiContracts`, `eventContracts`, `dataModel`, `ui`, `configContract` |
+| Workflow | `runtime/workflow/validation/quality-fields.mjs` | Typed fields `nfr`, `threatModel`, `observability`, `trackingPlan`, `capacity` |
+| Workflow | `runtime/workflow/validation/delivery-fields.mjs` | Typed fields `rollout`, `testStrategy`, `dependencies`, `recovery` |
+| Workflow | `runtime/workflow/validation/work-type-fields.mjs` | Work-type fields: `bugfix` variants, `refactor`, `libraryContract`, `migrationPlan`, `integrations`, `performanceAnalysis`, `dependencyChange`, `deprecationPlan`, `infraPlan`, `privacyAssessment`, `experimentDesign`, `releasePlan`, `modelCard` |
+| Workflow | `runtime/workflow/validation/process-fields.mjs` | Proposal fields `decisionLog`, `communication`, `releaseNote`, `demo`, `compliance`, and the archive-only review, compliance, and rollout-gate appendices |
+| Workflow | `runtime/workflow/validation/design-blueprints.mjs` | `WORK_TYPES`, `LIGHT_WORK`, `BEHAVIOR_NEUTRAL_WORK`, and design field validation/rendering in outline order |
+| Workflow | `runtime/workflow/validation/dev-document.mjs` | Work-type inference and the sections each work type requires |
+| Workflow | `runtime/workflow/skill-routing.mjs` | Build EDIT skills from work types, risk signals, and security triggers |
 | Workflow | `runtime/workflow/validation/semantic-intake.mjs` | Risk-derived discovery dimensions, decision-DAG validation, and bounded frontier selection |
 | Workflow | `runtime/workflow/validation/semantic-source-inventory.mjs` | Deterministic grounded-source inventory and freshness findings |
 | Workflow | `runtime/workflow/validation/repository-intelligence.mjs` | Bounded repository discovery, relevance ranking, and dependency/caller/test maps |
@@ -140,7 +193,19 @@ read-only argument.
 | Docs | `CONSUMER-QUALITY.md` | Installed quality protocols, onboarding, adapters, baselines, and fail-closed rules |
 | Docs | `README.md` | Runtime overview and operator guide |
 
-Semantic draft version 4 is the default. Agents write intent, requirements,
+Semantic draft version 5 is the default; versions 4 and 3 compile unchanged.
+A v5 draft is a folder: `change.json` (`version: 5`, every typed field) plus
+authored `proposal.md` and `design.md` whose `## ` headings come from the
+outline contract. The compiler keeps authored prose byte-for-byte, merges it
+with derived sections in outline order, and rejects unknown, derived,
+out-of-order, empty, or `TODO`/`TBD` sections in one EDIT. Every field module
+exports `validate<Field>(value, path)` (issues prefixed by the exact path, such
+as `boundaries[0].timeout is required`) and `render<Field>(value, {language})`
+(markdown without the heading, Thai labels for `th`); older field shapes stay
+valid. New fields are optional in v4 and v3 as well. The section order, work
+types, and required sections are specified in [WORKFLOW.md](../../WORKFLOW.md#draft-v5-folder-and-outline).
+
+Agents write intent, requirements,
 tasks, and explicit discovery dispositions once (evidence capabilities default
 to `test`); the
 harness derives required dimensions, refuses unresolved coverage, and validates
@@ -268,13 +333,19 @@ the answer; do not perform dependent work or add blanket confirmation gates.
 |---|---|---|
 | `investigate --template` | Prints the versioned source/fact/hypothesis record | Starting a bounded investigation |
 | `investigate <record.json>` | Persists source-bound investigation state and emits a Change handoff when ready | Resuming Investigate or crossing into Change |
-| `change start --template` | Prints the semantic draft v4 contract with machine-checkable discovery coverage | Beginning a fresh Change |
-| `change start <draft.json> --inspect` | Returns the next typed intake action and exact resume route without creating a change | Iterating on a semantic draft |
-| `change start <draft.json>` | Compiles, validates, installs, and prepares one isolated change transactionally | Completing Change |
+| `change start --template` | Leads with the minimal draft v5 folder (`change.json` with `version: 5` and `workType`, plus `proposal.md`) and its file-tool `save` route, then prints the typed-field contract with machine-checkable discovery coverage, `minimalDraftWriting`, one example block per work type (`workTypeExamples`), and the v5 folder layout (`draftFolderV5`); a v4 JSON draft still starts | Beginning a fresh Change |
+| `change start <draft.json \| draft-folder> --inspect` | Returns the next typed intake action and exact resume route without creating a change | Iterating on a semantic draft |
+| `change start <draft.json \| draft-folder>` | Compiles, validates, installs, and prepares one isolated change transactionally | Completing Change |
 | `change revise <change> <draft.json>` | Recompiles a revised semantic draft over the same change id through the start intake gate in the same call (an incomplete intake prints its action and changes nothing), with rollback and a requirement delta for approval; `--merge` applies the file as a partial draft over the recorded compiled-from draft; `--approve-spec --decision-ref <ref> [--through <target>]` records the user's approval in that call | An agreed semantic change must change before Build starts |
 | `change amend <change> <amendment.json>` | Adds, revises, or removes requirements before Land starts, including a `proven` candidate (returns to `building`); requires and retains a discovery delta for v4; a verify-only `updateTasks` amendment fixes an unfinished task's verify command (`--template` prints both); inspects in the same call and amends only at `DONE`, and accepts the same approval flags as `change revise` | A semantic v3/v4 change discovers new or changed behavior |
 | `change amend <change> --task <key\|id> --verify <command> [--reopen]` | Corrects one task's verify command directly through the same transaction (`--reopen` unticks a completed task); keeps the spec approval, claims, and capabilities, refuses an always-passing command, and accepts the task only when the new command passes | A task's verify command is wrong |
 | `advance <change> --through build\|proven\|archived` | Runs deterministic steps and returns one `EDIT`, `RUN_EXTERNAL`, `REPAIR`, `WAIT`, `ASK_USER`, or `DONE` action | Every normal step after Change |
+
+While a proof runs, another `advance` for the same change returns `WORKING`
+with `wait.progress`: the current `wave`, the providers `running`, each
+`finished` provider with its `status` and `durationMs`, `startedAt`, and
+`elapsedMs`. It is advisory and never changes recovery. Wait for the running
+proof instead of starting another.
 
 Every route `advance` returns stays on this surface: a `command`, `next`,
 instruction, or decision option that would name an operator primitive below
@@ -647,7 +718,8 @@ coordinator's recovery protocol.
 Generated state lives under `.foundation/` and must not be treated as product
 source:
 
-This table is the canonical listing of what the runtime writes. Shorter
+This table is the canonical inventory of runtime records and working inputs.
+The ownership exceptions are described above. Shorter
 listings elsewhere name this file as their source rather than restating it.
 
 | Path | Contents |
@@ -677,7 +749,7 @@ listings elsewhere name this file as their source rather than restating it.
 | `.foundation/backups/` | Commit bundles, patches, and file copies of unlanded sandbox work, written before a sandbox is removed |
 | `.foundation/agreement-drift/` | Isolated-packet edits made outside an amendment, saved when the harness restores the approved text |
 | `.foundation/prototypes/` | Disposable comparison prototypes, never admissible as evidence |
-| `.foundation/policy.json` | Optional project rules mapping paths to required capabilities |
+| `.foundation/policy.json` | Optional project-authored rules mapping paths to required capabilities; not generated proof |
 | `.foundation/install-manifest.txt` | Installer-owned record of managed files |
 
 `intake/`, `repository-sandboxes/`, `prototypes/`, `recovery/`, `agreement-drift/`, and `policy.json` appear
@@ -692,8 +764,10 @@ Review and acceptance receipts additionally carry the change's diff identity
 and the packet review hash. When a sandbox sync replays the change onto a
 moved base without altering either — the common shape of "another change
 landed first" — `proof run` / `proof advance` rebind the verdict to the new
-workspace hash instead of expiring it, and no review wave is consumed. A
-replay that does alter the diff expires the verdict as before; if that
+workspace hash instead of expiring it, and no review wave is consumed. This
+holds for a human verdict exactly as for an AI one, so no new request opens.
+A replay that does alter the diff expires the verdict and opens a new review
+request; if that
 expiry would exhaust the AI review wave cap, the next review dispatch
 releases exactly the expired passing attempt from the count under a
 harness-owned reference; `authority reset-base-move <change> --decision-ref

@@ -18,7 +18,8 @@ import {
   worktreeOwnedByTarget
 } from "../core/repository-binding.mjs";
 import {
-  landedTargetPaths, otherLandedOutput, replayLandedEdit, resolutionKeepsLanded
+  carriedLandedExcludes, landedTargetPaths, otherLandedOutput, replayLandedEdit,
+  resolutionKeepsLanded
 } from "./target-edits.mjs";
 import {
   captureCopyBase, captureCopyBaseSurface, copyBaseBytes, copyEditCarried, fileSource
@@ -579,7 +580,8 @@ export function assertReadOnlyReplayClean(repository, record, git, fail) {
 }
 
 export function replayContext({
-  id, state, candidate, gitHead, selectedRepositories, declaredRepositoryPaths = () => []
+  id, state, candidate, gitHead, selectedRepositories, declaredRepositoryPaths = () => [],
+  carriedExcludes = () => []
 }) {
   const { repository, record, targetPath } = candidate;
   const currentHead = targetPath ? gitHead(targetPath) : null;
@@ -598,7 +600,10 @@ export function replayContext({
       repository, from: record.baseHead, to: currentHead,
       rebased: false, conflicts: []
     },
-    pathspec: sandboxCodePathspec(id, nested),
+    // Carried landed work is not replayed; the sync carries it again onto
+    // the new base.
+    pathspec: [...sandboxCodePathspec(id, nested),
+      ...(repository === "root" ? carriedExcludes(state.workspace) : [])],
     staging: `${record.path}.rebase`,
     patch: `${record.path}.rebase.patch`
   };
@@ -672,10 +677,12 @@ export function prepareWritableReplay(context, dependencies) {
 export function prepareWorktreeReplay(
   options, id = options.id, state = options.state, candidate = options.candidate
 ) {
-  const { git, gitHead, selectedRepositories, declaredRepositoryPaths, fail } = options;
+  const { git, gitHead, selectedRepositories, declaredRepositoryPaths, fail,
+    carriedExcludes } = options;
   assertReadOnlyReplayClean(candidate.repository, candidate.record, git, fail);
   const context = replayContext({
-    id, state, candidate, gitHead, selectedRepositories, declaredRepositoryPaths
+    id, state, candidate, gitHead, selectedRepositories, declaredRepositoryPaths,
+    carriedExcludes
   });
   if (!context) return null;
   return candidate.record.access === "read"
@@ -1319,7 +1326,9 @@ export function changeDiffCandidatePlan(context, id, state, candidate) {
   const indexFile = `${record.path}.diff-identity-index.${context.pid}`;
   return {
     status: "ready", repository, record,
-    pathspec: context.codePathspec(id, nested),
+    pathspec: [...context.codePathspec(id, nested),
+      ...(repository === "root" && context.carriedExcludes
+        ? context.carriedExcludes(state?.workspace) : [])],
     indexFile,
     env: { ...context.environment, GIT_INDEX_FILE: indexFile }
   };
@@ -1720,12 +1729,13 @@ export function createSandboxRuntime({
       changeSourceHash: directoryHash(changePath(id)),
       packetSnapshot: packetManifest(join(path, "openspec", "changes", id))
     };
+    const carried = carryLandedOutput(id, state);
     transitionLifecycleState(state, "building", "worktree-sandbox-created");
     saveRuntime(state);
     projectRepositories(id, state);
     const setup = runWorkspaceSetup(state);
     if (setup) saveRuntime(state);
-    console.log(`SANDBOX ${id}\n  path: ${path}${sandboxSetupLine(setup)}`);
+    console.log(`SANDBOX ${id}\n  path: ${path}${landedCarryLine(carried)}${sandboxSetupLine(setup)}`);
   }
 
   function mergeTaskProgress(source, sandbox) {
@@ -1777,11 +1787,14 @@ export function createSandboxRuntime({
   // never mutates it, so no snapshot hash moves as a side effect of reading.
   // The diff drivers are pinned because patch text is the identity: a
   // machine-level `diff.algorithm` or prefix tweak must not expire verdicts.
+  const landedIdentity = (path) =>
+    lstatSync(path, { throwIfNoEntry: false })?.isFile() ? fileDigest(path) : null;
   const changeDiffIdentityPlan = changeDiffCandidatePlan.bind(null, {
     pathExists: existsSync,
     selectedRepositories,
     declaredRepositoryPaths,
     codePathspec: sandboxCodePathspec,
+    carriedExcludes: (workspace) => carriedLandedExcludes(workspace, landedIdentity),
     pid: process.pid,
     environment: process.env
   });
@@ -1808,7 +1821,8 @@ export function createSandboxRuntime({
   const prepareReplay = prepareWorktreeReplay.bind(null, {
     git, gitBuffer, gitHead, selectedRepositories, fail,
     declaredRepositoryPaths: () => typeof repositoryCatalog === "function"
-      ? nestedRepositoryRelativePaths(repositoryCatalog()) : []
+      ? nestedRepositoryRelativePaths(repositoryCatalog()) : [],
+    carriedExcludes: (workspace) => carriedLandedExcludes(workspace, landedIdentity)
   });
 
   // `worktree remove --force` destroys everything the checkout accumulated
@@ -2053,6 +2067,69 @@ export function createSandboxRuntime({
   // copy (3-way against the recorded base). A clean merge invalidates proof
   // like any sync; a conflict goes to the agent. The target is never written,
   // and paths this change left alone land beside it untouched.
+  // A worktree starts from HEAD, so another change's landed but uncommitted
+  // files were missing from it and Build and Prove ran without them. Carry
+  // every such file the sandbox has not changed, at create and after each
+  // sync. Only bytes a Land journal still vouches for are carried: a target
+  // file the user edited afterwards stays out, as any other user edit does.
+  function carryLandedOutput(id, state) {
+    const workspace = state.workspace;
+    if (workspace?.mode !== "worktree" || workspace.applied) return [];
+    const landed = otherLandedOutput({
+      transactions: join(root, ".foundation", "transactions"), changeId: id,
+      readJson: (path, fallback) => {
+        try { return JSON.parse(readFileSync(path, "utf8")); } catch { return fallback; }
+      }
+    });
+    const identity = (path) =>
+      lstatSync(path, { throwIfNoEntry: false })?.isFile() ? fileDigest(path) : null;
+    const landedBy = landedTargetPaths({ root, paths: Object.keys(landed), landed, identity });
+    const base = workspace.baseHead || "HEAD";
+    const prior = workspace.landedCarried || {};
+    const carried = {};
+    const added = [];
+    for (const path of Object.keys(landedBy).sort()) {
+      if ([".foundation/", "openspec/changes/"].some((prefix) => path.startsWith(prefix))) continue;
+      const sandboxFile = join(workspace.path, path);
+      const current = identity(sandboxFile);
+      const digest = landed[path].after;
+      if (current === digest) {
+        if (prior[path]) carried[path] = prior[path];
+        continue;
+      }
+      // Never overwrite this change's own edit; a path both changed is the
+      // landed replay's 3-way merge, not a carry.
+      const shown = gitBuffer(["show", `${base}:${path}`], root);
+      const untouched = shown.status === 0
+        ? current !== null && shown.stdout.equals(readFileSync(sandboxFile))
+        : !lstatSync(sandboxFile, { throwIfNoEntry: false });
+      if (!untouched && prior[path]?.digest !== current) continue;
+      mkdirSync(dirname(sandboxFile), { recursive: true });
+      cpSync(join(root, path), sandboxFile, VERBATIM_COPY);
+      carried[path] = { changeId: landedBy[path], digest: identity(sandboxFile) };
+      added.push({ path, landedBy: landedBy[path] });
+    }
+    // Recorded beside the copy-time carry-ins, so the change surface, task
+    // paths, and review packet skip them while their bytes are unchanged.
+    const digests = Object.fromEntries(Object.entries(carried).map(([path, row]) => [path, row.digest]));
+    const preexisting = { ...(workspace.sandboxPreexisting || {}) };
+    for (const path of Object.keys(prior)) if (!carried[path]) delete preexisting[path];
+    if (Object.keys(carried).length) {
+      workspace.landedCarried = carried;
+      workspace.sandboxPreexisting = { ...preexisting, ...digests };
+    } else {
+      delete workspace.landedCarried;
+      if (Object.keys(preexisting).length) workspace.sandboxPreexisting = preexisting;
+      else delete workspace.sandboxPreexisting;
+    }
+    return added;
+  }
+
+  function landedCarryLine(added) {
+    return added.length ? `\n  carried landed work: ${added.map((row) =>
+      `${row.path} (${row.landedBy})`).join(", ")}` : "";
+  }
+
   function replayLandedChanges(id, state) {
     const workspace = state.workspace;
     const result = { merged: [], conflicts: [] };
@@ -2266,6 +2343,7 @@ export function createSandboxRuntime({
     const landedReplay = movement?.conflicts?.length
       ? { merged: [], conflicts: [] } : replayLandedChanges(id, state);
     const targetCarried = movement?.conflicts?.length ? [] : carryTargetEdits(state);
+    const landedCarried = movement?.conflicts?.length ? [] : carryLandedOutput(id, state);
     clearSnapshotCache(id);
     const invalidated = !priorHash || priorHash !== relevantHash(id) ||
       fingerprints.priorContract !== fingerprints.nextContract ||
@@ -2273,7 +2351,7 @@ export function createSandboxRuntime({
       conflicts.length > 0 || (movement && !movement.rebased) ||
       Boolean(movement?.conflicts?.length) ||
       landedReplay.merged.length > 0 || landedReplay.conflicts.length > 0 ||
-      targetCarried.length > 0;
+      targetCarried.length > 0 || landedCarried.length > 0;
     if (preserveAmendment && directoryHash(source) !== acceptedSourceHash)
       fail(`target agreement changed during sandbox sync for '${id}'; both packets are preserved, retry sync to resolve the current target`);
     updateSandboxSyncState(id, state, source, fingerprints, invalidated,
@@ -2303,13 +2381,17 @@ export function createSandboxRuntime({
     for (const path of targetCarried)
       console.log(`CARRIED ${path}: merged the target checkout's uncommitted edit into the ` +
         "sandbox copy; the target edit is kept and evidence covering it runs again before Land.");
+    for (const row of landedCarried)
+      console.log(`CARRIED LANDED ${row.path}: copied ${row.landedBy}'s landed, uncommitted ` +
+        "bytes into the sandbox; they are not this change's contribution.");
     return {
       status: conflicts.length || movement?.conflicts?.length || landedReplay.conflicts.length
         ? "CONFLICT" : "SYNCED",
       conflicts: [...conflicts, ...(movement?.conflicts || []), ...landedReplay.conflicts],
       movement,
       ...(landedReplay.merged.length ? { landedReplayed: landedReplay.merged } : {}),
-      ...(targetCarried.length ? { targetCarried } : {})
+      ...(targetCarried.length ? { targetCarried } : {}),
+      ...(landedCarried.length ? { landedCarried } : {})
     };
   }
 

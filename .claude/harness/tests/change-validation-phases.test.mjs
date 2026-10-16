@@ -25,6 +25,7 @@ import {
   existingCapabilityRequirementFindings
 } from "../runtime/workflow/validation/spec-delta.mjs";
 import { unobservedAliasConfig } from "../runtime/evidence/provider-catalog.mjs";
+import { workTypeProviderSetupActions } from "../runtime/workflow/change-policy.mjs";
 
 const fail = (message) => { throw new Error(message); };
 
@@ -141,7 +142,7 @@ test("existing capability collector handles missing, non-markdown, new and curre
   assert.deepEqual(validator.changeSpecScenarios("change-a", join(root, "absent")), []);
 });
 
-function validationRuntimeFixture() {
+function validationRuntimeFixture(overrides = {}) {
   const root = mkdtempSync(join(tmpdir(), "foundation-validation-phases-"));
   const packet = join(root, "change-a");
   let activePacket = packet;
@@ -200,7 +201,8 @@ function validationRuntimeFixture() {
     knownProviders: new Set(),
     writeJson: (path, value) => writes.push({ path, value: structuredClone(value) }),
     now: () => "2026-08-26T00:00:00Z",
-    fail
+    fail,
+    ...overrides
   });
   return {
     runtime, state, contract, saved, handoffs, packet, writes, review,
@@ -210,6 +212,31 @@ function validationRuntimeFixture() {
     }
   };
 }
+
+test("an infra change without a plan-check provider gets an agent-owned setup advisory", () => {
+  const fixture = validationRuntimeFixture({
+    policyProviderSetupActions: (id, configured) =>
+      workTypeProviderSetupActions(id, ["infra"], configured)
+  });
+  fixture.contract.providers = { deploy: { capability: "deployment" } };
+  const setup = fixture.runtime.advisoryCapabilities("change-a")
+    .filter((row) => row.kind === "configure-provider");
+  assert.deepEqual(setup.map((row) => row.capability), ["plan-check"]);
+  const [row] = setup;
+  assert.equal(row.owner, "agent");
+  assert.equal(row.action, "EDIT");
+  assert.equal(row.reason, "work-type-provider-missing");
+  assert.equal(row.trigger, "work-type:infra");
+  assert.equal(row.command, "claude-foundation evidence init change-a --write");
+  assert.equal(row.resume, "claude-foundation advance change-a --through proven");
+  assert.match(row.next, /Resume: claude-foundation advance change-a --through proven/);
+  assert.doesNotMatch(JSON.stringify(row), /ASK_USER|"owner":"user"/);
+
+  // Once the provider is configured the setup step disappears.
+  fixture.contract.providers["plan"] = { capability: "plan-check" };
+  assert.equal(fixture.runtime.advisoryCapabilities("change-a")
+    .some((row) => row.kind === "configure-provider"), false);
+});
 
 test("validation preflight reports every unresolved prerequisite", () => {
   assert.deepEqual(validationPreflightIssues("change-a", {
@@ -327,22 +354,36 @@ test("acceptance normalization validates scope and persists resolved policy", ()
 });
 
 test("document budgets follow size and impact policy", () => {
-  assert.equal(validationDocumentBudgets({ size: "XS", impact: "high" })["design.md"], 1400);
-  assert.equal(validationDocumentBudgets({ size: "m", impact: "low" })["tasks.md"], 900);
-  assert.equal(validationDocumentBudgets({ size: "m", impact: "high" })["proposal.md"], 1600);
+  assert.deepEqual(validationDocumentBudgets({ size: "XS", impact: "high" }),
+    { "proposal.md": 1200, "design.md": 2000, "tasks.md": 1200 });
+  assert.deepEqual(validationDocumentBudgets({ size: "m", impact: "low" }),
+    { "proposal.md": 1200, "design.md": 2000, "tasks.md": 1200 });
+  assert.deepEqual(validationDocumentBudgets({ size: "m", impact: "high" }),
+    { "proposal.md": 2400, "design.md": 3600, "tasks.md": 2400 });
 });
 
 test("document budget warnings inspect only existing oversized artifacts", () => {
   const warnings = [];
   const content = new Map([
-    ["/packet/proposal.md", Array(901).fill("word").join(" ")],
+    ["/packet/proposal.md", Array(1201).fill("word").join(" ")],
     ["/packet/tasks.md", "short"]
   ]);
   warnValidationDocumentBudgets("/packet", { size: "s", impact: "high" },
     (path) => content.has(path), (path) => content.get(path),
     (message) => warnings.push(message));
   assert.equal(warnings.length, 1);
-  assert.match(warnings[0], /proposal\.md is 901 words/);
+  assert.match(warnings[0], /proposal\.md is 1201 words \(soft budget 1200\)/);
+  assert.match(warnings[0], /move duplicated or machine-only content into an appendix/);
+  assert.match(warnings[0], /instead of trimming/);
+  assert.doesNotMatch(warnings[0], /retain only load-bearing/);
+});
+
+test("document budget warnings never block validation", () => {
+  const warnings = [];
+  assert.doesNotThrow(() => warnValidationDocumentBudgets("/packet", { size: "l" },
+    () => true, () => Array(5000).fill("word").join(" "),
+    (message) => warnings.push(message)));
+  assert.equal(warnings.length, 3);
 });
 
 test("declared surface forecast reports wiring actions and review consequence", () => {

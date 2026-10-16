@@ -3,6 +3,9 @@ title: Consumer quality gates
 description: Add changed-code CRAP, mutation testing, language profiles, baselines, and quality debt to one or many repositories.
 ---
 
+<!-- docs-audience: project-maintainers -->
+**Audience:** project maintainers and authorized agents configuring an installation. For the everyday workflow, start with [Quickstart](/docs/quickstart/).
+
 Change Loop can orchestrate project-owned quality tools without pretending one metric fits every language. The feature is opt-in and starts in **report-only** mode.
 
 ```text

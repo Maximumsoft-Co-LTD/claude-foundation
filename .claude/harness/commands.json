@@ -370,6 +370,14 @@
       "description": "Acknowledge consumed reviewer infrastructure retries after the provider diagnosis passes, restoring AI review dispatch under an explicit host-recorded user decision."
     },
     {
+      "name": "authority extend-review",
+      "usage": "authority extend-review <change> --decision-ref <ref>",
+      "audience": "conditional",
+      "kind": "authority",
+      "idempotent": false,
+      "description": "Allow one more AI review wave after every routed wave is delivered, under an explicit host-recorded user decision."
+    },
+    {
       "name": "authority reset-base-move",
       "usage": "authority reset-base-move <change> --decision-ref <ref>",
       "audience": "conditional",
@@ -849,6 +857,7 @@
     "authority-status",
     "authority-record",
     "authority-reset-infra",
+    "authority-extend-review",
     "authority-reset-base-move",
     "receipt",
     "run-provider",

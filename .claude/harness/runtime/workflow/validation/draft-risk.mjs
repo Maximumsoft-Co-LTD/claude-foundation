@@ -1,5 +1,6 @@
 import { draftWorkTypes } from "./design-blueprints.mjs";
 import { inferWorkTypes } from "./dev-document.mjs";
+import { isSemanticVersion } from "./draft-version.mjs";
 
 // Risk, not diff size, selects the lane, so a semantic draft's impact and
 // coupling are derived from what it actually touches. An omitted or understated
@@ -133,12 +134,12 @@ export function declaredDraftRisk(source) {
 
 /**
  * Raise an omitted or understated impact/coupling to the derived value and
- * record why. Only semantic drafts (v3/v4) are derived; legacy drafts and
+ * record why. Only semantic drafts (v3/v4/v5) are derived; legacy drafts and
  * values outside the known scale are left for preflight to judge.
  */
 export function withDerivedRisk(input) {
   const source = declaredDraftRisk(input);
-  if (!source || typeof source !== "object" || ![3, 4].includes(source.version)) return source;
+  if (!source || typeof source !== "object" || !isSemanticVersion(source.version)) return source;
   const derived = deriveDraftRisk(source);
   const result = { ...source };
   const derivation = { declared: {} };

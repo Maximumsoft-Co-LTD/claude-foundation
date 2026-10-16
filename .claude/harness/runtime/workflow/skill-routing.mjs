@@ -5,32 +5,52 @@
 // Fixed priority, most specific first, so the cap keeps the skills that own
 // the hardest decision and drops the general testing skill last:
 //   1 debug-fundamentals          workType bugfix
-//   2 refactoring-fundamentals    workType refactor
-//   3 security-fundamentals       risk access-control; any security trigger
-//   4 performance-investigation   risk performance-slo
+//   2 refactoring-fundamentals    workType refactor, migration
+//   3 security-fundamentals       workType dependency, privacy, integration;
+//                                 risk access-control; any security trigger
+//   4 performance-investigation   workType performance; risk performance-slo
 //   5 database-fundamentals       workType data; risk persisted-data-change
 //   6 queue-fundamentals          workType async; risk financial
-//   7 api-design-fundamentals     workType api; risk external-integration
-//   8 ux-ui-principles            workType ui; risk user-interface
-//   9 observability-fundamentals  risk high-operational-risk
-//  10 testing-fundamentals        any behavior work type (not docs, chore, config);
+//   7 api-design-fundamentals     workType api, deprecation, library;
+//                                 risk external-integration
+//   8 architecture-fundamentals   workType migration, infra, integration
+//   9 ux-ui-principles            workType ui, experiment; risk user-interface
+//  10 delivery-engineering        workType dependency, infra, client-release
+//  11 observability-fundamentals  workType observability, experiment, ml;
+//                                 risk high-operational-risk
+//  12 testing-fundamentals        workType ml; any behavior work type;
 //                                 risk input-domain (caller-value partitions are test design)
+
+import { LIGHT_WORK } from "./validation/design-blueprints.mjs";
 
 export const SKILL_CAP = 4;
 
-const NON_BEHAVIOR_WORK = new Set(["docs", "chore", "config"]);
+// Work that routes no general testing skill: the shared LIGHT_WORK (docs,
+// test, chore) plus config. Config stays non-behavior as before. Refactor and
+// dependency are behavior-neutral (BEHAVIOR_NEUTRAL_WORK) yet still route
+// testing: their proof is the regression suite staying green, which is test
+// design. design-blueprints.mjs never imports this module, so no cycle.
+const NON_BEHAVIOR_WORK = new Set([...LIGHT_WORK, "config"]);
 
 const ROUTES = [
   ["debug-fundamentals", { work: ["bugfix"] }],
-  ["refactoring-fundamentals", { work: ["refactor"] }],
-  ["security-fundamentals", { risk: ["access-control"], security: true }],
-  ["performance-investigation", { risk: ["performance-slo"] }],
+  ["refactoring-fundamentals", { work: ["refactor", "migration"] }],
+  ["security-fundamentals", {
+    work: ["dependency", "privacy", "integration"], risk: ["access-control"], security: true
+  }],
+  ["performance-investigation", { work: ["performance"], risk: ["performance-slo"] }],
   ["database-fundamentals", { work: ["data"], risk: ["persisted-data-change"] }],
   ["queue-fundamentals", { work: ["async"], risk: ["financial"] }],
-  ["api-design-fundamentals", { work: ["api"], risk: ["external-integration"] }],
-  ["ux-ui-principles", { work: ["ui"], risk: ["user-interface"] }],
-  ["observability-fundamentals", { risk: ["high-operational-risk"] }],
-  ["testing-fundamentals", { risk: ["input-domain"], behavior: true }]
+  ["api-design-fundamentals", {
+    work: ["api", "deprecation", "library"], risk: ["external-integration"]
+  }],
+  ["architecture-fundamentals", { work: ["migration", "infra", "integration"] }],
+  ["ux-ui-principles", { work: ["ui", "experiment"], risk: ["user-interface"] }],
+  ["delivery-engineering", { work: ["dependency", "infra", "client-release"] }],
+  ["observability-fundamentals", {
+    work: ["observability", "experiment", "ml"], risk: ["high-operational-risk"]
+  }],
+  ["testing-fundamentals", { work: ["ml"], risk: ["input-domain"], behavior: true }]
 ];
 
 const names = (values) => new Set((Array.isArray(values) ? values : [])

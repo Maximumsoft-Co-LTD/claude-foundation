@@ -1,0 +1,901 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "outline-contract-compile",
+      "requirementKey": "outline-contract",
+      "scenario": "หัวข้อเรียงตาม outline",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "outline-contract-compile-2",
+      "requirementKey": "outline-contract",
+      "scenario": "หัวข้อที่เงื่อนไขไม่จริงไม่แสดง",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "outline-contract-compile-3",
+      "requirementKey": "outline-contract",
+      "scenario": "ไม่มีข้อมูลที่เปลี่ยนหลังอนุมัติ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "required-sections-change-start",
+      "requirementKey": "required-sections",
+      "scenario": "หัวข้อครบ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "required-sections-change-start-2",
+      "requirementKey": "required-sections",
+      "scenario": "งาน docs ไม่ต้องมี design",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "required-sections-change-start-3",
+      "requirementKey": "required-sections",
+      "scenario": "ขาดหัวข้อบังคับ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "single-home",
+      "requirementKey": "single-home",
+      "scenario": "ไม่ซ้ำ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "v5-draft-folder-change-start-foundation-drafts-refund-api",
+      "requirementKey": "v5-draft-folder",
+      "scenario": "คอมไพล์โฟลเดอร์",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "v5-draft-folder-change-start",
+      "requirementKey": "v5-draft-folder",
+      "scenario": "หัวข้อไม่รู้จัก",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "v5-draft-folder-change-start-2",
+      "requirementKey": "v5-draft-folder",
+      "scenario": "เขียนหัวข้อที่ harness สร้าง",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "v5-draft-folder-change-start-3",
+      "requirementKey": "v5-draft-folder",
+      "scenario": "ไม่มี change.json",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "v5-prose-merge-compile",
+      "requirementKey": "v5-prose-merge",
+      "scenario": "prose คงเดิม",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "v5-prose-merge-change-start",
+      "requirementKey": "v5-prose-merge",
+      "scenario": "หัวข้อผิดลำดับ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "v5-prose-merge-change-start-2",
+      "requirementKey": "v5-prose-merge",
+      "scenario": "prose ที่มี TODO",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "v5-intake-gate-change-start",
+      "requirementKey": "v5-intake-gate",
+      "scenario": "impact high ไม่มี coverage",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "v5-intake-gate-new-draft",
+      "requirementKey": "v5-intake-gate",
+      "scenario": "new --draft ใช้ v5",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "v5-revise-amend-revise-draft-requirement",
+      "requirementKey": "v5-revise-amend",
+      "scenario": "revise คง prose",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "v5-revise-amend-amend-rollout",
+      "requirementKey": "v5-revise-amend",
+      "scenario": "amend แก้หัวข้อ design",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "v5-revise-amend-amend-outline",
+      "requirementKey": "v5-revise-amend",
+      "scenario": "amend ด้วยหัวข้อไม่รู้จัก",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "draft-versions-change-start",
+      "requirementKey": "draft-versions",
+      "scenario": "v4 เดิมผ่าน",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "draft-versions-change-start-2",
+      "requirementKey": "draft-versions",
+      "scenario": "v3 ยังอ่านได้",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "draft-versions-claude-foundation-changes",
+      "requirementKey": "draft-versions",
+      "scenario": "CLI เดิมใช้ต่อได้",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "draft-versions-change-start-3",
+      "requirementKey": "draft-versions",
+      "scenario": "draft version ไม่รู้จัก",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "architecture-fields-compile",
+      "requirementKey": "architecture-fields",
+      "scenario": "แสดง boundary",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "architecture-fields-change-start",
+      "requirementKey": "architecture-fields",
+      "scenario": "boundary ขาด timeout",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "domain-fields-compile",
+      "requirementKey": "domain-fields",
+      "scenario": "แสดง domain",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "domain-fields-change-start",
+      "requirementKey": "domain-fields",
+      "scenario": "module ไม่มี interface",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "contract-fields-compile",
+      "requirementKey": "contract-fields",
+      "scenario": "API ครบ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "contract-fields-compile-2",
+      "requirementKey": "contract-fields",
+      "scenario": "field เดิมยังผ่าน",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "contract-fields-change-start",
+      "requirementKey": "contract-fields",
+      "scenario": "idempotency ไม่ครบ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "quality-fields-compile",
+      "requirementKey": "quality-fields",
+      "scenario": "แสดง threat model",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "quality-fields-compile-2",
+      "requirementKey": "quality-fields",
+      "scenario": "v5 derive grounding",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "quality-fields-change-start",
+      "requirementKey": "quality-fields",
+      "scenario": "NFR ไม่มีเกณฑ์",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "delivery-fields-compile",
+      "requirementKey": "delivery-fields",
+      "scenario": "แสดงการเปิดปิด",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "delivery-fields-change-start",
+      "requirementKey": "delivery-fields",
+      "scenario": "rollback ไม่มีหลักฐาน",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "process-fields-compile",
+      "requirementKey": "process-fields",
+      "scenario": "บันทึกคำตอบ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "process-fields-change-start",
+      "requirementKey": "process-fields",
+      "scenario": "งานที่ผู้ใช้เห็นไม่มี release note",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "archive-appendices-land-archive",
+      "requirementKey": "archive-appendices",
+      "scenario": "appendix review",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "archive-appendices-archive",
+      "requirementKey": "archive-appendices",
+      "scenario": "compliance ปิดอยู่",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "archive-appendices-change-start",
+      "requirementKey": "archive-appendices",
+      "scenario": "ผู้อนุมัติเป็นผู้ทำ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "bench-work-types-test-matrix",
+      "requirementKey": "bench-work-types",
+      "scenario": "matrix ครบทุกประเภท",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "bench-work-types-oracle",
+      "requirementKey": "bench-work-types",
+      "scenario": "oracle จับ seed ที่ยังไม่แก้",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "bench-work-types-test-matrix-2",
+      "requirementKey": "bench-work-types",
+      "scenario": "fixture digest ไม่ตรง",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "bench-packet-metrics-scorecard",
+      "requirementKey": "bench-packet-metrics",
+      "scenario": "รายงานตัววัดเอกสาร",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "bench-packet-metrics-2",
+      "requirementKey": "bench-packet-metrics",
+      "scenario": "ช้าเกินเกณฑ์",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "bench-packet-metrics-3",
+      "requirementKey": "bench-packet-metrics",
+      "scenario": "เร็วขึ้น",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "work-type-detail-fields-compile",
+      "requirementKey": "work-type-detail-fields",
+      "scenario": "model card ครบ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "work-type-detail-fields-compile-2",
+      "requirementKey": "work-type-detail-fields",
+      "scenario": "bugfix แบบ security",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "work-type-detail-fields-change-start",
+      "requirementKey": "work-type-detail-fields",
+      "scenario": "dependency ไม่มี provenance",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "work-type-detail-fields-compile-3",
+      "requirementKey": "work-type-detail-fields",
+      "scenario": "bugfix เดิมยังผ่าน",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "work-type-catalog-change-start",
+      "requirementKey": "work-type-catalog",
+      "scenario": "ประกาศ test",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "work-type-catalog-compile",
+      "requirementKey": "work-type-catalog",
+      "scenario": "อนุมาน infra",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "work-type-catalog-change-start-2",
+      "requirementKey": "work-type-catalog",
+      "scenario": "ประเภทไม่รู้จัก",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "work-type-routing-advance-build",
+      "requirementKey": "work-type-routing",
+      "scenario": "route infra",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "work-type-routing-advance",
+      "requirementKey": "work-type-routing",
+      "scenario": "งานเบาไม่ route",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "work-type-evidence-compile",
+      "requirementKey": "work-type-evidence",
+      "scenario": "ml ต้อง evaluation",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "work-type-evidence-prove",
+      "requirementKey": "work-type-evidence",
+      "scenario": "ไม่มี provider",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "gates-always-resumable-change-start",
+      "requirementKey": "gates-always-resumable",
+      "scenario": "ขาด field ได้ action ของ agent",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "gates-always-resumable-prove-land",
+      "requirementKey": "gates-always-resumable",
+      "scenario": "หลักฐานหลังปล่อยไม่ขวาง Land",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "gates-always-resumable-change-start-2",
+      "requirementKey": "gates-always-resumable",
+      "scenario": "compliance ขาดผู้อนุมัติ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "gates-always-resumable-test-gate",
+      "requirementKey": "gates-always-resumable",
+      "scenario": "ไม่มี gate ที่ไม่มีเจ้าของ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "unknown-task-fields-change-start",
+      "requirementKey": "unknown-task-fields",
+      "scenario": "depends แทน dependsOn",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "unknown-task-fields-change-start-2",
+      "requirementKey": "unknown-task-fields",
+      "scenario": "field ถูกต้องไม่มีคำเตือน",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "new-capabilities-prove",
+      "requirementKey": "new-capabilities",
+      "scenario": "evaluation ผ่านเกณฑ์",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "new-capabilities-prove-2",
+      "requirementKey": "new-capabilities",
+      "scenario": "evaluation ต่ำกว่าเกณฑ์",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "new-capabilities-prove-3",
+      "requirementKey": "new-capabilities",
+      "scenario": "release-health จากภายนอก",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "decision-status-compile",
+      "requirementKey": "decision-status",
+      "scenario": "option เป็น object",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "decision-status-compile-2",
+      "requirementKey": "decision-status",
+      "scenario": "proposed รอตัดสิน",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "decision-status-change-start",
+      "requirementKey": "decision-status",
+      "scenario": "สถานะไม่รู้จัก",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "rationale-in-spec-compile",
+      "requirementKey": "rationale-in-spec",
+      "scenario": "Rationale ใน spec",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "rationale-in-spec-land-archive",
+      "requirementKey": "rationale-in-spec",
+      "scenario": "หลัง archive",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "rationale-in-spec-compile-2",
+      "requirementKey": "rationale-in-spec",
+      "scenario": "decision ไม่ durable",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-replaces-amend",
+      "requirementKey": "amendment-replaces",
+      "scenario": "amend สามครั้งเหลือชุดเดียว",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-replaces-amend-2",
+      "requirementKey": "amendment-replaces",
+      "scenario": "รวมส่วนซ้ำจากรุ่นก่อน",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-replaces-amend-3",
+      "requirementKey": "amendment-replaces",
+      "scenario": "amend ที่ไม่เกี่ยวกับ investigation",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "reader-first-order-compile-draft",
+      "requirementKey": "reader-first-order",
+      "scenario": "ไม่มี appendix ก่อน Definition of done",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "reader-first-order-compile",
+      "requirementKey": "reader-first-order",
+      "scenario": "ส่วนที่ไม่มีข้อมูลไม่แสดง",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "investigation-once-compile",
+      "requirementKey": "investigation-once",
+      "scenario": "ไม่มีรายการซ้ำ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "investigation-once-compile-2",
+      "requirementKey": "investigation-once",
+      "scenario": "คำตอบครบ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "readable-traceability-compile-draft-scenario",
+      "requirementKey": "readable-traceability",
+      "scenario": "ใช้ชื่อ scenario",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "readable-traceability-compile",
+      "requirementKey": "readable-traceability",
+      "scenario": "เรียงตามชนิด",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "readable-traceability-compile-2",
+      "requirementKey": "readable-traceability",
+      "scenario": "check ไม่ซ้ำทุกแถว",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "discovery-authored-first",
+      "requirementKey": "discovery-authored-first",
+      "scenario": "สรุปแถว derive",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "header-clean-compile",
+      "requirementKey": "header-clean",
+      "scenario": "ไม่มี Status ตายตัว",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "header-clean-compile-change-standard",
+      "requirementKey": "header-clean",
+      "scenario": "lane ไม่มีวงเล็บซ้อน",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "localized-stories-compile",
+      "requirementKey": "localized-stories",
+      "scenario": "ภาษาไทย",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "localized-stories-compile-2",
+      "requirementKey": "localized-stories",
+      "scenario": "ภาษาอื่นคงเดิม",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "completeness-guard-compile",
+      "requirementKey": "completeness-guard",
+      "scenario": "ทุกชิ้นปรากฏ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "completeness-guard-test",
+      "requirementKey": "completeness-guard",
+      "scenario": "เนื้อหาหายถูกจับ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "complete-budgets-validate",
+      "requirementKey": "complete-budgets",
+      "scenario": "budget ใหม่",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "complete-budgets-validate-2",
+      "requirementKey": "complete-budgets",
+      "scenario": "ข้อความเตือนใหม่",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "readable-change-id-change-start",
+      "requirementKey": "readable-change-id",
+      "scenario": "intent ภาษาไทย",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "readable-change-id-change-start-2",
+      "requirementKey": "readable-change-id",
+      "scenario": "draft มี id",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "writing-guidance-template",
+      "requirementKey": "writing-guidance-template",
+      "scenario": "template มีคำแนะนำ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "docs-describe-packets-docs-consistency",
+      "requirementKey": "docs-describe-packets",
+      "scenario": "docs consistency ผ่าน",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "docs-describe-packets-docs-consistency-2",
+      "requirementKey": "docs-describe-packets",
+      "scenario": "ภาษาไม่ตรงกัน",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "file-map-once-compile",
+      "requirementKey": "file-map-once",
+      "scenario": "อ้าง task ด้วย id",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "file-map-once-compile-2",
+      "requirementKey": "file-map-once",
+      "scenario": "file map ที่ผู้เขียนให้มา",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/outline-contract.test.mjs) && (node --test .claude/harness/tests/design-blueprints.test.mjs .claude/harness/tests/test-discrimination.test.mjs) && (node --test .claude/harness/tests/required-sections.test.mjs) && (node --test .claude/harness/tests/semantic-draft.test.mjs) && (node --test .claude/harness/tests/skill-routing.test.mjs) && (node --test .claude/harness/tests/new-capabilities.test.mjs .claude/harness/tests/required-providers.test.mjs) && (node --test .claude/harness/tests/change-policy-surface.test.mjs) && (node --test .claude/harness/tests/architecture-fields.test.mjs) && (node --test .claude/harness/tests/contract-fields.test.mjs) && (node --test .claude/harness/tests/contract-fields.test.mjs .claude/harness/tests/design-blueprints.test.mjs) && (node --test .claude/harness/tests/quality-fields.test.mjs) && (node --test .claude/harness/tests/delivery-fields.test.mjs) && (node --test .claude/harness/tests/work-type-fields.test.mjs) && (node --test .claude/harness/tests/process-fields.test.mjs) && (node --test .claude/harness/tests/durable-decision-metadata.test.mjs) && (node --test .claude/harness/tests/apply-runtime-archive.test.mjs) && (node --test .claude/harness/tests/archive-appendices.test.mjs) && (node --test .claude/harness/tests/reader-guide.test.mjs) && (node --test .claude/harness/tests/design-render.test.mjs) && (node --test .claude/harness/tests/amendment-invalidation.test.mjs) && (node --test .claude/harness/tests/change-validation-phases.test.mjs .claude/harness/tests/change-atomic-start.test.mjs) && (node --test .claude/harness/tests/change-draft-materialization.test.mjs) && (node --test .claude/harness/tests/draft-folder.test.mjs) && (node --test .claude/harness/tests/semantic-intake.test.mjs) && (node --test .claude/harness/tests/change-revise.test.mjs) && (node --test .claude/tests/harness/upgrade-matrix.test.mjs .claude/harness/tests/public-command-golden.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh) && (node --test .claude/tests/bench/tests/openspec-native-matrix.test.mjs) && (node --test .claude/tests/bench/tests/openspec-native-scorecard.test.mjs .claude/tests/bench/tests/openspec-native-time-gate.test.mjs) && (node --test .claude/harness/tests/design-render.test.mjs .claude/harness/tests/design-blueprints.test.mjs)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared",
+      "timeoutMs": 1800000
+    }
+  }
+}

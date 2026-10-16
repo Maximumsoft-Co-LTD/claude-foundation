@@ -59,10 +59,13 @@ export function effectiveReviewAttemptLimit(routing = {}, delivered = [], worksp
     Boolean(workspaceHash) && workspaceHash !== latest?.workspaceHash;
   const base = promotesLow ? 2 : Number(routing.maxAiAttempts || 2);
   const closureWave = base === 2 && reviewClosureWaveAvailable(delivered, workspaceHash);
+  // An `authority extend-review` grant allows exactly one wave beyond those
+  // delivered when the user granted it.
+  const granted = Math.max(0, Number(routing.grantedAiWaveCap || 0));
   return {
     promotesLow,
     closureWave,
-    maxAiAttempts: closureWave ? 3 : base
+    maxAiAttempts: Math.max(closureWave ? 3 : base, granted)
   };
 }
 

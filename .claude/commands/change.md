@@ -7,13 +7,12 @@ Create or update **$ARGUMENTS**. Shared rules: `.claude/harness/AGENT.md`.
 
 1. Read only behavior-settling sources (code, tests, `openspec/specs`); reuse
    settled answers.
-2. Write the draft with the Write tool, not shell, to `.foundation/drafts/<id>.json` (no
-   `version`): `intent`,
-   `requirements[{description with SHALL, scenarios[{when, then}]}]`,
-   `tasks[{outcome, verify, paths}]`; `verify`: an existing test command
-   failing on wrong behavior. Write prose in the requested document
-   language, else the request's.
-3. Run `claude-foundation change start .foundation/drafts/<id>.json`. If the
+2. Write the draft folder with the Write tool, not shell, to
+   `.foundation/drafts/<id>/`: `change.json` with `version: 5`, `intent`,
+   `workType`, `requirements[{description with SHALL, scenarios[{when, then}]}]`,
+   `tasks[{outcome, verify, paths}]`; `proposal.md` `## Why`. `verify` fails
+   on wrong behavior. Prose: the requested language, else the request's.
+3. Run `claude-foundation change start .foundation/drafts/<id>`. If the
    request approved the spec, add `--approve-spec --decision-ref <ref>` (`/dev` adds its
    `--through`): one call starts, approves, continues.
    - `EDIT`: fix every named field via Edit, rerun.

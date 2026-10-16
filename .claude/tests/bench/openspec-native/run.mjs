@@ -11,7 +11,9 @@ import { fileURLToPath } from "node:url";
 
 import { benchArm, buildScorecard, costMeasurement, digest } from "./scorecard.mjs";
 import { shellCheck } from "./lab.mjs";
-import { benchmarkEvaluationWorkspace, collectBenchmarkQuality } from "./quality.mjs";
+import {
+  benchmarkEvaluationWorkspace, collectBenchmarkQuality, collectPacketMetrics
+} from "./quality.mjs";
 import {
   messageToolCalls, toolCallProfile
 } from "../../../harness/runtime/observability/telemetry.mjs";
@@ -485,7 +487,7 @@ export function collectNativeScorecard({
   quality = null, operationRows = null, syntheticOperationRows = [], stopwatch = {}, exitCode = 0,
   timedOut = false, budgetExhausted = null, changeId = null, provenance = {},
   hostTelemetry = {}, hostUsage = {}, oracle = null, decisionBoundary = null,
-  arm = "change-loop", outcome = null
+  arm = "change-loop", outcome = null, packet = undefined
 }) {
   const baseline = benchArm(arm) === "baseline";
   const discovered = baseline ? null
@@ -507,6 +509,9 @@ export function collectNativeScorecard({
     hostTelemetry: { ...hostTelemetry, guardrail: guardrailOutcomes(project, stopwatch) },
     hostUsage,
     stopwatch,
+    // Change packet metrics (collectPacketMetrics) belong to change-loop runs
+    // only; the caller collects them asynchronously.
+    ...(baseline || packet === undefined ? {} : { packet }),
     outcome: outcome ?? (baseline
       ? baselineOutcome({ envelope, exitCode, timedOut, budgetExhausted, oracle })
       : observedOutcome({
@@ -1333,8 +1338,10 @@ async function main() {
   const quality = !args["collect-only"] && (preliminaryOutcome.status === "completed" || archived)
     ? await collectBenchmarkQuality({ project, changeId: discoveredChangeId })
     : null;
+  const packet = baseline ? undefined
+    : await collectPacketMetrics({ project, changeId: discoveredChangeId });
   const scorecard = collectNativeScorecard({
-    scenario, arm, repeat, runId, project, outcome: baselineResult,
+    scenario, arm, repeat, runId, project, outcome: baselineResult, packet,
     config: {
       // Only a baseline adds fields, so a change-loop config digest is unchanged.
       ...(baseline ? { arm, projectCommand, hostPrompt: request?.prompt ?? null } : {}),

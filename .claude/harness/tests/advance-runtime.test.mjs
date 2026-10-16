@@ -4,8 +4,48 @@ import { spawnSync } from "node:child_process";
 
 import {
   coordinatorAction, createAdvanceRuntime, envelopeContextFiles, hasValidLandGrant,
-  prepareAdvanceBuild, runAdvanceProof
+  prepareAdvanceBuild, proofOperationAction, runAdvanceProof
 } from "../runtime/workflow/advance-runtime.mjs";
+
+test("a running proof's WORKING action carries its progress to the caller", () => {
+  const progress = { startedAt: "2026-10-16T00:00:00.000Z", wave: 2, running: ["test"],
+    finished: [{ provider: "lint", status: "pass", durationMs: 12 }], elapsedMs: 4000 };
+  const action = proofOperationAction("change-a", {
+    status: "IN_PROGRESS", owner: { pid: process.pid }, next: [], progress
+  });
+  assert.equal(action.action, "WORKING");
+  assert.deepEqual(action.wait.progress, progress);
+  // Without recorded progress the wait keeps its previous shape.
+  const bare = proofOperationAction("change-a", { status: "IN_PROGRESS", owner: { pid: process.pid } });
+  assert.equal("progress" in bare.wait, false);
+});
+test("exhausted AI review asks the user; a review no reviewer can start keeps waiting", () => {
+  const requests = [{ type: "review", status: "requested", requestId: "r1" }];
+  const template = "claude-foundation authority status change-a --request r1 --template";
+  const asked = proofOperationAction("change-a", {
+    status: "WAITING_EXTERNAL", requests,
+    next: [{ requestId: "r1", command: template,
+      aiReviewExhausted: { delivered: 2, maxAiAttempts: 2 } }]
+  });
+  assert.equal(asked.action, "ASK_USER");
+  assert.equal(asked.decision.kind, "review-exhausted");
+  assert.match(asked.decision.summary, /2\/2 AI review waves/);
+  const options = Object.fromEntries(asked.decision.options.map((row) => [row.id, row]));
+  assert.deepEqual(Object.keys(options).sort(), ["human-verdict", "one-more-ai-attempt", "pause"]);
+  assert.match(options["human-verdict"].command,
+    /authority dispatch change-a --request r1 --scope full --reviewer-type human/);
+  assert.match(options["one-more-ai-attempt"].command,
+    /authority extend-review change-a --decision-ref <user-decision>/);
+  assert.equal(asked.decision.options.some((row) => /waive/.test(row.command || "")), false,
+    "exhausted review is never waived");
+
+  const waiting = proofOperationAction("change-a", {
+    status: "WAITING_EXTERNAL", requests, next: [{ requestId: "r1", command: template }]
+  });
+  assert.equal(waiting.action, "WAIT");
+  assert.match(waiting.reason, /no configured reviewer can start review request r1/);
+});
+
 import {
   feedbackSnapshotValue, operationCauseCoverage, reviewRepairIntervals, intervalDuration
 } from "../runtime/observability/feedback-runtime.mjs";

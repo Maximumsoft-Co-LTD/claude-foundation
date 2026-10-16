@@ -1,0 +1,7 @@
+# Tasks
+
+> This is the sole implementation ledger.
+
+- [x] **T001** draft v5 ที่มี key ได้ capability และ outcome ที่เติมให้ [key:T001] [kind:implementation] [paths:.claude/harness/runtime/workflow/semantic-draft.mjs,.claude/harness/tests/draft-folder.test.mjs] [claims:v5-keyed-defaults-agent-change-start,v5-keyed-defaults-agent-change-start-2] — verify: `node --test .claude/harness/tests/draft-folder.test.mjs`
+- [x] **T002** capability จาก workType อย่างเดียวไม่ยกระดับ review [key:T002] [kind:implementation] [paths:.claude/harness/runtime/evidence/evidence-contract.mjs,.claude/harness/foundation.mjs,.claude/harness/tests/review-policy.test.mjs,.claude/harness/EVIDENCE.md] [claims:worktype-no-tier-harness-review,worktype-no-tier-harness-review-2] — verify: `node --test .claude/harness/tests/review-policy.test.mjs`
+- [x] **T003** ผูกหลักฐานให้ workType performance, async, integration และ deprecation [key:T003] [kind:implementation] [paths:.claude/harness/runtime/workflow/change-policy.mjs,.claude/harness/runtime/evidence/provider-catalog.mjs,.claude/harness/runtime/evidence/evidence-bootstrap.mjs,.claude/harness/tests/change-policy-surface.test.mjs,.claude/harness/EVIDENCE.md,website/docs/src/content/docs/evidence/claims.md,website/docs/src/content/docs/th/evidence/claims.md] [claims:worktype-evidence-four-harness,worktype-evidence-four-harness-2] — verify: `node --test .claude/harness/tests/change-policy-surface.test.mjs`

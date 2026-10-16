@@ -3,6 +3,9 @@ title: Adapters and wiring
 description: The five executable adapters, derived and custom wiring, and how resources keep providers from colliding.
 ---
 
+<!-- docs-audience: agents-integrators -->
+**Audience:** coding agents and integration operators. CLI commands and schemas below are system reference, not a user checklist. Users can follow [Quickstart](/docs/quickstart/).
+
 Change Loop separates the stable behavioral contract from replaceable execution wiring. It does not install test frameworks, browsers, or project dependencies — **your project owns and locks every executable an adapter names.**
 
 ## Derived wiring and execution.yaml
@@ -47,6 +50,11 @@ wiring change invalidates only the affected provider fingerprints.
   "timeoutMs": 120000
 }
 ```
+
+Without `timeoutMs` a command gets ten minutes. A timeout fails as an `error`
+that names the provider, the limit, and the `timeoutMs` to raise. Provider
+commands do not inherit the agent session's own variables, so a test that runs
+`claude-foundation` in a fixture works the same inside and outside Prove.
 
 ### test-discovery
 

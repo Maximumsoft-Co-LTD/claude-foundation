@@ -1,0 +1,1 @@
+{ "name": "email-worker", "image": "registry.example/email-worker:0.4.0", "port": 9100 }

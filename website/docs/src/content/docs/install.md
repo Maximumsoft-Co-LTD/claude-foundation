@@ -3,6 +3,9 @@ title: Install
 description: Requirements and the two supported ways to install Change Loop into an existing repository.
 ---
 
+<!-- docs-audience: project-maintainers -->
+**Audience:** project maintainers and authorized agents configuring an installation. For the everyday workflow, start with [Quickstart](/docs/quickstart/).
+
 Install the `claude-foundation` CLI once on your machine, then initialize Change
 Loop in each project. Running `init` again upgrades the managed files. It is
 safe for brownfield repositories: it seeds what is missing, refreshes what it
@@ -143,15 +146,20 @@ Project-owned paths are seeded or merged but **never clobbered**:
 .claude/settings.json          # hooks merged with jq; timestamped backup
 openspec/config.yaml           # copied only when missing
 openspec/repositories.yaml     # copied only when missing
-foundation.json                # copied when missing
+foundation.json                # seeded; supported missing-field/default migrations
 CLAUDE.md / AGENTS.md          # only the marked pointer block is rewritten
 ```
 
 Your specs, active changes, runtime state, custom agents, and hooks survive every upgrade. A path dropped from the managed list is removed from your project only if the manifest previously claimed it — so Change Loop never deletes a file it did not install.
 
-Because `foundation.json` belongs to your project, an upgrade does not replace
-its budgets or review policy with newer defaults. Read
+Because `foundation.json` belongs to your project, an upgrade preserves custom
+policy rather than replacing the file wholesale. It can add missing fields and
+migrate recognized historical default budgets. Read
 [Configure foundation.json](/docs/foundation-config/) before changing it.
+
+Project-owned does not mean the user must edit the file personally; an
+authorized agent can configure it. Installed system instructions are separate
+from project preferences. See [files and ownership](/docs/artifacts/).
 
 ## Browser proof stays yours
 

@@ -18,6 +18,7 @@ export const PROVIDER_CONTRACTS = {
   "integration": "Multiple components or external boundaries work together.",
   "compatibility": "Public or persisted contracts remain compatible across supported versions.",
   "performance": "Measured latency, throughput, resource, or size budgets are met.",
+  "concurrency": "Concurrent and asynchronous paths keep their ordering, isolation, and completion guarantees under contention.",
   "security-static": "Static security checks cover the changed trust boundary and unsafe sinks.",
   "cross-repo-contract": "Producer and consumer repositories agree on the same versioned contract.",
   "review": "Independent risk review covers the declared claims and unresolved findings.",
@@ -29,10 +30,108 @@ export const PROVIDER_CONTRACTS = {
   "resilience": "Timeout, retry, partial-failure, recovery, and degraded-dependency behavior is proven.",
   "observability": "Required logs, metrics, traces, and alerts expose success and failure safely.",
   "deployment": "Packaging, configuration, rollout health checks, and rollback behavior are proven.",
-  "dependency-supply-chain": "Dependency vulnerability, license, lockfile, and provenance policy passes."
+  "dependency-supply-chain": "Dependency vulnerability, license, lockfile, and provenance policy passes.",
+  "evaluation": "A model or ranking evaluation reports a score at or above its declared threshold.",
+  "release-health": "Post-release crash, error, and adoption signals stay healthy during rollout.",
+  "parity": "The new implementation matches the reference behavior on the declared comparison set.",
+  "plan-check": "An infrastructure or migration plan contains only the declared changes.",
+  "experiment-guardrail": "Experiment guardrail metrics stay within their declared bounds after release."
 };
 
+// The adapter each capability defaults to. Pre-Land capabilities run as a
+// project command; post-release capabilities are signals observed after
+// release, so they are recorded from external evidence.
+export const CAPABILITY_ADAPTERS = Object.freeze({
+  concurrency: "command",
+  evaluation: "command",
+  parity: "command",
+  "plan-check": "command",
+  "release-health": "external",
+  "experiment-guardrail": "external"
+});
+
+// When a capability's evidence exists. Absent means "pre-land": it gates
+// proof and Land. "post-release" capabilities exist only after the change
+// ships, so they are rollout gates recorded in the handoff and never block
+// proof or Land.
+export const CAPABILITY_PHASES = Object.freeze({
+  "release-health": "post-release",
+  "experiment-guardrail": "post-release"
+});
+
+export function capabilityPhase(capability) {
+  return CAPABILITY_PHASES[capability] || "pre-land";
+}
+
+export function isPostReleaseCapability(capability) {
+  return capabilityPhase(capability) === "post-release";
+}
+
+// Splits required provider names into the ones that gate proof and Land and
+// the post-release rollout gates, which are deferred (neither failed nor
+// pending). `providerCapability(name, config)` resolves each name.
+export function splitPostReleaseProviders(required, providers = {}, capabilityOf = providerCapability) {
+  const blocking = [];
+  const rolloutGates = [];
+  for (const provider of required || []) {
+    const config = providers?.[provider];
+    const capability = (config ? capabilityOf(provider, config) : null) || provider;
+    if (isPostReleaseCapability(capability))
+      rolloutGates.push({ provider, capability, phase: "post-release", status: "deferred",
+        gate: "rollout" });
+    else blocking.push(provider);
+  }
+  return { blocking, rolloutGates };
+}
+
+// A proof finalized before rollout gates existed has no rolloutGates field: it
+// owes none, so readers see an empty list. `deferred` keeps only the gates the
+// rollout still waits on (a waived capability is recorded, not owed).
+export function proofRolloutGates(proof, { deferred = false } = {}) {
+  const gates = Array.isArray(proof?.rolloutGates) ? proof.rolloutGates : [];
+  return deferred ? gates.filter((gate) => gate?.status !== "waived") : gates;
+}
+
+// Machine-readable evaluation result: a command prints this JSON on stdout or
+// writes it to its configured report. The claim passes only when
+// score >= threshold; a provider-level `threshold` applies when the result
+// omits one. Anything else (missing or non-numeric values) fails closed.
+export const EVALUATION_PROTOCOL = "foundation-evaluation-v1";
+
+export function evaluationResult(report, config = {}) {
+  const number = (value) => (typeof value === "number" && Number.isFinite(value)) ||
+    (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)))
+    ? Number(value) : null;
+  // A result for another protocol is not this contract's score, so it fails
+  // closed naming both; an omitted protocol keeps the documented shape.
+  if (report?.protocol !== undefined && report.protocol !== EVALUATION_PROTOCOL)
+    return { status: "fail", score: null, threshold: null,
+      observed: `evaluation result protocol '${report.protocol}' is not ${EVALUATION_PROTOCOL}` };
+  const score = number(report?.score);
+  const threshold = number(report?.threshold ?? config?.threshold);
+  if (score === null || threshold === null)
+    return { status: "fail", score, threshold,
+      observed: `evaluation result missing ${score === null ? "score" : "threshold"}` };
+  const status = score >= threshold ? "pass" : "fail";
+  return { status, score, threshold,
+    observed: `evaluation score ${score} ${status === "pass" ? ">=" : "<"} threshold ${threshold}` };
+}
+
 export const PROVIDERS = new Set(Object.keys(PROVIDER_CONTRACTS));
+
+// A provider command without timeoutMs gets ten minutes: long enough for an
+// ordinary suite, so a slow suite is not reported as a broken one.
+export const DEFAULT_PROVIDER_TIMEOUT_MS = 600000;
+
+export function providerTimeoutMs(config) {
+  return Number(config?.timeoutMs || DEFAULT_PROVIDER_TIMEOUT_MS);
+}
+
+// The reason a timed-out provider failed, with the limit and where to raise it.
+export function providerTimeoutDetail(provider, config) {
+  return `timed out after ${providerTimeoutMs(config)}ms; raise providers.${provider}.timeoutMs ` +
+    "in evidence.yaml when the command needs longer";
+}
 
 export function providerCapability(provider, config = null) {
   return config?.capability || (PROVIDERS.has(provider) ? provider : null);
@@ -60,7 +159,7 @@ function sameExecutionContext(left, right) {
     sameValue(left.env, right.env) && sameSet(left.envFrom, right.envFrom) &&
     sameValue(left.environment, right.environment) &&
     sameValue(left.service, right.service) && sameValue(left.readiness, right.readiness) &&
-    Number(left.timeoutMs || 120000) === Number(right.timeoutMs || 120000) &&
+    providerTimeoutMs(left) === providerTimeoutMs(right) &&
     sameSet(left.resources, right.resources) && sameSet(left.dependsOn, right.dependsOn);
 }
 

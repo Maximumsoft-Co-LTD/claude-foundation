@@ -6,6 +6,9 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 . "$HERE/../lib/assert.sh"
 
+assert_cmd_zero "documentation ownership, reading budgets, bilingual pages, and entry links" \
+  node --test "$HERE/documentation-governance.test.mjs"
+
 assert_cmd_zero "skill catalog metadata, references, and routing-case contracts" \
   node --test "$HERE/skill-catalog.test.mjs"
 assert_cmd_zero "skill evaluation helpers preserve measurements and held-out independence" \

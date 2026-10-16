@@ -4,7 +4,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { auditTraceability } from "../evidence/traceability.mjs";
 import { detectEvidenceWiring } from "../evidence/evidence-bootstrap.mjs";
-import { reviewCoveredProviders } from "../evidence/provider-catalog.mjs";
+import {
+  isPostReleaseCapability, reviewCoveredProviders, splitPostReleaseProviders
+} from "../evidence/provider-catalog.mjs";
 import { nextAfterValidate } from "../core/next-step.mjs";
 import { gateRepairPlan } from "../core/convergent-gate.mjs";
 import { compiledExecutionSurfaceValue } from "../core/authority-policy.mjs";
@@ -378,8 +380,8 @@ export function normalizeValidationAcceptance(id, state, claims, acceptance,
 export function validationDocumentBudgets(state) {
   return ["xs", "s"].includes(String(state.size || "").toLowerCase()) ||
     state.impact === "low"
-    ? { "proposal.md": 900, "design.md": 1400, "tasks.md": 900 }
-    : { "proposal.md": 1600, "design.md": 2600, "tasks.md": 1600 };
+    ? { "proposal.md": 1200, "design.md": 2000, "tasks.md": 1200 }
+    : { "proposal.md": 2400, "design.md": 3600, "tasks.md": 2400 };
 }
 
 export function lockValidatedGrounding(state, grounding, fingerprint, timestamp) {
@@ -404,7 +406,8 @@ export function warnValidationDocumentBudgets(dir, state,
     if (!exists(path)) continue;
     const words = read(path, "utf8").trim().split(/\s+/).filter(Boolean).length;
     if (words > limit)
-      warn(`WARNING: ${name} is ${words} words (soft budget ${limit}); retain only load-bearing content`);
+      warn(`WARNING: ${name} is ${words} words (soft budget ${limit}); ` +
+        "move duplicated or machine-only content into an appendix instead of trimming content the reader needs");
   }
 }
 
@@ -788,7 +791,33 @@ export function requiredProvidersOperation(context, id) {
   if (reviewRequired)
     for (const row of reviewCoveredProviders(contract.providers))
       capabilityContext.required.delete(row.provider);
-  return [...capabilityContext.required].sort();
+  // Post-release signals (release health, experiment guardrails) arrive only
+  // after the change ships, so they gate the rollout and never proof or Land.
+  return splitPostReleaseProviders([...capabilityContext.required].sort(),
+    contract.providers, context.providerCapability).blocking;
+}
+
+// The post-release gates the change still owes, as deferred rollout gates:
+// configured providers, capabilities its work types owe, and capabilities its
+// claims declare. A capability with no provider instance still owes its gate.
+export function postReleaseRolloutGates(context, id) {
+  const contract = context.evidence(id);
+  const providers = contract.providers || {};
+  const gates = splitPostReleaseProviders(Object.keys(providers).sort(), providers,
+    context.providerCapability).rolloutGates;
+  const covered = new Set(gates.map((gate) => gate.capability));
+  const owed = new Set(context.policyRolloutCapabilities?.(id) || []);
+  for (const claim of contract.claims || [])
+    for (const capability of claim.capabilities || [])
+      if (isPostReleaseCapability(capability)) owed.add(capability);
+  const extra = [...owed].filter((capability) => !covered.has(capability)).sort();
+  // A waived capability no longer owes its gate; it stays listed as waived so
+  // the handoff and archive still show the user's decision.
+  const state = context.loadRuntime?.(id);
+  const waived = new Set(state ? currentWaivers(state, state.waivers?.some((row) => row.binding)
+    ? context.relevantHash?.(id) : undefined).map((row) => row.capability) : []);
+  return [...gates, ...splitPostReleaseProviders(extra, {}, context.providerCapability).rolloutGates]
+    .map((gate) => waived.has(gate.capability) ? { ...gate, status: "waived" } : gate);
 }
 
 // The capabilities review covers in place of a provider that only repeats the
@@ -831,6 +860,9 @@ export function createChangeValidationRuntime({
   reviewAssurancePosture = () => null,
   policyCapabilities,
   policyCapabilityTrigger,
+  // (id, configuredCapabilities) -> agent-owned configure-provider EDIT rows
+  // for work-type capabilities the change has no provider for.
+  policyProviderSetupActions = () => [],
   changedSurfaceResolvable,
   forecastCapabilities,
   rawExecution,
@@ -1999,18 +2031,38 @@ export function createChangeValidationRuntime({
       next: `restore it: claude-foundation change waive ${id} --capability ${
         row.capability} --revoke --decision-ref <ref>`
     }));
-    if (!changedSurfaceResolvable(id)) return waived;
+    if (!changedSurfaceResolvable(id)) return [...providerSetupRows(id, waived), ...waived];
+    const inferred = policyCapabilitySplit(id).advisory.map((capability) => ({
+      capability,
+      trigger: policyCapabilityTrigger(id, capability),
+      reason: "policy-inferred-unwired",
+      next: `configure a project-owned ${capability} provider in openspec/changes/${
+        id}/execution.yaml, or accept the advisory`
+    }));
     return [
       ...reviewCoveredRows(id, active),
-      ...policyCapabilitySplit(id).advisory.map((capability) => ({
-        capability,
-        trigger: policyCapabilityTrigger(id, capability),
-        reason: "policy-inferred-unwired",
-        next: `configure a project-owned ${capability} provider in openspec/changes/${
-          id}/execution.yaml, or accept the advisory`
-      })),
+      ...inferred,
+      ...providerSetupRows(id, [...inferred, ...waived]),
       ...waived
     ];
+  }
+
+  // A work type that owes a capability the change has no provider for gets an
+  // agent-owned setup step with its resume route: never a user action and
+  // never blocking proof.
+  function providerSetupRows(id, listed) {
+    const seen = new Set(listed.map((row) => row.capability));
+    let contract;
+    try { contract = evidence(id); } catch { return []; }
+    const configured = Object.entries(contract?.providers || {})
+      .map(([provider, config]) => providerCapability(provider, config)).filter(Boolean);
+    return (policyProviderSetupActions(id, configured) || [])
+      .filter((action) => !seen.has(action.capability))
+      .map((action) => ({
+        ...action,
+        reason: "work-type-provider-missing",
+        next: `${action.instruction} Resume: ${action.resume}`
+      }));
   }
 
   const waiveGate = waiveGateOperation.bind(null, {

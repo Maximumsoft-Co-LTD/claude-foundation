@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
 import {
-  apiContractErrorIssues, createChangeLifecycle
+  apiContractErrorIssues, createChangeLifecycle, draftChangeId
 } from "../runtime/workflow/change-lifecycle.mjs";
 import {
   amendmentTaskRepositoryIssues, amendmentVerifyPathIssues, taskRepositoryIssues,
@@ -529,6 +529,61 @@ test("a minimal draft without version compiles and starts in one call", (t) => {
     /\[key:validate-note-titles\]/);
 });
 
+function idlessDraft(intent, overrides = {}) {
+  const { id: _id, ...base } = minimalRapidV4({
+    intent,
+    requirements: [{
+      key: "amendment-replaces", capability: "readable-change-packets", operation: "added",
+      scenarios: [{ name: "Bounded input", when: "A bounded input arrives",
+        then: "The bounded result is returned" }],
+      outcome: "The bounded result is returned"
+    }],
+    tasks: [{
+      key: "implement-amendment-replaces", outcome: "Implement the bounded result",
+      covers: ["amendment-replaces"], paths: ["src/**"], verify: "npm test"
+    }],
+    evidence: { "amendment-replaces": { capabilities: ["test"] } },
+    ...overrides
+  });
+  return base;
+}
+
+test("a Thai intent without an id names the change from capability and first requirement", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, idlessDraft("แก้เอกสารให้อ่านง่าย"));
+  const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.match(output, /^AGREED readable-change-packets-amendment-replaces/m);
+  assert.equal(existsSync(join(value.runtime, "readable-change-packets-amendment-replaces.json")), true);
+});
+
+test("an explicit draft id always names the change", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, { ...idlessDraft("แก้เอกสารให้อ่านง่าย"), id: "my-change" });
+  const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.match(output, /^AGREED my-change/m);
+  assert.equal(existsSync(join(value.changes, "my-change")), true);
+});
+
+test("an English multi-word intent without an id keeps its intent slug", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, idlessDraft("Make change packets readable"));
+  const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.match(output, /^AGREED make-change-packets-readable/m);
+});
+
+test("derived change ids follow the id length rule", () => {
+  const slugify = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/, "").slice(0, 64).replace(/-+$/, "") || "change";
+  const id = draftChangeId({
+    intent: "สั้น",
+    specs: [{ name: "a".repeat(40) }],
+    _requirementKeys: ["b".repeat(40)]
+  }, slugify);
+  assert.match(id, /^[a-z0-9][a-z0-9-]{0,63}$/);
+  assert.equal(draftChangeId({ id: "my-change", intent: "x" }, slugify), "my-change");
+  assert.equal(draftChangeId({ intent: "Fix it", specs: [] }, slugify), "fix-it");
+});
+
 // Seam: a rapid packet's concise delta spec is valid OpenSpec and Land's
 // archive step (the real CLI, as apply-runtime runs it) merges it into the
 // living spec exactly as for a standard change. Benchmark v3.5.29 archived a
@@ -1005,13 +1060,22 @@ test("a verify whose known runner prints no countable result gets an advisory, n
 
 // Every paid scenario saved the draft with `cat > … <<'EOF'`, which the host
 // refuses; the save route has to sit in the output the agent copies from.
-test("the start template leads with the pre-allowed file-tool save route", (t) => {
+test("the start template leads with the pre-allowed file-tool save route to a v5 folder", (t) => {
   const template = fixture(t).lifecycle.rapidStartTemplate();
   assert.deepEqual(Object.keys(template).slice(0, 2), ["save", "minimalDraft"]);
   assert.match(template.save, /Write tool/);
-  assert.match(template.save, /\.foundation\/drafts\/<id>\.json/);
+  assert.match(template.save, /\.foundation\/drafts\/<id>\/ \(change\.json with version 5, then proposal\.md\)/);
   assert.match(template.save, /not .*shell.*heredoc/);
-  assert.match(template.save, /claude-foundation change start \.foundation\/drafts\/<id>\.json/);
+  assert.match(template.save, /claude-foundation change start \.foundation\/drafts\/<id>\.$/);
+  assert.doesNotMatch(template.save, /<id>\.json/);
+  // The minimal folder declares its work type, so required sections apply.
+  const change = template.minimalDraft["change.json"];
+  assert.equal(change.version, 5);
+  assert.deepEqual(change.workType, ["feature"]);
+  assert.match(template.minimalDraft["proposal.md"], /^## Why\n/);
+  assert.match(template.minimalDraftWorkType, /workTypeExamples/);
+  // The typed-field reference describes change.json.
+  assert.equal(template.version, 5);
 });
 
 // Paid runs never declared a typed risk: the template the agent copies from
@@ -1335,7 +1399,7 @@ test("a standard-lane draft without why, failure matrix, or evidence agrees in o
   const id = readdirSync(value.changes).find((name) => name !== "archive");
   const { state, proposal } = startedChange(value, id);
   assert.equal(state.schema, "foundation-standard");
-  assert.match(proposal, /^## Derived by harness$/m);
+  assert.match(proposal, /^## Appendix: Derived by the harness$/m);
   assert.match(proposal, /\*\*Why:\*\* not authored separately; the intent above states it\./);
   assert.match(proposal, /\*\*Failure matrix:\*\* read from scenarios that state a rejection or error \(1\)/);
   assert.match(proposal, /\*\*Evidence capabilities:\*\* defaulted to `test`/);
@@ -1449,11 +1513,11 @@ test("a rapid proposal carries header, scope, acceptance table, definition of do
     "NOTE: coverage (advisory, no repair needed): no failure scenario; no edge/boundary scenario; " +
     "no success measure stated (optional 'successMeasure')"]);
   const proposal = readFileSync(join(value.changes, "single-shot-change", "proposal.md"), "utf8");
-  assert.match(proposal, /^- \*\*Change:\*\* `single-shot-change` · \*\*Lane:\*\* rapid \(low risk; see Impact\)$/m);
-  assert.match(proposal, /^- \*\*Owner:\*\* unassigned · \*\*Created:\*\* 2026-09-02 · \*\*Status:\*\* `claude-foundation changes`$/m);
+  assert.match(proposal, /^- \*\*Change:\*\* `single-shot-change` · \*\*Lane:\*\* rapid \(low risk\)$/m);
+  assert.match(proposal, /^- \*\*Review:\*\* not required · \*\*Owner:\*\* unassigned · \*\*Created:\*\* 2026-09-02$/m);
   assert.match(proposal, /^- \*\*In scope \(`single-shot-change`\):\*\* The bounded result is returned$/m);
   assert.match(proposal, /^- \*\*Out of scope:\*\* edits outside `src\/result\.js`, `test\/result\.test\.js`$/m);
-  assert.match(proposal, /\| bounded-result \| happy \| T001 \| test\/result\.test\.js \|/);
+  assert.match(proposal, /\| bounded-result \| Bounded input \| success \| T001 \| test: `test\/result\.test\.js` \| — \|/);
   assert.match(proposal, /^- Review: not required \(legacy review policy: no AI review runs\)\.$/m);
   assert.match(proposal, /^- Changed tests fail on the original code\.$/m);
   assert.match(proposal, /^- Success: acceptance scenarios above pass\.$/m);
@@ -1480,8 +1544,8 @@ test("a classified, measured rapid draft raises no coverage NOTE and states its 
   assert.doesNotMatch(output, /NOTE: coverage/);
   const proposal = readFileSync(join(value.changes, "single-shot-change", "proposal.md"), "utf8");
   assert.match(proposal, /^- Success: p95 under 200 ms on the 10k-row fixture\.$/m);
-  assert.match(proposal, /\| bounded-result › the-input-is-invalid \| failure \|/);
-  assert.match(proposal, /\| bounded-result › the-input-is-empty \| edge \|/);
+  assert.match(proposal, /\|  \| Invalid input \| failure \| T001 \|/);
+  assert.match(proposal, /\|  \| Empty input \| boundary \| T001 \|/);
   // A malformed measure is a draft edit; an absent one never is.
   writeJson(value.draftPath, minimalRapidV4({ successMeasure: "line one\nline two" }));
   const { result } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));

@@ -50,13 +50,15 @@ setup_project() {
   git add -A && git commit -qm init
 }
 
-# $1 = change id, $2 = report path the provider writes
+# $1 = change id, $2 = report path the provider writes, $7 = pinned id for an
+# intent under three words (otherwise named from capability and requirement key)
 draft() {
   node .claude/harness/foundation.mjs start --template > draft.json
-  REPORT="$2" TITLE="$1" DECLARE_REPORT="${3:-}" ADD_LINT="${4:-}" DERIVED="${6:-}" node -e '
+  REPORT="$2" TITLE="$1" DECLARE_REPORT="${3:-}" ADD_LINT="${4:-}" DERIVED="${6:-}" CHANGE_ID="${7:-}" node -e '
     const { readFileSync, writeFileSync } = require("fs");
     const d = JSON.parse(readFileSync("draft.json", "utf8"));
     d.intent = process.env.TITLE;
+    if (process.env.CHANGE_ID) d.id = process.env.CHANGE_ID;
     delete d.userStories;
     d.requirements = [{ key: "greeting-updated", capability: "application",
       operation: "added", scenario: { name: "app.txt carries v2",
@@ -158,7 +160,7 @@ assert_contains "finalization names the remedy" "$declared_proof" "test-results/
 
 # --- `prove` finalizes; it does not execute. --------------------------------
 setup_project excluded
-draft "Report excluded" "test-results/report.json"
+draft "Report excluded" "test-results/report.json" "" "" "" "" report-excluded
 assert_not_contains "an excluded report path draws no warning" \
   "$(cat start.log)" "inside the hashed workspace surface"
 implement report-excluded
@@ -206,7 +208,7 @@ printf '%s\n' '{"workflow":{"grounding":"optional","reviewPolicy":"risk-tiered"}
 # macOS /bin/sh) but not in dash, so set and unset it explicitly: it must not
 # leak into later fixtures, whose rapid change would otherwise require a review.
 REVIEW_FLAG=--review
-draft "Review waiver" "test-results/report.json"
+draft "Review waiver" "test-results/report.json" "" "" "" "" review-waiver
 unset REVIEW_FLAG
 assert_eq "installed consumer retains failed setup for retry" failed \
   "$(node -p 'require("./.foundation/runtime/review-waiver.json").workspace.setup.status')"
@@ -265,7 +267,7 @@ assert_contains "changing the diff expires the review waiver" "$stale_waiver" 'w
 # declared-input receipt, reruns the affected provider through advance, and
 # leaves a durable rebind audit.
 setup_project amendment-selective
-draft "Selective amendment" "test-results/report.json" "" 1 worktree
+draft "Selective amendment" "test-results/report.json" "" 1 worktree "" selective-amendment
 implement selective-amendment
 node .claude/harness/foundation.mjs proof-collect selective-amendment >/dev/null
 lint_before="$(shasum .foundation/receipts/selective-amendment/lint.json)"

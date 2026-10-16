@@ -3,6 +3,9 @@ title: Configure foundation.json
 description: Understand and safely tune Change Loop's project policy for execution, model tiers, escalation, review, sandboxes, and workflow.
 ---
 
+<!-- docs-audience: project-maintainers -->
+**Audience:** project maintainers and authorized agents configuring an installation. For the everyday workflow, start with [Quickstart](/docs/quickstart/).
+
 `foundation.json` is the **committed policy for one project**. It tells
 Change Loop how much autonomous work is allowed, how work maps to model tiers,
 when to escalate, who may review, and how a new Build workspace is prepared.

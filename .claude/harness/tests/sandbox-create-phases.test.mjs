@@ -39,6 +39,7 @@ import {
   setupSelectedRepositories,
   unrelatedSandboxTargetChanges
 } from "../runtime/workflow/sandbox-runtime.mjs";
+import { carriedLandedExcludes } from "../runtime/workflow/target-edits.mjs";
 import {
   isInvestigationPath, sandboxCodePathspec
 } from "../runtime/core/workspace-surface.mjs";
@@ -1032,7 +1033,9 @@ test("copy workspace state binds source and sandbox snapshots for Git and no-Git
 
 function copyRuntimeFixture(t, {
   carriesGit = false, setup = false, status = 0,
-  statusOutput = "?? outside.txt\0", worktreeAddStatus = 0
+  statusOutput = "?? outside.txt\0", worktreeAddStatus = 0,
+  gitBuffer = () => ({ status: 0 }),
+  fileDigest = (value) => `digest:${readFileSync(value, "utf8").length}`
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), "sandbox-copy-runtime-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -1072,10 +1075,10 @@ function copyRuntimeFixture(t, {
     canonicalPath: (value) => value,
     workspaceManifest: (value) => ({ root: value }),
     directoryHash: () => "change-hash",
-    fileDigest: (value) => `digest:${readFileSync(value, "utf8").length}`,
+    fileDigest,
     changePath: () => packet,
     gitHead: () => carriesGit ? "head" : null,
-    git, gitBuffer: () => ({ status: 0 }),
+    git, gitBuffer,
     porcelainStatusRecords: () => statusOutput
       ? [{ status: "??", path: "outside.txt" }]
       : [],
@@ -1136,6 +1139,55 @@ test("createSingle creates clean worktrees and reports add failures", (t) => {
     "openspec", "changes", "change", "tasks.md"), "utf8"), "- [ ] task\n");
   assert.equal(clean.saved.length, 1);
   assert.match(output.rows[0], /SANDBOX change/);
+});
+
+test("a new worktree sandbox carries another change's landed, uncommitted files", (t) => {
+  // Neither file exists at HEAD.
+  const f = copyRuntimeFixture(t, { carriesGit: true, statusOutput: "",
+    gitBuffer: (args) => args[0] === "show" ? { status: 128, stdout: Buffer.alloc(0) } : { status: 0 },
+    // Land journals record colon-free content digests.
+    fileDigest: (value) => `d${readFileSync(value, "utf8").length}` });
+  const landedBytes = "export const a = 1;\n";
+  mkdirSync(join(f.root, "src"), { recursive: true });
+  writeFileSync(join(f.root, "src", "a.js"), landedBytes);
+  // A user's own edit no Land journal vouches for.
+  writeFileSync(join(f.root, "src", "user.js"), "mine\n");
+  const run = join(f.root, ".foundation", "transactions", "change-a", "run-1");
+  mkdirSync(run, { recursive: true });
+  writeFileSync(join(run, "journal.json"), JSON.stringify({
+    changeId: "change-a", status: "verified", entries: [
+      { path: "src/a.js", after: `d${landedBytes.length}` },
+      { path: "src/stale.js", after: "d999" }
+    ]
+  }));
+  const output = captureConsole("log", () => f.runtime.createSingle("change"));
+  const sandbox = f.state.workspace.path;
+  assert.equal(f.state.workspace.mode, "worktree");
+  assert.equal(readFileSync(join(sandbox, "src", "a.js"), "utf8"), landedBytes);
+  assert.equal(existsSync(join(sandbox, "src", "user.js")), false,
+    "a user-edited target file is never carried");
+  assert.equal(existsSync(join(sandbox, "src", "stale.js")), false);
+  assert.deepEqual(f.state.workspace.landedCarried,
+    { "src/a.js": { changeId: "change-a", digest: `d${landedBytes.length}` } });
+  assert.equal(f.state.workspace.sandboxPreexisting["src/a.js"], `d${landedBytes.length}`,
+    "carried bytes are not this change's surface while unchanged");
+  assert.match(output.rows[0], /carried landed work: src\/a\.js \(change-a\)/);
+});
+
+test("carried landed paths leave the change's contribution only while unchanged", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "carried-excludes-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, "a.js"), "landed\n");
+  writeFileSync(join(root, "b.js"), "landed\n");
+  const identity = (path) => readFileSync(path, "utf8");
+  const workspace = { path: root, landedCarried: {
+    "a.js": { changeId: "change-a", digest: "landed\n" },
+    "b.js": { changeId: "change-a", digest: "landed\n" }
+  } };
+  writeFileSync(join(root, "b.js"), "landed plus this change\n");
+  assert.deepEqual(carriedLandedExcludes(workspace, identity), [":(exclude,literal)a.js"],
+    "a carried file this change edited is its contribution again");
+  assert.deepEqual(carriedLandedExcludes({ path: root }, identity), []);
 });
 
 // Three consumer Builds started in a worktree without node_modules and spent

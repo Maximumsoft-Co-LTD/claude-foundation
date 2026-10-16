@@ -4,12 +4,33 @@ import test from "node:test";
 import {
   addRequiredCapability,
   missingHighRiskQualityCapabilities,
+  postReleaseRolloutGates,
   providersForCapability,
   requiredProvidersOperation,
   reviewCoveredAdvisories
 } from "../runtime/workflow/change-validation.mjs";
-import { providerCapability as catalogCapability } from
+import { providerCapability as catalogCapability, proofRolloutGates } from
   "../runtime/evidence/provider-catalog.mjs";
+
+test("a waived post-release capability is recorded as a waived gate, not a deferred one", () => {
+  const state = { waivers: [{ capability: "release-health", reason: "no telemetry yet" }] };
+  const gates = postReleaseRolloutGates({
+    evidence: () => ({ providers: {}, claims: [] }),
+    providerCapability: catalogCapability,
+    policyRolloutCapabilities: () => ["release-health", "experiment-guardrail"],
+    loadRuntime: () => state
+  }, "change-a");
+  assert.deepEqual(gates.map((gate) => [gate.capability, gate.status]),
+    [["experiment-guardrail", "deferred"], ["release-health", "waived"]]);
+  assert.deepEqual(proofRolloutGates({ rolloutGates: gates }, { deferred: true })
+    .map((gate) => gate.capability), ["experiment-guardrail"]);
+});
+
+test("a proof finalized before rollout gates existed owes none", () => {
+  assert.deepEqual(proofRolloutGates({ version: 2, status: "pass" }), []);
+  assert.deepEqual(proofRolloutGates(null, { deferred: true }), []);
+  assert.deepEqual(proofRolloutGates({ rolloutGates: "bad" }), []);
+});
 
 const providers = {
   "test-global": { capability: "test" },
@@ -30,6 +51,8 @@ test("provider catalog resolves configured, built-in, and unknown capabilities",
   assert.equal(catalogCapability("changed-quality"), "changed-quality");
   assert.equal(catalogCapability("unknown"), null);
   assert.equal(catalogCapability("test", null), "test");
+  for (const name of ["evaluation", "release-health", "parity", "plan-check",
+    "experiment-guardrail"]) assert.equal(catalogCapability(name), name);
 });
 
 test("enforced high-risk policy requires changed quality and mutation providers", () => {
@@ -153,4 +176,27 @@ test("review covers a specialist provider that only repeats the test command", (
     next: "wire a project-owned security-static command in execution.yaml to observe it"
   }]);
   assert.deepEqual(reviewCoveredAdvisories(contract, false), []);
+});
+
+test("rollout gates cover configured, work-type, and claim post-release capabilities", () => {
+  const gates = (contract, owed = []) => postReleaseRolloutGates({
+    evidence: () => contract,
+    providerCapability: catalogCapability,
+    policyRolloutCapabilities: () => owed
+  }, "change-a").map((gate) => gate.capability);
+  const claim = (capabilities) => ({ id: "c", capabilities });
+  // A client-release change with no release-health provider still owes the gate.
+  assert.deepEqual(gates({ providers: {}, claims: [claim(["test"])] },
+    ["release-health"]), ["release-health"]);
+  // A claim that declares release-health with no provider instance owes it too.
+  assert.deepEqual(gates({ providers: {}, claims: [claim(["release-health"])] }),
+    ["release-health"]);
+  // A configured provider is listed once, never duplicated by policy or claims.
+  assert.deepEqual(gates({
+    providers: { health: { capability: "release-health" } },
+    claims: [claim(["release-health"])]
+  }, ["release-health", "experiment-guardrail"]),
+  ["release-health", "experiment-guardrail"]);
+  // Pre-land capabilities are never rollout gates.
+  assert.deepEqual(gates({ providers: {}, claims: [claim(["test"])] }), []);
 });

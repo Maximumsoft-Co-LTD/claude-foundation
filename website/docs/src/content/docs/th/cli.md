@@ -3,6 +3,9 @@ title: คำสั่ง CLI
 description: คำสั่งที่ agent ของคุณรัน จัดกลุ่มตามหน้าที่และระดับอำนาจที่ต้องใช้
 ---
 
+<!-- docs-audience: agents-integrators -->
+**ผู้อ่าน:** Coding agent และผู้ดูแล integration คำสั่ง CLI และ schema ด้านล่างเป็นเอกสารระบบ ไม่ใช่รายการที่ผู้ใช้ต้องทำเอง ผู้ใช้เริ่มที่ [เริ่มใช้งาน](/docs/th/quickstart/)
+
 agent ของคุณเป็นคนรันคำสั่งเหล่านี้ คุณแทบไม่ต้องรันเอง เอกสารนี้มีไว้ให้คุณอ่านออกว่า agent กำลังทำอะไร และรันเองได้เมื่ออยากรัน
 
 ทุกคำสั่งตอบ `--help` และ `claude-foundation describe [command] [--json]` อธิบายทั้ง surface — รวม `/deliver` แบบ optional พร้อม `/changes` และ alias `/feature` เรียกได้ทั้งชื่อเปล่าและแบบ `/slash` โดยอ่านจากไฟล์คำสั่งที่ ship มาโดยตรง จึงไม่มีสำเนาที่สองให้ drift
@@ -72,7 +75,7 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 |---|---|
 | `investigate --template \| <record.json>` | พิมพ์หรือตรวจ investigation record แล้วคืน typed action หนึ่งรายการ |
 | `change new <intent> [--rapid]` | Compatible primitive สำหรับเขียน agreement ด้วยมือ |
-| `change start --template \| <draft.json> [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | ตรวจและถ้าครบจะ compile และเริ่ม agreement จาก semantic draft ในคำสั่งเดียว โดยพื้นที่แยกจะสร้างภายหลังใน Build; `--approve-spec` บันทึก approval ของผู้ใช้ในคำสั่งเดียวกัน |
+| `change start --template \| <draft.json> [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | ตรวจและถ้าครบจะ compile และเริ่ม agreement จาก semantic draft (ไฟล์ JSON หรือ folder ของ draft v5) ในคำสั่งเดียว โดยพื้นที่แยกจะสร้างภายหลังใน Build; `--approve-spec` บันทึก approval ของผู้ใช้ในคำสั่งเดียวกัน |
 | `change amend --template \| <change> <amendment.json> [--inspect] [--consume-amendment] [--approve-spec --decision-ref <ref> [--through <target>]]` | Inspect intake และถ้าครบจะเพิ่ม แก้ หรือลบ semantic requirement หรือแก้ verify command ของ task ที่ยังไม่เสร็จ แบบ transaction และรักษางานที่เสร็จแล้ว ในคำสั่งเดียว |
 | `change amend <change> --task <task> --verify <command> [--reopen] [--reason <text>]` | แก้ verify command ของ task ที่ยังไม่เสร็จหนึ่งตัวโดยไม่ต้องเขียน amendment JSON claim, capability และ approval คงเดิม คำสั่งที่ผ่านเสมอจะถูกปฏิเสธ และ `--reopen` เอาเครื่องหมายเสร็จของ task ที่เสร็จแล้วออกเพื่อให้ต้องผ่านใหม่ |
 | `change revise <change> <draft.json> [--merge] [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | ก่อน Build ตรวจและถ้าครบจะคอมไพล์ semantic draft ฉบับแก้ทับ change id เดิมในคำสั่งเดียว พร้อม rollback และแสดง requirement delta (ใช้ approval เดิมต่อ เว้นแต่มีการลบ requirement) `--merge` รับเฉพาะ key และ entry ที่มี key ซึ่งเปลี่ยน |
@@ -177,7 +180,7 @@ Feedback ตรวจ validity จาก runtime ปัจจุบัน ส่
 |---|---|
 | runtime | 3.6.3 |
 | runtime API | 41 |
-| semantic draft schema | 4 |
+| semantic draft schema | 5 |
 | semantic intake state schema | 2 |
 | semantic amendment schema | 1 |
 | artifact defaults schema | 2 |

@@ -9,6 +9,40 @@ import { advanceFailureAction, createAdvanceRuntime } from "../runtime/workflow/
 import { drainSignals } from "../runtime/core/signals.mjs";
 import { workspaceCapabilityValue } from "../runtime/core/execution-contract.mjs";
 
+// Provider wiring is evidence configuration: editing it reruns that provider,
+// but which providers exist and every claim still need consent.
+test("spec approval survives provider wiring edits but not provider or claim edits", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "spec-wiring-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const packet = join(root, "openspec/changes/demo");
+  mkdirSync(packet, { recursive: true });
+  writeFileSync(join(packet, "proposal.md"), "Change the greeting");
+  const evidence = (providers, capability = "test") => JSON.stringify({ version: 2,
+    claims: [{ id: "greets", capabilities: [capability] }], providers }, null, 2);
+  const testProvider = (timeoutMs) => ({ test: { adapter: "test-discovery", command: ["npm", "test"], timeoutMs } });
+  writeFileSync(join(packet, "evidence.yaml"), evidence(testProvider(120000)));
+  writeFileSync(join(packet, "execution.yaml"), JSON.stringify({ version: 1,
+    providers: { lint: { command: ["npm", "run", "lint"] } }, services: {} }));
+  const prior = agreementIdentity(root, "demo", { wiring: true });
+  const state = { status: "change", specApproval: { required: true, identity: agreementIdentity(root, "demo"), revision: 0 } };
+  writeFileSync(join(packet, "evidence.yaml"), evidence(testProvider(1800000)));
+  writeFileSync(join(packet, "execution.yaml"), JSON.stringify({ version: 1,
+    providers: { lint: { command: ["npm", "run", "lint", "--fix"] } }, services: {} }));
+  assert.doesNotThrow(() => assertSpecApproval(root, "demo", state), "a wiring edit keeps consent");
+  writeFileSync(join(packet, "evidence.yaml"), evidence({}));
+  assert.throws(() => assertSpecApproval(root, "demo", state), { code: "SPEC_APPROVAL_REQUIRED" },
+    "removing a provider needs consent");
+  writeFileSync(join(packet, "evidence.yaml"), evidence(testProvider(1800000), "security-static"));
+  assert.throws(() => assertSpecApproval(root, "demo", state), { code: "SPEC_APPROVAL_REQUIRED" },
+    "changing a claim needs consent");
+  // An approval recorded before wiring became configuration still matches.
+  writeFileSync(join(packet, "evidence.yaml"), evidence(testProvider(120000)));
+  writeFileSync(join(packet, "execution.yaml"), JSON.stringify({ version: 1,
+    providers: { lint: { command: ["npm", "run", "lint"] } }, services: {} }));
+  assert.doesNotThrow(() => assertSpecApproval(root, "demo",
+    { ...state, specApproval: { ...state.specApproval, identity: prior } }));
+});
+
 test("spec approval binds semantics and revision, not task completion", (t) => {
   const root = mkdtempSync(join(tmpdir(), "spec-consent-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));

@@ -118,3 +118,60 @@ export function renderInvestigationCoverage(source) {
     current.map((r) => `| ${esc(sourceId(r))} | ${esc(r.statement)} | ${esc(mappings.get(sourceId(r)) || (th ? "สมมติฐานที่ไม่กระทบข้อตกลง" : "Nonmaterial retained context"))} |`).join("\n") +
     `\n\n${th ? "ลิงก์นี้ตรวจความครบเชิงโครงสร้าง Agent ต้องตรวจความหมายกับต้นทางก่อนเสนออนุมัติ spec" : "These links establish structural coverage; the agent must compare meaning with the source before presenting spec approval."}`;
 }
+
+// The proposal's single investigation appendix body (no top heading): every
+// retained requirement appears once, in the coverage table with its status,
+// targets, examples, and criteria; answers, experiment limits, conversation
+// provenance, and history gaps follow. Nothing is repeated in a second block.
+export function renderInvestigationContext(source) {
+  const binding = source?.investigation;
+  if (binding?.version !== 2) return "";
+  const intake = binding.intake || {};
+  const th = String(source.language || "").startsWith("th");
+  const esc = (v) => String(v ?? "").replace(/[\\`*_[\]<>]/g, "\\$&").replace(/\r?\n/g, " ");
+  const tableCell = (v) => esc(v).replaceAll("|", "\\|") || "—";
+  const section = (title, values) => values.length
+    ? `### ${title}\n\n${values.map((v) => `- ${v}`).join("\n")}` : "";
+  const parts = [];
+  const intent = [
+    intake.intent?.goal ? `${th ? "เป้าหมาย" : "Goal"}: ${esc(intake.intent.goal)}` : "",
+    intake.intent?.outcome ? `${th ? "ผลลัพธ์ที่ต้องการ" : "Desired outcome"}: ${esc(intake.intent.outcome)}` : ""
+  ].filter(Boolean);
+  if (intent.length) parts.push(intent.join("\n\n"));
+  parts.push(section(th ? "ขอบเขตและผู้เกี่ยวข้อง" : "Scope and actors",
+    [...rows(intake.intent?.scope), ...rows(intake.intent?.actors)].map(esc)));
+  const mappings = new Map(rows(source.investigationCoverage).map((r) => [
+    `${r.sourceKey}@${r.sourceRevision}`, rows(r.targets).map((t) =>
+      `${t.kind}: ${t.key}${t.scenario ? " / " + t.scenario : ""}`).join("; ")
+  ]));
+  const requirements = rows(intake.requirements).filter(Boolean);
+  if (requirements.length) {
+    const current = (r) => ["stated", "confirmed"].includes(r?.status);
+    const details = (r) => [
+      rows(r.examples).length ? `${th ? "ตัวอย่าง" : "examples"}: ${rows(r.examples).join(" / ")}` : "",
+      rows(r.criteria).length ? `${th ? "เกณฑ์" : "criteria"}: ${rows(r.criteria).join(" / ")}` : "",
+      r.reason || "",
+      r.supersededBy ? `→ ${sourceId(r.supersededBy)}` : ""
+    ].filter(Boolean).join("; ");
+    parts.push(`### ${th ? "ความครบของ requirement" : "Requirement coverage"}\n\n` +
+      `| Source | Requirement | ${th ? "สถานะ" : "Status"} | Targets | ${th ? "รายละเอียด" : "Details"} |\n` +
+      "|---|---|---|---|---|\n" +
+      requirements.map((r) => `| ${tableCell(sourceId(r))} | ${tableCell(r.statement)} | ` +
+        `${tableCell([r.kind, r.status, r.origin].filter(Boolean).join(" / "))} | ` +
+        `${tableCell(mappings.get(sourceId(r)) ||
+          (current(r) ? (th ? "สมมติฐานที่ไม่กระทบข้อตกลง" : "Nonmaterial retained context") : ""))} | ` +
+        `${tableCell(details(r))} |`).join("\n") +
+      `\n\n${th ? "ลิงก์นี้ตรวจความครบเชิงโครงสร้าง Agent ต้องตรวจความหมายกับต้นทางก่อนเสนออนุมัติ spec" : "These links establish structural coverage; the agent must compare meaning with the source before presenting spec approval."}`);
+  }
+  parts.push(section(th ? "คำถามและคำตอบ" : "Questions and answers",
+    rows(intake.questions).filter(Boolean).map((q) =>
+      `${esc(q.key)} [${esc(q.status)}]: ${esc(q.question)}${q.answer ? " → " + esc(q.answer) : ""}${q.reason ? "; " + esc(q.reason) : ""}`)));
+  parts.push(section(th ? "ผลทดลองและข้อจำกัด (ไม่ใช่ proof)" : "Experiments and limitations (not proof)",
+    rows(intake.experiments).filter(Boolean).map((e) =>
+      `${esc(e.key)} [${esc(e.status)}]: ${esc(e.question)}; criteria: ${rows(e.criteria).map(esc).join(" / ")}; findings: ${rows(e.findings).map(esc).join(" / ")}; limitations: ${rows(e.limitations).map(esc).join(" / ")}; refs: ${rows(e.requirementRefs).map((r) => esc(sourceId(r))).join(", ")}${e.supersededBy ? "; → " + esc(e.supersededBy) : ""}`)));
+  parts.push(section(th ? "สาระจากบทสนทนา" : "Conversation provenance",
+    rows(intake.conversation).filter(Boolean).map((e) =>
+      `${esc(e.key)} [${esc(e.speaker)}]: ${esc(e.statement)} (${esc(e.source)})`)));
+  parts.push(section(th ? "ช่องว่างของประวัติ" : "Unavailable history gaps", rows(intake.historyGaps).map(esc)));
+  return parts.filter(Boolean).join("\n\n");
+}

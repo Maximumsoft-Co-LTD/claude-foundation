@@ -5,7 +5,10 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 
+import { spawnSync } from "node:child_process";
+
 import { createApplyRuntime } from "../runtime/workflow/apply-runtime.mjs";
+import { normalizeSemanticDraft, renderRequirementMarkdown } from "../runtime/workflow/semantic-draft.mjs";
 import { agreementIdentity } from "../runtime/core/user-decisions.mjs";
 import { deliveryTreeEntries } from "../runtime/workflow/delivery-integrity.mjs";
 
@@ -620,4 +623,55 @@ test("a spec delta that OpenSpec failed to merge is retained for retry", () => {
   assert.ok(fixture.state.specSyncViolations.length > 0);
   assert.equal(fixture.state.specSyncInputs.length, 1);
   rmSync(fixture.root, { recursive: true, force: true });
+});
+
+// rationale-in-spec / "หลัง archive": the Rationale line a durable accepted
+// decision adds under its requirement survives the real `openspec archive`
+// merge into openspec/specs and passes spec-sync verification; a non-durable
+// decision leaves no Rationale behind.
+test("an archived spec keeps the durable decision Rationale and omits non-durable ones", (t) => {
+  const located = spawnSync("sh", ["-c", "command -v openspec"], { encoding: "utf8" });
+  const cli = located.status === 0 ? located.stdout.trim() : "";
+  if (!cli) { t.skip("openspec CLI is not installed"); return; }
+  const slugify = (value) => String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  const { draft } = normalizeSemanticDraft({
+    version: 3, intent: "Archive contract",
+    requirements: [
+      { key: "kept", requirement: "Archive contract",
+        description: "The archive SHALL preserve the contract.",
+        scenarios: [{ name: "Archive runs", when: "archive runs", then: "the contract remains" }] },
+      { key: "local", requirement: "Local contract",
+        description: "The system SHALL keep the local behavior.",
+        scenarios: [{ name: "Local runs", when: "local runs", then: "the local behavior remains" }] }
+    ],
+    decisions: [
+      { id: "D1", key: "durable", durable: true, status: "accepted",
+        choice: "Keep the contract", reason: "consumers rely on it", requirements: ["kept"] },
+      { id: "D2", key: "transient", durable: false, status: "accepted",
+        choice: "Local only", reason: "an implementation detail", requirements: ["local"] }
+    ]
+  }, slugify);
+  const delta = ["## ADDED Requirements", "",
+    draft.specs.map((spec) => renderRequirementMarkdown(spec)).join("\n\n"), ""].join("\n");
+  assert.match(delta, /- \*\*Rationale \(D1\):\*\* Keep the contract — consumers rely on it/);
+  const id = "rationale-archive";
+  const fixture = activeArchiveFixture(id, { delta });
+  write(join(fixture.root, "openspec", "changes", id, "proposal.md"),
+    "## Why\nDurable decisions must keep their reason in the living spec after archive.\n\n" +
+    "## What Changes\n- Archive contract\n");
+  write(join(fixture.root, "bin", "openspec"), `#!/bin/sh\nexec "${cli}" "$@"\n`);
+  try {
+    fixture.run();
+    assert.equal(fixture.state.status, "archived", "spec-sync verification accepts the Rationale line");
+    assert.equal(fixture.state.specSyncViolations, undefined);
+    const archived = readFileSync(join(fixture.root, "openspec", "specs", "sample", "spec.md"), "utf8");
+    const block = (name) => archived.split("### Requirement: ").find((part) => part.startsWith(name)) || "";
+    assert.match(block("Archive contract"),
+      /- \*\*Rationale \(D1\):\*\* Keep the contract — consumers rely on it\n/);
+    assert.doesNotMatch(block("Local contract"), /Rationale/);
+    assert.doesNotMatch(archived, /D2|Local only/);
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
 });

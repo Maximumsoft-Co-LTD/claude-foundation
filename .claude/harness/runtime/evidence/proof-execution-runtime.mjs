@@ -189,7 +189,8 @@ export function rebindProofCollectionReceipts(
 export function assertProofCollectionOutcomes(outcomes) {
   const failed = outcomes.filter((row) => row.status !== "pass");
   if (failed.length) {
-    const summary = failed.map((row) => `${row.provider}:${row.status}`).join(", ");
+    const summary = failed.map((row) =>
+      `${row.provider}:${row.status}${row.detail ? ` (${row.detail})` : ""}`).join(", ");
     const critical = failed.flatMap((row) => (row.observations || [])
       .filter((observation) => observation.kind === "critical-case" &&
         !["pass", "passed", "success", "ok"].includes(observation.status))
@@ -312,6 +313,33 @@ export function createProofExecutionRuntime({
     return path ? readJson(path, {}) : (memoryAdvance.get(id) || {});
   }
 
+  // Merges one scheduler event into a RUNNING record's progress: the wave's
+  // providers while they run, and each finished provider with its status and
+  // duration. Status, stage, and workspaceHash stay untouched for recovery.
+  function recordProofProgress(id, event) {
+    const record = readAdvance(id);
+    if (record.status !== "RUNNING") return;
+    const prior = record.progress || {};
+    const progress = { startedAt: prior.startedAt || now(), wave: prior.wave || 0,
+      running: [...(prior.running || [])], finished: [...(prior.finished || [])] };
+    if (event.event === "wave") Object.assign(progress, { wave: event.wave, running: [...event.providers] });
+    else if (event.event === "provider") {
+      progress.running = progress.running.filter((provider) => provider !== event.provider);
+      progress.finished.push({ provider: event.provider, status: event.status, durationMs: event.durationMs });
+    } else return;
+    const path = proofAdvancePath(id);
+    const next = { ...record, progress };
+    if (path) writeJson(path, next); else memoryAdvance.set(id, next);
+  }
+
+  // The progress a waiting caller sees, with the elapsed time since start.
+  function proofProgressView(id) {
+    const progress = readAdvance(id).progress;
+    if (!progress) return null;
+    const started = Date.parse(progress.startedAt);
+    return { ...progress, elapsedMs: Number.isFinite(started) ? Math.max(0, Date.now() - started) : null };
+  }
+
   function writeAdvance(id, outcome) {
     const requestIds = (outcome.requests || [])
       .map((request) => request.requestId).filter(Boolean).sort();
@@ -338,6 +366,9 @@ export function createProofExecutionRuntime({
       repairGraph: outcome.repairGraph || null,
       invalidation: outcome.invalidation || null,
       attemptedStrategies: outcome.attemptedStrategies || [],
+      // Advisory only: excluded from `comparable`, so it never counts as
+      // lifecycle progress or changes recovery.
+      ...(outcome.progress ? { progress: outcome.progress } : {}),
       updatedAt: now()
     };
     const prior = readAdvance(id);
@@ -456,10 +487,25 @@ export function createProofExecutionRuntime({
       sessions = await startTrackedServices(id, collectable.nodes, proofRunId);
       const outcomes = collectable.nodes.length
         ? await runExecutionDag(id, collectable.nodes, proofRunId, {
-            quiet: options.quiet
+            quiet: options.quiet,
+            onProgress: (event) => recordProofProgress(id, event)
           })
         : [];
-      assertProofCollectionOutcomes(outcomes);
+      try { assertProofCollectionOutcomes(outcomes); } catch (error) {
+        // An open merge of another change's landed edit explains a failing
+        // check better than the run itself: the sandbox no longer carries
+        // that change's work, which only the agent's merge can restore.
+        const open = loadRuntime(id).workspace?.landedConflicts || {};
+        if (Object.keys(open).length) Object.assign(error, {
+          owner: "agent", boundary: "conflict",
+          message: `${error.message}; the sandbox still has an open merge of earlier landed ` +
+            `work in ${Object.keys(open).sort().join(", ")}: merge onto the target's bytes, ` +
+            "keeping every landed and user edit, then resume",
+          details: { conflicts: Object.entries(open).map(([path, row]) =>
+            ({ repository: "root", path, landedBy: row.landedBy })) }
+        });
+        throw error;
+      }
       persistProofCollectionArtifacts({
         stopAll, durableArtifact, loadRuntime, saveRuntime
       }, id, proofRunId, sessions);
@@ -474,7 +520,8 @@ export function createProofExecutionRuntime({
       // Before die(), not after: a stale activeProofRun makes the next receipt
       // bind the pre-failure workspace hash and land in a dead run directory.
       clearActiveProofRun(id);
-      die(error.message);
+      die(error.message, 1, error.owner ? { owner: error.owner, boundary: error.boundary,
+        details: error.details } : undefined);
     } finally {
       clearActiveProofRun(id);
     }
@@ -517,7 +564,8 @@ export function createProofExecutionRuntime({
     } catch (error) {
       stopAll(sessions);
       clearActiveProofRun(id);
-      die(error.message);
+      die(error.message, 1, error.owner ? { owner: error.owner, boundary: error.boundary,
+        details: error.details } : undefined);
     } finally {
       clearActiveProofRun(id);
     }
@@ -776,23 +824,28 @@ export function createProofExecutionRuntime({
     // command guaranteed to block. Route the exhausted case to the external
     // recording template (a human verdict) instead.
     const delivered = deliveredAiAttempts(id);
-    return requests.map((request) => ({
-      requestId: request.requestId,
-      provider: request.provider,
-      status: request.status,
-      owner: request.status === "infrastructure-exhausted" ? "harness" :
-        stage === "review" ? "harness" : "external",
-      command: stage === "review" && request.status === "requested" &&
-          delivered.length < effectiveReviewAttemptLimit(
-            reviewPolicy(id), delivered, request.workspaceHash).maxAiAttempts &&
-          request.mainSessionFallback
-        ? `claude-foundation authority run ${id} --request ${request.requestId} --subject-actor ${request.mainSessionFallback.subject?.identity || "<implementer>"} --main-session-model-family <family> --main-session-model <model>`
-        : stage === "review" && request.status === "requested" &&
-            delivered.length < effectiveReviewAttemptLimit(
-              reviewPolicy(id), delivered, request.workspaceHash).maxAiAttempts
-          ? `claude-foundation authority run ${id} --request ${request.requestId} --subject-actor implementation-agent`
-        : `claude-foundation authority status ${id} --request ${request.requestId} --template`
-    }));
+    return requests.map((request) => {
+      const maxAiAttempts = stage === "review" && request.status === "requested"
+        ? effectiveReviewAttemptLimit(reviewPolicy(id), delivered, request.workspaceHash).maxAiAttempts
+        : null;
+      const runnable = maxAiAttempts !== null && delivered.length < maxAiAttempts;
+      return {
+        requestId: request.requestId,
+        provider: request.provider,
+        status: request.status,
+        // Distinguishes "every AI wave is used" (a user decision) from "no
+        // reviewer can start" (a wait) for the advance router.
+        ...(maxAiAttempts !== null && !runnable
+          ? { aiReviewExhausted: { delivered: delivered.length, maxAiAttempts } } : {}),
+        owner: request.status === "infrastructure-exhausted" ? "harness" :
+          stage === "review" ? "harness" : "external",
+        command: runnable && request.mainSessionFallback
+          ? `claude-foundation authority run ${id} --request ${request.requestId} --subject-actor ${request.mainSessionFallback.subject?.identity || "<implementer>"} --main-session-model-family <family> --main-session-model <model>`
+          : runnable
+            ? `claude-foundation authority run ${id} --request ${request.requestId} --subject-actor implementation-agent`
+            : `claude-foundation authority status ${id} --request ${request.requestId} --template`
+      };
+    });
   }
 
   function requestMissingAuthority(id, providers, type, workspaceHash, knownRequests) {
@@ -950,7 +1003,8 @@ export function createProofExecutionRuntime({
       workspaceHash: readiness.workspaceHash,
       providers: collectable.nodes.map((node) => node.provider),
       requests: [],
-      recoveryDecisionRef: decisionRef || null
+      recoveryDecisionRef: decisionRef || null,
+      progress: { startedAt: now(), wave: 0, running: [], finished: [] }
     });
     const proofRunId = `collect-${Date.now()}`;
     const review = startAdvanceReview(
@@ -1136,11 +1190,15 @@ export function createProofExecutionRuntime({
         id: "repair-final-review-findings",
         result: "repaired-without-remaining-review-wave"
       }],
-      recommended: "accept-review-risk",
+      recommended: "human-verdict",
       options: [{
-        id: "accept-review-risk",
-        outcome: "Accept the unreviewed final repair explicitly and continue to Land.",
-        command: `claude-foundation change waive ${id} --capability review --reason <remaining-risk> --decision-ref <user-decision>`
+        id: "human-verdict",
+        outcome: "A person reviews the final repair; request a review, dispatch it to them, then record the verdict they gave.",
+        command: `claude-foundation authority request ${id} --type review`
+      }, {
+        id: "one-more-ai-attempt",
+        outcome: "Allow one more AI review wave on the user's recorded decision; advance then runs it.",
+        command: `claude-foundation authority extend-review ${id} --decision-ref <user-decision>`
       }, {
         id: "revise-agreement",
         outcome: "Amend the agreement to declare a critical case that proves the repaired findings, then resume."
@@ -1171,8 +1229,8 @@ export function createProofExecutionRuntime({
       executedProviders,
       next: [{
         kind: "review-route-exhausted",
-        reason: "Report the repaired findings, passing checks, and the unreviewed final repair; let the user accept that risk, revise the agreement, or pause.",
-        command: `claude-foundation change waive ${id} --capability review --reason <remaining-risk> --decision-ref <user-decision>`
+        reason: "Report the repaired findings, passing checks, and the unreviewed final repair; let the user choose a human verdict, one more AI wave, a revised agreement, or a pause.",
+        command: `claude-foundation authority extend-review ${id} --decision-ref <user-decision>`
       }, ...decision.next]
     });
   }
@@ -1201,8 +1259,11 @@ export function createProofExecutionRuntime({
         row.route === "CONTRACT_DECISION_REQUIRED")) {
         // The repaired final delta gets one closure review before any person
         // is asked to accept it unreviewed.
+        // A user-granted extra wave reviews it the same way.
         if (exhausted.every((row) => reviewClosureWaveAvailable(delivered,
-          currentProviderHash(id, closureProviders.get(row), readiness.workspaceHash))))
+          currentProviderHash(id, closureProviders.get(row), readiness.workspaceHash))) ||
+            delivered.length < effectiveReviewAttemptLimit(
+              reviewPolicy(id), delivered, null).maxAiAttempts)
           return { readiness, authorityRequests };
         return { outcome: stopProofAdvance(
           writeReviewExhaustedStop(id, readiness, exhausted, executedProviders)) };
@@ -1450,6 +1511,8 @@ export function createProofExecutionRuntime({
         ...(locked.owner.state ? { state: locked.owner.state } : {}),
         ...(locked.owner.recoverableAfter ? { recoverableAfter: locked.owner.recoverableAfter } : {})
       } : null,
+      // Where the running proof is, so a waiting caller need not poll blind.
+      ...(proofProgressView(id) ? { progress: proofProgressView(id) } : {}),
       next: recovery
     });
   }

@@ -3,6 +3,9 @@ title: CLI reference
 description: The commands your agent runs, grouped by what they do and what authority they need.
 ---
 
+<!-- docs-audience: agents-integrators -->
+**Audience:** coding agents and integration operators. CLI commands and schemas below are system reference, not a user checklist. Users can follow [Quickstart](/docs/quickstart/).
+
 Your agent runs these; you rarely need to. They are documented so you can read what the agent is doing, and drive it yourself when you want to.
 
 Every command answers `--help`, and `claude-foundation describe [command] [--json]` describes the surface — including the optional `/deliver` command, `/changes`, and the `/feature` compatibility alias, resolvable by bare word or `/slash` spelling, read from the shipped command files so there is no second copy to drift.
@@ -73,7 +76,7 @@ language profiles, baselines, and rollout policy.
 |---|---|
 | `investigate --template \| <record.json>` | Print or validate a versioned investigation record and return one typed action |
 | `change new <intent> [--rapid]` | Compatible primitive for manually authoring a change agreement |
-| `change start --template \| <draft.json> [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | Inspect and, when complete, compile and start an agreement from one semantic draft in one call; Build creates isolation later; `--approve-spec` records the user's approval in the same call |
+| `change start --template \| <draft.json> [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | Inspect and, when complete, compile and start an agreement from one semantic draft (a JSON file or a draft v5 folder) in one call; Build creates isolation later; `--approve-spec` records the user's approval in the same call |
 | `change amend --template \| <change> <amendment.json> [--inspect] [--consume-amendment] [--approve-spec --decision-ref <ref> [--through <target>]]` | Inspect intake and, when complete, add, revise, or remove semantic requirements, or fix an unfinished task's verify command, transactionally while preserving completed work, in one call |
 | `change amend <change> --task <task> --verify <command> [--reopen] [--reason <text>]` | Correct one unfinished task's verify command without amendment JSON; claims, capabilities, and approval stay, an always-passing command is refused, and `--reopen` unticks a completed task so it must pass again |
 | `change revise <change> <draft.json> [--merge] [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | Before Build, inspect and, when complete, recompile a revised semantic draft over the same change id in one call, with rollback and a requirement delta (approval carries unless a requirement is removed); `--merge` takes only the changed keys and keyed entries |
@@ -180,7 +183,7 @@ Wire-visible contracts are pinned in `.claude/harness/protocol.json`. A mixed-re
 |---|---|
 | runtime | 3.6.3 |
 | runtime API | 41 |
-| semantic draft schema | 4 |
+| semantic draft schema | 5 |
 | semantic intake state schema | 2 |
 | semantic amendment schema | 1 |
 | artifact defaults schema | 2 |

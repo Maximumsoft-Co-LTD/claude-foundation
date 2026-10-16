@@ -3,6 +3,9 @@ title: Workflow หลาย Repository
 description: ตั้งค่า Build, Prove และ Land change ที่ต้องใช้หลาย Git repository ตามลำดับที่ Change Loop ตรวจจริง
 ---
 
+<!-- docs-audience: project-maintainers -->
+**ผู้อ่าน:** ผู้ดูแลโปรเจกต์และ agent ที่ได้รับอนุญาตให้ตั้งค่า หากต้องการใช้งานตามปกติ เริ่มที่ [เริ่มใช้งาน](/docs/th/quickstart/)
+
 ใช้คู่มือนี้เมื่อ change หนึ่งเขียนโค้ดในหลาย repository หรือเมื่อ test รันจาก
 repository หนึ่งแต่ต้องใช้โค้ดหรือ contract จาก repository อื่น
 

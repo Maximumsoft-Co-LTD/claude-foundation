@@ -677,6 +677,58 @@ test("collect-only CLI emits a schema-valid scorecard without a paid host run", 
   }
 });
 
+test("collect-only CLI scores the change-loop packet and validates it", () => {
+  const project = projectFixture();
+  write(join(project, "openspec/changes/todo/proposal.md"), [
+    "# Change: Todo", "", "## Why", "", "Users lose track of work.", "",
+    "## Why", "", "Repeated section.", ""
+  ].join("\n"));
+  write(join(project, "openspec/changes/todo/design.md"), "# Design\n\n## Context\n\nOne store.\n");
+  const outputDir = mkdtempSync(join(tmpdir(), "foundation-native-scorecard-"));
+  const output = join(outputDir, "rows.jsonl");
+  try {
+    const runner = new URL("../openspec-native/run.mjs", import.meta.url);
+    const result = spawnSync(process.execPath, [
+      runner.pathname, "--collect-only", "--scenario", "todolist-r2",
+      "--project", project, "--change-id", "todo", "--run-id", "packet-run",
+      "--wall-ms", "4000", "--started-at", "2026-08-28T01:00:00Z",
+      "--finished-at", "2026-08-28T01:00:04Z", "--output", output
+    ], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    const scorecard = JSON.parse(readFileSync(output, "utf8").trim());
+    assert.ok(scorecard.packet, "a change-loop run carries packet metrics");
+    assert.ok(["measured", "partial"].includes(scorecard.packet.measurement));
+    assert.equal(scorecard.packet.path, "openspec/changes/todo");
+    assert.ok(scorecard.packet.words.proposal > 0);
+    assert.ok(scorecard.packet.words.design > 0);
+    assert.ok(scorecard.packet.words.tasks > 0);
+    assert.equal(scorecard.packet.duplicateSections.count, 1);
+    assert.equal(validate(scorecard), true, JSON.stringify(validate.errors));
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(outputDir, { recursive: true, force: true });
+  }
+});
+
+test("a run without a packet reports it unavailable; a baseline has none", () => {
+  const project = projectFixture();
+  try {
+    const common = {
+      scenario: "todolist-r2", repeat: 1, runId: "run-1", project,
+      stopwatch: { wallMs: 1, startedAt: "2026-08-28T01:00:00Z", finishedAt: "2026-08-28T01:00:01Z" },
+      metrics: {}, provenance: { commit: "abc", dirty: false },
+      packet: { measurement: "unavailable", reason: "packet-unavailable", path: null }
+    };
+    const loop = collectNativeScorecard(common);
+    assert.equal(loop.packet.measurement, "unavailable");
+    assert.equal(loop.packet.words.proposal, null, "unknown is never a zero");
+    assert.equal(validate(loop), true, JSON.stringify(validate.errors));
+    const baseline = collectNativeScorecard({ ...common, arm: "baseline" });
+    assert.equal(baseline.packet, undefined);
+    assert.equal(validate(baseline), true, JSON.stringify(validate.errors));
+  } finally { rmSync(project, { recursive: true, force: true }); }
+});
+
 test("collect-only CLI persists categorized host tool calls from a saved stream", () => {
   const project = projectFixture();
   const outputDir = mkdtempSync(join(tmpdir(), "foundation-native-tool-calls-"));

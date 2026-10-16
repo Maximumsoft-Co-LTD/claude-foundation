@@ -29,10 +29,15 @@ import {
   ROOT_POINTER_MOVED, repositoryPointerStop, rootPointerMoves, rootPointerRepairMessage
 } from "./land-verification.mjs";
 import {
-  landedChangeSyncStop, landedTargetPaths, otherLandedOutput, parseRestoreTargetPaths,
+  carriedLandedExcludes, landedChangeSyncStop, landedTargetPaths, otherLandedOutput, parseRestoreTargetPaths,
   replayLandedEdit, restorableTargetPaths, targetConflictStop, targetEditCarried,
   targetEditSyncStop
 } from "./target-edits.mjs";
+import {
+  complianceEnabledFromConfig, renderComplianceChangeRecord, renderReviewRecord,
+  renderRolloutGates
+} from "./validation/process-fields.mjs";
+import { outlineRow, sectionHeading } from "./validation/outline-contract.mjs";
 
 // Whether an empty root diff is an acceptable apply outcome rather than an
 // error: true when the change selected any non-root repository, because the
@@ -696,6 +701,36 @@ export function assertRecoveredArchiveReadyOperation(context, id, state, archive
   assertRecoveredProjection(context, id, state, archivedPath);
 }
 
+const ROLLOUT_GATES_HEADING = Object.freeze({
+  en: "Appendix: Rollout gates", th: "ภาคผนวก: gate ของ rollout"
+});
+
+function appendixLanguage(value) {
+  return /^th\b/i.test(String(value || "")) ? "th" : "en";
+}
+
+// The archive-only proposal appendices, rendered from records the runtime
+// already holds: the review attempts, the compiled-from draft's compliance
+// data (only when openspec/config.yaml enables it) with the spec-approval
+// decision, and the deferred post-release rollout gates. "" when none apply.
+export function archiveAppendixMarkdown({
+  language, reviewAttempts = [], complianceEnabled = false, compliance = null,
+  approvalRef = null, rolloutGates = []
+} = {}) {
+  const lang = appendixLanguage(language);
+  const heading = (key) => sectionHeading(outlineRow("proposal", key), lang);
+  const sections = [];
+  const review = renderReviewRecord(reviewAttempts, { language: lang });
+  if (review) sections.push(`## ${heading("reviewRecord")}\n\n${review}`);
+  if (complianceEnabled) {
+    const record = renderComplianceChangeRecord(compliance, { language: lang, approvalRef });
+    if (record) sections.push(`## ${heading("complianceRecord")}\n\n${record}`);
+  }
+  const gates = renderRolloutGates(rolloutGates, { language: lang });
+  if (gates) sections.push(`## ${ROLLOUT_GATES_HEADING[lang]}\n\n${gates}`);
+  return sections.join("\n\n");
+}
+
 export function createApplyRuntime({
   root,
   transactions,
@@ -751,6 +786,11 @@ export function createApplyRuntime({
   consumeLandGrant = () => {},
   blockWithDecision,
   fail,
+  // Archive appendix inputs. All optional: an unwired reader contributes no
+  // rows. `reviewAttemptRecords(id)` must not migrate state;
+  // `rolloutGates(id)` reads the active packet, so it runs before the move.
+  reviewAttemptRecords = () => [],
+  rolloutGates = () => [],
   // Every repository the topology declares under root, selected or not: its
   // gitlink is its own pointer, never root projection content.
   declaredRepositoryPaths = () => []
@@ -764,8 +804,12 @@ export function createApplyRuntime({
     ...declaredRepositoryPaths()])];
   }
 
+  // Another change's landed bytes the sandbox carries unchanged are that
+  // change's Land, not this one's: projecting them could overwrite a target
+  // edit made after it.
   function applyPathspec(id, state) {
-    return sandboxCodePathspec(id, nestedRepositoryPaths(id, state));
+    return [...sandboxCodePathspec(id, nestedRepositoryPaths(id, state)),
+      ...carriedLandedExcludes(state.workspace, pathIdentity)];
   }
 
   function copyCodePaths(id, state) {
@@ -1200,7 +1244,9 @@ export function createApplyRuntime({
         typeof pathIdentity === "function") {
       const archivedPath = state.archivedChangePath || archivedChangeRelativePath(id);
       if (archivedPath) {
+        stripArchiveAppendix(state, archivedPath);
         assertRetainedArchiveIntegrity(id, state, archivedPath);
+        appendArchiveAppendix(state, archivedPath);
         recordDeliveryIntegrity(state, archivedPath, state.specSyncInputs,
           Array.isArray(state.land?.archivePacketEntries));
         saveRuntime(state);
@@ -1245,6 +1291,7 @@ export function createApplyRuntime({
     // so it is not an exemption from the Land guards. Everything still
     // checkable once the change directory has moved is checked here, before
     // any state is written: a refusal has to leave the change recoverable.
+    stripArchiveAppendix(state, archivedPath);
     assertRecoveredArchiveReady(id, state, archivedPath);
     assertRetainedArchiveIntegrity(id, state, archivedPath);
     // The move may have finished before the specs were settled; settle them
@@ -1265,6 +1312,7 @@ export function createApplyRuntime({
       status: "archive-audited",
       recoveredAt: now()
     };
+    appendArchiveAppendix(state, archivedPath);
     recordDeliveryIntegrity(state, archivedPath,
       Array.isArray(state.specSyncInputs) ? state.specSyncInputs : [],
       Array.isArray(state.land.archivePacketEntries));
@@ -1414,6 +1462,59 @@ export function createApplyRuntime({
     return telemetry;
   }
 
+  // Rendered while the active packet still exists (rollout gates read it) and
+  // kept in the Land record, so a resumed Land appends the same text.
+  function prepareArchiveAppendix(id, state) {
+    const draft = state.draftSource?.draft || {};
+    let configText = "";
+    try { configText = readFileSync(join(root, "openspec", "config.yaml"), "utf8"); } catch {}
+    const read = (reader) => { try { return reader(id, state) || []; } catch { return []; } };
+    return {
+      markdown: archiveAppendixMarkdown({
+        language: draft.language || state.documentLanguage,
+        reviewAttempts: read(reviewAttemptRecords),
+        complianceEnabled: complianceEnabledFromConfig(configText),
+        compliance: draft.compliance || null,
+        approvalRef: state.specApproval?.decisionRef || null,
+        rolloutGates: read(rolloutGates)
+      })
+    };
+  }
+
+  // Volatile records (review, compliance, rollout) are written only into the
+  // archived proposal, after the merged specs verify and before the delivery
+  // integrity record binds the archived tree. The pre-append byte length is
+  // recorded first, so a resumed Land can restore the exact archived packet
+  // (whose identity the approval and projection checks bind) and append again.
+  function appendArchiveAppendix(state, archivedPath) {
+    const appendix = state.land?.archiveAppendix;
+    if (!appendix?.markdown || !archivedPath) return;
+    const proposal = join(root, archivedPath, "proposal.md");
+    if (!existsSync(proposal)) return;
+    stripArchiveAppendix(state, archivedPath);
+    const original = readFileSync(proposal);
+    state.land.archiveAppendix = { ...appendix, offset: original.length };
+    saveRuntime(state);
+    const separator = original.length && !original.toString("utf8").endsWith("\n") ? "\n\n" : "\n";
+    writeFileSync(proposal, Buffer.concat([original,
+      Buffer.from(`${separator}${appendix.markdown}\n`, "utf8")]));
+  }
+
+  function stripArchiveAppendix(state, archivedPath) {
+    const offset = state.land?.archiveAppendix?.offset;
+    if (!Number.isInteger(offset) || !archivedPath) return;
+    const proposal = join(root, archivedPath, "proposal.md");
+    if (existsSync(proposal)) {
+      const bytes = readFileSync(proposal);
+      if (bytes.length > offset &&
+          bytes.subarray(offset).toString("utf8").includes(state.land.archiveAppendix.markdown))
+        writeFileSync(proposal, bytes.subarray(0, offset));
+    }
+    const { offset: _offset, ...rest } = state.land.archiveAppendix;
+    state.land.archiveAppendix = rest;
+    saveRuntime(state);
+  }
+
   function runOpenSpecArchive(id, state, readiness) {
     const preArchiveWorkspaceHash = readiness.hash;
     // 'openspec archive' moves the change out of openspec/changes and rewrites
@@ -1430,6 +1531,7 @@ export function createApplyRuntime({
       writeSpecBefore(applyTransactionRoot(id, state.workspace.apply.transactionId),
         specSyncInputs, writeJson);
     state.land = { ...state.land, status: "archive-prepared", updatedAt: now(),
+      archiveAppendix: prepareArchiveAppendix(id, state),
       ...(typeof pathIdentity === "function" ? {
         archivePacketEntries: deliveryTreeEntries(root, [`openspec/changes/${id}`], pathIdentity)
       } : {}) };
@@ -1462,6 +1564,7 @@ export function createApplyRuntime({
       saveRuntime(state);
       failSpecSync(specViolations);
     }
+    appendArchiveAppendix(state, state.archivedChangePath);
     // `archived` is reported only once the merged specs verify; a crash or a
     // violation before this resumes through interrupted-archive recovery,
     // which re-verifies from the retained inputs.

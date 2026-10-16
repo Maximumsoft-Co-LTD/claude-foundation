@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -133,4 +133,19 @@ test("upgrade diagnostics honor signed CI and intentional policy acknowledgement
   assert.equal(unsafeReference.policyObservations.length, 0);
   assert.equal(unsafeReference.policyFindings[0].classification,
     "historical-default-or-explicit-value-ambiguous");
+});
+
+// Draft v5 is a draft-schema change only: the installed CLI keeps working after
+// Land because every runtime API pin stays on the same value.
+test("draft schema 5 ships without moving the four runtime API pins", () => {
+  const root = join(import.meta.dirname, "..", "..", "..");
+  const protocol = JSON.parse(readFileSync(join(root, ".claude/harness/protocol.json"), "utf8"));
+  assert.equal(protocol.semanticDraftSchema, "5");
+  const api = protocol.runtimeApi;
+  assert.match(readFileSync(join(root, "cli.sh"), "utf8"), new RegExp(`^EXPECTED_RUNTIME_API=${api}$`, "m"));
+  assert.match(readFileSync(join(root, ".claude/harness/foundation.mjs"), "utf8"),
+    new RegExp(`const RUNTIME_API_VERSION = "${api}";`));
+  assert.match(readFileSync(join(root, ".claude/harness/runtime/version.mjs"), "utf8"),
+    new RegExp(`export const RUNTIME_MODULE_API = "${api}";`));
+  assert.equal(api, "41");
 });

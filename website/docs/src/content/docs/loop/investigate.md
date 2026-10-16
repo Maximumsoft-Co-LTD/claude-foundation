@@ -3,6 +3,9 @@ title: /investigate
 description: Optional read-only exploration for when the problem, cause, or direction is genuinely unclear.
 ---
 
+<!-- docs-audience: agents-integrators -->
+**Audience:** coding agents and integration operators. CLI commands and schemas below are system reference, not a user checklist. Users can follow [Quickstart](/docs/quickstart/).
+
 ```text
 /investigate <problem or decision> [--compare]
 ```

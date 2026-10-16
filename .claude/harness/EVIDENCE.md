@@ -5,8 +5,11 @@ wiring. Change Loop does not install test frameworks, browsers, or project
 dependencies; the project owns and locks every executable named by an adapter.
 
 This is the canonical provider/receipt reference for maintainers and evidence
-authors. For the installed user journey, start with `WORKFLOW.md`; for runtime
-file ownership and commands, use `README.md` in this directory.
+authors. Commands and schemas here are for the agent, configured tool, or
+integration operator; users provide decisions rather than hand-writing receipts.
+For everyday use, start with the [user quickstart](https://claude-foundation.dev/docs/quickstart/).
+For file ownership and permitted writers, use
+[the ownership reference](README.md#file-ownership-and-writers).
 
 ## Behavioral contract
 
@@ -100,6 +103,18 @@ covers it, and otherwise as blocked; both `evidence detect` and `doctor` name
 the next step to wire a project-owned command for that capability in
 `execution.yaml`, which replaces the alias.
 
+A provider command without `timeoutMs` runs for at most 600000 ms (ten
+minutes). A timeout is an infrastructure `error`, and the failure names the
+provider, the limit, and `providers.<name>.timeoutMs` to raise it. A provider
+command never inherits the harness's own session state
+(`CLAUDE_FOUNDATION_PROJECT`, `FOUNDATION_WORKSPACE_ROOT`,
+`FOUNDATION_CALLER_CWD`, `FOUNDATION_CLAUDE_SESSION_ID`,
+`FOUNDATION_CLAUDE_TRANSCRIPT_PATH`, `FOUNDATION_PUBLIC_OPERATION`,
+`FOUNDATION_ACTIVE_PHASE`), so a test that runs `claude-foundation` in its
+own fixture acts on that fixture; the provider contract variables such as
+`FOUNDATION_CHANGE_ID` and `FOUNDATION_REPOSITORIES_FILE` are still set, and a
+value the provider declares in `env` or `envFrom` still reaches it.
+
 ```json
 {
   "version": 1,
@@ -165,6 +180,68 @@ only high-confidence wiring and preserves existing providers. Ambiguous,
 external-authority, missing structured-test-count, and operator-review cases
 remain unresolved with an explicit next action. Bootstrap never installs a
 dependency, creates a receipt, weakens a claim, or treats detection as proof.
+
+## Work-type capabilities
+
+A change's declared or inferred work types add capabilities that its changed
+paths cannot reveal. They join the path-derived obligations with a
+`work-type:<type>` trigger:
+
+| Work type | Capabilities |
+|---|---|
+| api, library, deprecation | `compatibility` |
+| performance | `performance` |
+| async | `concurrency` |
+| integration | `integration` |
+| ui | `accessibility` |
+| data | `data-migration` |
+| migration | `parity` |
+| dependency | `dependency-supply-chain` |
+| infra | `plan-check`, `deployment` |
+| observability | `observability` |
+| privacy | `security-static` |
+| ml | `evaluation` |
+| client-release | `release-health` (post-release) |
+| experiment | `experiment-guardrail` (post-release) |
+
+A capability only a work type requires is still required evidence, but it does
+not raise the review tier or force review on its own: `compatibility` from
+`api` alone leaves review at the tier the change's real risk selects. The same
+capability required by a changed path still raises it.
+
+Six capabilities exist for these work types:
+
+| Capability | Proves | Default adapter | Phase | Bootstrap scripts |
+|---|---|---|---|---|
+| `concurrency` | Concurrent and asynchronous paths keep their ordering, isolation, and completion guarantees under contention | `command` | pre-land | `test:concurrency`, `concurrency` |
+| `evaluation` | A model or ranking evaluation scores at or above its threshold | `command` | pre-land | `test:eval`, `eval`, `evaluate` |
+| `parity` | The new implementation matches the reference on the declared comparison set | `command` | pre-land | `test:parity`, `parity` |
+| `plan-check` | An infrastructure or migration plan contains only the declared changes | `command` | pre-land | `plan:check`, `plan` |
+| `release-health` | Crash, error, and adoption signals stay healthy during rollout | `external` | post-release | none |
+| `experiment-guardrail` | Guardrail metrics stay within bounds after release | `external` | post-release | none |
+
+An `evaluation` command prints a `foundation-evaluation-v1` result on stdout
+(or writes it to its configured report):
+
+```json
+{ "protocol": "foundation-evaluation-v1", "score": 0.91, "threshold": 0.85 }
+```
+
+It passes only when the command exits 0 and `score >= threshold`; a
+provider-level `threshold` in `execution.yaml` applies when the result omits
+one. A missing or non-numeric score or threshold fails closed. When stdout
+holds log lines before the result, the last line that is a JSON object is the
+result. A result whose `protocol` names another protocol fails, naming both. The receipt
+observation records `{kind: "evaluation", status, score, threshold}`.
+
+Post-release capabilities exist only after the change ships. They are rollout
+gates: deferred (neither failed nor pending), excluded from the providers that
+gate proof, never blocking proof or Land, and listed as Appendix: Rollout gates
+in the archived proposal. A gate the work type or a claim owes is listed even
+without a provider. A waived capability's gate is listed with status `waived`
+and is no longer owed. A proof finalized before rollout gates existed owes
+none. Wiring a missing pre-land provider is agent work in
+`execution.yaml`, never a user question.
 
 ## Signed CI and external authority
 
@@ -234,8 +311,10 @@ dispatch another reviewer. Configured AI review uses
 `authority record`; acceptance uses request/status/record without a review
 dispatch. Requests contain bounded packets and expire or become stale with the
 workspace. Responses must match the request identity and workspace, then pass
-the ordinary review or acceptance receipt validator. Completed requests cannot
-be replayed.
+the ordinary review or acceptance receipt validator. `authority record` reports
+every response problem in one refusal, including an undispatched review
+request; the response template states that dispatch comes first, and a delta
+template counts its verified findings. Completed requests cannot be replayed.
 Readiness exposes this boundary as a structured user decision with pass, fail,
 inconclusive, error, and pause paths. It never emits a pre-filled passing receipt.
 The agent translates the packet and owns the response artifact; users answer in
@@ -809,6 +888,12 @@ service or readiness probe) and runs its command once against the base source:
   a plain `sh -c` wrapper is recognized with the same conservative command
   parser used for task checks; shell expansion, pipes, assignments, and
   redirects retain the configured command;
+- a provider compiled from several task verifies records them as `segments`;
+  the base runs the segments from the first through the last one whose command
+  names a changed test file, so an earlier setup segment (a build or codegen)
+  still runs and only later segments are skipped (a single first segment is
+  narrowed further as above); when a changed test is named by no segment in
+  that range, or the provider has no `segments`, its whole command runs as before;
   any other command (for example `npm test`) runs once as configured;
 - a test that imports a module the change adds fails on base and therefore
   counts as failing on base.

@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  DEFAULT_PROVIDER_TIMEOUT_MS, providerTimeoutDetail, providerTimeoutMs
+} from "../runtime/evidence/provider-catalog.mjs";
+import {
+  assertProofCollectionOutcomes,
   assertExecutionAvailable,
   executionAvailabilityError,
   prepareProofExecution,
@@ -192,6 +196,20 @@ test("proof run boundaries stop non-ready work and project successful proof outp
     version: 1, changeId: "change-b", command: "proof run", status: "PASS",
     completed: true, proofRunId: null, workspaceHash: "hash-b", providers: []
   });
+});
+
+test("a provider without timeoutMs gets ten minutes and a timeout names its limit", () => {
+  assert.equal(DEFAULT_PROVIDER_TIMEOUT_MS, 600000);
+  assert.equal(providerTimeoutMs({}), 600000);
+  assert.equal(providerTimeoutMs({ timeoutMs: 1800000 }), 1800000);
+  const detail = providerTimeoutDetail("test", {});
+  assert.match(detail, /timed out after 600000ms/);
+  assert.match(detail, /providers\.test\.timeoutMs in evidence\.yaml/);
+  // The failure summary carries the reason instead of a bare "test:error".
+  assert.throws(() => assertProofCollectionOutcomes([
+    { provider: "test", status: "error", observations: [], detail },
+    { provider: "lint", status: "pass", observations: [] }
+  ]), /evidence collection failed: test:error \(timed out after 600000ms; raise providers\.test\.timeoutMs/);
 });
 
 test("proof execution result reflects audit validity", () => {

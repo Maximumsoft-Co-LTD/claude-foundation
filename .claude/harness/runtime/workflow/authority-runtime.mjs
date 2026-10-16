@@ -215,6 +215,25 @@ export function abortAuthorityOperation(context, id, flags = {}) {
   return updated;
 }
 
+// The user's "one more AI attempt" answer to exhausted AI review. The grant
+// raises the cap by one, so the open request's next route is `authority run`
+// again and `advance` dispatches it.
+export function extendReviewAuthorityOperation(context, id, flags = {}) {
+  context.validate(id, "active", { quiet: true });
+  const decisionRef = String(flags["decision-ref"] || "").trim();
+  if (!decisionRef)
+    context.fail("authority extend-review requires --decision-ref <ref>");
+  const open = (context.authorityStore?.list(id) || []).map((entry) => entry.value)
+    .find((request) => request.type === "review" && request.status === "requested");
+  const { maxAiAttempts } = context.effectiveReviewAttemptLimit(
+    context.reviewPolicy(id), context.deliveredAiAttempts(id), open?.workspaceHash || null);
+  const result = context.grantExtraAiWave(id, decisionRef, maxAiAttempts);
+  context.output.log(`AUTHORITY ${id}: one more AI review wave\n  waves: ${
+    result.delivered}/${result.maxAiAttempts}\n  decision: ${decisionRef
+    }\n  next: ${`claude-foundation advance ${id} --through proven`}`);
+  return result;
+}
+
 export function resetInfrastructureAuthorityOperation(context, id, flags = {}) {
   context.validate(id, "active", { quiet: true });
   const decisionRef = String(flags["decision-ref"] || "").trim();
@@ -300,11 +319,14 @@ export function reviewSubjectResponseEvidence() {
 }
 
 export function reviewFindingResponseEvidence(request) {
+  // The count matches the prefilled first-round IDs, so a delta response
+  // recorded as given passes the count check.
+  const verifiedFindingIds = request.packet?.closureFindings?.ids || [];
   const evidence = {
     "unresolved-blockers": 0,
-    "verified-findings": 0,
+    "verified-findings": verifiedFindingIds.length,
     findings: [],
-    verifiedFindingIds: request.packet?.closureFindings?.ids || []
+    verifiedFindingIds
   };
   if (request.dispatch?.scope?.mode === "delta")
     evidence["scope-path"] = request.dispatch.scope.paths;
@@ -320,16 +342,75 @@ export function reviewResponseEvidence(request) {
   };
 }
 
+const RESPONSE_REFERENCE_URI = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+// The response problems `authority record` can decide before validating the
+// receipt, collected together: dispatch, references, provenance, and finding
+// closure. The later checks stay as the authority; this only reports early.
+export function authorityResponsePreflightIssues({ request, response, undispatched = false,
+  referenceExists = () => true }) {
+  const issues = [];
+  if (undispatched)
+    issues.push(`dispatch the request first: claude-foundation authority dispatch ${request.changeId} ` +
+      `--request ${request.requestId} --scope full|delta --reviewer-type human|ai --reviewer-identity <id>`);
+  if (request.type !== "review") return issues;
+  const evidence = response?.evidence && typeof response.evidence === "object" ? response.evidence : {};
+  // An error response closes the attempt as an infrastructure outcome; it
+  // carries no receipt, so receipt provenance and references do not apply.
+  const infrastructureError = response?.status === "error";
+  const references = (Array.isArray(evidence.reference) ? evidence.reference : [])
+    .map((value) => String(value).trim()).filter(Boolean);
+  const missing = infrastructureError ? [] : references.filter((reference) =>
+    !RESPONSE_REFERENCE_URI.test(reference) && !referenceExists(reference));
+  if (missing.length)
+    issues.push(`a reference must be a URI or a path that exists: ${missing.join(", ")}`);
+  // `subject-provenance` is the other accepted form, and the only one for
+  // several implementers.
+  const hasProvenance = evidence["subject-provenance"] !== undefined &&
+    evidence["subject-provenance"] !== null && evidence["subject-provenance"] !== "";
+  if (!infrastructureError && !hasProvenance && !String(evidence["subject-actor"] || "").trim())
+    issues.push("add evidence.subject-actor (who implemented the change) or evidence.subject-provenance");
+  const aiSubject = ["subject-provider-family", "subject-model-family", "subject-model"]
+    .some((key) => String(evidence[key] || "").trim());
+  if (!infrastructureError && !hasProvenance && aiSubject &&
+      !String(evidence["subject-session"] || "").trim())
+    issues.push("an AI implementer needs evidence.subject-session");
+  const verifiedIds = Array.isArray(evidence.verifiedFindingIds) ? evidence.verifiedFindingIds : [];
+  // The receipt validator's rule: counts bind only when finding rows or
+  // verified IDs are supplied, or the scope is a delta.
+  const suppliedRows = (Array.isArray(evidence.findings) && evidence.findings.length > 0) ||
+    verifiedIds.length > 0 || request.dispatch?.scope?.mode === "delta" ||
+    (Array.isArray(evidence["scope-path"]) && evidence["scope-path"].length > 0);
+  if (!infrastructureError && suppliedRows && evidence["verified-findings"] !== undefined &&
+      Number(evidence["verified-findings"]) !== verifiedIds.length)
+    issues.push(`evidence.verified-findings (${evidence["verified-findings"]}) must equal the ` +
+      `${verifiedIds.length} verifiedFindingIds`);
+  const expected = request.packet?.closureFindings?.ids;
+  if (Array.isArray(expected) && response?.status !== "error") {
+    const supplied = [...new Set(verifiedIds.map((value) => String(value).trim()).filter(Boolean))].sort();
+    if (JSON.stringify([...expected].sort()) !== JSON.stringify(supplied))
+      issues.push(`verifiedFindingIds must close exactly the first-round findings: ${[...expected].sort().join(", ")}`);
+  }
+  return issues;
+}
+
 export function authorityResponseTemplate(context, request) {
   // Preserve the established eager claim expansion. The production compactor
   // supports both arrays and previews, and callers may rely on malformed packet
   // shapes failing before a review template is projected.
   const acceptanceEvidence = acceptanceResponseEvidence(context, request);
+  // A full-delta review is recorded only after dispatch; say so up front.
+  const dispatchFirst = request.type === "review" && request.reviewCircuit === "full-delta" &&
+    request.status !== "dispatched"
+    ? `claude-foundation authority dispatch ${request.changeId} --request ${request.requestId} ` +
+      "--scope full|delta --reviewer-type human|ai --reviewer-identity <id>"
+    : null;
   return {
     version: Number(context.protocolVersion),
     requestId: request.requestId,
     changeId: request.changeId,
     type: request.type,
+    ...(dispatchFirst ? { dispatchFirst } : {}),
     workspaceHash: request.workspaceHash,
     status: "pass|fail|inconclusive|error",
     evidence: request.type === "acceptance"
@@ -561,6 +642,8 @@ export function createAuthorityRuntime({
   // asynchronous route awaits the synchronous reviewer.
   runConfiguredReviewAsync = null,
   acknowledgeInfrastructureAttempts,
+  // Absent in narrow compositions: extend-review then refuses.
+  grantExtraAiWave = () => fail("extra AI review waves are unavailable in this composition"),
   acknowledgeBaseMoveAttempts,
   // Absent in narrow compositions: dispatch then keeps the manual reset routes.
   autoReleaseReviewBudget = () => [],
@@ -1827,11 +1910,10 @@ export function createAuthorityRuntime({
     }
     if (!authorityStore.isOpen(request.status))
       fail(`authority request '${requestId}' is ${request.status}`);
-    if (request.type === "review" && request.reviewCircuit === "full-delta" &&
-        request.status !== "dispatched")
-      fail(`authority request '${requestId}' must be dispatched before its response is recorded`);
+    const undispatched = request.type === "review" && request.reviewCircuit === "full-delta" &&
+      request.status !== "dispatched";
     if (!existsSync(responsePath)) fail(`authority response not found: ${flags.response}`);
-    return { requestId, responsePath, entry, request };
+    return { requestId, responsePath, entry, request, undispatched };
   }
 
   function validateDispatchedReviewResponse(request, response, evidenceFlags) {
@@ -1970,8 +2052,17 @@ export function createAuthorityRuntime({
   }
 
   function recordAuthorityUnlocked(id, flags = {}) {
-    const { requestId, responsePath, entry, request } = recordAuthorityRequest(id, flags);
+    const { requestId, responsePath, entry, request, undispatched } = recordAuthorityRequest(id, flags);
     const response = readJson(responsePath);
+    // Every problem known before validation, at once, instead of one per run.
+    const preflight = authorityResponsePreflightIssues({
+      request, response, undispatched,
+      // The receipt validator's bases: the root and the provider's workspace.
+      referenceExists: (reference) => [root, providerWorkspace(id, request.provider)]
+        .some((base) => base && existsSync(resolve(base, reference)))
+    });
+    if (preflight.length)
+      fail(`authority response for '${requestId}' cannot be recorded:\n  - ${preflight.join("\n  - ")}`);
     const validated = authorityStore.validateResponse(response, request, id);
     if (!validated.valid) fail(validated.reason);
     const evidenceFlags = validated.evidence;
@@ -2029,6 +2120,12 @@ export function createAuthorityRuntime({
   const resetInfrastructureAuthority = lockedAuthorityOperation(
     withAuthorityLock, resetInfrastructureAuthorityUnlocked);
 
+  const extendReviewAuthority = lockedAuthorityOperation(withAuthorityLock,
+    extendReviewAuthorityOperation.bind(null, {
+      validate, authorityStore, reviewPolicy, deliveredAiAttempts,
+      effectiveReviewAttemptLimit, grantExtraAiWave, fail, output: console
+    }));
+
   // A moved base whose replay altered the change's diff expires a delivered
   // passing verdict through no fault of the work. This route releases exactly
   // that attempt from the wave budget, on a recorded user decision, so the
@@ -2056,6 +2153,7 @@ export function createAuthorityRuntime({
     runAuthorityReviewerAsync,
     abortAuthority,
     resetInfrastructureAuthority,
+    extendReviewAuthority,
     recoverReviewBindings,
     resetBaseMoveAuthority,
     unrecordedDeliveredAiResponse,

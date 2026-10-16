@@ -3,6 +3,9 @@ title: /build
 description: ทำตามข้อตกลงที่ compile แล้วใน workspace แยกผ่าน coordinator เดียว
 ---
 
+<!-- docs-audience: agents-integrators -->
+**ผู้อ่าน:** Coding agent และผู้ดูแล integration คำสั่ง CLI และ schema ด้านล่างเป็นเอกสารระบบ ไม่ใช่รายการที่ผู้ใช้ต้องทำเอง ผู้ใช้เริ่มที่ [เริ่มใช้งาน](/docs/th/quickstart/)
+
 ```text
 /build <change>
 ```

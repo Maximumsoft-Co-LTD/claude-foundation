@@ -3,6 +3,9 @@ title: /prove
 description: Reuse and execute content-bound evidence until proven or a real boundary.
 ---
 
+<!-- docs-audience: agents-integrators -->
+**Audience:** coding agents and integration operators. CLI commands and schemas below are system reference, not a user checklist. Users can follow [Quickstart](/docs/quickstart/).
+
 ```text
 /prove <change>
 ```

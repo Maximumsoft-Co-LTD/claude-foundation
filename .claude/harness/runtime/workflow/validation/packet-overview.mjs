@@ -1,4 +1,5 @@
 import { behaviorChangingWork } from "../../evidence/test-discrimination.mjs";
+import { BEHAVIOR_NEUTRAL_WORK } from "./design-blueprints.mjs";
 import { lightKind, scenarioKindLabel, inferWorkTypes } from "./dev-document.mjs";
 
 // What every change's proposal states once: who and which lane, the scope,
@@ -31,34 +32,47 @@ function preview(values, quote = "") {
   return values.length > PREVIEW ? `${shown}, … +${values.length - PREVIEW} more` : shown;
 }
 
-// Why the change is in its lane, from the same predicate that chose it. The
-// risk values themselves stay in Impact; this names only the cause.
+// Why the change is in its lane, as one short phrase from the same predicate
+// that chose it (the strongest cause). The risk values themselves stay in
+// Impact; the phrase never nests parentheses inside the Lane line.
 export function laneReason(draft, rapid) {
-  if (rapid) return "low risk; see Impact";
-  const causes = [];
+  if (rapid) return "low risk";
+  const plain = (value) => value.replace(/[()]/g, "");
+  const triggers = strings(draft?.securityTriggers).map(plain);
+  if (triggers.length) return `security triggers: ${triggers.join(", ")}`;
   if ((text(draft?.impact) || "low") !== "low" || (text(draft?.coupling) || "isolated") !== "isolated")
-    causes.push("impact or coupling above the rapid limit (see Impact)");
-  if (strings(draft?.securityTriggers).length)
-    causes.push(`security triggers: ${strings(draft.securityTriggers).join(", ")}`);
-  if (draft?.reviewRequired) causes.push("review required");
-  if (draft?.acceptance?.required) causes.push("user acceptance required");
-  if (!causes.length) causes.push("the draft carries design content (design.md and specs/)");
-  return causes.join("; ");
+    return "impact or coupling above the rapid limit";
+  if (draft?.reviewRequired) return "review required";
+  if (draft?.acceptance?.required) return "user acceptance required";
+  return "carries design content";
 }
 
-// Change id, lane, owner, created date. Absent facts are left out, and an
-// unknown owner says so; a status the harness cannot keep current points at
-// the command that does.
-export function renderPacketHeader(draft, state = {}) {
+// The review tier a proposal header names, from the policy's own route label:
+// "risk-tiered AI review (high tier, fast model)" reads "high tier".
+export function reviewTier(label) {
+  const value = text(label);
+  if (!value) return "";
+  if (/^not required\b/i.test(value)) return "not required";
+  const tier = value.match(/\b(low|medium|high) tier\b/i)?.[0];
+  return tier || value.replace(/\s*\(.*$/, "").trim() || value;
+}
+
+// Only facts that stay true after approval: change id, lane and its reason,
+// review tier, owner, and created date. Status, approvers, and evidence
+// freshness change after approval, so `claude-foundation changes` reports
+// them instead of the packet. Absent facts are left out; an unknown owner
+// says so.
+export function renderPacketHeader(draft, state = {}, { reviewLabel = "" } = {}) {
   const rapid = state.schema === "foundation-rapid";
   const lane = state.schema
     ? `**Lane:** ${rapid ? "rapid" : "standard"} (${laneReason(draft, rapid)})` : "";
   const first = [state.id ? `**Change:** \`${state.id}\`` : "", lane].filter(Boolean).join(" · ");
   const created = String(state.createdAt || "").match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+  const tier = reviewTier(reviewLabel);
   const second = [
+    tier ? `**Review:** ${tier}` : "",
     `**Owner:** ${text(state.owner) || "unassigned"}`,
-    created ? `**Created:** ${created}` : "",
-    "**Status:** `claude-foundation changes`"
+    created ? `**Created:** ${created}` : ""
   ].filter(Boolean).join(" · ");
   return [first, second].filter(Boolean).map((line) => `- ${line}`).join("\n");
 }
@@ -114,24 +128,38 @@ function testFilesFor(draft, claim, taskIds, scenarioName) {
   return unique([...authored, ...fromPaths]);
 }
 
-// One row per claim: requirement -> scenario (by claim id, with its kind) ->
-// task -> evidence capabilities -> test files. Titles and scenario text live
-// in the specs; tasks, checks, and claims live in tasks.md and evidence.yaml.
+// The access outcome a scenario asserts, when it states one: "allow"/"deny",
+// optionally for a named actor ({ actor|role, effect|result|decision }).
+function accessLabel(scenario) {
+  const access = scenario?.access;
+  if (typeof access === "string") return text(access).toLowerCase();
+  if (!access || typeof access !== "object") return "";
+  const effect = text(access.effect || access.result || access.decision || access.outcome).toLowerCase();
+  const actor = text(access.actor || access.role || access.subject);
+  return effect ? (actor ? `${effect}: ${actor}` : effect) : "";
+}
+
+// One row per claim: requirement -> scenario (its name and kind) -> task ->
+// evidence capabilities -> test files. Claim ids stay machine keys; readers
+// see the requirement title and the scenario name.
 export function traceabilityRows(draft) {
   const claims = Array.isArray(draft?.claims) ? draft.claims : [];
   const tasks = Array.isArray(draft?.tasks) ? draft.tasks : [];
   const requirements = requirementRows(draft);
   const rows = [];
   const seen = new Set();
+  const taskIdsOf = (claim) => tasks.filter((task) => (task.claims || []).includes(claim.id)).map((task) => task.id);
   for (const requirement of requirements) {
     const own = claims.filter((claim) => text(claim?.requirementKey) === requirement.key);
     const aligned = own.length === requirement.scenarios.length;
     own.forEach((claim, index) => {
       const scenario = aligned ? requirement.scenarios[index] : null;
-      const taskIds = tasks.filter((task) => (task.claims || []).includes(claim.id)).map((task) => task.id);
+      const taskIds = taskIdsOf(claim);
       seen.add(claim.id);
       rows.push({
-        requirement: requirement.key, claim: claim.id, kind: scenario ? scenarioKindLabel(scenario) : "unclassified",
+        requirement: requirement.key, title: requirement.title || requirement.key, claim: claim.id,
+        scenario: text(scenario?.name) || text(claim.scenario),
+        kind: scenario ? scenarioKindLabel(scenario) : "unclassified", access: accessLabel(scenario),
         tasks: taskIds, evidence: strings(claim.capabilities),
         tests: testFilesFor(draft, claim, taskIds, text(claim.scenario))
       });
@@ -139,9 +167,10 @@ export function traceabilityRows(draft) {
   }
   for (const claim of claims) {
     if (!claim?.id || seen.has(claim.id)) continue;
-    const taskIds = tasks.filter((task) => (task.claims || []).includes(claim.id)).map((task) => task.id);
+    const taskIds = taskIdsOf(claim);
     rows.push({
-      requirement: text(claim.requirementKey), claim: claim.id, kind: "unclassified",
+      requirement: text(claim.requirementKey), title: text(claim.requirementKey), claim: claim.id,
+      scenario: text(claim.scenario), kind: "unclassified", access: "",
       tasks: taskIds, evidence: strings(claim.capabilities),
       tests: testFilesFor(draft, claim, taskIds, text(claim.scenario))
     });
@@ -149,25 +178,54 @@ export function traceabilityRows(draft) {
   return rows;
 }
 
-export function renderTraceability(draft) {
+// Reader order inside a requirement: success, boundary, failure, then
+// anything unclassified; authored order breaks ties.
+const KIND_ORDER = { happy: 0, edge: 1, failure: 2 };
+const KIND_NAME = { happy: "success", edge: "boundary" };
+const TRACE_LABELS = {
+  en: { requirement: "Requirement", scenario: "Scenario", kind: "Kind", task: "Task", check: "Check",
+    decision: "Decision", intro: "Tasks: `tasks.md`; scenarios: the specs." },
+  th: { requirement: "Requirement", scenario: "Scenario", kind: "ชนิด", task: "Task", check: "Check",
+    decision: "Decision", intro: "Task: `tasks.md`; scenario: ใน specs" }
+};
+
+function governingDecisions(draft, key) {
+  return unique((Array.isArray(draft?.decisions) ? draft.decisions : [])
+    .filter((decision) => strings(decision?.requirements).includes(key))
+    .map((decision) => text(decision?.id) || text(decision?.key)));
+}
+
+// Grouped by requirement: its title and its check (evidence capabilities and
+// test files) appear once on the group's first row; each scenario is named,
+// never shown by claim id. Evidence freshness is volatile and stays in
+// `claude-foundation changes`, not here.
+export function renderTraceability(draft, { language = draft?.language } = {}) {
   const rows = traceabilityRows(draft);
   if (!rows.length) return "";
-  // A claim named for its requirement alone is that requirement's only
-  // scenario; otherwise the claim id's suffix names the scenario.
-  const reference = (row) => !row.requirement || row.claim === row.requirement ? row.claim
-    : row.claim.startsWith(`${row.requirement}-`)
-      ? `${row.requirement} › ${row.claim.slice(row.requirement.length + 1)}`
-      : `${row.requirement} › ${row.claim}`;
-  // Evidence is its own column only when it varies; a uniform capability list
-  // is stated once.
-  const evidence = unique(rows.map((row) => row.evidence.join(", ")));
-  const uniform = evidence.length === 1;
-  return "## Acceptance traceability\n\n" +
-    `Tasks and checks: \`tasks.md\`.${uniform && evidence[0] !== "test" ? ` Evidence: ${evidence[0] || "—"}.` : ""}\n\n` +
-    `| Requirement › scenario | Kind | Task |${uniform ? "" : " Evidence |"} Tests |\n` +
-    `|---|---|---|${uniform ? "" : "---|"}---|\n` +
-    rows.map((row) => `| ${cell(reference(row))} | ${row.kind} | ${cell(row.tasks)} |` +
-      `${uniform ? "" : ` ${cell(row.evidence)} |`} ${cell(row.tests)} |`).join("\n");
+  const label = TRACE_LABELS[language === "th" ? "th" : "en"];
+  const groups = new Map();
+  for (const row of rows) {
+    const key = row.requirement || row.claim;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  const lines = [];
+  for (const [key, group] of groups) {
+    const ordered = group.map((row, index) => ({ row, index })).sort((a, b) =>
+      ((KIND_ORDER[a.row.kind] ?? 3) - (KIND_ORDER[b.row.kind] ?? 3)) || a.index - b.index).map(({ row }) => row);
+    const capabilities = unique(group.flatMap((row) => row.evidence));
+    const tests = unique(group.flatMap((row) => row.tests));
+    const check = [capabilities.join(", "), tests.map((file) => `\`${file}\``).join(", ")].filter(Boolean).join(": ");
+    const decisions = governingDecisions(draft, key);
+    ordered.forEach((row, index) => {
+      const kind = (KIND_NAME[row.kind] || row.kind) + (row.access ? ` (${row.access})` : "");
+      lines.push(`| ${index ? "" : cell(row.title)} | ${cell(row.scenario)} | ${kind} | ${cell(row.tasks)} | ` +
+        `${index ? "" : cell(check)} | ${index ? "" : cell(decisions)} |`);
+    });
+  }
+  return "## Acceptance traceability\n\n" + `${label.intro}\n\n` +
+    `| ${label.requirement} | ${label.scenario} | ${label.kind} | ${label.task} | ${label.check} | ${label.decision} |\n` +
+    "|---|---|---|---|---|---|\n" + lines.join("\n");
 }
 
 function hasSuccessSignal(draft) {
@@ -187,14 +245,13 @@ export function successMeasureText(draft) {
 const BOUNDARY_WORDS = new RegExp("\\b(?:empty|blank|zero|none|null|missing|max(?:imum)?|min(?:imum)?|" +
   "limit|boundary|duplicate|already|exceed\\w*|large|first|last|concurrent|twice|overflow)\\b",
   "i");
-const LIGHT_TYPES = new Set(["docs", "chore", "test", "refactor", "config"]);
 
 // Advisory only: never a repair for the agent, never a new EDIT.
 export function coverageNotes(draft) {
   const notes = [];
   const rows = traceabilityRows(draft);
   const types = inferWorkTypes(draft || {});
-  const light = types.length > 0 && types.every((type) => LIGHT_TYPES.has(type));
+  const light = types.length > 0 && types.every((type) => BEHAVIOR_NEUTRAL_WORK.has(type));
   if (rows.length && !light) {
     if (!rows.some((row) => row.kind === "failure")) notes.push("no failure scenario");
     const scenarios = requirementRows(draft).flatMap((row) => row.scenarios);

@@ -103,5 +103,5 @@ test("adapter fingerprint uses external defaults without a service", () => {
   assert.equal(createAdapterFingerprint(context, "change", "test", {}), "default");
   assert.equal(material.adapter, "external");
   assert.equal(material.service, null);
-  assert.equal(material.executionPolicy.timeoutMs, 120000);
+  assert.equal(material.executionPolicy.timeoutMs, 600000);
 });

@@ -320,6 +320,16 @@ export function landedTargetPaths({ root, paths, landed, identity }) {
   return result;
 }
 
+// Paths another change landed and the sandbox still carries byte-for-byte are
+// not this change's contribution: apply, replay, and the diff identity exclude
+// them. A carried path this change has since edited counts again.
+export function carriedLandedExcludes(workspace, identity) {
+  const carried = workspace?.landedCarried || {};
+  return Object.keys(carried).sort().filter((path) => {
+    try { return identity(join(workspace.path, path)) === carried[path]?.digest; } catch { return false; }
+  }).map((path) => `:(exclude,literal)${path}`);
+}
+
 // Replays an earlier change's landed edit into the sandbox copy of a path the
 // sandbox also changed: the same 3-way merge Land's carried check uses. A
 // clean merge returns the bytes to write into the sandbox; anything else is a

@@ -3,6 +3,9 @@ title: Claim และ capability
 description: scenario ที่สังเกตได้กลายเป็น claim ที่มี ID คงที่อย่างไร และ capability ตัวไหนใน 19 ตัวที่พิสูจน์มันได้จริง
 ---
 
+<!-- docs-audience: agents-integrators -->
+**ผู้อ่าน:** Coding agent และผู้ดูแล integration คำสั่ง CLI และ schema ด้านล่างเป็นเอกสารระบบ ไม่ใช่รายการที่ผู้ใช้ต้องทำเอง ผู้ใช้เริ่มที่ [เริ่มใช้งาน](/docs/th/quickstart/)
+
 กฎหลักของ Change Loop คือ **คำสั่งที่ผ่านไม่ได้แปลว่าเป็นหลักฐานโดยอัตโนมัติ**
 
 ทุก scenario ที่ยอมรับได้และสังเกตได้จะได้ claim ID ที่คงที่ แต่ละ claim ประกาศ capability ที่พิสูจน์มันได้จริง หลักฐานที่ขาด, stale, fail, error หรือ inconclusive จะบล็อกการ land
@@ -48,6 +51,7 @@ override อยู่ใน [`execution.yaml`](/docs/th/evidence/adapters/) แ�
 | `integration` | หลายคอมโพเนนต์หรือขอบเขตภายนอกทำงานร่วมกันได้ |
 | `compatibility` | สัญญาสาธารณะหรือที่ persist ไว้ยังเข้ากันได้ข้ามเวอร์ชันที่รองรับ |
 | `performance` | latency, throughput, ทรัพยากร หรือขนาด อยู่ในงบที่วัดได้ |
+| `concurrency` | งานที่ทำพร้อมกันหรือแบบ async ยังรักษาลำดับ การแยกกัน และการทำงานให้จบได้เมื่อแย่งทรัพยากรกัน |
 | `security-static` | การตรวจความปลอดภัยเชิงสถิตครอบคลุม trust boundary และ sink ที่ไม่ปลอดภัยที่เปลี่ยนไป |
 | `cross-repo-contract` | ฝั่งผลิตและฝั่งบริโภคตกลงกันบนสัญญาเวอร์ชันเดียวกัน |
 | `review` | การรีวิวความเสี่ยงอย่างอิสระครอบคลุม claim และประเด็นที่ยังค้าง |

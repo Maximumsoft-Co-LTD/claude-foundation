@@ -1,5 +1,6 @@
 import { lifecycleOutcome } from "../../core/lifecycle-outcome.mjs";
 import { deriveDiscoveryCoverage, isDerivedCoverage } from "./derived-coverage.mjs";
+import { isSemanticV4Plus } from "./draft-version.mjs";
 
 const STATUSES = new Set([
   "covered", "not-applicable", "needs-investigation", "needs-user-decision"
@@ -183,7 +184,7 @@ function decisionIssues(decisions = []) {
 // from those decisions, instead of handing the agent another draft edit.
 export function projectResolvedDecisions(source = {}) {
   const discovery = source?.discovery;
-  if (source?.version !== 4 || !discovery || !Array.isArray(discovery.coverage) ||
+  if (!isSemanticV4Plus(source?.version) || !discovery || !Array.isArray(discovery.coverage) ||
       !Array.isArray(discovery.decisions)) return source;
   const resolved = new Set(discovery.decisions
     .filter((row) => decisionStatus(row) === "resolved").map((row) => text(row?.key)));
@@ -237,7 +238,7 @@ function accessIssues(source) {
 }
 
 export function semanticIntakeIssues(input = {}) {
-  if (input.version !== 4) return [];
+  if (!isSemanticV4Plus(input.version)) return [];
   const source = projectDiscovery(input);
   const issues = [];
   // Omitted discovery or coverage is an empty record; required dimensions
@@ -308,11 +309,15 @@ export function semanticIntakeIssues(input = {}) {
   return issues;
 }
 
+// `userQuestion` ({ key, question, kind }) is one harness-routed user decision
+// outside the requirement frontier (the compliance approver). It is asked once,
+// after every agent repair, and the same resume route continues after it.
 export function semanticIntakeAction(input = {}, {
-  resume = null, additionalIssues = [], sourceFreshnessFindings = [], frontierLimit = 3
+  resume = null, additionalIssues = [], sourceFreshnessFindings = [], frontierLimit = 3,
+  userQuestion = null
 } = {}) {
   const source = projectDiscovery(input);
-  if (source.version !== 4) return lifecycleOutcome({
+  if (!isSemanticV4Plus(source.version)) return lifecycleOutcome({
     action: "DONE", owner: "harness", boundary: "semantic-intake",
     reached: "intake-ready", reason: "The compatible semantic draft can be compiled.",
     resume
@@ -352,6 +357,20 @@ export function semanticIntakeAction(input = {}, {
         dimension: text(row?.dimension).toLowerCase(),
         sources: unique(strings(row?.sources))
       }))
+    },
+    resume
+  });
+
+  if (text(userQuestion?.key) && text(userQuestion?.question)) return lifecycleOutcome({
+    action: "ASK_USER", owner: "user", boundary: "consequential-semantics",
+    reason: "One user decision is required before the change can be created.",
+    decision: {
+      kind: text(userQuestion.kind) || "user-decision",
+      summary: `Record ${text(userQuestion.key)} in the draft, then resume.`,
+      items: [{
+        key: text(userQuestion.key), question: text(userQuestion.question),
+        alternatives: [], recommended: ""
+      }]
     },
     resume
   });
@@ -396,7 +415,7 @@ export function semanticIntakeAction(input = {}, {
 }
 
 export function normalizeDiscovery(input = {}) {
-  if (input.version !== 4) return undefined;
+  if (!isSemanticV4Plus(input.version)) return undefined;
   const source = projectDiscovery(input);
   return {
     coverage: (source.discovery?.coverage || []).map((row) => ({
