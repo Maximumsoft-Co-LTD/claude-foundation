@@ -12,6 +12,7 @@ import {
 import {
   fileMapWithTasks, openQuestionItems, readerGuideWarnings
 } from "../runtime/workflow/validation/reader-guide.mjs";
+import { derivedByHarness } from "../runtime/workflow/validation/dev-document.mjs";
 
 const slugify = (value) => String(value).toLowerCase()
   .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -189,6 +190,24 @@ test("reader fields are shape-checked and missing guidance only warns", () => {
   // A small rapid-lane draft gets no reader scaffolding prompts.
   const tiny = readerGuideWarnings({ ...compile(), impact: "low", fileMap: [] });
   assert.equal(tiny.some((warning) => /summary|userStories|successCriteria/.test(warning)), false);
+});
+
+test("v5 proposal prose counts as authored why, user stories, and success criteria", () => {
+  const base = { ...compile(), version: 5, summary: undefined, why: undefined,
+    userStories: undefined, successCriteria: undefined };
+  const reader = /summary|userStories|successCriteria/;
+  const authored = { ...base, prose: { proposal: {
+    why: "Cards get lost between columns.\n", userStories: "- P1 A planner tracks cards.\n",
+    successCriteria: "- Every moved card keeps its column.\n" }, design: {} } };
+  assert.equal(readerGuideWarnings(authored).some((warning) => reader.test(warning)), false);
+  assert.equal(derivedByHarness(authored).some((note) => /\*\*Why:\*\*/.test(note)), false);
+  // Neither the field nor the prose: the reader prompts and the derived note stay.
+  const missing = { ...base, prose: { proposal: {}, design: {} } };
+  assert.ok(readerGuideWarnings(missing).some((warning) => /summary/.test(warning)));
+  assert.ok(derivedByHarness(missing).some((note) => /\*\*Why:\*\* not authored separately/.test(note)));
+  // Whitespace-only prose is not authored text.
+  const blank = { ...base, prose: { proposal: { why: "  \n" }, design: {} } };
+  assert.ok(readerGuideWarnings(blank).some((warning) => /summary/.test(warning)));
 });
 
 test("assumptions and the architecture diagram render in design; open questions only in the proposal", () => {

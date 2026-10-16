@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { dirname } from "node:path";
@@ -9,6 +9,7 @@ import {
   createChangeLifecycle, renderDraftDesign, renderDraftProposal
 } from "../runtime/workflow/change-lifecycle.mjs";
 import { groundingFromQuality } from "../runtime/workflow/validation/quality-fields.mjs";
+import { expandMinimalSemanticDraft, isMinimalSemanticDraft } from "../runtime/workflow/semantic-draft.mjs";
 
 function folder(files) {
   const dir = mkdtempSync(join(tmpdir(), "foundation-draft-folder-"));
@@ -411,6 +412,89 @@ for (const [name, files, pattern] of [
     assert.equal(existsSync(join(root, ".foundation", "runtime", "refund-api.json")), false);
   });
 }
+
+// The template's minimal folder, filled in, starts without extra fields and the
+// packet uses the declared work type instead of one guessed from paths.
+const filledMinimalFolder = (lifecycle, change = {}) => {
+  const minimal = lifecycle.rapidStartTemplate().minimalDraft;
+  return {
+    "change.json": {
+      ...minimal["change.json"], intent: "Filter notes by tag",
+      requirements: [{ description: "The system SHALL list only notes with the chosen tag",
+        scenarios: [{ when: "a user filters by tag red", then: "only red notes are listed" }] }],
+      tasks: [{ outcome: "Filter notes by tag", verify: "npm test", paths: ["src/notes/**"] }],
+      ...change
+    },
+    "proposal.md": "## Why\n\nUsers cannot find tagged notes in a long list.\n"
+  };
+};
+
+test("the template's minimal v5 folder, filled in, starts with its declared work type", (t) => {
+  const { root, changes, lifecycle } = startProject(t);
+  const path = writeStartFolder(root, filledMinimalFolder(lifecycle,
+    { userFlow: { purpose: "Filter the list", source: "flowchart LR\n  A --> B" }, releaseNote: "Notes filter by tag." }));
+  const { result } = quiet(() => lifecycle.inspectDraft(path));
+  assert.equal(result.action, "DONE", JSON.stringify(result.intake || result));
+  quiet(() => lifecycle.startAtomic(path));
+  const id = readdirSync(changes)[0];
+  // A low-impact change is rapid: its work type renders in the proposal.
+  const proposal = readFileSync(join(changes, id, "proposal.md"), "utf8");
+  assert.match(proposal, /## Work type\n\nfeature\n/);
+  assert.doesNotMatch(proposal, /inferred from paths/);
+  assert.ok(proposal.includes("## Why\n\nUsers cannot find tagged notes in a long list.\n"), proposal);
+  assert.doesNotMatch(proposal, /\*\*Why:\*\* not authored separately/);
+  assert.equal(JSON.parse(readFileSync(join(root, ".foundation", "runtime", `${id}.json`), "utf8"))
+    .draftSource?.version ?? 5, 5);
+});
+
+test("a minimal v5 folder declaring api without apiContracts returns an EDIT naming it", (t) => {
+  const { root, changes, lifecycle } = startProject(t);
+  const path = writeStartFolder(root, filledMinimalFolder(lifecycle, { workType: ["api"] }));
+  const { result } = quiet(() => lifecycle.startAtomic(path));
+  assert.equal(result.action, "EDIT");
+  assert.match(JSON.stringify(result), /apiContracts/);
+  assert.equal(existsSync(changes) && readdirSync(changes).length > 0, false);
+});
+
+// Only the template's unkeyed shape expands as minimal; a keyed v5 draft keeps
+// v4's full-draft semantics, so an unmarked decision is not the agent's.
+test("a keyed v5 draft is not expanded as minimal and keeps its unmarked decisions", () => {
+  const decision = { key: "storage", choice: "Store refunds in Postgres", reason: "Existing database" };
+  const full = { ...startChangeJson(), decisions: [decision] };
+  assert.equal(isMinimalSemanticDraft(full), false);
+  const expanded = expandMinimalSemanticDraft(full);
+  assert.equal(expanded.decisions[0].decidedBy, undefined);
+  assert.equal(expanded._minimalDraft, undefined);
+  const { key: _r, ...requirement } = full.requirements[0];
+  const { key: _t, covers: _c, ...task } = full.tasks[0];
+  const minimal = { version: 5, intent: full.intent, requirements: [requirement], tasks: [task] };
+  assert.equal(isMinimalSemanticDraft(minimal), true);
+  assert.equal(expandMinimalSemanticDraft(minimal).version, 5);
+  // The recorded draft of a minimal v5 start is keyed but marked; a merge that
+  // adds an unkeyed row still expands as minimal and derives that row's key.
+  const recorded = expandMinimalSemanticDraft(minimal);
+  assert.ok(recorded.requirements.every((row) => row.key));
+  const added = { ...recorded, requirements: [...recorded.requirements, {
+    description: "The system SHALL reject a refund for an unknown order",
+    scenarios: [{ when: "the order does not exist", then: "the refund is rejected" }] }] };
+  assert.equal(isMinimalSemanticDraft(added), true);
+  const merged = expandMinimalSemanticDraft(added);
+  assert.equal(merged.version, 5);
+  assert.ok(merged.requirements[1].key, JSON.stringify(merged.requirements[1]));
+});
+
+test("a v4 minimal JSON draft without version still starts", (t) => {
+  const { root, changes, lifecycle } = startProject(t);
+  const path = join(root, ".foundation", "drafts", "notes-tag.json");
+  writeJsonFile(path, {
+    intent: "Filter notes by tag",
+    requirements: [{ description: "The system SHALL list only notes with the chosen tag",
+      scenarios: [{ when: "a user filters by tag red", then: "only red notes are listed" }] }],
+    tasks: [{ outcome: "Filter notes by tag", verify: "npm test", paths: ["src/notes/**"] }]
+  });
+  quiet(() => lifecycle.startAtomic(".foundation/drafts/notes-tag.json"));
+  assert.equal(readdirSync(changes).length, 1);
+});
 
 test("change start --consume-draft removes a v5 draft folder after the change is created", (t) => {
   const { root, changes, lifecycle } = startProject(t);

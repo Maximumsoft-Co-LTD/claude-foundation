@@ -2,6 +2,7 @@ import { scopeAllowsPath } from "../../core/graph-execution.mjs";
 import { renderInvestigationContext, renderRetainedInvestigation } from "./investigation-coverage.mjs";
 import { lightweightDraft } from "./design-blueprints.mjs";
 import { isSemanticV4Plus } from "./draft-version.mjs";
+import { hasAuthoredProposalProse } from "../draft-folder.mjs";
 
 // Reader guide: the parts of a compiled packet written for a human reviewer
 // rather than for the harness. Every field is optional and renders only when
@@ -91,11 +92,14 @@ export function readerGuideWarnings(draft) {
   // A small rapid-lane change needs no reader scaffolding prompts.
   const light = lightweightDraft(draft);
   // 'why' already gives the reader the lead; a summary would repeat it.
-  if (!light && !text(draft.summary) && !text(draft.why))
+  // A v5 draft authors these sections as proposal.md prose instead of fields.
+  const prose = (key) => hasAuthoredProposalProse(draft, key);
+  if (!light && !text(draft.summary) && !text(draft.why) && !prose("summary") && !prose("why"))
     warnings.push("add a plain-language 'why' or 'summary' (1-3 sentences) so a reviewer understands the change quickly");
-  if (!light && (!Array.isArray(draft.userStories) || !draft.userStories.length))
+  if (!light && (!Array.isArray(draft.userStories) || !draft.userStories.length) && !prose("userStories"))
     warnings.push("add prioritized 'userStories' (P1-P3) that name who benefits and link requirement keys");
-  if (!light && (!Array.isArray(draft.successCriteria) || !draft.successCriteria.length))
+  if (!light && (!Array.isArray(draft.successCriteria) || !draft.successCriteria.length) &&
+    !prose("successCriteria"))
     warnings.push("add measurable 'successCriteria' that say how the result is judged");
   const modifies = (Array.isArray(draft.fileMap) ? draft.fileMap : []).some((row) =>
     /^modif/i.test(text(row?.change)));

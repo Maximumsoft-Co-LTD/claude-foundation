@@ -10,3 +10,10 @@ export function isSemanticVersion(version) {
 export function isSemanticV4Plus(version) {
   return isSemanticVersion(version) && version >= 4;
 }
+
+// The v5 draft is a folder: change.json declares this version.
+export const FOLDER_DRAFT_VERSION = 5;
+
+export function isFolderDraftVersion(version) {
+  return version === FOLDER_DRAFT_VERSION;
+}

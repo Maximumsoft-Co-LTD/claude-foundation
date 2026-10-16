@@ -1,0 +1,108 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "template-leads-with-v5-agent-claude-foundation-change-start-temp",
+      "requirementKey": "template-leads-with-v5",
+      "scenario": "template นำด้วย v5",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "template-leads-with-v5-agent-minimal-draft-change-start",
+      "requirementKey": "template-leads-with-v5",
+      "scenario": "minimal draft ที่กรอกแล้วเริ่มได้",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "template-leads-with-v5-agent-change-start",
+      "requirementKey": "template-leads-with-v5",
+      "scenario": "work type ที่ประกาศบังคับหัวข้อของตัวเอง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "template-leads-with-v5-agent-change-start-json",
+      "requirementKey": "template-leads-with-v5",
+      "scenario": "draft v4 แบบ JSON ยังใช้ได้",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "v5-prose-counts-as-authored-agent-change-start",
+      "requirementKey": "v5-prose-counts-as-authored",
+      "scenario": "prose เหตุผลนับเป็น why",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "v5-prose-counts-as-authored-agent-change-start-2",
+      "requirementKey": "v5-prose-counts-as-authored",
+      "scenario": "prose user story และเกณฑ์นับเป็นของผู้เขียน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "v5-prose-counts-as-authored-agent-change-start-3",
+      "requirementKey": "v5-prose-counts-as-authored",
+      "scenario": "ไม่มีทั้ง field และ prose ยังเตือน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "instructions-teach-v5-agent-claude-commands-change-md",
+      "requirementKey": "instructions-teach-v5",
+      "scenario": "คำสั่ง /change สอนโฟลเดอร์ v5",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "instructions-teach-v5-agent-foundation-drafts-id-change-json-pro",
+      "requirementKey": "instructions-teach-v5",
+      "scenario": "ทางเขียน draft ได้รับอนุญาตล่วงหน้า",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "instructions-teach-v5-docs-consistency-context-budget",
+      "requirementKey": "instructions-teach-v5",
+      "scenario": "เอกสารสองภาษาตรงกัน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/reader-guide.test.mjs .claude/harness/tests/draft-folder.test.mjs) && (node --test .claude/harness/tests/change-atomic-start.test.mjs .claude/harness/tests/semantic-draft.test.mjs .claude/harness/tests/draft-folder.test.mjs .claude/harness/tests/public-command-golden.test.mjs) && (node --test .claude/harness/tests/permission-allowlist.test.mjs && sh .claude/tests/harness/run-context-budget-tests.sh && bash .claude/tests/docs/run-doc-consistency.sh)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

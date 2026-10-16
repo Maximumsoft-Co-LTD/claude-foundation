@@ -1,6 +1,7 @@
 import { leasePathIsAllowed } from "../lease-runtime.mjs";
 import { BEHAVIOR_NEUTRAL_WORK, LIGHT_WORK, draftWorkTypes } from "./design-blueprints.mjs";
 import { isSemanticV4Plus } from "./draft-version.mjs";
+import { hasAuthoredProposalProse } from "../draft-folder.mjs";
 
 // The dev document: what a Change hands to Build and to the person approving
 // it. Readers need to see what they get, what changes, and how it will be
@@ -340,7 +341,8 @@ export function derivedByHarness(draft, { standard = true } = {}) {
   const notes = [];
   if (!isSemanticV4Plus(draft?.version) || !standard) return notes;
   const required = requiredDevSections(draft);
-  if (!text(draft.summary) && !text(draft.why))
+  if (!text(draft.summary) && !text(draft.why) &&
+    !hasAuthoredProposalProse(draft, "summary") && !hasAuthoredProposalProse(draft, "why"))
     notes.push("**Why:** not authored separately; the intent above states it.");
   if (required.includes("failureMatrix") && !present(draft.failureMatrix)) {
     const rows = failureScenarios(draft);

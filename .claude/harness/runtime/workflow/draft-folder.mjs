@@ -9,8 +9,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { OUTLINE, derivedSectionKeys, sectionHeading } from "./validation/outline-contract.mjs";
 import { groundingFromQuality } from "./validation/quality-fields.mjs";
+import { FOLDER_DRAFT_VERSION } from "./validation/draft-version.mjs";
 
-export const DRAFT_FOLDER_VERSION = 5;
+export const DRAFT_FOLDER_VERSION = FOLDER_DRAFT_VERSION;
 export const DRAFT_FOLDER_PROSE = Object.freeze(["proposal", "design"]);
 
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
@@ -87,6 +88,13 @@ export function splitProse(document, text, { language, file = `${document}.md` }
 }
 
 const PLACEHOLDER = /(?<![A-Za-z0-9_])(TODO|TBD)(?![A-Za-z0-9_])/i;
+
+// True when a v5 draft authors the proposal section `key` as prose, so checks
+// that look for the typed field also accept the prose that replaces it.
+export function hasAuthoredProposalProse(draft, key) {
+  const body = draft?.prose?.proposal?.[key];
+  return typeof body === "string" && body.trim() !== "";
+}
 
 // Authored headings must follow the outline's reader order.
 function orderIssues(document, sections, file) {

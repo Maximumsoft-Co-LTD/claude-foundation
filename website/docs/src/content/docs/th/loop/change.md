@@ -17,16 +17,20 @@ transaction
 
 ## Draft แบบขั้นต่ำ
 
-งานทั่วไป agent เขียนแค่ intent, พฤติกรรมที่ต้องการ และ task โดยไม่ต้องใส่ `version`
+งานทั่วไป agent เขียนแค่ intent, ประเภทงาน, พฤติกรรมที่ต้องการ และ task
 คำสั่ง `change start --template` แสดงรูปแบบนี้เป็นอันดับแรกในชื่อ `minimalDraft`
-โดยมี field `save` นำหน้า: agent เขียน draft ด้วย Write tool ไว้ใต้
-`.foundation/drafts/` (path ที่อนุญาตไว้ล่วงหน้า) เพราะ host ปฏิเสธ shell heredoc
-Draft เป็นได้ทั้งไฟล์ JSON ไฟล์เดียว `.foundation/drafts/<id>.json` หรือ folder ของ
-draft v5 `.foundation/drafts/<id>/` (ดูด้านล่าง)
+โดยมี field `save` นำหน้า: agent เขียน folder ของ draft v5 `.foundation/drafts/<id>/`
+(ดูด้านล่าง) ด้วย Write tool เพราะ host ปฏิเสธ shell heredoc และ `.foundation/drafts/`
+เป็น path ที่อนุญาตไว้ล่วงหน้า จากนั้นรัน `claude-foundation change start .foundation/drafts/<id>`
+`change.json` ประกาศ `version: 5` และ `workType` ซึ่งเป็นตัวเลือกหัวข้อบังคับ ส่วน
+`proposal.md` เก็บเหตุผลเป็นเนื้อความ
 
 ```json
 {
+  "version": 5,
+  "language": "en",
   "intent": "Reject empty note titles",
+  "workType": ["bugfix"],
   "requirements": [{
     "description": "The system SHALL reject a note whose title is empty",
     "scenarios": [{ "when": "a user submits an empty title", "then": "the note is not created" }]
@@ -34,6 +38,9 @@ draft v5 `.foundation/drafts/<id>/` (ดูด้านล่าง)
   "tasks": [{ "outcome": "Validate note titles", "verify": "npm test", "paths": ["src/note.js"] }]
 }
 ```
+
+Draft JSON ไฟล์เดียวที่ไม่มี `version` (`.foundation/drafts/<id>.json`) ยังเริ่มได้ในฐานะ
+draft v4 พร้อมค่า default เดียวกัน
 
 Compiler เติมให้เอง ได้แก่ version, key ของ requirement และ task, capability
 (ใส่ `capability` ระดับบนสุดเพื่อตั้งชื่อเองได้ ไม่เช่นนั้นเลือกจาก capability ใน

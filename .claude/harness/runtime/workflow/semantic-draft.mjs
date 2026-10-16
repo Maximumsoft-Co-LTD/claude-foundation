@@ -9,7 +9,9 @@ import {
   devDocumentIssues, devDocumentShapeIssues, inferWorkTypes
 } from "./validation/dev-document.mjs";
 import { riskDerivationSummary } from "./validation/draft-risk.mjs";
-import { isSemanticV4Plus, isSemanticVersion } from "./validation/draft-version.mjs";
+import {
+  FOLDER_DRAFT_VERSION, isFolderDraftVersion, isSemanticV4Plus, isSemanticVersion
+} from "./validation/draft-version.mjs";
 import { OUTLINE } from "./validation/outline-contract.mjs";
 
 export {
@@ -628,8 +630,19 @@ function plainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+// A v5 folder's change.json may use the same minimal shape (the template's:
+// no requirement or task keys); it keeps version 5. A keyed v5 draft is a full
+// draft and keeps v4's full-draft semantics, such as unmarked decisions. The
+// draft recorded from a minimal v5 start carries derived keys and the
+// `_minimalDraft` marker, so a merge revision still expands as minimal.
+const unkeyed = (rows) => rows.every((row) => !text(row?.key));
+
 export function isMinimalSemanticDraft(source) {
-  return plainObject(source) && source.version === undefined && Boolean(text(source.intent)) &&
+  const minimalVersion = source?.version === undefined ||
+    (isFolderDraftVersion(source?.version) && Array.isArray(source.requirements) &&
+      Array.isArray(source.tasks) &&
+      (source._minimalDraft === true || (unkeyed(source.requirements) && unkeyed(source.tasks))));
+  return plainObject(source) && minimalVersion && Boolean(text(source.intent)) &&
     source.claims === undefined && source.specs === undefined &&
     Array.isArray(source.requirements) && source.requirements.length > 0 &&
     source.requirements.every((row) => plainObject(row) &&
@@ -931,7 +944,7 @@ export function expandMinimalSemanticDraft(input, {
 } = {}) {
   if (!isMinimalSemanticDraft(input)) return input;
   const source = structuredClone(input);
-  source.version = 4;
+  source.version = isFolderDraftVersion(input.version) ? FOLDER_DRAFT_VERSION : 4;
   source._minimalDraft = true;
   // An optional top-level `capability` names the living spec for every
   // requirement that does not name its own.
@@ -1571,6 +1584,17 @@ export function minimalSemanticDraftTemplate() {
       verify: "npm test",
       paths: ["src/**"]
     }]
+  };
+}
+
+// The minimal v5 folder the template leads with: typed fields with a declared
+// work type in change.json, and the reason as proposal.md prose. The v4
+// minimal JSON above stays valid for existing drafts.
+export function minimalDraftFolderTemplate() {
+  const { intent, requirements, tasks } = minimalSemanticDraftTemplate();
+  return {
+    "change.json": { version: 5, language: "en", intent, workType: ["feature"], requirements, tasks },
+    "proposal.md": "## Why\n\nSay in 1-3 plain sentences what changes, who benefits, and why.\n"
   };
 }
 

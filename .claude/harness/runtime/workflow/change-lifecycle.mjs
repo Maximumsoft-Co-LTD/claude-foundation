@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { acquireProcessLock } from "../core/process-lock.mjs";
-import { loadDraftFolder } from "./draft-folder.mjs";
+import { DRAFT_FOLDER_VERSION, loadDraftFolder } from "./draft-folder.mjs";
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 import { foundationChangeStores, retiredChangeStores } from "./retired-change-stores.mjs";
 import { nextCommand, resumeThrough } from "../core/next-step.mjs";
@@ -17,7 +17,7 @@ import { taskBlocks, taskMetadata } from "../contracts/change-artifacts.mjs";
 import { matchesSecurityTerm, materialSecurityTriggers } from "./security-policy.mjs";
 import {
   agentDecision, authoredDecisionReason, expandMinimalSemanticDraft, mergeSemanticDraft,
-  MINIMAL_DRAFT_WRITING, minimalSemanticDraftTemplate, normalizeSemanticDraft, renderRequirementMarkdown,
+  MINIMAL_DRAFT_WRITING, minimalDraftFolderTemplate, normalizeSemanticDraft, renderRequirementMarkdown,
   renderSpecHeading, semanticDraftTemplate, unknownTaskFieldWarnings
 } from "./semantic-draft.mjs";
 import { isSemanticV4Plus, isSemanticVersion } from "./validation/draft-version.mjs";
@@ -1781,20 +1781,27 @@ export function createChangeLifecycle({
     return id;
   }
 
-  // The minimal form leads; the full v4 template follows for richer drafts.
-  // The decisions note travels with the template the agent already reads, so
-  // recording unasked defaults costs no always-loaded instruction words.
-  // `save` leads because agents copy from this output: a shell-written JSON
+  // The minimal v5 folder leads; the typed-field reference follows for richer
+  // drafts. The decisions note travels with the template the agent already
+  // reads, so recording unasked defaults costs no always-loaded instruction
+  // words. `save` leads because agents copy from this output: a shell-written
   // draft is refused by the host, while the file tool falls under the seeded
-  // `Edit(/.foundation/drafts/**)` rule.
+  // `Edit(/.foundation/drafts/**)` rule. A v4 JSON draft still starts.
   function rapidStartTemplate() {
     return {
-      save: "Write minimalDraft (filled in) with the Write tool to " +
-        ".foundation/drafts/<id>.json; that path is pre-allowed and the tool creates the " +
-        "folder. Do not save it through the shell (heredoc, cat >, echo >, mkdir chains): " +
-        "the host refuses those. Then run claude-foundation change start " +
-        ".foundation/drafts/<id>.json.",
-      minimalDraft: minimalSemanticDraftTemplate(),
+      save: "Write each file of minimalDraft (filled in) with the Write tool into the folder " +
+        ".foundation/drafts/<id>/ (change.json with version 5, then proposal.md); that path " +
+        "is pre-allowed and the tool creates the folder. Do not save it through the shell " +
+        "(heredoc, cat >, echo >, mkdir chains): the host refuses those. Then run " +
+        "claude-foundation change start .foundation/drafts/<id>.",
+      minimalDraft: minimalDraftFolderTemplate(),
+      minimalDraftWorkType: "Set workType in change.json to every catalog type the change " +
+        "is (feature, bugfix, api, ui, data, migration, …) and copy each type's block from " +
+        "workTypeExamples into change.json; the type selects the required sections. Omitted, " +
+        "it is guessed from paths and may miss them.",
+      minimalDraftProse: "Write prose only under draftFolderV5's listed headings, in outline " +
+        "order. why, summary, userStories, and successCriteria go in proposal.md as prose or " +
+        "in change.json as fields, not both. The keys below are change.json's typed fields.",
       minimalDraftWriting: MINIMAL_DRAFT_WRITING,
       minimalDraftCapability: "Optionally add a top-level capability to the minimal draft: a " +
         "short noun phrase naming the living spec, such as kanban-board. Omitted, the draft " +
@@ -1818,7 +1825,9 @@ export function createChangeLifecycle({
         "[\"<id>\"] to the minimal draft and cover the analogous boundaries, not only the " +
         "reported one.",
       ...repositoryDraftGuidance(declaredRepositories()),
-      ...semanticDraftTemplate()
+      ...semanticDraftTemplate(),
+      // The field reference describes change.json, so it carries the v5 version.
+      version: DRAFT_FOLDER_VERSION
     };
   }
 
@@ -2768,9 +2777,13 @@ export function createChangeLifecycle({
     try { merged = mergeSemanticDraft(base, patch); }
     catch (error) { fail(`change revise --merge: ${error.message || error}`); }
     // A minimal draft stays minimal, so rows the patch adds without a key get
-    // derived keys, titles, and scenario names exactly as at start.
-    if (merged._minimalDraft && patch.version === undefined) delete merged.version;
-    delete merged._minimalDraft;
+    // derived keys, titles, and scenario names exactly as at start. A minimal
+    // v5 draft keeps version 5; only the implicit v4 version is dropped.
+    if (merged._minimalDraft && patch.version === undefined && merged.version !== DRAFT_FOLDER_VERSION)
+      delete merged.version;
+    // A minimal v5 draft is keyed after its first expansion; its marker is what
+    // keeps it minimal, so only an implicit-v4 draft drops it.
+    if (merged.version !== DRAFT_FOLDER_VERSION) delete merged._minimalDraft;
     return withDerivedRisk(
       expandMinimalSemanticDraft(merged, { ...minimalDraftContext, ...priorDraftIdentity(id) }));
   }

@@ -219,7 +219,7 @@ assert_file_contains "change keeps keyword-only security on the rapid lane" \
 assert_file_contains "change describes the minimal draft" \
   "$ROOT/.claude/commands/change.md" '`tasks[{outcome, verify, paths}]`'
 assert_file_contains "change saves the draft with the file tool, not a shell heredoc" \
-  "$ROOT/.claude/commands/change.md" 'with the Write tool, not shell, to `.foundation/drafts/<id>.json` (no'
+  "$ROOT/.claude/commands/change.md" 'Write the draft folder with the Write tool, not shell, to'
 assert_cmd_zero "start template leads with the pre-allowed save route" \
   sh -c 'node "$1" start --template | jq -e '\''
     (keys_unsorted[0] == "save") and (.save | test("Write tool")) and
@@ -342,7 +342,8 @@ assert_file_contains "change intake forbids parallel domain and ADR artifacts" \
   'Never create `CONTEXT.md`, a glossary artifact, or an ADR store'
 assert_cmd_zero "atomic draft template stays semantic and minimal" \
   sh -c 'node "$1" start --template | jq -e '\''
-    .version == 4 and (.requirements | length) == 1 and
+    .version == 5 and (.minimalDraft["change.json"].workType | length) == 1 and
+    (.requirements | length) == 1 and
     (.tasks[0].covers | length) == 1 and (.evidence | type) == "object" and
     (.discovery.coverage | length) == 4 and
     (has("domainLanguage") | not) and (has("execution") | not)'\'' >/dev/null' \

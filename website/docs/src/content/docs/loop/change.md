@@ -17,17 +17,21 @@ the bookkeeping, and installs the result transactionally.
 
 ## Minimal draft
 
-For an ordinary change, the agent writes only the intent, the behavior, and the tasks, and
-leaves `version` out. `change start --template` prints this form first as
-`minimalDraft`, preceded by a `save` field: the agent writes the draft with its
-Write tool under `.foundation/drafts/` (a pre-allowed path), because the host
-refuses a shell heredoc. A draft is either one JSON file,
-`.foundation/drafts/<id>.json`, or a draft v5 folder,
-`.foundation/drafts/<id>/` (see below):
+For an ordinary change, the agent writes only the intent, the work type, the
+behavior, and the tasks. `change start --template` prints this form first as
+`minimalDraft`, preceded by a `save` field: the agent writes a draft v5 folder,
+`.foundation/drafts/<id>/` (see below), with its Write tool, because the host
+refuses a shell heredoc and `.foundation/drafts/` is a pre-allowed path. Then it
+runs `claude-foundation change start .foundation/drafts/<id>`. `change.json`
+declares `version: 5` and `workType`, which selects the required sections;
+`proposal.md` holds the reason as prose:
 
 ```json
 {
+  "version": 5,
+  "language": "en",
   "intent": "Reject empty note titles",
+  "workType": ["bugfix"],
   "requirements": [{
     "description": "The system SHALL reject a note whose title is empty",
     "scenarios": [{ "when": "a user submits an empty title", "then": "the note is not created" }]
@@ -35,6 +39,9 @@ refuses a shell heredoc. A draft is either one JSON file,
   "tasks": [{ "outcome": "Validate note titles", "verify": "npm test", "paths": ["src/note.js"] }]
 }
 ```
+
+A one-file JSON draft without `version`, `.foundation/drafts/<id>.json`, still
+starts as draft v4 with the same defaults.
 
 The compiler fills in the version, requirement and task keys, capability (an
 optional top-level `capability` names it; otherwise an existing `openspec/specs`

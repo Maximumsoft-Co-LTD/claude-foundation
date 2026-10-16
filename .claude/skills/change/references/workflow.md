@@ -53,8 +53,8 @@ Make the agreement readable without chat history:
 Cross-component changes need a boundary/dependency diagram; changed state,
 async, or workflow behavior needs transitions or sequence, including
 failure/recovery paths.
-The harness infers `workType`
-from `paths` and derives folder tree, plan, file and test maps, the failure
+Declare `workType`; the harness infers it
+from `paths` only when omitted, and derives folder tree, plan, file and test maps, the failure
 matrix (from `failure` scenarios, else scenarios stating a rejection or error),
 `why` from `intent`, and `test` evidence unless security triggers apply, noting
 each under "Derived by harness". A standard draft authors failure scenarios
@@ -64,7 +64,7 @@ template's `workTypeExamples`, within `minimalDraftWriting`. Keep `fileMap` path
 ## Compile and inspect
 
 Create one semantic draft from `change start --template`: `intent`, semantic
-`requirements`, and `tasks` with `covers`. Prefer the v5 folder
+`requirements`, and `tasks` with `covers`. Write the v5 folder
 (`draftFolderV5`): typed fields in `change.json` (`version: 5`), prose under
 its listed `## ` headings in `proposal.md`/`design.md`, in order; no derived
 heading, empty section, `TODO`, or `TBD`. v4 JSON stays valid. Its discovery contract is defined once in

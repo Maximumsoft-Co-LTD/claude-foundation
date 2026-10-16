@@ -82,14 +82,20 @@ test("each EDIT task check is a pre-allowed command while the bare runner is not
 // the command and the template the agent copies from name that route.
 test("the taught draft save route is a pre-allowed file-tool write, not shell", () => {
   const change = read(".claude/commands/change.md").replace(/\s*\n\s*/g, " ");
-  assert.match(change, /Write the draft with the Write tool, not shell, to `\.foundation\/drafts\/<id>\.json`/);
+  assert.match(change, /Write the draft folder with the Write tool, not shell, to `\.foundation\/drafts\/<id>\/`/);
+  assert.match(change, /`change\.json` with `version: 5`, `intent`, `workType`/);
   const template = JSON.parse(execFileSync(process.execPath,
     [join(ROOT, ".claude/harness/foundation.mjs"), "start", "--template"],
     { cwd: ROOT, encoding: "utf8" }));
   assert.equal(Object.keys(template)[0], "save", "the save route precedes the JSON");
-  const target = template.save.match(/(\.foundation\/drafts\/<id>\.json)/)?.[1];
-  assert.ok(target, "the template names the draft path");
-  assert.ok(editAllowed(target.replace("<id>", "fix-seat-count")), `${target} is pre-allowed`);
+  const folder = template.save.match(/(\.foundation\/drafts\/<id>\/)/)?.[1];
+  assert.ok(folder, "the template names the draft folder");
+  // Every file the template asks for lands under the seeded drafts rule.
+  for (const file of Object.keys(template.minimalDraft)) {
+    const path = `${folder}${file}`.replace("<id>", "fix-seat-count");
+    assert.ok(editAllowed(path), `${path} is pre-allowed`);
+  }
+  const target = `${folder}change.json`;
   assert.match(template.save, /Write tool/);
   for (const command of [...template.save.matchAll(/claude-foundation [^\s,;:]+(?: [^\s,;:]+)*/g)])
     assert.ok(bashAllowed(command[0]), `${command[0]} is pre-allowed`);
@@ -121,8 +127,10 @@ test("amend and investigate templates teach a file-tool save and a pre-allowed c
 });
 
 test("Change drafts, Investigate records, and Build workspaces are pre-allowed edit targets", () => {
-  assert.match(read(".claude/commands/change.md"), /`\.foundation\/drafts\/<id>\.json`/);
+  assert.match(read(".claude/commands/change.md"), /`\.foundation\/drafts\/<id>\/`/);
   for (const path of [
+    ".foundation/drafts/fix-seat-count/change.json",
+    ".foundation/drafts/fix-seat-count/proposal.md",
     ".foundation/drafts/fix-seat-count.json",
     ".foundation/sandboxes/change-a/src/panel-state.js",
     ".foundation/repository-sandboxes/change-a/api/src/index.ts",

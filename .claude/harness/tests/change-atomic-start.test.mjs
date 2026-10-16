@@ -1060,13 +1060,22 @@ test("a verify whose known runner prints no countable result gets an advisory, n
 
 // Every paid scenario saved the draft with `cat > … <<'EOF'`, which the host
 // refuses; the save route has to sit in the output the agent copies from.
-test("the start template leads with the pre-allowed file-tool save route", (t) => {
+test("the start template leads with the pre-allowed file-tool save route to a v5 folder", (t) => {
   const template = fixture(t).lifecycle.rapidStartTemplate();
   assert.deepEqual(Object.keys(template).slice(0, 2), ["save", "minimalDraft"]);
   assert.match(template.save, /Write tool/);
-  assert.match(template.save, /\.foundation\/drafts\/<id>\.json/);
+  assert.match(template.save, /\.foundation\/drafts\/<id>\/ \(change\.json with version 5, then proposal\.md\)/);
   assert.match(template.save, /not .*shell.*heredoc/);
-  assert.match(template.save, /claude-foundation change start \.foundation\/drafts\/<id>\.json/);
+  assert.match(template.save, /claude-foundation change start \.foundation\/drafts\/<id>\.$/);
+  assert.doesNotMatch(template.save, /<id>\.json/);
+  // The minimal folder declares its work type, so required sections apply.
+  const change = template.minimalDraft["change.json"];
+  assert.equal(change.version, 5);
+  assert.deepEqual(change.workType, ["feature"]);
+  assert.match(template.minimalDraft["proposal.md"], /^## Why\n/);
+  assert.match(template.minimalDraftWorkType, /workTypeExamples/);
+  // The typed-field reference describes change.json.
+  assert.equal(template.version, 5);
 });
 
 // Paid runs never declared a typed risk: the template the agent copies from
