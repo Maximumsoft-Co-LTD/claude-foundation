@@ -61,6 +61,32 @@ function optionTokens(args, valueFlags) {
   return kept;
 }
 
+// A compiled provider's own task verifies (`segments`) from the first through
+// the last one that names a changed test file, as one command. Earlier
+// segments stay because one may be setup (a build or codegen) a later test
+// needs; only segments after the last named test are dropped. Every changed
+// test must be named within that prefix; otherwise (or with no segments) this
+// returns null and the whole provider command runs. A prefix of one segment
+// is narrowed only to the files it names itself.
+export function segmentTestCommand(config, files) {
+  const segments = Array.isArray(config?.segments) ? config.segments.map(String) : [];
+  if (!segments.length || !files?.length) return null;
+  const names = (segment, file) => segment.includes(file);
+  let last = -1;
+  segments.forEach((segment, index) => {
+    if (files.some((file) => names(segment, file))) last = index;
+  });
+  const chosen = segments.slice(0, last + 1);
+  if (!chosen.length || files.some((file) => !chosen.some((segment) => names(segment, file))))
+    return null;
+  if (chosen.length === 1) {
+    const own = files.filter((file) => names(chosen[0], file));
+    return scopedTestCommand({ command: "sh", args: ["-c", chosen[0]] }, own) ||
+      { command: "sh", args: ["-c", chosen[0]] };
+  }
+  return { command: "sh", args: ["-c", chosen.map((segment) => `(${segment})`).join(" && ")] };
+}
+
 // The provider command narrowed to the given test files, or null when its
 // runner does not take file arguments (the whole command then runs once).
 export function scopedTestCommand(built, files) {
@@ -241,7 +267,7 @@ export function createTestDiscriminationRuntime({
       lstatSync(join(workspace, row.path), { throwIfNoEntry: false })?.isFile())
       .map((row) => row.path);
     const built = configuredCommand(provider, config);
-    const scoped = scopedTestCommand(built, testFiles);
+    const scoped = segmentTestCommand(config, testFiles) || scopedTestCommand(built, testFiles);
     const command = scoped || { command: built.command, args: built.args };
     const overlay = overlayRows(workspace, dirty, productPaths, fileDigest);
     const envFrom = Object.fromEntries((config.envFrom || [])

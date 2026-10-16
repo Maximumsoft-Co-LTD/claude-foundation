@@ -1408,12 +1408,20 @@ export function deriveRepositoryTaskDependencies(tasks, {
   return { tasks: rows, derived, issues: unique(issues) };
 }
 
+// The provider command for a list of task verifies, and the verifies as
+// `segments` when there are several, so test discrimination can rerun only
+// the segment that names a changed test instead of the whole chain.
+export function verifyChain(commands) {
+  return commands.length === 1
+    ? { command: ["sh", "-c", commands[0]] }
+    : { command: ["sh", "-c", commands.map((value) => `(${value})`).join(" && ")],
+        segments: [...commands] };
+}
+
 function derivedExecution(source, claims, tasks) {
   if (source.execution) return source.execution;
   const commands = unique(tasks.map((task) => task.verify).filter(Boolean));
-  const command = commands.length === 1
-    ? ["sh", "-c", commands[0]]
-    : ["sh", "-c", commands.map((value) => `(${value})`).join(" && ")];
+  const { command, segments } = verifyChain(commands);
   const capabilities = unique(claims.flatMap((claim) => claim.capabilities));
   // Build runs each task's verify in its repository's sandbox, so a command
   // derived from those verifies runs there too. Only a single non-root
@@ -1431,7 +1439,7 @@ function derivedExecution(source, claims, tasks) {
     }
     providers[capability] = capability === "test"
       ? {
-          adapter: "test-discovery", command, minimum: 1,
+          adapter: "test-discovery", command, ...(segments ? { segments } : {}), minimum: 1,
           reportFormat: "auto", claims: "declared", ...repository
         }
       : { adapter: "command", capability, command, claims: "declared", ...repository };

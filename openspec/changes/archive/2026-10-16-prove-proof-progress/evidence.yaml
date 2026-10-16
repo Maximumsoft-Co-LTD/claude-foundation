@@ -1,0 +1,81 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "proof-progress-agent-advance",
+      "requirementKey": "proof-progress",
+      "scenario": "progress ระหว่างรัน",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "proof-progress-agent-advance-wave",
+      "requirementKey": "proof-progress",
+      "scenario": "provider ที่จบแล้ว",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "proof-progress-harness-proof-process",
+      "requirementKey": "proof-progress",
+      "scenario": "สถานะเดิมไม่เปลี่ยน",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "narrow-discrimination-harness-test",
+      "requirementKey": "narrow-discrimination",
+      "scenario": "รันถึง segment สุดท้ายที่ test เปลี่ยน",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "narrow-discrimination-harness-test-2",
+      "requirementKey": "narrow-discrimination",
+      "scenario": "ขั้นเตรียมก่อนหน้ายังรัน",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "narrow-discrimination-harness-test-3",
+      "requirementKey": "narrow-discrimination",
+      "scenario": "จับคู่ไม่ได้รันทั้งหมด",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "narrow-discrimination-harness-test-4",
+      "requirementKey": "narrow-discrimination",
+      "scenario": "ไม่มี segment ใช้แบบเดิม",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/proof-advance.test.mjs .claude/harness/tests/advance-runtime.test.mjs) && (node --test .claude/harness/tests/test-discrimination.test.mjs .claude/harness/tests/semantic-draft.test.mjs) && (node --test .claude/harness/tests/test-discrimination.test.mjs)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

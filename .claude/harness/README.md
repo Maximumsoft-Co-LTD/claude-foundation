@@ -341,6 +341,12 @@ the answer; do not perform dependent work or add blanket confirmation gates.
 | `change amend <change> --task <key\|id> --verify <command> [--reopen]` | Corrects one task's verify command directly through the same transaction (`--reopen` unticks a completed task); keeps the spec approval, claims, and capabilities, refuses an always-passing command, and accepts the task only when the new command passes | A task's verify command is wrong |
 | `advance <change> --through build\|proven\|archived` | Runs deterministic steps and returns one `EDIT`, `RUN_EXTERNAL`, `REPAIR`, `WAIT`, `ASK_USER`, or `DONE` action | Every normal step after Change |
 
+While a proof runs, another `advance` for the same change returns `WORKING`
+with `wait.progress`: the current `wave`, the providers `running`, each
+`finished` provider with its `status` and `durationMs`, `startedAt`, and
+`elapsedMs`. It is advisory and never changes recovery. Wait for the running
+proof instead of starting another.
+
 Every route `advance` returns stays on this surface: a `command`, `next`,
 instruction, or decision option that would name an operator primitive below
 (`proof`, `land`, `sandbox`, `evidence init`) is rewritten to the matching

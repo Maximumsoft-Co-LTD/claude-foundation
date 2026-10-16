@@ -407,7 +407,7 @@ function configuredReviewWait(id, request) {
   });
 }
 
-function proofOperationAction(id, result) {
+export function proofOperationAction(id, result) {
   if (!result || typeof result !== "object") return null;
   if (result.action) return result;
   if (result.decision && (result.status === "BLOCKED" || result.decision.automaticRecovery))
@@ -428,7 +428,8 @@ function proofOperationAction(id, result) {
     actor: "harness",
     boundary: "internal-lock",
     reason: "proof is already running for this change",
-    wait: { owner: result.owner || null, next: result.next || [] },
+    wait: { owner: result.owner || null, next: result.next || [],
+      ...(result.progress ? { progress: result.progress } : {}) },
     recoveryType: "AUTO_RECOVER",
     alternatives: ["reuse the active proof operation"]
   });

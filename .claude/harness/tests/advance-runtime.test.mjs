@@ -4,8 +4,21 @@ import { spawnSync } from "node:child_process";
 
 import {
   coordinatorAction, createAdvanceRuntime, envelopeContextFiles, hasValidLandGrant,
-  prepareAdvanceBuild, runAdvanceProof
+  prepareAdvanceBuild, proofOperationAction, runAdvanceProof
 } from "../runtime/workflow/advance-runtime.mjs";
+
+test("a running proof's WORKING action carries its progress to the caller", () => {
+  const progress = { startedAt: "2026-10-16T00:00:00.000Z", wave: 2, running: ["test"],
+    finished: [{ provider: "lint", status: "pass", durationMs: 12 }], elapsedMs: 4000 };
+  const action = proofOperationAction("change-a", {
+    status: "IN_PROGRESS", owner: { pid: process.pid }, next: [], progress
+  });
+  assert.equal(action.action, "WORKING");
+  assert.deepEqual(action.wait.progress, progress);
+  // Without recorded progress the wait keeps its previous shape.
+  const bare = proofOperationAction("change-a", { status: "IN_PROGRESS", owner: { pid: process.pid } });
+  assert.equal("progress" in bare.wait, false);
+});
 import {
   feedbackSnapshotValue, operationCauseCoverage, reviewRepairIntervals, intervalDuration
 } from "../runtime/observability/feedback-runtime.mjs";

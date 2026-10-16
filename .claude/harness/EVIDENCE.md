@@ -877,6 +877,12 @@ service or readiness probe) and runs its command once against the base source:
   a plain `sh -c` wrapper is recognized with the same conservative command
   parser used for task checks; shell expansion, pipes, assignments, and
   redirects retain the configured command;
+- a provider compiled from several task verifies records them as `segments`;
+  the base runs the segments from the first through the last one whose command
+  names a changed test file, so an earlier setup segment (a build or codegen)
+  still runs and only later segments are skipped (a single first segment is
+  narrowed further as above); when a changed test is named by no segment in
+  that range, or the provider has no `segments`, its whole command runs as before;
   any other command (for example `npm test`) runs once as configured;
 - a test that imports a module the change adds fails on base and therefore
   counts as failing on base.

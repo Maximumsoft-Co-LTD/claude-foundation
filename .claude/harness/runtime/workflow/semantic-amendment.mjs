@@ -4,7 +4,7 @@ import {
 import { join } from "node:path";
 import {
   deriveRepositoryTaskDependencies, normalizeSemanticDraft, renderRequirementMarkdown,
-  renderSpecHeading
+  renderSpecHeading, verifyChain
 } from "./semantic-draft.mjs";
 import {
   coverageRationale, coverageStatus, investigationAppendixBody
@@ -246,11 +246,19 @@ export function replaceRequirementBlock(content, scenarios, replacement) {
   return { found: true, matches: 1, content: text };
 }
 
+function combinedChain(tasksContent) {
+  return verifyChain(unique(String(tasksContent).split("\n").map(taskVerify).filter(Boolean)));
+}
+
 function combinedCommand(tasksContent) {
-  const commands = unique(String(tasksContent).split("\n").map(taskVerify).filter(Boolean));
-  return commands.length === 1
-    ? ["sh", "-c", commands[0]]
-    : ["sh", "-c", commands.map((command) => `(${command})`).join(" && ")];
+  return combinedChain(tasksContent).command;
+}
+
+// A rebuilt test provider carries the matching segments; a single verify has none.
+function withChain(config, chain) {
+  const { segments: _prior, ...rest } = config;
+  return { ...rest, command: chain.command,
+    ...(chain.segments && config.adapter === "test-discovery" ? { segments: chain.segments } : {}) };
 }
 
 function amendmentList(amendment, field) {
@@ -1250,11 +1258,12 @@ export function compileSemanticAmendment({
   for (const [name, config] of Object.entries(contract.providers || {}))
     providers[name] = Array.isArray(config?.claims)
       ? { ...config, claims: replaceClaimIds(config.claims) } : config;
-  const allCommand = combinedCommand(nextTasks);
+  const allChain = combinedChain(nextTasks);
+  const allCommand = allChain.command;
   for (const [name, config] of Object.entries(normalized.draft.execution.providers || {})) {
     if (providers[name]) {
       if (providers[name].command && ["command", "test-discovery"].includes(providers[name].adapter))
-        providers[name] = { ...providers[name], command: allCommand };
+        providers[name] = withChain(providers[name], allChain);
       continue;
     }
     // The agreement already names who proves this capability, and where; a
@@ -1292,7 +1301,7 @@ export function compileSemanticAmendment({
     for (const [name, config] of Object.entries(providers))
       if (["command", "test-discovery"].includes(config?.adapter) &&
           JSON.stringify(config.command) === priorCommand)
-        providers[name] = { ...config, command: allCommand };
+        providers[name] = withChain(config, allChain);
   }
   const taskContractTasks = taskContractChanges.map((change) => {
     const line = taskLines[change.index];

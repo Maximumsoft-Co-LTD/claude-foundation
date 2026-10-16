@@ -7,8 +7,45 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 
 import {
-  behaviorChangingWork, createTestDiscriminationRuntime, scopedTestCommand
+  behaviorChangingWork, createTestDiscriminationRuntime, scopedTestCommand, segmentTestCommand
 } from "../runtime/evidence/test-discrimination.mjs";
+import { verifyChain } from "../runtime/workflow/semantic-draft.mjs";
+
+// The base-source run reruns only the task verify that names a changed test.
+test("discrimination runs segments through the last one that names a changed test", () => {
+  const segments = ["node --test test/a.test.mjs", "node --test test/b.test.mjs", "bash scripts/lint.sh"];
+  // Task 2's test changed: tasks 1 and 2 run, the trailing lint does not.
+  assert.deepEqual(segmentTestCommand({ segments }, ["test/b.test.mjs"]), { command: "sh",
+    args: ["-c", "(node --test test/a.test.mjs) && (node --test test/b.test.mjs)"] });
+  // Only the first segment: narrowed to its own file.
+  assert.deepEqual(segmentTestCommand({ segments }, ["test/a.test.mjs"]),
+    { command: "node", args: ["--test", "test/a.test.mjs"] });
+  // A setup segment before the test is kept, so the base build still runs.
+  assert.deepEqual(segmentTestCommand({ segments: ["npm run build", "node --test test/b.test.mjs"] },
+    ["test/b.test.mjs"]), { command: "sh", args: ["-c", "(npm run build) && (node --test test/b.test.mjs)"] });
+  // No segment names the changed test, or no segments at all: the whole
+  // provider command runs as before.
+  assert.equal(segmentTestCommand({ segments }, ["test/c.test.mjs"]), null);
+  assert.equal(segmentTestCommand({}, ["test/a.test.mjs"]), null);
+  assert.equal(segmentTestCommand({ segments }, []), null);
+  // One changed test no segment names: matching is unclear, so the whole
+  // provider runs rather than leaving that test unchecked on base.
+  assert.equal(segmentTestCommand({ segments }, ["test/b.test.mjs", "tests/unit/c.test.ts"]), null);
+  // A narrowed segment receives only the files it names itself.
+  const mixed = ["node --test test/a.test.mjs", "npx vitest run web/b.test.ts"];
+  assert.deepEqual(segmentTestCommand({ segments: mixed }, ["test/a.test.mjs"]),
+    { command: "node", args: ["--test", "test/a.test.mjs"] });
+  assert.deepEqual(segmentTestCommand({ segments: mixed }, ["test/a.test.mjs", "web/b.test.ts"]),
+    { command: "sh", args: ["-c", "(node --test test/a.test.mjs) && (npx vitest run web/b.test.ts)"] });
+});
+
+test("a compiled chain of several verifies records them as segments", () => {
+  assert.deepEqual(verifyChain(["npm test"]), { command: ["sh", "-c", "npm test"] });
+  assert.deepEqual(verifyChain(["node --test a.mjs", "node --test b.mjs"]), {
+    command: ["sh", "-c", "(node --test a.mjs) && (node --test b.mjs)"],
+    segments: ["node --test a.mjs", "node --test b.mjs"]
+  });
+});
 import { configuredCommand } from "../runtime/evidence/evidence-results.mjs";
 import { lightKind, packetWorkTypes } from "../runtime/workflow/validation/dev-document.mjs";
 import { BEHAVIOR_NEUTRAL_WORK } from "../runtime/workflow/validation/design-blueprints.mjs";
