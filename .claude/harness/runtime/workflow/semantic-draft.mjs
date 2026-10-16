@@ -938,11 +938,69 @@ function existingCapability(source, names, canonicalRows) {
 // `priorRequirementKeys` and `priorCapabilities` describe the active change a
 // pre-Build revise replaces: a requirement or capability that change already
 // identified by the pre-3.5.30 derivation keeps that identity.
+// The capability a requirement without its own joins: the named one, the
+// existing living spec the draft matches, or one derived from the intent.
+// No confident match among existing specs records the choices instead.
+function draftCapabilityChoice(source, named, {
+  loadCanonicalSpec = null, listCanonicalCapabilities = null, priorCapabilities = []
+} = {}) {
+  const canonical = new Map();
+  const canonicalRows = (name) => {
+    if (!canonical.has(name))
+      canonical.set(name, loadCanonicalSpec ? parseSpecDocument(loadCanonicalSpec(name) || "") : []);
+    return canonical.get(name);
+  };
+  const existing = unique(stringList(listCanonicalCapabilities ? listCanonicalCapabilities() : []));
+  const legacyCapability = shortSlug(source.intent, 40);
+  let capability = named || (stringList(priorCapabilities).includes(legacyCapability)
+    ? legacyCapability : minimalCapability(source));
+  let choices = null;
+  if (!named && existing.length && source.requirements.some((row) => !text(row.capability))) {
+    capability = existingCapability(source, existing, canonicalRows);
+    if (!capability) choices = existing;
+  }
+  return { capability, choices, canonicalRows };
+}
+
+// A first scenario's result is a requirement's outcome when it states none.
+function derivedOutcome(row) {
+  return text(rawScenarioEntries(row).find((scenario) => text(scenario?.then))?.then);
+}
+
+// A keyed v5 draft keeps full-draft semantics (its keys, decisions, and
+// unmarked rows stay the agent's), yet still receives the capability and
+// outcome a minimal draft derives. Without them every keyed v5 draft cost an
+// extra repair round for fields the harness can fill.
+function keyedFolderDraftDefaults(input, context) {
+  if (!plainObject(input) || !isFolderDraftVersion(input.version) ||
+      input.claims !== undefined || input.specs !== undefined ||
+      !Array.isArray(input.requirements) || !input.requirements.length ||
+      !input.requirements.every(plainObject) ||
+      !input.requirements.some((row) => !text(row.capability) ||
+        (!text(row.outcome) && text(row.operation).toLowerCase() !== "removed")))
+    return input;
+  const source = structuredClone(input);
+  const { capability, choices } = draftCapabilityChoice(source, text(source.capability), context);
+  if (choices) source._capabilityChoices = choices;
+  source.requirements = source.requirements.map((input) => {
+    const row = { ...input };
+    if (!text(row.capability) && capability) row.capability = capability;
+    if (!text(row.outcome) && text(row.operation).toLowerCase() !== "removed") {
+      const outcome = derivedOutcome(row);
+      if (outcome) row.outcome = outcome;
+    }
+    return row;
+  });
+  return source;
+}
+
 export function expandMinimalSemanticDraft(input, {
   loadCanonicalSpec = null, listCanonicalCapabilities = null,
   priorRequirementKeys = [], priorCapabilities = []
 } = {}) {
-  if (!isMinimalSemanticDraft(input)) return input;
+  if (!isMinimalSemanticDraft(input))
+    return keyedFolderDraftDefaults(input,
+      { loadCanonicalSpec, listCanonicalCapabilities, priorCapabilities });
   const source = structuredClone(input);
   source.version = isFolderDraftVersion(input.version) ? FOLDER_DRAFT_VERSION : 4;
   source._minimalDraft = true;
@@ -951,21 +1009,10 @@ export function expandMinimalSemanticDraft(input, {
   const named = text(source.capability);
   delete source.capability;
   const requirementKeys = new Set(source.requirements.map((row) => text(row.key)).filter(Boolean));
-  const canonical = new Map();
-  const canonicalRows = (name) => {
-    if (!canonical.has(name))
-      canonical.set(name, loadCanonicalSpec ? parseSpecDocument(loadCanonicalSpec(name) || "") : []);
-    return canonical.get(name);
-  };
-  const existing = unique(stringList(listCanonicalCapabilities ? listCanonicalCapabilities() : []));
   const priorKeys = new Set(stringList(priorRequirementKeys));
-  const legacyCapability = shortSlug(source.intent, 40);
-  let capability = named || (stringList(priorCapabilities).includes(legacyCapability)
-    ? legacyCapability : minimalCapability(source));
-  if (!named && existing.length && source.requirements.some((row) => !text(row.capability))) {
-    capability = existingCapability(source, existing, canonicalRows);
-    if (!capability) source._capabilityChoices = existing;
-  }
+  const { capability, choices, canonicalRows } = draftCapabilityChoice(source, named,
+    { loadCanonicalSpec, listCanonicalCapabilities, priorCapabilities });
+  if (choices) source._capabilityChoices = choices;
   const titles = new Map();
   const takenTitles = (name) => {
     if (!titles.has(name))
@@ -996,8 +1043,8 @@ export function expandMinimalSemanticDraft(input, {
       row.scenarios = minimalScenarioNames(row.scenarios, text(row.requirement || row.title) ||
         wholeWordTitle(requirementClause(row.description), REQUIREMENT_TITLE_MAX));
     if (!text(row.outcome)) {
-      const first = rawScenarioEntries(row).find((scenario) => text(scenario?.then));
-      if (first) row.outcome = text(first.then);
+      const outcome = derivedOutcome(row);
+      if (outcome) row.outcome = outcome;
     }
     if (!text(row.operation) && text(row.capability)) {
       const match = canonicalRequirementMatch(row, canonicalRows(row.capability));

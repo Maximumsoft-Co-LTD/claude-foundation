@@ -54,6 +54,10 @@ export function carriedInUnchanged(
 export const WORK_TYPE_CAPABILITIES = Object.freeze({
   api: Object.freeze(["compatibility"]),
   library: Object.freeze(["compatibility"]),
+  deprecation: Object.freeze(["compatibility"]),
+  performance: Object.freeze(["performance"]),
+  async: Object.freeze(["concurrency"]),
+  integration: Object.freeze(["integration"]),
   ui: Object.freeze(["accessibility"]),
   dependency: Object.freeze(["dependency-supply-chain"]),
   infra: Object.freeze(["plan-check", "deployment"]),

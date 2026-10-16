@@ -714,6 +714,7 @@ const evidenceContract = createEvidenceContract({
   filesystemEntryIdentity,
   stableHash,
   policyCapabilities,
+  policyCapabilityTrigger,
   foundationPolicy,
   handoffContract,
   git,

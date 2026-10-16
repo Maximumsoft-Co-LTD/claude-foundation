@@ -189,7 +189,10 @@ paths cannot reveal. They join the path-derived obligations with a
 
 | Work type | Capabilities |
 |---|---|
-| api, library | `compatibility` |
+| api, library, deprecation | `compatibility` |
+| performance | `performance` |
+| async | `concurrency` |
+| integration | `integration` |
 | ui | `accessibility` |
 | data | `data-migration` |
 | migration | `parity` |
@@ -201,10 +204,16 @@ paths cannot reveal. They join the path-derived obligations with a
 | client-release | `release-health` (post-release) |
 | experiment | `experiment-guardrail` (post-release) |
 
-Five capabilities exist for these work types:
+A capability only a work type requires is still required evidence, but it does
+not raise the review tier or force review on its own: `compatibility` from
+`api` alone leaves review at the tier the change's real risk selects. The same
+capability required by a changed path still raises it.
+
+Six capabilities exist for these work types:
 
 | Capability | Proves | Default adapter | Phase | Bootstrap scripts |
 |---|---|---|---|---|
+| `concurrency` | Concurrent and asynchronous paths keep their ordering, isolation, and completion guarantees under contention | `command` | pre-land | `test:concurrency`, `concurrency` |
 | `evaluation` | A model or ranking evaluation scores at or above its threshold | `command` | pre-land | `test:eval`, `eval`, `evaluate` |
 | `parity` | The new implementation matches the reference on the declared comparison set | `command` | pre-land | `test:parity`, `parity` |
 | `plan-check` | An infrastructure or migration plan contains only the declared changes | `command` | pre-land | `plan:check`, `plan` |

@@ -8,6 +8,7 @@ const PROVIDER_SCRIPT_ALIASES = {
   integration: ["test:integration", "integration"],
   compatibility: ["test:compatibility", "compatibility"],
   performance: ["test:performance", "performance", "bench"],
+  concurrency: ["test:concurrency", "concurrency"],
   "security-static": ["security", "security:static", "scan:security"],
   accessibility: ["test:accessibility", "accessibility", "a11y"],
   "data-migration": ["test:migration", "migration:check"],

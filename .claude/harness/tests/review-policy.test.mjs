@@ -22,6 +22,21 @@ test("review signals stay empty for a low-risk claim", () => {
   assert.deepEqual([...signals.capabilities], ["test"]);
 });
 
+// workType api adds compatibility as required evidence; on its own that does
+// not raise the review tier. The same capability required by a path does.
+test("a capability only a work type requires does not raise the review tier", () => {
+  const state = { evidenceCapabilities: ["compatibility"] };
+  const contract = { claims: [{ impact: "medium", capabilities: ["compatibility"] }] };
+  const byWorkType = collectReviewSignals(state, contract, ["compatibility"], null,
+    new Set(["compatibility"]));
+  assert.deepEqual(byWorkType.requiredTriggers, []);
+  assert.deepEqual(byWorkType.diversityTriggers, []);
+  assert.equal(byWorkType.capabilities.has("compatibility"), false);
+  const byPath = collectReviewSignals(state, contract, ["compatibility"]);
+  assert.deepEqual(byPath.requiredTriggers, ["risk-capability"]);
+  assert.deepEqual(byPath.diversityTriggers, ["critical-capability"]);
+});
+
 test("review signals combine claim, repository, and semantic risk", () => {
   const signals = collectReviewSignals({
     intent: "Prevent concurrent payment migration races",

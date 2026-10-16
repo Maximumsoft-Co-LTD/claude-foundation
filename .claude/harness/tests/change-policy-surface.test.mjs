@@ -11,6 +11,9 @@ import {
   repositoryBaseHead,
   sortChangedSurface
 } from "../runtime/workflow/change-policy.mjs";
+import {
+  CAPABILITY_ADAPTERS, PROVIDER_CONTRACTS, PROVIDERS
+} from "../runtime/evidence/provider-catalog.mjs";
 
 test("changed-surface helpers normalize, exclude, merge and sort rows", () => {
   const sources = new Map();
@@ -377,6 +380,19 @@ test("client-release requires release-health as a rollout gate that never blocks
   assert.equal(policy.policyCapabilityTrigger("c", "release-health"), "work-type:client-release");
   assert.deepEqual(policy.policyProviderSetupActions("c", []), []);
   assert.deepEqual(capabilitiesForWorkTypes(["client-release"]).capabilities, []);
+});
+
+// Every declared work type owes its own evidence.
+test("performance, async, integration, and deprecation require their evidence", () => {
+  for (const [type, capability] of [["performance", "performance"], ["async", "concurrency"],
+    ["integration", "integration"], ["deprecation", "compatibility"]]) {
+    const policy = workTypePolicy([type], ["src/feature.js"]);
+    assert.ok(policy.policyCapabilities("c").includes(capability), `${type}: ${capability}`);
+    assert.equal(policy.policyCapabilityTrigger("c", capability), `work-type:${type}`);
+  }
+  assert.equal(typeof PROVIDER_CONTRACTS.concurrency, "string");
+  assert.ok(PROVIDERS.has("concurrency"));
+  assert.equal(CAPABILITY_ADAPTERS.concurrency, "command");
 });
 
 test("infra without a plan-check provider yields an agent-owned setup action with resume", () => {

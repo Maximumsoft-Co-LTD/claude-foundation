@@ -483,6 +483,31 @@ test("a keyed v5 draft is not expanded as minimal and keeps its unmarked decisio
   assert.ok(merged.requirements[1].key, JSON.stringify(merged.requirements[1]));
 });
 
+// Agents key v5 rows so coverage and tasks can cite them. Such a draft keeps
+// full-draft semantics but still receives the derived capability and outcome,
+// instead of an extra repair round for fields the harness can fill.
+test("a keyed v5 draft receives the derived capability and outcome only", () => {
+  const decision = { key: "storage", choice: "Store refunds in Postgres", reason: "Existing database" };
+  const full = { ...startChangeJson(), decisions: [decision] };
+  const { capability: _cap, outcome: _out, ...bare } = full.requirements[0];
+  const keyed = { ...full, requirements: [bare] };
+  assert.equal(isMinimalSemanticDraft(keyed), false);
+  const expanded = expandMinimalSemanticDraft(keyed,
+    { listCanonicalCapabilities: () => [], loadCanonicalSpec: () => "" });
+  assert.ok(expanded.requirements[0].capability, JSON.stringify(expanded.requirements[0]));
+  assert.equal(expanded.requirements[0].outcome,
+    bare.scenarios.find((scenario) => scenario.then).then);
+  assert.equal(expanded.requirements[0].key, bare.key);
+  assert.equal(expanded.decisions[0].decidedBy, undefined, "decisions keep full-draft semantics");
+  assert.equal(expanded._minimalDraft, undefined);
+  // A full draft with claims or specs is never filled in.
+  const withClaims = { ...keyed, claims: [] };
+  assert.equal(expandMinimalSemanticDraft(withClaims), withClaims);
+  // Fields the author set are kept.
+  const named = { ...keyed, requirements: [{ ...bare, capability: "refunds", outcome: "Refund recorded" }] };
+  assert.equal(expandMinimalSemanticDraft(named), named);
+});
+
 // Decisions renders under its English heading in every language; a Thai
 // author may still write its Thai heading, and the prose lands there once.
 test("a Thai heading for a section that renders in English is accepted as that section", (t) => {
