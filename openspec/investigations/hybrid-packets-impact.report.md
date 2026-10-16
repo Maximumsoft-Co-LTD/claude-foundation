@@ -3,7 +3,7 @@
 
 **สถานะ:** ข้อสรุปปัจจุบัน
 
-อัปเดต: 2026-10-15T12:17:40.740Z · 78e1e02d14bc23e99c02c2c242e6bd3e00231bd56b86cbd8a358bf694e39b607
+อัปเดต: 2026-10-15T12:38:46.609Z · a925458bc2817480272ee6c8d3b2bf969238f199caff83e74fc7ebda5984312e
 
 ## ปัญหา
 
@@ -189,7 +189,6 @@ v5: คนแก้ proposal.md/design.md ใน packet ตรง ๆ โดย 
 - [cli.sh](<../../cli.sh>)
 - [docs/reports/agent-harness-simplification-plan-2026-09-03.md](<../../docs/reports/agent-harness-simplification-plan-2026-09-03.md>)
 - [docs/reports/concurrent-change-review-efficiency-plan-2026-09-08.md](<../../docs/reports/concurrent-change-review-efficiency-plan-2026-09-08.md>)
-- [docs/reports/development-roadmap-2026-09-05.md](<../../docs/reports/development-roadmap-2026-09-05.md>)
 - [docs/reports/harness-core-path-simplification-plan-2026-09-30.md](<../../docs/reports/harness-core-path-simplification-plan-2026-09-30.md>)
 - [docs/reports/harness-rapid-speed-plan-2026-09-30.md](<../../docs/reports/harness-rapid-speed-plan-2026-09-30.md>)
 - [docs/reports/weekly-review-feedback-remediation-plan-2026-09-11.md](<../../docs/reports/weekly-review-feedback-remediation-plan-2026-09-11.md>)
@@ -201,22 +200,27 @@ v5: คนแก้ proposal.md/design.md ใน packet ตรง ๆ โดย 
 - [openspec/changes/archive/2026-10-15-go-test-json-amendment-task-requirement-spec-land-issue-41-43-44/design.md](<../changes/archive/2026-10-15-go-test-json-amendment-task-requirement-spec-land-issue-41-43-44/design.md>)
 - [openspec/changes/archive/2026-10-15-skill-pstack-reference-owner-skill-change-loop-context-budget/proposal.md](<../changes/archive/2026-10-15-skill-pstack-reference-owner-skill-change-loop-context-budget/proposal.md>)
 - [openspec/changes/archive/2026-10-15-skill-pstack-reference-owner-skill-change-loop-context-budget/specs/skill-guidance/spec.md](<../changes/archive/2026-10-15-skill-pstack-reference-owner-skill-change-loop-context-budget/specs/skill-guidance/spec.md>)
+- [openspec/changes/complete-change-packets/design.md](<../changes/complete-change-packets/design.md>)
+- [openspec/changes/complete-change-packets/evidence.yaml](<../changes/complete-change-packets/evidence.yaml>)
+- [openspec/changes/complete-change-packets/proposal.md](<../changes/complete-change-packets/proposal.md>)
+- [openspec/changes/complete-change-packets/tasks.md](<../changes/complete-change-packets/tasks.md>)
 - [openspec/investigations/change-doc-outline.md](<change-doc-outline.md>)
 - [openspec/investigations/roadmap-after-pstack.json](<roadmap-after-pstack.json>)
 - [openspec/specs/change/spec.md](<../specs/change/spec.md>)
-- [website/docs/src/content/docs/th/approval.md](<../../website/docs/src/content/docs/th/approval.md>)
 - [website/docs/src/content/docs/th/artifacts.md](<../../website/docs/src/content/docs/th/artifacts.md>)
 - [website/docs/src/content/docs/th/cli.md](<../../website/docs/src/content/docs/th/cli.md>)
-- [website/docs/src/content/docs/th/foundation-config.md](<../../website/docs/src/content/docs/th/foundation-config.md>)
 - [website/docs/src/content/docs/th/loop/change.md](<../../website/docs/src/content/docs/th/loop/change.md>)
 
 ## แหล่งที่ค้นพบแต่ยังไม่มีข้อเท็จจริงอ้างอิง (hash แล้ว ยังไม่ได้อ่าน)
 
+- [openspec/changes/complete-change-packets/proposal.md](<../changes/complete-change-packets/proposal.md>)
+- [openspec/changes/complete-change-packets/design.md](<../changes/complete-change-packets/design.md>)
 - [README.th.md](<../../README.th.md>)
 - [docs/reports/agent-harness-simplification-plan-2026-09-03.md](<../../docs/reports/agent-harness-simplification-plan-2026-09-03.md>)
 - [openspec/specs/change/spec.md](<../specs/change/spec.md>)
 - [docs/reports/weekly-review-feedback-remediation-plan-2026-09-11.md](<../../docs/reports/weekly-review-feedback-remediation-plan-2026-09-11.md>)
 - [website/docs/src/content/docs/th/loop/change.md](<../../website/docs/src/content/docs/th/loop/change.md>)
+- [openspec/changes/complete-change-packets/tasks.md](<../changes/complete-change-packets/tasks.md>)
 - [website/docs/src/content/docs/th/artifacts.md](<../../website/docs/src/content/docs/th/artifacts.md>)
 - [openspec/changes/archive/2026-10-15-change-code-repository-submodule-prove-amend-waive-recovery-issu/proposal.md](<../changes/archive/2026-10-15-change-code-repository-submodule-prove-amend-waive-recovery-issu/proposal.md>)
 - [openspec/changes/archive/2026-10-15-change-pstack-agent/proposal.md](<../changes/archive/2026-10-15-change-pstack-agent/proposal.md>)
@@ -228,11 +232,9 @@ v5: คนแก้ proposal.md/design.md ใน packet ตรง ๆ โดย 
 - [openspec/changes/archive/2026-10-15-go-test-json-amendment-task-requirement-spec-land-issue-41-43-44/design.md](<../changes/archive/2026-10-15-go-test-json-amendment-task-requirement-spec-land-issue-41-43-44/design.md>)
 - [openspec/changes/archive/2026-10-14-investigation-requirement-continuity/design.md](<../changes/archive/2026-10-14-investigation-requirement-continuity/design.md>)
 - [openspec/changes/archive/2026-10-15-skill-pstack-reference-owner-skill-change-loop-context-budget/proposal.md](<../changes/archive/2026-10-15-skill-pstack-reference-owner-skill-change-loop-context-budget/proposal.md>)
+- [openspec/changes/complete-change-packets/evidence.yaml](<../changes/complete-change-packets/evidence.yaml>)
 - [openspec/changes/archive/2026-10-15-skill-pstack-reference-owner-skill-change-loop-context-budget/specs/skill-guidance/spec.md](<../changes/archive/2026-10-15-skill-pstack-reference-owner-skill-change-loop-context-budget/specs/skill-guidance/spec.md>)
 - [docs/reports/harness-rapid-speed-plan-2026-09-30.md](<../../docs/reports/harness-rapid-speed-plan-2026-09-30.md>)
-- [website/docs/src/content/docs/th/foundation-config.md](<../../website/docs/src/content/docs/th/foundation-config.md>)
-- [website/docs/src/content/docs/th/approval.md](<../../website/docs/src/content/docs/th/approval.md>)
-- [docs/reports/development-roadmap-2026-09-05.md](<../../docs/reports/development-roadmap-2026-09-05.md>)
 
 ## ขั้นตอนถัดไป
 
