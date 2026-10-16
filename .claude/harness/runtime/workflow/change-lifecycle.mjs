@@ -2773,6 +2773,11 @@ export function createChangeLifecycle({
       fail(`change revise --merge cannot patch '${id}': its agreement changed after the recorded ` +
         "draft (an amendment or grounding reopen); pass the whole revised draft without --merge");
     const patch = readJson(path);
+    // A merge patches content; moving the draft between versions (v4 to v5)
+    // changes how every row is read, so it takes a whole-draft revision.
+    if (patch?.version !== undefined && patch.version !== base.version)
+      fail(`change revise --merge cannot change the draft version of '${id}' ` +
+        `(${base.version ?? "unversioned"} to ${patch.version}); pass the whole revised draft without --merge`);
     let merged;
     try { merged = mergeSemanticDraft(base, patch); }
     catch (error) { fail(`change revise --merge: ${error.message || error}`); }

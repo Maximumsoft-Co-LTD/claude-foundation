@@ -12,7 +12,10 @@ import {
   environmentIdentity, readTaskCheckExecution, sameArgv, sameShellLine, taskCheckArgv,
   taskCheckExecutionPath, taskCheckReuseRefusal, writeTaskCheckExecution
 } from "./task-check-evidence.mjs";
-import { evaluationResult } from "./provider-catalog.mjs";
+import {
+  evaluationResult, providerTimeoutDetail, providerTimeoutMs
+} from "./provider-catalog.mjs";
+import { parseLastJsonLine } from "./evidence-results.mjs";
 
 export function serviceStartBatch(entries, maxParallel, conflicts,
   completed = new Set()) {
@@ -199,12 +202,24 @@ export function mutationReceiptClassification(protocol, legacyResult, configured
     ? "behavioral-kill" : legacyResult || configured;
 }
 
+// The harness's own session state: the agent's workspace pin, caller cwd,
+// host session, public operation, and phase. A provider command is a project
+// tool, and a test that runs claude-foundation in its own fixture must not
+// inherit them, or it acts on the outer session. The provider contract
+// (FOUNDATION_CHANGE_ID, FOUNDATION_REPOSITORIES_FILE, …) is added afterwards.
+export const PROVIDER_SESSION_ENV = Object.freeze([
+  "CLAUDE_FOUNDATION_PROJECT", "FOUNDATION_WORKSPACE_ROOT", "FOUNDATION_CALLER_CWD",
+  "FOUNDATION_CLAUDE_SESSION_ID", "FOUNDATION_CLAUDE_TRANSCRIPT_PATH",
+  "FOUNDATION_PUBLIC_OPERATION", "FOUNDATION_ACTIVE_PHASE"
+]);
+
 export function providerExecutionEnvironment(base, additions = {}, workspacePath = null) {
-  const environment = { ...base, ...additions };
+  const environment = { ...base };
   // The harness may itself be pinned to a control root while executing a
   // candidate sandbox. Provider commands must discover from their own cwd;
   // leaking this pin redirects nested fixture CLIs back into the outer project.
-  delete environment.CLAUDE_FOUNDATION_PROJECT;
+  for (const name of PROVIDER_SESSION_ENV) delete environment[name];
+  Object.assign(environment, additions);
   // Declared commands routinely name locally-installed binaries (`eslint`,
   // `vitest`, `tsc`) the way package scripts do. npm puts the workspace's
   // `node_modules/.bin` on PATH before running a script; a provider command
@@ -524,7 +539,7 @@ export function createAdapterRuntime({
       repositoryId: repository?.id || "root", repositories: scope,
       env: config.env || {}, envFrom: [...(config.envFrom || [])].sort(),
       resolvedEnvFrom: Object.keys(envFrom).sort(),
-      timeoutMs: Number(config.timeoutMs || 120000), readiness: config.readiness || null
+      timeoutMs: providerTimeoutMs(config), readiness: config.readiness || null
     });
   }
 
@@ -575,7 +590,7 @@ export function createAdapterRuntime({
       commandCache.set(dedupKey, {
         commandExecutionId,
         result: runCommand(built.command, built.args, {
-          cwd, timeoutMs: config.timeoutMs, env: executionEnv,
+          cwd, timeoutMs: providerTimeoutMs(config), env: executionEnv,
           readiness: config.readiness
         })
       });
@@ -659,7 +674,7 @@ export function createAdapterRuntime({
     const startedAt = now();
     const startedMs = Date.now();
     const spawned = spawnCommandSync(built.command, built.args, {
-      cwd, env, encoding: "utf8", timeout: Number(config.timeoutMs || 120000),
+      cwd, env, encoding: "utf8", timeout: providerTimeoutMs(config),
       maxBuffer: 64 * 1024 * 1024
     });
     const result = {
@@ -908,7 +923,7 @@ export function createAdapterRuntime({
         config.resultProtocol === "foundation-mutation-v1"
       ? mutationProtocolResult(result.stdout) : null;
     const evaluation = capability === "evaluation"
-      ? evaluationAdapterResult(result, report || parseJsonOutput(result.stdout), config) : null;
+      ? evaluationAdapterResult(result, report || parseLastJsonLine(result.stdout), config) : null;
     return { capability, v2, legacy, evaluation };
   }
 
@@ -988,7 +1003,7 @@ export function createAdapterRuntime({
     const startedMs = Date.now();
     const measured = await measureBenchmark({
       config, workspace: cwd, baseHead: repositoryBaseHead(repository || { id: "root" }, state),
-      command: built.command, args: built.args, env, timeoutMs: config.timeoutMs
+      command: built.command, args: built.args, env, timeoutMs: providerTimeoutMs(config)
     });
     assertReadRepositories(provider, repositoryManifest.rows);
     const last = measured.results.at(-1) || {};
@@ -1034,18 +1049,14 @@ export function createAdapterRuntime({
     const readinessMissed = Boolean(config.readiness?.url) &&
       !execution.result.readinessObserved;
 
-    if (config.adapter === "test-discovery") {
-      return recordTestDiscoveryAdapter(
-        id, provider, config, execution, evidenceRow, baseFlags, readinessMissed);
-    }
-  
-    if (config.adapter === "playwright") {
-      return recordPlaywrightAdapter(
-        id, provider, config, execution, evidenceRow, baseFlags, readinessMissed);
-    }
-  
-    return recordGenericAdapter(
+    const record = config.adapter === "test-discovery" ? recordTestDiscoveryAdapter
+      : config.adapter === "playwright" ? recordPlaywrightAdapter : recordGenericAdapter;
+    const outcome = record(
       id, provider, config, execution, evidenceRow, baseFlags, readinessMissed);
+    // A timeout is infrastructure, not a test result: name it and its limit so
+    // the failure summary says what to change instead of only "error".
+    return execution.result.timedOut
+      ? { ...outcome, detail: providerTimeoutDetail(provider, config) } : outcome;
   }
 
   return {

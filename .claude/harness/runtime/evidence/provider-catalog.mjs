@@ -82,6 +82,14 @@ export function splitPostReleaseProviders(required, providers = {}, capabilityOf
   return { blocking, rolloutGates };
 }
 
+// A proof finalized before rollout gates existed has no rolloutGates field: it
+// owes none, so readers see an empty list. `deferred` keeps only the gates the
+// rollout still waits on (a waived capability is recorded, not owed).
+export function proofRolloutGates(proof, { deferred = false } = {}) {
+  const gates = Array.isArray(proof?.rolloutGates) ? proof.rolloutGates : [];
+  return deferred ? gates.filter((gate) => gate?.status !== "waived") : gates;
+}
+
 // Machine-readable evaluation result: a command prints this JSON on stdout or
 // writes it to its configured report. The claim passes only when
 // score >= threshold; a provider-level `threshold` applies when the result
@@ -92,6 +100,11 @@ export function evaluationResult(report, config = {}) {
   const number = (value) => (typeof value === "number" && Number.isFinite(value)) ||
     (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)))
     ? Number(value) : null;
+  // A result for another protocol is not this contract's score, so it fails
+  // closed naming both; an omitted protocol keeps the documented shape.
+  if (report?.protocol !== undefined && report.protocol !== EVALUATION_PROTOCOL)
+    return { status: "fail", score: null, threshold: null,
+      observed: `evaluation result protocol '${report.protocol}' is not ${EVALUATION_PROTOCOL}` };
   const score = number(report?.score);
   const threshold = number(report?.threshold ?? config?.threshold);
   if (score === null || threshold === null)
@@ -103,6 +116,20 @@ export function evaluationResult(report, config = {}) {
 }
 
 export const PROVIDERS = new Set(Object.keys(PROVIDER_CONTRACTS));
+
+// A provider command without timeoutMs gets ten minutes: long enough for an
+// ordinary suite, so a slow suite is not reported as a broken one.
+export const DEFAULT_PROVIDER_TIMEOUT_MS = 600000;
+
+export function providerTimeoutMs(config) {
+  return Number(config?.timeoutMs || DEFAULT_PROVIDER_TIMEOUT_MS);
+}
+
+// The reason a timed-out provider failed, with the limit and where to raise it.
+export function providerTimeoutDetail(provider, config) {
+  return `timed out after ${providerTimeoutMs(config)}ms; raise providers.${provider}.timeoutMs ` +
+    "in evidence.yaml when the command needs longer";
+}
 
 export function providerCapability(provider, config = null) {
   return config?.capability || (PROVIDERS.has(provider) ? provider : null);
@@ -130,7 +157,7 @@ function sameExecutionContext(left, right) {
     sameValue(left.env, right.env) && sameSet(left.envFrom, right.envFrom) &&
     sameValue(left.environment, right.environment) &&
     sameValue(left.service, right.service) && sameValue(left.readiness, right.readiness) &&
-    Number(left.timeoutMs || 120000) === Number(right.timeoutMs || 120000) &&
+    providerTimeoutMs(left) === providerTimeoutMs(right) &&
     sameSet(left.resources, right.resources) && sameSet(left.dependsOn, right.dependsOn);
 }
 

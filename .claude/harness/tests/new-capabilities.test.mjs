@@ -7,6 +7,24 @@ import {
   splitPostReleaseProviders
 } from "../runtime/evidence/provider-catalog.mjs";
 import { evaluationAdapterResult } from "../runtime/evidence/adapter-runtime.mjs";
+import { parseLastJsonLine } from "../runtime/evidence/evidence-results.mjs";
+
+test("an evaluation result after log lines is read from the last JSON line", () => {
+  const stdout = "loading model\nscoring 120 cases\n" +
+    `{"protocol":"${"foundation-evaluation-v1"}","score":0.93,"threshold":0.9}\n`;
+  const report = parseLastJsonLine(stdout);
+  assert.equal(report.score, 0.93);
+  assert.equal(evaluationAdapterResult({ status: 0 }, report).status, "pass");
+  // A clean JSON document still parses whole; no object line yields nothing.
+  assert.equal(parseLastJsonLine('{"score":1,"threshold":1}').score, 1);
+  assert.equal(parseLastJsonLine("no result here\n[1,2]\n"), null);
+});
+
+test("an evaluation result for another protocol fails naming both protocols", () => {
+  const result = evaluationResult({ protocol: "acme-eval-v2", score: 0.99, threshold: 0.5 });
+  assert.equal(result.status, "fail");
+  assert.match(result.observed, /protocol 'acme-eval-v2' is not foundation-evaluation-v1/);
+});
 import {
   discoverMissingEvidence, evidenceCandidateRows
 } from "../runtime/evidence/evidence-bootstrap.mjs";

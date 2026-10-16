@@ -29,6 +29,27 @@ import {
   validatePerformanceAnalysis,
   validateRefactor,
 } from "../runtime/workflow/validation/work-type-fields.mjs";
+import { workTypeSignalIssues } from "../runtime/workflow/validation/dev-document.mjs";
+
+// The webhook lane declared feature for an outbound integration and so got no
+// integration contract; typed signals now name the missing type.
+test("a declared work type missing the type its typed signals require is an issue", () => {
+  const issues = workTypeSignalIssues({ workType: ["feature"], riskSignals: ["external-integration"] });
+  assert.equal(issues.length, 1);
+  assert.match(issues[0], /workType \[feature\] lacks 'integration'.*riskSignals external-integration/);
+  assert.match(issues[0], /workTypeExamples/);
+  assert.match(workTypeSignalIssues({ workType: ["feature"], integrations: [{ name: "stripe" }] })[0],
+    /lacks 'integration'/);
+  assert.match(workTypeSignalIssues({ workType: ["api"], riskSignals: ["performance-slo"] })[0],
+    /lacks 'performance'/);
+  // Declared correctly: nothing to repair.
+  assert.deepEqual(workTypeSignalIssues({ workType: ["feature", "integration"],
+    riskSignals: ["external-integration"], integrations: [{ name: "stripe" }] }), []);
+  // Undeclared work keeps path inference and is never asked to declare.
+  assert.deepEqual(workTypeSignalIssues({ riskSignals: ["external-integration"] }), []);
+  // Other signals name no type.
+  assert.deepEqual(workTypeSignalIssues({ workType: ["feature"], riskSignals: ["access-control"] }), []);
+});
 
 const oldBugfix = {
   reproduction: "POST /orders twice within 1s", rootCause: "missing unique index on order key",

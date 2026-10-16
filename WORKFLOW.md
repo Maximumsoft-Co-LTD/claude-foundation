@@ -229,7 +229,11 @@ work type are in `change start --template` (`workTypeExamples`,
 `workType` takes any of: feature, bugfix, refactor, api, library, ui, data,
 migration, async, integration, config, performance, dependency, deprecation,
 infra, observability, privacy, experiment, client-release, ml, docs, test,
-chore. Undeclared, it is inferred from task paths. Light work (docs, test,
+chore. Undeclared, it is inferred from task paths. A declared `workType` must
+include the type its typed signals require: `integrations` or `riskSignals`
+`external-integration` require `integration`, and `performance-slo` requires
+`performance`; otherwise intake returns an `EDIT` naming the missing type.
+Prose is never read for this. Light work (docs, test,
 chore) owes only a summary. Every other type owes a failure matrix, except
 behavior-neutral work (refactor, config, dependency, docs, test, chore), which
 tells its failure story in its own section. Each type adds:
@@ -501,7 +505,8 @@ and passes the same intake gate as `change start`, under its own snapshot: the
 call inspects first, revises only at `DONE`, and otherwise prints the intake
 action and changes nothing. `--inspect` only inspects; `--consume-draft` also
 removes the draft. With `--merge` the file is a partial draft applied to the
-draft the change was compiled from: objects merge, `null` deletes a key, and an
+draft the change was compiled from; a patch that changes `version` (for example
+v4 to v5) is refused and needs a whole-draft revision. Objects merge, `null` deletes a key, and an
 entry in a list keyed by `key` (or `dimension`, or `name`) merges into the
 entry with the identity it names (any of those fields every listed entry
 has), `"$remove": true` drops it (an unmatched `$remove` is an error), and

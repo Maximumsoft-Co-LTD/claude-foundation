@@ -811,8 +811,13 @@ export function postReleaseRolloutGates(context, id) {
     for (const capability of claim.capabilities || [])
       if (isPostReleaseCapability(capability)) owed.add(capability);
   const extra = [...owed].filter((capability) => !covered.has(capability)).sort();
-  return [...gates, ...splitPostReleaseProviders(extra, {},
-    context.providerCapability).rolloutGates];
+  // A waived capability no longer owes its gate; it stays listed as waived so
+  // the handoff and archive still show the user's decision.
+  const state = context.loadRuntime?.(id);
+  const waived = new Set(state ? currentWaivers(state, state.waivers?.some((row) => row.binding)
+    ? context.relevantHash?.(id) : undefined).map((row) => row.capability) : []);
+  return [...gates, ...splitPostReleaseProviders(extra, {}, context.providerCapability).rolloutGates]
+    .map((gate) => waived.has(gate.capability) ? { ...gate, status: "waived" } : gate);
 }
 
 // The capabilities review covers in place of a provider that only repeats the

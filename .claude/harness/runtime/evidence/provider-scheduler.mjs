@@ -202,7 +202,8 @@ export function createProviderScheduler({
         outcomes.push({
           provider: batch[index].provider,
           status: results[index].status,
-          observations: results[index].observations || []
+          observations: results[index].observations || [],
+          ...(results[index].detail ? { detail: results[index].detail } : {})
         });
         if (results[index].status === "pass") {
           for (const covered of batch[index].covers) completed.add(covered);

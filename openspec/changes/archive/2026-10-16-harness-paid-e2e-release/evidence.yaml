@@ -1,0 +1,181 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "provider-timeout-harness-provider",
+      "requirementKey": "provider-timeout",
+      "scenario": "ค่าเริ่มต้น 10 นาที",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "provider-timeout-advance",
+      "requirementKey": "provider-timeout",
+      "scenario": "timeout บอกสาเหตุ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "provider-timeout-harness-provider-2",
+      "requirementKey": "provider-timeout",
+      "scenario": "ตั้งเองยังใช้ค่าที่ตั้ง",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "provider-env-isolation-harness-environment-provider",
+      "requirementKey": "provider-env-isolation",
+      "scenario": "ตัวแปร session ถูกถอด",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "provider-env-isolation-harness-environment-provider-2",
+      "requirementKey": "provider-env-isolation",
+      "scenario": "ตัวแปร contract ยังอยู่",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "provider-env-isolation-advance-proof",
+      "requirementKey": "provider-env-isolation",
+      "scenario": "suite ที่เรียก harness ซ้อนผ่านใน proof",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "work-type-signals-agent-change-start",
+      "requirementKey": "work-type-signals",
+      "scenario": "integration ที่ประกาศเป็น feature",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "work-type-signals-agent-change-start-2",
+      "requirementKey": "work-type-signals",
+      "scenario": "ประกาศถูกแล้วผ่าน",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "work-type-signals-agent-change-start-3",
+      "requirementKey": "work-type-signals",
+      "scenario": "ไม่ประกาศ workType ใช้การเดาเดิม",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "rollout-gate-rules-harness-rollout-gate",
+      "requirementKey": "rollout-gate-rules",
+      "scenario": "release-health ที่ถูก waive",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "rollout-gate-rules-land-audit-proof",
+      "requirementKey": "rollout-gate-rules",
+      "scenario": "proof เก่าไม่มี rolloutGates",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "rollout-gate-rules-prove",
+      "requirementKey": "rollout-gate-rules",
+      "scenario": "gate ตาม work type ไม่มี provider",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "evaluation-output-harness",
+      "requirementKey": "evaluation-output",
+      "scenario": "stdout มี log ปน",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "evaluation-output-harness-2",
+      "requirementKey": "evaluation-output",
+      "scenario": "protocol ผิด",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "outline-heading-rules-agent-change-start",
+      "requirementKey": "outline-heading-rules",
+      "scenario": "heading ไทยของ Decisions",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "outline-heading-rules-agent-change-amend",
+      "requirementKey": "outline-heading-rules",
+      "scenario": "amend หัวข้อที่ harness สร้าง",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "v5-merge-revision-agent-change-revise-merge-patch-requirement-ke",
+      "requirementKey": "v5-merge-revision",
+      "scenario": "merge เพิ่ม requirement ใน minimal v5",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "v5-merge-revision-agent-change-revise-merge-patch-version-5",
+      "requirementKey": "v5-merge-revision",
+      "scenario": "merge เปลี่ยน version",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/proof-execution-boundaries.test.mjs .claude/harness/tests/process-runtime.test.mjs) && (node --test .claude/harness/tests/evidence-bootstrap.test.mjs) && (node --test .claude/harness/tests/work-type-fields.test.mjs) && (node --test .claude/harness/tests/required-providers.test.mjs .claude/harness/tests/archive-appendices.test.mjs) && (node --test .claude/harness/tests/new-capabilities.test.mjs) && (node --test .claude/harness/tests/draft-folder.test.mjs .claude/harness/tests/amendment-invalidation.test.mjs) && (node --test .claude/harness/tests/change-revise.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh) && (bash .claude/tests/run-all.sh --affected)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared",
+      "timeoutMs": 1800000
+    }
+  }
+}

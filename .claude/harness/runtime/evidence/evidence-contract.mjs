@@ -7,7 +7,7 @@ import { memoizeByGitIndex } from "../core/tool-identity.mjs";
 import {
   classifyReviewRisk, reviewSemanticText, securityRiskSignals, thaiRiskPattern
 } from "./review-routing.mjs";
-import { reviewCoveredProviders, unobservedAliasConfig } from "./provider-catalog.mjs";
+import { providerTimeoutMs, reviewCoveredProviders, unobservedAliasConfig } from "./provider-catalog.mjs";
 
 const THAI_REQUIRED_SEMANTICS =
   thaiRiskPattern("concurrency", "money", "migration", "irreversible");
@@ -340,7 +340,7 @@ export function uncoveredCommandWorkspaceFiles({
 
 export function providerEvidencePolicy(config = {}) {
   return {
-    timeoutMs: Number(config.timeoutMs || 120000),
+    timeoutMs: providerTimeoutMs(config),
     minimum: config.minimum ?? null,
     report: config.report || null,
     reportFormat: config.reportFormat || null,

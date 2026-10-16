@@ -453,7 +453,7 @@ jq '.workflow.grounding = "optional" |
 cp "$TMP/foundation-atomic.json" "$TARGET/foundation.json"
 start_template="$(bash "$ROOT/cli.sh" --project "$TARGET" change start --template)"
 assert_contains "atomic start exposes a versioned draft template" \
-  "$start_template" '"version": 4'
+  "$start_template" '"version": 5'
 assert_contains "atomic start exposes discovery coverage" \
   "$start_template" '"discovery"'
 assert_contains "atomic start template links tasks by requirement key" \

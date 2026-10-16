@@ -253,6 +253,44 @@ test("revise --merge on a minimal draft derives keys for added rows and needs a 
   assert.deepEqual(snapshot(value.root), before);
 });
 
+// The template's minimal v5 shape: once started it is keyed, but its recorded
+// marker keeps a merge minimal, so added rows still get derived keys.
+test("revise --merge on a minimal v5 draft derives keys and keeps version 5", (t) => {
+  const value = fixture(t);
+  value.start({
+    version: 5, id: "revisable-change", intent: "Reject empty note titles",
+    requirements: [{ description: "The system SHALL reject a note whose title is empty",
+      scenarios: [{ when: "a user submits an empty title", then: "the note is not created" }] }],
+    tasks: [{ outcome: "Validate note titles", verify: "npm test", paths: ["src/note.js"] }]
+  });
+  assert.equal(value.state().draftSource.draft.version, 5);
+  const [prior] = value.state().draftSource.draft.requirements;
+  const [task] = value.state().draftSource.draft.tasks;
+  const delta = value.revise({
+    requirements: [{ description: "The system SHALL trim whitespace from a note title",
+      scenarios: [{ when: "a user submits a padded title", then: "the title is stored trimmed" }] }],
+    tasks: [{ key: task.key, covers: [prior.key, "trim-whitespace-from-note-title"] }]
+  }, { merge: true });
+  assert.deepEqual(delta, { added: ["trim-whitespace-from-note-title"], revised: [], removed: [] });
+  const revised = value.state().draftSource.draft;
+  assert.equal(revised.version, 5);
+  assert.equal(revised.requirements[1].key, "trim-whitespace-from-note-title");
+});
+
+test("revise --merge refuses a patch that changes the draft version", (t) => {
+  const value = fixture(t);
+  value.start({
+    id: "revisable-change", intent: "Reject empty note titles",
+    requirements: [{ description: "The system SHALL reject a note whose title is empty",
+      scenarios: [{ when: "a user submits an empty title", then: "the note is not created" }] }],
+    tasks: [{ outcome: "Validate note titles", verify: "npm test", paths: ["src/note.js"] }]
+  });
+  const before = snapshot(value.root);
+  assert.throws(() => value.revise({ version: 5 }, { merge: true }),
+    /--merge cannot change the draft version of 'revisable-change' \(4 to 5\); pass the whole revised draft without --merge/);
+  assert.deepEqual(snapshot(value.root), before);
+});
+
 test("a failed revision restores the prior packet and runtime byte-for-byte", (t) => {
   const value = fixture(t);
   value.start();

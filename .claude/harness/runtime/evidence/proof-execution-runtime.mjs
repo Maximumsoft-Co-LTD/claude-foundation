@@ -189,7 +189,8 @@ export function rebindProofCollectionReceipts(
 export function assertProofCollectionOutcomes(outcomes) {
   const failed = outcomes.filter((row) => row.status !== "pass");
   if (failed.length) {
-    const summary = failed.map((row) => `${row.provider}:${row.status}`).join(", ");
+    const summary = failed.map((row) =>
+      `${row.provider}:${row.status}${row.detail ? ` (${row.detail})` : ""}`).join(", ");
     const critical = failed.flatMap((row) => (row.observations || [])
       .filter((observation) => observation.kind === "critical-case" &&
         !["pass", "passed", "success", "ok"].includes(observation.status))

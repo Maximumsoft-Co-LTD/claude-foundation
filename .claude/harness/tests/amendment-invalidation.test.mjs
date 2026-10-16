@@ -7,6 +7,20 @@ import { planAmendmentInvalidation } from
   "../runtime/workflow/validation/amendment-invalidation.mjs";
 import { formatInvalidatedWaivers, invalidatedWaivers } from
   "../runtime/workflow/change-lifecycle.mjs";
+import { amendmentSectionIssues } from "../runtime/workflow/semantic-amendment.mjs";
+
+// The harness builds the file map, work type, and acceptance rows; an
+// amendment can replace only author sections, and the repair says so.
+test("amending a harness-built outline section returns an issue naming the harness", () => {
+  for (const [document, key] of [["design", "fileMap"], ["design", "workType"], ["proposal", "acceptance"]]) {
+    const issues = amendmentSectionIssues({ sections: [{ document, key, body: "rows" }] });
+    assert.equal(issues.length, 1, `${document}.${key}: ${issues.join("; ")}`);
+    assert.match(issues[0], new RegExp(`'${key}' is a \\w+ ${document} section the harness builds; ` +
+      "only author sections can be replaced"));
+  }
+  assert.deepEqual(amendmentSectionIssues({ sections: [{ document: "design", key: "risks", body: "- r" }] }), []);
+});
+
 import { compileSemanticAmendment, writeSemanticAmendment } from
   "../runtime/workflow/semantic-amendment.mjs";
 

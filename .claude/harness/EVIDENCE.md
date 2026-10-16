@@ -103,6 +103,18 @@ covers it, and otherwise as blocked; both `evidence detect` and `doctor` name
 the next step to wire a project-owned command for that capability in
 `execution.yaml`, which replaces the alias.
 
+A provider command without `timeoutMs` runs for at most 600000 ms (ten
+minutes). A timeout is an infrastructure `error`, and the failure names the
+provider, the limit, and `providers.<name>.timeoutMs` to raise it. A provider
+command never inherits the harness's own session state
+(`CLAUDE_FOUNDATION_PROJECT`, `FOUNDATION_WORKSPACE_ROOT`,
+`FOUNDATION_CALLER_CWD`, `FOUNDATION_CLAUDE_SESSION_ID`,
+`FOUNDATION_CLAUDE_TRANSCRIPT_PATH`, `FOUNDATION_PUBLIC_OPERATION`,
+`FOUNDATION_ACTIVE_PHASE`), so a test that runs `claude-foundation` in its
+own fixture acts on that fixture; the provider contract variables such as
+`FOUNDATION_CHANGE_ID` and `FOUNDATION_REPOSITORIES_FILE` are still set, and a
+value the provider declares in `env` or `envFrom` still reaches it.
+
 ```json
 {
   "version": 1,
@@ -208,13 +220,18 @@ An `evaluation` command prints a `foundation-evaluation-v1` result on stdout
 
 It passes only when the command exits 0 and `score >= threshold`; a
 provider-level `threshold` in `execution.yaml` applies when the result omits
-one. A missing or non-numeric score or threshold fails closed. The receipt
+one. A missing or non-numeric score or threshold fails closed. When stdout
+holds log lines before the result, the last line that is a JSON object is the
+result. A result whose `protocol` names another protocol fails, naming both. The receipt
 observation records `{kind: "evaluation", status, score, threshold}`.
 
 Post-release capabilities exist only after the change ships. They are rollout
 gates: deferred (neither failed nor pending), excluded from the providers that
 gate proof, never blocking proof or Land, and listed as Appendix: Rollout gates
-in the archived proposal. Wiring a missing pre-land provider is agent work in
+in the archived proposal. A gate the work type or a claim owes is listed even
+without a provider. A waived capability's gate is listed with status `waived`
+and is no longer owed. A proof finalized before rollout gates existed owes
+none. Wiring a missing pre-land provider is agent work in
 `execution.yaml`, never a user question.
 
 ## Signed CI and external authority

@@ -51,6 +51,10 @@ readiness หรือ config เฉพาะ project การเปลี่�
 }
 ```
 
+ถ้าไม่ตั้ง `timeoutMs` คำสั่งได้เวลาสิบนาที เมื่อหมดเวลาจะล้มเป็น `error` ที่ระบุ provider
+เวลาที่จำกัด และ `timeoutMs` ที่ต้องเพิ่ม คำสั่งของ provider ไม่ได้รับตัวแปรของ session ของ agent
+test ที่รัน `claude-foundation` ใน fixture จึงทำงานเหมือนกันทั้งในและนอก Prove
+
 ### test-discovery
 
 หนึ่งโปรเซส สอง receipt ต้องใช้กับ capability `test`

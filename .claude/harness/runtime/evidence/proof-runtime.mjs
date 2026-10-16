@@ -1,6 +1,7 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { validityRecovery } from "./receipt-validity.mjs";
+import { proofRolloutGates } from "./provider-catalog.mjs";
 import { resolveTaskExecutionAuthority } from "../core/task-execution-authority.mjs";
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 
@@ -231,8 +232,8 @@ export function createProofRuntime({
     if (!options.quiet)
       console.log(`PROVEN ${id}\n  workspace: ${hash}\n  providers: ${proof.providers.join(", ")}` +
         `${excludedReceipts.length ? `\n  excluded receipts: ${excludedReceipts.map((row) =>
-          `${row.provider}:${row.validity}`).join(", ")}` : ""}${proof.rolloutGates?.length
-          ? `\n  rollout gates (deferred): ${proof.rolloutGates.map((row) =>
+          `${row.provider}:${row.validity}`).join(", ")}` : ""}${proofRolloutGates(proof, { deferred: true }).length
+          ? `\n  rollout gates (deferred): ${proofRolloutGates(proof, { deferred: true }).map((row) =>
             row.capability).join(", ")}` : ""}\n  next: /land ${id}`);
   }
 

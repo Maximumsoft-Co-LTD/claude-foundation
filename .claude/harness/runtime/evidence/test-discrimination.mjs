@@ -6,6 +6,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { providerExecutionEnvironment } from "./adapter-runtime.mjs";
+import { providerTimeoutMs } from "./provider-catalog.mjs";
 import { environmentIdentity, taskCheckArgv } from "./task-check-evidence.mjs";
 import { spawnCapturedAsync } from "./configured-reviewer.mjs";
 // Work whose tests should pass before and after the change.
@@ -263,7 +264,7 @@ export function createTestDiscriminationRuntime({
     if (!prepared) return { ...row, outcome: "unavailable" };
     const options = {
       cwd: prepared.tree, encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
-      timeout: Number(config.timeoutMs || 120000),
+      timeout: providerTimeoutMs(config),
       env: providerExecutionEnvironment(environment, additions, prepared.tree)
     };
     const finish = (result) => {

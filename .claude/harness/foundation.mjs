@@ -1692,7 +1692,7 @@ const taskPacketWasPrecompleted = taskPacketWasPrecompletedOperation.bind(null, 
 // One set of deferred post-release gates for Prove and the archive appendix.
 function changeRolloutGates(id) {
   return postReleaseRolloutGates(
-    { evidence, providerCapability, policyRolloutCapabilities }, id);
+    { evidence, providerCapability, policyRolloutCapabilities, loadRuntime, relevantHash }, id);
 }
 const { finalize: prove, audit: proofAudit } = createProofRuntime({
   rolloutGates: changeRolloutGates,

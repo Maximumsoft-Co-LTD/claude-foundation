@@ -434,8 +434,31 @@ function mermaidSources(draft) {
   return sources;
 }
 
+// Typed declarations that name a work type the draft must also declare.
+// Prose is never read; only these fields decide.
+const WORK_TYPE_SIGNALS = Object.freeze([
+  ["integration", (draft) => (Array.isArray(draft?.integrations) && draft.integrations.length > 0) ||
+    riskSignalsOf(draft).includes("external-integration"), "integrations or riskSignals external-integration"],
+  ["performance", (draft) => riskSignalsOf(draft).includes("performance-slo"), "riskSignals performance-slo"]
+]);
+
+function riskSignalsOf(draft) {
+  return Array.isArray(draft?.riskSignals) ? draft.riskSignals.map(String) : [];
+}
+
+// A declared workType that omits a type its typed signals require would skip
+// that type's sections (an integration declared as feature had no
+// integration contract). Undeclared work keeps path inference.
+export function workTypeSignalIssues(draft) {
+  const declared = draftWorkTypes(draft);
+  if (!declared.length) return [];
+  return WORK_TYPE_SIGNALS.filter(([type, applies]) => applies(draft) && !declared.includes(type))
+    .map(([type, , because]) => `semantic draft workType [${declared.join(", ")}] lacks '${type}', ` +
+      `which ${because} requires; add '${type}' to workType and copy its block from workTypeExamples`);
+}
+
 export function devDocumentShapeIssues(draft) {
-  const issues = [];
+  const issues = [...workTypeSignalIssues(draft)];
   if (draft?.userFlow !== undefined && !userFlowSource(draft.userFlow))
     issues.push("semantic draft userFlow needs Mermaid source (a string or { purpose, source })");
   for (const [label, source] of mermaidSources(draft)) issues.push(...mermaidLabelIssues(source, label));

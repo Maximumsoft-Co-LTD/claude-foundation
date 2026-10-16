@@ -9,8 +9,28 @@ import {
   requiredProvidersOperation,
   reviewCoveredAdvisories
 } from "../runtime/workflow/change-validation.mjs";
-import { providerCapability as catalogCapability } from
+import { providerCapability as catalogCapability, proofRolloutGates } from
   "../runtime/evidence/provider-catalog.mjs";
+
+test("a waived post-release capability is recorded as a waived gate, not a deferred one", () => {
+  const state = { waivers: [{ capability: "release-health", reason: "no telemetry yet" }] };
+  const gates = postReleaseRolloutGates({
+    evidence: () => ({ providers: {}, claims: [] }),
+    providerCapability: catalogCapability,
+    policyRolloutCapabilities: () => ["release-health", "experiment-guardrail"],
+    loadRuntime: () => state
+  }, "change-a");
+  assert.deepEqual(gates.map((gate) => [gate.capability, gate.status]),
+    [["experiment-guardrail", "deferred"], ["release-health", "waived"]]);
+  assert.deepEqual(proofRolloutGates({ rolloutGates: gates }, { deferred: true })
+    .map((gate) => gate.capability), ["experiment-guardrail"]);
+});
+
+test("a proof finalized before rollout gates existed owes none", () => {
+  assert.deepEqual(proofRolloutGates({ version: 2, status: "pass" }), []);
+  assert.deepEqual(proofRolloutGates(null, { deferred: true }), []);
+  assert.deepEqual(proofRolloutGates({ rolloutGates: "bad" }), []);
+});
 
 const providers = {
   "test-global": { capability: "test" },
