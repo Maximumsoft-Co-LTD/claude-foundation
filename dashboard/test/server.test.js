@@ -45,6 +45,10 @@ after(async () => {
 });
 
 test('presence credits one user-minute across multiple machines', async () => {
+  // Both heartbeats must fall in the same wall-clock minute; under suite load
+  // a pair sent just before the boundary otherwise lands in two minutes.
+  const untilNextMinute = 60000 - (Date.now() % 60000);
+  if (untilNextMinute < 2000) await new Promise((resolve) => setTimeout(resolve, untilNextMinute + 50));
   assert.equal((await heartbeat('agent-one')).response.status, 200);
   assert.equal((await heartbeat('agent-two')).response.status, 200);
   const { response, body } = await request('/api/presence?days=1', {
