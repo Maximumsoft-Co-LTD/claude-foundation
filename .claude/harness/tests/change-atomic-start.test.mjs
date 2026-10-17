@@ -15,8 +15,9 @@ import {
 } from "../runtime/workflow/semantic-amendment.mjs";
 import { verifySpecSync } from "../runtime/workflow/spec-sync-verify.mjs";
 import { verifyCountAdvisories } from "../runtime/workflow/validation/design-blueprints.mjs";
-import { CORE_DISCOVERY_DIMENSIONS } from
-  "../runtime/workflow/validation/semantic-intake.mjs";
+import {
+  CORE_DISCOVERY_DIMENSIONS, riskSignalDimensions, semanticIntakeIssues
+} from "../runtime/workflow/validation/semantic-intake.mjs";
 import { assertSpecApproval } from "../runtime/core/user-decisions.mjs";
 
 function writeJson(path, value) {
@@ -1090,6 +1091,44 @@ test("the start template says when to declare risk signals, access tags, and fix
   assert.match(template.minimalDraftFixes, /fixes: \[/);
   assert.equal(template.minimalDraft.riskSignals, undefined,
     "guidance never adds a default declaration");
+});
+
+// Paid runs declared input-domain for almost every task and then repaired the
+// coverage it requires several times: the broad wording added review to small
+// changes, and the template never said which coverage rows a signal needs.
+test("the start template limits input-domain to outside values", (t) => {
+  const { minimalDraftRiskSignals } = fixture(t).lifecycle.rapidStartTemplate();
+  assert.match(minimalDraftRiskSignals,
+    /'input-domain' only when values from outside the program \(an HTTP request, uploaded file, CLI argument or message payload\)/);
+  assert.match(minimalDraftRiskSignals, /not for ordinary function arguments/);
+  for (const signal of ["access-control", "financial", "performance-slo",
+    "persisted-data-change", "external-integration"])
+    assert.match(minimalDraftRiskSignals, new RegExp(`'${signal}'`));
+});
+
+test("the start template names every risk signal's required coverage rows", (t) => {
+  const { minimalDraftRiskCoverage } = fixture(t).lifecycle.rapidStartTemplate();
+  for (const [signal, dimensions] of Object.entries(riskSignalDimensions()))
+    assert.ok(minimalDraftRiskCoverage.includes(`${signal} → ${dimensions.join(", ")}`),
+      `${signal} lists ${dimensions.join(", ")}`);
+  assert.match(minimalDraftRiskCoverage, /"status": "covered", "covers": \[/);
+  assert.match(minimalDraftRiskCoverage, /"not-applicable" with a "rationale"/);
+});
+
+test("a draft that follows the template coverage row passes intake", () => {
+  const draft = {
+    version: 5,
+    intent: "Reject invalid page sizes in the list endpoint",
+    riskSignals: ["input-domain"],
+    requirements: [{ key: "page-size", capability: "list", operation: "added" }],
+    discovery: { coverage: riskSignalDimensions()["input-domain"].map((dimension) => ({
+      dimension, status: "covered", covers: ["page-size"]
+    })), decisions: [] }
+  };
+  assert.deepEqual(semanticIntakeIssues(draft).filter((issue) => /coverage/.test(issue)), []);
+  const missing = semanticIntakeIssues({ ...draft, discovery: { coverage: [], decisions: [] } });
+  assert.ok(missing.some((issue) => /missing required dimension 'input-boundary'/.test(issue)),
+    "the check the template describes still applies");
 });
 
 test("a saved whole template still starts without the save note becoming draft content", (t) => {

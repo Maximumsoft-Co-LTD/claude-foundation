@@ -86,6 +86,12 @@ const unresolvedIssue = (issue) =>
 // requirement, forcing ceremony onto small changes. The nine core dimensions
 // are mandatory only for declared high impact; elsewhere the requirements and
 // scenarios themselves carry that coverage.
+// The coverage dimensions each typed risk signal requires, for the start
+// template, so the guidance an agent copies cannot drift from this check.
+export function riskSignalDimensions() {
+  return RISK_SIGNAL_DIMENSIONS;
+}
+
 export function requiredDiscoveryDimensions(source = {}) {
   const highImpact = text(source.impact).toLowerCase() === "high";
   const required = highImpact ? [...CORE_DISCOVERY_DIMENSIONS] : [];

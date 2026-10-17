@@ -25,7 +25,7 @@ import { assembleReviewPolicy, collectReviewSignals } from "../evidence/evidence
 import { classifyReviewRisk } from "../evidence/review-routing.mjs";
 import { reviewModelClass } from "../evidence/review-diff.mjs";
 import {
-  semanticIntakeAction, semanticIntakeIssues
+  riskSignalDimensions, semanticIntakeAction, semanticIntakeIssues
 } from "./validation/semantic-intake.mjs";
 import { inspectSemanticSources } from "./validation/semantic-source-inventory.mjs";
 import {
@@ -1818,8 +1818,15 @@ export function createChangeLifecycle({
         "transferred, or a retry must not repeat it; 'performance-slo' when the request is to " +
         "make something faster or meet a latency/throughput target (prove it with a provider " +
         "using adapter 'benchmark'); 'persisted-data-change' for stored data or schema " +
-        "changes; 'external-integration' for third-party calls; 'input-domain' for behavior " +
-        "computed from caller-supplied values.",
+        "changes; 'external-integration' for third-party calls; 'input-domain' only when " +
+        "values from outside the program (an HTTP request, uploaded file, CLI argument or " +
+        "message payload) must be validated or rejected, not for ordinary function arguments.",
+      minimalDraftRiskCoverage: "Each declared risk signal needs one discovery.coverage row " +
+        "per dimension it requires, in the same draft: {\"dimension\": \"<dimension>\", " +
+        "\"status\": \"covered\", \"covers\": [\"<requirement key>\"]}, or \"status\": " +
+        "\"not-applicable\" with a \"rationale\". Required dimensions: " +
+        Object.entries(riskSignalDimensions())
+          .map(([signal, dimensions]) => `${signal} → ${dimensions.join(", ")}`).join("; ") + ".",
       minimalDraftFixes: "When the request reports a defect introduced by an earlier change " +
         "that is already archived under openspec/changes/archive/<date>-<id>, add fixes: " +
         "[\"<id>\"] to the minimal draft and cover the analogous boundaries, not only the " +

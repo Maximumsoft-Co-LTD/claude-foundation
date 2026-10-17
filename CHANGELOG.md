@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Faster small changes.** The start template recommended the `input-domain`
+  risk for almost any task, so small changes got an AI review and repeated
+  draft repairs. It now recommends `input-domain` only when values from
+  outside the program (an HTTP request, uploaded file, CLI argument or message
+  payload) must be validated or rejected. It also lists the coverage rows each
+  risk requires, in the format the check expects. In a six-scenario test this
+  cut time by 30% and cost by 14% with the same results. Review and coverage
+  rules are unchanged.
+
 ## [3.6.4] - 2026-10-17
 
 ### Added

@@ -1,0 +1,63 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "narrow-input-domain-minimaldraftrisksignals",
+      "requirementKey": "narrow-input-domain",
+      "scenario": "คำแนะนำแคบลง",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "narrow-input-domain-minimaldraftrisksignals-2",
+      "requirementKey": "narrow-input-domain",
+      "scenario": "signal อื่นคงเดิม",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "risk-coverage-template-minimaldraftriskcoverage",
+      "requirementKey": "risk-coverage-template",
+      "scenario": "ทุก signal มี dimension",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "risk-coverage-template-minimaldraftriskcoverage-2",
+      "requirementKey": "risk-coverage-template",
+      "scenario": "รูปแบบ row",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "risk-coverage-template-semantic-intake-draft",
+      "requirementKey": "risk-coverage-template",
+      "scenario": "draft ตามตัวอย่างผ่าน intake",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "node --test .claude/harness/tests/change-atomic-start.test.mjs"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}
