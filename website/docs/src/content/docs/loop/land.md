@@ -23,6 +23,14 @@ writable repository receives an uncommitted diff while its HEAD and index stay
 unchanged. Completion
 means runtime status `archived`; `proven` is not completion.
 
+If the change edits the root `package.json` or a lockfile, Land then installs
+dependencies in your checkout with the same command the sandbox used
+(`sandbox.setupCommand`, or the lockfile's install such as `npm ci`), so your
+project commands find the new packages. Set `sandbox.installDependencies: false`
+without a setup command to turn this off. A failed install never undoes Land:
+the result is recorded and Land prints the command to run yourself. Child
+repositories of a multi-repository change are not installed.
+
 If Apply conflicts only with regenerable artifacts in the target (for example
 `__pycache__/*.pyc`) that were clean at isolation, the returned REPAIR restores
 them with `advance <change> --through archived --restore-target <paths>` inside

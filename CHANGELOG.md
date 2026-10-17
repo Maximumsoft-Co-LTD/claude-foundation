@@ -9,40 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Typed risk gates, benchmark evidence, and cross-change evidence rollups, with
-  evidence-gate benchmark scenarios for access control, refunds, search, and
-  regression fixes.
-- Complete change packets: a typed outline and semantic draft v5 (a
-  `change.json` folder with `proposal.md`/`design.md` prose). `change start
-  --template` now leads with the v5 folder; v4 JSON stays valid.
-- Investigations preserve requirements and give Change detailed handoffs.
-- Prove shows proof progress and skips trailing segments on the base run.
-- Verifiable procedures in the skill references. Five construction and process
-  skill descriptions now name the spec vocabulary (`workType`, `riskSignals`,
-  requirements, scenarios) that should make an agent load them.
-- A `concurrency` evidence capability. The `performance`, `async`,
-  `integration`, and `deprecation` work types now bind evidence.
+- **Fuller change documents.** A change can now carry a complete dev document:
+  a `change.json` folder with readable `proposal.md` and `design.md`, whose
+  required sections follow the kind of work (for example, a migration needs a
+  rollout plan). `change start --template` starts from this format. Older
+  JSON drafts still work.
+- **Checks for risky work.** When a change declares a risk such as access
+  control, money handling or a performance target, it must also show matching
+  evidence (allow/deny tests, a benchmark, a reproduced bug) before it can be
+  proven. Changes that declare no risk behave as before.
+- **Investigations carry over.** Requirements and decisions found in
+  `/investigate` are kept and handed to Change in detail, so they are not lost
+  between sessions.
+- **Proof progress.** Prove shows which checks are running and skips work that
+  the base run already covers.
+- **Evidence for more work types.** Performance, async, integration and
+  deprecation work now ask for evidence that fits them, including a new
+  concurrency check.
 
 ### Changed
 
-- Work-type-derived capabilities no longer raise the review tier by themselves.
-- Build actions no longer name skills; agents choose skills from their
-  descriptions.
+- **Less review for ordinary work.** The kind of work alone (for example "api")
+  no longer raises the AI review to the high tier; real risk signals still do.
+- **Agents pick skills themselves.** Build no longer lists skills to load.
+  Skill descriptions now name the spec terms (`workType`, `riskSignals`,
+  requirements, scenarios) that should lead an agent to them. No hooks force a
+  skill.
 
 ### Fixed
 
-- Land installs dependencies in the target (the sandbox setup command or the
-  lockfile's pinned install) when it changes the root `package.json` or a
-  lockfile. It records the result, and a failed install never rolls Land back.
-- Keyed v5 drafts get derived capability and outcome defaults, removing a
-  repair round from every new change.
-- Prove and Land are no longer blocked for stacked changes, for exhausted
-  review, or for repository-scoped changes after amend and waive.
-- Provider timeouts name the provider. Provider environments no longer leak
-  into nested harness suites.
+- **New dependencies work after Land.** When a change adds or updates packages
+  (`package.json` or a lockfile), Land now installs them in your project with
+  the same command the sandbox used, so `npm test` and similar commands work
+  right away. If the install fails, Land is kept and the command to run is
+  shown. Set `sandbox.installDependencies: false` to turn this off.
+- **Faster first draft.** New changes no longer spend an extra repair round
+  filling in defaults.
+- **Fewer stuck changes.** Prove and Land no longer stop for stacked changes,
+  for a review that used up its rounds, or for repository-scoped changes after
+  an amendment or waiver. Overlapping `advance` runs no longer report a false
+  "no progress" or lock problem.
+- **Clearer errors.** A test-provider timeout now names the provider, and
+  provider settings no longer leak between test suites.
 - `go test -json` results are counted, `addTasks` works for existing
   requirements, and landed specs are trimmed.
-- Overlapping `advance` runs no longer report false no-progress or lock repair.
 
 ## [3.6.3] - 2026-10-11
 

@@ -21,6 +21,13 @@ transaction ที่กู้คืนได้ apply projection ที่ผ�
 ผ่าน OpenSpec และ cleanup ทุก writable repository ได้ diff แบบยังไม่ commit โดย
 HEAD และ index ไม่เปลี่ยน งานจบเมื่อ runtime เป็น `archived`; `proven` ยังไม่จบ
 
+ถ้า change แก้ `package.json` หรือ lockfile ที่ root หลัง apply แล้ว Land จะติดตั้ง
+dependency ในโฟลเดอร์ของคุณด้วยคำสั่งเดียวกับที่ sandbox ใช้ (`sandbox.setupCommand`
+หรือคำสั่งของ lockfile เช่น `npm ci`) คำสั่งของโปรเจกต์จึงหา package ใหม่เจอ ถ้าไม่ต้องการ
+ให้ตั้ง `sandbox.installDependencies: false` และไม่ตั้ง setup command การติดตั้งที่ล้ม
+จะไม่ย้อน Land กลับ ระบบบันทึกผลไว้และแสดงคำสั่งให้รันเอง Repository ลูกของ change
+แบบหลาย repository จะไม่ถูกติดตั้งให้
+
 ถ้า Apply ชนเฉพาะไฟล์ใน target ที่สร้างซ้ำได้ (เช่น `__pycache__/*.pyc`) และสะอาดตอน
 isolate REPAIR ที่คืนมาจะคืนไฟล์เหล่านั้นเป็นค่าจาก base ด้วย
 `advance <change> --through archived --restore-target <paths>` ภายใน transaction

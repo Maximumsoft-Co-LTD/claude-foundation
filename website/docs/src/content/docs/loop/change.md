@@ -215,7 +215,9 @@ shape and an example, never a user question. Some examples:
 | ui | `userFlow`, `uiStates`, `componentMap` |
 
 Docs, test, and chore work owes only a summary; user-visible work also owes a
-`releaseNote`. Work types also select Build skills and evidence capabilities.
+`releaseNote`. Work types also select evidence capabilities. Agents choose
+skills themselves from skill descriptions that name `workType`, `riskSignals`,
+requirements, and scenarios.
 The full catalog of 23 types is in `WORKFLOW.md` under "Work types and required
 sections"; capabilities are in `.claude/harness/EVIDENCE.md` under "Work-type
 capabilities".

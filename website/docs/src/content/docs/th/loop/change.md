@@ -142,7 +142,8 @@ standard change ต้องมี ถ้าขาดจะเป็น `EDIT` �
 | ui | `userFlow`, `uiStates`, `componentMap` |
 
 งาน docs, test และ chore ต้องมีแค่ summary งานที่ผู้ใช้มองเห็นต้องมี `releaseNote` ด้วย
-ชนิดงานยังเลือก skill ของ Build และ evidence capability รายการครบทั้ง 23 ชนิดอยู่ใน
+ชนิดงานยังเลือก evidence capability ด้วย ส่วน skill นั้น agent เลือกเองจากคำอธิบายของ
+skill ที่อ้างถึง `workType`, `riskSignals`, requirement และ scenario รายการครบทั้ง 23 ชนิดอยู่ใน
 `WORKFLOW.md` หัวข้อ "Work types and required sections" ส่วน capability อยู่ใน
 `.claude/harness/EVIDENCE.md` หัวข้อ "Work-type capabilities"
 
