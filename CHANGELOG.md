@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Typed risk gates, benchmark evidence, and cross-change evidence rollups, with
+  evidence-gate benchmark scenarios for access control, refunds, search, and
+  regression fixes.
+- Complete change packets: a typed outline and semantic draft v5 (a
+  `change.json` folder with `proposal.md`/`design.md` prose). `change start
+  --template` now leads with the v5 folder; v4 JSON stays valid.
+- Investigations preserve requirements and give Change detailed handoffs.
+- Prove shows proof progress and skips trailing segments on the base run.
+- Verifiable procedures in the skill references. Five construction and process
+  skill descriptions now name the spec vocabulary (`workType`, `riskSignals`,
+  requirements, scenarios) that should make an agent load them.
+- A `concurrency` evidence capability. The `performance`, `async`,
+  `integration`, and `deprecation` work types now bind evidence.
+
+### Changed
+
+- Work-type-derived capabilities no longer raise the review tier by themselves.
+- Build actions no longer name skills; agents choose skills from their
+  descriptions.
+
+### Fixed
+
+- Land installs dependencies in the target (the sandbox setup command or the
+  lockfile's pinned install) when it changes the root `package.json` or a
+  lockfile. It records the result, and a failed install never rolls Land back.
+- Keyed v5 drafts get derived capability and outcome defaults, removing a
+  repair round from every new change.
+- Prove and Land are no longer blocked for stacked changes, for exhausted
+  review, or for repository-scoped changes after amend and waive.
+- Provider timeouts name the provider. Provider environments no longer leak
+  into nested harness suites.
+- `go test -json` results are counted, `addTasks` works for existing
+  requirements, and landed specs are trimmed.
+- Overlapping `advance` runs no longer report false no-progress or lock repair.
+
 ## [3.6.3] - 2026-10-11
 
 ### Added
