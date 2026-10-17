@@ -1,8 +1,9 @@
 # User scenario release status
 
-Latest publication: v3.6.3 on 2026-10-11; candidate checkpoint 9/10 strict
-delivery. Artifact publication completed under an explicit exception;
-assurance remains open.
+Latest publication: v3.6.4 on 2026-10-17. Its candidate checkpoint reached
+strict delivery 28/28 on every paid scenario (n=1), so no exception was
+needed; repeated and production assurance remain open. v3.6.3 (2026-10-11)
+was published under an explicit exception at 9/10.
 Current source adds the `order-inventory` workload to the executable matrix
 (twelve rows, eleven paid). Its [2026-10-12 paid audit](scenario-order-inventory-2026-10-12.md)
 reaches archived with oracle 19/19, measured quality and clean-install checks,
@@ -14,6 +15,19 @@ Retained supplement: 2026-10-09, no-harness/v3.6.2; historical ten-scenario
 comparison: 2026-10-08, no-harness/v3.6.0/v3.6.1/v3.6.2.
 
 ## Current scenario checkpoint
+
+### Verified v3.6.4 publication — 2026-10-17
+
+The [release](https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/tag/v3.6.4)
+and [publication workflow](https://github.com/Maximumsoft-Co-LTD/claude-foundation/actions/runs/39062657220)
+completed: release and docs deployment both succeeded. Checkpoint source
+`d481620e3` maps through the workflow rewrite to tagged source `d102a10e4`.
+The rewrite changes only version mirrors and changelog metadata. The formula
+commit `503c057ed` pins the tarball
+`sha256:b2d658bb528fa374e5dbdb615602a77e98fc18225d0c9fd0c951fe6f3b243c8a`
+(downloaded and matched) and the `arm64_sequoia` bottle. No maintainer
+exception was needed: strict delivery is 28/28. Production assurance remains
+open.
 
 The [2026-10-18 candidate checkpoint](scenario-checkpoint-candidate-2026-10-18.md)
 ([ภาษาไทย](scenario-checkpoint-candidate-2026-10-18.th.md)) tests clean source
