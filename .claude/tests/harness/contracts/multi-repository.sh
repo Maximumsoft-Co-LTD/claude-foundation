@@ -463,6 +463,13 @@ assert_contains "Land advance completes the authorized repository transaction" \
   "$resume_stage" '"reached":"archived"'
 assert_cmd_zero "archived repository transaction remains inspectable" \
   node .claude/harness/foundation.mjs land-check cross-repository-profile
+# No root is selected, so no root projection carries the packet: the archived
+# ledger must still show every task Build checked in the sandbox.
+archived_ledger="$(ls -d openspec/changes/archive/*-cross-repository-profile)/tasks.md"
+assert_eq "child-only archive keeps Build's checked tasks" "0" \
+  "$(grep -c '^- \[ \]' "$archived_ledger")"
+assert_eq "child-only archive checks all four tasks" "4" \
+  "$(grep -c '^- \[x\]' "$archived_ledger")"
 assert_eq "root target gitlink matches recorded commit" "$api_commit" \
   "$(git ls-files -s api | awk '{print $2}')"
 

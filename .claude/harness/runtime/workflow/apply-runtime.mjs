@@ -581,6 +581,21 @@ export function applyCodeEntry(context, sandboxPath, rel) {
   };
 }
 
+// A composite Land without a writable root has no root projection, so the
+// packet entry above never runs and Build's ticks stay in the sandbox. Merge
+// only the ticks back into the root ledger before archive; the root packet
+// stays the agreement source for every other line.
+export function syncChildOnlyTaskProgress({ repositories, rootTasksPath, sandboxTasksPath,
+  mergeTaskProgress, pathExists = existsSync }) {
+  if (repositories.some((row) => row.id === "root" && row.mode === "write")) return false;
+  if (!pathExists(rootTasksPath) || !pathExists(sandboxTasksPath)) return false;
+  const current = readFileSync(rootTasksPath, "utf8");
+  const merged = mergeTaskProgress(current, readFileSync(sandboxTasksPath, "utf8"));
+  if (merged === current) return false;
+  writeFileSync(rootTasksPath, merged);
+  return true;
+}
+
 export function changeArtifactApplyEntry(context, id, sandboxPath) {
   const changeRel = context.currentChangeRelativePath(id);
   return {
@@ -787,6 +802,7 @@ export function createApplyRuntime({
   modelUsageRecorded,
   telemetryReadiness = null,
   foundationPolicy = () => ({ telemetry: { requireUsage: false } }),
+  mergeTaskProgress = null,
   saveApplyJournal,
   transactionJournalPath,
   verifyAppliedProjection,
@@ -1458,6 +1474,11 @@ export function createApplyRuntime({
         // workspace-uncommitted delivery saga would misclassify those expected
         // child HEADs as target drift.
         if (!legacyRepositoryLandTransaction(readiness.state)) repositoryDelivery().apply(id);
+        if (typeof mergeTaskProgress === "function") syncChildOnlyTaskProgress({
+          repositories: selectedRepositories(id, readiness.state), mergeTaskProgress,
+          rootTasksPath: join(changePath(id), "tasks.md"),
+          sandboxTasksPath: join(readiness.state.workspace.path, currentChangeRelativePath(id), "tasks.md")
+        });
       }
       else applySandbox(id, { controlPlane: true }, readiness);
     });

@@ -1104,6 +1104,11 @@ result is recorded in the Land journal. A failed install never rolls Land back:
 it is recorded as `failed` and Land prints the command to run in the target.
 Selected child repositories of a multi-repository change are not installed.
 
+A multi-repository change whose selection has no writable root has no root
+projection, so Land merges the tasks Build checked in the sandbox ledger into
+the root `tasks.md` before archive. Only those checkboxes change; every other
+line of the root packet stays the agreement as approved and amended.
+
 An archived Land whose diff is still uncommitted is undone, on the user's
 decision, with `advance <change> --undo-land --decision-ref <user-decision>`.
 The harness returns every path Land wrote (code, synchronized specs, archived

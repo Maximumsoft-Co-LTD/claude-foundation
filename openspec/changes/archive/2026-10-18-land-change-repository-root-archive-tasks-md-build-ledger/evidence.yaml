@@ -1,0 +1,45 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "child-only-ledger-land-apply-archive",
+      "requirementKey": "child-only-ledger",
+      "scenario": "ทุก task เสร็จ",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "child-only-ledger-land-apply-archive-2",
+      "requirementKey": "child-only-ledger",
+      "scenario": "บรรทัดอื่นไม่เปลี่ยน",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "child-only-ledger-land-apply",
+      "requirementKey": "child-only-ledger",
+      "scenario": "มี root",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "node --test .claude/harness/tests/child-only-ledger.test.mjs"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

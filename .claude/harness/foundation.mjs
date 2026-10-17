@@ -1930,6 +1930,7 @@ const applyRuntime = createApplyRuntime({
   loadRuntime,
   saveRuntime,
   selectedRepositories,
+  mergeTaskProgress,
   workspaceManifest,
   declaredSurfaceMatcher,
   currentChangeRelativePath,
