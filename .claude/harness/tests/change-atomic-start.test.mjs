@@ -1111,6 +1111,7 @@ test("the start template names every risk signal's required coverage rows", (t) 
   for (const [signal, dimensions] of Object.entries(riskSignalDimensions()))
     assert.ok(minimalDraftRiskCoverage.includes(`${signal} → ${dimensions.join(", ")}`),
       `${signal} lists ${dimensions.join(", ")}`);
+  assert.match(minimalDraftRiskCoverage, /fixes → input-boundary/);
   assert.match(minimalDraftRiskCoverage, /"status": "covered", "covers": \[/);
   assert.match(minimalDraftRiskCoverage, /"not-applicable" with a "rationale"/);
 });

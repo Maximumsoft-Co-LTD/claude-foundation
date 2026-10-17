@@ -15,8 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outside the program (an HTTP request, uploaded file, CLI argument or message
   payload) must be validated or rejected. It also lists the coverage rows each
   risk requires, in the format the check expects. In a six-scenario test this
-  cut time by 30% and cost by 14% with the same results. Review and coverage
-  rules are unchanged.
+  cut time by 30% and cost by 14% with the same results. Review rules are
+  unchanged.
+- **Regression fixes cover nearby boundaries.** A change that declares
+  `fixes` must now also cover the input boundaries next to the reported one,
+  so a fix for one threshold is checked at the analogous thresholds too. This
+  adds no review.
 
 ## [3.6.4] - 2026-10-17
 

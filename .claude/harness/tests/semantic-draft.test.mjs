@@ -3282,7 +3282,11 @@ function startFixture(t) {
 
 test("a draft that fixes an archived change records it in state and proposal", (t) => {
   const value = startFixture(t);
-  value.start({ fixes: ["fix-rounding"], constraints: TWO_CONSTRAINTS });
+  // A declared fix owes the analogous-boundary coverage row.
+  value.start({ fixes: ["fix-rounding"], constraints: TWO_CONSTRAINTS, discovery: {
+    coverage: [{ dimension: "input-boundary", status: "covered", covers: ["bounded-result"] }],
+    decisions: []
+  } });
   assert.deepEqual(value.state().fixes, ["fix-rounding"]);
   assert.match(value.proposal(), /^- \*\*Fixes:\*\* fix-rounding$/m);
   assert.match(value.proposal(), /## Constraints\n\n- Keep the existing payment table\n- Respond within 200 ms/);

@@ -25,7 +25,7 @@ import { assembleReviewPolicy, collectReviewSignals } from "../evidence/evidence
 import { classifyReviewRisk } from "../evidence/review-routing.mjs";
 import { reviewModelClass } from "../evidence/review-diff.mjs";
 import {
-  riskSignalDimensions, semanticIntakeAction, semanticIntakeIssues
+  FIXES_DIMENSIONS, riskSignalDimensions, semanticIntakeAction, semanticIntakeIssues
 } from "./validation/semantic-intake.mjs";
 import { inspectSemanticSources } from "./validation/semantic-source-inventory.mjs";
 import {
@@ -1826,11 +1826,13 @@ export function createChangeLifecycle({
         "\"status\": \"covered\", \"covers\": [\"<requirement key>\"]}, or \"status\": " +
         "\"not-applicable\" with a \"rationale\". Required dimensions: " +
         Object.entries(riskSignalDimensions())
-          .map(([signal, dimensions]) => `${signal} → ${dimensions.join(", ")}`).join("; ") + ".",
+          .map(([signal, dimensions]) => `${signal} → ${dimensions.join(", ")}`).join("; ") +
+        `; fixes → ${FIXES_DIMENSIONS.join(", ")}.`,
       minimalDraftFixes: "When the request reports a defect introduced by an earlier change " +
         "that is already archived under openspec/changes/archive/<date>-<id>, add fixes: " +
         "[\"<id>\"] to the minimal draft and cover the analogous boundaries, not only the " +
-        "reported one.",
+        "reported one: fixes requires an input-boundary coverage row whose requirement " +
+        "has a scenario for each analogous boundary.",
       ...repositoryDraftGuidance(declaredRepositories()),
       ...semanticDraftTemplate(),
       // The field reference describes change.json, so it carries the v5 version.

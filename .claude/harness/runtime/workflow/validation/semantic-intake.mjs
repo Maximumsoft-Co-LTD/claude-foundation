@@ -86,6 +86,9 @@ const unresolvedIssue = (issue) =>
 // requirement, forcing ceremony onto small changes. The nine core dimensions
 // are mandatory only for declared high impact; elsewhere the requirements and
 // scenarios themselves carry that coverage.
+// The dimensions a declared `fixes` entry requires.
+export const FIXES_DIMENSIONS = Object.freeze(["input-boundary"]);
+
 // The coverage dimensions each typed risk signal requires, for the start
 // template, so the guidance an agent copies cannot drift from this check.
 export function riskSignalDimensions() {
@@ -98,6 +101,9 @@ export function requiredDiscoveryDimensions(source = {}) {
   const add = (...dimensions) => required.push(...dimensions);
   for (const signal of strings(source.riskSignals))
     add(...(RISK_SIGNAL_DIMENSIONS[signal.toLowerCase()] || []));
+  // A regression fix names the boundaries next to the reported one; without
+  // this, a fix that declares no input risk covers only the reproduction.
+  if (strings(source.fixes).length) add(...FIXES_DIMENSIONS);
 
   if ((source.securityTriggers || []).length)
     add("security-privacy", "permission-rejection");

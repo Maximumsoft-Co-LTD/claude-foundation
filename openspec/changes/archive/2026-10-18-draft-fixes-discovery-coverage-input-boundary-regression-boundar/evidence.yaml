@@ -1,0 +1,54 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "fixes-input-boundary-semantic-intake-draft-coverage-row-input-bo",
+      "requirementKey": "fixes-input-boundary",
+      "scenario": "fixes บังคับ input-boundary",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "fixes-input-boundary-semantic-intake-draft",
+      "requirementKey": "fixes-input-boundary",
+      "scenario": "ไม่มี fixes",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "fixes-input-boundary-harness-review-tier",
+      "requirementKey": "fixes-input-boundary",
+      "scenario": "review tier คงเดิม",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "fixes-template",
+      "requirementKey": "fixes-template",
+      "scenario": "template บอก fixes",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "node --test .claude/harness/tests/semantic-intake.test.mjs .claude/harness/tests/change-atomic-start.test.mjs .claude/harness/tests/semantic-draft.test.mjs"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

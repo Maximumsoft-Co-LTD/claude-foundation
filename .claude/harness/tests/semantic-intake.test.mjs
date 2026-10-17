@@ -17,6 +17,7 @@ import {
   semanticIntakeIssues
 } from "../runtime/workflow/validation/semantic-intake.mjs";
 import { intakeDecisions } from "../runtime/workflow/validation/reader-guide.mjs";
+import { classifyReviewRisk } from "../runtime/evidence/review-routing.mjs";
 import { planSemanticIntakeDepth } from
   "../runtime/workflow/validation/semantic-intake-intelligence.mjs";
 
@@ -84,6 +85,23 @@ test("prose keywords and modified requirements add no discovery dimensions", () 
     }]
   }));
   assert.deepEqual(required, []);
+});
+
+// A paid regression fix that declared no input risk covered only the reported
+// 1000-point boundary and missed the analogous 5000 one.
+test("a declared regression fix requires input-boundary coverage without raising review", () => {
+  const draft = {
+    version: 5, intent: "Give the 5% loyalty discount at exactly 1000 points",
+    fixes: ["add-loyalty-discount"],
+    requirements: [{ key: "boundary", capability: "pricing", operation: "modified" }]
+  };
+  assert.ok(requiredDiscoveryDimensions(draft).includes("input-boundary"));
+  assert.match(semanticIntakeIssues(draft).join("\n"), /missing required dimension 'input-boundary'/);
+  assert.deepEqual(requiredDiscoveryDimensions({ ...draft, fixes: undefined }), []);
+  const route = classifyReviewRisk({ state: { impact: "low", fixes: draft.fixes, securityTriggers: [] },
+    claims: [], capabilities: new Set(), grounding: null });
+  assert.equal(route.tier, "low");
+  assert.deepEqual(route.triggers, []);
 });
 
 test("an ordinary draft without discovery reaches DONE; high impact still needs coverage", () => {
