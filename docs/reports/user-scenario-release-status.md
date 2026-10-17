@@ -16,6 +16,13 @@ comparison: 2026-10-08, no-harness/v3.6.0/v3.6.1/v3.6.2.
 
 ## Current scenario checkpoint
 
+The [2026-10-18 v3.6.5 checkpoint](scenario-checkpoint-v3.6.5-2026-10-18.md)
+([ภาษาไทย](scenario-checkpoint-v3.6.5-2026-10-18.th.md)) tests clean
+`078e10ba8` on all 28 paid scenarios, plus clean `90cd46364` for the
+regression-fix row its `fixes` coverage rule changes (10/10 twice). Strict
+delivery is 28/28. Against v3.6.4, wall time is −18% and cost −12%; against
+v3.6.3 on its ten scenarios, +9% and +6%. Measured host cost: US$14.5801.
+
 ### Verified v3.6.4 publication — 2026-10-17
 
 The [release](https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/tag/v3.6.4)
