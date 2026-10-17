@@ -15,6 +15,23 @@ comparison: 2026-10-08, no-harness/v3.6.0/v3.6.1/v3.6.2.
 
 ## Current scenario checkpoint
 
+The [2026-10-18 candidate checkpoint](scenario-checkpoint-candidate-2026-10-18.md)
+([ภาษาไทย](scenario-checkpoint-candidate-2026-10-18.th.md)) tests clean source
+`8410d517cea3c3f1a9d60c3c1a62e1c2c7742d5b` on all 28 paid scenarios with
+`claude-sonnet-5-5`, n=1. The full suite passed 241/241 and the sentinel
+passed. Strict delivery is 27/28 and Tracker passes 33/33.
+- Order/inventory archives with oracle 19/19 but keeps three unchecked tasks,
+  so its strict outcome is `incomplete`. This is the open checkpoint blocker.
+- Feature-experiment stopped once at Change for an approval the harness did
+  not request. One selective rerun archived 8/8.
+- Against v3.6.3 on its ten shared scenarios, with byte-identical fixtures and
+  interleaved runs, the candidate takes +44% wall time and +27% host cost with
+  equal oracle scores.
+- Measured host cost totals US$19.9896. The raw archive SHA-256 is recorded
+  in the report.
+
+The remaining entries in this section are earlier development evidence.
+
 The [2026-10-15 full paid E2E and conversation comparison](continuity-paid-e2e-2026-10-15.md)
 ([ภาษาไทย](continuity-paid-e2e-2026-10-15.th.md)) tests clean source
 `6211780127a69c2166d61a24cf8eed8a3ce3f20e`: delivery is 9/10, with the same
