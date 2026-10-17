@@ -1155,41 +1155,22 @@ const ALL_SKILLS = ["debug-fundamentals", "performance-investigation", "queue-fu
   "security-fundamentals", "testing-fundamentals"];
 const LOAD = /^First, load these skills by name: /;
 
-test("a bugfix Build EDIT with a performance risk names its skills and how to load them", async (t) => {
+// Build EDITs name no skills: routed skills were skipped in every observed
+// paid run wherever the action put them. Agents choose from the descriptions.
+test("a Build EDIT names no skills even when the project has matching ones", async (t) => {
   const value = await skillEdit(t, {
     workType: "bugfix", riskSignals: ["performance-slo"], skills: ALL_SKILLS
   });
-  assert.equal(value.action, "EDIT", JSON.stringify(value));
-  assert.deepEqual(value.skills,
-    ["debug-fundamentals", "performance-investigation", "testing-fundamentals"]);
-  // The load step comes first: a trailing load line was skipped in paid runs.
-  assert.equal(value.instructions[0],
-    "First, load these skills by name: `debug-fundamentals`, " +
-    "`performance-investigation`, `testing-fundamentals`. Read a skill reference only " +
-    "when its decision is active.");
-  assert.match(value.instructions[1], /^Implement T001, T002 in this order inside the workspace\./);
-  assert.ok(value.contextFiles.length > 0);
-});
-
-test("a docs-only Build EDIT has no skills and unchanged instructions", async (t) => {
-  const value = await skillEdit(t, { workType: "docs", skills: ALL_SKILLS });
-  const plain = await skillEdit(t, { workType: "docs", skills: ALL_SKILLS, root: false });
+  const plain = await skillEdit(t, {
+    workType: "bugfix", riskSignals: ["performance-slo"], skills: ALL_SKILLS, root: false
+  });
   assert.equal(value.action, "EDIT", JSON.stringify(value));
   assert.equal("skills" in value, false);
   assert.deepEqual(value.instructions, plain.instructions);
   assert.ok(!value.instructions.some((line) => LOAD.test(line)));
-});
-
-test("Build EDIT skills ignore prose and skills the project lacks", async (t) => {
-  const prose = await skillEdit(t, {
-    workType: "feature", proposal: "# Proposal\n\nPayment checkout is slow.\n", skills: ALL_SKILLS
-  });
-  assert.deepEqual(prose.skills, ["testing-fundamentals"]);
-  const missing = await skillEdit(t, {
-    workType: "bugfix", skills: ALL_SKILLS.filter((name) => name !== "debug-fundamentals")
-  });
-  assert.equal(missing.action, "EDIT");
-  assert.deepEqual(missing.skills, ["testing-fundamentals"]);
+  for (const task of value.tasks) assert.doesNotMatch(task.instruction, /skills:/);
+  assert.match(value.instructions[0], /^Implement T001, T002 in this order inside the workspace\./);
+  assert.ok(value.contextFiles.length > 0);
 });
 
 test("a parallel spawn-group EDIT names no skills", async (t) => {

@@ -1,6 +1,6 @@
 ---
 name: database-fundamentals
-description: "Design schemas, queries, indexes, transactions, migrations, and durable invariants. Use for persistence correctness or query plans; record compatibility and evidence in OpenSpec. Use performance-investigation for measured comparisons; skip read-only ad-hoc analysis."
+description: "Use when a change's workType includes data or migration, or a task's paths or requirements touch a schema, query, index, transaction, migration, or persisted file: keep stored data correct, migrations rerunnable, and old records readable. Skip read-only analysis; use performance-investigation for measured comparisons."
 ---
 
 # Database fundamentals

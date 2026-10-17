@@ -1,6 +1,6 @@
 ---
 name: testing-fundamentals
-description: "Design or review behavior tests, regressions, test levels, doubles, coverage, and real-surface verification drivers. Map OpenSpec claims to project providers and discriminating checks. Skip trivial/generated work; harness receipts, not checklists, establish proof."
+description: "Use when implementing a task whose requirement has scenarios to prove: write the failing-first test for each scenario (especially boundary, error, and regression scenarios) before the code, and choose the test level and doubles. Skip tasks with no behavior to prove, such as docs or pure renames; harness receipts, not checklists, establish proof."
 ---
 
 # Testing fundamentals

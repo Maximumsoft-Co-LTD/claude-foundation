@@ -1,0 +1,40 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "spec-vocabulary-descriptions",
+      "requirementKey": "spec-vocabulary-descriptions",
+      "scenario": "description อ้าง spec",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "no-skill-routing",
+      "requirementKey": "no-skill-routing",
+      "scenario": "EDIT ไม่ระบุ skill",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/advance-runtime.test.mjs .claude/harness/tests/skill-routing.test.mjs) && (node --test .claude/harness/tests/skill-routing.test.mjs)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared",
+      "segments": [
+        "node --test .claude/harness/tests/advance-runtime.test.mjs .claude/harness/tests/skill-routing.test.mjs",
+        "node --test .claude/harness/tests/skill-routing.test.mjs"
+      ]
+    }
+  }
+}

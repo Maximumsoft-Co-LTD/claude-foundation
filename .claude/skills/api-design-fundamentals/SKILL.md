@@ -1,6 +1,6 @@
 ---
 name: api-design-fundamentals
-description: "Design or review independently consumed HTTP, GraphQL, RPC, or message contracts: schemas, errors, authorization, idempotency, pagination, and versioning. Record compatibility and consumer evidence in OpenSpec. Skip private module interfaces; use programming-fundamentals."
+description: "Use when a change's workType includes api or library, or a requirement defines a request, response, status code, error body, pagination, or version that other code consumes. Keep the contract consistent and compatible. Skip private module interfaces; use programming-fundamentals."
 ---
 
 # API design fundamentals

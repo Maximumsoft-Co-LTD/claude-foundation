@@ -1,6 +1,6 @@
 ---
 name: security-fundamentals
-description: "Review or implement protections at auth, secret, untrusted-input, file/exec/network, crypto, and dependency boundaries. Use alongside the owning construction skill. Record abuse cases and evidence in OpenSpec; skip work without a trust boundary."
+description: "Use when a change's riskSignals include access-control, authorization, secrets, or external-integration, or a requirement's scenario must reject forged, replayed, oversized, or unauthorized input. Use alongside the owning construction skill. Skip work without a trust boundary."
 ---
 
 # Security fundamentals

@@ -1,6 +1,6 @@
 ---
 name: debug-fundamentals
-description: "Reproduce and localize unknown-cause bugs, crashes, regressions, and flakes before fixing the owning invariant. Prove failing-before and passing-after behavior through project evidence. Use performance-investigation for measured slowness; skip obvious corrections and greenfield work."
+description: "Use when a change's workType is bugfix and the cause is not yet known: reproduce the reported behavior as a failing test, localize the cause, then fix it and prove failing-before and passing-after. Skip obvious corrections and greenfield features; use performance-investigation for measured slowness."
 ---
 
 # Debug fundamentals

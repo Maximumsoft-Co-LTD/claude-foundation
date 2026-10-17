@@ -165,7 +165,6 @@ the upstream repository uses those names for its own maintainer guidance.
 | Workflow | `runtime/workflow/validation/process-fields.mjs` | Proposal fields `decisionLog`, `communication`, `releaseNote`, `demo`, `compliance`, and the archive-only review, compliance, and rollout-gate appendices |
 | Workflow | `runtime/workflow/validation/design-blueprints.mjs` | `WORK_TYPES`, `LIGHT_WORK`, `BEHAVIOR_NEUTRAL_WORK`, and design field validation/rendering in outline order |
 | Workflow | `runtime/workflow/validation/dev-document.mjs` | Work-type inference and the sections each work type requires |
-| Workflow | `runtime/workflow/skill-routing.mjs` | Build EDIT skills from work types, risk signals, and security triggers |
 | Workflow | `runtime/workflow/validation/semantic-intake.mjs` | Risk-derived discovery dimensions, decision-DAG validation, and bounded frontier selection |
 | Workflow | `runtime/workflow/validation/semantic-source-inventory.mjs` | Deterministic grounded-source inventory and freshness findings |
 | Workflow | `runtime/workflow/validation/repository-intelligence.mjs` | Bounded repository discovery, relevance ranking, and dependency/caller/test maps |

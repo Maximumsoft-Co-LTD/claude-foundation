@@ -13,8 +13,6 @@ import {
   automaticReviewRun, createAdvanceRecovery, errorCodes, userEnvironmentAction,
   userEnvironmentCause
 } from "./advance-recovery.mjs";
-import { routedSkills, skillLoadInstruction } from "./skill-routing.mjs";
-import { changeWorkTypes } from "./task-change.mjs";
 
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, resolve } from "node:path";
@@ -1005,26 +1003,14 @@ export function createAdvanceRuntime({
         const paths = tasks.length ? [] : value.allowedPaths || [];
         const scopedPaths = (value.repairGraph?.nodes || []).flatMap((node) => node.paths || []);
         const state = loadRuntime(id);
-        return withSkills(id, state, { ...value, ...envelopeContextFiles({
+        // An EDIT names no skills: in every observed paid run agents skipped
+        // routed skills, wherever the action put them. Agents choose skills
+        // from the skills' own descriptions.
+        return { ...value, ...envelopeContextFiles({
           packetDir: changePath(id), state, tasks, paths, scopedPaths
-        }) });
+        }) };
       });
     } catch { return value; }
-  }
-
-  // Only a session Build EDIT that hands tasks names skills; parallel groups,
-  // proof-preflight EDITs, and REPAIRs do not.
-  function withSkills(id, state, value) {
-    if (!projectRoot || value.action !== "EDIT" || value.legacyAction !== "EXECUTE_TASK" ||
-      !(value.tasks || []).length) return value;
-    const skills = routedSkills({
-      workTypes: changeWorkTypes(changePath(id)),
-      riskSignals: state.riskSignals, securityTriggers: state.securityTriggers,
-      hasSkill: (name) => existsSync(join(projectRoot, ".claude", "skills", name, "SKILL.md"))
-    });
-    return skills.length ? {
-      ...value, skills, instructions: [skillLoadInstruction(skills), ...(value.instructions || [])]
-    } : value;
   }
 
   function pendingAction(id, through, pending) {

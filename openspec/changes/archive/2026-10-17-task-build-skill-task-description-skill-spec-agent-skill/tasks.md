@@ -1,0 +1,7 @@
+# Tasks
+
+> This is the sole implementation ledger.
+
+- [x] **T001** Build EDIT ระบุ skill ใน instruction ของ task แทนคำสั่งโหลดแยก [key:T001] [kind:implementation] [paths:.claude/harness/runtime/workflow/advance-runtime.mjs,.claude/harness/runtime/workflow/skill-routing.mjs,.claude/harness/tests/advance-runtime.test.mjs,.claude/harness/tests/skill-routing.test.mjs] [claims:no-skill-routing] — verify: `node --test .claude/harness/tests/advance-runtime.test.mjs .claude/harness/tests/skill-routing.test.mjs`
+- [x] **T002** description ของ 5 skill ใช้คำของ spec [key:T002] [kind:implementation] [paths:.claude/skills/testing-fundamentals/SKILL.md,.claude/skills/database-fundamentals/SKILL.md,.claude/skills/api-design-fundamentals/SKILL.md,.claude/skills/security-fundamentals/SKILL.md,.claude/skills/debug-fundamentals/SKILL.md,.claude/harness/tests/skill-routing.test.mjs] [claims:spec-vocabulary-descriptions] — verify: `node --test .claude/harness/tests/skill-routing.test.mjs`
+- [x] **T003** เอา skill routing ออกจาก Build EDIT [key:T003] [paths:.claude/harness/runtime/workflow/advance-runtime.mjs,.claude/harness/runtime/workflow/skill-routing.mjs,.claude/harness/tests/advance-runtime.test.mjs,.claude/harness/tests/skill-routing.test.mjs,.claude/harness/README.md,.claude/tests/README.md,.claude/tests/run-all.sh] [claims:no-skill-routing] — verify: `node --test .claude/harness/tests/advance-runtime.test.mjs .claude/harness/tests/skill-routing.test.mjs`
