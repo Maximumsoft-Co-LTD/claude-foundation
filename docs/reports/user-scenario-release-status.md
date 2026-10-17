@@ -1,9 +1,10 @@
 # User scenario release status
 
-Latest publication: v3.6.4 on 2026-10-17. Its candidate checkpoint reached
-strict delivery 28/28 on every paid scenario (n=1), so no exception was
-needed; repeated and production assurance remain open. v3.6.3 (2026-10-11)
-was published under an explicit exception at 9/10.
+Latest publication: v3.6.5 on 2026-10-18. It reached strict delivery 28/28
+on every paid scenario (n=1) and is 18% faster than v3.6.4 on the same rows;
+repeated and production assurance remain open. v3.6.4 (2026-10-17) also
+reached 28/28; v3.6.3 (2026-10-11) was published under an explicit exception
+at 9/10.
 Current source adds the `order-inventory` workload to the executable matrix
 (twelve rows, eleven paid). Its [2026-10-12 paid audit](scenario-order-inventory-2026-10-12.md)
 reaches archived with oracle 19/19, measured quality and clean-install checks,
@@ -15,6 +16,18 @@ Retained supplement: 2026-10-09, no-harness/v3.6.2; historical ten-scenario
 comparison: 2026-10-08, no-harness/v3.6.0/v3.6.1/v3.6.2.
 
 ## Current scenario checkpoint
+
+### Verified v3.6.5 publication — 2026-10-18
+
+The [release](https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/tag/v3.6.5)
+and [publication workflow](https://github.com/Maximumsoft-Co-LTD/claude-foundation/actions/runs/39075524792)
+completed, including the docs deployment. Checkpoint source `7baa1fae5` maps
+through the workflow rewrite to tagged source `3d99dafbd`. The formula commit
+`9e655efa5` pins the tarball
+`sha256:3b8c425e19e755f39fee542b99280002719a821819f47624ddb976cb0bb0938e`
+(downloaded and matched) and the `arm64_sequoia` bottle. The release upgrade
+matrix passed 260/260 on `7baa1fae5`. Strict delivery was 28/28, so no
+exception was needed. Repeated and production assurance remain open.
 
 The [2026-10-18 v3.6.5 checkpoint](scenario-checkpoint-v3.6.5-2026-10-18.md)
 ([ภาษาไทย](scenario-checkpoint-v3.6.5-2026-10-18.th.md)) tests clean
