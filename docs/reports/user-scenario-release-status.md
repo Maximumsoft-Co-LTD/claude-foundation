@@ -19,9 +19,12 @@ The [2026-10-18 candidate checkpoint](scenario-checkpoint-candidate-2026-10-18.m
 ([ภาษาไทย](scenario-checkpoint-candidate-2026-10-18.th.md)) tests clean source
 `8410d517cea3c3f1a9d60c3c1a62e1c2c7742d5b` on all 28 paid scenarios with
 `claude-sonnet-5-5`, n=1. The full suite passed 241/241 and the sentinel
-passed. Strict delivery is 27/28 and Tracker passes 33/33.
-- Order/inventory archives with oracle 19/19 but keeps three unchecked tasks,
-  so its strict outcome is `incomplete`. This is the open checkpoint blocker.
+passed. Strict delivery was 27/28 and Tracker passes 33/33.
+- Order/inventory first archived with three unchecked tasks. `dde4a619e`
+  fixed the child-only Land ledger. A selective rerun of both
+  multi-repository scenarios on clean `dde4a619e` archived with zero pending
+  tasks, so strict delivery is now **28/28**. The upgrade matrix passed
+  256/256 and the checkpoint total is US$21.8885.
 - Feature-experiment stopped once at Change for an approval the harness did
   not request. One selective rerun archived 8/8.
 - Against v3.6.3 on its ten shared scenarios, with byte-identical fixtures and

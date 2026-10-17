@@ -43,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the same command the sandbox used, so `npm test` and similar commands work
   right away. If the install fails, Land is kept and the command to run is
   shown. Set `sandbox.installDependencies: false` to turn this off.
+- **Correct task list after multi-repository Land.** A change that edits only
+  child repositories (for example backend, SDK and web, without the root) now
+  archives with its finished tasks checked. Before, the archived `tasks.md`
+  showed every task unfinished.
 - **Faster first draft.** New changes no longer spend an extra repair round
   filling in defaults.
 - **Fewer stuck changes.** Prove and Land no longer stop for stacked changes,

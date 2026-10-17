@@ -101,6 +101,39 @@ Candidate `8410d517cea3c3f1a9d60c3c1a62e1c2c7742d5b` ซึ่งเป็น co
   1502.7 วินาที / US$6.2090 คือเวลา 1.89 เท่า ค่าใช้จ่าย 1.90 เท่า
   oracle ผ่าน 23/23 ทั้งคู่
 
+## แก้ ledger และรันซ้ำเฉพาะแถวที่เกี่ยว
+
+หลัง checkpoint นี้ `dde4a619e` แก้ข้อบกพร่อง ledger ของ order/inventory แล้ว
+
+- **สาเหตุ:** Land ของ change แบบหลาย repository ที่ไม่มี root เป็น repository ที่เขียนได้
+  ไม่มี projection ของ root ติ๊กที่ Build ทำไว้จึงไม่ถูกนำกลับมาที่ `tasks.md` ของ root
+  ก่อน `openspec archive`
+- **ที่แก้:** ก่อน archive ตอนนี้ Land จะ merge เฉพาะติ๊กเหล่านั้นเข้า ledger ของ root
+- **การทดสอบ:**
+  - เพิ่ม assertion ใหม่ใน contract multi-repository ถ้าไม่มีการแก้จะล้ม 2/120
+    (ค้าง 4 tasks) ถ้ามีการแก้ผ่าน 120/120
+  - full suite ผ่าน 242/242
+  - release upgrade matrix ผ่าน 256/256 บน source สะอาด
+
+การแก้นี้กระทบแค่เส้นทาง Land ที่ไม่มี root เป็น repository ที่เขียนได้ จึงรันซ้ำเฉพาะ 2
+scenario แบบหลาย repository บน `dde4a619e` ที่สะอาด หลัง sentinel ผ่านแล้ว:
+
+| Scenario | ผล | Oracle | วินาที / ค่าใช้จ่ายที่วัดจาก host | integrity |
+|---|---|---|---|---|
+| order-inventory | **completed, archived, ไม่มี task ค้าง, ติ๊กครบ 3 tasks** | 19/19 | 570.4 / $1.4103 | `894beb1816bb7764` |
+| multi-service-event-flow | completed, archived | 6/6 | 103.6 / $0.4886 | `8f207fe5262c6512` |
+
+รวมแล้ว candidate **ส่งมอบแบบ strict ได้ 28/28** แบ่งเป็น:
+- 26 แถวจาก `8410d517c` ที่การแก้นี้ไม่กระทบ
+- 2 แถวจาก `dde4a619e`
+
+ค่ารันซ้ำ US$1.8989 ทำให้ทั้ง checkpoint รวม US$21.8885 ไฟล์ผลดิบ:
+
+```text
+~/.local/share/changeloop/benchmarks/2026-10-18-ledger-fix-dde4a619e.tar.gz
+sha256 0c9f937340b6b5485d95b702e86b71a7352f85833b3b8ef72f840d3b80f50f1b
+```
+
 ## ข้อค้นพบ
 
 1. **Feature-experiment หยุดที่ Change หนึ่งครั้ง**
@@ -117,8 +150,8 @@ Candidate `8410d517cea3c3f1a9d60c3c1a62e1c2c7742d5b` ซึ่งเป็น co
    - เหมือนใน [การตรวจ 2026-10-12](scenario-order-inventory-2026-10-12.md) และ
      [รอบ 2026-10-15](scenario-pstack-gates-2026-10-15.th.md)
    - oracle ของผลงานผ่าน แต่ผล strict ยังเป็น `incomplete`
-   - ยังเป็นตัวบล็อก checkpoint ตาม [RELEASING.md](../../RELEASING.md)
-     เว้นแต่ maintainer จะบันทึกข้อยกเว้นไว้
+   - เคยเป็นตัวบล็อก checkpoint ตาม [RELEASING.md](../../RELEASING.md)
+     ตอนนี้ `dde4a619e` แก้แล้ว ดูผลรันซ้ำด้านบน
 3. **การติดตั้ง dependency หลัง Land ปิดปัญหา dependency-upgrade แล้ว**
    - ตอนนี้ scenario นี้ archived และผ่าน clean install
    - ก่อนแก้ ล้มเฉพาะตอนใช้ harness เพราะหลัง Land โฟลเดอร์ของผู้ใช้ไม่มี dependency ใหม่
@@ -146,5 +179,4 @@ sha256 2babbd878e4ad3ccd559826b1e0ae5e7b96ead1851d700cee321ef0bd4d2771d
 
 ค่า SHA-256 ของ `integrity.json` แต่ละรันอยู่ใน[ฉบับภาษาอังกฤษ](scenario-checkpoint-candidate-2026-10-18.md#retained-runs)
 
-ขั้นต่อไป: ก่อนเผยแพร่ ให้แก้ archived ledger ของ order/inventory แล้วรันแถวนั้นใหม่
-หรือให้ maintainer บันทึกข้อยกเว้นไว้ และควรรันซ้ำก่อนอ้างว่าความเร็วต่างกัน
+ขั้นต่อไป: release notes พร้อมแล้ว เผยแพร่จาก `main` ได้เลย และควรรันซ้ำก่อนอ้างว่าความเร็วต่างกัน

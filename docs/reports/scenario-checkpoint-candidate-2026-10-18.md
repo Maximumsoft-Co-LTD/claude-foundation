@@ -85,6 +85,34 @@ Totals:
 - **Versus no harness, 23 shared rows:** 2838.3 s and US$11.7949 against
   1502.7 s and US$6.2090 (1.89× time, 1.90× cost). Oracle 23/23 in both.
 
+## Ledger fix and selective rerun
+
+After this checkpoint, `dde4a619e` fixed the order/inventory ledger defect.
+A multi-repository Land without a writable root had no root projection, so
+Build's ticks never reached the root `tasks.md` before `openspec archive`. Land
+now merges only those ticks into the root ledger before archive. A new
+assertion in the multi-repository harness contract fails 2/120 without the fix
+(four unchecked tasks) and passes 120/120 with it. The full suite passed
+242/242, and the release upgrade matrix passed 256/256 on clean source.
+
+The fix changes only the Land path without a writable root, so only the two
+multi-repository scenarios were rerun on clean `dde4a619e`, after the sentinel
+passed:
+
+| Scenario | Result | Oracle | Wall s / host cost | integrity |
+|---|---|---|---|---|
+| order-inventory | **completed, archived, 0 pending, all three tasks checked** | 19/19 | 570.4 / $1.4103 | `894beb1816bb7764` |
+| multi-service-event-flow | completed, archived | 6/6 | 103.6 / $0.4886 | `8f207fe5262c6512` |
+
+With these rows, the candidate reaches **strict delivery 28/28**: 26 rows from
+`8410d517c` that the fix does not touch, plus two rows from `dde4a619e`. Rerun
+cost: US$1.8989, so the checkpoint total is US$21.8885. Raw bundles:
+
+```text
+~/.local/share/changeloop/benchmarks/2026-10-18-ledger-fix-dde4a619e.tar.gz
+sha256 0c9f937340b6b5485d95b702e86b71a7352f85833b3b8ef72f840d3b80f50f1b
+```
+
 ## Findings
 
 1. **Feature-experiment stopped once at Change.** The first attempt
@@ -98,9 +126,9 @@ Totals:
 2. **Order/inventory's archived ledger keeps three unchecked tasks**, as in the
    [2026-10-12 audit](scenario-order-inventory-2026-10-12.md) and the
    [2026-10-15 rounds](scenario-pstack-gates-2026-10-15.md). The product oracle
-   passes, and the strict outcome stays `incomplete`. This remains a checkpoint
-   blocker under [RELEASING.md](../../RELEASING.md) unless the maintainer
-   records an exception.
+   passes, and the strict outcome stays `incomplete`. This was the checkpoint
+   blocker under [RELEASING.md](../../RELEASING.md). It is resolved by
+   `dde4a619e`; see the rerun above.
 3. **The post-Land dependency install closes the dependency-upgrade failure.**
    The scenario archives with clean-install checks passing; before this change
    it failed only with the harness, because the target lacked the new
@@ -157,6 +185,5 @@ each `integrity.json`:
 | ml-eval-threshold | `ml-eval-threshold-1792258580127` | `a5e374730e6a3250` | — | — |
 | security-hotfix | `security-hotfix-1792258710947` | `debd6e40e37673b1` | — | — |
 
-Resume: fix the order/inventory archived ledger and rerun that row, or record
-a maintainer exception for it, before publication. Repeat rows before claiming
-a speed difference.
+Resume: publish from `main` once the release notes are current. Repeat rows
+before claiming a speed difference.
