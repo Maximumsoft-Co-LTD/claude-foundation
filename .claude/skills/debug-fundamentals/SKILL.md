@@ -1,6 +1,6 @@
 ---
 name: debug-fundamentals
-description: "Use when a change's workType is bugfix and the cause is not yet known: reproduce the reported behavior as a failing test, localize the cause, then fix it and prove failing-before and passing-after. Skip obvious corrections and greenfield features; use performance-investigation for measured slowness."
+description: "Use when a change's workType is bugfix and the cause is unknown: reproduce the report as a failing test, localize the cause, then fix and prove it passes. Skip obvious corrections and greenfield features; use performance-investigation for measured slowness."
 ---
 
 # Debug fundamentals

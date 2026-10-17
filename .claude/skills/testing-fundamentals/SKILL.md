@@ -1,6 +1,6 @@
 ---
 name: testing-fundamentals
-description: "Use when implementing a task whose requirement has scenarios to prove: write the failing-first test for each scenario (especially boundary, error, and regression scenarios) before the code, and choose the test level and doubles. Skip tasks with no behavior to prove, such as docs or pure renames; harness receipts, not checklists, establish proof."
+description: "Use when implementing a task whose requirement has scenarios to prove: write a failing-first test per scenario, especially boundary, error, and regression ones, and choose test level and doubles. Skip docs, pure renames, and other work with no behavior to prove; harness receipts establish proof."
 ---
 
 # Testing fundamentals

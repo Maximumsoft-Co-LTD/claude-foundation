@@ -1,6 +1,6 @@
 ---
 name: security-fundamentals
-description: "Use when a change's riskSignals include access-control, authorization, secrets, or external-integration, or a requirement's scenario must reject forged, replayed, oversized, or unauthorized input. Use alongside the owning construction skill. Skip work without a trust boundary."
+description: "Use when a change's riskSignals include access-control, authorization, secrets, or external-integration, or a scenario must reject forged, replayed, oversized, or unauthorized input. Use alongside the owning construction skill. Skip work without a trust boundary."
 ---
 
 # Security fundamentals

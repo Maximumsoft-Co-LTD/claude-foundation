@@ -1,6 +1,6 @@
 ---
 name: database-fundamentals
-description: "Use when a change's workType includes data or migration, or a task's paths or requirements touch a schema, query, index, transaction, migration, or persisted file: keep stored data correct, migrations rerunnable, and old records readable. Skip read-only analysis; use performance-investigation for measured comparisons."
+description: "Use when a change's workType includes data or migration, or a requirement touches a schema, query, index, transaction, migration, or persisted file: keep data correct, migrations rerunnable, and old records readable. Skip read-only analysis; use performance-investigation for measured comparisons."
 ---
 
 # Database fundamentals
