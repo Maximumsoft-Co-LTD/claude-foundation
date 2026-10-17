@@ -325,7 +325,7 @@ export function runMeasuredSandboxSetupBatch(context, records) {
 // to an install. The harness therefore runs the pinned lockfile install itself
 // when no setup command is configured. Lockfile first: the install must match
 // the package manager the project actually pins.
-const DEPENDENCY_LOCKFILES = [
+export const DEPENDENCY_LOCKFILES = [
   ["package-lock.json", "npm ci"],
   ["npm-shrinkwrap.json", "npm ci"],
   ["pnpm-lock.yaml", "pnpm install --frozen-lockfile"],

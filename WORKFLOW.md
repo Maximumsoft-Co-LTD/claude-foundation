@@ -1095,6 +1095,15 @@ ignore rules they are never compared, projected, or reported as target edits or
 unlanded sandbox work. A tracked file stays content even when it matches an
 ignore pattern.
 
+When a single-repository Land changes the root `package.json` or a known
+lockfile, the harness then installs dependencies in the target with the same
+command the sandbox setup uses (`sandbox.setupCommand`, else the lockfile's
+pinned install; `sandbox.installDependencies: false` without a setup command
+opts out), so project commands in the checkout find the new dependencies. The
+result is recorded in the Land journal. A failed install never rolls Land back:
+it is recorded as `failed` and Land prints the command to run in the target.
+Selected child repositories of a multi-repository change are not installed.
+
 An archived Land whose diff is still uncommitted is undone, on the user's
 decision, with `advance <change> --undo-land --decision-ref <user-decision>`.
 The harness returns every path Land wrote (code, synchronized specs, archived

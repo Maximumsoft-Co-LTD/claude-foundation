@@ -1,0 +1,54 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "post-land-install-land-apply",
+      "requirementKey": "post-land-install",
+      "scenario": "lockfile เปลี่ยน",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "post-land-install-land-apply-2",
+      "requirementKey": "post-land-install",
+      "scenario": "dependency ไม่เปลี่ยน",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "post-land-install-land-lockfile",
+      "requirementKey": "post-land-install",
+      "scenario": "ปิดการติดตั้ง",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "post-land-install-land-apply-3",
+      "requirementKey": "post-land-install",
+      "scenario": "ติดตั้งล้ม",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "node --test .claude/harness/tests/post-land-install.test.mjs"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

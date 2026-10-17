@@ -20,7 +20,34 @@ import { deliveryTreeEntries, assertDeliveryEntries } from "./delivery-integrity
 import { approvalMatches } from "../core/user-decisions.mjs";
 import { emitSignal } from "../core/signals.mjs";
 import { legacyRepositoryLandTransaction } from "./land-runtime.mjs";
-import { rejectedPaths } from "./sandbox-runtime.mjs";
+import { DEPENDENCY_LOCKFILES, rejectedPaths, workspaceSetupPlan } from "./sandbox-runtime.mjs";
+
+// The root files whose change means the target's installed dependencies no
+// longer match: the manifest and every lockfile the sandbox setup knows.
+export const DEPENDENCY_FILES = Object.freeze(["package.json", ...DEPENDENCY_LOCKFILES.map(([file]) => file)]);
+
+export function dependencySnapshot(workspace, identity) {
+  return Object.fromEntries(DEPENDENCY_FILES.map((file) => {
+    try { return [file, identity(join(workspace, file)) ?? null]; } catch { return [file, null]; }
+  }));
+}
+
+// After Land wrote the target, a changed manifest or lockfile leaves the user's
+// checkout without the dependencies the sandbox installed. Install them with
+// the same command the sandbox setup used. A failure never rolls Land back; it
+// is recorded with the exact command to run.
+export function postLandInstall({ before, after, sandbox = {}, workspace, pathExists, run }) {
+  if (DEPENDENCY_FILES.every((file) => (before?.[file] ?? null) === (after?.[file] ?? null))) return null;
+  const plan = workspaceSetupPlan({ sandbox, workspace, pathExists });
+  if (!plan) return null;
+  const result = run(plan.command, workspace) || {};
+  return {
+    command: plan.command, source: plan.source, workspace,
+    status: result.status === 0 ? "ok" : "failed",
+    exitCode: result.status ?? null,
+    ...(result.status === 0 ? {} : { detail: String(result.stderr || result.error?.message || "").trim().slice(-400) })
+  };
+}
 import { writeSpecBefore } from "./land-undo.mjs";
 import {
   captureCopyBase, copyBaseBytes, copyBaseExecutable, fileSource
@@ -1421,8 +1448,11 @@ export function createApplyRuntime({
     if (!["worktree", "copy"].includes(readiness.state.workspace?.mode))
       return readiness;
     assertRootPointersUnmoved(id, readiness.state);
+    const composite = compositeRepositorySelection(selectedRepositories(id, readiness.state));
+    const installs = !composite && typeof pathIdentity === "function";
+    const dependenciesBefore = installs ? dependencySnapshot(root, pathIdentity) : null;
     measure("land.apply", () => {
-      if (compositeRepositorySelection(selectedRepositories(id, readiness.state))) {
+      if (composite) {
         // Legacy repository Land records already name commits applied by the
         // user. Their root gitlinks are staged by resumeLand; replaying the
         // workspace-uncommitted delivery saga would misclassify those expected
@@ -1431,8 +1461,20 @@ export function createApplyRuntime({
       }
       else applySandbox(id, { controlPlane: true }, readiness);
     });
+    const install = !installs ? null : measure("land.install", () => postLandInstall({
+      before: dependenciesBefore, after: dependencySnapshot(root, pathIdentity),
+      sandbox: foundationPolicy().sandbox || {}, workspace: root, pathExists: existsSync,
+      run: (command, cwd) => spawnSync("sh", ["-c", command], {
+        cwd, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
+        timeout: Number(foundationPolicy().sandbox?.setupTimeoutMs) || 600000
+      })
+    }));
+    if (install?.status === "ok") console.log(`LAND ${id}: dependencies installed (${install.command})`);
+    else if (install) console.error(`WARNING: Land applied the change but the dependency install failed ` +
+      `(exit ${install.exitCode}); run \`${install.command}\` in ${install.workspace}`);
     const journal = loadRuntime(id);
-    journal.land = { ...journal.land, status: "code-applied", updatedAt: now() };
+    journal.land = { ...journal.land, status: "code-applied", ...(install ? { dependencyInstall: install } : {}),
+      updatedAt: now() };
     saveRuntime(journal);
     // Post-apply readiness binds the hash recorded before the destructive
     // OpenSpec archive; it is never reused.
