@@ -539,6 +539,46 @@ never approved, still waits for approval. During Build agreement edits go throug
 `change amend`, and a hand-edited isolated packet is agent-owned drift repair. Legacy
 primitive-created/in-flight changes retain their compatibility route.
 
+#### Approval package, preview, and role lanes
+
+The approval question links a read-only approval package,
+`.foundation/packages/<change>.html`, which `change start`, the `advance`
+approval question, and `package <change>` write. The scratch router derives it
+from the agreement's existing `workType`, `riskSignals`, `impact`, `coupling`,
+`integrations`, and `securityTriggers`: a risk level (Critical when `impact` is
+high with `financial` or `access-control`; High when `impact` is high or a
+weight-3 signal is declared; Medium for any other signal or medium impact; Low
+otherwise), up to 28 technical domains, and approval artifacts grouped by
+approver role, each deduplicated across domains. Every change shows its change
+impact and test map; Low shows nothing else, and runnable artifacts appear only
+from High upward. A `proof` label requires a valid passing receipt; other
+artifacts are `preview` or `no evidence yet`. A render failure is a warning and
+the user approves from the packet as before.
+
+`preview <change> --provider <name>` is optional at every risk level and never
+blocks approval or Build. Before Build only, it copies the target into
+`.foundation/previews/<change>/workspace` and runs one declared provider there,
+recording a `kind: "preview"` receipt bound to the contract revision; the
+package marks it stale after a revision. A provider marked `external: true`
+reaches outside the machine and runs only with the user's `--decision-ref` for
+that run (otherwise `PREVIEW_AUTHORITY_REQUIRED`, and nothing runs). Preview
+receipts never satisfy Prove or Land ([evidence](.claude/harness/EVIDENCE.md)).
+For a High or Critical change the package suggests the matching provider and
+its command, or names the capability to declare.
+
+With `approval.roles` set in `foundation.json`, spec approval has one lane per
+configured role the router selects for the change. Each role records
+`advance <change> --approve-spec --role <role> --decision-ref <ref>`; until
+every required lane approved this revision and packet, the approval does not
+exist and `advance` asks for the missing roles. An approval without `--role`
+covers every lane required when it is given, a later `--role` approval adds its
+lane without revoking it, and without `approval.roles` the single approval is
+unchanged. The harness records the role as stated and does not verify identity.
+Lane approvals carry across additive revisions and amendments under the same
+rule as the whole approval, and the required lanes are routed again: a role the
+revision newly selects must approve before Build. Removing a requirement resets
+every lane. A malformed `approval` block or non-array `roles` is refused.
+
 To change an agreement that has not started Build, revise it in place instead
 of abandoning it and writing a new draft:
 

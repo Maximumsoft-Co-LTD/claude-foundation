@@ -1,0 +1,378 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "route-change-routechange",
+      "requirementKey": "route-change",
+      "scenario": "ตัวอย่างถอนเงิน",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "route-change-routechange-2",
+      "requirementKey": "route-change",
+      "scenario": "งาน docs อย่างเดียว",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "route-change-routechange-3",
+      "requirementKey": "route-change",
+      "scenario": "workType ที่ไม่รู้จัก",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-labels-package",
+      "requirementKey": "package-labels",
+      "scenario": "มี receipt ใช้ได้",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-labels-package-2",
+      "requirementKey": "package-labels",
+      "scenario": "มีแต่ preview",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preview-suggestions-package",
+      "requirementKey": "preview-suggestions",
+      "scenario": "Critical มี provider",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preview-suggestions-package-2",
+      "requirementKey": "preview-suggestions",
+      "scenario": "ยังไม่มี provider",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preview-suggestions-package-3",
+      "requirementKey": "preview-suggestions",
+      "scenario": "ระดับ Medium",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preview-suggestions-advance-through-build",
+      "requirementKey": "preview-suggestions",
+      "scenario": "ไม่บล็อก",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-links-package-change-start",
+      "requirementKey": "approval-links-package",
+      "scenario": "แนบ package",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-links-package-change-start-2",
+      "requirementKey": "approval-links-package",
+      "scenario": "render ล้มเหลว",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preview-run-preview-change-provider-plan-check",
+      "requirementKey": "preview-run",
+      "scenario": "รัน provider",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preview-run-preview-provider",
+      "requirementKey": "preview-run",
+      "scenario": "provider ไม่มี",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preview-never-proof",
+      "requirementKey": "preview-never-proof",
+      "scenario": "คัดลอก preview เข้า receipts",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preview-optional",
+      "requirementKey": "preview-optional",
+      "scenario": "Critical ไม่มี preview",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preview-external-authority-preview-decision-ref",
+      "requirementKey": "preview-external-authority",
+      "scenario": "ไม่มีสิทธิ์",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preview-external-authority-preview-decision-ref-user-ok",
+      "requirementKey": "preview-external-authority",
+      "scenario": "มีสิทธิ์",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preview-stale",
+      "requirementKey": "preview-stale",
+      "scenario": "revise หลัง preview",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-lanes-advance-through-build",
+      "requirementKey": "approval-lanes",
+      "scenario": "ขาด lane",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-lanes-advance-through-build-2",
+      "requirementKey": "approval-lanes",
+      "scenario": "ครบทุก lane",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-lanes-advance-through-build-lane",
+      "requirementKey": "approval-lanes",
+      "scenario": "บทบาทที่ router ไม่เลือก",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-lane-record-advance-approve-spec-role-qa-decision-ref-q",
+      "requirementKey": "approval-lane-record",
+      "scenario": "บันทึก lane",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-lane-record-advance-approve-spec-role-cfo-decision-ref",
+      "requirementKey": "approval-lane-record",
+      "scenario": "บทบาทที่ไม่รู้จัก",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "legacy-approval-advance-approve-spec-decision-ref-all-ok",
+      "requirementKey": "legacy-approval",
+      "scenario": "อนุมัติไม่ระบุ role",
+      "impact": "high",
+      "capabilities": [
+        "test",
+        "compatibility"
+      ]
+    },
+    {
+      "id": "legacy-approval-advance-through-build",
+      "requirementKey": "legacy-approval",
+      "scenario": "state เก่า",
+      "impact": "high",
+      "capabilities": [
+        "test",
+        "compatibility"
+      ]
+    },
+    {
+      "id": "lane-carry-change-revise-scenario",
+      "requirementKey": "lane-carry",
+      "scenario": "revision แบบเพิ่ม",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "lane-carry-change-revise-requirement",
+      "requirementKey": "lane-carry",
+      "scenario": "revision ลบ requirement",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-render-package-change",
+      "requirementKey": "package-render",
+      "scenario": "สร้าง package",
+      "impact": "low",
+      "capabilities": [
+        "test",
+        "accessibility"
+      ]
+    },
+    {
+      "id": "package-render-package-change-2",
+      "requirementKey": "package-render",
+      "scenario": "ไม่แก้ state",
+      "impact": "low",
+      "capabilities": [
+        "test",
+        "accessibility"
+      ]
+    },
+    {
+      "id": "package-render-package-change-3",
+      "requirementKey": "package-render",
+      "scenario": "draft v3 ไม่มี draftSource",
+      "impact": "low",
+      "capabilities": [
+        "test",
+        "accessibility"
+      ]
+    },
+    {
+      "id": "package-render-package-id",
+      "requirementKey": "package-render",
+      "scenario": "ไม่พบ change",
+      "impact": "low",
+      "capabilities": [
+        "test",
+        "accessibility"
+      ]
+    },
+    {
+      "id": "lane-after-full",
+      "requirementKey": "lane-after-full",
+      "scenario": "role หลังอนุมัติเต็ม",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "lane-recompute-revision-router-security",
+      "requirementKey": "lane-recompute",
+      "scenario": "revision เพิ่ม role ใหม่",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "lane-recompute-revision-router-role",
+      "requirementKey": "lane-recompute",
+      "scenario": "revision ไม่เปลี่ยน role",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-config-type-harness-policy",
+      "requirementKey": "approval-config-type",
+      "scenario": "approval เป็น string",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-config-type-harness-policy-2",
+      "requirementKey": "approval-config-type",
+      "scenario": "roles เป็น string",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/scratch-router.test.mjs) && (node --test .claude/harness/tests/approval-package.test.mjs .claude/harness/tests/public-command-golden.test.mjs .claude/harness/tests/command-registry.test.mjs) && (node --test .claude/harness/tests/approval-package.test.mjs .claude/harness/tests/change-atomic-start.test.mjs) && (node --test .claude/harness/tests/preview-runtime.test.mjs .claude/harness/tests/public-command-golden.test.mjs) && (node --test .claude/harness/tests/preview-evidence.test.mjs) && (node --test .claude/harness/tests/approval-lanes.test.mjs .claude/harness/tests/user-decisions.test.mjs .claude/harness/tests/change-revise.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh && node .claude/tests/harness/run-single-source-tests.mjs) && (node --test .claude/harness/tests/approval-lanes.test.mjs .claude/harness/tests/change-revise.test.mjs)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared",
+      "segments": [
+        "node --test .claude/harness/tests/scratch-router.test.mjs",
+        "node --test .claude/harness/tests/approval-package.test.mjs .claude/harness/tests/public-command-golden.test.mjs .claude/harness/tests/command-registry.test.mjs",
+        "node --test .claude/harness/tests/approval-package.test.mjs .claude/harness/tests/change-atomic-start.test.mjs",
+        "node --test .claude/harness/tests/preview-runtime.test.mjs .claude/harness/tests/public-command-golden.test.mjs",
+        "node --test .claude/harness/tests/preview-evidence.test.mjs",
+        "node --test .claude/harness/tests/approval-lanes.test.mjs .claude/harness/tests/user-decisions.test.mjs .claude/harness/tests/change-revise.test.mjs",
+        "bash .claude/tests/docs/run-doc-consistency.sh && node .claude/tests/harness/run-single-source-tests.mjs",
+        "node --test .claude/harness/tests/approval-lanes.test.mjs .claude/harness/tests/change-revise.test.mjs"
+      ]
+    },
+    "accessibility": {
+      "adapter": "command",
+      "capability": "accessibility",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/scratch-router.test.mjs) && (node --test .claude/harness/tests/approval-package.test.mjs .claude/harness/tests/public-command-golden.test.mjs .claude/harness/tests/command-registry.test.mjs) && (node --test .claude/harness/tests/approval-package.test.mjs .claude/harness/tests/change-atomic-start.test.mjs) && (node --test .claude/harness/tests/preview-runtime.test.mjs .claude/harness/tests/public-command-golden.test.mjs) && (node --test .claude/harness/tests/preview-evidence.test.mjs) && (node --test .claude/harness/tests/approval-lanes.test.mjs .claude/harness/tests/user-decisions.test.mjs .claude/harness/tests/change-revise.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh && node .claude/tests/harness/run-single-source-tests.mjs)"
+      ],
+      "claims": "declared"
+    },
+    "compatibility": {
+      "adapter": "command",
+      "capability": "compatibility",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/scratch-router.test.mjs) && (node --test .claude/harness/tests/approval-package.test.mjs .claude/harness/tests/public-command-golden.test.mjs .claude/harness/tests/command-registry.test.mjs) && (node --test .claude/harness/tests/approval-package.test.mjs .claude/harness/tests/change-atomic-start.test.mjs) && (node --test .claude/harness/tests/preview-runtime.test.mjs .claude/harness/tests/public-command-golden.test.mjs) && (node --test .claude/harness/tests/preview-evidence.test.mjs) && (node --test .claude/harness/tests/approval-lanes.test.mjs .claude/harness/tests/user-decisions.test.mjs .claude/harness/tests/change-revise.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh && node .claude/tests/harness/run-single-source-tests.mjs)"
+      ],
+      "claims": "declared"
+    }
+  }
+}

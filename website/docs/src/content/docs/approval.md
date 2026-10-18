@@ -206,6 +206,38 @@ things that would let "sandboxed" work reach outside the sandbox.
 Detection is not authorization. Finding that unattended execution is possible
 never implies permission to use it.
 
+## Approval package, previews, and role lanes
+
+When a change starts, and again when `advance` asks for spec approval, the
+agent writes a read-only approval package at
+`.foundation/packages/<change>.html` and shows you its path. It summarizes the
+risk level (Low, Medium, High, or Critical, derived from impact and risk
+signals), the technical domains touched, and the approval artifacts grouped by
+approver role (product-owner, tech-lead, qa, devops, security). Each artifact
+is labeled: **proof** only when a valid passing receipt backs it, **preview**,
+or **no evidence yet**. The change's Mermaid diagrams are embedded and render
+in viewers that support Mermaid; nothing is loaded from outside. The package
+never changes the change's state, and if it cannot be written, approval
+continues from the packet.
+
+**Previews are optional.** Before Build, the agent may run one declared
+provider against a throwaway copy of the target to show early behavior. A
+High or Critical package lists suggested previews. A preview result is never
+proof: it cannot satisfy Prove or Land, never blocks approval or Build, and
+shows as stale once the spec changes. A provider marked `external: true`
+(for example a payment sandbox or staging) reaches outside your machine, so it
+runs only after you authorize that specific run; without your decision it is
+refused and nothing runs.
+
+**Role lanes are opt-in.** By default one spec approval covers the change. If
+the project sets `approval.roles` in `foundation.json` (see
+[`approval`](/docs/foundation-config/#approval-role-approval-lanes)), each
+selected role approves the current revision separately, and Build does not
+start until every required lane has approved. You decide which role you are
+approving as; an approval given without a role covers every lane. The harness
+records the role as stated and does not verify identity. Adding requirements
+keeps lane approvals; removing a requirement resets every lane.
+
 ## Approval in your own words
 
 Your chat reply is the decision. Answering the spec-approval or amendment

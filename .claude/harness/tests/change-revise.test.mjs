@@ -10,7 +10,7 @@ import {
   createChangeLifecycle, mergeApprovalDelta, requirementDelta, requirementFingerprints
 } from "../runtime/workflow/change-lifecycle.mjs";
 import { acquireProcessLock } from "../runtime/core/process-lock.mjs";
-import { assertSpecApproval } from "../runtime/core/user-decisions.mjs";
+import { assertSpecApproval, missingApprovalLanes } from "../runtime/core/user-decisions.mjs";
 
 function writeJson(path, value) {
   mkdirSync(dirname(path), { recursive: true });
@@ -62,7 +62,7 @@ function snapshot(root) {
   return files;
 }
 
-function fixture(t) {
+function fixture(t, { approvalLanes = undefined } = {}) {
   const root = mkdtempSync(join(tmpdir(), "foundation-change-revise-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const changes = join(root, "openspec", "changes");
@@ -85,6 +85,7 @@ function fixture(t) {
   const draftPath = join(root, "draft.json");
   const lifecycle = createChangeLifecycle({
     root,
+    ...(approvalLanes ? { approvalLanes } : {}),
     policy: () => ({ workflow: { grounding: "optional" }, land: {} }),
     securityTerms: ["authentication"],
     fail: (message) => { throw new Error(message); },
@@ -497,6 +498,120 @@ test("an approved change keeps its approval across an additive revision", (t) =>
   assert.match(output, /requirement delta \(covered by the current approval\):\n  added: outbox/);
   assert.doesNotMatch(output, /awaiting approval/);
   assert.match(output, /next: claude-foundation advance revisable-change --through proven/);
+});
+
+function approveLane(value, role, decisionRef) {
+  const log = console.log;
+  console.log = () => {};
+  try {
+    value.lifecycle.resolveChange("revisable-change", {
+      "approve-spec": true, role, "decision-ref": decisionRef
+    });
+  } finally { console.log = log; }
+}
+const LANES = () => ({ configured: ["tech-lead", "qa"], required: ["tech-lead", "qa"] });
+
+test("approved role lanes carry across an additive revision", (t) => {
+  const value = fixture(t, { approvalLanes: LANES });
+  value.start();
+  approveLane(value, "tech-lead", "fixture://user/tl");
+  approveLane(value, "qa", "fixture://user/qa");
+  value.revise(semanticDraft({ requirements: [
+    requirement("throughput", "The service accepts 50 messages per second"),
+    requirement("ack-path", "The webhook acknowledges after Temporal accepts"),
+    requirement("outbox", "The webhook acknowledges after the Mongo outbox commit")
+  ] }));
+  const after = value.state();
+  assert.equal(after.specApproval.lanes.qa.decisionRef, "fixture://user/qa");
+  assert.equal(after.specApproval.lanes.qa.revision, after.contractRevision);
+  assert.equal(after.specApproval.lanes["tech-lead"].identity, after.specApproval.identity);
+  assert.doesNotThrow(() => assertSpecApproval(value.root, "revisable-change", after));
+});
+
+test("a revision that routes a new role asks only for that lane", (t) => {
+  const routed = { required: ["tech-lead"] };
+  const value = fixture(t, { approvalLanes: () => ({ configured: ["tech-lead", "security"], required: routed.required }) });
+  value.start();
+  approveLane(value, "tech-lead", "fixture://user/tl");
+  assert.doesNotThrow(() => assertSpecApproval(value.root, "revisable-change", value.state()));
+  routed.required = ["tech-lead", "security"];
+  value.revise(semanticDraft({ requirements: [
+    requirement("throughput", "The service accepts 50 messages per second"),
+    requirement("ack-path", "The webhook acknowledges after Temporal accepts"),
+    requirement("outbox", "The webhook acknowledges after the Mongo outbox commit")
+  ] }));
+  const after = value.state();
+  assert.equal(after.specApproval.identity, undefined);
+  assert.deepEqual(missingApprovalLanes(value.root, "revisable-change", after), ["security"]);
+  assert.throws(() => assertSpecApproval(value.root, "revisable-change", after),
+    (error) => error.code === "SPEC_APPROVAL_REQUIRED" && /security/.test(error.message));
+  approveLane(value, "security", "fixture://user/sec");
+  assert.doesNotThrow(() => assertSpecApproval(value.root, "revisable-change", value.state()));
+});
+
+test("an amendment that adds a risk signal asks for the lane it routes", (t) => {
+  // Lanes depend on the state being carried, as the shipped router does.
+  const value = fixture(t, { approvalLanes: (_id, state) => ({
+    configured: ["tech-lead", "security"],
+    required: (state.riskSignals || []).includes("access-control") ? ["tech-lead", "security"] : ["tech-lead"]
+  }) });
+  value.start();
+  approveLane(value, "tech-lead", "fixture://user/tl");
+  assert.doesNotThrow(() => assertSpecApproval(value.root, "revisable-change", value.state()));
+  const amendmentPath = join(value.root, "amendment.json");
+  writeJson(amendmentPath, {
+    version: 1,
+    reason: "Only owners may change the webhook",
+    riskSignals: ["access-control"],
+    addRequirements: [{ ...requirement("owner-only", "Only the owner changes the webhook"),
+      scenarios: [
+        { name: "Owner changes it", kind: "success", access: "allow", when: "the owner saves", then: "the webhook changes" },
+        { name: "Stranger refused", kind: "failure", access: "deny", when: "a stranger saves", then: "the request is refused" }
+      ] }],
+    addTasks: [{ key: "owner-task", outcome: "Enforce owner-only edits", covers: ["owner-only"],
+      dependsOn: ["implement"], verify: "npm test -- owner" }],
+    evidence: { "owner-only": { capabilities: ["test"] } },
+    discovery: { coverage: [
+      { dimension: "security-privacy", status: "covered", covers: ["owner-only"] },
+      { dimension: "permission-rejection", status: "covered", covers: ["owner-only"] }
+    ] }
+  });
+  const log = console.log;
+  console.log = () => {};
+  try { value.lifecycle.amendChange("revisable-change", amendmentPath); }
+  finally { console.log = log; }
+  const amended = value.state();
+  assert.ok(amended.riskSignals.includes("access-control"));
+  assert.equal(amended.specApproval.identity, undefined);
+  assert.deepEqual(missingApprovalLanes(value.root, "revisable-change", amended), ["security"]);
+  assert.throws(() => assertSpecApproval(value.root, "revisable-change", amended),
+    (error) => error.code === "SPEC_APPROVAL_REQUIRED" && /security/.test(error.message));
+});
+
+test("an unscoped approval covers the lanes required when it was given", (t) => {
+  const routed = { required: ["tech-lead"] };
+  const value = fixture(t, { approvalLanes: () => ({ configured: ["tech-lead", "security"], required: routed.required }) });
+  value.start();
+  approve(value, "fixture://user/all");
+  routed.required = ["tech-lead", "security"];
+  value.revise(semanticDraft({ requirements: [
+    requirement("throughput", "The service accepts 50 messages per second"),
+    requirement("ack-path", "The webhook acknowledges after Temporal accepts"),
+    requirement("outbox", "The webhook acknowledges after the Mongo outbox commit")
+  ] }));
+  assert.deepEqual(missingApprovalLanes(value.root, "revisable-change", value.state()), ["security"]);
+});
+
+test("a revision that removes a requirement resets every lane", (t) => {
+  const value = fixture(t, { approvalLanes: LANES });
+  value.start();
+  approveLane(value, "tech-lead", "fixture://user/tl");
+  approveLane(value, "qa", "fixture://user/qa");
+  value.revise(revisedDraft());
+  const after = value.state();
+  assert.deepEqual(after.specApproval, { required: true });
+  assert.throws(() => assertSpecApproval(value.root, "revisable-change", after),
+    (error) => error.code === "SPEC_APPROVAL_REQUIRED");
 });
 
 test("a revision that removes a requirement still asks for approval", (t) => {

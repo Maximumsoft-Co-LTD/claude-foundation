@@ -381,6 +381,8 @@ the envelope carries, and the budget no-progress cap are specified in
 | `feedback <change> [--pretty] [--diagnostics]` | Reports current readiness, source-aware timing, repair intervals, blocker coverage, evidence reuse, and the next action; diagnostics exports allowlisted metadata | Explaining why Prove took time without labeling repair as wait |
 | `outcomes [--pretty]` | Read-only rollup of archived changes: first-proof pass, proof runs, review attempts and repair rounds, amendments, reopened tasks, recorded user decisions, cost, and declared escaped defects (from later changes' `fixes`), grouped by workType × impact × riskSignals; unknown values stay `null` with a denominator and `unknownCount`; unreadable states are listed under `skipped` | Judging whether workflow changes improve accepted outcomes |
 | `lessons [--min-changes <n>] [--pretty]` | Read-only grouping of blocker codes and review finding codes that recur in at least `n` distinct changes (default 3, minimum 2), each with a suggested permanent check and the `/change` route; untyped blockers and uncoded findings are counted separately; never creates checks or exports free-text reasons | Turning recurring problems into checks |
+| `package <change> [--pretty]` | Writes the read-only approval package `.foundation/packages/<change>.html`: risk level, technical domains, artifacts by approver role with proof/preview labels, Mermaid diagrams, and optional suggested previews for High/Critical changes; never changes lifecycle state. `change start` and the `advance` approval question also write it and print its path, and a render failure only warns | Showing approvers the change before they approve |
+| `preview <change> --provider <name> [--decision-ref <ref>] [--pretty]` | Optional, before Build only: runs one declared provider in `.foundation/previews/<change>/workspace` and records a `kind: "preview"` receipt bound to the contract revision. A provider marked `external: true` runs only with the user's `--decision-ref`; preview receipts never satisfy Prove or Land ([WORKFLOW.md](../../WORKFLOW.md#approval-package-preview-and-role-lanes)) | Trying a plan, dry run, mock, or screenshot before approval |
 | `budget checkpoint <change>` | Reports measured remaining allowance, unfinished work, and the exact resume route | Checking remaining allowance and the resume route |
 | `exec <change> [--phase <phase>] [--repo <id>] [--task <id>] -- <command…>` | Derives the phase, runs Build and Prove commands in the change's sandbox under the shared mutation policy, passes the exit code through, and records duration. A multi-repository change picks the sandbox from `--repo`/`--task`, else the caller's directory (a repository sandbox, the shared mirror, or the checkout's copy maps to the same relative path in that repository's sandbox), else the pending tasks when they share one repository, else the shared sandbox; never the main checkout. An unknown repository or task refuses with the known names | Long build-phase commands (container builds, installs, full test runs) and a submodule task's checks |
 | `telemetry host-import <change> <result.json>` | Imports a validated host execution result without prompt or tool payloads | Recording actual model attempts, fallback, usage, and instruction provenance |
@@ -753,10 +755,12 @@ listings elsewhere name this file as their source rather than restating it.
 | `.foundation/backups/` | Commit bundles, patches, and file copies of unlanded sandbox work, written before a sandbox is removed |
 | `.foundation/agreement-drift/` | Isolated-packet edits made outside an amendment, saved when the harness restores the approved text |
 | `.foundation/prototypes/` | Disposable comparison prototypes, never admissible as evidence |
+| `.foundation/packages/` | Read-only approval packages (`<change>.html`), regenerated on demand |
+| `.foundation/previews/` | Optional pre-Build preview workspaces and `kind: "preview"` receipts, never admissible as evidence |
 | `.foundation/policy.json` | Optional project-authored rules mapping paths to required capabilities; not generated proof |
 | `.foundation/install-manifest.txt` | Installer-owned record of managed files |
 
-`intake/`, `repository-sandboxes/`, `prototypes/`, `recovery/`, `agreement-drift/`, and `policy.json` appear
+`intake/`, `repository-sandboxes/`, `prototypes/`, `packages/`, `previews/`, `recovery/`, `agreement-drift/`, and `policy.json` appear
 only once something creates them.
 
 Receipts are reusable only while their bound inputs remain unchanged. Every

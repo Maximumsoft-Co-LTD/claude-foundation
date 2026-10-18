@@ -1127,9 +1127,21 @@ export function deriveDraftBookkeeping(input, slugify) {
   return draft;
 }
 
+// The approval package is a reading aid: a render failure becomes a warning
+// and the user approves from the packet as before.
+export function approvalPackageLine(link) {
+  if (link?.path) return `  approval package: ${link.path}\n`;
+  if (link?.error) return `  warning: approval package not written (${link.error}); review the packet, then run claude-foundation package <change>\n`;
+  return "";
+}
+
 export function createChangeLifecycle({
   root,
   policy,
+  approvalPackageLink = () => null,
+  // { configured, required }: roles from approval.roles and the lanes this
+  // change needs (configured roles the scratch router selects).
+  approvalLanes = () => ({ configured: [], required: [] }),
   securityTerms,
   fail,
   pathInside,
@@ -2320,9 +2332,18 @@ export function createChangeLifecycle({
     if (decisionFlags.some((key) => flags[key])) {
       const decisionRef = String(flags["decision-ref"] || "").trim();
       if (!decisionRef) fail("This operation requires --decision-ref from an explicit user answer");
-      if (Object.keys(flags).some((key) => ![...decisionFlags, "decision-ref"].includes(key)) ||
+      if (Object.keys(flags).some((key) => ![...decisionFlags, "decision-ref", "role"].includes(key)) ||
           decisionFlags.filter((key) => flags[key]).length > 1)
         fail("Record one user decision at a time, separately from agreement edits");
+      const role = flags.role === undefined ? null : String(flags.role).trim();
+      if (role !== null && !flags["approve-spec"]) fail("--role applies only to --approve-spec");
+      if (role !== null) {
+        const { configured } = approvalLanes(id, loadRuntime(id));
+        if (!configured.length)
+          fail("--role needs approval.roles in foundation.json; without lanes approve once without --role");
+        if (!configured.includes(role))
+          fail(`unknown approval role '${role}'; approval.roles allows: ${configured.join(", ")}`);
+      }
       const state = loadRuntime(id);
       if (state.status === "archived") fail(`change '${id}' is already archived`);
       let approvedDelta = null;
@@ -2352,10 +2373,35 @@ export function createChangeLifecycle({
         if (openQuestions.length)
           fail("resolve the design's open questions before approving the spec:\n  - " +
             `${openQuestions.join("\n  - ")}\nAsk the user, record the answers, and revise the change.`);
-        current.specApproval = { required: true, identity: agreementIdentity(approvalRoot, id),
+        const consent = { identity: agreementIdentity(approvalRoot, id),
           revision: Number(current.contractRevision || 0), decisionRef, approvedAt: now() };
-        approvedDelta = current.pendingApprovalDelta || null;
-        delete current.pendingApprovalDelta;
+        const { required } = approvalLanes(id, current);
+        const prior = current.specApproval || {};
+        // Only consent given on these exact bytes and revision survives.
+        const lanes = Object.fromEntries(Object.entries(prior.lanes || {})
+          .filter(([, lane]) => lane?.identity === consent.identity && Number(lane.revision) === consent.revision));
+        const priorComplete = prior.identity === consent.identity && Number(prior.revision) === consent.revision;
+        if (role === null) {
+          // Approval without a role is the whole approval and covers every lane
+          // required now; a lane added by a later revision is asked again.
+          for (const lane of required) lanes[lane] = consent;
+          current.specApproval = { required: true, ...consent,
+            ...(required.length ? { lanes, requiredLanes: required } : {}) };
+        } else {
+          lanes[role] = consent;
+          if (priorComplete) {
+            // A lane recorded after the whole approval adds to it, never revokes it.
+            current.specApproval = { ...prior, lanes, requiredLanes: required };
+          } else {
+            const complete = required.every((lane) => lanes[lane]);
+            current.specApproval = complete
+              ? { required: true, ...consent, decisionRef: required.map((lane) => lanes[lane].decisionRef).join(",") || decisionRef,
+                lanes, requiredLanes: required }
+              : { required: true, lanes, requiredLanes: required };
+          }
+        }
+        approvedDelta = current.specApproval.identity ? current.pendingApprovalDelta || null : null;
+        if (current.specApproval.identity) delete current.pendingApprovalDelta;
         saveRuntime(current);
       } else if (flags["accept-target-edits"]) {
         // Binds the exact edited bytes: a later edit is a new question.
@@ -2371,7 +2417,12 @@ export function createChangeLifecycle({
         // so there is no window to extend. The flag stays accepted.
         console.log(`NOTE: review has no time window; '--continue-review' changes nothing`);
       }
+      const lanesState = flags["approve-spec"] ? loadRuntime(id).specApproval : null;
+      const pendingLanes = lanesState && !lanesState.identity
+        ? (lanesState.requiredLanes || []).filter((lane) => !lanesState.lanes?.[lane]) : [];
       console.log(`DECISION RECORDED ${id}\n` +
+        (role !== null ? `  approval lane: ${role}\n` : "") +
+        (pendingLanes.length ? `  approval lanes still needed: ${pendingLanes.join(", ")}\n` : "") +
         (approvedDelta ? `  approved requirement delta:\n${formatApprovalDelta(approvedDelta)}\n` : "") +
         `  next: claude-foundation advance ${id} --through ${flags["approve-spec"]
           ? resumeThrough(loadRuntime(id))
@@ -2597,6 +2648,7 @@ export function createChangeLifecycle({
         const openQuestions = designOpenQuestions(id, root);
         console.log(`AGREED ${id}\n  inspect: openspec/changes/${id}/\n` + packetFileLines(id) +
           "  awaiting user approval before Build\n" +
+          approvalPackageLine(approvalPackageLink(id)) +
           openQuestionLines(openQuestions) +
           designWarningLines(draft, loadRuntime(id).schema, source) +
           `  next: ${openQuestions.length
@@ -2682,9 +2734,22 @@ export function createChangeLifecycle({
     const fromRevision = Number(approval.revision);
     const toRevision = Number(next.contractRevision || 0);
     const { carriedFrom: _prior, ...consent } = approval;
-    next.specApproval = { ...consent,
-      identity: agreementIdentity(approvalPacketRootFor(next, id), id),
+    const identity = agreementIdentity(approvalPacketRootFor(next, id), id);
+    // Lane consent carries under the same rule as the whole approval.
+    const lanes = consent.lanes ? Object.fromEntries(Object.entries(consent.lanes)
+      .map(([role, lane]) => [role, { ...lane, identity, revision: toRevision }])) : undefined;
+    const carried = { ...consent, ...(lanes ? { lanes } : {}), identity,
       revision: toRevision, carriedFrom: { revision: fromRevision, reason, carriedAt } };
+    // The revision may route new roles: carried lanes still count, and a newly
+    // required lane must approve before the approval is whole again.
+    const { required } = approvalLanes(id, next);
+    const missing = required.filter((role) => !lanes?.[role]);
+    if (required.length && (lanes || missing.length)) {
+      const { identity: _identity, revision: _revision, decisionRef: _ref, approvedAt: _at, ...rest } = carried;
+      next.specApproval = missing.length
+        ? { ...rest, required: true, lanes: lanes || {}, requiredLanes: required }
+        : { ...carried, requiredLanes: required };
+    } else next.specApproval = carried;
     next.approvalCarries = [...(prior.approvalCarries || []), {
       fromRevision, toRevision, reason,
       delta: { added: delta.added || [], revised: delta.revised || [], removed: [] },
@@ -3245,6 +3310,11 @@ export function createChangeLifecycle({
         removed: compiled.removedRequirementKeys
       };
       const requirementDelta = Object.values(amendmentDelta).some((keys) => keys.length);
+      // Merge the amendment's risk signals before carrying consent: approval
+      // lanes are routed from them, and a new signal can require a new lane.
+      const amendedSignals = riskSignalValues([
+        ...(priorState.riskSignals || []), ...(amendment.riskSignals || [])]);
+      if (amendedSignals.length) nextState.riskSignals = amendedSignals;
       if (!carrySpecApproval(priorState, nextState, id, amendmentDelta,
         `semantic-amendment: ${String(amendment.reason || "Agreement expanded during Build")}`) &&
           (requirementDelta || nextState.pendingApprovalDelta))
@@ -3259,9 +3329,6 @@ export function createChangeLifecycle({
         for (const key of compiled.removedRequirementKeys) delete fingerprints[key];
         nextState.requirementFingerprints = fingerprints;
       }
-      const amendedSignals = riskSignalValues([
-        ...(priorState.riskSignals || []), ...(amendment.riskSignals || [])]);
-      if (amendedSignals.length) nextState.riskSignals = amendedSignals;
       // A proven candidate is still amendable until Land begins. Re-enter
       // Build so advance dispatches added tasks and re-finalizes this revision;
       // the prior proof and Land grant cannot authorize the amended packet.

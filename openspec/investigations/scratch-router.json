@@ -1,0 +1,396 @@
+{
+  "version": 2,
+  "purpose": "change",
+  "language": "th",
+  "id": "scratch-router",
+  "activeChange": null,
+  "problem": "ผู้อนุมัติยังไม่เห็นงานในรูปที่ตรวจได้ก่อนอนุมัติ Change: design ที่ compile แล้วเป็นข้อความใน design.md ตามชนิดงาน ไม่มีชุดเอกสารอนุมัติ (approval package) ที่เลือกตามประเภทงาน × ส่วนของระบบ × ความเสี่ยง และไม่มีผลทดลองจริงก่อน Build",
+  "mode": "analyze",
+  "intent": {
+    "goal": "ให้เห็นงานก่อนอนุมัติ ปรับปรุงได้ก่อนลงมือ และเริ่มงานได้ง่าย",
+    "outcome": "รู้ว่า Scratch Router ทำได้แค่ไหนบน harness ปัจจุบัน ส่วนไหนมีแล้ว ส่วนไหนขาด แนวทางที่แนะนำ และตัวอย่าง scratch ของงานนี้เอง",
+    "actors": ["user", "agent", "harness", "product-owner", "tech-lead", "qa", "devops-security"],
+    "scope": [
+      "runtime/contracts/work-types.mjs",
+      "runtime/workflow/validation/design-blueprints.mjs",
+      "runtime/workflow/validation/semantic-intake.mjs",
+      "runtime/workflow/validation/semantic-intake-intelligence.mjs",
+      "runtime/evidence/review-routing.mjs",
+      ".claude/skills/harness-html-report"
+    ]
+  },
+  "requirements": [
+    {
+      "key": "see-before-approve",
+      "revision": 1,
+      "kind": "behavior",
+      "statement": "สร้าง approval package ที่ให้ผู้อนุมัติเห็นงานก่อนอนุมัติ และปรับปรุงก่อนลงมือได้",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": ["u-idea"]
+    },
+    {
+      "key": "three-dimensions",
+      "revision": 1,
+      "kind": "behavior",
+      "statement": "router จำแนกงานด้วย 3 มิติ: Change Intent (WHY), Technical Domain (WHERE, 28 ประเภทใน 6 กลุ่ม), Risk Level (Low/Medium/High/Critical) งานเดียวมีได้หลาย domain",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": ["u-idea"]
+    },
+    {
+      "key": "no-workflow-per-type",
+      "revision": 1,
+      "kind": "constraint",
+      "statement": "ไม่ทำ 28 workflow แยกกัน ใช้ pipeline เดียว: Task → Intent → Codebase Analysis → Domain Detection → Risk → Scratch Generator → Approval Package → Implementation",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": ["u-idea"]
+    },
+    {
+      "key": "existing-code-first",
+      "revision": 1,
+      "kind": "behavior",
+      "statement": "ถ้ามีโค้ดเดิม ต้องวิเคราะห์ As-Is และ Change Impact ก่อนสร้าง scratch",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": ["u-idea"]
+    },
+    {
+      "key": "dedupe-artifacts",
+      "revision": 1,
+      "kind": "behavior",
+      "statement": "งานหลาย domain สร้าง artifact ร่วมกันโดยไม่ซ้ำ",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": ["u-idea"]
+    },
+    {
+      "key": "risk-based-depth",
+      "revision": 1,
+      "kind": "behavior",
+      "statement": "ความเสี่ยงต่ำใช้เพียง diff preview + test ไม่ต้องทำ prototype ทุกงาน",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": ["u-idea"]
+    },
+    {
+      "key": "evidence-based-approval",
+      "revision": 1,
+      "kind": "constraint",
+      "statement": "ผู้อนุมัติต้องเห็นผลทดลองจริง ไม่ใช่เพียง diagram ที่ AI สร้าง",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": ["u-idea"]
+    },
+    {
+      "key": "role-scoped",
+      "revision": 1,
+      "kind": "behavior",
+      "statement": "แต่ละบทบาท (PO, Tech Lead, QA, DevOps/Security) เห็นและอนุมัติเฉพาะขอบเขตของตน ไม่ต้องอนุมัติทุกงาน",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": ["u-idea"]
+    },
+    {
+      "key": "keep-worktype",
+      "revision": 1,
+      "kind": "constraint",
+      "statement": "ไม่แยก workType ใหม่ ใช้ตาราง mapping ครอบ workType/riskSignals เดิม ไม่เปลี่ยน protocol",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": ["u-taxonomy"]
+    },
+    {
+      "key": "investigate-only",
+      "revision": 1,
+      "kind": "constraint",
+      "statement": "รอบนี้ทำ investigation หา solution และแสดงว่า scratch ของงานนี้จะเป็นอย่างไร ยังไม่แก้โค้ด",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": ["u-scope"]
+    },
+    {
+      "key": "all-phases",
+      "revision": 1,
+      "kind": "behavior",
+      "statement": "ทำครบ P1 (ตาราง router + approval package), P2 (scratch ที่รันได้ก่อนอนุมัติ), P3 (อนุมัติตามบทบาท) แล้ว Land ทีเดียว",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": ["u-all", "u-p2p3"]
+    },
+    {
+      "key": "preview-optional",
+      "revision": 1,
+      "kind": "behavior",
+      "statement": "scratch ที่รันได้เลือกใช้ได้ทุกระดับความเสี่ยง ไม่บังคับและไม่บล็อกการอนุมัติ",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": ["u-p2p3"]
+    },
+    {
+      "key": "external-sandbox",
+      "revision": 1,
+      "kind": "constraint",
+      "statement": "scratch ใช้ sandbox ภายนอกได้ (เช่น payment sandbox, staging) ต้องมี credential และสิทธิ์ external operation ทุกครั้ง",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": ["u-p2p3"]
+    },
+    {
+      "key": "role-recorded",
+      "revision": 1,
+      "kind": "constraint",
+      "statement": "P3 บันทึกผู้อนุมัติแต่ละบทบาทตามที่แจ้ง (decisionRef + บทบาท) harness ไม่ยืนยันตัวตน",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": ["u-p2p3"]
+    },
+    {
+      "key": "preview-suggestions",
+      "revision": 1,
+      "kind": "behavior",
+      "statement": "package แนะนำ preview ที่เหมาะกับงาน โดยไม่บังคับ",
+      "origin": "user",
+      "status": "stated",
+      "material": true,
+      "conversationKeys": ["u-suggest"]
+    }
+  ],
+  "conversation": [
+    {
+      "key": "u-idea",
+      "speaker": "user",
+      "statement": "เสนอ Scratch Router: 28 ประเภทงานใน 6 กลุ่มพร้อม approval artifact, 3 มิติ (intent/domain/risk), ตัวอย่างระบบถอนเงิน, กฎ 4 ข้อ (existing code first, multi-type, risk-based depth, evidence-based approval), pipeline เดียว และอนุมัติตามบทบาท",
+      "source": "session message"
+    },
+    {
+      "key": "u-scope",
+      "speaker": "user",
+      "statement": "investigation และหา solution และ scratch ของงานนี้จะเป็นยังไง",
+      "source": "session AskUserQuestion answer"
+    },
+    {
+      "key": "u-taxonomy",
+      "speaker": "user",
+      "statement": "ยังไม่แยก ใช้ตารางครอบ (Recommended)",
+      "source": "session AskUserQuestion answer"
+    },
+    {
+      "key": "u-all",
+      "speaker": "user",
+      "statement": "ทำจนถึง p1-p3 เลยได้ไหม ต้องทำอะไรบ้าง",
+      "source": "session message"
+    },
+    {
+      "key": "u-p2p3",
+      "speaker": "user",
+      "statement": "preview: เลือกได้ทุกระดับ; boundary: อนุญาต sandbox ภายนอก; identity: บันทึกตามคำบอก; delivery: ทำครบ 3 phase แล้ว Land ทีเดียว",
+      "source": "session AskUserQuestion answer"
+    },
+    {
+      "key": "u-suggest",
+      "speaker": "user",
+      "statement": "เพิ่ม preview ที่แนะนำ",
+      "source": "session message"
+    }
+  ],
+  "questions": [],
+  "experiments": [],
+  "work": [],
+  "historyGaps": [],
+  "sources": [
+    ".claude/harness/runtime/contracts/work-types.mjs",
+    ".claude/harness/runtime/workflow/validation/design-blueprints.mjs",
+    ".claude/harness/runtime/workflow/validation/semantic-intake.mjs",
+    ".claude/harness/runtime/workflow/validation/semantic-intake-intelligence.mjs",
+    ".claude/harness/runtime/evidence/review-routing.mjs",
+    "WORKFLOW.md",
+    ".claude/harness/EVIDENCE.md",
+    ".claude/harness/runtime/workflow/change-lifecycle.mjs",
+    ".claude/harness/runtime/evidence/provider-catalog.mjs",
+    ".claude/harness/runtime/workflow/investigation-runtime.mjs",
+    ".claude/skills/harness-html-report/SKILL.md",
+    ".claude/commands/change.md"
+  ],
+  "facts": [
+    {
+      "key": "worktype-mixes-why-where",
+      "statement": "WORK_TYPES มี 23 ค่าที่ปนทั้ง intent (feature, bugfix, refactor, migration, experiment, deprecation) และ domain (api, ui, data, async, integration, infra, observability, privacy, ml, client-release) ไม่มี incident, enhancement, mobile, ci-cd, auth, payment, a11y/l10n, bi แยก",
+      "sources": [".claude/harness/runtime/contracts/work-types.mjs"]
+    },
+    {
+      "key": "blueprints-by-worktype",
+      "statement": "BY_WORK_TYPE ผูก workType กับ design section ที่ต้องมี: api→apiContracts, data→dataModel, ui→uiStates, config→configContract, async→jobContract+diagrams, integration→integrations, bugfix→reproduction/rootCause/regression, refactor→invariants/characterization ส่วนที่ขาดหรือบางแค่เตือน ไม่บล็อก และ render เป็นข้อความใน design.md",
+      "sources": [".claude/harness/runtime/workflow/validation/design-blueprints.mjs"]
+    },
+    {
+      "key": "risk-to-dimensions",
+      "statement": "RISK_SIGNAL_DIMENSIONS ผูก riskSignals 9 ค่ากับ discovery dimension ที่ agreement ต้องครอบ เช่น financial→timeout-retry-idempotency+recoverability, access-control→security-privacy+permission-rejection และ impact=high บังคับ CORE_DISCOVERY_DIMENSIONS 9 มิติ (current-behavior ... verification)",
+      "sources": [".claude/harness/runtime/workflow/validation/semantic-intake.mjs"]
+    },
+    {
+      "key": "risk-to-depth",
+      "statement": "planSemanticIntakeDepth ให้คะแนนจาก impact, ขนาด, coupling, RISK_WEIGHTS และจำนวน integration เพื่อเลือกระดับ focused/standard/deep (12/24/48 ไฟล์) ซึ่งตรงกับ risk-based depth ในฝั่งการสำรวจ ไม่ใช่ฝั่ง artifact",
+      "sources": [".claude/harness/runtime/workflow/validation/semantic-intake-intelligence.mjs"]
+    },
+    {
+      "key": "risk-to-review-tier",
+      "statement": "SECURITY_RISK_SIGNAL_TIERS: access-control และ financial ยก review เป็น high, input-domain เป็น medium",
+      "sources": [".claude/harness/runtime/evidence/review-routing.mjs"]
+    },
+    {
+      "key": "single-approval",
+      "statement": "การอนุมัติ spec มีผู้อนุมัติคนเดียว: state.specApproval {identity, revision, decisionRef, approvedAt} บันทึกด้วย advance --approve-spec --decision-ref ผู้ใช้เห็นเพียง packet ใน openspec/changes/<id>/ พร้อม open questions ไม่มีบทบาทผู้อนุมัติแยกตาม domain",
+      "sources": ["WORKFLOW.md", ".claude/harness/runtime/workflow/change-lifecycle.mjs", ".claude/commands/change.md"]
+    },
+    {
+      "key": "compliance-roles",
+      "statement": "บล็อก compliance (requester, approver, implementer; approver ต้องไม่ใช่ implementer) มีเฉพาะเมื่อ openspec/config.yaml ตั้ง compliance: change-record เป็นที่เดียวที่มีบทบาทผู้อนุมัติ",
+      "sources": ["WORKFLOW.md"]
+    },
+    {
+      "key": "no-prebuild-evidence",
+      "statement": "ไม่มีขั้นหลักฐานก่อน Build: ก่อน Build harness บันทึกแค่ execution-preparation identity และ provider รันเฉพาะใน Prove",
+      "sources": [".claude/harness/EVIDENCE.md"]
+    },
+    {
+      "key": "preview-capable-providers",
+      "statement": "provider catalog มี capability ที่ใช้ทำ preview ได้: plan-check, data-migration, browser (playwright), contract-digest/cross-repo-contract, static-analysis, performance, concurrency, resilience และ acceptance (มนุษย์ที่ระบุชื่อยอมรับ แต่รันใน Prove)",
+      "sources": [".claude/harness/runtime/evidence/provider-catalog.mjs"]
+    },
+    {
+      "key": "prototype-sandbox",
+      "statement": "/investigate --compare สร้าง prototype แบบใช้แล้วทิ้งได้เฉพาะใน .foundation/prototypes/<id>/ บันทึกตัวที่เลือกใน selection.md ไม่ถือเป็นหลักฐาน และส่งต่อเข้า Change ผ่าน draft prototypeSelection",
+      "sources": ["WORKFLOW.md", ".claude/harness/runtime/workflow/investigation-runtime.mjs"]
+    },
+    {
+      "key": "no-code-in-change",
+      "statement": "ขั้น Change ห้ามแตะโค้ด product (No product code during Change)",
+      "sources": [".claude/commands/change.md"]
+    },
+    {
+      "key": "mermaid-unrendered",
+      "statement": "diagrams (mermaid/svg/png) จำเป็นสำหรับ async หรือ coupled, userFlow เป็น mermaid flowchart, dataModel เป็น erDiagram แต่ออกมาเป็น fenced block ใน design.md เท่านั้น ไม่มีที่ไหน render",
+      "sources": [".claude/harness/runtime/workflow/change-lifecycle.mjs", ".claude/harness/runtime/workflow/validation/design-blueprints.mjs"]
+    },
+    {
+      "key": "html-report-readonly",
+      "statement": "harness-html-report เป็น projection แบบอ่านอย่างเดียวจาก .foundation/ และ openspec/ ออก HTML self-contained ไม่ใช่หลักฐาน และสรุปภาพรวมรอบงาน ไม่ใช่ชุดเอกสารอนุมัติ",
+      "sources": [".claude/skills/harness-html-report/SKILL.md"]
+    }
+  ],
+  "hypotheses": [
+    {
+      "key": "h-router-is-table",
+      "statement": "Scratch Router ทำเป็นตารางข้อมูลชั้นเดียว (workType+riskSignals+impact → domain tags → artifact kinds → role lanes) บน vocabulary เดิมได้ โดยไม่ต้องเปลี่ยน protocol",
+      "status": "supported",
+      "factKeys": ["worktype-mixes-why-where", "blueprints-by-worktype", "risk-to-dimensions", "risk-to-depth", "risk-to-review-tier", "mermaid-unrendered"]
+    },
+    {
+      "key": "h-runnable-needs-phase",
+      "statement": "scratch ที่รันได้ (API mock, migration dry-run, terraform plan) ก่อนอนุมัติ ต้องเป็นขั้นใหม่ที่มี workspace แยกจาก Build เพราะ Change ห้ามแตะโค้ด product",
+      "status": "supported",
+      "factKeys": ["no-prebuild-evidence", "no-code-in-change", "prototype-sandbox", "preview-capable-providers"]
+    },
+    {
+      "key": "h-role-needs-authority-change",
+      "statement": "การอนุมัติแยกตามบทบาทก่อน Build ทำไม่ได้ถ้าไม่เปลี่ยนสัญญาสิทธิ์อนุมัติ เพราะ specApproval มีผู้อนุมัติคนเดียว ส่วนบทบาทที่มีอยู่ (compliance, acceptance) อยู่ผิดจุดหรือต้องเปิดใช้เอง",
+      "status": "supported",
+      "factKeys": ["single-approval", "compliance-roles", "preview-capable-providers"]
+    }
+  ],
+  "options": [
+    {
+      "key": "o1-package-projection",
+      "summary": "P1: ตาราง router เป็นข้อมูลใน runtime/contracts (workType+riskSignals+impact+integrations → domain tags 28 ประเภท → artifact kinds → role lanes) + approval package HTML แบบอ่านอย่างเดียวที่ render จาก design fields และ mermaid ที่มีอยู่ แบ่งแท็บตามบทบาท ติดป้าย preview ไม่ใช่ proof คงการอนุมัติคนเดียว ไม่เปลี่ยน protocol"
+    },
+    {
+      "key": "o2-preview-providers",
+      "summary": "P2: scratch ที่รันได้ใน .foundation/prototypes/<id>/ (mock API, migration dry-run, plan-check, playwright screenshot) โดยใช้ provider ใน catalog เดิมแบบ preview receipt ที่ไม่มีวันนับเป็น Prove ต้องแก้ EVIDENCE.md:62-66 และ WORKFLOW Change"
+    },
+    {
+      "key": "o3-role-approval",
+      "summary": "P3: แยก specApproval เป็นรายบทบาทตาม lane ที่ router เลือก โดยใช้กฎ approver≠implementer ของ compliance เป็นฐาน ต้องแก้สัญญาสิทธิ์อนุมัติและ protocol"
+    },
+    {
+      "key": "o-skill-only",
+      "summary": "ทางเลือกเบาสุด: ทำเป็น skill ให้ agent สร้าง package เองโดยไม่มีตาราง router ใน runtime ถูกแต่ไม่ deterministic และผลแต่ละครั้งต่างกัน"
+    }
+  ],
+  "selection": null,
+  "decisions": [
+    {
+      "key": "d-taxonomy",
+      "question": "แยก intent กับ domain ออกจาก workType ไหม",
+      "status": "resolved",
+      "choice": "ไม่แยก ใช้ตาราง mapping ครอบ",
+      "reason": "ผู้ใช้เลือกตัวเลือกที่แนะนำ ไม่เปลี่ยน protocol",
+      "by": "user",
+      "conversationKeys": ["u-taxonomy"]
+    },
+    {
+      "key": "d-scope",
+      "question": "รอบแรกขอบเขตแค่ไหน",
+      "status": "resolved",
+      "choice": "investigation + solution + ตัวอย่าง scratch ของงานนี้",
+      "reason": "ผู้ใช้ตอบเอง",
+      "by": "user",
+      "conversationKeys": ["u-scope"]
+    },
+    {
+      "key": "d-phases",
+      "question": "ทำ phase ไหนและส่งมอบอย่างไร",
+      "status": "resolved",
+      "choice": "P1-P3 ใน change เดียว 3 slice และ Land ทีเดียว",
+      "reason": "ผู้ใช้เลือก",
+      "by": "user",
+      "conversationKeys": ["u-all", "u-p2p3"]
+    },
+    {
+      "key": "d-preview-policy",
+      "question": "บังคับ scratch ที่รันได้ไหม",
+      "status": "resolved",
+      "choice": "เลือกได้ทุกระดับ ไม่บังคับ",
+      "reason": "ผู้ใช้เลือก",
+      "by": "user",
+      "conversationKeys": ["u-p2p3"]
+    },
+    {
+      "key": "d-boundary",
+      "question": "scratch แตะของภายนอกได้แค่ไหน",
+      "status": "resolved",
+      "choice": "อนุญาต sandbox ภายนอก ภายใต้สิทธิ์ external operation",
+      "reason": "ผู้ใช้เลือก",
+      "by": "user",
+      "conversationKeys": ["u-p2p3"]
+    },
+    {
+      "key": "d-identity",
+      "question": "ยืนยันตัวผู้อนุมัติอย่างไร",
+      "status": "resolved",
+      "choice": "บันทึกตามคำบอก",
+      "reason": "ผู้ใช้เลือกตัวเลือกที่แนะนำ",
+      "by": "user",
+      "conversationKeys": ["u-p2p3"]
+    }
+  ],
+  "conclusion": {
+    "summary": "ทำได้ และ harness มีส่วนประกอบราว 60% อยู่แล้ว ได้แก่ workType, riskSignals, discovery dimensions, ความลึกตามความเสี่ยง, design blueprints, mermaid, prototype sandbox และ provider catalog ส่วนที่ขาดจริงมี 3 อย่าง: (1) ตารางที่รวมทุกอย่างเป็น domain tags → artifact → บทบาท และ package ที่ render ให้คนดูได้ (2) ยังไม่มีขั้น preview ที่รันได้ก่อน Build (3) การอนุมัติมีผู้อนุมัติคนเดียว แนะนำเริ่มที่ o1-package-projection ซึ่งไม่เปลี่ยน protocol และไม่รันโค้ด แล้วค่อยทำ o2 กับ o3 เป็น change แยก เพราะทั้งสองแก้สัญญาหลักฐานและสัญญาสิทธิ์อนุมัติ กฎ evidence-based approval ของผู้ใช้จะครบจริงก็ต่อเมื่อทำ o2 แล้ว"
+  },
+  "changeIntent": "Scratch Router ใน change เดียว 3 slice: (P1) ตาราง router ใน runtime/contracts ครอบ workType/riskSignals เดิม + คำสั่ง package สร้าง approval package HTML แบบอ่านอย่างเดียว แบ่งตามบทบาท ติดป้าย preview/proof; (P2) ขั้น preview ที่เลือกใช้ได้ระหว่าง compile กับ approve รันใน workspace แยก ออก preview receipt ที่ไม่มีวันนับเป็น Prove อนุญาต sandbox ภายนอกภายใต้สิทธิ์ external operation; (P3) specApproval ราย lane ตามบทบาทที่ router เลือก บันทึกตามคำบอก state เก่าที่มีการอนุมัติครั้งเดียวถือว่าครบทุก lane"
+}

@@ -1010,7 +1010,10 @@ export function createAdvanceRuntime({
   markBlocked = () => {},
   // Authority the change already needs (signed CI, ...); asked with spec
   // approval so it never first surfaces at Build dispatch.
-  pendingApprovalDecisions = () => []
+  pendingApprovalDecisions = () => [],
+  // Writes the approval package and returns { path } or { error }; a failure
+  // never changes the approval question.
+  approvalPackageLink = () => null
 }) {
   // Spec approval is the one Change-time question; known authority gates ride
   // along with it instead of stopping Build later.
@@ -1019,11 +1022,17 @@ export function createAdvanceRuntime({
       return advanceFailureAction(id, error, options);
     let alongside = [];
     try { alongside = pendingApprovalDecisions(id) || []; } catch {}
-    if (!alongside.length) return advanceFailureAction(id, error, options);
-    const summary = `${error.decision.summary} Ask in the same question, before Build: ${
-      alongside.map((item) => `${item.summary} (${item.next})`).join("; ")}`;
+    let link = null;
+    try { link = approvalPackageLink(id); } catch {}
+    const packageNote = link?.path ? ` Approval package: ${link.path}.`
+      : link?.error ? ` Approval package not written (${link.error}); review the packet.` : "";
+    if (!alongside.length && !packageNote) return advanceFailureAction(id, error, options);
+    const summary = `${error.decision.summary}${packageNote}${alongside.length ? ` Ask in the same question, before Build: ${
+      alongside.map((item) => `${item.summary} (${item.next})`).join("; ")}` : ""}`;
     return advanceFailureAction(id, Object.assign(error, {
-      message: summary, decision: { ...error.decision, summary, alongside }
+      message: summary,
+      decision: { ...error.decision, summary, ...(alongside.length ? { alongside } : {}),
+        ...(link?.path ? { approvalPackage: link.path } : {}) }
     }), options);
   }
 

@@ -238,6 +238,9 @@ export function createAbandonRuntime({
       // Per-change bookkeeping a later change reusing the id (or the same
       // content) would otherwise inherit; see retired-change-stores.mjs.
       ...retiredChangeStores(paths, id),
+      // Preview runs and the approval package belong to this change only.
+      ...(paths.previews ? [["previews", join(paths.previews, id)]] : []),
+      ...(paths.packages ? [["package.html", join(paths.packages, `${id}.html`)]] : []),
       ["logs", join(paths.logs, id)],
       ["snapshot.json", join(paths.snapshots, `${id}.json`)]
     ]);

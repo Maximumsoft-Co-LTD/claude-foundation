@@ -34,8 +34,15 @@ const VALIDITY_RECOVERY = {
   "external-evidence-missing": () => "a passing external receipt must carry an artifact or reference (--artifact or --reference)",
   "execution-log-missing": (id) => `a harness-executed receipt must carry its command log; re-run: claude-foundation proof run ${id}`,
   "invalid-artifacts": (id) => `a required artifact is missing or altered since it was recorded; re-run: claude-foundation proof run ${id}`,
-  "prototype-evidence": () => "prototype output cannot serve as evidence; prove the real implementation"
+  "prototype-evidence": () => "prototype output cannot serve as evidence; prove the real implementation",
+  "preview-evidence": (id) => `a preview receipt is a pre-Build reading aid and never proof; run the provider in Prove: claude-foundation advance ${id} --through proven`
 };
+
+// A preview receipt (`kind: "preview"`) is refused wherever it appears, even
+// when copied into the receipt store.
+export function receiptIsPreview(value) {
+  return value?.kind === "preview";
+}
 
 export function validityRecovery(validity, id, provider) {
   const route = VALIDITY_RECOVERY[validity];
@@ -122,6 +129,7 @@ export function createReceiptValidity({
     ({ provider, validity, status: value.status });
 
   function protocolValidity(id, provider, value) {
+    if (receiptIsPreview(value)) return invalidReceipt(provider, "preview-evidence", value);
     if (String(value.providerProtocolVersion || "") !== providerProtocolVersion)
       return invalidReceipt(provider, "provider-version-stale", value);
     if (receiptPrototypeEvidence(id, provider, value))

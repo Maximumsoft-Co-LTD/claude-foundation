@@ -22,7 +22,7 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | `change amend --template \| <change> <amendment.json> [--inspect] [--consume-amendment] [--approve-spec --decision-ref <ref> [--through <target>]]` | Inspect intake และถ้าครบจะเพิ่ม แก้ หรือลบ requirement หรือแก้ verify command ของ task ที่ยังไม่เสร็จ ระหว่าง Build แบบ transaction ในคำสั่งเดียว |
 | `change amend <change> --task <task> --verify <command> [--reopen] [--reason <text>]` | แก้ verify command ที่ผิดของ task ได้ตรง ๆ โดยคง approval ไว้ (ใช้ `--reopen` กับ task ที่เสร็จแล้ว) task จะถูกรับเมื่อคำสั่งใหม่ผ่านเท่านั้น |
 | `advance <change> --through build\|proven\|archived` | รัน deterministic lifecycle (evidence wiring, sandbox sync, review ที่ agent รันได้, ติ๊ก task) แล้วคืนหนึ่งในเจ็ด action (`WORKING` ระหว่างที่งานของ harness ยังทำอยู่) ที่ boundary จริง |
-| `advance <change> --approve-spec --decision-ref <ref>` | บันทึกการอนุมัติ spec ของผู้ใช้ (alias ของ `change resolve --approve-spec`) |
+| `advance <change> --approve-spec [--role <role>] --decision-ref <ref>` | บันทึกการอนุมัติ spec ของผู้ใช้ (alias ของ `change resolve --approve-spec`); เมื่อตั้ง `approval.roles` ไว้ `--role` อนุมัติหนึ่ง lane และถ้าไม่ระบุจะครอบคลุมทุก lane |
 | `exec <change> [--repo <id>] [--task <id>] -- <command…>` | รันและจับเวลาคำสั่ง (`checkCommand` ของ task, build หรือการรันเทสทั้งชุด) ใน sandbox ของ change: repository หรือ task ที่ระบุ ไม่เช่นนั้นใช้ directory ของผู้เรียก แล้วจึงใช้ repository ของ task ที่ค้าง ไม่รันใน checkout หลัก |
 | `deliver advance <change>` | หลังสั่ง `/deliver` อย่างชัดเจน ให้ harness ทำ isolated commit, push feature branch, เปิด/ใช้ PR เดิม, ตรวจผ่าน provider และคืน URL |
 | `changes` | อ่าน active state และ route ถัดไป |
@@ -33,7 +33,8 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 
 ## อ่านอย่างเดียว
 
-รันได้ทุกเมื่ออย่างปลอดภัย ไม่แก้อะไรทั้งสิ้น
+รันได้ทุกเมื่ออย่างปลอดภัย ไม่แก้อะไรทั้งสิ้น ยกเว้น `package` ที่เขียนไฟล์ HTML
+แบบอ่านอย่างเดียวของตัวเอง
 
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
@@ -41,6 +42,7 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 | `doctor [--stage change\|build\|prove] [--change <id>]` | วินิจฉัยความพร้อมของโปรเจกต์ provider และ lifecycle |
 | `packet <change> [--phase <phase>] [--repo <id>] [--task <id>]` | อ่าน handoff ของ operation ปัจจุบัน |
 | `metrics <change>` | ดูการใช้งาน ประสิทธิผล semantic intake งบ ต้นทุน และเวลาการรันที่วัดได้ |
+| `package <change> [--pretty]` | เขียน approval package แบบอ่านอย่างเดียว `.foundation/packages/<change>.html` (ระดับความเสี่ยง technical domain, artifact แยกตามบทบาทผู้อนุมัติพร้อมป้าย proof/preview/ยังไม่มีหลักฐาน, Mermaid diagram ที่ฝังไว้ และ suggested preview สำหรับ High/Critical) รันซ้ำได้ผลเดิม เขียนเฉพาะไฟล์นั้น และไม่เปลี่ยนสถานะ lifecycle |
 | `budget checkpoint <change>` | แสดงงบที่เหลือที่วัดได้ งานที่ยังไม่เสร็จ และ resume route ที่แน่นอน |
 | `feedback <change>` | อธิบายเวลา reviewer, repair ที่มีหลักฐาน, human wait และเวลาที่ยังระบุไม่ได้ พร้อม reuse และ action ถัดไป |
 | `change audit <change>` | ตรวจความเชื่อมโยงของ scenario claim task และ provider |
@@ -81,6 +83,7 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 | `change revise <change> <draft.json> [--merge] [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | ก่อน Build ตรวจและถ้าครบจะคอมไพล์ semantic draft ฉบับแก้ทับ change id เดิมในคำสั่งเดียว พร้อม rollback และแสดง requirement delta (ใช้ approval เดิมต่อ เว้นแต่มีการลบ requirement) `--merge` รับเฉพาะ key และ entry ที่มี key ซึ่งเปลี่ยน |
 | `change resolve <change> …` | บันทึกการตัดสินใจเรื่อง impact coupling security และ review |
 | `change validate <change>` | ตรวจ change และ evidence contract ที่รันได้ |
+| `preview <change> --provider <name> [--decision-ref <ref>] [--pretty]` | ทางเลือก ใช้ได้เฉพาะก่อน Build: คัดลอก target ไปที่ `.foundation/previews/<change>/workspace` (ไม่มี Git และ harness state) รัน provider ที่ประกาศไว้หนึ่งตัวในนั้น แล้วบันทึก receipt `kind: "preview"` ซึ่งไม่นับเป็นหลักฐานของ Prove หรือ Land และไม่บล็อก approval หรือ Build; provider ที่เป็น `external: true` ต้องมี `--decision-ref` ของผู้ใช้ ไม่เช่นนั้นถูกปฏิเสธด้วย `PREVIEW_AUTHORITY_REQUIRED` |
 | `sandbox create <change> [--all]` | สร้างพื้นที่ Build ที่แยกออกมา |
 | `sandbox sync <change>` | ซิงก์การแก้ข้อตกลงที่ตั้งใจเข้าไปใน Build |
 | `advance <change> [--through build\|proven\|archived] [--host-result <result.json>]` | Coordinator ปกติของ model รัน deterministic step ที่ปลอดภัยแล้วคืน bounded action หนึ่งตัว |
@@ -179,7 +182,7 @@ Feedback ตรวจ validity จาก runtime ปัจจุบัน ส่
 | Pin | v3.6.5 |
 |---|---|
 | runtime | 3.6.5 |
-| runtime API | 41 |
+| runtime API | 42 |
 | semantic draft schema | 5 |
 | semantic intake state schema | 2 |
 | semantic amendment schema | 1 |

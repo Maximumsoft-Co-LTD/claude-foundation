@@ -43,11 +43,11 @@
     },
     {
       "name": "advance",
-      "usage": "advance <change> [--through build|proven|archived] [--host-result <result.json>] [--decision retry|wait|pause|merge|retain --decision-fingerprint <hash> --decision-ref <ref> --reason <approach>] [--approve-spec --decision-ref <ref>] [--restore-target <path,path> [--decision-ref <ref>]] [--recover-apply settle|keep-current|restore-backup --decision-ref <ref>] [--undo-land --decision-ref <ref>] [--inspect] [--pretty]",
+      "usage": "advance <change> [--through build|proven|archived] [--host-result <result.json>] [--decision retry|wait|pause|merge|retain --decision-fingerprint <hash> --decision-ref <ref> --reason <approach>] [--approve-spec [--role <role>] --decision-ref <ref>] [--restore-target <path,path> [--decision-ref <ref>]] [--recover-apply settle|keep-current|restore-backup --decision-ref <ref>] [--undo-land --decision-ref <ref>] [--inspect] [--pretty]",
       "audience": "agent",
       "kind": "write",
       "idempotent": true,
-      "description": "Run deterministic lifecycle work through a requested target, including detected evidence wiring, safe sandbox sync, configured review, and task check completion, and return one bounded action at the next real model, user, resource, or authority boundary. --approve-spec records the user's spec approval (alias of change resolve --approve-spec); with --through it continues in the same call. --restore-target records the target files Land restores to the sandbox base when its apply conflicts; paths other than generated artifacts clean at isolation require --decision-ref. --recover-apply settles an interrupted Land apply under the user's decision, then continues. --undo-land, under the user's decision, restores the pre-Land bytes of an archived change whose Land diff is still uncommitted and retires the change, preserving what it landed; it refuses without writing when the target was committed, staged, or edited after Land in those paths."
+      "description": "Run deterministic lifecycle work through a requested target, including detected evidence wiring, safe sandbox sync, configured review, and task check completion, and return one bounded action at the next real model, user, resource, or authority boundary. --approve-spec records the user's spec approval (alias of change resolve --approve-spec); with --role it records one approval lane from foundation.json approval.roles, and the approval exists only once every required lane approved; with --through it continues in the same call. --restore-target records the target files Land restores to the sandbox base when its apply conflicts; paths other than generated artifacts clean at isolation require --decision-ref. --recover-apply settles an interrupted Land apply under the user's decision, then continues. --undo-land, under the user's decision, restores the pre-Land bytes of an archived change whose Land diff is still uncommitted and retires the change, preserving what it landed; it refuses without writing when the target was committed, staged, or edited after Land in those paths."
     },
     {
       "name": "feedback",
@@ -72,6 +72,22 @@
       "kind": "read",
       "idempotent": true,
       "description": "Group blocker and review finding codes that recur across at least --min-changes distinct changes (default 3, minimum 2) into advisory permanent-check proposals for /change, reporting uncoded totals separately, without writing state."
+    },
+    {
+      "name": "package",
+      "usage": "package <change> [--pretty]",
+      "audience": "agent",
+      "kind": "read",
+      "idempotent": true,
+      "description": "Write the read-only approval package .foundation/packages/<change>.html: risk level, technical domains, artifacts by approver role with proof/preview labels, optional suggested previews, and the change's Mermaid diagrams, without changing lifecycle state."
+    },
+    {
+      "name": "preview",
+      "usage": "preview <change> --provider <name> [--decision-ref <ref>] [--pretty]",
+      "audience": "agent",
+      "kind": "write",
+      "idempotent": false,
+      "description": "Optionally run one declared provider before Build in an isolated copy under .foundation/previews/<change>/ and record a preview receipt bound to the contract revision. Preview receipts never satisfy Prove or Land, never block approval or Build, and a provider marked external runs only with the user's --decision-ref."
     },
     {
       "name": "exec",
@@ -107,7 +123,7 @@
     },
     {
       "name": "change resolve",
-      "usage": "change resolve <change> [--impact low|medium|high] [--coupling isolated|coupled] [--ambiguity clear|unclear] [--surface <glob,glob>] [--security <terms>] [--review] [--size xs|s|m|l] [--acceptance-not-required | --acceptance-required --acceptance-reason <why> [--acceptance-claims <ids>]] [--reopen-grounding --decision-ref <ref> --reopen-reason <why>] [--ci-not-required --decision-ref <ref>] [--approve-spec --decision-ref <ref>] [--continue-review --decision-ref <ref>] [--accept-target-edits --decision-ref <ref>]",
+      "usage": "change resolve <change> [--impact low|medium|high] [--coupling isolated|coupled] [--ambiguity clear|unclear] [--surface <glob,glob>] [--security <terms>] [--review] [--size xs|s|m|l] [--acceptance-not-required | --acceptance-required --acceptance-reason <why> [--acceptance-claims <ids>]] [--reopen-grounding --decision-ref <ref> --reopen-reason <why>] [--ci-not-required --decision-ref <ref>] [--approve-spec [--role <role>] --decision-ref <ref>] [--continue-review --decision-ref <ref>] [--accept-target-edits --decision-ref <ref>]",
       "audience": "agent",
       "kind": "write",
       "idempotent": true,
@@ -832,6 +848,8 @@
     "feedback",
     "outcomes",
     "lessons",
+    "package",
+    "preview",
     "budget-checkpoint",
     "budget-continue",
     "doctor",

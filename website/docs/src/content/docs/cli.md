@@ -23,7 +23,7 @@ surface is:
 | `change amend --template \| <change> <amendment.json> [--inspect] [--consume-amendment] [--approve-spec --decision-ref <ref> [--through <target>]]` | Inspect intake and, when complete, transactionally add, revise, or remove requirements, or fix an unfinished task's verify command, during Build in one call |
 | `change amend <change> --task <task> --verify <command> [--reopen] [--reason <text>]` | Correct a task's wrong verify command directly, keeping the approval (`--reopen` for a completed task); the task is accepted only when the new command passes |
 | `advance <change> --through build\|proven\|archived` | Run deterministic lifecycle work (evidence wiring, sandbox sync, agent-runnable review, task ticking) and return one of seven bounded actions (`WORKING` while harness work runs) at the next real boundary |
-| `advance <change> --approve-spec --decision-ref <ref>` | Record the user's spec approval (alias of `change resolve --approve-spec`) |
+| `advance <change> --approve-spec [--role <role>] --decision-ref <ref>` | Record the user's spec approval (alias of `change resolve --approve-spec`); with `approval.roles` configured, `--role` approves one lane and omitting it covers every lane |
 | `exec <change> [--repo <id>] [--task <id>] -- <command…>` | Run and time a command (a task's `checkCommand`, a build, a full test run) in the change's sandbox: the named repository or task, else the caller's directory, else the pending tasks' repository; never the main checkout |
 | `deliver advance <change>` | After explicit `/deliver`, automate isolated commit, feature-branch push, PR creation/reuse, provider verification, and return the URL |
 | `changes` | Read active state and the next useful route |
@@ -34,7 +34,8 @@ compatible primitives below for operators and host integrations.
 
 ## Read-only
 
-Safe to run at any time. These mutate nothing.
+Safe to run at any time. These mutate nothing, except that `package` writes
+its own read-only HTML file.
 
 | Command | Purpose |
 |---|---|
@@ -42,6 +43,7 @@ Safe to run at any time. These mutate nothing.
 | `doctor [--stage change\|build\|prove] [--change <id>]` | Diagnose project, provider, and lifecycle readiness |
 | `packet <change> [--phase <phase>] [--repo <id>] [--task <id>]` | Read the bounded machine handoff for the current operation |
 | `metrics <change>` | Inspect measured usage, semantic-intake effectiveness, active budget, cost, and execution timing |
+| `package <change> [--pretty]` | Write the read-only approval package `.foundation/packages/<change>.html` (risk level, technical domains, artifacts by approver role with proof/preview/no-evidence labels, embedded Mermaid diagrams, suggested previews for High/Critical); idempotent, writes only that file, never changes lifecycle state |
 | `budget checkpoint <change>` | Show measured remaining allowance, unfinished work, and the exact resume route |
 | `feedback <change>` | Explain reviewer, evidenced repair, human-wait, and unattributed timing; show reuse and the next action |
 | `change audit <change>` | Audit scenario, claim, task, and provider traceability |
@@ -82,6 +84,7 @@ language profiles, baselines, and rollout policy.
 | `change revise <change> <draft.json> [--merge] [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | Before Build, inspect and, when complete, recompile a revised semantic draft over the same change id in one call, with rollback and a requirement delta (approval carries unless a requirement is removed); `--merge` takes only the changed keys and keyed entries |
 | `change resolve <change> …` | Persist impact, coupling, security, and review decisions |
 | `change validate <change>` | Validate the change and its executable evidence contract |
+| `preview <change> --provider <name> [--decision-ref <ref>] [--pretty]` | Optional, before Build only: copy the target into `.foundation/previews/<change>/workspace` (no Git, no harness state), run one declared provider there, and record a `kind: "preview"` receipt; preview receipts never satisfy Prove or Land and never block approval or Build; an `external: true` provider needs the user's `--decision-ref` or is refused with `PREVIEW_AUTHORITY_REQUIRED` |
 | `sandbox create <change> [--all]` | Create the isolated Build workspace |
 | `sandbox sync <change>` | Synchronize an intentional contract revision into Build |
 | `advance <change> [--through build\|proven\|archived] [--host-result <result.json>]` | Normal model-facing coordinator; run safe deterministic steps and return one bounded action |
@@ -182,7 +185,7 @@ Wire-visible contracts are pinned in `.claude/harness/protocol.json`. A mixed-re
 | Pin | v3.6.5 |
 |---|---|
 | runtime | 3.6.5 |
-| runtime API | 41 |
+| runtime API | 42 |
 | semantic draft schema | 5 |
 | semantic intake state schema | 2 |
 | semantic amendment schema | 1 |

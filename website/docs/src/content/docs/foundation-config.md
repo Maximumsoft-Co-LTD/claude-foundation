@@ -250,6 +250,35 @@ Do not put credentials, tokens, or login commands in `foundation.json`. Install
 and authenticate the selected CLI through its normal user-level setup, then use
 `doctor --stage prove` to verify readiness.
 
+## `approval`: role approval lanes
+
+Optional. Require separate spec approval from named roles:
+
+```json
+{
+  "approval": {
+    "roles": ["tech-lead", "qa"]
+  }
+}
+```
+
+`roles` accepts unique values from `product-owner`, `tech-lead`, `qa`,
+`devops`, and `security`. The default is empty: one spec approval, unchanged.
+
+When set, a change requires the configured roles that its router selects for
+that change. Each role approves with
+`claude-foundation advance <change> --approve-spec --role <role> --decision-ref <ref>`
+(or `change resolve … --approve-spec --role <role>`). Until every required lane
+has approved the current revision and packet, `advance` stops with `ASK_USER`
+naming the missing roles, and no sandbox is created. An approval without
+`--role` covers every lane required at that moment, and a later `--role`
+approval adds its lane without revoking it. The harness records the role as
+stated and does not verify identity. An additive revision keeps lane
+approvals, but if it makes the router select a new role, that role must
+approve before Build; a revision that removes a requirement resets every lane.
+An unknown role, `--role` without `approval.roles`, an `approval` value that
+is not an object, or `roles` that is not an array is refused.
+
 ## `sandbox`: prepare every new Build workspace
 
 A Git worktree contains tracked files but not `node_modules`. Without a setup

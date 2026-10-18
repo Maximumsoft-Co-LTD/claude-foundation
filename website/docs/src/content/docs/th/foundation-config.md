@@ -244,6 +244,34 @@ reviewer definition อยู่ใต้ `review.reviewers` โดย reviewer 
 อย่าใส่ credential, token หรือ login command ใน `foundation.json` ให้ติดตั้งและ
 login CLI ตามปกติ แล้วใช้ `doctor --stage prove` ตรวจ readiness
 
+## `approval`: approval lane ตามบทบาท
+
+ไม่บังคับ ใช้กำหนดให้ role ที่ระบุต้องอนุมัติ spec แยกกัน:
+
+```json
+{
+  "approval": {
+    "roles": ["tech-lead", "qa"]
+  }
+}
+```
+
+`roles` รับค่าที่ไม่ซ้ำกันจาก `product-owner`, `tech-lead`, `qa`, `devops` และ
+`security` ค่าเริ่มต้นคือว่าง: อนุมัติ spec ครั้งเดียวเหมือนเดิม
+
+เมื่อตั้งค่าแล้ว change ต้องได้รับอนุมัติจาก role ที่ตั้งไว้ซึ่ง router เลือกสำหรับ
+change นั้น แต่ละ role อนุมัติด้วย
+`claude-foundation advance <change> --approve-spec --role <role> --decision-ref <ref>`
+(หรือ `change resolve … --approve-spec --role <role>`) จนกว่าทุก lane ที่ต้องมีจะ
+อนุมัติ revision และ packet ปัจจุบันครบ `advance` จะหยุดด้วย `ASK_USER` พร้อมระบุ
+role ที่ยังขาด และไม่สร้าง sandbox การอนุมัติที่ไม่มี `--role` ครอบคลุมทุก lane
+ที่ต้องมี ณ ตอนที่อนุมัติ และการอนุมัติด้วย `--role` ภายหลังจะเพิ่ม lane นั้นโดยไม่ยกเลิก
+การอนุมัติเดิม harness บันทึก role ตามที่แจ้งและไม่ได้ยืนยันตัวตน revision ที่เพิ่ม
+อย่างเดียวคงการอนุมัติของ lane ไว้ แต่ถ้าทำให้ router เลือก role ใหม่ role นั้นต้องอนุมัติ
+ก่อน Build ส่วน revision ที่ลบ requirement จะรีเซ็ตทุก lane role ที่ไม่รู้จัก การใช้
+`--role` โดยไม่ได้ตั้ง `approval.roles`, `approval` ที่ไม่ใช่ object หรือ `roles` ที่ไม่ใช่
+array จะถูกปฏิเสธ
+
 ## `sandbox`: เตรียม Build workspace ใหม่
 
 Git worktree มี tracked file แต่ไม่มี `node_modules` ถ้าไม่มี setup command

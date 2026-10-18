@@ -147,5 +147,5 @@ test("draft schema 5 ships without moving the four runtime API pins", () => {
     new RegExp(`const RUNTIME_API_VERSION = "${api}";`));
   assert.match(readFileSync(join(root, ".claude/harness/runtime/version.mjs"), "utf8"),
     new RegExp(`export const RUNTIME_MODULE_API = "${api}";`));
-  assert.equal(api, "41");
+  assert.equal(api, "42");
 });

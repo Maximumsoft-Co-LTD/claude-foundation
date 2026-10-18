@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { delimiter, isAbsolute, join, resolve } from "node:path";
+import { APPROVAL_ROLES } from "../contracts/scratch-router.mjs";
 
 const DEFAULT_POLICY = {
   version: 1,
@@ -37,6 +38,8 @@ const DEFAULT_POLICY = {
   telemetry: { requireUsage: false },
   quality: { changeGate: "off" },
   land: { riskBasedCi: false },
+  // Per-role spec approval lanes; empty keeps the single approval.
+  approval: { roles: [] },
   sandbox: { setupCommand: null, setupTimeoutMs: 600000 },
   workflow: {
     grounding: "optional",
@@ -45,6 +48,20 @@ const DEFAULT_POLICY = {
     handoffDefaultOwner: "devops-team"
   }
 };
+
+// A malformed approval block must refuse, not silently become "no lanes".
+export function approvalPolicyIssue(configured = {}) {
+  const approval = configured.approval;
+  if (approval === undefined) return null;
+  if (!approval || typeof approval !== "object" || Array.isArray(approval))
+    return "foundation.json approval must be an object such as {\"roles\": [\"tech-lead\"]}";
+  if (approval.roles !== undefined && !Array.isArray(approval.roles))
+    return `foundation.json approval.roles must be an array of ${APPROVAL_ROLES.join("|")}`;
+  const roles = approval.roles || [];
+  if (roles.some((role) => !APPROVAL_ROLES.includes(role)) || new Set(roles).size !== roles.length)
+    return `foundation.json approval.roles must be unique values from ${APPROVAL_ROLES.join("|")}`;
+  return null;
+}
 
 export function policyExecutionLimit(policy, field) {
   return policy().execution[field];
@@ -150,6 +167,8 @@ export function createRuntimeEnvironment({
   });
 
   function mergePolicy(configured) {
+    const approvalIssue = approvalPolicyIssue(configured);
+    if (approvalIssue) fail(approvalIssue);
     return {
       ...DEFAULT_POLICY, ...configured,
       execution: { ...DEFAULT_POLICY.execution, ...(configured.execution || {}) },
@@ -169,6 +188,7 @@ export function createRuntimeEnvironment({
       telemetry: { ...DEFAULT_POLICY.telemetry, ...(configured.telemetry || {}) },
       quality: { ...DEFAULT_POLICY.quality, ...(configured.quality || {}) },
       land: { ...DEFAULT_POLICY.land, ...(configured.land || {}) },
+      approval: { ...DEFAULT_POLICY.approval, ...(configured.approval || {}) },
       sandbox: { ...DEFAULT_POLICY.sandbox, ...(configured.sandbox || {}) },
       workflow: { ...DEFAULT_POLICY.workflow, ...(configured.workflow || {}) }
     };
@@ -249,6 +269,8 @@ export function createRuntimeEnvironment({
   function validateWorkflowPolicy(policy) {
     if (!["off", "warn", "enforce-high-risk"].includes(policy.quality.changeGate))
       fail("foundation.json quality.changeGate must be off|warn|enforce-high-risk");
+    const approvalIssue = approvalPolicyIssue(policy);
+    if (approvalIssue) fail(approvalIssue);
     const setupCommand = policy.sandbox.setupCommand;
     if (setupCommand !== null && setupCommand !== undefined &&
         (typeof setupCommand !== "string" || setupCommand.trim() === ""))

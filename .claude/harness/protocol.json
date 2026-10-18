@@ -1,6 +1,6 @@
 {
   "runtime": "3.6.5",
-  "runtimeApi": "41",
+  "runtimeApi": "42",
   "semanticDraftSchema": "5",
   "semanticIntakeStateSchema": "2",
   "semanticSourceBindingSchema": "1",

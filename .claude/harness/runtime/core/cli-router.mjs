@@ -39,6 +39,8 @@ export async function routeRuntimeCommand(command, values, api) {
     showFeedback,
     showOutcomes,
     showLessons,
+    showPackage,
+    showPreview,
     execObserved,
     checkpointBudget,
     continueBudget,
@@ -204,7 +206,7 @@ export async function routeRuntimeCommand(command, values, api) {
         rest
       } = parseStrictCommandFlags(values, "change resolve", {
         boolean: ["review", "acceptance-required", "acceptance-not-required", "reopen-grounding", "ci-not-required", "approve-spec", "continue-review", "accept-target-edits"],
-        value: ["impact", "coupling", "security", "size", "ambiguity", "surface", "acceptance-reason", "acceptance-claims", "decision-ref", "reopen-reason"]
+        value: ["impact", "coupling", "security", "size", "ambiguity", "surface", "acceptance-reason", "acceptance-claims", "decision-ref", "reopen-reason", "role"]
       });
       if (rest.length !== 1) die("change resolve requires exactly one change id");
       resolveChange(rest[0], flags);
@@ -452,13 +454,26 @@ export async function routeRuntimeCommand(command, values, api) {
       if (rest.length) die("lessons takes no change id; it groups codes across changes");
       showLessons(flags);
     },
+    "package": async () => {
+      const { flags, rest } = parseStrictCommandFlags(values, "package", { boolean: ["pretty"] });
+      if (rest.length !== 1) die("package requires exactly one change id");
+      showPackage(rest[0], flags);
+    },
+    "preview": async () => {
+      const { flags, rest } = parseStrictCommandFlags(values, "preview", {
+        boolean: ["pretty"], value: ["provider", "decision-ref"]
+      });
+      if (rest.length !== 1) die("preview requires exactly one change id");
+      showPreview(rest[0], flags);
+    },
     "advance": async () => {
       const { flags, rest } = parseStrictCommandFlags(values, "advance", {
         boolean: ["pretty", "inspect", "approve-spec", "undo-land"],
         value: ["host-result", "through", "decision", "decision-fingerprint", "decision-ref", "reason",
-          "restore-target", "recover-apply"]
+          "restore-target", "recover-apply", "role"]
       });
       if (rest.length !== 1) die("advance requires exactly one change id");
+      if (flags.role !== undefined && !flags["approve-spec"]) die("advance --role applies only to --approve-spec");
       // Land's interrupted-apply route: settle the journaled apply under the
       // user's decision, then resume the same lifecycle route. The internal
       // `land recover` primitive is never the agent's command.
@@ -515,9 +530,9 @@ export async function routeRuntimeCommand(command, values, api) {
       // approving and starting Build is one step, not two commands.
       if (flags["approve-spec"]) {
         const extra = Object.keys(flags).filter((flag) =>
-          !["approve-spec", "decision-ref", "through"].includes(flag));
+          !["approve-spec", "decision-ref", "through", "role"].includes(flag));
         if (extra.length)
-          die(`advance --approve-spec combines only with --decision-ref and --through; drop --${extra.join(", --")}`);
+          die(`advance --approve-spec combines only with --decision-ref and --through (and --role for an approval lane); drop --${extra.join(", --")}`);
         if (!flags["decision-ref"])
           die(`advance --approve-spec requires --decision-ref <ref> naming the user's approval`);
         if (flags.through && !["build", "proven", "archived"].includes(flags.through))
@@ -528,10 +543,12 @@ export async function routeRuntimeCommand(command, values, api) {
           return;
         }
         beforeEnvelope(flags.through, () => resolveChange(rest[0], {
-          "approve-spec": true, "decision-ref": flags["decision-ref"] }));
+          "approve-spec": true, "decision-ref": flags["decision-ref"],
+          ...(flags.role !== undefined ? { role: flags.role } : {}) }));
         if (!flags.through) return;
         delete flags["approve-spec"];
         delete flags["decision-ref"];
+        delete flags.role;
       }
       if (flags.inspect && (flags.through || flags["host-result"] || flags.decision ||
           flags["decision-fingerprint"] || flags["decision-ref"] || flags.reason))

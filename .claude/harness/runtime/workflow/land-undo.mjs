@@ -140,6 +140,8 @@ export function createLandUndo({
       // The change is retired, so nothing it owned stays live for a later
       // change reusing the id; see retired-change-stores.mjs.
       ...retiredChangeStores(paths, id),
+      ...(paths.previews ? [["previews", join(paths.previews, id)]] : []),
+      ...(paths.packages ? [["package.html", join(paths.packages, `${id}.html`)]] : []),
       ["logs", join(paths.logs, id)],
       ["snapshot.json", join(paths.snapshots, `${id}.json`)]
     ]) {

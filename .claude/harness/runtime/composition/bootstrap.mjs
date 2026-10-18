@@ -41,6 +41,8 @@ export function createBootstrap({ start, pinned, fail, warn = console.error }) {
     plans: join(root, ".foundation", "plans"),
     leases: join(root, ".foundation", "leases"),
     prototypes: join(root, ".foundation", "prototypes"),
+    packages: join(root, ".foundation", "packages"),
+    previews: join(root, ".foundation", "previews"),
     attestations: join(root, ".foundation", "attestations"),
     authority: join(root, ".foundation", "authority"),
     reviews: join(root, ".foundation", "reviews"),

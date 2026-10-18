@@ -95,6 +95,21 @@ export function userDecisionError(code, summary, options, recommended) {
   return error;
 }
 
+// A lane counts only for the current revision and the packet it was given on.
+export function laneApproved(root, id, state, role) {
+  const lane = state?.specApproval?.lanes?.[role];
+  if (!lane?.identity || !lane.decisionRef) return false;
+  if (Number(lane.revision) !== Number(state.contractRevision || 0)) return false;
+  return approvalMatches(lane.identity, root, id) ||
+    Boolean(state.workspace?.path && existsSync(join(state.workspace.path, "openspec", "changes", id)) &&
+      approvalMatches(lane.identity, state.workspace.path, id));
+}
+
+export function missingApprovalLanes(root, id, state) {
+  const required = Array.isArray(state?.specApproval?.requiredLanes) ? state.specApproval.requiredLanes : [];
+  return required.filter((role) => !laneApproved(root, id, state, role));
+}
+
 export function assertSpecApproval(root, id, state, { workspace = true } = {}) {
   // Legacy primitive-created/in-flight agreements retain their compatibility route.
   if (!state.specApproval?.required || state.status === "archived") return;
@@ -132,6 +147,20 @@ export function assertSpecApproval(root, id, state, { workspace = true } = {}) {
     }
     throw agreementDriftError(id, state.workspace.path);
   }
+  // Role lanes: the whole approval exists only once every required lane has
+  // approved this revision, so name the roles still missing.
+  const missingLanes = state.specApproval.identity ? [] : missingApprovalLanes(root, id, state);
+  if (missingLanes.length)
+    throw userDecisionError("SPEC_APPROVAL_REQUIRED",
+      `Approval lanes still needed before Build: ${missingLanes.join(", ")}. ` +
+      "Ask each role to approve this exact spec.",
+      [
+        ...missingLanes.map((role) => ({
+          id: `approve-${role}`, outcome: `Record the ${role} approval for this spec`,
+          command: `claude-foundation advance ${id} --approve-spec --role ${role} --decision-ref <user-decision>`
+        })),
+        { id: "revise", outcome: "Revise the spec before implementation" }
+      ], `approve-${missingLanes[0]}`);
   throw userDecisionError("SPEC_APPROVAL_REQUIRED",
     "Inspect the compiled spec with the user and obtain approval before Build.", [
       { id: "approve", outcome: "Approve this exact spec, then begin Build",

@@ -13,6 +13,7 @@ import {
 import { createExecRuntime } from "./runtime/observability/exec-runtime.mjs";
 import { createOutcomesRuntime } from "./runtime/observability/outcomes-runtime.mjs";
 import { createLessonsRuntime } from "./runtime/observability/lessons-runtime.mjs";
+import { createApprovalPackageRuntime, routeForState } from "./runtime/workflow/approval-package.mjs";
 import {
   createFeedbackRuntime, FEEDBACK_SCHEMA_VERSION
 } from "./runtime/observability/feedback-runtime.mjs";
@@ -60,7 +61,10 @@ import {
   prepareAdvanceBuild, runAdvanceProof
 } from "./runtime/workflow/advance-runtime.mjs";
 import { automaticReviewRun, currentDeliveryProof } from "./runtime/workflow/advance-recovery.mjs";
-import { createSandboxRuntime } from "./runtime/workflow/sandbox-runtime.mjs";
+import {
+  copySandboxEntries, createSandboxRuntime, sandboxCopyPlan
+} from "./runtime/workflow/sandbox-runtime.mjs";
+import { createPreviewRuntime } from "./runtime/workflow/preview-runtime.mjs";
 import { createSandboxCleanup } from "./runtime/workflow/sandbox-cleanup.mjs";
 import { assertLandedProjection } from "./runtime/workflow/land-verification.mjs";
 import {
@@ -150,7 +154,7 @@ import {
 } from "./runtime/workflow/pull-request-runtime.mjs";
 
 const VERSION = "3.6.5";
-const RUNTIME_API_VERSION = "41";
+const RUNTIME_API_VERSION = "42";
 // Checked here, at load, rather than only inside `doctor`: a torn install —
 // this file from one revision, runtime/** from another — otherwise passed
 // every command up to `archive` and then threw partway through Land.
@@ -234,7 +238,8 @@ const {
   paths: {
     runtime: RUNTIME, receipts: RECEIPTS, logs: LOGS, evidenceVault: EVIDENCE_VAULT,
     snapshots: SNAPSHOTS, transactions: TRANSACTIONS, plans: PLANS, leases: LEASES,
-    prototypes: PROTOTYPES, attestations: ATTESTATIONS, authority: AUTHORITY,
+    prototypes: PROTOTYPES, packages: PACKAGES, previews: PREVIEWS,
+    attestations: ATTESTATIONS, authority: AUTHORITY,
     handoffs: HANDOFFS, instructionManifests: INSTRUCTION_MANIFESTS,
     recovery: RECOVERY, deliveries: DELIVERIES, changes: CHANGES, reviews: REVIEWS
   },
@@ -270,7 +275,7 @@ let operationFingerprint = null;
 // their rows, so proof-* and land-* are measurements, not inspections.
 const READ_ONLY_OPERATIONS = new Set([
   "metrics", "feedback", "outcomes", "lessons", "hash", "changes", "providers", "repos", "models", "describe",
-  "budget-checkpoint",
+  "package", "budget-checkpoint",
   "packet", "agent-task", "audit-change", "authority-status",
   "handoff-list", "handoff-status", "handoff-packet", "evidence-detect", "evidence-doctor",
   "doctor", "quality-discover", "quality-doctor", "quality-report",
@@ -1515,6 +1520,39 @@ function rollbackAtomicStart(id) {
   }
   return issues;
 }
+const approvalPackage = createApprovalPackageRuntime({
+  root: ROOT,
+  runtimeDir: RUNTIME,
+  packagesDir: PACKAGES,
+  previewsDir: PREVIEWS,
+  loadRuntime,
+  activeChangePath,
+  changeWorkTypes,
+  evidence,
+  providerCapability,
+  receiptValidity,
+  fail: die
+});
+const approvalPackageLink = (id) => trapFailures(() => approvalPackage.tryWritePackage(id));
+const preview = createPreviewRuntime({
+  root: ROOT,
+  runtimeDir: RUNTIME,
+  previewsDir: PREVIEWS,
+  loadRuntime,
+  evidence,
+  providerCapability,
+  // A preview copy never carries Git or harness state: it is a scratch tree.
+  copyWorkspace: (source, destination) => copySandboxEntries({
+    root: source, requestedPath: destination, fail: die,
+    plan: sandboxCopyPlan({
+      root: source, carriesGit: false, git,
+      sandboxCopyExcludedDirs: SANDBOX_COPY_EXCLUDED_DIRS,
+      excludedWorkspaceDirs: EXCLUDED_WORKSPACE_DIRS
+    })
+  }),
+  now,
+  fail: die
+});
 const {
   templateDir,
   instantiate,
@@ -1534,6 +1572,13 @@ const {
 } = createChangeLifecycle({
   root: ROOT,
   policy: foundationPolicy,
+  approvalPackageLink,
+  approvalLanes: (id, state) => {
+    const configured = foundationPolicy().approval?.roles || [];
+    if (!configured.length) return { configured, required: [] };
+    const routed = routeForState(state, changeWorkTypes(activeChangePath(id, state))).roles;
+    return { configured, required: configured.filter((role) => routed.includes(role)) };
+  },
   securityTerms: SECURITY_TERMS,
   fail: die,
   pathInside,
@@ -2100,6 +2145,7 @@ const sessionLeases = createSessionLeaseRuntime({
   acquire: acquireAgentLease, release: releaseAgentLease, discard: discardAgentLease
 });
 const { advanceValue, advanceThrough, showAdvance } = createAdvanceRuntime({
+  approvalPackageLink,
   pendingApprovalDecisions: (id) => trapFailures(() => {
     const preflight = authorityPreflight(id);
     const authority = preflight.status === "READY" ? [] : preflight.blockers.map((blocker) => ({
@@ -2247,6 +2293,8 @@ const abandonRuntime = createAbandonRuntime({
     instructionManifests: INSTRUCTION_MANIFESTS,
     attestations: ATTESTATIONS,
     deliveries: DELIVERIES,
+    previews: PREVIEWS,
+    packages: PACKAGES,
     logs: LOGS,
     changes: CHANGES
   },
@@ -2270,7 +2318,7 @@ const { undoLand } = createLandUndo({
     transactions: TRANSACTIONS, snapshots: SNAPSHOTS, plans: PLANS, handoffs: HANDOFFS,
     logs: LOGS, authority: AUTHORITY, reviews: REVIEWS,
     instructionManifests: INSTRUCTION_MANIFESTS, attestations: ATTESTATIONS,
-    deliveries: DELIVERIES
+    deliveries: DELIVERIES, previews: PREVIEWS, packages: PACKAGES
   },
   loadRuntime, saveRuntime, readJson, writeJson, now, gitHead, git, gitBuffer,
   pathIdentity, pathMode, safeRootPath, copyPath,
@@ -2403,6 +2451,8 @@ await routeRuntimeCommand(command, values, {
   showFeedback,
   showOutcomes,
   showLessons,
+  showPackage: approvalPackage.showPackage,
+  showPreview: preview.showPreview,
   execObserved,
   checkpointBudget,
   continueBudget,

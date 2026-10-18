@@ -184,6 +184,34 @@ token ของ Kubernetes service account ที่ mount ไว้ หรื�
 
 การตรวจพบไม่ใช่การอนุญาต การพบว่ารันแบบไม่มีคนดูได้ ไม่เคยแปลว่าได้รับอนุญาตให้ทำ
 
+## Approval package, preview และ role lane
+
+เมื่อเริ่ม change และอีกครั้งเมื่อ `advance` ถามขออนุมัติ spec agent จะเขียน
+approval package แบบอ่านอย่างเดียวไว้ที่ `.foundation/packages/<change>.html`
+และแสดง path ให้คุณ ในนั้นสรุประดับความเสี่ยง (Low, Medium, High หรือ Critical
+คำนวณจาก impact และ risk signal) technical domain ที่เกี่ยวข้อง และ artifact
+สำหรับอนุมัติแยกตามบทบาทผู้อนุมัติ (product-owner, tech-lead, qa, devops,
+security) แต่ละ artifact มีป้ายกำกับ: **proof** เฉพาะเมื่อมี receipt ที่ผ่านและ
+ใช้ได้รองรับ, **preview** หรือ **ยังไม่มีหลักฐาน** Mermaid diagram ของ change
+ฝังอยู่ในไฟล์และแสดงผลในโปรแกรมที่รองรับ Mermaid โดยไม่โหลดอะไรจากภายนอก
+package ไม่เปลี่ยนสถานะของ change และถ้าเขียนไม่ได้ การอนุมัติจะทำต่อจาก packet
+
+**Preview เป็นทางเลือก** ก่อน Build agent อาจรัน provider ที่ประกาศไว้หนึ่งตัว
+กับสำเนาของ target ที่ทิ้งได้ เพื่อให้เห็นพฤติกรรมเบื้องต้น package ระดับ High
+หรือ Critical จะแนะนำ preview ที่ควรรัน ผลของ preview ไม่ใช่ proof เด็ดขาด:
+ใช้ผ่าน Prove หรือ Land ไม่ได้ ไม่บล็อก approval หรือ Build และจะแสดงเป็น stale
+เมื่อ spec เปลี่ยน provider ที่ระบุ `external: true` (เช่น payment sandbox หรือ
+staging) จะออกไปนอกเครื่องของคุณ จึงรันได้เฉพาะหลังคุณอนุญาตการรันครั้งนั้น
+ถ้าไม่มีการตัดสินใจของคุณจะถูกปฏิเสธและไม่มีอะไรรัน
+
+**Role lane ต้องเปิดใช้เอง** ค่าเริ่มต้นคือการอนุมัติ spec ครั้งเดียวครอบคลุมทั้ง
+change ถ้าโปรเจกต์ตั้ง `approval.roles` ใน `foundation.json` (ดู
+หัวข้อ `approval` ใน [ตั้งค่า foundation.json](/docs/th/foundation-config/)) แต่ละ role
+ที่ถูกเลือกต้องอนุมัติ revision ปัจจุบันแยกกัน และ Build จะไม่เริ่มจนกว่าทุก lane
+ที่ต้องมีอนุมัติครบ คุณเป็นผู้ระบุว่าอนุมัติในบทบาทใด การอนุมัติที่ไม่ระบุ role
+ครอบคลุมทุก lane harness บันทึก role ตามที่แจ้งและไม่ได้ยืนยันตัวตน การเพิ่ม
+requirement คงการอนุมัติของ lane ไว้ ส่วนการลบ requirement จะรีเซ็ตทุก lane
+
 ## อนุมัติด้วยคำพูดของคุณเอง
 
 คำตอบในแชทคือการตัดสินใจ การตอบคำถามขออนุมัติ spec หรือ amendment ว่า "ลุยเลย",

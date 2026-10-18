@@ -273,8 +273,10 @@ assert_cmd_zero "command registry has one unique entry per public name" \
 # aggregate handoff list; neither grants authority or widens continuation.
 # `change revise` is the pre-Build sibling of `change amend`. `advance` is the
 # agent's lifecycle driver (it performs wiring, sync, and configured review).
-# `outcomes` and `lessons` are read-only cross-change rollups.
-assert_eq "agent command surface is bounded" "26" \
+# `outcomes` and `lessons` are read-only cross-change rollups. `package` is the
+# read-only approval package; `preview` is the optional pre-Build run whose
+# receipts never count as evidence.
+assert_eq "agent command surface is bounded" "28" \
   "$(jq '[.commands[] | select(.audience == "agent")] | length' \
     "$TARGET/.claude/harness/commands.json")"
 # 26 includes the bounded proof controller, its internal execution commands,

@@ -15,7 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXPECTED_RUNTIME_API=41
+EXPECTED_RUNTIME_API=42
 PROJECT_START="${CLAUDE_FOUNDATION_PROJECT:-$PWD}"
 
 fail() { printf 'claude-foundation: %s\n' "$*" >&2; exit 1; }
@@ -89,7 +89,7 @@ run_runtime() {
   local phase=""
   case "${1:-}" in
     investigate) phase="investigate" ;;
-    new|start|resolve|amend|revise|validate|audit-change|abandon|waive|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade|quality-discover|quality-init|quality-doctor) phase="change" ;;
+    new|start|resolve|amend|revise|validate|audit-change|abandon|waive|evidence-detect|evidence-init|evidence-doctor|evidence-upgrade|quality-discover|quality-init|quality-doctor|preview) phase="change" ;;
     sandbox|agent-plan|agent-dispatch|agent-acquire|agent-release) phase="build" ;;
     proof-plan|proof-readiness|proof-advance|proof-run|proof-collect|proof-preflight|proof-execute|proof-audit|prove|receipt|run-provider|evidence-verify-ci|authority-request|authority-dispatch|authority-run|authority-abort|authority-status|authority-record|authority-reset-infra|authority-reset-base-move|authority-extend-review|quality-run|quality-report|quality-baseline|quality-debt) phase="prove" ;;
     handoff-list|handoff-status|handoff-packet|handoff-record|land-check|land-advance|land-recover|land-plan|land-record|land-pointers|land-resume|archive) phase="land" ;;
@@ -320,6 +320,12 @@ case "${1:-}" in
   lessons)
     shift
     run_runtime read lessons "$@" ;;
+  package)
+    shift; need_arg "package" "${1:-}"
+    run_runtime read package "$@" ;;
+  preview)
+    shift; need_arg "preview" "${1:-}"
+    run_runtime write preview "$@" ;;
   investigate)
     shift; need_arg "investigate" "${1:-}"
     run_runtime write investigate "$@" ;;
@@ -535,7 +541,7 @@ case "${1:-}" in
     shift
     [ "$#" -gt 0 ] || fail "runtime requires an internal harness command"
     warn "'runtime' is an internal compatibility namespace; use canonical public commands"
-    case "$1" in version|api-version|hash|doctor|packet|metrics|feedback|outcomes|lessons) access=read ;; *) access=write ;; esac
+    case "$1" in version|api-version|hash|doctor|packet|metrics|feedback|outcomes|lessons|package) access=read ;; *) access=write ;; esac
     run_runtime "$access" "$@" ;;
   dashboard|dashboard-up|dashboard-down|dashboard-status)
     sub="$1"; shift
