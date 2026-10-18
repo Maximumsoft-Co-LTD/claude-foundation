@@ -207,7 +207,7 @@
       "audience": "internal",
       "kind": "write",
       "idempotent": true,
-      "description": "Advance the resumable Land saga and archive when every repository is ready."
+      "description": "Compatibility alias of advance <change> --through archived; issues no grant and lands only current passing proof."
     },
     {
       "name": "handoff status",

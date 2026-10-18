@@ -77,6 +77,37 @@ for every host, and the phase guard enforces its Git and Deliver parts.
   "open a PR") is `/deliver` for that one composite command, as is a yes to the
   delivery question the guard asked.
 
+### Blocking policy
+
+The user decides, the agent codes and documents, and the harness automates.
+The harness never blocks the user or the agent before Land: it performs a step
+itself or routes it to its owner (`EDIT` or `REPAIR` for the agent, `WORKING`
+or a harness `WAIT` for its own work, `WAIT` for a named external owner). Land
+is the single hard gate: it requires a still-valid spec approval, a `proven`
+(or `applied`) lifecycle, passing assurance, and a proof bound to the current
+workspace hash ([`/land`](#land-change)).
+
+Before Land, only a user decision stops the flow, as `ASK_USER`:
+
+- spec approval, or an amendment that removes approved behavior;
+- product meaning, a material trade-off, or a scope widening the agreement
+  does not settle (including an amended-agreement conflict, and two changes
+  whose intents contradict);
+- an acceptance verdict, a waiver, or exhausted review (`review-exhausted`);
+- Land authority, a commit or push, or another external side effect (including
+  rerunning a provider execution whose side effects are indeterminate);
+- budget or spend (`budget-no-progress`);
+- a cause only the user can clear in their own environment
+  (`user-environment`: a credential, the network, or a full disk).
+
+Everything else stays with the agent or the harness: setup and tool
+preparation, sandbox repair and sync conflicts, shared-resource waits,
+protected-path edits and deletions (recorded by Prove and shown at Land), and
+repeated repair, which the [recovery ladder](#recovery-and-user-decisions)
+returns to its owner with a changed strategy. The ladder's boundary set
+(`USER_AUTHORITY_BOUNDARIES` in the advance recovery runtime) is the runtime
+form of this list.
+
 ## Lifecycle commands
 
 ### `/investigate <problem>`
@@ -101,7 +132,10 @@ Questions may be open-ended and name their dependent work. The typed action
 exposes pending questions and independent work, which the agent continues
 while asking for material meaning. Only work depending on an unanswered
 material choice waits; record/source/report repairs remain with their agent
-or harness owner. Nonmaterial open questions can travel as disclosed context.
+or harness owner. Nonmaterial open questions can travel as disclosed context,
+and a material question that depends only on them is still asked; one blocked
+by another unanswered material question returns an agent repair to answer,
+defer, or unlink that dependency.
 Material proposals are not user agreement, and silence confirms nothing.
 Experiments name their question, requirement revisions, criteria, findings,
 and limitations; only affected results need review after requirements change.
@@ -131,17 +165,23 @@ current report link. `language: "th"` selects Thai headings; English is the
 fallback. JSON stdout and handoff remain machine-readable. Generated reports
 are excluded from investigation source binding, and authored `<id>.md` notes
 are preserved. A report failure preserves research and returns a regeneration
-route with no current report or handoff advertised. Reporting never starts Change.
+route with no current report or handoff advertised; the persisted state records
+that route, never `DONE`. Reporting never starts Change.
 
 Set the optional `activeChange` field to an existing change ID when the question
-arises during Build or Prove. The harness then reads the active isolated root,
-binds its workspace identity and base into state and handoff, and fails closed
-with the same record command if that sandbox is missing or stale. Omitting the
-field preserves standalone Investigate behavior against the project root.
+arises during Build or Prove. The harness then reads the active isolated root
+and binds its workspace identity and base into state and handoff. If that
+sandbox is missing, stale, or unreadable, the first run returns a harness-owned
+repair (`repair-harness`) with the same record command; the record itself is
+not blamed. Omitting the field preserves standalone Investigate behavior
+against the project root.
 
-`/investigate <decision> --compare` may build disposable alternatives only
-under `.foundation/prototypes/`. It always records the selected conclusion in
-`selection.md`. Prototype artifacts are never evidence.
+A comparison is a record with `mode: "compare"`: three to five options, each
+with findings, trade-offs, and sources, and, once concluded, a `selection`
+naming the chosen option, its reason, and why each other option was rejected.
+Under `/investigate <decision> --compare`, the agent may write disposable
+alternatives only at the `prototypePaths` such a record declares under
+`.foundation/prototypes/<id>/`. Prototype artifacts are never evidence.
 
 A `ready-for-change` result emits a digest-bound handoff. The agent copies it
 into semantic draft v4 as `investigation`; Change verifies the state and source
@@ -169,7 +209,9 @@ identities stay stable. See the [Change authoring workflow](.claude/skills/chang
 for the detail, language, and compiled-packet inspection rules.
 The transactional compiler creates
 `openspec/changes/<id>/`, assigns stable cross-ledger IDs, validates the complete
-agreement, installs it, and prepares isolation. The draft records:
+agreement, and installs it. `change start` creates no sandbox: the first
+`advance` creates the isolated workspace and moves the change from `change` to
+`building`. The draft records:
 
 - optional discovery coverage (required for high impact or typed risk), ambiguity, impact, coupling, and size;
 - semantic requirements and task outcomes, rendered for people: one case per
@@ -684,7 +726,9 @@ claude-foundation advance <change> --through proven
 
 The coordinator validates the agreement, prepares or synchronizes isolation,
 compiles the task graph, and returns one bounded protocol-v6 action:
-`EDIT`, `REPAIR`, `RUN_EXTERNAL`, `WAIT`, `ASK_USER`, or `DONE`. `/build`
+`WORKING`, `EDIT`, `REPAIR`, `RUN_EXTERNAL`, `WAIT`, `ASK_USER`, or `DONE`.
+`WORKING` means harness work is still running (`PROOF_IN_PROGRESS`,
+`LAND_IN_PROGRESS`): wait for it instead of starting another run. `/build`
 targets `proven` from its first call, because Prove has no external side
 effects: proof runs only once Build is complete, in the same coordinator
 call, without a separate Build `DONE` round trip. It stops at `proven` and
@@ -709,10 +753,12 @@ This is workspace integrity, not OS process, network, or secret containment.
 The agent runs `cd <workspace>` once as its own shell call and then plain
 commands, so no compound command asks the user for approval.
 
-The live guards never refuse the agent by default; they automate or route. A
+The live guards never refuse the agent by default; they automate or route
+([blocking policy](#blocking-policy)). A
 product edit aimed at the main checkout while a workspace exists is redirected
 to the same path in the workspace. Internal Land commands run as `advance
-<change> --through archived`, and a delivery outside `/deliver` becomes the
+<change> --through archived` (a raw `land advance` is rewritten to it in every
+session, `/land` included), and a delivery outside `/deliver` becomes the
 question for the user. Everything else runs with guidance naming the rule and
 the route: shell findings (path escapes, copies from outside the workspace),
 edits before a change exists, and edits outside the phase's surface. Land
@@ -736,7 +782,8 @@ declared, the harness runs the workspace lockfile's pinned install itself
 (`npm ci`, `pnpm install --frozen-lockfile`, `yarn install --frozen-lockfile`,
 or `bun install --frozen-lockfile`) and records it like a configured setup;
 `sandbox.installDependencies: false` opts out. If that install fails or its
-tool is missing, Build is not blocked: `advance` returns a `REPAIR` handoff with
+tool is missing, Build is not blocked ([blocking policy](#blocking-policy)):
+`advance` returns a `REPAIR` handoff with
 the command, workspace directory, and log tail for the agent to finish.
 
 Before Build, the harness compiles and persists an execution-preparation plan
@@ -764,27 +811,38 @@ telemetry or mutation. An attestation is short-lived, project-, agreement-, and
 permission-bound, single-use, and does not turn a worktree or container into a
 security boundary. The complete operator contract is in the harness guide.
 
-One-task changes without shared external authority stay in the current agent.
-Independent tasks in separate repository workspaces may use native workers.
-Tasks sharing a workspace stay serialized because lease release observes the
-whole repository diff; disjoint paths alone cannot identify their writer.
+A Build is confined when it stays in one repository, no claim spans
+repositories, and no task declares a `[resources:]` token beyond its own
+workspace. A confined single task, or a confined chain whose every scheduling
+wave holds one task, runs in the current session without a lease (below). When
+planned dispatch selects only one ready task otherwise, the current session
+runs it under a harness-held lease. Two or more ready tasks in separate
+repository workspaces use native workers. Tasks sharing a workspace stay
+serialized because lease release observes the whole repository diff; disjoint
+paths alone cannot identify their writer.
 The compiler writes cross-repository order into `tasks.md`. A task follows
 every same-change task in a repository nested inside its own, as root contains
 a submodule. A task without authored edges also follows the tasks of each
 repository its selection `dependsOn`. A task a semantic amendment adds gets
-the same edges. An edge that would close a cycle is a compile issue. The harness plans dependency and resource scopes,
+the same edges. An edge that would close a cycle, including a multi-task cycle
+across the updated, kept, and added tasks of an amendment, is a compile issue. The harness plans dependency and resource scopes,
 leases them all-or-none with fencing generations, and accepts only observed
 writes inside the granted authority. Load one primary construction skill per
 task and only the cross-cutting security or observability skills whose triggers
 apply.
 
 An edit inside the sandbox outside every task's `[paths:]` does not block Build
-or Prove. Prove records it in the change surface (`surfaceAdditions`), so it is
-proven and lands with the change. Prove still refuses a deletion, a
+or Prove ([blocking policy](#blocking-policy)). Prove records it in the change
+surface (`surfaceAdditions`), so it is proven and lands with the change. A
 control-plane, CI, or secret path (for example `.claude/`, `.github/`,
-`foundation.json`, `.env`), a misplaced root sandbox, or more than 100 such
-paths until a task's `[paths:]` declares them; Build refuses a write inside
-another active task's scope.
+`foundation.json`, `.env`) is recorded with `protected: true` and a path the
+sandbox removed with `deleted: true`; Land lists both (paths only, never
+contents) before it applies. Two cases remain agent repairs, each with a
+concrete command: more than 100 such paths (`ignore-generated-output`, with
+the `.gitignore` patterns that cover them, or an amendment if they are intended
+work) and child-repository work in the root sandbox
+(`move-to-repository-sandbox`). Build refuses a write inside another active
+task's scope and names the contested paths and the task that owns them.
 
 Lease recovery is harness work, not a user decision. An owner reacquiring its
 own unreleased lease after the graph, contract, or `[paths:]` changed is
@@ -792,8 +850,11 @@ re-granted under a new fencing generation and keeps its original write
 baseline, so earlier writes are still judged against the widened scope. A
 lease past its TTL is released or taken over without `--force` or a decision
 reference; only a live lease held by another worker needs one. `advance` settles
-the session lease it holds even after its TTL. A lease conflict between two
-active changes remains a real resource boundary.
+the session lease it holds even after its TTL. A shared `[resources:]` token
+another active change holds is queued, not a repair or a question: `advance`
+returns a harness-owned `WAIT` (`WAIT_RESOURCE`, code `LEASE_RESOURCE_HELD`)
+naming the holder, and resumes once it lands, is abandoned, or its lease
+expires. These waits never count toward the recovery ladder.
 
 A force-released lease grants no result authority. If its task was already
 checked complete, the planner returns it for leased verification without
@@ -938,7 +999,8 @@ Several changes may be active at once. Overlapping path or repository scopes
 never block Build, Prove, or Land across changes; whichever lands later
 synchronizes onto the moved target as above, resolves any double edit, and
 re-proves. Only an explicit `[resources:]` token names a resource two changes
-cannot use at once, and those still serialize.
+cannot use at once; the later change queues behind the holder as a harness
+`WAIT` (above) rather than blocking.
 
 Packet artifacts flow from `openspec/changes/<change>/` in the target into the
 sandbox. An artifact edited only in the sandbox blocks sync; only `tasks.md`
@@ -960,8 +1022,9 @@ project's whole suite; a project that wants its full suite as release evidence
 runs it as a separate gate before release (this repository: `run-all.sh`), or
 declares it as a provider in the change's `execution`.
 Failed, missing, stale, erroneous, or inconclusive evidence remains visible as
-assurance status. It blocks a `PROVEN` result, but an explicit `/land` may still
-authorize the current workspace projection.
+assurance status. It blocks a `PROVEN` result, and Land refuses it: an explicit
+`/land` proves the current workspace first and lands only once that proof
+passes.
 
 Composite identity binds repository content and agreement revision rather than
 Git commit identity. Recorded base heads remain explicit recovery and Land
@@ -1005,9 +1068,12 @@ explicitly with `[claims:<claim-id>]`.
 Every phase gate follows the same convergence rule: collect independent
 findings, repair one dependency-ordered in-contract batch, and selectively
 rerun invalidated checks. Product repair has no fixed cycle ceiling while its
-semantic progress identity changes. Two unchanged automated transitions hand
-the stuck step to the agent as a no-progress repair carrying what the step
-returned.
+semantic progress identity changes. A coding gate that returns the same
+findings for unchanged inputs returns an `AUTO_REPAIR` whose next step is a
+`change-strategy` repair carrying those findings, not a user question. Two
+unchanged automated transitions hand the stuck step to the agent as a
+no-progress repair carrying what the step returned. Repeated rounds follow the
+[recovery ladder](#recovery-and-user-decisions).
 
 Harness automation that cannot finish is handed to the agent rather than
 stopping the flow: a failed sandbox setup or OpenSpec preparation returns an
@@ -1015,8 +1081,9 @@ agent `REPAIR` with `recovery.type: HANDOFF` and a `handoff` naming the step,
 its exact command, working directory, and output. The agent finishes the step
 (or fixes its declared setup) and resumes. Thrown Build, Prove, or Land
 dependencies are captured in the same action envelope with their original
-reason and exact recovery route. Decisions,
-authority, resources, conflicts, and repeated no-progress preserve state.
+reason and exact recovery route. User decisions
+([blocking policy](#blocking-policy)), external waits, resource waits,
+conflicts, and repeated no-progress preserve state.
 `proof readiness`, `proof advance`, `proof run`, and direct authority commands
 remain diagnostic or integration primitives behind `advance`.
 
@@ -1030,8 +1097,21 @@ claude-foundation advance <change> --through archived
 
 This explicit invocation supplies Land authority. Any other explicit user
 instruction to land, in any wording (for example "land it when proven" in a
-`/dev` request), supplies it too. Silence never does. `land advance` remains an
-internal compatibility route that the agent does not call.
+`/dev` request), supplies it too. Silence never does. `land advance` remains
+only as an alias of `advance <change> --through archived`; it issues no grant of
+its own, and the phase guard rewrites it to that route.
+
+Land is the single hard gate ([blocking policy](#blocking-policy)). It refuses
+until the spec approval is still valid (checked again even when a grant
+exists), the lifecycle is `proven` (or `applied` during recovery), assurance
+passed, and the proof's workspace hash equals the current workspace hash.
+There is no unproven or risk-accepted Land: on a refusal, `advance <change>
+--through archived` proves the current workspace and returns to Land. A change
+still in `change` or `building` never moves to `applied` or `archived`
+directly; a legacy `landing` status reads as `proven` with every gate in force.
+When Prove recorded protected-path edits or deletions, the Land output lists
+`protected paths changed` and `paths deleted` (paths only), and the grant
+carries the same `surface`.
 Tests and checks run only inside the returned workspace, never in the main
 checkout. If Land's apply conflicts with target files that are regenerable
 artifacts (for example `__pycache__/*.pyc`) and were clean at isolation,
@@ -1042,8 +1122,10 @@ archived --restore-target <paths> --decision-ref <user-decision>`, and a file
 changed after the restore was recorded is never overwritten.
 Land has one user-visible
 goal: place the exact current workspace projection in the declared main
-workspace. The Harness binds a resumable grant to the exact change, workspace
-hash, available assurance, repository graph, and target roots, then owns
+workspace. The Harness binds a resumable grant to the exact change and its
+agreement, contract, and execution revisions, the current workspace hash, the
+passing proof run and its workspace hash, the repository graph, the target
+roots and base heads, and the issuing session, then owns
 checking, Apply, verification, semantic spec
 synchronization, archival, recovery, and cleanup as internal checkpoints. It
 finishes only at `archived`; `proven` is not completion.
@@ -1213,8 +1295,10 @@ user's Land authority: Deliver runs the normal `advance <change> --through
 archived` route, which issues the Land grant under this invocation, and continues
 delivery in the same call once the change is archived. A Land boundary on the
 way (a real decision or an agent repair) is returned with the Deliver resume
-route. A change that is not proven yet is not landed; Deliver recommends
-finishing Build and Prove first. The invocation grants only the authority to
+route. Deliver lands only from `proven` or `applied`; when the proof has gone
+stale since, that route proves the current workspace again before Land. A
+change that is not proven yet is not landed; Deliver recommends finishing Build
+and Prove first. The invocation grants only the authority to
 Land, create an isolated feature branch, commit the proven Land projection,
 push that branch, and open or reuse a pull request. It does not authorize
 force-push, default-branch push, merge, deploy, publish, evidence disclosure to
@@ -1571,7 +1655,7 @@ identity, observation, provenance, durable evidence, and the final workspace.
 The runtime never invokes a human, impersonates one, or manufactures approval.
 
 `handoffs.yaml` owns external operations. Pending handoffs do not block Build or
-evidence collection. Land blocks unresolved pre-Land or activation-coupled
+evidence collection ([blocking policy](#blocking-policy)). Land blocks unresolved pre-Land or activation-coupled
 operations. A declared post-Land operation does not require acknowledgement when
 a claim proves the merged artifact is safe before activation; the archived
 change preserves that operational obligation independently of `tasks.md`.
@@ -1603,11 +1687,18 @@ only where the work itself cannot continue.
 Advance protocol 6 retains the existing actions and command routes. Recovery
 observations and answers live in `advanceRecovery` on the existing runtime
 record. The ladder has three rungs: the first unchanged repair handoff is the
-agent's repair, the second returns one agent-owned `REPAIR`
+owner's repair, the second returns one agent-owned `REPAIR`
 (`TRY_ALTERNATE_APPROACH`) asking for a materially different approach inside the
-approved agreement, and the third requests a decision (`NO_PROGRESS_BOUNDARY`)
-whose `decision.repetition` carries the evidence: rounds, first and last
-observation, and the output that kept repeating. Two unchanged internal
+approved agreement, and the third returns a `REPAIR` (`NO_PROGRESS_BOUNDARY`)
+to the original owner, agent or harness, never the user. It carries
+`repetition` (rounds, first and last observation, and the output that kept
+repeating), `attemptedStrategies`, and an instruction naming the different
+approaches to choose from; `repetition.rounds` keeps counting until the
+delivery state changes. Only a boundary the user owns
+([blocking policy](#blocking-policy): user or Land authority, spec approval,
+an external side effect, product meaning, budget or spend) becomes an
+`ASK_USER` at the third rung, with that evidence in `decision.repetition`.
+Two unchanged internal
 automated transitions, a sandbox sync conflict, and a Build task verify that
 keeps failing with identical output (durations and timestamps ignored) follow
 the same ladder. New process sessions, proof run IDs, diagnostic wording, retry
@@ -1681,7 +1772,8 @@ claude-foundation advance <change> --decision <offered-option> \
 
 The offered options are `retry|wait|pause` for recovery decisions, and the
 options listed by an advance decision such as `merge|retain|pause`. A Prove
-gate's no-progress decision is answered the same way with any option it
+gate's no-progress decision, raised only for a choice the user owns, is
+answered the same way with any option it
 offers; any answer but pause resumes that gate as a first observation, so it
 returns the repair batch instead of the same question. A gate option that carries its own command
 (such as one more AI wave with `authority extend-review`) keeps that command. The answer

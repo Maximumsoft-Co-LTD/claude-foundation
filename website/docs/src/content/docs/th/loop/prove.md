@@ -28,13 +28,17 @@ Evidence ที่ล้มเหลวคืน `REPAIR` หรือ `EDIT` ba
 `review.modelByTier` override ได้) เมื่อใช้ผล check จาก Build ซ้ำ Review ยังรันขนานกับ
 การตรวจ test บนโค้ดเดิมแบบ async โดยไม่รัน Build check ซ้ำ finding ของ review กับ test ที่ล้ม
 จะคืนมาใน `REPAIR` เดียว Review แบบอื่นที่ตั้งค่าไว้เป็น `RUN_EXTERNAL` การรอเจ้าของภายนอกที่ระบุชื่อเป็น `WAIT` โดยไม่ต้องถาม มติด้าน contract หรือ
-acceptance เป็น `ASK_USER` ทุก boundary เก็บ state และให้ resume route เดียว การ
+acceptance เป็น `ASK_USER` path ของ control-plane, CI หรือ secret (เช่น `.claude/`, `.github/`,
+`foundation.json`, `.env`) หรือไฟล์ที่ถูกลบนอก path ของ task ไม่หยุด Prove: ระบบบันทึกไว้
+และแสดงให้คุณเห็นตอน Land ทุก boundary เก็บ state และให้ resume route เดียว การ
 เรียกซ้ำบน wait เดิมไม่ poll ไม่รัน evidence ซ้ำ และไม่เสีย model request เพิ่ม
 
-ประวัติ recovery ยังคงอยู่หลังเริ่ม process ใหม่ งานซ่อมเดิมครั้งแรกเป็นหน้าที่ Agent
-ครั้งที่สองให้ลองแนวทางที่ต่างออกไปภายใน agreement หากครั้งที่สามยังไม่คืบหน้า
-จึงถามว่าจะทำอย่างไร พร้อมสาเหตุ สิ่งที่ลอง ทางเลือกและคำแนะนำ
-Agent บันทึกคำตอบ retry/pause ผ่าน `advance --decision` พร้อม fingerprint
+ประวัติ recovery ยังคงอยู่หลังเริ่ม process ใหม่ งานซ่อมเดิมครั้งแรกเป็นหน้าที่ของเจ้าของงาน
+ครั้งที่สองให้ agent ลองแนวทางที่ต่างออกไปภายใน agreement หากครั้งที่สามยังไม่คืบหน้า
+จะส่งกลับไปที่เจ้าของเดิม (agent หรือ harness) พร้อม output ที่วนซ้ำ วิธีที่ลองไปแล้ว
+และชุดแนวทางอื่นให้เลือก โดยไม่ถามคุณ: gate ที่คืน finding เดิมซ้ำยังเป็นงานแก้ของ agent
+มีเพียงเรื่องที่เป็นของคุณ (อนุมัติ, ความหมายของ product, Land, side effect, budget) ที่จะกลายเป็นคำถาม
+สำหรับเรื่องเหล่านั้น Agent บันทึกคำตอบของคุณผ่าน `advance --decision` พร้อม fingerprint
 ที่ได้รับ decision reference และเหตุผล Harness resume เป้าหมายเดิมและใช้คำตอบซ้ำ
 เมื่อขอบเขตยังไม่เปลี่ยน การรอระบุเจ้าของกับเงื่อนไข ส่วนการพักไม่รัน setup หรือ
 provider ต่อ การ retry ไม่ได้ให้อำนาจ waiver เพิ่มงบ หรือ Land

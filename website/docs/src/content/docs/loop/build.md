@@ -24,24 +24,30 @@ chain. Proof starts in the same call only once Build is complete, so `/build`
 needs no separate Build `DONE` round trip; it stops at `proven` and never
 Lands. `--through build` still stops at Build when that is all you want.
 
-## The six actions
+## The seven actions
 
 | Action | Meaning |
 |---|---|
+| `WORKING` | Harness work is still running (a proof or a Land transaction); wait for it instead of starting another |
 | `EDIT` | Implement only the returned task(s), workspace, and allowed paths (each task's own `workspace`; a submodule task names its repository sandbox); open the listed `contextFiles`, create `newFiles`; run each task's `checkCommand` (its verify through `claude-foundation exec`) |
 | `REPAIR` | Apply one complete dependency-ordered repair batch, then resume |
 | `RUN_EXTERNAL` | Run the one configured boundary operation |
-| `WAIT` | A live resource/external owner must finish; state is preserved |
-| `ASK_USER` | A material choice or authority is genuinely missing |
+| `WAIT` | A resource another task or change holds, or an external owner, must finish; the harness resumes and state is preserved |
+| `ASK_USER` | A decision only you can make: spec approval, product meaning, acceptance, waiver, exhausted review, Land, a side effect, budget, or a cause in your environment |
 | `DONE` | The requested Build target is reached |
 
 Every non-done action names the cause, responsible actor, safe alternatives,
 preserved state, and exact resume command. Automatic recovery stays inside the
 agent's current authority; the harness never turns a stale lease or repeated
-execution into a pass.
+execution into a pass. Before Land, nothing stops the agent except a decision
+that is yours: setup failures, sync conflicts, and a shared resource another
+change holds go to the agent or the harness, never to you. A repair that
+returns unchanged three times goes back to its owner with a changed strategy
+and the output that kept repeating.
 
-When every pending task must run one at a time in one repository, `EDIT`
-hands all of them at once in dependency order. Implement them all and resume
+A single task, or a chain of tasks that must run one at a time, in one
+repository with no cross-repository claim or shared resource runs in the
+current session: `EDIT` hands all of them at once in dependency order. Implement them all and resume
 once: `advance` reruns each task's `verify`, ticks every passing task in
 `tasks.md`, and returns only failures (`verificationFailures`) with their
 dependents. The agent never edits checkboxes.
@@ -70,7 +76,10 @@ containment, so the host still owns process isolation for indirect effects.
 
 Parallel mode returns only independent tasks and lease instructions. The host
 starts every successfully leased worker before waiting, observes the writes,
-and resumes the same `advance` command. Primitive `sandbox`, `packet`, `agents
+and resumes the same `advance` command. When only one task is ready, the
+current session runs it under the harness's lease instead of a worker. An edit
+outside every task's paths does not stop Build: Prove records it, and a
+control-plane, CI, or secret path or a deletion is shown to you at Land. Primitive `sandbox`, `packet`, `agents
 plan`, and `agents dispatch` commands remain available under `help --all` for
 operator diagnostics and host integrations.
 

@@ -92,7 +92,7 @@ safe in-contract fix, and rerun only failed, unavailable, downstream,
 input-invalidated, or mandatory global checks. Continue without a repair-count
 limit while the progress fingerprint changes.
 
-At a decision, authority, resource, conflict, contradictory-contract, or
-repeated no-progress boundary, preserve the sandbox, present the typed choices,
-and resume the same Build yourself after resolution. Never turn repeated
+At a user-decision boundary (WORKFLOW.md § Blocking policy), preserve the
+sandbox, present the typed choices, and resume Build yourself; other boundaries
+stay with their owner. Never turn repeated
 execution or a stale receipt into a pass.

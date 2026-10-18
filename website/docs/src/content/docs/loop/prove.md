@@ -32,15 +32,21 @@ asynchronous base-source test check without rerunning those Build checks;
 its findings and failed tests return as one
 `REPAIR`. Other configured reviews are `RUN_EXTERNAL`; a named external owner
 is `WAIT` without a question; a material
-contract or acceptance decision is `ASK_USER`. Each boundary preserves state
+contract or acceptance decision is `ASK_USER`. A control-plane, CI, or secret
+path (such as `.claude/`, `.github/`, `foundation.json`, `.env`) or a deletion
+outside the task paths does not stop Prove: it is recorded and listed for you at
+Land. Each boundary preserves state
 and gives one exact resume route. Repeating an unchanged wait does not poll,
 rerun evidence, or spend another model request.
 
 Recovery observations survive process restarts. The first unchanged repair
-handoff belongs to the agent; the second asks for one materially different
-approach inside the agreement; the third asks how to proceed, with the cause,
-attempted work, alternatives and a recommendation. The agent records an explicit
-retry/pause answer with
+handoff belongs to its owner; the second asks the agent for one materially
+different approach inside the agreement; the third goes back to the same owner,
+agent or harness, with the output that kept repeating, the strategies already
+tried, and a set of different approaches. It does not ask you: a gate that keeps
+returning the same findings is still the agent's repair. Only a choice that is
+yours (approval, product meaning, Land, a side effect, budget) becomes a
+question. For those, the agent records your answer with
 `advance --decision`, the returned fingerprint, a decision reference and reason.
 The harness resumes the original target and reuses the answer while its scope is
 unchanged. Waiting names the owner and condition; pausing does not run setup or

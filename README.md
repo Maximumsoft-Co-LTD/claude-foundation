@@ -108,8 +108,9 @@ The delivered diff stays **uncommitted**, with Git HEAD and index unchanged.
 Only `archived` means code delivery is complete; it does not mean deployment
 or production verification.
 
-Land records available assurance; explicit risk acceptance does not turn failed
-or missing evidence into a pass. Target conflicts must be resolved.
+Land is the single hard gate: it lands only a passing proof of the current
+workspace, and proves again first when that proof is stale. Before Land, the
+harness stops only for your decisions. Target conflicts must be resolved.
 See the [Land contract](WORKFLOW.md#land-change) for exact behavior.
 
 ### 5. Optionally deliver a pull request

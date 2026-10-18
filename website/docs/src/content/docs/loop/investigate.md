@@ -81,8 +81,9 @@ an old report as current.
 For an investigation prompted by an existing Build or Prove workspace, set the
 record's optional `activeChange` field to that change ID. Source paths then
 resolve against the active isolated workspace, and the handoff binds its source
-root, base, and identity. A missing or stale sandbox returns the same exact
-record command instead of silently reading the main checkout.
+root, base, and identity. A missing, stale, or unreadable sandbox is the
+harness's repair (`repair-harness`) on the first run, with the same exact
+record command; it never silently reads the main checkout.
 
 ## What it may write
 
@@ -102,7 +103,7 @@ For genuinely unresolved experience, API, or architecture alternatives, add `--c
 
 This produces 3–5 lightweight, disposable alternatives under `.foundation/prototypes/<id>/`. In this mode the agent may additionally write **only** inside that prototype directory — never product code or a formal change packet.
 
-It always writes `selection.md` recording the choice, the reasons, the rejected alternatives, and the artifact paths. When the evidence cannot decide, it asks you rather than picking.
+The investigation record uses `mode: "compare"`: each option carries its findings, trade-offs, sources, and `prototypePaths`, and the agent writes prototypes only at those declared paths. Once concluded, the record's `selection` names the chosen option, the reason, and why each other option was rejected; the generated report shows it. When the evidence cannot decide, it asks you rather than picking.
 
 :::caution[Prototypes are not evidence]
 Files under `.foundation/prototypes/` are non-authoritative by design. The runtime rejects them — including local-path references and symlinked origins — before copying any artifact or writing a receipt. A prototype can inform a decision; it can never prove a claim.

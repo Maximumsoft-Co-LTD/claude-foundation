@@ -82,8 +82,9 @@ the change. It preserves unrelated edits and leaves the delivered diff
 Only `archived` means code delivery is complete. It does not mean deployment
 or production verification. Land alone never commits, pushes, or opens a PR.
 
-If proof has gaps, they remain visible. An explicit decision to accept remaining
-risk does not turn those checks into passes. Conflicting target edits must be
+Land is the single hard gate: it lands only a passing proof of the current
+workspace and proves again first when that proof is stale. Before Land, the
+agent stops only for your decisions. Conflicting target edits must be
 resolved before apply. See [Land](/docs/loop/land/) for the detailed rules.
 
 ## Moving backward
@@ -104,7 +105,8 @@ This lists active changes, blockers, and the next action without changing state.
 ## When a change cannot be proven
 
 The agent reports what is missing and the available choices. You may request
-further work, pause, or make an explicit decision about remaining risk.
+further work, pause, or waive a check you decide is not required (a recorded
+decision; it never turns a failure into a pass).
 Retiring a change is also an explicit decision; let the agent perform the
 supported recovery rather than deleting files.
 

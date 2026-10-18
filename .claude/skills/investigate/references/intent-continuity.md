@@ -17,9 +17,10 @@ revision and retiring only the conflicting revision with a reason and
 on resume. The harness retains the last validated intake after invalid edits.
 See the [record contract](../../../harness/README.md#investigation-intake-records).
 
-With approved `--compare`, create three to five disposable alternatives only
-under `.foundation/prototypes/<id>/`. Record the selection, reasons, rejected
-options, and paths in `selection.md`. Do not edit product code or OpenSpec;
+With approved `--compare`, use a `mode: "compare"` record with three to five
+options and create disposable alternatives only at their `prototypePaths` under
+`.foundation/prototypes/<id>/`. Record the choice, reason, and every rejected
+option in the record's `selection`. Do not edit product code or OpenSpec;
 prototype output is never proof.
 
 Separate user intent from source-grounded facts. Questions may be open-ended;

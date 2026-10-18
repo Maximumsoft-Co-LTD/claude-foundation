@@ -21,6 +21,13 @@ transaction ที่กู้คืนได้ apply projection ที่ผ�
 ผ่าน OpenSpec และ cleanup ทุก writable repository ได้ diff แบบยังไม่ commit โดย
 HEAD และ index ไม่เปลี่ยน งานจบเมื่อ runtime เป็น `archived`; `proven` ยังไม่จบ
 
+Land เป็นด่านบังคับเพียงด่านเดียว จะปฏิเสธเว้นแต่การอนุมัติ spec ยังใช้ได้ change อยู่ที่ `proven`
+assurance ผ่าน และ proof ตรงกับ workspace hash ปัจจุบัน ไม่มีการ Land แบบยังไม่ prove หรือแบบยอมรับความเสี่ยง
+ถ้า proof เก่าแล้ว route `advance --through archived` เดียวกันจะ prove workspace ปัจจุบันก่อน
+`land advance` เป็นเพียง alias ของ route นี้ ถ้า Prove บันทึก path ของ control-plane, CI
+หรือ secret หรือไฟล์ที่ถูกลบไว้ ผลของ Land จะแสดงเป็น `protected paths changed` และ
+`paths deleted` (เฉพาะ path) ก่อน apply
+
 ถ้า change แก้ `package.json` หรือ lockfile ที่ root หลัง apply แล้ว Land จะติดตั้ง
 dependency ในโฟลเดอร์ของคุณด้วยคำสั่งเดียวกับที่ sandbox ใช้ (`sandbox.setupCommand`
 หรือคำสั่งของ lockfile เช่น `npm ci`) คำสั่งของโปรเจกต์จึงหา package ใหม่เจอ ถ้าไม่ต้องการ

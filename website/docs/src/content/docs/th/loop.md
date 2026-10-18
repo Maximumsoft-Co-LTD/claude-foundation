@@ -54,14 +54,18 @@ Change ⇄ Build ⇄ Prove
 Agent แก้สิ่งที่ปลอดภัยและอยู่ใน contract เป็น batch ส่วน harness รันซ้ำเฉพาะ check ที่ input
 เปลี่ยน ระบบทำต่อได้ตราบใดที่งานยังมี progress โดยไม่จำกัดจำนวนรอบแก้ product
 
-ระบบจะพักเฉพาะเมื่อเลือกแทนผู้ใช้ไม่ได้อย่างปลอดภัย เช่น ต้องใช้อำนาจภายนอก
-ชน resource หรือ budget เกิด conflict requirement ขัดกัน หรือไม่มี progress ซ้ำ
-state เดิมจะถูกเก็บไว้ พร้อมตัวเลือกและทาง resume ที่แน่นอน การเรียกซ้ำบน wait
+ก่อนถึง Land ระบบจะหยุดเฉพาะเรื่องที่คุณต้องตัดสินใจ: อนุมัติ spec, ความหมายของ product
+หรือ trade-off, ผล acceptance หรือ waiver, review ที่ใช้รอบหมดแล้ว, Land, การ commit, push
+หรือ side effect ภายนอกอื่น, budget หรือสาเหตุที่มีแต่คุณแก้ได้ (login, network, disk เต็ม)
+นอกนั้นส่งไปยังเจ้าของงาน: setup, sync conflict และการแก้ที่วนซ้ำกลับไปที่ agent หรือ harness
+พร้อมให้เปลี่ยนวิธี ส่วน resource ที่ change อื่นถืออยู่เป็นการรอของ harness
+Land เป็นด่านบังคับเพียงด่านเดียว: จะ Land เฉพาะ proof ของ workspace ปัจจุบันที่ผ่าน
+state เดิมจะถูกเก็บไว้ และทุกจุดหยุดมีตัวเลือกพร้อมทาง resume ที่แน่นอน การเรียกซ้ำบน wait
 เดิมจะไม่ poll หรือเสีย model request เพิ่ม
 
 Slash command เรียก coordinator สำหรับ model เพียงตัวเดียว `/build`, `/prove`
 และ `/land` ใช้ `advance <change> --through build|proven|archived` ส่วน `/dev`
-compose target ชุดเดียวกัน Coordinator คืนเพียง `EDIT`, `RUN_EXTERNAL`, `REPAIR`,
+compose target ชุดเดียวกัน Coordinator คืนเพียง `WORKING`, `EDIT`, `RUN_EXTERNAL`, `REPAIR`,
 `WAIT`, `ASK_USER` หรือ `DONE` พร้อม exact resume route เมื่อหยุด Primitive เดิม
 ยังอยู่ใต้ `help --all` สำหรับ operator และ host integration
 

@@ -21,7 +21,7 @@ agent ของคุณเป็นคนรันคำสั่งเหล�
 | `change start --template \| <draft.json> [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | ตรวจ draft และถ้าครบจะ compile และเริ่ม agreement แบบ atomic ในคำสั่งเดียว; `--inspect` ตรวจอย่างเดียว; `--approve-spec` บันทึก approval ของผู้ใช้ในคำสั่งเดียวกัน |
 | `change amend --template \| <change> <amendment.json> [--inspect] [--consume-amendment] [--approve-spec --decision-ref <ref> [--through <target>]]` | Inspect intake และถ้าครบจะเพิ่ม แก้ หรือลบ requirement หรือแก้ verify command ของ task ที่ยังไม่เสร็จ ระหว่าง Build แบบ transaction ในคำสั่งเดียว |
 | `change amend <change> --task <task> --verify <command> [--reopen] [--reason <text>]` | แก้ verify command ที่ผิดของ task ได้ตรง ๆ โดยคง approval ไว้ (ใช้ `--reopen` กับ task ที่เสร็จแล้ว) task จะถูกรับเมื่อคำสั่งใหม่ผ่านเท่านั้น |
-| `advance <change> --through build\|proven\|archived` | รัน deterministic lifecycle (evidence wiring, sandbox sync, review ที่ agent รันได้, ติ๊ก task) แล้วคืนหนึ่งในหก action ที่ boundary จริง |
+| `advance <change> --through build\|proven\|archived` | รัน deterministic lifecycle (evidence wiring, sandbox sync, review ที่ agent รันได้, ติ๊ก task) แล้วคืนหนึ่งในเจ็ด action (`WORKING` ระหว่างที่งานของ harness ยังทำอยู่) ที่ boundary จริง |
 | `advance <change> --approve-spec --decision-ref <ref>` | บันทึกการอนุมัติ spec ของผู้ใช้ (alias ของ `change resolve --approve-spec`) |
 | `exec <change> [--repo <id>] [--task <id>] -- <command…>` | รันและจับเวลาคำสั่ง (`checkCommand` ของ task, build หรือการรันเทสทั้งชุด) ใน sandbox ของ change: repository หรือ task ที่ระบุ ไม่เช่นนั้นใช้ directory ของผู้เรียก แล้วจึงใช้ repository ของ task ที่ค้าง ไม่รันใน checkout หลัก |
 | `deliver advance <change>` | หลังสั่ง `/deliver` อย่างชัดเจน ให้ harness ทำ isolated commit, push feature branch, เปิด/ใช้ PR เดิม, ตรวจผ่าน provider และคืน URL |
@@ -45,7 +45,7 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 | `feedback <change>` | อธิบายเวลา reviewer, repair ที่มีหลักฐาน, human wait และเวลาที่ยังระบุไม่ได้ พร้อม reuse และ action ถัดไป |
 | `change audit <change>` | ตรวจความเชื่อมโยงของ scenario claim task และ provider |
 | `proof readiness <change>` | blocker แบบมีชนิด พร้อมคำสั่งถัดไปที่ถูกต้อง |
-| `land check <change>` | รันการตรวจชุดเดียวกับที่ Land ทำก่อนเขียนไฟล์ แบบไม่แก้ไขอะไร และรายงาน assurance ปัจจุบัน |
+| `land check <change>` | รันการตรวจชุดเดียวกับที่ Land ทำก่อนเขียนไฟล์ แบบไม่แก้ไขอะไร และรายงาน assurance ปัจจุบัน ปฏิเสธงานที่ยังไม่ prove เหมือน Land |
 | `handoff status <change>` | ดู operation ที่ต้องสิทธิ์ภายนอกและผลต่อ Land |
 | `handoff list [--open] [--owner <team>] [--environment <env>] [--json]` | ดู operational obligation ข้าม active และ archived change |
 | `handoff packet <change> [--id <H00n>]` | อ่าน packet ที่ไม่มี credential สำหรับ DevOps/SRE owner |

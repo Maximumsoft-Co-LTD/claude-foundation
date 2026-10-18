@@ -94,7 +94,7 @@ Foundation SHALL expose an additive high-level coordinator that evaluates the cu
 #### Scenario: Automated continuation repeats unchanged
 
 - **WHEN** the same automated transition leaves the semantic lifecycle progress identity unchanged twice
-- **THEN** the coordinator returns the typed repeated-no-progress `WAIT` boundary with state preserved
+- **THEN** the coordinator returns an agent-owned `REPAIR` (`NO_PROGRESS_BOUNDARY`) carrying the unchanged step's output, with state preserved, instead of a bare inspection route or a user question
 
 ### Requirement: Host execution envelopes are idempotent handoffs
 

@@ -75,9 +75,12 @@ invoked repeatedly. No unavailable measurement is converted to zero or pass.
 A sandbox path changed outside every task's `[paths:]` is recorded as a
 repository-qualified `surfaceAdditions` entry (`{repositoryId, path}`; legacy
 bare strings mean root) that widens only its own repository, included in the proven hash and the Land projection,
-and does not block readiness. Deletions, control-plane/CI/secret paths, a
-misplaced root sandbox, or more than 100 such paths still refuse Prove until
-declared.
+and does not block readiness. A control-plane, CI, or secret path is recorded
+with `protected: true` and a path the sandbox removed with `deleted: true`;
+both stay in readiness and the Land projection, and Land lists them (paths
+only) before it applies. A misplaced root sandbox or more than 100 such paths
+is an agent repair with a concrete command (`move-to-repository-sandbox`, or
+`ignore-generated-output` with the `.gitignore` patterns that cover the spill).
 
 ## Execution wiring
 

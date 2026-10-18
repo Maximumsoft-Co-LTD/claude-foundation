@@ -22,7 +22,7 @@ surface is:
 | `change start --template \| <draft.json> [--inspect] [--consume-draft] [--approve-spec --decision-ref <ref> [--through <target>]]` | Inspect a draft and, when complete, compile and atomically start it in one call; `--inspect` inspects only; `--approve-spec` records the user's approval in the same call |
 | `change amend --template \| <change> <amendment.json> [--inspect] [--consume-amendment] [--approve-spec --decision-ref <ref> [--through <target>]]` | Inspect intake and, when complete, transactionally add, revise, or remove requirements, or fix an unfinished task's verify command, during Build in one call |
 | `change amend <change> --task <task> --verify <command> [--reopen] [--reason <text>]` | Correct a task's wrong verify command directly, keeping the approval (`--reopen` for a completed task); the task is accepted only when the new command passes |
-| `advance <change> --through build\|proven\|archived` | Run deterministic lifecycle work (evidence wiring, sandbox sync, agent-runnable review, task ticking) and return one of six bounded actions at the next real boundary |
+| `advance <change> --through build\|proven\|archived` | Run deterministic lifecycle work (evidence wiring, sandbox sync, agent-runnable review, task ticking) and return one of seven bounded actions (`WORKING` while harness work runs) at the next real boundary |
 | `advance <change> --approve-spec --decision-ref <ref>` | Record the user's spec approval (alias of `change resolve --approve-spec`) |
 | `exec <change> [--repo <id>] [--task <id>] -- <command…>` | Run and time a command (a task's `checkCommand`, a build, a full test run) in the change's sandbox: the named repository or task, else the caller's directory, else the pending tasks' repository; never the main checkout |
 | `deliver advance <change>` | After explicit `/deliver`, automate isolated commit, feature-branch push, PR creation/reuse, provider verification, and return the URL |
@@ -46,7 +46,7 @@ Safe to run at any time. These mutate nothing.
 | `feedback <change>` | Explain reviewer, evidenced repair, human-wait, and unattributed timing; show reuse and the next action |
 | `change audit <change>` | Audit scenario, claim, task, and provider traceability |
 | `proof readiness <change>` | Typed blockers and canonical next commands |
-| `land check <change>` | Run the checks Land runs before it writes, read-only, and report current assurance |
+| `land check <change>` | Run the checks Land runs before it writes, read-only, and report current assurance; refuses unproven work like Land |
 | `handoff status <change>` | Inspect permission-bound operations and their Land disposition |
 | `handoff list [--open] [--owner <team>] [--environment <env>] [--json]` | List operational obligations across active and archived changes |
 | `handoff packet <change> [--id <H00n>]` | Read the credential-free packet for a named DevOps/SRE owner |

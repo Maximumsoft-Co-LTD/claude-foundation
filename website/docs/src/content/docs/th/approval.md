@@ -19,10 +19,17 @@ description: การตัดสินใจของผู้ใช้ นโ
 
 :::caution[Land บังคับอะไรจริง ๆ]
 คำสั่ง `/land <change>` ที่ตรง change ให้อำนาจสำหรับ transaction ที่กู้คืนได้
-และสร้าง grant ภายในที่ผูกกับ session หลักฐานที่ขาด, stale, fail, inconclusive
-หรือ invalid ยังถูกบันทึกตามจริง แต่ไม่ลบล้างอำนาจ Land ที่ให้ชัดเจน
-Land ยังปฏิเสธเมื่อมี target conflict, path ไม่ปลอดภัย, repository identity
-กำกวม หรือ transaction เสียหาย
+และสร้าง grant ภายในที่ผูกกับ session Land เป็นด่านบังคับเพียงด่านเดียว: จะปฏิเสธ
+เว้นแต่การอนุมัติ spec ของคุณยังใช้ได้ change ถูก prove แล้ว assurance ผ่าน และ proof
+ตรงกับ workspace ปัจจุบัน หลักฐานที่ขาด, stale, fail, inconclusive หรือ invalid
+จะไม่ถูก Land เลย ส่วน proof ที่เก่าแล้วจะถูก prove ใหม่ก่อน Land ยังปฏิเสธเมื่อมี
+target conflict, path ไม่ปลอดภัย, repository identity กำกวม หรือ transaction เสียหาย
+และจะแสดง path ของ control-plane, CI หรือ secret และไฟล์ที่ change ลบก่อน apply
+
+ก่อนถึง Land ไม่มีอะไรรอคุณนอกจากการตัดสินใจของคุณเอง: อนุมัติ spec, ความหมายของ
+product หรือ trade-off, ผล acceptance, waiver, review ที่ใช้รอบหมด, Land, การ commit,
+push หรือ side effect อื่น, budget หรือสาเหตุที่มีแต่คุณแก้ได้ (login, network, disk เต็ม)
+ส่วน setup, sync conflict, การรอ resource ร่วม และการแก้ที่วนซ้ำเป็นงานของ agent หรือ harness
 
 User ไม่ต้องสร้าง grant หรือ decision-reference command เอง `land record` ต้องมี
 `--decision-ref` เฉพาะ compatibility ของ commit-oriented transaction แบบ legacy

@@ -39,8 +39,9 @@ agreement source of truth.
   consequential semantics, explicit Land, final diff review, and separate Git
   or external-side-effect authority.
 - Product repair has no fixed retry count while progress changes.
-- Stop only at a real authority, resource, budget, conflict, or repeated
-  no-progress boundary; preserve state and return an exact resume route.
+- Before Land, stop only for a user decision; Land is the single hard gate
+  ([WORKFLOW.md § Blocking policy](WORKFLOW.md#blocking-policy)). Preserve state
+  and return an exact resume route.
 - A delivery flow is complete only at `archived`. `proven` is not completion.
 - Never fabricate evidence, convert unavailable measurements to zero/pass, edit
   machine-owned proof JSON, or infer user authority.

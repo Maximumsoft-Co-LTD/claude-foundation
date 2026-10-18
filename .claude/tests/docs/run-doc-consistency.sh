@@ -471,6 +471,17 @@ fi
 assert_file_contains "the approval page keeps mechanical safety fail-closed" \
   "$APPROVAL" "Land still fails closed on target conflicts"
 
+# The blocking policy is stated once, in WORKFLOW.md, and every other guide
+# links to it rather than restating it.
+assert_file_contains "the workflow states the blocking policy" \
+  "$WF" "### Blocking policy"
+assert_file_contains "the blocking policy names Land as the single hard gate" \
+  "$WF" "is the single hard gate"
+for guide in "$ROOT/CLAUDE.md" "$ROOT/AGENTS.md"; do
+  assert_file_contains "$(basename "$guide") points to the blocking policy" \
+    "$guide" "WORKFLOW.md#blocking-policy"
+done
+
 # Compare the agent entrypoints with their canonical contracts. These checks
 # reject the previously contradictory instructions, not just missing keywords.
 assert_cmd_zero "lifecycle instructions agree on routing, approval, handoffs, and reuse" \

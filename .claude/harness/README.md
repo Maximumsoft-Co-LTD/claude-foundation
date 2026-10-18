@@ -338,7 +338,7 @@ the answer; do not perform dependent work or add blanket confirmation gates.
 | `change revise <change> <draft.json>` | Recompiles a revised semantic draft over the same change id through the start intake gate in the same call (an incomplete intake prints its action and changes nothing), with rollback and a requirement delta for approval; `--merge` applies the file as a partial draft over the recorded compiled-from draft; `--approve-spec --decision-ref <ref> [--through <target>]` records the user's approval in that call | An agreed semantic change must change before Build starts |
 | `change amend <change> <amendment.json>` | Adds, revises, or removes requirements before Land starts, including a `proven` candidate (returns to `building`); requires and retains a discovery delta for v4; a verify-only `updateTasks` amendment fixes an unfinished task's verify command (`--template` prints both); inspects in the same call and amends only at `DONE`, and accepts the same approval flags as `change revise` | A semantic v3/v4 change discovers new or changed behavior |
 | `change amend <change> --task <key\|id> --verify <command> [--reopen]` | Corrects one task's verify command directly through the same transaction (`--reopen` unticks a completed task); keeps the spec approval, claims, and capabilities, refuses an always-passing command, and accepts the task only when the new command passes | A task's verify command is wrong |
-| `advance <change> --through build\|proven\|archived` | Runs deterministic steps and returns one `EDIT`, `RUN_EXTERNAL`, `REPAIR`, `WAIT`, `ASK_USER`, or `DONE` action | Every normal step after Change |
+| `advance <change> --through build\|proven\|archived` | Runs deterministic steps and returns one `WORKING`, `EDIT`, `RUN_EXTERNAL`, `REPAIR`, `WAIT`, `ASK_USER`, or `DONE` action | Every normal step after Change |
 
 While a proof runs, another `advance` for the same change returns `WORKING`
 with `wait.progress`: the current `wave`, the providers `running`, each
@@ -349,8 +349,10 @@ proof instead of starting another.
 Every route `advance` returns stays on this surface: a `command`, `next`,
 instruction, or decision option that would name an operator primitive below
 (`proof`, `land`, `sandbox`, `evidence init`) is rewritten to the matching
-`advance` route, and the recovery ladder (agent repair, `TRY_ALTERNATE_APPROACH`,
-then a decision with repetition evidence on the third unchanged round), the
+`advance` route, and the recovery ladder (owner repair, `TRY_ALTERNATE_APPROACH`,
+then a `REPAIR` back to the original agent or harness owner with repetition
+evidence on the third unchanged round; only a user-owned boundary becomes a
+question), the
 first-observation `user-environment` question for causes only the user can
 clear (typed `resource`, `credential`, or `network`), the optional `signals[]`
 the envelope carries, and the budget no-progress cap are specified in
@@ -415,8 +417,11 @@ the envelope carries, and the budget no-progress cap are specified in
 or diagnostic primitives. The Harness invokes them through the convergent Land
 transaction; agents must not ask users to compose or run them. `land check` runs
 Land's own pre-mutation preflight read-only, so it stops on the same code Land
-would; `land advance` prints only the `advance --through archived` JSON
-envelope, on its first run as on every later one.
+would, and refuses unproven work instead of reporting it ready. `land advance`
+is only an alias of `advance <change> --through archived`: it issues no grant,
+prints that route's JSON envelope, and the phase guard rewrites it to that
+route. Land requires current passing proof
+([WORKFLOW.md § Blocking policy](../../WORKFLOW.md#blocking-policy)).
 
 Consumer-quality configuration is opt-in and remains report-only until the
 project explicitly enables enforcement. The complete installed command,

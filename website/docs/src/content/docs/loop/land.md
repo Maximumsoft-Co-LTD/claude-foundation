@@ -23,6 +23,15 @@ writable repository receives an uncommitted diff while its HEAD and index stay
 unchanged. Completion
 means runtime status `archived`; `proven` is not completion.
 
+Land is the single hard gate. It refuses unless the spec approval is still
+valid, the change is `proven`, assurance passed, and the proof matches the
+current workspace hash; there is no unproven or risk-accepted Land. When the
+proof is stale, the same `advance --through archived` route proves the current
+workspace first. `land advance` is only an alias of that route. When Prove
+recorded control-plane, CI, or secret paths or deletions, the Land output lists
+them as `protected paths changed` and `paths deleted` (paths only) before
+applying.
+
 If the change edits the root `package.json` or a lockfile, Land then installs
 dependencies in your checkout with the same command the sandbox used
 (`sandbox.setupCommand`, or the lockfile's install such as `npm ci`), so your

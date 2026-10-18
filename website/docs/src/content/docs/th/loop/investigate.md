@@ -79,7 +79,8 @@ JSON record ยังคงใช้ร่วมกับระบบเดิ�
 หากคำถามเกิดจาก Build หรือ Prove workspace ที่มีอยู่ ให้ตั้ง field
 `activeChange` ใน record เป็น change ID นั้น source path จะอ้างอิงจาก isolated
 workspace ที่ active และ handoff จะผูก source root, base และ identity หาก sandbox
-หายหรือ stale ระบบจะคืนคำสั่ง record เดิมที่ใช้ resume โดยไม่ย้อนอ่าน main checkout
+หาย stale หรืออ่านไม่ได้ ตั้งแต่รอบแรกจะเป็นงานซ่อมของ harness (`repair-harness`)
+พร้อมคำสั่ง record เดิมที่ใช้ resume โดยไม่ย้อนอ่าน main checkout
 
 ## เขียนอะไรได้บ้าง
 
@@ -101,7 +102,7 @@ note `<id>.md` ที่ผู้ใช้เขียนไว้จะถู�
 ในโหมดนี้ agent จึงเขียนเพิ่มได้ **เฉพาะ** ใน prototype directory โดยไม่แตะ
 product code หรือ formal change packet
 
-มันจะเขียน `selection.md` เสมอ เพื่อบันทึกตัวเลือกที่เลือก เหตุผล ทางเลือกที่ตัดทิ้ง และ path ของ artifact และเมื่อหลักฐานตัดสินไม่ได้ มันจะถามคุณแทนที่จะเลือกเอง
+Investigation record ใช้ `mode: "compare"`: แต่ละทางเลือกมี finding, trade-off, source และ `prototypePaths` และ agent เขียน prototype ได้เฉพาะ path ที่ประกาศไว้เท่านั้น เมื่อสรุปแล้ว `selection` ใน record จะระบุทางเลือกที่เลือก เหตุผล และเหตุที่ตัดทางเลือกอื่นแต่ละตัว และ report ที่สร้างขึ้นจะแสดงไว้ เมื่อหลักฐานตัดสินไม่ได้ มันจะถามคุณแทนที่จะเลือกเอง
 
 :::caution[prototype ไม่ใช่หลักฐาน]
 ไฟล์ใต้ `.foundation/prototypes/` ไม่มีอำนาจรับรองโดยเจตนา runtime จะปฏิเสธมัน — รวมถึงการอ้างอิงแบบ local path และต้นทางที่เป็น symlink — ก่อนจะคัดลอก artifact หรือเขียน receipt ใด ๆ prototype ใช้ประกอบการตัดสินใจได้ แต่พิสูจน์ claim ไม่ได้เลย

@@ -20,10 +20,20 @@ configured reviewers and trusted hosts produce their own evidence.
 
 :::caution[What Land actually enforces]
 An exact `/land <change>` supplies one internal, session-bound grant for that
-recoverable transaction. Missing, stale, failed, inconclusive, or invalid
-evidence is retained as truthful assurance, but does not override that explicit
-authority. Land still fails closed on target conflicts, unsafe paths, ambiguous
-repository identity, and transaction corruption.
+recoverable transaction. Land is the single hard gate: it refuses unless your
+spec approval is still valid, the change is proven, assurance passed, and the
+proof matches the current workspace. Missing, stale, failed, inconclusive, or
+invalid evidence is never landed; a stale proof is proved again first.
+Land still fails closed on target conflicts, unsafe paths, ambiguous repository
+identity, and transaction corruption, and lists any control-plane, CI, or
+secret paths and deletions the change makes before it applies.
+
+Before Land, nothing waits on you except your own decisions: approving the
+spec, product meaning or a trade-off, an acceptance verdict, a waiver,
+exhausted review, Land, a commit, push, or other side effect, budget, or a
+cause only you can clear (a login, the network, a full disk). Setup, sync
+conflicts, shared-resource waits, and repeated repair stay with the agent or
+the harness.
 
 Users never construct the grant or a decision-reference command. `land record`
 requires `--decision-ref` only as compatibility for an already-active legacy

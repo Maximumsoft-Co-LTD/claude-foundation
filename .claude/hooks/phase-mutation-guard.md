@@ -9,9 +9,10 @@ What the default does with a call that leaves the active phase's rules:
 
 - A product edit aimed at the main checkout while an isolated workspace exists
   is redirected to the same path in that workspace (`updatedInput`).
-- `land advance`, `archive`, or `sandbox apply` outside `/land` runs as
-  `claude-foundation advance <change> --through archived`, which owns the grant,
-  readiness, and recovery.
+- `land advance` runs as `claude-foundation advance <change> --through
+  archived` in every session and mode, `/land` included, and `archive` or
+  `sandbox apply` outside `/land` runs the same way. That route owns the grant,
+  readiness, and recovery, and lands only proven work.
 - `deliver advance` outside `/deliver` is replaced by the question the agent
   must ask the user, because delivery commits, pushes, and opens a pull request.
   When the user's latest prompt directly asks to open a PR or deliver ("เปิด PR

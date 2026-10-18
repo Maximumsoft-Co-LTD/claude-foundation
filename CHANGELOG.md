@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Only user decisions stop work before Land; Land is the single hard gate.**
+  `WORKFLOW.md` gains a *Blocking policy* section listing the only pre-Land
+  stops (spec approval, product meaning, acceptance, waivers, exhausted review,
+  Land and external side effects, budget, and causes only the user can clear).
+  Land now refuses without a current passing proof and a still-valid spec
+  approval; the unproven and risk-accepted Land routes are gone, and
+  `land advance` is only an alias of `advance <change> --through archived`.
+  Prove records protected-path edits and sandbox deletions and Land lists them
+  instead of refusing them. The third unchanged recovery round returns a
+  `REPAIR` to its original agent or harness owner instead of a user question,
+  and a shared `[resources:]` token another change holds is a harness
+  `WAIT_RESOURCE`. A new `blocking policy` suite enforces the rule.
+
 ## [3.6.5] - 2026-10-17
 
 ### Fixed

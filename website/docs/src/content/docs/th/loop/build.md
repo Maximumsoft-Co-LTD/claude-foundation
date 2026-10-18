@@ -23,22 +23,27 @@ task ตรวจ lease ที่ยังทำงาน แล้วคืน 
 `/build` จึงไม่ต้องวนกลับมาที่ `DONE` ของ Build แยกอีกรอบ หยุดที่ `proven` และไม่ Land
 ถ้าต้องการหยุดแค่ Build ยังใช้ `--through build` ได้
 
-## Action หกแบบ
+## Action เจ็ดแบบ
 
 | Action | ความหมาย |
 |---|---|
+| `WORKING` | งานของ harness ยังทำอยู่ (proof หรือ transaction ของ Land) ให้รอแทนการเริ่มรอบใหม่ |
 | `EDIT` | ทำเฉพาะ task, workspace และ path ที่คืนมา (ใช้ `workspace` ของแต่ละ task; task ของ submodule ชี้ไปที่ repository sandbox ของมัน) เปิดเฉพาะไฟล์ใน `contextFiles` สร้างไฟล์ใน `newFiles` แล้วรัน `checkCommand` ของแต่ละ task (verify ที่รันผ่าน `claude-foundation exec`) |
 | `REPAIR` | แก้ repair batch ที่เรียงตาม dependency ให้ครบแล้ว resume |
 | `RUN_EXTERNAL` | รัน boundary operation ที่ตั้งค่าไว้หนึ่งตัว |
-| `WAIT` | รอ resource หรือเจ้าของภายนอก โดย state ถูกเก็บไว้ |
-| `ASK_USER` | ขาดมติสำคัญหรืออำนาจจริง ๆ |
+| `WAIT` | รอ resource ที่ task หรือ change อื่นถืออยู่ หรือรอเจ้าของภายนอก harness จะ resume เอง และ state ถูกเก็บไว้ |
+| `ASK_USER` | เรื่องที่มีแต่คุณตัดสินได้: อนุมัติ spec, ความหมายของ product, acceptance, waiver, review ที่ใช้รอบหมด, Land, side effect, budget หรือสาเหตุในสภาพแวดล้อมของคุณ |
 | `DONE` | ถึงเป้าหมาย Build แล้ว |
 
 ทุก action ที่ยังไม่จบระบุสาเหตุ actor ทางเลือกที่ปลอดภัย state ที่เก็บไว้ และ
 resume command ที่แน่นอน Automatic recovery ทำได้เฉพาะในอำนาจปัจจุบัน ระบบไม่
-เปลี่ยน lease เก่าหรือการรันซ้ำให้กลายเป็น pass
+เปลี่ยน lease เก่าหรือการรันซ้ำให้กลายเป็น pass ก่อนถึง Land ไม่มีอะไรหยุด agent
+นอกจากเรื่องที่คุณต้องตัดสินใจ: setup ที่ล้ม, sync conflict และ resource ที่ change อื่นถืออยู่
+ส่งไปที่ agent หรือ harness ไม่ใช่คุณ การแก้ที่ได้ผลเดิมซ้ำสามรอบจะกลับไปหาเจ้าของงาน
+พร้อมให้เปลี่ยนวิธี และแนบ output ที่วนซ้ำมาด้วย
 
-เมื่อ task ที่ค้างทั้งหมดต้องทำทีละตัวใน repository เดียว `EDIT` จะส่งทุก task มาพร้อมกัน
+Task เดียว หรือ chain ของ task ที่ต้องทำทีละตัว ใน repository เดียวที่ไม่มี claim ข้าม repository
+หรือ resource ร่วม จะทำใน session ปัจจุบัน: `EDIT` จะส่งทุก task มาพร้อมกัน
 เรียงตาม dependency ให้ทำให้ครบแล้ว resume ครั้งเดียว `advance` จะรัน `verify` ของแต่ละ
 task ใหม่ ติ๊ก task ที่ผ่านใน `tasks.md` ให้เอง และคืนเฉพาะ task ที่ล้ม
 (`verificationFailures`) พร้อม task ที่ต้องรอมัน Agent ไม่ต้องแก้ checkbox เอง
@@ -63,7 +68,10 @@ sandbox ของ repository นั้น นี่ยังเป็น coopera
 containment ดังนั้น host ต้องรับผิดชอบ process isolation สำหรับผลทางอ้อม
 
 Parallel mode คืนเฉพาะ task อิสระพร้อม lease instruction Host ต้องเริ่ม worker ที่
-lease สำเร็จทั้งหมดก่อนรอ ตรวจ write จริง แล้ว resume คำสั่งเดิม Primitive อย่าง
+lease สำเร็จทั้งหมดก่อนรอ ตรวจ write จริง แล้ว resume คำสั่งเดิม ถ้ามี task พร้อมทำเพียงตัวเดียว
+session ปัจจุบันจะทำเองภายใต้ lease ของ harness แทน worker การแก้นอก path ของทุก task
+ไม่หยุด Build: Prove จะบันทึกไว้ และ path ของ control-plane, CI หรือ secret หรือไฟล์ที่ถูกลบ
+จะแสดงให้คุณเห็นตอน Land Primitive อย่าง
 `sandbox`, `packet`, `agents plan`, `agents dispatch` ยังอยู่ใน `help --all` สำหรับ
 operator และ host integration
 

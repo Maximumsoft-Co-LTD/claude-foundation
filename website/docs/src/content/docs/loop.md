@@ -55,16 +55,21 @@ repair plan. The agent applies safe in-contract repairs; the harness reruns only
 inputs changed. It continues while the work makes progress—there is no fixed
 product-repair limit.
 
-The loop pauses only when the harness cannot choose safely: external authority,
-a resource or budget boundary, a conflict, contradictory requirements, or
-repeated no progress. State is preserved and the result includes the available
-choices and exact resume route. Repeating an unchanged wait does not poll or
-spend another model request.
+Before Land, the loop stops only for a decision that is yours: approving the
+spec, product meaning or a trade-off, an acceptance verdict or waiver, exhausted
+review, Land, a commit, push, or other external side effect, budget, or a cause
+only you can clear (a login, the network, a full disk). Everything else goes to
+its owner: setup, sync conflicts, and repeated repair return to the agent or the
+harness with a changed strategy, and a resource another change holds is a
+harness wait. Land is the single hard gate: it lands only a passing proof of the
+current workspace. State is preserved and every stop carries its choices and an
+exact resume route. Repeating an unchanged wait does not poll or spend another
+model request.
 
 The slash commands call one model-facing coordinator. `/build`, `/prove`, and
 `/land` use `advance <change> --through build|proven|archived`; `/dev` composes
-the same targets. The coordinator returns exactly one of `EDIT`, `RUN_EXTERNAL`,
-`REPAIR`, `WAIT`, `ASK_USER`, or `DONE`, with an exact resume route whenever it
+the same targets. The coordinator returns exactly one of `WORKING`, `EDIT`,
+`RUN_EXTERNAL`, `REPAIR`, `WAIT`, `ASK_USER`, or `DONE`, with an exact resume route whenever it
 stops. Primitive commands remain under `help --all` for operators and host
 integrations.
 
