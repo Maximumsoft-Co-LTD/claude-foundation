@@ -580,7 +580,36 @@ component path, an infrastructure path, or a webhook path adds the matching
 risk signal when the draft did not declare it, and the package names the path
 that raised it. Path signals affect only the risk level, domains, artifacts,
 and approval lanes; discovery coverage and review still follow the declared
-signals.
+signals. A `dataModel` whose every row declares `store: "browser"` (for
+example `localStorage`) skips the Data Migration domain and does not count
+`persisted-data-change` as heavy, unless a task path still looks like a
+migration. Reporting needs a `report` or `search` example, or data and UI work
+without an API, a feature, or stored-data change. `access-control` also routes
+the Security domain and its threat model.
+
+The draft may add two optional fields for approvers. `scratch` holds four plain
+lines (`get`, `asIs`, `toBe`, `ifFail`, each at most 240 characters) that the
+package shows first; without it the package shows the intent and says the
+summary is missing. `examples` holds typed blocks with real values from the
+request, code, or data, one of 29 types (`prototype`, `examples`, `api`,
+`timeline`, `dataDiff`, `lineage`, `mermaid`, `failures`, `permission`, `plan`,
+`snapshot`, `repro`, `perf`, `golden`, `adr`, `rollout`, `apiDiff`, `strings`,
+`alert`, `privacy`, `coverage`, `consumers`, `messages`, `terminal`, `doc`,
+`pipeline`, `search`, `report`, `diffSummary`); an unknown type or a missing
+required field is an intake `EDIT` naming the path. A `prototype` names a file
+the agent wrote under `.foundation/previews/<change>/` and opens in a sandboxed
+frame. Each example has an after-Build tab: with an optional `capability` it
+reads that provider's receipt (`proof` only when valid and passing, `failed`
+when it failed, with artifact links confined to the change's evidence folder)
+or preview (`preview` or stale), and otherwise says no result yet and shows the
+optional `postBuild` comparison. Page text is Thai when `language` is `th`,
+otherwise English. Switching tabs and API cases uses HTML only; the one script
+in a package loads the harness's own `.claude/harness/vendor/mermaid.min.js`
+by relative path, nothing is fetched over the network, and every draft value is
+escaped. Without that file, diagrams stay readable Mermaid text. `change start`
+prints `NOTE: scratch (advisory, approval page)` for a medium or high draft
+without examples, a performance change without a target number, or a defect,
+migration, or deprecation without a count in `scratch.asIs`; it never blocks.
 
 With `approval.roles` set in `foundation.json`, spec approval has one lane per
 configured role the router selects for the change. Each role records

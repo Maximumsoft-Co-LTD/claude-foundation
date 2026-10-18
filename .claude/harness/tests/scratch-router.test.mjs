@@ -91,6 +91,39 @@ test("each path family maps to its signal", () => {
   assert.deepEqual(signals("prisma/schema.prisma"), ["persisted-data-change"]);
 });
 
+const KANBAN = { workType: ["feature", "ui", "data"], riskSignals: ["user-interface", "persisted-data-change"], impact: "medium" };
+
+test("a board kept in browser storage is Medium with no migration rehearsal", () => {
+  const route = routeChange({ ...KANBAN, browserStorage: true });
+  assert.equal(route.level, "Medium");
+  assert.ok(!ids(route.domains).includes(15));
+  assert.ok(!route.roles.includes("devops"));
+  assert.ok(ids(route.domains).includes(14), "the data model is still reviewed");
+});
+
+test("server data without a declared store keeps the migration domain and High level", () => {
+  const route = routeChange({ workType: ["data", "migration"], riskSignals: ["persisted-data-change"], impact: "medium" });
+  assert.equal(route.level, "High");
+  assert.ok(ids(route.domains).includes(15));
+  // A touched migration path outranks a browser-only claim.
+  const touched = routeChange({ ...KANBAN, browserStorage: true, paths: ["db/migrations/004.sql"] });
+  assert.equal(touched.level, "High");
+});
+
+test("a CRUD feature is not reporting while a report or search example is", () => {
+  assert.ok(!ids(routeChange(KANBAN).domains).includes(17));
+  assert.ok(ids(routeChange({ workType: ["data", "ui"], impact: "medium" }).domains).includes(17));
+  assert.ok(ids(routeChange({ ...KANBAN, exampleTypes: ["report"] }).domains).includes(17));
+  assert.ok(ids(routeChange({ workType: ["feature"], impact: "medium", exampleTypes: ["search"] }).domains).includes(17));
+});
+
+test("access control brings the security domain and its threat model", () => {
+  const route = routeChange({ workType: ["feature", "api"], riskSignals: ["access-control"], impact: "medium" });
+  assert.ok(ids(route.domains).includes(23));
+  assert.ok(route.artifacts.some((row) => row.id === "threat"));
+  assert.ok(route.roles.includes("security"));
+});
+
 test("coupling, integrations, and security triggers add their domains", () => {
   const route = routeChange({
     workType: ["refactor"], coupling: "coupled", integrations: [{ name: "x" }],

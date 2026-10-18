@@ -215,10 +215,22 @@ risk level (Low, Medium, High, or Critical, derived from impact and risk
 signals), the technical domains touched, and the approval artifacts grouped by
 approver role (product-owner, tech-lead, qa, devops, security). Each artifact
 is labeled: **proof** only when a valid passing receipt backs it, **preview**,
-or **no evidence yet**. The change's Mermaid diagrams are embedded and render
-in viewers that support Mermaid; nothing is loaded from outside. The package
-never changes the change's state, and if it cannot be written, approval
-continues from the packet.
+or **no evidence yet**. The package never changes the change's state, and if
+it cannot be written, approval continues from the packet.
+
+**What to read first.** When the agent wrote them, the top of the page answers
+three plain questions: what you get, what changes (before and after, with a
+count when known), and what happens if it fails. Below that come concrete
+examples with real values, chosen for the kind of work: a clickable prototype,
+API requests and responses for each status, rules with numbers, rows before and
+after a migration, a permission table, and so on. Each example has an
+**After Build** tab: once Build and Prove have run it shows the real result
+(**proof** only from a valid passing receipt, **failed**, or a **preview**),
+and before that it says what will be compared. The page uses Thai or English to
+match the agreement. Diagrams are drawn by a copy of Mermaid shipped with the
+harness on your machine; nothing is fetched over the network, and the page
+shows the diagram text if that file is missing. Summaries and examples are
+optional: without them you get the per-role view above.
 
 **Previews are optional.** Before Build, the agent may run one declared
 provider against a throwaway copy of the target to show early behavior. A

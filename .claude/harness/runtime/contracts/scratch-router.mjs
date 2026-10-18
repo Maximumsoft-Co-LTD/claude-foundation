@@ -75,15 +75,19 @@ const DOMAIN_ROWS = [
   [12, "background-job", "Background Job / Scheduler", "application", (s) => has(s, "async") && !has(s, "feature"), ["timeline", "retry"], ["tech-lead"]],
   [13, "library", "SDK / Shared Library", "application", (s) => has(s, "library", "dependency"), ["compat"], ["tech-lead"]],
   [14, "database", "Database / Schema", "data", (s) => has(s, "data", "persisted-data-change"), ["erd"], ["tech-lead"]],
-  [15, "data-migration", "Data Migration", "data", (s) => has(s, "migration") || (has(s, "persisted-data-change") && has(s, "data")), ["dryrun"], ["tech-lead", "devops"]],
+  // Data that lives only in the browser has no server migration to rehearse.
+  [15, "data-migration", "Data Migration", "data", (s) => has(s, "migration") ||
+    (has(s, "persisted-data-change") && has(s, "data") && !has(s, "browser-storage")), ["dryrun"], ["tech-lead", "devops"]],
   [16, "pipeline", "Data Pipeline / ETL", "data", (s) => has(s, "data") && has(s, "async") && !has(s, "feature"), ["lineage"], ["tech-lead"]],
-  [17, "reporting", "BI / Reporting / Search", "data", (s) => has(s, "data") && has(s, "ui") && !has(s, "api"), ["sample"], ["product-owner"]],
+  // A product feature that stores its own records is CRUD, not reporting.
+  [17, "reporting", "BI / Reporting / Search", "data", (s) => has(s, "example:report", "example:search") ||
+    (has(s, "data") && has(s, "ui") && !has(s, "api", "feature", "persisted-data-change")), ["sample"], ["product-owner"]],
   [18, "architecture", "System Architecture", "platform", (s) => has(s, "coupled", "cross-repository"), ["c4"], ["tech-lead"]],
   [19, "infrastructure", "DevOps / Infrastructure", "platform", (s) => has(s, "infra"), ["plan"], ["devops"]],
   [20, "delivery", "CI/CD / Deployment", "platform", (s) => has(s, "infra", "high-operational-risk"), ["pipe"], ["devops"]],
   [21, "observability", "Observability / SRE", "platform", (s) => has(s, "observability"), ["alert"], ["devops"]],
   [22, "performance", "Performance / Scalability", "platform", (s) => has(s, "performance", "performance-slo"), ["bench"], ["tech-lead", "devops"]],
-  [23, "security", "Security / Privacy / Compliance", "platform", (s) => has(s, "privacy", "security-triggers", "external-side-effect"), ["threat"], ["security"]],
+  [23, "security", "Security / Privacy / Compliance", "platform", (s) => has(s, "privacy", "security-triggers", "external-side-effect", "access-control"), ["threat"], ["security"]],
   [24, "bugfix", "Bug Fix / Incident", "maintenance", (s) => has(s, "bugfix"), ["repro"], ["qa", "tech-lead"]],
   [25, "refactor", "Refactoring / Technical Debt", "maintenance", (s) => has(s, "refactor"), ["equiv"], ["tech-lead", "qa"]],
   [26, "qa", "QA / Test Automation", "maintenance", (s) => has(s, "test"), ["testmap"], ["qa"]],
@@ -117,13 +121,16 @@ const strings = (value) => Array.isArray(value)
   ? [...new Set(value.map((item) => String(item).trim().toLowerCase()).filter(Boolean))]
   : [];
 
-export function riskLevel({ riskSignals = [], impact = "" } = {}) {
+// `light` names declared signals that count as ordinary weight for this change,
+// such as stored data that never leaves the browser.
+export function riskLevel({ riskSignals = [], impact = "", light = [] } = {}) {
   const signals = strings(riskSignals);
   const level = String(impact).trim().toLowerCase();
   const reasons = [`impact:${level || "unspecified"}`, ...signals.map((signal) => `risk:${signal}`)];
   if (level === "high" && signals.some((signal) => signal === "financial" || signal === "access-control"))
     return { level: "Critical", reasons };
-  if (level === "high" || signals.some((signal) => HEAVY_SIGNALS.has(signal))) return { level: "High", reasons };
+  if (level === "high" || signals.some((signal) => HEAVY_SIGNALS.has(signal) && !light.includes(signal)))
+    return { level: "High", reasons };
   if (level === "medium" || signals.length) return { level: "Medium", reasons };
   return { level: "Low", reasons };
 }
@@ -149,9 +156,16 @@ export function routeChange(source = {}) {
   if (Array.isArray(source.securityTriggers) && source.securityTriggers.length) signals.add("security-triggers");
   const inferred = inferPathSignals(source.paths).filter((row) => !signals.has(row.signal));
   for (const row of inferred) signals.add(row.signal);
+  // Example block types and the data store refine domains; they are not signals.
+  for (const type of strings(source.exampleTypes)) signals.add(`example:${type}`);
+  // A touched migration path outranks a browser-only claim.
+  const browserStorage = source.browserStorage === true &&
+    !inferPathSignals(source.paths).some((row) => row.signal === "persisted-data-change");
+  if (browserStorage) signals.add("browser-storage");
 
   const { level, reasons: signalReasons } = riskLevel({
-    riskSignals: [...signals].filter((s) => RISK_SIGNALS.has(s)), impact: source.impact });
+    riskSignals: [...signals].filter((s) => RISK_SIGNALS.has(s)), impact: source.impact,
+    light: browserStorage ? ["persisted-data-change"] : [] });
   const reasons = [...signalReasons.filter((reason) =>
     !inferred.some((row) => reason === `risk:${row.signal}`)),
   ...inferred.map((row) => `path:${row.path}→${row.signal}`)];

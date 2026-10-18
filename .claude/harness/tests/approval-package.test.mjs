@@ -102,7 +102,11 @@ test("package writes one section per role and one mermaid block per diagram", (t
     assert.match(html, new RegExp(`id="role-${role}"`));
   assert.equal((html.match(/<pre class="mermaid">/g) || []).length, 2);
   assert.match(html, /Show the board\./);
-  assert.doesNotMatch(html, /<script|https?:\/\//, "self-contained, nothing loaded from outside");
+  // Nothing over the network; the only script is the harness's own Mermaid file.
+  assert.doesNotMatch(html, /https?:\/\//, "nothing loaded over the network");
+  const scripts = html.match(/<script\b[^>]*>/g) || [];
+  assert.equal(scripts.length, 1);
+  assert.match(scripts[0], /^<script src="[^"]*\.claude\/harness\/vendor\/mermaid\.min\.js"><\/script>$|^<script src="[^"]*\.claude\/harness\/vendor\/mermaid\.min\.js">$/);
   assert.ok(existsSync(join(root, ".foundation", "packages")));
 });
 

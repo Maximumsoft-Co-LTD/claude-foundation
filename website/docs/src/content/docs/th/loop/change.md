@@ -211,6 +211,15 @@ section เชิงบรรยาย (`fileMap`, `testMap`, `componentMap`,
 ที่มี `(`, `)` หรือ `"` ต้องใส่เครื่องหมายคำพูด เช่น `A["mean(values)"]` ไฟล์
 execution, repository, handoff และ grounding จะเกิดเมื่อมี override จริงเท่านั้น
 
+มีช่องใน draft แบบไม่บังคับ 2 ช่องที่ใช้กับหน้าอนุมัติเท่านั้น: `scratch` (ข้อความ
+ภาษาคน 4 บรรทัด: `get`, `asIs`, `toBe`, `ifFail`) และ `examples` (บล็อกตัวอย่าง
+แบบมีชนิดที่ใช้ค่าจริง เช่น `api`, `examples`, `dataDiff`, `permission` หรือไฟล์
+`prototype` ใต้ `.foundation/previews/<change>/`) ทั้งสองช่องไม่เปลี่ยน lane หรือ
+packet บล็อกที่ผิดรูปจะได้ intake `EDIT` และ `change start` แค่เตือน
+(`NOTE: scratch`) เมื่อ change ระดับ medium หรือ high ไม่มีตัวอย่าง ดูสิ่งที่ผู้อนุมัติ
+เห็นได้ใน [การอนุมัติโดยคน](/docs/th/approval/) ส่วนรายชื่อชนิดตัวอย่างทั้ง 29 ชนิด
+อยู่ใน `WORKFLOW.md`
+
 ตอน archive Land ต่อท้าย record ที่เปลี่ยนแปลงได้ไว้ใน `proposal.md` ที่ archive แล้วเท่านั้น:
 Appendix: Review record, Appendix: Compliance change record (เฉพาะเมื่อ
 `openspec/config.yaml` ตั้ง `compliance: change-record`) และ Appendix: Rollout gates

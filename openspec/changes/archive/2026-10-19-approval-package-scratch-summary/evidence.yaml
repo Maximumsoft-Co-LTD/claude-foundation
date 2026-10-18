@@ -1,0 +1,376 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "scratch-summary-package-change",
+      "requirementKey": "scratch-summary",
+      "scenario": "มี scratch ครบ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "scratch-summary-package-change-2",
+      "requirementKey": "scratch-summary",
+      "scenario": "ไม่มี scratch",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "scratch-summary-change-start",
+      "requirementKey": "scratch-summary",
+      "scenario": "ข้อความยาวเกิน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "scratch-summary-change-start-2",
+      "requirementKey": "scratch-summary",
+      "scenario": "scratch ไม่ใช่ object",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "scratch-examples-package",
+      "requirementKey": "scratch-examples",
+      "scenario": "ตัวอย่าง API สองกรณี",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "scratch-examples-change-start",
+      "requirementKey": "scratch-examples",
+      "scenario": "ชนิดไม่รู้จัก",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "scratch-examples-change-start-2",
+      "requirementKey": "scratch-examples",
+      "scenario": "ขาดช่องบังคับ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "scratch-examples-package-2",
+      "requirementKey": "scratch-examples",
+      "scenario": "ค่าที่มี HTML",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "scratch-examples-change-start-3",
+      "requirementKey": "scratch-examples",
+      "scenario": "prototype ชี้นอก previews",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "scratch-examples-package-3",
+      "requirementKey": "scratch-examples",
+      "scenario": "ครบ 29 ชนิด",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "example-actual-package-prove",
+      "requirementKey": "example-actual",
+      "scenario": "มี receipt ผ่าน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "example-actual-package",
+      "requirementKey": "example-actual",
+      "scenario": "มีแค่ preview",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "example-actual-package-2",
+      "requirementKey": "example-actual",
+      "scenario": "preview เก่า",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "example-actual-package-3",
+      "requirementKey": "example-actual",
+      "scenario": "ยังไม่มีผล",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "example-actual-package-4",
+      "requirementKey": "example-actual",
+      "scenario": "receipt ล้ม",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-language-package",
+      "requirementKey": "package-language",
+      "scenario": "ภาษาไทย",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-language-package-2",
+      "requirementKey": "package-language",
+      "scenario": "ภาษาอื่น",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-offline-diagrams-package",
+      "requirementKey": "package-offline-diagrams",
+      "scenario": "มีไฟล์ vendor",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-offline-diagrams-package-2",
+      "requirementKey": "package-offline-diagrams",
+      "scenario": "ไม่มีไฟล์ vendor",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-offline-diagrams-package-3",
+      "requirementKey": "package-offline-diagrams",
+      "scenario": "ไม่มี script อื่น",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-render-package-change",
+      "requirementKey": "package-render",
+      "scenario": "สร้าง package",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-render-state",
+      "requirementKey": "package-render",
+      "scenario": "ไม่แก้ state",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-render-draft-v3-draftsource",
+      "requirementKey": "package-render",
+      "scenario": "draft v3 ไม่มี draftSource",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-render-change",
+      "requirementKey": "package-render",
+      "scenario": "ไม่พบ change",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-content-api-contract",
+      "requirementKey": "package-content",
+      "scenario": "API contract",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-content-test-matrix",
+      "requirementKey": "package-content",
+      "scenario": "test matrix",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-content-permission-matrix",
+      "requirementKey": "package-content",
+      "scenario": "permission matrix",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-content-4",
+      "requirementKey": "package-content",
+      "scenario": "ไม่ได้ประกาศ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-content-package",
+      "requirementKey": "package-content",
+      "scenario": "ค่าที่มี HTML",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "scratch-nudges-change-start",
+      "requirementKey": "scratch-nudges",
+      "scenario": "ไม่มีตัวอย่าง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "scratch-nudges-change-start-2",
+      "requirementKey": "scratch-nudges",
+      "scenario": "performance ไม่มีเป้า",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "scratch-nudges-change-start-3",
+      "requirementKey": "scratch-nudges",
+      "scenario": "bugfix ไม่มีตัวเลขผลกระทบ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "scratch-nudges-change-start-4",
+      "requirementKey": "scratch-nudges",
+      "scenario": "impact low",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "scratch-nudges-change-start-5",
+      "requirementKey": "scratch-nudges",
+      "scenario": "ครบแล้ว",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "router-domain-precision-routechange",
+      "requirementKey": "router-domain-precision",
+      "scenario": "kanban ใน localStorage",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "router-domain-precision-routechange-2",
+      "requirementKey": "router-domain-precision",
+      "scenario": "migration ฝั่ง server",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "router-domain-precision-routechange-3",
+      "requirementKey": "router-domain-precision",
+      "scenario": "app CRUD ไม่ใช่รายงาน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "router-domain-precision-routechange-4",
+      "requirementKey": "router-domain-precision",
+      "scenario": "รายงานจริง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "router-domain-precision-routechange-5",
+      "requirementKey": "router-domain-precision",
+      "scenario": "สิทธิ์ได้ threat model",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/scratch-draft-fields.test.mjs .claude/harness/tests/semantic-draft.test.mjs) && (node --test .claude/harness/tests/scratch-router.test.mjs) && (node --test .claude/harness/tests/approval-package.test.mjs .claude/harness/tests/scratch-blocks.test.mjs) && (node --test .claude/harness/tests/scratch-nudges.test.mjs .claude/harness/tests/change-atomic-start.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh)"
+      ],
+      "segments": [
+        "node --test .claude/harness/tests/scratch-draft-fields.test.mjs .claude/harness/tests/semantic-draft.test.mjs",
+        "node --test .claude/harness/tests/scratch-router.test.mjs",
+        "node --test .claude/harness/tests/approval-package.test.mjs .claude/harness/tests/scratch-blocks.test.mjs",
+        "node --test .claude/harness/tests/scratch-nudges.test.mjs .claude/harness/tests/change-atomic-start.test.mjs",
+        "bash .claude/tests/docs/run-doc-consistency.sh"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

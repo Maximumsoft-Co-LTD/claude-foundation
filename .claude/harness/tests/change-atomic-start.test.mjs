@@ -1593,6 +1593,24 @@ test("a classified, measured rapid draft raises no coverage NOTE and states its 
   assert.match(result.intake.issues.join("\n"), /successMeasure must be one line/);
 });
 
+test("a medium draft without examples still starts and prints one scratch NOTE beside the coverage NOTE", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4({
+    impact: "medium",
+    requirements: [{
+      key: "bounded-result", capability: "single-shot-change", operation: "added",
+      scenarios: [
+        { name: "Bounded input", kind: "success", when: "A bounded input arrives", then: "The result is returned" },
+        { name: "Invalid input", kind: "failure", when: "The input is invalid", then: "An error names the field" }],
+      outcome: "The bounded result is returned"
+    }]
+  }));
+  const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.match(output, /^AGREED single-shot-change/m);
+  const notes = output.split("\n").filter((line) => line.startsWith("NOTE: scratch"));
+  assert.deepEqual(notes, ["NOTE: scratch (advisory, approval page): no concrete example (optional 'examples')"]);
+});
+
 // A change agreed before the layout moved keeps its Plan, What changes, and
 // Folder tree; resolve edits only harness-owned lines and nothing reads them.
 test("an older-layout proposal still resolves and is re-rendered consistently by revise", (t) => {

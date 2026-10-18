@@ -289,6 +289,15 @@ noting when it was inferred. Flowchart node labels holding `(`, `)`, or `"`
 must be quoted, as in `A["mean(values)"]`. Execution, repository,
 handoff, and grounding files appear only for real overrides.
 
+Two optional draft fields exist only for the approval page: `scratch` (four
+plain lines: `get`, `asIs`, `toBe`, `ifFail`) and `examples` (typed blocks
+with real values, such as `api`, `examples`, `dataDiff`, `permission`, or a
+`prototype` file under `.foundation/previews/<change>/`). They never change the
+lane or the packet, a malformed block is an intake `EDIT`, and `change start`
+only advises (`NOTE: scratch`) when a medium or high change has none. See
+[Approval package, previews, and role lanes](/docs/approval/#approval-package-previews-and-role-lanes)
+for what approvers see; `WORKFLOW.md` lists all 29 example types.
+
 At archive, Land appends the volatile records to the archived `proposal.md`
 only: Appendix: Review record, Appendix: Compliance change record (only when
 `openspec/config.yaml` sets `compliance: change-record`), and Appendix: Rollout

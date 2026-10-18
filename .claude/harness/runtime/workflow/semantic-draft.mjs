@@ -4,6 +4,7 @@ import {
   normalizeDiscovery, semanticIntakeIssues
 } from "./validation/semantic-intake.mjs";
 import { designBlueprintIssues } from "./validation/design-blueprints.mjs";
+import { EXAMPLE_TYPES, scratchFieldIssues } from "./scratch-fields.mjs";
 import { readerGuideIssues } from "./validation/reader-guide.mjs";
 import {
   devDocumentIssues, devDocumentShapeIssues, inferWorkTypes
@@ -368,6 +369,7 @@ function semanticDraftIssues(source, { defaultTestEvidence = false } = {}) {
   if (source?.language !== undefined &&
       !/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(text(source.language)))
     issues.push("semantic draft language must be a BCP 47 tag such as 'en' or 'th'");
+  issues.push(...scratchFieldIssues(source));
   if (source?.successMeasure !== undefined &&
       (typeof source.successMeasure !== "string" || !text(source.successMeasure) ||
         text(source.successMeasure).length > 240 || /\r?\n/.test(text(source.successMeasure))))
@@ -1664,6 +1666,17 @@ export function semanticDraftTemplate() {
     }],
     successCriteria: ["State how the result is judged, with a measurable threshold"],
     successMeasure: "Optional one line: the number or observable that shows it worked",
+    scratch: {
+      get: "Optional: what the approver gets, in one plain line",
+      asIs: "Optional: how it works today, with a count when known",
+      toBe: "Optional: how it works after the change",
+      ifFail: "Optional: what the user sees when it fails and how it recovers"
+    },
+    examples: [{
+      type: "examples", title: "Optional: concrete examples with real values",
+      rules: [{ rule: "One rule in plain words", rows: [
+        { name: "Main case", kind: "success", when: "One real input", then: "The exact result" }] }]
+    }],
     impact: "low",
     coupling: "isolated",
     workType: ["feature"],
@@ -1733,6 +1746,10 @@ export const MINIMAL_DRAFT_WRITING = Object.freeze({
   scope: "Scope items (changes, nonGoals) are short phrases, not paragraphs",
   language: "Write in the user's language; keep field names, keys, and SHALL/WHEN/THEN in English",
   sections: "Fill only the sections your work type needs (workTypeExamples); leave the rest out",
+  scratch: "Optional, for the approval page: scratch.get, asIs, toBe, ifFail are one plain line each " +
+    "(at most 240 characters) for an approver who does not read code; put counts in asIs when known",
+  examples: "Optional typed examples with real values from the request, code, or data, never invented: " +
+    `each { type, title, why?, postBuild?, capability? } where type is one of ${EXAMPLE_TYPES.join(", ")}`,
   limits: Object.freeze({ intentMaxCharacters: 70, whyMaxSentences: 3 })
 });
 

@@ -415,6 +415,14 @@ and every claim is still proven by a Prove run. A provider declared with
 provider, never covers a claim, and is not subject to provider wiring rules
 beyond having an adapter and a command.
 
+The approval package's after-Build tab for a draft example only reads evidence;
+it never creates it. An example's `capability` selects the matching Prove
+provider: the tab says `proof` only for a valid passing receipt, `failed` for a
+failing one, and otherwise falls back to a matching preview receipt, labeled
+`preview` or stale, or to no result. Its links reach only artifacts under the
+change's `.foundation/evidence/<change>/` or `.foundation/previews/<change>/`
+folders, resolved without following a symlink out of them.
+
 Valid receipts are reused. Commands with identical executable arguments,
 environment, working directory, and timeout are deduplicated within one proof
 execution. Providers with non-conflicting resources run concurrently.

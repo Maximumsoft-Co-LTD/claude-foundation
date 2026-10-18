@@ -1135,6 +1135,30 @@ export function approvalPackageLine(link) {
   return "";
 }
 
+// Advisory only, never a repair: what the approval page will lack. A medium or
+// high change without concrete examples, a performance change without a target
+// number, or a defect or migration without an affected count. Kept apart from
+// the coverage note so that line's wording stays unchanged.
+const SCRATCH_COUNT_WORK = new Set(["bugfix", "migration", "deprecation"]);
+const hasDigit = (value) => /\d/.test(String(value ?? ""));
+export function scratchNoteLine(draft) {
+  const impact = String(draft?.impact || "").trim().toLowerCase();
+  if (impact !== "medium" && impact !== "high") return "";
+  const examples = Array.isArray(draft?.examples) ? draft.examples : [];
+  const types = new Set((Array.isArray(draft?.workType) ? draft.workType : [draft?.workType]).map((type) => String(type || "")));
+  const signals = new Set(Array.isArray(draft?.riskSignals) ? draft.riskSignals : []);
+  const gaps = [];
+  if (!examples.length) gaps.push("no concrete example (optional 'examples')");
+  if (types.has("performance") || signals.has("performance-slo")) {
+    const target = examples.some((row) => row?.type === "perf" &&
+      (row.metrics || []).some((metric) => typeof metric?.target === "number"));
+    if (!target && !hasDigit(draft?.successMeasure)) gaps.push("no target number (perf example target or 'successMeasure')");
+  }
+  if ([...types].some((type) => SCRATCH_COUNT_WORK.has(type)) && !hasDigit(draft?.scratch?.asIs))
+    gaps.push("no affected count (optional 'scratch.asIs')");
+  return gaps.length ? `scratch (advisory, approval page): ${gaps.join("; ")}` : "";
+}
+
 export function createChangeLifecycle({
   root,
   policy,
@@ -2583,6 +2607,8 @@ export function createChangeLifecycle({
     if (derived) console.log(`NOTE: ${derived}`);
     const coverage = coverageNoteLine(draft);
     if (coverage) console.log(`NOTE: ${coverage}`);
+    const scratch = scratchNoteLine(draft);
+    if (scratch) console.log(`NOTE: ${scratch}`);
     const filled = derivedByHarness(draft, { standard: !rapid });
     if (filled.length)
       console.log(`NOTE: derived by harness (listed in proposal.md): ${

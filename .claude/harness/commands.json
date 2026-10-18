@@ -79,7 +79,7 @@
       "audience": "agent",
       "kind": "read",
       "idempotent": true,
-      "description": "Write the read-only approval package .foundation/packages/<change>.html: risk level, technical domains, artifacts by approver role with proof/preview labels, optional suggested previews, and the change's Mermaid diagrams, without changing lifecycle state."
+      "description": "Write the read-only approval package .foundation/packages/<change>.html: risk level, technical domains, artifacts by approver role with proof/preview labels, the draft's plain-language scratch summary and typed examples with an after-Build tab each, optional suggested previews, and the change's Mermaid diagrams rendered by the shipped local Mermaid file, without changing lifecycle state."
     },
     {
       "name": "preview",
